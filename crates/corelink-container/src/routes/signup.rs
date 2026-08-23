@@ -1259,21 +1259,81 @@ mod tests {
         }
     }
 
-    /// A valid hex key (≥ 32 bytes decoded) yields `Some`, so production with
-    /// the secret set mounts the route.
+    /// The D1 storage env vars `build_state_from_env` needs for the durable
+    /// store + audit sink. Values are syntactically valid but point nowhere —
+    /// `from_env` only reads them, so nothing is dialled here.
+    const STORAGE_ENV: [(&str, &str); 6] = [
+        ("R2_S3_ENDPOINT", "https://example.invalid"),
+        ("R2_S3_ACCESS_KEY_ID", "test-access-key-id"),
+        ("R2_S3_SECRET_ACCESS_KEY", "test-secret-access-key"),
+        ("CLOUDFLARE_ACCOUNT_ID", "test-account-id"),
+        ("CF_API_TOKEN", "test-api-token"),
+        ("D1_DATABASE_ID", "test-database-id"),
+    ];
+
+    /// The token key ALONE is NOT enough: without the D1 config the route
+    /// must stay unmounted rather than silently fall back to the in-memory
+    /// store. That fallback was a real shipped bug — the route answered
+    /// `201 Created` while prod D1 stayed at `COUNT(*)=0`.
     #[test]
-    fn build_state_from_env_is_some_with_valid_hex_secret() {
+    fn build_state_from_env_is_none_without_storage_env() {
         let _guard = ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let prev = std::env::var("SIGNUP_TOKEN_KEY").ok();
-        // 32 bytes (0xAB) hex-encoded.
+        let prev_key = std::env::var("SIGNUP_TOKEN_KEY").ok();
+        let prev_storage: Vec<_> = STORAGE_ENV
+            .iter()
+            .map(|(k, _)| (*k, std::env::var(k).ok()))
+            .collect();
+        for (k, _) in STORAGE_ENV {
+            std::env::remove_var(k);
+        }
         std::env::set_var("SIGNUP_TOKEN_KEY", "ab".repeat(32));
         assert!(
-            build_state_from_env().is_some(),
-            "valid hex SIGNUP_TOKEN_KEY (>= 32 bytes) must yield Some"
+            build_state_from_env().is_none(),
+            "a valid SIGNUP_TOKEN_KEY without the D1 storage env must yield \
+             None (fail-CLOSED — never the in-memory store in production)"
         );
-        match prev {
+        for (k, v) in prev_storage {
+            match v {
+                Some(v) => std::env::set_var(k, v),
+                None => std::env::remove_var(k),
+            }
+        }
+        match prev_key {
+            Some(v) => std::env::set_var("SIGNUP_TOKEN_KEY", v),
+            None => std::env::remove_var("SIGNUP_TOKEN_KEY"),
+        }
+    }
+
+    /// A valid hex key AND the D1 storage env together yield `Some`, so
+    /// production with both mounts the route — on the durable store.
+    #[test]
+    fn build_state_from_env_is_some_with_valid_hex_secret_and_storage_env() {
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let prev_key = std::env::var("SIGNUP_TOKEN_KEY").ok();
+        let prev_storage: Vec<_> = STORAGE_ENV
+            .iter()
+            .map(|(k, _)| (*k, std::env::var(k).ok()))
+            .collect();
+        // 32 bytes (0xAB) hex-encoded.
+        std::env::set_var("SIGNUP_TOKEN_KEY", "ab".repeat(32));
+        for (k, v) in STORAGE_ENV {
+            std::env::set_var(k, v);
+        }
+        assert!(
+            build_state_from_env().is_some(),
+            "valid SIGNUP_TOKEN_KEY + D1 storage env must yield Some"
+        );
+        for (k, v) in prev_storage {
+            match v {
+                Some(v) => std::env::set_var(k, v),
+                None => std::env::remove_var(k),
+            }
+        }
+        match prev_key {
             Some(v) => std::env::set_var("SIGNUP_TOKEN_KEY", v),
             None => std::env::remove_var("SIGNUP_TOKEN_KEY"),
         }
