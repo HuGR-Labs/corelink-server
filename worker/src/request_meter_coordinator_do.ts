@@ -10,8 +10,8 @@
  * The lease accounting itself lives in `lib/request_meter_lease.ts` (WP-1a, fully
  * unit-tested); this shell only persists `CoordinatorState` and routes ops.
  *
- * INERT: not yet wired to any request path (that is the `EDGE_DO_METER`-gated
- * worker change, a later WP). Bound + exported so it can be shadow-tested.
+ * LIVE: wired into the request path in worker/src/index.ts (the `EDGE_DO_METER`-
+ * gated serve block); `EDGE_DO_METER` = "serve" for prod. Bound + exported.
  *
  * Charter (mirrored from event_log_do.ts):
  *   - INV-NO-PII-IN-LOGS: tenant ids are NOT logged (the tenant id is the DO name,

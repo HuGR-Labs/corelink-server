@@ -549,7 +549,7 @@ class_name = "EventLogDO"
 name = "REPLICATION_COORDINATOR_DO"
 class_name = "ReplicationCoordinatorDO"
 
-# P3 metering DOs (INERT until EDGE_DO_METER flip) — see base bindings.
+# P3 metering DOs (LIVE — this env sets EDGE_DO_METER = "serve") — see base bindings.
 [[env.prod.durable_objects.bindings]]
 name = "REQUEST_METER_COORDINATOR_DO"
 class_name = "RequestMeterCoordinatorDO"
@@ -862,7 +862,7 @@ class_name = "EventLogDO"
 name = "REPLICATION_COORDINATOR_DO"
 class_name = "ReplicationCoordinatorDO"
 
-# P3 metering DOs (INERT until EDGE_DO_METER flip) — see base bindings.
+# P3 metering DOs (LIVE — this env sets EDGE_DO_METER = "serve") — see base bindings.
 [[env.prod-sam.durable_objects.bindings]]
 name = "REQUEST_METER_COORDINATOR_DO"
 class_name = "RequestMeterCoordinatorDO"
@@ -1021,7 +1021,7 @@ class_name = "EventLogDO"
 name = "REPLICATION_COORDINATOR_DO"
 class_name = "ReplicationCoordinatorDO"
 
-# P3 metering DOs (INERT until EDGE_DO_METER flip) — see base bindings.
+# P3 metering DOs (LIVE — this env sets EDGE_DO_METER = "serve") — see base bindings.
 [[env.prod-lhr.durable_objects.bindings]]
 name = "REQUEST_METER_COORDINATOR_DO"
 class_name = "RequestMeterCoordinatorDO"
@@ -1174,7 +1174,7 @@ class_name = "EventLogDO"
 name = "REPLICATION_COORDINATOR_DO"
 class_name = "ReplicationCoordinatorDO"
 
-# P3 metering DOs (INERT until EDGE_DO_METER flip) — see base bindings.
+# P3 metering DOs (LIVE — this env sets EDGE_DO_METER = "serve") — see base bindings.
 [[env.prod-nrt.durable_objects.bindings]]
 name = "REQUEST_METER_COORDINATOR_DO"
 class_name = "RequestMeterCoordinatorDO"
@@ -1323,7 +1323,7 @@ class_name = "EventLogDO"
 name = "REPLICATION_COORDINATOR_DO"
 class_name = "ReplicationCoordinatorDO"
 
-# P3 metering DOs (INERT until EDGE_DO_METER flip) — see base bindings.
+# P3 metering DOs (LIVE — this env sets EDGE_DO_METER = "serve") — see base bindings.
 [[env.prod-syd.durable_objects.bindings]]
 name = "REQUEST_METER_COORDINATOR_DO"
 class_name = "RequestMeterCoordinatorDO"

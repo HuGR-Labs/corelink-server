@@ -1,0 +1,50 @@
+# Keeps the built-but-unreachable radar honest.
+#
+# `scripts/detect_unreachable.py` reports Cloudflare bindings and Worker env
+# flags that are declared but reached from no TypeScript. The report itself is
+# advisory and always exits 0 — an UNREACHED verdict is a lead for a human, not
+# proof of dead code, and a tool that could not be wrong would be lying.
+#
+# What IS gated is the detector's own behaviour. Its value is entirely in the
+# direction of its errors: a missed dead binding costs nothing, while a false
+# "this is dead" invites someone to delete live code — which is exactly what a
+# naive grep did to EDGE_DO_METER before this tool existed. The self-test pins
+# that property, including the real-tree assertions, and it can go red.
+#
+# NO cron, per the standing rule: nothing here changes without a commit to one
+# of the paths below.
+name: unreachable-radar
+
+on:
+  pull_request:
+    paths:
+      - "wrangler.toml"
+      - "worker/src/**"
+      - "scripts/detect_unreachable.py"
+      - "scripts/test_detect_unreachable.sh"
+      - ".github/workflows/unreachable-radar.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  radar:
+    # Self-hosted fleet — zero GitHub-hosted spend, per the standing mandate.
+    runs-on: corelink
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0  # v6.0.3
+
+      # The gate's own gate, first: if the detector can no longer tell a
+      # type-cast read from a dead binding, its report below is worthless.
+      - name: the detector still answers its known cases (self-test)
+        run: bash scripts/test_detect_unreachable.sh
+
+      # Advisory. Printed so a reviewer sees the current leads in the PR log;
+      # it cannot fail the job by design.
+      - name: report declared-but-unreached items
+        run: python3 scripts/detect_unreachable.py

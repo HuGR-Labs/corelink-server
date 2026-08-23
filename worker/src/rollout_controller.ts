@@ -13,6 +13,9 @@
  * Phase C will wire this DO to the Rust implementation once the WASM
  * bridge is ready. For now it implements a no-op that returns 200 for
  * health checks and 501 for all other requests.
+ *
+ * Status: bound in prod (ROLLOUT_DO, migration tag v2), but no handler in
+ * worker/src currently calls `env.ROLLOUT_DO`. It carries no traffic.
  */
 
 import type { DurableObject, DurableObjectState } from "@cloudflare/workers-types";
