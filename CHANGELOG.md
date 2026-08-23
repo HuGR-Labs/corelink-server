@@ -24,6 +24,24 @@ Each entry cross-references:
 
 ### Fixed
 - **fix(installer): the public `curl | sh` one-liner's own `config.toml` write did not match the schema the CLI reads, so its trailing `corelink whoami` call — and anything chained after the pipe with `&&` — always failed with `error: No PAT found`, for any token.** `apps/get-corelink-worker/src/install.ts` wrote a flat top-level `token = "$TOKEN"` / `region = "..."` into `~/.corelink/config.toml`, but `tools/cli/src/config.rs` (`CorelinkConfig`/`AuthConfig`) only ever populates `cfg.auth.pat` from a `[auth]` table's `pat` key — TOML deserialization silently ignores unrecognized top-level scalars rather than erroring, so `auth.pat` stayed `None` regardless of how valid the supplied PAT was. Under `set -eu` that made the script's own final `corelink whoami` invocation fail and abort the *entire* one-liner non-zero, which is what `smoke-install.yml` caught (run `30988335681`, 2026-08-05): both docker legs logged `error: No PAT found...` immediately after "Checksum OK.", not because `corelink --version` needs a credential (it never has — confirmed directly against the published v0.1.1 binary: `--version`/`-V`/`--help`/`version`/`config set` all still work with zero PAT present), but because the install script's *own* trailing verification call died first and short-circuited the `&&`-chained `corelink --version` in the workflow's `docker run` command. `config.toml` now writes `[auth]\npat = "$TOKEN"` and `[defaults]\nendpoint = "..."`, matching `CorelinkConfig` exactly; `--region` remains a no-op CLI flag since no `[defaults].region` config key exists yet. New regression coverage in `apps/get-corelink-worker/tests/install.test.ts` parses `tools/cli/src/config.rs`'s real `AuthConfig`/`DefaultsConfig` structs (ground-truth, same discipline as the existing subcommand-membership test) and asserts the rendered heredoc writes `[auth].pat`/`[defaults].endpoint`, pinning against ever regressing back to the flat, silently-ignored form.
+### Added
+
+- **`BACKLOG.md` — a single source of truth for open work across the three CoreLink
+  repos, and it checks itself.** On 2026-08-23 a day of planning was built on notes
+  that had quietly gone stale: three items recorded as open had shipped days
+  earlier, and one cited a count of hosted CI lanes matching neither the file count
+  nor the job count. Nothing was dishonest — the notes were written once, never
+  re-checked, and nothing existed that could notice. So every item now carries a
+  command that decides whether its own claim is still true. `scripts/backlog_verify.py`
+  runs them: exit 0 confirms the declared status, non-zero means the item and the
+  repo disagree. An item that genuinely cannot be checked declares `verify: manual`
+  and must carry a fresh `last-verified` date; past 14 days it goes STALE and fails
+  the gate — an unverifiable claim is allowed, sitting unchallenged forever is not.
+  Gated by `backlog-verify.yml` on PR and on a daily cron; the cron earns its keep
+  under this repo's own rule because an item here closes when work lands in another
+  repo, which produces no commit in this one. `scripts/test_backlog_verify.sh` runs
+  first in that job and proves the gate can go red — a checker nobody has watched
+  fail proves nothing, and this project has shipped several of those.
 
 ### Changed
 - **fix(ci): the weekly compliance digest opened a PR that could never merge — no DCO trailer, and a same-day re-run could not push at all.** With the Actions PR-creation permission finally granted, `compliance-weekly.yml` produced its first digest PR since 2026-05-15 — and it was born un-mergeable: the bot commit carried no `Signed-off-by`, which the repo's `dco` check requires on every commit, and a second dispatch on the same date died on `! [rejected] auto/compliance-digest-<date> (non-fast-forward)` because the branch name is date-derived and the previous run had already pushed it, leaving an orphan branch with no PR (observed on run 32626164962). The commit now appends the trailer via a second `-m`, and the push is `--force` so a retry or a manual dispatch after a scheduled failure converges instead of stranding the branch. A third, deeper gap is now documented in the workflow rather than silently tolerated: GitHub does not trigger workflows for events created with `GITHUB_TOKEN`, so the digest PR arrives with **zero** checks and `scripts/pre-merge-gate-check.sh` rightly refuses it — closing that needs an owner-minted non-Actions credential (fine-grained PAT or App token with `contents:write` + `pull_requests:write`).
