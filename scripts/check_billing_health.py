@@ -64,6 +64,18 @@ PAYMENT_FAILED_ALERT_THRESHOLD = 3
 # cycle, narrow enough that a long-resolved incident stops paging.
 LOOKBACK_DAYS = 30
 
+# `stripe_webhook_events_processed.event_id` is written under TWO different id
+# schemes, because two separately-registered Stripe endpoints both deliver into
+# this one table: the signup-worker stores Stripe's own `evt_…` id, while the
+# container stores a derived content hash. This SQL fragment separates them.
+#
+# It matters for counting. Each endpoint receives EVERY event of the types it
+# subscribes to, so each scheme is already a COMPLETE view of those events.
+# Summing the two therefore double-counts every event both endpoints see, and a
+# cluster rule that sums will trip at half its stated threshold. Take the MAX of
+# the per-scheme counts, never the sum.
+CANONICAL_EVENT_ID_SQL = r"event_id LIKE 'evt\_%' ESCAPE '\'"
+
 
 class NotConfigured(Exception):
     """Credentials or database id absent — the check cannot see billing state."""
@@ -125,22 +137,75 @@ def check_payment_failure_clusters(
     Counted over the processed-webhook log rather than over invoices, because the
     webhook log is what production actually receives and is written on every
     delivery — including the retries that indicate a failure is not clearing.
+
+    Counted per id-scheme and reduced with MAX, not SUM. Two Stripe endpoints
+    write this table under different id schemes, so each scheme already holds a
+    complete copy of the same events; summing them reports double the real
+    number and trips the threshold at half its stated value. See
+    `CANONICAL_EVENT_ID_SQL` and `check_duplicate_webhook_ingestion`.
     """
     cutoff_ms = f"(strftime('%s','now') - {LOOKBACK_DAYS} * 86400) * 1000"
     rows = d1_query(
         account_id,
         database_id,
         token,
-        "SELECT COUNT(*) AS n FROM stripe_webhook_events_processed "
+        f"SELECT SUM(CASE WHEN {CANONICAL_EVENT_ID_SQL} THEN 1 ELSE 0 END) AS canonical, "
+        f"SUM(CASE WHEN NOT ({CANONICAL_EVENT_ID_SQL}) THEN 1 ELSE 0 END) AS derived "
+        "FROM stripe_webhook_events_processed "
         f"WHERE event_type = 'invoice.payment_failed' AND processed_at_ms >= {cutoff_ms}",
     )
-    n = rows[0]["n"] if rows else 0
+    row = rows[0] if rows else {}
+    canonical = row.get("canonical") or 0
+    derived = row.get("derived") or 0
+    n = max(canonical, derived)
     if n >= PAYMENT_FAILED_ALERT_THRESHOLD:
         return [
             f"{n} invoice.payment_failed webhooks in the last {LOOKBACK_DAYS}d "
             f"(threshold {PAYMENT_FAILED_ALERT_THRESHOLD}) — dunning is not recovering"
         ]
     return []
+
+
+def check_duplicate_webhook_ingestion(
+    account_id: str, database_id: str, token: str
+) -> list[str]:
+    """Two live Stripe endpoints ingesting the same event under different keys.
+
+    `stripe_webhook_events_processed` dedupes on `event_id` PRIMARY KEY. That
+    only protects a retry that arrives under the SAME id scheme. When one
+    endpoint stores Stripe's `evt_…` id and another stores a derived hash of the
+    same delivery, the two rows do not collide, so the same Stripe event is
+    processed twice and every count over this table is inflated.
+
+    Seeing both schemes for one `event_type` is therefore evidence of a second
+    live endpoint, not of a busy month. Resolving it is a Stripe dashboard
+    change (retire the redundant endpoint), which is why this reports rather
+    than repairs.
+    """
+    cutoff_ms = f"(strftime('%s','now') - {LOOKBACK_DAYS} * 86400) * 1000"
+    rows = d1_query(
+        account_id,
+        database_id,
+        token,
+        "SELECT event_type, "
+        f"SUM(CASE WHEN {CANONICAL_EVENT_ID_SQL} THEN 1 ELSE 0 END) AS canonical, "
+        f"SUM(CASE WHEN NOT ({CANONICAL_EVENT_ID_SQL}) THEN 1 ELSE 0 END) AS derived "
+        "FROM stripe_webhook_events_processed "
+        f"WHERE processed_at_ms >= {cutoff_ms} "
+        "GROUP BY event_type HAVING canonical > 0 AND derived > 0 "
+        "ORDER BY event_type",
+    )
+    if not rows:
+        return []
+    detail = ", ".join(
+        f"{r['event_type']} ({r['canonical']} canonical / {r['derived']} derived)"
+        for r in rows
+    )
+    return [
+        f"{len(rows)} event type(s) ingested under BOTH id schemes in the last "
+        f"{LOOKBACK_DAYS}d — a second live Stripe endpoint is writing this table "
+        f"and `event_id` dedupe does not span the two: {detail}"
+    ]
 
 
 def check_dead_letter_queue(account_id: str, database_id: str, token: str) -> list[str]:
@@ -157,6 +222,7 @@ def check_dead_letter_queue(account_id: str, database_id: str, token: str) -> li
 CHECKS = (
     ("stripe_subscriptions", check_unhealthy_subscriptions),
     ("stripe_webhook_events_processed", check_payment_failure_clusters),
+    ("stripe_webhook_events_processed", check_duplicate_webhook_ingestion),
     ("stripe_webhook_events_dlq", check_dead_letter_queue),
 )
 
@@ -194,9 +260,10 @@ def main() -> int:
         for f in findings:
             print(f"  - {f}")
         print(
-            "\nEach anomaly is lost or at-risk revenue. Triage in the Stripe "
-            "dashboard: recover the payment, or cancel the subscription and void "
-            "its open invoice if it is not a real customer."
+            "\nTriage in the Stripe dashboard. For lost or at-risk revenue: "
+            "recover the payment, or cancel the subscription and void its open "
+            "invoice if it is not a real customer. For duplicate ingestion: "
+            "retire the redundant webhook endpoint so one handler owns the event."
         )
         return 1
 
@@ -206,6 +273,7 @@ def main() -> int:
         f"  fewer than {PAYMENT_FAILED_ALERT_THRESHOLD} invoice.payment_failed "
         f"webhooks in {LOOKBACK_DAYS}d"
     )
+    print("  no event type ingested under two webhook id schemes")
     print("  Stripe webhook dead-letter queue empty")
     return 0
 
