@@ -6,6 +6,7 @@ description: Download a blob by digest with client-side BLAKE3 verify.
 tags: [reference, cli, get]
 ---
 
+
 <!-- i18n:MT (pt-BR) — TMX-seeded machine-translation stub; replace with native-speaker translation before GA -->
 
 > MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
@@ -33,7 +34,7 @@ corelink get <DIGEST> [-o <FILE>] [--output <FORMAT>]
 
 | Flag | Required | Default | Description |
 |---|---|---|---|
-| `-o`, `--output-file` | no | stdout | Destination file. If verify fails the partial file is deleted. |
+| `-o`, `--out` | no | stdout | Destination file. Verification happens before any bytes are written, so a verify failure never leaves a partial file — nothing is written at all. |
 | `--output` | no | `text` | `text` or `json`. JSON is emitted on stderr; bytes go to stdout/`-o`. |
 
 ## Examples
@@ -70,13 +71,14 @@ corelink get 0123...cdef -o ./out.bin --output json
 
 ## Exit codes
 
+The CLI has exactly four exit codes, shared by every subcommand:
+
 | Code | Meaning |
 |---|---|
 | `0` | Downloaded + verified. |
-| `1` | Network or auth failure. |
+| `1` | Any failure — network, auth, not found, verify mismatch. Read the `error: ...` message on stderr for which. |
 | `2` | Argument error. |
-| `3` | Verify mismatch (`COR_VERIFY_001`). |
-| `4` | Not found (`COR_CAS_NOT_FOUND`). |
+| `65` | Reserved for `corelink audit verify-ndjson --url` mid-stream abort only — not used by `get`. |
 
 ## See also
 

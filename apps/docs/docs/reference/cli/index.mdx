@@ -48,14 +48,15 @@ var or config file.
 
 ## Exit codes
 
+The CLI has exactly four exit codes, shared by every subcommand
+(`tools/cli/src/main.rs:512-543`) — there is no per-failure-class code:
+
 | Code | Meaning |
 |---|---|
 | `0`  | Success. |
-| `1`  | Generic runtime failure (network, auth, server error). |
+| `1`  | Any command failure — network, auth, quota, verify mismatch, not found, server error. Read the `error: ...` message on stderr for which. |
 | `2`  | Argument error, or `--pat` rejected. |
-| `3`  | BLAKE3 verify mismatch (`COR_VERIFY_001`). |
-| `4`  | Not found (`COR_CAS_NOT_FOUND`). |
-| `5`  | Rate limit (`COR_QUOTA_RATELIMIT`). |
+| `65` | Reserved for `corelink audit verify-ndjson --url` mid-stream integrity abort only — not used by any other subcommand. |
 
 ## Telemetry
 
