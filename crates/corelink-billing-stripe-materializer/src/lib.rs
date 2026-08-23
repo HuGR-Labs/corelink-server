@@ -76,7 +76,7 @@ pub use clock::SystemMatClock;
 pub use clock::WasmWorkerMatClock;
 pub use clock::{default_mat_clock, InMemoryFakeMatClock, MatClock};
 pub use d1::{
-    BillingD1Error, BillingD1Writer, InMemoryBillingD1, MaterializedRow,
+    BillingD1Error, BillingD1Writer, InMemoryBillingD1, MaterializedRow, WebhookOutcome,
     SQL_DELETE_RUNNERS_ENTITLEMENT, SQL_DOWNGRADE_TIER, SQL_INSERT_DISPUTE, SQL_INSERT_REFUND,
     SQL_INSERT_WEBHOOK_EVENT_PROCESSED, SQL_MARK_SUBSCRIPTION_CANCELED, SQL_READ_TIER,
     SQL_UPSERT_CUSTOMER, SQL_UPSERT_INVOICE, SQL_UPSERT_RUNNERS_ENTITLEMENT,

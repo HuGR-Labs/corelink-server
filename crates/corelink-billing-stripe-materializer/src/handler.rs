@@ -1338,9 +1338,10 @@ mod tests {
             stripe_event_id: &str,
             canonical_event_type: &str,
             now_ms: u64,
+            outcome: crate::d1::WebhookOutcome,
         ) -> Result<bool, BillingD1Error> {
             self.inner
-                .try_record_event(stripe_event_id, canonical_event_type, now_ms)
+                .try_record_event(stripe_event_id, canonical_event_type, now_ms, outcome)
         }
         fn read_tier(&self, tenant_id: &str) -> Result<Option<String>, BillingD1Error> {
             self.inner.read_tier(tenant_id)
