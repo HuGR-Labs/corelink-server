@@ -308,10 +308,11 @@ manual API change with no ADR and no IaC record.
 id: B-010
 repo: corelink-server
 owner: tl
-status: open
-verify: "! ls specs/03_architecture/adrs/ | grep -qi tls"
+status: done
+verify: "ls specs/03_architecture/adrs/ | grep -qi tls"
 verify-means: |
-  open while no ADR mentioning TLS exists. NOTE: this check first pointed at
+  done — ADR-0072 landed in #1232, with an OKF concept grounding it. Red if the ADR
+  is ever removed. NOTE: this check first pointed at
   docs/design/, which holds informal planning docs — the numbered ADR series lives
   in specs/03_architecture/adrs/. A check aimed at the wrong directory would have
   stayed green forever after the ADR landed, which is a false negative in the gate
@@ -417,9 +418,15 @@ rather than restating the expected shape.
 id: B-018
 repo: corelink-server
 owner: tl
-status: open
-verify: "grep -q 'token = ' apps/get-corelink-worker/src/install.ts"
-verify-means: open while the installer still writes the flat key the CLI cannot read
+status: done
+verify: "grep -qE '^\\[auth\\]$' apps/get-corelink-worker/src/install.ts"
+verify-means: |
+  done — the installer emits an [auth] table, which is what the CLI reads. Red if
+  that table is ever dropped. NOTE: this check first grepped for the old flat
+  `token = ` key and reported the item still OPEN after the fix landed — because it
+  matched a COMMENT describing the old bug, not code. A check that passes for the
+  wrong reason is the same defect this gate exists to catch, so it now asserts the
+  presence of the correct shape rather than the absence of the wrong one.
 last-verified: 2026-08-23
 ```
 
