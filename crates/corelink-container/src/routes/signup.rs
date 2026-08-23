@@ -733,10 +733,26 @@ pub fn build_state() -> SignupRouteState {
 ///   Missing or invalid → returns `None`; the caller logs a warning and
 ///   skips mounting the route (so `/v1/signup/pilot` is simply absent in
 ///   dev/CI without the secret, rather than running with a forgeable key).
+/// - The native-container [`crate::storage::StorageEnv`] set
+///   (`R2_S3_ENDPOINT`, `R2_S3_ACCESS_KEY_ID`, `R2_S3_SECRET_ACCESS_KEY`,
+///   `CLOUDFLARE_ACCOUNT_ID`, `CF_API_TOKEN`, `D1_DATABASE_ID`) — the SAME
+///   secrets `billing_d1_http` / `customer_d1` already require, already
+///   registered in `docs/internal/secrets-checklist.md`. **No new secret
+///   is introduced by this route.** Missing/invalid → `None` (fail-CLOSED
+///   — the route is never mounted with the volatile in-memory store /
+///   audit sink in production; see the module-level docs' "D1 store
+///   failure" row).
 ///
 /// Mirrors [`internal_pat::build_state_from_env`]'s `PAT_SIGNING_KEY`
-/// hex+length handling. Production wires the live secret; never the
-/// hardcoded [`DEV_TOKEN_KEY`].
+/// hex+length handling for the token key. Unlike [`build_state_with_key`]
+/// (dev/test path — always `InMemorySignupStore` /
+/// `InMemorySignupAuditSink`), this is the ONLY production wiring: it
+/// binds [`crate::signup_d1_http::D1HttpSignupStore`] (durable D1-over-
+/// HTTP persistence, `migrations/d1/0053_pilot_signups.sql`) and
+/// [`crate::storage::d1_audit_sink::D1AuditOutboxSink`] (the SAME durable
+/// `audit_outbox` seam the CAS/AC data plane already writes to) so pilot
+/// reservations and their `pilot_reserved.v1` audit rows survive a
+/// container roll and are enforceable across all 5 regional workers.
 #[must_use]
 pub fn build_state_from_env() -> Option<SignupRouteState> {
     let token_key_hex = std::env::var("SIGNUP_TOKEN_KEY").ok()?;
@@ -752,7 +768,56 @@ pub fn build_state_from_env() -> Option<SignupRouteState> {
         );
         return None;
     }
-    Some(build_state_with_key(token_key))
+
+    // Durable D1 store + audit sink — fail-CLOSED exactly like the
+    // SIGNUP_TOKEN_KEY gate above: production must NEVER silently fall
+    // back to the in-memory fakes (that was the bug — a live 201 with
+    // COUNT(*)=0 in prod D1's pilot_signups/pilot_tenants).
+    let Some(storage_env) = crate::storage::StorageEnv::from_env() else {
+        tracing::warn!(
+            "signup: storage env (R2_S3_*/CLOUDFLARE_ACCOUNT_ID/CF_API_TOKEN/D1_DATABASE_ID) \
+             unset; /v1/signup/pilot NOT mounted (fail-CLOSED — refusing the in-memory store \
+             in production)"
+        );
+        return None;
+    };
+    let store: Arc<dyn SignupStore> = match crate::signup_d1_http::signup_store_from_d1(
+        crate::storage::d1_http::D1HttpClient::new(&storage_env),
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(error = %e, "signup: durable store unavailable; /v1/signup/pilot NOT mounted");
+            return None;
+        }
+    };
+    let audit_sink: Arc<dyn SignupAuditSink> =
+        match crate::storage::d1_audit_sink::signup_audit_sink_from_d1(
+            crate::storage::d1_http::D1HttpClient::new(&storage_env),
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!(error = %e, "signup: durable audit sink unavailable; /v1/signup/pilot NOT mounted");
+                return None;
+            }
+        };
+
+    let rl_audit = Arc::new(InMemoryRateLimitAuditSink::new());
+    let rl_metrics = Arc::new(InMemoryRateLimitMetrics::new());
+    let rate_limiter: Arc<dyn RateLimiter> = Arc::new(InMemoryTokenBucketRateLimiter::new(
+        rl_audit,
+        rl_metrics,
+        pilot_signup_rate_limit_config(),
+    ));
+    let wall_clock = default_wall_clock();
+
+    Some(SignupRouteState {
+        token_key: Arc::new(token_key),
+        rate_limiter,
+        audit_sink,
+        store,
+        wall_clock,
+        activation_url_base: Arc::new(DEFAULT_ACTIVATION_URL_BASE.to_owned()),
+    })
 }
 
 /// Build the axum router exposing the pilot-signup route.
