@@ -369,11 +369,16 @@ Before merging a PR that touches CAS / AC / audit / BYOK / auth:
 
 ---
 
-## How regression gates work
+## How the perf-regression signal works (ADVISORY, not a merge gate)
 
 This section documents the **`perf-regression` CI workflow** — the
 automated counterpart to the patterns above. The patterns tell you
-how to write fast code; the gate makes sure fast code stays fast.
+how to write fast code; this signal reports when a tracked bench
+drifted. **As of 2026-08-11 this is explicitly NOT a merge gate** —
+see "Why it does not block" below. An earlier revision of this
+document described a blocking p99/10%/Linux-CI design; that design
+was never what shipped in `.github/workflows/perf-regression.yml`,
+and this section is corrected to match the workflow as committed.
 
 ### What it does
 
@@ -383,39 +388,51 @@ On every PR that touches a perf-critical crate (or carries the
 1. Runs the criterion bench suite for the tracked
    `(crate, bench)` pairs (see `reports/perf/README.md` for the list).
 2. Reads criterion's `target/criterion/<bench>/new/` output —
-   `estimates.json` (median, mean) and `sample.json` (per-iter timings,
-   from which **p99** is computed).
+   `estimates.json` (median, mean).
 3. Compares each current metric against the **committed** baseline
    at `reports/perf/baseline-<crate>-<bench>.json`.
-4. Fails the PR check if **any** bench regresses by more than the
-   configured threshold (default: **10% on p99**, configurable via
-   the `PERF_REGRESS_THRESHOLD_PCT` env var or
-   `--threshold-pct` CLI flag).
+4. Reports (does **not** fail) the PR check if any bench regresses
+   beyond its tolerance class: **5% for CRITICAL benches** (tenant-path
+   derive, blake3, JCS canonicalize, audit-chain merkle append, JWT
+   verify under DPA accept, envelope_roundtrip, orchestrator, tier
+   selection), **15% for non-critical benches** — a per-bench
+   `tolerance_pct` in the baseline JSON overrides the class default.
+   `--threshold-pct` / `PERF_REGRESS_THRESHOLD_PCT` can force a single
+   legacy threshold via `workflow_dispatch`.
 
 The criterion HTML report and `perf-regression-report.json` are
 uploaded as a workflow artifact (`criterion-report-<run_id>`,
 14d retention) for offline triage.
 
-### Why p99 (not median)
+### Why MEDIAN (not p99)
 
-The patterns in this playbook target tail latency. Median regressions
-are easy to spot in production dashboards; p99 regressions hide in the
-noise until a customer hits a slow request. The gate optimizes for
-catching the regressions that matter — which is exactly what the
-mutation-baseline philosophy demands at the perf layer.
+The workflow gates on **MEDIAN**, not p99. Criterion's `estimates.json`
+carries the median directly; p99 from raw per-iteration samples proved
+too noisy on the runner this lane actually uses (see next section) —
+empirically ~22% p99 jitter run-to-run vs <4% for the median on
+identical code — so the split 5%/15% thresholds are sized against the
+median's noise floor, not p99's.
 
-When `sample.json` is unavailable for a given bench (older criterion
-versions, or sample storage disabled), the gate falls back to median
-automatically — the failure mode is **"warn, do not block"**.
+### Why it does not block (the runner is the shared founder's Mac)
 
-### Why 10%
+The job runs on `runs-on: [self-hosted, mac, corelink-builder]` — the
+shared, multi-tenant `corelink-builder` Mac fleet, the SAME box class
+used for the rest of self-hosted CI — **not** dedicated or Linux-hosted
+silicon. Back-to-back runs of byte-identical code have measured up to
+**~5x** median swing from noisy-neighbour core-steal on that shared
+host. Gating merges on that signal would false-positive constantly, so
+the check step runs with `continue-on-error: true` and the workflow
+explicitly reports itself as **"INFORMATIONAL (non-blocking)"** in its
+own header and job-summary output. This is a documented, human-authorized
+WAIVER (owner "0 hosted spend", 2026-08-11): only isolated perf silicon
+(a dedicated box or a cgroup-pinned lane) would justify restoring a
+blocking gate, and the zero-hosted-spend mandate rules out paying for
+stable hosted silicon instead.
 
-CI environments produce ~3-7% p99 jitter run-to-run. A 10% floor sits
-comfortably above noise while still catching real regressions — the
-DEBT-013 wins are mostly 15-40% improvements, so a 10% floor protects
-~80% of the headroom. Tighter floors (5%) are appropriate for very
-stable benches (e.g. pure crypto kernels with no allocator); the
-threshold is per-run configurable via `workflow_dispatch`.
+**Practical consequence: a perf-sensitive PR needs a human to actually
+look at the criterion-report artifact.** A single red run is not proof
+of a regression (it may be noise); a persistent multi-run trend is the
+signal worth acting on. Triage flow: `specs/_runbooks/RB-PERF-REGRESSION.md`.
 
 ### The baseline manifest
 
