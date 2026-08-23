@@ -13,6 +13,21 @@ name: Bazel Starter CI (WI-S15-002)
 # exported as env var → consumed by .bazel/corelink-credential-helper.sh.
 # PAT is NEVER placed in bazel argv.
 
+# CREDENTIAL (2026-08-23): the secret is `CORELINK_CANARY_PAT`, NOT `CORELINK_PAT`.
+# `CORELINK_PAT` is documented in the secrets matrix (row 65) and referenced here
+# since this workflow was written, but it was NEVER BOUND on the repo — so every
+# run since at least 2026-07-09 died at "ERROR: CORELINK_PAT is not set." before
+# reaching a single Bazel action. 8 of the last 8 runs failed that way, which is
+# why this gate has never once exercised the surface it claims to guard.
+# `CORELINK_CANARY_PAT` is a real, bound prod credential already backing
+# `cas-canary.yml` + `smoke-install.yml`; reusing it needs no owner action, per
+# the same precedent smoke-install.yml documents at its own head. The ENV name
+# the credential helper reads stays `CORELINK_PAT` — only the secret it is
+# sourced from changes.
+#
+# NOT a claim that the Bazel surface works: the live endpoint was probed on
+# 2026-08-23 and answers 401 unauthenticated + 401 on an invalid token, so it is
+# alive and gating, but no run has yet completed a build against it end-to-end.
 on:
   push:
     paths:
@@ -45,7 +60,7 @@ jobs:
   # ---------------------------------------------------------------------------
   bazel-cache-hit:
     name: Bazel cache hit (≥ 80%)
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 20
     defaults:
       run:
@@ -77,7 +92,7 @@ jobs:
       # argv.
       - name: Cold build (populate remote cache)
         env:
-          CORELINK_PAT: ${{ secrets.CORELINK_PAT }}
+          CORELINK_PAT: ${{ secrets.CORELINK_CANARY_PAT }}
         run: |
           echo "--- Cold build start ---"
           COLD_START=$(date +%s%3N)
@@ -92,7 +107,7 @@ jobs:
 
       - name: Warm build (assert cache hit ≥ 80%)
         env:
-          CORELINK_PAT: ${{ secrets.CORELINK_PAT }}
+          CORELINK_PAT: ${{ secrets.CORELINK_CANARY_PAT }}
         run: |
           echo "--- Warm build start ---"
           WARM_START=$(date +%s%3N)
@@ -191,7 +206,7 @@ jobs:
   # ---------------------------------------------------------------------------
   negative-scenarios:
     name: Negative scenarios (4)
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 10
     defaults:
       run:
@@ -267,7 +282,7 @@ jobs:
   # ---------------------------------------------------------------------------
   weekly-benchmark:
     name: Weekly benchmark (com/sem cache)
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 30
     if: github.event_name == 'schedule'
     defaults:
@@ -283,7 +298,7 @@ jobs:
 
       - name: Run benchmark (3 iterations for CI speed)
         env:
-          CORELINK_PAT: ${{ secrets.CORELINK_PAT }}
+          CORELINK_PAT: ${{ secrets.CORELINK_CANARY_PAT }}
           ITERATIONS: "3"
         run: bash scripts/benchmark.sh --iterations 3
 
