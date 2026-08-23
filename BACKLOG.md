@@ -206,19 +206,29 @@ verify-means: open while the emitter's own TODO comment stands
 last-verified: 2026-08-23
 ```
 
-### B-008 — no PagerDuty page has ever been observed arriving
+### B-008 — PagerDuty accepts our events; nobody knows if they reach a human
 
-The client exists and is wired into prod-critical crons with a bound routing key.
-What is missing is evidence that a page ever reached a human. Three states —
-code exists, wired, delivery observed — and only the first two are established.
+**Half of this closed on 2026-08-23.** Dispatching `audit-chain-daily-verify`
+(run `32661206591`) fired **7 SEV-0 events** and the workflow's dispatch step —
+which checks its own response and only prints success on HTTP `202`
+(`audit-chain-daily-verify.yml:292-303`) — printed 7 successes and **zero**
+`::error::PagerDuty enqueue` lines. So the routing key is valid and armed, and
+PagerDuty's Events API accepted every one. That rules out the "always prints
+success" failure mode and the "key was never provisioned" theory.
+
+What remains genuinely open is the last hop: **escalation**. Accepted by
+PagerDuty is not the same as delivered to a person. And it now carries an
+uncomfortable implication — if the escalation policy works, the owner has been
+paged SEV-0 daily since roughly 2026-07-17; if it does not, then no alert this
+system raises has ever reached anybody.
 
 ```backlog
 id: B-008
 repo: corelink-server
-owner: tl
+owner: owner
 status: open
 verify: manual
-verify-means: vendor-side state; settled only by a drill or the PagerDuty incident log
+verify-means: only the owner or the PagerDuty incident log can say whether a page ever arrived
 last-verified: 2026-08-23
 ```
 
@@ -240,6 +250,41 @@ owner: tl
 status: open
 verify: test -f crates/corelink-privacy-erasure-worker/src/backends/r2_cas_legalhold_pseudo.rs
 verify-means: open while the pseudo backend is still the implementation
+last-verified: 2026-08-23
+```
+
+### B-015 — the sealed audit archive was never built, only its verifier
+
+`audit-chain-daily-verify` lists `corelink-audit-archive` under `audit/<date>/`.
+That bucket does not exist and never did. The producer does —
+`crates/corelink-audit-chain/src/archive_producer.rs`, writing exactly the key
+shape the verifier looks for — but it is dead on two independent axes: its only
+caller sits behind the Cargo feature `cf-billing-real`, which no build or deploy
+path ever passes, and the crate that owns that caller is a wasm cdylib the live
+Worker never imports. Commit `8ba0353b` added producer and verifier together;
+nothing since ever wired the producer to a binding. The `AUDIT_BUCKET` binding
+that would do it exists **only** on the quarantined `feat/remediation-gated-features`
+branch, which must not land, and even there it backs a different consumer.
+
+So this is not a broken cron. **Live tamper-evidence is D1-only** — a real BLAKE3
+hash chain with an Ed25519-signed head, sealed by `/_internal/audit/drain` — with
+**no offsite, immutable copy**. The control the specs describe (S-09: R2 NDJSON
+archive with 7-year retention) exists in source and tests, not in the running
+system. Pairs with [B-009], which is the retention half of the same gap.
+
+Meanwhile the verifier has fired SEV-0 pages every day since ~2026-07-17 over a
+configuration that could never have been satisfied — burying any real chain break
+under weeks of false alarm.
+
+```backlog
+id: B-015
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  ! gh api "repos/HuGR-Labs/corelink-server/contents/wrangler.toml?ref=main" \
+      -q .content | base64 -d | grep -q "AUDIT_BUCKET"
+verify-means: open while main has no AUDIT_BUCKET r2 binding wiring the archive producer
 last-verified: 2026-08-23
 ```
 
