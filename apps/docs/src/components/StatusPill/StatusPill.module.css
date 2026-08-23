@@ -2,7 +2,9 @@
  * StatusPill — visual styling for the docs-header operational status badge.
  *
  * The pill is a small inline link with a coloured dot + a one-word state.
- * Three states map to three colour tokens (success / warning / danger).
+ * Three severity states map to three colour tokens (success / warning /
+ * danger); a fourth, neutral "unknown" state (grey) renders when the pill
+ * has not verified any status — see StatusPill.tsx's doc-comment.
  *
  * Sizing is tuned to sit comfortably inside Docusaurus's navbar item row
  * (~40 px navbar height); the dot is 8 px diameter with 6 px gap to the
@@ -58,6 +60,15 @@
 .down .dot {
   background: var(--ifm-color-danger);
   box-shadow: 0 0 0 2px rgba(207, 34, 46, 0.2);
+}
+
+/*
+ * "unknown" — rendered when we have not verified any status (cold render
+ * with no cache, or a fetch failure). Neutral grey, distinct from .ok:
+ * this is "we don't know", never a claim of health.
+ */
+.unknown .dot {
+  background: var(--ifm-color-emphasis-400);
 }
 
 /*

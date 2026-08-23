@@ -1,5 +1,6 @@
 /**
- * statuspage-url — DEBT-016 closure (R-prep wave-24).
+ * statuspage-url — DEBT-016 closure (R-prep wave-24), repointed post
+ * false-"operational" incident (2026-08-22, see StatusPill.tsx doc-comment).
  *
  * Single source of truth for the customer-facing statuspage URL, exposed to
  * Docusaurus build-time (`docusaurus.config.ts customFields.statuspageUrl`)
@@ -17,15 +18,23 @@
  *     the operator-provided value; existing literal URLs in trust pages
  *     remain canonical defaults.
  *
- * The fallback default is `https://status.corelink.humangr.com` (the canonical
- * wave-19 commit value referenced from 5 trust MDX pages × 4 locales and
- * 20+ internal runbooks).
+ * The fallback default is `https://hugrl.betteruptime.com` — the live
+ * BetterStack status page (verified 2026-08-22: `/index.json` returns HTTP
+ * 200 with real JSON). The previous default, `https://status.corelink.humangr.com`,
+ * is a third-level name outside Cloudflare Universal SSL's one-level
+ * `*.humangr.com` coverage: the CNAME was never registered at BetterStack and
+ * the TLS handshake fails outright (`curl` returns connect failure). Nothing
+ * ever surfaced this because the StatusPill's own fetch-failure path rendered
+ * a green "All systems operational" pill regardless — see
+ * `src/components/StatusPill/StatusPill.tsx`. Do not restore
+ * `status.corelink.humangr.com` as the default until Option A above is
+ * actually completed and re-verified live.
  *
  * NOTE: This module must be importable from both Node (config-time) and
  * the browser (component-time). Do not introduce runtime-only deps.
  */
 
-export const DEFAULT_STATUSPAGE_URL = "https://status.corelink.humangr.com";
+export const DEFAULT_STATUSPAGE_URL = "https://hugrl.betteruptime.com";
 
 /**
  * Resolve the operator-configured statuspage URL.
