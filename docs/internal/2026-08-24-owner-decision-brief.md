@@ -166,6 +166,34 @@ every run, fatal under `--strict` — so they cannot be forgotten. But a contrac
 that overstates a security control stays a contract that overstates a security
 control.
 
+## 8. B-029 — the load-test regression gate has no staging to fire at
+
+**Today.** The nightly k6 load suite (`load-test-nightly.yml`) is now correct in
+every part the tech lead controls: the regression comparison is real (PR #1263),
+and the runner is fixed (both jobs moved off the dead `[self-hosted, Linux, X64]`
+label onto `corelink`). It still cannot run, for one reason left:
+**there is no staging environment.** `staging.corelink.humangr.com` does not
+resolve, and the `staging` GitHub environment holds none of the secrets the suite
+reads (`K6_TARGET_HOST`, `K6_STAGING_PAT`, and the four scenario secrets). The
+pre-flight target-host check fail-closes on the first, every run.
+
+**Options.**
+- **Stand up a staging deployment** (a Worker + container pin against a
+  `staging.*` hostname, with its own D1/R2) and wire the six `K6_*` secrets into
+  the `staging` environment. Then re-enable the nightly cron in the same change.
+  This is what turns the suite from correct-but-inert into a real perf gate, and
+  it is also the environment every other pre-prod check (endurance, cutover
+  smoke) assumes exists. Recommendation, if pre-launch load evidence is wanted.
+- **Retire the staging-targeted suites** (`load-test-nightly`, `endurance-2h`)
+  and drop the "nightly regression gate" claim, keeping only the dispatch-only
+  harness for a human to point at an ad-hoc target. Cheapest; gives up automated
+  perf-regression coverage before launch.
+
+**If deferred:** the workflow stays dispatch-only and honestly documents why; its
+verify keys on the still-disabled cron, so the item stays visibly open rather
+than flipping green on the runner fix alone. No perpetual red — it only runs when
+dispatched — but also no standing perf-regression signal.
+
 ---
 
 ## What the tech lead is doing in the meantime

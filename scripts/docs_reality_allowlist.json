@@ -507,6 +507,13 @@
         "owner": "dead-host-sweep",
         "expires": "2026-09-30",
         "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "staging.corelink.humangr.com": {
+        "reason": "No staging environment is deployed: staging.corelink.humangr.com does not resolve (NXDOMAIN) and the `staging` GitHub environment carries none of the K6_* secrets the load suites read. Named on shipped surfaces (BACKLOG B-029, the load-test-nightly header, the owner decision brief) precisely to state that it is NOT live and to route the stand-up-or-retire call to the owner. Cannot be made live from this repo — it needs a staging Worker/container deployment plus its own D1/R2 and secrets, an owner cost decision — so this is a suppression with an expiry, not a docs edit. Delete this entry in the same change that stands up staging (or retires the staging-targeted suites).",
+        "added": "2026-08-24",
+        "owner": "owner",
+        "expires": "2026-11-30",
+        "ref": "B-029 / owner decision brief item 8"
       }
     },
     "_retired": [
