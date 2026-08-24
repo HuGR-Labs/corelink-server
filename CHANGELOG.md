@@ -132,6 +132,19 @@ Each entry cross-references:
   the build died before Bazel started. Wrong shape regardless of the 401 — a new
   Bazel release can change action keys and silently invalidate every cache entry
   the example measures. Pinned to 9.2.0, read from the last green run's log.
+### Added
+
+- **The Python and JavaScript SDKs are now installable.** Every published
+  install command was fiction: `pip install corelink-py` 404s on PyPI,
+  `npm install @corelink/client` 404s on npm, and neither package was ever
+  published, so a paying customer could not install a client at all. Both
+  artifacts are now served from the docs domain, which is already public — a
+  PEP 503 static index at `/pypi/simple/` and the npm tarball at
+  `/npm/corelink-client-0.1.0.tgz` — and both were proven by installing them:
+  `pip show corelink-py` reports `0.1.0a1` and `import * as m from
+  "@corelink/client"` resolves. The documented flag is `--extra-index-url`,
+  not `--index-url`: the latter replaces PyPI entirely and the SDK's own
+  `blake3>=0.4` dependency then fails to resolve.
 
 ### Changed
 

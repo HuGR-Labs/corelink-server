@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install corelink-py
+      - run: pip install --extra-index-url https://humangr.com/corelink/docs/pypi/simple/ --pre corelink-py
       - run: python ./ci/warm_cache.py
 ```
 
@@ -61,7 +61,7 @@ build:
   variables:
     CORELINK_PAT: $CORELINK_PAT  # masked CI variable
   script:
-    - pip install corelink-py
+    - pip install --extra-index-url https://humangr.com/corelink/docs/pypi/simple/ --pre corelink-py
     - python ./ci/warm_cache.py
 ```
 
@@ -77,7 +77,7 @@ jobs:
       CORELINK_PAT: $CORELINK_PAT
     steps:
       - checkout
-      - run: pip install corelink-py
+      - run: pip install --extra-index-url https://humangr.com/corelink/docs/pypi/simple/ --pre corelink-py
       - run: python ./ci/warm_cache.py
 ```
 
