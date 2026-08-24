@@ -197,8 +197,8 @@ dispatched — but also no standing perf-regression signal.
 ## 9. B-005 — the last hosted lanes: a billing block and an unbound secret
 
 **Today.** The mandate is zero GitHub-hosted spend. Most lanes are already
-self-hosted; the remainder were diagnosed in full on 2026-08-24 and two of the
-three residual blockers are yours, not the tech lead's:
+self-hosted; the remainder were diagnosed in full on 2026-08-24. One residual
+blocker is squarely yours; a second is a question only you can resolve:
 
 - **Actions billing is blocking hosted jobs outright.** Every `ubuntu-latest`
   job now returns *"the job was not started because recent account payments have
@@ -206,12 +206,20 @@ three residual blockers are yours, not the tech lead's:
   run 32765508324). Until billing is cleared or the last hosted lanes are
   re-homed, `cosign-sign`, `smoke-install`, `codeql` and `cas-canary` cannot
   start at all.
-- **`CORELINK_CANARY_PAT` is not bound.** `smoke-install` and `cas-canary` both
-  fail on `error: No PAT found` independent of the billing block — the secret the
-  authenticated legs read is not wired into those workflows' scope. This is the
-  same PAT for both; binding it once fixes both authenticated canaries. Write-only
-  secret; the value lives only in `.env.local`. Set it with `printf`, never
-  `echo`.
+- **`CORELINK_CANARY_PAT` binding is disputed — please confirm (do not assume).**
+  A 2026-08-23 `smoke-install` run failed on the corelink CLI binary's own runtime
+  `error: No PAT found` — the secret was empty in that run's env. But
+  `smoke-install.yml`'s header (dated 2026-08-02) states it is *already bound and
+  working*, cas-canary having run it 6/6 that day, and both read the same plain
+  repo secret. Those conflict, and the repo cannot settle it (the secret is
+  write-only — only the GitHub UI shows its live state). This is separate from,
+  not simultaneous with, the billing block: a billing block stops a job from
+  STARTING, whereas a per-step `No PAT found` can only come from a run that DID
+  start — so the 2026-08-23 symptom predates the block, and both statements about
+  "current state" cannot be read together. If the UI shows it genuinely unset,
+  binding it once fixes both authenticated canaries (`printf`, never `echo`; value
+  in `.env.local`). If it shows bound, the 2026-08-23 failure was a since-fixed or
+  env-scoping glitch and there is nothing to bind.
 
 **What the tech lead owns here (not blocking you):** proving `docker/build-push-action`
 + cosign run on the new `corelink` docker shim before moving the signing lane, and
