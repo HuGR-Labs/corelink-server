@@ -60,9 +60,19 @@
 # string is NOT a label (it would exceed the
 # INV-OBS-CARDINALITY-BUDGET 20k-series ceiling).
 #
-# CI gate: `promtool test rules` on PR (wired via the existing
-# `dashboards/alerts/*.yml` validator; same pattern as
-# `dash-audit-export-alerts.yml`).
+# CI gate: `promtool check rules dashboards/alerts/*.yml` runs on PR and on
+# push to main via `.github/workflows/alerts-validate.yml`, which also asserts
+# that every `runbook:` label in this directory resolves to a real runbook file
+# (`scripts/validate_alert_runbook_labels.py`).
+#
+# Corrected 2026-08-24 (B-027): this header previously claimed the gate was
+# "wired via the existing `dashboards/alerts/*.yml` validator". No such
+# validator existed -- the claim was false from the day it was written. The
+# gate described above is real as of this commit.
+#
+# NOT gated: `promtool test rules` (rule UNIT tests) -- no `*_test.yml` fixtures
+# exist for these rules yet. And nothing publishes these rules to a live
+# Alertmanager; they are validated, not shipped.
 
 groups:
   - name: corelink-dsr-statuspage

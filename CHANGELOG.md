@@ -50,6 +50,35 @@ Each entry cross-references:
   `RB-AUDIT-ARCHIVE-ABSENT` §5 on what it means and how to list them.
 
 ### Fixed
+- **fix(alerting): the alert rules asserted their own CI gate, and the gate did
+  not exist (B-027).** Four of the ten rule files under `dashboards/alerts/`
+  carried a header claiming `promtool test rules` ran on PR — three "wired via
+  the existing `dashboards/alerts/*.yml` validator", one citing
+  `.github/workflows/alert-rules-validate.yml`. Neither the validator nor that
+  workflow had ever existed: `grep -r promtool .github/workflows/` returned
+  nothing. 125 rules carrying severities, PagerDuty routing labels and runbook
+  pointers were a *specification* of alerting that nothing parsed. A file
+  asserting its own gate is exactly the shape that survives review. Added
+  `.github/workflows/alerts-validate.yml` (`runs-on: corelink`, path-filtered,
+  PR + push): it runs `promtool check rules` over every rule file using a
+  checksum-verified, exactly-pinned Prometheus 3.5.0 tarball (cached; no
+  `curl | sh`, no "latest"), refuses an empty match set rather than reporting
+  green over nothing, and runs
+  `scripts/validate_alert_runbook_labels.py` to assert every `runbook:` label
+  resolves to a real file. The four false headers now describe what actually
+  happens, and state plainly what is still NOT gated (rule unit-test fixtures;
+  publication to a live Alertmanager — the publish half of B-027 stays open).
+  Of the twenty cited runbook ids, nine `RB-FM-*` ids believed missing in fact
+  resolve — they live in `specs/05_quality/runbooks/` under a slugged filename
+  (`RB-FM-059-do-quota-exceeded.md`), so the validator resolves by front-matter
+  `id:`, not filename. Five were genuinely dangling, all in
+  `dash-ac-alerts.yml`: `RB-AC-SLO-BURN` → `RB-SLO-AVAIL-DATA-PLANE`,
+  `RB-AC-LATENCY` → `RB-SLO-LATENCY-INVESTIGATION` and `RB-AC-HIT-RATIO` →
+  `RB-SLO-DEDUP-DEGRADATION` (each target genuinely covers that alert's SLO or
+  metric); `RB-AC-CONFORMANCE` and `RB-AC-COST-REGRESSION` had no covering
+  runbook and their labels were **removed**, with the removal recorded inline.
+  No stub runbooks were written to satisfy the gate — a pointer to nothing is
+  worse than no pointer.
 - **fix(backlog): the self-verifying register pointed the wrong way, and its own
   gate was content.** Two defects landed within a minute of each other on
   2026-08-24. First, two items were merged carrying the same `id: B-031` (the
