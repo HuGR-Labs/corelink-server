@@ -71,6 +71,21 @@ Each entry cross-references:
 
 ### Fixed
 
+- **The CAS datacenter canary was dark, and the only vantage it had was one it
+  could no longer reach.** Hosted Actions were payment-blocked again on
+  2026-08-24 (~15:55 UTC); the hourly `cas-datacenter-canary` job never started
+  (~2s, `runner: ""`, 0 steps) and went red 9 times in a row, so the only probe
+  that proves an authenticated CAS round-trip works for a real client had no
+  live signal at all. The probe body moved to
+  `scripts/cas-canary-roundtrip.sh` and now runs from TWO named vantage points:
+  `corelink` (the container fabric — a real customer path, and the one that
+  works today) and `ubuntu-latest` (a genuinely third-party datacenter IP),
+  the latter gated behind `vars.HOSTED_ACTIONS_AVAILABLE == 'true'` so a
+  monitor that cannot start is an honest absence rather than an hourly red
+  everyone learns to ignore. The two are NOT interchangeable and the workflow
+  says so: fabric traffic originates inside Cloudflare's own network, so it
+  cannot detect an edge rule that blocks outside datacenter ranges.
+
 - **The branded status hostname is retired, and the incident page it anchored
   was wrong about almost everything it promised.** The owner decided not to buy
   the BetterStack tier that includes a custom domain, so
