@@ -196,26 +196,25 @@ export default function PrivacyPage(): ReactElement {
             Clerk session, escalates to a WebAuthn step-up for the three
             destructive verbs (erasure, restriction, objection), and is
             then dispatched to the rights orchestrator. The orchestrator
-            fans out across the 12 backends that hold tenant data — CAS
-            (R2), Access Control (D1), audit-PII (D1), KV bindings,
-            Durable-Object state, consent ledger (D1), pseudonymization
-            index (KV), residency ledger (D1), DPA acceptance ledger (D1),
-            sub-processor notification ledger (D1), breach-notification
-            ledger (D1), and the metered-usage event log (Queue +
-            archive) — and signs an Ed25519 completion attestation
-            (consumed unchanged from{" "}
+            evaluates a canonical list of 12 backend kinds
+            (<code>BackendKind</code>), of which 4 have a real, shipped
+            adapter and actually hold tenant data today — R2 CAS
+            (content-addressable blobs), R2 Action Cache, D1 (metadata),
+            and Stripe (billing PII, pseudonymized rather than deleted).
+            The remaining 8 canonical kinds resolve to a truthful
+            <code>not_applicable</code> outcome rather than a masked
+            no-op, because no durable subject data exists there in the
+            shipped system. The orchestrator signs an Ed25519 completion
+            attestation over all 12 per-backend outcomes (consumed
+            unchanged from{" "}
             <code>corelink_crypto::ed25519::attestation</code>). The signed
             report is delivered to you alongside a Markdown-formatted
-            human summary. A 24-hour rolling status feed is published to
-            the public Statuspage at 06:00 UTC via{" "}
-            <code>corelink_privacy::dsr::statuspage</code>, providing
-            aggregate evidence of timely processing without disclosing
-            individual identities.
+            human summary.
           </p>
           <p>
             For the full article-by-article SLA table, the WebAuthn step-up
-            policy for destructive requests, and the 12-backend erasure
-            propagation order, see the explainers at{" "}
+            policy for destructive requests, and the backend-by-backend
+            erasure detail, see the explainers at{" "}
             <a href="/explanation/privacy/gdpr">GDPR rights</a> and{" "}
             <a href="/explanation/privacy/lgpd-full">LGPD rights</a>.
           </p>
@@ -296,16 +295,22 @@ export default function PrivacyPage(): ReactElement {
         <section className={styles.section}>
           <h2>7. Data residency, pseudonymization, and security</h2>
           <p>
-            CoreLink supports per-tenant data-residency pinning across
-            three regions: <code>Enam</code> (Eastern North America),{" "}
-            <code>Sam</code> (South America — São Paulo, primary surface
-            for Brazilian customers), and <code>Eu</code> (European Union
-            — Frankfurt). Residency selections are enforced by the{" "}
-            <code>corelink_privacy::residency</code> module at the request
-            ingress: a request bound to a Sam-pinned tenant cannot cross
-            into Enam or Eu storage even if the originating client is
-            elsewhere. Residency choices are recorded in the immutable
-            ledger and surfaced in the Admin UI privacy console.
+            CoreLink supports per-tenant data-residency pinning from a
+            closed set of macro regions. Four are currently provisioned
+            with a jurisdiction-correct storage bucket and enforced at
+            the request ingress by the <code>corelink_privacy::residency</code>{" "}
+            module: <code>wnam</code> and <code>enam</code> (North
+            America), <code>weur</code> (European Union — served from
+            London), and <code>apac</code> (Asia-Pacific — served from
+            Tokyo, provisioned 2026-08-17). A tenant pinned to one
+            provisioned region cannot cross into another region's storage
+            even if the originating client is elsewhere. Two further
+            macro codes, <code>sam</code> (South America) and{" "}
+            <code>afr</code> (Africa), exist in the region enum but have
+            no provisioned storage bucket; signup rejects them today, so
+            no tenant can be pinned there. Residency choices are recorded
+            in the immutable ledger and surfaced in the Admin UI privacy
+            console.
           </p>
           <p>
             Analytics and operational metrics are pseudonymized at source

@@ -143,25 +143,53 @@ If we reject a request as "manifestly unfounded or excessive" (Art. 12(5)
 lodge a complaint with your local supervisory authority and/or seek a
 judicial remedy.
 
-## 5. The deletion ("erasure") in detail
+## 5. A exclusão ("apagamento") em detalhe
 
-When you exercise Art. 17, the erasure pipeline propagates across **12
-backends** in a canonical order. Eight are **effectively erased** (rows
-hard-deleted); four are **pseudonymised retention** — the data is kept
-because we are legally required to keep it (audit logs, billing records,
-point-in-time backups, compliance evidence), but your identity is
-replaced with a one-way HKDF hash so we cannot re-identify you.
+Ao exercer o Art. 17, o orquestrador de apagamento avalia uma lista
+canônica de 12 tipos de backend. Apenas **4 têm um adaptador real, já
+implantado** — é onde seus dados realmente residem — e cada um é
+genuinamente apagado ou pseudonimizado:
 
-The 12 targets, in order: Neon control plane → Neon billing detail
-(legal-hold retention) → R2 CAS (refcount eraser) → R2 AC → D1 metadata
-→ KV → Stripe (PII nullified) → Loki/Grafana → R2 audit (pseudonymised)
-→ backup PITR (tombstone replay; natural 30-day rotation) → R2 CAS
-legal-hold partition (pseudonymised) → compliance evidence store
-(pseudonymised).
+- **D1** — linhas com escopo por titular são excluídas; a contagem de
+  referências é sincronizada com o R2.
+- **R2 CAS** (armazenamento endereçável por conteúdo) — apagador ciente
+  de contagem de referências: se o seu blob é compartilhado com outros
+  titulares, removemos só a sua referência e mantemos o blob até que
+  todas as referências desapareçam (mais uma janela de carência de 72
+  horas); se o blob é referenciado só por você, ele recebe tombstone
+  imediatamente.
+- **R2 AC** (Action Cache) — entradas pertencentes ao seu tenant são
+  excluídas.
+- **Stripe** — seu registro `Customer` é atualizado com e-mail, nome e
+  endereço zerados. O Stripe não permite exclusão completa porque isso
+  quebraria a integridade das faturas, então este backend é
+  **retenção pseudonimizada**, não apagamento.
 
-You receive a `dsr.completed.v1` event with a Merkle root over the
-twelve audit hashes, plus a confirmation email. Total SLA: 30 calendar
-days.
+Os outros 8 tipos de backend canônicos são reconciliados para
+`not_applicable`, em vez de relatados silenciosamente como um no-op de
+sucesso, porque não existem dados pessoais duráveis do titular ali no
+sistema em produção (ADR-S11-013, verificado a frio em 2026-06-11):
+
+| Backend | Por que não se aplica |
+|---|---|
+| Neon control plane | O control plane do Neon não foi lançado; a identidade do titular vive no D1 (tratado pelo adaptador D1) |
+| Neon billing detail | O faturamento no Neon não foi lançado; o estado de faturamento vive no D1 + Stripe |
+| Backup PITR do Neon | O PITR do Neon não foi lançado; não há backups do Neon para aplicar tombstone |
+| KV | Os namespaces KV são caches (metadados/JWKS/cache negativo); não há PII durável, é reconstruído a partir do D1 |
+| Loki / Grafana | Nenhum sink Loki ativo foi lançado (apenas referências de observabilidade) |
+| R2 audit (pseudonimizado) | Nenhum bucket WORM de auditoria no R2 foi lançado; não há armazenamento de auditoria indexado por titular para pseudonimizar |
+| Partição de legal-hold no R2 CAS | Nenhuma partição de legal-hold no CAS foi lançada |
+| Armazenamento de evidências no R2 | Nenhum bucket R2 evidence-* foi lançado |
+
+Se algum desses backends um dia for lançado com dados reais do titular,
+sua linha muda de `not_applicable` para um resultado real de
+apagamento/pseudonimização — o registro de auditoria por backend torna
+essa transição visível, não silenciosa.
+
+Você recebe um evento `dsr.completed.v1` com um hash de evidência
+assinado que vincula os 12 resultados por backend (quatro reais, oito
+`not_applicable`), além de um e-mail de confirmação. SLA total: 30 dias
+corridos.
 
 ## 6. Where your data goes (international transfers)
 

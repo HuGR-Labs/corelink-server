@@ -51,7 +51,7 @@ The nine rights, our service level for each, and how to exercise them:
 | §IV — Anonimização / bloqueio / eliminação | Delete unnecessary, excessive, or unlawfully-processed data | 30 calendar days | `POST /v1/privacy/dsr/erasure` (requires MFA) |
 | §V — Portabilidade | Give me my data in a structured format I can take elsewhere | 15 business days | `POST /v1/privacy/dsr/portability` |
 | §VI — Eliminação (consent-based) | Delete data we hold under your consent | 30 calendar days | Same erasure endpoint as §IV |
-| §VII — Compartilhamento | Tell me everyone you shared my data with | 15 business days | `GET /v1/privacy/dsr/shared-with` |
+| §VII — Compartilhamento | Tell me everyone you shared my data with | Continuous (published, not a per-request lookup) | See the [Sub-processors register](/privacy/sub-processors) — there is no dedicated request endpoint for this right today |
 | §VIII — Consequências de não consentir | Tell me what happens if I say no | Continuous (shown at consent capture) | Read the privacy notice §5 or look at the consent form before clicking |
 | §IX — Revogação do consentimento | Unsubscribe / withdraw consent | 5 dias úteis | e-mail `privacy@humangr.com` — o endpoint self-service ainda não está disponível |
 
@@ -143,52 +143,47 @@ can prove later that the request happened.
 ## 5. The deletion ("eliminação") in detail
 
 When you ask us to delete your data under Art. 18 §IV, the deletion
-pipeline propagates the request across **12 backends** in a canonical
-order. Eight backends are **effectively erased** (rows hard-deleted); four
-are **pseudonymized retention** (the data stays because we are legally
-required to keep it — audit logs, billing records, point-in-time backups —
-but your identity is replaced with a one-way HKDF hash so we cannot
-re-identify you).
+orchestrator evaluates a canonical list of 12 backend kinds. Only **4
+have a real, shipped adapter** — those are where your data actually
+lives:
 
-**The 8 effective-erasure targets:**
+**The 4 real targets:**
 
-1. **Neon** (`dsr_tickets`, `account`, `tenant`, `user_account`,
-   `consent_ledger`, `subscription`) — hard delete of your rows, with the
-   DSR ticket itself preserved as proof of the deletion.
-2. **Neon billing detail** (`invoice`, `usage_event`) — retained under
-   legal hold per LGPD Art. 16 §3 (5-year fiscal/accounting retention).
-3. **R2 CAS** (content-addressable storage) — refcount-based eraser. If
+1. **D1 metadata** — subject-scoped rows deleted; refcount synced with R2.
+2. **R2 CAS** (content-addressable storage) — refcount-based eraser. If
    your blob is shared with other subjects or referenced by other tenants,
    we remove your reference but keep the blob until everyone has dropped
    it (plus 72-hour grace). If your blob is only referenced by you, we
    tombstone immediately and the garbage collector reclaims it.
-4. **R2 AC** (Action Cache) — every cached entry referencing your subject
-   ID is invalidated; downstream caches are notified.
-5. **D1 metadata** — subject-scoped rows deleted; refcount synced with R2.
-6. **KV** — session tokens and cached subject metadata invalidated.
-7. **Stripe** — your `Customer` record is updated with email/name/address
-   nullified (Stripe does not allow full deletion because it would break
-   invoice integrity under PCI rules — but we strip every piece of PII
-   they have on you).
-8. **Loki / Grafana** — log deletion API applied with retention compaction
-   triggered.
+3. **R2 AC** (Action Cache) — entries owned by your tenant are deleted.
+4. **Stripe** — your `Customer` record is updated with email/name/address
+   nullified. Stripe does not allow full deletion because it would break
+   invoice integrity, so this one is **pseudonymized retention**, not
+   erasure — we strip every piece of PII they hold on you and keep only
+   what invoice integrity requires.
 
-**The 4 pseudonymized-retention targets:**
+**The other 8 canonical backend kinds are `not_applicable`,** not a
+silent no-op — because no durable subject data exists there in the
+shipped system (ADR-S11-013, cold-verified 2026-06-11):
 
-9. **R2 audit log** (Object Lock 7y) — we cannot delete audit records, so
-   your subject ID is replaced with `erased_<HKDF-hash>` (one-way; the
-   info string is `corelink/v1/audit-pseudonym`).
-10. **Backup PITR** (Neon point-in-time recovery, 30-day retention) —
-    natural rotation expires it within 30 days; if anyone restores from a
-    backup during that window, a tombstone replay re-applies your erasure.
-11. **R2 CAS legal-hold partition** (governance mode) — content retained if
-    actively under hold; index references are pseudonymized.
-12. **Compliance evidence store** (LIA records, consent proof, DSR
-    evidence — 7y retention per framework) — your subject ID is
-    pseudonymized.
+| Backend | Why it's not applicable |
+|---|---|
+| Neon control plane | Neon control-plane not shipped; subject identity lives in D1 (handled by the D1 adapter) |
+| Neon billing detail | Neon billing not shipped; billing state lives in D1 + Stripe |
+| Neon PITR backup | Neon PITR not shipped; no Neon backups to tombstone |
+| KV | KV namespaces are caches (metadata/JWKS/negative-cache); no durable PII, reconstructed from D1 |
+| Loki / Grafana | No active Loki sink shipped (observability references only) |
+| R2 audit log (pseudonymized) | No R2 audit WORM bucket shipped; no subject-indexed audit store to pseudonymize |
+| R2 CAS legal-hold partition | No legal-hold CAS partition shipped |
+| Compliance evidence store | No R2 evidence-* bucket shipped |
 
-You will receive a final `dsr.completed.v1` event with a hash of the entire
-deletion chain, and an email confirming we are done. Total SLA: 30
+If any of these ever ships with real subject data, its row switches from
+`not_applicable` to a real outcome — the per-backend audit record makes
+that transition visible.
+
+You will receive a final `dsr.completed.v1` event carrying a signed
+evidence hash that binds all 12 per-backend outcomes (four real, eight
+`not_applicable`), and an email confirming we are done. Total SLA: 30
 calendar days.
 
 ## 6. Who else sees your data?

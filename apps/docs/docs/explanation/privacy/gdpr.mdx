@@ -138,22 +138,45 @@ judicial remedy.
 
 ## 5. The deletion ("erasure") in detail
 
-When you exercise Art. 17, the erasure pipeline propagates across **12
-backends** in a canonical order. Eight are **effectively erased** (rows
-hard-deleted); four are **pseudonymised retention** — the data is kept
-because we are legally required to keep it (audit logs, billing records,
-point-in-time backups, compliance evidence), but your identity is
-replaced with a one-way HKDF hash so we cannot re-identify you.
+When you exercise Art. 17, the erasure orchestrator evaluates a canonical
+list of 12 backend kinds. Only **4 have a real, shipped adapter** — those
+are where your data actually lives — and each is genuinely erased or
+pseudonymised:
 
-The 12 targets, in order: Neon control plane → Neon billing detail
-(legal-hold retention) → R2 CAS (refcount eraser) → R2 AC → D1 metadata
-→ KV → Stripe (PII nullified) → Loki/Grafana → R2 audit (pseudonymised)
-→ backup PITR (tombstone replay; natural 30-day rotation) → R2 CAS
-legal-hold partition (pseudonymised) → compliance evidence store
-(pseudonymised).
+- **D1** — subject-scoped rows deleted; refcount synced with R2.
+- **R2 CAS** (content-addressable storage) — refcount-aware eraser: if
+  your blob is shared with other subjects, we drop your reference and
+  keep the blob until every reference is gone (plus a 72-hour grace
+  window); if it's referenced only by you, we tombstone it immediately.
+- **R2 AC** (Action Cache) — entries owned by your tenant are deleted.
+- **Stripe** — your `Customer` record is updated with email, name, and
+  address nullified. Stripe does not support full deletion because it
+  would break invoice integrity, so this backend is **pseudonymised
+  retention**, not erasure.
 
-You receive a `dsr.completed.v1` event with a Merkle root over the
-twelve audit hashes, plus a confirmation email. Total SLA: 30 calendar
+The remaining 8 canonical backend kinds are reconciled to
+`not_applicable` rather than silently reported as an erased no-op,
+because no durable subject data exists there in the shipped system
+(ADR-S11-013, cold-verified 2026-06-11):
+
+| Backend | Why it's not applicable |
+|---|---|
+| Neon control plane | Neon control-plane not shipped; subject identity lives in D1 (handled by the D1 adapter) |
+| Neon billing detail | Neon billing not shipped; billing state lives in D1 + Stripe |
+| Neon PITR backup | Neon PITR not shipped; no Neon backups to tombstone |
+| KV | KV namespaces are caches (metadata/JWKS/negative-cache); no durable PII, reconstructed from D1 |
+| Loki / Grafana | No active Loki sink shipped (observability references only) |
+| R2 audit (pseudonymised) | No R2 audit WORM bucket shipped; no subject-indexed audit store to pseudonymise |
+| R2 CAS legal-hold partition | No legal-hold CAS partition shipped |
+| R2 evidence store | No R2 evidence-* bucket shipped |
+
+If any of these ever ships with real subject data, its row switches from
+`not_applicable` to a real erase/pseudonymise outcome — the per-backend
+audit record makes that transition visible rather than silent.
+
+You receive a `dsr.completed.v1` event carrying a signed evidence hash
+that binds all 12 per-backend outcomes (four real, eight
+`not_applicable`), plus a confirmation email. Total SLA: 30 calendar
 days.
 
 ## 6. Where your data goes (international transfers)
