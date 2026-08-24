@@ -265,8 +265,11 @@ jobs:
             "https://github.com/lycheeverse/lychee/releases/download/lychee-${LYCHEE_VERSION}/${tarball}"
           # Verify BEFORE unpacking or executing anything.
           echo "${sha}  ${tarball}" | sha256sum -c -
-          tar -xzf "$tarball" lychee
-          install -m 0755 lychee "${RUNNER_TEMP}/lychee"
+          # The archive nests everything under <target>/. Unpack it whole and
+          # take the binary from its known path -- selecting a single member by
+          # name is not portable across GNU tar and bsdtar.
+          tar -xzf "$tarball"
+          install -m 0755 "lychee-${target}/lychee" "${RUNNER_TEMP}/lychee"
           "${RUNNER_TEMP}/lychee" --version
 
       - name: Run lychee
