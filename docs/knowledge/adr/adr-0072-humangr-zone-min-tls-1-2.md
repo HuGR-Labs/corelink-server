@@ -5,7 +5,8 @@ description: "Why the edge TLS floor is 1.2 and not 1.3: a 1.3-only zone silentl
 source_files:
   - "specs/03_architecture/adrs/ADR-0072-humangr-zone-min-tls-1.2.md"
   - "specs/03_architecture/security_model.md"
-checkpoint_sha: "38e26781720675ead10ac37fd2f94dadbf541180"
+  - "scripts/check_tls_floor.py"
+checkpoint_sha: "6e334917a4308b0c5e5cb24679356a7461537b1d"
 provenance: "AUTHORED"
 tags: ["adr", "security", "tls", "cloudflare", "zone-config", "sccache", "drift-risk"]
 timestamp: "2026-08-23T00:00:00Z"
@@ -29,10 +30,13 @@ informal e2e ledger. There is no Terraform or equivalent surface for zone settin
 (`infra/terraform/modules/cloudflare-base/` owns other zone-level Cloudflare resources and would
 be its home if one were built), so the value exists **only** in the vendor dashboard.
 
-It also left a **stale control claim** behind. `specs/03_architecture/security_model.md:254` still
-lists CTRL-CRYPTO-001 as "TLS 1.3 only", with quarterly review and an SSL Labs A+ as its evidence,
-and three S-02 sprint documents repeat it. A security model is what an auditor or a customer's
-security review reads; it currently describes a floor that is not in force. Tracked separately.
+It also left a **stale control claim** behind, since closed. `specs/03_architecture/security_model.md:254` listed
+CTRL-CRYPTO-001 as "TLS 1.3 only" with an SSL Labs A+ as its evidence, and the claim had spread to
+25 places across 13 compliance documents, both INV-CONF-IN-FLIGHT rows, the compliance matrix and
+the sprint-creation contract — which was still ordering every future sprint to refuse TLS < 1.2's
+successor. All of it now states the 1.2 floor (BACKLOG B-019); the two FROZEN/AUDITED compliance
+documents keep their audited bodies under a dated errata. The cited SSL Labs A+ scan predates the
+floor change and the control now says so rather than implying otherwise.
 
 # Decision
 
@@ -50,9 +54,13 @@ security review reads; it currently describes a floor that is not in force. Trac
   share of approximately zero over a defined window. Nothing in the repo measures handshake version
   share for this zone today, so the third trigger cannot be evaluated. A decision with no evaluable
   exit condition is a permanent one by default, and saying so is the point.
-- **The drift risk is the durable lesson.** Anyone with dashboard access can change this setting and
-  nothing in this repository would notice. That is true of every zone setting, and this ADR is the
-  only thing that would make a future reader ask why the floor is where it is.
+- **The drift risk is the durable lesson, and it is now instrumented.** Anyone with dashboard
+  access can change this setting, and until 2026-08-24 nothing in this repository would have
+  noticed. `scripts/check_tls_floor.py`, run daily by `.github/workflows/tls-floor-drift.yml`,
+  asserts **equality** with the documented floor: a raise back to 1.3 breaks `sccache` again, and a
+  drop below 1.2 makes the compliance set overstate the control. It exits non-zero when it cannot
+  authenticate, because a drift check that cannot read the value must never report "no drift". The
+  general lesson stands for every other zone setting, which remain uninstrumented.
 
 # Citations
 
@@ -70,6 +78,13 @@ security review reads; it currently describes a floor that is not in force. Trac
    and the fact that the third trigger is **not currently measurable**, since nothing in the repo
    tracks handshake-version share for this zone; plus the drift risk that the setting lives only in
    the vendor dashboard with no IaC surface to diff it against.
-4. `specs/03_architecture/security_model.md:254` — the stale control claim this decision left
-   behind: CTRL-CRYPTO-001 is still listed as "TLS 1.3 only", with quarterly review and SSL Labs A+
-   as its evidence, describing a floor that has not been in force since 2026-07-19.
+4. `specs/03_architecture/security_model.md:254` — CTRL-CRYPTO-001, now stating the 1.2 floor with
+   a pointer to this ADR and an explicit note that the SSL Labs A+ evidence predates the change.
+   Until 2026-08-24 this row read "TLS 1.3 only", describing a floor that had not been in force
+   since 2026-07-19.
+
+5. `scripts/check_tls_floor.py:31-40` — the instrumentation this concept's drift risk called for:
+   the zone id and the documented floor are declared in the script, and the comparison is equality
+   rather than a minimum, so drift in either direction is a failure. Authentication failure exits
+   non-zero rather than passing, because a check that cannot read the value cannot claim it has not
+   drifted.
