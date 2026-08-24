@@ -76,6 +76,24 @@ Each entry cross-references:
   so every re-cut looks exactly like a compromise and the standing pressure is
   to just bump the number. Maven Central was checked and does not carry this
   artifact, so no public immutable mirror exists.
+- **The cbindgen ABI-drift gate had been unrunnable, and its own comment
+  explained why it would stay that way.** `cbindgen-header-stable` was
+  deliberately left on `ubuntu-latest` in the 2026-08-03 migration wave, on the
+  argument that `cargo install cbindgen --locked` is a source build which only a
+  hosted runner caches, and that moving it would cost more than the
+  "~$0.20/3d of hosted time" it saved. Hosted Actions are payment-blocked, so
+  the job now fails in ~2 s with no steps and an empty runner name — the
+  billing-block signature — and blocks every PR touching that workflow. The
+  saving was never the point once the gate stopped running. The old note also
+  named the fix and its trap: use a prebuilt, but *check* that
+  `taiki-e/install-action` publishes a cbindgen manifest rather than assuming
+  it. Checked — it does not (`manifests/cbindgen.json` → 404), the same
+  outcome the note predicted for cargo-fuzz. So the prebuilt now comes from
+  upstream's own release, SHA-256 pinned per arch like every other tool this
+  repo installs, and the job moves to `corelink`. Pinned to 0.29.4, which is
+  what `cargo install cbindgen` resolves to today, so the generated header does
+  not move — and a future cbindgen release can no longer silently rewrite the
+  header this gate diffs against.
 
 - **Bazel can use its sandbox on the runner fabric again (B-025).** The runner
   image shipped no `/dev/shm`, so every sandboxed action died with
