@@ -798,9 +798,15 @@ id: B-028
 repo: corelink-server
 owner: tl
 status: open
-verify: |
-  test "$(gh api /repos/HuGR-Labs/corelink-server/dependabot/alerts --paginate -q '[.[]|select(.state=="open")]|length' 2>/dev/null || echo 1)" -gt 0
-verify-means: open while any Dependabot alert is still open and unadjudicated
+verify: manual
+verify-means: |
+  open while any Dependabot alert is still open and unadjudicated. NOT
+  CI-checkable: the Actions GITHUB_TOKEN cannot read the Dependabot alerts API,
+  and a command that returns empty under CI's credentials would make this check
+  pass by accident — the failure mode this register exists to prevent. Run it
+  where gh is authenticated:
+    gh api /repos/HuGR-Labs/corelink-server/dependabot/alerts --paginate \
+      -q '[.[]|select(.state=="open")]|length'
 last-verified: 2026-08-24
 ```
 
@@ -849,12 +855,17 @@ id: B-030
 repo: corelink-server
 owner: tl
 status: open
-verify: |
-  test "$(gh api /repos/HuGR-Labs/corelink-server/actions/runners -q '[.runners[]|select(.name|startswith("corelink-builder"))]|length' 2>/dev/null || echo 0)" -lt 5
+verify: manual
 verify-means: |
-  open while fewer than five corelink-builder runners are registered. Closes when
-  the fifth is back AND something watches the count, since the count is precisely
-  what nobody was watching.
+  open while fewer than five corelink-builder runners are registered, AND while
+  nothing watches that count. NOT CI-checkable: listing self-hosted runners needs
+  `administration: read`, which the Actions GITHUB_TOKEN does not have and cannot
+  be granted — the same wall that forced the fleet-busy endpoint. Run it where gh
+  is authenticated:
+    gh api /repos/HuGR-Labs/corelink-server/actions/runners \
+      -q '[.runners[]|select(.name|startswith("corelink-builder"))]|length'
+  Closes when the fifth slot is back AND a gate watches the count, since the
+  count is precisely what nobody was watching.
 last-verified: 2026-08-24
 ```
 
