@@ -902,7 +902,7 @@ verify-means: |
 last-verified: 2026-08-24
 ```
 
-### B-031 — every Critical vendor review is past its cadence window
+### B-033 — every Critical vendor review is past its cadence window
 
 All seven Critical vendors — Cloudflare, Stripe, Clerk, AWS, Google Cloud, Azure
 and Drata — were last reviewed on the 2026-05-15 baseline against a quarterly
@@ -922,7 +922,7 @@ alone: 2× remains the §7 page-worthy trigger, and changing that is a complianc
 decision, not a rendering one.
 
 ```backlog
-id: B-031
+id: B-033
 repo: corelink-server
 owner: owner
 status: open
