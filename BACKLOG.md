@@ -104,16 +104,31 @@ have been: `exec` had left `entrypoint.sh` twelve days earlier, so PID 1 had no
 handler and the signal was never delivered. The 864 s figure is real data. A
 false causal chain must not stand in the CHANGELOG.
 
+**Closed 2026-08-24 by corelink-runners #501.** The entry's body already carried
+the 2026-08-23 correction; the HEADING did not — it still read *"every fabric job
+longer than ~15 minutes was being SIGTERMed"*. A changelog is read by scanning
+headings, so anyone doing that took away exactly the refuted causal chain and
+never reached the footnote nine paragraphs below. The heading now states the part
+that survived (the activity deadline froze at container start + 900 s) and points
+at the correction.
+
+The 864 s figure is untouched: it is real data, produced under the earlier `exec`
+entrypoint when SIGTERM still landed, and still untraced to a specific run.
+Correcting a mechanism is not licence to quietly drop the measurement that
+motivated it.
+
 ```backlog
 id: B-003
 repo: corelink-runners
 owner: tl
-status: open
+status: done
 verify: manual
 verify-means: |
-  lives in corelink-runners; not automatable until [B-012] lands a cross-repo
-  credential. Open while the unqualified claim stands in that CHANGELOG.
-last-verified: 2026-08-23
+  done — re-check from a corelink-runners checkout:
+    git show origin/main:CHANGELOG.md | grep -n "2026-08-02 — the container"
+  Reopens if the heading is ever reverted to assert the SIGTERM mechanism, which
+  could not have applied after fc74fbd3 made PID 1 an un-trapped bash.
+last-verified: 2026-08-24
 ```
 
 ---
@@ -212,16 +227,27 @@ apply a GitHub label that does not exist. That one should be **retired**, not
 fixed — a one-line repair to a workflow whose reason to exist has passed is the
 wrong move.
 
+**Closed 2026-08-24.** GitHub now reports **zero** non-active workflows in this
+repo. The last one, `pre-cutover-weekly-cron`, was **retired rather than
+repaired** (#1273): it verified readiness for a GA cutover that happened on
+2026-07-10 and had been dying on a GitHub label that no longer exists. Its two
+companion scripts went with it — leaving them is the same half-measure one layer
+down. `check_workflow_state.py` also learned that a workflow whose file is gone
+needs no waiver.
+
 ```backlog
 id: B-004
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   test "$(gh api repos/HuGR-Labs/corelink-server/actions/workflows --paginate \
-    -q '.workflows[]|select(.state!="active")|.path' | wc -l | tr -d ' ')" -gt 0
-verify-means: open while any workflow is non-active; closes only when every one is enabled or deleted
-last-verified: 2026-08-23
+    -q '.workflows[]|select(.state!="active")|.path' | wc -l | tr -d ' ')" -eq 0
+verify-means: |
+  done — every workflow is active. Red the moment one is disabled again without
+  being deleted, which is exactly the 2026-08-08 shape: 21 switched off by one
+  script in 39 seconds, two of them PR gates rather than crons.
+last-verified: 2026-08-24
 ```
 
 ### B-005 — hosted lanes still fire on PR/push
