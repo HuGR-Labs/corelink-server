@@ -157,10 +157,8 @@ That `PASS` line is your activation event — a blob written and read back from
 the CoreLink CAS, verified byte-exact on your machine.
 
 :::tip Automate it
-The companion script `scripts/quickstart.sh` in the CoreLink repo runs this
-exact PUT/GET roundtrip automatically and prints a wall-clock summary. See
-[the script source](https://github.com/HumanGuardrail/corelink-server/blob/main/scripts/quickstart.sh)
-for reference.
+The companion script `scripts/quickstart.sh` runs this exact PUT/GET
+roundtrip automatically and prints a wall-clock summary.
 :::
 
 ---
@@ -177,9 +175,14 @@ You have a working PAT and a verified roundtrip. Where to go next:
 CoreLink exposes a **Bazel REAPI v2** cache at
 `https://corelink-api.humangr.com/bazel/v2/<your-tenant-id>` (the ByteStream
 scheme `/bazel/v2/<tenant>/blobs/<hash>/<size>`). Point a REAPI/ByteStream
-client at it, using your tenant UUID as the REAPI instance name — see the
-committed reference config at
-[`apps/examples/bazel/.bazelrc`](https://github.com/HumanGuardrail/corelink-server/blob/main/apps/examples/bazel/.bazelrc).
+client at it, using your tenant UUID as the REAPI instance name:
+
+```ini
+build --remote_cache=https://corelink-api.humangr.com/bazel/v2
+build --remote_instance_name=${CORELINK_TENANT}
+build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --remote_upload_local_results=true
+```
 
 :::note Stock `bazel --remote_cache` works too
 The plain-HTTP alias `https://corelink-api.humangr.com/bazel/cache` is **live**:

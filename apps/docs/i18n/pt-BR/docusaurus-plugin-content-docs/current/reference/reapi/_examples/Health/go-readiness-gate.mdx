@@ -12,9 +12,9 @@ sidebar_label: Go · readiness gate
 
 # Go — Kubernetes readiness gate
 
-Wire `Health.Check` into a Kubernetes readiness probe handler.
+Conecte `Client.Health` a um handler de readiness probe do Kubernetes.
 
-## Code
+## Código
 
 ```go
 package main
@@ -29,15 +29,15 @@ import (
 )
 
 func main() {
-    client, _ := corelink.NewClient(context.Background(), corelink.Config{
+    client, _ := corelink.NewClient(corelink.Config{
         Endpoint: "https://corelink-api.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
     })
     http.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
         ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
         defer cancel()
-        s, err := client.Health.Check(ctx)
-        if err != nil || s.String() != "SERVING" {
+        status, err := client.Health(ctx)
+        if err != nil || !status.OK {
             http.Error(w, "not ready", http.StatusServiceUnavailable)
             return
         }
@@ -47,15 +47,15 @@ func main() {
 }
 ```
 
-## Expected output
+## Saída esperada
 
 ```text
 $ curl -i http://localhost:8080/ready
 HTTP/1.1 200 OK
 ```
 
-## Common errors
+## Erros comuns
 
-| HTTP status | Cause | Fix |
+| Status HTTP | Causa | Correção |
 | --- | --- | --- |
-| `503` | Upstream `Health.Check` failed | Trigger pod restart via liveness probe |
+| `503` | `Client.Health` upstream falhou | Dispare o reinício do pod via liveness probe |

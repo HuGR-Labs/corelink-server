@@ -14,10 +14,14 @@ You install `@corelink/client` in a Node.js or modern bundler context and
 need to call any cache API. PAT auth is mandatory; the client refuses to
 construct without one.
 
+`@corelink/client` is not published to npm — it's served as a tarball from
+CoreLink's own docs domain. Installing by URL means you're pinning the exact
+early release (`0.1.0`), not tracking a registry range.
+
 ## Prerequisites
 
 - Node.js 18+ (uses the global `fetch`) or any bundler that targets ES2022. ESM is the default; CommonJS `require()` is not supported.
-- `npm install @corelink/client`
+- `npm install https://humangr.com/corelink/docs/npm/corelink-client-0.1.0.tgz`
 - A PAT minted at `https://humangr.com/corelink/en/customer/keys`.
 
 ## Recommended env var (Node.js)

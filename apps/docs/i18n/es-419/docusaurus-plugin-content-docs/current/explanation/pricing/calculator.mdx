@@ -1,7 +1,7 @@
 ---
 title: "Calculadora de costos"
 slug: "/pricing/calculator"
-description: "Estimación de costos autoservicio para CoreLink según el volumen de CAS, el tráfico de lectura, BYOK, la tasa de aciertos y la fijación de región. Matemática transparente, lista para copiar y pegar."
+description: "Estimación de costos autoservicio para CoreLink según el volumen de almacenamiento CAS, BYOK, la tasa de aciertos y la fijación de región. Matemática transparente, lista para copiar y pegar."
 draft: true
 cross_functional_review: TBD
 pending_signoff:
@@ -36,7 +36,7 @@ frente a alternativas autoalojadas, vea [vs. alternativas](./comparison).
 
 ## Entradas
 
-La calculadora recibe seis entradas. Todas son observables a partir de
+La calculadora recibe cinco entradas. Todas son observables a partir de
 cualquier caché existente (no necesita ejecutar CoreLink primero para estimar
 la factura).
 
@@ -44,7 +44,6 @@ la factura).
 |---|---|---|---|
 | `T` | Inquilinos | cantidad | 1–50 |
 | `S_w` | Volumen mensual de escritura en CAS | GB / mes | 5–5000 |
-| `S_r` | Volumen mensual de lectura en CAS | TB / mes | 0.05–50 |
 | `byok` | Proveedor de BYOK | `none` / `aws` / `gcp` / `azure` | — |
 | `h` | Tasa de aciertos de caché | fracción `[0, 1]` | 0.5–0.95 |
 | `R` | Fijación de región | cantidad de regiones | 1–4 |
@@ -56,13 +55,11 @@ la factura).
 - `S_w` es el crecimiento **neto** mensual del almacenamiento CAS después de la
   deduplicación y el desalojo (eviction). Los monorepos de Bazel en estado
   estable suelen tener 10–200 GB; los monorepos grandes de Buck2 van de 500 GB
-  a unos pocos TB.
-- `S_r` es el volumen mensual de **lectura** (TB), que escala con el volumen de
-  ejecuciones de CI × búsquedas de caché por ejecución × tamaño del blob por
-  búsqueda. La tasa de aciertos importa aquí porque los fallos (misses) no
-  generan lecturas.
-- `byok` activa el complemento BYOK en Max. Free / Solo / Starter / Pro no
-  admiten BYOK; Enterprise incluye BYOK sin cargo adicional.
+  a unos pocos TB. El almacenamiento CAS es el único eje que CoreLink mide —
+  no existe una cuota separada de volumen de lectura.
+- `byok` selecciona si el inquilino necesita BYOK. Ningún nivel de
+  autoservicio ofrece BYOK; cualquier valor de `byok` distinto de `none`
+  dirige la calculadora al formulario de consulta de Enterprise.
 - `h` es la tasa de aciertos. La calculadora **no** cobra por los fallos de
   caché (un fallo es un `404` y el runner del cliente compila localmente), pero
   se incluye `h` para que la calculadora también pueda informar el ahorro del
@@ -75,30 +72,28 @@ la factura).
 
 ## Fórmula
 
-En la v0.1, cada nivel tiene un **tope estricto (hard cap)** en sus cuotas
-incluidas — no hay excedente medido. Por lo tanto, el trabajo de la calculadora
-es encontrar el nivel más pequeño cuyas cuotas incluidas cubran su uso e
-informar la tarifa base fija de ese nivel. La factura mensual exacta es:
+En la v0.1, cada nivel tiene un **tope estricto (hard cap)** en su cuota de
+almacenamiento CAS incluida — no hay excedente medido. Por lo tanto, el
+trabajo de la calculadora es encontrar el nivel más pequeño cuya cuota de
+almacenamiento incluida cubra su uso e informar la tarifa base fija de ese
+nivel. La factura mensual exacta es:
 
 ```
-# 1. Resolve effective storage and reads after replication and dedup.
+# 1. Resolve effective storage after replication and dedup.
 S_w_billable = S_w × replication_factor(R, tier)
-S_r_billable = S_r × 1024                  # convert TB → GB for billing
 
-# 2. Resolve included quotas by tier (see table below).
+# 2. Resolve the included storage quota by tier (see table below).
 S_w_included = INCLUDED_STORAGE_GB[tier] × T
-S_r_included = INCLUDED_READS_GB[tier]   × T
 
 # 3. Hard cap: usage above the included quota does NOT bill — it 429s.
 #    The calculator flags it so you pick the next-larger tier instead.
-fits = (S_w_billable <= S_w_included) AND (S_r_billable <= S_r_included)
+#    BYOK is not sold on any self-serve tier, so a `byok` request that
+#    isn't "none" never fits a priced tier.
+fits = (S_w_billable <= S_w_included) AND (tier = "enterprise" OR byok = "none")
 
-# 4. Resolve add-ons (BYOK on Max only; included on Enterprise).
-addon_byok = (BYOK_FEE[tier] if byok != "none" else 0)
-
-# 5. Resolve base fee. Free is $0; Solo / Starter / Pro / Max are flat;
+# 4. Resolve base fee. Free is $0; Solo / Starter / Pro / Max are flat;
 #    Enterprise is negotiated (calculator returns a quote-request CTA).
-invoice = BASE_FEE[tier] × T + addon_byok          # only when `fits`
+invoice = BASE_FEE[tier] × T          # only when `fits`
 ```
 
 `replication_factor(R, tier)` es:
@@ -110,76 +105,75 @@ invoice = BASE_FEE[tier] × T + addon_byok          # only when `fits`
 | 3 | n/a | n/a | n/a | n/a | n/a | 3.0 |
 | 4 | n/a | n/a | n/a | n/a | n/a | 4.0 |
 
-Las lecturas no se replican para la facturación (una lectura sirve a un runner,
-no a todas las regiones).
-
 ## Constantes
 
 Estas son las constantes de la tarifa que referencia la fórmula. Todo nivel de
-pago tiene **tope estricto** en la v0.1 (sin excedente medido); la `BYOK_FEE`
-se aplica solo en Max.
+pago tiene **tope estricto** en la v0.1 (sin excedente medido).
 
-| Nivel | `BASE_FEE` ($/mes) | `INCLUDED_STORAGE_GB` | `INCLUDED_READS_GB` | Excedente | `BYOK_FEE` ($/mes) |
-|---|---|---|---|---|---|
-| Free | 0 | 10 | 50 | tope estricto | n/a |
-| Solo | 15 | 50 | 500 | tope estricto | n/a |
-| Starter | 35 | 150 | 1,536 | tope estricto | n/a |
-| Pro | 50 | 500 | 5,120 | tope estricto | n/a |
-| Max | 149 | 2,048 | 20,480 | tope estricto | 99 |
-| Enterprise | cotización | cotización | cotización | negociado | incluido |
+| Nivel | `BASE_FEE` ($/mes) | `INCLUDED_STORAGE_GB` | Excedente |
+|---|---|---|---|
+| Free | 0 | 10 | tope estricto |
+| Solo | 15 | 50 | tope estricto |
+| Starter | 35 | 150 | tope estricto |
+| Pro | 50 | 500 | tope estricto |
+| Max | 149 | 2,048 | tope estricto |
+| Enterprise | cotización | cotización | negociado |
 
-"tope estricto" significa que un nivel devuelve `429` al superar la cuota
-incluida hasta que se reinicie el siguiente mes calendario, o hasta que el
-inquilino mejore de nivel. Free no genera factura.
+"tope estricto" significa que un nivel devuelve `429` al superar la cuota de
+almacenamiento incluida hasta que se reinicie el siguiente mes calendario, o
+hasta que el inquilino mejore de nivel. Free no genera factura. Ningún nivel
+de autoservicio ofrece BYOK; un requisito de BYOK siempre dirige a Enterprise,
+sin importar el volumen de almacenamiento.
 
 ## Indicador de nivel
 
-La calculadora elige el nivel indicado como el nivel **más pequeño** cuyas
-cuotas con tope estricto cubren las entradas del cliente (sube la escalera
-hasta que el uso encaje):
+La calculadora elige el nivel indicado como el nivel **más pequeño** cuya
+cuota de almacenamiento con tope estricto cubre las entradas del cliente (sube
+la escalera hasta que el uso encaje):
 
 ```
 indicated_tier =
-  Free        if S_w ≤ 10   AND S_r × 1024 ≤ 50     AND T = 1 AND byok = "none" AND R ≤ 1
-  Solo        if S_w ≤ 50   AND S_r × 1024 ≤ 500    AND byok = "none" AND R ≤ 1
-  Starter     if S_w ≤ 150  AND S_r × 1024 ≤ 1536   AND byok = "none" AND R ≤ 1
-  Pro         if S_w ≤ 500  AND S_r × 1024 ≤ 5120   AND byok = "none" AND R ≤ 2
-  Max         if S_w ≤ 2048 AND S_r × 1024 ≤ 20480  AND R ≤ 2
+  Free        if S_w ≤ 10   AND T = 1 AND byok = "none" AND R ≤ 1
+  Solo        if S_w ≤ 50   AND byok = "none" AND R ≤ 1
+  Starter     if S_w ≤ 150  AND byok = "none" AND R ≤ 1
+  Pro         if S_w ≤ 500  AND byok = "none" AND R ≤ 2
+  Max         if S_w ≤ 2048 AND byok = "none" AND R ≤ 2
   Enterprise  otherwise
 ```
 
-Si el cliente supera incluso a Max en cualquier dimensión, o activa BYOK sin
-Max / 3+ regiones / un DPA personalizado, la calculadora lo dirige al
-formulario de consulta de Enterprise.
+Si el cliente supera incluso la cuota de almacenamiento de Max, necesita más
+de 2 regiones, o necesita BYOK, la calculadora lo dirige al formulario de
+consulta de Enterprise.
 
 ## Tabla de precios por nivel (resuelta)
 
-Para una entrada representativa — `T = 1`, `S_w = 100 GB/mo`, `S_r = 2 TB/mo`
-(2,048 GB), `byok = none`, `h = 0.8`, `R = 1` — cada nivel encaja (base fija) o
-alcanza el tope estricto (por encima de la cuota):
+Para una entrada representativa — `T = 1`, `S_w = 100 GB/mo`, `byok = none`,
+`h = 0.8`, `R = 1` — cada nivel encaja (base fija) o alcanza el tope estricto
+(por encima de la cuota):
 
 | Nivel | Base | ¿Encaja? | Total | Notas |
 |---|---|---|---|---|
-| Free | $0 | no | n/a | supera el tope de Free (10 GB / 50 GB) |
-| Solo | $15 | no | n/a | supera el tope de Solo (50 GB / 500 GB) |
-| Starter | $35 | no | n/a | lecturas de 2,048 GB > tope de 1,536 GB |
-| Pro ⭐ | $50 | sí | **$50.00** | 100 ≤ 500, 2,048 ≤ 5,120 — nivel indicado |
+| Free | $0 | no | n/a | supera el tope de almacenamiento de Free (10 GB) |
+| Solo | $15 | no | n/a | supera el tope de almacenamiento de Solo (50 GB) |
+| Starter | $35 | sí | **$35.00** | 100 ≤ 150 — nivel más pequeño que encaja |
+| Pro ⭐ | $50 | sí | $50.00 | encaja con margen hasta 500 GB — ancla recomendada |
 | Max | $149 | sí | $149.00 | encaja, pero sobredimensionado a esta escala |
 | Enterprise | cotización | — | cotización | excesivo a esta escala |
 
 La calculadora muestra las seis líneas para que el cliente vea exactamente en
-qué nivel cae su uso — aquí, **Pro** es el nivel más pequeño que encaja, y es
-el ancla recomendada.
+qué nivel cae su uso — aquí, **Starter** es el nivel más pequeño que encaja,
+aunque Pro sigue siendo el ancla recomendada para un equipo que espera
+crecer.
 
 ## Tres puntos de escala resueltos
 
 ### Pequeño: desarrollador individual en Bazel
 
-`T = 1`, `S_w = 4 GB/mo`, `S_r = 40 GB/mo`, `byok = none`, `h = 0.75`, `R = 1`.
+`T = 1`, `S_w = 4 GB/mo`, `byok = none`, `h = 0.75`, `R = 1`.
 
 | Nivel | Total | Notas |
 |---|---|---|
-| Free | **$0** | encaja dentro del tope de Free (10 GB / 50 GB) |
+| Free | **$0** | encaja dentro del tope de almacenamiento de Free (10 GB) |
 | Solo | $15 | sobredimensionado |
 | Pro | $50 | enormemente sobredimensionado |
 | Enterprise | cotización | enormemente sobredimensionado |
@@ -188,30 +182,31 @@ Nivel indicado: **Free**.
 
 ### Mediano: equipo pequeño de producción, una sola región
 
-`T = 1`, `S_w = 180 GB/mo`, `S_r = 4 TB/mo` (4,096 GB), `byok = none`, `h = 0.82`, `R = 1`.
+`T = 1`, `S_w = 180 GB/mo`, `byok = none`, `h = 0.82`, `R = 1`.
 
 | Nivel | Total | Notas |
 |---|---|---|
-| Free | n/a | supera el tope |
-| Solo | n/a | supera el tope (50 GB / 500 GB) |
-| Starter | n/a | lecturas de 4,096 GB > tope de 1,536 GB |
-| Pro ⭐ | **$50.00** | 180 ≤ 500, 4,096 ≤ 5,120 — las cuotas incluidas lo cubren |
+| Free | n/a | supera el tope de almacenamiento |
+| Solo | n/a | supera el tope de almacenamiento (50 GB) |
+| Starter | n/a | supera el tope de almacenamiento (180 GB > 150 GB) |
+| Pro ⭐ | **$50.00** | 180 ≤ 500 — la cuota incluida lo cubre |
 | Max | $149.00 | encaja, pero sobredimensionado |
 | Enterprise | cotización | excesivo |
 
-Nivel indicado: **Pro** — el nivel más pequeño cuyas cuotas con tope estricto
-cubren el uso, y el ancla recomendada de mejor relación calidad-precio.
+Nivel indicado: **Pro** — el nivel más pequeño cuya cuota de almacenamiento
+con tope estricto cubre el uso, y el ancla recomendada de mejor relación
+calidad-precio.
 
 ### Grande: enterprise multirregión, BYOK, 5 inquilinos
 
-`T = 5`, `S_w = 800 GB/mo`, `S_r = 12 TB/mo`, `byok = aws`, `h = 0.88`, `R = 3`.
+`T = 5`, `S_w = 800 GB/mo`, `byok = aws`, `h = 0.88`, `R = 3`.
 
 | Nivel | Total | Notas |
 |---|---|---|
-| Free | n/a | supera el tope |
+| Free | n/a | supera el tope de almacenamiento |
 | Solo / Starter | n/a | superan el tope de almacenamiento + región |
 | Pro | n/a | supera el tope de regiones (`R = 3 > 2`) |
-| Max | n/a | supera el tope de regiones (`R = 3 > 2`) + BYOK es complemento, no multirregión |
+| Max | n/a | supera el tope de regiones (`R = 3 > 2`); BYOK no se ofrece en ningún nivel de autoservicio |
 | Enterprise | **cotización** | requerido (3 regiones, BYOK, multiinquilino) |
 
 Nivel indicado: **Enterprise**. La calculadora dirige al formulario de consulta
@@ -271,32 +266,29 @@ coordenadas de celda.
 # Inputs
 T                = 1
 S_w_gb           = 180
-S_r_tb           = 4
 byok             = "none"      # "none" | "aws" | "gcp" | "azure"
 h                = 0.82
 R                = 1
 
-# Tier rate-card (flat base; hard-capped quotas — Free is $0, Enterprise is quote)
-base_free        = 0     ; incl_storage_free    = 10   ; incl_reads_free    = 50
-base_solo        = 15    ; incl_storage_solo    = 50   ; incl_reads_solo    = 500
-base_starter     = 35    ; incl_storage_starter = 150  ; incl_reads_starter = 1536
-base_pro         = 50    ; incl_storage_pro     = 500  ; incl_reads_pro     = 5120
-base_max         = 149   ; incl_storage_max     = 2048 ; incl_reads_max     = 20480
-byok_fee_max     = 99    # add-on, Max only
+# Tier rate-card (flat base; hard-capped storage quota — Free is $0, Enterprise is quote)
+base_free        = 0     ; incl_storage_free    = 10
+base_solo        = 15    ; incl_storage_solo    = 50
+base_starter     = 35    ; incl_storage_starter = 150
+base_pro         = 50    ; incl_storage_pro     = 500
+base_max         = 149   ; incl_storage_max     = 2048
+# No self-serve tier offers BYOK; byok != "none" always routes to Enterprise.
 
 # Derived
 S_w_billable     = S_w_gb * IF(R<=1, 1, IF(R=2, 2, IF(R=3, 3, 4)))
-S_r_billable_gb  = S_r_tb * 1024
 
-# Per-tier total: the flat base when usage fits the hard-capped quotas,
-# otherwise "over" (the tier 429s — pick the next-larger tier).
+# Per-tier total: the flat base when usage fits the hard-capped storage
+# quota, otherwise "over" (the tier 429s — pick the next-larger tier).
 total_pro =
-  IF(AND(S_w_billable <= incl_storage_pro * T, S_r_billable_gb <= incl_reads_pro * T),
-     base_pro * T, "over (hard cap)")
+  IF(S_w_billable <= incl_storage_pro * T, base_pro * T, "over (hard cap)")
 
 total_max =
-  IF(AND(S_w_billable <= incl_storage_max * T, S_r_billable_gb <= incl_reads_max * T),
-     base_max * T + IF(byok = "none", 0, byok_fee_max), "over (hard cap)")
+  IF(AND(S_w_billable <= incl_storage_max * T, byok = "none"),
+     base_max * T, "over (hard cap, or BYOK requires Enterprise)")
 ```
 
 La versión interna de esta calculadora con análisis de margen (costo del

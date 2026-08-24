@@ -10,7 +10,6 @@ sidebar_label: Go · Read
 >
 > Canonical EN source: `docs/reference/reapi/_examples/ByteStream/go-read.mdx`
 
-
 # Go — `ByteStream.Read`
 
 ## Code
@@ -21,7 +20,6 @@ package main
 import (
     "context"
     "fmt"
-    "io"
     "os"
 
     corelink "go.corelink.humangr.com/corelink-go"
@@ -29,33 +27,33 @@ import (
 
 func main() {
     ctx := context.Background()
-    client, _ := corelink.NewClient(ctx, corelink.Config{
+    client, _ := corelink.NewClient(corelink.Config{
         Endpoint: "https://corelink-api.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
+        Instance: "default",
     })
     defer client.Close()
 
     digest := corelink.Digest{Hash: "bdd9ea4a8e6b...", SizeBytes: 41943040}
-    rc, err := client.ByteStream.Read(ctx, digest)
+    out, err := os.Create("/tmp/big.bin")
     if err != nil { panic(err) }
-    defer rc.Close()
-    out, _ := os.Create("/tmp/big.bin")
     defer out.Close()
-    n, err := io.Copy(out, rc)
+
+    n, err := client.ByteStream().Read(ctx, digest, out)
     if err != nil { panic(err) }
     fmt.Printf("downloaded %d B\n", n)
 }
 ```
 
-## Expected output
+## Erwartete Ausgabe
 
 ```text
 downloaded 41943040 B
 ```
 
-## Common errors
+## Häufige Fehler
 
-| Status | Error taxonomy | Cause |
-| --- | --- | --- |
-| `NOT_FOUND` | `COR_CAS_BLOB_MISSING` | Digest evicted or never written. |
-| `ABORTED` | `COR_CAS_DIGEST_MISMATCH` | Client-verify rejected. |
+| Fehlertyp | Ursache |
+| --- | --- |
+| `*corelink.NotFoundError` | Digest evicted oder nie geschrieben. |
+| `*corelink.DigestMismatchError` | Client-Verify hat die übertragenen Bytes abgelehnt. |

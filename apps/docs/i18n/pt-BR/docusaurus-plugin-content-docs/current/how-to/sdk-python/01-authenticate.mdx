@@ -22,7 +22,8 @@ cache-reading API. A PAT is required for every CAS call.
 
 ## Prerequisites
 
-- `pip install corelink-py` (wheels published on PyPI).
+- `pip install --extra-index-url https://humangr.com/corelink/docs/pypi/simple/ --pre corelink-py`
+  (pre-release wheels served from CoreLink's own docs domain, not PyPI).
 - A CoreLink tenant. Issue a PAT at `https://humangr.com/corelink/en/customer/keys`.
 
 ## Two clients: sync and async

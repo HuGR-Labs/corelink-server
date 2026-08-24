@@ -5,7 +5,7 @@
  * `docs/trust/subprocessors.mdx` MDX page at `/trust/subprocessors`.
  *
  * Source of truth: `specs/_compliance/VENDOR-RISK-REGISTER.md` (full
- * 19-vendor register; only the 11 vendors that process customer personal
+ * 22-vendor register; only the 9 vendors that process customer personal
  * data on CoreLink's behalf appear in the public "Active sub-processors"
  * table).
  *
@@ -23,9 +23,7 @@ import Link from "@docusaurus/Link";
 import Translate from "@docusaurus/Translate";
 import type { ReactElement } from "react";
 
-const LAST_REFRESHED = "2026-05-15";
-const SOURCE_OF_TRUTH =
-  "https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_compliance/VENDOR-RISK-REGISTER.md";
+const LAST_REFRESHED = "2026-08-24";
 
 interface SubProcessor {
   readonly num: number;
@@ -67,75 +65,58 @@ const ACTIVE_SUB_PROCESSORS: readonly SubProcessor[] = [
   },
   {
     num: 4,
-    vendor: "Drata, Inc.",
-    service: "SOC 2 / ISO 27001 evidence + vendor-risk + employee attestations",
-    dataClasses: ["metadata", "audit-logs"],
-    regions: "US / EU (selectable)",
-    dpaHref: "https://drata.com/trust",
-    dpaLabel: "Drata trust portal",
-  },
-  {
-    num: 5,
     vendor: "PagerDuty, Inc.",
-    service: "Incident management + on-call alerting",
+    service: "Incident management + on-call alerting (prod + synthetic-drill routes)",
     dataClasses: ["audit-logs", "metadata"],
     regions: "US / EU (selectable)",
     dpaHref: "https://www.pagerduty.com/security/",
     dpaLabel: "PagerDuty trust portal",
   },
   {
-    num: 6,
-    vendor: "Slack Technologies, LLC (Salesforce)",
-    service: "Slack (notification payloads only)",
-    dataClasses: ["metadata", "audit-logs"],
-    regions: "US / EU (selectable)",
-    dpaHref: "mailto:privacy@humangr.com?subject=Slack%20DPA%20request",
-    dpaLabel: "Slack DPA (on request)",
-  },
-  {
-    num: 7,
-    vendor: "HubSpot, Inc.",
-    service: "CRM (enterprise-inquiry intake)",
-    dataClasses: ["pii"],
-    regions: "Multi-region (per tenant primary_region pin)",
-    dpaHref: "https://legal.hubspot.com/security",
-    dpaLabel: "HubSpot trust portal",
-  },
-  {
-    num: 8,
-    vendor: "GitHub, Inc. (Microsoft)",
-    service: "Source code + CI/CD + Actions secrets",
+    num: 5,
+    vendor: "GitHub, Inc. (Microsoft Enterprise)",
+    service: "Source code repository + CI/CD pipeline + Actions secrets store",
     dataClasses: ["source code", "ci artifacts", "audit-logs"],
     regions: "US / EU (selectable)",
     dpaHref: "https://github.com/security",
     dpaLabel: "GitHub trust portal",
   },
   {
-    num: 9,
-    vendor: "Grafana Labs",
-    service: "Grafana Cloud (telemetry aggregates)",
-    dataClasses: ["telemetry", "audit-logs"],
+    num: 6,
+    vendor: "Resend, Inc.",
+    service: "Transactional email + newsletter-audience delivery",
+    dataClasses: ["pii (recipient email address)"],
+    regions: "Multi-region (per tenant primary_region pin)",
+    dpaHref: "https://resend.com/legal/dpa",
+    dpaLabel: "Resend DPA",
+  },
+  {
+    num: 7,
+    vendor: "Functional Software, Inc. (Sentry)",
+    service: "Application error monitoring (admin-ui server/edge/client + docs-site build loader)",
+    dataClasses: ["telemetry (scrubbed diagnostic events)"],
     regions: "US / EU (selectable)",
-    dpaHref: "https://grafana.com/security/",
-    dpaLabel: "Grafana trust portal",
+    dpaHref: "https://sentry.io/legal/dpa/",
+    dpaLabel: "Sentry DPA",
   },
   {
-    num: 10,
-    vendor: "Neon, Inc.",
-    service: "Neon Postgres (shadow analytics plane)",
-    dataClasses: ["pii", "metadata"],
-    regions: "Multi-region (per tenant primary_region pin)",
-    dpaHref: "mailto:privacy@humangr.com?subject=Neon%20DPA%20request",
-    dpaLabel: "Neon DPA (on request)",
+    num: 8,
+    vendor: "Plausible Insights OÜ (Plausible Analytics)",
+    service: "Cookieless web analytics for the docs-site marketing funnel",
+    dataClasses: ["telemetry (page-view aggregates only)"],
+    regions: "US / EU (selectable)",
+    dpaHref: "https://plausible.io/dpa",
+    dpaLabel: "Plausible DPA",
   },
   {
-    num: 11,
-    vendor: "Twilio, Inc. (SendGrid + Twilio SMS)",
-    service: "Transactional email + SMS",
-    dataClasses: ["pii"],
-    regions: "Multi-region (per tenant primary_region pin)",
-    dpaHref: "mailto:privacy@humangr.com?subject=Twilio%20DPA%20request",
-    dpaLabel: "Twilio DPA (on request)",
+    num: 9,
+    vendor: "Better Stack, Inc. (BetterStack / Statuspage)",
+    service:
+      "Uptime and status monitoring: synthetic HTTP probes against CoreLink's own public endpoints, and the hosted status page",
+    dataClasses: ["telemetry (probe results only; no customer data is sent)"],
+    regions: "US / EU",
+    dpaHref: "https://betterstack.com/privacy",
+    dpaLabel: "Better Stack privacy policy",
   },
 ];
 
@@ -178,7 +159,7 @@ export default function SubProcessorRegister(): ReactElement {
   return (
     <Layout
       title="Sub-processor register"
-      description="CoreLink public sub-processor register — 11 active vendors that process customer personal data on CoreLink's behalf. 30-day advance-notice mechanism per GDPR Art. 28 / LGPD Art. 27 §4º."
+      description="CoreLink public sub-processor register — 8 active vendors that process customer personal data on CoreLink's behalf. 30-day advance-notice mechanism per GDPR Art. 28 / LGPD Art. 27 §4º."
     >
       <main className="container margin-top--lg margin-bottom--xl" style={{ maxWidth: "1100px" }}>
         <header>
@@ -223,15 +204,14 @@ export default function SubProcessorRegister(): ReactElement {
             >
               Source of truth:
             </Translate>{" "}
-            <a href={SOURCE_OF_TRUTH} rel="noopener noreferrer" target="_blank">
-              VENDOR-RISK-REGISTER.md
-            </a>{" "}
+            VENDOR-RISK-REGISTER.md{" "}
             <Translate
               id="trust.subprocessor.source.full"
               description="Source of truth size context"
             >
-              (full 19-vendor register; only the 11 vendors that process
+              (full 22-vendor register; only the 9 vendors that process
               customer personal data on CoreLink's behalf appear below).
+              Available on request from trust@humangr.com.
             </Translate>
           </p>
         </header>

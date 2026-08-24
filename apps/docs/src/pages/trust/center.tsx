@@ -134,16 +134,16 @@ const QUADRANTS: readonly TrustQuadrant[] = [
       {
         title: "BYOK envelope encryption",
         href: "/security/byok",
-        status: "LIVE",
+        status: "POST-GA",
         summary:
-          "Four KMS providers (AWS KMS, GCP Cloud KMS, Azure Key Vault, HashiCorp Vault). CoreLink only holds wrapped DEKs.",
+          "The shipping production build links no real KMS provider: it resolves to an in-memory placeholder (doc-marked not for production), and the activation endpoint fails closed rather than flip a tenant to BYOK on it. Four-provider wiring (AWS KMS, GCP Cloud KMS, Azure Key Vault, HashiCorp Vault) is designed but not yet built into the production binary.",
       },
       {
-        title: "Audit chain — Merkle-linked, 7-year retention",
+        title: "Audit chain — hash-chained events",
         href: "/security/audit-chain",
-        status: "LIVE",
+        status: "POST-GA",
         summary:
-          "RFC 6962 inclusion proofs, content-addressable, mirrored to Sigstore (public transparency log).",
+          "Each audit event is BLAKE3 hash-linked to the previous one with a verifiable inclusion proof, and that primitive is live. The durable side is not: the wired sink is in-memory (lost on process restart, not shared across containers), and R2 persistence, the scheduled verify cron, SIEM fan-out, and 7-year Object Lock retention are all deferred.",
       },
       {
         title: "Vulnerability disclosure (VDP)",
@@ -255,10 +255,10 @@ const QUADRANTS: readonly TrustQuadrant[] = [
     cards: [
       {
         title: "Pre-GA security attestation pack",
-        href: "https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md",
+        href: "mailto:trust@humangr.com",
         status: "LIVE",
         summary:
-          "Day-1 evidence pack for pentest vendors + GA sign-off — consolidated security posture across 8 waves of adversarial review.",
+          "Day-1 evidence pack for pentest vendors + GA sign-off — consolidated security posture across 8 waves of adversarial review. Available on request from trust@humangr.com.",
       },
       {
         title: "RFC 9116 security.txt",
@@ -277,9 +277,9 @@ const QUADRANTS: readonly TrustQuadrant[] = [
       {
         title: "Customer audit-log export",
         href: "/security/audit-chain#export",
-        status: "LIVE",
+        status: "POST-GA",
         summary:
-          "Tenant-admin self-service: CSV / NDJSON / Parquet exports of the tenant-scoped audit chain with inclusion proofs attached.",
+          "The export route and its audit sink are wired to in-memory implementations today: exported data is lost on process restart and is not shared across containers. The durable, R2-backed exporter tenant admins would use for a self-service CSV / NDJSON / Parquet export is not yet wired.",
       },
       {
         title: "Trust Center deep-dive overview",

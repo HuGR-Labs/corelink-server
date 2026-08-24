@@ -43,9 +43,8 @@ rotas `/bazel/*` aceitam; o CAS REST *nativo* em `/v1/cas/...` é chaveado por B
 
 ## Configurar o `.bazelrc`
 
-O repositório inclui uma configuração de referência versionada em
-[`apps/examples/bazel/.bazelrc`](https://github.com/HumanGuardrail/corelink-server/blob/main/apps/examples/bazel/.bazelrc).
-Ela aponta a instância REAPI do Bazel para o seu tenant:
+Aqui está uma configuração de referência para o `.bazelrc`. Ela aponta a
+instância REAPI do Bazel para o seu tenant:
 
 ```ini
 # Point at the CoreLink REAPI v2 endpoint (the /bazel/v2 prefix is required).

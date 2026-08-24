@@ -86,7 +86,7 @@ A small team or solo developer.
 | Vendor | Storage $ | Egress $ | Software $ | Ops $ | **Total $/mo** |
 |---|---|---|---|---|---|
 | **CoreLink Free** | included | $0 (R2) | $0 | $0 | **$0** |
-| **CoreLink Starter** | included (under 50 GB) | $0 (R2) | $29 | $0 | **$29** |
+| **CoreLink Starter** | included (under 150 GB) | $0 (R2) | $35 | $0 | **$35** |
 | **bazel-remote on S3** | 30 GB × $0.023 = $0.69 | 160 GB × $0.09 = $14.40 | $0 (OSS) | 2 hr × $200 = $400 | **$415.09** |
 | **S3 + CloudFront** | 30 GB × $0.023 = $0.69 | 160 GB × $0.085 = $13.60 | $0 (OSS) | 2 hr × $200 = $400 | **$414.29** |
 | **Harbor self-host** | 30 GB × $0.023 = $0.69 | 160 GB × $0.09 = $14.40 | $0 (OSS) | 4 hr × $200 = $800 | **$815.09** (and not REAPI) |
@@ -99,7 +99,7 @@ TB); R2 egress $0.00. All public list prices as of 2026-05.
 trivial. The dominant line item is operations. CoreLink Free is $0;
 any self-hosted alternative costs the customer at least one
 engineer-touch per week. For a hobbyist, Free is the obvious choice;
-for a tiny startup with one or two CI pipelines, even Starter at $29
+for a tiny startup with one or two CI pipelines, even Starter at $35
 is a rounding error compared to the engineer-hour cost.
 
 Harbor is noted because the comparison gets asked. It is not a REAPI
@@ -114,34 +114,30 @@ A 50–200 engineer team running a medium Bazel monorepo.
 
 | Vendor | Storage $ | Egress $ | Software $ | Ops $ | **Total $/mo** |
 |---|---|---|---|---|---|
-| **CoreLink Starter** | included (50 GB) + overage (50 × $0.20 = $10) | $0 (R2) | $29 + ((1600−500) × $0.04 = $44) read overage | $0 | **$83.00** |
-| **CoreLink Team** | included (500 GB) | $0 (R2) | $199 | $0 | **$199.00** |
+| **CoreLink Starter** | 300 GB exceeds the 150 GB included — hard cap | — | — | — | not available (upgrade required) |
+| **CoreLink Pro** | included (500 GB) | $0 (R2) | $50 | $0 | **$50.00** |
 | **bazel-remote on S3** | 300 GB × $0.023 = $6.90 | 1,600 GB × $0.09 = $144.00 | $0 (OSS) | 8 hr × $200 = $1,600 | **$1,750.90** |
 | **S3 + CloudFront** | 300 GB × $0.023 = $6.90 | 1,600 GB × $0.085 = $136.00 | $0 (OSS) | 8 hr × $200 = $1,600 | **$1,742.90** |
 | **Harbor self-host** | 300 GB × $0.023 = $6.90 | 1,600 GB × $0.09 = $144.00 | $0 (OSS) | 16 hr × $200 = $3,200 | **$3,350.90** (and not REAPI) |
 
-Detail on CoreLink Starter at this scale:
+Detail on CoreLink Pro at this scale:
 
 ```
-base            = $29
-storage_overage = max(0, 100 - 50)  × $0.20 = $10.00
-read_overage    = max(0, 1600 - 500) × $0.04 = $44.00
-total           = $29 + $10 + $44 = $83.00
+base    = $50
+storage = 300 GB, within the 500 GB Pro includes — no overage (hard cap, not metered)
+total   = $50.00
 ```
 
-So Starter-with-overage at this scale is **$83**, *cheaper* than Team's
-flat $199. Why pick Team? Because at this scale the customer is one
-month away from outgrowing Starter's quotas (the team is hiring, CI
-volume is climbing) and Team's headroom is the prudent choice. The
-calculator surfaces both lines so the customer decides — see
-[calculator](./calculator) for the canonical rendering.
+Starter hard-caps at this scale: 300 GB of stored CAS exceeds Starter's
+150 GB included quota, so the tenant must upgrade. Pro's 500 GB
+included quota covers it with room to grow, at a flat $50/mo.
 
-**Takeaway at this scale.** CoreLink Team at $199 lands roughly an
-order of magnitude below the next-cheapest self-hosted alternative,
-once operations are honestly priced in. Even **excluding** the
-operational tax, the egress line item alone ($144/mo on S3) is most
-of the way to CoreLink Team's flat $199. Adding ops makes the gap
-overwhelming.
+**Takeaway at this scale.** CoreLink Pro at $50 costs roughly 35×
+less than the cheapest self-hosted alternative at this scale, once
+operations are honestly priced in ($1,750.90 for bazel-remote on S3 ÷
+$50 ≈ 35). Even **excluding** the operational tax, the egress line
+item alone ($144/mo on S3) is nearly 3× CoreLink Pro's entire bill
+($144 ÷ $50 ≈ 2.9). Adding ops makes the gap overwhelming.
 
 This is the scale at which "we'll just spin up our own cache" stops
 being a defensible engineering decision and becomes an explicit
@@ -156,30 +152,26 @@ monorepo, heavy CI, multiple product teams sharing the cache.
 
 | Vendor | Storage $ | Egress $ | Software $ | Ops $ | **Total $/mo** |
 |---|---|---|---|---|---|
-| **CoreLink Team** | included 500 GB + overage (524 × $0.15 = $78.60) | $0 (R2) | $199 | $0 | **$615.52** (incl. $337.92 read overage) |
-| **CoreLink Enterprise** | negotiated | $0 (R2) | quote | $0 | **quote** (typically lower per-GB than Team overage at this scale) |
+| **CoreLink Max** | 3,072 GB exceeds the 2,000 GB included — hard cap | — | — | — | not available (upgrade required) |
+| **CoreLink Enterprise** | negotiated | $0 (R2) | quote | $0 | **quote** |
 | **bazel-remote on S3** | 3,072 GB × $0.023 = $70.66 | 16,384 GB × $0.09 = $1,474.56 | $0 (OSS) | 24 hr × $200 = $4,800 | **$6,345.22** |
 | **S3 + CloudFront** | 3,072 GB × $0.023 = $70.66 | 16,384 GB × $0.085 = $1,392.64 | $0 (OSS) | 24 hr × $200 = $4,800 | **$6,263.30** |
 | **Harbor self-host** | 3,072 GB × $0.023 = $70.66 | 16,384 GB × $0.09 = $1,474.56 | $0 (OSS) | 48 hr × $200 = $9,600 | **$11,145.22** (and not REAPI) |
 
-Detail on CoreLink Team at this scale:
+At 1 TB/mo of write volume, usage exceeds every self-serve tier: Max's
+2,000 GB included storage does not cover the ~3,072 GB steady state,
+so the customer routes to Enterprise, which is priced by contract and
+not published here.
 
-```
-base            = $199
-storage_overage = max(0, 1024 - 500)   × $0.15 = $78.60
-read_overage    = max(0, 16384 - 5120) × $0.03 = $337.92
-total           = $199 + $78.60 + $337.92 = $615.52
-```
+**Takeaway at this scale.** The self-serve ladder tops out at this
+scale point, so there is no flat CoreLink number to compare directly.
+What is directly comparable: the egress line item alone on S3
+($1,474.56/mo) is roughly 10× Max's entire flat fee ($149/mo — the
+last published price point below Enterprise), before any operational
+cost is added. Operations is a full engineer-week of load per month
+on top of that.
 
-**Takeaway at this scale.** CoreLink Team at ~$616 is roughly an order
-of magnitude below the self-hosted alternative at this scale point.
-The egress line item alone on S3 ($1,474/mo) is more than 2× the
-CoreLink Team total bill. Operations is another full engineer-week of
-load per month.
-
-At this scale, customers should also consider CoreLink Enterprise,
-which typically prices below the Team-with-overage line for sustained
-volumes above ~1.5 TB/mo of writes and adds BYOK + multi-region
+At this scale, Enterprise also adds BYOK and all four regions
 (features that self-hosted alternatives would each be a separate
 engineering project to implement).
 
@@ -187,14 +179,15 @@ engineering project to implement).
 
 | Scale | CoreLink | bazel-remote on S3 | S3 + CloudFront | Harbor |
 |---|---|---|---|---|
-| 10 GB/mo write | $0 (Free) or $29 | $415 | $414 | $815 |
-| 100 GB/mo write | $83 (Starter+overage) or $199 (Team) | $1,751 | $1,743 | $3,351 |
-| 1 TB/mo write | $615 (Team) or quote (Ent.) | $6,345 | $6,263 | $11,145 |
+| 10 GB/mo write | $0 (Free) or $35 (Starter) | $415 | $414 | $815 |
+| 100 GB/mo write | $50 (Pro) | $1,751 | $1,743 | $3,351 |
+| 1 TB/mo write | quote (Enterprise — Max hard-caps at 2,000 GB) | $6,345 | $6,263 | $11,145 |
 
 The gap is not subtle. It widens with scale, because the dominant
 line items on the self-hosted side (egress, then ops) scale roughly
-linearly with volume, whereas CoreLink's bill is dominated by a flat
-tier fee with small per-GB overage that does not include egress.
+linearly with volume, whereas CoreLink's bill is a flat tier fee with
+no per-GB egress or overage charge — each tier hard-caps at its
+included storage instead of billing overage.
 
 ## What this comparison does not include
 

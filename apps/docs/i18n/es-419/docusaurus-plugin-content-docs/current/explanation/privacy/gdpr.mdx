@@ -55,9 +55,9 @@ Rectification) so nobody can hijack your account to delete your data.
 | **Art. 18** | Right to restriction of processing | 5 business days | `POST /v1/privacy/dsr/restriction` |
 | **Art. 19** | Notification of rectification/erasure/restriction to recipients | Automatic — same SLA as the triggering right | Triggered by Art. 16/17/18 endpoints; recipient manifest in your audit |
 | **Art. 20** | Right to data portability | 15 business days | `POST /v1/privacy/dsr/portability` |
-| **Art. 21** | Right to object | 15 business days (Art. 21(1)) / **immediate** for direct marketing (Art. 21(2)) | `POST /v1/privacy/dsr/objection` + `DELETE /v1/consent/marketing_email` |
+| **Art. 21** | Right to object | 15 business days (Art. 21(1)) / **immediate** for direct marketing (Art. 21(2)) | `POST /v1/privacy/dsr/objection` |
 | **Art. 22** | Right not to be subject to automated decisions with legal/significant effect | N/A — **we do not run Art. 22 processing** (see §7) | — |
-| **Art. 7(3)** | Right to withdraw consent (as easy as giving) | ≤ 5 minutes | `DELETE /v1/consent/<purpose>` |
+| **Art. 7(3)** | Right to withdraw consent (as easy as giving) | 5 business days | email `privacy@humangr.com` — the self-service endpoint is not available yet |
 
 If you prefer email, write to `privacy@hugr.com`. Our DPO will process
 your request through the same pipeline with the same SLA. The clock
@@ -143,25 +143,54 @@ If we reject a request as "manifestly unfounded or excessive" (Art. 12(5)
 lodge a complaint with your local supervisory authority and/or seek a
 judicial remedy.
 
-## 5. The deletion ("erasure") in detail
+## 5. La eliminación ("borrado") en detalle
 
-When you exercise Art. 17, the erasure pipeline propagates across **12
-backends** in a canonical order. Eight are **effectively erased** (rows
-hard-deleted); four are **pseudonymised retention** — the data is kept
-because we are legally required to keep it (audit logs, billing records,
-point-in-time backups, compliance evidence), but your identity is
-replaced with a one-way HKDF hash so we cannot re-identify you.
+Cuando ejerces el Art. 17, el orquestador de borrado evalúa una lista
+canónica de 12 tipos de backend. Solo **4 tienen un adaptador real ya
+implementado** — es donde realmente viven tus datos — y cada uno se
+borra o se seudonimiza genuinamente:
 
-The 12 targets, in order: Neon control plane → Neon billing detail
-(legal-hold retention) → R2 CAS (refcount eraser) → R2 AC → D1 metadata
-→ KV → Stripe (PII nullified) → Loki/Grafana → R2 audit (pseudonymised)
-→ backup PITR (tombstone replay; natural 30-day rotation) → R2 CAS
-legal-hold partition (pseudonymised) → compliance evidence store
-(pseudonymised).
+- **D1** — se eliminan las filas con alcance por sujeto; el conteo de
+  referencias se sincroniza con R2.
+- **R2 CAS** (almacenamiento direccionable por contenido) — borrador
+  consciente del conteo de referencias: si tu blob se comparte con
+  otros sujetos, eliminamos solo tu referencia y conservamos el blob
+  hasta que todas las referencias desaparezcan (más una ventana de
+  gracia de 72 horas); si el blob solo lo referencias tú, se marca con
+  tombstone de inmediato.
+- **R2 AC** (Action Cache) — se eliminan las entradas propiedad de tu
+  tenant.
+- **Stripe** — tu registro `Customer` se actualiza con el correo,
+  nombre y dirección anulados. Stripe no permite el borrado completo
+  porque rompería la integridad de las facturas, así que este backend
+  es **retención seudonimizada**, no borrado.
 
-You receive a `dsr.completed.v1` event with a Merkle root over the
-twelve audit hashes, plus a confirmation email. Total SLA: 30 calendar
-days.
+Los otros 8 tipos de backend canónicos se reconcilian como
+`not_applicable`, en lugar de reportarse silenciosamente como un no-op
+exitoso, porque no existen datos personales duraderos del sujeto allí
+en el sistema en producción (ADR-S11-013, verificado en frío el
+2026-06-11):
+
+| Backend | Por qué no aplica |
+|---|---|
+| Plano de control de Neon | El plano de control de Neon no está implementado; la identidad del sujeto vive en D1 (gestionado por el adaptador D1) |
+| Detalle de facturación en Neon | La facturación en Neon no está implementada; el estado de facturación vive en D1 + Stripe |
+| Backup PITR de Neon | El PITR de Neon no está implementado; no hay backups de Neon para aplicar tombstone |
+| KV | Los namespaces de KV son cachés (metadatos/JWKS/caché negativo); no hay PII duradera, se reconstruye desde D1 |
+| Loki / Grafana | No hay ningún sink de Loki activo implementado (solo referencias de observabilidad) |
+| R2 audit (seudonimizado) | No hay ningún bucket WORM de auditoría en R2 implementado; no hay almacén de auditoría indexado por sujeto para seudonimizar |
+| Partición de legal-hold en R2 CAS | No hay ninguna partición de legal-hold en CAS implementada |
+| Almacén de evidencias en R2 | No hay ningún bucket R2 evidence-* implementado |
+
+Si alguno de estos backends llega a implementarse con datos reales del
+sujeto, su fila pasa de `not_applicable` a un resultado real de
+borrado/seudonimización — el registro de auditoría por backend hace
+visible esa transición, no la oculta.
+
+Recibirás un evento `dsr.completed.v1` con un hash de evidencia firmado
+que vincula los 12 resultados por backend (cuatro reales, ocho
+`not_applicable`), además de un correo de confirmación. SLA total: 30
+días naturales.
 
 ## 6. Where your data goes (international transfers)
 

@@ -25,8 +25,8 @@ When you submit a response, we record exactly four things:
 3. **The tenant ID** the survey was issued against — this is your
    organization's CoreLink workspace identifier.
 4. **A salted hash of your IP address and user-agent string** — used
-   only for abuse detection (see [our abuse
-   runbook](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_runbooks/RB-SURVEY-ABUSE.md))
+   only for abuse detection (see our abuse runbook, available on request
+   from `support@humangr.com`)
    and never displayed in any analyst dashboard.
 
 We do **not** store your raw IP address, your raw user-agent string,
@@ -38,10 +38,9 @@ Your response is **anonymous in aggregate but tied to your tenant_id
 for trend analysis.** Concretely:
 
 - The CS team reads survey data through weekly **aggregates** (NPS
-  per tier, CSAT per surface, free-text top themes) — see the [CS
-  team's analysis protocol](https://github.com/HumanGuardrail/corelink-server/blob/main/marketing/retention/customer-health/SURVEY-ANALYSIS-PROTOCOL.md).
+  per tier, CSAT per surface, free-text top themes) — see the CS team's analysis protocol.
 - Lighthouse-customer accounts (those who agreed to deeper engagement
-  via the [lighthouse program](https://github.com/HumanGuardrail/corelink-server/blob/main/marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md))
+  via the lighthouse program)
   get a **per-tenant pulse view** so the CS lead can spot drift
   inside an individual customer.
 - **Your individual score is never tied back to your name or email
@@ -59,7 +58,7 @@ recording your response. This means:
   in for credentials.
 - The link **expires** (typically after 7-14 days from issuance —
   the exact TTL is set by the wave; see
-  [NPS-SURVEY-SCHEDULE](https://github.com/HumanGuardrail/corelink-server/blob/main/marketing/retention/customer-health/NPS-SURVEY-SCHEDULE.md)).
+  NPS-SURVEY-SCHEDULE).
 - The link **works once.** A second submission on the same link is
   rejected (replay protection).
 - If someone forwards your link, they can submit a response **once**
@@ -86,8 +85,6 @@ record of who looked at what, when.
 
 ## Cross-links
 
-- [Survey schedule](https://github.com/HumanGuardrail/corelink-server/blob/main/marketing/retention/customer-health/NPS-SURVEY-SCHEDULE.md)
-- [CS team analysis protocol](https://github.com/HumanGuardrail/corelink-server/blob/main/marketing/retention/customer-health/SURVEY-ANALYSIS-PROTOCOL.md)
-- [Abuse runbook](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_runbooks/RB-SURVEY-ABUSE.md)
+- Abuse runbook — available on request from `support@humangr.com`
 - [Privacy Center](/legal/privacy)
-- [Lighthouse customer playbook](https://github.com/HumanGuardrail/corelink-server/blob/main/marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md)
+- [Lighthouse customer playbook](/pilot)

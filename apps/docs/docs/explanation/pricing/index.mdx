@@ -36,14 +36,14 @@ Stripe Checkout (**Solo, Starter, Pro, Max**); one is instant-activation
 **Pro is the recommended tier** — it is the best-value anchor for a team
 shipping production builds.
 
-| Tier | Monthly price | Who it's for | Included CAS storage | Included read traffic | BYOK | Region pin | Activation |
-|---|---|---|---|---|---|---|---|
-| **Free** | $0 | Personal projects + evaluation | 10 GB | 50 GB / mo | — | shared | Instant |
-| **Solo** | $15 | The solo developer | 50 GB | 500 GB / mo | — | 1 region | Stripe Checkout |
-| **Starter** | $35 | A small team | 150 GB | 1.5 TB / mo | — | 1 region | Stripe Checkout |
-| **Pro** ⭐ | $50 | Best value — production teams | 500 GB | 5 TB / mo | — | up to 2 regions | Stripe Checkout |
-| **Max** | $149 | Scaling teams, serious volume | 2 TB | 20 TB / mo | optional add-on | up to 2 regions | Stripe Checkout |
-| **Enterprise** | Contact us | Multi-region / regulated / BYOK | Custom | Custom | included | all 4 regions | Inquiry form |
+| Tier | Monthly price | Who it's for | Included CAS storage | BYOK | Region pin | Activation |
+|---|---|---|---|---|---|---|
+| **Free** | $0 | Personal projects + evaluation | 10 GB | — | shared | Instant |
+| **Solo** | $15 | The solo developer | 50 GB | — | 1 region | Stripe Checkout |
+| **Starter** | $35 | A small team | 150 GB | — | 1 region | Stripe Checkout |
+| **Pro** ⭐ | $50 | Best value — production teams | 500 GB | — | up to 2 regions | Stripe Checkout |
+| **Max** | $149 | Scaling teams, serious volume | 2 TB | — | up to 2 regions | Stripe Checkout |
+| **Enterprise** | Contact us | Multi-region / regulated / BYOK | Custom | included | all 4 regions | Inquiry form |
 
 All tiers run on the same data plane, the same SLO catalog, and the
 same audit and residency model. The differences are quotas, BYOK
@@ -57,15 +57,18 @@ inclusion, region count, and support tier — not capability.
 | BLAKE3 content addressing | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Zero-egress on cache reads | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Audit chain (Merkle proofs) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| RBAC + invite teammates | ✓ (3 seats) | ✓ (5 seats) | ✓ (10 seats) | ✓ (50 seats) | ✓ (100 seats) | unlimited |
-| BYOK (customer-managed KEK) | — | — | — | — | add-on | included |
+| RBAC + invite teammates | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| BYOK (customer-managed KEK) | — | — | — | — | — | included |
 | Region pin (residency) | shared | 1 of 4 | 1 of 4 | up to 2 | up to 2 | all 4 |
 | Multi-region failover | — | — | — | ✓ | ✓ | ✓ |
 | DPA (Data Processing Addendum) | clickwrap | clickwrap | clickwrap | clickwrap | clickwrap | negotiated |
 | Support | community | email (best-effort) | email (2 biz day) | email (1 biz day) | priority email (1 biz day) | dedicated (1 hr) |
 | Uptime SLO | best-effort | 99.5% | 99.5% | 99.9% | 99.9% | 99.95% |
-| Audit log retention | 7 days | 30 days | 30 days | 90 days | 90 days | 1 year+ |
-| Compliance reports (SOC 2, ISO) | — | — | — | summary | summary | full + custom |
+
+RBAC (owner / admin / member / viewer roles) governs who can invite or
+remove teammates on every tier; no tier limits how many teammates you
+can invite. No self-serve tier offers BYOK — it is an Enterprise-only
+capability.
 
 ## How the bill is computed
 
@@ -77,11 +80,11 @@ simply its flat base fee:
 invoice = base_fee + optional_add_ons
 ```
 
-A tenant that reaches 100% of its storage or read quota receives a
+A tenant that reaches 100% of its CAS storage quota receives a
 `429 Too Many Requests` (with an upgrade CTA) until the next calendar
 month resets, or until the tenant admin upgrades tier. The cap is a
 feature, not a punishment — it is what keeps the price predictable and
-keeps Free free. Metered overage is deferred to v0.2.
+keeps the Free tier free of charge. Metered overage is deferred to v0.2.
 
 | Tier | Monthly base | Overage |
 |---|---|---|
@@ -92,18 +95,14 @@ keeps Free free. Metered overage is deferred to v0.2.
 | Max | $149 | hard cap — upgrade to continue |
 | Enterprise | Contact us | negotiated |
 
-BYOK add-on for Max is a flat $99/month and provides per-tenant DEK
-wrapping by a customer-controlled KEK in AWS KMS, GCP KMS, or Azure
-Key Vault.
-
 ## Why no per-egress line item
 
 Cloud egress is, on most managed cache vendors, the dominant line item
 on a heavy-CI bill. CoreLink stores cache content on Cloudflare R2,
 which charges zero for egress on reads to the public internet and to
 Cloudflare's network. CoreLink passes that property through to
-customers: paid tiers price storage and per-GB *read* operations (a
-per-operation amortization), not per-GB *bytes* leaving the cache.
+customers: paid tiers price CAS storage, not per-GB bytes leaving the
+cache.
 
 This is structurally why the CoreLink bill at heavy read volume is
 typically a multiple smaller than the S3-backed self-hosted equivalent
@@ -115,10 +114,10 @@ walks the arithmetic at three scale points.
 CoreLink does not charge per developer seat. Cache load correlates with
 build volume and CI parallelism, not with seat count, and per-seat
 pricing creates a perverse incentive against onboarding the next
-engineer to the cache. Seats are capped per tier (above) as an
-anti-abuse measure; they are not a billing dimension.
-
-Enterprise removes the cap entirely.
+engineer to the cache. CoreLink does not limit the number of
+teammates you can invite on any tier; access is governed by
+role-based permissions (owner / admin / member / viewer), not a seat
+count.
 
 ## Why no compute / CPU line item
 
@@ -132,10 +131,10 @@ compute.
 
 The Free tier is designed for two cases:
 
-1. **Solo developers** running personal monorepos. 10 GB and 50 GB/mo of
-   reads is enough for a typical personal Bazel build with daily
-   incremental green builds. (A solo dev who outgrows it graduates to
-   the **Solo** tier at $15/mo.)
+1. **Solo developers** running personal monorepos. 10 GB of CAS storage
+   is enough for a typical personal Bazel build with daily incremental
+   green builds. (A solo dev who outgrows it graduates to the
+   **Solo** tier at $15/mo.)
 2. **Evaluation by larger teams** who want to wire CoreLink into a
    single CI pipeline alongside their existing cache for a two-week
    shadow comparison.
@@ -146,21 +145,22 @@ graduate to Solo, Starter, or Pro within a week of seriously using it.
 
 ## What Enterprise gives you that Max does not
 
-- **BYOK inclusion** (Max can buy it as an add-on; Enterprise has it).
+- **BYOK inclusion** — Enterprise is the only tier that offers it; no
+  self-serve tier has a BYOK add-on.
 - **All four regions** simultaneously, not just two.
 - **Negotiated DPA** rather than clickwrap, including custom data-handling
   language for regulated industries (financial services, healthcare,
   defense-adjacent).
-- **Custom retention** for audit logs and compliance reports — multi-year
-  retention is available on negotiated terms.
+- **Negotiated cache retention** up to 730 days, versus the 365-day
+  default on Max.
 - **Dedicated support** with a 1-hour SLO during business hours, with
   named technical account manager assignments above a usage threshold.
-- **Custom quotas** for storage, reads, and seats.
+- **Custom storage quotas.**
 
 Enterprise is the right fit when at least one of the following is
 true: residency requirements exceed two regions; security review
-requires BYOK; the customer's auditors require multi-year retention;
-the customer's CI fleet exceeds Max's quotas during peak.
+requires BYOK; the customer's CI fleet exceeds Max's quotas during
+peak.
 
 ## Trace
 

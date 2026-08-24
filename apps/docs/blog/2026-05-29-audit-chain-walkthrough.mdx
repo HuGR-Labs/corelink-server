@@ -253,14 +253,11 @@ curl -s \
 The export endpoint returns the canonical NDJSON format — one event
 per line — which is the same format the R2 chunks use.
 
-### Step 2 — Build the verifier from source
+### Step 2 — Get the verifier
 
-```bash
-git clone https://github.com/HumanGuardrail/corelink-server
-cd corelink-server
-cargo build -p corelink-audit-chain --bin verifier --release
-# Binary at: target/release/verifier
-```
+The source is not public, so there is nothing to clone. Ask
+`support@humangr.com` for the verifier binary, or for source access under
+NDA if you want to build it yourself and audit what it does first.
 
 The verifier has zero non-`std` dependencies at runtime (BLAKE3 +
 `serde_json` + `serde_jcs`; no network, no tokio, no Cloudflare

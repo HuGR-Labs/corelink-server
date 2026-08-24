@@ -1,6 +1,6 @@
 ---
 id: go-get-capabilities
-title: Go — GetCapabilities
+title: "Go — GetCapabilities: no disponible"
 sidebar_label: Go · GetCapabilities
 ---
 
@@ -10,9 +10,18 @@ sidebar_label: Go · GetCapabilities
 >
 > Canonical EN source: `Capabilities/go-get-capabilities.mdx`
 
-# Go — `Capabilities.GetCapabilities`
+# Go — `Capabilities.GetCapabilities` no existe en el servidor
 
-## Code
+`Client.Capabilities` existe en la superficie de tipos del SDK, pero no
+hay ningún endpoint de servidor detrás de él. La tabla de rutas de REAPI
+v2 (`crates/corelink-container/src/routes/bazel_v2.rs`) expone
+exactamente cinco rutas — lectura de CAS, escritura de CAS, lectura de
+AC, escritura de AC y `findMissingBlobs` — y ninguna es una superficie
+de capabilities. `Capabilities` no hace ninguna llamada de red; devuelve
+el `ServerCapabilities` en su valor cero junto con un error que explica
+el motivo.
+
+## Código
 
 ```go
 package main
@@ -27,33 +36,26 @@ import (
 
 func main() {
     ctx := context.Background()
-    client, _ := corelink.NewClient(ctx, corelink.Config{
+    client, _ := corelink.NewClient(corelink.Config{
         Endpoint: "https://corelink-api.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
     })
     defer client.Close()
 
-    caps, err := client.Capabilities.Get(ctx)
-    if err != nil {
-        panic(err)
-    }
-    fmt.Println("max_batch_total_size_bytes =", caps.CacheCapabilities.MaxBatchTotalSizeBytes)
-    fmt.Println("digest functions =", caps.CacheCapabilities.DigestFunctions)
-    fmt.Println("compressors =", caps.CacheCapabilities.SupportedCompressors)
+    _, err := client.Capabilities(ctx)
+    fmt.Println(err)
 }
 ```
 
-## Expected output
+## Salida esperada
 
 ```text
-max_batch_total_size_bytes = 4194304
-digest functions = [SHA256 BLAKE3]
-compressors = [IDENTITY ZSTD]
+corelink: no REAPI Capabilities endpoint exists on this server (bazel_v2.rs mounts only CAS read/write, AC read/write, and findMissingBlobs); use Client.Health for a readiness check instead
 ```
 
-## Common errors
+## Qué usar en su lugar
 
-| Status | Error taxonomy | Cause |
-| --- | --- | --- |
-| `UNAUTHENTICATED` | `COR_AUTH_PAT_INVALID` | PAT expired. |
-| `UNAVAILABLE` | `COR_NET_TRANSIENT` | Retry with exponential backoff. |
+Use `Client.Health` para una verificación de disponibilidad (vea el
+[ejemplo Health · Check](../Health/go-check.mdx)). Para elegir una
+función de digest sin un endpoint de negociación, vea
+[elegir una función de digest](./go-pick-digest.mdx).

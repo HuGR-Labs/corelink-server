@@ -39,7 +39,7 @@ address does not exist and will not connect. Concretely:
   gRPC service; there is no HTTP transport for it to fall back to.
 
 The gRPC REAPI implementation in
-[`crates/corelink-reapi/`](https://github.com/HumanGuardrail/corelink-server/tree/main/crates/corelink-reapi)
+`crates/corelink-reapi/`
 is host-only and not reachable from this topology. Standing up a separate
 non-Worker origin for it is a roadmap decision; no date is committed.
 :::
@@ -155,7 +155,7 @@ corelink put $(find /var/lib/bazel-remote/cas -type f -newer /tmp/last-mirror) \
 `corelink put` is content-addressed and idempotent: re-uploading the
 same blob is a no-op (returns `exists=true` with a 200, no bytes
 transferred). The orchestrator in
-[`crates/corelink-reapi/src/orchestrator.rs`](https://github.com/HumanGuardrail/corelink-server/blob/main/crates/corelink-reapi/src/orchestrator.rs)
+`crates/corelink-reapi/src/orchestrator.rs`
 enforces `INV-CAS-IMMUTABILITY` via `If-None-Match: *`.
 
 :::warning Do not point Bazel's `--remote_cache` at *two* URLs
@@ -364,4 +364,4 @@ gotchas you hit; future-you will thank you.
 - [From S3-only artifact storage](./from-s3-only) — for non-Bazel artifacts.
 - [10-minute quickstart](../../tutorials/quickstart-10min) — install + first put/get.
 - [REAPI v2 reference](../../reference/reapi/index.mdx) — the wire protocol Bazel speaks.
-- [Lighthouse Customer Playbook](https://github.com/HumanGuardrail/corelink-server/blob/main/marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md) — escalate to white-glove if you need a dedicated engineer.
+- [Lighthouse Customer Playbook](/pilot) — escalate to white-glove if you need a dedicated engineer.

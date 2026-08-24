@@ -1522,16 +1522,59 @@ deliberately unchanged: it tracks the hosted-runner half, which is still open.
 That work also surfaced B-037 — the reason the link count looked survivable is
 that the gate runs authenticated.
 
+**Hosted half closed 2026-08-24 — and three of the six jobs were deleted, not
+moved.** The trigger was GitHub itself: every `ubuntu-latest` job began failing
+in 2 seconds with `steps=0` and no runner, annotated *"The job was not started
+because recent account payments have failed or your spending limit needs to be
+increased"*. That reframed the 2026-08-03 decision to keep six jobs hosted —
+each of those notes weighed billed minutes against a real technical blocker, and
+the billed-minutes side of the trade no longer exists.
+
+Deleted (each ended in `|| echo "::warning::"`, so no finding could ever fail
+them — 87 billed minutes per 3 days for gates that proved nothing):
+
+- `lighthouse` — the owner's call, and the code agrees: advisory-only.
+- `axe` — advisory, and its rules are already enforced for real by the two a11y
+  jobs below.
+- `lighthouse-baseline` — same engine; this one COULD fail, but it is schedule-only
+  and went with the rest of Lighthouse. `apps/docs/lighthouserc.cjs` went too.
+
+Also deleted, on a second pass after the owner asked whether this was ceremony —
+and they were right about this one:
+
+- `a11y-baseline-diff` — strictly DOMINATED by `a11y-playwright` in the same
+  workflow. The sweep forbids ANY `serious`/`critical` on every route
+  (`playwright/a11y-sweep.spec.ts`, `FORBIDDEN_IMPACT`); this one only forbids a
+  NEW `critical` versus a baseline (`scripts/a11y-audit.sh:182`). Whenever the
+  sweep passes, this cannot fail. It was migrated before it was questioned — a
+  browser install per run to prove something already proven. `a11y-audit.sh` and
+  the baseline JSON stay as manual tools (`pnpm a11y-audit:diff`); the doc that
+  claimed a workflow ran them is corrected.
+
+Moved to `corelink`, both real gates, neither weakened:
+
+- `a11y-playwright` — already installed its own chromium; `admin-ui-e2e.yml` runs
+  that exact install on the fabric today, so this was the same recipe.
+- `broken-links` — the Docker container action cannot run on a box without
+  docker, so lychee is now a pinned release binary (v0.24.2, the same version the
+  link sweep was measured with) whose SHA-256 is verified before it is unpacked
+  or executed. The objection that a hand-rolled download loses the action's pin
+  is answered rather than ignored: version and checksum are both pinned in the
+  workflow.
+
+`docs-ci.yml` now has zero `runs-on: ubuntu-latest`; `actionlint` green.
+
 ```backlog
 id: B-034
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  grep -c "runs-on: ubuntu-latest" .github/workflows/docs-ci.yml | grep -qv '^0$'
+  test "$(grep -c 'runs-on: ubuntu-latest' .github/workflows/docs-ci.yml)" = "0"
 verify-means: |
-  open while docs-ci still schedules hosted jobs; goes red once every job in that
-  workflow runs on the self-hosted fleet
+  done while every job in docs-ci runs on the self-hosted fleet. Goes red the
+  moment a hosted job is reintroduced — which is the direction that matters,
+  since the failure mode here was a hosted job nobody was watching.
 last-verified: 2026-08-24
 ```
 
@@ -1870,5 +1913,47 @@ verify-means: |
   open while any `| head` site remains inside a file that sets pipefail. Measured 74
   on 2026-08-24. Goes red when the last one is either rewritten to a form that cannot
   SIGPIPE or shown, site by site, to be status-irrelevant.
+last-verified: 2026-08-24
+```
+
+### B-041 — `status.corelink.humangr.com` is advertised in 224 places and serves nothing
+
+DNS has a correct, DNS-only CNAME `status.corelink.humangr.com → hugrl.betteruptime.com`.
+The vendor side was never bound: the Better Stack status page had `custom_domain: null`,
+so it rejects the SNI and every client gets a TLS `handshake_failure` (alert 40). The
+page itself is live at `https://hugrl.betteruptime.com` (HTTP 200, titled
+"Human Guardrail / CoreLink status"). The dead hostname appears **224 times** across
+`apps/docs/`, `specs/`, `docs/` and `legal/`, including the Trust Center's
+"verifiable by you, right now" list.
+
+**Attempted and reverted on 2026-08-24.** Setting `custom_domain` via the API succeeded
+and made the vanity host canonical immediately — `hugrl.betteruptime.com` began
+301-redirecting to it — but no certificate was ever issued (50 probes over 25 minutes,
+all `handshake_failure`). The page attribute `whitelabeled: false` is the likely cause:
+custom domains are a plan feature. Net effect of the attempt was to break the ONE URL
+that worked, so it was reverted and the vendor page is serving again. Do not re-apply
+the binding without first confirming the plan includes custom domains, or the status
+page goes dark the moment it is set.
+
+The Trust Center and its three locale mirrors now link to the working vendor URL rather
+than to a hostname that resolves and then fails. The remaining ~220 references still
+point at the dead host.
+
+**OWNER DECISION REQUIRED:** whether to pay for the Better Stack tier that includes a
+custom domain. If yes, bind it and sweep the references back. If no, sweep all 224
+references to the vendor URL and retire the CNAME so nothing advertises a host that
+cannot serve.
+
+```backlog
+id: B-041
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  ! curl -sS -o /dev/null --max-time 15 https://status.corelink.humangr.com/
+verify-means: |
+  open while the advertised status hostname cannot complete a TLS handshake. Goes red
+  once it serves — i.e. once the vendor binding exists — at which point the reference
+  sweep is the remaining work.
 last-verified: 2026-08-24
 ```

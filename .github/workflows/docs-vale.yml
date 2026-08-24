@@ -9,7 +9,11 @@ on:
     paths:
       - "apps/docs/docs/**"
       - "apps/docs/blog/**"
-      - "apps/docs/i18n/**"
+      # NOT apps/docs/i18n/**: the lint step below globs only docs/ and blog/,
+      # so an i18n-only PR used to start this job, match no file, and report
+      # green having checked nothing. Vale's English dictionary would flag
+      # ordinary German, Spanish and Portuguese words by the thousand, so
+      # covering the mirrors needs per-locale configuration, not a wider glob.
       - "apps/docs/.vale.ini"
       - "apps/docs/styles/**"
       - ".github/workflows/docs-vale.yml"

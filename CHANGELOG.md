@@ -117,6 +117,47 @@ Each entry cross-references:
   rejected the whole file. Converted to a quoted heredoc, which prose cannot
   break. Found by the second rule of the new gate, which runs `bash -n` over
   every tracked shell script — 147 of them, and this was the only dead one.
+- **The trust page's "verifiable by you, right now" list was three-fifths
+  false, and the docs build proved it.** The section opens with "Compliance
+  docs can be theatre. We try hard to make ours falsifiable" and then listed
+  five proofs. `security.txt` (200 on humangr.com) and the audit-chain how-to
+  hold up. The other three did not: the SBOM link pointed at a page whose own
+  banner says the procurement path "is not yet contractually offered" (response
+  time TBD, signing-key URL `$TBD`); "Sigstore / Rekor provenance entries for
+  every binary" covers only the Worker OCI image, because the CLI release
+  workflow's signing step is literally named `[TODO v2] cosign sign
+  (placeholder)`; and the public status page answered a TLS `handshake_failure`
+  (alert 40) because `status.corelink.humangr.com` was CNAME'd to Better Stack
+  while Better Stack had `custom_domain: null` — a hostname advertised in 224
+  places across docs, specs and legal that no customer could load. The status
+  page is now linked at the URL that actually serves
+  (`https://hugrl.betteruptime.com`, HTTP 200) instead of a vanity hostname
+  that resolves and then fails: binding `custom_domain` at the vendor was
+  attempted and **reverted**, because it made the vanity host canonical
+  immediately — the working vendor URL began 301-ing to it — while no
+  certificate was ever issued (50 probes / 25 min, all `handshake_failure`);
+  `whitelabeled: false` says custom domains are a plan feature. The attempt
+  briefly broke the one URL that worked, which is why it was undone. The
+  remaining ~220 references to the dead hostname and the plan decision are
+  B-041. The other two claims are now stated as what they are, in a new "Not
+  yet available, and listed here rather than omitted" bucket. Applied to the three untranslated locale mirrors as well — the en-US
+  build failed first and masked them, and the i18n gates were green over a
+  section that has never been translated.
+
+- **The changelog gate reported "CHANGELOG.md is not modified" about a modified
+  CHANGELOG.md, and only on large PRs.** `git diff --name-only | grep -qx` under
+  `set -o pipefail` inverts on match: `grep -q` exits at the FIRST hit, `git
+  diff` takes SIGPIPE while still writing the remaining names and exits 141, and
+  pipefail reports the pipeline as failed — so the gate's `if !` fires the error
+  branch precisely when the file IS present. It is a race against the 64 KiB
+  pipe buffer, so it is invisible on small PRs and near-certain on large ones:
+  measured 38 of 40 runs misreporting on this PR's 326-file diff, 0 of 40 after
+  the fix. The check now asks git for the single path (`-- CHANGELOG.md`) and
+  tests for empty output, removing the pipe entirely. The same idiom appears at
+  two other sites where it fails OPEN rather than closed — the CTRL-CRED-001
+  credential scan of `docker history` and the okf-autoreconcile out-of-tree edit
+  guard — both tracked separately (B-039) because a security control deserves
+  its own review.
 
 - **Bazel can use its sandbox on the runner fabric again (B-025).** The runner
   image shipped no `/dev/shm`, so every sandboxed action died with
@@ -132,6 +173,19 @@ Each entry cross-references:
   the build died before Bazel started. Wrong shape regardless of the 401 — a new
   Bazel release can change action keys and silently invalidate every cache entry
   the example measures. Pinned to 9.2.0, read from the last green run's log.
+### Added
+
+- **The Python and JavaScript SDKs are now installable.** Every published
+  install command was fiction: `pip install corelink-py` 404s on PyPI,
+  `npm install @corelink/client` 404s on npm, and neither package was ever
+  published, so a paying customer could not install a client at all. Both
+  artifacts are now served from the docs domain, which is already public — a
+  PEP 503 static index at `/pypi/simple/` and the npm tarball at
+  `/npm/corelink-client-0.1.0.tgz` — and both were proven by installing them:
+  `pip show corelink-py` reports `0.1.0a1` and `import * as m from
+  "@corelink/client"` resolves. The documented flag is `--extra-index-url`,
+  not `--index-url`: the latter replaces PyPI entirely and the SDK's own
+  `blake3>=0.4` dependency then fails to resolve.
 
 ### Changed
 

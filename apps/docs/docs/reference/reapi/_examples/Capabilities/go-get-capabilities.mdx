@@ -1,10 +1,18 @@
 ---
 id: go-get-capabilities
-title: Go — GetCapabilities
+title: "Go — GetCapabilities: not available"
 sidebar_label: Go · GetCapabilities
 ---
 
-# Go — `Capabilities.GetCapabilities`
+# Go — `Capabilities.GetCapabilities` is not available
+
+`Client.Capabilities` exists on the SDK's type surface, but there is no
+server endpoint behind it. The REAPI v2 route table
+(`crates/corelink-container/src/routes/bazel_v2.rs`) mounts exactly five
+routes — CAS read, CAS write, AC read, AC write, and `findMissingBlobs` —
+and none of them is a capabilities surface. `Capabilities` makes no network
+call; it returns the zero-value `ServerCapabilities` and an error explaining
+why.
 
 ## Code
 
@@ -21,33 +29,26 @@ import (
 
 func main() {
     ctx := context.Background()
-    client, _ := corelink.NewClient(ctx, corelink.Config{
+    client, _ := corelink.NewClient(corelink.Config{
         Endpoint: "https://corelink-api.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
     })
     defer client.Close()
 
-    caps, err := client.Capabilities.Get(ctx)
-    if err != nil {
-        panic(err)
-    }
-    fmt.Println("max_batch_total_size_bytes =", caps.CacheCapabilities.MaxBatchTotalSizeBytes)
-    fmt.Println("digest functions =", caps.CacheCapabilities.DigestFunctions)
-    fmt.Println("compressors =", caps.CacheCapabilities.SupportedCompressors)
+    _, err := client.Capabilities(ctx)
+    fmt.Println(err)
 }
 ```
 
 ## Expected output
 
 ```text
-max_batch_total_size_bytes = 4194304
-digest functions = [SHA256 BLAKE3]
-compressors = [IDENTITY ZSTD]
+corelink: no REAPI Capabilities endpoint exists on this server (bazel_v2.rs mounts only CAS read/write, AC read/write, and findMissingBlobs); use Client.Health for a readiness check instead
 ```
 
-## Common errors
+## What to use instead
 
-| Status | Error taxonomy | Cause |
-| --- | --- | --- |
-| `UNAUTHENTICATED` | `COR_AUTH_PAT_INVALID` | PAT expired. |
-| `UNAVAILABLE` | `COR_NET_TRANSIENT` | Retry with exponential backoff. |
+Use `Client.Health` for a readiness check (see the
+[Health · Check example](../Health/go-check.mdx)). To pick a digest
+function without a negotiation endpoint, see
+[pick a digest function](./go-pick-digest.mdx).

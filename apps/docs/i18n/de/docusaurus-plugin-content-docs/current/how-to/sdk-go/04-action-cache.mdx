@@ -1,8 +1,8 @@
 ---
 id: sdk-go-action-cache
-title: Action Cache lookup & store (Go)
+title: Action Cache (Go)
 sidebar_label: Action Cache
-description: Action Cache support in the Go SDK — and where it actually lives.
+description: Using the REAPI v2 Action Cache from the Go SDK.
 tags: [sdk, go, ac, reapi, how-to]
 ---
 
@@ -15,53 +15,67 @@ tags: [sdk, go, ac, reapi, how-to]
 
 # Action Cache
 
-## The Go SDK does not implement an Action Cache client
+## Wann diese Anleitung verwenden
 
-`corelink-go` (`corelink.Client`, `corelink-go/corelink.go`) exposes exactly
-three data-plane methods — `Put`, `Get`, `Stat` — plus `Close` and
-`IsClientVerifyEnabled`. There is no `ActionCache()` method, no
-`corelink.ActionResult` type, and no `corelink.ErrActionCacheMiss` in this
-SDK today.
+Sie wollen das Ergebnis einer Build-Aktion — Exit-Code, stdout,
+Output-Dateien — anhand eines Action-Digests cachen und vor einer
+erneuten Ausführung nachschlagen.
 
-If you need Action Cache from JS/TS, use `@corelink/client`, which does
-implement it (`client.actionCache.get` / `.put`) — see the
-[JS/TS Action Cache guide](../sdk-js/04-action-cache.mdx).
+## `Client.ActionCache()`
 
-## Working around it from Go today
-
-The Action Cache is a real server surface (`routes/ac.rs`, REAPI v2) even
-though this SDK doesn't wrap it — call it directly over HTTP with the same
-PAT you already configured for the `Client`:
+`corelink.Client` exponiert den REAPI-v2-Action-Cache über
+`Client.ActionCache()`, das einen `*corelink.ActionCacheClient` mit zwei
+Methoden zurückgibt:
 
 ```go
-func getOrRun(ctx context.Context, pat, tenantID, baseURL, actionDigest string) ([]byte, error) {
-    req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-        fmt.Sprintf("%s/v1/ac/%s/%s", baseURL, tenantID, actionDigest), nil)
-    if err != nil {
-        return nil, err
-    }
-    req.Header.Set("Authorization", "Bearer "+pat)
+ac := client.ActionCache()
 
-    resp, err := http.DefaultClient.Do(req)
-    if err != nil {
-        return nil, err
-    }
-    defer resp.Body.Close()
+// Update stores an ActionResult for an action digest.
+err := ac.Update(ctx, actionDigest, corelink.ActionResult{
+    ExitCode: 0,
+    OutputFiles: []corelink.OutputFile{
+        {Path: "bin/app", Digest: outputDigest, IsExecutable: true},
+    },
+})
 
-    if resp.StatusCode == http.StatusNotFound {
-        return runLocallyAndStore(ctx, actionDigest)
+// Get returns a cached ActionResult, or corelink.ErrActionCacheMiss.
+result, err := ac.Get(ctx, actionDigest)
+```
+
+`Update` schreibt nach `PUT /bazel/v2/{instance}/blobs/ac/{hash}/{size}`;
+`Get` liest vom selben Pfad. Beide operieren gegen `Config.Instance` —
+setzen Sie ihn auf der `Config`, die Sie beim Konstruieren des Clients an
+`NewClient` übergeben, genauso wie Sie einen Bazel-Remote-Cache-Instanznamen
+konfigurieren würden.
+
+## Umgang mit einem Cache-Miss
+
+Ein Miss ist kein Fehler, den Sie per String-Vergleich verzweigen. Gleichen
+Sie das Sentinel mit `errors.Is` ab:
+
+```go
+result, err := ac.Get(ctx, actionDigest)
+switch {
+case errors.Is(err, corelink.ErrActionCacheMiss):
+    result, err = runActionAndStore(ctx, ac, actionDigest)
+    if err != nil {
+        return err
     }
-    if resp.StatusCode != http.StatusOK {
-        return nil, fmt.Errorf("ac lookup: unexpected status %d", resp.StatusCode)
-    }
-    return io.ReadAll(resp.Body) // opaque ActionResult bytes — you own the encoding
+case err != nil:
+    return fmt.Errorf("action cache lookup: %w", err)
 }
 ```
 
-The Action Cache stores an opaque byte payload keyed by a 64-hex action
-digest — the server does not parse it, so how you encode/decode the
-`ActionResult` is up to you, same as the JS SDK.
+## Kodierung
 
-## Next steps
+Der Server speichert die Action-Cache-Nutzlast als opakes Byte-Blob — er
+parst es nicht. `ActionCacheClient.Update` und `.Get` besitzen die
+Kodierung selbst (ein privates JSON-Format), sodass `ActionResult` durch
+dieses SDK durchgereicht wird, ohne dass Sie Serialisierungscode
+schreiben müssen. Eine von einem anderen Client geschriebene Nutzlast
+(dem JS/TS-SDK oder einem rohen HTTP-Aufruf) verwendet ihre eigene
+Kodierung und lässt sich hier nicht als `ActionResult` dekodieren.
+
+## Nächste Schritte
 
 - [CI integration](./06-ci-integration.mdx)

@@ -10,7 +10,6 @@ sidebar_label: Go · Check
 >
 > Canonical EN source: `docs/reference/reapi/_examples/Health/go-check.mdx`
 
-
 # Go — `Health.Check`
 
 ## Code
@@ -28,27 +27,27 @@ import (
 
 func main() {
     ctx := context.Background()
-    client, _ := corelink.NewClient(ctx, corelink.Config{
+    client, _ := corelink.NewClient(corelink.Config{
         Endpoint: "https://corelink-api.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
     })
     defer client.Close()
 
-    status, err := client.Health.Check(ctx)
+    status, err := client.Health(ctx)
     if err != nil { panic(err) }
-    fmt.Println("server status =", status)
+    fmt.Println("server ok =", status.OK)
 }
 ```
 
-## Expected output
+## Erwartete Ausgabe
 
 ```text
-server status = SERVING
+server ok = true
 ```
 
-## Common errors
+## Häufige Fehler
 
-| Status | Error taxonomy | Cause |
-| --- | --- | --- |
-| `UNAVAILABLE` | `COR_NET_TRANSIENT` | Server restarting. Retry. |
-| `NOT_SERVING` | `COR_HEALTH_NOT_SERVING` | Draining. Reconnect to another region. |
+| Fehlertyp | Ursache |
+| --- | --- |
+| einfacher Fehler (Netzwerk) | Server nicht erreichbar oder startet neu. Erneut versuchen. |
+| `*corelink.AuthError` | PAT abgelehnt. |
