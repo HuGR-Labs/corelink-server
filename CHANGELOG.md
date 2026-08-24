@@ -64,7 +64,11 @@ Each entry cross-references:
   gate reads the BLOCK, so an item could be verified green under a heading
   describing different work. `backlog_verify.py` now refuses a file where any
   heading and its block disagree, or where a block has no heading above it at
-  all. Proven to fail: reintroducing the swap exits 2 and names both lines.
+  all. The check runs BEFORE the id-density check, since density reasons over
+  the id set and a disagreeing heading means that set is not yet trustworthy.
+  Proven to fail: reintroducing the swap exits 2 and names both lines, and
+  `scripts/test_backlog_verify.sh` gains two cells (a disagreeing pair, a
+  headless block) — its fixtures now carry the heading a real item carries.
 
 
 - **The build-attestation lanes attested an artifact that cannot exist
