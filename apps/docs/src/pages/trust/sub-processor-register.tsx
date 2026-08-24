@@ -109,6 +109,7 @@ const ACTIVE_SUB_PROCESSORS: readonly SubProcessor[] = [
     dpaLabel: "Plausible DPA",
   },
   {
+    num: 9,
     vendor: "Better Stack, Inc. (BetterStack / Statuspage)",
     service:
       "Uptime and status monitoring: synthetic HTTP probes against CoreLink's own public endpoints, and the hosted status page",
