@@ -518,14 +518,42 @@ customer's security review reads, and it currently describes a control that is
 not in force. The change itself was correct and is now recorded in ADR-0072; what
 is missing is that the control table was never updated to match.
 
+**Closed 2026-08-24.** Measured first, then corrected: the `humangr.com` zone
+answers `min_tls_version = 1.2`, and `corelink-api.humangr.com` completes a real
+TLS 1.2 handshake (`ECDHE-ECDSA-CHACHA20-POLY1305`). The claim was false in 25
+places across 13 compliance documents plus the architecture set — every
+ISO/SOC 2/GDPR/LGPD/FedRAMP crosswalk citing CTRL-CRYPTO-001, both
+INV-CONF-IN-FLIGHT rows in the invariant registry, the compliance matrix, and
+`_sprint_creation_contract.md`, which was still ordering every future sprint to
+refuse TLS < 1.3. Live documents were corrected in place; the two FROZEN/AUDITED
+ones (`SOC2-GAP-ANALYSIS`, `DRATA-INTEGRATION-COVERAGE`) keep their audited
+bodies and carry a dated errata instead; the S-02 sprint records keep their
+history with a superseded marker.
+
+The evidence line was corrected too rather than quietly reused: the SSL Labs A+
+scan cited by CTRL-CRYPTO-001 predates the floor change, so the control now says
+so instead of implying the scan covers today's configuration.
+
+`scripts/check_tls_floor.py` + `.github/workflows/tls-floor-drift.yml` close the
+gap ADR-0072 named but could not fix: the floor lives in a Cloudflare dashboard
+setting, so nothing in this repo could see it drift. The check asserts
+**equality** with the documented value — a raise back to 1.3 breaks sccache
+again, a drop below 1.2 makes the compliance documents overstate the control —
+and exits non-zero when it cannot authenticate, because a drift check that
+cannot read the value must never report "no drift".
+
 ```backlog
 id: B-019
 repo: corelink-server
 owner: tl
-status: open
-verify: "grep -q 'TLS 1.3 only' specs/03_architecture/security_model.md"
-verify-means: open while the control table still claims a 1.3-only floor
-last-verified: 2026-08-23
+status: done
+verify: |
+  ! grep -q 'TLS 1.3 only' specs/03_architecture/security_model.md
+verify-means: |
+  done — the control table no longer claims a 1.3-only floor. Red if the claim
+  is reintroduced without the zone actually being raised (and if the zone IS
+  raised, tls-floor-drift.yml goes red first).
+last-verified: 2026-08-24
 ```
 
 ### B-020 — a cron sweep that cannot authenticate logs nothing at all

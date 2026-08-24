@@ -354,7 +354,7 @@ Art. 48: the controller shall **notify the national authority and data subject o
 
 | LGPD Art. | Control | Cross-framework | Evidence |
 |---|---|---|---|
-| Art. 46 (security) | CTRL-CRYPTO-001 (TLS 1.3 in-flight) | SOC 2 CC6.7 | `EVT-037` (SSL Labs A+) |
+| Art. 46 (security) | CTRL-CRYPTO-001 (TLS 1.2 floor / 1.3 preferred (ADR-0072)) | SOC 2 CC6.7 | `EVT-037` (SSL Labs A+ — scan anterior à queda do piso; reexecução pendente) |
 | Art. 46 | CTRL-CRYPTO-002 (at-rest envelope encryption) | SOC 2 CC6.1; ISO A.8.24 | `EVT-005` |
 | Art. 46 | CTRL-ISO-001..005 (tenant isolation) | SOC 2 CC6.2 | `EVT-022` (TLA+ proofs) |
 | Art. 46 | CTRL-AUTH-001..010 (auth + MFA) | SOC 2 CC6.1 | `EVT-025` (pentest) |

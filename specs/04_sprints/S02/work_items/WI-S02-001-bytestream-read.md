@@ -487,7 +487,7 @@ Triggers que automaticamente abrem post-mortem doc:
 | R-WI-004 | REAPI ByteStream protocol edge cases | M | L | LOW | L | LOW | REAPI v2 conformance suite + reject invalid params |
 | R-WI-005 | PAT auth stub diverge S-03 real | L | L | LOW | L | LOW | Stub interface frozen + integration test cobre transition |
 | R-WI-006 | R2 SDK eventual consistency window | L | L | LOW | L | LOW | Strong consistency in R2 documented + retry policy |
-| R-WI-007 | TLS 1.3 only enforcement em CF Edge | L | L | LOW | L | LOW | CF handles transparente + integration test cobre TLS path |
+| R-WI-007 | TLS 1.3 only enforcement em CF Edge **[SUPERSEDIDO 2026-07-19: o piso da zona é TLS 1.2 — ADR-0072]** | L | L | LOW | L | LOW | CF handles transparente + integration test cobre TLS path |
 
 ## 29. Review Checkpoints (HIGH_RISK = code + design + pre-merge + adversarial)
 

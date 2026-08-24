@@ -228,7 +228,7 @@ exception applies.**
 | Req 1 — Network security controls | YES (Stripe CDE) | N/A | CoreLink has no CDE network. |
 | Req 2 — Apply secure configurations | YES (Stripe CDE) | YES (limited: payment-page hosting) | CoreLink hardens Cloudflare Worker only. |
 | Req 3 — Protect stored account data | YES (Stripe CDE) | N/A | CoreLink stores zero CHD. |
-| Req 4 — Protect cardholder data with strong cryptography during transmission over open, public networks | YES (Stripe CDE; iframe TLS) | YES (CoreLink TLS 1.3 to Stripe API) | TLS 1.3 enforced; HSTS preload. |
+| Req 4 — Protect cardholder data with strong cryptography during transmission over open, public networks | YES (Stripe CDE; iframe TLS) | YES (CoreLink TLS 1.3 to Stripe API) | Outbound to Stripe negotiates 1.3. Inbound edge floor is 1.2 since 2026-07-19 (ADR-0072); HSTS preload. |
 | Req 5 — Protect all systems and networks from malicious software | YES (Stripe CDE) | YES (build pipeline + CI scans) | CF Workers runtime is sandbox-isolated. |
 | Req 6 — Develop and maintain secure systems and software | YES (Stripe CDE) | YES (CoreLink secure SDLC; Req 6.4.3 above) | Cosign + Rekor for binaries. |
 | Req 7 — Restrict access by business need-to-know | YES (Stripe CDE) | YES (Stripe dashboard RBAC) | Least-privilege enforced. |

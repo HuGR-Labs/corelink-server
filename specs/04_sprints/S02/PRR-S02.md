@@ -130,7 +130,7 @@ Per spec contract §15 + sprint.md §10. After WI-S02-001..006 implementation th
 | R-S02-007 — PAT auth stub diverges from S-03 real | LOW | Stub interface frozen Lote 9.4; integration test covers transition. | LOW | Tech Lead |
 | R-S02-008 — Probe storm cost without negative cache | MEDIUM | KV TTL 300 s + per-IP rate limit (S-08 soft dep). | LOW | SRE Lead |
 | R-S02-009 — REAPI ByteStream protocol edge cases | LOW | REAPI v2 spec compliance test suite; reject invalid params. | LOW | Engineer |
-| R-S02-010 — TLS termination at CF Edge | LOW | Cloudflare handles; documented; TLS 1.3 only path. | LOW | SRE Lead |
+| R-S02-010 — TLS termination at CF Edge | LOW | Cloudflare handles; documented; TLS 1.3 only path. **[SUPERSEDIDO 2026-07-19: o piso da zona é TLS 1.2 — ADR-0072]** | LOW | SRE Lead |
 | R-S02-011 — Cost regression > 10 % baseline | MEDIUM | Cost regression gate `_spec_contract.md` §14.10; CI benchmark per-op cost. | LOW | Tech Lead |
 | R-S02-012 — Mann-Whitney false positive | MEDIUM | 3 trial replication + Šidák correction (per-test α' ≈ 0.005 685 8); bootstrap CI gate. | LOW | AppSec |
 

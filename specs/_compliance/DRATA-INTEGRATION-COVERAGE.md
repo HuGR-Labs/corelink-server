@@ -12,6 +12,17 @@ owner: "Gustavo Schneiter"
 tags: ["soc2", "tsc-2017", "drata", "evidence-coverage", "r5p"]
 ---
 
+> **ERRATA 2026-08-24 — this document is FROZEN and its body is left as audited.**
+> Where it records **"TLS 1.3"** as an enforced in-transit control
+> (CTRL-CRYPTO-001), that is no longer accurate: the `humangr.com` zone
+> `min_tls_version` was lowered to **1.2** on 2026-07-19 so that
+> `native-tls`/SecureTransport clients (`sccache`) could complete a handshake.
+> Clients capable of 1.3 still negotiate 1.3; the floor is what changed. The
+> decision, its exit condition and its drift risk are recorded in
+> **ADR-0072**, and the live control table in
+> `specs/03_architecture/security_model.md` now states the 1.2 floor. Read
+> both before citing this document's transit control (BACKLOG B-019).
+
 > **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-drata-sync` was absorbed into `corelink-ops` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-ops-absorption.md. Canonical consumer path is now `corelink_ops::*`.
 
 # Drata Integration Coverage — SOC 2 TSC × CoreLink Evidence Streams

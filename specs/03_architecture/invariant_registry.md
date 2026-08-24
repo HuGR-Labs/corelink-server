@@ -121,7 +121,7 @@ Upgrade de severidade requer ADR.
 | ID | Nome | Severidade | Descrição | Enforcement |
 |---|---|---|---|---|
 | **INV-CONF-AT-REST** | Dados em repouso cifrados | HIGH | R2 SSE-S3 em todos os buckets; D1/Neon SSE enabled; BYOK opcional enterprise | CTRL-CRYPTO-002; quarterly config audit (EVT-028) |
-| **INV-CONF-IN-FLIGHT** | TLS 1.3 obrigatório | HIGH | Nenhum endpoint CoreLink aceita < TLS 1.3; mTLS entre Worker/Container bindings | CTRL-CRYPTO-001; SSL Labs A+ check (EVT-037) |
+| **INV-CONF-IN-FLIGHT** | Piso TLS 1.2, 1.3 preferido | HIGH | Nenhum endpoint CoreLink aceita < TLS 1.2 (`min_tls_version=1.2` na zona; era 1.3-only até 2026-07-19 — ADR-0072, motivo: clientes native-tls/SecureTransport como sccache). Todo cliente capaz negocia 1.3. mTLS entre Worker/Container bindings | CTRL-CRYPTO-001; SSL Labs A+ check (EVT-037) — scan anterior à queda do piso |
 
 ### 3.8 Availability (domain AVAIL)
 
@@ -921,7 +921,7 @@ Lote 9.5c expansion: catalogadas todas as invariantes HIGH cuja semantics não j
 | INV-DATA-BILLING-RECONCILE | HIGH | Subsumed por INV-BILLING-RECONCILE-3-LAYER (S-10 PLANNED `billing_atomicity.tla`) |
 | INV-AUDIT-RETENTION | HIGH | Object Lock hardware enforcement; quarterly audit (não invariant runtime) |
 | INV-CONF-AT-REST | HIGH | R2 SSE + D1/Neon SSE config; quarterly config audit (EVT-028); não runtime invariant |
-| INV-CONF-IN-FLIGHT | HIGH | TLS 1.3 enforced em CF Edge + Workers; SSL Labs A+ check (EVT-037); não runtime semantics |
+| INV-CONF-IN-FLIGHT | HIGH | Piso TLS 1.2 no CF Edge (ADR-0072), 1.3 negociado por cliente capaz; SSL Labs A+ check (EVT-037); não runtime semantics |
 | INV-AVAIL-ISOLATION | HIGH | Coberto indiretamente por TLA+ tenant_isolation (5-layer defense) + property test bulkhead PAT-BULKHEAD-001 |
 | INV-BILLING-NO-LOSS | HIGH | Subsumed por INV-BILLING-RECONCILE-3-LAYER + planned `billing_atomicity.tla` (S-10 PLANNED) |
 | INV-BILLING-NO-DUP | HIGH | Idempotency-Key + (tenant_id, request_id) UNIQUE; coberto por `billing_atomicity.tla` planned |

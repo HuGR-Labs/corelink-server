@@ -74,7 +74,7 @@ tags:
 | A.5.11 | Return of assets | Yes | I | Sub-processor offboarding clauses; no HuGR-owned hardware in scope. | — | `legal/sub-processors-templates/` |
 | A.5.12 | Classification of information | Yes | I | 3-tier classification (Public / Internal / Confidential-Tenant-Data) in `privacy_model.md §2`; CTRL-PRIV-001/003. | — | `specs/03_architecture/privacy_model.md §2` |
 | A.5.13 | Labelling of information | Yes | I | `purpose_tag` schema on every audit event (CloudEvents). | — | `specs/03_architecture/privacy_model.md` |
-| A.5.14 | Information transfer | Yes | I | TLS 1.3 enforced; envelope encryption per `compliance/byok-fips-matrix.md`; DPA §transfer clauses. | — | `specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md` |
+| A.5.14 | Information transfer | Yes | I | TLS 1.2 floor / 1.3 preferred (ADR-0072); envelope encryption per `compliance/byok-fips-matrix.md`; DPA §transfer clauses. | — | `specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md` |
 | A.5.15 | Access control | Yes | P | Clerk SSO + MFA + per-tenant DO; BYOK FIPS attestation per provider in progress. | SOC2 GAP-02 | `specs/03_architecture/auth_model.md` |
 | A.5.16 | Identity management | Yes | I | Clerk identity provisioning + WI-S19-001 onboarding flow. | — | `specs/03_architecture/auth_model.md` |
 | A.5.17 | Authentication information | Yes | I | PAT signed (HMAC-SHA256) + no-secret-in-log lint + WebAuthn UV=1. | — | `specs/03_architecture/security_model.md §6` |
@@ -169,10 +169,10 @@ tags:
 | A.8.18 | Use of privileged utility programs | Yes | I | Admin-plane MFA freshness gate + dual-approval for destructive ops + Wrangler / CF API audit. | — | `specs/03_architecture/security_model.md §6 CTRL-AUTH-010 + PAT-DUAL-APPROVAL-001` |
 | A.8.19 | Installation of software on operational systems | Yes | I | Cosign-verified deploys + no dynamic loading + immutable Workers + signed-deploy gate. | — | `specs/03_architecture/security_model.md §6 CTRL-SUPPLY-002/005` |
 | A.8.20 | Networks security | Yes | P | Cloudflare WAF + Access + mTLS edge-to-origin + per-tenant DO; OWASP CRS 4.0 baseline pending. | SOC2 GAP-10 | `specs/_compliance/SOC2-GAP-ANALYSIS.md GAP-10` |
-| A.8.21 | Security of network services | Yes | I | TLS 1.3 enforced + HSTS preload + CAA pin + Cloudflare-managed ruleset. | — | `specs/03_architecture/security_model.md §6 CTRL-CRYPTO-001 + CTRL-NET-001..005` |
+| A.8.21 | Security of network services | Yes | I | TLS 1.2 floor / 1.3 preferred (ADR-0072) + HSTS preload + CAA pin + Cloudflare-managed ruleset. | — | `specs/03_architecture/security_model.md §6 CTRL-CRYPTO-001 + CTRL-NET-001..005` |
 | A.8.22 | Segregation of networks | Yes | I | Per-tenant DO namespace + R2 bucket policy + HMAC tenant prefix + AuthZ check on storage call. | — | `specs/03_architecture/security_model.md §6 CTRL-NET-003 + CTRL-ISO-001..005` |
 | A.8.23 | Web filtering | Yes | I | Container egress allowlist (`*.r2.cloudflarestorage.com` + registries allowlist); admin-plane via Cloudflare Access. | — | `specs/03_architecture/security_model.md §6 CTRL-NET-005` |
-| A.8.24 | Use of cryptography | Yes | P | TLS 1.3 + AES-256-GCM at rest + envelope encryption per-tenant + annual key rotation; per-provider BYOK FIPS attestation in progress. | SOC2 GAP-02 | `specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md` |
+| A.8.24 | Use of cryptography | Yes | P | TLS 1.2 floor / 1.3 preferred (ADR-0072) + AES-256-GCM at rest + envelope encryption per-tenant + annual key rotation; per-provider BYOK FIPS attestation in progress. | SOC2 GAP-02 | `specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md` |
 | A.8.25 | Secure development life cycle | Yes | I | Schema validation + property tests + TLA+ 4 INV-level + ADR + sprint preflight reviews. | — | `specs/03_architecture/security_model.md §6 CTRL-INPUT-001..004 + CTRL-FORMAL-001` |
 | A.8.26 | Application security requirements | Yes | I | OWASP ASVS L2/L3 per-surface map + pentest SOW + property tests. | — | `specs/_audits/sealed/pentest/SOW-S20-EXTERNAL-PENTEST.md` |
 | A.8.27 | Secure system architecture and engineering principles | Yes | I | STRIDE/LINDDUN + threat-model per WI HIGH_RISK + failure_modes.md FM-XXX taxonomy. | — | `specs/03_architecture/failure_modes.md` |
