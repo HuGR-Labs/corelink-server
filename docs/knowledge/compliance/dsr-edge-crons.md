@@ -9,8 +9,8 @@ source_files:
   - apps/signup-worker/src/lib/erase-auth-key.ts
   - apps/signup-worker/src/index.ts
 source_blobs:
-  - apps/signup-worker/src/index.ts@583e09443c5d7e4fd5986195119c77b06536cebf
-checkpoint_sha: "94bbcd5eb6cf97bf962cdc3bffe8bd58eac30c4b"
+  - apps/signup-worker/src/index.ts@e6af410e8fe11c4b47ee2bbbb2c1c1f91c0d373d
+checkpoint_sha: "4d73badd70b5e791172b44715da3e34b1b654b68"
 provenance: "AUTHORED"
 tags: ["dsr", "gdpr", "erasure", "cron", "queue", "scheduled", "pat", "compliance", "worker-edge"]
 timestamp: "2026-06-27T00:00:00Z"
@@ -24,7 +24,7 @@ This control is the **edge-plane scheduler for GDPR Art.17 erasure + credential 
 
 # How it works
 
-- **Hourly Cron Trigger drives four independent sweeps.** The `scheduled()` handler computes `nowMs` once and fires the DSR verify sweep, the PAT scrub, the S-09 audit-chain drain, AND the S-09 offsite audit ARCHIVE under separate `ctx.waitUntil(...)`, each `.catch()`-isolated so one failing sweep never aborts the others (`apps/signup-worker/src/index.ts:136-220`). (This concept owns the first two; the audit-drain arm lives in the sibling `audit_drain_cron.ts` and the archive arm in `audit_archive_cron.ts`. The archive is a SEPARATE sweep from the drain by design — it only ever touches rows the drain has already sealed, so an R2 outage can never abort or corrupt a D1 seal.) The runtime that hosts these three handlers is the SAME signup-worker whose `route()` fetch table now also serves the runner GitHub-App install flow (`/install/github/*`) — those synchronous request routes were interleaved ahead of the queue/scheduled handlers, which is what shifted this concept's `index.ts` line anchors under `e6b6dee9`; the cron/queue plane is otherwise untouched by the install-flow addition.
+- **Hourly Cron Trigger drives four independent sweeps.** The `scheduled()` handler computes `nowMs` once and fires the DSR verify sweep, the PAT scrub, the S-09 audit-chain drain, AND the S-09 offsite audit ARCHIVE under separate `ctx.waitUntil(...)`, each `.catch()`-isolated so one failing sweep never aborts the others (`apps/signup-worker/src/index.ts:136-228`). (This concept owns the first two; the audit-drain arm lives in the sibling `audit_drain_cron.ts` and the archive arm in `audit_archive_cron.ts`. The archive is a SEPARATE sweep from the drain by design — it only ever touches rows the drain has already sealed, so an R2 outage can never abort or corrupt a D1 seal.) The archive arm logs a SECOND, dedicated WARN whenever that sweep quarantined rows, rather than folding the count into its routine `ok=true` line (`apps/signup-worker/src/index.ts:217-221`): a quarantined row is permanently outside the offsite evidence copy, and this cron plane's standing rule is that a sweep whose outcome is not ordinary must never look like one with nothing to report. The runtime that hosts these three handlers is the SAME signup-worker whose `route()` fetch table now also serves the runner GitHub-App install flow (`/install/github/*`) — those synchronous request routes were interleaved ahead of the queue/scheduled handlers, which is what shifted this concept's `index.ts` line anchors under `e6b6dee9`; the cron/queue plane is otherwise untouched by the install-flow addition.
 - **DSR verify sweep is gated on the D1 binding.** `runDsrVerifySweep` runs only when `env.CONFIG_DB` is bound; otherwise the sweep's `ctx.waitUntil` is skipped entirely at the `scheduled()` seam (`apps/signup-worker/src/index.ts:139-162`).
 - **24h SLA enumeration from the load-bearing `dsr_requested` anchor.** The sweep's primary source is `SELECT dsr_id, tenant_id, requested_at FROM dsr_requested WHERE status = 'requested' AND requested_at <= ?1`, where `?1 = nowMs - DEADLINE_MS` (24h), catching DSRs that failed before any tombstone and so have no `dsr_erasure_log` row (`apps/signup-worker/src/webhooks/dsr_verify_cron.ts:175-181`, `apps/signup-worker/src/webhooks/dsr_verify_cron.ts:156-159`, `apps/signup-worker/src/webhooks/dsr_verify_cron.ts:66`).
 - **Legacy second source + dedupe.** A second query over `dsr_erasure_log` (bounded by a 7-day look-back window) catches DSRs that produced ≥1 tombstone, and the two sets are merged by `dsr_id` with the `dsr_requested` anchor winning as the true SLA clock (`apps/signup-worker/src/webhooks/dsr_verify_cron.ts:192-199`, `apps/signup-worker/src/webhooks/dsr_verify_cron.ts:201-242`).
@@ -58,7 +58,7 @@ This control is the **edge-plane scheduler for GDPR Art.17 erasure + credential 
 
 # Citations
 
-1. `scheduled()` handler drives the four hourly sweeps (DSR verify + PAT scrub + audit-drain + audit-archive), `.catch()`-isolated under `waitUntil`: `apps/signup-worker/src/index.ts:136-220`; DSR sweep gated on `CONFIG_DB`: `apps/signup-worker/src/index.ts:139-162`.
+1. `scheduled()` handler drives the four hourly sweeps (DSR verify + PAT scrub + audit-drain + audit-archive), `.catch()`-isolated under `waitUntil`: `apps/signup-worker/src/index.ts:136-228`; DSR sweep gated on `CONFIG_DB`: `apps/signup-worker/src/index.ts:139-162`.
 2. `queue()` handler dispatches on `batch.queue` → `handleErasureQueueBatch` / `handleErasureDlqBatch`: `apps/signup-worker/src/index.ts:105-122`.
 3. 24h SLA enumeration from `dsr_requested` (load-bearing anchor): `apps/signup-worker/src/webhooks/dsr_verify_cron.ts:175-181`; deadline `nowMs - DEADLINE_MS` + the 24h constant: `apps/signup-worker/src/webhooks/dsr_verify_cron.ts:156-159`, `apps/signup-worker/src/webhooks/dsr_verify_cron.ts:66`.
 4. No-lower-bound on the anchor query (stuck-DSR breach detection): `apps/signup-worker/src/webhooks/dsr_verify_cron.ts:161-181`.
