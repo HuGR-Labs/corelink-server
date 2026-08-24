@@ -1796,30 +1796,40 @@ happen again. The fix directions are a partition lease so two drains cannot over
 or moving the seal after the CAS so a loser writes nothing. Either is a real change
 to the integrity path and wants its own design pass, not a patch.
 
-**Design pass done, implementation awaiting review (2026-08-24):**
-`docs/design/2026-08-24-audit-drain-partition-lease.md`. It picks a per-partition
-drain **lease** (serialise drains) over seal-after-CAS (which breaks the
-sealed-tail crash-recovery invariant — analysed in the doc), keeping the existing
-seal→CAS→drift logic untouched (it is correct for a single writer; the lease
-supplies the single-writer precondition the byte-identity claim always needed).
-Specifies the additive `audit_drain_lease` migration, the atomic
-`ON CONFLICT … WHERE expires_ms < now` acquire, TTL/crash-recovery, and a
-validation plan that does not pretend the pure-function drain harness can prove
-D1 concurrency (a prod dup-sequence probe is the real proof). Left OPEN
-deliberately: this mutates the audit **integrity** path with no CI-provable test,
-so it is specified for review before it lands, not landed on a watch-and-see.
+**Implemented flag-OFF (2026-08-24).** Design v2 in
+`docs/design/2026-08-24-audit-drain-partition-lease.md` (revised after a cold
+review found v1's bare TTL lease still forked — it added the mandatory seal-loop
+**fence**). The landed code (`crates/corelink-container/src/routes/audit_drain.rs`
++ migration `0101_audit_drain_lease.sql`): a per-`(tenant, region)` lease
+serialises drains, and — crucially — a seal-loop fence makes a holder stop writing
+at its own lease expiry (`now_ms >= my_lease_expires_ms` before each `write_seal`
+→ seal the prefix, do NOT advance the head, return `Fenced` → a re-drain resumes
+from the sealed tail, the proven crash-recovery path). This is what closes the
+TTL-steal fork the CAS could not (the CAS is post-seal). Gated behind
+`AUDIT_DRAIN_LEASE_ENABLED` (default off): merging is inert; the fence logic is
+unit-tested with teeth (a clock crossing the expiry mid-seal, asserting only the
+prefix is written and the head is not advanced). Cold-reviewed by me against the
+diff — release on every exit path incl. CF-6 fail-closed, acquire SQL consistent
+with the proven `advance_head_cas` bind pattern, migration additive. The prod
+ENABLE (after the concurrency probe) is B-043.
 
 ```backlog
 id: B-038
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  grep -q "byte-identical to that drain" crates/corelink-container/src/routes/audit_drain.rs
+  ! grep -q "byte-identical to that drain" crates/corelink-container/src/routes/audit_drain.rs
 verify-means: |
-  open while the drift path still justifies its no-op with the byte-identity claim.
-  Goes red once the drain either serialises partitions or seals after the CAS, at
-  which point the comment and the assumption both go away.
+  done — the drift path no longer justifies its no-op with the byte-identity
+  claim; the drain now serialises partitions with a per-partition lease and a
+  seal-loop fence (the fence is what actually closes the TTL-steal fork the cold
+  review found). Reopens if that comment/assumption returns (the fence removed).
+
+  SHIPS FLAG-OFF: gated behind `AUDIT_DRAIN_LEASE_ENABLED` (default off), so the
+  code is inert in prod until the concurrency probe validates it and an owner
+  flips it on — tracked as B-043, so this "done" is the code fix, not the prod
+  activation.
 last-verified: 2026-08-24
 ```
 
@@ -2006,5 +2016,41 @@ verify-means: |
   check here could only ever report the API failure, never the fact. The first
   version I wrote hid exactly that behind a `!`, turning "I could not look" into
   "confirmed". A check that cannot see must say so, not guess.
+last-verified: 2026-08-24
+```
+
+### B-043 — enable the audit-drain lease in prod after a concurrency probe
+
+The lease + seal fence that closes the [B-038] audit-chain fork recurrence is
+merged but ships **flag-OFF** (`AUDIT_DRAIN_LEASE_ENABLED` unset), so prod is not
+yet protected — the fork can still recur until the flag is on. It is deliberately
+inert because the drain is the audit **integrity** path and the concurrency
+correctness is not CI-provable (the drain's unit harness is pure-function; no test
+drives D1). Before enabling:
+
+1. Deploy the image carrying the lease code + apply migration `0101_audit_drain_lease.sql`
+   through the ledger (additive; creates `audit_drain_lease`).
+2. Run the prod **duplicate-sequence probe** from the design doc §Validation: fire
+   two `/_internal/audit/drain` calls at one seeded synthetic partition within the
+   same second, assert zero duplicate `(tenant, region, sequence_number)` rows and
+   exactly one `Sealed` + one `Leased`. Confirm the D1 `RETURNING`-on-`ON CONFLICT`
+   acquire semantics behave on D1's engine (open question in the design).
+3. Set `AUDIT_DRAIN_LEASE_ENABLED=1` on the container, roll, and watch the drain
+   summary for `partitions_leased` / fenced re-drains under real load.
+
+Until then the code is correct-but-inert — tracked here so it is not a silent
+built-but-unreachable loose end.
+
+```backlog
+id: B-043
+repo: corelink-server
+owner: owner
+status: open
+verify: manual
+verify-means: |
+  open while the audit-drain lease ships flag-OFF in prod. Closes when
+  AUDIT_DRAIN_LEASE_ENABLED is enabled on the prod container after the design's
+  concurrency probe passes. Owner-gated: enabling an unvalidated change on the
+  audit integrity path is worse than the current (bounded, monitored) state.
 last-verified: 2026-08-24
 ```
