@@ -1063,6 +1063,40 @@ verify-means: |
 last-verified: 2026-08-24
 ```
 
+### B-034 — docs CI has six hosted-runner jobs and 2 116 broken links
+
+Fixing the three tests that had docs CI failing early (see the `fix(docs)`
+commit of 2026-08-24) let the rest of the pipeline run for the first time in a
+while, and it surfaced two things the early failure had been masking.
+
+**2 116 broken links.** `lychee` reports them across the built site, including
+`https://corelink-api.humangr.com/` returning 404 from the API reference page.
+The count is not a regression from any recent change; it is what the site has
+been carrying.
+
+**Six jobs on `ubuntu-latest`.** `docs-ci.yml` runs lychee, axe-core (×3),
+lighthouse and the a11y baseline on hosted runners, against this repo's standing
+rule of zero GitHub-Actions spend. They are also the jobs that never ran while
+the early failure short-circuited the workflow, so the spend was invisible.
+
+Both need a decision before this pipeline can be called green: re-home the six
+jobs onto `corelink` (axe/lighthouse need a browser — check the image), and
+either fix or scope the link check, because a gate reporting 2 116 failures
+gates nothing.
+
+```backlog
+id: B-034
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  grep -c "runs-on: ubuntu-latest" .github/workflows/docs-ci.yml | grep -qv '^0$'
+verify-means: |
+  open while docs-ci still schedules hosted jobs; goes red once every job in that
+  workflow runs on the self-hosted fleet
+last-verified: 2026-08-24
+```
+
 ## Needs the owner
 
 These are not mine to do: they need a credential, a permanent deletion, or a
