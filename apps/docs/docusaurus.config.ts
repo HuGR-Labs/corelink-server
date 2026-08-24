@@ -31,7 +31,8 @@ const BASE_URL = "/corelink/docs/";
 const SITE_URL = `${SITE_HOST}${BASE_URL.replace(/\/+$/, "")}`;
 const ORG = "HumanGuardrail";
 const REPO = "corelink-server";
-const EDIT_BASE = `https://github.com/${ORG}/${REPO}/edit/main/apps/docs/`;
+// No edit link: corelink-server is a private repository, so an "Edit this
+// page" URL 404s for every reader on every page.
 
 /**
  * Canonical default statuspage URL (DEBT-016 closure, R-prep wave-24).
@@ -342,7 +343,6 @@ const config: Config = {
         docs: {
           sidebarPath: "./sidebars.ts",
           routeBasePath: "/",
-          editUrl: EDIT_BASE,
           showLastUpdateAuthor: true,
           showLastUpdateTime: true,
           versions: {
@@ -368,7 +368,6 @@ const config: Config = {
               "Engineering deep-dives from the CoreLink team.",
             copyright: `Copyright © ${new Date().getFullYear()} HuGR Labs.`,
           },
-          editUrl: EDIT_BASE,
         },
         theme: {
           customCss: "./src/css/custom.css",
@@ -426,11 +425,6 @@ const config: Config = {
         { to: "/pricing", label: "Pricing", position: "left" },
         { to: "/security", label: "Security", position: "left" },
         {
-          href: `https://github.com/${ORG}/${REPO}`,
-          label: "GitHub",
-          position: "right",
-        },
-        {
           href: "https://humangr.com/corelink",
           label: "Admin",
           position: "right",
@@ -473,8 +467,7 @@ const config: Config = {
         {
           title: "Community",
           items: [
-            { label: "GitHub", href: `https://github.com/${ORG}/${REPO}` },
-            { label: "Edit this site", href: EDIT_BASE },
+            { label: "Contact", href: "mailto:support@humangr.com" },
           ],
         },
       ],
