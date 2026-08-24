@@ -707,16 +707,35 @@ merged PR #1049 with four checks still pending.
 So the repo where a bad merge rolls a container image onto customer jobs has the
 weaker gate.
 
+**Closed 2026-08-24 by corelink-runners PR #499**, which took that repo's
+`scripts/pre-merge-gate-check.sh` from 156 to 475 lines: `--merge` in one process
+(no `&&` for a pipeline's exit status to swallow), `--dry-run`, `--admin-reason`
+refused on draft/pending/conflicting/missing-gate, draft refusal, post-merge state
+confirmed by re-querying GitHub rather than trusting `gh`'s exit code, and
+remote-branch cleanup through the API.
+
+Two checks are REPO-SPECIFIC rather than copied: `REQUIRED_PRESENT` is
+`["gates", "dco"]` there, not `["dco", "gitleaks"]`, because corelink-runners has
+no per-PR gitleaks lane, and `spawn-worker-ci.yml` is excluded as paths-filtered.
+A gate that names a workflow the repo does not run is worse than no gate — it is
+a green that proves nothing.
+
+Verified against that repo's `origin/main` rather than taken on report: 475
+lines, 12 occurrences of `--admin-reason`.
+
 ```backlog
 id: B-023
 repo: corelink-runners
 owner: tl
-status: open
-verify: "test \"$(wc -l < ../corelink-runners/scripts/pre-merge-gate-check.sh 2>/dev/null || echo 0)\" -lt 400"
+status: done
+verify: manual
 verify-means: |
-  open while the runners copy of the gate is materially shorter than the
-  server's, i.e. missing the later defenses. Path is relative to a sibling
-  checkout; a missing checkout reads as still-open, which is the safe direction.
+  done — the runners gate is at parity (475 lines, --merge and --admin-reason
+  present). Re-check from a checkout of that repo:
+    git show origin/main:scripts/pre-merge-gate-check.sh | wc -l
+  Reopens if that copy is truncated back under 400 lines, which is the state
+  that left the repo where a bad merge rolls a container image onto customer
+  jobs carrying the weaker gate.
 last-verified: 2026-08-24
 ```
 
@@ -1081,15 +1100,42 @@ Large relative to the other two repos, which carry none. Needs a merged-vs-
 abandoned sweep. Live worktrees point at some of them, so nothing may be deleted
 blind.
 
+**Closed 2026-08-24, and the item's own framing was wrong.** It read "~115
+branches with no open PR", which reads as abandoned work. Classified against
+GitHub's PR state rather than `git branch --merged` — squash merges destroy
+ancestry, so `--merged` called 141 of 146 unmerged and would have been a useless
+basis for deleting anything:
+
+| | |
+|---|---|
+| branches with a **MERGED** PR | **135** |
+| no PR ever (1-2 commits ahead, 160-415 behind: abandoned WIP) | 9 |
+| open PR | 1 |
+
+The 135 were deleted: their content is in `main` and GitHub keeps the ref
+recoverable from the PR page. Branches checked out in a live worktree were
+excluded by name first — another session held one. The remote went from 146 to
+11.
+
+The 9 without a PR are left alone deliberately. Each is somebody's unmerged work,
+and "no PR" is evidence of never having been proposed, not of abandonment:
+`feat/check-host-w2`, `feat/check-host-w5`, `feat/wp-b1a-entitlements-read`,
+`feat/wp-b1b-lease-detail`, `feat/wp-b1c-usage-multiperiod`,
+`worktree-agent-a8927d57490812036`, `docs/use-scenarios-r3`,
+`proof/f33-measure-wow`.
+
 ```backlog
 id: B-011
 repo: corelink-runners
 owner: tl
-status: open
+status: done
 verify: manual
 verify-means: |
-  lives in corelink-runners; not automatable until [B-012] lands a cross-repo credential
-last-verified: 2026-08-23
+  done — 135 merged-PR branches pruned, remote down to 11. Re-check by comparing
+  `gh pr list --repo HuGR-Labs/corelink-runners --state all --json
+  headRefName,state` against `git ls-remote --heads`. Reopens if the
+  merged-but-undeleted count climbs again, i.e. if nothing prunes on merge.
+last-verified: 2026-08-24
 ```
 
 ---
