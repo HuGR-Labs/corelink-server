@@ -117,6 +117,20 @@ Each entry cross-references:
   rejected the whole file. Converted to a quoted heredoc, which prose cannot
   break. Found by the second rule of the new gate, which runs `bash -n` over
   every tracked shell script — 147 of them, and this was the only dead one.
+- **The changelog gate reported "CHANGELOG.md is not modified" about a modified
+  CHANGELOG.md, and only on large PRs.** `git diff --name-only | grep -qx` under
+  `set -o pipefail` inverts on match: `grep -q` exits at the FIRST hit, `git
+  diff` takes SIGPIPE while still writing the remaining names and exits 141, and
+  pipefail reports the pipeline as failed — so the gate's `if !` fires the error
+  branch precisely when the file IS present. It is a race against the 64 KiB
+  pipe buffer, so it is invisible on small PRs and near-certain on large ones:
+  measured 38 of 40 runs misreporting on this PR's 326-file diff, 0 of 40 after
+  the fix. The check now asks git for the single path (`-- CHANGELOG.md`) and
+  tests for empty output, removing the pipe entirely. The same idiom appears at
+  two other sites where it fails OPEN rather than closed — the CTRL-CRED-001
+  credential scan of `docker history` and the okf-autoreconcile out-of-tree edit
+  guard — both tracked separately (B-039) because a security control deserves
+  its own review.
 
 - **Bazel can use its sandbox on the runner fabric again (B-025).** The runner
   image shipped no `/dev/shm`, so every sandboxed action died with
