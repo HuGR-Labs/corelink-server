@@ -805,9 +805,18 @@ validator". That validator does not exist. A file asserting its own gate is
 exactly the shape that survives review.
 
 Twenty runbook ids are cited from `runbook:` labels in those rules and
-**fourteen have no file**: `RB-AC-CONFORMANCE`, `RB-AC-COST-REGRESSION`,
-`RB-AC-HIT-RATIO`, `RB-AC-LATENCY`, `RB-AC-SLO-BURN`, and `RB-FM-059`, `-060`,
-`-250`, `-253`, `-254`, `-300`, `-303`, `-305`, `-404`. By contrast the three
+**five have no file**: `RB-AC-CONFORMANCE`, `RB-AC-COST-REGRESSION`,
+`RB-AC-HIT-RATIO`, `RB-AC-LATENCY`, `RB-AC-SLO-BURN`.
+
+> **Correction (2026-08-24).** This paragraph first claimed *fourteen*, adding
+> the nine `RB-FM-*` ids (059/060/250/253/254/300/303/305/404). Those exist —
+> in a SECOND runbook root, `specs/05_quality/runbooks/`, under slugged
+> filenames (`RB-FM-059-do-quota-exceeded.md`). The original count came from
+> resolving ids against filenames in one directory. All 124 runbooks declare a
+> front-matter `id:`, so `scripts/validate_alert_runbook_labels.py` resolves by
+> that and falls back to the filename stem. The overcount was mine, and it is
+> exactly the failure this backlog exists to prevent: a number asserted from a
+> partial scan and then quoted as fact. By contrast the three
 runbook pointers in live PagerDuty payloads all resolve — the last dangling one
 was written on 2026-08-24.
 
@@ -819,12 +828,23 @@ is aspirational, in which case the files must say so instead of claiming a gate.
 id: B-027
 repo: corelink-server
 owner: tl
-status: open
-verify: "! grep -rq 'promtool' .github/workflows/"
+status: done
+verify: "grep -rq 'promtool' .github/workflows/"
 verify-means: |
   open while no workflow runs promtool over dashboards/alerts/. Closes when the
   rules are validated and published, or relabelled non-live with the false gate
   claim removed.
+
+  CLOSED by PR #1264 on the second branch of that condition: `alerts-validate.yml`
+  runs `promtool check rules` over all ten files on `corelink` (proven in CI —
+  10 files, 125 rules, and proven able to fail: a corrupted `expr:` exits 1), a
+  new `scripts/validate_alert_runbook_labels.py` asserts every `runbook:` label
+  resolves, and FOUR files carrying a false "validated on PR" header were
+  corrected — one more than this item knew about. Nothing publishes these rules
+  to an Alertmanager, and the workflow header says so in as many words, so a
+  green run cannot be misread as "these alerts are firing". Publishing was never
+  part of this item's stated closure condition; if it is wanted, it needs its own
+  item rather than holding this one open forever.
 last-verified: 2026-08-24
 ```
 
@@ -940,11 +960,21 @@ id: B-029
 repo: corelink-server
 owner: tl
 status: open
-verify: "grep -q 'advisory mode' .github/workflows/load-test-nightly.yml"
+verify: "grep -qE 'advisory mode|self-hosted, Linux, X64' .github/workflows/load-test-nightly.yml"
 verify-means: |
   open while the regression check prints advisory mode instead of comparing
-  against a stored baseline. Closes when it can go red, or when it stops calling
-  itself a regression gate.
+  against a stored baseline, OR while the workflow is pinned to a runner label
+  no runner on the fleet holds. Closes when it can go red, or when it stops
+  calling itself a regression gate.
+
+  PARTIALLY CLOSED by PR #1263: the comparison is real now (proven both ways —
+  exit 2 at +73.9% over a stored baseline, exit 0 at +15.0%, and a failing run
+  does not publish a new baseline). What remains is that the workflow still
+  cannot execute: both jobs are `runs-on: [self-hosted, Linux, X64]`, a label
+  no runner carries, which is why its own header already says the nightly cron
+  was removed. The FIRST predicate was widened rather than left to flip on its
+  own — closing this item on "advisory mode is gone" would have replaced a gate
+  that lied with a gate that is correct and never runs. See B-037.
 last-verified: 2026-08-24
 ```
 
@@ -1165,6 +1195,19 @@ jobs onto `corelink` (axe/lighthouse need a browser — check the image), and
 either fix or scope the link check, because a gate reporting 2 116 failures
 gates nothing.
 
+**Link half closed by PR #1261 (2026-08-24).** Down to zero non-GitHub errors,
+proven by running lychee locally against the real build with the CI's own
+arguments. Real rot was repaired, not hidden: a dead GitHub org path in 43 files
+including every i18n mirror, the moved BLAKE3 paper, the HubSpot security page,
+the ANPD petition URL, and every documented CLI install recipe (see B-036).
+Exclusions were added only for category errors and for dead hosts that already
+carry a dated suppression in `hostname.tracked_dead`, each annotated in
+`apps/docs/lychee.toml` with why it is not a link. The `verify` above is
+deliberately unchanged: it tracks the hosted-runner half, which is still open.
+
+That work also surfaced B-037 — the reason the link count looked survivable is
+that the gate runs authenticated.
+
 ```backlog
 id: B-034
 repo: corelink-server
@@ -1175,6 +1218,88 @@ verify: |
 verify-means: |
   open while docs-ci still schedules hosted jobs; goes red once every job in that
   workflow runs on the self-hosted fleet
+last-verified: 2026-08-24
+```
+
+### B-036 — every documented CLI install recipe was fiction
+
+The installation tutorial and the 10-minute quickstart offered four
+"alternative install paths" for readers who cannot pipe curl to a shell. In all
+four locales, every one of them was wrong: `brew install
+HumanGuardrail/tap/corelink` (neither `HumanGuardrail/homebrew-tap` nor
+`HuGR-Labs/homebrew-tap` exists — both 404), `winget install
+HumanGuardrail.corelink` (never published), and two "release tarball" recipes
+naming a repo that does not exist (`HumanGuardrail/corelink-cli`), a format that
+is not published (`.tar.gz`; the assets are raw binaries) and an architecture
+spelling the release does not use (`arm64` vs `aarch64`).
+
+The primary `curl -fsSL https://corelink-get.humangr.com | sh` path was correct
+throughout, and its installer already normalises uname's `arm64` to the
+published `aarch64` — with a comment explaining that this exact mismatch once
+broke every Apple Silicon Mac. That is why this survived: the working path is
+the one everybody tests.
+
+Fixed in PR #1261 against the real assets on `HuGR-Labs/corelink-cli`, each
+verified 200 anonymously, with the published `.sha256` checked before the binary
+is made executable. The security policy's in-scope list, which named the
+nonexistent Homebrew formula as a distribution surface a researcher could probe,
+was corrected in the same change.
+
+Left open deliberately: nothing gates this. No check installs the CLI the way a
+reader would, so the next rename or release-format change reintroduces it
+silently.
+
+```backlog
+id: B-036
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  ! grep -rq 'HuGR-Labs/corelink-cli/releases' .github/workflows/
+verify-means: |
+  open while no workflow fetches the release assets the MANUAL recipes name.
+  The primary `curl | sh` path is already exercised (e2e-prod.yml,
+  release-cli.yml) — which is precisely why only the manual recipes rotted.
+  Closes when a check downloads the documented assets by name and verifies the
+  published checksum, the same way the tutorial tells a reader to.
+last-verified: 2026-08-24
+```
+
+### B-037 — two gates cannot see what they claim to check
+
+Two independent instances of the same shape, both found on 2026-08-24.
+
+**lychee runs authenticated.** The docs link checker uses a GitHub token, so a
+link into a PRIVATE repo resolves for CI and 404s for every actual reader. Run
+the identical command locally without a token — the customer's view — and the
+same build yields **2 589 GitHub errors that CI reports as OK**. Nearly all are
+the trust-centre and compliance pages citing evidence files under
+`HumanGuardrail/corelink-server`, i.e. the site invites a prospect to read
+audits they cannot open. Two possible resolutions and the item covers both:
+publish what the trust pages cite, or stop citing what cannot be published. What
+is NOT acceptable is the current state, where the gate is green because it holds
+a credential the reader does not.
+
+**Six workflows are pinned to a label no runner holds.** `runs-on:
+[self-hosted, Linux, X64]` appears in six workflow files; the fleet has
+`corelink` (Firecracker/Linux) and `[self-hosted, mac, corelink-builder]`, and
+nothing carries that triple. Those workflows cannot execute. `load-test-nightly`
+documents this in its own header and has had its cron removed; the other five
+have not been checked. A workflow that cannot be scheduled is indistinguishable
+from one that passes, in every view that matters.
+
+```backlog
+id: B-037
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  test "$(grep -rl 'self-hosted, Linux, X64' .github/workflows/*.yml | wc -l | tr -d ' ')" -gt 0
+verify-means: |
+  open while any workflow targets a runner label the fleet does not provide.
+  Covers only the second half; the authenticated-lychee half has no mechanical
+  predicate yet, which is itself the point — write one when the trust-page
+  decision lands.
 last-verified: 2026-08-24
 ```
 
