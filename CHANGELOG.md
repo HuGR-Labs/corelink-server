@@ -24,6 +24,21 @@ Each entry cross-references:
 
 ### Added
 
+- **A workspace lint gate that actually runs (B-033).** `cargo clippy
+  --workspace --all-targets -- -D warnings` lived in exactly one workflow,
+  `cas_foundation.yml`, parked since 2026-08-10 with its cron commented out; its
+  last scheduled run was cancelled and every one before it, back through July,
+  failed. The stated compensation — that per-crate PR lanes cover it — does not
+  hold either: those lanes name **12** crates against **75** under `crates/`.
+  Measured before wiring anything: the workspace is **already clean**, zero
+  warnings under `-D warnings`, cold 8 m 20 s / warm 49 s on the fleet's own
+  hardware. So the gate starts green and exists to keep it that way. It runs on
+  merge to `main` and only when Rust changed — five runners share one machine,
+  and the crate-scoped lanes already cover what a PR touches; what nothing
+  covered was the crate nobody touched.
+
+### Added
+
 - **The audit archiver makes partial progress instead of refusing a forked
   partition forever (B-026).** Eight of 360 chain partitions cannot be archived:
   a 17-minute seal fork on 2026-08-14 (01:43:40–02:00:50 UTC) put 1,505 excess

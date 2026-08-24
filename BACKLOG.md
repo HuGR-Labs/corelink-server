@@ -913,20 +913,34 @@ to the crates a PR's diff actually touches, or a workspace clippy on push-to-mai
 only. Choosing between them is a cost call and belongs in the same PR that
 measures what each would cost on the fabric.
 
+**Closed 2026-08-24.** `.github/workflows/workspace-lint.yml` runs
+`cargo clippy --workspace --all-targets -- -D warnings` on merge to `main`,
+filtered to commits that change Rust, plus dispatch. **Proven on real CI
+hardware before this was claimed**: run 32744738915, PASS in 6 m 54 s.
+
+Measured first, and the measurement was the good news: the workspace is
+**already clean** — zero warnings under `-D warnings`, cold 8 m 20 s / warm 49 s
+locally. The zero is a measurement rather than a silent no-op; a `&Vec<u8>`
+parameter planted in `corelink-hash` produced the expected `ptr_arg` warning and
+was reverted. So the gate starts green and there is no lint debt to pay down.
+
+Deliberately not per-PR: five runners share one machine and one `$HOME`, the
+crate-scoped lanes already lint what a PR touches, and what nothing covered was
+the crate NOBODY touched. No cron either — lint results cannot change without a
+commit.
+
 ```backlog
 id: B-033
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  test "$(grep -rho 'cargo clippy --package [a-z0-9-]*' .github/workflows/*.yml \
-    | awk '{print $4}' | sort -u | wc -l | tr -d ' ')" -lt 84
+  grep -q "clippy --workspace --all-targets" .github/workflows/workspace-lint.yml && \
+  grep -q "branches: \[main\]" .github/workflows/workspace-lint.yml
 verify-means: |
-  exits 0 while fewer workspace members have a per-crate clippy lane than exist
-  in the workspace, i.e. while some crate is linted by nothing on a PR. Starts
-  failing once coverage is closed — by per-crate lanes, or by whatever
-  diff-scoped or push-to-main lane replaces the parked workspace one, in which
-  case this verify is what must be rewritten to match the new mechanism.
+  done — the workspace lint runs on merge to main. Red if the gate is deleted or
+  demoted back to dispatch-only, which is the state that let 63 crates go
+  unlinted.
 last-verified: 2026-08-24
 ```
 
