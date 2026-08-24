@@ -1,6 +1,9 @@
 # Design — serialize audit-chain drains with a partition lease (B-038)
 
-**Status:** design, awaiting review before implementation.
+**Status:** design, awaiting review before implementation. **Revised 2026-08-24
+after a cold review found a critical hole in v1** — a bare TTL lease still forks on
+its steal path, and the CAS does NOT catch it (the CAS is post-seal). v2 adds a
+mandatory seal-loop **fence**; see "Fencing".
 **Owner:** tech lead.
 **Addresses:** BACKLOG `B-038`. Related: `B-026` (the historical fork this recurs
 from), `B-022` (the per-partition archive-lag page that would now catch a fresh
@@ -76,7 +79,22 @@ concurrently. Everything in `drain_partition` is already correct for a **single
 writer** — the seal→CAS order, the sealed-tail resume, the CAS drift-branch (which
 remains correct and useful for the *sequential* crash-then-resume case, where the
 resumed rows genuinely ARE byte-identical). The lease removes the *only* precondition
-the byte-identity claim needed and never had: single-writer-per-partition.
+the byte-identity claim needed and never had: single-writer-per-partition — **but
+only when paired with the seal-loop fence** (a bare TTL lease still forks on its
+steal path; see "Fencing" below). Lease + fence is the chosen mechanism.
+
+### Considered — C: atomic sequence-range reservation
+
+A third option: reserve the sequence range with one CAS *before* sealing, so a
+loser gets a disjoint range and cannot collide, and a crash leaves a benign,
+detectable *gap* rather than a fork. This is a real fix for the same defect and is
+the natural home for a durable fencing token. It is **not** chosen here because it
+is a larger change to the seal/resume model (the resume logic must learn to treat
+a reserved-but-unsealed gap as resumable rather than as tampering), whereas
+lease + wall-clock fence closes the window with no schema change to the chain
+columns and no new resume semantics. Recorded so the option is disposed of
+explicitly rather than silently; revisit it if the wall-clock fence proves
+insufficient under real clock skew.
 
 ## The lease
 
@@ -150,22 +168,68 @@ the TTL.
   Cleanest as a small RAII-ish guard or an explicit `release` before each return;
   given the function's size, a `let outcome = async { … }.await; release; outcome`
   wrapper keeps it single-exit.
-- The existing seal→CAS→drift logic is UNCHANGED. The CAS drift-branch stays as
-  defense-in-depth (a lease TTL expiry under an extraordinarily slow drain could
-  in principle still let a second drain in; the CAS then still refuses to double-
-  advance, and — with the lease making concurrent *sealing* effectively impossible
-  — the byte-identity claim it relies on is now actually true).
+- **Self-fence the seal loop (load-bearing — see "Fencing" below).** Before each
+  `write_seal`, abort if `now_ms() >= my_lease_expires_ms`, returning
+  `Leased`/`incomplete` so a caller re-drains. This is NOT optional polish: a bare
+  TTL lease still forks (a holder that overruns its TTL keeps writing while a
+  stealer writes too). The fence makes a holder provably stop writing at its own
+  expiry, regardless of TTL/`batch_limit` tuning.
+- The seal→CAS order and the CAS drift-branch are otherwise UNCHANGED. The CAS
+  keeps guarding the *sequential* crash-recovery race only (below); it does NOT,
+  and cannot, catch a concurrent-seal fork — it runs AFTER the seals are on disk.
 - The `"byte-identical to that drain's"` comment is rewritten to state the lease
-  guarantee. This is what flips B-038's `verify` (it greps that phrase).
+  + fence guarantee. This is what flips B-038's `verify` (it greps that phrase).
+
+## Fencing — a TTL lease alone is NOT enough
+
+A lease with a TTL but no fence is a lock without a fencing token, and it
+reintroduces the exact B-026 fork on its own steal path:
+
+1. Drain A holds the lease and is *slowly* sealing a large partition (the very
+   B-026 trigger — a 17-minute-wide drain; `write_seal` is one D1 round trip per
+   row).
+2. A's TTL expires **while A is still inside the seal loop**. Drain B steals the
+   now-expired lease.
+3. B's `read_checkpoint` / `read_sealed_tail` are separate, non-atomic
+   D1-over-HTTP reads with no read-your-writes session, so B can read a **stale**
+   checkpoint that does not yet reflect A's in-flight seals. `resolve_resume`
+   keeps that stale head.
+4. A (still running) and B now BOTH `write_seal`. `write_seal`'s `emitted_at IS
+   NULL` guard stops re-sealing the *same* row; it does nothing about two
+   *different* rows getting the same `sequence_number` from different resume
+   points — which is precisely the `attempted@9234 (prev=9233)` vs
+   `committed@9234 (prev=a4c578-orphan)` fork B-026 recorded.
+5. Both drains then run their CAS — but the forked rows are ALREADY on disk. The
+   CAS gates only the head advance. It never un-seals a loser's rows. So "the CAS
+   catches it" is **false** for the seal-then-CAS order — the same reason B-038
+   exists.
+
+With default tuning the window is small (`batch_limit`×per-row-latency ≈ 60s vs a
+5-min TTL), but the lease NEVER enforces that inequality and B-026 proves the
+per-row latency tail can blow it. The **self-fence** closes the window
+deterministically: a holder checks `now_ms() >= my_lease_expires_ms` before every
+`write_seal` and stops, so it cannot still be writing after a stealer takes over —
+no tuning required. (A true fencing token carried into the `write_seal` WHERE
+clause is the heavier alternative; the wall-clock self-check is cheaper and needs
+no schema change.)
+
+Clock caveat: `now_ms()` is per-container wall clock, so cross-container skew
+shifts both the steal boundary and the fence boundary. The fence still holds as
+long as a holder's OWN clock is monotonic within its process (it compares its own
+acquire-time-derived expiry against its own `now_ms()`), which it is — the skew
+affects only WHEN a steal is allowed, not whether a fenced holder stops.
 
 ## Why the CAS is kept, not removed
 
-The lease prevents concurrent drains. The CAS still guards the *sequential*
-crash-recovery race: drain A seals rows, crashes before advancing the head,
-releases nothing; its lease expires; drain B acquires, resumes from the SAME
-sealed tail, computes the SAME seals (now genuinely byte-identical — same single
-writer, same rows, same head), and the CAS lets exactly one head advance. Belt
-and suspenders on the integrity path is correct.
+With the fence in place, the CAS still earns its keep on the *sequential*
+crash-recovery race (a genuinely single-writer sequence, where it is correct):
+drain A seals rows, crashes before advancing the head, releases nothing; its lease
+expires; drain B acquires, resumes from the SAME sealed tail, computes the SAME
+seals (now genuinely byte-identical — same single writer, same rows, same head),
+and the CAS lets exactly one head advance. The fence handles the
+overlap-while-sealing case; the CAS handles the crash-then-resume case; together
+they cover both. Note the CAS alone was never sufficient (that is the defect), so
+it is kept as a companion to the fence, not as the primary guard.
 
 ## Validation plan (no D1 test harness exists)
 
@@ -186,22 +250,50 @@ and suspenders on the integrity path is correct.
    that **zero** duplicate `(tenant, region, sequence_number)` rows appear, and
    that exactly one call reports `Sealed` while the other reports `Leased`.
    Re-run against a seeded synthetic partition, not a live tenant.
-4. The migration is additive and reversible (drop the table); rollout follows the
+   **This probe only reaches the SIMULTANEOUS-invocation case — the one the lease
+   closes outright. It structurally CANNOT provoke a >TTL slow holder, so it does
+   NOT exercise the TTL-steal-while-sealing path.** It proves "the easy case is
+   fine", not fork-freedom.
+4. **Fence unit test (reaches the dangerous path — required).** The self-fence is
+   pure logic (`now_ms() >= my_lease_expires_ms` before each `write_seal`), so it
+   IS unit-testable without D1: drive the seal loop with a clock whose `now_ms`
+   crosses `my_lease_expires_ms` partway through, and assert it aborts to
+   `Leased`/`incomplete` having written only the pre-expiry prefix. This is the
+   test that actually covers the residual fork window; the prod probe cannot.
+5. The migration is additive and reversible (drop the table); rollout follows the
    standard d1-migrations ledger path.
 
 ## What this closes
 
 B-038 closes when the drain either serialises partitions or seals after the CAS.
-This picks serialisation (the lease), so the drift path's byte-identity assumption
-becomes true-by-construction and its justifying comment goes away — which is
-exactly what the item's `verify` detects.
+This picks serialisation (the lease **plus the seal-loop fence** — the lease alone
+is insufficient), so the drift path's byte-identity assumption becomes
+true-by-construction and its justifying comment goes away — which is exactly what
+the item's `verify` detects.
 
 ## Open questions for review
 
-- **TTL value.** 5 min proposed. Too low risks stealing a lease from a genuinely
-  slow (but progressing) drain, re-opening a narrow overlap the CAS still catches;
-  too high wedges a partition after a real crash. Pick against the measured
-  worst-case single-`/drain` wall time.
+- **TTL value.** 5 min proposed. With the self-fence in place a too-low TTL no
+  longer forks (a stolen holder stops writing at its own expiry) — it only causes
+  extra `Leased`/re-drain churn; a too-high TTL wedges a partition after a real
+  crash for up to the TTL. Pick against the measured worst-case single-`/drain`
+  wall time, now for liveness rather than correctness.
+- **`RETURNING` on the `ON CONFLICT DO UPDATE … WHERE` path.** The acquire relies
+  on SQLite emitting ZERO rows from `RETURNING` when the DO-UPDATE `WHERE` is
+  false (a live lease) — correct in upstream SQLite. Confirm D1's SQLite build
+  behaves identically (the planned SQLite unit test proves the semantics but not
+  D1's specific engine; verify once against D1 before trusting acquire detection).
+- **Fairness / starvation.** `read_pending_partitions` has no `ORDER BY` and the
+  sweep breaks on the global `batch_limit`, so a partition consistently last in
+  the DISTINCT order can be budget-starved across ticks (pre-existing, not the
+  lease's fault). The lease marginally worsens the worst case: while one drain
+  holds a slow partition's lease, no OTHER invocation can help it, so its seal
+  latency is bounded below by its own single-writer throughput. Acceptable given
+  B-022 now pages if a partition genuinely stalls, but acknowledge it.
+- **Panic mid-seal.** No async `Drop`, so a panic inside the seal loop skips the
+  release and the lease dangles until TTL (a ≤TTL stall for that partition). The
+  fence bounds the correctness risk to zero regardless; this is purely a liveness
+  cost of a panic, and self-heals on expiry.
 - **Lease table residency.** It lives in the same prod D1 as `audit_outbox`
   (`corelink-prod-d1`); it carries no audit evidence, only coordination state, so
   it is not itself under the 7-year retention regime. Confirm that is acceptable.
