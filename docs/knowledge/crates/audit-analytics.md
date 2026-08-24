@@ -13,7 +13,7 @@ source_files:
   - "crates/corelink-transparency-log/src/lib.rs"
   - "crates/corelink-transparency-log/src/entry.rs"
   - "crates/corelink-transparency-log/src/submit.rs"
-checkpoint_sha: "f1c7a04969e8a90ad67fb47d6b673d4cf480bb36"
+checkpoint_sha: "4b175691cea4ea818e3a98ce5d205004454df18b"
 provenance: "AUTHORED"
 tags: ["crates", "audit", "analytics", "transparency", "cloudevents", "observability"]
 timestamp: "2026-06-26T00:00:00Z"

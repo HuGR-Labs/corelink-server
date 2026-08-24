@@ -17,7 +17,7 @@ source_files:
   - crates/corelink-transparency-log/src/entry.rs
   - crates/corelink-transparency-log/src/submit.rs
   - crates/corelink-transparency-log/src/lib.rs
-checkpoint_sha: "2ea0d499dc45b1b0224d67835689a517fe67b5a0"
+checkpoint_sha: "4b175691cea4ea818e3a98ce5d205004454df18b"
 provenance: "AUTHORED"
 tags: [compliance, audit, transparency, hash-chain, blake3, rekor, sigstore, cloudevents, tamper-evidence, soc2]
 timestamp: "2026-06-26T00:00:00Z"

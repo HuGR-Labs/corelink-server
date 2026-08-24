@@ -6,7 +6,7 @@ source_files:
   - "docs/release/v1.0.0-GA-tag-draft-final.txt"
   - "crates/corelink-container/src/routes/audit_drain.rs"
   - "crates/corelink-container/src/main.rs"
-checkpoint_sha: "fbddf48f72ba793bae24429ad24420e995237ccf"
+checkpoint_sha: "4b175691cea4ea818e3a98ce5d205004454df18b"
 provenance: "AUTHORED"
 tags: ["ops", "release", "ga", "sign-off", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
