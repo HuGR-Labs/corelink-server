@@ -119,7 +119,7 @@ jobs:
           set -euo pipefail
           python3 scripts/okf_index.py
           # Fail the job if the agent touched anything outside the doc trees (safety net).
-          if git diff --name-only | grep -vE '^docs/knowledge/|^docs/internal/okf-wiki/' | grep -q .; then
+          if git diff --name-only | grep -vE '^docs/knowledge/|^docs/internal/okf-wiki/' | grep . >/dev/null; then
             echo "::error::agent edited files outside docs/knowledge — refusing to open a PR"; git diff --name-only; exit 1
           fi
           python3 scripts/validate_okf.py

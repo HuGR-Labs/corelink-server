@@ -37,7 +37,7 @@ assert_good() {
   local out rc
   out="$(python3 "$VAL" --bundle "$FIX/good" --manifest "$NONE" 2>&1)"
   rc=$?
-  if [ $rc -eq 0 ] && printf '%s' "$out" | grep -q 'OKF-CoreLink profile valid'; then
+  if [ $rc -eq 0 ] && printf '%s' "$out" | grep 'OKF-CoreLink profile valid' >/dev/null; then
     ok "good bundle exits 0 (valid)"
   else
     miss "good bundle (exit $rc): $(printf '%s' "$out" | tail -1)" "good"
@@ -53,7 +53,7 @@ assert_bad() {
   local out rc fired
   out="$(python3 "$VAL" "$@" 2>&1)"
   rc=$?
-  if [ $rc -ne 0 ] && printf '%s\n' "$out" | grep -q "^\[$exp\]"; then
+  if [ $rc -ne 0 ] && printf '%s\n' "$out" | grep "^\[$exp\]" >/dev/null; then
     fired="$(printf '%s\n' "$out" | grep '^\[' | tr -d '[]' | tr '\n' ' ')"
     ok "$label fires [$exp]   (all fired: ${fired%% })"
   else

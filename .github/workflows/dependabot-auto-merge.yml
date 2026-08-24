@@ -135,7 +135,7 @@ jobs:
 
           is_security=false
           # Check label.
-          if echo "${LABELS_JSON}" | grep -qE '"security"'; then
+          if echo "${LABELS_JSON}" | grep -E '"security"' >/dev/null; then
             is_security=true
           fi
           # Check title prefix.

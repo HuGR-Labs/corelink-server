@@ -168,7 +168,7 @@ check_dns() {
     # Expect CNAME chain to BetterStack, not a CF IP
     local cname_target
     cname_target=$(dig +short +time=5 +tries=2 CNAME "${host}" 2>/dev/null | head -1 | sed 's/\.$//' || true)
-    if [[ "${cname_target}" == "${bs_cname}" ]] || echo "${resolved}" | grep -q "betteruptime"; then
+    if [[ "${cname_target}" == "${bs_cname}" ]] || echo "${resolved}" | grep "betteruptime" >/dev/null; then
       _pass "${label}: CNAME → ${cname_target:-${resolved}} [BetterStack DNS-only, expected]"
       PASS_COUNT=$((PASS_COUNT + 1))
     else
@@ -267,11 +267,11 @@ check_cert() {
     return
   fi
 
-  if echo "${raw_issuer}" | grep -qi "cloudflare"; then
+  if echo "${raw_issuer}" | grep -i "cloudflare" >/dev/null; then
     _pass "${label}: issuer contains 'Cloudflare' — CF Universal SSL confirmed"
     _info "      issuer: ${raw_issuer}"
     PASS_COUNT=$((PASS_COUNT + 1))
-  elif echo "${raw_issuer}" | grep -qi "let.s encrypt"; then
+  elif echo "${raw_issuer}" | grep -i "let.s encrypt" >/dev/null; then
     _pass "${label}: issuer contains 'Let's Encrypt' — valid for status page"
     _info "      issuer: ${raw_issuer}"
     PASS_COUNT=$((PASS_COUNT + 1))

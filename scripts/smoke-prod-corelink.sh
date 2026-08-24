@@ -244,9 +244,9 @@ HDR_CT_1=$(curl -sS -D - -o /dev/null \
   | grep -i "^content-type:" | head -1 || echo "")
 printf '  health: HTTP %s\n' "$HEALTH_CODE"
 if [[ "$HEALTH_CODE" == "200" ]] \
-   && echo "$BODY" | grep -q '"status"' \
-   && echo "$BODY" | grep -q '"ok"' \
-   && echo "$HDR_CT_1" | grep -qi "application/json"; then
+   && echo "$BODY" | grep '"status"' >/dev/null \
+   && echo "$BODY" | grep '"ok"' >/dev/null \
+   && echo "$HDR_CT_1" | grep -i "application/json" >/dev/null; then
   pass "[1] /health → 200 + JSON + status:ok (extra fields ignored)"
   append_log "- [PASS] [1] /health → 200"
 else
@@ -261,7 +261,7 @@ HDR_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
 HDR_CT=$(curl -sS -D - -o /dev/null \
   --max-time "${TIMEOUT_CURL}" "${API_BASE}/_health" 2>/dev/null \
   | grep -i "^content-type:" | head -1 || echo "")
-if [[ "$HDR_CODE" == "200" ]] && echo "$HDR_CT" | grep -qi "application/json"; then
+if [[ "$HDR_CODE" == "200" ]] && echo "$HDR_CT" | grep -i "application/json" >/dev/null; then
   pass "[2] /_health → 200 + content-type: application/json"
   append_log "- [PASS] [2] /_health → 200 + JSON"
 else
@@ -335,7 +335,7 @@ step "Area (b): Pages deploys"
 log "CHECK [5] GET ${DOCS_URL}"
 DOCS_BODY=$(curl -sS --max-time "${TIMEOUT_CURL}" "${DOCS_URL}" 2>/dev/null || echo "")
 DOCS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time "${TIMEOUT_CURL}" "${DOCS_URL}" 2>/dev/null || true)
-if [[ "$DOCS_CODE" == "200" ]] && echo "$DOCS_BODY" | grep -qi "<html"; then
+if [[ "$DOCS_CODE" == "200" ]] && echo "$DOCS_BODY" | grep -i "<html" >/dev/null; then
   pass "[5] ${DOCS_URL} → 200 + HTML"
   append_log "- [PASS] [5] docs page → 200 + HTML"
 else
@@ -365,7 +365,7 @@ fi
 # [7] TLS chain — docs
 log "CHECK [7] TLS chain: corelink-docs.humangr.com"
 TLS_DOCS=$(tls_verify "corelink-docs.humangr.com")
-if echo "$TLS_DOCS" | grep -q "humangr.com"; then
+if echo "$TLS_DOCS" | grep "humangr.com" >/dev/null; then
   pass "[7] TLS corelink-docs.humangr.com — cert covers humangr.com"
   append_log "- [PASS] [7] TLS corelink-docs.humangr.com"
 else
@@ -376,7 +376,7 @@ fi
 # [8] TLS chain — app
 log "CHECK [8] TLS chain: corelink-app.humangr.com"
 TLS_APP=$(tls_verify "corelink-app.humangr.com")
-if echo "$TLS_APP" | grep -q "humangr.com"; then
+if echo "$TLS_APP" | grep "humangr.com" >/dev/null; then
   pass "[8] TLS corelink-app.humangr.com — cert covers humangr.com"
   append_log "- [PASS] [8] TLS corelink-app.humangr.com"
 else
@@ -409,7 +409,7 @@ for NAME in "${DNS_NAMES[@]}"; do
     # (CF IPs from BetterStack's CDN), not the CNAME itself.  Ticket: smoke-check-14-cname-fix.
     if [[ "$NAME" == "status.corelink.humangr.com" ]]; then
       CNAME_TARGET=$(dig CNAME +short +time="${TIMEOUT_DNS}" "$NAME" 2>/dev/null | head -1 || echo "")
-      if echo "$CNAME_TARGET" | grep -q "betteruptime"; then
+      if echo "$CNAME_TARGET" | grep "betteruptime" >/dev/null; then
         pass "[${CHECK_NUM}] dig CNAME ${NAME} → ${CNAME_TARGET} (DNS-only, BetterUptime)"
         append_log "- [PASS] [${CHECK_NUM}] DNS ${NAME} → BetterUptime CNAME (${CNAME_TARGET})"
       else
@@ -468,9 +468,9 @@ else
     # Expect row present (request_id in response) + chain_hash is a non-empty hex string
     CHAIN_HASH=$(echo "$CHAIN_RESP" | grep -o '"chain_hash":"[^"]*"' | cut -d'"' -f4 || echo "")
     if [[ "$CHAIN_CODE" == "200" ]] \
-       && echo "$CHAIN_RESP" | grep -q "$REQUEST_ID" \
+       && echo "$CHAIN_RESP" | grep "$REQUEST_ID" >/dev/null \
        && [[ -n "$CHAIN_HASH" ]] \
-       && echo "$CHAIN_HASH" | grep -qE '^[0-9a-f]{16,}$'; then
+       && echo "$CHAIN_HASH" | grep -E '^[0-9a-f]{16,}$' >/dev/null; then
       pass "[20] audit chain → 200, row present, chain_hash=${CHAIN_HASH:0:16}..."
       append_log "- [PASS] [20] audit chain → 200 + hash valid"
     else

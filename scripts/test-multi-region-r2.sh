@@ -275,7 +275,7 @@ for entry in "${EXPECTED_BUCKETS[@]}"; do
 
   if [[ "${status}" == "EXISTS" ]]; then
     exists_icon="YES"
-    if echo "${stats}" | grep -qE '^0 '; then
+    if echo "${stats}" | grep -E '^0 ' >/dev/null; then
       notes="empty (provisioned, no objects)"
     elif [[ "${stats}" == "LIST_ERROR" || "${stats}" == "API_ERROR" ]]; then
       notes="probe error — check manually"
@@ -304,7 +304,7 @@ for region in iad sam lhr nrt syd; do
     if [[ "${r}" == "${region}" && "${bucket_status["${bname}"]:-MISSING}" == "EXISTS" ]]; then
       has_bucket="YES"
       stats="${bucket_stats["${bname}"]:-}"
-      if ! echo "${stats}" | grep -qE '^0 '; then
+      if ! echo "${stats}" | grep -E '^0 ' >/dev/null; then
         if [[ "${stats}" != "n/a" && "${stats}" != "LIST_ERROR" && "${stats}" != "API_ERROR" ]]; then
           has_objects="YES"
         fi

@@ -575,7 +575,7 @@ if [[ "$COMPOSITE" != "1" ]]; then
 fi
 # Also fail if any step recorded FAIL.
 for frag in "${STEP_RESULTS[@]}"; do
-    if echo "$frag" | grep -q '"outcome":"FAIL"'; then
+    if echo "$frag" | grep '"outcome":"FAIL"' >/dev/null; then
         exit 1
     fi
 done

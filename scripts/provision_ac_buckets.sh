@@ -106,7 +106,7 @@ echo "Provisioning R2 AC buckets for env=$ENV (5 regions: ${REGIONS[*]})"
 for region in "${REGIONS[@]}"; do
     bucket="corelink-ac-${region}"
     echo "  region=$region bucket=$bucket"
-    if wrangler r2 bucket create "$bucket" --location "$region" 2>&1 | tee /dev/stderr | grep -qiE "already|exists"; then
+    if wrangler r2 bucket create "$bucket" --location "$region" 2>&1 | tee /dev/stderr | grep -iE "already|exists" >/dev/null; then
         echo "    bucket already exists (idempotent)"
     else
         echo "    bucket created"

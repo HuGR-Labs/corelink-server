@@ -144,7 +144,7 @@ jobs:
       - name: Allow breaking change only with `breaking-api-ok` label
         if: steps.base.outputs.has_base == 'true' && steps.diff.outputs.code != '0'
         run: |
-          if echo "$PR_LABELS_JSON" | grep -q '"breaking-api-ok"'; then
+          if echo "$PR_LABELS_JSON" | grep '"breaking-api-ok"' >/dev/null; then
             echo "::warning::breaking API change accepted (label: breaking-api-ok)"
             exit 0
           fi

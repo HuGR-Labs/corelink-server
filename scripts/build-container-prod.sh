@@ -216,7 +216,7 @@ CRED_PATTERNS=(
 )
 CRED_HITS=0
 for pattern in "${CRED_PATTERNS[@]}"; do
-    if echo "$HISTORY_OUTPUT" | grep -qi "$pattern"; then
+    if echo "$HISTORY_OUTPUT" | grep -i "$pattern" >/dev/null; then
         warn "CTRL-CRED-001 VIOLATION: Pattern '$pattern' found in docker history!"
         CRED_HITS=$(( CRED_HITS + 1 ))
     fi

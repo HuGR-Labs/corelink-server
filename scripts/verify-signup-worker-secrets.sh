@@ -72,7 +72,7 @@ fi
 
 MISSING=0
 for name in "${REQUIRED[@]}"; do
-  if printf '%s' "$LIST_JSON" | grep -q "\"${name}\""; then
+  if printf '%s' "$LIST_JSON" | grep "\"${name}\"" >/dev/null; then
     printf '  ok      %s\n' "$name"
   else
     printf '  MISSING %s\n' "$name"

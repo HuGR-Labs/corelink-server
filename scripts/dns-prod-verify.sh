@@ -169,7 +169,7 @@ check_dns() {
     fi
   else
     # DNS-only: check CNAME target matches expected
-    if echo "${resolved}" | grep -q "${expected_target}"; then
+    if echo "${resolved}" | grep "${expected_target}" >/dev/null; then
       echo "[PASS]  ${name}: resolved to ${expected_target} [dns-only]"
       PASS=$((PASS + 1))
     elif [[ "${cname_chain}" == "${expected_target}." ]] || [[ "${cname_chain}" == "${expected_target}" ]]; then

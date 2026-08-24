@@ -187,7 +187,7 @@ TOML
   # Contract: no "Cache errors" reported against the WebDAV backend.
   local cache_errors
   cache_errors=$(printf '%s' "$stats" | grep -iE 'Cache errors' | grep -oE '[0-9]+' | head -1 || echo "")
-  if printf '%s' "$stats" | grep -qiE 'bad protocol version|connection refused|connect error'; then
+  if printf '%s' "$stats" | grep -iE 'bad protocol version|connection refused|connect error' >/dev/null; then
     gated "$surface" "sccache stats" "sccache reported a client connect/TLS error — GATED (known Mac issue)"
   elif [ -n "$cache_errors" ] && [ "$cache_errors" -gt 0 ] 2>/dev/null; then
     fail "$surface" "sccache stats" "sccache reported ${cache_errors} Cache errors against the WebDAV backend"

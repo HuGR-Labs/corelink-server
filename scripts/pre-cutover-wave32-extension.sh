@@ -486,7 +486,7 @@ for item in data:
     local missing_core=""
     local forward_looking_info=""
     for secret in "${CORE_REQUIRED_SECRETS[@]}"; do
-        if ! printf '%s\n' "${bound_secrets}" | grep -qxF "${secret}"; then
+        if ! printf '%s\n' "${bound_secrets}" | grep -xF "${secret}" >/dev/null; then
             missing_core="${missing_core} ${secret}"
         fi
     done
@@ -515,7 +515,7 @@ for item in data:
             done
             [[ "${is_core}" -eq 1 ]] && continue
             # Only note it if also unbound.
-            if ! printf '%s\n' "${bound_secrets}" | grep -qxF "${secret}"; then
+            if ! printf '%s\n' "${bound_secrets}" | grep -xF "${secret}" >/dev/null; then
                 fwd_count=$(( fwd_count + 1 ))
             fi
         done <<< "${all_cf_wrangler_secrets}"

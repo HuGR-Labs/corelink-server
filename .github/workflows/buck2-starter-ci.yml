@@ -285,7 +285,7 @@ jobs:
           unset CORELINK_PAT || true
           # Temporarily override .buckconfig url to trigger auth path.
           # Expect non-zero exit from buck2 (remote cache 401).
-          if buck2 build :hello 2>&1 | grep -qiE "401|unauthorized|auth"; then
+          if buck2 build :hello 2>&1 | grep -iE "401|unauthorized|auth" >/dev/null; then
             echo "OK: got auth error as expected."
           else
             # Build may succeed locally if remote cache is skipped; warn only.
@@ -300,7 +300,7 @@ jobs:
           CORELINK_PAT="invalid_pat_$(date +%s)"
           export CORELINK_PAT
           # Buck2 will attempt remote cache write/read; expect 401 in stderr.
-          if buck2 build :hello 2>&1 | grep -qiE "401|unauthorized|forbidden|auth"; then
+          if buck2 build :hello 2>&1 | grep -iE "401|unauthorized|forbidden|auth" >/dev/null; then
             echo "OK: 401 surfaced as expected with invalid PAT."
           else
             echo "WARN: 401 not detected — remote cache may be gracefully skipped."

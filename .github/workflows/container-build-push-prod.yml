@@ -137,7 +137,7 @@ jobs:
           set -euo pipefail
           BLOB=$(jq -r '([.history[]?.created_by] + [.config.Env[]?]) | join("\n")' "$OCI_DIR/config.json")
           PATTERNS='API_TOKEN|API_KEY|SECRET|PASSWORD|PASSWD|PRIVATE_KEY|ACCESS_KEY|CF_API|STRIPE_|CLERK_|PAGERDUTY|NEON_|DATABASE_URL'
-          if echo "$BLOB" | grep -qiE "$PATTERNS"; then
+          if echo "$BLOB" | grep -iE "$PATTERNS" >/dev/null; then
             echo "::error::CTRL-CRED-001 VIOLATION: a credential pattern is present in the image config/history."
             echo "$BLOB" | grep -iE "$PATTERNS" | sed -E 's/=.*/=<redacted>/' | head
             exit 1
