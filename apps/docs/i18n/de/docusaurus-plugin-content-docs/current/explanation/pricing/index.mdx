@@ -43,14 +43,14 @@ Stripe Checkout (**Solo, Starter, Pro, Max**); eine ist sofort aktivierbar
 **Pro ist die empfohlene Stufe** — sie ist der Anker mit dem besten
 Preis-Leistungs-Verhältnis für ein Team, das Produktions-Builds ausliefert.
 
-| Stufe | Monatspreis | Für wen | Enthaltener CAS-Speicher | Enthaltener Lesedatenverkehr | BYOK | Region-Pin | Aktivierung |
-|---|---|---|---|---|---|---|---|
-| **Free** | $0 | Persönliche Projekte + Evaluierung | 10 GB | 50 GB / Mon. | — | geteilt | Sofort |
-| **Solo** | $15 | Der Einzelentwickler | 50 GB | 500 GB / Mon. | — | 1 Region | Stripe Checkout |
-| **Starter** | $35 | Ein kleines Team | 150 GB | 1.5 TB / Mon. | — | 1 Region | Stripe Checkout |
-| **Pro** ⭐ | $50 | Bestes Preis-Leistungs-Verhältnis — Produktionsteams | 500 GB | 5 TB / Mon. | — | bis zu 2 Regionen | Stripe Checkout |
-| **Max** | $149 | Skalierende Teams, ernsthaftes Volumen | 2 TB | 20 TB / Mon. | optionales Add-on | bis zu 2 Regionen | Stripe Checkout |
-| **Enterprise** | Kontaktieren Sie uns | Multiregion / reguliert / BYOK | Individuell | Individuell | enthalten | alle 4 Regionen | Anfrageformular |
+| Stufe | Monatspreis | Für wen | Enthaltener CAS-Speicher | BYOK | Region-Pin | Aktivierung |
+|---|---|---|---|---|---|---|
+| **Free** | $0 | Persönliche Projekte + Evaluierung | 10 GB | — | geteilt | Sofort |
+| **Solo** | $15 | Der Einzelentwickler | 50 GB | — | 1 Region | Stripe Checkout |
+| **Starter** | $35 | Ein kleines Team | 150 GB | — | 1 Region | Stripe Checkout |
+| **Pro** ⭐ | $50 | Bestes Preis-Leistungs-Verhältnis — Produktionsteams | 500 GB | — | bis zu 2 Regionen | Stripe Checkout |
+| **Max** | $149 | Skalierende Teams, ernsthaftes Volumen | 2 TB | — | bis zu 2 Regionen | Stripe Checkout |
+| **Enterprise** | Kontaktieren Sie uns | Multiregion / reguliert / BYOK | Individuell | enthalten | alle 4 Regionen | Anfrageformular |
 
 Alle Stufen laufen auf derselben Datenebene, demselben SLO-Katalog und
 demselben Audit- und Residenzmodell. Die Unterschiede sind Kontingente,
@@ -64,15 +64,18 @@ BYOK-Einschluss, Regionenanzahl und Support-Stufe — nicht die Funktionalität.
 | BLAKE3-Inhaltsadressierung | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Null-Egress bei Cache-Lesevorgängen | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Audit-Kette (Merkle-Beweise) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| RBAC + Teamkollegen einladen | ✓ (3 Plätze) | ✓ (5 Plätze) | ✓ (10 Plätze) | ✓ (50 Plätze) | ✓ (100 Plätze) | unbegrenzt |
-| BYOK (kundenverwalteter KEK) | — | — | — | — | Add-on | enthalten |
+| RBAC + Teamkollegen einladen | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| BYOK (kundenverwalteter KEK) | — | — | — | — | — | enthalten |
 | Region-Pin (Residenz) | geteilt | 1 von 4 | 1 von 4 | bis zu 2 | bis zu 2 | alle 4 |
 | Multiregion-Failover | — | — | — | ✓ | ✓ | ✓ |
 | DPA (Auftragsverarbeitungszusatz) | Clickwrap | Clickwrap | Clickwrap | Clickwrap | Clickwrap | verhandelt |
 | Support | Community | E-Mail (nach bestem Bemühen) | E-Mail (2 Werktage) | E-Mail (1 Werktag) | vorrangige E-Mail (1 Werktag) | dediziert (1 Std.) |
 | Verfügbarkeits-SLO | nach bestem Bemühen | 99.5% | 99.5% | 99.9% | 99.9% | 99.95% |
-| Aufbewahrung des Audit-Protokolls | 7 Tage | 30 Tage | 30 Tage | 90 Tage | 90 Tage | 1 Jahr+ |
-| Compliance-Berichte (SOC 2, ISO) | — | — | — | Zusammenfassung | Zusammenfassung | vollständig + individuell |
+
+RBAC (Rollen owner / admin / member / viewer) regelt, wer auf jeder Stufe
+Teamkollegen einladen oder entfernen kann; keine Stufe begrenzt, wie viele
+Teamkollegen Sie einladen können. Keine Self-Service-Stufe bietet BYOK an —
+das ist eine ausschließliche Enterprise-Funktion.
 
 ## Wie die Rechnung berechnet wird
 
@@ -85,7 +88,7 @@ Grundgebühr:
 invoice = base_fee + optional_add_ons
 ```
 
-Ein Mandant, der 100 % seines Speicher- oder Lesekontingents erreicht, erhält
+Ein Mandant, der 100 % seines CAS-Speicherkontingents erreicht, erhält
 ein `429 Too Many Requests` (mit einem Upgrade-CTA), bis der nächste
 Kalendermonat zurücksetzt oder bis der Mandanten-Administrator ein Upgrade der
 Stufe durchführt. Die Obergrenze ist eine Funktion, keine Strafe — sie hält den
@@ -101,10 +104,6 @@ verschoben.
 | Max | $149 | harte Obergrenze — Upgrade zum Fortfahren |
 | Enterprise | Kontaktieren Sie uns | verhandelt |
 
-Das BYOK-Add-on für Max kostet pauschal $99/Monat und bietet eine
-mandantenbezogene DEK-Umschlüsselung (Wrapping) durch einen kundengesteuerten
-KEK in AWS KMS, GCP KMS oder Azure Key Vault.
-
 ## Warum es keinen Egress-Posten gibt
 
 Cloud-Egress ist bei den meisten Anbietern von verwaltetem Cache der
@@ -112,8 +111,7 @@ dominierende Posten auf einer Rechnung mit intensivem CI. CoreLink speichert
 Cache-Inhalte auf Cloudflare R2, das für Egress bei Lesevorgängen ins
 öffentliche Internet und in das Netzwerk von Cloudflare nichts berechnet.
 CoreLink gibt diese Eigenschaft an die Kunden weiter: kostenpflichtige Stufen
-berechnen Speicher und *Lese*-Operationen pro GB (eine Amortisierung pro
-Operation), nicht *Bytes* pro GB, die den Cache verlassen.
+berechnen CAS-Speicher, nicht Bytes pro GB, die den Cache verlassen.
 
 Das ist der strukturelle Grund, warum die CoreLink-Rechnung bei hohem
 Lesevolumen typischerweise ein Vielfaches kleiner ist als das S3-gestützte,
@@ -126,10 +124,10 @@ Skalierungspunkten durch.
 CoreLink berechnet keine Gebühr pro Entwicklerplatz. Die Cache-Last korreliert
 mit dem Build-Volumen und der CI-Parallelität, nicht mit der Anzahl der Plätze,
 und eine Preisgestaltung pro Platz schafft einen perversen Anreiz, den nächsten
-Ingenieur nicht in den Cache aufzunehmen. Die Plätze sind pro Stufe (oben)
-gedeckelt, als Missbrauchsschutz-Maßnahme; sie sind keine Abrechnungsdimension.
-
-Enterprise entfernt die Obergrenze vollständig.
+Ingenieur nicht in den Cache aufzunehmen. CoreLink begrenzt auf keiner Stufe,
+wie viele Teamkollegen Sie einladen können; der Zugriff wird durch
+rollenbasierte Berechtigungen (owner / admin / member / viewer) geregelt,
+nicht durch eine Platzanzahl.
 
 ## Warum es keinen Compute-/CPU-Posten gibt
 
@@ -143,11 +141,10 @@ Rechenleistung.
 
 Die Free-Stufe ist für zwei Fälle konzipiert:
 
-1. **Einzelentwickler**, die persönliche Monorepos betreiben. 10 GB und
-   50 GB/Mon. an Lesevorgängen reichen für einen typischen persönlichen
-   Bazel-Build mit täglichen inkrementellen grünen Builds. (Ein
-   Einzelentwickler, der darüber hinauswächst, steigt in die **Solo**-Stufe zu
-   $15/Mon. auf.)
+1. **Einzelentwickler**, die persönliche Monorepos betreiben. 10 GB
+   CAS-Speicher reichen für einen typischen persönlichen Bazel-Build mit
+   täglichen inkrementellen grünen Builds. (Ein Einzelentwickler, der darüber
+   hinauswächst, steigt in die **Solo**-Stufe zu $15/Mon. auf.)
 2. **Evaluierung durch größere Teams**, die CoreLink neben ihrem bestehenden
    Cache in eine einzelne CI-Pipeline einbinden möchten, für einen
    zweiwöchigen Schattenvergleich.
@@ -159,23 +156,23 @@ Solo, Starter oder Pro auf.
 
 ## Was Enterprise Ihnen bietet, das Max nicht bietet
 
-- **BYOK-Einschluss** (Max kann es als Add-on kaufen; Enterprise hat es).
+- **BYOK-Einschluss** — Enterprise ist die einzige Stufe, die es anbietet;
+  keine Self-Service-Stufe hat ein BYOK-Add-on.
 - **Alle vier Regionen** gleichzeitig, nicht nur zwei.
 - **Verhandelter DPA** statt Clickwrap, einschließlich individueller
   Datenverarbeitungssprache für regulierte Branchen (Finanzdienstleistungen,
   Gesundheitswesen, verteidigungsnah).
-- **Individuelle Aufbewahrung** für Audit-Protokolle und Compliance-Berichte —
-  eine mehrjährige Aufbewahrung ist zu verhandelten Bedingungen verfügbar.
+- **Verhandelte Cache-Aufbewahrung** von bis zu 730 Tagen, gegenüber den
+  standardmäßigen 365 Tagen bei Max.
 - **Dedizierter Support** mit einem SLO von 1 Stunde während der
   Geschäftszeiten, mit der Zuweisung eines benannten Technical Account Managers
   oberhalb einer Nutzungsschwelle.
-- **Individuelle Kontingente** für Speicher, Lesevorgänge und Plätze.
+- **Individuelle Speicherkontingente.**
 
 Enterprise ist die richtige Wahl, wenn mindestens eine der folgenden Bedingungen
 zutrifft: Die Residenzanforderungen übersteigen zwei Regionen; die
-Sicherheitsprüfung erfordert BYOK; die Prüfer des Kunden verlangen eine
-mehrjährige Aufbewahrung; die CI-Flotte des Kunden übersteigt in Spitzenzeiten
-die Kontingente von Max.
+Sicherheitsprüfung erfordert BYOK; die CI-Flotte des Kunden übersteigt in
+Spitzenzeiten die Kontingente von Max.
 
 ## Rückverfolgbarkeit
 

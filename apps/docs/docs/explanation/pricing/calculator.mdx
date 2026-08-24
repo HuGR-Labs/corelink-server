@@ -1,7 +1,7 @@
 ---
 title: "Cost calculator"
 slug: "/pricing/calculator"
-description: "Self-serve cost estimate for CoreLink given CAS volume, read traffic, BYOK, hit rate, and region pin. Transparent math, copy-pasteable."
+description: "Self-serve cost estimate for CoreLink given CAS storage volume, BYOK, hit rate, and region pin. Transparent math, copy-pasteable."
 draft: true
 cross_functional_review: TBD
 pending_signoff:
@@ -30,7 +30,7 @@ alternatives, see [vs. alternatives](./comparison).
 
 ## Inputs
 
-The calculator takes six inputs. All of them are observable from any
+The calculator takes five inputs. All of them are observable from any
 existing cache (you do not need to run CoreLink first to estimate the
 bill).
 
@@ -38,7 +38,6 @@ bill).
 |---|---|---|---|
 | `T` | Tenants | count | 1–50 |
 | `S_w` | Monthly CAS write volume | GB / mo | 5–5000 |
-| `S_r` | Monthly CAS read volume | TB / mo | 0.05–50 |
 | `byok` | BYOK provider | `none` / `aws` / `gcp` / `azure` | — |
 | `h` | Cache hit rate | fraction `[0, 1]` | 0.5–0.95 |
 | `R` | Region pin | count of regions | 1–4 |
@@ -48,12 +47,11 @@ bill).
   orgs that want billing isolation per product have `T > 1`.
 - `S_w` is monthly **net** CAS storage growth after dedup and eviction.
   Bazel monorepos at steady state are typically 10–200 GB; large
-  Buck2 monorepos run 500 GB to a few TB.
-- `S_r` is monthly **read** volume (TB), which scales with CI run
-  volume × per-run cache lookup × per-lookup blob size. Hit rate
-  matters here because misses do not generate reads.
-- `byok` toggles the BYOK add-on on Max. Free / Solo / Starter / Pro do
-  not support BYOK; Enterprise includes BYOK at no extra charge.
+  Buck2 monorepos run 500 GB to a few TB. CAS storage is the only
+  axis CoreLink meters — there is no separate read-volume quota.
+- `byok` selects whether the tenant needs BYOK. No self-serve tier
+  offers BYOK; any `byok` value other than `none` routes the
+  calculator to the Enterprise inquiry form.
 - `h` is the hit rate. The calculator does **not** charge for cache
   misses (a miss is a `404` and the customer's runner builds locally),
   but `h` is included so the calculator can also report inner-loop
@@ -66,30 +64,28 @@ bill).
 
 ## Formula
 
-At v0.1 every tier is **hard-capped** at its included quotas — there is
-no metered overage. The calculator's job is therefore to find the
-smallest tier whose included quotas cover your usage, and report that
-tier's flat base fee. The exact monthly invoice is:
+At v0.1 every tier is **hard-capped** at its included CAS storage
+quota — there is no metered overage. The calculator's job is
+therefore to find the smallest tier whose included storage quota
+covers your usage, and report that tier's flat base fee. The exact
+monthly invoice is:
 
 ```
-# 1. Resolve effective storage and reads after replication and dedup.
+# 1. Resolve effective storage after replication and dedup.
 S_w_billable = S_w × replication_factor(R, tier)
-S_r_billable = S_r × 1024                  # convert TB → GB for billing
 
-# 2. Resolve included quotas by tier (see table below).
+# 2. Resolve the included storage quota by tier (see table below).
 S_w_included = INCLUDED_STORAGE_GB[tier] × T
-S_r_included = INCLUDED_READS_GB[tier]   × T
 
 # 3. Hard cap: usage above the included quota does NOT bill — it 429s.
 #    The calculator flags it so you pick the next-larger tier instead.
-fits = (S_w_billable <= S_w_included) AND (S_r_billable <= S_r_included)
+#    BYOK is not sold on any self-serve tier, so a `byok` request that
+#    isn't "none" never fits a priced tier.
+fits = (S_w_billable <= S_w_included) AND (tier = "enterprise" OR byok = "none")
 
-# 4. Resolve add-ons (BYOK on Max only; included on Enterprise).
-addon_byok = (BYOK_FEE[tier] if byok != "none" else 0)
-
-# 5. Resolve base fee. Free is $0; Solo / Starter / Pro / Max are flat;
+# 4. Resolve base fee. Free is $0; Solo / Starter / Pro / Max are flat;
 #    Enterprise is negotiated (calculator returns a quote-request CTA).
-invoice = BASE_FEE[tier] × T + addon_byok          # only when `fits`
+invoice = BASE_FEE[tier] × T          # only when `fits`
 ```
 
 `replication_factor(R, tier)` is:
@@ -101,76 +97,75 @@ invoice = BASE_FEE[tier] × T + addon_byok          # only when `fits`
 | 3 | n/a | n/a | n/a | n/a | n/a | 3.0 |
 | 4 | n/a | n/a | n/a | n/a | n/a | 4.0 |
 
-Reads are not replicated for billing (a read serves one runner, not
-all regions).
-
 ## Constants
 
 These are the rate-card constants the formula references. Every priced
-tier is **hard-capped** at v0.1 (no metered overage); the `BYOK_FEE`
-applies only on Max.
+tier is **hard-capped** at v0.1 (no metered overage).
 
-| Tier | `BASE_FEE` ($/mo) | `INCLUDED_STORAGE_GB` | `INCLUDED_READS_GB` | Overage | `BYOK_FEE` ($/mo) |
-|---|---|---|---|---|---|
-| Free | 0 | 10 | 50 | hard-capped | n/a |
-| Solo | 15 | 50 | 500 | hard-capped | n/a |
-| Starter | 35 | 150 | 1,536 | hard-capped | n/a |
-| Pro | 50 | 500 | 5,120 | hard-capped | n/a |
-| Max | 149 | 2,048 | 20,480 | hard-capped | 99 |
-| Enterprise | quote | quote | quote | negotiated | included |
+| Tier | `BASE_FEE` ($/mo) | `INCLUDED_STORAGE_GB` | Overage |
+|---|---|---|---|
+| Free | 0 | 10 | hard-capped |
+| Solo | 15 | 50 | hard-capped |
+| Starter | 35 | 150 | hard-capped |
+| Pro | 50 | 500 | hard-capped |
+| Max | 149 | 2,048 | hard-capped |
+| Enterprise | quote | quote | negotiated |
 
-"hard-capped" means a tier returns `429` past the included quota until
-the next calendar month resets, or until the tenant upgrades. Free does
-not generate an invoice.
+"hard-capped" means a tier returns `429` past the included storage
+quota until the next calendar month resets, or until the tenant
+upgrades. Free does not generate an invoice. No self-serve tier
+offers BYOK; a BYOK requirement always routes to Enterprise regardless
+of storage volume.
 
 ## Tier indicator
 
 The calculator picks the indicated tier as the **smallest** tier whose
-hard-capped quotas cover the customer's inputs (it climbs the ladder
-until the usage fits):
+hard-capped storage quota covers the customer's inputs (it climbs the
+ladder until the usage fits):
 
 ```
 indicated_tier =
-  Free        if S_w ≤ 10   AND S_r × 1024 ≤ 50     AND T = 1 AND byok = "none" AND R ≤ 1
-  Solo        if S_w ≤ 50   AND S_r × 1024 ≤ 500    AND byok = "none" AND R ≤ 1
-  Starter     if S_w ≤ 150  AND S_r × 1024 ≤ 1536   AND byok = "none" AND R ≤ 1
-  Pro         if S_w ≤ 500  AND S_r × 1024 ≤ 5120   AND byok = "none" AND R ≤ 2
-  Max         if S_w ≤ 2048 AND S_r × 1024 ≤ 20480  AND R ≤ 2
+  Free        if S_w ≤ 10   AND T = 1 AND byok = "none" AND R ≤ 1
+  Solo        if S_w ≤ 50   AND byok = "none" AND R ≤ 1
+  Starter     if S_w ≤ 150  AND byok = "none" AND R ≤ 1
+  Pro         if S_w ≤ 500  AND byok = "none" AND R ≤ 2
+  Max         if S_w ≤ 2048 AND byok = "none" AND R ≤ 2
   Enterprise  otherwise
 ```
 
-If the customer exceeds even Max on any dimension, or triggers BYOK
-without Max / 3+ regions / a custom DPA, the calculator routes to the
-Enterprise inquiry form.
+If the customer exceeds even Max's storage quota, needs more than 2
+regions, or needs BYOK, the calculator routes to the Enterprise
+inquiry form.
 
 ## Per-tier price table (worked)
 
-For a representative input — `T = 1`, `S_w = 100 GB/mo`, `S_r = 2 TB/mo`
-(2,048 GB), `byok = none`, `h = 0.8`, `R = 1` — each tier either fits
-(flat base) or hard-caps (over quota):
+For a representative input — `T = 1`, `S_w = 100 GB/mo`, `byok = none`,
+`h = 0.8`, `R = 1` — each tier either fits (flat base) or hard-caps
+(over quota):
 
 | Tier | Base | Fits? | Total | Notes |
 |---|---|---|---|---|
-| Free | $0 | no | n/a | exceeds Free cap (10 GB / 50 GB) |
-| Solo | $15 | no | n/a | exceeds Solo cap (50 GB / 500 GB) |
-| Starter | $35 | no | n/a | reads 2,048 GB > 1,536 GB cap |
-| Pro ⭐ | $50 | yes | **$50.00** | 100 ≤ 500, 2,048 ≤ 5,120 — indicated tier |
+| Free | $0 | no | n/a | exceeds Free's 10 GB storage cap |
+| Solo | $15 | no | n/a | exceeds Solo's 50 GB storage cap |
+| Starter | $35 | yes | **$35.00** | 100 ≤ 150 — smallest tier that fits |
+| Pro ⭐ | $50 | yes | $50.00 | fits with headroom to 500 GB — recommended anchor |
 | Max | $149 | yes | $149.00 | fits, but over-served at this scale |
 | Enterprise | quote | — | quote | overkill at this scale |
 
 The calculator surfaces all six lines so the customer sees exactly
-which tier their usage lands on — here, **Pro** is the smallest tier
-that fits, and it is the recommended anchor.
+which tier their usage lands on — here, **Starter** is the smallest
+tier that fits, though Pro remains the recommended anchor for a team
+expecting to grow.
 
 ## Three worked scale points
 
 ### Small: solo dev on Bazel
 
-`T = 1`, `S_w = 4 GB/mo`, `S_r = 40 GB/mo`, `byok = none`, `h = 0.75`, `R = 1`.
+`T = 1`, `S_w = 4 GB/mo`, `byok = none`, `h = 0.75`, `R = 1`.
 
 | Tier | Total | Notes |
 |---|---|---|
-| Free | **$0** | fits within Free cap (10 GB / 50 GB) |
+| Free | **$0** | fits within Free's 10 GB storage cap |
 | Solo | $15 | over-served |
 | Pro | $50 | wildly over-served |
 | Enterprise | quote | wildly over-served |
@@ -179,30 +174,30 @@ Indicated tier: **Free**.
 
 ### Medium: small production team, single region
 
-`T = 1`, `S_w = 180 GB/mo`, `S_r = 4 TB/mo` (4,096 GB), `byok = none`, `h = 0.82`, `R = 1`.
+`T = 1`, `S_w = 180 GB/mo`, `byok = none`, `h = 0.82`, `R = 1`.
 
 | Tier | Total | Notes |
 |---|---|---|
-| Free | n/a | exceeds cap |
-| Solo | n/a | exceeds cap (50 GB / 500 GB) |
-| Starter | n/a | reads 4,096 GB > 1,536 GB cap |
-| Pro ⭐ | **$50.00** | 180 ≤ 500, 4,096 ≤ 5,120 — included quotas cover it |
+| Free | n/a | exceeds storage cap |
+| Solo | n/a | exceeds storage cap (50 GB) |
+| Starter | n/a | exceeds storage cap (180 GB > 150 GB) |
+| Pro ⭐ | **$50.00** | 180 ≤ 500 — included quota covers it |
 | Max | $149.00 | fits, but over-served |
 | Enterprise | quote | overkill |
 
-Indicated tier: **Pro** — the smallest tier whose hard-capped quotas
-cover the usage, and the recommended best-value anchor.
+Indicated tier: **Pro** — the smallest tier whose hard-capped storage
+quota covers the usage, and the recommended best-value anchor.
 
 ### Large: multi-region enterprise, BYOK, 5 tenants
 
-`T = 5`, `S_w = 800 GB/mo`, `S_r = 12 TB/mo`, `byok = aws`, `h = 0.88`, `R = 3`.
+`T = 5`, `S_w = 800 GB/mo`, `byok = aws`, `h = 0.88`, `R = 3`.
 
 | Tier | Total | Notes |
 |---|---|---|
-| Free | n/a | exceeds cap |
+| Free | n/a | exceeds storage cap |
 | Solo / Starter | n/a | exceed storage + region cap |
 | Pro | n/a | exceeds region cap (`R = 3 > 2`) |
-| Max | n/a | exceeds region cap (`R = 3 > 2`) + BYOK is add-on, not multi-region |
+| Max | n/a | exceeds region cap (`R = 3 > 2`); BYOK is not offered on any self-serve tier |
 | Enterprise | **quote** | required (3 regions, BYOK, multi-tenant) |
 
 Indicated tier: **Enterprise**. The calculator routes to the inquiry
@@ -262,32 +257,29 @@ cell coordinates.
 # Inputs
 T                = 1
 S_w_gb           = 180
-S_r_tb           = 4
 byok             = "none"      # "none" | "aws" | "gcp" | "azure"
 h                = 0.82
 R                = 1
 
-# Tier rate-card (flat base; hard-capped quotas — Free is $0, Enterprise is quote)
-base_free        = 0     ; incl_storage_free    = 10   ; incl_reads_free    = 50
-base_solo        = 15    ; incl_storage_solo    = 50   ; incl_reads_solo    = 500
-base_starter     = 35    ; incl_storage_starter = 150  ; incl_reads_starter = 1536
-base_pro         = 50    ; incl_storage_pro     = 500  ; incl_reads_pro     = 5120
-base_max         = 149   ; incl_storage_max     = 2048 ; incl_reads_max     = 20480
-byok_fee_max     = 99    # add-on, Max only
+# Tier rate-card (flat base; hard-capped storage quota — Free is $0, Enterprise is quote)
+base_free        = 0     ; incl_storage_free    = 10
+base_solo        = 15    ; incl_storage_solo    = 50
+base_starter     = 35    ; incl_storage_starter = 150
+base_pro         = 50    ; incl_storage_pro     = 500
+base_max         = 149   ; incl_storage_max     = 2048
+# No self-serve tier offers BYOK; byok != "none" always routes to Enterprise.
 
 # Derived
 S_w_billable     = S_w_gb * IF(R<=1, 1, IF(R=2, 2, IF(R=3, 3, 4)))
-S_r_billable_gb  = S_r_tb * 1024
 
-# Per-tier total: the flat base when usage fits the hard-capped quotas,
-# otherwise "over" (the tier 429s — pick the next-larger tier).
+# Per-tier total: the flat base when usage fits the hard-capped storage
+# quota, otherwise "over" (the tier 429s — pick the next-larger tier).
 total_pro =
-  IF(AND(S_w_billable <= incl_storage_pro * T, S_r_billable_gb <= incl_reads_pro * T),
-     base_pro * T, "over (hard cap)")
+  IF(S_w_billable <= incl_storage_pro * T, base_pro * T, "over (hard cap)")
 
 total_max =
-  IF(AND(S_w_billable <= incl_storage_max * T, S_r_billable_gb <= incl_reads_max * T),
-     base_max * T + IF(byok = "none", 0, byok_fee_max), "over (hard cap)")
+  IF(AND(S_w_billable <= incl_storage_max * T, byok = "none"),
+     base_max * T, "over (hard cap, or BYOK requires Enterprise)")
 ```
 
 The internal version of this calculator with margin analysis (vendor

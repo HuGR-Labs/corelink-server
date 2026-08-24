@@ -43,14 +43,14 @@ Stripe Checkout (**Solo, Starter, Pro, Max**); um tem ativação instantânea
 **Pro é o nível recomendado** — é a âncora de melhor custo-benefício para uma
 equipe que envia builds de produção.
 
-| Nível | Preço mensal | Para quem é | Armazenamento CAS incluído | Tráfego de leitura incluído | BYOK | Fixação de região | Ativação |
-|---|---|---|---|---|---|---|---|
-| **Free** | $0 | Projetos pessoais + avaliação | 10 GB | 50 GB / mês | — | compartilhada | Instantânea |
-| **Solo** | $15 | O desenvolvedor solo | 50 GB | 500 GB / mês | — | 1 região | Stripe Checkout |
-| **Starter** | $35 | Uma equipe pequena | 150 GB | 1.5 TB / mês | — | 1 região | Stripe Checkout |
-| **Pro** ⭐ | $50 | Melhor custo-benefício — equipes de produção | 500 GB | 5 TB / mês | — | até 2 regiões | Stripe Checkout |
-| **Max** | $149 | Equipes em escala, volume sério | 2 TB | 20 TB / mês | complemento opcional | até 2 regiões | Stripe Checkout |
-| **Enterprise** | Fale conosco | Multirregião / regulado / BYOK | Personalizado | Personalizado | incluído | todas as 4 regiões | Formulário de contato |
+| Nível | Preço mensal | Para quem é | Armazenamento CAS incluído | BYOK | Fixação de região | Ativação |
+|---|---|---|---|---|---|---|
+| **Free** | $0 | Projetos pessoais + avaliação | 10 GB | — | compartilhada | Instantânea |
+| **Solo** | $15 | O desenvolvedor solo | 50 GB | — | 1 região | Stripe Checkout |
+| **Starter** | $35 | Uma equipe pequena | 150 GB | — | 1 região | Stripe Checkout |
+| **Pro** ⭐ | $50 | Melhor custo-benefício — equipes de produção | 500 GB | — | até 2 regiões | Stripe Checkout |
+| **Max** | $149 | Equipes em escala, volume sério | 2 TB | — | até 2 regiões | Stripe Checkout |
+| **Enterprise** | Fale conosco | Multirregião / regulado / BYOK | Personalizado | incluído | todas as 4 regiões | Formulário de contato |
 
 Todos os níveis rodam no mesmo plano de dados, no mesmo catálogo de SLO e no
 mesmo modelo de auditoria e residência. As diferenças são cotas, inclusão de
@@ -64,15 +64,18 @@ BYOK, contagem de regiões e nível de suporte — não capacidade.
 | Endereçamento de conteúdo BLAKE3 | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Zero egress em leituras de cache | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Cadeia de auditoria (provas de Merkle) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| RBAC + convidar colegas de equipe | ✓ (3 assentos) | ✓ (5 assentos) | ✓ (10 assentos) | ✓ (50 assentos) | ✓ (100 assentos) | ilimitado |
-| BYOK (KEK gerenciada pelo cliente) | — | — | — | — | complemento | incluído |
+| RBAC + convidar colegas de equipe | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| BYOK (KEK gerenciada pelo cliente) | — | — | — | — | — | incluído |
 | Fixação de região (residência) | compartilhada | 1 de 4 | 1 de 4 | até 2 | até 2 | todas as 4 |
 | Failover multirregião | — | — | — | ✓ | ✓ | ✓ |
 | DPA (Adendo de Processamento de Dados) | clickwrap | clickwrap | clickwrap | clickwrap | clickwrap | negociado |
 | Suporte | comunidade | e-mail (melhor esforço) | e-mail (2 dias úteis) | e-mail (1 dia útil) | e-mail prioritário (1 dia útil) | dedicado (1 h) |
 | SLO de uptime | melhor esforço | 99.5% | 99.5% | 99.9% | 99.9% | 99.95% |
-| Retenção de logs de auditoria | 7 dias | 30 dias | 30 dias | 90 dias | 90 dias | 1 ano+ |
-| Relatórios de conformidade (SOC 2, ISO) | — | — | — | resumo | resumo | completo + personalizado |
+
+RBAC (papéis owner / admin / member / viewer) rege quem pode convidar ou
+remover colegas de equipe em todos os níveis; nenhum nível limita quantos
+colegas você pode convidar. Nenhum nível self-service oferece BYOK — é uma
+capacidade exclusiva do Enterprise.
 
 ## Como a fatura é calculada
 
@@ -84,7 +87,7 @@ simplesmente sua tarifa base fixa:
 invoice = base_fee + optional_add_ons
 ```
 
-Um inquilino que atinge 100% da sua cota de armazenamento ou de leitura recebe
+Um inquilino que atinge 100% da sua cota de armazenamento CAS recebe
 um `429 Too Many Requests` (com um CTA de upgrade) até o próximo mês do
 calendário reiniciar, ou até o administrador do inquilino fazer upgrade de
 nível. O limite é um recurso, não uma punição — é o que mantém o preço
@@ -100,18 +103,14 @@ v0.2.
 | Max | $149 | limite rígido — faça upgrade para continuar |
 | Enterprise | Fale conosco | negociado |
 
-O complemento BYOK para o Max é um valor fixo de $99/mês e fornece
-encapsulamento (wrapping) de DEK por inquilino com uma KEK controlada pelo
-cliente no AWS KMS, GCP KMS ou Azure Key Vault.
-
 ## Por que não há item de linha por egress
 
 O egress de nuvem é, na maioria dos fornecedores de cache gerenciado, o item de
 linha dominante em uma fatura de CI pesada. A CoreLink armazena o conteúdo do
 cache no Cloudflare R2, que cobra zero por egress em leituras para a internet
 pública e para a rede da Cloudflare. A CoreLink repassa essa propriedade aos
-clientes: os níveis pagos precificam armazenamento e operações de *leitura* por
-GB (uma amortização por operação), não *bytes* por GB saindo do cache.
+clientes: os níveis pagos precificam armazenamento CAS, não bytes por GB
+saindo do cache.
 
 É estruturalmente por isso que a fatura da CoreLink em volume de leitura pesado
 é tipicamente um múltiplo menor que o equivalente auto-hospedado baseado em S3
@@ -123,10 +122,10 @@ percorre a aritmética em três pontos de escala.
 A CoreLink não cobra por assento de desenvolvedor. A carga do cache está
 correlacionada ao volume de builds e ao paralelismo de CI, não à contagem de
 assentos, e a precificação por assento cria um incentivo perverso contra
-adicionar o próximo engenheiro ao cache. Os assentos são limitados por nível
-(acima) como medida anti-abuso; eles não são uma dimensão de cobrança.
-
-O Enterprise remove o limite por completo.
+adicionar o próximo engenheiro ao cache. A CoreLink não limita quantos
+colegas de equipe você pode convidar em qualquer nível; o acesso é regido por
+permissões baseadas em papel (owner / admin / member / viewer), não por uma
+contagem de assentos.
 
 ## Por que não há item de linha de computação / CPU
 
@@ -139,8 +138,8 @@ CoreLink — o cliente já paga ao seu fornecedor de CI pela computação.
 
 O nível Free foi projetado para dois casos:
 
-1. **Desenvolvedores solo** rodando monorepos pessoais. 10 GB e 50 GB/mês de
-   leituras é suficiente para um build Bazel pessoal típico com builds
+1. **Desenvolvedores solo** rodando monorepos pessoais. 10 GB de armazenamento
+   CAS é suficiente para um build Bazel pessoal típico com builds
    incrementais verdes diários. (Um dev solo que ultrapassa isso avança para o
    nível **Solo** a $15/mês.)
 2. **Avaliação por equipes maiores** que querem conectar a CoreLink a um único
@@ -153,22 +152,22 @@ avança para Solo, Starter ou Pro em uma semana de uso sério.
 
 ## O que o Enterprise oferece que o Max não oferece
 
-- **Inclusão de BYOK** (o Max pode comprá-lo como complemento; o Enterprise já
-  o tem).
+- **Inclusão de BYOK** — o Enterprise é o único nível que o oferece; nenhum
+  nível self-service tem um complemento de BYOK.
 - **Todas as quatro regiões** simultaneamente, não apenas duas.
 - **DPA negociado** em vez de clickwrap, incluindo linguagem personalizada de
   tratamento de dados para setores regulados (serviços financeiros, saúde,
   adjacentes à defesa).
-- **Retenção personalizada** para logs de auditoria e relatórios de
-  conformidade — retenção de múltiplos anos disponível em termos negociados.
+- **Retenção de cache negociada** de até 730 dias, contra os 365 dias padrão
+  do Max.
 - **Suporte dedicado** com SLO de 1 hora no horário comercial, com atribuição
   de gerente técnico de contas nomeado acima de um limite de uso.
-- **Cotas personalizadas** para armazenamento, leituras e assentos.
+- **Cotas de armazenamento personalizadas.**
 
 O Enterprise é a escolha certa quando pelo menos uma das seguintes condições é
 verdadeira: requisitos de residência excedem duas regiões; a revisão de
-segurança exige BYOK; os auditores do cliente exigem retenção de múltiplos
-anos; a frota de CI do cliente excede as cotas do Max no pico.
+segurança exige BYOK; a frota de CI do cliente excede as cotas do Max no
+pico.
 
 ## Rastreabilidade
 

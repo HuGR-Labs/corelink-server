@@ -5,7 +5,7 @@
  * `docs/trust/subprocessors.mdx` MDX page at `/trust/subprocessors`.
  *
  * Source of truth: `specs/_compliance/VENDOR-RISK-REGISTER.md` (full
- * 21-vendor register; only the 8 vendors that process customer personal
+ * 22-vendor register; only the 9 vendors that process customer personal
  * data on CoreLink's behalf appear in the public "Active sub-processors"
  * table).
  *
@@ -110,6 +110,15 @@ const ACTIVE_SUB_PROCESSORS: readonly SubProcessor[] = [
     dpaHref: "https://plausible.io/dpa",
     dpaLabel: "Plausible DPA",
   },
+  {
+    vendor: "Better Stack, Inc. (BetterStack / Statuspage)",
+    service:
+      "Uptime and status monitoring: synthetic HTTP probes against CoreLink's own public endpoints, and the hosted status page",
+    dataClasses: ["telemetry (probe results only; no customer data is sent)"],
+    regions: "US / EU",
+    dpaHref: "https://betterstack.com/privacy",
+    dpaLabel: "Better Stack privacy policy",
+  },
 ];
 
 function SubProcessorRow({ sp }: { readonly sp: SubProcessor }): ReactElement {
@@ -203,7 +212,7 @@ export default function SubProcessorRegister(): ReactElement {
               id="trust.subprocessor.source.full"
               description="Source of truth size context"
             >
-              (full 21-vendor register; only the 8 vendors that process
+              (full 22-vendor register; only the 9 vendors that process
               customer personal data on CoreLink's behalf appear below).
             </Translate>
           </p>

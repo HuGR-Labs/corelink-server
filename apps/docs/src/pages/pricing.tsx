@@ -179,7 +179,7 @@ export default function Pricing(): ReactElement {
                   </li>
                   <li>
                     {card.hardCap
-                      ? "Hard cap at 100% — no surprise bills"
+                      ? "Storage hard-caps at 100% — no surprise bills"
                       : "Custom capacity"}
                   </li>
                   <li>{card.support}</li>
@@ -200,9 +200,12 @@ export default function Pricing(): ReactElement {
         <h2>Feature comparison</h2>
         <p>
           Every numeric quota below is the included allowance for the plan.
-          Free and Pro hard-cap at 100% — your cache returns{" "}
+          CAS storage is the axis CoreLink meters today: a tenant that
+          reaches 100% of its storage quota gets{" "}
           <code>429 Quota Exceeded</code> with an upgrade hint instead of
-          silently billing overage.
+          silently billing overage. Cache-request-count enforcement is not
+          live yet, so the request figure below is the allowance, not an
+          enforced cap.
         </p>
 
         <table className={styles.compareTable}>
