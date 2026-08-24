@@ -1,0 +1,153 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: alerts-validate
+
+# Validates the Prometheus/Alertmanager rule files under `dashboards/alerts/`.
+#
+# Why this exists (B-027): three of those files carried a header claiming
+# "`promtool test rules` on PR (wired via the existing `dashboards/alerts/*.yml`
+# validator)". No such validator existed -- `grep -r promtool .github/workflows/`
+# returned nothing. Ten rule files with severities, PagerDuty routing labels and
+# runbook pointers were a SPECIFICATION of alerting that nothing checked. A file
+# asserting its own gate is exactly the shape that survives review, so the gate
+# is now real and those headers now describe it.
+#
+# What this gate does and does NOT do:
+#   DOES  -- parse every rule file with `promtool check rules` (PromQL syntax,
+#            duration formats, label/annotation template validity, duplicate
+#            rule detection).
+#   DOES  -- assert every `runbook:` label resolves to a real runbook file.
+#   NOT   -- publish these rules to a live Alertmanager. Nothing ships them yet;
+#            the publish half of B-027 remains open. Do not read a green run
+#            here as "these alerts are firing in prod" -- it means "these rules
+#            are well-formed and their runbook pointers are honest".
+#
+# Fail-closed: YES. An empty glob exits non-zero rather than reporting green
+# over nothing (see the "Refuse an empty match set" step).
+#
+# Cost: runs on `corelink` (CoreLink's own ephemeral Firecracker fabric, $0
+# GitHub-hosted minutes), path-filtered to the alert rules and to this gate's
+# own inputs, and the pinned promtool tarball is cached so a PR does not
+# re-download 100 MB from GitHub releases on every run.
+
+on:
+  pull_request:
+    paths:
+      - 'dashboards/alerts/**'
+      - 'scripts/validate_alert_runbook_labels.py'
+      - '.github/workflows/alerts-validate.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'dashboards/alerts/**'
+      - 'scripts/validate_alert_runbook_labels.py'
+      - '.github/workflows/alerts-validate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Prometheus 3.5.0 is the current LTS line. promtool ships INSIDE the
+  # Prometheus release tarball -- there is no standalone promtool release.
+  # Pinned exactly (never "latest") and checksum-verified below; the tarball is
+  # never piped into a shell.
+  PROMETHEUS_VERSION: '3.5.0'
+  PROMETHEUS_SHA256: 'e811827af26d822afb09a4f28314f61b618b12cff5369835a67f674d8b46f39a'
+
+jobs:
+  alerts-validate:
+    name: promtool check rules + runbook label resolution
+    runs-on: corelink
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+
+      # A `paths:` filter that stops matching, a directory rename, or a bad
+      # glob all present identically: zero files checked, job green. Refuse
+      # that outcome BEFORE doing any work, so the failure names its own cause.
+      # (The python validator below repeats this check for when it is run
+      # outside CI; both are cheap and neither is redundant with the other.)
+      - name: Refuse an empty match set
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(dashboards/alerts/*.yml)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::'dashboards/alerts/*.yml' matched ZERO files."
+            echo "This gate will not report green over an empty match set."
+            echo "If the rules moved, update the 'paths:' filter in this"
+            echo "workflow and ALERT_GLOB in"
+            echo "scripts/validate_alert_runbook_labels.py together."
+            exit 1
+          fi
+          echo "rule files to validate: ${#files[@]}"
+          printf '  %s\n' "${files[@]}"
+
+      # Cache the extracted promtool binary, keyed on the exact pinned version.
+      # A version bump changes the key and re-downloads; nothing else does.
+      - name: Cache promtool
+        id: promtool-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .promtool-bin
+          key: promtool-${{ runner.os }}-${{ runner.arch }}-${{ env.PROMETHEUS_VERSION }}
+
+      # Download + checksum-verify, then extract ONLY promtool from the tarball.
+      # No `curl | sh`, no unpinned "latest", no install script: fetch a named
+      # artifact, verify it against a hash committed to this repo, extract one
+      # binary. A tarball that fails the checksum stops the job.
+      - name: Fetch promtool (pinned + checksum-verified)
+        if: steps.promtool-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tarball="prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz"
+          url="https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/${tarball}"
+
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "$workdir"' EXIT
+
+          echo "downloading ${url}"
+          curl --fail --silent --show-error --location --retry 3 \
+            -o "${workdir}/${tarball}" "${url}"
+
+          echo "${PROMETHEUS_SHA256}  ${workdir}/${tarball}" > "${workdir}/sha256.txt"
+          if ! sha256sum --check --strict "${workdir}/sha256.txt"; then
+            echo "::error::Checksum mismatch for ${tarball}."
+            echo "Expected ${PROMETHEUS_SHA256}. Refusing to execute the"
+            echo "downloaded binary. Either the pin in this workflow is wrong"
+            echo "or the artifact was tampered with."
+            exit 1
+          fi
+
+          mkdir -p .promtool-bin
+          tar -xzf "${workdir}/${tarball}" \
+            -C .promtool-bin \
+            --strip-components=1 \
+            "prometheus-${PROMETHEUS_VERSION}.linux-amd64/promtool"
+          chmod +x .promtool-bin/promtool
+
+      # `promtool check rules` parses each file: PromQL expression validity,
+      # `for:`/`keep_firing_for:` durations, label and annotation templates,
+      # and duplicate rules within a group. It exits non-zero on the first
+      # invalid file (verified locally against a deliberately broken `expr:`).
+      - name: promtool check rules
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/.promtool-bin:$PATH"
+          promtool --version
+          promtool check rules dashboards/alerts/*.yml
+
+      # A `runbook:` label naming a file that does not exist costs the on-call
+      # responder a search at 03:00 before they conclude there is nothing to
+      # read. stdlib-only python3 -- RUNNER_TOOL_CACHE is unset on this fleet,
+      # same constraint as the validators in actionlint.yml.
+      - name: Every `runbook:` label must resolve to a real runbook
+        shell: bash
+        run: python3 scripts/validate_alert_runbook_labels.py

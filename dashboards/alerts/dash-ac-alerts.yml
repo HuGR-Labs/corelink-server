@@ -57,7 +57,11 @@ groups:
         for: 0m
         labels:
           severity: sev0
-          runbook: RB-AC-CONFORMANCE
+          # runbook: REMOVED 2026-08-24 (B-027). The label read
+          # `RB-AC-CONFORMANCE`, which has never existed as a file. No
+          # runbook covers REAPI v2 conformance-suite regression. Writing
+          # one is tracked separately; a pointer to nothing is worse than
+          # no pointer, so on-call is told the truth: there is no runbook.
           sprint: S-04
           gate: ship
         annotations:
@@ -78,7 +82,10 @@ groups:
         for: 30m
         labels:
           severity: sev0
-          runbook: RB-AC-HIT-RATIO
+          # Repointed 2026-08-24 (B-027): RB-AC-HIT-RATIO never existed.
+          # RB-SLO-DEDUP-DEGRADATION's anomaly layer is keyed on exactly
+          # this metric (`corelink_cache_hit_ratio` dropping WoW).
+          runbook: RB-SLO-DEDUP-DEGRADATION
           sprint: S-04
         annotations:
           summary: "AC cache hit ratio dropped > 50% (or below 35% absolute) sustained 30 min"
@@ -93,7 +100,9 @@ groups:
         for: 30m
         labels:
           severity: sev1
-          runbook: RB-AC-SLO-BURN
+          # Repointed 2026-08-24 (B-027): RB-AC-SLO-BURN never existed.
+          # RB-SLO-AVAIL-DATA-PLANE covers SLO-AVAIL-AC (§4.4) explicitly.
+          runbook: RB-SLO-AVAIL-DATA-PLANE
           sprint: S-04
         annotations:
           summary: "SLO-AVAIL-AC < 99.9% sustained 30 min — P1; reset 72h clock"
@@ -108,7 +117,9 @@ groups:
         for: 30m
         labels:
           severity: sev1
-          runbook: RB-AC-LATENCY
+          # Repointed 2026-08-24 (B-027): RB-AC-LATENCY never existed.
+          # RB-SLO-LATENCY-INVESTIGATION covers SLO-LAT-AC-HIT (§4.8).
+          runbook: RB-SLO-LATENCY-INVESTIGATION
           sprint: S-04
         annotations:
           summary: "AC GET p99 warm > 200 ms sustained 30 min — P1; reset 72h clock"
@@ -174,7 +185,10 @@ groups:
         for: 1h
         labels:
           severity: sev2
-          runbook: RB-AC-COST-REGRESSION
+          # runbook: REMOVED 2026-08-24 (B-027). The label read
+          # `RB-AC-COST-REGRESSION`, which has never existed as a file, and
+          # the repo has NO cost-regression runbook at all. Left absent
+          # rather than repointed at an unrelated SLO runbook.
           sprint: S-04
         annotations:
           summary: "AC per-op cost > 110% of target — cost gate red"

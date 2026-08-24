@@ -28,8 +28,13 @@
 # - PagerDuty Events API v2 routing keys per service (corelink-staging
 #   / corelink-prod-us / corelink-prod-eu) bound via Worker secret.
 # - Alertmanager → PagerDuty webhook; runbook_url propagated.
-# - `promtool test rules dashboards/alerts/dash-slo-multi-burn.yml` CI
-#   gate at `.github/workflows/alert-rules-validate.yml`.
+# - `promtool check rules dashboards/alerts/*.yml` CI gate at
+#   `.github/workflows/alerts-validate.yml` (PR + push to main), which
+#   also resolves every `runbook:` label to a real file.
+#   Corrected 2026-08-24 (B-027): this line previously cited
+#   `.github/workflows/alert-rules-validate.yml` and `promtool test
+#   rules`. That workflow never existed and no rule unit-test fixtures
+#   exist; the gate named above is real as of this commit.
 
 groups:
   # -----------------------------------------------------------------
