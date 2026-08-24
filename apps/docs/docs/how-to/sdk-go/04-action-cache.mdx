@@ -8,6 +8,13 @@ tags: [sdk, go, ac, reapi, how-to]
 
 # Action Cache
 
+## When to use this guide
+
+You expected an Action Cache client in the Go SDK and want to know what to do
+instead. Read this before wiring anything: the capability is real on the server
+but absent from this SDK, so the honest options are the HTTP recipe below or the
+JS/TS client.
+
 ## The Go SDK does not implement an Action Cache client
 
 `corelink-go` (`corelink.Client`, `corelink-go/corelink.go`) exposes exactly

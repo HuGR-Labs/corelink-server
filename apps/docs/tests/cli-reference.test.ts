@@ -109,10 +109,35 @@ describe("WI-S18-003 CLI per-command reference", () => {
     expect(index).toMatch(/--pat.*reject/i);
   });
 
-  it("index lists exit codes 0-5", async () => {
+  // The documented exit codes must be the ones the binary can actually return,
+  // derived from the source rather than hardcoded here. This assertion used to
+  // demand `0`-`5`; the CLI has never had a 3, 4 or 5, so when the reference
+  // page was corrected to the real set the TEST is what went red — it was
+  // pinning a fiction. Deriving the set means a new `exit(N)` in main.rs fails
+  // this test until the page documents it, which is the direction that helps.
+  it("index documents exactly the exit codes the binary can return", async () => {
     const src = await readFile(resolve(refRoot, "index.mdx"), "utf8");
-    for (const c of ["`0`", "`1`", "`2`", "`3`", "`4`", "`5`"]) {
-      expect(src).toContain(c);
+    const cliSrc = await readFile(
+      resolve(here, "..", "..", "..", "tools", "cli", "src", "main.rs"),
+      "utf8",
+    );
+    const codes = new Set(["0"]); // success is never an explicit exit() call
+    for (const m of cliSrc.matchAll(/process::exit\((\d+)\)/g)) {
+      codes.add(m[1]);
+    }
+    // The audit-abort arm exits with a named constant, not a literal.
+    const dataerr = await readFile(
+      resolve(here, "..", "..", "..", "tools", "cli", "src", "commands",
+              "verify_ndjson_http.rs"),
+      "utf8",
+    );
+    const named = dataerr.match(/EXIT_DATAERR:\s*i32\s*=\s*(\d+)/);
+    if (named) codes.add(named[1]);
+
+    expect(codes.size).toBeGreaterThan(1);
+    for (const c of codes) {
+      expect(src, `exit code ${c} is reachable in the CLI but absent from the reference page`)
+        .toContain(`\`${c}\``);
     }
   });
 
