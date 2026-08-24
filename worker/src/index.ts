@@ -251,6 +251,19 @@ export interface Env {
   // authoritative, no user impact); "serve" = DO-authoritative (NOT flip-ready
   // until the WP-4 DO→D1 reconcile lands). Per-region, owner-flipped.
   EDGE_DO_METER?: string;
+  // Off-by-default diagnostic: unset/anything-but-"on" = today's header exactly
+  // (`wdb`, `qtier`, `qbatch`, `qresid`, no `qdo`, no `qother`). "on" additionally
+  // publishes `qdo` (the awaited `serveViaDO` hop) and `qother` (wdb's residue).
+  // Gated, not default-on, because `qdo`'s presence/absence is a CONFIRMATION
+  // ORACLE: `meter` (which gates `serveGateActive`, which gates whether `qdo`
+  // runs at all) is `!isFanout && requestQuotaEnabled`, and `isFanout` is a
+  // constant-time compare of the CLIENT-supplied `x-corelink-fanout-from`
+  // header against `CORELINK_INTERNAL_AUTH_KEY` — the same oracle the
+  // `qmeter`+`qstor` → `qbatch` merge exists to close (see the comment at the
+  // `qbatch` assignment). A future reader must not flip this default without
+  // understanding that "on" leaks one bit of the internal key's correctness
+  // per request on a capped tier. Operator-flipped only; not in wrangler.toml.
+  SERVER_TIMING_WDB_DETAIL?: string;
   ERASURE_SALT_KEY?: string;
   ERASURE_ATTESTATION_SEED_HEX?: string;
   ERASURE_ATTESTATION_KEY_ID?: string;
@@ -3976,32 +3989,48 @@ const baseHandler: ExportedHandler<Env> = {
       if (stAuthEnd > 0 && stOriginStart > 0) {
         st.push(`wdb;dur=${stOriginStart - stAuthEnd}`);
       }
-      // The FOUR awaits `wdb` is made of, in execution order. `-1` is the
-      // did-not-run sentinel (see the declarations); anything >= 0 ran and is
-      // reported at its real cost, 0 included. `qbatch` is ONE D1 round trip
-      // carrying the metering UPSERT and the storage SUM — the two phases that
-      // shipped as `qmeter` and `qstor` and were the whole of `wdb`. `qdo` is
-      // the awaited `serveViaDO(...)` hop — the 2026-08 prod gap where
-      // qtier+qbatch+qresid summed to only 122 ms of a 265 ms `wdb`; this is
-      // what fills the other 143.
+      // The THREE always-on awaits `wdb` is made of, in execution order. `-1`
+      // is the did-not-run sentinel (see the declarations); anything >= 0 ran
+      // and is reported at its real cost, 0 included. `qbatch` is ONE D1
+      // round trip carrying the metering UPSERT and the storage SUM — the two
+      // phases that shipped as `qmeter` and `qstor` and were the whole of `wdb`.
+      //
+      // `qdo` (the awaited `serveViaDO(...)` hop — the 2026-08 prod gap where
+      // qtier+qbatch+qresid summed to only 122 ms of a 265 ms `wdb`) and
+      // `qother` (wdb's remaining residue) are diagnostics gated on
+      // `SERVER_TIMING_WDB_DETAIL === "on"` — see the flag's doc-comment on
+      // `Env`. `qdo`'s presence is a confirmation oracle for whether a
+      // client-supplied `x-corelink-fanout-from` matched the internal auth
+      // key, so it must NOT ship by default; `qother` only exists to keep the
+      // reconciliation invariant honest while `qdo` is on, so it is gated
+      // identically. `stQDoMs` itself is still stamped unconditionally above
+      // (the clock is free; only the emission is gated) so flipping the flag
+      // needs no redeploy of the timing code, only of this gate.
+      const wdbDetail = (env as unknown as { SERVER_TIMING_WDB_DETAIL?: string })
+        .SERVER_TIMING_WDB_DETAIL === "on";
       for (const [name, ms] of [
         ["qtier", stQTierMs],
-        ["qdo", stQDoMs],
+        ...(wdbDetail ? ([["qdo", stQDoMs]] as const) : ([] as const)),
         ["qbatch", stQBatchMs],
         ["qresid", stQResidMs],
       ] as const) {
         if (ms >= 0) st.push(`${name};dur=${ms}`);
       }
-      // `qother`: whatever's left of `wdb` after the four q-phases above.
+      // `qother`: whatever's left of `wdb` after the q-phases above (`qdo`
+      // included when the flag is on, excluded when it is off — either way
+      // the invariant below holds for exactly the phases actually emitted).
       // Mirrors `ohop`'s reconciliation discipline exactly (see
       // `originSubPhases`): only emitted when `wdb` itself was (same
-      // `stAuthEnd > 0 && stOriginStart > 0` guard), the sum excludes any
-      // phase still at `-1` (did-not-run, never counted as 0), and a sum that
-      // overshoots `wdb` is dropped whole as `qother;dur=<wdb>;desc=
-      // "unreconciled"` rather than silently redistributed.
+      // `stAuthEnd > 0 && stOriginStart > 0` guard) AND the flag is on, the
+      // sum excludes any phase still at `-1` (did-not-run, never counted as
+      // 0), and a sum that overshoots `wdb` is dropped whole as
+      // `qother;dur=<wdb>;desc="unreconciled"` rather than silently
+      // redistributed.
       //
-      // Invariant: qtier + qdo + qbatch + qresid + qother === wdb, exactly, always.
-      if (stAuthEnd > 0 && stOriginStart > 0) {
+      // Invariant (flag on): qtier + qdo + qbatch + qresid + qother === wdb,
+      // exactly, always. (flag off): the header is byte-identical to before
+      // this change — no `qdo`, no `qother`.
+      if (wdbDetail && stAuthEnd > 0 && stOriginStart > 0) {
         st.push(
           wdbResidualPhase(stOriginStart - stAuthEnd, [stQTierMs, stQDoMs, stQBatchMs, stQResidMs]),
         );
@@ -4122,6 +4151,36 @@ export function isDsrEraseFanoutPath(pathSuffix: string): boolean {
 const ORIGIN_CONTAINER_PHASES = ["opat", "oquota", "ostore", "oother"] as const;
 
 /**
+ * Compute the `qother` phase — the unattributed remainder of `wdb` after its
+ * four named sub-phases (`qtier`, `qdo`, `qbatch`, `qresid`).
+ *
+ * Same reconciliation discipline as `ohop` above, one level simpler because
+ * there is nothing to parse: the four inputs are the Worker's own clocks, not
+ * a remote report.
+ *
+ *   `qother` = `wdb` − Σ(phases that ran)
+ *
+ * A phase still at its `-1` did-not-run sentinel is EXCLUDED from the sum,
+ * never treated as a 0-cost phase — the same sentinel semantics the caller's
+ * declarations document. If the phases that did run sum to MORE than `wdb`
+ * (clock skew across the awaits), the split is dropped whole rather than
+ * published wrong: `qother;dur=<wdbMs>;desc="unreconciled"`, mirroring
+ * `ohop`'s `unreconciled` case exactly.
+ *
+ * Invariant: qtier + qdo + qbatch + qresid + qother === wdb, exactly, always.
+ */
+export function wdbResidualPhase(wdbMs: number, phases: readonly number[]): string {
+  let sum = 0;
+  for (const v of phases) {
+    if (v >= 0) sum += v;
+  }
+  if (sum > wdbMs) {
+    return `qother;dur=${wdbMs};desc="unreconciled"`;
+  }
+  return `qother;dur=${wdbMs - sum}`;
+}
+
+/**
  * Decompose `origin` into `ohop` + the container's own phases.
  *
  * # Why the residue is the Worker's job
@@ -4165,36 +4224,6 @@ const ORIGIN_CONTAINER_PHASES = ["opat", "oquota", "ostore", "oother"] as const;
  * the two and carries ±1 ms of truncation either way — directional attribution,
  * never a profile.
  */
-/**
- * Compute the `qother` phase — the unattributed remainder of `wdb` after its
- * four named sub-phases (`qtier`, `qdo`, `qbatch`, `qresid`).
- *
- * Same reconciliation discipline as `ohop` above, one level simpler because
- * there is nothing to parse: the four inputs are the Worker's own clocks, not
- * a remote report.
- *
- *   `qother` = `wdb` − Σ(phases that ran)
- *
- * A phase still at its `-1` did-not-run sentinel is EXCLUDED from the sum,
- * never treated as a 0-cost phase — the same sentinel semantics the caller's
- * declarations document. If the phases that did run sum to MORE than `wdb`
- * (clock skew across the awaits), the split is dropped whole rather than
- * published wrong: `qother;dur=<wdbMs>;desc="unreconciled"`, mirroring
- * `ohop`'s `unreconciled` case exactly.
- *
- * Invariant: qtier + qdo + qbatch + qresid + qother === wdb, exactly, always.
- */
-export function wdbResidualPhase(wdbMs: number, phases: readonly number[]): string {
-  let sum = 0;
-  for (const v of phases) {
-    if (v >= 0) sum += v;
-  }
-  if (sum > wdbMs) {
-    return `qother;dur=${wdbMs};desc="unreconciled"`;
-  }
-  return `qother;dur=${wdbMs - sum}`;
-}
-
 export function originSubPhases(originMs: number, containerTiming: string | null): string[] {
   if (containerTiming === null) return [];
   const reported = new Map<string, number>();
