@@ -176,11 +176,36 @@ HTTP status, and the container logs
 
 This is the case where the archiver **is** running — so `MAX(archived_at)`
 may keep advancing from the healthy partitions while one tenant's rows never
-drain. That combination will **not** trip this page (clause 2 stays false),
-which is why `partitions_failed` must be checked independently.
+drain. That combination will **not** trip the absence clauses (clause 2 stays
+false because the whole-table `MAX(archived_at)` is fresh).
 
-**Check:** call the endpoint once by hand and read `partitions_failed` plus
-the per-partition error in the container log.
+**This now pages on its own (B-022).** The lag cron carries a third,
+per-partition measurement: any `(tenant_id, region)` partition that both still
+owns a sealed, non-quarantined, unarchived row older than T **and** whose own
+`MAX(archived_at)` is itself older than T (or NULL) is counted in
+`partitions_failed`, and `partitions_failed > 0` raises the page independently
+of the absence clauses. The page's `class` is `archive-partition-failure` and
+its dedup key is `audit-archive-partition-failure-<YYYY-MM-DD>`, distinct from
+the absence key so the two incident classes never collapse into one. The job
+summary lists the worst offenders as `<tenant8>/<region>(n=…,idle=…)`.
+
+Reproduce the cron's per-partition query by hand:
+
+```sql
+SELECT o.tenant_id, o.region, COUNT(*) AS pending_old,
+       MIN(o.enqueued_at) AS oldest_pending_ms,
+       (SELECT MAX(o2.archived_at) FROM audit_outbox o2
+          WHERE o2.tenant_id = o.tenant_id AND o2.region = o.region)
+         AS part_last_archived_ms
+FROM audit_outbox o
+WHERE o.emitted_at IS NOT NULL AND o.archived_at IS NULL
+  AND o.quarantined_at IS NULL AND o.enqueued_at < <T_MS>
+GROUP BY o.tenant_id, o.region
+HAVING part_last_archived_ms IS NULL OR part_last_archived_ms < <T_MS>;
+```
+
+**Check:** each returned row is a stuck partition. Call the endpoint once by
+hand for the per-partition error in the container log.
 
 **Fix:** depends on the underlying error (R2 auth/permission on
 `corelink-audit-weur`, a residency/region mismatch, a malformed
@@ -201,7 +226,10 @@ counted in `rows_quarantined`, not `partitions_failed`.
 3. Let the next `audit-chain-daily-verify` run confirm the new chunks are
    chain-valid — absence recovery is not integrity proof.
 4. Resolve the PagerDuty incident with dedup key
-   `audit-archive-absent-<YYYY-MM-DD>`.
+   `audit-archive-absent-<YYYY-MM-DD>` (absence) or
+   `audit-archive-partition-failure-<YYYY-MM-DD>` (per-partition failure §3.3) —
+   whichever `class` the page carried. A partition-failure recovery is proven
+   when the per-partition query above returns zero rows.
 
 ## 5. Quarantined rows — unarchivable BY DESIGN
 

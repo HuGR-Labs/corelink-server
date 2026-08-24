@@ -790,15 +790,37 @@ The gap is narrow but real: a single tenant/region partition could fail every
 hour indefinitely while the fleet looks healthy. Closing it needs either a
 per-partition lag query or a page driven off the sweep's own non-200.
 
+**Closed 2026-08-24 — the per-partition lag query.** `audit-archive-lag.yml`
+now runs a third measurement alongside the two absence clauses: any
+`(tenant_id, region)` partition that both still owns a sealed, non-quarantined,
+unarchived row older than T **and** whose OWN `MAX(archived_at)` is itself
+older than T (or NULL) is counted in `partitions_failed`, and
+`partitions_failed > 0` raises the PagerDuty page on its own — it does not need
+the whole-table archiver to also look idle. It carries a distinct
+`class=archive-partition-failure` and dedup key so it never collapses into an
+absence incident.
+
+Why the query cannot false-page on the healthy historical drain: the archiver
+sweeps EVERY partition with sealed-but-unarchived, non-quarantined rows on each
+hourly tick (`read_unarchived_partitions` in `routes/audit_archive.rs`),
+archiving each one's clean prefix. A partition that is draining advances its own
+`archived_at` every tick and is excluded by the `HAVING`; a fully quarantined
+partition owns no non-quarantined rows and never appears — so this can never
+page on the 2026-08-14 fork. Only a partition the sweep touches and fails to
+advance, tick after tick, survives both conditions. Runbook §3.3 and §4 updated
+to match (the section that used to document this exact gap as "check
+`partitions_failed` by hand").
+
 ```backlog
 id: B-022
 repo: corelink-server
 owner: tl
-status: open
-verify: "! grep -q 'partitions_failed' .github/workflows/audit-archive-lag.yml"
+status: done
+verify: "grep -q 'partitions_failed' .github/workflows/audit-archive-lag.yml"
 verify-means: |
-  open while no scheduled check looks at per-partition archive failure. Closes
-  when a partial failure can raise a page on its own.
+  done — a scheduled check looks at per-partition archive failure and can page
+  on it alone. Reopens if the per-partition clause is torn out of the lag cron
+  (the workflow stops referencing `partitions_failed`).
 last-verified: 2026-08-24
 ```
 
