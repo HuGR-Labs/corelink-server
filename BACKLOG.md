@@ -281,16 +281,50 @@ treats differently.
 positives out of seven. Parsed as YAML, only two hosted workflows ever had a
 real `pull_request` trigger. The verify now parses the trigger block.
 
-**Still hosted, and why** — this is the remaining work, not a waiver:
-- `cosign-sign` (push): docker build + push. The fabric has a docker shim; it is
-  untested for a signing lane, and a broken signing path is worse than a hosted one.
-- `smoke-install` (push + schedule): needs a docker daemon, and is currently
-  failing 5 of 5 runs on hosted — moving a red lane hides which change fixed it.
+**Still hosted, and why** — this is the remaining work, not a waiver. Diagnosed
+in full 2026-08-24; the blockers are more precisely owner/risk-gated than the
+first pass assumed:
+
+- **The `corelink` fabric now HAS a working `docker` shim** — nerdctl over
+  lazily-started containerd + buildkitd, installed as `docker` on PATH, running
+  unmodified `docker build`/`login`/`push`/`run` under passwordless `sudo` inside
+  the per-lease Firecracker microVM (`corelink-runners deploy/runner/docker-shim.sh`,
+  proven by `prove-baked-buildkit.yml`). So the standing "no docker-capable
+  self-hosted runner" premise in `cosign-sign.yml`'s own header is **stale** — the
+  two docker lanes are movable in principle.
+- **Root cause under all of these: hosted is billing-blocked.** Every
+  `ubuntu-latest` job now returns *"the job was not started because recent account
+  payments have failed or your spending limit needs to be increased"* — confirmed
+  live on `cas-canary` run 32765508324. So these lanes are not merely "still
+  hosted", they **cannot start at all** where they are. Owner billing item.
+- `cosign-sign` (push): the docker shim can build+push, but this lane drives the
+  full `docker/build-push-action` (a buildx action) and it is a **code-signing**
+  lane — a broken signing path is worse than a dead one. Moving it needs a
+  dispatched proof that build-push-action + cosign actually work over the nerdctl
+  shim first. tl work, gated on that proof; risk-real.
+- `smoke-install` (push + schedule): its red is **not** docker — the last hosted
+  run failed on `error: No PAT found` because `CORELINK_CANARY_PAT` is **not bound**
+  to the workflow. It is the same secret `cas-canary` needs, and `cas-canary` is
+  red for the same reason (plus the billing block). So moving the runner does not
+  make it green; **binding `CORELINK_CANARY_PAT` is an owner secret action.**
 - `codeql` (schedule): supported self-hosted but needs the CodeQL bundle; heavy.
 - `cas-canary` (schedule): **genuine exception, already documented in-file** —
   a datacenter IP is the point, it exists to see what a customer's CI sees.
-- `corelink-client-verify` (pull_request): one job, **already documented
-  in-file** — it needs a cbindgen manifest the fabric does not publish.
+- `corelink-client-verify` (pull_request): one `cbindgen-header-stable` job,
+  **already documented in-file** — `cargo install cbindgen --locked` is a source
+  build and the fabric's registry does not publish a cbindgen manifest at the
+  pinned SHA. This is the ACCEPTED exception the mechanical verify below cannot
+  distinguish from real work — it counts any ubuntu job under a `pull_request`
+  trigger. So even with the two docker lanes moved and the owner secret bound,
+  the verify would stay red on this accepted exception until it learns to skip
+  in-file-documented exceptions (an in-file marker + parser), or cbindgen is
+  re-homed (blocked on the registry manifest).
+
+**Net residual, assigned:** (a) owner — unblock Actions billing + bind
+`CORELINK_CANARY_PAT`; (b) tl — dispatched proof that build-push-action + cosign
+run on the shim, then flip `cosign-sign`; (c) tl — teach the verify to honour
+in-file-documented hosted exceptions, or re-home cbindgen. Surfaced to the owner
+brief. Kept OPEN rather than force-closed.
 
 ```backlog
 id: B-005
