@@ -47,23 +47,16 @@ Expected: ≤ 30 s (all actions resolved from remote cache).
 Check the hit ratio:
 
 ```bash
-python3 - <<'EOF'
-import json, sys
-
-hits = total = 0
-with open("/tmp/bazel-exec.json") as f:
-    for line in f:
-        if not line.strip():
-            continue
-        entry = json.loads(line)
-        if "remoteCacheHit" in entry:
-            total += 1
-            if entry["remoteCacheHit"]:
-                hits += 1
-
-print(f"Cache hit ratio: {hits}/{total} = {hits/total*100:.1f}%")
-EOF
+python3 scripts/cache_hit_ratio.py /tmp/bazel-exec.json
 ```
+
+The execution log is pretty-printed JSON objects, not one object per line, and
+the hit is recorded as `cacheHit` alongside a `runner` that names which cache
+answered — so a hand-rolled line-by-line reader looking for `remoteCacheHit`
+sees nothing at all and reports an empty cache. That is exactly the bug this
+example shipped with until 2026-08-24. The script above counts a spawn as a hit
+only when `runner` says a *remote* cache served it, so a local `--disk_cache`
+hit cannot flatter the number; pass `--allow-disk-cache` if you want both.
 
 Expected: ≥ 80 % cache hit ratio.
 

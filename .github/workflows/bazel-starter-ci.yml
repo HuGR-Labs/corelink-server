@@ -90,6 +90,9 @@ jobs:
       # The helper at .bazel/corelink-credential-helper.sh reads CORELINK_PAT
       # and emits the Bazel JSON credential response.  The PAT never appears in
       # argv.
+      - name: Self-test the cache-hit parser
+        run: bash scripts/test_cache_hit_ratio.sh
+
       - name: Cold build (populate remote cache)
         env:
           CORELINK_PAT: ${{ secrets.CORELINK_CANARY_PAT }}
@@ -128,40 +131,12 @@ jobs:
 
       - name: Verify cache hit ratio ≥ 80%
         run: |
-          # Note: EXEC_LOG is expanded by the shell before Python runs.
-          python3 - "${EXEC_LOG}" <<'EOF'
-          import json, sys
-
-          log_path = sys.argv[1]
-          hits = total = 0
-          with open(log_path) as f:
-              for line in f:
-                  line = line.strip()
-                  if not line:
-                      continue
-                  try:
-                      entry = json.loads(line)
-                  except json.JSONDecodeError:
-                      continue
-                  if "remoteCacheHit" in entry:
-                      total += 1
-                      if entry["remoteCacheHit"]:
-                          hits += 1
-
-          if total == 0:
-              print("WARNING: No remote cache entries in execution log.")
-              # Treat zero entries as a failure — the remote cache must be reachable.
-              sys.exit(1)
-
-          ratio = hits / total * 100
-          print(f"Cache hit ratio: {hits}/{total} = {ratio:.1f}%")
-
-          if ratio < 80.0:
-              print(f"FAIL: Cache hit ratio {ratio:.1f}% < 80% SLA.", file=sys.stderr)
-              sys.exit(1)
-
-          print("PASS: Cache hit ratio meets ≥ 80% SLA.")
-          EOF
+          # The parser lives in scripts/cache_hit_ratio.py and is self-tested by
+          # scripts/test_cache_hit_ratio.sh against real execution logs. It was
+          # inline here until 2026-08-24, reading the log line by line for a
+          # field Bazel stopped emitting — so it reported "no remote cache
+          # entries" no matter what the cache did (B-017).
+          python3 scripts/cache_hit_ratio.py "${EXEC_LOG}" --min 80
 
       - name: Run binary (smoke test)
         run: ./bazel-bin/hello | grep -q "Hello, World!"

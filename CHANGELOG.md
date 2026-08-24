@@ -22,6 +22,25 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Bazel starter's cache-hit check could never pass, no matter what the
+  cache did (B-017).** The example that exists to demonstrate CoreLink's Bazel
+  cache asserted `>= 80%` remote hits by reading `--execution_log_json_file`
+  line by line and counting a `remoteCacheHit` field. That log is
+  pretty-printed JSON objects, not one object per line, and the field has been
+  `cacheHit` (plus a `runner` naming which cache answered) since Bazel 7 — so
+  every line failed to parse, the total came out zero, and the job reported
+  "No remote cache entries in execution log." The same dead parser was copied
+  into `README.md`, which is the snippet customers are told to run. Replaced
+  all three copies with `examples/bazel-starter/scripts/cache_hit_ratio.py`,
+  self-tested by `scripts/test_cache_hit_ratio.sh` against real Bazel 9
+  execution logs, which also refuses to count a local `--disk_cache` hit as a
+  remote one.
+- The Bazel credential helper returned empty headers and exit 0 when
+  `CORELINK_PAT` was unset, turning a missing credential into a mid-build 401.
+  It now fails with the error `README.md` already documented.
+
 ### Added
 
 - **feat(ops): the offsite audit archive had a monitor for corruption and none
