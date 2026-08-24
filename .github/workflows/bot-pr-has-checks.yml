@@ -1,0 +1,279 @@
+# A bot PR with NO checks must never be mistaken for a bot PR that PASSED.
+#
+# ROOT CAUSE (GitHub, documented behaviour — not a bug in this repo):
+#   "When you use the repository's GITHUB_TOKEN to perform tasks, events
+#   triggered by the GITHUB_TOKEN will not create a new workflow run."
+#   `workflow_dispatch` and `repository_dispatch` are the only exceptions.
+#   Six workflows here open pull requests automatically — subprocessors-sync,
+#   okf-autoreconcile, compliance-weekly, api-reference-sync,
+#   pre-cutover-weekly-cron, release-notes — and at least
+#   subprocessors-sync.yml:96 and api-reference-sync.yml:72 pass
+#   `token: ${{ secrets.GITHUB_TOKEN }}` to the PR-creating action. Every PR
+#   they open is therefore born with ZERO check runs. A PR with no checks does
+#   not render as failing; it renders as nothing-wrong, and it can be merged
+#   straight past gates that never executed. That has already happened in this
+#   repo.
+#
+# THE DURABLE FIX IS NOT THIS FILE. It is a GitHub App installation token —
+#   mint it with `actions/create-github-app-token` and hand THAT token to the
+#   PR-creating step instead of GITHUB_TOKEN. Events from an App token are not
+#   suppressed, so the bot's PR gets its normal check suite. That requires a
+#   one-time owner action (create the App, install it, store the App id +
+#   private key), which is why it is not done here.
+#
+# THIS FILE IS THE COMPENSATING CONTROL until that lands: it makes the
+#   zero-checks condition loud instead of invisible. It does not prevent the
+#   condition; it refuses to let the condition look healthy.
+#
+# WHY A SCHEDULE, AND WHY NOT `pull_request`:
+#   `pull_request` is precisely the event GitHub suppresses on these PRs. A gate
+#   wired to the event that cannot fire is the disease, not the cure — it would
+#   itself be a check that never runs, on exactly the PRs it is meant to catch.
+#   So it polls.
+#   The cron also EARNS its keep under this repo's own rule (CLAUDE.md: "a cron
+#   earns its keep ONLY when something can change WITHOUT a commit"). A bot can
+#   open a PR here on its own schedule with no commit to this repo at all — a
+#   nightly drift regen, a weekly compliance sweep. The condition therefore
+#   arises without a commit, and no push- or PR-triggered gate can observe it.
+#   Every 30 minutes: the job is a handful of read-only API calls and finishes
+#   in seconds, and 30 minutes is comfortably shorter than the window between a
+#   bot opening a PR and a human getting around to merging it.
+
+name: bot-pr-has-checks
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+  actions: read
+  # Required IN ADDITION to `checks: read`: check runs and commit statuses are
+  # two different gating mechanisms behind two different token scopes. A PR can
+  # be gated by either, so counting only check runs would undercount and this
+  # gate would report a false red on a PR that is in fact gated by statuses.
+  statuses: read
+
+concurrency:
+  group: bot-pr-has-checks
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: every bot PR has at least one check
+    # Self-hosted fleet — zero GitHub-hosted spend, per the standing mandate.
+    runs-on: corelink
+    timeout-minutes: 10
+    steps:
+      - name: bot-authored open PRs are actually gated
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+          from datetime import datetime, timedelta, timezone
+
+          REPO = os.environ.get("REPO") or "HuGR-Labs/corelink-server"
+
+          # A PR opened seconds ago may legitimately have no checks yet — the
+          # runs are still being created. Only PRs older than this are judged.
+          GRACE_MINUTES = 15
+
+          # Belt and braces. The PRIMARY signal is the API's own
+          # `user.type == "Bot"`, which is authoritative and needs no string
+          # matching. This allowlist catches accounts that open PRs on behalf of
+          # automation but are typed as `User` (a machine account, an App acting
+          # through a PAT). Add to it; never remove `github-actions[bot]`.
+          BOT_LOGIN_ALLOWLIST = {
+              "github-actions[bot]",
+              "dependabot[bot]",
+              "renovate[bot]",
+              "corelink-bot",
+          }
+
+
+          def gh_api(path, paginate=False):
+              cmd = ["gh", "api", "-H", "Accept: application/vnd.github+json"]
+              if paginate:
+                  cmd.append("--paginate")
+              cmd.append(path)
+              proc = subprocess.run(cmd, capture_output=True, text=True)
+              if proc.returncode != 0:
+                  raise RuntimeError(
+                      "gh api %s failed (rc=%d): %s"
+                      % (path, proc.returncode, proc.stderr.strip()[:500])
+                  )
+              return proc.stdout
+
+
+          def parse_concat_json(text):
+              """`gh api --paginate` emits one JSON document per page, concatenated.
+
+              Parsing only the first would silently truncate the PR list at page 1
+              — an undercount that hides exactly the PR we are hunting for.
+              """
+              decoder = json.JSONDecoder()
+              text = text.strip()
+              idx = 0
+              docs = []
+              while idx < len(text):
+                  doc, end = decoder.raw_decode(text, idx)
+                  docs.append(doc)
+                  idx = end
+                  while idx < len(text) and text[idx] in " \t\r\n":
+                      idx += 1
+              return docs
+
+
+          def list_open_prs():
+              raw = gh_api(
+                  "repos/%s/pulls?state=open&per_page=100" % REPO, paginate=True
+              )
+              prs = []
+              for doc in parse_concat_json(raw):
+                  if isinstance(doc, list):
+                      prs.extend(doc)
+                  else:
+                      prs.append(doc)
+              return prs
+
+
+          def is_bot(pr):
+              user = pr.get("user") or {}
+              if (user.get("type") or "") == "Bot":
+                  return True
+              return (user.get("login") or "") in BOT_LOGIN_ALLOWLIST
+
+
+          def gate_counts(sha):
+              """(check_runs, commit_statuses) on this SHA.
+
+              An API failure is raised, never coerced to 0 — "we could not ask"
+              and "there is nothing there" must not produce the same verdict.
+              """
+              checks = json.loads(
+                  gh_api("repos/%s/commits/%s/check-runs?per_page=1" % (REPO, sha))
+              )
+              statuses = json.loads(
+                  gh_api("repos/%s/commits/%s/status?per_page=1" % (REPO, sha))
+              )
+              return int(checks.get("total_count", 0)), int(
+                  statuses.get("total_count", 0)
+              )
+
+
+          def emit(lines):
+              text = "\n".join(lines)
+              print(text)
+              summary = os.environ.get("GITHUB_STEP_SUMMARY")
+              if summary:
+                  with open(summary, "a", encoding="utf-8") as handle:
+                      handle.write(text + "\n")
+
+
+          now = datetime.now(timezone.utc)
+          cutoff = now - timedelta(minutes=GRACE_MINUTES)
+
+          try:
+              open_prs = list_open_prs()
+          except RuntimeError as exc:
+              print("::error::could not list open PRs: %s" % exc)
+              sys.exit(1)
+
+          bot_prs = [pr for pr in open_prs if is_bot(pr)]
+
+          rows = []
+          offenders = []
+          errors = []
+
+          for pr in sorted(bot_prs, key=lambda p: p["number"]):
+              number = pr["number"]
+              title = (pr.get("title") or "").replace("|", "\\|")
+              login = ((pr.get("user") or {}).get("login")) or "?"
+              sha = ((pr.get("head") or {}).get("sha")) or ""
+              created = datetime.strptime(
+                  pr["created_at"], "%Y-%m-%dT%H:%M:%SZ"
+              ).replace(tzinfo=timezone.utc)
+              age_min = int((now - created).total_seconds() // 60)
+
+              try:
+                  checks, statuses = gate_counts(sha)
+              except RuntimeError as exc:
+                  errors.append("#%d: %s" % (number, exc))
+                  rows.append(
+                      "| #%d | %s | %s | %d | ERROR | ERROR | could not query |"
+                      % (number, title, login, age_min)
+                  )
+                  continue
+
+              if checks == 0 and statuses == 0:
+                  if created < cutoff:
+                      verdict = "**NO CHECKS**"
+                      offenders.append((number, title, login, age_min))
+                  else:
+                      verdict = "none yet (within %d-min grace)" % GRACE_MINUTES
+              else:
+                  verdict = "gated"
+
+              rows.append(
+                  "| #%d | %s | %s | %d | %d | %d | %s |"
+                  % (number, title, login, age_min, checks, statuses, verdict)
+              )
+
+          # The healthy state is printed too. A gate that only speaks when angry
+          # is indistinguishable from a gate that is broken and silent.
+          out = ["## bot-authored open PRs in `%s`" % REPO, ""]
+          if not bot_prs:
+              out.append(
+                  "No open bot-authored PRs. (%d open PRs scanned.)" % len(open_prs)
+              )
+          else:
+              out.append(
+                  "| PR | title | author | age (min) | check runs | statuses | verdict |"
+              )
+              out.append("| --- | --- | --- | ---: | ---: | ---: | --- |")
+              out.extend(rows)
+              out.append("")
+              out.append(
+                  "%d bot PR(s) of %d open PRs scanned." % (len(bot_prs), len(open_prs))
+              )
+
+          if offenders:
+              out.append("")
+              out.append("### FAIL — bot PRs with zero checks AND zero statuses")
+              out.append("")
+              for number, title, login, age_min in offenders:
+                  out.append(
+                      "- **#%d** — %s (author `%s`, open %d min)"
+                      % (number, title, login, age_min)
+                  )
+              out.append("")
+              out.append(
+                  "These PRs are ungated. They will LOOK green because nothing ran. "
+                  "Do not merge them on the strength of an empty check list — "
+                  "re-run their gates via `workflow_dispatch` (the one event "
+                  "GITHUB_TOKEN does not suppress), or close and reopen the PR "
+                  "under a human account."
+              )
+
+          emit(out)
+
+          for message in errors:
+              print("::error::check-count query failed for %s" % message)
+          for number, title, login, age_min in offenders:
+              print(
+                  "::error::bot PR #%d has ZERO checks and ZERO statuses after %d "
+                  "minutes (author %s): %s" % (number, age_min, login, title)
+              )
+
+          if errors:
+              sys.exit(1)
+          sys.exit(1 if offenders else 0)
+          PY

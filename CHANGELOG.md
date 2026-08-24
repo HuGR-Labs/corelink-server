@@ -42,6 +42,26 @@ Each entry cross-references:
 
 ### Fixed
 
+- **fix(ci): every PR a bot opens here is born with ZERO checks, and a PR with
+  no checks looks green.** GitHub does not create workflow runs for events
+  triggered by `GITHUB_TOKEN` (the documented anti-recursion rule;
+  `workflow_dispatch` and `repository_dispatch` are the only exceptions). Six
+  workflows open PRs automatically — `subprocessors-sync`, `okf-autoreconcile`,
+  `compliance-weekly`, `api-reference-sync`, `pre-cutover-weekly-cron`,
+  `release-notes` — and at least `subprocessors-sync.yml:96` and
+  `api-reference-sync.yml:72` hand the PR-creating action
+  `secrets.GITHUB_TOKEN`, so their PRs are ungated and can be merged past gates
+  that never ran. It has already happened: PR #1224 sits at 0 check runs and 0
+  commit statuses. New `.github/workflows/bot-pr-has-checks.yml` polls every 30
+  minutes (it cannot be `pull_request`-triggered — that is the very event
+  GitHub suppresses on these PRs), lists open PRs paginated, selects
+  bot-authored ones by the API's own `user.type == "Bot"` plus a login
+  allowlist, counts BOTH check runs and commit statuses on the head SHA, prints
+  every bot PR and its counts to the job summary pass or fail, and fails naming
+  each PR that has neither after a 15-minute grace. This is a compensating
+  control, not the fix: the durable fix is a GitHub App installation token via
+  `actions/create-github-app-token`, which needs a one-time owner action.
+
 - **fix(ops): a scheduled sweep that could not authenticate logged nothing at
   all, so a missing credential was indistinguishable from an idle hour.** All
   four hourly sweeps in `apps/signup-worker/src/index.ts` resolve a credential
