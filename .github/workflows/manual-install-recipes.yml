@@ -1,0 +1,97 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: manual-install-recipes
+
+# Exercises the MANUAL CLI install recipe the docs hand a reader who cannot pipe
+# curl to a shell — the exact commands in apps/docs/docs/tutorial/01-installation.mdx
+# and apps/docs/docs/tutorials/quickstart-10min.mdx (B-036).
+#
+# WHY THIS EXISTS
+# ---------------
+# Every manual recipe was once fiction: a Homebrew tap that 404s, a winget id
+# never published, and release tarballs naming a repo/format/arch that do not
+# exist. They rotted silently because the ONLY install path anything tested was
+# the primary `curl | sh` (e2e-prod.yml, release-cli.yml) — so nothing caught
+# the four "alternative" paths drifting. PR #1261 corrected them against the real
+# assets on HuGR-Labs/corelink-cli; this workflow is the missing GATE, so the
+# next rename or release-format change turns THIS red instead of a reader's day.
+#
+# It downloads the documented asset BY NAME from `releases/latest/download/`,
+# ANONYMOUSLY — no GITHUB_TOKEN — because that is precisely the reader's view: an
+# asset a signed-in CI can fetch but the public cannot is exactly the failure a
+# gate that carries a credential would hide. It then verifies the published
+# `.sha256` the way the tutorial says (`sha256sum -c`, BEFORE chmod) and runs the
+# binary. Any 404 / checksum mismatch / non-runnable binary FAILS the job.
+#
+# runs-on: corelink — the Cloudflare container fabric is Linux x86_64, the exact
+# platform the linux-x86_64 recipe targets, and a datacenter IP the public would
+# use (the zero-hosted-Actions mandate keeps this off GitHub-hosted minutes).
+
+on:
+  schedule:
+    # Weekly, Monday 08:20 UTC. A NEW upstream release can change the asset name,
+    # format or arch spelling WITHOUT a commit to this repo — the one case that
+    # earns a cron (a `latest`-tracking recipe rots on the publisher's clock, not
+    # ours).
+    - cron: "20 8 * * 1"
+  workflow_dispatch:
+  pull_request:
+    # Re-verify whenever the documented recipe itself changes, or this checker does.
+    paths:
+      - "apps/docs/docs/tutorial/01-installation.mdx"
+      - "apps/docs/docs/tutorials/quickstart-10min.mdx"
+      - ".github/workflows/manual-install-recipes.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manual-install-recipes
+  cancel-in-progress: false
+
+jobs:
+  linux-x86_64-tarball-recipe:
+    name: manual recipe — linux x86_64 (anonymous, checksum-verified)
+    runs-on: corelink
+    timeout-minutes: 10
+    steps:
+      - name: Reproduce the documented manual recipe exactly (fail-CLOSED)
+        env:
+          # The repo + asset names the tutorial hands a reader. Bare literals so
+          # the item's verify (`grep HuGR-Labs/corelink-cli/releases`) matches the
+          # thing actually exercised, not a comment.
+          BASE: "https://github.com/HuGR-Labs/corelink-cli/releases/latest/download"
+          ASSET: "corelink-linux-x86_64"
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          cd "$work"
+
+          # 1. Download the binary + its checksum BY NAME, ANONYMOUSLY (no token —
+          #    the public reader's view). `--fail` turns a 404 into a non-zero exit
+          #    rather than a saved error page.
+          curl -fsSL "${BASE}/${ASSET}" -o "${ASSET}"
+          curl -fsSL "${BASE}/${ASSET}.sha256" -o "${ASSET}.sha256"
+
+          # 2. Verify the published checksum BEFORE making it executable — the
+          #    exact `sha256sum -c` step the tutorial tells the reader to run.
+          sha256sum -c "${ASSET}.sha256"
+
+          # 3. Install + run it, proving the asset is a working corelink binary
+          #    (not just a 200 that downloaded something).
+          chmod +x "${ASSET}"
+          ver="$(./${ASSET} --version)"
+          echo "installed: ${ver}"
+          # `--version` must actually name this CLI, not merely exit 0.
+          case "${ver}" in
+            *corelink*|*CoreLink*) : ;;
+            *) echo "::error::--version did not identify the corelink CLI: '${ver}'"; exit 1 ;;
+          esac
+
+          {
+            echo "## manual install recipe — linux x86_64"
+            echo ""
+            echo "Reproduced the documented manual recipe anonymously from \`${BASE}\`:"
+            echo "- \`${ASSET}\` + \`${ASSET}.sha256\` downloaded (200, no token)"
+            echo "- \`sha256sum -c\` passed before chmod"
+            echo "- \`./${ASSET} --version\` → \`${ver}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"

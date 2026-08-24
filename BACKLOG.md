@@ -1555,19 +1555,33 @@ Left open deliberately: nothing gates this. No check installs the CLI the way a
 reader would, so the next rename or release-format change reintroduces it
 silently.
 
+**Closed 2026-08-24 — the gate now exists.** `manual-install-recipes.yml`
+reproduces the documented manual recipe exactly: it downloads
+`corelink-linux-x86_64` + its `.sha256` BY NAME from
+`HuGR-Labs/corelink-cli/releases/latest/download`, **anonymously** (no
+`GITHUB_TOKEN` — an asset a signed-in CI can fetch but the public cannot is
+exactly the failure a credentialed gate would hide), verifies the published
+checksum with `sha256sum -c` BEFORE chmod, and runs the binary asserting
+`--version` names the CLI. `runs-on: corelink` (Linux x86_64 datacenter, the
+recipe's own platform; off hosted minutes). Triggers: a weekly cron (a NEW
+upstream release can break the asset name/format/arch WITHOUT a commit here —
+the one case that earns a clock), `workflow_dispatch`, and a `pull_request`
+scoped to the two tutorial files + itself so a recipe edit re-verifies. The
+whole recipe was proven end-to-end locally first (linux + darwin assets: 200,
+`sha256sum -c` OK, `--version` → `corelink 0.1.0`).
+
 ```backlog
 id: B-036
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  ! grep -rq 'HuGR-Labs/corelink-cli/releases' .github/workflows/
+  grep -rq 'HuGR-Labs/corelink-cli/releases' .github/workflows/
 verify-means: |
-  open while no workflow fetches the release assets the MANUAL recipes name.
-  The primary `curl | sh` path is already exercised (e2e-prod.yml,
-  release-cli.yml) — which is precisely why only the manual recipes rotted.
-  Closes when a check downloads the documented assets by name and verifies the
-  published checksum, the same way the tutorial tells a reader to.
+  done — a workflow (manual-install-recipes.yml) downloads the documented
+  release assets by name and verifies the published checksum the way the
+  tutorial tells a reader to. Reopens if that check is removed (no workflow
+  fetches the manual-recipe assets any more).
 last-verified: 2026-08-24
 ```
 
