@@ -12,7 +12,7 @@ source_blobs:
   - "worker/src/durable_object.ts@bf36fd6a2f94c92c8b5d47872dedb93cfc95d137"
   - "crates/corelink-container/src/routes.rs@8603539ebcedf67dcb10e9265efdb688aae9b97e"
   - "crates/corelink-container/src/origin_timing.rs@c22f7ca2a309a60c8da1b599cdbeda68301ee6c8"
-checkpoint_sha: "f51c071f8db68c973d8721f0042d16edf92eebfc"
+checkpoint_sha: "f642a7dfe0ee8532d17d14067e12f2972d9c4b16"
 provenance: "AUTHORED"
 tags: ["planes", "request-flow", "topology", "end-to-end"]
 timestamp: "2026-06-26T00:00:00Z"
