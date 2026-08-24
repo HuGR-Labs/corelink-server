@@ -194,6 +194,35 @@ verify keys on the still-disabled cron, so the item stays visibly open rather
 than flipping green on the runner fix alone. No perpetual red — it only runs when
 dispatched — but also no standing perf-regression signal.
 
+## 9. B-005 — the last hosted lanes: a billing block and an unbound secret
+
+**Today.** The mandate is zero GitHub-hosted spend. Most lanes are already
+self-hosted; the remainder were diagnosed in full on 2026-08-24 and two of the
+three residual blockers are yours, not the tech lead's:
+
+- **Actions billing is blocking hosted jobs outright.** Every `ubuntu-latest`
+  job now returns *"the job was not started because recent account payments have
+  failed or your spending limit needs to be increased"* (live on `cas-canary`
+  run 32765508324). Until billing is cleared or the last hosted lanes are
+  re-homed, `cosign-sign`, `smoke-install`, `codeql` and `cas-canary` cannot
+  start at all.
+- **`CORELINK_CANARY_PAT` is not bound.** `smoke-install` and `cas-canary` both
+  fail on `error: No PAT found` independent of the billing block — the secret the
+  authenticated legs read is not wired into those workflows' scope. This is the
+  same PAT for both; binding it once fixes both authenticated canaries. Write-only
+  secret; the value lives only in `.env.local`. Set it with `printf`, never
+  `echo`.
+
+**What the tech lead owns here (not blocking you):** proving `docker/build-push-action`
++ cosign run on the new `corelink` docker shim before moving the signing lane, and
+teaching the hosted-lane gate to honour the one genuine in-file-documented
+exception (`corelink-client-verify`'s cbindgen job, which needs a registry
+manifest the fabric does not publish).
+
+**If deferred:** the canaries and the smoke test stay red/never-start, so the
+"see what a customer's CI sees" signal is dark — acceptable pre-launch only if
+you accept flying without it.
+
 ---
 
 ## What the tech lead is doing in the meantime
