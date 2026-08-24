@@ -1,0 +1,68 @@
+name: Python tests
+
+# The repo carries six top-level python test files. Until this workflow existed,
+# exactly ONE of them ran in CI (`tests/test_validate_docs_reality_hostnames.py`,
+# named explicitly by `docs-reality.yml`). The other five — 129 assertions across
+# the billing-health checker, the GA-freeze gate, the INV inheritance validator,
+# the pentest-finding triage and the beta-feedback triage — ran nowhere. They
+# passed when invoked by hand, which is the point: an ungated suite does not fail
+# loudly when it rots, it just quietly stops describing the code.
+#
+# Discovery is a glob, not an allowlist, so a NEW top-level test file is gated the
+# day it lands. Only `tests/*.py` is collected: the subdirectories (chaos/, dr/,
+# e2e-*/) are credentialed suites with their own lanes and must not be dragged in.
+#
+# `docs-reality.yml` keeps its own pytest step on purpose — a docs-only PR does
+# not touch `tests/` or `scripts/` and so does not trigger this lane, and that
+# validator's regression net must still run there.
+
+on:
+  pull_request:
+    paths:
+      - 'tests/*.py'
+      - 'scripts/**'
+      - '.github/workflows/python-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tests/*.py'
+      - 'scripts/**'
+      - '.github/workflows/python-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: python-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    name: Top-level python test suite
+    # Runner: `corelink` (zero-hosted). python3 + pytest are baked into the box
+    # image; no actions/setup-python (the self-hosted fleet cannot provision it).
+    runs-on: corelink
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+
+      - name: Collect and run
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          FILES=(tests/*.py)
+          # A glob that matched nothing must fail, not pass. A green check over
+          # zero collected tests is the exact failure mode this lane exists to
+          # end, and it would be indistinguishable from a healthy run.
+          if [ ${#FILES[@]} -eq 0 ]; then
+            echo "::error::no top-level test files matched tests/*.py — refusing to report green over an empty collection"
+            exit 1
+          fi
+          echo "Collected ${#FILES[@]} file(s):"
+          printf '  %s\n' "${FILES[@]}"
+          python3 -m pytest "${FILES[@]}" -q
