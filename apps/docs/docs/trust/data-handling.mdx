@@ -98,7 +98,7 @@ What `primary_region` controls:
 - **DO placement.** Durable Object instance colocated with D1.
 - **Failover semantics.** During a region outage, the failover path is always
   within the tenant's residency boundary and is documented per region in
-  [`specs/_runbooks/RB-DR-DRILL.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_runbooks/RB-DR-DRILL.md).
+  `specs/_runbooks/RB-DR-DRILL.md`, available on request from `trust@humangr.com`.
   For Brazil specifically, see
   [Brazil residency & LGPD](/residency/lgpd-brazil) — Art. 33 §1º allows
   out-of-region temporary processing during a documented emergency.
@@ -177,9 +177,8 @@ CoreLink supports GDPR Art. 17 and LGPD Art. 18 erasure requests:
   within 35 days (the backup window); a tombstone is recorded on day 0
   so a Type II auditor can trace the chain.
 
-See the [DSR runbooks](https://github.com/HumanGuardrail/corelink-server/tree/main/specs/_runbooks)
-(`RB-DSR-INTAKE-FAILURE`, `RB-DSR-ERASURE-INCOMPLETE`) for the operational
-side.
+The DSR runbooks (`RB-DSR-INTAKE-FAILURE`, `RB-DSR-ERASURE-INCOMPLETE`) cover the
+operational side; they are available on request from `trust@humangr.com`.
 
 ## Customer data flow (high-level)
 
@@ -214,19 +213,13 @@ side.
 
 ## Verifying it yourself
 
-You don't have to take our word for any of the above. Three options:
+You don't have to take our word for any of the above. Two options:
 
-1. **Read the code.** The repo is
-   [`HumanGuardrail/corelink`](https://github.com/HumanGuardrail/corelink-server).
-   The residency enforcement, BYOK envelope, and audit chain are
-   all open. (Note: `wnam`/`enam`, physically-EU `weur`, and Japan-located
-   `apac` residency are live; `sam` and `afr` are not provisioned and
-   signup rejects them.)
-2. **Hit the admin API.** Endpoints under `/v1/tenant/me/*` return signed
+1. **Hit the admin API.** Endpoints under `/v1/tenant/me/*` return signed
    attestations of encryption status and audit-chain head. The
    region-pin/residency-proof attestation is part of the residency roadmap and
    is not relied-upon today.
-3. **Audit your own data.** Audit-chain inclusion proofs are exportable as
+2. **Audit your own data.** Audit-chain inclusion proofs are exportable as
    RFC 6962 proofs you can verify offline. See
    [Audit chain](/security/audit-chain).
 

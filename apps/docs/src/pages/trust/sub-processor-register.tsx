@@ -24,8 +24,6 @@ import Translate from "@docusaurus/Translate";
 import type { ReactElement } from "react";
 
 const LAST_REFRESHED = "2026-08-24";
-const SOURCE_OF_TRUTH =
-  "https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_compliance/VENDOR-RISK-REGISTER.md";
 
 interface SubProcessor {
   readonly num: number;
@@ -205,15 +203,14 @@ export default function SubProcessorRegister(): ReactElement {
             >
               Source of truth:
             </Translate>{" "}
-            <a href={SOURCE_OF_TRUTH} rel="noopener noreferrer" target="_blank">
-              VENDOR-RISK-REGISTER.md
-            </a>{" "}
+            VENDOR-RISK-REGISTER.md{" "}
             <Translate
               id="trust.subprocessor.source.full"
               description="Source of truth size context"
             >
               (full 22-vendor register; only the 9 vendors that process
               customer personal data on CoreLink's behalf appear below).
+              Available on request from trust@humangr.com.
             </Translate>
           </p>
         </header>

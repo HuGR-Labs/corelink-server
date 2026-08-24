@@ -47,8 +47,7 @@ go to Step 2.
 ## Step 2 — Wire your build tool and verify a cache hit
 
 For **Bazel** projects, point a REAPI v2 client at your tenant's cache endpoint.
-Add these lines to your `.bazelrc` (see the committed reference config at
-[`apps/examples/bazel/.bazelrc`](https://github.com/HumanGuardrail/corelink-server/blob/main/apps/examples/bazel/.bazelrc)):
+Add these lines to your `.bazelrc`:
 
 ```ini
 build --remote_cache=https://corelink-api.humangr.com/bazel/v2

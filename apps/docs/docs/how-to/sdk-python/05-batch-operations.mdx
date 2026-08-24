@@ -44,11 +44,25 @@ repeated `CoreLinkRequestError`s.
 
 There is no `RateLimitError` type and no `RetryPolicy` — `CoreLinkClient` /
 `AsyncCoreLinkClient` do not retry anything themselves. A `429` response
-surfaces as `CoreLinkRequestError` with `status_code == 429` (the generic
-4xx-except-401 exception — see
-[sdks/python/corelink/exceptions.py](https://github.com/HumanGuardrail/corelink-server/blob/main/sdks/python/corelink/exceptions.py)),
-indistinguishable from any other client error except by that attribute.
-You own the retry loop:
+surfaces as `CoreLinkRequestError`, the generic 4xx-except-401 exception:
+
+```python
+class CoreLinkRequestError(CoreLinkError):
+    """Raised for 4xx client errors (excluding 401).
+
+    Attributes
+    ----------
+    status_code:
+        The HTTP status code returned by the server.
+    error_code:
+        The stable machine-readable code from the CoreLink error taxonomy
+        (e.g. ``COR_ABUSE_DETECTED``), or ``None`` if not present in the
+        response body.
+    """
+```
+
+`status_code == 429` is indistinguishable from any other client error except
+by that attribute. You own the retry loop:
 
 ```python
 import asyncio

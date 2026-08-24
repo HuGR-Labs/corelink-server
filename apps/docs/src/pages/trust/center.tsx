@@ -255,10 +255,10 @@ const QUADRANTS: readonly TrustQuadrant[] = [
     cards: [
       {
         title: "Pre-GA security attestation pack",
-        href: "https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md",
+        href: "mailto:trust@humangr.com",
         status: "LIVE",
         summary:
-          "Day-1 evidence pack for pentest vendors + GA sign-off — consolidated security posture across 8 waves of adversarial review.",
+          "Day-1 evidence pack for pentest vendors + GA sign-off — consolidated security posture across 8 waves of adversarial review. Available on request from trust@humangr.com.",
       },
       {
         title: "RFC 9116 security.txt",

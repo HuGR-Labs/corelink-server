@@ -43,9 +43,8 @@ Beide werden per Bearer-PAT authentifiziert. (Bazel adressiert Inhalte per SHA-2
 
 ## `.bazelrc` konfigurieren
 
-Das Repository liefert eine eingecheckte Referenzkonfiguration unter
-[`apps/examples/bazel/.bazelrc`](https://github.com/HumanGuardrail/corelink-server/blob/main/apps/examples/bazel/.bazelrc).
-Sie verweist die REAPI-Instanz von Bazel auf Ihren Tenant:
+Hier ist eine Referenzkonfiguration für `.bazelrc`. Sie verweist die
+REAPI-Instanz von Bazel auf Ihren Tenant:
 
 ```ini
 # Point at the CoreLink REAPI v2 endpoint (the /bazel/v2 prefix is required).

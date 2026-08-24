@@ -163,10 +163,8 @@ Diese `PASS`-Zeile ist Ihr Aktivierungsereignis — ein Blob, der in das CoreLin
 geschrieben und wieder daraus gelesen wurde, byte-genau auf Ihrem Rechner verifiziert.
 
 :::tip Automatisieren Sie es
-Das begleitende Skript `scripts/quickstart.sh` im CoreLink-Repository führt genau diesen
-PUT/GET-Roundtrip automatisch aus und gibt eine Echtzeit-Zusammenfassung aus. Siehe
-[den Skript-Quellcode](https://github.com/HumanGuardrail/corelink-server/blob/main/scripts/quickstart.sh)
-als Referenz.
+Das begleitende Skript `scripts/quickstart.sh` führt genau diesen
+PUT/GET-Roundtrip automatisch aus und gibt eine Echtzeit-Zusammenfassung aus.
 :::
 
 ---
@@ -183,9 +181,14 @@ Sie haben ein funktionierendes PAT und einen verifizierten Roundtrip. Wie es wei
 CoreLink stellt einen **Bazel REAPI v2**-Cache unter
 `https://corelink-api.humangr.com/bazel/v2/<your-tenant-id>` bereit (das ByteStream-Schema
 `/bazel/v2/<tenant>/blobs/<hash>/<size>`). Verweisen Sie einen REAPI/ByteStream-Client
-darauf und verwenden Sie Ihre Mandanten-UUID als REAPI-Instanznamen — siehe die
-eingecheckte Referenzkonfiguration unter
-[`apps/examples/bazel/.bazelrc`](https://github.com/HumanGuardrail/corelink-server/blob/main/apps/examples/bazel/.bazelrc).
+darauf und verwenden Sie Ihre Mandanten-UUID als REAPI-Instanznamen:
+
+```ini
+build --remote_cache=https://corelink-api.humangr.com/bazel/v2
+build --remote_instance_name=${CORELINK_TENANT}
+build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --remote_upload_local_results=true
+```
 
 :::note Auch das Standard-`bazel --remote_cache` funktioniert
 Der Plain-HTTP-Alias `https://corelink-api.humangr.com/bazel/cache` ist **aktiv**:
