@@ -1539,14 +1539,22 @@ them — 87 billed minutes per 3 days for gates that proved nothing):
 - `lighthouse-baseline` — same engine; this one COULD fail, but it is schedule-only
   and went with the rest of Lighthouse. `apps/docs/lighthouserc.cjs` went too.
 
-Moved to `corelink`, all three real gates, none weakened:
+Also deleted, on a second pass after the owner asked whether this was ceremony —
+and they were right about this one:
+
+- `a11y-baseline-diff` — strictly DOMINATED by `a11y-playwright` in the same
+  workflow. The sweep forbids ANY `serious`/`critical` on every route
+  (`playwright/a11y-sweep.spec.ts`, `FORBIDDEN_IMPACT`); this one only forbids a
+  NEW `critical` versus a baseline (`scripts/a11y-audit.sh:182`). Whenever the
+  sweep passes, this cannot fail. It was migrated before it was questioned — a
+  browser install per run to prove something already proven. `a11y-audit.sh` and
+  the baseline JSON stay as manual tools (`pnpm a11y-audit:diff`); the doc that
+  claimed a workflow ran them is corrected.
+
+Moved to `corelink`, both real gates, neither weakened:
 
 - `a11y-playwright` — already installed its own chromium; `admin-ui-e2e.yml` runs
   that exact install on the fabric today, so this was the same recipe.
-- `a11y-baseline-diff` — the "Locate Chrome" guard that the 2026-08-03 note
-  correctly refused to weaken is still there and still exits 1. The job now
-  supplies a Chrome instead: Playwright's chromium, resolved via
-  `executablePath()`, with the PATH lookup kept as fallback.
 - `broken-links` — the Docker container action cannot run on a box without
   docker, so lychee is now a pinned release binary (v0.24.2, the same version the
   link sweep was measured with) whose SHA-256 is verified before it is unpacked
