@@ -260,6 +260,8 @@ export interface Env {
   AUDIT_CHAIN_SIGNING_KEY_ID?: string;
   AUDIT_CHAIN_TRUST_UNSIGNED_RESUME?: string;
   AUDIT_DRAIN_BATCH_LIMIT?: string;
+  R2_AUDIT_BUCKET?: string;
+  AUDIT_ARCHIVE_BATCH_LIMIT?: string;
   EMAIL_HASH_SALT?: string;
   STRIPE_LAUNCH_COUPON?: string;
   FABRIC_INTROSPECT_AUTH_KEY?: string;

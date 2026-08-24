@@ -597,6 +597,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
 
+    // S-09 audit ARCHIVE: `POST /_internal/audit/archive` — copies rows the
+    // drain already sealed into immutable NDJSON chunks in the R2 audit bucket
+    // (7-year Object Lock), closing the "the seal lands in mutable D1 with no
+    // offsite copy" gap. Deliberately a SEPARATE endpoint from the drain: an R2
+    // outage must never be able to abort or corrupt a D1 seal. Gated by the
+    // dedicated ERASE key (≥32 chars) + the D1/R2 `StorageEnv`; unmounted
+    // (fail-CLOSED) without them.
+    if let Some(audit_archive_state) =
+        corelink_server::routes::audit_archive::build_state_from_env().await
+    {
+        info!("routes: /_internal/audit/archive route mounted (erase auth key + D1 + R2 present)");
+        app = app.merge(corelink_server::routes::audit_archive::router(
+            audit_archive_state,
+        ));
+    } else {
+        warn!(
+            "CORELINK_ERASE_AUTH_KEY (<32) or D1/R2 absent; \
+             /_internal/audit/archive route NOT mounted (fail-CLOSED)"
+        );
+    }
+
     // Read-only internal tenant-quota lookup: `GET /_internal/tenant/{tenant_id}/quota`.
     // Returns the persisted `tenant_quota` row + a derived `unmetered` bit for a
     // trusted internal caller (signup-worker / operator plane) WITHOUT a billable
