@@ -35,7 +35,7 @@ for bodies), or invoke the **`okf-context`** skill.
 
 ## Gates (must stay green before merge)
 
-- `python3 scripts/validate_specs.py` → **469 full-schema + 11 YAML-only (480 total), 0 failures**.
+- `python3 scripts/validate_specs.py` → **473 full-schema + 11 YAML-only (484 total), 0 failures**.
 - Secrets matrix: `bash scripts/secrets-checklist-verify.sh` (OK, no drift) +
   `python3 scripts/validate_secrets_matrix.py` (code_only=0). Both exclude build output
   (`.open-next`/`.wrangler`) — don't let them scan generated bundles.
@@ -63,12 +63,15 @@ gates on them between runs. **Cadence, verified against each workflow's actual
   `workflow_dispatch`. The only one of this group still on a real clock.
 - **coverage** (`coverage.yml`), **cas-foundation** (`cas_foundation.yml`),
   **reproducible-build** (`reproducible-build.yml`) — all **`workflow_dispatch`-only
-  today**. Each had a weekly `schedule:` cron that is now **commented out**
-  in-file (reproducible-build's since 2026-08-10, "PARKED... this lane
-  produced ZERO successful scheduled runs of the last 8"; coverage and
-  cas-foundation similarly parked pending a fix). They do NOT run
+  today**. coverage and cas-foundation each had a weekly `schedule:` cron that is
+  now **commented out** in-file, parked pending a fix. They do NOT run
   automatically at all — only on-demand or when a PR happens to touch a
-  workflow that dispatches them.
+  workflow that dispatches them. **reproducible-build was re-enabled 2026-08-24**
+  (B-016): its zero successful runs were structural, not flaky — it hashed a wasm
+  artifact the build cannot produce. It now builds the shipped `corelink-cli`
+  binary twice and diffs the bytes; run 32726344224 is the first green one ever
+  (bit-identical). Still dispatch-only: two full release builds do not belong on
+  a PR.
 - **ffi-matrix** (`ffi-matrix-ci.yml`) — **`workflow_dispatch`-only**, no
   `schedule:` in the file at all (matches the standing note that this lane
   "never worked" and is parked).

@@ -24,6 +24,27 @@ Each entry cross-references:
 
 ### Fixed
 
+- **The build-attestation lanes attested an artifact that cannot exist
+  (B-016).** `reproducible-build` compiled `corelink-worker` for
+  `wasm32-unknown-unknown` and hashed
+  `target/wasm32-unknown-unknown/release/corelink_worker.wasm` — a file that has
+  never existed, because the crate declares no `[lib] crate-type = ["cdylib"]`
+  and can only emit an `.rlib`. Every run died on "No such file or directory"
+  *after* a successful compile, so reproducibility was never measured once.
+  `release-slsa3` built the same impossible artifact, ran once (2026-05-29), and
+  failed — no SLSA provenance has ever been produced for anything. The artifact
+  was wrong on its own terms too: `wrangler.toml` deploys
+  `worker/src/index.ts`, so nothing wasm ships, while the four CLI binaries
+  users actually download had neither check. Both lanes now target what ships —
+  `reproducible-build` builds `corelink-cli` with `release-cli.yml`'s own
+  command and diffs two legs, and `release-slsa3` takes its subjects from the
+  published release binaries (verified against `cli-v0.1.0`: the digests
+  computed this way are byte-identical to the release's own `checksums.txt`).
+  The threshold comparison also truncated the diff percentage to an integer, so
+  a 5.9 % diff passed a 5 % gate.
+
+### Fixed
+
 - **The security model asserted a TLS control that has not been in force since
   July (B-019).** CTRL-CRYPTO-001 read "TLS 1.3 only", with an SSL Labs A+ as
   its evidence, while the `humangr.com` zone has been on a **1.2** floor since

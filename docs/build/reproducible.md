@@ -9,67 +9,60 @@
 
 ---
 
-## 1. Architecture — 2-Runner Matrix + Diff Check
+## 1. Architecture — two legs, one host, byte diff
+
+> **Corrected 2026-08-24 (BACKLOG B-016).** Everything below used to describe a
+> two-runner hosted-ubuntu matrix building `corelink-worker` for
+> `wasm32-unknown-unknown`. That artifact **cannot exist** — the crate declares
+> no `[lib] crate-type = ["cdylib"]`, so it only ever emits an `.rlib` — and the
+> deployed Worker is TypeScript (`wrangler.toml:15`), so nothing wasm ships at
+> all. The lane hashed a path that was never written, failed after every
+> successful compile, and therefore measured reproducibility exactly zero times.
+> It now builds the artifact that ships.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  .github/workflows/reproducible-build.yml                   │
-│                                                             │
-│  Trigger: v* tag push | nightly 04:00 UTC | manual          │
-│                                                             │
-│  ┌────────────────────────┐  ┌────────────────────────┐    │
-│  │  Build job (runner-1)  │  │  Build job (runner-2)  │    │
-│  │  ubuntu-22.04 LTS      │  │  ubuntu-22.04 LTS      │    │
-│  │                        │  │                        │    │
-│  │  1. checkout (full)    │  │  1. checkout (full)    │    │
-│  │  2. rust-toolchain     │  │  2. rust-toolchain     │    │
-│  │     .toml pin 1.91.1   │  │     .toml pin 1.91.1   │    │
-│  │  3. SOURCE_DATE_EPOCH  │  │  3. SOURCE_DATE_EPOCH  │    │
-│  │     = git log -1 --ct  │  │     = git log -1 --ct  │    │
-│  │  4. cargo build        │  │  4. cargo build        │    │
-│  │     --release          │  │     --release          │    │
-│  │     --frozen           │  │     --frozen           │    │
-│  │     --offline          │  │     --offline          │    │
-│  │     --jobs 1           │  │     --jobs 1           │    │
-│  │     RUSTFLAGS remap    │  │     RUSTFLAGS remap    │    │
-│  │  5. SHA-256 hash       │  │  5. SHA-256 hash       │    │
-│  │  6. upload artifact    │  │  6. upload artifact    │    │
-│  └──────────┬─────────────┘  └────────────┬───────────┘    │
-│             │                              │                 │
-│             └──────────┬───────────────────┘                 │
-│                        ▼                                    │
-│             ┌──────────────────────┐                        │
-│             │  diff-check job      │                        │
-│             │  ubuntu-22.04        │                        │
-│             │                      │                        │
-│             │  1. download both    │                        │
-│             │  2. compare SHA-256  │                        │
-│             │  3. if different:    │                        │
-│             │     cmp -l (POSIX)   │                        │
-│             │  4. compute % diff   │                        │
-│             │  5. gate: ≤ 5 %      │                        │
-│             │  6. emit metrics     │                        │
-│             └──────────────────────┘                        │
-└─────────────────────────────────────────────────────────────┘
+.github/workflows/reproducible-build.yml   (workflow_dispatch only)
+
+  runs-on: [self-hosted, mac, corelink-builder]
+
+    leg A                              leg B
+    cargo build -p corelink-cli        cargo build -p corelink-cli
+      --release --locked --offline       --release --locked --offline
+      --jobs 1 --target <host>           --jobs 1 --target <host>
+      --target-dir target-repro-a        --target-dir target-repro-b
+                │                                 │
+                └──────────► sha256 diff ◄────────┘
 
 Outcomes:
-  bit_identical      diff = 0 bytes    → ideal (post-GA Q3 target)
-  within_threshold   0 < diff ≤ 5 %   → acceptable (current best-effort)
-  exceeds_threshold  diff > 5 %        → CI FAILS; alert SEV-3
+  bit_identical      diff = 0 bytes    → ideal (post-GA target)
+  within_threshold   0 < diff ≤ 5 %    → acceptable (ADR-0015 best-effort)
+  exceeds_threshold  diff > 5 %        → gate FAILS
 ```
 
----
+**What this proves, and what it does not.** Both legs run on one host, into two
+separate target directories — separate so the second leg is a genuine recompile
+rather than a cache hit re-hashing the first leg's output. That measures
+determinism of the compiler and its inputs under an identical environment. It
+does **not** establish cross-environment reproducibility: another machine, OS
+image or `$HOME` could still diverge. The earlier design claimed the stronger
+property by using two hosted runners; it never executed, so it proved neither —
+and hosted runners are not something this repo spends on.
+
+The build command, `SOURCE_DATE_EPOCH` and `--remap-path-prefix` set are copied
+from `release-cli.yml` deliberately. If the two ever drift apart, this lane
+measures an artifact the release does not ship, which is the failure it was just
+repaired from.
 
 ## 2. Hermetic Build Flags
 
 | Flag | Purpose |
 |------|---------|
 | `SOURCE_DATE_EPOCH` | Deterministic timestamp from `git log -1 --pretty=%ct`; Cargo + LLVM embed this instead of wall-clock time |
-| `--remap-path-prefix=$PWD=/SRC` | Strips workspace-local absolute paths from LLVM debug info |
-| `--remap-path-prefix=$HOME/.cargo=/CARGO` | Strips Cargo registry cache paths from LLVM debug info |
+| `--remap-path-prefix=$GITHUB_WORKSPACE=corelink` | Strips workspace-local absolute paths from debug info (same mapping `release-cli.yml` applies) |
+| `--remap-path-prefix=$HOME/.cargo/registry=cargo-registry` | Strips Cargo registry paths — also a username leak, see CTRL-PATH-HYGIENE |
 | `-C codegen-units=1` | Single codegen unit eliminates LLVM parallel codegen non-determinism |
-| `--jobs 1` | Sequential compilation eliminates link-order non-determinism in the final `.wasm` |
-| `--frozen` | Requires `Cargo.lock` unchanged; prevents silent dependency resolution drift |
+| `--jobs 1` | Sequential compilation eliminates link-order non-determinism in the final binary |
+| `--locked` | Requires `Cargo.lock` unchanged; prevents silent dependency-resolution drift |
 | `--offline` | No network calls during compile (SLSA-hermetic property) |
 | `CARGO_INCREMENTAL=0` | Disables incremental compilation state that could bleed across builds |
 
@@ -255,39 +248,41 @@ back to `0` for local dev.
 
 ## 7. Customer Verification Quickstart
 
-> **Current state:** the `reproducible-build.yml` workflow has **no
-> `pull_request` trigger** (moved off per-PR 2026-06-02) and runs on a
-> weekly schedule plus `workflow_dispatch`. As of this writing it has **0
-> observed successes** — the `runs-on` previously pointed at a self-hosted
-> fleet that didn't exist, so runs queued forever and never executed a
-> step. That root cause is now fixed, but a fixed cause is not an observed
-> pass: nobody has yet confirmed the two runners actually reproduce within
-> the ADR-0015 5 % tolerance. Treat the steps below as what verification
-> will look like once a green run exists — if you download an artifact and
-> find none, that is the current, known state, not a broken instruction.
+> **State as of 2026-08-24:** the lane was repaired today (B-016) and is
+> `workflow_dispatch`-only. Before that it had **zero successful runs ever**,
+> for a structural reason: it hashed an artifact the build could not produce.
+> Treat any measured diff below as coming from a specific, named run — if a
+> claim here is not tied to a run id, it has not been measured.
 
-A SecOps lead or enterprise prospect can verify the 2-runner diff report
-for any release, once a workflow run has actually completed:
+A SecOps lead or enterprise prospect can reproduce the released CLI binary:
 
 ```bash
-# 1. Download the reproducible-build-report artifact from the GitHub Actions
-#    run associated with the release tag (trigger via workflow_dispatch if
-#    no scheduled run has completed yet).
-gh run download --name reproducible-build-report --repo HuGR-Labs/corelink-server
+# 1. Fetch the release binary and its published checksum.
+gh release download <tag> --repo HuGR-Labs/corelink-server \
+    --pattern 'corelink-darwin-x86_64*'
 
-# 2. Inspect the step summary (printed to GITHUB_STEP_SUMMARY in CI).
-#    The report table includes: outcome, bit_identical, diff_bytes, diff_percentage.
-
-# 3. Re-verify locally (requires the same rust-toolchain.toml pin):
+# 2. Rebuild from the same commit with the same pinned toolchain.
 rustup toolchain install 1.91.1
-rustup target add wasm32-unknown-unknown
 SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) \
-RUSTFLAGS="--remap-path-prefix=$(pwd)=/SRC --remap-path-prefix=$HOME/.cargo=/CARGO -C codegen-units=1" \
-  cargo build --release --frozen --offline --jobs 1 --target wasm32-unknown-unknown -p corelink-worker
+RUSTFLAGS="--remap-path-prefix=$HOME/.cargo/registry=cargo-registry \
+  --remap-path-prefix=$HOME/.cargo/git=cargo-git \
+  --remap-path-prefix=$HOME/.rustup=rustup \
+  --remap-path-prefix=$(pwd)=corelink" \
+  cargo build -p corelink-cli --release --locked --jobs 1 \
+    --target x86_64-apple-darwin
 
-sha256sum target/wasm32-unknown-unknown/release/corelink_worker.wasm
-# Compare the hash with the artifact.sha256 from the CI run.
+# 3. Compare.
+shasum -a 256 target/x86_64-apple-darwin/release/corelink
+shasum -a 256 corelink-darwin-x86_64
 ```
+
+A difference is not automatically a red flag — see §3 for the six documented
+non-determinism sources and the ADR-0015 tolerance. A difference **larger than
+5 %** is, and is what the CI gate fails on.
+
+SLSA provenance for the same binaries is generated by `release-slsa3.yml`,
+whose subjects are the published release assets themselves, so the bundle
+describes exactly the bytes you downloaded.
 
 ---
 
