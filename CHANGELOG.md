@@ -52,6 +52,34 @@ Each entry cross-references:
 
 ### Fixed
 
+- **The branded status hostname is retired, and the incident page it anchored
+  was wrong about almost everything it promised.** The owner decided not to buy
+  the BetterStack tier that includes a custom domain, so
+  `status.corelink.humangr.com` is no longer advertised: 39 customer-facing and
+  operational files now point at `https://hugrl.betteruptime.com`, the URL that
+  actually serves. Sealed audits, the CHANGELOG and dated reports are left
+  untouched as historical record; the two dated operator records get a
+  correction note appended rather than a body rewrite. Auditing the page while
+  repointing it turned up four separate false claims, all customer-facing and
+  all in four locales: the trust pages said the status page is **operated by
+  Atlassian Statuspage** (it is Better Stack); they listed **eight tracked
+  components** with per-region status (the page carries **two** — CoreLink API
+  Health and CoreLink Container Storage); they advertised **email, SMS, RSS and
+  webhook subscriptions** (the page reports `subscribable: false`); and they
+  published `history.rss` and `api/v2/summary.json` as monitoring endpoints
+  (Atlassian paths this vendor does not serve — both 301 to the homepage, so a
+  polling script would parse HTML forever and never report anything). The real
+  endpoint is `/index.json`, already used by the docs navbar pill. The same
+  paragraph was corrected in the sales FAQ. Also fixed at the vendor, for free:
+  the status page's own `company_url` and `contact_url` pointed at
+  `corelink.humangr.com`, itself dead for the same third-level TLS reason — a
+  customer clicking "contact" mid-incident reached nothing. They now point at
+  live URLs. Remaining and tracked, not swept: the provisioning runbooks and
+  DNS scripts still describe acquiring the branded domain, which is now a
+  decision NOT to do, and they need supersession banners rather than a
+  find-and-replace — a mechanical pass over them produced text like "CNAME
+  `hugrl.betteruptime.com` → `hugrl.betteruptime.com`" and was reverted.
+
 - **The TLC supply-chain pin broke for the third time; re-pinned with a
   provenance chain, and the recurring cause is now a tracked item (B-040).**
   Upstream re-cut the `v1.8.0` release asset on 2026-08-21T16:04:52Z, so the

@@ -116,3 +116,36 @@ hosts are live.
    `https://billing.stripe.com/p/session/stub_<tenant>` URL — the customer
    self-service billing portal is **not wired to the real Stripe portal**. Money-path
    completeness item, separate from hostnames.
+
+---
+
+## ⛔ CORRECTION — 2026-08-24: the branded status hostname is RETIRED
+
+`status.corelink.humangr.com` is dead and is no longer advertised anywhere in
+this repo outside sealed history. The body above is preserved as the record of
+what was true when it was written; do not act on its hostname.
+
+**Why it does not work.** It is a THIRD-level name, outside the one-level
+`*.humangr.com` coverage of Cloudflare Universal SSL, so Cloudflare holds no
+certificate for it; and BetterStack refuses the Host because a custom domain is
+a paid-plan feature this account does not carry. Neither side can terminate
+TLS, so every client gets a handshake failure.
+
+**Unresolved:** the 2026-05-22 closure audit recorded `HTTP 200 — PASS` for
+this exact hostname (`specs/_audits/2026-05-22-w32-closure.md`). Measured on
+2026-08-24 it cannot complete a handshake from any client tried. Two
+explanations fit and NEITHER is verified: the check may have resolved the CNAME
+target rather than the name it reported, or the custom domain may genuinely
+have been registered then and lost since. The account today reports
+`whitelabeled: false` and `custom_domain: null`. Left as an open question
+rather than guessed at — the difference decides whether buying the plan would
+restore it.
+
+**Do NOT re-bind it at the vendor without buying the plan first.** Tried on
+2026-08-24: BetterStack makes the vanity host canonical immediately, so
+`hugrl.betteruptime.com` — the only URL that serves — began 301-ing to a host
+with no certificate. 50 probes over 25 minutes never completed a handshake.
+Reverted.
+
+**Live URL:** `https://hugrl.betteruptime.com` (HTTP 200, "Human Guardrail /
+CoreLink status").
