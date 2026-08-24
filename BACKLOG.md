@@ -530,15 +530,80 @@ tail stops shrinking. It cannot be armed at a fixed threshold today — the
 useful threshold has to wait for convergence or be expressed as "not shrinking"
 rather than "not zero".
 
+**Closed 2026-08-24.** `.github/workflows/audit-archive-lag.yml` is the absence
+monitor, hourly at :20 so it samples after the archive tick rather than racing
+it. The predicate is a two-clause conjunction with T = 3h — *there exists a
+sealed row unarchived longer than T* **AND** *`MAX(archived_at)` is older than T
+or NULL* — which is correct in all three regimes without any stored trend state:
+clause 1 alone would fire throughout the healthy backlog drain, clause 2 alone
+would fire in a genuinely quiet period. Validated against PRODUCTION before
+merge: clause 1 true (29,843 pending old rows), clause 2 false (the archiver had
+written within the window), verdict no-page — the correct answer.
+
+Writing it also surfaced that `audit-chain-daily-verify.yml` had been sending
+every chain-break page with `runbook: specs/_runbooks/RB-AUDIT-CHAIN-VERIFY.md`,
+a file that never existed. The spec gate caught it the moment the new runbook
+cited it by name. That runbook now exists.
+
 ```backlog
 id: B-021
 repo: corelink-server
 owner: tl
-status: open
-verify: "! grep -q 'archived_at IS NULL' .github/workflows/audit-chain-daily-verify.yml"
+status: done
+verify: "grep -q 'archived_at IS NULL' .github/workflows/audit-archive-lag.yml && grep -q 'MAX(archived_at)' .github/workflows/audit-archive-lag.yml && test -f specs/_runbooks/RB-AUDIT-ARCHIVE-ABSENT.md"
 verify-means: |
-  open while the daily verifier checks only the chunks it finds and never asks
-  D1 how many sealed rows never became a chunk.
+  done while the absence monitor still evaluates BOTH clauses of the predicate
+  and its runbook exists. A monitor reduced to one clause is a false-alarm
+  generator, not a monitor.
+last-verified: 2026-08-24
+```
+
+### B-022 — a partially-failing archiver pages nobody
+
+`POST /_internal/audit/archive` returns 500 when `partitions_failed > 0`, and
+the hourly sweep logs the status. Nothing pages on it. The B-021 absence monitor
+does not catch this case either, and deliberately so: its second clause asks
+whether the archiver wrote ANYTHING recently, so one broken partition among many
+healthy ones leaves the predicate false. Named in
+`specs/_runbooks/RB-AUDIT-ARCHIVE-ABSENT.md` §3.3 rather than left silent.
+
+The gap is narrow but real: a single tenant/region partition could fail every
+hour indefinitely while the fleet looks healthy. Closing it needs either a
+per-partition lag query or a page driven off the sweep's own non-200.
+
+```backlog
+id: B-022
+repo: corelink-server
+owner: tl
+status: open
+verify: "! grep -q 'partitions_failed' .github/workflows/audit-archive-lag.yml"
+verify-means: |
+  open while no scheduled check looks at per-partition archive failure. Closes
+  when a partial failure can raise a page on its own.
+last-verified: 2026-08-24
+```
+
+### B-023 — the two repos carry different pre-merge gates
+
+`scripts/pre-merge-gate-check.sh` is 456 lines in corelink-server and 156 in
+corelink-runners. The runners copy was ported by its PR #482 from an earlier
+revision and lacks the `--merge` mode, whose whole purpose is that a human
+cannot accidentally discard the gate's verdict by piping it — the failure that
+merged PR #1049 with four checks still pending.
+
+So the repo where a bad merge rolls a container image onto customer jobs has the
+weaker gate.
+
+```backlog
+id: B-023
+repo: corelink-runners
+owner: tl
+status: open
+verify: "test \"$(wc -l < ../corelink-runners/scripts/pre-merge-gate-check.sh 2>/dev/null || echo 0)\" -lt 400"
+verify-means: |
+  open while the runners copy of the gate is materially shorter than the
+  server's, i.e. missing the later defenses. Path is relative to a sibling
+  checkout; a missing checkout reads as still-open, which is the safe direction.
 last-verified: 2026-08-24
 ```
 
