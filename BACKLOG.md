@@ -779,6 +779,129 @@ verify-means: |
 last-verified: 2026-08-24
 ```
 
+### B-027 — the whole alerting layer runs nowhere and says it does
+
+`dashboards/alerts/` holds ten Prometheus/Alertmanager rule files with
+severities, PagerDuty routing labels and runbook pointers. **Nothing validates
+them and nothing publishes them.** No workflow invokes `promtool`; no pipeline
+ships the rules anywhere. They are a specification of alerting, not alerting.
+
+Worse than inert: `dash-audit-export-alerts.yml` states in its own header that
+`promtool test rules` runs "on PR via the existing `dashboards/alerts/*.yml`
+validator". That validator does not exist. A file asserting its own gate is
+exactly the shape that survives review.
+
+Twenty runbook ids are cited from `runbook:` labels in those rules and
+**fourteen have no file**: `RB-AC-CONFORMANCE`, `RB-AC-COST-REGRESSION`,
+`RB-AC-HIT-RATIO`, `RB-AC-LATENCY`, `RB-AC-SLO-BURN`, and `RB-FM-059`, `-060`,
+`-250`, `-253`, `-254`, `-300`, `-303`, `-305`, `-404`. By contrast the three
+runbook pointers in live PagerDuty payloads all resolve — the last dangling one
+was written on 2026-08-24.
+
+Two honest readings and the item covers both: either the layer is meant to be
+live, in which case it needs a validator, a publish path and its runbooks; or it
+is aspirational, in which case the files must say so instead of claiming a gate.
+
+```backlog
+id: B-027
+repo: corelink-server
+owner: tl
+status: open
+verify: "! grep -rq 'promtool' .github/workflows/"
+verify-means: |
+  open while no workflow runs promtool over dashboards/alerts/. Closes when the
+  rules are validated and published, or relabelled non-live with the false gate
+  claim removed.
+last-verified: 2026-08-24
+```
+
+### B-028 — six Dependabot alerts have never been triaged
+
+`HuGR-Labs/corelink-server` carries **4 high and 2 moderate** open Dependabot
+alerts. Every `git push` prints the banner; nobody has read them. The repo runs
+`cargo-audit`, `cargo-deny`, `semgrep`, `trivy` and `gitleaks` on schedules, so
+the gap is not tooling — GitHub's own advisory feed simply has no owner.
+
+Triage, not blanket upgrade: each alert needs a verdict (fix / not-reachable /
+accepted-with-reason). An unread high advisory on a product that sells storage
+governance is a bad look independent of exploitability.
+
+```backlog
+id: B-028
+repo: corelink-server
+owner: tl
+status: open
+verify: manual
+verify-means: |
+  open while any Dependabot alert is still open and unadjudicated. NOT
+  CI-checkable: the Actions GITHUB_TOKEN cannot read the Dependabot alerts API,
+  and a command that returns empty under CI's credentials would make this check
+  pass by accident — the failure mode this register exists to prevent. Run it
+  where gh is authenticated:
+    gh api /repos/HuGR-Labs/corelink-server/dependabot/alerts --paginate \
+      -q '[.[]|select(.state=="open")]|length'
+last-verified: 2026-08-24
+```
+
+### B-029 — the load-test regression gate cannot fail
+
+`load-test-nightly.yml` defines `REGRESSION_THRESHOLD = 1.20` and never uses it.
+The baseline lookup is a comment — *"Baseline lookup intentionally elided here —
+the GHA cache implementation lives in a follow-up WI"* — and the job prints
+`advisory mode` and exits 0. The artifact download it does perform fetches the
+CURRENT run's own artifacts, so there is nothing to compare against.
+
+A green check that asserts nothing about performance, in a repo whose product
+claim is speed.
+
+```backlog
+id: B-029
+repo: corelink-server
+owner: tl
+status: open
+verify: "grep -q 'advisory mode' .github/workflows/load-test-nightly.yml"
+verify-means: |
+  open while the regression check prints advisory mode instead of comparing
+  against a stored baseline. Closes when it can go red, or when it stops calling
+  itself a regression gate.
+last-verified: 2026-08-24
+```
+
+### B-030 — a Mac CI slot is down, and a stuck fleet is invisible
+
+`corelink-builder-1` is registered in launchd but not running: GitHub lists four
+`corelink-builder` runners, not five. Nobody noticed.
+
+Separately, on 2026-08-24 all four live runners reported `busy: true` while
+**zero** jobs were in progress across all three repos, with seven runs queued
+behind them — one since 05:04 UTC, six hours earlier. A launchd restart plus
+cancelling the orphaned queue cleared it, and a dispatched `rustfmt` then ran
+green; the `busy: true` flag itself stayed stale on GitHub's side even with an
+empty queue, so it is cosmetic rather than load-bearing.
+
+What is missing is not the fix, it is the noticing. Nothing watches whether the
+Mac fleet has its expected slot count or whether the queue is draining — and the
+queue is the one signal that would have caught both.
+
+```backlog
+id: B-030
+repo: corelink-server
+owner: tl
+status: open
+verify: manual
+verify-means: |
+  open while fewer than five corelink-builder runners are registered, AND while
+  nothing watches that count. NOT CI-checkable: listing self-hosted runners needs
+  `administration: read`, which the Actions GITHUB_TOKEN does not have and cannot
+  be granted — the same wall that forced the fleet-busy endpoint. Run it where gh
+  is authenticated:
+    gh api /repos/HuGR-Labs/corelink-server/actions/runners \
+      -q '[.runners[]|select(.name|startswith("corelink-builder"))]|length'
+  Closes when the fifth slot is back AND a gate watches the count, since the
+  count is precisely what nobody was watching.
+last-verified: 2026-08-24
+```
+
 ### B-011 — ~115 branches in corelink-runners have no open PR
 
 Large relative to the other two repos, which carry none. Needs a merged-vs-

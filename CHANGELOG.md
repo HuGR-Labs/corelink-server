@@ -125,6 +125,22 @@ Each entry cross-references:
 
 ### Fixed
 
+- **fix(compliance): the weekly digest rendered seven overdue vendor reviews as
+  a table whose only verdict column said "no".** Section 3 of
+  `scripts/compliance-weekly-digest.py` is built exclusively from vendors whose
+  review has already passed its cadence window, but it was headed "Vendor risk
+  SLAs" and carried a single `2× breach?` column — which marks only the subset
+  that has *doubled* the window, the §7 regression trigger. A reader scanning
+  the 2026-08-24 digest saw seven Critical vendors and seven `no`s and would
+  reasonably conclude the register was clean; in fact all seven (Cloudflare,
+  Stripe, Clerk, AWS, GCP, Azure, Drata) were 11 days past a 90-day cadence.
+  The table now leads with an explicit `N vendor review(s) OVERDUE` count and
+  carries a `Days overdue` column, and the ambiguous header is renamed
+  `> 2× cadence?`. Regression semantics are unchanged — this is a legibility
+  fix, the same defect class as a cron that skips and logs nothing (B-020).
+  The 2026-08-24 digest is regenerated in this commit from the corrected
+  renderer, byte-identical apart from section 3.
+
 - **fix(cache): a runner-job credential could evict a tenant's sccache cache, and
   a tampered Turborepo artifact was served as a cache hit.** Both come from
   `specs/_audits/2026-08-23-cache-integrity-coverage.md`, which read the write and
