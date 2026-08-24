@@ -35,6 +35,20 @@ Exit codes:
 
 from __future__ import annotations
 
+# ── ⛔ SUPERSEDED 2026-08-24 — see the shell siblings and B-041 (done).
+#    This verifies a provisioning outcome we decided not to pursue: Atlassian
+#    Statuspage (we run Better Stack) reached at a branded `status.` custom
+#    domain (a paid-plan feature the owner declined; the CNAME is deleted).
+#    A banner in a doc is advisory; this is an executable, so it refuses.
+import os as _os, sys as _sys
+if not _os.environ.get("STATUSPAGE_PROVISIONING_REVIVED"):
+    _sys.stderr.write(
+        "REFUSING: status-page provisioning is superseded (B-041, 2026-08-24).\n"
+        "  live status page: https://hugrl.betteruptime.com\n"
+        "  set STATUSPAGE_PROVISIONING_REVIVED=1 to override deliberately.\n")
+    raise SystemExit(78)
+
+
 import argparse
 import datetime
 import hashlib

@@ -23,6 +23,32 @@ tags:
 
 # Statuspage.io — T-7d Pre-Launch Test Plan
 
+> ## ⛔ SUPERSEDED — do not execute (2026-08-24)
+>
+> This document plans a status page on **Atlassian Statuspage** reached at a
+> branded `status.` hostname. Neither happened.
+>
+> **What shipped:** the status page is on **Better Stack**, at
+> **https://hugrl.betteruptime.com**, and that vendor URL is the one customers
+> are given.
+>
+> **Why the branded hostname is gone:** it is a third-level name, outside the
+> one-level `*.humangr.com` coverage of Cloudflare Universal SSL, so Cloudflare
+> holds no certificate for it — and Better Stack refuses a custom Host because
+> a custom domain is a paid-plan feature. Neither side could terminate TLS, and
+> it never served. The owner decided on 2026-08-24 not to buy the plan, so the
+> CNAME was deleted from the zone and the hostname is retired, not pending.
+>
+> **Do not follow the provisioning steps below.** They would have you create an
+> account with a vendor we do not use and request a custom domain we have
+> decided not to pay for. The three scripts that automate these steps now
+> refuse to run. Kept for the record — and because ~20 other documents cite
+> these files — not as a plan.
+>
+> Closed as **B-041**. See `CHANGELOG.md` (2026-08-24) for what the status page
+> was found to be claiming while this was left standing.
+
+
 > **Purpose:** the acceptance-test plan we run at **T-7d** against the freshly-provisioned Statuspage.io account, BEFORE we import lighthouse subscribers and BEFORE we announce `status.corelink.humangr.com` publicly. Pass = green-light for §7 subscriber import + T-0 banner flip. Fail = rollback (see §6).
 > **Audience:** SRE Lead (executor) + DevOps (operator) + VPSec (test-evidence reviewer).
 > **Cross-references:** `STATUS-PAGE-SPEC.md`, `STATUSPAGE-INIT.md`, `STATUSPAGE-SUBSCRIBER-IMPORT.md`, `scripts/statuspage-webhook-receiver.example.yaml`, `LAUNCH-CHECKLIST-V2.md`.
