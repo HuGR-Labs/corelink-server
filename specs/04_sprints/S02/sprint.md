@@ -239,7 +239,7 @@ Todas abaixo obrigatórias (framework §33.5.4.1 HIGH_RISK matrix):
 | R-S02-007 | PAT auth stub diverge de S-03 real (interface drift) | L | L | LOW | L | LOW | Stub interface frozen no Lote 9.4 contract; S-03 implementação respeita interface; integration test cobre transição | Tech Lead |
 | R-S02-008 | Probe storm cost sem negative cache | M | M | MEDIUM | M | LOW | Negative cache TTL 300s + per-IP rate limit (S-08 soft dep); cost benchmark | SRE Lead |
 | R-S02-009 | REAPI ByteStream protocol edge cases (read_offset out-of-bounds, read_limit zero) | M | L | LOW | L | LOW | REAPI v2 spec compliance test suite; reject invalid params com error_taxonomy entries `COR_CAS_*` | Engineer |
-| R-S02-010 | TLS termination at CF Edge vs Worker context | L | L | LOW | L | LOW | Cloudflare handles; documentado; test cobre TLS 1.3 only path | SRE Lead |
+| R-S02-010 | TLS termination at CF Edge vs Worker context | L | L | LOW | L | LOW | Cloudflare handles; documentado; test cobre TLS 1.3 only path. **[SUPERSEDIDO 2026-07-19: o piso da zona é TLS 1.2 — ADR-0072]** | SRE Lead |
 | R-S02-011 | Cost regression > 10% baseline | M | M | MEDIUM | M | LOW | Cost regression gate §14.10 universal Lote 9.4; criterion benchmark per-op cost CI | Tech Lead |
 | R-S02-012 | Mann-Whitney U test false positive (timing diff p < 0.05) | M | L | MEDIUM (delays merge) | L | LOW | Multiple measurement sessions; statistical noise reduction; 10k → 50k samples se needed | AppSec |
 

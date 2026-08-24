@@ -66,7 +66,7 @@ CoreLink é um **shared cache multi-tenant** com blast radius *cross-tenant* cas
 |---|------------------------------|------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------|
 | 1 | **Integridade do artefato**  | Nenhum blob servido diverge do hash requisitado. Envenenar o cache = produzir binário alterado em CI do cliente = catastrófico.         | INV-CAS-INTEGRITY             |
 | 2 | **Isolamento de tenant**     | Tenant A **NUNCA** lê/escreve/enumera blobs do tenant B; mesmo com credencial roubada, blast radius limitado ao tenant comprometido.     | INV-TenantIsolation (TLA+)    |
-| 3 | **Confidencialidade at-rest/in-flight** | Blobs e metadados cifrados em repouso (AES-256-GCM via R2 SSE) e em trânsito (TLS 1.3, mTLS entre planes).                 | INV-CONF-AT-REST, INV-CONF-IN-FLIGHT |
+| 3 | **Confidencialidade at-rest/in-flight** | Blobs e metadados cifrados em repouso (AES-256-GCM via R2 SSE) e em trânsito (piso TLS 1.2, 1.3 negociado por todo cliente capaz; mTLS entre planes) — ver ADR-0072.                 | INV-CONF-AT-REST, INV-CONF-IN-FLIGHT |
 | 4 | **Disponibilidade**          | Ataque DoS a um tenant não afeta SLO dos demais (bulkheading por namespace + rate limits per-tenant).                                    | INV-AVAIL-ISOLATION           |
 | 5 | **Auditabilidade**           | Toda operação write/admin gera evento imutável em audit log (append-only, retention ≥ 7 anos para SOC 2).                                | INV-AUDIT-APPEND-ONLY         |
 
@@ -102,7 +102,7 @@ Cada boundary é um **ponto onde os pressupostos de confiança mudam** — e por
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ TB-0: Internet pública ──► Cloudflare edge                               │
-│   • TLS 1.3 terminating; rate limit por IP; WAF managed rules             │
+│   • TLS terminating (piso 1.2 — ADR-0072); rate limit IP; WAF rules      │
 └──────────────────────────────────────────────────────────────────────────┘
                               │
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -251,7 +251,7 @@ Cada CTRL **DEVE** ter: descrição, implementação, owner (time), evidência o
 | CTRL-CAS-002 | BLAKE3 verify on read               | Client lib opt-out via header `X-Trust-Server: never` (default) | EVT-027 | Por release |
 | CTRL-AC-001  | Merkle verify                       | AC entry carrega digest de raiz; client valida             | EVT-002 | Por release |
 | CTRL-AC-002  | AC digest signing                   | AC digest assinado com tenant_key; verify no client        | EVT-004 (overhead) | Por release |
-| CTRL-CRYPTO-001 | TLS 1.3 only                     | CF edge config; HSTS preload; CAA pin                      | EVT-037 (SSL Labs A+) | Trimestral |
+| CTRL-CRYPTO-001 | TLS 1.2 floor, 1.3 preferido     | CF edge config (`min_tls_version=1.2` na zona `humangr.com`); HSTS preload; CAA pin. **Não é mais 1.3-only** — ver ADR-0072 | EVT-037 (SSL Labs A+) **reexecução pendente: o scan citado é anterior à queda do piso** | Trimestral |
 | CTRL-CRYPTO-002 | AES-256-GCM at rest              | R2 SSE-S3 default + envelope per-tenant (HKDF)             | EVT-013 | Trimestral |
 | CTRL-CRYPTO-003 | Key rotation annual              | Automation via CF API; re-wrap envelope                    | EVT-001 | Anual |
 

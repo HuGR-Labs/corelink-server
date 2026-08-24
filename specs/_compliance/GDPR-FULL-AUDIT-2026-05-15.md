@@ -62,7 +62,7 @@ GDPR Art. 5(1) enumerates six principles plus an accountability obligation in Ar
 | (c) **Data minimisation** | `necessidade` (III) | Minimal collection per dataflow (14 RoPA rows); deny-unknown-fields lint in CI | CTRL-PRIV-001; CTRL-PRIV-020 |
 | (d) **Accuracy** | `qualidade dos dados` (V) | DSR Rectification endpoint `POST /v1/privacy/dsr/rectification` (5 BD SLA, MFA required) | `crates/corelink-dsr/`; `EVT-048` |
 | (e) **Storage limitation** | `necessidade` (III) + retention | Canonical retention table `privacy_model.md §8.1`; GC + 12-backend erasure pipeline | `EVT-042` |
-| (f) **Integrity and confidentiality (security)** | `segurança` (VII) | TLS 1.3 + envelope encryption + tenant isolation + audit + INV-AUDIT-APPEND-ONLY | CTRL-CRYPTO-001/002; CTRL-ISO-001..005 |
+| (f) **Integrity and confidentiality (security)** | `segurança` (VII) | TLS 1.2 floor / 1.3 preferred (ADR-0072) + envelope encryption + tenant isolation + audit + INV-AUDIT-APPEND-ONLY | CTRL-CRYPTO-001/002; CTRL-ISO-001..005 |
 | Art. 5(2) **Accountability** | `responsabilização e prestação de contas` (X) | This audit + RoPA + DPO checklist + audit trail 7y Object Lock | `EVT-047`, `EVT-049` |
 
 **Gap:** none material. All six Art. 5(1) principles map to a canonical control with active evidence; accountability (Art. 5(2)) is demonstrated by the audit chain itself.
@@ -212,7 +212,7 @@ Art. 25 requires technical + organisational measures by design + by default. Map
 |---|---|---|
 | **Pseudonymisation by design** | INV-PRIVACY-PSEUDONYMIZE-ON-ERASURE (audit chain pseudonymized via HKDF); INV-AUDIT-PSEUDONYM-DETERMINISTIC | `crates/corelink-privacy-pseudonymize/`; `EVT-022` |
 | **Data minimisation by default** | INV-AUDIT-MINIMIZATION (log schema allowlist; deny-unknown-fields lint); CTRL-PRIV-014 | `EVT-026` (schema validation); `EVT-001` (lint in CI) |
-| **Encryption by design** | CTRL-CRYPTO-001 (TLS 1.3 in-flight); CTRL-CRYPTO-002 (envelope at-rest); BYOK ADR | `EVT-005`, `EVT-037` |
+| **Encryption by design** | CTRL-CRYPTO-001 (TLS 1.2 floor / 1.3 preferred (ADR-0072)); CTRL-CRYPTO-002 (envelope at-rest); BYOK ADR | `EVT-005`, `EVT-037` |
 | **Tenant isolation by default** | INV-ISO-CONSTANT-TIME-404; INV-ISO-NO-CROSS-LEAK; CTRL-ISO-001..005 | `EVT-022` (TLA+ proofs); `EVT-025` (pentest) |
 | **Residency pinning by default** | INV-RESIDENCY-FAIL-CLOSED (FM-451 cross-region routing); CTRL-PRIV-RESIDENCY-001 | `crates/corelink-privacy-residency-enforcement/`; `LGPD-RESIDENCY-ATTESTATION-2026-05-15.md` |
 | **Consent freshness by default** | INV-CONSENT-PROOF-VERIFIABLE; INV-CONSENT-NO-FAIL-OPEN (no basis degradation) | `crates/corelink-privacy-consent-ledger/`; TLA+ `InvConsentSymmetry` |

@@ -24,6 +24,33 @@ Each entry cross-references:
 
 ### Fixed
 
+- **The security model asserted a TLS control that has not been in force since
+  July (B-019).** CTRL-CRYPTO-001 read "TLS 1.3 only", with an SSL Labs A+ as
+  its evidence, while the `humangr.com` zone has been on a **1.2** floor since
+  2026-07-19 — lowered deliberately so `sccache` (macOS `native-tls` /
+  SecureTransport) could complete a handshake at all, per ADR-0072. Measured
+  before correcting: the zone answers `min_tls_version = 1.2` and
+  `corelink-api.humangr.com` completes a real TLS 1.2 handshake. The claim was
+  false in 25 places across 13 compliance documents plus the architecture set —
+  the ISO/SOC 2/GDPR/LGPD/FedRAMP crosswalks, both INV-CONF-IN-FLIGHT rows, the
+  compliance matrix, and `_sprint_creation_contract.md`, which was still
+  ordering every future sprint to refuse TLS below 1.3. Live documents were
+  corrected; the two FROZEN/AUDITED ones keep their audited bodies under a dated
+  errata; the S-02 sprint records keep their history with a superseded marker.
+  The stale SSL Labs evidence is labelled as stale rather than quietly reused.
+
+### Added
+
+- `scripts/check_tls_floor.py` and the daily `tls-floor-drift` workflow. The TLS
+  floor lives in a Cloudflare dashboard setting, so nothing in this repo could
+  see it drift — ADR-0072 named that gap and could not fix it. The check asserts
+  **equality** with the documented floor (a raise back to 1.3 breaks `sccache`
+  again; a drop below 1.2 makes the compliance set overstate the control) and
+  exits non-zero when it cannot authenticate, because a drift check that cannot
+  read the value must never report "no drift".
+
+### Fixed
+
 - **The Bazel starter's cache-hit check could never pass, no matter what the
   cache did (B-017).** The example that exists to demonstrate CoreLink's Bazel
   cache asserted `>= 80%` remote hits by reading `--execution_log_json_file`

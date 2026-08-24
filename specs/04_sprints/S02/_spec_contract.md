@@ -244,7 +244,7 @@ Canonical decision per ADR-0028 (forward-whitelisted): **MissReason → HTTP 404
 | **PAT auth stub diverge de S-03 real** (interface drift) | L | L | LOW | L | LOW | Stub interface frozen no Lote 9.4 contract; S-03 implementação respeita interface; integration test cobre. |
 | **Probe storm cost** sem negative cache | M | M | MEDIUM | M | LOW | Negative cache TTL 300s + per-IP rate limit (S-08 dependency soft); cost benchmark. |
 | **REAPI ByteStream protocol edge cases** (read_offset out-of-bounds, read_limit zero) | M | L | LOW | L | LOW | REAPI v2 spec compliance test; reject invalid params com error_taxonomy entries. |
-| **TLS termination at CF Edge** vs Worker context | L | L | LOW | L | LOW | Cloudflare handles; documentado; test cobre TLS 1.3 only path. |
+| **TLS termination at CF Edge** vs Worker context | L | L | LOW | L | LOW | Cloudflare handles; documentado; test cobre TLS 1.3 only path. **[SUPERSEDIDO 2026-07-19: o piso da zona é TLS 1.2 — ADR-0072]** |
 | **Cost regression** > 10% baseline | M | M | MEDIUM | M | LOW | Cost regression gate §14.10 universal Lote 9.4; criterion benchmark per-op cost CI. |
 
 ## 16. Benchmarks SOTA externos

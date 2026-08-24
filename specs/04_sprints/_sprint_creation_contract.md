@@ -222,7 +222,7 @@ Toda sprint, independente de escopo, **DEVE** manter:
 - **INV-AUDIT-APPEND-ONLY** (CRITICAL): sprint não pode introduzir UPDATE/DELETE em audit log. Enforcement: CTRL-AUDIT-001 + TLA+ `audit_immutability.tla`.
 - **INV-SUPPLY-SIGNED-DEPLOY** (HIGH): sprint não pode introduzir binário não-assinado em deploy. Enforcement: CTRL-SUPPLY-002 em release pipeline.
 - **INV-CONF-AT-REST** (HIGH): sprint não pode persistir PII/credentials em plaintext. Enforcement: CTRL-CRYPTO-002 + CTRL-CRED-001.
-- **INV-CONF-IN-FLIGHT** (HIGH): sprint não pode aceitar TLS < 1.3. Enforcement: CTRL-CRYPTO-001 + CTRL-NET-001.
+- **INV-CONF-IN-FLIGHT** (HIGH): sprint não pode aceitar TLS < 1.2 — o piso da zona é 1.2 desde 2026-07-19 (ADR-0072); voltar a exigir 1.3-only quebra clientes native-tls/SecureTransport (sccache) e precisa passar pela exit condition da ADR. Enforcement: CTRL-CRYPTO-001 + CTRL-NET-001.
 
 Sprint que **intencionalmente** mexe numa dessas invariantes (ex: S-06 GC toca INV-GC-*) DEVE:
 - Listar forcing factor correspondente em `lane_forcing_factors`.

@@ -107,7 +107,7 @@ Each TIA in `legal/tia/` follows the 6-step EDPB process:
 
 | Measure | Applied to | Effect |
 |---|---|---|
-| **Encryption in transit (TLS 1.3)** | All cross-border flows | CTRL-CRYPTO-001; bypass of government access in transit |
+| **Encryption in transit (TLS 1.2 floor / 1.3 preferred — ADR-0072)** | All cross-border flows | CTRL-CRYPTO-001; bypass of government access in transit |
 | **Encryption at rest (envelope, BYOK option)** | All sub-processor stores | CTRL-CRYPTO-002; raises bar on at-rest compelled disclosure |
 | **Pseudonymisation** | Customer IDs to Stripe; tenant_ids in telemetry; subject_hashes in audit | CTRL-PRIV-pseudonymize; raises bar on identification |
 | **Data minimisation** | Stripe receives email + pseudonymized customer_id + amount only — no card data, no full PII | CTRL-PRIV-001 |

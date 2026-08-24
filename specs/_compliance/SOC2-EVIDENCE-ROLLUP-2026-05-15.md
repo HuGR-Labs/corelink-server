@@ -110,7 +110,7 @@ Format key:
 | CC6.4 | — | OOS_INHERITED | `legal/sub-processors.md` (Cloudflare/AWS/GCP/Azure SOC 2 reports referenced) | ANNUAL | P (GAP-09 — refresh cadence) | f18acdc |
 | CC6.5 | — | OOS_INHERITED | `legal/sub-processors-templates/` termination clauses | ANNUAL | I (inherited) | f18acdc |
 | CC6.6 | CTRL-NET-001 + CTRL-NET-002 + CTRL-NET-003 | credential_management | Cloudflare WAF + Access + mTLS edge-to-origin + per-tenant DO namespace | AUTO | P (GAP-10 — OWASP CRS 4.0) | f18acdc |
-| CC6.7 | CTRL-CRYPTO-001 | change_management | TLS 1.3 enforced + signed-deploy + Rekor + PAT-DUAL-APPROVAL-001 | AUTO | I | f18acdc |
+| CC6.7 | CTRL-CRYPTO-001 | change_management | TLS 1.2 floor / 1.3 preferred (ADR-0072) + signed-deploy + Rekor + PAT-DUAL-APPROVAL-001 | AUTO | I | f18acdc |
 | CC6.8 | CTRL-SUPPLY-002 + CTRL-SUPPLY-003 | change_management | SBOM signed + Cosign verification + INV-SUPPLY-NO-YANKED + immutable Workers | PER-RELEASE | P (GAP-11 — runtime drift; compensating control: immutable images) | f18acdc |
 
 ### 2.7 CC7 System Operations
@@ -148,7 +148,7 @@ Format key:
 
 | TSC | CTRL ID | Evidence type | Artifact location | Cadence | Status | Last update |
 |---|---|---|---|---|---|---|
-| C1.1 | CTRL-CRYPTO-002 + CTRL-CRYPTO-003 + CTRL-ISO-001..005 | credential_management | TLS 1.3 + BYOK envelope encryption `compliance/byok-fips-matrix.md` + per-tenant key isolation | AUTO | **G — blocking-GA (GAP-02 + GAP-27)** | f18acdc |
+| C1.1 | CTRL-CRYPTO-002 + CTRL-CRYPTO-003 + CTRL-ISO-001..005 | credential_management | TLS 1.2 floor / 1.3 preferred (ADR-0072) + BYOK envelope encryption `compliance/byok-fips-matrix.md` + per-tenant key isolation | AUTO | **G — blocking-GA (GAP-02 + GAP-27)** | f18acdc |
 | C1.2 | CTRL-PRIV-014 + CTRL-PRIV-015 + CTRL-PRIV-016 | access_reviews | INV-DATA-ERASURE-COMPLETE + INV-ERASURE-ATTESTATION-SIGNED + ADR-S11-003 erasure salt + RB-DSR-ERASURE-INCOMPLETE | AUTO | I | f18acdc |
 
 ### 2.12 PI1 Processing Integrity
