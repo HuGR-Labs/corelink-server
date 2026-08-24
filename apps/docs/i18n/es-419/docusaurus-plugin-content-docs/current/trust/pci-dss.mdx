@@ -168,7 +168,7 @@ ever POSTs a PAN to a wrong endpoint. It pattern-matches PANs, redacts
 them with a salted-hash placeholder, and counts the redactions so we know
 if a leak happened upstream. It never stores the original value. Property
 test (100k synthetic PANs, zero leaks):
-[`crates/corelink-logpush/tests/pii_redaction_100k_synthetic.rs`](https://github.com/HumanGuardrail/corelink-server/blob/main/crates/corelink-logpush/tests/pii_redaction_100k_synthetic.rs).
+`crates/corelink-logpush/tests/pii_redaction_100k_synthetic.rs`.
 
 ## Related
 
