@@ -403,14 +403,47 @@ or to withdraw the claim. No customer-facing page currently makes a reproducible
 build or SLSA claim, so this is an internal-integrity gap today, not a false
 public statement; it would become one the moment such a page is written.
 
+**Closed 2026-08-24.** The fix was not "add cdylib" — it was to attest what
+ships. `wrangler.toml` deploys `worker/src/index.ts`; `corelink-worker` survives
+as an ordinary Rust library linked into the container, and nothing wasm exists
+anywhere in the release. What users download and execute is the `corelink` CLI,
+four platform binaries on the GitHub release — which GA-GATE-E09 already names,
+and which had neither a reproducibility check nor provenance.
+
+`reproducible-build` now builds `corelink-cli` with `release-cli.yml`'s own
+command, `SOURCE_DATE_EPOCH` and `--remap-path-prefix` set, twice, into separate
+target directories so the second leg is a real compile rather than a cache hit.
+Measured, not asserted — run 32726344224 on the self-hosted fleet:
+**bit-identical**, `58cc00a621dc095160bd54ecebee00640f8aa5a9e8f4acb7c262117aadc8c216`,
+4 691 516 bytes, 0 differing bytes. That is the first successful reproducibility
+measurement this repo has ever produced. Both legs run on one host, so the claim
+is build determinism, not cross-environment reproducibility, and the workflow
+says so.
+
+`release-slsa3` takes its subjects from the published release binaries instead
+of rebuilding a second artifact, so the provenance describes the bytes a user
+downloaded. Verified against the live `cli-v0.1.0` release: the four digests
+computed that way are byte-identical to the release's own `checksums.txt`. Job 3
+re-hashes after signing, so an asset swapped mid-flight cannot ship under a
+valid-looking bundle. The one thing still blocked is the hosted SLSA builder —
+tracked as B-027.
+
+Also fixed in passing: the diff-threshold comparison truncated the percentage to
+an integer, so a 5.9 % diff passed a 5 % gate.
+
 ```backlog
 id: B-016
 repo: corelink-server
 owner: tl
-status: open
-verify: "! grep -q 'crate-type' crates/corelink-worker/Cargo.toml"
-verify-means: open while corelink-worker still cannot emit the wasm its attestation lanes hash
-last-verified: 2026-08-23
+status: done
+verify: |
+  grep -q "cargo build .*corelink-cli\|-p corelink-cli" .github/workflows/reproducible-build.yml && \
+  ! grep -qE "^[^#]*--target wasm32-unknown-unknown" .github/workflows/release-slsa3.yml
+verify-means: |
+  done — reproducible-build compiles the shipped CLI, and release-slsa3 no longer
+  BUILDS the wasm artifact (its header still describes the old bug on purpose, so
+  the check ignores comments). Red if either is pointed back at the wasm target.
+last-verified: 2026-08-24
 ```
 
 ### B-017 — our own flagship Bazel cache demo records zero cache hits
@@ -801,6 +834,40 @@ verify: |
   ! grep -q "create_only\|put_if_absent" crates/corelink-container/src/routes/turbo_v8.rs
 verify-means: open while Turborepo PUT stays an overwrite; lands red once create-only semantics appear on that surface
 last-verified: 2026-08-23
+```
+
+### B-027 — SLSA L3 needs a GitHub-hosted builder, which this repo does not spend on
+
+`release-slsa3.yml` now takes its subjects from the published release binaries
+(B-016), so job 1 and job 3 run on the self-hosted fleet and are correct. Job 2
+is the `slsa-framework/slsa-github-generator` reusable workflow, and **SLSA L3
+is defined by that builder being GitHub-managed and isolated** — it cannot be
+re-homed onto our own runners without dropping to L2 or below. This repo's
+standing rule is zero GitHub-Actions spend.
+
+So the lane is correct and still cannot complete for free. It has run once ever
+(2026-05-29) and failed, and only one release exists (`cli-v0.1.0`), so no
+provenance bundle has ever been produced for anything we ship.
+
+The decision is a cost one and belongs to the owner: (a) allow hosted minutes
+for release provenance only — releases are rare, so the bill is bounded and
+small; (b) drop the L3 claim and self-host a weaker attestation (cosign-signed
+digests, no isolated builder), stating the level honestly wherever SLSA L3 is
+currently asserted; or (c) withdraw the provenance claim entirely. Option (b)
+and (c) both require editing the ISO 27001 SoA A.5.21 row and the SOC 2
+crosswalk, which cite SLSA L3 today.
+
+```backlog
+id: B-027
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  grep -q "slsa-github-generator" .github/workflows/release-slsa3.yml
+verify-means: |
+  open while the lane still depends on the hosted SLSA builder; goes red once
+  the dependency is removed, whichever way the decision lands
+last-verified: 2026-08-24
 ```
 
 ## Needs the owner

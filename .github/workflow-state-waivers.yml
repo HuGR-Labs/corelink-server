@@ -46,24 +46,6 @@
 # =============================================================================
 
 waivers:
-  ".github/workflows/reproducible-build.yml":
-    reason: >-
-      Disabled state is real but recorded nowhere, and it sits on top of an
-      unresolved contradiction that only the owner can settle. The workflow
-      builds on hosted `ubuntu` runners, which conflicts with the repository's
-      zero-hosted-GitHub-Actions mandate — so switching it off may well have
-      been deliberate. But CLAUDE.md still documents reproducible-build as a
-      workflow that STAYS NIGHTLY, and its own header records 0 successes in
-      the last 60 runs. Three sources disagree about whether this gate is
-      supposed to be running. Decide one of: (a) re-home it onto `corelink`
-      self-hosted runners and re-enable, (b) retire it and delete the CLAUDE.md
-      claim, or (c) re-enable as-is and grant an explicit hosted-minutes
-      exception. Leaving it silently off is not one of the options.
-    authorized-by: UNDECIDED
-    date: "2026-08-23"
-    expires: "2026-09-06"
-    tracking: none
-
   ".github/workflows/pre-cutover-weekly-cron.yml":
     reason: >-
       Off with no recorded authorization. Survivor of the 2026-08-08 mass
