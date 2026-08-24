@@ -869,6 +869,42 @@ verify-means: |
 last-verified: 2026-08-24
 ```
 
+### B-031 — every Critical vendor review is past its cadence window
+
+All seven Critical vendors — Cloudflare, Stripe, Clerk, AWS, Google Cloud, Azure
+and Drata — were last reviewed on the 2026-05-15 baseline against a quarterly
+(90-day) cadence. On 2026-08-24 that is 101 days, 11 days overdue, and the
+register's own header names 2026-08-15 as the next full refresh. The reviews
+themselves need Drata and the vendors' current SOC 2 / ISO evidence, so this is
+the human's.
+
+It went unseen because the thing built to see it said the opposite. Section 3 of
+the weekly digest is assembled *only* from vendors already in breach, yet it was
+headed "Vendor risk SLAs" and its single verdict column read `2× breach?` — true
+only once a review has **doubled** its window. Seven overdue Critical vendors
+therefore rendered as seven `no`s. The renderer is fixed (`#1248`: explicit
+OVERDUE count, a `Days overdue` column, the column renamed `> 2× cadence?`), so
+the next digest states it plainly. Regression semantics were deliberately left
+alone: 2× remains the §7 page-worthy trigger, and changing that is a compliance
+decision, not a rendering one.
+
+```backlog
+id: B-031
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  python3 scripts/compliance-weekly-digest.py --dry-run --json \
+    | python3 -c "import json,sys; v=json.load(sys.stdin)['vendor_breaches']; \
+      print('overdue=%d' % len(v)); sys.exit(0 if v else 1)"
+verify-means: |
+  exits 0 while at least one vendor review is past its cadence window, and starts
+  failing the moment the register is refreshed — so finishing the reviews turns
+  this item red until its status is updated to match. `--dry-run` keeps it from
+  writing a digest file, so the check leaves no dirty tree.
+last-verified: 2026-08-24
+```
+
 ### B-011 — ~115 branches in corelink-runners have no open PR
 
 Large relative to the other two repos, which carry none. Needs a merged-vs-
