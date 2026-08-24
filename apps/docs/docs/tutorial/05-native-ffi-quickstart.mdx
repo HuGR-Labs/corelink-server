@@ -106,7 +106,7 @@ GOPROXY=https://humangr.com/corelink/docs/goproxy,https://proxy.golang.org,direc
 ```
 
 The `GOPROXY` setting is mandatory: `go.corelink.humangr.com` has no DNS
-record, so a plain `go get` fails with "no such host". The module is served
+record, so a plain `go get` fails with "no such host." The module is served
 from CoreLink's own proxy — the first entry above; the second entry,
 `https://proxy.golang.org`, is what fetches the module's ordinary public
 dependencies.

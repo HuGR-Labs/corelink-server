@@ -145,7 +145,7 @@ For a representative input — `T = 1`, `S_w = 100 GB/mo`, `byok = none`,
 
 | Tier | Base | Fits? | Total | Notes |
 |---|---|---|---|---|
-| Free | $0 | no | n/a | exceeds Free's 10 GB storage cap |
+| Free | $0 | no | n/a | exceeds the Free tier's 10 GB storage cap |
 | Solo | $15 | no | n/a | exceeds Solo's 50 GB storage cap |
 | Starter | $35 | yes | **$35.00** | 100 ≤ 150 — smallest tier that fits |
 | Pro ⭐ | $50 | yes | $50.00 | fits with headroom to 500 GB — recommended anchor |
@@ -159,20 +159,20 @@ expecting to grow.
 
 ## Three worked scale points
 
-### Small: solo dev on Bazel
+### Small: Solo dev on Bazel
 
 `T = 1`, `S_w = 4 GB/mo`, `byok = none`, `h = 0.75`, `R = 1`.
 
 | Tier | Total | Notes |
 |---|---|---|
-| Free | **$0** | fits within Free's 10 GB storage cap |
+| Free | **$0** | fits within the Free tier's 10 GB storage cap |
 | Solo | $15 | over-served |
 | Pro | $50 | wildly over-served |
 | Enterprise | quote | wildly over-served |
 
 Indicated tier: **Free**.
 
-### Medium: small production team, single region
+### Medium: Small production team, single region
 
 `T = 1`, `S_w = 180 GB/mo`, `byok = none`, `h = 0.82`, `R = 1`.
 
@@ -188,7 +188,7 @@ Indicated tier: **Free**.
 Indicated tier: **Pro** — the smallest tier whose hard-capped storage
 quota covers the usage, and the recommended best-value anchor.
 
-### Large: multi-region enterprise, BYOK, 5 tenants
+### Large: Multi-region enterprise, BYOK, 5 tenants
 
 `T = 5`, `S_w = 800 GB/mo`, `byok = aws`, `h = 0.88`, `R = 3`.
 

@@ -93,7 +93,7 @@ readiness check instead.
 ## `ClientVerify` cannot be turned off with a plain `false`
 
 `Config.ClientVerify` defaults to enabled: the zero value (`false`) is
-indistinguishable from "not set", so opting out of client-side re-hashing
+indistinguishable from "not set," so opting out of client-side re-hashing
 takes a second, deliberate field — `ClientVerifyExplicitFalse: true`. Check
 `Client.IsClientVerifyEnabled()` if you need to confirm which mode a
 constructed client ended up in.

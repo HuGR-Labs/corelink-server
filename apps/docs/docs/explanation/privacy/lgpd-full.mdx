@@ -55,7 +55,7 @@ The nine rights, our service level for each, and how to exercise them:
 | §VIII — Consequências de não consentir | Tell me what happens if I say no | Continuous (shown at consent capture) | Read the privacy notice §5 or look at the consent form before clicking |
 | §IX — Revogação do consentimento | Unsubscribe / withdraw consent | 5 business days | email `privacy@humangr.com`; the self-service endpoint is not available yet |
 
-Plus a bonus tenth right per the 2019 amendment:
+Plus a bonus tenth right per the amendment enacted in 2019:
 
 | Right | What it means | Our SLA | How to exercise |
 |---|---|---|---|
@@ -80,7 +80,7 @@ content-addressable hash of those bytes (the digest), some metadata
 (size, timestamp, your tenant ID as a random UUID), and an audit record
 that says "this tenant uploaded this digest at this time" — **but we do
 not look at the content of your blobs**. Under LGPD, when your blob
-contains personal data of someone else (e.g., you uploaded a dataset for
+contains personal data of someone else (for example, you uploaded a dataset for
 ML training that contains your customers' info), **you are the controller
 and we are the operator**. We do not read or use your data outside the
 contract.
@@ -166,14 +166,14 @@ lives:
 silent no-op — because no durable subject data exists there in the
 shipped system (ADR-S11-013, cold-verified 2026-06-11):
 
-| Backend | Why it's not applicable |
+| Back end | Why it's not applicable |
 |---|---|
 | Neon control plane | Neon control-plane not shipped; subject identity lives in D1 (handled by the D1 adapter) |
 | Neon billing detail | Neon billing not shipped; billing state lives in D1 + Stripe |
 | Neon PITR backup | Neon PITR not shipped; no Neon backups to tombstone |
 | KV | KV namespaces are caches (metadata/JWKS/negative-cache); no durable PII, reconstructed from D1 |
 | Loki / Grafana | No active Loki sink shipped (observability references only) |
-| R2 audit log (pseudonymized) | No R2 audit WORM bucket shipped; no subject-indexed audit store to pseudonymize |
+| R2 audit log (subject to pseudonymisation) | No R2 audit WORM bucket shipped; no subject-indexed audit store to apply pseudonymisation to |
 | R2 CAS legal-hold partition | No legal-hold CAS partition shipped |
 | Compliance evidence store | No R2 evidence-* bucket shipped |
 

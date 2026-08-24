@@ -93,7 +93,7 @@ What `primary_region` controls:
   `apac`). The residency guard maps `weur`→`lhr` and `apac`→`nrt`, and
   refuses cross-region access (`INV-REGION-NO-CROSS-LEAK`). `sam` and `afr`
   have no bucket to route to, so signup rejects them rather than letting
-  a tenant land in an unprovisioned region.
+  a tenant land in a region that is not provisioned.
 - **D1 placement.** Per-tenant D1 database created in-region.
 - **DO placement.** Durable Object instance colocated with D1.
 - **Failover semantics.** During a region outage, the failover path is always
