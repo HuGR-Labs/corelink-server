@@ -61,6 +61,60 @@ exclude = [
   # being dead and an endpoint declining an anonymous GET. Excluding the host
   # here removes a category error, not a guard.
   "^https?://corelink-api\\.humangr\\.com",
+
+  # DEAD PRODUCT HOSTS — already owned, dated, and tracked elsewhere. All of these
+  # are registered in `hostname.tracked_dead` of scripts/docs_reality_allowlist.json
+  # with a TODO(dead-host-sweep) and an expiry (2026-09-30, status is 2026-11-30),
+  # enforced on every docs PR by `validate_docs_reality.py [hostname-liveness]` —
+  # which FAILS the moment a suppression expires. Verified dead on 2026-08-24:
+  # app/attest/billing are NXDOMAIN; corelink.humangr.com, status.corelink.humangr.com
+  # and trust.hugr.com resolve but complete no TLS handshake (curl 000).
+  # lychee re-reporting them adds no information the sweep does not already carry,
+  # and keeping docs CI red on them hides every OTHER broken link behind them.
+  # These exclusions are deliberately host-anchored so a NEW dead host is still caught.
+  "^https?://app\\.corelink\\.humangr\\.com",
+  "^https?://attest\\.corelink\\.humangr\\.com",
+  "^https?://billing\\.corelink\\.humangr\\.com",
+  "^https?://status\\.corelink\\.humangr\\.com",
+  "^https?://corelink\\.humangr\\.com",
+  # trust.hugr.com is dead the same way but is NOT covered by the sweep: the
+  # [hostname-liveness] corpus regex only matches `*.humangr.com`, so a `hugr.com`
+  # host is invisible to it. Tracked as its own backlog item; excluded here so it
+  # does not mask the rest.
+  "^https?://trust\\.hugr\\.com",
+
+  # CODE-BLOCK PLACEHOLDERS AND NON-LINKS. `include_verbatim = true` makes lychee
+  # GET any URL-shaped text inside <code>, including config values that were never
+  # links. Same category error as the corelink-api block above.
+  #   - `https://collector:4318` — the OTel collector endpoint the READER supplies
+  #     (forward-to-otel-collector.mdx).
+  #   - `https://hugr/` — a bare-hostname placeholder.
+  #   - `https://js.stripe.com` — a CSP `script-src` value printed in a shell
+  #     snippet in trust/pci-dss.mdx, not a link.
+  #   - `grafana.com/orgs/<your-org>/api-keys` — the LINK TEXT is the templated
+  #     form; the actual href is grafana.com/profile/api-keys and resolves.
+  #   - the Grafana Cloud `prometheus-prod-*` / `tempo-prod-*` push endpoints are
+  #     POST-only ingest URLs; a 404 to an anonymous GET is the endpoint working.
+  "^https?://collector:",
+  "^https?://hugr/",
+  "^https?://js\\.stripe\\.com",
+  "^https?://grafana\\.com/orgs/",
+  "^https?://(prometheus|tempo)-prod-[^.]*\\.grafana\\.net",
+
+  # THIRD-PARTY BOT BLOCKING. These return 403 to any datacenter/CI client but are
+  # live in a browser — verified 2026-08-24. Excluding a 403-to-robots is not the
+  # same as hiding a dead link; a genuinely removed page would 404, which is still
+  # caught here.
+  "^https?://emilyxiong\\.medium\\.com/",
+  "^https?://drata\\.com/",
+
+  # `your-domain.com` and friends are the reader-supplied placeholder host used in
+  # the competitor-comparison pages; never a real link.
+  "^https?://[^/]*your-domain\\.com",
+  # A URL carrying embedded userinfo (`https://user:token@host/...`) is always an
+  # example credential printed in a code block — e.g. the pip index-URL form in
+  # the Python how-to. lychee would send the fake PAT as basic auth.
+  "^https?://[^/@]*:[^/@]*@",
 ]
 
 # User-Agent for doc hosts that require one. (lychee >=0.20 renamed the old

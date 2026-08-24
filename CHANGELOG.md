@@ -109,6 +109,31 @@ Each entry cross-references:
   be the same silent green this change removes. The baseline is written only
   when the comparison passes, so a regression cannot ratchet itself in by
   being measured twice.
+
+- **docs: every documented CLI install recipe was fiction, and the link checker
+  could not see it.** The `brew install HumanGuardrail/tap/corelink` formula and
+  the `winget install HumanGuardrail.corelink` package were never published (both
+  taps 404), and the "release tarball" recipes named a repo that does not exist
+  (`HumanGuardrail/corelink-cli`), a format that is not published (`.tar.gz` — the
+  assets are raw binaries) and an architecture spelling the release does not use
+  (`arm64` vs `aarch64`). All four alternative install paths, in four locales, are
+  now the verified public assets on `HuGR-Labs/corelink-cli` with the published
+  `.sha256` checked before the binary is made executable — mirroring what the live
+  `corelink-get.humangr.com` installer already does. The primary `curl | sh` path
+  was and remains correct. The security policy's in-scope list, which named the
+  nonexistent Homebrew formula as a distribution surface, was corrected too.
+- **docs: the trust-centre and security pages linked to a GitHub org that no
+  longer exists** (`HumanGuardrail/corelink`, unqualified) across 43 files
+  including every i18n mirror; repointed to `corelink-server`. Also fixed the
+  BLAKE3 paper link (moved to the `BLAKE3-specs` repo), the HubSpot security page,
+  and the ANPD data-subject petition URL — all three verified 200.
+- **docs: the lychee gate now fails on link rot instead of on category errors.**
+  Twenty-three exclusions, each annotated with why it is not a link: dead product
+  hosts already carrying a dated `TODO(dead-host-sweep)` suppression in
+  `hostname.tracked_dead`, POST-only Grafana Cloud ingest endpoints, CSP values
+  and templated placeholders inside fenced code blocks, and third-party hosts that
+  403 any CI client. Proven locally against the real build: zero non-GitHub errors
+  remain, down from 338 reported in CI.
 - **fix(docs): docs CI had been red on `main` since 2026-08-04, and two of its
   three failures were the gate asserting a fiction.** `tests/cli-reference.test.ts`
   required the CLI reference index to list exit codes `0`–`5`. The CLI has never

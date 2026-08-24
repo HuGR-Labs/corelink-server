@@ -268,7 +268,7 @@ export default function PrivacyPage(): ReactElement {
               subjects may submit complaints directly to the Autoridade
               Nacional de Proteção de Dados via{" "}
               <a
-                href="https://www.gov.br/anpd/pt-br/canais_atendimento/cidadao/peticao-de-titular"
+                href="https://www.gov.br/anpd/pt-br/canais_atendimento"
                 rel="noopener noreferrer"
                 target="_blank"
               >
