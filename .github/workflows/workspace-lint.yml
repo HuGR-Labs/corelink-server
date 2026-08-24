@@ -33,6 +33,13 @@ on:
       - 'Cargo.lock'
       - 'rust-toolchain.toml'
       - '.github/workflows/workspace-lint.yml'
+  # Self-test: fires on a PR that edits THIS file and on nothing else, so a
+  # change to the gate is proven before it lands rather than after. Without this
+  # the gate could only be exercised post-merge, which is how a lane ships broken
+  # and nobody finds out for a month.
+  pull_request:
+    paths:
+      - '.github/workflows/workspace-lint.yml'
   workflow_dispatch:
 
 permissions:
