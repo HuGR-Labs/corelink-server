@@ -1623,9 +1623,19 @@ impl PatVerifier {
                 let plaintext = pat_plaintext.to_owned();
                 let permits = Arc::clone(&self.argon2_permits);
                 let per_tenant = Arc::clone(&self.per_tenant);
-                let outcome = self
-                    .burn_flights
-                    .run(
+                // `oargon`/`opermit`: `burn_flights.run` SPAWNS its `lead`
+                // future (see `FlightGroup::run`'s "the work is SPAWNED" doc),
+                // so the permit acquire below runs on a task with no ambient
+                // `origin_timing::LEDGER` in scope. Capture a HANDLE to it
+                // HERE, on this (the calling) task, before the closure moves
+                // it onto the spawned task — see `origin_timing::current_ledger`.
+                // The OUTER `timed(..)` wrap, in contrast, is polled on THIS
+                // task the whole time (it is `run(..).await`ed directly, never
+                // spawned itself), so it needs no such handle.
+                let permit_ledger = crate::origin_timing::current_ledger();
+                let outcome = crate::origin_timing::timed(
+                    crate::origin_timing::Phase::Argon,
+                    self.burn_flights.run(
                         &dummy_burn_fingerprint(pat_plaintext),
                         move || {
                             async move {
@@ -1687,22 +1697,39 @@ impl PatVerifier {
                                 // otherwise an attacker who floods valid-HMAC tokens
                                 // for NON-existent token_ids could OOM the container
                                 // exactly like the hot path.
-                                let permit = match tokio::time::timeout(
-                                    ARGON2_PERMIT_WAIT,
-                                    permits.acquire_owned(),
-                                )
-                                .await
-                                {
-                                    Ok(Ok(permit)) => permit,
-                                    // GLOBAL shed. Returns `Backend`, the SAME code
-                                    // the hot path returns for the SAME condition —
-                                    // see the status-parity note below. `tenant_permit`
-                                    // is released by RAII on this early return, so a
-                                    // global shed never strands a bucket slot either.
-                                    _ => {
-                                        return BurnFlight::Backend(
-                                            "pat verifier overloaded".into(),
-                                        )
+                                //
+                                // `opermit`: this runs inside the SPAWNED `lead`
+                                // future, so the acquire is timed via the
+                                // captured `permit_ledger` handle
+                                // (`origin_timing::PhaseScope::with_handle`),
+                                // not the ambient task-local — see the capture
+                                // site above. The nested block scopes the guard
+                                // to exactly this acquire; `Drop` fires on the
+                                // shed's early `return` too, so both outcomes
+                                // are timed identically.
+                                let permit = {
+                                    let _permit_scope =
+                                        crate::origin_timing::PhaseScope::with_handle(
+                                            permit_ledger,
+                                            crate::origin_timing::Phase::Permit,
+                                        );
+                                    match tokio::time::timeout(
+                                        ARGON2_PERMIT_WAIT,
+                                        permits.acquire_owned(),
+                                    )
+                                    .await
+                                    {
+                                        Ok(Ok(permit)) => permit,
+                                        // GLOBAL shed. Returns `Backend`, the SAME code
+                                        // the hot path returns for the SAME condition —
+                                        // see the status-parity note below. `tenant_permit`
+                                        // is released by RAII on this early return, so a
+                                        // global shed never strands a bucket slot either.
+                                        _ => {
+                                            return BurnFlight::Backend(
+                                                "pat verifier overloaded".into(),
+                                            )
+                                        }
                                     }
                                 };
                                 let _ = tokio::task::spawn_blocking(move || {
@@ -1718,8 +1745,9 @@ impl PatVerifier {
                             .boxed()
                         },
                         BurnFlight::Backend,
-                    )
-                    .await;
+                    ),
+                )
+                .await;
                 // STATUS PARITY between the two ways to earn a 401
                 // (INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM, #1034).
                 //
@@ -1818,92 +1846,122 @@ impl PatVerifier {
         // only at the very END of the pipeline, after that gate. See the comment
         // there for why populating it earlier would be an oracle.
         let mut proved_here = false;
-        if !self.secret_match_memo.contains(&fp) {
-            proved_here = true;
-            let plaintext = pat_plaintext.to_owned();
-            let signing_keys = Arc::clone(&self.signing_keys);
-            let stored_hash = PatHash::from_phc_string(row.pat_hash.clone());
-            let permits = Arc::clone(&self.argon2_permits);
-            let per_tenant = Arc::clone(&self.per_tenant);
-            let tenant_id = row.tenant_id.clone();
-            let outcome = self
-                .verify_flights
-                .run(
-                    &fp,
-                    move || {
-                        async move {
-                            // Finding #2: bound concurrent Argon2id. Acquire a permit
-                            // (bounded wait) BEFORE the blocking work; on
-                            // acquire-timeout the verifier is overloaded — return
-                            // `Backend` (reusing the existing variant, which the OCI
-                            // `/token` handler and the native gate already map to a
-                            // non-leaky fail-CLOSED rejection) rather than letting
-                            // the request pile on more 64-MiB allocations. The permit
-                            // is moved into the blocking closure and dropped there,
-                            // so it is held ONLY across the Argon2id.
-                            let permit = match tokio::time::timeout(
-                                ARGON2_PERMIT_WAIT,
-                                permits.acquire_owned(),
-                            )
-                            .await
-                            {
-                                Ok(Ok(permit)) => permit,
-                                // Semaphore closed (never in practice) or the
-                                // bounded wait elapsed — both fail CLOSED.
-                                Ok(Err(_)) | Err(_) => {
-                                    return VerifyFlight::Backend("pat verifier overloaded".into())
+        // `oargon`: this scope covers the memo check AND, on a miss, the
+        // verification flight below — the SAME phase name and the SAME
+        // emission rule (present iff this scope ran) as the row-not-found
+        // dummy burn's `oargon` above, which is the whole point: the two
+        // arms must stay indistinguishable on the wire. `Drop` records on
+        // EVERY exit from this block, including the early `return Err(..)`
+        // inside it, so timing this multi-statement region touches none of
+        // its branches. See `origin_timing`'s module-level security note.
+        // The extra `{ }` scopes the guard to exactly this `if`, so it does
+        // NOT also time the scope gate / memo-insert that follow it below.
+        {
+            let _argon_scope =
+                crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Argon);
+            if !self.secret_match_memo.contains(&fp) {
+                proved_here = true;
+                let plaintext = pat_plaintext.to_owned();
+                let signing_keys = Arc::clone(&self.signing_keys);
+                let stored_hash = PatHash::from_phc_string(row.pat_hash.clone());
+                let permits = Arc::clone(&self.argon2_permits);
+                let per_tenant = Arc::clone(&self.per_tenant);
+                let tenant_id = row.tenant_id.clone();
+                // `opermit`: `verify_flights.run` also SPAWNS its `lead` future
+                // (same `FlightGroup::run` as the dummy-burn arm above), so
+                // capture the ledger handle HERE, before it moves onto the
+                // spawned task — see the matching note on the dummy-burn arm.
+                let permit_ledger = crate::origin_timing::current_ledger();
+                let outcome = self
+                    .verify_flights
+                    .run(
+                        &fp,
+                        move || {
+                            async move {
+                                // Finding #2: bound concurrent Argon2id. Acquire a permit
+                                // (bounded wait) BEFORE the blocking work; on
+                                // acquire-timeout the verifier is overloaded — return
+                                // `Backend` (reusing the existing variant, which the OCI
+                                // `/token` handler and the native gate already map to a
+                                // non-leaky fail-CLOSED rejection) rather than letting
+                                // the request pile on more 64-MiB allocations. The permit
+                                // is moved into the blocking closure and dropped there,
+                                // so it is held ONLY across the Argon2id.
+                                let permit = {
+                                    let _permit_scope =
+                                        crate::origin_timing::PhaseScope::with_handle(
+                                            permit_ledger,
+                                            crate::origin_timing::Phase::Permit,
+                                        );
+                                    match tokio::time::timeout(
+                                        ARGON2_PERMIT_WAIT,
+                                        permits.acquire_owned(),
+                                    )
+                                    .await
+                                    {
+                                        Ok(Ok(permit)) => permit,
+                                        // Semaphore closed (never in practice) or the
+                                        // bounded wait elapsed — both fail CLOSED.
+                                        Ok(Err(_)) | Err(_) => {
+                                            return VerifyFlight::Backend(
+                                                "pat verifier overloaded".into(),
+                                            )
+                                        }
+                                    }
+                                };
+                                // Finding #1: per-tenant fairness. With the GLOBAL permit
+                                // already held, acquire this tenant's sub-permit
+                                // (consistent order global→per-tenant ⇒ deadlock-free).
+                                // If the tenant is at its sub-cap, fail-CLOSED with the
+                                // SAME overloaded signal as a global timeout — so ONE
+                                // tenant flooding distinct PATs cannot drain the whole
+                                // global pool and starve others. The `permit` (global) is
+                                // dropped on this early return by RAII, so a per-tenant
+                                // rejection does NOT leak a global permit. `Ok(None)` is
+                                // the fail-safe fall-through to global-only bounding.
+                                let tenant_permit = match per_tenant.acquire(&tenant_id).await {
+                                    Ok(maybe_permit) => maybe_permit,
+                                    Err(()) => {
+                                        return VerifyFlight::Backend(
+                                            "pat verifier overloaded".into(),
+                                        )
+                                    }
+                                };
+                                let joined = tokio::task::spawn_blocking(move || {
+                                    let r = verify_with_hash_multi(
+                                        &plaintext,
+                                        &token_id,
+                                        &stored_hash,
+                                        &signing_keys,
+                                    );
+                                    drop(permit); // release the global Argon2id permit the moment the work ends
+                                    drop(tenant_permit); // release the per-tenant permit too (RAII, both paths)
+                                    r
+                                })
+                                .await;
+                                // ⚠️ The flight proves the SECRET and nothing else. It
+                                // must NOT populate the memo here, even though this is
+                                // where the proof lands: the memo is written only past
+                                // the step-4 scope gate, per request — see the comment
+                                // there. A scope-rejected PAT memoised at this point
+                                // would 401 in ~0 ms forever after, which is the
+                                // latency oracle that gate placement exists to close.
+                                match joined {
+                                    Ok(Ok(_verified)) => VerifyFlight::Proven,
+                                    Ok(Err(_)) => VerifyFlight::Rejected,
+                                    Err(e) => VerifyFlight::Backend(format!("verify join: {e}")),
                                 }
-                            };
-                            // Finding #1: per-tenant fairness. With the GLOBAL permit
-                            // already held, acquire this tenant's sub-permit
-                            // (consistent order global→per-tenant ⇒ deadlock-free).
-                            // If the tenant is at its sub-cap, fail-CLOSED with the
-                            // SAME overloaded signal as a global timeout — so ONE
-                            // tenant flooding distinct PATs cannot drain the whole
-                            // global pool and starve others. The `permit` (global) is
-                            // dropped on this early return by RAII, so a per-tenant
-                            // rejection does NOT leak a global permit. `Ok(None)` is
-                            // the fail-safe fall-through to global-only bounding.
-                            let tenant_permit = match per_tenant.acquire(&tenant_id).await {
-                                Ok(maybe_permit) => maybe_permit,
-                                Err(()) => {
-                                    return VerifyFlight::Backend("pat verifier overloaded".into())
-                                }
-                            };
-                            let joined = tokio::task::spawn_blocking(move || {
-                                let r = verify_with_hash_multi(
-                                    &plaintext,
-                                    &token_id,
-                                    &stored_hash,
-                                    &signing_keys,
-                                );
-                                drop(permit); // release the global Argon2id permit the moment the work ends
-                                drop(tenant_permit); // release the per-tenant permit too (RAII, both paths)
-                                r
-                            })
-                            .await;
-                            // ⚠️ The flight proves the SECRET and nothing else. It
-                            // must NOT populate the memo here, even though this is
-                            // where the proof lands: the memo is written only past
-                            // the step-4 scope gate, per request — see the comment
-                            // there. A scope-rejected PAT memoised at this point
-                            // would 401 in ~0 ms forever after, which is the
-                            // latency oracle that gate placement exists to close.
-                            match joined {
-                                Ok(Ok(_verified)) => VerifyFlight::Proven,
-                                Ok(Err(_)) => VerifyFlight::Rejected,
-                                Err(e) => VerifyFlight::Backend(format!("verify join: {e}")),
                             }
-                        }
-                        .boxed()
-                    },
-                    VerifyFlight::Backend,
-                )
-                .await;
-            match &*outcome {
-                VerifyFlight::Proven => {}
-                VerifyFlight::Rejected => return Err(VerifyError::InvalidPat),
-                VerifyFlight::Backend(msg) => return Err(VerifyError::Backend(msg.clone())),
+                            .boxed()
+                        },
+                        VerifyFlight::Backend,
+                    )
+                    .await;
+                match &*outcome {
+                    VerifyFlight::Proven => {}
+                    VerifyFlight::Rejected => return Err(VerifyError::InvalidPat),
+                    VerifyFlight::Backend(msg) => return Err(VerifyError::Backend(msg.clone())),
+                }
             }
         }
 
