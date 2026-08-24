@@ -426,7 +426,7 @@ downloaded. Verified against the live `cli-v0.1.0` release: the four digests
 computed that way are byte-identical to the release's own `checksums.txt`. Job 3
 re-hashes after signing, so an asset swapped mid-flight cannot ship under a
 valid-looking bundle. The one thing still blocked is the hosted SLSA builder —
-tracked as B-027.
+tracked as B-031.
 
 Also fixed in passing: the diff-threshold comparison truncated the percentage to
 an integer, so a 5.9 % diff passed a 5 % gate.
@@ -959,7 +959,7 @@ verify-means: open while Turborepo PUT stays an overwrite; lands red once create
 last-verified: 2026-08-23
 ```
 
-### B-027 — SLSA L3 needs a GitHub-hosted builder, which this repo does not spend on
+### B-031 — SLSA L3 needs a GitHub-hosted builder, which this repo does not spend on
 
 `release-slsa3.yml` now takes its subjects from the published release binaries
 (B-016), so job 1 and job 3 run on the self-hosted fleet and are correct. Job 2
@@ -981,7 +981,7 @@ and (c) both require editing the ISO 27001 SoA A.5.21 row and the SOC 2
 crosswalk, which cite SLSA L3 today.
 
 ```backlog
-id: B-027
+id: B-031
 repo: corelink-server
 owner: owner
 status: open
