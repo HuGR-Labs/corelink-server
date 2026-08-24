@@ -732,6 +732,19 @@ remainder; archive both branches with an explicit fork marker; or accept the
 partitions as permanently unarchivable and record why — differ in what they
 claim to an auditor, so the owner picks.
 
+**Decided (2026-08-24): clean prefix + quarantine.** The archiver now writes
+each partition's longest contiguous VERIFYING PREFIX and marks the unarchivable
+remainder `quarantined_at` + `quarantine_reason`
+(`sequence_gap:expected=11,found=10`), so healthy rows reach R2 instead of being
+held hostage by one historical fork. Re-sequencing stays FORBIDDEN — no chain
+column is ever UPDATEd, enforced by a test that re-reads the writer's own source.
+Migration `0100_audit_outbox_quarantine.sql` adds the columns and narrows the
+work-queue index; the B-021 absence monitor excludes quarantined rows from its
+pending clause (they can never clear it) while printing their census every hour;
+`RB-AUDIT-ARCHIVE-ABSENT` §5 says what a quarantined row means and how to list
+them. **Still open** until the migration is applied to prod D1 and the eight
+partitions are observed quarantined with a recorded sequence range per partition.
+
 ```backlog
 id: B-024
 repo: corelink-server
