@@ -4,19 +4,19 @@ title: Go — BatchReadBlobs
 sidebar_label: Go · BatchReadBlobs
 ---
 
-:::caution The Go SDK is not released
-`corelink-go` is not published — there is no installable module and no
-Go source in this repository. This example illustrates a planned API. To
-register interest, contact [support@humangr.com](mailto:support@humangr.com).
-:::
-
 # Go — `BatchReadBlobs`
 
-Read many small blobs in one round-trip with client-verify default on.
+Read many small blobs with client-verify default on. The server has no
+batch-read REAPI route, so `BatchRead` issues one GET per digest and
+verifies each blob before returning it — it is a convenience wrapper, not a
+single round-trip.
 
-## Prerequisites (planned)
+## Prerequisites
 
-- There is no package to `go get` — the SDK is not published.
+```bash
+GOPROXY=https://humangr.com/corelink/docs/goproxy,https://proxy.golang.org,direct go get go.corelink.humangr.com/corelink-go@v0.1.0
+```
+
 - `CORELINK_PAT` exported
 
 ## Code
@@ -34,9 +34,10 @@ import (
 
 func main() {
     ctx := context.Background()
-    client, err := corelink.NewClient(ctx, corelink.Config{
+    client, err := corelink.NewClient(corelink.Config{
         Endpoint: "https://corelink-api.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
+        Instance: "default",
     })
     if err != nil {
         panic(err)
@@ -47,12 +48,12 @@ func main() {
         {Hash: "bdd9ea4a8e6b...", SizeBytes: 5},
         {Hash: "71c8b65b8b7e...", SizeBytes: 4},
     }
-    resps, err := client.CAS.BatchReadBlobs(ctx, digests)
+    blobs, err := client.CAS().BatchRead(ctx, digests)
     if err != nil {
         panic(err)
     }
-    for _, r := range resps {
-        fmt.Printf("OK %s (%d B)\n", r.Digest.Hash[:12], len(r.Data))
+    for d, data := range blobs {
+        fmt.Printf("OK %s (%d B)\n", d.Hash[:12], len(data))
     }
 }
 ```
@@ -66,8 +67,7 @@ OK 71c8b65b8b7e (4 B)
 
 ## Common errors
 
-| Status | Error taxonomy | Cause |
-| --- | --- | --- |
-| `NOT_FOUND` | `COR_CAS_BLOB_MISSING` | Digest not present (or evicted). |
-| `ABORTED` | `COR_CAS_DIGEST_MISMATCH` | Client-verify rejected returned bytes. |
-| `INVALID_ARGUMENT` | `COR_CAS_BATCH_TOO_LARGE` | Total response would exceed batch limit. |
+| Error type | Cause |
+| --- | --- |
+| `*corelink.NotFoundError` | Digest not present (or evicted). |
+| `*corelink.DigestMismatchError` | Client-verify rejected returned bytes. |

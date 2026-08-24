@@ -6,13 +6,6 @@ description: Store a content-addressable blob using the corelink-go SDK.
 tags: [sdk, go, cas, how-to]
 ---
 
-:::caution The Go SDK is not released
-`corelink-go` is not published — there is no installable module and no
-Go source in this repository. The rest of this page describes the
-planned interface. To register interest, contact
-[support@humangr.com](mailto:support@humangr.com).
-:::
-
 # Upload a blob
 
 ## When to use this guide
@@ -33,7 +26,7 @@ import (
     "context"
     "os"
 
-    "github.com/HumanGuardrail/corelink-go/v1"
+    "go.corelink.humangr.com/corelink-go"
 )
 
 func upload(ctx context.Context, cli *corelink.Client, path string) (string, error) {
@@ -41,19 +34,22 @@ func upload(ctx context.Context, cli *corelink.Client, path string) (string, err
     if err != nil {
         return "", err
     }
-    return cli.Put(ctx, data)
+    digest, err := cli.Put(ctx, data)
+    if err != nil {
+        return "", err
+    }
+    return digest.Hash, nil
 }
 ```
 
-## No streaming upload
+## No streaming upload on the native CAS surface
 
-`Client` has exactly three data-plane methods — `Put`, `Get`, `Stat` — and
+`Client` has exactly three native CAS methods — `Put`, `Get`, `Stat` — and
 `Put` takes a `[]byte`, not an `io.Reader`; there is no `PutStream` or
-chunk-size option. For a file too large to hold fully in memory, read it in
-your own chunks and assemble the upload yourself, or use `corelink-py`'s
-`put_stream(fileobj, chunk_size=...)` (both the sync and async Python
-clients have it), which streams from an open file handle without buffering
-the whole thing.
+chunk-size option on this surface. For a file too large to hold fully in
+memory, use `Client.ByteStream().Write`, which streams from an `io.Reader`
+against the REAPI v2 surface instead, or read the file in your own chunks
+and assemble the upload yourself.
 
 ## Idempotency
 
@@ -63,24 +59,37 @@ storage.
 
 ## Context plumbing
 
-`Put`'s `context.Context` parameter is accepted for API shape but is
-**not currently wired to cancellation** — the parameter is discarded
-(`func (c *Client) Put(_ context.Context, data []byte) ...`,
-`corelink-go/corelink.go:160`). Passing a cancelled or timed-out context
-does not abort an in-flight `Put`; if you need a hard timeout, enforce it
-around the call yourself (for example, run it in a goroutine and select on
-`ctx.Done()`).
+`Put`'s `context.Context` parameter is wired through to the underlying HTTP
+request (`Client.do` builds the request with
+`http.NewRequestWithContext(ctx, ...)`), so a cancelled or timed-out context
+aborts an in-flight `Put`.
 
 ## Errors
 
-`Client` methods return plain `error` values (message strings), not a
-typed error hierarchy — there is no `*corelink.AuthError`,
-`*corelink.QuotaError`, or similar type to type-switch on. Match on the
-message instead:
+`Client` methods return typed errors you can match with `errors.As`, not
+plain message strings:
 
-| Message contains | Cause | Action |
+| Error type | Cause | Action |
 |---|---|---|
-| `put failed (rc=%d)` | The native `Put` call returned non-zero — could be network, auth, or quota | Confirm the PAT/tenant with a `Stat` call first; if that also fails, see [Troubleshooting](./07-troubleshooting.mdx) |
+| `*corelink.AuthError` | The PAT was rejected, missing, or its tenant disagreed with the request's tenant | Confirm the PAT/tenant with a `Stat` call first; if that also fails, see [Troubleshooting](./07-troubleshooting.mdx) |
+| `*corelink.QuotaError` | The tenant's byte or request quota is exhausted | Check plan limits before retrying |
+| `*corelink.DigestMismatchError` | The uploaded bytes hashed to a different digest than the server computed | Recompute locally; do not retry the same bytes blindly |
+
+```go
+digest, err := cli.Put(ctx, data)
+if err != nil {
+    var authErr *corelink.AuthError
+    var quotaErr *corelink.QuotaError
+    switch {
+    case errors.As(err, &authErr):
+        log.Fatalf("auth error (%d): %s", authErr.StatusCode, authErr.Message)
+    case errors.As(err, &quotaErr):
+        log.Fatalf("quota exceeded (%d): %s", quotaErr.StatusCode, quotaErr.Message)
+    default:
+        log.Fatalf("put failed: %v", err)
+    }
+}
+```
 
 ## Next steps
 

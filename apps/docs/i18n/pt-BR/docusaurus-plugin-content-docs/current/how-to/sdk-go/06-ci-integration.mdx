@@ -13,19 +13,12 @@ tags: [sdk, go, ci, how-to]
 >
 > Canonical EN source: `sdk-go/06-ci-integration.mdx`
 
-:::caution O SDK Go ainda não foi lançado
-`corelink-go` não é publicado — não há módulo instalável nem código-fonte
-Go neste repositório. O restante desta página descreve a interface
-planejada. Para registrar interesse, contate
-[support@humangr.com](mailto:support@humangr.com).
-:::
-
 # CI integration
 
-## When to use this guide
+## Quando usar este guia
 
-Your build is a Go project (or its smoke tests are written in Go) and you
-want CoreLink as a shared cache without shelling out to the CLI.
+Seu build é um projeto Go (ou seus smoke tests são escritos em Go) e você
+quer o CoreLink como cache compartilhado sem sair chamando a CLI.
 
 ## GitHub Actions
 
@@ -36,13 +29,14 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CORELINK_PAT: ${{ secrets.CORELINK_PAT }}
+      GOPROXY: https://humangr.com/corelink/docs/goproxy,https://proxy.golang.org,direct
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
-      - run: cargo build --release -p corelink-go   # builds libcorelink_go for the cgo link
-      - run: CGO_LDFLAGS="-L./target/release -lcorelink_go" go run ./ci/warm-cache
+      - run: go get go.corelink.humangr.com/corelink-go@v0.1.0  # GOPROXY definido acima
+      - run: go run ./ci/warm-cache
 ```
 
 ```go
@@ -54,12 +48,13 @@ import (
     "log"
     "os"
 
-    "github.com/HumanGuardrail/corelink-go/v1"
+    "go.corelink.humangr.com/corelink-go"
 )
 
 func main() {
     ctx := context.Background()
     cli, err := corelink.NewClient(corelink.Config{
+        Endpoint: "https://corelink-api.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
         TenantID: os.Getenv("CORELINK_TENANT"),
     })
@@ -68,8 +63,7 @@ func main() {
     }
     defer cli.Close()
 
-    // There is no Bench method on this SDK — warm the cache with a real
-    // Put/Get round trip instead, and fail the job on error.
+    // Warm the cache with a real Put/Get round trip and fail the job on error.
     digest, err := cli.Put(ctx, []byte("ci-warm-cache-probe"))
     if err != nil {
         log.Fatalf("cache warm-up failed: %v", err)
@@ -88,9 +82,10 @@ build:
   image: golang:1.22
   variables:
     CORELINK_PAT: $CORELINK_PAT  # masked
+    GOPROXY: "https://humangr.com/corelink/docs/goproxy,https://proxy.golang.org,direct"
   script:
-    - cargo build --release -p corelink-go
-    - CGO_LDFLAGS="-L./target/release -lcorelink_go" go run ./ci/warm-cache
+    - go get go.corelink.humangr.com/corelink-go@v0.1.0  # GOPROXY definido acima
+    - go run ./ci/warm-cache
 ```
 
 ## CircleCI
@@ -103,20 +98,22 @@ jobs:
       - image: cimg/go:1.22
     environment:
       CORELINK_PAT: $CORELINK_PAT
+      GOPROXY: https://humangr.com/corelink/docs/goproxy,https://proxy.golang.org,direct
     steps:
       - checkout
-      - run: cargo build --release -p corelink-go
-      - run: CGO_LDFLAGS="-L./target/release -lcorelink_go" go run ./ci/warm-cache
+      - run: go get go.corelink.humangr.com/corelink-go@v0.1.0  # GOPROXY definido acima
+      - run: go run ./ci/warm-cache
 ```
 
-## Job-scoped PATs
+## PATs por job
 
-There is no self-service API to mint a short-lived PAT per pipeline today
-(see [Security model](../../security.md)) — email
-[support@humangr.com](mailto:support@humangr.com) to request a dedicated CI
-PAT, then inject it via your CI provider's secret store as shown above.
+Não existe hoje uma API self-service para gerar um PAT de curta duração
+por pipeline (veja [Security model](../../security.md)) — envie um e-mail
+para [support@humangr.com](mailto:support@humangr.com) para solicitar um
+PAT dedicado de CI e injete-o via o secret store do seu provedor de CI,
+como mostrado acima.
 
-## Next steps
+## Próximos passos
 
 - [Batch operations](./05-batch-operations.mdx)
 - [Troubleshooting](./07-troubleshooting.mdx)

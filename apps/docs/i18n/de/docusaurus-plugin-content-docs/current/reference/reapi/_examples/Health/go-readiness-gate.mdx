@@ -10,16 +10,9 @@ sidebar_label: Go · readiness gate
 >
 > Canonical EN source: `docs/reference/reapi/_examples/Health/go-readiness-gate.mdx`
 
-:::caution Das Go-SDK ist noch nicht veröffentlicht
-`corelink-go` ist nicht veröffentlicht — es gibt weder ein installierbares
-Modul noch Go-Quellcode in diesem Repository. Dieses Beispiel illustriert
-eine geplante API. Um Interesse zu registrieren, kontaktieren Sie
-[support@humangr.com](mailto:support@humangr.com).
-:::
+# Go — Kubernetes-Readiness-Gate
 
-# Go — Kubernetes readiness gate
-
-Wire `Health.Check` into a Kubernetes readiness probe handler.
+`Client.Health` in einen Kubernetes-Readiness-Probe-Handler einbinden.
 
 ## Code
 
@@ -36,15 +29,15 @@ import (
 )
 
 func main() {
-    client, _ := corelink.NewClient(context.Background(), corelink.Config{
+    client, _ := corelink.NewClient(corelink.Config{
         Endpoint: "https://corelink-api.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
     })
     http.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
         ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
         defer cancel()
-        s, err := client.Health.Check(ctx)
-        if err != nil || s.String() != "SERVING" {
+        status, err := client.Health(ctx)
+        if err != nil || !status.OK {
             http.Error(w, "not ready", http.StatusServiceUnavailable)
             return
         }
@@ -54,15 +47,15 @@ func main() {
 }
 ```
 
-## Expected output
+## Erwartete Ausgabe
 
 ```text
 $ curl -i http://localhost:8080/ready
 HTTP/1.1 200 OK
 ```
 
-## Common errors
+## Häufige Fehler
 
-| HTTP status | Cause | Fix |
+| HTTP-Status | Ursache | Fix |
 | --- | --- | --- |
-| `503` | Upstream `Health.Check` failed | Trigger pod restart via liveness probe |
+| `503` | Upstream `Client.Health` fehlgeschlagen | Pod-Neustart über Liveness-Probe auslösen |

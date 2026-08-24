@@ -10,15 +10,17 @@ sidebar_label: Go · GetCapabilities
 >
 > Canonical EN source: `Capabilities/go-get-capabilities.mdx`
 
-:::caution O SDK Go ainda não foi lançado
-`corelink-go` não é publicado — não há módulo instalável nem código-fonte
-Go neste repositório. Este exemplo ilustra uma API planejada. Para
-registrar interesse, contate [support@humangr.com](mailto:support@humangr.com).
-:::
+# Go — `Capabilities.GetCapabilities` não está disponível
 
-# Go — `Capabilities.GetCapabilities`
+`Client.Capabilities` existe na superfície de tipos do SDK, mas não há
+nenhum endpoint de servidor por trás dele. A tabela de rotas da REAPI v2
+(`crates/corelink-container/src/routes/bazel_v2.rs`) monta exatamente
+cinco rotas — leitura de CAS, escrita de CAS, leitura de AC, escrita de
+AC, e `findMissingBlobs` — e nenhuma delas é uma superfície de
+capabilities. `Capabilities` não faz nenhuma chamada de rede; ele retorna
+o `ServerCapabilities` zero-value e um erro explicando o motivo.
 
-## Code
+## Código
 
 ```go
 package main
@@ -33,33 +35,26 @@ import (
 
 func main() {
     ctx := context.Background()
-    client, _ := corelink.NewClient(ctx, corelink.Config{
+    client, _ := corelink.NewClient(corelink.Config{
         Endpoint: "https://corelink-api.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
     })
     defer client.Close()
 
-    caps, err := client.Capabilities.Get(ctx)
-    if err != nil {
-        panic(err)
-    }
-    fmt.Println("max_batch_total_size_bytes =", caps.CacheCapabilities.MaxBatchTotalSizeBytes)
-    fmt.Println("digest functions =", caps.CacheCapabilities.DigestFunctions)
-    fmt.Println("compressors =", caps.CacheCapabilities.SupportedCompressors)
+    _, err := client.Capabilities(ctx)
+    fmt.Println(err)
 }
 ```
 
-## Expected output
+## Saída esperada
 
 ```text
-max_batch_total_size_bytes = 4194304
-digest functions = [SHA256 BLAKE3]
-compressors = [IDENTITY ZSTD]
+corelink: no REAPI Capabilities endpoint exists on this server (bazel_v2.rs mounts only CAS read/write, AC read/write, and findMissingBlobs); use Client.Health for a readiness check instead
 ```
 
-## Common errors
+## O que usar em vez disso
 
-| Status | Error taxonomy | Cause |
-| --- | --- | --- |
-| `UNAUTHENTICATED` | `COR_AUTH_PAT_INVALID` | PAT expired. |
-| `UNAVAILABLE` | `COR_NET_TRANSIENT` | Retry with exponential backoff. |
+Use `Client.Health` para uma checagem de prontidão (veja o exemplo
+[Health · Check](../Health/go-check.mdx)). Para escolher uma função de
+digest sem um endpoint de negociação, veja
+[pick a digest function](./go-pick-digest.mdx).

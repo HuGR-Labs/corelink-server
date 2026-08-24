@@ -10,23 +10,23 @@ sidebar_label: Go · BatchReadBlobs
 >
 > Canonical EN source: `ContentAddressableStorage/go-batch-read.mdx`
 
-:::caution El SDK de Go aún no está disponible
-`corelink-go` no está publicado — no existe un módulo instalable ni
-código fuente Go en este repositorio. Este ejemplo ilustra una API
-planeada. Para registrar interés, contacte a
-[support@humangr.com](mailto:support@humangr.com).
-:::
-
 # Go — `BatchReadBlobs`
 
-Read many small blobs in one round-trip with client-verify default on.
+Lea muchos blobs pequeños con la verificación del lado del cliente
+activada por defecto. El servidor no tiene una ruta REAPI de lectura por
+lotes, así que `BatchRead` emite un GET por cada digest y verifica cada
+blob antes de devolverlo — es un envoltorio de conveniencia, no un único
+round-trip.
 
-## Prerequisites (planned)
+## Requisitos previos
 
-- No hay paquete para `go get` — el SDK no está publicado.
-- `CORELINK_PAT` exported
+```bash
+GOPROXY=https://humangr.com/corelink/docs/goproxy,https://proxy.golang.org,direct go get go.corelink.humangr.com/corelink-go@v0.1.0
+```
 
-## Code
+- `CORELINK_PAT` exportada
+
+## Código
 
 ```go
 package main
@@ -41,9 +41,10 @@ import (
 
 func main() {
     ctx := context.Background()
-    client, err := corelink.NewClient(ctx, corelink.Config{
+    client, err := corelink.NewClient(corelink.Config{
         Endpoint: "https://corelink-api.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
+        Instance: "default",
     })
     if err != nil {
         panic(err)
@@ -54,27 +55,26 @@ func main() {
         {Hash: "bdd9ea4a8e6b...", SizeBytes: 5},
         {Hash: "71c8b65b8b7e...", SizeBytes: 4},
     }
-    resps, err := client.CAS.BatchReadBlobs(ctx, digests)
+    blobs, err := client.CAS().BatchRead(ctx, digests)
     if err != nil {
         panic(err)
     }
-    for _, r := range resps {
-        fmt.Printf("OK %s (%d B)\n", r.Digest.Hash[:12], len(r.Data))
+    for d, data := range blobs {
+        fmt.Printf("OK %s (%d B)\n", d.Hash[:12], len(data))
     }
 }
 ```
 
-## Expected output
+## Salida esperada
 
 ```text
 OK bdd9ea4a8e6b (5 B)
 OK 71c8b65b8b7e (4 B)
 ```
 
-## Common errors
+## Errores comunes
 
-| Status | Error taxonomy | Cause |
-| --- | --- | --- |
-| `NOT_FOUND` | `COR_CAS_BLOB_MISSING` | Digest not present (or evicted). |
-| `ABORTED` | `COR_CAS_DIGEST_MISMATCH` | Client-verify rejected returned bytes. |
-| `INVALID_ARGUMENT` | `COR_CAS_BATCH_TOO_LARGE` | Total response would exceed batch limit. |
+| Tipo de error | Causa |
+| --- | --- |
+| `*corelink.NotFoundError` | Digest no presente (o expulsado del caché). |
+| `*corelink.DigestMismatchError` | La verificación del lado del cliente rechazó los bytes devueltos. |

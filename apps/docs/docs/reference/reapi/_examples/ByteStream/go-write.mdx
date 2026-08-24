@@ -4,12 +4,6 @@ title: Go — ByteStream.Write
 sidebar_label: Go · Write
 ---
 
-:::caution The Go SDK is not released
-`corelink-go` is not published — there is no installable module and no
-Go source in this repository. This example illustrates a planned API. To
-register interest, contact [support@humangr.com](mailto:support@humangr.com).
-:::
-
 # Go — `ByteStream.Write`
 
 ## Code
@@ -30,9 +24,11 @@ import (
 
 func main() {
     ctx := context.Background()
-    client, _ := corelink.NewClient(ctx, corelink.Config{
+    client, _ := corelink.NewClient(corelink.Config{
         Endpoint: "https://corelink-api.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
+        Instance: "default",
+        Digest:   corelink.DigestSHA256,
     })
     defer client.Close()
 
@@ -43,9 +39,8 @@ func main() {
     digest := corelink.Digest{Hash: hex.EncodeToString(h.Sum(nil)), SizeBytes: fileSize(f)}
     f.Seek(0, 0)
 
-    n, err := client.ByteStream.Write(ctx, digest, f)
-    if err != nil { panic(err) }
-    fmt.Printf("uploaded %d B sha256:%s...\n", n, digest.Hash[:12])
+    if err := client.ByteStream().Write(ctx, digest, f); err != nil { panic(err) }
+    fmt.Printf("uploaded %d B sha256:%s...\n", digest.SizeBytes, digest.Hash[:12])
 }
 
 func fileSize(f *os.File) int64 {
@@ -61,7 +56,7 @@ uploaded 41943040 B sha256:bdd9ea4a8e6b...
 
 ## Common errors
 
-| Status | Error taxonomy | Cause |
-| --- | --- | --- |
-| `ABORTED` | `COR_CAS_DIGEST_MISMATCH` | Hash mismatch at commit. |
-| `FAILED_PRECONDITION` | `COR_CAS_RESUME_INVALID` | Restart upload from offset 0. |
+| Error type | Cause |
+| --- | --- |
+| `*corelink.DigestMismatchError` | The server hashed the received bytes to a different digest than sent — surfaced from a 422 response. |
+| `*corelink.AuthError` | PAT rejected mid-upload. |

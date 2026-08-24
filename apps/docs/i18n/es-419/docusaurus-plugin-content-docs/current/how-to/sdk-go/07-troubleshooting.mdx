@@ -13,61 +13,104 @@ tags: [sdk, go, debug, how-to]
 >
 > Canonical EN source: `sdk-go/07-troubleshooting.mdx`
 
-:::caution El SDK de Go aún no está disponible
-`corelink-go` no está publicado — no existe un módulo instalable ni
-código fuente Go en este repositorio. El resto de esta página describe
-la interfaz planeada. Para registrar interés, contacte a
-[support@humangr.com](mailto:support@humangr.com).
-:::
-
 # Troubleshooting
 
 ## When to use this guide
 
-A `corelink-go` call returned an error. `corelink-go` is intentionally
-minimal: `Client` exposes only `Put` / `Get` / `Stat` / `Close` /
-`IsClientVerifyEnabled`, and every error is a plain `error` value (message
-string), not a typed error hierarchy. There is no `Doctor`, `Whoami`,
-streaming reader, or structured logging in this SDK today.
+Una llamada de `corelink-go` devolvió un error. `corelink-go` devuelve
+errores tipados que se comprueban con `errors.As` / `errors.Is` — no
+cadenas de mensaje simples ni un diagnóstico `Doctor`. No hay
+`Whoami`, ni registro estructurado, en este SDK hoy.
 
-If you want the 8-check `doctor` diagnostic or a CLI-driven identity check,
-use the [`corelink` CLI](../../reference/cli/doctor.mdx) or the
+Si quiere el diagnóstico `doctor` de 8 verificaciones o una
+comprobación de identidad guiada por CLI, use la [CLI de
+`corelink`](../../reference/cli/doctor.mdx) o los SDKs de
 [Python](../sdk-python/07-troubleshooting.mdx) /
-[JS](../sdk-js/07-troubleshooting.mdx) SDKs, which have richer surfaces.
+[JS](../sdk-js/07-troubleshooting.mdx), que tienen superficies más
+ricas.
 
 ## Errors you'll actually see
 
-`errors.New` / `fmt.Errorf` messages, matched by substring — there is no
-`error_code` field or typed error to switch on:
-
-| Message contains | Cause | Fix |
+| Error type / value | Cause | Fix |
 |---|---|---|
-| `PAT must not be empty` | `Config.PAT` was empty at `NewClient` | Set `CORELINK_PAT` and read it into `Config.PAT` yourself — `NewClient` does not read env vars for you. |
-| `TenantID must not be empty` | `Config.TenantID` was empty at `NewClient` | Pass a non-empty `TenantID`. |
-| `failed to construct client (invalid PAT or TenantID encoding)` | The cgo constructor rejected the PAT or tenant ID bytes | Check the PAT was copied in full (`corelink_<env>_<token_id>.<random_secret>.<hmac_sig>`), no truncation. |
-| `put failed (rc=%d)` | Non-zero return from the native `Put` call | Check network/auth first (a valid PAT and tenant on a failing `Get`/`Stat` narrows it down). |
-| `invalid digest length %d (expected 64)` | Digest passed to `Get`/`Stat` isn't 64 hex chars | Recompute — CoreLink digests are BLAKE3, not SHA-256. |
-| `COR_CAS_DIGEST_MISMATCH: digest mismatch for %s` | Client-verify (default-on, CTRL-CAS-002) caught a BLAKE3 mismatch on `Get` | Possible corruption in transit; retry. Persistent → open a support ticket. |
-| `COR_CAS_VERIFY_DISABLED` | `Get` called with client-verify explicitly disabled | Expected if you set `ClientVerify: false, ClientVerifyExplicitFalse: true` — not an error condition unless you didn't mean to disable it. |
-| `get verify failed (rc=%d)` | Non-zero, non-mismatch return from the native verify call | Check network/auth; retry. |
+| plain error: `Config.Endpoint is required` | `Config.Endpoint` estaba vacío en `NewClient` | Configure `Config.Endpoint` (`https://corelink-api.humangr.com`). |
+| plain error: `Config.PAT is required` | `Config.PAT` estaba vacío en `NewClient` | Configure `CORELINK_PAT` y léalo en `Config.PAT` usted mismo — `NewClient` no lee variables de entorno por usted. |
+| plain error: `CAS operations require a tenant` | Se llamó a `Put`/`Get`/`Stat` sin `Config.TenantID` configurado | Pase `TenantID` en `Config`, o use `corelink.WithTenantID(...)`. |
+| `*corelink.AuthError` | El PAT fue rechazado, faltaba, o su tenant no coincidía con el tenant de la solicitud (HTTP 401/403) | Verifique que el PAT se copió completo (`corelink_<env>_<token_id>.<random_secret>.<hmac_sig>`), sin truncar. |
+| `*corelink.QuotaError` | La cuota de bytes o de solicitudes del tenant está agotada (HTTP 402) | Verifique los límites del plan antes de reintentar. |
+| `*corelink.RateLimitError` | Se está limitando al llamador (HTTP 429); `RetryAfter` lleva el backoff anunciado por el servidor, cuando se envía | Espere `RetryAfter` y reintente. |
+| `*corelink.RegionError` | La solicitud llegó a, o pidió, una región que no puede servir a este tenant u objeto | Enrute la solicitud a `RegionError.Region` en su lugar. |
+| `*corelink.NotFoundError` | El digest, acción o recurso solicitado no existe en el almacén del tenant (HTTP 404) | Confirme el digest con `Stat` antes de `Get`. |
+| `*corelink.DigestMismatchError` | El contenido se hasheó a un digest distinto del esperado — ya sea que el llamador envió el digest equivocado en un `Put`, o la verificación del lado del cliente de `Get` detectó una lectura corrupta o envenenada | Recalcule el digest localmente; en un desajuste de `Get`, reintente — desajustes persistentes en el mismo digest necesitan un ticket de soporte. |
+| `corelink.ErrActionCacheMiss` (sentinel) | `ActionCache().Get` no encontró resultado para el digest de acción | Ruta ordinaria de cache-miss — compárela con `errors.Is`, luego ejecute la acción y llame a `Update`. |
+| digest validation error: `digest hex must be 64 characters` / `digest hex must be lower-case hex` | `Digest.Validate()` rechazó un digest malformado pasado a `Get`/`Stat` | Recalcule — los digests de CoreLink son BLAKE3 (64 caracteres hex en minúscula), no SHA-256. |
+
+## Matching typed errors
+
+```go
+digest, err := client.Put(ctx, data)
+if err != nil {
+    var authErr *corelink.AuthError
+    var quotaErr *corelink.QuotaError
+    var rateErr *corelink.RateLimitError
+    switch {
+    case errors.As(err, &authErr):
+        log.Fatalf("auth error (%d): %s", authErr.StatusCode, authErr.Message)
+    case errors.As(err, &quotaErr):
+        log.Fatalf("quota exceeded (%d): %s", quotaErr.StatusCode, quotaErr.Message)
+    case errors.As(err, &rateErr):
+        time.Sleep(rateErr.RetryAfter)
+        // retry
+    default:
+        log.Fatalf("put failed: %v", err)
+    }
+}
+```
+
+`corelink.ErrActionCacheMiss` es un centinela, no un tipo — compárelo
+con `errors.Is`, no con una aserción de tipo:
+
+```go
+result, err := client.ActionCache().Get(ctx, actionDigest)
+if errors.Is(err, corelink.ErrActionCacheMiss) {
+    // cache miss, not a failure
+}
+```
 
 ## Confirm the client is talking to the server at all
 
-There's no `Whoami` — the first real signal is a successful `Put`/`Get`:
+No hay `Whoami`. Use `Client.Health` para una comprobación de
+disponibilidad ligera, o un `Put`/`Get` real:
 
 ```go
-digest, err := client.Put(ctx, []byte("healthcheck"))
-if err != nil {
-    log.Fatalf("client not working: %v", err)
+status, err := client.Health(ctx)
+if err != nil || !status.OK {
+    log.Fatalf("server not reachable: %v", err)
 }
-log.Println("ok, wrote", digest)
+log.Println("server ok")
 ```
+
+## `Capabilities` returns an error, not data
+
+`Client.Capabilities` no tiene un endpoint de servidor al cual llamar.
+La tabla de rutas de REAPI v2 (`bazel_v2.rs`) monta exactamente cinco
+rutas — lectura de CAS, escritura de CAS, lectura de AC, escritura de
+AC, y `findMissingBlobs` — y ninguna de ellas es un endpoint de
+capacidades. `Capabilities` no realiza ninguna llamada de red; devuelve
+el `ServerCapabilities` de valor cero y un error que lo explica. Use
+`Client.Health` para una comprobación de disponibilidad en su lugar.
+
+## `ClientVerify` cannot be turned off with a plain `false`
+
+`Config.ClientVerify` está habilitado por defecto: el valor cero
+(`false`) es indistinguible de "no configurado", así que optar por
+desactivar el re-hasheo del lado del cliente requiere un segundo
+campo, deliberado — `ClientVerifyExplicitFalse: true`. Verifique
+`Client.IsClientVerifyEnabled()` si necesita confirmar en qué modo
+terminó un cliente construido.
 
 ## Filing a bug
 
-Include the exact error message (`err.Error()`), your `corelink-go`
-version (`go.mod` / `go list -m github.com/HumanGuardrail/corelink-go/v1`),
-and whether you built against a matching `libcorelink_go`
-(`cargo build --release -p corelink-go`) — a version skew between the Go
-module and the linked Rust cdylib is a common source of opaque `rc=%d`
-failures. Never include your PAT.
+Incluya el mensaje de error exacto (`err.Error()`) y su versión de
+`corelink-go` (`go.mod` / `go list -m
+go.corelink.humangr.com/corelink-go`). Nunca incluya su PAT.

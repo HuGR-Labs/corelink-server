@@ -13,34 +13,27 @@ tags: [sdk, go, cas, how-to]
 >
 > Canonical EN source: `docs/how-to/sdk-go/02-upload-blob.mdx`
 
-:::caution Das Go-SDK ist noch nicht veröffentlicht
-`corelink-go` ist nicht veröffentlicht — es gibt weder ein installierbares
-Modul noch Go-Quellcode in diesem Repository. Der Rest dieser Seite
-beschreibt die geplante Schnittstelle. Um Interesse zu registrieren,
-kontaktieren Sie [support@humangr.com](mailto:support@humangr.com).
-:::
+# Ein Blob hochladen
 
-# Upload a blob
+## Wann diese Anleitung verwenden
 
-## When to use this guide
+Sie haben ein `[]byte` und wollen es in den CoreLink-CAS persistieren.
+`Put` berechnet den BLAKE3-Digest für Sie — es gibt in diesem SDK keine
+Möglichkeit, clientseitig einen vorab berechneten Digest zu übergeben
+(anders als `expected_digest=` bei `corelink-py`).
 
-You have a `[]byte` and want it persisted into the CoreLink CAS. `Put`
-computes the BLAKE3 digest for you — there is no way to supply a
-pre-computed digest client-side in this SDK (unlike `corelink-py`'s
-`expected_digest=`).
+## Voraussetzungen
 
-## Prerequisites
+- Authentifizierung konfiguriert ([01-authenticate](./01-authenticate.mdx)).
 
-- Authentication configured ([01-authenticate](./01-authenticate.mdx)).
-
-## Minimal example
+## Minimalbeispiel
 
 ```go
 import (
     "context"
     "os"
 
-    "github.com/HumanGuardrail/corelink-go/v1"
+    "go.corelink.humangr.com/corelink-go"
 )
 
 func upload(ctx context.Context, cli *corelink.Client, path string) (string, error) {
@@ -48,48 +41,65 @@ func upload(ctx context.Context, cli *corelink.Client, path string) (string, err
     if err != nil {
         return "", err
     }
-    return cli.Put(ctx, data)
+    digest, err := cli.Put(ctx, data)
+    if err != nil {
+        return "", err
+    }
+    return digest.Hash, nil
 }
 ```
 
-## No streaming upload
+## Kein Streaming-Upload auf der nativen CAS-Oberfläche
 
-`Client` has exactly three data-plane methods — `Put`, `Get`, `Stat` — and
-`Put` takes a `[]byte`, not an `io.Reader`; there is no `PutStream` or
-chunk-size option. For a file too large to hold fully in memory, read it in
-your own chunks and assemble the upload yourself, or use `corelink-py`'s
-`put_stream(fileobj, chunk_size=...)` (both the sync and async Python
-clients have it), which streams from an open file handle without buffering
-the whole thing.
+`Client` hat genau drei native CAS-Methoden — `Put`, `Get`, `Stat` — und
+`Put` nimmt ein `[]byte`, kein `io.Reader`; es gibt auf dieser Oberfläche
+kein `PutStream` und keine Chunk-Größen-Option. Für eine Datei, die
+nicht vollständig in den Speicher passt, verwenden Sie
+`Client.ByteStream().Write`, das gegen die REAPI-v2-Oberfläche aus einem
+`io.Reader` streamt, oder lesen Sie die Datei in eigenen Chunks und
+setzen den Upload selbst zusammen.
 
-## Idempotency
+## Idempotenz
 
-The native CAS is content-addressed: two `Put` calls with identical bytes
-resolve to the same digest, so a duplicate upload is not billed as separate
-storage.
+Der native CAS ist content-addressed: Zwei `Put`-Aufrufe mit identischen
+Bytes lösen zum selben Digest auf, sodass ein doppelter Upload nicht als
+separater Speicher abgerechnet wird.
 
-## Context plumbing
+## Context-Durchreichung
 
-`Put`'s `context.Context` parameter is accepted for API shape but is
-**not currently wired to cancellation** — the parameter is discarded
-(`func (c *Client) Put(_ context.Context, data []byte) ...`,
-`corelink-go/corelink.go:160`). Passing a cancelled or timed-out context
-does not abort an in-flight `Put`; if you need a hard timeout, enforce it
-around the call yourself (for example, run it in a goroutine and select on
-`ctx.Done()`).
+Der `context.Context`-Parameter von `Put` wird bis zur zugrunde liegenden
+HTTP-Anfrage durchgereicht (`Client.do` baut die Anfrage mit
+`http.NewRequestWithContext(ctx, ...)`), sodass ein abgebrochener oder
+abgelaufener Context einen laufenden `Put` abbricht.
 
-## Errors
+## Fehler
 
-`Client` methods return plain `error` values (message strings), not a
-typed error hierarchy — there is no `*corelink.AuthError`,
-`*corelink.QuotaError`, or similar type to type-switch on. Match on the
-message instead:
+`Client`-Methoden liefern typisierte Fehler, die Sie mit `errors.As`
+abgleichen können, keine reinen Nachrichten-Strings:
 
-| Message contains | Cause | Action |
+| Fehlertyp | Ursache | Maßnahme |
 |---|---|---|
-| `put failed (rc=%d)` | The native `Put` call returned non-zero — could be network, auth, or quota | Confirm the PAT/tenant with a `Stat` call first; if that also fails, see [Troubleshooting](./07-troubleshooting.mdx) |
+| `*corelink.AuthError` | Der PAT wurde abgelehnt, fehlte, oder sein Tenant stimmte nicht mit dem Tenant der Anfrage überein | Bestätigen Sie PAT/Tenant zuerst mit einem `Stat`-Aufruf; schlägt auch das fehl, siehe [Troubleshooting](./07-troubleshooting.mdx) |
+| `*corelink.QuotaError` | Das Byte- oder Request-Kontingent des Tenants ist ausgeschöpft | Plan-Limits vor einem erneuten Versuch prüfen |
+| `*corelink.DigestMismatchError` | Die hochgeladenen Bytes hashten zu einem anderen Digest als vom Server berechnet | Lokal neu berechnen; nicht blind mit denselben Bytes erneut versuchen |
 
-## Next steps
+```go
+digest, err := cli.Put(ctx, data)
+if err != nil {
+    var authErr *corelink.AuthError
+    var quotaErr *corelink.QuotaError
+    switch {
+    case errors.As(err, &authErr):
+        log.Fatalf("auth error (%d): %s", authErr.StatusCode, authErr.Message)
+    case errors.As(err, &quotaErr):
+        log.Fatalf("quota exceeded (%d): %s", quotaErr.StatusCode, quotaErr.Message)
+    default:
+        log.Fatalf("put failed: %v", err)
+    }
+}
+```
+
+## Nächste Schritte
 
 - [Download the blob](./03-download-blob.mdx)
 - [Batch many uploads](./05-batch-operations.mdx)

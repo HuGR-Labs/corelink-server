@@ -10,18 +10,12 @@ sidebar_label: Go · readiness gate
 >
 > Canonical EN source: `Health/go-readiness-gate.mdx`
 
-:::caution El SDK de Go aún no está disponible
-`corelink-go` no está publicado — no existe un módulo instalable ni
-código fuente Go en este repositorio. Este ejemplo ilustra una API
-planeada. Para registrar interés, contacte a
-[support@humangr.com](mailto:support@humangr.com).
-:::
+# Go — puerta de disponibilidad de Kubernetes
 
-# Go — Kubernetes readiness gate
+Conecte `Client.Health` a un manejador de sonda de disponibilidad
+(readiness probe) de Kubernetes.
 
-Wire `Health.Check` into a Kubernetes readiness probe handler.
-
-## Code
+## Código
 
 ```go
 package main
@@ -36,15 +30,15 @@ import (
 )
 
 func main() {
-    client, _ := corelink.NewClient(context.Background(), corelink.Config{
+    client, _ := corelink.NewClient(corelink.Config{
         Endpoint: "https://corelink-api.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
     })
     http.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
         ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
         defer cancel()
-        s, err := client.Health.Check(ctx)
-        if err != nil || s.String() != "SERVING" {
+        status, err := client.Health(ctx)
+        if err != nil || !status.OK {
             http.Error(w, "not ready", http.StatusServiceUnavailable)
             return
         }
@@ -54,15 +48,15 @@ func main() {
 }
 ```
 
-## Expected output
+## Salida esperada
 
 ```text
 $ curl -i http://localhost:8080/ready
 HTTP/1.1 200 OK
 ```
 
-## Common errors
+## Errores comunes
 
-| HTTP status | Cause | Fix |
+| Estado HTTP | Causa | Solución |
 | --- | --- | --- |
-| `503` | Upstream `Health.Check` failed | Trigger pod restart via liveness probe |
+| `503` | Falló `Client.Health` en el backend | Dispare el reinicio del pod mediante la sonda de liveness |

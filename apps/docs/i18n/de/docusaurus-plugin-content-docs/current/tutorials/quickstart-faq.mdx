@@ -65,18 +65,13 @@ a 30-day BYOK evaluation tenant.
 
 ## 6 — Which languages have official SDKs at GA?
 
-Drei kanonische SDKs werden zur GA veröffentlicht, alle um dieselbe
-Rust-Wahrheit (`corelink-client-verify`, keine Hash-Abweichung zwischen
-Sprachen) herum gebaut. Go ist geplant, aber noch nicht veröffentlicht —
-es gibt kein Paket zu installieren — kontaktieren Sie
-[support@humangr.com](mailto:support@humangr.com), um Interesse zu
-registrieren:
+Vier kanonische SDKs werden zur GA veröffentlicht:
 
-| Language | Package | FFI surface |
+| Language | Package | Notes |
 | --- | --- | --- |
 | **Rust** | `corelink-client-verify` (crates.io) | native |
 | **Python** | `corelink-py` (PyPI) | PyO3 |
-| **Go** | not released | cgo (planned) |
+| **Go** | `go.corelink.humangr.com/corelink-go` | reines Go, kein cgo — Installation über CoreLinks `GOPROXY` (siehe die [Go-SDK-Authenticate-Anleitung](../how-to/sdk-go/01-authenticate.mdx)) |
 | **JS / TS / Browser** | `@corelink/client` (npm) | wasm-bindgen |
 
 ## 7 — Language SDK roadmap beyond GA?

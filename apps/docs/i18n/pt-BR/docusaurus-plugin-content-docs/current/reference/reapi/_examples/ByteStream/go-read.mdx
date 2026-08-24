@@ -10,15 +10,9 @@ sidebar_label: Go · Read
 >
 > Canonical EN source: `ByteStream/go-read.mdx`
 
-:::caution O SDK Go ainda não foi lançado
-`corelink-go` não é publicado — não há módulo instalável nem código-fonte
-Go neste repositório. Este exemplo ilustra uma API planejada. Para
-registrar interesse, contate [support@humangr.com](mailto:support@humangr.com).
-:::
-
 # Go — `ByteStream.Read`
 
-## Code
+## Código
 
 ```go
 package main
@@ -26,7 +20,6 @@ package main
 import (
     "context"
     "fmt"
-    "io"
     "os"
 
     corelink "go.corelink.humangr.com/corelink-go"
@@ -34,33 +27,33 @@ import (
 
 func main() {
     ctx := context.Background()
-    client, _ := corelink.NewClient(ctx, corelink.Config{
+    client, _ := corelink.NewClient(corelink.Config{
         Endpoint: "https://corelink-api.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
+        Instance: "default",
     })
     defer client.Close()
 
     digest := corelink.Digest{Hash: "bdd9ea4a8e6b...", SizeBytes: 41943040}
-    rc, err := client.ByteStream.Read(ctx, digest)
+    out, err := os.Create("/tmp/big.bin")
     if err != nil { panic(err) }
-    defer rc.Close()
-    out, _ := os.Create("/tmp/big.bin")
     defer out.Close()
-    n, err := io.Copy(out, rc)
+
+    n, err := client.ByteStream().Read(ctx, digest, out)
     if err != nil { panic(err) }
     fmt.Printf("downloaded %d B\n", n)
 }
 ```
 
-## Expected output
+## Saída esperada
 
 ```text
 downloaded 41943040 B
 ```
 
-## Common errors
+## Erros comuns
 
-| Status | Error taxonomy | Cause |
-| --- | --- | --- |
-| `NOT_FOUND` | `COR_CAS_BLOB_MISSING` | Digest evicted or never written. |
-| `ABORTED` | `COR_CAS_DIGEST_MISMATCH` | Client-verify rejected. |
+| Tipo de erro | Causa |
+| --- | --- |
+| `*corelink.NotFoundError` | Digest removido ou nunca escrito. |
+| `*corelink.DigestMismatchError` | O client-verify rejeitou os bytes transferidos. |

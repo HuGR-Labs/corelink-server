@@ -13,62 +13,68 @@ tags: [sdk, go, ac, reapi, how-to]
 >
 > Canonical EN source: `sdk-go/04-action-cache.mdx`
 
-:::caution O SDK Go ainda não foi lançado
-`corelink-go` não é publicado — não há módulo instalável nem código-fonte
-Go neste repositório. O restante desta página descreve a interface
-planejada. Para registrar interesse, contate
-[support@humangr.com](mailto:support@humangr.com).
-:::
-
 # Action Cache
 
-## The Go SDK does not implement an Action Cache client
+## Quando usar este guia
 
-`corelink-go` (`corelink.Client`, `corelink-go/corelink.go`) exposes exactly
-three data-plane methods — `Put`, `Get`, `Stat` — plus `Close` and
-`IsClientVerifyEnabled`. There is no `ActionCache()` method, no
-`corelink.ActionResult` type, and no `corelink.ErrActionCacheMiss` in this
-SDK today.
+Você quer armazenar em cache o resultado de uma ação de build — código de
+saída, stdout, arquivos de saída — indexado por um digest da ação, e
+consultá-lo antes de rodar a ação de novo.
 
-If you need Action Cache from JS/TS, use `@corelink/client`, which does
-implement it (`client.actionCache.get` / `.put`) — see the
-[JS/TS Action Cache guide](../sdk-js/04-action-cache.mdx).
+## `Client.ActionCache()`
 
-## Working around it from Go today
-
-The Action Cache is a real server surface (`routes/ac.rs`, REAPI v2) even
-though this SDK doesn't wrap it — call it directly over HTTP with the same
-PAT you already configured for the `Client`:
+`corelink.Client` expõe o Action Cache da REAPI v2 através de
+`Client.ActionCache()`, que retorna um `*corelink.ActionCacheClient` com
+dois métodos:
 
 ```go
-func getOrRun(ctx context.Context, pat, tenantID, baseURL, actionDigest string) ([]byte, error) {
-    req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-        fmt.Sprintf("%s/v1/ac/%s/%s", baseURL, tenantID, actionDigest), nil)
-    if err != nil {
-        return nil, err
-    }
-    req.Header.Set("Authorization", "Bearer "+pat)
+ac := client.ActionCache()
 
-    resp, err := http.DefaultClient.Do(req)
-    if err != nil {
-        return nil, err
-    }
-    defer resp.Body.Close()
+// Update stores an ActionResult for an action digest.
+err := ac.Update(ctx, actionDigest, corelink.ActionResult{
+    ExitCode: 0,
+    OutputFiles: []corelink.OutputFile{
+        {Path: "bin/app", Digest: outputDigest, IsExecutable: true},
+    },
+})
 
-    if resp.StatusCode == http.StatusNotFound {
-        return runLocallyAndStore(ctx, actionDigest)
+// Get returns a cached ActionResult, or corelink.ErrActionCacheMiss.
+result, err := ac.Get(ctx, actionDigest)
+```
+
+`Update` grava em `PUT /bazel/v2/{instance}/blobs/ac/{hash}/{size}`; `Get`
+lê do mesmo caminho. Ambos operam contra `Config.Instance` — defina-o na
+`Config` que você passa a `NewClient` ao construir o cliente, da mesma
+forma que você configuraria um nome de instância de remote-cache do Bazel.
+
+## Lidando com um cache miss
+
+Um miss não é um erro que você trata por string. Compare com o sentinel
+usando `errors.Is`:
+
+```go
+result, err := ac.Get(ctx, actionDigest)
+switch {
+case errors.Is(err, corelink.ErrActionCacheMiss):
+    result, err = runActionAndStore(ctx, ac, actionDigest)
+    if err != nil {
+        return err
     }
-    if resp.StatusCode != http.StatusOK {
-        return nil, fmt.Errorf("ac lookup: unexpected status %d", resp.StatusCode)
-    }
-    return io.ReadAll(resp.Body) // opaque ActionResult bytes — you own the encoding
+case err != nil:
+    return fmt.Errorf("action cache lookup: %w", err)
 }
 ```
 
-The Action Cache stores an opaque byte payload keyed by a 64-hex action
-digest — the server does not parse it, so how you encode/decode the
-`ActionResult` is up to you, same as the JS SDK.
+## Codificação
 
-## Next steps
+O servidor armazena o payload do Action Cache como um blob de bytes
+opaco — ele não o interpreta. `ActionCacheClient.Update` e `.Get` cuidam
+da codificação por conta própria (um formato JSON privado), então
+`ActionResult` percorre o ciclo de ida e volta por este SDK sem que você
+precise escrever nenhum código de serialização. Um payload gravado por um
+cliente diferente (o SDK JS/TS, ou uma chamada HTTP crua) usa sua própria
+codificação e não será decodificado como um `ActionResult` aqui.
+
+## Próximos passos
 
 - [CI integration](./06-ci-integration.mdx)

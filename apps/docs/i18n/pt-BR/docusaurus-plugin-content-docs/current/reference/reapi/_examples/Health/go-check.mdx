@@ -10,15 +10,9 @@ sidebar_label: Go · Check
 >
 > Canonical EN source: `Health/go-check.mdx`
 
-:::caution O SDK Go ainda não foi lançado
-`corelink-go` não é publicado — não há módulo instalável nem código-fonte
-Go neste repositório. Este exemplo ilustra uma API planejada. Para
-registrar interesse, contate [support@humangr.com](mailto:support@humangr.com).
-:::
-
 # Go — `Health.Check`
 
-## Code
+## Código
 
 ```go
 package main
@@ -33,27 +27,27 @@ import (
 
 func main() {
     ctx := context.Background()
-    client, _ := corelink.NewClient(ctx, corelink.Config{
+    client, _ := corelink.NewClient(corelink.Config{
         Endpoint: "https://corelink-api.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
     })
     defer client.Close()
 
-    status, err := client.Health.Check(ctx)
+    status, err := client.Health(ctx)
     if err != nil { panic(err) }
-    fmt.Println("server status =", status)
+    fmt.Println("server ok =", status.OK)
 }
 ```
 
-## Expected output
+## Saída esperada
 
 ```text
-server status = SERVING
+server ok = true
 ```
 
-## Common errors
+## Erros comuns
 
-| Status | Error taxonomy | Cause |
-| --- | --- | --- |
-| `UNAVAILABLE` | `COR_NET_TRANSIENT` | Server restarting. Retry. |
-| `NOT_SERVING` | `COR_HEALTH_NOT_SERVING` | Draining. Reconnect to another region. |
+| Tipo de erro | Causa |
+| --- | --- |
+| erro simples (rede) | Servidor inacessível ou reiniciando. Tente novamente. |
+| `*corelink.AuthError` | PAT rejeitado. |

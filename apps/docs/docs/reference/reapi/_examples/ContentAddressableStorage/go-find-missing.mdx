@@ -4,17 +4,14 @@ title: Go — FindMissingBlobs
 sidebar_label: Go · FindMissingBlobs
 ---
 
-:::caution The Go SDK is not released
-`corelink-go` is not published — there is no installable module and no
-Go source in this repository. This example illustrates a planned API. To
-register interest, contact [support@humangr.com](mailto:support@humangr.com).
-:::
-
 # Go — `FindMissingBlobs`
 
-## Prerequisites (planned)
+## Prerequisites
 
-- There is no package to `go get` — the SDK is not published.
+```bash
+GOPROXY=https://humangr.com/corelink/docs/goproxy,https://proxy.golang.org,direct go get go.corelink.humangr.com/corelink-go@v0.1.0
+```
+
 - `CORELINK_PAT` exported
 
 ## Code
@@ -39,9 +36,10 @@ func digest(b []byte) corelink.Digest {
 
 func main() {
     ctx := context.Background()
-    client, _ := corelink.NewClient(ctx, corelink.Config{
+    client, _ := corelink.NewClient(corelink.Config{
         Endpoint: "https://corelink-api.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
+        Instance: "default",
     })
     defer client.Close()
 
@@ -50,7 +48,7 @@ func main() {
     for i, b := range blobs {
         digests[i] = digest(b)
     }
-    missing, err := client.CAS.FindMissingBlobs(ctx, digests)
+    missing, err := client.CAS().FindMissing(ctx, digests)
     if err != nil {
         panic(err)
     }
@@ -66,7 +64,7 @@ func main() {
 
 ## Common errors
 
-| Status | Error taxonomy | Cause |
-| --- | --- | --- |
-| `UNAUTHENTICATED` | `COR_AUTH_PAT_INVALID` | PAT expired. |
-| `RESOURCE_EXHAUSTED` | `COR_QUOTA_RATE_LIMIT` | Too many requests; back off per the retry-after header. |
+| Error type | Cause |
+| --- | --- |
+| `*corelink.AuthError` | PAT expired. |
+| `*corelink.RateLimitError` | Too many requests; back off `RetryAfter`. |
