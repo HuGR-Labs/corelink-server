@@ -892,6 +892,15 @@ export class CoreLinkServer implements DurableObject {
           // this list silently no-ops (the ERASURE_SALT_KEY-class bug).
           R2_AUDIT_BUCKET: this.env.R2_AUDIT_BUCKET ?? "",
           AUDIT_ARCHIVE_BATCH_LIMIT: this.env.AUDIT_ARCHIVE_BATCH_LIMIT ?? "",
+          // Container origin-timing detail phases (`oargon`/`opermit`/`ortier`).
+          // "on" arms them; anything else (the production default) leaves their
+          // time inside the `oother` residue and the header byte-identical.
+          // Forwarded because the container reads it via std::env::var — a
+          // Worker secret that is not on this list silently no-ops, which for a
+          // diagnostic flag means it reads as "armed, and the phases just are
+          // not there" rather than as a failure. See `detail_phases_enabled`
+          // for why OFF is the load-bearing default.
+          CORELINK_ORIGIN_TIMING_DETAIL: this.env.CORELINK_ORIGIN_TIMING_DETAIL ?? "",
           // CTRL-PRIV-001: server-held salt for the email_hash pseudonym. Unset →
           // legacy unsalted SHA-256 (zero regression); set → HMAC-SHA256. MUST be
           // forwarded or the container can't see it when the owner registers it.
