@@ -302,11 +302,18 @@ first pass assumed:
   lane — a broken signing path is worse than a dead one. Moving it needs a
   dispatched proof that build-push-action + cosign actually work over the nerdctl
   shim first. tl work, gated on that proof; risk-real.
-- `smoke-install` (push + schedule): its red is **not** docker — the last hosted
-  run failed on `error: No PAT found` because `CORELINK_CANARY_PAT` is **not bound**
-  to the workflow. It is the same secret `cas-canary` needs, and `cas-canary` is
-  red for the same reason (plus the billing block). So moving the runner does not
-  make it green; **binding `CORELINK_CANARY_PAT` is an owner secret action.**
+- `smoke-install` (push + schedule): its red is **not** docker — a 2026-08-23
+  hosted run failed on the corelink CLI binary's own runtime `error: No PAT found`,
+  i.e. `CORELINK_CANARY_PAT` was empty in THAT run's env (that string is the
+  binary's, not the workflow's guard, which says `CORELINK_CANARY_PAT is not set`).
+  **Whether the secret is actually unbound is disputed, not established.**
+  `smoke-install.yml`'s own header (dated 2026-08-02) states the opposite — it is
+  *already bound and working*, cas-canary having run it 6/6 that day — and both
+  workflows read it as the same plain repo secret (no `environment:` scoping), so
+  they cannot differ. The bound-per-header vs empty-at-runtime conflict is
+  unreconciled from the repo (the secret is write-only; only the GitHub UI shows
+  its live state), so this needs the owner to CONFIRM the binding, not a tl claim
+  that it is unbound. Either way, moving the runner does not resolve it.
 - `codeql` (schedule): supported self-hosted but needs the CodeQL bundle; heavy.
 - `cas-canary` (schedule): **genuine exception, already documented in-file** —
   a datacenter IP is the point, it exists to see what a customer's CI sees.
@@ -320,9 +327,10 @@ first pass assumed:
   in-file-documented exceptions (an in-file marker + parser), or cbindgen is
   re-homed (blocked on the registry manifest).
 
-**Net residual, assigned:** (a) owner — unblock Actions billing + bind
-`CORELINK_CANARY_PAT`; (b) tl — dispatched proof that build-push-action + cosign
-run on the shim, then flip `cosign-sign`; (c) tl — teach the verify to honour
+**Net residual, assigned:** (a) owner — unblock Actions billing, and CONFIRM the
+disputed `CORELINK_CANARY_PAT` binding (bind only if the GitHub UI shows it
+genuinely unset); (b) tl — dispatched proof that build-push-action + cosign run on
+the shim, then flip `cosign-sign`; (c) tl — teach the verify to honour
 in-file-documented hosted exceptions, or re-home cbindgen. Surfaced to the owner
 brief. Kept OPEN rather than force-closed.
 
@@ -1576,7 +1584,7 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  grep -rq 'HuGR-Labs/corelink-cli/releases' .github/workflows/
+  grep -rqE '^[^#]*HuGR-Labs/corelink-cli/releases' .github/workflows/
 verify-means: |
   done — a workflow (manual-install-recipes.yml) downloads the documented
   release assets by name and verifies the published checksum the way the

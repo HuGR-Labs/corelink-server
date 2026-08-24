@@ -56,9 +56,9 @@ jobs:
     steps:
       - name: Reproduce the documented manual recipe exactly (fail-CLOSED)
         env:
-          # The repo + asset names the tutorial hands a reader. Bare literals so
-          # the item's verify (`grep HuGR-Labs/corelink-cli/releases`) matches the
-          # thing actually exercised, not a comment.
+          # The repo + asset names the tutorial hands a reader, as bare
+          # executable literals (B-036's verify anchors on the download URL below
+          # in executable position, not a comment).
           BASE: "https://github.com/HuGR-Labs/corelink-cli/releases/latest/download"
           ASSET: "corelink-linux-x86_64"
         run: |
