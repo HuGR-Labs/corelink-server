@@ -74,18 +74,26 @@ pub mod paths {
     /// DSR status poll.
     pub const DSR_STATUS: &str = "/v1/privacy/dsr/{request_id}/status";
     // ===================================================================
-    // ⛔ CONSENT — SPEC'D BUT **NOT IMPLEMENTED**. READ THIS BEFORE
-    //    WRITING A SINGLE CONSENT HANDLER.  (verified 2026-08-03)
+    // ⛔ CONSENT — NOT IMPLEMENTED, AND NO LONGER IN THE CONTRACT.
+    //    READ THIS BEFORE WRITING A SINGLE CONSENT HANDLER.
+    //    (not-implemented verified 2026-08-03; removed from the published
+    //    contract 2026-08-24)
     // ===================================================================
     //
-    // The four constants below are canonical *contract* entries — they
-    // appear in `openapi/corelink-v1.yaml`, which is why `spec_roundtrip`
-    // is green. They are NOT served. No `.route("…")` mount in `crates/`
-    // matches any `/v1/consent*` path, `worker/src/index.ts` has no
-    // consent branch, and `corelink-privacy` — the crate that owns the
-    // consent ledger — is not a dependency of `corelink-container` or of
-    // any Worker, so its consent logic is not compiled into anything
+    // Four consent operations used to live in `openapi/corelink-v1.yaml`
+    // as contract-only entries, mirrored by four path constants here.
+    // They were never served: no `.route("…")` mount in `crates/` matches
+    // any `/v1/consent*` path, `worker/src/index.ts` has no consent
+    // branch, and `corelink-privacy` — the crate that owns the consent
+    // ledger — is not a dependency of `corelink-container` or of any
+    // Worker, so its consent logic is not compiled into anything
     // deployed.
+    //
+    // A published spec is a contract, and customers generate SDKs from
+    // it, so shipping operations that answer 404 was the defect. The
+    // operations and their constants are gone. Everything below still
+    // applies the day someone implements consent for real: put the
+    // operations back in the spec in the same change that mounts them.
     //
     // ⚠️ DO NOT read a live `401` as proof a consent route exists.
     //    `corelink-api.humangr.com` answers `401` to EVERY `/v1/*` path,
@@ -121,38 +129,6 @@ pub mod paths {
     // lands — see `apps/admin-ui/src/app/[locale]/consent/retired.ts`.
     // -------------------------------------------------------------------
 
-    /// Consent grant / revoke per canonical purpose.
-    ///
-    /// **UNIMPLEMENTED** — contract only, no handler. See the block above,
-    /// and [`CONSENT_UNIMPLEMENTED`].
-    pub const CONSENT_ITEM: &str = "/v1/consent/{purpose}";
-    /// Consent history list.
-    ///
-    /// **UNIMPLEMENTED** — contract only, no handler. Note the admin-UI
-    /// client calls `/v1/consent/history`, not this path.
-    pub const CONSENT_HISTORY: &str = "/v1/consent";
-    /// Public stateless grant verify.
-    ///
-    /// **UNIMPLEMENTED** — contract only, no handler and no caller.
-    pub const CONSENT_VERIFY: &str = "/v1/consent/verify";
-    /// Public stateless revocation verify.
-    ///
-    /// **UNIMPLEMENTED** — contract only, no handler and no caller.
-    pub const CONSENT_REVOCATION_VERIFY: &str = "/v1/consent/revocation/verify";
-
-    /// Paths that are in the canonical spec but have **no handler anywhere
-    /// in this repo**. Machine-readable companion to the ⛔ block above so a
-    /// future gate can assert the list only ever shrinks.
-    ///
-    /// Every entry here is also in [`ALL`] — they are real contract
-    /// entries, just unserved. Delete an entry from THIS list (not from
-    /// [`ALL`]) the day its handler is mounted.
-    pub const CONSENT_UNIMPLEMENTED: &[&str] = &[
-        CONSENT_ITEM,
-        CONSENT_HISTORY,
-        CONSENT_VERIFY,
-        CONSENT_REVOCATION_VERIFY,
-    ];
     /// Admin op submission (dual-approval).
     pub const ADMIN_OPS: &str = "/v1/admin/ops";
     /// Admin op detail.
@@ -219,10 +195,6 @@ pub mod paths {
         STRIPE_WEBHOOK,
         DSR_SUBMIT,
         DSR_STATUS,
-        CONSENT_ITEM,
-        CONSENT_HISTORY,
-        CONSENT_VERIFY,
-        CONSENT_REVOCATION_VERIFY,
         ADMIN_OPS,
         ADMIN_OPS_ITEM,
         ADMIN_OPS_APPROVE,
