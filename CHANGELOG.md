@@ -22,6 +22,23 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+
+- **Bazel can use its sandbox on the runner fabric again (B-025).** The runner
+  image shipped no `/dev/shm`, so every sandboxed action died with
+  `[unix_jni.cc:382] /dev/shm (No such file or directory)` — which reads like a
+  Bazel bug and is a missing mount. The entrypoint now provisions it
+  (corelink-runners #502), the image was rebuilt and the fabric repinned (#503),
+  and the example's `--spawn_strategy=local` workaround is **deleted** — the only
+  proof that counts, since the workaround would have masked a fix that did not
+  work. Sandboxed run 32761594353: `3 remote cache hit`, cold 14 866 ms, warm
+  20 882 ms.
+- **The Bazel starter pinned no Bazel version.** `bazelisk` resolved `latest`
+  over the network on every run; that lookup returned **401** from the runner and
+  the build died before Bazel started. Wrong shape regardless of the 401 — a new
+  Bazel release can change action keys and silently invalidate every cache entry
+  the example measures. Pinned to 9.2.0, read from the last green run's log.
+
 ### Changed
 
 - **Three GitHub-hosted lanes moved onto the self-hosted fabric (B-005).**
