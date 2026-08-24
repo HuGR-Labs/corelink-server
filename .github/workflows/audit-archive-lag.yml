@@ -19,9 +19,22 @@ name: audit-archive-lag
 # -----------------------------------------------------
 #   PAGE iff
 #     (1) there exists a SEALED row (emitted_at IS NOT NULL) with
-#         archived_at IS NULL whose enqueued_at is older than T
+#         archived_at IS NULL AND quarantined_at IS NULL whose enqueued_at is
+#         older than T
 #     AND
 #     (2) MAX(archived_at) over the whole table is older than T, or is NULL
+#
+# Why clause 1 EXCLUDES quarantined rows (migration 0100): a quarantined row is
+# unarchivable BY DESIGN. The 2026-08-14 seal fork left 8 of 360 partitions on
+# duplicated sequence numbers, and re-sequencing sealed rows is forbidden — they
+# are the evidence. The archiver now writes each partition's longest verifying
+# prefix and marks the unarchivable remainder `quarantined_at`. Those rows will
+# never have an `archived_at`, so counting them in clause 1 would make this
+# monitor PAGE FOREVER the moment the healthy backlog reaches zero — a page
+# nobody can action is a page everybody learns to ignore. They are still
+# counted, loudly, as their own measurement below (and in the archive endpoint's
+# `rows_quarantined`, its container WARN, and the cron log line) — they are
+# removed from the ABSENCE predicate, not from view.
 #
 # Why BOTH clauses are load-bearing:
 #   - Clause 1 alone would fire throughout the current 56k-row historical
@@ -148,26 +161,44 @@ jobs:
               return rows
 
           # CLAUSE 1 — pending work older than T. Uses the partial work-queue
-          # index idx_audit_outbox_unarchived (migration 0099).
+          # index idx_audit_outbox_unarchived_active (migration 0100).
+          # `quarantined_at IS NULL` is load-bearing: a quarantined row
+          # is unarchivable by design and can never clear this clause.
           clause1_sql = (
               "SELECT COUNT(*) AS pending_old, MIN(enqueued_at) AS oldest_pending_ms "
               "FROM audit_outbox "
               "WHERE emitted_at IS NOT NULL AND archived_at IS NULL "
+              "AND quarantined_at IS NULL "
               f"AND enqueued_at < {t_ms}"
           )
           # CLAUSE 2 — the archiver's most recent demonstrated activity,
           # over the WHOLE table (not scoped to the pending set: a row that
           # was just archived is no longer pending).
           clause2_sql = "SELECT MAX(archived_at) AS last_archived_ms FROM audit_outbox"
+          # NOT part of the predicate — the quarantine census. Rows clause 1
+          # deliberately no longer counts still have to be VISIBLE, on every
+          # run, or "unarchivable by design" quietly becomes "unarchived and
+          # nobody noticed". Growth here is a real incident even though it
+          # never pages: today's population is historical (2026-08-14) and the
+          # drain on main has fork-freedom, so a RISING count means the seal
+          # path forked again.
+          quarantine_sql = (
+              "SELECT COUNT(*) AS quarantined_total, MAX(quarantined_at) AS last_quarantined_ms "
+              "FROM audit_outbox WHERE quarantined_at IS NOT NULL"
+          )
 
           r1 = d1_query(clause1_sql)
           r2 = d1_query(clause2_sql)
+          r3 = d1_query(quarantine_sql)
           row1 = r1[0] if r1 else {}
           row2 = r2[0] if r2 else {}
+          row3 = r3[0] if r3 else {}
 
           pending_old = int(row1.get("pending_old") or 0)
           oldest_pending_ms = row1.get("oldest_pending_ms")
           last_archived_ms = row2.get("last_archived_ms")
+          quarantined_total = int(row3.get("quarantined_total") or 0)
+          last_quarantined_ms = row3.get("last_quarantined_ms")
 
           clause1 = pending_old > 0
           clause2 = (last_archived_ms is None) or (int(last_archived_ms) < t_ms)
@@ -189,6 +220,8 @@ jobs:
               f"| sealed rows unarchived older than T | `{pending_old}` |",
               f"| oldest unarchived sealed row | `{oldest_pending_ms}` ({age_h(oldest_pending_ms)}) |",
               f"| MAX(archived_at) over audit_outbox | `{last_archived_ms}` ({age_h(last_archived_ms)}) |",
+              f"| QUARANTINED rows (unarchivable by design, excluded from clause 1) | `{quarantined_total}` |",
+              f"| most recent quarantine | `{last_quarantined_ms}` ({age_h(last_quarantined_ms)}) |",
               "",
               f"clause 1 (pending work older than T): **{clause1}**",
               "",
@@ -196,9 +229,11 @@ jobs:
               "",
               f"verdict: **{'PAGE' if page else 'OK'}**",
               "",
-              "Both measurements are emitted on every run, pass or fail, so the "
-              "backlog tail is observable without opening a page. "
-              "Runbook: `specs/_runbooks/RB-AUDIT-ARCHIVE-ABSENT.md`.",
+              "Both predicate measurements — and the quarantine census — are "
+              "emitted on every run, pass or fail, so the backlog tail and the "
+              "unarchivable population are observable without opening a page. A "
+              "RISING quarantine count is an incident even though it does not "
+              "page. Runbook: `specs/_runbooks/RB-AUDIT-ARCHIVE-ABSENT.md`.",
           ]
           if summary:
               with open(summary, "a") as fh:
@@ -212,6 +247,7 @@ jobs:
                   fh.write(f"pending_old={pending_old}\n")
                   fh.write(f"oldest_pending_ms={oldest_pending_ms}\n")
                   fh.write(f"last_archived_ms={last_archived_ms}\n")
+                  fh.write(f"quarantined_total={quarantined_total}\n")
                   fh.write(f"lag_hours={lag_hours}\n")
                   fh.write(f"cutoff_ms={t_ms}\n")
           PY

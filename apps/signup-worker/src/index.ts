@@ -209,8 +209,16 @@ const baseHandler: ExportedHandler<SignupEnv> = {
             );
           } else {
             console.log(
-              `[audit-archive-cron] ok=${r.ok} status=${r.status} rows=${r.rowsArchived} chunks=${r.chunksCreated} failed_partitions=${r.partitionsFailed} incomplete=${r.incomplete}`,
+              `[audit-archive-cron] ok=${r.ok} status=${r.status} rows=${r.rowsArchived} chunks=${r.chunksCreated} failed_partitions=${r.partitionsFailed} quarantined_rows=${r.rowsQuarantined} quarantined_partitions=${r.partitionsQuarantined} incomplete=${r.incomplete}`,
             );
+            // Quarantine is permanent: those rows will NEVER reach the R2
+            // archive. It gets its own WARN so it cannot hide inside a routine
+            // ok=true line — see RB-AUDIT-ARCHIVE-ABSENT §5.
+            if (r.rowsQuarantined > 0) {
+              console.warn(
+                `[audit-archive-cron] QUARANTINED rows=${r.rowsQuarantined} partitions=${r.partitionsQuarantined} — unarchivable chain segment, see RB-AUDIT-ARCHIVE-ABSENT`,
+              );
+            }
           }
         })
         .catch((err: unknown) => {
