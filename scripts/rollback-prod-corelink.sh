@@ -133,7 +133,7 @@ Step 3: DNS rollback (from Phase G snapshot)
   Snapshot: ${DNS_SNAPSHOT}
   Command:  bash scripts/dns-prod-apply.sh --rollback ${DNS_SNAPSHOT}
   Effect:   Deletes all 9 newly-created CNAME records from Phase G APPLY.
-            status.corelink.humangr.com (Phase A) is NOT touched.
+            The status CNAME was retired 2026-08-24 and no longer exists.
   Note:     Only runs if snapshot file exists.
 
 Step 4: Post-rollback smoke verification

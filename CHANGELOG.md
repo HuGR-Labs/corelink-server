@@ -38,6 +38,25 @@ Each entry cross-references:
 
 ### Removed
 
+- **The `status.corelink.humangr.com` CNAME is deleted, and the prod smoke's
+  status coverage turned out to be entirely fictional (B-041 closed).** The
+  record (`e785399235…`, CNAME → `hugrl.betteruptime.com`, DNS-only) is gone
+  from the Cloudflare zone; `dig` returns nothing and the real status page
+  still answers 200. Everything that defined or probed it moved in the same
+  change — the DNS plan/verify/apply scripts, the cutover checklist, rollback,
+  canary promotion and the prod smoke. Two findings came out of touching them:
+  the cutover checklist asked the operator to confirm *"Is
+  status.corelink.humangr.com reachable **and subscribable**?"*, where both
+  halves were false and the cutover shipped anyway; and the prod smoke had TWO
+  status checks aimed at hosts that do not exist — `status.humangr.com`, which
+  has no DNS record at all yet was required to return 200, and the retired
+  vanity host, whose failure was downgraded to a warning by a KNOWN-EXCEPTION
+  block written on 2026-05-30 telling the operator to "click Enable SSL in the
+  BetterStack console". There is no such click; a custom domain is a paid plan.
+  That suppression outlived its reason by three months. Both checks are
+  replaced by one check against the URL customers are actually given, and it
+  fails as a failure.
+
 - **`pre-cutover-weekly-cron` and its two scripts, retired rather than repaired
   (B-004).** It verified readiness for a GA cutover that happened on 2026-07-10
   and had been failing on a GitHub label that no longer exists. It was the last

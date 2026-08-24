@@ -23,7 +23,7 @@ CF_API_BASE="https://api.cloudflare.com/client/v4"
 WORKER_ROUTE_TARGET="corelink-worker.humangr.com"
 
 # All 6 flat-name subdomains backed by CF Worker routes:
-# (status.corelink.humangr.com is Phase A; NOT a Worker route — excluded here)
+# (the status CNAME was RETIRED 2026-08-24 — it never served; nothing to apply)
 SUBDOMAINS=(
   "corelink-api.humangr.com"
   "corelink-signup.humangr.com"

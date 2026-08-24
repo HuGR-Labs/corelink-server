@@ -1939,21 +1939,28 @@ The Trust Center and its three locale mirrors now link to the working vendor URL
 than to a hostname that resolves and then fails. The remaining ~220 references still
 point at the dead host.
 
-**OWNER DECISION REQUIRED:** whether to pay for the Better Stack tier that includes a
-custom domain. If yes, bind it and sweep the references back. If no, sweep all 224
-references to the vendor URL and retire the CNAME so nothing advertises a host that
-cannot serve.
+**OWNER DECISION, 2026-08-24: do not pay.** The hostname is retired rather than
+provisioned. The customer-facing sweep landed in #1290; the CNAME was deleted from the
+Cloudflare zone on 2026-08-24 (record `e785399235…`, CNAME → `hugrl.betteruptime.com`,
+DNS-only; backup of the record JSON kept with the change) and `dig` now returns nothing.
+Everything that probed or defined it moved with it.
+
+Note for anyone revisiting: `status.humangr.com` — a SECOND-level name, which Universal
+SSL does cover — was also found dead (no DNS record at all) while the prod smoke demanded
+HTTP 200 from it. Creating it would not help: BetterStack still refuses a custom Host
+without the paid plan, and terminating TLS ourselves would put the status page behind
+the infrastructure it exists to report on.
 
 ```backlog
 id: B-041
 repo: corelink-server
 owner: owner
-status: open
+status: done
 verify: |
-  ! curl -sS -o /dev/null --max-time 15 https://status.corelink.humangr.com/
+  [ -z "$(dig +short status.corelink.humangr.com 2>/dev/null)" ] && curl -sS -o /dev/null --max-time 15 https://hugrl.betteruptime.com/
 verify-means: |
-  open while the advertised status hostname cannot complete a TLS handshake. Goes red
-  once it serves — i.e. once the vendor binding exists — at which point the reference
-  sweep is the remaining work.
+  done while the retired hostname resolves to nothing AND the vendor status page
+  serves. Goes red if the dead name comes back (someone re-created the record) or
+  if the page customers are pointed at stops answering.
 last-verified: 2026-08-24
 ```

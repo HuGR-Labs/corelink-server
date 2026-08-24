@@ -21,7 +21,7 @@
 #
 # Checks per host:
 #   dns   : dig +short returns a CF IP (104.x or 172.67.x range)
-#           EXCEPT status.corelink.humangr.com which resolves via
+#           (the status CNAME was RETIRED 2026-08-24; it used to resolve via
 #           CNAME to hugrl.betteruptime.com (BetterStack)
 #   https : curl -sI returns HTTP 2xx or 3xx status code
 #   cert  : openssl s_client cert chain issuer contains "Cloudflare"
@@ -94,7 +94,6 @@ HOSTS=(
   "corelink-signup.humangr.com|worker|"
   "humangr.com|worker|"
   "corelink-get.humangr.com|worker|"
-  "status.corelink.humangr.com|statuspage|hugrl.betteruptime.com"
 )
 
 # ---------------------------------------------------------------------------

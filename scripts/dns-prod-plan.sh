@@ -75,7 +75,10 @@ fi
 #   - specs/_audits/sealed/2026-05-22-wave32-prod-deploy-spec.md §4 Phase G
 #   - wrangler.toml [env.prod] (name = "corelink-prod")
 #   - Phase F scope: Pages projects corelink-docs + corelink-admin-ui
-#   - Phase A (complete): status.corelink.humangr.com → hugrl.betteruptime.com
+#   - Phase A record RETIRED 2026-08-24: status.corelink.humangr.com is gone.
+#     It never served — third-level name outside Universal SSL's one-level
+#     `*.` coverage, and BetterStack needs a paid plan to accept the Host.
+#     The status page lives at https://hugrl.betteruptime.com.
 #
 # Format per entry:
 #   name|type|target|proxied|ttl|notes
@@ -94,14 +97,13 @@ fi
 # docs/operator/host-scheme-canonical-2026-06-09.md. Kept in sync with
 # scripts/smoke-prod-corelink.sh DNS_PLAN (5 flat hosts + status). The 4 dotted
 # wave-29 extras (acme-dev/staging/sandbox/go) are dropped — not part of the MVP
-# surface. status.corelink.humangr.com stays dotted (deliberate BetterUptime CNAME).
+# surface. No status CNAME is planned any more (see the Phase A note above).
 PLAN_ENTRIES=(
   "corelink-api.humangr.com|CNAME|corelink-prod.gustavoschneiter.workers.dev|true|1|Worker prod entry point (all /v1/* routes)"
   "corelink-app.humangr.com|CNAME|corelink-admin-ui.pages.dev|true|1|Phase F Pages: corelink-admin-ui (customer console)"
   "corelink-docs.humangr.com|CNAME|corelink-docs.pages.dev|true|1|Phase F Pages: corelink-docs (4 locales)"
   "corelink-signup.humangr.com|CNAME|corelink-prod.gustavoschneiter.workers.dev|true|1|Worker signup/pilot-onboard route"
   "humangr.com|CNAME|corelink-prod.gustavoschneiter.workers.dev|true|1|Worker internal-admin route (Clerk-gated)"
-  "status.corelink.humangr.com|CNAME|hugrl.betteruptime.com|false|1|Phase A (ALREADY EXISTS — dns-only per BetterUptime requirement)"
 )
 
 # ---------------------------------------------------------------------------
@@ -134,7 +136,7 @@ print_plan_md() {
   echo ""
   echo "- **Proxied (orange cloud):** All Worker and Pages routes. CF edge enforces"
   echo "  WAF, rate-limiting, and TLS termination. Required for DO/Container routing."
-  echo "- **DNS-only (grey cloud):** \`status.corelink.humangr.com\` only. BetterUptime"
+  echo "- **DNS-only (grey cloud):** none. The status CNAME was retired 2026-08-24; BetterUptime"
   echo "  requires direct TLS handshake to issue its own cert on the custom domain."
   echo "  Already set in Phase A — must NOT be proxied."
   echo ""
