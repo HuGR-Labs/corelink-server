@@ -628,7 +628,7 @@ last-verified: 2026-08-23
 
 ## Cache integrity
 
-### B-022 — Turborepo cache entries stay overwritable, on purpose, without evidence
+### B-024 — Turborepo cache entries stay overwritable, on purpose, without evidence
 
 `specs/_audits/2026-08-23-cache-integrity-coverage.md` (F-2) found Turborepo
 artifacts unverifiable, mutable and unpinned at once. Two of the three are now
@@ -654,7 +654,7 @@ the bytes behind that tenant's own Turborepo keys. Not cross-tenant; the envelop
 does not detect it, because the key is not a preimage of the content.
 
 ```backlog
-id: B-022
+id: B-024
 repo: corelink-server
 owner: tl
 status: open
