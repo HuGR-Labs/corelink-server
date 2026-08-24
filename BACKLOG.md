@@ -301,6 +301,17 @@ Remaining after this: the archive proves the chain is intact against ITSELF. An
 external anchor (Rekor) is still roadmap, and the ≤1h pre-seal window in
 `audit_outbox` is still unprotected — both pre-existing and out of this item.
 
+**Proven in production 2026-08-24.** The first hourly tick after the container
+roll archived real rows: `archived_at` moved from 0 to 3,456 of 56,266 sealed
+rows, and ten NDJSON chunks are readable in `corelink-audit-weur` under
+`audit/<Y>/<M>/<D>/<tenant>/<region>/<seq>.ndjson`. Every one of the ten was
+pulled back out of the bucket and fed to the `verifier` binary built from this
+commit: `AUDIT_CHAIN_VERIFY_OK` on all ten, 1,712 events total, no chain break.
+The backlog drains on its own from here, one hourly sweep at a time. One
+cosmetic artifact of real data: a probe row carrying `enqueued_at_ms: 1` lands
+under `audit/1970/01/01/…`, which is the key shape faithfully encoding a
+1970 timestamp, not a bug.
+
 ```backlog
 id: B-015
 repo: corelink-server
@@ -308,7 +319,7 @@ owner: tl
 status: done
 verify: "grep -q 'audit/archive' crates/corelink-container/src/main.rs && grep -q 'corelink-audit-weur' .github/workflows/audit-chain-daily-verify.yml"
 verify-means: done while the archive route is MOUNTED in the container composition root and the daily verifier reads the same bucket the archiver writes
-last-verified: 2026-08-23
+last-verified: 2026-08-24
 ```
 
 ### B-010 — the TLS floor change is recorded nowhere in the repo
@@ -463,6 +474,72 @@ status: open
 verify: "grep -q 'TLS 1.3 only' specs/03_architecture/security_model.md"
 verify-means: open while the control table still claims a 1.3-only floor
 last-verified: 2026-08-23
+```
+
+### B-020 — a cron sweep that cannot authenticate logs nothing at all
+
+Every hourly sweep in `apps/signup-worker/src/index.ts` resolves a credential
+first and returns `skipped: true` when it is unbound — and the caller only logs
+when `skipped` is false. So an archive, drain, DSR-verify or PAT-scrub sweep that
+never ran because its key went missing is indistinguishable in the logs from an
+hour with nothing to do. Four sweeps share the shape
+(`audit_archive_cron.ts`, `audit_drain_cron.ts`, `dsr_verify_cron.ts`,
+`pat_scrub_cron.ts`).
+
+Found while proving [B-015]: the archive produced nothing for two ticks and the
+absence of a log line could not distinguish "not deployed yet" from "no key".
+The fix is small — log the skip — but the class is the one that keeps costing
+us: silence read as success.
+
+**Closed 2026-08-24.** Each of the four sweeps now emits
+`console.warn("[<sweep>] skipped=true reason=<credential>-unbound")`, naming the
+credential that was missing. A fifth case was found while fixing it: the
+DSR sweep is wrapped in `if (db)`, so an unbound `CONFIG_DB` skipped it without
+even reaching the sweep function — that branch now warns too.
+
+```backlog
+id: B-020
+repo: corelink-server
+owner: tl
+status: done
+verify: "test \"$(grep -c 'skipped=true' apps/signup-worker/src/index.ts)\" -ge 5"
+verify-means: |
+  done while every sweep in scheduled() — the four sweep results plus the
+  CONFIG_DB guard — names its missing credential instead of returning silently.
+last-verified: 2026-08-24
+```
+
+### B-021 — nothing notices if the audit archive stops advancing
+
+`audit-chain-daily-verify` proves that the chunks in `corelink-audit-weur`
+verify. It does not prove that everything sealed in D1 reached the bucket. A day
+with no chunks is a clean no-op (`AUDIT_CHAIN_VERIFY_OK: no input paths`,
+confirmed by running the verifier with no arguments), which is correct for a
+quiet day and indistinguishable from an archiver that died.
+
+So the offsite copy has a monitor for corruption and none for absence. If the
+erase key is rotated, the route stops mounting, or the sweep starts 500ing on
+one partition, `archived_at` simply stops advancing and the first symptom is a
+compliance question nobody can answer. Since B-020 the skip case at least warns
+in the Worker log, but no gate reads that log.
+
+What is missing is a lag check: `COUNT(*) WHERE emitted_at IS NOT NULL AND
+archived_at IS NULL` compared against a threshold, paging when the unarchived
+tail stops shrinking. It cannot be armed at a fixed threshold today — the
+56k-row historical backlog is still draining through the hourly sweep, so any
+useful threshold has to wait for convergence or be expressed as "not shrinking"
+rather than "not zero".
+
+```backlog
+id: B-021
+repo: corelink-server
+owner: tl
+status: open
+verify: "! grep -q 'archived_at IS NULL' .github/workflows/audit-chain-daily-verify.yml"
+verify-means: |
+  open while the daily verifier checks only the chunks it finds and never asks
+  D1 how many sealed rows never became a chunk.
+last-verified: 2026-08-24
 ```
 
 ### B-011 — ~115 branches in corelink-runners have no open PR

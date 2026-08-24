@@ -61,6 +61,18 @@ Each entry cross-references:
   Nine regression cells cover both, including the two that matter most — the
   write-check still round-trips under a runner-job credential, and tampered bytes
   read as a miss instead of a hit.
+- **fix(ops): a scheduled sweep that could not authenticate logged nothing at
+  all, so a missing credential was indistinguishable from an idle hour.** All
+  four hourly sweeps in `apps/signup-worker/src/index.ts` resolve a credential
+  first and return `skipped: true` when it is unbound, and `scheduled()` only
+  logged when `skipped` was false. The audit archive's first two empty ticks
+  could not be read from the logs alone — "not deployed yet" and "no key bound"
+  produce byte-identical silence. Each sweep now warns
+  `skipped=true reason=<credential>-unbound`, naming what is missing. A fifth
+  case surfaced while fixing it: the DSR sweep sits behind `if (db)`, so an
+  unbound `CONFIG_DB` skipped it without reaching the sweep function at all;
+  that branch warns too. Tracked as B-020.
+
 - **fix(ci): the Bazel and Buck2 integration gates were sourcing a secret that
   never existed, so neither has ever exercised the surface it claims to guard.**
   `bazel-starter-ci.yml` and `buck2-starter-ci.yml` both read
