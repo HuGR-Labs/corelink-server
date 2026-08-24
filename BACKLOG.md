@@ -491,15 +491,21 @@ absence of a log line could not distinguish "not deployed yet" from "no key".
 The fix is small — log the skip — but the class is the one that keeps costing
 us: silence read as success.
 
+**Closed 2026-08-24.** Each of the four sweeps now emits
+`console.warn("[<sweep>] skipped=true reason=<credential>-unbound")`, naming the
+credential that was missing. A fifth case was found while fixing it: the
+DSR sweep is wrapped in `if (db)`, so an unbound `CONFIG_DB` skipped it without
+even reaching the sweep function — that branch now warns too.
+
 ```backlog
 id: B-020
 repo: corelink-server
 owner: tl
-status: open
-verify: "! grep -q 'skipped=' apps/signup-worker/src/index.ts"
+status: done
+verify: "test \"$(grep -c 'skipped=true' apps/signup-worker/src/index.ts)\" -ge 5"
 verify-means: |
-  open while the sweeps still return a silent `skipped` that the scheduled()
-  caller never logs. Closes when index.ts emits a line for the skip case.
+  done while every sweep in scheduled() — the four sweep results plus the
+  CONFIG_DB guard — names its missing credential instead of returning silently.
 last-verified: 2026-08-24
 ```
 
