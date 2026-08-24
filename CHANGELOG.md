@@ -22,6 +22,41 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Bazel starter's cache-hit check could never pass, no matter what the
+  cache did (B-017).** The example that exists to demonstrate CoreLink's Bazel
+  cache asserted `>= 80%` remote hits by reading `--execution_log_json_file`
+  line by line and counting a `remoteCacheHit` field. That log is
+  pretty-printed JSON objects, not one object per line, and the field has been
+  `cacheHit` (plus a `runner` naming which cache answered) since Bazel 7 — so
+  every line failed to parse, the total came out zero, and the job reported
+  "No remote cache entries in execution log." The same dead parser was copied
+  into `README.md`, which is the snippet customers are told to run. Replaced
+  all three copies with `examples/bazel-starter/scripts/cache_hit_ratio.py`,
+  self-tested by `scripts/test_cache_hit_ratio.sh` against real Bazel 9
+  execution logs, which also refuses to count a local `--disk_cache` hit as a
+  remote one.
+- **`bazel-starter-ci` is enabled and green for the first time.** Run
+  `32718680738` on the `corelink` runner, against prod: `3 remote cache hit`,
+  ratio `3/3 = 100.0%`, warm build 9 523 ms against a 21 001 ms cold build. Its
+  workflow-state waiver is removed. Builds under `--config=ci` now use
+  `--spawn_strategy=local` because the runner image has no `/dev/shm`, which is
+  tracked as B-025 rather than absorbed silently.
+- **The Bazel starter sent its PAT to every host Bazel fetched from.**
+  `.bazelrc` registered `--credential_helper` with no `<host>=` prefix, which
+  applies the helper to *all* URIs — so each build handed the tenant's live
+  CoreLink PAT to `bcr.bazel.build` on every module-registry request. The
+  registry answered `401`, which is also why the cold build died before it ever
+  reached CoreLink. The helper is now scoped to `corelink-api.humangr.com`, and
+  a new negative scenario (N5) fails the build if that scoping is ever dropped.
+- The `N4` negative scenario grepped `.bazelrc` for `--remote_header` without
+  stripping comments, so it matched the header comment explaining why
+  `--remote_header` is banned and failed on a correct file.
+- The Bazel credential helper returned empty headers and exit 0 when
+  `CORELINK_PAT` was unset, turning a missing credential into a mid-build 401.
+  It now fails with the error `README.md` already documented.
+
 ### Added
 
 - **feat(ops): the offsite audit archive had a monitor for corruption and none

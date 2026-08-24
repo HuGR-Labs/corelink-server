@@ -90,6 +90,9 @@ jobs:
       # The helper at .bazel/corelink-credential-helper.sh reads CORELINK_PAT
       # and emits the Bazel JSON credential response.  The PAT never appears in
       # argv.
+      - name: Self-test the cache-hit parser
+        run: bash scripts/test_cache_hit_ratio.sh
+
       - name: Cold build (populate remote cache)
         env:
           CORELINK_PAT: ${{ secrets.CORELINK_CANARY_PAT }}
@@ -128,40 +131,12 @@ jobs:
 
       - name: Verify cache hit ratio ≥ 80%
         run: |
-          # Note: EXEC_LOG is expanded by the shell before Python runs.
-          python3 - "${EXEC_LOG}" <<'EOF'
-          import json, sys
-
-          log_path = sys.argv[1]
-          hits = total = 0
-          with open(log_path) as f:
-              for line in f:
-                  line = line.strip()
-                  if not line:
-                      continue
-                  try:
-                      entry = json.loads(line)
-                  except json.JSONDecodeError:
-                      continue
-                  if "remoteCacheHit" in entry:
-                      total += 1
-                      if entry["remoteCacheHit"]:
-                          hits += 1
-
-          if total == 0:
-              print("WARNING: No remote cache entries in execution log.")
-              # Treat zero entries as a failure — the remote cache must be reachable.
-              sys.exit(1)
-
-          ratio = hits / total * 100
-          print(f"Cache hit ratio: {hits}/{total} = {ratio:.1f}%")
-
-          if ratio < 80.0:
-              print(f"FAIL: Cache hit ratio {ratio:.1f}% < 80% SLA.", file=sys.stderr)
-              sys.exit(1)
-
-          print("PASS: Cache hit ratio meets ≥ 80% SLA.")
-          EOF
+          # The parser lives in scripts/cache_hit_ratio.py and is self-tested by
+          # scripts/test_cache_hit_ratio.sh against real execution logs. It was
+          # inline here until 2026-08-24, reading the log line by line for a
+          # field Bazel stopped emitting — so it reported "no remote cache
+          # entries" no matter what the cache did (B-017).
+          python3 scripts/cache_hit_ratio.py "${EXEC_LOG}" --min 80
 
       - name: Run binary (smoke test)
         run: ./bazel-bin/hello | grep -q "Hello, World!"
@@ -202,10 +177,10 @@ jobs:
           retention-days: 14
 
   # ---------------------------------------------------------------------------
-  # Negative scenarios (4 per WI-S15-002 §15)
+  # Negative scenarios (5: the 4 per WI-S15-002 §15, plus helper scoping)
   # ---------------------------------------------------------------------------
   negative-scenarios:
-    name: Negative scenarios (4)
+    name: Negative scenarios (5)
     runs-on: corelink
     timeout-minutes: 10
     defaults:
@@ -264,18 +239,39 @@ jobs:
           # Accept any non-zero exit as evidence Bazel did not panic silently.
           echo "PASS: N3 unreachable cluster → Bazel reported error (exit ${exit_code})"
 
-      # N4: .bazelrc PAT-in-argv pattern check — assert NO --remote_header in .bazelrc.
+      # N4: .bazelrc PAT-in-argv pattern check — assert NO --remote_header in
+      # .bazelrc. Comments are stripped first: this check used to read its own
+      # documentation (the header explains why --remote_header is banned) and
+      # fail on it, which is why the negative-scenarios job was red even when
+      # the file was correct.
       - name: N4 - No PAT in .bazelrc argv (CTRL-CRED-001)
         run: |
-          if grep -E "remote_header.*Authorization" .bazelrc 2>/dev/null; then
+          directives=$(grep -vE '^[[:space:]]*#' .bazelrc || true)
+          if echo "${directives}" | grep -E "remote_header.*Authorization"; then
               echo "FAIL: .bazelrc contains --remote_header with Authorization (CTRL-CRED-001 violation)" >&2
               exit 1
           fi
-          if grep -E "remote_header.*PAT|CORELINK_PAT" .bazelrc 2>/dev/null; then
+          if echo "${directives}" | grep -E "remote_header.*PAT|CORELINK_PAT"; then
               echo "FAIL: .bazelrc leaks PAT via --remote_header (CTRL-CRED-001 violation)" >&2
               exit 1
           fi
           echo "PASS: N4 no PAT in .bazelrc argv"
+
+      # N5: the credential helper must be scoped to our own host. An unscoped
+      # --credential_helper applies to every URI Bazel fetches, which sent the
+      # PAT to bcr.bazel.build on every build until 2026-08-24.
+      - name: N5 - Credential helper is host-scoped (CTRL-CRED-001)
+        run: |
+          directives=$(grep -vE '^[[:space:]]*#' .bazelrc || true)
+          if echo "${directives}" | grep -E -- "--credential_helper=%workspace%"; then
+              echo "FAIL: .bazelrc registers an unscoped credential helper — the PAT would be sent to every host Bazel fetches from" >&2
+              exit 1
+          fi
+          echo "${directives}" | grep -qE -- "--credential_helper=corelink-api\.humangr\.com=" || {
+              echo "FAIL: .bazelrc does not scope the credential helper to corelink-api.humangr.com" >&2
+              exit 1
+          }
+          echo "PASS: N5 credential helper scoped to corelink-api.humangr.com"
 
   # ---------------------------------------------------------------------------
   # Weekly benchmark (runs on schedule only to avoid billing in every PR)

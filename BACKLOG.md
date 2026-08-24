@@ -118,6 +118,39 @@ last-verified: 2026-08-23
 
 ---
 
+### B-025 — the runner image has no `/dev/shm`, so Bazel cannot sandbox
+
+With the credential leak fixed (B-017), the Bazel starter's cold build reached
+CoreLink and then died in Bazel's Linux sandbox:
+
+```
+I/O exception during sandboxed execution: [unix_jni.cc:382] /dev/shm (No such file or directory)
+```
+
+The `corelink` runner image does not provide `/dev/shm`. The example works
+around it with `build:ci --spawn_strategy=local`, which is honest for a cache
+demo — the action keys, uploads and hit ratio are identical either way — but it
+means **every Bazel build on our own runners executes unsandboxed**, and any
+customer-facing workload we run there inherits that. Hermeticity is exactly what
+Bazel users buy.
+
+The fix belongs in the runner image (`corelink-runners`), not in each example's
+`.bazelrc`. Until it lands, the workaround stays and this item holds the debt.
+
+```backlog
+id: B-025
+repo: corelink-runners
+owner: tl
+status: open
+verify: |
+  grep -q "spawn_strategy=local" examples/bazel-starter/.bazelrc
+verify-means: |
+  open while the example still needs the workaround; goes red once the runner
+  image provides /dev/shm and the line is deleted
+last-verified: 2026-08-24
+```
+
+
 ## CI integrity
 
 ### B-004 — workflows silenced by the 2026-08-08 mass-disable
@@ -397,15 +430,34 @@ It was also a **silenced PR gate**: the workflow has a live `pull_request` trigg
 scoped to `examples/bazel-starter/**`, so any PR touching that path between
 2026-08-08 and today merged without it.
 
+**Closed 2026-08-24.** The zero-hit reading was a dead parser, not a dead
+cache: the job read `--execution_log_json_file` line by line looking for
+`remoteCacheHit`, and that file is pretty-printed JSON objects carrying
+`cacheHit`. Every line failed to parse, so the total was always zero. The same
+parser had been copied into `README.md` and `scripts/benchmark.sh`.
+
+Running the workflow for real then surfaced two breaks the disabled gate had
+hidden: `.bazelrc` registered an **unscoped** `--credential_helper`, so every
+build sent the tenant PAT to `bcr.bazel.build` (which answered 401, killing the
+build before it reached CoreLink); and `N4` matched the comment explaining the
+rule it enforces. Both fixed, with `N5` added to keep the helper host-scoped.
+
+Proven, not asserted — run 32718680738 on the `corelink` runner against prod:
+`3 remote cache hit`, ratio `3/3 = 100.0%`, warm 9 523 ms vs cold 21 001 ms.
+First green run this workflow has ever had. It is `active` again and its waiver
+is removed.
+
 ```backlog
 id: B-017
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  test "$(gh api repos/HuGR-Labs/corelink-server/actions/workflows/bazel-starter-ci.yml -q .state)" != "active"
-verify-means: open while the workflow stays disabled; re-enabling it requires the cache-hit break fixed first
-last-verified: 2026-08-23
+  test "$(gh api repos/HuGR-Labs/corelink-server/actions/workflows/bazel-starter-ci.yml -q .state)" = "active"
+verify-means: |
+  done — the workflow is enabled and gating again. Red the moment it is disabled
+  once more, which is the state that let it rot unnoticed for a year.
+last-verified: 2026-08-24
 ```
 
 ### B-018 — the public install one-liner has never worked end to end

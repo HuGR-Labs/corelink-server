@@ -16,11 +16,15 @@
 
 set -euo pipefail
 
-# Validate that CORELINK_PAT is set.  If unset, return empty headers
-# (unauthenticated; cache read may still work for public tenants).
+# Validate that CORELINK_PAT is set.  An unset PAT used to emit empty headers
+# and exit 0, on the theory that an unauthenticated read might still work.  It
+# cannot: the cache endpoint answers 401 to an unauthenticated request, so that
+# path only turned a missing credential into a 401 from the middle of a build.
+# Fail here instead, with the message README.md's troubleshooting section
+# documents.
 if [[ -z "${CORELINK_PAT:-}" ]]; then
-    printf '{"headers":{}}\n'
-    exit 0
+    echo "ERROR: CORELINK_PAT environment variable is not set" >&2
+    exit 1
 fi
 
 # Emit the Bazel credential helper JSON response.

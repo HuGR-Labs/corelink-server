@@ -64,19 +64,6 @@ waivers:
     expires: "2026-09-06"
     tracking: none
 
-  ".github/workflows/bazel-starter-ci.yml":
-    reason: >-
-      Off with no recorded authorization. PR #1238 just repaired this
-      workflow's credential — and that repair proves nothing at all while the
-      workflow is disabled, because a fix that never executes is a claim, not
-      evidence. Re-enable it and let one green run demonstrate the credential
-      actually works, or state on the record why the Bazel starter surface is
-      no longer gated.
-    authorized-by: UNDECIDED
-    date: "2026-08-23"
-    expires: "2026-09-06"
-    tracking: none
-
   ".github/workflows/pre-cutover-weekly-cron.yml":
     reason: >-
       Off with no recorded authorization. Survivor of the 2026-08-08 mass

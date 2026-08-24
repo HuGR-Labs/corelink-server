@@ -61,34 +61,12 @@ for i in $(seq 1 "${ITERATIONS}"); do
     warm_ms=$(( warm_end - warm_start ))
     warm_times+=("${warm_ms}")
 
-    # Parse cache hit ratio from execution log.
-    hit_ratio=$(python3 - <<'EOF'
-import json, sys
-
-hits = total = 0
-try:
-    with open(sys.argv[1]) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if "remoteCacheHit" in entry:
-                total += 1
-                if entry["remoteCacheHit"]:
-                    hits += 1
-except FileNotFoundError:
-    pass
-
-if total == 0:
-    print("0.0")
-else:
-    print(f"{hits/total*100:.1f}")
-EOF
-    "${EXEC_LOG}" 2>/dev/null || echo "0.0")
+    # Parse cache hit ratio from execution log. The parser is shared with CI
+    # (scripts/cache_hit_ratio.py) and self-tested by test_cache_hit_ratio.sh;
+    # --min 0 because this loop reports the ratio rather than gating on it.
+    hit_ratio=$(python3 "${SCRIPT_DIR}/cache_hit_ratio.py" "${EXEC_LOG}" --min 0 2>/dev/null \
+        | sed -n 's/.* = \([0-9.]*\)%$/\1/p')
+    hit_ratio="${hit_ratio:-0.0}"
 
     warm_hit_ratios+=("${hit_ratio}")
     printf "cold=%dms  warm=%dms  hit=%s%%\n" "${cold_ms}" "${warm_ms}" "${hit_ratio}"
