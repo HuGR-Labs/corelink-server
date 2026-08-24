@@ -46,15 +46,3 @@
 # =============================================================================
 
 waivers:
-  ".github/workflows/pre-cutover-weekly-cron.yml":
-    reason: >-
-      Off with no recorded authorization. Survivor of the 2026-08-08 mass
-      disable that was never re-enabled with the other 17. Its own name says
-      "pre-cutover", so it may simply be obsolete now that the GA cutover has
-      shipped — in which case DELETE it, because a disabled workflow left in
-      the tree is indistinguishable from a gate someone switched off. If it is
-      still load-bearing, re-enable it.
-    authorized-by: UNDECIDED
-    date: "2026-08-23"
-    expires: "2026-09-06"
-    tracking: none

@@ -50,6 +50,8 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 from typing import Any
 
 try:
@@ -142,6 +144,18 @@ def check_repo(
     workflows = list_workflows(repo)
     by_path = {w["path"]: w for w in workflows}
     non_active = {p: w for p, w in by_path.items() if w.get("state") != "active"}
+
+    # A workflow whose FILE is gone from this tree is being retired in the very
+    # change being checked. GitHub keeps listing it as `disabled_manually` until
+    # the deletion reaches the default branch, so without this the guard demands
+    # a waiver for a file that no longer exists — and the only way to satisfy it
+    # would be to waive something that is already deleted, which is nonsense.
+    # Deleting a workflow is the strongest possible form of "decided".
+    if repo.endswith("/corelink-server"):
+        non_active = {
+            p: w for p, w in non_active.items()
+            if (REPO_ROOT / p).exists()
+        }
 
     failures: list[str] = []
     rows: list[list[str]] = []

@@ -22,6 +22,20 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Removed
+
+- **`pre-cutover-weekly-cron` and its two scripts, retired rather than repaired
+  (B-004).** It verified readiness for a GA cutover that happened on 2026-07-10
+  and had been failing on a GitHub label that no longer exists. It was the last
+  of the 21 workflows switched off in the 2026-08-08 mass-disable; the other 20
+  were re-enabled and verified. `check_workflow_state.py` now treats a workflow
+  whose file is gone as needing no waiver — GitHub keeps listing a deleted
+  workflow as `disabled_manually` until the deletion reaches the default branch,
+  so the guard would otherwise demand a waiver for a file that does not exist.
+  B-004 stays open until GitHub stops listing it, which is a property of the
+  merge and not of this diff; closing it here would be claiming a state that
+  cannot exist yet.
+
 ### Fixed
 
 - **Bazel can use its sandbox on the runner fabric again (B-025).** The runner
