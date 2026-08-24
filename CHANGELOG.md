@@ -117,6 +117,26 @@ Each entry cross-references:
   rejected the whole file. Converted to a quoted heredoc, which prose cannot
   break. Found by the second rule of the new gate, which runs `bash -n` over
   every tracked shell script — 147 of them, and this was the only dead one.
+- **The trust page's "verifiable by you, right now" list was three-fifths
+  false, and the docs build proved it.** The section opens with "Compliance
+  docs can be theatre. We try hard to make ours falsifiable" and then listed
+  five proofs. `security.txt` (200 on humangr.com) and the audit-chain how-to
+  hold up. The other three did not: the SBOM link pointed at a page whose own
+  banner says the procurement path "is not yet contractually offered" (response
+  time TBD, signing-key URL `$TBD`); "Sigstore / Rekor provenance entries for
+  every binary" covers only the Worker OCI image, because the CLI release
+  workflow's signing step is literally named `[TODO v2] cosign sign
+  (placeholder)`; and the public status page answered a TLS `handshake_failure`
+  (alert 40) because `status.corelink.humangr.com` was CNAME'd to Better Stack
+  while Better Stack had `custom_domain: null` — a hostname advertised in 224
+  places across docs, specs and legal that no customer could load. The status
+  page was fixed at the source (the custom domain is now bound at the vendor,
+  not the claim edited away); the other two claims are now stated as what they
+  are, in a new "Not yet available, and listed here rather than omitted"
+  bucket. Applied to the three untranslated locale mirrors as well — the en-US
+  build failed first and masked them, and the i18n gates were green over a
+  section that has never been translated.
+
 - **The changelog gate reported "CHANGELOG.md is not modified" about a modified
   CHANGELOG.md, and only on large PRs.** `git diff --name-only | grep -qx` under
   `set -o pipefail` inverts on match: `grep -q` exits at the FIRST hit, `git
