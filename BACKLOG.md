@@ -1522,16 +1522,51 @@ deliberately unchanged: it tracks the hosted-runner half, which is still open.
 That work also surfaced B-037 — the reason the link count looked survivable is
 that the gate runs authenticated.
 
+**Hosted half closed 2026-08-24 — and three of the six jobs were deleted, not
+moved.** The trigger was GitHub itself: every `ubuntu-latest` job began failing
+in 2 seconds with `steps=0` and no runner, annotated *"The job was not started
+because recent account payments have failed or your spending limit needs to be
+increased"*. That reframed the 2026-08-03 decision to keep six jobs hosted —
+each of those notes weighed billed minutes against a real technical blocker, and
+the billed-minutes side of the trade no longer exists.
+
+Deleted (each ended in `|| echo "::warning::"`, so no finding could ever fail
+them — 87 billed minutes per 3 days for gates that proved nothing):
+
+- `lighthouse` — the owner's call, and the code agrees: advisory-only.
+- `axe` — advisory, and its rules are already enforced for real by the two a11y
+  jobs below.
+- `lighthouse-baseline` — same engine; this one COULD fail, but it is schedule-only
+  and went with the rest of Lighthouse. `apps/docs/lighthouserc.cjs` went too.
+
+Moved to `corelink`, all three real gates, none weakened:
+
+- `a11y-playwright` — already installed its own chromium; `admin-ui-e2e.yml` runs
+  that exact install on the fabric today, so this was the same recipe.
+- `a11y-baseline-diff` — the "Locate Chrome" guard that the 2026-08-03 note
+  correctly refused to weaken is still there and still exits 1. The job now
+  supplies a Chrome instead: Playwright's chromium, resolved via
+  `executablePath()`, with the PATH lookup kept as fallback.
+- `broken-links` — the Docker container action cannot run on a box without
+  docker, so lychee is now a pinned release binary (v0.24.2, the same version the
+  link sweep was measured with) whose SHA-256 is verified before it is unpacked
+  or executed. The objection that a hand-rolled download loses the action's pin
+  is answered rather than ignored: version and checksum are both pinned in the
+  workflow.
+
+`docs-ci.yml` now has zero `runs-on: ubuntu-latest`; `actionlint` green.
+
 ```backlog
 id: B-034
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  grep -c "runs-on: ubuntu-latest" .github/workflows/docs-ci.yml | grep -qv '^0$'
+  test "$(grep -c 'runs-on: ubuntu-latest' .github/workflows/docs-ci.yml)" = "0"
 verify-means: |
-  open while docs-ci still schedules hosted jobs; goes red once every job in that
-  workflow runs on the self-hosted fleet
+  done while every job in docs-ci runs on the self-hosted fleet. Goes red the
+  moment a hosted job is reintroduced — which is the direction that matters,
+  since the failure mode here was a hosted job nobody was watching.
 last-verified: 2026-08-24
 ```
 
