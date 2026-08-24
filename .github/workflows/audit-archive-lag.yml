@@ -15,14 +15,26 @@ name: audit-archive-lag
 # a clean no-op. The offsite copy therefore had a monitor for CORRUPTION and
 # none for ABSENCE. This workflow is the absence monitor.
 #
-# THE PREDICATE — a two-clause conjunction, T = 3 hours
-# -----------------------------------------------------
-#   PAGE iff
+# THE PREDICATE — T = 3 hours, PAGE on absence OR per-partition failure
+# ---------------------------------------------------------------------
+#   PAGE iff  (absence)  OR  (per-partition failure)
+#
+#   absence := a two-clause conjunction
 #     (1) there exists a SEALED row (emitted_at IS NOT NULL) with
 #         archived_at IS NULL AND quarantined_at IS NULL whose enqueued_at is
 #         older than T
 #     AND
 #     (2) MAX(archived_at) over the whole table is older than T, or is NULL
+#
+#   per-partition failure (B-022) := there exists at least one (tenant_id,
+#     region) partition that BOTH still owns a sealed, non-quarantined,
+#     unarchived row older than T AND whose OWN MAX(archived_at) is older than
+#     T (or NULL). This is the case absence (clause 2, whole-table MAX) cannot
+#     see: one partition failing every hour while the rest of the fleet drains
+#     normally keeps the global MAX(archived_at) fresh, so absence stays false.
+#     Because the archiver sweeps EVERY partition with work on each tick
+#     (read_unarchived_partitions), a partition that never advances its own
+#     archived_at across ticks is stuck, not merely un-reached.
 #
 # Why clause 1 EXCLUDES quarantined rows (migration 0100): a quarantined row is
 # unarchivable BY DESIGN. The 2026-08-14 seal fork left 8 of 360 partitions on
@@ -186,10 +198,42 @@ jobs:
               "SELECT COUNT(*) AS quarantined_total, MAX(quarantined_at) AS last_quarantined_ms "
               "FROM audit_outbox WHERE quarantined_at IS NOT NULL"
           )
+          # PER-PARTITION FAILURE (B-022) — the gap clauses 1+2 cannot see.
+          # Clause 2 is MAX(archived_at) over the WHOLE table, so one stuck
+          # (tenant_id, region) partition among many healthy ones leaves the
+          # global predicate false: the fleet looks fine while a single
+          # partition fails every hour indefinitely.
+          #
+          # The archiver sweeps EVERY partition with sealed-but-unarchived,
+          # non-quarantined rows on each hourly tick (read_unarchived_partitions
+          # in routes/audit_archive.rs), archiving each one's clean prefix and
+          # quarantining the unarchivable remainder. So a partition that STILL
+          # carries non-quarantined sealed rows older than T while its OWN
+          # MAX(archived_at) is itself older than T (or NULL — never archived)
+          # is not an un-reached tail: it is a partition the sweep touched and
+          # failed to advance, tick after tick. That — and only that — is what
+          # this clause counts. A partition draining normally advances its own
+          # archived_at every tick and is excluded by the HAVING; a fully
+          # quarantined partition has no non-quarantined rows and does not
+          # appear at all, so this can never page on the 2026-08-14 fork.
+          partitions_failed_sql = (
+              "SELECT o.tenant_id AS tenant_id, o.region AS region, "
+              "COUNT(*) AS pending_old, MIN(o.enqueued_at) AS oldest_pending_ms, "
+              "(SELECT MAX(o2.archived_at) FROM audit_outbox o2 "
+              " WHERE o2.tenant_id = o.tenant_id AND o2.region = o.region) "
+              "AS part_last_archived_ms "
+              "FROM audit_outbox o "
+              "WHERE o.emitted_at IS NOT NULL AND o.archived_at IS NULL "
+              "AND o.quarantined_at IS NULL "
+              f"AND o.enqueued_at < {t_ms} "
+              "GROUP BY o.tenant_id, o.region "
+              f"HAVING part_last_archived_ms IS NULL OR part_last_archived_ms < {t_ms}"
+          )
 
           r1 = d1_query(clause1_sql)
           r2 = d1_query(clause2_sql)
           r3 = d1_query(quarantine_sql)
+          r4 = d1_query(partitions_failed_sql)
           row1 = r1[0] if r1 else {}
           row2 = r2[0] if r2 else {}
           row3 = r3[0] if r3 else {}
@@ -200,14 +244,30 @@ jobs:
           quarantined_total = int(row3.get("quarantined_total") or 0)
           last_quarantined_ms = row3.get("last_quarantined_ms")
 
-          clause1 = pending_old > 0
-          clause2 = (last_archived_ms is None) or (int(last_archived_ms) < t_ms)
-          page = clause1 and clause2
-
           def age_h(ms):
               if ms is None:
                   return "never"
               return f"{(now_ms - int(ms)) / 3600000.0:.2f}h ago"
+
+          stuck_partitions = r4 or []
+          partitions_failed = len(stuck_partitions)
+          # A compact, page-safe rendering of which partitions are stuck.
+          worst = sorted(
+              stuck_partitions,
+              key=lambda p: int(p.get("oldest_pending_ms") or now_ms),
+          )[:5]
+          stuck_summary = "; ".join(
+              f"{str(p.get('tenant_id'))[:8]}/{p.get('region')}"
+              f"(n={int(p.get('pending_old') or 0)},"
+              f"idle={age_h(p.get('part_last_archived_ms'))})"
+              for p in worst
+          ) or "none"
+
+          clause1 = pending_old > 0
+          clause2 = (last_archived_ms is None) or (int(last_archived_ms) < t_ms)
+          # A partial failure now pages on its OWN — it does not need the
+          # whole-table archiver to also look idle (B-022).
+          page = (clause1 and clause2) or (partitions_failed > 0)
 
           summary = os.environ.get("GITHUB_STEP_SUMMARY")
           lines = [
@@ -222,12 +282,18 @@ jobs:
               f"| MAX(archived_at) over audit_outbox | `{last_archived_ms}` ({age_h(last_archived_ms)}) |",
               f"| QUARANTINED rows (unarchivable by design, excluded from clause 1) | `{quarantined_total}` |",
               f"| most recent quarantine | `{last_quarantined_ms}` ({age_h(last_quarantined_ms)}) |",
+              f"| PARTITIONS failing past T (stuck, not draining) | `{partitions_failed}` |",
+              f"| worst stuck partitions | {stuck_summary} |",
               "",
               f"clause 1 (pending work older than T): **{clause1}**",
               "",
               f"clause 2 (archiver idle for longer than T): **{clause2}**",
               "",
-              f"verdict: **{'PAGE' if page else 'OK'}**",
+              f"per-partition failure (partitions_failed > 0): **{partitions_failed > 0}** "
+              f"— {partitions_failed} partition(s): {stuck_summary}",
+              "",
+              f"verdict: **{'PAGE' if page else 'OK'}** "
+              f"(absence = {clause1 and clause2}, partial-failure = {partitions_failed > 0})",
               "",
               "Both predicate measurements — and the quarantine census — are "
               "emitted on every run, pass or fail, so the backlog tail and the "
@@ -248,6 +314,8 @@ jobs:
                   fh.write(f"oldest_pending_ms={oldest_pending_ms}\n")
                   fh.write(f"last_archived_ms={last_archived_ms}\n")
                   fh.write(f"quarantined_total={quarantined_total}\n")
+                  fh.write(f"partitions_failed={partitions_failed}\n")
+                  fh.write(f"stuck_summary={stuck_summary}\n")
                   fh.write(f"lag_hours={lag_hours}\n")
                   fh.write(f"cutoff_ms={t_ms}\n")
           PY
@@ -259,6 +327,8 @@ jobs:
           PENDING_OLD: ${{ steps.measure.outputs.pending_old }}
           OLDEST_PENDING_MS: ${{ steps.measure.outputs.oldest_pending_ms }}
           LAST_ARCHIVED_MS: ${{ steps.measure.outputs.last_archived_ms }}
+          PARTITIONS_FAILED: ${{ steps.measure.outputs.partitions_failed }}
+          STUCK_SUMMARY: ${{ steps.measure.outputs.stuck_summary }}
           LAG_HOURS: ${{ steps.measure.outputs.lag_hours }}
           CUTOFF_MS: ${{ steps.measure.outputs.cutoff_ms }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -267,33 +337,69 @@ jobs:
           : "${PAGERDUTY_ROUTING_KEY:?PAGERDUTY_ROUTING_KEY not set — cannot page on archive absence (fail-CLOSED)}"
           echo "::add-mask::${PAGERDUTY_ROUTING_KEY}"
           RUN_DATE=$(date -u +%Y-%m-%d)
-          echo "::error::AUDIT_ARCHIVE_ABSENT — ${PENDING_OLD} sealed row(s) pending past T=${LAG_HOURS}h and the archiver has not written since ${LAST_ARCHIVED_MS}"
+          # The page fires for either of two disjoint conditions. Name whichever
+          # one actually holds so the responder does not go looking for a
+          # whole-fleet stall when a single partition is stuck (B-022).
+          if [[ "${PARTITIONS_FAILED:-0}" -gt 0 ]]; then
+            echo "::error::AUDIT_ARCHIVE_PARTITION_FAILURE — ${PARTITIONS_FAILED} partition(s) stuck past T=${LAG_HOURS}h: ${STUCK_SUMMARY}"
+          fi
+          if [[ "${PENDING_OLD:-0}" -gt 0 && ( "${LAST_ARCHIVED_MS:-null}" == "null" || "${LAST_ARCHIVED_MS:-null}" == "None" || "${LAST_ARCHIVED_MS:-0}" -lt "${CUTOFF_MS}" ) ]]; then
+            echo "::error::AUDIT_ARCHIVE_ABSENT — ${PENDING_OLD} sealed row(s) pending past T=${LAG_HOURS}h and the archiver has not written since ${LAST_ARCHIVED_MS}"
+          fi
           PAGERDUTY_ROUTING_KEY="${PAGERDUTY_ROUTING_KEY}" \
           PENDING_OLD="${PENDING_OLD}" \
           OLDEST_PENDING_MS="${OLDEST_PENDING_MS}" \
           LAST_ARCHIVED_MS="${LAST_ARCHIVED_MS}" \
+          PARTITIONS_FAILED="${PARTITIONS_FAILED:-0}" \
+          STUCK_SUMMARY="${STUCK_SUMMARY:-none}" \
           LAG_HOURS="${LAG_HOURS}" \
           CUTOFF_MS="${CUTOFF_MS}" \
           RUN_DATE="${RUN_DATE}" \
           RUN_URL="${RUN_URL}" \
           python3 > pd-payload.json <<'PY'
           import json, os, sys
+          partitions_failed = int(os.environ.get("PARTITIONS_FAILED") or 0)
+          pending_old = int(os.environ.get("PENDING_OLD") or 0)
+          last_arch = os.environ.get("LAST_ARCHIVED_MS")
+          cutoff = int(os.environ["CUTOFF_MS"])
+          absence = pending_old > 0 and (
+              last_arch in (None, "", "null", "None") or int(last_arch) < cutoff
+          )
+          # Two disjoint failure classes share this one page step but must not
+          # share a dedup_key, or a live partition-failure incident would be
+          # collapsed into (or suppressed by) an absence incident for the day.
+          if partitions_failed > 0:
+              summary = (
+                  "SEV-0 audit archive PARTITION FAILURE: "
+                  + str(partitions_failed)
+                  + " partition(s) stuck past T=" + os.environ["LAG_HOURS"]
+                  + "h — " + os.environ["STUCK_SUMMARY"]
+              )
+              cls = "archive-partition-failure"
+              dedup = "audit-archive-partition-failure-" + os.environ["RUN_DATE"]
+          else:
+              summary = (
+                  "SEV-0 audit archive ABSENT: " + str(pending_old)
+                  + " sealed row(s) unarchived past T=" + os.environ["LAG_HOURS"]
+                  + "h and last archived_at=" + str(last_arch)
+              )
+              cls = "archive-absent"
+              dedup = "audit-archive-absent-" + os.environ["RUN_DATE"]
           event = {
               "routing_key": os.environ["PAGERDUTY_ROUTING_KEY"],
               "event_action": "trigger",
-              "dedup_key": "audit-archive-absent-" + os.environ["RUN_DATE"],
+              "dedup_key": dedup,
               "payload": {
-                  "summary": (
-                      "SEV-0 audit archive ABSENT: " + os.environ["PENDING_OLD"]
-                      + " sealed row(s) unarchived past T=" + os.environ["LAG_HOURS"]
-                      + "h and last archived_at=" + os.environ["LAST_ARCHIVED_MS"]
-                  ),
+                  "summary": summary,
                   "source": "audit-archive-lag cron (GHA)",
                   "severity": "critical",
                   "component": "corelink-audit-chain",
                   "group": "audit",
-                  "class": "archive-absent",
+                  "class": cls,
                   "custom_details": {
+                      "condition": "partition_failure" if partitions_failed > 0 else "absence",
+                      "partitions_failed": partitions_failed,
+                      "stuck_partitions": os.environ["STUCK_SUMMARY"],
                       "pending_sealed_rows_older_than_T": os.environ["PENDING_OLD"],
                       "oldest_pending_enqueued_at_ms": os.environ["OLDEST_PENDING_MS"],
                       "max_archived_at_ms": os.environ["LAST_ARCHIVED_MS"],
