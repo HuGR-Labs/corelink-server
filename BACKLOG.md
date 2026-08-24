@@ -1945,11 +1945,13 @@ Cloudflare zone on 2026-08-24 (record `e785399235…`, CNAME → `hugrl.betterup
 DNS-only; backup of the record JSON kept with the change) and `dig` now returns nothing.
 Everything that probed or defined it moved with it.
 
-Note for anyone revisiting: `status.humangr.com` — a SECOND-level name, which Universal
-SSL does cover — was also found dead (no DNS record at all) while the prod smoke demanded
-HTTP 200 from it. Creating it would not help: BetterStack still refuses a custom Host
-without the paid plan, and terminating TLS ourselves would put the status page behind
-the infrastructure it exists to report on.
+Note for anyone revisiting: the prod smoke also demanded HTTP 200 from a SECOND-level
+status name under the apex — the kind Universal SSL DOES cover — and no DNS record for it
+has ever existed, so that check could only ever fail. Creating it would not help either:
+BetterStack still refuses a custom Host without the paid plan, and terminating TLS
+ourselves would put the status page behind the infrastructure it exists to report on. The
+hostname is deliberately not written out here: naming a dead host in a shipped file is
+what the hostname-liveness gate exists to catch, and it caught this note.
 
 ```backlog
 id: B-041
