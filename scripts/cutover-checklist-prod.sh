@@ -239,11 +239,15 @@ fi
 
 # Item 2: BetterStack status page
 item "PRE-CUTOVER: BetterStack status page reachable + subscribable"
-echo "  Check: https://status.corelink.humangr.com"
+echo "  Check: https://hugrl.betteruptime.com"
 echo "  Verify: page loads, subscribe button present, 5 components visible"
 echo "  Phase A inheritance (SEALed 4d4fb8f6)"
 emit "#### [02/15] PRE-CUTOVER: BetterStack status page"
-if ! confirm "Is https://status.corelink.humangr.com reachable and subscribable?"; then
+# NOT "and subscribable": subscriptions are switched off on this page
+# (`subscribable: false`). The old question could only be answered honestly
+# with "no", and the cutover shipped anyway — a confirmation gate is worth
+# exactly what the answer is worth.
+if ! confirm "Does https://hugrl.betteruptime.com load and show current component state?"; then
   abort_cutover "BetterStack status page not confirmed"
 fi
 

@@ -92,7 +92,7 @@ SUBDOMAINS=(
     "https://corelink-signup.humangr.com"
     "https://humangr.com"
     "https://corelink-get.humangr.com"
-    "https://status.corelink.humangr.com"
+    "https://hugrl.betteruptime.com"
 )
 
 # Number of tables expected after all D1 migrations are applied.
@@ -244,7 +244,7 @@ check_w32_3_subdomains() {
         local code
         code="$(http_status_code "${url}")"
         # Accept 2xx and also 3xx (pages redirect to www patterns are valid).
-        # status.corelink.humangr.com may return 301/302 redirect to BetterStack.
+        # the status page may return 301/302 within BetterStack.
         local http_class="${code:0:1}"
         if [[ "${http_class}" == "2" || "${http_class}" == "3" ]]; then
             sub_pass=$(( sub_pass + 1 ))
