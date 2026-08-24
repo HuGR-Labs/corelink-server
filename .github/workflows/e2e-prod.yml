@@ -40,7 +40,14 @@ concurrency:
 jobs:
   playwright:
     name: playwright prod-surface (chromium)
-    runs-on: ubuntu-latest
+    # 2026-08-24 (B-005): moved off `ubuntu-latest`. This lane fires on push,
+    # pull_request AND a daily cron, so it was hosted spend on three triggers.
+    # `corelink` is the Cloudflare container fabric: Ubuntu 24.04, node and pnpm
+    # baked, apt available — which is what `playwright install --with-deps`
+    # needs. It stays a datacenter IP, which matters here: these probes assert
+    # what a customer's CI sees, and the Mac fleet is a residential address that
+    # the edge treats differently (see `edge-security-blocked-datacenter-ci`).
+    runs-on: corelink
     timeout-minutes: 15
     defaults:
       run:
