@@ -1,0 +1,101 @@
+name: Workflow-state guard
+
+# Detects workflows that have been switched OFF without a recorded decision.
+# -----------------------------------------------------------------------------
+# WHY THIS EXISTS
+#
+# On 2026-08-08, 21 workflows in this repository moved to `disabled_manually`
+# in 39 seconds. Nothing noticed. Two of them were PR gates rather than crons,
+# so pull requests merged while a gate was simply not running; 17 were later
+# re-enabled by hand and the remainder were never reconciled. The organisation
+# is on the GitHub **free** plan, so the audit-log REST API returns 404 and
+# "who disabled them" cannot be answered by API at all. Forensics being
+# impossible is exactly why this compensating control matters: we cannot
+# detect WHO, so we detect THAT — every single day.
+#
+# WHY IT IS A CRON AND NOT A PR GATE
+#
+# CLAUDE.md's rule is that "a cron earns its keep ONLY when something can
+# change WITHOUT a commit". A workflow's enabled/disabled state is precisely
+# such a thing: it is repository metadata, flipped through the API or the web
+# UI, leaving no commit, no diff, and no PR to gate on. A PR-triggered check
+# would therefore be blind for exactly the 10-of-14 days this repo sees no
+# commits to `main` — the window in which the 2026-08-08 disable went
+# unnoticed. This cron earns its schedule.
+#
+# WHAT IT ENFORCES  (logic: scripts/check_workflow_state.py)
+#
+#   1. Every non-active workflow must have an unexpired entry in
+#      `.github/workflow-state-waivers.yml`, keyed by its repo-relative path.
+#   2. Every waiver entry must name a workflow that EXISTS and is NON-ACTIVE.
+#      A waiver for a deleted workflow, or for one that is happily running, is
+#      drift in the other direction and fails too.
+#   3. Every waiver must carry an `expires` date that has not passed, no more
+#      than 90 days from the date it was written. An expired waiver is exactly
+#      as red as a missing one.
+#
+# The workflow list is PAGINATED (`gh api --paginate`). This repo has >100
+# workflows; an unpaginated call silently truncates at 30, and a previous
+# investigation was misled by exactly that.
+#
+# A table of every non-active workflow and its waiver status is written to the
+# job summary on EVERY run, pass or fail — a green check that shows nothing is
+# how the original incident stayed invisible.
+#
+# SCOPE LIMITATION — READ THIS BEFORE TRUSTING IT
+#
+# This job gates `HuGR-Labs/corelink-server` ONLY. It also ATTEMPTS to report
+# on `HuGR-Labs/corelink-runners`, but both repositories are private and the
+# default `GITHUB_TOKEN` is scoped to the repository the workflow runs in, so
+# that call is expected to 404. When it does, the runners repo is recorded in
+# the summary as `NOT INSPECTED — no cross-repo credential` and the run does
+# NOT fail on it. That is a KNOWN GAP, deliberately left visible rather than
+# papered over: closing it needs a credential with read access to the runners
+# repo, and adding a new secret was explicitly out of scope for this change.
+# If such a credential is later bound to this workflow, the reporting path is
+# already implemented — non-active workflows there will then fail the run.
+# (Measured 2026-08-23: corelink-runners had 30 workflows, all active.)
+
+on:
+  schedule:
+    # 06:41 UTC daily — staggered off the other crons' round hours.
+    - cron: "41 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: workflow-state-guard
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    name: Non-active workflows must be declared
+    runs-on: corelink
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install PyYAML if absent
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -c 'import yaml' 2>/dev/null && { echo "PyYAML present"; exit 0; }
+          python3 -m pip install --quiet --user pyyaml
+          python3 -c 'import yaml; print("PyYAML installed", yaml.__version__)'
+
+      - name: Check workflow state against the waiver register
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # NOTE: never pipe this into grep — the exit status would be grep's.
+          python3 scripts/check_workflow_state.py \
+            --repo "${GITHUB_REPOSITORY}" \
+            --waivers .github/workflow-state-waivers.yml \
+            --also-report HuGR-Labs/corelink-runners
