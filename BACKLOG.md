@@ -1780,7 +1780,7 @@ verify-means: |
 last-verified: 2026-08-24
 ```
 
-### B-040 — CI pins a hash against a URL upstream overwrites; fifth value, third outage
+### B-039 — CI pins a hash against a URL upstream overwrites; fifth value, third outage
 
 `TLC_SHA256_PINNED` guards `tla2tools.jar`, fetched from
 `https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar`. That URL
@@ -1820,7 +1820,7 @@ adding new public prod storage plus 3 carrier rewrites plus an ADR supersession 
 it would make a security-path change large and rushed at the same time.
 
 ```backlog
-id: B-040
+id: B-039
 repo: corelink-server
 owner: tl
 status: open
