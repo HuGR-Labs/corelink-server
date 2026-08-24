@@ -37,6 +37,12 @@ Each entry cross-references:
   self-tested by `scripts/test_cache_hit_ratio.sh` against real Bazel 9
   execution logs, which also refuses to count a local `--disk_cache` hit as a
   remote one.
+- **`bazel-starter-ci` is enabled and green for the first time.** Run
+  `32718680738` on the `corelink` runner, against prod: `3 remote cache hit`,
+  ratio `3/3 = 100.0%`, warm build 9 523 ms against a 21 001 ms cold build. Its
+  workflow-state waiver is removed. Builds under `--config=ci` now use
+  `--spawn_strategy=local` because the runner image has no `/dev/shm`, which is
+  tracked as B-025 rather than absorbed silently.
 - **The Bazel starter sent its PAT to every host Bazel fetched from.**
   `.bazelrc` registered `--credential_helper` with no `<host>=` prefix, which
   applies the helper to *all* URIs — so each build handed the tenant's live
