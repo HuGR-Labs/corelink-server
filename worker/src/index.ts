@@ -264,6 +264,11 @@ export interface Env {
   // understanding that "on" leaks one bit of the internal key's correctness
   // per request on a capped tier. Operator-flipped only; not in wrangler.toml.
   SERVER_TIMING_WDB_DETAIL?: string;
+  // Forwarded to the CONTAINER (see `durable_object.ts` container.start env
+  // forward-list), not read by the Worker itself: "on" arms the container's
+  // `oargon`/`opermit`/`ortier` detail phases. Declared here so the forward is
+  // typed. Off by default — see `detail_phases_enabled` in origin_timing.rs.
+  CORELINK_ORIGIN_TIMING_DETAIL?: string;
   ERASURE_SALT_KEY?: string;
   ERASURE_ATTESTATION_SEED_HEX?: string;
   ERASURE_ATTESTATION_KEY_ID?: string;
