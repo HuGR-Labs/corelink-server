@@ -22,6 +22,28 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+
+- **The fifth Mac CI slot was gone, and could not have been restarted back
+  (B-030).** `corelink-builder-1` was registered in launchd and absent from
+  GitHub; the service restarted cleanly and the listener died seconds later with
+  *"The runner registration has been deleted from the server"* — GitHub
+  auto-removes a runner offline for ~14 days, after which the local config is
+  orphaned and no restart can recover it. Re-registered
+  (`svc.sh uninstall` → `config.sh remove --local` → `--replace` → reinstall);
+  five `corelink-builder` runners are now online. The fleet had been running at
+  4/5 and nothing said so.
+
+### Added
+
+- `scripts/check_runner_fleet.py` + the hourly `runner-fleet-health` workflow,
+  which runs on the **Cloudflare container fabric, not the Macs** — a health
+  check hosted on the thing it watches goes quiet exactly when it matters. It
+  catches a missing slot, the `busy=true`-with-no-jobs wedge, and a backed-up
+  queue. The slot census needs repository admin that `GITHUB_TOKEN` cannot hold,
+  so in CI it is disabled **explicitly** and announced on every run; without that
+  variable the script fails rather than silently running half of itself.
+
 ### Added
 
 - **A workspace lint gate that actually runs (B-033).** `cargo clippy

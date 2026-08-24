@@ -1,0 +1,58 @@
+name: runner-fleet health
+
+# The fleet's own state is exactly the kind of thing this repo's cron rule says
+# a schedule is FOR: it changes without a commit. Three ways it has changed
+# silently, all in the last two weeks:
+#
+#   * `corelink-builder-1` stopped being online, and after ~14 days GitHub
+#     DELETED its registration. The launchd service kept restarting and the
+#     listener kept exiting with "The runner registration has been deleted from
+#     the server" — a restart could never fix it. The fleet ran at 4/5 for days
+#     and nothing said so.
+#   * All four live runners reported busy=true with zero jobs in progress and
+#     seven runs queued behind them, one for six hours.
+#   * A queue simply backed up and looked like slow CI.
+#
+# This job runs on the Cloudflare container fabric (`runs-on: corelink`), NOT on
+# the Macs it is watching. A health check that needs the thing it watches to be
+# healthy reports "no problem" precisely when there is one.
+
+on:
+  schedule:
+    # Hourly, off the hour. A wedge that lasts six hours is the failure mode;
+    # detecting it within one is enough.
+    - cron: '25 * * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/check_runner_fleet.py'
+      - '.github/workflows/runner-fleet-health.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  fleet:
+    name: every expected Mac slot is online and nothing is stuck
+    runs-on: corelink
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # The slot census needs repository ADMIN. `GITHUB_TOKEN` cannot have it —
+      # `administration` is not a grantable workflow permission — so in CI this
+      # runs queue health only, and says so out loud on every run rather than
+      # quietly dropping half the check. Provisioning that credential is
+      # BACKLOG B-012; the day it exists, delete FLEET_SLOT_CENSUS below and the
+      # census starts enforcing with no other change.
+      - name: Check the fleet against GitHub's own view
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FLEET_SLOT_CENSUS: skip
+        run: python3 scripts/check_runner_fleet.py
