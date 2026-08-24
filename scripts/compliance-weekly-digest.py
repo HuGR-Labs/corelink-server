@@ -1228,12 +1228,30 @@ def render_markdown(p: DigestPayload) -> str:
     lines.append("## 3. Vendor risk SLAs")
     lines.append("")
     if p.vendor_breaches:
-        lines.append("| Vendor | Tier | Days since review | SLA window | 2× breach? | Owner |")
-        lines.append("|---|---|---|---|---|---|")
+        # Every row in this table is ALREADY past its cadence window — the table
+        # is built from `sla_breach` vendors only. Say so in prose: a reader who
+        # scans just the verdict column would otherwise read "no" as "healthy",
+        # when it only means the breach has not yet DOUBLED the window (which is
+        # the §7 regression trigger). An overdue review that reads as clean is
+        # the same defect class as a cron that skips and logs nothing.
+        crit = sum(1 for v in p.vendor_breaches if v.category == "Critical")
+        doubled = sum(1 for v in p.vendor_breaches if v.sla_2x_breach)
+        lines.append(
+            f"⚠️ **{len(p.vendor_breaches)} vendor review(s) OVERDUE** "
+            f"({crit} Critical) — every row below is past its cadence window. "
+            f"{doubled} of them have passed 2× the window "
+            f"({'a §7 regression trigger' if doubled else 'the §7 regression trigger'})."
+        )
+        lines.append("")
+        lines.append(
+            "| Vendor | Tier | Days since review | SLA window | Days overdue | > 2× cadence? | Owner |"
+        )
+        lines.append("|---|---|---|---|---|---|---|")
         for v in p.vendor_breaches:
             lines.append(
                 f"| {v.vendor} | {v.category} | {v.days_since} | "
-                f"{v.cadence_days}d | {'YES' if v.sla_2x_breach else 'no'} | {v.owner} |"
+                f"{v.cadence_days}d | +{v.days_since - v.cadence_days} | "
+                f"{'YES' if v.sla_2x_breach else 'no'} | {v.owner} |"
             )
     else:
         lines.append("All registered vendors within SLA. No breaches.")
