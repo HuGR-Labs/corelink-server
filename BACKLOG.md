@@ -659,6 +659,65 @@ verify-means: |
 last-verified: 2026-08-24
 ```
 
+### B-026 — eight audit-chain partitions forked on 2026-08-14 and cannot be archived
+
+The archive built for [B-015] refused to write eight partitions, and the reason
+is a real integrity defect it inherited rather than caused. `_public`/`wnam` sat
+at exactly 131 unarchived rows for eight consecutive hourly ticks while
+`enam` drained 29,832 to 13,097. Pulling that partition out of D1 and running
+the verifier against it gives:
+
+```
+AUDIT_CHAIN_BREAK_DETECTED: tenant=_public: region=wnam:
+  sealed archive chunk sequence gap: expected 11, found 10
+```
+
+Six sequence numbers (10, 13, 20, 30, 32, 37) are each held by TWO rows, and the
+six numbers immediately after them (12, 14, 21, 31, 33, 38) are missing. Each
+pair is the `read.attempted` / `read.served` pair of one request, and the two
+rows carry DIFFERENT `prev_hash` values — so the chain did not merely duplicate a
+label, it FORKED into two branches at each of those points.
+
+**Scope, measured:** 8 of 360 partitions, 1,505 excess rows, 3,010 rows sitting
+on a duplicated sequence number. The largest affected partition is
+`00000000-0000-4000-8000-0000000f0005`/`enam` with 1,466 of them.
+
+**It is historical and bounded.** Every one of those 3,010 rows was sealed
+inside a single 17-minute window, 2026-08-14 01:43:40 → 02:00:50 UTC. The drain
+on `origin/main` today carries explicit fork-freedom — it reads the sealed tail,
+computes deterministically, and aborts the partition when the head drifted under
+it rather than forking (`crates/corelink-container/src/routes/audit_drain.rs`,
+the module doc at lines 30-35 and the drift path at 469). So this is the scar of
+one past incident, not an open wound, and nothing here suggests tampering: a
+tamperer does not helpfully leave both branches behind.
+
+**Why nothing noticed for ten days.** The daily verifier only examines chunks
+that reached the bucket, and these never did. The B-021 absence monitor cannot
+see it either — its second clause asks whether the archiver wrote ANYTHING
+recently, and the healthy partitions keep it false. That is exactly [B-022],
+now with a live instance instead of a hypothesis.
+
+**The open decision is remediation, and it is not mine.** Re-sequencing sealed
+rows would rewrite the very evidence the chain exists to protect. The plausible
+options — archive the clean prefix up to the first fork and quarantine the
+remainder; archive both branches with an explicit fork marker; or accept the
+partitions as permanently unarchivable and record why — differ in what they
+claim to an auditor, so the owner picks.
+
+```backlog
+id: B-024
+repo: corelink-server
+owner: tl
+status: open
+verify: manual
+verify-means: |
+  open until the eight forked partitions are either archived under a decided
+  policy or formally recorded as unarchivable. Re-measure with: SELECT
+  tenant_id, region, COUNT(*)-COUNT(DISTINCT sequence_number) FROM audit_outbox
+  WHERE emitted_at IS NOT NULL GROUP BY 1,2 HAVING 3 > 0.
+last-verified: 2026-08-24
+```
+
 ### B-011 — ~115 branches in corelink-runners have no open PR
 
 Large relative to the other two repos, which carry none. Needs a merged-vs-
@@ -706,7 +765,7 @@ the bytes behind that tenant's own Turborepo keys. Not cross-tenant; the envelop
 does not detect it, because the key is not a preimage of the content.
 
 ```backlog
-id: B-024
+id: B-026
 repo: corelink-server
 owner: tl
 status: open
