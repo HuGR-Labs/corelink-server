@@ -1,3 +1,9 @@
+# ⛔ SUPERSEDED 2026-08-24 — this configures a status page on Atlassian
+# Statuspage at a branded `status.` hostname. We run Better Stack at
+# https://hugrl.betteruptime.com, and the branded hostname is retired (the
+# owner declined the paid plan that a custom domain requires; the CNAME was
+# deleted from the zone). Kept for the record, not as configuration to apply.
+# B-041 (done).
 # config/statuspage/dns-cname-record.txt — Wave-28 R-prep step-5
 #
 # Exact DNS CNAME record the operator must add in the DNS provider

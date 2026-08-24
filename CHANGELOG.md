@@ -236,6 +236,22 @@ Each entry cross-references:
 
 ### Changed
 
+- **The status-page provisioning playbooks are superseded, and the three
+  scripts that automate them now refuse to run.** ~3 100 lines across 11 files
+  describe standing up a status page on **Atlassian Statuspage** at a branded
+  `status.` hostname. Neither happened: the page runs on Better Stack, and the
+  branded hostname was retired on 2026-08-24 when the owner declined the paid
+  plan a custom domain requires. Following these documents would create an
+  account with a vendor we do not use and request a domain we are not buying.
+  They are banner-superseded rather than deleted because ~20 other documents
+  cite them, and deleting would trade one class of broken reference for
+  another. The distinction that matters: a document gets a banner, an
+  executable gets a guard. `statuspage-init-dressrun.sh`,
+  `admin/statuspage-bootstrap.sh` and `statuspage-init-verify.py` now exit 78
+  with the reason and the live URL unless `STATUSPAGE_PROVISIONING_REVIVED=1`
+  is set deliberately — a banner does not stop anyone from running a script.
+  All three proven in both directions.
+
 - **Three GitHub-hosted lanes moved onto the self-hosted fabric (B-005).**
   `backup-daily` and `backup-daily-verify` ran **daily** on `ubuntu-latest` —
   the largest recurring hosted spend left against a mandate of zero — and
