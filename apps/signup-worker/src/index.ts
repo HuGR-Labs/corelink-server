@@ -141,7 +141,13 @@ const baseHandler: ExportedHandler<SignupEnv> = {
       ctx.waitUntil(
         runDsrVerifySweep({ ...env, CONFIG_DB: db }, nowMs)
           .then((r) => {
-            if (!r.skipped) {
+            if (r.skipped) {
+              // A sweep that could not authenticate must never look like a
+              // sweep with nothing to do (B-020).
+              console.warn(
+                "[dsr-verify-cron] skipped=true reason=internal-auth-key-unbound",
+              );
+            } else {
               console.log(
                 `[dsr-verify-cron] swept=${r.swept} failed=${r.failed}`,
               );
@@ -151,12 +157,18 @@ const baseHandler: ExportedHandler<SignupEnv> = {
             Sentry.captureException(err);
           }),
       );
+    } else {
+      console.warn("[dsr-verify-cron] skipped=true reason=CONFIG_DB-unbound");
     }
 
     ctx.waitUntil(
       runPatScrubSweep(env, nowMs)
         .then((r) => {
-          if (!r.skipped) {
+          if (r.skipped) {
+            console.warn(
+              "[pat-scrub-cron] skipped=true reason=CLERK_SECRET_KEY-unbound",
+            );
+          } else {
             console.log(
               `[pat-scrub-cron] scanned=${r.scanned} scrubbed=${r.scrubbed} failed=${r.failed}`,
             );
@@ -170,7 +182,11 @@ const baseHandler: ExportedHandler<SignupEnv> = {
     ctx.waitUntil(
       runAuditDrainSweep(env, nowMs)
         .then((r) => {
-          if (!r.skipped) {
+          if (r.skipped) {
+            console.warn(
+              "[audit-drain-cron] skipped=true reason=erase-auth-key-unbound",
+            );
+          } else {
             console.log(
               `[audit-drain-cron] ok=${r.ok} status=${r.status} sealed=${r.sealed} partitions=${r.partitions}`,
             );
@@ -187,7 +203,11 @@ const baseHandler: ExportedHandler<SignupEnv> = {
     ctx.waitUntil(
       runAuditArchiveSweep(env, nowMs)
         .then((r) => {
-          if (!r.skipped) {
+          if (r.skipped) {
+            console.warn(
+              "[audit-archive-cron] skipped=true reason=erase-auth-key-unbound",
+            );
+          } else {
             console.log(
               `[audit-archive-cron] ok=${r.ok} status=${r.status} rows=${r.rowsArchived} chunks=${r.chunksCreated} failed_partitions=${r.partitionsFailed} incomplete=${r.incomplete}`,
             );
