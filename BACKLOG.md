@@ -471,6 +471,44 @@ last-verified: 2026-08-23
 
 ---
 
+## Cache integrity
+
+### B-020 — Turborepo cache entries stay overwritable, on purpose, without evidence
+
+`specs/_audits/2026-08-23-cache-integrity-coverage.md` (F-2) found Turborepo
+artifacts unverifiable, mutable and unpinned at once. Two of the three are now
+closed: `R2KvStore` carries CoreLink's own BLAKE3 alongside each object and
+serves a MISS on mismatch, and the audit's F-1 containment landed on the sccache
+plane. Mutability is the part left open.
+
+The obvious fix — make PUT create-only, as the Action Cache already is — was
+**declined for now**, and that decision is the item. The AC can refuse an
+overwrite because its protocol says a result for an action digest is final;
+Turborepo makes no such promise, and nobody has measured whether real clients
+re-PUT an existing key. This repo has already paid once for guessing at a build
+tool's behaviour: rejecting `.sccache_check` made sccache deem the backend
+unusable and disable itself entirely.
+
+So the missing thing is not a patch, it is evidence: drive a real `turbo` client
+through a re-run of an already-cached task against our endpoint and record
+whether a PUT is re-issued for a key that exists, and what the client does with a
+refusal. Then decide.
+
+Residual until then: a credential with cache-write scope for a tenant can replace
+the bytes behind that tenant's own Turborepo keys. Not cross-tenant; the envelope
+does not detect it, because the key is not a preimage of the content.
+
+```backlog
+id: B-020
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  ! grep -q "create_only\|put_if_absent" crates/corelink-container/src/routes/turbo_v8.rs
+verify-means: open while Turborepo PUT stays an overwrite; lands red once create-only semantics appear on that surface
+last-verified: 2026-08-23
+```
+
 ## Needs the owner
 
 These are not mine to do: they need a credential, a permanent deletion, or a

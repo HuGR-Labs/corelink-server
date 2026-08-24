@@ -68,7 +68,7 @@ would fail verification against bytes it was never a hash of. Calling either one
 
 ## Findings
 
-### F-1 — the runner-job marker never reaches the adapter plane (MEDIUM)
+### F-1 — the runner-job marker never reaches the adapter plane (MEDIUM) — **CLOSED**
 
 The `pat` table carries a runner-job marker (migration
 `0086_pat_runner_job_ac_key.sql`) whose stated purpose is that "a stolen per-job
@@ -95,7 +95,7 @@ This is the same structural blindness ADR-0071 already identified and closed for
 Worker's `x-corelink-scope` header — would see `read-only` and grant read." The
 same reasoning applies to the runner-job marker and was not applied to it.
 
-### F-2 — Turborepo artifacts are unverifiable, mutable, and unpinned at once (MEDIUM)
+### F-2 — Turborepo artifacts are unverifiable, mutable, and unpinned at once (MEDIUM) — **PARTIALLY CLOSED**
 
 Each property is individually defensible; together they leave the surface with no
 integrity story at all.
@@ -158,7 +158,51 @@ checked.
    re-PUT, and refusing an overwrite could break them. It should not be changed
    without checking real client behaviour.
 
-## Residual risk if nothing is done
+## Disposition
+
+Everything above was addressed in the same session the audit was written.
+
+**F-1 — CLOSED.** `PAT_LOOKUP_SQL` and the co-read both select
+`runner_job_ac_key`; `PatRow::runner_job` decodes its PRESENCE (the AC-key value
+pins an Action Cache and no adapter has one); `verify_capability_full` surfaces
+it without disturbing the five adapters that have no narrowable operation; and
+the sccache WebDAV DELETE refuses a 64-hex artifact key for a runner-job
+credential. The refusal is narrow exactly as the recommendation demanded — the
+`.sccache_check` write-check still round-trips, and a test asserts it, because
+that is the difference between a containment and a fleet outage. `runner_job`
+also joined the memo fingerprint (domain tag v2 → v3), keeping the existing rule
+that every field the row can decide with is bound into the key.
+
+**F-2 — PARTIALLY CLOSED, and the remaining part cannot be closed here.**
+`R2KvStore` now frames every object with an 8-byte magic plus CoreLink's BLAKE3
+of the payload, verifies it on read, and reports a MISS on mismatch so the entry
+self-heals. Bitrot, truncation, a swapped object and storage-tier tampering are
+now detected instead of served. A client that uploads wrong bytes under its own
+opaque key is still undetectable — that is the protocol, not an omission, and the
+code says so where someone would look. Legacy objects are served unverified
+rather than dropped, and gain the envelope on their next write.
+
+**Recommendation 3 (make Turborepo PUT create-only) — DECLINED, deliberately.**
+It would convert an intra-tenant poisoning risk into a client-compatibility risk,
+and the evidence to weigh that trade does not exist yet: nobody has measured
+whether real Turborepo clients re-PUT an existing key, and this repo has already
+paid once for guessing at a build tool's behaviour (the `.sccache_check` 400 that
+made sccache disable the backend). The Action Cache can be create-only because
+its own protocol says a result for an action digest is final; Turborepo makes no
+such promise. Revisit with client evidence, not with reasoning. Tracked in
+`BACKLOG.md`.
+
+**F-3 — recorded, not "fixed".** The mismeasurement is the finding; the audit
+itself is the artefact that corrects the record.
+
+## Residual risk after the fixes
+
+The eviction path is closed and at-rest corruption is now detected. What remains
+is a tenant's own credential writing wrong bytes under a Turborepo key it
+controls — bounded to that tenant, invisible to any content check by
+construction, and unchanged by any decision available on this surface.
+
+## Residual risk that was accepted before the fixes (kept for the record)
 
 Confined to a single tenant, and to credentials that tenant issued. The realistic
 scenario is a leaked or misused per-job runner credential evicting or poisoning
