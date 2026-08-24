@@ -1865,7 +1865,7 @@ verify: |
 verify-means: |
   open while any carrier still fetches the jar from the mutable upstream release
   URL. Goes red when every carrier points at storage we control.
-  n=$(grep -rlE "set -[a-z]*o pipefail" .github/workflows scripts tests tools | xargs grep -hcE "\| *head\b" | paste -sd+ - | bc); [ "$n" -gt 0 ]
+  n=$(grep -rlE "set -[a-z]*o pipefail" .github/workflows scripts tests tools | xargs grep -oE "\| *head\b" | wc -l | tr -d " "); [ "${n:-0}" -gt 0 ]
 verify-means: |
   open while any `| head` site remains inside a file that sets pipefail. Measured 74
   on 2026-08-24. Goes red when the last one is either rewritten to a form that cannot
