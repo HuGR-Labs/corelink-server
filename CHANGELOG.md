@@ -50,6 +50,22 @@ Each entry cross-references:
   `RB-AUDIT-ARCHIVE-ABSENT` §5 on what it means and how to list them.
 
 ### Fixed
+- **fix(backlog): the self-verifying register pointed the wrong way, and its own
+  gate was content.** Two defects landed within a minute of each other on
+  2026-08-24. First, two items were merged carrying the same `id: B-031` (the
+  SLSA-builder item from #1255 and the vendor-review item from #1256) — the
+  duplicate-id check caught that one and `main` sat BROKEN until now; the
+  vendor item is renumbered **B-032**, since the reproducible-build prose
+  already cites B-031 for the SLSA item. Second, and worse because nothing
+  noticed: the forked-partitions item was headed `### B-026` while its block
+  declared `id: B-024`, and the Turborepo item held the mirror image. Both ids
+  were unique, so the gate was satisfied — but every reference from outside the
+  file (a CHANGELOG entry, a PR body, a runbook) cites the HEADING, while the
+  gate reads the BLOCK, so an item could be verified green under a heading
+  describing different work. `backlog_verify.py` now refuses a file where any
+  heading and its block disagree, or where a block has no heading above it at
+  all. Proven to fail: reintroducing the swap exits 2 and names both lines.
+
 
 - **The build-attestation lanes attested an artifact that cannot exist
   (B-016).** `reproducible-build` compiled `corelink-worker` for

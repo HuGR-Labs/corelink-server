@@ -52,6 +52,15 @@ BACKLOG_PATH = REPO_ROOT / "BACKLOG.md"
 # drift out of sync (this repo has been bitten by hand-editing a generated file).
 BLOCK_RE = re.compile(r"^```backlog\n(.*?)^```", re.MULTILINE | re.DOTALL)
 
+# The prose half of an item is titled `### B-0NN — …`, and every reference from
+# outside this file — a CHANGELOG entry, a PR body, a runbook — cites that
+# heading. The block's `id:` is what the gate reads. Nothing made the two agree,
+# and on 2026-08-24 they silently disagreed: the forked-partitions item was
+# headed B-026 while its block declared `id: B-024`, and the Turborepo item held
+# the mirror image. Both ids were unique, so the duplicate check below was
+# content; the register simply pointed the wrong way for anyone following an id.
+HEADING_RE = re.compile(r"^### (B-\d+)\b", re.MULTILINE)
+
 REQUIRED_FIELDS = ("id", "repo", "owner", "status", "verify", "verify-means", "last-verified")
 VALID_STATUS = ("open", "done", "parked")
 VALID_OWNER = ("tl", "owner")
@@ -223,6 +232,39 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
+
+    # Each block must sit under a heading that names the SAME id. Checked before
+    # the per-item verifies so a mislabelled item cannot be "confirmed" under a
+    # heading that describes different work.
+    text = path.read_text()
+    headings = [(m.start(), m.group(1)) for m in HEADING_RE.finditer(text)]
+    mismatches: list[str] = []
+    for m in BLOCK_RE.finditer(text):
+        line = text[: m.start()].count("\n") + 1
+        block_id = ""
+        try:
+            data = yaml.safe_load(m.group(1)) or {}
+            if isinstance(data, dict):
+                block_id = str(data.get("id", ""))
+        except yaml.YAMLError:
+            continue  # already reported as BROKEN by parse()
+        if not re.fullmatch(r"B-\d+", block_id):
+            continue
+        prior = [h for pos, h in headings if pos < m.start()]
+        if not prior:
+            mismatches.append(f"  line {line}: block `id: {block_id}` has no `### B-…` heading above it")
+        elif prior[-1] != block_id:
+            mismatches.append(f"  line {line}: heading says {prior[-1]}, block says id: {block_id}")
+    if mismatches:
+        print(
+            "FATAL: a heading and its block disagree about which item they are.\n"
+            + "\n".join(mismatches)
+            + "\nEvery reference from outside this file cites the HEADING; the gate reads\n"
+            "the block. When they diverge the register points the wrong way and nothing\n"
+            "notices, because both ids can still be unique.",
+            file=sys.stderr,
+        )
+        return 2
 
     seen: dict[str, int] = {}
     for it in items:

@@ -779,7 +779,7 @@ them. **Still open** until the migration is applied to prod D1 and the eight
 partitions are observed quarantined with a recorded sequence range per partition.
 
 ```backlog
-id: B-024
+id: B-026
 repo: corelink-server
 owner: tl
 status: open
@@ -915,7 +915,7 @@ verify-means: |
 last-verified: 2026-08-24
 ```
 
-### B-031 — every Critical vendor review is past its cadence window
+### B-032 — every Critical vendor review is past its cadence window
 
 All seven Critical vendors — Cloudflare, Stripe, Clerk, AWS, Google Cloud, Azure
 and Drata — were last reviewed on the 2026-05-15 baseline against a quarterly
@@ -935,7 +935,7 @@ alone: 2× remains the §7 page-worthy trigger, and changing that is a complianc
 decision, not a rendering one.
 
 ```backlog
-id: B-031
+id: B-032
 repo: corelink-server
 owner: owner
 status: open
@@ -998,7 +998,7 @@ the bytes behind that tenant's own Turborepo keys. Not cross-tenant; the envelop
 does not detect it, because the key is not a preimage of the content.
 
 ```backlog
-id: B-026
+id: B-024
 repo: corelink-server
 owner: tl
 status: open
