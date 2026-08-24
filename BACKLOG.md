@@ -839,24 +839,53 @@ remainder `quarantined_at` + `quarantine_reason`
 (`sequence_gap:expected=11,found=10`), so healthy rows reach R2 instead of being
 held hostage by one historical fork. Re-sequencing stays FORBIDDEN — no chain
 column is ever UPDATEd, enforced by a test that re-reads the writer's own source.
-Migration `0100_audit_outbox_quarantine.sql` adds the columns and a narrowed
+Migration `d1/0100_audit_outbox_quarantine.sql` adds the columns and a narrowed
 work-queue index; the B-021 absence monitor excludes quarantined rows from its
 pending clause (they can never clear it) while printing their census every hour;
 `RB-AUDIT-ARCHIVE-ABSENT` §5 says what a quarantined row means and how to list
 them. **Still open** until the migration is applied to prod D1 and the eight
 partitions are observed quarantined with a recorded sequence range per partition.
 
+**Closed 2026-08-24 — the decided policy is applied in prod and observed.**
+Migration `0100` is live on `corelink-prod-d1` and the archiver's quarantine pass
+fired at 15:00:08 UTC. It archived 45,836 rows and quarantined exactly the eight
+forked partitions, 11,818 rows, each with its own recorded reason and sequence
+range:
+
+| partition | rows | seq range | reason |
+|---|---|---|---|
+| `…0f0005`/enam | 11,435 | 9234..20669 | `sequence_gap:expected=9235,found=9234` |
+| `3c7d77b1…`/enam | 219 | 4988..5206 | `sequence_gap:expected=4989,found=4988` |
+| `_public`/wnam | 120 | 10..130 | `sequence_gap:expected=11,found=10` |
+| `bba0ff1d…`/enam | 15 | 1..14 | `chain_head_discontinuity:seq=1` |
+| `e51607b0…`/enam | 13 | 0..13 | `sequence_gap:expected=1,found=0` |
+| `ce42d194…`/enam | 12 | 1..13 | `sequence_gap:expected=2,found=1` |
+| `8873dc37…`/enam | 3 | 0..3 | `sequence_gap:expected=1,found=0` |
+| `dd35a645…`/enam | 1 | 0..0 | `sequence_gap:expected=1,found=0` |
+
+Eight partitions, as measured on 2026-08-14 — no drift in the population, and no
+row outside the original 17-minute window was ever involved. The remaining 90
+unchained rows are ordinary new traffic awaiting the next drain.
+
+One correction to what this item asserted. It claimed the fork "is not an open
+wound" because today's drain "aborts the partition when the head drifted under it
+rather than forking". Reading the drain again against this data, that is stronger
+than the code earns — see [B-038]. The quarantine census above is unaffected
+either way; what changes is whether recurrence is prevented or merely unobserved.
+
 ```backlog
 id: B-026
 repo: corelink-server
 owner: tl
-status: open
-verify: manual
+status: done
+verify: |
+  test "$(grep -c 'quarantined_at' migrations/d1/0100_audit_outbox_quarantine.sql)" -gt 0
 verify-means: |
-  open until the eight forked partitions are either archived under a decided
-  policy or formally recorded as unarchivable. Re-measure with: SELECT
-  tenant_id, region, COUNT(*)-COUNT(DISTINCT sequence_number) FROM audit_outbox
-  WHERE emitted_at IS NOT NULL GROUP BY 1,2 HAVING 3 > 0.
+  done while the quarantine policy the owner decided is present in the applied
+  migration. The prod-state half is a one-time observation, recorded in the table
+  above rather than re-run: re-measure with SELECT tenant_id, region, COUNT(*),
+  MIN(sequence_number), MAX(sequence_number), quarantine_reason FROM audit_outbox
+  WHERE quarantined_at IS NOT NULL GROUP BY 1,2,6.
 last-verified: 2026-08-24
 ```
 
@@ -1506,4 +1535,52 @@ verify-means: |
   account. Requires .env.local, so it only runs locally — the CI gate treats a
   missing file as a failed check, which is the correct direction.
 last-verified: 2026-08-23
+```
+
+### B-038 — the drain's drift path rests on a byte-identity claim the code does not guarantee
+
+`archive_partition`'s sibling in the drain seals rows FIRST and only then runs the
+compare-and-set on `audit_chain_head`
+(`crates/corelink-container/src/routes/audit_drain.rs`, the seal loop then
+`advance_head_cas`). The CAS is correct in isolation: a drain that loses it does
+not advance the head. But by then it has already written its own `sequence_number`,
+`prev_hash` and `chain_hash` onto real rows, and the drift branch does not undo
+them. It justifies that with a comment:
+
+> Our sealed rows are byte-identical to that drain's (deterministic), so they are safe
+
+That holds only if both drains sealed the SAME rows in the SAME order from the SAME
+head. Nothing enforces it. `read_pending_rows` returns whatever is pending at the
+moment it runs, so two drains that overlap read different sets. The prod data from
+[B-026] shows exactly that outcome: partition `…0f0005`/enam has TWO rows at
+sequence 9234 — one `corelink.cas.write.attempted` sealed at 01:43:40Z with
+`prev_hash` equal to 9233's `chain_hash`, and one `corelink.cas.write.committed`
+sealed at 02:00:50Z with a `prev_hash` (`a4c578…`) that appears nowhere in the
+table as any row's `chain_hash`. Not byte-identical; a second branch.
+
+Two consequences beyond the stall. The branch that WON the CAS is the one the head
+still follows (`next_sequence` 20670 today), while the branch the archiver reached
+first is the one now sealed into R2 — so the archive holds a row that is not on the
+canonical chain. And the 17-minute spacing is the clue to the trigger: the seal
+loop writes one row per D1 round trip, so a large partition can still be writing
+when the next cron tick starts. Nothing serialises the two.
+
+This item is about recurrence, not repair. The eight historical partitions are
+already quarantined and closed under [B-026]; what is unproven is that it cannot
+happen again. The fix directions are a partition lease so two drains cannot overlap,
+or moving the seal after the CAS so a loser writes nothing. Either is a real change
+to the integrity path and wants its own design pass, not a patch.
+
+```backlog
+id: B-038
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  grep -q "byte-identical to that drain" crates/corelink-container/src/routes/audit_drain.rs
+verify-means: |
+  open while the drift path still justifies its no-op with the byte-identity claim.
+  Goes red once the drain either serialises partitions or seals after the CAS, at
+  which point the comment and the assumption both go away.
+last-verified: 2026-08-24
 ```
