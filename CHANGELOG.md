@@ -105,6 +105,29 @@ Each entry cross-references:
 
 ### Added
 
+- **feat(ci): a workflow could be switched off and nothing would ever say so —
+  now a daily guard fails unless every non-active workflow is a declared,
+  expiring decision.** On 2026-08-08 21 workflows moved to `disabled_manually`
+  in 39 seconds with nobody noticing; two were PR gates, not crons, so PRs
+  merged against a gate that was not running. The org is on the GitHub free
+  plan, so the audit-log API returns 404 and "who did it" is unanswerable —
+  which is exactly why detecting *that* it happened has to be mechanical.
+  `.github/workflow-state-waivers.yml` is the new register of deliberately
+  non-active workflows (`reason` / `authorized-by` / `date` / `expires` /
+  `tracking`, capped at 90 days), and
+  `.github/workflows/workflow-state-guard.yml` +
+  `scripts/check_workflow_state.py` fail daily on a non-active workflow with no
+  unexpired entry, on an expired entry, and on a stale entry naming a workflow
+  that is active or absent — drift in both directions. The non-active table is
+  written to the job summary on every run, pass or fail. Seeded with the three
+  workflows that are off *today* (`reproducible-build`, `bazel-starter-ci`,
+  `pre-cutover-weekly-cron`), all at `authorized-by: UNDECIDED` and a 14-day
+  expiry so the register forces the decision instead of laundering the current
+  state. It is a cron because a workflow's enabled state changes without a
+  commit, which is CLAUDE.md's own test for earning a schedule. Scope is this
+  repo only: `corelink-runners` is reported best-effort and shows as
+  `NOT INSPECTED` under the default `GITHUB_TOKEN`, recorded rather than hidden.
+
 - **`scripts/detect_unreachable.py`** — reports Cloudflare bindings and Worker
   environment flags that are declared and deployed but reached by no code path
   in `worker/src`. Written after two confirmed instances of the "built but

@@ -1,0 +1,91 @@
+# Workflow-state waivers — the register of DELIBERATELY non-active workflows.
+# =============================================================================
+#
+# THE RULE
+#
+#   A workflow in this repository may be non-active (`disabled_manually`,
+#   `disabled_inactivity`, `disabled_fork`, …) ONLY if it has an entry in this
+#   file. An entry that is past its `expires` date is exactly as red as a
+#   missing one — the guard fails on both. A waiver is a scheduled decision,
+#   not a permanent exemption.
+#
+#   The converse is also drift: an entry here that names a workflow which does
+#   not exist, or which IS active, fails the guard too. This register must
+#   describe reality or it is worse than nothing.
+#
+#   Enforced by `.github/workflows/workflow-state-guard.yml`
+#   (logic: `scripts/check_workflow_state.py`).
+#
+# WHY THIS FILE EXISTS
+#
+#   On 2026-08-08, 21 workflows in this repository were switched to
+#   `disabled_manually` in 39 seconds. Nothing noticed. Two of them were PR
+#   gates rather than crons, so pull requests merged while a required gate was
+#   simply not running. 17 were later re-enabled by hand; the rest were never
+#   reconciled. The organisation is on the GitHub **free** plan, so the
+#   audit-log REST API returns 404 and "who disabled them" is unanswerable by
+#   API. Forensics being impossible is precisely why the compensating control
+#   matters: we cannot detect WHO, so we must detect THAT — every day.
+#
+# SCHEMA — one entry per waived workflow, keyed by repo-relative path:
+#
+#   ".github/workflows/<name>.yml":
+#     reason:         prose — WHY it is off. Not "temporarily disabled".
+#     authorized-by:  the human who made the call, or UNDECIDED if nobody has.
+#     date:           ISO date (YYYY-MM-DD) the waiver was written.
+#     expires:        ISO date. REQUIRED. Max 90 days out; use a short window
+#                     (14 days) when the entry exists to FORCE a decision
+#                     rather than to launder the current state.
+#     tracking:       a BACKLOG id, a PR/issue URL, or the literal `none`.
+#
+# SCOPE NOTE — `HuGR-Labs/corelink-runners` has its own workflow estate. The
+# guard cannot read a waiver file in that repository (both repos are private
+# and the workflow's default GITHUB_TOKEN is scoped to this repo only), so the
+# runners repo is reported, not waived. See the guard's header.
+#
+# =============================================================================
+
+waivers:
+  ".github/workflows/reproducible-build.yml":
+    reason: >-
+      Disabled state is real but recorded nowhere, and it sits on top of an
+      unresolved contradiction that only the owner can settle. The workflow
+      builds on hosted `ubuntu` runners, which conflicts with the repository's
+      zero-hosted-GitHub-Actions mandate — so switching it off may well have
+      been deliberate. But CLAUDE.md still documents reproducible-build as a
+      workflow that STAYS NIGHTLY, and its own header records 0 successes in
+      the last 60 runs. Three sources disagree about whether this gate is
+      supposed to be running. Decide one of: (a) re-home it onto `corelink`
+      self-hosted runners and re-enable, (b) retire it and delete the CLAUDE.md
+      claim, or (c) re-enable as-is and grant an explicit hosted-minutes
+      exception. Leaving it silently off is not one of the options.
+    authorized-by: UNDECIDED
+    date: "2026-08-23"
+    expires: "2026-09-06"
+    tracking: none
+
+  ".github/workflows/bazel-starter-ci.yml":
+    reason: >-
+      Off with no recorded authorization. PR #1238 just repaired this
+      workflow's credential — and that repair proves nothing at all while the
+      workflow is disabled, because a fix that never executes is a claim, not
+      evidence. Re-enable it and let one green run demonstrate the credential
+      actually works, or state on the record why the Bazel starter surface is
+      no longer gated.
+    authorized-by: UNDECIDED
+    date: "2026-08-23"
+    expires: "2026-09-06"
+    tracking: none
+
+  ".github/workflows/pre-cutover-weekly-cron.yml":
+    reason: >-
+      Off with no recorded authorization. Survivor of the 2026-08-08 mass
+      disable that was never re-enabled with the other 17. Its own name says
+      "pre-cutover", so it may simply be obsolete now that the GA cutover has
+      shipped — in which case DELETE it, because a disabled workflow left in
+      the tree is indistinguishable from a gate someone switched off. If it is
+      still load-bearing, re-enable it.
+    authorized-by: UNDECIDED
+    date: "2026-08-23"
+    expires: "2026-09-06"
+    tracking: none
