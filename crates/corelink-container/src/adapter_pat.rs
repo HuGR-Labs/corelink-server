@@ -149,6 +149,24 @@ pub struct PatRow {
     /// here (else its `read-only` base would grant e.g. `docker pull`). Legacy /
     /// non-find rows are `false`.
     pub find_only: bool,
+    /// D1 `pat.runner_job_ac_key IS NOT NULL` (migration 0086): `true` = a
+    /// NARROWED runner-job PAT, minted per CI job by the runner fabric.
+    ///
+    /// The migration's stated contract is that such a credential "must not be
+    /// able to EVICT the tenant's cache", and the native plane enforces exactly
+    /// that (`routes/cas.rs` denies CAS DELETE; `routes/ac.rs` pins AC writes to
+    /// the job's key). The adapter plane could not enforce it at all until this
+    /// field existed, because it authorizes from the D1 row directly and never
+    /// sees the Worker's `x-corelink-runner-job` header — the SAME structural
+    /// blindness ADR-0071 closed for `find_only`.
+    ///
+    /// Unlike `find_only` this is NOT a reason to reject the PAT: a runner job
+    /// legitimately reads and writes the cache, and sccache-over-CoreLink is the
+    /// runner fabric's own dogfood path. It narrows ONE operation
+    /// (`routes/cargo.rs`'s WebDAV DELETE of a build artifact) and nothing else.
+    /// The AC-key value itself is deliberately not carried: no adapter surface
+    /// has an Action Cache to pin it against.
+    pub runner_job: bool,
 }
 
 /// Fetch a `pat` row by its non-secret `token_id`, already expiry-filtered.
@@ -171,7 +189,8 @@ pub trait PatRowLookup: Send + Sync {
 /// filter (`expires_ms = 0` ⇒ no-expiry token) and the same soft-revocation
 /// filter (migration `0063_pat_customer_keys`: `revoked_at_ms IS NULL` ⇒
 /// active; a revoked row is indistinguishable from an absent one).
-const PAT_LOOKUP_SQL: &str = "SELECT tenant_id, pat_hash, scope, find_only FROM pat \
+const PAT_LOOKUP_SQL: &str =
+    "SELECT tenant_id, pat_hash, scope, find_only, runner_job_ac_key FROM pat \
      WHERE token_id = ?1 \
        AND (expires_ms = 0 OR expires_ms > unixepoch('now', 'subsec') * 1000) \
        AND revoked_at_ms IS NULL \
@@ -204,7 +223,8 @@ const PAT_LOOKUP_SQL: &str = "SELECT tenant_id, pat_hash, scope, find_only FROM 
 /// same columns, only aliased), so a co-read decides expiry and soft-revocation
 /// identically to the serial read — `INV-PAT-REVOKE-PROPAGATION` is untouched.
 const PAT_URL_MAP_COREAD_SQL: &str = "SELECT * FROM (\
-       SELECT 'p' AS kind, tenant_id AS c1, pat_hash AS c2, scope AS c3, find_only AS c4 \
+       SELECT 'p' AS kind, tenant_id AS c1, pat_hash AS c2, scope AS c3, find_only AS c4, \
+              runner_job_ac_key AS c5 \
        FROM pat \
        WHERE token_id = ?1 \
          AND (expires_ms = 0 OR expires_ms > unixepoch('now', 'subsec') * 1000) \
@@ -212,7 +232,8 @@ const PAT_URL_MAP_COREAD_SQL: &str = "SELECT * FROM (\
        LIMIT 1) \
      UNION ALL \
      SELECT * FROM (\
-       SELECT 'm' AS kind, content_hash AS c1, NULL AS c2, NULL AS c3, NULL AS c4 \
+       SELECT 'm' AS kind, content_hash AS c1, NULL AS c2, NULL AS c3, NULL AS c4, \
+              NULL AS c5 \
        FROM adapter_cache_map \
        WHERE namespace = ?2 AND url_hash = ?3 \
        LIMIT 1)";
@@ -228,6 +249,7 @@ fn pat_row_from_columns(
     pat_hash: Option<&serde_json::Value>,
     scope: Option<&serde_json::Value>,
     find_only: Option<&serde_json::Value>,
+    runner_job_ac_key: Option<&serde_json::Value>,
 ) -> Result<PatRow, String> {
     let tenant_id = tenant_id
         .and_then(|v| v.as_str())
@@ -244,11 +266,18 @@ fn pat_row_from_columns(
     // a legacy row ⇒ false (a normal PAT). The D1 HTTP API returns integers as
     // JSON numbers.
     let find_only = find_only.and_then(serde_json::Value::as_i64) == Some(1);
+    // `runner_job_ac_key` (0086): NULL = a normal PAT; any non-NULL value (the
+    // launch value is the literal `"*"`) = a NARROWED runner-job PAT. Only
+    // PRESENCE is decoded — the key value pins an AC key, and no adapter surface
+    // has an Action Cache. Absent on a legacy row / on the url-map arm of the
+    // co-read ⇒ `false`, i.e. a normal PAT, which is the pre-0086 behaviour.
+    let runner_job = runner_job_ac_key.is_some_and(|v| !v.is_null());
     Ok(PatRow {
         tenant_id,
         pat_hash,
         scope,
         find_only,
+        runner_job,
     })
 }
 
@@ -271,6 +300,7 @@ impl D1HttpClient {
             row.get("pat_hash"),
             row.get("scope"),
             row.get("find_only"),
+            row.get("runner_job_ac_key"),
         )
         .map(Some)
     }
@@ -342,10 +372,14 @@ impl D1HttpClient {
 
         match pat_row {
             None => Ok(None),
-            Some(row) => {
-                pat_row_from_columns(row.get("c1"), row.get("c2"), row.get("c3"), row.get("c4"))
-                    .map(Some)
-            }
+            Some(row) => pat_row_from_columns(
+                row.get("c1"),
+                row.get("c2"),
+                row.get("c3"),
+                row.get("c4"),
+                row.get("c5"),
+            )
+            .map(Some),
         }
     }
 }
@@ -988,26 +1022,34 @@ impl std::fmt::Debug for SecretMatchMemo {
 /// Only the digest is retained, so the memo never holds recoverable secret
 /// material.
 ///
-/// `scope` and `find_only` are in the key even though the gate re-reads them
-/// fresh every request and the memoised fact does not depend on them. They are
-/// here to close the last latency tail: without them, a PAT that verified
-/// successfully and was then *downgraded* in D1 (rather than revoked) would keep
-/// hitting the memo for the rest of the TTL and 401 in ~0 ms, while a *revoked*
-/// PAT still pays the slow dummy burn — distinguishing "downgraded" from
-/// "revoked" on latency alone. With them in the key, any change to either field
-/// makes the old entry unreachable, exactly as a `pat_hash` change already does,
-/// and the two rejections stay uniform.
+/// `scope`, `find_only` and `runner_job` are in the key even though the gate
+/// re-reads them fresh every request and the memoised fact does not depend on
+/// them. They are here to close the last latency tail: without them, a PAT that
+/// verified successfully and was then *downgraded* in D1 (rather than revoked)
+/// would keep hitting the memo for the rest of the TTL and 401 in ~0 ms, while a
+/// *revoked* PAT still pays the slow dummy burn — distinguishing "downgraded"
+/// from "revoked" on latency alone. With them in the key, any change to any of
+/// those fields makes the old entry unreachable, exactly as a `pat_hash` change
+/// already does, and the two rejections stay uniform.
+///
+/// `runner_job` joined them when the 0086 marker started narrowing an operation
+/// on this plane (`routes/cargo.rs` DELETE). It is a decision field now, so the
+/// rule "every field the row can decide with is bound into the key" keeps
+/// holding — the domain tag moved v2 → v3 accordingly, which costs exactly one
+/// cold verification per live token at deploy and nothing after.
 fn secret_match_fingerprint(
     plaintext: &str,
     token_id: &str,
     pat_hash: &str,
     scope: &str,
     find_only: bool,
+    runner_job: bool,
 ) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(b"corelink/adapter-pat/secret-match/v2\0");
+    hasher.update(b"corelink/adapter-pat/secret-match/v3\0");
     let find_only = if find_only { "1" } else { "0" };
-    for part in [plaintext, token_id, pat_hash, scope, find_only] {
+    let runner_job = if runner_job { "1" } else { "0" };
+    for part in [plaintext, token_id, pat_hash, scope, find_only, runner_job] {
         hasher.update((part.len() as u64).to_be_bytes());
         hasher.update(part.as_bytes());
     }
@@ -1502,6 +1544,26 @@ impl PatVerifier {
         &self,
         pat_plaintext: &str,
     ) -> Result<(String, bool), VerifyError> {
+        self.verify_capability_full(pat_plaintext)
+            .await
+            .map(|(tenant_id, can_write, _runner_job)| (tenant_id, can_write))
+    }
+
+    /// The same pipeline as [`Self::verify_capability`], additionally returning
+    /// the row's `runner_job` marker (0086).
+    ///
+    /// Split out rather than widening `verify_capability`'s tuple so the five
+    /// adapter surfaces that have no narrowable operation keep their call sites
+    /// untouched, and so this security pipeline exists exactly ONCE — the two
+    /// entry points are the same code, not two copies that can drift.
+    ///
+    /// The only caller today is the sccache WebDAV DELETE
+    /// (`routes/cargo.rs`), which is the only adapter operation that can
+    /// destroy a tenant's cache entry.
+    pub async fn verify_capability_full(
+        &self,
+        pat_plaintext: &str,
+    ) -> Result<(String, bool, bool), VerifyError> {
         // 1. HMAC fast-reject (pre-D1). A forged token is rejected here
         //    without a D1 round-trip. Uniform InvalidPat. Checked against
         //    the overlap key set so a token minted under the rotation
@@ -1746,6 +1808,7 @@ impl PatVerifier {
             &row.pat_hash,
             &row.scope,
             row.find_only,
+            row.runner_job,
         );
         // Whether THIS request went through the Argon2id stage rather than
         // being served by the memo. Under coalescing that includes a request
@@ -1891,7 +1954,7 @@ impl PatVerifier {
             self.secret_match_memo.insert(fp);
         }
 
-        Ok((row.tenant_id, can_write))
+        Ok((row.tenant_id, can_write, row.runner_job))
     }
 
     /// Test-only: shrink the per-tenant LRU map cap so the eviction path can be
@@ -2072,6 +2135,15 @@ mod tests {
             pat_hash: pat_hash.to_owned(),
             scope: scope.to_owned(),
             find_only: false,
+            runner_job: false,
+        }
+    }
+
+    /// [`row`] carrying the 0086 runner-job marker.
+    fn runner_job_row(pat_hash: &str, tenant: &str, scope: &str) -> PatRow {
+        PatRow {
+            runner_job: true,
+            ..row(pat_hash, tenant, scope)
         }
     }
 
@@ -2226,6 +2298,7 @@ mod tests {
             pat_hash: hash,
             scope: "read-only".to_owned(),
             find_only: true,
+            runner_job: false,
         };
         let lookup = Arc::new(FakeLookup::with_row(&tid, find_only_row));
         let verifier = PatVerifier::new(lookup, key);
@@ -3243,6 +3316,40 @@ mod tests {
         );
     }
 
+    /// The 0086 marker reaches this plane at all — the gap AUDIT-2026-08-23
+    /// F-1 found — and it NARROWS rather than rejects: a runner-job PAT still
+    /// verifies and still carries write, because the runner fabric's own sccache
+    /// dogfood depends on it. Only `routes/cargo.rs` acts on the flag.
+    #[tokio::test]
+    async fn a_runner_job_pat_verifies_and_surfaces_its_marker() {
+        let key = test_key();
+        let (pt, _tid, hash, tenant) = mint_pat(&key, 71, SCOPE_CACHE_RW);
+        let lookup = Arc::new(SwitchableLookup::new(
+            Ok(Some(runner_job_row(&hash, &tenant, "cas:rw"))),
+            0,
+        ));
+        let verifier = PatVerifier::new(lookup.clone(), key);
+
+        let (t, can_write, runner_job) = verifier.verify_capability_full(&pt).await.unwrap();
+        assert_eq!(t, tenant);
+        assert!(can_write, "a runner-job PAT still writes the cache");
+        assert!(runner_job, "the 0086 marker must reach the adapter plane");
+
+        // The narrow entry point is unchanged for the five adapters that have
+        // no narrowable operation.
+        let (t2, w2) = verifier.verify_capability(&pt).await.unwrap();
+        assert_eq!((t2, w2), (tenant.clone(), true));
+
+        // Same PAT, marker cleared in D1 → the next request sees a normal PAT.
+        // (The marker is in the memo key, so the old entry is unreachable.)
+        lookup.set(Ok(Some(row(&hash, &tenant, "cas:rw"))));
+        let (_t, _w, runner_job) = verifier.verify_capability_full(&pt).await.unwrap();
+        assert!(
+            !runner_job,
+            "clearing the marker must apply on the next request, never after a TTL"
+        );
+    }
+
     /// The stored PHC hash is part of the memo key, so re-hashing the row makes
     /// the old proof unreachable — the real Argon2id runs again and fails.
     #[tokio::test]
@@ -3411,40 +3518,46 @@ mod tests {
     /// The memo key binds EVERY decision field — plaintext, token_id, the stored
     /// PHC hash, `scope` and `find_only` — and is unambiguous across them.
     ///
-    /// `scope` / `find_only` are not incidental: dropping them back out
-    /// reintroduces the downgrade-vs-revocation latency split that
+    /// `scope` / `find_only` / `runner_job` are not incidental: dropping any of
+    /// them back out reintroduces the downgrade-vs-revocation latency split that
     /// `a_scope_downgrade_invalidates_the_memo` exists to catch.
     #[test]
     fn secret_match_fingerprint_binds_every_decision_field() {
-        let base = secret_match_fingerprint("pt", "tid", "hash", "cas:rw", false);
+        let base = secret_match_fingerprint("pt", "tid", "hash", "cas:rw", false, false);
         assert_ne!(
             base,
-            secret_match_fingerprint("pt-x", "tid", "hash", "cas:rw", false)
+            secret_match_fingerprint("pt-x", "tid", "hash", "cas:rw", false, false)
         );
         assert_ne!(
             base,
-            secret_match_fingerprint("pt", "tid-x", "hash", "cas:rw", false)
+            secret_match_fingerprint("pt", "tid-x", "hash", "cas:rw", false, false)
         );
         assert_ne!(
             base,
-            secret_match_fingerprint("pt", "tid", "hash-x", "cas:rw", false)
+            secret_match_fingerprint("pt", "tid", "hash-x", "cas:rw", false, false)
         );
         // scope + find_only are in the key so a DOWNGRADE (as opposed to a
         // revocation) makes the old entry unreachable instead of serving a
         // fast 401 that a revoked PAT would not get.
         assert_ne!(
             base,
-            secret_match_fingerprint("pt", "tid", "hash", "cas:r", false)
+            secret_match_fingerprint("pt", "tid", "hash", "cas:r", false, false)
         );
         assert_ne!(
             base,
-            secret_match_fingerprint("pt", "tid", "hash", "cas:rw", true)
+            secret_match_fingerprint("pt", "tid", "hash", "cas:rw", true, false)
+        );
+        // `runner_job` (0086) joined them once it started deciding an operation
+        // on this plane (the cargo DELETE containment). Same rule, same reason.
+        assert_ne!(
+            base,
+            secret_match_fingerprint("pt", "tid", "hash", "cas:rw", false, true)
         );
         // Length-prefixed ⇒ no concatenation-boundary collision between two
         // different triples that share a flat concatenation.
         assert_ne!(
-            secret_match_fingerprint("ab", "c", "d", "e", false),
-            secret_match_fingerprint("a", "bc", "d", "e", false)
+            secret_match_fingerprint("ab", "c", "d", "e", false, false),
+            secret_match_fingerprint("a", "bc", "d", "e", false, false)
         );
         // A digest, never recoverable material. `!contains("pt")` would be
         // VACUOUS here — `p` and `t` are not hex digits, so it holds for any
@@ -4383,22 +4496,49 @@ mod tests {
         let tenant = serde_json::Value::String("t".to_owned());
         let hash = serde_json::Value::String("h".to_owned());
 
-        let legacy = pat_row_from_columns(Some(&tenant), Some(&hash), Some(&null), None)
+        let legacy = pat_row_from_columns(Some(&tenant), Some(&hash), Some(&null), None, None)
             .expect("a legacy row is not a backend error");
         assert_eq!(legacy.scope, "", "NULL scope ⇒ \"\" ⇒ fail-CLOSED gate");
         assert!(!legacy.find_only, "absent find_only ⇒ a normal PAT");
+        assert!(
+            !legacy.runner_job,
+            "absent runner_job_ac_key ⇒ a normal PAT (the pre-0086 behaviour)"
+        );
 
-        let find_only = pat_row_from_columns(Some(&tenant), Some(&hash), Some(&null), Some(&one))
-            .expect("row decodes");
+        let find_only =
+            pat_row_from_columns(Some(&tenant), Some(&hash), Some(&null), Some(&one), None)
+                .expect("row decodes");
         assert!(find_only.find_only);
+
+        // 0086: PRESENCE decides, not the value. The launch value is the literal
+        // `"*"`; a future value is a BLAKE3 AC key. Both are narrowed, and an
+        // explicit SQL NULL (the co-read's url-map arm) is NOT.
+        let star = serde_json::Value::String("*".to_owned());
+        let ac_key = serde_json::Value::String("a".repeat(64));
+        for marker in [&star, &ac_key] {
+            let row =
+                pat_row_from_columns(Some(&tenant), Some(&hash), Some(&null), None, Some(marker))
+                    .expect("row decodes");
+            assert!(
+                row.runner_job,
+                "any non-NULL runner_job_ac_key ⇒ a narrowed runner-job PAT"
+            );
+        }
+        let explicit_null =
+            pat_row_from_columns(Some(&tenant), Some(&hash), Some(&null), None, Some(&null))
+                .expect("row decodes");
+        assert!(
+            !explicit_null.runner_job,
+            "an explicit JSON null is an ABSENT marker, not a narrowed PAT"
+        );
 
         // A missing REQUIRED column is a backend fault, never a silent default.
         assert_eq!(
-            pat_row_from_columns(None, Some(&hash), None, None),
+            pat_row_from_columns(None, Some(&hash), None, None, None),
             Err("D1 pat: missing `tenant_id` column".to_owned())
         );
         assert_eq!(
-            pat_row_from_columns(Some(&tenant), None, None, None),
+            pat_row_from_columns(Some(&tenant), None, None, None, None),
             Err("D1 pat: missing `pat_hash` column".to_owned())
         );
     }

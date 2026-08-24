@@ -86,6 +86,19 @@ pub struct ResolvedTenant {
     pub tenant_id: String,
     /// `true` iff the PAT grants cache WRITE (e.g. `cas:rw` / `admin`).
     pub can_write: bool,
+    /// `true` iff the PAT is a NARROWED runner-job credential (D1
+    /// `pat.runner_job_ac_key IS NOT NULL`, migration 0086).
+    ///
+    /// Such a credential reads and writes the cache normally — the runner
+    /// fabric's own sccache dogfood depends on it — but MUST NOT be able to
+    /// evict the tenant's cache, which is the migration's stated contract and
+    /// what the native plane already enforces. The cargo surface is the only
+    /// adapter with a destructive verb (WebDAV DELETE), so it is the only one
+    /// that consults this.
+    ///
+    /// `false` for every normal PAT, which is every PAT that is not minted by
+    /// the runner fabric.
+    pub runner_job: bool,
 }
 
 /// Resolves a PAT plaintext to its owning tenant.
@@ -120,6 +133,11 @@ pub trait TenantResolver: Send + Sync + Debug {
         Ok(ResolvedTenant {
             tenant_id,
             can_write: false,
+            // FAIL-SAFE in the same direction as `can_write: false`: an impl
+            // that cannot determine the marker is treated as narrowed. The
+            // marker can only ever REMOVE a capability, never grant one, so
+            // assuming it costs nothing and assuming its absence could.
+            runner_job: true,
         })
     }
 }

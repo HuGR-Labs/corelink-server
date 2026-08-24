@@ -166,17 +166,18 @@ impl TenantResolver for CargoPatResolver {
         &self,
         pat_plaintext: &str,
     ) -> Result<ResolvedTenant, TenantResolveError> {
-        let (tenant_id, can_write) =
-            self.0
-                .verify_capability(pat_plaintext)
-                .await
-                .map_err(|e| match e {
-                    VerifyError::InvalidPat => TenantResolveError::InvalidPat,
-                    VerifyError::Backend(m) => TenantResolveError::Backend(m),
-                })?;
+        let (tenant_id, can_write, runner_job) = self
+            .0
+            .verify_capability_full(pat_plaintext)
+            .await
+            .map_err(|e| match e {
+                VerifyError::InvalidPat => TenantResolveError::InvalidPat,
+                VerifyError::Backend(m) => TenantResolveError::Backend(m),
+            })?;
         Ok(ResolvedTenant {
             tenant_id,
             can_write,
+            runner_job,
         })
     }
 }
@@ -620,6 +621,18 @@ async fn handle_propfind(
 /// (the PAT's D1-verified `can_write` bit) and keys the delete by the
 /// PAT-resolved tenant. Idempotent: `204` even if the key was absent. All `req`
 /// borrows are dropped before the first `.await` (gate future must be `Send`).
+/// Is `key` an sccache build ARTIFACT (a 64-hex object digest), as opposed to
+/// one of sccache's non-hex control keys (notably `.sccache_check`)?
+///
+/// `normalize_key` deliberately admits BOTH shapes — rejecting the control keys
+/// is what made the real client deem the backend unusable once — so the two are
+/// distinguished here rather than at the door. Only artifacts are worth
+/// protecting from eviction; a control key is written and deleted by the client
+/// within one health probe and holds nothing.
+fn is_object_key(key: &str) -> bool {
+    key.len() == 64 && key.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
 async fn handle_delete(
     moat: Arc<MoatCache>,
     resolver: SharedTenantResolver,
@@ -631,8 +644,8 @@ async fn handle_delete(
         Some(p) => p,
         None => return (StatusCode::UNAUTHORIZED, "missing bearer token").into_response(),
     };
-    let tenant_id = match resolver.resolve_with_capability(&pat).await {
-        Ok(resolved) if resolved.can_write => resolved.tenant_id,
+    let (tenant_id, runner_job) = match resolver.resolve_with_capability(&pat).await {
+        Ok(resolved) if resolved.can_write => (resolved.tenant_id, resolved.runner_job),
         Ok(_no_write) => {
             return (StatusCode::FORBIDDEN, "PAT does not grant write capability").into_response();
         }
@@ -652,6 +665,28 @@ async fn handle_delete(
         // A key GET/PUT would reject cannot exist ⇒ idempotent no-op success.
         None => return StatusCode::NO_CONTENT.into_response(),
     };
+
+    // 0086 runner-job containment (AUDIT-2026-08-23-CACHE-INTEGRITY-COVERAGE
+    // F-1). The native plane refuses CAS DELETE outright for a runner-job
+    // credential — "a stolen per-job credential must not be able to EVICT the
+    // tenant's cache" — but this plane could not see the marker at all until
+    // `PatRow::runner_job` existed, the same structural blindness ADR-0071 closed
+    // for `find_only`.
+    //
+    // ⚠️ The refusal is NARROW ON PURPOSE, and a blanket one would take down the
+    // runner fleet. sccache's startup write-check does PUT `.sccache_check` →
+    // GET → DELETE, and the runner fabric's own dogfood IS sccache over CoreLink
+    // with a runner-minted PAT. A 400 on that control key already cost us a
+    // "real client never worked" outage once (see `translate::normalize_key`), so
+    // the write-check MUST keep round-tripping. Only a real build ARTIFACT — a
+    // 64-hex object key — is protected here; every control key still deletes.
+    if runner_job && is_object_key(&key) {
+        return (
+            StatusCode::FORBIDDEN,
+            "artifact delete not permitted for a runner-job credential",
+        )
+            .into_response();
+    }
 
     match moat.delete(&tenant_id, &key).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
@@ -1020,6 +1055,9 @@ mod tests {
     struct FixedTenantResolver {
         tenant: String,
         can_write: bool,
+        /// The 0086 narrowing marker. `false` for every case that predates the
+        /// runner-job containment; the DELETE cells set it explicitly.
+        runner_job: bool,
     }
     #[async_trait]
     impl TenantResolver for FixedTenantResolver {
@@ -1033,6 +1071,7 @@ mod tests {
             Ok(ResolvedTenant {
                 tenant_id: self.tenant.clone(),
                 can_write: self.can_write,
+                runner_job: self.runner_job,
             })
         }
     }
@@ -1040,10 +1079,22 @@ mod tests {
     /// Router carrying the `cargo_gate` over the given moat + resolver. GET/PUT/
     /// HEAD would hit the 200 fallback; PROPFIND/DELETE short-circuit in the gate.
     fn webdav_router(moat: Arc<MoatCache>, tenant: &str, can_write: bool) -> Router {
+        webdav_router_marked(moat, tenant, can_write, false)
+    }
+
+    /// [`webdav_router`] with the 0086 runner-job marker set explicitly, for the
+    /// containment cells.
+    fn webdav_router_marked(
+        moat: Arc<MoatCache>,
+        tenant: &str,
+        can_write: bool,
+        runner_job: bool,
+    ) -> Router {
         use axum::routing::any;
         let resolver: SharedTenantResolver = Arc::new(FixedTenantResolver {
             tenant: tenant.to_owned(),
             can_write,
+            runner_job,
         });
         let state = CargoGateState {
             quota: None,
@@ -1250,6 +1301,117 @@ mod tests {
             check.get(tenant, "delobject").await.unwrap().is_none(),
             "the key must be gone from the moat after DELETE"
         );
+    }
+
+    /// 0086 CONTAINMENT (audit F-1): a runner-job credential may NOT delete a
+    /// build artifact, even holding a write scope AND the D1 write bit — the
+    /// two layers this surface used to stop at. Mirrors the native plane's
+    /// `runner_job_cas_delete_returns_403`.
+    #[tokio::test]
+    async fn runner_job_cannot_delete_an_artifact() {
+        use tower::ServiceExt;
+        let tenant = "tenant-abc";
+        let key = "a".repeat(64); // a 64-hex object key = a real artifact
+        let moat = in_memory_moat();
+        moat.put(tenant, &key, b"bytes".to_vec(), None)
+            .await
+            .unwrap();
+        let check = Arc::clone(&moat);
+        let app = webdav_router_marked(moat, tenant, true, true);
+        let resp = app
+            .oneshot(webdav_request(
+                b"DELETE",
+                &format!("/cargo/tenant-abc/{key}"),
+                "cas:rw",
+                Some("pat"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::FORBIDDEN,
+            "a runner-job credential must not evict the tenant's cache"
+        );
+        assert!(
+            check.get(tenant, &key).await.unwrap().is_some(),
+            "the artifact must still be there after the refused DELETE"
+        );
+    }
+
+    /// The other half of the containment, and the one that keeps the runner
+    /// fleet alive: sccache's `.sccache_check` write-check MUST still round-trip
+    /// under a runner-job credential. A blanket DELETE refusal would fail every
+    /// runner box at startup — the same class of breakage as the 400 that once
+    /// made the real client disable the backend entirely.
+    #[tokio::test]
+    async fn runner_job_can_still_delete_the_sccache_write_check() {
+        use tower::ServiceExt;
+        let tenant = "tenant-abc";
+        let moat = in_memory_moat();
+        moat.put(tenant, ".sccache_check", b"probe".to_vec(), None)
+            .await
+            .unwrap();
+        let check = Arc::clone(&moat);
+        let app = webdav_router_marked(moat, tenant, true, true);
+        let resp = app
+            .oneshot(webdav_request(
+                b"DELETE",
+                "/cargo/tenant-abc/.sccache_check",
+                "cas:rw",
+                Some("pat"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::NO_CONTENT,
+            "the write-check control key must stay deletable"
+        );
+        assert!(
+            check.get(tenant, ".sccache_check").await.unwrap().is_none(),
+            "the control key must actually be removed"
+        );
+    }
+
+    /// A NORMAL (non-runner) credential deletes artifacts exactly as before —
+    /// the containment must not widen into ordinary cache management.
+    #[tokio::test]
+    async fn normal_pat_can_still_delete_an_artifact() {
+        use tower::ServiceExt;
+        let tenant = "tenant-abc";
+        let key = "b".repeat(64);
+        let moat = in_memory_moat();
+        moat.put(tenant, &key, b"bytes".to_vec(), None)
+            .await
+            .unwrap();
+        let check = Arc::clone(&moat);
+        let app = webdav_router_marked(moat, tenant, true, false);
+        let resp = app
+            .oneshot(webdav_request(
+                b"DELETE",
+                &format!("/cargo/tenant-abc/{key}"),
+                "cas:rw",
+                Some("pat"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+        assert!(check.get(tenant, &key).await.unwrap().is_none());
+    }
+
+    /// `is_object_key` decides the containment, so pin its edges: only exactly
+    /// 64 hex chars is an artifact. Anything else is a control key and stays
+    /// deletable — erring toward the runner fleet keeping working.
+    #[test]
+    fn is_object_key_accepts_only_64_hex() {
+        assert!(is_object_key(&"a".repeat(64)));
+        assert!(is_object_key(&"0123456789abcdef".repeat(4)));
+        assert!(is_object_key(&"A".repeat(64)), "uppercase hex is still hex");
+        assert!(!is_object_key(&"a".repeat(63)), "too short");
+        assert!(!is_object_key(&"a".repeat(65)), "too long");
+        assert!(!is_object_key(".sccache_check"), "the control key");
+        assert!(!is_object_key(&"g".repeat(64)), "non-hex");
+        assert!(!is_object_key(""), "empty");
     }
 
     /// DELETE with a read-ONLY scope → `403` (it is write-gated).
@@ -1538,6 +1700,7 @@ mod tests {
             pat_hash: pat_hash.to_owned(),
             scope: "cas:rw".to_owned(),
             find_only: false,
+            runner_job: false,
         }
     }
 

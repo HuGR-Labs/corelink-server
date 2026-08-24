@@ -42,6 +42,43 @@ Each entry cross-references:
 
 ### Fixed
 
+- **fix(cache): a runner-job credential could evict a tenant's sccache cache, and
+  a tampered Turborepo artifact was served as a cache hit.** Both come from
+  `specs/_audits/2026-08-23-cache-integrity-coverage.md`, which read the write and
+  read path of all five cache surfaces down to the durable store. (The audit's
+  larger finding was that the internal claim prompting it — "verification coverage
+  is irregular, the Action Cache has none" — was wrong: verification is
+  centralised in `R2CasHandler::verify_content_hash`, which native CAS, the Bazel
+  bridge and sccache all funnel through on write AND read, and the two surfaces
+  that do not verify cannot, for protocol reasons.)
+  **F-1** — the 0086 runner-job marker, whose stated contract is that "a stolen
+  per-job credential must not be able to EVICT the tenant's cache", never reached
+  the adapter plane: `PAT_LOOKUP_SQL` selected only
+  `tenant_id, pat_hash, scope, find_only`, the same structural blindness ADR-0071
+  closed for `find_only`. The marker is now read on both the serial and co-read
+  statements, surfaced through `verify_capability_full`, and enforced at the
+  sccache WebDAV DELETE. The refusal is deliberately NARROW — only a 64-hex
+  artifact key is protected, because sccache's own startup write-check does
+  PUT `.sccache_check` → GET → DELETE and the runner fabric's dogfood is
+  sccache-over-CoreLink with a runner-minted PAT; a blanket refusal would have
+  failed every runner box at boot, the same class of breakage as the 400 that once
+  made the real client disable the backend. `runner_job` also joins the memo
+  fingerprint (domain tag v2 → v3) so it obeys the existing rule that every field
+  the row can decide with is bound into the key.
+  **F-2** — Turborepo artifacts were unverifiable, mutable and unpinned at once.
+  The key is opaque by protocol so content-addressing is impossible, but
+  `R2KvStore` now frames each object with CoreLink's own BLAKE3 (an 8-byte magic
+  + 32-byte digest), verifies it on read, and reports a MISS on mismatch so the
+  entry self-heals on the client's re-upload. This detects bitrot, truncation and
+  tampering BELOW the API; it cannot detect a client poisoning its own cache, and
+  the audit says so rather than implying otherwise. Objects written before the
+  envelope are served unverified rather than dropped — evicting a live cache to
+  introduce a check would trade a silent risk for a certain rebuild storm — and
+  gain the envelope on their next write. Byte accounting is unchanged: prior size
+  is still reported in payload bytes.
+  Nine regression cells cover both, including the two that matter most — the
+  write-check still round-trips under a runner-job credential, and tampered bytes
+  read as a miss instead of a hit.
 - **fix(ci): every PR a bot opens here is born with ZERO checks, and a PR with
   no checks looks green.** GitHub does not create workflow runs for events
   triggered by `GITHUB_TOKEN` (the documented anti-recursion rule;

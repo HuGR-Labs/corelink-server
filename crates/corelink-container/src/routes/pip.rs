@@ -963,6 +963,7 @@ mod tests {
                 pat_hash: pat.hash.as_str().to_owned(),
                 scope: SCOPE_RW.to_owned(),
                 find_only: false,
+                runner_job: false,
             },
         };
         let verifier = Arc::new(PatVerifier::new(Arc::new(lookup), key));

@@ -710,6 +710,7 @@ async fn forged_pat_is_rejected_when_gate_present() {
             pat_hash: String::new(),
             scope: "cas:rw".to_owned(),
             find_only: false,
+            runner_job: false,
         },
         key,
     );
