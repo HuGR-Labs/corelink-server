@@ -1109,26 +1109,45 @@ CURRENT run's own artifacts, so there is nothing to compare against.
 A green check that asserts nothing about performance, in a repo whose product
 claim is speed.
 
+A green check that asserts nothing about performance, in a repo whose product
+claim is speed.
+
+**Two of the three blockers are now cleared; the third is owner infra.**
+- Comparison logic — REAL since PR #1263 (proven both ways: exit 2 at +73.9%
+  over a stored baseline, exit 0 at +15.0%, failing run does not publish a new
+  baseline).
+- Runner label — FIXED here: both jobs moved from `[self-hosted, Linux, X64]`
+  (a triple no runner carries) to `runs-on: corelink`. That is the correct home:
+  this is a load GENERATOR firing k6 at a remote endpoint, so a datacenter uplink
+  matters and host CPU does not — the very reason it never suited the residential
+  Mac fleet.
+- **Remaining blocker — there is no staging environment to fire at.**
+  `staging.corelink.humangr.com` does not resolve, and the `staging` GitHub
+  environment carries none of the secrets the suite reads (`K6_TARGET_HOST`,
+  `K6_STAGING_PAT`, …). So even on a live runner the pre-flight fail-closes every
+  run. Standing up staging (or retiring the staging-targeted suites) is an owner
+  cost decision, surfaced in `docs/internal/2026-08-24-owner-decision-brief.md`.
+
+The verify no longer keys on the (now-fixed) advisory-mode / dead-label strings —
+that would flip green on a technicality while the suite still cannot run. It keys
+on the honest end state: the nightly `schedule` is re-enabled, which must happen
+in the SAME change that wires the staging secrets, never before.
+
 ```backlog
 id: B-029
 repo: corelink-server
 owner: tl
 status: open
-verify: "grep -qE 'advisory mode|self-hosted, Linux, X64' .github/workflows/load-test-nightly.yml"
+verify: "! grep -qE \"^[[:space:]]+- cron: '0 2 [*] [*] 0'\" .github/workflows/load-test-nightly.yml"
 verify-means: |
-  open while the regression check prints advisory mode instead of comparing
-  against a stored baseline, OR while the workflow is pinned to a runner label
-  no runner on the fleet holds. Closes when it can go red, or when it stops
-  calling itself a regression gate.
-
-  PARTIALLY CLOSED by PR #1263: the comparison is real now (proven both ways —
-  exit 2 at +73.9% over a stored baseline, exit 0 at +15.0%, and a failing run
-  does not publish a new baseline). What remains is that the workflow still
-  cannot execute: both jobs are `runs-on: [self-hosted, Linux, X64]`, a label
-  no runner carries, which is why its own header already says the nightly cron
-  was removed. The FIRST predicate was widened rather than left to flip on its
-  own — closing this item on "advisory mode is gone" would have replaced a gate
-  that lied with a gate that is correct and never runs. See B-037.
+  open while the load suite's nightly `schedule` is still disabled (the cron
+  line commented out) — which is correct while no staging environment exists to
+  load-test against, since enabling it sooner only manufactures a nightly red on
+  missing infra. Closes when the cron is re-enabled, which by policy happens in
+  the same change that stands up staging and wires K6_TARGET_HOST + the
+  K6_STAGING_* secrets. The comparison logic (PR #1263) and the runner label
+  (corelink) are already done; the residual is owner infra, tracked in the
+  owner decision brief. See B-037 for the sibling dead-label sweep.
 last-verified: 2026-08-24
 ```
 
