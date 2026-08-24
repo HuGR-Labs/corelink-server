@@ -79,7 +79,7 @@ fi
 
 _info "Step 4: Building 30k property test (compile check)..."
 if cargo test -p corelink-privacy --test residency_property_region_pinning_30k \
-       --no-run 2>&1 | grep -q "Compiling\|Finished\|Fresh"; then
+       --no-run 2>&1 | grep "Compiling\|Finished\|Fresh" >/dev/null; then
     _pass "Step 4: residency_property_region_pinning_30k compiles"
 else
     # Fallback: try build directly
@@ -95,12 +95,12 @@ fi
 
 _info "Step 5: Running adversarial regression tests (10 scenarios)..."
 if cargo test -p corelink-privacy --test residency_region_adversarial \
-       2>&1 | grep -q "10 passed"; then
+       2>&1 | grep "10 passed" >/dev/null; then
     _pass "Step 5: All 10 adversarial scenarios passed"
 else
     # Try to count passed tests differently
     ADVERS_OUT=$(cargo test -p corelink-privacy --test residency_region_adversarial 2>&1)
-    if echo "$ADVERS_OUT" | grep -q "FAILED"; then
+    if echo "$ADVERS_OUT" | grep "FAILED" >/dev/null; then
         _fail "Step 5: Adversarial tests FAILED — $ADVERS_OUT"
     else
         _pass "Step 5: Adversarial tests passed (no FAILED found)"

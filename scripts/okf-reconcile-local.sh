@@ -32,7 +32,12 @@ if [[ "$STALE" == "0" ]]; then
 fi
 command -v claude >/dev/null || { echo "ERROR: 'claude' CLI not on PATH (log in to Claude Code first)."; exit 2; }
 
-PROMPT='You are reconciling the OKF architecture wiki after a code change, using the repo skill
+# Quoted heredoc, not a single-quoted string: the prompt below contains an
+# apostrophe ("file's anchor"), which terminated the old PROMPT='...' early and
+# left the remainder to be parsed as shell — `bash -n` rejected the whole file,
+# so this script could never run. A heredoc cannot be broken by prose.
+PROMPT=$(cat <<'OKF_PROMPT'
+You are reconciling the OKF architecture wiki after a code change, using the repo skill
 .claude/skills/okf-reconcile/SKILL.md. The deterministic reporter has the worklist:
 run `python3 scripts/okf_reconcile.py` to see which concepts drifted and which cited ranges moved.
 For EACH stale concept: open its cited code at current HEAD, re-anchor its `# Citations` ranges (and
@@ -45,14 +50,16 @@ against, and NEVER delete one to clear a red (C4c refuses it). Then `python3 scr
 HARD CONSTRAINTS: edit ONLY docs/knowledge/** + docs/internal/okf-wiki/** + docs/knowledge/index.md;
 NEVER edit code (crates/worker/apps/scripts/migrations) — you document it, not change it. Every cite
 must resolve to a real path:line that performs the claim; every cited file in source_files. Do NOT git.
-STOP when `python3 scripts/validate_okf.py` is 0 stale / 0 drift for the concepts you fixed.'
+STOP when `python3 scripts/validate_okf.py` is 0 stale / 0 drift for the concepts you fixed.
+OKF_PROMPT
+)
 
 run_agent_and_validate() {
   echo ">> $STALE concept(s) drifted — running the okf-reconcile skill (claude, local auth)…"
   claude -p "$PROMPT" --dangerously-skip-permissions --max-turns 80
   python3 scripts/okf_index.py
   # safety net: refuse if the agent touched anything outside the doc trees
-  if git diff --name-only | grep -vE '^docs/knowledge/|^docs/internal/okf-wiki/' | grep -q .; then
+  if git diff --name-only | grep -vE '^docs/knowledge/|^docs/internal/okf-wiki/' | grep . >/dev/null; then
     echo "ERROR: agent edited files outside docs/knowledge — aborting."; git diff --name-only; exit 1
   fi
   python3 scripts/validate_okf.py

@@ -197,7 +197,7 @@ log "  ENTRYPOINT: $ENTRYPOINT_VAL"
 log "  CMD:        $CMD_VAL"
 
 for val in "$ENTRYPOINT_VAL" "$CMD_VAL"; do
-    if echo "$val" | grep -qE '^\[.*sh.*\]|/bin/sh|/bin/bash'; then
+    if echo "$val" | grep -E '^\[.*sh.*\]|/bin/sh|/bin/bash' >/dev/null; then
         warn "ENTRYPOINT/CMD uses a shell invocation: $val"
         warn "Prefer exec-form ENTRYPOINT [\"/usr/local/bin/binary\"] to avoid shell wrapper overhead."
         SHELL_HITS=$(( SHELL_HITS + 1 ))

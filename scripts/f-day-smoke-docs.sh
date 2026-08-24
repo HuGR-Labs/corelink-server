@@ -98,7 +98,7 @@ probe() {
   if [ -z "${content_grep}" ]; then
     content_ok=true
     content_note="(no content assertion)"
-  elif echo "${body}" | grep -q "${content_grep}"; then
+  elif echo "${body}" | grep "${content_grep}" >/dev/null; then
     content_ok=true
     content_note="contains '${content_grep}'"
   else

@@ -1831,3 +1831,44 @@ verify-means: |
   URL. Goes red when every carrier points at storage we control.
 last-verified: 2026-08-24
 ```
+
+### B-040 — `| head` under pipefail is the same SIGPIPE defect, left open on purpose
+
+The `| grep -<quiet>` class is closed and gated (`scripts/check_shell_pipeline_safety.py`,
+`shell-pipeline-safety.yml`). `| head -n1` has the identical mechanism: `head` exits after
+N lines, the producer takes SIGPIPE and exits 141, and `set -o pipefail` reports the
+pipeline as failed. 74 such sites exist across 207 pipefail-setting files.
+
+They were NOT swept with the rest, and the reason is a difference in how the defect
+surfaces, not a shortage of time:
+
+  - `producer | grep -<quiet> P` is almost always a CONDITION. A wrong answer is
+    silent and the caller proceeds down the wrong branch. Two sites on main failed
+    OPEN this way, one of them the CTRL-CRED-001 credential scan.
+  - `X=$(producer | head -1)` is almost always a VALUE. Under `set -e` a SIGPIPE
+    aborts the script at that line. That is loud and self-announcing — a stopped
+    job, not a false green.
+
+Silent-wrong is what this repo keeps getting hurt by, so it was closed first and
+banned outright. The loud class deserves the same treatment, but it needs a
+site-by-site read (some are `|| true`, some are inside `$(...)` whose status is
+never tested, and a blanket `head` ban would be wrong), which is why it is a
+separate item rather than a hidden allowlist inside the gate.
+
+```backlog
+id: B-040
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  grep -rl "releases/download/v.*tla2tools\.jar" .github/workflows scripts >/dev/null
+verify-means: |
+  open while any carrier still fetches the jar from the mutable upstream release
+  URL. Goes red when every carrier points at storage we control.
+  n=$(grep -rlE "set -[a-z]*o pipefail" .github/workflows scripts tests tools | xargs grep -hcE "\| *head\b" | paste -sd+ - | bc); [ "$n" -gt 0 ]
+verify-means: |
+  open while any `| head` site remains inside a file that sets pipefail. Measured 74
+  on 2026-08-24. Goes red when the last one is either rewritten to a form that cannot
+  SIGPIPE or shown, site by site, to be status-irrelevant.
+last-verified: 2026-08-24
+```

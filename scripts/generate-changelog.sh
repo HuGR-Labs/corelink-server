@@ -123,7 +123,7 @@ while IFS=$'\t' read -r sha subject; do
   # BREAKING CHANGE detection.
   breaking=""
   bang_re='!:'
-  if [[ "$subject" =~ $bang_re ]] || grep -q "BREAKING CHANGE" <<<"$body"; then
+  if [[ "$subject" =~ $bang_re ]] || grep "BREAKING CHANGE" <<<"$body" >/dev/null; then
     breaking="**BREAKING** "
   fi
 

@@ -92,7 +92,7 @@ jobs:
           if [ "$bucket" = "size:XL" ]; then
             marker="<!-- size-xl-note -->"
             if ! gh pr view "$PR" --repo "$REPO" --json comments \
-                  --jq '.comments[].body' | grep -qF "$marker"; then
+                  --jq '.comments[].body' | grep -F "$marker" >/dev/null; then
               gh pr comment "$PR" --repo "$REPO" --body "$marker
           This PR is labelled **\`size:XL\`** (>= 500 lines changed, excluding
           lockfiles and generated artifacts). Per

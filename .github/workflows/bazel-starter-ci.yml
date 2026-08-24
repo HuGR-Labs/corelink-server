@@ -139,7 +139,7 @@ jobs:
           python3 scripts/cache_hit_ratio.py "${EXEC_LOG}" --min 80
 
       - name: Run binary (smoke test)
-        run: ./bazel-bin/hello | grep -q "Hello, World!"
+        run: ./bazel-bin/hello | grep "Hello, World!" >/dev/null
 
       - name: Negative scenario — PAT missing → clear auth error
         run: |
@@ -148,7 +148,7 @@ jobs:
           set +e
           OUTPUT=$(bazel build //:hello 2>&1 || true)
           set -e
-          if echo "${OUTPUT}" | grep -qi "CORELINK_PAT.*not set"; then
+          if echo "${OUTPUT}" | grep -i "CORELINK_PAT.*not set" >/dev/null; then
               echo "PASS: Clear auth error when PAT missing."
           else
               # Bazel may surface a different error; accept any non-zero exit
@@ -202,7 +202,7 @@ jobs:
           output=$(.bazel/corelink-credential-helper.sh 2>&1 || true)
           set -e
           echo "${output}"
-          echo "${output}" | grep -qi "CORELINK_PAT" || {
+          echo "${output}" | grep -i "CORELINK_PAT" >/dev/null || {
               echo "FAIL: Expected CORELINK_PAT error message"; exit 1
           }
           echo "PASS: N1 PAT missing → clear error"
@@ -267,7 +267,7 @@ jobs:
               echo "FAIL: .bazelrc registers an unscoped credential helper — the PAT would be sent to every host Bazel fetches from" >&2
               exit 1
           fi
-          echo "${directives}" | grep -qE -- "--credential_helper=corelink-api\.humangr\.com=" || {
+          echo "${directives}" | grep -E -- "--credential_helper=corelink-api\.humangr\.com=" >/dev/null || {
               echo "FAIL: .bazelrc does not scope the credential helper to corelink-api.humangr.com" >&2
               exit 1
           }

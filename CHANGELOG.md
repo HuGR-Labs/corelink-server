@@ -94,6 +94,29 @@ Each entry cross-references:
   what `cargo install cbindgen` resolves to today, so the generated header does
   not move — and a future cbindgen release can no longer silently rewrite the
   header this gate diffs against.
+- **81 pipelines could report "no match" while the match was right there
+  (B-039 opens the sibling class).** `producer | grep -<quiet> P` under
+  `set -o pipefail` inverts exactly on success: the quiet grep exits at the
+  first hit, the producer takes SIGPIPE and exits 141, pipefail marks the
+  pipeline failed, and the caller reads "not found". It is a race against the
+  64 KiB pipe buffer — invisible on small inputs, near-certain on large ones
+  (38 of 40 runs on a 326-file diff). Two sites failed OPEN rather than closed:
+  the CTRL-CRED-001 scan of `docker history` for `API_TOKEN` / `STRIPE_` /
+  `CLERK_`, where finding a credential is what kills the producer and the
+  control then prints PASS, and okf-autoreconcile's guard against an agent
+  editing outside `docs/knowledge`. All 81 sites are rewritten to
+  `... | grep P >/dev/null`, which has the same exit status and cannot
+  SIGPIPE, and the class is now banned by `check_shell_pipeline_safety.py` with
+  no allowlist — the checker assembles its own pattern from fragments so that
+  its source cannot match itself and need excusing. Proven in both directions
+  on the real repo: green on the swept tree, red when the defect is
+  reintroduced into `changelog-validate.yml`, green again on revert.
+- **`scripts/okf-reconcile-local.sh` could never have run.** Its prompt was a
+  single-quoted string containing the words "file's anchor"; the apostrophe
+  closed the string and the remaining prose was parsed as shell, so `bash -n`
+  rejected the whole file. Converted to a quoted heredoc, which prose cannot
+  break. Found by the second rule of the new gate, which runs `bash -n` over
+  every tracked shell script — 147 of them, and this was the only dead one.
 
 - **Bazel can use its sandbox on the runner fabric again (B-025).** The runner
   image shipped no `/dev/shm`, so every sandboxed action died with
