@@ -109,6 +109,39 @@ Each entry cross-references:
   be the same silent green this change removes. The baseline is written only
   when the comparison passes, so a regression cannot ratchet itself in by
   being measured twice.
+- **fix(docs): docs CI had been red on `main` since 2026-08-04, and two of its
+  three failures were the gate asserting a fiction.** `tests/cli-reference.test.ts`
+  required the CLI reference index to list exit codes `0`–`5`. The CLI has never
+  had six: `main.rs` exits `0`, `1` and `2`, and `verify_ndjson_http::EXIT_DATAERR`
+  (`65`) is reached only by `audit verify-ndjson --url` on a mid-stream integrity
+  abort. #1216 corrected the page to the truth and the stale test has failed ever
+  since — it could only pass against a page that lied. The test now derives the
+  set from the Rust source, so a new exit code fails it until the page documents
+  that code. The third failure was real: the Python and Go Action Cache guides
+  were rewritten to say those SDKs do not implement an AC client and lost the
+  Diataxis `When to use this guide` section every page is required to carry; both
+  now carry one that says what the page is actually for. Whole suite: 309/309.
+
+  Fixing those unblocked the jobs they had been masking, which were red too.
+  **axe:** every page carried one serious `color-contrast` violation — Docusaurus
+  paints the search box's `ctrl` / `K` hint with
+  `--ifm-navbar-search-input-placeholder-color` (#bec3c9), the right colour for
+  placeholder text (which axe ignores) and the wrong one for a rendered `<kbd>`,
+  which is content: **1.51:1** against #ebedf0 where 4.5:1 is required. Overridden
+  to `--ifm-color-emphasis-800`, which is theme-aware, so one declaration fixes
+  light and dark. The sweep spec also now prints the offending selector, HTML and
+  the measured ratio — it previously said only "1 node(s)", which names nothing
+  and is why this sat unfixed. **lychee:** 2,108 reported errors were two classes.
+  556 were `github.com/gschneiter`, the blog author's profile and avatar — that
+  account does not exist (404), so every blog page shipped a dead avatar;
+  repointed to `gmhelmold`. The rest were `corelink-api.humangr.com` endpoint URLs
+  printed in the API reference, several with OpenAPI's literal `string`
+  placeholder still in the path. lychee GETs them and calls a 401/404 a broken
+  link; an auth-required endpoint declining an anonymous GET is the endpoint
+  working. Excluded — and coverage is not lost, since
+  `validate_docs_reality.py` [hostname-liveness] checks every `*.humangr.com`
+  hostname on a shipped surface on every docs PR.
+
 - **fix(backlog): the self-verifying register pointed the wrong way, and its own
   gate was content.** Two defects landed within a minute of each other on
   2026-08-24. First, two items were merged carrying the same `id: B-031` (the

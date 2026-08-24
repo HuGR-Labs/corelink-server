@@ -47,6 +47,20 @@ exclude = [
   #   them post-`--root-dir`-resolution as `file://<root-dir>/explanation/...`
   #   — match that resolved form, not the raw href.
   "/explanation/(compliance/dpa|privacy/gdpr|privacy/lgpd-full|sre/slo)$",
+  # The API reference prints endpoint URLs, not links. lychee GETs them, and a
+  # POST-only or auth-required endpoint answering 401/404 to an anonymous GET is
+  # the endpoint working, not a broken link — `/v1/health` returns 401, the API
+  # root returns 404, both correctly. Several are OpenAPI templates with the
+  # literal placeholder still in the path (`/v1/cas/string/string`), which no
+  # amount of liveness would make fetchable. This single class accounted for
+  # ~1,550 of the 2,108 "errors" that kept docs CI red.
+  #
+  # Coverage is NOT lost: `scripts/validate_docs_reality.py` [hostname-liveness]
+  # checks every `*.humangr.com` hostname printed on a shipped surface, on every
+  # PR that touches docs — a check that understands the difference between a host
+  # being dead and an endpoint declining an anonymous GET. Excluding the host
+  # here removes a category error, not a guard.
+  "^https?://corelink-api\\.humangr\\.com",
 ]
 
 # User-Agent for doc hosts that require one. (lychee >=0.20 renamed the old

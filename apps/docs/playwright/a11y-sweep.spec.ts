@@ -61,7 +61,17 @@ async function scan(page: Page, route: string) {
       .map(
         (v) =>
           `  - [${v.impact}] ${v.id}: ${v.help} (${v.nodes.length} node(s))\n` +
-          `    ${v.helpUrl}`,
+          v.nodes
+            .map(
+              (n) =>
+                `      target: ${JSON.stringify(n.target)}\n` +
+                `      html:   ${n.html.replace(/\s+/g, " ").slice(0, 200)}\n` +
+                [...n.any, ...n.all]
+                  .map((c) => `      why:    ${c.message.replace(/\s+/g, " ").slice(0, 200)}`)
+                  .join("\n"),
+            )
+            .join("\n") +
+          `\n    ${v.helpUrl}`,
       )
       .join("\n");
     console.error(`a11y violations on ${route}:\n${summary}`);
