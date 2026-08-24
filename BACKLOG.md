@@ -301,6 +301,17 @@ Remaining after this: the archive proves the chain is intact against ITSELF. An
 external anchor (Rekor) is still roadmap, and the ≤1h pre-seal window in
 `audit_outbox` is still unprotected — both pre-existing and out of this item.
 
+**Proven in production 2026-08-24.** The first hourly tick after the container
+roll archived real rows: `archived_at` moved from 0 to 3,456 of 56,266 sealed
+rows, and ten NDJSON chunks are readable in `corelink-audit-weur` under
+`audit/<Y>/<M>/<D>/<tenant>/<region>/<seq>.ndjson`. Every one of the ten was
+pulled back out of the bucket and fed to the `verifier` binary built from this
+commit: `AUDIT_CHAIN_VERIFY_OK` on all ten, 1,712 events total, no chain break.
+The backlog drains on its own from here, one hourly sweep at a time. One
+cosmetic artifact of real data: a probe row carrying `enqueued_at_ms: 1` lands
+under `audit/1970/01/01/…`, which is the key shape faithfully encoding a
+1970 timestamp, not a bug.
+
 ```backlog
 id: B-015
 repo: corelink-server
@@ -308,7 +319,7 @@ owner: tl
 status: done
 verify: "grep -q 'audit/archive' crates/corelink-container/src/main.rs && grep -q 'corelink-audit-weur' .github/workflows/audit-chain-daily-verify.yml"
 verify-means: done while the archive route is MOUNTED in the container composition root and the daily verifier reads the same bucket the archiver writes
-last-verified: 2026-08-23
+last-verified: 2026-08-24
 ```
 
 ### B-010 — the TLS floor change is recorded nowhere in the repo
@@ -463,6 +474,33 @@ status: open
 verify: "grep -q 'TLS 1.3 only' specs/03_architecture/security_model.md"
 verify-means: open while the control table still claims a 1.3-only floor
 last-verified: 2026-08-23
+```
+
+### B-020 — a cron sweep that cannot authenticate logs nothing at all
+
+Every hourly sweep in `apps/signup-worker/src/index.ts` resolves a credential
+first and returns `skipped: true` when it is unbound — and the caller only logs
+when `skipped` is false. So an archive, drain, DSR-verify or PAT-scrub sweep that
+never ran because its key went missing is indistinguishable in the logs from an
+hour with nothing to do. Four sweeps share the shape
+(`audit_archive_cron.ts`, `audit_drain_cron.ts`, `dsr_verify_cron.ts`,
+`pat_scrub_cron.ts`).
+
+Found while proving [B-015]: the archive produced nothing for two ticks and the
+absence of a log line could not distinguish "not deployed yet" from "no key".
+The fix is small — log the skip — but the class is the one that keeps costing
+us: silence read as success.
+
+```backlog
+id: B-020
+repo: corelink-server
+owner: tl
+status: open
+verify: "! grep -q 'skipped=' apps/signup-worker/src/index.ts"
+verify-means: |
+  open while the sweeps still return a silent `skipped` that the scheduled()
+  caller never logs. Closes when index.ts emits a line for the skip case.
+last-verified: 2026-08-24
 ```
 
 ### B-011 — ~115 branches in corelink-runners have no open PR
