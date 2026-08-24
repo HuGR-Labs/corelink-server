@@ -1375,19 +1375,37 @@ through a re-run of an already-cached task against our endpoint and record
 whether a PUT is re-issued for a key that exists, and what the client does with a
 refusal. Then decide.
 
-Residual until then: a credential with cache-write scope for a tenant can replace
-the bytes behind that tenant's own Turborepo keys. Not cross-tenant; the envelope
-does not detect it, because the key is not a preimage of the content.
+**Closed 2026-08-24 — the evidence was gathered, then create-only landed.** The
+real `turbo` client (v2.10.11) was driven against a local mock of the
+`/v8/artifacts` surface (the mock, not prod, because the refusal path — question
+2 — can only be observed against a server that refuses, and prod overwrites):
+
+- turbo **GETs before it PUTs** and only uploads on a confirmed miss; with the
+  remote warm it downloads the hit and **never re-PUTs an existing key**. Only
+  `--force` (a deliberate override) even attempts an overwrite.
+- on a `409` it emits a **non-fatal warning**, the build **succeeds** (exit 0),
+  and the cache is **not** disabled — no `.sccache_check`-style self-disable.
+
+Both risks that justified deferring are therefore measured false, so PUT is now
+create-only (`put_if_absent`, 409 on an existing key), closing the residual: a
+`cas:rw` credential can no longer replace the bytes behind its own tenant's
+Turborepo keys. Method + full transcript:
+`docs/design/2026-08-24-turborepo-create-only-evidence.md`. The old overwrite
+byte-delta reconciliation (rt34) is superseded — overwrites can no longer be
+issued at all.
 
 ```backlog
 id: B-024
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  ! grep -q "create_only\|put_if_absent" crates/corelink-container/src/routes/turbo_v8.rs
-verify-means: open while Turborepo PUT stays an overwrite; lands red once create-only semantics appear on that surface
-last-verified: 2026-08-23
+  grep -q "create_only\|put_if_absent" crates/corelink-container/src/routes/turbo_v8.rs
+verify-means: |
+  done — Turborepo PUT is create-only (put_if_absent): the surface refuses an
+  overwrite with 409. Reopens if the create-only semantics are torn out of that
+  surface (the file stops naming create_only / put_if_absent).
+last-verified: 2026-08-24
 ```
 
 ### B-031 — SLSA L3 needs a GitHub-hosted builder, which this repo does not spend on
