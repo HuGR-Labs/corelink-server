@@ -35,15 +35,19 @@
 #   open a PR here on its own schedule with no commit to this repo at all — a
 #   nightly drift regen, a weekly compliance sweep. The condition therefore
 #   arises without a commit, and no push- or PR-triggered gate can observe it.
-#   Every 30 minutes: the job is a handful of read-only API calls and finishes
-#   in seconds, and 30 minutes is comfortably shorter than the window between a
-#   bot opening a PR and a human getting around to merging it.
+#   Hourly. The job is a handful of read-only API calls and finishes in
+#   seconds, but every tick spawns a container on our own fabric, so the
+#   cadence is a COGS decision as much as a detection one. The failure this
+#   catches needs a HUMAN to complete it — an ungated bot PR is only dangerous
+#   once someone merges it — and nobody merges within the hour at 03:00. Half-
+#   hourly would double the spawn count to buy a detection window narrower than
+#   the human latency it is racing.
 
 name: bot-pr-has-checks
 
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "7 * * * *"
   workflow_dispatch: {}
 
 permissions:
