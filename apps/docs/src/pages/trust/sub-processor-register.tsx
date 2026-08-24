@@ -98,7 +98,7 @@ const ACTIVE_SUB_PROCESSORS: readonly SubProcessor[] = [
     service: "CRM (enterprise-inquiry intake)",
     dataClasses: ["pii"],
     regions: "Multi-region (per tenant primary_region pin)",
-    dpaHref: "https://www.hubspot.com/data-privacy/security",
+    dpaHref: "https://legal.hubspot.com/security",
     dpaLabel: "HubSpot trust portal",
   },
   {

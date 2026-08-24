@@ -109,6 +109,64 @@ Each entry cross-references:
   be the same silent green this change removes. The baseline is written only
   when the comparison passes, so a regression cannot ratchet itself in by
   being measured twice.
+
+- **docs: every documented CLI install recipe was fiction, and the link checker
+  could not see it.** The `brew install HumanGuardrail/tap/corelink` formula and
+  the `winget install HumanGuardrail.corelink` package were never published (both
+  taps 404), and the "release tarball" recipes named a repo that does not exist
+  (`HumanGuardrail/corelink-cli`), a format that is not published (`.tar.gz` — the
+  assets are raw binaries) and an architecture spelling the release does not use
+  (`arm64` vs `aarch64`). All four alternative install paths, in four locales, are
+  now the verified public assets on `HuGR-Labs/corelink-cli` with the published
+  `.sha256` checked before the binary is made executable — mirroring what the live
+  `corelink-get.humangr.com` installer already does. The primary `curl | sh` path
+  was and remains correct. The security policy's in-scope list, which named the
+  nonexistent Homebrew formula as a distribution surface, was corrected too.
+- **docs: the trust-centre and security pages linked to a GitHub org that no
+  longer exists** (`HumanGuardrail/corelink`, unqualified) across 43 files
+  including every i18n mirror; repointed to `corelink-server`. Also fixed the
+  BLAKE3 paper link (moved to the `BLAKE3-specs` repo), the HubSpot security page,
+  and the ANPD data-subject petition URL — all three verified 200.
+- **docs: the lychee gate now fails on link rot instead of on category errors.**
+  Twenty-three exclusions, each annotated with why it is not a link: dead product
+  hosts already carrying a dated `TODO(dead-host-sweep)` suppression in
+  `hostname.tracked_dead`, POST-only Grafana Cloud ingest endpoints, CSP values
+  and templated placeholders inside fenced code blocks, and third-party hosts that
+  403 any CI client. Proven locally against the real build: zero non-GitHub errors
+  remain, down from 338 reported in CI.
+- **fix(docs): docs CI had been red on `main` since 2026-08-04, and two of its
+  three failures were the gate asserting a fiction.** `tests/cli-reference.test.ts`
+  required the CLI reference index to list exit codes `0`–`5`. The CLI has never
+  had six: `main.rs` exits `0`, `1` and `2`, and `verify_ndjson_http::EXIT_DATAERR`
+  (`65`) is reached only by `audit verify-ndjson --url` on a mid-stream integrity
+  abort. #1216 corrected the page to the truth and the stale test has failed ever
+  since — it could only pass against a page that lied. The test now derives the
+  set from the Rust source, so a new exit code fails it until the page documents
+  that code. The third failure was real: the Python and Go Action Cache guides
+  were rewritten to say those SDKs do not implement an AC client and lost the
+  Diataxis `When to use this guide` section every page is required to carry; both
+  now carry one that says what the page is actually for. Whole suite: 309/309.
+
+  Fixing those unblocked the jobs they had been masking, which were red too.
+  **axe:** every page carried one serious `color-contrast` violation — Docusaurus
+  paints the search box's `ctrl` / `K` hint with
+  `--ifm-navbar-search-input-placeholder-color` (#bec3c9), the right colour for
+  placeholder text (which axe ignores) and the wrong one for a rendered `<kbd>`,
+  which is content: **1.51:1** against #ebedf0 where 4.5:1 is required. Overridden
+  to `--ifm-color-emphasis-800`, which is theme-aware, so one declaration fixes
+  light and dark. The sweep spec also now prints the offending selector, HTML and
+  the measured ratio — it previously said only "1 node(s)", which names nothing
+  and is why this sat unfixed. **lychee:** 2,108 reported errors were two classes.
+  556 were `github.com/gschneiter`, the blog author's profile and avatar — that
+  account does not exist (404), so every blog page shipped a dead avatar;
+  repointed to `gmhelmold`. The rest were `corelink-api.humangr.com` endpoint URLs
+  printed in the API reference, several with OpenAPI's literal `string`
+  placeholder still in the path. lychee GETs them and calls a 401/404 a broken
+  link; an auth-required endpoint declining an anonymous GET is the endpoint
+  working. Excluded — and coverage is not lost, since
+  `validate_docs_reality.py` [hostname-liveness] checks every `*.humangr.com`
+  hostname on a shipped surface on every docs PR.
+
 - **fix(backlog): the self-verifying register pointed the wrong way, and its own
   gate was content.** Two defects landed within a minute of each other on
   2026-08-24. First, two items were merged carrying the same `id: B-031` (the

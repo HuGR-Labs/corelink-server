@@ -138,30 +138,40 @@ CI, pick a per-platform recipe below.
 ### macOS (Apple Silicon or Intel)
 
 ```bash
-brew install HumanGuardrail/tap/corelink
+# Apple Silicon
+curl -fsSL https://github.com/HuGR-Labs/corelink-cli/releases/latest/download/corelink-darwin-aarch64 -o corelink-darwin-aarch64
+curl -fsSL https://github.com/HuGR-Labs/corelink-cli/releases/latest/download/corelink-darwin-aarch64.sha256 -o corelink-darwin-aarch64.sha256
+shasum -a 256 -c corelink-darwin-aarch64.sha256
+chmod +x corelink-darwin-aarch64 && sudo mv corelink-darwin-aarch64 /usr/local/bin/corelink
 ```
 
-Or download a release tarball:
+Or, on Intel:
 
 ```bash
-curl -fsSL https://github.com/HumanGuardrail/corelink-cli/releases/latest/download/corelink-darwin-arm64.tar.gz \
-  | tar -xz -C /usr/local/bin
+# Intel
+curl -fsSL https://github.com/HuGR-Labs/corelink-cli/releases/latest/download/corelink-darwin-x86_64 -o corelink-darwin-x86_64
+curl -fsSL https://github.com/HuGR-Labs/corelink-cli/releases/latest/download/corelink-darwin-x86_64.sha256 -o corelink-darwin-x86_64.sha256
+shasum -a 256 -c corelink-darwin-x86_64.sha256
+chmod +x corelink-darwin-x86_64 && sudo mv corelink-darwin-x86_64 /usr/local/bin/corelink
 ```
 
 ### Linux (x86_64, arm64)
 
 ```bash
-curl -fsSL https://github.com/HumanGuardrail/corelink-cli/releases/latest/download/corelink-linux-amd64.tar.gz \
-  | sudo tar -xz -C /usr/local/bin
+# x86_64 — on arm64 use corelink-linux-aarch64 instead
+curl -fsSL https://github.com/HuGR-Labs/corelink-cli/releases/latest/download/corelink-linux-x86_64 -o corelink-linux-x86_64
+curl -fsSL https://github.com/HuGR-Labs/corelink-cli/releases/latest/download/corelink-linux-x86_64.sha256 -o corelink-linux-x86_64.sha256
+sha256sum -c corelink-linux-x86_64.sha256
+chmod +x corelink-linux-x86_64 && sudo mv corelink-linux-x86_64 /usr/local/bin/corelink
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-winget install HumanGuardrail.corelink
+Invoke-WebRequest -Uri https://github.com/HuGR-Labs/corelink-cli/releases/latest/download/corelink-windows-x86_64.exe -OutFile corelink.exe
 ```
 
-Or download `corelink-windows-amd64.zip` from the releases page and place
+Or download `corelink-windows-x86_64.exe` from the releases page and place
 `corelink.exe` on your `PATH`.
 
 After any of the manual paths above, re-run Step 2 (`corelink bazel-init`

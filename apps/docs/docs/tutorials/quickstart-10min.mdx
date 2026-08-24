@@ -89,23 +89,29 @@ If you can't run curl-pipe-sh, download a release archive directly:
 <TabItem value="macos" label="macOS" default>
 
 ```bash
-curl -fsSL https://github.com/HumanGuardrail/corelink-cli/releases/latest/download/corelink-darwin-arm64.tar.gz \
-  | tar -xz -C /usr/local/bin
+# Intel
+curl -fsSL https://github.com/HuGR-Labs/corelink-cli/releases/latest/download/corelink-darwin-x86_64 -o corelink-darwin-x86_64
+curl -fsSL https://github.com/HuGR-Labs/corelink-cli/releases/latest/download/corelink-darwin-x86_64.sha256 -o corelink-darwin-x86_64.sha256
+shasum -a 256 -c corelink-darwin-x86_64.sha256
+chmod +x corelink-darwin-x86_64 && sudo mv corelink-darwin-x86_64 /usr/local/bin/corelink
 ```
 
 </TabItem>
 <TabItem value="linux" label="Linux">
 
 ```bash
-curl -fsSL https://github.com/HumanGuardrail/corelink-cli/releases/latest/download/corelink-linux-amd64.tar.gz \
-  | sudo tar -xz -C /usr/local/bin
+# x86_64 — on arm64 use corelink-linux-aarch64 instead
+curl -fsSL https://github.com/HuGR-Labs/corelink-cli/releases/latest/download/corelink-linux-x86_64 -o corelink-linux-x86_64
+curl -fsSL https://github.com/HuGR-Labs/corelink-cli/releases/latest/download/corelink-linux-x86_64.sha256 -o corelink-linux-x86_64.sha256
+sha256sum -c corelink-linux-x86_64.sha256
+chmod +x corelink-linux-x86_64 && sudo mv corelink-linux-x86_64 /usr/local/bin/corelink
 ```
 
 </TabItem>
 <TabItem value="windows" label="Windows (winget)">
 
 ```powershell
-winget install HumanGuardrail.corelink
+Invoke-WebRequest -Uri https://github.com/HuGR-Labs/corelink-cli/releases/latest/download/corelink-windows-x86_64.exe -OutFile corelink.exe
 ```
 
 </TabItem>
@@ -317,7 +323,7 @@ your PAT from **Settings → Access tokens** with `write` scope.
 You're done. Cache is live. Where to go next:
 
 - **Explore the demo repo** — clone the
-  [corelink-bazel-example](https://github.com/HumanGuardrail/corelink-bazel-example)
+  [corelink-bazel-example](https://github.com/HumanGuardrail/corelink-server/tree/main/apps/examples/bazel)
   repo (200 LOC, 3 Go libraries + binary) and verify a cache hit in
   under 5 minutes.
 - **Read the architecture blog post** — [How CoreLink uses Cloudflare

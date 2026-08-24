@@ -195,3 +195,23 @@ main p a:hover {
 :root:not([data-theme="dark"]) .token.deleted {
   color: #b31d28 !important; /* 6.43:1 (was #d73a49 4.29:1) */
 }
+
+/* ---------------------------------------------------------------------------
+ * Search keyboard hint — WCAG 2.2 AA contrast.
+ *
+ * Docusaurus styles the `ctrl` / `K` hint beside the search box with
+ * `--ifm-navbar-search-input-placeholder-color` (#bec3c9). That is the right
+ * colour for placeholder text, which axe ignores; it is the wrong colour for a
+ * rendered `<kbd>`, which is content. Measured on the built site: **1.51:1**
+ * against the #ebedf0 input background, against a 4.5:1 requirement — one
+ * serious `color-contrast` violation on EVERY page, which is what kept the
+ * docs-ci axe sweep red.
+ *
+ * `--ifm-color-emphasis-800` is theme-aware (dark in light mode, light in dark
+ * mode), so this fixes both themes with one declaration instead of pinning a
+ * literal that would break the other one. The attribute selector matches the
+ * CSS-module class whose suffix is a per-build hash.
+ * ------------------------------------------------------------------------- */
+.navbar__search [class*="searchHint_"] {
+  color: var(--ifm-color-emphasis-800);
+}
