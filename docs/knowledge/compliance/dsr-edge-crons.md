@@ -10,7 +10,7 @@ source_files:
   - apps/signup-worker/src/index.ts
 source_blobs:
   - apps/signup-worker/src/index.ts@e6af410e8fe11c4b47ee2bbbb2c1c1f91c0d373d
-checkpoint_sha: "4d73badd70b5e791172b44715da3e34b1b654b68"
+checkpoint_sha: "1d3cbd5ec9279b901cedfeec24a75821ad15ca6a"
 provenance: "AUTHORED"
 tags: ["dsr", "gdpr", "erasure", "cron", "queue", "scheduled", "pat", "compliance", "worker-edge"]
 timestamp: "2026-06-27T00:00:00Z"
