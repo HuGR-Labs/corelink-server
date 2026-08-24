@@ -20,7 +20,7 @@ export interface SubProcessorList {
 }
 
 export const subProcessors: SubProcessorList = {
-  version: "2026-05-27",
+  version: "2026-08-24",
   items: [
     {
       id: "cloudflare",
@@ -93,6 +93,15 @@ export const subProcessors: SubProcessorList = {
       certifications: ["SOC 2 Type II", "ISO 27001", "GDPR", "EU–US DPF"],
       dpa_url: "https://docs.github.com/en/site-policy/privacy-policies/github-data-protection-agreement",
       last_audit: "2026-05-27",
+    },
+    {
+      id: "pagerduty",
+      name: "PagerDuty, Inc.",
+      role: "Incident management + on-call alerting — prod + synthetic-drill routes; operational-alert and incident-metadata payloads",
+      region: "United States",
+      certifications: ["SOC 2 Type II", "ISO 27001"],
+      dpa_url: "https://www.pagerduty.com/privacy-policy/",
+      last_audit: "2026-05-15",
     },
   ],
 };
