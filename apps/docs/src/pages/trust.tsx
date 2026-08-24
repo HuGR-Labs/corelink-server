@@ -113,9 +113,9 @@ const CONTROLS: readonly Control[] = [
   },
   {
     id: "encryption",
-    title: "TLS 1.3 in transit, AES-256-GCM at rest",
+    title: "TLS 1.2+ in transit, AES-256-GCM at rest",
     summary:
-      "All customer payloads are encrypted in transit (TLS 1.3, modern-cipher-only, no downgrade path) and at rest (AES-256-GCM via Cloudflare R2 platform encryption, layered under BYOK envelope encryption when a tenant supplies a KMS key).",
+      "All customer payloads are encrypted in transit (TLS 1.2 floor, 1.3 negotiated by any client that supports it) and at rest (AES-256-GCM via Cloudflare R2 platform encryption, layered under BYOK envelope encryption when a tenant supplies a KMS key).",
     evidence:
       "specs/_audits/sealed/2026-05-14-security-walkthrough-s13.md — transport + storage encryption walkthrough.",
     evidenceHref: "/trust/data-handling#encryption",

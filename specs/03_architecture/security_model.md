@@ -384,7 +384,7 @@ Adicionado em Lote 5.11 (cross-ref validator) endereçando CTRL-BILLING-001 dang
 | HMAC (path, nonces)         | HMAC-SHA256                      | 32 bytes key                   | `hmac`                  |
 | Key derivation              | HKDF-SHA256                      | info = "corelink/v1/<ctx>"    | `hkdf`                  |
 | Cifra simétrica at-rest     | AES-256-GCM                      | 96-bit nonce; random            | R2 SSE-S3               |
-| TLS                         | TLS 1.3                          | AES-256-GCM / ChaCha20-Poly1305 | CF edge (config)        |
+| TLS                         | Piso 1.2, 1.3 negociado (ADR-0072) | AES-256-GCM / ChaCha20-Poly1305 | CF edge (config)        |
 | Assinatura de release       | Ed25519 via sigstore/cosign      | — | `cosign`                |
 | Proof of possession (admin) | WebAuthn (Ed25519 / ES256)       | —                              | `webauthn-rs`           |
 

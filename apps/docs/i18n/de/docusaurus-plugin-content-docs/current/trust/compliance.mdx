@@ -80,7 +80,7 @@ email `trust@humangr.com`.
 These controls are implemented and continuously monitored, even though the
 external attestation is still in flight:
 
-- **CC6.1 / CC6.7 — logical access + cryptographic protection:** TLS 1.3
+- **CC6.1 / CC6.7 — logical access + cryptographic protection:** TLS 1.2 floor, 1.3 negotiated
   enforced edge-to-origin, MFA-enforced admin plane, signed-deploy
   pipeline, Rekor transparency-log entries for every release.
 - **CC7.1 — vulnerability management:** Dependency-Track + cargo-deny +

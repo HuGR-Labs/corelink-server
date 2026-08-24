@@ -106,7 +106,7 @@ Os titulares afetados são: *(descrever categorias — ex.: usuários da platafo
 
 **Medidas técnicas de proteção em vigor no momento do incidente**:
 - Criptografia em repouso (R2 SSE-S3 + D1/Neon SSE) conforme INV-CONF-AT-REST.
-- TLS 1.3 obrigatório em todos os endpoints conforme INV-CONF-IN-FLIGHT.
+- Piso TLS 1.2 em todos os endpoints, com 1.3 negociado por todo cliente capaz, conforme INV-CONF-IN-FLIGHT (ADR-0072).
 - Audit log append-only com Object Lock 7 anos conforme INV-AUDIT-APPEND-ONLY.
 - Isolamento de tenant conforme INV-TENANT-ISOLATION.
 

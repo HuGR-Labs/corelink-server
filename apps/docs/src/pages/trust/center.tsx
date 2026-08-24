@@ -125,11 +125,11 @@ const QUADRANTS: readonly TrustQuadrant[] = [
       "How we protect customer data in flight, at rest, and across the supply chain.",
     cards: [
       {
-        title: "Encryption — TLS 1.3 + AES-256-GCM",
+        title: "Encryption — TLS 1.2+ and AES-256-GCM",
         href: "/trust/data-handling#encryption",
         status: "LIVE",
         summary:
-          "All customer payloads encrypted in transit (TLS 1.3, modern-cipher-only) and at rest (AES-256-GCM via Cloudflare R2 platform encryption).",
+          "All customer payloads encrypted in transit (TLS 1.2 floor, 1.3 negotiated) and at rest (AES-256-GCM via Cloudflare R2 platform encryption).",
       },
       {
         title: "BYOK envelope encryption",

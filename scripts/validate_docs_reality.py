@@ -125,6 +125,12 @@ DOC_ROOTS = [
     REPO_ROOT / "apps" / "docs" / "blog",
     REPO_ROOT / "apps" / "docs" / "src",
     REPO_ROOT / "marketing",
+    # `legal/` was scanned for HOSTNAMES but not for claims, and that split cost
+    # us: the TLS-floor claim survived a full sweep inside a DPA, an SCC annex,
+    # three privacy notices and two regulator breach-notification templates,
+    # because no coherence rule could see them. A document filed with a data
+    # protection authority is the last place a stale control claim should live.
+    REPO_ROOT / "legal",
 ]
 DOC_ROOTS_WITH_EXCLUDES = [
     # (root, [excluded subdirs relative to repo root]) — `docs/**` minus the

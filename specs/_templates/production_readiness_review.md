@@ -459,7 +459,7 @@ tags: []
 - [ ] Audit log emitindo e imutável
 - [ ] Secrets em secrets manager (rotação testada)
 - [ ] Headers HTTP seguros (HSTS, CSP, etc)
-- [ ] TLS 1.3 enforced
+- [ ] TLS floor matches CTRL-CRYPTO-001 (1.2 today — ADR-0072; `scripts/check_tls_floor.py` passes)
 
 ### 11.3 Vuln scanning
 

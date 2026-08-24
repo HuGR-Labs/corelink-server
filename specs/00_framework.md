@@ -340,7 +340,7 @@ Exemplos: TLS obrigatório, auth obrigatória, *rate limiting* ativo por padrão
 
 > **NÃO DEVE** existir "perímetro confiável" onde autenticação/autorização é pulada.
 > **DEVE** toda chamada entre componentes, mesmo internos, autenticar e autorizar.
-> **DEVE** todo dado em trânsito ser criptografado (TLS 1.3+ ou equivalente).
+> **DEVE** todo dado em trânsito ser criptografado (piso TLS 1.2, 1.3 negociado por todo cliente capaz — ADR-0072 — ou equivalente).
 > **DEVE** todo dado em repouso em storage persistente ser criptografado.
 
 #### PRINC-022 — Privacy by Design
@@ -1456,7 +1456,7 @@ Certas preocupações atravessam **múltiplos componentes e múltiplas capabilit
 
 | Controle | Escopo | Verificação |
 |---|---|---|
-| TLS 1.3+ em todo *endpoint* | exposto externamente | SAST + DAST |
+| Piso TLS 1.2 (1.3 negociado) em todo *endpoint* | exposto externamente | SAST + DAST + `scripts/check_tls_floor.py` |
 | AuthN em todo *endpoint* | interno ou externo | integration test |
 | AuthZ baseada em *tenant* | toda operação que toca dados | property test INV-TenantIsolation |
 | *Rate limiting* por *tenant* | todo *endpoint* custoso | load test |
