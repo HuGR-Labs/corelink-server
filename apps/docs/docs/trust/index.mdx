@@ -61,9 +61,14 @@ shapes everything else on this page. The headline commitments are:
 3. **Every write produces an auditable, signed event.** The audit log is
    append-only, Merkle-linked, and exportable as RFC 6962 inclusion proofs
    that you can verify offline.
-4. **You can hold your own keys.** Enterprise tenants can wrap their data
-   encryption keys with their own KMS root — we never see plaintext key
-   material. Four KMS providers are supported on day one.
+4. **Bring-your-own-key is designed, not yet wired in production.** The
+   BYOK architecture supports wrapping a tenant's data encryption keys
+   with their own KMS root across four providers (AWS KMS, GCP Cloud KMS,
+   Azure Key Vault, HashiCorp Vault), and CoreLink only holds wrapped
+   DEKs by design. The production build ships with no real KMS provider
+   linked, and the activation endpoint fails closed rather than flip a
+   tenant to BYOK against a placeholder. Provider wiring is on the
+   roadmap.
 5. **We commit to a 72-hour breach-notification window.** Aligned with
    LGPD Art. 33 and GDPR Art. 33; communicated through the channels you
    pre-register at onboarding.

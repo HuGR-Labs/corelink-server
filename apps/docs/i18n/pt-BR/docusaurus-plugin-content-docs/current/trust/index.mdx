@@ -67,9 +67,14 @@ shapes everything else on this page. The headline commitments are:
 3. **Every write produces an auditable, signed event.** The audit log is
    append-only, Merkle-linked, and exportable as RFC 6962 inclusion proofs
    that you can verify offline.
-4. **You can hold your own keys.** Enterprise tenants can wrap their data
-   encryption keys with their own KMS root — we never see plaintext key
-   material. Four KMS providers are supported on day one.
+4. **BYOK está desenhado, mas ainda não está conectado em produção.** A
+   arquitetura de BYOK suporta encapsular as chaves de criptografia de
+   dados de um tenant com a raiz KMS dele, em quatro provedores (AWS
+   KMS, GCP Cloud KMS, Azure Key Vault, HashiCorp Vault), e o desenho
+   já prevê que a CoreLink só guarda DEKs encapsuladas. O build de
+   produção não conecta nenhum provedor KMS real, e o endpoint de
+   ativação falha fechado em vez de ativar BYOK para um tenant contra
+   um placeholder. A conexão dos provedores está no roadmap.
 5. **We commit to a 72-hour breach-notification window.** Aligned with
    LGPD Art. 33 and GDPR Art. 33; communicated through the channels you
    pre-register at onboarding.
