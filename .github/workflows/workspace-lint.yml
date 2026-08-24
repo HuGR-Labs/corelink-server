@@ -1,0 +1,66 @@
+name: workspace lint
+
+# `cargo clippy --workspace --all-targets -- -D warnings` appeared in exactly one
+# workflow, `cas_foundation.yml`, which was PARKED on 2026-08-10: cron commented
+# out, dispatch-only. Its last scheduled run was CANCELLED and every scheduled run
+# before that, back through July, FAILED. So the stated compensation — "the
+# per-crate PR lanes cover it" — does not hold either: those lanes name **12**
+# crates, and the workspace has **75** under `crates/` alone. The rest were linted
+# by nothing at all (B-033).
+#
+# WHAT IT COSTS, MEASURED, NOT GUESSED (2026-08-24, on the fleet's own hardware):
+#   cold  8 m 20 s   warm  49 s   target dir 9.3 GB
+# and the workspace is **already clean** — the first full run produced zero
+# warnings under `-D warnings`. This gate therefore starts green; it is here to
+# keep it that way, not to pay down a backlog.
+#
+# WHY NOT ON EVERY PULL REQUEST. Five runners share one machine and one $HOME, so
+# a cold 8-minute, 9 GB check on every PR is real contention for a gate whose
+# marginal value on a PR is small: the crate-scoped lanes already lint the crates
+# a PR touches. What they cannot see is the crate NOBODY touched and the
+# cross-crate drift a merge introduces — both post-merge concerns. So this runs on
+# merge to main, and only when Rust actually changed.
+#
+# No cron, per the repo rule: a schedule earns its keep only for state that can
+# change WITHOUT a commit. Lint results cannot.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**/*.rs'
+      - '**/Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/workspace-lint.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # The runners ARE the owner's Mac. Four jobs, not "all cores".
+  CARGO_BUILD_JOBS: "4"
+
+jobs:
+  clippy-workspace:
+    name: clippy --workspace --all-targets -D warnings
+    runs-on: [self-hosted, mac, corelink-builder]
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # Do NOT provision a toolchain here: the five runners share one ~/.rustup,
+      # and `rustup default` moves every concurrent job off the pinned toolchain.
+      # Full reasoning in the script's header.
+      - name: Use the workspace-pinned host toolchain (provisions nothing)
+        run: bash scripts/ci-use-host-toolchain.sh
+
+      - name: clippy, whole workspace, every target
+        run: cargo clippy --workspace --all-targets --message-format=short -- -D warnings
