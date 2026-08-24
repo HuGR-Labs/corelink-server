@@ -130,10 +130,17 @@ Each entry cross-references:
   (alert 40) because `status.corelink.humangr.com` was CNAME'd to Better Stack
   while Better Stack had `custom_domain: null` — a hostname advertised in 224
   places across docs, specs and legal that no customer could load. The status
-  page was fixed at the source (the custom domain is now bound at the vendor,
-  not the claim edited away); the other two claims are now stated as what they
-  are, in a new "Not yet available, and listed here rather than omitted"
-  bucket. Applied to the three untranslated locale mirrors as well — the en-US
+  page is now linked at the URL that actually serves
+  (`https://hugrl.betteruptime.com`, HTTP 200) instead of a vanity hostname
+  that resolves and then fails: binding `custom_domain` at the vendor was
+  attempted and **reverted**, because it made the vanity host canonical
+  immediately — the working vendor URL began 301-ing to it — while no
+  certificate was ever issued (50 probes / 25 min, all `handshake_failure`);
+  `whitelabeled: false` says custom domains are a plan feature. The attempt
+  briefly broke the one URL that worked, which is why it was undone. The
+  remaining ~220 references to the dead hostname and the plan decision are
+  B-041. The other two claims are now stated as what they are, in a new "Not
+  yet available, and listed here rather than omitted" bucket. Applied to the three untranslated locale mirrors as well — the en-US
   build failed first and masked them, and the i18n gates were green over a
   section that has never been translated.
 

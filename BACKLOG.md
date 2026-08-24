@@ -1915,3 +1915,45 @@ verify-means: |
   SIGPIPE or shown, site by site, to be status-irrelevant.
 last-verified: 2026-08-24
 ```
+
+### B-041 — `status.corelink.humangr.com` is advertised in 224 places and serves nothing
+
+DNS has a correct, DNS-only CNAME `status.corelink.humangr.com → hugrl.betteruptime.com`.
+The vendor side was never bound: the Better Stack status page had `custom_domain: null`,
+so it rejects the SNI and every client gets a TLS `handshake_failure` (alert 40). The
+page itself is live at `https://hugrl.betteruptime.com` (HTTP 200, titled
+"Human Guardrail / CoreLink status"). The dead hostname appears **224 times** across
+`apps/docs/`, `specs/`, `docs/` and `legal/`, including the Trust Center's
+"verifiable by you, right now" list.
+
+**Attempted and reverted on 2026-08-24.** Setting `custom_domain` via the API succeeded
+and made the vanity host canonical immediately — `hugrl.betteruptime.com` began
+301-redirecting to it — but no certificate was ever issued (50 probes over 25 minutes,
+all `handshake_failure`). The page attribute `whitelabeled: false` is the likely cause:
+custom domains are a plan feature. Net effect of the attempt was to break the ONE URL
+that worked, so it was reverted and the vendor page is serving again. Do not re-apply
+the binding without first confirming the plan includes custom domains, or the status
+page goes dark the moment it is set.
+
+The Trust Center and its three locale mirrors now link to the working vendor URL rather
+than to a hostname that resolves and then fails. The remaining ~220 references still
+point at the dead host.
+
+**OWNER DECISION REQUIRED:** whether to pay for the Better Stack tier that includes a
+custom domain. If yes, bind it and sweep the references back. If no, sweep all 224
+references to the vendor URL and retire the CNAME so nothing advertises a host that
+cannot serve.
+
+```backlog
+id: B-041
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  ! curl -sS -o /dev/null --max-time 15 https://status.corelink.humangr.com/
+verify-means: |
+  open while the advertised status hostname cannot complete a TLS handshake. Goes red
+  once it serves — i.e. once the vendor binding exists — at which point the reference
+  sweep is the remaining work.
+last-verified: 2026-08-24
+```
