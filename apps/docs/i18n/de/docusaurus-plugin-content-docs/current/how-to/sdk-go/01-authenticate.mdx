@@ -13,6 +13,13 @@ tags: [sdk, go, auth, how-to]
 >
 > Canonical EN source: `docs/how-to/sdk-go/01-authenticate.mdx`
 
+:::caution Das Go-SDK ist noch nicht veröffentlicht
+`corelink-go` ist nicht veröffentlicht — es gibt weder ein installierbares
+Modul noch Go-Quellcode in diesem Repository. Der Rest dieser Seite
+beschreibt die geplante Schnittstelle. Um Interesse zu registrieren,
+kontaktieren Sie [support@humangr.com](mailto:support@humangr.com).
+:::
+
 # Authenticate the Go SDK
 
 ## When to use this guide
@@ -32,9 +39,7 @@ to construct a client without one.
   CGO_LDFLAGS="-L../target/release -lcorelink_go" go build ./...
   ```
 
-  `go get github.com/HumanGuardrail/corelink-go/v1` alone is not enough —
-  without the compiled `libcorelink_go` on the link path, the build fails at
-  the cgo step.
+  Es gibt kein Paket für `go get` — das SDK ist nicht veröffentlicht.
 - A CoreLink tenant; PAT minted at `https://humangr.com/corelink/en/customer/keys`.
 
 ## Construct the client

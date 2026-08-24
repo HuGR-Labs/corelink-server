@@ -65,14 +65,17 @@ a 30-day BYOK evaluation tenant.
 
 ## 6 — Which languages have official SDKs at GA?
 
-Four canonical SDKs ship at GA, all wrapping the single Rust
-`corelink-client-verify` truth (no per-language hash drift):
+Três SDKs canônicos são lançados na GA, todos envolvendo a mesma
+verdade única em Rust (`corelink-client-verify`, sem divergência de hash
+entre linguagens). O Go está planejado, mas ainda não foi lançado — não há
+pacote para instalar — contate
+[support@humangr.com](mailto:support@humangr.com) para registrar interesse:
 
 | Language | Package | FFI surface |
 | --- | --- | --- |
 | **Rust** | `corelink-client-verify` (crates.io) | native |
 | **Python** | `corelink-py` (PyPI) | PyO3 |
-| **Go** | `go.corelink.humangr.com/corelink-go` | cgo |
+| **Go** | not released | cgo (planned) |
 | **JS / TS / Browser** | `@corelink/client` (npm) | wasm-bindgen |
 
 ## 7 — Language SDK roadmap beyond GA?

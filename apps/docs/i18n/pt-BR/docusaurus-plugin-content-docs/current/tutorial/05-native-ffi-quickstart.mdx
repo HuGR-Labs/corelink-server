@@ -104,9 +104,10 @@ if __name__ == "__main__":
 
 ## Go — `corelink-go`
 
-```bash
-go get go.corelink.humangr.com/corelink-go@latest
-```
+`corelink-go` não é publicado — não há módulo instalável nem código-fonte
+Go neste repositório. O código abaixo ilustra a API planejada; não é
+algo que você pode obter com `go get` hoje. Para registrar interesse,
+contate [support@humangr.com](mailto:support@humangr.com).
 
 ```go
 package main
@@ -148,9 +149,9 @@ explicit error handling:
 ```go
 // CoreLink Go SDK quickstart — corelink-go.
 //
-// Requires:
+// Não publicado hoje; não há pacote para obter. Este arquivo
+// ilustra a API planejada. Uma vez lançado, exigiria:
 //
-//	go get github.com/HumanGuardrail/corelink-go/v1
 //	export CORELINK_PAT=<your-pat>
 //	cargo build --release -p corelink-go
 //	CGO_LDFLAGS="-L../../target/release -lcorelink_go" go run quickstart.go
