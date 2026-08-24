@@ -7,6 +7,13 @@
 #   - scripts/check_tla_obligations.py (stdlib only)
 #   - scripts/check_error_taxonomy.py  (stdlib only)
 #   - scripts/check_cost_regression.py (stdlib only)
+#   - the top-level pytest suites in tests/ (.github/workflows/python-tests.yml)
 
 jsonschema>=4.21.0,<5.0.0
 pyyaml>=6.0.0,<7.0.0
+# Test runner for tests/*.py. Pinned here rather than assumed present on the
+# runner: `python3 -m pytest` resolves against whatever interpreter happens to
+# be first on that box's PATH, and the two self-hosted fleets disagree — the
+# `corelink` Firecracker image's /usr/bin/python3 has no pytest at all. A gate
+# that depends on which machine picks up the job is not a gate.
+pytest>=9.0.0,<10.0.0
