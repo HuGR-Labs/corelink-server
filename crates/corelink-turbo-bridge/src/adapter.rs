@@ -434,14 +434,26 @@ mod tests {
         let (_, _, h) = fixture();
         let mk = |bytes: &[u8]| {
             TurboPutRequest::new(
-                "hash_keep", "team_x", "my-repo", bytes.to_vec(), None, "ci_runner", "team_x", 1,
+                "hash_keep",
+                "team_x",
+                "my-repo",
+                bytes.to_vec(),
+                None,
+                "ci_runner",
+                "team_x",
+                1,
             )
         };
         h.put(mk(b"original")).expect("first put");
         let _ = h.put(mk(b"attempted-overwrite")); // refused
         let got = h
             .get(TurboGetRequest::new(
-                "hash_keep", "team_x", "my-repo", "ci_runner", "team_x", 2,
+                "hash_keep",
+                "team_x",
+                "my-repo",
+                "ci_runner",
+                "team_x",
+                2,
             ))
             .expect("get");
         assert_eq!(
