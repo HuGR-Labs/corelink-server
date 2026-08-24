@@ -509,6 +509,39 @@ verify-means: |
 last-verified: 2026-08-24
 ```
 
+### B-021 — nothing notices if the audit archive stops advancing
+
+`audit-chain-daily-verify` proves that the chunks in `corelink-audit-weur`
+verify. It does not prove that everything sealed in D1 reached the bucket. A day
+with no chunks is a clean no-op (`AUDIT_CHAIN_VERIFY_OK: no input paths`,
+confirmed by running the verifier with no arguments), which is correct for a
+quiet day and indistinguishable from an archiver that died.
+
+So the offsite copy has a monitor for corruption and none for absence. If the
+erase key is rotated, the route stops mounting, or the sweep starts 500ing on
+one partition, `archived_at` simply stops advancing and the first symptom is a
+compliance question nobody can answer. Since B-020 the skip case at least warns
+in the Worker log, but no gate reads that log.
+
+What is missing is a lag check: `COUNT(*) WHERE emitted_at IS NOT NULL AND
+archived_at IS NULL` compared against a threshold, paging when the unarchived
+tail stops shrinking. It cannot be armed at a fixed threshold today — the
+56k-row historical backlog is still draining through the hourly sweep, so any
+useful threshold has to wait for convergence or be expressed as "not shrinking"
+rather than "not zero".
+
+```backlog
+id: B-021
+repo: corelink-server
+owner: tl
+status: open
+verify: "! grep -q 'archived_at IS NULL' .github/workflows/audit-chain-daily-verify.yml"
+verify-means: |
+  open while the daily verifier checks only the chunks it finds and never asks
+  D1 how many sealed rows never became a chunk.
+last-verified: 2026-08-24
+```
+
 ### B-011 — ~115 branches in corelink-runners have no open PR
 
 Large relative to the other two repos, which carry none. Needs a merged-vs-
