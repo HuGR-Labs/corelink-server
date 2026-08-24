@@ -12,6 +12,7 @@ package corelink
 
 import (
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -30,8 +31,8 @@ const (
 
 // Digest identifies content by hash and size. Hex is lower-case, 64 characters.
 type Digest struct {
-	Hex  string
-	Size int64
+	Hash      string
+	SizeBytes int64
 }
 
 // Config configures a Client. Endpoint and PAT are required; a PAT carries its
@@ -46,6 +47,14 @@ type Config struct {
 	HTTPClient *http.Client
 	Timeout    time.Duration
 	UserAgent  string
+
+	// ClientVerify re-hashes every blob the client reads before returning it,
+	// which is what stops a poisoned cache entry from reaching the caller. It
+	// defaults to true, so the zero value is the safe one; opting out needs
+	// ClientVerifyExplicitFalse, because a plain false is indistinguishable
+	// from "not set".
+	ClientVerify              bool
+	ClientVerifyExplicitFalse bool
 }
 
 // Option mutates a Config. NewClient applies options after the base Config.
@@ -56,14 +65,16 @@ func WithTenantID(id string) Option { return func(c *Config) { c.TenantID = id }
 
 // Client is a CoreLink client. It is safe for concurrent use.
 type Client struct {
+	mu   sync.RWMutex
 	cfg  Config
 	http *http.Client
 }
 
 // Stat reports what the CAS knows about a blob without transferring it.
 type Stat struct {
-	Exists bool
-	Size   int64
+	Exists    bool
+	Digest    string
+	SizeBytes int64
 }
 
 // ActionResult is a REAPI v2 action-cache entry.
