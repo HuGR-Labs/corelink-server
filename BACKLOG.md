@@ -1745,6 +1745,19 @@ happen again. The fix directions are a partition lease so two drains cannot over
 or moving the seal after the CAS so a loser writes nothing. Either is a real change
 to the integrity path and wants its own design pass, not a patch.
 
+**Design pass done, implementation awaiting review (2026-08-24):**
+`docs/design/2026-08-24-audit-drain-partition-lease.md`. It picks a per-partition
+drain **lease** (serialise drains) over seal-after-CAS (which breaks the
+sealed-tail crash-recovery invariant — analysed in the doc), keeping the existing
+seal→CAS→drift logic untouched (it is correct for a single writer; the lease
+supplies the single-writer precondition the byte-identity claim always needed).
+Specifies the additive `audit_drain_lease` migration, the atomic
+`ON CONFLICT … WHERE expires_ms < now` acquire, TTL/crash-recovery, and a
+validation plan that does not pretend the pure-function drain harness can prove
+D1 concurrency (a prod dup-sequence probe is the real proof). Left OPEN
+deliberately: this mutates the audit **integrity** path with no CI-provable test,
+so it is specified for review before it lands, not landed on a watch-and-see.
+
 ```backlog
 id: B-038
 repo: corelink-server
