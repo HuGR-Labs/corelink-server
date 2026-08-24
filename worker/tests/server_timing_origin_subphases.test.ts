@@ -290,6 +290,27 @@ describe("Server-Timing `origin` sub-phase attribution", () => {
     expect(st["total"]).toBeGreaterThanOrEqual(st["auth"]! + st["wdb"]! + st["origin"]!);
   });
 
+  it("omits qdo and qother by default (SERVER_TIMING_WDB_DETAIL unset) — byte-identical to before", async () => {
+    // `qdo`'s presence/absence is a confirmation oracle for whether a
+    // client-supplied `x-corelink-fanout-from` matched `CORELINK_INTERNAL_AUTH_KEY`
+    // (it only runs when `meter === true`, which is `!isFanout && ...`). It — and
+    // `qother`, which exists only to reconcile against it — must stay OFF unless an
+    // operator explicitly sets `SERVER_TIMING_WDB_DETAIL === "on"`. This test's env
+    // does not set the flag, matching what ships today.
+    const st = await splitOnce(
+      makeEnv({ containerTiming: "opat;dur=0, oquota;dur=0, ostore;dur=0, oother;dur=0" }),
+      await mintValidToken(),
+      "e",
+    );
+    expect(st, "qdo leaked into the default header — confirmation oracle reopened").not.toHaveProperty(
+      "qdo",
+    );
+    expect(st, "qother leaked into the default header").not.toHaveProperty("qother");
+    for (const p of ["auth", "wdb", "qtier", "qbatch", "qresid", "origin", "total"] as const) {
+      expect(st, `${p} vanished from the default (flag-off) Server-Timing`).toHaveProperty(p);
+    }
+  });
+
   describe("originSubPhases (the merge itself)", () => {
     it("parses a container header and derives the residue", () => {
       expect(originSubPhases(300, "opat;dur=97, oquota;dur=118, ostore;dur=1, oother;dur=4")).toEqual(
