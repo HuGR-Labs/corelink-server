@@ -143,7 +143,7 @@ jobs:
           # indexing lag could momentarily report total_count<=1 again).
           MARKER="<!-- welcome-first-timer -->"
           if gh "$KIND" view "$NUMBER" --repo "$REPO" --json comments \
-               --jq '.comments[].body' 2>/dev/null | grep -qF "$MARKER"; then
+               --jq '.comments[].body' 2>/dev/null | grep -F "$MARKER" >/dev/null; then
             echo "welcome already posted — skipping"
             exit 0
           fi

@@ -177,7 +177,7 @@ STAGE 1 — 5% canary
     - CF Workers Analytics: ${CF_ANALYTICS_URL}
     - Grafana DASH-SLO-API: ${REPO_ROOT}/${DASH_SLO_API} (uid: DASH-SLO-API)
     - Grafana DASH-SLO-AUDIT: ${REPO_ROOT}/${DASH_SLO_AUDIT} (uid: DASH-SLO-AUDIT)
-    - BetterStack page ${BETTERSTACK_PAGE_ID}: https://status.corelink.humangr.com
+    - BetterStack page ${BETTERSTACK_PAGE_ID}: https://hugrl.betteruptime.com
 
   PASS criteria:
     C1 Error rate within +0.5pp of baseline (CF Analytics + Grafana DASH-SLO-API)
@@ -306,7 +306,7 @@ print_monitoring_reminder() {
      → Audit chain write latency + error rate
 
   4. BetterStack page ${BETTERSTACK_PAGE_ID}:
-     https://status.corelink.humangr.com
+     https://hugrl.betteruptime.com
      → All 7 synthetic probes must remain GREEN
 
   5. Sentry: DEFERRED (auto-PASS until DSN is provisioned — Phase H)

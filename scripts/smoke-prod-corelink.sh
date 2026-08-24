@@ -29,19 +29,20 @@ set -euo pipefail
 API_BASE="https://corelink-api.humangr.com"
 DOCS_URL="https://corelink-docs.humangr.com"
 APP_URL="https://corelink-app.humangr.com"
-STATUS_URL="https://status.humangr.com"
-STATUS_CORELINK_URL="https://status.corelink.humangr.com"
+STATUS_PAGE_URL="https://hugrl.betteruptime.com"
 
 # DNS rows — flat-rename scheme (Wave 32 Phase H APPLY patch)
 # 4 deleted hosts (acme-dev, sandbox, go, staging) removed — surface reduction per flat-rename.
-# status.corelink.humangr.com retained as DNS-only Phase A record (BetterStack).
+# The status CNAME was RETIRED 2026-08-24 — it never completed a TLS handshake
+# (third-level name outside Universal SSL's one-level coverage, and BetterStack
+# needs a paid plan to accept a custom Host). The page is checked at the vendor
+# URL, which is the one customers are given.
 declare -A DNS_PLAN
 DNS_PLAN["corelink-api.humangr.com"]="corelink-prod.gustavoschneiter.workers.dev"
 DNS_PLAN["corelink-app.humangr.com"]="corelink-admin-ui.pages.dev"
 DNS_PLAN["corelink-docs.humangr.com"]="corelink-docs.pages.dev"
 DNS_PLAN["corelink-signup.humangr.com"]="corelink-prod.gustavoschneiter.workers.dev"
 DNS_PLAN["humangr.com"]="corelink-prod.gustavoschneiter.workers.dev"
-DNS_PLAN["status.corelink.humangr.com"]="hugrl.betteruptime.com"
 
 # Ordered list for deterministic output (6 active records; 4 deleted hosts removed)
 DNS_NAMES=(
@@ -50,7 +51,6 @@ DNS_NAMES=(
   "corelink-docs.humangr.com"
   "corelink-signup.humangr.com"
   "humangr.com"
-  "status.corelink.humangr.com"
 )
 
 TIMEOUT_CURL=15   # seconds per curl call
@@ -180,7 +180,7 @@ Check inventory:
   [11] dig corelink-docs.humangr.com      → corelink-docs.pages.dev
   [12] dig corelink-signup.humangr.com    → corelink-prod.gustavoschneiter.workers.dev
   [13] dig humangr.com     → corelink-prod.gustavoschneiter.workers.dev
-  [14] dig status.corelink.humangr.com    → hugrl.betteruptime.com (NO-OP — Phase A)
+  [14] (retired) the status CNAME no longer exists — see check [18]
   (acme-dev, sandbox, go, staging: DELETED in flat-rename surface reduction)
 
 (d) Audit chain end-to-end
@@ -189,8 +189,9 @@ Check inventory:
        → row present + chain_hash valid (non-empty hex string)
 
 (e) Status page
-  [17] GET  ${STATUS_URL}                 → expect 200
-  [18] GET  ${STATUS_CORELINK_URL}        → KNOWN EXCEPTION: 000 (BetterStack TLS not provisioned; operator must Enable SSL in BetterStack console for page 247652)
+  [17] GET  ${STATUS_PAGE_URL}            → expect 200
+  [18] GET  ${STATUS_PAGE_URL}            → 200 (this was a KNOWN-EXCEPTION 000 for as
+                                            long as the retired vanity host was probed)
 
 Total active checks: 18 (down from 22; 4 deleted hosts removed)
 Exit code will equal number of failures.
@@ -244,9 +245,9 @@ HDR_CT_1=$(curl -sS -D - -o /dev/null \
   | grep -i "^content-type:" | head -1 || echo "")
 printf '  health: HTTP %s\n' "$HEALTH_CODE"
 if [[ "$HEALTH_CODE" == "200" ]] \
-   && echo "$BODY" | grep -q '"status"' \
-   && echo "$BODY" | grep -q '"ok"' \
-   && echo "$HDR_CT_1" | grep -qi "application/json"; then
+   && echo "$BODY" | grep '"status"' >/dev/null \
+   && echo "$BODY" | grep '"ok"' >/dev/null \
+   && echo "$HDR_CT_1" | grep -i "application/json" >/dev/null; then
   pass "[1] /health → 200 + JSON + status:ok (extra fields ignored)"
   append_log "- [PASS] [1] /health → 200"
 else
@@ -261,7 +262,7 @@ HDR_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
 HDR_CT=$(curl -sS -D - -o /dev/null \
   --max-time "${TIMEOUT_CURL}" "${API_BASE}/_health" 2>/dev/null \
   | grep -i "^content-type:" | head -1 || echo "")
-if [[ "$HDR_CODE" == "200" ]] && echo "$HDR_CT" | grep -qi "application/json"; then
+if [[ "$HDR_CODE" == "200" ]] && echo "$HDR_CT" | grep -i "application/json" >/dev/null; then
   pass "[2] /_health → 200 + content-type: application/json"
   append_log "- [PASS] [2] /_health → 200 + JSON"
 else
@@ -335,7 +336,7 @@ step "Area (b): Pages deploys"
 log "CHECK [5] GET ${DOCS_URL}"
 DOCS_BODY=$(curl -sS --max-time "${TIMEOUT_CURL}" "${DOCS_URL}" 2>/dev/null || echo "")
 DOCS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time "${TIMEOUT_CURL}" "${DOCS_URL}" 2>/dev/null || true)
-if [[ "$DOCS_CODE" == "200" ]] && echo "$DOCS_BODY" | grep -qi "<html"; then
+if [[ "$DOCS_CODE" == "200" ]] && echo "$DOCS_BODY" | grep -i "<html" >/dev/null; then
   pass "[5] ${DOCS_URL} → 200 + HTML"
   append_log "- [PASS] [5] docs page → 200 + HTML"
 else
@@ -365,7 +366,7 @@ fi
 # [7] TLS chain — docs
 log "CHECK [7] TLS chain: corelink-docs.humangr.com"
 TLS_DOCS=$(tls_verify "corelink-docs.humangr.com")
-if echo "$TLS_DOCS" | grep -q "humangr.com"; then
+if echo "$TLS_DOCS" | grep "humangr.com" >/dev/null; then
   pass "[7] TLS corelink-docs.humangr.com — cert covers humangr.com"
   append_log "- [PASS] [7] TLS corelink-docs.humangr.com"
 else
@@ -376,7 +377,7 @@ fi
 # [8] TLS chain — app
 log "CHECK [8] TLS chain: corelink-app.humangr.com"
 TLS_APP=$(tls_verify "corelink-app.humangr.com")
-if echo "$TLS_APP" | grep -q "humangr.com"; then
+if echo "$TLS_APP" | grep "humangr.com" >/dev/null; then
   pass "[8] TLS corelink-app.humangr.com — cert covers humangr.com"
   append_log "- [PASS] [8] TLS corelink-app.humangr.com"
 else
@@ -404,22 +405,8 @@ for NAME in "${DNS_NAMES[@]}"; do
     fail "[${CHECK_NUM}] dig ${NAME} → NXDOMAIN (expected to resolve toward ${EXPECTED})"
     append_log "- [FAIL] [${CHECK_NUM}] DNS ${NAME} → NXDOMAIN"
   else
-    # Extra check: for DNS-only record (status), must resolve via hugrl.betteruptime.com CNAME.
-    # Use `dig CNAME +short` because `dig +short | tail -1` returns the final resolved IP
-    # (CF IPs from BetterStack's CDN), not the CNAME itself.  Ticket: smoke-check-14-cname-fix.
-    if [[ "$NAME" == "status.corelink.humangr.com" ]]; then
-      CNAME_TARGET=$(dig CNAME +short +time="${TIMEOUT_DNS}" "$NAME" 2>/dev/null | head -1 || echo "")
-      if echo "$CNAME_TARGET" | grep -q "betteruptime"; then
-        pass "[${CHECK_NUM}] dig CNAME ${NAME} → ${CNAME_TARGET} (DNS-only, BetterUptime)"
-        append_log "- [PASS] [${CHECK_NUM}] DNS ${NAME} → BetterUptime CNAME (${CNAME_TARGET})"
-      else
-        fail "[${CHECK_NUM}] dig CNAME ${NAME} → '${CNAME_TARGET}' (expected betteruptime CNAME; resolved=${RESOLVED})"
-        append_log "- [FAIL] [${CHECK_NUM}] DNS ${NAME} → CNAME='${CNAME_TARGET}' resolved=${RESOLVED}"
-      fi
-    else
-      pass "[${CHECK_NUM}] dig ${NAME} → ${RESOLVED} (resolved OK)"
-      append_log "- [PASS] [${CHECK_NUM}] DNS ${NAME} → ${RESOLVED}"
-    fi
+    pass "[${CHECK_NUM}] dig ${NAME} → ${RESOLVED} (resolved OK)"
+    append_log "- [PASS] [${CHECK_NUM}] DNS ${NAME} → ${RESOLVED}"
   fi
   CHECK_NUM=$(( CHECK_NUM + 1 ))
 done
@@ -468,9 +455,9 @@ else
     # Expect row present (request_id in response) + chain_hash is a non-empty hex string
     CHAIN_HASH=$(echo "$CHAIN_RESP" | grep -o '"chain_hash":"[^"]*"' | cut -d'"' -f4 || echo "")
     if [[ "$CHAIN_CODE" == "200" ]] \
-       && echo "$CHAIN_RESP" | grep -q "$REQUEST_ID" \
+       && echo "$CHAIN_RESP" | grep "$REQUEST_ID" >/dev/null \
        && [[ -n "$CHAIN_HASH" ]] \
-       && echo "$CHAIN_HASH" | grep -qE '^[0-9a-f]{16,}$'; then
+       && echo "$CHAIN_HASH" | grep -E '^[0-9a-f]{16,}$' >/dev/null; then
       pass "[20] audit chain → 200, row present, chain_hash=${CHAIN_HASH:0:16}..."
       append_log "- [PASS] [20] audit chain → 200 + hash valid"
     else
@@ -490,44 +477,31 @@ fi
 # ──────────────────────────────────────────────
 step "Area (e): Status page"
 
-# [21] status.humangr.com
-log "CHECK [21] GET ${STATUS_URL}"
+# [21] the status page, at the URL customers are actually given.
+#
+# This replaces TWO checks that were both aimed at hosts that do not exist:
+#   [21] https://status.humangr.com          — NXDOMAIN. No DNS record has ever
+#        been created for it, so a check demanding 200 could only ever fail.
+#   [22] https://status.corelink.humangr.com — a third-level name outside
+#        Universal SSL's one-level coverage, which BetterStack also refuses
+#        (custom domain is a paid-plan feature). It carried a KNOWN-EXCEPTION
+#        block since 2026-05-30 that downgraded the failure to a warning and
+#        told the operator to "click Enable SSL in the BetterStack console".
+#        There is no such click; it is a plan, not a toggle. The suppression
+#        outlived the reason it was written for, and the record was retired on
+#        2026-08-24 (owner decision: do not buy the plan).
+#
+# One host, one check, and it fails as a failure.
+log "CHECK [21] GET ${STATUS_PAGE_URL}"
 ST_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-  --max-time "${TIMEOUT_CURL}" "${STATUS_URL}" 2>/dev/null || true)
-printf '  status-main: HTTP %s\n' "$ST_CODE"
+  --max-time "${TIMEOUT_CURL}" "${STATUS_PAGE_URL}" 2>/dev/null || true)
+printf '  status-page: HTTP %s\n' "$ST_CODE"
 if [[ "$ST_CODE" == "200" ]]; then
-  pass "[21] ${STATUS_URL} → 200"
-  append_log "- [PASS] [21] ${STATUS_URL} → 200"
+  pass "[21] ${STATUS_PAGE_URL} → 200"
+  append_log "- [PASS] [21] ${STATUS_PAGE_URL} → 200"
 else
-  fail "[21] ${STATUS_URL} → HTTP=${ST_CODE} (expected 200)"
-  append_log "- [FAIL] [21] ${STATUS_URL} → HTTP=${ST_CODE}"
-fi
-
-# [22] status.corelink.humangr.com (Phase A custom domain)
-# KNOWN EXCEPTION: returns 000 due to TLS cert not issued for this 2-level subdomain.
-# Root cause (investigated 2026-05-30): BetterStack's CDN edge sees the domain (HTTP 80 → 301 works)
-# but has no TLS cert for status.corelink.humangr.com. ACME HTTP-01 is blocked (403) so auto-
-# provisioning never completes. BetterStack requires a manual "Enable SSL" click in their web
-# console (Settings → Custom domain) to issue the cert via Cloudflare for Platforms.
-# CF Universal SSL covers *.humangr.com only (1-level wildcard; Free plan — no Advanced certs).
-# Operator action required: BetterStack console → page 247652 → Settings → Custom domain → Enable SSL.
-# See: docs/operator/betterstack-state-2026-05-29.md § TLS Provisioning
-# Once operator clicks "Enable SSL" and curl returns 200, remove this KNOWN EXCEPTION block and
-# change the elif ["$SCL_CODE" == "000"] branch to: fail "[22] ... → 000 (expected 200)".
-# Documented exception per Wave 32 Phase H APPLY audit §6. NOT a failure until cert is issued.
-log "CHECK [22] GET ${STATUS_CORELINK_URL} (KNOWN EXCEPTION: 000 until operator enables SSL in BetterStack console)"
-SCL_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-  --max-time "${TIMEOUT_CURL}" "${STATUS_CORELINK_URL}" 2>/dev/null || true)
-printf '  status-corelink: HTTP %s\n' "$SCL_CODE"
-if [[ "$SCL_CODE" == "200" ]]; then
-  pass "[22] ${STATUS_CORELINK_URL} → 200"
-  append_log "- [PASS] [22] ${STATUS_CORELINK_URL} → 200"
-elif [[ "$SCL_CODE" == "000" ]]; then
-  warn "[22] ${STATUS_CORELINK_URL} → 000 (KNOWN EXCEPTION — BetterStack TLS not provisioned; operator must click 'Enable SSL' in BetterStack console for page 247652)"
-  append_log "- [KNOWN-EXCEPTION] [22] ${STATUS_CORELINK_URL} → 000 (BetterStack SSL not activated; operator action required)"
-else
-  fail "[22] ${STATUS_CORELINK_URL} → HTTP=${SCL_CODE} (unexpected; expected 200 or 000)"
-  append_log "- [FAIL] [22] ${STATUS_CORELINK_URL} → HTTP=${SCL_CODE}"
+  fail "[21] ${STATUS_PAGE_URL} → HTTP=${ST_CODE} (expected 200)"
+  append_log "- [FAIL] [21] ${STATUS_PAGE_URL} → HTTP=${ST_CODE}"
 fi
 
 # ──────────────────────────────────────────────

@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: shell-pipeline-safety
+
+# Refuses two shell defects that make a gate answer wrongly instead of failing.
+#
+# RULE 1 — no early-exiting boolean consumer on the right of a pipe.
+# `producer | grep -<quiet> P` under `set -o pipefail` inverts on match: the
+# quiet grep exits at the first hit, the producer takes SIGPIPE and exits 141,
+# pipefail reports the pipeline failed, and the caller reads "no match". It is
+# a race against the 64 KiB pipe buffer, so it is invisible on small inputs and
+# near-certain on large ones — measured 38/40 misreports on a 326-file diff.
+# Found because the changelog gate claimed a modified CHANGELOG.md was not
+# modified (PR #1271). Two other sites failed OPEN: the CTRL-CRED-001 scan of
+# `docker history` (a credential MATCH is what kills the producer, so the
+# control printed PASS) and okf-autoreconcile's out-of-tree edit guard.
+#
+# RULE 2 — every tracked shell script must parse (`bash -n`).
+# This is how `scripts/okf-reconcile-local.sh` was found dead on main: its
+# prompt was single-quoted and contained "file's anchor", so the apostrophe
+# closed the string and the rest of the prose was parsed as shell.
+#
+# The checker self-tests both directions before it is trusted; a gate that has
+# only ever been observed green proves nothing.
+#
+# Quality lane: STANDARD
+# Fail-closed: YES
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'tools/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'tools/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  shell-pipeline-safety:
+    name: pipelines cannot invert on match; every shell script parses
+    # Self-hosted fleet (zero hosted Actions spend). Pure stdlib python3 plus
+    # `bash -n`; sub-minute, no toolchain, no network.
+    runs-on: [self-hosted, mac, corelink-builder]
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Self-test the checker before trusting its verdict
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check_shell_pipeline_safety.py --self-test
+
+      - name: Enforce
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check_shell_pipeline_safety.py

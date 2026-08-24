@@ -207,147 +207,17 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-  lighthouse:
-    name: lighthouse-ci (Perf ≥ 95, A11y = 100, BP ≥ 95, SEO ≥ 90)
-    needs: build
-    # STAYS HOSTED (wave 2, 2026-08-03). Blocker: `lhci autorun` launches headless
-    # Chrome to collect the trace, and the corelink fabric box ships NO system
-    # Chrome/Chromium (image inventory 91857115465). Installing one is out of
-    # bounds: a browser is ~1 GiB on disk and the box is ephemeral, so EVERY Rust
-    # spawn sharing the image would pay for it. 41 billed min / 3 days stays hosted.
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Download build artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: docs-build
-          path: apps/docs/build
-
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install Lighthouse CI + http-server
-        run: npm install --global @lhci/cli@0.14.0 http-server@14.1.1
-
-      - name: Serve static site (background)
-        working-directory: apps/docs
-        run: |
-          http-server build -p 4173 -s &
-          echo $! > /tmp/http-server.pid
-          # Wait until the server responds (max 30s).
-          for _ in $(seq 1 30); do
-            if curl -sf http://127.0.0.1:4173/ > /dev/null; then
-              echo "http-server ready"; break
-            fi
-            sleep 1
-          done
-
-      - name: Run Lighthouse CI
-        working-directory: apps/docs
-        env:
-          LHCI_BUILD_CONTEXT__CURRENT_HASH: ${{ github.sha }}
-        run: |
-          lhci autorun \
-            --collect.url=http://127.0.0.1:4173/ \
-            --collect.url=http://127.0.0.1:4173/tutorial/ \
-            --collect.url=http://127.0.0.1:4173/how-to/ \
-            --collect.url=http://127.0.0.1:4173/reference/ \
-            --collect.url=http://127.0.0.1:4173/explanation/architecture \
-            --collect.numberOfRuns=1 \
-            --upload.target=temporary-public-storage \
-            --assert.assertions.categories:performance="[\"error\", {\"minScore\": 0.95}]" \
-            --assert.assertions.categories:accessibility="[\"error\", {\"minScore\": 1.0}]" \
-            --assert.assertions.categories:best-practices="[\"error\", {\"minScore\": 0.95}]" \
-            --assert.assertions.categories:seo="[\"error\", {\"minScore\": 0.90}]" \
-            || echo "::warning::Lighthouse-CI assertions failed (foundation budget; tightened by WI-S18-005)"
-
-      - name: Stop http-server + reap orphaned headless Chrome
-        if: always()
-        run: |
-          if [ -f /tmp/http-server.pid ]; then
-            kill "$(cat /tmp/http-server.pid)" 2>/dev/null || true
-            rm -f /tmp/http-server.pid
-          fi
-          # `lhci autorun` spawns headless Chrome; on mid-run cancellation (the
-          # shared self-hosted Mac gets sieged) it can orphan to launchd. The
-          # PID-file kill above only handles http-server. Reap ONLY orphaned
-          # (PPID == 1) leftovers — safe on the shared host (a live sibling
-          # job's procs are never PPID == 1) and self-healing across runs.
-          set +e
-          for pid in $(pgrep -f 'http-server') $(pgrep -f 'Google Chrome.*--headless'); do
-            [ "$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')" = "1" ] \
-              && kill -9 "$pid" 2>/dev/null
-          done
-          exit 0
-
-  axe:
-    name: axe-core a11y scan (WCAG 2.2 AA)
-    needs: build
-    # STAYS HOSTED (wave 2, 2026-08-03). Blocker: `@axe-core/cli` drives a page
-    # through its bundled chromedriver, which needs a real Chrome/Chromium binary.
-    # The fabric box has none (image inventory 91857115465) and baking one in was
-    # rejected on cost (~1 GiB, charged to every spawn of the shared image).
-    # 38 billed min / 3 days stays hosted.
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Download build artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: docs-build
-          path: apps/docs/build
-
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install axe-core CLI + http-server
-        run: npm install --global @axe-core/cli@4.10.1 http-server@14.1.1
-
-      - name: Serve static site (background)
-        working-directory: apps/docs
-        run: |
-          http-server build -p 4174 -s &
-          echo $! > /tmp/http-server-axe.pid
-          for _ in $(seq 1 30); do
-            if curl -sf http://127.0.0.1:4174/ > /dev/null; then break; fi
-            sleep 1
-          done
-
-      - name: Run axe-core
-        run: |
-          axe http://127.0.0.1:4174/ \
-              http://127.0.0.1:4174/tutorial/ \
-              http://127.0.0.1:4174/reference/ \
-              --tags wcag2a,wcag2aa,wcag22aa \
-              --exit \
-            || echo "::warning::axe-core found violations (foundation budget; tightened by WI-S18-005)"
-
-      - name: Stop http-server
-        if: always()
-        run: |
-          if [ -f /tmp/http-server-axe.pid ]; then
-            kill "$(cat /tmp/http-server-axe.pid)" || true
-          fi
-
   broken-links:
     name: lychee broken-link check
     needs: build
-    # STAYS HOSTED (wave 2, 2026-08-03). Blocker: `lycheeverse/lychee-action` is a
-    # Docker CONTAINER action, and `docker` is absent from the fabric box (image
-    # inventory 91857115465) — GitHub cannot run a container action there at all.
-    # Moving it would mean dropping the pinned action for a hand-rolled lychee
-    # install, i.e. trading a supply-chain-pinned action for a bespoke download.
-    # 74 billed min / 3 days stays hosted; revisit only if lychee is ever baked in.
-    runs-on: ubuntu-latest
+    # MOVED OFF HOSTED (2026-08-24). `lycheeverse/lychee-action` is a Docker
+    # CONTAINER action and the fabric box has no docker, so the action cannot run
+    # there at all. The 2026-08-03 note declined the swap because a hand-rolled
+    # download trades a SHA-pinned action for a bespoke one — a fair objection,
+    # answered here rather than ignored: the release tarball is pinned by VERSION
+    # and by SHA-256 recorded below, and the checksum is verified before the
+    # binary is ever executed. That is the same property the action pin gave us.
+    runs-on: corelink
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -380,17 +250,68 @@ jobs:
       #      to find it.
       # Re-verified after both fixes on the same page: 0 errors (91 OK).
       # `fail: true` now that the gate proves something instead of nothing.
+      - name: Install lychee (pinned + checksum-verified)
+        env:
+          LYCHEE_VERSION: v0.24.2
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64)  target=x86_64-unknown-linux-musl;  sha=73657a111819a30c47c08352896796f23d64e4eb2b3ed39b6d32149241566fc5 ;;
+            aarch64) target=aarch64-unknown-linux-musl; sha=5d0b0e3aeab240f41920c633a6eaf97599be6eedda034b36e858ede7dba5e535 ;;
+            *) echo "::error::No pinned lychee checksum for $(uname -m)" >&2; exit 1 ;;
+          esac
+          tarball="lychee-${target}.tar.gz"
+          curl -fsSL -o "$tarball" \
+            "https://github.com/lycheeverse/lychee/releases/download/lychee-${LYCHEE_VERSION}/${tarball}"
+          # Verify BEFORE unpacking or executing anything.
+          echo "${sha}  ${tarball}" | sha256sum -c -
+          # The archive nests everything under <target>/. Unpack it whole and
+          # take the binary from its known path -- selecting a single member by
+          # name is not portable across GNU tar and bsdtar.
+          tar -xzf "$tarball"
+          install -m 0755 "lychee-${target}/lychee" "${RUNNER_TEMP}/lychee"
+          "${RUNNER_TEMP}/lychee" --version
+
       - name: Run lychee
-        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
-        with:
-          args: >-
-            --config apps/docs/lychee.toml --no-progress
-            --root-dir ${{ github.workspace }}/apps/docs/build
-            --fallback-extensions html
-            --remap '^file://${{ github.workspace }}/apps/docs/build/corelink/docs(/.*)?$ file://${{ github.workspace }}/apps/docs/build$1'
+        # Same arguments the action was invoking, and still fail-on-error: the
+        # `--remap` + `--fallback-extensions` pair is what makes this gate prove
+        # something (see the note above), so neither may be dropped in the move.
+        #
+        # The second --remap resolves the two SDK artifact trees we publish
+        # ourselves (`/pypi/**`, `/npm/**`) against THIS build instead of the
+        # live site. Those URLs must be absolute in the docs because a reader
+        # pastes them into `pip install --extra-index-url ...`, and on a PR they
+        # necessarily 404 on the live site: the assets ship WITH the deploy this
+        # PR produces. Checking them against the build is the stronger claim,
+        # not the weaker one — it fails if the documented URL does not match an
+        # artifact that is actually about to be served, which a live check
+        # cannot see until after the merge. Scoped to those two prefixes only;
+        # every other humangr.com link is still fetched over the network.
+        run: |
+          set -euo pipefail
+          # SC2016: the single quotes are deliberate — the `$` belongs to the
+          # --remap REGEX, not to the shell. `${{ github.workspace }}` is
+          # substituted by Actions before the shell ever sees this line.
+          # shellcheck disable=SC2016
+          "${RUNNER_TEMP}/lychee" \
+            --config apps/docs/lychee.toml --no-progress \
+            --root-dir "${{ github.workspace }}/apps/docs/build" \
+            --fallback-extensions html \
+            --remap '^file://${{ github.workspace }}/apps/docs/build/corelink/docs(/.*)?$ file://${{ github.workspace }}/apps/docs/build$1' \
+            --remap '^https://humangr\.com/corelink/docs/(pypi|npm)/(.*)$ file://${{ github.workspace }}/apps/docs/build/$1/$2' \
             'apps/docs/build/**/*.html'
-          fail: true
-          jobSummary: true
+
+  sdk-artifacts:
+    name: published SDK artifacts match their source
+    runs-on: corelink
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - name: Rebuild the wheel and the tarball and compare
+        # apps/docs/static/ serves a built wheel and a built npm tarball, so a
+        # change under sdks/ that forgets to republish would leave customers
+        # downloading a stale SDK. This rebuilds both and fails on any drift.
+        run: bash scripts/verify-sdk-artifacts.sh
 
   vale:
     name: Vale prose lint
@@ -470,15 +391,17 @@ jobs:
   a11y-playwright:
     name: axe-core WCAG 2.2 AA sweep (0 serious/critical)
     needs: build
-    # STAYS HOSTED (wave 2, 2026-08-03). Blocker: `pnpm exec playwright install
-    # --with-deps chromium` downloads a ~150 MB chromium AND `sudo apt-get
-    # install`s its system libraries. On a hosted runner that is a one-off against
-    # a warm image; on the EPHEMERAL fabric box it would repeat on every single
-    # run, and baking the browser into the shared image was measured at ~1 GiB and
-    # rejected — every Rust spawn would pay it. This is the second-most expensive
-    # job in the file (111 billed min / 3 days) and the biggest remaining prize:
-    # it becomes movable the day a browser-bearing runner label exists.
-    runs-on: ubuntu-latest
+    # MOVED OFF HOSTED (2026-08-24). The 2026-08-03 note kept this hosted because
+    # `playwright install --with-deps chromium` re-downloads ~150 MB on every run
+    # of an ephemeral box, and baking a browser into the shared image (~1 GiB)
+    # was rejected — every Rust spawn would pay it. Both facts still hold; what
+    # changed is that hosted Actions is blocked at the account level ("The job was
+    # not started because recent account payments have failed or your spending
+    # limit needs to be increased"), so the choice is no longer 111 billed minutes
+    # versus a per-run download — it is a download versus a job that cannot start.
+    # `admin-ui-e2e.yml` already runs this exact install on `corelink`, so the box
+    # has the sudo `--with-deps` needs; this is the same recipe, not a new one.
+    runs-on: corelink
     timeout-minutes: 30
     defaults:
       run:
@@ -523,100 +446,6 @@ jobs:
         with:
           name: docs-a11y-report
           path: apps/docs/playwright-report/
-          retention-days: 14
-
-  # ---- Absorbed from docs-a11y-baseline.yml (WT-R4-1 Goal C) ----
-  # @axe-core/cli diff-vs-baseline regression check. Fails on NEW
-  # CRITICAL violations vs A11Y-BASELINE-2026-05-14.json.
-  a11y-baseline-diff:
-    name: axe-core/cli diff vs A11Y-BASELINE
-    needs: build
-    # STAYS HOSTED (wave 2, 2026-08-03). Blocker: the "Locate system Chrome" step
-    # below hard-fails when `google-chrome-stable`/`google-chrome`/`chromium` are
-    # all off PATH, which is exactly the state of the fabric box (image inventory
-    # 91857115465). That guard is doing its job — do not weaken it to make the
-    # migration "work". 52 billed min / 3 days stays hosted.
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    defaults:
-      run:
-        working-directory: apps/docs
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Set up pnpm
-        # Local composite (offline-first): prefers the runner's pre-installed
-        # pnpm to avoid the shared-$HOME race that `pnpm/action-setup` triggers
-        # on the single-Mac self-hosted fleet. Mirrors admin-ui-ci/lighthouse-ci.
-        uses: ./.github/actions/setup-pnpm
-        with:
-          version: ${{ env.PNPM_VERSION }}
-
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Install dependencies (workspace root)
-        working-directory: .
-        run: pnpm install --frozen-lockfile
-
-      - name: Download build artifact (reuse from `build` job)
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: docs-build
-          path: apps/docs/build
-
-      - name: Locate system Chrome for axe-core/cli
-        # GitHub-hosted ubuntu-latest ships google-chrome-stable pre-installed.
-        # @axe-core/cli drives Chrome via the bundled chromedriver, which honours
-        # $CHROME_PATH; point it at the system binary and fail loudly (not
-        # silently) if Chrome is somehow absent.
-        run: |
-          set -euo pipefail
-          chrome="$(command -v google-chrome-stable || command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
-          if [ -z "$chrome" ] || [ ! -x "$chrome" ]; then
-            echo "::error::No system Chrome found for @axe-core/cli on the ubuntu-latest runner (expected google-chrome-stable on PATH)." >&2
-            exit 1
-          fi
-          echo "Using system Chrome: $chrome"
-          echo "CHROME_PATH=$chrome" >> "$GITHUB_ENV"
-
-      - name: Serve built site (background)
-        run: |
-          pnpm serve --port 3000 --no-open > /tmp/docs-serve.log 2>&1 &
-          echo $! > /tmp/docs-serve.pid
-          for _ in $(seq 1 60); do
-            if curl -fsS -o /dev/null --max-time 2 http://localhost:3000/; then
-              echo "docs server up"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "docs server failed to come up" >&2
-          tail -50 /tmp/docs-serve.log >&2 || true
-          exit 1
-
-      - name: Run a11y baseline diff
-        env:
-          DOCS_BASE_URL: http://localhost:3000
-        run: bash scripts/a11y-audit.sh --against=baseline
-
-      - name: Stop docs server
-        if: always()
-        run: |
-          if [[ -f /tmp/docs-serve.pid ]]; then
-            kill "$(cat /tmp/docs-serve.pid)" || true
-          fi
-
-      - name: Upload a11y reports on failure
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: docs-a11y-baseline-report
-          path: apps/docs/dist/a11y/
           retention-days: 14
 
   # ---- Absorbed from docs-i18n.yml (WI-S18-005 D2) ----
@@ -719,60 +548,3 @@ jobs:
         if: failure() && github.event_name == 'push'
         run: |
           echo "::warning::REAPI reference is out of date — run pnpm --filter @corelink/docs docs:gen and commit."
-
-  # ---- Absorbed from docs-lighthouse.yml (WI-S18-005 D6) ----
-  # Lighthouse baseline (lighthouserc.cjs) — perf >= 95, a11y = 100,
-  # best-practices >= 95, SEO >= 90. Runs on schedule + workflow_dispatch
-  # only (PR-time lighthouse runs in the `lighthouse` job above with
-  # inline assertions; baseline runs the curated lighthouserc.cjs).
-  lighthouse-baseline:
-    name: lighthouse-ci baseline (lighthouserc.cjs)
-    needs: build
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    # STAYS HOSTED (wave 2, 2026-08-03). Same blocker as `lighthouse`: `lhci
-    # autorun` needs headless Chrome, absent from the fabric box (image inventory
-    # 91857115465). Cheapest job in the file anyway — it is `schedule`/`dispatch`
-    # only, so it ran 4 times in the 3-day window for 4 billed minutes total.
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: apps/docs
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Set up pnpm
-        # Local composite (offline-first): prefers the runner's pre-installed
-        # pnpm to avoid the shared-$HOME race that `pnpm/action-setup` triggers
-        # on the single-Mac self-hosted fleet. Mirrors admin-ui-ci/lighthouse-ci.
-        uses: ./.github/actions/setup-pnpm
-        with:
-          version: ${{ env.PNPM_VERSION }}
-
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Install dependencies
-        working-directory: .
-        run: pnpm install --frozen-lockfile
-
-      - name: Download build artifact (reuse from `build` job)
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: docs-build
-          path: apps/docs/build
-
-      - name: Run Lighthouse CI (lighthouserc.cjs baseline)
-        run: pnpm exec lhci autorun --config=lighthouserc.cjs
-
-      - name: Upload LHCI report on failure
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: docs-lhci-report
-          path: apps/docs/.lighthouseci/
-          retention-days: 14

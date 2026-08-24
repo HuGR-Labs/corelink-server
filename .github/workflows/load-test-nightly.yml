@@ -1,9 +1,23 @@
 name: load-test-nightly (R3-prep)
 
-# Pinned to [self-hosted, Linux, X64] — no Linux runner currently exists on the
-# fleet; converted to workflow_dispatch-only to stop perpetual queuing. Re-add
-# the nightly `schedule` once a Linux self-hosted runner is registered (these k6
-# suites are too heavy for the macOS builder fleet).
+# Runner: `corelink` (the Cloudflare container fabric — Ubuntu 24.04, apt
+# available, a datacenter IP). Previously pinned to a self-hosted Linux/X64
+# triple that NO runner on the fleet carries, so the job could never start
+# (B-029).
+# `corelink` is the correct home: this job is a load GENERATOR firing k6 at a
+# remote staging endpoint, so a stable datacenter uplink matters and the host's
+# own CPU does not — which is also why it was never suitable for the residential
+# macOS builder fleet.
+#
+# STILL dispatch-only, and the reason is now the TRUE one (B-029): there is no
+# staging environment to fire at. `staging.corelink.humangr.com` does not
+# resolve, and the `staging` GitHub environment carries none of the secrets this
+# suite reads (K6_TARGET_HOST, K6_STAGING_PAT, …). The pre-flight target-host
+# check below therefore fail-closes every run until staging exists. Standing up
+# a staging deployment (or retiring the staging-targeted suites) is an owner
+# cost decision — see docs/internal/2026-08-24-owner-decision-brief.md. Re-add
+# the nightly `schedule` in the SAME change that wires the staging secrets;
+# enabling it before then only manufactures a nightly red on missing infra.
 #
 # R3-prep load test suite — nightly run against staging.
 #
@@ -38,9 +52,10 @@ name: load-test-nightly (R3-prep)
 # SHA-pinned per ADR-S12-045 §6 tooling-pin policy.
 
 on:
-  # schedule disabled: pinned to [self-hosted, Linux, X64] but no Linux runner
-  # exists on the fleet, so the weekly cron queued forever. Re-add once a Linux
-  # self-hosted runner is registered:
+  # schedule disabled: the runner is fixed (now `corelink`), but there is no
+  # staging environment to load-test against — the pre-flight check fail-closes
+  # on the missing K6_TARGET_HOST secret every run. Re-add this cron in the SAME
+  # change that stands up staging and wires its secrets, never before:
   #   schedule:
   #     # Sundays 02:00 UTC — out of normal business + after the weekly
   #     # staging redeploy completes (Sat 22:00 UTC).
@@ -73,7 +88,7 @@ env:
 jobs:
   k6-staging:
     name: k6 load suite (staging)
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: corelink
     environment: staging        # binds the staging secrets scope
     timeout-minutes: 45
     strategy:
@@ -172,7 +187,7 @@ jobs:
 
   baseline-regression:
     name: baseline regression check (median ≤ +20% vs stored baseline)
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: corelink
     needs: k6-staging
     if: always()
     permissions:

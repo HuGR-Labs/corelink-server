@@ -22,6 +22,290 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Security
+
+- **Turborepo remote-cache PUT is now create-only (`put_if_absent`) — 409 on an
+  existing key (B-024).** Turborepo keys are opaque/client-chosen, not
+  content-addressed, so a `cas:rw` credential could previously REPLACE the bytes
+  behind its own tenant's existing keys — within-tenant cache poisoning the
+  content envelope cannot detect. The bridge now probes presence under the
+  per-`(tenant, team, hash)` write lock and refuses an overwrite. Proven safe
+  against the real `turbo` client (v2.10.11): it never re-PUTs an existing key in
+  normal operation and tolerates the 409 as a non-fatal warning (the build still
+  succeeds, the cache stays enabled) — unlike sccache's `.sccache_check`
+  self-disable. Evidence + method:
+  `docs/design/2026-08-24-turborepo-create-only-evidence.md`.
+
+### Removed
+
+- **The `status.corelink.humangr.com` CNAME is deleted, and the prod smoke's
+  status coverage turned out to be entirely fictional (B-041 closed).** The
+  record (`e785399235…`, CNAME → `hugrl.betteruptime.com`, DNS-only) is gone
+  from the Cloudflare zone; `dig` returns nothing and the real status page
+  still answers 200. Everything that defined or probed it moved in the same
+  change — the DNS plan/verify/apply scripts, the cutover checklist, rollback,
+  canary promotion and the prod smoke. Two findings came out of touching them:
+  the cutover checklist asked the operator to confirm *"Is
+  status.corelink.humangr.com reachable **and subscribable**?"*, where both
+  halves were false and the cutover shipped anyway; and the prod smoke had TWO
+  status checks aimed at hosts that do not exist — `status.humangr.com`, which
+  has no DNS record at all yet was required to return 200, and the retired
+  vanity host, whose failure was downgraded to a warning by a KNOWN-EXCEPTION
+  block written on 2026-05-30 telling the operator to "click Enable SSL in the
+  BetterStack console". There is no such click; a custom domain is a paid plan.
+  That suppression outlived its reason by three months. Both checks are
+  replaced by one check against the URL customers are actually given, and it
+  fails as a failure.
+
+- **`pre-cutover-weekly-cron` and its two scripts, retired rather than repaired
+  (B-004).** It verified readiness for a GA cutover that happened on 2026-07-10
+  and had been failing on a GitHub label that no longer exists. It was the last
+  of the 21 workflows switched off in the 2026-08-08 mass-disable; the other 20
+  were re-enabled and verified. `check_workflow_state.py` now treats a workflow
+  whose file is gone as needing no waiver — GitHub keeps listing a deleted
+  workflow as `disabled_manually` until the deletion reaches the default branch,
+  so the guard would otherwise demand a waiver for a file that does not exist.
+  B-004 stays open until GitHub stops listing it, which is a property of the
+  merge and not of this diff; closing it here would be claiming a state that
+  cannot exist yet.
+
+### Fixed
+
+- **The branded status hostname is retired, and the incident page it anchored
+  was wrong about almost everything it promised.** The owner decided not to buy
+  the BetterStack tier that includes a custom domain, so
+  `status.corelink.humangr.com` is no longer advertised: 39 customer-facing and
+  operational files now point at `https://hugrl.betteruptime.com`, the URL that
+  actually serves. Sealed audits, the CHANGELOG and dated reports are left
+  untouched as historical record; the two dated operator records get a
+  correction note appended rather than a body rewrite. Auditing the page while
+  repointing it turned up four separate false claims, all customer-facing and
+  all in four locales: the trust pages said the status page is **operated by
+  Atlassian Statuspage** (it is Better Stack); they listed **eight tracked
+  components** with per-region status (the page carries **two** — CoreLink API
+  Health and CoreLink Container Storage); they advertised **email, SMS, RSS and
+  webhook subscriptions** (the page reports `subscribable: false`); and they
+  published `history.rss` and `api/v2/summary.json` as monitoring endpoints
+  (Atlassian paths this vendor does not serve — both 301 to the homepage, so a
+  polling script would parse HTML forever and never report anything). The real
+  endpoint is `/index.json`, already used by the docs navbar pill. The same
+  paragraph was corrected in the sales FAQ. Also fixed at the vendor, for free:
+  the status page's own `company_url` and `contact_url` pointed at
+  `corelink.humangr.com`, itself dead for the same third-level TLS reason — a
+  customer clicking "contact" mid-incident reached nothing. They now point at
+  live URLs. Remaining and tracked, not swept: the provisioning runbooks and
+  DNS scripts still describe acquiring the branded domain, which is now a
+  decision NOT to do, and they need supersession banners rather than a
+  find-and-replace — a mechanical pass over them produced text like "CNAME
+  `hugrl.betteruptime.com` → `hugrl.betteruptime.com`" and was reverted.
+
+- **The TLC supply-chain pin broke for the third time; re-pinned with a
+  provenance chain, and the recurring cause is now a tracked item (B-040).**
+  Upstream re-cut the `v1.8.0` release asset on 2026-08-21T16:04:52Z, so the
+  pinned SHA-256 stopped matching and the gate refused to run — correctly. It
+  surfaced on the first PR to touch one of its trigger paths. This is the
+  **fifth pin value for one version tag** (`d5d07d5d` → `237332bd` →
+  `33de7da9` → `e22f8ffb` → `eabd140a`), and one earlier drift went unnoticed
+  for 195 runs while five TLA+ gates appeared scheduled and proved nothing.
+  Verified before re-pinning, per ADR-0042 §A1: the jar's embedded
+  `X-Git-Revision: 9787e657…` exists in `tlaplus/tlaplus`, tag `v1.8.0`
+  resolves to exactly that commit, the jar's `Build-TimeStamp` (15:59:22Z)
+  falls between that commit (15:45:47Z) and the asset upload (16:04:52Z), two
+  independent network paths produced byte-identical downloads, and the running
+  binary self-reports `TLC2 Version 2026.08.21.155922 (rev: 9787e65)` — the
+  same revision. Upstream now publishes a checksum table (the 2026-08-02
+  ceremony stated none existed); its `sha1sum` matches, recorded as
+  corroborating and **not** dispositive, since SHA-1 is not collision-resistant
+  and the release body is editable by whoever can replace the asset. The jar is
+  still unsigned, so origin authenticity remains unproven. **B-040** promotes
+  §A1's twice-restated "vendor the jar to storage we control" from a
+  recommendation to a tracked item: the pin guards a URL upstream overwrites,
+  so every re-cut looks exactly like a compromise and the standing pressure is
+  to just bump the number. Maven Central was checked and does not carry this
+  artifact, so no public immutable mirror exists.
+- **The cbindgen ABI-drift gate had been unrunnable, and its own comment
+  explained why it would stay that way.** `cbindgen-header-stable` was
+  deliberately left on `ubuntu-latest` in the 2026-08-03 migration wave, on the
+  argument that `cargo install cbindgen --locked` is a source build which only a
+  hosted runner caches, and that moving it would cost more than the
+  "~$0.20/3d of hosted time" it saved. Hosted Actions are payment-blocked, so
+  the job now fails in ~2 s with no steps and an empty runner name — the
+  billing-block signature — and blocks every PR touching that workflow. The
+  saving was never the point once the gate stopped running. The old note also
+  named the fix and its trap: use a prebuilt, but *check* that
+  `taiki-e/install-action` publishes a cbindgen manifest rather than assuming
+  it. Checked — it does not (`manifests/cbindgen.json` → 404), the same
+  outcome the note predicted for cargo-fuzz. So the prebuilt now comes from
+  upstream's own release, SHA-256 pinned per arch like every other tool this
+  repo installs, and the job moves to `corelink`. Pinned to 0.29.4, which is
+  what `cargo install cbindgen` resolves to today, so the generated header does
+  not move — and a future cbindgen release can no longer silently rewrite the
+  header this gate diffs against.
+- **81 pipelines could report "no match" while the match was right there
+  (B-039 opens the sibling class).** `producer | grep -<quiet> P` under
+  `set -o pipefail` inverts exactly on success: the quiet grep exits at the
+  first hit, the producer takes SIGPIPE and exits 141, pipefail marks the
+  pipeline failed, and the caller reads "not found". It is a race against the
+  64 KiB pipe buffer — invisible on small inputs, near-certain on large ones
+  (38 of 40 runs on a 326-file diff). Two sites failed OPEN rather than closed:
+  the CTRL-CRED-001 scan of `docker history` for `API_TOKEN` / `STRIPE_` /
+  `CLERK_`, where finding a credential is what kills the producer and the
+  control then prints PASS, and okf-autoreconcile's guard against an agent
+  editing outside `docs/knowledge`. All 81 sites are rewritten to
+  `... | grep P >/dev/null`, which has the same exit status and cannot
+  SIGPIPE, and the class is now banned by `check_shell_pipeline_safety.py` with
+  no allowlist — the checker assembles its own pattern from fragments so that
+  its source cannot match itself and need excusing. Proven in both directions
+  on the real repo: green on the swept tree, red when the defect is
+  reintroduced into `changelog-validate.yml`, green again on revert.
+- **`scripts/okf-reconcile-local.sh` could never have run.** Its prompt was a
+  single-quoted string containing the words "file's anchor"; the apostrophe
+  closed the string and the remaining prose was parsed as shell, so `bash -n`
+  rejected the whole file. Converted to a quoted heredoc, which prose cannot
+  break. Found by the second rule of the new gate, which runs `bash -n` over
+  every tracked shell script — 147 of them, and this was the only dead one.
+- **The trust page's "verifiable by you, right now" list was three-fifths
+  false, and the docs build proved it.** The section opens with "Compliance
+  docs can be theatre. We try hard to make ours falsifiable" and then listed
+  five proofs. `security.txt` (200 on humangr.com) and the audit-chain how-to
+  hold up. The other three did not: the SBOM link pointed at a page whose own
+  banner says the procurement path "is not yet contractually offered" (response
+  time TBD, signing-key URL `$TBD`); "Sigstore / Rekor provenance entries for
+  every binary" covers only the Worker OCI image, because the CLI release
+  workflow's signing step is literally named `[TODO v2] cosign sign
+  (placeholder)`; and the public status page answered a TLS `handshake_failure`
+  (alert 40) because `status.corelink.humangr.com` was CNAME'd to Better Stack
+  while Better Stack had `custom_domain: null` — a hostname advertised in 224
+  places across docs, specs and legal that no customer could load. The status
+  page is now linked at the URL that actually serves
+  (`https://hugrl.betteruptime.com`, HTTP 200) instead of a vanity hostname
+  that resolves and then fails: binding `custom_domain` at the vendor was
+  attempted and **reverted**, because it made the vanity host canonical
+  immediately — the working vendor URL began 301-ing to it — while no
+  certificate was ever issued (50 probes / 25 min, all `handshake_failure`);
+  `whitelabeled: false` says custom domains are a plan feature. The attempt
+  briefly broke the one URL that worked, which is why it was undone. The
+  remaining ~220 references to the dead hostname and the plan decision are
+  B-041. The other two claims are now stated as what they are, in a new "Not
+  yet available, and listed here rather than omitted" bucket. Applied to the three untranslated locale mirrors as well — the en-US
+  build failed first and masked them, and the i18n gates were green over a
+  section that has never been translated.
+
+- **The changelog gate reported "CHANGELOG.md is not modified" about a modified
+  CHANGELOG.md, and only on large PRs.** `git diff --name-only | grep -qx` under
+  `set -o pipefail` inverts on match: `grep -q` exits at the FIRST hit, `git
+  diff` takes SIGPIPE while still writing the remaining names and exits 141, and
+  pipefail reports the pipeline as failed — so the gate's `if !` fires the error
+  branch precisely when the file IS present. It is a race against the 64 KiB
+  pipe buffer, so it is invisible on small PRs and near-certain on large ones:
+  measured 38 of 40 runs misreporting on this PR's 326-file diff, 0 of 40 after
+  the fix. The check now asks git for the single path (`-- CHANGELOG.md`) and
+  tests for empty output, removing the pipe entirely. The same idiom appears at
+  two other sites where it fails OPEN rather than closed — the CTRL-CRED-001
+  credential scan of `docker history` and the okf-autoreconcile out-of-tree edit
+  guard — both tracked separately (B-039) because a security control deserves
+  its own review.
+
+- **Bazel can use its sandbox on the runner fabric again (B-025).** The runner
+  image shipped no `/dev/shm`, so every sandboxed action died with
+  `[unix_jni.cc:382] /dev/shm (No such file or directory)` — which reads like a
+  Bazel bug and is a missing mount. The entrypoint now provisions it
+  (corelink-runners #502), the image was rebuilt and the fabric repinned (#503),
+  and the example's `--spawn_strategy=local` workaround is **deleted** — the only
+  proof that counts, since the workaround would have masked a fix that did not
+  work. Sandboxed run 32761594353: `3 remote cache hit`, cold 14 866 ms, warm
+  20 882 ms.
+- **The Bazel starter pinned no Bazel version.** `bazelisk` resolved `latest`
+  over the network on every run; that lookup returned **401** from the runner and
+  the build died before Bazel started. Wrong shape regardless of the 401 — a new
+  Bazel release can change action keys and silently invalidate every cache entry
+  the example measures. Pinned to 9.2.0, read from the last green run's log.
+### Added
+
+- **The Python and JavaScript SDKs are now installable.** Every published
+  install command was fiction: `pip install corelink-py` 404s on PyPI,
+  `npm install @corelink/client` 404s on npm, and neither package was ever
+  published, so a paying customer could not install a client at all. Both
+  artifacts are now served from the docs domain, which is already public — a
+  PEP 503 static index at `/pypi/simple/` and the npm tarball at
+  `/npm/corelink-client-0.1.0.tgz` — and both were proven by installing them:
+  `pip show corelink-py` reports `0.1.0a1` and `import * as m from
+  "@corelink/client"` resolves. The documented flag is `--extra-index-url`,
+  not `--index-url`: the latter replaces PyPI entirely and the SDK's own
+  `blake3>=0.4` dependency then fails to resolve.
+
+### Changed
+
+- **The status-page provisioning playbooks are superseded, and the three
+  scripts that automate them now refuse to run.** ~3 100 lines across 11 files
+  describe standing up a status page on **Atlassian Statuspage** at a branded
+  `status.` hostname. Neither happened: the page runs on Better Stack, and the
+  branded hostname was retired on 2026-08-24 when the owner declined the paid
+  plan a custom domain requires. Following these documents would create an
+  account with a vendor we do not use and request a domain we are not buying.
+  They are banner-superseded rather than deleted because ~20 other documents
+  cite them, and deleting would trade one class of broken reference for
+  another. The distinction that matters: a document gets a banner, an
+  executable gets a guard. `statuspage-init-dressrun.sh`,
+  `admin/statuspage-bootstrap.sh` and `statuspage-init-verify.py` now exit 78
+  with the reason and the live URL unless `STATUSPAGE_PROVISIONING_REVIVED=1`
+  is set deliberately — a banner does not stop anyone from running a script.
+  All three proven in both directions.
+
+- **Three GitHub-hosted lanes moved onto the self-hosted fabric (B-005).**
+  `backup-daily` and `backup-daily-verify` ran **daily** on `ubuntu-latest` —
+  the largest recurring hosted spend left against a mandate of zero — and
+  `e2e-prod` fired on push, pull request *and* a daily cron. All three now run on
+  `corelink`, each proven by a real dispatched run on the new fabric rather than
+  assumed: `cf-runner-c3049583`, `cf-runner-6b63e79b`, `cf-runner-c0da6b18`.
+  None went to the Mac fleet: five runners share one `$HOME` and `npm install -g`
+  into a shared home is what took the host down on 2026-06-15.
+
+### Fixed
+
+- **B-005's own check was counting comments.** It grepped workflow *text* for
+  `pull_request`, so five workflows matched on prose explaining their triggers.
+  Parsed as YAML, only two hosted workflows ever had a real PR trigger. The
+  check now parses the trigger block, and the item names the four lanes that are
+  genuinely still hosted with the reason each has not moved yet.
+
+### Fixed
+
+- **The fifth Mac CI slot was gone, and could not have been restarted back
+  (B-030).** `corelink-builder-1` was registered in launchd and absent from
+  GitHub; the service restarted cleanly and the listener died seconds later with
+  *"The runner registration has been deleted from the server"* — GitHub
+  auto-removes a runner offline for ~14 days, after which the local config is
+  orphaned and no restart can recover it. Re-registered
+  (`svc.sh uninstall` → `config.sh remove --local` → `--replace` → reinstall);
+  five `corelink-builder` runners are now online. The fleet had been running at
+  4/5 and nothing said so.
+
+### Added
+
+- `scripts/check_runner_fleet.py` + the hourly `runner-fleet-health` workflow,
+  which runs on the **Cloudflare container fabric, not the Macs** — a health
+  check hosted on the thing it watches goes quiet exactly when it matters. It
+  catches a missing slot, the `busy=true`-with-no-jobs wedge, and a backed-up
+  queue. The slot census needs repository admin that `GITHUB_TOKEN` cannot hold,
+  so in CI it is disabled **explicitly** and announced on every run; without that
+  variable the script fails rather than silently running half of itself.
+
+### Added
+
+- **A workspace lint gate that actually runs (B-033).** `cargo clippy
+  --workspace --all-targets -- -D warnings` lived in exactly one workflow,
+  `cas_foundation.yml`, parked since 2026-08-10 with its cron commented out; its
+  last scheduled run was cancelled and every one before it, back through July,
+  failed. The stated compensation — that per-crate PR lanes cover it — does not
+  hold either: those lanes name **12** crates against **75** under `crates/`.
+  Measured before wiring anything: the workspace is **already clean**, zero
+  warnings under `-D warnings`, cold 8 m 20 s / warm 49 s on the fleet's own
+  hardware. So the gate starts green and exists to keep it that way. It runs on
+  merge to `main` and only when Rust changed — five runners share one machine,
+  and the crate-scoped lanes already cover what a PR touches; what nothing
+  covered was the crate nobody touched.
+
 ### Added
 
 - **The audit archiver makes partial progress instead of refusing a forked

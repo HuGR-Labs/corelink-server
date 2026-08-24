@@ -201,11 +201,11 @@ fetch_body() {
 # ---------------------------------------------------------------------------
 has_clerk_markers() {
   local body="$1"
-  if echo "${body}" | grep -qi "data-clerk-" \
-    || echo "${body}" | grep -qi "__clerk_frontend_api" \
-    || echo "${body}" | grep -qi "clerk-captcha" \
-    || echo "${body}" | grep -qi "ClerkProvider" \
-    || echo "${body}" | grep -qi "window\.Clerk"; then
+  if echo "${body}" | grep -i "data-clerk-" >/dev/null \
+    || echo "${body}" | grep -i "__clerk_frontend_api" >/dev/null \
+    || echo "${body}" | grep -i "clerk-captcha" >/dev/null \
+    || echo "${body}" | grep -i "ClerkProvider" >/dev/null \
+    || echo "${body}" | grep -i "window\.Clerk" >/dev/null; then
     return 0
   fi
   return 1
@@ -220,7 +220,7 @@ log "Fetching: ${BASE_URL}/"
 BODY_ROOT=$(fetch_body "${BASE_URL}/")
 CODE_ROOT=$(check_http_code "${BASE_URL}/")
 
-if [[ "${CODE_ROOT}" == "200" ]] && echo "${BODY_ROOT}" | grep -qi "<body"; then
+if [[ "${CODE_ROOT}" == "200" ]] && echo "${BODY_ROOT}" | grep -i "<body" >/dev/null; then
   pass "[1] ${BASE_URL}/ → HTTP ${CODE_ROOT} + HTML <body> present (admin-ui shell)"
 else
   fail "[1] ${BASE_URL}/ → HTTP ${CODE_ROOT} (expected 200 + HTML <body>)"
@@ -246,7 +246,7 @@ if [[ "${CODE_SIGNUP}" == "200" ]] && has_clerk_markers "${BODY_SIGNUP}"; then
 elif [[ "${CODE_SIGNUP}" == "200" ]]; then
   # 200 but no Clerk markers — warn rather than hard-fail (SSR might differ)
   # Still counts as pass if HTML is present (Clerk may load via JS hydration).
-  if echo "${BODY_SIGNUP}" | grep -qi "<html"; then
+  if echo "${BODY_SIGNUP}" | grep -i "<html" >/dev/null; then
     warn "[2] ${BASE_URL}/sign-up → HTTP ${CODE_SIGNUP} + HTML present but no static Clerk DOM"
     warn "     Clerk may load via client-side hydration — verify in browser."
     pass "[2] ${BASE_URL}/sign-up → HTTP ${CODE_SIGNUP} + HTML present (Clerk hydration assumed)"
@@ -271,7 +271,7 @@ CODE_SIGNIN=$(check_http_code "${BASE_URL}/sign-in")
 if [[ "${CODE_SIGNIN}" == "200" ]] && has_clerk_markers "${BODY_SIGNIN}"; then
   pass "[3] ${BASE_URL}/sign-in → HTTP ${CODE_SIGNIN} + Clerk widget DOM markers present"
 elif [[ "${CODE_SIGNIN}" == "200" ]]; then
-  if echo "${BODY_SIGNIN}" | grep -qi "<html"; then
+  if echo "${BODY_SIGNIN}" | grep -i "<html" >/dev/null; then
     warn "[3] ${BASE_URL}/sign-in → HTTP ${CODE_SIGNIN} + HTML present but no static Clerk DOM"
     warn "     Clerk may load via client-side hydration — verify in browser."
     pass "[3] ${BASE_URL}/sign-in → HTTP ${CODE_SIGNIN} + HTML present (Clerk hydration assumed)"
@@ -307,7 +307,7 @@ LOCATION_HEADER=$(echo "${HEADERS_WELCOME}" | grep -i "^location:" | head -1 | t
 if [[ "${CODE_WELCOME}" == "200" ]]; then
   pass "[4] ${BASE_URL}/en/welcome → HTTP 200"
 elif [[ "${CODE_WELCOME}" =~ ^30[1278]$ ]]; then
-  if echo "${LOCATION_HEADER}" | grep -qi "sign-in"; then
+  if echo "${LOCATION_HEADER}" | grep -i "sign-in" >/dev/null; then
     pass "[4] ${BASE_URL}/en/welcome → HTTP ${CODE_WELCOME} redirect to sign-in (${LOCATION_HEADER})"
   else
     pass "[4] ${BASE_URL}/en/welcome → HTTP ${CODE_WELCOME} redirect (${LOCATION_HEADER:-no Location header})"

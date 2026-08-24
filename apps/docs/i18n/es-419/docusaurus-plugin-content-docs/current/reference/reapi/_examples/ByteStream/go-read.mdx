@@ -12,7 +12,7 @@ sidebar_label: Go · Read
 
 # Go — `ByteStream.Read`
 
-## Code
+## Código
 
 ```go
 package main
@@ -20,7 +20,6 @@ package main
 import (
     "context"
     "fmt"
-    "io"
     "os"
 
     corelink "go.corelink.humangr.com/corelink-go"
@@ -28,33 +27,33 @@ import (
 
 func main() {
     ctx := context.Background()
-    client, _ := corelink.NewClient(ctx, corelink.Config{
+    client, _ := corelink.NewClient(corelink.Config{
         Endpoint: "https://corelink-api.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
+        Instance: "default",
     })
     defer client.Close()
 
     digest := corelink.Digest{Hash: "bdd9ea4a8e6b...", SizeBytes: 41943040}
-    rc, err := client.ByteStream.Read(ctx, digest)
+    out, err := os.Create("/tmp/big.bin")
     if err != nil { panic(err) }
-    defer rc.Close()
-    out, _ := os.Create("/tmp/big.bin")
     defer out.Close()
-    n, err := io.Copy(out, rc)
+
+    n, err := client.ByteStream().Read(ctx, digest, out)
     if err != nil { panic(err) }
     fmt.Printf("downloaded %d B\n", n)
 }
 ```
 
-## Expected output
+## Salida esperada
 
 ```text
 downloaded 41943040 B
 ```
 
-## Common errors
+## Errores comunes
 
-| Status | Error taxonomy | Cause |
-| --- | --- | --- |
-| `NOT_FOUND` | `COR_CAS_BLOB_MISSING` | Digest evicted or never written. |
-| `ABORTED` | `COR_CAS_DIGEST_MISMATCH` | Client-verify rejected. |
+| Tipo de error | Causa |
+| --- | --- |
+| `*corelink.NotFoundError` | El digest fue expulsado del caché o nunca se escribió. |
+| `*corelink.DigestMismatchError` | La verificación del lado del cliente rechazó los bytes transferidos. |

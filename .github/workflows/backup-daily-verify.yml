@@ -34,7 +34,15 @@ jobs:
     name: Verify backups (daily)
     # GitHub-hosted (Mac-free), matching cf-deploy-prod.yml. The live lane only
     # needs wrangler + jq + CF auth to list the backup R2 bucket.
-    runs-on: ubuntu-latest
+    # 2026-08-24 (B-005): moved off `ubuntu-latest`. This lane runs DAILY, so it
+    # was the largest recurring GitHub-hosted spend left in the repo, against a
+    # standing mandate of zero. `corelink` is the Cloudflare container fabric —
+    # Ubuntu 24.04 with node and pnpm baked, apt available — so the `sudo
+    # apt-get` and `npm install -g` steps below keep working unchanged. It was
+    # NOT moved to the Mac fleet: those five runners share one $HOME, and
+    # `npm install -g` into a shared home is the same class of mutation that
+    # took the host down on 2026-06-15.
+    runs-on: corelink
     environment: production
     timeout-minutes: 35
 

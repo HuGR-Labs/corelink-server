@@ -139,12 +139,15 @@ jobs:
               openapi/corelink-v1.yaml \
               --fail-on ERR \
               | tee /tmp/oasdiff-report.txt
-          echo "code=$?" >> "$GITHUB_OUTPUT"
+          # $? after a pipeline is tee's status, which is 0 whenever the write
+          # succeeds -- so reading it here discarded oasdiff's verdict and this
+          # gate could never fail. PIPESTATUS[0] is the scan's own exit code.
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Allow breaking change only with `breaking-api-ok` label
         if: steps.base.outputs.has_base == 'true' && steps.diff.outputs.code != '0'
         run: |
-          if echo "$PR_LABELS_JSON" | grep -q '"breaking-api-ok"'; then
+          if echo "$PR_LABELS_JSON" | grep '"breaking-api-ok"' >/dev/null; then
             echo "::warning::breaking API change accepted (label: breaking-api-ok)"
             exit 0
           fi

@@ -79,7 +79,7 @@ fi
 # for humans and must be free to change without breaking the gate.
 quarantined() {
   grep -oE '^\| `[a-z0-9_]+`' "$QUARANTINE_FILE" 2>/dev/null \
-    | tr -d '|` ' | grep -Fxq "$1"
+    | tr -d '|` ' | grep -Fx "$1" >/dev/null
 }
 
 pass=(); fail=(); quarantine_ok=(); quarantine_stale=()
@@ -140,7 +140,7 @@ for spec_dir in "${SPEC_DIRS[@]}"; do
   rc=$?
   dur=$(( $(date +%s) - start ))
 
-  if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q "Model checking completed. No error has been found"; then
+  if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep "Model checking completed. No error has been found" >/dev/null; then
     ok=true
   else
     ok=false

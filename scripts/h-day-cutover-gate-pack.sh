@@ -183,7 +183,7 @@ printf '\nStage 2 exit code: %d\n' "${EXTENSION_EXIT}"
 
 # Collect DEFERRED / DEPS-MISSING lines as YELLOW notes.
 while IFS= read -r line; do
-    if printf '%s' "${line}" | grep -qE '(DEFERRED|DEPS-MISSING)'; then
+    if printf '%s' "${line}" | grep -E '(DEFERRED|DEPS-MISSING)' >/dev/null; then
         NOTES+=("${line}")
     fi
 done <<< "${EXTENSION_OUTPUT}"

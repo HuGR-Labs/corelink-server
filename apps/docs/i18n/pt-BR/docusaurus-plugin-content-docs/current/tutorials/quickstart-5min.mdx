@@ -163,10 +163,8 @@ Essa linha `PASS` é o seu evento de ativação — um blob escrito e lido de vo
 CAS do CoreLink, verificado byte a byte na sua máquina.
 
 :::tip Automatize
-O script complementar `scripts/quickstart.sh` no repositório do CoreLink executa este
-exato roundtrip PUT/GET automaticamente e imprime um resumo do tempo de relógio. Veja
-[o código-fonte do script](https://github.com/HumanGuardrail/corelink-server/blob/main/scripts/quickstart.sh)
-como referência.
+O script complementar `scripts/quickstart.sh` executa este exato roundtrip
+PUT/GET automaticamente e imprime um resumo do tempo de relógio.
 :::
 
 ---
@@ -183,9 +181,14 @@ Você tem um PAT funcionando e um roundtrip verificado. Para onde ir a seguir:
 O CoreLink expõe um cache **Bazel REAPI v2** em
 `https://corelink-api.humangr.com/bazel/v2/<your-tenant-id>` (o esquema ByteStream
 `/bazel/v2/<tenant>/blobs/<hash>/<size>`). Aponte um cliente REAPI/ByteStream
-para ele, usando seu UUID de inquilino como o nome de instância REAPI — veja a
-configuração de referência versionada em
-[`apps/examples/bazel/.bazelrc`](https://github.com/HumanGuardrail/corelink-server/blob/main/apps/examples/bazel/.bazelrc).
+para ele, usando seu UUID de inquilino como o nome de instância REAPI:
+
+```ini
+build --remote_cache=https://corelink-api.humangr.com/bazel/v2
+build --remote_instance_name=${CORELINK_TENANT}
+build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --remote_upload_local_results=true
+```
 
 :::note O `bazel --remote_cache` padrão também funciona
 O alias plain-HTTP `https://corelink-api.humangr.com/bazel/cache` está **ativo**:

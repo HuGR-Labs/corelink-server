@@ -220,15 +220,47 @@ impl TurboArtifactHandler for CasAdapterTurboHandler {
 
         // Storage: tenant dimension is the authenticated `caller_tenant`; the
         // key carries `team_id` as a sub-namespace so two teams under one tenant
-        // stay partitioned. `prior_len` is `Some(n)` on an overwrite (the route
-        // releases `n` to reconcile the byte delta), `None` on a fresh insert.
+        // stay partitioned.
+        let storage_key = format!("{}/{}", req.team_id, req.hash);
+
+        // Create-only / `put_if_absent` (BACKLOG B-024). Turborepo keys are
+        // opaque/client-chosen, NOT content-addressed, so a `cas:rw` credential
+        // could otherwise REPLACE the bytes behind its own tenant's existing
+        // keys — silent within-tenant cache poisoning the content envelope
+        // cannot detect (the key is not a preimage of the bytes). Refuse an
+        // overwrite: probe presence and 409 if the key already exists.
+        //
+        // Proven safe against the REAL turbo client (B-024 experiment,
+        // `docs/design/2026-08-24-turborepo-create-only-evidence.md`): turbo
+        // never re-PUTs an existing key in normal operation — it GETs first and
+        // uploads only on a miss — and tolerates a 409 as a NON-FATAL warning
+        // (the build still succeeds and the cache is not disabled), unlike
+        // sccache's `.sccache_check` self-disable.
+        //
+        // Atomicity: the route holds a per-(tenant, team, hash) write lock
+        // across this whole `put`, so this probe→refuse-or-write is serialized
+        // per stored object. A probe BACKEND error fails OPEN (proceed to
+        // write) so a transient R2 error never blocks a legitimate first insert;
+        // only a CONFIRMED existing key is refused — the same conservative
+        // direction the byte-accounting probe already takes.
+        match self.reader.read(&req.caller_tenant, &storage_key) {
+            Ok(_) => {
+                return Err(TurboBridgeError::AlreadyExists {
+                    hash: req.hash.clone(),
+                });
+            }
+            Err(TurboBridgeError::NotFound { .. }) => { /* fresh key — proceed */ }
+            Err(_) => { /* probe backend error — fail OPEN, proceed to write */ }
+        }
+
+        // `prior_len` is `Some(n)` only on the (now create-only-guarded)
+        // overwrite path; a fresh insert reports `None`. Kept intact so the
+        // route's byte-delta reconciliation stays correct if create-only is
+        // ever relaxed, and as defense-in-depth against a probe that failed OPEN
+        // above racing a concurrent first insert.
         let prior_len = self
             .writer
-            .write(
-                &req.caller_tenant,
-                &format!("{}/{}", req.team_id, req.hash),
-                req.bytes,
-            )
+            .write(&req.caller_tenant, &storage_key, req.bytes)
             .map_err(|e| TurboBridgeError::Internal(e.to_string()))?;
 
         // PutCommitted AFTER durable store.
@@ -356,13 +388,16 @@ mod tests {
         assert_eq!(resp.bytes, data);
     }
 
-    /// rt34 finding #3/#4/#5/#6: the FIRST PUT of a key is a fresh insert
+    /// B-024: the FIRST PUT of a key is a fresh, durable insert
     /// (`prior_len == None`, `durable == true`); a re-PUT of the SAME
-    /// (tenant, team, hash) reports the PRIOR byte length
-    /// (`prior_len == Some(prev_len)`, `durable == false`), so the route can
-    /// release exactly the prior charge and net the true on-disk delta.
+    /// (tenant, team, hash) is now REFUSED create-only with `AlreadyExists`
+    /// rather than overwriting the existing bytes. This is what closes the
+    /// within-tenant cache-poisoning residual (a `cas:rw` credential could
+    /// otherwise replace the bytes behind its own tenant's key). The real turbo
+    /// client never re-PUTs an existing key in normal operation and tolerates
+    /// the resulting 409 as a non-fatal warning (see the B-024 evidence doc).
     #[test]
-    fn adapter_put_reports_durable_then_overwrite() {
+    fn adapter_put_is_create_only_on_existing_key() {
         let (_, _, h) = fixture();
         let mk = |bytes: &[u8]| {
             TurboPutRequest::new(
@@ -382,16 +417,48 @@ mod tests {
             "first PUT of a fresh key must be durable=true"
         );
         assert_eq!(first.prior_len, None, "fresh insert has no prior");
-        // Overwrite with a DIFFERENT size to prove prior_len reports the OLD len.
-        let second = h.put(mk(b"longer-bytes-here")).expect("second put");
+        // A second PUT to the SAME key is refused create-only — the existing
+        // bytes are NOT overwritten.
+        let second = h.put(mk(b"longer-bytes-here"));
         assert!(
-            !second.durable,
-            "an overwrite must report durable=false (derived from prior_len)"
+            matches!(second, Err(TurboBridgeError::AlreadyExists { ref hash }) if hash == "hash_dup"),
+            "a re-PUT of an existing key must be refused with AlreadyExists, got {second:?}"
         );
+    }
+
+    /// The original bytes survive a refused overwrite — create-only never
+    /// mutates the stored object, so a subsequent GET still returns the FIRST
+    /// write's bytes.
+    #[test]
+    fn adapter_create_only_preserves_original_bytes() {
+        let (_, _, h) = fixture();
+        let mk = |bytes: &[u8]| {
+            TurboPutRequest::new(
+                "hash_keep",
+                "team_x",
+                "my-repo",
+                bytes.to_vec(),
+                None,
+                "ci_runner",
+                "team_x",
+                1,
+            )
+        };
+        h.put(mk(b"original")).expect("first put");
+        let _ = h.put(mk(b"attempted-overwrite")); // refused
+        let got = h
+            .get(TurboGetRequest::new(
+                "hash_keep",
+                "team_x",
+                "my-repo",
+                "ci_runner",
+                "team_x",
+                2,
+            ))
+            .expect("get");
         assert_eq!(
-            second.prior_len,
-            Some(10),
-            "overwrite must report the PRIOR object's byte length (10)"
+            got.bytes, b"original",
+            "a refused overwrite must leave the original bytes intact"
         );
     }
 

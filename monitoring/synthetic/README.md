@@ -5,7 +5,7 @@
 This directory contains the BetterStack synthetic monitoring probe definitions for all CoreLink production endpoints. Probes are defined declaratively in `probes.yml` and applied via `scripts/apply-betterstack-probes.sh`.
 
 **BetterStack status page ID:** `247652`
-**Custom domain:** `https://status.corelink.humangr.com`
+**Custom domain:** `https://hugrl.betteruptime.com`
 
 ---
 

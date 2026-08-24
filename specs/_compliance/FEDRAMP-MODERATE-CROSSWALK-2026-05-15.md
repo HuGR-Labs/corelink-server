@@ -88,7 +88,7 @@ tags:
 
 | NIST family × ctrl set | Representative controls (Moderate baseline) | SOC 2 CC overlap | Our CTRL ID | Status |
 |---|---|---|---|---|
-| AU (Audit & Accountability) — ~12 controls in Moderate | AU-2 Event Logging · AU-3 Content of Audit Records · AU-4 Storage Capacity · AU-5 Response to Audit Failure · AU-6 Review/Analysis · AU-7 Reduction/Reporting · AU-8 Time Stamps · AU-9 Protection of Audit Info · AU-11 Audit Retention · AU-12 Audit Generation | CC2.1 · CC4.1 · CC7.2 · PI1.2 · PI1.5 | CTRL-AUDIT-001..005 · CTRL-META-001 · INV-AUDIT-APPEND-ONLY · INV-OBS-AUDIT-CHAIN-INTEGRITY | **Coverage** (Merkle audit chain + R2 Object Lock + 7y retention + RFC 6962 inclusion proofs exceed Moderate baseline) |
+| AU (Audit & Accountability) — ~12 controls in Moderate | AU-2 Event Logging · AU-3 Content of Audit Records · AU-4 Storage Capacity · AU-5 Response to Audit Failure · AU-6 Review/Analysis · AU-7 Reduction/Reporting · AU-8 Time Stamps · AU-9 Protection of Audit Info · AU-11 Audit Retention · AU-12 Audit Generation | CC2.1 · CC4.1 · CC7.2 · PI1.2 · PI1.5 | CTRL-AUDIT-001..005 · CTRL-META-001 · INV-AUDIT-APPEND-ONLY · INV-OBS-AUDIT-CHAIN-INTEGRITY | **Partial** (the hash chain and inclusion proofs are live; the durable R2 sink and 7-year Object Lock retention that AU-4 and AU-11 need are deferred) |
 
 ### 2.4 CA — Assessment, Authorization, and Monitoring
 
@@ -190,7 +190,7 @@ tags:
 |---|---|---:|---|---|
 | 1 | AC — Access Control | 25 | Coverage | yes |
 | 2 | AT — Awareness & Training | 4 | Partial | yes (formality gap) |
-| 3 | AU — Audit & Accountability | 12 | Coverage | yes (exceeds) |
+| 3 | AU — Audit & Accountability | 12 | Partial | no — hash chain is live, durable R2 sink + Object Lock retention deferred |
 | 4 | CA — Assessment, Authorization & Monitoring | 9 | Partial | yes (CA-6 ATO Not-in-Scope) |
 | 5 | CM — Configuration Management | 11 | Coverage | yes (exceeds) |
 | 6 | CP — Contingency Planning | 9 | Partial | yes (drill cycle pending) |
@@ -220,8 +220,8 @@ tags:
 
 | Bucket | Family count | Estimated control coverage |
 |---|---:|---:|
-| **Coverage** (full substance via SOC 2 + ISO 27001 + CTRL-*) | 10 / 18 | ~165 / 215 = **76.7%** |
-| **Partial** (substance present; formality / FedRAMP-unique evidence gap) | 7 / 18 | ~42 / 215 = **19.5%** |
+| **Coverage** (full substance via SOC 2 + ISO 27001 + CTRL-*) | 9 / 18 | ~153 / 215 = **71.2%** |
+| **Partial** (substance present; formality / FedRAMP-unique evidence gap) | 8 / 18 | ~54 / 215 = **25.1%** |
 | **Not-in-Scope** (PS family — US-citizen personnel screening) | 1 / 18 | ~8 / 215 = **3.7%** |
 | **Gap** (no equivalent control) | 0 / 18 | 0% |
 

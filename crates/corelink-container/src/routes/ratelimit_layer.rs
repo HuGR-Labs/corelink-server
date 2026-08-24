@@ -507,7 +507,16 @@ pub async fn rate_limit_layer(
     let now_ms = state.clock.now_ms();
     // F-017: apply the tenant's real tier ladder before charging the bucket
     // (no-op when no resolver is wired or the tier is unresolvable).
-    state.ensure_tier_applied(raw_tenant, tenant, now_ms).await;
+    // `ortier`: the one D1 round trip in here (`resolve_tier_label`) is timed
+    // the same way `opat`/`oquota`/`ostore` already are — wrap the single
+    // awaited future, no restructuring of `ensure_tier_applied` itself. It is
+    // called directly on this task (no `tokio::spawn`), so the ambient
+    // task-local ledger is visible without a captured handle.
+    crate::origin_timing::timed(
+        crate::origin_timing::Phase::Tier,
+        state.ensure_tier_applied(raw_tenant, tenant, now_ms),
+    )
+    .await;
     let bucket_key = BucketKey::per_tenant(tenant);
 
     match state

@@ -14,7 +14,7 @@ source_files:
   - "crates/corelink-container/src/usage_meter.rs"
   - "crates/corelink-ratelimit/src/audit.rs"
   - "crates/corelink-ratelimit/src/metrics.rs"
-checkpoint_sha: "94bbcd5eb6cf97bf962cdc3bffe8bd58eac30c4b"
+checkpoint_sha: "eb9e3dbbdac32494072695e684a0ffb6fa52c585"
 provenance: "AUTHORED"
 tags: ["tenancy", "governance", "rate-limit", "customer", "users", "fail-closed"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -66,7 +66,7 @@ self-service plane. It rests on the same trusted tenant id established by
   on the repo/realm parsed from the path — and the two scopes reachable with no credential at all (`_token`,
   the Basic→Bearer exchange, and `_v2root`, the `/v2` version-check ping) additionally partition on the
   server-trusted client IP, because the scope literal alone is a constant and therefore gave the whole
-  internet ONE bucket per scope (`crates/corelink-container/src/routes/ratelimit_layer.rs:627-641`). The
+  internet ONE bucket per scope (`crates/corelink-container/src/routes/ratelimit_layer.rs:636-650`). The
   credential-gated per-repo scopes keep their per-repo keying.
 - The customer router exposes the self-serve surface — overview, usage, audit, billing, keys, team — under
   `/v1/customer/*` (`crates/corelink-container/src/routes/customer.rs:206`).
@@ -163,4 +163,4 @@ self-service plane. It rests on the same trusted tenant id established by
 21. `crates/corelink-container/src/oci_suspend.rs:85-86` — `state_denies`: only the terminal `suspended`/`erased` offboarding states deny on the OCI plane (grace/export windows keep access).
 22. `crates/corelink-container/src/oci_suspend.rs:250-283` — `CachedSuspendResolver::suspended_state`: single-flight + TTL cache with the fail-CLOSED sticky read-error fold (known-suspended stays denied through a D1 fault; unknown fails OPEN).
 23. `crates/corelink-container/src/routes/customer_export.rs:216-240` — `build_export_stream`: assembles the `/v1/customer/export` tenant self-service data-export (portability) bundle; `from_handlers_and_env` (`crates/corelink-container/src/routes/customer_export.rs:522`) builds the router's `export` collaborator from env.
-24. `crates/corelink-container/src/routes/ratelimit_layer.rs:627-641` — `oci_bucket_key`: the OCI velocity-gate key. Credential-gated per-repo scopes key on the repo name verbatim; the two credential-FREE synthetic scopes (`_token`, `_v2root`) fold in the server-trusted `x-corelink-client-ip`, with absent/empty collapsing to one dedicated `_no_ip` partition that is disjoint from every real per-IP bucket.
+24. `crates/corelink-container/src/routes/ratelimit_layer.rs:636-650` — `oci_bucket_key`: the OCI velocity-gate key. Credential-gated per-repo scopes key on the repo name verbatim; the two credential-FREE synthetic scopes (`_token`, `_v2root`) fold in the server-trusted `x-corelink-client-ip`, with absent/empty collapsing to one dedicated `_no_ip` partition that is disjoint from every real per-IP bucket.

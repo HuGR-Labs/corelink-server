@@ -24,7 +24,7 @@ import { DraftBanner } from "../../../src/components/DraftBanner";
 
 # Your GDPR rights at CoreLink
 
-> **DRAFT — pending Legal + DPO review.** Technical claims below are accurate as of 2026-05-15 and pinned to commit `de84b9d`. The companion compliance docs (`GDPR-FULL-AUDIT-2026-05-15.md`, `GDPR-SCC-EXECUTION-2026-05-15.md`, `GDPR-DPIA-LIBRARY.md`) are the source of truth; this page is the customer-facing summary. The sister page [LGPD rights](/privacy/lgpd-full) covers the parallel Brazilian regime; both regimes share most of the underlying machinery.
+> **DRAFT — pending Legal + DPO review.** Technical claims below are accurate as of May 15, 2026 and pinned to commit `de84b9d`. The companion compliance docs (`GDPR-FULL-AUDIT-2026-05-15.md`, `GDPR-SCC-EXECUTION-2026-05-15.md`, `GDPR-DPIA-LIBRARY.md`) are the source of truth; this page is the customer-facing summary. The sister page [LGPD rights](/privacy/lgpd-full) covers the parallel Brazilian regime; both regimes share most of the underlying machinery.
 
 CoreLink is a Brazilian company building infrastructure used by European
 developers, ML teams, and EU enterprises. Because we offer services to
@@ -46,11 +46,11 @@ Rectification) so nobody can hijack your account to delete your data.
 | **Art. 16** | Right to rectification | 5 business days | `POST /v1/privacy/dsr/rectification` (MFA required) |
 | **Art. 17** | Right to erasure ("right to be forgotten") | 30 calendar days | `POST /v1/privacy/dsr/erasure` (MFA required) |
 | **Art. 18** | Right to restriction of processing | 5 business days | `POST /v1/privacy/dsr/restriction` |
-| **Art. 19** | Notification of rectification/erasure/restriction to recipients | Automatic — same SLA as the triggering right | Triggered by Art. 16/17/18 endpoints; recipient manifest in your audit |
+| **Art. 19** | Notification of rectification/erasure/restriction to recipients | Automatic — same SLA as the triggering right | Triggered by Art. 16, 17, and 18 endpoints; recipient manifest in your audit |
 | **Art. 20** | Right to data portability | 15 business days | `POST /v1/privacy/dsr/portability` |
-| **Art. 21** | Right to object | 15 business days (Art. 21(1)) / **immediate** for direct marketing (Art. 21(2)) | `POST /v1/privacy/dsr/objection` + `DELETE /v1/consent/marketing_email` |
+| **Art. 21** | Right to object | 15 business days (Art. 21(1)) / **immediate** for direct marketing (Art. 21(2)) | `POST /v1/privacy/dsr/objection` |
 | **Art. 22** | Right not to be subject to automated decisions with legal/significant effect | N/A — **we do not run Art. 22 processing** (see §7) | — |
-| **Art. 7(3)** | Right to withdraw consent (as easy as giving) | ≤ 5 minutes | `DELETE /v1/consent/<purpose>` |
+| **Art. 7(3)** | Right to withdraw consent (as easy as giving) | 5 business days | email `privacy@humangr.com` — the self-service endpoint is not available yet |
 
 If you prefer email, write to `privacy@hugr.com`. Our DPO will process
 your request through the same pipeline with the same SLA. The clock
@@ -72,7 +72,7 @@ a content-addressable hash of those bytes (the digest), some metadata
 (size, timestamp, your tenant ID as a random UUID), and an audit record
 that says "this tenant uploaded this digest at this time" — **but we do
 not look at the content of your blobs**. When your blob contains personal
-data of someone else (e.g., your customers' info embedded in a dataset),
+data of someone else (for example, your customers' info embedded in a dataset),
 **you are the controller and we are the processor** under our DPA
 (Art. 28). We do not read or repurpose your data.
 
@@ -138,22 +138,45 @@ judicial remedy.
 
 ## 5. The deletion ("erasure") in detail
 
-When you exercise Art. 17, the erasure pipeline propagates across **12
-backends** in a canonical order. Eight are **effectively erased** (rows
-hard-deleted); four are **pseudonymised retention** — the data is kept
-because we are legally required to keep it (audit logs, billing records,
-point-in-time backups, compliance evidence), but your identity is
-replaced with a one-way HKDF hash so we cannot re-identify you.
+When you exercise Art. 17, the erasure orchestrator evaluates a canonical
+list of 12 backend kinds. Only **4 have a real, shipped adapter** — those
+are where your data actually lives — and each is genuinely erased or
+pseudonymised:
 
-The 12 targets, in order: Neon control plane → Neon billing detail
-(legal-hold retention) → R2 CAS (refcount eraser) → R2 AC → D1 metadata
-→ KV → Stripe (PII nullified) → Loki/Grafana → R2 audit (pseudonymised)
-→ backup PITR (tombstone replay; natural 30-day rotation) → R2 CAS
-legal-hold partition (pseudonymised) → compliance evidence store
-(pseudonymised).
+- **D1** — subject-scoped rows deleted; refcount synced with R2.
+- **R2 CAS** (content-addressable storage) — refcount-aware eraser: if
+  your blob is shared with other subjects, we drop your reference and
+  keep the blob until every reference is gone (plus a 72-hour grace
+  window); if it's referenced only by you, we tombstone it immediately.
+- **R2 AC** (Action Cache) — entries owned by your tenant are deleted.
+- **Stripe** — your `Customer` record is updated with email, name, and
+  address nullified. Stripe does not support full deletion because it
+  would break invoice integrity, so this backend is **pseudonymised
+  retention**, not erasure.
 
-You receive a `dsr.completed.v1` event with a Merkle root over the
-twelve audit hashes, plus a confirmation email. Total SLA: 30 calendar
+The remaining 8 canonical backend kinds are reconciled to
+`not_applicable` rather than silently reported as an erased no-op,
+because no durable subject data exists there in the shipped system
+(ADR-S11-013, cold-verified 2026-06-11):
+
+| Back end | Why it's not applicable |
+|---|---|
+| Neon control plane | Neon control-plane not shipped; subject identity lives in D1 (handled by the D1 adapter) |
+| Neon billing detail | Neon billing not shipped; billing state lives in D1 + Stripe |
+| Neon PITR backup | Neon PITR not shipped; no Neon backups to tombstone |
+| KV | KV namespaces are caches (metadata/JWKS/negative-cache); no durable PII, reconstructed from D1 |
+| Loki / Grafana | No active Loki sink shipped (observability references only) |
+| R2 audit (subject to pseudonymisation) | No R2 audit WORM bucket shipped; no subject-indexed audit store to apply pseudonymisation to |
+| R2 CAS legal-hold partition | No legal-hold CAS partition shipped |
+| R2 evidence store | No R2 evidence-* bucket shipped |
+
+If any of these ever ships with real subject data, its row switches from
+`not_applicable` to a real erase/pseudonymise outcome — the per-backend
+audit record makes that transition visible rather than silent.
+
+You receive a `dsr.completed.v1` event carrying a signed evidence hash
+that binds all 12 per-backend outcomes (four real, eight
+`not_applicable`), plus a confirmation email. Total SLA: 30 calendar
 days.
 
 ## 6. Where your data goes (international transfers)
@@ -282,7 +305,7 @@ cross-border complaints.
   - `specs/_runbooks/RB-DSR-GDPR.md` (internal DSR processing runbook)
 
 If you need a Transfer Impact Assessment specific to your regulatory
-situation (e.g., regulated-vertical EU tenant with onward processing in
+situation (for example, regulated-vertical EU tenant with onward processing in
 a non-adequate country), email `privacy@hugr.com` — we use the template
 in `legal/tia-template.md` and fill it in for your tenant within 5
 business days.

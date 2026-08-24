@@ -224,7 +224,7 @@ sys.exit(0)
 echo ""
 echo "==> Step 1: Verify tenant_billing table..."
 TB_CHECK=$(d1_query "SELECT name FROM sqlite_master WHERE name='tenant_billing'")
-if ! echo "$TB_CHECK" | grep -q '"tenant_billing"'; then
+if ! echo "$TB_CHECK" | grep '"tenant_billing"' >/dev/null; then
   echo "ERROR: tenant_billing table not found in D1 prod. Run migrations first." >&2
   exit 1
 fi

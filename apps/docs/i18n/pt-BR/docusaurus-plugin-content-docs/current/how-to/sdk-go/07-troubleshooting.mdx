@@ -15,52 +15,100 @@ tags: [sdk, go, debug, how-to]
 
 # Troubleshooting
 
-## When to use this guide
+## Quando usar este guia
 
-A `corelink-go` call returned an error. `corelink-go` is intentionally
-minimal: `Client` exposes only `Put` / `Get` / `Stat` / `Close` /
-`IsClientVerifyEnabled`, and every error is a plain `error` value (message
-string), not a typed error hierarchy. There is no `Doctor`, `Whoami`,
-streaming reader, or structured logging in this SDK today.
+Uma chamada de `corelink-go` retornou um erro. `corelink-go` retorna erros
+tipados que você captura com `errors.As` / `errors.Is` — não strings de
+mensagem simples e não um diagnóstico `Doctor`. Não há `Whoami`, nem log
+estruturado, neste SDK hoje.
 
-If you want the 8-check `doctor` diagnostic or a CLI-driven identity check,
-use the [`corelink` CLI](../../reference/cli/doctor.mdx) or the
-[Python](../sdk-python/07-troubleshooting.mdx) /
-[JS](../sdk-js/07-troubleshooting.mdx) SDKs, which have richer surfaces.
+Se você quer o diagnóstico `doctor` de 8 checagens ou uma verificação de
+identidade via CLI, use a [CLI `corelink`](../../reference/cli/doctor.mdx)
+ou os SDKs [Python](../sdk-python/07-troubleshooting.mdx) /
+[JS](../sdk-js/07-troubleshooting.mdx), que têm superfícies mais ricas.
 
-## Errors you'll actually see
+## Erros que você realmente vai ver
 
-`errors.New` / `fmt.Errorf` messages, matched by substring — there is no
-`error_code` field or typed error to switch on:
-
-| Message contains | Cause | Fix |
+| Tipo/valor de erro | Causa | Correção |
 |---|---|---|
-| `PAT must not be empty` | `Config.PAT` was empty at `NewClient` | Set `CORELINK_PAT` and read it into `Config.PAT` yourself — `NewClient` does not read env vars for you. |
-| `TenantID must not be empty` | `Config.TenantID` was empty at `NewClient` | Pass a non-empty `TenantID`. |
-| `failed to construct client (invalid PAT or TenantID encoding)` | The cgo constructor rejected the PAT or tenant ID bytes | Check the PAT was copied in full (`corelink_<env>_<token_id>.<random_secret>.<hmac_sig>`), no truncation. |
-| `put failed (rc=%d)` | Non-zero return from the native `Put` call | Check network/auth first (a valid PAT and tenant on a failing `Get`/`Stat` narrows it down). |
-| `invalid digest length %d (expected 64)` | Digest passed to `Get`/`Stat` isn't 64 hex chars | Recompute — CoreLink digests are BLAKE3, not SHA-256. |
-| `COR_CAS_DIGEST_MISMATCH: digest mismatch for %s` | Client-verify (default-on, CTRL-CAS-002) caught a BLAKE3 mismatch on `Get` | Possible corruption in transit; retry. Persistent → open a support ticket. |
-| `COR_CAS_VERIFY_DISABLED` | `Get` called with client-verify explicitly disabled | Expected if you set `ClientVerify: false, ClientVerifyExplicitFalse: true` — not an error condition unless you didn't mean to disable it. |
-| `get verify failed (rc=%d)` | Non-zero, non-mismatch return from the native verify call | Check network/auth; retry. |
+| erro simples: `Config.Endpoint is required` | `Config.Endpoint` estava vazio em `NewClient` | Defina `Config.Endpoint` (`https://corelink-api.humangr.com`). |
+| erro simples: `Config.PAT is required` | `Config.PAT` estava vazio em `NewClient` | Defina `CORELINK_PAT` e leia-o em `Config.PAT` você mesmo — `NewClient` não lê variáveis de ambiente por você. |
+| erro simples: `CAS operations require a tenant` | `Put`/`Get`/`Stat` chamado sem `Config.TenantID` definido | Passe `TenantID` em `Config`, ou use `corelink.WithTenantID(...)`. |
+| `*corelink.AuthError` | O PAT foi rejeitado, está ausente, ou seu tenant diverge do tenant da requisição (HTTP 401/403) | Confira se o PAT foi copiado por inteiro (`corelink_<env>_<token_id>.<random_secret>.<hmac_sig>`), sem truncamento. |
+| `*corelink.QuotaError` | A cota de bytes ou requisições do tenant está esgotada (HTTP 402) | Verifique os limites do plano antes de tentar novamente. |
+| `*corelink.RateLimitError` | O chamador está sendo limitado (HTTP 429); `RetryAfter` carrega o backoff anunciado pelo servidor, quando enviado | Aguarde `RetryAfter` e tente novamente. |
+| `*corelink.RegionError` | A requisição caiu em, ou pediu, uma região que não consegue atender esse tenant ou objeto | Roteie a requisição para `RegionError.Region` em vez disso. |
+| `*corelink.NotFoundError` | O digest, ação ou recurso solicitado não existe no armazenamento do tenant (HTTP 404) | Confirme o digest com `Stat` antes de `Get`. |
+| `*corelink.DigestMismatchError` | O conteúdo gerou um digest diferente do esperado — ou o chamador enviou o digest errado em um `Put`, ou a verificação client-side de `Get` detectou uma leitura corrompida ou envenenada | Recalcule o digest localmente; em um mismatch de `Get`, tente novamente — mismatches persistentes no mesmo digest precisam de um ticket de suporte. |
+| `corelink.ErrActionCacheMiss` (sentinel) | `ActionCache().Get` não encontrou resultado para o digest da ação | Caminho normal de cache-miss — capture com `errors.Is`, depois rode a ação e chame `Update`. |
+| erro de validação de digest: `digest hex must be 64 characters` / `digest hex must be lower-case hex` | `Digest.Validate()` rejeitou um digest malformado passado a `Get`/`Stat` | Recalcule — os digests do CoreLink são BLAKE3 (64 caracteres hex minúsculos), não SHA-256. |
 
-## Confirm the client is talking to the server at all
-
-There's no `Whoami` — the first real signal is a successful `Put`/`Get`:
+## Capturando erros tipados
 
 ```go
-digest, err := client.Put(ctx, []byte("healthcheck"))
+digest, err := client.Put(ctx, data)
 if err != nil {
-    log.Fatalf("client not working: %v", err)
+    var authErr *corelink.AuthError
+    var quotaErr *corelink.QuotaError
+    var rateErr *corelink.RateLimitError
+    switch {
+    case errors.As(err, &authErr):
+        log.Fatalf("auth error (%d): %s", authErr.StatusCode, authErr.Message)
+    case errors.As(err, &quotaErr):
+        log.Fatalf("quota exceeded (%d): %s", quotaErr.StatusCode, quotaErr.Message)
+    case errors.As(err, &rateErr):
+        time.Sleep(rateErr.RetryAfter)
+        // retry
+    default:
+        log.Fatalf("put failed: %v", err)
+    }
 }
-log.Println("ok, wrote", digest)
 ```
 
-## Filing a bug
+`corelink.ErrActionCacheMiss` é um sentinel, não um tipo — capture-o com
+`errors.Is`, não com uma type assertion:
 
-Include the exact error message (`err.Error()`), your `corelink-go`
-version (`go.mod` / `go list -m github.com/HumanGuardrail/corelink-go/v1`),
-and whether you built against a matching `libcorelink_go`
-(`cargo build --release -p corelink-go`) — a version skew between the Go
-module and the linked Rust cdylib is a common source of opaque `rc=%d`
-failures. Never include your PAT.
+```go
+result, err := client.ActionCache().Get(ctx, actionDigest)
+if errors.Is(err, corelink.ErrActionCacheMiss) {
+    // cache miss, not a failure
+}
+```
+
+## Confirme que o cliente está mesmo falando com o servidor
+
+Não há `Whoami`. Use `Client.Health` para uma checagem leve de prontidão,
+ou um `Put`/`Get` real:
+
+```go
+status, err := client.Health(ctx)
+if err != nil || !status.OK {
+    log.Fatalf("server not reachable: %v", err)
+}
+log.Println("server ok")
+```
+
+## `Capabilities` retorna um erro, não dados
+
+`Client.Capabilities` não tem endpoint de servidor para chamar. A tabela de
+rotas da REAPI v2 (`bazel_v2.rs`) monta exatamente cinco rotas — leitura de
+CAS, escrita de CAS, leitura de AC, escrita de AC, e `findMissingBlobs` —
+e nenhuma delas é um endpoint de capabilities. `Capabilities` não faz
+nenhuma chamada de rede; ele retorna o `ServerCapabilities` zero-value e um
+erro explicando isso. Use `Client.Health` para uma checagem de prontidão em
+vez disso.
+
+## `ClientVerify` não pode ser desligado com um `false` simples
+
+`Config.ClientVerify` vem habilitado por padrão: o valor zero (`false`) é
+indistinguível de "não definido", então desativar a re-verificação de hash
+no lado do cliente exige um segundo campo, deliberado —
+`ClientVerifyExplicitFalse: true`. Verifique
+`Client.IsClientVerifyEnabled()` se precisar confirmar em qual modo um
+cliente construído acabou ficando.
+
+## Registrando um bug
+
+Inclua a mensagem de erro exata (`err.Error()`) e sua versão de
+`corelink-go` (`go.mod` / `go list -m go.corelink.humangr.com/corelink-go`).
+Nunca inclua seu PAT.

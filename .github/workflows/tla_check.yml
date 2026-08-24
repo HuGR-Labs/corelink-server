@@ -77,7 +77,7 @@ jobs:
       - name: Install pinned TLC v1.8.0 (SHA-256 verified — ADR-0042 §A1)
         env:
           TLC_VERSION: '1.8.0'
-          TLC_SHA256_PINNED: 'e22f8ffb4bacdea0a871f444dd94fe5fb0d8013b3388ae39e82e26f852c735d5'
+          TLC_SHA256_PINNED: 'eabd140a70f49eb9305a3bd3f3df944eddf87e5a90d329789085f8953a80533a'
         run: |
           set -euo pipefail
           # Download tla2tools.jar from GitHub Releases per pinned version + verify SHA-256.

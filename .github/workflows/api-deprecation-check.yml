@@ -205,9 +205,9 @@ jobs:
             fi
             # Accept either the full URL or a `Refs: #<num>` mention derived from it.
             ISSUE_NUM=$(echo "$issue" | sed -nE 's#.*issues/([0-9]+).*#\1#p')
-            if echo "$SEARCH_HAYSTACK" | grep -qF "$issue"; then
+            if echo "$SEARCH_HAYSTACK" | grep -F "$issue" >/dev/null; then
               echo "OK: $op references $issue"
-            elif [ -n "$ISSUE_NUM" ] && echo "$SEARCH_HAYSTACK" | grep -qE "Refs?:[[:space:]]+#${ISSUE_NUM}\b"; then
+            elif [ -n "$ISSUE_NUM" ] && echo "$SEARCH_HAYSTACK" | grep -E "Refs?:[[:space:]]+#${ISSUE_NUM}\b" >/dev/null; then
               echo "OK: $op references issue #$ISSUE_NUM via Refs:"
             else
               echo "::error::Operation $op was deprecated but its issue ($issue) is not referenced in PR title/body or commit messages. Add 'Refs: #${ISSUE_NUM}'."

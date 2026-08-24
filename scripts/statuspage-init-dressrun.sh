@@ -67,6 +67,24 @@
 
 set -euo pipefail
 
+# ── ⛔ SUPERSEDED 2026-08-24 — this script provisions something we decided not
+#    to have. It targets Atlassian Statuspage (we run Better Stack) and a
+#    branded `status.` custom domain (a paid-plan feature the owner declined on
+#    2026-08-24; the CNAME was deleted from the zone). Running it would create
+#    an account with the wrong vendor and request a domain we are not buying.
+#
+#    A banner in a doc is advisory. This is an executable, so it refuses.
+#    Override deliberately if you are reviving the plan:
+#        STATUSPAGE_PROVISIONING_REVIVED=1 <this script>
+#    See B-041 (done) and marketing/launch/STATUS-PAGE-SPEC.md.
+if [[ -z "${STATUSPAGE_PROVISIONING_REVIVED:-}" ]]; then
+  echo "REFUSING: status-page provisioning is superseded (B-041, 2026-08-24)." >&2
+  echo "  live status page: https://hugrl.betteruptime.com" >&2
+  echo "  set STATUSPAGE_PROVISIONING_REVIVED=1 to override deliberately." >&2
+  exit 78
+fi
+
+
 # ----------------------------------------------------------------------
 # Argument parsing.
 # ----------------------------------------------------------------------

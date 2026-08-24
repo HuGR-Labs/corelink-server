@@ -2,7 +2,7 @@
 id: sdk-go-action-cache
 title: Action Cache (Go)
 sidebar_label: Action Cache
-description: Action Cache support in the Go SDK — and where it actually lives.
+description: Using the REAPI v2 Action Cache from the Go SDK.
 tags: [sdk, go, ac, reapi, how-to]
 ---
 
@@ -10,57 +10,62 @@ tags: [sdk, go, ac, reapi, how-to]
 
 ## When to use this guide
 
-You expected an Action Cache client in the Go SDK and want to know what to do
-instead. Read this before wiring anything: the capability is real on the server
-but absent from this SDK, so the honest options are the HTTP recipe below or the
-JS/TS client.
+You want to cache the result of a build action — exit code, stdout, output
+files — keyed by an action digest, and look it up before re-running the
+action.
 
-## The Go SDK does not implement an Action Cache client
+## `Client.ActionCache()`
 
-`corelink-go` (`corelink.Client`, `corelink-go/corelink.go`) exposes exactly
-three data-plane methods — `Put`, `Get`, `Stat` — plus `Close` and
-`IsClientVerifyEnabled`. There is no `ActionCache()` method, no
-`corelink.ActionResult` type, and no `corelink.ErrActionCacheMiss` in this
-SDK today.
-
-If you need Action Cache from JS/TS, use `@corelink/client`, which does
-implement it (`client.actionCache.get` / `.put`) — see the
-[JS/TS Action Cache guide](../sdk-js/04-action-cache.mdx).
-
-## Working around it from Go today
-
-The Action Cache is a real server surface (`routes/ac.rs`, REAPI v2) even
-though this SDK doesn't wrap it — call it directly over HTTP with the same
-PAT you already configured for the `Client`:
+`corelink.Client` exposes the REAPI v2 action cache through
+`Client.ActionCache()`, which returns an `*corelink.ActionCacheClient` with
+two methods:
 
 ```go
-func getOrRun(ctx context.Context, pat, tenantID, baseURL, actionDigest string) ([]byte, error) {
-    req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-        fmt.Sprintf("%s/v1/ac/%s/%s", baseURL, tenantID, actionDigest), nil)
-    if err != nil {
-        return nil, err
-    }
-    req.Header.Set("Authorization", "Bearer "+pat)
+ac := client.ActionCache()
 
-    resp, err := http.DefaultClient.Do(req)
-    if err != nil {
-        return nil, err
-    }
-    defer resp.Body.Close()
+// Update stores an ActionResult for an action digest.
+err := ac.Update(ctx, actionDigest, corelink.ActionResult{
+    ExitCode: 0,
+    OutputFiles: []corelink.OutputFile{
+        {Path: "bin/app", Digest: outputDigest, IsExecutable: true},
+    },
+})
 
-    if resp.StatusCode == http.StatusNotFound {
-        return runLocallyAndStore(ctx, actionDigest)
+// Get returns a cached ActionResult, or corelink.ErrActionCacheMiss.
+result, err := ac.Get(ctx, actionDigest)
+```
+
+`Update` writes to `PUT /bazel/v2/{instance}/blobs/ac/{hash}/{size}`; `Get`
+reads from the same path. Both operate against `Config.Instance` — set it on
+the `Config` you pass to `NewClient` when you construct the client, the same
+way you would configure a Bazel remote-cache instance name.
+
+## Handling a cache miss
+
+A miss is not an error you branch on by string. Match the sentinel with
+`errors.Is`:
+
+```go
+result, err := ac.Get(ctx, actionDigest)
+switch {
+case errors.Is(err, corelink.ErrActionCacheMiss):
+    result, err = runActionAndStore(ctx, ac, actionDigest)
+    if err != nil {
+        return err
     }
-    if resp.StatusCode != http.StatusOK {
-        return nil, fmt.Errorf("ac lookup: unexpected status %d", resp.StatusCode)
-    }
-    return io.ReadAll(resp.Body) // opaque ActionResult bytes — you own the encoding
+case err != nil:
+    return fmt.Errorf("action cache lookup: %w", err)
 }
 ```
 
-The Action Cache stores an opaque byte payload keyed by a 64-hex action
-digest — the server does not parse it, so how you encode/decode the
-`ActionResult` is up to you, same as the JS SDK.
+## Encoding
+
+The server stores the Action Cache payload as an opaque byte blob — it does
+not parse it. `ActionCacheClient.Update` and `.Get` own the encoding
+themselves (a private JSON shape), so `ActionResult` round-trips through
+this SDK without you writing any serialization code. A payload written by a
+different client (the JS/TS SDK, or a raw HTTP call) uses its own encoding
+and will not decode as an `ActionResult` here.
 
 ## Next steps
 

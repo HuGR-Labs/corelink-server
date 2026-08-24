@@ -22,13 +22,14 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CORELINK_PAT: ${{ secrets.CORELINK_PAT }}
+      GOPROXY: https://humangr.com/corelink/docs/goproxy,https://proxy.golang.org,direct
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
-      - run: cargo build --release -p corelink-go   # builds libcorelink_go for the cgo link
-      - run: CGO_LDFLAGS="-L./target/release -lcorelink_go" go run ./ci/warm-cache
+      - run: go get go.corelink.humangr.com/corelink-go@v0.1.0  # GOPROXY set above
+      - run: go run ./ci/warm-cache
 ```
 
 ```go
@@ -40,12 +41,13 @@ import (
     "log"
     "os"
 
-    "github.com/HumanGuardrail/corelink-go/v1"
+    "go.corelink.humangr.com/corelink-go"
 )
 
 func main() {
     ctx := context.Background()
     cli, err := corelink.NewClient(corelink.Config{
+        Endpoint: "https://corelink-api.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
         TenantID: os.Getenv("CORELINK_TENANT"),
     })
@@ -54,8 +56,7 @@ func main() {
     }
     defer cli.Close()
 
-    // There is no Bench method on this SDK — warm the cache with a real
-    // Put/Get round trip instead, and fail the job on error.
+    // Warm the cache with a real Put/Get round trip and fail the job on error.
     digest, err := cli.Put(ctx, []byte("ci-warm-cache-probe"))
     if err != nil {
         log.Fatalf("cache warm-up failed: %v", err)
@@ -74,9 +75,10 @@ build:
   image: golang:1.22
   variables:
     CORELINK_PAT: $CORELINK_PAT  # masked
+    GOPROXY: "https://humangr.com/corelink/docs/goproxy,https://proxy.golang.org,direct"
   script:
-    - cargo build --release -p corelink-go
-    - CGO_LDFLAGS="-L./target/release -lcorelink_go" go run ./ci/warm-cache
+    - go get go.corelink.humangr.com/corelink-go@v0.1.0  # GOPROXY set above
+    - go run ./ci/warm-cache
 ```
 
 ## CircleCI
@@ -89,10 +91,11 @@ jobs:
       - image: cimg/go:1.22
     environment:
       CORELINK_PAT: $CORELINK_PAT
+      GOPROXY: https://humangr.com/corelink/docs/goproxy,https://proxy.golang.org,direct
     steps:
       - checkout
-      - run: cargo build --release -p corelink-go
-      - run: CGO_LDFLAGS="-L./target/release -lcorelink_go" go run ./ci/warm-cache
+      - run: go get go.corelink.humangr.com/corelink-go@v0.1.0  # GOPROXY set above
+      - run: go run ./ci/warm-cache
 ```
 
 ## Job-scoped PATs

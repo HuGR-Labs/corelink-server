@@ -2,7 +2,7 @@
 id: sdk-go-troubleshooting
 title: Troubleshooting (Go)
 sidebar_label: Troubleshooting
-description: Diagnose common Go SDK errors — corelink-go's real, minimal error surface.
+description: Diagnose common Go SDK errors — corelink-go's typed error surface.
 tags: [sdk, go, debug, how-to]
 ---
 
@@ -10,11 +10,10 @@ tags: [sdk, go, debug, how-to]
 
 ## When to use this guide
 
-A `corelink-go` call returned an error. `corelink-go` is intentionally
-minimal: `Client` exposes only `Put` / `Get` / `Stat` / `Close` /
-`IsClientVerifyEnabled`, and every error is a plain `error` value (message
-string), not a typed error hierarchy. There is no `Doctor`, `Whoami`,
-streaming reader, or structured logging in this SDK today.
+A `corelink-go` call returned an error. `corelink-go` returns typed errors
+you match with `errors.As` / `errors.Is` — not plain message strings and not
+a `Doctor` diagnostic. There is no `Whoami`, no structured logging, in this
+SDK today.
 
 If you want the 8-check `doctor` diagnostic or a CLI-driven identity check,
 use the [`corelink` CLI](../../reference/cli/doctor.mdx) or the
@@ -23,37 +22,84 @@ use the [`corelink` CLI](../../reference/cli/doctor.mdx) or the
 
 ## Errors you'll actually see
 
-`errors.New` / `fmt.Errorf` messages, matched by substring — there is no
-`error_code` field or typed error to switch on:
-
-| Message contains | Cause | Fix |
+| Error type / value | Cause | Fix |
 |---|---|---|
-| `PAT must not be empty` | `Config.PAT` was empty at `NewClient` | Set `CORELINK_PAT` and read it into `Config.PAT` yourself — `NewClient` does not read env vars for you. |
-| `TenantID must not be empty` | `Config.TenantID` was empty at `NewClient` | Pass a non-empty `TenantID`. |
-| `failed to construct client (invalid PAT or TenantID encoding)` | The cgo constructor rejected the PAT or tenant ID bytes | Check the PAT was copied in full (`corelink_<env>_<token_id>.<random_secret>.<hmac_sig>`), no truncation. |
-| `put failed (rc=%d)` | Non-zero return from the native `Put` call | Check network/auth first (a valid PAT and tenant on a failing `Get`/`Stat` narrows it down). |
-| `invalid digest length %d (expected 64)` | Digest passed to `Get`/`Stat` isn't 64 hex chars | Recompute — CoreLink digests are BLAKE3, not SHA-256. |
-| `COR_CAS_DIGEST_MISMATCH: digest mismatch for %s` | Client-verify (default-on, CTRL-CAS-002) caught a BLAKE3 mismatch on `Get` | Possible corruption in transit; retry. Persistent → open a support ticket. |
-| `COR_CAS_VERIFY_DISABLED` | `Get` called with client-verify explicitly disabled | Expected if you set `ClientVerify: false, ClientVerifyExplicitFalse: true` — not an error condition unless you didn't mean to disable it. |
-| `get verify failed (rc=%d)` | Non-zero, non-mismatch return from the native verify call | Check network/auth; retry. |
+| plain error: `Config.Endpoint is required` | `Config.Endpoint` was empty at `NewClient` | Set `Config.Endpoint` (`https://corelink-api.humangr.com`). |
+| plain error: `Config.PAT is required` | `Config.PAT` was empty at `NewClient` | Set `CORELINK_PAT` and read it into `Config.PAT` yourself — `NewClient` does not read env vars for you. |
+| plain error: `CAS operations require a tenant` | `Put`/`Get`/`Stat` called without `Config.TenantID` set | Pass `TenantID` in `Config`, or use `corelink.WithTenantID(...)`. |
+| `*corelink.AuthError` | The PAT was rejected, missing, or its tenant disagreed with the request's tenant (HTTP 401/403) | Check the PAT was copied in full (`corelink_<env>_<token_id>.<random_secret>.<hmac_sig>`), no truncation. |
+| `*corelink.QuotaError` | The tenant's byte or request quota is exhausted (HTTP 402) | Check plan limits before retrying. |
+| `*corelink.RateLimitError` | The caller is being throttled (HTTP 429); `RetryAfter` carries the server's advertised backoff, when sent | Back off for `RetryAfter` and retry. |
+| `*corelink.RegionError` | The request landed on, or asked for, a region that cannot serve this tenant or object | Route the request to `RegionError.Region` instead. |
+| `*corelink.NotFoundError` | The requested digest, action, or resource does not exist in the tenant's store (HTTP 404) | Confirm the digest with `Stat` before `Get`. |
+| `*corelink.DigestMismatchError` | Content hashed to a different digest than expected — either the caller sent the wrong digest for a `Put`, or `Get`'s client-side verification caught a corrupted or poisoned read | Recompute the digest locally; on a `Get` mismatch, retry — persistent mismatches on the same digest need a support ticket. |
+| `corelink.ErrActionCacheMiss` (sentinel) | `ActionCache().Get` found no result for the action digest | Ordinary cache-miss path — match with `errors.Is`, then run the action and `Update`. |
+| digest validation error: `digest hex must be 64 characters` / `digest hex must be lower-case hex` | `Digest.Validate()` rejected a malformed digest passed to `Get`/`Stat` | Recompute — CoreLink digests are BLAKE3 (64 lower-case hex), not SHA-256. |
+
+## Matching typed errors
+
+```go
+digest, err := client.Put(ctx, data)
+if err != nil {
+    var authErr *corelink.AuthError
+    var quotaErr *corelink.QuotaError
+    var rateErr *corelink.RateLimitError
+    switch {
+    case errors.As(err, &authErr):
+        log.Fatalf("auth error (%d): %s", authErr.StatusCode, authErr.Message)
+    case errors.As(err, &quotaErr):
+        log.Fatalf("quota exceeded (%d): %s", quotaErr.StatusCode, quotaErr.Message)
+    case errors.As(err, &rateErr):
+        time.Sleep(rateErr.RetryAfter)
+        // retry
+    default:
+        log.Fatalf("put failed: %v", err)
+    }
+}
+```
+
+`corelink.ErrActionCacheMiss` is a sentinel, not a type — match it with
+`errors.Is`, not a type assertion:
+
+```go
+result, err := client.ActionCache().Get(ctx, actionDigest)
+if errors.Is(err, corelink.ErrActionCacheMiss) {
+    // cache miss, not a failure
+}
+```
 
 ## Confirm the client is talking to the server at all
 
-There's no `Whoami` — the first real signal is a successful `Put`/`Get`:
+There's no `Whoami`. Use `Client.Health` for a lightweight readiness check,
+or a real `Put`/`Get`:
 
 ```go
-digest, err := client.Put(ctx, []byte("healthcheck"))
-if err != nil {
-    log.Fatalf("client not working: %v", err)
+status, err := client.Health(ctx)
+if err != nil || !status.OK {
+    log.Fatalf("server not reachable: %v", err)
 }
-log.Println("ok, wrote", digest)
+log.Println("server ok")
 ```
+
+## `Capabilities` returns an error, not data
+
+`Client.Capabilities` has no server endpoint to call. The REAPI v2 route
+table (`bazel_v2.rs`) mounts exactly five routes — CAS read, CAS write, AC
+read, AC write, and `findMissingBlobs` — and none of them is a capabilities
+endpoint. `Capabilities` makes no network call; it returns the zero-value
+`ServerCapabilities` and an error explaining this. Use `Client.Health` for a
+readiness check instead.
+
+## `ClientVerify` cannot be turned off with a plain `false`
+
+`Config.ClientVerify` defaults to enabled: the zero value (`false`) is
+indistinguishable from "not set," so opting out of client-side re-hashing
+takes a second, deliberate field — `ClientVerifyExplicitFalse: true`. Check
+`Client.IsClientVerifyEnabled()` if you need to confirm which mode a
+constructed client ended up in.
 
 ## Filing a bug
 
-Include the exact error message (`err.Error()`), your `corelink-go`
-version (`go.mod` / `go list -m github.com/HumanGuardrail/corelink-go/v1`),
-and whether you built against a matching `libcorelink_go`
-(`cargo build --release -p corelink-go`) — a version skew between the Go
-module and the linked Rust cdylib is a common source of opaque `rc=%d`
-failures. Never include your PAT.
+Include the exact error message (`err.Error()`) and your `corelink-go`
+version (`go.mod` / `go list -m go.corelink.humangr.com/corelink-go`).
+Never include your PAT.

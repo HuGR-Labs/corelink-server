@@ -48,44 +48,52 @@ We do **not** store: PHI, cardholder data (Stripe holds it), customer email
 beyond what's needed for billing notifications, or copies of customer code
 outside the CAS surface.
 
-## Residency
+## Datenresidenz
 
-Every CoreLink tenant chooses a `primary_region` at signup. The values are
-a closed enum — there are no exceptions.
+> **Wo Daten heute tatsächlich liegen (genau genommen):** Der
+> Regionen-Enum von CoreLink hat sechs Makro-Codes; vier davon sind mit
+> einem jurisdiktionskorrekten Speicher-Bucket bereitgestellt, und ein
+> Tenant kann nur auf eine bereitgestellte Region gepinnt werden — die
+> Anmeldung lehnt die anderen zwei ab.
 
-| Pin | Region | Geography | Used for |
+| Pin | Region | Geografie | Status |
 | --- | --- | --- | --- |
-| `sam` | South America (São Paulo) | Brazil | LGPD-bound tenants |
-| `nam` | North America (Iowa / Virginia) | United States | Default for US customers |
-| `eur` | Europe (Frankfurt / Dublin) | EU | GDPR-bound tenants |
-| `oce` | Oceania (Sydney) | AU / NZ | Available on request |
-| `apc` | Asia-Pacific (Tokyo / Singapore) | JP / SG | Available on request |
-| `mea` | Middle East (Dubai) | UAE | Available on request |
+| `enam` | Östliches Nordamerika | USA (bedient über `iad`) | **Live (Standard)** |
+| `wnam` | Westliches Nordamerika | USA (bedient über `iad`) | **Live** |
+| `weur` | Westeuropa | EU (physisch EU-R2; bedient über `lhr` / London) | **Live — EU-Daten bleiben in der EU** |
+| `apac` | Asien-Pazifik | In Japan gelegenes R2 (`corelink-cas-apac`; bedient über `nrt` / Tokio) | **Live seit 2026-08-17** |
+| `sam` | Südamerika | Brasilien (São Paulo) | **Nicht bereitgestellt** — keine Cloudflare-Region in Südamerika; die Anmeldung lehnt diesen Pin ab |
+| `afr` | Afrika | — | **Nicht bereitgestellt** — kein Colo-Mapping; die Anmeldung lehnt diesen Pin ab |
 
-What `primary_region` controls:
+Was `primary_region` steuert:
 
-- **R2 object placement.** All blobs are pinned to the colo closest to the
-  region's anchor city. Reads are served from in-region colos.
-- **D1 placement.** Per-tenant D1 database is created in-region.
-- **DO placement.** Durable Object instance is colocated with D1.
-- **Failover semantics.** During a region outage, the failover path is
-  documented per region in
-  [`specs/_runbooks/RB-DR-DRILL.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_runbooks/RB-DR-DRILL.md).
-  For Brazil specifically, see
-  [Brazil residency & LGPD](/residency/lgpd-brazil) — Art. 33 §1º allows
-  out-of-region temporary processing during a documented emergency.
+- **R2-Objektplatzierung.** Für die bereitgestellten Regionen werden
+  Blobs in die R2-Buckets dieser Region geschrieben (US-Buckets für
+  `wnam`/`enam`; physisch in der EU liegende Buckets für `weur`; der in
+  Tokio gelegene Bucket `corelink-cas-apac` für `apac`). Der
+  Residenz-Guard mappt `weur`→`lhr` und `apac`→`nrt` und verweigert
+  regionsübergreifenden Zugriff (`INV-REGION-NO-CROSS-LEAK`). `sam` und
+  `afr` haben keinen Bucket, an den geroutet werden könnte, daher lehnt
+  die Anmeldung sie ab.
+- **D1-Platzierung.** Die D1-Datenbank pro Tenant wird in der jeweiligen
+  Region angelegt.
+- **DO-Platzierung.** Die Durable-Object-Instanz liegt zusammen mit D1.
+- **Failover-Semantik.** Bei einem Regionsausfall ist der Failover-Pfad
+  pro Region in
+  `specs/_runbooks/RB-DR-DRILL.md` (auf Anfrage über `trust@humangr.com`)
+  dokumentiert. Speziell für Brasilien siehe
+  [Brasilien-Residenz & LGPD](/residency/lgpd-brazil) — Art. 33 §1º
+  erlaubt vorübergehende Verarbeitung außerhalb der Region während einer
+  dokumentierten Notlage.
 
-Residency is enforced by `crates/corelink-privacy-residency-enforcement/`
-and verified nightly by `scripts/verify-lgpd-residency.py`. You can also
-verify your own tenant via the admin API:
-
-```bash
-curl -H "Authorization: Bearer $PAT" \
-     https://corelink-api.humangr.com/v1/tenant/me/residency-proof
-```
-
-The response is a signed attestation including the region pin, the last
-verification timestamp, and a Merkle inclusion proof against the audit chain.
+Die Residenz wird von `crates/corelink-privacy-residency-enforcement/`
+durchgesetzt. Das Brasilien-spezifische Prüfskript
+(`scripts/verify-lgpd-residency.py`) **schlägt laut fehl**, statt eine
+grüne Attestierung auszugeben, weil die physische brasilianische
+Residenz noch nicht bereitgestellt ist (keine Cloudflare-Region in
+Südamerika). Eine signierte Residenznachweis-API pro Tenant
+(`/v1/tenant/me/residency-proof`) steht auf der Roadmap und ist heute
+keine verlässliche Funktion.
 
 ## Encryption
 
@@ -153,9 +161,8 @@ CoreLink supports GDPR Art. 17 and LGPD Art. 18 erasure requests:
   within 35 days (the backup window); a tombstone is recorded on day 0
   so a Type II auditor can trace the chain.
 
-See the [DSR runbooks](https://github.com/HumanGuardrail/corelink-server/tree/main/specs/_runbooks)
-(`RB-DSR-INTAKE-FAILURE`, `RB-DSR-ERASURE-INCOMPLETE`) for the operational
-side.
+The DSR runbooks (`RB-DSR-INTAKE-FAILURE`, `RB-DSR-ERASURE-INCOMPLETE`) cover the
+operational side; they are available on request from `trust@humangr.com`.
 
 ## Customer data flow (high-level)
 
@@ -184,14 +191,11 @@ side.
 
 ## Verifying it yourself
 
-You don't have to take our word for any of the above. Three options:
+You don't have to take our word for any of the above. Two options:
 
-1. **Read the code.** The repo is
-   [`HumanGuardrail/corelink`](https://github.com/HumanGuardrail/corelink-server).
-   Residency enforcement, BYOK envelope, audit chain are all open.
-2. **Hit the admin API.** Endpoints under `/v1/tenant/me/*` return signed
+1. **Hit the admin API.** Endpoints under `/v1/tenant/me/*` return signed
    attestations of region pin, encryption status, and audit-chain head.
-3. **Audit your own data.** Audit-chain inclusion proofs are exportable as
+2. **Audit your own data.** Audit-chain inclusion proofs are exportable as
    RFC 6962 proofs you can verify offline. See
    [Audit chain](/security/audit-chain).
 

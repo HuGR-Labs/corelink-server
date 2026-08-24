@@ -104,16 +104,31 @@ have been: `exec` had left `entrypoint.sh` twelve days earlier, so PID 1 had no
 handler and the signal was never delivered. The 864 s figure is real data. A
 false causal chain must not stand in the CHANGELOG.
 
+**Closed 2026-08-24 by corelink-runners #501.** The entry's body already carried
+the 2026-08-23 correction; the HEADING did not — it still read *"every fabric job
+longer than ~15 minutes was being SIGTERMed"*. A changelog is read by scanning
+headings, so anyone doing that took away exactly the refuted causal chain and
+never reached the footnote nine paragraphs below. The heading now states the part
+that survived (the activity deadline froze at container start + 900 s) and points
+at the correction.
+
+The 864 s figure is untouched: it is real data, produced under the earlier `exec`
+entrypoint when SIGTERM still landed, and still untraced to a specific run.
+Correcting a mechanism is not licence to quietly drop the measurement that
+motivated it.
+
 ```backlog
 id: B-003
 repo: corelink-runners
 owner: tl
-status: open
+status: done
 verify: manual
 verify-means: |
-  lives in corelink-runners; not automatable until [B-012] lands a cross-repo
-  credential. Open while the unqualified claim stands in that CHANGELOG.
-last-verified: 2026-08-23
+  done — re-check from a corelink-runners checkout:
+    git show origin/main:CHANGELOG.md | grep -n "2026-08-02 — the container"
+  Reopens if the heading is ever reverted to assert the SIGTERM mechanism, which
+  could not have applied after fc74fbd3 made PID 1 an un-trapped bash.
+last-verified: 2026-08-24
 ```
 
 ---
@@ -137,16 +152,43 @@ Bazel users buy.
 The fix belongs in the runner image (`corelink-runners`), not in each example's
 `.bazelrc`. Until it lands, the workaround stays and this item holds the debt.
 
+**Closed 2026-08-24, end to end.** The entrypoint provisions `/dev/shm`
+(corelink-runners #502), the image was rebuilt (build 32758127683) and the fabric
+repinned onto it (#503, spawn-worker deployed), and the example's
+`--spawn_strategy=local` workaround is **deleted** — which is the only proof that
+counts, since the workaround would have hidden a fix that did not work.
+
+Sandboxed run on the rolled image: **32761594353**, `3 remote cache hit`, cold
+14 866 ms, warm 20 882 ms, no sandbox error.
+
+The fix prefers a real tmpfs and falls back to a plain directory, because this
+fabric does not grant `CAP_SYS_ADMIN` — the fallback is the branch production
+takes, so it is the branch the regression test covers hardest, and it announces
+itself in the job log rather than leaving a performance mystery.
+
+**A second defect surfaced on the way and is fixed here too:** the example had no
+`.bazelversion`, so bazelisk resolved `latest` over the network on every run. That
+lookup returned **401** from the runner and the build died before Bazel started —
+a failure that reads as "our cache is broken". It is also the wrong shape for a
+cache example regardless of the 401: a new Bazel release can change action keys
+and silently invalidate every entry being measured. Pinned to 9.2.0, read from
+the last green run's log rather than picked.
+
 ```backlog
 id: B-025
-repo: corelink-runners
+repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  grep -q "spawn_strategy=local" examples/bazel-starter/.bazelrc
+  ! grep -qE "^[^#]*spawn_strategy=local" examples/bazel-starter/.bazelrc && \
+  test -f examples/bazel-starter/.bazelversion
 verify-means: |
-  open while the example still needs the workaround; goes red once the runner
-  image provides /dev/shm and the line is deleted
+  done — the sandbox works on the fabric image, so the workaround is gone and the
+  Bazel version is pinned. Red if either is reintroduced: the workaround would
+  mean the image regressed, and an unpinned version means the example is not
+  reproducible. The grep ignores comments on purpose — the comment explaining the
+  removal names the flag, and matching it would keep this red forever, which is
+  how B-005's check ended up counting its own prose.
 last-verified: 2026-08-24
 ```
 
@@ -185,23 +227,112 @@ apply a GitHub label that does not exist. That one should be **retired**, not
 fixed — a one-line repair to a workflow whose reason to exist has passed is the
 wrong move.
 
+**Closed 2026-08-24.** GitHub now reports **zero** non-active workflows in this
+repo. The last one, `pre-cutover-weekly-cron`, was **retired rather than
+repaired** (#1273): it verified readiness for a GA cutover that happened on
+2026-07-10 and had been dying on a GitHub label that no longer exists. Its two
+companion scripts went with it — leaving them is the same half-measure one layer
+down. `check_workflow_state.py` also learned that a workflow whose file is gone
+needs no waiver.
+
 ```backlog
 id: B-004
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   test "$(gh api repos/HuGR-Labs/corelink-server/actions/workflows --paginate \
-    -q '.workflows[]|select(.state!="active")|.path' | wc -l | tr -d ' ')" -gt 0
-verify-means: open while any workflow is non-active; closes only when every one is enabled or deleted
-last-verified: 2026-08-23
+    -q '.workflows[]|select(.state!="active")|.path' | wc -l | tr -d ' ')" -eq 0
+verify-means: |
+  done — every workflow is active. Red the moment one is disabled again without
+  being deleted, which is exactly the 2026-08-08 shape: 21 switched off by one
+  script in 39 seconds, two of them PR gates rather than crons.
+last-verified: 2026-08-24
 ```
 
 ### B-005 — hosted lanes still fire on PR/push
 
-The mandate is zero GitHub-hosted spend: a job runs on the self-hosted `corelink`
-fleet or it does not run. `lighthouse-ci` is a genuine exception pending a
-browser-baked image; the rest are not.
+The mandate is zero GitHub-hosted spend: a job runs on the self-hosted fleet or
+it does not run. `lighthouse-ci` is a genuine exception pending a browser-baked
+image; the rest are not.
+
+**Partially closed 2026-08-24 — three lanes moved and proven, and the item's own
+check was measuring the wrong thing.**
+
+Moved to `corelink` (the Cloudflare container fabric: Ubuntu 24.04, node + pnpm
+baked, apt available, and a `docker` shim over nerdctl/containerd), each proven
+by a real run on the new fabric rather than asserted:
+
+| lane | why it mattered | proof |
+|---|---|---|
+| `backup-daily` | ran **daily** — the largest recurring hosted cost | run 32755245261, `cf-runner-c3049583` |
+| `backup-daily-verify` | ran **daily** | run 32755083651, `cf-runner-6b63e79b` |
+| `e2e-prod` | fired on push, pull_request **and** a daily cron | run 32755381431, `cf-runner-c0da6b18` |
+
+None went to the Mac fleet, deliberately: those five runners share one `$HOME`,
+and `npm install -g` into a shared home is the class of mutation that took the
+host down on 2026-06-15. `e2e-prod` also *wants* a datacenter IP — it asserts
+what a customer's CI sees, and the Macs are a residential address the edge
+treats differently.
+
+**The check was counting comments.** `verify` grepped the file text for
+`pull_request`, so `codeql`, `cas_foundation`, `ffi-matrix-ci`, `semgrep` and
+`smoke-install` all matched on prose *explaining* their triggers — five false
+positives out of seven. Parsed as YAML, only two hosted workflows ever had a
+real `pull_request` trigger. The verify now parses the trigger block.
+
+**Still hosted, and why** — this is the remaining work, not a waiver. Diagnosed
+in full 2026-08-24; the blockers are more precisely owner/risk-gated than the
+first pass assumed:
+
+- **The `corelink` fabric now HAS a working `docker` shim** — nerdctl over
+  lazily-started containerd + buildkitd, installed as `docker` on PATH, running
+  unmodified `docker build`/`login`/`push`/`run` under passwordless `sudo` inside
+  the per-lease Firecracker microVM (`corelink-runners deploy/runner/docker-shim.sh`,
+  proven by `prove-baked-buildkit.yml`). So the standing "no docker-capable
+  self-hosted runner" premise in `cosign-sign.yml`'s own header is **stale** — the
+  two docker lanes are movable in principle.
+- **Root cause under all of these: hosted is billing-blocked.** Every
+  `ubuntu-latest` job now returns *"the job was not started because recent account
+  payments have failed or your spending limit needs to be increased"* — confirmed
+  live on `cas-canary` run 32765508324. So these lanes are not merely "still
+  hosted", they **cannot start at all** where they are. Owner billing item.
+- `cosign-sign` (push): the docker shim can build+push, but this lane drives the
+  full `docker/build-push-action` (a buildx action) and it is a **code-signing**
+  lane — a broken signing path is worse than a dead one. Moving it needs a
+  dispatched proof that build-push-action + cosign actually work over the nerdctl
+  shim first. tl work, gated on that proof; risk-real.
+- `smoke-install` (push + schedule): its red is **not** docker — a 2026-08-23
+  hosted run failed on the corelink CLI binary's own runtime `error: No PAT found`,
+  i.e. `CORELINK_CANARY_PAT` was empty in THAT run's env (that string is the
+  binary's, not the workflow's guard, which says `CORELINK_CANARY_PAT is not set`).
+  **Whether the secret is actually unbound is disputed, not established.**
+  `smoke-install.yml`'s own header (dated 2026-08-02) states the opposite — it is
+  *already bound and working*, cas-canary having run it 6/6 that day — and both
+  workflows read it as the same plain repo secret (no `environment:` scoping), so
+  they cannot differ. The bound-per-header vs empty-at-runtime conflict is
+  unreconciled from the repo (the secret is write-only; only the GitHub UI shows
+  its live state), so this needs the owner to CONFIRM the binding, not a tl claim
+  that it is unbound. Either way, moving the runner does not resolve it.
+- `codeql` (schedule): supported self-hosted but needs the CodeQL bundle; heavy.
+- `cas-canary` (schedule): **genuine exception, already documented in-file** —
+  a datacenter IP is the point, it exists to see what a customer's CI sees.
+- `corelink-client-verify` (pull_request): one `cbindgen-header-stable` job,
+  **already documented in-file** — `cargo install cbindgen --locked` is a source
+  build and the fabric's registry does not publish a cbindgen manifest at the
+  pinned SHA. This is the ACCEPTED exception the mechanical verify below cannot
+  distinguish from real work — it counts any ubuntu job under a `pull_request`
+  trigger. So even with the two docker lanes moved and the owner secret bound,
+  the verify would stay red on this accepted exception until it learns to skip
+  in-file-documented exceptions (an in-file marker + parser), or cbindgen is
+  re-homed (blocked on the registry manifest).
+
+**Net residual, assigned:** (a) owner — unblock Actions billing, and CONFIRM the
+disputed `CORELINK_CANARY_PAT` binding (bind only if the GitHub UI shows it
+genuinely unset); (b) tl — dispatched proof that build-push-action + cosign run on
+the shim, then flip `cosign-sign`; (c) tl — teach the verify to honour
+in-file-documented hosted exceptions, or re-home cbindgen. Surfaced to the owner
+brief. Kept OPEN rather than force-closed.
 
 ```backlog
 id: B-005
@@ -209,10 +340,23 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  grep -lE '^\s+runs-on:\s*ubuntu-latest' .github/workflows/*.yml \
-    | xargs grep -l 'pull_request' | head -1 | grep -q .
-verify-means: open while any ubuntu-latest workflow still has a pull_request trigger
-last-verified: 2026-08-23
+  python3 - <<'EOF'
+  import glob, sys, yaml
+  bad = []
+  for f in glob.glob(".github/workflows/*.yml"):
+      text = open(f).read()
+      if "runs-on: ubuntu" not in text:
+          continue
+      on = yaml.safe_load(text).get(True) or {}
+      if isinstance(on, dict) and ("pull_request" in on or "push" in on):
+          bad.append(f)
+  sys.exit(0 if bad else 1)
+  EOF
+verify-means: |
+  open while any workflow with an ubuntu job has a REAL pull_request or push
+  trigger, parsed from the YAML rather than grepped from the text — the previous
+  check matched comments and reported five workflows that trigger on neither.
+last-verified: 2026-08-24
 ```
 
 ---
@@ -267,6 +411,8 @@ uncomfortable implication — if the escalation policy works, the owner has been
 paged SEV-0 daily since roughly 2026-07-17; if it does not, then no alert this
 system raises has ever reached anybody.
 
+**Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
+today, what each option costs, and what happens if the answer is "not now".
 ```backlog
 id: B-008
 repo: corelink-server
@@ -288,6 +434,8 @@ retention backend is in-memory: no stored `retain_until`, no Governance or
 Compliance mode flag, no R2 Object-Lock enforcement. Needs a policy decision
 before any build.
 
+**Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
+today, what each option costs, and what happens if the answer is "not now".
 ```backlog
 id: B-009
 repo: corelink-server
@@ -684,15 +832,37 @@ The gap is narrow but real: a single tenant/region partition could fail every
 hour indefinitely while the fleet looks healthy. Closing it needs either a
 per-partition lag query or a page driven off the sweep's own non-200.
 
+**Closed 2026-08-24 — the per-partition lag query.** `audit-archive-lag.yml`
+now runs a third measurement alongside the two absence clauses: any
+`(tenant_id, region)` partition that both still owns a sealed, non-quarantined,
+unarchived row older than T **and** whose OWN `MAX(archived_at)` is itself
+older than T (or NULL) is counted in `partitions_failed`, and
+`partitions_failed > 0` raises the PagerDuty page on its own — it does not need
+the whole-table archiver to also look idle. It carries a distinct
+`class=archive-partition-failure` and dedup key so it never collapses into an
+absence incident.
+
+Why the query cannot false-page on the healthy historical drain: the archiver
+sweeps EVERY partition with sealed-but-unarchived, non-quarantined rows on each
+hourly tick (`read_unarchived_partitions` in `routes/audit_archive.rs`),
+archiving each one's clean prefix. A partition that is draining advances its own
+`archived_at` every tick and is excluded by the `HAVING`; a fully quarantined
+partition owns no non-quarantined rows and never appears — so this can never
+page on the 2026-08-14 fork. Only a partition the sweep touches and fails to
+advance, tick after tick, survives both conditions. Runbook §3.3 and §4 updated
+to match (the section that used to document this exact gap as "check
+`partitions_failed` by hand").
+
 ```backlog
 id: B-022
 repo: corelink-server
 owner: tl
-status: open
-verify: "! grep -q 'partitions_failed' .github/workflows/audit-archive-lag.yml"
+status: done
+verify: "grep -q 'partitions_failed' .github/workflows/audit-archive-lag.yml"
 verify-means: |
-  open while no scheduled check looks at per-partition archive failure. Closes
-  when a partial failure can raise a page on its own.
+  done — a scheduled check looks at per-partition archive failure and can page
+  on it alone. Reopens if the per-partition clause is torn out of the lag cron
+  (the workflow stops referencing `partitions_failed`).
 last-verified: 2026-08-24
 ```
 
@@ -707,16 +877,35 @@ merged PR #1049 with four checks still pending.
 So the repo where a bad merge rolls a container image onto customer jobs has the
 weaker gate.
 
+**Closed 2026-08-24 by corelink-runners PR #499**, which took that repo's
+`scripts/pre-merge-gate-check.sh` from 156 to 475 lines: `--merge` in one process
+(no `&&` for a pipeline's exit status to swallow), `--dry-run`, `--admin-reason`
+refused on draft/pending/conflicting/missing-gate, draft refusal, post-merge state
+confirmed by re-querying GitHub rather than trusting `gh`'s exit code, and
+remote-branch cleanup through the API.
+
+Two checks are REPO-SPECIFIC rather than copied: `REQUIRED_PRESENT` is
+`["gates", "dco"]` there, not `["dco", "gitleaks"]`, because corelink-runners has
+no per-PR gitleaks lane, and `spawn-worker-ci.yml` is excluded as paths-filtered.
+A gate that names a workflow the repo does not run is worse than no gate — it is
+a green that proves nothing.
+
+Verified against that repo's `origin/main` rather than taken on report: 475
+lines, 12 occurrences of `--admin-reason`.
+
 ```backlog
 id: B-023
 repo: corelink-runners
 owner: tl
-status: open
-verify: "test \"$(wc -l < ../corelink-runners/scripts/pre-merge-gate-check.sh 2>/dev/null || echo 0)\" -lt 400"
+status: done
+verify: manual
 verify-means: |
-  open while the runners copy of the gate is materially shorter than the
-  server's, i.e. missing the later defenses. Path is relative to a sibling
-  checkout; a missing checkout reads as still-open, which is the safe direction.
+  done — the runners gate is at parity (475 lines, --merge and --admin-reason
+  present). Re-check from a checkout of that repo:
+    git show origin/main:scripts/pre-merge-gate-check.sh | wc -l
+  Reopens if that copy is truncated back under 400 lines, which is the state
+  that left the repo where a bad merge rolls a container image onto customer
+  jobs carrying the weaker gate.
 last-verified: 2026-08-24
 ```
 
@@ -771,24 +960,53 @@ remainder `quarantined_at` + `quarantine_reason`
 (`sequence_gap:expected=11,found=10`), so healthy rows reach R2 instead of being
 held hostage by one historical fork. Re-sequencing stays FORBIDDEN — no chain
 column is ever UPDATEd, enforced by a test that re-reads the writer's own source.
-Migration `0100_audit_outbox_quarantine.sql` adds the columns and a narrowed
+Migration `d1/0100_audit_outbox_quarantine.sql` adds the columns and a narrowed
 work-queue index; the B-021 absence monitor excludes quarantined rows from its
 pending clause (they can never clear it) while printing their census every hour;
 `RB-AUDIT-ARCHIVE-ABSENT` §5 says what a quarantined row means and how to list
 them. **Still open** until the migration is applied to prod D1 and the eight
 partitions are observed quarantined with a recorded sequence range per partition.
 
+**Closed 2026-08-24 — the decided policy is applied in prod and observed.**
+Migration `0100` is live on `corelink-prod-d1` and the archiver's quarantine pass
+fired at 15:00:08 UTC. It archived 45,836 rows and quarantined exactly the eight
+forked partitions, 11,818 rows, each with its own recorded reason and sequence
+range:
+
+| partition | rows | seq range | reason |
+|---|---|---|---|
+| `…0f0005`/enam | 11,435 | 9234..20669 | `sequence_gap:expected=9235,found=9234` |
+| `3c7d77b1…`/enam | 219 | 4988..5206 | `sequence_gap:expected=4989,found=4988` |
+| `_public`/wnam | 120 | 10..130 | `sequence_gap:expected=11,found=10` |
+| `bba0ff1d…`/enam | 15 | 1..14 | `chain_head_discontinuity:seq=1` |
+| `e51607b0…`/enam | 13 | 0..13 | `sequence_gap:expected=1,found=0` |
+| `ce42d194…`/enam | 12 | 1..13 | `sequence_gap:expected=2,found=1` |
+| `8873dc37…`/enam | 3 | 0..3 | `sequence_gap:expected=1,found=0` |
+| `dd35a645…`/enam | 1 | 0..0 | `sequence_gap:expected=1,found=0` |
+
+Eight partitions, as measured on 2026-08-14 — no drift in the population, and no
+row outside the original 17-minute window was ever involved. The remaining 90
+unchained rows are ordinary new traffic awaiting the next drain.
+
+One correction to what this item asserted. It claimed the fork "is not an open
+wound" because today's drain "aborts the partition when the head drifted under it
+rather than forking". Reading the drain again against this data, that is stronger
+than the code earns — see [B-038]. The quarantine census above is unaffected
+either way; what changes is whether recurrence is prevented or merely unobserved.
+
 ```backlog
 id: B-026
 repo: corelink-server
 owner: tl
-status: open
-verify: manual
+status: done
+verify: |
+  test "$(grep -c 'quarantined_at' migrations/d1/0100_audit_outbox_quarantine.sql)" -gt 0
 verify-means: |
-  open until the eight forked partitions are either archived under a decided
-  policy or formally recorded as unarchivable. Re-measure with: SELECT
-  tenant_id, region, COUNT(*)-COUNT(DISTINCT sequence_number) FROM audit_outbox
-  WHERE emitted_at IS NOT NULL GROUP BY 1,2 HAVING 3 > 0.
+  done while the quarantine policy the owner decided is present in the applied
+  migration. The prod-state half is a one-time observation, recorded in the table
+  above rather than re-run: re-measure with SELECT tenant_id, region, COUNT(*),
+  MIN(sequence_number), MAX(sequence_number), quarantine_reason FROM audit_outbox
+  WHERE quarantined_at IS NOT NULL GROUP BY 1,2,6.
 last-verified: 2026-08-24
 ```
 
@@ -805,9 +1023,18 @@ validator". That validator does not exist. A file asserting its own gate is
 exactly the shape that survives review.
 
 Twenty runbook ids are cited from `runbook:` labels in those rules and
-**fourteen have no file**: `RB-AC-CONFORMANCE`, `RB-AC-COST-REGRESSION`,
-`RB-AC-HIT-RATIO`, `RB-AC-LATENCY`, `RB-AC-SLO-BURN`, and `RB-FM-059`, `-060`,
-`-250`, `-253`, `-254`, `-300`, `-303`, `-305`, `-404`. By contrast the three
+**five have no file**: `RB-AC-CONFORMANCE`, `RB-AC-COST-REGRESSION`,
+`RB-AC-HIT-RATIO`, `RB-AC-LATENCY`, `RB-AC-SLO-BURN`.
+
+> **Correction (2026-08-24).** This paragraph first claimed *fourteen*, adding
+> the nine `RB-FM-*` ids (059/060/250/253/254/300/303/305/404). Those exist —
+> in a SECOND runbook root, `specs/05_quality/runbooks/`, under slugged
+> filenames (`RB-FM-059-do-quota-exceeded.md`). The original count came from
+> resolving ids against filenames in one directory. All 124 runbooks declare a
+> front-matter `id:`, so `scripts/validate_alert_runbook_labels.py` resolves by
+> that and falls back to the filename stem. The overcount was mine, and it is
+> exactly the failure this backlog exists to prevent: a number asserted from a
+> partial scan and then quoted as fact. By contrast the three
 runbook pointers in live PagerDuty payloads all resolve — the last dangling one
 was written on 2026-08-24.
 
@@ -819,12 +1046,23 @@ is aspirational, in which case the files must say so instead of claiming a gate.
 id: B-027
 repo: corelink-server
 owner: tl
-status: open
-verify: "! grep -rq 'promtool' .github/workflows/"
+status: done
+verify: "grep -rq 'promtool' .github/workflows/"
 verify-means: |
   open while no workflow runs promtool over dashboards/alerts/. Closes when the
   rules are validated and published, or relabelled non-live with the false gate
   claim removed.
+
+  CLOSED by PR #1264 on the second branch of that condition: `alerts-validate.yml`
+  runs `promtool check rules` over all ten files on `corelink` (proven in CI —
+  10 files, 125 rules, and proven able to fail: a corrupted `expr:` exits 1), a
+  new `scripts/validate_alert_runbook_labels.py` asserts every `runbook:` label
+  resolves, and FOUR files carrying a false "validated on PR" header were
+  corrected — one more than this item knew about. Nothing publishes these rules
+  to an Alertmanager, and the workflow header says so in as many words, so a
+  green run cannot be misread as "these alerts are firing". Publishing was never
+  part of this item's stated closure condition; if it is wanted, it needs its own
+  item rather than holding this one open forever.
 last-verified: 2026-08-24
 ```
 
@@ -893,20 +1131,34 @@ to the crates a PR's diff actually touches, or a workspace clippy on push-to-mai
 only. Choosing between them is a cost call and belongs in the same PR that
 measures what each would cost on the fabric.
 
+**Closed 2026-08-24.** `.github/workflows/workspace-lint.yml` runs
+`cargo clippy --workspace --all-targets -- -D warnings` on merge to `main`,
+filtered to commits that change Rust, plus dispatch. **Proven on real CI
+hardware before this was claimed**: run 32744738915, PASS in 6 m 54 s.
+
+Measured first, and the measurement was the good news: the workspace is
+**already clean** — zero warnings under `-D warnings`, cold 8 m 20 s / warm 49 s
+locally. The zero is a measurement rather than a silent no-op; a `&Vec<u8>`
+parameter planted in `corelink-hash` produced the expected `ptr_arg` warning and
+was reverted. So the gate starts green and there is no lint debt to pay down.
+
+Deliberately not per-PR: five runners share one machine and one `$HOME`, the
+crate-scoped lanes already lint what a PR touches, and what nothing covered was
+the crate NOBODY touched. No cron either — lint results cannot change without a
+commit.
+
 ```backlog
 id: B-033
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  test "$(grep -rho 'cargo clippy --package [a-z0-9-]*' .github/workflows/*.yml \
-    | awk '{print $4}' | sort -u | wc -l | tr -d ' ')" -lt 84
+  grep -q "clippy --workspace --all-targets" .github/workflows/workspace-lint.yml && \
+  grep -q "branches: \[main\]" .github/workflows/workspace-lint.yml
 verify-means: |
-  exits 0 while fewer workspace members have a per-crate clippy lane than exist
-  in the workspace, i.e. while some crate is linted by nothing on a PR. Starts
-  failing once coverage is closed — by per-crate lanes, or by whatever
-  diff-scoped or push-to-main lane replaces the parked workspace one, in which
-  case this verify is what must be rewritten to match the new mechanism.
+  done — the workspace lint runs on merge to main. Red if the gate is deleted or
+  demoted back to dispatch-only, which is the state that let 63 crates go
+  unlinted.
 last-verified: 2026-08-24
 ```
 
@@ -921,16 +1173,45 @@ CURRENT run's own artifacts, so there is nothing to compare against.
 A green check that asserts nothing about performance, in a repo whose product
 claim is speed.
 
+A green check that asserts nothing about performance, in a repo whose product
+claim is speed.
+
+**Two of the three blockers are now cleared; the third is owner infra.**
+- Comparison logic — REAL since PR #1263 (proven both ways: exit 2 at +73.9%
+  over a stored baseline, exit 0 at +15.0%, failing run does not publish a new
+  baseline).
+- Runner label — FIXED here: both jobs moved from `[self-hosted, Linux, X64]`
+  (a triple no runner carries) to `runs-on: corelink`. That is the correct home:
+  this is a load GENERATOR firing k6 at a remote endpoint, so a datacenter uplink
+  matters and host CPU does not — the very reason it never suited the residential
+  Mac fleet.
+- **Remaining blocker — there is no staging environment to fire at.**
+  `staging.corelink.humangr.com` does not resolve, and the `staging` GitHub
+  environment carries none of the secrets the suite reads (`K6_TARGET_HOST`,
+  `K6_STAGING_PAT`, …). So even on a live runner the pre-flight fail-closes every
+  run. Standing up staging (or retiring the staging-targeted suites) is an owner
+  cost decision, surfaced in `docs/internal/2026-08-24-owner-decision-brief.md`.
+
+The verify no longer keys on the (now-fixed) advisory-mode / dead-label strings —
+that would flip green on a technicality while the suite still cannot run. It keys
+on the honest end state: the nightly `schedule` is re-enabled, which must happen
+in the SAME change that wires the staging secrets, never before.
+
 ```backlog
 id: B-029
 repo: corelink-server
 owner: tl
 status: open
-verify: "grep -q 'advisory mode' .github/workflows/load-test-nightly.yml"
+verify: "! grep -qE \"^[[:space:]]+- cron: '0 2 [*] [*] 0'\" .github/workflows/load-test-nightly.yml"
 verify-means: |
-  open while the regression check prints advisory mode instead of comparing
-  against a stored baseline. Closes when it can go red, or when it stops calling
-  itself a regression gate.
+  open while the load suite's nightly `schedule` is still disabled (the cron
+  line commented out) — which is correct while no staging environment exists to
+  load-test against, since enabling it sooner only manufactures a nightly red on
+  missing infra. Closes when the cron is re-enabled, which by policy happens in
+  the same change that stands up staging and wires K6_TARGET_HOST + the
+  K6_STAGING_* secrets. The comparison logic (PR #1263) and the runner label
+  (corelink) are already done; the residual is owner infra, tracked in the
+  owner decision brief. See B-037 for the sibling dead-label sweep.
 last-verified: 2026-08-24
 ```
 
@@ -950,22 +1231,48 @@ What is missing is not the fix, it is the noticing. Nothing watches whether the
 Mac fleet has its expected slot count or whether the queue is draining — and the
 queue is the one signal that would have caught both.
 
+**Closed 2026-08-24, and the item's own diagnosis was wrong.** The fifth slot
+did not need a restart. Its launchd service was restarting fine and the listener
+was exiting immediately with:
+
+```
+Failed to create a session. The runner registration has been deleted from the
+server, please re-configure.
+```
+
+GitHub auto-removes a runner that stays offline for ~14 days. Once it does, the
+local config is orphaned and **no number of restarts can recover it** —
+`launchctl kickstart` brought the process up and it died seconds later, every
+time. The fix was `svc.sh uninstall` → `config.sh remove --local` (the server-side
+`remove` returns 404, which is itself the confirmation) → re-register with
+`--replace` → `svc.sh install && svc.sh start`. Verified: five
+`corelink-builder` runners, all `online`.
+
+`scripts/check_runner_fleet.py` + `.github/workflows/runner-fleet-health.yml`
+watch the count hourly from the **Cloudflare container fabric, not the Macs** — a
+health check that runs on the thing it watches reports "fine" exactly when it is
+not. Each failure mode was exercised rather than assumed: missing slot exits 1,
+an unreadable fleet exits 2.
+
+The slot census needs repository admin, which the Actions `GITHUB_TOKEN` cannot
+have. So in CI the census is **explicitly** disabled via `FLEET_SLOT_CENSUS=skip`
+and the run says so on every line of output; without that variable the script
+FAILS rather than silently running half of itself. Queue health — runs sitting
+queued while nothing is in progress, the wedge's actual symptom — runs on every
+tick with the default token. The missing credential is B-012.
+
 ```backlog
 id: B-030
 repo: corelink-server
 owner: tl
-status: open
-verify: manual
+status: done
+verify: |
+  test -f scripts/check_runner_fleet.py && \
+  grep -q "runs-on: corelink" .github/workflows/runner-fleet-health.yml
 verify-means: |
-  open while fewer than five corelink-builder runners are registered, AND while
-  nothing watches that count. NOT CI-checkable: listing self-hosted runners needs
-  `administration: read`, which the Actions GITHUB_TOKEN does not have and cannot
-  be granted — the same wall that forced the fleet-busy endpoint. Run it where gh
-  is authenticated:
-    gh api /repos/HuGR-Labs/corelink-server/actions/runners \
-      -q '[.runners[]|select(.name|startswith("corelink-builder"))]|length'
-  Closes when the fifth slot is back AND a gate watches the count, since the
-  count is precisely what nobody was watching.
+  done — the count is watched, from off-fleet. Red if the watcher is deleted or
+  moved onto the Macs it is supposed to be watching. The live slot count itself
+  is asserted by the hourly run, not by this line.
 last-verified: 2026-08-24
 ```
 
@@ -988,6 +1295,8 @@ the next digest states it plainly. Regression semantics were deliberately left
 alone: 2× remains the §7 page-worthy trigger, and changing that is a compliance
 decision, not a rendering one.
 
+**Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
+today, what each option costs, and what happens if the answer is "not now".
 ```backlog
 id: B-032
 repo: corelink-server
@@ -1011,15 +1320,42 @@ Large relative to the other two repos, which carry none. Needs a merged-vs-
 abandoned sweep. Live worktrees point at some of them, so nothing may be deleted
 blind.
 
+**Closed 2026-08-24, and the item's own framing was wrong.** It read "~115
+branches with no open PR", which reads as abandoned work. Classified against
+GitHub's PR state rather than `git branch --merged` — squash merges destroy
+ancestry, so `--merged` called 141 of 146 unmerged and would have been a useless
+basis for deleting anything:
+
+| | |
+|---|---|
+| branches with a **MERGED** PR | **135** |
+| no PR ever (1-2 commits ahead, 160-415 behind: abandoned WIP) | 9 |
+| open PR | 1 |
+
+The 135 were deleted: their content is in `main` and GitHub keeps the ref
+recoverable from the PR page. Branches checked out in a live worktree were
+excluded by name first — another session held one. The remote went from 146 to
+11.
+
+The 9 without a PR are left alone deliberately. Each is somebody's unmerged work,
+and "no PR" is evidence of never having been proposed, not of abandonment:
+`feat/check-host-w2`, `feat/check-host-w5`, `feat/wp-b1a-entitlements-read`,
+`feat/wp-b1b-lease-detail`, `feat/wp-b1c-usage-multiperiod`,
+`worktree-agent-a8927d57490812036`, `docs/use-scenarios-r3`,
+`proof/f33-measure-wow`.
+
 ```backlog
 id: B-011
 repo: corelink-runners
 owner: tl
-status: open
+status: done
 verify: manual
 verify-means: |
-  lives in corelink-runners; not automatable until [B-012] lands a cross-repo credential
-last-verified: 2026-08-23
+  done — 135 merged-PR branches pruned, remote down to 11. Re-check by comparing
+  `gh pr list --repo HuGR-Labs/corelink-runners --state all --json
+  headRefName,state` against `git ls-remote --heads`. Reopens if the
+  merged-but-undeleted count climbs again, i.e. if nothing prunes on merge.
+last-verified: 2026-08-24
 ```
 
 ---
@@ -1047,19 +1383,37 @@ through a re-run of an already-cached task against our endpoint and record
 whether a PUT is re-issued for a key that exists, and what the client does with a
 refusal. Then decide.
 
-Residual until then: a credential with cache-write scope for a tenant can replace
-the bytes behind that tenant's own Turborepo keys. Not cross-tenant; the envelope
-does not detect it, because the key is not a preimage of the content.
+**Closed 2026-08-24 — the evidence was gathered, then create-only landed.** The
+real `turbo` client (v2.10.11) was driven against a local mock of the
+`/v8/artifacts` surface (the mock, not prod, because the refusal path — question
+2 — can only be observed against a server that refuses, and prod overwrites):
+
+- turbo **GETs before it PUTs** and only uploads on a confirmed miss; with the
+  remote warm it downloads the hit and **never re-PUTs an existing key**. Only
+  `--force` (a deliberate override) even attempts an overwrite.
+- on a `409` it emits a **non-fatal warning**, the build **succeeds** (exit 0),
+  and the cache is **not** disabled — no `.sccache_check`-style self-disable.
+
+Both risks that justified deferring are therefore measured false, so PUT is now
+create-only (`put_if_absent`, 409 on an existing key), closing the residual: a
+`cas:rw` credential can no longer replace the bytes behind its own tenant's
+Turborepo keys. Method + full transcript:
+`docs/design/2026-08-24-turborepo-create-only-evidence.md`. The old overwrite
+byte-delta reconciliation (rt34) is superseded — overwrites can no longer be
+issued at all.
 
 ```backlog
 id: B-024
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  ! grep -q "create_only\|put_if_absent" crates/corelink-container/src/routes/turbo_v8.rs
-verify-means: open while Turborepo PUT stays an overwrite; lands red once create-only semantics appear on that surface
-last-verified: 2026-08-23
+  grep -q "create_only\|put_if_absent" crates/corelink-container/src/routes/turbo_v8.rs
+verify-means: |
+  done — Turborepo PUT is create-only (put_if_absent): the surface refuses an
+  overwrite with 409. Reopens if the create-only semantics are torn out of that
+  surface (the file stops naming create_only / put_if_absent).
+last-verified: 2026-08-24
 ```
 
 ### B-031 — SLSA L3 needs a GitHub-hosted builder, which this repo does not spend on
@@ -1083,6 +1437,8 @@ currently asserted; or (c) withdraw the provenance claim entirely. Option (b)
 and (c) both require editing the ISO 27001 SoA A.5.21 row and the SOC 2
 crosswalk, which cite SLSA L3 today.
 
+**Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
+today, what each option costs, and what happens if the answer is "not now".
 ```backlog
 id: B-031
 repo: corelink-server
@@ -1117,6 +1473,8 @@ condition). It is a legal and product call, not an editorial one.
 lines as **tracked** drift: visible on every run, fatal under `--strict`, and
 impossible to forget. New occurrences anywhere else fail the gate outright.
 
+**Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
+today, what each option costs, and what happens if the answer is "not now".
 ```backlog
 id: B-035
 repo: corelink-server
@@ -1151,16 +1509,168 @@ jobs onto `corelink` (axe/lighthouse need a browser — check the image), and
 either fix or scope the link check, because a gate reporting 2 116 failures
 gates nothing.
 
+**Link half closed by PR #1261 (2026-08-24).** Down to zero non-GitHub errors,
+proven by running lychee locally against the real build with the CI's own
+arguments. Real rot was repaired, not hidden: a dead GitHub org path in 43 files
+including every i18n mirror, the moved BLAKE3 paper, the HubSpot security page,
+the ANPD petition URL, and every documented CLI install recipe (see B-036).
+Exclusions were added only for category errors and for dead hosts that already
+carry a dated suppression in `hostname.tracked_dead`, each annotated in
+`apps/docs/lychee.toml` with why it is not a link. The `verify` above is
+deliberately unchanged: it tracks the hosted-runner half, which is still open.
+
+That work also surfaced B-037 — the reason the link count looked survivable is
+that the gate runs authenticated.
+
+**Hosted half closed 2026-08-24 — and three of the six jobs were deleted, not
+moved.** The trigger was GitHub itself: every `ubuntu-latest` job began failing
+in 2 seconds with `steps=0` and no runner, annotated *"The job was not started
+because recent account payments have failed or your spending limit needs to be
+increased"*. That reframed the 2026-08-03 decision to keep six jobs hosted —
+each of those notes weighed billed minutes against a real technical blocker, and
+the billed-minutes side of the trade no longer exists.
+
+Deleted (each ended in `|| echo "::warning::"`, so no finding could ever fail
+them — 87 billed minutes per 3 days for gates that proved nothing):
+
+- `lighthouse` — the owner's call, and the code agrees: advisory-only.
+- `axe` — advisory, and its rules are already enforced for real by the two a11y
+  jobs below.
+- `lighthouse-baseline` — same engine; this one COULD fail, but it is schedule-only
+  and went with the rest of Lighthouse. `apps/docs/lighthouserc.cjs` went too.
+
+Also deleted, on a second pass after the owner asked whether this was ceremony —
+and they were right about this one:
+
+- `a11y-baseline-diff` — strictly DOMINATED by `a11y-playwright` in the same
+  workflow. The sweep forbids ANY `serious`/`critical` on every route
+  (`playwright/a11y-sweep.spec.ts`, `FORBIDDEN_IMPACT`); this one only forbids a
+  NEW `critical` versus a baseline (`scripts/a11y-audit.sh:182`). Whenever the
+  sweep passes, this cannot fail. It was migrated before it was questioned — a
+  browser install per run to prove something already proven. `a11y-audit.sh` and
+  the baseline JSON stay as manual tools (`pnpm a11y-audit:diff`); the doc that
+  claimed a workflow ran them is corrected.
+
+Moved to `corelink`, both real gates, neither weakened:
+
+- `a11y-playwright` — already installed its own chromium; `admin-ui-e2e.yml` runs
+  that exact install on the fabric today, so this was the same recipe.
+- `broken-links` — the Docker container action cannot run on a box without
+  docker, so lychee is now a pinned release binary (v0.24.2, the same version the
+  link sweep was measured with) whose SHA-256 is verified before it is unpacked
+  or executed. The objection that a hand-rolled download loses the action's pin
+  is answered rather than ignored: version and checksum are both pinned in the
+  workflow.
+
+`docs-ci.yml` now has zero `runs-on: ubuntu-latest`; `actionlint` green.
+
 ```backlog
 id: B-034
 repo: corelink-server
 owner: tl
+status: done
+verify: |
+  test "$(grep -c 'runs-on: ubuntu-latest' .github/workflows/docs-ci.yml)" = "0"
+verify-means: |
+  done while every job in docs-ci runs on the self-hosted fleet. Goes red the
+  moment a hosted job is reintroduced — which is the direction that matters,
+  since the failure mode here was a hosted job nobody was watching.
+last-verified: 2026-08-24
+```
+
+### B-036 — every documented CLI install recipe was fiction
+
+The installation tutorial and the 10-minute quickstart offered four
+"alternative install paths" for readers who cannot pipe curl to a shell. In all
+four locales, every one of them was wrong: `brew install
+HumanGuardrail/tap/corelink` (neither `HumanGuardrail/homebrew-tap` nor
+`HuGR-Labs/homebrew-tap` exists — both 404), `winget install
+HumanGuardrail.corelink` (never published), and two "release tarball" recipes
+naming a repo that does not exist (`HumanGuardrail/corelink-cli`), a format that
+is not published (`.tar.gz`; the assets are raw binaries) and an architecture
+spelling the release does not use (`arm64` vs `aarch64`).
+
+The primary `curl -fsSL https://corelink-get.humangr.com | sh` path was correct
+throughout, and its installer already normalises uname's `arm64` to the
+published `aarch64` — with a comment explaining that this exact mismatch once
+broke every Apple Silicon Mac. That is why this survived: the working path is
+the one everybody tests.
+
+Fixed in PR #1261 against the real assets on `HuGR-Labs/corelink-cli`, each
+verified 200 anonymously, with the published `.sha256` checked before the binary
+is made executable. The security policy's in-scope list, which named the
+nonexistent Homebrew formula as a distribution surface a researcher could probe,
+was corrected in the same change.
+
+Left open deliberately: nothing gates this. No check installs the CLI the way a
+reader would, so the next rename or release-format change reintroduces it
+silently.
+
+**Closed 2026-08-24 — the gate now exists.** `manual-install-recipes.yml`
+reproduces the documented manual recipe exactly: it downloads
+`corelink-linux-x86_64` + its `.sha256` BY NAME from
+`HuGR-Labs/corelink-cli/releases/latest/download`, **anonymously** (no
+`GITHUB_TOKEN` — an asset a signed-in CI can fetch but the public cannot is
+exactly the failure a credentialed gate would hide), verifies the published
+checksum with `sha256sum -c` BEFORE chmod, and runs the binary asserting
+`--version` names the CLI. `runs-on: corelink` (Linux x86_64 datacenter, the
+recipe's own platform; off hosted minutes). Triggers: a weekly cron (a NEW
+upstream release can break the asset name/format/arch WITHOUT a commit here —
+the one case that earns a clock), `workflow_dispatch`, and a `pull_request`
+scoped to the two tutorial files + itself so a recipe edit re-verifies. The
+whole recipe was proven end-to-end locally first (linux + darwin assets: 200,
+`sha256sum -c` OK, `--version` → `corelink 0.1.0`).
+
+```backlog
+id: B-036
+repo: corelink-server
+owner: tl
+status: done
+verify: |
+  grep -rqE '^[^#]*HuGR-Labs/corelink-cli/releases' .github/workflows/
+verify-means: |
+  done — a workflow (manual-install-recipes.yml) downloads the documented
+  release assets by name and verifies the published checksum the way the
+  tutorial tells a reader to. Reopens if that check is removed (no workflow
+  fetches the manual-recipe assets any more).
+last-verified: 2026-08-24
+```
+
+### B-037 — two gates cannot see what they claim to check
+
+Two independent instances of the same shape, both found on 2026-08-24.
+
+**lychee runs authenticated.** The docs link checker uses a GitHub token, so a
+link into a PRIVATE repo resolves for CI and 404s for every actual reader. Run
+the identical command locally without a token — the customer's view — and the
+same build yields **2 589 GitHub errors that CI reports as OK**. Nearly all are
+the trust-centre and compliance pages citing evidence files under
+`HumanGuardrail/corelink-server`, i.e. the site invites a prospect to read
+audits they cannot open. Two possible resolutions and the item covers both:
+publish what the trust pages cite, or stop citing what cannot be published. What
+is NOT acceptable is the current state, where the gate is green because it holds
+a credential the reader does not.
+
+**Six workflows are pinned to a label no runner holds.** `runs-on:
+[self-hosted, Linux, X64]` appears in six workflow files; the fleet has
+`corelink` (Firecracker/Linux) and `[self-hosted, mac, corelink-builder]`, and
+nothing carries that triple. Those workflows cannot execute. `load-test-nightly`
+documents this in its own header and has had its cron removed; the other five
+have not been checked. A workflow that cannot be scheduled is indistinguishable
+from one that passes, in every view that matters.
+
+```backlog
+id: B-037
+repo: corelink-server
+owner: tl
 status: open
 verify: |
-  grep -c "runs-on: ubuntu-latest" .github/workflows/docs-ci.yml | grep -qv '^0$'
+  test "$(grep -rl 'self-hosted, Linux, X64' .github/workflows/*.yml | wc -l | tr -d ' ')" -gt 0
 verify-means: |
-  open while docs-ci still schedules hosted jobs; goes red once every job in that
-  workflow runs on the self-hosted fleet
+  open while any workflow targets a runner label the fleet does not provide.
+  Covers only the second half; the authenticated-lychee half has no mechanical
+  predicate yet, which is itself the point — write one when the trust-page
+  decision lands.
 last-verified: 2026-08-24
 ```
 
@@ -1177,6 +1687,8 @@ nothing. Needs a fine-grained PAT or GitHub App token with `contents:write` and
 `pull_requests:write`. Deliberately not reusing an existing release token: one
 secret, one purpose.
 
+**Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
+today, what each option costs, and what happens if the answer is "not now".
 ```backlog
 id: B-012
 repo: corelink-server
@@ -1203,6 +1715,8 @@ is listed here only so nobody deletes three and calls it four.
 These are GitHub App private keys. Secure deletion is genuinely the owner's: I do
 not permanently delete data. `rm -P` overwrites before unlinking.
 
+**Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
+today, what each option costs, and what happens if the answer is "not now".
 ```backlog
 id: B-013
 repo: corelink-server
@@ -1246,4 +1760,209 @@ verify-means: |
   account. Requires .env.local, so it only runs locally — the CI gate treats a
   missing file as a failed check, which is the correct direction.
 last-verified: 2026-08-23
+```
+
+### B-038 — the drain's drift path rests on a byte-identity claim the code does not guarantee
+
+`archive_partition`'s sibling in the drain seals rows FIRST and only then runs the
+compare-and-set on `audit_chain_head`
+(`crates/corelink-container/src/routes/audit_drain.rs`, the seal loop then
+`advance_head_cas`). The CAS is correct in isolation: a drain that loses it does
+not advance the head. But by then it has already written its own `sequence_number`,
+`prev_hash` and `chain_hash` onto real rows, and the drift branch does not undo
+them. It justifies that with a comment:
+
+> Our sealed rows are byte-identical to that drain's (deterministic), so they are safe
+
+That holds only if both drains sealed the SAME rows in the SAME order from the SAME
+head. Nothing enforces it. `read_pending_rows` returns whatever is pending at the
+moment it runs, so two drains that overlap read different sets. The prod data from
+[B-026] shows exactly that outcome: partition `…0f0005`/enam has TWO rows at
+sequence 9234 — one `corelink.cas.write.attempted` sealed at 01:43:40Z with
+`prev_hash` equal to 9233's `chain_hash`, and one `corelink.cas.write.committed`
+sealed at 02:00:50Z with a `prev_hash` (`a4c578…`) that appears nowhere in the
+table as any row's `chain_hash`. Not byte-identical; a second branch.
+
+Two consequences beyond the stall. The branch that WON the CAS is the one the head
+still follows (`next_sequence` 20670 today), while the branch the archiver reached
+first is the one now sealed into R2 — so the archive holds a row that is not on the
+canonical chain. And the 17-minute spacing is the clue to the trigger: the seal
+loop writes one row per D1 round trip, so a large partition can still be writing
+when the next cron tick starts. Nothing serialises the two.
+
+This item is about recurrence, not repair. The eight historical partitions are
+already quarantined and closed under [B-026]; what is unproven is that it cannot
+happen again. The fix directions are a partition lease so two drains cannot overlap,
+or moving the seal after the CAS so a loser writes nothing. Either is a real change
+to the integrity path and wants its own design pass, not a patch.
+
+**Design pass done, implementation awaiting review (2026-08-24):**
+`docs/design/2026-08-24-audit-drain-partition-lease.md`. It picks a per-partition
+drain **lease** (serialise drains) over seal-after-CAS (which breaks the
+sealed-tail crash-recovery invariant — analysed in the doc), keeping the existing
+seal→CAS→drift logic untouched (it is correct for a single writer; the lease
+supplies the single-writer precondition the byte-identity claim always needed).
+Specifies the additive `audit_drain_lease` migration, the atomic
+`ON CONFLICT … WHERE expires_ms < now` acquire, TTL/crash-recovery, and a
+validation plan that does not pretend the pure-function drain harness can prove
+D1 concurrency (a prod dup-sequence probe is the real proof). Left OPEN
+deliberately: this mutates the audit **integrity** path with no CI-provable test,
+so it is specified for review before it lands, not landed on a watch-and-see.
+
+```backlog
+id: B-038
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  grep -q "byte-identical to that drain" crates/corelink-container/src/routes/audit_drain.rs
+verify-means: |
+  open while the drift path still justifies its no-op with the byte-identity claim.
+  Goes red once the drain either serialises partitions or seals after the CAS, at
+  which point the comment and the assumption both go away.
+last-verified: 2026-08-24
+```
+
+### B-039 — CI pins a hash against a URL upstream overwrites; fifth value, third outage
+
+`TLC_SHA256_PINNED` guards `tla2tools.jar`, fetched from
+`https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar`. That URL
+is **mutable**: the tag stays `v1.8.0` while the asset behind it is re-cut. Recorded
+pin values for that one tag:
+
+| pinned | sha256 | note |
+|---|---|---|
+| 2026-04-25 | `d5d07d5d…` | |
+| 2026-06-02 | `237332bd…` | |
+| 2026-07-09 | `33de7da9…` | never entered ADR-0042 §A1 — §A1 and CI disagreed 3 weeks |
+| 2026-08-02 | `e22f8ffb…` | after `tla_check` scored 0 successes in 100 runs |
+| 2026-08-24 | `eabd140a…` | this one; upstream re-cut on 2026-08-21 |
+
+Each re-cut presents as a supply-chain pin violation, which is indistinguishable at
+the point of failure from a real compromise — so every occurrence costs a full
+verification ceremony, and the pressure each time is to just bump the number. Once
+it went unnoticed for 195 runs while five TLA+ gates proved nothing and still
+appeared in the rotation.
+
+ADR-0042 §A1 has carried the same remedy as a "standing recommendation" since
+2026-08-02 and it has now been restated twice without being done. It is promoted
+here to a tracked item because a recommendation that survives three outages is not
+a recommendation.
+
+**The fix:** stop fetching from a mutable third-party URL. Copy the verified jar
+once to storage we control and point all carriers at that immutable object, keeping
+the SHA-256 check (which then can only fail if OUR copy changed — a real signal
+instead of a recurring false alarm). Maven Central was checked as an alternative
+immutable source and does not carry this artifact (`org/lamport/tla2tools/1.8.0`
+→ 404), so a public mirror is not available; it has to be ours. Options, in order
+of preference: an R2 bucket fronted by a public hostname (no credential in CI), or
+our own CAS, which is immutable by construction and would dogfood the product.
+
+Deliberately not done inside the 2026-08-24 re-pin PR: that PR unblocks CI, and
+adding new public prod storage plus 3 carrier rewrites plus an ADR supersession to
+it would make a security-path change large and rushed at the same time.
+
+```backlog
+id: B-039
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  grep -rl "releases/download/v.*tla2tools\.jar" .github/workflows scripts >/dev/null
+verify-means: |
+  open while any carrier still fetches the jar from the mutable upstream release
+  URL. Goes red when every carrier points at storage we control.
+last-verified: 2026-08-24
+```
+
+### B-040 — `| head` under pipefail is the same SIGPIPE defect, left open on purpose
+
+The `| grep -<quiet>` class is closed and gated (`scripts/check_shell_pipeline_safety.py`,
+`shell-pipeline-safety.yml`). `| head -n1` has the identical mechanism: `head` exits after
+N lines, the producer takes SIGPIPE and exits 141, and `set -o pipefail` reports the
+pipeline as failed. 74 such sites exist across 207 pipefail-setting files.
+
+They were NOT swept with the rest, and the reason is a difference in how the defect
+surfaces, not a shortage of time:
+
+  - `producer | grep -<quiet> P` is almost always a CONDITION. A wrong answer is
+    silent and the caller proceeds down the wrong branch. Two sites on main failed
+    OPEN this way, one of them the CTRL-CRED-001 credential scan.
+  - `X=$(producer | head -1)` is almost always a VALUE. Under `set -e` a SIGPIPE
+    aborts the script at that line. That is loud and self-announcing — a stopped
+    job, not a false green.
+
+Silent-wrong is what this repo keeps getting hurt by, so it was closed first and
+banned outright. The loud class deserves the same treatment, but it needs a
+site-by-site read (some are `|| true`, some are inside `$(...)` whose status is
+never tested, and a blanket `head` ban would be wrong), which is why it is a
+separate item rather than a hidden allowlist inside the gate.
+
+```backlog
+id: B-040
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  grep -rl "releases/download/v.*tla2tools\.jar" .github/workflows scripts >/dev/null
+verify-means: |
+  open while any carrier still fetches the jar from the mutable upstream release
+  URL. Goes red when every carrier points at storage we control.
+  n=$(grep -rlE "set -[a-z]*o pipefail" .github/workflows scripts tests tools | xargs grep -oE "\| *head\b" | wc -l | tr -d " "); [ "${n:-0}" -gt 0 ]
+verify-means: |
+  open while any `| head` site remains inside a file that sets pipefail. Measured 74
+  on 2026-08-24. Goes red when the last one is either rewritten to a form that cannot
+  SIGPIPE or shown, site by site, to be status-irrelevant.
+last-verified: 2026-08-24
+```
+
+### B-041 — `status.corelink.humangr.com` is advertised in 224 places and serves nothing
+
+DNS has a correct, DNS-only CNAME `status.corelink.humangr.com → hugrl.betteruptime.com`.
+The vendor side was never bound: the Better Stack status page had `custom_domain: null`,
+so it rejects the SNI and every client gets a TLS `handshake_failure` (alert 40). The
+page itself is live at `https://hugrl.betteruptime.com` (HTTP 200, titled
+"Human Guardrail / CoreLink status"). The dead hostname appears **224 times** across
+`apps/docs/`, `specs/`, `docs/` and `legal/`, including the Trust Center's
+"verifiable by you, right now" list.
+
+**Attempted and reverted on 2026-08-24.** Setting `custom_domain` via the API succeeded
+and made the vanity host canonical immediately — `hugrl.betteruptime.com` began
+301-redirecting to it — but no certificate was ever issued (50 probes over 25 minutes,
+all `handshake_failure`). The page attribute `whitelabeled: false` is the likely cause:
+custom domains are a plan feature. Net effect of the attempt was to break the ONE URL
+that worked, so it was reverted and the vendor page is serving again. Do not re-apply
+the binding without first confirming the plan includes custom domains, or the status
+page goes dark the moment it is set.
+
+The Trust Center and its three locale mirrors now link to the working vendor URL rather
+than to a hostname that resolves and then fails. The remaining ~220 references still
+point at the dead host.
+
+**OWNER DECISION, 2026-08-24: do not pay.** The hostname is retired rather than
+provisioned. The customer-facing sweep landed in #1290; the CNAME was deleted from the
+Cloudflare zone on 2026-08-24 (record `e785399235…`, CNAME → `hugrl.betteruptime.com`,
+DNS-only; backup of the record JSON kept with the change) and `dig` now returns nothing.
+Everything that probed or defined it moved with it.
+
+Note for anyone revisiting: the prod smoke also demanded HTTP 200 from a SECOND-level
+status name under the apex — the kind Universal SSL DOES cover — and no DNS record for it
+has ever existed, so that check could only ever fail. Creating it would not help either:
+BetterStack still refuses a custom Host without the paid plan, and terminating TLS
+ourselves would put the status page behind the infrastructure it exists to report on. The
+hostname is deliberately not written out here: naming a dead host in a shipped file is
+what the hostname-liveness gate exists to catch, and it caught this note.
+
+```backlog
+id: B-041
+repo: corelink-server
+owner: owner
+status: done
+verify: |
+  [ -z "$(dig +short status.corelink.humangr.com 2>/dev/null)" ] && curl -sS -o /dev/null --max-time 15 https://hugrl.betteruptime.com/
+verify-means: |
+  done while the retired hostname resolves to nothing AND the vendor status page
+  serves. Goes red if the dead name comes back (someone re-created the record) or
+  if the page customers are pointed at stops answering.
+last-verified: 2026-08-24
 ```

@@ -63,7 +63,7 @@ tags:
 | Channel | Owner | Hours | Intake target | First-touch SLA |
 |---|---|---|---|---|
 | `support@humangr.com` (primary) | Support-T1 | 24/7 (follow-the-sun pre-GA: Gustavo + 1 backup) | Zendesk-equivalent ticket queue (TBD vendor; placeholder `support.corelink.humangr.com`) | Per §4 by severity |
-| Status page subscribers (`status.corelink.humangr.com`) | VPMkt | Auto-publish | Not a support channel — outbound only; tickets generated automatically when subscribers reply | n/a |
+| Status page subscribers (`hugrl.betteruptime.com`) | VPMkt | Auto-publish | Not a support channel — outbound only; tickets generated automatically when subscribers reply | n/a |
 | In-app help widget (Intercom-style; `apps/docs` footer + dashboard chrome) | Support-T1 | Business hours (T+0..T+30); 24/7 from T+30 | Backfills to `support@humangr.com` queue with `channel:widget` tag | Same as email per §4 |
 | `billing@humangr.com` | Support-T1 → Finance escalation | 24/7 | Same queue, `category:billing` tag | Per §4 |
 | `security@humangr.com` | VPSec | 24/7 | **Bypasses support queue** — direct VPSec; reference `SECURITY.md` | ≤ 4h ack |

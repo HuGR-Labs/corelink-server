@@ -25,8 +25,6 @@ import subProcessorsData from "../../../../admin-ui/src/content/sub-processors.j
 
 import styles from "./legal.module.css";
 
-const GITHUB_REPO = "https://github.com/HumanGuardrail/corelink-server";
-const COMMIT_HISTORY_URL = `${GITHUB_REPO}/commits/main/apps/docs/src/pages/legal/sub-processors.tsx`;
 const NEWSLETTER_SUBSCRIBE_URL =
   "https://humangr.com/corelink/newsletter";
 const PRIVACY_EMAIL = "privacy@humangr.com";
@@ -375,12 +373,8 @@ export default function SubProcessorsPage(): ReactElement {
           <a href="/legal/terms">Terms of Service</a> &middot;{" "}
           <a href="/explanation/compliance/dpa">Data Processing Addendum</a>
           {" "}&middot;{" "}
-          <a
-            href={COMMIT_HISTORY_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Commit history (GitHub) — audit prior versions
+          <a href={`mailto:${PRIVACY_EMAIL}`}>
+            Ask for prior versions of this list
           </a>
         </p>
       </main>

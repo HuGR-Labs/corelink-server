@@ -61,7 +61,7 @@ jobs:
             fi
 
             # Ensure at least one signoff matches the author email.
-            if ! echo "$signoff" | grep -q "<$(git show -s --format='%ae' "$sha")>"; then
+            if ! echo "$signoff" | grep "<$(git show -s --format='%ae' "$sha")>" >/dev/null; then
               echo "::warning::commit $sha signoff ($signoff) does not match author email ($author)."
             fi
           done < <(git rev-list "$BASE_SHA".."$HEAD_SHA")

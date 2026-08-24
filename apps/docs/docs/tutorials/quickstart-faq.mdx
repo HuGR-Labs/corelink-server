@@ -58,14 +58,13 @@ a 30-day BYOK evaluation tenant.
 
 ## 6 — Which languages have official SDKs at GA?
 
-Four canonical SDKs ship at GA, all wrapping the single Rust
-`corelink-client-verify` truth (no per-language hash drift):
+Four canonical SDKs ship at GA:
 
-| Language | Package | FFI surface |
+| Language | Package | Notes |
 | --- | --- | --- |
 | **Rust** | `corelink-client-verify` (crates.io) | native |
 | **Python** | `corelink-py` (PyPI) | PyO3 |
-| **Go** | `corelink-api.humangr.com/corelink-go` | cgo |
+| **Go** | `go.corelink.humangr.com/corelink-go` | pure Go, no cgo — install via CoreLink's `GOPROXY` (see the [Go SDK authenticate guide](../how-to/sdk-go/01-authenticate.mdx)) |
 | **JS / TS / Browser** | `@corelink/client` (npm) | wasm-bindgen |
 
 ## 7 — Language SDK roadmap beyond GA?
@@ -77,7 +76,7 @@ Post-GA priority order (subject to demand signal):
 - **C# / .NET** (Q4 post-GA) — P/Invoke binding.
 - **Swift** (community-driven; no committed date).
 
-File a +1 on the [SDK request issue tracker](https://github.com/HumanGuardrail/corelink-server/issues?q=label%3Asdk-request)
+Email [support@humangr.com](mailto:support@humangr.com) with the language you need
 to influence priority.
 
 ## 8 — Free tier vs paid limits?
@@ -154,8 +153,7 @@ we can usually triage without further questions.
 
 Support channels, fastest first:
 
-- **GitHub Discussions** — [github.com/HumanGuardrail/corelink-server/discussions](https://github.com/HumanGuardrail/corelink-server/discussions) for design questions + roadmap.
-- **GitHub Issues** — [github.com/HumanGuardrail/corelink-server/issues](https://github.com/HumanGuardrail/corelink-server/issues) for bugs (please include `corelink doctor --output=json`).
+- **Email** — [support@humangr.com](mailto:support@humangr.com) for bugs, design questions and roadmap (for a bug, please include `corelink doctor --output=json`).
 - **Email** — [support@humangr.com](mailto:support@humangr.com) for billing or account issues. **Enterprise plans** include a dedicated Slack Connect channel + a 4-hour SEV-1 response SLA.
 
-For security disclosures see [`SECURITY.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/SECURITY.md) — **do not** open public issues for vulnerabilities.
+For security disclosures see [security policy](/security) — **do not** open public issues for vulnerabilities.

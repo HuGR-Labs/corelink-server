@@ -32,28 +32,17 @@ interface IncidentEntry {
   readonly postmortemHref: string;
 }
 
-const ENTRIES: readonly IncidentEntry[] = [
-  {
-    date: "2026-05-04",
-    kind: "drill",
-    severity: "internal-drill",
-    title: "Active failover drill — primary region BR → US",
-    summary:
-      "Quarterly active failover drill. Simulated complete loss of BR primary region; traffic re-pinned to US within 7m12s (target ≤ 10m). No customer impact (drill executed in shadow plane).",
-    postmortemHref:
-      "https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_compliance/drill-evidence/2026-05-04-active-failover-drill.md",
-  },
-  {
-    date: "2026-04-15",
-    kind: "drill",
-    severity: "internal-drill",
-    title: "Cold-restore drill — full-region rebuild from R2 + audit chain",
-    summary:
-      "Quarterly cold-restore drill. Restored full-region cache index from R2 cold storage + audit chain inclusion proofs. Recovery time 42m18s (target ≤ 60m); recovery point 0 (audit-chain replay).",
-    postmortemHref:
-      "https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_compliance/drill-evidence/2026-04-15-cold-restore-drill.md",
-  },
-];
+// Nothing is listed here that we cannot show evidence for.
+//
+// Two drill entries used to sit here -- an active-failover drill dated
+// 2026-05-04 quoting a 7m12s re-pin, and a cold-restore drill dated
+// 2026-04-15 quoting a 42m18s recovery -- each linking to an evidence file
+// under specs/_compliance/drill-evidence/. Neither evidence file has ever
+// existed, and the only drill document in the repository is an unexecuted
+// dry-run template. The figures had no source, so they are gone. An entry
+// goes back on this page when a drill has actually run and its evidence
+// exists.
+const ENTRIES: readonly IncidentEntry[] = [];
 
 const SEVERITY_COLORS: Record<
   IncidentSeverity,
@@ -195,9 +184,21 @@ export default function IncidentHistory(): ReactElement {
               Recent entries
             </Translate>
           </h2>
-          {ENTRIES.map((entry) => (
-            <EntryCard key={entry.date} entry={entry} />
-          ))}
+          {ENTRIES.length === 0 ? (
+            <p>
+              <Translate
+                id="trust.incident.entries.empty"
+                description="Shown when no incident or drill entry has published evidence"
+              >
+                No incident or drill has been published yet. This page lists
+                only entries whose evidence we can produce; ask
+                support@humangr.com if you need our current drill status
+                under NDA.
+              </Translate>
+            </p>
+          ) : (
+            ENTRIES.map((entry) => <EntryCard key={entry.date} entry={entry} />)
+          )}
         </section>
 
         <section style={{ marginTop: "2rem" }}>
@@ -284,11 +285,11 @@ export default function IncidentHistory(): ReactElement {
             </li>
             <li>
               <a
-                href="https://status.corelink.humangr.com"
+                href="https://hugrl.betteruptime.com"
                 rel="noopener noreferrer"
                 target="_blank"
               >
-                status.corelink.humangr.com
+                hugrl.betteruptime.com
               </a>
             </li>
           </ul>

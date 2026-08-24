@@ -211,41 +211,73 @@ jobs:
 
   cbindgen-header-stable:
     name: cbindgen header drift gate (ABI stability)
-    # ⛔ STAYS ON ubuntu-latest — deliberately NOT migrated in wave 4
-    # (2026-08-03), and the reason is the `Install cbindgen` step below.
+    # Moved OFF ubuntu-latest 2026-08-24. The previous note kept it hosted on
+    # a cost argument — `cargo install cbindgen --locked` is a source build of
+    # cbindgen and its dependency tree, and only a github-hosted runner gets
+    # `Swatinem/rust-cache` (the corelink fabric is ephemeral with a private
+    # $HOME, so the cache step SKIPs and the build would repeat every run). The
+    # note put the saving at "~$0.20/3d of hosted time" and concluded the move
+    # would be net-negative.
     #
-    # `cargo install cbindgen --locked` is a SOURCE build of cbindgen and its
-    # whole dependency tree (syn, clap, toml, …). On a GitHub-hosted runner the
-    # `Swatinem/rust-cache` step above absorbs that: `runner.environment ==
-    # 'github-hosted'` is true, so the compiled artifacts are restored between
-    # runs. On a corelink box that same guard makes the step SKIP — the fabric is
-    # ephemeral with a private $HOME and no cache carries over — so cbindgen
-    # would be compiled from scratch on EVERY run. That is a per-run cost this
-    # job does not pay today and it plausibly exceeds the ~$0.20/3d of hosted
-    # time the move would save, i.e. the migration would be net-negative.
+    # That arithmetic is void: hosted Actions are payment-blocked, so this job
+    # does not run at all. It fails in ~2 s with no steps and an empty runner
+    # name — the billing-block signature — and it blocks every PR that touches
+    # this workflow. The cost of staying hosted is not $0.20, it is the gate.
     #
-    # Note this is exactly the case a binaries-on-PATH inventory misses:
-    # `docs/internal/ci-runner-fabric-box.md` §8.3 lists this whole workflow as
-    # class A ("moves today") because its mechanical scan looks for missing
-    # system binaries, and cbindgen is not one — it is a cargo-installed tool.
-    # §8.2 warns about precisely this ("Confirm per-workflow before moving
-    # anything"); this job is an instance of that warning.
+    # The old note named the honest fix: use a prebuilt instead of a source
+    # build, "confirm `taiki-e/install-action` actually publishes a cbindgen
+    # manifest (checked, not assumed — cargo-fuzz turned out to have none)".
+    # Checked: it does NOT. `manifests/cbindgen.json` is a 404, exactly the
+    # case that note warned about. So the prebuilt comes from upstream's own
+    # release instead, SHA-256 pinned like every other tool this repo installs.
     #
-    # To unblock, the honest fix is a prebuilt: confirm `taiki-e/install-action`
-    # actually publishes a cbindgen manifest at the SHA this repo pins (checked,
-    # not assumed — cargo-fuzz turned out to have none and would have silently
-    # fallen back to a source build). Not done here: inventing an install step to
-    # make a job fit is out of scope for a runner-label wave.
-    runs-on: ubuntu-latest
+    # The version is pinned to 0.29.4, which is what `cargo install cbindgen`
+    # resolves to today (crates.io max_version 0.29.4) — so the generated
+    # header is unchanged by this move, and a future cbindgen release can no
+    # longer silently rewrite the header this gate diffs against.
+    runs-on: corelink
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # dtolnay/rust-toolchain@stable@2026-05-15
+
+      # `dtolnay/rust-toolchain` removed with the move off hosted: the fleet
+      # shares one $HOME, so a job that provisions a toolchain mutates
+      # ~/.rustup underneath every other running job (this is what
+      # scripts/validate_no_shared_rustup_mutation.py exists to stop, and it
+      # caught this migration). The same pattern the sibling `corelink` lanes
+      # in this file already use: assert the workspace pin instead of
+      # installing one, so an image drift fails loudly rather than silently
+      # changing the compiler under a header-diff gate.
+      - name: Assert the workspace-pinned toolchain (rust-toolchain.toml)
+        run: bash scripts/ci-assert-pinned-toolchain.sh
+
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
         if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:
           workspaces: ". -> target"
-      - name: Install cbindgen
-        run: cargo install cbindgen --locked
+      - name: Install cbindgen (pinned prebuilt, SHA-256 verified)
+        env:
+          CBINDGEN_VERSION: '0.29.4'
+          CBINDGEN_SHA256_X86_64: '27ac237e2ad3ffaffc8ecce0c03e3caa1d1b09e691906c3cb0967367ff6d783d'
+          CBINDGEN_SHA256_AARCH64: '1838dfc7ddfb7e941556505fa6eebc5c28553eb03118980262c760594e240bdb'
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64)          asset="cbindgen-ubuntu22.04";          want="${CBINDGEN_SHA256_X86_64}" ;;
+            aarch64|arm64)   asset="cbindgen-ubuntu22.04-aarch64";  want="${CBINDGEN_SHA256_AARCH64}" ;;
+            *) echo "::error::no pinned cbindgen prebuilt for $(uname -m)"; exit 1 ;;
+          esac
+          curl -fsSL -o "${RUNNER_TEMP}/cbindgen" \
+            "https://github.com/mozilla/cbindgen/releases/download/${CBINDGEN_VERSION}/${asset}"
+          got="$(sha256sum "${RUNNER_TEMP}/cbindgen" | cut -d' ' -f1)"
+          if [ "${got}" != "${want}" ]; then
+            echo "::error::cbindgen SHA-256 pin violation"
+            echo "::error::expected: ${want}"
+            echo "::error::actual:   ${got}"
+            exit 1
+          fi
+          chmod +x "${RUNNER_TEMP}/cbindgen"
+          echo "${RUNNER_TEMP}" >> "${GITHUB_PATH}"
+          "${RUNNER_TEMP}/cbindgen" --version
       - name: Regenerate header
         run: |
           cbindgen \
@@ -295,7 +327,7 @@ jobs:
           TOOLS="$HOME/.cargo-tools/${RUNNER_NAME:-default}"
           mkdir -p "$TOOLS/bin"
           echo "$TOOLS/bin" >> "$GITHUB_PATH"
-          if "$TOOLS/bin/cargo-fuzz" --version 2>/dev/null | grep -q '0.13.1'; then
+          if "$TOOLS/bin/cargo-fuzz" --version 2>/dev/null | grep '0.13.1' >/dev/null; then
             echo "cargo-fuzz 0.13.1 already in $TOOLS — no compile, no shared-registry write"
           else
             echo "compiling cargo-fuzz 0.13.1 into $TOOLS (isolated from ~/.cargo)"
@@ -348,7 +380,7 @@ jobs:
           TOOLS="$HOME/.cargo-tools/${RUNNER_NAME:-default}"
           mkdir -p "$TOOLS/bin"
           echo "$TOOLS/bin" >> "$GITHUB_PATH"
-          if "$TOOLS/bin/cargo-fuzz" --version 2>/dev/null | grep -q '0.13.1'; then
+          if "$TOOLS/bin/cargo-fuzz" --version 2>/dev/null | grep '0.13.1' >/dev/null; then
             echo "cargo-fuzz 0.13.1 already in $TOOLS — no compile, no shared-registry write"
           else
             echo "compiling cargo-fuzz 0.13.1 into $TOOLS (isolated from ~/.cargo)"

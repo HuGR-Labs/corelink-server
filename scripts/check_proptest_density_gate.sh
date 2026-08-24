@@ -52,7 +52,7 @@ while IFS='|' read -r crate prop_macros prop_tests inv_refs ratio; do
   [ "$ratio" = "N/A" ] && continue
   # Numeric compare.
   if awk -v r="$ratio" 'BEGIN { exit !(r+0 < 1.0) }'; then
-    if echo "$ALLOWED" | grep -qx "$crate"; then
+    if echo "$ALLOWED" | grep -x "$crate" >/dev/null; then
       echo "ALLOWED gap: $crate (ratio=$ratio, inv_refs=$inv_refs) — see proptest-density-allowlist.txt"
     else
       echo "FAIL: $crate ratio=$ratio inv_refs=$inv_refs prop_tests=$prop_tests (below 1.0; not in allowlist)" >&2

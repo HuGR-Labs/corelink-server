@@ -12,9 +12,14 @@ sidebar_label: Go · pick digest function
 
 # Go — pick a digest function
 
-Negotiate SHA256 vs BLAKE3 based on server support.
+Não há um endpoint `Capabilities` para negociar uma função de digest (veja
+[GetCapabilities](./go-get-capabilities.mdx)). Escolha uma explicitamente
+em vez disso: `corelink.DigestBLAKE3` é o padrão do CAS e a única função
+que a superfície nativa `/v1/cas` aceita; use `corelink.DigestSHA256`
+apenas quando você souber que a instância REAPI com a qual está falando
+espera isso.
 
-## Code
+## Código
 
 ```go
 package main
@@ -23,40 +28,35 @@ import (
     "context"
     "fmt"
     "os"
-    "slices"
 
     corelink "go.corelink.humangr.com/corelink-go"
 )
 
 func main() {
     ctx := context.Background()
-    client, _ := corelink.NewClient(ctx, corelink.Config{
+    client, _ := corelink.NewClient(corelink.Config{
         Endpoint: "https://corelink-api.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
+        Digest:   corelink.DigestBLAKE3,
     })
     defer client.Close()
 
-    caps, err := client.Capabilities.Get(ctx)
-    if err != nil {
-        panic(err)
-    }
-    df := corelink.DigestSHA256
-    if slices.Contains(caps.CacheCapabilities.DigestFunctions, corelink.DigestBLAKE3) {
-        df = corelink.DigestBLAKE3
-    }
-    client.SetDigestFunction(df)
-    fmt.Println("using", df)
+    // Switch at runtime if a particular call needs SHA-256 instead.
+    client.SetDigestFunction(corelink.DigestSHA256)
+    fmt.Println("using SHA-256 for this call")
+
+    _ = ctx
 }
 ```
 
-## Expected output
+## Saída esperada
 
 ```text
-using BLAKE3
+using SHA-256 for this call
 ```
 
-## Common errors
+## Erros comuns
 
-| Status | Error taxonomy | Cause |
-| --- | --- | --- |
-| `UNAUTHENTICATED` | `COR_AUTH_PAT_INVALID` | PAT expired. |
+| Tipo de erro | Causa |
+| --- | --- |
+| `*corelink.AuthError` | PAT expirado. |

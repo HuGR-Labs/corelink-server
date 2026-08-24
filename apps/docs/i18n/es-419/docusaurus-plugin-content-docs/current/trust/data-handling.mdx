@@ -48,44 +48,52 @@ We do **not** store: PHI, cardholder data (Stripe holds it), customer email
 beyond what's needed for billing notifications, or copies of customer code
 outside the CAS surface.
 
-## Residency
+## Residencia
 
-Every CoreLink tenant chooses a `primary_region` at signup. The values are
-a closed enum — there are no exceptions.
+> **Dónde viven los datos hoy (para ser precisos):** el enum de regiones
+> de CoreLink tiene seis códigos macro; cuatro están aprovisionados con
+> un bucket de almacenamiento en la jurisdicción correcta, y un tenant
+> solo puede fijarse (pin) en una región aprovisionada — el registro
+> rechaza las otras dos.
 
-| Pin | Region | Geography | Used for |
+| Pin | Región | Geografía | Estado |
 | --- | --- | --- | --- |
-| `sam` | South America (São Paulo) | Brazil | LGPD-bound tenants |
-| `nam` | North America (Iowa / Virginia) | United States | Default for US customers |
-| `eur` | Europe (Frankfurt / Dublin) | EU | GDPR-bound tenants |
-| `oce` | Oceania (Sydney) | AU / NZ | Available on request |
-| `apc` | Asia-Pacific (Tokyo / Singapore) | JP / SG | Available on request |
-| `mea` | Middle East (Dubai) | UAE | Available on request |
+| `enam` | Norteamérica Oriental | Estados Unidos (servido vía `iad`) | **Activo (predeterminado)** |
+| `wnam` | Norteamérica Occidental | Estados Unidos (servido vía `iad`) | **Activo** |
+| `weur` | Europa Occidental | UE (R2 físicamente en la UE; servido vía `lhr` / Londres) | **Activo — los datos de la UE permanecen en la UE** |
+| `apac` | Asia-Pacífico | R2 ubicado en Japón (`corelink-cas-apac`; servido vía `nrt` / Tokio) | **Activo desde 2026-08-17** |
+| `sam` | Sudamérica | Brasil (São Paulo) | **No aprovisionado** — no existe región de Cloudflare en Sudamérica; el registro rechaza este pin |
+| `afr` | África | — | **No aprovisionado** — sin mapeo de colo; el registro rechaza este pin |
 
-What `primary_region` controls:
+Qué controla `primary_region`:
 
-- **R2 object placement.** All blobs are pinned to the colo closest to the
-  region's anchor city. Reads are served from in-region colos.
-- **D1 placement.** Per-tenant D1 database is created in-region.
-- **DO placement.** Durable Object instance is colocated with D1.
-- **Failover semantics.** During a region outage, the failover path is
-  documented per region in
-  [`specs/_runbooks/RB-DR-DRILL.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_runbooks/RB-DR-DRILL.md).
-  For Brazil specifically, see
-  [Brazil residency & LGPD](/residency/lgpd-brazil) — Art. 33 §1º allows
-  out-of-region temporary processing during a documented emergency.
+- **Ubicación de objetos en R2.** Para las regiones aprovisionadas, los
+  blobs se escriben en los buckets R2 de esa región (buckets en EE. UU.
+  para `wnam`/`enam`; buckets físicamente en la UE para `weur`; el
+  bucket ubicado en Tokio `corelink-cas-apac` para `apac`). El guardián
+  de residencia mapea `weur`→`lhr` y `apac`→`nrt`, y rechaza el acceso
+  entre regiones (`INV-REGION-NO-CROSS-LEAK`). `sam` y `afr` no tienen
+  bucket al cual enrutar, así que el registro los rechaza.
+- **Ubicación de D1.** La base de datos D1 por tenant se crea en la
+  misma región.
+- **Ubicación de DO.** La instancia de Durable Object se coloca junto
+  al D1.
+- **Semántica de failover.** Durante una interrupción regional, la ruta
+  de failover se documenta por región en
+  `specs/_runbooks/RB-DR-DRILL.md`, disponible a solicitud a través de `trust@humangr.com`.
+  Para Brasil en particular, consulta
+  [Residencia en Brasil y LGPD](/residency/lgpd-brazil) — el Art. 33 §1º
+  permite el procesamiento temporal fuera de la región durante una
+  emergencia documentada.
 
-Residency is enforced by `crates/corelink-privacy-residency-enforcement/`
-and verified nightly by `scripts/verify-lgpd-residency.py`. You can also
-verify your own tenant via the admin API:
-
-```bash
-curl -H "Authorization: Bearer $PAT" \
-     https://corelink-api.humangr.com/v1/tenant/me/residency-proof
-```
-
-The response is a signed attestation including the region pin, the last
-verification timestamp, and a Merkle inclusion proof against the audit chain.
+La residencia la aplica `crates/corelink-privacy-residency-enforcement/`.
+El script de verificación específico de Brasil
+(`scripts/verify-lgpd-residency.py`) **falla de forma explícita** en
+lugar de emitir una atestación verde, porque la residencia física
+brasileña aún no está aprovisionada (no existe región de Cloudflare en
+Sudamérica). Una API firmada de prueba de residencia por tenant
+(`/v1/tenant/me/residency-proof`) está en el roadmap y no es una
+capacidad en la que debas confiar hoy.
 
 ## Encryption
 
@@ -153,9 +161,8 @@ CoreLink supports GDPR Art. 17 and LGPD Art. 18 erasure requests:
   within 35 days (the backup window); a tombstone is recorded on day 0
   so a Type II auditor can trace the chain.
 
-See the [DSR runbooks](https://github.com/HumanGuardrail/corelink-server/tree/main/specs/_runbooks)
-(`RB-DSR-INTAKE-FAILURE`, `RB-DSR-ERASURE-INCOMPLETE`) for the operational
-side.
+The DSR runbooks (`RB-DSR-INTAKE-FAILURE`, `RB-DSR-ERASURE-INCOMPLETE`) cover the
+operational side; they are available on request from `trust@humangr.com`.
 
 ## Customer data flow (high-level)
 
@@ -184,14 +191,11 @@ side.
 
 ## Verifying it yourself
 
-You don't have to take our word for any of the above. Three options:
+You don't have to take our word for any of the above. Two options:
 
-1. **Read the code.** The repo is
-   [`HumanGuardrail/corelink`](https://github.com/HumanGuardrail/corelink-server).
-   Residency enforcement, BYOK envelope, audit chain are all open.
-2. **Hit the admin API.** Endpoints under `/v1/tenant/me/*` return signed
+1. **Hit the admin API.** Endpoints under `/v1/tenant/me/*` return signed
    attestations of region pin, encryption status, and audit-chain head.
-3. **Audit your own data.** Audit-chain inclusion proofs are exportable as
+2. **Audit your own data.** Audit-chain inclusion proofs are exportable as
    RFC 6962 proofs you can verify offline. See
    [Audit chain](/security/audit-chain).
 

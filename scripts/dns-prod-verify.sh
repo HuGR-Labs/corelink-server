@@ -71,16 +71,13 @@ PLAN_TARGET["corelink-app.humangr.com"]="corelink-admin-ui.pages.dev"
 PLAN_TARGET["corelink-docs.humangr.com"]="corelink-docs.pages.dev"
 PLAN_TARGET["corelink-signup.humangr.com"]="corelink-prod.gustavoschneiter.workers.dev"
 PLAN_TARGET["humangr.com"]="corelink-prod.gustavoschneiter.workers.dev"
-PLAN_TARGET["status.corelink.humangr.com"]="hugrl.betteruptime.com"
 
 PLAN_PROXIED["corelink-api.humangr.com"]="true"
 PLAN_PROXIED["corelink-app.humangr.com"]="true"
 PLAN_PROXIED["corelink-docs.humangr.com"]="true"
 PLAN_PROXIED["corelink-signup.humangr.com"]="true"
 PLAN_PROXIED["humangr.com"]="true"
-PLAN_PROXIED["status.corelink.humangr.com"]="false"
 
-PLAN_DNS_ONLY_NOTE["status.corelink.humangr.com"]="dns-only — TLS managed by BetterUptime, not CF edge"
 
 # Expected TLS health paths (only applicable after Phase E+G deploy)
 declare -A PLAN_HEALTH_PATH
@@ -169,7 +166,7 @@ check_dns() {
     fi
   else
     # DNS-only: check CNAME target matches expected
-    if echo "${resolved}" | grep -q "${expected_target}"; then
+    if echo "${resolved}" | grep "${expected_target}" >/dev/null; then
       echo "[PASS]  ${name}: resolved to ${expected_target} [dns-only]"
       PASS=$((PASS + 1))
     elif [[ "${cname_chain}" == "${expected_target}." ]] || [[ "${cname_chain}" == "${expected_target}" ]]; then
@@ -196,7 +193,6 @@ NAMES=(
   "corelink-docs.humangr.com"
   "corelink-signup.humangr.com"
   "humangr.com"
-  "status.corelink.humangr.com"
 )
 
 echo "## DNS Resolution Check"

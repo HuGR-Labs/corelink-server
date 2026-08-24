@@ -78,7 +78,7 @@ MISSING=""
 if [ $# -gt 0 ]; then
     INSTALLED="$(rustup target list --installed)"
     for t in "$@"; do
-        printf '%s\n' "$INSTALLED" | grep -qx "$t" || MISSING="${MISSING} $t"
+        printf '%s\n' "$INSTALLED" | grep -x "$t" >/dev/null || MISSING="${MISSING} $t"
     done
 fi
 if [ -n "${MISSING# }" ]; then

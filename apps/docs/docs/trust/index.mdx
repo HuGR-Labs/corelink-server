@@ -43,7 +43,7 @@ writing.
 | Audit chain | Merkle-linked, RFC 6962 inclusion proofs, 7-year retention — see [Audit chain](/security/audit-chain) |
 | Sub-processors | [Sub-processors list](./subprocessors) — 30-day advance-notice mechanism |
 | Vulnerability disclosure | [Security policy](/security/policy) — coordinated VDP, safe-harbor, severity matrix |
-| Status page | [status.corelink.humangr.com](https://status.corelink.humangr.com) — RSS / email / webhook subscription |
+| Status page | [hugrl.betteruptime.com](https://hugrl.betteruptime.com) — RSS / email / webhook subscription |
 | Incident response | [Incident response](./incident-response) — 72h breach-notification commitment |
 | RFC 9116 contact card | [`/.well-known/security.txt`](/.well-known/security.txt) |
 | Pre-sales legal toolkit | SIG Lite (5 business days), CAIQ v4 (7 business days), custom vendor questionnaires (3–10 business days depending on size) — email `trust@humangr.com` with countersigned NDA |
@@ -61,9 +61,14 @@ shapes everything else on this page. The headline commitments are:
 3. **Every write produces an auditable, signed event.** The audit log is
    append-only, Merkle-linked, and exportable as RFC 6962 inclusion proofs
    that you can verify offline.
-4. **You can hold your own keys.** Enterprise tenants can wrap their data
-   encryption keys with their own KMS root — we never see plaintext key
-   material. Four KMS providers are supported on day one.
+4. **Bring-your-own-key is designed, not yet wired in production.** The
+   BYOK architecture supports wrapping a tenant's data encryption keys
+   with their own KMS root across four providers (AWS KMS, GCP Cloud KMS,
+   Azure Key Vault, HashiCorp Vault), and CoreLink only holds wrapped
+   DEKs by design. The production build ships with no real KMS provider
+   linked, and the activation endpoint fails closed rather than flip a
+   tenant to BYOK against a placeholder. Provider wiring is on the
+   roadmap.
 5. **We commit to a 72-hour breach-notification window.** Aligned with
    LGPD Art. 33 and GDPR Art. 33; communicated through the channels you
    pre-register at onboarding.
@@ -74,10 +79,18 @@ Compliance docs can be theatre. We try hard to make ours falsifiable:
 
 - **Verifiable by you, right now:**
   audit-chain proofs ([how-to](/security/audit-chain)), the
-  [security.txt](/.well-known/security.txt) contact card, the
-  [SBOM](https://github.com/HumanGuardrail/corelink-server/releases) shipped with every
-  release, Sigstore / Rekor provenance entries for every binary, and our
-  public [status page](https://status.corelink.humangr.com).
+  [security.txt](/.well-known/security.txt) contact card, our public
+  [status page](https://hugrl.betteruptime.com), and Sigstore / Rekor
+  transparency-log entries for the **Worker container image** — signed keyless
+  on every release, verifiable with `cosign verify` against the
+  `token.actions.githubusercontent.com` issuer, with no key from us required.
+- **Not yet available, and listed here rather than omitted:**
+  the CLI binaries are **not** signed — the signing step in the CLI release
+  workflow is still a placeholder, so do not expect a Rekor entry for them.
+  SBOMs are generated and signed on every release build but have **no customer
+  distribution path yet**: the procurement process is drafted, not offered.
+  Ask at **trust@humangr.com** and we will tell you where it stands rather than
+  route you to a process that does not exist.
 - **Attested by us (with evidence on request):**
   SOC 2 readiness rollup, BYOK FIPS attestation matrix per provider, vendor
   risk register, LGPD Art. 33 residency attestation.

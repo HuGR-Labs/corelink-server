@@ -13,31 +13,37 @@ tags: [sdk, go, auth, how-to]
 >
 > Canonical EN source: `docs/how-to/sdk-go/01-authenticate.mdx`
 
-# Authenticate the Go SDK
+# Go-SDK authentifizieren
 
-## When to use this guide
+## Wann diese Anleitung verwenden
 
-You import `github.com/HumanGuardrail/corelink-go/v1` and need to call any
-cache-mutating or cache-reading API. PAT auth is mandatory; the SDK refuses
-to construct a client without one.
+Sie importieren `go.corelink.humangr.com/corelink-go` und müssen eine
+cache-verändernde oder cache-lesende API aufrufen. PAT-Authentifizierung
+ist verpflichtend; das SDK verweigert die Konstruktion eines Clients ohne
+PAT.
 
-## Prerequisites
+## Voraussetzungen
 
-- Go 1.21+.
-- The module has **no external Go dependencies** — it links against
-  `libcorelink_go` via cgo. Build the Rust crate first, then the Go module:
+- Go 1.22+.
+- `corelink-go` ist ein reines Go-Modul — kein cgo, keine native
+  Bibliothek, nichts vorher zu bauen. Beziehen Sie es über CoreLinks
+  eigenen Modul-Proxy:
 
   ```bash
-  cargo build --release -p corelink-go
-  CGO_LDFLAGS="-L../target/release -lcorelink_go" go build ./...
+  GOPROXY=https://humangr.com/corelink/docs/goproxy,https://proxy.golang.org,direct go get go.corelink.humangr.com/corelink-go@v0.1.0
   ```
 
-  `go get github.com/HumanGuardrail/corelink-go/v1` alone is not enough —
-  without the compiled `libcorelink_go` on the link path, the build fails at
-  the cgo step.
-- A CoreLink tenant; PAT minted at `https://humangr.com/corelink/en/customer/keys`.
+  Die `GOPROXY`-Einstellung ist verpflichtend, kein Nice-to-have:
+  `go.corelink.humangr.com` hat keinen DNS-Eintrag, daher schlägt ein
+  einfaches `go get` mit „no such host" fehl. Das Modul wird über
+  CoreLinks eigenen Proxy ausgeliefert — der erste Eintrag in der Liste.
+  Der zweite Eintrag, `https://proxy.golang.org`, holt die gewöhnlichen
+  öffentlichen Abhängigkeiten dieses Moduls; `direct` ist der Fallback,
+  falls beide Proxys nichts finden.
+- Ein CoreLink-Tenant; PAT erstellt unter
+  `https://humangr.com/corelink/en/customer/keys`.
 
-## Construct the client
+## Client konstruieren
 
 ```go
 package main
@@ -47,11 +53,12 @@ import (
     "log"
     "os"
 
-    "github.com/HumanGuardrail/corelink-go/v1"
+    "go.corelink.humangr.com/corelink-go"
 )
 
 func main() {
     client, err := corelink.NewClient(corelink.Config{
+        Endpoint: "https://corelink-api.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
         TenantID: "acme-corp",
     })
@@ -69,44 +76,53 @@ func main() {
     if err != nil {
         log.Fatal(err)
     }
-    log.Printf("wrote+read %d bytes at %s", len(data), digest)
+    log.Printf("wrote+read %d bytes at %s", len(data), digest.Hash)
 }
 ```
 
-`corelink.NewClient` takes a single `Config` struct — there is no
-`WithTenantID` / `WithPAT` functional-options API. `Config.PAT` and
-`Config.TenantID` are both required; `NewClient` returns an error if either
-is empty.
+`corelink.NewClient` nimmt ein `Config`-Struct entgegen sowie optionale
+funktionale Optionen (`corelink.WithTenantID`, um den Tenant getrennt vom
+Config-Literal festzulegen). `Config.Endpoint` und `Config.PAT` sind
+verpflichtend; `NewClient` liefert einen Fehler, wenn eines der beiden
+leer ist. `Config.TenantID` ist im Allgemeinen optional — ein PAT trägt
+bereits seinen eigenen Tenant — aber die nativen CAS-Routen
+(`Put`/`Get`/`Stat`) benötigen einen, setzen Sie ihn also, sofern Sie
+nicht ausschließlich die REAPI-v2-Oberfläche nutzen.
 
-## Forbidden: PAT in struct literal in committed code
+## Verboten: PAT als Struct-Literal in committetem Code
 
 ```go
 // DO NOT DO THIS
 client, _ := corelink.NewClient(corelink.Config{
+    Endpoint: "https://corelink-api.humangr.com",
     PAT:      "corelink_pat_01ARZ3NDEKTSV4RRFFQ69G5FAV.4pT7q1yZ9vX2wL8cR5nB3sD6fH0jK1mQ8aV2eS.7bY4tN9oL2x",
     TenantID: "acme-corp",
 })
 ```
 
-Violates CTRL-CRED-001. Read `Config.PAT` from `os.Getenv("CORELINK_PAT")`
-only.
+Verstößt gegen CTRL-CRED-001. Lesen Sie `Config.PAT` ausschließlich aus
+`os.Getenv("CORELINK_PAT")`.
 
-## Verify
+## Verifizieren
 
-There is no `Whoami` method on this client and no dedicated `AuthError`
-type — errors are plain `error` values. `NewClient` itself only validates
-that `PAT`/`TenantID` are non-empty; an invalid or revoked PAT surfaces the
-first time you actually call `Put`/`Get`/`Stat`:
+Dieser Client hat keine `Whoami`-Methode. `NewClient` selbst validiert
+nur die Struktur der Config und führt keine Netzwerk-I/O aus; ein
+ungültiger oder widerrufener PAT tritt erst beim ersten tatsächlichen
+Aufruf von `Put`/`Get`/`Stat` als typisierter `*corelink.AuthError` zutage:
 
 ```go
 digest, err := client.Put(ctx, []byte("healthcheck"))
 if err != nil {
-    log.Fatalf("auth or network failure: %v", err)
+    var authErr *corelink.AuthError
+    if errors.As(err, &authErr) {
+        log.Fatalf("auth failed (%d): %s", authErr.StatusCode, authErr.Message)
+    }
+    log.Fatalf("request failed: %v", err)
 }
-log.Println("authenticated; wrote", digest)
+log.Println("authenticated; wrote", digest.Hash)
 ```
 
-## Next steps
+## Nächste Schritte
 
 - [Upload a blob](./02-upload-blob.mdx)
 - [Download a blob](./03-download-blob.mdx)

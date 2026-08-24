@@ -1,7 +1,7 @@
 ---
 title: "Data handling"
 slug: "/trust/data-handling"
-description: "Where CoreLink stores customer data (US default + physically-EU residency for EU tenants), how data is encrypted at rest / in flight / in use, the per-region residency roadmap, and retention windows."
+description: "Where CoreLink stores customer data (US default, physically-EU residency for EU tenants, Japan-located residency for APAC tenants), how data is encrypted at rest / in flight / in use, and retention windows."
 draft: false
 cross_functional_review: TBD
 pending_signoff:
@@ -43,55 +43,62 @@ outside the CAS surface.
 
 ## Residency
 
-> **Where data lives today (be precise):** CoreLink serves tenants from two
-> live regions — the **US (ENAM, Eastern North America)** default and a
-> **physically-EU (WEUR)** region for EU tenants.
-> - **US tenants:** all data — CAS blobs, action-cache entries, metadata,
->   audit chain — is physically stored in the **United States**.
-> - **EU (`weur`) tenants:** CAS and action-cache blobs are stored in
->   **physically-EU Cloudflare R2 buckets** (`corelink-cas-eu` /
->   `corelink-ac-eu`, both **EEUR / East EU**), served via our London / `lhr`
->   cluster — **EU-origin data physically stays in the EU**. This is a
->   **delivered** capability for EU-region tenants, not roadmap.
+> **Where data lives today (be precise):** CoreLink's region enum has six
+> macro codes; four are provisioned with a jurisdiction-correct storage
+> bucket, and tenants can only be pinned to a provisioned region — signup
+> rejects the other two.
+> - **`wnam` / `enam` tenants (North America):** all data — CAS blobs,
+>   action-cache entries, metadata, audit chain — is physically stored in
+>   the **United States**, served via our `iad` cluster.
+> - **`weur` tenants (European Union):** CAS and action-cache blobs are
+>   stored in **physically-EU Cloudflare R2 buckets** (`corelink-cas-eu` /
+>   `corelink-ac-eu`), served via our **London / `lhr`** cluster —
+>   **EU-origin data physically stays in the EU**. This is a **delivered**
+>   capability, not roadmap.
+> - **`apac` tenants (Asia-Pacific):** CAS blobs are stored in the
+>   **Tokyo-located** Cloudflare R2 bucket `corelink-cas-apac`, served via
+>   our `nrt` cluster. Provisioned 2026-08-17 — **live**, not roadmap. This
+>   is a physical-location hint for latency/locality; Cloudflare R2 has no
+>   dedicated APAC data-residency jurisdiction the way it does for the EU.
 >
-> The remaining jurisdictions in the model below — **Brazil / São Paulo
-> (`sam`)** and **APAC (`oce` / `apc` / `mea`)** — are still **roadmap /
-> enterprise-on-request**. In particular, **Cloudflare R2 has no
-> South-America region**, so Brazilian-jurisdiction *physical* residency is
-> not yet technically possible (`sam`-bound data resides in the US or EU under
-> SCCs). Treat any non-US, non-EU region as a forward-looking commitment until
-> it ships and a real `locationHint`-based verification passes.
+> **`sam` (South America) and `afr` (Africa)** are valid codes in the region
+> enum but have **no provisioned storage bucket**. Signup rejects both, so
+> no tenant can be pinned to either today. In particular, Cloudflare R2 has
+> no South America region, so Brazilian-jurisdiction *physical* residency is
+> not yet technically possible.
 
-Where data is stored under a US (or, for `sam`, US/EU) binding, cross-border
-transfers are governed by **SCCs + supplementary measures in the DPA** (see
+Where data is stored under a US binding, cross-border transfers are
+governed by **SCCs + supplementary measures in the DPA** (see
 [Compliance](./compliance)).
 
 ### Region availability
 
-Every tenant has a `primary_region` set at provisioning, from a closed enum:
+Every tenant has a `primary_region` set at provisioning, from a closed
+six-value enum:
 
 | Pin | Region | Geography | Status |
 | --- | --- | --- | --- |
-| `enam` | Eastern North America (Iowa / Virginia) | United States | **Live (default)** |
-| `weur` | Western Europe | EU (physically-EU R2, EEUR; served via `lhr`) | **Live — EU data stays in the EU** |
-| `wnam` | Western North America | United States | Roadmap / on request |
-| `sam` | South America (São Paulo) | Brazil | **Roadmap** — no Cloudflare SA region; physical BR residency not yet possible |
-| `oce` | Oceania (Sydney) | AU / NZ | Roadmap / on request |
-| `apc` | Asia-Pacific (Tokyo / Singapore) | JP / SG | Roadmap / on request |
-| `mea` | Middle East (Dubai) | UAE | Roadmap / on request |
+| `enam` | Eastern North America | United States (served via `iad`) | **Live (default)** |
+| `wnam` | Western North America | United States (served via `iad`) | **Live** |
+| `weur` | Western Europe | EU (physically-EU R2; served via `lhr` / London) | **Live — EU data stays in the EU** |
+| `apac` | Asia-Pacific | Japan-located R2 (`corelink-cas-apac`; served via `nrt` / Tokyo) | **Live since 2026-08-17** |
+| `sam` | South America | Brazil (São Paulo) | **Not provisioned** — no Cloudflare SA region; signup rejects this pin |
+| `afr` | Africa | — | **Not provisioned** — no colo mapping; signup rejects this pin |
 
 What `primary_region` controls:
 
-- **R2 object placement.** For the live regions, blobs are written to that
-  region's R2 buckets (US buckets for `enam`; physically-EU EEUR buckets for
-  `weur`). The residency guard maps `weur`→`lhr` and refuses cross-region
-  access (`INV-REGION-NO-CROSS-LEAK`). *(Roadmap regions: in-jurisdiction
-  buckets ship with the region.)*
+- **R2 object placement.** For the provisioned regions, blobs are written
+  to that region's R2 buckets (US buckets for `wnam`/`enam`; physically-EU
+  buckets for `weur`; the Tokyo-located `corelink-cas-apac` bucket for
+  `apac`). The residency guard maps `weur`→`lhr` and `apac`→`nrt`, and
+  refuses cross-region access (`INV-REGION-NO-CROSS-LEAK`). `sam` and `afr`
+  have no bucket to route to, so signup rejects them rather than letting
+  a tenant land in a region that is not provisioned.
 - **D1 placement.** Per-tenant D1 database created in-region.
 - **DO placement.** Durable Object instance colocated with D1.
 - **Failover semantics.** During a region outage, the failover path is always
   within the tenant's residency boundary and is documented per region in
-  [`specs/_runbooks/RB-DR-DRILL.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_runbooks/RB-DR-DRILL.md).
+  `specs/_runbooks/RB-DR-DRILL.md`, available on request from `trust@humangr.com`.
   For Brazil specifically, see
   [Brazil residency & LGPD](/residency/lgpd-brazil) — Art. 33 §1º allows
   out-of-region temporary processing during a documented emergency.
@@ -170,15 +177,16 @@ CoreLink supports GDPR Art. 17 and LGPD Art. 18 erasure requests:
   within 35 days (the backup window); a tombstone is recorded on day 0
   so a Type II auditor can trace the chain.
 
-See the [DSR runbooks](https://github.com/HumanGuardrail/corelink-server/tree/main/specs/_runbooks)
-(`RB-DSR-INTAKE-FAILURE`, `RB-DSR-ERASURE-INCOMPLETE`) for the operational
-side.
+The DSR runbooks (`RB-DSR-INTAKE-FAILURE`, `RB-DSR-ERASURE-INCOMPLETE`) cover the
+operational side; they are available on request from `trust@humangr.com`.
 
 ## Customer data flow (high-level)
 
-> The storage below is physically in the tenant's region: **US (ENAM)** for the
-> default region, and **physically-EU (WEUR / EEUR)** for EU tenants (storage
-> served via the `lhr` cluster). Brazil/`sam` and APAC region pins are roadmap.
+> The storage below is physically in the tenant's region: **US (`wnam` /
+> `enam`)** for North American tenants, **physically-EU (`weur`)** for EU
+> tenants (served via `lhr`), and **Japan-located (`apac`)** for
+> Asia-Pacific tenants (served via `nrt`, live since 2026-08-17). `sam`
+> and `afr` pins are not provisioned; signup rejects them.
 
 ```
                 ┌─────────────────┐
@@ -197,7 +205,7 @@ side.
   │ (isolate)  │◄──────────────┤ (per-tenant) │
   └─────┬──────┘               └──────────────┘
         │
-        ├──► R2 (per-tenant prefix; US/ENAM or EU/EEUR buckets per region; BYOK envelope if enabled)
+        ├──► R2 (per-tenant prefix; US, EU, or Japan-located buckets per region; BYOK envelope if enabled)
         ├──► D1 (per-tenant DB, in tenant region)
         ├──► KV (per-tenant namespace, short-TTL only)
         └──► Audit chain (append-only, Merkle-linked)
@@ -205,18 +213,13 @@ side.
 
 ## Verifying it yourself
 
-You don't have to take our word for any of the above. Three options:
+You don't have to take our word for any of the above. Two options:
 
-1. **Read the code.** The repo is
-   [`HumanGuardrail/corelink`](https://github.com/HumanGuardrail/corelink-server).
-   The residency enforcement, BYOK envelope, and audit chain are
-   all open. (Note: US/ENAM and physically-EU/WEUR residency are live;
-   Brazil/`sam` and APAC physical residency are roadmap, not GA.)
-2. **Hit the admin API.** Endpoints under `/v1/tenant/me/*` return signed
+1. **Hit the admin API.** Endpoints under `/v1/tenant/me/*` return signed
    attestations of encryption status and audit-chain head. The
    region-pin/residency-proof attestation is part of the residency roadmap and
    is not relied-upon today.
-3. **Audit your own data.** Audit-chain inclusion proofs are exportable as
+2. **Audit your own data.** Audit-chain inclusion proofs are exportable as
    RFC 6962 proofs you can verify offline. See
    [Audit chain](/security/audit-chain).
 

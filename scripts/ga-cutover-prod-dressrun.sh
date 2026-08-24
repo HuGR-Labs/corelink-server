@@ -738,6 +738,6 @@ emit "== RB-GA-CUTOVER §3 production-tier dress-run COMPLETE — verdict ${VERD
 
 if [[ "$COMPOSITE" != "1" ]]; then exit 1; fi
 for frag in "${STEP_RESULTS[@]}"; do
-    if echo "$frag" | grep -q '"outcome":"FAIL"'; then exit 1; fi
+    if echo "$frag" | grep '"outcome":"FAIL"' >/dev/null; then exit 1; fi
 done
 exit 0

@@ -32,7 +32,7 @@ where to read the post-mortem.
 
 The internal side — playbooks, runbooks, tabletop schedule, NIST 800-61
 alignment — is documented in
-[`specs/_compliance/IR-TABLETOP-PLAYBOOK.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_compliance/IR-TABLETOP-PLAYBOOK.md).
+`specs/_compliance/IR-TABLETOP-PLAYBOOK.md`, available on request from `trust@humangr.com`.
 
 ## Severity definitions
 
@@ -44,10 +44,12 @@ alignment — is documented in
 
 ## Status page
 
-[status.corelink.humangr.com](https://status.corelink.humangr.com) is the **single source of
-truth** during an incident. It is operated by Atlassian Statuspage and is
-isolated from the CoreLink production fabric — if CoreLink is down, the
-status page is up.
+[hugrl.betteruptime.com](https://hugrl.betteruptime.com) is the **single source of
+truth** during an incident. It is operated by **Better Stack**, on
+infrastructure separate from the CoreLink production fabric — if CoreLink is
+down, the status page is up. It is served from the vendor's own hostname on
+purpose: a branded name would have to be served through infrastructure we run, and a status page that shares our fate goes quiet in
+exactly the incident it exists to report.
 
 Eight components are tracked:
 
@@ -64,21 +66,23 @@ Per-region status is shown for each component (where applicable).
 
 ### Subscribe
 
-You can subscribe to status updates by:
+**Programmatic monitoring** — `https://hugrl.betteruptime.com/index.json`
+returns the page state as JSON, including `data.attributes.aggregate_state`.
+This is the same endpoint the status indicator in our docs header reads.
 
-- **Email** — sign up at [status.corelink.humangr.com](https://status.corelink.humangr.com).
-- **SMS** — text the keyword from the status page (US / EU numbers
-  supported).
-- **RSS** — `https://status.corelink.humangr.com/history.rss`
-  / `https://status.corelink.humangr.com/history.atom`.
-- **Webhook** — Slack and Microsoft Teams integrations available;
-  PagerDuty webhook supported.
-- **JSON API** — `https://status.corelink.humangr.com/api/v2/summary.json` for
-  programmatic monitoring.
+**Email, SMS, RSS and webhook subscriptions are NOT available today.** This
+page previously advertised all four, plus a
+`https://hugrl.betteruptime.com/api/v2/summary.json` JSON endpoint and an
+enterprise incident-comms distribution address. None of it was real: the
+subscription feature is switched off on the status page (`subscribable:
+false`), and both `/history.rss` and `/api/v2/summary.json` are
+Atlassian-Statuspage paths that this vendor does not serve — they 301 to the
+homepage, so a monitoring script polling them would parse HTML and never
+report a thing.
 
-Enterprise tenants can also pre-register a dedicated incident-comms
-distribution address inside tenant settings; SEV1 events are pushed there
-in parallel with the public status page.
+If you need to be told rather than to poll, email **support@humangr.com** and
+we will add you to the incident list by hand until subscriptions are turned
+on.
 
 ## Communicating during a SEV1
 
@@ -94,7 +98,7 @@ We follow a deliberate cadence so you can plan around it:
 | T+14d | Internal post-mortem review with corrective-action register; summary delta added to the public post-mortem if material |
 
 We follow the templates in
-[`marketing/launch/CRISIS-COMMS-TEMPLATES.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/marketing/launch/CRISIS-COMMS-TEMPLATES.md):
+`marketing/launch/CRISIS-COMMS-TEMPLATES.md`:
 SEV1 outage, privacy incident, billing bug, BYOK CMK rumor, pentester early
 disclosure. The templates exist so we can communicate quickly under
 pressure without writing prose from scratch.
@@ -117,9 +121,9 @@ internal escalation that puts the decision in front of the DPO and Security
 Lead within 4 hours of suspicion, well inside the regulatory window.
 
 The breach-notification runbook is
-[`specs/_runbooks/RB-BREACH-NOTIF.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_runbooks/RB-BREACH-NOTIF.md);
+`specs/_runbooks/RB-BREACH-NOTIF.md`;
 the tabletop playbook (NIST 800-61 Rev. 2 aligned, six scenarios) is
-[`specs/_compliance/IR-TABLETOP-PLAYBOOK.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_compliance/IR-TABLETOP-PLAYBOOK.md).
+`specs/_compliance/IR-TABLETOP-PLAYBOOK.md`. Both are available on request from `trust@humangr.com`.
 
 ## Past incidents
 
@@ -137,7 +141,7 @@ Format we'll use:
 | _(none yet)_ | | | | |
 
 For internal-only events (drills, tabletop exercises), see
-[`specs/_compliance/IR-TABLETOP-SCHEDULE-2026.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_compliance/IR-TABLETOP-SCHEDULE-2026.md).
+`specs/_compliance/IR-TABLETOP-SCHEDULE-2026.md`, available on request from `trust@humangr.com`.
 First live tabletop session **TT-01 is scheduled 2026-07-22**.
 
 ## Reporting an incident *to* us
@@ -155,7 +159,7 @@ acknowledged:
 24/7 paging is in place across three regions per PagerDuty rotation. A
 weekly synthetic page (sent every Monday 14:00 UTC, sustained for 30 days
 pre-GA) verifies the rotation actually pages — see
-[`marketing/launch/STATUS-PAGE-SPEC.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/marketing/launch/STATUS-PAGE-SPEC.md).
+`marketing/launch/STATUS-PAGE-SPEC.md`.
 
 ## Related
 
@@ -165,4 +169,4 @@ pre-GA) verifies the rotation actually pages — see
 - [Sub-processors](./subprocessors)
 - [Security policy (VDP)](/security/policy)
 - [Responsible disclosure](/security/policy)
-- [Status page](https://status.corelink.humangr.com)
+- [Status page](https://hugrl.betteruptime.com)

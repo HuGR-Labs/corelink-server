@@ -105,6 +105,20 @@ pub enum TurboBridgeError {
         reason: &'static str,
     },
 
+    /// A PUT targeted a key that already holds an artifact, and the store is
+    /// create-only (`put_if_absent`): the existing bytes are NOT overwritten.
+    /// Maps to HTTP 409 Conflict. Turborepo keys are opaque/client-chosen, not
+    /// content-addressed, so an overwrite could silently REPLACE the bytes
+    /// behind a tenant's own existing key (within-tenant cache poisoning the
+    /// content envelope cannot detect). Create-only closes that (BACKLOG
+    /// B-024); the real `turbo` client never re-PUTs an existing key in normal
+    /// operation and tolerates this 409 as a non-fatal warning.
+    #[error("artifact already exists (create-only): hash={hash:?}")]
+    AlreadyExists {
+        /// The hash whose key already holds an artifact.
+        hash: String,
+    },
+
     /// An audit emit failed; the operation was aborted without mutating state
     /// (fail-CLOSED ordering).
     #[error("audit sink failed: {0}")]

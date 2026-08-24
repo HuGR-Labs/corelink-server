@@ -92,7 +92,7 @@ SUBDOMAINS=(
     "https://corelink-signup.humangr.com"
     "https://humangr.com"
     "https://corelink-get.humangr.com"
-    "https://status.corelink.humangr.com"
+    "https://hugrl.betteruptime.com"
 )
 
 # Number of tables expected after all D1 migrations are applied.
@@ -244,7 +244,7 @@ check_w32_3_subdomains() {
         local code
         code="$(http_status_code "${url}")"
         # Accept 2xx and also 3xx (pages redirect to www patterns are valid).
-        # status.corelink.humangr.com may return 301/302 redirect to BetterStack.
+        # the status page may return 301/302 within BetterStack.
         local http_class="${code:0:1}"
         if [[ "${http_class}" == "2" || "${http_class}" == "3" ]]; then
             sub_pass=$(( sub_pass + 1 ))
@@ -486,7 +486,7 @@ for item in data:
     local missing_core=""
     local forward_looking_info=""
     for secret in "${CORE_REQUIRED_SECRETS[@]}"; do
-        if ! printf '%s\n' "${bound_secrets}" | grep -qxF "${secret}"; then
+        if ! printf '%s\n' "${bound_secrets}" | grep -xF "${secret}" >/dev/null; then
             missing_core="${missing_core} ${secret}"
         fi
     done
@@ -515,7 +515,7 @@ for item in data:
             done
             [[ "${is_core}" -eq 1 ]] && continue
             # Only note it if also unbound.
-            if ! printf '%s\n' "${bound_secrets}" | grep -qxF "${secret}"; then
+            if ! printf '%s\n' "${bound_secrets}" | grep -xF "${secret}" >/dev/null; then
                 fwd_count=$(( fwd_count + 1 ))
             fi
         done <<< "${all_cf_wrangler_secrets}"

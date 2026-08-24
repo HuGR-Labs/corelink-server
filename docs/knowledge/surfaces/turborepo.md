@@ -4,7 +4,7 @@ title: "Turborepo v8 remote-cache surface"
 description: "The Vercel Turborepo /v8/artifacts remote-cache protocol wired onto CoreLink, with teamId-as-sub-namespace isolation and per-route body caps."
 source_files:
   - "crates/corelink-container/src/routes/turbo_v8.rs"
-checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
+checkpoint_sha: "847387c94fe6dd5bde4c70dfe90fbc9fe6e7f448"
 provenance: "AUTHORED"
 tags: ["surfaces", "turborepo", "vercel", "cache"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -54,6 +54,7 @@ cross-tenant access is impossible.
 - The telemetry `events` route is capped at `EVENTS_BODY_LIMIT_BYTES` (64 KiB), not the artifact cap (`crates/corelink-container/src/routes/turbo_v8.rs:140`; `crates/corelink-container/src/routes/turbo_v8.rs:1050-1053`).
 - Artifact bodies are bounded at `TURBO_BODY_LIMIT_BYTES` (100 MiB) so a PAT cannot OOM the shared container (`crates/corelink-container/src/routes/turbo_v8.rs:103`).
 - The GET read path is concurrency-bounded like PUT: per-tenant cap 4 + global cap 16, both reserved before the artifact is buffered, so neither one tenant nor an aggregate read burst can OOM the container (`crates/corelink-container/src/routes/turbo_v8.rs:128`; `crates/corelink-container/src/routes/turbo_v8.rs:183`).
+- PUT is create-only (`put_if_absent`): a PUT to a key that already holds an artifact is refused `409 Conflict`, never overwritten (`crates/corelink-container/src/routes/turbo_v8.rs:1524-1525`). Turborepo keys are opaque/client-chosen, not content-addressed, so an overwrite could replace the bytes behind a tenant's own existing key — within-tenant cache poisoning the content envelope cannot detect. The presence probe runs under the per-`(tenant, team, hash)` write lock so the probe→refuse-or-write is serialized per stored object; a probe backend error fails OPEN (a transient storage error never blocks a legitimate first insert). Proven safe against the real `turbo` client, which never re-PUTs an existing key in normal operation and tolerates the 409 as a non-fatal warning (`docs/design/2026-08-24-turborepo-create-only-evidence.md`).
 
 # Gotchas
 - axum honours the INNERMOST `DefaultBodyLimit`, so the order of the layers matters: the `events`
@@ -80,3 +81,4 @@ cross-tenant access is impossible.
 11. `crates/corelink-container/src/routes/turbo_v8.rs:128` — `TURBO_GET_CONCURRENCY_LIMIT` (4); `crates/corelink-container/src/routes/turbo_v8.rs:183` — `GLOBAL_TURBO_GET_PERMITS` (16).
 12. `crates/corelink-container/src/routes/turbo_v8.rs:951-1029` — `build_handlers` store selection: durable `R2KvStore` when `StorageEnv::from_env()` is present (persists across restarts), in-RAM `InMemoryKvStore` only in the no-creds dev/CI fallback, fail-CLOSED handler when creds are present but R2 refuses to build.
 13. `crates/corelink-container/src/routes/turbo_v8.rs:1152-1153` (GET read HIT), `crates/corelink-container/src/routes/turbo_v8.rs:1311-1312` (PUT write) — fire-and-forget usage-metering `record` calls (DISPLAY telemetry, off the hot path).
+14. `crates/corelink-container/src/routes/turbo_v8.rs:1524-1525` — `map_err(AlreadyExists)` → `409 Conflict`: the create-only (`put_if_absent`) refusal of an overwrite. The presence probe itself lives in `corelink-turbo-bridge`'s adapter, under the route's per-`(tenant, team, hash)` write lock. Client evidence: `docs/design/2026-08-24-turborepo-create-only-evidence.md`.

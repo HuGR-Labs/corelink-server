@@ -21,7 +21,7 @@
 #
 # Checks per host:
 #   dns   : dig +short returns a CF IP (104.x or 172.67.x range)
-#           EXCEPT status.corelink.humangr.com which resolves via
+#           (the status CNAME was RETIRED 2026-08-24; it used to resolve via
 #           CNAME to hugrl.betteruptime.com (BetterStack)
 #   https : curl -sI returns HTTP 2xx or 3xx status code
 #   cert  : openssl s_client cert chain issuer contains "Cloudflare"
@@ -94,7 +94,6 @@ HOSTS=(
   "corelink-signup.humangr.com|worker|"
   "humangr.com|worker|"
   "corelink-get.humangr.com|worker|"
-  "status.corelink.humangr.com|statuspage|hugrl.betteruptime.com"
 )
 
 # ---------------------------------------------------------------------------
@@ -168,7 +167,7 @@ check_dns() {
     # Expect CNAME chain to BetterStack, not a CF IP
     local cname_target
     cname_target=$(dig +short +time=5 +tries=2 CNAME "${host}" 2>/dev/null | head -1 | sed 's/\.$//' || true)
-    if [[ "${cname_target}" == "${bs_cname}" ]] || echo "${resolved}" | grep -q "betteruptime"; then
+    if [[ "${cname_target}" == "${bs_cname}" ]] || echo "${resolved}" | grep "betteruptime" >/dev/null; then
       _pass "${label}: CNAME → ${cname_target:-${resolved}} [BetterStack DNS-only, expected]"
       PASS_COUNT=$((PASS_COUNT + 1))
     else
@@ -267,11 +266,11 @@ check_cert() {
     return
   fi
 
-  if echo "${raw_issuer}" | grep -qi "cloudflare"; then
+  if echo "${raw_issuer}" | grep -i "cloudflare" >/dev/null; then
     _pass "${label}: issuer contains 'Cloudflare' — CF Universal SSL confirmed"
     _info "      issuer: ${raw_issuer}"
     PASS_COUNT=$((PASS_COUNT + 1))
-  elif echo "${raw_issuer}" | grep -qi "let.s encrypt"; then
+  elif echo "${raw_issuer}" | grep -i "let.s encrypt" >/dev/null; then
     _pass "${label}: issuer contains 'Let's Encrypt' — valid for status page"
     _info "      issuer: ${raw_issuer}"
     PASS_COUNT=$((PASS_COUNT + 1))

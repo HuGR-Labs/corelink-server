@@ -1,6 +1,6 @@
 ---
-version: "1.1.0"
-last_updated: "2026-08-23"
+version: "1.3.0"
+last_updated: "2026-08-24"
 notification_required: true
 sub_processors:
   - id: "cloudflare"
@@ -94,6 +94,42 @@ sub_processors:
     primary_jurisdiction: "United States"
     contract_signed_at: "2026-04-23"
     legal_review_evidence: "docs/compliance/vendor-reviews/pagerduty-dpa-review-2026-04.md"
+
+  - id: "sentry"
+    name: "Functional Software, Inc. (Sentry)"
+    role: "Application error monitoring (admin-ui server/edge/client + docs-site build loader)"
+    data_categories_processed:
+      - "telemetry"
+    region: "United States"
+    certifications: []
+    dpa_url: "https://sentry.io/legal/dpa/"
+    primary_jurisdiction: "United States"
+    contract_signed_at: null
+    legal_review_evidence: "PENDING — VR-7 in specs/_compliance/VENDOR-RISK-REGISTER.md §5; DPA policy is published, no signed-copy evidence file on file yet"
+
+  - id: "plausible"
+    name: "Plausible Insights OÜ (Plausible Analytics)"
+    role: "Cookieless web analytics for the docs-site marketing funnel"
+    data_categories_processed:
+      - "telemetry"
+    region: "European Union"
+    certifications: []
+    dpa_url: "https://plausible.io/dpa"
+    primary_jurisdiction: "Estonia (EU)"
+    contract_signed_at: null
+    legal_review_evidence: "PENDING — VR-8 in specs/_compliance/VENDOR-RISK-REGISTER.md §5; DPA policy is published, no signed-copy evidence file on file yet"
+
+  - id: "betterstack"
+    name: "Better Stack, Inc. (BetterStack / Statuspage)"
+    role: "Uptime/status monitoring — synthetic HTTP-health probes against CoreLink's own public endpoints + public status page hosting"
+    data_categories_processed:
+      - "telemetry"
+    region: "European Union"
+    certifications: []
+    dpa_url: "https://betterstack.com/privacy"
+    primary_jurisdiction: "European Union"
+    contract_signed_at: null
+    legal_review_evidence: "PENDING — VR-9 in specs/_compliance/VENDOR-RISK-REGISTER.md §5; DPA policy is published, no signed-copy evidence file on file yet"
 ---
 
 # CoreLink — Sub-Processors Register
@@ -128,7 +164,7 @@ Rate limit: 5 objections/day/subject (anti-DoS; S-08 inheritance).
 
 ## Sub-Processors
 
-Active sub-processors (6) — vendors actually processing customer personal data
+Active sub-processors (9) — vendors actually processing customer personal data
 today, matching `apps/docs/docs/trust/subprocessors.mdx`'s "Active
 sub-processors" table and `specs/_compliance/VENDOR-RISK-REGISTER.md` §2:
 
@@ -140,6 +176,9 @@ sub-processors" table and `specs/_compliance/VENDOR-RISK-REGISTER.md` §2:
 | github | GitHub, Inc. | Source code repository and CI/CD | United States | SOC 2 Type II, ISO 27001 | [DPA](https://docs.github.com/en/site-policy/privacy-policies/github-data-protection-agreement) |
 | pagerduty | PagerDuty, Inc. | Incident management + on-call alerting | United States | SOC 2 Type II, ISO 27001 | [Privacy Policy](https://www.pagerduty.com/privacy-policy/) |
 | resend | Resend, Inc. | Transactional email + newsletter-audience delivery (recipient email is PII) | United States | DPA policy published; signed-copy evidence pending (VR-6) | [DPA](https://resend.com/legal/dpa) |
+| sentry | Functional Software, Inc. (Sentry) | Application error monitoring — scrubbed diagnostic telemetry (admin-ui + docs-site) | United States | DPA policy published; signed-copy evidence pending (VR-7) | [DPA](https://sentry.io/legal/dpa/) |
+| plausible | Plausible Insights OÜ (Plausible Analytics) | Cookieless web analytics for the docs-site marketing funnel | European Union | DPA policy published; signed-copy evidence pending (VR-8) | [DPA](https://plausible.io/dpa) |
+| betterstack | Better Stack, Inc. (BetterStack / Statuspage) | Uptime/status monitoring — synthetic probes + public status page (no customer data) | European Union | DPA policy published; signed-copy evidence pending (VR-9) | [Privacy Policy](https://betterstack.com/privacy) |
 
 ## Contracted-but-not-active / integration built, not enabled
 

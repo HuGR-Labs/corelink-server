@@ -44,14 +44,14 @@ instantánea (Free); uno se enruta mediante un formulario de consulta
 **Pro es el nivel recomendado** — es el ancla de mejor relación
 calidad-precio para un equipo que envía builds de producción.
 
-| Nivel | Precio mensual | Para quién es | Almacenamiento CAS incluido | Tráfico de lectura incluido | BYOK | Fijación de región | Activación |
-|---|---|---|---|---|---|---|---|
-| **Free** | $0 | Proyectos personales + evaluación | 10 GB | 50 GB / mes | — | compartida | Instantánea |
-| **Solo** | $15 | El desarrollador individual | 50 GB | 500 GB / mes | — | 1 región | Stripe Checkout |
-| **Starter** | $35 | Un equipo pequeño | 150 GB | 1.5 TB / mes | — | 1 región | Stripe Checkout |
-| **Pro** ⭐ | $50 | Mejor valor — equipos de producción | 500 GB | 5 TB / mes | — | hasta 2 regiones | Stripe Checkout |
-| **Max** | $149 | Equipos en crecimiento, volumen serio | 2 TB | 20 TB / mes | complemento opcional | hasta 2 regiones | Stripe Checkout |
-| **Enterprise** | Contáctenos | Multirregión / regulado / BYOK | Personalizado | Personalizado | incluido | las 4 regiones | Formulario de consulta |
+| Nivel | Precio mensual | Para quién es | Almacenamiento CAS incluido | BYOK | Fijación de región | Activación |
+|---|---|---|---|---|---|---|
+| **Free** | $0 | Proyectos personales + evaluación | 10 GB | — | compartida | Instantánea |
+| **Solo** | $15 | El desarrollador individual | 50 GB | — | 1 región | Stripe Checkout |
+| **Starter** | $35 | Un equipo pequeño | 150 GB | — | 1 región | Stripe Checkout |
+| **Pro** ⭐ | $50 | Mejor valor — equipos de producción | 500 GB | — | hasta 2 regiones | Stripe Checkout |
+| **Max** | $149 | Equipos en crecimiento, volumen serio | 2 TB | — | hasta 2 regiones | Stripe Checkout |
+| **Enterprise** | Contáctenos | Multirregión / regulado / BYOK | Personalizado | incluido | las 4 regiones | Formulario de consulta |
 
 Todos los niveles se ejecutan sobre el mismo plano de datos, el mismo catálogo
 de SLO y el mismo modelo de auditoría y residencia. Las diferencias son las
@@ -66,15 +66,18 @@ no la capacidad.
 | Direccionamiento de contenido BLAKE3 | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Cero egreso en lecturas de caché | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Cadena de auditoría (pruebas de Merkle) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| RBAC + invitar compañeros de equipo | ✓ (3 asientos) | ✓ (5 asientos) | ✓ (10 asientos) | ✓ (50 asientos) | ✓ (100 asientos) | ilimitado |
-| BYOK (KEK gestionada por el cliente) | — | — | — | — | complemento | incluido |
+| RBAC + invitar compañeros de equipo | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| BYOK (KEK gestionada por el cliente) | — | — | — | — | — | incluido |
 | Fijación de región (residencia) | compartida | 1 de 4 | 1 de 4 | hasta 2 | hasta 2 | las 4 |
 | Conmutación por error multirregión | — | — | — | ✓ | ✓ | ✓ |
 | DPA (Anexo de Procesamiento de Datos) | clickwrap | clickwrap | clickwrap | clickwrap | clickwrap | negociado |
 | Soporte | comunidad | correo electrónico (mejor esfuerzo) | correo electrónico (2 días hábiles) | correo electrónico (1 día hábil) | correo electrónico prioritario (1 día hábil) | dedicado (1 h) |
 | SLO de tiempo de actividad | mejor esfuerzo | 99.5% | 99.5% | 99.9% | 99.9% | 99.95% |
-| Retención de registros de auditoría | 7 días | 30 días | 30 días | 90 días | 90 días | 1 año+ |
-| Informes de cumplimiento (SOC 2, ISO) | — | — | — | resumen | resumen | completo + personalizado |
+
+RBAC (roles owner / admin / member / viewer) rige quién puede invitar o quitar
+compañeros de equipo en todos los niveles; ningún nivel limita cuántos
+compañeros puede invitar. Ningún nivel de autoservicio ofrece BYOK — es una
+capacidad exclusiva de Enterprise.
 
 ## Cómo se calcula la factura
 
@@ -86,7 +89,7 @@ un nivel de pago es simplemente su tarifa base fija:
 invoice = base_fee + optional_add_ons
 ```
 
-Un inquilino que alcanza el 100% de su cuota de almacenamiento o de lectura
+Un inquilino que alcanza el 100% de su cuota de almacenamiento CAS
 recibe un `429 Too Many Requests` (con un CTA de mejora) hasta que se reinicie
 el siguiente mes calendario, o hasta que el administrador del inquilino mejore
 de nivel. El tope es una función, no un castigo — es lo que mantiene el precio
@@ -101,10 +104,6 @@ predecible y mantiene Free gratis. El excedente medido se difiere a la v0.2.
 | Max | $149 | tope estricto — mejore para continuar |
 | Enterprise | Contáctenos | negociado |
 
-El complemento BYOK para Max tiene un costo fijo de $99/mes y proporciona el
-encapsulamiento (wrapping) de DEK por inquilino mediante una KEK controlada por
-el cliente en AWS KMS, GCP KMS o Azure Key Vault.
-
 ## Por qué no hay una partida por egreso
 
 El egreso en la nube es, en la mayoría de los proveedores de caché gestionado,
@@ -112,8 +111,7 @@ la partida dominante de una factura de CI intensiva. CoreLink almacena el
 contenido de la caché en Cloudflare R2, que cobra cero por egreso en las
 lecturas hacia la internet pública y hacia la red de Cloudflare. CoreLink
 traslada esa propiedad a los clientes: los niveles de pago cobran por el
-almacenamiento y por las operaciones de *lectura* por GB (una amortización por
-operación), no por los *bytes* por GB que salen de la caché.
+almacenamiento CAS, no por los bytes por GB que salen de la caché.
 
 Esta es, estructuralmente, la razón por la que la factura de CoreLink con un
 volumen de lectura intensivo suele ser un múltiplo menor que el equivalente
@@ -126,11 +124,10 @@ escala.
 CoreLink no cobra por asiento de desarrollador. La carga de la caché se
 correlaciona con el volumen de builds y el paralelismo de CI, no con la
 cantidad de asientos, y la fijación de precios por asiento crea un incentivo
-perverso contra incorporar al siguiente ingeniero a la caché. Los asientos
-tienen un tope por nivel (arriba) como medida antiabuso; no son una dimensión
-de facturación.
-
-Enterprise elimina el tope por completo.
+perverso contra incorporar al siguiente ingeniero a la caché. CoreLink no
+limita la cantidad de compañeros de equipo que puede invitar en ningún nivel;
+el acceso se rige por permisos basados en roles (owner / admin / member /
+viewer), no por una cantidad de asientos.
 
 ## Por qué no hay una partida de cómputo / CPU
 
@@ -143,8 +140,8 @@ CoreLink — el cliente ya le paga a su proveedor de CI por el cómputo.
 
 El nivel Free está diseñado para dos casos:
 
-1. **Desarrolladores individuales** que ejecutan monorepos personales. 10 GB y
-   50 GB/mes de lecturas es suficiente para un build de Bazel personal típico
+1. **Desarrolladores individuales** que ejecutan monorepos personales. 10 GB
+   de almacenamiento CAS es suficiente para un build de Bazel personal típico
    con builds incrementales verdes diarios. (Un desarrollador individual que lo
    supera pasa al nivel **Solo** a $15/mes.)
 2. **Evaluación por parte de equipos más grandes** que quieren conectar
@@ -157,25 +154,23 @@ gestionada pasan a Solo, Starter o Pro dentro de la semana de usarla en serio.
 
 ## Qué le da Enterprise que Max no
 
-- **Inclusión de BYOK** (Max puede comprarlo como complemento; Enterprise lo
-  tiene).
+- **Inclusión de BYOK** — Enterprise es el único nivel que lo ofrece; ningún
+  nivel de autoservicio tiene un complemento de BYOK.
 - **Las cuatro regiones** simultáneamente, no solo dos.
 - **DPA negociado** en lugar de clickwrap, incluyendo lenguaje personalizado de
   manejo de datos para industrias reguladas (servicios financieros, salud,
   adyacentes a defensa).
-- **Retención personalizada** para registros de auditoría e informes de
-  cumplimiento — la retención de varios años está disponible en términos
-  negociados.
+- **Retención de caché negociada** hasta 730 días, frente a los 365 días por
+  defecto en Max.
 - **Soporte dedicado** con un SLO de 1 hora en horario comercial, con
   asignación de un gerente técnico de cuentas nombrado por encima de un umbral
   de uso.
-- **Cuotas personalizadas** para almacenamiento, lecturas y asientos.
+- **Cuotas de almacenamiento personalizadas.**
 
 Enterprise es la opción adecuada cuando al menos una de las siguientes
 condiciones es verdadera: los requisitos de residencia superan las dos
-regiones; la revisión de seguridad exige BYOK; los auditores del cliente exigen
-retención de varios años; la flota de CI del cliente supera las cuotas de Max
-durante los picos.
+regiones; la revisión de seguridad exige BYOK; la flota de CI del cliente
+supera las cuotas de Max durante los picos.
 
 ## Trazabilidad
 

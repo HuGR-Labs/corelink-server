@@ -267,7 +267,7 @@ real CoreLink incident vs us being rate-limited normally?
 - **System-side, our problem:** `global_circuit_open`. This is the
   system-wide breaker tripped on multi-signal overload. It **is
   counted** in our SLO numerator. Action: check
-  [status.corelink.humangr.com](https://status.corelink.humangr.com); if no
+  [hugrl.betteruptime.com](https://hugrl.betteruptime.com); if no
   incident is posted, escalate via `support@humangr.com` with the
   `error.request_id` from the 429 body.
 

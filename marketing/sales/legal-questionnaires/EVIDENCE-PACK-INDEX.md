@@ -140,7 +140,7 @@ If a question family is not listed here, escalate to DPO before answering — it
 | 88 | **SLO catalog** | `specs/03_architecture/slo_catalog.md` | NDA |
 | 89 | SLO — public summary | **not published** — `/slo` 404s on the live docs site and no source page exists; use row 88 | NDA |
 >>>>>>> ec54c5c7 (fix(marketing): BES ingest has no endpoint either, and finish the dead-host sweep across sales + retention)
-| 90 | Status page | `https://status.corelink.humangr.com` | PUBLIC |
+| 90 | Status page | `https://hugrl.betteruptime.com` | PUBLIC |
 | 91 | **Trust Center — index** | `apps/docs/docs/trust/index.mdx` | PUBLIC |
 | 92 | Trust Center — compliance | `apps/docs/docs/trust/compliance.mdx` | PUBLIC |
 | 93 | Trust Center — data handling | `apps/docs/docs/trust/data-handling.mdx` | PUBLIC |

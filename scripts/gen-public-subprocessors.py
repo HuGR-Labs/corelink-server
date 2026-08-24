@@ -374,7 +374,7 @@ last_updated: "{last_updated}"
 CoreLink uses a small set of carefully selected sub-processors to operate
 the service. This page is the **public list** maintained per GDPR Art. 28
 §2 and LGPD Art. 39 + Art. 27 §4º. It is a subset of our internal
-[Vendor Risk Register](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_compliance/VENDOR-RISK-REGISTER.md)
+Vendor Risk Register
 ({total_vendors} vendors total) — only those who *actually process customer
 personal data on CoreLink's behalf today* appear in the **Active
 sub-processors** table ({active_count} of them). A handful of registered
@@ -397,12 +397,14 @@ Subscribe to change notices:
 - **Email digest** — register a `subprocessor-changes@` distribution
   address inside your tenant settings. We send a digest the moment a
   change is queued, and a reminder 7 days before the change takes effect.
-- **Status page subscription** — sub-processor changes are also published
-  as a *Maintenance / Informational* item at
-  [status.corelink.humangr.com](https://status.corelink.humangr.com). Subscribe via RSS,
-  email, SMS, or webhook.
-- **RSS feed (sub-processor changes only):**
-  `https://corelink.humangr.com/trust/subprocessors.rss` (post-GA).
+- **Status page** — [hugrl.betteruptime.com](https://hugrl.betteruptime.com)
+  carries service state. It is **not** a sub-processor notification channel:
+  subscriptions are switched off on that page, so email, SMS, RSS and webhook
+  delivery do not exist there. Earlier versions of this page said they did.
+- **RSS feed for sub-processor changes** — not available. A feed at
+  `corelink.humangr.com/trust/subprocessors.rss` was listed here as "post-GA";
+  that hostname does not resolve to a serving endpoint and no such feed was
+  ever published.
 
 If you object to a proposed sub-processor change you have the rights set
 out in DPA §6.4 (objection window, escalation, termination-for-cause if
@@ -465,14 +467,14 @@ sub-processors:
 
 The internal sub-processor file (with the full DPA matrix and termination
 clauses) is at
-[`legal/sub-processors.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/legal/sub-processors.md).
-The full vendor risk register (19 vendors with inherent risk scoring,
+held internally and available on request from support@humangr.com.
+The full vendor risk register ({total_vendors} vendors with inherent risk scoring,
 control-effectiveness factors, and quarterly review cadence) is at
-[`specs/_compliance/VENDOR-RISK-REGISTER.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_compliance/VENDOR-RISK-REGISTER.md).
+held internally and available on request from support@humangr.com.
 
 ## Change management
 
-Operational runbook: [`specs/_runbooks/RB-SUBPROCESSOR-CHANGE.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_runbooks/RB-SUBPROCESSOR-CHANGE.md).
+The operational runbook is held internally.
 The 30-day customer-broadcast pipeline is implemented by
 `scripts/subprocessor-change-notify.py` and the
 `corelink-privacy-sub-processor-emit` crate (CloudEvents

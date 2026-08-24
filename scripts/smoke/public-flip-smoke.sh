@@ -90,7 +90,7 @@ probe_security_headers() {
   local missing=""
   check_header() {
     local pattern="$1" label="$2"
-    if ! printf '%s\n' "$headers" | grep -qiE "$pattern"; then
+    if ! printf '%s\n' "$headers" | grep -iE "$pattern" >/dev/null; then
       h_ok=0
       missing="$missing $label"
     fi
@@ -124,7 +124,7 @@ upgrade_first_hop=$(curl -s -o /dev/null -m "$TIMEOUT" -A "$UA" \
   -w '%{http_code} %{redirect_url}' "$APP_URL/upgrade?plan=solo" || printf '000')
 upgrade_code=${upgrade_first_hop%% *}
 upgrade_loc=${upgrade_first_hop#* }
-if [ "$upgrade_code" = "307" ] && printf '%s' "$upgrade_loc" | grep -q '/en/upgrade?plan=solo'; then
+if [ "$upgrade_code" = "307" ] && printf '%s' "$upgrade_loc" | grep '/en/upgrade?plan=solo' >/dev/null; then
   pass "app GET /upgrade?plan=solo → 307 /en/upgrade?plan=solo"
 else
   fail "app GET /upgrade?plan=solo → $upgrade_code ${upgrade_loc:-<no Location>} (expected 307 → /en/upgrade?plan=solo)"
@@ -149,7 +149,7 @@ step "corelink-api.humangr.com (main Worker)"
 probe_status "api GET / (fail-closed root)" "$API_URL/" 404
 health_body=$(curl -s -m "$TIMEOUT" -A "$UA" "$API_URL/health" || printf '')
 health_code=$(http_code "$API_URL/health")
-if [ "$health_code" = "200" ] && printf '%s' "$health_body" | grep -q '"status":"ok"'; then
+if [ "$health_code" = "200" ] && printf '%s' "$health_body" | grep '"status":"ok"' >/dev/null; then
   pass "api GET /health → 200 + status:ok"
 else
   fail "api GET /health → $health_code (expected 200 + \"status\":\"ok\"; body: ${health_body:0:120})"

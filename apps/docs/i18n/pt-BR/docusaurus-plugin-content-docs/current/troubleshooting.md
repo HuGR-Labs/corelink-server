@@ -215,7 +215,7 @@ Se todos os quatro passos passarem, o CoreLink está funcionando. Qualquer falha
 
 ## Como obter ajuda
 
-- GitHub Issues: [github.com/HumanGuardrail/corelink-server/issues](https://github.com/HumanGuardrail/corelink-server/issues)
+- Support: [support@humangr.com](mailto:support@humangr.com)
 - Suporte por e-mail: [support@humangr.com](mailto:support@humangr.com)
 
 Ao abrir uma solicitação de suporte, inclua a saída dos passos de 1 a 4 acima e o ID do seu tenant.

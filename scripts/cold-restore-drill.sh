@@ -262,7 +262,7 @@ probe_r2() {
         return 0
     fi
     if wrangler r2 bucket list --remote 2>/dev/null \
-        | grep -q "corelink-cold-${LOST_REGION}"; then
+        | grep "corelink-cold-${LOST_REGION}" >/dev/null; then
         log "R2 bucket still present (warm failover may suffice; cold restore may be overkill)"
         return 1
     fi
@@ -292,7 +292,7 @@ probe_kv() {
         return 0
     fi
     if ! wrangler kv namespace list --remote 2>/dev/null \
-        | grep -q "CORELINK_KV"; then
+        | grep "CORELINK_KV" >/dev/null; then
         log "KV HARD DESTROYED: namespaces absent"
     else
         log "KV namespaces present (verify per-region binding)"

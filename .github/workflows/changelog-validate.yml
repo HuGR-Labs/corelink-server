@@ -96,7 +96,17 @@ jobs:
           HEAD="${{ github.event.pull_request.head.sha }}"
 
           # 1. CHANGELOG.md must appear in the PR diff.
-          if ! git diff --name-only "${BASE}..${HEAD}" | grep -qx 'CHANGELOG.md'; then
+          #    Ask git for the single path directly instead of piping the whole
+          #    name list into `grep -q`. Under `set -o pipefail` that idiom is
+          #    inverted: `grep -q` exits at the FIRST match, `git diff` — still
+          #    writing the remaining names — takes SIGPIPE and exits 141, and
+          #    pipefail reports the whole pipeline as failed. The `if !` then
+          #    fires the error branch. It misreports ONLY when the file IS in
+          #    the diff and the name list outruns the 64 KiB pipe buffer, i.e.
+          #    exactly on the large PRs that most need a changelog entry.
+          #    Measured on PR #1271 (326 changed files): the gate reported
+          #    "not modified" for a CHANGELOG.md carrying a 24-line diff.
+          if [[ -z "$(git diff --name-only "${BASE}..${HEAD}" -- CHANGELOG.md)" ]]; then
             echo "::error file=CHANGELOG.md::PR contains feat:/fix: commits but CHANGELOG.md is not modified. Add an entry under '## [Unreleased]'."
             exit 1
           fi
