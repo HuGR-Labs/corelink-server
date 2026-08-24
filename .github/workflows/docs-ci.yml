@@ -289,6 +289,18 @@ jobs:
             --remap '^file://${{ github.workspace }}/apps/docs/build/corelink/docs(/.*)?$ file://${{ github.workspace }}/apps/docs/build$1' \
             'apps/docs/build/**/*.html'
 
+  sdk-artifacts:
+    name: published SDK artifacts match their source
+    runs-on: corelink
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - name: Rebuild the wheel and the tarball and compare
+        # apps/docs/static/ serves a built wheel and a built npm tarball, so a
+        # change under sdks/ that forgets to republish would leave customers
+        # downloading a stale SDK. This rebuilds both and fails on any drift.
+        run: bash scripts/verify-sdk-artifacts.sh
+
   vale:
     name: Vale prose lint
     # ADVISORY (never fails on findings — `--no-exit`): full-tree error-level
