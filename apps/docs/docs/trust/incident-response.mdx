@@ -41,8 +41,7 @@ alignment — is documented in
 truth** during an incident. It is operated by **Better Stack**, on
 infrastructure separate from the CoreLink production fabric — if CoreLink is
 down, the status page is up. It is served from the vendor's own hostname on
-purpose: a branded name would have to be proxied or provisioned through
-infrastructure we run, and a status page that shares our fate goes quiet in
+purpose: a branded name would have to be served through infrastructure we run, and a status page that shares our fate goes quiet in
 exactly the incident it exists to report.
 
 Two components are tracked today:
@@ -61,7 +60,7 @@ reported on.
 
 **Programmatic monitoring** — `https://hugrl.betteruptime.com/index.json`
 returns the page state as JSON, including `data.attributes.aggregate_state`.
-This is the same endpoint the status pill in our docs navbar reads.
+This is the same endpoint the status indicator in our docs header reads.
 
 **Email, SMS, RSS and webhook subscriptions are NOT available today.** This
 page previously advertised all four, plus a
