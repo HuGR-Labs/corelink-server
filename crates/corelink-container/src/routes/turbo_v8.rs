@@ -2402,6 +2402,102 @@ mod tests {
         );
     }
 
+    /// B-024 — create-only under concurrent PUTs of a FRESH key: exactly ONE of N
+    /// concurrent PUTs wins (probe-absent → write); the rest observe the winner
+    /// and 409, and a GET returns the winner's bytes intact.
+    ///
+    /// HONESTY NOTE — this is a happy-path concurrency SMOKE test, NOT a
+    /// regression guard for the per-(tenant, team, hash) write lock. That lock is
+    /// what makes "exactly one winner" hold in prod, where the probe (R2 GET) and
+    /// write (R2 PUT) are slow network calls with a wide interleaving window. In
+    /// this in-RAM harness the window collapses: probe+write is a pair of fast
+    /// synchronous HashMap ops, and empirically this test still reports one winner
+    /// with the write lock neutered (measured: lock removed → still 1×200). Making
+    /// it deterministically fail without the lock is not achievable at the unit
+    /// level — any mechanism that FORCES two tasks to be between probe and write
+    /// simultaneously (a barrier) DEADLOCKS a correct lock, and anything softer
+    /// (a slow probe) the scheduler does not reliably interleave. The lock's
+    /// serialization is therefore covered by code inspection (cold-review H1: the
+    /// route holds `_write_lock` across `handler.put`) and by the design's prod
+    /// concurrency probe, not by this test. This test still earns its place: it
+    /// proves the create-only path does not corrupt, 500, or mis-account under
+    /// concurrent fresh-key load.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_fresh_key_puts_one_wins_rest_409_smoke() {
+        let (state, store) = fixture_with_byte_accounting();
+        let app = router(state);
+        let used = || store.used(TEST_AUTH_TENANT, TEST_BYTES_REGION);
+
+        // N concurrent PUTs of an ABSENT key, each a DISTINCT 1-byte payload so
+        // the winner is identifiable. N <= TURBO_PUT_CONCURRENCY_LIMIT (4) so the
+        // per-tenant PutConcurrencyGuard never 429s one of them.
+        const N: usize = 4;
+        let mut handles = Vec::with_capacity(N);
+        for i in 0..N {
+            let app = app.clone();
+            handles.push(tokio::spawn(async move {
+                let req = Request::builder()
+                    .method(Method::PUT)
+                    .uri("/v8/artifacts/fresh_shared?teamId=team_x")
+                    .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+                    .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
+                    .header(
+                        crate::byte_accounting::STORAGE_QUOTA_HEADER,
+                        UNLIMITED_QUOTA_HEADER,
+                    )
+                    .body(Body::from(vec![b'a' + (i as u8)]))
+                    .expect("request");
+                (i as u8, app.oneshot(req).await.expect("oneshot").status())
+            }));
+        }
+        let mut winner: Option<u8> = None;
+        let mut oks = 0usize;
+        let mut conflicts = 0usize;
+        for h in handles {
+            let (i, status) = h.await.expect("join");
+            match status {
+                StatusCode::OK => {
+                    oks += 1;
+                    winner = Some(i);
+                }
+                StatusCode::CONFLICT => conflicts += 1,
+                other => panic!("unexpected status {other} for concurrent fresh-key PUT"),
+            }
+        }
+        assert_eq!(
+            oks, 1,
+            "exactly ONE concurrent fresh-key PUT may win — more than one means the \
+             per-object write lock did not serialize the racers (overwrite window open)"
+        );
+        assert_eq!(conflicts, N - 1, "every non-winner must be refused 409");
+        assert_eq!(
+            used(),
+            1,
+            "one 1-byte object stored; the N-1 refused reservations were released"
+        );
+
+        // The stored bytes are the winner's, intact — a GET returns exactly the
+        // payload of the PUT that won, not a torn/overwritten object.
+        let winner = winner.expect("one winner");
+        let get = Request::builder()
+            .method(Method::GET)
+            .uri("/v8/artifacts/fresh_shared?teamId=team_x")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
+            .body(Body::empty())
+            .expect("get request");
+        let get_resp = app.oneshot(get).await.expect("get oneshot");
+        assert_eq!(get_resp.status(), StatusCode::OK);
+        let got = axum::body::to_bytes(get_resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        assert_eq!(
+            got.as_ref(),
+            &[b'a' + winner][..],
+            "the stored object must be exactly the winning PUT's bytes"
+        );
+    }
+
     /// Distinct keys are NOT serialized against each other (the per-object lock
     /// only serializes the SAME object): concurrent PUTs to different keys both
     /// land and accumulate independently.
