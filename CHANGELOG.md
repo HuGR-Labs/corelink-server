@@ -38,7 +38,7 @@ Each entry cross-references:
   `crates/corelink-audit-chain/src/sealed_archive.rs`) and QUARANTINES the
   unarchivable remainder — migration `0100_audit_outbox_quarantine.sql` adds
   `quarantined_at` + a machine-readable `quarantine_reason`
-  (`sequence_gap:expected=11,found=10`) and narrows the work-queue index, so
+  (`sequence_gap:expected=11,found=10`) and adds a narrowed work-queue index, so
   those rows leave the queue and the backlog can reach zero. Archiving resumes
   on later rows as a new mid-chain chunk window. **Re-sequencing is forbidden:**
   the sealed rows are the evidence, and a test that re-reads the writer's own

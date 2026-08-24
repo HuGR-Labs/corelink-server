@@ -161,8 +161,8 @@ jobs:
               return rows
 
           # CLAUSE 1 — pending work older than T. Uses the partial work-queue
-          # index idx_audit_outbox_unarchived (migration 0099, narrowed by
-          # 0100). `quarantined_at IS NULL` is load-bearing: a quarantined row
+          # index idx_audit_outbox_unarchived_active (migration 0100).
+          # `quarantined_at IS NULL` is load-bearing: a quarantined row
           # is unarchivable by design and can never clear this clause.
           clause1_sql = (
               "SELECT COUNT(*) AS pending_old, MIN(enqueued_at) AS oldest_pending_ms "

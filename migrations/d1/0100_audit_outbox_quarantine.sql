@@ -34,10 +34,10 @@
 -- of each partition and quarantines from the break onward, so healthy rows
 -- reach R2 instead of being held hostage by one historical fork.
 --
--- ADDITIVE ONLY: two nullable columns and one partial-index replacement. No
--- CHECK constraint is touched, so no table rebuild and no ADR is required (see
--- the auth-migrations additive-only rule). Every existing row starts NULL, i.e.
--- "not quarantined", which is the truth.
+-- ADDITIVE ONLY: two nullable columns and one NEW partial index. Nothing is
+-- dropped, no CHECK constraint is touched, so no table rebuild and no ADR is
+-- required (see the auth-migrations additive-only rule). Every existing row
+-- starts NULL, i.e. "not quarantined", which is the truth.
 --
 -- Canonical sources:
 --   - crates/corelink-container/src/routes/audit_archive.rs
@@ -48,20 +48,31 @@
 ALTER TABLE audit_outbox ADD COLUMN quarantined_at INTEGER;   -- unix epoch ms the row was ruled unarchivable; NULL = not quarantined
 ALTER TABLE audit_outbox ADD COLUMN quarantine_reason TEXT;   -- e.g. 'sequence_gap:expected=11,found=10' — grep-able, GROUP BY-able
 
--- The archiver's work queue, narrowed.
+-- A SECOND work-queue index, narrowed by `quarantined_at IS NULL`.
 --
--- REPLACING 0099's `idx_audit_outbox_unarchived` rather than adding a second
--- index, because the archiver has exactly ONE work-queue predicate and it now
--- carries `quarantined_at IS NULL` in every one of its three queries (the
--- partition scan, the per-partition row read, and the quarantine census — see
--- `audit_archive.rs`). A second index would leave 0099's index still matching
--- quarantined rows, so the planner could pick the wider one and walk a growing
--- tail of permanently-unarchivable rows on every hourly tick — which is the
--- cost this migration exists to remove. SQLite cannot alter an index's WHERE
--- clause, so a drop-and-create is the only way to narrow it; dropping an index
--- touches no row data.
-DROP INDEX IF EXISTS idx_audit_outbox_unarchived;
+-- The archiver has exactly ONE work-queue predicate and it now carries
+-- `quarantined_at IS NULL` in every one of its three reads (the partition scan,
+-- the per-partition row read, and the quarantine census — see
+-- `audit_archive.rs`). The narrower index is the one that matches it.
+--
+-- WHY A SECOND INDEX AND NOT A NARROWED 0099. SQLite cannot alter an index's
+-- WHERE clause, so narrowing 0099's `idx_audit_outbox_unarchived` in place would
+-- mean DROP + CREATE — and `INV-AUTH-MIGRATION-ADDITIVE` rejects a `DROP INDEX`
+-- without an ADR (`scripts/check_migrations_additive.py`). Dropping an index
+-- destroys no row data, but the rule is the rule and the correct answer here is
+-- not to argue with the gate: 0099's index stays, and this one is added
+-- alongside it.
+--
+-- The cost of keeping both is a plan choice, never a correctness one. Both
+-- indexes' WHERE clauses are implied by the archiver's query, so the planner may
+-- pick either; if it picks 0099's wider one it walks the quarantined rows and
+-- discards them against the query's own `quarantined_at IS NULL` filter. That is
+-- slower, not wrong, and the population it would walk is bounded and historical
+-- (3,010 rows from one 17-minute window, against ~56k sealed). If the quarantine
+-- population ever grows enough for that to matter, THAT is the moment to spend
+-- an ADR on retiring 0099's index — and a growing quarantine count is already an
+-- incident in its own right (see the audit-archive-lag census).
 
-CREATE INDEX IF NOT EXISTS idx_audit_outbox_unarchived
+CREATE INDEX IF NOT EXISTS idx_audit_outbox_unarchived_active
     ON audit_outbox(tenant_id, region, sequence_number)
     WHERE emitted_at IS NOT NULL AND archived_at IS NULL AND quarantined_at IS NULL;

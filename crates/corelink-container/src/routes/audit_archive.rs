@@ -248,7 +248,7 @@ async fn read_unarchived_partitions(d1: &D1HttpClient) -> Result<Vec<(String, St
     let rows = d1
         .query(
             // The quarantine predicate matches the partial work-queue index
-            // (migration 0100): a partition whose only remaining rows are
+            // added by migration 0100: a partition whose only remaining rows are
             // quarantined has no work left and must drop out of the sweep
             // entirely, or the archiver walks a permanently-refused tail on
             // every hourly tick.

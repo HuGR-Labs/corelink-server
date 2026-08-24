@@ -291,7 +291,8 @@ on its own.
 - `migrations/d1/0099_audit_outbox_archived_at.sql` — the watermark column
   and the archiver's partial work-queue index.
 - `migrations/d1/0100_audit_outbox_quarantine.sql` — `quarantined_at` /
-  `quarantine_reason` and the narrowed work-queue index (§5).
+  `quarantine_reason` and the narrowed work-queue index
+  `idx_audit_outbox_unarchived_active` (§5).
 - `crates/corelink-audit-chain/src/sealed_archive.rs` — `split_verifying_prefix`
   and the `PrefixBreak::reason_code` vocabulary.
 - `crates/corelink-container/src/routes/audit_archive.rs` — the producer.
