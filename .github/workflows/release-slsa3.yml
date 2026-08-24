@@ -5,7 +5,20 @@ name: Release — SLSA L3 Build Provenance (WI-S12-001)
 # Trigger: GitHub release published OR manual dispatch.
 #
 # Architecture:
-#   Job 1 (build-artifacts): Build Worker WASM bundle + compute SHA-256 subjects.
+#   Job 1 (build-artifacts): Read the PUBLISHED release binaries + compute SHA-256 subjects.
+#
+# WHAT IS ATTESTED, AND WHY IT CHANGED (2026-08-24, BACKLOG B-016)
+#   Until today this workflow compiled `corelink-worker` for
+#   wasm32-unknown-unknown and attested
+#   `target/wasm32-unknown-unknown/release/corelink_worker.wasm`. That file has
+#   never existed -- the crate declares no `[lib] crate-type = ["cdylib"]`, so it
+#   can only emit an `.rlib` -- and the deployed Worker is TypeScript anyway
+#   (`wrangler.toml:15`). This lane has run exactly once, on 2026-05-29, and
+#   failed. No SLSA provenance has ever been produced for anything.
+#   Meanwhile the artifacts users download and execute -- the `corelink` CLI
+#   binaries attached to the GitHub release by `release-cli.yml` -- carried no
+#   provenance at all. Those are now the subjects: provenance covers the exact
+#   bytes a user installs, which is the only version of this claim worth making.
 #   Job 2 (slsa-provenance): slsa-github-generator reusable workflow — isolated VM,
 #     hermetic build, Fulcio keyless OIDC signing, Rekor inclusion proof.
 #
@@ -39,98 +52,65 @@ permissions: {}
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Job 1: Build Worker WASM bundle and compute SHA-256 digest for SLSA subjects.
+  # Job 1: Read the published release binaries and compute their SHA-256 subjects.
   # ---------------------------------------------------------------------------
   build-artifacts:
-    name: Build Worker WASM Bundle
+    name: Subjects from the published release binaries
     runs-on: [self-hosted, mac, corelink-builder]
-    # Permissions for this job only:
     permissions:
       contents: read
 
     outputs:
-      # SHA-256 digest of the built artifact (hex-encoded)
-      artifact-digest: ${{ steps.compute-digest.outputs.artifact-digest }}
-      # Artifact filename
-      artifact-name: ${{ steps.compute-digest.outputs.artifact-name }}
-      # base64-encoded SLSA subjects string (sha256:hex artifact-name)
+      # base64-encoded SLSA subjects (one `sha256hex  name` line per binary)
       base64-subjects: ${{ steps.compute-digest.outputs.base64-subjects }}
+      # newline-separated `sha256  name` list, re-verified in job 3
+      subject-list: ${{ steps.compute-digest.outputs.subject-list }}
 
     steps:
       - name: Checkout source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          # Fetch full history to include commit SHA in provenance
           fetch-depth: 1
 
-      # Do NOT provision a toolchain on the self-hosted fleet. Per its own action.yml,
-      # `dtolnay/rust-toolchain` runs `rustup toolchain install` + `rustup default`
-      # against the SHARED `~/.rustup` (5 runners, one `$HOME`). That (a) can make
-      # `rustc` unexecutable mid-build for every other job — it took the host down
-      # for a day on 2026-06-15 — and (b) `rustup default` rewrites the MACHINE-GLOBAL
-      # default, silently moving every concurrent job off the ADR-0015 reproducibility
-      # pin. Full reasoning: scripts/ci-use-host-toolchain.sh header.
-      - name: Use the workspace-pinned host toolchain (provisions nothing)
-        run: bash scripts/ci-use-host-toolchain.sh wasm32-unknown-unknown
-
-      - name: Cache Cargo registry + build artifacts
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-slsa-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-slsa-
-
-      - name: Build Worker WASM bundle (hermetic — offline after cache restore)
+      # The binaries are built and uploaded by release-cli.yml. Attesting the
+      # bytes that are actually on the release -- rather than rebuilding and
+      # attesting a second, differently-produced artifact -- is what makes the
+      # provenance answer the question a user asks: "is the file I just
+      # downloaded the one you built?"
+      - name: Download the published release binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
         run: |
           set -euo pipefail
-          # Build with explicit target; cargo will use Cargo.lock (pinned)
-          cargo build \
-            --release \
-            --target wasm32-unknown-unknown \
-            -p corelink-worker \
-            2>&1
-          echo "Build complete."
+          mkdir -p release-assets
+          gh release download "${TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --dir release-assets \
+            --pattern 'corelink-*'
+          # Checksums and signatures are not subjects; the executables are.
+          find release-assets -name '*.sha256' -delete
+          ls -l release-assets
 
-      - name: Compute SHA-256 artifact digest and SLSA subjects
+      - name: Compute SHA-256 subjects
         id: compute-digest
         run: |
           set -euo pipefail
-          ARTIFACT_PATH="target/wasm32-unknown-unknown/release/corelink_worker.wasm"
-          ARTIFACT_NAME="corelink-worker.wasm"
-
-          if [[ ! -f "$ARTIFACT_PATH" ]]; then
-            echo "::error::Artifact not found at $ARTIFACT_PATH"
+          cd release-assets
+          COUNT=$(find . -maxdepth 1 -type f | wc -l | tr -d ' ')
+          if [[ "${COUNT}" -eq 0 ]]; then
+            echo "::error::The release carries no corelink-* binaries. Nothing to attest — refusing to emit an empty provenance, which would assert coverage that does not exist."
             exit 1
           fi
-
-          SHA256_HEX="$(sha256sum "$ARTIFACT_PATH" | awk '{print $1}')"
-          echo "Artifact: $ARTIFACT_NAME"
-          echo "SHA-256:  $SHA256_HEX"
-
-          # SLSA subjects format: "sha256:<hex> <artifact_name>"
-          # base64-encoded for the SLSA generator input
-          SUBJECTS_RAW="${SHA256_HEX}  ${ARTIFACT_NAME}"
-          BASE64_SUBJECTS="$(echo -n "${SUBJECTS_RAW}" | base64 -w 0)"
-
+          SUBJECTS=$(shasum -a 256 ./* | sed 's|\./||')
+          echo "${SUBJECTS}"
+          BASE64_SUBJECTS=$(printf '%s' "${SUBJECTS}" | base64 | tr -d '\n')
           {
-            echo "artifact-digest=${SHA256_HEX}"
-            echo "artifact-name=${ARTIFACT_NAME}"
             echo "base64-subjects=${BASE64_SUBJECTS}"
+            echo "subject-list<<EOF"
+            echo "${SUBJECTS}"
+            echo "EOF"
           } >> "$GITHUB_OUTPUT"
-
-      - name: Upload WASM artifact for release upload
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: corelink-worker-wasm
-          path: target/wasm32-unknown-unknown/release/corelink_worker.wasm
-          retention-days: 1
-          if-no-files-found: error
 
   # ---------------------------------------------------------------------------
   # Job 2: SLSA L3 provenance generation via slsa-github-generator.
@@ -168,48 +148,53 @@ jobs:
   # Job 3: Attach build artifacts to release + validate provenance.
   # ---------------------------------------------------------------------------
   attach-release-assets:
-    name: Attach Artifacts + Validate Provenance
+    name: Re-verify the attested digests against the release
     needs: [build-artifacts, slsa-provenance]
     runs-on: [self-hosted, mac, corelink-builder]
     permissions:
-      contents: write
+      contents: read
 
     steps:
       - name: Checkout source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Download WASM artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: corelink-worker-wasm
-          path: ./release-artifacts/
-
-      - name: Verify SHA-256 digest matches build output
+      # Provenance is only worth what the digests are worth. Re-download the
+      # release assets AFTER signing and confirm they still hash to what was
+      # attested: an asset replaced between job 1 and now would otherwise ship
+      # with a valid-looking bundle that describes different bytes.
+      - name: Re-download and re-hash the release binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
         run: |
           set -euo pipefail
-          EXPECTED="${{ needs.build-artifacts.outputs.artifact-digest }}"
-          ACTUAL="$(sha256sum release-artifacts/corelink_worker.wasm | awk '{print $1}')"
-          echo "Expected SHA-256: $EXPECTED"
-          echo "Actual   SHA-256: $ACTUAL"
-          if [[ "$EXPECTED" != "$ACTUAL" ]]; then
-            echo "::error::SHA-256 digest mismatch! Artifact may have been tampered."
+          mkdir -p verify-assets
+          gh release download "${TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --dir verify-assets \
+            --pattern 'corelink-*'
+          find verify-assets -name '*.sha256' -delete
+
+          printf '%s\n' "${{ needs.build-artifacts.outputs.subject-list }}" > attested.txt
+          cd verify-assets
+          shasum -a 256 ./* | sed 's|\./||' > ../actual.txt
+          cd ..
+
+          if ! diff -u <(sort attested.txt) <(sort actual.txt); then
+            echo "::error::A release asset changed after it was attested. The provenance bundle does not describe the bytes now on the release."
             exit 1
           fi
-          echo "SHA-256 digest verified."
+          echo "All attested digests still match the release assets."
 
-      - name: Upload WASM to release
-        uses: softprops/action-gh-release@f3cad8bcbf209fe591aa1823e372c5d96b7fc800 # v2.3.1
-        with:
-          files: release-artifacts/corelink_worker.wasm
-          tag_name: ${{ github.event.release.tag_name || inputs.release_tag }}
-          fail_on_unmatched_files: true
-
-      - name: Validate provenance bundle attached to release
+      - name: Report what was attested
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
         run: |
           set -euo pipefail
-          TAG="${{ github.event.release.tag_name || inputs.release_tag }}"
-          echo "Provenance generated for release: $TAG"
+          echo "Provenance generated for release: ${TAG}"
           echo "Rekor inclusion proof: mandatory (INV-SUPPLY-PROVENANCE-IN-REKOR)"
+          echo "Subjects:"
+          printf '%s\n' "${{ needs.build-artifacts.outputs.subject-list }}"
           echo "Customer verify command:"
           echo "  corelink-supply-verify verify \\"
           echo "    --bundle provenance.intoto.bundle \\"

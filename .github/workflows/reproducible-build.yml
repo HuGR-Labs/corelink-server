@@ -1,87 +1,71 @@
-name: Reproducible Build (2-Runner Diff)
+name: Reproducible Build (2-leg byte diff)
 # WI-S12-006 — CAP-SUPPLY-005 (reproducible builds best-effort).
+# ADR-0015 ratifies the ≤ 5 % byte-diff tolerance and the roadmap to 100 %
+# bit-identical post-GA. Non-determinism sources: docs/build/reproducible.md.
 #
-# Triggers 2 independent GitHub Actions runners (matrix runner ×2) on the
-# SAME hosted ubuntu image, builds the corelink-worker WASM bundle with
-# hermetic flags (SOURCE_DATE_EPOCH + --remap-path-prefix + --frozen
-# --offline), computes SHA-256, and compares the two hashes.
+# WHAT THIS BUILDS, AND WHY IT CHANGED (2026-08-24, BACKLOG B-016)
 #
-#   • Bit-identical → outcome=bit_identical  (target state)
-#   • Diff ≤ 5 %    → outcome=within_threshold  (acceptable)
-#   • Diff > 5 %    → CI fails + outcome=exceeds_threshold  (gate)
+# Until today this lane compiled `corelink-worker` for wasm32-unknown-unknown
+# and hashed `target/wasm32-unknown-unknown/release/corelink_worker.wasm`.
+# **That file has never existed.** `crates/corelink-worker/Cargo.toml` declares
+# no `[lib] crate-type = ["cdylib"]`, so the crate can only ever emit an
+# `.rlib`; every run died on `sha256sum: … No such file or directory` AFTER a
+# successful compile. Reproducibility was therefore never measured once — the
+# gate was red for a structural reason, not a flaky one.
 #
-# Non-determinism sources documented in docs/build/reproducible.md.
-# ADR-0015 ratifies the 5 % tolerance and the roadmap to 100 % post-GA Q3.
+# The artifact was also the wrong one on its own terms. `wrangler.toml:15` sets
+# `main = "worker/src/index.ts"`: the deployed Worker is TypeScript, and
+# `corelink-worker` survives as an ordinary Rust library that other crates link
+# into the container. Nothing wasm ships. Meanwhile the artifacts users actually
+# download and execute — the CLI binaries on the GitHub release — had no
+# reproducibility check at all, even though GA-GATE-E09 names exactly those
+# ("byte-identical release binaries", four target triples).
 #
-# SHA pins: bump via ADR amendment + reproducible-build test on the PR.
+# So this lane now builds what release-cli.yml ships: `corelink-cli`, release
+# profile, `--locked`, with the same SOURCE_DATE_EPOCH and the same
+# `--remap-path-prefix` set that workflow uses. Same command, same artifact.
+#
+# WHAT THE RESULT PROVES, AND WHAT IT DOES NOT
+#
+# Both legs run on ONE self-hosted host, into two separate target directories.
+# That measures determinism of the compiler and inputs given an identical
+# environment. It does NOT prove cross-environment reproducibility — a second
+# machine, a different OS image, or a different `$HOME` could still diverge.
+# The previous version claimed the stronger property by running two hosted
+# `ubuntu-latest` legs; it never once executed, so it proved neither. Hosted
+# runners are also forbidden in this repo (zero GitHub-Actions spend), which is
+# why the honest weaker claim on self-hosted is what we make.
 
 on:
-  # NO pull_request trigger — still deliberate, and NOT yet earned.
-  #
-  # 0 successes in the last 60 runs (measured 2026-08-02). The CAUSE is now
-  # known and fixed — `runs-on` named a self-hosted Linux fleet that does not
-  # exist, so every run queued forever and never executed a step (see the note
-  # on the `build` job). But a fixed cause is not an observed pass: this gate has
-  # never once completed, so nobody knows whether the two builds actually
-  # reproduce within the ADR-0015 5 % tolerance.
-  #
-  # Re-add `pull_request` only after a `workflow_dispatch` run is observed GREEN,
-  # and say in that PR what the measured diff was. Turning it on now would just
-  # move an unknown onto every pull request.
-  # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
-  # WEEKLY (staggered) + on-demand. Re-add pull_request only if
-  # this must block PRs again.
-  # PARKED 2026-08-10 (cost hygiene, owner-authorized): the weekly cron is
-  # commented out because this lane produced ZERO successful scheduled runs of
-  # the last 8 (failures + runs that sat queued for hours under the recurring
-  # hosted-Actions spending-limit block) while gating nothing between runs. It
-  # stays `workflow_dispatch`-able for an on-demand determinism check. RESTORE
-  # the `schedule:` block once the underlying failure is diagnosed + fixed
-  # (tracked as debt — see the parking PR).
-  # schedule:
-  #   # CI cost diet 2026-08-02: daily -> WEEKLY. determinism of an UNCHANGED tree — nothing varies day to day.
-  #   # Kept the same minute/hour (spread out, low-traffic window); only the
-  #   # weekday field is added. Per-PR gating is unchanged.
-  #   - cron: '0 10 * * 3'
+  # Dispatch-only, deliberately. Two full release builds of a 207-dependency
+  # crate is not something to put on every pull request, and the self-hosted
+  # fleet is the owner's own machine. Re-add a trigger only with a measured
+  # duration from a real run to justify it.
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"   # deterministic: no incremental state
   RUST_BACKTRACE: "1"
+  # The host target of the self-hosted fleet. release-cli.yml builds this same
+  # triple natively (no zig), so this leg needs no cross toolchain.
+  TARGET: x86_64-apple-darwin
 
 jobs:
-  # ── build ─────────────────────────────────────────────────────────────────
-  build:
-    name: Build (${{ matrix.runner }})
-    strategy:
-      matrix:
-        runner: [runner-1, runner-2]
-      fail-fast: false            # collect both artefacts even on failure
-    # 2026-08-02: BACK to hosted ubuntu. The previous value was
-    # `[self-hosted, Linux, X64]`, moved here to get off GitHub billing — but
-    # **there is no self-hosted Linux runner.** Every online self-hosted runner
-    # in this repo is labelled `self-hosted,macOS,X64,mac,corelink-builder`.
-    # GitHub does not fail an unsatisfiable `runs-on`; it QUEUES IT FOREVER, and
-    # the run later surfaces as "cancelled" when the queue expires. That is the
-    # whole explanation for 0 successes in 60 runs: this gate never executed a
-    # single step, on any runner, ever. (Same class as the
-    # `container-build-push-prod` blocker fixed in #940 — a label that no runner
-    # carries is silent, not loud.)
-    #
-    # Hosted is also the RIGHT home for this particular gate: the point is a
-    # byte-diff between two builds, so a deterministic, identical image on both
-    # legs is the requirement. Both matrix legs of a single run get the same
-    # `ubuntu-latest` image, so the within-run comparison stays valid; the
-    # cross-run baseline moves when GitHub bumps the image, which is expected and
-    # is what `docs/build/reproducible.md` calls a re-baseline event.
-    runs-on: ubuntu-latest
-    # No timeout existed on either job. A self-hosted job with no timeout
-    # inherits GitHub's 360-min default; a QUEUED one just sits. Bound it.
-    timeout-minutes: 45
+  two-leg-diff:
+    name: Build corelink-cli twice, diff the bytes
+    runs-on: [self-hosted, mac, corelink-builder]
+    # Two single-job release builds of a 207-dep crate, cold. Generous, because
+    # a timeout here reads as "reproducibility failed" when it means "the box
+    # was busy".
+    timeout-minutes: 180
 
     steps:
       - name: Checkout (full history for SOURCE_DATE_EPOCH)
@@ -89,204 +73,149 @@ jobs:
         with:
           fetch-depth: 0
 
-      # rust-toolchain.toml pins to 1.91.1 (bumped post S-14 wave-4 for AWS SDK MSRV); dtolnay action reads that file.
-      - name: Install Rust toolchain (from rust-toolchain.toml)
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable as of 2026-04-29
+      # Do NOT provision a toolchain on this fleet: 5 runners share one $HOME,
+      # so `rustup default` moves every concurrent job off the pinned toolchain
+      # and a concurrent install can make rustc unexecutable mid-build. Full
+      # reasoning in the script header.
+      - name: Use the workspace-pinned host toolchain (provisions nothing)
+        run: bash scripts/ci-use-host-toolchain.sh "${TARGET}"
 
-      # Cache keyed on Cargo.lock + toolchain; no incremental artefacts.
-      - name: Restore Cargo cache
-        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c  # v2.7.7
-        if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
-        with:
-          # Separate key per runner instance to avoid cross-contamination.
-          key: ${{ matrix.runner }}-reproducible-${{ hashFiles('Cargo.lock') }}
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      # Standard reproducible-builds.org env-var: set from the latest commit
-      # time so each release has a unique but *deterministic* timestamp.
-      - name: Set SOURCE_DATE_EPOCH
+      # Standard reproducible-builds.org variable, derived from the commit so it
+      # is unique per revision but identical across both legs.
+      - name: Set SOURCE_DATE_EPOCH and the path remap
         run: |
           EPOCH=$(git log -1 --pretty=%ct)
           echo "SOURCE_DATE_EPOCH=${EPOCH}" >> "$GITHUB_ENV"
           echo "SOURCE_DATE_EPOCH=${EPOCH}"
 
-      # Acquire dependencies BEFORE going hermetic.
-      #
-      # This step did not exist, and its absence is why the gate failed on its
-      # first-ever real execution (2026-08-02): `cargo build --frozen --offline`
-      # on a clean machine has an EMPTY registry, so it cannot resolve anything —
-      # it died on `no matching package named async-stream found`, a crate that
-      # is present in Cargo.lock.
-      #
-      # The workflow only ever "worked" on a machine whose ~/.cargo was already
-      # warm, i.e. the self-hosted mac. A reproducible build that reproduces only
-      # on one pre-warmed host fails its own premise, and the rust-cache step
-      # above cannot help on a cold key (it also only saves on `main`).
-      #
-      # Fetching over the network here does NOT weaken hermeticity: `--locked`
-      # pins every version to Cargo.lock, and the COMPILE below is still
-      # `--frozen --offline`. Dependency acquisition and hermetic compilation are
-      # separate phases — SLSA cares about the second.
-      # NOTE the absence of `--target`. A first attempt used
-      # `--target wasm32-unknown-unknown`, and that narrowing is exactly what
-      # broke the next run: the build still failed, on
-      # `failed to download cpufeatures v0.3.0 / attempting to make an HTTP
-      # request, but --frozen was specified` — a dependency the target filter had
-      # excluded from the fetch but the compile still wanted. Plain
-      # `cargo fetch --locked` populates the registry for every target in the
-      # lockfile, which is what an offline compile needs. Do not "optimise" the
-      # target back in; it saves seconds and costs the whole gate.
-      - name: Fetch dependencies (network allowed; --locked pins to Cargo.lock)
+          # Byte-for-byte the remap release-cli.yml applies. If these two ever
+          # diverge, this lane measures an artifact the release does not ship.
+          REMAP=""
+          REMAP="$REMAP --remap-path-prefix=$HOME/.cargo/registry=cargo-registry"
+          REMAP="$REMAP --remap-path-prefix=$HOME/.cargo/git=cargo-git"
+          REMAP="$REMAP --remap-path-prefix=$HOME/.rustup=rustup"
+          REMAP="$REMAP --remap-path-prefix=$GITHUB_WORKSPACE=corelink"
+          echo "RUSTFLAGS=$REMAP" >> "$GITHUB_ENV"
+
+      # Acquire dependencies BEFORE the compile. `--locked` pins every version
+      # to Cargo.lock; fetching over the network here does not weaken the
+      # hermeticity SLSA cares about, which is the compile.
+      - name: Fetch dependencies (network allowed; --locked)
         run: cargo fetch --locked
 
-      # Hermetic, deterministic build:
-      #   --remap-path-prefix  → strips absolute paths from LLVM debug info
-      #   --jobs 1             → eliminates link-order non-determinism
-      #   --frozen             → Cargo.lock must match; no resolution
-      #   --offline            → no network during compile (SLSA-hermetic)
-      - name: Build WASM (hermetic + deterministic)
-        env:
-          RUSTFLAGS: >-
-            --remap-path-prefix=${{ github.workspace }}=/SRC
-            --remap-path-prefix=$HOME/.cargo=/CARGO
-            -C codegen-units=1
+      - name: Leg A — build corelink-cli
         run: |
+          set -euo pipefail
           cargo build \
+            -p corelink-cli \
             --release \
-            --frozen \
+            --locked \
             --offline \
             --jobs 1 \
-            --target wasm32-unknown-unknown \
-            -p corelink-worker
+            --target "${TARGET}" \
+            --target-dir target-repro-a
 
-      - name: Compute SHA-256
-        id: hash
+      # A missing artifact is the exact failure this lane shipped for a year.
+      # Say so explicitly instead of letting `shasum` produce the error.
+      - name: Leg A — hash the artifact
+        id: leg_a
         run: |
-          WASM=target/wasm32-unknown-unknown/release/corelink_worker.wasm
-          sha256sum "$WASM" > artifact.sha256
-          echo "hash=$(awk '{print $1}' artifact.sha256)" >> "$GITHUB_OUTPUT"
-          cat artifact.sha256
-
-      - name: Upload artefact + hash
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
-        with:
-          name: build-${{ matrix.runner }}
-          path: |
-            target/wasm32-unknown-unknown/release/corelink_worker.wasm
-            artifact.sha256
-          retention-days: 7
-
-  # ── diff-check ────────────────────────────────────────────────────────────
-  diff-check:
-    name: Diff check (2-runner compare)
-    needs: build
-    runs-on: ubuntu-latest       # see the note on `build` — no self-hosted Linux exists
-    timeout-minutes: 15
-
-    outputs:
-      bit_identical:   ${{ steps.diff.outputs.BIT_IDENTICAL }}
-      diff_bytes:      ${{ steps.diff.outputs.DIFF_BYTES }}
-      diff_percentage: ${{ steps.diff.outputs.DIFF_PERCENTAGE }}
-      outcome:         ${{ steps.diff.outputs.OUTCOME }}
-
-    steps:
-      - name: Download runner-1 artefact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
-        with:
-          name: build-runner-1
-          path: runner-1/
-
-      - name: Download runner-2 artefact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
-        with:
-          name: build-runner-2
-          path: runner-2/
-
-      - name: Compare hashes + compute byte diff
-        id: diff
-        run: |
-          HASH_1=$(awk '{print $1}' runner-1/artifact.sha256)
-          HASH_2=$(awk '{print $1}' runner-2/artifact.sha256)
-          echo "runner-1 SHA-256: ${HASH_1}"
-          echo "runner-2 SHA-256: ${HASH_2}"
-
-          if [ "${HASH_1}" = "${HASH_2}" ]; then
-            {
-              echo "BIT_IDENTICAL=true"
-              echo "DIFF_BYTES=0"
-              echo "DIFF_PERCENTAGE=0"
-              echo "OUTCOME=bit_identical"
-            } >> "$GITHUB_OUTPUT"
-            echo "RESULT: bit-identical"
-          else
-            WASM_1=runner-1/corelink_worker.wasm
-            WASM_2=runner-2/corelink_worker.wasm
-            SIZE=$(stat -c %s "${WASM_1}")
-            DIFF=$(cmp -l "${WASM_1}" "${WASM_2}" 2>/dev/null | wc -l || true)
-            PERCENTAGE=$(awk "BEGIN {printf \"%.4f\", ${DIFF} / ${SIZE} * 100}")
-            {
-              echo "BIT_IDENTICAL=false"
-              echo "DIFF_BYTES=${DIFF}"
-              echo "DIFF_PERCENTAGE=${PERCENTAGE}"
-            } >> "$GITHUB_OUTPUT"
-
-            # Determine outcome bucket
-            PCT_INT=$(awk "BEGIN {printf \"%d\", ${PERCENTAGE}}")
-            if [ "${PCT_INT}" -le 5 ]; then
-              echo "OUTCOME=within_threshold" >> "$GITHUB_OUTPUT"
-              echo "RESULT: within_threshold (${PERCENTAGE}%)"
-            else
-              echo "OUTCOME=exceeds_threshold" >> "$GITHUB_OUTPUT"
-              echo "RESULT: EXCEEDS THRESHOLD (${PERCENTAGE}%)"
-            fi
-          fi
-
-      - name: Enforce ≤ 5 % diff threshold
-        run: |
-          OUTCOME="${{ steps.diff.outputs.OUTCOME }}"
-          if [ "${OUTCOME}" = "exceeds_threshold" ]; then
-            echo "::error::Reproducible build diff > 5% (${OUTCOME})."
-            echo "::error::diff_bytes=${{ steps.diff.outputs.DIFF_BYTES }}"
-            echo "::error::diff_percentage=${{ steps.diff.outputs.DIFF_PERCENTAGE }}%"
-            echo "::error::See docs/build/reproducible.md for non-determinism sources."
+          set -euo pipefail
+          BIN="target-repro-a/${TARGET}/release/corelink"
+          if [[ ! -f "${BIN}" ]]; then
+            echo "::error::No binary at ${BIN}. The build succeeded but produced nothing to attest — this is the B-016 failure mode, and it means the artifact path and the build command disagree."
             exit 1
           fi
-          echo "Gate passed: outcome=${OUTCOME}"
+          HASH=$(shasum -a 256 "${BIN}" | awk '{print $1}')
+          SIZE=$(wc -c < "${BIN}" | tr -d ' ')
+          echo "leg A sha256=${HASH} size=${SIZE}"
+          { echo "hash=${HASH}"; echo "size=${SIZE}"; } >> "$GITHUB_OUTPUT"
 
-      # Emit structured Prometheus-style line to the step summary so
-      # metrics can be scraped externally.  In production the metrics
-      # gateway URL + token are env secrets.
-      - name: Emit metrics (step summary + optional gateway)
+      # Separate target dir, so this is a genuine second compile rather than a
+      # cache hit reading leg A's output back. A lane that re-hashes the same
+      # file twice always reports bit-identical and proves nothing.
+      - name: Leg B — build corelink-cli again, from scratch
+        run: |
+          set -euo pipefail
+          cargo build \
+            -p corelink-cli \
+            --release \
+            --locked \
+            --offline \
+            --jobs 1 \
+            --target "${TARGET}" \
+            --target-dir target-repro-b
+
+      - name: Leg B — hash the artifact
+        id: leg_b
+        run: |
+          set -euo pipefail
+          BIN="target-repro-b/${TARGET}/release/corelink"
+          if [[ ! -f "${BIN}" ]]; then
+            echo "::error::No binary at ${BIN} — see the note on leg A."
+            exit 1
+          fi
+          HASH=$(shasum -a 256 "${BIN}" | awk '{print $1}')
+          echo "leg B sha256=${HASH}"
+          echo "hash=${HASH}" >> "$GITHUB_OUTPUT"
+
+      - name: Compare, and enforce the ADR-0015 threshold
+        id: diff
+        run: |
+          set -uo pipefail
+          A="target-repro-a/${TARGET}/release/corelink"
+          B="target-repro-b/${TARGET}/release/corelink"
+          HASH_A="${{ steps.leg_a.outputs.hash }}"
+          HASH_B="${{ steps.leg_b.outputs.hash }}"
+          SIZE="${{ steps.leg_a.outputs.size }}"
+
+          echo "leg A: ${HASH_A}"
+          echo "leg B: ${HASH_B}"
+
+          if [[ "${HASH_A}" == "${HASH_B}" ]]; then
+            {
+              echo "outcome=bit_identical"
+              echo "diff_bytes=0"
+              echo "diff_pct=0.0000"
+            } >> "$GITHUB_OUTPUT"
+            echo "RESULT: bit-identical"
+            exit 0
+          fi
+
+          DIFF=$(cmp -l "${A}" "${B}" 2>/dev/null | wc -l | tr -d ' ')
+          PCT=$(awk "BEGIN {printf \"%.4f\", ${DIFF} / ${SIZE} * 100}")
+          echo "RESULT: ${DIFF} differing bytes of ${SIZE} (${PCT}%)"
+          {
+            echo "diff_bytes=${DIFF}"
+            echo "diff_pct=${PCT}"
+          } >> "$GITHUB_OUTPUT"
+
+          # ADR-0015 §3: ≤ 5 % is within tolerance, above it fails the gate.
+          # Compared as a float — the old integer truncation passed 5.9 %.
+          WITHIN=$(awk "BEGIN {print (${PCT} <= 5.0) ? 1 : 0}")
+          if [[ "${WITHIN}" == "1" ]]; then
+            echo "outcome=within_threshold" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "outcome=exceeds_threshold" >> "$GITHUB_OUTPUT"
+          echo "::error::Reproducible-build diff ${PCT}% exceeds the ADR-0015 5% tolerance. See docs/build/reproducible.md for known non-determinism sources."
+          exit 1
+
+      - name: Report
         if: always()
         run: |
-          OUTCOME="${{ steps.diff.outputs.OUTCOME }}"
-          DIFF_BYTES="${{ steps.diff.outputs.DIFF_BYTES }}"
-          DIFF_PCT="${{ steps.diff.outputs.DIFF_PERCENTAGE }}"
-          BIT_ID="${{ steps.diff.outputs.BIT_IDENTICAL }}"
-
-          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          ## Reproducible Build Report
-
-          | Metric | Value |
-          |--------|-------|
-          | Outcome | \`${OUTCOME}\` |
-          | Bit-identical | \`${BIT_ID}\` |
-          | Diff bytes | \`${DIFF_BYTES}\` |
-          | Diff percentage | \`${DIFF_PCT}%\` |
-          | Threshold | \`≤ 5%\` |
-
-          **Non-determinism docs**: \`docs/build/reproducible.md\`
-          **ADR**: \`specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md\`
-          EOF
-
-          # Prometheus push-gateway (optional; skip if secrets not configured).
-          if [ -n "${METRICS_GATEWAY_URL:-}" ]; then
-            curl -sf -X POST "${METRICS_GATEWAY_URL}" \
-              -H "Authorization: Bearer ${METRICS_TOKEN}" \
-              --data-binary "corelink_supply_reproducible_diff_bytes_gauge{outcome=\"${OUTCOME}\"} ${DIFF_BYTES}
-          corelink_supply_reproducible_runs_total{outcome=\"${OUTCOME}\"} 1" \
-              || echo "::warning::Metrics push failed (non-blocking)"
-          fi
-        env:
-          METRICS_GATEWAY_URL: ${{ secrets.METRICS_GATEWAY_URL }}
-          METRICS_TOKEN: ${{ secrets.METRICS_TOKEN }}
+          {
+            echo "## Reproducible build — corelink-cli (${TARGET})"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|---|---|"
+            echo "| Outcome | \`${{ steps.diff.outputs.outcome }}\` |"
+            echo "| Leg A sha256 | \`${{ steps.leg_a.outputs.hash }}\` |"
+            echo "| Leg B sha256 | \`${{ steps.leg_b.outputs.hash }}\` |"
+            echo "| Differing bytes | \`${{ steps.diff.outputs.diff_bytes }}\` |"
+            echo "| Diff | \`${{ steps.diff.outputs.diff_pct }}%\` (tolerance 5%) |"
+            echo ""
+            echo "Both legs ran on one host into separate target directories:"
+            echo "this measures build determinism, not cross-environment"
+            echo "reproducibility. See the header of this workflow."
+          } >> "$GITHUB_STEP_SUMMARY"
