@@ -79,6 +79,36 @@ Each entry cross-references:
   runbook and their labels were **removed**, with the removal recorded inline.
   No stub runbooks were written to satisfy the gate — a pointer to nothing is
   worse than no pointer.
+- **fix(ci): the load-test "regression gate" asserted nothing — it printed
+  `advisory mode` and exited 0 (B-029).**
+  `.github/workflows/load-test-nightly.yml` declared
+  `REGRESSION_THRESHOLD = 1.20` inside an inline heredoc and never referenced
+  it. The baseline lookup was a comment ("intentionally elided here — the GHA
+  cache implementation lives in a follow-up WI"), and the only artifacts the
+  job downloaded were the CURRENT run's own (`run-id: github.run_id`), so there
+  was nothing to compare against even in principle. The job printed each
+  scenario's p99 and exited 0 unconditionally: a permanently green check
+  claiming week-over-week p99 enforcement, in a repo whose product claim is
+  speed. The header made the same false claim ("It DOES fail the run when a
+  scenario's p99 regresses > 20% … the `compare-baseline` step downloads last
+  week's artifact"); there was no such step. The comparison now lives in
+  `scripts/load-test-baseline-check.py` (a file, so it is runnable and provable
+  outside CI) and the baseline is persisted across runs in the GitHub Actions
+  cache — `actions/cache/restore` with a prefix restore-key returns the last
+  saved baseline, `actions/cache/save` publishes this run's under a run-unique
+  key. A scenario whose current median `http_req_duration` exceeds
+  `baseline * REGRESSION_THRESHOLD` now exits 2 and reds the run. Gating on the
+  MEDIAN rather than p99 follows the measured precedent in
+  `perf-regression.yml`: p99 jitters ~22% run-to-run on identical work on
+  shared hosts while the median holds to <4%, so a 20% band on p99 is a coin
+  flip; p99 is still recorded in the baseline and printed every run for trend
+  review. The only non-failing paths are "within threshold" and "no stored
+  baseline yet", the latter seeding the file and saying so explicitly in the
+  log. A run that produced no parseable k6 summary at all now fails too — the
+  matrix legs are `continue-on-error`, so an empty result set would otherwise
+  be the same silent green this change removes. The baseline is written only
+  when the comparison passes, so a regression cannot ratchet itself in by
+  being measured twice.
 - **fix(backlog): the self-verifying register pointed the wrong way, and its own
   gate was content.** Two defects landed within a minute of each other on
   2026-08-24. First, two items were merged carrying the same `id: B-031` (the
