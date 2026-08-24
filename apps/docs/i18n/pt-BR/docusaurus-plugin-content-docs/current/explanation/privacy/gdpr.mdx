@@ -55,9 +55,9 @@ Rectification) so nobody can hijack your account to delete your data.
 | **Art. 18** | Right to restriction of processing | 5 business days | `POST /v1/privacy/dsr/restriction` |
 | **Art. 19** | Notification of rectification/erasure/restriction to recipients | Automatic — same SLA as the triggering right | Triggered by Art. 16/17/18 endpoints; recipient manifest in your audit |
 | **Art. 20** | Right to data portability | 15 business days | `POST /v1/privacy/dsr/portability` |
-| **Art. 21** | Right to object | 15 business days (Art. 21(1)) / **immediate** for direct marketing (Art. 21(2)) | `POST /v1/privacy/dsr/objection` + `DELETE /v1/consent/marketing_email` |
+| **Art. 21** | Right to object | 15 business days (Art. 21(1)) / **immediate** for direct marketing (Art. 21(2)) | `POST /v1/privacy/dsr/objection` |
 | **Art. 22** | Right not to be subject to automated decisions with legal/significant effect | N/A — **we do not run Art. 22 processing** (see §7) | — |
-| **Art. 7(3)** | Right to withdraw consent (as easy as giving) | ≤ 5 minutes | `DELETE /v1/consent/<purpose>` |
+| **Art. 7(3)** | Right to withdraw consent (as easy as giving) | 5 business days | email `privacy@humangr.com` — the self-service endpoint is not available yet |
 
 If you prefer email, write to `privacy@hugr.com`. Our DPO will process
 your request through the same pipeline with the same SLA. The clock

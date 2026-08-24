@@ -95,7 +95,7 @@ grep -rEn 'card_number|cvv|cvc|\bpan\b' \
   --include='*.go' --include='*.js' \
   | grep -vE '/tests/|/test/|/specs/|_test\.|\.test\.'
 
-# Expected: hits only in crates/corelink-logpush/src/redaction.rs
+# Expected: hits only in crates/corelink-telemetry/src/logpush/redaction.rs
 # (a defense-in-depth log-redactor that detects and scrubs accidentally
 #  leaked card numbers before logs leave our infrastructure — see the
 #  note in the SAQ-A doc).
@@ -161,7 +161,7 @@ ever POSTs a PAN to a wrong endpoint. It pattern-matches PANs, redacts
 them with a salted-hash placeholder, and counts the redactions so we know
 if a leak happened upstream. It never stores the original value. Property
 test (100k synthetic PANs, zero leaks):
-`crates/corelink-logpush/tests/pii_redaction_100k_synthetic.rs`.
+`crates/corelink-telemetry/tests/pii_redaction_100k_synthetic.rs`.
 
 ## Related
 
