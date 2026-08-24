@@ -369,6 +369,8 @@ uncomfortable implication — if the escalation policy works, the owner has been
 paged SEV-0 daily since roughly 2026-07-17; if it does not, then no alert this
 system raises has ever reached anybody.
 
+**Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
+today, what each option costs, and what happens if the answer is "not now".
 ```backlog
 id: B-008
 repo: corelink-server
@@ -390,6 +392,8 @@ retention backend is in-memory: no stored `retain_until`, no Governance or
 Compliance mode flag, no R2 Object-Lock enforcement. Needs a policy decision
 before any build.
 
+**Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
+today, what each option costs, and what happens if the answer is "not now".
 ```backlog
 id: B-009
 repo: corelink-server
@@ -1208,6 +1212,8 @@ the next digest states it plainly. Regression semantics were deliberately left
 alone: 2× remains the §7 page-worthy trigger, and changing that is a compliance
 decision, not a rendering one.
 
+**Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
+today, what each option costs, and what happens if the answer is "not now".
 ```backlog
 id: B-032
 repo: corelink-server
@@ -1330,6 +1336,8 @@ currently asserted; or (c) withdraw the provenance claim entirely. Option (b)
 and (c) both require editing the ISO 27001 SoA A.5.21 row and the SOC 2
 crosswalk, which cite SLSA L3 today.
 
+**Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
+today, what each option costs, and what happens if the answer is "not now".
 ```backlog
 id: B-031
 repo: corelink-server
@@ -1364,6 +1372,8 @@ condition). It is a legal and product call, not an editorial one.
 lines as **tracked** drift: visible on every run, fatal under `--strict`, and
 impossible to forget. New occurrences anywhere else fail the gate outright.
 
+**Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
+today, what each option costs, and what happens if the answer is "not now".
 ```backlog
 id: B-035
 repo: corelink-server
@@ -1519,6 +1529,8 @@ nothing. Needs a fine-grained PAT or GitHub App token with `contents:write` and
 `pull_requests:write`. Deliberately not reusing an existing release token: one
 secret, one purpose.
 
+**Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
+today, what each option costs, and what happens if the answer is "not now".
 ```backlog
 id: B-012
 repo: corelink-server
@@ -1545,6 +1557,8 @@ is listed here only so nobody deletes three and calls it four.
 These are GitHub App private keys. Secure deletion is genuinely the owner's: I do
 not permanently delete data. `rm -P` overwrites before unlinking.
 
+**Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
+today, what each option costs, and what happens if the answer is "not now".
 ```backlog
 id: B-013
 repo: corelink-server
