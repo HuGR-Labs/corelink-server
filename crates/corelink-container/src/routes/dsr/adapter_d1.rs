@@ -88,6 +88,12 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     "tenant_config",
     "hot_blobs",
     "quota_reservations",
+    // Audit-drain partition lease (migr. 0101, B-038): transient, self-expiring
+    // coordination state (holder uuid + acquired/expires ms), NO subject PII and
+    // NOT audit evidence — a lease self-heals on TTL expiry. No lawful retention
+    // basis and no FK, so it is order-safe and ERASE-by-tenant_id (privacy-forward:
+    // wiped with the tenant, harmless since an erased tenant is not draining).
+    "audit_drain_lease",
     "quota_cas_attempts",
     "quota_fsm_state",
     "ratelimit_buckets",
@@ -294,6 +300,7 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "tenant_config",
     "hot_blobs",
     "quota_reservations",
+    "audit_drain_lease",           // audit-drain partition lease (migr. 0101, B-038) — erase:tenant_id
     "quota_cas_attempts",
     "quota_fsm_state",
     "ratelimit_buckets",
