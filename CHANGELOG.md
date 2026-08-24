@@ -44,6 +44,26 @@ Each entry cross-references:
   a 5.9 % diff passed a 5 % gate.
 
 ### Fixed
+- **fix(ci): five of the repo's six python test files ran in no lane at all.**
+  `tests/` holds six top-level suites; only `test_validate_docs_reality_hostnames.py`
+  was executed by CI, because `docs-reality.yml` names that one file explicitly.
+  The other five — `test_check_billing_health.py`, `test_check_ga_freeze_allowed.py`,
+  `validate_inv_inheritance_test.py`, `pentest_finding_triage_test.py` and
+  `beta_feedback_triage_test.py`, 129 assertions over the billing-health checker,
+  the GA-freeze gate, the INV inheritance validator and two triage scripts — were
+  never run by anything. They all pass today, which is precisely why nobody
+  noticed: an ungated suite does not go red when the code drifts out from under
+  it, it just stops describing the code. New `python-tests.yml` (PR- and
+  push-gated on `tests/*.py` + `scripts/**`, `runs-on: corelink`) collects them by
+  glob rather than by allowlist, so a new top-level suite is gated the day it
+  lands, and fails loudly if the glob ever matches nothing — a green check over an
+  empty collection being the same defect wearing a different hat. The lane
+  installs pytest into a venv from `requirements-ci.txt` rather than assuming it
+  is on the box: `python3 -m pytest` resolves against whatever interpreter leads
+  that runner's PATH, and the two self-hosted fleets disagree — the `corelink`
+  Firecracker image's `/usr/bin/python3` carries no pytest, which is how this
+  lane's own first run failed while the identical step in `docs-reality.yml`
+  passed on the mac fleet.
 
 - **The security model asserted a TLS control that has not been in force since
   July (B-019).** CTRL-CRYPTO-001 read "TLS 1.3 only", with an SSL Labs A+ as
