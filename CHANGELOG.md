@@ -211,6 +211,20 @@ Each entry cross-references:
   needs a version bump and possibly notice, so it is the owner's call (B-035).
 
 ### Fixed
+- **fix(deps): three of the six open Dependabot alerts had a published patch and
+  nobody had taken it (B-028).** `ip-address` was pinned at 10.2.0 through
+  `socks` → `proxy-agent` → `@puppeteer/browsers`, carrying GHSA advisories for
+  leading-zero octets decoded as decimal, a CIDR suffix suppressing validation,
+  and misclassified IPv4-mapped/NAT64 addresses. A `pnpm.overrides` entry
+  (`ip-address@<10.3.1` → `>=10.3.1 <11`, the same idiom already used for a
+  dozen transitive advisories) lifts it to 10.5.0. The remaining three —
+  `extract-zip` ≤ 2.0.1 and two `image-size` ≤ 2.0.2 advisories — have **no
+  patched version at all**, so there is nothing to take; both arrive through
+  build-time-only paths (`@puppeteer/browsers`, `@docusaurus/mdx-loader`) and
+  neither ships in a Worker or container bundle. They stay open and tracked
+  rather than dismissed. The lockfile refresh also carried `chromedriver`
+  152.0.0 → 152.0.1, an unrelated patch bump from a floating range.
+
 
 - **The build-attestation lanes attested an artifact that cannot exist
   (B-016).** `reproducible-build` compiled `corelink-worker` for
