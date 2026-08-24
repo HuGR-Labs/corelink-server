@@ -22,7 +22,54 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+
+- **The audit archiver makes partial progress instead of refusing a forked
+  partition forever (B-026).** Eight of 360 chain partitions cannot be archived:
+  a 17-minute seal fork on 2026-08-14 (01:43:40–02:00:50 UTC) put 1,505 excess
+  rows across 3,010 rows on DUPLICATED `sequence_number`s — each duplicate pair
+  carrying a DIFFERENT `prev_hash`, so two branches, not a relabelling — with
+  the sequence after each duplicate missing. `verify_chunk` requires a
+  contiguous sequence, so `POST /_internal/audit/archive` refused those
+  partitions *entirely* and retried them on every hourly tick, forever,
+  invisibly. Refusing the broken chunk was correct; refusing the partition's
+  healthy rows with it was not. The archiver now writes each partition's longest
+  contiguous VERIFYING PREFIX (`split_verifying_prefix`, pure and unit-tested in
+  `crates/corelink-audit-chain/src/sealed_archive.rs`) and QUARANTINES the
+  unarchivable remainder — migration `0100_audit_outbox_quarantine.sql` adds
+  `quarantined_at` + a machine-readable `quarantine_reason`
+  (`sequence_gap:expected=11,found=10`) and adds a narrowed work-queue index, so
+  those rows leave the queue and the backlog can reach zero. Archiving resumes
+  on later rows as a new mid-chain chunk window. **Re-sequencing is forbidden:**
+  the sealed rows are the evidence, and a test that re-reads the writer's own
+  source proves no `UPDATE` ever touches `sequence_number` / `prev_hash` /
+  `chain_hash` / `canonical_jcs` / `emitted_at` / `chained_at`. Quarantine is
+  loud, not a drawer — `rows_quarantined` / `partitions_quarantined` in the
+  archive response, a container WARN per segment, a dedicated cron log line, an
+  hourly census in the `audit-archive-lag` job summary, and
+  `RB-AUDIT-ARCHIVE-ABSENT` §5 on what it means and how to list them.
+
 ### Fixed
+- **fix(backlog): the self-verifying register pointed the wrong way, and its own
+  gate was content.** Two defects landed within a minute of each other on
+  2026-08-24. First, two items were merged carrying the same `id: B-031` (the
+  SLSA-builder item from #1255 and the vendor-review item from #1256) — the
+  duplicate-id check caught that one and `main` sat BROKEN until now; the
+  vendor item is renumbered **B-032**, since the reproducible-build prose
+  already cites B-031 for the SLSA item. Second, and worse because nothing
+  noticed: the forked-partitions item was headed `### B-026` while its block
+  declared `id: B-024`, and the Turborepo item held the mirror image. Both ids
+  were unique, so the gate was satisfied — but every reference from outside the
+  file (a CHANGELOG entry, a PR body, a runbook) cites the HEADING, while the
+  gate reads the BLOCK, so an item could be verified green under a heading
+  describing different work. `backlog_verify.py` now refuses a file where any
+  heading and its block disagree, or where a block has no heading above it at
+  all. The check runs BEFORE the id-density check, since density reasons over
+  the id set and a disagreeing heading means that set is not yet trustworthy.
+  Proven to fail: reintroducing the swap exits 2 and names both lines, and
+  `scripts/test_backlog_verify.sh` gains two cells (a disagreeing pair, a
+  headless block) — its fixtures now carry the heading a real item carries.
+
 
 - **The TLS-floor correction had missed the surfaces customers actually read.**
   Yesterday's sweep (B-019) corrected `specs/`, and the commit said so — but a
@@ -44,7 +91,7 @@ Each entry cross-references:
   gate, and the rule auto-retires if the floor is ever raised back. Proven to
   fire on a planted violation. Eight lines of **versioned contract text** are
   held as tracked drift rather than edited — correcting an executed contract
-  needs a version bump and possibly notice, so it is the owner's call (B-032).
+  needs a version bump and possibly notice, so it is the owner's call (B-035).
 
 ### Fixed
 
@@ -115,6 +162,15 @@ Each entry cross-references:
   read the value must never report "no drift".
 
 ### Fixed
+- **The audit-archive absence monitor would have paged forever once the backlog
+  drained (B-021 / B-026).** Its clause 1 counted every sealed row with
+  `archived_at IS NULL` older than T. Quarantined rows are unarchivable BY
+  DESIGN and can never clear that clause, so as soon as the healthy 56k-row
+  backlog reached zero the predicate would have latched true permanently — a
+  page nobody can action is a page everybody learns to ignore. Clause 1 now
+  carries `AND quarantined_at IS NULL`; the two-clause structure is otherwise
+  untouched, and the quarantined population is reported as its own measurement
+  on every run so it is excluded from the predicate, not from view.
 
 - **The Bazel starter's cache-hit check could never pass, no matter what the
   cache did (B-017).** The example that exists to demonstrate CoreLink's Bazel

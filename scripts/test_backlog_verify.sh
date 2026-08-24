@@ -30,9 +30,12 @@ cell() {
   pass "$name"
 }
 
+# A fixture carries the `### B-NNN` heading a real item carries: the gate now
+# requires the heading and the block to name the same id, so a headless fixture
+# would fail on THAT instead of on the defect the cell is actually testing.
 item() { # $1 id, $2 status, $3 verify, $4 last-verified
-  printf '```backlog\nid: %s\nrepo: corelink-server\nowner: tl\nstatus: %s\nverify: %s\nverify-means: test fixture\nlast-verified: %s\n```\n' \
-    "$1" "$2" "$3" "$4"
+  printf '### %s — fixture\n\n```backlog\nid: %s\nrepo: corelink-server\nowner: tl\nstatus: %s\nverify: %s\nverify-means: test fixture\nlast-verified: %s\n```\n' \
+    "$1" "$1" "$2" "$3" "$4"
 }
 
 echo "backlog gate"
@@ -53,10 +56,10 @@ cell "a freshly verified manual claim is fine" 0 CONFIRMED "$(item B-1 open manu
 # A malformed item must never be silently skipped: skipping is the failure mode
 # the whole gate exists to prevent.
 cell "a missing required field is BROKEN, not ignored" 1 BROKEN \
-  "$(printf '```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: open\n```\n')"
+  "$(printf '### B-1 — fixture\n\n```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: open\n```\n')"
 cell "an invalid status is BROKEN" 1 BROKEN "$(item B-1 nearly-done '"true"' 2026-08-23)"
 cell "a duplicate id is BROKEN" 1 BROKEN "$(item B-1 open '"true"' 2026-08-23; item B-1 open '"true"' 2026-08-23)"
-cell "unparseable YAML is BROKEN" 1 BROKEN "$(printf '```backlog\nid: [B-1\n```\n')"
+cell "unparseable YAML is BROKEN" 1 BROKEN "$(printf '### B-1 — fixture\n\n```backlog\nid: [B-1\n```\n')"
 
 # A deleted item passes every per-item check — the survivors are all still true.
 # Only density catches it. This cell exists because exactly that happened while
@@ -66,6 +69,17 @@ cell "a gap in the ids is a hard failure (an item was deleted)" 2 - \
 
 # An empty file is far more likely to be a broken format than genuinely no work.
 cell "an empty backlog is a hard failure, not a pass" 2 - "$(printf 'no items here\n')"
+
+# Every reference from outside BACKLOG.md cites the HEADING; the gate reads the
+# BLOCK. On 2026-08-24 two items held each other's ids — both unique, so the
+# duplicate check was satisfied while the register pointed at the wrong work.
+cell "a heading and its block naming different ids is a hard failure" 2 "heading says B-1" \
+  "$(printf '### B-1 — fixture\n\n```backlog\nid: B-2\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
+
+# A block with no heading at all is orphaned prose-side: nothing outside the
+# file can cite it, and a reader scrolling past sees no item there.
+cell "a block with no heading above it is a hard failure" 2 "no \`### B-" \
+  "$(printf '```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
 
 echo
 if [[ "$fails" -eq 0 ]]; then echo "backlog gate: all cells passed"; exit 0; fi

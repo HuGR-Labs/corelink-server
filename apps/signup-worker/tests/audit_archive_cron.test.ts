@@ -56,6 +56,41 @@ describe("runAuditArchiveSweep", () => {
     });
   });
 
+  it("surfaces the quarantine counts, and defaults them to 0 when absent", async () => {
+    // A quarantined row is permanently outside the offsite evidence copy. If
+    // the driver dropped these counts, the only place they would appear is a
+    // container log line nobody reads — which is the silent-backlog defect the
+    // quarantine path exists to remove.
+    const r = await runAuditArchiveSweep(
+      env({
+        CORELINK_API_SVC: svc(200, {
+          rows_archived: 120,
+          chunks_created: 1,
+          partitions_failed: 0,
+          rows_quarantined: 131,
+          partitions_quarantined: 1,
+          incomplete: false,
+        }),
+      }),
+      0,
+    );
+    expect(r).toMatchObject({
+      ok: true,
+      rowsArchived: 120,
+      rowsQuarantined: 131,
+      partitionsQuarantined: 1,
+    });
+
+    // An older container that predates migration 0100 omits the fields; that
+    // must read as "none quarantined", never as NaN.
+    const old = await runAuditArchiveSweep(
+      env({ CORELINK_API_SVC: svc(200, { rows_archived: 5 }) }),
+      0,
+    );
+    expect(old.rowsQuarantined).toBe(0);
+    expect(old.partitionsQuarantined).toBe(0);
+  });
+
   it("does NOT read a partial failure as success", async () => {
     // The handler answers 500 with a body when any partition failed. Parsing
     // the body on a non-2xx is deliberate: `partitions_failed` is the whole

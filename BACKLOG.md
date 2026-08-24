@@ -765,8 +765,21 @@ remainder; archive both branches with an explicit fork marker; or accept the
 partitions as permanently unarchivable and record why — differ in what they
 claim to an auditor, so the owner picks.
 
+**Decided (2026-08-24): clean prefix + quarantine.** The archiver now writes
+each partition's longest contiguous VERIFYING PREFIX and marks the unarchivable
+remainder `quarantined_at` + `quarantine_reason`
+(`sequence_gap:expected=11,found=10`), so healthy rows reach R2 instead of being
+held hostage by one historical fork. Re-sequencing stays FORBIDDEN — no chain
+column is ever UPDATEd, enforced by a test that re-reads the writer's own source.
+Migration `0100_audit_outbox_quarantine.sql` adds the columns and a narrowed
+work-queue index; the B-021 absence monitor excludes quarantined rows from its
+pending clause (they can never clear it) while printing their census every hour;
+`RB-AUDIT-ARCHIVE-ABSENT` §5 says what a quarantined row means and how to list
+them. **Still open** until the migration is applied to prod D1 and the eight
+partitions are observed quarantined with a recorded sequence range per partition.
+
 ```backlog
-id: B-024
+id: B-026
 repo: corelink-server
 owner: tl
 status: open
@@ -826,6 +839,16 @@ Triage, not blanket upgrade: each alert needs a verdict (fix / not-reachable /
 accepted-with-reason). An unread high advisory on a product that sells storage
 governance is a bad look independent of exploitability.
 
+**Triaged 2026-08-24.** Three of the six — `ip-address` ≤ 10.3.0, reached via
+`socks` → `proxy-agent` → `@puppeteer/browsers` — had a published patch and are
+fixed in `#1259` by a `pnpm.overrides` entry lifting them to 10.5.0. The other
+three have **no patched version at all**: `extract-zip` ≤ 2.0.1 (via
+`@puppeteer/browsers`) and two `image-size` ≤ 2.0.2 advisories (via
+`@docusaurus/mdx-loader`). Both are build-time-only paths; neither package
+reaches a Worker or container bundle. They stay OPEN rather than dismissed,
+because dismissing removes the reminder to take the patch when one lands — so
+this item stays open too, and its verify keeps counting them.
+
 ```backlog
 id: B-028
 repo: corelink-server
@@ -840,6 +863,50 @@ verify-means: |
   where gh is authenticated:
     gh api /repos/HuGR-Labs/corelink-server/dependabot/alerts --paginate \
       -q '[.[]|select(.state=="open")]|length'
+last-verified: 2026-08-24
+```
+
+### B-033 — the workspace lint gate runs nowhere, and its stated compensation does not hold
+
+`cargo clippy --workspace --all-targets -- -D warnings` appears in exactly one
+workflow, `cas_foundation.yml`. That workflow was PARKED on 2026-08-10 (cost
+hygiene, owner-authorized): its cron is commented out and it is dispatch-only.
+Its last scheduled run was 2026-08-05 and it was CANCELLED; every scheduled run
+before that, back through July, FAILED.
+
+The park is documented and the reasoning is sound on cost. What does not hold is
+the compensating argument written beside it — that "the per-crate PR lanes gate
+the touched crates on every PR". Measured: **8 of 84 workspace members** have a
+per-crate clippy lane (`corelink-server`, `-hash`, `-meta`, `-worker`, `-reapi`,
+`-adapter-host`, `-client-verify`, `-tenant-path`). The other 76 are linted by
+nothing.
+
+This is not hypothetical. On 2026-08-24 an agent working in
+`crates/corelink-audit-chain` found `cargo clippy -p corelink-audit-chain
+--all-targets -- -D warnings` **already red on origin/main** — 33 errors, every
+one in test code missing the workspace lint opt-out. It had been red for an
+unknown period and no lane could have said so. `#1252` fixed that crate; the
+hole that hid it is untouched.
+
+The fix is not to unpark a heavy weekly lane. The candidates are a lint scoped
+to the crates a PR's diff actually touches, or a workspace clippy on push-to-main
+only. Choosing between them is a cost call and belongs in the same PR that
+measures what each would cost on the fabric.
+
+```backlog
+id: B-033
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  test "$(grep -rho 'cargo clippy --package [a-z0-9-]*' .github/workflows/*.yml \
+    | awk '{print $4}' | sort -u | wc -l | tr -d ' ')" -lt 84
+verify-means: |
+  exits 0 while fewer workspace members have a per-crate clippy lane than exist
+  in the workspace, i.e. while some crate is linted by nothing on a PR. Starts
+  failing once coverage is closed — by per-crate lanes, or by whatever
+  diff-scoped or push-to-main lane replaces the parked workspace one, in which
+  case this verify is what must be rewritten to match the new mechanism.
 last-verified: 2026-08-24
 ```
 
@@ -902,7 +969,7 @@ verify-means: |
 last-verified: 2026-08-24
 ```
 
-### B-033 — every Critical vendor review is past its cadence window
+### B-032 — every Critical vendor review is past its cadence window
 
 All seven Critical vendors — Cloudflare, Stripe, Clerk, AWS, Google Cloud, Azure
 and Drata — were last reviewed on the 2026-05-15 baseline against a quarterly
@@ -922,7 +989,7 @@ alone: 2× remains the §7 page-worthy trigger, and changing that is a complianc
 decision, not a rendering one.
 
 ```backlog
-id: B-033
+id: B-032
 repo: corelink-server
 owner: owner
 status: open
@@ -985,7 +1052,7 @@ the bytes behind that tenant's own Turborepo keys. Not cross-tenant; the envelop
 does not detect it, because the key is not a preimage of the content.
 
 ```backlog
-id: B-026
+id: B-024
 repo: corelink-server
 owner: tl
 status: open
@@ -1029,7 +1096,7 @@ verify-means: |
 last-verified: 2026-08-24
 ```
 
-### B-032 — eight contract lines promise a TLS floor we do not enforce
+### B-035 — eight contract lines promise a TLS floor we do not enforce
 
 The DPA (`legal/dpa/v1.0.0.{en-US,pt-BR,es-419}.md`), the EU SCC annex, the
 sub-processor commitments and the three privacy notices all state encryption in
@@ -1051,7 +1118,7 @@ lines as **tracked** drift: visible on every run, fatal under `--strict`, and
 impossible to forget. New occurrences anywhere else fail the gate outright.
 
 ```backlog
-id: B-032
+id: B-035
 repo: corelink-server
 owner: owner
 status: open

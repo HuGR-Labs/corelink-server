@@ -65,6 +65,23 @@
 //! refuses to produce bytes otherwise. The archive is evidence; writing a chunk
 //! that does not verify would manufacture a chain break in the offsite copy of
 //! a chain that is intact in D1 (or, worse, launder one that is not).
+//!
+//! ## Partial progress — [`split_verifying_prefix`]
+//!
+//! Fail-CLOSED per CHUNK is correct. Fail-CLOSED per PARTITION was not: a
+//! partition that carries ONE historical chain break could never archive ANY of
+//! its rows, so it retried on every hourly tick forever and nothing said so.
+//! (Measured 2026-08-14: a 17-minute seal fork put 1,505 excess rows on
+//! duplicated `sequence_number`s across 8 of 360 partitions.)
+//!
+//! [`split_verifying_prefix`] is the seam. It walks a partition's rows and
+//! returns the LONGEST leading run that [`verify_chunk`] accepts, plus a
+//! [`PrefixBreak`] naming exactly where and why the chain stops. The caller
+//! archives the prefix normally and QUARANTINES the rest — sealed rows are the
+//! evidence, so they are never re-sequenced, re-hashed, or deleted; they are
+//! marked unarchivable with a machine-readable reason and taken out of the work
+//! queue so the backlog can reach zero and the absence monitor can tell a stuck
+//! archiver from a permanently broken chain segment.
 
 use serde::{Deserialize, Serialize};
 
@@ -229,14 +246,77 @@ pub fn sealed_chunk_key(first: &SealedArchiveLine) -> String {
     )
 }
 
-/// Verify a slice of lines as one contiguous chunk of a single partition.
+/// Where a partition's archivable prefix stops, and why.
 ///
-/// # Errors
+/// Returned by [`split_verifying_prefix`] alongside the prefix itself. It names
+/// the FIRST line that cannot join the chunk; every line from `index` onward is
+/// unarchivable until a human resolves the break, because the chain's own
+/// linkage — not a policy choice — says so.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PrefixBreak {
+    /// Index into the slice handed to [`split_verifying_prefix`] of the first
+    /// line that could not be archived.
+    pub index: usize,
+    /// `sequence_number` carried by that line. This is the LOW bound of what
+    /// the caller quarantines — note that on a duplicated sequence it equals a
+    /// sequence the prefix already archived, which is correct: the archived
+    /// copy is already marked and the duplicate is the row being refused.
+    pub sequence_number: u64,
+    /// The verification failure that stopped the prefix.
+    pub error: SealedArchiveError,
+}
+
+impl PrefixBreak {
+    /// Short machine-readable reason string, for
+    /// `audit_outbox.quarantine_reason`.
+    ///
+    /// Deliberately grep-able and stable: an operator triaging a quarantined
+    /// row must be able to `GROUP BY quarantine_reason` and see the shape of
+    /// the damage without reading a prose log line that may have rotated away.
+    #[must_use]
+    pub fn reason_code(&self) -> String {
+        match &self.error {
+            SealedArchiveError::EmptyChunk => "empty_chunk".to_owned(),
+            SealedArchiveError::MalformedHash {
+                sequence_number,
+                field,
+            } => format!("malformed_hash:seq={sequence_number},field={field}"),
+            SealedArchiveError::MixedPartition { expected, found } => {
+                format!("mixed_partition:expected={expected},found={found}")
+            }
+            SealedArchiveError::SequenceGap { expected, found } => {
+                format!("sequence_gap:expected={expected},found={found}")
+            }
+            SealedArchiveError::ChainHeadDiscontinuity { sequence_number } => {
+                format!("chain_head_discontinuity:seq={sequence_number}")
+            }
+            SealedArchiveError::LinkHashMismatch { sequence_number } => {
+                format!("link_hash_mismatch:seq={sequence_number}")
+            }
+            SealedArchiveError::Serialization(_) => "serialization".to_owned(),
+        }
+    }
+}
+
+/// Split an in-order run of one partition's lines into the longest leading run
+/// that [`verify_chunk`] accepts, plus the break that ended it.
 ///
-/// Any [`SealedArchiveError`]; every arm means "do not archive this".
-pub fn verify_chunk(lines: &[SealedArchiveLine]) -> Result<(), SealedArchiveError> {
+/// `(prefix, None)` means the whole slice verifies. `(prefix, Some(break))`
+/// means `prefix` is archivable AS A CHUNK WINDOW and everything from
+/// `break.index` onward is not.
+///
+/// This function is PURE and BORROWS: it never mutates a line, so no chain
+/// column can be rewritten on the quarantine path. Re-sequencing a sealed row
+/// would destroy the evidence the chain exists to produce.
+///
+/// An empty slice yields an empty prefix and no break — there is nothing to
+/// archive and nothing to quarantine.
+#[must_use]
+pub fn split_verifying_prefix(
+    lines: &[SealedArchiveLine],
+) -> (&[SealedArchiveLine], Option<PrefixBreak>) {
     let Some(first) = lines.first() else {
-        return Err(SealedArchiveError::EmptyChunk);
+        return (lines, None);
     };
     let partition = format!("{}/{}", first.tenant_id, first.region);
     let mut expected_seq = first.sequence_number;
@@ -245,45 +325,81 @@ pub fn verify_chunk(lines: &[SealedArchiveLine]) -> Result<(), SealedArchiveErro
     // predecessor we do not hold.
     let mut running_head: Option<ChainHash> = None;
 
-    for line in lines {
+    for (index, line) in lines.iter().enumerate() {
         let found_partition = format!("{}/{}", line.tenant_id, line.region);
-        if found_partition != partition {
-            return Err(SealedArchiveError::MixedPartition {
-                expected: partition,
+        let failure = if found_partition != partition {
+            Some(SealedArchiveError::MixedPartition {
+                expected: partition.clone(),
                 found: found_partition,
-            });
-        }
-        if line.sequence_number != expected_seq {
-            return Err(SealedArchiveError::SequenceGap {
+            })
+        } else if line.sequence_number != expected_seq {
+            Some(SealedArchiveError::SequenceGap {
                 expected: expected_seq,
                 found: line.sequence_number,
-            });
-        }
-        let prev = parse_hash(&line.prev_hash).ok_or(SealedArchiveError::MalformedHash {
-            sequence_number: line.sequence_number,
-            field: "prev_hash",
-        })?;
-        let claimed = parse_hash(&line.chain_hash).ok_or(SealedArchiveError::MalformedHash {
-            sequence_number: line.sequence_number,
-            field: "chain_hash",
-        })?;
-        if let Some(head) = running_head {
-            if head != prev {
-                return Err(SealedArchiveError::ChainHeadDiscontinuity {
+            })
+        } else {
+            match (parse_hash(&line.prev_hash), parse_hash(&line.chain_hash)) {
+                (None, _) => Some(SealedArchiveError::MalformedHash {
                     sequence_number: line.sequence_number,
-                });
+                    field: "prev_hash",
+                }),
+                (_, None) => Some(SealedArchiveError::MalformedHash {
+                    sequence_number: line.sequence_number,
+                    field: "chain_hash",
+                }),
+                (Some(prev), Some(claimed)) => {
+                    if running_head.is_some_and(|head| head != prev) {
+                        Some(SealedArchiveError::ChainHeadDiscontinuity {
+                            sequence_number: line.sequence_number,
+                        })
+                    } else if link_chain_hash_from_canonical(&prev, line.canonical_jcs.as_bytes())
+                        != claimed
+                    {
+                        Some(SealedArchiveError::LinkHashMismatch {
+                            sequence_number: line.sequence_number,
+                        })
+                    } else {
+                        running_head = Some(claimed);
+                        expected_seq = expected_seq.saturating_add(1);
+                        None
+                    }
+                }
             }
+        };
+        if let Some(error) = failure {
+            return (
+                // `index` is always in bounds for a prefix range; `get` rather
+                // than a slice expression because the workspace denies
+                // `indexing_slicing` and a silent panic here would take the
+                // whole archive sweep down.
+                lines.get(..index).unwrap_or(&[]),
+                Some(PrefixBreak {
+                    index,
+                    sequence_number: line.sequence_number,
+                    error,
+                }),
+            );
         }
-        let recomputed = link_chain_hash_from_canonical(&prev, line.canonical_jcs.as_bytes());
-        if recomputed != claimed {
-            return Err(SealedArchiveError::LinkHashMismatch {
-                sequence_number: line.sequence_number,
-            });
-        }
-        running_head = Some(claimed);
-        expected_seq = expected_seq.saturating_add(1);
     }
-    Ok(())
+    (lines, None)
+}
+
+/// Verify a slice of lines as one contiguous chunk of a single partition.
+///
+/// # Errors
+///
+/// Any [`SealedArchiveError`]; every arm means "do not archive this".
+pub fn verify_chunk(lines: &[SealedArchiveLine]) -> Result<(), SealedArchiveError> {
+    if lines.is_empty() {
+        return Err(SealedArchiveError::EmptyChunk);
+    }
+    // ONE implementation of the link rules, shared with the partial-progress
+    // path, so the prefix the archiver writes and the chunk the verifier
+    // accepts can never drift apart.
+    match split_verifying_prefix(lines) {
+        (_, None) => Ok(()),
+        (_, Some(brk)) => Err(brk.error),
+    }
 }
 
 /// Verify then serialize a chunk to NDJSON bytes.
@@ -349,6 +465,13 @@ pub fn split_into_chunks(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "tests are allowed to use these primitives"
+)]
 mod tests {
     use super::*;
 
@@ -546,5 +669,211 @@ mod tests {
         let chunks = split_into_chunks(lines, 0, 0);
         assert_eq!(chunks.len(), 3, "clamped to one line per chunk");
         assert_eq!(chunks.iter().map(Vec::len).sum::<usize>(), 3);
+    }
+
+    // ---------------------------------------------------------------------
+    // `split_verifying_prefix` — partial progress over a FORKED partition.
+    //
+    // The fixture reproduces the measured 2026-08-14 defect rather than a
+    // synthetic gap: within one `(tenant_id, region)` partition the seal path
+    // forked, so a sequence number appears TWICE carrying two DIFFERENT
+    // `prev_hash` values (two branches, not a relabelling) and the sequence
+    // that should have followed is missing.
+    // ---------------------------------------------------------------------
+
+    /// `_public`/`wnam`-shaped fixture: a clean run 0..=`dup_at`, then a SECOND
+    /// row re-using sequence `dup_at` off a DIFFERENT (forked) head, then the
+    /// branch continues at `dup_at + 2` — i.e. `dup_at + 1` is missing.
+    fn forked_partition(dup_at: u64, tail: u64) -> Vec<SealedArchiveLine> {
+        let mut lines = chain(
+            "_public",
+            "wnam",
+            0,
+            ChainHash::genesis(),
+            1_787_517_615_093,
+            dup_at + 1,
+        );
+        // The forked branch: same sequence number, different prev_hash.
+        let forked_head = ChainHash([0x5au8; 32]);
+        let mut dup = chain("_public", "wnam", dup_at, forked_head, 1_787_517_615_093, 1);
+        // Give the duplicate its own payload so it is unmistakably a second
+        // row, not a copy of the archived one.
+        let jcs = format!("{{\"data\":{{\"n\":{dup_at}}},\"id\":\"row-{dup_at}-fork\"}}");
+        let link = link_chain_hash_from_canonical(&forked_head, jcs.as_bytes());
+        if let Some(d) = dup.first_mut() {
+            d.row_id = format!("row-{dup_at}-fork");
+            d.canonical_jcs = jcs;
+            d.chain_hash = link.to_hex();
+        }
+        let branch_start = dup_at + 2;
+        let branch = chain(
+            "_public",
+            "wnam",
+            branch_start,
+            link,
+            1_787_517_615_093,
+            tail,
+        );
+        lines.extend(dup);
+        lines.extend(branch);
+        lines
+    }
+
+    #[test]
+    fn prefix_stops_immediately_before_a_duplicated_sequence() {
+        // Duplicate at 10, so 11 is what the chunk needed next and 11 is
+        // missing from the branch — the exact `_public`/`wnam` shape.
+        let lines = forked_partition(10, 4);
+        let (prefix, brk) = split_verifying_prefix(&lines);
+        assert_eq!(prefix.len(), 11, "sequences 0..=10 archive normally");
+        verify_chunk(prefix).expect("the prefix must be an archivable chunk");
+        let brk = brk.expect("the fork must be reported, never swallowed");
+        assert_eq!(brk.index, 11);
+        assert_eq!(brk.sequence_number, 10);
+        assert_eq!(
+            brk.error,
+            SealedArchiveError::SequenceGap {
+                expected: 11,
+                found: 10
+            }
+        );
+        // The classification names the expected/found pair, machine-readably.
+        assert_eq!(brk.reason_code(), "sequence_gap:expected=11,found=10");
+    }
+
+    #[test]
+    fn a_clean_partition_is_entirely_prefix_and_quarantines_nothing() {
+        let lines = chain("t1", "enam", 0, ChainHash::genesis(), 1_787_517_615_093, 12);
+        let (prefix, brk) = split_verifying_prefix(&lines);
+        assert_eq!(prefix.len(), lines.len());
+        assert!(brk.is_none(), "a healthy partition has no break");
+        verify_chunk(prefix).expect("whole partition verifies");
+    }
+
+    #[test]
+    fn a_break_on_the_very_first_row_yields_an_empty_prefix_and_no_loop() {
+        // The archiver resumes at the first UNARCHIVED sequence. If that row is
+        // itself the break, there is nothing to archive at all — the caller
+        // must quarantine and move on rather than spin.
+        let mut lines = chain("t1", "enam", 5, ChainHash::genesis(), 1_787_517_615_093, 3);
+        if let Some(l) = lines.first_mut() {
+            // Corrupt the first row's own link: it no longer verifies against
+            // its persisted bytes, so not even a window can start here.
+            l.canonical_jcs = "{\"data\":{\"n\":999}}".to_owned();
+        }
+        let (prefix, brk) = split_verifying_prefix(&lines);
+        assert!(prefix.is_empty(), "nothing is archivable");
+        let brk = brk.expect("the break must be reported");
+        assert_eq!(brk.index, 0);
+        assert_eq!(brk.sequence_number, 5);
+        assert_eq!(brk.reason_code(), "link_hash_mismatch:seq=5");
+        // An empty prefix produces no chunk, so nothing is written and nothing
+        // is marked archived — the caller quarantines and the partition leaves
+        // the work queue instead of being retried forever.
+        assert_eq!(verify_chunk(prefix), Err(SealedArchiveError::EmptyChunk));
+    }
+
+    #[test]
+    fn archiving_resumes_after_a_break_as_a_new_mid_chain_window() {
+        // Rows sealed AFTER the quarantined segment form their own window. A
+        // window starts wherever it starts and carries whatever `prev_hash` its
+        // first row holds; `verify_chunk` checks that row against its own link
+        // only (`running_head` starts `None`), so resumption is legal.
+        let lines = forked_partition(10, 4);
+        let (_, brk) = split_verifying_prefix(&lines);
+        assert!(brk.is_some());
+        // The branch that continues at sequence 12 with the forked head.
+        let resumed = lines.get(12..).expect("branch rows exist");
+        assert_eq!(resumed.len(), 4);
+        assert_eq!(
+            resumed.first().map(|l| l.sequence_number),
+            Some(12),
+            "the resumed window starts mid-chain, not at 0"
+        );
+        let (prefix, brk2) = split_verifying_prefix(resumed);
+        assert!(brk2.is_none(), "the resumed window has no break of its own");
+        assert_eq!(prefix.len(), 4);
+        verify_chunk(resumed).expect("a mid-chain window verifies as a chunk");
+        serialize_chunk(resumed).expect("and therefore serializes");
+    }
+
+    #[test]
+    fn classifying_a_break_never_rewrites_a_chain_column() {
+        // The quarantine decision is derived from the rows and MUST NOT touch
+        // them: sequence_number / prev_hash / chain_hash / canonical_jcs are
+        // the evidence. `split_verifying_prefix` borrows, so this is a property
+        // of the signature — this test pins it against a future refactor that
+        // takes ownership and "normalizes" a row on the way past.
+        let before = forked_partition(10, 4);
+        let subject = before.clone();
+        let (prefix, brk) = split_verifying_prefix(&subject);
+        let reason = brk.expect("break present").reason_code();
+        assert!(!reason.is_empty());
+        assert_eq!(prefix.len(), 11);
+        assert_eq!(
+            subject, before,
+            "not one byte of any sealed row may change on the quarantine path"
+        );
+        // And specifically the chain columns, named, so the assertion reads as
+        // the invariant it enforces rather than as a generic equality.
+        for (after, orig) in subject.iter().zip(before.iter()) {
+            assert_eq!(after.sequence_number, orig.sequence_number);
+            assert_eq!(after.prev_hash, orig.prev_hash);
+            assert_eq!(after.chain_hash, orig.chain_hash);
+            assert_eq!(after.canonical_jcs, orig.canonical_jcs);
+            assert_eq!(after.enqueued_at_ms, orig.enqueued_at_ms);
+        }
+    }
+
+    #[test]
+    fn reason_codes_are_stable_and_greppable() {
+        // `quarantine_reason` is queried by operators with GROUP BY; the shape
+        // is part of the contract, not a log string.
+        let cases = [
+            (
+                SealedArchiveError::SequenceGap {
+                    expected: 11,
+                    found: 10,
+                },
+                "sequence_gap:expected=11,found=10",
+            ),
+            (
+                SealedArchiveError::ChainHeadDiscontinuity { sequence_number: 7 },
+                "chain_head_discontinuity:seq=7",
+            ),
+            (
+                SealedArchiveError::LinkHashMismatch { sequence_number: 7 },
+                "link_hash_mismatch:seq=7",
+            ),
+            (
+                SealedArchiveError::MalformedHash {
+                    sequence_number: 7,
+                    field: "prev_hash",
+                },
+                "malformed_hash:seq=7,field=prev_hash",
+            ),
+            (
+                SealedArchiveError::MixedPartition {
+                    expected: "a/enam".to_owned(),
+                    found: "b/enam".to_owned(),
+                },
+                "mixed_partition:expected=a/enam,found=b/enam",
+            ),
+        ];
+        for (error, expected) in cases {
+            let brk = PrefixBreak {
+                index: 0,
+                sequence_number: 0,
+                error,
+            };
+            assert_eq!(brk.reason_code(), expected);
+        }
+    }
+
+    #[test]
+    fn prefix_of_nothing_is_nothing() {
+        let (prefix, brk) = split_verifying_prefix(&[]);
+        assert!(prefix.is_empty());
+        assert!(brk.is_none(), "an empty read is not a chain break");
     }
 }

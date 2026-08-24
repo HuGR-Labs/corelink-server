@@ -49,6 +49,43 @@
 //! backlog and the cron's own logs both show the gap. Silently reporting
 //! success on an unwritten chunk is the failure mode this whole item exists to
 //! remove.
+//!
+//! ## Clean prefix + quarantine — partial progress over a forked partition
+//!
+//! Refusing a chunk that does not verify is correct. Refusing a whole PARTITION
+//! forever was not. A 17-minute seal fork on 2026-08-14 left 8 of 360
+//! partitions with duplicated `sequence_number`s (each duplicate pair carrying
+//! a DIFFERENT `prev_hash` — two branches) and the following sequence missing,
+//! so those partitions could never satisfy the verifier and retried on every
+//! hourly tick, invisibly, forever.
+//!
+//! Per partition the archiver therefore:
+//!
+//! 1. takes the LONGEST CONTIGUOUS VERIFYING PREFIX
+//!    ([`corelink_audit_chain::split_verifying_prefix`]) of the sealed,
+//!    unarchived, not-yet-quarantined rows and archives it exactly as before —
+//!    R2 first, `archived_at` second;
+//! 2. QUARANTINES the rest of the partition's currently-sealed set: sets
+//!    `quarantined_at` + a machine-readable `quarantine_reason` naming the
+//!    break (`sequence_gap:expected=11,found=10`), which takes those rows out
+//!    of the work queue;
+//! 3. resumes on later rows as a NEW chunk window — legal because
+//!    [`corelink_audit_chain::verify_chunk`] checks a window's first row
+//!    against its OWN link only, never against a predecessor it does not hold.
+//!
+//! **Re-sequencing is FORBIDDEN.** The sealed rows are the evidence. Nothing
+//! here ever UPDATEs `sequence_number`, `prev_hash`, `chain_hash`,
+//! `canonical_jcs`, `emitted_at` or `chained_at`; the only columns this module
+//! writes are `archived_at`, `quarantined_at` and `quarantine_reason`, and a
+//! test in this file re-reads its own source to prove it.
+//!
+//! **Quarantine is LOUD, not a drawer.** The response body carries
+//! `rows_quarantined` / `partitions_quarantined`, the cron logs them, the
+//! absence monitor excludes quarantined rows from its pending clause so it
+//! neither pages forever nor goes quiet, and
+//! `specs/_runbooks/RB-AUDIT-ARCHIVE-ABSENT.md` says how to list them. A row
+//! that is silently unarchivable forever is the defect class this endpoint was
+//! built to remove.
 
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -62,8 +99,9 @@ use serde_json::{json, Value};
 use subtle::ConstantTimeEq;
 
 use corelink_audit_chain::{
-    sealed_chunk_key, serialize_chunk, split_into_chunks, SealedArchiveLine,
-    DEFAULT_SEALED_MAX_BYTES_PER_CHUNK, DEFAULT_SEALED_MAX_LINES_PER_CHUNK, SEALED_LINE_SCHEMA,
+    sealed_chunk_key, serialize_chunk, split_into_chunks, split_verifying_prefix,
+    SealedArchiveLine, DEFAULT_SEALED_MAX_BYTES_PER_CHUNK, DEFAULT_SEALED_MAX_LINES_PER_CHUNK,
+    SEALED_LINE_SCHEMA,
 };
 
 use crate::storage::d1_http::D1HttpClient;
@@ -209,8 +247,14 @@ enum ChunkWrite {
 async fn read_unarchived_partitions(d1: &D1HttpClient) -> Result<Vec<(String, String)>, String> {
     let rows = d1
         .query(
+            // The quarantine predicate matches the partial work-queue index
+            // added by migration 0100: a partition whose only remaining rows are
+            // quarantined has no work left and must drop out of the sweep
+            // entirely, or the archiver walks a permanently-refused tail on
+            // every hourly tick.
             "SELECT DISTINCT tenant_id, region FROM audit_outbox \
              WHERE emitted_at IS NOT NULL AND archived_at IS NULL \
+               AND quarantined_at IS NULL \
                AND sequence_number IS NOT NULL AND canonical_jcs IS NOT NULL",
             &[],
         )
@@ -235,9 +279,15 @@ async fn read_unarchived_partitions(d1: &D1HttpClient) -> Result<Vec<(String, St
 /// Read up to `limit` sealed-but-unarchived rows of one partition, in chain
 /// order.
 ///
-/// `ORDER BY sequence_number` over the unarchived set yields the ordered PREFIX
-/// of what is left, so the batch is always chain-contiguous and the next call
-/// resumes exactly where this one stopped.
+/// `ORDER BY sequence_number` over the unarchived, un-quarantined set yields
+/// the ordered PREFIX of what is left, so the next call resumes exactly where
+/// this one stopped.
+///
+/// It does NOT guarantee the batch is chain-contiguous — that was the wrong
+/// assumption. The 2026-08-14 seal fork left duplicated sequence numbers with
+/// the following sequence missing, so the ORDERED batch can still contain a
+/// break. [`split_verifying_prefix`] is what decides how much of it is
+/// archivable; this function only decides what to look at.
 async fn read_unarchived_rows(
     d1: &D1HttpClient,
     tenant_id: &str,
@@ -250,6 +300,7 @@ async fn read_unarchived_rows(
              FROM audit_outbox \
              WHERE tenant_id = ?1 AND region = ?2 \
                AND emitted_at IS NOT NULL AND archived_at IS NULL \
+               AND quarantined_at IS NULL \
                AND sequence_number IS NOT NULL AND canonical_jcs IS NOT NULL \
              ORDER BY sequence_number \
              LIMIT ?3",
@@ -350,12 +401,126 @@ async fn mark_archived(
     Ok(())
 }
 
+/// Census of what a quarantine sweep is about to take out of the work queue.
+///
+/// `count` is read with the SAME predicate the UPDATE uses, immediately before
+/// it, so the number reported to the operator is the number of rows actually
+/// marked rather than an estimate. `max_sequence` is what bounds the UPDATE:
+/// "the end of the partition's CURRENTLY-sealed set". An unbounded
+/// `sequence_number >= break` would also swallow rows the drain seals a
+/// millisecond later — rows that are the whole point of resumption.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct QuarantineCensus {
+    count: u64,
+    max_sequence: u64,
+}
+
+/// The one and only quarantine write. Sets ONLY `quarantined_at` and
+/// `quarantine_reason` — never a chain column. See
+/// `no_update_ever_touches_a_chain_column` in this file's tests.
+///
+/// The D1 REST API binds JSON numbers as REAL, so every integer bind that is
+/// COMPARED against an INTEGER column is wrapped in `CAST(?N AS INTEGER)`.
+const QUARANTINE_SQL: &str = "UPDATE audit_outbox \
+     SET quarantined_at = CAST(?1 AS INTEGER), quarantine_reason = ?2 \
+     WHERE tenant_id = ?3 AND region = ?4 \
+       AND emitted_at IS NOT NULL AND archived_at IS NULL AND quarantined_at IS NULL \
+       AND sequence_number IS NOT NULL AND canonical_jcs IS NOT NULL \
+       AND sequence_number >= CAST(?5 AS INTEGER) \
+       AND sequence_number <= CAST(?6 AS INTEGER)";
+
+/// Count the rows a quarantine would take, and find the upper bound.
+async fn quarantine_census(
+    d1: &D1HttpClient,
+    tenant_id: &str,
+    region: &str,
+    from_sequence: u64,
+) -> Result<Option<QuarantineCensus>, String> {
+    let rows = d1
+        .query(
+            "SELECT COUNT(*) AS n, MAX(sequence_number) AS max_seq FROM audit_outbox \
+             WHERE tenant_id = ?1 AND region = ?2 \
+               AND emitted_at IS NOT NULL AND archived_at IS NULL AND quarantined_at IS NULL \
+               AND sequence_number IS NOT NULL AND canonical_jcs IS NOT NULL \
+               AND sequence_number >= CAST(?3 AS INTEGER)",
+            &[json!(tenant_id), json!(region), json!(from_sequence)],
+        )
+        .await?;
+    let Some(row) = rows.first() else {
+        return Ok(None);
+    };
+    let count = row
+        .get("n")
+        .and_then(Value::as_i64)
+        .and_then(|n| u64::try_from(n).ok())
+        .ok_or("audit_outbox quarantine census: COUNT(*) missing/non-integer")?;
+    if count == 0 {
+        return Ok(None);
+    }
+    // MAX over a non-empty set is never NULL, but read it as an Option rather
+    // than assume: quarantining against an unknown upper bound is exactly the
+    // unbounded UPDATE this census exists to prevent.
+    let max_sequence = row
+        .get("max_seq")
+        .and_then(Value::as_i64)
+        .and_then(|n| u64::try_from(n).ok())
+        .ok_or("audit_outbox quarantine census: MAX(sequence_number) missing/non-integer")?;
+    Ok(Some(QuarantineCensus {
+        count,
+        max_sequence,
+    }))
+}
+
+/// Mark the unarchivable tail of one partition, from the break through the end
+/// of its currently-sealed set. Returns how many rows left the work queue.
+async fn quarantine_tail(
+    d1: &D1HttpClient,
+    tenant_id: &str,
+    region: &str,
+    from_sequence: u64,
+    reason: &str,
+    now: i64,
+) -> Result<u64, String> {
+    let Some(census) = quarantine_census(d1, tenant_id, region, from_sequence).await? else {
+        return Ok(0);
+    };
+    d1.query(
+        QUARANTINE_SQL,
+        &[
+            json!(now),
+            json!(reason),
+            json!(tenant_id),
+            json!(region),
+            json!(from_sequence),
+            json!(census.max_sequence),
+        ],
+    )
+    .await?;
+    // WARN, not INFO: a quarantined row is permanently outside the offsite
+    // evidence copy. It must appear in the container log even when the sweep
+    // as a whole returns 200.
+    tracing::warn!(
+        tenant_id = %tenant_id,
+        region = %region,
+        rows = census.count,
+        from_sequence,
+        to_sequence = census.max_sequence,
+        reason = %reason,
+        "audit/archive: QUARANTINED an unarchivable chain segment — \
+         rows stay sealed in D1 but will NEVER reach the R2 archive \
+         (runbook RB-AUDIT-ARCHIVE-ABSENT §5)"
+    );
+    Ok(census.count)
+}
+
 /// Outcome of archiving a single partition.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct PartitionOutcome {
     rows: u64,
     chunks_created: u64,
     chunks_already_present: u64,
+    /// Rows this call ruled permanently unarchivable.
+    rows_quarantined: u64,
     /// The batch limit truncated this partition's tail.
     truncated: bool,
 }
@@ -372,7 +537,15 @@ async fn archive_partition(
         return Ok(PartitionOutcome::default());
     }
     let truncated = i64::try_from(lines.len()).unwrap_or(i64::MAX) >= limit;
-    let chunks = split_into_chunks(lines, state.max_lines_per_chunk, state.max_bytes_per_chunk);
+    // The ordered batch is NOT necessarily chain-contiguous (the 2026-08-14
+    // fork). Archive the longest verifying prefix; the break, if any, tells us
+    // exactly where the quarantine starts.
+    let (prefix, brk) = split_verifying_prefix(&lines);
+    let chunks = split_into_chunks(
+        prefix.to_vec(),
+        state.max_lines_per_chunk,
+        state.max_bytes_per_chunk,
+    );
     let mut outcome = PartitionOutcome {
         truncated,
         ..PartitionOutcome::default()
@@ -401,6 +574,22 @@ async fn archive_partition(
         mark_archived(&state.d1, &chunk, now).await?;
         outcome.rows = outcome.rows.saturating_add(chunk.len() as u64);
     }
+    // Quarantine LAST, and only after every prefix chunk is durable in R2 and
+    // marked. A `?` above returns before this line, so a partial R2 failure
+    // leaves the tail un-quarantined and retryable — the archive's ordering
+    // rule (R2 first, D1 bookkeeping second) applied to the second kind of
+    // bookkeeping.
+    if let Some(brk) = brk {
+        outcome.rows_quarantined = quarantine_tail(
+            &state.d1,
+            tenant_id,
+            region,
+            brk.sequence_number,
+            &brk.reason_code(),
+            now,
+        )
+        .await?;
+    }
     Ok(outcome)
 }
 
@@ -421,6 +610,8 @@ async fn handle_archive(State(state): State<AuditArchiveState>, headers: HeaderM
     let mut chunks_already_present: u64 = 0;
     let mut partitions_archived: u64 = 0;
     let mut partitions_failed: u64 = 0;
+    let mut rows_quarantined: u64 = 0;
+    let mut partitions_quarantined: u64 = 0;
     let mut incomplete = false;
 
     for (tenant_id, region) in partitions {
@@ -433,6 +624,10 @@ async fn handle_archive(State(state): State<AuditArchiveState>, headers: HeaderM
                 chunks_created = chunks_created.saturating_add(o.chunks_created);
                 chunks_already_present =
                     chunks_already_present.saturating_add(o.chunks_already_present);
+                if o.rows_quarantined > 0 {
+                    partitions_quarantined = partitions_quarantined.saturating_add(1);
+                    rows_quarantined = rows_quarantined.saturating_add(o.rows_quarantined);
+                }
                 if o.truncated {
                     incomplete = true;
                 }
@@ -459,6 +654,11 @@ async fn handle_archive(State(state): State<AuditArchiveState>, headers: HeaderM
         "chunks_already_present": chunks_already_present,
         "partitions_archived": partitions_archived,
         "partitions_failed": partitions_failed,
+        // Quarantine is reported, never merely logged. A row that is
+        // unarchivable BY DESIGN still has to be counted somewhere an operator
+        // reads, or it becomes the silent backlog this endpoint replaced.
+        "rows_quarantined": rows_quarantined,
+        "partitions_quarantined": partitions_quarantined,
         "incomplete": incomplete,
     });
     // A partial failure is NOT a 200. The cron logs the status; reporting
@@ -508,6 +708,99 @@ mod tests {
             &headers_with(&format!("{expected}x"))
         ));
         assert!(!internal_auth_ok(expected.as_bytes(), &HeaderMap::new()));
+    }
+
+    /// The columns this module is ALLOWED to write. Anything else in a `SET`
+    /// clause is a re-sequencing bug.
+    const WRITABLE_COLUMNS: [&str; 3] = ["archived_at", "quarantined_at", "quarantine_reason"];
+
+    /// The evidence. Rewriting any of these to make the verifier happy destroys
+    /// the exact property the audit chain exists to prove.
+    const CHAIN_COLUMNS: [&str; 6] = [
+        "sequence_number",
+        "prev_hash",
+        "chain_hash",
+        "canonical_jcs",
+        "emitted_at",
+        "chained_at",
+    ];
+
+    #[test]
+    fn no_update_ever_touches_a_chain_column() {
+        // Reads this module's OWN source and inspects every `UPDATE
+        // audit_outbox` statement in it. A unit test over the two SQL constants
+        // would only prove the two statements I remembered to list; scanning
+        // the file catches the third one a future change adds.
+        //
+        // The needle is split so this test does not match itself.
+        let needle = concat!("UPDATE ", "audit_outbox");
+        let source = include_str!("audit_archive.rs");
+        let statements: Vec<&str> = source
+            .match_indices(needle)
+            .filter_map(|(i, _)| source.get(i..))
+            .collect();
+        assert_eq!(
+            statements.len(),
+            2,
+            "expected exactly two UPDATE statements (mark_archived, QUARANTINE_SQL); \
+             a new one must be reviewed against the immutability rule"
+        );
+        for stmt in statements {
+            let set_clause = stmt
+                .split("WHERE")
+                .next()
+                .expect("split always yields at least one element");
+            for chain_column in CHAIN_COLUMNS {
+                assert!(
+                    !set_clause.contains(chain_column),
+                    "an UPDATE writes the chain column `{chain_column}`; \
+                     sealed rows are evidence and MUST NOT be re-sequenced or re-hashed. \
+                     SET clause: {set_clause}"
+                );
+            }
+            // And positively: every assignment names a permitted column.
+            let assignments = set_clause.matches('=').count();
+            let permitted: usize = WRITABLE_COLUMNS
+                .iter()
+                .map(|c| set_clause.matches(c).count())
+                .sum();
+            assert!(
+                assignments <= permitted,
+                "an UPDATE assigns something outside {WRITABLE_COLUMNS:?}. SET clause: {set_clause}"
+            );
+        }
+    }
+
+    #[test]
+    fn quarantine_sql_writes_only_the_quarantine_columns_and_is_bounded() {
+        assert!(QUARANTINE_SQL
+            .contains("SET quarantined_at = CAST(?1 AS INTEGER), quarantine_reason = ?2"));
+        // Bounded above by the census's MAX: an unbounded `sequence_number >=`
+        // would swallow rows sealed a millisecond later, which are exactly the
+        // rows resumption depends on.
+        assert!(QUARANTINE_SQL.contains("sequence_number <= CAST(?6 AS INTEGER)"));
+        // Never re-quarantines and never touches an already-archived row.
+        assert!(QUARANTINE_SQL.contains("archived_at IS NULL AND quarantined_at IS NULL"));
+    }
+
+    #[test]
+    fn the_work_queue_excludes_quarantined_rows() {
+        // Both reads must carry the predicate, or the archiver walks a
+        // permanently-refused tail on every hourly tick — the exact cost this
+        // change removes.
+        let source = include_str!("audit_archive.rs");
+        // Count in the PRODUCTION half only — this test module quotes the same
+        // predicate, and a test that counts its own assertions proves nothing.
+        let production = source
+            .split("\n#[cfg(test)]")
+            .next()
+            .expect("split always yields at least one element");
+        let occurrences = production.matches("quarantined_at IS NULL").count();
+        assert_eq!(
+            occurrences, 4,
+            "expected the quarantine predicate in the partition scan, the row read, \
+             the census and the UPDATE guard; found {occurrences}"
+        );
     }
 
     #[test]

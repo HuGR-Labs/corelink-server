@@ -22,6 +22,14 @@
  * the next tick continues. That is also how the pre-existing sealed backlog is
  * archived — there is no separate backfill script to run and forget.
  *
+ * A partition whose chain is BROKEN (the 2026-08-14 seal fork left duplicated
+ * sequence numbers in 8 of 360 partitions) no longer blocks its own healthy
+ * rows: the handler archives the longest verifying prefix and QUARANTINES the
+ * unarchivable remainder — sealed rows are evidence and are never re-sequenced.
+ * Quarantined rows come back as `rows_quarantined` / `partitions_quarantined`
+ * and are logged separately, because a row that is unarchivable forever must
+ * never be a silent one.
+ *
  * Auth: the `/_internal/audit/*` surface reuses the erase/DSR consumer key
  * (erase-first, shared-fallback — see `resolveEraseAuthKey`); no new secret.
  * Inert (no-op-with-log) until that key is bound, exactly like the drain sweep,
@@ -49,6 +57,10 @@ export interface AuditArchiveSweepResult {
   rowsArchived: number;
   chunksCreated: number;
   partitionsFailed: number;
+  /** Rows ruled permanently unarchivable (a chain break; migration 0100). */
+  rowsQuarantined: number;
+  /** Partitions that contributed at least one quarantined row this sweep. */
+  partitionsQuarantined: number;
   /** The batch budget truncated the backlog; the next tick continues. */
   incomplete: boolean;
   /** Neither the dedicated nor the shared internal-auth key is bound. */
@@ -72,6 +84,8 @@ export async function runAuditArchiveSweep(
       rowsArchived: 0,
       chunksCreated: 0,
       partitionsFailed: 0,
+      rowsQuarantined: 0,
+      partitionsQuarantined: 0,
       incomplete: false,
       skipped: true,
     };
@@ -93,17 +107,23 @@ export async function runAuditArchiveSweep(
     let rowsArchived = 0;
     let chunksCreated = 0;
     let partitionsFailed = 0;
+    let rowsQuarantined = 0;
+    let partitionsQuarantined = 0;
     let incomplete = false;
     try {
       const j = (await resp.json()) as {
         rows_archived?: number;
         chunks_created?: number;
         partitions_failed?: number;
+        rows_quarantined?: number;
+        partitions_quarantined?: number;
         incomplete?: boolean;
       };
       rowsArchived = Number(j.rows_archived ?? 0);
       chunksCreated = Number(j.chunks_created ?? 0);
       partitionsFailed = Number(j.partitions_failed ?? 0);
+      rowsQuarantined = Number(j.rows_quarantined ?? 0);
+      partitionsQuarantined = Number(j.partitions_quarantined ?? 0);
       incomplete = Boolean(j.incomplete ?? false);
     } catch {
       // Non-JSON body — keep the transport status, report unknown counts. The
@@ -116,6 +136,8 @@ export async function runAuditArchiveSweep(
       rowsArchived,
       chunksCreated,
       partitionsFailed,
+      rowsQuarantined,
+      partitionsQuarantined,
       incomplete,
       skipped: false,
     };
@@ -129,6 +151,8 @@ export async function runAuditArchiveSweep(
       rowsArchived: 0,
       chunksCreated: 0,
       partitionsFailed: 0,
+      rowsQuarantined: 0,
+      partitionsQuarantined: 0,
       incomplete: false,
       skipped: false,
     };

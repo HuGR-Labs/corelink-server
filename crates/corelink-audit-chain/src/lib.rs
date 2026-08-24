@@ -198,9 +198,9 @@ pub use exporter::{
     InclusionProof, ProofSibling,
 };
 pub use sealed_archive::{
-    sealed_chunk_key, serialize_chunk, split_into_chunks, verify_chunk, SealedArchiveError,
-    SealedArchiveLine, DEFAULT_SEALED_MAX_BYTES_PER_CHUNK, DEFAULT_SEALED_MAX_LINES_PER_CHUNK,
-    SEALED_LINE_SCHEMA,
+    sealed_chunk_key, serialize_chunk, split_into_chunks, split_verifying_prefix, verify_chunk,
+    PrefixBreak, SealedArchiveError, SealedArchiveLine, DEFAULT_SEALED_MAX_BYTES_PER_CHUNK,
+    DEFAULT_SEALED_MAX_LINES_PER_CHUNK, SEALED_LINE_SCHEMA,
 };
 pub use sink::{
     canonical_date_yyyy_mm_dd, canonical_r2_key, CapturedR2AuditSink, FailingR2AuditSink,
