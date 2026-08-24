@@ -22,6 +22,20 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Security
+
+- **Turborepo remote-cache PUT is now create-only (`put_if_absent`) — 409 on an
+  existing key (B-024).** Turborepo keys are opaque/client-chosen, not
+  content-addressed, so a `cas:rw` credential could previously REPLACE the bytes
+  behind its own tenant's existing keys — within-tenant cache poisoning the
+  content envelope cannot detect. The bridge now probes presence under the
+  per-`(tenant, team, hash)` write lock and refuses an overwrite. Proven safe
+  against the real `turbo` client (v2.10.11): it never re-PUTs an existing key in
+  normal operation and tolerates the 409 as a non-fatal warning (the build still
+  succeeds, the cache stays enabled) — unlike sccache's `.sccache_check`
+  self-disable. Evidence + method:
+  `docs/design/2026-08-24-turborepo-create-only-evidence.md`.
+
 ### Removed
 
 - **`pre-cutover-weekly-cron` and its two scripts, retired rather than repaired

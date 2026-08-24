@@ -1516,6 +1516,14 @@ fn map_err(e: TurboBridgeError) -> axum::response::Response {
         TurboBridgeError::CrossTenantDenied { .. } => {
             (StatusCode::FORBIDDEN, "cross-tenant").into_response()
         }
+        // Create-only / `put_if_absent` (B-024): the key already holds an
+        // artifact and the store refuses to overwrite it → 409 Conflict. The
+        // real turbo client treats this as a non-fatal remote-cache warning
+        // (the build still succeeds), proven in
+        // docs/design/2026-08-24-turborepo-create-only-evidence.md.
+        TurboBridgeError::AlreadyExists { .. } => {
+            (StatusCode::CONFLICT, "artifact already exists").into_response()
+        }
         TurboBridgeError::AuditFailed(_) => {
             // Fail-CLOSED: audit pipeline down = 503; never serve/commit
             // without the audit row.
@@ -2199,9 +2207,10 @@ mod tests {
         (state, store)
     }
 
-    /// Issue a PUT of `body` to `hash` and assert 200. Carries the unlimited
-    /// quota header so the fresh `tenant_storage_state` row seeds (else 503).
-    async fn put_artifact(app: &Router, hash: &str, body: Vec<u8>) {
+    /// Issue a PUT of `body` to `hash` and return the status. Carries the
+    /// unlimited quota header so the fresh `tenant_storage_state` row seeds
+    /// (else 503).
+    async fn put_artifact_status(app: &Router, hash: &str, body: Vec<u8>) -> StatusCode {
         let req = Request::builder()
             .method(Method::PUT)
             .uri(format!("/v8/artifacts/{hash}?teamId=team_x"))
@@ -2213,21 +2222,27 @@ mod tests {
             )
             .body(Body::from(body))
             .expect("request");
-        let resp = app.clone().oneshot(req).await.expect("oneshot");
-        assert_eq!(resp.status(), StatusCode::OK, "PUT {hash} must 200");
+        app.clone().oneshot(req).await.expect("oneshot").status()
     }
 
-    /// The KILLING rt34 test: storage `bytes_used` tracks the TRUE on-disk delta
-    /// across overwrites — the OLD all-or-nothing rollback let a tenant store
-    /// unbounded bytes for free (PUT 1B then PUT 100MiB under the same key
-    /// released the whole 100MiB while it stayed on disk).
-    ///
-    /// Covers the five delta cases: fresh insert charges full; same-size
-    /// overwrite nets 0; GROW 1→big nets +(big-1); SHRINK big→1 decreases
-    /// bytes_used. (The probe-error-treated-as-fresh case is covered at the
-    /// store layer in `r2_kv::rt_write_probe_error_fails_closed_to_none`.)
+    /// Issue a PUT of `body` to `hash` and assert 200 (a fresh insert). Panics
+    /// on any other status — use for the first write of a key.
+    async fn put_artifact(app: &Router, hash: &str, body: Vec<u8>) {
+        assert_eq!(
+            put_artifact_status(app, hash, body).await,
+            StatusCode::OK,
+            "PUT {hash} must 200"
+        );
+    }
+
+    /// B-024 create-only: a fresh insert is charged in full, and a SECOND PUT to
+    /// the same key is REFUSED with 409 — the bytes are never overwritten, so
+    /// `bytes_used` cannot change on a re-PUT. This supersedes the old
+    /// overwrite-byte-delta reconciliation (rt34): with overwrites refused there
+    /// is no grow/shrink delta to account, and the "PUT 1B then PUT 100MiB under
+    /// the same key" free-storage exploit shape simply cannot be issued.
     #[tokio::test]
-    async fn put_overwrite_accounts_true_byte_delta_not_all_or_nothing() {
+    async fn put_is_create_only_second_put_refused_409() {
         let (state, store) = fixture_with_byte_accounting();
         let app = router(state);
         let used = || store.used(TEST_AUTH_TENANT, TEST_BYTES_REGION);
@@ -2236,26 +2251,28 @@ mod tests {
         put_artifact(&app, "k", vec![b'a']).await;
         assert_eq!(used(), 1, "fresh insert charges the full new bytes");
 
-        // 2) Same-size overwrite (1 → 1) → net 0 (accrue 1, release prior 1).
-        put_artifact(&app, "k", vec![b'b']).await;
-        assert_eq!(used(), 1, "same-size overwrite nets zero");
-
-        // 3) GROW 1 → 100 (the exploit shape) → +99 (accrue 100, release prior 1).
-        put_artifact(&app, "k", vec![0u8; 100]).await;
+        // 2) Any second PUT to the same key — same size, GROW, or SHRINK — is
+        //    refused create-only (409). The stored bytes and the charge are
+        //    unchanged: the reservation the route accrued up front is released
+        //    on the refusal, so `used` stays exactly the first insert's size.
         assert_eq!(
-            used(),
-            100,
-            "grow must add the delta — the OLD rollback would have released the \
-             full 100 leaving used≈1 with 100 bytes on disk (the bypass)"
+            put_artifact_status(&app, "k", vec![0u8; 100]).await,
+            StatusCode::CONFLICT,
+            "a GROW re-PUT (the old free-storage exploit shape) must be refused 409"
         );
+        assert_eq!(used(), 1, "a refused overwrite must not change bytes_used");
 
-        // 4) SHRINK 100 → 1 → -99 (accrue 1, release prior 100).
-        put_artifact(&app, "k", vec![b'c']).await;
-        assert_eq!(used(), 1, "shrink must decrease bytes_used to the new size");
+        assert_eq!(
+            put_artifact_status(&app, "k", vec![b'b']).await,
+            StatusCode::CONFLICT,
+            "a same-size re-PUT must be refused 409"
+        );
+        assert_eq!(used(), 1, "still the first insert's size after a refusal");
     }
 
-    /// A SECOND distinct key is charged independently — proves the release
-    /// targets the OVERWRITTEN key's prior, not the whole tenant.
+    /// Distinct keys are each charged independently, and a re-PUT of an existing
+    /// key is refused create-only (409) — proving the refusal targets the exact
+    /// stored object, not the whole tenant, and never disturbs another key.
     #[tokio::test]
     async fn put_distinct_keys_accumulate_independently() {
         let (state, store) = fixture_with_byte_accounting();
@@ -2264,15 +2281,19 @@ mod tests {
 
         put_artifact(&app, "k1", vec![0u8; 10]).await;
         assert_eq!(used(), 10);
-        // Fresh second key: no prior to release → full add.
+        // Fresh second key: full add.
         put_artifact(&app, "k2", vec![0u8; 25]).await;
-        assert_eq!(used(), 35, "two fresh keys sum (no spurious release)");
-        // Overwrite k1 same size: net 0 → total unchanged.
-        put_artifact(&app, "k1", vec![1u8; 10]).await;
+        assert_eq!(used(), 35, "two fresh keys sum");
+        // Re-PUT k1: refused create-only, total unchanged, k2 untouched.
+        assert_eq!(
+            put_artifact_status(&app, "k1", vec![1u8; 10]).await,
+            StatusCode::CONFLICT,
+            "a re-PUT of an existing key is refused 409"
+        );
         assert_eq!(
             used(),
             35,
-            "same-size overwrite of one key leaves the total"
+            "a refused re-PUT of one key leaves the total (and the other key) intact"
         );
     }
 
@@ -2324,20 +2345,14 @@ mod tests {
 
     // ── C1: per-object write serialization (no double-release / no underflow) ──
 
-    /// The KILLING C1 test: N CONCURRENT shrink-PUTs to the SAME key must net
-    /// the TRUE on-disk delta — never double-release the prior size.
-    ///
-    /// Without the per-object lock, two+ concurrent same-key PUTs each probe
-    /// the SAME prior length `L` (`R2KvStore::write`'s GET-presence probe is not
-    /// serialized) and each `release(L)`, underflowing `bytes_used` well below
-    /// the true on-disk size while real storage is unchanged. We prime a large
-    /// (1000-byte) object, then fire N=8 concurrent tiny (1-byte) overwrites.
-    /// The TRUE final size is 1 byte, so `bytes_used` MUST equal 1 — never a
-    /// double-released value (which would be 0 / underflowed, or some racy
-    /// value < 1). The per-key `tokio::sync::Mutex` serializes probe→put→release
-    /// so exactly ONE prior gets released per real overwrite.
+    /// B-024 create-only under concurrency: with the key already present, N
+    /// CONCURRENT PUTs to the SAME key are ALL refused 409 and the primed bytes
+    /// are never mutated. The per-(tenant, team, hash) write lock serializes the
+    /// probe→refuse decision, so no interleaving lets an overwrite slip through
+    /// (the old double-release race required an overwrite to happen at all;
+    /// create-only removes the overwrite, so the race is gone by construction).
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn concurrent_same_key_shrink_puts_net_true_delta_no_double_release() {
+    async fn concurrent_same_key_puts_all_refused_create_only() {
         let (state, store) = fixture_with_byte_accounting();
         let app = router(state);
         let used = || store.used(TEST_AUTH_TENANT, TEST_BYTES_REGION);
@@ -2346,13 +2361,10 @@ mod tests {
         put_artifact(&app, "shared", vec![0u8; 1000]).await;
         assert_eq!(used(), 1000, "primed large object");
 
-        // Fire N concurrent tiny (1-byte) overwrites of the SAME key. N MUST be
-        // <= TURBO_PUT_CONCURRENCY_LIMIT (4): the per-tenant PutConcurrencyGuard
-        // 429s the (limit+1)th in-flight PUT, so N > 4 made this test flaky (a
-        // 429 tripped the "each PUT 200s" assert depending on scheduling). 4
-        // concurrent same-key shrinks still exercise the double-release race
-        // (without the per-key lock they'd each probe prior=1000 and N-tuple
-        // -release it), so the lock's correctness is proven deterministically.
+        // Fire N concurrent PUTs to the SAME, already-present key. N <=
+        // TURBO_PUT_CONCURRENCY_LIMIT (4) so the per-tenant PutConcurrencyGuard
+        // never 429s one of them (which would muddy the create-only assertion).
+        // Every one targets an existing key, so every one must be refused 409.
         const N: usize = 4;
         let mut handles = Vec::with_capacity(N);
         for i in 0..N {
@@ -2373,19 +2385,20 @@ mod tests {
             }));
         }
         for h in handles {
-            assert_eq!(h.await.expect("join"), StatusCode::OK, "each PUT 200s");
+            assert_eq!(
+                h.await.expect("join"),
+                StatusCode::CONFLICT,
+                "every concurrent re-PUT of an existing key must be refused 409"
+            );
         }
 
-        // The TRUE on-disk size is 1 byte (last writer wins, all writes are
-        // 1 byte). With the per-key lock, each overwrite releases exactly its
-        // own prior, so bytes_used reconciles to the true size: 1. Without the
-        // lock, concurrent probes would each see prior=1000 and double/N-tuple
-        // -release it, underflowing bytes_used to 0 (saturating) — the bug.
+        // The primed 1000-byte object is untouched: no overwrite happened, so
+        // bytes_used stays exactly 1000 — there is no prior to release and no
+        // double-release race to trip.
         assert_eq!(
             used(),
-            1,
-            "concurrent same-key shrinks must net the TRUE on-disk size (1), \
-             not a double-released / underflowed value"
+            1000,
+            "refused overwrites must leave the primed object and its charge intact"
         );
     }
 
