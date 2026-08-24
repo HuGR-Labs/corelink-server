@@ -35,26 +35,27 @@ const REPO = "corelink-server";
 // page" URL 404s for every reader on every page.
 
 /**
- * Canonical default statuspage URL (DEBT-016 closure, R-prep wave-24).
+ * Canonical default statuspage URL.
  *
- * Operator-bound provisioning (see `specs/_runbooks/STATUSPAGE-INIT.md`):
+ * The default is the vendor's own host, `https://hugrl.betteruptime.com`
+ * (`apps/docs/src/statuspage-url.ts`). That is a decision, not a placeholder.
  *
- *   Option A — CNAME (zero docs rebuild, preferred):
- *     Operator owns `status.corelink.humangr.com` DNS and CNAMEs it to the real
- *     Atlassian Statuspage instance (e.g. `corelink.statuspage.io`). All
- *     literal URLs in MDX trust pages resolve correctly with no rebuild.
+ * A branded `status.corelink.humangr.com` was advertised for months and never
+ * served: it is a THIRD-level name, outside the one-level `*.humangr.com`
+ * coverage of Cloudflare Universal SSL, so Cloudflare holds no certificate for
+ * it — and BetterStack rejects the Host because a custom domain is a paid-plan
+ * feature this account does not carry. Neither side can terminate TLS.
+ * Binding it at the vendor was tried on 2026-08-24 and REVERTED: BetterStack
+ * makes the vanity host canonical the moment it is set, which 301'd the one
+ * URL that works to one with no certificate. The owner decided not to buy the
+ * plan, so the branded hostname is retired rather than left advertised.
  *
- *   Option B — env-var override (rebuild required):
- *     Operator sets `STATUSPAGE_URL=https://status.example.com` before
- *     `pnpm build`. Trust-page MDX consumes the URL via the
- *     `siteConfig.customFields.statuspageUrl` accessor (used by shared
- *     components / `getStatuspageUrl()` helper). Existing literal
- *     `https://status.corelink.humangr.com` references remain as the **default
- *     canonical host** — Option A is the preferred provisioning path.
+ * `STATUSPAGE_URL` still overrides at build time, which is the path to use if
+ * a branded host is ever provisioned.
  *
- * The default value is the canonical wave-19 commit value referenced from
- * 5 customer-facing trust pages × 4 locales (en/pt-BR/es-419/de) and
- * 20+ internal runbooks + spec docs.
+ * Keep the status page on infrastructure we do not run. Proxying it through
+ * our own Worker would win the brand back and take the page down in exactly
+ * the incident it exists to report.
  */
 const STATUSPAGE_URL = getStatuspageUrl();
 

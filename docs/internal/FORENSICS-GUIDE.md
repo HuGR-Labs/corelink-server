@@ -46,7 +46,7 @@ useful war room member within 5 minutes.
   `#inc-YYYYMMDD-N` channel has been spun up, join that too.
 - Voice bridge: Zoom link in the `#incident-active` topic. Mic muted
   by default; unmute only to commit to an action.
-- Status page admin: <https://status.corelink.humangr.com/admin> — ⚠️ **UNAVAILABLE**:
+- Status page admin: <https://hugrl.betteruptime.com/admin> — ⚠️ **UNAVAILABLE**:
   this URL TLS-fails (connection resets during the TLS handshake), even though the
   hostname itself resolves (CNAME to `hugrl.betteruptime.com`). The working status
   page is **<https://hugrl.betteruptime.com>** — use that instead. If you need

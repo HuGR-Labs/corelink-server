@@ -1,7 +1,7 @@
 # CoreLink BetterStack synthetic monitoring probes
 #
 # Status page: https://uptime.betterstack.com/api/v2/status-pages/247652
-# Custom domain: https://status.corelink.humangr.com
+# Custom domain: https://hugrl.betteruptime.com
 #
 # Apply with: scripts/apply-betterstack-probes.sh --dry-run
 # Live apply (Owner-only): scripts/apply-betterstack-probes.sh --apply

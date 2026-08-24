@@ -37,41 +37,44 @@ alignment — is documented in
 
 ## Status page
 
-[status.corelink.humangr.com](https://status.corelink.humangr.com) is the **single source of
-truth** during an incident. It is operated by Atlassian Statuspage and is
-isolated from the CoreLink production fabric — if CoreLink is down, the
-status page is up.
+[hugrl.betteruptime.com](https://hugrl.betteruptime.com) is the **single source of
+truth** during an incident. It is operated by **Better Stack**, on
+infrastructure separate from the CoreLink production fabric — if CoreLink is
+down, the status page is up. It is served from the vendor's own hostname on
+purpose: a branded name would have to be served through infrastructure we run, and a status page that shares our fate goes quiet in
+exactly the incident it exists to report.
 
-Eight components are tracked:
+Two components are tracked today:
 
-1. **API ingress** — `corelink-api.humangr.com` egress.
-2. **CAS read path** — content-addressable read operations.
-3. **CAS write path** — content-addressable write operations.
-4. **Action cache** — REAPI v2 action-result reads/writes.
-5. **Audit chain** — append + read + Merkle proof endpoints.
-6. **Admin plane** — `humangr.com/corelink`, dashboard, billing.
-7. **Identity (Clerk)** — sign-in, MFA, token refresh.
-8. **BYOK envelope** — KMS round-trip per provider.
+1. **CoreLink API Health**
+2. **CoreLink Container Storage**
 
-Per-region status is shown for each component (where applicable).
+This page previously listed eight components — API ingress, CAS read, CAS
+write, action cache, audit chain, admin plane, identity and BYOK envelope — and
+promised per-region status for each. The status page has never carried them.
+The list is corrected here rather than left as an aspiration, because a
+component a customer cannot see the state of is not a component that is being
+reported on.
 
 ### Subscribe
 
-You can subscribe to status updates by:
+**Programmatic monitoring** — `https://hugrl.betteruptime.com/index.json`
+returns the page state as JSON, including `data.attributes.aggregate_state`.
+This is the same endpoint the status indicator in our docs header reads.
 
-- **Email** — sign up at [status.corelink.humangr.com](https://status.corelink.humangr.com).
-- **SMS** — text the keyword from the status page (US / EU numbers
-  supported).
-- **RSS** — `https://status.corelink.humangr.com/history.rss`
-  / `https://status.corelink.humangr.com/history.atom`.
-- **Webhook** — Slack and Microsoft Teams integrations available;
-  PagerDuty webhook supported.
-- **JSON API** — `https://status.corelink.humangr.com/api/v2/summary.json` for
-  programmatic monitoring.
+**Email, SMS, RSS and webhook subscriptions are NOT available today.** This
+page previously advertised all four, plus a
+`https://hugrl.betteruptime.com/api/v2/summary.json` JSON endpoint and an
+enterprise incident-comms distribution address. None of it was real: the
+subscription feature is switched off on the status page (`subscribable:
+false`), and both `/history.rss` and `/api/v2/summary.json` are
+Atlassian-Statuspage paths that this vendor does not serve — they 301 to the
+homepage, so a monitoring script polling them would parse HTML and never
+report a thing.
 
-Enterprise tenants can also pre-register a dedicated incident-comms
-distribution address inside tenant settings; SEV1 events are pushed there
-in parallel with the public status page.
+If you need to be told rather than to poll, email **support@humangr.com** and
+we will add you to the incident list by hand until subscriptions are turned
+on.
 
 ## Communicating during a SEV1
 
@@ -158,4 +161,4 @@ pre-GA) verifies the rotation actually pages — see
 - [Sub-processors](./subprocessors)
 - [Security policy (VDP)](/security/policy)
 - [Responsible disclosure](/security/policy)
-- [Status page](https://status.corelink.humangr.com)
+- [Status page](https://hugrl.betteruptime.com)

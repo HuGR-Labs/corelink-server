@@ -285,11 +285,11 @@ export default function IncidentHistory(): ReactElement {
             </li>
             <li>
               <a
-                href="https://status.corelink.humangr.com"
+                href="https://hugrl.betteruptime.com"
                 rel="noopener noreferrer"
                 target="_blank"
               >
-                status.corelink.humangr.com
+                hugrl.betteruptime.com
               </a>
             </li>
           </ul>

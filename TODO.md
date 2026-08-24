@@ -85,7 +85,7 @@
 - [ ] Dashboard MVP em `app.corelink.humangr.com`
 - [ ] Stripe checkout integrado (tiers BR + global)
 - [ ] Docs em `docs.corelink.humangr.com`
-- [ ] Status page Better Stack em `status.corelink.humangr.com`
+- [ ] Status page Better Stack em `hugrl.betteruptime.com`
 
 ## Semana 12 — Soft launch
 

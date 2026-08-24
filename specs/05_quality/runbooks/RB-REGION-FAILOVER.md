@@ -130,7 +130,7 @@ during the transition. ETA to full recovery: ~30 min. Next update: +10 min.
 ```
 [Identified] Traffic from {REGION} has been routed to {TARGET_REGION}.
 Service is operational. We are investigating root cause and will provide
-a post-incident report within 14 days at status.corelink.humangr.com/incidents.
+a post-incident report within 14 days at hugrl.betteruptime.com/incidents.
 ```
 
 ## Post-incident

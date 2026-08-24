@@ -212,7 +212,7 @@ const QUADRANTS: readonly TrustQuadrant[] = [
     cards: [
       {
         title: "Status page + uptime history",
-        href: "https://status.corelink.humangr.com",
+        href: "https://hugrl.betteruptime.com",
         status: "LIVE",
         summary:
           "RSS / email / SMS / webhook subscription. Live incident timeline, scheduled maintenance, and sub-processor change broadcasts.",

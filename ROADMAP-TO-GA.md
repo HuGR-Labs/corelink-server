@@ -135,7 +135,7 @@ Phase 3 triggers (only when a paying customer explicitly asks):
 | R-X1 | **First 3 users churn before feedback captured** | M | H | Hand-deliver onboarding for first 3; weekly 15-min check-in calls |
 | R-X2 | **No customer asks for SOC 2 / DPA / pentest — but enterprise lead asks for everything at once and you can't deliver** | L | M | Have a "we're starting SOC 2 next month" honest answer ready; many startups accept a roadmap commitment in lieu of cert |
 | R-X3 | **Real-world traffic surfaces invariant bugs not caught in property tests** | M | H | Canary deploy (5% → 25% → 100%) per S-13 admin plane rollout; auto-rollback at error budget breach (substrate from Wave 32 already covers this) |
-| R-X4 | **Vendor outage during a customer's first hour** (Clerk / Stripe / CF) | L | M | Vendor SLAs; status page (`status.corelink.humangr.com`) already live; document fallback per WI-S19-001 chaos handling |
+| R-X4 | **Vendor outage during a customer's first hour** (Clerk / Stripe / CF) | L | M | Vendor SLAs; status page (`hugrl.betteruptime.com`) already live; document fallback per WI-S19-001 chaos handling |
 | R-X5 | **Solo-founder burnout from oncall** | M | H | Phase 1 oncall is best-effort, NOT 24/7 SLA; honest with customers about response window |
 | R-X6 | **Free-tier abuse before pricing is enforced** | M | L | Rate limits + per-tenant quotas already wired (S-10 + S-13); monitor R2 storage cost daily |
 | R-X7 | **Landing page misrepresents what works** | M | M | Only advertise features that ship; "coming soon" labels for everything else |
@@ -298,7 +298,7 @@ Replaces InMemory fakes with real HTTP/CF/KMS clients. Tracked via Wave 32 produ
 | R4-4 | **Cookie consent UI live** — Cookiebot or equivalent + integration with consent ledger (WI-S11-003) | 1 Sonnet | LGPD + GDPR + ePrivacy |
 | R4-5 | **Privacy/legal pages real content** | 1 Sonnet | (Now handled via Phase 1 L4 template) |
 | R4-6 | **4-locale stub translations replaced with real translations** | Translators (hired contractors) | (Deferred to Phase 3 enterprise demand) |
-| R4-7 | **Status page** at `status.corelink.humangr.com` — BetterStack (live as of 2026-05-22) | 1 Sonnet + Gustavo | Customer-facing — DONE |
+| R4-7 | **Status page** at `hugrl.betteruptime.com` — BetterStack (live as of 2026-05-22) | 1 Sonnet + Gustavo | Customer-facing — DONE |
 | R4-8 | **Email + SMS providers** — SES (transactional) + Twilio (SMS) wired into notification path | 1 Sonnet + Gustavo (AWS/Twilio accounts) | DSR notifications, breach alerts |
 
 ---
