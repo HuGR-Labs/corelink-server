@@ -137,16 +137,43 @@ Bazel users buy.
 The fix belongs in the runner image (`corelink-runners`), not in each example's
 `.bazelrc`. Until it lands, the workaround stays and this item holds the debt.
 
+**Closed 2026-08-24, end to end.** The entrypoint provisions `/dev/shm`
+(corelink-runners #502), the image was rebuilt (build 32758127683) and the fabric
+repinned onto it (#503, spawn-worker deployed), and the example's
+`--spawn_strategy=local` workaround is **deleted** — which is the only proof that
+counts, since the workaround would have hidden a fix that did not work.
+
+Sandboxed run on the rolled image: **32761594353**, `3 remote cache hit`, cold
+14 866 ms, warm 20 882 ms, no sandbox error.
+
+The fix prefers a real tmpfs and falls back to a plain directory, because this
+fabric does not grant `CAP_SYS_ADMIN` — the fallback is the branch production
+takes, so it is the branch the regression test covers hardest, and it announces
+itself in the job log rather than leaving a performance mystery.
+
+**A second defect surfaced on the way and is fixed here too:** the example had no
+`.bazelversion`, so bazelisk resolved `latest` over the network on every run. That
+lookup returned **401** from the runner and the build died before Bazel started —
+a failure that reads as "our cache is broken". It is also the wrong shape for a
+cache example regardless of the 401: a new Bazel release can change action keys
+and silently invalidate every entry being measured. Pinned to 9.2.0, read from
+the last green run's log rather than picked.
+
 ```backlog
 id: B-025
-repo: corelink-runners
+repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  grep -q "spawn_strategy=local" examples/bazel-starter/.bazelrc
+  ! grep -qE "^[^#]*spawn_strategy=local" examples/bazel-starter/.bazelrc && \
+  test -f examples/bazel-starter/.bazelversion
 verify-means: |
-  open while the example still needs the workaround; goes red once the runner
-  image provides /dev/shm and the line is deleted
+  done — the sandbox works on the fabric image, so the workaround is gone and the
+  Bazel version is pinned. Red if either is reintroduced: the workaround would
+  mean the image regressed, and an unpinned version means the example is not
+  reproducible. The grep ignores comments on purpose — the comment explaining the
+  removal names the flag, and matching it would keep this red forever, which is
+  how B-005's check ended up counting its own prose.
 last-verified: 2026-08-24
 ```
 
