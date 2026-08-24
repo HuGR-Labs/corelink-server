@@ -91,7 +91,7 @@ The PAT is read from `CORELINK_PAT` env var — never shell-expanded into argv
 | Flag | Default | Purpose |
 |---|---|---|
 | `--remote_cache` | — | CoreLink REAPI v2 endpoint |
-| `--credential_helper` | — | Helper script path (relative to workspace) |
+| `--credential_helper` | — | `corelink-api.humangr.com=<script>`. **Keep the host prefix** — an unscoped helper hands your PAT to every host Bazel fetches from, including `bcr.bazel.build` |
 | `--remote_timeout` | 30s | Per-request deadline |
 | `--remote_retries` | 3 | Retry on transient errors (FM-150) |
 | `--remote_upload_local_results` | true | Upload new build results to cache |

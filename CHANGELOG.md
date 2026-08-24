@@ -37,6 +37,16 @@ Each entry cross-references:
   self-tested by `scripts/test_cache_hit_ratio.sh` against real Bazel 9
   execution logs, which also refuses to count a local `--disk_cache` hit as a
   remote one.
+- **The Bazel starter sent its PAT to every host Bazel fetched from.**
+  `.bazelrc` registered `--credential_helper` with no `<host>=` prefix, which
+  applies the helper to *all* URIs — so each build handed the tenant's live
+  CoreLink PAT to `bcr.bazel.build` on every module-registry request. The
+  registry answered `401`, which is also why the cold build died before it ever
+  reached CoreLink. The helper is now scoped to `corelink-api.humangr.com`, and
+  a new negative scenario (N5) fails the build if that scoping is ever dropped.
+- The `N4` negative scenario grepped `.bazelrc` for `--remote_header` without
+  stripping comments, so it matched the header comment explaining why
+  `--remote_header` is banned and failed on a correct file.
 - The Bazel credential helper returned empty headers and exit 0 when
   `CORELINK_PAT` was unset, turning a missing credential into a mid-build 401.
   It now fails with the error `README.md` already documented.
