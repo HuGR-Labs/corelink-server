@@ -62,6 +62,7 @@ impl TenantResolver for StubResolver {
             Ok(ResolvedTenant {
                 tenant_id: TENANT.to_owned(),
                 can_write: true,
+                runner_job: false,
             })
         } else {
             Err(TenantResolveError::InvalidPat)

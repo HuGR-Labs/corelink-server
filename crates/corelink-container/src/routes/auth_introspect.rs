@@ -1112,6 +1112,7 @@ mod tests {
             pat_hash: hash.to_owned(),
             scope: "cas:rw".to_owned(),
             find_only: false,
+            runner_job: false,
         }
     }
 

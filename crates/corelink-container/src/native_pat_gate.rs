@@ -471,6 +471,7 @@ mod tests {
             pat_hash: pat_hash.to_owned(),
             scope: "cas:rw".to_owned(),
             find_only: false,
+            runner_job: false,
         }
     }
 
@@ -482,6 +483,7 @@ mod tests {
             pat_hash: pat_hash.to_owned(),
             scope: "cas:r".to_owned(),
             find_only: false,
+            runner_job: false,
         }
     }
 

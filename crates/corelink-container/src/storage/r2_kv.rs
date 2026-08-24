@@ -1,9 +1,13 @@
 //! R2-backed opaque key→value store for the Turborepo (and future cargo/
 //! sccache) cache surface.
 //!
-//! Unlike the content-addressed CAS, this store does **NOT** verify that
-//! the key equals the hash of the bytes — the key is opaque (a Turborepo
-//! artifact hash / an sccache cache key). It implements the
+//! Unlike the content-addressed CAS, this store cannot verify that the key
+//! equals the hash of the bytes — the key is opaque (a Turborepo artifact
+//! hash: xxhash, sha512-prefix, or something custom, chosen by the client).
+//! What it CAN do, and now does, is carry CoreLink's own digest of the bytes
+//! alongside them, so tampering or bitrot BELOW the API is detected instead of
+//! being served as a cache hit (see [`INTEGRITY_MAGIC`] and
+//! AUDIT-2026-08-23-CACHE-INTEGRITY-COVERAGE F-2). It implements the
 //! [`corelink_turbo_bridge::adapter::CasReadStore`] +
 //! [`CasWriteStore`](corelink_turbo_bridge::adapter::CasWriteStore) ports
 //! over a pluggable [`KvBackend`], closing the `routes/turbo_v8.rs`
@@ -43,6 +47,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use corelink_hash::Digest;
 use corelink_tenant_path::{derive_prefix, TenantDerivationKey};
 use corelink_turbo_bridge::adapter::{CasReadStore, CasWriteStore};
 use corelink_turbo_bridge::TurboBridgeError;
@@ -153,11 +158,115 @@ impl R2KvStore {
     }
 }
 
+/// Magic prefix marking an object that carries an integrity envelope.
+///
+/// # Why an envelope and not a sidecar object
+///
+/// A Turborepo key is opaque, so the ONLY integrity statement this surface can
+/// make is CoreLink's own: "these are the bytes we stored". Keeping that digest
+/// in a second R2 object would double the Class-A writes and add a Class-B read
+/// to every hit; framing it into the object itself costs one 40-byte header and
+/// no extra operations.
+///
+/// # What it does and does not defend
+///
+/// It detects R2 bitrot, a truncated or swapped object, and tampering at the
+/// storage tier — everything BELOW our API. It does NOT detect a client that
+/// uploads wrong bytes under its own key: nothing can, because the key is not a
+/// preimage of the content. That limit is protocol, not implementation.
+///
+/// # Backward compatibility
+///
+/// Objects written before this existed have no magic and are served unverified
+/// rather than dropped — evicting a live cache to introduce a check would trade
+/// a silent risk for a certain rebuild storm. They gain the envelope the next
+/// time they are written. The residual: a LEGACY payload whose first 8 bytes
+/// happen to be this magic AND which is at least [`ENVELOPE_LEN`] long would be
+/// read as an envelope and fail its digest check, yielding one false miss that
+/// self-heals on the client's re-upload. The magic is deliberately not a
+/// prefix of any common archive/compression header, and the failure mode is a
+/// re-fetch, never corrupt bytes served as good.
+const INTEGRITY_MAGIC: &[u8; 8] = b"CLTBINT1";
+
+/// `INTEGRITY_MAGIC` + a 32-byte BLAKE3 digest.
+const ENVELOPE_LEN: usize = INTEGRITY_MAGIC.len() + corelink_hash::DIGEST_LEN;
+
+/// Wrap `payload` in the integrity envelope.
+fn wrap_envelope(payload: &[u8]) -> Vec<u8> {
+    let digest = Digest::compute(payload);
+    let mut out = Vec::with_capacity(ENVELOPE_LEN + payload.len());
+    out.extend_from_slice(INTEGRITY_MAGIC);
+    out.extend_from_slice(digest.as_bytes());
+    out.extend_from_slice(payload);
+    out
+}
+
+/// The verdict of reading a stored object back.
+#[derive(Debug, PartialEq, Eq)]
+enum Unwrapped<'a> {
+    /// Enveloped and the digest matched — these are the bytes we stored.
+    Verified(&'a [u8]),
+    /// Written before the envelope existed. Served as-is, unverified.
+    Legacy(&'a [u8]),
+    /// Enveloped and the digest did NOT match. The caller must treat this as a
+    /// MISS, never serve it.
+    Corrupt,
+}
+
+/// Inspect a stored object: verified payload, legacy passthrough, or corrupt.
+fn unwrap_envelope(stored: &[u8]) -> Unwrapped<'_> {
+    let Some(rest) = stored.strip_prefix(INTEGRITY_MAGIC) else {
+        return Unwrapped::Legacy(stored);
+    };
+    let Some((claimed, payload)) = rest.split_at_checked(corelink_hash::DIGEST_LEN) else {
+        // Magic present but the object is too short to hold a digest: it was
+        // truncated, or it is legacy content that starts with the magic. Either
+        // way we cannot verify it, and the fail-safe direction is a miss.
+        return Unwrapped::Corrupt;
+    };
+    // Plain equality is correct here: both sides come from storage, neither is
+    // a secret, and there is no attacker-chosen comparison to time.
+    if Digest::compute(payload).as_bytes() == claimed {
+        Unwrapped::Verified(payload)
+    } else {
+        Unwrapped::Corrupt
+    }
+}
+
+/// The PAYLOAD length of a stored object, in the same unit the route accounts
+/// bytes in. The envelope header is storage overhead and is excluded, so
+/// byte-accounting means the same thing before and after this change.
+fn payload_len(stored: &[u8]) -> u64 {
+    match unwrap_envelope(stored) {
+        Unwrapped::Verified(p) | Unwrapped::Legacy(p) => p.len() as u64,
+        // Unreadable: charge the whole object rather than under-count.
+        Unwrapped::Corrupt => stored.len() as u64,
+    }
+}
+
 impl CasReadStore for R2KvStore {
     fn read(&self, tenant: &str, key: &str) -> Result<Vec<u8>, TurboBridgeError> {
         let object_key = self.object_key(tenant, key)?;
         match Self::block_on(self.backend.get(&object_key)) {
-            Ok(Some(bytes)) => Ok(bytes),
+            Ok(Some(bytes)) => match unwrap_envelope(&bytes) {
+                Unwrapped::Verified(payload) => Ok(payload.to_vec()),
+                Unwrapped::Legacy(payload) => Ok(payload.to_vec()),
+                // Stored bytes that do not match the digest stored WITH them
+                // are not a cache hit. Report a miss so the client rebuilds and
+                // re-uploads, which also self-heals the entry — the same
+                // posture `adapter_cache`'s re-hash-on-read takes. The key is
+                // logged (it is a client-chosen artifact hash, not PII); the
+                // bytes never are.
+                Unwrapped::Corrupt => {
+                    tracing::error!(
+                        object_key = %object_key,
+                        "turbo kv: stored bytes failed their own integrity digest; serving a MISS"
+                    );
+                    Err(TurboBridgeError::NotFound {
+                        hash: key.to_owned(),
+                    })
+                }
+            },
             Ok(None) => Err(TurboBridgeError::NotFound {
                 hash: key.to_owned(),
             }),
@@ -187,14 +296,20 @@ impl CasWriteStore for R2KvStore {
         // conservative, never under). (The `KvBackend` port exposes only
         // get/put; the prod R2 backend's `get` is the presence probe — the same
         // call `read` already uses.)
+        //
+        // The prior size is reported in PAYLOAD bytes (`payload_len` strips any
+        // envelope header), which is the unit the route accrued the new write
+        // in — so the delta arithmetic is unchanged by the envelope. The header
+        // itself is a flat 40 bytes of storage overhead per object, not charged
+        // to the tenant.
         let prior_len = match Self::block_on(self.backend.get(&object_key)) {
-            Ok(Some(prior)) => Some(prior.len() as u64),
+            Ok(Some(prior)) => Some(payload_len(&prior)),
             Ok(None) => None,
             // Fail CLOSED: treat a probe error as a fresh insert ⇒ charge the
             // full new bytes (do not release anything we cannot confirm).
             Err(_) => None,
         };
-        Self::block_on(self.backend.put(&object_key, bytes))
+        Self::block_on(self.backend.put(&object_key, wrap_envelope(&bytes)))
             .map_err(|e| TurboBridgeError::Internal(format!("r2 kv put: {e}")))?;
         Ok(prior_len)
     }
@@ -451,6 +566,160 @@ mod tests {
         assert_eq!(s.read("t", "k").unwrap(), Vec::<u8>::new());
         // Re-write over the now-empty object ⇒ prior is Some(0).
         assert_eq!(s.write("t", "k", b"new".to_vec()).unwrap(), Some(0));
+    }
+
+    // ── AUDIT-2026-08-23 F-2: the integrity envelope ──
+
+    /// The envelope is transparent to callers: what goes in comes out, byte for
+    /// byte, including the empty object.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn envelope_round_trips_every_payload_unchanged() {
+        let backend = FakeBackend::new();
+        let s = store_with(backend.clone());
+        for bytes in [vec![], vec![0u8], vec![0xFFu8; 4096], (0..=255u8).collect()] {
+            s.write("t", "k", bytes.clone()).unwrap();
+            assert_eq!(s.read("t", "k").unwrap(), bytes, "payload must survive");
+            let stored = backend
+                .store
+                .lock()
+                .unwrap()
+                .get(&s.object_key("t", "k").unwrap())
+                .cloned()
+                .expect("stored");
+            assert!(
+                stored.starts_with(INTEGRITY_MAGIC),
+                "the stored object must carry the envelope"
+            );
+            assert_eq!(
+                stored.len(),
+                bytes.len() + ENVELOPE_LEN,
+                "exactly one 40-byte header of overhead, never more"
+            );
+        }
+    }
+
+    /// The point of the whole exercise: bytes mutated UNDER the API — R2 bitrot,
+    /// a swapped object, tampering at the storage tier — must not be served as a
+    /// cache hit. The client sees a miss, rebuilds, and the entry self-heals.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn tampered_bytes_read_as_a_miss_not_a_hit() {
+        let backend = FakeBackend::new();
+        let s = store_with(backend.clone());
+        s.write("t", "k", b"the real artifact".to_vec()).unwrap();
+        let object_key = s.object_key("t", "k").unwrap();
+
+        // Flip one byte of the PAYLOAD, leaving the digest untouched.
+        {
+            let mut store = backend.store.lock().unwrap();
+            let obj = store.get_mut(&object_key).unwrap();
+            let byte = obj.last_mut().expect("the stored object is never empty");
+            *byte ^= 0xFF;
+        }
+        assert!(
+            matches!(s.read("t", "k"), Err(TurboBridgeError::NotFound { .. })),
+            "tampered payload must read as a MISS, never as bytes"
+        );
+
+        // And the mirror case: a mangled DIGEST is equally not a hit.
+        s.write("t", "k", b"the real artifact".to_vec()).unwrap();
+        {
+            let mut store = backend.store.lock().unwrap();
+            let obj = store.get_mut(&object_key).unwrap();
+            let byte = obj
+                .get_mut(INTEGRITY_MAGIC.len())
+                .expect("an enveloped object always has a digest");
+            *byte ^= 0xFF;
+        }
+        assert!(
+            matches!(s.read("t", "k"), Err(TurboBridgeError::NotFound { .. })),
+            "a mangled digest must read as a MISS"
+        );
+
+        // Self-heal: a normal re-upload restores a verifiable entry.
+        s.write("t", "k", b"the real artifact".to_vec()).unwrap();
+        assert_eq!(s.read("t", "k").unwrap(), b"the real artifact");
+    }
+
+    /// Objects written before the envelope existed must keep serving. Dropping
+    /// them to introduce a check would trade a silent risk for a certain
+    /// rebuild storm across every live Turborepo tenant.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn legacy_objects_still_serve_and_still_account_in_payload_bytes() {
+        let backend = FakeBackend::new();
+        let s = store_with(backend.clone());
+        let object_key = s.object_key("t", "legacy").unwrap();
+        // A pre-envelope object: raw payload, no header.
+        backend
+            .store
+            .lock()
+            .unwrap()
+            .insert(object_key.clone(), b"pre-envelope bytes".to_vec());
+
+        assert_eq!(
+            s.read("t", "legacy").unwrap(),
+            b"pre-envelope bytes",
+            "a legacy object must still be served"
+        );
+        // Overwriting it reports the prior size in PAYLOAD bytes — the unit the
+        // route accrued in — so the byte-accounting delta is unaffected by the
+        // format change.
+        assert_eq!(
+            s.write("t", "legacy", b"new".to_vec()).unwrap(),
+            Some("pre-envelope bytes".len() as u64)
+        );
+        // …and it is enveloped from now on.
+        assert!(backend
+            .store
+            .lock()
+            .unwrap()
+            .get(&object_key)
+            .unwrap()
+            .starts_with(INTEGRITY_MAGIC));
+    }
+
+    /// The envelope decoder, at its edges.
+    #[test]
+    fn unwrap_envelope_classifies_every_shape() {
+        // Enveloped and honest.
+        let good = wrap_envelope(b"payload");
+        assert_eq!(unwrap_envelope(&good), Unwrapped::Verified(b"payload"));
+
+        // No magic ⇒ legacy passthrough, whatever the length.
+        assert_eq!(unwrap_envelope(b""), Unwrapped::Legacy(b""));
+        assert_eq!(unwrap_envelope(b"raw"), Unwrapped::Legacy(b"raw"));
+
+        // Magic but truncated below a full digest ⇒ unverifiable ⇒ Corrupt.
+        // This is also the documented false-miss case for a legacy payload that
+        // happens to begin with the magic: a miss that self-heals, never bytes
+        // served as good.
+        let mut truncated = INTEGRITY_MAGIC.to_vec();
+        truncated.extend_from_slice(&[0u8; 4]);
+        assert_eq!(unwrap_envelope(&truncated), Unwrapped::Corrupt);
+
+        // Magic + a wrong digest ⇒ Corrupt.
+        let mut wrong = INTEGRITY_MAGIC.to_vec();
+        wrong.extend_from_slice(&[0u8; corelink_hash::DIGEST_LEN]);
+        wrong.extend_from_slice(b"payload");
+        assert_eq!(unwrap_envelope(&wrong), Unwrapped::Corrupt);
+
+        // An EMPTY payload is a legitimate, verifiable object — Turborepo can
+        // store one, and `Corrupt` here would break the empty-overwrite case.
+        let empty = wrap_envelope(b"");
+        assert_eq!(unwrap_envelope(&empty), Unwrapped::Verified(b""));
+    }
+
+    /// `payload_len` is what byte-accounting sees, so pin it on all three shapes.
+    #[test]
+    fn payload_len_excludes_the_header_and_never_under_counts() {
+        assert_eq!(payload_len(&wrap_envelope(b"12345")), 5);
+        assert_eq!(payload_len(b"legacy bytes"), "legacy bytes".len() as u64);
+        let mut corrupt = INTEGRITY_MAGIC.to_vec();
+        corrupt.extend_from_slice(&[0u8; 4]);
+        assert_eq!(
+            payload_len(&corrupt),
+            corrupt.len() as u64,
+            "an unreadable object is charged whole rather than under-counted"
+        );
     }
 
     /// rt34 finding #3/#4/#5/#6 — the byte-delta contract `write` exposes:

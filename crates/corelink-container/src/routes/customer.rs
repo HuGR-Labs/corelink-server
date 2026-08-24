@@ -2381,6 +2381,7 @@ mod tests {
             pat_hash,
             scope: "cas:rw".to_owned(),
             find_only: false,
+            runner_job: false,
         };
         let verifier = verifier_with_row(token_id, row, key);
         state.pat_gate = Some(Arc::new(NativePatGate::new_for_test(verifier)));
