@@ -76,6 +76,25 @@ else
   echo "    ok: $(basename "$published_tgz") matches sdks/js"
 fi
 
+echo "==> go module proxy"
+published_zip="$(find apps/docs/static/goproxy -name '*.zip' | head -1)"
+if [[ -z "$published_zip" ]]; then
+  echo "::error::no module zip published under apps/docs/static/goproxy" >&2
+  exit 1
+fi
+before="$(shasum -a 256 "$published_zip" | cut -d" " -f1)"
+python3 scripts/publish-go-sdk.py >/dev/null
+after="$(shasum -a 256 "$published_zip" | cut -d" " -f1)"
+# The publisher writes fixed timestamps, so a republish of unchanged sources is
+# byte-identical and this really is a content comparison.
+if [[ "$before" != "$after" ]]; then
+  echo "::error::the published Go module does not match a rebuild of sdks/go" >&2
+  echo "         published $before, rebuilt $after" >&2
+  fail=1
+else
+  echo "    ok: $(basename "$published_zip") matches sdks/go"
+fi
+
 if [[ "$fail" -ne 0 ]]; then
   echo >&2
   echo "Republish with the commands in docs/internal/sdk-publishing.md and commit the result." >&2
