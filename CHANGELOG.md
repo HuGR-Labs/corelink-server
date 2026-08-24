@@ -22,6 +22,25 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Changed
+
+- **Three GitHub-hosted lanes moved onto the self-hosted fabric (B-005).**
+  `backup-daily` and `backup-daily-verify` ran **daily** on `ubuntu-latest` —
+  the largest recurring hosted spend left against a mandate of zero — and
+  `e2e-prod` fired on push, pull request *and* a daily cron. All three now run on
+  `corelink`, each proven by a real dispatched run on the new fabric rather than
+  assumed: `cf-runner-c3049583`, `cf-runner-6b63e79b`, `cf-runner-c0da6b18`.
+  None went to the Mac fleet: five runners share one `$HOME` and `npm install -g`
+  into a shared home is what took the host down on 2026-06-15.
+
+### Fixed
+
+- **B-005's own check was counting comments.** It grepped workflow *text* for
+  `pull_request`, so five workflows matched on prose explaining their triggers.
+  Parsed as YAML, only two hosted workflows ever had a real PR trigger. The
+  check now parses the trigger block, and the item names the four lanes that are
+  genuinely still hosted with the reason each has not moved yet.
+
 ### Fixed
 
 - **The fifth Mac CI slot was gone, and could not have been restarted back

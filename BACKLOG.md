@@ -199,9 +199,45 @@ last-verified: 2026-08-23
 
 ### B-005 — hosted lanes still fire on PR/push
 
-The mandate is zero GitHub-hosted spend: a job runs on the self-hosted `corelink`
-fleet or it does not run. `lighthouse-ci` is a genuine exception pending a
-browser-baked image; the rest are not.
+The mandate is zero GitHub-hosted spend: a job runs on the self-hosted fleet or
+it does not run. `lighthouse-ci` is a genuine exception pending a browser-baked
+image; the rest are not.
+
+**Partially closed 2026-08-24 — three lanes moved and proven, and the item's own
+check was measuring the wrong thing.**
+
+Moved to `corelink` (the Cloudflare container fabric: Ubuntu 24.04, node + pnpm
+baked, apt available, and a `docker` shim over nerdctl/containerd), each proven
+by a real run on the new fabric rather than asserted:
+
+| lane | why it mattered | proof |
+|---|---|---|
+| `backup-daily` | ran **daily** — the largest recurring hosted cost | run 32755245261, `cf-runner-c3049583` |
+| `backup-daily-verify` | ran **daily** | run 32755083651, `cf-runner-6b63e79b` |
+| `e2e-prod` | fired on push, pull_request **and** a daily cron | run 32755381431, `cf-runner-c0da6b18` |
+
+None went to the Mac fleet, deliberately: those five runners share one `$HOME`,
+and `npm install -g` into a shared home is the class of mutation that took the
+host down on 2026-06-15. `e2e-prod` also *wants* a datacenter IP — it asserts
+what a customer's CI sees, and the Macs are a residential address the edge
+treats differently.
+
+**The check was counting comments.** `verify` grepped the file text for
+`pull_request`, so `codeql`, `cas_foundation`, `ffi-matrix-ci`, `semgrep` and
+`smoke-install` all matched on prose *explaining* their triggers — five false
+positives out of seven. Parsed as YAML, only two hosted workflows ever had a
+real `pull_request` trigger. The verify now parses the trigger block.
+
+**Still hosted, and why** — this is the remaining work, not a waiver:
+- `cosign-sign` (push): docker build + push. The fabric has a docker shim; it is
+  untested for a signing lane, and a broken signing path is worse than a hosted one.
+- `smoke-install` (push + schedule): needs a docker daemon, and is currently
+  failing 5 of 5 runs on hosted — moving a red lane hides which change fixed it.
+- `codeql` (schedule): supported self-hosted but needs the CodeQL bundle; heavy.
+- `cas-canary` (schedule): **genuine exception, already documented in-file** —
+  a datacenter IP is the point, it exists to see what a customer's CI sees.
+- `corelink-client-verify` (pull_request): one job, **already documented
+  in-file** — it needs a cbindgen manifest the fabric does not publish.
 
 ```backlog
 id: B-005
@@ -209,10 +245,23 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  grep -lE '^\s+runs-on:\s*ubuntu-latest' .github/workflows/*.yml \
-    | xargs grep -l 'pull_request' | head -1 | grep -q .
-verify-means: open while any ubuntu-latest workflow still has a pull_request trigger
-last-verified: 2026-08-23
+  python3 - <<'EOF'
+  import glob, sys, yaml
+  bad = []
+  for f in glob.glob(".github/workflows/*.yml"):
+      text = open(f).read()
+      if "runs-on: ubuntu" not in text:
+          continue
+      on = yaml.safe_load(text).get(True) or {}
+      if isinstance(on, dict) and ("pull_request" in on or "push" in on):
+          bad.append(f)
+  sys.exit(0 if bad else 1)
+  EOF
+verify-means: |
+  open while any workflow with an ubuntu job has a REAL pull_request or push
+  trigger, parsed from the YAML rather than grepped from the text — the previous
+  check matched comments and reported five workflows that trigger on neither.
+last-verified: 2026-08-24
 ```
 
 ---
