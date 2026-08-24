@@ -22,6 +22,24 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+
+- **feat(ops): the offsite audit archive had a monitor for corruption and none
+  for absence.** `audit-chain-daily-verify.yml` verifies the NDJSON chunks it
+  finds in `corelink-audit-weur`; it never asks D1 how many sealed rows never
+  became a chunk, so a day with zero chunks reads as a clean no-op — the
+  archiver could stop entirely and nothing would say so. New hourly cron
+  `.github/workflows/audit-archive-lag.yml` closes that gap with a two-clause
+  predicate over `audit_outbox`, T = 3h: it pages SEV-0 only when sealed
+  unarchived rows are older than T **and** `MAX(archived_at)` over the whole
+  table is older than T or NULL. Either clause alone is a false-alarm
+  generator — the first fires throughout the healthy 56k-row backlog drain,
+  the second during any genuinely quiet period; together they name the one
+  state worth waking someone for, with no stored trend state. Both
+  measurements land in the job summary on every run, pass or fail, so the
+  backlog tail is observable without a page. Runbook
+  `specs/_runbooks/RB-AUDIT-ARCHIVE-ABSENT.md`. Tracked as B-021.
+
 ### Fixed
 
 - **fix(cache): a runner-job credential could evict a tenant's sccache cache, and
@@ -61,6 +79,26 @@ Each entry cross-references:
   Nine regression cells cover both, including the two that matter most — the
   write-check still round-trips under a runner-job credential, and tampered bytes
   read as a miss instead of a hit.
+- **fix(ci): every PR a bot opens here is born with ZERO checks, and a PR with
+  no checks looks green.** GitHub does not create workflow runs for events
+  triggered by `GITHUB_TOKEN` (the documented anti-recursion rule;
+  `workflow_dispatch` and `repository_dispatch` are the only exceptions). Six
+  workflows open PRs automatically — `subprocessors-sync`, `okf-autoreconcile`,
+  `compliance-weekly`, `api-reference-sync`, `pre-cutover-weekly-cron`,
+  `release-notes` — and at least `subprocessors-sync.yml:96` and
+  `api-reference-sync.yml:72` hand the PR-creating action
+  `secrets.GITHUB_TOKEN`, so their PRs are ungated and can be merged past gates
+  that never ran. It has already happened: PR #1224 sits at 0 check runs and 0
+  commit statuses. New `.github/workflows/bot-pr-has-checks.yml` polls every 30
+  minutes (it cannot be `pull_request`-triggered — that is the very event
+  GitHub suppresses on these PRs), lists open PRs paginated, selects
+  bot-authored ones by the API's own `user.type == "Bot"` plus a login
+  allowlist, counts BOTH check runs and commit statuses on the head SHA, prints
+  every bot PR and its counts to the job summary pass or fail, and fails naming
+  each PR that has neither after a 15-minute grace. This is a compensating
+  control, not the fix: the durable fix is a GitHub App installation token via
+  `actions/create-github-app-token`, which needs a one-time owner action.
+
 - **fix(ops): a scheduled sweep that could not authenticate logged nothing at
   all, so a missing credential was indistinguishable from an idle hour.** All
   four hourly sweeps in `apps/signup-worker/src/index.ts` resolve a credential
@@ -103,6 +141,29 @@ Each entry cross-references:
 
 
 ### Added
+
+- **feat(ci): a workflow could be switched off and nothing would ever say so —
+  now a daily guard fails unless every non-active workflow is a declared,
+  expiring decision.** On 2026-08-08 21 workflows moved to `disabled_manually`
+  in 39 seconds with nobody noticing; two were PR gates, not crons, so PRs
+  merged against a gate that was not running. The org is on the GitHub free
+  plan, so the audit-log API returns 404 and "who did it" is unanswerable —
+  which is exactly why detecting *that* it happened has to be mechanical.
+  `.github/workflow-state-waivers.yml` is the new register of deliberately
+  non-active workflows (`reason` / `authorized-by` / `date` / `expires` /
+  `tracking`, capped at 90 days), and
+  `.github/workflows/workflow-state-guard.yml` +
+  `scripts/check_workflow_state.py` fail daily on a non-active workflow with no
+  unexpired entry, on an expired entry, and on a stale entry naming a workflow
+  that is active or absent — drift in both directions. The non-active table is
+  written to the job summary on every run, pass or fail. Seeded with the three
+  workflows that are off *today* (`reproducible-build`, `bazel-starter-ci`,
+  `pre-cutover-weekly-cron`), all at `authorized-by: UNDECIDED` and a 14-day
+  expiry so the register forces the decision instead of laundering the current
+  state. It is a cron because a workflow's enabled state changes without a
+  commit, which is CLAUDE.md's own test for earning a schedule. Scope is this
+  repo only: `corelink-runners` is reported best-effort and shows as
+  `NOT INSPECTED` under the default `GITHUB_TOKEN`, recorded rather than hidden.
 
 - **`scripts/detect_unreachable.py`** — reports Cloudflare bindings and Worker
   environment flags that are declared and deployed but reached by no code path
