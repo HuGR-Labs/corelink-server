@@ -57,7 +57,7 @@ Customer (Controller, EEA or Brazil)
       [Data stored in tenant-pinned region per Section 7 of DPA]
 ```
 
-- **Transfer 1**: Customer → CoreLink (via HTTPS/TLS 1.3). Personal Data enters CoreLink's processing environment.
+- **Transfer 1**: Customer → CoreLink (via HTTPS; TLS 1.2 floor, 1.3 negotiated). Personal Data enters CoreLink's processing environment.
 - **Transfer 2**: CoreLink → Cloudflare infrastructure (Workers runtime + R2/D1/DO storage). Data stored encrypted (BYOK, AES-256-GCM).
 - **Transfer direction**: EEA-originating data may be processed by Cloudflare infrastructure with US parent company jurisdiction (FISA 702 / EO 12333 / CLOUD Act risk scope).
 
@@ -148,7 +148,7 @@ Cloudflare participates in the EU-US Data Privacy Framework (as of 2023). Howeve
 
 #### 4.1.2 Encryption in Transit
 
-**Measure**: TLS 1.3 enforced for all client-to-CoreLink and CoreLink-to-Cloudflare communications. Mutual TLS (mTLS) for Vault operations. Certificate management via Cloudflare.
+**Measure**: TLS 1.2 floor enforced for all client-to-CoreLink and CoreLink-to-Cloudflare communications, with TLS 1.3 negotiated by every client that supports it (the floor was lowered from 1.3-only on 2026-07-19 so that native-tls clients could connect at all — ADR-0072). Mutual TLS (mTLS) for Vault operations. Certificate management via Cloudflare.
 
 **Effectiveness**: Protects against EO 12333 interception-in-transit risk. **Assessment: EFFECTIVE (additional layer).**
 

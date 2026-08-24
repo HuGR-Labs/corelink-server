@@ -993,6 +993,40 @@ verify-means: |
 last-verified: 2026-08-24
 ```
 
+### B-032 — eight contract lines promise a TLS floor we do not enforce
+
+The DPA (`legal/dpa/v1.0.0.{en-US,pt-BR,es-419}.md`), the EU SCC annex, the
+sub-processor commitments and the three privacy notices all state encryption in
+transit as **"TLS 1.3+"** or **"(TLS 1.3)"**. The `humangr.com` edge floor is
+**1.2** (ADR-0072), so those lines commit us contractually to a control we do
+not enforce. Everything editorial — docs site, questionnaires, legal templates,
+compliance crosswalks — was corrected in the same sweep; these eight were not,
+deliberately.
+
+They are **versioned contract text**. Correcting `v1.0.0` in place would rewrite
+a document a customer may have accepted; the honest paths are (a) publish
+`v1.0.1` with the corrected clause and, if anyone has executed v1.0.0, give
+notice, or (b) raise the zone floor back to 1.3 and accept that `sccache` and
+every other `native-tls`/SecureTransport client stops working (ADR-0072's exit
+condition). It is a legal and product call, not an editorial one.
+
+`scripts/validate_docs_reality.py` now scans `legal/` and holds these eight
+lines as **tracked** drift: visible on every run, fatal under `--strict`, and
+impossible to forget. New occurrences anywhere else fail the gate outright.
+
+```backlog
+id: B-032
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  grep -q "tls-13-floor-claim-executed-contracts" scripts/docs_reality_allowlist.json
+verify-means: |
+  open while the contract text still needs the tracked suppression; goes red the
+  moment the clause is fixed (or the floor raised) and the rule is deleted
+last-verified: 2026-08-24
+```
+
 ## Needs the owner
 
 These are not mine to do: they need a credential, a permanent deletion, or a

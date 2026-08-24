@@ -31,7 +31,7 @@ CoreLink is a multi-tenant shared cache. The blast radius of a compromise is
 2. **Tenant isolation** — tenant A never reads, writes, or enumerates blobs
    belonging to tenant B (`INV-TenantIsolation`, TLA+ model-checked).
 3. **Confidentiality** at rest (AES-256-GCM via R2 SSE) and in flight
-   (TLS 1.3 + mTLS between control and data planes).
+   (TLS 1.2 floor, 1.3 negotiated + mTLS between control and data planes).
 4. **Availability isolation** — a DoS aimed at one tenant must not consume
    another tenant's SLO budget.
 5. **Auditability** — every write or admin operation produces an immutable
@@ -60,7 +60,7 @@ CoreLink is a multi-tenant shared cache. The blast radius of a compromise is
 | HMAC (path, nonces) | HMAC-SHA256 | — |
 | Key derivation | HKDF-SHA256 | per-purpose `info` string |
 | At-rest encryption | AES-256-GCM | R2 SSE |
-| Transport | TLS 1.3 | AES-256-GCM / ChaCha20-Poly1305 |
+| Transport | TLS 1.2 floor, 1.3 negotiated | AES-256-GCM / ChaCha20-Poly1305 |
 | Release signing | Ed25519 via Sigstore/cosign | offline HSM-backed key |
 
 Banned: MD5, SHA-1, DES/3DES, RC4, ECB, RSA < 2048, hand-rolled cryptography.

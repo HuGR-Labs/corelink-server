@@ -24,6 +24,30 @@ Each entry cross-references:
 
 ### Fixed
 
+- **The TLS-floor correction had missed the surfaces customers actually read.**
+  Yesterday's sweep (B-019) corrected `specs/`, and the commit said so — but a
+  cold audit found the false "TLS 1.3 enforced" claim still live on the
+  **published trust pages** (`corelink-docs.humangr.com/trust/iso27001`, verified
+  by fetching it), in the **pre-filled CAIQ v4 and SIG Lite questionnaires** sent
+  to enterprise prospects, in two **regulator breach-notification templates**,
+  in the TIA and residency-amendment templates, in `specs/00_framework.md`'s
+  normative rule, in the PRR template every future sprint checks off, and in
+  `specs/_audits/iso27001-soa.csv`. All corrected, in four locales, to "TLS 1.2
+  floor, 1.3 negotiated".
+
+### Added
+
+- `validate_docs_reality.py` now scans `legal/` (it read that tree for hostnames
+  but not for claims — which is exactly how a stale control claim survived
+  inside a DPA), and carries a `tls-13-floor-claim` rule grounded in ADR-0072:
+  any customer- or regulator-facing document asserting a 1.3 floor fails the
+  gate, and the rule auto-retires if the floor is ever raised back. Proven to
+  fire on a planted violation. Eight lines of **versioned contract text** are
+  held as tracked drift rather than edited — correcting an executed contract
+  needs a version bump and possibly notice, so it is the owner's call (B-032).
+
+### Fixed
+
 - **The build-attestation lanes attested an artifact that cannot exist
   (B-016).** `reproducible-build` compiled `corelink-worker` for
   `wasm32-unknown-unknown` and hashed

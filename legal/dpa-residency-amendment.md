@@ -193,7 +193,7 @@ CoreLink implements and maintains the following technical and organisational sec
 
 ### 9.2 Encryption in Transit
 
-- TLS 1.3 for all client-to-CoreLink and CoreLink-to-Cloudflare communications.
+- TLS 1.2 floor, 1.3 negotiated, for all client-to-CoreLink and CoreLink-to-Cloudflare communications (ADR-0072).
 - Mutual TLS (mTLS) for HashiCorp Vault key operations.
 - Certificate management via Cloudflare-managed certificates.
 
@@ -354,7 +354,7 @@ The following CoreLink implementation artefacts evidence the technical security 
 | Failover restriction PAT-REGION-FAILOVER-001 | `specs/04_sprints/S14/work_items/WI-S14-003-*.md` | WI-S14-003 |
 | Audit chain integrity (Ed25519 + 7y retention) | S-09 audit chain | S-09 |
 | FIPS-validated BYOK (4 providers) | `docs/compliance/byok-fips-evidence.md` | WI-S14-005 |
-| TLS 1.3 + mTLS | Cloudflare certificate management | S-06 |
+| TLS 1.2 floor / 1.3 negotiated + mTLS | Cloudflare certificate management | S-06 |
 
 ---
 

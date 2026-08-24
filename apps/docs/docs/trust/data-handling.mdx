@@ -120,7 +120,7 @@ All persistent storage is encrypted at rest with **AES-256-GCM**:
 
 ### In flight
 
-- **External traffic:** **TLS 1.3** mandatory, with HSTS
+- **External traffic:** **TLS 1.2 minimum**, 1.3 negotiated by every client that supports it, with HSTS
   (`max-age=63072000; includeSubDomains; preload`). HTTP/2 + HTTP/3
   available. Cipher suites limited to AEAD (AES-256-GCM, ChaCha20-Poly1305).
 - **Edge-to-origin:** mTLS between Cloudflare edge and backing data planes
@@ -184,7 +184,7 @@ side.
                 ┌─────────────────┐
                 │   Your CI / IDE │
                 └────────┬────────┘
-                         │ TLS 1.3
+                         │ TLS 1.2+
                          ▼
        ┌─────────────────────────────────┐
        │ Cloudflare Edge (tenant region) │

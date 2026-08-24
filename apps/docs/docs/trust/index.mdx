@@ -38,7 +38,7 @@ writing.
 | PCI DSS | [PCI DSS posture](./pci-dss) — **SAQ-A compliant** (self-attested 2026-05-15); CoreLink never sees card data — Stripe Elements tokenizes in browser |
 | FedRAMP | [FedRAMP posture](./fedramp-info) — **Not pursued** today (commercial-market focus); ~85% Moderate baseline covered via SOC 2 + ISO 27001 crosswalk; sponsorship path documented |
 | Where your data lives | [Data handling → Residency](./data-handling#residency) — **US (ENAM) default + physically-EU (WEUR) residency live for EU tenants**; Brazil / APAC residency is roadmap / enterprise-on-request |
-| Encryption | [Data handling → Encryption](./data-handling#encryption) — TLS 1.3 in flight, AES-256-GCM at rest, optional BYOK envelope encryption |
+| Encryption | [Data handling → Encryption](./data-handling#encryption) — TLS 1.2 floor / 1.3 negotiated in flight, AES-256-GCM at rest, optional BYOK envelope encryption |
 | BYOK matrix | 4 providers: AWS KMS, GCP Cloud KMS, Azure Key Vault, HashiCorp Vault — see [BYOK explanation](/security/byok) |
 | Audit chain | Merkle-linked, RFC 6962 inclusion proofs, 7-year retention — see [Audit chain](/security/audit-chain) |
 | Sub-processors | [Sub-processors list](./subprocessors) — 30-day advance-notice mechanism |

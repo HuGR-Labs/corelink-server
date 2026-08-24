@@ -321,8 +321,9 @@ export default function PrivacyPage(): ReactElement {
             Bring-Your-Own-Key tenants.
           </p>
           <p>
-            All personal data is encrypted in transit (TLS 1.3 minimum,
-            HSTS preload on every public surface, certificate transparency
+            All personal data is encrypted in transit (TLS 1.2 minimum,
+            with TLS 1.3 negotiated by every client that supports it; HSTS
+            preload on every public surface, certificate transparency
             monitored by Cloudflare). Data at rest is encrypted by the
             underlying Cloudflare R2 / D1 / KV / Durable-Object substrates
             with AES-256-GCM; Enterprise tenants may additionally opt into

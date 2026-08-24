@@ -63,7 +63,7 @@ tags: ["sales", "proof-points", "r-prep", "ga", "numeric-claims", "sources"]
 | 2.4 | DEK cache TTL hard-capped at 5 minutes (code path, not config) | `crates/corelink-crypto-envelope/src/dek_cache.rs`; ADR-S14-004 |
 | 2.5 | AAD binding: `tenant_id \|\| blob_hash \|\| cache_id` enforced on every wrap | `BLOG-POSTS/02-byok-deep-dive.md#aad-binding-cryptographic-locality` |
 | 2.6 | AEAD primitives: AES-256-GCM, ChaCha20-Poly1305 per provider matrix | `BLOG-POSTS/02-byok-deep-dive.md#the-four-providers` |
-| 2.7 | TLS 1.3 mandatory; HSTS `max-age=63072000; includeSubDomains; preload` | `apps/docs/docs/trust/data-handling.mdx#in-flight` |
+| 2.7 | TLS 1.2 floor, 1.3 negotiated (ADR-0072); HSTS `max-age=63072000; includeSubDomains; preload` | `apps/docs/docs/trust/data-handling.mdx#in-flight` |
 | 2.8 | mTLS edge-to-origin (CTRL-NET-002) | `apps/docs/docs/trust/data-handling.mdx#in-flight` |
 | 2.9 | Client-side BLAKE3 re-hash default-on (CTRL-CAS-002); mismatch raises `COR_CAS_DIGEST_MISMATCH` | `apps/docs/docs/tutorials/quickstart-faq.mdx#12` |
 | 2.10 | `--pat` CLI flag rejected by design (CTRL-CRED-001) | `apps/docs/docs/tutorials/quickstart-faq.mdx#11` |

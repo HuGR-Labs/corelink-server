@@ -97,7 +97,7 @@ CoreLink processa três classes de dado que requerem atenção:
 ┌─────────────────┐      ┌──────────────┐       ┌───────────────┐
 │ User (dev)      │ HTTPS│ CF Edge       │ signed│ Worker-CP     │
 │  - email         │─────►│ (region near)│──────►│ authn/authz   │
-│  - name          │      │ TLS 1.3       │       │ audit event  │
+│  - name          │      │ TLS 1.2+      │       │ audit event  │
 │  - billing addr  │      └──────────────┘       └──────┬────────┘
 └─────────────────┘                                      │
                                                          │ tenant_id = UUID

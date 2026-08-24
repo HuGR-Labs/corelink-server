@@ -106,7 +106,7 @@ On `{{breach_detected_at}}` (UTC), HuGR Labs became aware of a personal data bre
 
 **Technical security measures in place at time of breach**:
 - Encryption at rest (INV-CONF-AT-REST: R2 SSE-S3, D1/Neon server-side encryption).
-- TLS 1.3 mandatory on all endpoints (INV-CONF-IN-FLIGHT).
+- TLS 1.2 floor on all endpoints, 1.3 negotiated by every capable client (INV-CONF-IN-FLIGHT; ADR-0072).
 - Append-only audit log with R2 Object Lock 7-year retention (INV-AUDIT-APPEND-ONLY).
 - Tenant isolation enforced at infrastructure level (INV-TENANT-ISOLATION).
 

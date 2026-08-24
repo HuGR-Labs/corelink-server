@@ -29,7 +29,7 @@ A.8.13,Information backup,Yes,R2 replication + Object Lock 7y,CTRL-AUDIT-005,EVT
 A.8.15,Logging,Yes,Audit log + observability stack,CTRL-AUDIT-002,EVT-001,SRE Lead,2026-04-24
 A.8.16,Monitoring activities,Yes,observability_model.md (alerts SLO-based),CTRL-AUDIT-004,EVT-013,SRE Lead,2026-04-24
 A.8.17,Clock synchronization,Yes,NTP via CF; PAT-MONOTONIC-001,PAT-MONOTONIC-001,EVT-002,SRE Lead,2026-04-24
-A.8.20,Networks security,Yes,TLS 1.3 + HSTS + CAA pinned,CTRL-CRYPTO-001 + CTRL-NET-001 + CTRL-NET-002,EVT-037,Security Lead,2026-04-24
+A.8.20,Networks security,Yes,TLS 1.2 floor / 1.3 negotiated (ADR-0072) + HSTS + CAA pinned,CTRL-CRYPTO-001 + CTRL-NET-001 + CTRL-NET-002,EVT-037,Security Lead,2026-04-24
 A.8.21,Security of network services,Yes,CF service binding (CTRL-NET-003),CTRL-NET-003,EVT-028,SRE Lead,2026-04-24
 A.8.22,Segregation in networks,Yes,Trust boundaries TB-0..TB-5,CTRL-ISO-001..005,EVT-036,Security Lead + Architect,2026-04-24
 A.8.23,Web filtering,Yes,Container egress allowlist,CTRL-NET-005,EVT-028,Security Lead,2026-04-24

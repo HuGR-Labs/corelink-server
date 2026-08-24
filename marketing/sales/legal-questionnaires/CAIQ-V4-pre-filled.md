@@ -110,7 +110,7 @@ CSP / CSC responsibility column:
 |---|---|---|---|---|---|
 | CEK-01.1 | Cryptography policy established? | Y | CSP | `apps/docs/docs/trust/data-handling.mdx#encryption` + security overview cryptography baseline. | C1.1 |
 | CEK-02.1 | Encryption at rest enforced? | Y | CSP | AES-256-GCM on R2 / D1 / KV / DO. Optional BYOK envelope. `compliance/byok-fips-matrix.md`. | C1.1 |
-| CEK-03.1 | Encryption in transit enforced? | Y | CSP | TLS 1.3 mandatory + HSTS preload + AEAD-only ciphers + mTLS edge-to-origin. | C1.1 |
+| CEK-03.1 | Encryption in transit enforced? | Y | CSP | TLS 1.2 floor with 1.3 negotiated by every capable client (ADR-0072) + HSTS preload + AEAD-only ciphers + mTLS edge-to-origin. | C1.1 |
 | CEK-04.1 | Cryptographic algorithms compliant with industry standards (FIPS / NIST)? | P | CSP | AES-256-GCM, ChaCha20-Poly1305, BLAKE3 / SHA-256, Ed25519. **GAP-02** FIPS attestation per provider (AWS L3 attested; GCP L1 + Azure pending; matrix at `specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md`; D+30 hard cap with fallback ADR). | C1.1 |
 | CEK-05.1 | Key generation procedures documented? | Y | CSP | KMS-side per provider (AWS / GCP / Azure / Vault). CoreLink never generates root keys. | C1.1 |
 | CEK-06.1 | Key rotation supported? | Y | CSP | KMS-side automatic rotation (provider-default cadence). DEK rotation on customer trigger; CMK rotation transparent to CoreLink. | C1.1 |

@@ -234,6 +234,80 @@
         "deterministic HMAC"
       ],
       "reason": "The CAS plane addresses + client-verifies blobs by BLAKE3 (CTRL-CAS-002; see the CLI Get/Put docstrings). A quickstart that computes the digest with `sha256sum` and uploads `sha256:<digest>` instructs users to produce a digest the server will reject. Use BLAKE3 (`corelink put` computes it)."
+    },
+    {
+      "id": "tls-13-floor-claim",
+      "tracked": false,
+      "grounding": {
+        "okf_concept": "docs/knowledge/adr/adr-0072-humangr-zone-min-tls-1-2.md",
+        "marker": "The edge TLS floor for `humangr.com` is **1.2**"
+      },
+      "scope_globs": [
+        "apps/docs/",
+        "marketing/",
+        "legal/",
+        "specs/",
+        "README.md",
+        "openapi/",
+        "sdks/",
+        "examples/"
+      ],
+      "forbidden": [
+        "TLS 1\\.3[ -]?(only|enforced|mandatory|required|minimum|obrigat|mandat)",
+        "TLS 1\\.3\\+",
+        "(minimum|mínimo|piso|floor|at least)[^.\\n]{0,20}TLS 1\\.3",
+        "\\bTLS 1\\.3\\b[^.\\n]{0,30}\\b(no downgrade|sem downgrade)\\b"
+      ],
+      "allow": [
+        "1\\.2",
+        "negotiat",
+        "ADR-0072",
+        "superseded",
+        "ERRATA",
+        "Stripe",
+        "KMS",
+        "Clerk",
+        "Drata",
+        "HubSpot",
+        "PagerDuty",
+        "Slack",
+        "outbound",
+        "used to",
+        "no longer",
+        "TLS 1\\.3\\+\\) and at rest",
+        "TLS 1\\.3\\+; AES-256",
+        "TLS 1\\.3\\+\\) e em repouso",
+        "TLS 1\\.3\\+\\) y en reposo"
+      ],
+      "reason": "The humangr.com edge floor is TLS 1.2, not 1.3 — lowered 2026-07-19 so native-tls/SecureTransport clients (sccache) could complete a handshake (ADR-0072). A customer-facing or regulator-facing document that says 1.3 is enforced/minimum overstates a security control that a prospect can disprove with one scan. Say 'TLS 1.2 floor, 1.3 negotiated'. Outbound calls to third parties (Stripe, KMS, Clerk) legitimately negotiate 1.3 and are allowed."
+    },
+    {
+      "id": "tls-13-floor-claim-executed-contracts",
+      "tracked": true,
+      "grounding": {
+        "okf_concept": "docs/knowledge/adr/adr-0072-humangr-zone-min-tls-1-2.md",
+        "marker": "The edge TLS floor for `humangr.com` is **1.2**"
+      },
+      "scope_globs": [
+        "legal/dpa/",
+        "legal/privacy-notice/"
+      ],
+      "forbidden": [
+        "TLS 1\\.3[ -]?(only|enforced|mandatory|required|minimum|obrigat|mandat)",
+        "TLS 1\\.3\\+",
+        "(minimum|mínimo|piso|floor|at least)[^.\\n]{0,20}TLS 1\\.3",
+        "\\bTLS 1\\.3\\b[^.\\n]{0,30}\\b(no downgrade|sem downgrade)\\b",
+        "in transit \\(TLS 1\\.3\\)",
+        "em tr[âa]nsito \\(TLS 1\\.3\\)",
+        "en tr[áa]nsito \\(TLS 1\\.3\\)"
+      ],
+      "allow": [
+        "1\\.2",
+        "negotiat",
+        "ADR-0072",
+        "ERRATA"
+      ],
+      "reason": "Same false floor, but inside VERSIONED CONTRACT text (DPA v1.0.0 in three locales, the SCC annex, the sub-processor commitments and three privacy notices). Correcting an executed contract is not an editorial fix — it needs a version bump and, if any customer has signed, notice. Owner decision, tracked as a backlog item; tracked here so it stays visible without blocking merges, and FATAL under --strict."
     }
   ],
   "hostname": {
