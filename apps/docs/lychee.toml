@@ -115,6 +115,17 @@ exclude = [
   # example credential printed in a code block — e.g. the pip index-URL form in
   # the Python how-to. lychee would send the fake PAT as basic auth.
   "^https?://[^/@]*:[^/@]*@",
+
+  # RFC 9116 REQUIRES security.txt at the domain root and forbids serving it
+  # under a path prefix, so `/.well-known/security.txt` is a deliberately
+  # absolute href — not a Docusaurus `<Link>` — and it never carries the
+  # `/corelink/docs` baseUrl. It is LIVE: verified 200 on 2026-08-24 at both
+  # corelink-docs.humangr.com/.well-known/security.txt and
+  # humangr.com/.well-known/security.txt. The file is served by the host, not
+  # emitted into `apps/docs/build/`, so `--root-dir` resolves it to a path that
+  # cannot exist. Same class as the hardcoded-absolute-path block above: match
+  # the RESOLVED `file://` form, not the raw href.
+  "/\\.well-known/security\\.txt$",
 ]
 
 # User-Agent for doc hosts that require one. (lychee >=0.20 renamed the old
