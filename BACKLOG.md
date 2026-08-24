@@ -950,22 +950,48 @@ What is missing is not the fix, it is the noticing. Nothing watches whether the
 Mac fleet has its expected slot count or whether the queue is draining — and the
 queue is the one signal that would have caught both.
 
+**Closed 2026-08-24, and the item's own diagnosis was wrong.** The fifth slot
+did not need a restart. Its launchd service was restarting fine and the listener
+was exiting immediately with:
+
+```
+Failed to create a session. The runner registration has been deleted from the
+server, please re-configure.
+```
+
+GitHub auto-removes a runner that stays offline for ~14 days. Once it does, the
+local config is orphaned and **no number of restarts can recover it** —
+`launchctl kickstart` brought the process up and it died seconds later, every
+time. The fix was `svc.sh uninstall` → `config.sh remove --local` (the server-side
+`remove` returns 404, which is itself the confirmation) → re-register with
+`--replace` → `svc.sh install && svc.sh start`. Verified: five
+`corelink-builder` runners, all `online`.
+
+`scripts/check_runner_fleet.py` + `.github/workflows/runner-fleet-health.yml`
+watch the count hourly from the **Cloudflare container fabric, not the Macs** — a
+health check that runs on the thing it watches reports "fine" exactly when it is
+not. Each failure mode was exercised rather than assumed: missing slot exits 1,
+an unreadable fleet exits 2.
+
+The slot census needs repository admin, which the Actions `GITHUB_TOKEN` cannot
+have. So in CI the census is **explicitly** disabled via `FLEET_SLOT_CENSUS=skip`
+and the run says so on every line of output; without that variable the script
+FAILS rather than silently running half of itself. Queue health — runs sitting
+queued while nothing is in progress, the wedge's actual symptom — runs on every
+tick with the default token. The missing credential is B-012.
+
 ```backlog
 id: B-030
 repo: corelink-server
 owner: tl
-status: open
-verify: manual
+status: done
+verify: |
+  test -f scripts/check_runner_fleet.py && \
+  grep -q "runs-on: corelink" .github/workflows/runner-fleet-health.yml
 verify-means: |
-  open while fewer than five corelink-builder runners are registered, AND while
-  nothing watches that count. NOT CI-checkable: listing self-hosted runners needs
-  `administration: read`, which the Actions GITHUB_TOKEN does not have and cannot
-  be granted — the same wall that forced the fleet-busy endpoint. Run it where gh
-  is authenticated:
-    gh api /repos/HuGR-Labs/corelink-server/actions/runners \
-      -q '[.runners[]|select(.name|startswith("corelink-builder"))]|length'
-  Closes when the fifth slot is back AND a gate watches the count, since the
-  count is precisely what nobody was watching.
+  done — the count is watched, from off-fleet. Red if the watcher is deleted or
+  moved onto the Macs it is supposed to be watching. The live slot count itself
+  is asserted by the hourly run, not by this line.
 last-verified: 2026-08-24
 ```
 
