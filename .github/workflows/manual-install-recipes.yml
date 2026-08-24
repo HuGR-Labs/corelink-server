@@ -79,7 +79,7 @@ jobs:
           # 3. Install + run it, proving the asset is a working corelink binary
           #    (not just a 200 that downloaded something).
           chmod +x "${ASSET}"
-          ver="$(./${ASSET} --version)"
+          ver="$(./"${ASSET}" --version)"
           echo "installed: ${ver}"
           # `--version` must actually name this CLI, not merely exit 0.
           case "${ver}" in
