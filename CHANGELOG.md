@@ -52,6 +52,31 @@ Each entry cross-references:
 
 ### Fixed
 
+- **The TLC supply-chain pin broke for the third time; re-pinned with a
+  provenance chain, and the recurring cause is now a tracked item (B-040).**
+  Upstream re-cut the `v1.8.0` release asset on 2026-08-21T16:04:52Z, so the
+  pinned SHA-256 stopped matching and the gate refused to run — correctly. It
+  surfaced on the first PR to touch one of its trigger paths. This is the
+  **fifth pin value for one version tag** (`d5d07d5d` → `237332bd` →
+  `33de7da9` → `e22f8ffb` → `eabd140a`), and one earlier drift went unnoticed
+  for 195 runs while five TLA+ gates appeared scheduled and proved nothing.
+  Verified before re-pinning, per ADR-0042 §A1: the jar's embedded
+  `X-Git-Revision: 9787e657…` exists in `tlaplus/tlaplus`, tag `v1.8.0`
+  resolves to exactly that commit, the jar's `Build-TimeStamp` (15:59:22Z)
+  falls between that commit (15:45:47Z) and the asset upload (16:04:52Z), two
+  independent network paths produced byte-identical downloads, and the running
+  binary self-reports `TLC2 Version 2026.08.21.155922 (rev: 9787e65)` — the
+  same revision. Upstream now publishes a checksum table (the 2026-08-02
+  ceremony stated none existed); its `sha1sum` matches, recorded as
+  corroborating and **not** dispositive, since SHA-1 is not collision-resistant
+  and the release body is editable by whoever can replace the asset. The jar is
+  still unsigned, so origin authenticity remains unproven. **B-040** promotes
+  §A1's twice-restated "vendor the jar to storage we control" from a
+  recommendation to a tracked item: the pin guards a URL upstream overwrites,
+  so every re-cut looks exactly like a compromise and the standing pressure is
+  to just bump the number. Maven Central was checked and does not carry this
+  artifact, so no public immutable mirror exists.
+
 - **Bazel can use its sandbox on the runner fabric again (B-025).** The runner
   image shipped no `/dev/shm`, so every sandboxed action died with
   `[unix_jni.cc:382] /dev/shm (No such file or directory)` — which reads like a

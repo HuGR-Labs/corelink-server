@@ -1779,3 +1779,55 @@ verify-means: |
   which point the comment and the assumption both go away.
 last-verified: 2026-08-24
 ```
+
+### B-039 — CI pins a hash against a URL upstream overwrites; fifth value, third outage
+
+`TLC_SHA256_PINNED` guards `tla2tools.jar`, fetched from
+`https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar`. That URL
+is **mutable**: the tag stays `v1.8.0` while the asset behind it is re-cut. Recorded
+pin values for that one tag:
+
+| pinned | sha256 | note |
+|---|---|---|
+| 2026-04-25 | `d5d07d5d…` | |
+| 2026-06-02 | `237332bd…` | |
+| 2026-07-09 | `33de7da9…` | never entered ADR-0042 §A1 — §A1 and CI disagreed 3 weeks |
+| 2026-08-02 | `e22f8ffb…` | after `tla_check` scored 0 successes in 100 runs |
+| 2026-08-24 | `eabd140a…` | this one; upstream re-cut on 2026-08-21 |
+
+Each re-cut presents as a supply-chain pin violation, which is indistinguishable at
+the point of failure from a real compromise — so every occurrence costs a full
+verification ceremony, and the pressure each time is to just bump the number. Once
+it went unnoticed for 195 runs while five TLA+ gates proved nothing and still
+appeared in the rotation.
+
+ADR-0042 §A1 has carried the same remedy as a "standing recommendation" since
+2026-08-02 and it has now been restated twice without being done. It is promoted
+here to a tracked item because a recommendation that survives three outages is not
+a recommendation.
+
+**The fix:** stop fetching from a mutable third-party URL. Copy the verified jar
+once to storage we control and point all carriers at that immutable object, keeping
+the SHA-256 check (which then can only fail if OUR copy changed — a real signal
+instead of a recurring false alarm). Maven Central was checked as an alternative
+immutable source and does not carry this artifact (`org/lamport/tla2tools/1.8.0`
+→ 404), so a public mirror is not available; it has to be ours. Options, in order
+of preference: an R2 bucket fronted by a public hostname (no credential in CI), or
+our own CAS, which is immutable by construction and would dogfood the product.
+
+Deliberately not done inside the 2026-08-24 re-pin PR: that PR unblocks CI, and
+adding new public prod storage plus 3 carrier rewrites plus an ADR supersession to
+it would make a security-path change large and rushed at the same time.
+
+```backlog
+id: B-039
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  grep -rl "releases/download/v.*tla2tools\.jar" .github/workflows scripts >/dev/null
+verify-means: |
+  open while any carrier still fetches the jar from the mutable upstream release
+  URL. Goes red when every carrier points at storage we control.
+last-verified: 2026-08-24
+```
