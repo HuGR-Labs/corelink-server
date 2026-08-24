@@ -145,7 +145,7 @@ deprecated: true
 x-sunset-date: "2028-05-15"        # ISO-8601; ≥ 730d future for GA, ≥ 90d for Preview
 x-deprecated-since: "2026-05-15"
 x-replaced-by: "/v2/pats"          # canonical successor, or "" if no successor
-x-deprecation-issue: "https://github.com/HumanGuardrail/corelink-server/issues/4321"
+x-deprecation-issue: "https://corelink-docs.humangr.com/explanation/api-stability"
 ```
 
 The CI gate (`.github/workflows/api-deprecation-check.yml`) **fails the PR**
@@ -175,7 +175,7 @@ Link: </v2/pats>; rel="successor-version"
   "detail": "POST /v1/pats was sunset on 2028-05-15. Use POST /v2/pats.",
   "sunset_date": "2028-05-15",
   "replaced_by": "/v2/pats",
-  "deprecation_issue": "https://github.com/HumanGuardrail/corelink-server/issues/4321"
+  "deprecation_issue": "https://corelink-docs.humangr.com/explanation/api-stability"
 }
 ```
 

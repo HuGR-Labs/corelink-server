@@ -46,9 +46,8 @@ it's a hard prerequisite.
 | Pants, Buck2, or custom REAPI cache | Read the [Bazel guide](./from-bazel-remote-cache.mdx) — the REAPI v2 wire protocol is identical; just swap `.bazelrc` flags for your build tool's equivalent. | — |
 | **Mixed** (e.g. S3 + Docker registry, or bazel-remote + S3) | Run all three migrations in sequence, lowest-blast-radius first (S3 → Docker → Bazel). | — |
 
-If your situation doesn't fit any row above, file an issue against
-[`HumanGuardrail/corelink-server`](https://github.com/HumanGuardrail/corelink-server/issues)
-with the `migration-help` label. The lighthouse program is one option;
+If your situation doesn't fit any row above, email [support@humangr.com](mailto:support@humangr.com)
+with `migration-help` in the subject. The lighthouse program is one option;
 self-serve with async support on the community Slack is another.
 
 ## The migration pattern (shared across all 3 guides)
