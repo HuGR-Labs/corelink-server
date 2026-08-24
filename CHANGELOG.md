@@ -22,6 +22,24 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+
+- **feat(ops): the offsite audit archive had a monitor for corruption and none
+  for absence.** `audit-chain-daily-verify.yml` verifies the NDJSON chunks it
+  finds in `corelink-audit-weur`; it never asks D1 how many sealed rows never
+  became a chunk, so a day with zero chunks reads as a clean no-op — the
+  archiver could stop entirely and nothing would say so. New hourly cron
+  `.github/workflows/audit-archive-lag.yml` closes that gap with a two-clause
+  predicate over `audit_outbox`, T = 3h: it pages SEV-0 only when sealed
+  unarchived rows are older than T **and** `MAX(archived_at)` over the whole
+  table is older than T or NULL. Either clause alone is a false-alarm
+  generator — the first fires throughout the healthy 56k-row backlog drain,
+  the second during any genuinely quiet period; together they name the one
+  state worth waking someone for, with no stored trend state. Both
+  measurements land in the job summary on every run, pass or fail, so the
+  backlog tail is observable without a page. Runbook
+  `specs/_runbooks/RB-AUDIT-ARCHIVE-ABSENT.md`. Tracked as B-021.
+
 ### Fixed
 
 - **fix(ops): a scheduled sweep that could not authenticate logged nothing at

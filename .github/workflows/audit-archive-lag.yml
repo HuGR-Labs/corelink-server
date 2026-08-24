@@ -1,0 +1,289 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: audit-archive-lag
+
+# Absence monitor for the offsite audit archive (BACKLOG B-021).
+#
+# WHAT WAS MISSING
+# ----------------
+# `POST /_internal/audit/archive` (crates/corelink-container/src/routes/audit_archive.rs)
+# copies sealed `audit_outbox` rows out of D1 into NDJSON chunks in the R2
+# bucket `corelink-audit-weur`, driven hourly by
+# `apps/signup-worker/src/webhooks/audit_archive_cron.ts`.
+#
+# `audit-chain-daily-verify.yml` verifies the chunks it FINDS. It never asks D1
+# how many sealed rows never became a chunk, so a day with ZERO chunks reads as
+# a clean no-op. The offsite copy therefore had a monitor for CORRUPTION and
+# none for ABSENCE. This workflow is the absence monitor.
+#
+# THE PREDICATE — a two-clause conjunction, T = 3 hours
+# -----------------------------------------------------
+#   PAGE iff
+#     (1) there exists a SEALED row (emitted_at IS NOT NULL) with
+#         archived_at IS NULL whose enqueued_at is older than T
+#     AND
+#     (2) MAX(archived_at) over the whole table is older than T, or is NULL
+#
+# Why BOTH clauses are load-bearing:
+#   - Clause 1 alone would fire throughout the current 56k-row historical
+#     backlog drain, which is healthy behaviour — the tail is simply long.
+#   - Clause 2 alone would fire during a genuinely quiet period when there is
+#     nothing to archive, because MAX(archived_at) naturally ages.
+#   - Together they describe exactly one state: pending work that the archiver
+#     is demonstrably not touching. That is the only state worth waking
+#     someone for, and it needs no stored trend state to evaluate.
+#
+# T = 3h = three consecutive missed hourly ticks. One missed tick is noise; a
+# container roll can eat two.
+#
+# BOTH measurements are written to the job summary on EVERY run, pass or fail,
+# so the operator can watch the backlog tail shrink without opening a page.
+#
+# Secrets consumed (all already have rows in docs/internal/secrets-checklist.md):
+#   - CF_ACCOUNT_ID          (#49) — CF account id
+#   - CF_API_TOKEN           (#50) — Bearer for the D1 HTTP query API
+#   - PAGERDUTY_ROUTING_KEY  (#11) — SEV-0 page when the predicate holds
+#
+# Fail-CLOSED: any non-200, `success != true`, or JSON parse failure from the
+# D1 API exits non-zero. An inconclusive read is NEVER reported as healthy.
+#
+# SHA-pinned third-party actions per the HIGH_RISK lane tooling-pin policy.
+
+on:
+  schedule:
+    # Hourly, at :20 — off the top of the hour so it samples AFTER the
+    # signup-worker archive cron tick rather than racing it.
+    - cron: "20 * * * *"
+  workflow_dispatch:
+    inputs:
+      lag_hours:
+        description: "Lag threshold T in hours (default 3 = three missed hourly ticks)"
+        required: false
+        default: "3"
+
+# Read-only — this cron reads D1 and pages. It writes nothing.
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-archive-lag
+  cancel-in-progress: false
+
+env:
+  DEFAULT_LAG_HOURS: "3"
+  # The consolidated prod D1 (`corelink-prod-d1`) that holds `audit_outbox`.
+  # A database identifier, not a credential — it is already committed in
+  # wrangler.toml and a dozen sealed audit docs. Hardcoded rather than
+  # secret-gated on purpose: an absence monitor that stays inert until an
+  # owner wires a secret is itself an absence.
+  AUDIT_D1_DATABASE_ID: "d64742ea-e102-40b2-a844-ff02e3f94562"
+
+jobs:
+  archive-lag:
+    name: audit-archive-lag
+    # Self-hosted `corelink` per the zero-hosted-Actions mandate. No cargo
+    # build here — this job is python3 + curl only, so it needs neither the
+    # host toolchain step nor a cargo cache.
+    runs-on: corelink
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Measure archive lag against prod D1 (fail-CLOSED)
+        id: measure
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          D1_DATABASE_ID: ${{ env.AUDIT_D1_DATABASE_ID }}
+          LAG_HOURS: ${{ github.event.inputs.lag_hours || env.DEFAULT_LAG_HOURS }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${CF_API_TOKEN:-}"
+          : "${CF_API_TOKEN:?CF_API_TOKEN not set — cannot read D1 (fail-CLOSED)}"
+          : "${CF_ACCOUNT_ID:?CF_ACCOUNT_ID not set — cannot read D1 (fail-CLOSED)}"
+          if ! [[ "${LAG_HOURS}" =~ ^[0-9]+$ ]] || [ "${LAG_HOURS}" -lt 1 ] || [ "${LAG_HOURS}" -gt 168 ]; then
+            echo "::error::lag_hours must be an integer in [1,168]; got '${LAG_HOURS}'"
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json, os, sys, time
+          import requests
+
+          acct = os.environ["CF_ACCOUNT_ID"]
+          db = os.environ["D1_DATABASE_ID"]
+          token = os.environ["CF_API_TOKEN"]
+          lag_hours = int(os.environ["LAG_HOURS"])
+
+          now_ms = int(time.time() * 1000)
+          # T, as a unix-ms literal. Computed here and INLINED into the SQL
+          # rather than bound: the D1 REST API binds JSON numbers as REAL, so a
+          # bound integer would compare a float against an INTEGER column.
+          t_ms = now_ms - lag_hours * 3600 * 1000
+
+          url = f"https://api.cloudflare.com/client/v4/accounts/{acct}/d1/database/{db}/query"
+          headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+          def d1_query(sql):
+              try:
+                  r = requests.post(url, headers=headers, json={"sql": sql, "params": []}, timeout=60)
+              except Exception as exc:  # network / TLS — inconclusive, fail closed
+                  sys.stderr.write(f"AUDIT_ARCHIVE_LAG_ERROR: D1 request failed: {exc}\n")
+                  sys.exit(3)
+              if r.status_code != 200:
+                  sys.stderr.write(f"AUDIT_ARCHIVE_LAG_ERROR: D1 query HTTP {r.status_code}: {r.text[:500]}\n")
+                  sys.exit(3)
+              try:
+                  body = r.json()
+              except ValueError as exc:
+                  sys.stderr.write(f"AUDIT_ARCHIVE_LAG_ERROR: D1 response not JSON: {exc}\n")
+                  sys.exit(3)
+              if not body.get("success", False):
+                  sys.stderr.write(f"AUDIT_ARCHIVE_LAG_ERROR: D1 success!=true: {body.get('errors')}\n")
+                  sys.exit(3)
+              rows = []
+              for block in body.get("result") or []:
+                  rows.extend(block.get("results") or [])
+              return rows
+
+          # CLAUSE 1 — pending work older than T. Uses the partial work-queue
+          # index idx_audit_outbox_unarchived (migration 0099).
+          clause1_sql = (
+              "SELECT COUNT(*) AS pending_old, MIN(enqueued_at) AS oldest_pending_ms "
+              "FROM audit_outbox "
+              "WHERE emitted_at IS NOT NULL AND archived_at IS NULL "
+              f"AND enqueued_at < {t_ms}"
+          )
+          # CLAUSE 2 — the archiver's most recent demonstrated activity,
+          # over the WHOLE table (not scoped to the pending set: a row that
+          # was just archived is no longer pending).
+          clause2_sql = "SELECT MAX(archived_at) AS last_archived_ms FROM audit_outbox"
+
+          r1 = d1_query(clause1_sql)
+          r2 = d1_query(clause2_sql)
+          row1 = r1[0] if r1 else {}
+          row2 = r2[0] if r2 else {}
+
+          pending_old = int(row1.get("pending_old") or 0)
+          oldest_pending_ms = row1.get("oldest_pending_ms")
+          last_archived_ms = row2.get("last_archived_ms")
+
+          clause1 = pending_old > 0
+          clause2 = (last_archived_ms is None) or (int(last_archived_ms) < t_ms)
+          page = clause1 and clause2
+
+          def age_h(ms):
+              if ms is None:
+                  return "never"
+              return f"{(now_ms - int(ms)) / 3600000.0:.2f}h ago"
+
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          lines = [
+              "## audit-archive absence monitor",
+              "",
+              f"Threshold **T = {lag_hours}h** (cutoff `{t_ms}` ms).",
+              "",
+              "| measurement | value |",
+              "| --- | --- |",
+              f"| sealed rows unarchived older than T | `{pending_old}` |",
+              f"| oldest unarchived sealed row | `{oldest_pending_ms}` ({age_h(oldest_pending_ms)}) |",
+              f"| MAX(archived_at) over audit_outbox | `{last_archived_ms}` ({age_h(last_archived_ms)}) |",
+              "",
+              f"clause 1 (pending work older than T): **{clause1}**",
+              "",
+              f"clause 2 (archiver idle for longer than T): **{clause2}**",
+              "",
+              f"verdict: **{'PAGE' if page else 'OK'}**",
+              "",
+              "Both measurements are emitted on every run, pass or fail, so the "
+              "backlog tail is observable without opening a page. "
+              "Runbook: `specs/_runbooks/RB-AUDIT-ARCHIVE-ABSENT.md`.",
+          ]
+          if summary:
+              with open(summary, "a") as fh:
+                  fh.write("\n".join(lines) + "\n")
+          sys.stderr.write("\n".join(lines) + "\n")
+
+          out = os.environ.get("GITHUB_OUTPUT")
+          if out:
+              with open(out, "a") as fh:
+                  fh.write(f"page={'1' if page else '0'}\n")
+                  fh.write(f"pending_old={pending_old}\n")
+                  fh.write(f"oldest_pending_ms={oldest_pending_ms}\n")
+                  fh.write(f"last_archived_ms={last_archived_ms}\n")
+                  fh.write(f"lag_hours={lag_hours}\n")
+                  fh.write(f"cutoff_ms={t_ms}\n")
+          PY
+
+      - name: PagerDuty SEV-0 page — archiver is not touching pending work
+        if: steps.measure.outputs.page == '1'
+        env:
+          PAGERDUTY_ROUTING_KEY: ${{ secrets.PAGERDUTY_ROUTING_KEY }}
+          PENDING_OLD: ${{ steps.measure.outputs.pending_old }}
+          OLDEST_PENDING_MS: ${{ steps.measure.outputs.oldest_pending_ms }}
+          LAST_ARCHIVED_MS: ${{ steps.measure.outputs.last_archived_ms }}
+          LAG_HOURS: ${{ steps.measure.outputs.lag_hours }}
+          CUTOFF_MS: ${{ steps.measure.outputs.cutoff_ms }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          : "${PAGERDUTY_ROUTING_KEY:?PAGERDUTY_ROUTING_KEY not set — cannot page on archive absence (fail-CLOSED)}"
+          echo "::add-mask::${PAGERDUTY_ROUTING_KEY}"
+          RUN_DATE=$(date -u +%Y-%m-%d)
+          echo "::error::AUDIT_ARCHIVE_ABSENT — ${PENDING_OLD} sealed row(s) pending past T=${LAG_HOURS}h and the archiver has not written since ${LAST_ARCHIVED_MS}"
+          PAGERDUTY_ROUTING_KEY="${PAGERDUTY_ROUTING_KEY}" \
+          PENDING_OLD="${PENDING_OLD}" \
+          OLDEST_PENDING_MS="${OLDEST_PENDING_MS}" \
+          LAST_ARCHIVED_MS="${LAST_ARCHIVED_MS}" \
+          LAG_HOURS="${LAG_HOURS}" \
+          CUTOFF_MS="${CUTOFF_MS}" \
+          RUN_DATE="${RUN_DATE}" \
+          RUN_URL="${RUN_URL}" \
+          python3 > pd-payload.json <<'PY'
+          import json, os, sys
+          event = {
+              "routing_key": os.environ["PAGERDUTY_ROUTING_KEY"],
+              "event_action": "trigger",
+              "dedup_key": "audit-archive-absent-" + os.environ["RUN_DATE"],
+              "payload": {
+                  "summary": (
+                      "SEV-0 audit archive ABSENT: " + os.environ["PENDING_OLD"]
+                      + " sealed row(s) unarchived past T=" + os.environ["LAG_HOURS"]
+                      + "h and last archived_at=" + os.environ["LAST_ARCHIVED_MS"]
+                  ),
+                  "source": "audit-archive-lag cron (GHA)",
+                  "severity": "critical",
+                  "component": "corelink-audit-chain",
+                  "group": "audit",
+                  "class": "archive-absent",
+                  "custom_details": {
+                      "pending_sealed_rows_older_than_T": os.environ["PENDING_OLD"],
+                      "oldest_pending_enqueued_at_ms": os.environ["OLDEST_PENDING_MS"],
+                      "max_archived_at_ms": os.environ["LAST_ARCHIVED_MS"],
+                      "threshold_hours": os.environ["LAG_HOURS"],
+                      "cutoff_ms": os.environ["CUTOFF_MS"],
+                      "run_url": os.environ["RUN_URL"],
+                      "runbook": "RB-AUDIT-ARCHIVE-ABSENT",
+                  },
+              },
+              "links": [{"href": os.environ["RUN_URL"], "text": "GHA run"}],
+          }
+          sys.stdout.write(json.dumps(event))
+          PY
+          http_code=$(curl --silent --show-error -o pd-resp.json -w "%{http_code}" \
+            -X POST -H "Content-Type: application/json" \
+            --data @pd-payload.json \
+            "https://events.pagerduty.com/v2/enqueue" || echo "000")
+          if [[ "${http_code}" != "202" ]]; then
+            echo "::error::PagerDuty enqueue returned HTTP ${http_code} — manually page the SRE Lead (RB-AUDIT-ARCHIVE-ABSENT)"
+            cat pd-resp.json || true
+          else
+            echo "PagerDuty SEV-0 dispatched (dedup_key=audit-archive-absent-${RUN_DATE})"
+          fi
+
+      - name: Fail the job when the archive is absent (after paging)
+        if: steps.measure.outputs.page == '1'
+        run: |
+          echo "::error::AUDIT_ARCHIVE_ABSENT — see the PagerDuty page above and specs/_runbooks/RB-AUDIT-ARCHIVE-ABSENT.md"
+          exit 1
