@@ -62,6 +62,7 @@ import {
   PUBLIC_BLOB_CONTENT_TYPE,
   writePublicBlocklistKv,
 } from "./lib/edge_public_read.js";
+import { shadowCompareEdgeFindMissing } from "./lib/edge_find_missing.js";
 import { handleAuthRotate } from "./lib/auth_rotate.js";
 import { handleTenantLookup } from "./lib/tenant_lookup.js";
 import {
@@ -240,6 +241,14 @@ export interface Env {
   // only (serve the container), "serve" = edge-authoritative HIT. Unset = off.
   CAS_BUCKET: R2Bucket;
   EDGE_PUBLIC_READ?: string;
+  /**
+   * F1 of the edge-native `findMissingBlobs`
+   * (`docs/design/2026-08-25-adr-edge-native-find-missing.md`). `"shadow"`
+   * computes the edge answer on a background clone and logs whether it agrees
+   * with the container's; it NEVER serves. Unset ⇒ the shadow does not run at
+   * all, which is today's behaviour exactly.
+   */
+  EDGE_FIND_MISSING?: string;
   // F3.2 WP-E client-side `_public` dedup flag, forwarded to the container. "0"
   // (Roll-1) = client OCI finalize routes per-tenant (never `_public`); a later
   // roll flips it on so client finalizes dedup into the server-seeded shared blob.
@@ -3846,6 +3855,19 @@ const baseHandler: ExportedHandler<Env> = {
     const doId = env.CORELINK_SERVER.idFromName(resolvedTenantId);
     const stub = env.CORELINK_SERVER.get(doId, serverGetOpts(env));
 
+    // F1 SHADOW (findMissingBlobs): the forward below reuses this request's body
+    // stream, so a clone has to be taken HERE — after it, the body is gone. Only
+    // under the shadow flag, and only for the one route, so no other request
+    // pays for buffering. Nothing from it is logged (INV-NO-BODY-IN-LOGS); it
+    // exists to be re-parsed by the comparison.
+    const findMissingShadowBody =
+      env.EDGE_FIND_MISSING === "shadow" &&
+      request.method === "POST" &&
+      route.routeKind === "bazel_v2" &&
+      route.pathSuffix.endsWith("/findMissingBlobs")
+        ? await request.clone().text()
+        : null;
+
     // Augment request with correlation headers (no body inspection — INV-NO-BODY-IN-LOGS)
     const augmented = new Request(request, {
       headers: (() => {
@@ -4047,6 +4069,33 @@ const baseHandler: ExportedHandler<Env> = {
           request,
         );
       }
+    }
+
+    // F1 SHADOW (findMissingBlobs): prove the edge answer EQUALS the container's
+    // on real traffic before anything flips, and measure the edge's own cost in
+    // the same pass. Zero user impact — the container's response is served
+    // unchanged and only a CLONE is read here, in the background.
+    //
+    // Why this route is worth moving: measured from inside the fabric, the
+    // container answers at ~13 digests/second, and that ceiling is NOT our
+    // fan-out — 16 separate single-digest requests (1.19 s wall) are no faster
+    // than one 16-digest request (1.59-1.82 s). See
+    // `docs/design/2026-08-25-adr-edge-native-find-missing.md`.
+    if (findMissingShadowBody !== null && doResponse.ok) {
+      const fmClone = doResponse.clone();
+      const fmTenant = resolvedTenantId;
+      const fmBody = findMissingShadowBody;
+      ctx.waitUntil(
+        shadowCompareEdgeFindMissing(env, fmTenant, fmBody, fmClone)
+          .then((verdict) =>
+            console.log(`[${requestId}] edge_find_missing_shadow ${verdict}`),
+          )
+          .catch((e) =>
+            console.error(
+              `[${requestId}] edge_find_missing_shadow error: ${String(e).slice(0, 80)}`,
+            ),
+          ),
+      );
     }
 
     // F3.3 SHADOW: prove Worker-native `_public` edge-read parity vs the container

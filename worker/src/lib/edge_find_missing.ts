@@ -130,3 +130,179 @@ export async function findMissingProbeKey(
   if (!prefix) return null;
   return casBlobKey(region, prefix, digestHex, "sha256");
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F1 SHADOW — compute the edge answer alongside the container's, compare, and
+// measure. Serves nothing. Every uncertainty resolves to a SKIP verdict, never
+// to a claim of parity: a shadow that quietly counts "we could not check" as
+// "match" is worse than no shadow, because it manufactures the confidence the
+// F2 flip is supposed to earn.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Bindings the shadow needs. Optional ones mirror how `index.ts` reads them. */
+export interface EdgeFindMissingEnv {
+  CONFIG_DB: D1Database;
+  CAS_BUCKET: R2Bucket;
+  R2_TDK_HEX?: string;
+  R2_CAS_REGION?: string;
+}
+
+/**
+ * The most digests the edge path will probe in one request. Each `head()` is a
+ * subrequest, and a Worker's per-request subrequest budget is finite, while
+ * `FIND_MISSING_BLOB_CAP` (the container's limit) is 4096 — far above it. Over
+ * this, the edge declines and the container answers, which is the behaviour
+ * today anyway.
+ */
+export const EDGE_FIND_MISSING_MAX_DIGESTS = 256;
+
+/** Verdict strings are logged verbatim; keep them greppable and unambiguous. */
+export type ShadowVerdict = string;
+
+/** Digests out of a `findMissingBlobs` request body, or null if it is not one. */
+export function parseRequestDigests(bodyText: string): string[] | null {
+  let doc: unknown;
+  try {
+    doc = JSON.parse(bodyText);
+  } catch {
+    return null;
+  }
+  const list = (doc as { blobDigests?: unknown })?.blobDigests;
+  if (!Array.isArray(list)) return null;
+  const out: string[] = [];
+  for (const item of list) {
+    const hash = (item as { hash?: unknown })?.hash;
+    if (typeof hash !== "string") return null;
+    out.push(hash);
+  }
+  return out;
+}
+
+/** The `missingBlobDigests` hashes out of a container response body. */
+export function parseMissingDigests(bodyText: string): string[] | null {
+  let doc: unknown;
+  try {
+    doc = JSON.parse(bodyText);
+  } catch {
+    return null;
+  }
+  const list = (doc as { missingBlobDigests?: unknown })?.missingBlobDigests;
+  if (!Array.isArray(list)) return null;
+  const out: string[] = [];
+  for (const item of list) {
+    const hash = (item as { hash?: unknown })?.hash;
+    if (typeof hash !== "string") return null;
+    out.push(hash);
+  }
+  return out;
+}
+
+/**
+ * True when this tenant has ANY row in `tenant_byok_secret`.
+ *
+ * The edge must not answer for a BYOK tenant: the container probes a PHYSICAL
+ * key that is an HMAC of the logical digest, resolved through the TCS, which
+ * the edge does not have. Probing the plaintext key would report every blob
+ * missing. The check is deliberately coarse — a row at all, wrapped or not —
+ * and any query error also disqualifies the tenant, because "we do not know"
+ * and "not BYOK" must not collapse into the same branch.
+ */
+export async function tenantMayUseEdgePath(
+  env: EdgeFindMissingEnv,
+  tenantId: string,
+): Promise<boolean> {
+  try {
+    const row = await env.CONFIG_DB.prepare(
+      "SELECT 1 AS present FROM tenant_byok_secret WHERE tenant_id = ?1 LIMIT 1",
+    )
+      .bind(tenantId)
+      .first<{ present: number }>();
+    return row === null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Probe every digest through the native R2 binding, concurrently, and return
+ * the ones that are ABSENT — the same set `findMissingBlobs` returns.
+ */
+export async function probeMissingAtEdge(
+  env: EdgeFindMissingEnv,
+  tenantId: string,
+  digests: string[],
+): Promise<string[] | null> {
+  const tdk = env.R2_TDK_HEX;
+  const region = env.R2_CAS_REGION;
+  if (!tdk || !region) return null;
+
+  const prefix = await deriveTenantPrefix(tdk, tenantId);
+  if (!prefix) return null;
+
+  const keys: string[] = [];
+  for (const d of digests) {
+    if (!SHA256_HEX_RE.test(d)) return null;
+    keys.push(casBlobKey(region, prefix, d, "sha256"));
+  }
+
+  // One `head()` per digest, all in flight at once. This is the whole point of
+  // the move: in-colo, no TLS handshake, no SigV4 — the container's ~85 ms per
+  // digest is not a property of the work, it is a property of where the work runs.
+  const heads = await Promise.all(keys.map((k) => env.CAS_BUCKET.head(k)));
+  const missing: string[] = [];
+  for (let i = 0; i < heads.length; i++) {
+    // `heads[i]` is null exactly when the object is absent. Index over the
+    // ORIGINAL digest array: `Promise.all` preserves input order, and the
+    // response must not depend on which R2 call finished first.
+    const digest = digests[i];
+    if (heads[i] === null && digest !== undefined) missing.push(digest);
+  }
+  return missing;
+}
+
+/**
+ * Compare the edge answer against the container's on ONE request. Returns a
+ * verdict string for the log. Never throws to the caller's path: the caller
+ * runs it inside `ctx.waitUntil`, and a shadow must not be able to affect the
+ * response it is shadowing.
+ */
+export async function shadowCompareEdgeFindMissing(
+  env: EdgeFindMissingEnv,
+  tenantId: string,
+  requestBodyText: string,
+  containerResponse: Response,
+  now: () => number = () => Date.now(),
+): Promise<ShadowVerdict> {
+  const requested = parseRequestDigests(requestBodyText);
+  if (requested === null) return "skip:unparseable-request";
+  if (requested.length === 0) return "skip:empty";
+  if (requested.length > EDGE_FIND_MISSING_MAX_DIGESTS) {
+    return `skip:over-cap n=${requested.length}`;
+  }
+
+  if (!(await tenantMayUseEdgePath(env, tenantId))) return "skip:byok-or-unknown";
+
+  const containerText = await containerResponse.text();
+  const containerMissing = parseMissingDigests(containerText);
+  if (containerMissing === null) return "skip:unparseable-container-response";
+
+  const started = now();
+  let edgeMissing: string[] | null;
+  try {
+    edgeMissing = await probeMissingAtEdge(env, tenantId, requested);
+  } catch (e) {
+    return `skip:edge-error ${String(e).slice(0, 60)}`;
+  }
+  const edgeMs = now() - started;
+  if (edgeMissing === null) return "skip:underivable";
+
+  const a = new Set(edgeMissing);
+  const b = new Set(containerMissing);
+  const onlyEdge = [...a].filter((h) => !b.has(h)).length;
+  const onlyContainer = [...b].filter((h) => !a.has(h)).length;
+  const shape = `n=${requested.length} edge_ms=${edgeMs}`;
+  if (onlyEdge === 0 && onlyContainer === 0) return `match ${shape}`;
+  // Counts only — digests are tenant data and this line goes to logs
+  // (INV-NO-BODY-IN-LOGS).
+  return `DIVERGENT ${shape} only_edge=${onlyEdge} only_container=${onlyContainer}`;
+}
