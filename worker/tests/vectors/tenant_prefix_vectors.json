@@ -1,0 +1,43 @@
+{
+  "_comment": [
+    "Two-sided parity contract for the edge-native findMissingBlobs path",
+    "(docs/design/2026-08-25-adr-edge-native-find-missing.md).",
+    "BOTH implementations assert against THIS file: the Rust source of truth in",
+    "crates/tenant-path/tests/edge_parity_vectors.rs, and the TypeScript port in",
+    "worker/tests/edge_find_missing.test.ts. If either drifts, one side goes red;",
+    "a one-sided test would let the edge derive a key the container never wrote.",
+    "The TDK here is a FIXED TEST KEY (bytes 0x01..0x20), never the prod TDK —",
+    "prefixes derived from the real TDK are tenant-namespace secrets."
+  ],
+  "tdk_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+  "cases": [
+    {
+      "tenant": "d863fafb-17c3-4ec3-92f6-b5a85c27d7bd",
+      "prefix": "QB1S4StvCIsDVFjI",
+      "region": "iad",
+      "blake3_digest": "deadbeef00000001",
+      "blake3_key": "iad/QB1S4StvCIsDVFjI/deadbeef00000001",
+      "sha256_digest": "0000000000000000000000000000000000000000000000000000000000000001",
+      "sha256_key": "iad/QB1S4StvCIsDVFjI/bazel/sha256/0000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "tenant": "ee30f7ba-fc25-4d71-939e-ebe130b4c6a3",
+      "prefix": "NLUpQinQsk0wVlRR",
+      "region": "syd",
+      "blake3_digest": "cafebabe00000002",
+      "blake3_key": "syd/NLUpQinQsk0wVlRR/cafebabe00000002",
+      "sha256_digest": "00000000000000000000000000000000000000000000000000000000000000ff",
+      "sha256_key": "syd/NLUpQinQsk0wVlRR/bazel/sha256/00000000000000000000000000000000000000000000000000000000000000ff"
+    },
+    {
+      "_note": "the nil UUID is a DERIVATION vector only — the edge path refuses sentinel tenants long before key derivation",
+      "tenant": "00000000-0000-0000-0000-000000000000",
+      "prefix": "8I3MnvFkLUTP5zfw",
+      "region": "iad",
+      "blake3_digest": "0000000000000000",
+      "blake3_key": "iad/8I3MnvFkLUTP5zfw/0000000000000000",
+      "sha256_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sha256_key": "iad/8I3MnvFkLUTP5zfw/bazel/sha256/0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}

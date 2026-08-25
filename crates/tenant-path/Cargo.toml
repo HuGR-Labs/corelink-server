@@ -21,6 +21,10 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+# Reads the shared edge/container parity vectors
+# (worker/tests/vectors/tenant_prefix_vectors.json). Dev-only: nothing in the
+# shipped crate parses JSON.
+serde_json = { workspace = true }
 criterion = { workspace = true }
 
 [[bench]]
