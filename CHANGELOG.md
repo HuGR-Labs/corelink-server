@@ -24,6 +24,21 @@ Each entry cross-references:
 
 ### Fixed
 
+- **The 2026-08-25 `_system` wedge was an INSTANCE failure, not the image
+  (follow-up to the rollback below).** `prod-syd` was pinned alone to
+  `34848d93-r1` (#1333) precisely to separate the two hypotheses without risking
+  the money path a second time. On that image syd's `_system` container answers
+  `/_health/container` 4/4 (0.31-1.66 s) and `POST /_internal/pat/mint` 2/2 (200,
+  0.75-1.06 s) — from a COLD instance, which is the harder case. The image boots
+  and serves the internal plane. So the apex outage was one instance that failed
+  to come up during the roll and stayed "running" from the platform's point of
+  view while serving nothing, not a defect in #1320/#1328. Prod is rolled forward
+  onto `34848d93-r1` again, this time with `/_health/container` probed within
+  ~2 min of the roll instead of being discovered by the monitor 4 minutes later.
+  Caveat kept on the record: this proves the image serves a FRESH `_system`
+  instance, not that an instance can never wedge again — which is why the
+  post-roll probe is now part of the procedure.
+
 - **Prod container image rolled back to `d38d739e-r1` — `34848d93-r1` wedged the
   `_system` container (INCIDENT 2026-08-25).** `cf-deploy-prod` run 32892355888
   rolled all 5 regions onto `34848d93-r1` at 20:02-20:06 UTC. BetterStack monitor
