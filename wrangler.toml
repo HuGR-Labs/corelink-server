@@ -1334,7 +1334,7 @@ class_name = "RequestMeterShardDO"
 
 [[env.prod-syd.containers]]
 class_name = "CoreLinkServer"
-image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-syd-corelinkserver-prod:d38d739e-r1"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-syd-corelinkserver-prod:34848d93-r1"
 # Cap raised 10→200 (2026-08-19) — see the iad block (account vCPU is the binding limit).
 max_instances = 200
 instance_type = "basic"
