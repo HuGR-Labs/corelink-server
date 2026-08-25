@@ -1578,30 +1578,61 @@ not enforce. Everything editorial — docs site, questionnaires, legal templates
 compliance crosswalks — was corrected in the same sweep; these eight were not,
 deliberately.
 
-They are **versioned contract text**. Correcting `v1.0.0` in place would rewrite
-a document a customer may have accepted; the honest paths are (a) publish
-`v1.0.1` with the corrected clause and, if anyone has executed v1.0.0, give
-notice, or (b) raise the zone floor back to 1.3 and accept that `sccache` and
-every other `native-tls`/SecureTransport client stops working (ADR-0072's exit
-condition). It is a legal and product call, not an editorial one.
+They are **versioned, effective-dated legal instruments**, and the earlier "just
+correct the wording, it's cheap" framing was wrong on inspection: the DPA carries
+`legal_review_status: "approved"` (counsel sign-off) and a `wording_id` UUID; the
+SCC annex and sub-processor commitments are the DPA's own `related_documents`
+(annexes to the executed package); the three privacy notices are DPO-published,
+versioned notices. Changing **"TLS 1.3" → "TLS 1.2"** is not an editorial tidy —
+it is a **material downgrade of a stated security control** in text a customer
+signs at sign-up (`apps/docs/src/pages/trust/center.tsx`: "DPA v1.0.0 signed at
+sign-up"). Doing that unilaterally, in place, on a counsel-approved signed
+template is exactly the outward-facing, hard-to-reverse act a TL must not take
+alone. The honest paths both need counsel/owner:
+- **(a) Publish `v1.0.1`** (DPA + annexes + notices) with the corrected clause and
+  counsel re-approval, leave v1.0.0 byte-intact as the historical signed bytes,
+  repoint the sign-up click-through to v1.0.1, and — if anyone executed v1.0.0 —
+  give notice. Recommendation. (A draft v1.0.1 cannot be self-approved: setting
+  `legal_review_status: approved` without counsel would be a second lie.)
+- **(b) Raise the zone floor back to 1.3** and accept that `sccache` and every
+  other `native-tls`/SecureTransport client stops connecting (ADR-0072's own exit
+  condition) — re-breaks a live cache surface.
 
-`scripts/validate_docs_reality.py` now scans `legal/` and holds these eight
-lines as **tracked** drift: visible on every run, fatal under `--strict`, and
-impossible to forget. New occurrences anywhere else fail the gate outright.
+**Corrected in passing 2026-08-25 (TL lane, no counsel needed):** the two
+customer-facing **marketing** overclaims that stated the floor as *mandatory
+1.3* — `marketing/sales/FAQ-MASTER.md` and
+`marketing/sales/legal-questionnaires/VENDOR-QUESTIONNAIRE-RESPONSE-TEMPLATE.md`
+("In transit: TLS 1.3 mandatory") — now read "TLS 1.2 minimum (1.3 negotiated
+when supported), per ADR-0072". These are sales collateral, not signed
+instruments, so accuracy is the TL's to fix; they were also NOT among the eight
+and had been missed by the 2026-08-24 editorial sweep.
 
-**Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
-today, what each option costs, and what happens if the answer is "not now".
+**Verify was broken and is fixed here.** The prior `verify` grepped
+`scripts/docs_reality_allowlist.json` for `tls-13-floor-claim-executed-contracts`
+— a key that does not exist, in an allowlist whose gate (`validate_docs_reality.py`)
+only scans `corelink <cmd>` CLI references and does not read `legal/` for TLS
+claims at all. It passed vacuously while all eight lines still said 1.3. The
+verify now counts the actual drift in the eight files.
+
+**Owner decision brief:** `docs/internal/2026-08-24-owner-decision-brief.md` §7.
 ```backlog
 id: B-035
 repo: corelink-server
 owner: owner
 status: open
 verify: |
-  grep -q "tls-13-floor-claim-executed-contracts" scripts/docs_reality_allowlist.json
+  test $(grep -lE 'TLS 1\.3\+|\(TLS 1\.3\)' \
+    legal/dpa/v1.0.0.en-US.md legal/dpa/v1.0.0.pt-BR.md legal/dpa/v1.0.0.es-419.md \
+    legal/dpa/STANDARD-CONTRACTUAL-CLAUSES-EU.md legal/dpa/SUB-PROCESSOR-COMMITMENTS.md \
+    legal/privacy-notice/v1.0.0/en-US.md legal/privacy-notice/v1.0.0/pt-BR.md \
+    legal/privacy-notice/v1.0.0/es-MX.md 2>/dev/null | wc -l | tr -d ' ') -ne 0
 verify-means: |
-  open while the contract text still needs the tracked suppression; goes red the
-  moment the clause is fixed (or the floor raised) and the rule is deleted
-last-verified: 2026-08-24
+  open (exit 0) while any of the eight signed legal instruments still claims a TLS
+  1.3 floor; goes red the moment counsel-approved corrected text (v1.0.1 or an
+  errata) replaces them, or the zone floor is raised to 1.3. MANUAL residual: only
+  the owner/counsel can decide v1.0.1-vs-floor-raise and whether a v1.0.0 signer
+  needs notice.
+last-verified: 2026-08-25
 ```
 
 ### B-034 — docs CI has six hosted-runner jobs and 2 116 broken links
