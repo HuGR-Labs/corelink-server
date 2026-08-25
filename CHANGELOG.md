@@ -24,6 +24,21 @@ Each entry cross-references:
 
 ### Added
 
+- **Governance-mode legal-hold-aware CAS erasure — the retention backend is real,
+  not a stub (B-009).** The last open piece of DSR WI-S11-008. The CAS legal-hold
+  backend was reconciled to `NotApplicable("no legal-hold CAS partition shipped")`;
+  it is now `BackendKind::R2CasLegalHold` with a real `R2CasLegalHoldEraseAdapter`.
+  Under an active hold it preserves the frozen content-addressed bytes and writes
+  one subject-free `cas_retention` row per surviving object (new migration
+  `0102_cas_retention.sql`) — the anonymous retention record IS the severing of the
+  subject→object PII linkage (GDPR Recital 26), returning `Pseudonymized` so an
+  admin-driven drain can finish the physical erasure once the hold ends; with no
+  hold it delegates to the effective CAS LIST+DELETE. Governance mode is
+  CODE-reversible, NOT R2 Object-Lock storage immutability — Compliance/Object-Lock
+  mode is explicitly deferred (the `mode` column admits only `'governance'`). Fails
+  CLOSED when the tenant TDK is absent. Stub file removed; 7 adapter tests + the
+  erasure-worker suite green.
+
 - **The near-$-ceiling early-warning now routes to an alert sink, not just a log
   line (B-007).** `tenant_quota.rs` still emits the structured `warn!` when a
   refill falls back to a partial lease (a tenant within one lease-chunk of its

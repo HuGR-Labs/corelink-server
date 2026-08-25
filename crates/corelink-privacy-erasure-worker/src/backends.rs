@@ -67,7 +67,6 @@ pub mod neon_pitr_pseudo;
 pub mod r2_ac;
 pub mod r2_audit_pseudo;
 pub mod r2_cas;
-pub mod r2_cas_legalhold_pseudo;
 pub mod r2_evidence_pseudo;
 pub mod stripe;
 

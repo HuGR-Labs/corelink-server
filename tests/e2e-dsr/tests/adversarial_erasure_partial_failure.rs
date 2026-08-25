@@ -71,7 +71,7 @@ fn partial_backend_failure_aborts_then_replays() {
     // have been inserted; Stripe + the 4 backends after it should be
     // empty. Canonical order: NeonMain, NeonBilling, R2Cas, R2Ac, D1,
     // Kv, Stripe, Loki, R2AuditPseudo, NeonPitrPseudo,
-    // R2CasLegalHoldPseudo, R2EvidencePseudo — Stripe is index 6.
+    // R2CasLegalHold, R2EvidencePseudo — Stripe is index 6.
     assert!(
         snapshot.len() < 12,
         "expected partial snapshot, got {}",
