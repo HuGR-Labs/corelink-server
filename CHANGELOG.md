@@ -24,6 +24,19 @@ Each entry cross-references:
 
 ### Fixed
 
+- **`scripts/admin/mint-dogfood-pat.sh` could not mint against prod — Cloudflare
+  Access sits in front of `/_internal/*`.** The `x-corelink-internal-auth` key
+  alone never reaches the container from outside the edge; the call comes back
+  403 with an Access HTML body, which reads like a wrong key and is not one.
+  Operators had been working around it with hand-rolled one-off `curl`s. The
+  script now sends `CF-Access-Client-Id` / `CF-Access-Client-Secret` when
+  `CF_ACCESS_OPERATOR_CLIENT_ID` / `_SECRET` are in the environment (they are in
+  `.env.local`, which its usage block already says to source); both stay optional
+  so a host with no Access in front is unaffected, and the failure message now
+  names the service token as a candidate cause. Verified end to end against prod:
+  mint + D1 persist 200, the resulting read-only PAT authenticated, then revoked
+  and the revocation proven with a 401.
+
 - **The 2026-08-25 `_system` wedge was an INSTANCE failure, not the image
   (follow-up to the rollback below).** `prod-syd` was pinned alone to
   `34848d93-r1` (#1333) precisely to separate the two hypotheses without risking

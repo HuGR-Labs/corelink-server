@@ -56,6 +56,19 @@ command -v python3 >/dev/null || { echo "python3 required" >&2; exit 127; }
 command -v curl >/dev/null || { echo "curl required" >&2; exit 127; }
 [[ -n "${CORELINK_PAT_MINT_AUTH_KEY:-}" ]] || { echo "ERROR: CORELINK_PAT_MINT_AUTH_KEY unset (source .env.local)" >&2; exit 2; }
 
+# Cloudflare Access sits in FRONT of /_internal/* on the prod hostname, so the
+# internal-auth key alone is not enough from outside the edge: without an Access
+# service token the request never reaches the container and comes back 403 with
+# an Access HTML body, not a CoreLink error. Measured 2026-08-25 while minting a
+# latency-probe PAT. The service-token pair lives in .env.local as
+# CF_ACCESS_OPERATOR_CLIENT_ID / _SECRET; both are optional here so the script
+# still works against a host with no Access in front of it.
+ACCESS_HEADERS=()
+if [[ -n "${CF_ACCESS_OPERATOR_CLIENT_ID:-}" && -n "${CF_ACCESS_OPERATOR_CLIENT_SECRET:-}" ]]; then
+  ACCESS_HEADERS=(-H "CF-Access-Client-Id: ${CF_ACCESS_OPERATOR_CLIENT_ID}"
+                  -H "CF-Access-Client-Secret: ${CF_ACCESS_OPERATOR_CLIENT_SECRET}")
+fi
+
 # Canonical D1 `pat.scope` label — the CHECK domain is exactly
 # ('read-write','read-only','admin') (migration 0037). This is the SINGLE
 # source of truth: we send $CANON to BOTH the mint route AND the D1 INSERT, so
@@ -80,10 +93,11 @@ fi
 
 # 1) mint (pure function — returns token + argon2id hash; does NOT persist)
 RESP="$(curl -fsS -X POST "$API_BASE/_internal/pat/mint" \
+  ${ACCESS_HEADERS[@]+"${ACCESS_HEADERS[@]}"} \
   -H "x-corelink-internal-auth: $CORELINK_PAT_MINT_AUTH_KEY" \
   -H "content-type: application/json" \
   -d "$(python3 -c "import json,sys;print(json.dumps({'tenant_id':sys.argv[1],'principal_id':sys.argv[2],'scopes':sys.argv[3],'ttl_seconds':int(sys.argv[4])}))" "$TENANT" "$PRINCIPAL" "$CANON" "$TTL")")" \
-  || { echo "ERROR: mint call failed (auth? host? key?)" >&2; exit 1; }
+  || { echo "ERROR: mint call failed (auth? host? key? Access service token?)" >&2; exit 1; }
 
 # parse the mint response
 read -r PAT_ID TOKEN_ID EXPIRES_MS TOKEN HASH < <(python3 - "$RESP" <<'PY'
