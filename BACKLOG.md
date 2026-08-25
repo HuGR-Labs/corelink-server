@@ -1904,10 +1904,6 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  grep -rl "releases/download/v.*tla2tools\.jar" .github/workflows scripts >/dev/null
-verify-means: |
-  open while any carrier still fetches the jar from the mutable upstream release
-  URL. Goes red when every carrier points at storage we control.
   n=$(grep -rlE "set -[a-z]*o pipefail" .github/workflows scripts tests tools | xargs grep -oE "\| *head\b" | wc -l | tr -d " "); [ "${n:-0}" -gt 0 ]
 verify-means: |
   open while any `| head` site remains inside a file that sets pipefail. Measured 74

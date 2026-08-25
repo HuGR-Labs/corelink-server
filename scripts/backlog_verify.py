@@ -82,12 +82,41 @@ class Item:
     problems: list[str] = field(default_factory=list)
 
 
+class _NoDuplicateKeysLoader(yaml.SafeLoader):
+    """`yaml.SafeLoader` that refuses a mapping with a repeated key.
+
+    PyYAML's default is last-wins, silently. On 2026-08-24 a B-039 `verify:` +
+    `verify-means:` pair was pasted into the B-040 block; both blocks parsed,
+    both were unique by `id`, and the gate cheerfully ran B-039's TLA-jar check
+    while reporting on B-040. The two happened to agree at the time, so nothing
+    went red — the register would have started lying the moment they diverged.
+    A duplicate key here is never intentional; make it BROKEN.
+    """
+
+
+def _no_duplicate_keys(loader, node, deep=False):
+    seen = set()
+    for key_node, _ in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in seen:
+            raise yaml.constructor.ConstructorError(
+                None, None, f"duplicate key {key!r} in a backlog block", key_node.start_mark
+            )
+        seen.add(key)
+    return yaml.SafeLoader.construct_mapping(loader, node, deep=deep)
+
+
+_NoDuplicateKeysLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _no_duplicate_keys
+)
+
+
 def parse(text: str) -> list[Item]:
     items: list[Item] = []
     for m in BLOCK_RE.finditer(text):
         line = text[: m.start()].count("\n") + 1
         try:
-            data = yaml.safe_load(m.group(1)) or {}
+            data = yaml.load(m.group(1), Loader=_NoDuplicateKeysLoader) or {}
         except yaml.YAMLError as e:
             items.append(Item(raw={}, line=line, id=f"<unparseable@{line}>", verdict=BROKEN,
                               detail=f"the backlog block is not valid YAML: {e}"))
@@ -223,7 +252,7 @@ def main() -> int:
         line = text[: m.start()].count("\n") + 1
         block_id = ""
         try:
-            data = yaml.safe_load(m.group(1)) or {}
+            data = yaml.load(m.group(1), Loader=_NoDuplicateKeysLoader) or {}
             if isinstance(data, dict):
                 block_id = str(data.get("id", ""))
         except yaml.YAMLError:

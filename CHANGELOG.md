@@ -85,6 +85,15 @@ Each entry cross-references:
   everyone learns to ignore. The two are NOT interchangeable and the workflow
   says so: fabric traffic originates inside Cloudflare's own network, so it
   cannot detect an edge rule that blocks outside datacenter ranges.
+- **The backlog register was running one item's check and reporting it as
+  another's (B-040).** A B-039 `verify:`/`verify-means:` pair had been pasted
+  into the B-040 block. PyYAML's default for a repeated key is last-wins,
+  silently, so the block parsed, its `id` was unique, and `backlog_verify.py`
+  ran B-039's TLA-jar check while printing a verdict for B-040. The two happened
+  to agree, so nothing went red — the register would have started lying the
+  moment they diverged. The stray pair is removed and the parser now rejects a
+  duplicate key outright (`_NoDuplicateKeysLoader`), with a test cell in
+  `scripts/test_backlog_verify.sh` proving it in both directions.
 
 - **The branded status hostname is retired, and the incident page it anchored
   was wrong about almost everything it promised.** The owner decided not to buy
