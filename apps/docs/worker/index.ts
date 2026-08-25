@@ -53,6 +53,47 @@ export default {
       url.pathname = url.pathname.slice(MOUNT.length);
     }
 
-    return env.ASSETS.fetch(new Request(url.toString(), request));
+    const response = await env.ASSETS.fetch(new Request(url.toString(), request));
+    return reattachMount(response);
   },
 };
+
+/**
+ * Re-attach the mount prefix to a redirect issued by the ASSETS binding.
+ *
+ * The prefix strip above is invisible to the assets layer, so every `Location`
+ * it produces is relative to the BUILD root, not to the mount. Returned as-is,
+ * such a redirect walks the reader straight out of the docs Worker and into the
+ * admin-ui app's `/corelink/*` route.
+ *
+ * This was not theoretical and it did not look like a failure. Measured
+ * 2026-08-24 against prod:
+ *
+ *   GET /corelink/docs/reference/api/
+ *     -> 307 location: /reference/api            (trailing-slash normalisation)
+ *     -> 200 the marketing homepage. No 404, no error — the wrong page,
+ *        served successfully.
+ *
+ *   GET /corelink/docs/goproxy/<mod>/@v/list
+ *     -> 307 location: /goproxy/<mod>/%40v/list  (`@` percent-normalisation)
+ *     -> 200 HTML, which is why every documented `go get` of the Go SDK died
+ *        with `invalid character '<' looking for beginning of value`. The
+ *        %40-encoded URL served the correct proxy response all along.
+ *
+ * Only root-relative locations are touched: an absolute URL to another origin
+ * (or one that already carries the mount) is somebody's deliberate destination.
+ */
+function reattachMount(response: Response): Response {
+  if (response.status < 300 || response.status >= 400) return response;
+  const location = response.headers.get("location");
+  if (!location || !location.startsWith("/") || location.startsWith("//")) return response;
+  if (location === MOUNT || location.startsWith(`${MOUNT}/`)) return response;
+
+  const headers = new Headers(response.headers);
+  headers.set("location", `${MOUNT}${location}`);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
