@@ -3348,7 +3348,52 @@ const baseHandler: ExportedHandler<Env> = {
         meter && !isStorageMutating && !quotaTier.d1Error;
       let handledFast = false;
 
-      if (!serveHandled && asyncMeterMode === "on" && asyncMeterEligible) {
+      // ── The serve path used to force a synchronous D1 storage SUM ─────────
+      // Measured from inside the fabric (colo=IAD, corelink-runners run
+      // 32792837540, 2026-08-25): `qbatch` 35-51 ms on EVERY warm authed read,
+      // and 115-124 ms on the same request from São Paulo. It should not have
+      // been there at all. `EDGE_ASYNC_METER="on"` (WP-B) exists precisely to
+      // take that round trip off a warm READ, but its arming condition began
+      // with `!serveHandled`, so flipping `EDGE_DO_METER="serve"` — which is on
+      // in every prod region — silently disabled it for every capped tier. Two
+      // optimizations that compose perfectly were mutually exclusive by an
+      // accident of ordering.
+      //
+      // They compose because they own DIFFERENT caps. The DO is authoritative
+      // for the request COUNT (it already metered this request, verdict in
+      // hand), which leaves only the STORAGE verdict — and a READ cannot grow
+      // storage, so the B1 KV byte count answers it with the same verdict the
+      // live SUM would return, from a ≤60 s-fresh read. That is the identical
+      // trade `asyncMeterEligible` already encodes and the async-metering ADR
+      // already accepted; this branch changes WHO ELSE may take it, not WHAT is
+      // traded.
+      //
+      // Enforcement order is preserved exactly: storage 429 first, then the DO's
+      // request-cap 429 — the same precedence the `!handledFast` block below
+      // applies on the serve path. Both are enforced HERE because setting
+      // `handledFast` skips that block entirely; forgetting the DO verdict here
+      // would be a money-path hole, not an optimization.
+      const quotaPath = quotaPathFor({ serveHandled, asyncMeterMode, asyncMeterEligible });
+      if (quotaPath === "serve-fast") {
+        const storageCheck = await checkStorageQuotaCachedRead(
+          env.CONFIG_DB,
+          resolvedTenantId,
+          quotaTier.tier,
+          false,
+          storageCapIsFinite(quotaTier.tier),
+          { ...(tierKv ? { kv: tierKv } : {}), waitUntil: ctx.waitUntil.bind(ctx) },
+        );
+        if (!storageCheck.ok) {
+          return quotaExceeded(storageCheck.reason, storageCheck.retryAfterSec);
+        }
+        if (serveVerdict !== null && !serveVerdict.withinCap) {
+          return quotaExceeded(
+            `Monthly request quota exceeded: limit is ${doServeCap} (tier: ${quotaTier.tier})`,
+            secondsUntilNextMonthStart(),
+          );
+        }
+        handledFast = true;
+      } else if (quotaPath === "fast") {
         const fast = await tryFastRequestCount(env.CONFIG_DB, resolvedTenantId, quotaTier.tier, {
           ...(tierKv ? { kv: tierKv } : {}),
           waitUntil: ctx.waitUntil.bind(ctx),
@@ -3370,7 +3415,7 @@ const baseHandler: ExportedHandler<Env> = {
           }
           handledFast = true;
         }
-      } else if (asyncMeterMode === "shadow" && asyncMeterEligible) {
+      } else if (quotaPath === "shadow") {
         // Canary: compute the arming DECISION (no side effect, no double-count)
         // and log it; the exact path below still serves. No tenant id (no PII).
         ctx.waitUntil(
@@ -4154,6 +4199,49 @@ export function isDsrEraseFanoutPath(pathSuffix: string): boolean {
  * `fetch` above.)
  */
 const ORIGIN_CONTAINER_PHASES = ["opat", "oquota", "ostore", "oother"] as const;
+
+/**
+ * Which quota path a request takes at the edge — the composition rule for the
+ * two independent optimizations that own DIFFERENT caps.
+ *
+ * `EDGE_DO_METER="serve"` makes the edge-local DO authoritative for the request
+ * COUNT. `EDGE_ASYNC_METER="on"` (WP-B) takes the synchronous D1 round trip off
+ * a warm READ by answering the STORAGE verdict from the ≤60 s-fresh B1 KV byte
+ * count. They are orthogonal, but the arming condition used to read
+ * `!serveHandled && mode === "on" && eligible`, so turning the DO serve path on
+ * — which is the state of every prod region — disabled the async path for every
+ * capped tier, and every warm read paid a D1 storage SUM it did not need
+ * (`qbatch` 35-51 ms measured from colo=IAD, 115-124 ms from São Paulo).
+ *
+ * The verdicts:
+ *
+ *   - `"serve-fast"` — the DO metered this request AND the async rule arms:
+ *     enforce storage from cache, then the DO's own cap verdict, skip D1.
+ *   - `"fast"`       — no DO verdict, async rule arms: today's WP-B fast path.
+ *   - `"shadow"`     — canary: decide-and-log only; the exact path still serves.
+ *   - `"exact"`      — the full `runQuotaBatch` path, byte-identical to before.
+ *
+ * A request is `eligible` only when it is metered (never a fan-out), NOT
+ * storage-mutating (a read cannot grow storage) and the tier is CONFIRMED — so
+ * no branch here can trade a verdict it is not allowed to trade.
+ */
+export function quotaPathFor(input: {
+  readonly serveHandled: boolean;
+  readonly asyncMeterMode: string | undefined;
+  readonly asyncMeterEligible: boolean;
+}): "serve-fast" | "fast" | "shadow" | "exact" {
+  const { serveHandled, asyncMeterMode, asyncMeterEligible } = input;
+  if (!asyncMeterEligible) {
+    return "exact";
+  }
+  if (asyncMeterMode === "on") {
+    return serveHandled ? "serve-fast" : "fast";
+  }
+  if (asyncMeterMode === "shadow") {
+    return "shadow";
+  }
+  return "exact";
+}
 
 /**
  * Compute the `qother` phase — the unattributed remainder of `wdb` after its
