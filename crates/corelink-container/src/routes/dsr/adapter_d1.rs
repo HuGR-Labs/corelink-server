@@ -233,6 +233,14 @@ pub(super) const RETAIN_SET: &[&str] = &[
     // legal-process / audit anchor (`placed_at`), `reason` is operator-internal
     // and explicitly NOT DSR-disclosable per the migration → RETAIN.
     "tenant_legal_hold",
+    // CAS legal-hold retention index (migr. 0102, B-009): one subject-free row per
+    // CAS object frozen under a Governance-mode legal hold. A row = "this held CAS
+    // object is retained pending hold release" — the litigation/retention anchor
+    // whose whole purpose is to SURVIVE the erasure it defers; erasing it would
+    // orphan the frozen bytes and lose the drain's worklist. Sibling of
+    // `tenant_legal_hold`. Carries NO raw subject PII (tenant_id + region +
+    // object_key + timestamps only; subject-free by construction) → RETAIN.
+    "cas_retention",
     // abuse_score_history (migr. 0013): OWNER-DECIDED RETAIN — fraud/abuse
     // prevention is a legitimate interest under GDPR Art.17(3)(... ) / Art.6(1)(f);
     // retaining behavioural abuse scores survives an Art.17 erasure as an
@@ -352,6 +360,7 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "audit_chain_head",
     "tier_select_audit_events",
     "tenant_legal_hold",
+    "cas_retention",
     "abuse_score_history",
     "session_exchange_throttle",
     // CAS-plane-owned
