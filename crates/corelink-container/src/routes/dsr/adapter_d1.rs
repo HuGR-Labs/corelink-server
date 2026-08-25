@@ -300,7 +300,7 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "tenant_config",
     "hot_blobs",
     "quota_reservations",
-    "audit_drain_lease",           // audit-drain partition lease (migr. 0101, B-038) — erase:tenant_id
+    "audit_drain_lease", // audit-drain partition lease (migr. 0101, B-038) — erase:tenant_id
     "quota_cas_attempts",
     "quota_fsm_state",
     "ratelimit_buckets",

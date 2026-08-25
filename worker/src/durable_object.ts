@@ -884,6 +884,11 @@ export class CoreLinkServer implements DurableObject {
           // the audit/drain sweep. "" ⇒ container default (200). Forwarded so a
           // Worker-side var actually reaches the container process.
           AUDIT_DRAIN_BATCH_LIMIT: this.env.AUDIT_DRAIN_BATCH_LIMIT ?? "",
+          // B-038 rollout flag (default OFF). "1"/"true" serialises audit drains
+          // behind a per-partition lease + seal fence. Forwarded so the container
+          // process actually sees the toggle (else setting it as a Worker var is
+          // silently inert). Not a secret.
+          AUDIT_DRAIN_LEASE_ENABLED: this.env.AUDIT_DRAIN_LEASE_ENABLED ?? "",
           // S-09 offsite archive (`POST /_internal/audit/archive`). Both are
           // non-secret tuning knobs; "" ⇒ container defaults (bucket
           // `corelink-audit-weur`, which already carries the 7-year Object
