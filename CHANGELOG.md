@@ -22,6 +22,34 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Changed
+
+- **`findMissingBlobs` is ~3x faster in prod — MEASURED, and still linear, which
+  is the real finding.** #1328 shipped with its speedup argued rather than
+  measured; it is measured now, from inside the fabric (colo=IAD), same tenant,
+  same endpoint, same worst-case shape as the baseline (random 64-hex digests,
+  absent by construction, so every digest is probed and every audit row written).
+  `corelink-runners` `latency-probe` run 32900535628, 3 samples per size:
+
+  | n digests | before (2026-08-25) | after | per digest |
+  |---|---|---|---|
+  | 5 | 2.10 s | 0.65-1.22 s | ~150 ms |
+  | 20 | 5.74 s | 2.20-2.24 s | ~111 ms |
+  | 50 | 13.48 s | 4.68-4.85 s | ~96 ms |
+  | 100 | 26.86 s | 8.98-9.70 s | ~92 ms |
+
+  ~268 ms per digest became ~92 ms — but it is still **linear in n**, and that is
+  not what 16-way concurrent probes should produce. 100 HEADs at the measured
+  ~60 ms each, 16 at a time, is ~6 waves ≈ 400 ms, not 9 s. The audit batching
+  clearly landed (the ~122 ms/digest audit write is gone); the probe concurrency
+  did not deliver, and the residual ~92 ms/digest is suspiciously close to ONE
+  D1-over-HTTP round trip from the container. Candidate causes, none yet proven:
+  CPU-bound TLS on a 0.25-vCPU instance serialising the fan-out, or a per-digest
+  cost still hiding behind `probe_existence_unaudited`. Attributing it needs the
+  per-phase `Server-Timing` breakdown on this route. Recorded as an open thread
+  rather than claimed as a win: 9 s for a batch Bazel sends thousands of digests
+  in is still not a product.
+
 ### Fixed
 
 - **`scripts/admin/mint-dogfood-pat.sh` could not mint against prod — Cloudflare
