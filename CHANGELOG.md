@@ -22,6 +22,30 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+
+- **F0 of the edge-native `findMissingBlobs` path — derivation, pinned two-sided
+  against Rust.** `worker/src/lib/edge_find_missing.ts` maps `(tenant, sha256
+  digest)` to the exact R2 key the container writes:
+  `deriveTenantPrefix` (HMAC-SHA256(TDK, uuid16-BE) → base64url-no-pad → 16
+  chars, generalising `edge_public_read.ts::derivePublicPrefix` from the
+  `_public` UUID to any tenant) and `casBlobKey`, which keeps REAPI sha256
+  digests in their own `bazel/sha256/` keyspace — collapsing the two would
+  answer "missing" for blobs that exist, and a cache client acts on that by
+  re-uploading everything. Nothing here touches R2, D1 or auth; no request
+  reaches it yet.
+
+  `worker/tests/vectors/tenant_prefix_vectors.json` is asserted by BOTH sides —
+  `crates/tenant-path/tests/edge_parity_vectors.rs` against the Rust
+  `derive_prefix`, and `worker/tests/edge_find_missing.test.ts` against the TS
+  port. A one-sided test would let the edge derive keys the container never
+  wrote. Derivation fails CLOSED (returns null, never a guess) on sentinel
+  tenants, non-canonical UUIDs, a short TDK, or a non-sha256 digest, so a caller
+  that cannot derive must fall back to the container.
+
+  Rationale and the measurements that forced it:
+  `docs/design/2026-08-25-adr-edge-native-find-missing.md`.
+
 ### Changed
 
 - **`findMissingBlobs` is ~3x faster in prod — MEASURED, and still linear, which
