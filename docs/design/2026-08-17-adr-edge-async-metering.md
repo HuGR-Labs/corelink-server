@@ -159,3 +159,30 @@ same way. Every invariant above is unchanged: eligibility still requires a meter
 tier-CONFIRMED request; writes still resolve storage live; `d1Error` is still never cached; fan-out is
 still never re-metered. Enforcement ORDER on the serve path is preserved verbatim — storage 429 first,
 then the DO's request-cap 429 — because setting `handledFast` skips the block that used to apply them.
+
+## Amendment 2026-08-25 (2) — the DO meter hop moves off the critical path for reads
+
+With the storage SUM gone (amendment 1), the DO meter hop became the last synchronous round trip
+between auth and the origin fetch: `wdb` 71-78 ms measured from colo=IAD, essentially all of it the
+hop (corelink-runners run 32802599838).
+
+The hop is NOT removed — the DO is the counter, and skipping it would under-count. It is now issued
+CONCURRENTLY with the origin fetch on a **GET/HEAD** request that already qualifies for this ADR's
+fast path, and collected immediately before the response is returned. The cap is still enforced
+before a single byte reaches the client.
+
+What this trades, stated plainly:
+
+- **An over-cap READ now makes the origin do its work before being refused.** No bytes are served;
+  the 429 is byte-identical to the inline one (both build it from the same
+  `quotaExceededResponse`). This is the same trade rt-nuclear #24 already accepted when the storage
+  SUM was batched ahead of the counter.
+- **A DO fault during a deferred hop now under-counts.** The awaited path fell back to an inline D1
+  count; by the collection point the response is already built, so that fallback moves to
+  `ctx.waitUntil`, which has no durability guarantee. Under-count is the direction this counter's
+  fail-open design already tolerates and already produces when the UPSERT throws; it can never
+  over-count, which is the failure that would wrongly 429 a paying tenant.
+
+A mutation is never deferred — committing a write and then refusing it is a correctness bug, not an
+optimization. The rule is a pure, unit-tested predicate (`deferCapVerdictFor`), so each condition is
+visible and testable rather than spelled inline in a 4000-line handler.

@@ -9,12 +9,12 @@ source_files:
   - "crates/tenant-path/src/lib.rs"
   - "crates/tenant-path/src/prefix.rs"
 source_blobs:
-  - "worker/src/index.ts@74f79e1cdc7219b1761b56ce3fab1fadb433691b"
+  - "worker/src/index.ts@926d963bf214f2df90ae29bf83254e9dc22e6ca3"
   - "crates/corelink-worker/src/tenant.rs@d3ba56482c7b31fa168133737d8eddba72462a80"
   - "crates/corelink-container/src/auth_tenant.rs@299dd57e7a045709717860a3d52b8fcf57defe73"
   - "crates/tenant-path/src/lib.rs@ed40ce405d38f398b6537f17531f0fd05be3dfdb"
   - "crates/tenant-path/src/prefix.rs@cb25dffd2461c9cd3e6c8f5a98744d3a3d75066c"
-checkpoint_sha: "f0e91332ead73a966e92998b504faf71896ae732"
+checkpoint_sha: "0d6443d662a4dc456550b998a2e68ca4f309906d"
 provenance: "AUTHORED"
 tags: ["tenancy", "isolation", "durable-object", "multi-tenant", "security"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -44,7 +44,7 @@ keyed on the same trusted tenant id this control establishes.
 - The Worker maps each tenant to its own Durable Object instance via `idFromName(resolvedTenantId)` —
   derived from the Worker-resolved tenant id, never from client input — so a single DO is the sole
   serialization point for that tenant's state; the local (this-region) DO id is always keyed on
-  `resolvedTenantId`, never the shared `_pending_auth` — `worker/src/index.ts:3799`.
+  `resolvedTenantId`, never the shared `_pending_auth` — `worker/src/index.ts:3846`.
 - Non-tenant system traffic uses reserved sentinel DO names (e.g. `_system`, `_oci`) that are deliberately
   distinct from any real tenant id — `worker/src/index.ts:830`.
 - Inside the container the ONLY trustworthy tenant source is the DO-injected `x-corelink-tenant-id` header;
@@ -85,7 +85,7 @@ keyed on the same trusted tenant id this control establishes.
 
 # Citations
 
-1. `worker/src/index.ts:3799` — one DO instance per tenant via `idFromName(resolvedTenantId)` (the implementing call).
+1. `worker/src/index.ts:3846` — one DO instance per tenant via `idFromName(resolvedTenantId)` (the implementing call).
 2. `worker/src/index.ts:830` — reserved `_system` sentinel DO name for non-tenant traffic (the `_health/container` route return).
 3. `crates/corelink-worker/src/tenant.rs:36-44` — the `TenantCtx` struct with a private, derived prefix field.
 4. `crates/corelink-worker/src/tenant.rs:55-63` — `TenantCtx::new` derives the prefix from `(tdk, tenant_id)`.

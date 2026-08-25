@@ -1956,6 +1956,22 @@ const baseHandler: ExportedHandler<Env> = {
     // the call so a DO outage (the fail-open `catch` that swallows it) still
     // gets its time attributed rather than silently vanishing into `qother`.
     let stQDoMs = -1;
+    // ── The request-cap verdict, deferred off the critical path ────────────
+    // On a warm READ the DO meter hop is now the LAST synchronous D1-class round
+    // trip left before the origin fetch — measured `wdb` 71-78 ms from colo=IAD
+    // with `qbatch` already gone (corelink-runners run 32802599838). The hop
+    // still HAPPENS on every request (the DO is the counter; skipping it would
+    // under-count), but nothing in the origin fetch depends on its ANSWER, so on
+    // a non-mutating request it can run CONCURRENTLY with that fetch and be
+    // awaited just before the response is handed back. The cap is still enforced
+    // before a single byte reaches the client; what changes is that an over-cap
+    // READ may have touched storage before being refused — the same trade
+    // rt-nuclear #24 already accepted for the storage SUM, and the reason this is
+    // restricted to GET/HEAD: a mutation must never commit and then be 429'd.
+    let pendingCapVerdict: Promise<{ withinCap: boolean; refilled: boolean } | null> | null =
+      null;
+    let deferredCap: { cap: number; tier: string } | null = null;
+    let deferredCapTierResult: Awaited<ReturnType<typeof resolveTenantTierCached>> | null = null;
     let stQBatchMs = -1;
     let stQResidMs = -1;
     const requestId = resolveRequestId(request);
@@ -3154,24 +3170,7 @@ const baseHandler: ExportedHandler<Env> = {
     if (resolvedTenantId !== "_anonymous" && resolvedTenantId !== "_system" && resolvedTenantId !== "_pending") {
       // Helper: emit the shared 429 quota-exceeded response shape.
       const quotaExceeded = (reason: string, retryAfterSec: number): Response =>
-        applyCors(
-          new Response(
-            JSON.stringify({
-              error: "QUOTA_EXCEEDED",
-              message: reason,
-              request_id: requestId,
-            }),
-            {
-              status: 429,
-              headers: {
-                "Content-Type": "application/json",
-                "Retry-After": String(retryAfterSec),
-                "X-Request-Id": requestId,
-              },
-            },
-          ),
-          request,
-        );
+        applyCors(quotaExceededResponse(reason, retryAfterSec, requestId), request);
 
       // Request-count quota is ENFORCED BY DEFAULT (fail-CLOSED). The monthly
       // per-tenant request cap is a CONTRACTED ceiling, so an unset env var in
@@ -3287,7 +3286,44 @@ const baseHandler: ExportedHandler<Env> = {
       ) {
         const shardNs = env.REQUEST_METER_SHARD_DO;
         const coordNs = env.REQUEST_METER_COORDINATOR_DO;
+        // Defer the hop OFF the critical path when the request is a READ that
+        // would take the `serve-fast` quota path anyway: the storage verdict then
+        // comes from the ≤60 s-fresh B1 cache, so this hop is the ONLY thing left
+        // between auth and the origin fetch, and the fetch does not depend on its
+        // answer. See `pendingCapVerdict` for the trade and why GET/HEAD only.
+        const deferCapVerdict = deferCapVerdictFor({
+          method: request.method,
+          isStorageMutating,
+          asyncMeterMode: (env as unknown as { EDGE_ASYNC_METER?: string }).EDGE_ASYNC_METER,
+          meter,
+          tierD1Error: quotaTier.d1Error === true,
+        });
         const qdoStart = Date.now();
+        if (deferCapVerdict) {
+          deferredCap = { cap: doServeCap, tier: quotaTier.tier };
+          deferredCapTierResult = quotaTier;
+          pendingCapVerdict = serveViaDO(
+            { shard: shardNs, coordinator: coordNs },
+            {
+              tenantId: resolvedTenantId,
+              region: env.R2_CAS_REGION,
+              yearMonth: currentYearMonthUtc(),
+              cap: doServeCap,
+              block: Math.min(doServeCap, DO_METER_LEASE_BLOCK),
+              lowWater: 0,
+            },
+          )
+            .then((v) => {
+              stQDoMs = Date.now() - qdoStart;
+              return v;
+            })
+            .catch(() => {
+              // Fail-OPEN, exactly as the awaited path does — but the D1 count
+              // fallback moves OFF the response path (see the await site).
+              stQDoMs = Date.now() - qdoStart;
+              return null;
+            });
+        } else {
         try {
           serveVerdict = await serveViaDO(
             { shard: shardNs, coordinator: coordNs },
@@ -3325,6 +3361,7 @@ const baseHandler: ExportedHandler<Env> = {
               refilled: serveVerdict.refilled,
             }),
           );
+        }
         }
       }
       // True iff the DO authoritatively metered this request (verdict in hand).
@@ -3373,7 +3410,17 @@ const baseHandler: ExportedHandler<Env> = {
       // applies on the serve path. Both are enforced HERE because setting
       // `handledFast` skips that block entirely; forgetting the DO verdict here
       // would be a money-path hole, not an optimization.
-      const quotaPath = quotaPathFor({ serveHandled, asyncMeterMode, asyncMeterEligible });
+      // A DEFERRED verdict counts as `serveHandled` for path selection: the DO
+      // hop is in flight and owns the request count, so the D1 counter must NOT
+      // also run (that would double-count the same request). The verdict itself
+      // is enforced at the await site below, not here — which is why the
+      // `serve-fast` branch's `serveVerdict !== null` guard is correctly inert on
+      // this path rather than silently skipped.
+      const quotaPath = quotaPathFor({
+        serveHandled: serveHandled || pendingCapVerdict !== null,
+        asyncMeterMode,
+        asyncMeterEligible,
+      });
       if (quotaPath === "serve-fast") {
         const storageCheck = await checkStorageQuotaCachedRead(
           env.CONFIG_DB,
@@ -3956,6 +4003,52 @@ const baseHandler: ExportedHandler<Env> = {
       }
     }
 
+    // ── Enforce the deferred request-cap verdict, before ANY byte is served ──
+    // The DO hop ran CONCURRENTLY with the origin fetch above (see
+    // `pendingCapVerdict`). This is where it is collected. Nothing has reached
+    // the client yet — `doResponse` is a Response object in this isolate — so a
+    // 429 here is indistinguishable, from the caller's side, from the 429 the
+    // awaited path returned before the fetch. What the caller cannot see, and
+    // what is the honest cost of this change, is that an over-cap READ made the
+    // origin do its work first.
+    //
+    // A `null` verdict is a DO fault, and it is fail-OPEN exactly as before: the
+    // request is served. The D1 counter fallback that the awaited path ran
+    // inline moves to `ctx.waitUntil` here, because by this point the response is
+    // already built and blocking it on a D1 write would hand back the latency
+    // this whole path removed. `waitUntil` carries no durability guarantee, so a
+    // DO outage can now UNDER-count — the direction this counter's fail-open
+    // design already tolerates and already produces when the UPSERT itself
+    // throws; it can never over-count, which is the failure that would wrongly
+    // 429 a paying tenant.
+    if (pendingCapVerdict !== null) {
+      const verdict = await pendingCapVerdict;
+      if (verdict === null) {
+        const capDb = env.CONFIG_DB;
+        const capTenant = resolvedTenantId;
+        const capTier = deferredCapTierResult;
+        if (capTier !== null) {
+          ctx.waitUntil(
+            runQuotaBatch(capDb, capTenant, capTier, { meter: true, isMutating: false }).then(
+              () => undefined,
+              () => undefined,
+            ),
+          );
+        }
+      } else if (!verdict.withinCap) {
+        return applyCors(
+          quotaExceededResponse(
+            `Monthly request quota exceeded: limit is ${deferredCap?.cap ?? 0} (tier: ${
+              deferredCap?.tier ?? "unknown"
+            })`,
+            secondsUntilNextMonthStart(),
+            requestId,
+          ),
+          request,
+        );
+      }
+    }
+
     // F3.3 SHADOW: prove Worker-native `_public` edge-read parity vs the container
     // on real traffic, with ZERO user impact — we serve the container's response
     // unchanged and only compare a CLONE in the background (`ctx.waitUntil`).
@@ -4199,6 +4292,70 @@ export function isDsrEraseFanoutPath(pathSuffix: string): boolean {
  * `fetch` above.)
  */
 const ORIGIN_CONTAINER_PHASES = ["opat", "oquota", "ostore", "oother"] as const;
+
+/**
+ * Whether this request may take the DO meter hop CONCURRENTLY with the origin
+ * fetch instead of awaiting it first.
+ *
+ * The hop still happens — the DO is the counter, and skipping it would
+ * under-count — but nothing in the origin fetch depends on its ANSWER, so on a
+ * READ it can be collected just before the response is handed back. The cap is
+ * still enforced before a single byte reaches the client; the honest cost is
+ * that an over-cap READ makes the origin do its work first, which is the same
+ * trade rt-nuclear #24 already accepted for the storage SUM.
+ *
+ * Every condition here is load-bearing:
+ *
+ *   - **GET/HEAD only.** A mutation that commits and is THEN 429'd is a
+ *     correctness bug, not an optimization. `isStorageMutating` is checked too,
+ *     so a verb-shaped read that still grows storage cannot slip through.
+ *   - **`EDGE_ASYNC_METER === "on"`.** Deferring is only useful when the storage
+ *     verdict already comes from cache; otherwise the request is about to make a
+ *     synchronous D1 round trip anyway and nothing is saved.
+ *   - **`meter`.** A fan-out sub-request is never metered, so there is no verdict
+ *     to defer and no count to protect.
+ *   - **tier CONFIRMED.** With `d1Error` we do not know the cap, so the request
+ *     takes the exact path with its verb-aware fail posture, untouched.
+ */
+export function deferCapVerdictFor(input: {
+  readonly method: string;
+  readonly isStorageMutating: boolean;
+  readonly asyncMeterMode: string | undefined;
+  readonly meter: boolean;
+  readonly tierD1Error: boolean;
+}): boolean {
+  const { method, isStorageMutating, asyncMeterMode, meter, tierD1Error } = input;
+  if (method !== "GET" && method !== "HEAD") {
+    return false;
+  }
+  return !isStorageMutating && asyncMeterMode === "on" && meter && !tierD1Error;
+}
+
+/**
+ * The shared 429 quota-exceeded response body/headers.
+ *
+ * Extracted so the deferred request-cap verdict — enforced after the origin
+ * fetch, on the concurrent-hop path — returns a response byte-identical to the
+ * one the inline gates return, rather than a second, drifting copy of the same
+ * shape. CORS is applied by the caller, matching both use sites.
+ */
+export function quotaExceededResponse(
+  reason: string,
+  retryAfterSec: number,
+  requestId: string,
+): Response {
+  return new Response(
+    JSON.stringify({ error: "QUOTA_EXCEEDED", message: reason, request_id: requestId }),
+    {
+      status: 429,
+      headers: {
+        "Content-Type": "application/json",
+        "Retry-After": String(retryAfterSec),
+        "X-Request-Id": requestId,
+      },
+    },
+  );
+}
 
 /**
  * Which quota path a request takes at the edge — the composition rule for the
