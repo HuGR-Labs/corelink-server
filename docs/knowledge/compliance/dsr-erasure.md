@@ -31,7 +31,7 @@ source_files:
   - crates/corelink-dsr/src/lib.rs
 source_blobs:
   - "crates/corelink-container/src/routes/dsr/adapter_d1.rs@5228e4d12c89264fdfca3d55db6ce88a33705ed0"
-checkpoint_sha: "efb831b69bc387d4a287a1623e03812fabf5c569"
+checkpoint_sha: "27f9cae98b3b5e677b8586781d88f30ac820f78f"
 provenance: "AUTHORED"
 tags: ["dsr", "gdpr", "lgpd", "erasure", "right-to-erasure", "compliance", "mfa", "attestation"]
 timestamp: "2026-06-26T00:00:00Z"
