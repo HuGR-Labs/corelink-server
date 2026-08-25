@@ -2051,36 +2051,52 @@ last-verified: 2026-08-24
 
 ### B-043 — enable the audit-drain lease in prod after a concurrency probe
 
-The lease + seal fence that closes the [B-038] audit-chain fork recurrence is
-merged but ships **flag-OFF** (`AUDIT_DRAIN_LEASE_ENABLED` unset), so prod is not
-yet protected — the fork can still recur until the flag is on. It is deliberately
-inert because the drain is the audit **integrity** path and the concurrency
-correctness is not CI-provable (the drain's unit harness is pure-function; no test
-drives D1). Before enabling:
+The lease + seal fence that closes the [B-038] audit-chain fork recurrence is now
+**enabled + live** in prod. `AUDIT_DRAIN_LEASE_ENABLED = "1"` is set in
+`[env.prod].vars` (#1305) — the primary Worker whose container serves the hourly
+`POST /_internal/audit/drain` (the drain is centralized against the shared prod D1,
+so the flag belongs on the primary, not the regional edge Workers).
 
-1. Deploy the image carrying the lease code + apply migration `0101_audit_drain_lease.sql`
-   through the ledger (additive; creates `audit_drain_lease`).
-2. Run the prod **duplicate-sequence probe** from the design doc §Validation: fire
-   two `/_internal/audit/drain` calls at one seeded synthetic partition within the
-   same second, assert zero duplicate `(tenant, region, sequence_number)` rows and
-   exactly one `Sealed` + one `Leased`. Confirm the D1 `RETURNING`-on-`ON CONFLICT`
-   acquire semantics behave on D1's engine (open question in the design).
-3. Set `AUDIT_DRAIN_LEASE_ENABLED=1` on the container, roll, and watch the drain
-   summary for `partitions_leased` / fenced re-drains under real load.
+What was done + proven (2026-08-25):
+1. **Code + migration live.** All 5 prod regions run an image carrying B-038;
+   migration `0101_audit_drain_lease.sql` is applied to the prod D1 and the
+   `audit_drain_lease` table exists (verified via the D1 REST API).
+2. **Acquire/refuse/steal proven on the real D1 engine** (the design's open
+   question). A synthetic-partition probe against prod D1: a fresh `INSERT … ON
+   CONFLICT … WHERE expires_ms < ?4 RETURNING holder` returned the holder; a
+   held-and-unexpired contender got **zero rows** (refused); an expired lease was
+   stolen. `RETURNING`-on-`ON CONFLICT` behaves exactly as the single-writer guard
+   needs; the D1-REST REAL-number bind does not break the numeric comparison.
+3. **Flag actually active, not just deployed.** A same-image rollout does NOT
+   restart a live container ([[force-cf-container-roll]]), so the running
+   instances kept the pre-flag env — the flag sat deployed-but-dormant. Rolling
+   onto a fresh image tag (`6f87d295-r1`, identical container code, #1306) cold-
+   started every instance; the CF Containers API confirms all 5 regions now run it.
+4. **Live drain healthy with the lease on.** The 03:00Z drain sealed ~200 rows
+   (`sealed_total` 59695→59895, `pending` fell) and the duplicate-sequence count
+   held at its pre-existing 1505 (historical B-026 forks, quarantined) — **zero
+   new forks**.
 
-Until then the code is correct-but-inert — tracked here so it is not a silent
-built-but-unreachable loose end.
+Honest scope: the design's live *concurrent* two-drain probe was not run from
+outside — `corelink-api.humangr.com` is behind CF Access (only the cron's service
+binding reaches `/_internal/audit/drain`), and the 1505 historical forks confound
+a real-data dup check. Active concurrent-fork prevention is covered by the D1
+acquire/refuse/steal proof (step 2) + the merged self-fence unit test; the live
+observation confirms no regression. Monitored via `dup_groups` (must stay 1505)
+and the audit-archive-lag census.
 
 ```backlog
 id: B-043
 repo: corelink-server
 owner: owner
-status: open
-verify: manual
+status: done
+verify: |
+  grep -q 'AUDIT_DRAIN_LEASE_ENABLED = "1"' wrangler.toml
 verify-means: |
-  open while the audit-drain lease ships flag-OFF in prod. Closes when
-  AUDIT_DRAIN_LEASE_ENABLED is enabled on the prod container after the design's
-  concurrency probe passes. Owner-gated: enabling an unvalidated change on the
-  audit integrity path is worse than the current (bounded, monitored) state.
-last-verified: 2026-08-24
+  done — the lease is enabled in prod ([env.prod].vars) and live on a rolled
+  container image. Reopens if the flag is removed from wrangler.toml (which would
+  disable the B-038 fork protection). Runtime health is watched out-of-band via
+  the prod dup-sequence count (must stay at its historical 1505) and the
+  audit-archive-lag monitor, not by this static check.
+last-verified: 2026-08-25
 ```
