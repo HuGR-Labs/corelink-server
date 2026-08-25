@@ -277,6 +277,23 @@ jobs:
           "${RUNNER_TEMP}/lychee" --version
 
       - name: Run lychee
+        # ⛔ DO NOT add `GITHUB_TOKEN` (or any other credential) to this job.
+        # lychee picks `GITHUB_TOKEN` up from the environment automatically, and
+        # a link checker holding a credential the reader does not have stops
+        # measuring what the reader sees. This job has NO env at the workflow,
+        # job or step level beyond `LYCHEE_VERSION`, and B-037's verify asserts
+        # that mechanically.
+        #
+        # The other half of the vantage question — this job runs `runs-on:
+        # corelink`, i.e. from inside Cloudflare, checking links partly served
+        # BY Cloudflare — was settled by measurement rather than by argument on
+        # 2026-08-25: the same build artifact (run 32801556993) re-checked from
+        # an outside, token-less host produced byte-identical counters —
+        # 108 870 total / 11 553 unique / 105 598 OK / **0 errors** / 3 183
+        # excluded / 89 unsupported — differing only in redirects followed
+        # (111 vs 108, ordinary jitter). Re-measure if the exclusion list or the
+        # runner changes; do not assume it.
+        #
         # Same arguments the action was invoking, and still fail-on-error: the
         # `--remap` + `--fallback-extensions` pair is what makes this gate prove
         # something (see the note above), so neither may be dropped in the move.
