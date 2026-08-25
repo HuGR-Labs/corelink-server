@@ -78,6 +78,43 @@ pub trait CasReadHandler: Send + Sync + core::fmt::Debug {
             Err(other) => Err(other),
         }
     }
+
+    /// OPTIONAL batch existence probe — the same question as
+    /// [`Self::exists`], asked about many digests at once so an
+    /// implementor can collapse the per-digest network round trips.
+    ///
+    /// # Contract
+    ///
+    /// * `None` — this handler provides no batch capability. The caller
+    ///   MUST fall back to looping [`Self::exists`], which is the
+    ///   behaviour every handler had before this method existed. This is
+    ///   the default, so no existing implementor changes semantics.
+    /// * `Some(Ok(flags))` — `flags.len() == reqs.len()` and `flags[i]`
+    ///   answers `reqs[i]`, **in request order**. `true` = present,
+    ///   `false` = absent (the storage-layer `NotFound`, absorbed exactly
+    ///   as [`Self::exists`] absorbs it).
+    /// * `Some(Err(e))` — the FIRST error in request order, mapped
+    ///   exactly as the equivalent [`Self::exists`] call would map it.
+    ///   One error fails the whole batch; no partial result is returned.
+    ///
+    /// # Invariants an implementor MUST preserve
+    ///
+    /// Every guarantee [`Self::exists`] makes per digest still holds per
+    /// digest here — in particular a cross-tenant request is denied
+    /// (and audited) BEFORE any storage work is dispatched, and the
+    /// mandatory `ReadAttempted` audit rows must have COMMITTED before
+    /// any probe result is returned (fail-CLOSED). Concurrency may change
+    /// what gets *dispatched*; it must never change what can *reach the
+    /// caller*.
+    ///
+    /// # Errors
+    ///
+    /// See the contract above — variants of [`CasHandlerError`], never a
+    /// `NotFound` (absorbed into `Ok(false)` per digest).
+    fn exists_batch(&self, reqs: &[CasReadRequest]) -> Option<Result<Vec<bool>, CasHandlerError>> {
+        let _ = reqs;
+        None
+    }
 }
 
 /// Trait every concrete CAS write handler implements. Same
