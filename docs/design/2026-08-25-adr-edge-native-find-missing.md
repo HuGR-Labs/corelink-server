@@ -124,7 +124,31 @@ same `db.batch` as the audit row. If that holds for the REAPI/bazel plane, the
 whole route collapses to one `json_each` query over the `CONFIG_DB` binding —
 ~9 ms from our edge, independent of n.
 
-**That "if" is load-bearing and is NOT yet verified.** If `blob_meta` is not
+**REFUTED, same day, before anything was built on it.** `blob_meta` in prod
+CONFIG_DB is **empty — 0 rows, 0 tenants, no `created_at`** — while
+`audit_outbox` took 3939 read-audit rows across 8 tenants in the same 7 days. The
+live container CAS write path does not populate it; the only writers in the tree
+are GC (`refcount` / `deleted_at` UPDATEs) and the LRU tracker
+(`update_last_accessed_at_ms`), both of which UPDATE rows that nothing INSERTs.
+Answering `findMissingBlobs` from that table would report **every** blob as
+missing, and a cache client responds to that by re-uploading its entire build.
+
+This is the `designed-vs-wired` trap in its purest form: the migration comment
+calls the table "single source of truth for CAS existence" and the schema is
+exactly right for the job. The table is real. The maintenance is not.
+
+**Consequences.** F2 ships the R2-binding path measured above — a real, parity-
+proven 76 %. A flat-in-n answer still needs an index, but building one is a
+project, not a query: the write path has to maintain it, existing blobs need a
+backfill, and someone has to decide what happens when the index says "missing"
+and R2 disagrees (the safe answer — treat the index as authoritative only for
+PRESENT and fall back to a probe for absent — costs exactly the round trips it
+was meant to remove for a cold cache). That is its own ADR, with its own
+measurement, not a footnote to this one.
+
+The original text is kept below for the record of what was believed:
+
+**That "if" was load-bearing and was NOT verified when written.** If `blob_meta` is not
 maintained for bazel-plane blobs, answering from it would report PRESENT blobs
 as missing, and a cache client responds to that by re-uploading everything. The
 next step is to prove which writers maintain it, not to assume the table means
