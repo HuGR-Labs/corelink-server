@@ -10,11 +10,11 @@ source_files:
   - "crates/corelink-container/src/adapter_pat.rs"
 source_blobs:
   - "worker/src/lib/internal_auth.ts@fb27ec67f58a10c777261c7485f79baeff0965de"
-  - "worker/src/index.ts@926d963bf214f2df90ae29bf83254e9dc22e6ca3"
+  - "worker/src/index.ts@605e4453576d3f3e860e705e0780e3cb0dc1c5db"
   - "worker/src/lib/pat_verify_cache.ts@b0dafab6381684057de4c0589b5d95d18a35c741"
   - "worker/src/lib/tenant_suspend_gate.ts@bed740c1e2a471244a2c9680fcf4f1e800f26d7c"
   - "crates/corelink-container/src/adapter_pat.rs@069fb6295e5926ffc0b1263eb91e838addbe1297"
-checkpoint_sha: "0d6443d662a4dc456550b998a2e68ca4f309906d"
+checkpoint_sha: "8669c6ffa0f9c70fec3b9d52ba1ae064535f893f"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
