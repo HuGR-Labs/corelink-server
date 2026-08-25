@@ -12,3 +12,12 @@ packages:
   # because there was nothing to see it. Membership here is what makes
   # `sdks-js.yml` able to install and gate it.
   - "sdks/js"
+  # The real-browser prod suite (Playwright + @clerk/testing). Adopted into the
+  # workspace 2026-08-24 after the same ORPHAN pattern as `sdks/js` above: it was
+  # absent here AND referenced by no workflow, so its dependencies were never
+  # installed and none of its nine specs had ever run in CI. One of them,
+  # `03-money-checkout.spec.ts`, is the only end-to-end proof of the checkout
+  # path — a fresh Clerk user through the DPA gate to a real `cs_live_` Stripe
+  # session. Run by hand on 2026-08-24 against prod: it PASSES. It had simply
+  # never been asked.
+  - "tests/e2e-browser"
