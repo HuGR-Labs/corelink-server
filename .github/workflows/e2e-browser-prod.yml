@@ -1,0 +1,92 @@
+name: e2e-browser-prod
+
+# The real-browser prod journeys (`tests/e2e-browser`): a REAL Clerk session in
+# a REAL browser against the DEPLOYED app. This is the only vantage that can
+# exercise the money path — a headless FAPI mint is rejected 401 by the prod
+# Worker's Clerk verification, a browser session is not — so `curl` cannot
+# stand in for it (see memory `spa-routes-cannot-be-verified-by-http`).
+#
+# Why this workflow exists: the suite was an ORPHAN. It was absent from
+# `pnpm-workspace.yaml` and referenced by no workflow, so its dependencies were
+# never installed and none of its nine specs had ever run in CI — including
+# `03-money-checkout.spec.ts`, the only end-to-end proof that a customer can
+# reach a real Stripe Checkout session. Run by hand on 2026-08-24 against prod
+# it PASSES; it had simply never been asked.
+#
+# DISPATCH-ONLY, deliberately. Two reasons, and neither is squeamishness:
+#   1. It needs LIVE Clerk credentials (`sk_live`) with user create + delete
+#      rights. Those are not repo secrets today, and provisioning them is the
+#      owner's call, not mine — see B-042.
+#   2. Every run mints a throwaway prod Clerk user and creates a real (unpaid,
+#      expiring) Stripe Checkout session. The fixture DSR-deletes the user on
+#      teardown. That is acceptable on demand; putting it on a cron is a
+#      separate decision, and it belongs to whoever owns the prod tenant data.
+# Once B-042 lands the secrets, adding a `schedule:` here is a one-line change.
+on:
+  workflow_dispatch:
+    inputs:
+      spec:
+        description: "Spec to run (blank = all)"
+        required: false
+        default: "specs/03-money-checkout.spec.ts"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-browser-prod
+  cancel-in-progress: false
+
+jobs:
+  browser:
+    name: real-browser prod journeys (chromium)
+    # The container fabric: Ubuntu 24.04 with apt available, which is what
+    # `playwright install --with-deps` needs. The Mac fleet cannot install
+    # Linux browser deps and hosted Actions are payment-blocked.
+    runs-on: corelink
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: tests/e2e-browser
+    env:
+      CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_LIVE_PUBLISHABLE_KEY }}
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_LIVE_SECRET_KEY }}
+      CORELINK_APP_URL: ${{ vars.CORELINK_APP_URL || 'https://humangr.com' }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # Fail HERE, loudly and with the remedy, rather than 20 lines deep in a
+      # Clerk 401 that reads like a product bug.
+      - name: The live Clerk credentials must be provisioned
+        run: |
+          missing=0
+          [ -n "${CLERK_PUBLISHABLE_KEY:-}" ] || { echo "::error::CLERK_LIVE_PUBLISHABLE_KEY is not set"; missing=1; }
+          [ -n "${CLERK_SECRET_KEY:-}" ] || { echo "::error::CLERK_LIVE_SECRET_KEY is not set"; missing=1; }
+          if [ "$missing" = "1" ]; then
+            echo "::error::This suite drives a REAL browser session against prod and cannot be faked. Provision the two secrets (B-042) and re-dispatch."
+            exit 1
+          fi
+          echo "both live Clerk credentials are present"
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v4.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+
+      - name: Install workspace dependencies
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+
+      - name: Install chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run the browser journeys against prod
+        run: pnpm exec playwright test ${{ inputs.spec }} --reporter=line
+
+      - name: Upload the trace on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-browser-traces
+          path: tests/e2e-browser/test-results/
+          retention-days: 7

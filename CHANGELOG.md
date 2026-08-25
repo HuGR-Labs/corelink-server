@@ -71,6 +71,20 @@ Each entry cross-references:
 
 ### Fixed
 
+- **The only end-to-end proof of the checkout path had never run (B-042).**
+  `tests/e2e-browser` — a real Clerk session in a real browser against the
+  deployed app, the only vantage that can exercise the money path — was absent
+  from `pnpm-workspace.yaml` AND referenced by no workflow, the same orphan
+  pattern `sdks/js` carried before it. Its dependencies were never installed and
+  not one of its nine specs had ever run in CI, including the sole proof that a
+  customer reaches a real Stripe Checkout session. Run by hand against prod on
+  2026-08-24 it PASSES (`403 dpa_required` -> accept -> `200` ->
+  `checkout.stripe.com/g/pay/cs_live_…`); it had simply never been asked. The
+  suite joins the workspace and gains `e2e-browser-prod.yml`
+  (`workflow_dispatch`). It stays dispatch-only until the owner decides on the
+  live Clerk credentials it needs — `sk_live` can create and delete production
+  users, which is a real blast radius to hand to CI.
+
 - **The CAS datacenter canary was dark, and the only vantage it had was one it
   could no longer reach.** Hosted Actions were payment-blocked again on
   2026-08-24 (~15:55 UTC); the hourly `cas-datacenter-canary` job never started

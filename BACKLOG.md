@@ -1966,3 +1966,43 @@ verify-means: |
   if the page customers are pointed at stops answering.
 last-verified: 2026-08-24
 ```
+
+### B-042 — the only end-to-end proof of the checkout path can run nowhere
+
+`tests/e2e-browser` drives a REAL Clerk session in a REAL browser against the
+deployed app. It is the only vantage that can exercise the money path: a headless
+FAPI mint is rejected 401 by the prod Worker's Clerk verification, a browser
+session is not, so `curl` cannot stand in for it. One of its nine specs,
+`03-money-checkout.spec.ts`, is the sole end-to-end proof that a customer reaches
+a real Stripe Checkout session — fresh user, DPA click-through, `cs_live_`.
+
+The suite was an ORPHAN: absent from `pnpm-workspace.yaml` AND referenced by no
+workflow, so its dependencies were never installed and not one spec had ever run
+in CI. Run by hand against prod on 2026-08-24 it PASSES (`403 dpa_required` →
+accept → `200` → `checkout.stripe.com/g/pay/cs_live_…`). It had simply never been
+asked. The workspace membership and `e2e-browser-prod.yml` close the mechanical
+half.
+
+What remains is the owner's, and it is a credential decision, not a wiring one:
+the suite needs `CLERK_LIVE_PUBLISHABLE_KEY` + `CLERK_LIVE_SECRET_KEY` as repo
+secrets. `sk_live` can create and delete production users — that is a real blast
+radius to hand to CI, and the call belongs to whoever owns the prod tenant data.
+Every run also mints a throwaway prod Clerk user and creates a real (unpaid,
+expiring) Stripe Checkout session; the fixture DSR-deletes the user on teardown.
+Acceptable on demand; putting it on a schedule is a second, separate decision.
+
+```backlog
+id: B-042
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  out=$(gh secret list --repo HuGR-Labs/corelink-server) || exit 2
+  if printf '%s\n' "$out" | grep -E "^CLERK_LIVE_(SECRET|PUBLISHABLE)_KEY" > /dev/null; then exit 1; fi
+verify-means: |
+  open while neither live Clerk credential is a repo secret, i.e. the browser
+  suite cannot run in CI at all. Goes red once they are provisioned and the
+  money-path proof becomes dispatchable — at which point the remaining question
+  is only whether it earns a schedule.
+last-verified: 2026-08-24
+```
