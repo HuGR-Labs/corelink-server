@@ -1,7 +1,8 @@
 # ADR: the container's D1 transport is the hot path's largest remaining cost
 
-- Status: **Proposed** — the decision this ADR asks for is WHICH transport, and it
-  should not be taken before the one unmeasured number below is measured.
+- Status: **Proposed — the blocking number is now MEASURED** (see §"The missing term").
+  The measurement decides for option A; the decision left to the owner is whether to
+  take it now or fold it into the larger option B.
 - Date: 2026-08-25
 - Extends: `docs/design/2026-08-17-adr-edge-async-metering.md` (and its two 2026-08-25
   amendments), `docs/design/2026-08-19-adr-edge-local-do-request-metering.md`.
@@ -57,6 +58,25 @@ the container makes is on that transport: audit writes, the `$`-ceiling accrue, 
 per-request PAT row read. Audit is simply where it hurts most, because the lookup path
 does it twice, serially.
 
+## The missing term — measured 2026-08-25, run 32813248443
+
+From the same ephemeral box at `colo=IAD`, eight samples each, `curl -w`:
+
+| target | wall total | TLS handshake | **after TLS** |
+|---|---:|---:|---:|
+| our own Worker edge (`/health` — no DO, no container, no D1) | 44-49 ms | 33-36 ms | **~9 ms** |
+| the public CF API frontend the container uses for D1 today | 124-133 ms | 29-37 ms | **~95 ms** |
+
+The TLS handshake is an artefact of `curl` opening a fresh connection per sample; the
+container's `reqwest` client keeps its connections, so the number that matters is the
+post-handshake round trip. **The box reaches our own edge in ~9 ms and the CF API
+frontend in ~95 ms.** The ~100 ms a container D1 write costs is therefore almost
+entirely the API frontend, not distance and not D1.
+
+This is the opposite of what I would have estimated — I expected the fabric→edge hop to
+cost the ~40 ms that `ohop` costs in the other direction, which would have made option A
+worthless. It does not, and that is exactly why the ADR refused to guess it.
+
 ## Options
 
 ### A. Narrow, typed internal Worker endpoint (NOT an SQL proxy)
@@ -98,21 +118,34 @@ storage read costs 27.
 
 ## Recommendation
 
-1. **Measure the missing term first.** `container → Worker edge` RTT from inside the
-   fabric decides between A and B. If that hop costs ~40 ms — the same order as the
-   `ohop` we measure in the other direction — then A saves roughly nothing (40 + 40 vs
-   100 per write) and only B is worth building.
-2. **Prefer B if the measurement allows it**, because it adds NO hop, batches the two
-   events into one statement, and keeps the fail-closed boundary intact — it just moves
-   it one layer out, to the component that already gates the response.
-3. **Never A-as-SQL-proxy.** If A is chosen it is a typed event endpoint.
-4. C only on an explicit owner decision.
+**Option A, now.** The measurement settles it: `~9 ms` to our edge plus the Worker's own
+D1 binding round trip (35-51 ms for a batch of TWO statements, so a single write is at
+or under that) replaces a `~100 ms` REST write. That is roughly a **50-60 ms saving per
+D1 call the container makes**, and the lookup path makes two of them.
+
+Constraints on A, non-negotiable:
+
+- the endpoint takes the audit event's **FIELDS**, never SQL. A `/_internal/d1/exec`
+  would hand the control-plane database to whatever compromises a container;
+- it is gated by the existing internal-auth key, and the Worker route must match the
+  handler-key convention (`/_internal/audit/*` → the audit handler) or it 401s at the
+  edge and the endpoint is dead on arrival;
+- it is behind a flag, with the REST transport as the fallback, and it must be proven by
+  measurement in prod before the fallback is removed.
+
+**Option B stays on the table as the next step, not the first one.** It removes even the
+9 ms and batches the lookup path's two events into one statement, but it changes where
+the fail-closed boundary sits, which needs the durability question answered explicitly.
+A gets most of the win without touching the response path.
 
 ## What this ADR does not claim
 
 - It does not claim the container's REST transport is slow because of D1. The
   measurement isolates the transport, not the query: the same database answers the
   Worker's binding in half the time for twice the statements.
-- It does not have the `container → Worker` number. That is stated as unknown here
-  rather than estimated, because estimating it is precisely what would make the wrong
-  option look right.
+- It does not claim the Worker's D1 binding will cost exactly what `qbatch` measured.
+  35-51 ms was a batch of two statements on a warm path; a single audit INSERT should be
+  at or under that, but the flagged rollout must measure it rather than assume it.
+- It no longer withholds the `container → Worker` number: measured at ~9 ms after TLS
+  (run 32813248443). The estimate I would have written instead — ~40 ms, by symmetry
+  with `ohop` — would have been wrong by 4x and would have killed the right option.
