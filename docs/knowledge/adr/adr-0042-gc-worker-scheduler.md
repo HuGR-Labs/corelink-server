@@ -4,7 +4,7 @@ title: "ADR-0042 — GC worker scheduler design + gc-pause degrade-mode contract
 description: "Per-region sticky DO GC workers on a jittered 02:00 UTC cron, partial-UNIQUE single-flight, checkpoint-idempotent resume, and a config-singleton gc-pause emergency stop."
 source_files:
   - "specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md"
-checkpoint_sha: "853f1a2a5834d3e1253ca6a141367ea98fcaf331"
+checkpoint_sha: "c81f6d91d04b2f21f552b25f0e3175684d1467fe"
 provenance: "AUTHORED"
 tags: ["adr", "gc", "worker", "scheduler", "degrade-mode", "s06"]
 timestamp: "2026-06-26T00:00:00Z"
