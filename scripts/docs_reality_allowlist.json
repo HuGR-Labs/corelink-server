@@ -338,7 +338,8 @@
       "api.humangr.com": "LIVE, but bound to a DIFFERENT project (hugr-wallet) — it resolves and serves, so it is not a dead host, yet it is not CoreLink's API either. Do not introduce new CoreLink copy pointing here; CoreLink's API is corelink-api.humangr.com. Verified DNS+TLS 2026-08-22.",
       "send.humangr.com": "Transactional-mail sending domain (MX/SPF). Verified 2026-08-22.",
       "mail.humangr.com": "Mail record. Verified 2026-08-22.",
-      "_dmarc.humangr.com": "DMARC policy record. Verified 2026-08-22."
+      "_dmarc.humangr.com": "DMARC policy record. Verified 2026-08-22.",
+      "corelink-artifacts.humangr.com": "CI artifact mirror (R2 bucket corelink-ci-artifacts, proxied custom domain). Holds the pinned tla2tools.jar so CI stops fetching a mutable upstream URL (B-039). Verified DNS+TLS+200 2026-08-25."
     },
     "live_patterns": [
       {
