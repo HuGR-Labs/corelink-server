@@ -120,23 +120,40 @@ last-verified: 2026-08-25
 ### B-044 — arm orphan-box teardown after confirming the instance↔handle join
 
 B-002 shipped the platform-truth reconciliation observe-only: `reconcileOrphanBoxes`
-LOGS orphan candidates but tears nothing down. Arming it is owner-gated and needs
-two things the dry-run cannot supply itself:
+LOGS orphan candidates but tears nothing down. Arming it is gated. **Progress
+2026-08-25 (corelink-runners #513 merged + deployed, observe ENABLED):**
 
-1. **Cloudflare API credentials in the Worker Env.** The sweep no-ops today
-   because the spawn Worker has no `CLOUDFLARE_ACCOUNT_ID` and no containers-read
-   token (`CLOUDFLARE_CONTAINERS_API_TOKEN`/`CLOUDFLARE_API_TOKEN`). Adding a
-   secret is the owner's step (`wrangler secret put` / vars).
-2. **Confirm `instance.name === the sbox handle`.** The teardown key is the
-   instance `name`; the join to the durable `sbox:` handle is asserted by the
-   CHANGELOG but not proven in code. Before `RECONCILE_ORPHAN_TEARDOWN` is ever
-   flipped, cross-check a live `scripts/container-instances.sh --json` dump
-   against the `sbox:` handles — the dry-run exists precisely to surface a
-   mismatch (a wrong join would flag 100% of boxes as orphans, visible in
-   `orphan_box_detected` before anything is destroyed).
+- ✅ **Pre-work hardening landed (#513).** Two FAIL-UNSAFE bugs that would turn a
+  LIVE box into a false orphan, fixed before arming: (a) `listRunningInstances`
+  enumerated EVERY container app in the account (corelink-prod × 5, githugr,
+  fabricd, checkhost) — none write `sbox:`, so all flooded `orphan_box_detected`;
+  now scoped to the runner app by stable app-id `a03d11a2-…`. (b)
+  `listSpawnedBoxHandles` did a single `kv.list` (1000-key cap) → a CI storm
+  truncated the known set; now paginates + fails closed.
+- ✅ **Prereq 1 (creds) DONE.** `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_CONTAINERS_API_TOKEN`
+  (the scoped `cfut_`, not the broad token), and `RECONCILE_ORPHAN_BOXES=1` set as
+  Worker secrets. Observe is LIVE and proven app-scoped: `orphan_reconcile_scan`
+  shows `scanned` tracking only runner boxes (0 prod/githugr names), `sboxKnown`
+  138 (full paginated read), `orphan_boxes_detected count 0`.
+- 🟡 **Prereq 2 (join) partially proven.** Offline: a live runner box name matched
+  the `sbox.h` set. Live observe idle-window scans are clean; a `scanned>0` tick /
+  real orphan is still wanted to confirm the join at scale from the logs.
+- 🔴 **NEW BLOCKER — the teardown MECHANISM is unproven.** A CF API instance-delete
+  probe returns **403 (no token carries instance-delete scope)** — consistent with
+  the 2026-08-23 finding that an image roll was the only lever. The remaining path
+  is `getContainer(RUNNER_CONTAINER, inst.name).destroy()`, which lands ONLY for a
+  "type-1" orphan (a box WE spawned by that handle whose `sbox:` write failed) and
+  no-ops for a "type-2" platform/warm-pool box (name ≠ our handle). Which type real
+  orphans are cannot be known until one appears in the (now-live) observe log —
+  its name ∈ historical `sbox.h` ⇒ type-1 (DO teardown works); else ⇒ image-roll
+  only. Do NOT build/arm teardown until this is settled.
 
-Only after both: enable `RECONCILE_ORPHAN_BOXES`, watch `orphan_box_detected`
-match the real leak rate for a cycle, THEN flip `RECONCILE_ORPHAN_TEARDOWN`.
+Sequence to close: watch observe for a real orphan → classify type-1/2 → if type-1,
+build teardown (app-scoped, per-tick destroy CAP, ns-routing, raise the 4 h floor
+above max job duration since teardown is liveness-BLIND, distinct `orphan_box_reaped`
+metric), ship INERT, then flip `RECONCILE_ORPHAN_TEARDOWN` (a SECRET, not a var) —
+or, if orphans are type-2/none, declare programmatic teardown blocked and keep
+observe + alert as the honest outcome.
 
 ```backlog
 id: B-044
@@ -145,11 +162,15 @@ owner: owner
 status: open
 verify: manual
 verify-means: |
-  open while orphan-box teardown is unarmed in prod — correct until the CF API
-  creds are in the Worker Env AND the instance-name↔sbox-handle join is confirmed
-  against a live dump. Closes when RECONCILE_ORPHAN_TEARDOWN is enabled after the
-  observe-only sweep has been watched matching the real leak rate. Owner-gated:
-  arming an unvalidated join on a teardown path can kill a live box.
+  open while orphan-box teardown is unarmed in prod. As of 2026-08-25 the pre-work
+  is DONE (#513: app-scope + KV pagination) and OBSERVE is enabled (creds +
+  RECONCILE_ORPHAN_BOXES=1 as Worker secrets; orphan_reconcile_scan live, 0 false
+  orphans). It stays open because (a) the join wants a scanned>0 confirmation and
+  (b) the teardown MECHANISM is unproven — CF API instance-delete is 403 (no
+  scope), and the DO-handle path only reaps type-1 orphans. Closes when a real
+  orphan is classified type-1 AND RECONCILE_ORPHAN_TEARDOWN is armed after an
+  observe window, OR is retired if orphans prove type-2/none (image-roll only).
+  Arming an unvalidated join or an unproven primitive can kill a live box.
 last-verified: 2026-08-25
 ```
 
