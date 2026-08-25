@@ -1,92 +1,87 @@
 name: e2e-browser-prod
 
-# The real-browser prod journeys (`tests/e2e-browser`): a REAL Clerk session in
-# a REAL browser against the DEPLOYED app. This is the only vantage that can
-# exercise the money path — a headless FAPI mint is rejected 401 by the prod
-# Worker's Clerk verification, a browser session is not — so `curl` cannot
-# stand in for it (see memory `spa-routes-cannot-be-verified-by-http`).
+# Real-browser money/DSR e2e (Playwright + @clerk/testing) driving a REAL
+# prod-accepted Clerk session against LIVE humangr.com/corelink.
 #
-# Why this workflow exists: the suite was an ORPHAN. It was absent from
-# `pnpm-workspace.yaml` and referenced by no workflow, so its dependencies were
-# never installed and none of its nine specs had ever run in CI — including
-# `03-money-checkout.spec.ts`, the only end-to-end proof that a customer can
-# reach a real Stripe Checkout session. Run by hand on 2026-08-24 against prod
-# it PASSES; it had simply never been asked.
+# This is the ONLY vantage that can exercise the money path end-to-end: a
+# headless FAPI mint is rejected 401 by the prod Worker's Clerk verification,
+# a browser session is not, so `curl` cannot stand in for it (see BACKLOG B-042).
+# The `03-money-checkout` spec is the sole e2e proof a customer reaches a real
+# `checkout.stripe.com/…/cs_live_` session (it STOPS at the hosted page — no card
+# submitted, so no charge; Stripe owns the rest).
 #
-# DISPATCH-ONLY, deliberately. Two reasons, and neither is squeamishness:
-#   1. It needs LIVE Clerk credentials (`sk_live`) with user create + delete
-#      rights. Those are not repo secrets today, and provisioning them is the
-#      owner's call, not mine — see B-042.
-#   2. Every run mints a throwaway prod Clerk user and creates a real (unpaid,
-#      expiring) Stripe Checkout session. The fixture DSR-deletes the user on
-#      teardown. That is acceptable on demand; putting it on a cron is a
-#      separate decision, and it belongs to whoever owns the prod tenant data.
-# Once B-042 lands the secrets, adding a `schedule:` here is a one-line change.
+# Runner: the self-hosted mac fleet — it has a real browser and can
+# `playwright install chromium`. Zero GitHub-hosted spend (standing mandate).
+#
+# Trigger: workflow_dispatch ONLY, on purpose. Each run creates a fresh live
+# Clerk user + a live Stripe checkout session against prod; until test-user
+# cleanup is confirmed automatic we do NOT put this on a schedule that would
+# accrete prod state unattended. Promote to a nightly `schedule:` once the
+# 04-dsr erase path is confirmed to reap what the run creates.
+#
+# Secrets (repo-level, set out-of-band — no Actions token can read them back):
+#   CLERK_LIVE_PUBLISHABLE_KEY  -> env CLERK_PUBLISHABLE_KEY (pk_live_, public)
+#   CLERK_LIVE_SECRET_KEY       -> env CLERK_SECRET_KEY      (sk_live_, sensitive)
+# The suite maps LIVE_* -> the un-suffixed names @clerk/testing expects.
+#
+# Action SHAs are pinned (no floating tags) — security requirement.
+
 on:
   workflow_dispatch:
     inputs:
-      spec:
-        description: "Spec to run (blank = all)"
+      grep:
+        description: "Playwright --grep filter (blank = full suite)"
         required: false
-        default: "specs/03-money-checkout.spec.ts"
+        default: ""
 
 permissions:
   contents: read
 
 concurrency:
   group: e2e-browser-prod
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   browser:
-    name: real-browser prod journeys (chromium)
-    # The container fabric: Ubuntu 24.04 with apt available, which is what
-    # `playwright install --with-deps` needs. The Mac fleet cannot install
-    # Linux browser deps and hosted Actions are payment-blocked.
-    runs-on: corelink
+    name: real-browser money/DSR (chromium, prod)
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 25
     defaults:
       run:
         working-directory: tests/e2e-browser
     env:
+      CORELINK_APP_URL: ${{ vars.CORELINK_APP_URL || 'https://humangr.com/corelink' }}
       CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_LIVE_PUBLISHABLE_KEY }}
       CLERK_SECRET_KEY: ${{ secrets.CLERK_LIVE_SECRET_KEY }}
-      CORELINK_APP_URL: ${{ vars.CORELINK_APP_URL || 'https://humangr.com' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      # Fail HERE, loudly and with the remedy, rather than 20 lines deep in a
-      # Clerk 401 that reads like a product bug.
-      - name: The live Clerk credentials must be provisioned
+      - name: Fail fast if live Clerk creds are absent
         run: |
-          missing=0
-          [ -n "${CLERK_PUBLISHABLE_KEY:-}" ] || { echo "::error::CLERK_LIVE_PUBLISHABLE_KEY is not set"; missing=1; }
-          [ -n "${CLERK_SECRET_KEY:-}" ] || { echo "::error::CLERK_LIVE_SECRET_KEY is not set"; missing=1; }
-          if [ "$missing" = "1" ]; then
-            echo "::error::This suite drives a REAL browser session against prod and cannot be faked. Provision the two secrets (B-042) and re-dispatch."
+          if [ -z "${CLERK_PUBLISHABLE_KEY}" ] || [ -z "${CLERK_SECRET_KEY}" ]; then
+            echo "::error::CLERK_LIVE_PUBLISHABLE_KEY / CLERK_LIVE_SECRET_KEY not set as repo secrets — the browser suite cannot mint a prod-accepted session. See BACKLOG B-042."
             exit 1
           fi
-          echo "both live Clerk credentials are present"
 
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v4.1.0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "22"
-
-      - name: Install workspace dependencies
-        working-directory: .
-        run: pnpm install --frozen-lockfile
+      - name: Install deps (npm, standalone — not a pnpm-workspace member)
+        run: npm ci
 
       - name: Install chromium
-        run: pnpm exec playwright install --with-deps chromium
+        run: npx playwright install chromium
 
-      - name: Run the browser journeys against prod
-        run: pnpm exec playwright test ${{ inputs.spec }} --reporter=line
+      - name: Run suite
+        run: |
+          if [ -n "${{ inputs.grep }}" ]; then
+            npx playwright test --grep "${{ inputs.grep }}"
+          else
+            npx playwright test
+          fi
 
-      - name: Upload the trace on failure
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - name: Upload report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: e2e-browser-traces
-          path: tests/e2e-browser/test-results/
-          retention-days: 7
+          name: playwright-report
+          path: tests/e2e-browser/playwright-report/
+          retention-days: 14
+          if-no-files-found: ignore

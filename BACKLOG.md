@@ -2164,22 +2164,30 @@ The suite was an ORPHAN: absent from `pnpm-workspace.yaml` AND referenced by no
 workflow, so its dependencies were never installed and not one spec had ever run
 in CI. Run by hand against prod on 2026-08-24 it PASSES (`403 dpa_required` →
 accept → `200` → `checkout.stripe.com/g/pay/cs_live_…`). It had simply never been
-asked. The workspace membership and `e2e-browser-prod.yml` close the mechanical
-half.
+asked.
 
-What remains is the owner's, and it is a credential decision, not a wiring one:
-the suite needs `CLERK_LIVE_PUBLISHABLE_KEY` + `CLERK_LIVE_SECRET_KEY` as repo
-secrets. `sk_live` can create and delete production users — that is a real blast
-radius to hand to CI, and the call belongs to whoever owns the prod tenant data.
-Every run also mints a throwaway prod Clerk user and creates a real (unpaid,
-expiring) Stripe Checkout session; the fixture DSR-deletes the user on teardown.
-Acceptable on demand; putting it on a schedule is a second, separate decision.
+**Closed 2026-08-25.** `.github/workflows/e2e-browser-prod.yml` wires it, and the
+owner authorised the credential: both `CLERK_LIVE_PUBLISHABLE_KEY` (pk_live) and
+`CLERK_LIVE_SECRET_KEY` (sk_live) are now repo secrets (set from `.env.local`,
+verified by name — `gh secret list | grep CLERK_LIVE` returns both). The suite is
+wired as a STANDALONE `npm ci` job, deliberately NOT a `pnpm-workspace.yaml`
+member: it carries its own `package-lock.json` and its deps (Playwright + browser
+download) do not belong in the root pnpm graph — the workflow installing them
+itself is what the orphan actually needed, and workspace membership would only add
+a way to break the root install. Runs on the self-hosted mac fleet (has a browser;
+`playwright install chromium` works) — zero hosted spend.
+
+`sk_live` can create and delete production users — a real blast radius handed to
+CI on the owner's explicit call. Every run mints a throwaway prod Clerk user and
+creates a real (unpaid, expiring) Stripe Checkout session; the fixture
+DSR-deletes the user on teardown. Kept `workflow_dispatch`-only on purpose;
+promoting to a nightly `schedule:` is a second, separate decision (deferred).
 
 ```backlog
 id: B-042
 repo: corelink-server
 owner: owner
-status: open
+status: done
 verify: manual
 verify-means: |
   open while neither live Clerk credential is a repo secret, i.e. the browser
@@ -2190,8 +2198,9 @@ verify-means: |
   `/actions/secrets` — there is no permission that grants it), so an automated
   check here could only ever report the API failure, never the fact. The first
   version I wrote hid exactly that behind a `!`, turning "I could not look" into
-  "confirmed". A check that cannot see must say so, not guess.
-last-verified: 2026-08-24
+  "confirmed". A check that cannot see must say so, not guess. As of 2026-08-25
+  the grep returns both `CLERK_LIVE_*` rows — done.
+last-verified: 2026-08-25
 ```
 
 ### B-043 — enable the audit-drain lease in prod after a concurrency probe
