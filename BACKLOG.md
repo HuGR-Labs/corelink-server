@@ -1996,13 +1996,16 @@ id: B-042
 repo: corelink-server
 owner: owner
 status: open
-verify: |
-  out=$(gh secret list --repo HuGR-Labs/corelink-server) || exit 2
-  if printf '%s\n' "$out" | grep -E "^CLERK_LIVE_(SECRET|PUBLISHABLE)_KEY" > /dev/null; then exit 1; fi
+verify: manual
 verify-means: |
   open while neither live Clerk credential is a repo secret, i.e. the browser
-  suite cannot run in CI at all. Goes red once they are provisioned and the
-  money-path proof becomes dispatchable — at which point the remaining question
-  is only whether it earns a schedule.
+  suite cannot run in CI at all. Check by hand with
+  `gh secret list --repo HuGR-Labs/corelink-server | grep CLERK_LIVE`.
+  MANUAL on purpose, and the reason is the point: no GitHub Actions token can
+  read the secret list (`GITHUB_TOKEN` gets HTTP 403 on
+  `/actions/secrets` — there is no permission that grants it), so an automated
+  check here could only ever report the API failure, never the fact. The first
+  version I wrote hid exactly that behind a `!`, turning "I could not look" into
+  "confirmed". A check that cannot see must say so, not guess.
 last-verified: 2026-08-24
 ```
