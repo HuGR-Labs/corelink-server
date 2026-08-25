@@ -24,11 +24,13 @@ Fix: drop the quiet flag and redirect. `producer | grep P >/dev/null` has the
 same exit status, reads all input, and cannot SIGPIPE. Or use a here-string:
 `grep -<q> P <<<"$var"`, which involves no pipe at all.
 
-NOT banned: `producer | head -n1`. Same SIGPIPE mechanism, different blast
-radius — `head` appears in value assignments, where a SIGPIPE aborts the script
-under `set -e`. That is loud and self-announcing. This gate exists for the
-silent-wrong class. The 72 `| head` sites under pipefail are tracked in
-BACKLOG.md, not ignored.
+NOT banned here: `producer | head -n1`. Same SIGPIPE mechanism, different
+blast radius — `head` cannot answer wrongly, it can only abort with 141 when
+something reads the pipeline's status. That is loud and self-announcing, and it
+depends on the *position* of the pipeline rather than on its presence, so it
+needs a classifier rather than a pattern ban. It has one:
+`scripts/check_head_under_pipefail.py`, enforced by the same workflow as this
+gate. This gate exists for the silent-wrong class.
 
 RULE 2 — every tracked shell script must parse.
 

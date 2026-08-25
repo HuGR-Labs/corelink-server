@@ -162,7 +162,7 @@ for spec_dir in "${SPEC_DIRS[@]}"; do
       pass+=("$name")
     else
       echo "  FAIL              ${name}  (${dur}s)"
-      printf '%s\n' "$out" | grep -iE "^Error|is violated|Semantic errors|Attempted to check" | head -3 | sed 's/^/                    /'
+      printf '%s\n' "$out" | grep -m3 -iE "^Error|is violated|Semantic errors|Attempted to check" | sed 's/^/                    /'
       [ "$rc" -eq 124 ] && echo "                    (timed out after ${budget}s)"
       fail+=("$name")
     fi

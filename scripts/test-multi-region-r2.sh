@@ -218,7 +218,7 @@ declare -A bucket_stats
 
 for entry in "${EXPECTED_BUCKETS[@]}"; do
   IFS='|' read -r bname region btype <<< "${entry}"
-  exists=$(echo "${all_buckets_json}" | jq -r --arg n "${bname}" '.[] | select(.name == $n) | .name' | head -1)
+  exists=$(echo "${all_buckets_json}" | jq -r --arg n "${bname}" 'first(.[] | select(.name == $n) | .name) // empty')
   if [[ -n "${exists}" ]]; then
     bucket_status["${bname}"]="EXISTS"
     stats=$(query_bucket_stats "${bname}")

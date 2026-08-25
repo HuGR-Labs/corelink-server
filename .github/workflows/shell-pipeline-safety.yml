@@ -14,7 +14,19 @@ name: shell-pipeline-safety
 # `docker history` (a credential MATCH is what kills the producer, so the
 # control printed PASS) and okf-autoreconcile's out-of-tree edit guard.
 #
-# RULE 2 — every tracked shell script must parse (`bash -n`).
+# RULE 2 — no `| head` whose exit status is consumed.
+# Same SIGPIPE mechanism, opposite blast radius: `head` cannot answer wrongly,
+# only abort with 141. So the question is never "is there a `| head`" but "does
+# anything read this pipeline's status". `scripts/check_head_under_pipefail.py`
+# answers that per site — an assignment RHS or a bare pipeline is a failure; a
+# `$( … | head … )` in an argument position, whose status the enclosing command
+# discards, is not, and neither is prose inside a quoted string. Counting
+# occurrences instead is what kept B-040 open: 72 raw matches, of which 0 were
+# actually reachable failures once the position was taken into account, and 3
+# real ones that the comment-anchored grep could not see at all because the
+# line contained a `#` inside quotes.
+#
+# RULE 3 — every tracked shell script must parse (`bash -n`).
 # This is how `scripts/okf-reconcile-local.sh` was found dead on main: its
 # prompt was single-quoted and contained "file's anchor", so the apostrophe
 # closed the string and the rest of the prose was parsed as shell.
@@ -69,3 +81,15 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/check_shell_pipeline_safety.py
+
+      - name: Self-test the `| head` classifier before trusting its verdict
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check_head_under_pipefail.py --self-test
+
+      - name: Enforce — no `| head` whose exit status is consumed
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check_head_under_pipefail.py

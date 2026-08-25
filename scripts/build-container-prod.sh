@@ -174,8 +174,10 @@ log "Build completed in ${BUILD_DURATION_S}s."
 # ── Step 4: Image metadata ─────────────────────────────────────────────────
 
 log "Collecting image metadata..."
-IMAGE_ID="$(docker images --format '{{.ID}}' "$FULL_TAG_PROD" | head -1)"
-IMAGE_SIZE="$(docker images --format '{{.Size}}' "$FULL_TAG_PROD" | head -1)"
+IMAGE_ID="$(docker images --format '{{.ID}}' "$FULL_TAG_PROD")"
+IMAGE_ID=${IMAGE_ID%%$'\n'*}
+IMAGE_SIZE="$(docker images --format '{{.Size}}' "$FULL_TAG_PROD")"
+IMAGE_SIZE=${IMAGE_SIZE%%$'\n'*}
 IMAGE_DIGEST="$(docker inspect --format '{{.Id}}' "$FULL_TAG_PROD")"
 LAYER_COUNT="$(docker history "$FULL_TAG_PROD" --no-trunc --format '{{.ID}}' | grep -v '<missing>' | wc -l | tr -d ' ')"
 

@@ -25,8 +25,9 @@ PATHS=(crates/ Dockerfile Cargo.lock Cargo.toml)
 # Extract the pinned image SHA (the `<sha>` in `…corelinkserver-prod:<sha>-r<N>`)
 # from the prod container pin. All 5 envs are pinned to the same SHA by
 # push-container-multiregion.sh, so the first prod pin is representative.
-PIN="$(grep -oE 'corelink-prod-corelinkserver-prod:[0-9a-f]+-r[0-9]+' wrangler.toml \
-        | head -1 | sed -E 's/.*:([0-9a-f]+)-r[0-9]+/\1/')"
+PIN="$(grep -m1 -oE 'corelink-prod-corelinkserver-prod:[0-9a-f]+-r[0-9]+' wrangler.toml \
+        | sed -E 's/.*:([0-9a-f]+)-r[0-9]+/\1/')"
+PIN=${PIN%%$'\n'*}
 if [ -z "${PIN:-}" ]; then
     echo "::error::check-container-pin-fresh: could not parse a container image pin from wrangler.toml." >&2
     exit 2

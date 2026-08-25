@@ -125,7 +125,7 @@ MODE_INTERACTIVE=false
 MODE_VALIDATE_MATRIX=false
 
 usage() {
-    grep '^#' "$0" | head -65 | sed 's/^# \?//'
+    grep -m65 '^#' "$0" | sed 's/^# \?//'
 }
 
 while [[ $# -gt 0 ]]; do

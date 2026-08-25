@@ -180,8 +180,8 @@ fi
 # image lines (staging/dev blocks) are excluded by the registry.cloudflare.com
 # prefix requirement.
 EXPECTED_IMG_NAME="corelink-${ENV_NAME}-corelinkserver-prod"
-PINNED_REF="$(grep -E '^image = "registry\.cloudflare\.com/[^/]+/'"${EXPECTED_IMG_NAME}"':[^"]+"' wrangler.toml \
-    | head -1 | sed -E 's/^image = "([^"]+)".*/\1/')"
+PINNED_REF="$(grep -m1 -E '^image = "registry\.cloudflare\.com/[^/]+/'"${EXPECTED_IMG_NAME}"':[^"]+"' wrangler.toml \
+    | sed -E 's/^image = "([^"]+)".*/\1/')"
 
 [ -n "$PINNED_REF" ] || die "could not find a pinned [[env.$ENV_NAME.containers]] image named '$EXPECTED_IMG_NAME' in wrangler.toml.
      Repin the image tag first (see scripts/push-container-multiregion.sh output)."
