@@ -22,6 +22,20 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+
+- **The near-$-ceiling early-warning now routes to an alert sink, not just a log
+  line (B-007).** `tenant_quota.rs` still emits the structured `warn!` when a
+  refill falls back to a partial lease (a tenant within one lease-chunk of its
+  monthly cap), and now ALSO dispatches a PII-free `PagerDutyEvent`
+  (`corelink_slo::pagerduty::PagerDutyDispatcher`) carrying only the tenant id and
+  three quota metrics, deduped per tenant so repeats collapse to one incident. The
+  dispatch is fire-and-forget (`tokio::spawn` + `spawn_blocking`), off the quota
+  hot path — no `.await`, no extra D1 round-trip — and gated default-off behind
+  `NEAR_CEILING_ALERT_SINK`, so it ships inert. Flipping the flag does not page a
+  human yet: the only bindable dispatcher today is in-memory; wiring the real
+  HTTPS Events-API dispatcher + per-service routing key is B-008 (owner).
+
 ### Security
 
 - **CI no longer fetches `tla2tools.jar` from a URL upstream overwrites (B-039).**

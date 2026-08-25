@@ -217,6 +217,7 @@ ALLOWLIST_REGEX = re.compile(
     # serialises audit drains behind a per-partition lease + seal fence.
     #   Consumer: crates/corelink-container/src/routes/audit_drain.rs (build_state_from_env)
     r"|AUDIT_DRAIN_LEASE_ENABLED$"
+    r"|NEAR_CEILING_ALERT_SINK$"
     r")"
 )
 

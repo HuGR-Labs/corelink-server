@@ -296,6 +296,12 @@ corelink-telemetry = { workspace = true }
 # REAL rolling-metrics probe over live traffic (not the crate's InMemory probe
 # fixture), fail-CLOSED blocking writes to a degraded region.
 corelink-failover-router = { workspace = true }
+# B-007 — near-$-ceiling early-warning sink. Reuses the canonical alert
+# primitive `corelink_slo::pagerduty::{PagerDutyDispatcher, PagerDutyEvent}`
+# as the sink for the tenant-quota near-ceiling signal. Pure-logic crate
+# (only `thiserror`; no reqwest/tokio), so it adds ZERO hot-path weight —
+# the container already links tokio for the fire-and-forget spawn.
+corelink-slo = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

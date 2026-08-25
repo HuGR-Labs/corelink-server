@@ -420,16 +420,39 @@ last-verified: 2026-08-23
 ### B-007 — the near-ceiling warning goes nowhere
 
 `$`-ceiling hardening C1 landed in `#1074`. C2 — routing the warning to a paging
-or email sink — did not. The emitter is still a bare `tracing::warn!`.
+or email sink — did not. The emitter was a bare `tracing::warn!`.
+
+**Done (2026-08-25).** The near-$-ceiling branch in `tenant_quota.rs` now, in
+addition to the unchanged structured `tracing::warn!`, routes the signal to the
+canonical alert primitive `corelink_slo::pagerduty::PagerDutyDispatcher` via a
+new `fn emit_near_ceiling` — a `tokio::spawn` fire-and-forget (the SYNC
+`dispatch` wrapped in `spawn_blocking`) OFF the lease hot path, so `charge`
+returns `Ok(true)` without ever awaiting the dispatch (the "no extra D1
+round-trip on the hot path" invariant holds). It is gated default-off by
+`NEAR_CEILING_ALERT_SINK`: unset ⇒ the sink field is `None` ⇒ behavior is
+byte-identical to today. The event is PII/secret-free (only `tenant_id` + the
+three integer quota metrics; `dedup_key = near-ceiling:{tenant_id}` so repeats
+collapse). **Scope boundary:** no real egress dispatcher exists yet —
+`corelink-slo` ships only the in-memory sink, so flipping the flag ON today
+captures events in memory and pages NOBODY. Wiring the real HTTPS
+`PagerDutyEventsApiV2HttpsDispatcher` + per-service `routing_key` (Integration
+Key) secret is exactly **B-008** (owner).
 
 ```backlog
 id: B-007
 repo: corelink-server
 owner: tl
-status: open
-verify: grep -q 'deliberate follow-up (C2)' crates/corelink-container/src/tenant_quota.rs
-verify-means: open while the emitter's own TODO comment stands
-last-verified: 2026-08-23
+status: done
+verify: |
+  grep -q 'fn emit_near_ceiling' crates/corelink-container/src/tenant_quota.rs && \
+  ! grep -q 'deliberate follow-up (C2)' crates/corelink-container/src/tenant_quota.rs
+verify-means: |
+  done — the near-ceiling signal is wired to a PagerDutyDispatcher sink
+  (`fn emit_near_ceiling`, gated default-off by NEAR_CEILING_ALERT_SINK) and the
+  old "deliberate follow-up (C2)" TODO is gone. Red if the wiring is removed or
+  the TODO reappears. Grepping the code identifier (not prose) avoids the
+  self-counting-comment trap.
+last-verified: 2026-08-25
 ```
 
 ### B-008 — PagerDuty accepts our events; nobody knows if they reach a human

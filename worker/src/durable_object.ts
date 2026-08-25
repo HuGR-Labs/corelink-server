@@ -889,6 +889,7 @@ export class CoreLinkServer implements DurableObject {
           // process actually sees the toggle (else setting it as a Worker var is
           // silently inert). Not a secret.
           AUDIT_DRAIN_LEASE_ENABLED: this.env.AUDIT_DRAIN_LEASE_ENABLED ?? "",
+          NEAR_CEILING_ALERT_SINK: this.env.NEAR_CEILING_ALERT_SINK ?? "",
           // S-09 offsite archive (`POST /_internal/audit/archive`). Both are
           // non-secret tuning knobs; "" ⇒ container defaults (bucket
           // `corelink-audit-weur`, which already carries the 7-year Object
