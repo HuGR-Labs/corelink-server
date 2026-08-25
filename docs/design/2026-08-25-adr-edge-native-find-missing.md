@@ -88,6 +88,50 @@ The Worker already has everything the route needs:
 Expected shape: one D1 quota call + N concurrent R2 `head`s + one D1 audit
 batch. That is roughly `9 ms + max(head) + 9 ms` rather than `N × 85 ms`.
 
+## F1 SHADOW RESULT (2026-08-25, measured — supersedes every estimate above)
+
+Flag armed on `prod` (iad) only, driven from the fabric, `wrangler tail` read
+back 43 shadow verdicts.
+
+**Parity: 43/43 `match`, zero divergence.** The edge answer equalled the
+container's on every request, at every size.
+
+Edge wall time, from the shadow's own clock:
+
+| n | 1 | 2 | 4 | 8 | 16 | 32 | 64 | 100 |
+|---|---|---|---|---|---|---|---|---|
+| edge ms | 110-195 | 114-147 | 136-155 | 151-291 | 346-371 | 467-591 | 1148-1304 | 2084-2141 |
+
+Against the container on the same route: **8.65 s → 2.10 s at n=100, a 76 % cut**,
+and ~85 ms/digest → ~20 ms/digest marginal.
+
+That clears the 70 % ask. It does NOT clear the 15 ms ceiling, and the shape says
+exactly why: **the edge is linear too.** n=1 costs ~110 ms, and n=100 costs
+almost precisely 17 × that. Workers cap simultaneous outbound connections at 6,
+so 100 `head()`s are ~17 waves of ~120 ms, not one parallel burst. `Promise.all`
+does not buy what it looks like it buys.
+
+**The corrected conclusion: the probe itself is the wrong primitive.** Moving it
+in-colo removed the container's 85 ms constant and replaced it with a 20 ms one;
+it did not remove the per-digest round trip, and no amount of concurrency tuning
+will, because the limit is the connection cap rather than the work.
+
+To reach 15 ms, `findMissingBlobs` must become ONE lookup rather than N. The
+candidate already exists: `blob_meta` (migration 0001) is
+`PRIMARY KEY (tenant_id, digest)` with a `deleted_at IS NULL` partial index and
+is described as the single source of truth for CAS existence, written in the
+same `db.batch` as the audit row. If that holds for the REAPI/bazel plane, the
+whole route collapses to one `json_each` query over the `CONFIG_DB` binding —
+~9 ms from our edge, independent of n.
+
+**That "if" is load-bearing and is NOT yet verified.** If `blob_meta` is not
+maintained for bazel-plane blobs, answering from it would report PRESENT blobs
+as missing, and a cache client responds to that by re-uploading everything. The
+next step is to prove which writers maintain it, not to assume the table means
+what its comment says (`designed-vs-wired`). Until then, F2 ships the R2-binding
+edge path measured above — a real 76 % — and the index is a separate decision
+with its own proof.
+
 ## Explicitly NOT decided here
 
 - **A number.** No latency is promised in this ADR. The F1 shadow measures it,
