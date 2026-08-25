@@ -587,14 +587,29 @@ last-verified: 2026-08-25
 Follow-up to [B-009]. Governance-mode CAS legal-hold retention now ships
 (code-reversible: an admin/drain path can delete after the hold ends). The stronger
 **Compliance mode** — R2/S3 Object-Lock so NOT EVEN an admin can delete before the
-retention term expires — is deferred. It is blocked on infra, not code: R2 Object
-Lock must be enabled **at bucket creation** and Compliance mode is irreversible, so
-it needs a purpose-provisioned Object-Lock CAS bucket (and a validation that R2
-honours `x-amz-object-lock-*` on `PutObject`). Admitting a `'compliance'` value to
-`cas_retention.mode` is then a table-REBUILD migration (SQLite/D1 cannot widen an
-inline CHECK). Do this when a customer contract actually requires storage-enforced
-immutability (owner brief §4 recommendation: "Governance now, Compliance at the
-point a contract requires it").
+retention term expires — is deferred.
+
+**BLOCKED AT THE R2 PLATFORM LEVEL, not on an owner infra decision (probed
+2026-08-25).** Direct probe against the prod account with the `.env.local` R2 S3
+creds: `create-bucket --object-lock-enabled-for-bucket` → **`NotImplemented`**, and
+`put-object --object-lock-mode GOVERNANCE --object-lock-retain-until-date …` on a
+plain bucket → **`NotImplemented`**. So R2 implements neither bucket-level nor
+per-object S3 Object Lock — true WORM immutability **cannot be built on R2 today**.
+(The `corelink-audit-7y-retention` behaviour on `corelink-audit-weur` is therefore
+lifecycle / `If-None-Match` append-only, NOT true Object Lock — an admin with
+bucket access can still delete.) The `aws-sdk-s3` object-lock setters exist but R2
+rejects them at runtime, so writing `mode='compliance'` + PutObject object-lock
+params would be a built-but-unreachable trap. See memory
+`r2-does-not-support-object-lock`.
+
+**Consequence:** the shipped Governance mode ([B-009]) is the STRONGEST retention
+achievable on R2. Compliance mode needs one of: (a) Cloudflare shipping R2 Object
+Lock, or (b) a different storage backend (S3/GCS with Object Lock) used only for
+compliance-retained objects. Either is a real project, gated on a customer contract
+actually requiring storage-enforced immutability (owner brief §4: "Governance now,
+Compliance at the point a contract requires it"). Admitting a `'compliance'` value
+to `cas_retention.mode` is then also a table-REBUILD migration (D1 cannot widen an
+inline CHECK).
 
 ```backlog
 id: B-046
@@ -603,10 +618,11 @@ owner: owner
 status: open
 verify: manual
 verify-means: |
-  open until a Compliance/Object-Lock retention mode ships (an Object-Lock-enabled
-  CAS bucket + a `'compliance'` mode on cas_retention + PutObject object-lock
-  params). Manual: gated on provisioning an irreversible Object-Lock bucket, which
-  is an owner/infra decision, not a code change.
+  open until a Compliance/Object-Lock retention mode ships. BLOCKED: R2 does not
+  implement S3 Object Lock (probed 2026-08-25 — NotImplemented on both bucket and
+  object), so this needs either Cloudflare adding Object Lock OR a different
+  Object-Lock-capable storage backend for compliance-retained objects — a platform
+  dependency, not a code change. Re-probe R2 before assuming it is still blocked.
 last-verified: 2026-08-25
 ```
 
