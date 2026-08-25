@@ -1591,10 +1591,13 @@ The engineering re-home ([B-031]) made release provenance honest: it is generate
 on the self-hosted fleet, which is **SLSA Build L2**, not L3. But the claim "SLSA
 L3" is still written into the compliance and architecture surface as an
 *implemented* control — and it was already false before the re-home, because the
-old hosted lane had produced a provenance bundle exactly zero times. Known sites
-(`grep -rIln 'SLSA L3\|SLSA Level 3'`, excluding the verifier code in
-`corelink-ops`, which legitimately *verifies* L3 and makes no claim about our own
-builds):
+old hosted lane had produced a provenance bundle exactly zero times. A raw
+`grep -rIln 'SLSA L3'` returns ~70 files, but most are **out of scope on purpose**:
+sealed sprints/audits (rewriting them would falsify history), the frozen ADR-0045
+L3 design-of-record, sprint work-item definitions, the `corelink-ops` verifier
+code (it *verifies* L3, it makes no claim about our builds), and accurate
+references (ADR-0045-title citations, drill/scenario text). The LIVE claim surface
+that must change:
 `specs/_compliance/ISO27001-STATEMENT-OF-APPLICABILITY-2026-05-15.md` (A.5.21,
 A.8.4), `specs/_compliance/ISO27001-CROSSWALK-2026-05-15.md` (same rows),
 `specs/_compliance/FEDRAMP-MODERATE-CROSSWALK-2026-05-15.md`,
@@ -1604,20 +1607,50 @@ A.8.4), `specs/_compliance/ISO27001-CROSSWALK-2026-05-15.md` (same rows),
 CTRL-SUPPLY-001), `specs/03_architecture/invariant_registry.md`, `ARCHITECTURE.md`
 (§6.5). Two of these (`security_model.md`, `ARCHITECTURE.md`) are OKF-cited, so the
 sweep must reconcile the `adr-0072` / `posture-overview` concept anchors — this is
-the [okf-c5-base-ref-stricter-than-local] trap, which is why it is its own item.
+the [okf-c5-base-ref-stricter-than-local] trap.
+
+**Closed 2026-08-25.** Every live present-tense "we implement SLSA L3" claim was
+corrected to the honest **L2 (self-hosted provenance; L3 deferred)**: the ISO SoA
++ crosswalk (A.5.21, A.8.4), the FedRAMP + LGPD crosswalks, GA-GATE-S09, the PRR
+`≥50%` rollout gate, `failure_modes` FM-156, `invariant_registry`, the
+`remote_cache_product_profile` matrix, `00_framework` §26.1, `security_model` §8
+(heading, TOC, threat rows, CTRL-SUPPLY-001, and the now-false "GitHub-hosted
+builder" bullet), `ARCHITECTURE.md` §6.5, and the three `CTRL-SUPPLY-001` runbook
+labels that drifted against the renamed control. Left untouched on purpose:
+sealed history, ADR-0045 (frozen), the `corelink-ops` verifier, and accurate
+references (ADR-0045-title citations, the BCP-DR / TT-05 scenario descriptions).
 
 ```backlog
 id: B-045
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  test $(grep -rIl 'SLSA L3\|SLSA Level 3' specs ARCHITECTURE.md 2>/dev/null | wc -l | tr -d ' ') -ne 0
+  test $(grep -hE 'SLSA L3|SLSA Level 3' \
+    specs/_compliance/ISO27001-STATEMENT-OF-APPLICABILITY-2026-05-15.md \
+    specs/_compliance/ISO27001-CROSSWALK-2026-05-15.md \
+    specs/_compliance/FEDRAMP-MODERATE-CROSSWALK-2026-05-15.md \
+    specs/_compliance/LGPD-FULL-AUDIT-2026-05-15.md \
+    specs/_compliance/GA-GATE-CRITERIA.md \
+    specs/03_architecture/failure_modes.md \
+    specs/03_architecture/invariant_registry.md \
+    specs/03_architecture/security_model.md \
+    specs/03_architecture/remote_cache_product_profile.md \
+    specs/_templates/production_readiness_review.md \
+    specs/00_framework.md ARCHITECTURE.md 2>/dev/null \
+    | grep -viE 'defer|adiad|B-031|requires|exige|SolarWinds|motiv|não é o alvo' \
+    | wc -l | tr -d ' ') -eq 0
 verify-means: |
-  open (exit 0) while any spec/architecture doc still asserts SLSA L3; flips to
-  exit 1 (drift against an `open` item, prompting the status change to done) once
-  every such claim is corrected to the honest L2 level. The verifier code under
-  crates/corelink-ops is out of scope — it verifies L3, it does not claim it.
+  done (exit 0) once none of the twelve LIVE compliance/architecture docs CLAIMS
+  SLSA L3 as an implemented control; would flip to exit 1 (drift) if a claim
+  reappeared. The second grep drops the handful of honest lines that name L3 only
+  to say it is DEFERRED (or the SolarWinds motivation note) — those are not
+  claims. Scope is DELIBERATELY the live surface only —
+  sealed sprints/audits (`04_sprints/_sealed`, `_audits`), the frozen ADR-0045
+  design-of-record, sprint work-item definitions, the `corelink-ops` verifier code
+  (it verifies L3, it does not claim it), and accurate references (ADR-0045-title
+  citations, drill/scenario descriptions like BCP-DR / TT-05) are OUT of scope:
+  rewriting sealed history or an accurate reference would be dishonest, not a fix.
 last-verified: 2026-08-25
 ```
 

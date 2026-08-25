@@ -45,8 +45,8 @@ launch gate).
   equals the requested tenant, and an HMAC-derived per-tenant R2 prefix at the storage binding —
   both must agree for a request to land bytes (`ARCHITECTURE.md:170-199`).
 - The trust-security model layers BYOK envelope encryption, the Merkle-chained audit, TLA+-verified
-  invariants, a STRIDE/LINDDUN boundary model (TB-0..TB-4), SLSA-L3 supply chain, and constant-time
-  side-channel hygiene (`ARCHITECTURE.md:274-345`).
+  invariants, a STRIDE/LINDDUN boundary model (TB-0..TB-4), SLSA-L2 supply chain, and constant-time
+  side-channel hygiene (`ARCHITECTURE.md:274-349`).
 - The CAA-360 audit was a PTES/OWASP/MITRE-method 360° sweep with adversarial verification: of 49 raw
   candidates, 37 confirmed and 12 were refuted as false-positives on re-reading the real code
   (`docs/security/2026-06-13-CAA-360-audit-report.md:1-5`).
@@ -92,7 +92,7 @@ launch gate).
 2. `ARCHITECTURE.md:33-52` — invariant detail (integrity, isolation, confidentiality, audit).
 3. `ARCHITECTURE.md:93-101` — control/data plane split; container is service-binding-only.
 4. `ARCHITECTURE.md:170-199` — two-layer tenant isolation (Worker authZ + HMAC R2 prefix).
-5. `ARCHITECTURE.md:274-345` — trust & security model (BYOK, Merkle audit, TLA+, STRIDE/LINDDUN, SLSA-L3, constant-time).
+5. `ARCHITECTURE.md:274-349` — trust & security model (BYOK, Merkle audit, TLA+, STRIDE/LINDDUN, SLSA-L2, constant-time).
 6. `docs/security/2026-06-13-CAA-360-audit-report.md:1-5` — audit counts (49 raw / 37 confirmed / 12 refuted; 1 High).
 7. `docs/security/2026-06-13-CAA-360-audit-report.md:13-27` — executive summary: launch-safe conditionally, no Critical.
 8. `docs/security/2026-06-13-CAA-360-audit-report.md:22-27` — the fail-open-secrets root cause + the launch gate.

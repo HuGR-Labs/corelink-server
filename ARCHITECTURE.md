@@ -324,14 +324,18 @@ mitigation is a control with a stable ID (`CTRL-*` for security,
 `CTRL-PRIV-*` for privacy) cross-referenced from the compliance
 matrix.
 
-### 6.5 Supply chain (SLSA L3)
+### 6.5 Supply chain (SLSA L2)
 
-The CoreLink build pipeline is engineered to SLSA Level 3: hermetic
-builds in disposable runners, signed CycloneDX SBOMs per artifact
-(ADR-0014), provenance attestations with non-falsifiable build
-metadata, two-person review on every PR that touches a release
-script, and `corelink-supply-verify` blocking deploys whose SBOM
-diff includes an unreviewed dependency. CLI releases are signed —
+The CoreLink build pipeline operates at **SLSA Build L2**: signed
+in-toto provenance generated on the self-hosted fleet, cosign keyless
+(GitHub OIDC → Fulcio) with mandatory Rekor inclusion, self-verified
+on every run, plus signed CycloneDX SBOMs per artifact (ADR-0014),
+two-person review on every PR that touches a release script, and
+`corelink-supply-verify` blocking deploys whose SBOM diff includes an
+unreviewed dependency. The builder is **not** an isolated,
+GitHub-managed VM — that isolation (hermetic, non-falsifiable build
+environment) is what SLSA L3 requires, and it is deferred (see B-031);
+we do not claim it today. CLI releases are signed —
 GPG for Linux, Apple-notarized for macOS, Authenticode for Windows
 — and the verification recipe is published at the canonical
 `.well-known/gpg-pubkey.asc` URL.

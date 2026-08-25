@@ -358,7 +358,7 @@ Art. 48: the controller shall **notify the national authority and data subject o
 | Art. 46 | CTRL-CRYPTO-002 (at-rest envelope encryption) | SOC 2 CC6.1; ISO A.8.24 | `EVT-005` |
 | Art. 46 | CTRL-ISO-001..005 (tenant isolation) | SOC 2 CC6.2 | `EVT-022` (TLA+ proofs) |
 | Art. 46 | CTRL-AUTH-001..010 (auth + MFA) | SOC 2 CC6.1 | `EVT-025` (pentest) |
-| Art. 46 | CTRL-SUPPLY-001..005 (SBOM + Sigstore + provenance) | SOC 2 CC6.8 | `EVT-011` (SLSA L3) |
+| Art. 46 | CTRL-SUPPLY-001..005 (SBOM + Sigstore + provenance) | SOC 2 CC6.8 | `EVT-011` (SLSA L2) |
 | Art. 47 | CTRL-AUDIT-001..005 (audit trail + Object Lock 7y) | SOC 2 CC7.x; ISO A.8.15 | `EVT-047` |
 | Art. 48 | `RB-BREACH-NOTIF` + ANPD/DPA timeline | GDPR Art. 33 / 34 | `EVT-019` (tabletop) |
 | Art. 48 | ANPD Resolução 15/2024 incident template alignment | — | `legal/breach-notification/templates/anpd-incident-form-v2024.md` |

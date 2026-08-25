@@ -73,7 +73,7 @@ tags: ["runbook", "p1", "supply-chain", "security"]
 
 ## Prevenção
 
-- CTRL-SUPPLY-001 SLSA L3 (não previne tudo, mas provenance).
+- CTRL-SUPPLY-001 SLSA L2 (não previne tudo, mas provenance).
 - CTRL-SUPPLY-003 SBOM (traceability).
 - CTRL-SUPPLY-004 pinning + cargo-audit diário.
 - CTRL-SUPPLY-005 no dynamic loading.

@@ -543,7 +543,7 @@ Aplicável se processa PII / dados regulados.
 | 13.3.1 | SBOM publicado e acessível | 🤖 | 🔒 | URL |
 | 13.3.2 | Binary signature válida (re-verificada em pipeline) | 🤖 | 🔒 | verification log |
 | 13.3.3 | Ausência de dependências com vuln `High`/`Critical` sem waiver | 🤖 | 🔒 | `cargo audit` + `cargo deny` clean |
-| 13.3.4 | Se faixa ≥ 50%: SLSA Level 3 atestado | 🤖👤 | 🔒 | attestation + human audit |
+| 13.3.4 | Se faixa ≥ 50%: SLSA Level 2 atestado (provenance self-hosted; L3 adiado — ver B-031) | 🤖👤 | 🔒 | attestation + human audit |
 
 ---
 

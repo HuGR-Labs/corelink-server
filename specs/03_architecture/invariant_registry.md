@@ -298,7 +298,7 @@ Invariantes que governam Action Cache lifecycle: REAPI handlers + idempotency, M
 - TLA+ specs PLANNED em §4.2 (cas_integrity.tla AC variant, tenant_isolation.tla AC eviction variant) — implementação em sprints S-09 ou S-12.
 - `data_model.md §4.2` schema canonical (tenant_prefix column adicionada Lote 10.4bis).
 - `error_taxonomy.md §3.2` mapeia AC errors (12 codes pós-Lote 10.4bis amendment).
-- `compliance_matrix.md` mapeia INV-AC-* para LGPD/GDPR/SLSA L3 alignment.
+- `compliance_matrix.md` mapeia INV-AC-* para LGPD/GDPR/SLSA L2 alignment.
 
 **Aliases históricos:** nenhum. Estes 19 IDs introduzidos em Lote 10.4 (sprint S-04 spec) e promovidos ao registry em Lote 10.4bis (P0 fix Agent R4 review remediation r4-s04-part1+part2); 4 adicionais (INV-AC-TTL-REFRESH-MONOTONIC, INV-AC-REGION-PINNED, INV-AC-EVICT-REGION-PINNED, INV-AC-EVICT-AUDIT-EMITTED) promovidos em DEBT-004 closure (2026-05-15). **CI gate enforcement**: `scripts/validate_inv_promotion.py` valida que todo INV declarado em WI sob `specs/04_sprints/SXX/work_items/` existe nesta seção (closes 4-sprint persistent gap flagged em S-01/S-02/S-03 R4 reviews).
 
@@ -332,7 +332,7 @@ Invariantes que governam multipart upload, chunking determinism, manifest dual-s
 - TLA+ specs PLANNED (cas_integrity.tla chunked variant, tenant_isolation.tla multipart variant) — implementação em sprints S-09 ou S-12.
 - `data_model.md §4.X` schema canonical (chunks + manifest_chunks + multipart_sessions adicionadas Lote 10.5).
 - `error_taxonomy.md §3.X` mapeia COR_MULTIPART_* errors.
-- `compliance_matrix.md` mapeia INV-MULTIPART-* para LGPD/GDPR/SLSA L3 alignment.
+- `compliance_matrix.md` mapeia INV-MULTIPART-* para LGPD/GDPR/SLSA L2 alignment.
 
 **Aliases históricos:** nenhum. Estes 13 IDs introduzidos em Lote 10.5 (sprint S-05 spec) e **promovidos preemptivamente em Lote 10.5** (consistency com lesson Lote 10.4bis CI gate validate_inv_promotion.py); refinements possíveis em Lote 10.5bis pós-Agent R4 review.
 
@@ -559,7 +559,7 @@ INVs introduced by the `corelink-replication::rollout_controller` module (was `c
 - WI-S13-005 §6.1.3 (auto-rollback design).
 - Google SRE Workbook Ch 16 — multi-window multi-burn-rate alerting.
 - INV-SUPPLY-SIGNED-DEPLOY (§3.10) — parent of INV-ROLLOUT-COSIGN-GATE.
-- `compliance_matrix.md` mapeia INV-ROLLOUT-* para SOC 2 CC8.1 (change management) + SLSA L3 (provenance gate).
+- `compliance_matrix.md` mapeia INV-ROLLOUT-* para SOC 2 CC8.1 (change management) + SLSA L2 (provenance gate).
 
 **Aliases históricos:** nenhum. Promoted in DEBT-004 closure pass (2026-05-15) from `corelink-replication::rollout_controller` crate orphan refs (crate absorbed into `corelink-replication::rollout_controller` Wave-35 Phase 2).
 

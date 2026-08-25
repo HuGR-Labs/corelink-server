@@ -50,7 +50,7 @@ tags: ["architecture", "security", "threat-model", "stride", "controls"]
 5. [STRIDE — análise por asset × trust boundary](#5-stride--análise-por-asset--trust-boundary)
 6. [Control catalog (CTRL-XXX)](#6-control-catalog-ctrl-xxx)
 7. [Criptografia (algoritmos, chaves, rotação)](#7-criptografia-algoritmos-chaves-rotação)
-8. [Supply chain security (SLSA L3)](#8-supply-chain-security-slsa-l3)
+8. [Supply chain security (SLSA L2)](#8-supply-chain-security-slsa-l2)
 9. [Hardening de runtime](#9-hardening-de-runtime)
 10. [Testes de segurança obrigatórios](#10-testes-de-segurança-obrigatórios)
 11. [Mapeamento STRIDE → CTRL → Evidência](#11-mapeamento-stride--ctrl--evidência)
@@ -87,7 +87,7 @@ Taxonomia de assets (referenciada por CTRLs e por `work_item §26`):
 | AST-AUDIT    | Audit log                      | Log                | HIGH        | R2 append-only `audit-<region>`  | Retention 7 anos; imutabilidade garantida por Object Lock. |
 | AST-BILLING  | Billing counters (bytes, reqs) | Data               | HIGH        | D1 tabela `usage_counters`       | Integridade crítica para faturamento; adulteração = fraude. |
 | AST-TENANT-KEY | Tenant-scoped derivation key (HKDF salt) | Key     | CRITICAL    | Cloudflare Secrets (KMS-backed)  | Usada para HMAC de paths cross-tenant; rotação anual. |
-| AST-CODE     | Código do CoreLink (Worker+Container+Containers) | Supply chain | CRITICAL | GitHub + Cloudflare deploy | SLSA L3 provenance obrigatória. |
+| AST-CODE     | Código do CoreLink (Worker+Container+Containers) | Supply chain | CRITICAL | GitHub + Cloudflare deploy | SLSA L2 (self-hosted provenance; L3 deferred) obrigatória. |
 | AST-CONFIG   | Flags, policies, rate limits   | Config             | HIGH        | DO `config-singleton` + KV cache | Mudança audita + aprovação dual. |
 | AST-TLA-MODEL | TLA+ specs checadas            | Artifact           | MEDIUM      | Repo `specs/**/*.tla`            | Evidência obrigatória para INV CRITICAL. |
 
@@ -152,7 +152,7 @@ Taxonomia **Kiwicon-style**; ordem = capability ascendente.
 | TA-2  | Tenant malicioso (pagante)                | Full API access no seu namespace; pode tentar extravasar para outros         | Espionagem industrial; free-riding             | TB-3 + TLA+ INV-TenantIsolation     |
 | TA-3  | CI comprometido (supply chain → cliente)  | Injeta payload em builds; pode fazer cache poisoning se não houver integridade | Sabotagem; criptominer embutido              | BLAKE3 verification no client; CAS content-addressable |
 | TA-4  | Insider (colaborador HuGR)                | Acesso legítimo a planos de controle; pode ler audit logs                    | Curiosidade, retaliação, coerção                | Dual-approval; audit imutável; BYOK opcional |
-| TA-5  | Supply chain attacker (dep do CoreLink)   | Contribui código malicioso para dep transitiva                               | Watering hole                                   | SLSA L3 + SBOM + pin + cargo-audit em CI |
+| TA-5  | Supply chain attacker (dep do CoreLink)   | Contribui código malicioso para dep transitiva                               | Watering hole                                   | SLSA L2 (self-hosted provenance; L3 deferred) + SBOM + pin + cargo-audit em CI |
 | TA-6  | Nation-state                              | Capabilities praticamente ilimitadas; exploits 0-day reservados              | Espionagem sistemática                          | Defense in depth; BYOK; residency enforcement |
 
 > **Threat model default:** proteger contra TA-0..TA-5 sem compromissos. TA-6 → mitigação parcial (residency + BYOK), sem claim absoluto.
@@ -182,7 +182,7 @@ Cada célula abaixo é uma **ameaça específica** com ID `THR-<STRIDE>-<NNN>`. 
 | THR-T-003  | Metadata tamper (ref count zerado → GC deleta blob vivo)                           | AST-META     | TB-2     | CTRL-META-001 (checksum linha), CTRL-GC-001 (grace period 24h) |
 | THR-T-004  | Audit log adulterado retroativamente                                                | AST-AUDIT    | TB-5     | CTRL-AUDIT-001 (R2 Object Lock + hash chain) |
 | THR-T-005  | Billing counter manipulado (fraude)                                                  | AST-BILLING  | TB-2     | CTRL-BILLING-001 (append-only events + reconciliation) |
-| THR-T-006  | Código CoreLink modificado no pipeline (supply chain)                              | AST-CODE     | TB-1     | CTRL-SUPPLY-001 (SLSA L3), CTRL-SUPPLY-002 (signed release) |
+| THR-T-006  | Código CoreLink modificado no pipeline (supply chain)                              | AST-CODE     | TB-1     | CTRL-SUPPLY-001 (SLSA L2, self-hosted provenance; L3 deferred), CTRL-SUPPLY-002 (signed release) |
 | THR-T-007  | TLA+ model checked ≠ model deployed                                                 | AST-TLA-MODEL| TB-1     | CTRL-FORMAL-001 (CI mandatório + evidence EVT-022) |
 
 ### 5.3 Repudiation (R)
@@ -269,7 +269,7 @@ Cada CTRL **DEVE** ter: descrição, implementação, owner (time), evidência o
 
 | ID           | Controle                            | Implementação                                              | Evidence     | Revalidação |
 |--------------|-------------------------------------|------------------------------------------------------------|--------------|-------------|
-| CTRL-SUPPLY-001 | SLSA Level 3                      | GitHub Actions + provenance attestation via sigstore        | EVT-011 | Por release |
+| CTRL-SUPPLY-001 | SLSA Level 2 (self-hosted provenance; L3 deferred) | Self-hosted fleet + provenance attestation via sigstore     | EVT-011 | Por release |
 | CTRL-SUPPLY-002 | Signed release + verified deploy  | Cosign sign; CF deploy verifica assinatura                 | EVT-001 | Por release |
 | CTRL-SUPPLY-003 | SBOM mandatório                    | CycloneDX gerado em build; publicado em release            | EVT-010 | Por release |
 | CTRL-SUPPLY-004 | Dependency pinning + audit         | `Cargo.lock` committed; `cargo-audit` CI; deny unmaintained | EVT-001 | Diário (CI) |
@@ -421,11 +421,15 @@ Root KMS (Cloudflare Workers Secrets, HSM-backed)
 
 ---
 
-## 8. Supply chain security (SLSA L3)
+## 8. Supply chain security (SLSA L2)
+
+> **Nível efetivo: SLSA Build L2 (provenance self-hosted).** A provenance in-toto é
+> assinada e gerada na frota self-hosted (builder não isolado). L3 — que exige um builder
+> isolado gerenciado pelo GitHub — está **adiado** (ver B-031); não é operado hoje.
 
 ### 8.1 Build provenance
 
-- Build em **GitHub Actions runners hospedados GitHub** (não self-hosted, para evitar TA-4 comprometer runner).
+- Build na **frota self-hosted** (builder não isolado — por isso L2, não L3; um builder isolado gerenciado pelo GitHub para L3 está adiado, ver B-031).
 - Provenance attestation via **sigstore/cosign** assinando `subject = { name, digest }` com **GitHub OIDC → Fulcio**.
 - Verificação no deploy: CF Worker deploy roda `cosign verify-blob` contra transparency log.
 

@@ -18,7 +18,7 @@ dry_run_evidence: "specs/_audits/sealed/2026-05-14-rb-fm-157-dry-run.md"
 
 # RB-FM-157 — Typosquatting Dependency (Cargo / crates.io)
 
-> **FM:** FM-157 (S=4, O=2, D=4, RPN=32, P1) | **CTRLs:** CTRL-SUPPLY-001 (SLSA L3) + CTRL-SUPPLY-004 (cargo-audit/deny) + CTRL-SUPPLY-006 (Dependency-Track) | **SLA:** detect ≤ 24h (lockfile diff / CODEOWNERS review); PR block ≤ 5 min (required-status-checks gate); remediate ≤ 7d
+> **FM:** FM-157 (S=4, O=2, D=4, RPN=32, P1) | **CTRLs:** CTRL-SUPPLY-001 (SLSA L2) + CTRL-SUPPLY-004 (cargo-audit/deny) + CTRL-SUPPLY-006 (Dependency-Track) | **SLA:** detect ≤ 24h (lockfile diff / CODEOWNERS review); PR block ≤ 5 min (required-status-checks gate); remediate ≤ 7d
 
 ## Scenario
 

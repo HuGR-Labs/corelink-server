@@ -1762,7 +1762,7 @@ Métricas mínimas obrigatórias para todo serviço:
 
 ### 26.1 Framework: SLSA
 
-Adotamos **SLSA** (*Supply-chain Levels for Software Artifacts*). Alvo: SLSA Level 3 para builds de produção até GA.
+Adotamos **SLSA** (*Supply-chain Levels for Software Artifacts*). Nível efetivo em produção: **SLSA Build L2** — provenance in-toto assinada gerada na frota self-hosted. SLSA Level 3 (que exige um builder isolado gerenciado pelo GitHub) **não** é o alvo de GA; está adiado — ver BACKLOG B-031.
 
 ### 26.2 Controles obrigatórios
 

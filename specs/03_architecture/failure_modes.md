@@ -154,7 +154,7 @@ Cada FM tem scores 1–5 em:
 | FM-153 | Grafana Cloud outage                                     | 1 | 2 | 1 | 2   | P2      | Metrics em R2 Logpush como fallback |
 | FM-154 | Dep crate yank mid-deploy                                | 3 | 2 | 3 | 18  | P2      | `Cargo.lock` pinned + CI check |
 | FM-155 | Dep CVE HIGH descoberto                                   | 3 | 3 | 2 | 18  | P2      | PAT-PATCH-SLA-001 + cargo-audit CI |
-| FM-156 | Dep com maintainer malicioso (supply chain TA-5)        | 5 | 1 | 5 | 25  | P1 (S=5 → upgrade) | SLSA L3 + review + signed commits |
+| FM-156 | Dep com maintainer malicioso (supply chain TA-5)        | 5 | 1 | 5 | 25  | P1 (S=5 → upgrade) | SLSA L2 + review + signed commits |
 
 ### 3.5 Operational
 
