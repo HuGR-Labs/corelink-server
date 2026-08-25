@@ -87,14 +87,70 @@ leaked on 2026-08-23 had no such record, so the layer built to catch bookkeeping
 loss still begins with bookkeeping. Needs a reconciliation path keyed on platform
 truth. The instance `name` field is the handle UUID that `/v1/teardown` takes.
 
+**Reconciliation landed observe-only 2026-08-25** (corelink-runners #507,
+`deploy/cloudflare/src/index.ts` `reconcileOrphanBoxes`). It is the mirror image
+of the sbox-first reaper: it enumerates the ACTUAL running instances from
+Cloudflare — per-app, because the account-level instances endpoint is dead —
+cross-references each against the `sbox:` records, and flags any instance with no
+record AND age > 2× the lease TTL as an orphan candidate. It **logs** candidates
+and bumps `orphan_box_detected`; there is NO destroy/stop/teardown on this path.
+Two default-off flags: `RECONCILE_ORPHAN_BOXES` (the observe sweep) and a
+separate, owner-gated `RECONCILE_ORPHAN_TEARDOWN` (declared for Env stability,
+NOT wired here). Enabling teardown is [B-044] — the same ship-inert-then-flip
+discipline as [B-038]/[B-043].
+
 ```backlog
 id: B-002
 repo: corelink-runners
 owner: tl
+status: done
+verify: manual
+verify-means: |
+  done — the platform-truth reconciliation exists (corelink-runners #507,
+  `reconcileOrphanBoxes` in deploy/cloudflare/src/index.ts): it no longer starts
+  from our own bookkeeping, it starts from the Cloudflare instance list and
+  reaps-by-omission against sbox. Observe-only by design; arming teardown is
+  B-044. MANUAL because the code is in the SEPARATE corelink-runners repo — the
+  corelink-server backlog gate cannot grep a path that does not exist here. Check
+  in that repo: `grep -q "reconcileOrphanBoxes" deploy/cloudflare/src/index.ts`
+  (present as of #507). Reopens if that sweep is removed.
+last-verified: 2026-08-25
+```
+
+### B-044 — arm orphan-box teardown after confirming the instance↔handle join
+
+B-002 shipped the platform-truth reconciliation observe-only: `reconcileOrphanBoxes`
+LOGS orphan candidates but tears nothing down. Arming it is owner-gated and needs
+two things the dry-run cannot supply itself:
+
+1. **Cloudflare API credentials in the Worker Env.** The sweep no-ops today
+   because the spawn Worker has no `CLOUDFLARE_ACCOUNT_ID` and no containers-read
+   token (`CLOUDFLARE_CONTAINERS_API_TOKEN`/`CLOUDFLARE_API_TOKEN`). Adding a
+   secret is the owner's step (`wrangler secret put` / vars).
+2. **Confirm `instance.name === the sbox handle`.** The teardown key is the
+   instance `name`; the join to the durable `sbox:` handle is asserted by the
+   CHANGELOG but not proven in code. Before `RECONCILE_ORPHAN_TEARDOWN` is ever
+   flipped, cross-check a live `scripts/container-instances.sh --json` dump
+   against the `sbox:` handles — the dry-run exists precisely to surface a
+   mismatch (a wrong join would flag 100% of boxes as orphans, visible in
+   `orphan_box_detected` before anything is destroyed).
+
+Only after both: enable `RECONCILE_ORPHAN_BOXES`, watch `orphan_box_detected`
+match the real leak rate for a cycle, THEN flip `RECONCILE_ORPHAN_TEARDOWN`.
+
+```backlog
+id: B-044
+repo: corelink-runners
+owner: owner
 status: open
 verify: manual
-verify-means: design not started; nothing in the repo to grep for yet
-last-verified: 2026-08-23
+verify-means: |
+  open while orphan-box teardown is unarmed in prod — correct until the CF API
+  creds are in the Worker Env AND the instance-name↔sbox-handle join is confirmed
+  against a live dump. Closes when RECONCILE_ORPHAN_TEARDOWN is enabled after the
+  observe-only sweep has been watched matching the real leak rate. Owner-gated:
+  arming an unvalidated join on a teardown path can kill a live box.
+last-verified: 2026-08-25
 ```
 
 ### B-003 — the 864s ceiling from 2026-08-02 has no established mechanism
