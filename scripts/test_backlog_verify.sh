@@ -61,6 +61,14 @@ cell "an invalid status is BROKEN" 1 BROKEN "$(item B-1 nearly-done '"true"' 202
 cell "a duplicate id is BROKEN" 1 BROKEN "$(item B-1 open '"true"' 2026-08-23; item B-1 open '"true"' 2026-08-23)"
 cell "unparseable YAML is BROKEN" 1 BROKEN "$(printf '### B-1 — fixture\n\n```backlog\nid: [B-1\n```\n')"
 
+# PyYAML's default for a repeated key is last-wins, SILENTLY. On 2026-08-24 a
+# B-039 `verify:` was pasted into the B-040 block; both parsed, both were unique
+# by id, and the gate ran B-039's check while reporting on B-040. The two agreed
+# at the time, so nothing went red — the register would have started lying the
+# moment they diverged.
+cell "a duplicate key inside one block is BROKEN, not last-wins" 1 BROKEN \
+  "$(printf '### B-1 — fixture\n\n```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify: "false"\nverify-means: |\n  fixture\nlast-verified: 2026-08-23\n```\n')"
+
 # A deleted item passes every per-item check — the survivors are all still true.
 # Only density catches it. This cell exists because exactly that happened while
 # this file was being written, and the gate reported all-green.
