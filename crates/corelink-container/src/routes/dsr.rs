@@ -68,6 +68,7 @@ mod adapter_d1;
 mod adapter_not_applicable;
 mod adapter_r2_ac;
 mod adapter_r2_cas;
+mod adapter_r2_cas_legalhold;
 mod adapter_stripe;
 mod attestation;
 mod audit;
@@ -262,9 +263,13 @@ fn build_d1_worker() -> Option<(
                     BackendKind::R2AuditPseudo,
                     "no R2 audit WORM bucket shipped; no subject-indexed audit store to pseudonymize",
                 ),
-                BackendKind::R2CasLegalHoldPseudo => na(
-                    BackendKind::R2CasLegalHoldPseudo,
-                    "no legal-hold CAS partition shipped",
+                // Governance-mode legal-hold-aware CAS erase (B-009): under an
+                // active hold it preserves the frozen bytes + pseudonymizes the
+                // subject linkage into `cas_retention`; with no hold it delegates
+                // to the effective CAS adapter's LIST+DELETE. Governance mode is
+                // CODE-reversible — NOT storage Object-Lock (see the adapter).
+                BackendKind::R2CasLegalHold => Arc::new(
+                    adapter_r2_cas_legalhold::R2CasLegalHoldEraseAdapter::new(Arc::clone(&d1)),
                 ),
                 BackendKind::R2EvidencePseudo => na(
                     BackendKind::R2EvidencePseudo,

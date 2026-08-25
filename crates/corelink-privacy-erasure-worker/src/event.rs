@@ -85,10 +85,16 @@ pub enum BackendKind {
     /// rotation; tombstone replay on any restore; auto-expires after
     /// 30d retention window (no manual delete).
     NeonPitrPseudo,
-    /// R2 CAS legal_hold partition (governance mode): content retained
-    /// while under active hold; pseudonymize index references; release
-    /// post legal_hold expiry.
-    R2CasLegalHoldPseudo,
+    /// R2 CAS legal_hold partition (Governance mode): content retained
+    /// while under active hold; pseudonymize the subject→object index
+    /// references; release (drain) post legal_hold expiry. Governance
+    /// mode is CODE-reversible (adapter + `cas_retention` enforced), NOT
+    /// storage-level Object-Lock immutability. The real adapter lives at
+    /// `corelink-container` `routes/dsr/adapter_r2_cas_legalhold.rs`
+    /// (B-009). The variant was renamed off its former "…Pseudo" stub
+    /// name because the backend is now a REAL Governance-mode adapter,
+    /// not a no-op stub. The wire mnemonic (`as_str`) is unchanged.
+    R2CasLegalHold,
     /// R2 evidence-* buckets 7y (DPIA / LIA / DSR evidence): retain
     /// per SLA framework (EVT-046 LIA + EVT-049 consent record +
     /// EVT-048 DSR evidence); subject_id pseudonymized.
@@ -112,7 +118,14 @@ impl BackendKind {
             Self::Loki => "loki",
             Self::R2AuditPseudo => "r2_audit_pseudo",
             Self::NeonPitrPseudo => "neon_pitr_pseudo",
-            Self::R2CasLegalHoldPseudo => "r2_cas_legalhold_pseudo",
+            // Wire mnemonic retained (NOT renamed with the variant): it is a
+            // PERSISTED contract — the `dsr_erasure_log.backend` D1 CHECK
+            // (migration 0022, already applied in prod) + the
+            // `dsr-erasure-backend_completed.v1` cloudevents enum both pin this
+            // exact string. "_pseudo" here denotes a *pseudonymized* backend
+            // (still true — this backend pseudonymizes under hold), so the wire
+            // form is accurate; only the misleading Rust identifier changed.
+            Self::R2CasLegalHold => "r2_cas_legalhold_pseudo",
             Self::R2EvidencePseudo => "r2_evidence_pseudo",
         }
     }
@@ -135,7 +148,7 @@ impl BackendKind {
             | Self::Loki => true,
             Self::R2AuditPseudo
             | Self::NeonPitrPseudo
-            | Self::R2CasLegalHoldPseudo
+            | Self::R2CasLegalHold
             | Self::R2EvidencePseudo => false,
         }
     }
@@ -181,7 +194,7 @@ pub const fn canonical_backend_kinds() -> &'static [BackendKind; BACKEND_COUNT] 
         BackendKind::Loki,
         BackendKind::R2AuditPseudo,
         BackendKind::NeonPitrPseudo,
-        BackendKind::R2CasLegalHoldPseudo,
+        BackendKind::R2CasLegalHold,
         BackendKind::R2EvidencePseudo,
     ]
 }
@@ -738,7 +751,7 @@ mod tests {
     fn backend_kind_display_matches_as_str() {
         assert_eq!(format!("{}", BackendKind::NeonMain), "neon_main");
         assert_eq!(
-            format!("{}", BackendKind::R2CasLegalHoldPseudo),
+            format!("{}", BackendKind::R2CasLegalHold),
             "r2_cas_legalhold_pseudo"
         );
     }

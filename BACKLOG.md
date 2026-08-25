@@ -550,16 +550,64 @@ retention backend is in-memory: no stored `retain_until`, no Governance or
 Compliance mode flag, no R2 Object-Lock enforcement. Needs a policy decision
 before any build.
 
-**Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
+**Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` §4 states what is true
 today, what each option costs, and what happens if the answer is "not now".
+
+**Closed 2026-08-25 — Governance mode, owner's call.** The pseudo stub is gone.
+`BackendKind::R2CasLegalHold` (renamed from `…Pseudo`; the persisted wire mnemonic
+`r2_cas_legalhold_pseudo` is KEPT — it is pinned by the prod-applied
+`dsr_erasure_log.backend` CHECK, migration 0022, and the cloudevents enum) now maps
+to a REAL `R2CasLegalHoldEraseAdapter`. Under an active hold it preserves the frozen
+CAS bytes and writes one subject-free `cas_retention` row per surviving object (new
+migration `0102_cas_retention.sql`) — the anonymous record IS the severing of the
+subject→object linkage (GDPR Recital 26) — returning `Pseudonymized`; no hold →
+delegates to the effective CAS LIST+DELETE. Governance mode is CODE-reversible (a
+drain reads `cas_retention`), NOT R2 Object-Lock immutability — Compliance/Object-Lock
+(storage-enforced, needs an Object-Lock bucket provisioned at creation) is explicitly
+DEFERRED, tracked as [B-046]. 7 adapter tests + the erasure-worker suite green; OKF
+`compliance/dsr-erasure` reconciled (legal-hold now REAL, not NotApplicable).
 ```backlog
 id: B-009
 repo: corelink-server
 owner: tl
+status: done
+verify: |
+  ! test -f crates/corelink-privacy-erasure-worker/src/backends/r2_cas_legalhold_pseudo.rs \
+    && test -f crates/corelink-container/src/routes/dsr/adapter_r2_cas_legalhold.rs \
+    && test -f migrations/d1/0102_cas_retention.sql
+verify-means: |
+  done once the pseudo stub is gone AND the real Governance-mode adapter + its
+  `cas_retention` migration exist (exit 0). Would flip to exit 1 if the stub
+  returned or the real adapter/migration were removed.
+last-verified: 2026-08-25
+```
+
+### B-046 — Compliance/Object-Lock retention mode (storage-enforced immutability)
+
+Follow-up to [B-009]. Governance-mode CAS legal-hold retention now ships
+(code-reversible: an admin/drain path can delete after the hold ends). The stronger
+**Compliance mode** — R2/S3 Object-Lock so NOT EVEN an admin can delete before the
+retention term expires — is deferred. It is blocked on infra, not code: R2 Object
+Lock must be enabled **at bucket creation** and Compliance mode is irreversible, so
+it needs a purpose-provisioned Object-Lock CAS bucket (and a validation that R2
+honours `x-amz-object-lock-*` on `PutObject`). Admitting a `'compliance'` value to
+`cas_retention.mode` is then a table-REBUILD migration (SQLite/D1 cannot widen an
+inline CHECK). Do this when a customer contract actually requires storage-enforced
+immutability (owner brief §4 recommendation: "Governance now, Compliance at the
+point a contract requires it").
+
+```backlog
+id: B-046
+repo: corelink-server
+owner: owner
 status: open
-verify: test -f crates/corelink-privacy-erasure-worker/src/backends/r2_cas_legalhold_pseudo.rs
-verify-means: open while the pseudo backend is still the implementation
-last-verified: 2026-08-23
+verify: manual
+verify-means: |
+  open until a Compliance/Object-Lock retention mode ships (an Object-Lock-enabled
+  CAS bucket + a `'compliance'` mode on cas_retention + PutObject object-lock
+  params). Manual: gated on provisioning an irreversible Object-Lock bucket, which
+  is an owner/infra decision, not a code change.
+last-verified: 2026-08-25
 ```
 
 ### B-015 — the sealed audit archive was never built, only its verifier

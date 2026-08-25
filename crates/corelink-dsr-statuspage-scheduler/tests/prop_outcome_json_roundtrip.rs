@@ -66,7 +66,7 @@ fn backend_kind_strategy() -> impl Strategy<Value = BackendKind> {
         Just(BackendKind::Loki),
         Just(BackendKind::R2AuditPseudo),
         Just(BackendKind::NeonPitrPseudo),
-        Just(BackendKind::R2CasLegalHoldPseudo),
+        Just(BackendKind::R2CasLegalHold),
         Just(BackendKind::R2EvidencePseudo),
     ]
 }
