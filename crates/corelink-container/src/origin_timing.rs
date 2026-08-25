@@ -25,11 +25,11 @@
 //! |----------|--------------------------------------------------------------------|
 //! | `opat`    | the container's per-request D1 `pat` row read (kept by #1022 for immediate revocation) — and, on the cargo read path, the url-map row it CO-READS in the same round trip |
 //! | `oquota`  | the per-tenant monthly `$`-ceiling check/accrue (ADR-0068) — a D1 round trip |
-//! | `ostore`  | the moat storage lookup (`(namespace,key)→content_hash` map read plus the CAS/R2 blob fetch) **and**, on the native CAS/AC plane, the R2/S3 object GET/PUT/DELETE/LIST calls `R2CasHandler`/`R2AcHandler` make through the sync `block_in_place` bridge (`storage/r2_s3.rs`) — **and**, on the native CAS/AC `list()` read path specifically, the CONCURRENT audit write that now runs alongside the R2 `ListObjectsV2` call (see "Concurrent native-plane list seam" below) |
+//! | `ostore`  | the moat storage lookup (`(namespace,key)→content_hash` map read plus the CAS/R2 blob fetch) **and**, on the native CAS/AC plane, the R2/S3 object GET/PUT/DELETE/LIST calls `R2CasHandler`/`R2AcHandler` make through the sync `block_in_place` bridge (`storage/r2_s3.rs`) — **and**, on the native CAS/AC `list()` read path specifically, the CONCURRENT audit write that now runs alongside the R2 `ListObjectsV2` call — and, on the Bazel `findMissingBlobs` path, the whole joined window of the batched audit write plus the concurrent R2 `HeadObject` probes (see "Concurrent native-plane list seam" below) |
 //! | `oargon`  | Argon2id verification (`adapter_pat.rs`): the secret-match memo check plus, on a miss, the coalesced verify flight — AND, on the SAME name, the row-not-found coalesced dummy Argon2id burn that pads timing for a missing/expired/revoked `token_id` (see the security note below) |
 //! | `opermit` | the semaphore acquires bounded by `ARGON2_PERMIT_WAIT`, in both the dummy-burn arm and the real verify arm |
 //! | `ortier`  | `ensure_tier_applied`'s D1 tier-label resolution (`routes/ratelimit_layer.rs` → `oci_cap.rs`) |
-//! | `oaudit`  | the blocking durable-audit D1 write on the request path (`D1AuditOutboxSink::write_blocking`, `storage/d1_audit_sink.rs`) — every `AuditSink::emit`/`append` the native CAS/AC handlers make before/after a mutation or read routes through this one blocking D1-over-HTTP `INSERT`. **Exception:** the native CAS/AC `list()` read path's `ListAttempted` audit write does NOT appear here when it runs concurrently with the R2 call — see below. |
+//! | `oaudit`  | the blocking durable-audit D1 write on the request path (`D1AuditOutboxSink::write_blocking`, `storage/d1_audit_sink.rs`) — every `AuditSink::emit`/`append` the native CAS/AC handlers make before/after a mutation or read routes through this one blocking D1-over-HTTP `INSERT`. **Exceptions:** the native CAS/AC `list()` read path's `ListAttempted` audit write, and the Bazel `findMissingBlobs` path's batched `ReadAttempted` write, do NOT appear here when they run concurrently with the R2 calls — see below. |
 //! | `oother`  | **residue** — every other millisecond the container spent: routing, HMAC, body handling, response assembly |
 //!
 //! ## Security: `oargon` must not become a token-enumeration oracle
@@ -99,6 +99,34 @@
 //! see `r2_s3.rs` for why those paths were NOT made concurrent). The
 //! four-way sum therefore still partitions the request exactly, by
 //! construction, not by the `max(0)` guard papering over an overcount.
+//!
+//! ### The `findMissingBlobs` batch seam obeys the SAME rule
+//!
+//! `R2CasHandler::exists_batch` (`storage/r2_s3.rs`, the Bazel REAPI
+//! `findMissingBlobs` path) is the second — and, at time of writing, last —
+//! place two kinds of work overlap. It joins ONE batched `ReadAttempted`
+//! audit write (`D1AuditOutboxSink::append_batch_async`, N rows in one
+//! statement) with up to `MAX_CONCURRENT_EXISTS_PROBES` in-flight R2
+//! `HeadObject` probes.
+//!
+//! It is attributed by exactly the rule above, applied twice over:
+//!
+//! * **Across the two kinds of work** — ONE `Phase::Store` scope wraps the
+//!   whole joined window and `Phase::Audit` is never entered for it
+//!   (`append_batch_async`, like `append_async`, opens no scope of its own),
+//!   so the audit and the storage halves cannot both bill the same
+//!   milliseconds.
+//! * **Across the concurrent probes themselves** — the per-probe helper
+//!   (`probe_existence_unaudited`) opens NO `PhaseScope` either. N probes
+//!   overlapping in one window, each entering `Phase::Store`, would bill that
+//!   window N times over and could make `ostore` alone exceed `total_ms`; the
+//!   single outer scope bills the wall-clock window once.
+//!
+//! So on this path too, `ostore` reports the FULL joined window (batched
+//! audit + all probes, whichever finishes last) and `oaudit` reports nothing
+//! for that specific write. The rule to carry forward when adding any future
+//! concurrent seam: **the joined window gets exactly one `PhaseScope`, opened
+//! by whoever owns the join — never one per concurrent branch.**
 //!
 //! ## Coverage caveats — stated, not faked
 //!

@@ -552,6 +552,25 @@ struct ByokResolved {
     plan: ByokBodyPlan,
 }
 
+/// How many CAS existence probes (`HeadObject`) [`R2CasHandler::exists_batch`]
+/// keeps in flight at once.
+///
+/// Deliberately small. The container runs on a Cloudflare Containers `basic`
+/// instance — **0.25 vCPU** — so the ceiling has to stay well under what would
+/// make TLS/HTTP bookkeeping for the in-flight requests contend for that
+/// quarter-core; the probes themselves are pure I/O wait (~60 ms per R2 HEAD
+/// measured from IAD), so a small window already recovers nearly all of the
+/// serial loss. R2 request rate limits are also shared across tenants on the
+/// account, so one tenant's 4096-digest `findMissingBlobs` must not be able to
+/// open a wide burst against the bucket every other tenant reads through.
+///
+/// 16 turns the 4096-digest worst case from 4096 serial HEADs into 256 waves
+/// (~15 s of HEAD time instead of ~246 s) and a typical 100-digest Bazel call
+/// into 7 waves (~0.42 s instead of ~6 s) — the linear term is broken without
+/// betting the shared bucket budget or the quarter-core on a large number.
+/// Raise it only against a measurement, never on intuition.
+const MAX_CONCURRENT_EXISTS_PROBES: usize = 16;
+
 /// A sync `CasReadHandler` + `CasWriteHandler` backed by [`R2S3Client`].
 ///
 /// Wraps the async S3 operations with
@@ -1416,17 +1435,11 @@ impl CasReadHandler for R2CasHandler {
                     req.principal.clone(),
                     req.at_unix_ms,
                 ));
-                let store_fut = async {
-                    let resolved = self.resolve_byok(&req.tenant, &req.hash, req.algo).await?;
-                    let key = self
-                        .r2_key(&req.tenant, &resolved.physical_digest, req.algo)
-                        .map_err(CasHandlerError::Internal)?;
-                    debug!(key = %key, "R2CasHandler::exists");
-                    self.client.head_size(&key).await.map_err(|e| {
-                        warn!(error = %e, key = %key, "R2CasHandler::exists error");
-                        CasHandlerError::Internal(e)
-                    })
-                };
+                // The storage half is the SHARED `probe_existence_unaudited`
+                // — the ONE body the batch seam (`exists_batch`) also drives,
+                // so a single-digest probe and a batched one can never drift
+                // on which key they HEAD or on their fail-CLOSED handling.
+                let store_fut = self.probe_existence_unaudited(&req);
                 let _scope =
                     crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
                 tokio::task::block_in_place(|| {
@@ -1501,6 +1514,218 @@ impl CasReadHandler for R2CasHandler {
                 Err(e)
             }
         }
+    }
+
+    /// Batch existence probe — the `findMissingBlobs` seam. Collapses the
+    /// N `ReadAttempted` audit writes into ONE D1 round trip and runs the N
+    /// R2 `HeadObject` probes with bounded concurrency, instead of
+    /// `2N` strictly serial public-endpoint round trips.
+    ///
+    /// # Measured defect this fixes
+    ///
+    /// `POST /bazel/v2/{instance}/findMissingBlobs` was perfectly linear at
+    /// ~268 ms per digest against prod (2.10 / 5.74 / 13.48 / 26.86 s for
+    /// 5 / 20 / 50 / 100 digests), i.e. ~18 minutes at the documented
+    /// `FIND_MISSING_BLOB_CAP` of 4096. `Server-Timing` decomposed a 40-digest
+    /// call (7961 ms total) into 40 blocking D1 audit writes (~122 ms each)
+    /// plus 40 R2 HEADs (~60 ms each), all serial — the loop, not the work.
+    ///
+    /// # `None` ⇒ serial fallback
+    ///
+    /// Returns `None` when the async audit seam is not wired
+    /// (`audit_async == None`: every test handler in this module, and any
+    /// non-D1 `AuditSink`), so those callers keep looping [`Self::exists`],
+    /// byte-identical to before this method existed. Mirrors exactly how the
+    /// concurrent `list()` seam was introduced.
+    ///
+    /// # Fail-CLOSED
+    ///
+    /// The audit batch and the probes are DISPATCHED together, but the audit
+    /// result is evaluated FIRST and an `Err` short-circuits to
+    /// `AuditFailed` — no probe result can reach the caller without its audit
+    /// rows having committed. Cross-tenant denial happens strictly before
+    /// anything is dispatched, and still emits its own `ReadDenied` row. See
+    /// `list()`'s doc for the full argument; this path is the same shape.
+    fn exists_batch(&self, reqs: &[CasReadRequest]) -> Option<Result<Vec<bool>, CasHandlerError>> {
+        // No async-capable durable sink ⇒ no batch capability ⇒ the caller
+        // uses the unchanged per-digest `exists()` loop.
+        let audit_async = Arc::clone(self.audit_async.as_ref()?);
+        Some(self.exists_batch_inner(&audit_async, reqs))
+    }
+}
+
+impl R2CasHandler {
+    /// The body of [`CasReadHandler::exists_batch`], reached only once the
+    /// async audit seam is known to be wired.
+    fn exists_batch_inner(
+        &self,
+        audit_async: &crate::storage::d1_audit_sink::D1AuditOutboxSink,
+        reqs: &[CasReadRequest],
+    ) -> Result<Vec<bool>, CasHandlerError> {
+        use corelink_handler_cas::observer::Sli;
+
+        let emit = |is_error: bool| {
+            self.emit_sli(Sli::AvailCasGet, Sli::LatencyCasGetP99, is_error);
+        };
+
+        // STRICTLY FIRST, before ANY dispatch: cross-tenant denial, audited
+        // as `ReadDenied` through the SYNC sink exactly as `exists()` does.
+        // Scanning the whole slice before dispatching (rather than per
+        // digest, interleaved) is what makes "denial precedes dispatch" true
+        // for the batch as a whole — one poisoned digest must not have let
+        // the others touch R2 first.
+        for req in reqs {
+            if req.tenant != req.caller_tenant {
+                self.audit
+                    .emit(AuditEvent::new(
+                        AuditEventKind::ReadDenied,
+                        req.tenant.clone(),
+                        req.hash.clone(),
+                        req.principal.clone(),
+                        req.at_unix_ms,
+                    ))
+                    .map_err(CasHandlerError::AuditFailed)?;
+                emit(true);
+                return Err(CasHandlerError::CrossTenantDenied {
+                    caller: req.caller_tenant.clone(),
+                    requested_tenant: req.tenant.clone(),
+                });
+            }
+        }
+
+        if reqs.is_empty() {
+            // Nothing to audit, nothing to probe — the serial loop would
+            // likewise write no row and issue no request.
+            return Ok(Vec::new());
+        }
+
+        // N digests still produce N `ReadAttempted` rows — same kind, same
+        // per-digest fields. The taxonomy is untouched; only the number of
+        // network trips that carry the rows changes. Duplicate digests in one
+        // request produce colliding `id`/`request_id` keys and are deduped by
+        // `INSERT OR IGNORE`, exactly as duplicate serial emits are today.
+        let events: Vec<AuditEvent> = reqs
+            .iter()
+            .map(|req| {
+                AuditEvent::new(
+                    AuditEventKind::ReadAttempted,
+                    req.tenant.clone(),
+                    req.hash.clone(),
+                    req.principal.clone(),
+                    req.at_unix_ms,
+                )
+            })
+            .collect();
+
+        let handle = tokio::runtime::Handle::current();
+        let audit_fut = audit_async.emit_cas_batch_async(&events);
+        let probes_fut = self.probe_existence_concurrently(reqs);
+
+        // ONE `Phase::Store` scope over the ENTIRE joined window — not one
+        // per future, and NOT a second `Phase::Audit` scope. `Σ(phases) ≤
+        // total` holds by construction rather than by `oother`'s `max(0)`
+        // guard swallowing a double count. See `origin_timing.rs`'s
+        // "Concurrent native-plane list seam" note, which covers this path.
+        let (audit_result, probe_results) = {
+            let _scope =
+                crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+            tokio::task::block_in_place(|| {
+                handle.block_on(async { tokio::join!(audit_fut, probes_fut) })
+            })
+        };
+
+        // AUDIT FIRST. A failed audit returns `AuditFailed` and NO probe
+        // result reaches the caller — identical to the serial path, which
+        // returns from the first digest's audit `map_err(..)?` (and, like it,
+        // emits no SLI observation on that path).
+        if let Err(e) = audit_result {
+            return Err(CasHandlerError::AuditFailed(e));
+        }
+
+        // Deterministic, request-ordered evaluation: FIRST error wins, and
+        // the observations recorded before it are exactly the ones the serial
+        // loop would have recorded before returning on the same digest.
+        let mut flags = Vec::with_capacity(probe_results.len());
+        for result in probe_results {
+            match result {
+                Ok(present) => {
+                    emit(false);
+                    flags.push(present);
+                }
+                Err(e) => {
+                    emit(true);
+                    return Err(e);
+                }
+            }
+        }
+        Ok(flags)
+    }
+
+    /// Run the per-digest HEAD probes with bounded concurrency, returning one
+    /// outcome per request **in request order** (`buffered` preserves the
+    /// input order regardless of completion order — the response must not
+    /// depend on which R2 call finished first).
+    async fn probe_existence_concurrently(
+        &self,
+        reqs: &[CasReadRequest],
+    ) -> Vec<Result<bool, CasHandlerError>> {
+        use futures::StreamExt as _;
+
+        futures::stream::iter(reqs.iter().map(|req| async move {
+            // `Some(len)` present / `None` absent — the storage-layer
+            // `NotFound` absorbed into `Ok(false)` exactly as `exists` does.
+            self.probe_existence_unaudited(req)
+                .await
+                .map(|found| found.is_some())
+        }))
+        .buffered(MAX_CONCURRENT_EXISTS_PROBES)
+        .collect::<Vec<_>>()
+        .await
+    }
+
+    /// The storage half of ONE existence probe: BYOK resolution, key
+    /// derivation, one S3 `HeadObject`. No body download, no rehash — the
+    /// same work [`CasReadHandler::exists`] does after its audit row.
+    ///
+    /// # This deliberately emits NO audit row
+    ///
+    /// It is `fn`-private to this module and has exactly TWO callers, both
+    /// concurrent seams inside this same impl: [`CasReadHandler::exists`]'s
+    /// join and [`Self::exists_batch_inner`]'s. Each has already DISPATCHED
+    /// the corresponding `ReadAttempted` write and refuses to return ANY
+    /// result of this probe unless that write committed. It must NOT be
+    /// widened into a generally reachable way to probe the CAS without an
+    /// audit row — that would be a hole straight through the fail-CLOSED
+    /// contract. There is deliberately ONE body: two copies of an
+    /// un-audited probe is exactly the kind of duplication where one copy
+    /// later grows a caller that skips the audit.
+    ///
+    /// It also opens no [`crate::origin_timing::PhaseScope`] of its own: on
+    /// the batch path N concurrent probes each entering `Phase::Store` would
+    /// count the same wall-clock window N times over. Each caller's single
+    /// scope covers its whole joined window instead.
+    ///
+    /// Returns the RAW `head_size` outcome (`Some(len)` present / `None`
+    /// absent) rather than a bool, because `exists` needs the same shape the
+    /// serial fallback produces; the batch path maps it to a bool itself.
+    async fn probe_existence_unaudited(
+        &self,
+        req: &CasReadRequest,
+    ) -> Result<Option<u64>, CasHandlerError> {
+        // BYOK Wave 3c: probe the §4-hardened physical key for an active
+        // tenant, so this hits the SAME key `read`/`write`/`exists` use.
+        let resolved = self.resolve_byok(&req.tenant, &req.hash, req.algo).await?;
+        // Fail CLOSED if the tenant prefix is not derivable: never touch R2
+        // under a degraded/empty (SHARED) prefix.
+        let key = self
+            .r2_key(&req.tenant, &resolved.physical_digest, req.algo)
+            .map_err(CasHandlerError::Internal)?;
+        debug!(key = %key, "R2CasHandler::exists");
+
+        self.client.head_size(&key).await.map_err(|e| {
+            warn!(error = %e, key = %key, "R2CasHandler::exists error");
+            CasHandlerError::Internal(e)
+        })
     }
 }
 
@@ -3879,6 +4104,198 @@ mod tests {
         let audit = Arc::new(InMemoryAuditSink::new());
         let sli = Arc::new(InMemorySliObserver::new());
         R2CasHandler::new(client, region, None, audit, sli)
+    }
+
+    // ---------------------------------------------------------------
+    // `exists_batch` — the findMissingBlobs seam
+    // ---------------------------------------------------------------
+
+    /// Without the async audit seam wired, the handler advertises NO batch
+    /// capability, so `find_missing` keeps the unchanged per-digest
+    /// `exists()` loop. This is the regression pin for "the serial fallback
+    /// stayed byte-identical".
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn exists_batch_is_absent_without_the_async_audit_seam() {
+        let handler = make_test_handler("iad").await;
+        let req = CasReadRequest::new(
+            "tenant-x",
+            "deadbeef00000000000000000000000000000000000000000000000000000001",
+            "caller@tenant-x",
+            "tenant-x",
+            1,
+        );
+        assert!(
+            CasReadHandler::exists_batch(&handler, &[req]).is_none(),
+            "no durable async sink -> no batch capability -> serial fallback"
+        );
+    }
+
+    /// Cross-tenant denial is evaluated STRICTLY FIRST — before the audit
+    /// batch or any R2 probe is dispatched — and still emits its own
+    /// `ReadDenied` row through the sync sink.
+    ///
+    /// The proof that nothing was dispatched is that this test is fully
+    /// hermetic: the S3 client points at `localhost:1` and the D1 sink
+    /// carries stub credentials, so ANY dispatch would have to fail against
+    /// an unreachable endpoint rather than return a clean denial.
+    ///
+    /// It deliberately wires an in-memory `audit` alongside a D1
+    /// `audit_async` — a combination `with_async_audit`'s doc forbids in
+    /// production (the two must be the same sink) — purely so the denial
+    /// row can be READ BACK without a network call. The denial path only
+    /// ever touches `audit`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn exists_batch_denies_cross_tenant_before_dispatching_anything() {
+        let stub_env = StorageEnv {
+            r2_endpoint: "https://localhost:1".to_owned(),
+            r2_access_key_id: "test".to_owned(),
+            r2_secret_access_key: "test".to_owned(),
+            cloudflare_account_id: "test".to_owned(),
+            cf_api_token: "test".to_owned(),
+            d1_database_id: "test".to_owned(),
+        };
+        let client = R2S3Client::new(&stub_env, "test-bucket")
+            .await
+            .expect("stub client");
+        let recorder = Arc::new(InMemoryAuditSink::new());
+        let audit: Arc<dyn AuditSink> = recorder.clone();
+        let audit_concrete = cas_audit_sink_from_d1_concrete(D1HttpClient::new(&stub_env))
+            .expect("D1 client constructs (the network call happens lazily)");
+        let sli = Arc::new(InMemorySliObserver::new());
+        let handler =
+            R2CasHandler::new(client, "iad", None, audit, sli).with_async_audit(audit_concrete);
+
+        // A legitimate digest FIRST, the poisoned one second: the scan must
+        // still refuse the whole batch before the good one touches R2.
+        let ok = CasReadRequest::new(
+            "victim",
+            "deadbeef00000000000000000000000000000000000000000000000000000001",
+            "attacker",
+            "victim",
+            1,
+        );
+        let poisoned = CasReadRequest::new(
+            "victim",
+            "deadbeef00000000000000000000000000000000000000000000000000000002",
+            "attacker",
+            "attacker-tenant",
+            1,
+        );
+
+        let result = CasReadHandler::exists_batch(&handler, &[ok, poisoned])
+            .expect("batch capability is wired");
+        match result {
+            Err(CasHandlerError::CrossTenantDenied {
+                caller,
+                requested_tenant,
+            }) => {
+                assert_eq!(caller, "attacker-tenant");
+                assert_eq!(requested_tenant, "victim");
+            }
+            other => panic!("expected CrossTenantDenied, got {other:?}"),
+        }
+
+        let rows = recorder.snapshot().expect("snapshot");
+        assert_eq!(rows.len(), 1, "exactly one denial row: {rows:?}");
+        assert_eq!(rows[0].kind, AuditEventKind::ReadDenied);
+        assert_eq!(rows[0].tenant, "victim");
+    }
+
+    /// The CONCURRENT batch path, production shape: when the durable-audit
+    /// D1 write fails (reachable-but-wrong credentials), `exists_batch`
+    /// returns `AuditFailed` — NO probe result reaches the caller — and the
+    /// joined window is attributed ONCE to `ostore` with `oaudit` ABSENT
+    /// (proving neither `append_batch_async` nor the per-probe helper
+    /// opened a scope of its own). Mirrors
+    /// `r2_cas_list_concurrent_path_fails_closed_on_bad_audit_creds`.
+    ///
+    /// `#[ignore]` for the same reason as that test: needs outbound
+    /// reachability to `api.cloudflare.com` (a 401 still proves the join
+    /// ran). Run manually with:
+    ///
+    /// ```bash
+    /// cargo test -p corelink-server r2_cas_exists_batch_fails_closed_on_bad_audit_creds -- --ignored
+    /// ```
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore = "requires outbound network reachability to api.cloudflare.com"]
+    async fn r2_cas_exists_batch_fails_closed_on_bad_audit_creds() {
+        let stub_env = StorageEnv {
+            r2_endpoint: "https://localhost:1".to_owned(),
+            r2_access_key_id: "test".to_owned(),
+            r2_secret_access_key: "test".to_owned(),
+            cloudflare_account_id: "test".to_owned(),
+            cf_api_token: "test".to_owned(),
+            d1_database_id: "test".to_owned(),
+        };
+        let client = R2S3Client::new(&stub_env, "test-bucket")
+            .await
+            .expect("stub client");
+        let audit_concrete = cas_audit_sink_from_d1_concrete(D1HttpClient::new(&stub_env))
+            .expect("D1HttpClient constructs over the stub env");
+        let audit: Arc<dyn AuditSink> = audit_concrete.clone();
+        let sli = Arc::new(InMemorySliObserver::new());
+        let handler = std::sync::Arc::new(
+            R2CasHandler::new(client, "iad", None, audit, sli).with_async_audit(audit_concrete),
+        );
+
+        let app = axum::Router::new()
+            .route(
+                "/x",
+                axum::routing::get(move || {
+                    let handler = std::sync::Arc::clone(&handler);
+                    async move {
+                        let reqs: Vec<CasReadRequest> = (0..4u8)
+                            .map(|i| {
+                                CasReadRequest::new(
+                                    "tenant-x",
+                                    format!("{i:064x}"),
+                                    "caller@tenant-x",
+                                    "tenant-x",
+                                    1,
+                                )
+                            })
+                            .collect();
+                        let result = CasReadHandler::exists_batch(&*handler, &reqs)
+                            .expect("batch capability is wired");
+                        assert!(
+                            matches!(result, Err(CasHandlerError::AuditFailed(_))),
+                            "a rejected D1 credential must surface as AuditFailed, \
+                             never as probe results: {result:?}"
+                        );
+                        axum::http::StatusCode::OK
+                    }
+                }),
+            )
+            .layer(axum::middleware::from_fn(
+                crate::origin_timing::origin_timing_layer,
+            ));
+
+        let resp = tower::ServiceExt::oneshot(
+            app,
+            axum::http::Request::builder()
+                .uri("/x")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        let header = resp
+            .headers()
+            .get("server-timing")
+            .expect("origin_timing_layer must stamp Server-Timing")
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let parsed = parse_server_timing(&header);
+        assert!(
+            parsed.contains_key("ostore"),
+            "the joined window must be attributed to ostore. Header: {header}"
+        );
+        assert!(
+            !parsed.contains_key("oaudit"),
+            "oaudit must be ABSENT on the concurrent batch path — a second \
+             scope over the same window would double-count it. Header: {header}"
+        );
     }
 
     /// A non-zero fake 32-byte TDK for tests that must exercise the

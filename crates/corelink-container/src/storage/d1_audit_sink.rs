@@ -32,10 +32,11 @@
 //!
 //! ## `region` column
 //!
-//! Mirrors the DSR sink exactly: the INSERT omits `region`, so the row takes
-//! the table DEFAULT (`'wnam'`, migration 0023). This is the established,
-//! prod-live durable-writer convention; a per-event residency-region column is
-//! a cross-cutting change tracked with the DSR sink, not introduced here.
+//! Every INSERT here sets `region` from a correlated subquery on the tenant's
+//! `primary_region` (COALESCE to `'wnam'` when the tenant row does not exist
+//! yet), NOT from the column default — migration 0023's BEFORE-INSERT
+//! residency trigger aborts any row whose `region` disagrees with the tenant.
+//! See [`AUDIT_OUTBOX_INSERT_ONE_SQL`] for the incident this encodes.
 
 use std::sync::Arc;
 
@@ -67,6 +68,128 @@ impl core::fmt::Debug for D1AuditOutboxSink {
     }
 }
 
+/// The field values of ONE `audit_outbox` row, as derived by
+/// [`D1AuditOutboxSink::build_row`] — the single place that decides what an
+/// audit row contains.
+///
+/// Both write shapes in this module consume this and nothing else, so they
+/// cannot drift on the idempotency keys or on the CloudEvents envelope an
+/// auditor reads:
+///
+/// * [`D1AuditOutboxSink::build_insert`] → the single-row
+///   `INSERT … VALUES (?1..?7)` (via [`AuditRow::into_params`]);
+/// * [`D1AuditOutboxSink::build_batch_insert`] → the JSON1
+///   `INSERT … SELECT … FROM json_each(?1)` (via
+///   [`AuditRow::to_json_element`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct AuditRow {
+    id: String,
+    tenant: String,
+    /// `None` ⇒ SQL `NULL` (pre-write events carry no blob hash).
+    digest: Option<String>,
+    request_id: String,
+    event_type: String,
+    payload_json: String,
+    at_ms: i64,
+}
+
+impl AuditRow {
+    /// Positional params for [`AUDIT_OUTBOX_INSERT_ONE_SQL`] (`?1`..`?7`).
+    fn into_params(self) -> Vec<Value> {
+        let digest_param = match self.digest {
+            Some(d) => Value::String(d),
+            None => Value::Null,
+        };
+        vec![
+            json!(self.id),
+            json!(self.tenant),
+            digest_param,
+            json!(self.request_id),
+            json!(self.event_type),
+            json!(self.payload_json),
+            json!(self.at_ms),
+        ]
+    }
+
+    /// One element of the JSON array bound as `?1` to
+    /// [`AUDIT_OUTBOX_INSERT_MANY_SQL`]. The key names are the `$.…` paths
+    /// that SQL's `json_extract` calls read — change one, change both.
+    ///
+    /// `digest: None` encodes as JSON `null`, and `json_extract` of a JSON
+    /// `null` yields SQL `NULL` — the same value the single-row path binds.
+    fn to_json_element(&self) -> Value {
+        json!({
+            "id": self.id,
+            "tenant": self.tenant,
+            "digest": self.digest,
+            "request_id": self.request_id,
+            "event_type": self.event_type,
+            "payload": self.payload_json,
+            "at": self.at_ms,
+        })
+    }
+}
+
+/// Why every `audit_outbox` INSERT in this module computes `region` from a
+/// correlated subquery instead of taking the column default.
+///
+/// `region` MUST be the tenant's `primary_region`, NOT the `'wnam'` column
+/// default: migration 0023 installs a BEFORE-INSERT residency trigger
+/// (`trg_audit_outbox_region_match_insert`) that RAISE(ABORT)s when
+/// `NEW.region != tenant.primary_region`. Tenants default to `'enam'`
+/// (migration 0028), so relying on the `'wnam'` default aborts the INSERT for
+/// essentially every tenant → the handler fails CLOSED → 503 on every CAS/AC
+/// op (prod incident 2026-07-17, surfaced when task #74 flipped this sink from
+/// InMemory to durable-D1). The correlated subquery tags the row with the
+/// tenant's true residency region and always satisfies the trigger; COALESCE
+/// covers the tenant-absent case (the trigger's `NEW.region != NULL` is
+/// UNKNOWN ⇒ no abort). Mirrors the fix owed to `routes/dsr/audit.rs`.
+const AUDIT_OUTBOX_INSERT_ONE_SQL: &str = "INSERT OR IGNORE INTO audit_outbox \
+     (id, tenant_id, digest, request_id, event_type, payload_json, enqueued_at, emitted_at, region) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, \
+             COALESCE((SELECT primary_region FROM tenant WHERE tenant_id = ?2), 'wnam'))";
+
+/// The BATCH counterpart of [`AUDIT_OUTBOX_INSERT_ONE_SQL`]: the SAME table,
+/// the SAME column list, the SAME `INSERT OR IGNORE` idempotency, the SAME
+/// residency COALESCE — but N rows in ONE statement, and therefore ONE D1
+/// round trip instead of N.
+///
+/// # Why JSON1 and not a multi-`VALUES` insert
+///
+/// D1 caps a statement at **100 bound parameters** (verified against prod:
+/// `variable number must be between ?1 and ?100 … SQLITE_ERROR`). At 7 params
+/// per row a multi-`VALUES` insert fits only 14 rows, so a `findMissingBlobs`
+/// call at the 4096-digest cap would still need ~293 statements. D1 ships
+/// SQLite's JSON1, so the whole batch rides in ONE parameter instead: `?1` is
+/// a JSON array of [`AuditRow::to_json_element`] objects and `json_each`
+/// expands it into rows.
+///
+/// The rows written are IDENTICAL to what the single-row path writes for the
+/// same events — same event kind, same `id`/`request_id` derivation (both come
+/// from [`D1AuditOutboxSink::build_row`]), same payload envelope, same
+/// `INSERT OR IGNORE` dedupe. This changes how many network trips write the
+/// rows, NOT what an auditor reads.
+const AUDIT_OUTBOX_INSERT_MANY_SQL: &str = "INSERT OR IGNORE INTO audit_outbox \
+     (id, tenant_id, digest, request_id, event_type, payload_json, enqueued_at, emitted_at, region) \
+     SELECT json_extract(value,'$.id'), json_extract(value,'$.tenant'), json_extract(value,'$.digest'), \
+            json_extract(value,'$.request_id'), json_extract(value,'$.event_type'), \
+            json_extract(value,'$.payload'), json_extract(value,'$.at'), NULL, \
+            COALESCE((SELECT primary_region FROM tenant WHERE tenant_id = json_extract(value,'$.tenant')), 'wnam') \
+     FROM json_each(?1)";
+
+/// Maximum `audit_outbox` rows carried by ONE
+/// [`AUDIT_OUTBOX_INSERT_MANY_SQL`] statement.
+///
+/// The 100-parameter cap is not the binding constraint any more (the batch
+/// rides in a single param) — the **value size** is: D1 caps a single
+/// string/BLOB/row at 2,000,000 bytes. A `ReadAttempted` element runs roughly
+/// 600-800 bytes once the CloudEvents envelope is embedded, so 256 rows is
+/// ~200 KB — an order of magnitude under the cap even for long principals and
+/// tenant ids. At the `FIND_MISSING_BLOB_CAP` of 4096 digests this is 16
+/// statements (dispatched concurrently by
+/// [`D1AuditOutboxSink::append_batch_async`]) instead of 4096 serial ones.
+const AUDIT_BATCH_ROWS_PER_STATEMENT: usize = 256;
+
 impl D1AuditOutboxSink {
     /// Construct over a shared [`D1HttpClient`] with a fixed CloudEvents
     /// `source`.
@@ -75,21 +198,17 @@ impl D1AuditOutboxSink {
         Self { d1, source }
     }
 
-    /// Build the `(sql, params)` pair for a single audit-event row, shared
-    /// by BOTH the sync [`Self::append`] (drives it through
-    /// [`Self::write_blocking`]) and the async [`Self::append_async`]
-    /// (drives it with a bare `.await`, for the CAS/AC concurrent read seam
-    /// — see `storage/r2_s3.rs`). Splitting this out means the two bridge
-    /// shapes can never drift on the SQL/idempotency-key logic — there is
-    /// exactly one place that decides what row gets written.
-    fn build_insert(
+    /// Derive the field values of ONE audit row — **the single place that
+    /// decides what a row contains** (id, `request_id`, payload envelope,
+    /// digest nullability, timestamp). See [`AuditRow`].
+    fn build_row(
         &self,
         event_type: &str,
         tenant: &str,
         digest: Option<&str>,
         principal: &str,
         at_unix_ms: u64,
-    ) -> Result<(String, Vec<Value>), String> {
+    ) -> Result<AuditRow, String> {
         // Epoch ms never realistically exceeds i64::MAX; saturate defensively.
         let at_ms = i64::try_from(at_unix_ms).unwrap_or(i64::MAX);
         // Treat an empty digest (pre-write events supply no hash) as SQL NULL.
@@ -118,37 +237,43 @@ impl D1AuditOutboxSink {
         let payload_json =
             serde_json::to_string(&payload).map_err(|e| format!("audit payload serialize: {e}"))?;
 
-        // `region` MUST be the tenant's `primary_region`, NOT the `'wnam'` column
-        // default: migration 0023 installs a BEFORE-INSERT residency trigger
-        // (`trg_audit_outbox_region_match_insert`) that RAISE(ABORT)s when
-        // `NEW.region != tenant.primary_region`. Tenants default to `'enam'`
-        // (migration 0028), so relying on the `'wnam'` default aborts the INSERT
-        // for essentially every tenant → the handler fails CLOSED → 503 on every
-        // CAS/AC op (prod incident 2026-07-17, surfaced when task #74 flipped this
-        // sink from InMemory to durable-D1). Set `region` from a correlated
-        // subquery so the row is tagged with the tenant's true residency region
-        // and always satisfies the trigger; COALESCE to `'wnam'` for the
-        // tenant-absent case (the trigger's `NEW.region != NULL` is UNKNOWN ⇒ no
-        // abort). Mirrors the fix owed to `routes/dsr/audit.rs`.
-        let sql = "INSERT OR IGNORE INTO audit_outbox \
-             (id, tenant_id, digest, request_id, event_type, payload_json, enqueued_at, emitted_at, region) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, \
-                     COALESCE((SELECT primary_region FROM tenant WHERE tenant_id = ?2), 'wnam'))"
-            .to_owned();
-        let digest_param = match dig {
-            Some(d) => Value::String(d.to_owned()),
-            None => Value::Null,
-        };
-        let params = vec![
-            json!(id),
-            json!(tenant),
-            digest_param,
-            json!(request_id),
-            json!(event_type),
-            json!(payload_json),
-            json!(at_ms),
-        ];
-        Ok((sql, params))
+        Ok(AuditRow {
+            id,
+            tenant: tenant.to_owned(),
+            digest: dig.map(str::to_owned),
+            request_id,
+            event_type: event_type.to_owned(),
+            payload_json,
+            at_ms,
+        })
+    }
+
+    /// Build the `(sql, params)` pair for a SINGLE audit-event row, shared by
+    /// BOTH the sync [`Self::append`] (drives it through
+    /// [`Self::write_blocking`]) and the async [`Self::append_async`] (drives
+    /// it with a bare `.await`, for the CAS/AC concurrent read seam — see
+    /// `storage/r2_s3.rs`). The row's CONTENT comes from [`Self::build_row`],
+    /// so this and [`Self::build_batch_insert`] cannot drift.
+    fn build_insert(
+        &self,
+        event_type: &str,
+        tenant: &str,
+        digest: Option<&str>,
+        principal: &str,
+        at_unix_ms: u64,
+    ) -> Result<(String, Vec<Value>), String> {
+        let row = self.build_row(event_type, tenant, digest, principal, at_unix_ms)?;
+        Ok((AUDIT_OUTBOX_INSERT_ONE_SQL.to_owned(), row.into_params()))
+    }
+
+    /// Build the `(sql, params)` pair that writes MANY rows in ONE statement
+    /// — see [`AUDIT_OUTBOX_INSERT_MANY_SQL`]. `params` is always exactly one
+    /// element: the JSON array `?1`.
+    fn build_batch_insert(rows: &[AuditRow]) -> Result<(&'static str, Vec<Value>), String> {
+        let elements: Vec<Value> = rows.iter().map(AuditRow::to_json_element).collect();
+        let encoded = serde_json::to_string(&Value::Array(elements))
+            .map_err(|e| format!("audit batch payload serialize: {e}"))?;
+        Ok((AUDIT_OUTBOX_INSERT_MANY_SQL, vec![Value::String(encoded)]))
     }
 
     /// Append a single audit event to `audit_outbox`, synchronously (drives
@@ -206,6 +331,59 @@ impl D1AuditOutboxSink {
     ) -> Result<(), String> {
         let (sql, params) = self.build_insert(event_type, tenant, digest, principal, at_unix_ms)?;
         self.d1.query(&sql, &params).await.map(|_| ())
+    }
+
+    /// Append MANY audit rows in ONE D1 round trip (or, past
+    /// [`AUDIT_BATCH_ROWS_PER_STATEMENT`], a small fixed number of
+    /// CONCURRENT ones) instead of one round trip per row.
+    ///
+    /// # Why this exists (the same narrow seam as [`Self::append_async`])
+    ///
+    /// `AuditSink::emit` is, and stays, SYNC and one-row-at-a-time; this
+    /// method is NOT part of that trait and is never reached through it. It
+    /// exists solely for the Bazel REAPI `findMissingBlobs` batch seam
+    /// (`R2CasHandler::exists_batch` in `storage/r2_s3.rs`), where a single
+    /// request legitimately produces up to `FIND_MISSING_BLOB_CAP` (4096)
+    /// `ReadAttempted` rows and the per-row round trip
+    /// (~122 ms each, measured in prod) is the dominant cost of the endpoint.
+    ///
+    /// **This does not change the audit taxonomy.** N events still produce N
+    /// rows, each byte-identical to what [`Self::append`] would have written
+    /// for the same event (same [`Self::build_row`] derivation, same
+    /// `INSERT OR IGNORE` idempotency key). Duplicate events inside one batch
+    /// collide on the PK / `UNIQUE(request_id, event_type)` and dedupe
+    /// exactly as a re-emit does today.
+    ///
+    /// Fail-CLOSED contract is unchanged: `Err` on serialize / D1 transport
+    /// failure, and the caller must treat that as "no result may be served".
+    /// It is ALL-or-nothing at the caller's level — any chunk failing fails
+    /// the whole call.
+    ///
+    /// Like [`Self::append_async`], it deliberately opens NO
+    /// [`crate::origin_timing::PhaseScope`]: the caller wraps the whole
+    /// concurrent join in one `Phase::Store` scope so the overlapping window
+    /// is attributed exactly once. See `origin_timing.rs`'s "Concurrent
+    /// native-plane list seam" note.
+    async fn append_batch_async(&self, rows: Vec<AuditRow>) -> Result<(), String> {
+        if rows.is_empty() {
+            // Zero events ⇒ zero rows ⇒ no statement at all. Matches the
+            // serial path, which simply never calls `append`.
+            return Ok(());
+        }
+        let statements = rows
+            .chunks(AUDIT_BATCH_ROWS_PER_STATEMENT)
+            .map(Self::build_batch_insert)
+            .collect::<Result<Vec<_>, String>>()?;
+        // Chunks are independent `INSERT OR IGNORE`s over disjoint row sets,
+        // so dispatching them together is safe and bounded: at the 4096
+        // digest cap this is 16 in flight, never more.
+        futures::future::try_join_all(
+            statements
+                .iter()
+                .map(|(sql, params)| async move { self.d1.query(sql, params).await.map(|_| ()) }),
+        )
+        .await
+        .map(|_| ())
     }
 
     /// Drive the async [`D1HttpClient::query`] to completion from the sync
@@ -281,6 +459,30 @@ impl D1AuditOutboxSink {
             event.at_unix_ms,
         )
         .await
+    }
+
+    /// BATCH counterpart of [`Self::emit_cas_async`], for the
+    /// `findMissingBlobs` seam only — see [`Self::append_batch_async`].
+    ///
+    /// Preserves the taxonomy exactly: one row per event, in request order,
+    /// each derived by the SAME [`Self::build_row`] the single-row path uses.
+    pub(crate) async fn emit_cas_batch_async(
+        &self,
+        events: &[corelink_handler_cas::AuditEvent],
+    ) -> Result<(), String> {
+        let rows = events
+            .iter()
+            .map(|event| {
+                self.build_row(
+                    event.kind.slug(),
+                    &event.tenant,
+                    Some(event.hash.as_str()),
+                    &event.principal,
+                    event.at_unix_ms,
+                )
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        self.append_batch_async(rows).await
     }
 
     /// AC counterpart of [`Self::emit_cas_async`].
@@ -474,6 +676,7 @@ fn durable_client(d1: Result<D1HttpClient, String>) -> Result<Arc<D1HttpClient>,
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
+    clippy::indexing_slicing,
     reason = "tests are allowed to use these primitives"
 )]
 mod tests {
@@ -519,6 +722,208 @@ mod tests {
         let dbg = format!("{sink:?}");
         assert!(dbg.contains("D1AuditOutboxSink"), "got: {dbg}");
         assert!(!dbg.contains("InMemory"), "got: {dbg}");
+    }
+
+    // ------------------------------------------------------------------
+    // The BATCH write shape (`findMissingBlobs` seam).
+    //
+    // The load-bearing claim is that batching changes how many round trips
+    // carry the rows, NOT what an auditor reads. These tests pin exactly
+    // that: the batch element and the single-row params come from the SAME
+    // `build_row`, so id / request_id / payload / digest-nullability / ts
+    // are identical field-for-field.
+    // ------------------------------------------------------------------
+
+    fn stub_sink() -> D1AuditOutboxSink {
+        D1AuditOutboxSink::new(
+            Arc::new(D1HttpClient::new(&stub_env()).expect("client builds")),
+            "corelink/cas",
+        )
+    }
+
+    const DIGEST_A: &str = "deadbeef00000000000000000000000000000000000000000000000000000001";
+
+    #[test]
+    fn batch_element_and_single_row_params_agree_field_for_field() {
+        let sink = stub_sink();
+        let (sql_one, params) = sink
+            .build_insert(
+                "read.attempted",
+                "t-1",
+                Some(DIGEST_A),
+                "p@t-1",
+                1_700_000_000_123,
+            )
+            .expect("single-row insert builds");
+        let row = sink
+            .build_row(
+                "read.attempted",
+                "t-1",
+                Some(DIGEST_A),
+                "p@t-1",
+                1_700_000_000_123,
+            )
+            .expect("row builds");
+        let element = row.to_json_element();
+
+        // Positional params of the single-row INSERT, in column order.
+        assert_eq!(element["id"], params[0], "id (PK / idempotency key)");
+        assert_eq!(element["tenant"], params[1], "tenant_id");
+        assert_eq!(element["digest"], params[2], "digest");
+        assert_eq!(element["request_id"], params[3], "request_id (UNIQUE key)");
+        assert_eq!(element["event_type"], params[4], "event_type (taxonomy)");
+        assert_eq!(element["payload"], params[5], "payload_json envelope");
+        assert_eq!(element["at"], params[6], "enqueued_at");
+        assert_eq!(params.len(), 7, "single-row shape unchanged");
+        assert!(sql_one.contains("INSERT OR IGNORE"), "{sql_one}");
+    }
+
+    #[test]
+    fn batch_insert_binds_exactly_one_param_carrying_every_row() {
+        let sink = stub_sink();
+        let rows: Vec<AuditRow> = (0..40)
+            .map(|i| {
+                sink.build_row(
+                    "read.attempted",
+                    "t-1",
+                    Some(&format!("{i:064x}")),
+                    "p@t-1",
+                    7,
+                )
+                .expect("row builds")
+            })
+            .collect();
+        let (sql, params) = D1AuditOutboxSink::build_batch_insert(&rows).expect("batch builds");
+
+        // ONE param — this is the whole point: D1 caps a statement at 100
+        // bound params, so 40 rows x 7 params could not have been bound
+        // positionally.
+        assert_eq!(params.len(), 1, "the batch rides in a single parameter");
+        let encoded = params[0].as_str().expect("param is the JSON array string");
+        let parsed: Value = serde_json::from_str(encoded).expect("valid JSON");
+        let arr = parsed.as_array().expect("JSON array");
+        assert_eq!(arr.len(), 40, "N events -> N rows, no summarisation");
+
+        // Same table, same columns, same idempotency, same residency guard.
+        assert!(sql.contains("INSERT OR IGNORE INTO audit_outbox"), "{sql}");
+        assert!(sql.contains("FROM json_each(?1)"), "{sql}");
+        assert!(
+            sql.contains("COALESCE((SELECT primary_region FROM tenant WHERE tenant_id = json_extract(value,'$.tenant')), 'wnam')"),
+            "the migration-0023 residency trigger MUST be satisfied per row: {sql}"
+        );
+        // Every `$.…` path the SQL reads must exist on every element.
+        for element in arr {
+            for key in [
+                "id",
+                "tenant",
+                "digest",
+                "request_id",
+                "event_type",
+                "payload",
+                "at",
+            ] {
+                assert!(
+                    element.get(key).is_some(),
+                    "element missing $.{key}: {element}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn batch_preserves_null_digest_for_events_without_a_hash() {
+        let sink = stub_sink();
+        let row = sink
+            .build_row("read.attempted", "t-1", Some(""), "p@t-1", 7)
+            .expect("row builds");
+        let element = row.to_json_element();
+        assert_eq!(element["digest"], Value::Null, "empty digest -> SQL NULL");
+        // …and the id/request_id use the same `-` sentinel the single-row
+        // path uses, so the two shapes dedupe against each other.
+        assert!(
+            element["id"].as_str().expect("id").contains(":-:"),
+            "{element}"
+        );
+    }
+
+    #[test]
+    fn duplicate_events_in_one_batch_collide_on_the_idempotency_keys() {
+        // A REAPI client may repeat a digest inside one findMissingBlobs
+        // request. Both occurrences must derive the SAME `id` (PK) and the
+        // SAME `request_id` so `INSERT OR IGNORE` dedupes them, exactly as
+        // it dedupes a serial re-emit today.
+        let sink = stub_sink();
+        let mk = || {
+            sink.build_row("read.attempted", "t-1", Some(DIGEST_A), "p@t-1", 42)
+                .expect("row builds")
+        };
+        let (a, b) = (mk(), mk());
+        assert_eq!(a, b, "identical events derive identical rows");
+
+        let (_, params) = D1AuditOutboxSink::build_batch_insert(&[a, b]).expect("batch builds");
+        let parsed: Value =
+            serde_json::from_str(params[0].as_str().expect("string")).expect("valid JSON");
+        let arr = parsed.as_array().expect("array");
+        assert_eq!(arr.len(), 2, "the batch does NOT pre-dedupe; the DB does");
+        assert_eq!(arr[0]["id"], arr[1]["id"], "same PK -> INSERT OR IGNORE");
+        assert_eq!(
+            arr[0]["request_id"], arr[1]["request_id"],
+            "same UNIQUE(request_id, event_type) key"
+        );
+    }
+
+    #[test]
+    fn batch_chunking_respects_d1s_value_size_cap_at_the_find_missing_cap() {
+        // D1 caps a single string/BLOB/row at 2,000,000 bytes. At the
+        // FIND_MISSING_BLOB_CAP of 4096 digests the batch must therefore be
+        // split — and every chunk must fit with room to spare.
+        const D1_MAX_VALUE_BYTES: usize = 2_000_000;
+        let sink = stub_sink();
+        // Deliberately long tenant/principal: the worst realistic element.
+        let tenant = "d863fafb-0000-4000-8000-000000000000";
+        let principal = "pat_0123456789abcdef0123456789abcdef@d863fafb-0000-4000-8000-000000000000";
+        let rows: Vec<AuditRow> = (0..4096)
+            .map(|i| {
+                sink.build_row(
+                    "read.attempted",
+                    tenant,
+                    Some(&format!("{i:064x}")),
+                    principal,
+                    1_700_000_000_123,
+                )
+                .expect("row builds")
+            })
+            .collect();
+
+        let chunks: Vec<&[AuditRow]> = rows.chunks(AUDIT_BATCH_ROWS_PER_STATEMENT).collect();
+        assert_eq!(chunks.len(), 16, "4096 / 256 statements, not 4096");
+        let mut total = 0usize;
+        for chunk in &chunks {
+            let (_, params) = D1AuditOutboxSink::build_batch_insert(chunk).expect("chunk builds");
+            let encoded = params[0].as_str().expect("string");
+            assert!(
+                encoded.len() < D1_MAX_VALUE_BYTES,
+                "chunk param is {} bytes, D1 caps a value at {D1_MAX_VALUE_BYTES}",
+                encoded.len()
+            );
+            total += serde_json::from_str::<Value>(encoded)
+                .expect("valid JSON")
+                .as_array()
+                .expect("array")
+                .len();
+        }
+        assert_eq!(total, 4096, "every requested digest still gets its own row");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn empty_batch_issues_no_statement_at_all() {
+        // Zero events must not produce a degenerate `json_each('[]')` round
+        // trip. This runs with no network because it must never reach D1 —
+        // if it ever did, the stub credentials would make it fail loudly.
+        stub_sink()
+            .append_batch_async(Vec::new())
+            .await
+            .expect("an empty batch is a no-op, not an error");
     }
 
     #[test]
