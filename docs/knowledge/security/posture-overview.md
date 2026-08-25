@@ -6,7 +6,7 @@ source_files:
   - "docs/security/2026-06-13-CAA-360-audit-report.md"
   - "ARCHITECTURE.md"
   - "apps/signup-worker/src/security-headers.ts"
-checkpoint_sha: "57fd1bbeba017a3a9ac60d1a045728295fcf88d7"
+checkpoint_sha: "b121f6bc7db735782fcc3b9ead0f6aab4b410050"
 provenance: "AUTHORED"
 tags: ["security", "posture", "audit", "tenant-isolation", "compliance"]
 timestamp: "2026-06-26T00:00:00Z"
