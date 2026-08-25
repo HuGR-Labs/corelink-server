@@ -31,6 +31,21 @@ exclude = [
   # (`file:///...`). include_verbatim picks up the bare scheme text inside
   # <code> blocks; this excludes that class without hiding real file:// findings.
   "^file://[^/]",
+  # A GOPROXY VALUE is not a URL. The Go SDK pages print
+  #   GOPROXY=https://humangr.com/corelink/docs/goproxy,https://proxy.golang.org,direct
+  # and lychee's URL scanner swallows the whole comma-joined list as one link,
+  # then GETs a path that ends in `,https://proxy.golang.org,direct`. No server
+  # can serve that, because it was never an address.
+  #
+  # Why it only appeared on 2026-08-25: before #1297 the docs Worker returned
+  # redirects that had lost the `/corelink/docs` mount, so this bogus path fell
+  # through to the marketing homepage and answered 200. lychee was passing on
+  # the WRONG PAGE. Fixing the redirect turned a fake 200 into an honest 404 and
+  # the gate started reporting what had been true all along.
+  #
+  # Anchored on the comma so a genuine `/corelink/docs/goproxy/...` link is
+  # still checked — only the env-var-value form is excluded.
+  "^https://humangr\\.com/corelink/docs/goproxy,",
   # KNOWN PRE-EXISTING GAPS — tracked separately, not introduced by and out
   # of scope for the docs-search/lychee-gate/gRPC-claims PR that added this
   # comment. Un-exclude once each is closed so the gate catches regressions:
