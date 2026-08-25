@@ -25,10 +25,11 @@
 //! |----------|--------------------------------------------------------------------|
 //! | `opat`    | the container's per-request D1 `pat` row read (kept by #1022 for immediate revocation) — and, on the cargo read path, the url-map row it CO-READS in the same round trip |
 //! | `oquota`  | the per-tenant monthly `$`-ceiling check/accrue (ADR-0068) — a D1 round trip |
-//! | `ostore`  | the moat storage lookup: the `(namespace,key)→content_hash` map read plus the CAS/R2 blob fetch |
+//! | `ostore`  | the moat storage lookup (`(namespace,key)→content_hash` map read plus the CAS/R2 blob fetch) **and**, on the native CAS/AC plane, the R2/S3 object GET/PUT/DELETE/LIST calls `R2CasHandler`/`R2AcHandler` make through the sync `block_in_place` bridge (`storage/r2_s3.rs`) |
 //! | `oargon`  | Argon2id verification (`adapter_pat.rs`): the secret-match memo check plus, on a miss, the coalesced verify flight — AND, on the SAME name, the row-not-found coalesced dummy Argon2id burn that pads timing for a missing/expired/revoked `token_id` (see the security note below) |
 //! | `opermit` | the semaphore acquires bounded by `ARGON2_PERMIT_WAIT`, in both the dummy-burn arm and the real verify arm |
 //! | `ortier`  | `ensure_tier_applied`'s D1 tier-label resolution (`routes/ratelimit_layer.rs` → `oci_cap.rs`) |
+//! | `oaudit`  | the blocking durable-audit D1 write on the request path (`D1AuditOutboxSink::write_blocking`, `storage/d1_audit_sink.rs`) — every `AuditSink::emit`/`append` the native CAS/AC handlers make before/after a mutation or read routes through this one blocking D1-over-HTTP `INSERT` |
 //! | `oother`  | **residue** — every other millisecond the container spent: routing, HMAC, body handling, response assembly |
 //!
 //! ## Security: `oargon` must not become a token-enumeration oracle
@@ -67,9 +68,20 @@
 //!
 //! * `ostore` instruments [`crate::adapter_cache::MoatCache`], which backs the
 //!   cargo/brew/npm/pip cache surfaces. The **native** CAS/AC plane does not go
-//!   through the moat, so on those routes storage time lands in `oother`. The
-//!   phase is named for what it measures, not for what one might wish it
-//!   measured.
+//!   through the moat, but its R2/S3 object calls (`storage/r2_s3.rs`) are ALSO
+//!   wrapped into `ostore` via [`PhaseScope`] — the two report under the same
+//!   name because both answer the same question ("how long did this request
+//!   spend touching durable blob storage"), not because they share a code
+//!   path. What is still NOT covered by `ostore` on the native plane is the
+//!   BYOK key-resolution / encrypt / decrypt work (`resolve_byok`,
+//!   `encrypt_body`, `decrypt_body`) that wraps those calls — that remains in
+//!   `oother`. The phase is named for what it measures, not for what one might
+//!   wish it measured.
+//! * `oaudit` instruments [`crate::storage::d1_audit_sink::D1AuditOutboxSink`]'s
+//!   `write_blocking` — the ONE blocking-D1 choke point every CAS/AC audit
+//!   `emit`/`append` call routes through, native plane only (the moat
+//!   surfaces' cache-hit audit trail is a separate, already-async path and is
+//!   not in `oaudit`).
 //! * The layer stops timing when the handler returns its `Response`. For a
 //!   buffered body (every route on the measured `/cargo` path) that is the whole
 //!   cost; for a streamed body the streaming itself is outside `oother` — and it
@@ -152,6 +164,11 @@ pub enum Phase {
     /// `ensure_tier_applied`'s tier resolution — the one D1 round trip in the
     /// `oother` residue that no other phase counted (`ortier`).
     Tier,
+    /// The blocking durable-audit D1 write on the request path (`oaudit`):
+    /// `D1AuditOutboxSink::write_blocking` (`storage/d1_audit_sink.rs`), the
+    /// single choke point every CAS/AC `AuditSink::emit`/`append` call routes
+    /// through before/after a native-plane read or mutation.
+    Audit,
 }
 
 /// Sentinel for "this phase did not run at all", mirroring the Worker's `-1`
@@ -179,6 +196,7 @@ pub struct PhaseLedger {
     argon_us: AtomicI64,
     permit_us: AtomicI64,
     tier_us: AtomicI64,
+    audit_us: AtomicI64,
 }
 
 impl Default for PhaseLedger {
@@ -198,6 +216,7 @@ impl PhaseLedger {
             argon_us: AtomicI64::new(DID_NOT_RUN),
             permit_us: AtomicI64::new(DID_NOT_RUN),
             tier_us: AtomicI64::new(DID_NOT_RUN),
+            audit_us: AtomicI64::new(DID_NOT_RUN),
         }
     }
 
@@ -209,6 +228,7 @@ impl PhaseLedger {
             Phase::Argon => &self.argon_us,
             Phase::Permit => &self.permit_us,
             Phase::Tier => &self.tier_us,
+            Phase::Audit => &self.audit_us,
         }
     }
 
@@ -254,7 +274,7 @@ impl PhaseLedger {
     #[must_use]
     pub(crate) fn server_timing_value_with(&self, total_us: i64, detail: bool) -> String {
         let total_ms = total_us.max(0) / 1_000;
-        let mut parts: Vec<String> = Vec::with_capacity(7);
+        let mut parts: Vec<String> = Vec::with_capacity(8);
         let mut attributed_ms: i64 = 0;
         for (name, phase) in [
             ("opat", Phase::Pat),
@@ -263,11 +283,17 @@ impl PhaseLedger {
             ("oargon", Phase::Argon),
             ("opermit", Phase::Permit),
             ("ortier", Phase::Tier),
+            ("oaudit", Phase::Audit),
         ] {
-            // The three detail phases are gated (see `detail_phases_enabled`);
+            // The four detail phases are gated (see `detail_phases_enabled`);
             // when off their time is left to fall into `oother`, exactly as
             // before this split existed.
-            if !detail && matches!(phase, Phase::Argon | Phase::Permit | Phase::Tier) {
+            if !detail
+                && matches!(
+                    phase,
+                    Phase::Argon | Phase::Permit | Phase::Tier | Phase::Audit
+                )
+            {
                 continue;
             }
             if let Some(us) = self.micros(phase) {
@@ -285,12 +311,12 @@ impl PhaseLedger {
     }
 }
 
-/// Whether the three PAT-path detail phases (`oargon`, `opermit`, `ortier`) are
+/// Whether the four detail phases (`oargon`, `opermit`, `ortier`, `oaudit`) are
 /// published on the wire.
 ///
-/// **Off by default, and that default is load-bearing.** These phases report the
-/// state of a per-process cache on the credential path, so their PRESENCE — not
-/// their duration — is observable signal:
+/// **Off by default, and that default is load-bearing.** `oargon`/`opermit`
+/// report the state of a per-process cache on the credential path, so their
+/// PRESENCE — not their duration — is observable signal:
 ///
 ///   - `opermit` is recorded inside the Argon2id flight. On the row-NOT-FOUND arm
 ///     the coalesced dummy burn always runs, so the phase appears; on the valid-token
@@ -301,7 +327,14 @@ impl PhaseLedger {
 ///     `token_id` is timing-indistinguishable from a valid one. A header that
 ///     partitions that time by name erodes the padding it is there to provide.
 ///
-/// When off, the three phases are simply not emitted and their time falls into
+/// `ortier` and `oaudit` carry no such credential-oracle risk on their own —
+/// they are gated behind the SAME flag as a matter of a single, conservative
+/// opt-in switch for every phase this split has added since the original
+/// three (`opat`/`oquota`/`ostore`), rather than growing a second flag per
+/// addition. An operator may enable the whole group once they have read this
+/// doc; there is currently no reason to ship `oaudit` alone.
+///
+/// When off, the four phases are simply not emitted and their time falls into
 /// `oother` — the residue is unchanged in meaning and the header is byte-identical
 /// to what shipped before the split. The ledger still RECORDS them unconditionally
 /// (an `Instant` is free), so turning the flag on needs no rebuild of the timing
@@ -488,6 +521,7 @@ mod tests {
         assert!(!parsed.contains_key("oargon"));
         assert!(!parsed.contains_key("opermit"));
         assert!(!parsed.contains_key("ortier"));
+        assert!(!parsed.contains_key("oaudit"));
     }
 
     #[test]
@@ -512,10 +546,10 @@ mod tests {
     }
 
     #[test]
-    fn all_six_named_phases_plus_oother_sum_exactly_to_the_container_total() {
-        // W2: opat + oquota + ostore + oargon + opermit + ortier + oother
-        // must reconcile exactly against the container's own whole-request
-        // clock, the same way the original three did.
+    fn all_seven_named_phases_plus_oother_sum_exactly_to_the_container_total() {
+        // W2/W3: opat + oquota + ostore + oargon + opermit + ortier + oaudit +
+        // oother must reconcile exactly against the container's own
+        // whole-request clock, the same way the original three did.
         let ledger = PhaseLedger::new();
         ledger.add(Phase::Pat, 3_400);
         ledger.add(Phase::Quota, 20_100);
@@ -523,12 +557,13 @@ mod tests {
         ledger.add(Phase::Argon, 61_700);
         ledger.add(Phase::Permit, 12_300);
         ledger.add(Phase::Tier, 4_600);
+        ledger.add(Phase::Audit, 8_500);
         let parsed = parse(&ledger.server_timing_value_with(140_250, true));
         let sum: i64 = parsed.values().sum();
         assert_eq!(
             sum, 140,
-            "opat+oquota+ostore+oargon+opermit+ortier+oother must equal the \
-             140ms the container held the request; they summed to {sum}. \
+            "opat+oquota+ostore+oargon+opermit+ortier+oaudit+oother must equal \
+             the 140ms the container held the request; they summed to {sum}. \
              Split: {parsed:?}"
         );
         assert_eq!(parsed["opat"], 3);
@@ -537,8 +572,9 @@ mod tests {
         assert_eq!(parsed["oargon"], 61);
         assert_eq!(parsed["opermit"], 12);
         assert_eq!(parsed["ortier"], 4);
-        // 140 - (3 + 20 + 0 + 61 + 12 + 4) = 40, the truncation residue.
-        assert_eq!(parsed["oother"], 40);
+        assert_eq!(parsed["oaudit"], 8);
+        // 140 - (3 + 20 + 0 + 61 + 12 + 4 + 8) = 32, the truncation residue.
+        assert_eq!(parsed["oother"], 32);
     }
 
     #[test]
@@ -552,6 +588,26 @@ mod tests {
             "oargon must be reported even at dur=0, exactly like the existing \
              three phases — see the not-found/found parity requirement"
         );
+        assert!(!parsed.contains_key("opermit"));
+        assert!(!parsed.contains_key("ortier"));
+        assert!(!parsed.contains_key("oaudit"));
+        assert!(!parsed.contains_key("opat"));
+        assert!(!parsed.contains_key("oquota"));
+        assert!(!parsed.contains_key("ostore"));
+    }
+
+    #[test]
+    fn a_phase_that_never_ran_among_audit_is_omitted_and_one_that_ran_is_emitted() {
+        let ledger = PhaseLedger::new();
+        ledger.add(Phase::Audit, 0);
+        let parsed = parse(&ledger.server_timing_value_with(5_000, true));
+        assert_eq!(
+            parsed.get("oaudit"),
+            Some(&0),
+            "oaudit must be reported even at dur=0, exactly like the other \
+             detail phases"
+        );
+        assert!(!parsed.contains_key("oargon"));
         assert!(!parsed.contains_key("opermit"));
         assert!(!parsed.contains_key("ortier"));
         assert!(!parsed.contains_key("opat"));
@@ -760,7 +816,7 @@ mod tests {
     }
     /// The gate is OFF by default and that default must keep the header exactly
     /// as it was before the PAT-detail split existed: no `oargon`, no `opermit`,
-    /// no `ortier`, and their time left inside the `oother` residue.
+    /// no `ortier`, no `oaudit`, and their time left inside the `oother` residue.
     ///
     /// This is a security property, not a formatting preference — see
     /// `detail_phases_enabled`. `opermit`'s presence reports whether the
@@ -773,6 +829,7 @@ mod tests {
         ledger.add(Phase::Argon, 90_000);
         ledger.add(Phase::Permit, 5_000);
         ledger.add(Phase::Tier, 20_000);
+        ledger.add(Phase::Audit, 15_000);
 
         let off = parse(&ledger.server_timing_value_with(200_000, false));
         assert!(
@@ -787,12 +844,16 @@ mod tests {
             !off.contains_key("ortier"),
             "ortier must not ship by default"
         );
+        assert!(
+            !off.contains_key("oaudit"),
+            "oaudit must not ship by default"
+        );
         assert_eq!(
             off.get("opat"),
             Some(&10),
             "the pre-existing phases are untouched"
         );
-        // 200 total - 10 opat = 190; the three gated phases stay in the residue.
+        // 200 total - 10 opat = 190; the four gated phases stay in the residue.
         assert_eq!(
             off.get("oother"),
             Some(&190),
@@ -804,6 +865,7 @@ mod tests {
         assert_eq!(on.get("oargon"), Some(&90));
         assert_eq!(on.get("opermit"), Some(&5));
         assert_eq!(on.get("ortier"), Some(&20));
-        assert_eq!(on.get("oother"), Some(&75), "190 - 90 - 5 - 20 = 75");
+        assert_eq!(on.get("oaudit"), Some(&15));
+        assert_eq!(on.get("oother"), Some(&60), "190 - 90 - 5 - 20 - 15 = 60");
     }
 }
