@@ -75,21 +75,21 @@ impl D1AuditOutboxSink {
         Self { d1, source }
     }
 
-    /// Append a single audit event to `audit_outbox`.
-    ///
-    /// Keys (`id`, `request_id`) are deterministic per logical event so a
-    /// re-emit collides on the PK / `UNIQUE(request_id, event_type)` and is an
-    /// `INSERT OR IGNORE` no-op — idempotent on a handler retry (mirrors the
-    /// DSR sink). Returns `Err` on serialize / D1 transport failure; the
-    /// handler treats that as fail-CLOSED.
-    fn append(
+    /// Build the `(sql, params)` pair for a single audit-event row, shared
+    /// by BOTH the sync [`Self::append`] (drives it through
+    /// [`Self::write_blocking`]) and the async [`Self::append_async`]
+    /// (drives it with a bare `.await`, for the CAS/AC concurrent read seam
+    /// — see `storage/r2_s3.rs`). Splitting this out means the two bridge
+    /// shapes can never drift on the SQL/idempotency-key logic — there is
+    /// exactly one place that decides what row gets written.
+    fn build_insert(
         &self,
         event_type: &str,
         tenant: &str,
         digest: Option<&str>,
         principal: &str,
         at_unix_ms: u64,
-    ) -> Result<(), String> {
+    ) -> Result<(String, Vec<Value>), String> {
         // Epoch ms never realistically exceeds i64::MAX; saturate defensively.
         let at_ms = i64::try_from(at_unix_ms).unwrap_or(i64::MAX);
         // Treat an empty digest (pre-write events supply no hash) as SQL NULL.
@@ -133,7 +133,8 @@ impl D1AuditOutboxSink {
         let sql = "INSERT OR IGNORE INTO audit_outbox \
              (id, tenant_id, digest, request_id, event_type, payload_json, enqueued_at, emitted_at, region) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, \
-                     COALESCE((SELECT primary_region FROM tenant WHERE tenant_id = ?2), 'wnam'))";
+                     COALESCE((SELECT primary_region FROM tenant WHERE tenant_id = ?2), 'wnam'))"
+            .to_owned();
         let digest_param = match dig {
             Some(d) => Value::String(d.to_owned()),
             None => Value::Null,
@@ -147,7 +148,64 @@ impl D1AuditOutboxSink {
             json!(payload_json),
             json!(at_ms),
         ];
-        self.write_blocking(sql, params)
+        Ok((sql, params))
+    }
+
+    /// Append a single audit event to `audit_outbox`, synchronously (drives
+    /// the write through [`Self::write_blocking`]'s `block_in_place` +
+    /// `block_on` bridge). Every non-concurrent `AuditSink::emit` call
+    /// routes through this.
+    ///
+    /// Keys (`id`, `request_id`) are deterministic per logical event so a
+    /// re-emit collides on the PK / `UNIQUE(request_id, event_type)` and is an
+    /// `INSERT OR IGNORE` no-op — idempotent on a handler retry (mirrors the
+    /// DSR sink). Returns `Err` on serialize / D1 transport failure; the
+    /// handler treats that as fail-CLOSED.
+    fn append(
+        &self,
+        event_type: &str,
+        tenant: &str,
+        digest: Option<&str>,
+        principal: &str,
+        at_unix_ms: u64,
+    ) -> Result<(), String> {
+        let (sql, params) = self.build_insert(event_type, tenant, digest, principal, at_unix_ms)?;
+        self.write_blocking(&sql, params)
+    }
+
+    /// Async counterpart of [`Self::append`] — same SQL, same idempotency
+    /// key, same fail-CLOSED `Result<(), String>` contract, but a bare
+    /// `.await`-able future instead of a self-contained blocking call.
+    ///
+    /// # Why this exists (narrow seam, not a new audit path)
+    ///
+    /// `AuditSink::emit` is, and stays, SYNC — this method is NOT part of
+    /// that trait and is never called through it. It exists solely so the
+    /// CAS/AC native-plane concurrent LIST seam
+    /// (`R2CasHandler::list` / `R2AcHandler::list` in `storage/r2_s3.rs`)
+    /// can `tokio::join!` the audit write and the R2 enumeration as two
+    /// sibling futures under ONE outer `block_in_place` + `block_on`,
+    /// instead of two separate serial ones. `self.audit.emit(...)`
+    /// (the sync path) cannot be used as one half of a `join!` — it is
+    /// itself a self-contained `block_in_place`+`block_on` call, not a
+    /// `Future`.
+    ///
+    /// Deliberately does NOT wrap a [`crate::origin_timing::PhaseScope`]
+    /// itself (contrast [`Self::write_blocking`], which always does): the
+    /// caller wraps the WHOLE concurrent join in one `Phase::Store` scope,
+    /// so this audit write's wall time is attributed exactly once, not
+    /// double-counted against the overlapping R2 call. See
+    /// `origin_timing.rs`'s "Concurrent native-plane list seam" note.
+    pub(crate) async fn append_async(
+        &self,
+        event_type: &str,
+        tenant: &str,
+        digest: Option<&str>,
+        principal: &str,
+        at_unix_ms: u64,
+    ) -> Result<(), String> {
+        let (sql, params) = self.build_insert(event_type, tenant, digest, principal, at_unix_ms)?;
+        self.d1.query(&sql, &params).await.map(|_| ())
     }
 
     /// Drive the async [`D1HttpClient::query`] to completion from the sync
@@ -155,7 +213,7 @@ impl D1AuditOutboxSink {
     /// axum handler path) — identical bridge + safety envelope as
     /// `routes/dsr/d1util::d1_query_blocking`.
     ///
-    /// This is the ONE choke point every CAS/AC/signup `emit`/`append` call
+    /// This is the choke point every SYNC CAS/AC/signup `emit`/`append` call
     /// routes through, so it is where the blocking D1-over-HTTP write is timed
     /// into `crate::origin_timing::Phase::Audit` (`oaudit`) — a single
     /// [`crate::origin_timing::PhaseScope`] here covers every caller rather
@@ -163,6 +221,12 @@ impl D1AuditOutboxSink {
     /// Silent pass-through with no ledger in scope, exactly like every other
     /// `PhaseScope` use: instrumentation can never change this method's
     /// result.
+    ///
+    /// [`Self::append_async`] is the ONE exception: it drives the same SQL
+    /// through `self.d1.query` directly (no `block_in_place`, no
+    /// `PhaseScope` here) so its caller (the CAS/AC concurrent `list()` seam
+    /// in `storage/r2_s3.rs`) can attribute the joined window itself — see
+    /// that method's doc.
     fn write_blocking(&self, sql: &str, params: Vec<Value>) -> Result<(), String> {
         let _scope = crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Audit);
         let d1 = Arc::clone(&self.d1);
@@ -195,6 +259,43 @@ impl corelink_handler_ac::AuditSink for D1AuditOutboxSink {
             &event.principal,
             event.at_unix_ms,
         )
+    }
+}
+
+/// Async counterpart of the CAS `AuditSink::emit` impl above, for the
+/// concurrent-list seam only — see [`D1AuditOutboxSink::append_async`].
+/// NOT a trait impl (the `corelink_handler_cas::AuditSink` trait stays
+/// sync); this is a plain inherent method reached directly by
+/// `storage/r2_s3.rs`, which holds the concrete `Arc<D1AuditOutboxSink>`
+/// alongside the type-erased `Arc<dyn AuditSink>` for exactly this reason.
+impl D1AuditOutboxSink {
+    pub(crate) async fn emit_cas_async(
+        &self,
+        event: corelink_handler_cas::AuditEvent,
+    ) -> Result<(), String> {
+        self.append_async(
+            event.kind.slug(),
+            &event.tenant,
+            Some(event.hash.as_str()),
+            &event.principal,
+            event.at_unix_ms,
+        )
+        .await
+    }
+
+    /// AC counterpart of [`Self::emit_cas_async`].
+    pub(crate) async fn emit_ac_async(
+        &self,
+        event: corelink_handler_ac::AuditEvent,
+    ) -> Result<(), String> {
+        self.append_async(
+            event.kind.slug(),
+            &event.tenant,
+            Some(event.action_digest.as_str()),
+            &event.principal,
+            event.at_unix_ms,
+        )
+        .await
     }
 }
 
@@ -274,33 +375,70 @@ impl crate::routes::signup::SignupAuditSink for D1AuditOutboxSink {
 /// Yield a DURABLE CAS audit sink from a D1-client construction result, or
 /// REFUSE (fail-CLOSED) when the D1 client could not be built.
 ///
-/// The CAS builder passes `D1HttpClient::new(&env)` straight in; the `Result`
-/// seam makes the refusal deterministically testable (a durable sink can't
-/// force `reqwest` to fail).
+/// The `Result` seam makes the refusal deterministically testable (a durable
+/// sink can't force `reqwest` to fail). The production builder
+/// (`build_r2_cas_handler_from_env`) now calls
+/// [`cas_audit_sink_from_d1_concrete`] directly (it needs the concrete type
+/// for the async seam) — this type-erased wrapper is kept for tests that
+/// only care about the `AuditSink` trait-object shape, hence `#[cfg(test)]`.
 ///
 /// # Errors
 ///
-/// Returns `Err(String)` when `d1` is `Err` — the builder maps that to
-/// `Some(Err(..))` and the route mounts the fail-CLOSED 503 handler instead of
-/// a silent in-memory fallback.
+/// Returns `Err(String)` when `d1` is `Err` (fail-CLOSED — see
+/// [`cas_audit_sink_from_d1_concrete`]).
+#[cfg(test)]
 pub(crate) fn cas_audit_sink_from_d1(
     d1: Result<D1HttpClient, String>,
 ) -> Result<Arc<dyn corelink_handler_cas::AuditSink>, String> {
+    Ok(cas_audit_sink_from_d1_concrete(d1)? as Arc<dyn corelink_handler_cas::AuditSink>)
+}
+
+/// Concrete-typed counterpart of [`cas_audit_sink_from_d1`], for callers
+/// that need the narrow async seam ([`D1AuditOutboxSink::emit_cas_async`])
+/// and not just the type-erased `AuditSink` trait object — currently only
+/// `build_r2_cas_handler_from_env` (`storage/r2_s3.rs`), which passes this
+/// SAME `Arc` to both `R2CasHandler::new` (coerced to `Arc<dyn AuditSink>`)
+/// and `R2CasHandler::with_async_audit` (kept concrete) so the sync and
+/// concurrent paths are provably the same sink instance, not two.
+///
+/// # Errors
+///
+/// Returns `Err(String)` when `d1` is `Err` (fail-CLOSED — see
+/// [`cas_audit_sink_from_d1`]).
+pub(crate) fn cas_audit_sink_from_d1_concrete(
+    d1: Result<D1HttpClient, String>,
+) -> Result<Arc<D1AuditOutboxSink>, String> {
     Ok(Arc::new(D1AuditOutboxSink::new(
         durable_client(d1)?,
         "corelink/cas",
     )))
 }
 
-/// AC counterpart of [`cas_audit_sink_from_d1`].
+/// AC counterpart of [`cas_audit_sink_from_d1`] — also `#[cfg(test)]` for
+/// the same reason (see there).
+///
+/// # Errors
+///
+/// Returns `Err(String)` when `d1` is `Err` (fail-CLOSED — see
+/// [`cas_audit_sink_from_d1_concrete`]).
+#[cfg(test)]
+pub(crate) fn ac_audit_sink_from_d1(
+    d1: Result<D1HttpClient, String>,
+) -> Result<Arc<dyn corelink_handler_ac::AuditSink>, String> {
+    Ok(ac_audit_sink_from_d1_concrete(d1)? as Arc<dyn corelink_handler_ac::AuditSink>)
+}
+
+/// Concrete-typed counterpart of [`ac_audit_sink_from_d1`] — see
+/// [`cas_audit_sink_from_d1_concrete`] for why this exists (used by
+/// `build_r2_ac_handler_from_env`).
 ///
 /// # Errors
 ///
 /// Returns `Err(String)` when `d1` is `Err` (fail-CLOSED — see
 /// [`cas_audit_sink_from_d1`]).
-pub(crate) fn ac_audit_sink_from_d1(
+pub(crate) fn ac_audit_sink_from_d1_concrete(
     d1: Result<D1HttpClient, String>,
-) -> Result<Arc<dyn corelink_handler_ac::AuditSink>, String> {
+) -> Result<Arc<D1AuditOutboxSink>, String> {
     Ok(Arc::new(D1AuditOutboxSink::new(
         durable_client(d1)?,
         "corelink/ac",

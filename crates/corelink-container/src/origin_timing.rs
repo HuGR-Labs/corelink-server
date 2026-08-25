@@ -25,11 +25,11 @@
 //! |----------|--------------------------------------------------------------------|
 //! | `opat`    | the container's per-request D1 `pat` row read (kept by #1022 for immediate revocation) — and, on the cargo read path, the url-map row it CO-READS in the same round trip |
 //! | `oquota`  | the per-tenant monthly `$`-ceiling check/accrue (ADR-0068) — a D1 round trip |
-//! | `ostore`  | the moat storage lookup (`(namespace,key)→content_hash` map read plus the CAS/R2 blob fetch) **and**, on the native CAS/AC plane, the R2/S3 object GET/PUT/DELETE/LIST calls `R2CasHandler`/`R2AcHandler` make through the sync `block_in_place` bridge (`storage/r2_s3.rs`) |
+//! | `ostore`  | the moat storage lookup (`(namespace,key)→content_hash` map read plus the CAS/R2 blob fetch) **and**, on the native CAS/AC plane, the R2/S3 object GET/PUT/DELETE/LIST calls `R2CasHandler`/`R2AcHandler` make through the sync `block_in_place` bridge (`storage/r2_s3.rs`) — **and**, on the native CAS/AC `list()` read path specifically, the CONCURRENT audit write that now runs alongside the R2 `ListObjectsV2` call (see "Concurrent native-plane list seam" below) |
 //! | `oargon`  | Argon2id verification (`adapter_pat.rs`): the secret-match memo check plus, on a miss, the coalesced verify flight — AND, on the SAME name, the row-not-found coalesced dummy Argon2id burn that pads timing for a missing/expired/revoked `token_id` (see the security note below) |
 //! | `opermit` | the semaphore acquires bounded by `ARGON2_PERMIT_WAIT`, in both the dummy-burn arm and the real verify arm |
 //! | `ortier`  | `ensure_tier_applied`'s D1 tier-label resolution (`routes/ratelimit_layer.rs` → `oci_cap.rs`) |
-//! | `oaudit`  | the blocking durable-audit D1 write on the request path (`D1AuditOutboxSink::write_blocking`, `storage/d1_audit_sink.rs`) — every `AuditSink::emit`/`append` the native CAS/AC handlers make before/after a mutation or read routes through this one blocking D1-over-HTTP `INSERT` |
+//! | `oaudit`  | the blocking durable-audit D1 write on the request path (`D1AuditOutboxSink::write_blocking`, `storage/d1_audit_sink.rs`) — every `AuditSink::emit`/`append` the native CAS/AC handlers make before/after a mutation or read routes through this one blocking D1-over-HTTP `INSERT`. **Exception:** the native CAS/AC `list()` read path's `ListAttempted` audit write does NOT appear here when it runs concurrently with the R2 call — see below. |
 //! | `oother`  | **residue** — every other millisecond the container spent: routing, HMAC, body handling, response assembly |
 //!
 //! ## Security: `oargon` must not become a token-enumeration oracle
@@ -64,6 +64,42 @@
 //! DO hop — which is why an unattributed millisecond can never vanish: it lands
 //! in a named phase on one side of the boundary or the other.
 //!
+//! ## Concurrent native-plane list seam — the ONE place two phases now overlap
+//!
+//! Every phase above is entered and exited on the SAME task, one at a time —
+//! the regions are sequential, so summing their accumulated microseconds is a
+//! true partition of the request and can never double-count a millisecond.
+//! `R2CasHandler::list` / `R2AcHandler::list` (`storage/r2_s3.rs`) are the ONE
+//! exception: the mandatory `ListAttempted` durable-audit write and the R2
+//! `ListObjectsV2` call now run CONCURRENTLY, `tokio::join!`ed under a single
+//! `block_in_place` + `block_on`, because they measurably don't need to be
+//! serial (the audit write and the R2 call don't read each other's result —
+//! see `r2_s3.rs`'s `list()` doc for the fail-CLOSED argument).
+//!
+//! If BOTH sides entered their own `PhaseScope` (`Phase::Audit` and
+//! `Phase::Store`) for that overlapping wall-clock window, their accumulated
+//! microseconds would NOT partition the request any more — the SAME
+//! milliseconds would be counted under two names, `attributed_ms` could
+//! exceed `total_ms`, and `oother`'s `(total_ms - attributed_ms).max(0)` guard
+//! would silently swallow the overcount into a floor of zero rather than
+//! reporting it. That would make the header LIE by omission — `Σ(phases)`
+//! would no longer be a request partition even though nothing overflowed.
+//!
+//! The concurrent seam avoids this by attributing the WHOLE joined window
+//! ONCE, to `Phase::Store`, and never entering `Phase::Audit` for it:
+//! `D1AuditOutboxSink::append_async` (the audit half of the join) is a bare
+//! future with NO `PhaseScope` of its own — only the serial
+//! `write_blocking` bridge (used by every other audit call, including
+//! `list()`'s own fallback path when no async-capable sink is wired) still
+//! enters `Phase::Audit`. So: on the concurrent `list()` path, `ostore`
+//! reports the FULL joined window (audit + R2, whichever finishes last) and
+//! `oaudit` reports nothing for that specific write — `oaudit` is
+//! unaffected everywhere else (every mutation path — write/update/delete —
+//! stays fully serial and keeps entering `Phase::Audit` exactly as before;
+//! see `r2_s3.rs` for why those paths were NOT made concurrent). The
+//! four-way sum therefore still partitions the request exactly, by
+//! construction, not by the `max(0)` guard papering over an overcount.
+//!
 //! ## Coverage caveats — stated, not faked
 //!
 //! * `ostore` instruments [`crate::adapter_cache::MoatCache`], which backs the
@@ -81,7 +117,9 @@
 //!   `write_blocking` — the ONE blocking-D1 choke point every CAS/AC audit
 //!   `emit`/`append` call routes through, native plane only (the moat
 //!   surfaces' cache-hit audit trail is a separate, already-async path and is
-//!   not in `oaudit`).
+//!   not in `oaudit`). EXCEPT the native `list()` read path's concurrent
+//!   audit write, which is charged to `ostore` instead — see "Concurrent
+//!   native-plane list seam" above.
 //! * The layer stops timing when the handler returns its `Response`. For a
 //!   buffered body (every route on the measured `/cargo` path) that is the whole
 //!   cost; for a streamed body the streaming itself is outside `oother` — and it
