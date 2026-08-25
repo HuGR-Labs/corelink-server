@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Runs `scripts/runner_wedge_watchdog.py` on the Mac that hosts the
+  `corelink-builder-{1..5}` runners. It must run HERE, as the same user that
+  owns the runner LaunchAgents, because `launchctl kickstart` can only reach
+  services in that user's own domain — which is exactly why the existing
+  `runner-fleet health` workflow can detect the wedge and never fix it.
+
+  Install (per host, once):
+    cp deploy/launchd/com.corelink.runner-wedge-watchdog.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.corelink.runner-wedge-watchdog.plist
+    launchctl kickstart -p gui/$(id -u)/com.corelink.runner-wedge-watchdog   # first run now
+
+  Verify it holds when the fleet is healthy (it should print `hold`):
+    python3 scripts/runner_wedge_watchdog.py (with the dry-run flag)
+
+  EDIT THE ABSOLUTE PATHS BELOW to match this checkout. launchd resolves
+  neither `~` nor `$PATH` the way a shell does, so the repo path and the
+  interpreter are spelled out.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.corelink.runner-wedge-watchdog</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/Users/CHANGE-ME/Documents/HuGR/corelink-server/scripts/runner_wedge_watchdog.py</string>
+    <string>--min-age-s</string>
+    <string>600</string>
+  </array>
+
+  <!-- `gh` lives in /usr/local/bin or /opt/homebrew/bin depending on the arch;
+       both are listed so the script's `gh api` call resolves under launchd,
+       which starts with a near-empty PATH. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <!-- Every 5 minutes. The watchdog only acts on work queued at or beyond 10 minutes, so
+       this cadence cannot make it twitchy; it bounds how long a real wedge
+       lasts to roughly one tick plus the age threshold. -->
+  <key>StartInterval</key>
+  <integer>300</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/corelink-runner-wedge-watchdog.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/corelink-runner-wedge-watchdog.log</string>
+</dict>
+</plist>

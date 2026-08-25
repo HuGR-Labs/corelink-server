@@ -421,3 +421,63 @@ was closed unmerged on 2026-08-03. Its measurement work was sound and is
 preserved here; its code was superseded by **#1003** (migration wave 1),
 **#1005** (wave 2), and `runner-probe.yml` on `main`. Sections 9–10 post-date
 #932 and revise its priority order.
+
+---
+
+## The Mac fleet wedges `busy=true`, and until 2026-08-25 nothing could fix it
+
+**Measured 2026-08-25.** Every job on `[self-hosted, mac, corelink-builder]` —
+`dco`, `changelog-validate`, the label and size-bucket jobs, `Docs Reality Gate` —
+sat `queued` for **12 hours**, which blocks every merge, because those are exactly
+the checks the merge gate requires. The five builders reported `busy=true` to
+GitHub while zero jobs were in progress on the host.
+
+The Cloudflare fabric was **healthy the whole time** — jobs on the `corelink`
+label (`okf-wiki-validation`, `autoreconcile`) ran normally, and the spawn
+worker's own tail showed boxes spawning and tearing down. That is what made the
+outage read as "CI is slow" instead of as a wedged host, and it is why the first
+hour of diagnosis went to the wrong component. **The label a stuck job asked for
+is the first thing to look at**, not the fabric.
+
+Two remedies that do NOT work, both tried:
+
+- `gh run cancel` + `gh run rerun` — it recreates the job, which then joins the
+  same queue with no runner able to take it.
+- the spawn worker's re-drive reconciler (`redriveOrphanedJobs`, 1-minute cron) —
+  it covers the ephemeral Cloudflare fleet, not the Macs, and is bounded at
+  `MAX_ORPHAN_ATTEMPTS = 3` with a 30-minute dead-letter TTL, so a job stranded
+  longer than that is never revisited.
+
+The remedy that works is `launchctl kickstart -k` on each builder service. All
+five recovered within a minute and drained the queue.
+
+**Never `pkill` by pattern here.** The CI runners *are* processes on this Mac;
+pattern-killing has taken down the runner that was executing the very job doing
+the killing.
+
+### The watchdog
+
+`scripts/runner_wedge_watchdog.py` + `deploy/launchd/com.corelink.runner-wedge-watchdog.plist`
+automate exactly that recovery, on the Mac, because `launchctl kickstart` only
+reaches services in the invoking user's own domain — which is why
+`scripts/check_runner_fleet.py` and the `runner-fleet health` workflow can *detect*
+this condition (they already name it) and can never *fix* it: they run on the
+ephemeral fabric with no admin token and no `launchctl`.
+
+It restarts a builder only when BOTH hold:
+
+1. GitHub reports a job queued for our labels for at least `--min-age-s`
+   (default 600 s); **and**
+2. this host has no `Runner.Worker` process alive — local proof that no job is
+   executing here.
+
+(2) is the interlock, and it is read from the host's process table rather than
+from GitHub's `busy` flag, because `busy` is precisely the field that lies when
+the fleet is wedged (and reading it needs a repo-admin token this host does not
+have — BACKLOG B-012). A wedged listener holds no `Runner.Worker`, so the
+restart is safe; a working one does, so the watchdog holds and says so.
+
+The service list is spelled out rather than globbed: this Mac also hosts the
+runners of `hugr-wallet`, `githugr`, `hugit`, `corelink-workspaces` and others,
+and a wildcard over `actions.runner.*` would restart someone else's runner
+mid-job.
