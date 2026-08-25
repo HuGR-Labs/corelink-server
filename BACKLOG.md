@@ -1866,13 +1866,16 @@ it would make a security-path change large and rushed at the same time.
 id: B-039
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  grep -rl "releases/download/v.*tla2tools\.jar" .github/workflows scripts >/dev/null
+  if grep -rl "releases/download/v.*tla2tools\.jar" .github/workflows scripts > /dev/null; then exit 1; fi
+  curl -fsS -o /dev/null --max-time 30 "https://corelink-artifacts.humangr.com/tlaplus/v1.8.0/eabd140a70f49eb9305a3bd3f3df944eddf87e5a90d329789085f8953a80533a/tla2tools.jar"
 verify-means: |
-  open while any carrier still fetches the jar from the mutable upstream release
-  URL. Goes red when every carrier points at storage we control.
-last-verified: 2026-08-24
+  done while NO carrier fetches the jar from the mutable upstream release URL AND
+  our own copy still serves. Two-sided on purpose: the first half alone would stay
+  green if the mirror vanished, leaving CI pointing at a URL that 404s, and the
+  second alone would stay green if someone quietly re-added the upstream fetch.
+last-verified: 2026-08-25
 ```
 
 ### B-040 — `| head` under pipefail is the same SIGPIPE defect, left open on purpose

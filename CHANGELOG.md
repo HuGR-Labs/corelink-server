@@ -24,6 +24,22 @@ Each entry cross-references:
 
 ### Security
 
+- **CI no longer fetches `tla2tools.jar` from a URL upstream overwrites (B-039).**
+  `tlaplus` re-cuts the asset behind the unchanged `v1.8.0` tag: five distinct
+  SHA-256 values for one tag between 2026-04 and 2026-08, each presenting as a
+  supply-chain pin violation indistinguishable at the point of failure from a
+  real compromise — and one of them went unnoticed for 195 runs while five TLA+
+  gates proved nothing and still appeared in the rotation. The verified jar now
+  lives in R2 (`corelink-ci-artifacts`) behind a proxied custom domain,
+  `corelink-artifacts.humangr.com`, keyed by its own SHA-256 so **the pin is the
+  address**: re-pinning without uploading the matching jar 404s loudly instead of
+  silently fetching different bytes. The hash check in every carrier stays and can
+  now only fail if OUR copy changed. Maven Central was checked as a neutral
+  immutable source and does not carry this artifact
+  (`org/lamport/tla2tools/1.8.0` -> 404), so the copy had to be ours. ADR-0042
+  §A1 records the change; its "standing recommendation", made three times since
+  2026-06-02, is finally executed rather than restated.
+
 - **Turborepo remote-cache PUT is now create-only (`put_if_absent`) — 409 on an
   existing key (B-024).** Turborepo keys are opaque/client-chosen, not
   content-addressed, so a `cas:rw` credential could previously REPLACE the bytes
