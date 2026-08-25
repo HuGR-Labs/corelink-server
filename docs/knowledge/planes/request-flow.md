@@ -15,8 +15,8 @@ source_blobs:
   - "crates/corelink-container/src/routes.rs@8603539ebcedf67dcb10e9265efdb688aae9b97e"
   - "crates/corelink-container/src/origin_timing.rs@73aa3cb2c904d8ccc7b0a3b6de647908331055f9"
   - "crates/corelink-container/src/storage/d1_audit_sink.rs@3e35e9a137acd87e7cff1e5e75f8b3823a11fe07"
-  - "crates/corelink-container/src/storage/r2_s3.rs@ae28946a9634b8d359296804f8ba752699f2cfe7"
-checkpoint_sha: "325a0a2abdbc78ef7318e866d671ee974e12b6aa"
+  - "crates/corelink-container/src/storage/r2_s3.rs@9246123782339846f3e737c84c95533b75eb3a58"
+checkpoint_sha: "15ed4b03c2aa8866c4d44ad6d2e4b4d24a699c06"
 provenance: "AUTHORED"
 tags: ["planes", "request-flow", "topology", "end-to-end"]
 timestamp: "2026-06-26T00:00:00Z"
