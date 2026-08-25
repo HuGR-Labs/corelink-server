@@ -1,9 +1,20 @@
 name: endurance-2h-nightly (R-prep)
 
-# Pinned to [self-hosted, Linux, X64] — no Linux runner currently exists on the
-# fleet; converted to workflow_dispatch-only to stop perpetual queuing. Re-add
-# the nightly `schedule` once a Linux self-hosted runner is registered (these k6
-# suites are too heavy for the macOS builder fleet).
+# Runner: `corelink` — the Cloudflare container fabric (Ubuntu 24.04, apt +
+# sudo available, which is what the k6 apt install below needs).
+#
+# 2026-08-25 (B-037): both jobs were pinned to `[self-hosted, Linux, X64]`, a
+# label NO runner in the fleet carries, so neither could ever be scheduled — and
+# a workflow that cannot be scheduled is indistinguishable, in every view that
+# matters, from one that passes. The header claimed the cause was "no Linux
+# runner exists on the fleet". That stopped being true when the container fabric
+# landed: `corelink` IS Linux, and `buck2-starter-ci` / `sign-windows` had
+# already moved to it for exactly this reason. The claim outlived the fact.
+#
+# STILL dispatch-only. Re-arming the nightly cron is a SPEND decision, not a
+# wiring one: this is a 2-hour job and the container fabric is metered. The
+# cadence rule would justify a cron (staging drift changes without a commit),
+# but that is the owner's money and it is not mine to start spending silently.
 #
 # R-prep endurance load — 2-hour variant of the 24h endurance drill.
 #
@@ -20,9 +31,9 @@ name: endurance-2h-nightly (R-prep)
 # SHA-pinned per ADR-S12-045 §6 tooling-pin policy.
 
 on:
-  # schedule disabled: pinned to [self-hosted, Linux, X64] but no Linux runner
-  # exists on the fleet, so the nightly cron queued forever. Re-add once a Linux
-  # self-hosted runner is registered:
+  # schedule deliberately absent — see the header. The runner-label defect that
+  # originally forced this is fixed; what remains is the cost decision. To
+  # re-arm, add:
   #   schedule:
   #     # 03:00 UTC daily — well after the 02:00 UTC weekly load-test-nightly
   #     # so they don't contend for staging.
@@ -46,7 +57,7 @@ concurrency:
 jobs:
   endurance-2h:
     name: k6 endurance 2h (staging)
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: corelink
     environment: staging
     # Budget: 2h script + 5min ramp-up + 5min ramp-down + ~10min for k6
     # boot / artifact upload / baseline compare = 140 minutes ceiling.
@@ -133,7 +144,7 @@ jobs:
 
   baseline-drift-check:
     name: 7-day rolling p99 drift (≤ +20% per SLO)
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: corelink
     needs: endurance-2h
     if: always()
     permissions:

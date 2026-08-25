@@ -87,6 +87,21 @@ Each entry cross-references:
 
 ### Fixed
 
+- **A load workflow was pinned to a runner label nothing in the fleet carries
+  (B-037, second half).** `endurance-2h-nightly` had both jobs on
+  `runs-on: [self-hosted, Linux, X64]`; the fleet has `corelink`
+  (Firecracker/Linux) and `[self-hosted, mac, corelink-builder]`. Neither job
+  could ever be scheduled — and a workflow that cannot be scheduled is
+  indistinguishable, in every view that matters, from one that passes. Its header
+  blamed "no Linux runner exists on the fleet", which was true when written and
+  false since the container fabric landed: `buck2-starter-ci` and `sign-windows`
+  had already moved to `corelink` for exactly this reason. The claim outlived the
+  fact. Both jobs now target `corelink`; the workflow stays dispatch-only,
+  because re-arming a nightly TWO-HOUR job on metered fabric is a spend decision
+  rather than a wiring one. The original "six workflows" count was five files
+  documenting their own migration plus one real site — anchoring the check on
+  `^\s*runs-on:` is what separates them.
+
 - **The only end-to-end proof of the checkout path had never run (B-042).**
   `tests/e2e-browser` — a real Clerk session in a real browser against the
   deployed app, the only vantage that can exercise the money path — was absent

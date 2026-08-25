@@ -1651,27 +1651,46 @@ publish what the trust pages cite, or stop citing what cannot be published. What
 is NOT acceptable is the current state, where the gate is green because it holds
 a credential the reader does not.
 
-**Six workflows are pinned to a label no runner holds.** `runs-on:
-[self-hosted, Linux, X64]` appears in six workflow files; the fleet has
-`corelink` (Firecracker/Linux) and `[self-hosted, mac, corelink-builder]`, and
-nothing carries that triple. Those workflows cannot execute. `load-test-nightly`
-documents this in its own header and has had its cron removed; the other five
-have not been checked. A workflow that cannot be scheduled is indistinguishable
-from one that passes, in every view that matters.
+**Six workflows are pinned to a label no runner holds — CLOSED 2026-08-25.**
+`runs-on: [self-hosted, Linux, X64]` appeared in six workflow files; the fleet
+has `corelink` (Firecracker/Linux) and `[self-hosted, mac, corelink-builder]`,
+and nothing carries that triple. A workflow that cannot be scheduled is
+indistinguishable, in every view that matters, from one that passes.
+
+On inspection only ONE file still had it in a `runs-on:` — `endurance-2h-nightly`
+(both jobs). The other five mention the label only in comments DOCUMENTING their
+own migration, so the original count of six was this register's own prose being
+counted back at it (the same shape as [B-005]'s check counting its own comment).
+Anchoring on `^\s*runs-on:` gives the real number.
+
+`endurance-2h-nightly` now runs on `corelink`. Its header had claimed the cause
+was "no Linux runner exists on the fleet" — true when written, false since the
+container fabric landed; `buck2-starter-ci` and `sign-windows` had already moved
+there for exactly this reason. The claim outlived the fact. It stays
+dispatch-only: re-arming a nightly 2-HOUR job on metered fabric is a spend
+decision, not a wiring one, and that is the owner's call.
+
+What remains open here is the FIRST half — the authenticated link checker.
 
 ```backlog
 id: B-037
 repo: corelink-server
 owner: tl
 status: open
-verify: |
-  test "$(grep -rl 'self-hosted, Linux, X64' .github/workflows/*.yml | wc -l | tr -d ' ')" -gt 0
+verify: manual
 verify-means: |
-  open while any workflow targets a runner label the fleet does not provide.
-  Covers only the second half; the authenticated-lychee half has no mechanical
-  predicate yet, which is itself the point — write one when the trust-page
-  decision lands.
-last-verified: 2026-08-24
+  The runner-label half is closed and has its own standing check: no workflow
+  carries a `runs-on:` the fleet cannot serve —
+  `grep -rnE "^\s*runs-on:.*self-hosted, Linux, X64" .github/workflows/*.yml`
+  must find nothing (it finds nothing as of 2026-08-25). Note the anchor: the
+  unanchored version counted five files that only DOCUMENT the migration.
+  What keeps this item open is the authenticated-lychee half, and it is MANUAL
+  because the only honest check is expensive: build the docs and run the link
+  checker WITHOUT a token — the customer's credential — and compare. The 2 589
+  figure predates #1271, which cut the authenticated count to 0, so the number
+  itself needs re-measuring before anyone acts on it. Manual decay is the point:
+  in 14 days this has to be looked at again rather than assumed.
+last-verified: 2026-08-25
 ```
 
 ## Needs the owner
