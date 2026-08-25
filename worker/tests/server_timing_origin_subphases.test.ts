@@ -356,6 +356,33 @@ describe("Server-Timing `origin` sub-phase attribution", () => {
       ]);
     });
 
+    it("consumes the detail phases instead of blaming the network for them", () => {
+      // The regression this case exists to prevent SHIPPED and was measured in
+      // prod: the container emitted `oaudit` (the blocking durable-audit D1
+      // write, ~100 ms) but the allowlist did not carry the name, so the split
+      // dropped it and its milliseconds landed in `ohop` — real container work
+      // reported as network. With CORELINK_ORIGIN_TIMING_DETAIL armed, `ohop`
+      // read 114-125 ms on the same tenant and colo where it reads 17-20 ms
+      // unarmed. Every phase the container can emit must be consumed here.
+      expect(
+        originSubPhases(
+          300,
+          "opat;dur=5, oquota;dur=0, ostore;dur=60, oargon;dur=30, opermit;dur=2, " +
+            "ortier;dur=3, oaudit;dur=100, oother;dur=1",
+        ),
+      ).toEqual([
+        "ohop;dur=99",
+        "opat;dur=5",
+        "oquota;dur=0",
+        "ostore;dur=60",
+        "oargon;dur=30",
+        "opermit;dur=2",
+        "ortier;dur=3",
+        "oaudit;dur=100",
+        "oother;dur=1",
+      ]);
+    });
+
     it("returns no split at all when there is no container header", () => {
       expect(originSubPhases(300, null)).toEqual([]);
       expect(originSubPhases(300, "cache;desc=miss")).toEqual([]);

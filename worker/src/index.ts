@@ -4283,15 +4283,36 @@ export function isDsrEraseFanoutPath(pathSuffix: string): boolean {
  *   - `opat`   — the container's per-request D1 `pat` row read (#1022 kept it
  *                so a revocation takes effect immediately)
  *   - `oquota` — the per-tenant monthly `$`-ceiling check/accrue (ADR-0068)
- *   - `ostore` — the moat storage lookup: url-map read + CAS/R2 blob
+ *   - `ostore` — the moat storage lookup (url-map read + CAS/R2 blob) and the
+ *                native CAS/AC plane's R2 object calls
+ *   - `oargon`/`opermit`/`ortier`/`oaudit` — the detail phases the container
+ *                emits only when `CORELINK_ORIGIN_TIMING_DETAIL=on`: Argon2id
+ *                verification, its permit wait, the D1 tier resolution, and the
+ *                blocking durable-audit D1 write
  *   - `oother` — the container's own residue (routing, rate-limit layer, HMAC,
- *                Argon2id or its memo hit, response assembly)
+ *                response assembly)
+ *
+ * A name NOT on this list is dropped, and a dropped phase's milliseconds land in
+ * `ohop` — i.e. real container work is reported as network. That is exactly what
+ * happened when the detail phases shipped: with the flag armed, `ohop` measured
+ * 114-125 ms against 17-20 ms unarmed, on the same tenant and colo, because
+ * ~100 ms of `oaudit` was being discarded here. Any phase the container can emit
+ * MUST be on this list.
  *
  * `oother` is a residue the container computes against its OWN whole-request
  * clock, so these always sum to the container's total. (Hoisted; used in
  * `fetch` above.)
  */
-const ORIGIN_CONTAINER_PHASES = ["opat", "oquota", "ostore", "oother"] as const;
+const ORIGIN_CONTAINER_PHASES = [
+  "opat",
+  "oquota",
+  "ostore",
+  "oargon",
+  "opermit",
+  "ortier",
+  "oaudit",
+  "oother",
+] as const;
 
 /**
  * Whether this request may take the DO meter hop CONCURRENTLY with the origin
