@@ -1,29 +1,56 @@
 name: cas-datacenter-canary
 # Real-client drift canary: asserts the CAS API answers an AUTHENTICATED BLAKE3
-# round-trip 2xx from a GitHub-hosted (datacenter) IP — the customer's CI
-# environment. Catches the class of drift that is invisible to every existing
-# gate + the unauthenticated /health probes: Cloudflare edge policy (Bot Fight
-# Mode / WAF rate-limit) blocking datacenter IPs, a digest-algo regression, or a
-# route break. If this goes red, real customer CI cannot use the cache.
+# round-trip 2xx from a NON-residential IP — the customer's CI environment.
+# Catches the class of drift that is invisible to every existing gate + the
+# unauthenticated /health probes: Cloudflare edge policy (Bot Fight Mode / WAF
+# rate-limit) blocking datacenter IPs, a digest-algo regression, or a route
+# break. If this goes red, real customer CI cannot use the cache.
 #   See docs/operator/edge-security-per-plane-sota.md + memory edge-security-blocked-datacenter-ci.
+#
+# TWO vantage points, because they do not prove the same thing:
+#
+#   fabric  — `runs-on: corelink`, the Cloudflare container fabric. This is a
+#             REAL customer path (customers run their CI on `runs-on: corelink`)
+#             and it is the vantage that still works today. It does NOT prove
+#             the third-party-datacenter case: the traffic originates inside
+#             Cloudflare's own network, so an edge rule that blocks outside
+#             datacenter ranges would not show up here.
+#   hosted  — `ubuntu-latest`, a GitHub-owned datacenter IP genuinely outside
+#             our provider. This is the probe that actually answers the
+#             question the canary was built for.
+#
+# 2026-08-24: hosted Actions are payment-blocked again (job never starts:
+# ~2s, `runner: ""`, 0 steps, "recent account payments have failed"). The
+# hosted job went red 9 times in a row and the fabric half was not running at
+# all, so the ONLY probe of the cache's real-client path was dark. The hosted
+# job is therefore gated behind `vars.HOSTED_ACTIONS_AVAILABLE == 'true'`
+# (unset today) rather than left to fail hourly — a monitor that cannot start
+# is not a monitor, and an hourly red that everyone learns to ignore is worse
+# than an honest absence. Flip the variable to `true` the moment billing is
+# restored; that is the one action that brings the datacenter probe back.
 on:
   schedule:
     # HOURLY — deliberately KEPT (the CI cost diet 2026-08-01 proposed every-4h
-    # and the proposal was REJECTED on review). This job MUST stay
-    # GitHub-hosted: its whole assertion is "a DATACENTER IP can use the
-    # cache", which the self-hosted Mac fleet (residential IP) cannot prove, so
-    # cadence is its only cost lever — but the trade does not clear.
+    # and the proposal was REJECTED on review).
     #   - Real cost is NOT ~720 min/month. Measured 2026-07-15..21, GitHub
     #     drops scheduled runs under load: 10-13 dispatches/day, not 24, each
     #     ~10s = 1 billable min under the per-job floor -> ~340 min/month.
-    #   - Moving to every 4h would therefore save ~185 min/month (~9% of the
-    #     Free allowance) in exchange for 4x the detection window on the ONLY
-    #     probe that proves the edge (Bot Fight Mode / WAF / TLS floor) has not
-    #     re-blocked customer CI on a LAUNCHED product.
+    #   - Moving to every 4h would save ~185 min/month (~9% of the Free
+    #     allowance) in exchange for 4x the detection window on a LAUNCHED
+    #     product.
     #   - It is not theoretical: this canary caught a real production CAS
     #     outage on 2026-08-01 (two consecutive failures, R2 binding disabled).
     # Staggered off :00.
     - cron: "17 * * * *"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/cas-canary-roundtrip.sh"
+      - ".github/workflows/cas-canary.yml"
+  pull_request:
+    paths:
+      - "scripts/cas-canary-roundtrip.sh"
+      - ".github/workflows/cas-canary.yml"
   workflow_dispatch:
 permissions:
   contents: read
@@ -31,73 +58,34 @@ concurrency:
   group: cas-canary
   cancel-in-progress: false
 jobs:
-  roundtrip:
-    runs-on: ubuntu-latest          # datacenter IP = the customer's CI
+  fabric:
+    name: CAS round-trip (CoreLink fabric IP)
+    runs-on: corelink
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Authenticated CAS BLAKE3 round-trip against prod
         env:
           PAT: ${{ secrets.CORELINK_CANARY_PAT }}
           API: https://corelink-api.humangr.com
           TEN: 93da3f7a-984d-4ef9-86e0-b0bd9fd0252e   # dedicated canary tenant (unmetered $1M; decoupled from the paused githugr/hugit d863fafb dogfood)
-        run: |
-          set -uo pipefail
-          if [ -z "${PAT:-}" ]; then echo "::error::CORELINK_CANARY_PAT not set"; exit 1; fi
-          curl -fsSL https://github.com/BLAKE3-team/BLAKE3/releases/download/1.5.4/b3sum_linux_x64_bin -o /usr/local/bin/b3sum && chmod +x /usr/local/bin/b3sum
-          echo "runner public IP: $(curl -s https://api.ipify.org)"
-          printf 'cas-canary %s-%s' "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" > blob.bin
-          DIGEST=$(b3sum blob.bin | awk '{print $1}')
+          CANARY_VANTAGE: corelink-fabric
+          RUN_TAG: ${{ github.run_id }}-${{ github.run_attempt }}-fabric
+        run: bash scripts/cas-canary-roundtrip.sh
 
-          echo "== PUT =="
-          put=$(curl -s -o put.out -D put.hdr -w '%{http_code}' -X PUT \
-            -H "Authorization: Bearer $PAT" -H "Content-Type: application/octet-stream" \
-            --data-binary @blob.bin --max-time 20 "$API/v1/cas/$TEN/$DIGEST")
-          echo "PUT http=$put"
-          echo "== GET =="
-          get=$(curl -s -o got.bin -D get.hdr -w '%{http_code}' \
-            -H "Authorization: Bearer $PAT" --max-time 20 "$API/v1/cas/$TEN/$DIGEST")
-          echo "GET http=$get bytes=$(wc -c < got.bin)"
-
-          fail=0
-          case "$put" in 201|409) ;; *) echo "::error::CAS PUT expected 201/409, got $put"; fail=1;; esac
-          [ "$get" = "200" ] || { echo "::error::CAS GET expected 200, got $get"; fail=1; }
-          cmp -s blob.bin got.bin || { echo "::error::CAS round-trip byte mismatch"; fail=1; }
-
-          if [ "$fail" = "1" ]; then
-            # The canary used to shout WITHOUT saying why: it printed only the
-            # status code + a handful of edge markers, so an origin-side 5xx
-            # (the one class it CANNOT attribute to the edge) left no evidence
-            # at all. On 2026-08-01 it went red with PUT/GET=500 and the whole
-            # forensic trail was "500". Dump the origin's own error envelope.
-            #
-            # Redaction: bodies are the API's typed error envelope (code +
-            # detail + request id) and never echo credentials — but redact
-            # anything token-shaped anyway, since this log is world-readable on
-            # a public-workflow re-run. INV-NO-PII-IN-LOGS.
-            redact() { sed -E 's/(corelink_pat_[A-Za-z0-9_-]+|Bearer +[A-Za-z0-9._-]+)/[REDACTED]/g'; }
-
-            echo "== origin error envelope (PUT) =="
-            head -c 2000 put.out | redact || true; echo
-            echo "== origin error envelope (GET) =="
-            head -c 2000 got.bin | redact || true; echo
-
-            echo "== CoreLink origin headers (which plane answered, and why) =="
-            grep -iE 'x-corelink-|server-timing|x-request-id|cf-worker' put.hdr get.hdr | redact || echo "  (none — the response never reached a CoreLink handler)"
-
-            echo "== response headers (edge-challenge / rate-limit markers) =="
-            grep -iE 'cf-ray|cf-mitigated|server:|retry-after|cf-cache' put.hdr get.hdr || true
-
-            case "$put$get" in
-              *500*|*502*|*503*|*504*)
-                echo "::error::ORIGIN 5xx — this is NOT an edge/bot/rate-limit block (those are 403/429/challenge). The request authenticated and reached CoreLink, then the origin failed. Read the error envelope above; then check the container roll state (running image vs the wrangler.toml pin) and the D1 migration ledger."
-                ;;
-            esac
-            if grep -qi 'cf-mitigated: *challenge' put.hdr get.hdr; then
-              echo "::error::Cloudflare CHALLENGE on the cache API — Bot Fight Mode / WAF re-enabled for corelink-api? See docs/operator/edge-security-per-plane-sota.md"
-            fi
-            if [ "$put" = "429" ] || [ "$get" = "429" ]; then
-              echo "::error::429 rate-limited — is corelink-api back in the Wave-32 rate-limit rule scope?"
-            fi
-            exit 1
-          fi
-          echo "✅ CAS datacenter round-trip OK (PUT $put / GET $get / bytes identical)"
+  hosted:
+    name: CAS round-trip (third-party datacenter IP)
+    # Gated: see the header. Unset today because hosted Actions cannot start.
+    if: vars.HOSTED_ACTIONS_AVAILABLE == 'true'
+    runs-on: ubuntu-latest          # datacenter IP genuinely outside our provider
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Authenticated CAS BLAKE3 round-trip against prod
+        env:
+          PAT: ${{ secrets.CORELINK_CANARY_PAT }}
+          API: https://corelink-api.humangr.com
+          TEN: 93da3f7a-984d-4ef9-86e0-b0bd9fd0252e
+          CANARY_VANTAGE: github-hosted-datacenter
+          RUN_TAG: ${{ github.run_id }}-${{ github.run_attempt }}-hosted
+        run: bash scripts/cas-canary-roundtrip.sh
