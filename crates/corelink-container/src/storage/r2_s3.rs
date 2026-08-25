@@ -50,7 +50,9 @@ use corelink_handler_cas::InMemoryAuditSink;
 use corelink_hash::Digest;
 use corelink_tenant_path::{derive_prefix, TenantDerivationKey};
 
-use crate::storage::d1_audit_sink::{ac_audit_sink_from_d1, cas_audit_sink_from_d1};
+use crate::storage::d1_audit_sink::{
+    ac_audit_sink_from_d1_concrete, cas_audit_sink_from_d1_concrete,
+};
 use crate::storage::d1_http::D1HttpClient;
 use sha2::{Digest as _, Sha256};
 use subtle::ConstantTimeEq;
@@ -563,6 +565,18 @@ pub struct R2CasHandler {
     /// `Option<...>` because tests construct without a TDK.
     tdk: Option<TenantDerivationKey>,
     audit: Arc<dyn AuditSink>,
+    /// Narrow async-capable seam onto the SAME sink as `audit` (perf,
+    /// concurrent-list PR): `Some` only when `audit` is backed by the
+    /// durable `D1AuditOutboxSink` (the production builder always wires
+    /// this — see [`build_r2_cas_handler_from_env`] /
+    /// [`Self::with_async_audit`]). `list()` uses this to `tokio::join!`
+    /// the mandatory `ListAttempted` audit write with the R2 enumeration
+    /// instead of running them serially; `None` (tests, any other
+    /// `AuditSink` impl) keeps the fully serial fallback, byte-identical to
+    /// before this seam existed. This does NOT weaken fail-closed: the
+    /// response is still gated on the audit result, checked FIRST, exactly
+    /// as the serial path checks it — see `list()`'s doc.
+    audit_async: Option<Arc<crate::storage::d1_audit_sink::D1AuditOutboxSink>>,
     sli: Arc<dyn SliObserver>,
     /// BYOK Wave 3a (GATED-INERT): per-tenant BYOK config cache. `None` on the
     /// non-BYOK build / tests → the plaintext path runs unchanged. When `Some`
@@ -605,11 +619,31 @@ impl R2CasHandler {
             cas_region: cas_region.into(),
             tdk,
             audit,
+            audit_async: None,
             sli,
             byok_config_cache: None,
             tcs_resolver: None,
             byok_mode_b: None,
         }
+    }
+
+    /// Attach the concurrent-list async audit seam: `audit_async` MUST be
+    /// the SAME sink as the `audit` passed to [`Self::new`] (the production
+    /// builder enforces this by cloning one `Arc<D1AuditOutboxSink>` into
+    /// both places — see [`build_r2_cas_handler_from_env`]). Passing a
+    /// DIFFERENT sink here would let `list()` write its audit row to one
+    /// sink while every other call writes to another — never do that.
+    ///
+    /// Optional: a handler with `audit_async` left `None` keeps `list()`
+    /// fully serial (identical to the pre-existing behavior) — this is the
+    /// state every test handler in this module is in today.
+    #[must_use]
+    pub fn with_async_audit(
+        mut self,
+        audit_async: Arc<crate::storage::d1_audit_sink::D1AuditOutboxSink>,
+    ) -> Self {
+        self.audit_async = Some(audit_async);
+        self
     }
 
     /// Attach the BYOK Wave-3a collaborators (config cache + Tcs resolver),
@@ -1707,44 +1741,139 @@ impl CasListHandler for R2CasHandler {
             });
         }
 
-        // ListAttempted audit BEFORE enumeration.
-        self.audit
-            .emit(AuditEvent::new(
-                AuditEventKind::ListAttempted,
-                req.tenant.clone(),
-                String::new(),
-                req.principal.clone(),
-                req.at_unix_ms,
-            ))
-            .map_err(CasHandlerError::AuditFailed)?;
-
-        // Enumeration is bounded to the tenant's derived prefix —
-        // cross-tenant keys cannot appear in the result. Fail CLOSED if
-        // the prefix is not derivable: an empty prefix would list a
-        // SHARED keyspace across every non-derivable tenant.
-        let prefix = match self.r2_list_prefix(&req.tenant) {
-            Ok(p) => p,
-            Err(e) => {
-                emit(true);
-                return Err(CasHandlerError::Internal(e));
-            }
-        };
-        debug!(prefix = %prefix, "R2CasHandler::list");
-
+        // ListAttempted audit and the R2 enumeration.
+        //
+        // Enumeration is bounded to the tenant's derived prefix — cross-tenant
+        // keys cannot appear in the result. Fail CLOSED if the prefix is not
+        // derivable: an empty prefix would list a SHARED keyspace across every
+        // non-derivable tenant. Both branches below log their own R2 error
+        // (with whatever prefix they had, if any) INSIDE the branch, so the
+        // shared post-join code only has to deal in `CasHandlerError`.
         let handle = tokio::runtime::Handle::current();
-        let result = {
-            let _scope =
-                crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
-            tokio::task::block_in_place(|| {
-                handle.block_on(self.client.list_objects_page(
-                    &prefix,
-                    req.limit,
-                    req.cursor.as_deref(),
-                ))
-            })
-        };
+        type StoreResult = Result<(Vec<(String, u64, String)>, Option<String>), CasHandlerError>;
 
-        match result {
+        let (audit_result, store_result): (Result<(), String>, StoreResult) =
+            if let Some(audit_async) = self.audit_async.as_ref() {
+                // CONCURRENT PATH (production: durable D1 audit sink wired).
+                //
+                // The mandatory `ListAttempted` audit write and the R2
+                // `ListObjectsV2` call now run CONCURRENTLY — one
+                // `tokio::join!` under a single `block_in_place` +
+                // `block_on`, instead of two serial round trips (measured:
+                // ~236ms total on IAD, ~30-36ms `ostore` + ~108-120ms
+                // `oother` dominated by this blocking D1 INSERT — see the
+                // PR).
+                //
+                // FAIL-CLOSED IS PRESERVED. The two calls are dispatched
+                // together, but NEITHER result is used — and no bytes are
+                // served — until BOTH have completed and are checked BELOW,
+                // in the SAME order the old serial code checked them: the
+                // audit result first (`AuditFailed` short-circuits exactly
+                // as it did when the calls were serial), the store result
+                // second. What changes is that a failing audit no longer
+                // PREVENTS the R2 call from having been issued (it can no
+                // longer prevent it — they started together); what does NOT
+                // change is that a failing audit still prevents any R2
+                // result from ever reaching the caller. "No bytes served
+                // without the audit row" holds; "no R2 request issued
+                // without the audit row" is the guarantee traded away for
+                // the latency win, and it was never a stated invariant —
+                // only "audit before enumeration" was, and enumeration
+                // (returning rows to the caller) still cannot happen without
+                // the audit row.
+                //
+                // Cross-tenant denial (above) is UNAFFECTED — it returns
+                // before this point and never joins anything.
+                let audit_fut = audit_async.emit_cas_async(AuditEvent::new(
+                    AuditEventKind::ListAttempted,
+                    req.tenant.clone(),
+                    String::new(),
+                    req.principal.clone(),
+                    req.at_unix_ms,
+                ));
+                let store_fut = async {
+                    let prefix = self
+                        .r2_list_prefix(&req.tenant)
+                        .map_err(CasHandlerError::Internal)?;
+                    debug!(prefix = %prefix, "R2CasHandler::list");
+                    self.client
+                        .list_objects_page(&prefix, req.limit, req.cursor.as_deref())
+                        .await
+                        .map_err(|e| {
+                            warn!(error = %e, prefix = %prefix, "R2CasHandler::list error");
+                            CasHandlerError::Internal(e)
+                        })
+                };
+                // ONE `Phase::Store` scope wraps the ENTIRE joined window —
+                // NOT two separate scopes (one per future) — so the
+                // overlapping wall time is attributed exactly once.
+                // `oaudit` (`Phase::Audit`) is deliberately NOT entered
+                // here: `append_async` (which this drives) skips its own
+                // scope for exactly this reason. See `origin_timing.rs`'s
+                // "Concurrent native-plane list seam" note — without this,
+                // the two phases would double-count the same wall-clock
+                // window and the `Σ(phases) ≤ total` invariant would break.
+                let _scope =
+                    crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+                tokio::task::block_in_place(|| {
+                    handle.block_on(async { tokio::join!(audit_fut, store_fut) })
+                })
+            } else {
+                // SERIAL FALLBACK — byte-identical to the pre-existing
+                // behavior. Taken whenever `audit_async` is unset (every
+                // test handler in this module, and any future `AuditSink`
+                // impl that is not the durable D1 sink).
+                let audit_result = self.audit.emit(AuditEvent::new(
+                    AuditEventKind::ListAttempted,
+                    req.tenant.clone(),
+                    String::new(),
+                    req.principal.clone(),
+                    req.at_unix_ms,
+                ));
+                let store_result = if audit_result.is_err() {
+                    // Mirrors the old code exactly: on audit failure it
+                    // returned via `?` before ever touching the prefix or
+                    // R2 — never compute or evaluate the store side here.
+                    Ok((Vec::new(), None))
+                } else {
+                    let prefix = match self.r2_list_prefix(&req.tenant) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            emit(true);
+                            return Err(CasHandlerError::Internal(e));
+                        }
+                    };
+                    debug!(prefix = %prefix, "R2CasHandler::list");
+                    let result = {
+                        let _scope = crate::origin_timing::PhaseScope::enter(
+                            crate::origin_timing::Phase::Store,
+                        );
+                        tokio::task::block_in_place(|| {
+                            handle.block_on(self.client.list_objects_page(
+                                &prefix,
+                                req.limit,
+                                req.cursor.as_deref(),
+                            ))
+                        })
+                    };
+                    match result {
+                        Ok(ok) => Ok(ok),
+                        Err(e) => {
+                            warn!(error = %e, prefix = %prefix, "R2CasHandler::list error");
+                            emit(true);
+                            return Err(CasHandlerError::Internal(e));
+                        }
+                    }
+                };
+                (audit_result, store_result)
+            };
+
+        if let Err(e) = audit_result {
+            emit(true);
+            return Err(CasHandlerError::AuditFailed(e));
+        }
+
+        match store_result {
             Ok((rows, next_cursor)) => {
                 let blobs = rows
                     .into_iter()
@@ -1759,9 +1888,10 @@ impl CasListHandler for R2CasHandler {
                 Ok(CasListResponse::new(blobs, next_cursor))
             }
             Err(e) => {
-                warn!(error = %e, prefix = %prefix, "R2CasHandler::list error");
+                // Already `warn!`-logged (with prefix, where one was
+                // available) at the point the error was produced above.
                 emit(true);
-                Err(CasHandlerError::Internal(e))
+                Err(e)
             }
         }
     }
@@ -1810,7 +1940,14 @@ pub async fn build_r2_cas_handler_from_env(
     // REFUSE to build the handler — the route mounts the fail-CLOSED 503
     // handler, never a silent in-memory fallback (mirrors the `R2_TDK_HEX`
     // refusal above).
-    let audit = match cas_audit_sink_from_d1(D1HttpClient::new(&env)) {
+    //
+    // The CONCRETE `Arc<D1AuditOutboxSink>` is kept (not just the
+    // type-erased `Arc<dyn AuditSink>`) so it can ALSO be wired as the
+    // handler's `audit_async` seam below — same sink instance, two views:
+    // the sync `AuditSink` trait object every non-list call still uses, and
+    // the concrete type `list()` uses to `tokio::join!` the audit write
+    // with the R2 enumeration (perf: concurrent native-plane list).
+    let audit_concrete = match cas_audit_sink_from_d1_concrete(D1HttpClient::new(&env)) {
         Ok(a) => a,
         Err(e) => {
             tracing::error!(
@@ -1821,6 +1958,7 @@ pub async fn build_r2_cas_handler_from_env(
             return Some(Err(e));
         }
     };
+    let audit: Arc<dyn AuditSink> = audit_concrete.clone();
     let sli = Arc::new(InMemorySliObserver::new());
     Some(Ok(R2CasHandler::new(
         client,
@@ -1828,7 +1966,8 @@ pub async fn build_r2_cas_handler_from_env(
         Some(tdk_bytes),
         audit,
         sli,
-    )))
+    )
+    .with_async_audit(audit_concrete)))
 }
 
 /// A sync `AcLookupHandler` + `AcUpdateHandler` backed by [`R2S3Client`].
@@ -1852,6 +1991,10 @@ pub struct R2AcHandler {
     /// Tenant derivation key — see [`R2CasHandler`].
     tdk: Option<TenantDerivationKey>,
     audit: Arc<dyn corelink_handler_ac::AuditSink>,
+    /// Narrow async-capable seam onto the SAME sink as `audit` — AC
+    /// counterpart of [`R2CasHandler::audit_async`]; see there for the full
+    /// rationale. `list()` uses this; `None` keeps it fully serial.
+    audit_async: Option<Arc<crate::storage::d1_audit_sink::D1AuditOutboxSink>>,
     sli: Arc<dyn corelink_handler_ac::SliObserver>,
     /// BYOK Wave 3b (GATED-INERT): per-tenant BYOK config cache. `None` on the
     /// non-BYOK build / tests → the plaintext path runs unchanged. When `Some`
@@ -1893,11 +2036,24 @@ impl R2AcHandler {
             ac_region: ac_region.into(),
             tdk,
             audit,
+            audit_async: None,
             sli,
             byok_config_cache: None,
             tcs_resolver: None,
             byok_mode_b: None,
         }
+    }
+
+    /// AC counterpart of [`R2CasHandler::with_async_audit`] — same
+    /// same-sink invariant applies (`audit_async` MUST be the same
+    /// `D1AuditOutboxSink` behind `audit`).
+    #[must_use]
+    pub fn with_async_audit(
+        mut self,
+        audit_async: Arc<crate::storage::d1_audit_sink::D1AuditOutboxSink>,
+    ) -> Self {
+        self.audit_async = Some(audit_async);
+        self
     }
 
     /// Attach the BYOK Wave-3b collaborators (config cache + Tcs resolver),
@@ -2604,43 +2760,98 @@ impl corelink_handler_ac::AcListHandler for R2AcHandler {
             });
         }
 
-        // ListAttempted audit BEFORE enumeration.
-        self.audit
-            .emit(AcAuditEvent::new(
-                AcAuditEventKind::ListAttempted,
-                req.tenant.clone(),
-                String::new(),
-                req.principal.clone(),
-                req.at_unix_ms,
-            ))
-            .map_err(AcHandlerError::AuditFailed)?;
-
-        // Enumeration is bounded to the tenant's derived prefix. Fail
-        // CLOSED if the prefix is not derivable: an empty prefix would
-        // list a SHARED keyspace across every non-derivable tenant.
-        let prefix = match self.r2_list_prefix(&req.tenant) {
-            Ok(p) => p,
-            Err(e) => {
-                self.emit_lookup_sli(true);
-                return Err(AcHandlerError::Internal(e));
-            }
-        };
-        debug!(prefix = %prefix, "R2AcHandler::list");
-
+        // ListAttempted audit and the R2 enumeration — AC counterpart of
+        // `R2CasHandler::list`'s concurrent seam; see that doc for the full
+        // fail-CLOSED rationale (audit result checked first, in the same
+        // order as the old serial code; store-side error already
+        // `warn!`-logged at the point it is produced).
         let handle = tokio::runtime::Handle::current();
-        let result = {
-            let _scope =
-                crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
-            tokio::task::block_in_place(|| {
-                handle.block_on(self.client.list_objects_page(
-                    &prefix,
-                    req.limit,
-                    req.cursor.as_deref(),
-                ))
-            })
-        };
+        type StoreResult = Result<(Vec<(String, u64, String)>, Option<String>), AcHandlerError>;
 
-        match result {
+        let (audit_result, store_result): (Result<(), String>, StoreResult) =
+            if let Some(audit_async) = self.audit_async.as_ref() {
+                // CONCURRENT PATH (production: durable D1 audit sink wired).
+                // See `R2CasHandler::list` for the full rationale — this
+                // mirrors it exactly for the AC surface.
+                let audit_fut = audit_async.emit_ac_async(AcAuditEvent::new(
+                    AcAuditEventKind::ListAttempted,
+                    req.tenant.clone(),
+                    String::new(),
+                    req.principal.clone(),
+                    req.at_unix_ms,
+                ));
+                let store_fut = async {
+                    let prefix = self
+                        .r2_list_prefix(&req.tenant)
+                        .map_err(AcHandlerError::Internal)?;
+                    debug!(prefix = %prefix, "R2AcHandler::list");
+                    self.client
+                        .list_objects_page(&prefix, req.limit, req.cursor.as_deref())
+                        .await
+                        .map_err(|e| {
+                            warn!(error = %e, prefix = %prefix, "R2AcHandler::list error");
+                            AcHandlerError::Internal(e)
+                        })
+                };
+                // ONE `Phase::Store` scope for the whole joined window — see
+                // `R2CasHandler::list` for why (never double-count against
+                // `oaudit`).
+                let _scope =
+                    crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+                tokio::task::block_in_place(|| {
+                    handle.block_on(async { tokio::join!(audit_fut, store_fut) })
+                })
+            } else {
+                // SERIAL FALLBACK — byte-identical to the pre-existing
+                // behavior (every test handler in this module today).
+                let audit_result = self.audit.emit(AcAuditEvent::new(
+                    AcAuditEventKind::ListAttempted,
+                    req.tenant.clone(),
+                    String::new(),
+                    req.principal.clone(),
+                    req.at_unix_ms,
+                ));
+                let store_result = if audit_result.is_err() {
+                    Ok((Vec::new(), None))
+                } else {
+                    let prefix = match self.r2_list_prefix(&req.tenant) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            self.emit_lookup_sli(true);
+                            return Err(AcHandlerError::Internal(e));
+                        }
+                    };
+                    debug!(prefix = %prefix, "R2AcHandler::list");
+                    let result = {
+                        let _scope = crate::origin_timing::PhaseScope::enter(
+                            crate::origin_timing::Phase::Store,
+                        );
+                        tokio::task::block_in_place(|| {
+                            handle.block_on(self.client.list_objects_page(
+                                &prefix,
+                                req.limit,
+                                req.cursor.as_deref(),
+                            ))
+                        })
+                    };
+                    match result {
+                        Ok(ok) => Ok(ok),
+                        Err(e) => {
+                            warn!(error = %e, prefix = %prefix, "R2AcHandler::list error");
+                            self.emit_lookup_sli(true);
+                            return Err(AcHandlerError::Internal(e));
+                        }
+                    }
+                };
+                (audit_result, store_result)
+            };
+
+        if let Err(e) = audit_result {
+            self.emit_lookup_sli(true);
+            return Err(AcHandlerError::AuditFailed(e));
+        }
+
+        match store_result {
             Ok((rows, next_cursor)) => {
                 let refs = rows
                     .into_iter()
@@ -2653,9 +2864,10 @@ impl corelink_handler_ac::AcListHandler for R2AcHandler {
                 Ok(AcListResponse::new(refs, next_cursor))
             }
             Err(e) => {
-                warn!(error = %e, prefix = %prefix, "R2AcHandler::list error");
+                // Already `warn!`-logged (with prefix, where available) at
+                // the point the error was produced above.
                 self.emit_lookup_sli(true);
-                Err(AcHandlerError::Internal(e))
+                Err(e)
             }
         }
     }
@@ -2701,7 +2913,9 @@ pub async fn build_r2_ac_handler_from_env(
     // space is not content-addressed, so a lost/forged audit row is even more
     // dangerous. Wire the D1 `audit_outbox` sink or REFUSE (route mounts the
     // fail-CLOSED handler, never a volatile in-memory fallback).
-    let audit = match ac_audit_sink_from_d1(D1HttpClient::new(&env)) {
+    // Kept concrete for `with_async_audit` too — see the matching comment in
+    // `build_r2_cas_handler_from_env`.
+    let audit_concrete = match ac_audit_sink_from_d1_concrete(D1HttpClient::new(&env)) {
         Ok(a) => a,
         Err(e) => {
             tracing::error!(
@@ -2712,6 +2926,7 @@ pub async fn build_r2_ac_handler_from_env(
             return Some(Err(e));
         }
     };
+    let audit: Arc<dyn corelink_handler_ac::AuditSink> = audit_concrete.clone();
     let sli = Arc::new(corelink_handler_ac::InMemorySliObserver::new());
     Some(Ok(R2AcHandler::new(
         client,
@@ -2719,7 +2934,8 @@ pub async fn build_r2_ac_handler_from_env(
         Some(tdk_bytes),
         audit,
         sli,
-    )))
+    )
+    .with_async_audit(audit_concrete)))
 }
 
 /// Load the tenant derivation key from `R2_TDK_HEX` env var (64 hex chars =
@@ -3120,6 +3336,176 @@ mod tests {
             "R2AcHandler::lookup's block_in_place R2 GET must be attributed \
              to Phase::Store (ostore) even when the call errors. Header: {header}"
         );
+    }
+
+    // ---------------------------------------------------------------
+    // Concurrent audit+R2 `list()` seam
+    // ---------------------------------------------------------------
+
+    /// `list()`'s SERIAL FALLBACK path (`audit_async` unset — every test
+    /// handler in this module) is exercised no differently than before this
+    /// PR: the `block_in_place` R2 `ListObjectsV2` call still lands in
+    /// `Phase::Store` (`ostore`). Network-free (stub S3 endpoint), so this
+    /// runs in CI, unlike the concurrent-path test below.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn r2_cas_list_serial_fallback_attributes_the_r2_call_to_ostore() {
+        let handler = std::sync::Arc::new(make_test_handler("iad").await);
+
+        let app = axum::Router::new()
+            .route(
+                "/x",
+                axum::routing::get(move || {
+                    let handler = std::sync::Arc::clone(&handler);
+                    async move {
+                        let req = corelink_handler_cas::CasListRequest::new(
+                            "tenant-x",
+                            "caller@tenant-x",
+                            "tenant-x",
+                            10,
+                            None,
+                            1,
+                        );
+                        let _ = CasListHandler::list(&*handler, req);
+                        axum::http::StatusCode::OK
+                    }
+                }),
+            )
+            .layer(axum::middleware::from_fn(
+                crate::origin_timing::origin_timing_layer,
+            ));
+
+        let resp = tower::ServiceExt::oneshot(
+            app,
+            axum::http::Request::builder()
+                .uri("/x")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        let header = resp
+            .headers()
+            .get("server-timing")
+            .expect("origin_timing_layer must stamp Server-Timing")
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let parsed = parse_server_timing(&header);
+        assert!(
+            parsed.contains_key("ostore"),
+            "R2CasHandler::list's serial-fallback R2 call must be attributed \
+             to Phase::Store (ostore). Header: {header}"
+        );
+    }
+
+    /// The CONCURRENT path (`audit_async` wired — production shape): even
+    /// when the durable-audit D1 write fails (here: a reachable-but-wrong
+    /// token, `stub_env()` from `d1_audit_sink.rs`'s own test helper shape),
+    /// `list()` still returns `AuditFailed` and — the load-bearing part —
+    /// the joined window is attributed ONCE to `ostore`, and `oaudit` is
+    /// ABSENT (proving `append_async` did not enter its own `Phase::Audit`
+    /// scope, so the two never double-count the same wall-clock window; see
+    /// `origin_timing.rs`'s "Concurrent native-plane list seam" note).
+    ///
+    /// Gated behind `#[ignore]` like the `d1_audit_sink.rs` async-phase
+    /// test it mirrors — needs outbound reachability to
+    /// `api.cloudflare.com` (not live credentials: a 401 still proves the
+    /// join ran). Run manually with:
+    ///
+    /// ```bash
+    /// cargo test -p corelink-server r2_cas_list_concurrent_path_fails_closed_on_bad_audit_creds -- --ignored
+    /// ```
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore = "requires outbound network reachability to api.cloudflare.com"]
+    async fn r2_cas_list_concurrent_path_fails_closed_on_bad_audit_creds() {
+        let stub_env = StorageEnv {
+            r2_endpoint: "https://localhost:1".to_owned(),
+            r2_access_key_id: "test".to_owned(),
+            r2_secret_access_key: "test".to_owned(),
+            cloudflare_account_id: "test".to_owned(),
+            cf_api_token: "test".to_owned(),
+            d1_database_id: "test".to_owned(),
+        };
+        let client = R2S3Client::new(&stub_env, "test-bucket")
+            .await
+            .expect("stub client");
+        let audit_concrete = cas_audit_sink_from_d1_concrete(D1HttpClient::new(&stub_env))
+            .expect("D1HttpClient constructs over the stub env (network call happens lazily)");
+        let audit: Arc<dyn AuditSink> = audit_concrete.clone();
+        let sli = Arc::new(InMemorySliObserver::new());
+        let handler = std::sync::Arc::new(
+            R2CasHandler::new(client, "iad", None, audit, sli).with_async_audit(audit_concrete),
+        );
+
+        let app = axum::Router::new()
+            .route(
+                "/x",
+                axum::routing::get(move || {
+                    let handler = std::sync::Arc::clone(&handler);
+                    async move {
+                        let req = corelink_handler_cas::CasListRequest::new(
+                            "tenant-x",
+                            "caller@tenant-x",
+                            "tenant-x",
+                            10,
+                            None,
+                            1,
+                        );
+                        let result = CasListHandler::list(&*handler, req);
+                        // FAIL-CLOSED: a rejected D1 credential must surface
+                        // as AuditFailed, never as a "success" that could
+                        // have served R2 rows.
+                        assert!(
+                            matches!(result, Err(CasHandlerError::AuditFailed(_))),
+                            "bad D1 creds must fail CLOSED as AuditFailed, got: {result:?}"
+                        );
+                        axum::http::StatusCode::OK
+                    }
+                }),
+            )
+            .layer(axum::middleware::from_fn(
+                crate::origin_timing::origin_timing_layer,
+            ));
+
+        let resp = tower::ServiceExt::oneshot(
+            app,
+            axum::http::Request::builder()
+                .uri("/x")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        let header = resp
+            .headers()
+            .get("server-timing")
+            .expect("origin_timing_layer must stamp Server-Timing")
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let parsed = parse_server_timing(&header);
+        assert!(
+            parsed.contains_key("ostore"),
+            "the concurrent join must be attributed to Phase::Store (ostore). \
+             Header: {header}"
+        );
+        assert!(
+            !detail_phases_enabled_for_test() || !parsed.contains_key("oaudit"),
+            "the concurrent list()'s audit write must NOT ALSO appear under \
+             oaudit — it would double-count the same wall-clock window \
+             `ostore` already reports. Header: {header}"
+        );
+    }
+
+    /// `oaudit`/`ortier`/`opermit`/`oargon` are gated behind
+    /// `CORELINK_ORIGIN_TIMING_DETAIL`; read it the same way
+    /// `origin_timing.rs`'s own tests do, so the assertion above is
+    /// meaningful whether or not the detail phases are published on this
+    /// run.
+    fn detail_phases_enabled_for_test() -> bool {
+        // Mirrors `origin_timing::detail_phases_enabled` exactly (that
+        // function is private to its own module).
+        std::env::var("CORELINK_ORIGIN_TIMING_DETAIL").is_ok_and(|v| v == "on")
     }
 
     // ---------------------------------------------------------------
