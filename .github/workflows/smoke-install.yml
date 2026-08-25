@@ -99,6 +99,17 @@ concurrency:
 
 jobs:
   smoke:
+    name: installer smoke (real Docker daemon required)
+    # Gated hosted, mirroring cas-canary.yml: this job's hard requirement is a
+    # REAL Docker daemon (the preflight `exit 1`s without one), which the
+    # `corelink` Firecracker fabric does not provide — only the founder's arm64
+    # Mac has one, and it would cross-emulate the amd64 install image. So the
+    # zero-hosted mandate resolves the other way here: the lane does NOT run
+    # rather than run on a box that cannot serve it. Unset today (hosted Actions
+    # cannot start), so this SKIPS cleanly instead of failing red on every push;
+    # it re-arms the moment an operator sets HOSTED_ACTIONS_AVAILABLE (which also
+    # implies CORELINK_CANARY_PAT is provisioned for the authenticated leg).
+    if: vars.HOSTED_ACTIONS_AVAILABLE == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:

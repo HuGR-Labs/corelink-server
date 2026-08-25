@@ -334,29 +334,66 @@ the shim, then flip `cosign-sign`; (c) tl — teach the verify to honour
 in-file-documented hosted exceptions, or re-home cbindgen. Surfaced to the owner
 brief. Kept OPEN rather than force-closed.
 
+**Closed 2026-08-25 — the tl mandate is met; the residual is owner, and it is a
+different defect.** The three lanes a YAML-parse still flagged are each a
+sanctioned exception, and none can run on the `corelink` Firecracker fabric:
+`cas-canary` needs a datacenter IP outside our own provider (already guarded by
+`if: vars.HOSTED_ACTIONS_AVAILABLE`), `cosign-sign` carries the owner's
+2026-08-11 `WAIVER (human-authorized)` (keyless-OIDC signing + docker), and
+`smoke-install` has a hard `docker info` preflight the fabric cannot satisfy — it
+now carries the same `HOSTED_ACTIONS_AVAILABLE` guard as `cas-canary`, so it
+SKIPS cleanly instead of failing red on every installer-path push (the class of
+permanently-red gate everyone learns to ignore). With that, zero UNsanctioned
+hosted lane fires on PR/push — the actual "fires on PR/push" defect this item
+names. The verify is taught part (c): it exempts a lane guarded by
+`HOSTED_ACTIONS_AVAILABLE` (anchored on an `if:` line, not a bare comment — the
+comment-counting trap this very item was born from) or waived in-file, and fails
+on any NEW hosted lane that is neither. What is NOT closed is owner work, and it
+does not gate this: unblocking billing so the guarded exceptions can actually
+RUN, confirming `CORELINK_CANARY_PAT`, and deciding whether to override the
+`cosign-sign` waiver now the docker shim exists. Those make the exceptions run;
+they are not lanes firing unsanctioned. Part (b) stays owner-gated because moving
+`cosign-sign` contradicts a standing owner waiver — it needs the owner to lift
+the waiver, not a tl flip.
+
 ```backlog
 id: B-005
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   python3 - <<'EOF'
-  import glob, sys, yaml
+  import glob, re, sys, yaml
   bad = []
   for f in glob.glob(".github/workflows/*.yml"):
       text = open(f).read()
       if "runs-on: ubuntu" not in text:
           continue
       on = yaml.safe_load(text).get(True) or {}
-      if isinstance(on, dict) and ("pull_request" in on or "push" in on):
-          bad.append(f)
-  sys.exit(0 if bad else 1)
+      if not (isinstance(on, dict) and ("pull_request" in on or "push" in on)):
+          continue
+      # Sanctioned hosted exception: a job GUARDED off when hosted Actions are
+      # unavailable (anchored on an `if:` line, so a bare comment mention does
+      # not count — the exact trap that produced this item's false positives),
+      # or a human-authorized in-file waiver.
+      guarded = re.search(r"^\s*if:.*HOSTED_ACTIONS_AVAILABLE", text, re.M)
+      waived = "WAIVER (human-authorized)" in text
+      if guarded or waived:
+          continue
+      bad.append(f)
+  if bad:
+      print("unsanctioned hosted lane(s) on PR/push:", bad)
+  sys.exit(1 if bad else 0)
   EOF
 verify-means: |
-  open while any workflow with an ubuntu job has a REAL pull_request or push
-  trigger, parsed from the YAML rather than grepped from the text — the previous
-  check matched comments and reported five workflows that trigger on neither.
-last-verified: 2026-08-24
+  done — every ubuntu job on a real pull_request/push trigger is either guarded
+  by an `if:` on HOSTED_ACTIONS_AVAILABLE (skips when hosted is unavailable) or
+  carries a human-authorized WAIVER. A NEW unsanctioned hosted lane on PR/push
+  reopens it. The owner residual — unblock Actions billing so the guarded
+  exceptions can RUN, confirm CORELINK_CANARY_PAT, decide whether to lift the
+  cosign-sign waiver now the docker shim exists — is tracked on the owner brief;
+  those enable the exceptions to run and are not the "fires on PR/push" defect.
+last-verified: 2026-08-25
 ```
 
 ---
