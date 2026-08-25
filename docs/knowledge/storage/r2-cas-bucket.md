@@ -6,7 +6,7 @@ source_files:
   - "crates/corelink-container/src/storage.rs"
   - "crates/corelink-container/src/storage/r2_s3.rs"
   - "crates/corelink-region/src/region.rs"
-checkpoint_sha: "94bbcd5eb6cf97bf962cdc3bffe8bd58eac30c4b"
+checkpoint_sha: "5d14b718ea1577aa4dab245602ac85642f46d6b9"
 provenance: "AUTHORED"
 tags: ["storage", "r2", "cas", "s3", "tenant-isolation"]
 timestamp: "2026-06-29T00:00:00Z"
@@ -59,7 +59,12 @@ unchanged — only the `<digest>` component is hardened for an active tenant.
    `cas_audit_sink_from_d1(D1HttpClient::new(&env))` and REFUSES to build the handler if that sink cannot
    be constructed — the route then mounts the fail-CLOSED 503 handler rather than falling back to the
    in-memory `InMemoryAuditSink` (which would lose every CAS audit event on restart and make the route's
-   `AuditFailed → 503` guard dead code) (`crates/corelink-container/src/storage/r2_s3.rs:1781-1800`).
+   `AuditFailed → 503` guard dead code) (`crates/corelink-container/src/storage/r2_s3.rs:1804-1823`).
+8. Every native CAS/AC handler's R2/S3 object GET/PUT/DELETE/LIST call — made through the sync
+   `block_in_place` bridge described in point 3 — is now timed into the container's `ostore`
+   Server-Timing phase rather than falling into the unattributed `oother` residue; the read path's GET is
+   the representative example (`crates/corelink-container/src/storage/r2_s3.rs:1158-1162`). See
+   [the request-flow concept](/planes/request-flow.md) for the full phase list.
 
 # Invariants
 - S3 credentials come only from env and are redacted in both `Debug` and `Display` — a `{:?}` must
@@ -75,7 +80,7 @@ unchanged — only the `<digest>` component is hardened for an active tenant.
   (`crates/corelink-container/src/storage/r2_s3.rs:102-135`).
 - On the production data plane the CAS audit sink MUST be durable: the builder wires the D1 `audit_outbox`
   sink and fails CLOSED (refuses to mount the handler) if it cannot, never silently falling back to the
-  volatile in-memory sink (`crates/corelink-container/src/storage/r2_s3.rs:1790`).
+  volatile in-memory sink (`crates/corelink-container/src/storage/r2_s3.rs:1813`).
 
 # Gotchas
 - Empty-string env is the trap, not just absent env: the DO forwards container env as `this.env.X ?? ""`,
@@ -92,5 +97,6 @@ unchanged — only the `<digest>` component is hardened for an active tenant.
 5. `crates/corelink-container/src/storage/r2_s3.rs:1-19` — CAS key scheme `<region>/<tenant_prefix_16>/<digest>` + tenant isolation.
 6. `crates/corelink-container/src/storage/r2_s3.rs:74-91` — `R2S3Client` bucket field + per-key delete-serialization locks.
 7. `crates/corelink-container/src/storage/r2_s3.rs:102-135` — direct static-credential S3 config; IMDS-bypass cold-start fix.
-8. `crates/corelink-container/src/storage/r2_s3.rs:1781-1800` — `build_r2_cas_handler_from_env` wires the DURABLE D1 `audit_outbox` sink (`cas_audit_sink_from_d1`) and fails CLOSED, replacing the former volatile `InMemoryAuditSink`.
+8. `crates/corelink-container/src/storage/r2_s3.rs:1804-1823` — `build_r2_cas_handler_from_env` wires the DURABLE D1 `audit_outbox` sink (`cas_audit_sink_from_d1`) and fails CLOSED, replacing the former volatile `InMemoryAuditSink`.
 9. `crates/corelink-region/src/region.rs:66-70` — `Region::r2_bucket_name()` → per-region `corelink-cas-{region}` (the regional-bucket topology this native adapter does not use).
+10. `crates/corelink-container/src/storage/r2_s3.rs:1158-1162` — `R2CasHandler::read`'s R2 GET wrapped into `Phase::Store` (`ostore`) via `PhaseScope::enter`, the same treatment every other native-plane R2 GET/PUT/HEAD/DELETE/LIST call in this file now gets.

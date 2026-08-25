@@ -1155,7 +1155,11 @@ impl CasReadHandler for R2CasHandler {
         };
         debug!(key = %key, "R2CasHandler::read");
 
-        let result = tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)));
+        let result = {
+            let _scope =
+                crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+            tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)))
+        };
 
         match result {
             Ok(Some(stored)) => {
@@ -1313,7 +1317,11 @@ impl CasReadHandler for R2CasHandler {
         };
         debug!(key = %key, "R2CasHandler::exists");
 
-        let result = tokio::task::block_in_place(|| handle.block_on(self.client.head_size(&key)));
+        let result = {
+            let _scope =
+                crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+            tokio::task::block_in_place(|| handle.block_on(self.client.head_size(&key)))
+        };
 
         match result {
             Ok(Some(_)) => {
@@ -1444,7 +1452,12 @@ impl CasWriteHandler for R2CasHandler {
         // so a Mode-B write always proceeds to the PUT below.
         let dedup_eligible = !matches!(resolved.plan, ByokBodyPlan::Random { .. });
         if dedup_eligible {
-            match tokio::task::block_in_place(|| handle.block_on(self.client.head_size(&key))) {
+            let head_result = {
+                let _scope =
+                    crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+                tokio::task::block_in_place(|| handle.block_on(self.client.head_size(&key)))
+            };
+            match head_result {
                 Ok(Some(_)) => {
                     // Already durable under this content-addressed key → idempotent
                     // no-op; do not re-PUT and do not re-charge the bytes.
@@ -1489,8 +1502,11 @@ impl CasWriteHandler for R2CasHandler {
             }
         };
 
-        let result =
-            tokio::task::block_in_place(|| handle.block_on(self.client.put(&key, payload)));
+        let result = {
+            let _scope =
+                crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+            tokio::task::block_in_place(|| handle.block_on(self.client.put(&key, payload)))
+        };
 
         match result {
             Ok(()) => {
@@ -1616,8 +1632,11 @@ impl CasDeleteHandler for R2CasHandler {
         // release reflect what THIS request actually removed, so two racing
         // deletes can never both credit the same bytes. CRITICAL — `block_in_place`:
         // see `read` above.
-        let result =
-            tokio::task::block_in_place(|| handle.block_on(self.client.delete_if_present(&key)));
+        let result = {
+            let _scope =
+                crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+            tokio::task::block_in_place(|| handle.block_on(self.client.delete_if_present(&key)))
+        };
 
         match result {
             Ok(prior) => {
@@ -1713,13 +1732,17 @@ impl CasListHandler for R2CasHandler {
         debug!(prefix = %prefix, "R2CasHandler::list");
 
         let handle = tokio::runtime::Handle::current();
-        let result = tokio::task::block_in_place(|| {
-            handle.block_on(self.client.list_objects_page(
-                &prefix,
-                req.limit,
-                req.cursor.as_deref(),
-            ))
-        });
+        let result = {
+            let _scope =
+                crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+            tokio::task::block_in_place(|| {
+                handle.block_on(self.client.list_objects_page(
+                    &prefix,
+                    req.limit,
+                    req.cursor.as_deref(),
+                ))
+            })
+        };
 
         match result {
             Ok((rows, next_cursor)) => {
@@ -2189,7 +2212,11 @@ impl corelink_handler_ac::AcLookupHandler for R2AcHandler {
         };
         debug!(key = %key, "R2AcHandler::lookup");
 
-        let result = tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)));
+        let result = {
+            let _scope =
+                crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+            tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)))
+        };
 
         match result {
             Ok(Some(bytes)) => {
@@ -2357,7 +2384,11 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
         let stored_view: &[u8] = encrypted
             .as_deref()
             .unwrap_or(req.result_payload.as_slice());
-        let existing = tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)));
+        let existing = {
+            let _scope =
+                crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+            tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)))
+        };
         match existing {
             Ok(Some(prior)) if prior.as_slice() != stored_view => {
                 warn!(
@@ -2390,8 +2421,11 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
         // Store the ciphertext (active) or the plaintext payload (non-BYOK) —
         // the same bytes the compare above proved are non-divergent.
         let payload = encrypted.unwrap_or(req.result_payload);
-        let result =
-            tokio::task::block_in_place(|| handle.block_on(self.client.put(&key, payload)));
+        let result = {
+            let _scope =
+                crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+            tokio::task::block_in_place(|| handle.block_on(self.client.put(&key, payload)))
+        };
 
         match result {
             Ok(()) => {
@@ -2499,8 +2533,11 @@ impl corelink_handler_ac::AcDeleteHandler for R2AcHandler {
         };
         debug!(key = %key, "R2AcHandler::delete");
 
-        let result =
-            tokio::task::block_in_place(|| handle.block_on(self.client.delete_if_present(&key)));
+        let result = {
+            let _scope =
+                crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+            tokio::task::block_in_place(|| handle.block_on(self.client.delete_if_present(&key)))
+        };
 
         match result {
             Ok(prior) => {
@@ -2591,13 +2628,17 @@ impl corelink_handler_ac::AcListHandler for R2AcHandler {
         debug!(prefix = %prefix, "R2AcHandler::list");
 
         let handle = tokio::runtime::Handle::current();
-        let result = tokio::task::block_in_place(|| {
-            handle.block_on(self.client.list_objects_page(
-                &prefix,
-                req.limit,
-                req.cursor.as_deref(),
-            ))
-        });
+        let result = {
+            let _scope =
+                crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+            tokio::task::block_in_place(|| {
+                handle.block_on(self.client.list_objects_page(
+                    &prefix,
+                    req.limit,
+                    req.cursor.as_deref(),
+                ))
+            })
+        };
 
         match result {
             Ok((rows, next_cursor)) => {
@@ -2944,6 +2985,140 @@ mod tests {
         assert!(
             !matches!(err, CasHandlerError::HashMismatch { .. }),
             "honest bytes must pass content verification, got {err:?}"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // origin_timing: `ostore` must absorb the native-plane R2 calls
+    // ---------------------------------------------------------------
+
+    /// Parse a `Server-Timing` header value into `{ name: dur_ms }`, mirroring
+    /// `origin_timing::tests::parse` (that one is private to its own module).
+    fn parse_server_timing(value: &str) -> std::collections::HashMap<String, i64> {
+        let mut out = std::collections::HashMap::new();
+        for part in value.split(',') {
+            let mut it = part.trim().split(";dur=");
+            if let (Some(name), Some(dur)) = (it.next(), it.next()) {
+                if let Ok(v) = dur.trim().parse::<i64>() {
+                    out.insert(name.trim().to_owned(), v);
+                }
+            }
+        }
+        out
+    }
+
+    /// The `oother` residue used to swallow the native CAS plane's R2 GET
+    /// silently. This proves `R2CasHandler::read`'s `block_in_place` call is
+    /// now wrapped into `Phase::Store` (`ostore`) — recorded even though the
+    /// stub endpoint (`localhost:1`) makes the GET itself fail, because
+    /// `PhaseScope`'s `Drop` records on every exit path, success or error.
+    /// Driven through the real `origin_timing_layer` axum middleware (the
+    /// only public way to scope a ledger from outside `origin_timing.rs`),
+    /// exactly like `origin_timing::tests::the_layer_attributes_a_delay_to_the_phase_it_was_charged_to`.
+    // NOTE: `multi_thread` flavor is REQUIRED — see
+    // `r2_cas_write_with_honest_bytes_passes_verification` above for why.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn r2_cas_read_attributes_the_r2_get_to_ostore() {
+        let handler = std::sync::Arc::new(make_test_handler("iad").await);
+
+        let app = axum::Router::new()
+            .route(
+                "/x",
+                axum::routing::get(move || {
+                    let handler = std::sync::Arc::clone(&handler);
+                    async move {
+                        let req = CasReadRequest::new(
+                            "tenant-x",
+                            "deadbeef00000000000000000000000000000000000000000000000000000001",
+                            "caller@tenant-x",
+                            "tenant-x",
+                            1,
+                        );
+                        // Errors against the unreachable stub endpoint — that
+                        // is fine, the assertion is on the timing header, not
+                        // the result.
+                        let _ = handler.read(req);
+                        axum::http::StatusCode::OK
+                    }
+                }),
+            )
+            .layer(axum::middleware::from_fn(
+                crate::origin_timing::origin_timing_layer,
+            ));
+
+        let resp = tower::ServiceExt::oneshot(
+            app,
+            axum::http::Request::builder()
+                .uri("/x")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        let header = resp
+            .headers()
+            .get("server-timing")
+            .expect("origin_timing_layer must stamp Server-Timing")
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let parsed = parse_server_timing(&header);
+        assert!(
+            parsed.contains_key("ostore"),
+            "R2CasHandler::read's block_in_place R2 GET must be attributed \
+             to Phase::Store (ostore) even when the call errors. Header: {header}"
+        );
+    }
+
+    /// AC counterpart of the above: `R2AcHandler::lookup`'s `block_in_place`
+    /// R2 GET must also land in `Phase::Store`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn r2_ac_lookup_attributes_the_r2_get_to_ostore() {
+        let handler = std::sync::Arc::new(make_test_ac_handler("iad").await);
+
+        let app = axum::Router::new()
+            .route(
+                "/x",
+                axum::routing::get(move || {
+                    let handler = std::sync::Arc::clone(&handler);
+                    async move {
+                        let req = corelink_handler_ac::AcLookupRequest::new(
+                            "tenant-x",
+                            "deadbeef00000000000000000000000000000000000000000000000000000001",
+                            "caller@tenant-x",
+                            "tenant-x",
+                            1,
+                        );
+                        let _ = corelink_handler_ac::AcLookupHandler::lookup(&*handler, req);
+                        axum::http::StatusCode::OK
+                    }
+                }),
+            )
+            .layer(axum::middleware::from_fn(
+                crate::origin_timing::origin_timing_layer,
+            ));
+
+        let resp = tower::ServiceExt::oneshot(
+            app,
+            axum::http::Request::builder()
+                .uri("/x")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        let header = resp
+            .headers()
+            .get("server-timing")
+            .expect("origin_timing_layer must stamp Server-Timing")
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let parsed = parse_server_timing(&header);
+        assert!(
+            parsed.contains_key("ostore"),
+            "R2AcHandler::lookup's block_in_place R2 GET must be attributed \
+             to Phase::Store (ostore) even when the call errors. Header: {header}"
         );
     }
 
