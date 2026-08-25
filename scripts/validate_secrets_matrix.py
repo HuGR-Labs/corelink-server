@@ -269,6 +269,42 @@ RUST_BINDING_CONST_RE = re.compile(
 TS_ENV_DOT_RE = re.compile(r"process\.env\.([A-Z][A-Z0-9_]*)")
 TS_ENV_BRACKET_RE = re.compile(r"process\.env\[\s*\"([A-Z][A-Z0-9_]*)\"\s*\]")
 
+# Cloudflare Worker env vars. A Worker NEVER uses `process.env` — it reads `env.X`
+# off its `Env` interface, so the two regexes above are structurally blind to every
+# Worker secret. Measured 2026-08-24: 14 of the 52 secrets deployed on
+# `corelink-prod` were absent from the matrix while this gate reported no drift,
+# including a live `GITHUGR_CLERK_JWT_KEY`. The `Env` interface (and the inline
+# `env as unknown as { X?: string }` cast the codebase uses for flags) IS the
+# authoritative declaration, so scan that instead of the read sites.
+#
+# Only `string`-typed members are env vars. A member typed `R2Bucket`,
+# `D1Database`, `DurableObjectNamespace`, `KVNamespace`, `Queue`, or a
+# fetcher-shaped service binding is a BINDING — declared in `wrangler.toml`,
+# carrying no secret value, and correctly absent from a secrets matrix.
+ENV_INTERFACE_RE = re.compile(r"(?:export\s+)?interface\s+Env\b[^{]*\{", re.M)
+ENV_STRING_MEMBER_RE = re.compile(
+    r"^\s*([A-Z][A-Z0-9_]*)\??\s*:\s*string\s*(?:\|\s*undefined\s*)?;", re.M
+)
+# `env as unknown as { FLAG?: string }` — the flag-reading idiom in index.ts.
+ENV_CAST_MEMBER_RE = re.compile(
+    r"as\s+unknown\s+as\s*\{\s*([A-Z][A-Z0-9_]*)\??\s*:\s*string"
+)
+
+
+def _env_interface_bodies(txt: str) -> list[str]:
+    """Return the brace-balanced body of every `interface Env { ... }` in `txt`."""
+    bodies: list[str] = []
+    for m in ENV_INTERFACE_RE.finditer(txt):
+        depth, i = 1, m.end()
+        while i < len(txt) and depth:
+            if txt[i] == "{":
+                depth += 1
+            elif txt[i] == "}":
+                depth -= 1
+            i += 1
+        bodies.append(txt[m.end() : i - 1])
+    return bodies
+
 # GHA `${{ secrets.X }}` and `${{ env.X }}` (env. only if uppercase-style)
 GHA_SECRETS_RE = re.compile(r"\$\{\{\s*secrets\.([A-Z][A-Z0-9_]*)\s*\}\}")
 
@@ -353,6 +389,12 @@ def scan_ts(root: Path) -> set[str]:
         for m in TS_ENV_DOT_RE.finditer(txt):
             hits.add(m.group(1))
         for m in TS_ENV_BRACKET_RE.finditer(txt):
+            hits.add(m.group(1))
+        # Worker `Env` interfaces + the inline flag cast (see the regexes above).
+        for body in _env_interface_bodies(txt):
+            for m in ENV_STRING_MEMBER_RE.finditer(body):
+                hits.add(m.group(1))
+        for m in ENV_CAST_MEMBER_RE.finditer(txt):
             hits.add(m.group(1))
     return hits
 
