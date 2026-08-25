@@ -1,41 +1,59 @@
-name: Release — SLSA L3 Build Provenance (WI-S12-001)
+name: Release — SLSA L2 Build Provenance, self-hosted (WI-S12-001)
 
-# Generates SLSA Level 3 build provenance for CoreLink releases.
+# Generates SLSA Build **Level 2** provenance for CoreLink releases on the
+# self-hosted `corelink-builder` fleet.
 #
 # Trigger: GitHub release published OR manual dispatch.
 #
+# WHY THIS IS L2 AND NOT L3 (2026-08-25, BACKLOG B-031) — READ BEFORE EDITING
+#   SLSA Build **L3** is defined by the provenance being produced by a
+#   GitHub-MANAGED, isolated builder (the upstream SLSA framework's reusable
+#   generator workflow, which runs in an ephemeral VM the release author cannot
+#   influence). We deliberately no longer call that hosted generator.
+#   The repo's standing rule is ZERO GitHub-hosted Actions spend, so we cannot
+#   keep that hosted builder. Re-homing provenance generation onto our own
+#   `[self-hosted, mac, corelink-builder]` fleet means the builder is no longer
+#   isolated from the workload or GitHub-managed, which by the SLSA v1 spec is
+#   **Build L2, not L3**. This was an explicit owner tradeoff: accept the honest
+#   drop to L2 to keep zero hosted spend. Do NOT re-label this L3 or describe the
+#   builder as hermetic/isolated/GitHub-managed — that would be false.
+#
+# WHAT IS ATTESTED (unchanged, 2026-08-24 BACKLOG B-016)
+#   The subjects are the `corelink` CLI binaries attached to the GitHub release
+#   by `release-cli.yml` — the exact bytes a user downloads and executes. This
+#   lane does not rebuild them; it reads the published assets and attests their
+#   SHA-256 digests, so the provenance answers "is the file I just downloaded the
+#   one you published?".
+#
 # Architecture:
-#   Job 1 (build-artifacts): Read the PUBLISHED release binaries + compute SHA-256 subjects.
+#   Job 1 (build-artifacts):  read the PUBLISHED release binaries + compute SHA-256 subjects.
+#   Job 2 (slsa-provenance):  build an in-toto v1 SLSA-v1 provenance statement on the
+#                             self-hosted fleet, sign it KEYLESS with cosign (Fulcio
+#                             OIDC + mandatory Rekor inclusion), self-verify the bundle,
+#                             and upload it to the release. Self-hosted → SLSA Build L2.
+#   Job 3 (attach-release-assets): re-download + re-hash the release assets and confirm
+#                             they still match what was attested.
 #
-# WHAT IS ATTESTED, AND WHY IT CHANGED (2026-08-24, BACKLOG B-016)
-#   Until today this workflow compiled `corelink-worker` for
-#   wasm32-unknown-unknown and attested
-#   `target/wasm32-unknown-unknown/release/corelink_worker.wasm`. That file has
-#   never existed -- the crate declares no `[lib] crate-type = ["cdylib"]`, so it
-#   can only emit an `.rlib` -- and the deployed Worker is TypeScript anyway
-#   (`wrangler.toml:15`). This lane has run exactly once, on 2026-05-29, and
-#   failed. No SLSA provenance has ever been produced for anything.
-#   Meanwhile the artifacts users download and execute -- the `corelink` CLI
-#   binaries attached to the GitHub release by `release-cli.yml` -- carried no
-#   provenance at all. Those are now the subjects: provenance covers the exact
-#   bytes a user installs, which is the only version of this claim worth making.
-#   Job 2 (slsa-provenance): slsa-github-generator reusable workflow — isolated VM,
-#     hermetic build, Fulcio keyless OIDC signing, Rekor inclusion proof.
-#
-# Security properties:
-#   - Hermetic builder: slsa-github-generator runs in GitHub-managed isolated VM.
-#   - No long-lived secrets: Fulcio keyless OIDC (10 min cert, GitHub Actions identity).
-#   - Rekor mandatory: INV-SUPPLY-PROVENANCE-IN-REKOR; no bypass, release blocked if down.
-#   - Builder pinned: slsa-github-generator@v1.10.0 SHA-pinned (ADR-0045).
-#   - All GitHub Actions SHA-pinned (no @latest, no @vN floating tags).
+# Security properties (honest inventory for L2 on self-hosted):
+#   - No long-lived signing keys: Fulcio keyless OIDC. The OIDC token is issued by
+#     GitHub (`token.actions.githubusercontent.com`), NOT by the runner, so keyless
+#     signing works on self-hosted; the Fulcio cert SAN is this workflow's ref.
+#   - Rekor mandatory: INV-SUPPLY-PROVENANCE-IN-REKOR. cosign uploads the inclusion
+#     proof by default and the job FAILS if signing or Rekor upload fails — no bypass.
+#   - Self-proving lane: the just-signed bundle is verified with `cosign verify-blob`
+#     in the same run; the job fails if the round-trip does not pass.
+#   - NOT isolated / NOT hermetic: the builder is the shared self-hosted fleet. That
+#     is the whole reason this is L2. State it plainly rather than implying otherwise.
+#   - All third-party GitHub Actions SHA-pinned (no @latest, no @vN floating tags).
 #
 # Invariants:
 #   INV-SUPPLY-PROVENANCE-IN-REKOR (HIGH): Rekor inclusion is mandatory.
-#   INV-SUPPLY-SIGNED-DEPLOY (CRITICAL): inherited; WI-S12-003 enforce at deploy.
+#   INV-SUPPLY-SIGNED-DEPLOY (CRITICAL): inherited; WI-S12-003 enforces at deploy.
 #
 # References:
-#   WI-S12-001 §6.1, §7, §8, ADR-0045
-#   https://github.com/slsa-framework/slsa-github-generator/blob/main/internal/builders/generic/README.md
+#   WI-S12-001 §6.1, §7, §8, ADR-0045 (see the 2026-08-25 L3→L2 addendum)
+#   https://slsa.dev/spec/v1.0/provenance
+#   https://slsa.dev/spec/v1.0/levels  (Build L2 vs L3 = isolated/managed builder)
 
 on:
   release:
@@ -76,7 +94,7 @@ jobs:
       # bytes that are actually on the release -- rather than rebuilding and
       # attesting a second, differently-produced artifact -- is what makes the
       # provenance answer the question a user asks: "is the file I just
-      # downloaded the one you built?"
+      # downloaded the one you published?"
       - name: Download the published release binaries
         env:
           GH_TOKEN: ${{ github.token }}
@@ -113,36 +131,216 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------------
-  # Job 2: SLSA L3 provenance generation via slsa-github-generator.
+  # Job 2: SLSA L2 provenance generation on the self-hosted fleet.
   #
-  # This job calls the SLSA reusable workflow in an isolated, GitHub-managed VM.
-  # The generator:
-  #   - Produces in-toto v1.0 attestation (predicateType: https://slsa.dev/provenance/v1).
-  #   - Signs via Fulcio keyless OIDC (GitHub Actions identity → 10 min cert).
-  #   - Publishes inclusion proof to Rekor transparency log (mandatory; no bypass).
-  #   - Outputs provenance.intoto.jsonl + provenance.intoto.bundle.
-  #
-  # SHA pin: SHA of the slsa-github-generator commit for v1.10.0 tag.
-  # Bump requires ADR-0045 update + regression testing.
+  # This job runs on our own `corelink-builder` box (NOT a GitHub-managed
+  # isolated VM — that is why this is Build L2, not L3; see the header). It:
+  #   - Assembles an in-toto v1 Statement with a SLSA v1 provenance predicate,
+  #     one subject per published release binary, using python3 (not a fragile
+  #     shell heredoc) and validates the result is well-formed JSON.
+  #   - Signs the statement KEYLESS with cosign (`sign-blob`): Fulcio short-lived
+  #     cert bound to this workflow's OIDC identity, Rekor inclusion proof in the
+  #     bundle. Rekor is MANDATORY (INV-SUPPLY-PROVENANCE-IN-REKOR); the job fails
+  #     if signing or Rekor upload fails.
+  #   - Self-verifies the bundle it just produced with `cosign verify-blob` and
+  #     fails the job if the round-trip does not pass.
+  #   - Uploads provenance.intoto.jsonl + the signature bundle to the release.
   # ---------------------------------------------------------------------------
   slsa-provenance:
-    name: Generate SLSA L3 Provenance
+    name: Generate SLSA L2 Provenance (self-hosted)
     needs: [build-artifacts]
-    # slsa-github-generator reusable workflow (SHA-pinned at v1.10.0)
-    # See: https://github.com/slsa-framework/slsa-github-generator/releases/tag/v1.10.0
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a  # slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
-    with:
-      base64-subjects: ${{ needs.build-artifacts.outputs.base64-subjects }}
-      provenance-name: "provenance.intoto.jsonl"
-      # Upload provenance bundle to release assets
-      upload-assets: true
+    runs-on: [self-hosted, mac, corelink-builder]
     permissions:
-      # OIDC token for Fulcio keyless signing (bound to GitHub Actions workflow identity)
+      # OIDC token for Fulcio keyless signing. Issued by GitHub, not the runner,
+      # so this works on the self-hosted fleet.
       id-token: write
-      # Read workflow context for provenance generation
-      actions: read
-      # Write release assets (provenance.intoto.bundle)
+      # Upload provenance.intoto.jsonl + bundle to the release assets.
       contents: write
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+
+      # Cosign 2.x, SHA-pinned to the exact same release used by cosign-sign.yml
+      # (WI-S12-003) so the whole supply-chain toolchain moves as one unit.
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
+        with:
+          cosign-release: 'v2.4.3'
+
+      # Build the in-toto v1 Statement (SLSA v1 provenance predicate) with
+      # python3. The subject list, tag, repo, refs and run URL all arrive via the
+      # environment — nothing is interpolated into the program text, so a binary
+      # name with an odd character cannot corrupt the JSON. The script is the
+      # single source of the statement shape; it validates its own output.
+      - name: Build in-toto SLSA v1 provenance statement
+        env:
+          SUBJECT_LIST: ${{ needs.build-artifacts.outputs.subject-list }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+          REPO: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          GITHUB_REF: ${{ github.ref }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+
+          # Write the generator to a file with a QUOTED heredoc: the shell does
+          # not touch the body, so this is not a fragile-interpolation heredoc.
+          cat > build_provenance.py <<'PY'
+          import json
+          import os
+          import sys
+
+          def env(name):
+              v = os.environ.get(name, "")
+              if v == "":
+                  print(f"::error::missing required env {name}", file=sys.stderr)
+                  sys.exit(1)
+              return v
+
+          repo = env("REPO")                    # e.g. HuGR-Labs/corelink-server
+          server = os.environ.get("SERVER_URL", "https://github.com")
+          release_tag = env("RELEASE_TAG")
+          github_ref = env("GITHUB_REF")        # e.g. refs/tags/v0.1.0
+          commit_sha = env("COMMIT_SHA")
+          run_id = env("RUN_ID")
+          run_attempt = os.environ.get("RUN_ATTEMPT", "1")
+
+          # github.workflow_ref = "OWNER/REPO/.github/workflows/f.yml@REF".
+          # The builder id must be a resolvable URI naming this exact workflow.
+          workflow_ref = os.environ.get("WORKFLOW_REF", "")
+          if workflow_ref:
+              builder_id = f"{server}/{workflow_ref}"
+          else:
+              builder_id = f"{server}/{repo}/.github/workflows/release-slsa3.yml@{github_ref}"
+
+          # Parse `SUBJECTS` = one `<sha256hex>  <name>` line per binary
+          # (the exact output shape of `shasum -a 256 | sed 's|./||'`).
+          subjects = []
+          for raw in os.environ.get("SUBJECT_LIST", "").splitlines():
+              line = raw.strip()
+              if not line:
+                  continue
+              parts = line.split(None, 1)
+              if len(parts) != 2:
+                  print(f"::error::unparseable subject line: {line!r}", file=sys.stderr)
+                  sys.exit(1)
+              digest, name = parts[0], parts[1].strip()
+              if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest.lower()):
+                  print(f"::error::not a sha256 hex digest: {digest!r}", file=sys.stderr)
+                  sys.exit(1)
+              subjects.append({"name": name, "digest": {"sha256": digest.lower()}})
+
+          if not subjects:
+              print("::error::no subjects parsed — refusing to emit empty provenance", file=sys.stderr)
+              sys.exit(1)
+
+          invocation_id = f"{server}/{repo}/actions/runs/{run_id}/attempts/{run_attempt}"
+
+          statement = {
+              "_type": "https://in-toto.io/Statement/v1",
+              "subject": subjects,
+              "predicateType": "https://slsa.dev/provenance/v1",
+              "predicate": {
+                  "buildDefinition": {
+                      # Stable URI naming THIS fleet build recipe.
+                      "buildType": "https://corelink.humangr.com/slsa/selfhosted-release/v1",
+                      "externalParameters": {
+                          "release_tag": release_tag,
+                          "repository": f"{server}/{repo}",
+                          "ref": github_ref,
+                      },
+                      "internalParameters": {
+                          # Honest: the builder is the shared self-hosted fleet,
+                          # not an isolated/managed VM. This is Build L2, not L3.
+                          "runner": "self-hosted:corelink-builder",
+                          "isolated": False,
+                      },
+                      "resolvedDependencies": [
+                          {
+                              "uri": f"git+{server}/{repo}@{github_ref}",
+                              "digest": {"gitCommit": commit_sha},
+                          }
+                      ],
+                  },
+                  "runDetails": {
+                      "builder": {
+                          # Non-isolated self-hosted builder → SLSA Build L2.
+                          "id": builder_id,
+                          "version": {
+                              "corelink-slsa-build-level": "L2",
+                              "corelink-builder-isolation": "self-hosted-non-isolated",
+                          },
+                      },
+                      "metadata": {
+                          "invocationId": invocation_id,
+                      },
+                  },
+              },
+          }
+
+          with open("provenance.intoto.jsonl", "w", encoding="utf-8") as fh:
+              # in-toto "jsonl": one JSON statement object per line.
+              fh.write(json.dumps(statement, separators=(",", ":")))
+              fh.write("\n")
+
+          print(f"Wrote provenance.intoto.jsonl with {len(subjects)} subject(s).")
+          PY
+
+          python3 build_provenance.py
+
+          # Fail loudly unless the emitted file is well-formed JSON.
+          python3 -c "import json; json.load(open('provenance.intoto.jsonl'))"
+          echo "provenance.intoto.jsonl is well-formed JSON."
+          cat provenance.intoto.jsonl
+
+      # Keyless sign with cosign. Fulcio issues a ≤10-min cert bound to this
+      # workflow's OIDC identity; the Rekor inclusion proof is written into the
+      # bundle. `sign-blob` uploads to Rekor by default and exits non-zero on
+      # failure, so INV-SUPPLY-PROVENANCE-IN-REKOR is enforced with no bypass.
+      - name: Sign provenance (cosign keyless OIDC → Fulcio + Rekor)
+        run: |
+          set -euo pipefail
+          cosign sign-blob --yes \
+            --bundle provenance.intoto.jsonl.bundle \
+            provenance.intoto.jsonl
+          echo "Signed; Fulcio cert + Rekor inclusion proof written to provenance.intoto.jsonl.bundle."
+
+      # Self-prove: verify the bundle we just produced, in the same run. A
+      # provenance lane that never round-trips its own output is exactly the
+      # failure mode this repo forbids — fail hard if verification does not pass.
+      - name: Self-verify the signed provenance (cosign verify-blob)
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # The Fulcio cert SAN is this workflow's ref (refs/tags/v* on a release,
+          # a branch ref on manual dispatch); accept any ref of THIS workflow.
+          IDENTITY_RE="^https://github\.com/${REPO}/\.github/workflows/release-slsa3\.yml@refs/.*$"
+          cosign verify-blob \
+            --bundle provenance.intoto.jsonl.bundle \
+            --certificate-identity-regexp "${IDENTITY_RE}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            provenance.intoto.jsonl
+          echo "Self-verification passed: the bundle verifies against its own signed statement."
+
+      - name: Upload provenance to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          gh release upload "${TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --clobber \
+            provenance.intoto.jsonl \
+            provenance.intoto.jsonl.bundle
+          echo "Uploaded provenance.intoto.jsonl + provenance.intoto.jsonl.bundle to release ${TAG}."
 
   # ---------------------------------------------------------------------------
   # Job 3: Attach build artifacts to release + validate provenance.
@@ -191,17 +389,17 @@ jobs:
           TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
         run: |
           set -euo pipefail
-          echo "Provenance generated for release: ${TAG}"
+          echo "SLSA Build L2 provenance (self-hosted) generated for release: ${TAG}"
           echo "Rekor inclusion proof: mandatory (INV-SUPPLY-PROVENANCE-IN-REKOR)"
           echo "Subjects:"
           printf '%s\n' "${{ needs.build-artifacts.outputs.subject-list }}"
           echo "Customer verify command:"
           echo "  corelink-supply-verify verify \\"
-          echo "    --bundle provenance.intoto.bundle \\"
+          echo "    --bundle provenance.intoto.jsonl.bundle \\"
           echo "    --release ${TAG} \\"
-          echo "    --expected-builder HumanGuardrail/corelink-server"
+          echo "    --expected-builder HuGR-Labs/corelink-server"
 
       - name: Emit SLSA attestation metric (success)
         # Structured log event for Prometheus scrape (OTel collector parses)
         run: |
-          echo '{"metric":"corelink_supply_slsa_attestations_total","outcome":"ok","plan":"internal","value":1,"release":"${{ github.event.release.tag_name || inputs.release_tag }}"}'
+          echo '{"metric":"corelink_supply_slsa_attestations_total","outcome":"ok","slsa_build_level":"L2","plan":"internal","value":1,"release":"${{ github.event.release.tag_name || inputs.release_tag }}"}'
