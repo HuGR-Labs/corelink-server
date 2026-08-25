@@ -40,6 +40,19 @@ Each entry cross-references:
   §A1 records the change; its "standing recommendation", made three times since
   2026-06-02, is finally executed rather than restated.
 
+- **Audit-drain partition lease + seal-loop fence, flag-gated OFF (B-038).** The
+  S-09 `POST /_internal/audit/drain` seals rows FIRST and advances the
+  `audit_chain_head` checkpoint with a post-seal compare-and-set, so the CAS
+  gates only the head advance and cannot un-seal a concurrent drain's rows — the
+  drift path's "byte-identical to that drain's" justification held only under a
+  single-writer-per-partition precondition nothing enforced (the B-026 fork).
+  A new per-`(tenant_id, region)` lease (`audit_drain_lease`, migration 0101)
+  serialises drains, and a seal-loop self-fence makes a holder provably stop
+  writing at its own lease expiry so it cannot still be sealing after a stealer
+  takes the expired lease. Gated behind `AUDIT_DRAIN_LEASE_ENABLED` (default
+  OFF): with the flag off the drain behaves exactly as before, so the change
+  ships inert until an operator enables it after a prod probe. Design:
+  `docs/design/2026-08-24-audit-drain-partition-lease.md`.
 - **Turborepo remote-cache PUT is now create-only (`put_if_absent`) — 409 on an
   existing key (B-024).** Turborepo keys are opaque/client-chosen, not
   content-addressed, so a `cas:rw` credential could previously REPLACE the bytes

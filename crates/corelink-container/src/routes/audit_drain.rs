@@ -141,6 +141,13 @@ pub struct AuditDrainState {
     /// caller (the hourly cron, or a manual loop) re-calls until `incomplete`
     /// is false. `AUDIT_DRAIN_BATCH_LIMIT`, default 200 (~60s at 0.3s/row).
     batch_limit: i64,
+    /// B-038: serialize drains per `(tenant_id, region)` with a lease + seal-loop
+    /// fence. SECURE-INERT DEFAULT `false`: when OFF, `drain_partition` behaves
+    /// EXACTLY as before (no lease acquire/release, no fence) so merging this is
+    /// inert until an operator flips `AUDIT_DRAIN_LEASE_ENABLED` on after a prod
+    /// probe. Same empty-is-absent idiom as the other toggles (a forwarded `""`
+    /// is treated as absent → OFF).
+    lease_enabled: bool,
 }
 
 impl std::fmt::Debug for AuditDrainState {
@@ -157,6 +164,7 @@ impl std::fmt::Debug for AuditDrainState {
             .field("signing_key_id", &self.signing_key_id)
             .field("trust_unsigned_resume", &self.trust_unsigned_resume)
             .field("batch_limit", &self.batch_limit)
+            .field("lease_enabled", &self.lease_enabled)
             .finish()
     }
 }
@@ -399,6 +407,18 @@ pub fn build_state_from_env() -> Option<AuditDrainState> {
         .and_then(|s| s.trim().parse::<i64>().ok())
         .filter(|n| *n >= 1)
         .unwrap_or(200);
+    // B-038 partition lease + seal-loop fence. SECURE-INERT DEFAULT OFF: absent /
+    // forwarded-`""` / anything but an explicit truthy value ⇒ the drain behaves
+    // exactly as before. Flipped on by an operator only after the prod probe.
+    let lease_enabled = std::env::var("AUDIT_DRAIN_LEASE_ENABLED")
+        .ok()
+        .is_some_and(|v| matches!(v.trim(), "1" | "true" | "TRUE"));
+    if lease_enabled {
+        tracing::info!(
+            "audit/drain: AUDIT_DRAIN_LEASE_ENABLED is ON — partitions are serialized \
+             by a per-partition lease + seal-loop fence (B-038)"
+        );
+    }
     Some(AuditDrainState {
         internal_auth_key,
         d1,
@@ -406,6 +426,7 @@ pub fn build_state_from_env() -> Option<AuditDrainState> {
         signing_key_id,
         trust_unsigned_resume,
         batch_limit,
+        lease_enabled,
     })
 }
 
@@ -424,6 +445,124 @@ fn now_ms() -> i64 {
             .unwrap_or(0),
     )
     .unwrap_or(i64::MAX)
+}
+
+/// TTL for a per-partition drain lease (B-038). Generously bounds ONE `/drain`
+/// call (already row-bounded by `batch_limit` + the edge subrequest timeout), so
+/// a crashed holder's lease self-expires and the partition is never wedged. NOT
+/// tied to the whole backlog drain — each `/drain` call re-acquires. 5 min.
+const AUDIT_DRAIN_LEASE_TTL_MS: i64 = 5 * 60 * 1000;
+
+/// A unique-per-invocation lease holder id (uuid v4). Used so `release_lease`
+/// only ever deletes a lease we still own (holder-scoped delete).
+fn new_lease_holder() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
+
+/// The seal-loop self-fence decision (B-038). When the lease regime is ON, a
+/// holder MUST stop writing once its own lease has expired (`now >= expires_ms`)
+/// so it cannot still be sealing after a stealer takes the now-expired lease —
+/// the residual fork window a bare TTL lease leaves open. Pure so it is
+/// unit-tested without D1. When the lease is OFF this is always `false`, so the
+/// seal loop runs to completion exactly as before.
+fn should_fence(now_ms: i64, my_lease_expires_ms: i64, lease_enabled: bool) -> bool {
+    lease_enabled && now_ms >= my_lease_expires_ms
+}
+
+/// Outcome of the fenced seal loop over the pre-computed sealed rows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FencedSeal {
+    /// Every row was written; the caller proceeds to advance the head.
+    Complete(u64),
+    /// The fence tripped after writing `n` rows (the pre-expiry prefix); the
+    /// caller must NOT advance the head — the next drain resumes from the tail.
+    Fenced(u64),
+}
+
+/// Write the pre-computed sealed rows in order, checking the self-fence
+/// (`should_fence`) with a FRESH clock reading before EACH write. On a fence trip
+/// it stops having written only the ordered prefix and reports `Fenced(prefix)`;
+/// otherwise `Complete(n)`. The `clock` and `write_row` seams make the fence
+/// deterministically unit-testable without D1 (drive `clock` across the expiry
+/// and assert only the prefix was written) while the real path passes `now_ms`
+/// and a `write_seal` closure — one shared loop, no divergence.
+async fn run_fenced_seal_loop<C, W, Fut>(
+    sealed: &[SealedRow],
+    lease_enabled: bool,
+    my_lease_expires_ms: i64,
+    mut clock: C,
+    mut write_row: W,
+) -> Result<FencedSeal, String>
+where
+    C: FnMut() -> i64,
+    W: FnMut(SealedRow) -> Fut,
+    Fut: std::future::Future<Output = Result<(), String>>,
+{
+    for (i, row) in sealed.iter().enumerate() {
+        if should_fence(clock(), my_lease_expires_ms, lease_enabled) {
+            return Ok(FencedSeal::Fenced(u64::try_from(i).unwrap_or(u64::MAX)));
+        }
+        write_row(row.clone()).await?;
+    }
+    Ok(FencedSeal::Complete(
+        u64::try_from(sealed.len()).unwrap_or(u64::MAX),
+    ))
+}
+
+/// Acquire the per-partition drain lease atomically (B-038). One SQLite statement
+/// — `INSERT … ON CONFLICT DO UPDATE … WHERE expires_ms < now RETURNING holder` —
+/// so there is no read-then-write race: a fresh row INSERTs, an EXPIRED lease is
+/// stolen by the guarded UPDATE, and a LIVE lease fails the `WHERE` so the
+/// `RETURNING` yields zero rows. Acquired iff a row is returned (mirrors the
+/// `advance_head_cas` RETURNING pattern). Only called when the lease flag is ON.
+async fn acquire_lease(
+    d1: &D1HttpClient,
+    tenant_id: &str,
+    region: &str,
+    holder: &str,
+    now_ms: i64,
+    ttl_ms: i64,
+) -> Result<bool, String> {
+    let expires_ms = now_ms.saturating_add(ttl_ms);
+    let rows = d1
+        .query(
+            "INSERT INTO audit_drain_lease \
+                 (tenant_id, region, holder, acquired_ms, expires_ms) \
+             VALUES (?1, ?2, ?3, ?4, ?5) \
+             ON CONFLICT(tenant_id, region) DO UPDATE \
+                SET holder = excluded.holder, \
+                    acquired_ms = excluded.acquired_ms, \
+                    expires_ms = excluded.expires_ms \
+                WHERE audit_drain_lease.expires_ms < ?4 \
+             RETURNING holder",
+            &[
+                json!(tenant_id),
+                json!(region),
+                json!(holder),
+                json!(now_ms),
+                json!(expires_ms),
+            ],
+        )
+        .await?;
+    Ok(!rows.is_empty())
+}
+
+/// Release the per-partition drain lease (B-038), holder-scoped so we only ever
+/// delete a lease we still hold. Best-effort: a missed release (crash/panic) is
+/// harmless — the next drain steals the lease once it expires.
+async fn release_lease(
+    d1: &D1HttpClient,
+    tenant_id: &str,
+    region: &str,
+    holder: &str,
+) -> Result<(), String> {
+    d1.query(
+        "DELETE FROM audit_drain_lease \
+         WHERE tenant_id = ?1 AND region = ?2 AND holder = ?3",
+        &[json!(tenant_id), json!(region), json!(holder)],
+    )
+    .await?;
+    Ok(())
 }
 
 /// Parse a 64-char lowercase-hex BLAKE3 digest into a [`ChainHash`]. `None` on
@@ -471,6 +610,16 @@ enum PartitionOutcome {
     Drift,
     /// No pending rows (raced away between the partition scan and the read).
     Empty,
+    /// Another drain holds this partition's lease (`AUDIT_DRAIN_LEASE_ENABLED`
+    /// ON). We did not touch it — neither an error nor drift, just normal
+    /// backpressure. Counted into `partitions_leased`.
+    Leased,
+    /// The seal-loop self-fence tripped: `n` rows were sealed (the pre-expiry
+    /// PREFIX) and the loop stopped at the lease expiry, so the head was NOT
+    /// advanced. A re-drain resumes from the now-ahead sealed tail and continues
+    /// (the existing crash-recovery path). Treated like a truncated batch by the
+    /// sweep: `n` counts into `rows_sealed` and forces `incomplete = true`.
+    Fenced(u64),
 }
 
 /// Pure chain-seal computation. Given the resume `(start_head, start_seq)` and the
@@ -1016,6 +1165,15 @@ async fn converge_unsigned_heads(
 }
 
 /// Drain a single `(tenant_id, region)` partition.
+///
+/// B-038 lease wrapper. When `lease_enabled` is OFF this is a thin pass-through to
+/// [`drain_partition_inner`] with the fence disabled — EXACTLY the pre-lease
+/// behavior (no lease acquire/release, no fence). When ON it acquires the
+/// per-partition lease FIRST (before any read): if another drain holds it we
+/// return [`PartitionOutcome::Leased`] without touching the partition; otherwise
+/// we run the body and, on EVERY exit path (`Sealed`/`Drift`/`Empty`/`Fenced` and
+/// the CF-6 `FailClosed` `Err`), release the lease before returning. Single-exit
+/// so no path can leak a held lease (a missed release still self-heals on TTL).
 #[allow(
     clippy::too_many_arguments,
     reason = "explicit, no shared config struct"
@@ -1029,6 +1187,95 @@ async fn drain_partition(
     signing_key_id: u64,
     trust_unsigned_resume: bool,
     batch_limit: i64,
+    lease_enabled: bool,
+) -> Result<PartitionOutcome, String> {
+    if !lease_enabled {
+        // Lease regime OFF: no lease, no fence — the drain runs exactly as it did
+        // before B-038. `i64::MAX` expiry makes `should_fence` a permanent `false`.
+        return drain_partition_inner(
+            d1,
+            tenant_id,
+            region,
+            now,
+            signing_seed,
+            signing_key_id,
+            trust_unsigned_resume,
+            batch_limit,
+            false,
+            i64::MAX,
+        )
+        .await;
+    }
+
+    let holder = new_lease_holder();
+    // Acquire against a FRESH clock read (not the shared sweep `now`, which may be
+    // seconds stale for a late partition) so the TTL bounds THIS call, and derive
+    // the fence expiry from the SAME instant — the fence boundary must equal the
+    // lease's written `expires_ms` so a holder stops writing exactly when its lease
+    // becomes stealable, never after.
+    let acquired_ms = now_ms();
+    let acquired = acquire_lease(
+        d1,
+        tenant_id,
+        region,
+        &holder,
+        acquired_ms,
+        AUDIT_DRAIN_LEASE_TTL_MS,
+    )
+    .await?;
+    if !acquired {
+        tracing::debug!(
+            region = %region,
+            "audit/drain: partition lease held by another drain — skipping (backpressure, not drift)"
+        );
+        return Ok(PartitionOutcome::Leased);
+    }
+    let my_lease_expires_ms = acquired_ms.saturating_add(AUDIT_DRAIN_LEASE_TTL_MS);
+
+    // Run the body, then ALWAYS release (single exit). The CF-6 `FailClosed` Err
+    // return happens INSIDE the body, so it too passes through the release.
+    let outcome = drain_partition_inner(
+        d1,
+        tenant_id,
+        region,
+        now,
+        signing_seed,
+        signing_key_id,
+        trust_unsigned_resume,
+        batch_limit,
+        true,
+        my_lease_expires_ms,
+    )
+    .await;
+    if let Err(e) = release_lease(d1, tenant_id, region, &holder).await {
+        tracing::warn!(
+            error = %e,
+            region = %region,
+            "audit/drain: lease release failed (best-effort; the lease self-heals on TTL expiry)"
+        );
+    }
+    outcome
+}
+
+/// The single-writer drain body for one partition. Correct for a single writer;
+/// B-038's [`drain_partition`] wrapper provides that precondition via the lease,
+/// and the seal-loop fence (`lease_enabled` + `my_lease_expires_ms`) guarantees a
+/// holder stops writing at its own lease expiry.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "explicit, no shared config struct"
+)]
+async fn drain_partition_inner(
+    d1: &D1HttpClient,
+    tenant_id: &str,
+    region: &str,
+    now: i64,
+    signing_seed: Option<&[u8; 32]>,
+    signing_key_id: u64,
+    trust_unsigned_resume: bool,
+    batch_limit: i64,
+    lease_enabled: bool,
+    my_lease_expires_ms: i64,
 ) -> Result<PartitionOutcome, String> {
     let checkpoint = read_checkpoint(d1, tenant_id, region).await?;
 
@@ -1093,8 +1340,32 @@ async fn drain_partition(
     // Seal the rows FIRST (deterministic + idempotent: guarded by emitted_at IS
     // NULL). A crash here leaves correctly-sealed rows the next drain resumes from
     // (sealed-tail authoritative) — never a gap.
-    for row in &sealed {
-        write_seal(d1, row, now).await?;
+    //
+    // B-038 SELF-FENCE (load-bearing): before each write, if the lease regime is
+    // ON and our lease has expired (`now_ms() >= my_lease_expires_ms`), STOP —
+    // seal only the pre-expiry prefix and do NOT advance the head. NOT advancing
+    // is crash-safe: the next drain resumes from the now-ahead sealed tail and
+    // continues (the SAME crash-recovery path). This makes a holder provably stop
+    // writing at its own expiry, so it cannot still be sealing after a stealer
+    // takes the now-expired lease — closing the residual fork window a bare TTL
+    // lease leaves open. When the lease is OFF the fence never trips and the loop
+    // runs to completion exactly as before.
+    let fence = run_fenced_seal_loop(
+        &sealed,
+        lease_enabled,
+        my_lease_expires_ms,
+        now_ms,
+        |row| async move { write_seal(d1, &row, now).await },
+    )
+    .await?;
+    if let FencedSeal::Fenced(prefix) = fence {
+        tracing::warn!(
+            region = %region,
+            prefix_sealed = prefix,
+            "audit/drain: lease expired mid-seal — FENCED after the prefix, head NOT advanced; \
+             a re-drain resumes from the sealed tail (B-038)"
+        );
+        return Ok(PartitionOutcome::Fenced(prefix));
     }
 
     // CF-6: sign the canonical head tuple we are about to commit (when a seed is
@@ -1133,16 +1404,22 @@ async fn drain_partition(
     if committed {
         Ok(PartitionOutcome::Sealed(sealed.len() as u64))
     } else {
-        // Drift: a concurrent drain advanced the head. Our sealed rows are
-        // byte-identical to that drain's (deterministic), so they are safe; we
-        // just do not double-advance the checkpoint.
+        // Drift: a concurrent drain advanced the head first. The CAS gates only
+        // the head advance, so this branch guards the SEQUENTIAL crash-then-resume
+        // race — where the resumed rows ARE genuinely identical (same single
+        // writer, same tail, same head). The CONCURRENT-overlap fork the CAS can
+        // NOT catch (it runs after the seals hit disk) is closed upstream by the
+        // B-038 partition lease + seal-loop fence, which enforce the single-writer
+        // precondition this no-op always needed; we simply do not double-advance.
         Ok(PartitionOutcome::Drift)
     }
 }
 
 /// `POST /_internal/audit/drain` — seal every pending partition. Returns a
 /// summary `{ ok, partitions_drained, rows_sealed, partitions_drifted,
-/// partitions_failed }`. Internal-auth gated; no request body.
+/// partitions_failed, partitions_leased, heads_resigned, incomplete }`
+/// (`partitions_leased` is B-038 lease backpressure, always 0 while
+/// `AUDIT_DRAIN_LEASE_ENABLED` is OFF). Internal-auth gated; no request body.
 async fn handle_drain(State(state): State<AuditDrainState>, headers: HeaderMap) -> Response {
     if !internal_auth_ok(state.internal_auth_key.as_bytes(), &headers) {
         return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
@@ -1159,6 +1436,9 @@ async fn handle_drain(State(state): State<AuditDrainState>, headers: HeaderMap) 
     let mut rows_sealed: u64 = 0;
     let mut partitions_drifted: u64 = 0;
     let mut partitions_failed: u64 = 0;
+    // B-038: partitions skipped because another drain holds their lease
+    // (`AUDIT_DRAIN_LEASE_ENABLED` ON) — normal backpressure, always 0 when OFF.
+    let mut partitions_leased: u64 = 0;
     // Global per-call row budget (see `AuditDrainState::batch_limit`). Bounds the
     // total sealing work so a cold backlog can never make one call exceed the edge
     // subrequest timeout. When the budget is spent (or a partition's tail was
@@ -1185,6 +1465,7 @@ async fn handle_drain(State(state): State<AuditDrainState>, headers: HeaderMap) 
             state.signing_key_id,
             state.trust_unsigned_resume,
             limit,
+            state.lease_enabled,
         )
         .await
         {
@@ -1198,6 +1479,27 @@ async fn handle_drain(State(state): State<AuditDrainState>, headers: HeaderMap) 
                 if sealed_i >= limit {
                     incomplete = true;
                 }
+            }
+            Ok(PartitionOutcome::Fenced(n)) => {
+                // B-038 fence: the pre-expiry PREFIX (`n` rows) was sealed but the
+                // head was NOT advanced. Treated like a truncated batch — count the
+                // rows and force a re-drain (which resumes from the sealed tail).
+                rows_sealed = rows_sealed.saturating_add(n);
+                let sealed_i = i64::try_from(n).unwrap_or(i64::MAX);
+                remaining = remaining.saturating_sub(sealed_i);
+                incomplete = true;
+                tracing::warn!(
+                    region = %region,
+                    prefix_sealed = n,
+                    "audit/drain: partition fenced at lease expiry — prefix sealed, re-drain required"
+                );
+            }
+            Ok(PartitionOutcome::Leased) => {
+                partitions_leased = partitions_leased.saturating_add(1);
+                tracing::debug!(
+                    region = %region,
+                    "audit/drain: partition lease held by another drain — skipped"
+                );
             }
             Ok(PartitionOutcome::Drift) => {
                 partitions_drifted = partitions_drifted.saturating_add(1);
@@ -1233,6 +1535,9 @@ async fn handle_drain(State(state): State<AuditDrainState>, headers: HeaderMap) 
             "rows_sealed": rows_sealed,
             "partitions_drifted": partitions_drifted,
             "partitions_failed": partitions_failed,
+            // B-038: partitions another drain's live lease made us skip (always 0
+            // unless AUDIT_DRAIN_LEASE_ENABLED is ON). Normal backpressure.
+            "partitions_leased": partitions_leased,
             // CF-6 convergence: legacy UNSIGNED/foreign-key heads re-signed in place
             // this sweep (only non-zero while AUDIT_CHAIN_TRUST_UNSIGNED_RESUME is ON).
             "heads_resigned": heads_resigned,
@@ -1812,6 +2117,190 @@ mod tests {
             &head_hex(),
             5,
             &sig
+        ));
+    }
+
+    // ---- B-038: partition lease + seal-loop fence ----
+
+    /// A batch of `n` deterministic sealed rows to drive the fenced loop.
+    fn sealed_rows(n: usize) -> Vec<SealedRow> {
+        let payloads: Vec<Value> = (0..n).map(|i| json!({ "i": i })).collect();
+        let (sealed, _, _) = seal_rows(ChainHash::genesis(), 0, &rows(&payloads)).unwrap();
+        sealed
+    }
+
+    /// The fence decision is pure: it trips ONLY when the lease is enabled AND the
+    /// clock has reached the lease expiry. When the lease is OFF it is never `true`
+    /// regardless of the clock, so the seal loop always runs to completion.
+    #[test]
+    fn should_fence_only_when_enabled_and_expired() {
+        // Lease OFF ⇒ never fence, even far past "expiry".
+        assert!(!should_fence(1_000, 500, false));
+        assert!(!should_fence(i64::MAX, 0, false));
+        // Lease ON, before expiry ⇒ keep sealing.
+        assert!(!should_fence(499, 500, true));
+        // Lease ON, at/after expiry ⇒ fence (>= boundary is inclusive).
+        assert!(should_fence(500, 500, true));
+        assert!(should_fence(501, 500, true));
+    }
+
+    /// THE FENCE TEST (reaches the residual fork window). Drive the REAL seal loop
+    /// with a clock that crosses `my_lease_expires_ms` partway through and assert:
+    /// only the pre-expiry PREFIX was written, and the outcome is `Fenced(prefix)`
+    /// — so the caller does NOT advance the head. This is the path the prod probe
+    /// structurally cannot reach.
+    #[tokio::test]
+    async fn fence_stops_seal_loop_at_expiry_writing_only_the_prefix() {
+        let sealed = sealed_rows(5);
+        let expires = 1_000;
+        // Clock: rows 0,1,2 see now < expiry (900); row 3 sees now == expiry
+        // (1000) → fence BEFORE writing row 3. `should_fence` reads the clock once
+        // per row, before each write, so 4 readings are consumed (rows 0..=3).
+        let ticks = [900, 900, 900, 1_000, 1_000];
+        let mut tick = ticks.into_iter();
+        let clock = move || tick.next().unwrap_or(i64::MAX);
+
+        let mut written: Vec<u64> = Vec::new();
+        let outcome = run_fenced_seal_loop(&sealed, true, expires, clock, |row| {
+            written.push(row.sequence_number);
+            async { Ok(()) }
+        })
+        .await
+        .unwrap();
+
+        // Fenced after the 3-row prefix (sequences 0,1,2); rows 3,4 were NOT written.
+        assert_eq!(outcome, FencedSeal::Fenced(3));
+        assert_eq!(written, vec![0, 1, 2]);
+    }
+
+    /// With the lease OFF the fence is inert: the loop seals every row and reports
+    /// `Complete`, even when the clock is past a (would-be) expiry — proving the
+    /// flag-OFF default writes the whole batch exactly as before B-038.
+    #[tokio::test]
+    async fn lease_disabled_seals_whole_batch_completely() {
+        let sealed = sealed_rows(4);
+        let mut written: Vec<u64> = Vec::new();
+        let outcome = run_fenced_seal_loop(
+            &sealed,
+            false,       // lease OFF
+            0,           // expiry already in the past — must be ignored
+            || i64::MAX, // clock way past expiry
+            |row| {
+                written.push(row.sequence_number);
+                async { Ok(()) }
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(outcome, FencedSeal::Complete(4));
+        assert_eq!(written, vec![0, 1, 2, 3]);
+    }
+
+    /// Lease ON but the clock never reaches expiry ⇒ the whole batch is sealed and
+    /// the head may advance (Complete). The fence only bites when the lease truly
+    /// expires mid-seal.
+    #[tokio::test]
+    async fn lease_enabled_but_not_expired_completes() {
+        let sealed = sealed_rows(3);
+        let mut written = 0u64;
+        let outcome = run_fenced_seal_loop(
+            &sealed,
+            true,
+            i64::MAX,
+            || 0,
+            |_row| {
+                written += 1;
+                async { Ok(()) }
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(outcome, FencedSeal::Complete(3));
+        assert_eq!(written, 3);
+    }
+
+    /// A write error propagates (the loop is not swallowed by the fence).
+    #[tokio::test]
+    async fn seal_loop_propagates_write_error() {
+        let sealed = sealed_rows(2);
+        let err = run_fenced_seal_loop(
+            &sealed,
+            true,
+            i64::MAX,
+            || 0,
+            |_row| async { Err("boom".to_string()) },
+        )
+        .await;
+        assert_eq!(err, Err("boom".to_string()));
+    }
+
+    /// Sweep plumbing: a `Fenced(n)` outcome is accounted like a truncated batch —
+    /// its `n` rows count into `rows_sealed` and it forces `incomplete = true`,
+    /// while a `Leased` outcome only increments `partitions_leased`. This mirrors
+    /// the exact arithmetic the `handle_drain` match arms perform (kept in lock-step
+    /// with them) without needing a live D1.
+    #[test]
+    fn sweep_accounts_fenced_and_leased_outcomes() {
+        // Replicate the match-arm accounting over a synthetic outcome stream.
+        let outcomes = [
+            PartitionOutcome::Sealed(4),
+            PartitionOutcome::Leased,
+            PartitionOutcome::Fenced(3),
+            PartitionOutcome::Leased,
+            PartitionOutcome::Drift,
+            PartitionOutcome::Empty,
+        ];
+        let mut rows_sealed: u64 = 0;
+        let mut partitions_drained: u64 = 0;
+        let mut partitions_leased: u64 = 0;
+        let mut partitions_drifted: u64 = 0;
+        let mut incomplete = false;
+        for o in outcomes {
+            match o {
+                PartitionOutcome::Sealed(n) => {
+                    partitions_drained += 1;
+                    rows_sealed += n;
+                }
+                PartitionOutcome::Fenced(n) => {
+                    rows_sealed += n;
+                    incomplete = true;
+                }
+                PartitionOutcome::Leased => partitions_leased += 1,
+                PartitionOutcome::Drift => partitions_drifted += 1,
+                PartitionOutcome::Empty => {}
+            }
+        }
+        assert_eq!(rows_sealed, 7); // 4 sealed + 3 fenced prefix
+        assert_eq!(partitions_drained, 1);
+        assert_eq!(partitions_leased, 2);
+        assert_eq!(partitions_drifted, 1);
+        assert!(incomplete, "a fenced partition must force a re-drain");
+    }
+
+    /// Two lease holders minted for the same partition are DISTINCT, so a stealer's
+    /// holder-scoped release can never delete the other holder's lease.
+    #[test]
+    fn lease_holders_are_unique_per_invocation() {
+        let a = new_lease_holder();
+        let b = new_lease_holder();
+        assert_ne!(a, b);
+        assert_eq!(a.len(), 36, "uuid v4 hyphenated form is 36 chars");
+    }
+
+    /// The fence boundary equals the lease's written `expires_ms` (acquired_ms +
+    /// TTL), so a holder stops writing exactly when its lease becomes stealable —
+    /// never after. (The acquire SQL writes the same `acquired_ms + TTL`.)
+    #[test]
+    fn fence_expiry_matches_lease_ttl() {
+        let acquired_ms = 1_700_000_000_000;
+        let my_lease_expires_ms = acquired_ms + AUDIT_DRAIN_LEASE_TTL_MS;
+        // At exactly the written expiry the holder fences (does not write past it).
+        assert!(should_fence(my_lease_expires_ms, my_lease_expires_ms, true));
+        // One ms before, it keeps going.
+        assert!(!should_fence(
+            my_lease_expires_ms - 1,
+            my_lease_expires_ms,
+            true
         ));
     }
 }

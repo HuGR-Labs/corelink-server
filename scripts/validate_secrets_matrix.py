@@ -212,6 +212,11 @@ ALLOWLIST_REGEX = re.compile(
     # verbose logging), NOT a credential. Same class as RUST_LOG / NODE_ENV.
     #   Consumer: sdks/js/src/client.ts (process.env.CORELINK_LOG === "debug")
     r"|CORELINK_LOG$"
+    # 2026-08-24 (B-038) — audit-drain partition-lease rollout flag. A pure
+    # on/off feature toggle (default OFF), NOT a credential; enabling it
+    # serialises audit drains behind a per-partition lease + seal fence.
+    #   Consumer: crates/corelink-container/src/routes/audit_drain.rs (build_state_from_env)
+    r"|AUDIT_DRAIN_LEASE_ENABLED$"
     r")"
 )
 

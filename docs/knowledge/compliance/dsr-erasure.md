@@ -28,7 +28,9 @@ source_files:
   - crates/corelink-dsr/src/receipt.rs
   - crates/corelink-dsr/src/event.rs
   - crates/corelink-dsr/src/lib.rs
-checkpoint_sha: "d1c0534571c6e38b477d2d314516c1fc18277b1c"
+source_blobs:
+  - "crates/corelink-container/src/routes/dsr/adapter_d1.rs@5228e4d12c89264fdfca3d55db6ce88a33705ed0"
+checkpoint_sha: "efb831b69bc387d4a287a1623e03812fabf5c569"
 provenance: "AUTHORED"
 tags: ["dsr", "gdpr", "lgpd", "erasure", "right-to-erasure", "compliance", "mfa", "attestation"]
 timestamp: "2026-06-26T00:00:00Z"
