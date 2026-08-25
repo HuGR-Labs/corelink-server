@@ -1936,12 +1936,23 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  n=$(grep -rlE "set -[a-z]*o pipefail" .github/workflows scripts tests tools | xargs grep -oE "\| *head\b" | wc -l | tr -d " "); [ "${n:-0}" -gt 0 ]
+  n=$(grep -rlE "set -[a-z]*o pipefail" .github/workflows scripts tests tools | xargs grep -nE "^[^#]*\| *head\b" | grep -vE "\|\| *(true|echo)" | wc -l | tr -d " "); [ "${n:-0}" -gt 0 ]
 verify-means: |
-  open while any `| head` site remains inside a file that sets pipefail. Measured 74
-  on 2026-08-24. Goes red when the last one is either rewritten to a form that cannot
-  SIGPIPE or shown, site by site, to be status-irrelevant.
-last-verified: 2026-08-24
+  open while any UNGUARDED `| head` remains on a CODE line of a file that sets
+  pipefail. Two anchors, both learned the hard way:
+    - `^[^#]*` — the unanchored version counted COMMENTS, including this repo's
+      own gate docstring and the comments the fix itself added explaining the
+      rule. 72 naive vs 65 anchored on the fix branch.
+    - `|| true` / `|| echo` excluded — a site whose status is explicitly
+      discarded cannot abort anything; leaving it in the count would demand
+      churn that buys nothing.
+  Measured: 51 unguarded code sites on 2026-08-24, 36 after the 2026-08-25 pass.
+  The remaining 36 were classified site by site with evidence — command
+  substitution in an argument position (status never consumed), or a producer
+  that provably cannot outrun the cap. That classification is what closing this
+  item requires, and it has NOT been re-derived by hand for every one of the 36;
+  the fixed 17 were.
+last-verified: 2026-08-25
 ```
 
 ### B-041 — `status.corelink.humangr.com` is advertised in 224 places and serves nothing

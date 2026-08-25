@@ -18,7 +18,7 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 echo "==> python wheel"
-published_whl="$(find apps/docs/static/pypi/packages -name '*.whl' | head -1)"
+published_whl="$(find apps/docs/static/pypi/packages -name '*.whl' -print -quit)"
 if [[ -z "$published_whl" ]]; then
   echo "::error::no wheel published under apps/docs/static/pypi/packages" >&2
   exit 1
@@ -26,7 +26,7 @@ fi
 python3 -m venv "$work/venv" >/dev/null
 "$work/venv/bin/pip" -q install build hatchling
 (cd sdks/python && "$work/venv/bin/python" -m build --wheel --outdir "$work/whl" >/dev/null)
-rebuilt_whl="$(find "$work/whl" -name '*.whl' | head -1)"
+rebuilt_whl="$(find "$work/whl" -name '*.whl' -print -quit)"
 
 if [[ "$(basename "$published_whl")" != "$(basename "$rebuilt_whl")" ]]; then
   echo "::error::wheel name drift: published $(basename "$published_whl"), rebuilt $(basename "$rebuilt_whl")" >&2
@@ -49,7 +49,7 @@ else
 fi
 
 echo "==> npm tarball"
-published_tgz="$(find apps/docs/static/npm -name '*.tgz' | head -1)"
+published_tgz="$(find apps/docs/static/npm -name '*.tgz' -print -quit)"
 if [[ -z "$published_tgz" ]]; then
   echo "::error::no tarball published under apps/docs/static/npm" >&2
   exit 1
@@ -57,7 +57,7 @@ fi
 cp -R sdks/js "$work/js"
 (cd "$work/js" && npm install --no-save --silent typescript @types/node >/dev/null 2>&1 \
   && npx tsc -p tsconfig.build.json >/dev/null && npm pack --silent >/dev/null)
-rebuilt_tgz="$(find "$work/js" -maxdepth 1 -name '*.tgz' | head -1)"
+rebuilt_tgz="$(find "$work/js" -maxdepth 1 -name '*.tgz' -print -quit)"
 
 if [[ "$(basename "$published_tgz")" != "$(basename "$rebuilt_tgz")" ]]; then
   echo "::error::tarball name drift: published $(basename "$published_tgz"), rebuilt $(basename "$rebuilt_tgz")" >&2
@@ -77,7 +77,7 @@ else
 fi
 
 echo "==> go module proxy"
-published_zip="$(find apps/docs/static/goproxy -name '*.zip' | head -1)"
+published_zip="$(find apps/docs/static/goproxy -name '*.zip' -print -quit)"
 if [[ -z "$published_zip" ]]; then
   echo "::error::no module zip published under apps/docs/static/goproxy" >&2
   exit 1

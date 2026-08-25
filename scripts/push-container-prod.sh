@@ -111,8 +111,13 @@ FULL_TAG_SHA="${IMAGE_NAME}:${SHORT_SHA}"
 # Extract <name> from that line and verify it matches IMAGE_NAME above.
 # This prevents silent drift if the worker or class is renamed in one place only.
 
-EXPECTED_IMAGE_NAME="$(grep -E '^image = "registry\.cloudflare\.com/[^/]+/[^:"]+'  \
-    "$REPO_ROOT/wrangler.toml" | head -1 | sed -E 's|.*registry\.cloudflare\.com/[^/]+/([^:]+):.*|\1|')"
+# `grep -m1` rather than `| head -1`: wrangler.toml carries FIVE such lines
+# (prod + sam/lhr/nrt/syd) and the first is the one this prod-push script
+# means. `head -1` closed the pipe on the other four, so under `pipefail` the
+# substitution could exit 141 and abort the script (B-040). `-m1` stops grep
+# itself at the same first match — identical value, no pipe to break.
+EXPECTED_IMAGE_NAME="$(grep -m1 -E '^image = "registry\.cloudflare\.com/[^/]+/[^:"]+'  \
+    "$REPO_ROOT/wrangler.toml" | sed -E 's|.*registry\.cloudflare\.com/[^/]+/([^:]+):.*|\1|')"
 
 if [ -z "$EXPECTED_IMAGE_NAME" ]; then
     die "Could not extract image name from wrangler.toml. Is the [[env.prod.containers]] image= line present?"

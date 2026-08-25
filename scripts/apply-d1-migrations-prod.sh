@@ -72,7 +72,11 @@ readonly LOG_PREFIX="[$SCRIPT_NAME]"
 APPLY_MODE=false
 
 usage() {
-    grep '^#' "$0" | head -40 | sed 's/^# \?//'
+    # `|| true`: this is the LAST command of usage(), so its status becomes
+    # the function's, and `usage; exit 0` under `set -e` turned a --help into
+    # exit 141 — the file has more than 40 comment lines, so `head` always
+    # closed the pipe (B-040).
+    grep '^#' "$0" | head -40 | sed 's/^# \?//' || true
 }
 
 while [[ $# -gt 0 ]]; do

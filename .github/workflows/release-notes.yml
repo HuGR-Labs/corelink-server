@@ -92,7 +92,10 @@ jobs:
             PREV="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
             if [[ -z "$PREV" ]]; then
               # Fallback to repo root commit.
-              PREV="$(git rev-list --max-parents=0 HEAD | head -1)"
+              # `git log -1` instead of `rev-list | head -1`: git stops on its
+              # own, so there is no pipe for a second root commit (grafts,
+              # orphan merges) to break under pipefail (B-040).
+              PREV="$(git log --max-parents=0 --format=%H -1)"
             fi
             FROM="$PREV"
             VERSION_FLAG="--version ${TAG#v}"

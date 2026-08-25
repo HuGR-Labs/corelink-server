@@ -49,7 +49,11 @@ ENV_FILE="$DEFAULT_ENV_FILE"
 readonly MVP_ALLOWLIST="$REPO_ROOT/scripts/secrets-mvp-allowlist.txt"
 
 usage() {
-    grep '^#' "$0" | head -45 | sed 's/^# \?//'
+    # `|| true`: this is the LAST command of usage(), so its status becomes
+    # the function's, and `usage; exit 0` under `set -e` turned a --help into
+    # exit 141 — the file has more than 45 comment lines, so `head` always
+    # closed the pipe (B-040).
+    grep '^#' "$0" | head -45 | sed 's/^# \?//' || true
     cat <<'USAGE_EXTRA'
 
   --mvp-only      Only put secrets present in scripts/secrets-mvp-allowlist.txt.

@@ -85,7 +85,10 @@ jobs:
             echo "info: reference is already up to date"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            git diff --stat apps/docs/docs/reference/api/ | head -50
+            # `|| true`: log-only diagnostic. A diff wider than 50 files makes
+            # `head` close the pipe, and under pipefail that failed the step
+            # for the sole reason that there was a lot to report (B-040).
+            git diff --stat apps/docs/docs/reference/api/ | head -50 || true
           fi
 
       - name: Configure git identity
