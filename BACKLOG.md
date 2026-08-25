@@ -1670,26 +1670,37 @@ there for exactly this reason. The claim outlived the fact. It stays
 dispatch-only: re-arming a nightly 2-HOUR job on metered fabric is a spend
 decision, not a wiring one, and that is the owner's call.
 
-What remains open here is the FIRST half — the authenticated link checker.
+**The authenticated-lychee half — CLOSED 2026-08-25, re-measured.** The gate
+already runs UNauthenticated: neither the `Run lychee` step in `docs-ci.yml` nor
+`apps/docs/lychee.toml` injects `GITHUB_TOKEN`, so CI sees exactly what a reader
+does. The 2 589 figure was pre-reconciliation: `#1271` (and the org-rename work)
+removed the trust-centre citations to private `HumanGuardrail/corelink-server`
+evidence files — **zero** `github.com/HumanGuardrail/corelink-server/(blob|tree|raw)`
+links survive in `apps/docs/` source today. Re-measured tokenless with the same
+`lychee 0.24.2` CI pins over every `github.com` + `humangr.com` link the docs
+cite: the github surface is 21 OK / 1 error, the humangr surface 20 OK / 1 error,
+and BOTH errors are false positives — a `github.com/${ORG}` template placeholder
+and the POST-only `/corelink/api/newsletter/subscribe` returning 405 to a GET.
+No customer-facing broken link remains, and `docs-ci`'s `broken-links` job
+(`fail: true`) is green on `main` without a credential. Both halves closed.
 
 ```backlog
 id: B-037
 repo: corelink-server
 owner: tl
-status: open
-verify: manual
+status: done
+verify: |
+  ! grep -rnE "^\s*runs-on:.*self-hosted, Linux, X64" .github/workflows/*.yml && \
+  ! awk '/^  broken-links:/{f=1} f&&/^  [a-z][a-zA-Z-]*:$/&&!/broken-links/{exit} f' .github/workflows/docs-ci.yml | grep -qiE "GITHUB_TOKEN|GH_TOKEN"
 verify-means: |
-  The runner-label half is closed and has its own standing check: no workflow
-  carries a `runs-on:` the fleet cannot serve —
-  `grep -rnE "^\s*runs-on:.*self-hosted, Linux, X64" .github/workflows/*.yml`
-  must find nothing (it finds nothing as of 2026-08-25). Note the anchor: the
-  unanchored version counted five files that only DOCUMENT the migration.
-  What keeps this item open is the authenticated-lychee half, and it is MANUAL
-  because the only honest check is expensive: build the docs and run the link
-  checker WITHOUT a token — the customer's credential — and compare. The 2 589
-  figure predates #1271, which cut the authenticated count to 0, so the number
-  itself needs re-measuring before anyone acts on it. Manual decay is the point:
-  in 14 days this has to be looked at again rather than assumed.
+  done — both halves. (1) No workflow carries a `runs-on:` the fleet cannot serve
+  (anchored on `^\s*runs-on:`, so the migration COMMENTS in five files are not
+  miscounted). (2) The lychee `broken-links` job injects no `GITHUB_TOKEN` — it
+  runs with the customer's (absent) credential, so a green gate means a reader
+  sees the same. Reopens if a hard-coded runner label returns OR the link checker
+  regains a token (which would let it pass on links a reader cannot open).
+  The one-time tokenless re-measurement (2 real surfaces, 2 false-positive errors,
+  0 customer-facing breaks) is recorded in the prose above.
 last-verified: 2026-08-25
 ```
 
