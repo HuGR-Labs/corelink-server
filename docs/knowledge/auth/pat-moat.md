@@ -10,11 +10,11 @@ source_files:
   - "crates/corelink-container/src/adapter_pat.rs"
 source_blobs:
   - "worker/src/lib/internal_auth.ts@fb27ec67f58a10c777261c7485f79baeff0965de"
-  - "worker/src/index.ts@7a3789b04e1c4e65e5e850b2efa7eb907d875e27"
+  - "worker/src/index.ts@74f79e1cdc7219b1761b56ce3fab1fadb433691b"
   - "worker/src/lib/pat_verify_cache.ts@b0dafab6381684057de4c0589b5d95d18a35c741"
   - "worker/src/lib/tenant_suspend_gate.ts@bed740c1e2a471244a2c9680fcf4f1e800f26d7c"
   - "crates/corelink-container/src/adapter_pat.rs@069fb6295e5926ffc0b1263eb91e838addbe1297"
-checkpoint_sha: "f642a7dfe0ee8532d17d14067e12f2972d9c4b16"
+checkpoint_sha: "f0e91332ead73a966e92998b504faf71896ae732"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -86,7 +86,7 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
   stamps `PatVerifyResult.source` (`l1`/`kv`/`d1`, `worker/src/lib/pat_verify_cache.ts:142`), which
   `extractAuth` threads onto its `AuthResult` as `patSource` (`worker/src/index.ts:1504-1505`) purely so
   the handler can surface it in the `Server-Timing` response header's `auth` desc for a client latency
-  probe (`worker/src/index.ts:3988`); it is observability-only, never a trust signal and never forwarded
+  probe (`worker/src/index.ts:4033`); it is observability-only, never a trust signal and never forwarded
   to the container.
 - **L1 — per-isolate in-memory, 5 s.** A `Map` keyed by the non-secret `token_id`; a fresh (<TTL) hit
   returns with no I/O, served even through a transient D1/KV blip

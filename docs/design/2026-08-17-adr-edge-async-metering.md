@@ -133,3 +133,29 @@ parity proof:
 - **Keep `runQuotaBatch` on the warm path** (the status quo — one sync round trip): correct and already
   batched, but a synchronous cross-colo D1 write on every warm cache HIT is precisely the ~44 ms residual
   the target rules out. The fast path routes reads around it while keeping it for writes / near-cap.
+
+## Amendment 2026-08-25 — the serve path was excluded from this ADR by accident
+
+This ADR shipped, and then `EDGE_DO_METER="serve"` (the P3 edge-local request meter,
+`docs/design/2026-08-19-adr-edge-local-do-request-metering.md`) shipped on top of it. The async fast
+path's arming condition began with `!serveHandled`, so once the DO serve flag was on — which it is in
+**every** prod region — this ADR's fast path became unreachable for every capped tier, and every warm
+authed READ went on paying the synchronous D1 storage SUM this ADR exists to remove.
+
+Measured from inside the fabric (an ephemeral Cloudflare Containers box at `colo=IAD`, corelink-runners
+run 32792837540, 2026-08-25): `qbatch` **35-51 ms** on every warm authed read; the same request from
+São Paulo measures **115-124 ms**, because the round trip is to the ENAM D1 primary either way.
+
+The two mechanisms own **different caps** and compose exactly:
+
+- the DO is authoritative for the request **count** — on the serve path it has already metered this
+  request and holds the verdict, so no D1 counter statement is wanted at all;
+- what remains is the **storage** verdict, and this ADR's whole argument — a READ cannot grow storage,
+  so a ≤60 s-fresh B1 byte count returns the same verdict the live SUM would — applies to it unchanged.
+
+The composition rule is now one pure, unit-tested function (`quotaPathFor` in `worker/src/index.ts`)
+rather than a condition spelled inline, so a third mechanism cannot silently disable a second one the
+same way. Every invariant above is unchanged: eligibility still requires a metered, non-mutating,
+tier-CONFIRMED request; writes still resolve storage live; `d1Error` is still never cached; fan-out is
+still never re-metered. Enforcement ORDER on the serve path is preserved verbatim — storage 429 first,
+then the DO's request-cap 429 — because setting `handledFast` skips the block that used to apply them.
