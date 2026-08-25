@@ -22,6 +22,25 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+
+- **Prod container image rolled back to `d38d739e-r1` — `34848d93-r1` wedged the
+  `_system` container (INCIDENT 2026-08-25).** `cf-deploy-prod` run 32892355888
+  rolled all 5 regions onto `34848d93-r1` at 20:02-20:06 UTC. BetterStack monitor
+  4467865 (`/_health/container`) went DOWN at 20:05:44 UTC with "Timeout (no
+  headers received)"; the previous incident on that monitor resolved 2026-08-23,
+  so the roll caused it. Blast radius is the `_system` container only:
+  `/_health/container` hangs with no response headers, and `/_internal/pat/mint`
+  hangs AFTER the Worker's internal-auth gate passes (a wrong key still 401s in
+  ~0.1 s from the edge) — that is the PAT-issuance path the signup-worker session
+  exchange uses. `wrangler tail` shows the stateless Worker request open with NO
+  DurableObject invocation logged, i.e. the stub fetch never lands. The tenant
+  data plane was NOT affected: `cas-canary` run 32895201733 is green on the new
+  image and the per-tenant container instance serves normally, so the image is not
+  broken for tenant containers. Rolled back first, diagnosed second; #1320 and
+  #1328 ride on `34848d93` and go back in the queue with it until the `_system`
+  regression is understood.
+
 ### Added
 
 - **Governance-mode legal-hold-aware CAS erasure — the retention backend is real,
