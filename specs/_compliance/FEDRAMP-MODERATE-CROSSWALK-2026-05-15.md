@@ -100,7 +100,7 @@ tags:
 
 | NIST family × ctrl set | Representative controls (Moderate baseline) | SOC 2 CC overlap | Our CTRL ID | Status |
 |---|---|---|---|---|
-| CM (Configuration Management) — ~11 controls in Moderate | CM-2 Baseline Configuration · CM-3 Change Control · CM-4 Impact Analyses · CM-5 Access Restrictions for Change · CM-6 Configuration Settings · CM-7 Least Functionality · CM-8 System Component Inventory · CM-9 Configuration Mgmt Plan · CM-10 Software Usage · CM-11 User-Installed Software · CM-12 Information Location | CC6.8 · CC8.1 | PAT-DRIFT-DETECTION-001 + CTRL-SUPPLY-001/002/003/008 · branch protection · ADR process · sprint contracts §5.1 | **Coverage** (SLSA L3 + Cosign + Rekor + reproducible builds + Terraform drift detection exceed Moderate baseline) |
+| CM (Configuration Management) — ~11 controls in Moderate | CM-2 Baseline Configuration · CM-3 Change Control · CM-4 Impact Analyses · CM-5 Access Restrictions for Change · CM-6 Configuration Settings · CM-7 Least Functionality · CM-8 System Component Inventory · CM-9 Configuration Mgmt Plan · CM-10 Software Usage · CM-11 User-Installed Software · CM-12 Information Location | CC6.8 · CC8.1 | PAT-DRIFT-DETECTION-001 + CTRL-SUPPLY-001/002/003/008 · branch protection · ADR process · sprint contracts §5.1 | **Coverage** (SLSA L2 (self-hosted provenance) + Cosign + Rekor + reproducible builds + Terraform drift detection meet the Moderate baseline; L3 isolation is not claimed — see B-031) |
 
 ### 2.6 CP — Contingency Planning
 
@@ -178,7 +178,7 @@ tags:
 
 | NIST family × ctrl set | Representative controls (Moderate baseline) | SOC 2 CC overlap | Our CTRL ID | Status |
 |---|---|---|---|---|
-| SR (Supply Chain Risk Management) — ~12 controls in Moderate (introduced in Rev 5) | SR-2 Supply Chain Risk Mgmt Plan · SR-3 Supply Chain Controls & Processes · SR-5 Acquisition Strategies, Tools & Methods · SR-6 Supplier Assessments & Reviews · SR-8 Notification Agreements · SR-10 Inspection of Systems & Components · SR-11 Component Authenticity · SR-12 Component Disposal | CC5.2 · CC6.8 · CC9.2 | CTRL-SUPPLY-001..008 + SLSA L3 + Cosign + Rekor + CycloneDX SBOM + Dependency-Track + license allowlist + reproducible builds + `VENDOR-RISK-REGISTER.md` (19 vendors with quarterly review cadence) | **Coverage** (SLSA L3 build attestation + signed deploys + transparency logs + vendor risk register + sub-processor 30-day change notification all in place; one of our strongest families) |
+| SR (Supply Chain Risk Management) — ~12 controls in Moderate (introduced in Rev 5) | SR-2 Supply Chain Risk Mgmt Plan · SR-3 Supply Chain Controls & Processes · SR-5 Acquisition Strategies, Tools & Methods · SR-6 Supplier Assessments & Reviews · SR-8 Notification Agreements · SR-10 Inspection of Systems & Components · SR-11 Component Authenticity · SR-12 Component Disposal | CC5.2 · CC6.8 · CC9.2 | CTRL-SUPPLY-001..008 + SLSA L2 (self-hosted provenance) + Cosign + Rekor + CycloneDX SBOM + Dependency-Track + license allowlist + reproducible builds + `VENDOR-RISK-REGISTER.md` (19 vendors with quarterly review cadence) | **Coverage** (SLSA L2 signed build attestation (self-hosted fleet) + signed deploys + transparency logs + vendor risk register + sub-processor 30-day change notification in place; L3 builder isolation is deferred — see B-031) |
 
 ---
 

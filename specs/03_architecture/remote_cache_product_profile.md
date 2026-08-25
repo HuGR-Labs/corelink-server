@@ -465,7 +465,7 @@ Bazel/Buck2 têm modo `--remote_download_minimal` onde cliente baixa APENAS outp
 | Package mirrors unified | ✅ (Fase 2+) | ⛔ | ⛔ | ⛔ | ✅ |
 | Build-without-the-bytes | ✅ target | ✅ | ✅ | ✅ | N/A |
 | Cross-tenant dedup | ⚠️ optional, ADR-pending | ⛔ | ⛔ | N/A | ⚠️ |
-| Signed provenance (SLSA L3+) | ✅ target GA | ⚠️ | ⚠️ | ⛔ | ✅ |
+| Signed provenance (SLSA L2, self-hosted) | ✅ | ⚠️ | ⚠️ | ⛔ | ✅ |
 
 ### 14.1 Diferenciais que importam
 

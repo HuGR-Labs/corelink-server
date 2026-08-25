@@ -18,7 +18,7 @@ dry_run_evidence: "specs/_audits/sealed/2026-05-13-rb-fm-156-dry-run.md"
 
 # RB-FM-156 — Dep Maintainer Malicioso (SolarWinds-style Supply Chain Compromise)
 
-> **FM:** FM-156 (S=5, O=1, D=5, RPN=25, P1 S=5→upgrade) | **CTRLs:** CTRL-SUPPLY-001 (SLSA L3) + CTRL-SUPPLY-004 (cargo-audit/deny) + CTRL-SUPPLY-006 (Dependency-Track) | **SLA:** detect ≤ 24h (cargo-audit advisory lag); alert ≤ 15 min (DT webhook p99); block auto-merge ≤ 5 min (CI gate)
+> **FM:** FM-156 (S=5, O=1, D=5, RPN=25, P1 S=5→upgrade) | **CTRLs:** CTRL-SUPPLY-001 (SLSA L2) + CTRL-SUPPLY-004 (cargo-audit/deny) + CTRL-SUPPLY-006 (Dependency-Track) | **SLA:** detect ≤ 24h (cargo-audit advisory lag); alert ≤ 15 min (DT webhook p99); block auto-merge ≤ 5 min (CI gate)
 
 ## Scenario
 
