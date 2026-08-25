@@ -142,7 +142,8 @@ if ! docker image inspect "$FULL_TAG_PROD" >/dev/null 2>&1; then
 fi
 
 IMAGE_DIGEST="$(docker inspect --format '{{.Id}}' "$FULL_TAG_PROD")"
-IMAGE_SIZE="$(docker images --format '{{.Size}}' "$FULL_TAG_PROD" | head -1)"
+IMAGE_SIZE="$(docker images --format '{{.Size}}' "$FULL_TAG_PROD")"
+IMAGE_SIZE=${IMAGE_SIZE%%$'\n'*}
 log "Image found: $FULL_TAG_PROD"
 log "  Digest: $IMAGE_DIGEST"
 log "  Size:   $IMAGE_SIZE"

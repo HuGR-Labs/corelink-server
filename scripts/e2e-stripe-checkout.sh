@@ -314,7 +314,8 @@ echo "==> Step 5: POSTing signed checkout.session.completed webhook..."
 
 WEBHOOK_URL="https://corelink-signup.humangr.com/webhooks/stripe"
 NOW_TS=$(date +%s)
-EVENT_ID="evt_e2e_$(date +%s%N | head -c20)"
+EVENT_NONCE="$(date +%s%N)"
+EVENT_ID="evt_e2e_${EVENT_NONCE:0:20}"
 
 # Build event payload matching the fields the handler expects:
 #   data.object.customer       → stripeCustomerId

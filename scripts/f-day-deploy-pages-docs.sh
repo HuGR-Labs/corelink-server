@@ -229,7 +229,8 @@ main() {
     exit 1
   fi
   local wrangler_ver
-  wrangler_ver=$("${WRANGLER}" --version 2>&1 | head -1)
+  wrangler_ver=$("${WRANGLER}" --version 2>&1)
+  wrangler_ver=${wrangler_ver%%$'\n'*}
   log_info "wrangler: ${wrangler_ver}"
 
   # Verify build dir exists

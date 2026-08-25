@@ -41,7 +41,8 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-CHANNEL="$(sed -n 's/^[[:space:]]*channel[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' rust-toolchain.toml | head -1)"
+CHANNEL="$(sed -n 's/^[[:space:]]*channel[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' rust-toolchain.toml)"
+CHANNEL=${CHANNEL%%$'\n'*}
 if [ -z "${CHANNEL:-}" ]; then
     echo "::error::ci-assert-pinned-toolchain: could not parse [toolchain] channel from rust-toolchain.toml." >&2
     exit 2

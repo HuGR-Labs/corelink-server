@@ -198,7 +198,7 @@ run_step() {
     STEP_OUTCOMES+=("$outcome")
     STEP_DETAILS+=("$detail")
     STEP_DURATIONS_MS+=("$dur_ms")
-    STEP_VERIFICATION_IDS+=("VID-${DRYRUN_DATE}-${step_id}-$(printf '%s' "$step_name$detail" | shasum -a 256 | head -c 12)")
+    STEP_VERIFICATION_IDS+=("VID-${DRYRUN_DATE}-${step_id}-$(printf '%s' "$step_name$detail" | shasum -a 256 | cut -c1-12)")
 
     if [[ "$outcome" == "FAIL" ]]; then
         overall_rc=1

@@ -64,8 +64,8 @@ trap 'rm -f "$TMPSQL"' EXIT
 
 {
     for i in $(seq 1 "$SEED_COUNT"); do
-        action_digest="$(printf 'seed-action-%05d' "$i" | sha256sum | head -c 64)"
-        result_hash="$(printf 'seed-result-%05d' "$i" | sha256sum | head -c 64)"
+        action_digest="$(printf 'seed-action-%05d' "$i" | sha256sum | cut -c1-64)"
+        result_hash="$(printf 'seed-result-%05d' "$i" | sha256sum | cut -c1-64)"
         # 16 raw bytes hex => 32 chars: BLOB literal X'...'.
         tenant_prefix_hex="$(printf '%032s' "$(printf '%x' "$i")" | tr ' ' '0')"
         cat <<SQL

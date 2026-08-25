@@ -273,7 +273,8 @@ jobs:
         run: |
           set -euo pipefail
           TAG=$(curl -fsSL https://api.github.com/repos/WebAssembly/binaryen/releases/latest \
-            | grep -oE '"tag_name":[[:space:]]*"[^"]+"' | head -1 | sed -E 's/.*"([^"]+)"$/\1/')
+            | grep -m1 -oE '"tag_name":[[:space:]]*"[^"]+"' | sed -E 's/.*"([^"]+)"$/\1/')
+          TAG=${TAG%%$'\n'*}
           echo "binaryen ${TAG}"
           curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/${TAG}/binaryen-${TAG}-x86_64-linux.tar.gz" \
             | sudo tar xz -C /usr/local --strip-components=1

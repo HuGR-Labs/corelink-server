@@ -58,7 +58,8 @@ verify_wrangler() {
     return 1
   fi
   local ver
-  ver=$("${WRANGLER}" --version 2>&1 | head -1)
+  ver=$("${WRANGLER}" --version 2>&1)
+  ver=${ver%%$'\n'*}
   log_info "wrangler found: ${ver}"
 }
 

@@ -33,7 +33,7 @@ readonly LOG_PREFIX="[$SCRIPT_NAME]"
 WRANGLER_ENV="prod"
 
 usage() {
-    grep '^#' "$0" | head -30 | sed 's/^# \?//'
+    grep -m30 '^#' "$0" | sed 's/^# \?//'
 }
 
 while [[ $# -gt 0 ]]; do

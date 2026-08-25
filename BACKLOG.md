@@ -1934,25 +1934,30 @@ separate item rather than a hidden allowlist inside the gate.
 id: B-040
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  n=$(grep -rlE "set -[a-z]*o pipefail" .github/workflows scripts tests tools | xargs grep -nE "^[^#]*\| *head\b" | grep -vE "\|\| *(true|echo)" | wc -l | tr -d " "); [ "${n:-0}" -gt 0 ]
+  python3 scripts/check_head_under_pipefail.py --self-test >/dev/null && python3 scripts/check_head_under_pipefail.py >/dev/null
 verify-means: |
-  open while any UNGUARDED `| head` remains on a CODE line of a file that sets
-  pipefail. Two anchors, both learned the hard way:
-    - `^[^#]*` — the unanchored version counted COMMENTS, including this repo's
-      own gate docstring and the comments the fix itself added explaining the
-      rule. 72 naive vs 65 anchored on the fix branch.
-    - `|| true` / `|| echo` excluded — a site whose status is explicitly
-      discarded cannot abort anything; leaving it in the count would demand
-      churn that buys nothing.
-  Measured: 51 unguarded code sites on 2026-08-24, 36 after the 2026-08-25 pass.
-  The remaining 36 were classified site by site with evidence — command
-  substitution in an argument position (status never consumed), or a producer
-  that provably cannot outrun the cap. That classification is what closing this
-  item requires, and it has NOT been re-derived by hand for every one of the 36;
-  the fixed 17 were.
-last-verified: 2026-08-25
+  closed by replacing the count with a classifier. `head` cannot answer wrongly
+  the way `grep -q` can — it can only abort with 141 — so the only question that
+  ever mattered is whether anything READS the pipeline's status. Counting
+  occurrences answered a different question and is why this sat open: 72 raw
+  matches, 65 once comments were anchored out, and the anchor itself was wrong
+  (`^[^#]*` cannot reach past a `#` inside quotes, which hid three real sites —
+  two `usage()` helpers and a secrets dump).
+
+  `scripts/check_head_under_pipefail.py` walks each line tracking quote state
+  and `$(` depth and reports CONSUMED (assignment RHS or bare pipeline — fails),
+  ARGUMENT (status discarded by the enclosing command), LITERAL (prose in a
+  string) or GUARDED. 18 CONSUMED sites were fixed by removing the pipe rather
+  than muffling it — `grep -m<n>`, `cut -c1-N`, or slicing in the shell
+  (`${v%%$'\n'*}`) — each proven to yield a byte-identical value. Reproduced
+  the abort first (a 200k-line producer into `| head -2` exits 141 and the next
+  statement never runs); the two real `usage()` sites exit 0 today only because
+  their file is small enough to fit the pipe buffer, which is the latency fuse,
+  not a defence. Now enforced on every PR by shell-pipeline-safety.yml, with the
+  classifier self-testing 11 cases before its verdict is trusted.
+last-verified: 2026-08-24
 ```
 
 ### B-041 — `status.corelink.humangr.com` is advertised in 224 places and serves nothing
