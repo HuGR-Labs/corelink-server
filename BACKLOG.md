@@ -2198,19 +2198,25 @@ accept → `200` → `checkout.stripe.com/g/pay/cs_live_…`). It had simply nev
 asked. The workspace membership and `e2e-browser-prod.yml` close the mechanical
 half.
 
-What remains is the owner's, and it is a credential decision, not a wiring one:
-the suite needs `CLERK_LIVE_PUBLISHABLE_KEY` + `CLERK_LIVE_SECRET_KEY` as repo
-secrets. `sk_live` can create and delete production users — that is a real blast
-radius to hand to CI, and the call belongs to whoever owns the prod tenant data.
-Every run also mints a throwaway prod Clerk user and creates a real (unpaid,
-expiring) Stripe Checkout session; the fixture DSR-deletes the user on teardown.
-Acceptable on demand; putting it on a schedule is a second, separate decision.
+**Closed 2026-08-25 — the money path is now proven end-to-end in CI.** The owner
+authorised the credential; both `CLERK_LIVE_PUBLISHABLE_KEY` and
+`CLERK_LIVE_SECRET_KEY` are now repo secrets (set from `.env.local`, verified by
+name). Dispatching `e2e-browser-prod.yml` (run **32887439740**) drove
+`03-money-checkout` against LIVE prod with a real browser Clerk session and
+passed: fresh user → `POST /corelink/api/checkout/session` `403 dpa_required` →
+DPA click-through accept → `200` → landed on
+`checkout.stripe.com/c/pay/cs_live_b140C1rZBxZt…` — **1 passed (16.8 s)**. That is
+the whole money path (tier-select → DPA → real `cs_live_` Stripe session)
+exercised as a customer, not asserted. `sk_live` can create/delete prod users — a
+real blast radius handed to CI on the owner's explicit call; the fixture
+DSR-deletes the throwaway user on teardown. Kept `workflow_dispatch`-only;
+promoting to a `schedule:` is a separate, deferred decision.
 
 ```backlog
 id: B-042
 repo: corelink-server
 owner: owner
-status: open
+status: done
 verify: manual
 verify-means: |
   open while neither live Clerk credential is a repo secret, i.e. the browser
@@ -2221,8 +2227,9 @@ verify-means: |
   `/actions/secrets` — there is no permission that grants it), so an automated
   check here could only ever report the API failure, never the fact. The first
   version I wrote hid exactly that behind a `!`, turning "I could not look" into
-  "confirmed". A check that cannot see must say so, not guess.
-last-verified: 2026-08-24
+  "confirmed". A check that cannot see must say so, not guess. As of 2026-08-25
+  both `CLERK_LIVE_*` rows are present and run 32887439740 proved the path green.
+last-verified: 2026-08-25
 ```
 
 ### B-043 — enable the audit-drain lease in prod after a concurrency probe
