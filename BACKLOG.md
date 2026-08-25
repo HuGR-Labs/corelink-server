@@ -1555,17 +1555,69 @@ crosswalk, which cite SLSA L3 today.
 
 **Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
 today, what each option costs, and what happens if the answer is "not now".
+
+**Closed 2026-08-25 — option (b), owner's call ("usa corelink runners").** Job 2
+no longer calls `slsa-github-generator`. It now assembles the in-toto v1 / SLSA
+v1 provenance statement itself on `[self-hosted, mac, corelink-builder]`, signs
+it keyless with cosign (Fulcio + mandatory Rekor — INV-SUPPLY-PROVENANCE-IN-REKOR
+unchanged), self-verifies the bundle in the same run, and uploads it to the
+release. Keyless OIDC works on the fleet because the token is issued by GitHub,
+not the runner. The predicate records the builder honestly as non-isolated
+(`corelink-slsa-build-level: L2`). This is SLSA Build **L2** — the honest level
+for a non-isolated self-hosted builder — not L3; the path back to L3 (a hosted
+isolated builder) is unchanged and documented in the workflow header. The
+engineering half is done; the residual — ~10 compliance/architecture docs still
+assert "SLSA L3 **implemented**" (a claim that was already false, since the lane
+had never produced a bundle) — is tracked separately as [B-045] because it is a
+distinct concern (attestation-text accuracy, OKF-anchored) and must not gate the
+engineering fix.
 ```backlog
 id: B-031
 repo: corelink-server
 owner: owner
-status: open
+status: done
 verify: |
   grep -q "slsa-github-generator" .github/workflows/release-slsa3.yml
 verify-means: |
   open while the lane still depends on the hosted SLSA builder; goes red once
-  the dependency is removed, whichever way the decision lands
-last-verified: 2026-08-24
+  the dependency is removed, whichever way the decision lands. As of 2026-08-25
+  the string is gone (self-hosted L2 provenance) — done.
+last-verified: 2026-08-25
+```
+
+### B-045 — ten docs still claim "SLSA L3" after the lane dropped to L2
+
+The engineering re-home ([B-031]) made release provenance honest: it is generated
+on the self-hosted fleet, which is **SLSA Build L2**, not L3. But the claim "SLSA
+L3" is still written into the compliance and architecture surface as an
+*implemented* control — and it was already false before the re-home, because the
+old hosted lane had produced a provenance bundle exactly zero times. Known sites
+(`grep -rIln 'SLSA L3\|SLSA Level 3'`, excluding the verifier code in
+`corelink-ops`, which legitimately *verifies* L3 and makes no claim about our own
+builds):
+`specs/_compliance/ISO27001-STATEMENT-OF-APPLICABILITY-2026-05-15.md` (A.5.21,
+A.8.4), `specs/_compliance/ISO27001-CROSSWALK-2026-05-15.md` (same rows),
+`specs/_compliance/FEDRAMP-MODERATE-CROSSWALK-2026-05-15.md`,
+`specs/_compliance/LGPD-FULL-AUDIT-2026-05-15.md`,
+`specs/_compliance/GA-GATE-CRITERIA.md` (GA-GATE-S09),
+`specs/03_architecture/security_model.md` (§8 heading, TOC, threat tables,
+CTRL-SUPPLY-001), `specs/03_architecture/invariant_registry.md`, `ARCHITECTURE.md`
+(§6.5). Two of these (`security_model.md`, `ARCHITECTURE.md`) are OKF-cited, so the
+sweep must reconcile the `adr-0072` / `posture-overview` concept anchors — this is
+the [okf-c5-base-ref-stricter-than-local] trap, which is why it is its own item.
+
+```backlog
+id: B-045
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  test $(grep -rIl 'SLSA L3\|SLSA Level 3' specs ARCHITECTURE.md 2>/dev/null | wc -l | tr -d ' ') -eq 0
+verify-means: |
+  open while any spec/architecture doc still asserts SLSA L3; goes green once every
+  such claim is corrected to the honest L2 level (the verifier code under
+  crates/corelink-ops is out of scope — it verifies L3, it does not claim it).
+last-verified: 2026-08-25
 ```
 
 ### B-035 — eight contract lines promise a TLS floor we do not enforce

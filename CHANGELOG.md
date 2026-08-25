@@ -36,6 +36,25 @@ Each entry cross-references:
   human yet: the only bindable dispatcher today is in-memory; wiring the real
   HTTPS Events-API dispatcher + per-service routing key is B-008 (owner).
 
+### Changed
+
+- **Release provenance is now generated on the self-hosted fleet — SLSA Build
+  L2, not L3 (B-031).** `release-slsa3.yml` no longer calls the GitHub-managed
+  `slsa-github-generator` reusable workflow. SLSA Build L3 is *defined* by that
+  builder being GitHub-managed and isolated; it cannot be re-homed onto our own
+  runners without dropping to L2, and the repo's standing rule is zero
+  GitHub-hosted Actions spend. The owner accepted the honest drop to L2. Job 2
+  now assembles the in-toto v1 / SLSA v1 provenance statement itself on
+  `[self-hosted, mac, corelink-builder]`, signs it keyless with cosign (Fulcio
+  short-lived cert + mandatory Rekor inclusion — INV-SUPPLY-PROVENANCE-IN-REKOR
+  unchanged), self-verifies the bundle it just produced in the same run, and
+  uploads it to the release. Keyless OIDC works on the fleet because the token is
+  issued by GitHub, not the runner. The predicate records the builder honestly as
+  non-isolated (`isolated: false`, `corelink-slsa-build-level: L2`) so a strict
+  verifier is told the truth. Path back to L3 (a GitHub-managed builder) is
+  unchanged and documented in the workflow header; ADR-0045 stays frozen as the
+  original L3 design-of-record.
+
 ### Security
 
 - **CI no longer fetches `tla2tools.jar` from a URL upstream overwrites (B-039).**
