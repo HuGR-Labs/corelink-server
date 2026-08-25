@@ -284,7 +284,10 @@ step_2_api_health() {
     fi
     # Network unreachable — record DEGRADED (not FAIL).
     local err
-    err="$(tr '\n' ' ' <"$SANDBOX/api/curl.err" | head -c 200)"
+    # `|| true`: DEGRADED-path diagnostic. curl's stderr is unbounded, so
+    # `head -c 200` closes the pipe and pipefail would abort the run while it is
+    # trying to REPORT a failure (B-040).
+    err="$(tr '\n' ' ' <"$SANDBOX/api/curl.err" | head -c 200 || true)"
     echo "OUTCOME=DEGRADED"
     echo "DETAIL=network unreachable; offline-tolerant per dress-run policy; curl_err=${err}"
     return 0
@@ -429,7 +432,10 @@ step_4_audit_trail() {
     ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
     local prev_outcomes
-    prev_outcomes="$(printf '%s\n' "${STEP_OUTCOMES[@]}" | head -3 | jq -R . | jq -s .)"
+    # Bash array slicing bounds the PRODUCER instead of cutting the stream:
+    # a dress run has far more than three steps, so `head -3` always closed the
+    # pipe and pipefail could turn the summary into a 141 (B-040).
+    prev_outcomes="$(printf '%s\n' "${STEP_OUTCOMES[@]:0:3}" | jq -R . | jq -s .)"
 
     # Hash the runbook + the helper to bind the handoff to a specific
     # engineering-closure commit. If either changes, the handoff is

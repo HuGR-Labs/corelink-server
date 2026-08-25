@@ -388,8 +388,12 @@ for item in data:
 PY
   else
     # Fallback: grep the line containing the name then peel id.
+    # `|| true`: this pipeline is the LAST command of find_by_name(), so its
+    # status is the function's, and the caller assigns it plainly under `set -e`.
+    # A SIGPIPE from `head -1` on a multi-match list aborted the script instead
+    # of yielding the id (B-040). No match still yields empty, as before.
     echo "${list_json}" | grep -o "\"id\":\"[^\"]*\"[^}]*\"name\":\"${name}\"" \
-      | head -1 | sed 's/.*"id":"\([^"]*\)".*/\1/'
+      | head -1 | sed 's/.*"id":"\([^"]*\)".*/\1/' || true
   fi <<<"${list_json}"
 }
 

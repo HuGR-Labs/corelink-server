@@ -68,7 +68,11 @@ jobs:
             echo "::error::Roll the runner image that bakes them first (corelink-runners deploy/runner/Dockerfile)."
             exit 1
           fi
-          buildkitd --version; buildctl --version; runc --version | head -1
+          # `|| true`: version logging only, and it is the LAST statement of the
+          # step, so its status IS the step's status. `runc --version` prints
+          # several lines; `head -1` closing the pipe under pipefail failed the
+          # build over a log line (B-040).
+          buildkitd --version; buildctl --version; runc --version | head -1 || true
 
       - name: Compute short SHA + reproducible-build args
         id: meta
@@ -139,7 +143,10 @@ jobs:
           PATTERNS='API_TOKEN|API_KEY|SECRET|PASSWORD|PASSWD|PRIVATE_KEY|ACCESS_KEY|CF_API|STRIPE_|CLERK_|PAGERDUTY|NEON_|DATABASE_URL'
           if echo "$BLOB" | grep -iE "$PATTERNS" >/dev/null; then
             echo "::error::CTRL-CRED-001 VIOLATION: a credential pattern is present in the image config/history."
-            echo "$BLOB" | grep -iE "$PATTERNS" | sed -E 's/=.*/=<redacted>/' | head
+            # `|| true`: the branch already ends in an explicit `exit 1`; this
+            # line is the evidence dump. Under pipefail a SIGPIPE from `head`
+            # aborted the script BEFORE that exit, losing the message (B-040).
+            echo "$BLOB" | grep -iE "$PATTERNS" | sed -E 's/=.*/=<redacted>/' | head || true
             exit 1
           fi
           echo "CTRL-CRED-001 scan: PASS (0 credential patterns)."

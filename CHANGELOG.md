@@ -114,6 +114,24 @@ Each entry cross-references:
   rather than a wiring one. The original "six workflows" count was five files
   documenting their own migration plus one real site — anchoring the check on
   `^\s*runs-on:` is what separates them.
+- **Seventeen `| head` sites under `pipefail` could abort the run they were
+  reporting on (B-040).** `head` exits after N lines, the producer takes SIGPIPE
+  and exits 141, and `pipefail` propagates it — so the pipeline "fails" for
+  having done exactly what was asked. Unlike its silent sibling (`grep -q`,
+  closed earlier) this class cannot give a wrong ANSWER; it can only abort. The
+  question per site is therefore narrow: is the status consumed? All 78 sites
+  were classified with per-site evidence; 17 had their status consumed and are
+  fixed. Where a bounded producer exists the pipe is gone entirely —
+  `find -print -quit`, `grep -m1`, `git log -1`, bash array slicing (values
+  proven identical, e.g. `wrangler.toml` has FIVE matching `image =` lines and
+  `grep -m1` selects the same first one `head -1` did). Where the site is a
+  log-only dump the status is now explicitly discarded rather than accidentally
+  load-bearing — including two `usage()` helpers whose `--help` exited **141**
+  instead of 0, and `docs-ci`'s fallback asset lookup, which was missing the
+  `|| true` its sibling four lines above already had: the asymmetry was the bug,
+  since the fallback runs precisely when there are many chunks. Unguarded code
+  sites: 51 -> 36. The remaining 36 are command substitutions in argument
+  position (status never consumed) or producers that cannot outrun the cap.
 
 - **The only end-to-end proof of the checkout path had never run (B-042).**
   `tests/e2e-browser` — a real Clerk session in a real browser against the

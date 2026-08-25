@@ -58,7 +58,10 @@ TAG="${SHA}-${SUFFIX}"
 # works; we just need a non-empty value for the registry path.
 ACCT="${CLOUDFLARE_ACCOUNT_ID:-}"
 if [ -z "$ACCT" ] && [ -f "$REPO_ROOT/.env.local" ]; then
-    ACCT="$(grep '^CLOUDFLARE_ACCOUNT_ID=' "$REPO_ROOT/.env.local" | head -1 | cut -d= -f2-)"
+    # `grep -m1`, not `| head -1`: a duplicate key in the operator's
+    # .env.local would leave head closing the pipe, and under `pipefail` the
+    # assignment could exit 141 (B-040).
+    ACCT="$(grep -m1 '^CLOUDFLARE_ACCOUNT_ID=' "$REPO_ROOT/.env.local" | cut -d= -f2-)"
 fi
 LOCAL_REF="corelink-server:${SHA}"
 
