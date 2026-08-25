@@ -108,6 +108,21 @@ Each entry cross-references:
   moment they diverged. The stray pair is removed and the parser now rejects a
   duplicate key outright (`_NoDuplicateKeysLoader`), with a test cell in
   `scripts/test_backlog_verify.sh` proving it in both directions.
+- **Every redirect the docs site issued walked the reader out of the docs.** The
+  `corelink-docs` Worker strips the `/corelink/docs` mount before delegating to
+  the Static-Assets binding, so each `Location` that layer produced was relative
+  to the build root and was returned unchanged. Measured against prod:
+  `GET /corelink/docs/reference/api/` (an ordinary docs URL with a trailing
+  slash) answered `307 -> /reference/api`, which resolves to the **marketing
+  homepage, HTTP 200** — no 404, no error, just the wrong page served
+  successfully. The same defect is why every documented `go get` of the Go SDK
+  failed with `invalid character '<' looking for beginning of value`: the Go
+  client's `@v/` path was percent-normalised to `%40v/` by a redirect that
+  dropped the mount, so the module proxy answered with HTML. The
+  `%40`-encoded URL had been serving the correct proxy response the whole time.
+  The Worker now re-attaches the mount to root-relative redirect locations
+  (cross-origin, protocol-relative and already-mounted locations are left
+  alone), with `apps/docs/tests/worker-mount.test.ts` covering both real cases.
 
 - **The branded status hostname is retired, and the incident page it anchored
   was wrong about almost everything it promised.** The owner decided not to buy
