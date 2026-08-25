@@ -53,7 +53,28 @@ use std::sync::{Arc, Mutex};
 
 use axum::response::Response;
 
+// B-007 — the canonical alert-dispatch primitive reused as the sink for the
+// near-$-ceiling early-warning signal (see `emit_near_ceiling`). Pure-logic;
+// no HTTPS egress ships yet (the real dispatcher + routing_key are B-008).
+use corelink_slo::pagerduty::{
+    InMemoryPagerDutyDispatcher, PagerDutyDispatcher, PagerDutyEvent, PagerDutyEventAction,
+    PagerDutyServiceKey,
+};
+
 use crate::wall_clock::WallClock;
+
+/// Cosmetic runbook deep-link carried on the near-ceiling [`PagerDutyEvent`]
+/// (the [`PagerDutyEvent::runbook_url`] field is required). It is inert today
+/// — the in-memory sink pages nobody; B-008 wires the real HTTPS dispatcher
+/// that would surface this link.
+const NEAR_CEILING_RUNBOOK_URL: &str = "https://corelink.io/runbooks/RB-QUOTA-DOLLAR-CEILING.md";
+
+/// Default-off env flag gating the near-$-ceiling alert sink (B-007). Mirrors
+/// the `AUDIT_DRAIN_LEASE_ENABLED` secure-inert-default precedent
+/// (`routes/audit_drain.rs`): unset / forwarded-`""` / anything but an explicit
+/// truthy value ⇒ the sink is `None` and behavior is byte-identical to today
+/// (bare `tracing::warn!` only).
+const NEAR_CEILING_ALERT_SINK_ENV: &str = "NEAR_CEILING_ALERT_SINK";
 
 /// The default per-tenant monthly ceiling: **effectively-unlimited**
 /// (`$1,000,000/mo` in micro-dollars). ADR-0068 reconciliation (2026-07-09):
@@ -563,6 +584,13 @@ pub struct LeasedQuotaStore {
     cost_per_op: i64,
     /// Per-tenant lease state, behind a `Mutex` (invariant 5).
     leases: Mutex<HashMap<String, Lease>>,
+    /// B-007 near-$-ceiling early-warning sink. `None` unless
+    /// [`NEAR_CEILING_ALERT_SINK_ENV`] is explicitly on at construction, so
+    /// the feature ships INERT: unset ⇒ `None` ⇒ the near-ceiling branch emits
+    /// only the existing structured `tracing::warn!` (byte-identical to today).
+    /// When `Some`, the near-ceiling branch ALSO fires a [`PagerDutyEvent`]
+    /// fire-and-forget OFF the lease hot path (never awaited in `charge`).
+    near_ceiling_sink: Option<Arc<dyn PagerDutyDispatcher>>,
 }
 
 /// One tenant's in-memory lease: budget already debited from the inner
@@ -578,13 +606,49 @@ struct Lease {
     cycle_anchor_ms: i64,
 }
 
+/// B-007: build the near-$-ceiling [`PagerDutyEvent`] from ONLY the tenant id
+/// and the three integer quota metrics — a PURE, PII/secret-free helper (no
+/// PAT, no secret, no user data; the `routing_key`/Integration Key lives in
+/// the future real dispatcher's own config, never in the event).
+///
+/// `dedup_key` is `near-ceiling:{tenant_id}` so repeat near-ceiling signals
+/// for one tenant collapse to a single open incident (Events API v2 dedup-key
+/// idempotency); `event_action` is `Trigger`, `severity` `sev2`, `source`
+/// `tenant-quota`, `summary` a fixed template embedding the three metrics.
+fn build_near_ceiling_event(
+    tenant_id: &str,
+    granted_micros: i64,
+    full_chunk_micros: i64,
+    cycle_anchor_ms: i64,
+) -> PagerDutyEvent {
+    PagerDutyEvent {
+        // Service routing is a placeholder until B-008 wires the real
+        // per-service Integration Key; the inert in-memory sink ignores it.
+        service: PagerDutyServiceKey::ProdUs,
+        event_action: PagerDutyEventAction::Trigger,
+        dedup_key: format!("near-ceiling:{tenant_id}"),
+        severity: "sev2",
+        summary: format!(
+            "tenant-quota: tenant {tenant_id} is within one lease-chunk of its monthly \
+             $-ceiling (granted_micros={granted_micros}, full_chunk_micros={full_chunk_micros}, \
+             cycle_anchor_ms={cycle_anchor_ms})"
+        ),
+        source: "tenant-quota",
+        runbook_url: NEAR_CEILING_RUNBOOK_URL.to_owned(),
+    }
+}
+
 impl LeasedQuotaStore {
     /// Wrap an inner durable [`QuotaStore`] with the default lease chunk
     /// ([`DEFAULT_LEASE_OPS`]) and the env-resolved per-op cost
     /// ([`cost_per_op_micros`]).
     #[must_use]
     pub fn new(inner: Arc<dyn QuotaStore>) -> Self {
-        Self::with_config(inner, DEFAULT_LEASE_OPS, cost_per_op_micros())
+        let mut store = Self::with_config(inner, DEFAULT_LEASE_OPS, cost_per_op_micros());
+        // B-007: resolve the near-ceiling sink from the env flag at
+        // construction. Default-off ⇒ `None` ⇒ the feature ships inert.
+        store.near_ceiling_sink = Self::near_ceiling_sink_from_env();
+        store
     }
 
     /// Wrap an inner store with an explicit lease chunk + per-op cost (the
@@ -599,12 +663,93 @@ impl LeasedQuotaStore {
             lease_ops: lease_ops.max(1),
             cost_per_op: cost_per_op.max(1),
             leases: Mutex::new(HashMap::new()),
+            // B-007: the seam constructor defaults the sink OFF; `new()`
+            // resolves it from the env flag, tests inject it via
+            // [`with_near_ceiling_sink`].
+            near_ceiling_sink: None,
         }
+    }
+
+    /// B-007 builder: inject a near-$-ceiling alert sink (tests pass an
+    /// [`InMemoryPagerDutyDispatcher`]). Production resolves the sink from
+    /// [`NEAR_CEILING_ALERT_SINK_ENV`] in [`new`](Self::new) instead.
+    #[must_use]
+    pub fn with_near_ceiling_sink(mut self, sink: Arc<dyn PagerDutyDispatcher>) -> Self {
+        self.near_ceiling_sink = Some(sink);
+        self
+    }
+
+    /// B-007: resolve the near-ceiling sink from [`NEAR_CEILING_ALERT_SINK_ENV`].
+    /// Returns `None` (feature inert) unless the var is explicitly truthy;
+    /// only then is a dispatcher constructed. Today the only bindable sink is
+    /// the in-memory dispatcher, which captures events but pages NOBODY — the
+    /// real HTTPS `PagerDutyEventsApiV2HttpsDispatcher` + per-service
+    /// `routing_key` (Integration Key) secret are B-008 (owner).
+    fn near_ceiling_sink_from_env() -> Option<Arc<dyn PagerDutyDispatcher>> {
+        let enabled = std::env::var(NEAR_CEILING_ALERT_SINK_ENV)
+            .ok()
+            .is_some_and(|v| matches!(v.trim(), "1" | "true" | "TRUE"));
+        if !enabled {
+            return None;
+        }
+        tracing::info!(
+            "tenant-quota: {NEAR_CEILING_ALERT_SINK_ENV} is ON — near-$-ceiling \
+             early-warning signals route to a PagerDuty sink (B-007). NOTE: the \
+             only bindable dispatcher today is in-memory (pages nobody); the real \
+             HTTPS dispatcher + routing_key are B-008."
+        );
+        Some(Arc::new(InMemoryPagerDutyDispatcher::new()))
     }
 
     /// The size, in micro-dollars, of a full lease chunk.
     fn full_chunk_micros(&self) -> i64 {
         self.lease_ops.saturating_mul(self.cost_per_op)
+    }
+
+    /// B-007: emit the near-$-ceiling early-warning to the configured sink,
+    /// fire-and-forget, OFF the quota lease hot path.
+    ///
+    /// Returns `None` when no sink is configured (the default-off case — the
+    /// caller in `charge` never awaits, so the hot path is byte-identical to
+    /// today). When a sink is set, the [`PagerDutyEvent`] is built by the pure
+    /// [`build_near_ceiling_event`] helper (PII/secret-free — only the tenant
+    /// id + the three integer quota metrics) and dispatched inside a
+    /// `tokio::spawn`; the SYNC [`PagerDutyDispatcher::dispatch`] is wrapped in
+    /// `spawn_blocking` so even the future real blocking-HTTPS dispatcher
+    /// (B-008) never blocks a runtime worker thread. Dispatch errors are
+    /// logged (fail-OPEN) inside the spawned task and can NEVER change the
+    /// quota decision. The returned [`JoinHandle`](tokio::task::JoinHandle) is
+    /// dropped by the hot-path caller (fire-and-forget) and is only awaited by
+    /// tests to observe the dispatch deterministically.
+    fn emit_near_ceiling(
+        &self,
+        tenant_id: &str,
+        granted_micros: i64,
+        full_chunk_micros: i64,
+        cycle_anchor_ms: i64,
+    ) -> Option<tokio::task::JoinHandle<()>> {
+        let sink = Arc::clone(self.near_ceiling_sink.as_ref()?);
+        let event = build_near_ceiling_event(
+            tenant_id,
+            granted_micros,
+            full_chunk_micros,
+            cycle_anchor_ms,
+        );
+        Some(tokio::spawn(async move {
+            // spawn_blocking wraps the SYNC dispatch so a bound blocking-HTTPS
+            // impl (B-008) never blocks a runtime worker on the quota path.
+            match tokio::task::spawn_blocking(move || sink.dispatch(event)).await {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => tracing::warn!(
+                    error = %e,
+                    "tenant-quota: near-$-ceiling alert dispatch failed (fail-OPEN — quota decision unaffected)"
+                ),
+                Err(e) => tracing::warn!(
+                    error = %e,
+                    "tenant-quota: near-$-ceiling alert task join failed (fail-OPEN — quota decision unaffected)"
+                ),
+            }
+        }))
     }
 
     /// Try to satisfy `cost_micros` for `tenant` from an existing VALID
@@ -717,9 +862,13 @@ impl LeasedQuotaStore {
                 // logic — no extra D1 round-trip on the hot path — and is
                 // naturally low-volume: it can only fire on the last chunk(s) a
                 // cycle has left, and the served-from-lease fast path above skips
-                // it entirely. Routing this to a paging sink (Slack/PagerDuty) is
-                // a deliberate follow-up (C2); this increment lands it in the
-                // container's structured logs (queryable in the CF dashboard).
+                // it entirely. The structured log lands it in the container's logs
+                // (queryable in the CF dashboard); B-007 ALSO routes it to a
+                // PagerDutyDispatcher sink via `emit_near_ceiling` — a
+                // tokio::spawn fire-and-forget (NO extra D1 round-trip / NO
+                // .await on the hot path), gated default-off by
+                // `NEAR_CEILING_ALERT_SINK` so it ships inert. The real HTTPS
+                // dispatcher + per-service routing_key secret are B-008 (owner).
                 if attempt < full_chunk {
                     tracing::warn!(
                         tenant_id = %tenant_id,
@@ -728,6 +877,11 @@ impl LeasedQuotaStore {
                         cycle_anchor_ms = anchor,
                         "tenant-quota: near monthly $-ceiling — refill granted a partial lease (within one chunk of the cap)"
                     );
+                    // Fire-and-forget: the handle is intentionally dropped so
+                    // `charge` returns Ok(true) WITHOUT awaiting the dispatch
+                    // (preserves the "no extra D1 round-trip on the hot path"
+                    // invariant). No-op when the sink is None (default-off).
+                    let _ = self.emit_near_ceiling(tenant_id, attempt, full_chunk, anchor);
                 }
                 return Ok(true);
             }
@@ -2462,6 +2616,157 @@ mod tests {
             spy.gets(),
             5,
             "a store without a lease inherits the Ok(None) default → one `get` per op"
+        );
+    }
+
+    // ---- B-007: near-$-ceiling early-warning sink ------------------------
+
+    /// The pure event builder carries ONLY the tenant id + the three integer
+    /// quota metrics (PII/secret-free), with the canonical dedup-key, action,
+    /// severity, and source.
+    #[test]
+    fn build_near_ceiling_event_is_canonical_and_pii_free() {
+        let ev = build_near_ceiling_event("tenant-xyz", 2_000_000, 8_000_000, 1_700_000_000_000);
+        assert_eq!(ev.dedup_key, "near-ceiling:tenant-xyz");
+        assert_eq!(ev.event_action, PagerDutyEventAction::Trigger);
+        assert_eq!(ev.severity, "sev2");
+        assert_eq!(ev.source, "tenant-quota");
+        // Summary embeds exactly the tenant id + the three metrics.
+        assert!(ev.summary.contains("tenant-xyz"));
+        assert!(ev.summary.contains("granted_micros=2000000"));
+        assert!(ev.summary.contains("full_chunk_micros=8000000"));
+        assert!(ev.summary.contains("cycle_anchor_ms=1700000000000"));
+        // PII/secret-free: no credential-shaped material anywhere in the event.
+        for hay in [
+            ev.summary.as_str(),
+            ev.dedup_key.as_str(),
+            ev.runbook_url.as_str(),
+        ] {
+            for needle in [
+                "sk_", "sk-", "whsec", "Bearer ", "pat_", "ghp_", "password", "secret=",
+            ] {
+                assert!(
+                    !hay.contains(needle),
+                    "near-ceiling event field must be secret-free but contained {needle:?}: {hay}"
+                );
+            }
+        }
+    }
+
+    /// Default-off: with no sink configured (the `with_config` seam / flag
+    /// unset), `emit_near_ceiling` returns `None` — zero dispatch, behavior
+    /// byte-identical to the bare `tracing::warn!` path.
+    #[tokio::test]
+    async fn near_ceiling_sink_absent_emits_nothing() {
+        let inner: Arc<dyn QuotaStore> = Arc::new(InMemoryQuotaStore::new());
+        let store = LeasedQuotaStore::with_config(inner, 8, 1_000_000);
+        assert!(
+            store
+                .emit_near_ceiling("t-none", 2_000_000, 8_000_000, i64::try_from(T0).unwrap())
+                .is_none(),
+            "no sink ⇒ emit_near_ceiling is a no-op (default-off, inert)"
+        );
+    }
+
+    /// Direct emit: with an injected in-memory sink, `emit_near_ceiling`
+    /// dispatches exactly one event (fire-and-forget; awaited here to observe
+    /// it deterministically) and the payload matches the pure builder.
+    #[tokio::test]
+    async fn near_ceiling_emit_dispatches_once() {
+        let dispatcher = InMemoryPagerDutyDispatcher::new();
+        let inner: Arc<dyn QuotaStore> = Arc::new(InMemoryQuotaStore::new());
+        let store = LeasedQuotaStore::with_config(inner, 8, 1_000_000)
+            .with_near_ceiling_sink(Arc::new(dispatcher.clone()));
+        let handle = store
+            .emit_near_ceiling("t-emit", 2_000_000, 8_000_000, i64::try_from(T0).unwrap())
+            .expect("sink present ⇒ a spawned emit handle");
+        handle.await.expect("emit task joins");
+        assert_eq!(dispatcher.attempt_count(), 1);
+        assert_eq!(dispatcher.open_incident_count(), 1);
+        let snap = dispatcher.snapshot_attempts();
+        let first = snap.first().expect("one attempt recorded");
+        assert_eq!(first.dedup_key, "near-ceiling:t-emit");
+        assert_eq!(first.source, "tenant-quota");
+    }
+
+    /// Idempotency: two near-ceiling emits for the SAME tenant collapse to a
+    /// single open incident (Events API v2 dedup-key), though both attempts
+    /// are recorded.
+    #[tokio::test]
+    async fn near_ceiling_emit_dedup_collapses_incident() {
+        let dispatcher = InMemoryPagerDutyDispatcher::new();
+        let inner: Arc<dyn QuotaStore> = Arc::new(InMemoryQuotaStore::new());
+        let store = LeasedQuotaStore::with_config(inner, 8, 1_000_000)
+            .with_near_ceiling_sink(Arc::new(dispatcher.clone()));
+        for _ in 0..2 {
+            store
+                .emit_near_ceiling("t-dedup", 2_000_000, 8_000_000, i64::try_from(T0).unwrap())
+                .expect("sink present")
+                .await
+                .expect("emit task joins");
+        }
+        assert_eq!(dispatcher.attempt_count(), 2, "both attempts recorded");
+        assert_eq!(
+            dispatcher.open_incident_count(),
+            1,
+            "same tenant collapses to one incident (dedup_key)"
+        );
+    }
+
+    /// End-to-end wiring: driving `charge` through the near-ceiling branch (a
+    /// refill forced to shrink below a full chunk) fires exactly one
+    /// fire-and-forget dispatch to the injected sink. The hot path returns
+    /// `Ok(None)` (Allow) without awaiting the dispatch.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn near_ceiling_charge_path_dispatches() {
+        const LEASE_OPS: i64 = 8;
+        const COST: i64 = 1_000_000; // $1/op
+        let inner: Arc<dyn QuotaStore> = Arc::new(InMemoryQuotaStore::new());
+        // Budget = $3: the first op's $8 chunk is rejected and the partial-lease
+        // fallback shrinks below the full chunk ⇒ the near-ceiling branch fires.
+        inner
+            .put(
+                "t-wire",
+                QuotaState {
+                    monthly_budget_usd_micros: 3_000_000,
+                    accrued_usd_micros: 0,
+                    cycle_anchor_ms: i64::try_from(T0).unwrap(),
+                },
+                i64::try_from(T0).unwrap(),
+            )
+            .await
+            .unwrap();
+        let dispatcher = InMemoryPagerDutyDispatcher::new();
+        let leased: Arc<dyn QuotaStore> = Arc::new(
+            LeasedQuotaStore::with_config(inner, LEASE_OPS, COST)
+                .with_near_ceiling_sink(Arc::new(dispatcher.clone())),
+        );
+        let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
+        let guard = QuotaGuard::new(leased, clock);
+
+        // Allow (Ok(None)) returns immediately — the dispatch is fire-and-forget.
+        assert!(guard.check("t-wire", COST).await.is_none());
+
+        // Bounded wait for the fire-and-forget dispatch to land.
+        for _ in 0..200 {
+            if dispatcher.attempt_count() >= 1 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        assert_eq!(
+            dispatcher.attempt_count(),
+            1,
+            "the near-ceiling branch in charge() fired exactly one dispatch"
+        );
+        assert_eq!(dispatcher.open_incident_count(), 1);
+        assert_eq!(
+            dispatcher
+                .snapshot_attempts()
+                .first()
+                .expect("one attempt recorded")
+                .dedup_key,
+            "near-ceiling:t-wire"
         );
     }
 }
