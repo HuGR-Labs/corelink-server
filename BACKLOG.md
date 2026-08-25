@@ -1577,11 +1577,11 @@ repo: corelink-server
 owner: owner
 status: done
 verify: |
-  grep -q "slsa-github-generator" .github/workflows/release-slsa3.yml
+  ! grep -q "slsa-github-generator" .github/workflows/release-slsa3.yml
 verify-means: |
-  open while the lane still depends on the hosted SLSA builder; goes red once
-  the dependency is removed, whichever way the decision lands. As of 2026-08-25
-  the string is gone (self-hosted L2 provenance) — done.
+  done once the lane no longer depends on the hosted SLSA builder — the string is
+  gone (self-hosted L2 provenance). The `!` makes the check exit 0 while the item
+  is correctly `done`; it would exit 1 (drift) if the hosted generator returned.
 last-verified: 2026-08-25
 ```
 
@@ -1612,11 +1612,12 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  test $(grep -rIl 'SLSA L3\|SLSA Level 3' specs ARCHITECTURE.md 2>/dev/null | wc -l | tr -d ' ') -eq 0
+  test $(grep -rIl 'SLSA L3\|SLSA Level 3' specs ARCHITECTURE.md 2>/dev/null | wc -l | tr -d ' ') -ne 0
 verify-means: |
-  open while any spec/architecture doc still asserts SLSA L3; goes green once every
-  such claim is corrected to the honest L2 level (the verifier code under
-  crates/corelink-ops is out of scope — it verifies L3, it does not claim it).
+  open (exit 0) while any spec/architecture doc still asserts SLSA L3; flips to
+  exit 1 (drift against an `open` item, prompting the status change to done) once
+  every such claim is corrected to the honest L2 level. The verifier code under
+  crates/corelink-ops is out of scope — it verifies L3, it does not claim it.
 last-verified: 2026-08-25
 ```
 
