@@ -84,8 +84,21 @@ jobs:
           # The runner script (run_tlc_corelink.sh) hashes ${TLC_JAR} when set — this avoids
           # the prior cycle 4 bug where the wrapper SHA was hashed instead of the jar (codex P0).
           mkdir -p "$RUNNER_TEMP/tla"
+          # Fetched from OUR OWN mirror, not from the upstream release URL (B-039).
+          # `tlaplus` re-cuts the asset behind the unchanged `v1.8.0` tag: five
+          # distinct SHA-256 values for one tag between 2026-04 and 2026-08, each
+          # presenting as a supply-chain pin violation indistinguishable from a
+          # real compromise. Maven Central does not carry this artifact
+          # (`org/lamport/tla2tools/1.8.0` -> 404), so the immutable copy has to
+          # be ours.
+          #
+          # The pin IS the address: the key contains the SHA-256, so changing the
+          # pin without uploading the matching jar 404s loudly instead of silently
+          # downloading different bytes. The hash check below stays, and can now
+          # only fail if OUR copy changed — a real signal.
           curl -fsSL -o "$RUNNER_TEMP/tla/tla2tools.jar" \
-            "https://github.com/tlaplus/tlaplus/releases/download/v${TLC_VERSION}/tla2tools.jar"
+            "https://corelink-artifacts.humangr.com/tlaplus/v${TLC_VERSION}/${TLC_SHA256_PINNED}/tla2tools.jar" \
+            || { echo "::error::tla2tools.jar v${TLC_VERSION} @ ${TLC_SHA256_PINNED} is not in the CoreLink artifact mirror. Upload it (see ADR-0042 A1) rather than re-pointing at the mutable upstream URL." >&2; exit 1; }
           ACTUAL_SHA="$(sha256sum "$RUNNER_TEMP/tla/tla2tools.jar" | awk '{print $1}')"
           echo "TLC SHA-256 actual: ${ACTUAL_SHA}"
           echo "TLC SHA-256 expect: ${TLC_SHA256_PINNED}"
