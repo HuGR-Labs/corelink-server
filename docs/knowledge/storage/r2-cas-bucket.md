@@ -6,7 +6,7 @@ source_files:
   - "crates/corelink-container/src/storage.rs"
   - "crates/corelink-container/src/storage/r2_s3.rs"
   - "crates/corelink-region/src/region.rs"
-checkpoint_sha: "5d14b718ea1577aa4dab245602ac85642f46d6b9"
+checkpoint_sha: "3a17e78abb15c71802f22dfac3c8cba71233f21b"
 provenance: "AUTHORED"
 tags: ["storage", "r2", "cas", "s3", "tenant-isolation"]
 timestamp: "2026-06-29T00:00:00Z"
