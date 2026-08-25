@@ -1244,8 +1244,7 @@ impl CasReadHandler for R2CasHandler {
                             return Err(e);
                         }
                     };
-                    let key = match self.r2_key(&req.tenant, &resolved.physical_digest, req.algo)
-                    {
+                    let key = match self.r2_key(&req.tenant, &resolved.physical_digest, req.algo) {
                         Ok(k) => k,
                         Err(e) => {
                             emit(true);
@@ -1455,8 +1454,7 @@ impl CasReadHandler for R2CasHandler {
                             return Err(e);
                         }
                     };
-                    let key = match self.r2_key(&req.tenant, &resolved.physical_digest, req.algo)
-                    {
+                    let key = match self.r2_key(&req.tenant, &resolved.physical_digest, req.algo) {
                         Ok(k) => k,
                         Err(e) => {
                             emit(true);
@@ -1468,9 +1466,7 @@ impl CasReadHandler for R2CasHandler {
                         let _scope = crate::origin_timing::PhaseScope::enter(
                             crate::origin_timing::Phase::Store,
                         );
-                        tokio::task::block_in_place(|| {
-                            handle.block_on(self.client.head_size(&key))
-                        })
+                        tokio::task::block_in_place(|| handle.block_on(self.client.head_size(&key)))
                     };
                     match result {
                         Ok(ok) => Ok(ok),

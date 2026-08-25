@@ -152,7 +152,7 @@ semantics in the container.
    mandatory `ListAttempted` audit write CONCURRENTLY with the R2 `ListObjectsV2` enumeration —
    `tokio::join!`ed under one `block_in_place`/`block_on` — when the handler was built with the async
    audit seam wired (production; a handler without it, e.g. every test handler, keeps the fully serial
-   path) (`crates/corelink-container/src/storage/r2_s3.rs:1753-1867`). Naively timing both sides with
+   path) (`crates/corelink-container/src/storage/r2_s3.rs:1882-1996`). Naively timing both sides with
    their own `PhaseScope` would double-count that overlapping window and break the `Σ(phases) ≤ total`
    partition the reconciliation below depends on, so the join is timed ONCE, under `Phase::Store`
    only — `append_async` (the audit half) never opens a `PhaseScope` of its own
@@ -161,7 +161,7 @@ semantics in the container.
    path stays fully serial). Fail-CLOSED is unweakened: the audit result is checked, and can short-circuit
    to `AuditFailed`, BEFORE the store result is ever inspected — no rows are served on a failed audit
    write, concurrency only changes whether the R2 call was already dispatched, never whether its result
-   can reach the caller (`crates/corelink-container/src/storage/r2_s3.rs:1869-1872`).
+   can reach the caller (`crates/corelink-container/src/storage/r2_s3.rs:1998-2001`).
 
 # Invariants
 - The DO is always selected from the PAT-resolved tenant, never the URL tenant — isolation is
@@ -220,6 +220,6 @@ semantics in the container.
 15. `crates/corelink-container/src/origin_timing.rs:383-386` — `detail_phases_enabled`: reads `CORELINK_ORIGIN_TIMING_DETAIL`, off by default and load-bearing — `opermit` presence is a warm-memo oracle, and the dummy burn's padding is timing that a named split would erode. W3 (this concept) added a fourth gated phase, `oaudit`, to the same flag.
 16. `crates/corelink-container/src/storage/d1_audit_sink.rs:230-238` — `D1AuditOutboxSink::write_blocking`: the choke point every SYNC native CAS/AC `AuditSink::emit`/`append` call routes through, timed into `Phase::Audit` (`oaudit`) via `PhaseScope::enter`.
 17. `crates/corelink-container/src/storage/r2_s3.rs:1190-1194` — `R2CasHandler::read`'s R2 GET, timed into the EXISTING `Phase::Store` (`ostore`) — the first native-plane R2 call this phase absorbs (see also `crates/corelink-container/src/storage/r2_s3.rs:2371-2375` for the AC counterpart, `R2AcHandler::lookup`).
-18. `crates/corelink-container/src/storage/r2_s3.rs:1753-1867` — `R2CasHandler::list`'s concurrent seam (W4, this reconcile): when built with the async audit seam wired, the mandatory `ListAttempted` audit write and the R2 `ListObjectsV2` call run under one `tokio::join!` instead of two serial round trips; without that seam (every test handler) the original fully serial code path runs unchanged. `R2AcHandler::list` mirrors it exactly.
+18. `crates/corelink-container/src/storage/r2_s3.rs:1882-1996` — `R2CasHandler::list`'s concurrent seam (W4, this reconcile): when built with the async audit seam wired, the mandatory `ListAttempted` audit write and the R2 `ListObjectsV2` call run under one `tokio::join!` instead of two serial round trips; without that seam (every test handler) the original fully serial code path runs unchanged. `R2AcHandler::list` mirrors it exactly.
 19. `crates/corelink-container/src/storage/d1_audit_sink.rs:199-209` — `append_async`: the audit half of the join in 18, deliberately WITHOUT its own `PhaseScope` — the caller (18) attributes the whole overlapping window to `Phase::Store` exactly once, so `Σ(phases) ≤ total` still holds when `oaudit` and `ostore` would otherwise have double-counted the same wall-clock window.
-20. `crates/corelink-container/src/storage/r2_s3.rs:1869-1872` — the fail-CLOSED check in 18: the audit result is inspected, and can short-circuit to `AuditFailed`, BEFORE the store result — concurrency changes when the R2 call was dispatched, never whether a failed audit can still let its result reach the caller.
+20. `crates/corelink-container/src/storage/r2_s3.rs:1998-2001` — the fail-CLOSED check in 18: the audit result is inspected, and can short-circuit to `AuditFailed`, BEFORE the store result — concurrency changes when the R2 call was dispatched, never whether a failed audit can still let its result reach the caller.
