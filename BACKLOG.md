@@ -1676,20 +1676,44 @@ What remains open here is the FIRST half — the authenticated link checker.
 id: B-037
 repo: corelink-server
 owner: tl
-status: open
-verify: manual
+status: done
+verify: |
+  grep -rE "^[[:space:]]*runs-on:.*self-hosted, Linux, X64" .github/workflows/*.yml >/dev/null 2>&1; rc=$?
+  [ "$rc" -le 1 ] || { echo "grep failed to look (rc=$rc)"; exit 2; }
+  [ "$rc" -eq 1 ] || { echo "a workflow still asks for a label the fleet cannot serve"; exit 1; }
+  python3 -c "
+  import yaml,sys
+  w=yaml.safe_load(open('.github/workflows/docs-ci.yml'))
+  j=w['jobs']['broken-links']
+  env={}
+  env.update(w.get('env') or {}); env.update(j.get('env') or {})
+  for s in j['steps']: env.update(s.get('env') or {})
+  bad=[k for k in env if any(t in k.upper() for t in ('TOKEN','SECRET','KEY','PASSWORD','CRED'))]
+  if bad: print('link checker holds a credential the reader does not have:', bad); sys.exit(1)
+  "
 verify-means: |
-  The runner-label half is closed and has its own standing check: no workflow
-  carries a `runs-on:` the fleet cannot serve —
-  `grep -rnE "^\s*runs-on:.*self-hosted, Linux, X64" .github/workflows/*.yml`
-  must find nothing (it finds nothing as of 2026-08-25). Note the anchor: the
-  unanchored version counted five files that only DOCUMENT the migration.
-  What keeps this item open is the authenticated-lychee half, and it is MANUAL
-  because the only honest check is expensive: build the docs and run the link
-  checker WITHOUT a token — the customer's credential — and compare. The 2 589
-  figure predates #1271, which cut the authenticated count to 0, so the number
-  itself needs re-measuring before anyone acts on it. Manual decay is the point:
-  in 14 days this has to be looked at again rather than assumed.
+  BOTH halves closed, each on evidence rather than on argument.
+
+  Runner label: no workflow carries a `runs-on:` the fleet cannot serve. Note
+  the anchor — the unanchored grep counted five files that only DOCUMENT the
+  migration.
+
+  Link-check vantage: the worry was that the gate sees something the customer
+  cannot. Measured 2026-08-25 instead of reasoned about — the docs-build
+  artifact from run 32801556993 was re-checked with the same lychee 0.24.2, the
+  same `apps/docs/lychee.toml` and the same `--remap` pair, from a host OUTSIDE
+  Cloudflare with `GITHUB_TOKEN`/`GH_TOKEN` unset. Byte-identical counters:
+  108 870 total, 11 553 unique, 105 598 OK, **0 errors**, 3 183 excluded, 89
+  unsupported; only redirects followed differed (111 vs 108). The 2 589 figure
+  this item carried predated #1271 and #1297 and was stale by two fixes — which
+  is exactly why it was left MANUAL rather than acted on.
+
+  The verify now pins the property, not the measurement: the runner-label grep,
+  plus a parse of docs-ci.yml asserting the `broken-links` job inherits NO
+  credential-shaped env at workflow, job or step level. lychee reads
+  `GITHUB_TOKEN` from the environment on its own, so the only durable guarantee
+  is that there is nothing there to read. Re-measure if the exclusion list (3 183
+  entries) or the runner changes.
 last-verified: 2026-08-25
 ```
 
