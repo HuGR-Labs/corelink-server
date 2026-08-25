@@ -24,6 +24,18 @@ Each entry cross-references:
 
 ### Added
 
+- **F1 shadow for the edge-native `findMissingBlobs` — measures and compares, serves
+  nothing.** Under `EDGE_FIND_MISSING="shadow"` the Worker computes the edge answer
+  from a background clone (`ctx.waitUntil`) and logs whether it agrees with the
+  container's, plus the edge's own elapsed ms. The container's response is served
+  unchanged; unset, nothing runs at all. Every uncertainty resolves to an explicit
+  `skip:` verdict rather than to a claim of parity — a shadow that counts "could not
+  check" as "match" manufactures exactly the confidence the F2 flip is supposed to
+  earn. Skips: BYOK tenants (a plaintext key would report every blob missing) and any
+  BYOK-lookup error, over-cap batches (each `head()` is a subrequest and the container's
+  cap is 4096), an underivable tenant prefix, and unparseable bodies. Divergence is
+  logged as COUNTS only — digests are tenant data (INV-NO-BODY-IN-LOGS).
+
 - **F0 of the edge-native `findMissingBlobs` path — derivation, pinned two-sided
   against Rust.** `worker/src/lib/edge_find_missing.ts` maps `(tenant, sha256
   digest)` to the exact R2 key the container writes:
