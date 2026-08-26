@@ -144,6 +144,14 @@ pub mod cas;
 /// `corelink-handler-cas-erase`. Route mounting is owner-gated on the R2 eraser
 /// (the #254 seam); until then `build_state_from_env` returns `None`.
 pub mod cas_erase;
+/// At-rest CAS integrity scrubber (B-050): `POST /_internal/cas/scrub`.
+/// Re-hashes stored CAS objects so the read-path re-verify stops being the only
+/// integrity coverage — a cold object is never read and therefore never checked
+/// today. Enumerates R2 per tenant (an R2 key's tenant prefix is a secret-keyed
+/// HMAC and cannot be inverted), skips BYOK-encrypting tenants whole, and
+/// reports `examined` / `skipped_encrypted` / `failed` as three distinct
+/// counters. Hard prerequisite for streaming CAS reads — ADR-S34-001.
+pub mod cas_scrub;
 /// Customer self-serve HTTP routes (Stream-2.6): `/v1/customer/*` endpoints
 /// (overview, usage, billing, keys, team, audit) wired via
 /// `corelink-handler-customer` trait objects. Worker matchRoute already

@@ -639,6 +639,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
 
+    // B-050 at-rest CAS integrity scrubber: `POST /_internal/cas/scrub`. The
+    // read-path digest re-verify only ever covers objects a client actually
+    // asks for, so cold objects go unchecked forever; this cron-driven sweep
+    // re-hashes stored objects directly. Same dedicated ERASE key + D1/R2 gate
+    // as the archive route, plus `R2_TDK_HEX` (without it no tenant prefix can
+    // be derived, so the sweep could not address a single object); unmounted
+    // fail-CLOSED without them.
+    if let Some(cas_scrub_state) = corelink_server::routes::cas_scrub::build_state_from_env().await
+    {
+        info!("routes: /_internal/cas/scrub route mounted (erase auth key + TDK + D1 + R2)");
+        app = app.merge(corelink_server::routes::cas_scrub::router(cas_scrub_state));
+    } else {
+        warn!(
+            "CORELINK_ERASE_AUTH_KEY (<32), R2_TDK_HEX or D1/R2 absent; \
+             /_internal/cas/scrub route NOT mounted (fail-CLOSED)"
+        );
+    }
+
     // Read-only internal tenant-quota lookup: `GET /_internal/tenant/{tenant_id}/quota`.
     // Returns the persisted `tenant_quota` row + a derived `unmetered` bit for a
     // trusted internal caller (signup-worker / operator plane) WITHOUT a billable

@@ -1100,7 +1100,11 @@ fn raw_padded_prefix(tenant: &str) -> String {
 /// — funnels through `R2CasHandler`, so this one gate closes the
 /// cache-poisoning hole across all of them. (The in-memory handler
 /// enforces the same invariant for dev/test.)
-fn verify_content_hash(algo: DigestAlgo, claimed_hash: &str, bytes: &[u8]) -> Result<(), String> {
+pub(crate) fn verify_content_hash(
+    algo: DigestAlgo,
+    claimed_hash: &str,
+    bytes: &[u8],
+) -> Result<(), String> {
     match algo {
         DigestAlgo::Blake3 => {
             let actual = Digest::compute(bytes);
