@@ -890,6 +890,12 @@ export class CoreLinkServer implements DurableObject {
           // silently inert). Not a secret.
           AUDIT_DRAIN_LEASE_ENABLED: this.env.AUDIT_DRAIN_LEASE_ENABLED ?? "",
           NEAR_CEILING_ALERT_SINK: this.env.NEAR_CEILING_ALERT_SINK ?? "",
+          // Sample floor before the rolling health probe is allowed to declare a
+          // region unhealthy (`routes/failover.rs:228`). "" ⇒ container default
+          // (50). Forwarded because the container reads it at construction — an
+          // operator raising the floor during an incident would otherwise be
+          // setting a Worker var the failover path never sees. Not a secret.
+          FAILOVER_MIN_SAMPLES: this.env.FAILOVER_MIN_SAMPLES ?? "",
           // S-09 offsite archive (`POST /_internal/audit/archive`). Both are
           // non-secret tuning knobs; "" ⇒ container defaults (bucket
           // `corelink-audit-weur`, which already carries the 7-year Object

@@ -129,25 +129,47 @@ pub trait ReplicaAuditSink: std::fmt::Debug + Send + Sync {
 /// In-memory audit sink for tests and local orchestration.
 ///
 /// Thread-safe via `std::sync::Mutex`.
+///
+/// Two construction modes:
+/// - [`InMemoryReplicaAuditSink::new`] — UNBOUNDED retention (tests rely on
+///   total retention; unchanged behavior);
+/// - [`InMemoryReplicaAuditSink::with_capacity`] — bounded RING buffer that
+///   discards the OLDEST record once the cap is reached (production wiring
+///   for process-lifetime sinks: an unbounded `Mutex<Vec>` grows without
+///   limit for the life of the container).
 #[derive(Debug)]
 pub struct InMemoryReplicaAuditSink {
-    records: std::sync::Mutex<Vec<ReplicaAuditRecord>>,
+    records: std::sync::Mutex<std::collections::VecDeque<ReplicaAuditRecord>>,
+    cap: Option<usize>,
 }
 
 impl InMemoryReplicaAuditSink {
-    /// Create a new empty in-memory audit sink.
+    /// Create a new empty in-memory audit sink with UNBOUNDED retention.
     pub fn new() -> Self {
         InMemoryReplicaAuditSink {
-            records: std::sync::Mutex::new(Vec::new()),
+            records: std::sync::Mutex::new(std::collections::VecDeque::new()),
+            cap: None,
         }
     }
 
-    /// Returns a snapshot of all emitted records.
+    /// Create a bounded ring-buffer sink: once `cap` records are held, each
+    /// further emit drops the OLDEST retained record. Emission never fails
+    /// and never blocks on the cap.
+    pub fn with_capacity(cap: usize) -> Self {
+        InMemoryReplicaAuditSink {
+            records: std::sync::Mutex::new(std::collections::VecDeque::with_capacity(cap)),
+            cap: Some(cap),
+        }
+    }
+
+    /// Returns a snapshot of all retained records (oldest-first).
     pub fn records(&self) -> Vec<ReplicaAuditRecord> {
         self.records
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .clone()
+            .iter()
+            .cloned()
+            .collect()
     }
 }
 
@@ -159,7 +181,13 @@ impl Default for InMemoryReplicaAuditSink {
 
 impl ReplicaAuditSink for InMemoryReplicaAuditSink {
     fn emit(&self, record: ReplicaAuditRecord) -> Result<(), String> {
-        self.records.lock().map_err(|e| e.to_string())?.push(record);
+        let mut guard = self.records.lock().unwrap_or_else(|p| p.into_inner());
+        guard.push_back(record);
+        if let Some(cap) = self.cap {
+            while guard.len() > cap {
+                guard.pop_front();
+            }
+        }
         Ok(())
     }
 }
@@ -203,5 +231,64 @@ impl FailingReplicaAuditSink {
 impl ReplicaAuditSink for FailingReplicaAuditSink {
     fn emit(&self, _record: ReplicaAuditRecord) -> Result<(), String> {
         Err(self.message.clone())
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    reason = "tests are allowed to use these primitives"
+)]
+mod tests {
+    use super::*;
+
+    fn record(i: u64) -> ReplicaAuditRecord {
+        ReplicaAuditRecord {
+            event_type: ReplicaAuditEventType::ReplicationStarted,
+            tenant_id_hash: format!("t{i}"),
+            blob_hash: String::new(),
+            primary_region: "enam".to_owned(),
+            replica_region: "wnam".to_owned(),
+            timestamp_ms: 1_000 + i,
+            detail: String::new(),
+        }
+    }
+
+    #[test]
+    fn new_sink_retains_everything_unbounded() {
+        let sink = InMemoryReplicaAuditSink::new();
+        for i in 0..100u64 {
+            sink.emit(record(i)).unwrap();
+        }
+        assert_eq!(sink.records().len(), 100);
+        assert_eq!(sink.records().first().unwrap().tenant_id_hash, "t0");
+    }
+
+    #[test]
+    fn with_capacity_ring_keeps_newest_cap_records() {
+        let sink = InMemoryReplicaAuditSink::with_capacity(8);
+        for i in 0..18u64 {
+            sink.emit(record(i)).unwrap();
+        }
+        let records = sink.records();
+        assert_eq!(records.len(), 8, "cap enforced");
+        assert_eq!(
+            records.first().unwrap().tenant_id_hash,
+            "t10",
+            "oldest dropped"
+        );
+        assert_eq!(records.last().unwrap().tenant_id_hash, "t17", "newest kept");
+    }
+
+    #[test]
+    fn with_capacity_exact_fill_then_one_more_drops_oldest_only() {
+        let sink = InMemoryReplicaAuditSink::with_capacity(3);
+        for i in 0..4u64 {
+            sink.emit(record(i)).unwrap();
+        }
+        let records = sink.records();
+        assert_eq!(records.len(), 3);
+        assert_eq!(records.first().unwrap().tenant_id_hash, "t1");
+        assert_eq!(records.last().unwrap().tenant_id_hash, "t3");
     }
 }
