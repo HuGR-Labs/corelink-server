@@ -1,0 +1,78 @@
+-- CoreLink D1 (Cloudflare SQLite) — migration 0103: audit_outbox sealed-tail index.
+--
+-- WHY
+-- ---
+-- The audit-chain drain resumes from the durable sealed-rows tail — the row with
+-- the MAX `sequence_number` in a `(tenant_id, region)` partition (see
+-- `read_sealed_tail` in `routes/audit_drain.rs`). This is the crash-safety
+-- mechanism itself: when a prior drain crashed after sealing rows but before
+-- advancing the `audit_chain_head` checkpoint, the sealed tail is AHEAD of the
+-- checkpoint and the drain must trust it, or the next seal links onto a stale
+-- head and FORKS the chain. The query is:
+--
+--   SELECT sequence_number, chain_hash FROM audit_outbox
+--    WHERE tenant_id = ?1 AND region = ?2
+--      AND emitted_at IS NOT NULL AND sequence_number IS NOT NULL
+--    ORDER BY sequence_number DESC LIMIT 1
+--
+-- Measured against the real DDL with every index that exists today,
+-- EXPLAIN QUERY PLAN gives:
+--
+--     SCAN audit_outbox
+--     USE TEMP B-TREE FOR ORDER BY
+--
+-- A full table scan plus a sort, hourly, per partition — on a table with NO
+-- DELETE anywhere in the repo, so the scan cost grows monotonically forever.
+--
+-- WHY NONE OF THE FOUR EXISTING INDEXES CAN SERVE IT
+-- --------------------------------------------------
+-- SQLite will use a partial index only when the query's WHERE clause IMPLIES the
+-- index's WHERE clause; each conjunct of the index predicate must be supplied by
+-- the query.
+--
+--   - 0001 `idx_audit_outbox_pending`       (`WHERE emitted_at IS NULL`) — WRONG
+--     PREDICATE: it indexes the pending queue; this query wants the opposite half
+--     of the same column (`emitted_at IS NOT NULL`), so the implication fails.
+--   - 0078 `idx_audit_outbox_chain_order`   (`WHERE emitted_at IS NULL`) — same
+--     wrong predicate, and its key order (`tenant_id, region, enqueued_at, id`)
+--     could not satisfy `ORDER BY sequence_number` anyway.
+--   - 0099 `idx_audit_outbox_unarchived`    (`... AND archived_at IS NULL`) and
+--     0100 `idx_audit_outbox_unarchived_active` (`... AND quarantined_at IS NULL`)
+--     have the RIGHT leading columns but carry an `archived_at IS NULL` conjunct
+--     the resume query does NOT supply — deliberately so. Adding
+--     `AND archived_at IS NULL` to the QUERY would make those indexes usable,
+--     but archived rows are still sealed chain members: excluding them from the
+--     sealed-tail resume would make the drain link onto a stale head after a
+--     crash and fork the chain. That is a CORRECTNESS change disguised as an
+--     optimisation, so the fix is the additive index below instead of editing
+--     the query.
+--
+-- WHAT THIS INDEX DOES
+-- --------------------
+-- `(tenant_id, region, sequence_number)` gives the planner an equality prefix on
+-- both partition columns and the ORDER BY column as the trailing key, and the
+-- partial WHERE clause matches the query's two conjuncts EXACTLY. With it, the
+-- plan becomes `SEARCH audit_outbox USING INDEX idx_audit_outbox_sealed_tail`:
+-- the tail is one index seek to the last entry of the partition range, no scan
+-- and no temp B-tree. It also keeps serving the drain's per-partition sealed-row
+-- reads in ascending chain order for free.
+--
+-- ADDITIVE ONLY: one NEW partial index. Nothing dropped, no column or CHECK
+-- constraint touched, so no table rebuild and no ADR is required (see the
+-- auth-migrations additive-only rule, `INV-AUTH-MIGRATION-ADDITIVE`,
+-- enforced by `scripts/check_migrations_additive.py`). The write cost is one
+-- extra index entry per newly sealed row — bounded by the same global
+-- `AUDIT_DRAIN_BATCH_LIMIT` budget that already bounds the sealing writes.
+--
+-- Canonical sources:
+--   - crates/corelink-container/src/routes/audit_drain.rs  (read_sealed_tail)
+--   - migrations/d1/0099_audit_outbox_archived_at.sql      (archived_at watermark)
+--   - migrations/d1/0100_audit_outbox_quarantine.sql       (quarantine predicates)
+--   - docs/knowledge/compliance/audit-chain.md
+
+-- Partial index: the drain's sealed-tail resume seek. Sealed rows only, keyed so
+-- `ORDER BY sequence_number DESC LIMIT 1` is the last entry of the partition
+-- range — no SCAN, no TEMP B-TREE.
+CREATE INDEX IF NOT EXISTS idx_audit_outbox_sealed_tail
+    ON audit_outbox(tenant_id, region, sequence_number)
+    WHERE emitted_at IS NOT NULL AND sequence_number IS NOT NULL;
