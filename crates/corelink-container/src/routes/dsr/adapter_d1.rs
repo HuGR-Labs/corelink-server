@@ -228,6 +228,13 @@ pub(super) const RETAIN_SET: &[&str] = &[
     // `audit_outbox` / `customer_audit_events`. Erasing it would defeat the very
     // audit-before-mutation guarantee it exists for → RETAIN (Art.5(2)).
     "tier_select_audit_events",
+    // Durable billing-audit evidence (migr. 0095, WP-D1/MED-5): one append-only
+    // row per materializer audit-before-mutation emit. Subject-free by
+    // construction (tenant_id is the pseudonymous ref; the rest is Stripe ids /
+    // severity / ts_ms / canonical payload JSON). Same audit-evidence class as
+    // `tier_select_audit_events` — erasing it would defeat the guarantee it
+    // exists for → RETAIN (Art.5(2)).
+    "stripe_billing_audit_events",
     // Legal-hold control record (migr. 0076): the durable signal that gates
     // erasure itself. A row = "destructive erasure refused"; it is a
     // legal-process / audit anchor (`placed_at`), `reason` is operator-internal
@@ -359,6 +366,7 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "customer_audit_events",
     "audit_chain_head",
     "tier_select_audit_events",
+    "stripe_billing_audit_events",
     "tenant_legal_hold",
     "cas_retention",
     "abuse_score_history",

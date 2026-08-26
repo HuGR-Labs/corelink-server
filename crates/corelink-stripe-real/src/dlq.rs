@@ -118,6 +118,20 @@ impl DlqReplayOutcome {
             Self::Abandoned => "abandoned",
         }
     }
+
+    /// Parse the SQL CHECK-admitted string back into the enum (the read
+    /// path of a durable store). Returns `None` on an out-of-taxonomy
+    /// value — callers must treat that as backend corruption, not as a
+    /// replayed row.
+    #[must_use]
+    pub fn parse_sql(value: &str) -> Option<Self> {
+        match value {
+            "succeeded" => Some(Self::Succeeded),
+            "failed" => Some(Self::Failed),
+            "abandoned" => Some(Self::Abandoned),
+            _ => None,
+        }
+    }
 }
 
 // =========================================================================
@@ -222,6 +236,49 @@ impl WebhookDlqRow {
     #[must_use]
     pub const fn is_expired(&self, now_ms: u64) -> bool {
         now_ms >= self.expires_at_ms
+    }
+
+    /// Reconstruct a full row from a durable backend's read path.
+    ///
+    /// `new_quarantine` only mints FRESH quarantine rows; a D1-backed
+    /// store needs to rebuild EVERY field — including the replay slots —
+    /// when serving `get`. The struct is `#[non_exhaustive]`, so the
+    /// reconstruction must live in this crate. The parameter order
+    /// mirrors the 0045 column order for auditability.
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    pub fn rehydrate(
+        event_id: impl Into<String>,
+        dlq_row_id: impl Into<String>,
+        event_type: impl Into<String>,
+        raw_body_hex: impl Into<String>,
+        correlation_id: impl Into<String>,
+        attempt_count: u32,
+        first_seen_at_ms: u64,
+        last_seen_at_ms: u64,
+        last_error: impl Into<String>,
+        expires_at_ms: u64,
+        replay_request_id: Option<String>,
+        replayed_by: Option<String>,
+        replayed_at_ms: Option<u64>,
+        replay_outcome: Option<DlqReplayOutcome>,
+    ) -> Self {
+        Self {
+            event_id: event_id.into(),
+            dlq_row_id: dlq_row_id.into(),
+            event_type: event_type.into(),
+            raw_body_hex: raw_body_hex.into(),
+            correlation_id: correlation_id.into(),
+            attempt_count,
+            first_seen_at_ms,
+            last_seen_at_ms,
+            last_error: last_error.into(),
+            expires_at_ms,
+            replay_request_id,
+            replayed_by,
+            replayed_at_ms,
+            replay_outcome,
+        }
     }
 }
 
