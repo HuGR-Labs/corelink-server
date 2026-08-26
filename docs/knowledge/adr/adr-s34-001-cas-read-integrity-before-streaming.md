@@ -4,7 +4,7 @@ title: "ADR-S34-001 — CAS read integrity: the scrubber precedes streaming"
 description: "Streaming CAS reads would remove the read-path digest re-verification, which is the only integrity coverage that exists, so the at-rest scrubber is a hard prerequisite; the read-path memory bound is a separate concern with a cheaper answer."
 source_files:
   - "specs/03_architecture/adrs/ADR-S34-001-cas-read-integrity-before-streaming.md"
-checkpoint_sha: "3dd422d7f47aa421dc23e0f41fa9927d28a14e3e"
+checkpoint_sha: "2c0c92004dc041b5752dfd111bbd6c2d544bfbbe"
 provenance: "AUTHORED"
 tags: ["adr", "cas", "integrity", "streaming", "scrubber", "availability", "read-path"]
 timestamp: "2026-08-26T00:00:00Z"
