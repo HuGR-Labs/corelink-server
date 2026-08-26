@@ -217,3 +217,69 @@ put tenant key material on a background sweep's path for a coverage gain that
 is currently zero (no active BYOK tenants), and it deserves its own decision
 with its own threat model rather than being smuggled in as an implementation
 detail of a scrubber.
+
+## Addendum 2 (2026-08-26) — correcting decision 4's seam, and a second coverage trap
+
+Appended for the same reason as addendum 1: the line citations above stay valid.
+
+### Decision 4 named the wrong seam
+
+Decision 4 says the scrubber "resolves each object's BYOK plan". It cannot, and
+it should not want to.
+
+`resolve_byok` is a **private** `async fn` on `impl R2CasHandler`
+(`crates/corelink-container/src/storage/r2_s3.rs:711`) and, separately, on
+`impl R2AcHandler` (`:2446`). It is not a method on `R2S3Client`, which is the
+type that carries `list_objects_page` and is therefore what a sweep holds. So
+the call decision 4 describes does not compile from where the scrubber stands.
+
+It is also the wrong question. `resolve_byok` maps a **logical digest to a
+physical one**; the scrubber starts from a physical R2 key and has no logical
+digest to feed it. Asking it per object inverts the direction of the mapping.
+
+**Decision 4 (revised): the scrubber asks the BYOK question ONCE PER TENANT,
+through the public config API, and skips an encrypting tenant WHOLE.**
+
+`ByokConfigCache::get` (`crates/corelink-container/src/storage/byok_cas.rs:203`)
+does at most one D1 read per tenant and caches the not-configured answer too;
+`engagement_for` (`:1138`) is the single source of truth that the read and write
+paths already share, and both it and `ByokEngagement` are `pub`. The mapping:
+
+- `ByokEngagement::Plaintext` (or no config row) — scrub the tenant.
+- `ByokEngagement::Encrypt(_)` — skip the whole tenant, add its object count to
+  `skipped_encrypted`. Never `failed`: the data is intact, it is merely opaque
+  to a re-hash.
+- `ByokEngagement::FailClosed(_)`, or a config read error — count `failed`.
+  An encrypting tenant we cannot classify must be visible, not silently skipped,
+  and must never be assumed plaintext.
+
+This is strictly cheaper than the per-object form (one config read per tenant,
+not per object) and it preserves everything decision 4 was protecting: no
+re-hash of ciphertext, and the three-way counter split intact.
+
+### The tenant list is a second coverage trap
+
+Enumeration must be per tenant, because an R2 key is
+`<region>/<tenant_prefix>/<digest>` where `tenant_prefix` is a secret-keyed HMAC
+of the tenant UUID — a key cannot be mapped back to a tenant. That makes the
+choice of tenant list load-bearing. Measured against `corelink-config-prod`
+(`d64742ea-e102-40b2-a844-ff02e3f94562`) on 2026-08-26:
+
+| table                  | rows |
+|------------------------|------|
+| `tenant`               | 262  |
+| `tenant_storage_state` |  74  |
+| `blob_meta`            |   0  |
+
+`tenant_storage_state` only carries tenants that have accrued byte accounting.
+Driving the sweep off it omits 188 of 262 tenants and reports a clean run — the
+same silent-success shape as `blob_meta`, one table over. The scrubber
+enumerates `tenant`.
+
+### `verify_content_hash` stays the single enforcement point
+
+This ADR rests on `verify_content_hash` being *"the single enforcement point for
+content-addressing on the durable path"*. It is currently private to the
+`storage::r2_s3` module, so a scrubber in `routes::cas_scrub` cannot call it.
+It is to be widened to `pub(crate)` and called — not reimplemented. A second,
+parallel hash check would quietly falsify the claim this ADR is built on.
