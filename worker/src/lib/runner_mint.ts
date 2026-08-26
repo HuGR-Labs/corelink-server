@@ -450,23 +450,72 @@ export async function handleRunnerMint(
       tenantId = patTenant;
     }
 
-    // 5b. Suspend gate: an ACTIVE tenant has NO offboarding row; a row EXISTS ⇒
-    // the tenant is offboarding/suspended ⇒ deny.
-    const offRow = await env.CONFIG_DB.prepare(
+    // 5b/5c/5d — the three authz reads that depend ONLY on (tenantId [, repoFullName]).
+    // None consumes another's result, so they are eligible for ONE `db.batch` round
+    // trip (latency: wdb-style wins measured elsewhere in the suite). The original
+    // order 5b -> 5c -> 5d is the rejection-precedence order (behaviour, not an
+    // implementation detail): the FIRST failing gate is the one that decides, so
+    // an offboarding row still denies even when the allowlist would ALSO have
+    // denied. We keep that ordering in the source — first the prepared statements
+    // are built in 5b/5c/5d order, then the deny conditions are evaluated in the
+    // same order from the consumed batch results (or from the sequential reads
+    // on the fallback path).
+    const offStmt = env.CONFIG_DB.prepare(
       "SELECT 1 FROM tenant_offboarding_state WHERE tenant_id = ?1 LIMIT 1",
-    )
-      .bind(tenantId)
-      .first<{ 1: number }>();
+    ).bind(tenantId);
+    const allowStmt = env.CONFIG_DB.prepare(
+      "SELECT 1 FROM runner_repo_allowlist WHERE tenant_id = ?1 AND repo_full_name = ?2 LIMIT 1",
+    ).bind(tenantId, repoFullName);
+    const entStmt = env.CONFIG_DB.prepare(
+      "SELECT max_concurrency, max_vcpu_h FROM runners_entitlement WHERE tenant_id = ?1",
+    ).bind(tenantId);
+
+    // Pull one row out of a batch `D1Result` — D1 returns the matching row(s) in
+    // `result.results` (an empty array when the statement matched nothing). A
+    // missing/short result array is treated as "no row", identical to a `first()`
+    // that returned `null` (the mock and the real driver agree on that contract;
+    // the mock's `batchViaFirst` helper does the same). The TYPES of the rows are
+    // pinned by the sequential path so the deny-condition checks below stay
+    // unchanged.
+    const rowOf = <T>(result: { results?: unknown[] } | undefined): T | null => {
+      const arr = result?.results;
+      if (!Array.isArray(arr) || arr.length === 0) return null;
+      return arr[0] as T;
+    };
+
+    let offRow: { 1: number } | null;
+    let allowRow: { 1: number } | null;
+    let entRow: { max_concurrency: number; max_vcpu_h: number | null } | null;
+    if (typeof (env.CONFIG_DB as { batch?: unknown }).batch === "function") {
+      // ONE round trip carrying all three statements in the original 5b/5c/5d order.
+      const results = await (
+        env.CONFIG_DB as unknown as {
+          batch: (
+            stmts: [typeof offStmt, typeof allowStmt, typeof entStmt],
+          ) => Promise<Array<{ results?: unknown[] }>>,
+        }
+      ).batch([offStmt, allowStmt, entStmt]);
+      offRow = rowOf<{ 1: number }>(results[0]);
+      allowRow = rowOf<{ 1: number }>(results[1]);
+      entRow = rowOf<{ max_concurrency: number; max_vcpu_h: number | null }>(results[2]);
+    } else {
+      // Fallback for test doubles that do not implement `batch` — IDENTICAL to
+      // today's serial behaviour, so every existing test continues to exercise
+      // the same three awaits in the same order.
+      offRow = await offStmt.first<{ 1: number }>();
+      allowRow = await allowStmt.first<{ 1: number }>();
+      entRow = await entStmt.first<{ max_concurrency: number; max_vcpu_h: number | null }>();
+    }
+
+    // 5b. Suspend gate: an ACTIVE tenant has NO offboarding row; a row EXISTS ⇒
+    // the tenant is offboarding/suspended ⇒ deny. Evaluated FIRST so an
+    // offboarding row denies even when the allowlist/entitlement would also
+    // have denied — precedence is behaviour, not an ordering accident.
     if (offRow !== null) {
       return forbidden();
     }
 
     // 5c. Allowlist gate: the (tenant, repo) pair must be explicitly allowlisted.
-    const allowRow = await env.CONFIG_DB.prepare(
-      "SELECT 1 FROM runner_repo_allowlist WHERE tenant_id = ?1 AND repo_full_name = ?2 LIMIT 1",
-    )
-      .bind(tenantId, repoFullName)
-      .first<{ 1: number }>();
     if (allowRow === null) {
       return forbidden();
     }
@@ -476,11 +525,6 @@ export async function handleRunnerMint(
     // `max_vcpu_h` (the monthly compute allowance). Only the first is a GATE;
     // the second rides along so the dispatcher can warn the customer as they
     // approach it rather than surprising them with overage on the invoice.
-    const entRow = await env.CONFIG_DB.prepare(
-      "SELECT max_concurrency, max_vcpu_h FROM runners_entitlement WHERE tenant_id = ?1",
-    )
-      .bind(tenantId)
-      .first<{ max_concurrency: number; max_vcpu_h: number | null }>();
     if (entRow === null || typeof entRow.max_concurrency !== "number") {
       return forbidden();
     }
