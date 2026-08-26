@@ -22,7 +22,7 @@ source_files:
   - "crates/corelink-container/src/routes/failover.rs"
   - "crates/corelink-container/Cargo.toml"
   - "tests/e2e-replication-failover/Cargo.toml"
-checkpoint_sha: "06e7e785e4a83e1abb211daa56fbbeb3825cc23b"
+checkpoint_sha: "7c38d01867de8b729fec5eac3b31ed1ddc1b7a7a"
 provenance: "AUTHORED"
 tags: ["replication", "failover", "multi-region", "availability"]
 timestamp: "2026-06-28T00:00:00Z"
