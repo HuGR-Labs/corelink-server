@@ -7,14 +7,30 @@
 //! 2. Latency p99 > 300ms
 //! 3. ≥ 3 consecutive failures
 //!
-//! All sustained within 5s window (prevents false-positive from transient
-//! slowness misdetected as outage).
+//! All within the same 5s window. `evaluate` itself judges ONE instantaneous
+//! snapshot; the "sustained" qualification lives in the PRODUCTION WIRING,
+//! which adds two layers around this decision core:
+//! 1. a statistical sample floor (`FAILOVER_MIN_SAMPLES`, default 50) in the
+//!    rolling probe — below it NO signal counts, so 3 bad requests cannot
+//!    freeze a region;
+//! 2. trip/recover hysteresis (3 consecutive degraded probes to latch, 5
+//!    consecutive healthy probes to release) in the container's failover
+//!    guard.
+//!
+//! Together these are the sustention guarantee; there is no separate
+//! sustained-state machine inside this crate.
 //!
 //! # Read-only mode
 //!
 //! Writes are BLOCKED during failover (returns `WriteBlockedDuringFailover`).
 //! Stale read post-write inconsistency is eliminated.
 //! Customer notified after 30 min sustained outage (production wiring deferred).
+//!
+//! # Health states
+//!
+//! `evaluate` produces ONLY `Healthy` and `Degraded`. `RegionHealth::Down`
+//! exists for display/prometheus consumers but is UNREACHABLE from evaluation
+//! today — dashboards must not expect it.
 //!
 //! # Acyclic graph
 //!

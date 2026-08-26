@@ -198,6 +198,22 @@ Each entry cross-references:
   behaviorally against the real 0039+0055 DDLs in in-memory SQLite: canceled → no
   resurrection, paid → grants, no-billing-row → grants, insert-branch residual
   pinned as accepted.
+- **Three bad requests could freeze every write in a failover region.** The
+  rolling health probe required only `total > 0` samples, so 3 consecutive slow
+  5xx inside the 5s window tripped all three degradation signals at once
+  (rate = 100% > 1%, p99 > 300ms, streak ≥ 3) and the failover guard went
+  fail-closed 503 on ALL writes — a brownout amplifier, since the probe counts
+  the container's own responses. Three layered fixes: (1) statistical sample
+  floor (`FAILOVER_MIN_SAMPLES`, default 50) below which NO signal fires;
+  (2) trip/recover hysteresis — the guard latches read-only only after 3
+  consecutive degraded probe observations and releases after 5 consecutive
+  healthy ones (no flapping); (3) the production failover audit sink is now a
+  bounded ring buffer (10k records, oldest dropped) instead of an unbounded
+  `Mutex<Vec>` grown for process lifetime. The pure decision core
+  (`RegionHealthSnapshot::evaluate`) is untouched — doctests pass unedited.
+  Router rustdoc no longer claims a "sustained" state machine that did not
+  exist, and documents that `RegionHealth::Down` is unreachable from
+  evaluation today.
 
 ### Added
 
