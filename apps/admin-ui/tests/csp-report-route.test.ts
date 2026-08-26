@@ -30,15 +30,15 @@ function buildCspReq(headers: Record<string, string>, body: unknown): NextReques
   // NextRequest is just a Web Request with Next-flavored sugar; constructing
   // it from a standard Request is the documented way to drive the handler
   // from tests (see tests/checkout-session-route.test.ts).
-  const init: RequestInit = {
+  // No `RequestInit` annotation: the DOM lib types `signal` as
+  // `AbortSignal | null`, while NextRequest's own RequestInit demands
+  // `AbortSignal | undefined`, so annotating widens the literal into a
+  // type tsc then rejects. Letting the literal infer keeps it assignable.
+  return new NextRequest(new URL("https://humangr.com/corelink/api/csp-report"), {
     method: "POST",
     headers,
     body: typeof body === "string" ? body : JSON.stringify(body),
-  };
-  return new NextRequest(
-    new URL("https://humangr.com/corelink/api/csp-report"),
-    init,
-  );
+  });
 }
 
 describe("POST /api/csp-report", () => {
