@@ -197,7 +197,31 @@ pub const SQL_READ_TIER: &str = "SELECT tier FROM tier_selections WHERE tenant_i
 /// `subscription_started_when_active` CHECK requires it NOT NULL when
 /// active). Binds `?1..?4` = (tenant_id, tier, subscription_started_at_ms,
 /// correlation_id). Already schema-correct (the #172 fix).
-pub const SQL_UPSERT_TIER: &str = "INSERT INTO tier_selections (tenant_id, tier, subscription_state, subscription_started_at_ms, correlation_id) VALUES (?, ?, 'active', ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET tier = excluded.tier, subscription_state = 'active', subscription_started_at_ms = excluded.subscription_started_at_ms, correlation_id = excluded.correlation_id";
+///
+/// ANTI-RESURRECTION GUARD: the `DO UPDATE` arm carries a `WHERE NOT EXISTS`
+/// probe against `tenant_billing` — if the tenant's canonical billing status
+/// is already `'canceled'`, the conflict-path update is skipped entirely. A
+/// STALE, out-of-order Stripe redelivery (`customer.subscription.updated`
+/// with `status=active`) landing AFTER the cancel/downgrade path ran must not
+/// resurrect paid access for a canceled customer. This mirrors the
+/// signup-worker's DB-level guard (`apps/signup-worker/src/webhooks/stripe.ts`,
+/// `reactivateTierSelectionBySubscription`: `AND status != 'canceled'`) so both
+/// writers of the access gate enforce the same invariant. The probe CORRELATES
+/// on `tier_selections.tenant_id` — it deliberately binds ZERO extra
+/// parameters, keeping the statement arity at exactly 4.
+///
+/// KNOWN RESIDUAL (accepted): the `WHERE` clause guards ONLY the `DO UPDATE`
+/// arm — SQLite attaches a guarded `WHERE` on `ON CONFLICT … DO UPDATE` to that
+/// arm alone, so the plain `INSERT` branch is unguarded. A tenant whose
+/// `tenant_billing.status` is `'canceled'` but who has NO `tier_selections` row
+/// yet would get a FRESH `'active'` row. That is acceptable because the cancel
+/// path ([`SQL_DOWNGRADE_TIER`] / the signup-worker) writes `'inactive'` rather
+/// than deleting the row — a missing row means the tenant NEVER had a tier, so
+/// there is nothing stale to resurrect. Do NOT try to close this gap by
+/// rewriting the statement as `INSERT .. SELECT .. WHERE NOT EXISTS`: that
+/// breaks the `ON CONFLICT(tenant_id)` upsert interplay AND the fixed 4-bind
+/// arity every call site depends on.
+pub const SQL_UPSERT_TIER: &str = "INSERT INTO tier_selections (tenant_id, tier, subscription_state, subscription_started_at_ms, correlation_id) VALUES (?, ?, 'active', ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET tier = excluded.tier, subscription_state = 'active', subscription_started_at_ms = excluded.subscription_started_at_ms, correlation_id = excluded.correlation_id WHERE NOT EXISTS (SELECT 1 FROM tenant_billing tb WHERE tb.tenant_id = tier_selections.tenant_id AND tb.status = 'canceled')";
 /// DOWNGRADE a tenant's tier → `subscription_state='inactive'` (the
 /// `customer.subscription.deleted` cancel path). Binds `?1..?4` =
 /// (tenant_id, tier, subscription_started_at_ms, correlation_id).
@@ -985,6 +1009,37 @@ mod tests {
     }
 
     #[test]
+    fn upsert_tier_do_update_guarded_against_canceled_resurrection() {
+        let sql = SQL_UPSERT_TIER;
+        // The stale-redelivery fix: the DO UPDATE arm must carry a
+        // `WHERE NOT EXISTS` probe so a delayed
+        // `customer.subscription.updated(status=active)` cannot resurrect a
+        // subscription whose canonical `tenant_billing.status` is already
+        // 'canceled' (mirrors the signup-worker guard in
+        // apps/signup-worker/src/webhooks/stripe.ts).
+        assert!(sql.contains("WHERE NOT EXISTS"), "{sql}");
+        assert!(sql.contains("tenant_billing"), "{sql}");
+        assert!(
+            sql.contains("tb.status = 'canceled'"),
+            "guard must key on the canceled billing status: {sql}"
+        );
+    }
+
+    #[test]
+    fn upsert_tier_resurrection_guard_adds_zero_placeholders() {
+        let sql = SQL_UPSERT_TIER;
+        // The guard correlates on tier_selections.tenant_id — it binds NO
+        // extra parameters, so the arity stays EXACTLY 4
+        // (tenant_id, tier, subscription_started_at_ms, correlation_id).
+        // Re-parameterizing the tenant would break this assert AND every
+        // call site.
+        assert_eq!(sql.matches('?').count(), 4, "{sql}");
+        // Still writes 'active' on both arms.
+        assert_eq!(sql.matches("'active'").count(), 2, "{sql}");
+    }
+
+
+    #[test]
     fn downgrade_tier_sql_writes_inactive_not_active_and_preserves_start_0039() {
         // CAA-360 MEDIUM fix: the cancel/downgrade path MUST write
         // subscription_state='inactive' (access gate OFF), NEVER 'active'
@@ -1047,5 +1102,19 @@ mod tests {
             do_update, "subscription_state = 'inactive', correlation_id = excluded.correlation_id",
             "DO UPDATE must set ONLY subscription_state + correlation_id: {sql}"
         );
+    }
+
+    #[test]
+    fn downgrade_tier_sql_unchanged() {
+        // The downgrade path is the PRIMARY authority on cancel — it must
+        // write `subscription_state='inactive'` (access gate OFF) and preserve
+        // the original `subscription_started_at_ms` (the DO UPDATE does NOT
+        // reset it). The statement must NOT have been changed by the
+        // resurrection-guard fix (that fix only touches SQL_UPSERT_TIER).
+        let sql = SQL_DOWNGRADE_TIER;
+        assert_eq!(sql.matches('?').count(), 4, "{sql}");
+        assert!(sql.contains("'inactive'"), "{sql}");
+        assert!(!sql.contains("'active'"), "{sql}");
+        assert!(!sql.contains("tenant_billing"), "{sql}");
     }
 }
