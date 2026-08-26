@@ -59,9 +59,10 @@ import { checkRateLimit } from "@/lib/rate-limit";
 export const dynamic = "force-dynamic";
 
 /**
- * Client IP for rate limiting (mirrors /api/csp-report). On Cloudflare,
- * `CF-Connecting-IP` is set by the edge and not spoofable by the client;
- * fall back to XFF/X-Real-IP for non-CF dev environments.
+ * Client IP for rate limiting. On Cloudflare, `CF-Connecting-IP` is set by
+ * the edge and not spoofable by the client; fall back to XFF/X-Real-IP for
+ * non-CF dev environments. `/api/csp-report` mirrors THIS ordering — the
+ * old XFF-first ordering there was a spoofable bucket-rotation bug.
  */
 function clientIp(req: NextRequest): string {
   const cf = req.headers.get("cf-connecting-ip");
