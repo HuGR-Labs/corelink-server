@@ -54,6 +54,8 @@ on:
       - 'worker/**'
       - 'apps/**'
       - '.github/workflows/trivy.yml'
+  schedule:
+    - cron: '50 6 * * *'
   workflow_dispatch:
 
 permissions:
