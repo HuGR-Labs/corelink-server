@@ -116,11 +116,68 @@ def scan_file(path: Path) -> list[tuple[int, str, str]]:
     return violations
 
 
+# A migration filename must start with a zero-padded ordinal that is UNIQUE
+# within its directory. Two files sharing an ordinal is not cosmetic: the
+# apply order between them degrades to a lexicographic tiebreak on the rest
+# of the name, and the D1 ledger — which keys on the full filename — records
+# both as applied, so the duplicate never surfaces as an error. It shows up
+# later as "0094 did what?" ambiguity in every incident and every replay.
+# Two sessions branching off the same `main` will pick the same next number
+# independently; only a gate catches that at merge time.
+ORDINAL_PATTERN = re.compile(r"^(\d{4})_")
+
+# Ordinals that were ALREADY duplicated when this check landed, and that are
+# already applied in production. Renaming an applied migration desyncs the D1
+# ledger — it keys on the filename, so the renamed file reads as never-applied
+# and gets replayed. These are grandfathered deliberately; the cost of the
+# rename is strictly worse than the ambiguity. Never add to this set to make a
+# NEW collision pass: renumber the new file instead.
+GRANDFATHERED_ORDINALS: dict[str, frozenset[str]] = {
+    # Both landed 2026-05-14 from two branches that each picked "next = 0044".
+    "migrations/d1": frozenset(
+        {"0044_drata_evidence_sent.sql", "0044_stripe_webhook_events_processed.sql"}
+    ),
+}
+
+
+def check_ordinals() -> int:
+    """Report migration ordinals reused within a single directory."""
+    collisions = 0
+    for d in MIGRATION_DIRS:
+        if not d.exists():
+            continue
+        by_ordinal: dict[str, list[str]] = {}
+        for path in sorted(p for p in d.iterdir() if p.suffix == ".sql"):
+            m = ORDINAL_PATTERN.match(path.name)
+            if m is None:
+                continue
+            by_ordinal.setdefault(m.group(1), []).append(path.name)
+        rel = d.relative_to(REPO_ROOT)
+        grandfathered = GRANDFATHERED_ORDINALS.get(rel.as_posix(), frozenset())
+        for ordinal, names in sorted(by_ordinal.items()):
+            if len(names) < 2:
+                continue
+            if all(name in grandfathered for name in names):
+                continue
+            collisions += 1
+            print(f"\n{rel}: ordinal {ordinal} is used by {len(names)} files")
+            for name in names:
+                print(f"  {name}")
+            print(
+                "  \u2192 migration ordinals must be unique per directory. Renumber all "
+                "but one to the next free ordinal; the apply order between "
+                "same-ordinal files is an accident of lexicographic sort."
+            )
+    return collisions
+
+
 def main() -> int:
     files = iter_migration_files()
     if not files:
         print("warn: no migration files found under migrations/ or migrations/d1/")
         return 0
+
+    ordinal_collisions = check_ordinals()
 
     total_violations = 0
     for path in files:
@@ -140,12 +197,18 @@ def main() -> int:
             "documenting the dual-write window."
         )
 
-    if total_violations:
-        print(
-            f"\nFAIL: {total_violations} destructive token(s) across {len(files)} files."
-        )
+    if total_violations or ordinal_collisions:
+        parts = []
+        if total_violations:
+            parts.append(f"{total_violations} destructive token(s)")
+        if ordinal_collisions:
+            parts.append(f"{ordinal_collisions} duplicated ordinal(s)")
+        print(f"\nFAIL: {' and '.join(parts)} across {len(files)} files.")
         return 1
-    print(f"OK: {len(files)} migration file(s) scanned; all additive.")
+    print(
+        f"OK: {len(files)} migration file(s) scanned; all additive, "
+        "all ordinals unique."
+    )
     return 0
 
 

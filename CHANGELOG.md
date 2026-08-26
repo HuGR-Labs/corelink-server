@@ -24,6 +24,20 @@ Each entry cross-references:
 
 ### Fixed
 
+- **Migration ordinals are now gated for uniqueness (`check_migrations_additive.py`).**
+  Nothing stopped two branches from each picking the same "next" number off a
+  shared `main`, and it had already happened: `0044_drata_evidence_sent.sql`
+  and `0044_stripe_webhook_events_processed.sql` both landed on 2026-05-14,
+  and a webhook-DLQ branch in flight was about to reuse `0094`/`0095`. A
+  duplicated ordinal is not cosmetic — the apply order between the two files
+  degrades to a lexicographic tiebreak on the rest of the name, and the D1
+  ledger keys on the full filename, so both record as applied and the clash
+  never surfaces as an error. The gate now fails on any ordinal reused within
+  a migration directory. The 2026-05-14 `0044` pair is grandfathered
+  explicitly: both are applied in production, and renaming an applied
+  migration desyncs the ledger (the renamed file reads as never-applied and
+  replays), which is strictly worse than the ambiguity.
+
 - **429-body URLs repointed to live flat hosts (go-live audit I-cluster / WP-3).**
   `TIER_UPGRADE_URL` (`corelink.humangr.com/pricing`) and `DOCS_URL`
   (`docs.corelink.humangr.com/explanation/rate-limits`) were frozen at
