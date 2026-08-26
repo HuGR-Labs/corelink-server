@@ -6,6 +6,8 @@ source_files:
   - "worker/src/lib/session_exchange.ts"
   - "worker/src/lib/runner_mint.ts"
   - "worker/src/lib/auth_rotate.ts"
+source_blobs:
+  - "worker/src/lib/runner_mint.ts@5348e004fe2fd09568d20fa0dcf35f80f4bdb7a2"
 checkpoint_sha: "9615e0e694e7c839430341a065ab1f949dbf6dfe"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "mint", "worker-edge", "tenancy"]
@@ -24,7 +26,7 @@ D1 `pat` row. The three public handlers above it are thin, fail-CLOSED *authoriz
 each proves the caller may mint (a verified session, an internal-auth key plus a
 runners entitlement, or ownership of the old PAT), then delegates the privileged work to
 the shared chokepoint (`worker/src/lib/session_exchange.ts:544-552`,
-`worker/src/lib/runner_mint.ts:545-559`, `worker/src/lib/auth_rotate.ts:286-292`). Each
+`worker/src/lib/runner_mint.ts:589-603`, `worker/src/lib/auth_rotate.ts:286-292`). Each
 consumer now presents the **DEDICATED** `CORELINK_PAT_MINT_AUTH_KEY` to that chokepoint
 — falling back to the shared `CORELINK_INTERNAL_AUTH_KEY` ONLY when the dedicated key is
 unset — because the container's `/_internal/pat/mint` gate now REQUIRES the dedicated
@@ -131,25 +133,25 @@ place a leaked token can be revoked, since every consumer's token lands in the s
   `runners_entitlement` row (migration 0070) and capture its `max_concurrency` → no row →
   403. EVERY miss returns the SAME generic `403 {error:"FORBIDDEN", message:"runner mint
   unauthorized"}` — no oracle distinguishes which check failed — and any D1 exception →
-  500 (`worker/src/lib/runner_mint.ts:402-479`). **M22(b) per-tenant mint ceiling:** after
+  500 (`worker/src/lib/runner_mint.ts:402-539`). **M22(b) per-tenant mint ceiling:** after
   tenant derivation and BEFORE the mint, it calls the shared throttle a SECOND time with a
   domain-separated hashed key (`"runner-tenant:" + tenantId`) and a cap SCALED off the
   tenant's runner ceiling (`max(max_concurrency * 2, 8)`), so a mint-storm across MANY
   distinct `job_id`s (each under its own per-job cap) is bounded per tenant while the
-  ceiling grows with entitlement (`worker/src/lib/runner_mint.ts:508-518`). It then
+  ceiling grows with entitlement (`worker/src/lib/runner_mint.ts:552-562`). It then
   delegates to the chokepoint with a `MintGrant.fromRunnerDerivation` (read-write ceiling),
   the DERIVED tenant, and the runner `job_id` as the principal source, threading
   `max_concurrency` into the response via `mintScopedPat`'s `extraFields` bag — plus an
   ADDITIVE `max_vcpu_h` (the monthly compute allowance) that is OMITTED, not nulled, when
   the tenant has no metered ceiling on file, so the wire stays byte-identical for every
-  tenant that had none (`worker/src/lib/runner_mint.ts:545-559`). It also honors an
+  tenant that had none (`worker/src/lib/runner_mint.ts:589-603`). It also honors an
   optional **lease-bound `ttl_seconds`**: the dispatcher sends the lease's remaining time so the runner PAT
   EXPIRES WITH THE LEASE (server-enforced), clamped DOWN to the 90-min cap — a caller
   can only shorten, never extend — and `0`/negative/non-integer is refused `400` (the
   container maps `ttl_seconds=0` → "no expiry", so a non-expiring runner PAT is
   impossible to request) (`worker/src/lib/runner_mint.ts:357-369`). Teardown revoke is an
   idempotent soft-revoke on the shared `pat` table
-  (`worker/src/lib/runner_mint.ts:642-653`).
+  (`worker/src/lib/runner_mint.ts:686-697`).
 - **Consumer 3 — `clw auth rotate`:** `handleAuthRotate` reads the OLD `pat` row, refuses
   a missing/already-revoked PAT with a 404, refuses a caller-named tenant that does not
   own the row with a 403, mints an equal-scope replacement via the chokepoint with a
@@ -178,17 +180,17 @@ place a leaked token can be revoked, since every consumer's token lands in the s
   (`worker/src/lib/session_exchange.ts:533`, `worker/src/lib/session_exchange.ts:925-927`).
 - Runners is a SEPARATE authorization axis from the cache tier — a tenant with no
   `runners_entitlement` row gets no runner credential (403), independent of its cache
-  subscription (`worker/src/lib/runner_mint.ts:474-495`).
+  subscription (`worker/src/lib/runner_mint.ts:523-539`).
 - The runner-mint authz chokepoint is a NON-ORACLE: an unmapped installation, a suspended
   tenant, a non-allowlisted repo, and a non-entitled tenant ALL return the byte-identical
   generic `403 "runner mint unauthorized"`, and the tenant is DERIVED server-side from the
   installation — never taken from the request body (the single-tenant hole WP2 closes)
-  (`worker/src/lib/runner_mint.ts:392-479`).
+  (`worker/src/lib/runner_mint.ts:392-539`).
 - A runner tenant's mints are bounded per WINDOW, not just per job (M22(b)): after
   server-side tenant derivation the shared throttle is re-applied under a per-tenant key at
   a cap scaled off `max_concurrency`, so a storm across distinct `job_id`s cannot slip the
   per-job cap — yet legitimate fan-out (up to the scaled ceiling) never false-throttles
-  (`worker/src/lib/runner_mint.ts:508-518`).
+  (`worker/src/lib/runner_mint.ts:552-562`).
 - Every mint is throttled and every issuance failure fails CLOSED — an unmappable OR
   over-ceiling scope is a 500 and an over-cap principal is a 429, never an
   issued-but-unusable or over-privileged token (`worker/src/lib/session_exchange.ts:621-625`,
@@ -200,7 +202,7 @@ place a leaked token can be revoked, since every consumer's token lands in the s
   `worker/src/lib/session_exchange.ts:382-392`).
 - Revocation shares ONE surface: both the runner-revoke and the rotate-old-key write are
   the same idempotent `UPDATE pat SET revoked_at_ms ... WHERE ... revoked_at_ms IS NULL`
-  the native plane honors (`worker/src/lib/runner_mint.ts:642-653`,
+  the native plane honors (`worker/src/lib/runner_mint.ts:686-697`,
   `worker/src/lib/auth_rotate.ts:319-325`).
 
 # Gotchas
@@ -259,14 +261,14 @@ place a leaked token can be revoked, since every consumer's token lands in the s
 19. `worker/src/lib/runner_mint.ts:40-45` — Consumer 2 imports `mintScopedPat` / `MintGrant` / `checkMintThrottle` / `deriveTenantCeilingThrottleKey` (no second mint path).
 20. `worker/src/lib/runner_mint.ts:298-306` — WP2 body `{ job_id, repo_full_name, installation_id?, scope?, ttl_seconds?, ac_output_name? }` — the tenant is NOT a body field.
 21. `worker/src/lib/runner_mint.ts:402-428` — WP2 (a): derive tenant via `SELECT tenant_id FROM tenant_gh_installation_map WHERE installation_id = ?1`; no row → generic 403.
-21a. `worker/src/lib/runner_mint.ts:446-454` — WP2 (b): a `tenant_offboarding_state` row EXISTS → suspended → generic 403.
-21b. `worker/src/lib/runner_mint.ts:456-464` — WP2 (c): `runner_repo_allowlist(tenant, repo)` miss → generic 403.
-22. `worker/src/lib/runner_mint.ts:474-495` — WP2 (d): `SELECT max_concurrency, max_vcpu_h FROM runners_entitlement WHERE tenant_id = ?1` (the separate Runners axis, migration 0070); no row → generic 403; capture `max_concurrency` (the GATE) and `max_vcpu_h` (the NULLABLE monthly compute allowance, migration 0072 — advisory only, kept as `null` unless it is a real positive number).
+21a. `worker/src/lib/runner_mint.ts:510-516` — WP2 (b): a `tenant_offboarding_state` row EXISTS → suspended → generic 403.
+21b. `worker/src/lib/runner_mint.ts:518-521` — WP2 (c): `runner_repo_allowlist(tenant, repo)` miss → generic 403.
+22. `worker/src/lib/runner_mint.ts:523-539` — WP2 (d): `SELECT max_concurrency, max_vcpu_h FROM runners_entitlement WHERE tenant_id = ?1` (the separate Runners axis, migration 0070); no row → generic 403; capture `max_concurrency` (the GATE) and `max_vcpu_h` (the NULLABLE monthly compute allowance, migration 0072 — advisory only, kept as `null` unless it is a real positive number).
 22a. `worker/src/lib/runner_mint.ts:392-393` — the single generic `403 "runner mint unauthorized"` shared by all four checks (no oracle).
-23. `worker/src/lib/runner_mint.ts:508-518` — M22(b) per-tenant mint ceiling: re-apply the shared throttle under the `"runner-tenant:" + tenantId` key at `max(max_concurrency * 2, 8)`, in-memory arm disabled (durable per-window gate).
-24. `worker/src/lib/runner_mint.ts:545-559` — delegates via `MintGrant.fromRunnerDerivation` with the DERIVED tenant + `job_id` principal source, threading `max_concurrency` — and, only when the tenant has one on file, an ADDITIVE `max_vcpu_h` — through `extraFields`.
+23. `worker/src/lib/runner_mint.ts:552-562` — M22(b) per-tenant mint ceiling: re-apply the shared throttle under the `"runner-tenant:" + tenantId` key at `max(max_concurrency * 2, 8)`, in-memory arm disabled (durable per-window gate).
+24. `worker/src/lib/runner_mint.ts:589-603` — delegates via `MintGrant.fromRunnerDerivation` with the DERIVED tenant + `job_id` principal source, threading `max_concurrency` — and, only when the tenant has one on file, an ADDITIVE `max_vcpu_h` — through `extraFields`.
 24a. `worker/src/lib/runner_mint.ts:358-366` — lease-bound `ttl_seconds` clamped DOWN to the 90-min cap (never extended); `0`/negative/non-integer → 400.
-25. `worker/src/lib/runner_mint.ts:642-653` — idempotent `UPDATE pat SET revoked_at_ms ... WHERE ... revoked_at_ms IS NULL` (tenant-scoped when `owner_tenant` is present, else by `pat_id` alone).
+25. `worker/src/lib/runner_mint.ts:686-697` — idempotent `UPDATE pat SET revoked_at_ms ... WHERE ... revoked_at_ms IS NULL` (tenant-scoped when `owner_tenant` is present, else by `pat_id` alone).
 26. `worker/src/lib/auth_rotate.ts:48` — Consumer 3 imports `mintScopedPat` + `MintGrant` + `canonicalizePatScope` (no second mint path).
 27. `worker/src/lib/auth_rotate.ts:237-241` — `SELECT tenant_id, scope, expires_ms, revoked_at_ms FROM pat WHERE pat_id = ?1` (read the old row).
 28. `worker/src/lib/auth_rotate.ts:247-252` — unknown OR already-revoked PAT → 404 (never silently mint).
