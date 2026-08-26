@@ -39,6 +39,7 @@ import {
   secondsUntilNextMonthStart,
 } from "./lib/quota.js";
 import { meterViaDO, serveViaDO, serveGateActive } from "./lib/edge_do_meter.js";
+import { isValidPatSigningKeyHex } from "./lib/pat_signing_key.js";
 import { checkStorageQuotaCachedRead } from "./lib/quota_storage_cache.js";
 import {
   tryFastRequestCount,
@@ -1288,14 +1289,17 @@ async function extractAuth(
     );
     return { ok: false, reason: "signing_key_not_configured" };
   }
-  // Validate the decoded key length: the hex string encodes raw bytes, so
-  // length/2 gives decoded byte count. A key < 64 hex chars = < 32 bytes.
-  if (signingKeyRaw.length < 64) {
+  // WP-F2 (MED-1): the PRIMARY key gets the SAME full predicate as its
+  // rotation siblings (shared helper — they cannot diverge again). The old
+  // length-only gate let a 64+-char NON-hex key through: hexDecode() returned
+  // null on every request, HMAC failed silently and ALL legitimate clients
+  // took 401s with zero operational signal. Now: fail CLOSED + LOUD (503).
+  if (!isValidPatSigningKeyHex(signingKeyRaw)) {
     console.error(
       JSON.stringify({
-        event: "pat_signing_key_too_short",
+        event: "pat_signing_key_malformed",
         severity: "CRITICAL",
-        message: `PAT_SIGNING_KEY decodes to fewer than 32 bytes (hex length ${signingKeyRaw.length}) — failing closed (503).`,
+        message: `PAT_SIGNING_KEY is PRESENT but is not a valid signing key (need an even-length all-hex string of >= 64 chars / >= 32 bytes; got hex length ${signingKeyRaw.length}) — failing closed (503). Fix or unset the key and redeploy.`,
       }),
     );
     return { ok: false, reason: "signing_key_not_configured" };
@@ -1408,10 +1412,8 @@ async function extractAuth(
     // (>= 32 bytes). This rejects ALL of finding #7's named malformations —
     // a short value, an odd-length hex string, and a non-hex typo — none of
     // which must be silently dropped (which would shrink the overlap set).
-    const isValidHexKey =
-      sibling.length >= 64 &&
-      sibling.length % 2 === 0 &&
-      /^[0-9a-fA-F]+$/.test(sibling);
+    // WP-F2: same SHARED predicate as the primary key (was inline here).
+    const isValidHexKey = isValidPatSigningKeyHex(sibling);
     if (!isValidHexKey) {
       console.error(
         JSON.stringify({
