@@ -14,7 +14,7 @@ source_blobs:
   - "crates/corelink-container/src/main.rs@079e9d823f1837d3e101b6b6596d52be1c557e9a"
   - "worker/src/index.ts@88fe71fd97c8f5d36a5eef8805e6219e68b3fd2b"
   - "docs/operator/stripe-checkout-e2e-2026-05-29.md@ec7f01cfc9c7e538e782b44697a3e2f4ce482bc6"
-checkpoint_sha: "84eabdd7282dabb77fa8f4dbd4015a02329b749f"
+checkpoint_sha: "be7cde272ca191f79c4e2c1d70688818b96e9ed9"
 provenance: "AUTHORED"
 tags: [launch, billing, stripe, checkout, usage, money-path]
 timestamp: "2026-06-26T00:00:00Z"
