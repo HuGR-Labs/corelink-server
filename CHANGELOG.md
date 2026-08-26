@@ -214,6 +214,22 @@ Each entry cross-references:
   Router rustdoc no longer claims a "sustained" state machine that did not
   exist, and documents that `RegionHealth::Down` is unreachable from
   evaluation today.
+- **Two concurrent AC writers could poison a proven ActionResult (last-write-
+  wins over an immutable entry).** `R2AcHandler::update` implemented AC
+  immutability as GET-compare-then-unconditional-PUT: two racing writers with
+  divergent bodies both observed "absent" and both PUT — whichever landed last
+  overwrote a proven result for every later build on that digest
+  (`INV-AC-RESULT-HASH-IMMUTABLE`, intra-tenant supply-chain window). The PUT
+  is now conditional via `put_if_absent` (server-side `If-None-Match: *`, the
+  same primitive the audit archive already relies on): `Ok(true)` → created
+  (`durable=true`); `Ok(false)` → lost the race, re-GET and apply the same
+  prior-state classifier — byte-identical → idempotent no-op (`durable=false`),
+  divergent → `DivergentBody` (409), ambiguous re-GET error/absent → fail
+  closed. The compare itself is factored into one shared `classify_prior`
+  helper used by BOTH the pre-PUT check and the lost-race resolution so they
+  cannot diverge. CAS path untouched (content-addressed; unconditional put is
+  correct and cheaper there). BYOK ordering, audit-before-mutation emissions,
+  and the telemetry `Phase::Store` scopes are preserved.
 
 ### Added
 
