@@ -21,6 +21,7 @@ Each entry cross-references:
 ---
 
 ## [Unreleased]
+- CVE-feed cron schedules restored on `cargo-deny` (daily) and `trivy` (daily), staggered on the self-hosted fleet, so advisory/license/vuln feeds that change without a commit are no longer blind between pushes; `semgrep` stays owner-parked (0/8 broken, hosted, CodeQL covers SAST) (F-014).
 
 ### Added
 

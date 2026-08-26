@@ -47,6 +47,8 @@ on:
   # # Daily at 06:30 UTC — 30 min after cargo-audit cron to avoid I/O
   # # contention on advisory-db fetch.
   # - cron: '30 6 * * *'
+  schedule:
+    - cron: '20 6 * * *'
   workflow_dispatch:
 
 permissions:
