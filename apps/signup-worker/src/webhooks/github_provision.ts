@@ -159,7 +159,7 @@ function json(status: number, body: unknown): Response {
  * @returns the chosen key string, or `null` when neither qualifies (fail-CLOSED;
  *   the caller MUST then return 503 — no properly sized gate is bound).
  */
-export function resolveRunnerProvisionKey(env: InstallationProvisionEnv): string | null {
+function resolveRunnerProvisionKey(env: InstallationProvisionEnv): string | null {
   const specific = env.CORELINK_RUNNER_PROVISION_AUTH_KEY;
   if (specific && specific.length > 0) {
     // A dedicated key was EXPLICITLY provided for this consumer.
