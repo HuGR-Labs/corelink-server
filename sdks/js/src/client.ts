@@ -47,6 +47,8 @@ function sleep(ms: number): Promise<void> {
 interface RawResponse {
   status: number;
   bytes: Uint8Array;
+  /** `Content-Length` response header, when the server sends one. */
+  contentLength?: number;
 }
 
 /**
@@ -165,15 +167,18 @@ export class CoreLinkClient {
   }
 
   /**
-   * Existence + size for a digest. Performs a `GET` (the container exposes no
-   * lighter single-object probe), so `sizeBytes` is the exact byte length.
-   * A 404/410 resolves to `{ exists: false, sizeBytes: 0 }`.
+   * Existence + size for a digest. Issues a `HEAD` request to the same CAS
+   * route (mirroring the Python SDK's `stat`), so no body is transferred and
+   * `sizeBytes` comes from the `Content-Length` response header. A 404/410
+   * resolves to `{ exists: false, sizeBytes: 0 }`.
    */
   async stat(digest: BlobDigest): Promise<StatResult> {
     this.assertDigest(digest);
-    const res = await this.rawRequest("GET", this.casPath(digest));
+    const res = await this.rawRequest("HEAD", this.casPath(digest));
     if (res.status === 200) {
-      return { digest, exists: true, sizeBytes: res.bytes.byteLength };
+      // A HEAD response carries the size only as a header. If a server omits
+      // it, report 0 rather than guessing (mirrors the Python SDK's default).
+      return { digest, exists: true, sizeBytes: res.contentLength ?? 0 };
     }
     if (res.status === 404 || res.status === 410) {
       return { digest, exists: false, sizeBytes: 0 };
@@ -231,7 +236,9 @@ export class CoreLinkClient {
   /**
    * Issue a request with retry/backoff and return the raw response WITHOUT
    * throwing on non-2xx (so callers like `stat` can branch on 404). Retries
-   * transient failures: 429, 503, and transport errors.
+   * transient failures: 429, 503, and transport errors. Method-agnostic — any
+   * verb works, including `HEAD` (the captured `Content-Length` header is
+   * exposed as {@link RawResponse.contentLength} for bodyless probes).
    * @internal
    */
   async rawRequest(
@@ -266,6 +273,13 @@ export class CoreLinkClient {
         });
         const bytes = new Uint8Array(await resp.arrayBuffer());
         const raw: RawResponse = { status: resp.status, bytes };
+        const clHeader = resp.headers.get("content-length");
+        if (clHeader !== null) {
+          const parsed = Number.parseInt(clHeader, 10);
+          if (Number.isFinite(parsed) && parsed >= 0) {
+            raw.contentLength = parsed;
+          }
+        }
         if (this.isRetryable(resp.status) && attempt < this.retry.maxAttempts) {
           lastErr = errorForStatus(resp.status, decode(bytes));
           await this.backoff(attempt);
