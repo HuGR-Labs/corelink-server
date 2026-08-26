@@ -2621,7 +2621,14 @@ shaped work is absent from `crates/corelink-container/src/routes/` entirely.
 So verification is a sampling function driven by traffic: an object is checked
 exactly when a client requests it, and a cold object is never checked at all.
 
-Design in `specs/03_architecture/adrs/ADR-S34-001-cas-read-integrity-before-streaming.md`.
+Design in `specs/03_architecture/adrs/ADR-S34-001-cas-read-integrity-before-streaming.md`,
+including the 2026-08-26 addendum: for a BYOK-`active` tenant the stored object
+is CIPHERTEXT and the R2 key may be a `physical_digest` rather than the
+plaintext one, so re-hashing raw bytes would emit false violations against
+intact data. The scrubber must resolve each object's plan and count anything
+non-`Plaintext` as `skipped_encrypted`, distinct from both `examined` and
+`failed`. BYOK is gated-inert today, which is exactly why this is easy to ship
+wrong: correct now, silently wrong the day it flips.
 Two constraints the ADR fixes: enumerate R2 directly via
 `R2S3Client::list_objects_page` (`crates/corelink-container/src/storage/r2_s3.rs:467`
 — cursor + `max_keys` clamp of 1000, resumable and bounded per call), NOT
