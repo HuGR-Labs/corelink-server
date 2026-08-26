@@ -22,7 +22,7 @@ source_files:
   - "crates/corelink-container/src/routes/failover.rs"
   - "crates/corelink-container/Cargo.toml"
   - "tests/e2e-replication-failover/Cargo.toml"
-checkpoint_sha: "94bbcd5eb6cf97bf962cdc3bffe8bd58eac30c4b"
+checkpoint_sha: "3e10c0f87c45d60e560c11a2f49d0d414650bb56"
 provenance: "AUTHORED"
 tags: ["replication", "failover", "multi-region", "availability"]
 timestamp: "2026-06-28T00:00:00Z"
@@ -42,12 +42,16 @@ cross-jurisdiction replication (WNAM↔ENAM, WEUR↔SAM only), audit-emit-before
 
 STATUS — SPLIT, and this is load-bearing for anyone diagnosing a production 503. The **read-side
 failover-router is wired and live**: `crates/corelink-container/src/routes.rs:1061-1064` layers
-`failover::failover_guard` (`crates/corelink-container/src/routes/failover.rs:333`) as a Tower
+`failover::failover_guard` (`crates/corelink-container/src/routes/failover.rs:452`) as a Tower
 middleware over the data-plane router, alongside `residency_guard`. That middleware drives
 `corelink-failover-router`'s decision core with a REAL `RollingMetricsHealthProbe` built from THIS
 container's own live traffic (5xx rate, p99 latency, consecutive failures) — not the `InMemory*` test
-fixture — and, on a detected region degradation, calls `state.router.route_read(...)`
-(`crates/corelink-container/src/routes/failover.rs:361`). **If the region is degraded, writes
+fixture — gated by TWO anti-false-positive layers before a write can be blocked: (1) a statistical
+sample floor (`FAILOVER_MIN_SAMPLES`, default 50 — below it the probe reports Healthy unconditionally,
+so 3 bad requests cannot freeze a region) and (2) trip/recover hysteresis (`HysteresisGate`: 3
+consecutive DEGRADED probe observations to latch, 5 consecutive HEALTHY to release). Only then does
+it call `state.router.route_read(...)`
+(`crates/corelink-container/src/routes/failover.rs:484`). **If the region is degraded, writes
 (`POST`/`PUT`/`PATCH`/`DELETE`) are fail-CLOSED rejected with a 503 body `failover_readonly`**, and
 reads are passed through with a `x-corelink-failover-read-region` / `x-corelink-failover-active: 1`
 hint for the edge Worker to re-route. **A 503 with that body in production means this live code path
@@ -76,7 +80,7 @@ not.
   retry up to 5, emit audits, mark `Replicated`
   (`crates/corelink-replica-worker/src/replication.rs:158-291`).
 - **Failover-router** — read-side routing decision: healthy → read primary; degraded → read the sibling
-  + block writes (`crates/corelink-failover-router/src/router.rs:158-216`).
+  + block writes (`crates/corelink-failover-router/src/router.rs:166-238`).
 - **Aggregator façade** — `corelink-replication` re-exports all four (plus rollout-controller) at
   canonical `coordinator` / `replica` / `failover` / `region` submodule paths; the live request path
   only touches its `region_resolver` type-alias module
@@ -110,7 +114,7 @@ not.
 6. **Read failover routing.** `route_read` probes the primary's health; `Healthy` → read primary, writes
    allowed; degraded → look up the sibling, emit `failover.detected` BEFORE routing, return
    `read_region = sibling`, `read_mode = Replica`, `write_mode = Blocked`
-   (`crates/corelink-failover-router/src/router.rs:158-216`).
+   (`crates/corelink-failover-router/src/router.rs:166-238`).
 7. **Multi-signal degradation.** A region is flagged `Degraded` only when ALL THREE signals fire (5xx
    rate > 1%, p99 > 300ms, ≥3 consecutive failures) — the AND of three triggers, to suppress transient
    false positives (`crates/corelink-failover-router/src/health.rs:222-256`).
@@ -152,7 +156,7 @@ not.
 - **⚠️ The read-side router IS live — a 503 `failover_readonly` in production is real.**
   `corelink-container` layers `failover::failover_guard` as Tower middleware
   (`crates/corelink-container/src/routes.rs:1061-1064`), and that middleware calls
-  `state.router.route_read(...)` (`crates/corelink-container/src/routes/failover.rs:361`) against a
+  `state.router.route_read(...)` (`crates/corelink-container/src/routes/failover.rs:484`) against a
   REAL rolling-metrics health probe on every request. If you are diagnosing a production 503 with body
   `failover_readonly`, this is the code that produced it — treat it as a genuine region-degradation
   signal, not a test artifact, and check `RollingMetricsHealthProbe`'s inputs (5xx rate / p99 / consecutive
@@ -181,7 +185,7 @@ not.
   is the only part anything live actually uses (`crates/corelink-replication/src/lib.rs:92-99`).
 - **`route_read`'s probe-failure path fails CLOSED to degraded** (treats a probe error as an outage),
   which is conservative but means a flaky probe would route reads to the sibling if this were ever wired
-  (`crates/corelink-failover-router/src/router.rs:150-155`).
+  (`crates/corelink-failover-router/src/router.rs:166-172`).
 
 # Citations
 1. `crates/corelink-replication/src/lib.rs:86-99` — the aggregator re-exports (`coordinator`/`failover`/
@@ -220,9 +224,9 @@ not.
     WEUR↔SAM).
 19. `crates/corelink-failover-router/src/lib.rs:6-10` — module doc: "**pure-logic skeleton** … the
     production Tower layer will satisfy".
-20. `crates/corelink-failover-router/src/router.rs:158-216` — `route_read`: healthy→primary;
+20. `crates/corelink-failover-router/src/router.rs:166-238` — `route_read`: healthy→primary;
     degraded→sibling read + `failover.detected` audit + `WriteMode::Blocked`.
-21. `crates/corelink-failover-router/src/router.rs:150-155` — `get_health` fails CLOSED to degraded on a
+21. `crates/corelink-failover-router/src/router.rs:166-172` — `get_health` fails CLOSED to degraded on a
     probe error.
 22. `crates/corelink-failover-router/src/health.rs:222-245` — `evaluate`: `Degraded` only when all three
     triggers (5xx>1%, p99>300ms, ≥3 consecutive failures) fire.
@@ -237,7 +241,8 @@ not.
 26. `crates/corelink-container/src/routes.rs:1061-1064` — `failover::FailoverLayerState::from_env()` +
     `router.layer(axum::middleware::from_fn_with_state(failover_state, failover::failover_guard))`,
     layered alongside `residency_guard` — the live Tower-middleware wiring.
-27. `crates/corelink-container/src/routes/failover.rs:333-384` — `failover_guard`: calls
+27. `crates/corelink-container/src/routes/failover.rs:452-503` — `failover_guard`: applies the
+    sample-floor + hysteresis gate over the raw health verdict, then calls
     `state.router.route_read(...)` against a REAL `RollingMetricsHealthProbe`; fail-CLOSED 503
     `failover_readonly` on writes during a detected region degradation, sibling-read hint on reads.
 28. `crates/corelink-container/Cargo.toml:298` — the crate depends on `corelink-failover-router` only;

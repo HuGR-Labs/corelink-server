@@ -9,7 +9,7 @@ source_files:
   - "crates/corelink-container/src/routes/failover.rs"
   - "crates/corelink-container/src/routes/otel_layer.rs"
   - "crates/corelink-container/src/storage/r2_kv.rs"
-checkpoint_sha: "3b5b48431dfdc7c84a45864c088b4cbcfc50164a"
+checkpoint_sha: "3e10c0f87c45d60e560c11a2f49d0d414650bb56"
 provenance: "AUTHORED"
 tags: ["planes", "container", "rust", "axum", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -87,7 +87,7 @@ surface.
    and the D1 moat map build from env (`crates/corelink-container/src/routes.rs:872-1031`).
 8. Four Tower layers wrap the composed data plane (NOT `/_health` or `/_internal/*`, which mount later in
    `main`): the residency guard, the WI-MULTI-REGION-V1 read-side failover guard
-   (`crates/corelink-container/src/routes/failover.rs:333-366`), the per-tenant rate-limit token-bucket,
+   (`crates/corelink-container/src/routes/failover.rs:452-487`), the per-tenant rate-limit token-bucket,
    and — outermost, so it observes the final status — the OTel-export seam, mounted only when
    `CORELINK_OBSERVABILITY_EXPORT_VARIANT` selects a configured vendor
    (`crates/corelink-container/src/routes/otel_layer.rs:413-439`,
@@ -141,5 +141,5 @@ surface.
 16. `crates/corelink-container/src/routes.rs:1038-1096` — the rate-limit layer scoped to the data plane only.
 17. `crates/corelink-container/src/main.rs:328-406` — positive prod-arming assertion: an independent R2-region signal ⇒ ALL launch controls must be armed (the request-count one as the OCI op-cap, plus `ERASURE_SALT_KEY` at `crates/corelink-container/src/main.rs:376-388`), else a FATAL boot refusal (no half-armed prod).
 18. `crates/corelink-container/src/storage/r2_kv.rs:127-148` — `R2KvStore::object_key`: per-tenant `derive_prefix` HMAC key layout, fail-CLOSED on a non-derivable tenant rather than a public predictable prefix.
-19. `crates/corelink-container/src/routes/failover.rs:333-366` — `failover_guard`: the WI-MULTI-REGION-V1 read-side failover Tower layer — inert in a healthy region, fail-CLOSED blocks writes (503 `failover_readonly`) + stamps a sibling read-region hint under a sustained region outage.
+19. `crates/corelink-container/src/routes/failover.rs:452-487` — `failover_guard`: the WI-MULTI-REGION-V1 read-side failover Tower layer — inert in a healthy region; engages only after the statistical sample floor (default 50 samples/5s window) AND 3 consecutive degraded probe observations (hysteresis latch, released after 5 consecutive healthy); then fail-CLOSED blocks writes (503 `failover_readonly`) + stamps a sibling read-region hint.
 20. `crates/corelink-container/src/routes/otel_layer.rs:413-439` — `otel_export_layer`: the OUTERMOST data-plane layer, streaming a canonical `MetricPoint` + `TraceSpan` per request through the configured exporter's fail-OPEN boundary; mounted only when `CORELINK_OBSERVABILITY_EXPORT_VARIANT` selects a vendor.
