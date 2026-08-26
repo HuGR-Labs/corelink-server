@@ -58,7 +58,10 @@ interface DebitResponse {
   needsRefill: boolean;
   balance: number;
   yearMonth: string;
-  refillReq: { spentDelta: number; reportedBalance: number };
+  // `spentTotal` is optional so a response from a shard still running
+  // pre-2026-08-26 code parses; the coordinator then falls back to the
+  // legacy additive `spentDelta`.
+  refillReq: { spentDelta: number; reportedBalance: number; spentTotal?: number };
 }
 interface RefillResponse {
   granted: number;
@@ -123,6 +126,7 @@ export async function meterViaDO(
     yearMonth: params.yearMonth,
     spentDelta: debit.refillReq.spentDelta,
     reportedBalance: debit.refillReq.reportedBalance,
+    spentTotal: debit.refillReq.spentTotal,
     block: params.block,
     tenantId: params.tenantId,
     reconcileToD1: params.reconcileToD1 === true,
@@ -131,6 +135,7 @@ export async function meterViaDO(
     op: "applyRefill",
     yearMonth: params.yearMonth,
     newBalance: refill.newBalance,
+    granted: refill.granted,
   });
 
   // Already served in step 1 (was at low-water, not empty) — done.

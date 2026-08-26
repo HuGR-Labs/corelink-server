@@ -119,13 +119,26 @@ describe("request_meter_lease — pure token-lease accounting", () => {
         const r = refill(s, cap, region, YM, spend, reported, block);
         s = r.state;
         held[region] = r.newBalance;
-        // The invariant must hold after EVERY step.
-        assertNeverOverCap(s, cap);
-        // A shard's held balance is always non-negative and ≤ cap.
-        expect(held[region]!).toBeGreaterThanOrEqual(0);
-        expect(held[region]!).toBeLessThanOrEqual(cap);
+        // The invariants must hold after EVERY step, but asserting through the
+        // matcher 3x per step is ~36k matcher calls and pushed this case past
+        // the 5s default timeout on a loaded machine. Same coverage, checked
+        // directly; the first violation fails the case with its exact state.
+        if (s.consumed + totalOutstanding(s) > cap) {
+          throw new Error(
+            `over-serve at seed=${seed} step=${step} region=${region}: ` +
+              `consumed=${s.consumed} + outstanding=${totalOutstanding(s)} > cap=${cap}`,
+          );
+        }
+        if (held[region]! < 0 || held[region]! > cap) {
+          throw new Error(
+            `held out of range at seed=${seed} step=${step} region=${region}: ` +
+              `${held[region]} not in [0, ${cap}]`,
+          );
+        }
       }
     }
+    // Reached only if every step above held.
+    expect(true).toBe(true);
   });
 
   it("month rollover: a new yearMonth resets consumed + all outstanding", () => {

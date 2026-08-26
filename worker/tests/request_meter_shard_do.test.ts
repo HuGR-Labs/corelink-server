@@ -87,11 +87,11 @@ describe("RequestMeterShardDO — DO shell over the shard core", () => {
       served: boolean;
       needsRefill: boolean;
       balance: number;
-      refillReq: { spentDelta: number; reportedBalance: number };
+      refillReq: { spentDelta: number; reportedBalance: number; spentTotal: number };
     };
     expect(body.served).toBe(false);
     expect(body.needsRefill).toBe(true);
-    expect(body.refillReq).toEqual({ spentDelta: 0, reportedBalance: 0 });
+    expect(body.refillReq).toEqual({ spentDelta: 0, reportedBalance: 0, spentTotal: 0 });
 
     // Coordinator grants 5 → shard adopts it.
     await do_.fetch(applyRefillReq({ yearMonth: YM, newBalance: 5 }));
@@ -125,15 +125,16 @@ describe("RequestMeterShardDO — DO shell over the shard core", () => {
     await do_.fetch(applyRefillReq({ yearMonth: YM, newBalance: 5 }));
     await do_.fetch(debitReq({ yearMonth: YM, lowWater: 0 }));
     const b = (await (await do_.fetch(debitReq({ yearMonth: YM, lowWater: 0 }))).json()) as {
-      refillReq: { spentDelta: number; reportedBalance: number };
+      refillReq: { spentDelta: number; reportedBalance: number; spentTotal: number };
     };
-    expect(b.refillReq).toEqual({ spentDelta: 2, reportedBalance: 3 });
+    expect(b.refillReq).toEqual({ spentDelta: 2, reportedBalance: 3, spentTotal: 2 });
 
     await do_.fetch(applyRefillReq({ yearMonth: YM, newBalance: 13 }));
     const after = (await (await do_.fetch(debitReq({ yearMonth: YM, lowWater: 0 }))).json()) as {
-      refillReq: { spentDelta: number; reportedBalance: number };
+      refillReq: { spentDelta: number; reportedBalance: number; spentTotal: number };
     };
-    expect(after.refillReq).toEqual({ spentDelta: 1, reportedBalance: 12 });
+    // spentTotal keeps counting across the sync (3), spentSinceSync restarts (1).
+    expect(after.refillReq).toEqual({ spentDelta: 1, reportedBalance: 12, spentTotal: 3 });
   });
 
   it("drops a stale-month balance to 0 (month isolation)", async () => {

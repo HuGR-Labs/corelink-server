@@ -99,6 +99,13 @@ interface RefillOp {
   readonly reportedBalance: number;
   readonly block: number;
   /**
+   * The shard's cumulative month spend. When present the coordinator charges
+   * only the excess over this region's high-water mark, so a repeated or raced
+   * refill cannot count the same requests twice. Absent only during a rollout
+   * from pre-2026-08-26 shard code, which falls back to `spentDelta`.
+   */
+  readonly spentTotal?: number;
+  /**
    * Tenant id (the DO's identity) — needed to seed/reconcile the D1 ledger.
    * OPTIONAL: when absent (or CONFIG_DB is unbound) the coordinator runs as a
    * pure in-memory lease with no D1 seam, exactly as before WP-4.
@@ -206,7 +213,12 @@ export class RequestMeterCoordinatorDO implements DurableObject {
           canD1 && db !== undefined
             ? await seedConsumedFromD1(db, op.tenantId as string, op.yearMonth)
             : 0;
-        base = { yearMonth: op.yearMonth, consumed: seeded, outstanding: {} };
+        base = {
+          yearMonth: op.yearMonth,
+          consumed: seeded,
+          outstanding: {},
+          reconciledSpent: {},
+        };
       } else {
         base = stored;
       }
@@ -218,6 +230,7 @@ export class RequestMeterCoordinatorDO implements DurableObject {
         op.spentDelta,
         op.reportedBalance,
         op.block,
+        isFiniteNumber(op.spentTotal) ? op.spentTotal : undefined,
       );
       await this.storage.put(STATE_KEY, r.state);
       // RECONCILE (serve-only): write `consumed` back to the D1 ledger. Gated so

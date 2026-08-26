@@ -48,12 +48,43 @@ describe("request_meter_shard — pure local shard accounting", () => {
     expect(s.balance).toBe(3);
     // prepareRefill reports what to send upstream, without mutating.
     const req = prepareRefill(s);
-    expect(req).toEqual({ spentDelta: 2, reportedBalance: 3 });
+    expect(req).toEqual({ spentDelta: 2, reportedBalance: 3, spentTotal: 2 });
     expect(s.spentSinceSync).toBe(2); // unchanged by prepareRefill
-    // applyRefill adopts the coordinator balance and zeroes the counter.
+    // Legacy call (no `granted`): adopts the coordinator balance and zeroes the
+    // delta counter, as before. The month's cumulative total is NOT reset — the
+    // coordinator dedupes against it, so resetting would let the same requests
+    // be charged again on the next refill.
     s = applyRefill(s, YM, 13);
     expect(s.balance).toBe(13);
     expect(s.spentSinceSync).toBe(0);
+    expect(s.spentTotal).toBe(2);
+  });
+
+  it("applyRefill ADDS the grant, so debits served mid-sync are not re-granted", () => {
+    // The shard reported a balance of 3 one hop ago; the coordinator granted 10
+    // against that figure (newBalance 13). Two requests were served in between.
+    let s: ShardState = { yearMonth: YM, balance: 3, spentSinceSync: 2, spentTotal: 2 };
+    s = debit(s, YM, 2).state;
+    s = debit(s, YM, 2).state;
+    expect(s.balance).toBe(1);
+
+    s = applyRefill(s, YM, 13, 10);
+    // 1 held + 10 granted — NOT the stale absolute 13, which would hand back the
+    // two tokens already spent.
+    expect(s.balance).toBe(11);
+    expect(s.spentTotal).toBe(4);
+  });
+
+  it("a refill that crosses a month boundary starts the new month's spend at zero", () => {
+    const s = applyRefill(
+      { yearMonth: "2026-08", balance: 4, spentSinceSync: 6, spentTotal: 6 },
+      "2026-09",
+      99,
+      7,
+    );
+    expect(s.yearMonth).toBe("2026-09");
+    expect(s.balance).toBe(7); // last month's balance does not carry over
+    expect(s.spentTotal).toBe(0);
   });
 
   it("denies and flags needsRefill when the balance is empty", () => {
