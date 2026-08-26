@@ -2605,3 +2605,160 @@ verify-means: |
   on main: that hides the mechanism and it re-orphans on the next squash.
 last-verified: 2026-08-26
 ```
+
+### B-050 — CAS at-rest integrity: nothing verifies a stored object until a client asks for it
+
+`R2CasHandler::read` re-hashes every object it serves and compares it against
+the requested digest (`crates/corelink-container/src/storage/r2_s3.rs:1333`,
+`verify_content_hash` at `:1103`) — it catches R2 bitrot, storage-tier
+tampering and historically mis-keyed blobs, and its doc-comment calls it "the
+single enforcement point for content-addressing on the durable path" for the
+native CAS route, the Bazel REAPI v2 bridge and sccache.
+
+That is the ONLY integrity coverage that exists. No background job, cron or
+sweep reads stored objects to check them — `scrub` / `fsck` / integrity-sweep
+shaped work is absent from `crates/corelink-container/src/routes/` entirely.
+So verification is a sampling function driven by traffic: an object is checked
+exactly when a client requests it, and a cold object is never checked at all.
+
+Design in `specs/03_architecture/adrs/ADR-S34-001-cas-read-integrity-before-streaming.md`.
+Two constraints the ADR fixes: enumerate R2 directly via
+`R2S3Client::list_objects_page` (`crates/corelink-container/src/storage/r2_s3.rs:467`
+— cursor + `max_keys` clamp of 1000, resumable and bounded per call), NOT
+`blob_meta`, which is empty in production and written by no code; and report
+OBJECTS EXAMINED, not only failures found, so a run that enumerated nothing is
+distinguishable from a healthy one.
+
+```backlog
+id: B-050
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  ! grep -rqE '\.route\("[^"]*scrub' crates/corelink-container/src/routes/
+verify-means: |
+  open — passes while no scrub ROUTE is registered in the container, which is
+  the premise of this item. Anchored on `.route("…scrub…"` rather than the bare
+  word: `scrub` also appears in oci.rs prose about scrubbed error messages, and
+  matching that would have made this item read as done on day one.
+last-verified: 2026-08-26
+```
+
+### B-051 — streaming CAS reads must not land before B-050
+
+Streaming cannot preserve the read-path digest check: verification needs the
+whole object, and by the time the digest can be computed the bytes are already
+on the wire. Streaming does not weaken that check, it REMOVES it — and with it
+the only bitrot detection anywhere in the system, because at-rest coverage is
+zero (B-050).
+
+Shipping streaming first would take the system from "every served object is
+verified" to "no object is ever verified" with no overlap. Ordering is the
+whole decision; see ADR-S34-001.
+
+Note that the memory argument originally attached to streaming has a cheaper
+answer that costs no integrity — a pre-body concurrency permit, the pattern
+Turbo already uses on both directions (B-052). If that closes the memory
+pressure, streaming has to justify itself on time-to-first-byte alone.
+
+```backlog
+id: B-051
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  awk '/fn read\(&self, req: CasReadRequest\)/,/^    }$/' \
+    crates/corelink-container/src/storage/r2_s3.rs | grep -q 'verify_content_hash' \
+    || grep -rqE '\.route\("[^"]*scrub' crates/corelink-container/src/routes/
+verify-means: |
+  open — fails if the read-path content-hash re-verification is gone from
+  `R2CasHandler::read` (i.e. streaming landed) while no scrubber route exists,
+  which is exactly the ordering this item forbids. Passes while the check is
+  still there, and passes once a scrubber exists to replace it.
+last-verified: 2026-08-26
+```
+
+### B-052 — single CAS GET buffers the whole object with no concurrency guard
+
+`handle_read` (`crates/corelink-container/src/routes/cas.rs:773`) takes
+`State`, `Path`, `auth`, `scope`, `headers` and no guard, then buffers the full
+object into a `Vec<u8>` and into the response body. Its sibling
+`handle_batch_read` declares `CasReadConcurrencyGuard` AHEAD of `body`
+precisely so axum reserves the slot before anything is buffered; the
+single-object read was left out of that hardening.
+
+Every other read surface is covered on both axes — Turbo GET has
+`TURBO_GET_CONCURRENCY_LIMIT` per tenant plus a process-wide
+`GLOBAL_TURBO_GET_BUDGET`, Turbo PUT the same, CAS batch read has
+`CAS_READ_CONCURRENCY_LIMIT`. Turbo's own comment describes this exact shape as
+a bug already fixed once there: "the read path was left asymmetrically open
+while the PUT path was hardened"
+(`crates/corelink-container/src/routes/turbo_v8.rs:119`).
+
+Severity depends on sharding: routing is
+`env.CORELINK_SERVER.idFromName(tenantId)` (`worker/src/index.ts:88`), one
+Durable Object and therefore one container per tenant, which makes an unbounded
+concurrent-read burst self-inflicted rather than cross-tenant. That reading is
+NOT yet proven and changes the priority, not the fix.
+
+```backlog
+id: B-052
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  ! awk '/^async fn handle_read\(/,/^\) ->/' \
+      crates/corelink-container/src/routes/cas.rs | grep -q 'ConcurrencyGuard'
+verify-means: |
+  open — passes while `handle_read` still has no concurrency guard among its
+  extractors, which is the defect. Turns red once a guard is added, forcing
+  this item to be closed rather than left open against a fixed world.
+last-verified: 2026-08-26
+```
+
+### B-053 — the failover sample floor makes a dead low-traffic region un-failoverable
+
+`RollingMetricsHealthProbe` will not fire ANY degradation signal until it has
+seen `min_samples` requests inside the rolling window. The window is
+`SUSTAINED_WINDOW_SECS` = 5 s (`crates/corelink-container/src/routes/failover.rs:93`)
+and the default floor is 50
+(`crates/corelink-container/src/routes/failover.rs:105`), so a region needs
+**>= 10 req/s just to be eligible to fail over**. Below that the probe reports
+`Healthy` **unconditionally** (`:216`) — a region returning 100% errors at low
+volume never trips, and never will, for as long as it stays quiet.
+
+The floor was added for a real bug: three consecutive slow 5xx satisfy all
+three triggers at once (rate 100% > 1%, p99 > 300 ms, streak >= 3) and freeze
+every write region-wide, amplified because the probe counts the container's own
+responses. But the SAME change added hysteresis — `FAILOVER_TRIP_PROBES` = 3
+consecutive DEGRADED probe observations before latching (`:110`) — and that
+alone already defeats a three-request blip, while still letting sustained
+failure through. The floor is a second, blunter layer on top, and what it buys
+beyond the hysteresis is small next to the false negative it introduces.
+
+This is worth deciding NOW rather than later, because the knob only just
+started reaching production: `FAILOVER_MIN_SAMPLES` was read by the container
+but missing from the DO forward-list until #1348, so until today setting it did
+nothing. An operator can now lower it during an incident — but only if they
+know it exists and know that "healthy" on a quiet region may mean "below the
+floor", not "fine".
+
+Decide one of: keep the floor and document the low-traffic blind spot as
+accepted; lower the default; scale the floor to observed traffic; or drop it
+and rely on the hysteresis that was added alongside it. Found by a peer review
+of #1348.
+
+```backlog
+id: B-053
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  grep -qE '^const MIN_SAMPLES_FOR_FAILOVER_DEFAULT: usize = 50;$' \
+    crates/corelink-container/src/routes/failover.rs
+verify-means: |
+  open — passes while the default floor is still 50, the value this item is
+  about. Turns red if the default changes, forcing the decision recorded here
+  to be closed out rather than left open against a world that already moved.
+last-verified: 2026-08-26
+```
