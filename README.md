@@ -18,7 +18,7 @@
 
 ## TL;DR
 
-CoreLink is a multi-tenant, content-addressable cache for software builds, package indices, container layers, and ML artifacts — a [Remote Execution API v2 (REAPI)](./specs/03_architecture/) implementation in Rust on Cloudflare's edge. It commits to four invariant guarantees (integrity, tenant isolation, confidentiality, append-only audit) verified by TLA+ model checking, property-based tests, and runtime assertions. The same managed service ships BYOK envelope encryption across four KMS providers, RFC 6962 Merkle-chained audit logs, residency-honest multi-region storage, and a published OpenAPI contract — so customers do not have to choose between operational simplicity and the controls a regulated business actually needs.
+CoreLink is a multi-tenant, content-addressable cache for software builds, package indices, container layers, and ML artifacts — a [Remote Execution API v2 (REAPI)](./specs/03_architecture/) implementation in Rust on Cloudflare's edge. It commits to four invariant guarantees (integrity, tenant isolation, confidentiality, append-only audit) verified by TLA+ model checking, property-based tests, and runtime assertions. The same managed service ships BYOK envelope encryption across four KMS providers, an append-only BLAKE3 hash-chained audit log, residency-honest multi-region storage, and a published OpenAPI contract — so customers do not have to choose between operational simplicity and the controls a regulated business actually needs.
 
 ## 30-second demo
 
@@ -98,9 +98,10 @@ artifact, not a marketing claim.
   See [ARCHITECTURE.md §6.1](./ARCHITECTURE.md#6-trust-and-security-model).
 
 - **The audit chain is a primary artifact.** Every state-changing
-  operation lands in an append-only Merkle log (BLAKE3 leaves,
-  Ed25519-signed hourly roots, RFC 3161 timestamped); customers and
-  auditors re-derive the root from raw events. See
+  operation lands in an append-only BLAKE3 hash-chained audit log
+  (RFC 8785 JCS-canonicalized leaves) with offline inclusion-proof
+  verification — customers and auditors recompute the chain from raw
+  events against any later published head. See
   [ARCHITECTURE.md §6.2](./ARCHITECTURE.md#6-trust-and-security-model).
 
 - **Residency is honest.** Four enumerated regions (`wnam`, `enam`,
@@ -133,7 +134,7 @@ Then drop into the crate that owns your domain:
 - [`crates/corelink-reapi/`](./crates/corelink-reapi/) — REAPI v2 wire surface.
 - [`crates/corelink-hash/`](./crates/corelink-hash/) — BLAKE3-primary integrity.
 - [`crates/tenant-path/`](./crates/tenant-path/) — HMAC tenant prefix; sole owner of `INV-TenantIsolation`.
-- [`crates/corelink-audit-chain/`](./crates/corelink-audit-chain/) — Merkle append + Ed25519 roots.
+- [`crates/corelink-audit-chain/`](./crates/corelink-audit-chain/) — BLAKE3 hash-chain append + published chain heads.
 - [`crates/corelink-byok/`](./crates/corelink-byok/) — envelope encryption core.
 
 Workspace conventions are in
@@ -301,7 +302,7 @@ flowchart LR
     cp -->|signed intent| dp[Data plane<br/>Rust REAPI gRPC]
     dp -->|BLAKE3 + dedup| r2[(R2<br/>blobs + AC + audit)]
     dp -->|hot meta| d1[(D1)]
-    dp -->|event| ac[corelink-audit-chain<br/>Merkle append-only]
+    dp -->|event| ac[corelink-audit-chain<br/>hash-chained append-only]
     cp -->|usage| billing[Stripe meter]
 ```
 

@@ -94,14 +94,14 @@ CSP / CSC responsibility column:
 
 | # | Question | A | Resp | Answer + Evidence | TSC |
 |---|---|---|---|---|---|
-| CCC-01.1 | Change management policy established? | Y | CSP | Sprint-contract §5.1 sign-off + branch protection + `PAT-DUAL-APPROVAL-001` + signed-deploy + Rekor. | CC8.1 |
+| CCC-01.1 | Change management policy established? | Y | CSP | Sprint-contract §5.1 sign-off + branch protection + `PAT-DUAL-APPROVAL-001` + signed-deploy pipeline. | CC8.1 |
 | CCC-02.1 | Changes approved before deployment? | Y | CSP | Dual approval on protected branches; per-release approver enumerated in commit metadata. | CC8.1 |
 | CCC-03.1 | Emergency changes documented post-implementation? | Y | CSP | Waiver pattern `WAIVER-YYYYMMDD-NNN` with explicit expiry; fallback ADR per WI. | CC8.1 |
 | CCC-04.1 | Production / non-production separation enforced? | Y | CSP | Staging tenant isolated from production; 30-day R-6 staging-bake gate. | CC8.1 |
-| CCC-05.1 | Configuration baselines documented? | Y | CSP | ADR-driven configuration; immutable Workers (no runtime drift); SBOM signed per release. | CC5.1 |
+| CCC-05.1 | Configuration baselines documented? | Y | CSP | ADR-driven configuration; immutable Workers (no runtime drift); CycloneDX SBOM maintained in-repo (NDA-shared; hand-refreshed — see `EVIDENCE-PACK-INDEX.md` §1.1). | CC5.1 |
 | CCC-06.1 | Unauthorized changes detected? | Y | CSP | Canonical-consistency validator on every PR (`.github/workflows/canonical-consistency.yml`) + secrets-drift gate. | CC4.1 |
 | CCC-07.1 | Source-code repositories access-controlled? | Y | CSP | GitHub Enterprise; branch protection; signed commits; DCO; CODEOWNERS. | CC6.1 |
-| CCC-08.1 | Configuration changes logged? | Y | CSP | Append-only Merkle audit chain (`INV-AUDIT-APPEND-ONLY`). GitHub audit log retained per Microsoft Enterprise. | PI1.2 |
+| CCC-08.1 | Configuration changes logged? | Y | CSP | Append-only BLAKE3 hash-chained audit log (`INV-AUDIT-APPEND-ONLY`). GitHub audit log retained per Microsoft Enterprise. | PI1.2 |
 | CCC-09.1 | Rollback procedures defined? | Y | CSP | Sprint contracts include rollback criteria; immutable Workers enable instant rollback via Cloudflare deploy ID. | CC8.1 |
 
 ## CEK — Cryptography, Encryption & Key Management (21 questions)
@@ -209,7 +209,7 @@ CSP / CSC responsibility column:
 | IAM-10.1 | Tenant isolation enforced? | Y | CSP | `INV-TenantIsolation` TLA+ model-checked + CI-gated. Per-tenant R2 / D1 / DO / Clerk namespace. **Cross-tenant blast radius zero.** | CC6.1 |
 | IAM-11.1 | Customer-administered IAM supported? | Y | CSP | Clerk admin API + tenant-side role assignment. | CC6.2 |
 | IAM-12.1 | API key / token lifecycle managed? | Y | CSP | PAT lifecycle managed; revocation API; secrets-drift gate. | CC6.1 |
-| IAM-13.1 | Just-in-time / break-glass access logged? | Y | CSP | Append-only Merkle audit chain; PAT-DUAL-APPROVAL-001 for break-glass. | PI1.2 |
+| IAM-13.1 | Just-in-time / break-glass access logged? | Y | CSP | Append-only BLAKE3 hash-chained audit log; PAT-DUAL-APPROVAL-001 for break-glass. | PI1.2 |
 | IAM-14.1 | Identity events logged? | Y | CSP | Clerk audit log + CoreLink audit chain. | PI1.2 |
 | IAM-15.1 | RBAC / ABAC enforced? | Y | CSP | Clerk RBAC + per-tenant DO namespace + CTRL-AUTHZ-002. | CC6.2 |
 | IAM-16.1 | Customer's IdP integration supported? | Y | CSP | Clerk SAML / OIDC; per-tenant configuration. | CC6.1 |
@@ -220,7 +220,7 @@ CSP / CSC responsibility column:
 |---|---|---|---|---|---|
 | IPY-01.1 | Data portability supported? | Y | CSP | Admin API export + CAS bulk-export; REAPI v2 standard format. Portability validation is **GAP-17** (T+3m for full automation evidence). | P-DSR |
 | IPY-02.1 | Standard APIs documented? | Y | CSP | REAPI v2 + REST admin API; OpenAPI specs at `apps/docs/docs/reference/`. | CC2.1 |
-| IPY-03.1 | Data export format documented? | Y | CSP | REAPI v2 (build artefacts) + JSON (metadata) + Merkle proof export (RFC 6962). | P-DSR |
+| IPY-03.1 | Data export format documented? | Y | CSP | REAPI v2 (build artefacts) + JSON (metadata) + NDJSON audit-chain export (BLAKE3 hash chain, offline verification). | P-DSR |
 | IPY-04.1 | Vendor-lock-in mitigations published? | Y | CSP | Content-addressable (BLAKE3 / SHA-256) blobs are inherently portable; REAPI v2 standard; export documented in `apps/docs/docs/how-to/migrate/`. | CC2.1 |
 
 ## IVS — Infrastructure & Virtualization (9 questions)
@@ -231,7 +231,7 @@ CSP / CSC responsibility column:
 | IVS-02.1 | Network segmentation enforced? | Y | CSP | Cloudflare Workers + per-tenant DO + Cloudflare Access edge controls. | CC6.6 |
 | IVS-03.1 | Production / non-production isolated? | Y | CSP | Separate tenants; R-6 staging-bake gate. | CC8.1 |
 | IVS-04.1 | Virtualization hardened? | CSP-inherited | CSP | V8 isolate model (Cloudflare Workers); per-request memory isolation. | CC6.6 |
-| IVS-05.1 | Container security applied? | N/A | CSP | Workers run as V8 isolates, not containers. Build-side containers covered by SBOM + Sigstore. | CC6.6 |
+| IVS-05.1 | Container security applied? | N/A | CSP | Workers run as V8 isolates, not containers. Build-side containers covered by an in-repo CycloneDX SBOM (NDA-shared). | CC6.6 |
 | IVS-06.1 | Hypervisor patched? | CSP-inherited | CSP | Cloudflare-managed. | CC6.6 |
 | IVS-07.1 | Network monitoring active? | Y | CSP | Grafana SLO dashboards + Cloudflare-native + PagerDuty. | CC7.2 |
 | IVS-08.1 | DDoS protection? | Y | CSP | Cloudflare-native DDoS protection (inherited). | CC6.6 |
@@ -243,16 +243,16 @@ CSP / CSC responsibility column:
 |---|---|---|---|---|---|
 | LOG-01.1 | Logging policy established? | Y | CSP | `specs/03_architecture/observability_model.md` + Prometheus catalog. | CC7.2 |
 | LOG-02.1 | Logs centralized? | Y | CSP | Grafana Cloud (telemetry) + R2 (audit chain). | CC7.2 |
-| LOG-03.1 | Audit log immutability enforced? | Y | CSP | Append-only Merkle-linked + R2 Object Lock Governance Mode. **`INV-AUDIT-APPEND-ONLY`.** | PI1.2 |
+| LOG-03.1 | Audit log immutability enforced? | Y | CSP | Append-only BLAKE3 hash-chained audit log. **`INV-AUDIT-APPEND-ONLY`.** Daily fail-closed chain verifier; sealed-chain chunks archived offsite to R2 (`/_internal/audit/archive`). | PI1.2 |
 | LOG-04.1 | Logs encrypted? | Y | CSP | Same envelope as data class. | C1.1 |
 | LOG-05.1 | Logs retained per policy? | Y | CSP | Audit chain 7yr; telemetry 13mo. | PI1.2 |
 | LOG-06.1 | Logs reviewed periodically? | Y | CSP | DASH-COMPLIANCE-S20 + Drata daily tick + weekly compliance digest. | CC4.1 |
 | LOG-07.1 | Time synchronization enforced? | Y | CSP | NTP via Cloudflare-managed; audit chain timestamps signed. | PI1.2 |
 | LOG-08.1 | Privileged-access events logged? | Y | CSP | All admin-API calls + PAT-DUAL-APPROVAL-001 events. | PI1.2 |
-| LOG-09.1 | Log tampering detected? | Y | CSP | Merkle audit chain integrity check (`INV-OBS-AUDIT-CHAIN-INTEGRITY`); reconcile job S-13. | PI1.3 |
-| LOG-10.1 | Customer audit logs accessible? | Y | CSP | Admin API + RFC 6962 inclusion proofs verifiable offline. | PI1.2 |
+| LOG-09.1 | Log tampering detected? | Y | CSP | BLAKE3 hash-chain integrity check (`INV-OBS-AUDIT-CHAIN-INTEGRITY`); reconcile job S-13. | PI1.3 |
+| LOG-10.1 | Customer audit logs accessible? | Y | CSP | Admin API + offline hash-chain verification against published heads. | PI1.2 |
 | LOG-11.1 | Anomaly detection active? | Y | CSP | SLO burn-rate alerts + Grafana dashboards + PagerDuty. | CC4.1 |
-| LOG-12.1 | Forensic-grade log integrity? | Y | CSP | Merkle audit chain + Rekor (release provenance) + Sigstore. | PI1.2 |
+| LOG-12.1 | Forensic-grade log integrity? | Y | CSP | BLAKE3 hash-chained audit log + daily fail-closed integrity verifier (`INV-OBS-AUDIT-CHAIN-INTEGRITY`). No Rekor/Sigstore entries today (roadmap — see `EVIDENCE-PACK-INDEX.md` §1.1). | PI1.2 |
 | LOG-13.1 | Logs include sufficient detail for investigation? | Y | CSP | CloudEvents schema with tenant / actor / resource / action / timestamp / signature. | PI1.2 |
 
 ## SEF — Security Incident Management, E-Discovery & Cloud Forensics (8 questions)
@@ -263,7 +263,7 @@ CSP / CSC responsibility column:
 | SEF-02.1 | IR plan tested? | P | CSP | First live tabletop TT-01 scheduled 2026-07-22. | CC7.3 |
 | SEF-03.1 | 24×7 detection? | Y | CSP | PagerDuty 24/7 across 3 regions; weekly synthetic page (Mon 14:00 UTC). | CC7.3 |
 | SEF-04.1 | Customer breach notification within defined window? | Y | CSP | **72h to ANPD / supervisory authority; 24h to enterprise tenant.** DPA §7. | P-BREACH |
-| SEF-05.1 | E-discovery / forensics supported? | Y | CSP | Merkle audit chain + RFC 6962 proofs + R2 Object Lock. Chain-of-custody in RB-BREACH-NOTIF. | PI1.2 |
+| SEF-05.1 | E-discovery / forensics supported? | Y | CSP | BLAKE3 hash-chained audit log with offline verification; exportable NDJSON. Chain-of-custody in RB-BREACH-NOTIF. | PI1.2 |
 | SEF-06.1 | Post-mortem published? | Y | CSP | Public post-mortem within 72h on status page. | CC2.3 |
 | SEF-07.1 | Incident history shared with customers? | Y | CSP | `apps/docs/docs/trust/incident-response.mdx#past-incidents`. No customer-impacting SEV1 to date. | CC2.3 |
 | SEF-08.1 | Coordinated vulnerability disclosure / safe harbor? | Y | CSP | `apps/docs/docs/security/policy` VDP + RFC 9116 contact card + PGP. | CC7.3 |
@@ -279,10 +279,10 @@ CSP / CSC responsibility column:
 | STA-05.1 | Sub-processor SOC 2 / ISO held? | Y | CSP | 13/19 vendors current SOC 2 Type II (≤ 12 mo). | CC9.2 |
 | STA-06.1 | Right to audit sub-processors? | Y | CSP | Flow-through via CoreLink DPA §8 + sub-processor DPAs. | CC9.2 |
 | STA-07.1 | Sub-processor termination procedures? | Y | CSP | `legal/sub-processors-templates/` termination clauses. | CC6.5 |
-| STA-08.1 | Software supply chain attestation? | Y | CSP | SLSA Level 3 + Cosign + Rekor + CycloneDX SBOM + reproducible builds. | CC6.7 |
-| STA-09.1 | Software components inventoried? | Y | CSP | CycloneDX SBOM per release; Dependency-Track; license allowlist. | CC6.8 |
+| STA-08.1 | Software supply chain attestation? | P | CSP | CycloneDX SBOM maintained in-repo (NDA-shared; hand-refreshed, not per-release) + reproducible builds + public per-binary SHA-256 checksums. **No Cosign signatures, no Rekor entries, no SLSA attestation today** (roadmap — see `EVIDENCE-PACK-INDEX.md` §1.1). | CC6.7 |
+| STA-09.1 | Software components inventoried? | Y | CSP | In-repo CycloneDX SBOM (NDA-shared; hand-refreshed, not per-release — `EVIDENCE-PACK-INDEX.md` §1.1); Dependency-Track; license allowlist. | CC6.8 |
 | STA-10.1 | Yanked / vulnerable components blocked? | Y | CSP | `INV-SUPPLY-NO-YANKED` + cargo-deny daily + ADR-0037. | CC7.1 |
-| STA-11.1 | Build provenance verifiable? | Y | CSP | Rekor public transparency log entries; offline verification documented. | CC6.7 |
+| STA-11.1 | Build provenance verifiable? | N | CSP | Not today — no transparency-log entry has ever been created (roadmap). Public integrity evidence today: per-binary SHA-256 checksums on releases. | CC6.7 |
 | STA-12.1 | Open-source license compliance? | Y | CSP | License allowlist enforced; OSS matrix landed 2026-05-15 (commit `44cdf15`). | CC5.2 |
 | STA-13.1 | Sub-processor SOC 2 inheritance documented? | Y | CSP | `legal/sub-processors.md` + ISO 27001 page §"What we'll formally certify vs inherited". | CC6.4 |
 | STA-14.1 | Vendor failover tested for Critical vendors? | Y | CSP | 5 of 6 Critical vendors have tested failover (Drata is monitoring-only, no failover required). | A1.2 |
@@ -295,7 +295,7 @@ CSP / CSC responsibility column:
 | TVM-02.1 | Scanning at planned intervals? | Y | CSP | DAILY (cargo-deny + Dependency-Track + CodeQL/Semgrep on every PR). | CC7.1 |
 | TVM-03.1 | Severity-based SLA for remediation? | Y | CSP | `RB-STATIC-ANALYSIS-TRIAGE.md`. | CC7.1 |
 | TVM-04.1 | Pentest performed at planned intervals? | P | CSP | Internal adversarial reviews + cargo-fuzz summary; external pentest scoped under R-6 staging-bake (T-30d pre-GA). | CC7.1 |
-| TVM-05.1 | Threat intelligence consumed? | Y | CSP | Dependency-Track CVE feeds + GitHub Advisory Database + Sigstore. | CC3.2 |
+| TVM-05.1 | Threat intelligence consumed? | Y | CSP | Dependency-Track CVE feeds + GitHub Advisory Database + cargo-deny daily. | CC3.2 |
 | TVM-06.1 | Coordinated disclosure / VDP? | Y | CSP | `apps/docs/docs/security/policy` + RFC 9116 `/.well-known/security.txt` + PGP. | CC7.3 |
 | TVM-07.1 | Bug bounty / responsible disclosure? | P | CSP | VDP + safe harbor in place; formal bug bounty deferred to post-GA. | CC7.3 |
 | TVM-08.1 | Endpoint scanning? | P | CSP | OS-vendor anti-malware; commercial EDR consolidation Q3-2026. | CC7.1 |

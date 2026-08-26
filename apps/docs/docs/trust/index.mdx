@@ -40,7 +40,7 @@ writing.
 | Where your data lives | [Data handling → Residency](./data-handling#residency) — **US (ENAM) default + physically-EU (WEUR) residency live for EU tenants**; Brazil / APAC residency is roadmap / enterprise-on-request |
 | Encryption | [Data handling → Encryption](./data-handling#encryption) — TLS 1.2 floor / 1.3 negotiated in flight, AES-256-GCM at rest, optional BYOK envelope encryption |
 | BYOK matrix | 4 providers: AWS KMS, GCP Cloud KMS, Azure Key Vault, HashiCorp Vault — see [BYOK explanation](/security/byok) |
-| Audit chain | Merkle-linked, RFC 6962 inclusion proofs, 7-year retention — see [Audit chain](/security/audit-chain) |
+| Audit chain | Append-only, BLAKE3 hash-chained, offline verification, 7-year retention — see [Audit chain](/security/audit-chain) |
 | Sub-processors | [Sub-processors list](./subprocessors) — 30-day advance-notice mechanism |
 | Vulnerability disclosure | [Security policy](/security/policy) — coordinated VDP, safe-harbor, severity matrix |
 | Status page | [hugrl.betteruptime.com](https://hugrl.betteruptime.com) — RSS / email / webhook subscription |
@@ -59,8 +59,8 @@ shapes everything else on this page. The headline commitments are:
 2. **Every artefact is hash-pinned.** No blob ever served diverges from the
    requested digest (`INV-CAS-INTEGRITY`).
 3. **Every write produces an auditable, signed event.** The audit log is
-   append-only, Merkle-linked, and exportable as RFC 6962 inclusion proofs
-   that you can verify offline.
+   append-only and BLAKE3 hash-chained; any window of it can be verified
+   offline against a later published head.
 4. **Bring-your-own-key is designed, not yet wired in production.** The
    BYOK architecture supports wrapping a tenant's data encryption keys
    with their own KMS root across four providers (AWS KMS, GCP Cloud KMS,
@@ -80,15 +80,18 @@ Compliance docs can be theatre. We try hard to make ours falsifiable:
 - **Verifiable by you, right now:**
   audit-chain proofs ([how-to](/security/audit-chain)), the
   [security.txt](/.well-known/security.txt) contact card, our public
-  [status page](https://hugrl.betteruptime.com), and Sigstore / Rekor
-  transparency-log entries for the **Worker container image** — signed keyless
-  on every release, verifiable with `cosign verify` against the
-  `token.actions.githubusercontent.com` issuer, with no key from us required.
+  [status page](https://hugrl.betteruptime.com), and per-binary
+  SHA-256 checksums on CLI releases.
 - **Not yet available, and listed here rather than omitted:**
   the CLI binaries are **not** signed — the signing step in the CLI release
-  workflow is still a placeholder, so do not expect a Rekor entry for them.
+  workflow is still a placeholder. Container-image signing via
+  Sigstore / Rekor is designed but **not live**: no Rekor transparency
+  entry has ever been created (the signing workflow has never run).
   SBOMs are generated and signed on every release build but have **no customer
   distribution path yet**: the procurement process is drafted, not offered.
+  The external penetration test is **planned pre-GA; no report exists
+  yet** (see the internal pentest posture note — the compliance
+  summary page is draft-gated until Legal review completes).
   Ask at **trust@humangr.com** and we will tell you where it stands rather than
   route you to a process that does not exist.
 - **Attested by us (with evidence on request):**
@@ -124,7 +127,7 @@ back within 1 business day.
 
 - [Security overview](/security) — control model, cryptography baseline.
 - [BYOK customer-managed keys](/security/byok) — provider matrix and key flow.
-- [Audit chain and Merkle proofs](/security/audit-chain) — how to verify.
+- [Audit chain](/security/audit-chain) — how to verify it offline.
 - [Security policy](/security/policy) — coordinated VDP and safe harbor.
 - [Responsible disclosure](/security/policy) — how to report.
 - [Brazil residency & LGPD](/residency/lgpd-brazil) — Art. 33 §1º specifics.
@@ -138,6 +141,6 @@ back within 1 business day.
 | --- | --- |
 | Security vulnerability report | `security@humangr.com` (see [policy](/security/policy)) |
 | Privacy / data-subject request | `privacy@humangr.com` |
-| DPA, SOC 2 letter, pentest summary | `trust@humangr.com` |
+| DPA, SOC 2 readiness letter | `trust@humangr.com` |
 | Procurement / vendor review forms | `trust@humangr.com` |
 | Press / disclosure-coordination | `press@humangr.com` |

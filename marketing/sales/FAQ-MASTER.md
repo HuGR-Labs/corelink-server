@@ -60,7 +60,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** If we blow through our tier's storage / TPS / egress cap, what happens?
 
-**A:** Soft-cap then notify, then negotiate. Concretely: at 80% of any cap we emit a webhook + email; at 100% we serve a `429 / overage-pending` for **TPS** (rate-limited, not refused — your build still completes, just slower) and continue serving **storage / egress** with the overage line appearing on the next invoice. We *do not* hard-fail builds in production tenants when caps are exceeded; we'd rather invoice you than break your inner loop. For Enterprise the overage line is governed by your order form; for the self-serve tiers (Solo / Starter / Pro / Max) it's metered at our standard list rate. We are happy to convert a recurring overage into a contractual tier upgrade with no penalty (see P5 — migration discount).
+**A:** Hard cap, not overage billing. At v0.1 **every priced tier is hard-capped** (`hardCap: true` in `apps/docs/src/lib/pricing.ts`; `PRICING-WORKSHEET.md` agrees). Concretely: at 80% of your storage cap we notify you (webhook + email); at 100% writes return `429` with an upgrade CTA until you upgrade or free space — there is **no metered overage invoice** (metered overage is deferred to v0.2 per `PRICING-WORKSHEET.md`). TPS above your token bucket simply gets `429` + `Retry-After` per the rate ladder. For Enterprise, caps and any burst headroom are governed by your order form. We are happy to convert a cap ceiling into a contractual tier upgrade with no penalty (see P5 — migration discount).
 
 **Sources:** SLO catalog (`specs/03_architecture/slo_catalog.md` — internal; no public SLO page is published today, `/slo` 404s); overage runbook (`specs/_runbooks/RB-BILLING-OVERAGE.md`); quickstart-faq Q8.
 
@@ -134,7 +134,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** How do I, the auditor, verify that an event I received was actually in the chain at the time you say it was?
 
-**A:** Four steps you (or your external auditor) run yourself, with no CoreLink-side trust required: (1) JCS-canonicalize the event payload per RFC 8785; (2) hash it with SHA-256 using the RFC 6962 leaf prefix; (3) request the inclusion proof for `chain_position` against any later published head; (4) re-derive the root from leaf + sibling hashes. The arithmetic is logarithmic; we publish a reference verifier in Rust + TypeScript that produces bitwise-identical canonical output. For a window of events the same flow gives you a **consistency proof** between two heads — structural append-only evidence, not a screenshot. This is `INV-AUDIT-APPEND-ONLY` + `INV-OBS-AUDIT-CHAIN-INTEGRITY`, both CRITICAL, both modeled in `audit_immutability.tla` and checked in CI.
+**A:** Three steps you (or your external auditor) run yourself, with no CoreLink-side trust required: (1) JCS-canonicalize the event payload per RFC 8785; (2) recompute the BLAKE3 chain links across the exported window containing the event; (3) compare the recomputed head against any later published head. Verification cost is linear in the window you replay — the chain is deliberately a simple hash chain, not a Merkle tree, so there is no logarithmic inclusion proof; in exchange, any insertion, deletion, or reorder breaks every subsequent link and cannot hide. We publish a reference verifier in Rust + TypeScript that produces bitwise-identical canonical output. This is `INV-AUDIT-APPEND-ONLY` + `INV-OBS-AUDIT-CHAIN-INTEGRITY`, both CRITICAL, both modeled in `audit_immutability.tla` and checked in CI.
 
 **Sources:** `marketing/launch/BLOG-POSTS/03-audit-chain-merkle-proofs.md` (full walk-through); `/security/audit-chain` (docs).
 
@@ -142,7 +142,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** If tenant A is compromised, what's the worst case for tenant B?
 
-**A:** Cross-tenant blast radius is engineered to **zero**. Tenant A cannot read, write, or enumerate tenant B's blobs. This is the `INV-TenantIsolation` invariant — TLA+ model-checked (`tenant_isolation.tla`) and gated in CI. Every CAS read, every AC write, every audit append carries a verified tenant binding; cross-tenant access is structurally impossible. AAD binding (`tenant_id || blob_hash || cache_id`) means even if an attacker could substitute ciphertext, the AEAD primitive (AES-GCM-256 / ChaCha20-Poly1305 per provider) would reject the decryption. We have run an external pentest with a tenant-isolation adversarial scenario; clean, post-remediation retest also clean.
+**A:** Cross-tenant blast radius is engineered to **zero**. Tenant A cannot read, write, or enumerate tenant B's blobs. This is the `INV-TenantIsolation` invariant — TLA+ model-checked (`tenant_isolation.tla`) and gated in CI. Every CAS read, every AC write, every audit append carries a verified tenant binding; cross-tenant access is structurally impossible. AAD binding (`tenant_id || blob_hash || cache_id`) means even if an attacker could substitute ciphertext, the AEAD primitive (AES-GCM-256 / ChaCha20-Poly1305 per provider) would reject the decryption. An external penetration test with a tenant-isolation adversarial scenario is planned pre-GA; no report exists yet.
 
 **Sources:** `apps/docs/docs/trust/index.mdx#posture-at-a-glance`; `marketing/launch/BLOG-POSTS/01-introducing-corelink.md`; `marketing/launch/BLOG-POSTS/02-byok-deep-dive.md` (AAD binding); `specs/03_architecture/security_model.md`.
 
@@ -158,9 +158,9 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** When was the last pentest? Can we see the report?
 
-**A:** Yes — Pentest-1 firm engaged pre-GA, full report on file, post-remediation retest clean (this is one of the seven engineering-gate prerequisites, per spec contract S-20 §6.1 — see `BLOG-POSTS/01` "What 'GA' means"). The executive summary is shareable under NDA via `trust@humangr.com`. Annual cadence post-GA; next engagement is Q4 2026 stacked with SOC 2 Type I fieldwork. We do not publish the unredacted report (industry-standard practice and a condition of the testing firm's engagement); we do share the executive summary, the methodology, and the remediation status for any finding.
+**A:** No — and we say so plainly: **no external penetration test has been commissioned yet.** Engagement is planned pre-GA; no report exists today (`pentest-summary.mdx` states this verbatim, and `PROOF-POINTS.md` 2.12 marks any pentest result NOT A CLAIM). In the meantime, internal adversarial reviews and cargo-fuzz summaries are tracked (SIG Lite G.11). Once the first engagement completes, the executive summary will be shareable under NDA via `trust@humangr.com`; the intent is an annual cadence post-GA. We will never describe a pentest as run or clean until a report exists.
 
-**Sources:** `marketing/launch/BLOG-POSTS/01-introducing-corelink.md` (engineering gate); `apps/docs/docs/trust/index.mdx#whats-verifiable-vs-whats-attested`; spec contract S-20 §6.1.
+**Sources:** `apps/docs/docs/explanation/compliance/pentest-summary.mdx`; `marketing/sales/PROOF-POINTS.md` 2.12; SIG Lite A.4 / G.11.
 
 ### S6 — What encryption do you use, and where?
 
@@ -312,7 +312,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** How many puts/gets per second?
 
-**A:** Per-tier TPS ceilings are in the rate-limit ladder (`marketing/sales/RATE-LIMIT-FAQ.md` RL1). The **Enterprise tier is negotiated** — we've stress-tested in staging to 5× our highest self-serve tier's sustained TPS with no observed degradation, and the Cloudflare R2 + Workers substrate scales horizontally per region. If you need a specific committed TPS, name it in the order form; we'll either commit or come back with a fact-based pushback. We do not artificially throttle below the published cap; we *do* rate-limit gracefully above it (soft-cap then 429 / overage-pending — see P2).
+**A:** Per-tier TPS ceilings are in the rate-limit ladder (`marketing/sales/RATE-LIMIT-FAQ.md` RL1). The **Enterprise tier is negotiated** — we've stress-tested in staging to 5× our highest self-serve tier's sustained TPS with no observed degradation, and the Cloudflare R2 + Workers substrate scales horizontally per region. If you need a specific committed TPS, name it in the order form; we'll either commit or come back with a fact-based pushback. We do not artificially throttle below the published cap; sustained traffic above your bucket receives `429` + `Retry-After`, and v0.1 plans are hard-capped rather than overage-billed (see P2).
 
 **Sources:** `apps/docs/docs/tutorials/quickstart-faq.mdx#8`; SLO catalog.
 
@@ -404,7 +404,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** How long do you keep audit events?
 
-**A:** **7 years.** Customer-controlled? No — compliance-driven minimum. Audit chain is append-only, Merkle-linked, with RFC 6962 inclusion proofs and JCS-canonicalized leaves. Backup snapshots of the chain follow the same 35-day rolling window with tombstones recorded on day 0 so a Type II auditor can trace the chain. Right-to-erasure under GDPR Art. 17 / LGPD Art. 18: erasure is fulfilled today via an operator-assisted request (the erasure pipeline is live); PII-bearing claims are made cryptographically unrecoverable via the salt-rotation pattern (`ADR-S11-003`) while the audit record itself remains for integrity. A customer-served signed Ed25519 erasure attestation is on the near-term roadmap.
+**A:** **7 years.** Customer-controlled? No — compliance-driven minimum. Audit chain is append-only, BLAKE3 hash-chained, with JCS-canonicalized leaves; any window re-verifies offline against a later published head. Backup snapshots of the chain follow the same 35-day rolling window with tombstones recorded on day 0 so a Type II auditor can trace the chain. Right-to-erasure under GDPR Art. 17 / LGPD Art. 18: erasure is fulfilled today via an operator-assisted request (the erasure pipeline is live); PII-bearing claims are made cryptographically unrecoverable via the salt-rotation pattern (`ADR-S11-003`) while the audit record itself remains for integrity. A customer-served signed Ed25519 erasure attestation is on the near-term roadmap.
 
 **Sources:** `apps/docs/docs/trust/data-handling.mdx#retention`; `marketing/launch/BLOG-POSTS/03-audit-chain-merkle-proofs.md`; the operator procedure behind "operator-assisted erasure" is `specs/_runbooks/RB-DSR-GDPR.md` §2.3 (Art. 17, 30-day SLA, MFA-gated) and its LGPD sister `specs/_runbooks/RB-DSR-LGPD-FULL.md`.
 
