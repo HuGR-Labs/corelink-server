@@ -25,9 +25,13 @@
 //     `consumed + Σoutstanding ≤ cap`, no region serves past the monthly cap.
 //   • month isolation: a `debit` in a NEW `yearMonth` first drops the stale
 //     balance to 0 (last month's lease never carries over) and forces a refill.
-//   • spend accounting is exact: `spentSinceSync` accumulates every served
-//     request and is zeroed only by `applyRefill` (which reports it upstream),
-//     so no debit is ever double-counted or lost across a sync.
+//   • spend accounting is exact: `spentTotal` accumulates every served request
+//     for the month and is NEVER reset by a sync, so no debit is double-counted
+//     or lost across one. The coordinator reconciles against its own high-water
+//     mark per region, which makes a repeated refill a no-op rather than a
+//     second charge. (`spentSinceSync` is the pre-2026-08-26 delta field, kept
+//     on the wire only so a shard and a coordinator running different code
+//     during a rollout still agree; it is not the accounting source.)
 
 /** Local shard state for ONE tenant+region + ONE UTC calendar month. Immutable. */
 export interface ShardState {
@@ -35,8 +39,26 @@ export interface ShardState {
   readonly yearMonth: string;
   /** Unspent leased tokens held locally (≥ 0). */
   readonly balance: number;
-  /** Tokens debited since the last coordinator sync (≥ 0). */
+  /** Tokens debited since the last coordinator sync (≥ 0). ROLLOUT-COMPAT
+   * ONLY — a delta is not idempotent under a retried or raced refill; read
+   * {@link spentTotalOf} for the accounting value. */
   readonly spentSinceSync: number;
+  /**
+   * Tokens debited this month, cumulative and monotonic — reset only by a month
+   * rollover, never by a sync. Absent on state persisted before 2026-08-26;
+   * {@link spentTotalOf} folds that legacy shape in without a migration.
+   */
+  readonly spentTotal?: number;
+}
+
+/**
+ * The month's cumulative spend. Legacy state (no `spentTotal`) carries its
+ * unreported spend in `spentSinceSync`, which is exactly the amount the
+ * coordinator has not yet reconciled — so adopting it as the starting
+ * high-water mark keeps the first post-upgrade refill exact.
+ */
+export function spentTotalOf(state: ShardState): number {
+  return state.spentTotal ?? state.spentSinceSync;
 }
 
 /** A fresh, empty shard for `yearMonth` (no balance, nothing to report). */
@@ -97,15 +119,23 @@ export function debit(
       yearMonth,
       balance,
       spentSinceSync: state.spentSinceSync + 1,
+      spentTotal: spentTotalOf(state) + 1,
     },
   };
 }
 
 export interface RefillRequest {
-  /** Tokens spent since the last sync — the coordinator's `spentDelta`. */
+  /** Tokens spent since the last sync — the coordinator's legacy `spentDelta`. */
   readonly spentDelta: number;
   /** The balance the shard still holds — the coordinator's `reportedBalance`. */
   readonly reportedBalance: number;
+  /**
+   * The month's cumulative spend. The coordinator reconciles against this
+   * (its own per-region high-water mark), so replaying an identical refill —
+   * two requests racing an empty shard both snapshot the same payload —
+   * contributes 0 instead of charging the same requests twice.
+   */
+  readonly spentTotal: number;
 }
 
 /**
@@ -114,24 +144,61 @@ export interface RefillRequest {
  * coordinator has authoritatively reconciled and granted.
  */
 export function prepareRefill(state: ShardState): RefillRequest {
-  return { spentDelta: state.spentSinceSync, reportedBalance: state.balance };
+  return {
+    spentDelta: state.spentSinceSync,
+    reportedBalance: state.balance,
+    spentTotal: spentTotalOf(state),
+  };
 }
 
 /**
- * Apply the coordinator's refill response. The coordinator is authoritative for
- * the balance (it returns `newBalance = reportedBalance + granted`), so the
- * shard adopts it verbatim and zeroes `spentSinceSync` (those spends are now the
- * coordinator's `consumed`). `yearMonth` is set to the coordinator's month, so a
- * refill that crossed a month boundary lands the shard in the new month cleanly.
+ * Apply the coordinator's refill response.
+ *
+ * The grant is ADDED to whatever the shard holds right now — it is not the
+ * absolute balance the coordinator computed. Between the debit that snapshotted
+ * `reportedBalance` and this call, other requests may have been served from the
+ * same shard; adopting `newBalance` verbatim would hand those already-spent
+ * tokens back as spendable balance (an over-serve past the cap) and wipe the
+ * spend record along with it.
+ *
+ * `spentTotal` is deliberately NOT reset: it is the month's cumulative spend and
+ * the coordinator dedupes against its own high-water mark. `spentSinceSync` is
+ * still zeroed for the rollout-compat wire field.
+ *
+ * `yearMonth` is the coordinator's month, so a refill that crossed a month
+ * boundary lands the shard in the new month cleanly — with a fresh spend
+ * counter, since last month's total does not belong to it.
+ *
+ * @param granted tokens the coordinator added. Omit ONLY when talking to a
+ *                coordinator old enough not to report it, in which case
+ *                `newBalance` is adopted as before.
  */
 export function applyRefill(
   state: ShardState,
   yearMonth: string,
   newBalance: number,
+  granted?: number,
 ): ShardState {
+  if (granted === undefined || !Number.isFinite(granted)) {
+    return {
+      yearMonth,
+      balance: Math.max(0, newBalance),
+      spentSinceSync: 0,
+      spentTotal: state.yearMonth === yearMonth ? spentTotalOf(state) : 0,
+    };
+  }
+  if (state.yearMonth !== yearMonth) {
+    return {
+      yearMonth,
+      balance: Math.max(0, granted),
+      spentSinceSync: 0,
+      spentTotal: 0,
+    };
+  }
   return {
     yearMonth,
-    balance: Math.max(0, newBalance),
+    balance: Math.max(0, state.balance + Math.max(0, granted)),
     spentSinceSync: 0,
+    spentTotal: spentTotalOf(state),
   };
 }

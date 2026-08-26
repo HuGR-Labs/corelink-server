@@ -38,11 +38,22 @@ export interface CoordinatorState {
   readonly consumed: number;
   /** region → currently-held unspent lease balance. */
   readonly outstanding: Readonly<Record<string, number>>;
+  /**
+   * region → the highest cumulative month-spend that region has reported and
+   * this coordinator has already folded into `consumed`. A refill only charges
+   * what exceeds this mark, which makes the reconcile idempotent: two requests
+   * racing an empty shard snapshot the SAME payload, and the second one adds 0.
+   *
+   * Absent on state persisted before 2026-08-26 (and on refills from a shard
+   * that does not send `spentTotal` yet) — both fall back to the legacy
+   * additive `spentDelta`.
+   */
+  readonly reconciledSpent?: Readonly<Record<string, number>>;
 }
 
 /** A fresh coordinator for `yearMonth` (implicit monthly reset). */
 export function emptyState(yearMonth: string): CoordinatorState {
-  return { yearMonth, consumed: 0, outstanding: {} };
+  return { yearMonth, consumed: 0, outstanding: {}, reconciledSpent: {} };
 }
 
 /** Σ of all regions' currently-held balances. */
@@ -69,8 +80,14 @@ export interface RefillResult {
 /**
  * A region reconciles-and-refills in one step (the only mutation on the hot path).
  *
- * @param spentDelta      tokens spent since this region's last sync — moved from
- *                        its outstanding into `consumed` (clamped ≥ 0).
+ * @param spentDelta      LEGACY: tokens spent since this region's last sync.
+ *                        Used only when `spentTotal` is absent (a shard running
+ *                        pre-2026-08-26 code during a rollout); a delta cannot be
+ *                        deduped, so a retried or raced refill charges twice.
+ * @param spentTotal      the region's cumulative month spend. Only the excess
+ *                        over what this coordinator already reconciled for the
+ *                        region becomes `consumed`, so replaying a refill is a
+ *                        no-op.
  * @param reportedBalance the region's CURRENT unspent balance (what it still holds)
  *                        BEFORE this refill (clamped ≥ 0).
  * @param block           the max tokens to grant this refill (the lease block `L`).
@@ -87,17 +104,29 @@ export function refill(
   spentDelta: number,
   reportedBalance: number,
   block: number,
+  spentTotal?: number,
 ): RefillResult {
   const base = state.yearMonth === yearMonth ? state : emptyState(yearMonth);
 
   // Reconcile: spent tokens become permanent `consumed`; this region now holds
-  // exactly `reportedBalance`.
-  const consumed = base.consumed + Math.max(0, spentDelta);
+  // exactly `reportedBalance`. When the shard reports a cumulative total we
+  // charge only what is new since this region's high-water mark — so a repeated
+  // or raced refill carrying the same total contributes nothing.
+  const priorMark = base.reconciledSpent?.[region] ?? 0;
+  const useTotal = spentTotal !== undefined && Number.isFinite(spentTotal);
+  const charge = useTotal
+    ? Math.max(0, (spentTotal as number) - priorMark)
+    : Math.max(0, spentDelta);
+  const consumed = base.consumed + charge;
   const held = Math.max(0, reportedBalance);
+  const marks: Record<string, number> = useTotal
+    ? { ...base.reconciledSpent, [region]: Math.max(priorMark, spentTotal as number) }
+    : { ...base.reconciledSpent };
   const reconciled: CoordinatorState = {
     yearMonth,
     consumed,
     outstanding: { ...base.outstanding, [region]: held },
+    reconciledSpent: marks,
   };
 
   // Grant against what is left, never past the cap.
@@ -112,6 +141,7 @@ export function refill(
       yearMonth,
       consumed,
       outstanding: { ...reconciled.outstanding, [region]: newBalance },
+      reconciledSpent: marks,
     },
   };
 }
@@ -133,5 +163,8 @@ export function reclaimIdle(
     yearMonth,
     consumed: base.consumed,
     outstanding: { ...base.outstanding, [region]: Math.max(0, keep) },
+    // Carried, not rebuilt: dropping the region's high-water mark here would
+    // let the next refill re-charge spend this coordinator already counted.
+    reconciledSpent: { ...base.reconciledSpent },
   };
 }

@@ -50,6 +50,13 @@ interface ApplyRefillOp {
   readonly op: "applyRefill";
   readonly yearMonth: string;
   readonly newBalance: number;
+  /**
+   * Tokens the coordinator ADDED. Preferred over `newBalance`, which is an
+   * absolute figure computed from the balance the shard reported one hop
+   * earlier and is therefore stale if any request was served in between.
+   * Absent only during a rollout from pre-2026-08-26 code.
+   */
+  readonly granted?: number;
 }
 interface ReadOp {
   readonly op: "read";
@@ -129,7 +136,11 @@ export class RequestMeterShardDO implements DurableObject {
         needsRefill: r.needsRefill,
         balance: r.state.balance,
         yearMonth: r.state.yearMonth,
-        refillReq: { spentDelta: req.spentDelta, reportedBalance: req.reportedBalance },
+        refillReq: {
+          spentDelta: req.spentDelta,
+          reportedBalance: req.reportedBalance,
+          spentTotal: req.spentTotal,
+        },
       };
     });
     return jsonResponse(result);
@@ -141,7 +152,14 @@ export class RequestMeterShardDO implements DurableObject {
     }
     const next = await this.state.blockConcurrencyWhile(async () => {
       const prev = await this.load(op.yearMonth);
-      const s = applyRefill(prev, op.yearMonth, op.newBalance);
+      // `granted` is absent only when the caller runs pre-2026-08-26 code; then
+      // applyRefill keeps its old absolute-adopt behaviour.
+      const s = applyRefill(
+        prev,
+        op.yearMonth,
+        op.newBalance,
+        isFiniteNumber(op.granted) ? op.granted : undefined,
+      );
       await this.storage.put(STATE_KEY, s);
       return s;
     });

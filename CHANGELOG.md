@@ -37,6 +37,28 @@ Each entry cross-references:
   explicitly: both are applied in production, and renaming an applied
   migration desyncs the ledger (the renamed file reads as never-applied and
   replays), which is strictly worse than the ambiguity.
+- **Edge request meter: the shard/coordinator refill handshake counted raced
+  spend twice and re-granted spend served mid-sync.** `EDGE_DO_METER="serve"`
+  is live and enforcing in all five prod regions, and `meterViaDO` runs the
+  cap decision as three separate Durable Object hops — each hop is serialized
+  by its own object, the triple is not. Two requests racing an empty shard
+  both snapshotted the same `spentDelta` and the coordinator added it to
+  `consumed` on each call, so a tenant was 429'd before its contracted monthly
+  cap and the inflated count propagated into `monthly_request_counts` through
+  a `MAX()` write that by design never decreases. Separately, `applyRefill`
+  adopted the coordinator's absolute `newBalance` — a figure computed from the
+  balance reported one hop earlier — and zeroed the spend counter, so any
+  request served in between was both erased from the spend record and handed
+  its token back (latent today: all three call sites wire `lowWater: 0`, so no
+  in-flight debit can be served; arming eager refill would have made it live).
+  The shard now reports a cumulative, monotonic `spentTotal` and the
+  coordinator charges only the excess over its per-region high-water mark, so
+  a replayed refill contributes nothing; `applyRefill` adds the grant instead
+  of adopting an absolute. Both wire fields are additive and the old shapes
+  still parse, so a mixed-version rollout stays correct in both directions.
+  New `request_meter_refill_protocol.test.ts` pins both invariants across a
+  sync — the gap the existing suites left, since they proved each object
+  correct only in isolation.
 
 - **429-body URLs repointed to live flat hosts (go-live audit I-cluster / WP-3).**
   `TIER_UPGRADE_URL` (`corelink.humangr.com/pricing`) and `DOCS_URL`
