@@ -2454,3 +2454,52 @@ verify-means: |
   audit-archive-lag monitor, not by this static check.
 last-verified: 2026-08-25
 ```
+
+### B-047 — F2 (edge-served findMissingBlobs) needs the audit seam before the flag
+
+F1 shipped the shadow (#1340) and it measured 43/43 parity, 8.65 s → 2.10 s at
+n=100. That result says the edge computes the right SET — it says nothing about
+whether the edge may SERVE it, because a shadow that serves nothing cannot fail
+open.
+
+`probeMissingAtEdge` (`worker/src/lib/edge_find_missing.ts`) does not do what
+the container's `exists_batch`
+(`crates/corelink-container/src/storage/r2_s3.rs:1560`) does: N `ReadAttempted`
+rows into `audit_outbox`, `ReadDenied` audited before any dispatch, the
+fail-closed `AuditFailed` coupling that throws away probe results the code is
+already holding, and the `AvailCasGet` / `LatencyCasGetP99` SLIs. Flipping
+`EDGE_FIND_MISSING` to serve today would answer a REAPI read surface with its
+evidence trail absent, and would keep answering while the audit sink is down —
+against the invariant the F0 ADR itself states ("the audit result gates the
+response").
+
+Design decided in `docs/design/2026-08-26-adr-edge-find-missing-audit-seam.md`:
+the edge probes R2 natively and **awaits ONE** container call
+(`POST /_internal/audit/cas-attempted`) that emits the batch through the same
+`D1AuditOutboxSink::emit_cas_batch_async`, rather than the Worker writing
+`audit_outbox` rows itself. The row is a contract — UUIDv7 id, CloudEvents
+payload, `UNIQUE (request_id, event_type)`, and a region trigger that
+`RAISE(ABORT)`s on mismatch — and a second TypeScript author of it would drift
+while still passing its own tests. Audit call non-2xx/timeout ⇒ discard the
+probe results and fall through to the container.
+
+Remaining work: the internal route, the awaited edge call, a test that proves
+fallthrough when the audit call fails, the SLI tagging, and only then the flag.
+F3 (red-team) then runs against serving code, with audit-sink-down as a named
+case.
+
+```backlog
+id: B-047
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  ! grep -qE '^[^#]*EDGE_FIND_MISSING[[:space:]]*=[[:space:]]*"(on|serve|1)"' wrangler.toml \
+    || grep -rq '_internal/audit/cas-attempted' crates/corelink-container/src/routes/
+verify-means: |
+  open — fails if the edge findMissingBlobs serve flag is turned on in
+  wrangler.toml while the container still has no `/_internal/audit/cas-attempted`
+  route, i.e. if F2 is flipped before the audit seam it depends on exists. Closes
+  when the route lands and the flag is on; `shadow` and `off` are unaffected.
+last-verified: 2026-08-26
+```
