@@ -306,3 +306,105 @@ export async function shadowCompareEdgeFindMissing(
   // (INV-NO-BODY-IN-LOGS).
   return `DIVERGENT ${shape} only_edge=${onlyEdge} only_container=${onlyContainer}`;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F2 SERVE — answer at the edge, but only once the audit rows are DURABLE.
+//
+// F1 proved the edge computes the same SET (43/43 parity, 8.65 s -> 2.10 s at
+// n=100). That is not permission to serve. `exists_batch`
+// (`crates/corelink-container/src/storage/r2_s3.rs`) writes one `ReadAttempted`
+// row per digest and DISCARDS probe results it is already holding when that
+// write fails — `findMissingBlobs` is a REAPI read surface and those rows are
+// the evidence the S-09 chain drains. An edge that answered without them would
+// keep answering while the audit sink was down.
+//
+// So the edge probes R2 in-colo and then AWAITS one call to the container's
+// `POST /_internal/audit/cas-attempted`, which emits the rows through the same
+// `D1AuditOutboxSink`. The container stays the single author of the row shape.
+// See `docs/design/2026-08-26-adr-edge-find-missing-audit-seam.md`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Emits the `ReadAttempted` rows for a probe the edge performed. Injected so the
+ * decision logic is testable without a DO stub.
+ *
+ * MUST resolve `true` ONLY on a 204 from the container. Every other outcome —
+ * any other status, a timeout, a transport error — is `false`, and `false` means
+ * the caller falls through to the container. "We could not audit" must never
+ * become "we answered".
+ */
+export type EmitAttemptedAudit = (batch: {
+  tenant: string;
+  principal: string;
+  caller_tenant: string;
+  at_unix_ms: number;
+  digests: string[];
+}) => Promise<boolean>;
+
+/** What the caller must do next. `null` ⇒ fall through to the container. */
+export type EdgeServeOutcome = { missing: string[]; edgeMs: number } | null;
+
+/**
+ * Decide whether the edge may answer this `findMissingBlobs`, and produce the
+ * answer if so. Returns `null` for every reason to defer — malformed body, over
+ * cap, BYOK/unknown tenant, underivable key, probe error, and above all an audit
+ * that did not commit.
+ *
+ * Deferring is always SAFE: the container answers exactly as it does today,
+ * writing its own audit rows and failing closed in its own taxonomy. That is why
+ * every branch here resolves to `null` rather than to a served response.
+ */
+export async function serveEdgeFindMissing(
+  env: EdgeFindMissingEnv,
+  tenantId: string,
+  principal: string,
+  requestBodyText: string,
+  emitAudit: EmitAttemptedAudit,
+  now: () => number = () => Date.now(),
+): Promise<EdgeServeOutcome> {
+  const requested = parseRequestDigests(requestBodyText);
+  if (requested === null) return null;
+  // An empty batch is answerable without probing OR auditing — the container
+  // writes no row and issues no request for it either (`exists_batch` returns
+  // early on an empty slice). Answering it here is not an unaudited answer,
+  // because there is nothing to audit.
+  if (requested.length === 0) return { missing: [], edgeMs: 0 };
+  if (requested.length > EDGE_FIND_MISSING_MAX_DIGESTS) return null;
+  if (!(await tenantMayUseEdgePath(env, tenantId))) return null;
+
+  const started = now();
+  let missing: string[] | null;
+  try {
+    missing = await probeMissingAtEdge(env, tenantId, requested);
+  } catch {
+    return null;
+  }
+  if (missing === null) return null;
+
+  // AUDIT GATES THE RESPONSE. The probe result is already in hand and is thrown
+  // away if the rows did not commit — deliberately mirroring the container,
+  // which does exactly this with its own results rather than serve unaudited.
+  const at = now();
+  let audited = false;
+  try {
+    audited = await emitAudit({
+      tenant: tenantId,
+      principal,
+      caller_tenant: tenantId,
+      at_unix_ms: at,
+      digests: requested,
+    });
+  } catch {
+    return null;
+  }
+  if (!audited) return null;
+
+  return { missing, edgeMs: now() - started };
+}
+
+/** The REAPI `findMissingBlobs` response body for a set of missing digests. */
+export function findMissingResponseBody(missing: string[]): string {
+  // `sizeBytes` is required by the proto and unknown to a HEAD probe; the
+  // container answers the same shape, echoing only the hash.
+  return JSON.stringify({ missingBlobDigests: missing.map((hash) => ({ hash })) });
+}
