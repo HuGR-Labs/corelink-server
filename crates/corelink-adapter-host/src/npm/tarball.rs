@@ -392,7 +392,6 @@ pub async fn serve_tarball(
     // downstream, so the spec'd move into `put` is the one unavoidable
     // full copy. `downloaded` itself then moves into the response
     // `body` as `Bytes` for free (no copy, just a refcount bump).
-    let body_len = downloaded.len();
     let owned = downloaded.to_vec();
     // Audit BEFORE the CAS put (audit-fail-CLOSED contract).
     emit_npm_audit(
@@ -404,7 +403,7 @@ pub async fn serve_tarball(
             "pkg": pkg,
             "version": version,
             "digest": digest_hex,
-            "size_bytes": body_len,
+            "size_bytes": owned.len(),
         }),
     )?;
     cas.put(tenant, &digest, owned).await?;
