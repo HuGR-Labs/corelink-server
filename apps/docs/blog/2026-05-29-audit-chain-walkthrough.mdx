@@ -155,8 +155,10 @@ through two pre-conditions. First, PII redaction: the
 substitutes matches for `email`, `ip`, `bearer`, and `digest` fields
 with canonical redaction tokens. The chain emit itself does not
 re-redact; if a non-redacted body reaches the chain, it lands in the
-7-year immutable R2 archive (a compliance gap). Pre-redaction is
-enforced at the WI-S09-002 wiring layer, not inside the crate.
+7-year append-only audit chain archive (tamper-evident on verify; R2
+Object-Lock immutable storage is a planned roadmap item — WI-S09-007).
+Pre-redaction is enforced at the WI-S09-002 wiring layer, not inside
+the crate.
 
 Second, the audit-of-audit envelope fires *before* any state mutation.
 For every emit, before the chain head advances, the
@@ -425,8 +427,11 @@ hash check fires.
 Deleting event N creates a gap: the verifier expects `sequence_number`
 N but sees N+1 and immediately returns
 `AuditChainError::SequenceOrderingViolation`. The R2 Object Lock
-Governance Mode (7-year retention) makes this additional defense —
-deletion from R2 under Governance Mode requires an explicit override
+Governance Mode (7-year retention) is a planned roadmap item
+(WI-S09-007) — the shipped guarantee is the append-only, keyed
+signed-head chain (tamper-evident on verify); R2 Object-Lock
+immutable storage under Governance Mode is planned — WI-S09-007
+and would make deletion from R2 require an explicit override
 token that only an account owner can issue, creating an auditable
 administrative action.
 
@@ -467,9 +472,12 @@ of attacks the current construction explicitly does not stop.
 
 If the entire R2 bucket is deleted (e.g., a catastrophic
 misconfiguration or a CF account takeover), the audit log is gone.
-Object Lock Governance Mode raises the operational bar significantly —
-deletion requires an account-level override token — but it is not
-equivalent to physical immutability.
+Object Lock Governance Mode (planned — WI-S09-007) raises the
+operational bar significantly — deletion would require an
+account-level override token — but it is not equivalent to physical
+immutability. The shipped guarantee is append-only with a keyed,
+signed chain head; tamper is *detected* at verify time, not
+prevented at storage time.
 
 **Mitigation in progress:** we are evaluating cross-account R2
 replication + customer-controlled bucket mirrors as a follow-on. For
@@ -583,8 +591,9 @@ the hash step.
   per-tenant hash chain unbroken; daily verifier walks chain start→end.
   Source: `crates/corelink-audit-chain/src/lib.rs:86`.
 - **CoreLink invariant INV-AUDIT-APPEND-ONLY** (CRITICAL; TLA+ proven):
-  R2 Object Lock + hash chain integrity. Source:
-  `crates/corelink-audit-chain/src/lib.rs:89`.
+  append-only hash chain with keyed, signed head (tamper-evident on
+  verify; R2 Object-Lock immutable storage is a planned roadmap item
+  — WI-S09-007). Source: `crates/corelink-audit-chain/src/lib.rs:89`.
 - **CoreLink invariant INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER** (HIGH):
   audit-of-audit emit BEFORE state mutation on every decision arm.
   Source: `crates/corelink-audit-chain/src/lib.rs:96`.

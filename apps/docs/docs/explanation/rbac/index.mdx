@@ -30,7 +30,7 @@ The `membership.role` column is constrained to exactly four values
 
 | Role        | Tier              | Purpose                                                                 |
 |-------------|-------------------|-------------------------------------------------------------------------|
-| `Owner`     | Tenant-wide       | Full access including billing, role grants, BYOK; can act as approver. |
+| `Owner`     | Tenant-wide       | Full access including billing, role grants, planned Enterprise BYOK; can act as approver. |
 | `Admin`     | Tenant-wide       | All operations except billing; can act as approver.                     |
 | `Developer` | Per-user surface  | CAS read/write, PAT mint for self; no admin surface.                    |
 | `Viewer`    | Per-user surface  | Read-only CAS + audit-log read; cannot mint PATs.                       |
@@ -50,7 +50,7 @@ categories:
 | Category    | Scopes                                                                                          | Notes                                                |
 |-------------|-------------------------------------------------------------------------------------------------|------------------------------------------------------|
 | **CAS**     | `cache:r`, `cache:w`, `cache:find-missing`, `cache:delete`                                      | Read/write content-addressable storage + AC results. |
-| **BYOK**    | `admin:tenant-read`, `admin:tenant-write` (KMS config subset)                                   | Bring-your-own-key root config (Enterprise tier).    |
+| **BYOK**    | `admin:tenant-read`, `admin:tenant-write` (KMS config subset)                                   | Roadmap — Enterprise BYOK with customer-managed KMS is on the roadmap (the current handler returns HTTP 501, not wired). |
 | **Audit**   | `admin:audit`                                                                                   | Tenant audit-log read.                               |
 | **Billing** | `admin:billing`                                                                                 | View / mutate billing surface.                       |
 | **Members** | `admin:users`, `admin:tokens`                                                                   | Invite / demote users; mint / revoke PATs.           |
@@ -130,5 +130,9 @@ Demote and revoke events are themselves audited — see
 - [Permissions reference](../../reference/rbac/permissions.mdx) — every
   permission ID + which endpoints it gates.
 - [Audit chain](../security/audit-chain) — how the underlying log
-  works.
-- [BYOK](../security/byok) — Enterprise customer-managed keys.
+  works. Today this is an append-only audit chain with a keyed, signed head
+  (tamper-evident, detect-at-verify); R2 Object-Lock immutable storage with
+  WORM retention is a roadmap item (WI-S09-007).
+- [BYOK](../security/byok) — Roadmap: planned — Enterprise BYOK with
+  customer-managed KMS is on the roadmap (not shipped; the current handler
+  returns HTTP 501, not wired).
