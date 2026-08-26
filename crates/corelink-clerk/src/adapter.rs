@@ -8,9 +8,9 @@
 //! See module-level rustdoc on [`crate`] for the architectural rules
 //! (RS256-only, exact-match issuer, lazy-refresh on KID miss, etc.).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -24,6 +24,14 @@ use crate::error::AuthError;
 use crate::jwks::{Jwks, JwksFetcher};
 use crate::jwks_cache::{is_fresh, CachedJwks, KvJwksCache};
 use crate::principal::{ClerkOrgId, ClerkPrincipal, ClerkRole, ClerkSessionId, ClerkUserId, Email};
+
+/// TTL for the per-kid negative cache (F-020): a `kid` that was
+/// fetched-but-NOT-found is remembered for this duration so repeated
+/// adversarial requests carrying the same bogus `kid` cannot drive a
+/// JWKS fetch storm (up to 2N upstream GETs per N requests without
+/// this). 60s is short enough that a legitimate key rotation lands
+/// in well under a minute, and long enough to absorb a burst.
+const NEGATIVE_CACHE_TTL: Duration = Duration::from_secs(60);
 
 /// Refresh trigger for `corelink_auth_clerk_jwks_refresh_total{trigger=…}` (WI §6.1.6).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -119,6 +127,33 @@ struct Inner {
     cache: Arc<dyn KvJwksCache>,
     counters: Counters,
     clock: Box<dyn Fn() -> SystemTime + Send + Sync>,
+    /// F-020: per-kid negative cache. Maps `kid` -> deadline (SystemTime)
+    /// at which the "fetched but not found" record expires. A request
+    /// carrying a `kid` listed here (and still within TTL) is rejected
+    /// without driving another upstream JWKS fetch. Bounded by
+    /// adversarial-burst length; entries self-expire after
+    /// [`NEGATIVE_CACHE_TTL`]. A legitimate key rotation lands in well
+    /// under the TTL, so a genuinely new valid `kid` is never poisoned.
+    /// TODO(F-020): cross-isolate single-flight coalescing is a
+    /// separate follow-up — the kid-bound + negative cache close the
+    /// per-kid amplification; single-flight would close the
+    /// concurrent-request amplification.
+    negative_kid_cache: Mutex<HashMap<String, SystemTime>>,
+}
+
+/// Syntactic bound on the `kid` JOSE header parameter. Enforced
+/// BEFORE any JWKS lookup so a bogus / over-long kid can never
+/// drive a fetch (F-020). 64 chars is well over Clerk's current
+/// kid length (~16 base62 chars) and the JOSE spec's
+/// "reasonable length" guidance; the charset is base64url-safe
+/// (plus underscore) which is the universe of valid `kid` values
+/// per RFC 7517 §4.5.
+fn is_valid_kid(kid: &str) -> bool {
+    !kid.is_empty()
+        && kid.len() <= 64
+        && kid
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
 #[derive(Debug, Deserialize)]
@@ -200,6 +235,7 @@ impl ClerkAdapter {
                 cache: Arc::new(cache),
                 counters: Counters::default(),
                 clock: Box::new(clock),
+                negative_kid_cache: Mutex::new(HashMap::new()),
             }),
         }
     }
@@ -303,6 +339,20 @@ impl ClerkAdapter {
             .kid
             .ok_or_else(|| AuthError::Malformed("missing kid header".into()))?;
 
+        // F-020: syntactic bound on `kid` BEFORE any JWKS lookup. An
+        // over-long or illegal-charset kid can never reach the
+        // miss/fetch path, so it cannot drive an upstream JWKS GET.
+        if !is_valid_kid(&kid) {
+            return Err(AuthError::KidNotInJwks);
+        }
+
+        // F-020: negative cache — if this `kid` was previously
+        // fetched-and-not-found and the record is still within TTL,
+        // reject without driving another upstream fetch.
+        if self.negative_kid_cache_hit(&kid) {
+            return Err(AuthError::KidNotInJwks);
+        }
+
         // 2. Resolve key — KV cache lookup with lazy refresh on expiry
         // / KID miss. Single retry max per WI §9.5 / §6.1.3 step 4.
         let cached = self.load_cached().await?;
@@ -319,6 +369,11 @@ impl ClerkAdapter {
                 if let Some(k) = jwks.find(&kid).cloned() {
                     k
                 } else {
+                    // F-020: remember this `kid` as "fetched but not
+                    // found" so a subsequent request with the same
+                    // bogus `kid` does not drive another upstream
+                    // fetch within the TTL.
+                    self.negative_kid_cache_insert(&kid);
                     // Second fetch only meaningful when the first
                     // was a cold-start: a warm cache that already
                     // missed has just been replaced by a fetch that
@@ -445,6 +500,41 @@ impl ClerkAdapter {
             issued_at,
             expires_at: exp_time,
         })
+    }
+
+    /// F-020: consult the per-kid negative cache. Expired entries are
+    /// pruned on hit. Returns `true` if the `kid` is currently
+    /// remembered as "fetched but not found" within
+    /// [`NEGATIVE_CACHE_TTL`].
+    fn negative_kid_cache_hit(&self, kid: &str) -> bool {
+        let now = (self.inner.clock)();
+        let mut guard = match self.inner.negative_kid_cache.lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if let Some(deadline) = guard.get(kid).copied() {
+            if deadline > now {
+                return true;
+            }
+            // Expired — drop and fall through.
+            guard.remove(kid);
+        }
+        false
+    }
+
+    /// F-020: record a `kid` as "fetched but not found" with deadline
+    /// `now + NEGATIVE_CACHE_TTL`. A genuine key rotation lands well
+    /// under the TTL, so a new valid `kid` is never poisoned.
+    fn negative_kid_cache_insert(&self, kid: &str) {
+        let now = (self.inner.clock)();
+        let deadline = now
+            .checked_add(NEGATIVE_CACHE_TTL)
+            .unwrap_or(now);
+        let mut guard = match self.inner.negative_kid_cache.lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        guard.insert(kid.to_owned(), deadline);
     }
 
     async fn load_cached(&self) -> Result<Option<CachedJwks>, AuthError> {
