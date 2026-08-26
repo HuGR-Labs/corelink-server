@@ -163,25 +163,78 @@ describe("get", () => {
 });
 
 describe("stat", () => {
-  it("reports exists + exact size on 200", async () => {
+  /** Records how many body bytes the stub "server" hands to the client. */
+  function countingFetch(
+    respond: () => Response,
+  ): ReturnType<typeof mockFetch> & { bytesServed: () => number } {
+    let served = 0;
+    const f = mockFetch(() => {
+      const res = respond();
+      // Simulate the wire: count whatever payload the response carries.
+      res.arrayBuffer().then((ab) => {
+        served += ab.byteLength;
+      });
+      return res;
+    });
+    return Object.assign(f, { bytesServed: () => served });
+  }
+
+  it("issues a HEAD (not GET) with no request body, like the Python SDK", async () => {
     const data = new Uint8Array(1234);
     const digest = blake3Hex(data);
-    const f = mockFetch(() => new Response(data, { status: 200 }));
-    expect(await client(f).stat(digest)).toEqual({
+    const f = mockFetch((url, init) => {
+      expect(init.method).toBe("HEAD");
+      expect(init.body).toBeUndefined();
+      expect(url).toBe(
+        `https://corelink-api.humangr.com/v1/cas/${TENANT}/${digest}`,
+      );
+      return new Response(null, {
+        status: 200,
+        headers: { "content-length": String(data.byteLength) },
+      });
+    });
+    await client(f).stat(digest);
+    expect(f.calls.length).toBe(1);
+  });
+
+  it("does NOT transfer the blob body — size comes from Content-Length", async () => {
+    const data = new Uint8Array(1234);
+    const digest = blake3Hex(data);
+    // A real HEAD response has an empty body; only the header carries the size.
+    const f = countingFetch(() =>
+      new Response(null, {
+        status: 200,
+        headers: { "content-length": String(data.byteLength) },
+      }),
+    );
+    await expect(client(f).stat(digest)).resolves.toEqual({
       digest,
       exists: true,
       sizeBytes: 1234,
     });
+    expect(f.bytesServed()).toBe(0);
   });
 
   it("reports absent on 404/410", async () => {
     const digest = "d".repeat(64);
-    const f = mockFetch(() => new Response("not found", { status: 404 }));
-    expect(await client(f).stat(digest)).toEqual({
+    const f404 = mockFetch(() => new Response("not found", { status: 404 }));
+    expect(await client(f404).stat(digest)).toEqual({
       digest,
       exists: false,
       sizeBytes: 0,
     });
+    const f410 = mockFetch(() => new Response("erased", { status: 410 }));
+    expect(await client(f410).stat(digest)).toEqual({
+      digest,
+      exists: false,
+      sizeBytes: 0,
+    });
+  });
+
+  it("still maps unexpected statuses through the normal error path", async () => {
+    const digest = "d".repeat(64);
+    const f = mockFetch(() => new Response("who are you", { status: 401 }));
+    await expect(client(f).stat(digest)).rejects.toBeInstanceOf(AuthError);
   });
 });
 
