@@ -288,6 +288,20 @@ Each entry cross-references:
   the recommendation for a dedicated `/​_repl/*` key instead of the shared
   internal-auth key.
 
+- **PAT revoke did not invalidate the edge L2 cache — three docs claimed it
+  did.** The runner-teardown revoke wrote only the D1 `revoked_at_ms`; a
+  `.delete(` on KV existed NOWHERE in worker/src, so a revoked PAT kept
+  authenticating at the edge for up to the 60s `patrow:` L2 TTL (plus D1
+  read-replication lag) — and `tenant_suspend_gate`'s fail-open rationale
+  cited the nonexistent control as its justification. The revoke UPDATE now
+  `RETURNING token_id`, and a non-empty result triggers
+  `METADATA_KV.delete(patrow:<token_id>)`: awaited (teardown path; no
+  ExecutionContext threading), NON-FATAL on KV error (D1 is already revoked;
+  the 60s TTL is the backstop — never a 500), and covered on both branches
+  (with/without `owner_tenant`). Unknown pat_id / already-revoked → empty
+  RETURNING → idempotent 200 with no delete. Comments in
+  `pat_verify_cache`/`tenant_suspend_gate` now describe the real behavior.
+
 ### Added
 
 - **Governance-mode legal-hold-aware CAS erasure — the retention backend is real,

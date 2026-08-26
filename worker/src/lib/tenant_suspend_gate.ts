@@ -43,7 +43,8 @@
  * deliberate, ratified trade-off recorded in **ADR-0070** — the enforcement
  * window is ≤ {@link KV_SUSPEND_TTL_S}s (KV TTL) + ≤ {@link SUSPEND_CACHE_TTL_MS}
  * of isolate slack. The immediate hard-stop levers are unchanged: individual PAT
- * revoke (worker revoke also KV-deletes the `patrow:` entry) and the container
+ * revoke (worker revoke — runner teardown `handleRunnerRevoke` — also
+ * KV-deletes the `patrow:` entry, WP-F1) and the container
  * `NativePatGate`. This is inside the offboarding state machine's own day-scale
  * `suspended` arm; for abuse response the ADR keeps PAT-revoke as the ≤0-window
  * lever.
