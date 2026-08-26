@@ -171,3 +171,49 @@ production and unmaintained by any code path. See decision 2.
 **Treat the missing `handle_read` guard as part of S2.** Rejected. Bundling a
 small, well-patterned availability fix behind a blocked integrity redesign
 delays the fix for no benefit. They are separate changes with separate risk.
+
+## Addendum (2026-08-26) — BYOK: the scrubber cannot re-hash raw R2 bytes
+
+Appended rather than folded into the sections above so the existing line
+citations stay valid.
+
+Decision 2 said the scrubber enumerates R2 and re-hashes what it finds. That is
+correct **only for plaintext-plan tenants**, and the exception is not an edge
+case — it is a whole tenant class the design would silently mishandle.
+
+For a BYOK-`active` tenant the stored object is **ciphertext**. The read path
+decrypts to plaintext BEFORE the content-hash re-verify, and the code says why
+in as many words: *"the integrity re-verify MUST run on the PLAINTEXT, never on
+ciphertext"* (`crates/corelink-container/src/storage/r2_s3.rs:1307-1332`).
+`resolve_byok` also returns a `physical_digest` distinct from the logical one
+(`crates/corelink-container/src/storage/r2_s3.rs:711-740`), so for those tenants
+the R2 key is not necessarily the plaintext digest either. A scrubber that
+re-hashes raw bytes and compares against the key would therefore be wrong twice
+over, and its output would be a stream of false `CorrectnessViolation`s against
+tenants whose data is perfectly intact.
+
+BYOK is **GATED-INERT** today — `resolve_byok` returns `Plaintext` unless BOTH
+the `byok_config_cache` and the `tcs_resolver` collaborators are present
+(`crates/corelink-container/src/storage/r2_s3.rs:722-727`), and `_public` stays
+plaintext by design to preserve cross-tenant dedup. So a scrubber written today
+would be correct today and become wrong the day BYOK is switched on, with no
+compile error and no test failure to announce it. That is the worst shape a
+latent defect can take in this codebase, and it is why this is recorded now
+rather than when BYOK ships.
+
+**Decision 4: the scrubber resolves each object's BYOK plan and, for anything
+that is not `Plaintext`, SKIPS the object and counts it separately as
+`skipped_encrypted` — never as verified, and never as a violation.**
+
+The counter split is the load-bearing part. Decision 2 already requires
+reporting objects EXAMINED rather than only failures found; this extends it:
+`examined`, `skipped_encrypted` and `failed` must be three distinct numbers. A
+scrubber that folds skips into examined would report full coverage over a store
+it never checked — the same silent-success failure that decision 2 exists to
+prevent, arriving through a different door.
+
+Decrypting inside the scrubber was considered and rejected for now: it would
+put tenant key material on a background sweep's path for a coverage gain that
+is currently zero (no active BYOK tenants), and it deserves its own decision
+with its own threat model rather than being smuggled in as an implementation
+detail of a scrubber.
