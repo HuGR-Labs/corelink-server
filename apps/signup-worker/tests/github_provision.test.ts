@@ -14,7 +14,22 @@ import {
   type InstallationProvisionEnv,
 } from "../src/webhooks/github_provision.js";
 
-const AUTH = "internal-secret-key";
+/**
+ * Shared-key fixture: 64 hex chars — mirrors `openssl rand -hex 32` (the format
+ * the main Worker's internal-auth gate and the container's
+ * `build_state_from_env` floor both target). MUST be `>= 32` chars; the new
+ * `resolveRunnerProvisionKey` rejects anything shorter (arm c on the shared
+ * key, arm b on the dedicated key), so under-sized fixtures silently shift
+ * tests from "auth path" to "503 unavailable" without an obvious cause.
+ */
+const AUTH = "a".repeat(64);
+
+/**
+ * Dedicated-key fixture for the runner-provisioning consumer. Same length
+ * floor as `AUTH`; distinct value so a "did the right key get picked up?"
+ * assertion in arm (a) is meaningful.
+ */
+const DEDICATED = "b".repeat(64);
 
 interface Captured {
   sql: string;
@@ -86,7 +101,7 @@ describe("handleInstallationProvision — gates", () => {
     expect(r.status).toBe(405);
   });
 
-  it("missing Authorization → 403", async () => {
+  it("missing Authorization → 401 unauthorized (verdict about the CALLER)", async () => {
     const { binding } = db();
     const env: InstallationProvisionEnv = {
       CONFIG_DB: binding,
@@ -94,15 +109,16 @@ describe("handleInstallationProvision — gates", () => {
     };
     const r = await handleInstallationProvision(
       req(
-        { installation_id: "i-403a", tenant_id: "t1", repositories: [] },
+        { installation_id: "i-401a", tenant_id: "t1", repositories: [] },
         { auth: null },
       ),
       env,
     );
-    expect(r.status).toBe(403);
+    expect(r.status).toBe(401);
+    expect(await r.json()).toEqual({ error: "unauthorized" });
   });
 
-  it("mismatched bearer → 403", async () => {
+  it("mismatched bearer → 401 unauthorized (verdict about the CALLER)", async () => {
     const { binding } = db();
     const env: InstallationProvisionEnv = {
       CONFIG_DB: binding,
@@ -110,22 +126,24 @@ describe("handleInstallationProvision — gates", () => {
     };
     const r = await handleInstallationProvision(
       req(
-        { installation_id: "i-403b", tenant_id: "t1", repositories: [] },
+        { installation_id: "i-401b", tenant_id: "t1", repositories: [] },
         { auth: "wrong-key" },
       ),
       env,
     );
-    expect(r.status).toBe(403);
+    expect(r.status).toBe(401);
+    expect(await r.json()).toEqual({ error: "unauthorized" });
   });
 
-  it("unbound CORELINK_INTERNAL_AUTH_KEY → 403 (fail-closed)", async () => {
+  it("neither key bound → 503 unavailable (statement about US, not 403)", async () => {
     const { binding } = db();
     const env: InstallationProvisionEnv = { CONFIG_DB: binding };
     const r = await handleInstallationProvision(
-      req({ installation_id: "i-403c", tenant_id: "t1", repositories: [] }),
+      req({ installation_id: "i-503a", tenant_id: "t1", repositories: [] }),
       env,
     );
-    expect(r.status).toBe(403);
+    expect(r.status).toBe(503);
+    expect(await r.json()).toEqual({ error: "unavailable" });
   });
 
   it("missing installation_id → 400", async () => {
@@ -152,6 +170,161 @@ describe("handleInstallationProvision — gates", () => {
       env,
     );
     expect(r.status).toBe(400);
+  });
+});
+
+describe("handleInstallationProvision — resolver arms (dedicated/shared)", () => {
+  // These tests pin the four-arm selection in
+  // `resolveRunnerProvisionKey` AND the new 503/401 status contract. The
+  // arms mirror `worker/src/lib/internal_auth.ts::resolveConsumerKey`; the
+  // load-bearing one is (b) — a set-but-sub-floor dedicated key MUST NOT
+  // silently widen to the shared key, which is the regression this resolver
+  // exists to prevent.
+
+  it("arm (a) dedicated key (>= 32) accepted; shared key then REJECTED with 401", async () => {
+    const { binding } = db();
+    // BOTH keys bound; the dedicated one is properly sized; the shared one
+    // is also properly sized. The dedicated MUST win, and the shared MUST
+    // be rejected when presented (a leaked shared secret must not unlock
+    // this surface once the operator has split the keys — least privilege).
+    const env: InstallationProvisionEnv = {
+      CONFIG_DB: binding,
+      CORELINK_INTERNAL_AUTH_KEY: AUTH,
+      CORELINK_RUNNER_PROVISION_AUTH_KEY: DEDICATED,
+    };
+    // 1. Presented Bearer = dedicated key → authorized.
+    const ok = await handleInstallationProvision(
+      req(
+        {
+          installation_id: "i-arm-a-ok",
+          tenant_id: "t1",
+          repositories: ["acme/web"],
+        },
+        { auth: DEDICATED },
+      ),
+      env,
+    );
+    expect(ok.status).toBe(200);
+
+    // 2. Presented Bearer = shared key → REJECTED with 401, not 200, not
+    //    503. The resolver picked the dedicated key (so the gate is bound);
+    //    the presented value just didn't match it.
+    const denied = await handleInstallationProvision(
+      req(
+        {
+          installation_id: "i-arm-a-deny",
+          tenant_id: "t1",
+          repositories: ["acme/web"],
+        },
+        { auth: AUTH },
+      ),
+      env,
+    );
+    expect(denied.status).toBe(401);
+    expect(await denied.json()).toEqual({ error: "unauthorized" });
+  });
+
+  it("arm (b) dedicated key set but 10 chars → 503; shared key does NOT work (no widening)", async () => {
+    const { binding } = db();
+    // Dedicated set but sub-floor (10 chars, well below the 32-char
+    // minimum). The shared key IS bound and properly sized — but arm (b)
+    // MUST refuse to silently widen to the shared key. The result is a
+    // 503 from arm (d) of the resolver's "neither qualifies" branch, with
+    // a logged refusal. We present the shared key to prove the rejection
+    // is the resolver's null (not a comparison mismatch on the dedicated
+    // value): the shared key is bound, properly sized, and would otherwise
+    // have been accepted under the old (pre-isolation) code path.
+    const shortDedicated = "short-key1"; // 10 chars, < 32 floor
+    const env: InstallationProvisionEnv = {
+      CONFIG_DB: binding,
+      CORELINK_INTERNAL_AUTH_KEY: AUTH,
+      CORELINK_RUNNER_PROVISION_AUTH_KEY: shortDedicated,
+    };
+    const r = await handleInstallationProvision(
+      req(
+        {
+          installation_id: "i-arm-b",
+          tenant_id: "t1",
+          repositories: ["acme/web"],
+        },
+        { auth: AUTH },
+      ),
+      env,
+    );
+    // The shared key is what was presented, the shared key is what is
+    // bound AND properly sized, and the call is still 503 — proof that
+    // arm (b) refused to widen. NOT 200, NOT 401.
+    expect(r.status).toBe(503);
+    expect(await r.json()).toEqual({ error: "unavailable" });
+  });
+
+  it("arm (c) no dedicated key, shared key (>= 32) → accepted (PHASE-1 fallback)", async () => {
+    const { binding } = db();
+    // PHASE 1: no dedicated key bound, shared key is properly sized → the
+    // shared key is used. Promoting this consumer to "dedicated required"
+    // is a separate later change; this test pins the deliberate PHASE-1
+    // behaviour, so any future move to "dedicated required" lands as an
+    // explicit test change rather than a silent regression.
+    const env: InstallationProvisionEnv = {
+      CONFIG_DB: binding,
+      CORELINK_INTERNAL_AUTH_KEY: AUTH,
+    };
+    const r = await handleInstallationProvision(
+      req(
+        {
+          installation_id: "i-arm-c",
+          tenant_id: "t1",
+          repositories: ["acme/web"],
+        },
+        { auth: AUTH },
+      ),
+      env,
+    );
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({
+      installation_id: "i-arm-c",
+      repos_added: 1,
+    });
+  });
+
+  it("arm (d) neither key bound → 503 unavailable (never 403)", async () => {
+    // Cross-reference to the matching gates-block test: explicitly named
+    // for the arm-d coverage so the four-arm matrix is complete in one
+    // glance. Same contract: no properly-sized key resolvable → 503
+    // `{"error":"unavailable"}`, not 403.
+    const { binding } = db();
+    const env: InstallationProvisionEnv = { CONFIG_DB: binding };
+    const r = await handleInstallationProvision(
+      req(
+        { installation_id: "i-arm-d", tenant_id: "t1", repositories: [] },
+        { auth: AUTH },
+      ),
+      env,
+    );
+    expect(r.status).toBe(503);
+    expect(await r.json()).toEqual({ error: "unavailable" });
+  });
+
+  it("status contract: wrong bearer against a bound key → 401 (never 403, never 503)", async () => {
+    // The resolver returned a key (shared, properly sized, PHASE-1) but
+    // the presented Bearer is wrong. That is a verdict about the CALLER:
+    // 401 `{"error":"unauthorized"}`. NOT 403 (config-fault costume) and
+    // NOT 503 (the resolver DID return a key, so the endpoint can
+    // evaluate authz).
+    const { binding } = db();
+    const env: InstallationProvisionEnv = {
+      CONFIG_DB: binding,
+      CORELINK_INTERNAL_AUTH_KEY: AUTH,
+    };
+    const r = await handleInstallationProvision(
+      req(
+        { installation_id: "i-status-401", tenant_id: "t1", repositories: [] },
+        { auth: "definitely-not-the-key" },
+      ),
+      env,
+    );
+    expect(r.status).toBe(401);
+    expect(await r.json()).toEqual({ error: "unauthorized" });
   });
 });
 

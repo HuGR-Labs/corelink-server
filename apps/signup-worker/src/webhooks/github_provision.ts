@@ -17,11 +17,40 @@
  *
  * ## Fail-closed + idempotent
  *
- * Wrong method → 405. Missing/mismatched internal-auth (or an unbound
- * `CORELINK_INTERNAL_AUTH_KEY`) → 403 (constant-time compare, no key-shape leak).
- * Malformed body → 400. Any D1 fault → 500 (never a partial "success"). Both
- * writes are `INSERT OR IGNORE`, so a Svix-style redelivery / re-call is a
- * harmless no-op.
+ * Wrong method → 405. Malformed body → 400. Any D1 fault → 500 (never a partial
+ * "success"). Both writes are `INSERT OR IGNORE`, so a Svix-style redelivery /
+ * re-call is a harmless no-op.
+ *
+ * ## Internal-auth gate (mirrors `worker/src/lib/internal_auth.ts`)
+ *
+ * Resolved per-call via {@link resolveRunnerProvisionKey}, which selects
+ * between this consumer's dedicated key (`CORELINK_RUNNER_PROVISION_AUTH_KEY`)
+ * and the shared `CORELINK_INTERNAL_AUTH_KEY` (PHASE 1 — the shared fallback
+ * STAYS, mirroring `resolveConsumerKey`'s non-`DEDICATED_REQUIRED_CONSUMERS`
+ * arms; promoting this consumer to "dedicated required" is a separate later
+ * change). The dedicated/shared split arms are load-bearing:
+ *
+ *   a) dedicated key set AND `>= MIN_INTERNAL_AUTH_KEY_LEN`           → dedicated
+ *   b) dedicated key set BUT `< MIN_INTERNAL_AUTH_KEY_LEN`           → null
+ *      (FAIL CLOSED; never silently widens to the shared key on a typo —
+ *       an operator who set a dedicated key DECLARED this consumer should be
+ *       ISOLATED, so silently widening on a typo is the opposite of the
+ *       intent; the floor and the consumer name are logged)
+ *   c) dedicated key NOT set, shared key set AND `>= MIN…`            → shared
+ *   d) otherwise                                                     → null
+ *
+ * The status contract distinguishes two failures that used to share 403:
+ *
+ *   - resolver returns `null` (no properly-sized key bound)         → **503**
+ *     `{"error":"unavailable"}` — a statement about US, not the caller.
+ *     The endpoint cannot evaluate authz at all right now. Callers branch
+ *     on this: a 5xx is retryable, a 403 is a hard deny. 503 also matches
+ *     the frozen Rust contract (`routes/internal_pat.rs::build_state_from_env`)
+ *     for the same condition. The TypeScript side was the half that drifted.
+ *   - resolver returns a key, presented Bearer does not match         → **401**
+ *     `{"error":"unauthorized"}` — a verdict ABOUT THE CALLER.
+ *
+ * Both still fail CLOSED — nothing is authorized either way.
  */
 
 export interface InstallationProvisionEnv {
@@ -35,12 +64,38 @@ export interface InstallationProvisionEnv {
   CONFIG_DB?: D1Database;
 
   /**
-   * Shared internal-auth secret. The `Authorization: Bearer <token>` on the
-   * provisioning call MUST equal this. Unbound ⇒ every call 403s (fail-closed).
+   * DEDICATED internal-auth secret for the runner-provisioning consumer. The
+   * `Authorization: Bearer <token>` on the provisioning call MUST equal this
+   * (or, when this is UNSET, the shared `CORELINK_INTERNAL_AUTH_KEY` — see
+   * {@link resolveRunnerProvisionKey}). Set via
+   * `wrangler secret put CORELINK_RUNNER_PROVISION_AUTH_KEY`. Mirrors the
+   * per-consumer key-split the main Worker enforces for the other
+   * `/_internal/*` surfaces, so leaking this consumer's secret does not unlock
+   * the rest of the internal auth family. PHASE 1: a set-but-sub-floor value
+   * fails CLOSED (never widens to the shared key) — see the arm-b note in the
+   * module header.
+   */
+  CORELINK_RUNNER_PROVISION_AUTH_KEY?: string;
+
+  /**
+   * Shared internal-auth secret. The fallback credential used when
+   * `CORELINK_RUNNER_PROVISION_AUTH_KEY` is UNSET (PHASE 1; this is the
+   * `resolveConsumerKey` arm-c pattern — no flag-day required to roll out the
+   * dedicated key). Also must be `>= MIN_INTERNAL_AUTH_KEY_LEN` to qualify.
    * Bound via `wrangler secret put CORELINK_INTERNAL_AUTH_KEY`.
    */
   CORELINK_INTERNAL_AUTH_KEY?: string;
 }
+
+/**
+ * Minimum length (chars) of the internal-auth secret. Mirrors the container's
+ * `build_state_from_env` floor (`openssl rand -hex 32` → 64 chars; the floor is
+ * 32) AND `worker/src/lib/internal_auth.ts::MIN_INTERNAL_AUTH_KEY_LEN`. A
+ * shorter/absent secret fails the endpoint CLOSED (arm b for the dedicated
+ * key, the shared-key check in arm c, and the arm-d fallback all apply this
+ * floor).
+ */
+const MIN_INTERNAL_AUTH_KEY_LEN = 32;
 
 interface ProvisionBody {
   installation_id: string;
@@ -74,6 +129,67 @@ function json(status: number, body: unknown): Response {
     status,
     headers: { "content-type": "application/json" },
   });
+}
+
+/**
+ * Resolve the internal-auth key to verify against for the runner-provisioning
+ * consumer. Mirrors `worker/src/lib/internal_auth.ts::resolveConsumerKey`'s
+ * four-arm selection for a NEW consumer key:
+ *   - `CORELINK_RUNNER_PROVISION_AUTH_KEY` (dedicated, set per this consumer)
+ *   - `CORELINK_INTERNAL_AUTH_KEY`        (shared fallback, PHASE 1)
+ *
+ * Selection (see the arm-by-arm commentary on each branch):
+ *   a) dedicated key SET and `>= MIN_INTERNAL_AUTH_KEY_LEN` → use the dedicated
+ *   b) dedicated key SET but `< MIN_INTERNAL_AUTH_KEY_LEN` → `null`, REFUSING
+ *      the shared fallback (fail-CLOSED, logged)
+ *   c) dedicated key UNSET, shared key SET and `>= MIN…`     → use the shared
+ *   d) otherwise                                              → `null`
+ *
+ * Arm (b) is the subtle one. An operator who sets a dedicated key for this
+ * consumer has DECLARED that consumer should be ISOLATED; silently serving it
+ * the broad shared key on a typo would WIDEN the blast radius exactly when the
+ * operator was trying to NARROW it. A sub-floor secret is a misconfiguration to
+ * surface, not one to route around — same posture as the main Worker.
+ *
+ * PHASE 1: arm (c) is deliberate and remains. Promoting this consumer to
+ * "dedicated required" (so an UNSET dedicated key also fails closed instead of
+ * degrading to the shared key) is a separate later change. Do not add a
+ * `DEDICATED_REQUIRED_CONSUMERS`-style check here without that follow-up.
+ *
+ * @returns the chosen key string, or `null` when neither qualifies (fail-CLOSED;
+ *   the caller MUST then return 503 — no properly sized gate is bound).
+ */
+function resolveRunnerProvisionKey(env: InstallationProvisionEnv): string | null {
+  const specific = env.CORELINK_RUNNER_PROVISION_AUTH_KEY;
+  if (specific && specific.length > 0) {
+    // A dedicated key was EXPLICITLY provided for this consumer.
+    if (specific.length >= MIN_INTERNAL_AUTH_KEY_LEN) {
+      return specific;
+    }
+    // Set but below the floor: a misconfiguration. Do NOT silently fall back to
+    // the broad shared key — that would give this consumer a WIDER blast radius
+    // than the operator intended (the whole point of a dedicated key is to
+    // ISOLATE it). Fail LOUD + fail-CLOSED: this consumer's gate rejects
+    // everything until the key is fixed or unset. Mirrors
+    // `resolveConsumerKey` arm (b) in `worker/src/lib/internal_auth.ts`.
+    console.error(
+      `[runner-provision-auth] dedicated key for consumer "runner_provision" is ` +
+        `set but < ${MIN_INTERNAL_AUTH_KEY_LEN} chars — REFUSING to fall back ` +
+        `to the shared CORELINK_INTERNAL_AUTH_KEY (that would silently widen the ` +
+        `blast radius). Fix the dedicated key to >= ${MIN_INTERNAL_AUTH_KEY_LEN} ` +
+        `chars, or unset it to intentionally use the shared key.`,
+    );
+    return null;
+  }
+  // No dedicated key configured for this consumer. PHASE 1: fall back to the
+  // shared key when it is properly sized (arm c). This is deliberate and
+  // matches `resolveConsumerKey` for a non-`DEDICATED_REQUIRED_CONSUMERS`
+  // consumer — it lets the per-consumer split roll out without a flag-day.
+  const shared = env.CORELINK_INTERNAL_AUTH_KEY;
+  if (shared && shared.length >= MIN_INTERNAL_AUTH_KEY_LEN) {
+    return shared;
+  }
+  return null;
 }
 
 /**
@@ -130,16 +246,24 @@ export async function handleInstallationProvision(
   }
 
   // 2. Internal-auth gate (fail-closed, constant-time).
-  const expected = env.CORELINK_INTERNAL_AUTH_KEY;
-  if (!expected) {
-    // Key unbound → no way to authenticate anyone → deny.
-    return json(403, { error: "forbidden" });
+  //    Resolver follows the dedicated/shared arms documented on
+  //    `resolveRunnerProvisionKey`; the STATUS distinction is load-bearing
+  //    (see the module header) and matches the main Worker's
+  //    `requireConsumerAuth` / `requireInternalAuth`:
+  //      - resolver `null` (no properly-sized key bound) → 503 "unavailable"
+  //        (statement about US; endpoint cannot evaluate authz; a 5xx is
+  //        retryable, where the prior 403 was a hard deny)
+  //      - resolver returned a key, presented Bearer does not match → 401
+  //        "unauthorized" (verdict about the CALLER)
+  const expected = resolveRunnerProvisionKey(env);
+  if (expected === null) {
+    return json(503, { error: "unavailable" });
   }
   const authz = request.headers.get("authorization") ?? "";
   const prefix = "Bearer ";
   const presented = authz.startsWith(prefix) ? authz.slice(prefix.length) : "";
   if (!constantTimeEqual(presented, expected)) {
-    return json(403, { error: "forbidden" });
+    return json(401, { error: "unauthorized" });
   }
 
   // 3. Parse + validate body.
