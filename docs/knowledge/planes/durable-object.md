@@ -13,8 +13,8 @@ source_blobs:
   - "worker/src/index.ts@71b0ca646a02e65598e0501ca94d7e3902ddaccc"
   - "worker/src/event_log_do.ts@296d814b88a582cae97f9cd01665f5dce7738b05"
   - "worker/src/rollout_controller.ts@989af7c4ac828a39ede4381bd3d036b4bb747267"
-  - "worker/src/replication_coordinator_do.ts@9123a2c4cd02c0f71e363a6447f3e15edf12ed1e"
-checkpoint_sha: "94ff5fc4666eeac4d37181715f26ea0c2b03259a"
+  - "worker/src/replication_coordinator_do.ts@e3b43ccaadff3a348fd51366c4772cb6e3efe69f"
+checkpoint_sha: "2e95f9b1f88f06f40a9849c0dcf343ad7c9db931"
 provenance: "AUTHORED"
 tags: ["planes", "durable-object", "container-lifecycle", "cold-start"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -147,10 +147,10 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
     addressed by a FIXED name (`idFromName(REPLICATION_COORDINATOR_SINGLETON)`), so its single-instance /
     single-writer guarantee IS the split-brain-safe promotion lock. It persists the region role-map +
     heartbeats under `blockConcurrencyWhile` and self-arms a periodic `alarm()` that runs the
-    evaluate→promote tick and always re-arms itself (`worker/src/replication_coordinator_do.ts:419-476`).
+    evaluate→promote tick and always re-arms itself (`worker/src/replication_coordinator_do.ts:425-482`).
     The Worker intercepts `/_internal/replication/*` (after the shared internal-auth gate, before the
     generic container forward) and maps it to the DO's `/_repl/<op>` (`arm`/`status`/`tick`)
-    (`worker/src/replication_coordinator_do.ts:525-547`).
+    (`worker/src/replication_coordinator_do.ts:531-553`).
 13. The `_system` `CoreLinkServer` DO (the `idFromName("_system")` instance that hosts this region's
     container) also fronts the B1b `_public`-revoke seam: the Worker's `/_internal/public/revoke` arm
     proxies the revoke onto that DO via `systemStub.fetch` (`worker/src/index.ts:2427`), which the DO
@@ -176,14 +176,14 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
   head) (`worker/src/event_log_do.ts:270-281`).
 - Honest wiring: of the four exported DO classes, `CoreLinkServer` serves every tenant's data plane and
   `ReplicationCoordinatorDO` serves the single-instance `/_internal/replication/*` control plane
-  (`worker/src/replication_coordinator_do.ts:419-476`). `EventLogDO` is implemented + bound + exported but
+  (`worker/src/replication_coordinator_do.ts:425-482`). `EventLogDO` is implemented + bound + exported but
   has NO live edge caller yet (`EVENT_LOG_DO` is an OPTIONAL `Env` field, `worker/src/index.ts:86-91`), and
   `RolloutController` is a bound+exported STUB returning `501 NOT_IMPLEMENTED` for everything but health
   (`worker/src/rollout_controller.ts:37-59`).
 - The replication coordinator is a TRUE singleton: because the Worker always addresses it by the fixed
   `REPLICATION_COORDINATOR_SINGLETON` name, at most one instance can promote a replica at a time — that
   name-addressed single-writer property IS the split-brain-safe lock (never auto-promotes into a
-  partition) (`worker/src/replication_coordinator_do.ts:525-547`).
+  partition) (`worker/src/replication_coordinator_do.ts:531-553`).
 
 # Gotchas
 - DOs are single-threaded but ASYNC-concurrent: every `await` is a yield point where another queued
@@ -231,8 +231,8 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 17. `worker/src/event_log_do.ts:270-281` — `handleAppend`: monotonic gap-free `seq` under `blockConcurrencyWhile` (persist-entry-then-advance-head).
 18. `worker/src/index.ts:86-91` — the `EVENT_LOG_DO` binding declared OPTIONAL on `Env` (the only `worker/src` reference; no edge route dispatches to it yet).
 19. `worker/src/rollout_controller.ts:37-59` — `RolloutController` UNWIRED stub: `/_do/health` 200 but `501 NOT_IMPLEMENTED` "WASM bridge not yet wired (Phase C)" for all other requests.
-20. `worker/src/replication_coordinator_do.ts:419-476` — `ReplicationCoordinatorDO`: the single global coordinator DO — persists role-map + heartbeats under `blockConcurrencyWhile` and self-arms the periodic `alarm()` evaluate→promote driver (always re-arms, even on a throwing tick).
-21. `worker/src/replication_coordinator_do.ts:525-547` — the DO `fetch` router for the `/_repl/<op>` control plane (`arm`/`status`/`tick`), which the Worker reaches by mapping `/_internal/replication/*` onto it; the fixed `REPLICATION_COORDINATOR_SINGLETON` name is the split-brain-safe single-writer promotion lock.
+20. `worker/src/replication_coordinator_do.ts:425-482` — `ReplicationCoordinatorDO`: the single global coordinator DO — persists role-map + heartbeats under `blockConcurrencyWhile` and self-arms the periodic `alarm()` evaluate→promote driver (always re-arms, even on a throwing tick).
+21. `worker/src/replication_coordinator_do.ts:531-553` — the DO `fetch` router for the `/_repl/<op>` control plane (`arm`/`status`/`tick`), which the Worker reaches by mapping `/_internal/replication/*` onto it; the fixed `REPLICATION_COORDINATOR_SINGLETON` name is the split-brain-safe single-writer promotion lock.
 22. `worker/src/durable_object.ts:1249-1374` — `handleHealthProbe` + `probeD1Latency`: the `d1_probe` placement instrument on `/_do/health` (primary vs `withSession("first-unconstrained")` replica, feature-detected exactly as `worker/src/index.ts:1437-1440` does it, warm-up reported not hidden, a throw surfaced as an explicit `error` field, never on the request-serving path).
 23. `worker/src/index.ts:2186-2225` — `/_internal/do-d1-probe/{tenant_id}` → that tenant's DO `/_do/health`: same forward shape as the `/_internal/replication` → `/_repl` precedent, behind the internal-auth gate on the low-privilege `quota_read` consumer (`worker/src/index.ts:466-474`), with the DO id derived by `idFromName(tenant)` so the probe measures the SAME instance that serves that tenant.
 24. `worker/src/durable_object.ts:1191` — `armInactivityTimeout`: the PLATFORM idle reaper, `container.setInactivityTimeout(IDLE_TIMEOUT_MS)`, which workerd enforces without this Worker (it survives DO eviction, a broken alarm chain and a wedged isolate — the failure modes that made containers immortal). Armed right after `container.start()`, before the health poll (`worker/src/durable_object.ts:1016`), and re-armed on a live non-idle alarm tick (`worker/src/durable_object.ts:1539`) because the type declaration does not specify whether the timer resets on activity or is absolute from arming. Feature-detected, and an arming failure is logged rather than thrown (`worker/src/durable_object.ts:1181`) — a container that cannot arm its idle timer must still serve.

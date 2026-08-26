@@ -443,6 +443,12 @@ export class ReplicationCoordinatorDO implements DurableObject {
   // Emit an audit record BEFORE mutating state (fail-CLOSED: a throw here aborts
   // the mutation). Overridable in tests to exercise the fail-closed path.
   // INV-NO-PII-IN-LOGS: only region codes + lag numbers cross this boundary.
+  // TODO(owner): durable sink — promotion/role-change audits currently live ONLY
+  // in stdout (this structured line). Writing them to the `audit_outbox` chain
+  // requires a D1 binding on THIS DO (none today: no CONFIG_DB in its env), which
+  // is a wrangler.toml + deploy change and needs owner sign-off. The line is
+  // JSON with request_id + region so an external log shipper can correlate it
+  // until the durable path exists.
   protected emitAudit(rec: AuditRecord): void {
     console.log(JSON.stringify({ kind: "replication_audit", ...rec }));
   }
@@ -573,12 +579,23 @@ export class ReplicationCoordinatorDO implements DurableObject {
     }
 
     if (request.method === "POST" && path === "/_repl/heartbeat") {
+      // WP-E (freshness is SERVER-side): the DO stamps the RECEIPT time and
+      // IGNORES the reporter-supplied `ts_ms` as a decision input. The field
+      // stays on the wire for compatibility and is validated + logged as
+      // informative telemetry only. Rationale: any holder of the shared
+      // `CORELINK_INTERNAL_AUTH_KEY` can reach this endpoint — a skewed or
+      // malicious reporter could otherwise mark a HEALTHY primary stale and
+      // have `alarm()` promote a replica within one tick, freezing writes.
+      // TODO(owner): /_repl/* should carry a DEDICATED key instead of the
+      // shared internal-auth key (leaking that single key also enables admin
+      // PAT minting for any tenant) — secret rotation + deploy, owner call.
       const body = await this.parseJson(request);
       if (body === null) return errorResponse("INVALID_BODY", "body must be JSON", 400, requestId);
       const b = body as Record<string, unknown>;
       const region = String(b.region ?? "");
       if (!isRegionCode(region)) return errorResponse("INVALID_REGION", `unknown region ${region}`, 400, requestId);
-      const ts_ms = Number(b.ts_ms ?? now_ms);
+      // Telemetry only — NEVER a freshness input (see block comment above).
+      const reported_ts_ms = Number(b["ts_ms"] ?? now_ms);
       const lagRaw = (b.lag ?? {}) as Record<string, unknown>;
       const lag: LagBundle = {
         r2_s: Number(lagRaw.r2_s ?? 0),
@@ -586,10 +603,12 @@ export class ReplicationCoordinatorDO implements DurableObject {
         kv_s: Number(lagRaw.kv_s ?? 0),
         neon_s: Number(lagRaw.neon_s ?? 0),
       };
-      if (!Number.isFinite(ts_ms) || !Number.isFinite(lag.r2_s) || !Number.isFinite(lag.d1_s) || !Number.isFinite(lag.kv_s)) {
+      if (!Number.isFinite(reported_ts_ms) || !Number.isFinite(lag.r2_s) || !Number.isFinite(lag.d1_s) || !Number.isFinite(lag.kv_s)) {
         return errorResponse("INVALID_HEARTBEAT", "ts_ms/lag must be finite numbers", 400, requestId);
       }
-      const next: HeartbeatMap = { ...this.heartbeats, [region]: { ts_ms, lag } };
+      // INV-NO-PII-IN-LOGS: region codes + numbers only.
+      console.log(JSON.stringify({ kind: "replication_heartbeat", request_id: requestId, region, reported_ts_ms, server_now_ms: now_ms }));
+      const next: HeartbeatMap = { ...this.heartbeats, [region]: { ts_ms: now_ms, lag } };
       await this.persistHeartbeats(next);
       await this.armAlarm();
       return jsonResponse({ ok: true, region }, 200, requestId);
