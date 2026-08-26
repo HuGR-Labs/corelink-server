@@ -160,6 +160,12 @@ mod tests {
         }
     }
 
+    fn sample_payload_for_region(region: Region) -> ErasureAttestationPayload {
+        let mut p = sample_payload();
+        p.region = region;
+        p
+    }
+
     #[test]
     fn sign_produces_64_byte_base64_sig() {
         let sk = ErasureSigningKey::generate(1, Region::Weur, 0, 30 * 24 * 3_600 * 1_000);
@@ -170,6 +176,22 @@ mod tests {
             .decode(&att.signature_ed25519)
             .expect("base64 decode");
         assert_eq!(sig_bytes.len(), 64);
+    }
+
+    #[test]
+    fn sign_afr_erasure_yields_signed_attestation() {
+        let sk = ErasureSigningKey::generate(2, Region::Afr, 0, 30 * 24 * 3_600 * 1_000);
+        let signer = ErasureAttestationSigner::new(sk);
+        let att = signer
+            .sign(sample_payload_for_region(Region::Afr))
+            .expect("sign afr");
+        // AFR must produce a non-empty canonical payload and a 64-byte signature.
+        assert!(!att.canonical_payload_jcs.is_empty());
+        let sig_bytes = base64::engine::general_purpose::STANDARD
+            .decode(&att.signature_ed25519)
+            .expect("base64 decode");
+        assert_eq!(sig_bytes.len(), 64);
+        assert_eq!(att.payload.region, Region::Afr);
     }
 
     #[test]

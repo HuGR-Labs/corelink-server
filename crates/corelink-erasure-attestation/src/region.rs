@@ -19,6 +19,8 @@ pub enum Region {
     Sam,
     /// Asia-Pacific (Cloudflare APAC).
     Apac,
+    /// Africa (Cloudflare AFR).
+    Afr,
 }
 
 impl Region {
@@ -32,16 +34,13 @@ impl Region {
             Self::Weur => "weur",
             Self::Sam => "sam",
             Self::Apac => "apac",
+            Self::Afr => "afr",
         }
     }
 
     /// Parse the canonical lowercase region string (the value stored in the
     /// D1 `region` CHECK columns + `tenant.primary_region`). Returns `None` for
-    /// any value outside the current 5-region baseline — including the
-    /// residency macro-region `afr`, which is a valid
-    /// `tenant.primary_region` value but has no attestation signing key yet
-    /// (the caller treats `None` as "no attestation region" and skips signing
-    /// fail-OPEN rather than mis-attributing the region).
+    /// any value outside the current region baseline.
     #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         match s {
@@ -50,6 +49,7 @@ impl Region {
             "weur" => Some(Self::Weur),
             "sam" => Some(Self::Sam),
             "apac" => Some(Self::Apac),
+            "afr" => Some(Self::Afr),
             _ => None,
         }
     }
@@ -81,8 +81,9 @@ mod tests {
             Region::Weur,
             Region::Sam,
             Region::Apac,
+            Region::Afr,
         ];
-        let expected = ["wnam", "enam", "weur", "sam", "apac"];
+        let expected = ["wnam", "enam", "weur", "sam", "apac", "afr"];
         for (r, e) in regions.iter().zip(expected.iter()) {
             assert_eq!(r.as_str(), *e);
         }
@@ -101,13 +102,14 @@ mod tests {
             Region::Weur,
             Region::Sam,
             Region::Apac,
+            Region::Afr,
         ] {
             assert_eq!(Region::parse(r.as_str()), Some(r));
         }
-        // APAC now has an attestation region → Some.
+        // APAC has an attestation region → Some.
         assert_eq!(Region::parse("apac"), Some(Region::Apac));
-        // Residency macro-region with no attestation key yet → None.
-        assert_eq!(Region::parse("afr"), None);
+        // AFR has an attestation region → Some.
+        assert_eq!(Region::parse("afr"), Some(Region::Afr));
         assert_eq!(Region::parse(""), None);
         assert_eq!(Region::parse("WEUR"), None); // case-sensitive (canonical lowercase)
     }

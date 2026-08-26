@@ -21,6 +21,7 @@ Each entry cross-references:
 ---
 
 ## [Unreleased]
+- Erasure-attestation now covers the Africa (AFR) jurisdiction: `Region::Afr` is a signed-attestation region instead of parsing to `None` and silently skipping signing (fail-open), so an AFR erasure produces an auditable signed record (F-016). NOTE: an AFR attestation signing key must be provisioned operationally; absent one, AFR erasures fail closed rather than silently skip.
 
 ### Added
 
