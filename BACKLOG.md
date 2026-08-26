@@ -2687,6 +2687,12 @@ last-verified: 2026-08-26
 
 ### B-052 — single CAS GET buffers the whole object with no concurrency guard
 
+**CLOSED 2026-08-26 by #1367.** `handle_read` now declares
+`CasReadConcurrencyGuard` against the SAME `read_inflight` pool
+`handle_batch_read` uses — a separate pool would have let one tenant hold
+`2 x 8` concurrent reads and raised the very ceiling the constant exists to
+impose. The original finding is kept below as the record.
+
 `handle_read` (`crates/corelink-container/src/routes/cas.rs:773`) takes
 `State`, `Path`, `auth`, `scope`, `headers` and no guard, then buffers the full
 object into a `Vec<u8>` and into the response body. Its sibling
@@ -2712,14 +2718,15 @@ NOT yet proven and changes the priority, not the fix.
 id: B-052
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  ! awk '/^async fn handle_read\(/,/^\) ->/' \
+  awk '/^async fn handle_read\(/,/^\) ->/' \
       crates/corelink-container/src/routes/cas.rs | grep -q 'ConcurrencyGuard'
 verify-means: |
-  open — passes while `handle_read` still has no concurrency guard among its
-  extractors, which is the defect. Turns red once a guard is added, forcing
-  this item to be closed rather than left open against a fixed world.
+  done — passes while `handle_read` declares a concurrency guard among its
+  extractors, which is the fix (#1367). Turns red if the guard is ever removed
+  or the extractor is reordered after `body`, where it would no longer reserve
+  the slot before buffering.
 last-verified: 2026-08-26
 ```
 
