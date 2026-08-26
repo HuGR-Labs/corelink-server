@@ -94,8 +94,12 @@ const KV_PAT_ROW_PREFIX = "patrow:";
  * edge access until this entry expires. That is the MAX of ADR-0030's
  * `SLO-FRESH-PAT-REVOKE ≤ 60 s p99` — compliant, and it REPLACES (not adds to)
  * the D1-read axis on the hot path, so it is not additive with replication lag.
- * Worker-initiated revokes additionally KV-delete for immediacy (see the revoke
- * paths); this TTL is the uniform backstop for every revoke path.
+ * Worker-initiated revokes additionally KV-delete for immediacy — as of WP-F1
+ * this is REAL on the worker revoke surface (runner teardown
+ * `handleRunnerRevoke`: `UPDATE … RETURNING token_id` →
+ * `METADATA_KV.delete(patRowKvKey(token_id))`, non-fatal on KV error); this
+ * TTL remains the uniform backstop for every OTHER revoke path (container-side
+ * revokes never touch this Worker's KV).
  */
 const KV_PAT_ROW_TTL_S = 60;
 
