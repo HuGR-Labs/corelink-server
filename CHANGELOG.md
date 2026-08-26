@@ -231,6 +231,25 @@ Each entry cross-references:
   correct and cheaper there). BYOK ordering, audit-before-mutation emissions,
   and the telemetry `Phase::Store` scopes are preserved.
 
+- **The Stripe-webhook DLQ was in-memory — a container restart destroyed the
+  only copy of a quarantined money-path event.** The dispatcher commits the
+  dedup row BEFORE materializing (F-008, deliberate), so a transient
+  materialize failure means Stripe's retries hit `AlreadyProcessed` and are
+  skipped forever: the DLQ quarantine is the ONLY recoverable copy, and it
+  evaporated on every redeploy. A durable `D1WebhookDlqStore` now implements
+  `WebhookDlqStore` against `stripe_webhook_events_dlq` (migrations 0045 +
+  a new UNIQUE index on `event_id`, migration 0094, so the SQL UPSERT enforces
+  `DLQ_IDEMPOTENT_ON_EVENT_ID` the way the in-memory HashMap always did:
+  first quarantine → `Inserted`, re-quarantine → same row,
+  `attempt_count + 1` → `Updated`). Wired in `main.rs` whenever the CF D1
+  config is present; dev/CI keep the in-memory store. Behavioral pins execute
+  the canonical SQL against the real 0045+0094+0095 DDLs in in-memory SQLite.
+  Same commit closes **MED-5**: the materializer's billing-audit evidence was
+  also in-memory (`InMemoryBillingAuditEmitter`) while the state it witnessed
+  went to D1; a new `D1BillingAuditEmitter` appends each audit-before-mutation
+  record to `stripe_billing_audit_events` (migration 0095, classified RETAIN
+  in the DSR erasure registry). Both stores share one `D1HttpClient`.
+
 ### Added
 
 - **Governance-mode legal-hold-aware CAS erasure — the retention backend is real,

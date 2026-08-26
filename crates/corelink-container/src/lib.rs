@@ -204,3 +204,4 @@ pub mod tenant_quota;
 pub mod usage_meter;
 pub mod wall_clock;
 pub mod webhook;
+pub mod webhook_dlq_d1;
