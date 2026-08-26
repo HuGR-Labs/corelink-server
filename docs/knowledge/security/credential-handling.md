@@ -7,7 +7,7 @@ source_files:
   - "docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md"
   - "worker/src/durable_object.ts"
   - "crates/corelink-container/src/routes/admin.rs"
-checkpoint_sha: "94ff5fc4666eeac4d37181715f26ea0c2b03259a"
+checkpoint_sha: "b881e31e2d3fa9b7837546ef083ceb6d271f3361"
 provenance: "AUTHORED"
 tags: ["security", "credentials", "pat", "secrets", "clerk"]
 timestamp: "2026-06-26T00:00:00Z"
