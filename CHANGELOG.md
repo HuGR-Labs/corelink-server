@@ -22,6 +22,31 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+
+- **`POST /_internal/audit/cas-attempted` — the audit seam the edge-served
+  `findMissingBlobs` depends on.** F1 measured the edge answer at 43/43 parity
+  and 8.65 s → 2.10 s at n=100 (#1340), which is why F2 looked like a flag flip.
+  It is not: `probeMissingAtEdge` computes the same SET but does none of what
+  `exists_batch` does around it — one `ReadAttempted` row per digest in
+  `audit_outbox`, `ReadDenied` audited before any dispatch, and the fail-closed
+  coupling that discards probe results already in hand when the audit write
+  fails. Serving from the edge today would answer a REAPI read surface with its
+  evidence absent, and keep answering while the audit sink was down.
+  This route closes that: the edge probes R2 through its in-colo binding and
+  **awaits** one call here, which emits the rows through the same
+  `D1AuditOutboxSink` the container already uses. Writing `audit_outbox` rows
+  from the Worker was rejected — UUIDv7 id, CloudEvents payload,
+  `UNIQUE (request_id, event_type)` and a region trigger that `RAISE(ABORT)`s
+  make that row a contract, and a second TypeScript author of it would drift
+  while still passing its own tests. Gated by the dedicated
+  `CORELINK_AUDIT_ATTEMPTED_AUTH_KEY` (no shared-key fallback: it writes
+  tenant-attributed rows for an arbitrary tenant), fail-CLOSED unmounted without
+  it — in which case the edge's awaited call 404s and it falls through to the
+  container, i.e. today's behaviour. `204` is the only outcome that authorizes
+  the caller to serve. See
+  `docs/design/2026-08-26-adr-edge-find-missing-audit-seam.md` (B-047).
+
 ### Fixed
 
 - **Migration ordinals are now gated for uniqueness (`check_migrations_additive.py`).**

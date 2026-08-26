@@ -60,6 +60,12 @@ pub mod admin_tenant_detail;
 /// the canonical chain-integrity store is the R2 NDJSON archive
 /// (Wave 15) — see `specs/_audits/sealed/2026-05-15-neon-analytics-shadow.md`.
 pub mod audit_analytics;
+/// Internal audit-emit route for edge-served existence probes:
+/// `POST /_internal/audit/cas-attempted`. Writes the `ReadAttempted` rows a
+/// `findMissingBlobs` batch owes when the PROBE ran at the edge, through the
+/// same `D1AuditOutboxSink` the container uses — so the edge never becomes a
+/// second author of the audit row. Dedicated-key gated; fail-CLOSED mount.
+pub mod audit_cas_attempted;
 /// Internal S-09 audit-chain drain route: `POST /_internal/audit/drain`.
 /// Seals the live `audit_outbox` trail into the BLAKE3 tamper-evident hash
 /// chain (computes each row's RFC-8785 JCS canonical bytes + BLAKE3 link,

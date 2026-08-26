@@ -597,6 +597,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
 
+    // Edge-probe audit emit: `POST /_internal/audit/cas-attempted`. Lets the
+    // Worker serve `findMissingBlobs` from its in-colo R2 binding while the
+    // `ReadAttempted` rows are still written by THIS sink — the edge awaits
+    // this call and falls through to the container on anything but 204, so an
+    // unmounted route degrades to today's behaviour rather than to an
+    // unaudited answer. Dedicated key only (no shared fallback): this writes
+    // tenant-attributed audit rows on behalf of an arbitrary tenant.
+    if let Some(state) = corelink_server::routes::audit_cas_attempted::build_state_from_env() {
+        info!(
+            "routes: /_internal/audit/cas-attempted mounted \
+             (CORELINK_AUDIT_ATTEMPTED_AUTH_KEY + D1 present)"
+        );
+        app = app.merge(corelink_server::routes::audit_cas_attempted::router(state));
+    } else {
+        warn!(
+            "CORELINK_AUDIT_ATTEMPTED_AUTH_KEY (dedicated, <32/unset) or D1 absent; \
+             /_internal/audit/cas-attempted NOT mounted (fail-CLOSED) — the edge \
+             findMissingBlobs path falls through to the container"
+        );
+    }
+
     // S-09 audit ARCHIVE: `POST /_internal/audit/archive` — copies rows the
     // drain already sealed into immutable NDJSON chunks in the R2 audit bucket
     // (7-year Object Lock), closing the "the seal lands in mutable D1 with no
