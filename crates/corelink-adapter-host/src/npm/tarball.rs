@@ -386,7 +386,14 @@ pub async fn serve_tarball(
         return Err(err);
     }
 
-    let bytes_vec = downloaded.to_vec();
+    // Exactly one owned copy on the cold-miss path: `downloaded` is a
+    // `Bytes` (refcounted, cheap to clone), but `cas.put` takes `Vec<u8>`
+    // by value and its implementations consume the owned `Vec`
+    // downstream, so the spec'd move into `put` is the one unavoidable
+    // full copy. `downloaded` itself then moves into the response
+    // `body` as `Bytes` for free (no copy, just a refcount bump).
+    let body_len = downloaded.len();
+    let owned = downloaded.to_vec();
     // Audit BEFORE the CAS put (audit-fail-CLOSED contract).
     emit_npm_audit(
         auditor,
@@ -397,12 +404,12 @@ pub async fn serve_tarball(
             "pkg": pkg,
             "version": version,
             "digest": digest_hex,
-            "size_bytes": bytes_vec.len(),
+            "size_bytes": body_len,
         }),
     )?;
-    cas.put(tenant, &digest, bytes_vec.clone()).await?;
+    cas.put(tenant, &digest, owned).await?;
     Ok(TarballResponse {
-        body: Bytes::from(bytes_vec),
+        body: downloaded,
         digest_hex,
     })
 }
