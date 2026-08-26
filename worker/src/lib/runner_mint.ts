@@ -44,6 +44,7 @@ import {
   deriveTenantCeilingThrottleKey,
 } from "./session_exchange.js";
 import { blake3Hex } from "./blake3.js";
+import { patRowKvKey } from "./pat_verify_cache.js";
 
 /**
  * Domain-separation prefix for the exact-AC-key narrowing of a runner-job PAT
@@ -646,19 +647,47 @@ export async function handleRunnerRevoke(
   // caller that opts in; a (pat_id, owner_tenant) mismatch matches zero rows → a
   // no-op 200, no cross-tenant write). owner_tenant ABSENT (2026-07-08 contract)
   // → revoke by pat_id alone; the pat_id already uniquely identifies the row.
+  //
+  // WP-F1: the UPDATE now RETURNS the revoked row's `token_id` so this path can
+  // ALSO delete the edge L2 cache entry (`patrow:<token_id>` on METADATA_KV).
+  // Without the KV delete, a revoked PAT keeps authenticating at the edge for
+  // up to the 60s L2 TTL (plus D1 read-replication lag) — three docs claimed
+  // the Worker "KV-deletes on revoke" while NO `.delete(` existed anywhere in
+  // worker/src. KV failure is NON-FATAL: D1 is already revoked here (the source
+  // of truth) and the 60s TTL is the backstop, so a slow/absent KV must never
+  // turn a successful revoke into a 500. Awaited (not waitUntil): teardown-path,
+  // few-ms cost, and handleRunnerRevoke does not receive an ExecutionContext.
   try {
+    let token_id: string | null = null;
     if (typeof ownerTenant === "string") {
-      await env.CONFIG_DB.prepare(
-        "UPDATE pat SET revoked_at_ms = ?1 WHERE pat_id = ?2 AND tenant_id = ?3 AND revoked_at_ms IS NULL",
+      const row = await env.CONFIG_DB.prepare(
+        "UPDATE pat SET revoked_at_ms = ?1 WHERE pat_id = ?2 AND tenant_id = ?3 AND revoked_at_ms IS NULL RETURNING token_id",
       )
         .bind(Date.now(), patId, ownerTenant)
-        .run();
+        .first<{ token_id: string } | null>();
+      token_id = row?.token_id ?? null;
     } else {
-      await env.CONFIG_DB.prepare(
-        "UPDATE pat SET revoked_at_ms = ?1 WHERE pat_id = ?2 AND revoked_at_ms IS NULL",
+      const row = await env.CONFIG_DB.prepare(
+        "UPDATE pat SET revoked_at_ms = ?1 WHERE pat_id = ?2 AND revoked_at_ms IS NULL RETURNING token_id",
       )
         .bind(Date.now(), patId)
-        .run();
+        .first<{ token_id: string } | null>();
+      token_id = row?.token_id ?? null;
+    }
+    if (token_id !== null) {
+      const kv = (env as unknown as {
+        METADATA_KV?: { delete(key: string): Promise<void> };
+      }).METADATA_KV;
+      if (kv) {
+        try {
+          await kv.delete(patRowKvKey(token_id));
+        } catch (kvErr: unknown) {
+          const message = kvErr instanceof Error ? kvErr.message : "unknown error";
+          console.error(
+            `[${requestId}] runner revoke KV L2 delete failed (non-fatal, TTL backstop): ${message.slice(0, 80)}`,
+          );
+        }
+      }
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
