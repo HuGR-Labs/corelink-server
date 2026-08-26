@@ -134,7 +134,8 @@ export type InternalConsumer =
   | "erase"
   | "dsr_anchor"
   | "runner_mint"
-  | "quota_read";
+  | "quota_read"
+  | "audit_attempted";
 
 /**
  * Consumers whose gate MUST be a DEDICATED key — a missing dedicated key
@@ -153,6 +154,12 @@ export type InternalConsumer =
  */
 const DEDICATED_REQUIRED_CONSUMERS: ReadonlySet<InternalConsumer> = new Set([
   "quota_read",
+  // `audit_attempted` gates `/_internal/audit/cas-attempted`, whose container
+  // gate (`routes/audit_cas_attempted.rs::build_state_from_env`) reads the
+  // dedicated key ONLY and has no shared fallback. If the EDGE accepted the
+  // shared key here, it would admit a caller the container then rejects — the
+  // two gates must agree, and the stricter of the two is the contract.
+  "audit_attempted",
 ]);
 
 /**
@@ -187,7 +194,9 @@ export function resolveConsumerKey(env: Env, consumer: InternalConsumer): string
             ? env.CORELINK_DSR_ANCHOR_AUTH_KEY
             : consumer === "quota_read"
               ? env.CORELINK_QUOTA_READ_AUTH_KEY
-              : env.CORELINK_RUNNER_MINT_AUTH_KEY;
+              : consumer === "audit_attempted"
+                ? env.CORELINK_AUDIT_ATTEMPTED_AUTH_KEY
+                : env.CORELINK_RUNNER_MINT_AUTH_KEY;
   if (specific && specific.length > 0) {
     // A dedicated key was EXPLICITLY provided for this consumer.
     if (specific.length >= MIN_INTERNAL_AUTH_KEY_LEN) {

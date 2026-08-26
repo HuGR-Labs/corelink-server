@@ -62,7 +62,11 @@ import {
   PUBLIC_BLOB_CONTENT_TYPE,
   writePublicBlocklistKv,
 } from "./lib/edge_public_read.js";
-import { shadowCompareEdgeFindMissing } from "./lib/edge_find_missing.js";
+import {
+  findMissingResponseBody,
+  serveEdgeFindMissing,
+  shadowCompareEdgeFindMissing,
+} from "./lib/edge_find_missing.js";
 import { handleAuthRotate } from "./lib/auth_rotate.js";
 import { handleTenantLookup } from "./lib/tenant_lookup.js";
 import {
@@ -246,8 +250,13 @@ export interface Env {
    * F1 of the edge-native `findMissingBlobs`
    * (`docs/design/2026-08-25-adr-edge-native-find-missing.md`). `"shadow"`
    * computes the edge answer on a background clone and logs whether it agrees
-   * with the container's; it NEVER serves. Unset ⇒ the shadow does not run at
-   * all, which is today's behaviour exactly.
+   * with the container's; it NEVER serves. `"on"` SERVES the edge answer, but
+   * only after the `ReadAttempted` rows committed through the container's
+   * `/_internal/audit/cas-attempted` — see
+   * `docs/design/2026-08-26-adr-edge-find-missing-audit-seam.md`. Any reason to
+   * doubt (BYOK tenant, over cap, probe error, audit not committed) falls
+   * through to the container unchanged. Unset ⇒ neither runs, which is today's
+   * behaviour exactly.
    */
   EDGE_FIND_MISSING?: string;
   // F3.2 WP-E client-side `_public` dedup flag, forwarded to the container. "0"
@@ -462,6 +471,15 @@ export function internalConsumerForPath(pathSuffix: string): InternalConsumer {
   // BEFORE the erase catch-all below.
   if (pathSuffix.startsWith("/_internal/tenant/") && pathSuffix.endsWith("/quota")) {
     return "quota_read";
+  }
+  // Edge-probe audit emit (`/_internal/audit/cas-attempted`): its own consumer,
+  // NOT the `erase` catch-all below. The container gates it on the dedicated
+  // `CORELINK_AUDIT_ATTEMPTED_AUTH_KEY` with no shared fallback, so falling into
+  // the catch-all would have the edge demand the ERASE key while the container
+  // demands the audit key — a mismatch that 401s at the edge and leaves the
+  // endpoint unreachable no matter which secret the operator binds.
+  if (pathSuffix === "/_internal/audit/cas-attempted") {
+    return "audit_attempted";
   }
   // Read-only DO D1-placement probe (`/_internal/do-d1-probe/{tenant_id}`) — the
   // diagnostic instrument that answers "where does this tenant's DO sit relative
@@ -3861,13 +3879,17 @@ const baseHandler: ExportedHandler<Env> = {
     // under the shadow flag, and only for the one route, so no other request
     // pays for buffering. Nothing from it is logged (INV-NO-BODY-IN-LOGS); it
     // exists to be re-parsed by the comparison.
-    const findMissingShadowBody =
-      env.EDGE_FIND_MISSING === "shadow" &&
+    const isFindMissing =
       request.method === "POST" &&
       route.routeKind === "bazel_v2" &&
-      route.pathSuffix.endsWith("/findMissingBlobs")
+      route.pathSuffix.endsWith("/findMissingBlobs");
+    const findMissingBody =
+      (env.EDGE_FIND_MISSING === "shadow" || env.EDGE_FIND_MISSING === "on") &&
+      isFindMissing
         ? await request.clone().text()
         : null;
+    const findMissingShadowBody =
+      env.EDGE_FIND_MISSING === "shadow" ? findMissingBody : null;
 
     // Augment request with correlation headers (no body inspection — INV-NO-BODY-IN-LOGS)
     const augmented = new Request(request, {
@@ -4001,6 +4023,68 @@ const baseHandler: ExportedHandler<Env> = {
         // An edge-read fault must NEVER fail a request that the container can serve.
         console.error(
           `[${requestId}] edge_public_serve error: ${String(e).slice(0, 80)}`,
+        );
+      }
+    }
+
+    // F2 SERVE (findMissingBlobs): answer in-colo instead of paying the
+    // container's ~13 digests/second. Placed BEFORE the forward because that is
+    // the whole point — after it, the cost is already spent. `serveEdgeFindMissing`
+    // returns null for every reason to defer, INCLUDING an audit that did not
+    // commit, and a deferral just falls into the normal forward below.
+    if (
+      env.EDGE_FIND_MISSING === "on" &&
+      findMissingBody !== null &&
+      !edgeServed &&
+      resolvedTenantId
+    ) {
+      try {
+        const auditKey = resolveConsumerKey(env, "audit_attempted");
+        // No properly sized dedicated key ⇒ the container's route is unmounted
+        // too, so there is nothing to call. Defer rather than probe-then-discard.
+        if (auditKey) {
+          const outcome = await serveEdgeFindMissing(
+            env,
+            resolvedTenantId,
+            // The SAME value the container would have derived for these rows:
+            // `bazel_v2.rs::principal` reads `x-corelink-token-prefix` and
+            // defaults to `_unknown`. Sending anything else would attribute the
+            // edge-served probes to a principal the container never uses, and
+            // the audit trail would fork by who answered.
+            auth.tokenPrefix || "_unknown",
+            findMissingBody,
+            async (batch) => {
+              const r = await stub.fetch(
+                new Request("https://container/_internal/audit/cas-attempted", {
+                  method: "POST",
+                  headers: {
+                    "content-type": "application/json",
+                    "x-corelink-internal-auth": auditKey,
+                  },
+                  body: JSON.stringify(batch),
+                }),
+              );
+              // 204 and ONLY 204 authorizes serving. A 404 (route unmounted),
+              // 503 (outbox down), or anything else means the rows are not
+              // durable, and the container must answer instead.
+              return r.status === 204;
+            },
+          );
+          if (outcome) {
+            edgeServed = new Response(findMissingResponseBody(outcome.missing), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            });
+            console.log(
+              `[${requestId}] edge_find_missing_served n=${outcome.missing.length} edge_ms=${outcome.edgeMs}`,
+            );
+          }
+        }
+      } catch (e: unknown) {
+        // Serving is an OPTIMISATION. A fault in it must never fail a request
+        // the container can answer.
+        console.error(
+          `[${requestId}] edge_find_missing_serve error: ${String(e).slice(0, 80)}`,
         );
       }
     }

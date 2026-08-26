@@ -24,6 +24,33 @@ Each entry cross-references:
 
 ### Added
 
+- **F2: `findMissingBlobs` is answered at the edge — but only once its audit rows
+  are durable.** The Worker probes R2 through its in-colo binding (measured
+  8.65 s → 2.10 s at n=100, 43/43 answer parity in the F1 shadow) and then
+  **awaits** `POST /_internal/audit/cas-attempted`, which emits the
+  `ReadAttempted` rows through the container's own `D1AuditOutboxSink`. A `204`
+  and only a `204` authorizes serving: a 404 (route unmounted), a 503 (outbox
+  down), a timeout, or a transport error all fall through to the container,
+  which then answers as it does today and fails closed in its own taxonomy. The
+  probe result is discarded in that case even though it is already in hand —
+  deliberately mirroring `exists_batch`, because "we could not audit" must never
+  become "we answered".
+  Deferral is the default for every other doubt too: BYOK or unknown tenant,
+  non-UUID tenant, over the 256-digest cap, unparseable body, or a probe error.
+  An empty batch is served without auditing, because the container writes no row
+  for one either.
+  `/_internal/audit/cas-attempted` gets its OWN internal-auth consumer
+  (`audit_attempted`) rather than falling into the `erase` catch-all: the
+  container gates it on the dedicated `CORELINK_AUDIT_ATTEMPTED_AUTH_KEY` with no
+  shared fallback, so the catch-all would have had the edge demand the erase key
+  while the container demanded the audit key — 401 at the edge, endpoint
+  unreachable whatever the operator bound. It is dedicated-required on the edge
+  too, so the two gates cannot disagree about who may call.
+  Gated by `EDGE_FIND_MISSING="on"`; `"shadow"` and unset are unchanged.
+  See `docs/design/2026-08-26-adr-edge-find-missing-audit-seam.md` (B-047).
+
+### Added
+
 - **`POST /_internal/audit/cas-attempted` — the audit seam the edge-served
   `findMissingBlobs` depends on.** F1 measured the edge answer at 43/43 parity
   and 8.65 s → 2.10 s at n=100 (#1340), which is why F2 looked like a flag flip.
