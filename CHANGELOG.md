@@ -183,6 +183,22 @@ Each entry cross-references:
   #1328 ride on `34848d93` and go back in the queue with it until the `_system`
   regression is understood.
 
+- **A stale `customer.subscription.updated(active)` redelivery could resurrect a
+  canceled subscription's paid access.** The container materializer's tier UPSERT
+  (`SQL_UPSERT_TIER`) wrote `subscription_state='active'` unconditionally on
+  conflict — its payload-level guard (`subscription_status_grants_access`) only
+  inspects the event being processed, so a delayed/reordered `updated` landing
+  after the `deleted` was materialized re-granted a canceled tenant. The UPSERT
+  now carries a SQL-level guard mirroring the signup-worker authority
+  (`apps/signup-worker` "must NOT resurrect a canceled subscription"): the DO
+  UPDATE has `WHERE NOT EXISTS (… tenant_billing.status = 'canceled')`, correlated
+  on the row's own `tenant_id` so bind arity stays at 4. First purchase (no
+  billing row) still grants; the INSERT branch is untouched (documented residual:
+  unreachable in practice because cancel downgrades rather than deletes). Pinned
+  behaviorally against the real 0039+0055 DDLs in in-memory SQLite: canceled → no
+  resurrection, paid → grants, no-billing-row → grants, insert-branch residual
+  pinned as accepted.
+
 ### Added
 
 - **Governance-mode legal-hold-aware CAS erasure — the retention backend is real,

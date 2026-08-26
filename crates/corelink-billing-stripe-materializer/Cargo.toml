@@ -70,3 +70,6 @@ proptest = { workspace = true }
 corelink-cf-bindings = { workspace = true }
 corelink-audit-chain = { workspace = true }
 uuid = { workspace = true, features = ["v7"] }
+# Behavioral pin of `SQL_UPSERT_TIER` against the REAL 0039+0055 DDLs
+# (in-memory SQLite; same `bundled` pin as corelink-container/corelink-ops).
+rusqlite = { version = "0.32", features = ["bundled"] }

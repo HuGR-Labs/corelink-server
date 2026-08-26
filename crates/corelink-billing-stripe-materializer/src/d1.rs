@@ -197,7 +197,37 @@ pub const SQL_READ_TIER: &str = "SELECT tier FROM tier_selections WHERE tenant_i
 /// `subscription_started_when_active` CHECK requires it NOT NULL when
 /// active). Binds `?1..?4` = (tenant_id, tier, subscription_started_at_ms,
 /// correlation_id). Already schema-correct (the #172 fix).
-pub const SQL_UPSERT_TIER: &str = "INSERT INTO tier_selections (tenant_id, tier, subscription_state, subscription_started_at_ms, correlation_id) VALUES (?, ?, 'active', ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET tier = excluded.tier, subscription_state = 'active', subscription_started_at_ms = excluded.subscription_started_at_ms, correlation_id = excluded.correlation_id";
+///
+/// **SQL-level cancel guard (mirrors the signup-worker authority).** The DO
+/// UPDATE carries a `WHERE NOT EXISTS` guard on `tenant_billing.status =
+/// 'canceled'`, matching the PRIMARY writer's
+/// `apps/signup-worker/src/webhooks/stripe.ts`
+/// (`"must NOT resurrect a canceled subscription"`,
+/// `AND status != 'canceled'`). Without it, a STALE
+/// `customer.subscription.updated(status=active)` redelivery landing AFTER
+/// the `customer.subscription.deleted` was processed would re-grant access
+/// to a canceled tenant. The guard is CORRELATED on the conflicting row's
+/// own `tier_selections.tenant_id` — it adds NO bind placeholder, keeping
+/// the arity pinned at 4 (see `tier_sql_unchanged_and_schema_correct_0039`).
+///
+/// Semantics preserved by the guard:
+/// - no `tenant_billing` row → `NOT EXISTS` true → grant proceeds (first
+///   purchase never blocked);
+/// - the INSERT branch (no prior `tier_selections` row) is untouched by a
+///   `DO UPDATE WHERE`;
+/// - [`SQL_DOWNGRADE_TIER`] (cancel path) writes `'inactive'` and never
+///   deletes, so "row exists" always holds for tenants that ever had a tier.
+///
+/// KNOWN + ACCEPTED residual: because the guard cannot apply to the INSERT
+/// branch, an INSERT over a tenant whose `tenant_billing.status='canceled'`
+/// but which has NO `tier_selections` row still grants. This state is not
+/// reachable through the cancel flow (cancellation downgrades to
+/// `'inactive'` rather than deleting), so "no row" means "never had a
+/// tier", not "was canceled". Pinned behaviorally by
+/// `upsert_tier_insert_branch_is_not_gated_known_residual`; do NOT close by
+/// rewriting as `INSERT … SELECT … WHERE NOT EXISTS` — that breaks the ON
+/// CONFLICT semantics and the 4-bind arity.
+pub const SQL_UPSERT_TIER: &str = "INSERT INTO tier_selections (tenant_id, tier, subscription_state, subscription_started_at_ms, correlation_id) VALUES (?, ?, 'active', ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET tier = excluded.tier, subscription_state = 'active', subscription_started_at_ms = excluded.subscription_started_at_ms, correlation_id = excluded.correlation_id WHERE NOT EXISTS (SELECT 1 FROM tenant_billing tb WHERE tb.tenant_id = tier_selections.tenant_id AND tb.status = 'canceled')";
 /// DOWNGRADE a tenant's tier → `subscription_state='inactive'` (the
 /// `customer.subscription.deleted` cancel path). Binds `?1..?4` =
 /// (tenant_id, tier, subscription_started_at_ms, correlation_id).
@@ -1046,6 +1076,148 @@ mod tests {
         assert_eq!(
             do_update, "subscription_state = 'inactive', correlation_id = excluded.correlation_id",
             "DO UPDATE must set ONLY subscription_state + correlation_id: {sql}"
+        );
+    }
+
+    // --- Behavioral pins of `SQL_UPSERT_TIER` against the REAL DDLs --------
+    //
+    // The signup-worker (PRIMARY billing authority,
+    // `apps/signup-worker/src/webhooks/stripe.ts` "must NOT resurrect a
+    // canceled subscription") guards its tier UPSERT at the SQL level with
+    // `AND status != 'canceled'`. The container materializer is the
+    // defense-in-depth SECOND writer and MUST converge to the same rule:
+    // a STALE `customer.subscription.updated(status=active)` redelivery that
+    // lands AFTER the `deleted` was processed must not flip the canceled
+    // tenant's access gate back ON.
+    //
+    // These tests execute [`SQL_UPSERT_TIER`] verbatim against in-memory
+    // SQLite loaded with migrations 0039 + 0055 exactly as shipped.
+
+    const DDL_0039: &str = include_str!("../../../migrations/d1/0039_tier_selection.sql");
+    const DDL_0055: &str = include_str!("../../../migrations/d1/0055_tenant_billing.sql");
+
+    fn billing_db() -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch(DDL_0039).expect("0039 DDL applies");
+        conn.execute_batch(DDL_0055).expect("0055 DDL applies");
+        conn
+    }
+
+    /// Seed a pre-existing `tier_selections` row in the given state via the
+    /// production downgrade statement (the real way an 'inactive' row comes
+    /// into being on cancel).
+    fn seed_tier_row(conn: &rusqlite::Connection, tenant_id: &str, tier: &str) {
+        conn.execute(
+            SQL_DOWNGRADE_TIER,
+            rusqlite::params![tenant_id, tier, 1_000_i64, "seed"],
+        )
+        .expect("seed tier row");
+    }
+
+    fn seed_billing_status(conn: &rusqlite::Connection, tenant_id: &str, status: &str) {
+        conn.execute(
+            "INSERT INTO tenant_billing (tenant_id, status, created_at_ms, updated_at_ms) \
+             VALUES (?1, ?2, 1_000, 1_000) \
+             ON CONFLICT(tenant_id) DO UPDATE SET status = excluded.status",
+            rusqlite::params![tenant_id, status],
+        )
+        .expect("seed tenant_billing row");
+    }
+
+    /// Run [`SQL_UPSERT_TIER`] exactly as the binders do — 4 positional binds:
+    /// (tenant_id, tier, subscription_started_at_ms, correlation_id).
+    fn run_upsert_tier(conn: &rusqlite::Connection, tenant_id: &str, tier: &str) {
+        // rows_affected is 1 on grant/insert, **0 when the cancel guard
+        // suppressed the DO UPDATE** — which is itself evidence the guard
+        // fired. The state assertion below is the real oracle.
+        let _ = conn
+            .execute(
+                SQL_UPSERT_TIER,
+                rusqlite::params![tenant_id, tier, 2_000_i64, "evt_test"],
+            )
+            .expect("SQL_UPSERT_TIER executes against real DDLs");
+    }
+
+    fn tier_state(conn: &rusqlite::Connection, tenant_id: &str) -> String {
+        conn.query_row(
+            "SELECT subscription_state FROM tier_selections WHERE tenant_id = ?1",
+            rusqlite::params![tenant_id],
+            |r| r.get::<_, String>(0),
+        )
+        .expect("tier row exists")
+    }
+
+    /// T1 (THE BUG): a stale `subscription.updated(active)` arriving AFTER the
+    /// cancel must NOT resurrect access for a tenant whose canonical billing
+    /// status is `canceled`.
+    #[test]
+    fn upsert_tier_does_not_resurrect_canceled_subscription() {
+        let conn = billing_db();
+        seed_tier_row(&conn, "ten_cancel", "pro");
+        seed_billing_status(&conn, "ten_cancel", "canceled");
+
+        run_upsert_tier(&conn, "ten_cancel", "pro");
+
+        assert_ne!(
+            tier_state(&conn, "ten_cancel"),
+            "active",
+            "stale active event must NOT resurrect a canceled subscription"
+        );
+    }
+
+    /// T2 (non-regression): with billing `paid`, the grant path still grants.
+    #[test]
+    fn upsert_tier_still_grants_when_billing_paid() {
+        let conn = billing_db();
+        seed_tier_row(&conn, "ten_paid", "pro");
+        seed_billing_status(&conn, "ten_paid", "paid");
+
+        run_upsert_tier(&conn, "ten_paid", "pro");
+
+        assert_eq!(tier_state(&conn, "ten_paid"), "active");
+    }
+
+    /// T3 (non-regression): first purchase — no `tenant_billing` row yet —
+    /// must never be blocked by the cancel guard.
+    #[test]
+    fn upsert_tier_first_purchase_without_billing_row_grants() {
+        let conn = billing_db();
+        seed_tier_row(&conn, "ten_new", "free");
+        assert!(
+            !conn
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM tenant_billing WHERE tenant_id = ?1)",
+                    rusqlite::params!["ten_new"],
+                    |r| r.get::<_, bool>(0),
+                )
+                .unwrap(),
+            "fixture requires no tenant_billing row"
+        );
+
+        run_upsert_tier(&conn, "ten_new", "team");
+
+        assert_eq!(tier_state(&conn, "ten_new"), "active");
+    }
+
+    /// T4 (KNOWN + ACCEPTED residual): the guard lives ONLY in the DO UPDATE
+    /// `WHERE`, so the INSERT branch (no prior `tier_selections` row) is NOT
+    /// blocked even when `tenant_billing.status='canceled'`. In practice this
+    /// state cannot arise from the cancel path — cancellation writes
+    /// `'inactive'` (never deletes), so "no tier row" means "never had a
+    /// tier". Do NOT close this by rewriting as INSERT…SELECT…WHERE NOT
+    /// EXISTS — that breaks the ON CONFLICT semantics + bind arity. Pinned
+    /// here so any accidental change to this trade-off is a conscious one.
+    #[test]
+    fn upsert_tier_insert_branch_is_not_gated_known_residual() {
+        let conn = billing_db();
+        seed_billing_status(&conn, "ten_never", "canceled");
+
+        run_upsert_tier(&conn, "ten_never", "pro");
+
+        assert_eq!(
+            tier_state(&conn, "ten_never"),
+            "active",
+            "INSERT branch bypasses the cancel guard — documented residual"
         );
     }
 }

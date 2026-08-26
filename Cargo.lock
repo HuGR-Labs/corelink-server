@@ -1484,6 +1484,7 @@ dependencies = [
  "hex",
  "js-sys",
  "proptest",
+ "rusqlite",
  "serde",
  "serde_json",
  "subtle",
