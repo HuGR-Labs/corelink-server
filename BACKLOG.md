@@ -2503,3 +2503,105 @@ verify-means: |
   when the route lands and the flag is on; `shadow` and `off` are unaffected.
 last-verified: 2026-08-26
 ```
+
+### B-048 — `cargo-mutants` fails any PR that is one commit behind `main`
+
+`mutation-pr.yml:124` fetches the base with `git fetch --no-tags --depth=1 origin
+"$BASE_REF"`, then runs `git diff "$base"...HEAD`. The three-dot form needs a
+merge-base, and a depth-1 fetch supplies only `main`'s tip commit. The moment
+`main` moves past the PR's base — an ordinary condition, not an author error —
+there is no common ancestor in the shallow clone and the step dies:
+
+```
+fatal: origin/main...HEAD: no merge base
+```
+
+Observed on #1359 (2026-08-26): the gate failed in 27 s having mutated nothing,
+while the branch was exactly ONE commit behind (#1360, a container repin). The
+red is indistinguishable at a glance from a surviving-mutant finding, so it costs
+a log read plus a rebase every time it fires — and a rebase is the one operation
+that then breaks the OKF anchors ([B-049]).
+
+Fix is `fetch-depth`, not a rebase ritual: deepen the base fetch until a merge
+base exists (`--deepen`, or `fetch-depth: 0` on the checkout as `okf_wiki.yml`
+already does), or compute the diff two-dot against the fetched tip and accept
+that it also shows main-side changes.
+
+```backlog
+id: B-048
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  grep -qE 'git fetch --no-tags --depth=1 origin "\$BASE_REF"' .github/workflows/mutation-pr.yml
+verify-means: |
+  open — fails while the depth-1 base fetch is still the thing feeding a
+  three-dot diff in mutation-pr.yml. Closes when the fetch is deepened (or the
+  diff no longer needs a merge base). The check is deliberately about the FETCH,
+  not about a green run: the gate passes whenever the PR happens to sit on main's
+  tip, so a green CI run is not evidence the defect is gone.
+last-verified: 2026-08-26
+```
+
+### B-049 — squash-merge orphans every OKF anchor: 57 of 161 are unreachable on `main`
+
+Reconciling a concept writes `checkpoint_sha` = the current HEAD of the PR
+branch. The repo merges by SQUASH, so those commits never land on `main` — the
+anchor names a commit that does not exist there. Measured on `main` @ ca4e66de
+(2026-08-26): **57 of the 161 concepts carrying a `checkpoint_sha` name a commit
+that is not an ancestor of HEAD** — 35% of the wiki. `auth/pat-moat` points at
+`94ff5fc4`, a pre-squash commit from #1359, which is the mechanism caught in the
+act. A rebase or amend mid-PR does the same thing earlier.
+
+C5 then resolves those concepts against the BASE-REF fallback instead of the
+anchor the author advanced. Two consequences, and they pull in opposite
+directions, which is why this went unnoticed:
+
+- **In a PR** the fallback is the base branch's tip, so every line-range the PR
+  shifts reads STALE. #1359 reported **43 C5 failures** for a 23-line insertion,
+  none of them a wrong claim.
+- **Locally it stays green** — the orphaned objects are still in the author's
+  clone, so `validate_okf` resolves the anchor and prints `0 stale`. The author
+  cannot see what CI sees.
+
+The knowledge already exists in two memories
+(`okf-anchor-must-name-a-reachable-commit`, `okf-c5-base-ref-stricter-than-local`)
+and the workflow still does not enforce it, which is the definition of a gap the
+tooling should close rather than a habit to remember harder.
+
+Two changes would end it:
+
+1. **Make `validate_okf` fail on an unreachable `checkpoint_sha`** instead of
+   silently resolving it from local objects. A green local run must not be
+   achievable with an anchor CI cannot resolve.
+2. **Create blob anchors on first reconcile.** A `source_blobs` entry is
+   immutable under rebase/squash/cherry-pick. `okf_reanchor.py --blob` only
+   ADVANCES an existing entry and never creates one, so a concept that has never
+   had a blob anchor for a file stays on the fragile commit anchor forever.
+
+```backlog
+id: B-049
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  python3 - <<'PY'
+  import subprocess,sys,pathlib,re
+  bad=0
+  for p in pathlib.Path("docs/knowledge").rglob("*.md"):
+      m=re.search(r'^checkpoint_sha:\s*"([0-9a-f]{40})"',p.read_text(),re.M)
+      if not m: continue
+      if subprocess.run(["git","merge-base","--is-ancestor",m.group(1),"HEAD"],
+                        capture_output=True).returncode!=0: bad+=1
+  print(f"unreachable checkpoint anchors: {bad}")
+  sys.exit(0 if bad else 1)
+  PY
+verify-means: |
+  open — exits 0 while at least one concept's checkpoint_sha is not an ancestor
+  of HEAD, i.e. while the squash-orphaning is still happening. 57 at filing.
+  Closes (this verify then exits 1, forcing the status update) when every anchor
+  resolves — which in practice means validate_okf enforces reachability and
+  reconciles write blob anchors. Do NOT "fix" this by bulk-rewriting the 57 shas
+  on main: that hides the mechanism and it re-orphans on the next squash.
+last-verified: 2026-08-26
+```
