@@ -23,6 +23,22 @@ Each entry cross-references:
 ## [Unreleased]
 - CVE-feed cron schedules restored on `cargo-deny` (daily) and `trivy` (daily), staggered on the self-hosted fleet, so advisory/license/vuln feeds that change without a commit are no longer blind between pushes; `semgrep` stays owner-parked (0/8 broken, hosted, CodeQL covers SAST) (F-014).
 
+### Fixed
+
+- **The single CAS `GET` had no concurrency guard (B-052).**
+  `handle_read` (`crates/corelink-container/src/routes/cas.rs`) took `State`,
+  `Path`, `auth`, `scope` and `headers` and no guard, then buffered the whole
+  object into memory and into the response body. Every sibling read surface was
+  already bounded — Turbo `GET` and `PUT` carry a per-tenant limit plus a
+  process-wide budget, and CAS batch read carries `CAS_READ_CONCURRENCY_LIMIT` —
+  so an authenticated tenant could burst concurrent single reads of a large blob
+  and hold N whole objects on the heap at once. `handle_read` now takes
+  `CasReadConcurrencyGuard`, the same RAII extractor `handle_batch_read` already
+  used, against the SAME `read_inflight` pool: a separate pool would have let one
+  tenant hold `2 x 8` concurrent reads and raised the very ceiling the constant
+  exists to impose. `CAS_READ_CONCURRENCY_LIMIT`'s doc comment, which described
+  itself as bounding bulk reads only, was corrected to match its new scope.
+
 ### Added
 
 - **F2: `findMissingBlobs` is answered at the edge — but only once its audit rows

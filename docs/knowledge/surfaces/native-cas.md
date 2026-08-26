@@ -4,7 +4,7 @@ title: "Native CAS surface"
 description: "CoreLink's first-party content-addressable storage surface — the GET/PUT/DELETE/list + bulk-batch CAS routes every other surface ultimately stores into."
 source_files:
   - "crates/corelink-container/src/routes/cas.rs"
-checkpoint_sha: "ab4e1a5f80d90d5e95e4ec8f477c3f64cbaa5984"
+checkpoint_sha: "eb9cc776273691fc454fa64de6e1ff0684d16c9b"
 provenance: "AUTHORED"
 tags: ["surfaces", "cas", "cache", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -29,31 +29,31 @@ path segment.
 
 # How it works
 1. The router mounts read/write/delete on `CAS_READ_ROUTE` and adds the three bulk routes as static
-   siblings ranked above the `:hash` wildcard by matchit (`crates/corelink-container/src/routes/cas.rs:642-656`).
-2. A read is a digest-keyed lookup via `handle_read` (`crates/corelink-container/src/routes/cas.rs:773`).
+   siblings ranked above the `:hash` wildcard by matchit (`crates/corelink-container/src/routes/cas.rs:647-661`).
+2. A read is a digest-keyed lookup via `handle_read` (`crates/corelink-container/src/routes/cas.rs:778`).
 3. A write rejects a path/auth tenant mismatch with 403, then validates the digest, then the write
-   scope, then the native PAT **write-capability** gate, all before storage — `handle_write` (`crates/corelink-container/src/routes/cas.rs:876-910`). The write/batch/delete paths run `pat_gate_reject_write`, which re-derives the PAT's D1-stored `can_write` at the container via `NativePatGate::verify_write` (not just tenant possession) — a read-only PAT is rejected 403 even if the Worker-set scope header claimed write, upholding the Option-B invariant that a compromised Worker cannot grant write on its own (`crates/corelink-container/src/routes/cas.rs:908`; helper at `crates/corelink-container/src/routes/cas.rs:753-764`).
+   scope, then the native PAT **write-capability** gate, all before storage — `handle_write` (`crates/corelink-container/src/routes/cas.rs:887-921`). The write/batch/delete paths run `pat_gate_reject_write`, which re-derives the PAT's D1-stored `can_write` at the container via `NativePatGate::verify_write` (not just tenant possession) — a read-only PAT is rejected 403 even if the Worker-set scope header claimed write, upholding the Option-B invariant that a compromised Worker cannot grant write on its own (`crates/corelink-container/src/routes/cas.rs:919`; helper at `crates/corelink-container/src/routes/cas.rs:758-769`).
 4. A per-tenant in-flight reservation runs as an extractor BEFORE the body is buffered, returning 429
    over the concurrency cap — the `CasPutGuard` extractor (`crates/corelink-container/src/routes/cas.rs:319-324`).
 5. Bulk uploads are split into a newline-framed manifest + concatenated payload at the first blank
-   line by `split_manifest` (`crates/corelink-container/src/routes/cas.rs:709`); a wrong/absent
+   line by `split_manifest` (`crates/corelink-container/src/routes/cas.rs:714`); a wrong/absent
    content-type is rejected 415 before parse — the `content_type_is` predicate
-   (`crates/corelink-container/src/routes/cas.rs:665`) at the batch-handler call-site
-   (`crates/corelink-container/src/routes/cas.rs:1024-1025`).
+   (`crates/corelink-container/src/routes/cas.rs:670`) at the batch-handler call-site
+   (`crates/corelink-container/src/routes/cas.rs:1035-1036`).
 6. After the storage handler returns, the surface records a fire-and-forget usage-metering event into
    the in-process display aggregator [`crate::usage_meter`] — a `ReadHit` on a served read, a `ReadMiss`
    on a genuine `NotFound`, a `Write` on a committed write — with no await / no I/O on the hot path
-   (`crates/corelink-container/src/routes/cas.rs:852-854`; `crates/corelink-container/src/routes/cas.rs:860-864`;
-   `crates/corelink-container/src/routes/cas.rs:945-947`).
+   (`crates/corelink-container/src/routes/cas.rs:863-865`; `crates/corelink-container/src/routes/cas.rs:871-875`;
+   `crates/corelink-container/src/routes/cas.rs:956-958`).
 
 # Invariants
-- A non-canonical `:hash` is rejected 400 BEFORE it derives an R2 key (`crates/corelink-container/src/routes/cas.rs:895-896`).
-- A path `:tenant` that differs from the authenticated tenant is denied 403 BEFORE storage (`crates/corelink-container/src/routes/cas.rs:891-892`).
-- A write requires a `cas:rw` (write-capable) scope; a read-only token is rejected 403 (`crates/corelink-container/src/routes/cas.rs:901-902`).
-- A write/batch/delete additionally re-derives the PAT's D1 `can_write` capability at the container (`verify_write`), not just tenant possession — a read-only PAT is rejected 403 even if the Worker-set scope header claimed write (`crates/corelink-container/src/routes/cas.rs:908`).
-- A batch is capped at `BATCH_MAX_OBJECTS` objects and `BATCH_MAX_BYTES` of payload, over-cap → 413 (`crates/corelink-container/src/routes/cas.rs:121`; `crates/corelink-container/src/routes/cas.rs:127`; `crates/corelink-container/src/routes/cas.rs:1060`).
+- A non-canonical `:hash` is rejected 400 BEFORE it derives an R2 key (`crates/corelink-container/src/routes/cas.rs:906-907`).
+- A path `:tenant` that differs from the authenticated tenant is denied 403 BEFORE storage (`crates/corelink-container/src/routes/cas.rs:902-903`).
+- A write requires a `cas:rw` (write-capable) scope; a read-only token is rejected 403 (`crates/corelink-container/src/routes/cas.rs:912-913`).
+- A write/batch/delete additionally re-derives the PAT's D1 `can_write` capability at the container (`verify_write`), not just tenant possession — a read-only PAT is rejected 403 even if the Worker-set scope header claimed write (`crates/corelink-container/src/routes/cas.rs:919`).
+- A batch is capped at `BATCH_MAX_OBJECTS` objects and `BATCH_MAX_BYTES` of payload, over-cap → 413 (`crates/corelink-container/src/routes/cas.rs:121`; `crates/corelink-container/src/routes/cas.rs:127`; `crates/corelink-container/src/routes/cas.rs:1071`).
 - Per-tenant concurrent uploads are bounded; over the limit returns 429 before buffering (`crates/corelink-container/src/routes/cas.rs:319-324`).
-- Usage metering is fire-and-forget DISPLAY telemetry: the `record(...)` call is off the storage-decision path and never gates, bills, or fails a request (`crates/corelink-container/src/routes/cas.rs:852-854`).
+- Usage metering is fire-and-forget DISPLAY telemetry: the `record(...)` call is off the storage-decision path and never gates, bills, or fails a request (`crates/corelink-container/src/routes/cas.rs:863-865`).
 
 # Gotchas
 - The native CAS path proves PAT possession with the native HMAC gate (`pat_gate_reject`) on reads,
@@ -65,21 +65,21 @@ path segment.
   whole request 400.
 
 # Citations
-1. `crates/corelink-container/src/routes/cas.rs:642-656` — the router: single-object + three bulk batch routes.
-2. `crates/corelink-container/src/routes/cas.rs:773` — `handle_read`, the digest-keyed read.
-3. `crates/corelink-container/src/routes/cas.rs:876-910` — `handle_write`: cross-tenant 403, canonical-digest, scope, native PAT write-capability gate order.
-4. `crates/corelink-container/src/routes/cas.rs:891-892` — the cross-tenant 403.
-5. `crates/corelink-container/src/routes/cas.rs:895-896` — canonical-digest reject before storage.
-6. `crates/corelink-container/src/routes/cas.rs:901-902` — the write-scope (`cas:rw`) gate.
-6b. `crates/corelink-container/src/routes/cas.rs:908` — the native PAT write-capability gate call (`pat_gate_reject_write`, after scope, before storage).
-6c. `crates/corelink-container/src/routes/cas.rs:753-764` — `pat_gate_reject_write` helper: re-derives D1 `can_write` via `NativePatGate::verify_write` (line 763).
+1. `crates/corelink-container/src/routes/cas.rs:647-661` — the router: single-object + three bulk batch routes.
+2. `crates/corelink-container/src/routes/cas.rs:778` — `handle_read`, the digest-keyed read.
+3. `crates/corelink-container/src/routes/cas.rs:887-921` — `handle_write`: cross-tenant 403, canonical-digest, scope, native PAT write-capability gate order.
+4. `crates/corelink-container/src/routes/cas.rs:902-903` — the cross-tenant 403.
+5. `crates/corelink-container/src/routes/cas.rs:906-907` — canonical-digest reject before storage.
+6. `crates/corelink-container/src/routes/cas.rs:912-913` — the write-scope (`cas:rw`) gate.
+6b. `crates/corelink-container/src/routes/cas.rs:919` — the native PAT write-capability gate call (`pat_gate_reject_write`, after scope, before storage).
+6c. `crates/corelink-container/src/routes/cas.rs:758-769` — `pat_gate_reject_write` helper: re-derives D1 `can_write` via `NativePatGate::verify_write` (line 763).
 7. `crates/corelink-container/src/routes/cas.rs:319-324` — pre-body per-tenant concurrency 429 (`CasPutGuard`).
-8. `crates/corelink-container/src/routes/cas.rs:709` — `split_manifest` length-framed bulk parser.
-9. `crates/corelink-container/src/routes/cas.rs:665` — `content_type_is` predicate for the 415 gate.
-9b. `crates/corelink-container/src/routes/cas.rs:1024-1025` — batch-handler call-site that returns 415 on wrong/absent content-type.
+8. `crates/corelink-container/src/routes/cas.rs:714` — `split_manifest` length-framed bulk parser.
+9. `crates/corelink-container/src/routes/cas.rs:670` — `content_type_is` predicate for the 415 gate.
+9b. `crates/corelink-container/src/routes/cas.rs:1035-1036` — batch-handler call-site that returns 415 on wrong/absent content-type.
 10. `crates/corelink-container/src/routes/cas.rs:121` — `BATCH_MAX_OBJECTS` cap.
 11. `crates/corelink-container/src/routes/cas.rs:127` — `BATCH_MAX_BYTES` cap.
-12. `crates/corelink-container/src/routes/cas.rs:1060` — over-cap 413 on bulk write.
-13. `crates/corelink-container/src/routes/cas.rs:852-854` — read HIT usage-metering `record` (fire-and-forget display telemetry, no await/I/O).
-14. `crates/corelink-container/src/routes/cas.rs:860-864` — read MISS usage-metering `record` (only on a genuine `NotFound`).
-15. `crates/corelink-container/src/routes/cas.rs:945-947` — write usage-metering `record` (both fresh 201 and idempotent 200 count as a `Write`).
+12. `crates/corelink-container/src/routes/cas.rs:1071` — over-cap 413 on bulk write.
+13. `crates/corelink-container/src/routes/cas.rs:863-865` — read HIT usage-metering `record` (fire-and-forget display telemetry, no await/I/O).
+14. `crates/corelink-container/src/routes/cas.rs:871-875` — read MISS usage-metering `record` (only on a genuine `NotFound`).
+15. `crates/corelink-container/src/routes/cas.rs:956-958` — write usage-metering `record` (both fresh 201 and idempotent 200 count as a `Write`).
