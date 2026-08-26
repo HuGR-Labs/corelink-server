@@ -6,7 +6,7 @@ source_files:
   - "worker/src/lib/session_exchange.ts"
   - "worker/src/lib/runner_mint.ts"
   - "worker/src/lib/auth_rotate.ts"
-checkpoint_sha: "e9c9b1e434cce8e5e6263affc4f0fe3b6368378b"
+checkpoint_sha: "78a8b3693739a0e99826c078688068c1348abfbb"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "mint", "worker-edge", "tenancy"]
 timestamp: "2026-06-27T00:00:00Z"
