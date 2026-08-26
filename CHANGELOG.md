@@ -22,6 +22,18 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+
+- **429-body URLs repointed to live flat hosts (go-live audit I-cluster / WP-3).**
+  `TIER_UPGRADE_URL` (`corelink.humangr.com/pricing`) and `DOCS_URL`
+  (`docs.corelink.humangr.com/explanation/rate-limits`) were frozen at
+  unprovisioned dotted subdomains (both NXDOMAIN live-verified) — every
+  canonical 429 body and `X-CoreLink-Tier-Upgrade-URL` header shipped dead
+  links. Both now point at `corelink-docs.humangr.com` (live flat
+  `corelink-*.humangr.com` scheme), final-effective 200 verified for the
+  Pricing page and the rate-limits explanation page; added a regression test
+  pinning the constants against resurrection of the dotted hosts.
+
 ### Added
 
 - **F1 shadow for the edge-native `findMissingBlobs` — measures and compares, serves
