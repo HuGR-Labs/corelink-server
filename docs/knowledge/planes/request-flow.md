@@ -10,13 +10,13 @@ source_files:
   - "crates/corelink-container/src/storage/d1_audit_sink.rs"
   - "crates/corelink-container/src/storage/r2_s3.rs"
 source_blobs:
-  - "worker/src/index.ts@88fe71fd97c8f5d36a5eef8805e6219e68b3fd2b"
+  - "worker/src/index.ts@71b0ca646a02e65598e0501ca94d7e3902ddaccc"
   - "worker/src/durable_object.ts@bf36fd6a2f94c92c8b5d47872dedb93cfc95d137"
-  - "crates/corelink-container/src/routes.rs@8603539ebcedf67dcb10e9265efdb688aae9b97e"
+  - "crates/corelink-container/src/routes.rs@6f39a799290d476995c320f21452e1269a550ffd"
   - "crates/corelink-container/src/origin_timing.rs@305d22a13fa5027f2ba79b6a3bde5914e14393ae"
   - "crates/corelink-container/src/storage/d1_audit_sink.rs@e7469a400d53d76a210a6e7c27bf5c4b5aa87c37"
   - "crates/corelink-container/src/storage/r2_s3.rs@2449eb71eed04b81be799ce081e75b434fd82409"
-checkpoint_sha: "50400f62e538f8900dfcea632fc15593e0879301"
+checkpoint_sha: "94ff5fc4666eeac4d37181715f26ea0c2b03259a"
 provenance: "AUTHORED"
 tags: ["planes", "request-flow", "topology", "end-to-end"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -41,13 +41,13 @@ semantics in the container.
 
 # How it works
 1. The request enters `baseHandler.fetch`: request-id, CORS, then `matchRoute` selects a `RouteKind` +
-   tenant (`worker/src/index.ts:1928-1996`).
+   tenant (`worker/src/index.ts:1929-1997`).
 2. The Worker authenticates the Bearer PAT — HMAC fast-reject then a D1 `token_id` lookup + expiry —
-   resolving the trusted tenant (`worker/src/index.ts:1311-1469`). EXCEPTION (Artifact 1): the unauth
+   resolving the trusted tenant (`worker/src/index.ts:1312-1470`). EXCEPTION (Artifact 1): the unauth
    `/v1/public/*` arm (the erasure-attestation verifier) is matched BEFORE the generic `/v1/*` PAT bucket
    and forwarded as `_anonymous` with NO PAT and NO internal-auth — an erasure proof is publicly
-   verifiable, so this route skips the auth hop entirely (matchRoute arm `worker/src/index.ts:1125-1126`,
-   forward arm `worker/src/index.ts:2781-2809`). The edge expiry check honors the
+   verifiable, so this route skips the auth hop entirely (matchRoute arm `worker/src/index.ts:1126-1127`,
+   forward arm `worker/src/index.ts:2782-2810`). The edge expiry check honors the
    `expires_ms === 0` "never expires" sentinel (`row.expires_ms !== 0 && row.expires_ms <= now`),
    matching the container's `adapter_pat` SQL (`expires_ms = 0 OR expires_ms > now`) — so a no-TTL PAT
    is no longer a split-brain edge-reject that worked in the container but died at the Worker. If that
@@ -55,12 +55,12 @@ semantics in the container.
    to a retryable 503, not a 401 — the request never reaches the DO, and a transient infra fault is
    never surfaced to the client as "bad credentials" (H1).
 3. The Worker derives the per-tenant DO with `idFromName(resolvedTenantId)`, making isolation structural
-   (`worker/src/index.ts:3853-3855`). A non-local-region tenant may first be routed to the LOCAL
+   (`worker/src/index.ts:3854-3856`). A non-local-region tenant may first be routed to the LOCAL
    (this-region) `_system` container branch above this forward; the fall-through then lands on the
-   per-tenant DO derivation here (`worker/src/index.ts:2226-2228`).
+   per-tenant DO derivation here (`worker/src/index.ts:2227-2229`).
 4. It strips any client-supplied trust headers (delete-then-set discipline), sets its own verified
    tenant-id/scope/token-prefix, and (absent an edge-serve short-circuit, next point) dispatches via
-   `stub.fetch` (`worker/src/index.ts:3871-3902`, `worker/src/index.ts:4013`).
+   `stub.fetch` (`worker/src/index.ts:3872-3903`, `worker/src/index.ts:4014`).
 4b. **F3.3 F2 SERVE short-circuits the DO→container hop entirely on a `brew`/`pip` `_public` cache HIT.**
    With `env.EDGE_PUBLIC_READ === "serve"` and a GET on those two route kinds, the Worker reads the blob
    itself from the native `CONFIG_DB` map + `CAS_BUCKET` R2 (`readPublicHit`) BEFORE ever building the
@@ -68,34 +68,34 @@ semantics in the container.
    the F3.3 removal of the `origin` phase (~585 ms) from this path; a miss, revocation, re-hash mismatch, or
    thrown fault yields `null`/falls into the `catch` and the request falls through unchanged to the
    container path below, so this can only make a HIT faster, never change correctness
-   (`worker/src/index.ts:3947-4008`). A served HIT now sets `Content-Type: <PUBLIC_BLOB_CONTENT_TYPE>` and
+   (`worker/src/index.ts:3948-4009`). A served HIT now sets `Content-Type: <PUBLIC_BLOB_CONTENT_TYPE>` and
    `Accept-Ranges: bytes` (faithful to what the container's own binary read returns, previously dropped on
    this path) and honors a client `Range` header — `parseByteRange` yields a `206 Partial Content` slice
    with `Content-Range`, a `416` with `Content-Range: bytes */<total>` on an unsatisfiable range, or the
-   full `200` body otherwise (`worker/src/index.ts:3972-3996`). This edge HIT deliberately does **not**
+   full `200` body otherwise (`worker/src/index.ts:3973-3997`). This edge HIT deliberately does **not**
    pass through the container's per-op $-ceiling gate (ADR-0068) — request-count and storage quota
    (`runQuotaBatch`, already run above this block) still apply, but the spend cap does not, an intentional
-   exemption for the cheapest, most-shared traffic class (`worker/src/index.ts:3964-3971`). The Worker
+   exemption for the cheapest, most-shared traffic class (`worker/src/index.ts:3965-3972`). The Worker
    deliberately does NOT stamp `stOrigin*` on an edge-served response, so `Server-Timing` simply omits the
    `origin` phase — that absence is itself the wire-level proof the container was bypassed
-   (`worker/src/index.ts:3954-3955`).
+   (`worker/src/index.ts:3955-3956`).
 4c. **The `_public` edge-serve cache of 4b is invalidated out-of-band by `/_internal/public/revoke` (B1b).**
    That internal route forwards the revoke to the `_system` DO → container — the authoritative D1 blocklist
-   + `cache_map` delete + R2 erase (`worker/src/index.ts:2426`) — and, only on the container's `ok` response
-   with `METADATA_KV` bound (`worker/src/index.ts:2442`), reads the RESOLVED `content_hash` from the
-   container's buffered-and-rebuilt RESPONSE body (`worker/src/index.ts:2452`, F-1: authoritative for BOTH
+   + `cache_map` delete + R2 erase (`worker/src/index.ts:2427`) — and, only on the container's `ok` response
+   with `METADATA_KV` bound (`worker/src/index.ts:2443`), reads the RESOLVED `content_hash` from the
+   container's buffered-and-rebuilt RESPONSE body (`worker/src/index.ts:2453`, F-1: authoritative for BOTH
    revoke spaces, so a revoke-by-`upstream_digest` — whose REQUEST carries no `content_hash` — collapses the
    edge window too) and best-effort-writes a content-hash-keyed edge blocklist KV via
-   `ctx.waitUntil(writePublicBlocklistKv(...))` (`worker/src/index.ts:2468`), so a revoked `_public` hash
+   `ctx.waitUntil(writePublicBlocklistKv(...))` (`worker/src/index.ts:2469`), so a revoked `_public` hash
    stops edge-serving within KV propagation (~seconds) instead of waiting out the ~60 s map-cache TTL. The
    KV write never fails the revoke the container already applied — a KV fault or a non-`{content_hash}`
    response body just falls back to the map-cache window.
 4d. **The `wdb` window also carries an optional P3 EDGE_DO_METER hop — a SEPARATE DO pair from the
    per-tenant `CoreLinkServer` of steps 5-6 — now separately clocked.** When `EDGE_DO_METER === "serve"`
    for this region and the request is genuinely counted (`meter = !isFanout && requestQuotaEnabled`,
-   `worker/src/index.ts:3257`), the Worker AWAITS `serveViaDO(...)` (the request-meter shard/coordinator
+   `worker/src/index.ts:3258`), the Worker AWAITS `serveViaDO(...)` (the request-meter shard/coordinator
    pair) inside a `try/finally` so the elapsed time (`stQDoMs`) is captured even on the fail-open `catch`
-   path (`worker/src/index.ts:3310-3356`). That duration is reported as the `qdo` Server-Timing phase,
+   path (`worker/src/index.ts:3311-3357`). That duration is reported as the `qdo` Server-Timing phase,
    and `wdb`'s leftover as `qother`, but ONLY when the operator flag `SERVER_TIMING_WDB_DETAIL === "on"`
    (unset by default) — see [the Worker edge plane](/planes/worker-edge.md) for the full `wdb` breakdown
    and why the gate exists (an unflagged `qdo` would leak whether a client-supplied
@@ -105,17 +105,17 @@ semantics in the container.
 6. The proxy rewrites the request onto `http://localhost:50051` through the `getTcpPort` fetcher — the
    DO→container hop (`worker/src/durable_object.ts:345-358`).
 7. The container's composed router (built by `build_with_factory`) receives the request and routes it to
-   the matching handler (`crates/corelink-container/src/routes.rs:448-450`).
+   the matching handler (`crates/corelink-container/src/routes.rs:454-456`).
 8. The shared CAS/AC handler objects — wrapped once with byte-accounting, the erasure tombstone gate,
    and the native PAT possession backstop — execute the actual cache operation
-   (`crates/corelink-container/src/routes.rs:550-659`).
+   (`crates/corelink-container/src/routes.rs:556-665`).
 9. The hop is MEASURED end to end, and the measurement is split across the same boundary the request
    crosses. The container's outermost data-plane layer clocks its whole share of the request and stamps
    `opat` / `oquota` / `ostore` / `oother` onto the response's own `Server-Timing`
    (`crates/corelink-container/src/origin_timing.rs:527-536`, wired last so it wraps every inner layer at
-   `crates/corelink-container/src/routes.rs:1134-1136`); the Worker forwards those four and derives the
+   `crates/corelink-container/src/routes.rs:1140-1142`); the Worker forwards those four and derives the
    one term only it can see, `ohop = origin − Σ(container phases)` — the dispatch, the DO's prologue and
-   the wire (`worker/src/index.ts:4554`). Recording is a task-local ledger, so an instrumented region
+   the wire (`worker/src/index.ts:4555`). Recording is a task-local ledger, so an instrumented region
    reached outside a request (a test, a background task) simply records nothing
    (`crates/corelink-container/src/origin_timing.rs:440-446`).
 9b. **W2 split `oother` into three named regions on the PAT-verification path**, `oargon` /
@@ -181,19 +181,19 @@ semantics in the container.
 
 # Invariants
 - The DO is always selected from the PAT-resolved tenant, never the URL tenant — isolation is
-  established at this hop (`worker/src/index.ts:3853-3855`).
+  established at this hop (`worker/src/index.ts:3854-3856`).
 - The request that crosses Worker→DO carries only Worker-established trust headers; client values are
-  stripped first (`worker/src/index.ts:3871-3902`).
+  stripped first (`worker/src/index.ts:3872-3903`).
 - The DO→container hop always targets port 50051 via the `getTcpPort` fetcher
   (`worker/src/durable_object.ts:345-358`).
 - The container re-verifies possession at the shared handler chokepoint rather than trusting the hop
-  blindly (`crates/corelink-container/src/routes.rs:550-659`).
+  blindly (`crates/corelink-container/src/routes.rs:556-665`).
 - The DO will not proxy until the container is confirmed running (or it returns 503/500)
   (`worker/src/durable_object.ts:573-602`).
 - The `origin` split always reconciles: the container's residue phase is computed against its OWN
   whole-request clock, so its parts sum exactly to the time it held the request
   (`crates/corelink-container/src/origin_timing.rs:374`), and the Worker publishes no split it cannot
-  make add up (`worker/src/index.ts:4551-4552`). That reconciliation holds with `oargon`/`opermit`/
+  make add up (`worker/src/index.ts:4552-4553`). That reconciliation holds with `oargon`/`opermit`/
   `ortier`/`oaudit` present OR absent — the gate just moves their time between the named phases and
   `oother`, never off the ledger (`crates/corelink-container/src/origin_timing.rs:341-375`). The ONE
   exception is the native `list()` concurrent seam (citation 18): there, `oaudit` and `ostore` overlap
@@ -204,9 +204,9 @@ semantics in the container.
   `doResponse` directly from the Worker-local read and skips `stub.fetch` altogether, but only ever as a
   strictly-faster substitute for an outcome the container would also have served — any miss/fault falls
   through to the unchanged container path, so this hop is optional for speed, never for correctness
-  (`worker/src/index.ts:3947-4008`). An edge-served HIT is exempt from the container's $-ceiling gate but
+  (`worker/src/index.ts:3948-4009`). An edge-served HIT is exempt from the container's $-ceiling gate but
   not from request-count/storage quota, which the Worker has already enforced upstream of this block
-  (`worker/src/index.ts:3964-3971`).
+  (`worker/src/index.ts:3965-3972`).
 
 # Gotchas
 - OCI, the Stripe webhook, and fabric-introspect take dedicated pass-through arms in the Worker that
@@ -217,20 +217,20 @@ semantics in the container.
 
 # Citations
 1. `worker/src/index.ts:1-20` — the `Internet → Worker → DO → container` topology header.
-2. `worker/src/index.ts:1311-1469` — edge PAT auth (HMAC fast-reject + D1 lookup + expiry).
-3. `worker/src/index.ts:1928-1996` — the Worker `fetch` entry + `matchRoute`.
-4. `worker/src/index.ts:3853-3855` — `idFromName(resolvedTenantId)` DO derivation (structural isolation).
-5. `worker/src/index.ts:3871-3902` — strip-then-set trust headers on the forward.
-6. `worker/src/index.ts:3871-3902` — the augmented forward (strip-then-set trust headers); `worker/src/index.ts:4013` — the `stub.fetch` dispatch to the DO (reached only when 6b did not already set `doResponse`).
-6b. `worker/src/index.ts:3947-4008` — F3.3 F2 SERVE: the `EDGE_PUBLIC_READ === "serve"` short-circuit on a `brew`/`pip` `_public` HIT — `readPublicHit` at `worker/src/index.ts:3963`, the $-ceiling exemption rationale at `worker/src/index.ts:3964-3971`, the `Content-Type`/`Accept-Ranges` headers at `worker/src/index.ts:3977-3979`, and the `parseByteRange`-driven `200`/`206`/`416` branch at `worker/src/index.ts:3981-3996`; the deliberate omission of `stOrigin*` (so `Server-Timing` proves the bypass by omitting `origin`) at `worker/src/index.ts:3954-3955`.
-6c. `worker/src/index.ts:2426` — the `/_internal/public/revoke` invalidation seam (B1b): the revoke forwards to the `_system` DO → container (authoritative D1 blocklist + `cache_map` delete + R2 erase) and, on an `ok` response with `METADATA_KV` bound (`worker/src/index.ts:2442`), reads the RESOLVED `content_hash` from the container's buffered RESPONSE body (`worker/src/index.ts:2452`, F-1: authoritative for both the raw `content_hash` and the `upstream_digest` revoke spaces) and best-effort-writes the content-hash-keyed edge blocklist KV via `ctx.waitUntil(writePublicBlocklistKv(...))` (`worker/src/index.ts:2468`), collapsing the `_public` edge-serve revocation window from the ~60 s map-cache TTL to KV propagation without ever failing the revoke on a KV fault.
-6d. `worker/src/index.ts:3257` — `meter = !isFanout && requestQuotaEnabled`, the gate that decides whether the P3 `qdo` hop runs at all; `worker/src/index.ts:3310-3356` — the awaited `serveViaDO(...)` call timed in a `try/finally` (`stQDoMs`, captured even on the fail-open `catch`); `worker/src/index.ts:4201-4229` — the `qdo`/`qother` emission, gated on `SERVER_TIMING_WDB_DETAIL === "on"`.
+2. `worker/src/index.ts:1312-1470` — edge PAT auth (HMAC fast-reject + D1 lookup + expiry).
+3. `worker/src/index.ts:1929-1997` — the Worker `fetch` entry + `matchRoute`.
+4. `worker/src/index.ts:3854-3856` — `idFromName(resolvedTenantId)` DO derivation (structural isolation).
+5. `worker/src/index.ts:3872-3903` — strip-then-set trust headers on the forward.
+6. `worker/src/index.ts:3872-3903` — the augmented forward (strip-then-set trust headers); `worker/src/index.ts:4014` — the `stub.fetch` dispatch to the DO (reached only when 6b did not already set `doResponse`).
+6b. `worker/src/index.ts:3948-4009` — F3.3 F2 SERVE: the `EDGE_PUBLIC_READ === "serve"` short-circuit on a `brew`/`pip` `_public` HIT — `readPublicHit` at `worker/src/index.ts:3964`, the $-ceiling exemption rationale at `worker/src/index.ts:3965-3972`, the `Content-Type`/`Accept-Ranges` headers at `worker/src/index.ts:3978-3980`, and the `parseByteRange`-driven `200`/`206`/`416` branch at `worker/src/index.ts:3982-3997`; the deliberate omission of `stOrigin*` (so `Server-Timing` proves the bypass by omitting `origin`) at `worker/src/index.ts:3955-3956`.
+6c. `worker/src/index.ts:2427` — the `/_internal/public/revoke` invalidation seam (B1b): the revoke forwards to the `_system` DO → container (authoritative D1 blocklist + `cache_map` delete + R2 erase) and, on an `ok` response with `METADATA_KV` bound (`worker/src/index.ts:2443`), reads the RESOLVED `content_hash` from the container's buffered RESPONSE body (`worker/src/index.ts:2453`, F-1: authoritative for both the raw `content_hash` and the `upstream_digest` revoke spaces) and best-effort-writes the content-hash-keyed edge blocklist KV via `ctx.waitUntil(writePublicBlocklistKv(...))` (`worker/src/index.ts:2469`), collapsing the `_public` edge-serve revocation window from the ~60 s map-cache TTL to KV propagation without ever failing the revoke on a KV fault.
+6d. `worker/src/index.ts:3258` — `meter = !isFanout && requestQuotaEnabled`, the gate that decides whether the P3 `qdo` hop runs at all; `worker/src/index.ts:3311-3357` — the awaited `serveViaDO(...)` call timed in a `try/finally` (`stQDoMs`, captured even on the fail-open `catch`); `worker/src/index.ts:4202-4230` — the `qdo`/`qother` emission, gated on `SERVER_TIMING_WDB_DETAIL === "on"`.
 7. `worker/src/durable_object.ts:345-358` — the DO→container proxy via `getTcpPort(50051)`.
 8. `worker/src/durable_object.ts:541-642` — the DO `fetch`: tenant bind, ensure-running, proxy.
 9. `worker/src/durable_object.ts:573-602` — the ensure-running gate before proxying (503/500 otherwise).
-10. `crates/corelink-container/src/routes.rs:448-450` — the container's composed router receiving the request.
-11. `crates/corelink-container/src/routes.rs:550-659` — the shared CAS/AC handlers (accounting + tombstone + PAT gate) executing the op.
-12. `crates/corelink-container/src/origin_timing.rs:527-536` — the container's outermost data-plane layer: scope a task-local phase ledger over the request, clock the whole of it, and stamp the phases on the response's `Server-Timing`. Wired last (so it wraps every inner layer) at `crates/corelink-container/src/routes.rs:1134-1136`; the residue that makes the parts sum to the whole is `crates/corelink-container/src/origin_timing.rs:374`; `timed` is the pass-through recorder at `crates/corelink-container/src/origin_timing.rs:440-446`.
+10. `crates/corelink-container/src/routes.rs:454-456` — the container's composed router receiving the request.
+11. `crates/corelink-container/src/routes.rs:556-665` — the shared CAS/AC handlers (accounting + tombstone + PAT gate) executing the op.
+12. `crates/corelink-container/src/origin_timing.rs:527-536` — the container's outermost data-plane layer: scope a task-local phase ledger over the request, clock the whole of it, and stamp the phases on the response's `Server-Timing`. Wired last (so it wraps every inner layer) at `crates/corelink-container/src/routes.rs:1140-1142`; the residue that makes the parts sum to the whole is `crates/corelink-container/src/origin_timing.rs:374`; `timed` is the pass-through recorder at `crates/corelink-container/src/origin_timing.rs:440-446`.
 13. `crates/corelink-container/src/origin_timing.rs:218-232` — the `Phase::Argon` / `Phase::Permit` / `Phase::Tier` variants W2 split out of `oother`: the PAT Argon2id region (found arm AND row-not-found dummy burn, same name), the `ARGON2_PERMIT_WAIT` semaphore acquires, and `ensure_tier_applied`'s D1 read.
 14. `crates/corelink-container/src/origin_timing.rs:461-463` — `current_ledger`: captures a handle to the ambient ledger on the ORIGINATING task, for a region (the Argon2id `FlightGroup`'s spawned lead future) that runs on a different task and cannot see the task-local `timed`/`PhaseScope::enter` rely on.
 15. `crates/corelink-container/src/origin_timing.rs:411-414` — `detail_phases_enabled`: reads `CORELINK_ORIGIN_TIMING_DETAIL`, off by default and load-bearing — `opermit` presence is a warm-memo oracle, and the dummy burn's padding is timing that a named split would erode. W3 (this concept) added a fourth gated phase, `oaudit`, to the same flag.

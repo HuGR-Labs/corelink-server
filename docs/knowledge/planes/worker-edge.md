@@ -10,13 +10,13 @@ source_files:
   - "worker/src/lib/onboarding_events.ts"
   - "worker/src/lib/internal_auth.ts"
 source_blobs:
-  - "worker/src/index.ts@88fe71fd97c8f5d36a5eef8805e6219e68b3fd2b"
+  - "worker/src/index.ts@71b0ca646a02e65598e0501ca94d7e3902ddaccc"
   - "worker/src/sentry-scrub.ts@e9cd0d761cab3aaa83ea618f7d270e8b77adc316"
   - "worker/src/lib/tenant_residency_cache.ts@dc42b4123dae51e9887264168efcc5d8f6ab817b"
   - "worker/src/lib/tenant_tier_cache.ts@4a440e51a8199a471bcde1b80ed31a872aee2b53"
   - "worker/src/lib/onboarding_events.ts@13087a3f130b93729ade6e30e9568ea500344c22"
   - "worker/src/lib/internal_auth.ts@fb27ec67f58a10c777261c7485f79baeff0965de"
-checkpoint_sha: "50400f62e538f8900dfcea632fc15593e0879301"
+checkpoint_sha: "94ff5fc4666eeac4d37181715f26ea0c2b03259a"
 provenance: "AUTHORED"
 tags: ["planes", "worker", "edge", "auth", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -37,9 +37,9 @@ keeps forged tokens cheap to reject before any expensive work.
 - The sole HTTPS ingress and route dispatcher: the architecture header documents the
   `Internet → Worker → DO → container` topology (`worker/src/index.ts:1-20`).
 - The auth authority for the native plane: it is the only layer that reads the D1 `pat.scope` and
-  forwards it as a server-trust header (`worker/src/index.ts:518-548`).
+  forwards it as a server-trust header (`worker/src/index.ts:519-549`).
 - The declarer of the container's env contract: every operator secret the container reads is first a
-  field on the Worker `Env` interface here (`worker/src/index.ts:288`), then materialized onto the
+  field on the Worker `Env` interface here (`worker/src/index.ts:289`), then materialized onto the
   container by the per-tenant DO's `container.start({ env })` forward — owned by
   [the Durable Object lifecycle](/planes/durable-object.md) concept. That DO forward now also carries the
   launch-checkout coupon id `STRIPE_LAUNCH_COUPON` alongside the `EMAIL_HASH_SALT` salt — unset ⇒ checkout
@@ -48,47 +48,47 @@ keeps forged tokens cheap to reject before any expensive work.
 
 # How it works
 1. The exported handler is `baseHandler.fetch`, which resolves a request-id, handles CORS preflight,
-   and matches the route before doing anything else (`worker/src/index.ts:1928-1996`).
+   and matches the route before doing anything else (`worker/src/index.ts:1929-1997`).
 2. `matchRoute` is an ordered first-match table mapping each URL to a `RouteKind` + tenant, with
    specificity ordering (signup/customer/onboarding before the generic `/v1/*` arm)
-   (`worker/src/index.ts:831-1143`). The `/_internal/*` arm (`routeKind="internal"`,
+   (`worker/src/index.ts:832-1144`). The `/_internal/*` arm (`routeKind="internal"`,
    tenant `_system`) is, as of the Inc-2 lockdown (2026-08-19), gated at the NETWORK layer by a
    Cloudflare Access self-hosted app (Service-Auth service tokens) in front of
    `corelink-api.humangr.com/_internal*` — an unauthenticated public request is rejected 403 before the
    Worker; the constant-time per-consumer `x-corelink-internal-auth` compare stays as the app-layer gate
    underneath (see the SECURITY NOTE at the `/_internal/` arm + `docs/internal/inc2-cf-access-lockdown.md`).
-3. Health routes short-circuit with no auth and no DO forward (`worker/src/index.ts:1998-2015`).
+3. Health routes short-circuit with no auth and no DO forward (`worker/src/index.ts:1999-2016`).
    The Artifact 1 `/v1/public/*` arm (the erasure-attestation verifier, `routeKind="public_attestation"`)
    is matched BEFORE the generic `/v1/*` PAT bucket and forwarded to the `_anonymous` DO → container as a
    pure pass-through with NO PAT gate and NO internal-auth (an erasure proof is publicly verifiable;
    client-forged `x-corelink-*` trust headers are still stripped) — matchRoute arm
-   (`worker/src/index.ts:1125-1126`), forward arm (`worker/src/index.ts:2781-2809`).
+   (`worker/src/index.ts:1126-1127`), forward arm (`worker/src/index.ts:2782-2810`).
 3b. Three EXACT-path fabric/ingest carve-outs are matched BEFORE the generic `/v1/*` PAT arm and are pure
    pass-throughs to the `_system` DO → container (the container is the SOLE auth authority; the Worker
    applies NO edge PAT gate and forwards the caller's `x-corelink-internal-auth` unchanged):
-   `/internal/v1/auth/introspect` (`worker/src/index.ts:1025`) and the sibling
-   `/internal/v1/auth/resolve-tenant` (`worker/src/index.ts:1037`) — both share `routeKind="fabric_introspect"`
+   `/internal/v1/auth/introspect` (`worker/src/index.ts:1026`) and the sibling
+   `/internal/v1/auth/resolve-tenant` (`worker/src/index.ts:1038`) — both share `routeKind="fabric_introspect"`
    and the same `FABRIC_INTROSPECT_AUTH_KEY` (+ optional `_HUGR`) gate; resolve-tenant lets a fabric consumer
    (githugr) map `clerk_org_id(=sub)→tenant_id` for isolation verification + per-tenant reads. The runner
-   billing usage-push (`/internal/v1/billing/usage`, `routeKind="billing_ingest"`, `worker/src/index.ts:1049`)
+   billing usage-push (`/internal/v1/billing/usage`, `routeKind="billing_ingest"`, `worker/src/index.ts:1050`)
    is the same shape but gated by its own DEDICATED `BILLING_INGEST_AUTH_KEY`.
 3c. **B1b `_public` edge-revocation accelerator.** In the internal-forward chain (after the shared
    internal-auth gate) the `/_internal/public/revoke` arm forwards the revoke to the `_system` DO →
    container as a pass-through — the authoritative D1 blocklist + `cache_map` delete + R2 erase
-   (`worker/src/index.ts:2415`, forward at `worker/src/index.ts:2426`) — and ONLY on the container's `ok`
+   (`worker/src/index.ts:2416`, forward at `worker/src/index.ts:2427`) — and ONLY on the container's `ok`
    response AND when `METADATA_KV` is bound best-effort-writes a content-hash-keyed edge blocklist entry
-   via `ctx.waitUntil(writePublicBlocklistKv(...))` (`worker/src/index.ts:2468`), gated on the RESOLVED
-   `content_hash` the container returns in its buffered-and-rebuilt RESPONSE body (`worker/src/index.ts:2452`,
+   via `ctx.waitUntil(writePublicBlocklistKv(...))` (`worker/src/index.ts:2469`), gated on the RESOLVED
+   `content_hash` the container returns in its buffered-and-rebuilt RESPONSE body (`worker/src/index.ts:2453`,
    F-1 — authoritative for BOTH the raw `content_hash` and the `upstream_digest` revoke spaces, since a
    revoke-by-`upstream_digest` REQUEST carries no `content_hash`) matching `^[0-9a-f]{64}$`
-   (`worker/src/index.ts:2467`). This collapses the
+   (`worker/src/index.ts:2468`). This collapses the
    edge-serve (F3.3, point 8-adjacent) revocation window from the ~60 s map-cache TTL to KV propagation
    (~seconds); the KV write is best-effort by design — a KV fault must never fail a revoke the container
-   has already applied authoritatively (`worker/src/index.ts:2442`).
+   has already applied authoritatively (`worker/src/index.ts:2443`).
 4. `extractAuth` fails CLOSED (503) when `PAT_SIGNING_KEY` is absent or decodes to < 32 bytes — the
-   signing key is the sole possession gate for the native plane (`worker/src/index.ts:1257-1283`).
+   signing key is the sole possession gate for the native plane (`worker/src/index.ts:1258-1284`).
 5. PAT validation is HMAC-SHA256 fast-reject (with rotation siblings) BEFORE any D1 round-trip, then a
-   D1 lookup by `token_id` and an application-side expiry check (`worker/src/index.ts:1311-1469`). The
+   D1 lookup by `token_id` and an application-side expiry check (`worker/src/index.ts:1312-1470`). The
    expiry check honors the `expires_ms === 0` "never expires" sentinel
    (`row.expires_ms !== 0 && row.expires_ms <= now`), matching the container's `adapter_pat` SQL
    (`expires_ms = 0 OR expires_ms > now`) — so a no-TTL PAT is no longer a split-brain edge-reject that
@@ -96,32 +96,32 @@ keeps forged tokens cheap to reject before any expensive work.
    now served through the per-isolate PAT-verify cache (`verifyPatRowCached`,
    `worker/src/lib/pat_verify_cache.ts`), which owns the miss-path try/catch; a TRANSIENT D1 fault
    (network partition / DB unavailable) surfaces as the cache's `error` kind, which `extractAuth` maps to
-   the distinct reason `d1_lookup_error` (`worker/src/index.ts:1449-1453`). The caller maps BOTH the config fault
+   the distinct reason `d1_lookup_error` (`worker/src/index.ts:1450-1454`). The caller maps BOTH the config fault
    `signing_key_not_configured` (absent/short `PAT_SIGNING_KEY`) AND `d1_lookup_error` to a retryable
    `503` — a D1 infra hiccup is treated as "auth service unavailable", NOT a bad credential, so a
    transient outage can't masquerade as a 401 (which would trigger spurious CI failures, PAT rotation,
    and on-call chasing the wrong thing). Genuine bad/unknown PATs (`pat_not_found` / `pat_expired` /
-   `invalid_*`) still fall through to `401` (`worker/src/index.ts:3063-3100`). The caller's own H1
+   `invalid_*`) still fall through to `401` (`worker/src/index.ts:3064-3101`). The caller's own H1
    comment at the mapping site states this rationale directly — a D1 fault must map to 503, not 401
-   (`worker/src/index.ts:3069-3074`).
+   (`worker/src/index.ts:3070-3075`).
 6. `stripClientTrustHeaders` deletes every client-suppliable trust header on every forward, then the
-   Worker re-sets its own verified values (`worker/src/index.ts:779-783`).
+   Worker re-sets its own verified values (`worker/src/index.ts:780-784`).
 6b. The Worker is also the PRODUCER of the `first_cli_authed` onboarding signal. Immediately after the
    PAT resolves a real tenant and the path-spoof guard clears — and BEFORE quota/residency — a
    `GET /v1/users/me` (the CLI's first authenticated call) fires a fire-and-forget analytics event
-   (`worker/src/index.ts:3149-3155`). It lives here rather than in the container because the container's
+   (`worker/src/index.ts:3150-3156`). It lives here rather than in the container because the container's
    single `D1_DATABASE_ID` points at the control plane while `analytics_events` lives only in
    `corelink-analytics-prod`, and its charter forbids `tokio::spawn` in `src/`. The write is dispatched
-   over the `ANALYTICS_SVC` service binding (`worker/src/index.ts:328`) to the analytics Worker's
+   over the `ANALYTICS_SVC` service binding (`worker/src/index.ts:329`) to the analytics Worker's
    `AnalyticsIngest.ingestServerEvent` RPC entrypoint — never the public hostname, which Cloudflare
    edge-rejects Worker→Worker with error 1014. Dedup is structural, not a round-trip: the event id is the
    deterministic `first_cli_authed:<tenant_id>` (`worker/src/lib/onboarding_events.ts:158-160`), so `analytics_events`'
    `PRIMARY KEY (id)` + ingest's `INSERT OR IGNORE` act as a once-per-tenant lock.
 7. Per-tier quota (storage SUM + monthly request-count) runs after auth and before the DO forward —
    request-count fail-CLOSED; storage verb-aware (reads fail-open for availability, byte-adding writes
-   fail-closed) (`worker/src/index.ts:3158-3663`). The tier is resolved FIRST (cache-served) and the two
+   fail-closed) (`worker/src/index.ts:3159-3664`). The tier is resolved FIRST (cache-served) and the two
    UNCACHED statements — the monthly-counter UPSERT and the storage `SUM(bytes_used)` — then travel as a
-   SINGLE `db.batch()` round trip (`runQuotaBatch` — see the [edge quota & tier serving](/launch/edge-quota-tier-serving.md) concept for that module; the call site is `worker/src/index.ts:3532-3537`) rather than two
+   SINGLE `db.batch()` round trip (`runQuotaBatch` — see the [edge quota & tier serving](/launch/edge-quota-tier-serving.md) concept for that module; the call site is `worker/src/index.ts:3533-3538`) rather than two
    serial awaits: the 2026-08-04 prod measurement showed those two WERE the whole `wdb` phase (qmeter
    152/158/163 ms + qstor 120/126/130 ms = wdb 277/284/302 ms) and neither reads the other's result. The
    counter stays SYNCHRONOUS and un-deferred on purpose — its post-increment value IS the 429 decision,
@@ -133,12 +133,12 @@ keeps forged tokens cheap to reject before any expensive work.
    forward through the three-tier cache `resolveTenantResidency` — **L1** per-isolate (5 s) → **L2** Workers
    KV (`tres:<tenant>`, 60 s) → **L3** D1 (`SELECT primary_region`) — replacing the former inline
    per-request D1-PRIMARY read so a far-from-D1 (e.g. SAM) caller no longer pays a synchronous round-trip
-   for this near-immutable value (`worker/src/index.ts:3713-3718`,
+   for this near-immutable value (`worker/src/index.ts:3714-3719`,
    `worker/src/lib/tenant_residency_cache.ts:231-298`). It is FAIL-CLOSED: an unresolved region (a D1 fault
    with no cached fallback ⇒ the `RESIDENCY_UNRESOLVED` sentinel) returns `503 RESIDENCY_UNAVAILABLE`
-   rather than IAD-leaking an EU tenant to US storage (`worker/src/index.ts:3720-3737`,
+   rather than IAD-leaking an EU tenant to US storage (`worker/src/index.ts:3721-3738`,
    `worker/src/lib/tenant_residency_cache.ts:284-291`); a `null` region (no tenant row / no pin) preserves
-   the existing `primaryRegion === undefined` IAD-local fall-through (`worker/src/index.ts:3741`). A stale
+   the existing `primaryRegion === undefined` IAD-local fall-through (`worker/src/index.ts:3742`). A stale
    cached region can only MIS-ROUTE, never silently leak, because the container residency backstop
    (`residency.rs`) 409s any real cross-region mismatch.
 7c. A response returned through **this PAT-gated native DO forward** carries a `Server-Timing` header
@@ -159,19 +159,19 @@ keeps forged tokens cheap to reject before any expensive work.
    at 0 ms instead, which is why the 2026-08-04 probe saw `auth` on 3 of 30 responses. Durations are coarse
    by construction — a Worker's `Date.now()` advances only across I/O, so a CPU-only stretch reads 0 —
    which makes them directional attribution, never a profile
-   (`worker/src/index.ts:4170-4245`). `origin` is decomposed the same way `wdb` is, and the split spans
+   (`worker/src/index.ts:4171-4246`). `origin` is decomposed the same way `wdb` is, and the split spans
    the process boundary: the CONTAINER reports `opat` (its own per-request D1 `pat` read) / `oquota`
    (the `$`-ceiling accrue) / `ostore` (the moat storage lookup) / `oother` (its residue) on the
    subresponse's own `Server-Timing`, which the Worker reads off the DO response
-   (`worker/src/index.ts:4240`), forwards verbatim (`worker/src/index.ts:4560`) and completes with the
+   (`worker/src/index.ts:4241`), forwards verbatim (`worker/src/index.ts:4561`) and completes with the
    one number only the Worker can see: `ohop = origin − Σ(container phases)`
-   (`worker/src/index.ts:4554`), covering the DO dispatch + placement, the DO's own prologue, the wire
+   (`worker/src/index.ts:4555`), covering the DO dispatch + placement, the DO's own prologue, the wire
    and the response coming back. The five always sum to `origin` exactly, and both ways that could
    fail are refusals: a container that reports nothing — an image predating the split, or a response
    the DO synthesized without reaching the container — leaves `origin` undecomposed
-   (`worker/src/index.ts:4527`, `worker/src/index.ts:4548`), and a report that cannot be reconciled,
+   (`worker/src/index.ts:4528`, `worker/src/index.ts:4549`), and a report that cannot be reconciled,
    its phases exceeding `origin` or a consumed phase carrying an unreadable duration, is dropped WHOLE
-   as `ohop;dur=<origin>;desc="unreconciled"` (`worker/src/index.ts:4551-4552`) rather than published
+   as `ohop;dur=<origin>;desc="unreconciled"` (`worker/src/index.ts:4552-4553`) rather than published
    as a split that does not add up.
    Two caveats a reader needs:
    **(a)** on a multi-region tenant the client sees the REGIONAL Worker's split; the primary Worker
@@ -208,96 +208,96 @@ keeps forged tokens cheap to reject before any expensive work.
    just retired one.** The P3 EDGE_DO_METER hop (`await serveViaDO(...)`, a DIFFERENT DO pair from the
    per-tenant `CoreLinkServer` this section otherwise describes) sits inside the `wdb` window and is now
    clocked as `stQDoMs` in a `try/finally` around the call, so the time is attributed even when the
-   fail-open `catch` swallows a DO outage (`worker/src/index.ts:3310-3356`). Its Server-Timing name is
+   fail-open `catch` swallows a DO outage (`worker/src/index.ts:3311-3357`). Its Server-Timing name is
    `qdo`, and `wdb`'s leftover after `qtier`/`qdo`/`qbatch`/`qresid` is `qother`
-   (`worker/src/index.ts:4471`, `wdbResidualPhase` — same "drop the split whole rather than publish it
+   (`worker/src/index.ts:4472`, `wdbResidualPhase` — same "drop the split whole rather than publish it
    wrong" discipline as `ohop` above). BOTH are gated on the operator flag
    `SERVER_TIMING_WDB_DETAIL === "on"` (unset by default, declared on `Env` at
-   `worker/src/index.ts:275`) — never emitted otherwise, so the byte-for-byte header contract this
+   `worker/src/index.ts:276`) — never emitted otherwise, so the byte-for-byte header contract this
    section documents is unchanged unless an operator opts in. The reason is the SAME oracle 7d just
    closed for `qmeter`: the `qdo` block only runs when `doServeActive` is true, which requires
-   `meter = !isFanout && requestQuotaEnabled` (`worker/src/index.ts:3257`), and `isFanout` is a
+   `meter = !isFanout && requestQuotaEnabled` (`worker/src/index.ts:3258`), and `isFanout` is a
    constant-time compare of the client-supplied `x-corelink-fanout-from` header against
-   `CORELINK_INTERNAL_AUTH_KEY` (`worker/src/index.ts:3222-3226`) — so an UNGATED `qdo` would tell a
+   `CORELINK_INTERNAL_AUTH_KEY` (`worker/src/index.ts:3223-3227`) — so an UNGATED `qdo` would tell a
    caller, one bit per request, whether their guessed header value equalled the internal key. Gating the
    emission behind an off-by-default operator flag is the fix `qbatch` couldn't be (merging `qmeter`
    narrowed but did not remove the leak); `stQDoMs` itself is still stamped unconditionally — the clock is
    free, only the wire emission costs anything — so flipping the flag needs no redeploy of the timing
    code, only of the gate.
 8. The request is routed to the per-tenant DO via `idFromName(resolvedTenantId)`
-   (`worker/src/index.ts:3853-3855`) and dispatched with `stub.fetch` (`worker/src/index.ts:4013`). A
+   (`worker/src/index.ts:3854-3856`) and dispatched with `stub.fetch` (`worker/src/index.ts:4014`). A
    multi-region tenant may first take the LOCAL (this-region) `_system` container branch above this
-   forward (`worker/src/index.ts:2226-2228`); a non-resident tenant falls through to the per-tenant DO
+   forward (`worker/src/index.ts:2227-2229`); a non-resident tenant falls through to the per-tenant DO
    derivation here.
 9. The forwarded request is augmented: strip-then-set the trusted tenant-id, scope, token-prefix, and
-   client-ip headers (`worker/src/index.ts:3871-3902`).
+   client-ip headers (`worker/src/index.ts:3872-3903`).
 10. The whole handler is wrapped by `Sentry.withSentry`, inert until `SENTRY_DSN` is set and with
-    `sendDefaultPii=false` (`worker/src/index.ts:4272-4280`); its `beforeSend`/`beforeSendTransaction`
+    `sendDefaultPii=false` (`worker/src/index.ts:4273-4281`); its `beforeSend`/`beforeSendTransaction`
     run `scrubSentryEvent` (`worker/src/sentry-scrub.ts`) over EVERY event before it leaves the Worker —
     not just sensitive header KEYS but message/exception bodies, breadcrumbs, and `extra`/`contexts`
     VALUES (CoreLink PATs, bearer/basic auth, Stripe `sk_`/`pk_`/`whsec_` keys, emails are
-    `[REDACTED]`), closing the WP4 PII/secret-leak gap (`worker/src/index.ts:4281-4286`).
+    `[REDACTED]`), closing the WP4 PII/secret-leak gap (`worker/src/index.ts:4282-4287`).
 
 # Invariants
 - Tenant isolation is structural: the DO id is derived solely from the PAT-resolved tenant, never the
-  URL path segment (`worker/src/index.ts:3853-3855`).
+  URL path segment (`worker/src/index.ts:3854-3856`).
 - A client can never smuggle a server-trust header: the strip list is applied on every forward path
-  before the Worker sets its own values (`worker/src/index.ts:703-772`). The team-RBAC role header
+  before the Worker sets its own values (`worker/src/index.ts:704-773`). The team-RBAC role header
   `x-corelink-role` (migration 0074) is a member of that strip list, so a client copy is always deleted;
   the Worker is its SOLE setter and stamps the D1-resolved role only on the customer-plane forward
-  (`worker/src/index.ts:771`, set at `worker/src/index.ts:2975`) — this is what lets the container gate
+  (`worker/src/index.ts:772`, set at `worker/src/index.ts:2976`) — this is what lets the container gate
   OWNER-only account deletion, and owner/admin-only team-management (invite/remove), without trusting a
   client-supplied role.
 - The signing-key gate is mandatory — a missing/short `PAT_SIGNING_KEY` is a 503, never a silent skip
-  (`worker/src/index.ts:1257-1283`).
+  (`worker/src/index.ts:1258-1284`).
 - The Worker forwards the D1-resolved `scope` as `x-corelink-scope` and is its sole setter
-  (`worker/src/index.ts:3902`); for a find-only PAT (`pat.find_only = 1`) the forwarded value is narrowed
-  to `find-missing` rather than the stored base `read-only` (ADR-0071, `worker/src/index.ts:1509`).
+  (`worker/src/index.ts:3903`); for a find-only PAT (`pat.find_only = 1`) the forwarded value is narrowed
+  to `find-missing` rather than the stored base `read-only` (ADR-0071, `worker/src/index.ts:1510`).
 - On the customer (Clerk-session) forward the Worker sets `x-corelink-scope` from the D1-resolved team
   role, a THREE-way branch (not the old "viewer vs everyone-else"): `viewer` → `read-only`, `member` →
   `read-write`, `owner`/`admin` → `read-write billing` — so the `billing` capability (billing portal /
   cancel subscription / financial PII) is now OWNER/ADMIN-only and a plain `member` no longer clears the
-  container's F-018 billing/PII gate; the Worker is the sole setter (`worker/src/index.ts:2962-2969`).
+  container's F-018 billing/PII gate; the Worker is the sole setter (`worker/src/index.ts:2963-2970`).
 - A 404 from the DO is timing-padded to defeat cross-tenant enumeration
-  (`worker/src/index.ts:4131-4139`).
+  (`worker/src/index.ts:4132-4140`).
 - Data-residency is resolved FAIL-CLOSED before the DO forward: an unresolvable region (a D1 fault with
   no cached fallback) is a `503`, never an IAD-local fall-through that could place an EU tenant's bytes in
   US storage; only a resolved `null` (no row / no pin) falls through to IAD-local
-  (`worker/src/index.ts:3720-3737`, `worker/src/lib/tenant_residency_cache.ts:284-291`).
+  (`worker/src/index.ts:3721-3738`, `worker/src/lib/tenant_residency_cache.ts:284-291`).
 
 # Gotchas
 - Argon2id is NOT run in the Worker (cpu_ms budget) — possession on the native CAS/AC/Bazel/Turbo plane
   rests solely on the HMAC gate; adapter routes (cargo/brew/npm/pip/oci) re-verify in the container.
 - OCI, the Stripe webhook, and the fabric-introspect / resolve-tenant / billing-ingest arms are pure
   pass-throughs: the Worker applies no edge PAT gate and the container is the sole auth authority for
-  them. `/internal/v1/auth/introspect` (`worker/src/index.ts:1025`) and `/internal/v1/auth/resolve-tenant`
-  (`worker/src/index.ts:1037`) share `routeKind="fabric_introspect"` + the `FABRIC_INTROSPECT_AUTH_KEY` gate;
-  `/internal/v1/billing/usage` (`worker/src/index.ts:1049`) uses its own `BILLING_INGEST_AUTH_KEY`.
+  them. `/internal/v1/auth/introspect` (`worker/src/index.ts:1026`) and `/internal/v1/auth/resolve-tenant`
+  (`worker/src/index.ts:1038`) share `routeKind="fabric_introspect"` + the `FABRIC_INTROSPECT_AUTH_KEY` gate;
+  `/internal/v1/billing/usage` (`worker/src/index.ts:1050`) uses its own `BILLING_INGEST_AUTH_KEY`.
 
 # Citations
 1. `worker/src/index.ts:1-20` — the architecture header documenting the Worker → DO → container topology.
-2. `worker/src/index.ts:518-548` — the `AuthResult` carrying the D1-resolved scope (the Worker is its sole authority).
-3. `worker/src/index.ts:703-772` — the `CLIENT_TRUST_HEADERS` strip list.
-4. `worker/src/index.ts:779-783` — `stripClientTrustHeaders` (delete-then-set discipline).
-5. `worker/src/index.ts:831-1143` — the `matchRoute` ordered route table.
-5b. `worker/src/index.ts:1025` / `worker/src/index.ts:1037` / `worker/src/index.ts:1049` — the three exact-path pure-pass-through carve-outs: `/internal/v1/auth/introspect` + `/internal/v1/auth/resolve-tenant` (both `fabric_introspect`, `FABRIC_INTROSPECT_AUTH_KEY`) and `/internal/v1/billing/usage` (`billing_ingest`, `BILLING_INGEST_AUTH_KEY`).
-5c. `worker/src/index.ts:2415` — the `/_internal/public/revoke` internal-forward arm (B1b): it forwards the revoke to the `_system` DO → container (`worker/src/index.ts:2426`) and, only on an `ok` container response with `METADATA_KV` bound (`worker/src/index.ts:2442`), reads the RESOLVED `content_hash` from the container's buffered RESPONSE body (`worker/src/index.ts:2452`, F-1: authoritative for both the raw `content_hash` and the `upstream_digest` revoke spaces) and, gated on it matching `^[0-9a-f]{64}$` (`worker/src/index.ts:2467`), best-effort-writes the content-hash-keyed edge blocklist KV via `ctx.waitUntil(writePublicBlocklistKv(...))` (`worker/src/index.ts:2468`) — collapsing the `_public` edge-serve revocation window from the ~60 s map-cache TTL to KV propagation, never failing the revoke on a KV fault.
-6. `worker/src/index.ts:1257-1283` — `extractAuth` fail-CLOSED on absent/short `PAT_SIGNING_KEY`.
-7. `worker/src/index.ts:1311-1469` — HMAC fast-reject + cached D1 lookup + expiry check (incl. the `expires_ms === 0` never-expires sentinel guard at `:1453`, and the cached PAT-row lookup `verifyPatRowCached` whose `error` kind becomes `d1_lookup_error` at `:1435-1439`).
-7b. `worker/src/index.ts:3063-3100` — caller reason→status mapping: BOTH `signing_key_not_configured` (config fault) AND `d1_lookup_error` (transient D1 fault) → retryable `503`; the distinct `tenant_suspended` reason → `403` (an authorization denial, `worker/src/index.ts:3090-3095`); and only then the 401 fall-through for a genuinely bad credential (`pat_not_found` / `pat_expired` / `invalid_*`). The mapping is THREE-way, not two-way — an earlier draft of this line said "every other reason → 401" while citing a range that contains the 403 arm.
-8. `worker/src/index.ts:1928-1996` — the `baseHandler.fetch` entry, request-id, CORS, route match.
-9. `worker/src/index.ts:1998-2015` — health short-circuit (no auth, no DO).
-9b. `worker/src/index.ts:3149-3155` — the `first_cli_authed` emit site (`GET /v1/users/me`, after the PAT-resolved tenant clears the path-spoof guard), handed to `ctx.waitUntil`. The producer module is `worker/src/lib/onboarding_events.ts:170-224` (`emitFirstCliAuthed` returns `void` and swallows every error, so the emit can never add latency to — or fail — the response); every skip path is silent by design, including the one where the binding resolved to the target's default `fetch` export because `entrypoint = "AnalyticsIngest"` is missing, which degrades to a no-op rather than a `TypeError`; the deterministic id is built at `worker/src/lib/onboarding_events.ts:158-160`; the `ANALYTICS_SVC` service binding is declared on `Env` at `worker/src/index.ts:328` and bound with `entrypoint = "AnalyticsIngest"` at `wrangler.toml` `[[env.prod.services]]`. There is NO caller-side ingest key any more: the RPC path is authenticated by the platform (`ingestServerEvent` passes `trusted = true` on that basis), which is what removed the `ANALYTICS_INGEST_KEY` operator prerequisite that kept this emit dark in prod.
-10. `worker/src/index.ts:3158-3663` — per-tier quota enforcement after auth, before forward.
-10a. `worker/src/index.ts:3244-3249` — `resolveTenantTierCached` three-tier tier resolution (L1 isolate → L2 KV `ttier:` 60 s → L3 D1 `getTierForTenant`) for the storage-quota header + request-count cap, replacing the former inline per-request tier D1-PRIMARY read (latency WP slice 2). FAIL-OPEN like the suspend gate: an unconfirmed (`d1Error`) result is returned unchanged and NEVER cached (a transient D1 fault can't pin a tenant to 'free' — F21 preserved), so a stale worker tier is bounded (`≤ 60 s`) and never authoritative (the DO quota FSM re-derives the hard caps). The cache module is `worker/src/lib/tenant_tier_cache.ts:182`.
-10b. `worker/src/index.ts:3713-3718` — `resolveTenantResidency` three-tier residency resolution (L1 isolate → L2 KV `tres:` 60 s → L3 D1) replacing the former inline `SELECT primary_region` per-request D1-PRIMARY read; FAIL-CLOSED `503 RESIDENCY_UNAVAILABLE` on the `RESIDENCY_UNRESOLVED` sentinel (`worker/src/index.ts:3720-3737`), `null` region ⇒ IAD-local (`worker/src/index.ts:3741`). The cache module is `worker/src/lib/tenant_residency_cache.ts:231-298`, whose catch serves a cached region on a transient D1 fault but returns `RESIDENCY_UNRESOLVED` (never caches the error) when none is held (`worker/src/lib/tenant_residency_cache.ts:284-291`).
-11. `worker/src/index.ts:3853-3855` — `idFromName(resolvedTenantId)` per-tenant DO routing.
-12. `worker/src/index.ts:3871-3902` — the augmented forward (strip-then-set trust headers).
-13. `worker/src/index.ts:3902` — forwarding the D1-resolved scope as `x-corelink-scope` (narrowed to `find-missing` for a find-only PAT, ADR-0071 `worker/src/index.ts:1509`).
-14. `worker/src/index.ts:4013` — `stub.fetch` dispatch to the DO.
-14a. `worker/src/index.ts:4170-4245` — the `Server-Timing` emission: `auth` / `wdb` / `origin` / `total`, with `wdb` decomposed into `qtier` / `qbatch` / `qresid` (`qbatch` = the one D1 round trip carrying both quota statements; it replaced the retired `qmeter` + `qstor` pair when those two serial round trips were merged). A phase that ran is emitted even at `dur=0`; a phase that was skipped is omitted (the `-1` sentinel at `worker/src/index.ts:1961-1985`), so a cache-served phase is never mistaken for one that did not execute.
-14b. `worker/src/index.ts:4526-4563` — `originSubPhases`, the merge that decomposes `origin` across the Worker↔container boundary. The container's four phases are named at `worker/src/index.ts:4343` (`opat` / `oquota` / `ostore` / `oother`) and arrive on the DO response's own `Server-Timing`, read at `worker/src/index.ts:4240`; the Worker re-emits them unchanged (`worker/src/index.ts:4560`) and derives `ohop` as `origin` minus their sum (`worker/src/index.ts:4554`). No container report ⇒ no split (`worker/src/index.ts:4527`, `worker/src/index.ts:4548`), which is what lets the Worker deploy ahead of the container image; an irreconcilable report ⇒ the whole split is refused as `ohop;dur=<origin>;desc="unreconciled"` (`worker/src/index.ts:4551-4552`). Same emission contract as the `wdb` children: a container phase that ran is forwarded even at `dur=0`, one that did not run is absent (`worker/src/index.ts:4556-4560`).
-14c. `worker/src/index.ts:275` — `SERVER_TIMING_WDB_DETAIL` declared on `Env`, off-by-default. `worker/src/index.ts:3310-3356` — the awaited `serveViaDO(...)` P3 hop timed as `stQDoMs` in a `try/finally` (captured even on the fail-open `catch`). `worker/src/index.ts:4201-4229` — the `qdo`/`qother` emission, gated on `SERVER_TIMING_WDB_DETAIL === "on"`; `wdbResidualPhase` at `worker/src/index.ts:4471-4480`. `worker/src/index.ts:3257` — `meter = !isFanout && requestQuotaEnabled`, the gate `qdo`'s presence depends on; `worker/src/index.ts:3222-3226` — `isFanout`, the constant-time compare of the client-supplied `x-corelink-fanout-from` header against `CORELINK_INTERNAL_AUTH_KEY` that makes an ungated `qdo` a confirmation oracle.
-15. `worker/src/index.ts:4131-4139` — 404 timing-pad.
-16. `worker/src/index.ts:4272-4280` — the `Sentry.withSentry` wrapper (inert until `SENTRY_DSN`; `sendDefaultPii=false`).
-17. `worker/src/index.ts:4281-4286` — `beforeSend`/`beforeSendTransaction` → `scrubSentryEvent` (`worker/src/sentry-scrub.ts:101-188`): full-event PII/secret scrub (default-DENY sensitive keys + free-text secret/PII shapes), not just header keys.
+2. `worker/src/index.ts:519-549` — the `AuthResult` carrying the D1-resolved scope (the Worker is its sole authority).
+3. `worker/src/index.ts:704-773` — the `CLIENT_TRUST_HEADERS` strip list.
+4. `worker/src/index.ts:780-784` — `stripClientTrustHeaders` (delete-then-set discipline).
+5. `worker/src/index.ts:832-1144` — the `matchRoute` ordered route table.
+5b. `worker/src/index.ts:1026` / `worker/src/index.ts:1038` / `worker/src/index.ts:1050` — the three exact-path pure-pass-through carve-outs: `/internal/v1/auth/introspect` + `/internal/v1/auth/resolve-tenant` (both `fabric_introspect`, `FABRIC_INTROSPECT_AUTH_KEY`) and `/internal/v1/billing/usage` (`billing_ingest`, `BILLING_INGEST_AUTH_KEY`).
+5c. `worker/src/index.ts:2416` — the `/_internal/public/revoke` internal-forward arm (B1b): it forwards the revoke to the `_system` DO → container (`worker/src/index.ts:2427`) and, only on an `ok` container response with `METADATA_KV` bound (`worker/src/index.ts:2443`), reads the RESOLVED `content_hash` from the container's buffered RESPONSE body (`worker/src/index.ts:2453`, F-1: authoritative for both the raw `content_hash` and the `upstream_digest` revoke spaces) and, gated on it matching `^[0-9a-f]{64}$` (`worker/src/index.ts:2468`), best-effort-writes the content-hash-keyed edge blocklist KV via `ctx.waitUntil(writePublicBlocklistKv(...))` (`worker/src/index.ts:2469`) — collapsing the `_public` edge-serve revocation window from the ~60 s map-cache TTL to KV propagation, never failing the revoke on a KV fault.
+6. `worker/src/index.ts:1258-1284` — `extractAuth` fail-CLOSED on absent/short `PAT_SIGNING_KEY`.
+7. `worker/src/index.ts:1312-1470` — HMAC fast-reject + cached D1 lookup + expiry check (incl. the `expires_ms === 0` never-expires sentinel guard at `:1453`, and the cached PAT-row lookup `verifyPatRowCached` whose `error` kind becomes `d1_lookup_error` at `:1435-1439`).
+7b. `worker/src/index.ts:3064-3101` — caller reason→status mapping: BOTH `signing_key_not_configured` (config fault) AND `d1_lookup_error` (transient D1 fault) → retryable `503`; the distinct `tenant_suspended` reason → `403` (an authorization denial, `worker/src/index.ts:3091-3096`); and only then the 401 fall-through for a genuinely bad credential (`pat_not_found` / `pat_expired` / `invalid_*`). The mapping is THREE-way, not two-way — an earlier draft of this line said "every other reason → 401" while citing a range that contains the 403 arm.
+8. `worker/src/index.ts:1929-1997` — the `baseHandler.fetch` entry, request-id, CORS, route match.
+9. `worker/src/index.ts:1999-2016` — health short-circuit (no auth, no DO).
+9b. `worker/src/index.ts:3150-3156` — the `first_cli_authed` emit site (`GET /v1/users/me`, after the PAT-resolved tenant clears the path-spoof guard), handed to `ctx.waitUntil`. The producer module is `worker/src/lib/onboarding_events.ts:170-224` (`emitFirstCliAuthed` returns `void` and swallows every error, so the emit can never add latency to — or fail — the response); every skip path is silent by design, including the one where the binding resolved to the target's default `fetch` export because `entrypoint = "AnalyticsIngest"` is missing, which degrades to a no-op rather than a `TypeError`; the deterministic id is built at `worker/src/lib/onboarding_events.ts:158-160`; the `ANALYTICS_SVC` service binding is declared on `Env` at `worker/src/index.ts:329` and bound with `entrypoint = "AnalyticsIngest"` at `wrangler.toml` `[[env.prod.services]]`. There is NO caller-side ingest key any more: the RPC path is authenticated by the platform (`ingestServerEvent` passes `trusted = true` on that basis), which is what removed the `ANALYTICS_INGEST_KEY` operator prerequisite that kept this emit dark in prod.
+10. `worker/src/index.ts:3159-3664` — per-tier quota enforcement after auth, before forward.
+10a. `worker/src/index.ts:3245-3250` — `resolveTenantTierCached` three-tier tier resolution (L1 isolate → L2 KV `ttier:` 60 s → L3 D1 `getTierForTenant`) for the storage-quota header + request-count cap, replacing the former inline per-request tier D1-PRIMARY read (latency WP slice 2). FAIL-OPEN like the suspend gate: an unconfirmed (`d1Error`) result is returned unchanged and NEVER cached (a transient D1 fault can't pin a tenant to 'free' — F21 preserved), so a stale worker tier is bounded (`≤ 60 s`) and never authoritative (the DO quota FSM re-derives the hard caps). The cache module is `worker/src/lib/tenant_tier_cache.ts:182`.
+10b. `worker/src/index.ts:3714-3719` — `resolveTenantResidency` three-tier residency resolution (L1 isolate → L2 KV `tres:` 60 s → L3 D1) replacing the former inline `SELECT primary_region` per-request D1-PRIMARY read; FAIL-CLOSED `503 RESIDENCY_UNAVAILABLE` on the `RESIDENCY_UNRESOLVED` sentinel (`worker/src/index.ts:3721-3738`), `null` region ⇒ IAD-local (`worker/src/index.ts:3742`). The cache module is `worker/src/lib/tenant_residency_cache.ts:231-298`, whose catch serves a cached region on a transient D1 fault but returns `RESIDENCY_UNRESOLVED` (never caches the error) when none is held (`worker/src/lib/tenant_residency_cache.ts:284-291`).
+11. `worker/src/index.ts:3854-3856` — `idFromName(resolvedTenantId)` per-tenant DO routing.
+12. `worker/src/index.ts:3872-3903` — the augmented forward (strip-then-set trust headers).
+13. `worker/src/index.ts:3903` — forwarding the D1-resolved scope as `x-corelink-scope` (narrowed to `find-missing` for a find-only PAT, ADR-0071 `worker/src/index.ts:1510`).
+14. `worker/src/index.ts:4014` — `stub.fetch` dispatch to the DO.
+14a. `worker/src/index.ts:4171-4246` — the `Server-Timing` emission: `auth` / `wdb` / `origin` / `total`, with `wdb` decomposed into `qtier` / `qbatch` / `qresid` (`qbatch` = the one D1 round trip carrying both quota statements; it replaced the retired `qmeter` + `qstor` pair when those two serial round trips were merged). A phase that ran is emitted even at `dur=0`; a phase that was skipped is omitted (the `-1` sentinel at `worker/src/index.ts:1962-1986`), so a cache-served phase is never mistaken for one that did not execute.
+14b. `worker/src/index.ts:4527-4564` — `originSubPhases`, the merge that decomposes `origin` across the Worker↔container boundary. The container's four phases are named at `worker/src/index.ts:4344` (`opat` / `oquota` / `ostore` / `oother`) and arrive on the DO response's own `Server-Timing`, read at `worker/src/index.ts:4241`; the Worker re-emits them unchanged (`worker/src/index.ts:4561`) and derives `ohop` as `origin` minus their sum (`worker/src/index.ts:4555`). No container report ⇒ no split (`worker/src/index.ts:4528`, `worker/src/index.ts:4549`), which is what lets the Worker deploy ahead of the container image; an irreconcilable report ⇒ the whole split is refused as `ohop;dur=<origin>;desc="unreconciled"` (`worker/src/index.ts:4552-4553`). Same emission contract as the `wdb` children: a container phase that ran is forwarded even at `dur=0`, one that did not run is absent (`worker/src/index.ts:4557-4561`).
+14c. `worker/src/index.ts:276` — `SERVER_TIMING_WDB_DETAIL` declared on `Env`, off-by-default. `worker/src/index.ts:3311-3357` — the awaited `serveViaDO(...)` P3 hop timed as `stQDoMs` in a `try/finally` (captured even on the fail-open `catch`). `worker/src/index.ts:4202-4230` — the `qdo`/`qother` emission, gated on `SERVER_TIMING_WDB_DETAIL === "on"`; `wdbResidualPhase` at `worker/src/index.ts:4472-4481`. `worker/src/index.ts:3258` — `meter = !isFanout && requestQuotaEnabled`, the gate `qdo`'s presence depends on; `worker/src/index.ts:3223-3227` — `isFanout`, the constant-time compare of the client-supplied `x-corelink-fanout-from` header against `CORELINK_INTERNAL_AUTH_KEY` that makes an ungated `qdo` a confirmation oracle.
+15. `worker/src/index.ts:4132-4140` — 404 timing-pad.
+16. `worker/src/index.ts:4273-4281` — the `Sentry.withSentry` wrapper (inert until `SENTRY_DSN`; `sendDefaultPii=false`).
+17. `worker/src/index.ts:4282-4287` — `beforeSend`/`beforeSendTransaction` → `scrubSentryEvent` (`worker/src/sentry-scrub.ts:101-188`): full-event PII/secret scrub (default-DENY sensitive keys + free-text secret/PII shapes), not just header keys.

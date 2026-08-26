@@ -808,6 +808,13 @@ export class CoreLinkServer implements DurableObject {
           // duration of a rotation so an in-flight erase leg never 401s while the
           // DO containers cycle onto the new key. Empty when unset ⇒ single-key.
           CORELINK_ERASE_AUTH_KEY_PREVIOUS: this.env.CORELINK_ERASE_AUTH_KEY_PREVIOUS ?? "",
+          // Edge-probe audit emit: the container's `POST /_internal/audit/cas-attempted`
+          // gate reads a DEDICATED `CORELINK_AUDIT_ATTEMPTED_AUTH_KEY` with NO shared
+          // fallback (it writes tenant-attributed audit rows for an arbitrary tenant).
+          // Unforwarded, the route would stay unmounted no matter what the operator
+          // provisions — the edge findMissingBlobs path would silently keep taking the
+          // slow container route with no way to tell why.
+          CORELINK_AUDIT_ATTEMPTED_AUTH_KEY: this.env.CORELINK_AUDIT_ATTEMPTED_AUTH_KEY ?? "",
           // H5 dual-approval: the container's `POST /v1/admin/approve` gate reads
           // a DEDICATED `CORELINK_ADMIN_APPROVER_AUTH_KEY` (distinct from the
           // mutate/admin key so approve+mutate need different keys — real
