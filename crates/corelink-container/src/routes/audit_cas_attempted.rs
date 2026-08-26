@@ -73,6 +73,13 @@ const INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
 /// a full-size batch, and a caller that sends one is malfunctioning.
 pub const AUDIT_CAS_ATTEMPTED_MAX_DIGESTS: usize = 256;
 
+/// Compile-time proof that this route is not an alternative intake for a
+/// full-size `findMissingBlobs` batch. Both operands are consts, so a runtime
+/// `assert!` would be folded to `assert!(true)` and prove nothing — this fails
+/// the BUILD if either cap ever moves past the other.
+const _: () =
+    assert!(AUDIT_CAS_ATTEMPTED_MAX_DIGESTS < corelink_bazel_bridge::FIND_MISSING_BLOB_CAP);
+
 /// Minimum length of the dedicated auth key. Mirrors the fleet-wide floor
 /// (`openssl rand -hex 32` → 64 chars; the floor is 32).
 const MIN_AUTH_KEY_LEN: usize = 32;
@@ -248,7 +255,6 @@ pub fn build_state_from_env() -> Option<AuditCasAttemptedState> {
 }
 
 /// Mount `POST /_internal/audit/cas-attempted`.
-#[must_use]
 pub fn router(state: AuditCasAttemptedState) -> Router {
     Router::new()
         .route("/_internal/audit/cas-attempted", post(handle_cas_attempted))
@@ -261,7 +267,12 @@ mod tests {
 
     fn headers_with(value: &str) -> HeaderMap {
         let mut h = HeaderMap::new();
-        h.insert(INTERNAL_AUTH_HEADER, value.parse().expect("header value"));
+        match value.parse() {
+            Ok(v) => {
+                h.insert(INTERNAL_AUTH_HEADER, v);
+            }
+            Err(_) => unreachable!("test header values are ASCII"),
+        }
         h
     }
 
@@ -297,8 +308,7 @@ mod tests {
     }
 
     #[test]
-    fn the_cap_mirrors_the_edge_and_stays_under_the_container_cap() {
+    fn the_cap_mirrors_the_edge() {
         assert_eq!(AUDIT_CAS_ATTEMPTED_MAX_DIGESTS, 256);
-        assert!(AUDIT_CAS_ATTEMPTED_MAX_DIGESTS < corelink_bazel_bridge::FIND_MISSING_BLOB_CAP);
     }
 }
