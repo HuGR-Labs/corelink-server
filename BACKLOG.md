@@ -2715,3 +2715,50 @@ verify-means: |
   this item to be closed rather than left open against a fixed world.
 last-verified: 2026-08-26
 ```
+
+### B-051 — the failover sample floor makes a dead low-traffic region un-failoverable
+
+`RollingMetricsHealthProbe` will not fire ANY degradation signal until it has
+seen `min_samples` requests inside the rolling window. The window is
+`SUSTAINED_WINDOW_SECS` = 5 s (`crates/corelink-container/src/routes/failover.rs:93`)
+and the default floor is 50
+(`crates/corelink-container/src/routes/failover.rs:105`), so a region needs
+**>= 10 req/s just to be eligible to fail over**. Below that the probe reports
+`Healthy` **unconditionally** (`:216`) — a region returning 100% errors at low
+volume never trips, and never will, for as long as it stays quiet.
+
+The floor was added for a real bug: three consecutive slow 5xx satisfy all
+three triggers at once (rate 100% > 1%, p99 > 300 ms, streak >= 3) and freeze
+every write region-wide, amplified because the probe counts the container's own
+responses. But the SAME change added hysteresis — `FAILOVER_TRIP_PROBES` = 3
+consecutive DEGRADED probe observations before latching (`:110`) — and that
+alone already defeats a three-request blip, while still letting sustained
+failure through. The floor is a second, blunter layer on top, and what it buys
+beyond the hysteresis is small next to the false negative it introduces.
+
+This is worth deciding NOW rather than later, because the knob only just
+started reaching production: `FAILOVER_MIN_SAMPLES` was read by the container
+but missing from the DO forward-list until #1348, so until today setting it did
+nothing. An operator can now lower it during an incident — but only if they
+know it exists and know that "healthy" on a quiet region may mean "below the
+floor", not "fine".
+
+Decide one of: keep the floor and document the low-traffic blind spot as
+accepted; lower the default; scale the floor to observed traffic; or drop it
+and rely on the hysteresis that was added alongside it. Found by a peer review
+of #1348.
+
+```backlog
+id: B-051
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  grep -qE '^const MIN_SAMPLES_FOR_FAILOVER_DEFAULT: usize = 50;$' \
+    crates/corelink-container/src/routes/failover.rs
+verify-means: |
+  open — passes while the default floor is still 50, the value this item is
+  about. Turns red if the default changes, forcing the decision recorded here
+  to be closed out rather than left open against a world that already moved.
+last-verified: 2026-08-26
+```
