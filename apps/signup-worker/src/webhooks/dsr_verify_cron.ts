@@ -68,6 +68,17 @@ const DEADLINE_MS = 24 * 60 * 60 * 1000;
 const WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
+ * Above this many past-deadline `dsr_requested` rows in a single sweep, log
+ * LOUD. The 'requested' set is bounded by COMPLETION, not by age (see the
+ * query comment), so it is designed to grow without limit while DSRs are
+ * stuck — which is the correct alerting behaviour and also the exact shape
+ * that grows silently. Prod holds 166 `dsr_requested` rows today, all already
+ * flipped to 'verified', so the past-deadline set a healthy sweep enumerates
+ * is 0 and any sustained double-digit reading is a real backlog, not noise.
+ */
+const REQUESTED_BACKLOG_WARN_AT = 25;
+
+/**
  * Format epoch-ms as the ledger's `"YYYY-MM-DDTHH:MM:SSZ"` second-precision ISO
  * (matches `dsr_erasure_log.started_at`, so the SQL string comparison is exact).
  */
@@ -162,14 +173,24 @@ export async function runDsrVerifySweep(
   // that failed before ANY tombstone (no dsr_erasure_log row). requested_at is
   // epoch-ms (INTEGER), so compare in ms directly.
   //
-  // NO lower (WINDOW_MS) bound here, deliberately: a DSR stuck at
-  // status='requested' is EXACTLY the breach this anchor exists to surface, and
-  // it self-expires from a 7-day window after one week — silencing the alert
-  // precisely for the permanently-stuck case. The set is self-limiting (a
-  // completed DSR flips to 'verified' and drops out), so enumerating every
-  // past-deadline 'requested' row is bounded and cheap. The WINDOW_MS lower
-  // bound stays on the dsr_erasure_log source below (cost cap on the large
-  // tombstone table, where a row's absence is not itself a breach signal).
+  // NO lower (WINDOW_MS) bound here, deliberately. Read that as a decision
+  // NOT to add one, not as a description of a bound that exists: this query
+  // has exactly ONE exit, `status` leaving 'requested', which happens only
+  // where the sweep flips it to 'verified' on a `verified_complete` decision
+  // (see below; migration 0069 CHECKs the column to those two values). Age
+  // alone never drops a row.
+  //
+  // Adding the 7-day bound would silence the alert for exactly the case the
+  // anchor exists to surface: a DSR stuck at 'requested' IS the breach, and a
+  // week-old stuck DSR is a worse breach than a day-old one, not a resolved
+  // one. So the set is bounded by COMPLETION, not by time — which is cheap in
+  // the healthy case (a completed DSR drops out) and deliberately unbounded in
+  // the unhealthy one. `requestedOverThreshold` below makes that growth
+  // visible rather than letting an ever-larger sweep look like a quiet one.
+  //
+  // The WINDOW_MS lower bound stays on the dsr_erasure_log source below: that
+  // is a cost cap on the large tombstone table, where a row's ABSENCE is not
+  // itself a breach signal.
   let requested: Array<Record<string, unknown>> = [];
   try {
     const reqRes = await env.CONFIG_DB.prepare(
@@ -185,6 +206,18 @@ export async function runDsrVerifySweep(
     // degrade to the dsr_erasure_log source rather than failing the sweep.
     console.error(
       `[dsr-verify-cron] dsr_requested query failed (degrading to log source): ${(err as Error).message.slice(0, 120)}`,
+    );
+  }
+
+  // Growth signal. The count is the number of DSRs past their 24h deadline
+  // that have NOT been verified complete — a number that should sit at 0 and
+  // whose only way up is real. Emitted once per sweep (never per row) so a
+  // large backlog cannot itself become the incident.
+  if (requested.length > REQUESTED_BACKLOG_WARN_AT) {
+    console.warn(
+      `[dsr-verify-cron] past-deadline dsr_requested backlog ${requested.length} ` +
+        `exceeds ${REQUESTED_BACKLOG_WARN_AT} — these DSRs are past the 24h SLA ` +
+        "and have not reached verified_complete; the set only shrinks on completion",
     );
   }
 

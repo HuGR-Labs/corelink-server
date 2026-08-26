@@ -25,6 +25,33 @@ Each entry cross-references:
 
 ### Fixed
 
+- **The DSR verify sweep's `dsr_requested` query said it "self-expires from a
+  7-day window after one week" — it does not, and the concept repeated the
+  claim as fact.** The query has exactly ONE exit: `status` leaving
+  `'requested'`, which happens only where the sweep flips it to `'verified'` on
+  a `verified_complete` decision (migration 0069 CHECKs the column to those two
+  values). Age never drops a row. The comment was arguing AGAINST adding the
+  7-day bound and read as a description of one that exists;
+  `docs/knowledge/compliance/dsr-edge-crons.md` had taken it literally and
+  asserted a stuck DSR "completes or self-expires after a week", which would
+  have told a reader the SLA alert eventually goes quiet on its own. **The bound
+  is still NOT implemented, deliberately:** a DSR stuck at `'requested'` IS the
+  breach the anchor exists to surface, and a week-old stuck DSR is a worse
+  breach than a day-old one — adding the window would silence the alert for
+  exactly the permanently-stuck case. What that leaves is a set bounded by
+  COMPLETION rather than by time: correct, and also the exact shape that grows
+  silently, since a sweep over 26 breached DSRs and a sweep over 0 read
+  identically. `REQUESTED_BACKLOG_WARN_AT` (25) now logs the count ONCE per
+  sweep (never per row, so a large backlog cannot itself become the incident).
+  Threshold set against measured prod state: 166 `dsr_requested` rows, all
+  already `verified`, so a healthy sweep enumerates 0 past-deadline rows and
+  the warn never fires on routine volume. Regression-locked in both directions
+  and proven RED against the reverted log (`expected [] to have a length of 1`):
+  26 rows warns once with the count, 25 stays silent. The existing pin that the
+  query carries no `requested_at >=` bound is untouched — the breach signal must
+  survive this change. 245 signup-worker tests green. Requires a
+  `corelink-signup-worker` deploy (manual `wrangler deploy`; no CI deploy path).
+
 - **The single CAS `GET` had no concurrency guard (B-052).**
   `handle_read` (`crates/corelink-container/src/routes/cas.rs`) took `State`,
   `Path`, `auth`, `scope` and `headers` and no guard, then buffered the whole

@@ -2,7 +2,7 @@
  * Unit tests for the DSR 24h verification sweep cron (WI-S11-008 incr 5 + G4).
  * Mocks D1 via env.CONFIG_DB and the container call via env.CORELINK_API_SVC.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   runDsrVerifySweep,
   postVerify,
@@ -227,6 +227,54 @@ describe("runDsrVerifySweep", () => {
     // No second (>=) bound on the durable anchor → never ages out.
     expect(requestedSql).not.toMatch(/requested_at\s*>=/);
     expect(requestedSql).not.toContain("?2");
+  });
+
+  // ── Growth signal on the deliberately-unbounded 'requested' set ───────────
+
+  /** Run a sweep over `n` past-deadline requested rows, capturing console.warn. */
+  async function sweepWithRequested(n: number): Promise<string[]> {
+    const now = Date.now();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      await runDsrVerifySweep(
+        {
+          CORELINK_API_BASE: "https://api",
+          CORELINK_INTERNAL_AUTH_KEY: "k",
+          CORELINK_API_SVC: svc(200),
+          CONFIG_DB: db({
+            requestedRows: Array.from({ length: n }, (_, i) => ({
+              dsr_id: `d${i}`,
+              tenant_id: "t",
+              requested_at: now - 2 * 86_400_000,
+            })),
+          }),
+        },
+        now,
+      );
+      return warnSpy.mock.calls.map((c) => String(c[0] ?? ""));
+    } finally {
+      warnSpy.mockRestore();
+    }
+  }
+
+  it("logs ONCE, with the count, when the past-deadline requested backlog exceeds the threshold", async () => {
+    // The 'requested' query has no lower bound BY DESIGN, so the set it
+    // enumerates can grow without limit while DSRs are stuck. That is the
+    // correct alerting behaviour and also the exact shape that grows silently:
+    // a sweep over 26 breached DSRs and a sweep over 0 read identically before
+    // this log existed.
+    const warns = await sweepWithRequested(26);
+    const backlog = warns.filter((m) => m.includes("past-deadline dsr_requested backlog"));
+    expect(backlog).toHaveLength(1); // once per sweep, never per row
+    expect(backlog[0]).toContain("26");
+    expect(backlog[0]).toContain("exceeds 25");
+  });
+
+  it("stays quiet at the threshold — the warn means a real backlog, not routine volume", async () => {
+    // A signal that fires on every healthy sweep is not a signal. Prod holds
+    // zero past-deadline rows today, so 25 must not page.
+    const warns = await sweepWithRequested(25);
+    expect(warns.filter((m) => m.includes("past-deadline dsr_requested backlog"))).toHaveLength(0);
   });
 
   it("G4: degrades to dsr_erasure_log when dsr_requested is absent (migration not applied)", async () => {
