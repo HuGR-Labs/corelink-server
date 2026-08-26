@@ -925,6 +925,12 @@ candidates:
     status: "active"
     source_cluster: "adr"
     seed_from: ["specs/03_architecture/adrs/ADR-S33-001-team-multi-seat-membership-model.md"]
+  - id: "adr/adr-s34-001-cas-read-integrity-before-streaming"
+    type: "ADR"
+    title: "ADR S34 001 cas read integrity before streaming"
+    status: "active"
+    source_cluster: "adr"
+    seed_from: ["specs/03_architecture/adrs/ADR-S34-001-cas-read-integrity-before-streaming.md"]
   - id: "adr/waiver-s14-001-legal-externo-timeline"
     type: "ADR"
     title: "WAIVER S14 001 legal externo timeline"

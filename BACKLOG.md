@@ -2716,7 +2716,7 @@ verify-means: |
 last-verified: 2026-08-26
 ```
 
-### B-051 — the failover sample floor makes a dead low-traffic region un-failoverable
+### B-053 — the failover sample floor makes a dead low-traffic region un-failoverable
 
 `RollingMetricsHealthProbe` will not fire ANY degradation signal until it has
 seen `min_samples` requests inside the rolling window. The window is
@@ -2749,7 +2749,7 @@ and rely on the hysteresis that was added alongside it. Found by a peer review
 of #1348.
 
 ```backlog
-id: B-051
+id: B-053
 repo: corelink-server
 owner: tl
 status: open
