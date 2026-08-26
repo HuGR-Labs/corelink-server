@@ -335,12 +335,17 @@ impl FromRequestParts<CasRouteState> for CasPutGuard {
     }
 }
 
-/// Maximum concurrent in-flight native CAS bulk READs for a single tenant. Excess
-/// bulk reads are rejected 429 BEFORE the body is buffered. Bounds peak per-tenant
-/// read-payload heap (`batch-read` accumulates up to [`BATCH_MAX_BYTES`] per
-/// request) and read fan-out (`batch-exists`). SEPARATE axis from the write cap
-/// [`CAS_WRITE_CONCURRENCY_LIMIT`] so reads and writes don't over-throttle each
-/// other; same per-tenant ceiling (8).
+/// Maximum concurrent in-flight native CAS READs for a single tenant — both the
+/// bulk routes (`batch-read` / `batch-exists`) and, since B-052, the single-object
+/// `GET /v1/cas/:tenant/:hash`. Excess reads are rejected 429 before any object is
+/// buffered. Bounds peak per-tenant read-payload heap (`batch-read` accumulates up
+/// to [`BATCH_MAX_BYTES`] per request; a single GET buffers one whole object).
+///
+/// Single and bulk reads deliberately share ONE pool. Giving the single GET its
+/// own counter would let a tenant hold `2 x 8` concurrent reads and defeat the
+/// ceiling this constant exists to impose — the pool is the bound, not the route.
+/// Still a SEPARATE axis from the write cap [`CAS_WRITE_CONCURRENCY_LIMIT`] so
+/// reads and writes do not over-throttle each other; same per-tenant ceiling (8).
 pub const CAS_READ_CONCURRENCY_LIMIT: usize = 8;
 
 /// RAII release of one per-tenant in-flight CAS bulk-READ slot (decrements on
@@ -776,6 +781,12 @@ async fn handle_read(
     auth: crate::auth_tenant::AuthTenant,
     scope: crate::scope::CacheScope,
     headers: axum::http::HeaderMap,
+    // B-052: reserve a per-tenant in-flight read slot BEFORE the handler runs,
+    // so a burst of concurrent GETs cannot each buffer a full object into the
+    // heap. Shares the SAME `read_inflight` pool as `handle_batch_read` on
+    // purpose — see the note on `CAS_READ_CONCURRENCY_LIMIT`. The RAII slot
+    // releases on every return path.
+    _read_concurrency: CasReadConcurrencyGuard,
 ) -> impl IntoResponse {
     // The path `:tenant` is a client echo that MUST equal the
     // authenticated tenant; mismatch is a cross-tenant attempt and is
