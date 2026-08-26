@@ -2960,16 +2960,30 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
         //   - absent                  → PUT (`durable=true`).
         //   - ambiguous GET error     → fail CLOSED (`Internal`); never
         //     blind-overwrite on an unknown prior state.
-        let stored_view: &[u8] = encrypted
+        // Owned copy: the compare view must outlive the move of
+        // `encrypted`/`result_payload` into the conditional put, because a
+        // lost race re-compares against it.
+        let stored_view: Vec<u8> = encrypted
             .as_deref()
-            .unwrap_or(req.result_payload.as_slice());
+            .unwrap_or(req.result_payload.as_slice())
+            .to_vec();
         let existing = {
             let _scope =
                 crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
             tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)))
         };
-        match existing {
-            Ok(Some(prior)) if prior.as_slice() != stored_view => {
+        let pre_put_state = match existing {
+            Ok(prior) => classify_prior(prior.as_deref(), &stored_view),
+            Err(e) => {
+                // Ambiguous prior state: fail closed rather than risk a
+                // blind overwrite of a proven result.
+                warn!(error = %e, key = %key, "R2AcHandler::update pre-PUT GET error");
+                self.emit_update_sli(true);
+                return Err(AcHandlerError::Internal(e));
+            }
+        };
+        match pre_put_state {
+            PriorState::Divergent => {
                 warn!(
                     key = %key,
                     "R2AcHandler::update divergent body — refusing to overwrite a \
@@ -2981,33 +2995,40 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
                     action_digest: req.action_digest,
                 });
             }
-            Ok(Some(_)) => {
+            PriorState::Identical => {
                 // Byte-identical re-PUT → idempotent no-op. The proven
                 // bytes are already durable; do not re-PUT.
                 self.emit_update_sli(false);
                 return Ok(AcUpdateResponse::new(req.action_digest, false));
             }
-            Ok(None) => { /* absent — fall through to the PUT below */ }
-            Err(e) => {
-                // Ambiguous prior state: fail closed rather than risk a
-                // blind overwrite of a proven result.
-                warn!(error = %e, key = %key, "R2AcHandler::update pre-PUT GET error");
-                self.emit_update_sli(true);
-                return Err(AcHandlerError::Internal(e));
-            }
+            PriorState::Absent => { /* absent — fall through to the PUT below */ }
         }
 
         // Store the ciphertext (active) or the plaintext payload (non-BYOK) —
         // the same bytes the compare above proved are non-divergent.
+        //
+        // CONDITIONAL PUT (WP-C): the GET-compare above is NOT atomic with
+        // the write. Two concurrent writers with divergent bodies can both
+        // observe `Ok(None)` and both fire an unconditional `put` —
+        // last-write-wins over a PROVEN result (intra-tenant AC poisoning
+        // window). `put_if_absent` closes it server-side (`If-None-Match: *`):
+        //   - Ok(true)  → this caller created the object (durable=true).
+        //   - Ok(false) → another writer won the race. Re-GET and apply the
+        //     SAME classifier as the pre-PUT compare: identical bytes →
+        //     idempotent no-op (durable=false); divergent → `DivergentBody`.
+        //     The winner's bytes are NEVER overwritten on this path.
+        //   - Err       → fail CLOSED (same as the pre-PUT GET error arm).
         let payload = encrypted.unwrap_or(req.result_payload);
-        let result = {
+        let created = {
             let _scope =
                 crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
-            tokio::task::block_in_place(|| handle.block_on(self.client.put(&key, payload)))
+            tokio::task::block_in_place(|| {
+                handle.block_on(self.client.put_if_absent(&key, payload))
+            })
         };
 
-        match result {
-            Ok(()) => {
+        match created {
+            Ok(true) => {
                 self.audit
                     .emit(AcAuditEvent::new(
                         AcAuditEventKind::UpdateCommitted,
@@ -3018,8 +3039,59 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
                     ))
                     .map_err(AcHandlerError::AuditFailed)?;
                 self.emit_update_sli(false);
-                // Fresh insert (the `None` arm above) → durable=true.
+                // This caller created the object → durable=true.
                 Ok(AcUpdateResponse::new(req.action_digest, true))
+            }
+            Ok(false) => {
+                // Lost the race: someone else's bytes are (or were being)
+                // stored under this digest. Re-GET and compare against OUR
+                // would-be-stored view.
+                let prior = {
+                    let _scope =
+                        crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+                    tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)))
+                };
+                let lost_race_state = match prior {
+                    Ok(bytes) => classify_prior(bytes.as_deref(), &stored_view),
+                    Err(e) => {
+                        // Ambiguous post-race state: fail closed rather
+                        // than report success on bytes we cannot prove.
+                        warn!(error = %e, key = %key, "R2AcHandler::update lost-race re-GET error");
+                        self.emit_update_sli(true);
+                        return Err(AcHandlerError::Internal(e));
+                    }
+                };
+                match lost_race_state {
+                    PriorState::Identical => {
+                        self.emit_update_sli(false);
+                        Ok(AcUpdateResponse::new(req.action_digest, false))
+                    }
+                    PriorState::Divergent => {
+                        warn!(
+                            key = %key,
+                            "R2AcHandler::update lost conditional-PUT race with a DIVERGENT \
+                             body — preserving the proven AC result \
+                             (INV-AC-RESULT-HASH-IMMUTABLE)"
+                        );
+                        self.emit_update_sli(false);
+                        Err(AcHandlerError::DivergentBody {
+                            tenant: req.tenant,
+                            action_digest: req.action_digest,
+                        })
+                    }
+                    PriorState::Absent => {
+                        // We lost a conditional put yet the object reads
+                        // absent — ambiguous state (concurrent delete?).
+                        // Fail closed rather than report success on bytes we
+                        // cannot prove are stored.
+                        warn!(key = %key, "R2AcHandler::update lost-race re-GET absent");
+                        self.emit_update_sli(true);
+                        Err(AcHandlerError::Internal(
+                            "conditional-PUT lost the race but re-GET found the key absent"
+                                .to_owned(),
+                        ))
+                    }
+                }
             }
             Err(e) => {
                 warn!(error = %e, key = %key, "R2AcHandler::update error");
@@ -3038,6 +3110,31 @@ impl R2AcHandler {
     fn r2_list_prefix(&self, tenant: &str) -> Result<String, String> {
         let prefix = tenant_prefix(self.tdk.as_ref(), tenant)?;
         Ok(format!("{}/{}/", self.ac_region, prefix))
+    }
+}
+
+/// The relationship between an EXISTING stored object and the bytes a
+/// caller would store (`stored_view`): the AC immutability decision space.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PriorState {
+    /// No object stored — the caller may create it.
+    Absent,
+    /// Stored bytes are byte-identical to the would-be-stored view — an
+    /// idempotent no-op (durable=false).
+    Identical,
+    /// Stored bytes diverge — refuse with `DivergentBody` (409).
+    Divergent,
+}
+
+/// Classify a prior GET result against the bytes that would be stored.
+///
+/// Shared by the pre-PUT compare AND the lost-race re-GET after a failed
+/// conditional put, so both sites can never diverge in their decision.
+fn classify_prior(existing: Option<&[u8]>, stored_view: &[u8]) -> PriorState {
+    match existing {
+        None => PriorState::Absent,
+        Some(prior) if prior == stored_view => PriorState::Identical,
+        Some(_) => PriorState::Divergent,
     }
 }
 
@@ -5323,6 +5420,69 @@ mod tests {
                 .await
                 .is_err(),
             "a CAS blob must NOT decrypt under the AC surface"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // WP-C — AC conditional PUT: prior-state classification
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn classify_prior_absent_allows_put() {
+        assert_eq!(
+            classify_prior(None, b"payload"),
+            PriorState::Absent,
+            "no prior object → the caller may create it"
+        );
+    }
+
+    #[test]
+    fn classify_prior_identical_is_idempotent_no_op() {
+        let view = vec![7u8; 32];
+        assert_eq!(
+            classify_prior(Some(&view), &view),
+            PriorState::Identical,
+            "byte-identical re-PUT → no-op (durable=false)"
+        );
+    }
+
+    #[test]
+    fn classify_prior_divergent_refuses() {
+        let view = vec![1u8; 16];
+        let other = vec![2u8; 16];
+        assert_eq!(
+            classify_prior(Some(&other), &view),
+            PriorState::Divergent,
+            "divergent stored bytes → DivergentBody (409), never overwrite"
+        );
+    }
+
+    #[test]
+    fn classify_prior_empty_vs_empty_is_identical_not_divergent() {
+        // Edge: an empty stored body and empty would-be-stored bytes are
+        // EQUAL — the immutability contract compares bytes, not presence.
+        assert_eq!(classify_prior(Some(&[]), &[]), PriorState::Identical);
+    }
+
+    #[test]
+    fn lost_race_resolution_mirrors_pre_put_compare() {
+        // The Ok(false) arm of put_if_absent re-GETs and applies the SAME
+        // classifier: identical → no-op, divergent → DivergentBody. Pin the
+        // mapping so a future edit cannot make the loser overwrite or
+        // double-report.
+        let winner_bytes = vec![9u8; 64];
+        let loser_view = vec![1u8; 64];
+
+        // Loser wrote the SAME bytes → idempotent success (durable=false).
+        assert_eq!(
+            classify_prior(Some(&winner_bytes), &winner_bytes),
+            PriorState::Identical
+        );
+
+        // Loser's body DIVERGES from what won → refused, winner preserved.
+        assert_eq!(
+            classify_prior(Some(&winner_bytes), &loser_view),
+            PriorState::Divergent
         );
     }
 }
