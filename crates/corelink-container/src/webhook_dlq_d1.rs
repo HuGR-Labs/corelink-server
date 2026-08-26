@@ -368,9 +368,9 @@ mod tests {
 
     const DDL_0045: &str = include_str!("../../../migrations/d1/0045_stripe_webhook_dlq.sql");
     const DDL_0094: &str =
-        include_str!("../../../migrations/d1/0094_webhook_dlq_event_id_unique.sql");
+        include_str!("../../../migrations/d1/0104_webhook_dlq_event_id_unique.sql");
     const DDL_0095: &str =
-        include_str!("../../../migrations/d1/0095_stripe_billing_audit_events.sql");
+        include_str!("../../../migrations/d1/0105_stripe_billing_audit_events.sql");
 
     fn db() -> rusqlite::Connection {
         let conn = rusqlite::Connection::open_in_memory().expect("in-memory sqlite");

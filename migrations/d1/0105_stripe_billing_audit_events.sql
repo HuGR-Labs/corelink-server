@@ -1,4 +1,4 @@
--- Migration 0095: durable billing-audit evidence rows (MED-5 closure).
+-- Migration 0105: durable billing-audit evidence rows (MED-5 closure).
 --
 -- # Why this table exists
 --

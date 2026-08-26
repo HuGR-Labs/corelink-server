@@ -1,4 +1,4 @@
--- Migration 0094: enforce DLQ idempotency on event_id (UNIQUE index).
+-- Migration 0104: enforce DLQ idempotency on event_id (UNIQUE index).
 --
 -- # Why this exists
 --

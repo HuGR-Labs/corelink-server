@@ -238,7 +238,7 @@ Each entry cross-references:
   skipped forever: the DLQ quarantine is the ONLY recoverable copy, and it
   evaporated on every redeploy. A durable `D1WebhookDlqStore` now implements
   `WebhookDlqStore` against `stripe_webhook_events_dlq` (migrations 0045 +
-  a new UNIQUE index on `event_id`, migration 0094, so the SQL UPSERT enforces
+  a new UNIQUE index on `event_id`, migration 0104, so the SQL UPSERT enforces
   `DLQ_IDEMPOTENT_ON_EVENT_ID` the way the in-memory HashMap always did:
   first quarantine → `Inserted`, re-quarantine → same row,
   `attempt_count + 1` → `Updated`). Wired in `main.rs` whenever the CF D1
@@ -247,7 +247,7 @@ Each entry cross-references:
   Same commit closes **MED-5**: the materializer's billing-audit evidence was
   also in-memory (`InMemoryBillingAuditEmitter`) while the state it witnessed
   went to D1; a new `D1BillingAuditEmitter` appends each audit-before-mutation
-  record to `stripe_billing_audit_events` (migration 0095, classified RETAIN
+  record to `stripe_billing_audit_events` (migration 0105, classified RETAIN
   in the DSR erasure registry). Both stores share one `D1HttpClient`.
 
 ### Added
