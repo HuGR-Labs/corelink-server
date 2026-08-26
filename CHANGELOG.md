@@ -275,6 +275,19 @@ Each entry cross-references:
   record to `stripe_billing_audit_events` (migration 0105, classified RETAIN
   in the DSR erasure registry). Both stores share one `D1HttpClient`.
 
+- **Replica promotion trusted the REPORTER's clock — a skewed or malicious
+  heartbeat could freeze a healthy primary's writes.** `/_repl/heartbeat`
+  stored the client-supplied `ts_ms`, and the staleness gate compared it to
+  server now: any holder of the shared internal-auth key could send an old
+  (or future, tripping the skew guard) timestamp and have `alarm()` promote a
+  replica within one 30s tick. The DO now stamps the SERVER receipt time and
+  treats the wire field as telemetry only (validated + logged, never a
+  decision input); the future-skew guard stays as defense-in-depth. The
+  promotion audit line gains an explicit TODO(owner) for a durable sink
+  (needs a D1 binding on this DO — deploy change) and the endpoint documents
+  the recommendation for a dedicated `/​_repl/*` key instead of the shared
+  internal-auth key.
+
 ### Added
 
 - **Governance-mode legal-hold-aware CAS erasure — the retention backend is real,

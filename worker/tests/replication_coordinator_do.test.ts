@@ -255,10 +255,15 @@ describe("ReplicationCoordinatorDO shell", () => {
     const { ddo, store, alarm } = makeDO();
     await ddo.fetch(req("/_repl/register", "POST", { region: "wnam", role: "primary" }));
     await ddo.fetch(req("/_repl/register", "POST", { region: "enam", role: "replica" }));
-    // Primary stale, replica fresh (relative to Date.now()).
+    // WP-E: freshness is SERVER-side — the DO stamps receipt time and ignores
+    // the reported ts_ms. To simulate a STALE primary we overwrite the persisted
+    // heartbeat map directly with an old SERVER-stamped timestamp.
     const now = Date.now();
-    await ddo.fetch(req("/_repl/heartbeat", "POST", { region: "wnam", ts_ms: 0, lag: zeroLag }));
-    await ddo.fetch(req("/_repl/heartbeat", "POST", { region: "enam", ts_ms: now, lag: zeroLag }));
+    await ddo.fetch(req("/_repl/heartbeat", "POST", { region: "wnam", lag: zeroLag }));
+    await ddo.fetch(req("/_repl/heartbeat", "POST", { region: "enam", lag: zeroLag }));
+    const hbs = store.get("heartbeats") as Record<string, { ts_ms: number; lag: unknown }>;
+    hbs.wnam = { ts_ms: 0, lag: zeroLag }; // primary's server-stamped beat is ancient
+    store.set("heartbeats", hbs);
 
     alarm.at = null;
     await ddo.alarm();
@@ -291,8 +296,11 @@ describe("ReplicationCoordinatorDO shell", () => {
     await ddo.fetch(req("/_repl/register", "POST", { region: "wnam", role: "primary" }));
     await ddo.fetch(req("/_repl/register", "POST", { region: "enam", role: "replica" }));
     const now = Date.now();
-    await ddo.fetch(req("/_repl/heartbeat", "POST", { region: "wnam", ts_ms: 0, lag: zeroLag }));
-    await ddo.fetch(req("/_repl/heartbeat", "POST", { region: "enam", ts_ms: now, lag: zeroLag }));
+    await ddo.fetch(req("/_repl/heartbeat", "POST", { region: "wnam", lag: zeroLag }));
+    await ddo.fetch(req("/_repl/heartbeat", "POST", { region: "enam", lag: zeroLag }));
+    const hbs = store.get("heartbeats") as Record<string, { ts_ms: number; lag: unknown }>;
+    hbs.wnam = { ts_ms: 0, lag: zeroLag };
+    store.set("heartbeats", hbs);
 
     // Force the audit sink to throw → the promote MUST NOT mutate roles.
     (ddo as unknown as { emitAudit: () => void }).emitAudit = () => {
@@ -317,5 +325,48 @@ describe("ReplicationCoordinatorDO shell", () => {
     const { ddo } = makeDO();
     const resp = await ddo.fetch(req("/_do/health"));
     expect(resp.status).toBe(200);
+  });
+
+  // ── WP-E: freshness is a function of SERVER-received time only ──────────
+
+  it("reported future ts_ms does NOT affect the freshness verdict", async () => {
+    const { ddo, store } = makeDO();
+    await ddo.fetch(req("/_repl/register", "POST", { region: "wnam", role: "primary" }));
+    // Reporter claims a heartbeat 1h in the future (clock skew / malicious).
+    await ddo.fetch(req("/_repl/heartbeat", "POST", { region: "wnam", ts_ms: Date.now() + 3_600_000, lag: zeroLag }));
+    const stored = store.get("heartbeats") as Record<string, { ts_ms: number }>;
+    const skew = Math.abs(stored.wnam.ts_ms - Date.now());
+    expect(skew).toBeLessThan(5_000, "stored ts must be the SERVER receipt time");
+  });
+
+  it("reported ancient ts_ms does NOT mark the primary stale", async () => {
+    const { ddo, store } = makeDO();
+    await ddo.fetch(req("/_repl/register", "POST", { region: "wnam", role: "primary" }));
+    await ddo.fetch(req("/_repl/heartbeat", "POST", { region: "wnam", ts_ms: 0, lag: zeroLag }));
+    const status = (await (
+      await ddo.fetch(req("/_repl/status"))
+    ).json()) as { regions: { region: string; heartbeat_fresh: boolean }[] };
+    const wnam = status.regions.find((r) => r.region === "wnam");
+    expect(wnam?.heartbeat_fresh).toBe(true, "an honest-looking beat must not be judged by the reporter's clock");
+  });
+
+  it("server-side staleness still promotes after the threshold (non-regression)", async () => {
+    const { ddo, store, alarm } = makeDO();
+    await ddo.fetch(req("/_repl/register", "POST", { region: "wnam", role: "primary" }));
+    await ddo.fetch(req("/_repl/register", "POST", { region: "enam", role: "replica" }));
+    await ddo.fetch(req("/_repl/heartbeat", "POST", { region: "wnam", lag: zeroLag }));
+    await ddo.fetch(req("/_repl/heartbeat", "POST", { region: "enam", lag: zeroLag }));
+    // Age BOTH server-stamped beats past the staleness threshold; replica fresher.
+    const hbs = store.get("heartbeats") as Record<string, { ts_ms: number; lag: unknown }>;
+    hbs.wnam = { ts_ms: Date.now() - (HEARTBEAT_STALE_SECONDS + 30) * 1000, lag: zeroLag };
+    hbs.enam = { ts_ms: Date.now() - 1_000, lag: zeroLag };
+    store.set("heartbeats", hbs);
+
+    alarm.at = null;
+    await ddo.alarm();
+
+    const roles = store.get("roles") as RoleMap;
+    expect(roles.enam.role).toBe("primary");
+    expect(roles.wnam.role).toBe("hot_standby");
   });
 });
