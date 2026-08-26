@@ -13,6 +13,13 @@ import { checkRateLimit } from "@/lib/rate-limit";
 export const dynamic = "force-dynamic";
 
 function clientIp(req: NextRequest): string {
+  // On Cloudflare, `CF-Connecting-IP` is set by the edge and not spoofable
+  // by the client; `X-Forwarded-For` is APPENDED to by the edge (not
+  // overwritten), so reading it first would let a caller rotate a fresh
+  // bucket on every request. Mirror the newsletter route's ordering: CF,
+  // then XFF, then X-Real-IP, then "unknown".
+  const cf = req.headers.get("cf-connecting-ip");
+  if (cf) return cf.trim();
   const xff = req.headers.get("x-forwarded-for");
   if (xff) {
     const first = xff.split(",")[0];
@@ -45,6 +52,13 @@ interface CspViolationReport {
  */
 type CspReportPayload = CspViolationReport | CspViolationReport[];
 
+// Hard cap on the number of reports we forward per inbound request. A single
+// batched `report-to` (Reporting API v1) payload can carry thousands of
+// reports; without a cap, one request would pin the Worker on serial
+// outbound `fetch` calls. Excess is dropped, not silently — a silent cap
+// would look like "all reports forwarded" to anyone reading the logs.
+const MAX_FORWARDED_REPORTS = 32;
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const ip = clientIp(req);
   const decision = checkRateLimit(ip);
@@ -66,12 +80,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const reports: CspViolationReport[] = Array.isArray(payload) ? payload : [payload];
   if (reports.length === 0) return new NextResponse(null, { status: 204 });
 
+  // Cap the outbound fan-out. We forward the FIRST `MAX_FORWARDED_REPORTS`
+  // in order (preserving the browser's batch order) and explicitly surface
+  // the dropped count so ops can see that a batch was truncated.
+  const forwardedReports = reports.slice(0, MAX_FORWARDED_REPORTS);
+  const droppedCount = reports.length - forwardedReports.length;
+  if (droppedCount > 0) {
+    // One warn per request (not per dropped item). The dropped count is
+    // part of the message string AND the structured second arg, so both
+    // human readers and log scrapers can see the truncation.
+    // eslint-disable-next-line no-console
+    console.warn(
+      `csp-report fan-out capped (dropped ${droppedCount})`,
+      { received: reports.length, forwarded: forwardedReports.length },
+    );
+  }
+
   const endpoint =
     process.env["CSP_REPORT_ENDPOINT"] ??
     `${process.env["NEXT_PUBLIC_CORELINK_API_URL"] ?? "https://corelink-api.humangr.com"}/v1/csp-violations`;
 
   const ipHash = hashIp(ip);
-  for (const report of reports) {
+  for (const report of forwardedReports) {
     try {
       const r = await fetch(endpoint, {
         method: "POST",
