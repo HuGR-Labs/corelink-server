@@ -66,6 +66,20 @@ Each entry cross-references:
   exists to impose. `CAS_READ_CONCURRENCY_LIMIT`'s doc comment, which described
   itself as bounding bulk reads only, was corrected to match its new scope.
 
+### Changed
+
+- **ADR-S34-001 addendum 2 — decision 4 named a seam the scrubber cannot reach.**
+  Decision 4 told the scrubber to "resolve each object's BYOK plan", but
+  `resolve_byok` is private to `impl R2CasHandler` / `impl R2AcHandler` and is
+  not a method on `R2S3Client`, the type a sweep actually holds; it also maps a
+  logical digest to a physical one, the opposite of the direction a sweep
+  travels. Revised to one per-tenant classification through the public
+  `ByokConfigCache::get` + `engagement_for` pair, with `Encrypt(_)` skipping the
+  whole tenant into `skipped_encrypted` and `FailClosed(_)` counting `failed`.
+  The addendum also records a second coverage trap measured in prod: `tenant`
+  holds 262 rows against `tenant_storage_state`'s 74, so driving the sweep off
+  the latter would omit 188 of 262 tenants and still report a clean run.
+
 ### Added
 
 - **F2: `findMissingBlobs` is answered at the edge — but only once its audit rows
