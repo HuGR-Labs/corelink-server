@@ -25,6 +25,37 @@ Each entry cross-references:
 
 ### Fixed
 
+- **A raw NUL byte made `worker/tests/runner_mint.test.ts` BINARY to git, so
+  every change to it shipped without a reviewable diff.** The D1 mock joins
+  tenant and repo on a NUL separator — a good choice, since the byte cannot
+  occur in either half, so no pair of values can collide on the joined key —
+  but it was written as a literal 0x00 inside a template literal. Git calls a
+  blob binary when it finds a 0x00 in the first 8000 bytes, so `git diff`
+  printed `Binary files a/… and b/… differ` instead of a patch and `--stat`
+  collapsed to `Bin 69429 -> 69923 bytes`. Nothing ever went red: the file
+  compiled, the 62 tests passed, and the file simply stopped being reviewable.
+  Same class as a gate that answers wrongly instead of failing — here the thing
+  answering wrongly is review itself. The separator is UNCHANGED; it is now
+  written as the JS escape sequence for that code point, which is the same
+  character at runtime and leaves the file text, with a comment saying why
+  nobody may "simplify" it back. 62 worker tests green.
+- **The same defect, found by the new gate, in a second place.**
+  `docs/internal/onboarding/domains/audit-chain.md` documented a JCS edge case —
+  "a JSON leaf with a NUL in a string" — using a literal NUL, making the
+  onboarding doc binary too. Now the escape sequence.
+- **Gated, in both directions.** New `scripts/check_no_nul_bytes.py` refuses a
+  raw NUL in any tracked text file, skipping genuinely binary content by
+  extension rather than by guessing from content (guessing from content is the
+  heuristic this check exists to stop relying on). Its `--self-test` proves it
+  RED on a raw NUL in a `.ts` file and GREEN on both the escape form and a real
+  `.png`, so it is never trusted on a green it has only ever been observed at.
+  Wired as RULE 4 of `shell-pipeline-safety.yml` — the lane that already refuses
+  defects making a check answer wrongly instead of failing — with its path
+  filter widened to `apps/**`, `crates/**`, `worker/**`, `docs/**` so a NUL
+  landing anywhere in the tree reaches it, not only one landing in a script.
+  The extension list covers packaged distributions (`.whl`, `.jar`, `.crate`, …)
+  after the first full-tree run flagged a Python wheel.
+
 - **The DSR verify sweep's `dsr_requested` query said it "self-expires from a
   7-day window after one week" — it does not, and the concept repeated the
   claim as fact.** The query has exactly ONE exit: `status` leaving
