@@ -29,6 +29,7 @@ on:
       - '.github/workflows/actionlint.yml'
       - 'scripts/validate_shared_home_cache_guard.py'
       - 'scripts/validate_no_shared_rustup_mutation.py'
+      - 'scripts/validate_workflow_path_filters.py'
       - 'scripts/ci-use-host-toolchain.sh'
   push:
     branches: [main]
@@ -38,6 +39,7 @@ on:
       - '.github/actionlint.yaml'
       - 'scripts/validate_shared_home_cache_guard.py'
       - 'scripts/validate_no_shared_rustup_mutation.py'
+      - 'scripts/validate_workflow_path_filters.py'
       - 'scripts/ci-use-host-toolchain.sh'
 
 permissions:
@@ -102,3 +104,14 @@ jobs:
       - name: Self-hosted jobs must not provision a Rust toolchain
         shell: bash
         run: python3 scripts/validate_no_shared_rustup_mutation.py
+
+      # A `paths:` glob that matches nothing does not fail — it just stops
+      # triggering its workflow, which looks exactly like "no problem found".
+      # Three such globs were live on 2026-08-03: two crate paths misspelled in
+      # perf-regression.yml, and `apps/server/**` in tenant-path.yml, a tree
+      # absorbed into crates/corelink-container in May and never re-pointed.
+      # actionlint does not check this (it validates syntax, not whether a glob
+      # resolves), so this gate does. stdlib-only python3, same as its siblings.
+      - name: Workflow path filters must match at least one tracked file
+        shell: bash
+        run: python3 scripts/validate_workflow_path_filters.py

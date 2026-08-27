@@ -34,7 +34,7 @@ concurrency:
 jobs:
   fmt:
     name: terraform fmt
-    runs-on: ubuntu-latest
+    runs-on: corelink  # zero-hosted: terraform/tflint provision via their setup-actions into the (writable) tool-cache; tfsec via a verified binary download
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -50,7 +50,7 @@ jobs:
 
   validate:
     name: terraform validate (${{ matrix.env }})
-    runs-on: ubuntu-latest
+    runs-on: corelink  # zero-hosted: terraform/tflint provision via their setup-actions into the (writable) tool-cache; tfsec via a verified binary download
     strategy:
       fail-fast: false
       matrix:
@@ -76,7 +76,7 @@ jobs:
 
   tflint:
     name: tflint
-    runs-on: ubuntu-latest
+    runs-on: corelink  # zero-hosted: terraform/tflint provision via their setup-actions into the (writable) tool-cache; tfsec via a verified binary download
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -97,12 +97,12 @@ jobs:
 
   tfsec:
     name: tfsec
-    runs-on: ubuntu-latest
+    runs-on: corelink  # zero-hosted: terraform/tflint provision via their setup-actions into the (writable) tool-cache; tfsec via a verified binary download
     # Native tfsec (no container action). `aquasecurity/tfsec-sarif-action` is a
     # Docker container action we avoid (no-unpinned-action posture). We download
     # the pinned tfsec linux binary from GitHub Releases (SHA-256 verified,
     # mirroring the supply-chain pin pattern in tla_check.yml) and run it
-    # directly on the GitHub-hosted ubuntu-latest fleet.
+    # directly (into $RUNNER_TEMP, writable on the corelink box — x86_64 Linux).
     env:
       TFSEC_VERSION: "1.28.14"
       # SHA-256 of the RAW `tfsec-linux-amd64` release asset for the version

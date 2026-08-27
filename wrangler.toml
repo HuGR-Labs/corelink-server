@@ -237,9 +237,17 @@ class_name = "ReplicationCoordinatorDO"
 tag = "v4"
 new_sqlite_classes = ["ReplicationCoordinatorDO"]
 
+# DevEnv DO cross-worker binding (WP-08)
+[[durable_objects.bindings]]
+name = "RUNNER_DEVENV_DO"
+class_name = "RunnerDevEnvDO"
+script_name = "corelink-spawn-worker"
+
 # Vars não-secretas
 [vars]
 ENVIRONMENT = "dev"
+CORELINK_API_BASE = "https://corelink-api.humangr.com"
+
 
 # WI-S17-001 — Chaos scheduler weekly cron (Mondays 06:00 UTC).
 # Default = dev/staging only; production env intentionally omits [triggers]

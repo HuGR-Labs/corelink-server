@@ -13,6 +13,7 @@ import type {
   CustomerAuditEvent,
   CustomerBilling,
   CustomerByokConfig,
+  CustomerDevenv,
   CustomerDollarCeiling,
   CustomerOverview,
   CustomerPat,
@@ -21,6 +22,7 @@ import type {
   CustomerTeamMember,
   CustomerUsage,
   CustomerWorkspace,
+  CreateDevenvRequest,
 } from "./customer-types";
 import { withAppBasePath } from "./route-matcher";
 
@@ -289,6 +291,34 @@ export class CustomerClient {
     return this.request<CustomerWorkspace>(
       `/v1/customer/workspaces/${encodeURIComponent(workspaceId)}/pin`,
       { method: "POST" },
+    );
+  }
+
+  // ── [live] CoreLink DevEnv (WP-09) ───────────────────────────────────
+
+  /** [live] List active DevEnvs for tenant (0-or-1 invariant). */
+  async listDevenvs(): Promise<{ devenvs: CustomerDevenv[] }> {
+    return this.request<{ devenvs: CustomerDevenv[] }>("/v1/customer/devenv");
+  }
+
+  /** [live] Get status of specific DevEnv. */
+  async getDevenv(devenvId: string): Promise<CustomerDevenv> {
+    return this.request<CustomerDevenv>(`/v1/customer/devenv/${encodeURIComponent(devenvId)}`);
+  }
+
+  /** [live] Start a DevEnv container session. */
+  async createDevenv(input: CreateDevenvRequest): Promise<CustomerDevenv> {
+    return this.request<CustomerDevenv>("/v1/customer/devenv", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  /** [live] Gracefully stop a running DevEnv container. */
+  async stopDevenv(devenvId: string): Promise<{ ok: boolean }> {
+    return this.request<{ ok: boolean }>(
+      `/v1/customer/devenv/${encodeURIComponent(devenvId)}`,
+      { method: "DELETE" },
     );
   }
 }

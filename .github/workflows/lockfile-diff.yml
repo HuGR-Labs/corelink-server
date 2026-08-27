@@ -36,7 +36,11 @@ concurrency:
 jobs:
   lockfile-diff:
     name: Cargo.lock diff comment
-    runs-on: ubuntu-latest
+    # Runner: `corelink` (zero-hosted). Needs a working `cargo` (Cargo.lock diff +
+    # `cargo deny`), python3 (the diff script), and `gh` for the PR comment — the
+    # last is baked at increment 3 (corelink-runners #453, gh 2.97.0). cargo-deny
+    # still arrives via the SHA-pinned taiki-e prebuilt (kept — see cargo-deny.yml).
+    runs-on: corelink
     timeout-minutes: 10
 
     steps:
@@ -51,8 +55,16 @@ jobs:
         with:
           path: head
 
-      - name: Install Rust toolchain (stable, pinned)
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+      # `dtolnay/rust-toolchain` removed — it re-provisions cargo and collides
+      # with the box image's pinned toolchain (validate_no_shared_rustup_mutation
+      # forbids it on self-hosted). The workspace pins the channel via
+      # rust-toolchain.toml; this asserts the pinned cargo is on PATH instead
+      # (mirrors cargo-deny.yml / dependabot-policy.yml on `corelink`).
+      # Run from `head/` — this workflow checks the repo out into base/ + head/
+      # subdirs, so rust-toolchain.toml + scripts/ live under head/, not the root.
+      - name: Assert the workspace-pinned toolchain (rust-toolchain.toml)
+        working-directory: head
+        run: bash scripts/ci-assert-pinned-toolchain.sh
 
       # cargo-deny 0.19.8 — pinned per §14.s12.004.1 (ADR-S12-045 v1.2.0).
       # Installed via the SAME SHA-pinned taiki-e/install-action prebuilt

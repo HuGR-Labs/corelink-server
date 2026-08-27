@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import userEvent from "@testing-library/user-event";
-import { renderWithProviders, screen } from "@/test-utils/render";
+import { renderWithProviders, screen, fireEvent } from "@/test-utils/render";
 import { axe } from "@/test-utils/axe";
 import { Checkbox } from "./Checkbox";
 
@@ -9,7 +8,7 @@ describe("Checkbox", () => {
     const onChange = vi.fn();
     renderWithProviders(<Checkbox label="Accept" onCheckedChange={onChange} />);
     const cb = screen.getByRole("checkbox", { name: "Accept" });
-    await userEvent.click(cb);
+    fireEvent.click(cb);
     expect(onChange).toHaveBeenCalledWith(true);
   });
 

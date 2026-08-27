@@ -2302,6 +2302,7 @@ dependencies = [
  "corelink-dsr",
  "corelink-erasure-attestation",
  "corelink-failover-router",
+ "corelink-gc",
  "corelink-handler-ac",
  "corelink-handler-admin",
  "corelink-handler-cas",

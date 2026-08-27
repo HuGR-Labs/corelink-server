@@ -89,7 +89,13 @@ env:
 jobs:
   reconcile:
     name: billing-reconcile
-    runs-on: ubuntu-latest
+    # Self-hosted `corelink` (ephemeral CF-Container Ubuntu 24.04): pinned Rust
+    # toolchain + `requests` (python3-requests apt pkg) are baked into the runner
+    # image, so this cron runs at zero hosted-Actions cost. Per the zero-hosted-CI
+    # mandate. NOTE: still READ-ONLY and, until the repo var
+    # `BILLING_RECONCILE_LIVE=1` is set, runs the SMOKE (empty-input) no-op lane —
+    # so it neither queries prod D1 nor pages PagerDuty on the self-hosted box.
+    runs-on: corelink
     timeout-minutes: 30
     steps:
       - name: Checkout repo
@@ -97,10 +103,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
-        with:
-          toolchain: stable
+      # Use the runner image's pre-installed, workspace-pinned toolchain — a
+      # self-hosted job must not provision one (validate_no_shared_rustup_mutation.py;
+      # `corelink` counts as self-hosted). HOST_TRIPLE selects the Linux triple.
+      - name: Use host toolchain (baked, workspace-pinned)
+        env:
+          HOST_TRIPLE: x86_64-unknown-linux-gnu
+        run: bash scripts/ci-use-host-toolchain.sh
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
@@ -128,11 +137,12 @@ jobs:
           echo "run_date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
           echo "Reconciling billing period: $PERIOD"
 
-      - name: Install extraction deps
-        run: |
-          set -euo pipefail
-          python3 -m pip install --upgrade pip
-          python3 -m pip install 'requests==2.32.5'
+      # No pip install: `requests` is baked into the `corelink` image as the
+      # python3-requests apt package (Ubuntu 24.04 is PEP-668 externally-managed,
+      # so a global `pip install` would fail anyway). The live lane's `import
+      # requests` resolves against the system package; the smoke lane never
+      # imports it. (System requests is 2.31.0 vs the former 2.32.5 pin — a plain
+      # HTTP POST to the D1 API, unaffected by the minor delta.)
 
       - name: Extract three-layer totals (live lane gated; else empty no-op)
         id: extract

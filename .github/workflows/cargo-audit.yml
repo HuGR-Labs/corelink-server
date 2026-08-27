@@ -152,18 +152,21 @@ jobs:
   # -----------------------------------------------------------------------
   cargo-audit-daily:
     name: cargo-audit daily cron
-    # STAYS hosted (wave 2, 2026-08-03). Its "Classify findings + emit SEV alerts"
-    # step is a `python3` heredoc, and the corelink image has no python3. It is
-    # also cron-only, so it carries no per-PR bill worth moving.
-    runs-on: ubuntu-latest
+    # `corelink` (zero-hosted). The old reason to stay hosted — the "Classify
+    # findings + emit SEV alerts" python3 heredoc, absent from the image — no
+    # longer holds: python3 is baked into the corelink runner image.
+    runs-on: corelink
     timeout-minutes: 10
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.deny_warnings == 'false')
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Install Rust toolchain (stable, pinned)
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+      - name: Use host toolchain (baked, workspace-pinned)
+        # NOT dtolnay — self-hosted provisioning is guard-forbidden.
+        env:
+          HOST_TRIPLE: x86_64-unknown-linux-gnu
+        run: bash scripts/ci-use-host-toolchain.sh
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7

@@ -475,15 +475,14 @@ export class ReplicationCoordinatorDO implements DurableObject {
     }
   }
 
-  /** evaluate(current primary) → promote if a replica is eligible. */
-  async runTick(now_ms: number): Promise<PromotionDecision | null> {
+  private async evaluateAndDrivePromotion(now_ms: number): Promise<PromotionDecision | CoordError | null> {
     const primary = primaryIn(this.roles);
     if (primary === null) {
       // No primary registered yet — nothing to drive (safe no-op).
       return null;
     }
     const decision = evaluateDecision(this.roles, this.heartbeats, primary, now_ms);
-    if ("kind" in decision && decision.kind === "promote_replica") {
+    if (decision.kind === "promote_replica") {
       const plan = planPromote(this.roles, this.heartbeats, primary, decision.replica, now_ms);
       if (plan.ok) {
         for (const rec of plan.audits) this.emitAudit(rec); // BEFORE mutation
@@ -491,14 +490,21 @@ export class ReplicationCoordinatorDO implements DurableObject {
       }
       return decision;
     }
-    if ("kind" in decision && decision.kind === "no_eligible_replica") {
+    if (decision.kind === "no_eligible_replica") {
       // Escalate to runbook — do NOT auto-promote into a partition.
       console.warn(
         JSON.stringify({ kind: "replication_no_eligible_replica", primary, now_ms }),
       );
       return decision;
     }
-    return decision as PromotionDecision;
+    return decision;
+  }
+
+  /** evaluate(current primary) → promote if a replica is eligible. */
+  async runTick(now_ms: number): Promise<PromotionDecision | null> {
+    const result = await this.evaluateAndDrivePromotion(now_ms);
+    if (!result || "message" in result) return null;
+    return result;
   }
 
   private async applyPromote(primary: string, replica: string, now_ms: number, requestId: string): Promise<Response> {
@@ -534,13 +540,21 @@ export class ReplicationCoordinatorDO implements DurableObject {
 
     const now_ms = Date.now();
 
+    return this.handleReplRoute(request, path, now_ms, requestId);
+  }
+
+  async handleReplRoute(request: Request, path: string, now_ms: number, requestId: string): Promise<Response> {
+    if (request.method === "GET" && path === "/_repl/status") {
+      return jsonResponse(
+        buildStatus(this.roles, this.heartbeats, now_ms),
+        200,
+        requestId,
+      );
+    }
+
     if (request.method === "POST" && path === "/_repl/arm") {
       await this.armAlarm();
       return jsonResponse({ ok: true, armed: true }, 200, requestId);
-    }
-
-    if (request.method === "GET" && path === "/_repl/status") {
-      return jsonResponse(buildStatus(this.roles, this.heartbeats, now_ms), 200, requestId);
     }
 
     if (request.method === "POST" && path === "/_repl/tick") {
@@ -555,8 +569,9 @@ export class ReplicationCoordinatorDO implements DurableObject {
     if (request.method === "POST" && path === "/_repl/register") {
       const body = await this.parseJson(request);
       if (body === null) return errorResponse("INVALID_BODY", "body must be JSON", 400, requestId);
-      const region = String((body as Record<string, unknown>).region ?? "");
-      const role = String((body as Record<string, unknown>).role ?? "");
+      const b = body as Record<string, unknown>;
+      const region = String(b["region"] ?? "");
+      const role = String(b["role"] ?? "");
       if (!isRegionCode(region)) return errorResponse("INVALID_REGION", `unknown region ${region}`, 400, requestId);
       if (!isRegionRole(role)) return errorResponse("INVALID_ROLE", `unknown role ${role}`, 400, requestId);
       // Split-brain guard at registration time (mirrors coordinator.rs::register).
@@ -576,15 +591,15 @@ export class ReplicationCoordinatorDO implements DurableObject {
       const body = await this.parseJson(request);
       if (body === null) return errorResponse("INVALID_BODY", "body must be JSON", 400, requestId);
       const b = body as Record<string, unknown>;
-      const region = String(b.region ?? "");
+      const region = String(b["region"] ?? "");
       if (!isRegionCode(region)) return errorResponse("INVALID_REGION", `unknown region ${region}`, 400, requestId);
-      const ts_ms = Number(b.ts_ms ?? now_ms);
-      const lagRaw = (b.lag ?? {}) as Record<string, unknown>;
+      const ts_ms = Number(b["ts_ms"] ?? now_ms);
+      const lagRaw = (b["lag"] ?? {}) as Record<string, unknown>;
       const lag: LagBundle = {
-        r2_s: Number(lagRaw.r2_s ?? 0),
-        d1_s: Number(lagRaw.d1_s ?? 0),
-        kv_s: Number(lagRaw.kv_s ?? 0),
-        neon_s: Number(lagRaw.neon_s ?? 0),
+        r2_s: Number(lagRaw["r2_s"] ?? 0),
+        d1_s: Number(lagRaw["d1_s"] ?? 0),
+        kv_s: Number(lagRaw["kv_s"] ?? 0),
+        neon_s: Number(lagRaw["neon_s"] ?? 0),
       };
       if (!Number.isFinite(ts_ms) || !Number.isFinite(lag.r2_s) || !Number.isFinite(lag.d1_s) || !Number.isFinite(lag.kv_s)) {
         return errorResponse("INVALID_HEARTBEAT", "ts_ms/lag must be finite numbers", 400, requestId);
@@ -599,15 +614,16 @@ export class ReplicationCoordinatorDO implements DurableObject {
       const body = await this.parseJson(request);
       if (body === null) return errorResponse("INVALID_BODY", "body must be JSON", 400, requestId);
       const b = body as Record<string, unknown>;
-      const primary = String(b.primary ?? "");
-      const replica = String(b.replica ?? "");
+      const primary = String(b["primary"] ?? "");
+      const replica = String(b["replica"] ?? "");
       return this.applyPromote(primary, replica, now_ms, requestId);
     }
 
     if (request.method === "POST" && path === "/_repl/failback") {
       const body = await this.parseJson(request);
       if (body === null) return errorResponse("INVALID_BODY", "body must be JSON", 400, requestId);
-      const region = String((body as Record<string, unknown>).region ?? "");
+      const b = body as Record<string, unknown>;
+      const region = String(b["region"] ?? "");
       return this.applyFailback(region, now_ms, requestId);
     }
 

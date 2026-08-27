@@ -48,7 +48,10 @@ env:
 jobs:
   build-and-deploy:
     name: build + deploy to CF Pages
-    runs-on: ubuntu-latest
+    # Runner: `corelink` — the product's own ephemeral runner fabric (zero GitHub
+    # billing). Mirrors the proven `corelink` job in docs-ci.yml. wrangler-only
+    # deploy (no docker), so the ephemeral Linux box is the right host.
+    runs-on: corelink
     timeout-minutes: 25
     defaults:
       run:
@@ -68,8 +71,9 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+          # ⛔ `cache: pnpm` REMOVED for the `corelink` ephemeral runner (mirrors the
+          # docs-ci.yml corelink job): a fresh box each run makes the GH-cache
+          # round-trip pure cost, and it sidesteps the shared-$HOME cache guard.
 
       - name: Install dependencies
         working-directory: .

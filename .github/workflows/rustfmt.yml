@@ -36,7 +36,7 @@ on:
   pull_request:
     paths:
       - '**.rs'
-      - '**rustfmt.toml'
+      - '**rustfmt.toml'  # path-filter-allow: repo has no rustfmt.toml today; a future one MUST trigger fmt (see header note 2)
       - '**Cargo.toml'
       - 'rust-toolchain.toml'
       - '.github/workflows/rustfmt.yml'

@@ -51,7 +51,11 @@ env:
 jobs:
   digest:
     name: Generate weekly compliance digest
-    runs-on: ubuntu-latest
+    # Runner: `corelink` (zero-hosted). Pure python3 (compliance-weekly-digest.py,
+    # stdlib only) + `gh` (pr create / pr comment) — both baked into the box image
+    # (gh 2.97.0 at increment 3, corelink-runners #453). No setup-python needed;
+    # the system python3 is used directly (the PYTHON_VERSION env is vestigial).
+    runs-on: corelink
     timeout-minutes: 15
     outputs:
       regression: ${{ steps.digest.outputs.regression }}

@@ -41,7 +41,7 @@ jobs:
   drift-check:
     name: drift check (PR-side)
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: corelink  # zero-hosted: pure python3 + PyYAML (gen-api-reference.py), baked into the box image
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -61,7 +61,7 @@ jobs:
   regenerate-and-pr:
     name: regenerate + open PR (main-side)
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: corelink  # zero-hosted: python3 (regenerate) + `gh pr create` — gh 2.97.0 baked at increment 3 (#453)
     timeout-minutes: 15
     steps:
       - name: Checkout

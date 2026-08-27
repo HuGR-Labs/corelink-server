@@ -1,12 +1,15 @@
 name: corelink-server
 
-# Hosted PR gate for the `corelink-server` crate (the corelink-container plane:
-# routes, customer/team/DSR handlers, native PAT gate, adapters wiring). PR lane:
-# crate-scoped clippy (-D warnings) + tests on GitHub-HOSTED ubuntu-latest, so
-# container changes verify in CI WITHOUT loading the self-hosted macOS builder
-# fleet (mirrors corelink-meta.yml::pr-gate). This closes the gap where the
-# container only built in cas_foundation.yml::workspace-build-test on the Mac
-# (nightly + on-demand) — there was no fast per-PR compile gate for it.
+# PR gate for the `corelink-server` crate (the corelink-container plane: routes,
+# customer/team/DSR handlers, native PAT gate, adapters wiring). PR lane:
+# crate-scoped clippy (-D warnings) + tests, so container changes verify in CI
+# WITHOUT loading the self-hosted macOS builder fleet (mirrors
+# corelink-meta.yml::pr-gate). This closes the gap where the container only built
+# in cas_foundation.yml::workspace-build-test on the Mac (nightly + on-demand) —
+# there was no fast per-PR compile gate for it.
+#
+# The lane ran on GitHub-HOSTED `ubuntu-latest` until wave 3 of the migration
+# (2026-08-03) moved it onto `runs-on: corelink` — see the job comment below.
 
 on:
   pull_request:
@@ -45,14 +48,49 @@ env:
 jobs:
   pr-gate:
     name: PR gate (crate-scoped clippy + tests)
-    runs-on: ubuntu-latest
+    # Runner: `corelink` — the product's own ephemeral runner fabric (wave 3 of
+    # the migration off GitHub-hosted runners, 2026-08-03; wave 1 moved gitleaks
+    # + trivy, wave 2 the four Rust crate lanes). This was the single most
+    # expensive hosted job left in the repo: 22 runs over 2026-08-01→03, median
+    # 687 s, 234 BILLED minutes ≈ $1.40 in 3 days. A minute on `corelink` costs
+    # $0 of GitHub billing.
+    #
+    # The box is 4 vCPU / 12.5 GB against ubuntu-latest's 2 vCPU / 7 GB on a
+    # private repo — twice the cores. This is not only cheaper: the comparable
+    # `corelink-reapi` pr-gate runs 409–423 s COLD on `corelink` versus this
+    # lane's 687 s WARM on ubuntu-latest.
+    #
+    # ⚠️ Ephemeral-runner reality — a box is minted per job and destroyed after,
+    # so the crate compiles COLD every run. The `Swatinem/rust-cache` step below
+    # is gated `runner.environment == 'github-hosted'`, so it SKIPS here. What
+    # makes cold competitive is the image's pre-seeded `~/.cargo` (415 MB, 362
+    # registry entries — `cargo fetch --locked` measured at 12 s). Do NOT "fix"
+    # this by re-enabling the cache step on self-hosted: that guard exists
+    # because the MAC fleet shares one $HOME and rust-cache's prune step deletes
+    # a sibling job's registry mid-compile (`os error 2`, #979/#980), and it is
+    # machine-checked by scripts/validate_shared_home_cache_guard.py.
+    #
+    # ⚠️ A refused or dropped spawn leaves the job QUEUED, and `timeout-minutes`
+    # does NOT bound queued time — it starts counting once the job is RUNNING.
+    # That is a stall, not a false pass: `scripts/pre-merge-gate-check.sh` scores
+    # a pending check as ⛔ DO NOT MERGE, so a stranded box blocks the PR rather
+    # than waving it through.
+    runs-on: corelink
+    # Bound the job: with no timeout it inherits GitHub's 360-min default, so one
+    # wedged run can burn 6 h. Measured median is 687 s (~11.5 min) warm-hosted;
+    # 30 min leaves real headroom for a cold compile on a contended box.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # dtolnay/rust-toolchain@stable@2026-05-15
-        with:
-          components: clippy, rustfmt
+      # `dtolnay/rust-toolchain` removed. It asked for `stable` + clippy/rustfmt;
+      # `rust-toolchain.toml` pins 1.91.1 and lists BOTH components, and rustup
+      # honours that file over any `rustup default` — so 1.91.1's clippy is what
+      # has always compiled this crate, hosted included. Dropping the action is a
+      # no-op for coverage; the assertion below makes the pin provable per run, so
+      # a future image drift fails loudly instead of silently changing compiler.
+      - name: Assert the workspace-pinned toolchain (rust-toolchain.toml)
+        run: bash scripts/ci-assert-pinned-toolchain.sh
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
@@ -61,6 +99,9 @@ jobs:
           workspaces: ". -> target"
 
       # corelink-reapi (a transitive dep) has a prost-build script that needs protoc.
+      # KEEP on `corelink`: the image does not ship protoc, and this action is how
+      # the already-migrated `corelink-reapi` pr-gate gets it on the same fabric
+      # today — a SHA-pinned prebuilt download, not a source build.
       - name: Install protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b  # arduino/setup-protoc@v3.0.0
         with:

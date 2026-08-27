@@ -53,9 +53,11 @@ on:
     # requirement.
     #
     # Cadence: daily -> WEEKLY Mon (CI cost diet 2026-08-01). This workflow
-    # fans out to 10 hosted jobs (build, axe, a11y-diff, i18n, vale,
-    # broken-links, reapi-gen-drift, lighthouse-baseline, ...), so one
-    # scheduled run costs ~10x the per-job billing floor before any real work.
+    # fans out to 10 jobs, of which 6 are still GitHub-hosted after the wave-2
+    # fabric migration (lighthouse, axe, broken-links, a11y-playwright,
+    # a11y-baseline-diff, lighthouse-baseline — all blocked on Chrome or Docker;
+    # see each job), so one scheduled run costs ~6x the per-job billing floor
+    # before any real work.
     # The `pull_request` + `push:main` paths above already gate EVERY docs
     # change; the schedule only catches external drift (dead outbound links,
     # a Lighthouse score moving under an unchanged site), which is weekly-shaped.
@@ -76,7 +78,45 @@ env:
 jobs:
   build:
     name: typecheck + lint + test + build
-    runs-on: ubuntu-latest
+    # ── Runner: `corelink` — the product's own ephemeral runner fabric (wave 2,
+    # 2026-08-03). THIS BLOCK IS THE CANONICAL NOTE FOR THIS FILE; the other
+    # three migrated jobs (`vale`, `i18n-coverage`, `reapi-gen-drift`) point here.
+    #
+    # Measured cost removed: 204 billed minutes of `ubuntu-latest` over the 43
+    # docs-ci runs in the 3 days to 2026-08-03 (43 executions, median 290 s,
+    # p90 306 s, max 312 s; billed = ceil-to-the-minute per job). That is 31 % of
+    # this workflow's 664 billed minutes in the window and the single most
+    # expensive job in the file. A minute on `corelink` costs $0 of GitHub billing.
+    #
+    # Why it fits: `pnpm typecheck/lint/test/build` is node-only. `vitest` runs
+    # with `environment: "node"` (apps/docs/vitest.config.ts) — no browser. pnpm 10
+    # does not execute dependency lifecycle scripts (no `onlyBuiltDependencies` in
+    # package.json), so `pnpm install` never invokes node-gyp and never needs the
+    # python3 that this box lacks. Image inventory job 91857115465 (2026-08-04
+    # 00:30 UTC, on a real fabric box) proves: Linux x86_64, node v22.23.2,
+    # npm 10.9.8, pnpm 10.32.1, registry.npmjs.org reachable (200).
+    #
+    # Box shape: 4 vCPU / 12.5 GB against `ubuntu-latest`'s 2 vCPU / 7 GB on a
+    # private repo — twice the cores for the 226 s Docusaurus build that dominates
+    # this job.
+    #
+    # ⚠️ Ephemeral: the box carries NOTHING between runs — no tool cache, no pnpm
+    # store, no node_modules. See the Node.js step below for what that costs and
+    # for why the pnpm cache was removed rather than left looking functional.
+    #
+    # ⚠️ A refused or dropped spawn leaves the job QUEUED, and `timeout-minutes`
+    # does not bound queued time — it starts once a job is RUNNING. That is a
+    # stall, not a false pass: `scripts/pre-merge-gate-check.sh` scores a pending
+    # check as ⛔ DO NOT MERGE. Note this job has the highest fan-in in the file —
+    # six jobs `needs: build` for the `docs-build` artifact — so a stranded spawn
+    # here stalls the whole workflow rather than one lane.
+    runs-on: corelink
+    # Measured median 290 s (~4.8 min) over 43 hosted runs; worst observed 312 s.
+    # DELIBERATELY LEFT AT 20 (≈4.1x median) rather than tightened to the 3x/15
+    # the recipe suggests: this is the job's first exposure to a cold, cacheless
+    # box, so the fabric median is not yet known. A too-tight bound would fail
+    # runs that are merely cold. Re-tighten once ~6 fabric runs exist. This bounds
+    # RUNNING time only — it does not cap a job queued on a fabric spawn.
     timeout-minutes: 20
     defaults:
       run:
@@ -93,11 +133,33 @@ jobs:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Set up Node.js
+        # KEPT on the fabric box, deliberately. The image ships node v22.23.2,
+        # but this pins node 20 (`NODE_VERSION`), and the runner image drifts
+        # UNMONITORED — rustc moved 1.91 -> 1.96 on this image inside two days.
+        # Measured price of the pin: 6.0 s median for this step across 14 hosted
+        # runs, i.e. ~2 % of the job's 290 s. Dropping it would save at most those
+        # few seconds and would silently move the Docusaurus build from node 20 to
+        # node 22 — a behaviour change, not a cost win. Keep.
+        #
+        # ⛔ `cache: pnpm` REMOVED here (it is still present on the jobs that stay
+        # hosted). Reason, measured — NOT assumed:
+        #   * `.github/actions/setup-pnpm` pins the pnpm store to
+        #     `$HOME/.pnpm-store-$RUNNER_NAME`. A fabric box is ephemeral and its
+        #     RUNNER_NAME is unique per spawn (`cf-runner-<hex>`), so a restored
+        #     store always lands under a DEAD directory name that pnpm never reads.
+        #     The step would report success and deliver nothing.
+        #   * It already delivers nothing on the hosted runners either: job
+        #     91820851349 (2026-08-03) logged `pnpm cache is not found` and then
+        #     `resolved 2087, reused 0, downloaded 2084` — a full cold install —
+        #     and job 91811652838 on the prior run logged the same. Two jobs of the
+        #     same run also race to save the identical key
+        #     `node-cache-Linux-x64-pnpm-<lockfile-hash>`.
+        # Removing it also drops the ~9 s `Post Set up Node.js` save step. The
+        # hosted-side breakage lives in the shared composite and is NOT fixed here
+        # (it is shared with admin-ui-ci and out of this file's scope).
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
         working-directory: .
@@ -148,6 +210,11 @@ jobs:
   lighthouse:
     name: lighthouse-ci (Perf ≥ 95, A11y = 100, BP ≥ 95, SEO ≥ 90)
     needs: build
+    # STAYS HOSTED (wave 2, 2026-08-03). Blocker: `lhci autorun` launches headless
+    # Chrome to collect the trace, and the corelink fabric box ships NO system
+    # Chrome/Chromium (image inventory 91857115465). Installing one is out of
+    # bounds: a browser is ~1 GiB on disk and the box is ephemeral, so EVERY Rust
+    # spawn sharing the image would pay for it. 41 billed min / 3 days stays hosted.
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -221,6 +288,11 @@ jobs:
   axe:
     name: axe-core a11y scan (WCAG 2.2 AA)
     needs: build
+    # STAYS HOSTED (wave 2, 2026-08-03). Blocker: `@axe-core/cli` drives a page
+    # through its bundled chromedriver, which needs a real Chrome/Chromium binary.
+    # The fabric box has none (image inventory 91857115465) and baking one in was
+    # rejected on cost (~1 GiB, charged to every spawn of the shared image).
+    # 38 billed min / 3 days stays hosted.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -269,6 +341,12 @@ jobs:
   broken-links:
     name: lychee broken-link check
     needs: build
+    # STAYS HOSTED (wave 2, 2026-08-03). Blocker: `lycheeverse/lychee-action` is a
+    # Docker CONTAINER action, and `docker` is absent from the fabric box (image
+    # inventory 91857115465) — GitHub cannot run a container action there at all.
+    # Moving it would mean dropping the pinned action for a hand-rolled lychee
+    # install, i.e. trading a supply-chain-pinned action for a bespoke download.
+    # 74 billed min / 3 days stays hosted; revisit only if lychee is ever baked in.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -294,19 +372,46 @@ jobs:
     # docs-vale.yml, scoped to the files each PR changes. Installs a
     # checksum-pinned native Vale (Linux x86_64 release asset) rather than
     # errata-ai/vale-action, keeping the no-unpinned-action posture.
-    runs-on: ubuntu-latest
+    #
+    # ── Runner: `corelink` fabric (wave 2, 2026-08-03) — see the `build` job above
+    # for the full ephemeral-box / queued-spawn note.
+    #
+    # Measured cost removed: 43 billed minutes of `ubuntu-latest` over the 43 runs
+    # in the 3 days to 2026-08-03 — and ALL of it is GitHub's per-job 1-minute
+    # billing floor, because the job's median wall time is 12 s (max 29 s). This is
+    # the best ratio in the file: ~9 s of real work billed as 43 minutes.
+    #
+    # Why it fits: pure `curl` + `sha256sum` + `tar` + a static Go binary. Nothing
+    # node, nothing python3, no browser. All four are PRESENT on the box (curl
+    # 8.5.0, coreutils 9.4, GNU tar 1.35) and github.com answers 200 from it
+    # (image inventory 91857115465).
+    runs-on: corelink
+    # Measured median 12 s over 43 hosted runs (max 29 s). 3x median is far under
+    # the floor, so this sits at the recipe's 10-minute floor — which is also what
+    # it already was. Bounds RUNNING time only; a queued spawn is not capped.
     timeout-minutes: 10
     env:
       VALE_VERSION: 3.9.1
       # sha256 from the official vale_3.9.1_checksums.txt release asset
-      # (vale_3.9.1_Linux_64-bit.tar.gz). ubuntu-latest is always x86_64.
+      # (vale_3.9.1_Linux_64-bit.tar.gz).
       VALE_SHA256_X86_64: fbc2eb47d0b8c50220ed1a2c5c611fbe0904ed567d638143d482016a18fd2db0
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Install Vale (pinned, checksum-verified)
+        # ⚠️ ARCH ASSUMPTION, now explicit. The tarball name and the sha256 above
+        # are hardcoded to Linux x86_64. That held implicitly on ubuntu-latest;
+        # on the corelink fabric it holds because the box reports X64 / Linux
+        # (`uname -m` = x86_64, image inventory 91857115465) — but the runner image
+        # is rebuilt without notice, so assert it rather than discover an arm64
+        # image via a confusing "Exec format error" three steps later.
         run: |
           set -euo pipefail
+          arch="$(uname -m)"
+          if [ "$arch" != "x86_64" ]; then
+            echo "::error::Vale install is pinned to the Linux x86_64 asset but this runner is ${arch}. Add the matching asset + checksum before re-enabling." >&2
+            exit 1
+          fi
           TARBALL="vale_${VALE_VERSION}_Linux_64-bit.tar.gz"
           SHA="$VALE_SHA256_X86_64"
           curl -fsSLo "$RUNNER_TEMP/$TARBALL" \
@@ -338,6 +443,14 @@ jobs:
   a11y-playwright:
     name: axe-core WCAG 2.2 AA sweep (0 serious/critical)
     needs: build
+    # STAYS HOSTED (wave 2, 2026-08-03). Blocker: `pnpm exec playwright install
+    # --with-deps chromium` downloads a ~150 MB chromium AND `sudo apt-get
+    # install`s its system libraries. On a hosted runner that is a one-off against
+    # a warm image; on the EPHEMERAL fabric box it would repeat on every single
+    # run, and baking the browser into the shared image was measured at ~1 GiB and
+    # rejected — every Rust spawn would pay it. This is the second-most expensive
+    # job in the file (111 billed min / 3 days) and the biggest remaining prize:
+    # it becomes movable the day a browser-bearing runner label exists.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -391,6 +504,11 @@ jobs:
   a11y-baseline-diff:
     name: axe-core/cli diff vs A11Y-BASELINE
     needs: build
+    # STAYS HOSTED (wave 2, 2026-08-03). Blocker: the "Locate system Chrome" step
+    # below hard-fails when `google-chrome-stable`/`google-chrome`/`chromium` are
+    # all off PATH, which is exactly the state of the fabric box (image inventory
+    # 91857115465). That guard is doing its job — do not weaken it to make the
+    # migration "work". 52 billed min / 3 days stays hosted.
     runs-on: ubuntu-latest
     timeout-minutes: 25
     defaults:
@@ -478,7 +596,19 @@ jobs:
   # i18n coverage ≥ 80 % en → {pt-BR, es-419}. Per S-18 §5.6 R-S18-12.
   i18n-coverage:
     name: i18n coverage (>=80% en -> {pt-BR, es-419})
-    runs-on: ubuntu-latest
+    # ── Runner: `corelink` fabric (wave 2, 2026-08-03) — see the `build` job above
+    # for the full ephemeral-box / queued-spawn note.
+    #
+    # Measured cost removed: 52 billed minutes of `ubuntu-latest` over 43 runs in
+    # the 3 days to 2026-08-03 (median 54 s, p90 67 s, max 271 s).
+    #
+    # Why it fits: `pnpm i18n-coverage` is `tsx scripts/i18n-coverage.ts` — pure
+    # node, no `child_process`, no browser, no python3. node/npm/pnpm are on the
+    # box (image inventory 91857115465).
+    runs-on: corelink
+    # Measured median 54 s over 43 hosted runs (p90 67 s; one 271 s outlier).
+    # 3x median is under the recipe's 10-minute floor, so it stays at the floor —
+    # which also covers the outlier ~2.2x over. Bounds RUNNING time only.
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -492,11 +622,14 @@ jobs:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Set up Node.js
+        # `cache: pnpm` removed — see the `build` job's Node.js step for the
+        # measurement. Short version: the store is pinned to
+        # `$HOME/.pnpm-store-$RUNNER_NAME`, which is unique per ephemeral fabric
+        # spawn, so a restore can never be read back; and the hosted runs already
+        # log `pnpm cache is not found` + `reused 0`. Node 20 stays pinned.
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -511,7 +644,20 @@ jobs:
   # docs-gen-check script).
   reapi-gen-drift:
     name: REAPI .proto -> MDX zero-drift
-    runs-on: ubuntu-latest
+    # ── Runner: `corelink` fabric (wave 2, 2026-08-03) — see the `build` job above
+    # for the full ephemeral-box / queued-spawn note.
+    #
+    # Measured cost removed: 45 billed minutes of `ubuntu-latest` over 43 runs in
+    # the 3 days to 2026-08-03 (median 50 s, p90 55 s, max 67 s).
+    #
+    # Why it fits: `docs:gen:check` is `tsx scripts/gen-reapi-docs.ts --check` —
+    # node, plus one `execSync("diff -r --brief ...")`. No protoc, no python3, no
+    # browser. `diff` is Priority: required on the Ubuntu 24.04 base this image is
+    # built from; and if it were ever absent, `checkDrift()` catches the execSync
+    # throw and FAILS the gate loudly — it cannot degrade into a false pass.
+    runs-on: corelink
+    # Measured median 50 s over 43 hosted runs (max 67 s). 3x median is under the
+    # recipe's 10-minute floor, so it stays at the floor. Bounds RUNNING time only.
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -521,10 +667,14 @@ jobs:
         with:
           version: ${{ env.PNPM_VERSION }}
 
+      # `cache: pnpm` removed — see the `build` job's Node.js step for the
+      # measurement. Short version: the store is pinned to
+      # `$HOME/.pnpm-store-$RUNNER_NAME`, which is unique per ephemeral fabric
+      # spawn, so a restore can never be read back; and the hosted runs already
+      # log `pnpm cache is not found` + `reused 0`. Node 20 stays pinned.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
 
       - name: Install docs deps
         run: pnpm install --filter @corelink/docs --frozen-lockfile=false
@@ -552,6 +702,10 @@ jobs:
     name: lighthouse-ci baseline (lighthouserc.cjs)
     needs: build
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # STAYS HOSTED (wave 2, 2026-08-03). Same blocker as `lighthouse`: `lhci
+    # autorun` needs headless Chrome, absent from the fabric box (image inventory
+    # 91857115465). Cheapest job in the file anyway — it is `schedule`/`dispatch`
+    # only, so it ran 4 times in the 3-day window for 4 billed minutes total.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:

@@ -43,12 +43,16 @@ jobs:
     # every touched file; the ~200-file legacy backlog does not block
     # unrelated PRs and burns down as files are edited. Full-tree visibility
     # lives in docs-ci.yml's advisory "Vale prose lint" job.
-    runs-on: ubuntu-latest
+    # Runner: `corelink` (zero-hosted). This job already installs a
+    # checksum-pinned Vale binary at runtime rather than via an action, so no box
+    # image change is needed — the corelink box is Linux x86_64, same asset.
+    runs-on: corelink
     timeout-minutes: 10
     env:
       VALE_VERSION: 3.9.1
       # sha256 from the official vale_3.9.1_checksums.txt release asset
-      # (vale_3.9.1_Linux_64-bit.tar.gz). ubuntu-latest is always x86_64.
+      # (vale_3.9.1_Linux_64-bit.tar.gz). Both ubuntu-latest and the corelink
+      # box are x86_64.
       VALE_SHA256_X86_64: fbc2eb47d0b8c50220ed1a2c5c611fbe0904ed567d638143d482016a18fd2db0
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

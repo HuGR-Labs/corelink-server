@@ -45,7 +45,7 @@
  * matching the file's documented "fail-open on D1 errors" posture.
  */
 
-import type { D1Database } from "@cloudflare/workers-types";
+import type { D1Database, D1PreparedStatement, D1Result } from "@cloudflare/workers-types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tier taxonomy
@@ -338,57 +338,85 @@ export async function checkStorageQuota(
   tierResult: TierResult,
   isMutating: boolean,
 ): Promise<QuotaCheckResult> {
-  // On a D1 error we cannot confirm storage headroom (CAA-360 #25). Reads fail
-  // OPEN (availability); writes fail CLOSED with a short Retry-After so an
-  // outage cannot be used to write past the cap unbounded.
-  const onD1Error = (): QuotaCheckResult =>
-    isMutating
-      ? {
-          ok: false,
-          retryAfterSec: STORAGE_QUOTA_D1_ERROR_RETRY_SEC,
-          reason: "storage quota temporarily unverifiable (store error); retry",
-        }
-      : { ok: true };
-
   // F21 + #25: if the tier lookup itself errored, the tier is unconfirmed.
   // Reads pass through (avoid a false-positive 429 for a paid tenant); writes
   // fail closed (cannot confirm headroom on a byte-adding op).
   if (tierResult.d1Error) {
-    return onD1Error();
+    return storageD1ErrorResult(isMutating);
   }
 
   const tier = tierResult.tier;
-  const quota = QUOTAS[tier];
 
   // Enterprise (and unlimited tiers) — no cap to check.
-  if (quota.storageBytesMax === Number.MAX_SAFE_INTEGER) {
+  if (!storageCapIsFinite(tier)) {
     return { ok: true };
   }
 
-  interface SumRow { total_bytes: number | null }
-  let row: SumRow | null = null;
+  let row: StorageSumRow | null = null;
   try {
-    row = await db
-      .prepare(
-        "SELECT SUM(bytes_used) AS total_bytes FROM tenant_storage_state WHERE tenant_id = ?1",
-      )
-      .bind(tenantId)
-      .first<SumRow>();
+    row = await storageSumStatement(db, tenantId).first<StorageSumRow>();
   } catch {
     // D1 error → fail open on reads, fail closed on writes (CAA-360 #25).
-    return onD1Error();
+    return storageD1ErrorResult(isMutating);
   }
 
-  const totalBytes = row?.total_bytes ?? 0;
+  return storageResultForBytes(row?.total_bytes ?? 0, tier);
+}
 
-  if (totalBytes < quota.storageBytesMax) {
+/** Row shape of the storage `SUM(bytes_used)` read. */
+interface StorageSumRow {
+  total_bytes: number | null;
+}
+
+/**
+ * The storage-cap read, as a prepared+bound statement. SINGLE definition of this
+ * SQL: both the standalone {@link checkStorageQuota} and the batched
+ * {@link runQuotaBatch} issue exactly this statement, so the two paths cannot
+ * drift apart into enforcing different things.
+ */
+function storageSumStatement(db: D1Database, tenantId: string): D1PreparedStatement {
+  return db
+    .prepare(
+      "SELECT SUM(bytes_used) AS total_bytes FROM tenant_storage_state WHERE tenant_id = ?1",
+    )
+    .bind(tenantId);
+}
+
+/** True when the tier has a FINITE storage ceiling, i.e. the SUM read is worth paying for. */
+function storageCapIsFinite(tier: Tier): boolean {
+  return QUOTAS[tier].storageBytesMax !== Number.MAX_SAFE_INTEGER;
+}
+
+/**
+ * The verb-aware D1-error posture for the storage gate (CAA-360 #25). Reads fail
+ * OPEN (availability — a read cannot grow storage past the cap); byte-adding
+ * writes fail CLOSED with a SHORT Retry-After so an outage cannot be used to
+ * write past the cap unbounded.
+ */
+function storageD1ErrorResult(isMutating: boolean): QuotaCheckResult {
+  return isMutating
+    ? {
+        ok: false,
+        retryAfterSec: STORAGE_QUOTA_D1_ERROR_RETRY_SEC,
+        reason: "storage quota temporarily unverifiable (store error); retry",
+      }
+    : { ok: true };
+}
+
+/**
+ * Pure cap comparison for an already-read `SUM(bytes_used)`. No D1 access —
+ * factored out so the serial and the batched read reach the identical verdict
+ * (and the identical `reason` string) from the identical bytes.
+ */
+function storageResultForBytes(totalBytes: number, tier: Tier): QuotaCheckResult {
+  const max = QUOTAS[tier].storageBytesMax;
+  if (totalBytes < max) {
     return { ok: true };
   }
-
   return {
     ok: false,
     retryAfterSec: secondsUntilNextMonthStart(),
-    reason: `Storage quota exceeded: ${totalBytes} bytes used, limit is ${quota.storageBytesMax} bytes (tier: ${tier})`,
+    reason: `Storage quota exceeded: ${totalBytes} bytes used, limit is ${max} bytes (tier: ${tier})`,
   };
 }
 
@@ -541,22 +569,9 @@ export async function incrementMonthlyRequestCount(
     return { counted: false, count: 0 };
   }
 
-  const yearMonth = currentYearMonthUtc();
-  const nowMs = Date.now();
-
-  interface CountRow { request_count: number }
-  let row: CountRow | null = null;
+  let row: RequestCountRow | null = null;
   try {
-    row = await db
-      .prepare(
-        "INSERT INTO monthly_request_counts (tenant_id, year_month, request_count, updated_at_ms) " +
-          "VALUES (?1, ?2, 1, ?3) " +
-          "ON CONFLICT(tenant_id, year_month) " +
-          "DO UPDATE SET request_count = request_count + 1, updated_at_ms = ?3 " +
-          "RETURNING request_count",
-      )
-      .bind(tenantId, yearMonth, nowMs)
-      .first<CountRow>();
+    row = await monthlyRequestCountStatement(db, tenantId).first<RequestCountRow>();
   } catch {
     // Transient store error → fail OPEN (availability), consistent with the
     // file's posture. The request is NOT counted; the DO/container remain the
@@ -567,6 +582,30 @@ export async function incrementMonthlyRequestCount(
   // A successful RETURNING UPSERT always yields exactly one row; treat a
   // (theoretically impossible) null as 0 → within cap, fail-open.
   return { counted: true, count: row?.request_count ?? 0 };
+}
+
+/** Row shape returned by the metering UPSERT's `RETURNING request_count`. */
+interface RequestCountRow {
+  request_count: number;
+}
+
+/**
+ * The atomic monthly-counter UPSERT, as a prepared+bound statement. SINGLE
+ * definition of this SQL (and of the `YYYY-MM` bucket + `updated_at_ms` clock
+ * it binds): both {@link incrementMonthlyRequestCount} and the batched
+ * {@link runQuotaBatch} issue exactly this statement, so the two paths cannot
+ * drift into counting differently.
+ */
+function monthlyRequestCountStatement(db: D1Database, tenantId: string): D1PreparedStatement {
+  return db
+    .prepare(
+      "INSERT INTO monthly_request_counts (tenant_id, year_month, request_count, updated_at_ms) " +
+        "VALUES (?1, ?2, 1, ?3) " +
+        "ON CONFLICT(tenant_id, year_month) " +
+        "DO UPDATE SET request_count = request_count + 1, updated_at_ms = ?3 " +
+        "RETURNING request_count",
+    )
+    .bind(tenantId, currentYearMonthUtc(), Date.now());
 }
 
 /**
@@ -588,6 +627,160 @@ export function requestCapResultForCount(count: number, tier: Tier): QuotaCheckR
     retryAfterSec: secondsUntilNextMonthStart(),
     reason: `Monthly request quota exceeded: ${count} requests this month, limit is ${cap} (tier: ${tier})`,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Single-round-trip quota batch (the `wdb` latency fix)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Both halves of the per-request quota decision, resolved in ONE D1 round trip. */
+export interface QuotaBatchResult {
+  /** Outcome of the atomic monthly-counter UPSERT (`counted:false` ⇒ fail-open). */
+  readonly increment: RequestCountIncrement;
+  /** Verdict of the storage-cap check (identical to {@link checkStorageQuota}). */
+  readonly storage: QuotaCheckResult;
+  /**
+   * Whether a D1 round trip was actually issued. False only when BOTH statements
+   * were skipped (a fan-out / metering-disabled request on an unlimited-storage
+   * tier), in which case there is no phase to report on `Server-Timing`.
+   */
+  readonly ranD1: boolean;
+}
+
+/**
+ * Run the metering UPSERT and the storage-cap SUM as a single `db.batch()` —
+ * ONE D1 round trip instead of two serial ones.
+ *
+ * # Why (the measurement)
+ *
+ * Measured against live prod (warm, n=30, single reused connection, 2026-08-04):
+ * `qmeter` (the counter UPSERT) 152/158/163 ms and `qstor` (the storage SUM)
+ * 120/126/130 ms, summing to the whole 277/284/302 ms `wdb` phase — i.e. `wdb`
+ * was ENTIRELY two serial uncached round trips to the ENAM D1 primary, and the
+ * two cache-backed phases (`qtier`, `qresid`) contributed 0. Neither statement
+ * depends on the other's RESULT, so the seriality was pure latency with nothing
+ * bought by it. Batching collapses them onto one network round trip.
+ *
+ * # What did NOT change (deliberately)
+ *
+ *   - **The counter still increments synchronously, on the request path.** It is
+ *     not deferred to `ctx.waitUntil` and not sampled: the post-increment count
+ *     is the value the caller compares against the tier cap to serve a 429
+ *     (`requestCapResultForCount`), so a deferred write cannot enforce; and
+ *     `waitUntil` has no durability guarantee, so a dropped increment silently
+ *     under-counts a BILLING/quota counter. The statement, its bindings, the
+ *     bucket key and the cap comparison are byte-for-byte what they were.
+ *   - **The fail-open/fail-closed posture.** A batch failure yields exactly what
+ *     a failure of the serial pair yielded: `counted:false` (request cap fails
+ *     OPEN, uncounted) and {@link storageD1ErrorResult} (storage fails OPEN on
+ *     reads, CLOSED with a short Retry-After on byte-adding writes).
+ *   - **What is counted.** Skips are unchanged: no metering statement when the
+ *     caller says so (fan-out sub-request / kill-switch), no storage statement
+ *     for an unlimited-storage tier or an unconfirmed (`d1Error`) tier.
+ *
+ * # The one honest consequence: `db.batch()` is a transaction
+ *
+ * D1 runs a batch as a single transaction, so a fault rolls BOTH statements
+ * back — where the serial pair could have committed the increment and then had
+ * the SUM fail. The direction of that change is an UNDER-count on a D1 fault,
+ * which is precisely the failure this counter's fail-open design already
+ * tolerates and already produces when the UPSERT itself throws (`counted:false`).
+ * It can never OVER-count, which is the failure that would wrongly 429 a paying
+ * tenant. Under a real D1 outage (both statements fail either way) the observable
+ * behaviour is identical.
+ *
+ * @param opts.meter       Whether to include the metering UPSERT. The caller owns
+ *                         this decision (fan-out marker + kill-switch).
+ * @param opts.isMutating  Whether the request adds storage (PUT/POST) — selects
+ *                         the verb-aware D1-error posture (CAA-360 #25).
+ */
+export async function runQuotaBatch(
+  db: D1Database,
+  tenantId: string,
+  tierResult: TierResult,
+  opts: { readonly meter: boolean; readonly isMutating: boolean },
+): Promise<QuotaBatchResult> {
+  const notCounted: RequestCountIncrement = { counted: false, count: 0 };
+
+  // F21 + CAA-360 #25: an unconfirmed tier means we cannot know the cap, so the
+  // storage read is SKIPPED entirely and the verb-aware error posture applies —
+  // identical to checkStorageQuota's first branch.
+  const storageSkipped: QuotaCheckResult = tierResult.d1Error
+    ? storageD1ErrorResult(opts.isMutating)
+    : { ok: true };
+
+  const wantStorage = !tierResult.d1Error && storageCapIsFinite(tierResult.tier);
+
+  if (!opts.meter && !wantStorage) {
+    // Nothing to ask D1. Do not issue an empty batch (a round trip that buys
+    // nothing), and report no phase.
+    return { increment: notCounted, storage: storageSkipped, ranD1: false };
+  }
+
+  const statements: D1PreparedStatement[] = [];
+  const meterIndex = opts.meter
+    ? statements.push(monthlyRequestCountStatement(db, tenantId)) - 1
+    : -1;
+  const storageIndex = wantStorage
+    ? statements.push(storageSumStatement(db, tenantId)) - 1
+    : -1;
+
+  let results: D1Result[];
+  try {
+    results = await db.batch(statements);
+  } catch {
+    // Transient store error → fail OPEN on the counter (uncounted) and apply the
+    // verb-aware posture to storage. Same as the serial path under an outage.
+    return {
+      increment: notCounted,
+      storage: wantStorage ? storageD1ErrorResult(opts.isMutating) : storageSkipped,
+      ranD1: true,
+    };
+  }
+
+  const meterRows = meterIndex >= 0 ? rowsOf<RequestCountRow>(results[meterIndex]) : null;
+  const increment: RequestCountIncrement =
+    meterIndex < 0 || meterRows === null
+      ? notCounted
+      : // A successful RETURNING UPSERT always yields exactly one row; treat a
+        // (theoretically impossible) null as 0 → within cap, fail-open.
+        { counted: true, count: meterRows[0]?.request_count ?? 0 };
+
+  let storage: QuotaCheckResult;
+  if (storageIndex < 0) {
+    storage = storageSkipped;
+  } else {
+    const storageRows = rowsOf<StorageSumRow>(results[storageIndex]);
+    storage =
+      storageRows === null
+        ? storageD1ErrorResult(opts.isMutating)
+        : storageResultForBytes(storageRows[0]?.total_bytes ?? 0, tierResult.tier);
+  }
+
+  return { increment, storage, ranD1: true };
+}
+
+/**
+ * Rows of one statement's batch result, or `null` when that statement did not
+ * succeed. D1 THROWS on a failed batch (handled by the caller's `catch`); this
+ * additionally treats a present-but-`success:false` result — and a driver that
+ * returns a short array — as a failure rather than as "zero rows", because
+ * reading a missing result as an empty SUM would silently mean "0 bytes used",
+ * i.e. fail-OPEN past the storage cap on a fault.
+ */
+function rowsOf<T>(result: D1Result | undefined): T[] | null {
+  if (result === undefined) {
+    return null;
+  }
+  // `D1Response.success` is declared as the LITERAL `true` (a failed statement is
+  // supposed to throw), so a plain `=== false` does not type-check. The runtime
+  // value is still the thing to trust here — this is the fail-closed read of a
+  // result the type system says cannot exist.
+  if ((result as { success?: unknown }).success === false) {
+    return null;
+  }
+  const rows = result.results as unknown;
+  return Array.isArray(rows) ? (rows as T[]) : null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

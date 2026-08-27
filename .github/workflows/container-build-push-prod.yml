@@ -1,6 +1,18 @@
 # Build + push the prod container image on a GitHub-HOSTED Linux runner — OFF the
 # founder's dev Mac.
 #
+# WAIVER (human-authorized) — this lane stays GitHub-HOSTED, exempt from the
+# zero-hosted-spend mandate. Reason: it needs `docker` + buildx to build a native
+# linux/amd64 image. The self-hosted `corelink` fabric runs in Firecracker with no
+# docker daemon (docker-in-Firecracker is unbuilt), and the only docker-capable
+# self-hosted box is the founder's arm64 Mac (`corelink-builder`) — where an
+# amd64 build means slow qemu emulation of a fat-LTO Rust link, exactly what this
+# lane was moved off the Mac to avoid. Cost is negligible: it fires only on
+# `workflow_dispatch` (a manual release step), not per-PR or per-push.
+#   authorized-by: repo owner | 2026-08-11 ("manter hosted c/ waiver")
+#   remediation: move to `runs-on: corelink` once the corelink runner image ships
+#     a docker daemon, OR to a native-amd64 self-hosted box if one is provisioned.
+#
 # History: the off-Mac build was blocked twice on 2026-06-19 — Blacksmith needs a
 # GitHub Org (account was personal), and GitHub-hosted was billing-blocked. BOTH
 # were resolved when the account moved to the `HumanGuardrail` GitHub Org + a paid

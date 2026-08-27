@@ -781,5 +781,55 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
     };
   }
 
+  // ----- Customer DevEnv (WP-09) -----
+  if (path === "/v1/customer/devenv" && method === "GET") {
+    const devenvsList = (g as any).devenvs ?? [
+      {
+        devenv_id: "devenv_e2e_01",
+        status: "running",
+        workspace_name: "frontend-repo",
+        profile_name: "default",
+        tier: "standard-4",
+        created_at: Date.now() - 3600000,
+        started_at: Date.now() - 3600000,
+        ports: [6080, 7681, 8080],
+      },
+    ];
+    return {
+      status: 200,
+      body: {
+        devenvs: devenvsList,
+      },
+    };
+  }
+
+  if (path === "/v1/customer/devenv" && method === "POST") {
+    const b = (typeof body === "object" && body !== null ? body : {}) as any;
+    const newDev = {
+      devenv_id: `devenv_${Date.now()}`,
+      status: "starting",
+      workspace_name: b.workspace_name || "new-workspace",
+      profile_name: b.profile_name || "default",
+      tier: b.tier || "standard-4",
+      created_at: Date.now(),
+      started_at: Date.now(),
+      ports: [6080, 7681, 8080],
+    };
+    if (!(g as any).devenvs) (g as any).devenvs = [];
+    (g as any).devenvs.push(newDev);
+    return { status: 201, body: newDev };
+  }
+
+  if (path.startsWith("/v1/customer/devenv/") && method === "DELETE") {
+    const id = path.slice("/v1/customer/devenv/".length);
+    if ((g as any).devenvs) {
+      (g as any).devenvs = (g as any).devenvs.map((d: any) =>
+        d.devenv_id === id ? { ...d, status: "stopped" } : d
+      );
+    }
+    return { status: 200, body: { ok: true } };
+  }
+
   return rfc7807(404, "Not Found", `unmocked ${method} ${path}`);
 }
+

@@ -164,3 +164,25 @@ export interface CustomerRunnerRun {
   started_at: string;
   duration_s: number | null;
 }
+
+// ─── CoreLink DevEnv (WP-09) ──────────────────────────────────────────
+export type DevenvTier = "standard-2" | "standard-4" | "power-8" | "ultra-16";
+
+export interface CustomerDevenv {
+  devenv_id: string;
+  status: "stopped" | "starting" | "running" | "stopping" | "errored";
+  workspace_name: string;
+  profile_name: string;
+  tier: DevenvTier;
+  created_at: number;
+  started_at: number | null;
+  ports: number[];
+}
+
+export interface CreateDevenvRequest {
+  workspace_name: string;
+  profile_name: string;
+  tier?: DevenvTier;
+  clw_token: string;
+}
+

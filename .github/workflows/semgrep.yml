@@ -39,8 +39,14 @@ on:
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
   # nightly (staggered) + on-demand. Re-add pull_request only if
   # this must block PRs again.
-  schedule:
-    - cron: '0 6 * * *'
+  # PARKED 2026-08-10 (cost hygiene, owner-authorized): the daily cron is
+  # commented out because this SAST lane produced ZERO successful runs of the
+  # last 8 (0/8) while burning ~6 hosted min/day, and CodeQL (codeql.yml,
+  # healthy 7/8) already provides the SAST gate — so this was a broken
+  # duplicate paying for no signal. It stays workflow_dispatch-able. RESTORE the
+  # schedule once the underlying failure is diagnosed + fixed (tracked as debt).
+  # schedule:
+  #   - cron: '0 6 * * *'
   workflow_dispatch:
 
 permissions:

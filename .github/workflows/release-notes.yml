@@ -61,7 +61,10 @@ concurrency:
 jobs:
   generate:
     name: Generate release notes draft
-    runs-on: ubuntu-latest
+    # Runner: `corelink` (zero-hosted). Pure stdlib python3
+    # (generate-release-notes.py) + `gh` (pr create) + the softprops release
+    # action (node) — all provided by the box image (gh 2.97.0 at increment 3).
+    runs-on: corelink
     timeout-minutes: 10
     steps:
       - name: Checkout full history
@@ -180,7 +183,7 @@ jobs:
 
       - name: Create draft GitHub Release
         if: github.event_name == 'push'
-        uses: softprops/action-gh-release@c95fe1489396b046f0b6a56a05b2d3513ae11142 # v2.3.1
+        uses: softprops/action-gh-release@f3cad8bcbf209fe591aa1823e372c5d96b7fc800 # v2.3.1
         with:
           tag_name: ${{ github.ref_name }}
           name: "CoreLink ${{ steps.refs.outputs.version }}"

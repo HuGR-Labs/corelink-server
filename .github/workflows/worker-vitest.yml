@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   vitest:
-    runs-on: ubuntu-latest
+    runs-on: corelink  # zero-hosted: node/python already baked into the corelink image
     defaults:
       run:
         working-directory: worker

@@ -82,6 +82,15 @@ jobs:
     # stall, not a false pass: `scripts/pre-merge-gate-check.sh` scores a pending
     # check as ⛔ DO NOT MERGE, so a stranded box blocks the PR.
     runs-on: corelink
+    # Measured median 416 s (~6.9 min) over the last 6 runs ON THIS FABRIC (hosted
+    # history is slower, median 685 s); 3x rounds to 25 min, ~2.2x over the worst
+    # fabric run observed (676 s). Migrated before the bound was standard, so it
+    # inherited GitHub's 360-min default — one wedged run could pin a PR for 6 h.
+    # This bounds RUNNING time only: it does not start until the job is running,
+    # so it does not cap a job queued on a fabric spawn, and it cannot pre-empt
+    # the "runner lost communication" failure (GitHub fails that job itself).
+    # Backstop against a wedged-but-alive box, not a fix for fleet instability.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
 
@@ -109,8 +118,18 @@ jobs:
       #
       # Installing per-job costs seconds and buys the measurement now. Baking it
       # into the runner image (corelink-runners) is the right long-term home, but
-      # only worth doing once the number below justifies it.
+      # only worth doing once the number below justifies it — and as of the
+      # 2026-08-03 result it does NOT. See the pilot block below.
+      #
+      # ⛔ OFF BY DEFAULT. The three steps of this pilot (install / wire / measure)
+      # are all gated on the repo variable CORELINK_SCCACHE_PILOT == 'on', which
+      # does not exist, so they SKIP. The experiment ran, produced its number, and
+      # the number said the cache costs more than it saves — so merging it in the
+      # ON state would knowingly slow every PR gate run. Flip the variable to
+      # re-run the experiment (e.g. after a latency fix on the /cargo hot path);
+      # delete these steps once that is settled either way.
       - name: Install sccache (prebuilt, SHA-pinned)
+        if: vars.CORELINK_SCCACHE_PILOT == 'on'
         uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
         with:
           tool: sccache
@@ -119,7 +138,132 @@ jobs:
       #
       # This lane already runs on `corelink` (wave 2), and the rust-cache step
       # above is correctly gated to github-hosted, so it SKIPS here and the lane
-      # compiles COLD every run — measured 676 s. That is the cost this removes.
+      # compiles COLD every run. That is the cost this pilot targets.
+      #
+      # ⛔ THE MEASUREMENT IS IN, AND IT SAYS NO. Same job, same box class, four
+      # runs on this branch:
+      #     409 s  sccache absent            (d88b1af4)
+      #     423 s  sccache absent            (81919a49)
+      #     917 s  sccache on,  22.85 % hits (189 hits / 638 misses)
+      #     631 s  sccache on, 100.00 % hits (827 hits /   0 misses)
+      #
+      # The last line is the one that settles it. At a PERFECT hit rate — zero
+      # compilation, every artifact served from CoreLink — the lane is still
+      # ~1.5x SLOWER than just compiling cold. Fetching 827 artifacts over the
+      # network costs more than building them on 4 local vCPUs. The warm case was
+      # the pilot's best case and it lost, so "wait until the cache warms up" is
+      # answered, not open.
+      #
+      # This is NOT a malfunction: 0 cache errors, 0 read errors, 0 write errors,
+      # 0 timeouts across both engaged runs. The surface authenticated, served
+      # reads and accepted writes flawlessly. A cache only pays when a fetch is
+      # cheaper than the work it skips, and for a 4-vCPU box compiling small
+      # crate units, on these runs, it was not.
+      #
+      # ⚠️ ATTRIBUTION AMENDED (2026-08-03). The numbers above stand unchanged;
+      # the CAUSE assigned to them here does not. This comment blamed "the
+      # round-trips … a CAS hot path already known to be D1-over-HTTP bound".
+      # That was reasoning by analogy to the native plane, not a measurement of
+      # THIS path, and tracing `/cargo` found a larger, adapter-plane-specific
+      # term the native plane does not pay: every authenticated request ran a
+      # full OWASP-2024 Argon2id (m=64 MiB, t=3, p=4, >=0.15 CPU-s) on a 0.5-vCPU
+      # container, uncached. For the 100 %-hit run that predicts
+      # `827 x 0.15 / 0.5 ~= 248 s` against the +208...222 s observed — a
+      # sufficient explanation of the whole regression on its own, and the D1 hop
+      # is NOT needed to account for it (`adapter_pat.rs` has said since before
+      # this pilot that "the D1 hop is dwarfed by Argon2id").
+      #
+      # Neither attribution is measurement-confirmed: no per-request server-timing
+      # breakdown of an AUTHENTICATED /cargo request has ever been captured, and
+      # the ~20 ms probe cited while investigating was a 401, which short-circuits
+      # at the HMAC fast-reject BEFORE Argon2id and therefore measures nothing
+      # about this path.
+      #
+      # ── RE-RUN AFTER THE FIX (2026-08-04) ────────────────────────────────
+      #
+      # The Argon2id memo shipped: prod container 4036395f-r1 on all 5 regions
+      # (verified against the CF Containers API, not the deploy's own exit
+      # code). The `cargo-cache-latency-probe` was run against the SAME
+      # `/cargo` surface immediately before and after, 30 samples each, from a
+      # corelink box, every key freshly random so every request is a 404 miss
+      # doing no storage work:
+      #
+      #                                  before        after
+      #   /health TTFB p50                40 ms        38 ms   (unchanged: the
+      #                                                         edge was never
+      #                                                         the problem)
+      #   /cargo GET p50, new conn       682 ms       333 ms
+      #   /cargo GET p50, reused conn    696 ms       305 ms
+      #
+      #   throughput vs parallelism (served/s) -- the decisive one:
+      #     P=1    1.51  ->   2.73
+      #     P=2    1.52  ->   5.04
+      #     P=4    1.77  ->   9.90
+      #     P=8    1.72  ->  15.40      (was 23 of 32 shed as 401; now 0 shed)
+      #     P=16   1.32  ->  26.08      (was 56 of 64 shed as 401; now 5x 429)
+      #
+      # Before, throughput was FLAT at ~1.5/s no matter the parallelism -- the
+      # signature of a CPU-bound serialisation. It now scales with parallelism,
+      # which is what confirms the Argon2id attribution behaviourally rather
+      # than by arithmetic. The 401-under-load defect went with it: a genuine
+      # PAT above the sub-cap now gets an honest, retryable
+      # `429 rate_limited` instead of `authentication failed`.
+      #
+      # ⚠️ HONEST ABOUT WHAT DID *NOT* HAPPEN: the prediction was that phase 2
+      # would collapse toward the ~38 ms edge floor. It did not -- it halved.
+      # ~300 ms of server time still sits on a 404 that only authenticates.
+      # That residue is NOT Argon2id (the throughput curve rules that out) and
+      # it is NOT measured: the candidates are the per-request D1 `pat` row read
+      # deliberately kept for immediate revocation, and the storage lookup that
+      # resolves the miss. Nobody should quote a cause for those 300 ms until
+      # someone instruments them.
+      #
+      # END-TO-END RESULT (run 30874583952, this lane, cache already warm from
+      # the earlier pilot -- 827 hits / 0 misses / 100 % / 0 errors, directly
+      # comparable to the 631 s run):
+      #
+      #                                 no cache    pilot BEFORE   pilot AFTER
+      #   lane total                   409-423 s        631 s         435 s
+      #   Average cache read hit             --       1.702 s       0.864 s
+      #   cargo clippy                     64-72 s      145 s         100 s
+      #   cargo test (debug)              110-118 s     189 s         117 s
+      #   cargo test (release)            191-206 s     259 s         183 s
+      #
+      # The regression went from +215 s to +19 s against the no-cache mean, and
+      # sccache's own per-object figure HALVED. So ~91 % of what this pilot was
+      # blamed on the network was the Argon2id. The `debug` and `release` steps
+      # are now at or below their no-cache times; only clippy still carries a
+      # visible tail.
+      #
+      # ⚠️ THE VERDICT IS UNCHANGED ANYWAY: 435 s still loses to 416 s. The
+      # pilot stays OFF and CORELINK_SCCACHE_PILOT is back to `off`. What
+      # changed is the REASON -- this is no longer "the cache is 1.5x slower
+      # than compiling", it is "the cache is within noise of break-even on a
+      # 4-vCPU box compiling small crate units", which is the workload a
+      # compilation cache helps least. It says nothing about a customer whose
+      # units are expensive or whose boxes are slower, and 0.864 s per object
+      # is still a real number worth attacking (see the ~300 ms of unexplained
+      # server time in the probe block above).
+      #
+      # Re-run the experiment only after that 300 ms is instrumented; another
+      # run at this cost profile will just reproduce 435 s.
+      #
+      # The verdict below is UNCHANGED and still binding: the pilot stays refused.
+      # What changes is that there is now a specific, falsifiable hypothesis with
+      # a fix in flight (the `SecretMatchMemo` in `adapter_pat.rs`). Re-running
+      # this lane AFTER that container deploys is the experiment that
+      # discriminates the two causes — if the warm run drops to or below the
+      # 409-423 s baseline, Argon2id was the cost; if it does not, the round-trip
+      # explanation survives and the refusal hardens.
+      #
+      # Retracted with it: the 676 s cold baseline this work was justified with,
+      # which NONE of the four runs reproduces.
+      #
+      # Honest scope of the claim: single samples on a shared ephemeral box with
+      # real run-to-run variance. It is enough to refuse a rollout; it is not a
+      # claim about sccache-on-CoreLink for customers on other workloads (a
+      # slower compiler, bigger translation units, or a fatter box flips the
+      # arithmetic — that is the case the product actually sells).
       #
       # An ephemeral box has no disk to cache to, which is precisely the problem
       # CoreLink sells the answer to. `/cargo/<tenant>/<key>` is a live sccache
@@ -138,6 +282,7 @@ jobs:
       # CARGO_INCREMENTAL=0 is required — incremental artifacts embed
       # per-invocation paths, which would make sccache store and never hit.
       - name: Point sccache at CoreLink (no-op without the secret)
+        if: vars.CORELINK_SCCACHE_PILOT == 'on'
         env:
           SCCACHE_TOKEN: ${{ secrets.CORELINK_SCCACHE_TOKEN }}
           SCCACHE_TENANT: ee30f7ba-fc25-4d71-939e-ebe130b4c6a3
@@ -187,15 +332,49 @@ jobs:
 
       - name: cargo test (cross-tenant isolation property — 10k iter + 100k concurrent, WI-S02-001)
         run: cargo test --release --package corelink-reapi --test prop_cross_tenant_read
-      # The number this pilot exists to produce. Report-only and `always()`: a
-      # cache that must not fail the build must not fail its own measurement
-      # either. Compare "Cache hits" vs "Cache misses" across two consecutive
-      # runs — run 1 populates the cache, run 2 is the real signal.
-      - name: sccache stats
-        if: always()
+
+      # The number this pilot exists to produce, ASSERTED rather than eyeballed.
+      #
+      # "the build passed" is not evidence: this lane passes at a 100 % miss rate
+      # too, and it passed for 409 s on the run that proved sccache was missing
+      # from the box image entirely. A run in which the pilot did not execute
+      # must not look like one in which it worked, so this step NAMES the state
+      # it is in instead of printing whatever it happens to find:
+      #
+      #   RUSTC_WRAPPER unset  -> the wiring step no-opped; the pilot did NOT run
+      #   hits == 0            -> the cache is not being hit; we are paying a
+      #                           round-trip and buying nothing
+      #   hits > 0             -> the claim is true, with a number behind it
+      #
+      # RUSTC_WRAPPER is the load-bearing probe: the wiring step exports it via
+      # $GITHUB_ENV, so its absence HERE is proof the wiring no-opped — whether
+      # for a missing secret, a missing binary, or a future regression in either.
+      #
+      # Still report-only (`always()`, never a non-zero exit): a cache that must
+      # not fail the build must not fail its own measurement either. The signal
+      # is a ::warning:: plus a line in the job summary, visible without opening
+      # the log and without reddening a gate. Run 1 populates the cache, so
+      # hits == 0 is EXPECTED on the first run and only meaningful from run 2 on.
+      - name: sccache stats (hit-rate assertion — report-only)
+        if: always() && vars.CORELINK_SCCACHE_PILOT == 'on'
         run: |
-          command -v sccache >/dev/null 2>&1 || { echo "sccache absent — lane compiled cold"; exit 0; }
-          sccache --show-stats || echo "::notice::sccache inactive on this run"
+          if [ -z "${RUSTC_WRAPPER:-}" ]; then
+            echo "::warning::sccache never engaged (RUSTC_WRAPPER unset) — this run measured NOTHING; the lane compiled cold exactly as before the pilot"
+            echo "sccache: not engaged this run (no secret, or sccache missing from the box)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          stats="$(sccache --show-stats 2>&1 || true)"
+          echo "${stats}"
+          hits="$(printf '%s\n' "${stats}" | awk '/^Cache hits/ {print $NF; exit}')"
+          misses="$(printf '%s\n' "${stats}" | awk '/^Cache misses/ {print $NF; exit}')"
+          case "${hits}" in ''|*[!0-9]*) hits=0 ;; esac
+          case "${misses}" in ''|*[!0-9]*) misses=0 ;; esac
+          echo "sccache -> CoreLink /cargo: hits=${hits} misses=${misses}" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${hits}" -eq 0 ]; then
+            echo "::warning::sccache 0 hits / ${misses} misses — the CoreLink cache is NOT being hit. Expected on the first run (it populates); from run 2 on it means the pilot costs a round-trip and buys nothing."
+          else
+            echo "::notice::sccache ${hits} hits / ${misses} misses against CoreLink /cargo"
+          fi
 
   wasm-build:
     name: WASM target build (CF Workers compile compatibility — pure-logic core)
@@ -203,6 +382,9 @@ jobs:
     # ephemeral-box caveats (no cache between runs; a dropped spawn stalls the
     # job as ⛔ pending rather than passing it).
     runs-on: corelink
+    # Measured median 82 s over the last 8 fabric runs (112 s hosted); 3x is under
+    # the 10-min floor, so the floor applies.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
       # `dtolnay/rust-toolchain@stable` with `targets: wasm32-unknown-unknown`

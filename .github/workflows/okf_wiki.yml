@@ -41,9 +41,9 @@ concurrency:
 
 jobs:
   okf-wiki-validation:
-    # ubuntu-latest (zero Mac load) — the self-hosted setup-python hack noted in
-    # spec_validation.yml is N/A here.
-    runs-on: ubuntu-latest
+    # `corelink` ephemeral Linux (zero hosted spend, zero Mac load): the validator
+    # is pure python3 with PyYAML, both baked into the runner image.
+    runs-on: corelink
     steps:
       - name: Checkout
         # fetch-depth: 0 — C4/C5 need full history (checkpoint_sha lookup + the

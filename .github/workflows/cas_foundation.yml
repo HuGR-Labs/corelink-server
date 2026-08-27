@@ -73,8 +73,16 @@ on:
   # this cron must go back to daily in the same PR. That rule was violated once
   # already (see the CORRECTION above) — a rule written in a comment does not
   # enforce itself, which is the same lesson ADR-0042 §A1 learned the hard way.
-  schedule:
-    - cron: '0 9 * * 3'
+  # PARKED 2026-08-10 (cost hygiene, owner-authorized): the weekly cron is
+  # commented out because this lane produced ZERO successful scheduled runs
+  # (7 failure / 1 cancelled of the last 8) while costing ~460 hosted min/month
+  # — it was re-observing the same red for no signal. It stays
+  # `workflow_dispatch`-able. RESTORE the `schedule:` block once the underlying
+  # failure is diagnosed + fixed (tracked as debt — see the parking PR). Per the
+  # NOTE above, if the compensating lanes change, restore to the correct cadence
+  # in the same PR that fixes the failure.
+  # schedule:
+  #   - cron: '0 9 * * 3'
   workflow_dispatch:
 
 permissions:
