@@ -82,6 +82,34 @@ Each entry cross-references:
   landing anywhere in the tree reaches it, not only one landing in a script.
   The extension list covers packaged distributions (`.whl`, `.jar`, `.crate`, …)
   after the first full-tree run flagged a Python wheel.
+- **PHASE 2: the runner-provisioning endpoint no longer accepts the shared
+  internal-auth key at all, so its isolation stops depending on a secret
+  staying bound.** Phase 1 (#1372) added a dedicated
+  `CORELINK_RUNNER_PROVISION_AUTH_KEY` and kept the broad
+  `CORELINK_INTERNAL_AUTH_KEY` as a fallback so the split could roll out
+  without a flag-day. That migration is now DONE: the dedicated key is bound on
+  `corelink-signup-worker` and was proven live end to end against
+  `POST /internal/v1/runner/provision-installation` — dedicated key ⇒ auth
+  passes (400 on an empty body, i.e. zero D1 writes), shared key ⇒ **401**,
+  absent or wrong ⇒ **401**. **Why remove a fallback that binding the key had
+  already made unreachable:** while it existed, UNBINDING the dedicated key
+  would silently re-widen this endpoint back to the broad shared secret instead
+  of failing — the security property would hold only for as long as an operator
+  action held. It now holds in code: no dedicated key, no gate to evaluate,
+  503. The shared key is also removed from `InstallationProvisionEnv`, so it is
+  unreachable by TYPE and not merely by control flow; a later edit cannot
+  re-widen this consumer without first re-declaring the dependency. Arm (b)
+  (set-but-sub-floor ⇒ fail CLOSED, never widen) is unchanged. **The arm-(c)
+  test was rewritten because the obvious version was decoration:** with the
+  shared key simply absent from the env, restoring the fallback leaves the test
+  GREEN — it asserts nothing. It now binds the shared key through a cast, the
+  way the live Worker `Env` intersection actually carries it, and was proven
+  RED against the restored fallback (`expected 200 to be 503`). It also asserts
+  ZERO D1 writes on the 503, since a fail-CLOSED that had already provisioned
+  rows would be worse than a 200. 250 signup-worker tests green.
+  ⚠️ **Operational consequence:** unbinding or shortening
+  `CORELINK_RUNNER_PROVISION_AUTH_KEY` now takes this endpoint to 503 rather
+  than degrading it. Rotate by binding the new value before retiring the old.
 
 - **The DSR verify sweep's `dsr_requested` query said it "self-expires from a
   7-day window after one week" — it does not, and the concept repeated the
