@@ -2699,7 +2699,7 @@ tell the client to re-upload bytes we hold) and not 500 (which invites a retry
 that cannot succeed). 64 MiB clears the observed 52.3 MB maximum, so nothing
 served today stops being served, and the per-tenant worst case becomes
 `8 x 64 MiB = 512 MiB` instead of the 8 GiB inherited from the mirror's fetch
-cap. The remaining PROCESS-wide half is B-054. Original finding below.
+cap. The remaining PROCESS-wide half is B-055. Original finding below.
 
 **Re-scoped 2026-08-26 by ADR-S34-002.** This item was "streaming CAS reads must
 not land before B-050". B-050 shipped, and measuring the read path to plan the
@@ -2754,7 +2754,7 @@ verify-means: |
 last-verified: 2026-08-26
 ```
 
-### B-054 — the CAS read path has no PROCESS-WIDE byte budget, only a per-tenant one
+### B-055 — the CAS read path has no PROCESS-WIDE byte budget, only a per-tenant one
 
 `CAS_READ_CONCURRENCY_LIMIT` (8) bounds ONE tenant, and B-051 now bounds one
 object (`CAS_READ_MAX_OBJECT_BYTES`, 64 MiB). Their product — 512 MiB — is a
@@ -2777,7 +2777,7 @@ itself to the first. Sizing it needs the same treatment the ceiling got: a
 number argued from the 1024 MiB the container actually has.
 
 ```backlog
-id: B-054
+id: B-055
 repo: corelink-server
 owner: tl
 status: open

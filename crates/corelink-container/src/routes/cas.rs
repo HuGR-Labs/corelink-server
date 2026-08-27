@@ -178,7 +178,7 @@ const _: () = assert!(
 /// CAS_READ_MAX_OBJECT_BYTES`, and it has to leave room for everything else
 /// the process is doing. This is the arithmetic the ceiling was chosen by; if
 /// either factor is retuned, this is what notices. (It bounds one tenant only —
-/// the process-wide budget is B-054.)
+/// the process-wide budget is B-055.)
 const _: () = assert!(
     CAS_READ_MAX_OBJECT_BYTES * CAS_READ_CONCURRENCY_LIMIT as u64 <= CONTAINER_MEMORY_BYTES / 2,
     "one tenant's concurrent reads could claim more than half the container"
