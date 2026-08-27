@@ -162,6 +162,7 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 - [ADR-S32-001 — Permit BSL-1.0 in the license allowlist](/adr/adr-s32-001-bsl-1.0-license-allowlist.md)
 - [ADR-S33-001 — Team multi-seat: additive membership model (not Clerk Orgs)](/adr/adr-s33-001-team-multi-seat-membership-model.md)
 - [ADR-S34-001 — CAS read integrity: the scrubber precedes streaming](/adr/adr-s34-001-cas-read-integrity-before-streaming.md)
+- [ADR-S34-002 — the CAS read path is bounded by object SIZE, not by streaming](/adr/adr-s34-002-cas-read-bound-size-not-protocol.md)
 - [WAIVER-S14-001 — Legal-externo review timeline exception](/adr/waiver-s14-001-legal-externo-timeline.md)
 
 ## ops
