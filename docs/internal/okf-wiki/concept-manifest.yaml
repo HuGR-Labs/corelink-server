@@ -307,6 +307,12 @@ candidates:
     status: "active"
     source_cluster: "flows"
     seed_from: ["crates/corelink-container/src/routes/cas.rs", "crates/corelink-container/src/storage.rs"]
+  - id: "flows/cas-integrity-scrub"
+    type: "RequestFlow"
+    title: "CAS at-rest integrity scrub"
+    status: "active"
+    source_cluster: "flows"
+    seed_from: ["crates/corelink-container/src/routes/cas_scrub.rs", "crates/corelink-container/src/storage/r2_s3.rs", "crates/corelink-container/src/storage/byok_cas.rs"]
   - id: "flows/pat-gauntlet"
     type: "RequestFlow"
     title: "PAT verification gauntlet"
