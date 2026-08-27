@@ -21,6 +21,25 @@ Each entry cross-references:
 ---
 
 ## [Unreleased]
+
+### Changed
+
+- **ADR-S34-002 — B-051 re-scoped from streaming to a read-side size ceiling.**
+  Measuring the read path to plan the streaming work showed ADR-S34-001's parked
+  memory note was wrong in both directions. The concurrency permit B-052 added
+  bounds the COUNT of concurrent reads (8/tenant) but not the SIZE, and the
+  10 MiB `DefaultBodyLimit` does not cap the other factor — it bounds
+  client-supplied bodies, while the server-side mirror ingest caps a blob at
+  **1 GiB**. So the memory concern is not closed. But streaming is not the
+  answer either: a full enumeration of `corelink-cas-prod` (22,597 objects,
+  3.57 GB) gives a median of 593 bytes with 95.1% of objects under 1 MiB, so
+  streaming would buy nothing for 95% of reads while costing an async-trait
+  migration of `CasReadHandler` across 11 production implementors and 12 call
+  sites, plus the read-path digest re-verify. The fix is a size ceiling — the
+  same shape as the permit — so `N x max_size` becomes a number the system
+  chose. B-051's `verify` was re-anchored on that constant: the old streaming
+  predicate passed both before and after the scrubber landed and so could never
+  have gone red.
 - Erasure-attestation now covers the Africa (AFR) jurisdiction: `Region::Afr` is a signed-attestation region instead of parsing to `None` and silently skipping signing (fail-open), so an AFR erasure produces an auditable signed record (F-016). NOTE: an AFR attestation signing key must be provisioned operationally; absent one, AFR erasures fail closed rather than silently skip.
 
 ### Added
