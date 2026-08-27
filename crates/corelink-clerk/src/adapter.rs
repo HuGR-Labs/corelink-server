@@ -527,9 +527,7 @@ impl ClerkAdapter {
     /// under the TTL, so a new valid `kid` is never poisoned.
     fn negative_kid_cache_insert(&self, kid: &str) {
         let now = (self.inner.clock)();
-        let deadline = now
-            .checked_add(NEGATIVE_CACHE_TTL)
-            .unwrap_or(now);
+        let deadline = now.checked_add(NEGATIVE_CACHE_TTL).unwrap_or(now);
         let mut guard = match self.inner.negative_kid_cache.lock() {
             Ok(g) => g,
             Err(poisoned) => poisoned.into_inner(),
