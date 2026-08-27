@@ -911,6 +911,13 @@ export class CoreLinkServer implements DurableObject {
           // this list silently no-ops (the ERASURE_SALT_KEY-class bug).
           R2_AUDIT_BUCKET: this.env.R2_AUDIT_BUCKET ?? "",
           AUDIT_ARCHIVE_BATCH_LIMIT: this.env.AUDIT_ARCHIVE_BATCH_LIMIT ?? "",
+          // Objects one `POST /_internal/cas/scrub` call resolves before it
+          // truncates and hands back a cursor (`routes/cas_scrub.rs`,
+          // `build_state_from_env`). "" ⇒ container default (500). Forwarded
+          // because the container reads it at construction — an operator
+          // retuning the sweep would otherwise be setting a Worker var the
+          // scrubber never sees. Not a secret.
+          CAS_SCRUB_OBJECT_BUDGET: this.env.CAS_SCRUB_OBJECT_BUDGET ?? "",
           // Container origin-timing detail phases (`oargon`/`opermit`/`ortier`).
           // "on" arms them; anything else (the production default) leaves their
           // time inside the `oother` residue and the header byte-identical.

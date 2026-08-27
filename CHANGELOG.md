@@ -42,7 +42,12 @@ Each entry cross-references:
   violations against intact data — while an unclassifiable tenant counts
   `failed` and is never assumed plaintext. Unmounted fail-CLOSED without the
   dedicated erase key, `R2_TDK_HEX`, D1 and R2. Design: ADR-S34-001 and its two
-  addenda. Unblocks B-051 (streaming CAS reads).
+  addenda. Unblocks B-051 (streaming CAS reads). One new NON-secret tuning knob,
+  `CAS_SCRUB_OBJECT_BUDGET` (default 500, clamped ≥1), mirroring
+  `AUDIT_ARCHIVE_BATCH_LIMIT`: a row in the secrets checklist and a line in the
+  Durable Object forward-list, because the container reads it at construction
+  and an operator retuning the sweep would otherwise be setting a Worker var the
+  scrubber never sees.
 - CVE-feed cron schedules restored on `cargo-deny` (daily) and `trivy` (daily), staggered on the self-hosted fleet, so advisory/license/vuln feeds that change without a commit are no longer blind between pushes; `semgrep` stays owner-parked (0/8 broken, hosted, CodeQL covers SAST) (F-014).
 
 ### Fixed
