@@ -2483,25 +2483,51 @@ payload, `UNIQUE (request_id, event_type)`, and a region trigger that
 while still passing its own tests. Audit call non-2xx/timeout ⇒ discard the
 probe results and fall through to the container.
 
-Remaining work: the internal route, the awaited edge call, a test that proves
-fallthrough when the audit call fails, the SLI tagging, and only then the flag.
-F3 (red-team) then runs against serving code, with audit-sink-down as a named
-case.
+**DONE 2026-08-27 — F2 is LIVE in prod (`[env.prod]` only).** The seam shipped in
+#1359 (container route), #1362 (Worker: consumer key + awaited call + serve
+block, 9 tests incl. the one that proves fallthrough when the audit does not
+commit), and #1384 flipped `EDGE_FIND_MISSING = "on"`. Proven in production, not
+from a green workflow:
+
+- the deployed bundle read back from the Cloudflare API carries
+  `EDGE_FIND_MISSING = on` as a `plain_text` binding;
+- `/_internal/audit/cas-attempted` answers `204` on a valid body, `401` on a
+  wrong key, `422` on a body missing `tenant` — three distinct codes only the
+  real handler produces;
+- `wrangler tail` on `corelink-prod` captured
+  `edge_find_missing_served n=100 edge_ms=1550` for a live n=100 request;
+- 12 n=100 requests produced **1200** `corelink.cas.read.attempted` rows in
+  `audit_outbox` for the probing tenant — the evidence the edge owes is durable,
+  not assumed;
+- end-to-end n=100 in prod (MIA colo) is **~2.4 s median** against the F1
+  baseline of **8.65 s**.
+
+⚠️ **Note `--search` is a broken instrument here.** `wrangler tail --search
+edge_find_missing` returned ZERO bytes while the unfiltered tail on the same
+worker captured the line — searching for a string that IS in the URL matched
+nothing either. Read the unfiltered stream; a filtered tail that finds nothing
+is not evidence of nothing.
+
+Left open deliberately, tracked as B-055: the edge serve path does NOT emit the
+`AvailCasGet` / `LatencyCasGetP99` SLIs that `exists_batch`
+(`storage/r2_s3.rs:1572`) emits, so those SLOs now under-count the edge-served
+fraction. F3 (red-team) still runs against serving code, with audit-sink-down as
+a named case.
 
 ```backlog
 id: B-047
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   ! grep -qE '^[^#]*EDGE_FIND_MISSING[[:space:]]*=[[:space:]]*"(on|serve|1)"' wrangler.toml \
     || grep -rq '_internal/audit/cas-attempted' crates/corelink-container/src/routes/
 verify-means: |
-  open — fails if the edge findMissingBlobs serve flag is turned on in
-  wrangler.toml while the container still has no `/_internal/audit/cas-attempted`
-  route, i.e. if F2 is flipped before the audit seam it depends on exists. Closes
-  when the route lands and the flag is on; `shadow` and `off` are unaffected.
-last-verified: 2026-08-26
+  done — the flag IS on and the route DOES exist, so the check passes on its
+  second arm. It stays as a REGRESSION guard, not a to-do: if anyone ever
+  removes the container route while the flag is still on, this flips DRIFTED.
+  `shadow` and `off` are unaffected.
+last-verified: 2026-08-27
 ```
 
 ### B-048 — `cargo-mutants` fails any PR that is one commit behind `main`
@@ -2867,4 +2893,45 @@ verify-means: |
   (`new_keyed`), forcing this item to be closed out with the epoch-cutover design
   recorded rather than left open against a world that already moved.
 last-verified: 2026-08-26
+```
+
+### B-055 — the edge-served findMissingBlobs is invisible to the CAS SLOs
+
+F2 is live: with `EDGE_FIND_MISSING = "on"` the Worker answers
+`findMissingBlobs` in-colo and never reaches the container's `exists_batch`
+(`crates/corelink-container/src/storage/r2_s3.rs:1560`). The audit rows still get
+written — that seam was the whole point of B-047 — but the SLI emission at
+`r2_s3.rs:1572` (`Sli::AvailCasGet` / `Sli::LatencyCasGetP99`) sits on the
+container path only, and the edge serve block emits nothing.
+
+So the CAS availability and p99-latency SLOs now measure a SHRINKING sample: the
+requests the edge answers are exactly the ones that got faster, and they are
+absent from the numbers. That is the wrong direction twice over — the SLO
+under-reports both the win and, more importantly, any future edge-side
+regression. A colo-side R2 fault that made every edge probe slow would move
+these SLOs by ZERO.
+
+Not a launch blocker and deliberately not bundled into F2: emitting an SLI from
+the Worker is a different transport (no `emit_sli`, no container metrics
+registry) and deserves its own design rather than a lookalike written under a
+flag flip. The natural home is the same awaited `/_internal/audit/cas-attempted`
+call the edge already makes — it knows `edge_ms` and the outcome, and it is
+already the one place the edge and the container agree on what happened.
+
+Relates to [B-047] (which shipped F2 and records this gap in its close-out).
+
+```backlog
+id: B-055
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  grep -qE 'EDGE_FIND_MISSING[[:space:]]*=[[:space:]]*"on"' wrangler.toml \
+    && ! grep -q 'AvailCasGet' crates/corelink-container/src/routes/audit_cas_attempted.rs
+verify-means: |
+  open — passes while the serve flag is ON and the audit-seam route still emits
+  no CAS SLI, i.e. while edge-served requests are missing from the SLOs. Closes
+  when the SLI is emitted on that path (or turns moot if the flag goes back off,
+  which flips this to DRIFTED and forces a re-read rather than silently passing).
+last-verified: 2026-08-27
 ```
