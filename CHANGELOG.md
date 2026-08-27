@@ -42,6 +42,23 @@ Each entry cross-references:
   have gone red.
 - Erasure-attestation now covers the Africa (AFR) jurisdiction: `Region::Afr` is a signed-attestation region instead of parsing to `None` and silently skipping signing (fail-open), so an AFR erasure produces an auditable signed record (F-016). NOTE: an AFR attestation signing key must be provisioned operationally; absent one, AFR erasures fail closed rather than silently skip.
 - Clerk JWKS verification now bounds the `kid` header (`^[A-Za-z0-9_-]{1,64}$`) before any lookup and keeps a short (60s) per-`kid` negative cache, so a stream of bogus `kid`s can no longer drive an upstream JWKS fetch storm (F-020). Cross-isolate single-flight coalescing is a tracked follow-up.
+- **`findMissingBlobs` is now answered at the edge in prod (`prod` env only).**
+  `EDGE_FIND_MISSING = "on"`. The precondition F2 was gated on is measured, not
+  assumed: `POST /_internal/audit/cas-attempted` answers **204** in prod across
+  three consecutive probes, so the container mounted the route and the dedicated
+  `CORELINK_AUDIT_ATTEMPTED_AUTH_KEY` resolves. The route walked 401 → 404 → 204
+  as the three halves landed — bind the secret, deploy the Worker (without its
+  `audit_attempted` consumer mapping the edge 401s on its own call), and
+  cold-start the container so it reads the key at start. A sibling read-only
+  route answered consistently throughout, which is how the CF Access and
+  key-plumbing layers were ruled out as the variable rather than assumed
+  innocent.
+  Enabled on `prod` only, not the five regional envs: this is the first env
+  where the edge answers a REAPI *read* surface, and the 8.65 s / n=100 baseline
+  was measured from inside the fabric against this env, so it is the only one
+  whose before/after comparison is honest. Rollback is deleting the var — every
+  deferral path already falls through to the container, so unset is
+  byte-identical to the previous behaviour.
 
 ### Added
 
