@@ -307,6 +307,12 @@ candidates:
     status: "active"
     source_cluster: "flows"
     seed_from: ["crates/corelink-container/src/routes/cas.rs", "crates/corelink-container/src/storage.rs"]
+  - id: "adr/adr-s34-002-cas-read-bound-size-not-protocol"
+    type: "ADR"
+    title: "ADR-S34-002 — CAS read bounded by size, not streaming"
+    status: "active"
+    source_cluster: "adr"
+    seed_from: ["specs/03_architecture/adrs/ADR-S34-002-cas-read-bound-size-not-protocol.md"]
   - id: "flows/cas-integrity-scrub"
     type: "RequestFlow"
     title: "CAS at-rest integrity scrub"

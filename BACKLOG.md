@@ -2662,22 +2662,44 @@ verify-means: |
 last-verified: 2026-08-26
 ```
 
-### B-051 — streaming CAS reads must not land before B-050
+### B-051 — the CAS read path has no SIZE bound; the concurrency permit bounds only the count
 
-Streaming cannot preserve the read-path digest check: verification needs the
-whole object, and by the time the digest can be computed the bytes are already
-on the wire. Streaming does not weaken that check, it REMOVES it — and with it
-the only bitrot detection anywhere in the system, because at-rest coverage is
-zero (B-050).
+**Re-scoped 2026-08-26 by ADR-S34-002.** This item was "streaming CAS reads must
+not land before B-050". B-050 shipped, and measuring the read path to plan the
+streaming work showed the item was aimed at the wrong thing in both directions.
 
-Shipping streaming first would take the system from "every served object is
-verified" to "no object is ever verified" with no overlap. Ordering is the
-whole decision; see ADR-S34-001.
+`CasReadHandler::read` is a SYNCHRONOUS trait method returning an owned
+`Vec<u8>` (`crates/corelink-handler-cas/src/handler.rs:41`), served by blocking
+a worker thread (`crates/corelink-container/src/storage/r2_s3.rs:1282`). The
+client collects the whole body and then copies it —
+`.collect().await?.into_bytes().to_vec()`
+(`crates/corelink-container/src/storage/r2_s3.rs:236-242`) — so two N-byte
+allocations are live at once, three on the BYOK path where `decrypt_body`
+(`:821`) yields plaintext while the ciphertext is still held.
 
-Note that the memory argument originally attached to streaming has a cheaper
-answer that costs no integrity — a pre-body concurrency permit, the pattern
-Turbo already uses on both directions (B-052). If that closes the memory
-pressure, streaming has to justify itself on time-to-first-byte alone.
+`CAS_READ_CONCURRENCY_LIMIT` is 8 per tenant
+(`crates/corelink-container/src/routes/cas.rs:343`) and B-052 correctly extended
+it to the single GET. But peak heap is `N x object_size` and B-052 bounds only
+`N`. The 10 MiB `DefaultBodyLimit` (`crates/corelink-container/src/main.rs:504`)
+does NOT cap the other factor: it bounds client-supplied request bodies, and the
+server-side ingest paths present no body. `MIRROR_MAX_BLOB_BYTES` is **1 GiB**
+(`crates/corelink-container/src/routes/public_mirror.rs:128`), re-checked at
+`crates/corelink-container/src/routes/public_pullthrough.rs:103` — so a CAS
+object may be three orders of magnitude larger than the request-body limit
+implies, and the read path buffers it whole.
+
+Streaming is NOT the answer, on measurement. Full enumeration of
+`corelink-cas-prod` (2026-08-26, 22,597 objects, 3.57 GB): p50 **593 B**, 87.9%
+≤ 64 KiB, 95.1% ≤ 1 MiB, max 52.3 MB — while the 4.86% above 1 MiB hold 78.3%
+of stored bytes. Streaming would buy nothing for 95% of reads and would cost an
+async-trait migration of `CasReadHandler` across 11 production implementors and
+12 call sites, plus the loss of the read-path digest re-verify.
+
+The fix is a read-side SIZE ceiling — a constant and a check, the same shape as
+the permit B-052 added, so that `N x max_size` becomes a number the system chose
+rather than one it inherited from the mirror's fetch path. The open question is
+the threshold: it must sit above the observed max (52.3 MB) or the change needs
+a migration story for objects that are served today and would stop being served.
 
 ```backlog
 id: B-051
@@ -2685,14 +2707,15 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  awk '/fn read\(&self, req: CasReadRequest\)/,/^    }$/' \
-    crates/corelink-container/src/storage/r2_s3.rs | grep -q 'verify_content_hash' \
-    || grep -rqE '\.route\("[^"]*scrub' crates/corelink-container/src/routes/
+  ! grep -qE 'CAS_READ_MAX_OBJECT_BYTES|MAX_CAS_READ_OBJECT_BYTES' \
+      crates/corelink-container/src/routes/cas.rs \
+      crates/corelink-container/src/storage/r2_s3.rs
 verify-means: |
-  open — fails if the read-path content-hash re-verification is gone from
-  `R2CasHandler::read` (i.e. streaming landed) while no scrubber route exists,
-  which is exactly the ordering this item forbids. Passes while the check is
-  still there, and passes once a scrubber exists to replace it.
+  open — passes while no read-side object-size ceiling exists, which is the
+  defect. Anchored on the constant rather than on prose so it turns red the
+  moment a ceiling is introduced, forcing this item closed. Deliberately NOT
+  anchored on the old streaming predicate: that one passed both before and
+  after the scrubber landed and so could never have gone red.
 last-verified: 2026-08-26
 ```
 
