@@ -164,6 +164,15 @@ Each entry cross-references:
   the per-tenant worst case `8 x 64 MiB = 512 MiB` instead of the 8 GiB
   inherited from the mirror's fetch cap. The remaining process-wide half — the
   budget Turbo already has and CAS does not — is tracked as B-056.
+- **F-008 — npm tarball moat now threads the resolved per-tier storage cap.**
+  `NpmMoatStore::put` (`crates/corelink-container/src/routes/npm.rs`) passed a
+  hardcoded `None` cap on every write, so a tenant writing only via npm never
+  re-seeded a lowered cap after a tier downgrade and kept a stale-high cap. It
+  now resolves the cap via the same D1-backed `TenantCapResolver` cargo/OCI use
+  and threads it into the CAS write (absence / D1-indeterminate ⇒ `None`, never
+  unlimited — fail-closed). Wired in `routes.rs` at the npm router build. brew /
+  pip (the `_public` shared namespace) are a separate accounting fix (F-007) and
+  are out of scope here.
 
 ### Changed
 

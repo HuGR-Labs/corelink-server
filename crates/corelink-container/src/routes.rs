@@ -953,6 +953,13 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
                 match crate::adapter_kv::npm_kv_from_env() {
                     Some(npm_meta_kv) => {
                         let npm_map: Arc<dyn crate::adapter_cache::UrlMapStore> = d1.clone();
+                        // F-008 (WP-16-npm): thread the SAME D1-backed per-tier cap
+                        // resolver cargo/OCI use so every npm tarball write
+                        // seeds/reconciles the tenant's `tenant_storage_state` row with
+                        // the RESOLVED cap (a npm-only tenant otherwise keeps a
+                        // stale-high cap after a tier downgrade). Reuses the moat's D1.
+                        let npm_cap_resolver: Arc<dyn crate::oci_cap::TenantCapResolver> =
+                            Arc::new(crate::oci_cap::D1TenantCapResolver::new(d1.clone()));
                         router = router.merge(npm::router(
                             npm_cas_read,
                             npm_cas_write,
@@ -960,6 +967,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
                             npm_meta_kv,
                             verifier.clone(),
                             quota.clone(),
+                            Some(npm_cap_resolver),
                         ));
                     }
                     None => {

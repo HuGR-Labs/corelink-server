@@ -81,6 +81,7 @@ use corelink_handler_cas::{CasReadHandler, CasWriteHandler};
 use crate::adapter_cache::{MoatCache, MoatError, UrlMapStore, PUBLIC_NAMESPACE};
 use crate::adapter_kv::{NpmKvError, NpmKvStore};
 use crate::adapter_pat::{PatVerifier, VerifyError};
+use crate::oci_cap::TenantCapResolver;
 use crate::scope::{requires_cache_read, requires_cache_write, SCOPE_HEADER};
 
 /// Service principal stamped on the adapter's CAS operations. Identifies the
@@ -134,9 +135,19 @@ fn namespace_for_meta_key<'a>(key: &str, tenant_ns: &'a str) -> &'a str {
 /// metadata) threaded through the `CasStore` port so unscoped tarballs can
 /// route to [`PUBLIC_NAMESPACE`] while scoped ones stay per-tenant. Until the
 /// port carries that signal, fail-CLOSED (isolate) is the correct default.
+///
+/// F-008 (WP-16-npm): `cap_resolver` is threaded from the container's router
+/// (the SAME D1-backed resolver OCI + cargo use) so every npm tarball write
+/// seeds/reconciles the tenant's `tenant_storage_state` row with the
+/// RESOLVED per-tier cap. Without it a npm-only tenant would never
+/// re-seed a lowered cap after a tier downgrade (cargo/OCI already do via
+/// the same seam). `None` ⇒ no resolver wired (dev/CI); a D1 fault returns
+/// `None` from the resolver (indeterminate cap) — BOTH stay `None` (NEVER
+/// treated as unlimited) so the moat's reservation logic fail-CLOSEs.
 #[derive(Debug)]
 struct NpmMoatStore {
     moat: Arc<MoatCache>,
+    cap_resolver: Option<Arc<dyn TenantCapResolver>>,
 }
 
 #[async_trait]
@@ -165,11 +176,24 @@ impl CasStore for NpmMoatStore {
         bytes: Vec<u8>,
     ) -> Result<(), NpmAdapterError> {
         // SECURITY: per-tenant namespace (not PUBLIC) — see the type doc.
+        // F-008 (WP-16-npm): resolve the per-tier storage cap and thread it
+        // into the moat write so this npm tarball PUT seeds/reconciles the
+        // tenant's `tenant_storage_state` row with the RESOLVED cap (else a
+        // npm-only tenant keeps a stale-high cap after a tier downgrade).
+        // Absence (no resolver wired in dev/CI) OR an indeterminate cap
+        // (D1 fault ⇒ `None`) stays `None` — NEVER treated as unlimited; the
+        // moat's reservation fail-CLOSEs on an indeterminate cap.
+        let storage_cap_bytes = match self.cap_resolver.as_ref() {
+            Some(r) => r.resolve_storage_cap(&tenant.to_string()).await,
+            None => None,
+        };
         self.moat
-            // `None`: npm tarballs accrue against the tenant's EXISTING
-            // `tenant_storage_state` row's stored cap (the OCI surface — WP #10 —
-            // is the one that threads a resolved cap; npm keeps the prior posture).
-            .put(&tenant.to_string(), &digest.to_hex(), bytes, None)
+            .put(
+                &tenant.to_string(),
+                &digest.to_hex(),
+                bytes,
+                storage_cap_bytes,
+            )
             .await
             .map_err(|e| match e {
                 MoatError::Backend(m) => NpmAdapterError::Cas(m),
@@ -295,6 +319,11 @@ struct NpmGateState {
 /// metadata KV; `verifier` is shared across cache adapters. On a
 /// construction error the route is simply NOT mounted (empty sub-router +
 /// logged) so the container still boots.
+///
+/// F-008 (WP-16-npm): `cap_resolver` (D1-backed, the SAME one cargo/OCI
+/// use) is threaded LAST so every npm tarball write seeds/reconciles the
+/// tenant's `tenant_storage_state` row with the RESOLVED per-tier cap.
+/// `None` in dev/CI without D1.
 pub fn router(
     cas_read: Arc<dyn CasReadHandler>,
     cas_write: Arc<dyn CasWriteHandler>,
@@ -302,6 +331,7 @@ pub fn router(
     meta_kv: Arc<NpmKvStore>,
     verifier: Arc<PatVerifier>,
     quota: Option<crate::routes::QuotaGate>,
+    cap_resolver: Option<Arc<dyn TenantCapResolver>>,
 ) -> Router {
     let moat = Arc::new(MoatCache::production(
         cas_read,
@@ -309,7 +339,7 @@ pub fn router(
         map,
         NPM_SERVICE_PRINCIPAL,
     ));
-    let cas: Arc<dyn CasStore> = Arc::new(NpmMoatStore { moat });
+    let cas: Arc<dyn CasStore> = Arc::new(NpmMoatStore { moat, cap_resolver });
     let kv: Arc<dyn KvStore> = Arc::new(NpmMetaKv { kv: meta_kv });
     let resolver: TenantResolverHandle = Arc::new(NpmPatResolver(verifier));
     let auditor: Arc<dyn AuditEmitter> = Arc::new(InMemoryAuditEmitter::new());
@@ -668,6 +698,55 @@ mod tests {
         }
     }
 
+    /// F-008 (WP-16-npm) — recording CAS write/read fake. Captures the
+    /// `storage_quota_bytes` the moat forwarded (and the tenant + hash) on every
+    /// write, so the test can assert the npm router threads the RESOLVED cap
+    /// into `MoatCache::put`. Also captures every read for symmetry.
+    #[derive(Debug, Default)]
+    struct RecordingCasWrite {
+        store: Mutex<HashMap<(String, String), Vec<u8>>>,
+        last_write_cap: Mutex<Option<Option<i64>>>,
+    }
+    impl CasReadHandler for RecordingCasWrite {
+        fn read(&self, req: CasReadRequest) -> Result<CasReadResponse, CasHandlerError> {
+            match self
+                .store
+                .lock()
+                .unwrap()
+                .get(&(req.tenant.clone(), req.hash.clone()))
+            {
+                Some(b) => Ok(CasReadResponse::new(b.clone(), req.hash)),
+                None => Err(CasHandlerError::Internal("recorder: absent".into())),
+            }
+        }
+    }
+    impl CasWriteHandler for RecordingCasWrite {
+        fn write(&self, req: CasWriteRequest) -> Result<CasWriteResponse, CasHandlerError> {
+            // Capture the storage_quota_bytes the npm moat forwarded — the
+            // WHOLE point of F-008: the resolved cap must be threaded into the
+            // cas write, not hardcoded `None`.
+            *self.last_write_cap.lock().unwrap() = Some(req.storage_quota_bytes);
+            self.store
+                .lock()
+                .unwrap()
+                .insert((req.tenant, req.claimed_hash.clone()), req.bytes);
+            Ok(CasWriteResponse::new(req.claimed_hash, true))
+        }
+    }
+
+    /// F-008 — stub `TenantCapResolver` that returns a fixed resolved cap
+    /// regardless of tenant (test-only; production is `D1TenantCapResolver`).
+    #[derive(Debug)]
+    struct StubCapResolver {
+        cap: Option<i64>,
+    }
+    #[async_trait]
+    impl TenantCapResolver for StubCapResolver {
+        async fn resolve_storage_cap(&self, _tenant: &str) -> Option<i64> {
+            self.cap
+        }
+    }
+
     fn test_key() -> Arc<PatSigningKey> {
         Arc::new(PatSigningKey::from_bytes(vec![0x42u8; 32]).unwrap())
     }
@@ -686,6 +765,7 @@ mod tests {
             Arc::new(FakeMap::default()),
             npm_kv(Arc::new(FakeKv::default())),
             verifier,
+            None,
             None,
         )
     }
@@ -796,6 +876,7 @@ mod tests {
             npm_kv(Arc::new(FakeKv::default())),
             verifier,
             Some(gate),
+            None,
         )
     }
 
@@ -873,6 +954,7 @@ mod tests {
             Arc::new(FakeMap::default()),
             npm_kv(kv_backend),
             verifier,
+            None,
             None,
         );
 
@@ -972,6 +1054,7 @@ mod tests {
             npm_kv(kv_backend),
             verifier,
             None,
+            None,
         );
 
         let resp = app
@@ -987,6 +1070,77 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(body.as_ref(), tarball_bytes.as_slice());
+    }
+
+    /// F-008 (WP-16-npm) — with a resolver wired, `NpmMoatStore::put` forwards
+    /// the RESOLVED cap into the moat's CAS write, NOT a hardcoded `None`.
+    /// Mirrors cargo's `put_threads_resolved_cap_into_cas_write`: drives the
+    /// store's `put` DIRECTLY (no HTTP/upstream) so the assertion is exactly
+    /// "the resolved cap reached `CasWriteRequest::storage_quota_bytes`".
+    #[tokio::test]
+    async fn put_threads_resolved_cap_into_cas_write() {
+        let rec = Arc::new(RecordingCasWrite::default());
+        let moat = Arc::new(MoatCache::production(
+            rec.clone() as Arc<dyn CasReadHandler>,
+            rec.clone() as Arc<dyn CasWriteHandler>,
+            Arc::new(FakeMap::default()) as Arc<dyn UrlMapStore>,
+            NPM_SERVICE_PRINCIPAL,
+        ));
+        let resolved_cap: i64 = 9_876_543_210;
+        let cap_resolver: Arc<dyn TenantCapResolver> = Arc::new(StubCapResolver {
+            cap: Some(resolved_cap),
+        });
+        let store = NpmMoatStore {
+            moat,
+            cap_resolver: Some(cap_resolver),
+        };
+
+        let tenant = TenantId::from_uuid(Uuid::from_u128(0xB22D));
+        let digest = Digest::from_bytes([0x11u8; 32]);
+        store
+            .put(&tenant, &digest, b"npm-tarball-bytes".to_vec())
+            .await
+            .expect("npm moat put must succeed");
+
+        let recorded = *rec.last_write_cap.lock().unwrap();
+        assert_eq!(
+            recorded,
+            Some(Some(resolved_cap)),
+            "F-008: npm tarball write must forward the RESOLVED cap Some({resolved_cap}) to the cas write, not None; got {recorded:?}"
+        );
+    }
+
+    /// F-008 (WP-16-npm) — with NO resolver wired (dev/CI), `NpmMoatStore::put`
+    /// forwards `storage_quota_bytes == None` (the pre-WP-16-npm posture, a
+    /// fail-CLOSED-friendly default: the moat's reservation fail-CLOSEs on an
+    /// indeterminate cap). Mirrors cargo's `put_with_no_resolver_keeps_none_cap`.
+    #[tokio::test]
+    async fn put_with_no_resolver_keeps_none_cap() {
+        let rec = Arc::new(RecordingCasWrite::default());
+        let moat = Arc::new(MoatCache::production(
+            rec.clone() as Arc<dyn CasReadHandler>,
+            rec.clone() as Arc<dyn CasWriteHandler>,
+            Arc::new(FakeMap::default()) as Arc<dyn UrlMapStore>,
+            NPM_SERVICE_PRINCIPAL,
+        ));
+        let store = NpmMoatStore {
+            moat,
+            cap_resolver: None,
+        };
+
+        let tenant = TenantId::from_uuid(Uuid::from_u128(0xB22D));
+        let digest = Digest::from_bytes([0x22u8; 32]);
+        store
+            .put(&tenant, &digest, b"npm-tarball-bytes".to_vec())
+            .await
+            .expect("npm moat put must succeed");
+
+        let recorded = *rec.last_write_cap.lock().unwrap();
+        assert_eq!(
+            recorded,
+            Some(None),
+            "F-008: no resolver wired => npm tarball write forwards None (indeterminate cap, fail-CLOSED-friendly); got {recorded:?}"
+        );
     }
 
     fn now_ms() -> u64 {
