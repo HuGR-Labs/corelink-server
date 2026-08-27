@@ -23,12 +23,12 @@
  *
  * ## Internal-auth gate (mirrors `worker/src/lib/internal_auth.ts`)
  *
- * Resolved per-call via {@link resolveRunnerProvisionKey}, which selects
- * between this consumer's dedicated key (`CORELINK_RUNNER_PROVISION_AUTH_KEY`)
- * and the shared `CORELINK_INTERNAL_AUTH_KEY` (PHASE 1 — the shared fallback
- * STAYS, mirroring `resolveConsumerKey`'s non-`DEDICATED_REQUIRED_CONSUMERS`
- * arms; promoting this consumer to "dedicated required" is a separate later
- * change). The dedicated/shared split arms are load-bearing:
+ * Resolved per-call via {@link resolveRunnerProvisionKey}. As of PHASE 2 this
+ * consumer is DEDICATED-REQUIRED: the only credential accepted is
+ * `CORELINK_RUNNER_PROVISION_AUTH_KEY`, at or above the length floor. The
+ * shared `CORELINK_INTERNAL_AUTH_KEY` is NOT accepted here — it is deliberately
+ * absent from {@link InstallationProvisionEnv} so a future edit cannot reach
+ * for it by accident. The arms are load-bearing:
  *
  *   a) dedicated key set AND `>= MIN_INTERNAL_AUTH_KEY_LEN`           → dedicated
  *   b) dedicated key set BUT `< MIN_INTERNAL_AUTH_KEY_LEN`           → null
@@ -65,26 +65,20 @@ export interface InstallationProvisionEnv {
 
   /**
    * DEDICATED internal-auth secret for the runner-provisioning consumer. The
-   * `Authorization: Bearer <token>` on the provisioning call MUST equal this
-   * (or, when this is UNSET, the shared `CORELINK_INTERNAL_AUTH_KEY` — see
-   * {@link resolveRunnerProvisionKey}). Set via
-   * `wrangler secret put CORELINK_RUNNER_PROVISION_AUTH_KEY`. Mirrors the
-   * per-consumer key-split the main Worker enforces for the other
+   * `Authorization: Bearer <token>` on the provisioning call MUST equal this.
+   * Set via `wrangler secret put CORELINK_RUNNER_PROVISION_AUTH_KEY`. Mirrors
+   * the per-consumer key-split the main Worker enforces for the other
    * `/_internal/*` surfaces, so leaking this consumer's secret does not unlock
-   * the rest of the internal auth family. PHASE 1: a set-but-sub-floor value
-   * fails CLOSED (never widens to the shared key) — see the arm-b note in the
-   * module header.
+   * the rest of the internal auth family.
+   *
+   * PHASE 2: this is the ONLY credential this route accepts. Unset, or set
+   * below `MIN_INTERNAL_AUTH_KEY_LEN`, both fail CLOSED with a 503 — the route
+   * does NOT fall back to the shared `CORELINK_INTERNAL_AUTH_KEY`, which is
+   * why that secret is not a member of this interface at all. Making it
+   * unreachable by TYPE, not only by control flow, is the point: a later edit
+   * cannot re-widen this consumer without first re-declaring the dependency.
    */
   CORELINK_RUNNER_PROVISION_AUTH_KEY?: string;
-
-  /**
-   * Shared internal-auth secret. The fallback credential used when
-   * `CORELINK_RUNNER_PROVISION_AUTH_KEY` is UNSET (PHASE 1; this is the
-   * `resolveConsumerKey` arm-c pattern — no flag-day required to roll out the
-   * dedicated key). Also must be `>= MIN_INTERNAL_AUTH_KEY_LEN` to qualify.
-   * Bound via `wrangler secret put CORELINK_INTERNAL_AUTH_KEY`.
-   */
-  CORELINK_INTERNAL_AUTH_KEY?: string;
 }
 
 /**
@@ -135,26 +129,36 @@ function json(status: number, body: unknown): Response {
  * Resolve the internal-auth key to verify against for the runner-provisioning
  * consumer. Mirrors `worker/src/lib/internal_auth.ts::resolveConsumerKey`'s
  * four-arm selection for a NEW consumer key:
- *   - `CORELINK_RUNNER_PROVISION_AUTH_KEY` (dedicated, set per this consumer)
- *   - `CORELINK_INTERNAL_AUTH_KEY`        (shared fallback, PHASE 1)
+ *   - `CORELINK_RUNNER_PROVISION_AUTH_KEY` (dedicated; the ONLY key accepted)
  *
- * Selection (see the arm-by-arm commentary on each branch):
+ * Selection:
  *   a) dedicated key SET and `>= MIN_INTERNAL_AUTH_KEY_LEN` → use the dedicated
- *   b) dedicated key SET but `< MIN_INTERNAL_AUTH_KEY_LEN` → `null`, REFUSING
- *      the shared fallback (fail-CLOSED, logged)
- *   c) dedicated key UNSET, shared key SET and `>= MIN…`     → use the shared
- *   d) otherwise                                              → `null`
+ *   b) dedicated key SET but `< MIN_INTERNAL_AUTH_KEY_LEN` → `null` (fail-CLOSED, logged)
+ *   c) dedicated key UNSET                                  → `null` (fail-CLOSED, logged)
  *
- * Arm (b) is the subtle one. An operator who sets a dedicated key for this
- * consumer has DECLARED that consumer should be ISOLATED; silently serving it
- * the broad shared key on a typo would WIDEN the blast radius exactly when the
- * operator was trying to NARROW it. A sub-floor secret is a misconfiguration to
- * surface, not one to route around — same posture as the main Worker.
+ * PHASE 2 (this change): the shared `CORELINK_INTERNAL_AUTH_KEY` is NO LONGER
+ * accepted here, in either direction. Phase 1 kept it as a fallback so the
+ * per-consumer split could roll out without a flag-day; that migration is
+ * DONE — the dedicated key is bound on `corelink-signup-worker` and was proven
+ * live end to end (dedicated ⇒ auth passes; shared ⇒ 401; absent/wrong ⇒ 401).
  *
- * PHASE 1: arm (c) is deliberate and remains. Promoting this consumer to
- * "dedicated required" (so an UNSET dedicated key also fails closed instead of
- * degrading to the shared key) is a separate later change. Do not add a
- * `DEDICATED_REQUIRED_CONSUMERS`-style check here without that follow-up.
+ * Why removing arm (c) matters even though binding the dedicated key already
+ * makes it unreachable: while the fallback exists, UNBINDING the dedicated key
+ * silently re-widens this endpoint back to the broad shared secret instead of
+ * failing. The isolation would then depend on a secret staying bound — an
+ * operator action — rather than on the code. It now depends on the code: with
+ * no dedicated key there is no gate to evaluate, and the route answers 503.
+ *
+ * Arm (b) is the subtle one and is unchanged. An operator who sets a dedicated
+ * key for this consumer has DECLARED that consumer should be ISOLATED; silently
+ * serving it the broad shared key on a typo would WIDEN the blast radius
+ * exactly when the operator was trying to NARROW it. A sub-floor secret is a
+ * misconfiguration to surface, not one to route around.
+ *
+ * ⚠️ OPERATIONAL CONSEQUENCE: unbinding or shortening
+ * `CORELINK_RUNNER_PROVISION_AUTH_KEY` takes this endpoint down (503) rather
+ * than degrading it. That is the intent — a 503 says "we cannot evaluate
+ * authz", which is retryable and visible, where a silent widening is neither.
  *
  * @returns the chosen key string, or `null` when neither qualifies (fail-CLOSED;
  *   the caller MUST then return 503 — no properly sized gate is bound).
@@ -181,14 +185,20 @@ function resolveRunnerProvisionKey(env: InstallationProvisionEnv): string | null
     );
     return null;
   }
-  // No dedicated key configured for this consumer. PHASE 1: fall back to the
-  // shared key when it is properly sized (arm c). This is deliberate and
-  // matches `resolveConsumerKey` for a non-`DEDICATED_REQUIRED_CONSUMERS`
-  // consumer — it lets the per-consumer split roll out without a flag-day.
-  const shared = env.CORELINK_INTERNAL_AUTH_KEY;
-  if (shared && shared.length >= MIN_INTERNAL_AUTH_KEY_LEN) {
-    return shared;
-  }
+  // Arm (c). No dedicated key configured. PHASE 2: there is NO shared-key
+  // fallback any more — this consumer is `DEDICATED_REQUIRED`. Falling back
+  // would mean the isolation holds only while a secret stays bound, so that
+  // unbinding it silently re-widens the endpoint to the broad shared key
+  // instead of failing. Fail-CLOSED and LOUD: the caller returns 503, which
+  // says "we cannot evaluate authz" (retryable, visible) rather than pretending
+  // to be a verdict about the caller.
+  console.error(
+    `[runner-provision-auth] no dedicated key bound for consumer ` +
+      `"runner_provision" — CORELINK_RUNNER_PROVISION_AUTH_KEY is REQUIRED ` +
+      `(>= ${MIN_INTERNAL_AUTH_KEY_LEN} chars) and the shared ` +
+      `CORELINK_INTERNAL_AUTH_KEY is NOT accepted here. The endpoint answers ` +
+      `503 until the dedicated key is bound.`,
+  );
   return null;
 }
 

@@ -92,7 +92,7 @@ describe("handleInstallationProvision — gates", () => {
     const { binding } = db();
     const env: InstallationProvisionEnv = {
       CONFIG_DB: binding,
-      CORELINK_INTERNAL_AUTH_KEY: AUTH,
+      CORELINK_RUNNER_PROVISION_AUTH_KEY: AUTH,
     };
     const r = await handleInstallationProvision(
       req({}, { method: "GET" }),
@@ -105,7 +105,7 @@ describe("handleInstallationProvision — gates", () => {
     const { binding } = db();
     const env: InstallationProvisionEnv = {
       CONFIG_DB: binding,
-      CORELINK_INTERNAL_AUTH_KEY: AUTH,
+      CORELINK_RUNNER_PROVISION_AUTH_KEY: AUTH,
     };
     const r = await handleInstallationProvision(
       req(
@@ -122,7 +122,7 @@ describe("handleInstallationProvision — gates", () => {
     const { binding } = db();
     const env: InstallationProvisionEnv = {
       CONFIG_DB: binding,
-      CORELINK_INTERNAL_AUTH_KEY: AUTH,
+      CORELINK_RUNNER_PROVISION_AUTH_KEY: AUTH,
     };
     const r = await handleInstallationProvision(
       req(
@@ -150,7 +150,7 @@ describe("handleInstallationProvision — gates", () => {
     const { binding } = db();
     const env: InstallationProvisionEnv = {
       CONFIG_DB: binding,
-      CORELINK_INTERNAL_AUTH_KEY: AUTH,
+      CORELINK_RUNNER_PROVISION_AUTH_KEY: AUTH,
     };
     const r = await handleInstallationProvision(
       req({ tenant_id: "t1", repositories: [] }),
@@ -163,7 +163,7 @@ describe("handleInstallationProvision — gates", () => {
     const { binding } = db();
     const env: InstallationProvisionEnv = {
       CONFIG_DB: binding,
-      CORELINK_INTERNAL_AUTH_KEY: AUTH,
+      CORELINK_RUNNER_PROVISION_AUTH_KEY: AUTH,
     };
     const r = await handleInstallationProvision(
       req({ installation_id: "i-400b", repositories: [] }),
@@ -183,13 +183,14 @@ describe("handleInstallationProvision — resolver arms (dedicated/shared)", () 
 
   it("arm (a) dedicated key (>= 32) accepted; shared key then REJECTED with 401", async () => {
     const { binding } = db();
-    // BOTH keys bound; the dedicated one is properly sized; the shared one
-    // is also properly sized. The dedicated MUST win, and the shared MUST
-    // be rejected when presented (a leaked shared secret must not unlock
-    // this surface once the operator has split the keys — least privilege).
+    // The dedicated key is bound and properly sized. Any OTHER properly-sized
+    // secret — the shared `CORELINK_INTERNAL_AUTH_KEY` being the one that
+    // matters operationally — must NOT unlock this surface. `AUTH` stands in
+    // for it here: as of PHASE 2 the shared key is not a member of
+    // `InstallationProvisionEnv` at all, so a test cannot bind it even by
+    // mistake, and what is left to prove is that presenting it gets a 401.
     const env: InstallationProvisionEnv = {
       CONFIG_DB: binding,
-      CORELINK_INTERNAL_AUTH_KEY: AUTH,
       CORELINK_RUNNER_PROVISION_AUTH_KEY: DEDICATED,
     };
     // 1. Presented Bearer = dedicated key → authorized.
@@ -206,9 +207,9 @@ describe("handleInstallationProvision — resolver arms (dedicated/shared)", () 
     );
     expect(ok.status).toBe(200);
 
-    // 2. Presented Bearer = shared key → REJECTED with 401, not 200, not
-    //    503. The resolver picked the dedicated key (so the gate is bound);
-    //    the presented value just didn't match it.
+    // 2. Presented Bearer = the shared-key stand-in → REJECTED with 401, not
+    //    200, not 503. The resolver picked the dedicated key (so the gate IS
+    //    bound); the presented value simply did not match it.
     const denied = await handleInstallationProvision(
       req(
         {
@@ -227,17 +228,16 @@ describe("handleInstallationProvision — resolver arms (dedicated/shared)", () 
   it("arm (b) dedicated key set but 10 chars → 503; shared key does NOT work (no widening)", async () => {
     const { binding } = db();
     // Dedicated set but sub-floor (10 chars, well below the 32-char
-    // minimum). The shared key IS bound and properly sized — but arm (b)
-    // MUST refuse to silently widen to the shared key. The result is a
-    // 503 from arm (d) of the resolver's "neither qualifies" branch, with
-    // a logged refusal. We present the shared key to prove the rejection
-    // is the resolver's null (not a comparison mismatch on the dedicated
-    // value): the shared key is bound, properly sized, and would otherwise
-    // have been accepted under the old (pre-isolation) code path.
+    // minimum) → the resolver returns null and the route answers 503 with a
+    // logged refusal. We present a DIFFERENT properly-sized secret (the
+    // stand-in for the shared key) rather than the sub-floor value itself:
+    // presenting the sub-floor value would produce a 401 under a naive
+    // implementation too, so it could not distinguish "refused to resolve"
+    // from "compared and mismatched". A 503 here can only come from the
+    // resolver declining to hand back ANY key.
     const shortDedicated = "short-key1"; // 10 chars, < 32 floor
     const env: InstallationProvisionEnv = {
       CONFIG_DB: binding,
-      CORELINK_INTERNAL_AUTH_KEY: AUTH,
       CORELINK_RUNNER_PROVISION_AUTH_KEY: shortDedicated,
     };
     const r = await handleInstallationProvision(
@@ -258,17 +258,33 @@ describe("handleInstallationProvision — resolver arms (dedicated/shared)", () 
     expect(await r.json()).toEqual({ error: "unavailable" });
   });
 
-  it("arm (c) no dedicated key, shared key (>= 32) → accepted (PHASE-1 fallback)", async () => {
-    const { binding } = db();
-    // PHASE 1: no dedicated key bound, shared key is properly sized → the
-    // shared key is used. Promoting this consumer to "dedicated required"
-    // is a separate later change; this test pins the deliberate PHASE-1
-    // behaviour, so any future move to "dedicated required" lands as an
-    // explicit test change rather than a silent regression.
-    const env: InstallationProvisionEnv = {
+  it("arm (c) no dedicated key → 503, and NO shared-key fallback remains", async () => {
+    const { binding, captured } = db();
+    // PHASE 2, and the behaviour change this test exists for. Under phase 1
+    // this same call was a 200: the route fell back to the shared
+    // `CORELINK_INTERNAL_AUTH_KEY` whenever the dedicated key was absent.
+    //
+    // Why the fallback had to go even though binding the dedicated key already
+    // made it unreachable in production: while it existed, the isolation held
+    // only for as long as a secret STAYED bound. UNBINDING
+    // `CORELINK_RUNNER_PROVISION_AUTH_KEY` would silently re-widen this
+    // endpoint back to the broad shared secret rather than fail — an operator
+    // action quietly undoing a security property. Now the property lives in
+    // the code: no dedicated key, no gate to evaluate, 503.
+    //
+    // The shared key IS bound here, through a cast. That is deliberate and it
+    // is the whole point of the test. Removing the field from
+    // `InstallationProvisionEnv` stops a TYPED read, but the live Worker `Env`
+    // is an intersection that still carries `CORELINK_INTERNAL_AUTH_KEY`, so a
+    // future edit could reach it with exactly this cast. A test that merely
+    // OMITTED the key would stay GREEN if the fallback were restored — it
+    // would be asserting nothing. Verified by reverting: with the fallback put
+    // back and the key bound as below, this case fails `expected 200 to be
+    // 503`.
+    const env = {
       CONFIG_DB: binding,
       CORELINK_INTERNAL_AUTH_KEY: AUTH,
-    };
+    } as InstallationProvisionEnv & { CORELINK_INTERNAL_AUTH_KEY: string };
     const r = await handleInstallationProvision(
       req(
         {
@@ -280,11 +296,12 @@ describe("handleInstallationProvision — resolver arms (dedicated/shared)", () 
       ),
       env,
     );
-    expect(r.status).toBe(200);
-    expect(await r.json()).toEqual({
-      installation_id: "i-arm-c",
-      repos_added: 1,
-    });
+    expect(r.status).toBe(503);
+    expect(await r.json()).toEqual({ error: "unavailable" });
+    // Fail-CLOSED means nothing was written, not merely that the response
+    // said no. A 503 that had already provisioned rows would be worse than
+    // a 200.
+    expect(captured).toHaveLength(0);
   });
 
   it("arm (d) neither key bound → 503 unavailable (never 403)", async () => {
@@ -314,7 +331,7 @@ describe("handleInstallationProvision — resolver arms (dedicated/shared)", () 
     const { binding } = db();
     const env: InstallationProvisionEnv = {
       CONFIG_DB: binding,
-      CORELINK_INTERNAL_AUTH_KEY: AUTH,
+      CORELINK_RUNNER_PROVISION_AUTH_KEY: AUTH,
     };
     const r = await handleInstallationProvision(
       req(
@@ -333,7 +350,7 @@ describe("handleInstallationProvision — writes", () => {
     const { binding, captured } = db();
     const env: InstallationProvisionEnv = {
       CONFIG_DB: binding,
-      CORELINK_INTERNAL_AUTH_KEY: AUTH,
+      CORELINK_RUNNER_PROVISION_AUTH_KEY: AUTH,
     };
     const r = await handleInstallationProvision(
       req({
@@ -380,7 +397,7 @@ describe("handleInstallationProvision — writes", () => {
     const { binding, captured } = db();
     const env: InstallationProvisionEnv = {
       CONFIG_DB: binding,
-      CORELINK_INTERNAL_AUTH_KEY: AUTH,
+      CORELINK_RUNNER_PROVISION_AUTH_KEY: AUTH,
     };
     const r = await handleInstallationProvision(
       req({ installation_id: "i-empty", tenant_id: "t-empty", repositories: [] }),
@@ -403,7 +420,7 @@ describe("handleInstallationProvision — writes", () => {
     const { binding } = db();
     const env: InstallationProvisionEnv = {
       CONFIG_DB: binding,
-      CORELINK_INTERNAL_AUTH_KEY: AUTH,
+      CORELINK_RUNNER_PROVISION_AUTH_KEY: AUTH,
     };
     const payload = {
       installation_id: "i-idem",
@@ -420,7 +437,7 @@ describe("handleInstallationProvision — writes", () => {
     const { binding } = db({ throwOnRun: true });
     const env: InstallationProvisionEnv = {
       CONFIG_DB: binding,
-      CORELINK_INTERNAL_AUTH_KEY: AUTH,
+      CORELINK_RUNNER_PROVISION_AUTH_KEY: AUTH,
     };
     const r = await handleInstallationProvision(
       req({ installation_id: "i-fault", tenant_id: "t1", repositories: ["a/b"] }),
@@ -430,7 +447,7 @@ describe("handleInstallationProvision — writes", () => {
   });
 
   it("CONFIG_DB unbound → 500 (cannot persist)", async () => {
-    const env: InstallationProvisionEnv = { CORELINK_INTERNAL_AUTH_KEY: AUTH };
+    const env: InstallationProvisionEnv = { CORELINK_RUNNER_PROVISION_AUTH_KEY: AUTH };
     const r = await handleInstallationProvision(
       req({ installation_id: "i-nodb", tenant_id: "t1", repositories: [] }),
       env,
