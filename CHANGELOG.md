@@ -24,6 +24,33 @@ Each entry cross-references:
 
 ### Changed
 
+- **F2 (edge-served `findMissingBlobs`) extended from the prod env to the four
+  regional envs, and the container pin rolled to `4f9313e0-r1` to deliver it.**
+  #1384 turned the flag on for `[env.prod]` only, deliberately, because the
+  dedicated `CORELINK_AUDIT_ATTEMPTED_AUTH_KEY` existed on `corelink-prod` and
+  nowhere else — read back from the Cloudflare API, `corelink-prod-{sam,lhr,nrt,syd}`
+  each returned **0** occurrences of it. That secret is now provisioned on all
+  four (`printf`, never `echo` — a trailing newline yields 401/403/422) and
+  verified present via the same API read-back that found it missing.
+  **The repin is the delivery mechanism, not housekeeping:** a container reads
+  its env at process start and a Worker deploy does NOT restart a live
+  container, so the regional containers cannot see the new secret until a fresh
+  image tag cold-starts them. `4f9313e0-r1` was already built and pushed to all
+  five regional registries during the #1384 rollout and its container code is
+  byte-identical to the pinned `c4191de4-r1` (`crates/`, `Dockerfile`,
+  `Cargo.{toml,lock}` unchanged between them), so this costs one roll and no
+  build. **Ordering is safe in either direction because the path is fail-CLOSED
+  at every doubt:** the edge answers only after an AWAITED
+  `POST /_internal/audit/cas-attempted` returns `204`, so a region whose
+  container has not yet picked the secret up gets a `404` and falls through to
+  the container — the slow path, never an outage. Prod measurements that
+  justify the extension: n=100 end-to-end **~2.4 s median** (MIA colo) against
+  the F1 baseline **8.65 s**, with `edge_find_missing_served n=100 edge_ms=1550`
+  captured from an unfiltered `wrangler tail` and **1200**
+  `corelink.cas.read.attempted` rows landed in `audit_outbox` for 12 such
+  requests. Known gap, tracked as **B-055**: the edge serve path emits no
+  `AvailCasGet` / `LatencyCasGetP99`, so those SLOs under-count the
+  edge-served fraction in every region this now covers.
 - **ADR-S34-002 — B-051 re-scoped from streaming to a read-side size ceiling.**
   Measuring the read path to plan the streaming work showed ADR-S34-001's parked
   memory note was wrong in both directions. The concurrency permit B-052 added

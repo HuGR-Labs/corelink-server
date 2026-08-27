@@ -490,7 +490,7 @@ class_name = "CoreLinkServer"
 # WP-S1.2 real AC R2 handler + WP-S1.2 real D1 Admin handler + cas.rs
 # block_in_place fix. Once 2aa2be6f's Dockerfile cache invalidation fix proves
 # itself end-to-end in CI, revert to "./Dockerfile".
-image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-corelinkserver-prod:c4191de4-r1"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-corelinkserver-prod:4f9313e0-r1"
 # Cap 20→200 (2026-08-19). 1 `basic` container (0.25 vCPU) per active tenant; idle
 # scales to zero so a high ceiling is free when idle. The BINDING account limit is
 # vCPU, NOT instance count: CF RESERVES max_instances × per-instance-vCPU against
@@ -745,6 +745,13 @@ ENVIRONMENT = "prod-sam"
 EDGE_PUBLIC_READ = "serve"
 EDGE_DO_METER = "serve"
 EDGE_ASYNC_METER = "on"
+# F2 — serve findMissingBlobs from the edge's in-colo R2 binding instead of the
+# container's ~13 digests/s. Safe to declare per-region because the path is
+# fail-CLOSED at every doubt: the edge only answers after an AWAITED container
+# call returns 204, so a region whose container has not yet picked up
+# CORELINK_AUDIT_ATTEMPTED_AUTH_KEY gets a 404 and simply falls through to the
+# container (the slow path, never an outage).
+EDGE_FIND_MISSING = "on"
 # F3.2 WP-E — client `_public` dedup flag. "0" (Roll-1) keeps it OFF.
 OCI_PUBLIC_DEDUP_ENABLED = "1"
 OCI_UPSTREAM_ON_MISS = "1"
@@ -873,7 +880,7 @@ class_name = "RequestMeterShardDO"
 
 [[env.prod-sam.containers]]
 class_name = "CoreLinkServer"
-image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-sam-corelinkserver-prod:c4191de4-r1"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-sam-corelinkserver-prod:4f9313e0-r1"
 # Cap raised 10→200 (2026-08-19) — see the iad block (account vCPU is the binding limit).
 max_instances = 200
 instance_type = "basic"
@@ -895,6 +902,13 @@ ENVIRONMENT = "prod-lhr"
 EDGE_PUBLIC_READ = "serve"
 EDGE_DO_METER = "serve"
 EDGE_ASYNC_METER = "on"
+# F2 — serve findMissingBlobs from the edge's in-colo R2 binding instead of the
+# container's ~13 digests/s. Safe to declare per-region because the path is
+# fail-CLOSED at every doubt: the edge only answers after an AWAITED container
+# call returns 204, so a region whose container has not yet picked up
+# CORELINK_AUDIT_ATTEMPTED_AUTH_KEY gets a 404 and simply falls through to the
+# container (the slow path, never an outage).
+EDGE_FIND_MISSING = "on"
 # F3.2 WP-E — client `_public` dedup flag. "0" (Roll-1) keeps it OFF.
 OCI_PUBLIC_DEDUP_ENABLED = "1"
 OCI_UPSTREAM_ON_MISS = "1"
@@ -1032,7 +1046,7 @@ class_name = "RequestMeterShardDO"
 
 [[env.prod-lhr.containers]]
 class_name = "CoreLinkServer"
-image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-lhr-corelinkserver-prod:c4191de4-r1"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-lhr-corelinkserver-prod:4f9313e0-r1"
 # Cap raised 10→200 (2026-08-19) — see the iad block (account vCPU is the binding limit).
 max_instances = 200
 instance_type = "basic"
@@ -1054,6 +1068,13 @@ ENVIRONMENT = "prod-nrt"
 EDGE_PUBLIC_READ = "serve"
 EDGE_DO_METER = "serve"
 EDGE_ASYNC_METER = "on"
+# F2 — serve findMissingBlobs from the edge's in-colo R2 binding instead of the
+# container's ~13 digests/s. Safe to declare per-region because the path is
+# fail-CLOSED at every doubt: the edge only answers after an AWAITED container
+# call returns 204, so a region whose container has not yet picked up
+# CORELINK_AUDIT_ATTEMPTED_AUTH_KEY gets a 404 and simply falls through to the
+# container (the slow path, never an outage).
+EDGE_FIND_MISSING = "on"
 # F3.2 WP-E — client `_public` dedup flag. "0" (Roll-1) keeps it OFF.
 OCI_PUBLIC_DEDUP_ENABLED = "1"
 OCI_UPSTREAM_ON_MISS = "1"
@@ -1185,7 +1206,7 @@ class_name = "RequestMeterShardDO"
 
 [[env.prod-nrt.containers]]
 class_name = "CoreLinkServer"
-image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-nrt-corelinkserver-prod:c4191de4-r1"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-nrt-corelinkserver-prod:4f9313e0-r1"
 # Cap raised 10→200 (2026-08-19) — see the iad block (account vCPU is the binding limit).
 max_instances = 200
 instance_type = "basic"
@@ -1207,6 +1228,13 @@ ENVIRONMENT = "prod-syd"
 EDGE_PUBLIC_READ = "serve"
 EDGE_DO_METER = "serve"
 EDGE_ASYNC_METER = "on"
+# F2 — serve findMissingBlobs from the edge's in-colo R2 binding instead of the
+# container's ~13 digests/s. Safe to declare per-region because the path is
+# fail-CLOSED at every doubt: the edge only answers after an AWAITED container
+# call returns 204, so a region whose container has not yet picked up
+# CORELINK_AUDIT_ATTEMPTED_AUTH_KEY gets a 404 and simply falls through to the
+# container (the slow path, never an outage).
+EDGE_FIND_MISSING = "on"
 # F3.2 WP-E — client `_public` dedup flag. "0" (Roll-1) keeps it OFF.
 OCI_PUBLIC_DEDUP_ENABLED = "1"
 OCI_UPSTREAM_ON_MISS = "1"
@@ -1334,7 +1362,7 @@ class_name = "RequestMeterShardDO"
 
 [[env.prod-syd.containers]]
 class_name = "CoreLinkServer"
-image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-syd-corelinkserver-prod:c4191de4-r1"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-syd-corelinkserver-prod:4f9313e0-r1"
 # Cap raised 10→200 (2026-08-19) — see the iad block (account vCPU is the binding limit).
 max_instances = 200
 instance_type = "basic"
