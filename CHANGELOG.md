@@ -41,6 +41,7 @@ Each entry cross-references:
   predicate passed both before and after the scrubber landed and so could never
   have gone red.
 - Erasure-attestation now covers the Africa (AFR) jurisdiction: `Region::Afr` is a signed-attestation region instead of parsing to `None` and silently skipping signing (fail-open), so an AFR erasure produces an auditable signed record (F-016). NOTE: an AFR attestation signing key must be provisioned operationally; absent one, AFR erasures fail closed rather than silently skip.
+- Clerk JWKS verification now bounds the `kid` header (`^[A-Za-z0-9_-]{1,64}$`) before any lookup and keeps a short (60s) per-`kid` negative cache, so a stream of bogus `kid`s can no longer drive an upstream JWKS fetch storm (F-020). Cross-isolate single-flight coalescing is a tracked follow-up.
 
 ### Added
 

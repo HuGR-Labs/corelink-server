@@ -11,6 +11,8 @@ source_files:
   - "crates/corelink-pat/src/types.rs"
   - "crates/corelink-clerk/src/lib.rs"
   - "crates/corelink-clerk/src/adapter.rs"
+source_blobs:
+  - "crates/corelink-clerk/src/adapter.rs@5b1495ffc07caa37d0fc304f792747d265b3b647"
 checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
 provenance: "AUTHORED"
 tags: ["crates", "auth", "pat", "clerk", "jwt", "security"]
@@ -29,14 +31,14 @@ The cluster is the trust spine feeding the [2-level PAT moat](/auth/pat-moat.md)
 
 - `corelink-pat` defines the canonical PAT plaintext `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` and a four-step verify pipeline: parse → constant-time `token_id` match → `verify_hmac_sig_multi` (rejects unsigned spam in ≤100µs) → `verify_argon2id` possession proof — the executed orchestrator (`crates/corelink-pat/src/verify.rs:70-105`), the HMAC fast-fail step (`crates/corelink-pat/src/sig.rs:93-110`).
 - The cold path (parse fail / sig mismatch / row absent) must call `dummy_verify_for_constant_time` — which runs a real Argon2id verify against a fixed dummy PHC — so end-to-end latency cannot be used as an existence oracle (`crates/corelink-pat/src/argon.rs:217-257`, with `verify_argon2id` at `crates/corelink-pat/src/argon.rs:127-134`).
-- `corelink-clerk` validates a Clerk JWT by decoding the header for `kid`, KV-cached JWKS lookup with a single lazy refresh on miss, then explicit `Validation::new(Algorithm::RS256)` so `alg=none`/HS-confusion is rejected at the decoder boundary (`crates/corelink-clerk/src/adapter.rs:299`, `crates/corelink-clerk/src/adapter.rs:350`), then exact `iss`/`aud` allowlist match (`crates/corelink-clerk/src/adapter.rs:406-414`).
+- `corelink-clerk` validates a Clerk JWT by decoding the header for `kid`, KV-cached JWKS lookup with a single lazy refresh on miss, then explicit `Validation::new(Algorithm::RS256)` so `alg=none`/HS-confusion is rejected at the decoder boundary (`crates/corelink-clerk/src/adapter.rs:335`, `crates/corelink-clerk/src/adapter.rs:405`), then exact `iss`/`aud` allowlist match (`crates/corelink-clerk/src/adapter.rs:461-469`).
 - `corelink-auth` is an Option-A aggregator re-exporting the 6 auth primitives (`clerk`, `clerk_cf`, `pat`, `schema`, `webauthn`, `tenant_path`) at canonical `corelink_auth::*` submodule paths with behaviour preserved 1:1 (`crates/corelink-auth/src/lib.rs:1-15`, `crates/corelink-auth/src/lib.rs:136-141`).
 
 # Invariants
 
 - PAT secret material is unloggable: `PatPlaintext` has no `Display`/`Serialize`/secret-revealing `Debug` and zeroizes on drop (`crates/corelink-pat/src/types.rs:41-89`); `PatSigningKey` is `ZeroizeOnDrop`, redacts in `Debug`, and rejects keys < 32 bytes with `SigningKeyTooShort` (`crates/corelink-pat/src/types.rs:219-241`).
 - The HMAC fast-fail layer runs before any Argon2id work, bounding the cost a forged token can impose (`crates/corelink-pat/src/verify.rs:96`, `crates/corelink-pat/src/sig.rs:93-110`).
-- The Clerk adapter accepts RS256 only — no HS256, no `alg=none`, no allowlist relaxation, ≤120s leeway (`crates/corelink-clerk/src/adapter.rs:299`).
+- The Clerk adapter accepts RS256 only — no HS256, no `alg=none`, no allowlist relaxation, ≤120s leeway (`crates/corelink-clerk/src/adapter.rs:335`).
 - The aggregator never redefines types or weakens charter guarantees — RLS-default-on, constant-time PAT compare, and `SecretString` are preserved by reference, not re-implemented (`crates/corelink-auth/src/lib.rs:76-91`).
 
 # Gotchas
@@ -58,6 +60,6 @@ The cluster is the trust spine feeding the [2-level PAT moat](/auth/pat-moat.md)
 7. `crates/corelink-pat/src/types.rs:41-89` — `PatPlaintext` secret-handling newtype (no Display/Serialize/Debug; zeroize on drop).
 8. `crates/corelink-pat/src/types.rs:219-241` — `PatSigningKey`: `ZeroizeOnDrop`, `Debug`-redacted, rejects keys < 32 bytes (`SigningKeyTooShort`).
 9. `crates/corelink-pat/src/argon.rs:127-134` — `verify_argon2id`: the Argon2id PHC possession proof.
-10. `crates/corelink-clerk/src/adapter.rs:299` — RS256-only alg enforcement at the header-decode boundary (`AlgNotAllowed`).
-11. `crates/corelink-clerk/src/adapter.rs:350` — `Validation::new(Algorithm::RS256)`: RS256 pinned at the signature decoder.
-12. `crates/corelink-clerk/src/adapter.rs:406-414` — exact `iss`/`aud` allowlist match enforcement.
+10. `crates/corelink-clerk/src/adapter.rs:335` — RS256-only alg enforcement at the header-decode boundary (`AlgNotAllowed`).
+11. `crates/corelink-clerk/src/adapter.rs:405` — `Validation::new(Algorithm::RS256)`: RS256 pinned at the signature decoder.
+12. `crates/corelink-clerk/src/adapter.rs:461-469` — exact `iss`/`aud` allowlist match enforcement.
