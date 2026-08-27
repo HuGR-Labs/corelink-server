@@ -43,7 +43,7 @@ Each entry cross-references:
   22,597 enumerated), so nothing served today stops being served, and it makes
   the per-tenant worst case `8 x 64 MiB = 512 MiB` instead of the 8 GiB
   inherited from the mirror's fetch cap. The remaining process-wide half — the
-  budget Turbo already has and CAS does not — is tracked as B-055.
+  budget Turbo already has and CAS does not — is tracked as B-056.
 
 ### Changed
 

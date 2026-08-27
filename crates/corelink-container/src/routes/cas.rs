@@ -152,7 +152,7 @@ pub const BATCH_MAX_BYTES: usize = 8 * 1024 * 1024;
 ///
 /// This bounds ONE tenant. With N tenants the process is still unbounded; Turbo
 /// closed that with a process-wide byte budget and CAS has no equivalent yet
-/// (tracked as B-055).
+/// (tracked as B-056).
 pub const CAS_READ_MAX_OBJECT_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Largest object actually stored, from the full enumeration of
@@ -178,7 +178,7 @@ const _: () = assert!(
 /// CAS_READ_MAX_OBJECT_BYTES`, and it has to leave room for everything else
 /// the process is doing. This is the arithmetic the ceiling was chosen by; if
 /// either factor is retuned, this is what notices. (It bounds one tenant only —
-/// the process-wide budget is B-055.)
+/// the process-wide budget is B-056.)
 const _: () = assert!(
     CAS_READ_MAX_OBJECT_BYTES * CAS_READ_CONCURRENCY_LIMIT as u64 <= CONTAINER_MEMORY_BYTES / 2,
     "one tenant's concurrent reads could claim more than half the container"
