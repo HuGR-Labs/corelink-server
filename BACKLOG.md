@@ -2690,6 +2690,17 @@ last-verified: 2026-08-26
 
 ### B-051 — the CAS read path has no SIZE bound; the concurrency permit bounds only the count
 
+**CLOSED 2026-08-26.** `CAS_READ_MAX_OBJECT_BYTES` = 64 MiB
+(`crates/corelink-container/src/routes/cas.rs:156`), enforced by
+`R2S3Client::get_capped` (`storage/r2_s3.rs:289`), which reads `Content-Length`
+and drops the stream WITHOUT collecting it — an over-size object costs one
+round-trip and no heap. Refused as 413 `ObjectTooLarge`, not 404 (which would
+tell the client to re-upload bytes we hold) and not 500 (which invites a retry
+that cannot succeed). 64 MiB clears the observed 52.3 MB maximum, so nothing
+served today stops being served, and the per-tenant worst case becomes
+`8 x 64 MiB = 512 MiB` instead of the 8 GiB inherited from the mirror's fetch
+cap. The remaining PROCESS-wide half is B-056. Original finding below.
+
 **Re-scoped 2026-08-26 by ADR-S34-002.** This item was "streaming CAS reads must
 not land before B-050". B-050 shipped, and measuring the read path to plan the
 streaming work showed the item was aimed at the wrong thing in both directions.
@@ -2731,17 +2742,53 @@ a migration story for objects that are served today and would stop being served.
 id: B-051
 repo: corelink-server
 owner: tl
+status: done
+verify: |
+  grep -q 'CAS_READ_MAX_OBJECT_BYTES' crates/corelink-container/src/routes/cas.rs \
+    && grep -q 'get_capped' crates/corelink-container/src/storage/r2_s3.rs
+verify-means: |
+  done — passes while the ceiling constant exists AND the read path reaches R2
+  through `get_capped`. Both halves are required: the constant alone would be
+  a number nothing enforces, and `get_capped` alone could be called with a
+  ceiling large enough to be no ceiling. Goes red if either is removed.
+last-verified: 2026-08-26
+```
+
+### B-056 — the CAS read path has no PROCESS-WIDE byte budget, only a per-tenant one
+
+`CAS_READ_CONCURRENCY_LIMIT` (8) bounds ONE tenant, and B-051 now bounds one
+object (`CAS_READ_MAX_OBJECT_BYTES`, 64 MiB). Their product — 512 MiB — is a
+per-tenant figure. With N tenants sharing a container the process is still
+unbounded: two tenants reading concurrently can claim 1 GiB, which is the whole
+container (0.25 vCPU / **1024 MiB**, measured via the Cloudflare Containers API
+on 2026-08-26 for all five prod regions).
+
+Turbo already closed exactly this gap and says so in as many words: the
+per-tenant `GetConcurrencyGuard` "bounds ONE tenant to
+`TURBO_GET_CONCURRENCY_LIMIT x TURBO_BODY_LIMIT_BYTES`, but with N tenants the
+process is unbounded" — hence `GLOBAL_TURBO_GET_BUDGET`, a lazily-initialised
+process-wide `Semaphore` shared by every `TurboRouteState`
+(`crates/corelink-container/src/routes/turbo_v8.rs:374-387`, guard at `:726-733`).
+CAS has the per-tenant half and no process-wide half.
+
+The pattern to copy is in the repo, so this is not a design question — it is the
+second of the two factors ADR-S34-002 named, and the ADR deliberately scoped
+itself to the first. Sizing it needs the same treatment the ceiling got: a
+number argued from the 1024 MiB the container actually has.
+
+```backlog
+id: B-056
+repo: corelink-server
+owner: tl
 status: open
 verify: |
-  ! grep -qE 'CAS_READ_MAX_OBJECT_BYTES|MAX_CAS_READ_OBJECT_BYTES' \
-      crates/corelink-container/src/routes/cas.rs \
-      crates/corelink-container/src/storage/r2_s3.rs
+  ! grep -qE 'GLOBAL_CAS_READ_BUDGET|GLOBAL_CAS_GET_BUDGET' \
+      crates/corelink-container/src/routes/cas.rs
 verify-means: |
-  open — passes while no read-side object-size ceiling exists, which is the
-  defect. Anchored on the constant rather than on prose so it turns red the
-  moment a ceiling is introduced, forcing this item closed. Deliberately NOT
-  anchored on the old streaming predicate: that one passed both before and
-  after the scrubber landed and so could never have gone red.
+  open — passes while no process-wide CAS read budget exists, which is the gap.
+  Anchored on the singleton's name (mirroring `GLOBAL_TURBO_GET_BUDGET`) so it
+  turns red the moment one is introduced. Deliberately NOT anchored on the
+  per-tenant constant, which already exists and would make this read as done.
 last-verified: 2026-08-26
 ```
 

@@ -126,6 +126,64 @@ pub const BATCH_MAX_OBJECTS: usize = 2_000;
 /// ceiling, the extra 2 MiB headroom covers the manifest framing.
 pub const BATCH_MAX_BYTES: usize = 8 * 1024 * 1024;
 
+/// FROZEN ceiling on the size of a single CAS object the read path will serve.
+///
+/// The read path materialises a whole object in memory (twice — the SDK's
+/// `Bytes` plus the `Vec<u8>` copy the handler trait's return type forces, and
+/// three times on the BYOK path where the plaintext exists while the ciphertext
+/// is still held). Peak heap is therefore `concurrent_reads x object_size`.
+/// [`CAS_READ_CONCURRENCY_LIMIT`] bounds the first factor; NOTHING bounded the
+/// second until this constant, and the two are not interchangeable — see
+/// ADR-S34-002.
+///
+/// It is tempting to think the container's global 10 MiB `DefaultBodyLimit`
+/// caps object size transitively. It does not: that limit bounds
+/// CLIENT-SUPPLIED request bodies, and the server-side mirror ingest presents
+/// no request body at all — `public_mirror::MIRROR_MAX_BLOB_BYTES` accepts a
+/// blob up to **1 GiB**. On a 0.25 vCPU / 1024 MiB prod container (measured via
+/// the Containers API, 2026-08-26) a single such read is an OOM.
+///
+/// **Why 64 MiB.** Full enumeration of `corelink-cas-prod` on 2026-08-26 —
+/// 22,597 objects, 3.57 GB — put the median at 593 BYTES, 95.1% of objects
+/// under 1 MiB and the largest at 52.3 MB. 64 MiB clears the observed maximum,
+/// so nothing served today stops being served, and it makes the per-tenant
+/// worst case `8 x 64 MiB = 512 MiB` — a number this system chose, instead of
+/// the 8 GiB it had inherited from the mirror's fetch cap.
+///
+/// This bounds ONE tenant. With N tenants the process is still unbounded; Turbo
+/// closed that with a process-wide byte budget and CAS has no equivalent yet
+/// (tracked as B-056).
+pub const CAS_READ_MAX_OBJECT_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Largest object actually stored, from the full enumeration of
+/// `corelink-cas-prod` on 2026-08-26 (22,597 objects, 3.57 GB).
+const OBSERVED_MAX_OBJECT_BYTES: u64 = 52_341_477;
+
+/// Memory of one prod container — 0.25 vCPU / 1024 MiB on all five regions,
+/// read from the Cloudflare Containers API on 2026-08-26.
+const CONTAINER_MEMORY_BYTES: u64 = 1024 * 1024 * 1024;
+
+/// The ceiling MUST stay above the largest object actually stored, or the
+/// change stops serving content that is served today — the migration question
+/// ADR-S34-002 deliberately left open. A COMPILE-TIME assert, not a test: both
+/// sides are constants, so a runtime check folds to `assert!(true)` and proves
+/// nothing (clippy says so). This fails the build instead.
+const _: () = assert!(
+    CAS_READ_MAX_OBJECT_BYTES > OBSERVED_MAX_OBJECT_BYTES,
+    "the read ceiling would refuse an object that is served today; \
+     lowering it needs a migration story, not just a smaller number"
+);
+
+/// Peak heap for ONE tenant is `CAS_READ_CONCURRENCY_LIMIT x
+/// CAS_READ_MAX_OBJECT_BYTES`, and it has to leave room for everything else
+/// the process is doing. This is the arithmetic the ceiling was chosen by; if
+/// either factor is retuned, this is what notices. (It bounds one tenant only —
+/// the process-wide budget is B-056.)
+const _: () = assert!(
+    CAS_READ_MAX_OBJECT_BYTES * CAS_READ_CONCURRENCY_LIMIT as u64 <= CONTAINER_MEMORY_BYTES / 2,
+    "one tenant's concurrent reads could claim more than half the container"
+);
+
 /// Bounded per-request read concurrency for `handle_batch_read`: each in-flight
 /// R2 GET holds one permit, so at most this many reads run at once. Keeps a
 /// 2000-object batch under the Cloudflare wall-clock deadline (the old fully
@@ -1646,6 +1704,15 @@ fn map_err(e: CasHandlerError) -> axum::response::Response {
         CasHandlerError::CrossTenantDenied { .. } => {
             (StatusCode::FORBIDDEN, "cross-tenant").into_response()
         }
+        // B-051: the object exists and is intact; it is the SIZE that is
+        // refused, so this is 413 and not 404 (which would tell the client to
+        // re-upload bytes we already hold) and not 500 (which invites a retry
+        // that cannot succeed).
+        CasHandlerError::ObjectTooLarge { .. } => (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "object exceeds the read-size ceiling",
+        )
+            .into_response(),
         CasHandlerError::AuditFailed(_) => {
             // Fail-CLOSED: audit pipeline down = 503; never serve
             // bytes / commit writes without the audit row.
@@ -3475,6 +3542,49 @@ mod tests {
             r_402.status(),
             StatusCode::PAYMENT_REQUIRED,
             "the batch charge must be n (=3); budget for 2 must trip 402"
+        );
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "tests are allowed these primitives"
+)]
+mod read_size_ceiling_tests {
+    use super::*;
+
+    #[test]
+    fn over_size_maps_to_413_not_404_and_not_500() {
+        let resp = map_err(CasHandlerError::ObjectTooLarge {
+            actual_bytes: 100 * 1024 * 1024,
+            limit_bytes: CAS_READ_MAX_OBJECT_BYTES,
+        });
+        assert_eq!(
+            resp.status(),
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "404 would tell the client to re-upload bytes we already hold; 500 invites a \
+             retry that cannot succeed"
+        );
+    }
+
+    #[test]
+    fn absent_and_over_size_stay_distinguishable() {
+        let missing = map_err(CasHandlerError::NotFound {
+            tenant: "t1".to_owned(),
+            hash: "a".repeat(64),
+        });
+        let too_big = map_err(CasHandlerError::ObjectTooLarge {
+            actual_bytes: 1,
+            limit_bytes: 0,
+        });
+        assert_ne!(
+            missing.status(),
+            too_big.status(),
+            "`absent` and `present but refused` are different answers"
         );
     }
 }

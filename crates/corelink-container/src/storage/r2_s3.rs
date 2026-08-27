@@ -92,6 +92,27 @@ pub struct R2S3Client {
         std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
 }
 
+/// Outcome of [`R2S3Client::get_capped`].
+///
+/// Three states, not two: "absent" and "present but refused" are different
+/// answers and the caller must not be able to conflate them — a 404 for an
+/// object that exists would tell the client to re-upload bytes we already hold.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CappedGet {
+    /// The object exists and is within the ceiling.
+    Found(Vec<u8>),
+    /// No such key.
+    Missing,
+    /// The object exists but is over the ceiling and was NOT read.
+    /// `actual_bytes` is `None` when the storage layer reported no content
+    /// length at all — refused for the same reason, since the size that would
+    /// have been buffered is unknown.
+    TooLarge {
+        /// Size the storage layer reported, when it reported one.
+        actual_bytes: Option<u64>,
+    },
+}
+
 impl R2S3Client {
     /// Construct an [`R2S3Client`] from a validated [`StorageEnv`].
     ///
@@ -266,6 +287,69 @@ impl R2S3Client {
     /// egress for an arbitrarily large blob.
     ///
     /// # Errors
+    /// GET an object, refusing anything larger than `max_bytes` BEFORE the body
+    /// is materialised.
+    ///
+    /// The plain [`Self::get`] collects the whole body into memory and then
+    /// copies it into a `Vec<u8>`, so peak heap for one read is twice the object
+    /// size. That is fine for the median CAS object (593 bytes measured in prod)
+    /// and is not fine for the tail: nothing on the read path bounded object
+    /// size, and the server-side mirror ingest accepts a blob up to 1 GiB
+    /// (`routes::public_mirror::MIRROR_MAX_BLOB_BYTES`) — on a 0.25 vCPU /
+    /// 1024 MiB container that is an OOM, not a slow request (ADR-S34-002).
+    ///
+    /// The check reads `Content-Length` from the `GetObject` response and drops
+    /// the stream without collecting it, so an over-size object costs one
+    /// round-trip and no heap. A response with NO content length is refused
+    /// too — fail-CLOSED, because the whole point is to never buffer an object
+    /// of unknown size.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(String)` on any transport/service error other than a 404.
+    pub async fn get_capped(&self, key: &str, max_bytes: u64) -> Result<CappedGet, String> {
+        debug!(bucket = %self.bucket, key = %key, max_bytes, "R2S3Client::get_capped");
+        let result = self
+            .inner
+            .get_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .send()
+            .await;
+
+        match result {
+            Ok(output) => {
+                let Some(len) = output.content_length() else {
+                    return Ok(CappedGet::TooLarge { actual_bytes: None });
+                };
+                let len = u64::try_from(len).unwrap_or(u64::MAX);
+                if len > max_bytes {
+                    // Drop `output` (and its `ByteStream`) without collecting:
+                    // the body never enters the heap.
+                    return Ok(CappedGet::TooLarge {
+                        actual_bytes: Some(len),
+                    });
+                }
+                let bytes = output
+                    .body
+                    .collect()
+                    .await
+                    .map_err(|e| format!("R2 body read failed for key {key}: {e}"))?
+                    .into_bytes()
+                    .to_vec();
+                Ok(CappedGet::Found(bytes))
+            }
+            Err(sdk_err) => {
+                if let aws_sdk_s3::error::SdkError::ServiceError(ref se) = sdk_err {
+                    if se.err().is_no_such_key() {
+                        return Ok(CappedGet::Missing);
+                    }
+                }
+                Err(format!("R2 get failed for key {key}: {sdk_err}"))
+            }
+        }
+    }
+
     /// Returns `Err(String)` on any non-404 transport/service error.
     pub async fn head_size(&self, key: &str) -> Result<Option<u64>, String> {
         debug!(
@@ -1275,14 +1359,37 @@ impl CasReadHandler for R2CasHandler {
                         }
                     };
                     debug!(key = %key, "R2CasHandler::read");
-                    let result = {
-                        let _scope = crate::origin_timing::PhaseScope::enter(
-                            crate::origin_timing::Phase::Store,
-                        );
-                        tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)))
-                    };
+                    let result =
+                        {
+                            let _scope = crate::origin_timing::PhaseScope::enter(
+                                crate::origin_timing::Phase::Store,
+                            );
+                            tokio::task::block_in_place(|| {
+                                handle.block_on(self.client.get_capped(
+                                    &key,
+                                    crate::routes::cas::CAS_READ_MAX_OBJECT_BYTES,
+                                ))
+                            })
+                        };
                     match result {
-                        Ok(got) => Ok((resolved, got)),
+                        // B-051: refused BEFORE the body was collected, so the
+                        // bytes never entered the heap. Distinct from NotFound —
+                        // the object is there and intact.
+                        Ok(CappedGet::TooLarge { actual_bytes }) => {
+                            warn!(
+                                key = %key,
+                                actual_bytes = ?actual_bytes,
+                                limit_bytes = crate::routes::cas::CAS_READ_MAX_OBJECT_BYTES,
+                                "R2CasHandler::read refused an over-size object"
+                            );
+                            emit(true);
+                            return Err(CasHandlerError::ObjectTooLarge {
+                                actual_bytes: actual_bytes.unwrap_or(0),
+                                limit_bytes: crate::routes::cas::CAS_READ_MAX_OBJECT_BYTES,
+                            });
+                        }
+                        Ok(CappedGet::Missing) => Ok((resolved, None)),
+                        Ok(CappedGet::Found(bytes)) => Ok((resolved, Some(bytes))),
                         Err(e) => {
                             warn!(error = %e, key = %key, "R2CasHandler::read error");
                             emit(true);

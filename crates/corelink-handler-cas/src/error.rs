@@ -48,6 +48,23 @@ pub enum CasHandlerError {
     #[error("cas audit emit failed: {0}")]
     AuditFailed(String),
 
+    /// The stored object is larger than the read path is willing to buffer
+    /// (B-051 / ADR-S34-002).
+    ///
+    /// The read path materialises a whole object in memory, so peak heap is
+    /// `concurrent_reads x object_size`. The per-tenant permit
+    /// (`CAS_READ_CONCURRENCY_LIMIT`) bounds the first factor; this bounds the
+    /// second. Distinct from [`Self::Internal`] so the route can answer 413
+    /// rather than 500: the request is well-formed and the object is intact —
+    /// it is the SIZE that is refused, and retrying will not change that.
+    #[error("cas object too large to serve: {actual_bytes} bytes exceeds the {limit_bytes}-byte read ceiling")]
+    ObjectTooLarge {
+        /// Size of the stored object, from the storage layer's content length.
+        actual_bytes: u64,
+        /// The ceiling that refused it.
+        limit_bytes: u64,
+    },
+
     /// Internal state-machine inconsistency (lock poisoning, etc.).
     #[error("internal cas-handler error: {0}")]
     Internal(String),
