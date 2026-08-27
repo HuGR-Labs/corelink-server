@@ -596,36 +596,55 @@ async fn handle_introspect(
     // ── 2. Verify the PAT (HMAC + D1 liveness + Argon2id + scope) ───────────
     match state.verifier.verify(&req.token).await {
         Ok(tenant_id) => {
-            // ── 3. Resolve the plan. A tier-query fault → 503 (fail-CLOSED:
-            //       never serve a wrong plan). ──────────────────────────────
-            match tier_for_tenant(&state.d1, &tenant_id).await {
-                Ok(plan) => {
-                    // M2 (runners seam): the entitlement is a SEPARATE axis —
-                    // read from `runners_entitlement` (migrations 0070 + 0072),
-                    // NOT derived from `plan`. One lookup returns both the
-                    // concurrency cap and the monthly vCPU-h ceiling. Present
-                    // ONLY for a tenant with a row (vCPU-h only if that NULLABLE
-                    // column is set); a cache-only tenant gets both omitted. A D1
-                    // fault fails CLOSED (503 — never guess an entitlement).
-                    match runner_concurrency_for_tenant(&state.d1, &tenant_id).await {
-                        Ok((max_concurrency, max_vcpu_h)) => (
-                            StatusCode::OK,
-                            Json(IntrospectResponse::valid(
-                                tenant_id,
-                                plan,
-                                max_concurrency,
-                                max_vcpu_h,
-                            )),
-                        )
-                            .into_response(),
-                        Err(e) => {
-                            tracing::error!(error = %e, "auth_introspect: runner entitlement resolution failed");
-                            StatusCode::SERVICE_UNAVAILABLE.into_response()
-                        }
-                    }
-                }
-                Err(e) => {
+            // ── 3. Resolve the plan AND the runners entitlement.
+            //
+            // These are two INDEPENDENT D1 reads: `tier_for_tenant` reads
+            // `tier_selection`, `runner_concurrency_for_tenant` reads
+            // `runners_entitlement` (migrations 0070 + 0072), and neither
+            // consumes the other's result — the M2 runners seam is a SEPARATE
+            // axis, deliberately NOT derived from `plan`. They used to run
+            // nested, so the route paid both round trips end to end. From the
+            // container these are D1-over-HTTP, ~80-100 ms each measured, which
+            // is the dominant cost of this handler; issuing them concurrently
+            // halves the success path.
+            //
+            // FAIL-CLOSED is preserved exactly: either fault still yields 503,
+            // and the two error arms keep their DISTINCT log lines, so an
+            // operator can still tell which table faulted. `try_join!` returns
+            // the first error, and each side tags its own before joining.
+            //
+            // ⚠️ Stated cost, not hidden: with a join, BOTH queries are issued
+            // even when one is going to fault, where the nested form would have
+            // short-circuited. That is one extra D1 read on the ERROR path, in
+            // exchange for halving the SUCCESS path. The error path is the rare
+            // one and it already ends in a 503.
+            let plan_fut = async {
+                tier_for_tenant(&state.d1, &tenant_id)
+                    .await
+                    .map_err(|e| ("tier", e))
+            };
+            let ent_fut = async {
+                runner_concurrency_for_tenant(&state.d1, &tenant_id)
+                    .await
+                    .map_err(|e| ("runner entitlement", e))
+            };
+            match futures::try_join!(plan_fut, ent_fut) {
+                Ok((plan, (max_concurrency, max_vcpu_h))) => (
+                    StatusCode::OK,
+                    Json(IntrospectResponse::valid(
+                        tenant_id,
+                        plan,
+                        max_concurrency,
+                        max_vcpu_h,
+                    )),
+                )
+                    .into_response(),
+                Err(("tier", e)) => {
                     tracing::error!(error = %e, "auth_introspect: tier resolution failed");
+                    StatusCode::SERVICE_UNAVAILABLE.into_response()
+                }
+                Err((_, e)) => {
+                    tracing::error!(error = %e, "auth_introspect: runner entitlement resolution failed");
                     StatusCode::SERVICE_UNAVAILABLE.into_response()
                 }
             }

@@ -5,6 +5,8 @@ description: "How the corelink-runners compute fabric authorizes placement: the 
 source_files:
   - "crates/corelink-container/src/routes/auth_introspect.rs"
   - "docs/launch/2026-06-18-sota-tooling-roadmap.md"
+source_blobs:
+  - "crates/corelink-container/src/routes/auth_introspect.rs@89f33980ba0d14b0749887b17d30c289f9d61c83"
 checkpoint_sha: "a298cd91a4f0429d6e3d31a64191d2b0e87eced5"
 provenance: "AUTHORED"
 tags: ["ops", "runners", "introspect", "entitlement", "fabric", "runbook"]
@@ -39,7 +41,7 @@ the operational runbook for that gate; its authz mechanism is documented as the
 3. The PAT is verified (HMAC + D1 liveness + Argon2id + scope) before any tenant resolution
    (`crates/corelink-container/src/routes/auth_introspect.rs:596-597`).
 4. The plan (cache tier wire string) is resolved; a tier-query fault fails CLOSED with 503
-   (`crates/corelink-container/src/routes/auth_introspect.rs:601-602`).
+   (`crates/corelink-container/src/routes/auth_introspect.rs:599-631`).
 5. The runner entitlement is read in one keyed lookup from `runners_entitlement` (migrations 0070+0072),
    returning both the concurrency cap and the monthly vCPU-hour ceiling
    (`crates/corelink-container/src/routes/auth_introspect.rs:353`).
@@ -64,12 +66,12 @@ the operational runbook for that gate; its authz mechanism is documented as the
 # Invariants
 - Any D1 fault during plan OR entitlement resolution fails CLOSED with 503 — the fabric maps 503 to
   unreachable and never serves a wrong/guessed plan or cap
-  (`crates/corelink-container/src/routes/auth_introspect.rs:621-656`).
+  (`crates/corelink-container/src/routes/auth_introspect.rs:642-676`).
 - The runner cap is NOT derived from the cache plan: an absent `runners_entitlement` row means no Runners
   entitlement and the fabric rejects the placement (empty table = no cap = reject)
   (`crates/corelink-container/src/routes/auth_introspect.rs:318`).
 - An invalid PAT returns a uniform `valid:false` with no tenant_id and no reason — no existence/plan oracle
-  (`crates/corelink-container/src/routes/auth_introspect.rs:634-636`).
+  (`crates/corelink-container/src/routes/auth_introspect.rs:653-655`).
 - The dedicated fabric secret MUST be ≥32 chars or the route is not mounted at all
   (`crates/corelink-container/src/routes/auth_introspect.rs:975-983`).
 
@@ -83,7 +85,7 @@ the operational runbook for that gate; its authz mechanism is documented as the
   (`crates/corelink-container/src/routes/auth_introspect.rs:280-298`).
 - The `plan` field is informational only for the runners decision — capacity comes from the entitlement
   table, so do not authorize a runner off the cache tier
-  (`crates/corelink-container/src/routes/auth_introspect.rs:610-620`).
+  (`crates/corelink-container/src/routes/auth_introspect.rs:626-641`).
 
 # Citations
 1. `crates/corelink-container/src/routes/auth_introspect.rs:246` — `max_concurrency: Option<u32>` wire field.
@@ -95,9 +97,9 @@ the operational runbook for that gate; its authz mechanism is documented as the
 7. `crates/corelink-container/src/routes/auth_introspect.rs:847` — dedicated `FABRIC_INTROSPECT_AUTH_KEY` read; `crates/corelink-container/src/routes/auth_introspect.rs:877-886` — optional `_HUGR` additive consumer key.
 8. `crates/corelink-container/src/routes/auth_introspect.rs:582-594` — body parsed only after the gate; token never logged.
 9. `crates/corelink-container/src/routes/auth_introspect.rs:596-597` — PAT verify (HMAC+D1+Argon2id+scope).
-10. `crates/corelink-container/src/routes/auth_introspect.rs:601-602` — plan resolution.
-11. `crates/corelink-container/src/routes/auth_introspect.rs:610-620` — 200 valid response assembly (plan informational).
-12. `crates/corelink-container/src/routes/auth_introspect.rs:621-656` — fail-CLOSED 503 on entitlement/tier/backend fault.
-13. `crates/corelink-container/src/routes/auth_introspect.rs:634-636` — uniform `valid:false`, no oracle.
+10. `crates/corelink-container/src/routes/auth_introspect.rs:599-631` — plan resolution.
+11. `crates/corelink-container/src/routes/auth_introspect.rs:626-641` — 200 valid response assembly (plan informational).
+12. `crates/corelink-container/src/routes/auth_introspect.rs:642-676` — fail-CLOSED 503 on entitlement/tier/backend fault.
+13. `crates/corelink-container/src/routes/auth_introspect.rs:653-655` — uniform `valid:false`, no oracle.
 14. `crates/corelink-container/src/routes/auth_introspect.rs:975-983` — `FABRIC_INTROSPECT_AUTH_KEY` ≥32 or route not mounted.
 15. `docs/launch/2026-06-18-sota-tooling-roadmap.md:40-56` — move compute off the shared Mac (Blacksmith / Linux runner).

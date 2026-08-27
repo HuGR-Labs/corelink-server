@@ -73,6 +73,35 @@ Each entry cross-references:
 
 ### Fixed
 
+- **`/internal/v1/auth/introspect` paid two D1-over-HTTP round trips end to end
+  for two lookups that never depended on each other.** `tier_for_tenant`
+  (`tier_selection`) and `runner_concurrency_for_tenant` (`runners_entitlement`,
+  migrations 0070 + 0072) were nested — the second only started once the first
+  returned — even though the M2 runners seam is a SEPARATE axis, deliberately
+  NOT derived from `plan`, so neither consumes the other's result. From the
+  container these are D1-over-HTTP at **~80-100 ms each, measured**, and they
+  are the dominant cost of this handler; they now run under one
+  `futures::try_join!`, halving the success path. **Fail-CLOSED is unchanged:**
+  either fault still yields 503, and the two error arms keep their DISTINCT log
+  lines (each side tags its own error before joining) so an operator can still
+  tell which table faulted — a join that collapsed both into one message would
+  have traded latency for diagnosability. **Stated cost, not hidden:** with a
+  join BOTH queries are issued even when one is going to fault, where the nested
+  form short-circuited — one extra D1 read on the ERROR path, in exchange for
+  halving the SUCCESS path; the error path is the rare one and already ends in a
+  503. `clippy -D warnings` clean **on a forced recompile** (the first run
+  reported exit 0 having never emitted `Compiling corelink-server` — a cache hit
+  is not an approval), `cargo fmt --check` clean, and the full lib suite is
+  **1434 passed / 0 failed**. The three OKF concepts citing this file were
+  re-anchored, and `flows/introspection-fabric` had a real claim to fix, not
+  just line numbers: its numbered steps 5 and 6 read as an ordering, which is
+  no longer true — it now says so explicitly, with the extra-read cost recorded.
+  ⚠️ **The plan for this change cited "the crate already uses `try_join!` 10x in
+  `storage/r2_s3.rs`" as precedent. That is FALSE on `main`** — the only
+  `futures::` join there today is a `try_join_all` in `storage/d1_audit_sink.rs`;
+  the `r2_s3.rs` precedent lives on an unmerged branch. Requires a container
+  build + repin + `cf-deploy-prod` to reach production.
+
 - **Two `[Unreleased]` entries said `corelink-signup-worker` has no CI deploy
   path. It does.** `.github/workflows/signup-worker-deploy.yml` deploys it on
   push to `main` — proven by its run history, which shows it firing green on
