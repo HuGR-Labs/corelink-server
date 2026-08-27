@@ -514,10 +514,12 @@ impl axum::extract::FromRequestParts<TurboRouteState> for PutConcurrencyGuard {
             .and_then(|v| v.to_str().ok())
             .map(str::trim)
             .unwrap_or("");
-        // Sentinels the Worker/DO use for non-tenant traffic — never a real
-        // tenant (mirrors `auth_tenant::AuthTenant`'s set).
-        const TENANT_SENTINELS: &[&str] = &["_anonymous", "_unknown", "_system", "_pending"];
-        if tenant.is_empty() || TENANT_SENTINELS.contains(&tenant) {
+        // WP-I.3: reuse the canonical `auth_tenant::is_reserved_sentinel`
+        // helper (single source of truth for the four sentinels: the
+        // helper covers `_anonymous`, `_unknown`, `_system`, `_pending`
+        // plus the two we were missing: `_oci` and `_public`). Three
+        // previous local copies were drift-prone copy-paste.
+        if tenant.is_empty() || crate::auth_tenant::is_reserved_sentinel(&tenant) {
             return Err((StatusCode::UNAUTHORIZED, "authenticated tenant required").into_response());
         }
         let tenant_key = tenant.to_owned();
@@ -690,8 +692,7 @@ impl axum::extract::FromRequestParts<TurboRouteState> for GetConcurrencyGuard {
             .and_then(|v| v.to_str().ok())
             .map(str::trim)
             .unwrap_or("");
-        const TENANT_SENTINELS: &[&str] = &["_anonymous", "_unknown", "_system", "_pending"];
-        if tenant.is_empty() || TENANT_SENTINELS.contains(&tenant) {
+        if tenant.is_empty() || crate::auth_tenant::is_reserved_sentinel(&tenant) {
             return Err((StatusCode::UNAUTHORIZED, "authenticated tenant required").into_response());
         }
         let tenant_key = tenant.to_owned();
@@ -897,8 +898,7 @@ impl axum::extract::FromRequestParts<TurboRouteState> for EventsConcurrencyGuard
             .and_then(|v| v.to_str().ok())
             .map(str::trim)
             .unwrap_or("");
-        const TENANT_SENTINELS: &[&str] = &["_anonymous", "_unknown", "_system", "_pending"];
-        if tenant.is_empty() || TENANT_SENTINELS.contains(&tenant) {
+        if tenant.is_empty() || crate::auth_tenant::is_reserved_sentinel(&tenant) {
             return Err((StatusCode::UNAUTHORIZED, "authenticated tenant required").into_response());
         }
         let tenant_key = tenant.to_owned();
@@ -3096,5 +3096,40 @@ mod tests {
             GLOBAL_TURBO_PUT_PERMITS,
             "permits restored on drop (RAII release)"
         );
+    }
+
+    // ── WP-I.3: turbo_v8 routes reuse the canonical sentinel set ──────────
+    //
+    // The pre-fix code carried three local copies of the sentinel list, and
+    // they were missing `_oci` and `_public` (the two sentinels the
+    // canonical `auth_tenant::is_reserved_sentinel` helper includes).
+    // We pin the helper's coverage here at the surface level so a
+    // future drift (e.g. dropping a sentinel from auth_tenant) does
+    // not silently re-introduce the bypass.
+
+    #[test]
+    fn rejects_oci_and_public_sentinels_via_canonical_helper() {
+        // The exact set of sentinels the helper recognises (mirror of
+        // the literal in `auth_tenant::SENTINELS`). Listed here so a
+        // copy/paste of the test into another surface is intentional.
+        for sentinel in [
+            "",
+            "_anonymous",
+            "_unknown",
+            "_system",
+            "_pending",
+            "_oci",
+            "_public",
+        ] {
+            assert!(
+                crate::auth_tenant::is_reserved_sentinel(sentinel),
+                "expected the canonical helper to reject sentinel={sentinel:?}"
+            );
+        }
+        // And the negative: a normal-looking tenant id is NOT a sentinel.
+        assert!(!crate::auth_tenant::is_reserved_sentinel("acme-co"));
+        assert!(!crate::auth_tenant::is_reserved_sentinel(
+            "11111111-1111-1111-1111-111111111111"
+        ));
     }
 }

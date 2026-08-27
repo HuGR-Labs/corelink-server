@@ -36,6 +36,39 @@ use crate::{
 /// 90-day retention window in milliseconds.
 const RETENTION_90D_MS: u64 = 90 * 24 * 60 * 60 * 1000;
 
+/// WP-I.2: prune the in-memory history + payloads BTreeMaps of any
+/// entries older than [`RETENTION_90D_MS`] at `now_ms`. Reuses the
+/// SAME constant that gates the rollback eligibility check (so the
+/// two cannot drift), and keeps the maps sized to `~live_rollbacks`
+/// rather than the entire lifetime of the singleton.
+///
+/// The current (`state.current_version`) is always kept — only the
+/// past-`RETENTION_90D_MS` rows are dropped. Rollback can still hit
+/// any row within the window, and `update`/`rollback` re-inserts
+/// always fall within the window.
+fn prune_expired_history(state: &mut InMemoryState, now_ms: u64) {
+    // collect expired versions first (avoid borrow-on-mut in iterator)
+    let expired: Vec<u64> = state
+        .history
+        .iter()
+        .filter_map(|(v, e)| {
+            let age = now_ms.saturating_sub(e.created_at_ms);
+            if age > RETENTION_90D_MS && *v != state.current_version {
+                Some(*v)
+            } else {
+                None
+            }
+        })
+        .collect();
+    if expired.is_empty() {
+        return;
+    }
+    for v in &expired {
+        state.history.remove(v);
+        state.payloads.remove(v);
+    }
+}
+
 /// Audit sink trait for config-singleton write events.
 ///
 /// Production wiring inserts into D1 `audit_outbox` and
@@ -277,6 +310,8 @@ impl ConfigSingletonStore for InMemoryConfigSingletonStore {
         state.history.insert(new_version, entry);
         state.current_version = new_version;
         state.current_payload = new_payload;
+        // WP-I.2: lazy prune of the retention-expired history + payloads.
+        prune_expired_history(&mut state, now_ms);
 
         self.metrics.set_history_size(state.history.len() as u64);
         self.metrics.record_update(UpdateOutcome::Ok);
@@ -362,6 +397,8 @@ impl ConfigSingletonStore for InMemoryConfigSingletonStore {
         state.history.insert(new_version, entry);
         state.current_version = new_version;
         state.current_payload = historical_payload;
+        // WP-I.2: lazy prune of the retention-expired history + payloads.
+        prune_expired_history(&mut state, now_ms);
 
         self.metrics.set_history_size(state.history.len() as u64);
         self.metrics.record_rollback(RollbackOutcome::Ok);
@@ -385,5 +422,93 @@ impl ConfigSingletonStore for InMemoryConfigSingletonStore {
             .cloned()
             .collect();
         Ok(entries)
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code"
+)]
+mod tests {
+    use super::*;
+    use crate::{NoopAuditSink, NoopMetrics};
+
+    fn fresh_store() -> InMemoryConfigSingletonStore {
+        InMemoryConfigSingletonStore::new(Arc::new(NoopAuditSink), Arc::new(NoopMetrics))
+    }
+
+    /// WP-I.2: a successful `update` ages the prior `history` and
+    /// `payloads` entries by the elapsed time; a second `update`
+    /// after the 90-day retention window must drop the prior
+    /// entries from both maps. The pre-fix code never pruned —
+    /// every payload ever written survived for the singleton's
+    /// lifetime.
+    #[test]
+    fn history_and_payloads_pruned_after_retention_window() {
+        let store = fresh_store();
+        let base: u64 = 1_700_000_000_000;
+        // First version: born at t=base, version 1.
+        let v1 = tokio_test::block_on(store.update(
+            0,
+            ConfigPayload::genesis(),
+            &AdminActor::operator("op"),
+            base,
+        ))
+        .unwrap();
+        // Second version: born at t=base + 91 days (one past retention).
+        let past = base + 90 * 24 * 60 * 60 * 1000 + 1;
+        let _v2 = tokio_test::block_on(store.update(
+            v1,
+            ConfigPayload::genesis(),
+            &AdminActor::operator("op"),
+            past,
+        ))
+        .unwrap();
+
+        // The pre-v2 entry is now past RETENTION_90D_MS; it should have
+        // been pruned on the second `update`. Confirm it is GONE.
+        let hist = tokio_test::block_on(store.history(10)).unwrap();
+        let v1_alive = hist.iter().any(|e| e.version == v1);
+        assert!(
+            !v1_alive,
+            "v1 ({} ms old at prune time) must be pruned, but it survived",
+            past - base
+        );
+        // The v2 entry survives (just-born).
+        let v2_alive = hist.iter().any(|e| e.version == _v2);
+        assert!(v2_alive, "the just-written v2 must survive its own prune");
+    }
+
+    #[test]
+    fn history_within_retention_window_is_not_pruned() {
+        let store = fresh_store();
+        let base: u64 = 1_700_000_000_000;
+        let v1 = tokio_test::block_on(store.update(
+            0,
+            ConfigPayload::genesis(),
+            &AdminActor::operator("op"),
+            base,
+        ))
+        .unwrap();
+        // 89 days, 23h, 59m later — still within the 90d window.
+        let within = base + (90 * 24 * 60 * 60 * 1000) - 60_000;
+        let _v2 = tokio_test::block_on(store.update(
+            v1,
+            ConfigPayload::genesis(),
+            &AdminActor::operator("op"),
+            within,
+        ))
+        .unwrap();
+        // v1 must still be available for rollback (it's the only
+        // non-current entry and it is within the window).
+        let alive = tokio_test::block_on(store.history(10))
+            .unwrap()
+            .iter()
+            .any(|e| e.version == v1);
+        assert!(alive, "within-window v1 must not be pruned");
     }
 }

@@ -106,7 +106,7 @@
 
 #![forbid(unsafe_code)]
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -259,8 +259,29 @@ pub struct RateLimitLayerState {
     /// Tenants whose tier has already been resolved + applied to the bucket
     /// (so we resolve a tenant's tier at most once per container lifetime,
     /// keeping the hot path D1-free after first touch).
-    planned: Arc<Mutex<HashSet<Uuid>>>,
+    ///
+    /// WP-I.1: the previous `HashSet<Uuid>` was a pure LIFETIME set — once
+    /// inserted, the entry never expired. That broke TWO production cases:
+    ///   1. a tenant whose `D1` lookup initially failed (e.g. transient
+    ///      D1 outage during the container's first request) was
+    ///      permanently stuck on the team-default RPS ladder — a real
+    ///      customer being silently throttled even after the outage
+    ///      cleared. The fix: a failure (resolver `None` / D1 fault) is
+    ///      treated as retryable — the entry is NOT inserted.
+    ///   2. a tier upgrade (a Solo customer pays for Pro mid-window) was
+    ///      invisible to the limiter — `update_plan` would only run on
+    ///      the FIRST ever call from that tenant, and any subsequent call
+    ///      hits the fast-path. The fix: entries carry a wall-clock
+    ///      `expires_at_ms` and are evicted lazily on read.
+    planned: Arc<Mutex<HashMap<Uuid, u64>>>,
 }
+
+/// TTL (ms) for a successful tier-resolution entry. Short enough that a
+/// tenant upgrading their plan sees the new RPS ladder within one window
+/// (5 min) without requiring a container restart, long enough that the
+/// hot path stays D1-free under normal load. Re-anchored from the
+/// briefing's 5 min default.
+const PLANNED_ENTRY_TTL_MS: u64 = 5 * 60 * 1000;
 
 impl std::fmt::Debug for RateLimitLayerState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -350,7 +371,7 @@ impl RateLimitLayerState {
             oci_limiter: Arc::new(oci_limiter),
             clock,
             tier_resolver,
-            planned: Arc::new(Mutex::new(HashSet::new())),
+            planned: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -394,26 +415,29 @@ impl RateLimitLayerState {
         let Some(resolver) = self.tier_resolver.as_ref() else {
             return;
         };
-        // Fast path: already planned this tenant — skip the D1 hop. A poisoned
-        // set (Err) is treated as not-yet-planned (re-resolve is idempotent);
-        // we never block the request on a poisoned guard.
-        if let Ok(g) = self.planned.lock() {
-            if g.contains(&tenant) {
-                return;
+        // WP-I.1: a `planned` entry is only valid for `PLANNED_ENTRY_TTL_MS`
+        // from its insertion. After expiry the entry is treated as
+        // absent (lazy eviction on read) — a tier upgrade is observed
+        // within one window, and a failure-then-success path recovers
+        // without a container restart.
+        if let Ok(mut g) = self.planned.lock() {
+            if let Some(deadline) = g.get(&tenant).copied() {
+                if deadline > now_ms {
+                    return;
+                }
+                g.remove(&tenant);
             }
         }
         let label = resolver.resolve_tier_label(raw_tenant).await;
         let tier = match label {
             Some(l) => tier_for_billing_label(&l),
-            // Unknown tier: leave the bucket on the team default but STILL
-            // mark planned so we don't re-hit D1 every request for a tenant
-            // whose tier is (currently) unresolvable.
-            None => {
-                if let Ok(mut g) = self.planned.lock() {
-                    g.insert(tenant);
-                }
-                return;
-            }
+            // WP-I.1: a transient resolution failure MUST NOT mark the
+            // tenant as planned. The next call (after D1 recovers, after
+            // the tier-label lands in the next resolver pass, or after
+            // the cache TTL expires) will retry the lookup. A real
+            // customer was previously pinned to the team-default ladder
+            // for the lifetime of the container — silent throttle.
+            None => return,
         };
         let (rps, burst) = refill_rate_for_tier(tier);
         // `update_plan` materialises the bucket if absent and snaps available
@@ -427,8 +451,9 @@ impl RateLimitLayerState {
             tracing::warn!(error = %err, "rate_limit: tier update_plan failed; bucket left on default");
             return;
         }
+        // Insert under TTL — the NEXT call within the window skips D1.
         if let Ok(mut g) = self.planned.lock() {
-            g.insert(tenant);
+            g.insert(tenant, now_ms.saturating_add(PLANNED_ENTRY_TTL_MS));
         }
     }
 }
@@ -1264,5 +1289,141 @@ mod tests {
             .unwrap();
         assert_eq!(snap.available_tokens, 3.0);
         assert_eq!(snap.burst_capacity, 200);
+    }
+
+    // ---- WP-I.1: planned entries are NOT permanent ----------------------
+    //
+    // The pre-fix `HashSet<Uuid>` lifetime set broke two production
+    // shapes. We pin BOTH here.
+
+    /// Resolver returns `None` (transient D1 outage / unknown tier) on
+    /// the FIRST call. The tenant must NOT be marked planned — the
+    /// next call must re-attempt the resolver. The pre-fix code
+    /// inserted the tenant into the set on `None` (silently pinning
+    /// the customer to the team-default ladder for the container
+    /// lifetime). We assert via a calls counter that the second
+    /// request reaches the resolver.
+    #[tokio::test]
+    async fn transient_resolver_failure_does_not_pin_planned() {
+        use std::sync::atomic::{AtomicU32, Ordering as AOrd};
+
+        /// Resolver that returns `None` for the first call, then a label.
+        /// Call count is exposed for the test assertion.
+        #[derive(Debug)]
+        struct FlakyResolver {
+            none_until: AtomicU32,
+            calls: Arc<AtomicU32>,
+        }
+        #[async_trait::async_trait]
+        impl TenantTierResolver for FlakyResolver {
+            async fn resolve_tier_label(&self, _tenant_id: &str) -> Option<String> {
+                self.calls.fetch_add(1, AOrd::SeqCst);
+                let prev = self.none_until.load(AOrd::SeqCst);
+                if prev > 0 {
+                    self.none_until.store(prev - 1, AOrd::SeqCst);
+                }
+                if prev > 0 {
+                    None
+                } else {
+                    Some("team".to_owned())
+                }
+            }
+        }
+
+        let clock = fixed_clock(7_000_000);
+        let calls = Arc::new(AtomicU32::new(0));
+        let resolver: Arc<dyn TenantTierResolver> = Arc::new(FlakyResolver {
+            none_until: AtomicU32::new(1),
+            calls: Arc::clone(&calls),
+        });
+        let state = RateLimitLayerState::with_tier_resolver(clock, resolver);
+
+        // First call: resolver returns None (transient D1 outage).
+        // Bucket stays on team default. No planned entry inserted.
+        let app1 = app(state.clone(), Arc::new(AtomicUsize::new(0)));
+        let _ = app1.oneshot(req(Some(TENANT_A))).await.unwrap();
+        let calls_after_first = calls.load(AOrd::SeqCst);
+        assert_eq!(calls_after_first, 1, "first request must call the resolver");
+
+        // Second call: resolver returns Some("team"). It IS called again,
+        // proving the first call's failure did NOT pin the planned entry.
+        // (Pre-fix code: `g.insert(tenant)` even on None -> second call would
+        // short-circuit on `if g.contains(...) return` and the calls counter
+        // would still be 1.)
+        let app2 = app(state.clone(), Arc::new(AtomicUsize::new(0)));
+        let _ = app2.oneshot(req(Some(TENANT_A))).await.unwrap();
+        let calls_after_second = calls.load(AOrd::SeqCst);
+        assert!(
+            calls_after_second > calls_after_first,
+            "the resolver was NOT re-called after a None result -- the              planned entry was inserted on failure, the WP-I.1 fix is not              working"
+        );
+    }
+
+    /// TTL expiry: a planned entry expires after `PLANNED_ENTRY_TTL_MS`
+    /// and the next call re-resolves. The pre-fix `HashSet` had no TTL
+    /// at all, so a tier upgrade was invisible to the limiter until
+    /// container restart.
+    #[tokio::test]
+    async fn planned_entry_expires_after_ttl() {
+        use crate::wall_clock::InMemoryFakeWallClock;
+        use std::sync::atomic::AtomicU32;
+
+        #[derive(Debug)]
+        struct AlwaysOkResolver {
+            calls: Arc<AtomicU32>,
+        }
+        #[async_trait::async_trait]
+        impl TenantTierResolver for AlwaysOkResolver {
+            async fn resolve_tier_label(&self, _tenant_id: &str) -> Option<String> {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                Some("team".to_owned())
+            }
+        }
+
+        let base_ms: u64 = 7_000_000;
+        let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(base_ms));
+        let calls = Arc::new(AtomicU32::new(0));
+        let resolver: Arc<dyn TenantTierResolver> = Arc::new(AlwaysOkResolver {
+            calls: Arc::clone(&calls),
+        });
+        let state = RateLimitLayerState::with_tier_resolver(
+            Arc::clone(&clock) as Arc<dyn WallClock>,
+            resolver,
+        );
+
+        // First request at t=base_ms: resolver is called, tenant is
+        // marked planned with deadline = base_ms + 5 min.
+        let app1 = app(state.clone(), Arc::new(AtomicUsize::new(0)));
+        let _ = app1.oneshot(req(Some(TENANT_A))).await.unwrap();
+        let calls_after_first = calls.load(Ordering::SeqCst);
+        assert!(
+            calls_after_first >= 1,
+            "resolver was not called on first request"
+        );
+
+        // Subsequent requests within the TTL window: NO new resolver
+        // calls (the planned entry is alive).
+        for _ in 0..5 {
+            let a = app(state.clone(), Arc::new(AtomicUsize::new(0)));
+            let _ = a.oneshot(req(Some(TENANT_A))).await.unwrap();
+        }
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            calls_after_first,
+            "resolver was re-called within the TTL window — the planned              entry is being ignored or the TTL is too short"
+        );
+
+        // Advance the fake clock past the 5-min TTL.
+        clock.advance(std::time::Duration::from_millis(5 * 60 * 1000 + 1));
+
+        // Next request: the planned entry has expired, the resolver
+        // MUST be called again.
+        let app3 = app(state.clone(), Arc::new(AtomicUsize::new(0)));
+        let _ = app3.oneshot(req(Some(TENANT_A))).await.unwrap();
+        let calls_after_expiry = calls.load(Ordering::SeqCst);
+        assert!(
+            calls_after_expiry > calls_after_first,
+            "resolver was NOT re-called after the TTL expired — the              planned entry is permanent, the WP-I.1 fix is not working"
+        );
     }
 }
