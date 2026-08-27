@@ -22,6 +22,29 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+
+- **The CAS read path had no object-SIZE bound (B-051).** Peak heap for a read
+  is `concurrent_reads x object_size`. B-052 bounded the first factor
+  (`CAS_READ_CONCURRENCY_LIMIT`, 8/tenant); nothing bounded the second. The
+  container's global 10 MiB `DefaultBodyLimit` does not cap it transitively —
+  that limit bounds CLIENT-SUPPLIED request bodies, and the server-side mirror
+  ingest presents no request body at all, accepting a blob up to **1 GiB**
+  (`public_mirror::MIRROR_MAX_BLOB_BYTES`). On a 0.25 vCPU / 1024 MiB prod
+  container (measured via the Cloudflare Containers API, all five regions) a
+  single such read is an OOM, not a slow request.
+  `CAS_READ_MAX_OBJECT_BYTES` (64 MiB) is now enforced by
+  `R2S3Client::get_capped`, which reads `Content-Length` and drops the stream
+  WITHOUT collecting it, so an over-size object costs one round-trip and no
+  heap; a response carrying no content length is refused for the same reason.
+  Refused as **413** `ObjectTooLarge` — not 404, which would tell the client to
+  re-upload bytes we already hold, and not 500, which invites a retry that
+  cannot succeed. 64 MiB clears the largest object actually stored (52.3 MB of
+  22,597 enumerated), so nothing served today stops being served, and it makes
+  the per-tenant worst case `8 x 64 MiB = 512 MiB` instead of the 8 GiB
+  inherited from the mirror's fetch cap. The remaining process-wide half — the
+  budget Turbo already has and CAS does not — is tracked as B-054.
+
 ### Changed
 
 - **F2 (edge-served `findMissingBlobs`) extended from the prod env to the four
