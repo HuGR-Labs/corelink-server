@@ -53,6 +53,16 @@ Each entry cross-references:
 
 ### Fixed
 
+- **Two `[Unreleased]` entries said `corelink-signup-worker` has no CI deploy
+  path. It does.** `.github/workflows/signup-worker-deploy.yml` deploys it on
+  push to `main` — proven by its run history, which shows it firing green on
+  this campaign's own merge commits (`4ecb3e15`, `46aa848c`, `1d572dac`). The
+  claim was carried forward from older session notes and repeated without
+  checking, which is exactly the failure mode the repo's docs-reality gates
+  exist to catch; it just happens to live in a file no gate reads. Corrected in
+  place rather than deleted, so the record shows both what was believed and
+  what is true.
+
 - **A raw NUL byte made `worker/tests/runner_mint.test.ts` BINARY to git, so
   every change to it shipped without a reviewable diff.** The D1 mock joins
   tenant and repo on a NUL separator — a good choice, since the byte cannot
@@ -137,7 +147,10 @@ Each entry cross-references:
   26 rows warns once with the count, 25 stays silent. The existing pin that the
   query carries no `requested_at >=` bound is untouched — the breach signal must
   survive this change. 245 signup-worker tests green. Requires a
-  `corelink-signup-worker` deploy (manual `wrangler deploy`; no CI deploy path).
+  `corelink-signup-worker` deploy, which
+  `.github/workflows/signup-worker-deploy.yml` performs automatically on push
+  to `main` (this entry originally said the deploy was manual — that was
+  stale; the lane exists and ran).
 
 - **The single CAS `GET` had no concurrency guard (B-052).**
   `handle_read` (`crates/corelink-container/src/routes/cas.rs`) took `State`,
