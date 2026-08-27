@@ -30,7 +30,7 @@ CoreLink DevEnv gives developers full desktop, terminal, and VS Code environment
 
 1. Navigate to `https://corelink.humangr.com/customer/devenv`.
 2. Click **Start DevEnv**.
-3. Select your hardware tier (`Standard`, `Performance`, or `GPU`).
+3. Select your hardware tier (`standard-2`, `standard-4`, `power-8`, or `ultra-16`).
 4. Once the state transitions to `RUNNING`, choose your connection mode:
    - **VS Code Editor**: Embedded browser-based code-server.
    - **Terminal**: Low-latency `ttyd` interactive shell.
@@ -45,7 +45,7 @@ CoreLink DevEnv gives developers full desktop, terminal, and VS Code environment
 export CORELINK_PAT="cl_pat_your_token_here"
 
 # Start the remote DevEnv instance
-clw devenv start --tier standard --name my-feature-branch
+clw devenv start --tier standard-4 --name my-feature-branch
 
 # Open an interactive SSH / terminal session
 clw devenv attach --tty
@@ -58,6 +58,6 @@ clw snapshot --name my-feature-branch
 
 ## 4. Lifecycle & Auto-Hibernation
 
-- DevEnvs automatically hibernate when idle for more than 15 minutes.
+- DevEnvs automatically hibernate when idle for more than 30 minutes.
 - When hibernated, memory and vCPU billing stops, and your workspace is safely preserved in Content-Addressed Storage (CAS).
 - Reconnecting to any endpoint instantly wakes the container in < 5 seconds.

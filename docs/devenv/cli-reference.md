@@ -21,7 +21,7 @@ The `clw` command-line utility provides direct orchestration of remote DevEnvs, 
 ### `clw devenv start`
 Starts or resumes a DevEnv container for the current tenant.
 ```bash
-clw devenv start [--name <WORKSPACE_NAME>] [--tier <standard|performance|gpu>]
+clw devenv start [--name <WORKSPACE_NAME>] [--tier <standard-2|standard-4|power-8|ultra-16>]
 ```
 
 ### `clw devenv status`

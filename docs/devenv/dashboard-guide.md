@@ -26,7 +26,7 @@ The CoreLink DevEnv Web Dashboard (`/customer/devenv`) provides real-time contro
 ## 2. Interface Elements
 
 - **Status Banner**: Displays current lifecycle state (`stopped`, `starting`, `running`, `stopping`, `errored`) with live color badges.
-- **Hardware Tier Selector**: Allows switching between standard 2-vCPU / 4GB and performance 8-vCPU / 16GB tiers when starting an environment.
+- **Hardware Tier Selector**: Allows switching between `standard-2` (2 vCPU / 4 GB), `standard-4` (4 vCPU / 8 GB), `power-8` (8 vCPU / 16 GB), and `ultra-16` (16 vCPU / 32 GB) tiers when starting an environment.
 - **Connection Modalities**:
   - **Open Code Server**: Opens VS Code Web in a dedicated tab.
   - **Open Terminal**: Opens an in-browser `ttyd` interactive terminal.

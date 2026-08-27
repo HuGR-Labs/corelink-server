@@ -22,7 +22,7 @@ Common issues, diagnostic procedures, and recovery steps.
 
 ## 2. In-Container Process OOM
 - **Cause**: Workload exceeded assigned container memory limit.
-- **Solution**: Use the dashboard to upgrade to the `Performance` hardware tier or check `dmesg` inside the terminal.
+- **Solution**: Use the dashboard to upgrade to the `power-8` hardware tier or check `dmesg` inside the terminal.
 
 ## 3. Snapshot Lock Conflict
 - **Cause**: An automated snapshot pass is currently writing deltas to CAS.
