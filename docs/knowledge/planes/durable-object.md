@@ -10,11 +10,11 @@ source_files:
   - "worker/src/replication_coordinator_do.ts"
 source_blobs:
   - "worker/src/durable_object.ts@b811f2e1300d766338d675bdc877b671d4f37d21"
-  - "worker/src/index.ts@e671fb7fd9da6cef7d3800aaf152b4c34c6abe7d"
+  - "worker/src/index.ts@5bec58b1bb61819bb96b4cf056ef34590dd71f09"
   - "worker/src/event_log_do.ts@296d814b88a582cae97f9cd01665f5dce7738b05"
   - "worker/src/rollout_controller.ts@989af7c4ac828a39ede4381bd3d036b4bb747267"
   - "worker/src/replication_coordinator_do.ts@e3b43ccaadff3a348fd51366c4772cb6e3efe69f"
-checkpoint_sha: "e37ff76225d26ab3553e9982e6779b195d6dcb59"
+checkpoint_sha: "4e29e7d901780029d2402c56f10a62ef725cdc43"
 provenance: "AUTHORED"
 tags: ["planes", "durable-object", "container-lifecycle", "cold-start"]
 timestamp: "2026-06-26T00:00:00Z"

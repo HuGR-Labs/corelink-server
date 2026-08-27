@@ -8,13 +8,14 @@ source_files:
   - "worker/src/lib/pat_verify_cache.ts"
   - "worker/src/lib/tenant_suspend_gate.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
+  - "worker/src/lib/pat_signing_key.ts"
 source_blobs:
   - "worker/src/lib/internal_auth.ts@4a60c0111b8db4c3512976ffe6e92406e749edfc"
-  - "worker/src/index.ts@e671fb7fd9da6cef7d3800aaf152b4c34c6abe7d"
+  - "worker/src/index.ts@5bec58b1bb61819bb96b4cf056ef34590dd71f09"
   - "worker/src/lib/pat_verify_cache.ts@0714719fb815cd7bddea91f3dac723c7f2c662fa"
   - "worker/src/lib/tenant_suspend_gate.ts@1059c8885c9922f2f08a3abe53344525bf9037e1"
   - "crates/corelink-container/src/adapter_pat.rs@069fb6295e5926ffc0b1263eb91e838addbe1297"
-checkpoint_sha: "14dd32a4d2f39920813f3fbc2380f19e6598fbbb"
+checkpoint_sha: "4e29e7d901780029d2402c56f10a62ef725cdc43"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -238,3 +239,4 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 12. `worker/src/lib/pat_verify_cache.ts:326-333` — the best-effort L2 KV write on a D1 hydrate, handed to `ctx.waitUntil` so it survives the response (a bare `void kv.put(...)` is cancelled when the Worker returns, leaving KV un-populated), falling back to `await` when no `waitUntil` is passed (tests); `extractAuth` threads `ctx.waitUntil.bind(ctx)` from the handler (`worker/src/index.ts:3074`) into `verifyPatRowCached` (`worker/src/index.ts:1466`). Writes go via `kvPutPatRow` (`worker/src/lib/pat_verify_cache.ts:383-389`); a KV write failure is swallowed and never breaks auth (POSITIVE rows only).
 13. `worker/src/lib/pat_verify_cache.ts:83-86` — the structural `KvReader` handle for L2; the `patrow:` key prefix (`worker/src/lib/pat_verify_cache.ts:89`) + `patRowKvKey` (`worker/src/lib/pat_verify_cache.ts:103-105`) and the `KV_PAT_ROW_TTL_S = 60 s` revocation backstop = ADR-0030's 60 s p99 (`worker/src/lib/pat_verify_cache.ts:100`).
 14. `worker/src/index.ts:1462-1466` — the `extractAuth` L2 wiring: feature-detect the `METADATA_KV` binding and pass it as `kv` into `verifyPatRowCached` only when bound (a build without the binding skips L2).
+33. `worker/src/lib/pat_signing_key.ts:17-18` — WP-F2: the SHARED signing-key validity predicate (`isValidPatSigningKeyHex`: even-length, all-hex, >=64 chars) applied to BOTH the primary `PAT_SIGNING_KEY` gate and the rotation siblings via `isValidPatSigningKeyHex`. A malformed primary key now fails CLOSED with a CRITICAL log + 503 instead of the old behavior where a 64+-char non-hex key passed the length-only gate, made `hexDecode()` return null on every request, and silently 401d every legitimate client.

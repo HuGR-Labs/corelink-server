@@ -79,6 +79,9 @@ excludes:
     reason: "F3.3 Worker-native `_public` edge cache-HIT read (`shadowCompareEdgePublicRead`), currently SHADOW-only: reached under the `EDGE_PUBLIC_READ=shadow` flag in planes/worker-edge, it computes+compares an edge R2 read against the container's response on a background `ctx.waitUntil` clone with ZERO user impact and never serves. The edge-authoritative serve path is not final, so there is no LIVE narrative to ground a concept on yet (designed-vs-wired discipline). Its OKF concept will be authored at the F2 edge-authoritative flip, when the serve path becomes the source-of-truth for `_public` HITs."
   - surface: "worker/src/lib/edge_find_missing.ts"
     reason: "F0 of the edge-native findMissingBlobs path (docs/design/2026-08-25-adr-edge-native-find-missing.md) — DERIVATION ONLY and not reached by any request: it maps (tenant, sha256 digest) to the R2 key the container writes, and touches no R2, D1 or auth. There is no live narrative to ground a concept on yet (designed-vs-wired discipline), and the derivation itself is already pinned two-sided by worker/tests/vectors/tenant_prefix_vectors.json, which crates/tenant-path/tests/edge_parity_vectors.rs asserts against the Rust source of truth. The concept is authored when the serve path lands and the edge becomes the source of truth for this route — same trigger as edge_public_read.ts."
+
+  - surface: "worker/src/lib/pat_signing_key.ts"
+    reason: "WP-F2 pure signing-key-validity predicate (`isValidPatSigningKeyHex` -- even-length, all-hex, >=64 chars) shared by the primary `PAT_SIGNING_KEY` gate and its rotation siblings. A single exported constant-fn, no I/O, no deps, no credentials, no request-reachable enforcement on its own; the call sites are owned by the auth/edge-pat-mint-lifecycle concept (primary-key fail-CLOSED in `worker/src/index.ts:1289`; rotation-sibling fail-CLOSED in `worker/src/index.ts:1412`). Same class as `worker/src/lib/blake3.ts` (a 3-line crypto helper) and `worker/src/lib/edge_do_meter.ts` (a boot-read feature flag). The shared-helper extraction IS the fix; this file is the predicate-only leaf -- the F2 fix narrative lives in the auth/edge-pat-mint-lifecycle concept."
   - surface: "apps/*/src/types/**"
     reason: "Per-app shared type/binding declarations — types, no runtime behavior."
   - surface: "apps/analytics-worker/src/types.ts"
@@ -425,7 +428,7 @@ candidates:
     title: "The edge PAT-mint lifecycle (one authority, three consumers)"
     status: "active"
     source_cluster: "auth"
-    seed_from: ["worker/src/lib/session_exchange.ts", "worker/src/lib/runner_mint.ts", "worker/src/lib/auth_rotate.ts"]
+    seed_from: ["worker/src/lib/session_exchange.ts", "worker/src/lib/runner_mint.ts", "worker/src/lib/pat_signing_key.ts", "worker/src/lib/auth_rotate.ts"]
   - id: "auth/edge-identity-resolution"
     type: "AuthMechanism"
     title: "Edge identity resolution (Clerk session -> tenant)"
