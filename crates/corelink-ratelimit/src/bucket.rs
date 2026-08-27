@@ -89,6 +89,28 @@ impl TokenBucketState {
         }
     }
 
+    /// Build a freshly-empty bucket (WP-M MED-19 — drain-then-evict
+    /// bypass closure). `available_tokens = 0.0` so the very next
+    /// `try_acquire` against a non-zero `cost` will go through the
+    /// lazy-refill path: if the refill rate × elapsed-since-`now_ms`
+    /// can already cover the cost it will Allow, otherwise it will
+    /// Deny429. The `last_refill_at_ms` is stamped at `now_ms` so
+    /// the refill formula uses the live wall clock from the first
+    /// hit, not a stale origin.
+    #[must_use]
+    pub fn new_exhausted(
+        burst_capacity: u32,
+        refill_rate_per_sec: u32,
+        created_at_ms: u64,
+    ) -> Self {
+        Self {
+            available_tokens: 0.0,
+            burst_capacity,
+            refill_rate_per_sec: f64::from(refill_rate_per_sec),
+            last_refill_at_ms: created_at_ms,
+        }
+    }
+
     /// Build a bucket from explicit values (for cold-start reload from
     /// the durable D1 mirror). Clamps `available_tokens` to
     /// `[0.0, burst_capacity as f64]` defensively.

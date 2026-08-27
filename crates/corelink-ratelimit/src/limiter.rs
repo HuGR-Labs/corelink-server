@@ -130,6 +130,23 @@ struct Bucket {
     last_access: u64,
 }
 
+/// TTL of the per-key "drained" tombstone (WP-M MED-19 closure).
+///
+/// A bucket that returned `Deny429` (tokens = 0) leaves a tombstone for
+/// this many seconds. If the entry is then EVICTED before the tombstone
+/// expires, a subsequent re-materialisation is born with 0 tokens, not
+/// `burst_capacity`. This closes the drain-then-evict bypass vector
+/// (5-step attack: drain own bucket, stop touching, flood distinct keys,
+/// approximate-LRU eviction hits the drained key, attacker returns and
+/// receives a fresh burst).
+///
+/// The 60s default matches the [`KV_PAT_ROW_TTL_S`](../../../corelink-handler-cas/src/lib.rs)
+/// convention and is well above any realistic token-recovery window for
+/// the canonical plan ladder. A legitimate refilling bucket expires the
+/// tombstone long before the next access (the bucket has refilled in the
+/// meantime), so the tombstone never poisons a fresh legitimate request.
+const DRAINED_TOMBSTONE_TTL_SECS: u64 = 60;
+
 /// Per-request decision rendered by [`RateLimiter::try_acquire`].
 ///
 /// `PartialEq` is intentionally NOT derived because the `Allow` arm
@@ -266,6 +283,15 @@ where
     metrics: Arc<M>,
     config: RateLimitConfig,
     state: Arc<Mutex<HashMap<BucketKey, Bucket>>>,
+    /// Per-key "drained" tombstones (WP-M MED-19 closure). Maps a key
+    /// that hit `Deny429` (tokens=0) to the wall-clock instant at which
+    /// the tombstone expires. A re-materialisation while the tombstone
+    /// is still alive births the bucket with 0 tokens (NOT
+    /// `burst_capacity`) — closing the drain-then-evict bypass
+    /// (5-step attack: drain own bucket, stop touching, flood distinct
+    /// keys, approximate-LRU eviction hits the drained key, attacker
+    /// returns and receives a fresh burst). See [`DRAINED_TOMBSTONE_TTL_SECS`].
+    drained_tombstones: Mutex<HashMap<BucketKey, u64>>,
     /// Max live buckets before LRU eviction kicks in (see
     /// [`LIMITER_BUCKET_MAP_CAP`]).
     bucket_cap: usize,
@@ -308,6 +334,15 @@ where
     /// constructors; a smaller cap is used by the bounded-map regression
     /// test so the distinct-key flood is cheap to drive.
     #[must_use]
+    pub fn with_bucket_map_cap_for_test(
+        audit: Arc<A>,
+        metrics: Arc<M>,
+        config: RateLimitConfig,
+        bucket_cap: usize,
+    ) -> Self {
+        Self::new_with_cap(audit, metrics, config, bucket_cap)
+    }
+
     fn new_with_cap(
         audit: Arc<A>,
         metrics: Arc<M>,
@@ -319,6 +354,7 @@ where
             metrics,
             config,
             state: Arc::new(Mutex::new(HashMap::new())),
+            drained_tombstones: Mutex::new(HashMap::new()),
             bucket_cap: bucket_cap.max(1),
             access_tick: AtomicU64::new(0),
         }
@@ -421,12 +457,64 @@ where
         Ok(())
     }
 
-    fn fresh_bucket(&self, now_ms: u64) -> TokenBucketState {
+    /// Build a fresh bucket (full burst) — UNLESS the caller is
+    /// re-materialising a key that was recently `Deny429`'d and still
+    /// has a live drained-tombstone, in which case the new bucket
+    /// starts with 0 tokens (the WP-M fix). The tombstone is
+    /// consulted-and-pruned as a single guarded block so the
+    /// prune and the consume-and-erase are atomic relative to a
+    /// concurrent `try_acquire` (the per-instance Mutex already
+    /// serialises every entry; the map and the tombstones share
+    /// the same per-instance lock acquisition in `try_acquire`).
+    fn fresh_bucket(
+        &self,
+        bucket_key: &BucketKey,
+        now_ms: u64,
+    ) -> TokenBucketState {
+        let mut tombstones = match self.drained_tombstones.lock() {
+            Ok(g) => g,
+            Err(_) => {
+                // Poisoned: treat as if the tombstone is absent (fail-
+                // OPEN on a poison edge to keep the limiter available).
+                return TokenBucketState::new_full(
+                    self.config.default_burst_capacity(),
+                    self.config.default_refill_rate_per_sec(),
+                    now_ms,
+                );
+            }
+        };
+        if let Some(deadline) = tombstones.get(bucket_key).copied() {
+            if deadline > now_ms {
+                // Live tombstone: a recently-drained key is re-materialised
+                // EXHAUSTED, not full. This is the WP-M fix; the
+                // tombstone is consumed-on-re-materialise so the
+                // bucket can refuel naturally after the cooldown.
+                tombstones.remove(bucket_key);
+                return TokenBucketState::new_exhausted(
+                    self.config.default_burst_capacity(),
+                    self.config.default_refill_rate_per_sec(),
+                    now_ms,
+                );
+            }
+            // Expired: clear and fall through to the full bucket.
+            tombstones.remove(bucket_key);
+        }
         TokenBucketState::new_full(
             self.config.default_burst_capacity(),
             self.config.default_refill_rate_per_sec(),
             now_ms,
         )
+    }
+
+    /// Record a `Deny429` outcome for `bucket_key` as a tombstone
+    /// (WP-M MED-19). The tombstone is consulted by `fresh_bucket`
+    /// and lives at most [`DRAINED_TOMBSTONE_TTL_SECS`] from `now_ms`.
+    fn record_drained_tombstone(&self, bucket_key: &BucketKey, now_ms: u64) {
+        let deadline = now_ms
+            .saturating_add(DRAINED_TOMBSTONE_TTL_SECS.saturating_mul(1000));
+        if let Ok(mut g) = self.drained_tombstones.lock() {
+            g.insert(bucket_key.clone(), deadline);
+        }
     }
 }
 
@@ -465,8 +553,12 @@ where
         Self::evict_if_at_cap(&mut guard, &bucket_key, self.bucket_cap);
 
         // Lazy materialise the bucket (and mark it freshly accessed for LRU).
+        // WP-M MED-19: `fresh_bucket` consults the drained-tombstone map
+        // first; if the key was recently `Deny429`d and the tombstone
+        // is still alive, the new bucket starts with 0 tokens (NOT
+        // `burst_capacity`) — closing the drain-then-evict bypass.
         let entry = guard.entry(bucket_key.clone()).or_insert_with(|| Bucket {
-            state: self.fresh_bucket(now_ms),
+            state: self.fresh_bucket(&bucket_key, now_ms),
             last_access: tick,
         });
         entry.last_access = tick;
@@ -503,6 +595,12 @@ where
                 next_state,
             ),
         };
+        // WP-M MED-19: a `Deny429` is a "drained" outcome — record a
+        // tombstone so a future eviction-then-re-materialise on the
+        // SAME key starts with 0 tokens, not `burst_capacity`.
+        if matches!(decision, BucketDecision::Deny429 { .. }) {
+            self.record_drained_tombstone(&bucket_key, now_ms);
+        }
         self.audit.emit(RateLimitAuditRecord {
             event_type,
             tenant_id,
@@ -619,8 +717,9 @@ where
             .lock()
             .map_err(|_| RateLimitError::Backend("limiter state mutex poisoned".to_string()))?;
         Self::evict_if_at_cap(&mut g, &key, self.bucket_cap);
-        let entry = g.entry(key).or_insert_with(|| Bucket {
-            state: self.fresh_bucket(now_ms),
+        // WP-M: tombstone-aware re-materialisation (see Step 2 of try_acquire).
+        let entry = g.entry(key.clone()).or_insert_with(|| Bucket {
+            state: self.fresh_bucket(&key, now_ms),
             last_access: tick,
         });
         entry.last_access = tick;
