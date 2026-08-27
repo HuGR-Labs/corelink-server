@@ -4,6 +4,8 @@ title: "Native CAS surface"
 description: "CoreLink's first-party content-addressable storage surface — the GET/PUT/DELETE/list + bulk-batch CAS routes every other surface ultimately stores into."
 source_files:
   - "crates/corelink-container/src/routes/cas.rs"
+source_blobs:
+  - "crates/corelink-container/src/routes/cas.rs@680f9182ea3d9e54d3a881617dc1c3a379ca486c"
 checkpoint_sha: "63e00e0444ffa565635eea09da5e11ea6a055464"
 provenance: "AUTHORED"
 tags: ["surfaces", "cas", "cache", "hot-path"]

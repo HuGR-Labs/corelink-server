@@ -21,6 +21,8 @@ source_files:
   - "crates/corelink-container/src/customer_d1.rs"
   - "crates/corelink-container/src/byte_accounting.rs"
   - "crates/corelink-container/src/routes.rs"
+source_blobs:
+  - "crates/corelink-container/src/routes/cas.rs@680f9182ea3d9e54d3a881617dc1c3a379ca486c"
 checkpoint_sha: "63e00e0444ffa565635eea09da5e11ea6a055464"
 provenance: "AUTHORED"
 tags: ["handlers", "traits", "cas", "hot-path", "dependency-injection"]

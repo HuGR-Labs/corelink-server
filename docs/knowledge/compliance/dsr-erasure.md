@@ -30,6 +30,7 @@ source_files:
   - crates/corelink-dsr/src/event.rs
   - crates/corelink-dsr/src/lib.rs
 source_blobs:
+  - "crates/corelink-container/src/routes/cas.rs@680f9182ea3d9e54d3a881617dc1c3a379ca486c"
   - "crates/corelink-container/src/routes/dsr/adapter_d1.rs@0d1610a40c89fcb0977ce37b8aa6eb8e154edae7"
 checkpoint_sha: "63e00e0444ffa565635eea09da5e11ea6a055464"
 provenance: "AUTHORED"

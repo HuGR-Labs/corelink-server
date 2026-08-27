@@ -6,6 +6,8 @@ source_files:
   - "crates/corelink-container/src/routes/cas_scrub.rs"
   - "crates/corelink-container/src/storage/r2_s3.rs"
   - "crates/corelink-container/src/storage/byok_cas.rs"
+source_blobs:
+  - "crates/corelink-container/src/storage/r2_s3.rs@0213dc40b11f7ecb592ddb1f87b54a68b543c0d9"
 checkpoint_sha: "63e00e0444ffa565635eea09da5e11ea6a055464"
 provenance: "AUTHORED"
 tags: ["flows", "cas", "integrity", "scrubber", "storage", "byok", "request-flow"]
