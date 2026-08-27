@@ -26,6 +26,18 @@ name: shell-pipeline-safety
 # real ones that the comment-anchored grep could not see at all because the
 # line contained a `#` inside quotes.
 #
+# RULE 4 — no raw NUL byte in a tracked text file.
+# Git calls a blob binary when it finds a 0x00 in the first 8000 bytes, so one
+# raw NUL turns a source file into a binary one for every operation review
+# depends on: `git diff` prints `Binary files … differ` instead of a patch and
+# `--stat` collapses to a byte count. Nothing goes red — the file simply stops
+# being reviewable, and every later change to it ships unread. Found on
+# `worker/tests/runner_mint.test.ts`, whose D1 mock joins tenant and repo on a
+# NUL separator written as a literal byte; `\u0000` is the same character at
+# runtime and keeps the file text. Belongs in THIS lane because it is the same
+# class as the rules above — a check that answers wrongly (here, review
+# answering "no change") instead of failing.
+#
 # RULE 3 — every tracked shell script must parse (`bash -n`).
 # This is how `scripts/okf-reconcile-local.sh` was found dead on main: its
 # prompt was single-quoted and contained "file's anchor", so the apostrophe
@@ -44,6 +56,12 @@ on:
       - 'scripts/**'
       - 'tests/**'
       - 'tools/**'
+      # RULE 4 scans the whole tracked tree, so a NUL landing in any source
+      # file must reach this lane — not only one landing in a script.
+      - 'apps/**'
+      - 'crates/**'
+      - 'worker/**'
+      - 'docs/**'
   push:
     branches: [main]
     paths:
@@ -51,6 +69,10 @@ on:
       - 'scripts/**'
       - 'tests/**'
       - 'tools/**'
+      - 'apps/**'
+      - 'crates/**'
+      - 'worker/**'
+      - 'docs/**'
 
 permissions:
   contents: read
@@ -93,3 +115,15 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/check_head_under_pipefail.py
+
+      - name: Self-test the NUL-byte checker before trusting its verdict
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check_no_nul_bytes.py --self-test
+
+      - name: Enforce — no raw NUL byte in a tracked text file
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check_no_nul_bytes.py
