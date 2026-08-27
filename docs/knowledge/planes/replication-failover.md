@@ -22,7 +22,7 @@ source_files:
   - "crates/corelink-container/src/routes/failover.rs"
   - "crates/corelink-container/Cargo.toml"
   - "tests/e2e-replication-failover/Cargo.toml"
-checkpoint_sha: "b881e31e2d3fa9b7837546ef083ceb6d271f3361"
+checkpoint_sha: "e5f095f9cd5a3a47ba001e19f4df395557919ace"
 provenance: "AUTHORED"
 tags: ["replication", "failover", "multi-region", "availability"]
 timestamp: "2026-06-28T00:00:00Z"
@@ -41,7 +41,7 @@ submodule paths). Together they encode the resilience design: at most one `Prima
 cross-jurisdiction replication (WNAM↔ENAM, WEUR↔SAM only), audit-emit-before-mutation everywhere.
 
 STATUS — SPLIT, and this is load-bearing for anyone diagnosing a production 503. The **read-side
-failover-router is wired and live**: `crates/corelink-container/src/routes.rs:1067-1070` layers
+failover-router is wired and live**: `crates/corelink-container/src/routes.rs:1075-1078` layers
 `failover::failover_guard` (`crates/corelink-container/src/routes/failover.rs:452`) as a Tower
 middleware over the data-plane router, alongside `residency_guard`. That middleware drives
 `corelink-failover-router`'s decision core with a REAL `RollingMetricsHealthProbe` built from THIS
@@ -123,7 +123,7 @@ not.
    primary's `audit_outbox` still has un-emitted rows, fail-CLOSED on a query error
    (`crates/corelink-failover-router/src/failback.rs:255-285`).
 9. **What's actually wired.** `corelink-container`'s `failover_guard` Tower middleware
-   (`crates/corelink-container/src/routes.rs:1067-1070`) drives `corelink-failover-router`'s
+   (`crates/corelink-container/src/routes.rs:1075-1078`) drives `corelink-failover-router`'s
    `route_read` against a REAL health probe on every request through the data-plane router — this
    part IS live production code. The coordinator's `promote`/`failback` and the replica-worker's
    `replicate_batch` have no such caller: the deterministic e2e harness drives those `InMemory*`
@@ -155,7 +155,7 @@ not.
 # Gotchas
 - **⚠️ The read-side router IS live — a 503 `failover_readonly` in production is real.**
   `corelink-container` layers `failover::failover_guard` as Tower middleware
-  (`crates/corelink-container/src/routes.rs:1067-1070`), and that middleware calls
+  (`crates/corelink-container/src/routes.rs:1075-1078`), and that middleware calls
   `state.router.route_read(...)` (`crates/corelink-container/src/routes/failover.rs:484`) against a
   REAL rolling-metrics health probe on every request. If you are diagnosing a production 503 with body
   `failover_readonly`, this is the code that produced it — treat it as a genuine region-degradation
@@ -238,7 +238,7 @@ not.
     coordinator/router call — evidence the plane is unconsumed.
 25. `tests/e2e-replication-failover/Cargo.toml:2` — the e2e harness drives the `InMemory*` coordinator/
     heartbeat/audit orchestrators (skeleton validation), not a live request path.
-26. `crates/corelink-container/src/routes.rs:1067-1070` — `failover::FailoverLayerState::from_env()` +
+26. `crates/corelink-container/src/routes.rs:1075-1078` — `failover::FailoverLayerState::from_env()` +
     `router.layer(axum::middleware::from_fn_with_state(failover_state, failover::failover_guard))`,
     layered alongside `residency_guard` — the live Tower-middleware wiring.
 27. `crates/corelink-container/src/routes/failover.rs:452-503` — `failover_guard`: applies the

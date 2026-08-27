@@ -2608,6 +2608,14 @@ last-verified: 2026-08-26
 
 ### B-050 — CAS at-rest integrity: nothing verifies a stored object until a client asks for it
 
+**CLOSED 2026-08-26.** `POST /_internal/cas/scrub`
+(`crates/corelink-container/src/routes/cas_scrub.rs`) sweeps stored objects and
+re-hashes them through the same `verify_content_hash` the read path uses,
+reporting `examined` / `skipped_encrypted` / `failed` as three distinct
+counters. The BYOK arm follows ADR-S34-001 addendum 2 (per-tenant
+classification, not the unreachable per-object `resolve_byok`). The original
+finding is kept below as the record.
+
 `R2CasHandler::read` re-hashes every object it serves and compares it against
 the requested digest (`crates/corelink-container/src/storage/r2_s3.rs:1333`,
 `verify_content_hash` at `:1103`) — it catches R2 bitrot, storage-tier
@@ -2640,14 +2648,17 @@ distinguishable from a healthy one.
 id: B-050
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  ! grep -rqE '\.route\("[^"]*scrub' crates/corelink-container/src/routes/
+  grep -rqE '\.route\("[^"]*scrub' crates/corelink-container/src/routes/ \
+    && grep -q 'cas_scrub::router' crates/corelink-container/src/main.rs
 verify-means: |
-  open — passes while no scrub ROUTE is registered in the container, which is
-  the premise of this item. Anchored on `.route("…scrub…"` rather than the bare
-  word: `scrub` also appears in oci.rs prose about scrubbed error messages, and
-  matching that would have made this item read as done on day one.
+  done — passes while the scrub ROUTE is registered AND actually mounted in
+  `main.rs`. Both halves are required: a `router()` no caller merges is a
+  built-but-unreachable endpoint that would satisfy a route-only grep while
+  verifying nothing in production. Anchored on `.route("…scrub…"` rather than
+  the bare word, since `scrub` also appears in oci.rs prose about scrubbed
+  error messages.
 last-verified: 2026-08-26
 ```
 

@@ -61,6 +61,7 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 
 - [Billing quota check flow](/flows/billing-quota-check.md)
 - [CAS write flow](/flows/cas-write.md)
+- [CAS at-rest integrity scrub](/flows/cas-integrity-scrub.md)
 - [Introspection flow (runners fabric)](/flows/introspection-fabric.md)
 - [PAT verification gauntlet](/flows/pat-gauntlet.md)
 - [Runner GitHub-App install → tenant-map provisioning flow](/flows/runner-github-install.md)

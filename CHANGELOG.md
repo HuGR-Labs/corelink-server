@@ -21,6 +21,33 @@ Each entry cross-references:
 ---
 
 ## [Unreleased]
+
+### Added
+
+- **At-rest CAS integrity scrubber — `POST /_internal/cas/scrub` (B-050).**
+  The read-path digest re-verify in `R2CasHandler::read` was the only integrity
+  coverage in the system, and it is a sampling function driven by traffic: an
+  object is checked exactly when a client asks for it, so a cold object was
+  never checked at all. The new sweep re-hashes stored objects directly,
+  through the SAME `verify_content_hash` (widened to `pub(crate)` rather than
+  reimplemented, so it stays the single enforcement point the design rests on).
+  It enumerates R2 via `list_objects_page` and never `blob_meta`, which is
+  empty in production; it walks tenants from `tenant` and not
+  `tenant_storage_state`, which holds 74 rows against 262 and would have
+  omitted most of the estate while still reporting a clean run; and it reports
+  `examined`, `skipped_encrypted` and `failed` as three distinct counters so a
+  sweep that enumerated nothing cannot look like a healthy one. A
+  BYOK-encrypting tenant is classified once via `ByokConfigCache::get` +
+  `engagement_for` and skipped WHOLE — re-hashing ciphertext would emit false
+  violations against intact data — while an unclassifiable tenant counts
+  `failed` and is never assumed plaintext. Unmounted fail-CLOSED without the
+  dedicated erase key, `R2_TDK_HEX`, D1 and R2. Design: ADR-S34-001 and its two
+  addenda. Unblocks B-051 (streaming CAS reads). One new NON-secret tuning knob,
+  `CAS_SCRUB_OBJECT_BUDGET` (default 500, clamped ≥1), mirroring
+  `AUDIT_ARCHIVE_BATCH_LIMIT`: a row in the secrets checklist and a line in the
+  Durable Object forward-list, because the container reads it at construction
+  and an operator retuning the sweep would otherwise be setting a Worker var the
+  scrubber never sees.
 - CVE-feed cron schedules restored on `cargo-deny` (daily) and `trivy` (daily), staggered on the self-hosted fleet, so advisory/license/vuln feeds that change without a commit are no longer blind between pushes; `semgrep` stays owner-parked (0/8 broken, hosted, CodeQL covers SAST) (F-014).
 
 ### Fixed
