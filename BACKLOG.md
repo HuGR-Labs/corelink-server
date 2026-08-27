@@ -2810,3 +2810,61 @@ verify-means: |
   to be closed out rather than left open against a world that already moved.
 last-verified: 2026-08-26
 ```
+
+### B-054 — F-001 keyed per-link audit hash: defense-in-depth, deferred as a keyed epoch (WI-S09-007)
+
+The go-live audit (F-001) flagged the per-link audit hash as **un-keyed** BLAKE3
+(`link_chain_hash_streaming` uses `Hasher::new()`, not `new_keyed(&key)` —
+`crates/corelink-audit-chain/src/chain.rs`), so a party holding the sealed rows
+can recompute a self-consistent chain **body**. The audit's remediation offered a
+fork: key the per-link hash **or** downgrade the marketing claims to the honest
+detect-at-verify posture. Both were ratified.
+
+**The claims downgrade shipped** (PROOF-POINTS + BLOG-POSTS/03 now describe the
+linear BLAKE3 chain + JCS + Ed25519-signed head honestly; Object-Lock / Merkle
+inclusion+consistency proofs / customer R2 proof-bundle / Rekor are labelled
+roadmap). **The keyed per-link is deferred to WI-S09-007**, deliberately, for two
+reasons:
+
+1. **CF-6 already carries the load-bearing control.** The chain HEAD is Ed25519-
+   signed on every advance and verified fail-closed on drain resume
+   (`AUDIT_CHAIN_SIGNING_SEED_HEX`, live in prod). An insider who rewrites a sealed
+   row changes `head_hash`, so the old head signature no longer verifies and they
+   cannot re-sign without the seed — the drain refuses to extend (SEV-1). Keyed
+   per-link is defense-in-depth ON TOP of an already-live tamper-evidence control,
+   not the thing that closes the hole.
+
+2. **A naive formula swap is a SEV-0 in prod.** Prod `audit_chain_head` holds
+   **365 live per-tenant chain heads** and `audit_outbox` holds **~67k sealed rows**
+   (probed 2026-08-26, prod config D1 `d64742ea`). Every sealed link was computed
+   un-keyed; flipping `chain.rs` to `new_keyed` makes the daily verifier's recompute
+   mismatch **every** existing link → 365 chain breaks. Keying therefore requires a
+   proper **epoch cutover** (per-chain algorithm-version checkpoint: verify old
+   segments un-keyed, new segments keyed), which belongs with the other WI-S09-007
+   audit-immutability work (R2 Object-Lock, write-time chaining that closes the ≤1h
+   pre-seal window, the DO verifier cron) — not a per-PR change.
+
+Also record (separate, ops): `AUDIT_CHAIN_SIGNING_SEED_HEX` is committed in
+plaintext in `wrangler.toml` (prod vars, ~line 295). A repo reader holds the head-
+signing seed, which weakens CF-6's insider guarantee. It should be moved to a
+write-only Cloudflare secret and rotated. Tracked here for owner/ops.
+
+Relates to [B-009] and [B-046] (both R2 Object-Lock storage-immutability, platform-
+blocked) and the `audit-chain` OKF concept (which honestly documents the un-keyed
+per-link + signed head today).
+
+```backlog
+id: B-054
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  grep -qE 'let mut hasher = Hasher::new\(\);' \
+    crates/corelink-audit-chain/src/chain.rs
+verify-means: |
+  open — passes while the per-link hash is still un-keyed (`Hasher::new()`),
+  the state this deferral is about. Turns red the moment someone keys the link
+  (`new_keyed`), forcing this item to be closed out with the epoch-cutover design
+  recorded rather than left open against a world that already moved.
+last-verified: 2026-08-26
+```
