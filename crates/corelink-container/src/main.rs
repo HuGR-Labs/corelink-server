@@ -456,9 +456,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             // ERASURE_ATTESTATION_SINGLE_REGION: explicit operator assertion that
             // this deployment is single-region. Prevents silent mis-attribution of
             // erasure attestations to the wrong region (Schrems II compliance).
-            let erasure_attestation_single_region_present = std::env::var("ERASURE_ATTESTATION_SINGLE_REGION")
-                .map(|v| !v.trim().is_empty())
-                .unwrap_or(false);
+            let erasure_attestation_single_region_present =
+                std::env::var("ERASURE_ATTESTATION_SINGLE_REGION")
+                    .map(|v| !v.trim().is_empty())
+                    .unwrap_or(false);
             if !erasure_attestation_single_region_present {
                 missing.push("ERASURE_ATTESTATION_SINGLE_REGION (operator region assertion)");
             }
