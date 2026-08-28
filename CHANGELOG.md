@@ -9855,6 +9855,18 @@ Each entry cross-references:
     in the April-2026 MVP roadmap should be acted on without
     re-confirming against the live backlog + a freshly-re-run
     `backlog_verify.py`.
+- **`ok:true` was hiding real failures in the audit-drain response (WP-L MED-21).**
+  `POST /_internal/audit/drain` (per-partition seal sweep) returned
+  `ok: true` regardless of `partitions_failed` — masking a chronically-stuck
+  chain under a green-looking response. The 503/502/401 caller in
+  `apps/signup-worker/src/webhooks/audit_drain_cron.ts` uses `resp.ok` (HTTP
+  status) so the bug was invisible to it, but any future caller that reads
+  the JSON body would conclude a broken sweep succeeded. The fix: `ok` is now
+  `partitions_failed == 0`, with `incomplete` kept INDEPENDENT (a budget-
+  bound sweep that needs another iteration is a successful sweep). The pure
+  expression + the JSON body builder are extracted as `audit_drain_ok` /
+  `build_drain_response_body` so the invariant has unit-test anchors that
+  do not require a live D1 / HTTP harness.
 
 ## [1.0.0] - DRAFT — pending `framework-v1-0-0-ga` tag + Owner approval
 

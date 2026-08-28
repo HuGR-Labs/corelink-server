@@ -1527,28 +1527,67 @@ async fn handle_drain(State(state): State<AuditDrainState>, headers: HeaderMap) 
     )
     .await;
     incomplete = incomplete || heads_resign_incomplete;
+    let ok = audit_drain_ok(partitions_failed);
     (
         StatusCode::OK,
-        Json(json!({
-            "ok": true,
-            "partitions_drained": partitions_drained,
-            "rows_sealed": rows_sealed,
-            "partitions_drifted": partitions_drifted,
-            "partitions_failed": partitions_failed,
-            // B-038: partitions another drain's live lease made us skip (always 0
-            // unless AUDIT_DRAIN_LEASE_ENABLED is ON). Normal backpressure.
-            "partitions_leased": partitions_leased,
-            // CF-6 convergence: legacy UNSIGNED/foreign-key heads re-signed in place
-            // this sweep (only non-zero while AUDIT_CHAIN_TRUST_UNSIGNED_RESUME is ON).
-            "heads_resigned": heads_resigned,
-            // `true` ⇒ the per-call row budget bounded this sweep and pending rows
-            // remain; a caller (hourly cron or a manual loop) must re-drain until
-            // this is `false`. Independent of `partitions_failed` (a distinct retry
-            // signal).
-            "incomplete": incomplete,
-        })),
+        Json(build_drain_response_body(
+            ok,
+            partitions_drained,
+            rows_sealed,
+            partitions_drifted,
+            partitions_failed,
+            partitions_leased,
+            heads_resigned,
+            incomplete,
+        )),
     )
         .into_response()
+}
+
+/// WP-L MED-21: the canonical "sweep as a whole succeeded" signal.
+/// `partitions_failed > 0` means at least one partition could not be
+/// drained (transport / consistency / lock failure on that key);
+/// returning `ok:true` while the chain is silently NOT advancing is the
+/// exact trap that hid the original bug.
+///
+/// Pure fn (extracted so the invariant has a unit-test anchor that does
+/// not require a live D1 client or an HTTP harness).
+pub(crate) const fn audit_drain_ok(partitions_failed: u64) -> bool {
+    partitions_failed == 0
+}
+
+/// Build the JSON body returned by `POST /_internal/audit/drain`. Extracted
+/// so the `ok: partitions_failed == 0` invariant + the
+/// `incomplete`-independence-from-`ok` invariant are unit-testable without
+/// a live handler / D1.
+pub(crate) fn build_drain_response_body(
+    ok: bool,
+    partitions_drained: u64,
+    rows_sealed: u64,
+    partitions_drifted: u64,
+    partitions_failed: u64,
+    partitions_leased: u64,
+    heads_resigned: u64,
+    incomplete: bool,
+) -> serde_json::Value {
+    serde_json::json!({
+        "ok": ok,
+        "partitions_drained": partitions_drained,
+        "rows_sealed": rows_sealed,
+        "partitions_drifted": partitions_drifted,
+        "partitions_failed": partitions_failed,
+        // B-038: partitions another drain's live lease made us skip (always 0
+        // unless AUDIT_DRAIN_LEASE_ENABLED is ON). Normal backpressure.
+        "partitions_leased": partitions_leased,
+        // CF-6 convergence: legacy UNSIGNED/foreign-key heads re-signed in place
+        // this sweep (only non-zero while AUDIT_CHAIN_TRUST_UNSIGNED_RESUME is ON).
+        "heads_resigned": heads_resigned,
+        // `true` => the per-call row budget bounded this sweep and pending rows
+        // remain; a caller (hourly cron or a manual loop) must re-drain until
+        // this is `false`. Independent of `partitions_failed` (a distinct retry
+        // signal).
+        "incomplete": incomplete,
+    })
 }
 
 #[cfg(test)]
@@ -2302,5 +2341,46 @@ mod tests {
             my_lease_expires_ms,
             true
         ));
+    }
+
+    // ---- WP-L MED-21: `ok` is `partitions_failed == 0` ------------------
+    //
+    // The pre-fix shape returned `ok: true` regardless of how many
+    // partitions actually failed — masking a chronically-stuck chain
+    // under a green-looking response. The fix inverts that.
+
+    #[test]
+    fn audit_drain_ok_is_true_when_no_partition_failed() {
+        assert!(audit_drain_ok(0));
+    }
+
+    #[test]
+    fn audit_drain_ok_is_false_when_any_partition_failed() {
+        assert!(!audit_drain_ok(1));
+        assert!(!audit_drain_ok(7));
+    }
+
+    #[test]
+    fn audit_drain_response_body_ok_field_reflects_partitions_failed() {
+        // All-zero → ok:true.
+        let j = build_drain_response_body(true, 0, 0, 0, 0, 0, 0, false);
+        assert_eq!(j["ok"], serde_json::Value::Bool(true));
+        assert_eq!(j["incomplete"], serde_json::Value::Bool(false));
+        // partitions_failed > 0 → ok:false (the fix).
+        let j = build_drain_response_body(false, 1, 5, 0, 1, 0, 0, false);
+        assert_eq!(j["ok"], serde_json::Value::Bool(false));
+        assert_eq!(
+            j["partitions_failed"],
+            serde_json::Value::Number(1u64.into())
+        );
+        // incomplete stays independent of ok (a budget-bound sweep with
+        // zero failures is a successful sweep that needs another call).
+        let j = build_drain_response_body(true, 0, 200, 0, 0, 0, 0, true);
+        assert_eq!(j["ok"], serde_json::Value::Bool(true));
+        assert_eq!(j["incomplete"], serde_json::Value::Bool(true));
+        // And incomplete combined with a real failure.
+        let j = build_drain_response_body(false, 0, 200, 0, 3, 0, 0, true);
+        assert_eq!(j["ok"], serde_json::Value::Bool(false));
+        assert_eq!(j["incomplete"], serde_json::Value::Bool(true));
     }
 }
