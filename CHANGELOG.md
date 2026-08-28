@@ -9706,6 +9706,36 @@ Each entry cross-references:
 
 ---
 
+- **`migrations/` rot and `TODO.md` rot addressed without breaking the
+  `include_str!` graph (WP-K MED-23).** Three sub-fixes the briefing
+  grouped as one WP:
+  - **K.1** (0044 collision): the 2026-05-14 `0044_drata_evidence_sent.sql` /
+    `0044_stripe_webhook_events_processed.sql` collision is
+    grandfathered explicitly by `scripts/check_migrations_additive.py`
+    (PR #1353, already merged). Both are applied in production; the
+    D1 ledger keys on the full filename. Renaming would desync the
+    ledger, so the `check_migrations_additive.py` gate fails on any
+    FUTURE ordinal reuse but carves out this single historical pair.
+  - **K.2** (`migrations/` root rot): the five files at the
+    `migrations/` root (`0001_init`, `002_auth_tables`,
+    `013_admin_op_log`, `013_rotation_state`,
+    `N4__sub_processor_tables`) and the `migrations/neon/`
+    directory are HISTORICAL Neon-control-plane artifacts, not
+    current-D1 live migrations. Moving them under
+    `migrations/_archive/` would break the `include_str!` canonical-
+    text regression in `corelink-auth/src/schema.rs` and
+    `corelink-audit-chain/tests/harness/pg_container.rs` (the Rust
+    code reads these files as compile-time constants). The cleanest
+    "archive" is a `migrations/LEGACY_README.md` that names every
+    file, the current home of its successor (the D1 migration that
+    supersedes it), and the inline-canonical regression that pins it.
+  - **K.3** (`TODO.md` at repo root): moved to
+    `docs/_archive/2026-04-todo-mvp.md` with a one-line note
+    that BACKLOG.md is the current source of truth and that nothing
+    in the April-2026 MVP roadmap should be acted on without
+    re-confirming against the live backlog + a freshly-re-run
+    `backlog_verify.py`.
+
 ## [1.0.0] - DRAFT — pending `framework-v1-0-0-ga` tag + Owner approval
 
 > **DRAFT.** This section is the technical changelog companion to
