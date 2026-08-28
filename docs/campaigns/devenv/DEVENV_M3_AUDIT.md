@@ -271,7 +271,7 @@ async resize(payload: ResizeRequest): Promise<{ ok: true }> {
 
 **Verificação:** `grep -rn "resize" crates/corelink-check-exec-server/` = vazio.
 
-**Impacto (HIGH):** `resize()` (chamado pelo spec WP-06) **sempre falha 404**. DO `runner_dev_env.ts:223` throw `RESIZE_FAILED: 404`.
+**Impacto (HIGH):** `resize()` (chamado pelo spec WP-06) **sempre falha 404**. DO `runner_dev_env.ts:224` throw `RESIZE_FAILED: 404`.
 
 ### 3.10 E5-residual — `execClwSnapshot` (CORRIGIDO, ver 3.2)
 
