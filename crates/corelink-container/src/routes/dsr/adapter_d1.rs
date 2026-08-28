@@ -150,6 +150,10 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     // `(tenant_id, day)` (migr. 0089). Display telemetry — the tenant's own
     // operational usage state, no retention basis → ERASE.
     "usage_daily",
+    // Per-tenant, per-month vCPU-second meter for the DevEnv product
+    // `(tenant_id, month_at)` (migr. 0094). Operational billing data — the
+    // tenant's own usage state, no retention basis → ERASE.
+    "devenv_monthly_vcpu",
 ];
 
 /// Erase-set tables keyed by a `namespace` column. The bound value is the
@@ -302,6 +306,7 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "runner_repo_allowlist",
     "workspaces",
     "usage_daily",
+    "devenv_monthly_vcpu",
     // erase-set (namespace)
     "adapter_cache_map",
     "adapter_npm_meta",
