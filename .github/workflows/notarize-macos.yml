@@ -31,6 +31,9 @@
 
 name: notarize-macos
 
+concurrency:
+  group: "ci-notarize-macos"
+
 on:
   workflow_dispatch:
     inputs:

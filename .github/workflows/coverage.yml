@@ -1,5 +1,9 @@
 name: coverage (R7-1 supply-quality rollup)
 
+concurrency:
+  group: "ci-coverage-r7-1-supply-quality-rollup"
+  cancel-in-progress: true
+
 # Workspace test-coverage report (cargo-llvm-cov).
 #
 # Triggered on every PR touching Rust code or coverage tooling. Runs

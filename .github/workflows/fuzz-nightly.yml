@@ -1,5 +1,9 @@
 name: Fuzz nightly (BYOK + tenant-path + audit-chain + HKDF)
 
+concurrency:
+  group: "ci-fuzz-nightly-byok-tenant-path-audit-chain-hkdf"
+  cancel-in-progress: true
+
 # Nightly fuzz lane for the pre-pentest hardening surface: BYOK
 # envelope encryption, tenant-path HMAC derivation (extended), audit-
 # chain hash-chain append + JCS canonicalization, HKDF-SHA256 expand.

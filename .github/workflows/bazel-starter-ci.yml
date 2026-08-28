@@ -38,10 +38,7 @@ on:
     paths:
       - 'examples/bazel-starter/**'
       - '.github/workflows/bazel-starter-ci.yml'
-  schedule:
-    # Weekly cron: every Monday 06:00 UTC — sustained 7d green gate.
-    - cron: '0 6 * * 1'
-  workflow_dispatch:
+workflow_dispatch:
 
 permissions:
   contents: read

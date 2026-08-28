@@ -347,7 +347,7 @@ print()
 # would make the script fail on PRs that legitimately skip it — turning a
 # fail-open into a fail-noisy, which gets the whole check disabled by the next
 # person in a hurry.
-REQUIRED_PRESENT = ["dco", "gitleaks"]
+REQUIRED_PRESENT = ["dco", "gitleaks", "changelog"]
 names = " ".join(c.get("name", "").lower() for c in data)
 missing = [g for g in REQUIRED_PRESENT if g not in names]
 if missing:

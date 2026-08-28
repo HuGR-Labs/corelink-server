@@ -23,14 +23,7 @@ on:
   # 398/665, 2026-06-04). Moved to nightly + on-demand, matching the 977225d3
   # "stop heavy-gate stampede" sweep (2026-06-02, ADR-S12-045 §Schedule). The PR
   # `paths:` lane above still enforces density on every crate/script change.
-  schedule:
-    # Nightly at 04:31 UTC — staggered into the Rust-compile nightly band
-    # (between corelink-* component gates at 04:23 and 04:37) to spread fleet load.
-    # CI cost diet 2026-08-02: daily -> WEEKLY. lint-shaped density check over unchanged sources.
-    # Kept the same minute/hour (spread out, low-traffic window); only the
-    # weekday field is added. Per-PR gating is unchanged.
-    - cron: '31 4 * * 4'
-  workflow_dispatch:
+workflow_dispatch:
 
 permissions:
   contents: read

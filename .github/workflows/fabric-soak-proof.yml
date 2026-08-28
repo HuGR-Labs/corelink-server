@@ -27,6 +27,10 @@
 # produto, então roda quando alguém quer a prova, não em todo push.
 name: fabric-soak-proof
 
+concurrency:
+  group: "ci-fabric-soak-proof"
+  cancel-in-progress: true
+
 on:
   workflow_dispatch:
     inputs:

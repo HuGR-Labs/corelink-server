@@ -1,5 +1,9 @@
 name: Performance nightly (criterion baseline)
 
+concurrency:
+  group: "ci-performance-nightly-criterion-baseline"
+  cancel-in-progress: true
+
 # Nightly criterion bench run across the 8 hot paths covered by the
 # perf-benchmark-suite WI:
 #

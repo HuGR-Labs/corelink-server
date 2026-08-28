@@ -25,6 +25,9 @@
 # stub binary from layer-cached deps).
 name: container-build-push-prod
 
+concurrency:
+  group: "ci-container-build-push-prod"
+
 on:
   workflow_dispatch:
     inputs:

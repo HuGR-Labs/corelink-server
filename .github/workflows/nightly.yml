@@ -1,5 +1,9 @@
 name: Nightly extended gates (WI-S01-007)
 
+concurrency:
+  group: "ci-nightly-extended-gates-wi-s01-007"
+  cancel-in-progress: true
+
 # Sprint-level nightly workflow per WI-S01-007 §6.1.2.
 # Adds extended-bound runs that are too costly for per-PR gating:
 #

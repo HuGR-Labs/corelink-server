@@ -1,5 +1,9 @@
 name: mutation-nightly (R2 baseline + 5-crate expansion + wave-24 large-crate lane)
 
+concurrency:
+  group: "ci-mutation-nightly-r2-baseline-5-crate-expansion-wave-24-large-crate-lane"
+  cancel-in-progress: true
+
 # Nightly cargo-mutants gate on 11 critical crates:
 # - corelink-byok (envelope encryption + DEK cache)         [baseline 2026-05-14]
 # - corelink-signup (atomic provisioning orchestrator)      [baseline 2026-05-14]

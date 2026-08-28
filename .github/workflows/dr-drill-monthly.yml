@@ -1,5 +1,9 @@
 name: DR Drill Monthly (Cycle 1 Quarterly)
 
+concurrency:
+  group: "ci-dr-drill-monthly-cycle-1-quarterly"
+  cancel-in-progress: true
+
 # Runs DR drill cycle 1 (CF region failover) quarterly against STAGING ONLY.
 # Cycle 2 + 3 are not auto-scheduled here — they are operator-triggered
 # via workflow_dispatch (cycle 2: D1 corruption; cycle 3: BYOK compromise).
