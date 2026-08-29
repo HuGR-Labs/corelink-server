@@ -2954,9 +2954,9 @@ last-verified: 2026-08-26
 
 F2 is live: with `EDGE_FIND_MISSING = "on"` the Worker answers
 `findMissingBlobs` in-colo and never reaches the container's `exists_batch`
-(`crates/corelink-container/src/storage/r2_s3.rs:1560`). The audit rows still get
+(`crates/corelink-container/src/storage/r2_s3.rs`, `R2CasHandler::exists_batch_inner`). The audit rows still get
 written — that seam was the whole point of B-047 — but the SLI emission at
-`r2_s3.rs:1572` (`Sli::AvailCasGet` / `Sli::LatencyCasGetP99`) sits on the
+`r2_s3.rs`'s `emit_sli` call inside `exists_batch_inner` (`Sli::AvailCasGet` / `Sli::LatencyCasGetP99`) sits on the
 container path only, and the edge serve block emits nothing.
 
 So the edge-served requests are absent from the CAS SLI stream entirely: a
@@ -3071,7 +3071,7 @@ cause — the "production wiring" the code promises was never built.
 
 **1. No consumer.** The production CAS handler is constructed with
 `let sli = Arc::new(InMemorySliObserver::new())`
-(`crates/corelink-container/src/storage/r2_s3.rs:2316`; the AC twin at `:3353`),
+(`crates/corelink-container/src/storage/r2_s3.rs`, in `build_r2_cas_handler_from_env`; the AC twin in `build_r2_ac_handler_from_env`),
 whose doc-comment calls it a "capture-everything in-process observer for tests +
 apps/server wire-up" and whose trait doc says "Production wiring adapts this to
 the `corelink-slo::BurnRateCalculator` input stream + prometheus histogram
@@ -3082,7 +3082,7 @@ rate. So `AvailCasGet`, `AvailCasPut`, `LatencyCasGetP99`, `LatencyCasPutP99`,
 `AvailAcLookup`, `LatencyAcHitP99` and `CorrectnessCas` are computed by nothing,
 in every region, on every path.
 
-**2. No latency.** `emit_sli` (`r2_s3.rs:926-934`) passes `latency_us: 0` for
+**2. No latency.** `emit_sli` (`r2_s3.rs`, `impl R2CasHandler`) passes `latency_us: 0` for
 both the availability AND the latency SLI, and so does every other CAS/AC call
 site — 11 of the 12 `SliObservation::new` call sites in the workspace hard-code
 a zero. The field is documented as "wall-clock latency of the handler entry".
@@ -3093,8 +3093,9 @@ not a loose measurement — it is not a measurement.
 
 **3. No bound.** `InMemorySliObserver` is a `Mutex<Vec<SliObservation>>` that is
 only ever pushed to. Both instances are built at process start, not per request
-(`routes/cas.rs:526 build_handlers` is called from `routes.rs:572`, and
-`routes/public_mirror.rs:172` calls it again for the `_public` moat), so the Vec
+(`routes/cas.rs::build_handlers` is called from `routes.rs`, and
+`routes/public_mirror.rs::build_state_from_env` calls it again for the `_public`
+moat), so the Vec
 grows monotonically for the life of the container: ~16 bytes per observation,
 two observations per CAS operation, never drained. Today's containers recycle
 often enough on deploys that this has not surfaced as an incident, which is
@@ -3112,6 +3113,13 @@ defects 1 and 3.
 **Not a customer-facing outage** — no request fails because of this. It is an
 alerting and capacity blind spot: the CAS availability SLO cannot page anyone,
 so a partial R2 degradation is only visible if a human happens to look.
+
+⚠️ **Line-number provenance.** The `file:line` coordinates this item shipped with
+in #1407 were written from a worktree sitting on a stale branch, 297 lines behind
+`main` in `r2_s3.rs`, so every one of them was off by roughly 110 lines. The
+CLAIMS were verified against real code; the COORDINATES were not. They are
+replaced here with SYMBOL references — a symbol does not drift when a file grows
+above it, and it survives the rebase that a line number does not.
 
 Relates to [B-055] (which this blocks) and [B-047].
 
