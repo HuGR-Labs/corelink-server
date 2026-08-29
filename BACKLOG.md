@@ -2992,6 +2992,57 @@ last-verified: 2026-08-27
 ```
 
 
+### B-058 — the OKF auto-reconcile bot dies at `claude: command not found`
+
+The hourly `okf-autoreconcile` workflow is the thing that keeps `docs/knowledge`
+from drifting red on every PR that touches a cited file. It is **not** dead from
+the zero-hosted mandate — a plausible-sounding diagnosis that is wrong.
+`.github/workflows/okf-autoreconcile.yml:55` is already `runs-on: corelink`
+(self-hosted), and the schedule is firing on time.
+
+It is a REGRESSION, not a lane that never worked: of the last 60 runs, **56
+succeeded and the most recent 4 failed**, all with
+
+```
+/opt/actions-runner/_work/_temp/....sh: line 2: claude: command not found
+##[error]Process completed with exit code 127
+```
+
+The `claude` CLI is no longer on the runner service's PATH. The first failure is
+2026-08-27T03:16, the same timestamp as the #1391 merge, so the trigger is
+likely the run that merge kicked off rather than the merge's content — worth
+confirming rather than assuming. `ANTHROPIC_API_KEY` also logs empty in that
+step, which may be a second, independent break hiding behind the first: exit 127
+happens before the key is ever used, so the key cannot be exonerated until the
+PATH is fixed.
+
+Cost of leaving it: every PR that touches a cited file arrives with
+`okf-wiki-validation` already red, and a human has to hand-reconcile. That is
+what made `main` 46-red and blocked four PRs at once.
+
+Fix is environment, not code — the runner runs as a launchd service on the
+founder's Mac, so its PATH is not the interactive shell's. Needs the owner (or
+whoever owns the runner service definition) to put `claude` on it. A CI-side
+guard is worth adding regardless: fail LOUD with a named precondition when the
+binary is absent, instead of exiting 127 into a log nobody reads for two days.
+
+```backlog
+id: B-058
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  gh run list --workflow=okf-autoreconcile.yml --limit 5 \
+    --json conclusion -q '.[].conclusion' | grep -q failure
+verify-means: |
+  open — passes while any of the last 5 auto-reconcile runs failed. Goes green
+  only once five consecutive runs succeed, which is the real signal that the
+  runner PATH is fixed and stayed fixed. Anchored on run history rather than on
+  the workflow file, because the file is already correct — the breakage is in
+  the runner environment and no file diff would reveal it.
+last-verified: 2026-08-29
+```
+
 ### B-057 — the CAS/AC SLI stream is a dead end: no consumer, no latency, no bound
 
 Tracing where an `AvailCasGet` observation actually goes, before writing the
