@@ -9,7 +9,7 @@ source_files:
   - "crates/corelink-container/src/routes/failover.rs"
   - "crates/corelink-container/src/routes/otel_layer.rs"
   - "crates/corelink-container/src/storage/r2_kv.rs"
-checkpoint_sha: "e5f095f9cd5a3a47ba001e19f4df395557919ace"
+checkpoint_sha: "1c41b63dd71dd9fa2373a5e23631ef5fa4963c05"
 provenance: "AUTHORED"
 tags: ["planes", "container", "rust", "axum", "routing"]
 timestamp: "2026-06-26T00:00:00Z"

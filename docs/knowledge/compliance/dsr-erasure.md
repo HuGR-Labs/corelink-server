@@ -32,7 +32,7 @@ source_files:
 source_blobs:
   - "crates/corelink-container/src/routes/cas.rs@e26b524b8e6891d340dfef1911ccdec366ca3ff5"
   - "crates/corelink-container/src/routes/dsr/adapter_d1.rs@3f0f4b3fcf3c8b5315cc44c14f5f85e00e178ce2"
-checkpoint_sha: "63e00e0444ffa565635eea09da5e11ea6a055464"
+checkpoint_sha: "1c41b63dd71dd9fa2373a5e23631ef5fa4963c05"
 provenance: "AUTHORED"
 tags: ["dsr", "gdpr", "lgpd", "erasure", "right-to-erasure", "compliance", "mfa", "attestation"]
 timestamp: "2026-06-26T00:00:00Z"

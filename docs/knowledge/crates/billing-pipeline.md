@@ -24,7 +24,7 @@ source_files:
   - "crates/corelink-analytics/src/validator.rs"
   - "crates/corelink-container/src/main.rs"
   - ".github/workflows/billing-reconcile-daily.yml"
-checkpoint_sha: "e5f095f9cd5a3a47ba001e19f4df395557919ace"
+checkpoint_sha: "1c41b63dd71dd9fa2373a5e23631ef5fa4963c05"
 provenance: "AUTHORED"
 tags: ["billing", "stripe", "usage-metering", "reconciliation", "money-path"]
 timestamp: "2026-06-28T00:00:00Z"
