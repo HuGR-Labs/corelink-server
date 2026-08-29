@@ -10,7 +10,7 @@ source_files:
   - "crates/corelink-reapi/src/lib.rs"
   - "crates/corelink-container/src/routes/cas.rs"
 source_blobs:
-  - "crates/corelink-container/src/routes/cas.rs@680f9182ea3d9e54d3a881617dc1c3a379ca486c"
+  - "crates/corelink-container/src/routes/cas.rs@e26b524b8e6891d340dfef1911ccdec366ca3ff5"
 checkpoint_sha: "63e00e0444ffa565635eea09da5e11ea6a055464"
 provenance: "AUTHORED"
 tags: ["crates", "cas", "ac", "integrity", "blake3", "core"]
