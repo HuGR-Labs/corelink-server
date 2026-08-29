@@ -43,6 +43,14 @@ in *another* repo, which happens with no commit to this one.
 - **A `verify` for an `open` item must exit 0 while the work is unfinished** and
   start failing once it lands. That is what makes the file self-closing: finishing
   the work turns the gate red until the status is updated to match.
+- **When the status flips to `done`, INVERT the `verify` into a regression
+  guard** — it must exit 0 while the world is CORRECT, and fail if someone undoes
+  the work. `backlog_verify` requires exit 0 from every item regardless of status;
+  `status:` describes, it does not excuse. A `done` item still carrying the
+  `open`-polarity check is the nastiest shape this file has: it passes in the PR
+  that wrote it (the work is not in the tree yet) and turns the gate RED on the
+  merge of the NEXT PR, blaming a change that did nothing wrong. Found on B-060,
+  2026-08-29.
 
 ---
 
