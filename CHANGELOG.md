@@ -35,8 +35,6 @@ Each entry cross-references:
   as a transitive DEV dependency (via `testcontainers`), so nothing shipped
   changes.
 
-### Fixed
-
 - **The CAS read path had no object-SIZE bound (B-051).** Peak heap for a read
   is `concurrent_reads x object_size`. B-052 bounded the first factor
   (`CAS_READ_CONCURRENCY_LIMIT`, 8/tenant); nothing bounded the second. The
