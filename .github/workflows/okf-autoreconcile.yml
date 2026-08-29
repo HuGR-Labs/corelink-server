@@ -24,13 +24,21 @@
 name: OKF auto-reconcile
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'crates/**'
-      - 'worker/**'
-      - 'apps/**'
-      - 'migrations/**'
+  # DISPATCH-ONLY as of 2026-08-29 (owner decision: the OKF robot stays
+  # local/manual — `scripts/okf-reconcile-local.sh`).
+  #
+  # The `push: branches: [main]` trigger that used to live here is removed, not
+  # commented out, because this lane has NEVER once executed: `claude`
+  # authenticates from the CLI logged in on the founder's Mac (`~/.claude`), and
+  # `runs-on: corelink` is the EPHEMERAL container fleet, which has no such
+  # directory and no login. Every run either skipped (nothing stale) or died at
+  # `claude: command not found` / exit 127. An automatic trigger on a lane that
+  # can only fail is chronic red, and chronic red nobody acts on trains everyone
+  # to ignore the signal.
+  #
+  # Kept dispatchable so it is one click away if the decision changes. Before
+  # re-arming any automatic trigger, apply the four-line fix recorded in B-058 —
+  # otherwise this just goes back to failing 100% of the time.
   workflow_dispatch:
     inputs:
       force:

@@ -2992,39 +2992,50 @@ last-verified: 2026-08-27
 ```
 
 
-### B-058 — the OKF auto-reconcile bot dies at `claude: command not found`
+### B-058 — the OKF auto-reconcile bot has NEVER executed, and it is pointed at the wrong machine
 
-The hourly `okf-autoreconcile` workflow is the thing that keeps `docs/knowledge`
-from drifting red on every PR that touches a cited file. It is **not** dead from
-the zero-hosted mandate — a plausible-sounding diagnosis that is wrong.
-`.github/workflows/okf-autoreconcile.yml:55` is already `runs-on: corelink`
-(self-hosted), and the schedule is firing on time.
+**Corrected 2026-08-29.** The first version of this item, which I wrote, was
+wrong in three ways and every one came from the same mistake: I read the
+`conclusion` column of the run list and the `runs-on:` string, without ever
+opening a step or the runner registry. Recording the corrections rather than
+quietly editing them, because the wrong reading is the interesting part.
 
-It is a REGRESSION, not a lane that never worked: of the last 60 runs, **56
-succeeded and the most recent 4 failed**, all with
+- It said "the **hourly** workflow … the schedule is firing on time". There is
+  **no schedule**. The triggers are `push` on `main` (paths `crates/**`,
+  `worker/**`, `apps/**`, `migrations/**`) and `workflow_dispatch`.
+- It said "It is a **REGRESSION**, not a lane that never worked: of the last 60
+  runs, 56 succeeded". Those 56 are runs where `stale_count == 0` and the claude
+  step is **`skipped`** — 56 no-ops, not 56 executions. Opening the steps of
+  three of them shows `Install Claude Code CLI: skipped` /
+  `Run the okf-reconcile skill: skipped`. **The bot has never once executed.**
+- It treated `runs-on: corelink` as merely "self-hosted, so fine". `corelink` is
+  the **ephemeral CF container fleet**, and that is the root cause, not a detail.
 
-```
-/opt/actions-runner/_work/_temp/....sh: line 2: claude: command not found
-##[error]Process completed with exit code 127
-```
+The real diagnosis: `claude` authenticates from the CLI logged in on the
+founder's Mac (`~/.claude`); an ephemeral container has no such directory. The
+`npm install -g` step reports success, its bin never reaches the next step's
+PATH (hence `claude: command not found` / exit 127), and even if it did there
+would be no login. The lane is aimed at a machine that structurally cannot run
+it.
 
-The `claude` CLI is no longer on the runner service's PATH. The first failure is
-2026-08-27T03:16, the same timestamp as the #1391 merge, so the trigger is
-likely the run that merge kicked off rather than the merge's content — worth
-confirming rather than assuming. `ANTHROPIC_API_KEY` also logs empty in that
-step, which may be a second, independent break hiding behind the first: exit 127
-happens before the key is ever used, so the key cannot be exonerated until the
-PATH is fixed.
+**Decision (owner, 2026-08-29): the OKF robot stays LOCAL/MANUAL for now** —
+`scripts/okf-reconcile-local.sh` — and is not automated in CI. So the `push`
+trigger is removed in the same change as this correction: it can only ever fire
+to fail, and a chronic red nobody acts on trains everyone to ignore the signal.
+`workflow_dispatch` is kept, so the lane is one click away if the decision
+changes.
 
-Cost of leaving it: every PR that touches a cited file arrives with
-`okf-wiki-validation` already red, and a human has to hand-reconcile. That is
-what made `main` 46-red and blocked four PRs at once.
+If it ever returns to CI, the fix is four lines and is recorded here so the
+diagnosis is not re-derived: run on `[self-hosted, macOS, X64]` (the persistent
+Mac — the runner process runs as the same user, so it sees the CLI auth); add
+`$HOME/.local/bin` to `$GITHUB_PATH`; drop the `npm install -g` (installing over
+the owner's binary is needless risk); drop the `env: ANTHROPIC_API_KEY` block
+(the secret does not exist and the auth is the CLI's, so it advertises a
+dependency that is not real).
 
-Fix is environment, not code — the runner runs as a launchd service on the
-founder's Mac, so its PATH is not the interactive shell's. Needs the owner (or
-whoever owns the runner service definition) to put `claude` on it. A CI-side
-guard is worth adding regardless: fail LOUD with a named precondition when the
-binary is absent, instead of exiting 127 into a log nobody reads for two days.
+Standing cost of leaving it manual: every PR that touches a cited file needs a
+hand re-anchor. That was paid three times on 2026-08-29 alone (#1408, #1411,
+and the OKF half of the read-ceiling work).
 
 ```backlog
 id: B-058
@@ -3032,14 +3043,15 @@ repo: corelink-server
 owner: owner
 status: open
 verify: |
-  gh run list --workflow=okf-autoreconcile.yml --limit 5 \
-    --json conclusion -q '.[].conclusion' | grep -q failure
+  ! grep -qE '^\s+push:' .github/workflows/okf-autoreconcile.yml
 verify-means: |
-  open — passes while any of the last 5 auto-reconcile runs failed. Goes green
-  only once five consecutive runs succeed, which is the real signal that the
-  runner PATH is fixed and stayed fixed. Anchored on run history rather than on
-  the workflow file, because the file is already correct — the breakage is in
-  the runner environment and no file diff would reveal it.
+  open — passes while the lane is dispatch-only, i.e. while the OKF robot is
+  still the manual/local tool the owner chose and CI is NOT relied on to
+  reconcile. Goes red the moment an automatic trigger is added back, which is
+  exactly when this item must be revisited: re-arming it without the four-line
+  fix below just restores a lane that fails 100% of the time. Deliberately NOT
+  anchored on run history — the previous version of this verify was, and it
+  would have read "green" off runs whose claude step never ran.
 last-verified: 2026-08-29
 ```
 
