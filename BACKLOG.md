@@ -2942,7 +2942,7 @@ verify-means: |
 last-verified: 2026-08-26
 ```
 
-### B-055 — the edge-served findMissingBlobs is invisible to the CAS SLOs
+### B-055 — the edge-served findMissingBlobs emits no CAS SLI
 
 F2 is live: with `EDGE_FIND_MISSING = "on"` the Worker answers
 `findMissingBlobs` in-colo and never reaches the container's `exists_batch`
@@ -2951,12 +2951,19 @@ written — that seam was the whole point of B-047 — but the SLI emission at
 `r2_s3.rs:1572` (`Sli::AvailCasGet` / `Sli::LatencyCasGetP99`) sits on the
 container path only, and the edge serve block emits nothing.
 
-So the CAS availability and p99-latency SLOs now measure a SHRINKING sample: the
-requests the edge answers are exactly the ones that got faster, and they are
-absent from the numbers. That is the wrong direction twice over — the SLO
-under-reports both the win and, more importantly, any future edge-side
-regression. A colo-side R2 fault that made every edge probe slow would move
-these SLOs by ZERO.
+So the edge-served requests are absent from the CAS SLI stream entirely: a
+colo-side R2 fault that made every edge probe slow would emit ZERO observations.
+
+⚠️ **Correction 2026-08-27 — the original framing of this item was wrong, and
+wrong in the flattering direction.** It said the SLOs "measure a shrinking
+sample", which assumes they measure something. They do not. Tracing the sink
+before writing the fix found that the CAS/AC SLI stream has no production
+consumer at all and never had one — see [B-057]. Emitting an observation from
+the edge path as this item originally proposed would have added a second writer
+to a stream nothing reads, produced a green PR, and closed a gap that was never
+the real one. This item stays open and stays scoped to the edge path, but it is
+now BLOCKED on B-057: there is no point instrumenting the edge until the
+instrument exists.
 
 Not a launch blocker and deliberately not bundled into F2: emitting an SLI from
 the Worker is a different transport (no `emit_sli`, no container metrics
@@ -2965,7 +2972,8 @@ flag flip. The natural home is the same awaited `/_internal/audit/cas-attempted`
 call the edge already makes — it knows `edge_ms` and the outcome, and it is
 already the one place the edge and the container agree on what happened.
 
-Relates to [B-047] (which shipped F2 and records this gap in its close-out).
+Relates to [B-047] (which shipped F2 and records this gap in its close-out) and
+is BLOCKED by [B-057] (the SLI stream has no consumer).
 
 ```backlog
 id: B-055
@@ -2980,5 +2988,77 @@ verify-means: |
   no CAS SLI, i.e. while edge-served requests are missing from the SLOs. Closes
   when the SLI is emitted on that path (or turns moot if the flag goes back off,
   which flips this to DRIFTED and forces a re-read rather than silently passing).
+last-verified: 2026-08-27
+```
+
+
+### B-057 — the CAS/AC SLI stream is a dead end: no consumer, no latency, no bound
+
+Tracing where an `AvailCasGet` observation actually goes, before writing the
+edge-side emit for [B-055], found that it goes nowhere. Three defects, one root
+cause — the "production wiring" the code promises was never built.
+
+**1. No consumer.** The production CAS handler is constructed with
+`let sli = Arc::new(InMemorySliObserver::new())`
+(`crates/corelink-container/src/storage/r2_s3.rs:2316`; the AC twin at `:3353`),
+whose doc-comment calls it a "capture-everything in-process observer for tests +
+apps/server wire-up" and whose trait doc says "Production wiring adapts this to
+the `corelink-slo::BurnRateCalculator` input stream + prometheus histogram
+registry". That adaptation does not exist. Every call of `snapshot()` / `count()`
+in the entire workspace is inside a test, and `corelink-container` references
+`corelink_slo` exactly ONCE — `tenant_quota.rs:59`, for PagerDuty, not the burn
+rate. So `AvailCasGet`, `AvailCasPut`, `LatencyCasGetP99`, `LatencyCasPutP99`,
+`AvailAcLookup`, `LatencyAcHitP99` and `CorrectnessCas` are computed by nothing,
+in every region, on every path.
+
+**2. No latency.** `emit_sli` (`r2_s3.rs:926-934`) passes `latency_us: 0` for
+both the availability AND the latency SLI, and so does every other CAS/AC call
+site — 11 of the 12 `SliObservation::new` call sites in the workspace hard-code
+a zero. The field is documented as "wall-clock latency of the handler entry".
+The one site that measures anything real is the Stripe webhook dispatcher
+(`crates/corelink-stripe-real/src/webhook_dispatch.rs:847`,
+`clock.observe_latency_seconds`). A p99-latency SLI whose every sample is 0 is
+not a loose measurement — it is not a measurement.
+
+**3. No bound.** `InMemorySliObserver` is a `Mutex<Vec<SliObservation>>` that is
+only ever pushed to. Both instances are built at process start, not per request
+(`routes/cas.rs:526 build_handlers` is called from `routes.rs:572`, and
+`routes/public_mirror.rs:172` calls it again for the `_public` moat), so the Vec
+grows monotonically for the life of the container: ~16 bytes per observation,
+two observations per CAS operation, never drained. Today's containers recycle
+often enough on deploys that this has not surfaced as an incident, which is
+exactly why it needs a bound rather than luck — a long-lived instance in a quiet
+region is the case that finds it.
+
+**Why this is filed and not fixed inline:** the fix is a design decision about
+the observability transport (drain to the existing structured-log stream that
+Workers Logs already retains? a bounded ring buffer plus a scrape route? wire
+`BurnRateCalculator` for real?), and the honest interim is a BOUNDED sink, since
+an unbounded buffer nobody reads is strictly worse than dropping. Whatever is
+chosen must also thread a real `latency_us`, or defect 2 survives the fix for
+defects 1 and 3.
+
+**Not a customer-facing outage** — no request fails because of this. It is an
+alerting and capacity blind spot: the CAS availability SLO cannot page anyone,
+so a partial R2 degradation is only visible if a human happens to look.
+
+Relates to [B-055] (which this blocks) and [B-047].
+
+```backlog
+id: B-057
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  grep -q 'let sli = Arc::new(InMemorySliObserver::new());' \
+    crates/corelink-container/src/storage/r2_s3.rs \
+    || grep -q 'SliObservation::new(avail, is_error, 0)' \
+      crates/corelink-container/src/storage/r2_s3.rs
+verify-means: |
+  open — passes while EITHER half of the dead end survives: the production CAS
+  handler still wired to the in-process capture buffer (no consumer, no bound),
+  or `emit_sli` still hard-coding `latency_us: 0` (no latency). Deliberately an
+  OR: fixing the transport while leaving every sample at zero would look like a
+  closed item and leave the latency SLO exactly as blind as it is today.
 last-verified: 2026-08-27
 ```
