@@ -49,6 +49,37 @@ Each entry cross-references:
   source to diverge silently. The sibling artifacts (the Python wheel and the
   Go module zip, plus the PyPI simple-index `sha256`) were checked and are in
   sync.
+- **A phantom table in the DSR erase set turned GDPR Art.17 into "destroy the
+  operational data, keep the identity PII, return 500".** #1405 added
+  `devenv_monthly_vcpu` to `TENANT_ID_TABLES` and `ALL_TENANT_KEYED_TABLES`
+  (`crates/corelink-container/src/routes/dsr/adapter_d1.rs`) citing "migr.
+  0094" — but 0094 is `0094_runner_usage_counter.sql`, and **no migration on
+  `main` creates that table**; it ships with the unmerged #1397. `erase()` runs
+  `count_then_delete` over the registry in a bare `for` loop with `?` and **no
+  transaction**, and the phantom sat immediately after `ratelimit_buckets` and
+  immediately before `byok_envelope` / `tenant_byok_config` /
+  `tenant_byok_secret`. So a real erasure request would delete the 16
+  operational tables ahead of it, fail on the 17th with `no such table`, and
+  **never reach** the BYOK tables, the namespace-keyed group, `signup_*`, or the
+  root `tenant` row that carries `clerk_user_id` / `email_hash` and is deleted
+  last by design. Worse than failing clean: operational state destroyed,
+  identity PII intact, 500 returned, `verification_hash()` mismatching so no
+  attestation is issued — a stuck ticket rather than a SEV-1. Art.15
+  access/portability walks the same registry. **Not in production:** prod runs
+  `4f9313e0-r1` in all five regions and #1405 is NOT an ancestor of that pin
+  (`git merge-base --is-ancestor`), so this was armed on `main` and would have
+  shipped on the next repin. The fix is the two lines; they belong with #1397
+  and its migration.
+- **`cargo fmt --all --check` was RED on `main`.** #1406, titled "apply
+  `cargo fmt --all` to fix rustfmt CI gate", moved
+  `crates/corelink-container/src/main.rs` in the WRONG direction — the blob went
+  `aac874e6 → ad9ab0c5`, and running rustfmt 1.91.1 (the version
+  `rust-toolchain.toml` pins, the same one the lane uses) takes it straight
+  back. Since `rustfmt.yml` checks the WHOLE workspace on any Rust PR, every
+  such PR was inheriting a red gate it did not cause. Folded in here rather than
+  split because the other offending line was the `devenv_monthly_vcpu` entry
+  this change already deletes, so separating them would have put two PRs in the
+  same file.
 
 - **The CAS read path had no object-SIZE bound (B-051).** Peak heap for a read
   is `concurrent_reads x object_size`. B-052 bounded the first factor
