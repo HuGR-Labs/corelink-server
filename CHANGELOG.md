@@ -49,6 +49,35 @@ Each entry cross-references:
   source to diverge silently. The sibling artifacts (the Python wheel and the
   Go module zip, plus the PyPI simple-index `sha256`) were checked and are in
   sync.
+- **The CF-1 drift gate could not see a phantom table, and could not see two
+  migration files at all.** Two independent holes in the same gate, both found
+  while writing the guard for the `devenv_monthly_vcpu` incident (#1410).
+  **(1) One-directional.** `every_migrated_tenant_keyed_table_is_classified`
+  walks migrations → registry, so a table on disk that nobody classified fails.
+  Nothing walked registry → migrations, so a name in a registry that no
+  migration creates was structurally invisible — and since `erase()` deletes in
+  a bare loop with no transaction, exactly that kind of phantom splits an Art.17
+  sweep in half. The new mirror refuses any name in ANY of the registries
+  (`ALL_TENANT_KEYED_TABLES` plus all five `CLASSIFICATION_SETS`) that no
+  `CREATE TABLE` in `migrations/d1` creates. **Checking only the completeness
+  registry was not enough, and mutation testing is what said so:** re-adding the
+  phantom to `TENANT_ID_TABLES` alone — the list `erase()` actually walks — left
+  an `ALL_TENANT_KEYED_TABLES`-only version of the test GREEN.
+  **(2) A comment-stripper bug that blinded it to whole files.**
+  `strip_sql_comments` removed block comments BEFORE line comments, so an
+  unpaired `/*` inside a `--` comment opened a block that never closed and
+  swallowed the rest of the file. `0090_dsr_tickets.sql:3` documents the
+  `/v1/privacy/dsr/*` route and `0061_adapter_oci_kv.sql` has the same shape, so
+  **every `CREATE TABLE` in both files was invisible to the gate** — which is how
+  the mirror initially reported `dsr_tickets` and `adapter_oci_kv` as phantoms
+  when both plainly exist. Order reversed, with the reason recorded on the
+  function. Both tables were already classified, so nothing was mis-erased; the
+  defect was in the gate, and any future table declared in either file — or in
+  any migration whose prose mentions a glob — would have escaped it silently.
+  Also removed: a singular `"erasure_attestation"` in `RETAIN_SET` that matched
+  no table (the real one is plural, migr. 0032) — harmless, never queried, and
+  exactly the shape the mirror now refuses.
+
 - **A phantom table in the DSR erase set turned GDPR Art.17 into "destroy the
   operational data, keep the identity PII, return 500".** #1405 added
   `devenv_monthly_vcpu` to `TENANT_ID_TABLES` and `ALL_TENANT_KEYED_TABLES`
