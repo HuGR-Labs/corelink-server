@@ -33,6 +33,22 @@
 name: rustfmt
 
 on:
+  # PUSH on main as well as PR (2026-08-29). The PR-only trigger left a hole
+  # that was not theoretical: #1406 — titled "apply cargo fmt --all to fix
+  # rustfmt CI gate" — merged the INVERSE of correct formatting while red, and
+  # `main` then sat rustfmt-red with nothing to report it. The next PR author
+  # inherits a red gate they did not cause. This is not a cron (CLAUDE.md's rule
+  # stands: formatting changes only when code changes), it is the push half of
+  # the same trigger, on the same `paths:` filter and the same self-hosted
+  # runner, so it costs nothing extra per merge.
+  push:
+    branches: [main]
+    paths:
+      - '**.rs'
+      - '**rustfmt.toml'  # path-filter-allow: mirrors the pull_request filter below
+      - '**Cargo.toml'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/rustfmt.yml'
   pull_request:
     paths:
       - '**.rs'
