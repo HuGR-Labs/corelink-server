@@ -5,8 +5,8 @@ description: "CoreLink's first-party content-addressable storage surface — the
 source_files:
   - "crates/corelink-container/src/routes/cas.rs"
 source_blobs:
-  - "crates/corelink-container/src/routes/cas.rs@680f9182ea3d9e54d3a881617dc1c3a379ca486c"
-checkpoint_sha: "63e00e0444ffa565635eea09da5e11ea6a055464"
+  - "crates/corelink-container/src/routes/cas.rs@e26b524b8e6891d340dfef1911ccdec366ca3ff5"
+checkpoint_sha: "a688b7ab1b72d38c90f10be59c26503e391347d0"
 provenance: "AUTHORED"
 tags: ["surfaces", "cas", "cache", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
