@@ -397,9 +397,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             // key looks "healthy" while EVERY erasure/account-delete call silently
             // 500s — the GDPR Art. 17 path is broken with no early alarm. Treat it as
             // a must-arm prod control (read identically to PAT_SIGNING_KEY).
-            let erasure_salt_key_present = std::env::var("ERASURE_SALT_KEY")
-                .map(|v| !v.trim().is_empty())
-                .unwrap_or(false);
+            let erasure_salt_key_present =
+                std::env::var("ERASURE_SALT_KEY")
+                    .map(|v| !v.trim().is_empty())
+                    .unwrap_or(false);
             if !erasure_salt_key_present {
                 missing.push("ERASURE_SALT_KEY (GDPR erasure/account-delete salt)");
             }
