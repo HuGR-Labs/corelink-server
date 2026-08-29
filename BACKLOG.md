@@ -3113,3 +3113,95 @@ verify-means: |
   closed item and leave the latency SLO exactly as blind as it is today.
 last-verified: 2026-08-27
 ```
+
+### B-059 — the OKF citation regex cannot see abbreviated citations, so a re-anchor can be wrong and green
+
+`CITE_RE` in `scripts/validate_okf.py:108` requires a NON-EMPTY path, so
+`_collect_cites` never yields a citation written in the abbreviated
+continuation form — a bare `` `:803-831` `` following a full-path citation in
+the same sentence, which the wiki uses freely to avoid repeating a long path.
+
+Those citations are therefore invisible to C5/C6/C6b. They are never checked
+for freshness, never checked for existence, and never counted. A concept can
+carry a citation pointing at the wrong lines while `okf-wiki-validation`
+reports the profile valid.
+
+Measured on #1410: shifting `crates/corelink-container/src/main.rs` by one line
+moved 21 full-path citations, all corrected — and left **6 abbreviated ones**
+wrong (`crates/billing-pipeline.md:119` → `:803-831`, `:881-891`, `:464-489`;
+`launch/money-path.md:72` → `:824-862`, `:903-908`, `:875-886`), each needing
+the same `−1`. The gate was green on that PR the whole time, and because the PR
+also re-pins the `main.rs` blob anchor, the gate would have gone PERMANENTLY
+blind to them: the reference point moves past the drift that was never seen.
+
+That is the house's signature failure — the change asserts it checked, the gate
+agrees, and it is wrong — so the fix is not "remember to grep for `:N-N`". Make
+the abbreviated form a first-class citation: resolve it against the nearest
+preceding full-path citation in the same concept, and validate it like any
+other. Until then, every re-anchor that touches a file cited in abbreviated
+form is silently unverified.
+
+Relates to [B-058] (the OKF reconcile backlog) and to the C5 freshness gate
+generally.
+
+```backlog
+id: B-059
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  grep -qF '(?P<path>[A-Za-z0-9._/\-]+):(?P<l1>' scripts/validate_okf.py
+verify-means: |
+  open — passes while the citation regex still requires a non-empty path, i.e.
+  while abbreviated `:N-M` citations are invisible to the OKF gates. Closes when
+  the pattern admits a path-less citation (resolved against the preceding
+  full-path one) and the gates validate it like any other.
+last-verified: 2026-08-29
+```
+
+### B-060 — the DSR registry→migrations mirror gate
+
+CF-1 (`every_migrated_tenant_keyed_table_is_classified`,
+`crates/corelink-container/src/routes/dsr/adapter_d1.rs`) only walks
+**migrations → registry**: a table on disk that nobody classified fails the
+build. Nothing walks **registry → migrations**, so a name in a DSR registry that
+no migration creates is structurally invisible — and because `erase()` deletes
+in a bare loop with no transaction, such a phantom splits an Art.17 sweep in
+half at its own position. That is not theoretical: `devenv_monthly_vcpu`
+(#1405, reverted in #1410) sat at entry 18 of 41 in `TENANT_ID_TABLES`,
+immediately before the three `byok_*` tables.
+
+The mirror assertion is written and green (stacked on #1410) and closes this.
+It is filed anyway rather than shipped silently, because the same PR corrects a
+`dsr-erasure` claim that the forward gate makes a future tenant-keyed migration
+impossible to land unclassified — a claim that is false for reasons BEYOND the
+phantom, and the reasons deserve to outlive the PR:
+
+- `find("CREATE TABLE")` is case- and whitespace-sensitive;
+- `KEY_COLS` is a closed list of six, so a table scoped by any other column is
+  not seen as tenant-keyed at all;
+- the test reads only `migrations/d1/`, while `migrations/*.sql` at the root
+  also declares tables carrying `tenant_id`.
+
+So the forward direction is weaker than it reads even with the comment-stripper
+bug fixed, and the mirror is the check that does not depend on the heuristic:
+it asks only whether a name the code will DELETE corresponds to a table that
+EXISTS.
+
+Relates to [B-057] and the `compliance/dsr-erasure` concept.
+
+```backlog
+id: B-060
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  ! grep -q 'fn every_registry_table_is_actually_created_by_a_migration' \
+    crates/corelink-container/src/routes/dsr/adapter_d1.rs
+verify-means: |
+  open — passes while the mirror assertion is NOT in the tree. Closes the moment
+  the stacked PR lands it, which is the point: the item exists so the claim
+  correction in the wiki is backed by something tracked, not by a promise in a
+  PR body.
+last-verified: 2026-08-29
+```

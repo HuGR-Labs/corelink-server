@@ -58,9 +58,9 @@ Each entry cross-references:
   `count_then_delete` over the registry in a bare `for` loop with `?` and **no
   transaction**, and the phantom sat immediately after `ratelimit_buckets` and
   immediately before `byok_envelope` / `tenant_byok_config` /
-  `tenant_byok_secret`. So a real erasure request would delete the 16
-  operational tables ahead of it, fail on the 17th with `no such table`, and
-  **never reach** the BYOK tables, the namespace-keyed group, `signup_*`, or the
+  `tenant_byok_secret`. So a real erasure request would delete the **17**
+  operational tables ahead of it (the phantom is entry 18 of 41), fail on it with
+  `no such table`, and **never reach** the BYOK tables, the namespace-keyed group, `signup_*`, or the
   root `tenant` row that carries `clerk_user_id` / `email_hash` and is deleted
   last by design. Worse than failing clean: operational state destroyed,
   identity PII intact, 500 returned, `verification_hash()` mismatching so no
