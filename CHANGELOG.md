@@ -49,6 +49,40 @@ Each entry cross-references:
   source to diverge silently. The sibling artifacts (the Python wheel and the
   Go module zip, plus the PyPI simple-index `sha256`) were checked and are in
   sync.
+- **The CAS/AC SLI stream was a dead end: no consumer, no latency, no bound
+  (B-057).** Found while implementing B-055's edge-side emit — tracing where an
+  `AvailCasGet` observation actually goes showed it goes nowhere, so the emit as
+  originally scoped would have added a second writer to a stream nothing reads.
+  **(1) No consumer.** The deployed CAS and AC handlers were built with
+  `InMemorySliObserver`, whose own trait doc promises that "production wiring
+  adapts this to the `corelink-slo::BurnRateCalculator` input stream +
+  prometheus histogram registry". That adaptation does not exist: every
+  `snapshot()` / `count()` call in the workspace is inside a test, and
+  `corelink-container` references `corelink_slo` exactly once, for PagerDuty in
+  `tenant_quota.rs`. **(2) No latency.** `emit_sli` passed `latency_us: 0` for
+  the LATENCY SLI as well as the availability one, as did 11 of the 12
+  `SliObservation::new` call sites in the workspace — a p99-latency SLI whose
+  every sample is zero is not a loose measurement. **(3) No bound.** The
+  observer is a `Mutex<Vec<SliObservation>>` that is only ever pushed to, built
+  at PROCESS START in two places (`routes/cas.rs::build_handlers` via
+  `routes.rs`, and again from `routes/public_mirror.rs::build_state_from_env`
+  for the `_public` moat), so it grew monotonically for the life of the
+  container. New `corelink-container::sli_aggregate::CountingSliObserver` keeps
+  one counter set per `Sli` variant — bounded by the closed 18-variant taxonomy
+  regardless of traffic — carries `(errors, total)`, which is exactly what
+  `BurnRateCalculator` consumes, and publishes the aggregate onto the
+  container's ordinary `tracing` stream every 256 observations so the numbers
+  are readable at all. It lives in the container, not the handler crates, so
+  those keep their freedom from a `tracing` dependency; it implements BOTH
+  handler traits. The 6 CAS call sites now start an `Instant` at handler entry
+  and pass real elapsed microseconds. **Regression-pinned and proven RED
+  first:** `cas_read_emits_a_nonzero_latency_sli` drives the cross-tenant
+  denial arm of `read()` (which emits and returns without touching R2, so the
+  pin needs no credentials and cannot flake on the network); reverting
+  `emit_sli` to the old literal `0` fails it with `got 0 us`. **This does NOT
+  close the SLO loop** — nothing yet computes a burn rate or raises an alert,
+  and B-055 stays open for the edge-side emit.
+
 - **The CF-1 drift gate could not see a phantom table, and could not see two
   migration files at all.** Two independent holes in the same gate, both found
   while writing the guard for the `devenv_monthly_vcpu` incident (#1410).
