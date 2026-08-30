@@ -96,6 +96,21 @@ jobs:
           done <<< "$CHANGED_PATHS"
           TOUCHED="$(sort -u /tmp/touched.txt)"
 
+          # UNIVERSAL SEED: a change to the lockfile, the workspace manifest,
+          # the toolchain pin or this workflow can break ANY package without
+          # touching a single file inside it. Path-based closure is structurally
+          # blind to that — a dependabot PR editing only `Cargo.lock` maps to no
+          # package at all and would be tested against the 13-package floor.
+          # Measured: those paths yield an EMPTY seed set today.
+          if printf '%s\n' "$CHANGED_PATHS" | grep -qxE 'Cargo\.lock|Cargo\.toml|rust-toolchain\.toml|\.github/workflows/rust-affected-tests\.yml'; then
+            echo "universal seed: a root manifest/lockfile/toolchain change can break any package"
+            cut -f2 /tmp/pkgdirs.tsv | sort -u > /tmp/final.txt
+            echo "selected $(wc -l < /tmp/final.txt | tr -d ' ') crates (whole workspace):"
+            sed 's/^/  /' /tmp/final.txt
+            echo "crates=$(tr '\n' ' ' < /tmp/final.txt)" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           # auth + pat are unconditional. See the header.
           SEEDS="$(printf '%s\ncorelink-auth\ncorelink-pat\n' "$TOUCHED" \
             | grep -v '^$' | sort -u)"
