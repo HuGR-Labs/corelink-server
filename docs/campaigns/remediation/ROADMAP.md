@@ -688,3 +688,126 @@ renames é minha, **não medição**.
 
 **Regra: `merge-tree` serve para "conflita?" barato e não-destrutivo, ANTES de mexer.
 Não decide merge.** Consultar os dois e crer no **mais pessimista**.
+
+---
+
+# PARTE V — Auto-indiciamento (revisão adversarial Opus)
+
+> Quatro revisores independentes leram este documento. O adversarial encontrou o
+> quinto erro que eu tinha pedido que procurasse — e mais três que são **contra o
+> autor**, não contra o conteúdo. Registrados aqui porque um sucessor precisa saber
+> que o lead falhou nas próprias regras, não só que as escreveu.
+
+## V.1 — Quebrei minha própria ordem de merge em 13 minutos
+
+| Evento | Horário (UTC) |
+|---|---|
+| #1414 criado, declarando `Ordem: #1412 → #1410 → …` | `23:59:16` |
+| **#1417 (meu WP-0) MERGEADO** — não está na ordem | `00:12:07` |
+| #1412, a cabeça declarada da fila | `00:13:03` |
+
+O primeiro merge depois de publicar a ordem foi **um PR fora dela, à frente dela**.
+Mesmo autor do documento, mesmo executor do merge, em repos **sem branch protection**
+— o fato que o §0.1 nomeia como razão de o lead ser a única trava.
+
+O #1417 estava verde e o merge era defensável em mérito. **Isso não é a questão.** A
+questão é que a única regra que o lead escreveu **para o lead** foi quebrada pelo lead
+em treze minutos, e o documento não registrava.
+
+## V.2 — WP-1 é o único WP sem DoD, sem invariants, sem completude
+
+Todos os oito outros carregam os três. O único marcado *"do lead e não é delegável"*
+não carrega nenhum, e não tem worktree nem branch.
+
+**Num documento cujo assunto é trabalho sem portão, o pacote do autor é o único sem
+portão.** Corrigido abaixo.
+
+### WP-1 — Fila de merge · LEAD · **contrato, agora explícito**
+
+- **DoD:** cada merge registra, no comentário do PR: conjunto de lanes conferido contra
+  um PR de mesmo escopo (não contagem), zero pendentes, zero falhas não-herdadas, e o
+  comando usado (`bash scripts/pre-merge-gate-check.sh --merge <PR>`, sem pipe).
+- **Invariants:** (a) **a ordem declarada é vinculante para o lead** — desvio exige
+  registro escrito com o motivo, ANTES do merge; (b) falha herdada é **nomeada e
+  rastreada**, nunca ignorada; (c) o lead **não mergeia trabalho próprio** sem revisão
+  independente registrada.
+- **Completeness:** nenhum PR mergeado nesta campanha sem entrada correspondente na
+  ordem, ou sem exceção escrita.
+
+## V.3 — A retratação do F-009 estava errada nas DUAS direções
+
+Eu escrevi (§III.2) que a correção sugerida *"não é implementável — não há contra o que
+comparar"*, e classifiquei como suposição de confiança inerente ao protocolo.
+
+**Ambas as metades são falsas, e as duas por leitura parcial do módulo que eu citava:**
+
+1. **Existe contra o que comparar, e é do próprio protocolo.** O Turborepo define
+   `x-artifact-tag` — HMAC sobre hash+corpo, enviado no PUT e esperado no GET quando o
+   cliente usa `TURBO_REMOTE_CACHE_SIGNATURE_KEY`. Medido: `git grep -ci
+   "artifact-tag\|artifact_tag" origin/main` → **0 ocorrências**. Um cliente que ligar
+   verificação de assinatura contra o CoreLink recebe **silêncio, não verificação**.
+2. **O envenenamento que descrevi já está bloqueado.** `turbo_v8.rs` responde
+   **409 create-only** em re-PUT (`TurboBridgeError::AlreadyExists`, B-024, com
+   documento de evidência citado no próprio código). Não se sobrescreve chave existente.
+   O resíduo real é uma **corrida de primeira escrita**, muito mais estreita.
+
+**E o revisor cravou o ponto que dói:** *"over-retraction é erro tanto quanto
+over-escalation, e esta é conveniente — é a retratação que apaga mais trabalho."*
+As quatro retratações do §0.5 apontam **todas para baixo**. Um padrão de retratação que
+só desce merece a mesma desconfiança que o §0.4 aplica a portão que só fica verde.
+
+**Destino real do F-009:** ⚠️ **REABERTO** — `x-artifact-tag` não implementado é lacuna
+de conformidade de protocolo, verificável e não hipotética.
+
+## V.4 — Números que eu publiquei errados, e um vazou
+
+| Alegação minha | Medido | Consequência |
+|---|---|---|
+| "5 lanes, 1.057 execuções, zero sucessos" | **19 lanes, 1.539 execuções** | O WP-4 deixa **14 lanes** de fora enquanto seu DoD diz *"nenhuma fica vermelha crônica"*. As duas frases não podem ser satisfeitas juntas. **E o número errado já vazou** para o corpo de um PR mergeado. |
+| "10 dos 13 PRs abertos editam CHANGELOG" | ≥11 de 15 | A lista **omite o #1397** — os 28.642 linhas, cujo conflito de changelog é o mais caro — e **inclui o #1412**, já mergeado. |
+| "F-006: `tier.rs` tem 6 tiers" | **11 variantes**; o "6" é doc-comment **obsoleto** | Medi da **prosa**, não do código — violando o Q1 no achado que o Q1 deveria proteger. A divergência real é 11 vs 5, **com fallback silencioso**: `ratelimit/tier.rs` não tem arm para nenhum `runner_*`, então **os 5 SKUs de runner são limitados como Team**. |
+
+## V.5 — A retratação do exec-server: conclusão certa, razão falsa
+
+*"Não é RCE sem autenticação"* — **correto, mantido**.
+*"O serviço nem sobe / é funcionalidade morta"* — **falso duas vezes**: o Worker de
+check-host injeta o token e o serviço **sobe e serve autenticado**; e é construído em
+CI, assado no Dockerfile, e **digest-pinned vivo** no `wrangler.jsonc` com o DO binding
+deployado.
+
+**Resíduo não registrado antes:** o gate vive **só** no `main.rs`; `lib.rs`
+`app_with_auth(None)` ainda constrói um `/exec` **aberto** e apenas avisa. E na trilha
+devenv o fail-closed é **por erro de digitação** (`EXEC_SERVER_TOKEN` injetado vs
+`EXEC_SERVER_AUTH_TOKEN` lido) — **um rename de uma linha armaria um `/exec` sem
+autenticação**.
+
+## V.6 — A origem real do apodrecimento de âncoras: squash, não só rebase
+
+Complementa §IV.2. O rebase é uma fonte; **o squash-merge é a maior**.
+
+**Todo PR que reancora um conceito órfã a própria âncora no instante em que é
+mergeado** — o commit ancorado deixa de existir na `main`. Taxa: ~1 órfão por conceito
+reancorado por merge. É **estrutural e contínuo**, não resíduo de campanha, e explica
+38% em vez de 5%.
+
+**Consequência dura para o WP-5:** reancorar os 63 **sem mudar o portão é trabalho que
+se desfaz na semana seguinte**. O blob anchor é a correção certa por um motivo mais
+forte do que eu tinha registrado: sendo content-addressed, sobrevive ao rebase **e ao
+squash**. O commit anchor não sobrevive a nenhum dos dois.
+
+Já existe item para isso — **B-049**, aberto medindo 57/161; hoje 63/164, taxa
+compatível. **Reaproveitar o B-049**, não abrir item novo.
+
+## V.7 — A recomendação que eu adoto: este documento precisa de `verify`
+
+Todo item do `BACKLOG.md` carrega um comando que decide se a própria afirmação ainda
+vale, e o `backlog_verify.py` fica vermelho em DRIFTED. **Este arquivo — que define
+ordem de merge, declara disjunção e congela contratos — não tem nenhum.** Sua deriva é
+invisível por construção, e a prova está no chão: um número errado meu vazou para texto
+de CI mergeado.
+
+É a doença que o próprio documento nomeia como dominante — *a prosa é excelente e a
+implementação não corresponde* — **aplicada a ele mesmo**.
+
+**Ação:** cada WP ganha `verify:` executável, e o roadmap é registrado no `BACKLOG.md`
+para que o `backlog_verify.py` seja dono da sua deriva.
