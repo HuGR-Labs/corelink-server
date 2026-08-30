@@ -1,0 +1,3 @@
+### Fixed
+
+- **O portão de merge apagava o branch-base de uma pilha e o GitHub fechava o PR filho.** Fechamento por base ausente é irreversível na prática: `reopenPullRequest` recusa reabrir, e o PR tem de ser recriado, perdendo revisão, comentários e histórico. Aconteceu com o #1436 em 2026-08-30 — mergear a base da pilha matou um filho que estava com 8 checks verdes. O `--merge` agora consulta `gh pr list --base <branch> --state open` antes de apagar e **recusa** se o branch ainda for base de alguém, imprimindo os `gh pr edit <n> --base main` necessários. Se a consulta falhar, também não apaga: comparação impossível não é prova de ausência. O merge já landou nesse ponto, então nada disso é fatal — branch órfão é bagunça, PR fechado é trabalho perdido.
