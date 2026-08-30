@@ -811,3 +811,136 @@ implementação não corresponde* — **aplicada a ele mesmo**.
 
 **Ação:** cada WP ganha `verify:` executável, e o roadmap é registrado no `BACKLOG.md`
 para que o `backlog_verify.py` seja dono da sua deriva.
+
+---
+
+# PARTE VI — Contratos mecânicos (axioma · DoD · invariants · qualidade · completude)
+
+> As Partes I-V escreveram contratos em **prosa**. Quatro revisores atacaram exatamente
+> isso: critério em prosa não é falsificável, e o do WP-5 **certificava um conserto de
+> 5% como pronto**. Aqui cada WP carrega as cinco partes, e **a completude é um comando**
+> cuja saída decide, não uma frase que alguém interpreta.
+>
+> **Axioma que rege todos:** *nenhum critério de conclusão pode ser satisfeito por um
+> conserto que não resolve o problema.* Se o comando de completude passa com o defeito
+> vivo, o critério é o defeito.
+
+## WP-4 — Higiene de CI  ⚠️ **REDIMENSIONADO 4×**
+
+**Axioma:** portão que nunca fica verde não é portão — é ruído que treina a equipe a
+ignorar sinal. Cada lane ou volta a funcionar, ou é aposentada com registro.
+
+**DoD:** toda lane com zero sucessos históricos ou (a) tem execução verde, ou (b) foi
+removida com item de backlog nomeando o que faltaria para reativá-la.
+
+**Invariants:** zero `ubuntu-latest` introduzido (hosted é billing-blocked; toda
+execução falha desde 2026-08-25) · nenhum canário passa a rodar **dentro** da frota que
+vigia (destrói a propriedade que o faz existir) · caminhos de deploy e assinatura usam
+grupo de concorrência **sem** `cancel-in-progress` — serializar, nunca cancelar.
+
+**Qualidade:** a lista de lanes é **derivada**, nunca transcrita — foi transcrever que
+produziu "5 lanes / 1.057 execuções" quando são **19 / 1.539**, número que vazou para
+um PR mergeado.
+
+**Completude (comando):**
+```bash
+# conta lanes com ZERO sucesso histórico — DoD: 0
+for wf in $(gh api repos/HuGR-Labs/corelink-server/actions/workflows \
+            --jq '.workflows[].id'); do
+  t=$(gh api "repos/HuGR-Labs/corelink-server/actions/workflows/$wf/runs" --jq '.total_count')
+  s=$(gh api "repos/HuGR-Labs/corelink-server/actions/workflows/$wf/runs?status=success" --jq '.total_count')
+  [ "$t" -gt 0 ] && [ "$s" -eq 0 ] && echo "$wf"
+done | wc -l          # hoje: 19   DoD: 0
+```
+
+## WP-5 — Âncoras OKF  ⚠️ **REESCOPADO 4,8× + PREVENÇÃO OBRIGATÓRIA**
+
+**Axioma:** conserto sem prevenção, num defeito com taxa de criação contínua, é trabalho
+que se desfaz. **O squash-merge órfã a âncora do próprio PR que reancora** (~1 por
+conceito por merge) — reancorar 63 hoje recria 63 em poucas semanas.
+
+**DoD:** (a) zero âncoras inalcançáveis **e** (b) `validate_okf` **reprova** âncora
+inalcançável em vez de degradar silenciosamente para base-ref **e** (c) blob anchor
+passa a ser o padrão, commit anchor vira fallback.
+
+**Invariants:** nenhuma âncora avançada sem reler a claim — avançar sem reler **mascara**
+drift futuro, que é pior que o vermelho · blob anchor é content-addressed e sobrevive a
+rebase **e** a squash; commit anchor não sobrevive a nenhum dos dois.
+
+**Qualidade:** verificar com o predicado que a **CI** usa. `validate_okf` local passa
+verde sobre os 63, porque o objeto órfão ainda existe no clone; só
+`git merge-base --is-ancestor` discrimina.
+
+**Completude (comando):**
+```bash
+n=0
+for f in $(git ls-tree -r --name-only origin/main -- docs/knowledge/ \
+           | grep '\.md$' | grep -vE '/(index|log)\.md$'); do
+  sha=$(git show "origin/main:$f" | grep -m1 -oE 'checkpoint_sha:[[:space:]]*"?[0-9a-f]{8,40}' \
+        | grep -oE '[0-9a-f]{8,40}'); [ -z "$sha" ] && continue
+  git merge-base --is-ancestor "$sha" origin/main 2>/dev/null || n=$((n+1))
+done; echo "$n"      # hoje: 63   DoD: 0
+```
+⚠️ O critério anterior (`grep -c` de **duas** SHAs) passava com **32 SHAs distintos**
+órfãos vivos. Era o defeito, não o teste. Rastreado em **[B-049]** e **[B-061]**.
+
+## WP-6 — Re-corte do devenv  ⚠️ **O MANIFESTO É O ENTREGÁVEL**
+
+**Axioma:** um contrato congelado não deixa decisão de projeto para quem executa. Hoje o
+DESCARTE está itemizado e o **SALVAR não** — "todo o resto, por nome" devolve ao agente
+a classificação de 173 arquivos, que é precisamente a decisão que o contrato deveria ter
+removido.
+
+**DoD:** existe um **manifesto arquivo-a-arquivo** (`SALVAR` / `DESCARTAR` / `ARQUIVAR`),
+revisado pelo lead **antes** de qualquer extração. Cada PR re-cortado compila, tem teste
+que falha se revertido, e **o serviço inicia** — o defeito raiz é um nome de variável
+trocado que impede o boot.
+
+**Invariants:** `git add -A` **proibido** (foi ele que varreu 54 workflows e um módulo
+inteiro para dentro do PR) · nada de `:latest` — imagem fixada por digest · nenhuma
+vinculação a DO cuja classe não esteja publicada (derruba o deploy inteiro, não só o
+devenv) · **arquivar antes de descartar**: o `gc_worker/` (13 arquivos) só sobreviveu
+porque o `git add -A` o varreu para `c98ca0f4`.
+
+**Qualidade:** os testes atuais **codificam o bug como contrato** — mockam sucesso e
+"provam" que uma rota inexistente retorna ok. Nenhum conserto é aceito com verificação
+mockada.
+
+**Completude (comando):**
+```bash
+# o manifesto cobre exatamente os 173 arquivos do PR, sem sobra nem falta
+diff <(gh pr view 1397 --json files --jq '.files[].path' | sort) \
+     <(cat docs/campaigns/remediation/devenv-manifest.tsv | cut -f1 | sort) \
+  && echo "manifesto completo"     # DoD: sai limpo
+```
+
+## WP-7 — Série WP-* (6 PRs)
+
+**Axioma:** três destes formam **pilha acidental** — mergear um mergeia os três. A ordem
+não é preferência, é topologia.
+
+**DoD:** cada um compila (**#1399 e #1400 não compilam hoje**), tem teste que fica
+vermelho se o fix for revertido, e o defeito nomeado no §II.2 está fechado.
+
+**Invariants:** o teste que "prova" o conserto do #1396 **passa vaziamente** — o contrato
+original mandava PROVAR o bypass antes de consertar e **PARAR se não provasse**; foi
+enviado conserto sem prova. Não repetir.
+
+**Completude (comando):**
+```bash
+for p in 1395 1396 1398 1399 1400 1402; do
+  gh pr view $p --json state --jq '.state'
+done | grep -c OPEN        # DoD: 0
+```
+
+## WP-9 (NOVO) — Achados sem dono
+
+Cada um verificado, nenhum atribuído até aqui.
+
+| Achado | Fato medido | Ação |
+|---|---|---|
+| **F-009 REABERTO** | `x-artifact-tag` (HMAC do protocolo Turborepo) — **0 ocorrências** no repo. Cliente que liga verificação de assinatura recebe **silêncio**. O envenenamento por sobrescrita **já está bloqueado** (409 create-only); o resíduo é corrida de primeira escrita. | Lacuna de conformidade de protocolo, verificável |
+| **F-006** | `TierKind` tem **11 variantes**; `ratelimit` mapeia **5** com fallback silencioso `_ => Team`. **Nenhum arm para `runner_*`** ⇒ os 5 SKUs de runner são limitados como Team. | Cobrança/limite divergentes |
+| **F-010 / F-019** | Reembolso não revoga acesso; ticket de credencial 2 h reusável (pedido real: TTL 7200→600 + `destroy`) | Decisão de produto |
+| **P-A7** | `worker/src/index.ts` provisiona sessão de réplica D1 usada só no auth, nunca repassada às leituras de tier/quota — ida a região distante **por request autenticado** | Perf, do 4º relatório |
+| **exec-server** | O gate vive **só** no `main.rs`; `lib.rs` `app_with_auth(None)` constrói `/exec` **aberto**. Na trilha devenv o fail-closed é **por erro de digitação** — um rename de uma linha arma `/exec` sem auth | Endurecer o ponto de entrada da biblioteca |
