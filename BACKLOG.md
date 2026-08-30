@@ -3298,26 +3298,43 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  bash -c 'grep -qF "59 de 164" docs/campaigns/remediation/ROADMAP.md || exit 1
-  git rev-parse --is-shallow-repository | grep -qx false || { echo "FALHA: clone raso — ancestralidade nao verificavel. O workflow precisa de fetch-depth: 0."; exit 1; }
+  bash -c 'git rev-parse --is-shallow-repository | grep -qx false || { echo "FALHA: clone raso — ancestralidade nao verificavel. O workflow precisa de fetch-depth: 0."; exit 1; }
   n=0
   for f in $(git ls-tree -r --name-only HEAD -- docs/knowledge/ | grep "\.md$" | grep -vE "/(index|log)\.md$"); do
     sha=$(git show "HEAD:$f" | grep -m1 -oE "checkpoint_sha:[[:space:]]*\"?[0-9a-f]{8,40}" | grep -oE "[0-9a-f]{8,40}") || true
     [ -z "$sha" ] && continue
     git merge-base --is-ancestor "$sha" HEAD 2>/dev/null || n=$((n+1))
   done
-  [ "$n" -eq 59 ]'
+  [ "$n" -gt 0 ] || { echo "FALHA: zero ancoras inalcancaveis — o apodrecimento acabou, feche o item."; exit 1; }
+  python3 scripts/validate_okf.py >/dev/null 2>&1 || { echo "FALHA: validate_okf REPROVA — a prevencao existe, feche o item."; exit 1; }
+  echo "aberto: $n ancoras inalcancaveis e validate_okf ainda passa (prevencao ausente)"'
 verify-means: |
-  open — o roadmap afirma "63 de 164" âncoras OKF inalcançáveis, e a varredura de
-  ancestralidade sobre todos os conceitos confirma 63 agora. Fica verde enquanto o
-  documento e a realidade concordam. Vira DRIFTED nos dois sentidos: se alguém
-  reancorar (o número cai e o texto mente) ou se o apodrecimento continuar (o número
-  sobe e o texto subestima). Fechar este item exige a PREVENÇÃO, não só a
-  re-ancoragem — ver o mecanismo em [B-049]: o squash-merge órfã a âncora do próprio
-  PR que reancora, a ~1 por conceito por merge, então reancorar sem mudar o portão se
-  desfaz na semana seguinte. A correção estrutural é preferir blob anchor
-  (content-addressed, sobrevive a rebase E a squash) e fazer o validate_okf reprovar
-  âncora inalcançável em vez de degradar para base-ref.
+  open — existem âncoras inalcançáveis E o `validate_okf.py` ainda passa mesmo
+  assim. As duas metades juntas são a definição do item: o apodrecimento é real e
+  nada o impede.
+
+  A versão anterior fixava um NÚMERO exato e era instável por construção. Medido em
+  2026-08-30, no mesmo dia: 63 → 59 depois de três PRs reancorarem, e 59 → 64 depois
+  de UM único squash-merge (#1432), porque o squash orfana as âncoras dos conceitos
+  do próprio PR. Um número exato reprova em duas situações opostas — quando alguém
+  conserta e quando alguém apenas mergeia — e no meio disso derruba PRs sem relação
+  nenhuma, que herdam o vermelho (aconteceu com o #1402, que não toca em âncora).
+  Um portão que o trabalho correto derruba não é rigor, é ruído; e ruído é o que faz
+  um portão ser ignorado.
+
+  O que este item afirma NÃO é uma contagem — é a AUSÊNCIA DA PREVENÇÃO, que é o que
+  o próprio item sempre disse que fecharia ele. Ver [B-049]: o squash orfana a ~1 por
+  conceito por merge, então reancorar sem mudar o portão se desfaz na semana seguinte.
+  Fechar exige que `validate_okf` REPROVE âncora inalcançável em vez de degradar para
+  base-ref (hoje `_check_c5b` faz `if not git.is_ancestor(prev_sha, base_ref): continue`
+  — pula a checagem em vez de reprovar), e que o blob anchor (content-addressed,
+  sobrevive a rebase E a squash) seja o padrão.
+
+  Vira DRIFTED exatamente quando a prevenção existir: aí `validate_okf` reprova, o
+  verify falha, e o item TEM de ser fechado. É o único evento que muda a alegação.
+
+  A contagem continua registrada no ROADMAP como INSTANTÂNEO datado, explicitamente
+  não-gateado — número medido apodrece por design, e fingir o contrário foi o defeito.
 last-verified: 2026-08-30
 # NOTA (aprendida na propria CI): a primeira versao deste verify PASSAVA local e
 # REPROVAVA na CI. Causa: `actions/checkout` sem `fetch-depth: 0` clona RASO, e
