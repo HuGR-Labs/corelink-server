@@ -559,3 +559,84 @@ modelo ao consertar os outros.
 Pergunta obrigatória em toda revisão de portão daqui pra frente:
 **"o que quebraria isto e NÃO seria pego?"** Se não houver resposta, o portão não foi
 revisado — foi lido.
+
+---
+
+# PARTE IV — O quarto briefing (dispatch ox alpha), e a sétima cegueira
+
+## IV.1 — Status: NÃO executável como escrito, e **2 de 14 feitos**
+
+O quarto documento recebido é um runbook de dispatch (`OX-ALPHA-FIX-PLAN.md` +
+`OX-ALPHA-DISPATCH.md`), com 14 WPs numerados atravessando os três repos. Três
+impedimentos, todos medidos:
+
+| # | Impedimento | Medição |
+|---|---|---|
+| 1 | **A spec não existe** | Os dois arquivos viviam em `/var/folders/.../T/opencode/audit/` — diretório temporário do sistema, **apagado**. O briefing manda entregar os pacotes PART-B **verbatim**; sem os arquivos, executá-lo exigiria **inventar** o conteúdo, que é o que ele proíbe. |
+| 2 | **A base fixa está 54 commits atrás** | Manda ramificar de `8cd0f920`; a `main` estava em `dc0e5e0e`. Ramificar dali reverteria tudo que entrou desde então. |
+| 3 | **Só 2 de 14 existem** | Branches sob `go-live/wp-*`: **WP-3 mergeado** (#1345), **WP-2 aberto** (#1356). Os outros 12 não têm branch. `WP-9` (runners) e `WP-13` (workspaces) — buscados nos repos respectivos — **nunca foram feitos**. |
+
+### ⚠️ Retificação registrada
+
+Eu havia reportado que o trabalho deste briefing estava *"majoritariamente feito"*.
+**Estava errado.** Concluí isso a partir de **duas branches**, e confundi este briefing
+(14 WPs numerados, 3 repos) com o **terceiro** (15 WPs por letra, `claude/fix-WP-A..M`).
+Os PRs #1347-1352 e #1364 pertencem ao **terceiro**, não a este.
+
+É o mesmo erro que este documento condena — **conclusão a partir de leitura parcial** —
+e é a quinta vez que ele aparece nesta campanha. Peguei ao duvidar de mim antes de
+escrever, não durante a análise original.
+
+**Status real deste briefing: 1 mergeado, 1 aberto, 12 sem branch.**
+
+### Contradição de papel — não resolvida por mim
+
+O briefing diz *"Você é o tech lead… e **NÃO mergeia nada**"*. O owner nomeou este lead
+**guardião único de merge dos 3 repos**. São instruções opostas.
+
+**Leitura adotada:** aquele "não mergeia" era instrução ao **ox alpha**, e o documento
+chegou como material histórico, não como ordem nova. **O lead segue mergeando.** Fica
+registrado como pressuposto explícito, não como decisão inventada — se estiver errado,
+é o owner quem corrige.
+
+### Item deste briefing que virou ação real
+
+**#1356 (WP-2, purga de claims falsos)** e **#1376** estavam travados no portão
+`published SDK artifacts`. Esse portão foi consertado (o pacote npm servido do próprio
+domínio estava defasado). Os dois precisam apenas de **rebase** para destravar — parados
+há dias por dívida que não era deles.
+
+## IV.2 — A SÉTIMA cegueira, e por que ela explica os 63/164
+
+Atualiza §III.4. Esta é a mais cara encontrada.
+
+**`validate_okf` fica VERDE localmente enquanto a CI o vê vermelho.** Cada rebase
+reescreve os commits e órfã todo `checkpoint_sha` — mas os objetos órfãos **continuam
+existindo no clone local**, então a checagem local os alcança e passa. A CI clona limpo,
+não os alcança, e reporta stale.
+
+**O único check local que concorda com a CI:**
+
+```bash
+git merge-base --is-ancestor <checkpoint_sha> origin/main   # por conceito
+```
+
+**Consequência medida:** 63 de 164 conceitos (38%) com âncora inalcançável em
+`origin/main`. Não é acidente de um merge — é **toda pilha rebaseada de toda campanha**,
+apodrecendo sem nunca ficar vermelho onde alguém olhasse. Uma única sessão pagou 3
+rebases num dia e órfã 10 conceitos.
+
+**Isso muda o WP-5.** Re-ancorar os 63 sem prevenção recria o problema na próxima rodada
+de rebases. O conserto tem de incluir:
+1. `validate_okf` **reprova** âncora inalcançável (hoje ele cai em silêncio para base-ref);
+2. **preferir blob anchor** — ele é content-addressed e **sobrevive ao rebase**; só o
+   commit anchor move. Tratar commit anchor como fallback, não como padrão.
+
+## IV.3 — Régua de merge ajustada
+
+`git merge-tree --write-tree` retornou **exit 0 e uma tree** enquanto o GitHub reportava
+`CONFLICTING` no mesmo par. Não sei ainda qual estava certo sobre o quê — a hipótese de
+renames é minha, **não medição**.
+
+**Regra: `merge-tree` serve para "conflita?" barato e não-destrutivo, ANTES de mexer.
+Não decide merge.** Consultar os dois e crer no **mais pessimista**.
