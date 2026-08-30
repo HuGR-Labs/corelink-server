@@ -31,10 +31,9 @@ use uuid::Uuid;
 const ATTACKER_TENANT: Uuid = Uuid::from_u128(0xa);
 const FLOOD_TENANT: Uuid = Uuid::from_u128(0xc);
 
-fn limiter_with_cap(cap: usize) -> InMemoryTokenBucketRateLimiter<
-    InMemoryRateLimitAuditSink,
-    InMemoryRateLimitMetrics,
-> {
+fn limiter_with_cap(
+    cap: usize,
+) -> InMemoryTokenBucketRateLimiter<InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics> {
     InMemoryTokenBucketRateLimiter::with_bucket_map_cap_for_test(
         Arc::new(InMemoryRateLimitAuditSink::new()),
         Arc::new(InMemoryRateLimitMetrics::new()),
@@ -112,9 +111,7 @@ fn drained_key_does_not_re_materialise_full_after_drain_then_flood() {
     // after this; the approximate-LRU eviction (sample K=8) will
     // hit it with overwhelming probability across 64 evictions.
     for n in 0..64u32 {
-        let _ = lim
-            .try_acquire(FLOOD_TENANT, flood_key(n), 1, 0)
-            .unwrap();
+        let _ = lim.try_acquire(FLOOD_TENANT, flood_key(n), 1, 0).unwrap();
     }
     assert!(lim.bucket_count().unwrap() <= cap);
 
@@ -145,8 +142,6 @@ fn fresh_key_still_re_materialises_full() {
     let cap = 16usize;
     let lim = limiter_with_cap(cap);
     let key = flood_key(0);
-    let out = lim
-        .try_acquire(FLOOD_TENANT, key, 1, 0)
-        .unwrap();
+    let out = lim.try_acquire(FLOOD_TENANT, key, 1, 0).unwrap();
     assert!(is_allow(&out.decision));
 }

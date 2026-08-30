@@ -473,11 +473,7 @@ where
     /// concurrent `try_acquire` (the per-instance Mutex already
     /// serialises every entry; the map and the tombstones share
     /// the same per-instance lock acquisition in `try_acquire`).
-    fn fresh_bucket(
-        &self,
-        bucket_key: &BucketKey,
-        now_ms: u64,
-    ) -> TokenBucketState {
+    fn fresh_bucket(&self, bucket_key: &BucketKey, now_ms: u64) -> TokenBucketState {
         let mut tombstones = match self.drained_tombstones.lock() {
             Ok(g) => g,
             Err(_) => {
@@ -517,8 +513,7 @@ where
     /// (WP-M MED-19). The tombstone is consulted by `fresh_bucket`
     /// and lives at most [`DRAINED_TOMBSTONE_TTL_SECS`] from `now_ms`.
     fn record_drained_tombstone(&self, bucket_key: &BucketKey, now_ms: u64) {
-        let deadline = now_ms
-            .saturating_add(DRAINED_TOMBSTONE_TTL_SECS.saturating_mul(1000));
+        let deadline = now_ms.saturating_add(DRAINED_TOMBSTONE_TTL_SECS.saturating_mul(1000));
         if let Ok(mut g) = self.drained_tombstones.lock() {
             g.insert(bucket_key.clone(), deadline);
         }
