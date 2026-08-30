@@ -1,7 +1,16 @@
 name: changelog-validate
 
 # Enforces that every PR carrying a `feat:` or `fix:` Conventional Commit
-# touches `CHANGELOG.md` under the `[Unreleased]` section — and that it adds
+# records its change — EITHER by adding a `changelog.d/<pr>-<slug>.md` fragment
+# (preferred; a new file per PR cannot conflict with another PR's new file) OR
+# by the legacy route of touching `CHANGELOG.md` under the `[Unreleased]`
+# section. Dual acceptance is deliberate and stays until the in-flight merge
+# queue drains: on 2026-08-29, 10 of the 13 open PRs (#1389 #1393 #1395 #1396
+# #1398 #1399 #1400 #1402 #1410 #1412) edited CHANGELOG.md, and a fragment-only
+# gate would turn all ten red. `scripts/assemble_changelog.py` splices the
+# fragments back into `## [Unreleased]` at release time.
+#
+# The legacy half additionally asserts that it adds
 # EXACTLY ONE entry for the change, not two. Prevents (a) the common drift
 # where the changelog falls behind the actual feature/bug trajectory, and
 # (b) the rebase-duplication observed on PR #955 (2026-08-01): a
@@ -87,8 +96,70 @@ jobs:
           echo "$FEAT_FIX_COMMITS"
           echo "required=true" >> "$GITHUB_OUTPUT"
 
+      - name: Detect changelog.d/ fragment added by this PR
+        id: fragment
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+
+          # A fragment is an ADDED (`--diff-filter=A`) `.md` file under
+          # `changelog.d/`. Modifying an existing fragment is not a new entry,
+          # and `changelog.d/README.md` documents the mechanism rather than
+          # recording a change, so neither satisfies the gate.
+          #
+          # `git diff --name-only` is asked for the single pathspec directly and
+          # its output captured, NOT piped into `grep -q`: under `pipefail` the
+          # quiet-grep idiom inverts (grep exits at the first match, git takes
+          # SIGPIPE 141, the pipeline reports failure) exactly on the large PRs
+          # whose name list outruns the 64 KiB pipe buffer. Same defect the
+          # legacy step below documents from PR #1271.
+          ADDED=$(git diff --name-only --diff-filter=A "${BASE}..${HEAD}" \
+                    -- 'changelog.d/*.md')
+          ADDED=$(printf '%s\n' "$ADDED" | grep -v '^changelog.d/README.md$' || true)
+          ADDED=$(printf '%s\n' "$ADDED" | grep -v '^[[:space:]]*$' || true)
+
+          if [[ -z "$ADDED" ]]; then
+            echo "no new changelog.d/ fragment in this PR"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "changelog fragment(s) added:"
+          echo "$ADDED"
+          echo "present=true" >> "$GITHUB_OUTPUT"
+          {
+            echo "paths<<EOF"
+            echo "$ADDED"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Validate changelog fragment format
+        # Runs whenever a fragment is added, feat:/fix: or not. A malformed
+        # fragment that is never linted is a silently-dropped changelog entry —
+        # the same drift this whole workflow exists to prevent, moved one file
+        # sideways.
+        if: steps.fragment.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Word-split intentionally: one path per line from the step output.
+          # shellcheck disable=SC2046
+          python3 scripts/assemble_changelog.py --lint $(printf '%s\n' "${{ steps.fragment.outputs.paths }}")
+
+      # ---------------------------------------------------------------------
+      # DUAL ACCEPTANCE (transition, 2026-08-29).
+      # A feat:/fix: PR satisfies the changelog requirement with EITHER a new
+      # `changelog.d/` fragment (preferred, conflict-free) OR the legacy
+      # `## [Unreleased]` entry in CHANGELOG.md. The legacy check below is
+      # therefore skipped — and only skipped — when a fragment is present.
+      # Both halves stay live until the in-flight queue drains: 10 of the 13
+      # open PRs on 2026-08-29 carry a CHANGELOG.md edit and would break under
+      # a fragment-only gate.
+      # ---------------------------------------------------------------------
       - name: Verify CHANGELOG.md is touched under [Unreleased]
-        if: steps.detect.outputs.required == 'true'
+        if: steps.detect.outputs.required == 'true' && steps.fragment.outputs.present != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -107,7 +178,7 @@ jobs:
           #    Measured on PR #1271 (326 changed files): the gate reported
           #    "not modified" for a CHANGELOG.md carrying a 24-line diff.
           if [[ -z "$(git diff --name-only "${BASE}..${HEAD}" -- CHANGELOG.md)" ]]; then
-            echo "::error file=CHANGELOG.md::PR contains feat:/fix: commits but CHANGELOG.md is not modified. Add an entry under '## [Unreleased]'."
+            echo "::error file=CHANGELOG.md::PR contains feat:/fix: commits but has neither a new changelog.d/ fragment nor a CHANGELOG.md edit. Preferred: add changelog.d/<pr-number>-<slug>.md (see changelog.d/README.md). Legacy: add an entry under '## [Unreleased]'."
             exit 1
           fi
 
