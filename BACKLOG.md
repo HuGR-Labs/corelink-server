@@ -6273,3 +6273,180 @@ verify-means: |
   gasto hosted, rodando na frota `corelink`.
 last-verified: 2026-08-30
 ```
+
+---
+
+### B-116 — a doc publica um endpoint de aceite de DPA que não existe
+
+O `apps/docs` documenta `POST /v1/dpa/accept`, com página própria, entrada no índice da
+API, exemplos em quatro linguagens e uma tradução pt-BR. **O código não registra essa
+rota.** O que existe é `POST /v1/onboarding/dpa-accept`
+(`crates/corelink-container/src/routes/dpa_accept.rs:634`).
+
+Não é sinônimo, é outro caminho, e a divergência tem duas camadas:
+
+1. **O caminho.** Não há reescrita no Worker. `/v1/dpa/accept` não casa com nenhum arm
+   dedicado do `matchRoute`, então cai no balde genérico `/v1/*`, é encaminhado ao
+   contêiner, e o contêiner não tem a rota — 404 depois de autenticar.
+2. **O mecanismo de autenticação.** A doc apresenta o endpoint como o resto da API de PAT.
+   A rota real vive sob `/v1/onboarding/`, que o Worker trata num arm próprio,
+   **autenticado por Clerk** e com tenant `_anonymous`
+   (`worker/src/index.ts:1000-1001`). Um cliente que siga a doc erra o caminho **e** a
+   credencial.
+
+Gravidade: o aceite de DPA é o registro de consentimento click-through. Um cliente que
+tente registrá-lo pela via publicada não consegue, e o produto fica vendendo um controle
+contratual cuja porta documentada não abre.
+
+**Como foi provado, e por que não por HTTP.** Sondar prod não decide: os dois caminhos
+devolvem `401`, porque o Worker rejeita sem credencial **antes** de rotear. O instrumento
+correto é a tabela de rotas do Worker mais o registro do contêiner — sonda autenticada não
+vê o que o cliente vê, e sonda não autenticada não vê o roteamento.
+
+```backlog
+id: B-116
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'docs=$(grep -rl -- "/v1/dpa/accept" apps/docs/ 2>/dev/null | wc -l | tr -d " ")
+  code=$(grep -rn -- "\"/v1/dpa/accept\"" crates/ worker/src/ 2>/dev/null | wc -l | tr -d " ")
+  [ "$docs" -gt 0 ] || { echo "FALHA: a doc nao menciona mais /v1/dpa/accept — ou foi corrigida (feche o item) ou o grep quebrou; conte o sinal antes de fechar."; exit 1; }
+  [ "$code" = 0 ] || { echo "FALHA: /v1/dpa/accept agora esta registrado no codigo — a divergencia acabou, feche o item."; exit 1; }
+  echo "aberto: $docs arquivo(s) de doc publicam /v1/dpa/accept e 0 sitio de codigo registra essa rota"'
+verify-means: |
+  open — a doc publica o caminho e o código não o registra.
+
+  Os dois lados são medidos, de propósito. Um predicado que só olhasse a doc fecharia
+  sozinho se alguém apagasse a página sem criar a rota, e um que só olhasse o código
+  fecharia se a rota nascesse com a doc ainda errada. A divergência é uma relação entre
+  duas coisas e só uma medição das duas a decide.
+
+  A primeira falha é deliberadamente ruidosa: `docs=0` pode significar "corrigido" ou
+  "meu grep quebrou", e essas duas leituras não podem compartilhar um caminho silencioso.
+
+  O que este comando NÃO decide: se o reparo escolhido é o certo. Há dois — publicar o
+  caminho real (`/v1/onboarding/dpa-accept`, dizendo que é autenticado por Clerk) ou
+  registrar um alias no caminho publicado. O primeiro é honesto; o segundo preserva
+  qualquer integração que já tenha sido escrita contra a doc. Quem fechar escolhe e
+  justifica, e em ambos os casos a página tem de dizer a credencial certa — corrigir o
+  caminho e deixar o mecanismo de auth errado troca um 404 por um 401.
+last-verified: 2026-08-30
+```
+
+---
+
+### B-117 — apagar e exportar a própria conta não têm documento nenhum
+
+O contêiner registra `POST /v1/customer/account/delete` e
+`GET /v1/customer/account/export`. **Nenhuma das duas aparece em lugar algum do
+`apps/docs`** — nem página de referência, nem índice, nem OpenAPI, nem tutorial, nem a
+tradução pt-BR.
+
+São as duas rotas que materializam apagamento e portabilidade para o titular. O produto
+vende conformidade com esses direitos, o binário os implementa, e o cliente não tem como
+descobrir que existem. É a forma inversa do [B-116]: lá a doc promete o que o código não
+faz; aqui o código faz o que a doc não conta.
+
+Contexto que evita conclusão apressada: as rotas `/v1/privacy/dsr/*` **são** documentadas,
+com página por direito. Então não é o tema que falta — é este par específico. Vale
+verificar, ao fechar, se as duas são redundantes com o portal DSR (e então o reparo é
+apagá-las ou apontá-las) ou se são a via de autosserviço do titular (e então o reparo é
+documentá-las).
+
+```backlog
+id: B-117
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'n=0
+  for r in /v1/customer/account/delete /v1/customer/account/export; do
+    c=$(grep -rn -- "\"$r\"" crates/ 2>/dev/null | wc -l | tr -d " ")
+    d=$(grep -rl -- "$r" apps/docs/ 2>/dev/null | wc -l | tr -d " ")
+    [ "$c" -gt 0 ] || { echo "FALHA: $r nao esta mais registrada no codigo — o item pressupoe que ela existe; reavalie em vez de fechar."; exit 1; }
+    [ "$d" = 0 ] && n=$((n+1))
+  done
+  [ "$n" -gt 0 ] || { echo "FALHA: as duas rotas agora aparecem na doc — feche o item."; exit 1; }
+  echo "aberto: $n de 2 rotas de conta registradas no codigo sem nenhuma mencao em apps/docs"'
+verify-means: |
+  open — pelo menos uma das duas rotas existe no binário e não existe na doc.
+
+  O comando exige que a rota **esteja registrada** antes de reclamar da ausência de doc.
+  Sem isso o item fecharia sozinho no dia em que alguém apagasse a rota — e "sumiu" não é
+  "resolvido". Um item que pode fechar pelo desaparecimento do seu próprio objeto não
+  mede nada.
+
+  O que este comando NÃO decide: se a documentação que aparecer é **correta**. Ele conta
+  menção, não qualidade. Quem fechar tem de operar as duas rotas como cliente, com
+  credencial de cliente, e confirmar que a página descreve o que elas de fato fazem —
+  inclusive o que é irreversível.
+last-verified: 2026-08-30
+```
+
+---
+
+### B-118 — a única lane hosted protegida por waiver nunca executou
+
+`cosign-sign.yml` assina a imagem OCI do Worker com Cosign keyless e publica no Rekor. Ela
+é a **única** lane que o owner autorizou manter hospedada na GitHub, com waiver escrito no
+cabeçalho do arquivo (2026-08-11), sob o argumento de que o custo é desprezível porque só
+dispara em tag de release.
+
+O argumento está certo. O efeito é que o waiver protege uma lane que **nunca assinou
+nada**:
+
+```
+gh run list --workflow=cosign-sign.yml --limit 5   →  zero linhas
+gh run list --workflow=nightly.yml     --limit 2   →  2 linhas
+```
+
+A segunda consulta existe para provar o mecanismo: a mesma chamada devolve linhas quando há
+linhas, então o vazio da primeira é ausência real e não consulta quebrada.
+
+Ela é, portanto, mais uma lane com zero sucessos — só que do lado protegido da fronteira,
+onde a varredura de lanes hosted não a procura porque o waiver a marca como resolvida.
+
+**Consequência que já chegou ao cliente.** O `apps/docs/docs/trust/index.mdx` prometia
+entradas de transparência Sigstore/Rekor para a imagem do Worker, "verificáveis com
+`cosign verify` contra o emissor `token.actions.githubusercontent.com`, sem chave nossa".
+Nada disso jamais foi emitido. O #1356 remove a promessa — e a remoção deixa de ser
+plausível e passa a ser provada por este item.
+
+O precedente que define o padrão de reparo é a `reproducible-build`: zero verdes por motivo
+**estrutural**, não por flake — ela hasheava um artefato wasm que o build não produz, e
+ninguém tinha lido o que a lane fazia. Leia o corpo desta antes de classificar.
+
+```backlog
+id: B-118
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'test -f .github/workflows/cosign-sign.yml || { echo "FALHA: cosign-sign.yml nao existe mais — se foi apagada por decisao, feche o item registrando o motivo."; exit 1; }
+  ctrl=$(gh api "repos/HuGR-Labs/corelink-server/actions/workflows/nightly.yml/runs?per_page=1" --jq ".total_count" 2>/dev/null || echo "")
+  case "$ctrl" in ""|0) echo "INDETERMINADO: a consulta de controle (nightly.yml) nao devolveu execucoes; sem gh/rede autenticada este predicado nao decide nada — nao interprete como ausencia."; exit 0 ;; esac
+  n=$(gh api "repos/HuGR-Labs/corelink-server/actions/workflows/cosign-sign.yml/runs?per_page=1" --jq ".total_count" 2>/dev/null || echo "")
+  case "$n" in "") echo "INDETERMINADO: a consulta da cosign-sign falhou enquanto a de controle funcionou; investigue em vez de concluir."; exit 0 ;; esac
+  [ "$n" = 0 ] || { echo "FALHA: cosign-sign.yml ja executou $n vez(es) — a lane saiu do zero, feche ou reescreva o item."; exit 1; }
+  echo "aberto: cosign-sign.yml tem 0 execucoes (controle nightly.yml: $ctrl) e segue com waiver de custo hosted"'
+verify-means: |
+  open — a lane existe, tem waiver, e nunca rodou.
+
+  A consulta de controle não é enfeite. Este predicado depende de rede autenticada, e a
+  classe de defeito dominante desta campanha é concluir ausência a partir de saída vazia.
+  Sem `gh`, sem rede ou sem permissão, a chamada devolve vazio — que se parece com "zero
+  execuções" e significa outra coisa. O controle separa as duas leituras, e o item sai
+  como INDETERMINADO em vez de mentir nos dois sentidos.
+
+  O que este comando NÃO decide: **por que** ela nunca rodou. Zero execuções é compatível
+  com "nunca houve tag de release" e com "o gatilho está quebrado", e o reparo é
+  completamente diferente nos dois casos. Quem fechar precisa dizer qual é, com o corpo do
+  workflow na mão.
+
+  Saídas aceitáveis, as mesmas três de qualquer lane sem sucesso: consertar na raiz e
+  fazê-la ficar verde; apagá-la, com o motivo no corpo do PR — e nesse caso **toda**
+  promessa de assinatura na doc do cliente sai junto; ou documentar o bloqueio. Nenhuma
+  fica no meio, e "flaky, deixa quieto" não é saída.
+last-verified: 2026-08-30
+```
