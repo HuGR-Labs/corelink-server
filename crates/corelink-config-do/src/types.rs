@@ -154,3 +154,41 @@ pub struct AdminActor {
     /// SHA-256(email) — pseudonymized; never raw email in audit log.
     pub email_hash: [u8; 32],
 }
+
+impl AdminActor {
+    /// Construct a synthetic test/operator actor (zeroed email hash).
+    /// Production wiring reads the actor from the auth middleware's
+    /// verified JWT and constructs a real instance — this is a test
+    /// helper, NOT a real-admin entry point.
+    #[must_use]
+    #[allow(
+        clippy::indexing_slicing,
+        reason = "indices are bounded by construction"
+    )]
+    pub fn operator(id: &str) -> Self {
+        // Stable per-label UUID via a simple stable mix (no external
+        // dep) of the first 16 bytes of the label. The input is
+        // bounded to 16 bytes before the copy, so the index-slicing
+        // clippy lint is satisfied (no out-of-bounds possible).
+        let mut h = [0u8; 32];
+        let bytes = id.as_bytes();
+        let n = bytes.len().min(16);
+        for (i, b) in bytes.iter().take(n).enumerate() {
+            // Mirror the padding shape so the bytes occupy the same
+            // slot as if we'd copied them into a 16-byte buffer.
+            h[i % 32] ^= b.wrapping_add((i as u8).wrapping_mul(31));
+            // Fold the index into a second slot so the hash is sensitive
+            // to the position of the last byte (distinguishes "ab" from "ba").
+            h[(i + 16) % 32] ^= b.wrapping_add((i as u8).wrapping_mul(17));
+        }
+        // Construct a UUIDv4 from the first 16 bytes of the mix.
+        let mut bytes16 = [0u8; 16];
+        bytes16.copy_from_slice(&h[..16]);
+        bytes16[6] = (bytes16[6] & 0x0f) | 0x40; // version 4
+        bytes16[8] = (bytes16[8] & 0x3f) | 0x80; // variant
+        Self {
+            user_id: Uuid::from_bytes(bytes16),
+            email_hash: [0u8; 32],
+        }
+    }
+}

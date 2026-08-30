@@ -703,6 +703,26 @@ Each entry cross-references:
   record to `stripe_billing_audit_events` (migration 0105, classified RETAIN
   in the DSR erasure registry). Both stores share one `D1HttpClient`.
 
+- **Three containers grew without bound (or drifted): rate-limit plan cache,
+  config-DO history/payload, turbo_v8 sentinel set.**
+  - `ratelimit_layer.rs`: the `planned: HashSet<Uuid>` was a pure lifetime
+    set — a transient D1 lookup failure during the FIRST request pinned
+    the tenant to the team-default RPS ladder FOREVER (silent throttle
+    after the outage cleared), and a tier upgrade was invisible until a
+    container restart. Now a `HashMap<Uuid, deadline_ms>` with
+    `PLANNED_ENTRY_TTL_MS = 5 min` (lazy eviction on read). A `None` resolver
+    result is treated as retryable and does NOT record a planned entry —
+    the next request within the window re-resolves.
+  - `config-do store.rs`: `history` and `payloads` BTreeMaps were pruned
+    NEVER. A long-lived singleton kept every payload ever written in
+    memory. Added `prune_expired_history` (lazy, on every `update` and
+    `rollback`) that reuses the SAME `RETENTION_90D_MS = 90 days`
+    constant that gates the rollback eligibility check — the two cannot
+    drift. The current version is always kept.
+  - `turbo_v8.rs`: 3 local copies of the sentinel list, missing `_oci`
+    and `_public` (the helper's full set). Replaced with the canonical
+    `auth_tenant::is_reserved_sentinel` call.
+
 - **Replica promotion trusted the REPORTER's clock — a skewed or malicious
   heartbeat could freeze a healthy primary's writes.** `/_repl/heartbeat`
   stored the client-supplied `ts_ms`, and the staleness gate compared it to

@@ -6,6 +6,8 @@ source_files:
   - "crates/corelink-container/src/routes/turbo_v8.rs"
   - "crates/corelink-turbo-bridge/src/adapter.rs"
   - "crates/corelink-turbo-bridge/src/error.rs"
+source_blobs:
+  - "crates/corelink-container/src/routes/turbo_v8.rs@889a3e6f67f5e98cb487bcc366ce93e81b689016"
 checkpoint_sha: "6129c31dd52fe840e7de87dfa81507a01100cb30"
 provenance: "AUTHORED"
 tags: ["surfaces", "turborepo", "vercel", "cache"]
@@ -45,7 +47,7 @@ signature rides alongside the artifact and is handed back on read.
    over-cap) and a process-wide `GlobalGetBudgetGuard` (cap `GLOBAL_TURBO_GET_PERMITS` = 16, 503 on
    saturation) — so an over-cap read is rejected BEFORE the up-to-100 MiB artifact is read into the heap,
    bounding per-tenant and aggregate read-path memory on a pool SEPARATE from writes
-   (`crates/corelink-container/src/routes/turbo_v8.rs:1107-1114`; `crates/corelink-container/src/routes/turbo_v8.rs:669-739`; `crates/corelink-container/src/routes/turbo_v8.rs:759-795`).
+   (`crates/corelink-container/src/routes/turbo_v8.rs:1107-1114`; `crates/corelink-container/src/routes/turbo_v8.rs:671-740`; `crates/corelink-container/src/routes/turbo_v8.rs:760-796`).
 7. Each artifact read and write records a fire-and-forget usage-metering event into the in-process
    display aggregator [`crate::usage_meter`] — a `ReadHit` / `ReadMiss` on GET and a `Write` on PUT —
    off the hot path (no await/I/O), DISPLAY telemetry only, never gating the response
@@ -97,8 +99,8 @@ signature rides alongside the artifact and is handed back on read.
 6. `crates/corelink-container/src/routes/turbo_v8.rs:1072-1080` — per-route 100 MiB artifact limit override.
 7. `crates/corelink-container/src/routes/turbo_v8.rs:118` — `TURBO_BODY_LIMIT_BYTES` (100 MiB).
 8. `crates/corelink-container/src/routes/turbo_v8.rs:28-37` — `teamId` sub-namespace vs authenticated-tenant isolation.
-9. `crates/corelink-container/src/routes/turbo_v8.rs:669-739` — `GetConcurrencyGuard`: per-tenant GET concurrency cap (429 before buffering), the read twin of `PutConcurrencyGuard`.
-10. `crates/corelink-container/src/routes/turbo_v8.rs:759-795` — `GlobalGetBudgetGuard`: process-wide GET budget (503 on saturation), separate pool from the PUT budget.
+9. `crates/corelink-container/src/routes/turbo_v8.rs:671-740` — `GetConcurrencyGuard`: per-tenant GET concurrency cap (429 before buffering), the read twin of `PutConcurrencyGuard`.
+10. `crates/corelink-container/src/routes/turbo_v8.rs:760-796` — `GlobalGetBudgetGuard`: process-wide GET budget (503 on saturation), separate pool from the PUT budget.
 11. `crates/corelink-container/src/routes/turbo_v8.rs:143` — `TURBO_GET_CONCURRENCY_LIMIT` (4); `crates/corelink-container/src/routes/turbo_v8.rs:198` — `GLOBAL_TURBO_GET_PERMITS` (16).
 12. `crates/corelink-container/src/routes/turbo_v8.rs:966-1044` — `build_handlers` store selection: durable `R2KvStore` when `StorageEnv::from_env()` is present (persists across restarts), in-RAM `InMemoryKvStore` only in the no-creds dev/CI fallback, fail-CLOSED handler when creds are present but R2 refuses to build.
 13. `crates/corelink-container/src/routes/turbo_v8.rs:1167-1168` (GET read HIT), `crates/corelink-container/src/routes/turbo_v8.rs:1361-1362` (PUT write) — fire-and-forget usage-metering `record` calls (DISPLAY telemetry, off the hot path).
