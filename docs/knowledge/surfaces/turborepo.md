@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-turbo-bridge/src/adapter.rs"
   - "crates/corelink-turbo-bridge/src/error.rs"
 source_blobs:
-  - "crates/corelink-container/src/routes/turbo_v8.rs@e281ae839c98a18f3bbc564ce40c2a52b837d3c1"
+  - "crates/corelink-container/src/routes/turbo_v8.rs@889a3e6f67f5e98cb487bcc366ce93e81b689016"
 checkpoint_sha: "6129c31dd52fe840e7de87dfa81507a01100cb30"
 provenance: "AUTHORED"
 tags: ["surfaces", "turborepo", "vercel", "cache"]
