@@ -908,11 +908,29 @@ mockada.
 
 **Completude (comando):**
 ```bash
-# o manifesto cobre exatamente os 173 arquivos do PR, sem sobra nem falta
-diff <(gh pr view 1397 --json files --jq '.files[].path' | sort) \
-     <(cat docs/campaigns/remediation/devenv-manifest.tsv | cut -f1 | sort) \
-  && echo "manifesto completo"     # DoD: sai limpo
+# PAGINE. A forma abaixo devolve os 173; a ingenua devolve 100 em silencio.
+: > /tmp/pr1397.txt
+for pg in 1 2; do
+  gh api "repos/HuGR-Labs/corelink-server/pulls/1397/files?per_page=100&page=$pg" \
+     --jq '.[].filename' >> /tmp/pr1397.txt
+done
+diff <(sort -u /tmp/pr1397.txt) \
+     <(cut -f1 docs/campaigns/remediation/devenv-manifest.tsv | tail -n +2 | sort -u)
+# DoD: exit 0
 ```
+
+> ### ⚠️ O comando ANTERIOR era falso-vermelho por construção — e é a minha própria regra falhando
+>
+> `gh pr view 1397 --json files` devolve **100 de 173** arquivos. Página padrão do GraphQL,
+> **sem aviso de truncagem**. Um manifesto correto reprovava.
+>
+> E o segundo modo é pior: na forma REST o campo é **`filename`**, não `path`. Pedir
+> `.path` devolve **173 linhas vazias** e o `jq` **não levanta erro** — um `diff` contra
+> isso compara nada com nada e sai limpo.
+>
+> **Isto é o §0.2 — "nunca conclua ausência a partir de saída truncada" — falhando DENTRO
+> do comando que eu escrevi para aplicá-lo.** Regra reforçada: *todo comando de completude
+> que enumera precisa provar a própria cardinalidade antes de comparar.*
 
 ## WP-7 — Série WP-* (6 PRs)
 
