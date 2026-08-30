@@ -51,7 +51,7 @@ tags: ["sales", "objection-handling", "r-prep", "ga", "playbook"]
 
 - **Why it matters:** customers want a track record. Build-cache outages are quietly catastrophic.
 - **Our position:** name the gap honestly. Counter with engineering-gate rigor, not bluster.
-- **Evidence:** 21 sprints, external pentest with clean retest, 30 days sustained staging as a precondition of GA, three lighthouse customers attesting our SLA, zero cross-tenant leaks ever (adversarial E2E + audit chain), 24/7 on-call across three regions with weekly synthetic page exercises sustained for 30 days pre-GA.
+- **Evidence:** 21 sprints, 30 days sustained staging as a precondition of GA, three lighthouse customers attesting our SLA, zero cross-tenant leaks ever (adversarial E2E + audit chain), 24/7 on-call across three regions. An external penetration test is planned pre-GA; no report exists yet.
 - **Counter-question:** "Would a SOC 2 readiness rollup + audit-chain proofs + a lighthouse-customer reference call resolve this, or is the concern more about ARR-scale and runway? Those are different conversations and I want to make sure I'm answering the right one."
 
 ### Obj-3 — "What if you raise prices on us next year?"
@@ -65,8 +65,8 @@ tags: ["sales", "objection-handling", "r-prep", "ga", "playbook"]
 
 - **Why it matters:** procurement gate. Some shops have hard rules.
 - **Our position:** acknowledge we're at 3 lighthouse customers; offer alternative evidence forms.
-- **Evidence:** 3 lighthouse customers will reference-call (with sign-off); Forge customer-zero attestation is public; SOC 2 readiness rollup, ISO 27001 crosswalk, pentest executive summary, vendor risk register — all NDA-deliverable. Reference calls scale to 2/quarter per lighthouse alumni for 12 months post-attestation.
-- **Counter-question:** "If references are the only blocker — would 3 reference calls plus the SOC 2 readiness pack and a pentest summary get you across the line? If the answer is 'still need 5,' I'd rather know now."
+- **Evidence:** 3 lighthouse customers will reference-call (with sign-off); Forge customer-zero attestation is public; SOC 2 readiness rollup, ISO 27001 crosswalk, vendor risk register — all NDA-deliverable. Reference calls scale to 2/quarter per lighthouse alumni for 12 months post-attestation.
+- **Counter-question:** "If references are the only blocker — would 3 reference calls plus the SOC 2 readiness pack get you across the line? If the answer is 'still need 5,' I'd rather know now."
 
 ### Obj-5 — "Your roadmap is too small for our needs."
 
@@ -87,7 +87,7 @@ tags: ["sales", "objection-handling", "r-prep", "ga", "playbook"]
   - bazel-remote is excellent reference implementation; single-tenant by construction.
   - Self-hosting carries a real, persistent operational tax: eviction tuning, GC correctness, dashboards, 3am pages, blob sprawl across regions. Often a part-time job for an SRE, full-time during bad weeks.
   - On S3 with realistic CI traffic, **egress** is typically the single largest line item — `BLOG-POSTS/05-fast-cache-hit-economics.md`. CoreLink on R2 has zero egress.
-  - No multi-tenant isolation, no audit chain with Merkle proofs, no BYOK, no residency invariants.
+  - No multi-tenant isolation, no append-only audit chain, no BYOK, no residency invariants.
 - **Counter-question:** "Would you run the calculator at `corelink-docs.humangr.com` against your actual CI numbers? If the answer comes back 'self-hosted is cheaper,' the answer is self-hosted. We're aware that's a possible outcome."
 
 ### Obj-7 — "Why not just S3 + CloudFront?"
@@ -121,7 +121,7 @@ tags: ["sales", "objection-handling", "r-prep", "ga", "playbook"]
 
 - **Why it matters:** legitimate alternative for self-hosted-minded teams.
 - **Our position:** acknowledge NativeLink's strong performance and license. We're a different shape.
-- **Evidence:** NativeLink is self-hosted; the operator is responsible for tenancy, residency, and key management. CoreLink is managed multi-tenant with regulated-industry primitives. If you want to run cache infrastructure yourself, NativeLink is a serious option; if you want the residency invariants, audit chain with Merkle proofs, BYOK kill switch, and 24/7 on-call to come pre-wired, that's the difference.
+- **Evidence:** NativeLink is self-hosted; the operator is responsible for tenancy, residency, and key management. CoreLink is managed multi-tenant with regulated-industry primitives. If you want to run cache infrastructure yourself, NativeLink is a serious option; if you want the residency invariants, an append-only audit chain, BYOK kill switch, and 24/7 on-call to come pre-wired, that's the difference.
 - **Counter-question:** "Are you set up to run the operational tail? If you have an SRE rotation that wants to own a cache, NativeLink is a fine answer. If you don't, that operational tail becomes a line item we're priced against."
 
 ---
@@ -146,15 +146,15 @@ tags: ["sales", "objection-handling", "r-prep", "ga", "playbook"]
 
 - **Why it matters:** procurement gate at most regulated shops.
 - **Our position:** acknowledge directly. We have a calendared path; offer Type I readiness pack now.
-- **Evidence:** readiness 83.7% weighted; auditor Schellman; Type I fieldwork Q4 2026, report Q1 2027. ISO 27001 cert Q1-2027 (98.9% in-scope crosswalk today). Drata-continuous evidence available under NDA. PCI DSS SAQ-A compliant. LGPD + GDPR compliant as processor. Pentest with clean retest.
-- **Counter-question:** "Is SOC 2 a hard gate, or is the gate 'evidence of a controlled environment'? If it's the latter, the SOC 2 readiness rollup + ISO 27001 crosswalk + pentest summary may resolve it under NDA. If it's the former and procurement won't bend, our Type I lands Q4 2026 — would a deferred-effective-date contract structure work?"
+- **Evidence:** readiness 83.7% weighted; auditor Schellman; Type I fieldwork Q4 2026, report Q1 2027. ISO 27001 cert Q1-2027 (98.9% in-scope crosswalk today). Drata-continuous evidence available under NDA. PCI DSS SAQ-A compliant. LGPD + GDPR compliant as processor. External penetration test planned pre-GA; no report exists yet.
+- **Counter-question:** "Is SOC 2 a hard gate, or is the gate 'evidence of a controlled environment'? If it's the latter, the SOC 2 readiness rollup + ISO 27001 crosswalk may resolve it under NDA. If it's the former and procurement won't bend, our Type I lands Q4 2026 — would a deferred-effective-date contract structure work?"
 
 ### Obj-13 — "Your audit chain is just logs in S3."
 
 - **Why it matters:** customers have been burned by "compliant" log retention.
-- **Our position:** the chain is RFC 6962 Merkle-linked with RFC 8785 JCS canonicalization. Verifiable offline by your auditor.
-- **Evidence:** `marketing/launch/BLOG-POSTS/03-audit-chain-merkle-proofs.md`. Independently re-derivable chain heads. Consistency proofs across an arbitrary window. Reference verifier published in Rust + TypeScript producing bitwise-identical canonical output. `INV-AUDIT-APPEND-ONLY` + `audit_immutability.tla` model-checked in CI.
-- **Counter-question:** "Want your auditor on a 30-minute call with us to walk the inclusion-proof flow? They can verify a synthetic event end-to-end live."
+- **Our position:** the chain is an append-only BLAKE3 hash chain with RFC 8785 JCS-canonicalized leaves. Verifiable offline by your auditor.
+- **Evidence:** `marketing/launch/BLOG-POSTS/03-audit-chain-merkle-proofs.md`. Independently re-derivable chain heads — replay any window and compare against a later published head. Reference verifier published in Rust + TypeScript producing bitwise-identical canonical output. `INV-AUDIT-APPEND-ONLY` + `audit_immutability.tla` model-checked in CI.
+- **Counter-question:** "Want your auditor on a 30-minute call with us to walk the chain-verification flow? They can verify a synthetic event end-to-end live."
 
 ### Obj-14 — "Your tenant isolation is a marketing word."
 
@@ -163,7 +163,7 @@ tags: ["sales", "objection-handling", "r-prep", "ga", "playbook"]
 - **Evidence:**
   - `tenant_isolation.tla` formal specification, model-checked in CI; CI fails if the safety property regresses.
   - AAD binding makes cross-tenant decryption cryptographically impossible — not policy-prevented.
-  - External pentest tenant-isolation adversarial scenario: clean, post-remediation retest also clean.
+  - Internal adversarial scenario suite covering tenant isolation; summaries available under NDA (an external pentest is planned pre-GA — no report exists yet).
   - **0 cross-tenant leaks ever** — adversarial E2E + audit chain.
   - `INV-TENANT-NO-CROSS-READ` CRITICAL invariant.
 - **Counter-question:** "Would you want a read-only copy of the TLA+ spec + the CI run history? It's not theatre to share — auditors find it useful."
@@ -178,16 +178,16 @@ tags: ["sales", "objection-handling", "r-prep", "ga", "playbook"]
 ### Obj-16 — "What if your engineers go rogue?"
 
 - **Why it matters:** insider threat is real and CoreLink does have operators with production access.
-- **Our position:** same answer as Obj-15 for the data path: with BYOK, a compromised operator cannot read plaintext at rest. For non-BYOK tenants: dual-approval gate (`PAT-DUAL-APPROVAL-001`) on destructive admin ops, signed-deploy pipeline, Rekor transparency-log entries for every release, audit-chain coverage of all state-changing operations.
+- **Our position:** same answer as Obj-15 for the data path: with BYOK, a compromised operator cannot read plaintext at rest. For non-BYOK tenants: dual-approval gate (`PAT-DUAL-APPROVAL-001`) on destructive admin ops, signed-deploy pipeline, audit-chain coverage of all state-changing operations.
 - **Evidence:** `apps/docs/docs/trust/compliance.mdx#what-you-can-rely-on-today-pre-type-i`; `marketing/launch/BLOG-POSTS/02-byok-deep-dive.md` (operator threat model).
 - **Counter-question:** "Want the operator-trust threat model walk-through? It's a 20-minute call covering: BYOK envelope, dual-approval gate, signed deploys, audit-chain reconstruction."
 
 ### Obj-17 — "We need an annual pentest report."
 
 - **Why it matters:** procurement standard.
-- **Our position:** Pentest-1 firm pre-GA, clean post-remediation retest, exec summary shareable under NDA. Annual cadence post-GA; next Q4 2026 stacked with SOC 2.
-- **Evidence:** `marketing/launch/BLOG-POSTS/01-introducing-corelink.md` (engineering gate); `apps/docs/docs/trust/index.mdx#whats-verifiable-vs-whats-attested`.
-- **Counter-question:** "Is your annual-pentest requirement met by exec summary + remediation status, or do you need full unredacted report access? The latter is rare; the former we can do under NDA within one business day."
+- **Our position:** no external pentest report exists yet — engagement is planned pre-GA (`pentest-summary.mdx`). Internal adversarial reviews + cargo-fuzz summaries are available under NDA today; the executive summary of the first external engagement will be shareable under NDA once it completes. Annual cadence post-GA is the intent.
+- **Evidence:** `apps/docs/docs/explanation/compliance/pentest-summary.mdx` ("No vendor has been contracted"); `marketing/sales/PROOF-POINTS.md` 2.12; SIG Lite A.4 / G.11.
+- **Counter-question:** "Is your annual-pentest requirement satisfiable by a scoped engagement letter + scheduled date now, with exec summary + remediation status to follow once the first engagement completes? Full unredacted report access is rare; the executive summary we can do under NDA."
 
 ---
 

@@ -44,7 +44,8 @@ GA regions at launch: **`us-east-1`** (Cloudflare IAD), **`us-west-2`**
 (LAX), **`eu-west-1`** (DUB), **`ap-southeast-1`** (SIN). The
 control-plane is global; data-plane is regional and **never crosses
 boundaries** without an explicit cross-region replication policy
-(Lighthouse+). Free-tier tenants are provisioned in the geographically
+(Enterprise; Pro and Max include 2 regions). Free-tier tenants are
+provisioned in the geographically
 closest region to your sign-up IP.
 
 ## 5 — Can I use BYOK on the Free tier?
@@ -81,17 +82,24 @@ to influence priority.
 
 ## 8 — Free tier vs paid limits?
 
-Quick reference (full SLA at [/pricing](/pricing)):
+The canonical plans (source of truth:
+[/pricing](/pricing), generated from
+`apps/docs/src/lib/pricing.ts`):
 
-| Limit | **Free** | **Team** | **Lighthouse** | **Enterprise** |
-| --- | --- | --- | --- | --- |
-| Storage cap | 10 GiB | 100 GiB | 1 TiB | unlimited |
-| Egress / mo | 50 GiB | 500 GiB | 5 TiB | negotiated |
-| TPS (put/get) | 100 | 500 | 5000 | negotiated |
-| Audit retention | 14d | 90d | 365d | 365d+ |
-| BYOK | ✗ | ✗ | ✗ | ✓ |
-| Regions | 1 | 2 | 4 | 4 + cross-region |
-| SLA | none | 99.5% | 99.9% | 99.95% |
+| Plan | $/mo | Cache cap | Audit retention |
+| --- | --- | --- | --- |
+| Free | 0 | 10 GB | 7 days |
+| Solo | 15 | 50 GB | 30 days |
+| Starter | 35 | 150 GB | 90 days |
+| Pro | 50 | 500 GB | 365 days |
+| Max | 149 | 2 TB | 365 days |
+| Enterprise | custom | custom | custom |
+
+At v0.1 **every priced plan is hard-capped**: exceeding your
+allowance returns `429` with an upgrade CTA — there is no metered
+overage invoice. Rate limits follow the 5-bucket ladder (Free 10 RPS
+→ Enterprise 10 000 RPS; `pro` and `max` share the Business bucket) —
+see [Rate limits](../explanation/rate-limits).
 
 ## 9 — Do I need a separate PAT per environment?
 
