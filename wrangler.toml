@@ -247,6 +247,13 @@ class_name = "RequestMeterCoordinatorDO"
 name = "REQUEST_METER_SHARD_DO"
 class_name = "RequestMeterShardDO"
 
+# DevEnv DO cross-worker binding (WP-08). `script_name` points at the worker
+# that OWNS the class — this binding only reaches it.
+[[durable_objects.bindings]]
+name = "RUNNER_DEVENV_DO"
+class_name = "RunnerDevEnvDO"
+script_name = "corelink-spawn-worker"
+
 [[migrations]]
 tag = "v5"
 new_sqlite_classes = ["RequestMeterCoordinatorDO", "RequestMeterShardDO"]
@@ -557,6 +564,16 @@ class_name = "RequestMeterCoordinatorDO"
 [[env.prod.durable_objects.bindings]]
 name = "REQUEST_METER_SHARD_DO"
 class_name = "RequestMeterShardDO"
+
+# MIRRORED into env.prod on purpose. `durable_objects` is NON-INHERITABLE in
+# wrangler: an env block REPLACES the top-level list, it does not extend it.
+# Shipping only the top-level binding makes DevEnv green in dev and a permanent
+# 503 in prod (worker/src/index.ts), with CustomerNav linking users straight at
+# it. Every one of the other bindings above is mirrored for the same reason.
+[[env.prod.durable_objects.bindings]]
+name = "RUNNER_DEVENV_DO"
+class_name = "RunnerDevEnvDO"
+script_name = "corelink-spawn-worker"
 
 # ============================================================================
 # R2-10 — Staging environment (`wrangler deploy --env staging`).

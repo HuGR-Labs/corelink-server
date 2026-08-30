@@ -160,6 +160,9 @@ export interface Env {
   // REQUIRED: extractAuth() fails closed (503) when this secret is absent
   // or decodes to fewer than 32 bytes. Never optional in any deployed env.
   PAT_SIGNING_KEY: string;
+  // DevEnv DO cross-worker binding (WP-08)
+  RUNNER_DEVENV_DO?: DurableObjectNamespace;
+  // Public base URL (e.g. "https://corelink-api.humangr.com")
   // OPTIONAL rotation overlap keys (key_management.md §3.2.1, 24h overlap).
   // During a PAT_SIGNING_KEY rotation, bind the OUTGOING key as
   // PAT_SIGNING_KEY_PREV (and/or stage the INCOMING key as
@@ -518,6 +521,8 @@ type RouteKind =
   | "cargo"
   | "reapi_v2"
   | "customer_v1"
+  | "devenv_v1"
+  | "openapi"
   | "public_attestation"
   | "reapi_v1"
   | "bazel_v2"
@@ -966,6 +971,17 @@ function matchRoute(url: URL): RouteMatch {
   // traffic to one DO instance.
   if (path.startsWith("/v1/signup/") || path === "/v1/signup") {
     return { tenantId: "_anonymous", pathSuffix: path, routeKind: "signup" };
+  }
+
+  // Public OpenAPI 3.1 schema — /openapi.json (WP-08)
+  if (path === "/openapi.json" || path === "/v1/openapi.json") {
+    return { tenantId: "_system", pathSuffix: path, routeKind: "openapi" };
+  }
+
+  // DevEnv cloud development environments — /v1/customer/devenv* (WP-08)
+  // Checked BEFORE generic customer_v1 so it forwards to RUNNER_DEVENV_DO
+  if (path.startsWith("/v1/customer/devenv") || path === "/v1/customer/devenv" || path.startsWith("/v1/devenv")) {
+    return { tenantId: "_anonymous", pathSuffix: path, routeKind: "devenv_v1" };
   }
 
   // REAPI v1 customer portal — /v1/customer/* (overview, usage, billing, keys, team, audit)
@@ -2035,6 +2051,23 @@ const baseHandler: ExportedHandler<Env> = {
       return applyCors(resp, request);
     }
 
+    // Public OpenAPI 3.1 schema — /openapi.json (WP-08)
+    if (route.routeKind === "openapi") {
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        return new Response("Method Not Allowed", { status: 405 });
+      }
+      const { devenvOpenApiSpec } = await import("./lib/openapi_devenv.js");
+      const resp = new Response(JSON.stringify(devenvOpenApiSpec), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "public, max-age=300",
+          "X-Request-Id": requestId,
+        },
+      });
+      return applyCors(resp, request);
+    }
+
     // Container health deep-probe — /_health/container — no auth required.
     // Forwards to the container's /_health via the _system DO.
     //
@@ -2912,6 +2945,87 @@ const baseHandler: ExportedHandler<Env> = {
         );
       }
       return applyCors(biResp, request);
+    }
+
+    // DevEnv cloud development environments handler (WP-08)
+    if (route.routeKind === "devenv_v1") {
+      const devAuthz = request.headers.get("authorization") ?? "";
+      const devToken = devAuthz.startsWith("Bearer ")
+        ? devAuthz.slice("Bearer ".length).trim()
+        : "";
+
+      let devTenantId: string;
+      let devRole: string = "member";
+      let devScope: string = "read-write";
+      let devTokenPrefix: string = "pat";
+
+      if (parsePat(devToken) === null) {
+        const devClerkAuth = await verifyClerkSessionAndResolveTenant(request, env, requestId);
+        if (!devClerkAuth.ok) {
+          return applyCors(devClerkAuth.response, request);
+        }
+        devTenantId = devClerkAuth.tenantId;
+        devRole = devClerkAuth.role;
+        devScope = devRole === "viewer" ? "read-only" : "read-write";
+        devTokenPrefix = "clerk";
+      } else {
+        const auth = await extractAuth(request, env);
+        if (!auth.ok) {
+          return applyCors(reapiError("UNAUTHORIZED", "Invalid PAT", 401, requestId), request);
+        }
+        devTenantId = auth.tenantId;
+        devScope = auth.scope || "read-write";
+        devRole = "member";
+        devTokenPrefix = auth.tokenPrefix;
+      }
+
+      // Check quota
+      const { checkDevenvQuota } = await import("./lib/devenv_guard.js");
+      const quota = await checkDevenvQuota(env, devTenantId);
+      if (!quota.allowed) {
+        return applyCors(
+          reapiError("QUOTA_EXCEEDED", quota.reason ?? "DevEnv quota exceeded", 403, requestId),
+          request,
+        );
+      }
+
+      if (!env.RUNNER_DEVENV_DO) {
+        return applyCors(
+          reapiError("SERVICE_UNAVAILABLE", "RUNNER_DEVENV_DO binding not configured", 503, requestId),
+          request,
+        );
+      }
+
+      const devDoId = env.RUNNER_DEVENV_DO.idFromName(devTenantId);
+      const devStub = env.RUNNER_DEVENV_DO.get(devDoId);
+
+      const devAugmented = new Request(request, {
+        headers: (() => {
+          const h = new Headers(request.headers);
+          stripClientTrustHeaders(h);
+          h.delete("authorization");
+          h.set("x-request-id", requestId);
+          h.set("x-corelink-route-kind", "devenv_v1");
+          h.set("x-corelink-token-prefix", devTokenPrefix);
+          h.set("x-corelink-tenant-id", devTenantId);
+          h.set("x-corelink-scope", devScope);
+          h.set("x-corelink-role", devRole);
+          return h;
+        })(),
+      });
+
+      let devResp: Response;
+      try {
+        devResp = await devStub.fetch(devAugmented);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "unknown error";
+        return applyCors(
+          reapiError("INTERNAL_ERROR", `devenv upstream error: ${message}`, 500, requestId),
+          request,
+        );
+      }
+
+      return applyCors(devResp, request);
     }
 
     // Customer portal dual-auth dispatch (dashboard revival WP-1) —
