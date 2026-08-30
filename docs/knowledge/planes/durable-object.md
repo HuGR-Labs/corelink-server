@@ -84,7 +84,7 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
    `.get()` homed a regional tenant's DO + container at the entry colo instead of its region, and when
    that colo was not a CF Containers metro the container never became reachable
    (`container_health_check_failed`). The per-tenant CAS/AC forward is a representative site
-   (`worker/src/index.ts:3989`); the `_system`/`_oci`/`_anonymous` sentinel forwards route through the
+   (`worker/src/index.ts:3992`); the `_system`/`_oci`/`_anonymous` sentinel forwards route through the
    same helper.
 5c. That same idempotency extends to the `container.start()` CALL itself. `container.running` can flip
    true BETWEEN the synchronous `"starting"` guard and the async `start()` (CF's start is async), so
@@ -130,7 +130,7 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
    container stays in the chain (probe skipped) so it remains subject to the reaper
    (`worker/src/durable_object.ts:1447-1463`, `worker/src/durable_object.ts:1471-1592`).
 10. The Worker exports three SIBLING DO classes alongside `CoreLinkServer`
-    (`worker/src/index.ts:4493`). `EventLogDO` is the ADR-0065 per-tenant append-only event-log
+    (`worker/src/index.ts:4496`). `EventLogDO` is the ADR-0065 per-tenant append-only event-log
     primitive — it adopts the first `x-corelink-tenant-id` it sees, persists that pin, and refuses any
     other tenant's request with a `403 TENANT_MISMATCH` (`worker/src/event_log_do.ts:211-222`). Its
     `append` monotonically assigns `seq` under `blockConcurrencyWhile` (persist the entry, THEN advance
@@ -153,10 +153,10 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
     (`worker/src/replication_coordinator_do.ts:531-553`).
 13. The `_system` `CoreLinkServer` DO (the `idFromName("_system")` instance that hosts this region's
     container) also fronts the B1b `_public`-revoke seam: the Worker's `/_internal/public/revoke` arm
-    proxies the revoke onto that DO via `systemStub.fetch` (`worker/src/index.ts:2478`), which the DO
+    proxies the revoke onto that DO via `systemStub.fetch` (`worker/src/index.ts:2481`), which the DO
     forwards to the container like any other request, and — only on the container's `ok` response — the
     Worker best-effort-writes the content-hash-keyed edge blocklist KV
-    (`ctx.waitUntil(writePublicBlocklistKv(...))`, `worker/src/index.ts:2520`). It is a Worker-side
+    (`ctx.waitUntil(writePublicBlocklistKv(...))`, `worker/src/index.ts:2523`). It is a Worker-side
     forward to the `_system` DO, NOT a new DO handler — the DO's proxy path is unchanged.
 
 # Invariants
@@ -203,7 +203,7 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
   behind the same `/_internal/*` internal-auth gate on the low-privilege `quota_read` consumer; the
   tenant is REQUIRED because placement is per-DO-id, and the id is derived with the same
   `idFromName(tenant)` the data path uses so it probes the SAME instance
-  (`worker/src/index.ts:2237-2276`). CAVEAT: `/_internal/*` does not fan out, so a tenant whose
+  (`worker/src/index.ts:2240-2279`). CAVEAT: `/_internal/*` does not fan out, so a tenant whose
   residency is a non-IAD colo must be probed on ITS regional Worker.
 - Two of the Worker's four exported DO classes are NOT live request paths: `EventLogDO` is a wired-but-
   unconsumed primitive (no edge dispatcher reads the optional `EVENT_LOG_DO` binding) and
@@ -225,7 +225,7 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 11. `worker/src/durable_object.ts:1212-1242` — `waitForContainerHealth` polling `/_health`; `worker/src/durable_object.ts:1125-1154` — the M1 fast-exit on a terminal `"stopped"` container (no full ~90s spin on a dead container).
 12. `worker/src/durable_object.ts:1499-1528` — the DURABLE idle reaper inside `alarmTick()`: an absent `lastActivityMs` backfills, an expired one emits the death event (audit-before-mutation), RE-CHECKS the clock (every `await` is a yield point where a queued request may have arrived), then destroys the container and signals chain-end so the DO hibernates instead of heartbeating a dead container forever.
 13. `worker/src/durable_object.ts:1447-1463` — `alarm()`: a thin `try/finally` that ALWAYS re-arms the chain unless the tick reported a deliberate end, so a throwing tick can never strand the reaper (the posture `ReplicationCoordinatorDO.alarm()` already used); `worker/src/durable_object.ts:1471-1592` — `alarmTick()`: chain guard (dead container ⇒ end the chain), the idle reaper, the `degraded`-but-running arm (probe skipped, chain kept so the reaper still applies), the dedup arm, then the health re-probe + degrade.
-14. `worker/src/index.ts:4493` — the Worker's named export of `CoreLinkServer`, `RolloutController`, `EventLogDO`, `ReplicationCoordinatorDO` (the DO-class exports at the module tail, immediately after the `export default handler` Sentry-wrapped fetch handler).
+14. `worker/src/index.ts:4496` — the Worker's named export of `CoreLinkServer`, `RolloutController`, `EventLogDO`, `ReplicationCoordinatorDO` (the DO-class exports at the module tail, immediately after the `export default handler` Sentry-wrapped fetch handler).
 15. `worker/src/event_log_do.ts:211-222` — `EventLogDO` cross-tenant guard: a tenant-pinned DO rejects a different `x-corelink-tenant-id` with `403 TENANT_MISMATCH` (ADR-0065).
 16. `worker/src/event_log_do.ts:224-229` — the `/_eventlog/append` + `/_eventlog/read` route dispatch.
 17. `worker/src/event_log_do.ts:270-281` — `handleAppend`: monotonic gap-free `seq` under `blockConcurrencyWhile` (persist-entry-then-advance-head).
@@ -234,7 +234,7 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 20. `worker/src/replication_coordinator_do.ts:425-482` — `ReplicationCoordinatorDO`: the single global coordinator DO — persists role-map + heartbeats under `blockConcurrencyWhile` and self-arms the periodic `alarm()` evaluate→promote driver (always re-arms, even on a throwing tick).
 21. `worker/src/replication_coordinator_do.ts:531-553` — the DO `fetch` router for the `/_repl/<op>` control plane (`arm`/`status`/`tick`), which the Worker reaches by mapping `/_internal/replication/*` onto it; the fixed `REPLICATION_COORDINATOR_SINGLETON` name is the split-brain-safe single-writer promotion lock.
 22. `worker/src/durable_object.ts:1256-1381` — `handleHealthProbe` + `probeD1Latency`: the `d1_probe` placement instrument on `/_do/health` (primary vs `withSession("first-unconstrained")` replica, feature-detected exactly as `worker/src/index.ts:1471-1474` does it, warm-up reported not hidden, a throw surfaced as an explicit `error` field, never on the request-serving path).
-23. `worker/src/index.ts:2237-2276` — `/_internal/do-d1-probe/{tenant_id}` → that tenant's DO `/_do/health`: same forward shape as the `/_internal/replication` → `/_repl` precedent, behind the internal-auth gate on the low-privilege `quota_read` consumer (`worker/src/index.ts:487-495`), with the DO id derived by `idFromName(tenant)` so the probe measures the SAME instance that serves that tenant.
+23. `worker/src/index.ts:2240-2279` — `/_internal/do-d1-probe/{tenant_id}` → that tenant's DO `/_do/health`: same forward shape as the `/_internal/replication` → `/_repl` precedent, behind the internal-auth gate on the low-privilege `quota_read` consumer (`worker/src/index.ts:487-495`), with the DO id derived by `idFromName(tenant)` so the probe measures the SAME instance that serves that tenant.
 24. `worker/src/durable_object.ts:1198` — `armInactivityTimeout`: the PLATFORM idle reaper, `container.setInactivityTimeout(IDLE_TIMEOUT_MS)`, which workerd enforces without this Worker (it survives DO eviction, a broken alarm chain and a wedged isolate — the failure modes that made containers immortal). Armed right after `container.start()`, before the health poll (`worker/src/durable_object.ts:1023`), and re-armed on a live non-idle alarm tick (`worker/src/durable_object.ts:1546`) because the type declaration does not specify whether the timer resets on activity or is absolute from arming. Feature-detected, and an arming failure is logged rather than thrown (`worker/src/durable_object.ts:1188`) — a container that cannot arm its idle timer must still serve.
-25. `worker/src/index.ts:2478` — the B1b `/_public`-revoke forward onto the `_system` `CoreLinkServer` DO via `systemStub.fetch` (a Worker-side pass-through the DO proxies to the container unchanged); on the container's `ok` response the Worker best-effort-writes the content-hash-keyed edge blocklist KV (`ctx.waitUntil(writePublicBlocklistKv(...))`, `worker/src/index.ts:2520`). No new DO handler — the `_system` DO's proxy path is unchanged.
-26. `worker/src/index.ts:388-420` — `doLocationHintForRegion` + `serverGetOpts`: derive a CF DO `locationHint` from this Worker's serving region (`R2_CAS_REGION`) so a newly-created `CoreLinkServer` DO and its container home in-region deterministically (unknown region ⇒ `undefined` ⇒ bare hint-less `.get(id)`, unchanged behaviour); the per-tenant CAS/AC forward passes it at `worker/src/index.ts:3989`, and every sentinel (`_system`/`_oci`/`_anonymous`) forward routes through the same helper.
+25. `worker/src/index.ts:2481` — the B1b `/_public`-revoke forward onto the `_system` `CoreLinkServer` DO via `systemStub.fetch` (a Worker-side pass-through the DO proxies to the container unchanged); on the container's `ok` response the Worker best-effort-writes the content-hash-keyed edge blocklist KV (`ctx.waitUntil(writePublicBlocklistKv(...))`, `worker/src/index.ts:2523`). No new DO handler — the `_system` DO's proxy path is unchanged.
+26. `worker/src/index.ts:388-420` — `doLocationHintForRegion` + `serverGetOpts`: derive a CF DO `locationHint` from this Worker's serving region (`R2_CAS_REGION`) so a newly-created `CoreLinkServer` DO and its container home in-region deterministically (unknown region ⇒ `undefined` ⇒ bare hint-less `.get(id)`, unchanged behaviour); the per-tenant CAS/AC forward passes it at `worker/src/index.ts:3992`, and every sentinel (`_system`/`_oci`/`_anonymous`) forward routes through the same helper.
