@@ -1,5 +1,93 @@
 # CoreLink — Roadmap canônico de remediação
 
+> ## PARTE 0 — ÂNCORA (leia isto primeiro, sempre)
+>
+> Este bloco existe para que o lead — eu, ou quem assumir — retome sem perder
+> julgamento acumulado. Tudo abaixo foi **medido**, não presumido. Se o contexto
+> compactar, esta é a memória.
+
+### 0.1 Autoridade
+
+Uma única sessão detém **merge** nos 3 repos (`corelink-server`, `corelink-runners`,
+`corelink-workspaces`). Todas as outras sessões e agentes **abrem PR e reportam ao
+lead** — nunca mergeiam, nunca deployam, nunca escalam direto ao owner. O lead julga
+o que sobe.
+
+**Não existe branch protection em nenhum dos 3 repos** (`403 Upgrade to GitHub Pro`).
+Nada do lado do GitHub impede um merge. O lead é a única trava que existe. Isso não é
+retórica: o portão foi furado 4 vezes num dia, e três mensagens de commit dizem
+`"Bypassing DCO + gates"` em texto puro.
+
+### 0.2 As regras de verificação (cada uma nasceu de um erro real)
+
+| Regra | O erro que a originou |
+|---|---|
+| **Conjunto, não contagem.** Compare o CONJUNTO de lanes contra um PR de mesmo escopo. | Duas lanes trocadas dão o mesmo número e escondem o que a régua existe pra pegar. |
+| **`git show origin/main:<path>`, nunca o checkout.** | Contei conceitos contra um worktree 3 dias defasado e errei 8 vs 13. |
+| **Nunca conclua AUSÊNCIA de saída truncada.** `head`/`cut` cabem na tela; `grep -c` decide existência. | Um `cut -c1-200` cortou a prova e produziu um "não existe" falso. |
+| **Exit code nu, nunca por pipe.** `cmd \| tail` devolve o status do `tail`. | Foi assim que um PR entrou com 4 checks pendentes. |
+| **Pendente é pendente**, mesmo quando o job se diz informativo. | O cabeçalho descreve a intenção do job, não o estado do check. |
+| **A prosa não é evidência.** Verifique no caminho que produção toma. | Um cap de leitura foi ligado no ramo de teste; produção segue sem limite. |
+| **Nenhum teste que passa antes do fix.** Reverta o fix: a suíte tem de ficar vermelha. | Um teste verificava o parâmetro, não o bug. |
+| **Âncora tem de sobreviver ao squash.** Blob final ou commit já em `origin/main`. | 13 conceitos ancorados em commits órfãos. |
+| **Ao estabelecer um negativo, varra o que depende dele.** | Escreveram no PR que uma proteção não vale em release e deixaram de pé, na wiki, a frase que dependia dela. |
+| **Antes de despachar, verifique se o trabalho já existe.** | Um defeito foi consertado duas vezes por duas auditorias com nomes diferentes. |
+| **Nunca `git add -A`.** Índice compartilhado entre worktrees. | Varreu 54 workflows e um módulo inteiro para dentro de um PR. |
+| **Um worktree por WP, a partir de `origin/main`.** | O checkout raiz está divergido e carrega commit com assinatura DCO fabricada. |
+
+### 0.3 O formato de defeito DOMINANTE
+
+**A prosa é excelente e a implementação não corresponde.** Encontrado 4× num só dia:
+um cap ligado no ramo errado; um `cargo fmt` que era o revert da formatação correta;
+um "arquivei os arquivos velhos" que não arquivou quase nada e justificou com
+afirmação falsa; um "movi a chave" que a deixou em dois branches remotos.
+
+**Em todos existia teste, `verify` ou portão — e todos eram incapazes de notar.**
+
+### 0.4 Portões estruturalmente cegos (6 confirmados)
+
+Passam verde **enquanto o defeito existe**. Pior que não ter portão: produzem confiança.
+
+`CITE_RE` do OKF (exige caminho, não vê citação abreviada) · C5 do OKF (valida posição,
+não correspondência) · `sdk-artifacts` (filtrado pra nunca disparar no PR culpado) ·
+espelho CF-1 (unidirecional) · piso de cobertura (**nunca executou**: faltava
+`--coverage`) · escopo de cobertura (só conta arquivo importado por teste).
+
+**Contra-exemplo a imitar: o C10b** — recusa seed cujo conceito não cite o arquivo, ou
+seja, **recusa auto-certificação**.
+
+> **Pergunta obrigatória em toda revisão de portão: "o que quebraria isto e NÃO seria
+> pego?"** Sem resposta, o portão não foi revisado — foi lido.
+
+### 0.5 Retratações (não repetir)
+
+1. **"RCE sem autenticação"** no exec-server — **falso**. O binário falha fechado; o
+   serviço nem sobe. É funcionalidade morta, não risco.
+2. **"O documento marca tudo BROKEN"** — li a **coluna errada** de uma tabela de duas
+   colunas. Os 🔴 eram da auditoria que o documento refutava.
+3. **"Buraco de auth `_oci`/`_public`"** — divergência real, **não explorável**: o
+   header é removido em todo forward do Worker.
+4. **"F-009 é P0"** — escalei a partir de `grep` estreito. O comportamento é
+   documentado, herdado do protocolo do Turborepo, e a correção sugerida é
+   **impossível** (o hash cobre inputs que o servidor nunca vê).
+
+**Padrão comum às quatro: severidade afirmada a partir de leitura parcial.** Verifique
+o mecanismo antes de classificar.
+
+### 0.6 Este documento registra DECISÃO e CONTRATO — nunca ESTADO
+
+Estado muda e o documento apodrece (já apodreceu duas vezes). Estado se consulta:
+
+```bash
+gh pr list --state open --json number,title,mergeable
+bash scripts/pre-merge-gate-check.sh <PR>          # sem pipe, sempre
+```
+
+Se uma tabela deste arquivo discordar do comando, **o comando ganha**.
+
+---
+
+
 **Baseline:** `origin/main` @ `1fc1092d` · **Lead:** sessão guardiã de merge · **Data:** 2026-08-29
 
 > **Autoridade.** Uma única sessão detém a decisão de merge nos 3 repos
