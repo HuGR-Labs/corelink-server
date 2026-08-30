@@ -38,7 +38,7 @@ on:
     paths:
       - 'examples/bazel-starter/**'
       - '.github/workflows/bazel-starter-ci.yml'
-workflow_dispatch:
+  workflow_dispatch:
 
 permissions:
   contents: read

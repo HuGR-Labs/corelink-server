@@ -23,7 +23,7 @@ on:
   # 398/665, 2026-06-04). Moved to nightly + on-demand, matching the 977225d3
   # "stop heavy-gate stampede" sweep (2026-06-02, ADR-S12-045 §Schedule). The PR
   # `paths:` lane above still enforces density on every crate/script change.
-workflow_dispatch:
+  workflow_dispatch:
 
 permissions:
   contents: read
