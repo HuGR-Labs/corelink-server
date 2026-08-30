@@ -10,7 +10,15 @@ export const devenvOpenApiSpec = {
   },
   servers: [
     { url: "https://corelink-api.humangr.com/v1", description: "Production" },
-    { url: "https://api.staging.corelink.humangr.com/v1", description: "Staging" },
+    // The feature branch also listed a staging server whose hostname is
+    // NXDOMAIN (name withheld here on purpose — the docs-reality
+    // hostname-liveness gate scans this file for literal hostnames, so
+    // naming a dead one even in a comment re-trips it). A published OpenAPI
+    // `servers` list is a customer-facing promise: an SDK generated
+    // from it would emit a client pointed at a host that does not exist.
+    // Dropped rather than "fixed" to a guess — re-add it when a staging host
+    // is actually proven live, and the docs-reality hostname-liveness gate
+    // will confirm it then.
   ],
   components: {
     securitySchemes: {
