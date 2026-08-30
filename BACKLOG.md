@@ -3258,6 +3258,118 @@ verify-means: |
 last-verified: 2026-08-29
 ```
 
+### B-114 — 50 dos 75 crates nunca aparecem num `cargo test`, e 16 aparecem so em lane morta
+
+Levantado crate a crate em 2026-08-30, cruzando "nomeado em `cargo test -p`" com
+as 20 lanes de zero sucesso ([B-110], [B-112], [B-113]):
+
+- **9 realmente testados** em CI: `adapter-host`, `client-verify`, `gc`, `hash`,
+  `meta`, `ops`, `privacy`, `reapi`, `worker`.
+- **16 que PARECEM cobertos e nao estao** — nomeados so em `nightly.yml` (zero
+  sucessos) ou `ffi-matrix-ci.yml` (nunca funcionou): `cas`, `audit`,
+  `audit-chain`, `ratelimit`, `eviction`, `slo`, `telemetry`, `tracing`,
+  `analytics`, `rate-headers`, as **cinco de billing**, e `wasm`.
+- **50 nunca nomeados**, entre eles `corelink-auth` e `corelink-pat`.
+
+**A categoria do meio e o achado, nao o numero 9.** Um grep por "crates sob
+teste" responde 25; a resposta verdadeira e 9. A lista errada existe, e citavel,
+e nao da sintoma.
+
+`corelink-auth` e `corelink-pat` aparecem no `mutation-nightly.yml` como alvos
+de **`cargo mutants --package`**, nunca de `cargo test -p`. Mesmo se aquela lane
+rodasse seria mutacao, nao teste unitario de PR: um crate pode ter kill-rate
+alto e continuar sem nenhum teste executando num pull request.
+
+`rust-affected-tests.yml` cobre o fecho reverso do que o diff tocou mais
+auth+pat incondicionais — 13 crates de piso, que ja arrastam `cas`, `server`,
+`worker`, `reapi`, `privacy` e `adapter-host`. Os demais seguem descobertos.
+
+```backlog
+id: B-114
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'n=0
+  for c in $(ls crates); do
+    grep -rqE "cargo (\\+[^ ]+ )?test[^\\n]*(--package|-p) $c( |$)" .github/workflows/ || n=$((n+1))
+  done
+  [ "$n" -gt 0 ]'
+verify-means: |
+  open — passa enquanto QUALQUER crate de `crates/` nao for nomeado em nenhum
+  `cargo test -p` de workflow. Vira vermelho so quando os 75 estiverem
+  nomeados, que e o fim legitimo do item. Deliberadamente NAO distingue lane
+  viva de morta: isso exigiria a API de execucoes, e um verify que depende de
+  rede le timeout como resposta. O numero honesto de cobertura REAL esta no
+  corpo, medido, e e 9 — nao o que este comando checa.
+last-verified: 2026-08-30
+```
+
+### B-115 — as cinco de billing ficam fora do piso incondicional, e o custo esta medido
+
+`rust-affected-tests.yml` roda o fecho reverso do que o diff tocou, mais
+`corelink-auth` e `corelink-pat` sempre. As cinco de billing **nao** estao nesse
+piso: `corelink-billing` so entra quando alguem toca `ratelimit`,
+`billing-stripe-materializer` ou o proprio billing — que e exatamente quando o
+teste importa MENOS. A regressao perigosa vem de outro crate, e o caminho e
+dinheiro.
+
+**Custo medido (2026-08-30), para a decisao nao ser por impressao:** o fecho das
+cinco e 8 crates; sobre o piso de 13 isso sao **+7** (`billing`,
+`billing-aggregator`, `billing-emit`, `billing-reconcile`, `billing-stripe`,
+`runner-aggregate`, `e2e-billing-flow`). Nao e proibitivo — e orcamento de PR,
+nao impossibilidade.
+
+A alternativa (deixar so na lane profunda pos-merge) tem custo proprio e
+nomeavel: a regressao de billing apareceria DEPOIS do merge, possivelmente com
+outro PR ja em cima.
+
+```backlog
+id: B-115
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  ! grep -qE "^\s*SEEDS=.*corelink-billing" .github/workflows/rust-affected-tests.yml
+verify-means: |
+  open — passa enquanto nenhum crate de billing estiver na linha SEEDS da lane
+  de PR, que e onde as sementes incondicionais vivem. Vira vermelho quando
+  alguem os adicionar, que e a decisao que este item existe para forcar.
+
+  Ancorado na LINHA da semente, nao no arquivo inteiro: a primeira versao
+  grepava o nome em qualquer lugar do workflow e casava com o proprio COMENTARIO
+  que explica por que billing importa. Predicado que casa com a prosa que o
+  descreve nasce vermelho e nao mede nada — mesmo defeito de um teste que
+  procura a string que ele mesmo contem.
+last-verified: 2026-08-30
+```
+
+### B-116 — a lane profunda precisa ser LIDA, senao vira decoracao
+
+`rust-deep-property.yml` roda as propriedades em intensidade cheia e os testes
+`#[ignore]`d. Ela e a rede que sustenta o recorte da lane de PR — se ficar
+vermelha tres semanas sem ninguem notar, o recorte deixou de ser recorte e virou
+perda de cobertura.
+
+Este repo ja produziu exatamente esse formato: **20 lanes com zero sucessos
+historicos**, varias rodando por meses sem que o vermelho movesse ninguem
+([B-110], [B-113]). Lane agendada sem leitor e a mesma coisa.
+
+```backlog
+id: B-116
+repo: corelink-server
+owner: tl
+status: open
+verify: manual
+verify-means: |
+  manual e com prazo, de proposito. A pergunta — "alguem leu o resultado desta
+  lane?" — nao e decidivel por comando sobre o repositorio: um verify que
+  checasse a ultima execucao leria verde de uma lane que ninguem abriu, que e o
+  defeito que o item descreve. O decaimento de 14 dias forca a leitura a
+  acontecer, e e a unica garantia real aqui.
+last-verified: 2026-08-30
+```
+
 ### B-110 — cinco lanes de CI presas em runner GitHub-hosted, que está billing-blocked
 
 `cas_foundation.yml`, `coverage.yml`, `ffi-matrix-ci.yml`, `mutation-nightly.yml`
@@ -3938,7 +4050,15 @@ status: open
 verify: |
   bash -c 'n=$(grep -rl "#\[ignore" crates/ --include="*.rs" 2>/dev/null | wc -l | tr -d " ")
   [ "$n" -gt 0 ] || { echo "FALHA: nao ha mais testes #[ignore] — feche o item."; exit 1; }
-  exec_wf=$(grep -rlE "\-\-ignored|include-ignored" .github/workflows/ scripts/ 2>/dev/null | wc -l | tr -d " ")
+  # Executor CONTADO POR CRATE, nao "existe a string em algum lugar". O
+  # rust-deep-property.yml roda --ignored para corelink-auth e corelink-pat; um
+  # grep global passaria a dar verde com os outros quatro crates ainda sem
+  # executor nenhum.
+  exec_wf=0
+  for c in corelink-container corelink-audit-chain corelink-stripe-real corelink-cas; do
+    grep -rlE "(\-\-ignored|include-ignored)" .github/workflows/ scripts/ 2>/dev/null \
+      | xargs -r grep -l -- "$c" 2>/dev/null | grep -q . && exec_wf=$((exec_wf+1))
+  done
   exec_nt=0; [ -f .config/nextest.toml ] && grep -q "run-ignored" .config/nextest.toml && exec_nt=1
   if [ "$exec_wf" -gt 0 ] || [ "$exec_nt" = 1 ]; then
     echo "FALHA: existe executor de #[ignore] (workflows/scripts=$exec_wf nextest=$exec_nt) — feche o item."; exit 1; fi
@@ -3955,6 +4075,18 @@ verify-means: |
   Escrito para a alegação — a AUSÊNCIA DO EXECUTOR — e não para a contagem. Um número
   exato de testes `#[ignore]` apodrece a cada PR que adiciona um, e derrubaria PRs sem
   relação nenhuma. A contagem por crate fica na prosa como instantâneo datado.
+
+  ⚠️ APERTADO 2026-08-30, porque a versão anterior ficou DOMINADA. Ela perguntava
+  "existe `--ignored` em algum workflow?". O `rust-deep-property.yml` introduziu um,
+  para `corelink-auth` e `corelink-pat` — e isso teria virado o item verde enquanto os
+  **quatro outros crates** que ele nomeia (`corelink-container` 28 testes,
+  `corelink-audit-chain` 14, `corelink-stripe-real` 7, `corelink-cas` 1) continuavam
+  sem executor nenhum. Cinquenta testes de D1/R2/Stripe reais seguiriam sem rodar,
+  com o portão dizendo que o problema acabou.
+
+  Agora conta executor POR CRATE nomeado. Fecha quando os quatro tiverem um, não
+  quando a string aparecer em qualquer lugar. O `corelink-pat` saiu da lista porque
+  ganhou executor de verdade neste mesmo PR.
 last-verified: 2026-08-30
 ```
 
