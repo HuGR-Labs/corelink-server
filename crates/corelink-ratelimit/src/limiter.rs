@@ -435,6 +435,21 @@ where
         Ok(g.len())
     }
 
+    /// Live entries in the drained-tombstone map. Sibling of
+    /// [`Self::bucket_count`] and exposed for the same reason: the bound on
+    /// this map is only observable if something can read its size.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RateLimitError::Backend`] on mutex poisoning.
+    pub fn tombstone_count(&self) -> Result<usize, RateLimitError> {
+        let g = self
+            .drained_tombstones
+            .lock()
+            .map_err(|_| RateLimitError::Backend("tombstone map mutex poisoned".to_string()))?;
+        Ok(g.len())
+    }
+
     /// Pre-seed a bucket (test wiring + DO cold-start reload). The
     /// production binding constructs the bucket lazily on first
     /// `try_acquire`; tests pre-seed to drive deterministic boundary
@@ -515,6 +530,37 @@ where
     fn record_drained_tombstone(&self, bucket_key: &BucketKey, now_ms: u64) {
         let deadline = now_ms.saturating_add(DRAINED_TOMBSTONE_TTL_SECS.saturating_mul(1000));
         if let Ok(mut g) = self.drained_tombstones.lock() {
+            // The tombstone map is a SECOND per-key map on the same DO
+            // singleton, and it was introduced with no bound at all — the
+            // exact shape `LIMITER_BUCKET_MAP_CAP` exists to close (#534:
+            // unbounded distinct keys grow the singleton's heap until the
+            // OOM-killer reaps it). A tombstone is only ever removed when
+            // its own key is re-materialised, so a flood of distinct keys
+            // that are each denied once leaves entries that nothing sweeps.
+            // The fix that changed eviction must not re-open eviction's bug
+            // one map over.
+            //
+            // Two bounds, cheapest first:
+            //  1. Drop everything already expired. An expired tombstone is
+            //     inert — `fresh_bucket` treats it as absent — so this
+            //     costs no protection and bounds the map to keys denied
+            //     within one TTL window.
+            //  2. If that was not enough, refuse the insert. Skipping a
+            //     tombstone weakens the drain-then-evict defence for ONE
+            //     key; letting the map grow without limit takes the whole
+            //     singleton down for every tenant on it. Availability of
+            //     the limiter outranks the strength of one bucket's
+            //     cooldown, and reaching this branch already requires
+            //     `bucket_cap` distinct keys to have been drained inside a
+            //     single TTL window — each of which costs a full burst to
+            //     exhaust, so it is far more expensive to mount than the
+            //     one-request-per-key flood #534 described.
+            if g.len() >= self.bucket_cap {
+                g.retain(|_, dl| *dl > now_ms);
+            }
+            if g.len() >= self.bucket_cap {
+                return;
+            }
             g.insert(bucket_key.clone(), deadline);
         }
     }
@@ -1060,6 +1106,42 @@ mod tests {
         }
         // Map is clamped at exactly the cap despite 128 distinct keys.
         assert_eq!(lim.bucket_count().unwrap(), cap);
+    }
+
+    /// The tombstone map introduced by WP-M is a SECOND per-key map on the
+    /// same singleton, and it shipped with no bound — re-opening, one map
+    /// over, exactly the unbounded-growth DoS that `LIMITER_BUCKET_MAP_CAP`
+    /// was added to close (#534). A tombstone is removed only when its own
+    /// key is re-materialised, so distinct keys that are each drained once
+    /// leave entries nothing sweeps.
+    ///
+    /// Drives the real shape: drain each key to `Deny429` (which is what
+    /// records a tombstone), across far more distinct keys than the cap.
+    #[test]
+    fn tombstone_map_is_bounded_under_distinct_key_flood() {
+        let audit = Arc::new(InMemoryRateLimitAuditSink::new());
+        let metrics = Arc::new(InMemoryRateLimitMetrics::new());
+        let cap = 16usize;
+        let lim = InMemoryTokenBucketRateLimiter::new_with_cap(
+            Arc::clone(&audit),
+            Arc::clone(&metrics),
+            RateLimitConfig::canonical(),
+            cap,
+        );
+        let burst = RateLimitConfig::canonical().default_burst_capacity();
+        for i in 0..(cap * 8) as u32 {
+            let key = BucketKey::per_tenant_per_endpoint(ten_a(), format!("oci.repo.{i}"));
+            // Exhaust this key, then take one more to earn the Deny429 that
+            // records the tombstone.
+            let _ = lim.try_acquire(ten_a(), key.clone(), burst, 1000).unwrap();
+            let _ = lim.try_acquire(ten_a(), key, 1, 1000).unwrap();
+            // The invariant holds at EVERY step, not only at the end.
+            assert!(
+                lim.tombstone_count().unwrap() <= cap,
+                "tombstone map grew past the cap at i={i}"
+            );
+        }
+        assert!(lim.tombstone_count().unwrap() <= cap);
     }
 
     /// `next_tick` is the monotonic LRU recency counter — every access stamps a
