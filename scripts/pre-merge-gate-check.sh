@@ -522,7 +522,31 @@ if [ "$cross" = "true" ]; then
 elif [ -z "$head_ref" ] || [ "$head_ref" = "-" ]; then
   echo "  ⚠️  could not read headRefName — delete the merged branch manually."
 else
-  if gh api -X DELETE "repos/{owner}/{repo}/git/refs/heads/$head_ref" --silent 2>/dev/null; then
+  # ── PRs EMPILHADOS: apagar a base FECHA o filho, e é irreversível ──────────
+  # O GitHub fecha automaticamente qualquer PR cujo branch-base deixe de
+  # existir, e `reopenPullRequest` RECUSA reabrir nesse estado — o PR tem de
+  # ser recriado, perdendo revisão, comentários e histórico. Aconteceu com o
+  # #1436 em 2026-08-30: mergear a base da pilha apagou `fix/okf-main-red` e
+  # matou o filho, que tinha 8 checks verdes.
+  #
+  # O merge JÁ landou neste ponto, então isto nunca é fatal: na dúvida a
+  # varredura RECUSA apagar. Branch órfão é bagunça; PR fechado é trabalho
+  # perdido, e os dois custos não se comparam.
+  dependents="$(gh pr list --state open --base "$head_ref" \
+                  --json number --jq '[.[].number] | join(", ")' 2>/dev/null || echo "?")"
+  if [ "$dependents" = "?" ]; then
+    echo "  ⚠️  não consegui checar se \`$head_ref\` é base de algum PR aberto — NÃO apagando."
+    echo "      Comparação impossível não é prova de ausência. Apague à mão depois de conferir:"
+    echo "        gh pr list --base $head_ref --state open"
+  elif [ -n "$dependents" ]; then
+    echo "  ⛔ \`$head_ref\` ainda é BASE do(s) PR(s) aberto(s): $dependents"
+    echo "     NÃO apagando — o GitHub fecharia esse(s) PR(s) e reabrir seria recusado."
+    echo "     Retargete primeiro, depois apague:"
+    for d in ${dependents//,/ }; do
+      echo "        gh pr edit $d --base main"
+    done
+    echo "        gh api -X DELETE repos/{owner}/{repo}/git/refs/heads/$head_ref"
+  elif gh api -X DELETE "repos/{owner}/{repo}/git/refs/heads/$head_ref" --silent 2>/dev/null; then
     echo "  🧹 deleted remote branch \`$head_ref\`."
   else
     echo "  ⚠️  remote branch \`$head_ref\` was NOT deleted (already gone, or no perms):"
