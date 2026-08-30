@@ -335,7 +335,21 @@ impl D1SubscriptionStateHandler {
                  is a payload integrity problem, not an authz one. \
                  Operator action: inspect the upstream payload."
             );
-            return Ok(());
+            // Err, NOT Ok. `Ok(())` reads as "dispatched successfully" to
+            // `webhook_dispatch`: it audits `Dispatched`, answers 200, and
+            // quarantines nothing. Meanwhile the idempotency dedup row was
+            // already committed BEFORE this materialize, so a Stripe retry
+            // hits `AlreadyProcessed` and skips the handler entirely — the
+            // event would be gone for good, with the audit trail asserting
+            // it succeeded. `InvalidPayload` is the arm that already exists
+            // for exactly this: it audits `MaterializerInvalid` and
+            // QUARANTINES the (HMAC-verified) event into the DLQ, which has
+            // depth/age alerting, so an operator can replay it. Refusing the
+            // write and losing the event are not the same outcome, and only
+            // the first one is what this fix wanted.
+            return Err(MaterializerError::InvalidPayload(format!(
+                "subscription {sub_id} arrived with no `status` field"
+            )));
         };
 
         let audit_name = if canceled {
@@ -936,7 +950,17 @@ mod tests {
         // absence (the audit sink is exercised by other tests; the
         // "no audit emitted" assertion is encoded via the warn line
         // pin below).
-        handler.on_subscription_updated(&e).unwrap();
+        // Err(InvalidPayload) — the arm `webhook_dispatch` quarantines into
+        // the DLQ. `Ok(())` would have been audited as `Dispatched`, answered
+        // 200, and (the dedup row being already committed) made the Stripe
+        // retry a no-op: event lost, audit trail claiming success.
+        let err = handler
+            .on_subscription_updated(&e)
+            .expect_err("a missing `status` must be refused, not reported as dispatched");
+        assert!(
+            matches!(err, MaterializerError::InvalidPayload(_)),
+            "must be InvalidPayload (the DLQ-quarantining arm), got {err:?}"
+        );
         // The write MUST NOT materialise a fabricated value: no row in
         // `stripe_subscriptions`. (The audit sink is exercised by
         // other tests; the "no audit emitted" assertion is encoded via
