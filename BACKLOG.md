@@ -3300,25 +3300,40 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-063 — quatro lanes bloqueadas em secrets que não existem no repositório
+### B-063 — aquisição de certificados Apple/Windows (o resto dos "secrets ausentes" não era isso)
 
-`terraform-drift.yml`, `sign-linux.yml`, `sign-windows.yml` e
-`notarize-macos.yml` falham antes de fazer qualquer trabalho porque os segredos
-que exigem **não estão provisionados**. O repositório tem 11 secrets; nenhum
-deles é `CF_CLIENT_ID`, `CF_CLIENT_SECRET`, `TF_BACKEND_BUCKET`,
-`GPG_PRIVATE_KEY`, `WINDOWS_CODE_SIGNING_CERT` ou `APPLE_DEVELOPER_ID`.
+Reescrito 2026-08-30 depois que o owner respondeu. A primeira versão deste item
+tratava quatro lanes como um bloqueio só — "os secrets não existem". Ler os
+nomes exigidos **por lane**, em vez da lista como bloco, mostrou três coisas
+distintas, com donos e horizontes diferentes:
 
-As lanes estão CERTAS: o `terraform-drift` checa presença e aborta com
-`::error::CF_CLIENT_ID or CF_CLIENT_SECRET missing` em vez de seguir e produzir
-um plano vazio que pareceria "sem drift". Falhar alto é o comportamento
-desejado; o que falta é a credencial.
+**(a) Aquisição — `notarize-macos` e `sign-windows`.** Não é secret esquecido:
+o owner **não possui** os certificados. Notarização exige conta Apple Developer
+paga (`APPLE_DEVELOPER_ID`, `APPLE_DEVELOPER_ID_PASSWORD`,
+`APPLE_NOTARIZATION_USERNAME`, `APPLE_NOTARIZATION_PASSWORD`, `APPLE_TEAM_ID`) e
+Authenticode exige certificado emitido por CA (`WINDOWS_CODE_SIGNING_CERT`,
+`WINDOWS_CODE_SIGNING_PASSWORD`). Horizonte de compra, não de configuração —
+dizer "secret pendente" sugeriria que alguém só esqueceu de colar.
 
-Consequência a registrar: enquanto isso durar, **não há detecção de drift de
-infraestrutura** e **nenhum binário de release sai assinado** — nem GPG no
-Linux, nem Authenticode no Windows, nem notarização da Apple. Isso é postura de
-supply-chain, não conveniência de CI.
+**(b) RESOLVIDO em 2026-08-30 — `terraform-drift` e `sign-linux`.** O owner
+autorizou o mint e a guardiã de merge emitiu os sete: `CF_CLIENT_ID`,
+`CF_CLIENT_SECRET`, `TF_BACKEND_BUCKET`, `TF_BACKEND_ENDPOINT`,
+`GPG_PRIVATE_KEY`, `GPG_PRIVATE_KEY_PASS`, `GPG_KEY_ID` — o repositório foi de
+11 para 18 secrets. Este item deixa de cobrir essas duas lanes: o bloqueio de
+credencial acabou.
 
-Owner-facing: só quem tem as credenciais pode fechar.
+O que NÃO está provado, e por isso não é fechamento: nenhuma das duas foi
+executada desde o mint, então "tem o secret" ainda não é "fica verde". O
+`sign-linux` continua atrás do `release-cli` de qualquer forma ([B-064]). A
+próxima execução decide, e ela é barata — o `terraform-drift` é um
+`plan -detailed-exitcode`, leitura pura.
+
+**(c) Não é bloqueio de secret nenhum — `release-cli`.** O único secret que ela
+usa é `CORELINK_CLI_RELEASE_TOKEN`, e **ele já existe**. A falha é o step
+`cargo zigbuild`. Ver [B-064].
+
+Consequência enquanto (a) e (b) durarem: sem detecção de drift de
+infraestrutura, e nenhum binário de release assinado em plataforma alguma.
 
 ```backlog
 id: B-063
@@ -3328,17 +3343,21 @@ status: open
 verify: |
   bash -c 'have=$(gh api repos/HuGR-Labs/corelink-server/actions/secrets --jq ".secrets[].name" 2>/dev/null)
   [ -n "$have" ] || exit 0
-  for s in CF_CLIENT_ID CF_CLIENT_SECRET TF_BACKEND_BUCKET GPG_PRIVATE_KEY WINDOWS_CODE_SIGNING_CERT APPLE_DEVELOPER_ID; do
+  for s in APPLE_DEVELOPER_ID APPLE_TEAM_ID APPLE_NOTARIZATION_PASSWORD WINDOWS_CODE_SIGNING_CERT WINDOWS_CODE_SIGNING_PASSWORD; do
     echo "$have" | grep -qx "$s" && exit 1
   done
   exit 0'
 verify-means: |
-  open — passa enquanto NENHUM dos seis segredos existir, que é o bloqueio
-  compartilhado pelas quatro lanes. Vira vermelho quando o primeiro for
-  provisionado, que é exatamente quando o item precisa ser reavaliado (a lane
-  correspondente passa a poder rodar e a disposição muda). Sai 0 quando a API
-  não responde, para não confundir falha de rede com ausência de segredo — o
-  contrário transformaria um timeout em "provisionado".
+  open — passa enquanto NENHUM dos cinco secrets de AQUISIÇÃO existir, que é o
+  bloqueio restante (Apple + Windows). Os do grupo (b) saíram da lista porque
+  foram emitidos em 2026-08-30 e mantê-los aqui deixaria o item vermelho para
+  sempre por uma razão já resolvida.
+
+  Este verify já provou o próprio valor: escrito com os sete do grupo (b) na
+  lista, ficou DRIFTED minutos depois, porque o mint aconteceu enquanto o item
+  era redigido. Foi o gate que avisou, não uma releitura.
+
+  Sai 0 quando a API não responde, para não ler timeout como "provisionado".
 last-verified: 2026-08-30
 ```
 
@@ -3365,9 +3384,24 @@ razão técnica registrada — precisa de `docker` e da identidade OIDC hosted p
 assinatura keyless Cosign, e a frota Firecracker não tem daemon docker.
 **Não migrar, não apagar.**
 
-Ordem de trabalho: o `cargo zigbuild` é a raiz; as três lanes de assinatura só
-podem ser avaliadas depois dele — e mesmo assim continuam bloqueadas por
-[B-063].
+**A raiz NÃO é falta de secret** — correção de 2026-08-30. O `release-cli` usa
+um único secret, `CORELINK_CLI_RELEASE_TOKEN`, e ele já existe. A falha é
+defeito de build no `cargo zigbuild`, e é a única do grupo que não depende de
+credencial nenhuma.
+
+A ordem importa, porque muda o que adianta consertar primeiro:
+
+```
+release-cli (cargo zigbuild) quebrado
+   └─ sign-linux      → destrava quando o GPG for mintado (B-063 grupo b)
+   └─ sign-windows    → bloqueado por AQUISIÇÃO de certificado (B-063 grupo a)
+   └─ notarize-macos  → bloqueado por AQUISIÇÃO de conta Apple (B-063 grupo a)
+```
+
+Consertar o `release-cli` é **condição necessária das três**: mesmo com os
+certificados Apple e Windows em mãos, nada seria assinado, porque o artefato
+nunca chega a ser produzido. Investigar o que o `zigbuild` reclama antes de
+propor conserto — não presumir toolchain ausente.
 
 ```backlog
 id: B-064
