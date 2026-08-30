@@ -256,7 +256,17 @@ Arquivo novo por PR ⇒ **zero conflito por construção**.
 - **Completeness:** os 10 PRs abertos são convertidos, **ou** a compatibilidade dupla é mantida
   até a fila drenar. Documentar qual das duas.
 
-### WP-1 — Fila de merge · **LEAD, NÃO DELEGÁVEL**
+### WP-1 — Fila de merge · **LEAD, NÃO DELEGÁVEL**  ✅ **DoD FECHADO POR MECANISMO — #1428 + #1429**
+
+> **Estado 2026-08-30.** O DoD ("conjunto de lanes conferido a cada merge") foi violado
+> por **9 merges seguidos**, e eu virei o décimo depois de dizer que mudaria o processo.
+> Foi fechado mudando o MECANISMO, não recobrando disciplina: o `--merge` do
+> `pre-merge-gate-check.sh` agora registra no PR o conjunto de lanes que checou, como
+> sub-produto do gating (#1428). Duas propriedades vêm de ONDE a escrita fica — portão
+> vermelho não gera registro nenhum, e o registro renderiza da MESMA lista que decidiu o
+> merge, então não dá para alegar um conjunto mais verde do que o que autorizou.
+> O #1429 fechou o furo seguinte: o portão recusa o merge quando a cópia rodada não é a
+> de `origin/main` (o #1418 foi mergeado por cópia velha e saiu sem registro).
 
 Ordem: `#1412` → `#1410` → `#1411` → `#519` → `#518`.
 Cada merge exige: conjunto de lanes conferido (Q5), zero pendentes (Q7), zero falhas
@@ -276,7 +286,7 @@ não-herdadas. Falha herdada é nomeada e rastreada, nunca ignorada.
   `main.rs` nem `REMEDIATION_PLAN.md` (esses pertencem ao commit em quarentena).
 - **Completeness:** `git status --porcelain` vazio no worktree raiz para `docs/campaigns/`.
 
-### WP-3 — Portão de cobertura  🔵 **EM VOO — #1418 (server) + runners #520**
+### WP-3 — Portão de cobertura  ✅ **CONCLUÍDO — #1418 (server) + runners #520 mergeados**
 
 > Não redespache. Achado: o piso existia e **nunca executou** (faltava `--coverage`) — §III.4.
 
@@ -285,7 +295,29 @@ não-herdadas. Falha herdada é nomeada e rastreada, nunca ignorada.
 - **Invariants:** piso na cobertura **atual medida menos folga**, nunca acima — portão que já nasce vermelho é ignorado por todos.
 - **Completeness:** os 3 repos cobertos ou justificativa escrita de por que um ficou fora.
 
-### WP-4 — Higiene de CI
+### WP-4 — Higiene de CI  🔵 **EM VOO — #1434**
+
+> **Redimensionado com medição, 2026-08-30.** Não são 5 lanes nem 19: são **20** sem
+> nenhuma conclusão `success`, contadas pela API de Actions sobre os 129 workflows
+> registrados. E elas se partem em duas classes que NÃO têm a mesma correção:
+> **19 rodaram e nunca passaram** (1.539 execuções) e **1 nunca disparou**
+> (`cosign-sign.yml`, 0 runs — defeito de GATILHO, e com waiver humano do owner datado
+> 2026-08-11 para permanecer hosted; não migrar).
+>
+> **Priorize por frequência atual, não por volume histórico.** Só **três** lanes ainda
+> produzem vermelho diário — `nightly`, `billing-health-daily`, `terraform-drift`. As
+> outras 17 não disparam mais. Ordenar por volume acumulado apontaria `semgrep` (388
+> execuções) e `cas_foundation` (321), que são exatamente as que não incomodam ninguém
+> hoje.
+>
+> **Fato de infra que decide quatro linhas de uma vez:** não existe runner `Linux`
+> self-hosted neste repo — o inventário é a frota efêmera `corelink` mais 5
+> `corelink-builder` macOS. Todo `runs-on: [self-hosted, Linux, X64]` fica sem box, e é
+> isso que explica os `runner_name = NONE`, sem precisar de teoria.
+>
+> **A família de release tem UMA raiz.** `sign-linux`, `sign-windows` e
+> `notarize-macos` disparam por `workflow_run` atrás do `release-cli`; tratá-las como
+> quatro defeitos independentes inventa três trabalhos que não existem.
 
 - **Worktree:** `/tmp/wt-wp4` · **Branch:** `ci/hygiene-sweep` · **Depende de:** #1402 resolver (mesmos arquivos)
 - **Escopo:** aposentar 5 lanes com **1.057 execuções e zero sucessos**; remover 5 crons redundantes;
@@ -295,7 +327,27 @@ não-herdadas. Falha herdada é nomeada e rastreada, nunca ignorada.
 - **Invariants:** zero `ubuntu-latest` introduzido; nenhum canário passa a rodar dentro da frota que vigia.
 - **Completeness:** `grep -c "ubuntu-latest" .github/workflows/*` documentado antes/depois.
 
-### WP-5 — OKF: 13 âncoras órfãs + 2 cegueiras de portão
+### WP-5 — OKF: âncoras órfãs  ⚠️ **LATENTE, NÃO ATIVO — e as duas correções óbvias são armadilha**
+
+> **Reclassificado 2026-08-30.** O `validate_okf.py` na `main` limpa dá
+> `0 stale, 0 drift`: o fallback base-ref absorve as órfãs. A condição é latente, não
+> ativa, e a prioridade cai.
+>
+> **A contagem não é uma alegação estável.** Medida num único dia: 63 → 59 (três PRs
+> reancoraram) → **64** (um squash-merge orfanou as âncoras dos conceitos do próprio PR).
+> Ver B-061, cujo `verify` foi reescrito duas vezes hoje por causa disso.
+>
+> **Armadilha 1:** recusar âncora inalcançável cria deadlock — o squash orfana a âncora
+> do próprio PR que reancora. O `validate_okf.py:40-43` já documenta, e é por isso que
+> C4 avisa em vez de falhar.
+> **Armadilha 2:** migrar os restantes em massa para `source_blobs` falsifica revisão —
+> o `okf_reanchor.py --help` avisa que avançar âncora cegamente mascara drift real.
+> Exige re-autoria por conceito, não script.
+>
+> **E blob anchor não é imune ao squash.** Descoberto na prática (#1435): uma âncora de
+> blob tirada de um commit INTERMEDIÁRIO do PR aponta um objeto que o squash descarta.
+> Ela é robusta a *rebase*; contra *squash*, tem de ser tirada de um commit já na `main`
+> ou reconferida depois do merge.
 
 - **Worktree:** `/tmp/wt-wp5` · **Branch:** `docs/okf-anchor-integrity` · **Depende de:** #1410
 - **Escopo:** re-ancorar os **63 conceitos** com âncora inalcançável (§IV.2 — não 13; aquele número contava só dois SHAs de um PR) **e** adicionar a prevenção, senão a próxima rodada de rebases recria tudo: (a) `validate_okf` **reprova** âncora inalcançável em vez de cair em silêncio para base-ref; (b) preferir blob anchor. Corrigir também a citação `main.rs:661-681` em
@@ -318,7 +370,12 @@ for f in $(git ls-tree -r --name-only origin/main -- docs/knowledge/ \
 done | wc -l    # DoD: 0   (hoje: 63)
 ```
 
-### WP-6 — Re-corte do devenv
+### WP-6 — Re-corte do devenv  ✅ **CONCLUÍDO — #1432 mergeado**
+
+> Não redespache. Escopo real: **10 linhas** (16 SALVAR menos as 6 marcadas
+> `LOTE SEPARADO`, que são basePath/pricing e saem em PR próprio). A migração voltou
+> renumerada (`0106`) e com a tabela registrada nas duas listas de erase **no mesmo PR** —
+> o invariante que faltava quando a `devenv_monthly_vcpu` quebrou a erasure GDPR.
 
 - **Worktrees:** `/tmp/wt-wp6a` (server) e `/tmp/wt-wp6b` (runners) — **separados**
 - **Depende de:** fila drenada
@@ -336,7 +393,32 @@ done | wc -l    # DoD: 0   (hoje: 63)
   classe não esteja publicada (derruba o deploy inteiro, não só o devenv).
 - **Completeness:** o conjunto salvo + descartado = 173 arquivos. Sem "sobrou um".
 
-### WP-7 — Série WP-* (6 PRs)
+### WP-7 — Série WP-* (6 PRs)  🔵 **5 de 6 mergeados — falta #1400**
+
+> **A auditoria abaixo estava certa em 5 das 6 alegações, e eu mergeei 4 desses PRs
+> tendo conferido só parte.** `cargo test` verde me deu confiança que o achado escrito
+> contradizia. Verificado depois, um por um:
+> - **#1395** asserção morta — CONFIRMADO. `expect(fn(s).length >= 64 && fn(s))` avalia o
+>   literal `false` (`.length` de boolean é `undefined`) e passava faça a função o que
+>   fizer. Corrigido no #1431.
+> - **#1396** mapa sem limite — CONFIRMADO. O tombstone reabria, um mapa adiante, o DoS
+>   que o `LIMITER_BUCKET_MAP_CAP` fecha. Corrigido no #1431.
+> - **#1398** todo cliente do plano gratuito — **NÃO REPRODUZIDO**. A lista compartilhada
+>   é mais estrita, mas as guardas são superfície autenticada por PAT, onde `_public` não
+>   é tenant legítimo. Registrado como não-reproduzido, não como falso.
+> - **#1399 / #1400** "nem compila" — CONFIRMADO sob `clippy -D warnings`
+>   (`too_many_arguments`, import redundante). Corrigidos.
+> - **#1400** o evento some da fila de recuperação — CONFIRMADO e é o pior do dia.
+>   `Ok(())` faz o dispatcher auditar `Dispatched` e responder 200 sem quarentenar; a
+>   linha de dedup já foi commitada antes do materialize, então o retry da Stripe pula o
+>   handler e o evento some com a auditoria dizendo que deu certo. Trocado por
+>   `Err(InvalidPayload)`, que é o braço que quarentena na DLQ.
+> - **#1402** dois workflows estruturalmente inválidos — CONFIRMADO. O `workflow_dispatch`
+>   tinha saído do bloco `on:`; o `proptest-density-gate` perderia o único gatilho que
+>   lhe restava.
+>
+> **A lição:** teste verde não refuta achado escrito. Quando os dois discordam, o achado
+> ganha até ser reproduzido ou refutado explicitamente.
 
 - **Worktree:** `/tmp/wt-wp7` · **Depende de:** WP-0 (senão é fila, não paralelo)
 - **Estado auditado + refutado:** #1395 (teste **nunca executou**, asserção morta), #1396

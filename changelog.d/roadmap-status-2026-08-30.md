@@ -1,0 +1,3 @@
+### Changed
+
+- **O roadmap de remediação estava descrevendo um estado que não existe mais.** Sete blocos de work-package atualizados contra a realidade medida: WP-1 fechado por mecanismo (#1428/#1429), WP-3 e WP-6 concluídos, WP-4 redimensionado para 20 lanes em duas classes distintas com priorização por frequência atual em vez de volume histórico, WP-5 reclassificado como latente com as duas armadilhas documentadas, e WP-7 com o veredito individual das 6 alegações da auditoria — 5 confirmadas, 1 não reproduzida. Registra também a lição operacional que custou o dia: teste verde não refuta achado escrito.
