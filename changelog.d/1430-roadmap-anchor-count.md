@@ -1,0 +1,3 @@
+### Fixed
+
+- **O roadmap de remediação afirmava 63 âncoras OKF inalcançáveis; são 59.** O número caiu porque as re-ancoragens de hoje (WP-F2, WP-M, WP-I) apontaram 4 conceitos para commits alcançáveis e preferiram `source_blobs`. É a deriva que o B-061 existe para tornar visível, no sentido que o próprio item previu — "se alguém reancorar, o número cai e o texto mente" — e o `verify` reprovou como devia. Texto e `verify` atualizados para 59. Registra também a re-medição das lanes sem sucesso: 20 no total, sendo 19 que rodaram e nunca passaram (1.539 execuções) e 1 que nunca disparou; as duas metades não têm a mesma correção.

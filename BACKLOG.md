@@ -3298,7 +3298,7 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  bash -c 'grep -qF "63 de 164" docs/campaigns/remediation/ROADMAP.md || exit 1
+  bash -c 'grep -qF "59 de 164" docs/campaigns/remediation/ROADMAP.md || exit 1
   git rev-parse --is-shallow-repository | grep -qx false || { echo "FALHA: clone raso — ancestralidade nao verificavel. O workflow precisa de fetch-depth: 0."; exit 1; }
   n=0
   for f in $(git ls-tree -r --name-only HEAD -- docs/knowledge/ | grep "\.md$" | grep -vE "/(index|log)\.md$"); do
@@ -3306,7 +3306,7 @@ verify: |
     [ -z "$sha" ] && continue
     git merge-base --is-ancestor "$sha" HEAD 2>/dev/null || n=$((n+1))
   done
-  [ "$n" -eq 63 ]'
+  [ "$n" -eq 59 ]'
 verify-means: |
   open — o roadmap afirma "63 de 164" âncoras OKF inalcançáveis, e a varredura de
   ancestralidade sobre todos os conceitos confirma 63 agora. Fica verde enquanto o
