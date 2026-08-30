@@ -390,7 +390,7 @@ consertar os outros quatro.
 
 | Item | Medido |
 |---|---|
-| 13 conceitos com `checkpoint_sha` **órfão de squash** | `git merge-base --is-ancestor` falha nos dois SHAs |
+| **63 de 164 conceitos (38%)** com `checkpoint_sha` **inalcançável** | Medido em `origin/main`: para cada conceito com `checkpoint_sha`, `git merge-base --is-ancestor <sha> origin/main` falha em 63. **Correção de escopo:** eu havia registrado "13", que era só a contagem de **dois SHAs específicos** vindos do #1408. A população real é 4,8× maior, e o item de backlog B-049 já a tinha medido em 57/161 **antes** deste roadmap existir. Não é acidente pontual — é **defeito sistêmico de squash-orphaning**, e o conserto tem de incluir a prevenção (falhar `validate_okf` em âncora inalcançável), não só a re-ancoragem. |
 | `index.md` gerado afirma **162**; disco tem **165** | Defasado em 3; é o índice que uma pessoa navega |
 | `planes/container.md:132` cita `main.rs:661-681` como mount do archive | É a **rota de quota**; o archive mounta em 622-639 |
 
@@ -438,7 +438,24 @@ desconhecidos declarados — não como resolvidos.
 2. **Re-corte do devenv** — 1.377 linhas úteis de 28.642
 3. Os **4 consertos de cegueira de portão**
 4. **Verificação** de MED-3, MED-4, PERF-1 e da lista LOW
-5. Um **quarto relatório** ainda por chegar
+5. ~~Um quarto relatório ainda por chegar~~ — **ele já estava no repo.**
+   `reports/audits/2026-08-26-tail-verification.md` está em `origin/main` e sua base
+   (`8cd0f920`) é **ancestral** da base deste roadmap. Ele resolve parte do balde
+   "não verificados" do §II.6 — confirma **MED-4** como real (exige ADR), onde este
+   documento ainda o chamava de não-verificado. E produz um item que vira trabalho e
+   **não tem dono**: **P-A7** — `worker/src/index.ts` provisiona uma sessão de réplica
+   de leitura D1 usada só no lookup de auth, nunca repassada às leituras de tier/quota
+   (`:3532`, `:4054`), custando uma ida a região distante por request autenticado.
+   O relatório o destina a "WP-F2+", que **não existe** neste roadmap.
+6. **Itens de `BACKLOG.md` abertos sem referência aqui:** B-057 (fluxo de SLI de CAS/AC
+   sem consumidor, sem latência real, sem limite — mesma família das cegueiras do §II.3),
+   B-055 (F2 na borda não emite SLI), B-048 (`mutation-pr.yml` com fetch depth-1 alimenta
+   diff de três pontos errado — o portão pode passar sobre base velha), B-053 (piso de 50
+   amostras torna região de baixo tráfego **não-failoverável**), B-056 (sem orçamento de
+   leitura CAS por processo).
+7. **Dois `TODO(owner)` em `worker/src/replication_coordinator_do.ts`** (`:446` auditoria
+   de promoção só em stdout, precisa binding D1; `:589` `/_repl/*` compartilha a chave
+   interna com mint de PAT admin) — ausentes da tabela de decisões do owner.
 
 ---
 
