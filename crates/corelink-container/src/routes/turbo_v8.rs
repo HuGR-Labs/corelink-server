@@ -519,7 +519,7 @@ impl axum::extract::FromRequestParts<TurboRouteState> for PutConcurrencyGuard {
         // helper covers `_anonymous`, `_unknown`, `_system`, `_pending`
         // plus the two we were missing: `_oci` and `_public`). Three
         // previous local copies were drift-prone copy-paste.
-        if tenant.is_empty() || crate::auth_tenant::is_reserved_sentinel(&tenant) {
+        if tenant.is_empty() || crate::auth_tenant::is_reserved_sentinel(tenant) {
             return Err((StatusCode::UNAUTHORIZED, "authenticated tenant required").into_response());
         }
         let tenant_key = tenant.to_owned();
@@ -692,7 +692,7 @@ impl axum::extract::FromRequestParts<TurboRouteState> for GetConcurrencyGuard {
             .and_then(|v| v.to_str().ok())
             .map(str::trim)
             .unwrap_or("");
-        if tenant.is_empty() || crate::auth_tenant::is_reserved_sentinel(&tenant) {
+        if tenant.is_empty() || crate::auth_tenant::is_reserved_sentinel(tenant) {
             return Err((StatusCode::UNAUTHORIZED, "authenticated tenant required").into_response());
         }
         let tenant_key = tenant.to_owned();
@@ -898,7 +898,7 @@ impl axum::extract::FromRequestParts<TurboRouteState> for EventsConcurrencyGuard
             .and_then(|v| v.to_str().ok())
             .map(str::trim)
             .unwrap_or("");
-        if tenant.is_empty() || crate::auth_tenant::is_reserved_sentinel(&tenant) {
+        if tenant.is_empty() || crate::auth_tenant::is_reserved_sentinel(tenant) {
             return Err((StatusCode::UNAUTHORIZED, "authenticated tenant required").into_response());
         }
         let tenant_key = tenant.to_owned();
