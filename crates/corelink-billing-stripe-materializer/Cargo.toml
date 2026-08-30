@@ -46,6 +46,7 @@ corelink-billing-stripe-traits = { path = "../corelink-billing-stripe-traits" }
 # integration test (`tests/materializers_e2e.rs`) can construct the
 # concrete `WebhookDispatcher` + test fakes (`FixedClock`,
 # `RecordingSliRecorder`, …) that still live in stripe-real.
+tracing = { workspace = true }  # WP-J: structured warn line for missing subscription status
 corelink-stripe-real = { path = "../corelink-stripe-real" }
 corelink-tier-selection = { path = "../corelink-tier-selection" }
 

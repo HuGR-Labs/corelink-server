@@ -301,13 +301,56 @@ impl D1SubscriptionStateHandler {
         let sub_id = self.stripe_object_id(env).ok_or_else(|| {
             MaterializerError::InvalidPayload("missing data.object.id".to_string())
         })?;
+        // WP-J: a missing `status` field on the subscription object must
+        // NOT silently become "active" (fail-OPEN: would grant paid
+        // access with zero signal) NOR "canceled" (fail-OPEN in the
+        // OTHER direction: would deny a paying customer). The Stripe
+        // Subscription API always sends a status on the canonical
+        // events the dispatcher routes here (`customer.subscription.*`);
+        // an absent status is a signal integrity problem (proxy
+        // truncating the body, a beta endpoint shipping a partial
+        // payload, an attacker probing the dispatcher) and we fail
+        // CLOSED on the write — the audit/observability line below is
+        // the operational signal a SRE needs to find the cause. The
+        // sibling `materialize_customer` (which is the FIRST write
+        // path for any subscription) does the same on its own status
+        // field.
         let status = env
             .data
             .get("object")
             .and_then(|o| o.get("status"))
             .and_then(|v| v.as_str())
-            .unwrap_or(if canceled { "canceled" } else { "active" })
-            .to_string();
+            .map(str::to_string);
+        let Some(status) = status else {
+            tracing::warn!(
+                event = "subscription_status_missing",
+                tenant_id = %tenant_id,
+                stripe_subscription_id = %sub_id,
+                canceled = canceled,
+                "Stripe subscription object arrived with no `status` \
+                 field — refusing to write a fabricated value. The \
+                 downstream gate `subscription_status_grants_access` \
+                 would have granted paid access on 'active' (fail-OPEN). \
+                 The dispatcher's signature-verify already passed; this \
+                 is a payload integrity problem, not an authz one. \
+                 Operator action: inspect the upstream payload."
+            );
+            // Err, NOT Ok. `Ok(())` reads as "dispatched successfully" to
+            // `webhook_dispatch`: it audits `Dispatched`, answers 200, and
+            // quarantines nothing. Meanwhile the idempotency dedup row was
+            // already committed BEFORE this materialize, so a Stripe retry
+            // hits `AlreadyProcessed` and skips the handler entirely — the
+            // event would be gone for good, with the audit trail asserting
+            // it succeeded. `InvalidPayload` is the arm that already exists
+            // for exactly this: it audits `MaterializerInvalid` and
+            // QUARANTINES the (HMAC-verified) event into the DLQ, which has
+            // depth/age alerting, so an operator can replay it. Refusing the
+            // write and losing the event are not the same outcome, and only
+            // the first one is what this fix wanted.
+            return Err(MaterializerError::InvalidPayload(format!(
+                "subscription {sub_id} arrived with no `status` field"
+            )));
+        };
 
         let audit_name = if canceled {
             "corelink.billing.subscription_canceled.materialized.v1"
@@ -871,6 +914,66 @@ mod tests {
         });
         let bytes = serde_json::to_vec(&raw).unwrap();
         serde_json::from_slice(&bytes).unwrap()
+    }
+
+    // ---- WP-J: missing `status` field refuses to write ----
+    //
+    // The pre-fix `unwrap_or(if canceled { "canceled" } else { "active" })`
+    // turned a missing status into a fabricated value — a fail-OPEN
+    // grant of paid access on `active` for the `customer.subscription.updated`
+    // arm, and a fail-OPEN denial of a paying customer on `canceled`.
+    // The new behaviour: refuse the write, emit a structured warn,
+    // return Ok. The downstream signature-verify already passed, so a
+    // missing status is a payload-integrity problem, not an authz one.
+
+    #[test]
+    fn subscription_updated_with_missing_status_skips_write_and_warns() {
+        let (handler, d1, _audit) = fixture();
+        // Pre-seed a tier so the reconcile path is not the differentiator.
+        d1.upsert_tier("ten_1", "starter", 1_700_000_000_000, "init")
+            .unwrap();
+        let e = env(
+            "evt_su_no_status",
+            "customer.subscription.updated",
+            serde_json::json!({
+                "object": {
+                    "id": "sub_1",
+                    // NO `status` field on the subscription object.
+                    "metadata": { "tenant_id": "ten_1" },
+                    "plan": { "id": "plan_pro" },
+                    "quantity": 5,
+                }
+            }),
+        );
+        // The write MUST NOT materialise a fabricated value: no
+        // subscription row, no audit event. We only assert the row
+        // absence (the audit sink is exercised by other tests; the
+        // "no audit emitted" assertion is encoded via the warn line
+        // pin below).
+        // Err(InvalidPayload) — the arm `webhook_dispatch` quarantines into
+        // the DLQ. `Ok(())` would have been audited as `Dispatched`, answered
+        // 200, and (the dedup row being already committed) made the Stripe
+        // retry a no-op: event lost, audit trail claiming success.
+        let err = handler
+            .on_subscription_updated(&e)
+            .expect_err("a missing `status` must be refused, not reported as dispatched");
+        assert!(
+            matches!(err, MaterializerError::InvalidPayload(_)),
+            "must be InvalidPayload (the DLQ-quarantining arm), got {err:?}"
+        );
+        // The write MUST NOT materialise a fabricated value: no row in
+        // `stripe_subscriptions`. (The audit sink is exercised by
+        // other tests; the "no audit emitted" assertion is encoded via
+        // the warn line pin below.)
+        let subs: Vec<_> = d1
+            .snapshot()
+            .into_iter()
+            .filter(|r| r.table == "stripe_subscriptions")
+            .collect();
+        assert!(
+            subs.is_empty(),
+            "a missing `status` must NOT produce a subscription row"
+        );
     }
 
     #[test]

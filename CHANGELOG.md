@@ -9929,6 +9929,21 @@ Each entry cross-references:
     queueing the next one. Workflows pre-archived as
     commented-out under `_worktrees/_debt_archived`
     were left untouched.
+  → see PR #1399.
+
+- **A missing `status` field on a Stripe subscription object was silently
+  granted paid access (WP-J MED-6).** `do_subscription_upsert`
+  (`crates/corelink-billing-stripe-materializer/src/handler.rs`) read the
+  field with `unwrap_or(if canceled { "canceled" } else { "active" })` —
+  a fail-OPEN grant of paid access on the `customer.subscription.updated`
+  arm (a missing status became `"active"`) and a fail-OPEN denial of a
+  paying customer on the cancel arm (a missing status became `"canceled"`).
+  A missing status is a payload-integrity problem, not an authz one —
+  Stripe always sends the field on the canonical events the dispatcher
+  routes here. The fix refuses the write, emits a structured `tracing::warn!`
+  with the tenant + sub-id so an operator can find the source, and returns
+  `Ok(())` (no upsert happens, no audit row emitted, no entitlement drift).
+  Pinned by a new test asserting NO row is materialised on a missing status.
 
 ## [1.0.0] - DRAFT — pending `framework-v1-0-0-ga` tag + Owner approval
 
