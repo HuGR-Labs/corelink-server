@@ -15,7 +15,7 @@ source_files:
   - "crates/corelink-ratelimit/src/bucket.rs"
   - "crates/corelink-ratelimit/src/key.rs"
 source_blobs:
-  - "crates/corelink-ratelimit/src/limiter.rs@bfce13dc8812d826bf0cb1a18b4a0a810d3c2647"
+  - "crates/corelink-ratelimit/src/limiter.rs@c60cbca1583273e44c49973e41457f86b6da28b2"
   - "crates/corelink-ratelimit/src/bucket.rs@c34b98261d14fb61f4ba3abcd9652d8c01370b5a"
 checkpoint_sha: "db0dc2936842d0e43fa41a613317245b80c89da6"
 provenance: "AUTHORED"
