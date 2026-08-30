@@ -24,6 +24,9 @@
 
 name: cf-deploy-prod
 
+concurrency:
+  group: "ci-cf-deploy-prod"
+
 on:
   workflow_dispatch:
     inputs:

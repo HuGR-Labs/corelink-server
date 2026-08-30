@@ -1,5 +1,9 @@
 name: Release — SLSA L2 Build Provenance, self-hosted (WI-S12-001)
 
+concurrency:
+  group: "ci-release-slsa-l2-build-provenance-self-hosted-wi-s12-001"
+  cancel-in-progress: true
+
 # Generates SLSA Build **Level 2** provenance for CoreLink releases on the
 # self-hosted `corelink-builder` fleet.
 #

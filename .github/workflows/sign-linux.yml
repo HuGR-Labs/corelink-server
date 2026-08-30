@@ -25,6 +25,9 @@
 
 name: sign-linux
 
+concurrency:
+  group: "ci-sign-linux"
+
 on:
   workflow_dispatch:
     inputs:

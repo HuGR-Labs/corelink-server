@@ -12,6 +12,10 @@
 # the file drift silently between merges — which is the exact failure this replaces.
 name: backlog-verify
 
+concurrency:
+  group: "ci-backlog-verify"
+  cancel-in-progress: true
+
 on:
   pull_request:
     paths:

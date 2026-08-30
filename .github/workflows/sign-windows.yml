@@ -27,6 +27,9 @@
 
 name: sign-windows
 
+concurrency:
+  group: "ci-sign-windows"
+
 on:
   workflow_dispatch:
     inputs:

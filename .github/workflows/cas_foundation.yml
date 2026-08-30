@@ -1,5 +1,9 @@
 name: CAS Foundation CI (WI-S01-007)
 
+concurrency:
+  group: "ci-cas-foundation-ci-wi-s01-007"
+  cancel-in-progress: true
+
 # Sprint-level convergence workflow per WI-S01-007.
 # Adds CI gates that the per-crate workflows (tenant-path, corelink-hash,
 # corelink-worker, corelink-meta, corelink-reapi) do NOT cover and that

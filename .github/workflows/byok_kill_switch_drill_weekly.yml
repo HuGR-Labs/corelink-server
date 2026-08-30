@@ -1,5 +1,9 @@
 name: BYOK Kill Switch Chaos Drill (Weekly)
 
+concurrency:
+  group: "ci-byok-kill-switch-chaos-drill-weekly"
+  cancel-in-progress: true
+
 on:
   schedule:
     # Every Sunday at 03:00 UTC (per-provider rotation: 4 providers / 4 weeks).

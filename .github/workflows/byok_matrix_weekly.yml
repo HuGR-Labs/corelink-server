@@ -1,5 +1,9 @@
 name: BYOK Matrix — Weekly Staging (WI-S14-005)
 
+concurrency:
+  group: "ci-byok-matrix-weekly-staging-wi-s14-005"
+  cancel-in-progress: true
+
 # Weekly cron staging run of the 16-combination matrix test
 # (4 providers × 4 ops). Fires every Monday at 06:17 UTC.
 #

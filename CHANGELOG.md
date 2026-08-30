@@ -9897,6 +9897,38 @@ Each entry cross-references:
   expression + the JSON body builder are extracted as `audit_drain_ok` /
   `build_drain_response_body` so the invariant has unit-test anchors that
   do not require a live D1 / HTTP harness.
+- **CI hygiene tri-pack (WP-H MED-12).**
+  - **H.1** `scripts/pre-merge-gate-check.sh`:
+    `REQUIRED_PRESENT` did not list the `changelog` check
+    (`changelog-validate.yml`, bare `on: pull_request`).
+    A PR that skipped changelog-update on a feat/fix commit would
+    have passed the structural gate. Added — the gate now requires
+    the check name `changelog` to be present in the check-run
+    rollup. (The owner of the changelog-validate workflow must
+    not edit the `name: changelog-validate` job label.)
+  - **H.2** removed the standalone `schedule:` block from
+    `bazel-starter-ci.yml` (Monday 06:00 UTC) and
+    `proptest-density-gate.yml` (Thursday 04:31 UTC). Both
+    workflows still enforce the gate on every PR via their
+    `pull_request` lane (and the proptest-density PR path
+    `paths:` filter), so the removal is observation-only — the
+    re-verification of unchanged sources on a clock was the
+    exact "cron of nothing-changed" pattern the briefing
+    flagged as low-value CI spend on the self-hosted Mac fleet.
+    `workflow_dispatch` retained on both (manual operator
+    runs still work).
+  - **H.3** added `concurrency:` blocks to the 19
+    workflows that were missing them. Most use
+    `cancel-in-progress: true` (PR-revision cancels earlier
+    runs of the same workflow). The six prod-build / signing /
+    notarize workflows (`cf-deploy-prod`,
+    `container-build-push-prod`, `notarize-macos`,
+    `sign-linux`, `sign-windows`, `release-slsa3`)
+    intentionally OMIT `cancel-in-progress` per the briefing:
+    cancelling a deploy / sign mid-flight is worse than
+    queueing the next one. Workflows pre-archived as
+    commented-out under `_worktrees/_debt_archived`
+    were left untouched.
 
 ## [1.0.0] - DRAFT — pending `framework-v1-0-0-ga` tag + Owner approval
 

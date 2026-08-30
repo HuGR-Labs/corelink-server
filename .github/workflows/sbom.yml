@@ -11,6 +11,10 @@
 
 name: "SBOM — CycloneDX 1.5+ (WI-S12-002)"
 
+concurrency:
+  group: "ci-sbom-cyclonedx-1-5-wi-s12-002"
+  cancel-in-progress: true
+
 on:
   release:
     types: [published]
