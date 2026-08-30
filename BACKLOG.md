@@ -6450,3 +6450,196 @@ verify-means: |
   fica no meio, e "flaky, deixa quieto" não é saída.
 last-verified: 2026-08-30
 ```
+
+---
+
+### B-119 — `POST /v1/admin/ops` é documentado, chamado por três clientes, e não existe
+
+A superfície de aprovação dupla é publicada como quatro endpoints — `POST /v1/admin/ops`,
+`GET /v1/admin/ops/{op_id}`, `POST /v1/admin/ops/{op_id}/approve`,
+`POST /v1/admin/ops/{op_id}/reject` — cada um com página própria em
+`apps/docs/docs/reference/api/endpoints/`.
+
+**Nenhum servidor registra nenhum dos quatro.** O contêiner registra `/v1/admin/mutate` e
+`/v1/admin/approve`.
+
+O que torna este caso grave não é a ausência, é **quantas coisas já foram construídas em
+cima dela**:
+
+- `apps/admin-ui/src/lib/admin-client.ts:139-163` chama os quatro.
+- `crates/corelink-wasm/examples/quickstart_team_invite.ts` e
+  `quickstart_byok_rotate.ts` — **exemplos de quickstart publicados dos SDKs** — chamam
+  `POST /v1/admin/ops` e `POST /v1/admin/ops/{op_id}/approve`.
+- `crates/corelink-dual-approval/src/types.rs:8` tem um tipo cujo doc-comment diz
+  *"Corresponds to `POST /v1/admin/ops` body after header extraction."*
+
+E o crate que teria a implementação **não está no binário servido**:
+
+```
+cargo tree -p corelink-server --edges normal
+  corelink-dual-approval        0 ocorrências
+  corelink-cas   (controle)     2 ocorrências
+  arvore total                  1513 linhas
+```
+
+O controle e o total não são enfeite: sem eles, um zero é indistinguível de um comando que
+falhou. Ler o crate também não decide — ele compila igual estando ou não ligado ao binário;
+só a árvore de dependências do binário responde.
+
+**Por que ninguém percebeu.** O admin-ui tem `src/lib/e2e-mock-fixtures.ts` e um catch-all
+em `src/app/api/v1/[...path]/route.ts` que **simulam** essas rotas. O próprio arquivo se
+declara mock de teste e devolve 503 em produção. O e2e passa contra o mock, e o mock é a
+única coisa que implementa o endpoint — teste verde provando o simulador, não o produto.
+
+```backlog
+id: B-119
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'docs=$(ls apps/docs/docs/reference/api/endpoints/ 2>/dev/null | grep -c "admin-ops" | tr -d " ")
+  [ "$docs" -gt 0 ] || { echo "FALHA: nenhuma pagina de doc de admin/ops encontrada — ou foram removidas (feche) ou o caminho mudou; investigue antes de fechar."; exit 1; }
+  srv=$(grep -rn -- "\"/v1/admin/ops" crates/ worker/src 2>/dev/null | wc -l | tr -d " ")
+  [ "$srv" = 0 ] || { echo "FALHA: /v1/admin/ops agora tem $srv literal(is) no servidor — a rota nasceu, feche ou reescreva o item."; exit 1; }
+  echo "aberto: $docs pagina(s) publicam /v1/admin/ops e 0 sitio de servidor registra a rota"'
+verify-means: |
+  open — a doc publica a superfície e nenhum servidor a registra.
+
+  Os dois lados são medidos. Um predicado de um lado só fecharia sozinho pelo lado errado:
+  apagar as páginas fecharia o item sem entregar a funcionalidade, e a funcionalidade
+  aparecer sem corrigir a doc deixaria a divergência viva ao contrário.
+
+  O que este comando NÃO decide, e é o mais importante: **qual das duas superfícies é a
+  verdadeira.** Pode ser que a doc esteja adiantada (a feature nunca foi ligada) ou que ela
+  esteja atrasada (a feature virou `/v1/admin/mutate` + `/v1/admin/approve` e a doc não
+  acompanhou). O reparo é completamente diferente nos dois casos, e quem fechar tem de
+  dizer qual é — com `corelink-dual-approval` e `routes/admin.rs` abertos lado a lado.
+
+  Também não decide os clientes. Se a superfície documentada for abandonada, os dois
+  exemplos de quickstart dos SDKs e o `admin-client.ts` passam a chamar rota inexistente e
+  precisam ir junto. Fechar este item sem varrer os consumidores só move a mentira de
+  lugar.
+last-verified: 2026-08-30
+```
+
+---
+
+### B-120 — `POST /v1/enterprise/inquire` idem: doc, crate, e nenhuma rota
+
+`apps/docs/docs/reference/api/endpoints/post-v1-enterprise-inquire.mdx` publica o endpoint e
+afirma *"Implemented by `corelink-enterprise-inquiry`. Atomic outbox to …"*. O
+`openapi-corelink-v1.yaml` repete a atribuição.
+
+O crate existe e é dependência de `corelink-ops` e `corelink-slack-real`. **Não há literal
+de caminho `/v1/enterprise/inquire` em `crates/` nem em `worker/src`**, e o crate não está
+no binário servido:
+
+```
+cargo tree -p corelink-server --edges normal
+  corelink-enterprise-inquiry   0 ocorrências
+```
+
+Mesma classe do [B-119], e com um agravante comercial: é a porta pela qual um cliente
+enterprise pede contato. O owner **vende** enterprise. Um formulário de contato enterprise
+que não existe é receita perdida em silêncio, não um defeito de documentação.
+
+```backlog
+id: B-120
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'test -f apps/docs/docs/reference/api/endpoints/post-v1-enterprise-inquire.mdx || { echo "FALHA: a pagina do endpoint sumiu — se foi decisao, feche o item registrando o motivo."; exit 1; }
+  srv=$(grep -rn -- "\"/v1/enterprise/inquire\"" crates/ worker/src 2>/dev/null | wc -l | tr -d " ")
+  dep=$(grep -c "corelink-enterprise-inquiry" crates/corelink-container/Cargo.toml 2>/dev/null | tr -d " ")
+  [ "$srv" = 0 ] || { echo "FALHA: /v1/enterprise/inquire aparece $srv vez(es) como literal de caminho no servidor — a rota pode ter nascido; verifique e feche."; exit 1; }
+  [ "$dep" = 0 ] || { echo "FALHA: o binario do conteiner agora depende de corelink-enterprise-inquiry — a implementacao pode ter sido ligada; verifique e feche."; exit 1; }
+  echo "aberto: a doc publica /v1/enterprise/inquire, nenhum literal de caminho o registra, e o crate nao e dependencia do binario servido"'
+verify-means: |
+  open — a página existe e o caminho não aparece em nenhum servidor.
+
+  O predicado do lado do servidor é deliberadamente **largo**: qualquer menção ao caminho,
+  não só um `.route(...)`. Rota registrada por constante não casaria com o padrão estreito,
+  e foi exatamente assim que uma primeira varredura minha reportou 32 endpoints ausentes
+  quando o número real era muito menor — o instrumento estava errado, não o repo.
+  Predicado largo erra para o lado seguro: pode deixar de acusar, nunca acusa à toa.
+
+  O que este comando NÃO decide: se a inquirição enterprise é atendida por **outro**
+  caminho (um formulário no site, um e-mail, o Slack via `corelink-slack-real`). Se for,
+  o reparo é apagar a promessa de endpoint e apontar o caminho real — e nesse caso o item
+  fecha por decisão registrada, não por o grep mudar de valor.
+last-verified: 2026-08-30
+```
+
+---
+
+### B-121 — nada compara a superfície documentada com a superfície servida
+
+[B-119] e [B-120] não são dois defeitos, são duas amostras. A varredura que os achou
+encontrou mais, e o que falta é o portão, não os consertos.
+
+Comparando os 45 endpoints de `apps/docs/docs/reference/api/endpoints/` com todos os
+literais de caminho de `crates/`, `worker/` e `apps/`:
+
+| endpoint documentado | situação no código |
+|---|---|
+| `POST /v1/admin/ops` (+ `{op_id}`, approve, reject) | não registrado — [B-119] |
+| `POST /v1/enterprise/inquire` | não registrado — [B-120] |
+| `POST /v1/dpa/accept` | caminho real é `/v1/onboarding/dpa-accept` — [B-116] |
+| `GET /v1/audit/export` | caminho real é `/v1/audit/{tenant}/export` — falta o segmento de tenant |
+| `GET /v1/admin/audit/events` | não registrado |
+| `GET /v1/admin/tenants` (lista) | não registrado; só existem as sub-rotas `/{tenant_id}/…` |
+| `GET /v1/data-categories` | não registrado; só `admin-ui/src/lib/dsr-client.ts` o chama |
+| `GET`/`POST` `/v1/pats`, `DELETE /v1/pats/{pat_id}` | só existe a variante admin `/v1/admin/tenants/{tenant_id}/pats` |
+
+Duas formas distintas aparecem aqui e o reparo difere: **ausência** (a rota não existe) e
+**divergência de caminho** (a rota existe com outro caminho). A segunda é pior para o
+cliente, porque a doc parece certa e a chamada falha com 404 depois de autenticar.
+
+**A raiz é a especificação, não as páginas.** `scripts/gen-api-reference.py` **gera** as 45
+páginas a partir de `openapi/corelink-v1.yaml`, uma por `paths.<path>.<method>`. Então as
+páginas não são a fonte da divergência — são a sua propagação, e regenerá-las não conserta
+nada. A fonte é o OpenAPI, que é escrito à mão e **nunca é confrontado com as rotas
+servidas**. O comparador certo é `openapi/corelink-v1.yaml` × rotas registradas; a doc
+publicada segue de graça. Isso também define quem tem de mudar quando o veredito sair: a
+especificação, não o MDX.
+
+**A lição de método vale mais que a lista.** A primeira varredura reportou 32 ausências. Era
+o instrumento: `grep '\.route("…'` é por linha, e este repo registra rota com o caminho na
+linha seguinte, ou por constante (`TURBO_GET_ROUTE`, `AUDIT_EXPORT_ROUTE`,
+`ROUTE_EVENT_COUNT`). Um resultado implausível é sinal contra o próprio instrumento antes
+de ser sinal contra o repo — e um portão automatizado tem de nascer com essa lição embutida,
+senão vira uma fonte de alarme falso que alguém acaba silenciando.
+
+```backlog
+id: B-121
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'n=$(grep -rln "reference/api/endpoints" scripts/ .github/workflows/ 2>/dev/null | grep -v "gen-api-reference" | wc -l | tr -d " ")
+  [ "$n" = 0 ] || { echo "FALHA: $n script/lane alem do gerador referencia o diretorio de endpoints — pode ser o comparador nascendo; verifique e feche se for."; exit 1; }
+  eps=$(ls apps/docs/docs/reference/api/endpoints/*.mdx 2>/dev/null | wc -l | tr -d " ")
+  [ "$eps" -gt 0 ] || { echo "FALHA: nenhuma pagina de endpoint encontrada — o item pressupoe que a superficie documentada existe; reavalie."; exit 1; }
+  echo "aberto: $eps endpoints documentados e nenhum script ou lane compara essa lista com as rotas servidas"'
+verify-means: |
+  open — a superfície documentada existe e nada a compara com a servida.
+
+  O predicado mede a **presença do comparador**, não a ausência de divergências. Escolhi o
+  mais estreito e mais honesto: contar divergências dentro de um `verify:` exigiria embutir
+  ali a varredura inteira, e uma varredura frágil dentro de um portão é pior que nenhuma —
+  ela vira alarme falso, alguém a silencia, e a supressão-com-motivo sobrevive muito mais
+  tempo que um build vermelho.
+
+  O que este comando NÃO decide: se o comparador, quando existir, é **correto**. Um que
+  extraia rota por `grep '\.route("'` reprova este item ficando verde e não enxerga nada —
+  foi o que aconteceu na primeira tentativa desta varredura. Quem fechar precisa provar o
+  contrário: rodar o comparador contra as divergências já conhecidas ([B-116], [B-119],
+  [B-120] e as quatro da tabela) e mostrar que ele **acusa as oito**. Portão que nunca foi
+  visto pegando o defeito conhecido não é portão.
+
+  Nota de escopo: o comparador natural é bidirecional. Uma direção pega doc sem rota
+  (o que está aqui); a outra pega rota sem doc, que é [B-117]. Um único instrumento
+  fecha as duas famílias.
+last-verified: 2026-08-30
+```
