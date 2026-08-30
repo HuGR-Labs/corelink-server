@@ -355,6 +355,9 @@ importers:
       '@cloudflare/workers-types':
         specifier: ^4.20260619.1
         version: 4.20260619.1
+      '@vitest/coverage-v8':
+        specifier: 4.1.10
+        version: 4.1.10(vitest@4.1.10)
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -5795,8 +5798,8 @@ packages:
     resolution: {integrity: sha512-rNjApaLzuwaOTjCiT8lSDdGN1APCiqkChLMJxJPWLunPAt5fy8xgU9/jNOchV84wfIxrA0lRQB7oCT8jrn/wrQ==}
     engines: {node: '>=6.0'}
 
-  chromedriver@152.0.1:
-    resolution: {integrity: sha512-8zet2yPAFOSlYxUIcQ/1yOOC1xP4ooPZiKFRdlJhFawBKvlZIHDU6qv4LDOfPEw1yXbyu+tQTzbL0Vfb+vHdQQ==}
+  chromedriver@152.0.2:
+    resolution: {integrity: sha512-w/trjzSjQC8vHHwl4e+WXBGPRN3XnrsY14q/FdxCY8GtTUIlB+wH1gn/Kz3CHpdmbsouUEGal6E8bjEEz72pZg==}
     engines: {node: '>=22'}
     hasBin: true
 
@@ -11957,7 +11960,7 @@ snapshots:
     dependencies:
       '@axe-core/webdriverjs': 4.12.1(selenium-webdriver@4.44.0)
       axe-core: 4.12.1
-      chromedriver: 152.0.1
+      chromedriver: 152.0.2
       colors: 1.4.0
       commander: 9.5.0
       dotenv: 17.4.2
@@ -17945,7 +17948,7 @@ snapshots:
 
   chrome-trace-event@1.0.4: {}
 
-  chromedriver@152.0.1:
+  chromedriver@152.0.2:
     dependencies:
       '@testim/chrome-version': 1.1.4
       adm-zip: 0.6.0
