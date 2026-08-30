@@ -203,7 +203,11 @@ pub(super) const RETAIN_SET: &[&str] = &[
     // pipeline before D1), so it SURVIVES an Art.17 erasure (RETAIN).
     "dsr_tickets",
     "dpa_acceptances",
-    "erasure_attestation",
+    // NOTE: the table is `erasure_attestations` (plural, migr. 0032). A
+    // singular `"erasure_attestation"` sat here too and matched nothing —
+    // harmless (RETAIN entries are never deleted, and the Art.15 disclosable
+    // subset in `access.rs` uses the plural), but it is exactly the shape the
+    // mirror gate below now refuses.
     "erasure_attestations",
     "export_audit_log",
     "stripe_customers",
@@ -726,6 +730,79 @@ mod tests {
         );
     }
 
+    /// The MIRROR of `every_migrated_tenant_keyed_table_is_classified`, and
+    /// the direction that gate never checked.
+    ///
+    /// CF-1 walked migrations → registry: a table that exists on disk but is
+    /// unclassified fails. Nothing walked registry → migrations, so a name in
+    /// the registry that no migration ever creates was structurally invisible.
+    ///
+    /// That is not hypothetical. `devenv_monthly_vcpu` was added to both
+    /// `TENANT_ID_TABLES` and `ALL_TENANT_KEYED_TABLES` in #1405 citing
+    /// "migr. 0094", but 0094 is `0094_runner_usage_counter.sql` and no
+    /// migration creates that table on `main` — it ships with the unmerged
+    /// #1397. Because `erase()` runs `count_then_delete` in a bare `for` loop
+    /// with `?` and NO transaction, the phantom sat at the boundary and turned
+    /// an Art.17 erasure into: delete the 16 operational tables before it,
+    /// error on the phantom, and never reach `byok_envelope`,
+    /// `tenant_byok_config`, `tenant_byok_secret`, the namespace tables,
+    /// `signup_*`, or the root `tenant` row. Operational data destroyed,
+    /// identity PII left intact, 500 returned, no attestation, no SEV-1.
+    ///
+    /// Compared against EVERY `CREATE TABLE` in the migrations, not just the
+    /// tenant-keyed ones, so a registry entry whose key column the CF-1
+    /// heuristic does not recognise is not failed for the wrong reason.
+    #[test]
+    fn every_registry_table_is_actually_created_by_a_migration() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../migrations/d1");
+        let mut created: Vec<String> = Vec::new();
+        let entries = std::fs::read_dir(dir)
+            .unwrap_or_else(|e| panic!("CF-1 mirror gate cannot read {dir}: {e}"));
+        for entry in entries {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|e| e.to_str()) != Some("sql") {
+                continue;
+            }
+            let sql = std::fs::read_to_string(&path).unwrap();
+            created.extend(extract_all_created_tables(&sql));
+        }
+        created.sort();
+        created.dedup();
+        assert!(
+            !created.is_empty(),
+            "CF-1 mirror gate parsed ZERO CREATE TABLEs — parser or path is broken"
+        );
+
+        // EVERY registry, not just `ALL_TENANT_KEYED_TABLES`. `erase()` walks
+        // `TENANT_ID_TABLES` and `NAMESPACE_TABLES` directly, so a phantom in
+        // one of THOSE is what actually splits a sweep in half — checking only
+        // the completeness registry would leave the load-bearing lists
+        // unguarded. Caught by mutating the fix: re-adding the phantom to
+        // `TENANT_ID_TABLES` alone left an ALL_TENANT_KEYED_TABLES-only
+        // version of this test GREEN.
+        let mut registry: Vec<&str> = ALL_TENANT_KEYED_TABLES.to_vec();
+        for (_, set) in CLASSIFICATION_SETS {
+            registry.extend_from_slice(set);
+        }
+        registry.sort_unstable();
+        registry.dedup();
+
+        let phantom: Vec<&&str> = registry
+            .iter()
+            .filter(|t| !created.iter().any(|c| c == *t))
+            .collect();
+        assert!(
+            phantom.is_empty(),
+            "CF-1 MIRROR: table(s) are classified in the DSR registry but no \
+             migration in migrations/d1 creates them. A DSR erase runs its \
+             deletes in a bare loop with no transaction, so a name that does \
+             not exist aborts the sweep PART-WAY — destroying the tables \
+             before it and leaving every table after it, including the \
+             identity rows, intact. Remove the entry or land its migration: \
+             {phantom:?}"
+        );
+    }
+
     #[test]
     fn kind_is_d1() {
         // Construction needs a client; assert the const instead (kind() is
@@ -735,10 +812,34 @@ mod tests {
 
     /// Strip SQL line (`--`) and block (`/* */`) comments so `CREATE TABLE`
     /// inside doc-comments is not mistaken for a real DDL statement.
+    ///
+    /// ⚠️ **Line comments are stripped FIRST, and the order is load-bearing.**
+    /// This helper used to run the block pass first, which made an unpaired
+    /// `/*` inside a LINE comment swallow the rest of the file: the scan for
+    /// the closing `*/` ran to EOF and everything after it disappeared. Two
+    /// migrations contain exactly that — `0090_dsr_tickets.sql:3` documents
+    /// the `/v1/privacy/dsr/*` route and `0061_adapter_oci_kv.sql` has the
+    /// same shape — so `dsr_tickets` and `adapter_oci_kv` were INVISIBLE to
+    /// the CF-1 drift gate that exists to notice unclassified tables. Both
+    /// happen to be classified already, so nothing was mis-erased; the hole
+    /// was in the gate, and any future table declared in either file (or any
+    /// file whose prose mentions a `/*` glob) would have escaped it silently.
     fn strip_sql_comments(sql: &str) -> String {
-        // block comments first (migrations are ASCII; byte scan is safe)
-        let mut no_block = String::with_capacity(sql.len());
-        let bytes = sql.as_bytes();
+        // Line comments FIRST: a `--` comment can contain an unpaired `/*`
+        // (a route glob, a path), and stripping blocks first would treat it
+        // as the start of a block that never ends.
+        let mut no_line = String::with_capacity(sql.len());
+        for line in sql.lines() {
+            let l = match line.find("--") {
+                Some(k) => &line[..k],
+                None => line,
+            };
+            no_line.push_str(l);
+            no_line.push('\n');
+        }
+        // then block comments (migrations are ASCII; byte scan is safe)
+        let mut out = String::with_capacity(no_line.len());
+        let bytes = no_line.as_bytes();
         let mut i = 0usize;
         while i < bytes.len() {
             if i + 1 < bytes.len() && bytes[i] == b'/' && bytes[i + 1] == b'*' {
@@ -748,21 +849,45 @@ mod tests {
                     j += 1;
                 }
                 i = (j + 2).min(bytes.len());
-                no_block.push(' ');
+                out.push(' ');
                 continue;
             }
-            no_block.push(bytes[i] as char);
+            out.push(bytes[i] as char);
             i += 1;
         }
-        // then line comments
-        let mut out = String::with_capacity(no_block.len());
-        for line in no_block.lines() {
-            let l = match line.find("--") {
-                Some(k) => &line[..k],
-                None => line,
+        out
+    }
+
+    /// Every `CREATE TABLE` name in a migration, regardless of its columns.
+    ///
+    /// The tenant-keyed extractor below answers "which tables need
+    /// classification"; this one answers "which tables exist at all", which is
+    /// what the mirror gate needs — a registry entry must correspond to a real
+    /// table even when the CF-1 key-column heuristic would not have flagged it.
+    fn extract_all_created_tables(sql: &str) -> Vec<String> {
+        let clean = strip_sql_comments(sql);
+        let mut out = Vec::new();
+        let mut rest = clean.as_str();
+        while let Some(pos) = rest.find("CREATE TABLE") {
+            let after = rest[pos + "CREATE TABLE".len()..].trim_start();
+            let after = {
+                let lower = after.to_ascii_lowercase();
+                if lower.starts_with("if not exists") {
+                    after["if not exists".len()..].trim_start()
+                } else {
+                    after
+                }
             };
-            out.push_str(l);
-            out.push('\n');
+            let name: String = after
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            // `*_new` are transient table-rebuild artifacts, DROP+RENAMEd to
+            // their canonical name inside the same migration.
+            if !name.is_empty() && !name.ends_with("_new") {
+                out.push(name);
+            }
+            rest = after;
         }
         out
     }

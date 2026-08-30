@@ -43,6 +43,14 @@ in *another* repo, which happens with no commit to this one.
 - **A `verify` for an `open` item must exit 0 while the work is unfinished** and
   start failing once it lands. That is what makes the file self-closing: finishing
   the work turns the gate red until the status is updated to match.
+- **When the status flips to `done`, INVERT the `verify` into a regression
+  guard** — it must exit 0 while the world is CORRECT, and fail if someone undoes
+  the work. `backlog_verify` requires exit 0 from every item regardless of status;
+  `status:` describes, it does not excuse. A `done` item still carrying the
+  `open`-polarity check is the nastiest shape this file has: it passes in the PR
+  that wrote it (the work is not in the tree yet) and turns the gate RED on the
+  merge of the NEXT PR, blaming a change that did nothing wrong. Found on B-060,
+  2026-08-29.
 
 ---
 
@@ -3183,7 +3191,7 @@ half at its own position. That is not theoretical: `devenv_monthly_vcpu`
 (#1405, reverted in #1410) sat at entry 18 of 41 in `TENANT_ID_TABLES`,
 immediately before the three `byok_*` tables.
 
-The mirror assertion is written and green (stacked on #1410) and closes this.
+The mirror assertion landed with this item's own PR (stacked on #1410) and closes it.
 It is filed anyway rather than shipped silently, because the same PR corrects a
 `dsr-erasure` claim that the forward gate makes a future tenant-keyed migration
 impossible to land unclassified — a claim that is false for reasons BEYOND the
@@ -3200,20 +3208,44 @@ bug fixed, and the mirror is the check that does not depend on the heuristic:
 it asks only whether a name the code will DELETE corresponds to a table that
 EXISTS.
 
+### The lesson this item exists to carry
+
+Three of the four defects found in #1410's review were **acquisition** failures:
+a stale worktree, a truncated read, a gate that never emitted the citation. The
+fourth was different and no gate can catch it.
+
+The PR body stated, in writing, that the CF-1 `debug_assert!` is compiled out of
+the release container. The `dsr-erasure` concept asserted, in a sentence
+depending on exactly that, that an unaccounted-for table "can never run an erase
+that then attests `VerifiedComplete`". Both were on screen at the same time. The
+fact was acquired, written down, and then did not **propagate** to the claim
+whose truth rested on it — its sibling, in the same paragraph of the same file
+the same PR was already editing.
+
+No linter knows that sentence X in the wiki depends on fact Y in a commit
+message. The only antidote is a habit, applied whenever you establish that
+something does NOT hold — compiled out, not wired, never called, no consumer:
+immediately ask **"what in this repo asserts the opposite, or rests on it?"**
+and sweep. Do it at the moment of the finding, not at the end, because that is
+when the dependency is still in view.
+
+Same shape as [B-055], where the item's own premise assumed the thing it wanted
+to fix existed.
+
 Relates to [B-057] and the `compliance/dsr-erasure` concept.
 
 ```backlog
 id: B-060
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  ! grep -q 'fn every_registry_table_is_actually_created_by_a_migration' \
+  grep -q 'fn every_registry_table_is_actually_created_by_a_migration' \
     crates/corelink-container/src/routes/dsr/adapter_d1.rs
 verify-means: |
-  open — passes while the mirror assertion is NOT in the tree. Closes the moment
-  the stacked PR lands it, which is the point: the item exists so the claim
-  correction in the wiki is backed by something tracked, not by a promise in a
-  PR body.
+  done — the mirror assertion is in the tree, so this check now FAILS, which is
+  the closure signal. It stays as a regression guard: deleting the assertion
+  flips the item back to DRIFTED rather than quietly removing the only check
+  that does not depend on the SQL heuristic.
 last-verified: 2026-08-29
 ```
