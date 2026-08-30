@@ -3313,6 +3313,38 @@ tem branch protection** — `GET /branches/main/protection` devolve 403 "Upgrade
 to GitHub Pro". Portanto a mecanizacao da (1) tem de viver no
 `pre-merge-gate-check.sh`, nao em configuracao do GitHub.
 
+**PROPOSTA DESCARTADA, registrada com autopsia.** A guardia propos re-executar
+o `backlog_verify` obrigatoriamente depois que um PR irmao mergeia, via
+required-checks contra `refs/pull/N/merge`. Medi antes de aceitar:
+`GET /branches/main/protection` devolve **403 "Upgrade to GitHub Pro or make
+this repository public"** — nao ha branch protection em nenhum dos tres repos,
+entao required-checks nao existe aqui. Ela retirou a proposta. Fica escrito
+porque proposta morta com autopsia vale mais que proposta esquecida: sem isto,
+alguem a ressuscita em tres meses e gasta o mesmo dia descobrindo o mesmo 403.
+
+**Recomendacao: (2) monotonicidade.** Guardia e eu convergimos independentemente.
+A mecanizacao, seja qual for a saida, tem de viver no `pre-merge-gate-check.sh`
+— unico caminho de merge que existe e o unico lugar que conhece o estado real da
+`main` no instante em que decide.
+
+## Licao de metodo: substituicao em massa tem DOIS limites, nao um
+
+Renumerar 116-118 para 122-124 corrompeu os itens **da guardia** que o rebase
+tinha trazido para o mesmo arquivo. O padrao tinha limite de digito
+(`(?![0-9])`, que evita estragar um `B-1160` vizinho) e **nao tinha limite de
+regiao** — entao alcancou os `### B-116` dela, 3200 linhas abaixo, gerando ids
+duplicados. O gate pegou; foi revertido e refeito limitado ao intervalo de
+linhas do meu bloco.
+
+O aviso que eu tinha recebido cobria so o primeiro limite, porque so o primeiro
+ja tinha mordido alguem antes. Ficam os dois escritos:
+
+1. **Limite de token** — `(?![0-9])` ou equivalente, senao `B-116` casa dentro de
+   `B-1160`.
+2. **Limite de regiao** — restrinja ao intervalo de linhas que voce escreveu.
+   Num arquivo compartilhado por N sessoes, o mesmo id existe legitimamente em
+   dois lugares durante um rebase, e o seu padrao nao sabe qual e o seu.
+
 Decisao do lead pendente. Nao implementar antes.
 
 ```backlog
@@ -3374,7 +3406,7 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-119 — 50 dos 75 diretorios de crate nunca aparecem num `cargo test` (e o workspace tem 95 pacotes)
+### B-124 — 50 dos 75 diretorios de crate nunca aparecem num `cargo test` (e o workspace tem 95 pacotes)
 
 ⚠️ O DENOMINADOR: 75 e o numero de DIRETORIOS em `crates/`. O workspace tem
 **95 pacotes** — `cargo metadata --no-deps` conta 95, dos quais 20 vivem fora de
@@ -3414,7 +3446,7 @@ auth+pat incondicionais — 13 crates de piso, que ja arrastam `cas`, `server`,
 `worker`, `reapi`, `privacy` e `adapter-host`. Os demais seguem descobertos.
 
 ```backlog
-id: B-119
+id: B-124
 repo: corelink-server
 owner: tl
 status: open
@@ -3434,7 +3466,7 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-120 — as cinco de billing ficam fora do piso incondicional, e o custo esta medido
+### B-125 — as cinco de billing ficam fora do piso incondicional, e o custo esta medido
 
 `rust-affected-tests.yml` roda o fecho reverso do que o diff tocou, mais
 `corelink-auth` e `corelink-pat` sempre. As cinco de billing **nao** estao nesse
@@ -3454,7 +3486,7 @@ nomeavel: a regressao de billing apareceria DEPOIS do merge, possivelmente com
 outro PR ja em cima.
 
 ```backlog
-id: B-120
+id: B-125
 repo: corelink-server
 owner: tl
 status: open
@@ -3473,7 +3505,7 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-121 — a lane profunda precisa ser LIDA, senao vira decoracao
+### B-126 — a lane profunda precisa ser LIDA, senao vira decoracao
 
 `rust-deep-property.yml` roda as propriedades em intensidade cheia e os testes
 `#[ignore]`d. Ela e a rede que sustenta o recorte da lane de PR — se ficar
@@ -3485,7 +3517,7 @@ historicos**, varias rodando por meses sem que o vermelho movesse ninguem
 ([B-110], [B-113]). Lane agendada sem leitor e a mesma coisa.
 
 ```backlog
-id: B-121
+id: B-126
 repo: corelink-server
 owner: tl
 status: open
