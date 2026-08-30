@@ -82,36 +82,39 @@ jobs:
           SEEDS="$(printf '%s\ncorelink-auth\ncorelink-pat\n' "$TOUCHED" \
             | grep -v '^$' | sort -u)"
 
-          CLOSURE=""
-          for c in $SEEDS; do
+          # Everything below stays NEWLINE-delimited and is consumed with
+          # `while read`, never by unquoted word-splitting. Splitting would work
+          # here (crate names have no spaces) but it trips shellcheck SC2086,
+          # and silencing a real warning to keep a shortcut is how the next
+          # genuinely-unsafe expansion gets waved through too.
+          : > /tmp/closure.txt
+          while IFS= read -r c; do
+            [ -n "$c" ] || continue
             # `cargo tree --invert <crate>` — NOT `-i -p <crate>`, which cargo
             # rejects ("the -i flag requires a package name") and which fails
             # into an empty parse that reads as "nothing depends on this".
             if ! OUT="$(cargo tree --invert "$c" --workspace --edges normal 2>/dev/null)"; then
               echo "::warning::cargo tree --invert failed for $c; including it alone"
-              CLOSURE="$CLOSURE $c"
+              printf '%s\n' "$c" >> /tmp/closure.txt
               continue
             fi
-            CLOSURE="$CLOSURE $(printf '%s' "$OUT" \
-              | grep -oE '[a-z0-9-]+ v[0-9]' | sed 's/ v[0-9]//')"
-          done
+            printf '%s' "$OUT" | grep -oE '[a-z0-9-]+ v[0-9]' \
+              | sed 's/ v[0-9]//' >> /tmp/closure.txt
+          done <<< "$SEEDS"
 
           # Workspace members only: the closure also names test harnesses under
           # tests/, which are not `-p` targets of this lane.
-          MEMBERS="$(ls crates)"
-          FINAL="$(printf '%s\n' $CLOSURE | sort -u \
-            | grep -Fx -f <(printf '%s\n' $MEMBERS) || true)"
+          ls crates > /tmp/members.txt
+          sort -u /tmp/closure.txt | grep -Fx -f /tmp/members.txt > /tmp/final.txt || true
 
-          if [ -z "$FINAL" ]; then
-            echo "::error::closure came out EMPTY — auth and pat are \
-                  unconditional seeds, so an empty set means the computation \
-                  broke, not that there is nothing to test"
+          if [ ! -s /tmp/final.txt ]; then
+            echo "::error::closure came out EMPTY — auth and pat are unconditional seeds, so an empty set means the computation broke, not that there is nothing to test"
             exit 1
           fi
 
-          echo "selected $(printf '%s\n' $FINAL | wc -l | tr -d ' ') crates:"
-          printf '  %s\n' $FINAL
-          echo "crates=$(printf '%s' "$FINAL" | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+          echo "selected $(wc -l < /tmp/final.txt | tr -d ' ') crates:"
+          sed 's/^/  /' /tmp/final.txt
+          echo "crates=$(tr '\n' ' ' < /tmp/final.txt)" >> "$GITHUB_OUTPUT"
 
   test:
     name: cargo test (affected)
@@ -129,10 +132,26 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
+      # `corelink-reapi`'s build script needs protoc and the fleet image does
+      # NOT ship it — the first run of this lane failed with
+      # "Could not find `protoc`". reapi is in the unconditional floor (it sits
+      # in corelink-auth's reverse closure), so every run reaches it. Same
+      # action and same pin the existing corelink-reapi.yml lane already uses on
+      # this fleet; adding it to the image is the better long-term fix and
+      # belongs in corelink-runners, not here.
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b  # arduino/setup-protoc@v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: cargo test (affected crates)
         run: |
           set -euo pipefail
-          ARGS=""
-          for c in ${{ needs.select.outputs.crates }}; do ARGS="$ARGS -p $c"; done
-          echo "cargo test$ARGS --all-targets"
-          cargo test $ARGS --all-targets
+          # Built as an ARRAY, not a string: `cargo test $ARGS` relies on
+          # word-splitting (shellcheck SC2086) and would also break on any crate
+          # name that ever gained a character needing quoting.
+          read -ra SELECTED <<< "${{ needs.select.outputs.crates }}"
+          ARGS=()
+          for c in "${SELECTED[@]}"; do ARGS+=(-p "$c"); done
+          echo "cargo test ${ARGS[*]} --all-targets"
+          cargo test "${ARGS[@]}" --all-targets
