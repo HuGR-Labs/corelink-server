@@ -321,3 +321,106 @@ desconhecidos declarados — não como resolvidos.
 3. Os **4 consertos de cegueira de portão**
 4. **Verificação** de MED-3, MED-4, PERF-1 e da lista LOW
 5. Um **quarto relatório** ainda por chegar
+
+---
+
+# PARTE III — Os achados da auditoria Edition-2.0, e por que este documento não deve envelhecer
+
+## III.0 — Como ler este documento (a correção de desenho)
+
+As Partes I e II ficaram **desatualizadas duas vezes em poucas horas**. Não por descuido:
+por desenho. Elas repetiam **estado** (quais PRs abertos, o que já mergeou), e estado
+muda. É o mesmo defeito do índice OKF (afirma 162, disco tem 165), do `CLAUDE.md`
+(afirma ~73 crates, são 75) e do briefing original (medido contra base velha).
+
+**Regra a partir daqui: este documento registra DECISÃO e CONTRATO, nunca estado.**
+Decisão e contrato não mudam sozinhos. Estado se consulta:
+
+```bash
+gh pr list --state open --json number,title,mergeable   # o que está aberto
+gh pr list --state merged --search "<termo>"            # o que já entrou
+bash scripts/pre-merge-gate-check.sh <PR>               # se pode entrar
+```
+
+Se você encontrar uma tabela de estado numa parte anterior deste arquivo e ela
+discordar do comando acima, **o comando ganha**.
+
+## III.1 — Rastreabilidade da Edition-2.0
+
+A Parte II mediu o briefing de 15 WPs. Mas **uma segunda auditoria** (Edition-2.0,
+`reports/audits/2026-08-26-go-live-readiness.md`) produziu achados `F-001..F-020` que
+não estavam registrados aqui — o trabalho existia, o registro não. Cada um agora tem
+destino.
+
+| Achado | Assunto | Destino |
+|---|---|---|
+| F-001 | Claims de WORM/Object-Lock na cadeia de auditoria | **Fechado** — claims rebaixados; keyed-hash deferido como epoch cutover (B-054) |
+| F-002/003 | gRPC e BYOK anunciados vs 501 | Em PR de claims (docs) |
+| F-004 | Hostnames mortos no corpo do 429 | **Fechado** |
+| F-005 | "4+3 regiões" vs 2 vivas | Em PR de claims (docs) |
+| **F-006** | **Taxonomia de pricing divergente** | ⚠️ **SEM DONO** — medido: `tier.rs` tem 6 tiers, `ratelimit/tier.rs` tem 5. Mesmo rótulo, faturamento diferente. |
+| F-007/008 | `_public` sem cap + cap velho após downgrade | Metade npm feita; a metade `_public` é redesenho de accounting (ver II.8) |
+| **F-009** | Turborepo sem verificação de conteúdo | **NÃO É DEFEITO** — ver III.2 |
+| **F-010** | **Reembolso não revoga acesso** | ⚠️ **SEM DONO** — mesma decisão que OWNER-4 |
+| F-011 | DLQ volátil | **Fechado** (WP-D1) |
+| F-012 | Chaves privadas em `~/Downloads` | Owner |
+| F-013 | Drift da matriz de secrets | **Refutado** no briefing (`code_only=0`) |
+| F-014 | Feeds de CVE sem cron | **Fechado** |
+| F-015 | Janela de revogação de 65 s | Parcial (WP-F1); o piso de TTL do KV é 60 s, não dá pra baixar |
+| F-016 | Enum de região 4 vs 6 | **Fechado** |
+| F-017 | Deploy sem drain (SIGTERM) | Em PR, **reprovado** por auditoria independente (afirmação falsa de fallback + fila de billing não drenada) |
+| F-018 | Hash do DPA forjável | **Bloqueado** — exige decisão de arquitetura (fonte canônica do texto) |
+| **F-019** | **Ticket de credencial 2 h reusável** | ⚠️ **SEM DONO** — o pedido real é TTL 7200→600 + `destroy`, não uso único |
+| F-020 | Flood de `kid` no JWKS | **Fechado** — e ver III.3 |
+
+## III.2 — F-009: retratação registrada
+
+Escalei este achado a P0 com base num `grep` por três palavras retornando zero.
+**Estava errado, e o erro é o mesmo que este documento condena:** concluir ausência a
+partir de busca estreita.
+
+Verificação correta: o módulo **documenta o comportamento** nas próprias linhas 41-43 —
+*"Turbo's artifact hash is OPAQUE. It is stored verbatim as the KV key without any
+hash-integrity verification."* A camada de armazenamento **tem** verificação
+(`verify_content_hash`, 24 ocorrências); o turbo deliberadamente não a usa.
+
+E não pode usar: no protocolo do Turborepo o hash é dos **inputs da tarefa**, não do
+artefato. O servidor não tem os inputs, logo não recomputa. A correção sugerida pela
+auditoria (`blake3(bytes) verify`) **não é implementável** — não há contra o que comparar.
+
+Severidade real: exige credencial de escrita do tenant **e** pertencer ao mesmo time.
+Não é quebra cross-tenant. O serviço hospedado do próprio Turborepo tem a mesma
+propriedade. **É suposição de confiança, não bug.** O que sobra é dever de informar o
+cliente; mitigar de verdade seria escopo de escrita por usuário — trabalho novo.
+
+## III.3 — Trabalho duplicado, medido
+
+**F-020 e WP-G são o mesmo defeito.** Duas auditorias independentes, dois nomes, duas
+sessões consertando, nenhuma contabilização. O custo só apareceu quando alguém cruzou
+as duas listas.
+
+Isso torna a rastreabilidade cruzada obrigatória: **antes de despachar, consulte se o
+trabalho já existe.** Aconteceu de novo hoje — duas instruções pediram consertos
+(`chacha20` no runners; republicar o pacote SDK) que já estavam prontos e verdes em PR.
+Verificar antes custou dois comandos; duplicar teria custado dois PRs e duas revisões.
+
+## III.4 — Portões estruturalmente cegos: agora são seis
+
+Atualiza a tabela de II.3. É o formato de defeito **dominante** desta casa.
+
+| Portão | Cegueira |
+|---|---|
+| OKF `CITE_RE` | Regex exige caminho ⇒ citação abreviada é invisível |
+| OKF C5 | Valida posição, não correspondência semântica |
+| `sdk-artifacts` | Filtrado por `apps/docs/**` ⇒ nunca dispara no PR que causa a defasagem |
+| Espelho CF-1 | Unidirecional ⇒ tabela fantasma é invisível |
+| **Piso de cobertura** | O bloco `thresholds` existia; o workflow chamava `vitest run` **sem `--coverage`** ⇒ **nunca executou uma vez**. Custo medido: um arquivo documentado a 90% mede 77,13% |
+| **Escopo de cobertura** | O provider só reporta arquivo **importado** por algum teste ⇒ arquivo novo sem teste não move o número. Medido: 88,23% vs 79,09% |
+
+**Contra-exemplo a imitar: o C10b.** Ele **recusa** seed cujo conceito não cite o
+arquivo — recusa auto-certificação. É o único desenho correto encontrado, e deve ser o
+modelo ao consertar os outros.
+
+Pergunta obrigatória em toda revisão de portão daqui pra frente:
+**"o que quebraria isto e NÃO seria pego?"** Se não houver resposta, o portão não foi
+revisado — foi lido.
