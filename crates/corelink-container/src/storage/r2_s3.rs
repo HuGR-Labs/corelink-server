@@ -2504,7 +2504,7 @@ pub async fn build_r2_cas_handler_from_env(
     // observer. The previous `InMemorySliObserver` here retained every
     // observation in a `Vec` for the life of the container process, with
     // no production reader of `snapshot()`/`count()` anywhere.
-    let sli = Arc::new(crate::sli_aggregate::CountingSliObserver::new());
+    let sli = crate::sli_aggregate::shared();
     Some(Ok(R2CasHandler::new(
         client,
         cas_region,
@@ -3640,7 +3640,7 @@ pub async fn build_r2_ac_handler_from_env(
     let audit: Arc<dyn corelink_handler_ac::AuditSink> = audit_concrete.clone();
     // B-057, AC twin of the CAS builder above: constant-memory aggregate
     // instead of a Vec that grew for the life of the container.
-    let sli = Arc::new(crate::sli_aggregate::CountingSliObserver::new());
+    let sli = crate::sli_aggregate::shared();
     Some(Ok(R2AcHandler::new(
         client,
         ac_region,

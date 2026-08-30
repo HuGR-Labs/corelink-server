@@ -57,7 +57,8 @@ use serde::Deserialize;
 use serde_json::json;
 use subtle::ConstantTimeEq;
 
-use corelink_handler_cas::{AuditEvent, AuditEventKind};
+use corelink_handler_cas::{AuditEvent, AuditEventKind, SliObservation, SliObserver as _};
+use corelink_slo::definition::Sli;
 
 use crate::storage::d1_audit_sink::D1AuditOutboxSink;
 
@@ -89,6 +90,11 @@ const MIN_AUTH_KEY_LEN: usize = 32;
 pub struct AuditCasAttemptedState {
     internal_auth_key: String,
     sink: Arc<D1AuditOutboxSink>,
+    /// The PROCESS-WIDE SLI observer — the same instance the CAS and AC
+    /// handlers fold into. `AvailCasGet` served by the container and
+    /// `AvailCasGet` served in-colo by the edge are the same SLI; two
+    /// observers would give two partial views of one SLO (B-055).
+    sli: Arc<crate::sli_aggregate::CountingSliObserver>,
 }
 
 impl core::fmt::Debug for AuditCasAttemptedState {
@@ -117,6 +123,39 @@ pub struct AuditCasAttemptedRequest {
     /// The probed digests, in request order. Lowercase hex sha256 — the REAPI
     /// keyspace `findMissingBlobs` probes.
     pub digests: Vec<String>,
+    /// Wall-clock the EDGE spent probing R2, in milliseconds, as measured by
+    /// `serveEdgeFindMissing`. Feeds `LatencyCasGetP99` so the SLO sees the
+    /// window the customer actually waited on, not a zero.
+    ///
+    /// OPTIONAL on purpose: a Worker deployed before this field existed still
+    /// gets its rows written and its 204. The observation is then recorded
+    /// with a zero latency, which `SliCounters` keeps distinguishable from
+    /// "fast" by counting it in `total` while adding nothing to the sum.
+    #[serde(default)]
+    pub edge_ms: Option<u64>,
+}
+
+/// Fold ONE observation pair into the shared counters, mirroring
+/// `R2CasHandler::exists_batch_inner`'s `emit` closure exactly: one
+/// availability + one latency observation per BATCH (not per digest), on the
+/// same three outcomes the container path emits on — cross-tenant denial and
+/// audit failure as errors, a written batch as a success.
+///
+/// This is the whole of B-055. Before it, a `findMissingBlobs` answered at the
+/// edge produced NO observation at all, so `AvailCasGet` / `LatencyCasGetP99`
+/// silently stopped covering the requests that the F2 rollout made fast — an
+/// R2 fault in-colo could have degraded every edge probe and moved the SLOs by
+/// zero.
+fn emit_sli(sli: &crate::sli_aggregate::CountingSliObserver, is_error: bool, edge_ms: Option<u64>) {
+    // `edge_ms` is milliseconds on the wire (what the Worker measures);
+    // `SliObservation` carries MICROseconds, like every other call site.
+    let latency_us = edge_ms.unwrap_or(0).saturating_mul(1_000);
+    sli.observe(SliObservation::new(Sli::AvailCasGet, is_error, latency_us));
+    sli.observe(SliObservation::new(
+        Sli::LatencyCasGetP99,
+        is_error,
+        latency_us,
+    ));
 }
 
 /// Constant-time internal-auth check. Mirrors
@@ -185,6 +224,7 @@ async fn handle_cas_attempted(
             tracing::error!("audit/cas-attempted: cross-tenant denial audit failed: {e}");
             return err(StatusCode::SERVICE_UNAVAILABLE, "audit_unavailable");
         }
+        emit_sli(&state.sli, true, req.edge_ms);
         return err(StatusCode::FORBIDDEN, "cross_tenant_denied");
     }
 
@@ -215,8 +255,12 @@ async fn handle_cas_attempted(
         .collect();
 
     match state.sink.emit_cas_batch_async(&events).await {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Ok(()) => {
+            emit_sli(&state.sli, false, req.edge_ms);
+            StatusCode::NO_CONTENT.into_response()
+        }
         Err(e) => {
+            emit_sli(&state.sli, true, req.edge_ms);
             // 503, not 500: this is "try the container", not "your request was
             // bad". The caller's contract is to fall through on anything but
             // 204, but the status still has to tell the truth.
@@ -251,6 +295,7 @@ pub fn build_state_from_env() -> Option<AuditCasAttemptedState> {
     Some(AuditCasAttemptedState {
         internal_auth_key,
         sink,
+        sli: crate::sli_aggregate::shared(),
     })
 }
 
@@ -274,6 +319,42 @@ mod tests {
             Err(_) => unreachable!("test header values are ASCII"),
         }
         h
+    }
+
+    /// B-055: an edge-served batch must produce the SAME observation pair the
+    /// container emits, on the SAME three outcomes, with the edge's measured
+    /// window instead of a zero.
+    ///
+    /// Driven through `emit_sli` directly rather than through the handler,
+    /// because the handler needs a live D1 sink; the branch selection is
+    /// pinned separately by the status-code tests. What this pins is the part
+    /// that was MISSING, not the routing: that an edge-served probe is
+    /// observed at all, that a denial is an error observation, and that the
+    /// milliseconds on the wire become microseconds in the SLI.
+    #[test]
+    fn edge_served_batches_are_observed_with_their_measured_latency() {
+        let fresh = crate::sli_aggregate::CountingSliObserver::new();
+
+        emit_sli(&fresh, false, Some(7));
+        emit_sli(&fresh, true, Some(3));
+        emit_sli(&fresh, false, None);
+
+        let c = fresh.counters().unwrap_or_default();
+        let avail = c.get(&Sli::AvailCasGet).copied().unwrap_or_default();
+        let lat = c.get(&Sli::LatencyCasGetP99).copied().unwrap_or_default();
+
+        assert_eq!(avail.total, 3, "one availability observation per BATCH");
+        assert_eq!(avail.errors, 1, "only the denial counts as an error");
+        assert_eq!(
+            lat.total, 3,
+            "the latency SLI is observed on every outcome, like the container's"
+        );
+        assert_eq!(
+            lat.latency_us_sum, 10_000,
+            "7ms + 3ms + 0 = 10000us — milliseconds on the wire become \
+             microseconds in the SLI"
+        );
+        assert_eq!(lat.latency_us_max, 7_000);
     }
 
     #[test]

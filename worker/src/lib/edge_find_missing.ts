@@ -339,6 +339,20 @@ export type EmitAttemptedAudit = (batch: {
   caller_tenant: string;
   at_unix_ms: number;
   digests: string[];
+  /**
+   * The R2 probe window in milliseconds, so the container can record
+   * `LatencyCasGetP99` for a request the edge answered (B-055). Before this,
+   * an edge-served `findMissingBlobs` produced NO SLI observation at all, so
+   * the CAS SLOs silently stopped covering exactly the requests F2 made fast.
+   *
+   * ⚠️ This is the PROBE window, not the whole edge handler: it necessarily
+   * excludes the audit round-trip that is being made to report it. The
+   * container's own `exists_batch` latency DOES include its audit write, so
+   * edge-served samples run slightly LOW against container-served ones. Stated
+   * rather than silently mixed — the alternative is a number that cannot be
+   * measured before it is sent.
+   */
+  edge_ms: number;
 }) => Promise<boolean>;
 
 /** What the caller must do next. `null` ⇒ fall through to the container. */
@@ -393,6 +407,7 @@ export async function serveEdgeFindMissing(
       caller_tenant: tenantId,
       at_unix_ms: at,
       digests: requested,
+      edge_ms: at - started,
     });
   } catch {
     return null;
