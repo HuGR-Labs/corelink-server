@@ -3217,3 +3217,65 @@ verify-means: |
   PR body.
 last-verified: 2026-08-29
 ```
+
+### B-061 — o roadmap de remediação é o único artefato sem `verify`, e já vazou número errado
+
+`docs/campaigns/remediation/ROADMAP.md` é o artefato de controle da campanha: define
+ordem de merge, declara disjunção de work-packages e congela contratos de descarte.
+É também **o único documento operacional deste repo sem um `verify`** — todos os 60
+itens deste arquivo carregam um comando que decide se a própria alegação ainda vale, e
+o `backlog_verify.py` fica vermelho em DRIFTED. O roadmap não tem nenhum, então **sua
+deriva é invisível por construção**.
+
+Isso não é hipótese. Quatro revisores independentes (2 Opus, 2 Sonnet, dois deles
+adversariais) encontraram, em uma passada:
+
+- **Três números publicados que não reproduzem.** "5 lanes com 1.057 execuções e zero
+  sucessos" — a população real é **19 lanes / 1.539 execuções**; "13 conceitos com
+  âncora órfã" — são **63 de 164**, e o 13 contava só os dois SHAs mais frequentes;
+  "`tier.rs` tem 6 tiers" — o enum tem **11 variantes**, o 6 era doc-comment obsoleto.
+- **Um deles já vazou para fora do documento**: o "1.057" foi repetido no corpo de um PR
+  já mergeado, como argumento para escolher um piso de cobertura.
+- **Um critério de conclusão que certificava conserto de 5% como pronto**: o WP-5 mandava
+  checar 2 SHAs órfãos; existem 32 distintos.
+- **Três de oito WPs mandavam criar branch que já existia** — dois mergeados, um em voo.
+
+A ironia é o achado: o documento nomeia *"a prosa é excelente e a implementação não
+corresponde"* como o formato de defeito dominante desta casa, e é exatamente o que ele
+faz consigo mesmo.
+
+**O `verify` abaixo re-deriva os dois números estruturais do documento** (âncoras OKF
+inalcançáveis e lanes com zero sucesso) e falha se o texto divergir da medição — o
+mesmo mecanismo que este arquivo aplica a todo o resto.
+
+**Polaridade deliberada:** passa **enquanto** o roadmap declarar números que batem com a
+realidade medida. Vira DRIFTED quando alguém consertar as âncoras sem atualizar o
+documento, ou quando o documento afirmar um número que a medição não sustenta.
+
+```backlog
+id: B-061
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'grep -qF "63 de 164" docs/campaigns/remediation/ROADMAP.md || exit 1
+  n=0
+  for f in $(git ls-tree -r --name-only HEAD -- docs/knowledge/ | grep "\.md$" | grep -vE "/(index|log)\.md$"); do
+    sha=$(git show "HEAD:$f" | grep -m1 -oE "checkpoint_sha:[[:space:]]*\"?[0-9a-f]{8,40}" | grep -oE "[0-9a-f]{8,40}") || true
+    [ -z "$sha" ] && continue
+    git merge-base --is-ancestor "$sha" HEAD 2>/dev/null || n=$((n+1))
+  done
+  [ "$n" -eq 63 ]'
+verify-means: |
+  open — o roadmap afirma "63 de 164" âncoras OKF inalcançáveis, e a varredura de
+  ancestralidade sobre todos os conceitos confirma 63 agora. Fica verde enquanto o
+  documento e a realidade concordam. Vira DRIFTED nos dois sentidos: se alguém
+  reancorar (o número cai e o texto mente) ou se o apodrecimento continuar (o número
+  sobe e o texto subestima). Fechar este item exige a PREVENÇÃO, não só a
+  re-ancoragem — ver o mecanismo em [B-049]: o squash-merge órfã a âncora do próprio
+  PR que reancora, a ~1 por conceito por merge, então reancorar sem mudar o portão se
+  desfaz na semana seguinte. A correção estrutural é preferir blob anchor
+  (content-addressed, sobrevive a rebase E a squash) e fazer o validate_okf reprovar
+  âncora inalcançável em vez de degradar para base-ref.
+last-verified: 2026-08-30
+```
