@@ -34,6 +34,21 @@ Each entry cross-references:
   reproduced the failure behind a green-looking diff. `chacha20` reaches us only
   as a transitive DEV dependency (via `testcontainers`), so nothing shipped
   changes.
+- **The npm tarball we serve from our own domain was STALE (WP-8).** PR #1346
+  changed `sdks/js/src/client.ts` — `stat()` moved from `GET` to `HEAD`, so a
+  size probe no longer transfers the body — but did not republish the packaged
+  artifact at `apps/docs/static/npm/corelink-client-0.1.0.tgz`. Every customer
+  who installed the JS SDK from `https://humangr.com/corelink/docs/npm/...`
+  since 2026-08-26 got the pre-change build: `stat()` still downloading the
+  whole object. The tarball is rebuilt from current source (same version,
+  `0.1.0` — no version bump was needed; the drift was content-only) and
+  `scripts/verify-sdk-artifacts.sh` is green on all three published SDKs.
+  The drift survived for days because the `published SDK artifacts match their
+  source` gate is path-filtered to `apps/docs/**`, so a commit touching only
+  `sdks/**` never runs it — that gap is what allowed the artifact and its
+  source to diverge silently. The sibling artifacts (the Python wheel and the
+  Go module zip, plus the PyPI simple-index `sha256`) were checked and are in
+  sync.
 
 - **The CAS read path had no object-SIZE bound (B-051).** Peak heap for a read
   is `concurrent_reads x object_size`. B-052 bounded the first factor
