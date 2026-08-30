@@ -40,8 +40,14 @@ jobs:
         # The pnpm workspace side stays deterministic via the committed lockfile.
         run: npm install --legacy-peer-deps
 
-      - name: Run vitest (node config)
-        run: npx vitest run
+      - name: Run vitest (node config) + coverage floor
+        # `--coverage` is LOAD-BEARING, not a report nicety. `worker/vitest.config.mts`
+        # has carried a `coverage.thresholds` block since it was written, but vitest
+        # only evaluates thresholds when the coverage provider is enabled — so with a
+        # bare `vitest run` the floor never ran, and src/index.ts silently rotted from
+        # its declared 90% down to 77%. Do not drop this flag: the config's floor is
+        # unenforceable without it. Exit code is vitest's own (no pipe, no `|| true`).
+        run: npx vitest run --coverage
 
       - name: Run vitest (miniflare / workerd integration)
         # The workerd DO-dispatch / isolation / CORS integration suite. Its
