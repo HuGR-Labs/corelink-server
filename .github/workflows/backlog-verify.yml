@@ -42,6 +42,12 @@ jobs:
     runs-on: corelink
     steps:
       - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0  # v6.0.3
+        with:
+          # Four backlog `verify` commands ask git about HISTORY (merge-base,
+          # rev-list, git log). The default shallow clone has none, so those
+          # checks cannot answer here — and a check that cannot answer is worse
+          # than a red one, because it reports green. Full history or nothing.
+          fetch-depth: 0
 
       # The gate's own gate. A checker nobody has watched fail proves nothing, so
       # the self-test runs FIRST: if it cannot produce a red verdict on a backlog
