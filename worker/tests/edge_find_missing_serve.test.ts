@@ -37,15 +37,26 @@ const reqBody = (hashes: string[]) =>
 
 /** Records what the audit seam was asked to emit, and answers as told. */
 function auditSpy(answer: boolean | "throw") {
-  const calls: { digests: string[]; tenant: string; caller_tenant: string }[] = [];
+  const calls: {
+    digests: string[];
+    tenant: string;
+    caller_tenant: string;
+    edge_ms: number;
+  }[] = [];
   const emit = async (b: {
     tenant: string;
     principal: string;
     caller_tenant: string;
     at_unix_ms: number;
     digests: string[];
+    edge_ms: number;
   }) => {
-    calls.push({ digests: b.digests, tenant: b.tenant, caller_tenant: b.caller_tenant });
+    calls.push({
+      digests: b.digests,
+      tenant: b.tenant,
+      caller_tenant: b.caller_tenant,
+      edge_ms: b.edge_ms,
+    });
     if (answer === "throw") throw new Error("container unreachable");
     return answer;
   };
@@ -183,6 +194,37 @@ describe("edge findMissingBlobs F2 serve", () => {
     });
     expect(JSON.parse(findMissingResponseBody([]))).toEqual({ missingBlobDigests: [] });
   });
+
+  it("reports the probe window to the container so the CAS SLI is not blind (B-055)", async () => {
+    // The container records LatencyCasGetP99 from this field. Before B-055 an
+    // edge-served findMissingBlobs emitted no observation at all, so the SLO
+    // stopped covering exactly the requests F2 made fast.
+    let t = 1000;
+    const clock = () => t;
+    const env = envWith(bucket(new Set()), db(false));
+    const spy = auditSpy(true);
+    const emit = async (b: Parameters<typeof spy.emit>[0]) => {
+      t += 42; // the audit round-trip must NOT be inside the reported window
+      return spy.emit(b);
+    };
+    const out = await serveEdgeFindMissing(
+      env,
+      TENANT,
+      PRINCIPAL,
+      reqBody([D(1)]),
+      emit,
+      () => {
+        const v = t;
+        t += 5; // each clock read advances: probe start, probe end
+        return v;
+      },
+    );
+    expect(out).not.toBeNull();
+    expect(spy.calls).toHaveLength(1);
+    expect(spy.calls[0]?.edge_ms).toBeGreaterThan(0);
+    expect(Number.isFinite(spy.calls[0]?.edge_ms ?? NaN)).toBe(true);
+  });
+
 });
 
 /** Helper: D(1) present in R2, D(2) absent. */

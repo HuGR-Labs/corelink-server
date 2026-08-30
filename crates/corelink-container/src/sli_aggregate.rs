@@ -37,7 +37,7 @@
 //! tracked separately.
 
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use corelink_slo::definition::Sli;
 
@@ -133,6 +133,22 @@ impl CountingSliObserver {
             );
         }
     }
+}
+
+/// The ONE observer the whole process shares.
+///
+/// The CAS handler, the AC handler and the edge's audit-emit route
+/// (`routes/audit_cas_attempted`) must all fold into the SAME counters:
+/// `AvailCasGet` served by the container and `AvailCasGet` served in-colo
+/// by the Worker are the same SLI, and two disjoint observers would give
+/// two partial views of one SLO — which is the shape of blindness B-055
+/// exists to remove, not a new one to add.
+static SHARED: OnceLock<Arc<CountingSliObserver>> = OnceLock::new();
+
+/// Handle to the process-wide observer, created on first use.
+#[must_use]
+pub fn shared() -> Arc<CountingSliObserver> {
+    Arc::clone(SHARED.get_or_init(|| Arc::new(CountingSliObserver::new())))
 }
 
 impl corelink_handler_cas::SliObserver for CountingSliObserver {
