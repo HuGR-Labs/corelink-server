@@ -97,7 +97,6 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     "quota_cas_attempts",
     "quota_fsm_state",
     "ratelimit_buckets",
-    "devenv_monthly_vcpu",  // per-tenant, per-month vCPU-second meter for the DevEnv product (migr. 0094) — operational billing data, ERASE per ADR-S11-013
     "byok_envelope",
     "tenant_byok_config",
     "tenant_byok_secret",
@@ -322,7 +321,6 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "ratelimit_buckets",
     "byok_envelope",
     "tenant_byok_config",
-    "devenv_monthly_vcpu",
     "tenant_byok_secret",
     "adapter_oci_kv",
     "survey_responses",
