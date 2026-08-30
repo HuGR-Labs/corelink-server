@@ -102,9 +102,16 @@ jobs:
               | sed 's/ v[0-9]//' >> /tmp/closure.txt
           done <<< "$SEEDS"
 
-          # Workspace members only: the closure also names test harnesses under
-          # tests/, which are not `-p` targets of this lane.
-          ls crates > /tmp/members.txt
+          # Workspace members from `cargo metadata`, NOT from `ls crates`.
+          # Directory name != package name: `crates/corelink-container` is the
+          # package `corelink-server`, and `crates/tenant-path` is
+          # `corelink-tenant-path`. The first run of this lane died on
+          # "package ID specification `corelink-container` did not match any
+          # packages" for exactly that reason. cargo metadata is also the only
+          # source that sees the 20 workspace packages living outside crates/.
+          cargo metadata --no-deps --format-version 1 \
+            | python3 -c 'import json,sys; [print(p["name"]) for p in json.load(sys.stdin)["packages"]]' \
+            > /tmp/members.txt
           sort -u /tmp/closure.txt | grep -Fx -f /tmp/members.txt > /tmp/final.txt || true
 
           if [ ! -s /tmp/final.txt ]; then
