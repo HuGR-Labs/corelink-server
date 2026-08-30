@@ -3298,13 +3298,17 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  bash -c 'git rev-parse --is-shallow-repository | grep -qx false || { echo "FALHA: clone raso — ancestralidade nao verificavel. O workflow precisa de fetch-depth: 0."; exit 1; }
-  n=0
-  for f in $(git ls-tree -r --name-only HEAD -- docs/knowledge/ | grep "\.md$" | grep -vE "/(index|log)\.md$"); do
-    sha=$(git show "HEAD:$f" | grep -m1 -oE "checkpoint_sha:[[:space:]]*\"?[0-9a-f]{8,40}" | grep -oE "[0-9a-f]{8,40}") || true
-    [ -z "$sha" ] && continue
-    git merge-base --is-ancestor "$sha" HEAD 2>/dev/null || n=$((n+1))
-  done
+  bash -c 'set -o pipefail
+  git rev-parse --is-shallow-repository | grep -qx false || { echo "FALHA: clone raso — ancestralidade nao verificavel. O workflow precisa de fetch-depth: 0."; exit 1; }
+  tmp=$(mktemp -d); trap "rm -rf $tmp" EXIT
+  git ls-tree -r --name-only HEAD -- docs/knowledge/ | grep "\.md$" | grep -vE "/(index|log)\.md$" > "$tmp/files"
+  [ -s "$tmp/files" ] || { echo "INDETERMINADO: nenhum conceito encontrado em docs/knowledge — arvore inesperada."; exit 1; }
+  grep -H -m1 -oE "^checkpoint_sha:[[:space:]]*\"?[0-9a-f]{8,40}" $(cat "$tmp/files") 2>/dev/null \
+    | sed -E "s|^([^:]+):.*[^0-9a-f]([0-9a-f]{8,40})$|\1\t\2|" > "$tmp/pairs"
+  git rev-list HEAD | sort > "$tmp/reach"
+  cut -f2 "$tmp/pairs" | sort -u | sed "s|^|^|" > "$tmp/pat"
+  grep -hoE -f "$tmp/pat" "$tmp/reach" | sort -u > "$tmp/hit"
+  n=$(cut -f2 "$tmp/pairs" | grep -vxF -f "$tmp/hit" | wc -l | tr -d " ")
   [ "$n" -gt 0 ] || { echo "FALHA: zero ancoras inalcancaveis — o apodrecimento acabou, feche o item."; exit 1; }
   blk=$(grep -A1 -F "if not git.is_ancestor(str(prev_sha), args.base_ref):" scripts/validate_okf.py) || {
     echo "INDETERMINADO: o bloco de ancestralidade do C5b nao foi encontrado em validate_okf.py."
