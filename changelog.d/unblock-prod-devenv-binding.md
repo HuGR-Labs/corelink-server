@@ -1,0 +1,3 @@
+### Fixed
+
+- **Um binding do DevEnv bloqueava TODO deploy de produção, incluindo o apagamento GDPR do Art.17.** O `wrangler.toml` declarava `RUNNER_DEVENV_DO → RunnerDevEnvDO` no script `corelink-spawn-worker`, mas o spawn-worker deployado não exporta a classe — e o deploy dele também falha, porque o `wrangler.jsonc` do `corelink-runners` aponta `corelink-runner-devenv:latest` e a Cloudflare recusa tags `latest`. A imagem, por sua vez, **nunca foi construída**: não existe workflow que a produza. O binding sai do `wrangler.toml` até a imagem existir e a feature ser validada. Prod destrava com 43 commits presos, entre eles o #1410 (a tabela fantasma que partia a erasure GDPR no meio) e o #1439 (404 no funil de compra).
