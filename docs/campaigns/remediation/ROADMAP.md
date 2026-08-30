@@ -29,7 +29,7 @@ retórica: o portão foi furado 4 vezes num dia, e três mensagens de commit diz
 | **Pendente é pendente**, mesmo quando o job se diz informativo. | O cabeçalho descreve a intenção do job, não o estado do check. |
 | **A prosa não é evidência.** Verifique no caminho que produção toma. | Um cap de leitura foi ligado no ramo de teste; produção segue sem limite. |
 | **Nenhum teste que passa antes do fix.** Reverta o fix: a suíte tem de ficar vermelha. | Um teste verificava o parâmetro, não o bug. |
-| **Âncora tem de sobreviver ao squash.** Prefira **blob anchor** (content-addressed, sobrevive a rebase); commit anchor é fallback. | **59 de 164 conceitos (38%)** com âncora inalcançável — e `validate_okf` passa **verde localmente** porque o objeto órfão ainda existe no clone. Único check local fiel: `git merge-base --is-ancestor <sha> origin/main`. |
+| **Âncora tem de sobreviver ao squash.** Prefira **blob anchor** (content-addressed, sobrevive a rebase); commit anchor é fallback. | **64 de 164 conceitos (38%)** com âncora inalcançável — e `validate_okf` passa **verde localmente** porque o objeto órfão ainda existe no clone. Único check local fiel: `git merge-base --is-ancestor <sha> origin/main`. |
 | **Ao estabelecer um negativo, varra o que depende dele.** | Escreveram no PR que uma proteção não vale em release e deixaram de pé, na wiki, a frase que dependia dela. |
 | **Antes de despachar, verifique se o trabalho já existe.** | Um defeito foi consertado duas vezes por duas auditorias com nomes diferentes. |
 | **Nunca `git add -A`.** Índice compartilhado entre worktrees. | Varreu 54 workflows e um módulo inteiro para dentro de um PR. |
@@ -201,7 +201,7 @@ Derivados de defeitos reais desta campanha. Não são conselhos — são condiç
 |---|---|---|
 | Q1 | **A prosa não é evidência.** Toda afirmação do PR é verificada contra o código no caminho que **produção** toma. | Um cap de leitura foi ligado no ramo de teste; produção segue sem limite. |
 | Q2 | **Nenhum teste que passa antes do fix.** Reverta o fix: a suíte tem de ficar vermelha. | Teste que verificava o parâmetro, não o bug. Reverter o fix deixava tudo verde. |
-| Q3 | **Nenhuma âncora que o squash orfana.** Referencie blob do conteúdo final ou commit já em `origin/main` — nunca o HEAD do próprio branch. | 59 de 164 conceitos com âncora inalcançável — e o validador passa VERDE localmente. |
+| Q3 | **Nenhuma âncora que o squash orfana.** Referencie blob do conteúdo final ou commit já em `origin/main` — nunca o HEAD do próprio branch. | 64 de 164 conceitos com âncora inalcançável — e o validador passa VERDE localmente. |
 | Q4 | **Ao estabelecer um negativo, varra o que depende dele.** "Compilado fora", "não wired", "sem consumidor" → procure quem afirma o contrário, **no momento do achado**. | Sessão escreveu no corpo do PR que uma proteção não vale em release e deixou de pé, na wiki, a frase que dependia dela. |
 | Q5 | **Contagem ≠ conjunto.** Verificar CI compara o **conjunto** de lanes contra um PR de mesmo escopo, não o número. | Duas lanes trocadas dão a mesma contagem e escondem o que a régua existe para pegar. |
 | Q6 | **`verify` de item concluído é guarda de regressão.** Passa enquanto a asserção existe; DRIFTED se alguém a apagar. Nunca escrito na polaridade "aberto". | Item `done` com `verify` na polaridade errada quebra o portão no merge do PR **seguinte**. |
@@ -438,7 +438,8 @@ consertar os outros quatro.
 
 | Item | Medido |
 |---|---|
-| **59 de 164 conceitos (38%)** com `checkpoint_sha` **inalcançável** | Medido em `origin/main`: para cada conceito com `checkpoint_sha`, `git merge-base --is-ancestor <sha> origin/main` falha em 59. **Correção de escopo:** eu havia registrado "13", que era só a contagem de **dois SHAs específicos** vindos do #1408. A população real é 4,8× maior, e o item de backlog B-049 já a tinha medido em 57/161 **antes** deste roadmap existir. Não é acidente pontual — é **defeito sistêmico de squash-orphaning**, e o conserto tem de incluir a prevenção (falhar `validate_okf` em âncora inalcançável), não só a re-ancoragem. |
+| **64 de 164 conceitos (38%)** com `checkpoint_sha` **inalcançável** | Medido em `origin/main`: para cada conceito com `checkpoint_sha`, `git merge-base --is-ancestor <sha> origin/main` falha em 64. **Correção de escopo:** eu havia registrado "13", que era só a contagem de **dois SHAs específicos** vindos do #1408. A população real é 4,8× maior, e o item de backlog B-049 já a tinha medido em 57/161 **antes** deste roadmap existir. Não é acidente pontual — é **defeito sistêmico de squash-orphaning**, e o conserto tem de incluir a prevenção (falhar `validate_okf` em âncora inalcançável), não só a re-ancoragem. |
+| Este número é um INSTANTÂNEO datado, não uma alegação gateada | Medido em `2ab90523` (2026-08-30). No MESMO dia foi 63, depois 59 (três PRs reancoraram), depois **64** — porque o squash-merge do #1432 orfanou as âncoras dos conceitos do próprio PR, que é o mecanismo do defeito operando em tempo real. Fixar um número exato num `verify` reprova em duas situações opostas (quando alguém conserta e quando alguém apenas mergeia) e derruba PRs sem relação, que herdam o vermelho — aconteceu com o #1402. O B-061 passou a afirmar a AUSÊNCIA DA PREVENÇÃO, que é estável e só muda quando o conserto existe. |
 | `index.md` gerado afirma **162**; disco tem **165** | Defasado em 3; é o índice que uma pessoa navega |
 | `planes/container.md:132` cita `main.rs:661-681` como mount do archive | É a **rota de quota**; o archive mounta em 622-639 |
 
@@ -670,7 +671,7 @@ não os alcança, e reporta stale.
 git merge-base --is-ancestor <checkpoint_sha> origin/main   # por conceito
 ```
 
-**Consequência medida:** 59 de 164 conceitos (38%) com âncora inalcançável em
+**Consequência medida:** 64 de 164 conceitos (38%) com âncora inalcançável em
 `origin/main`. Não é acidente de um merge — é **toda pilha rebaseada de toda campanha**,
 apodrecendo sem nunca ficar vermelho onde alguém olhasse. Uma única sessão pagou 3
 rebases num dia e órfã 10 conceitos.
