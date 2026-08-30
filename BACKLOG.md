@@ -3258,7 +3258,7 @@ verify-means: |
 last-verified: 2026-08-29
 ```
 
-### B-114 — 50 dos 75 crates nunca aparecem num `cargo test`, e 16 aparecem so em lane morta
+### B-116 — 50 dos 75 crates nunca aparecem num `cargo test`, e 16 aparecem so em lane morta
 
 Levantado crate a crate em 2026-08-30, cruzando "nomeado em `cargo test -p`" com
 as 20 lanes de zero sucesso ([B-110], [B-112], [B-113]):
@@ -3285,7 +3285,7 @@ auth+pat incondicionais — 13 crates de piso, que ja arrastam `cas`, `server`,
 `worker`, `reapi`, `privacy` e `adapter-host`. Os demais seguem descobertos.
 
 ```backlog
-id: B-114
+id: B-116
 repo: corelink-server
 owner: tl
 status: open
@@ -3305,7 +3305,7 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-115 — as cinco de billing ficam fora do piso incondicional, e o custo esta medido
+### B-117 — as cinco de billing ficam fora do piso incondicional, e o custo esta medido
 
 `rust-affected-tests.yml` roda o fecho reverso do que o diff tocou, mais
 `corelink-auth` e `corelink-pat` sempre. As cinco de billing **nao** estao nesse
@@ -3325,7 +3325,7 @@ nomeavel: a regressao de billing apareceria DEPOIS do merge, possivelmente com
 outro PR ja em cima.
 
 ```backlog
-id: B-115
+id: B-117
 repo: corelink-server
 owner: tl
 status: open
@@ -3344,7 +3344,7 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-116 — a lane profunda precisa ser LIDA, senao vira decoracao
+### B-118 — a lane profunda precisa ser LIDA, senao vira decoracao
 
 `rust-deep-property.yml` roda as propriedades em intensidade cheia e os testes
 `#[ignore]`d. Ela e a rede que sustenta o recorte da lane de PR — se ficar
@@ -3356,7 +3356,7 @@ historicos**, varias rodando por meses sem que o vermelho movesse ninguem
 ([B-110], [B-113]). Lane agendada sem leitor e a mesma coisa.
 
 ```backlog
-id: B-116
+id: B-118
 repo: corelink-server
 owner: tl
 status: open
