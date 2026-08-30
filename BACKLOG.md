@@ -3299,7 +3299,7 @@ owner: tl
 status: open
 verify: |
   bash -c 'grep -qF "63 de 164" docs/campaigns/remediation/ROADMAP.md || exit 1
-  git rev-parse --is-shallow-repository | grep -qx false || { echo "SKIP: clone raso, ancestralidade nao verificavel"; exit 0; }
+  git rev-parse --is-shallow-repository | grep -qx false || { echo "FALHA: clone raso — ancestralidade nao verificavel. O workflow precisa de fetch-depth: 0."; exit 1; }
   n=0
   for f in $(git ls-tree -r --name-only HEAD -- docs/knowledge/ | grep "\.md$" | grep -vE "/(index|log)\.md$"); do
     sha=$(git show "HEAD:$f" | grep -m1 -oE "checkpoint_sha:[[:space:]]*\"?[0-9a-f]{8,40}" | grep -oE "[0-9a-f]{8,40}") || true
