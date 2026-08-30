@@ -104,6 +104,33 @@ Respondido antes de qualquer fanout, conforme a disciplina de decomposição.
 **1. O trabalho é decomponível em fatias disjuntas?** Sim, **depois** do WP-0. Hoje não é.
 
 **2. Qual o arquivo único que todo agente tocaria?** `CHANGELOG.md`.
+
+> ### ⚠️ CORREÇÃO — a premissa deste Go/No-Go estava incompleta
+>
+> `.gitattributes` na raiz já continha **`CHANGELOG.md merge=union`**, mergeado em
+> `2d34f4dd` (2026-06-02) e **de novo** em `f174f447` (2026-06-04) — a linha está
+> **duplicada**, o que sugere que a segunda pessoa também não sabia que a primeira já
+> tinha feito. Ou seja: existia um mecanismo de auto-resolução **três meses antes** deste
+> documento declarar *"paralelismo real é impossível"*.
+>
+> Eu escrevi essa conclusão **sem abrir um arquivo de 3 linhas na raiz do repo**.
+>
+> **E a conclusão não decorre da premissa mesmo se ela valesse:** conflito de
+> `CHANGELOG.md` é custo de **merge**, não de **dispatch**. Seis agentes em seis
+> worktrees trabalham simultaneamente de qualquer jeito; quem paga é a fila serial do
+> lead — que já é serial por desenho. Com ≤6 PRs, o custo real de **não** ter feito o
+> WP-0 seria cinco rebases de uma linha. **"Impossível" é a palavra errada, e é a
+> palavra em que todo o veredito HÍBRIDO se apoiava.**
+>
+> **O que continua verdadeiro:** o WP-0 entregue é bom e o fragmento é superior ao
+> `merge=union` (que resolve o conflito **concatenando os dois lados** — pode duplicar
+> ou desordenar entradas sem avisar). Mas era **otimização, não desbloqueio**, e o
+> documento vendeu como desbloqueio.
+>
+> **Pendente de medição, e ninguém mediu:** o `merge=union` funciona no caminho de
+> squash-merge do GitHub? Se sim, os conflitos de CHANGELOG que a gente sofreu tinham
+> outra causa. Se não, **esse é o fato que o sucessor precisa** — e a linha duplicada é
+> indício de que nunca foi testado.
 **10 dos 13 PRs abertos o editam** (#1389, #1393, #1395, #1396, #1398, #1399, #1400, #1402,
 #1410, #1412). É a causa única da serialização: cada rebase invalida o próximo. Enquanto ele
 estiver no caminho de edição, **paralelismo real é impossível** — só se produz fila com passos extras.
@@ -277,7 +304,19 @@ não-herdadas. Falha herdada é nomeada e rastreada, nunca ignorada.
   e **B-060** (gate espelho registry→migrations).
 - **DoD:** `validate_okf` 0 stale / 0 drift **e** os dois `verify` na polaridade de regressão (Q6).
 - **Invariants:** nenhuma âncora avançada sem reler a claim (avançar sem reler **mascara** drift futuro).
-- **Completeness:** `git grep -c` das duas SHAs órfãs em `origin/main` = 0.
+- **Completeness — CRITÉRIO CORRIGIDO.** O anterior (`grep -c` de **duas** SHAs = 0)
+  **certificava um conserto 5% completo como pronto**: há **32 SHAs distintos** órfãos
+  cobrindo 63 conceitos. Use a varredura, não o grep:
+
+```bash
+for f in $(git ls-tree -r --name-only origin/main -- docs/knowledge/ \
+           | grep '\.md$' | grep -vE '/(index|log)\.md$'); do
+  sha=$(git show "origin/main:$f" | grep -m1 -oE 'checkpoint_sha:\s*"?[0-9a-f]{8,40}' \
+        | grep -oE '[0-9a-f]{8,40}')
+  [ -z "$sha" ] && continue
+  git merge-base --is-ancestor "$sha" origin/main || echo "ORFAO $f"
+done | wc -l    # DoD: 0   (hoje: 63)
+```
 
 ### WP-6 — Re-corte do devenv
 
