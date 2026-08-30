@@ -1,0 +1,3 @@
+### Fixed
+
+- **O portão de merge aceitava ser rodado de uma cópia velha de si mesmo.** `pre-merge-gate-check.sh` roda do worktree em que o operador está, e esse worktree pode estar muitos merges atrás de `main`. A cópia velha ainda gateia certo, então nada parece errado — o que ela descarta em silêncio é o que a cópia nova acrescentou. O #1418 foi mergeado por uma cópia anterior ao #1428 e saiu sem o registro do conjunto de lanes. O script agora compara o próprio blob com o de `origin/main`: recusa o merge na divergência, avisa em modo relatório, e segue quando a comparação é irresolvível (sem rede não é prova de defasagem).
