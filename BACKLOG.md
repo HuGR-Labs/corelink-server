@@ -3372,3 +3372,2392 @@ last-verified: 2026-08-30
 # obrigatorio em qualquer verify que use ancestralidade. E a mesma cegueira que
 # este item existe para consertar, mordendo o proprio mecanismo.
 ```
+
+---
+
+## Superauditoria 2026-08-30 — B-063 … B-102
+
+Os 40 itens abaixo são a transcrição integral da superauditoria de 2026-08-30
+(relatório estruturado: `https://claude.ai/code/artifact/c44eb468-1f03-4e37-8b0b-b8f2a197b816`).
+Cada achado do relatório vira **um** item aqui, ou uma recusa registrada — a regra
+que o próprio [B-101] enuncia e que esta seção existe para não violar.
+
+Referências cruzadas com itens já existentes, para não duplicar: a metade WORM de
+[B-085] é [B-046]; a metade process-wide de [B-077] é [B-056]; as cinco lanes
+hosted-blocked de [B-066] são o item de lanes hosted-blocked do #1434; a decisão de não gastar em builder
+hosted que [B-087] cita é [B-031].
+
+### B-062 — produção roda código 39 commits atrás da main, com correções de GDPR presas fora
+
+As cinco regiões de produção executam a imagem `4f9313e0-r1`, confirmado não pela
+configuração mas pela API de Containers da Cloudflare em 2026-08-30, aplicação por
+aplicação (`corelink-prod`, `prod-sam`, `prod-lhr`, `prod-nrt`, `prod-syd`). Último
+deploy bem-sucedido: `2026-08-27T02:56`.
+
+Dez dos 39 commits não implantados tocam o crate do contêiner. Entre eles `3ec2a76e`
+(#1410, o apagamento do Art.17 do GDPR rodando pela metade), `06048762` (#1391, o
+caminho de leitura do CAS sem limite de tamanho), `cbd68c73` (#1424, a assinatura do
+Turborepo descartada em vez de verificada) e `b1235dbe` (#1398, três coleções sem
+limite).
+
+O portão de merge deste repositório é rigoroso e funciona. Toda essa disciplina é
+anulada nesta costura: **um merge impecável que não chega à produção não protege
+ninguém.** Deploy é decisão do owner; este item existe para que a distância entre
+`main` e produção seja rastreada, não para disparar o deploy.
+
+```backlog
+id: B-062
+repo: corelink-server
+owner: owner
+status: open
+verify: manual
+verify-means: |
+  MANUAL, e o `verify` NÃO decide a alegação — declaro isso em vez de fingir.
+
+  A alegação é sobre o estado VIVO de produção: qual imagem cada uma das cinco
+  aplicações está rodando agora. Isso só se lê na API de Containers da Cloudflare
+  (`CLOUDFLARE_CONTAINERS_API_TOKEN`), que não está disponível no runner de CI, e
+  a LISTA daquele endpoint serve visão defasada — a leitura confiável é o GET por
+  `{id}`, um por aplicação.
+
+  Um `verify` automático que comparasse o pin do `wrangler.toml` com o `HEAD` seria
+  um portão dominado: mediria a configuração, não o que executa, e passaria verde
+  exatamente no cenário que este item descreve (pin novo declarado, contêiner velho
+  ainda vivo, porque um deploy de Worker não reinicia contêiner — só uma imagem NOVA
+  substitui).
+
+  Procedimento de reverificação: GET por id nas cinco aplicações, comparar a tag com
+  `git rev-parse --short HEAD`, e contar `git log --oneline <tag-commit>..HEAD --
+  crates/corelink-container/`. Fecha quando as cinco convergirem para um pin cuja
+  origem seja um commit alcançável a partir da `main`.
+last-verified: 2026-08-30
+```
+
+### B-063 — uma partição da trilha de auditoria não drena há 82h, disparando SEV-0 diário para ninguém
+
+O cron `audit-archive-lag` falhou nas últimas dez execuções, sem sucesso desde
+`2026-08-27T03:22`. Ele não está quebrado — está reportando corretamente:
+`AUDIT_ARCHIVE_PARTITION_FAILURE — 1 partition(s) stuck past T=3h: 93da3f7a/enam
+(n=140, idle=81.91h ago)`, com `PagerDuty SEV-0 dispatched`.
+
+O prefixo `93da3f7a` é o tenant do canary horário (`cas-canary.yml:80`): a partição
+travada é justamente a que mais gera linhas, e o canary continua alimentando-a.
+
+Por que ninguém viu: o portão primário `audit-chain-daily-verify` está **verde**,
+porque o `MAX(archived_at)` da tabela inteira permanece fresco graças às partições
+saudáveis. O runbook `RB-AUDIT-ARCHIVE-ABSENT.md` §3.3 antecipa exatamente este ponto
+cego e prescreve tratar partição persistentemente falha como SEV-1 próprio. O detector
+por partição foi construído ([B-022]) precisamente para ele, funciona, e é ignorado.
+
+A causa mecânica é [B-064]. Este item cobre o incidente; aquele cobre o defeito.
+
+```backlog
+id: B-063
+repo: corelink-server
+owner: owner
+status: open
+verify: manual
+verify-means: |
+  MANUAL, e o `verify` NÃO decide a alegação — declaro em vez de fingir.
+
+  A alegação é sobre estado de produção (linhas não arquivadas numa partição do D1
+  de prod) e sobre um alarme externo (PagerDuty). Nenhum dos dois é legível do CI:
+  o D1 de prod exige credencial que o runner não tem, e o estado do PagerDuty não
+  está no repositório.
+
+  Um `verify` que apenas relesse o log do último `audit-archive-lag` seria dominado
+  por [B-064]: assim que o dreno voltar a funcionar o log fica verde, mas o backlog
+  acumulado continua lá — mediria o alarme, não a condição.
+
+  Procedimento: rodar a consulta do runbook §3.3 contra o D1 de prod e conferir se
+  alguma partição tem `idle > 3h`. Fecha quando a partição `93da3f7a/enam` drenar
+  E o `audit-archive-lag` voltar a passar. Consertar [B-064] é pré-requisito para
+  que ela drene sozinha.
+last-verified: 2026-08-30
+```
+
+### B-064 — o selamento da auditoria tem teto de 200 linhas/hora e o laço que o contornaria nunca foi implementado no chamador
+
+Três fatos compõem, e juntos são a causa mecânica de [B-063].
+
+**O orçamento.** `audit_drain.rs:409` é `.unwrap_or(200)`, e o comentário da linha 405
+diz textualmente `Global per-call row budget` — é global entre TODAS as partições, não
+por partição: `handle_drain` inicializa `let mut remaining = state.batch_limit` e o
+decrementa ao longo de todo o laço. A linha 189 do `secrets-checklist.md` confirma que
+`AUDIT_DRAIN_BATCH_LIMIT` está `UNSET in prod (default 200)`.
+
+**O contrato quebrado.** O handler responde `rows_sealed`, `partitions_drained` e
+`incomplete`. Seu único chamador, `apps/signup-worker/src/webhooks/audit_drain_cron.ts`,
+lê `j.sealed` e `j.partitions` — chaves que não existem — e registra `sealed=0
+partitions=0` para sempre. O tipo declarado no consumidor sequer inclui `incomplete`,
+cujo contrato inteiro, segundo o mesmo `secrets-checklist`, é *"a budget-bounded sweep
+returns `incomplete: true` so the hourly cron re-drains until done"*. O cron dispara uma
+vez por hora, uma requisição, sem laço.
+
+**A assimetria.** Emissão é em lote e concorrente (256 linhas por statement via JSON1);
+selamento é serial, uma `UPDATE` por linha a ~0,3s. E `FIND_MISSING_BLOB_CAP = 4096`,
+com o comentário de `r2_s3.rs:1765` registrando que *"N digests still produce N
+`ReadAttempted` rows"* — uma requisição Bazel no teto gera 4.096 linhas.
+
+Consequência aritmética: uma leitura de CAS emite duas linhas (`ReadAttempted` antes da
+busca, `ReadServed` no acerto). A 200 linhas/hora o selamento acompanha ~100 leituras
+por hora **para a plataforma inteira**, somando os cinco ambientes — cerca de 73 mil por
+mês. O tier gratuito, sozinho, promete `includedRequests: 500_000` por mês *por tenant*
+(`apps/docs/src/lib/pricing.ts:136`). O outbox absorve rajadas, então o produto não
+recusa requisições; a defasagem da camada de evidência é que cresce sem limite.
+
+Reparo mínimo: duas linhas no cron — ler as chaves certas e iterar enquanto `incomplete`
+for verdadeiro. Reparo estrutural: selar em lote, como a emissão já faz.
+
+```backlog
+id: B-064
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'cron=apps/signup-worker/src/webhooks/audit_drain_cron.ts
+  h=crates/corelink-container/src/routes/audit_drain.rs
+  [ -f "$cron" ] && [ -f "$h" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
+  emite_novo=0; grep -q "\"rows_sealed\"" "$h" && emite_novo=1
+  le_velho=0; grep -qE "j\.sealed|j\.partitions" "$cron" && le_velho=1
+  le_incomplete=0; grep -q "incomplete" "$cron" && le_incomplete=1
+  [ "$emite_novo" = 1 ] || { echo "FALHA: handler nao emite mais rows_sealed — a alegacao mudou, reavalie."; exit 1; }
+  if [ "$le_velho" = 0 ] && [ "$le_incomplete" = 1 ]; then
+    echo "FALHA: o cron le as chaves certas E consulta incomplete — feche o item."; exit 1; fi
+  echo "aberto: handler emite rows_sealed; cron le_chaves_velhas=$le_velho le_incomplete=$le_incomplete"'
+verify-means: |
+  open — o handler emite `rows_sealed`/`partitions_drained`/`incomplete` E o cron
+  continua lendo `j.sealed`/`j.partitions`, ou continua sem consultar `incomplete`.
+  As duas metades juntas são a alegação: o contrato existe do lado do servidor e não
+  tem implementação do lado de quem chama.
+
+  Vira DRIFTED (e o item TEM de ser fechado) quando o cron passar a ler as chaves
+  corretas E a consultar `incomplete` — que é exatamente o reparo de duas linhas.
+
+  O que este verify NÃO decide, e admito: o teto de 200 em si. Ele é o `unwrap_or`
+  default e continuará no código mesmo depois do laço existir — corretamente, porque
+  com laço o teto por chamada deixa de ser um teto por hora. Medir o `200` daria um
+  portão que nunca fecha. A alegação verificável é o contrato quebrado, e é essa que
+  o comando decide.
+last-verified: 2026-08-30
+```
+
+### B-065 — dois endpoints Stripe vivos processam o mesmo evento duas vezes, há mais de sete dias
+
+`billing-health-daily` falhou 8 de 8 execuções, sem nenhum sucesso desde 23 de agosto.
+Também não está quebrado: reporta `BILLING HEALTH: 1 anomaly(ies) found` e detalha
+`3 event type(s) ingested under BOTH id schemes in the last 30d` —
+`customer.subscription.deleted (1/1)`, `customer.subscription.updated (2/2)`,
+`invoice.payment_failed (2/2)`.
+
+O detector (`scripts/check_billing_health.py:169`) explica o mecanismo:
+`stripe_webhook_events_processed` deduplica por `event_id` como chave primária, o que
+só protege retentativas sob o *mesmo* esquema de identificador. Um endpoint grava o
+`evt_…` da Stripe, o outro grava um hash derivado da mesma entrega; as duas linhas não
+colidem e o evento é processado duas vezes.
+
+Processamento duplicado de `subscription.deleted` e `subscription.updated` afeta estado
+de direito de acesso, não apenas contagem. O reparo é no painel da Stripe — aposentar o
+endpoint redundante — e portanto é ação exclusiva do owner.
+
+```backlog
+id: B-065
+repo: corelink-server
+owner: owner
+status: open
+verify: manual
+verify-means: |
+  MANUAL, e o `verify` NÃO decide a alegação. Declaro em vez de fingir.
+
+  A alegação é sobre a configuração de destinos de webhook na conta Stripe, que não
+  está no repositório e não é legível do CI sem a chave da conta. Pior: a lista v1 da
+  API Stripe é CEGA a destinos v2, então mesmo com credencial um `verify` ingênuo
+  reportaria zero e passaria verde — portão dominado, exatamente o que este item não
+  pode ter.
+
+  O sinal correto já existe e é o `billing-health-daily`, que detecta a duplicidade
+  pelo lado dos dados. Este item não recria esse detector; ele rastreia a AÇÃO no
+  painel da Stripe, que só o owner executa.
+
+  Procedimento: no painel Stripe, manter o destino "Corelink prd" apontando para o
+  signup-worker e aposentar o redundante. Fecha quando `billing-health-daily` voltar
+  a passar por três execuções consecutivas.
+last-verified: 2026-08-30
+```
+
+### B-066 — RECUSADO: o `smoke-install` já está portado atrás do gate de Actions hosted
+
+**Este item é uma recusa registrada, não um achado.** A superauditoria de 2026-08-30
+listou o `smoke-install` (0 de 8 execuções) junto das demais lanes derrubadas pelo
+bloqueio de faturamento do GitHub Actions. Ao escrever o `verify` que decidiria a
+alegação, ela caiu.
+
+`smoke-install.yml:112` já traz `if: vars.HOSTED_ACTIONS_AVAILABLE == "true"`, exatamente
+o padrão que o `cas-canary` estabeleceu e que a própria auditoria elogiou como tratamento
+correto. As execuções recentes aparecem como `skipped`, não `failure` — as falhas são
+anteriores ao porte. A lane não está quebrada: está desarmada de propósito, com o custo
+explícito, esperando o operador liberar gasto hosted.
+
+O que sobra do achado original pertence ao item de lanes hosted-blocked do #1434 (a
+decisão de fundo: liberar gasto, migrar para a frota self-hosted, ou apagar) e não a um
+item novo. Registro a recusa em vez de apagar o achado, porque a regra de [B-101] exige
+que cada constatação vire item **ou** recusa com motivo — e uma auditoria que só publica
+o que confirma não deixa ninguém calibrar quanto acreditar nela.
+
+Lição de método, que vale mais que o item: eu havia contado `smoke-install` como lane
+caída **sem ler o `if:` do job**. Contar execuções vermelhas sem ler a condição de guarda
+é a mesma cegueira que este repositório documenta em vários lugares — medir o sintoma sem
+ler o predicado.
+
+```backlog
+id: B-066
+repo: corelink-server
+owner: tl
+status: done
+verify: |
+  bash -c 'f=.github/workflows/smoke-install.yml
+  [ -f "$f" ] || { echo "FALHA: smoke-install.yml sumiu — a recusa perdeu objeto, reavalie."; exit 1; }
+  grep -q "HOSTED_ACTIONS_AVAILABLE" "$f" || { echo "FALHA: o job NAO esta mais portado atras do gate — a recusa deixou de valer, REABRA o item."; exit 1; }
+  echo "recusa mantida: smoke-install portado atras de HOSTED_ACTIONS_AVAILABLE"'
+verify-means: |
+  done — polaridade INVERTIDA, como todo item fechado neste arquivo: o comando PASSA
+  enquanto o motivo da recusa continuar verdadeiro, e FALHA se alguém remover o gate.
+
+  Concretamente: passa enquanto `smoke-install.yml` portar o job atrás de
+  `HOSTED_ACTIONS_AVAILABLE`. Se esse `if:` for removido, a lane volta a queimar minutos
+  hosted num bloqueio de faturamento, o achado original passa a valer, e o verify vermelho
+  força a REABERTURA — não o fechamento.
+
+  É a polaridade correta para uma recusa: ela não afirma "não há problema", afirma "não há
+  problema ENQUANTO esta condição valer", e vigia a condição.
+last-verified: 2026-08-30
+```
+
+### B-067 — oito crates têm teste executado por PR, a lane do workspace passa `--no-run`, e os dois crates de autenticação não têm execução nenhuma
+
+Os 8.619 testes são reais e a densidade é boa. Esta alegação não é sobre quantos testes
+existem, é sobre quantos executam.
+
+**Escopo por PR.** Toda lane de teste disparada por `pull_request` é `--package <um>`.
+São oito: `corelink-server`, `-worker`, `-hash`, `-meta`, `-reapi`, `-adapter-host`,
+`-client-verify`, `-tenant-path`. (Contando todos os workflows, 28 crates aparecem em
+`cargo test -p` — a maioria em lanes noturnas ou mortas.)
+
+**A lane que aparenta cobrir o resto não cobre.** `nightly.yml:218` é
+`cargo test --release --workspace --no-run`: compila os testes e não executa nenhum. É
+verificação de compilação apresentada como suíte. O único `cargo test --workspace` que
+de fato executa está em `cas_foundation.yml:156`, que é dispatch-only e hosted-blocked
+(#1434). E a própria `nightly` tem zero verdes em doze execuções.
+
+**Os dois crates de autenticação.** `corelink-auth` (WebAuthn, OTP de recuperação) e
+`corelink-pat` (Argon2id, verificação de credencial) aparecem em **exatamente um**
+workflow: `mutation-nightly.yml`, como matriz de mutação — não como execução de teste.
+Essa lane pede `runs-on: ubuntu-x64-4core`, não tem `schedule`, e acumula 1 cancelamento
+e 5 falhas, zero sucessos, nada desde 2026-08-03. Net: **zero execução de teste em CI**
+para as primitivas de autenticação do produto.
+
+E o repositório afirma o contrário a quem chega: `welcome-first-pr.yml:90` recebe todo
+primeiro contribuidor com *"(`cargo build --workspace`, `cargo clippy --workspace
+--tests -- -D warnings`, `cargo test --workspace`). CI runs all three."* A terceira é
+falsa.
+
+**Dependência de sequência:** este item vem ANTES de qualquer reparo de credencial
+([B-073], [B-074], [B-081]). Consertar autenticação sem execução de teste é apostar.
+
+```backlog
+id: B-067
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'norun=0
+  grep -rqE "cargo test.*--workspace.*--no-run" .github/workflows/ && norun=1
+  authpat=$(grep -rlE "corelink-(auth|pat)" .github/workflows/ 2>/dev/null | grep -v mutation-nightly | wc -l | tr -d " ")
+  claim=0; grep -q "CI runs all three" .github/workflows/welcome-first-pr.yml 2>/dev/null && claim=1
+  if [ "$norun" = 0 ] && [ "$authpat" -gt 0 ]; then
+    echo "FALHA: --no-run sumiu E auth/pat tem lane fora do mutation-nightly — feche o item."; exit 1; fi
+  echo "aberto: no-run=$norun  workflows_com_auth_ou_pat_fora_do_mutation=$authpat  afirmacao_ao_contribuidor=$claim"'
+verify-means: |
+  open — existe uma lane `cargo test --workspace --no-run` E nenhum workflow fora do
+  `mutation-nightly` nomeia `corelink-auth`/`corelink-pat`. As duas metades juntas são
+  a alegação: a lane que parece cobrir tudo não executa nada, e os dois crates de
+  autenticação não têm lane própria.
+
+  Vira DRIFTED quando AMBOS forem resolvidos — o `--no-run` virar execução real E os
+  dois crates ganharem lane. Escolhi o AND deliberadamente: resolver só metade deixa a
+  alegação verdadeira, e um portão que fecha pela metade do reparo é pior que nenhum.
+
+  O que NÃO decide, e admito: se a lane que passar a nomear `corelink-auth` de fato
+  EXECUTA (podia ser outra matriz de mutação, ou uma lane morta). O comando conta a
+  presença do nome, não a execução. Quem fechar este item deve confirmar à mão que a
+  lane nova roda e é verde — e, se não for, reabrir em vez de fechar.
+
+  A correção da linha 90 do `welcome-first-pr.yml` é reportada mas não gateada: é
+  documentação, e travar o item nela atrasaria o reparo que importa.
+last-verified: 2026-08-30
+```
+
+### B-068 — os testes `#[ignore]` que cobrem D1, R2 e Stripe reais não são executados por nada
+
+Cinco crates carregam testes `#[ignore]` que são, segundo os próprios comentários, a
+cobertura real dos caminhos de produção: D1 real, round-trip R2 real, checkout Stripe
+real, shadow Neon, e2e de PAT. Exemplo típico em `tier_select_store.rs:131`:
+*"behavioural coverage of the real SQL uses the standard `#[ignore]` harness"*.
+
+Procurei quem os executa. `--ignored` e `include-ignored` não aparecem em nenhum
+workflow, em nenhum script, e o `.config/nextest.toml` não define `run-ignored` em
+profile algum.
+
+Distribuição medida em 2026-08-30: `corelink-container` 28, `corelink-audit-chain` 14,
+`corelink-stripe-real` 7, `corelink-pat` 2, `corelink-cas` 1.
+
+O SQL real, o R2 real e o Stripe real têm zero execuções — enquanto os comentários de
+código afirmam que essa é justamente a camada onde eles são cobertos. É o padrão que
+[B-101] descreve: a evidência de que o caminho é coberto existe em prosa, não em
+execução.
+
+```backlog
+id: B-068
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'n=$(grep -rl "#\[ignore" crates/ --include="*.rs" 2>/dev/null | wc -l | tr -d " ")
+  [ "$n" -gt 0 ] || { echo "FALHA: nao ha mais testes #[ignore] — feche o item."; exit 1; }
+  exec_wf=$(grep -rlE "\-\-ignored|include-ignored" .github/workflows/ scripts/ 2>/dev/null | wc -l | tr -d " ")
+  exec_nt=0; [ -f .config/nextest.toml ] && grep -q "run-ignored" .config/nextest.toml && exec_nt=1
+  if [ "$exec_wf" -gt 0 ] || [ "$exec_nt" = 1 ]; then
+    echo "FALHA: existe executor de #[ignore] (workflows/scripts=$exec_wf nextest=$exec_nt) — feche o item."; exit 1; fi
+  echo "aberto: $n arquivos com #[ignore] e ZERO executores"'
+verify-means: |
+  open — existem testes `#[ignore]` no repositório E nenhum workflow, script ou profile
+  do nextest os executa.
+
+  Vira DRIFTED quando aparecer um executor — `--ignored` num workflow, num script, ou
+  `run-ignored` no `.config/nextest.toml`. Também fecha, legitimamente, se os testes
+  `#[ignore]` deixarem de existir (alguém os converteu em testes normais ou os apagou).
+  Os dois desfechos são reparos válidos e o comando aceita ambos.
+
+  Escrito para a alegação — a AUSÊNCIA DO EXECUTOR — e não para a contagem. Um número
+  exato de testes `#[ignore]` apodrece a cada PR que adiciona um, e derrubaria PRs sem
+  relação nenhuma. A contagem por crate fica na prosa como instantâneo datado.
+last-verified: 2026-08-30
+```
+
+### B-069 — os nove arquivos de E2E da interface autenticada estão em `test.fixme`, inclusive apagamento GDPR e dupla aprovação
+
+Nove de nove specs Playwright em `apps/admin-ui/playwright/e2e/` contêm `test.fixme`.
+Não é lacuna pontual, é a suíte inteira: `00-a11y-sweep`, `01-onboarding`,
+`02-consent-capture`, `03-consent-withdraw`, `04-dsr-access`, `05-dsr-erasure`,
+`06-admin-audit-viewer`, `07-admin-dual-approval`, `08-locale-switch`.
+
+Literal, em `05-dsr-erasure.spec.ts:21`:
+`test.fixme("erasure with category selection → receipt + SLA clock", …)`.
+
+Os fluxos sem nenhuma cobertura executando são exatamente os de maior consequência
+regulatória e de privilégio: captura e retirada de consentimento, acesso e apagamento
+de DSR (Art. 15 e 17), o visualizador de auditoria e a dupla aprovação administrativa.
+
+Fecha o círculo com [B-062]: a correção do apagamento do Art.17 não está implantada
+**e** o fluxo de interface que a exercitaria nunca roda.
+
+```backlog
+id: B-069
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'd=apps/admin-ui/playwright/e2e
+  [ -d "$d" ] || { echo "FALHA: diretorio e2e sumiu — reavalie o item."; exit 1; }
+  total=$(ls "$d"/*.spec.ts 2>/dev/null | wc -l | tr -d " ")
+  [ "$total" -gt 0 ] || { echo "FALHA: nao ha mais specs — reavalie o item."; exit 1; }
+  comfixme=$(grep -l "test\.fixme" "$d"/*.spec.ts 2>/dev/null | wc -l | tr -d " ")
+  [ "$comfixme" -gt 0 ] || { echo "FALHA: nenhum spec tem test.fixme — feche o item."; exit 1; }
+  echo "aberto: $comfixme de $total specs e2e ainda em test.fixme"'
+verify-means: |
+  open — pelo menos um spec E2E da admin-ui ainda carrega `test.fixme`.
+
+  Vira DRIFTED quando o último `test.fixme` sair, que é o reparo. Deliberadamente NÃO
+  fixo o número nove: um portão que exige exatamente 9 reprova quando alguém conserta
+  um só, e punir progresso parcial é como se ensina uma equipe a ignorar o portão.
+  O `9 de 9` fica na prosa como instantâneo datado de 2026-08-30.
+
+  O que NÃO decide, e admito: se os specs, uma vez destravados, PASSAM. Tirar o
+  `test.fixme` e deixar o teste vermelho fecharia este item sem entregar cobertura.
+  Quem fechar deve confirmar que a suíte roda verde em CI; se não rodar, o item certo
+  é um novo, não a reabertura deste.
+last-verified: 2026-08-30
+```
+
+### B-070 — o `[env.staging]` é declarado como espelho 1:1 de produção e nunca recebeu deploy
+
+`wrangler.toml:579` declara `[env.staging]` descrevendo-o como *"um espelho 1:1 da
+topologia de prod"* e afirma que *"os fluxos de canary e rollout promovem artefatos de
+staging para prod"*.
+
+Nenhum workflow faz deploy com `--env staging`. Toda ida a produção é direta, sem soak.
+
+Isto é o que torna [B-062] mais caro do que precisaria ser: sem um ambiente onde a
+imagem nova assente antes de ir para as cinco regiões, cada deploy carrega risco que
+um staging absorveria — e é parte de por que o deploy fica represado.
+
+Nota de escopo: as lanes de verificação paradas (`fuzz-nightly`, `mutation-nightly`,
+`coverage`, `load-test-nightly`, `endurance-2h`) NÃO estão neste item. As cinco
+hosted-blocked são #1434; as demais têm nota de parking justificada e são decisão de
+cadência, não defeito. O que este item afirma é especificamente a distância entre o que
+o `wrangler.toml` declara sobre staging e o que existe.
+
+```backlog
+id: B-070
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'decl=0; grep -q "^\[env\.staging\]" wrangler.toml && decl=1
+  [ "$decl" = 1 ] || { echo "FALHA: [env.staging] nao e mais declarado — feche o item."; exit 1; }
+  dep=$(grep -rlE "deploy.*--env[= ]staging|--env[= ]staging.*deploy" .github/workflows/ 2>/dev/null | wc -l | tr -d " ")
+  [ "$dep" = 0 ] || { echo "FALHA: $dep workflow(s) fazem deploy em staging — feche o item."; exit 1; }
+  echo "aberto: [env.staging] declarado no wrangler.toml e ZERO workflows deployam nele"'
+verify-means: |
+  open — o `[env.staging]` está declarado E nenhum workflow faz deploy nele. As duas
+  metades são a alegação: o ambiente é prometido em configuração e não existe de fato.
+
+  Vira DRIFTED por qualquer um dos dois reparos legítimos — alguém passa a deployar em
+  staging (o bom), ou alguém remove a declaração e a prosa que promete promoção via
+  staging (o honesto). Os dois fecham o item, e é correto que fechem: a alegação é
+  sobre a DIVERGÊNCIA, não sobre a ausência de staging.
+last-verified: 2026-08-30
+```
+
+### B-071 — não existe coleta de lixo nem eviction em produção; o armazenamento é catraca de sentido único sob preço fixo
+
+O crate `corelink-gc` tem ~22,9 mil linhas, é verificado em TLA+, tem proptests, e não
+executa em produção. Nem `corelink-gc` nem o binário `gc_sweep` aparecem no `Dockerfile`
+ou no `cf-deploy-prod.yml`. A lane `gc-sweep-dry-run.yml` é, como o nome diz, simulação.
+
+Nada recupera espaço em R2 hoje.
+
+Isto compõe com dois outros itens. Com [B-095]: a interface de cliente afirma que o pin
+de workspace isenta conteúdo de eviction — não há eviction da qual isentar. E com
+[B-079]: o mapeamento de tier seleciona a escada de TTL de retenção, descrita em
+comentário como *"customer-visible retention promise"* — promessa hoje inerte.
+
+É o exemplo mais caro do padrão que a auditoria inteira encontrou: trabalho excelente
+construído, formalmente verificado, e com a última costura aberta.
+
+```backlog
+id: B-071
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  bash -c '[ -d crates/corelink-gc ] || { echo "FALHA: crate corelink-gc sumiu — reavalie o item."; exit 1; }
+  n=0
+  for f in Dockerfile .github/workflows/cf-deploy-prod.yml .github/workflows/container-build-push-prod.yml; do
+    [ -f "$f" ] || continue
+    grep -qE "gc_sweep|corelink-gc" "$f" && n=$((n+1))
+  done
+  [ "$n" = 0 ] || { echo "FALHA: $n artefato(s) de build/deploy ja referenciam o GC — feche o item."; exit 1; }
+  echo "aberto: corelink-gc existe e nao e referenciado por Dockerfile nem pelas lanes de deploy de prod"'
+verify-means: |
+  open — o crate existe E nenhum artefato de build ou deploy de produção o referencia.
+
+  Vira DRIFTED quando o `Dockerfile` ou uma lane de deploy passar a construir/embarcar
+  o GC, que é o reparo. Também fecharia se o crate fosse removido — desfecho válido se
+  a decisão for não ter GC, e nesse caso o item deve ser fechado como recusa registrada,
+  não apagado.
+
+  O que NÃO decide, e admito: se o GC, uma vez embarcado, de fato RODA e recupera bytes.
+  Presença no build é condição necessária, não suficiente. Quem fechar deve provar com
+  bytes recuperados medidos em produção — a mesma exigência de "prove a execução, não a
+  ausência de reclamação" que este repositório aplica em todo lugar.
+
+  Owner, não tl: rodar GC pela primeira vez em dados de cliente é decisão de produto e
+  de risco, não de higiene de engenharia.
+last-verified: 2026-08-30
+```
+
+### B-072 — o `wrangler.toml` declara dois crons no Worker e o Worker não tem manipulador `scheduled`
+
+`wrangler.toml:283-284` declara `[triggers]` com `crons = ["0 6 * * 1", "0 14 * * 1"]`.
+Não existe `async scheduled(...)` em `worker/src/index.ts` nem em nenhum outro módulo do
+Worker — a única ocorrência da palavra é um comentário na linha 100. Os disparos ocorrem
+e não encontram destino.
+
+A consequência específica importa mais que o defeito: um desses agendamentos é o drill
+de entrega do PagerDuty. Ele nunca executou.
+
+Isso não é independente de [B-063]. A organização acredita ter validado que o alarme
+chega a um humano, e essa validação nunca correu. O alarme de [B-063] de fato dispara;
+o que nunca foi provado é que alguém o recebe — e três dias de SEV-0 sem resposta são
+consistentes com as duas hipóteses.
+
+```backlog
+id: B-072
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'temcron=0; grep -qE "^crons[[:space:]]*=" wrangler.toml && temcron=1
+  [ "$temcron" = 1 ] || { echo "FALHA: nao ha mais crons declarados no wrangler.toml — feche o item."; exit 1; }
+  h=$(grep -rlE "async scheduled[[:space:]]*\(|scheduled[[:space:]]*:[[:space:]]*async" worker/src/ 2>/dev/null | wc -l | tr -d " ")
+  [ "$h" = 0 ] || { echo "FALHA: existe manipulador scheduled no Worker ($h arquivo(s)) — feche o item."; exit 1; }
+  echo "aberto: crons declarados no wrangler.toml e ZERO manipuladores scheduled no worker/src"'
+verify-means: |
+  open — há `crons` declarados E nenhum manipulador `scheduled` no código do Worker.
+
+  Vira DRIFTED por qualquer um dos dois reparos: implementar o manipulador (o bom) ou
+  remover os crons órfãos (o honesto). A alegação é a DIVERGÊNCIA entre o gatilho
+  declarado e o destino ausente, então os dois desfechos a encerram legitimamente.
+
+  Se o reparo for implementar o manipulador, quem fechar deve confirmar que o drill do
+  PagerDuty efetivamente entrega — presença do handler não prova entrega, e é
+  precisamente a entrega que [B-063] presume e nunca foi provada.
+last-verified: 2026-08-30
+```
+
+### B-073 — um assento em outro tenant é concedido por hash de e-mail, sem token, sem expiração e sem verificação, e vira PAT `cas:rw` daquele tenant
+
+É o único achado da auditoria que entrega dado de um cliente a outro. O isolamento no
+plano de dados é sólido e não cedeu sob ataque; a brecha é em quem recebe um assento.
+
+Convidar um colega grava `team_member` com `status='invited'` e `email_hash`, sem o
+e-mail em claro — decisão de privacidade correta. O problema é o resgate. Seis elos,
+cada um verificado no código de 2026-08-30:
+
+1. `apps/signup-worker/src/lib/d1.ts:316` — `SELECT tenant_id, user_id FROM team_member
+   WHERE email_hash IN (?1, ?2) AND status = 'invited' LIMIT 1`. Sem escopo de tenant,
+   sem token, sem nonce, sem expiração: a primeira linha convidada do banco INTEIRO que
+   casar com o hash é transferida ao novo usuário Clerk.
+2. `grep -n "verification\|email_verified" apps/signup-worker/src/webhooks/clerk.ts`
+   retorna **zero linhas**. O tipo do evento sequer modela o campo, então a checagem é
+   estruturalmente impossível no código atual.
+3. `worker/src/lib/clerk_auth.ts:299` — sessão sem tenant próprio cai no assento
+   (`SELECT tenant_id, role FROM team_member WHERE user_id = ?1 AND status = 'active'`).
+4. `worker/src/index.ts:3100` — papel `member` vira `x-corelink-scope: read-write`.
+5. `crates/corelink-container/src/routes/customer.rs:796` — cunhar PAT exige apenas
+   `requires_cache_write(caller_scope)`. O assento passa e recebe `cas:rw` do tenant.
+6. `team_member` está em `TENANT_ID_TABLES`, ou seja, o apagamento DSR é chaveado por
+   `tenant_id`: um assento mantido em OUTRO tenant sobrevive ao apagamento do próprio.
+
+Toda a segurança dessa transição repousa numa suposição sobre um terceiro que o código
+não declara nem impõe: que a Clerk sempre verifica posse do e-mail antes de emitir
+`user.created`. E mesmo supondo que sempre verifique, os elos 1, 3 e 6 permanecem — o
+convite é um **portador permanente, transferível e reciclável**, e um endereço
+corporativo reatribuído entrega o assento antigo ao novo titular. Ao contrário do
+convite (que emite `team.invited` na auditoria), a ACEITAÇÃO não emite evento nenhum.
+
+Quatro reparos independentes, cada um quebrando a cadeia sozinho: token de convite
+exigido no resgate; escopo de `tenant_id` na consulta; expiração; e leitura do campo de
+verificação da Clerk. Somar evento de auditoria na aceitação.
+
+**Sequência:** depende de [B-067]. Não mergear conserto de auth contra CI que não roda
+os testes de `corelink-auth`/`corelink-pat`.
+
+```backlog
+id: B-073
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'd=apps/signup-worker/src/lib/d1.ts
+  c=apps/signup-worker/src/webhooks/clerk.ts
+  [ -f "$d" ] && [ -f "$c" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
+  q=$(awk "/acceptTeamInvitation/,/^}/" "$d" 2>/dev/null)
+  sel=$(printf "%s" "$q" | awk "/SELECT tenant_id, user_id FROM team_member/,/first</")
+  temtoken=0; printf "%s" "$sel" | grep -qiE "invit(e|ation)_token|nonce" && temtoken=1
+  temtenant=0; printf "%s" "$sel" | grep -qE "WHERE[^\"]*tenant_id[[:space:]]*=" && temtenant=1
+  temexp=0; printf "%s" "$sel" | grep -qiE "expires_at|expiry|invited_at_ms[[:space:]]*>" && temexp=1
+  temver=0; grep -qE "email_verified|verification" "$c" && temver=1
+  soma=$((temtoken + temtenant + temexp + temver))
+  [ "$soma" = 0 ] || { echo "FALHA: $soma de 4 defesas ja presentes (token=$temtoken tenant=$temtenant exp=$temexp verif=$temver) — reavalie e feche ou reescreva o item."; exit 1; }
+  echo "aberto: aceitacao de convite sem token, sem escopo de tenant, sem expiracao e sem checagem de verificacao"'
+verify-means: |
+  open — NENHUMA das quatro defesas existe. Escolhi o "zero de quatro" em vez de "menos
+  de quatro" de propósito: cada defesa quebra a cadeia sozinha, então a primeira que
+  aparecer já muda a alegação do item, e o item deve ser reavaliado e reescrito para o
+  que sobrou — não continuar aberto afirmando algo que deixou de ser verdade.
+
+  Vira DRIFTED assim que qualquer defesa entrar. Isso é intencional e é o oposto de
+  ruído: é o sinal de que a alegação precisa ser reescrita, e a mensagem de falha diz
+  exatamente qual das quatro apareceu.
+
+  O que NÃO decide, e admito: os elos 3, 4, 5 e 6 (o fallthrough do `clerk_auth`, o
+  mapa `member` → `read-write`, o portão do mint, e o escopo do apagamento DSR). Eles
+  são comportamento correto isoladamente e só compõem a cadeia junto com o elo 1 —
+  gatear neles daria falso positivo permanente. O comando decide a RAIZ, que é a
+  aceitação não autenticada; se a raiz for fechada, a cadeia não existe mais.
+last-verified: 2026-08-30
+```
+
+### B-074 — o caminho do dinheiro aceita chave interna com metade do piso de entropia e não pode ser estreitado
+
+Um red-team anterior quebrou a chave interna compartilhada em chaves por consumidor. O
+helper `resolve_internal_auth_key` tenta primeiro a chave dedicada, cai para a
+compartilhada, e exige `INTERNAL_AUTH_KEY_MIN_LEN = 32` nas duas. A remediação funcionou:
+o mint de PAT any-tenant tem chave dedicada sem fallback (`internal_pat.rs:747`), a
+autoridade de apagamento também, e o aprovador dual é dedicado com distinção verificada
+no boot.
+
+Dois arquivos ficaram de fora, e são os dois do dinheiro:
+
+- `crates/corelink-container/src/routes/tier_select.rs:601` —
+  `let auth_key = std::env::var("CORELINK_INTERNAL_AUTH_KEY").ok()?;` seguido de
+  `if auth_key.len() < 16`.
+- `crates/corelink-container/src/routes/dpa_accept.rs:585` — idem.
+
+O checkout pago e o aceite do DPA (o registro de consentimento juridicamente vinculante)
+leem a chave compartilhada crua, com piso de **16** contra os 32 de todas as outras
+superfícies internas. Consequência dupla: não existe caminho de rotação para credencial
+própria, porque o helper nunca é chamado; e um segredo com metade da entropia é aceito
+precisamente onde o dinheiro e o consentimento passam.
+
+Reparo: os dois arquivos passam a usar `resolve_internal_auth_key` com sua própria
+variável dedicada, herdando o piso de 32 e o fallback documentado.
+
+```backlog
+id: B-074
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'n=0; det=""
+  for f in crates/corelink-container/src/routes/tier_select.rs crates/corelink-container/src/routes/dpa_accept.rs; do
+    [ -f "$f" ] || continue
+    cru=0; grep -qE "env::var\(\"CORELINK_INTERNAL_AUTH_KEY\"\)" "$f" && cru=1
+    helper=0; grep -q "resolve_internal_auth_key" "$f" && helper=1
+    if [ "$cru" = 1 ] && [ "$helper" = 0 ]; then n=$((n+1)); det="$det $(basename $f)"; fi
+  done
+  [ "$n" -gt 0 ] || { echo "FALHA: nenhum dos dois arquivos le a chave compartilhada crua — feche o item."; exit 1; }
+  echo "aberto: $n arquivo(s) do caminho do dinheiro leem CORELINK_INTERNAL_AUTH_KEY cru sem o helper:$det"'
+verify-means: |
+  open — `tier_select.rs` e/ou `dpa_accept.rs` leem `CORELINK_INTERNAL_AUTH_KEY` por
+  `env::var` direto SEM chamar `resolve_internal_auth_key`.
+
+  Vira DRIFTED quando os dois passarem pelo helper, que é o reparo — e o helper traz o
+  piso de 32 junto, então não preciso medir o `16` separadamente. Medir o literal `16`
+  seria frágil: alguém poderia trocar para `32` mantendo a leitura crua, o que conserta
+  a entropia e deixa a impossibilidade de rotação intacta. Gatear no HELPER decide as
+  duas metades da alegação com um único predicado.
+
+  Conta arquivos em vez de exigir os dois: consertar um só reduz o número e mantém o
+  item aberto com o detalhe de qual falta. Progresso parcial não é punido nem escondido.
+last-verified: 2026-08-30
+```
+
+### B-075 — o plano de computação DevEnv autoriza por omissão, e uma falha do D1 também autoriza
+
+O guard de `/v1/customer/devenv*` e `/v1/devenv*` (`worker/src/lib/devenv_guard.ts`)
+consulta `runners_entitlement` no D1 e nega quando encontra linha negativa. Falta o ramo
+`else`: **nenhuma linha encontrada** e **exceção do D1** caem ambos no caminho permitido.
+O verificador adversarial tentou refutar e não conseguiu — o fluxo de controle falha
+aberto nos dois casos.
+
+O plano de computação é a superfície mais cara por requisição do produto. Autorizar por
+omissão significa que um tenant sem direito ao SKU, ou qualquer tenant durante uma
+indisponibilidade do D1, consome computação faturável.
+
+Nota de colisão: **#1397 está em voo** e toca superfície devenv. Antes de escrever
+código para este item, confira se aquele PR já move este guard.
+
+```backlog
+id: B-075
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'f=worker/src/lib/devenv_guard.ts
+  [ -f "$f" ] || { echo "FALHA: devenv_guard.ts nao existe mais — reavalie o item."; exit 1; }
+  temelse=0; grep -qE "^[[:space:]]*\}[[:space:]]*else[[:space:]]*\{|return[[:space:]]+\{[[:space:]]*allowed:[[:space:]]*false" "$f" && temelse=1
+  temcatch=0; grep -qE "catch" "$f" && temcatch=1
+  falhafechado=0
+  if [ "$temcatch" = 1 ]; then
+    awk "/catch/,/^[[:space:]]*\}/" "$f" | grep -qiE "allowed:[[:space:]]*false|deny|throw|503|403" && falhafechado=1
+  fi
+  if [ "$temelse" = 1 ] && [ "$falhafechado" = 1 ]; then
+    echo "FALHA: guard tem ramo de negacao explicito E catch que falha fechado — feche o item."; exit 1; fi
+  echo "aberto: devenv_guard sem negacao por omissao (else=$temelse) e/ou catch que nao fecha (catch=$temcatch fecha=$falhafechado)"'
+verify-means: |
+  open — o guard não tem ramo explícito de negação para "sem linha de entitlement", ou
+  seu `catch` não fecha o acesso.
+
+  Vira DRIFTED quando AMBOS existirem: negação explícita no caminho sem-linha E `catch`
+  que nega. As duas metades são a alegação (falha aberta por omissão E por exceção), e
+  consertar só uma deixa o buraco pela outra.
+
+  O que NÃO decide, e admito francamente: este é o `verify` mais frágil do lote, porque
+  lê ESTRUTURA de TypeScript por regex em vez de executar o guard. Um refator que mude
+  o formato do fluxo pode falsear em qualquer direção. O certo seria um teste unitário
+  do guard com D1 ausente e D1 lançando — e é isso que quem consertar deve escrever,
+  fechando este item pelo teste e não pelo grep. Registro a fragilidade aqui em vez de
+  deixá-la implícita.
+last-verified: 2026-08-30
+```
+
+### B-076 — o mesmo tenant pode manter duas assinaturas pagáveis abertas, e a segunda apaga o registro da primeira
+
+Cinco elos, todos verificados:
+
+1. **O guard só olha assinaturas ativas.** `HAS_ACTIVE_PAID_CACHE_SUBSCRIPTION_SQL`
+   (`tier_select_store.rs:68`) é `subscription_state = 'active' AND tier != 'free'`. Um
+   tenant parado em `pending_checkout` não é `'active'` e passa.
+2. **As chaves de idempotência divergem no campo errado.** `client.rs:800` é
+   `format!("checkout:{}:{}", tenant_id, tier)` — inclui o tier; `client.rs:821` é
+   `format!("customer:{}", tenant_id)` — mesmo cliente. Tiers diferentes produzem duas
+   páginas hospedadas independentemente pagáveis sobre o mesmo `cus_`, vivas pelas 24h
+   padrão de expiração de sessão da Stripe.
+3. **O lock não identifica quem o detém.** `release_lock` (`tier_select_store.rs:323`) é
+   `DELETE FROM tier_selection_locks WHERE tenant_id = ?1` — a coluna `correlation_id`
+   existe e é descartada. Com TTL de 60s, uma chamada à Stripe que passe disso faz a
+   requisição A liberar o lock que já pertence à B, no meio da orquestração dela.
+4. **O empate é resolvido destruindo o registro.** `upsertBillingPaid`
+   (`apps/signup-worker/src/webhooks/stripe.ts:591`) faz
+   `ON CONFLICT (tenant_id) DO UPDATE SET stripe_subscription_id = excluded.…` sem
+   guarda. Uma linha por tenant: a segunda assinatura sobrescreve o id da primeira, que
+   continua cobrando e deixa de existir para a plataforma — inclusive para o
+   `deactivateTierSelectionBySubscription`, que resolve o tenant por esse mapa e é um
+   no-op documentado quando não acha nada.
+5. **Nada detecta.** `FROM stripe_checkout_sessions` em todo `.rs` e `.ts`: zero
+   ocorrências — a tabela é escrita e nunca lida. O `tier_select_store.rs:287` se apoia
+   numa *"daily reconciliation cron"* chamada
+   `corelink_onboarding_stripe_customer_id_drift_total`; esse nome aparece em quatro
+   lugares no repositório e **nenhum deles é código executável**.
+
+Ordem importa e piora: pagar Solo e depois Pro faz o guard `subscription_state <>
+'active'` bloquear a troca de tier enquanto o `upsertBillingPaid` sobrescreve id E plano
+— cliente com direito ao tier barato, pagando dois, com `tenant_billing.plan='pro'`
+contradizendo `tier_selections.tier='solo'`. Cancelar a rastreada revoga o direito que a
+não-rastreada financia.
+
+**Antes de reparar:** reconciliar as assinaturas vivas na Stripe contra `tenant_billing`
+para dimensionar a exposição existente. Colisão: **#1400** está em voo tocando
+`billing-stripe-materializer`; confira antes de escrever código.
+
+```backlog
+id: B-076
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 's=crates/corelink-container/src/routes/tier_select_store.rs
+  c=crates/corelink-stripe-real/src/client.rs
+  w=apps/signup-worker/src/webhooks/stripe.ts
+  [ -f "$s" ] && [ -f "$c" ] && [ -f "$w" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
+  lock=0; awk "/fn release_lock/,/^    }/" "$s" | grep -q "correlation_id" || lock=1
+  idem=0; grep -qE "format!\(\"customer:\{\}\"" "$c" && idem=1
+  clob=0; awk "/ON CONFLICT \(tenant_id\)/,/updated_at_ms/" "$w" | grep -q "stripe_subscription_id[[:space:]]*=[[:space:]]*excluded" && clob=1
+  leitor=$(grep -rl "FROM stripe_checkout_sessions" --include="*.rs" --include="*.ts" . 2>/dev/null | grep -v "/target/" | wc -l | tr -d " ")
+  soma=$((lock + idem + clob))
+  if [ "$soma" = 0 ] && [ "$leitor" -gt 0 ]; then
+    echo "FALHA: lock por correlation_id, idempotencia por cliente corrigida, clobber guardado e a tabela tem leitor — feche o item."; exit 1; fi
+  echo "aberto: lock_sem_correlation=$lock idem_customer_sem_tier=$idem clobber_sem_guarda=$clob leitores_da_tabela=$leitor"'
+verify-means: |
+  open — pelo menos um dos três defeitos de código persiste, OU a
+  `stripe_checkout_sessions` continua sem nenhum leitor.
+
+  Vira DRIFTED só quando os quatro forem resolvidos juntos. Escolhi o AND porque este
+  item é uma CADEIA de dinheiro: consertar o clobber sem consertar o lock, ou vice-versa,
+  deixa cobrança indevida possível por outro caminho. Um portão que fecha a 1/4 do
+  reparo, num caminho de cobrança, é pior que portão nenhum.
+
+  O contador `leitores_da_tabela` é o que decide a metade "nada detecta": hoje é 0, e
+  qualquer leitor real (uma reconciliação de verdade, não o comentário fantasma) o
+  levanta.
+
+  O que NÃO decide, e admito: a exposição JÁ EXISTENTE em produção — quantas assinaturas
+  órfãs estão cobrando agora. Isso só a reconciliação contra a Stripe viva mede, e é
+  pré-requisito do reparo, não consequência dele.
+last-verified: 2026-08-30
+```
+
+### B-077 — o repositório mediu o próprio contêiner e guardou o número numa constante que só um subsistema enxerga
+
+Em 2026-08-10 o commit `9c4ee47a` (#1066, *"perf(container): right-size prod cache
+container to basic (1GiB)"*) trocou `instance_type` de `standard-1` para `basic` nos sete
+blocos do `wrangler.toml`. Boa decisão de custo.
+
+O `cas.rs` reagiu de forma exemplar: mediu a caixa pela API, gravou
+`CONTAINER_MEMORY_BYTES = 1024 MiB` (`cas.rs:164`, com o comentário *"0.25 vCPU / 1024
+MiB on all five regions, read from the Cloudflare Containers API"*) e ancorou nela um
+assert de **tempo de compilação** (`cas.rs:183`).
+
+O defeito é que essa constante é referenciada em exatamente dois lugares, ambos dentro
+do próprio `cas.rs`. O `adapter_pat.rs` nunca a vê: dimensiona `ARGON2_VERIFY_PERMITS = 16`
+contra *"a standard-1 instance (~4 GiB) […] ~4x safety headroom"*, e afirma na linha 1328
+que o contêiner tem **0,5 vCPU** — o dobro dos 0,25 medidos, número que o `cas.rs` tem
+correto no mesmo binário.
+
+Ressalva registrada, porque a primeira versão deste achado errava: permits limitam
+concorrência, não reservam memória (os 64 MiB são alocados dentro do `spawn_blocking`);
+`ARGON2_PER_TENANT_PERMITS = 4` mais coalescing por chave limitam um tenant sozinho a
+256 MiB; e `p_cost = 4` não paraleliza, porque `corelink-pat/Cargo.toml:17` compila
+argon2 com `default-features = false`, sem feature de paralelismo. Saturar os 16 exige
+quatro tenants distintos com quatro PATs frios cada — condição adversarial, não uma
+matriz de CI.
+
+O que sobra e é durável: um teto de DoS cuja aritmética nomeia um tipo de instância que o
+repositório não implanta, contradito por uma constante medida no mesmo binário. O
+`cas.rs` compile-asserta que pode reivindicar metade da caixa; o Argon2 dimensiona-se
+para a caixa inteira; nenhum dos dois referencia o outro. São ~1,5 GiB de orçamento
+documentado sobre 1 GiB físico. **A metade do CAS é [B-056]; a metade do Argon2 é este
+item.** E não existe portão ligando `instance_type` às constantes derivadas dele: o
+próximo redimensionamento repete isto em silêncio.
+
+```backlog
+id: B-077
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'a=crates/corelink-container/src/adapter_pat.rs
+  c=crates/corelink-container/src/routes/cas.rs
+  [ -f "$a" ] && [ -f "$c" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
+  medida=$(grep -c "CONTAINER_MEMORY_BYTES" "$c" 2>/dev/null | tr -d " ")
+  [ "$medida" -gt 0 ] || { echo "FALHA: cas.rs nao define mais CONTAINER_MEMORY_BYTES — reavalie o item."; exit 1; }
+  fora=$(grep -rl "CONTAINER_MEMORY_BYTES" crates/ --include="*.rs" 2>/dev/null | grep -v "routes/cas.rs" | wc -l | tr -d " ")
+  velho=0; grep -qE "standard-1|~4 GiB|0\.5 vCPU" "$a" && velho=1
+  if [ "$fora" -gt 0 ] && [ "$velho" = 0 ]; then
+    echo "FALHA: CONTAINER_MEMORY_BYTES ja e usado fora do cas.rs E adapter_pat nao cita mais a instancia velha — feche o item."; exit 1; fi
+  echo "aberto: arquivos_usando_a_constante_fora_do_cas=$fora  adapter_pat_ainda_cita_standard-1_ou_0.5vCPU=$velho"'
+verify-means: |
+  open — a constante medida continua confinada ao `cas.rs`, OU o `adapter_pat.rs` ainda
+  dimensiona contra `standard-1` / `~4 GiB` / `0.5 vCPU`.
+
+  Vira DRIFTED quando AMBOS forem resolvidos: a constante virar orçamento compartilhado
+  E o `adapter_pat` parar de citar a instância antiga. O AND é a alegação: promover a
+  constante sem recalcular o pool deixa o número errado, e recalcular sem compartilhar
+  deixa o próximo redimensionamento repetir tudo.
+
+  Cross-ref: a metade process-wide do CAS é [B-056]. Este item NÃO a duplica — decide
+  especificamente a não-propagação da constante e o dimensionamento órfão do Argon2.
+
+  O reparo estrutural que fecha os dois de vez é um portão ligando `instance_type` do
+  `wrangler.toml` às constantes derivadas dele. Se alguém escrever esse portão, escreva
+  o item novo em vez de estender este.
+last-verified: 2026-08-30
+```
+
+### B-078 — `batch-read` materializa todos os blobs em memória antes de aplicar o teto de 8 MiB
+
+Único achado classificado como alto entre os 34 do pen-test de 2026-08-30, sobrevivendo à
+refutação adversarial. O `handle_batch_read` (`crates/corelink-container/src/routes/cas.rs`)
+dispara até `BATCH_MAX_OBJECTS = 2_000` tarefas em um laço que roda até o fim ANTES de o
+teto `BATCH_MAX_BYTES = 8 MiB` ser aplicado. O limite é verificado na saída, não na
+entrada.
+
+Uma única requisição autenticada esgota a memória do contêiner multi-tenant compartilhado.
+Composto com [B-077] sobre a mesma instância de 1 GiB, a superfície é bem menor do que a
+análise original de 4 GiB supunha.
+
+O próprio código conhece a forma do problema: o comentário em `cas.rs:235-239` calcula o
+risco de leituras em massa concorrentes como `N × payload heap (≈ N × 8 MiB) on the
+shared container`, e por isso existe o `CasReadConcurrencyGuard`. O que falta é aplicar o
+teto de bytes na ENTRADA, antes da materialização, e não depois.
+
+```backlog
+id: B-078
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'f=crates/corelink-container/src/routes/cas.rs
+  [ -f "$f" ] || { echo "FALHA: cas.rs sumiu — reavalie o item."; exit 1; }
+  grep -q "BATCH_MAX_BYTES" "$f" || { echo "FALHA: BATCH_MAX_BYTES nao existe mais — reavalie o item."; exit 1; }
+  corpo=$(awk "/fn handle_batch_read/,/^async fn |^pub async fn |^fn /" "$f" | head -200)
+  linha_cap=$(printf "%s" "$corpo" | grep -n "BATCH_MAX_BYTES" | head -1 | cut -d: -f1)
+  linha_fan=$(printf "%s" "$corpo" | grep -nE "spawn|join_all|JoinSet|futures::" | head -1 | cut -d: -f1)
+  if [ -n "$linha_cap" ] && [ -n "$linha_fan" ] && [ "$linha_cap" -lt "$linha_fan" ]; then
+    echo "FALHA: o teto de bytes e aplicado ANTES do fan-out (cap@$linha_cap fanout@$linha_fan) — feche o item."; exit 1; fi
+  echo "aberto: teto de bytes aplicado depois do fan-out (cap@${linha_cap:-ausente} fanout@${linha_fan:-ausente})"'
+verify-means: |
+  open — dentro de `handle_batch_read`, a primeira menção a `BATCH_MAX_BYTES` aparece
+  DEPOIS da primeira construção de fan-out concorrente. Ou seja: materializa, depois
+  mede.
+
+  Vira DRIFTED quando o teto passar a ser aplicado antes do fan-out, que é o reparo.
+
+  O que NÃO decide, e admito com todas as letras: isto lê ORDEM TEXTUAL de linhas, não
+  ordem de execução. Um refator que extraia o fan-out para uma função auxiliar falsearia
+  o resultado nas duas direções. É o `verify` mais fraco deste lote junto com [B-075], e
+  registro isso em vez de deixar implícito.
+
+  O reparo correto traz o `verify` correto junto: um teste que envie um lote cuja soma
+  declarada exceda 8 MiB e exija 413 ANTES de qualquer leitura do R2. Quem consertar
+  deve substituir este comando por esse teste.
+last-verified: 2026-08-30
+```
+
+### B-079 — o tier Max é publicado a 4.000 rps e limitado a 1.000, e as duas resoluções de tier falham na direção mais generosa
+
+**Na direção do cliente que paga.** `crates/corelink-ratelimit/src/tier.rs:124` mapeia
+`"pro" | "org" | "max" => Tier::Business`, que é 1.000 rps / 5.000 burst. A página
+publicada (`apps/docs/docs/explanation/rate-limits.mdx:45`) anuncia Max a 4.000 / 20.000.
+Um cliente Max paga $149/mês e recebe um quarto da taxa publicada — dano faturável e
+diretamente demonstrável por ele. O `tier.rs:97` documenta a decisão deliberadamente
+(*"`max` | `Business` — NOT Enterprise (ratified Q5a…)"*); a página nunca acompanhou.
+
+**Na direção oposta.** `tier_for_billing_label` termina em `_ => Tier::Team` (200 rps,
+20× o gratuito) e `refill_rate_for_tier` termina em `_ => ENTERPRISE_RATE` (10.000 rps,
+1000× o gratuito). Um rótulo de cobrança corrompido, com erro de grafia, ou de um tier
+futuro recebe taxa paga; uma variante de enum desconhecida recebe taxa Enterprise. Ambas
+documentadas como escolha deliberada (*"most-permissive default"*), postura defensável
+para disponibilidade — mas num controle **medido e vendido** significa que o limitador
+falha na direção do vazamento de receita.
+
+Nota composta com [B-071]: o comentário do `tier.rs` observa que este mapeamento também
+seleciona a escada de TTL de eviction e é portanto uma *"customer-visible retention
+promise"* — promessa hoje inerte, porque não há eviction rodando.
+
+Reparo: decidir qual dos dois números é a verdade (a página ou o código) e alinhar; e
+decidir se os fallbacks devem cair para `Free` em vez de para tier pago.
+
+```backlog
+id: B-079
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 't=crates/corelink-ratelimit/src/tier.rs
+  d=apps/docs/docs/explanation/rate-limits.mdx
+  [ -f "$t" ] || { echo "FALHA: tier.rs sumiu — reavalie o item."; exit 1; }
+  maxbiz=0; grep -qE "\"max\"[^=]*=>[[:space:]]*Tier::Business|\|[[:space:]]*\"max\"[[:space:]]*=>" "$t" && maxbiz=1
+  docs4k=0; [ -f "$d" ] && grep -qE "4[ ,.]?000" "$d" && docs4k=1
+  fbteam=0; grep -qE "_[[:space:]]*=>[[:space:]]*Tier::Team" "$t" && fbteam=1
+  fbent=0; grep -qE "_[[:space:]]*=>[[:space:]]*\(ENTERPRISE_REFILL_RPS" "$t" && fbent=1
+  desalinhado=0; [ "$maxbiz" = 1 ] && [ "$docs4k" = 1 ] && desalinhado=1
+  soma=$((desalinhado + fbteam + fbent))
+  [ "$soma" -gt 0 ] || { echo "FALHA: Max alinhado com a pagina E fallbacks nao caem mais em tier pago — feche o item."; exit 1; }
+  echo "aberto: max_mapeado_para_business_com_docs_dizendo_4000=$desalinhado fallback_string_para_Team=$fbteam fallback_enum_para_Enterprise=$fbent"'
+verify-means: |
+  open — o Max continua mapeado para `Business` enquanto a página publica 4.000, OU
+  algum dos dois fallbacks continua caindo em tier pago.
+
+  Vira DRIFTED quando os três forem resolvidos. Aceita QUALQUER das duas correções do
+  desalinhamento: mudar o código para `Enterprise`, ou corrigir a página para 1.000 —
+  são decisões de produto diferentes com o mesmo efeito sobre a alegação, que é a
+  DIVERGÊNCIA, não qual dos lados está certo.
+
+  O que NÃO decide, e admito: se o número novo da página bate exatamente com a constante
+  nova do código. O comando detecta a presença de "4.000" na página e o mapeamento para
+  `Business`; um terceiro valor em ambos os lados passaria despercebido. Um `verify`
+  robusto exigiria parsear a tabela da página e a escada do `tier.rs` e compará-las —
+  vale escrever quando alguém consertar, e aí substituir este comando.
+last-verified: 2026-08-30
+```
+
+### B-080 — metade dos escopos canônicos de PAT não é verificada por nenhum ponto de aplicação
+
+`crates/corelink-pat/src/scopes.rs:157` define doze escopos canônicos. O ponto de
+aplicação em `crates/corelink-container/src/scope.rs:77` reconhece seis: `cas:rw`,
+`cas:r`, `cas:w`, `read-write`, `read-only`, `admin`.
+
+Os escopos `admin:tenant-read`, `admin:tenant-write`, `admin:tokens`, `admin:billing`,
+`admin:audit` e `admin:users` podem ser cunhados num token e nunca são consultados. Um
+token emitido com `admin:audit` não recebe menos privilégio que um emitido com `admin` —
+recebe o mesmo, porque a distinção não é lida.
+
+Qualquer plano de privilégio mínimo baseado nesses nomes é decorativo. Isso importa em
+particular para clientes enterprise, para quem a granularidade de escopo costuma ser
+requisito de contrato.
+
+Dois reparos legítimos: implementar a verificação dos seis, ou remover os escopos que
+não são aplicados para que ninguém construa política sobre eles. O segundo é honesto e
+mais barato; o primeiro é o que o produto promete.
+
+```backlog
+id: B-080
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 's=crates/corelink-pat/src/scopes.rs
+  e=crates/corelink-container/src/scope.rs
+  [ -f "$s" ] && [ -f "$e" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
+  naoaplicados=0; faltando=""
+  for sc in admin:tenant-read admin:tenant-write admin:tokens admin:billing admin:audit admin:users; do
+    if grep -q "$sc" "$s" 2>/dev/null; then
+      grep -q "$sc" "$e" 2>/dev/null || { naoaplicados=$((naoaplicados+1)); faltando="$faltando $sc"; }
+    fi
+  done
+  [ "$naoaplicados" -gt 0 ] || { echo "FALHA: todo escopo admin:* definido tambem aparece no ponto de aplicacao — feche o item."; exit 1; }
+  echo "aberto: $naoaplicados escopo(s) admin:* definidos e nunca verificados:$faltando"'
+verify-means: |
+  open — existe pelo menos um escopo `admin:*` definido em `scopes.rs` que não aparece
+  em `scope.rs`.
+
+  Vira DRIFTED por qualquer um dos dois reparos: os escopos passam a ser verificados (o
+  bom), ou são removidos da definição (o honesto). O laço só conta escopos que EXISTEM
+  na definição, então remover fecha o item naturalmente.
+
+  Conta em vez de exigir zero-ou-tudo: implementar dois dos seis reduz o número e mantém
+  o item aberto listando os que faltam. Progresso parcial aparece.
+
+  O que NÃO decide, e admito: se a menção em `scope.rs` é uma verificação REAL ou só o
+  nome aparecendo numa lista. É a fraqueza de gatear por presença de string. Quem
+  consertar deve acompanhar de teste que prove negação — um token com `admin:audit`
+  recusado numa rota de billing — e trocar este comando por ele.
+last-verified: 2026-08-30
+```
+
+### B-081 — seguir o runbook de rotação da chave de assinatura de PAT causa indisponibilidade
+
+O verificador do contêiner aceita chaves de transição: `adapter_pat.rs:1466` itera sobre
+`["PAT_SIGNING_KEY_PREV", "PAT_SIGNING_KEY_NEW"]`. O Durable Object encaminha apenas a
+chave corrente — `worker/src/durable_object.ts:848` passa
+`PAT_SIGNING_KEY: this.env.PAT_SIGNING_KEY ?? ""` e não encaminha as duas irmãs.
+
+O mecanismo de rotação sem interrupção existe do lado do contêiner e é **inalcançável**,
+porque as chaves de transição nunca chegam até ele. Um operador que siga o procedimento
+documentado invalida todos os PATs emitidos sob a chave anterior no instante da troca.
+
+É latente: só se manifesta quando alguém rotacionar. Exatamente por isso merece reparo
+antes, e não depois — o custo de descobrir isto durante uma rotação de emergência é uma
+indisponibilidade autoinfligida no pior momento possível.
+
+Reparo: duas linhas no `container.start({ env })`, mais uma linha na matriz de secrets
+para cada uma das duas variáveis.
+
+```backlog
+id: B-081
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'a=crates/corelink-container/src/adapter_pat.rs
+  d=worker/src/durable_object.ts
+  [ -f "$a" ] && [ -f "$d" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
+  aceita=0; grep -q "PAT_SIGNING_KEY_PREV" "$a" && aceita=1
+  [ "$aceita" = 1 ] || { echo "FALHA: o container nao aceita mais chaves de transicao — reavalie o item."; exit 1; }
+  enc=0
+  grep -q "PAT_SIGNING_KEY_PREV" "$d" && enc=$((enc+1))
+  grep -q "PAT_SIGNING_KEY_NEW" "$d" && enc=$((enc+1))
+  [ "$enc" -lt 2 ] || { echo "FALHA: o DO ja encaminha as duas chaves de transicao — feche o item."; exit 1; }
+  echo "aberto: container aceita PREV/NEW e o DO encaminha $enc de 2"'
+verify-means: |
+  open — o contêiner aceita `PAT_SIGNING_KEY_PREV` E o Durable Object encaminha menos
+  que as duas chaves de transição.
+
+  Vira DRIFTED quando o DO encaminhar as duas, que é o reparo. Fecharia também se o
+  contêiner deixasse de aceitar chaves de transição — mas nesse caso a rotação sem
+  interrupção deixa de existir por decisão, e isso merece item próprio de recusa, não o
+  fechamento silencioso deste.
+
+  Conta 0/1/2 em vez de exigir ambas: encaminhar só uma é um reparo pela metade que
+  ainda quebra a rotação, e o número mostra isso em vez de esconder.
+
+  Depende de [B-067] na sequência: é reparo de credencial, e `corelink-pat` hoje não tem
+  execução de teste em CI.
+last-verified: 2026-08-30
+```
+
+### B-082 — a sonda profunda de saúde do contêiner existe, funciona, e não é alcançável por ninguém
+
+`worker/src/index.ts:861` documenta que `/_health/container` expõe o campo `storage`, que
+revela se um handler caiu para o armazenamento em memória. A linha 2116 do mesmo arquivo
+executa `delete raw["storage"]`.
+
+A remoção é deliberada e **correta** — foi reparo de segurança, para não vazar topologia
+de armazenamento a um chamador anônimo. O defeito é que nenhuma variante autenticada foi
+criada em seu lugar. O sinal existe, é produzido pela sonda profunda que de fato alcança
+o DO `_system`, e é descartado antes de chegar a qualquer consumidor, inclusive ao
+operador. E o comentário da linha 861 continua descrevendo o comportamento antigo.
+
+Consequência operacional concreta: o modo de falha "o handler subiu com armazenamento em
+memória" é indetectável de fora. É precisamente o que uma sonda de saúde existe para
+detectar.
+
+Reparo: variante autenticada de `/_health/container` que preserve `storage` atrás do
+`CORELINK_ADMIN_AUTH_KEY`, e corrigir o comentário da linha 861.
+
+```backlog
+id: B-082
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'f=worker/src/index.ts
+  [ -f "$f" ] || { echo "FALHA: index.ts sumiu — reavalie o item."; exit 1; }
+  strip=0; grep -qE "delete raw\[\"storage\"\]|delete raw\[.storage.\]" "$f" && strip=1
+  [ "$strip" = 1 ] || { echo "FALHA: o campo storage nao e mais removido — feche o item ou reescreva-o."; exit 1; }
+  autent=0
+  awk "/delete raw\[/{n=NR} n&&NR>=n-40&&NR<=n+40" "$f" | grep -qiE "ADMIN_AUTH_KEY|authenticated variant|health_container_authed" && autent=1
+  [ "$autent" = 0 ] || { echo "FALHA: existe caminho autenticado na sonda de container — feche o item."; exit 1; }
+  echo "aberto: campo storage removido e nenhuma variante autenticada da sonda"'
+verify-means: |
+  open — o campo `storage` continua sendo removido E não existe caminho autenticado que
+  o preserve. As duas metades são a alegação: a remoção é correta, a ausência de
+  alternativa é o defeito.
+
+  Vira DRIFTED quando aparecer a variante autenticada. Se alguém simplesmente parar de
+  remover o campo, o primeiro ramo falha e o item também fecha — mas isso seria REGRESSÃO
+  de segurança, então a mensagem manda reavaliar em vez de fechar cegamente. Registro
+  essa ambiguidade de propósito: prefiro um portão que peça julgamento a um que aprove
+  o desfazimento de um reparo.
+
+  A correção do comentário da linha 861 é reportada na prosa e não gateada: é
+  documentação, e travar o item nela atrasaria a variante autenticada, que é o que
+  importa.
+last-verified: 2026-08-30
+```
+
+### B-083 — o BYOK é vendido a $99/mês, consta do SLA assinado, e é um `XOR` em memória no binário embarcado
+
+Três elos, todos verificados no código de 2026-08-30:
+
+1. **O binário não ativa as features reais.** `Dockerfile:182` é
+   `cargo build --release --locked -p corelink-server --bin corelink-server;` — sem
+   `--features`. `crates/corelink-container/Cargo.toml:16` declara `default = []`, e as
+   quatro features `byok-aws-real` (:35), `byok-gcp-real` (:47), `byok-azure-real` (:55)
+   e `byok-vault-real` (:63) não são ativadas por nenhum caminho de build.
+2. **O próprio código admite.** `routes/byok_admin.rs:249` — `if !REAL_KMS_PROVIDER_WIRED
+   { tracing::error!(event = "ByokActivateNotAvailable", …); return
+   (StatusCode::NOT_IMPLEMENTED, "byok_not_available") }`.
+3. **O kill switch não é chamado.** `crates/corelink-byok/src/byok_revocation/detector.rs:147`
+   define `pub async fn run_loop(self)`, descrita em comentário como *"the core kill
+   switch implementation"*. Suas únicas referências estão dentro do próprio crate e em
+   testes; nenhum caminho do binário embarcado a invoca.
+
+O que **S** afirma: `legal/sla/v1.0.0.md:46` compromete, para Enterprise, *"BYOK
+kill-switch p99 ≤ 5 min"*. O `marketing/sales/FAQ-MASTER.md:71` vende o add-on a $99/mês
+e afirma textualmente *"we don't run BYOK as a marketing checkbox; the kill switch is
+exercised on a schedule."*
+
+Este item cobre o defeito de engenharia (o binário). A reconciliação dos instrumentos
+assinados é [B-087] e a evidência falsa é [B-084].
+
+```backlog
+id: B-083
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  bash -c 'd=Dockerfile
+  c=crates/corelink-container/Cargo.toml
+  [ -f "$d" ] && [ -f "$c" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
+  buildline=$(grep -E "cargo build.*-p corelink-server" "$d" | head -1)
+  [ -n "$buildline" ] || { echo "FALHA: a linha de build do corelink-server mudou — reavalie o item."; exit 1; }
+  temfeat=0; printf "%s" "$buildline" | grep -qE "byok-(aws|gcp|azure|vault)-real" && temfeat=1
+  defvazio=0; grep -qE "^default[[:space:]]*=[[:space:]]*\[\]" "$c" && defvazio=1
+  defbyok=0; grep -E "^default[[:space:]]*=" "$c" | grep -q "byok" && defbyok=1
+  if [ "$temfeat" = 1 ] || [ "$defbyok" = 1 ]; then
+    echo "FALHA: o build embarca alguma feature byok-*-real (cmdline=$temfeat default=$defbyok) — feche o item."; exit 1; fi
+  echo "aberto: Dockerfile constroi sem --features byok-*-real e default=[] (default_vazio=$defvazio)"'
+verify-means: |
+  open — a linha de build do `Dockerfile` não passa nenhuma feature `byok-*-real` E o
+  `default` do crate não as inclui. As duas metades cobrem os dois caminhos possíveis de
+  ativação, então nenhuma delas sozinha decide.
+
+  Vira DRIFTED quando qualquer um dos dois caminhos passar a embarcar um provedor real,
+  que é o reparo.
+
+  O que NÃO decide, e admito: se o provedor embarcado FUNCIONA contra um KMS real, e se
+  o `run_loop` do kill switch passa a ser chamado. Compilar a feature é condição
+  necessária, não suficiente. Quem fechar deve provar com um drill REAL — que é
+  exatamente o que [B-084] cobra — e não com a presença da flag.
+
+  Owner, não tl: embarcar BYOK real toca credencial de KMS de cliente e muda a superfície
+  vendida. Não é decisão de engenharia.
+last-verified: 2026-08-30
+```
+
+### B-084 — o drill do kill switch emite atestado de aprovação a partir de um `sleep`, e o atestado é encaminhado a clientes
+
+`scripts/byok_kill_switch_drill.sh` produz um relatório de aprovação sem exercitar nada:
+`:50 # Here: simulated pass in CI.`, `:80-81 # CI: simulate detection after 2s. / sleep 2`,
+`:99 # CI: simulated pass.`, `:116 SLA_RESULT="PASS"`, `:126 sleep 1 # simulated`,
+`:136 cat > "${REPORT_FILE}" << EOF`.
+
+As chamadas reais ao KMS estão comentadas; todas as credenciais no workflow
+(`byok_kill_switch_drill_weekly.yml:48-51`) estão comentadas. O script então escreve
+`specs/_audits/AAAA-MM-DD-byok-kill-switch-drill-*.md` com uma tabela de aprovação, e
+esse arquivo é encaminhado ao SRE do cliente como evidência de SLA por instrução de
+`lighthouse-kit/05-sla-attestation-instructions.md:61`.
+
+É um gerador automático de evidência de segurança falsa. Categoricamente diferente de um
+controle ausente ([B-083]): ali falta o controle; aqui se produz prova de que ele existe.
+
+**Reparo mínimo, uma linha:** fazer o script sair com código diferente de zero em modo
+simulado, para que não possa emitir `PASS`. É a melhor relação entre exposição removida e
+esforço de todo o repositório, e não depende de [B-083] estar resolvido.
+
+```backlog
+id: B-084
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 's=scripts/byok_kill_switch_drill.sh
+  [ -f "$s" ] || { echo "FALHA: o script do drill sumiu — feche o item ou reescreva-o."; exit 1; }
+  hard=0; grep -qE "SLA_RESULT=\"?PASS\"?" "$s" && hard=1
+  sim=0; grep -qiE "simulated|simulate detection" "$s" && sim=1
+  guarda=0
+  awk "/SLA_RESULT=/{n=NR} n&&NR>n&&NR<n+12&&/exit[[:space:]]+[1-9]/{print;exit}" "$s" | grep -q . && guarda=1
+  if [ "$hard" = 0 ] || [ "$guarda" = 1 ]; then
+    echo "FALHA: PASS hardcoded removido ($hard) ou ha saida nao-zero no caminho simulado ($guarda) — feche o item."; exit 1; fi
+  echo "aberto: SLA_RESULT=PASS hardcoded e modo simulado ainda sai zero (sim=$sim)"'
+verify-means: |
+  open — o script ainda contém `SLA_RESULT="PASS"` fixo E não há saída não-zero no
+  caminho simulado.
+
+  Vira DRIFTED por qualquer um dos dois reparos: remover o `PASS` hardcoded (o drill
+  passa a derivar o resultado do que mediu), ou fazer o modo simulado sair não-zero (o
+  reparo de uma linha). Aceito os dois porque ambos impedem a emissão de atestado falso,
+  que é a alegação.
+
+  O que NÃO decide, e admito: se o atestado JÁ EMITIDO e encaminhado a clientes será
+  retratado. Arquivos em `specs/_audits/` com tabela de PASS existem e foram distribuídos.
+  Retratá-los é decisão de comunicação com cliente, pertence ao owner, e deve virar item
+  próprio se a decisão for retratar.
+last-verified: 2026-08-30
+```
+
+### B-085 — a página LGPD promete São Paulo e imutabilidade à prova de ordem judicial; os dados estão nos EUA e são deletáveis
+
+`apps/docs/docs/explanation/residency/lgpd-brazil.mdx` está publicada, sem marca de
+rascunho, e afirma a titulares brasileiros que com o tenant pinado em `sam` os dados
+estão *"fisicamente localizados na região da América do Sul (São Paulo) … bucket R2
+`cas-sam`"*, e que `audit-sam` tem *"Object Lock 7 anos (imutável; não podemos apagar um
+evento de auditoria mesmo sob ordem judicial)"*.
+
+A realidade, em três fontes: `scripts/provision-cf-corelink-prod.sh:475` provisiona
+`corelink-ac-sam` com `locationHint=enam` (Eastern North America); `wrangler.toml:792`
+liga `[[env.prod-sam.r2_buckets]]` ao `bucket_name = "corelink-cas-prod"`, o bucket dos
+EUA; e não existe bucket `cas-sam` em lugar algum.
+
+O `worker/src/region-map.ts:66` é explícito sobre por que `sam` foi excluído do conjunto
+provisionável: *"Cloudflare has no SAM region … its data would mis-land in US R2 under a
+false residency label."* A página faz exatamente o que esse comentário adverte.
+
+A afirmação de Object Lock aparece também no DPA executado (`legal/dpa/v1.0.0.en-US.md:110`),
+nos avisos de privacidade publicados, e nos templates de notificação de violação
+endereçados à DPC irlandesa e à ANPD. É representação factual a reguladores.
+
+Cross-ref: a impossibilidade técnica do WORM em R2 já é [B-046] (`NotImplemented` medido
+contra a conta de produção). **Este item não a duplica** — cobre a página LGPD publicada
+e a propagação da afirmação para os instrumentos.
+
+```backlog
+id: B-085
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  bash -c 'p=apps/docs/docs/explanation/residency/lgpd-brazil.mdx
+  [ -f "$p" ] || { echo "FALHA: a pagina LGPD sumiu — feche o item ou reescreva-o."; exit 1; }
+  saopaulo=0; grep -qiE "sao paulo|são paulo|cas-sam" "$p" && saopaulo=1
+  lock=0; grep -qiE "object lock|ordem judicial|court order" "$p" && lock=1
+  busketeua=0; grep -A6 "env.prod-sam.r2_buckets" wrangler.toml 2>/dev/null | grep -q "corelink-cas-prod" && busketeua=1
+  soma=$((saopaulo + lock))
+  if [ "$soma" = 0 ]; then echo "FALHA: a pagina nao promete mais Sao Paulo nem Object Lock — feche o item."; exit 1; fi
+  if [ "$busketeua" = 0 ]; then echo "FALHA: prod-sam nao aponta mais para o bucket dos EUA — reavalie o item."; exit 1; fi
+  echo "aberto: pagina promete sao_paulo=$saopaulo object_lock=$lock e prod-sam ainda liga ao corelink-cas-prod"'
+verify-means: |
+  open — a página publicada ainda promete localização em São Paulo ou imutabilidade por
+  Object Lock, E o `prod-sam` ainda liga ao bucket dos EUA. As duas metades juntas são a
+  divergência.
+
+  Vira DRIFTED por qualquer um dos dois reparos legítimos: corrigir a página (barato,
+  imediato, e é o que a realidade permite hoje), ou provisionar de fato armazenamento em
+  São Paulo com WORM (caro, e hoje impossível em R2 — ver [B-046]).
+
+  O que NÃO decide, e admito: a propagação da mesma afirmação para o DPA executado, os
+  avisos de privacidade e os dois templates para reguladores. Esses arquivos são
+  instrumentos jurídicos e a correção deles é de [B-087] junto com o resto da
+  reconciliação — não porque sejam menos graves, mas porque exigem revisão jurídica e não
+  cabem no mesmo PR de documentação.
+
+  Owner: corrigir texto publicado a titulares e reguladores não é decisão de engenharia.
+last-verified: 2026-08-30
+```
+
+### B-086 — um único D1 global atende as cinco regiões, enquanto o instrumento assinado nomeia o D1 entre os serviços fixados por tenant
+
+Os cinco blocos de produção do `wrangler.toml` — linhas 540, 870, 1036, 1196 e 1352 —
+ligam o **mesmo** `database_id = "d64742ea-e102-40b2-a844-ff02e3f94562"`. O que vive nesse
+banco inclui `tenant`, `team_member` (identificador Clerk em claro e hash de e-mail),
+`pat`, quotas, estado de cobrança e o outbox de auditoria.
+
+O que **S** declara, na tabela de sub-processadores de `legal/dpa-residency-amendment.md`:
+*"Cloudflare, Inc. | Infrastructure: Workers, R2, **D1**, KV, Durable Objects, Custom
+Domains | … | **Tenant-pinned (Section 7)**"*. E a linha 144: *"WEUR data NEVER replicates
+outside the EU jurisdiction. This restriction is enforced at the infrastructure level
+(Cloudflare DO `jurisdictional_restriction`)."*
+
+As únicas chaves `jurisdiction = "eu"` em toda a configuração estão nas linhas 958 e 971
+do `wrangler.toml`, e ambas são bindings de **bucket R2**. O binding do D1 não tem chave
+de jurisdição alguma.
+
+A engenharia de residência é real e cobre bytes. O contrato afirma que cobre o D1. Dois
+caminhos: provisionar D1 por jurisdição, ou emendar as cláusulas contratuais e a avaliação
+de impacto de transferência para divulgar dados pessoais de plano de controle residentes
+nos EUA. É base de transferência do Art. 46 — não é questão que se resolva depois do
+lançamento.
+
+```backlog
+id: B-086
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  bash -c 'ids=$(grep -E "^database_id[[:space:]]*=" wrangler.toml | grep -oE "\"[0-9a-f-]{36}\"" | sort -u | wc -l | tr -d " ")
+  ocorr=$(grep -cE "^database_id[[:space:]]*=[[:space:]]*\"[0-9a-f-]{36}\"" wrangler.toml | tr -d " ")
+  [ "$ocorr" -ge 2 ] || { echo "FALHA: menos de 2 database_id reais no wrangler.toml — reavalie o item."; exit 1; }
+  amend=legal/dpa-residency-amendment.md
+  declara=0
+  [ -f "$amend" ] && grep -qE "D1" "$amend" && grep -qiE "tenant-pinned" "$amend" && declara=1
+  jd=$(grep -c "^jurisdiction" wrangler.toml | tr -d " ")
+  if [ "$ids" -gt 1 ] || [ "$declara" = 0 ]; then
+    echo "FALHA: ha $ids database_id distintos ou o DPA nao declara mais D1 tenant-pinned — feche ou reescreva o item."; exit 1; fi
+  echo "aberto: 1 unico database_id em $ocorr blocos de prod, DPA declara D1 tenant-pinned, chaves jurisdiction no toml=$jd (todas em R2)"'
+verify-means: |
+  open — existe UM único `database_id` distinto em todos os blocos de produção E o
+  aditivo de residência continua declarando D1 como tenant-pinned. As duas metades são a
+  divergência entre `S` e `I`.
+
+  Vira DRIFTED por qualquer um dos dois reparos: provisionar D1 por jurisdição (o número
+  de ids distintos sobe), ou emendar o instrumento para não afirmar que o D1 é
+  tenant-pinned. Os dois encerram a divergência, e a escolha entre eles é jurídica e de
+  custo, não técnica.
+
+  O que NÃO decide, e admito: ONDE fisicamente reside o primário desse D1. A alegação
+  verificável é a divergência entre um banco único e um contrato que promete fixação por
+  tenant; a localização do primário exigiria a API da Cloudflare e não muda a conclusão.
+
+  Owner: base de transferência internacional é decisão jurídica.
+last-verified: 2026-08-30
+```
+
+### B-087 — o CAIQ v4 entregue a compradores atesta "Y" para três controles que nunca executaram com sucesso
+
+`marketing/sales/legal-questionnaires/CAIQ-V4-pre-filled.md` é documento voltado ao
+cliente, mapeado a critérios SOC 2, e escopado pelo próprio cabeçalho para *"enterprise
+procurement RFP attachment, or hyperscaler-marketplace listing"*. Três linhas não se
+sustentam:
+
+- **STA-08.1** — *"Software supply chain attestation? **Y** | SLSA Level 3 + Cosign +
+  Rekor + CycloneDX SBOM + reproducible builds"*.
+- **STA-11.1** — *"Build provenance verifiable? **Y** | Rekor public transparency log
+  entries; offline verification documented"*.
+- **AIS-04.1** — *"Application security testing? **Y** | CodeQL + Semgrep on every PR;
+  cargo-fuzz daily"*.
+
+Contra o verificado: `release-cli.yml:254` imprime *"SIGNING PLACEHOLDER: cosign keyless
+signing not yet wired"*; `cosign-sign.yml:210` carrega `ZONE_ID_PLACEHOLDER` e a lane
+nunca executou; não existe entrada Rekor; SLSA L3 foi explicitamente recusado por exigir
+builder hosted ([B-031], done). Dos três controles de AIS-04.1, o CodeQL é noturno e não
+por PR e está hosted-blocked (#1434), o Semgrep foi estacionado com zero sucessos, e o
+`fuzz-nightly` teve o cron comentado (*"Currently the ONLY trigger"* para o dispatch) com
+1 cancelamento e 5 falhas, nada desde 2026-08-03.
+
+Ressalva justa e registrada: a linha CCC-07.1 sobre commits assinados **se sustenta** —
+os commits carregam `gpgsig`.
+
+Este item também é o guarda-chuva da reconciliação dos demais instrumentos assinados: o
+BYOK do SLA ([B-083]), o Object Lock do DPA e dos templates a reguladores ([B-085]), e a
+residência do D1 ([B-086]). Um CAIQ entra no processo de risco do comprador e costuma ser
+garantido como verdadeiro no contrato principal — correção é barata antes de assinar e
+cara depois.
+
+```backlog
+id: B-087
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  bash -c 'q=marketing/sales/legal-questionnaires/CAIQ-V4-pre-filled.md
+  [ -f "$q" ] || { echo "FALHA: o CAIQ sumiu — feche o item ou reescreva-o."; exit 1; }
+  ys=0
+  grep -E "^\|[[:space:]]*STA-08\.1" "$q" | grep -q "| Y " && ys=$((ys+1))
+  grep -E "^\|[[:space:]]*STA-11\.1" "$q" | grep -q "| Y " && ys=$((ys+1))
+  grep -E "^\|[[:space:]]*AIS-04\.1" "$q" | grep -q "| Y " && ys=$((ys+1))
+  ph=0
+  grep -rqE "SIGNING PLACEHOLDER|ZONE_ID_PLACEHOLDER" .github/workflows/ && ph=1
+  if [ "$ys" = 0 ]; then echo "FALHA: as tres linhas do CAIQ nao atestam mais Y — feche o item."; exit 1; fi
+  if [ "$ph" = 0 ]; then echo "FALHA: os placeholders de assinatura sumiram — reavalie: talvez o controle exista agora."; exit 1; fi
+  echo "aberto: $ys de 3 linhas do CAIQ ainda atestam Y e os placeholders de assinatura seguem no CI"'
+verify-means: |
+  open — pelo menos uma das três linhas ainda atesta "Y" E os placeholders de assinatura
+  continuam nos workflows. As duas metades são a alegação: a afirmação existe E o
+  controle que ela nomeia não.
+
+  Vira DRIFTED por qualquer um dos dois reparos: corrigir as linhas para "N"/"P" com
+  plano datado (barato, honesto, imediato), ou implementar de fato a assinatura e a
+  proveniência (caro, e SLSA L3 já foi recusado em [B-031]).
+
+  Conta 3/2/1 em vez de exigir zero: corrigir uma linha reduz o número e mantém o item
+  aberto. Progresso parcial aparece.
+
+  O que NÃO decide, e admito: quais prospects já receberam a versão atual do documento, e
+  se precisam ser notificados. Isso é registro comercial fora do repositório e pertence
+  ao owner — deve virar item próprio se a decisão for notificar.
+last-verified: 2026-08-30
+```
+
+### B-088 — o comunicado de lançamento afirma pentest externo limpo; o próprio repositório instrui a não afirmar isso
+
+`marketing/launch/PRESS-RELEASE.md:26` declara *"External pentest, clean"*, e a linha 39
+traz citação atribuída a `[CEO_NAME]` — marcador de substituição nunca preenchido.
+
+`reports/pentest-rfp-tracker.json` lista cinco fornecedores, todos com `NOT_CONTACTED` e
+`rfp_sent_date: null`.
+
+E `marketing/sales/PROOF-POINTS.md:71` — documento destinado à mesma equipe comercial —
+diz: *"**NOT A CLAIM — no external pentest has been commissioned.** … Reps must not assert
+any pentest result."*
+
+O aviso correto existe, está escrito, e não alcançou o comunicado. É a forma mais nítida
+do padrão de [B-101]: falha de propagação, não de conhecimento. Reparo: remover as
+afirmações e o marcador `[CEO_NAME]`, propagando o texto que o `PROOF-POINTS.md` já tem.
+
+```backlog
+id: B-088
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  bash -c 'p=marketing/launch/PRESS-RELEASE.md
+  t=reports/pentest-rfp-tracker.json
+  [ -f "$p" ] || { echo "FALHA: o press release sumiu — feche o item."; exit 1; }
+  afirma=0; grep -qiE "external pentest|pentest.*clean" "$p" && afirma=1
+  ceo=0; grep -q "CEO_NAME" "$p" && ceo=1
+  contratado=0
+  if [ -f "$t" ]; then grep -qE "\"rfp_sent_date\"[[:space:]]*:[[:space:]]*\"" "$t" && contratado=1; fi
+  if [ "$afirma" = 0 ] && [ "$ceo" = 0 ]; then
+    echo "FALHA: o comunicado nao afirma mais pentest nem carrega CEO_NAME — feche o item."; exit 1; fi
+  if [ "$contratado" = 1 ]; then
+    echo "FALHA: o tracker registra RFP enviada — reavalie: talvez o pentest exista agora."; exit 1; fi
+  echo "aberto: comunicado afirma_pentest=$afirma tem_CEO_NAME=$ceo e o tracker nao registra nenhuma RFP enviada"'
+verify-means: |
+  open — o comunicado ainda afirma pentest externo (ou ainda carrega o marcador
+  `[CEO_NAME]`) E o tracker não registra nenhuma RFP efetivamente enviada.
+
+  Vira DRIFTED por qualquer um dos dois reparos: remover as afirmações do comunicado (o
+  imediato), ou de fato contratar o pentest e registrar no tracker (o caro). A segunda
+  saída é legítima e por isso o comando a detecta em vez de ignorá-la.
+
+  O que NÃO decide: se o comunicado já foi distribuído a jornalistas ou prospects. Fora
+  do repositório, pertence ao owner.
+last-verified: 2026-08-30
+```
+
+### B-089 — o SLA promete créditos automáticos como remédio exclusivo e não existe código que emita crédito
+
+`legal/sla/v1.0.0.md:74` promete créditos *"issued automatically against the next
+invoice"*, e a §4.5 declara isso o *"sole and exclusive remedy"* do cliente.
+
+Busquei `service_credit`, `sla_credit`, `credit_note` e `balance_transaction` em todo
+`crates/`, `worker/` e `apps/` — nada, exceto cupons de lançamento da Stripe no checkout.
+
+Agravantes na mesma cláusula: o SLA define quatro tiers enquanto o produto vende seis, de
+modo que um cliente Solo ($15) ou Max ($149) não tem tier no instrumento assinado, embora
+o `FAQ-MASTER.md:51` lhes prometa 99,5% e 99,9% com créditos. E os Termos de Serviço
+(`terms.tsx:333`) concedem créditos automáticos ao tier Pro, que a própria tabela de
+preços marca como `slaCredits: false`.
+
+Uma cláusula de remédio exclusivo que não pode ser cumprida é a primeira a cair, e sua
+queda expõe danos sem teto.
+
+```backlog
+id: B-089
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  bash -c 's=legal/sla/v1.0.0.md
+  [ -f "$s" ] || { echo "FALHA: o SLA sumiu — reavalie o item."; exit 1; }
+  promete=0; grep -qiE "issued automatically|automatic.*credit" "$s" && promete=1
+  [ "$promete" = 1 ] || { echo "FALHA: o SLA nao promete mais credito automatico — feche o item."; exit 1; }
+  impl=$(grep -rlE "service_credit|sla_credit|credit_note|balance_transaction" crates/ worker/src/ apps/ --include="*.rs" --include="*.ts" --include="*.tsx" 2>/dev/null | grep -v "/target/" | grep -v node_modules | wc -l | tr -d " ")
+  [ "$impl" = 0 ] || { echo "FALHA: $impl arquivo(s) implementam emissao de credito — feche o item."; exit 1; }
+  echo "aberto: SLA promete credito automatico como remedio exclusivo e ZERO codigo emite credito"'
+verify-means: |
+  open — o SLA promete crédito automático E nenhum arquivo de código implementa emissão
+  de crédito.
+
+  Vira DRIFTED por qualquer um dos dois reparos: implementar a emissão (o que o contrato
+  exige), ou emendar a cláusula para um remédio que a organização consiga cumprir (o
+  honesto). A escolha é jurídica e comercial.
+
+  O que NÃO decide, e admito: o descompasso de quatro tiers no SLA contra seis vendidos, e
+  a contradição do `terms.tsx:333` com `slaCredits: false`. São três documentos que
+  precisam concordar entre si, e um `verify` que os comparasse exigiria parsear a tabela
+  de preços — vale escrever junto com o reparo, não antes dele. Ficam registrados na prosa.
+
+  Owner: emenda de instrumento assinado.
+last-verified: 2026-08-30
+```
+
+### B-090 — o worker que processa Stripe, Clerk e DSR implanta a partir de `npm install` sem lockfile, e o portão de supply-chain é cego a ele
+
+O `signup-worker` é o handler vivo de cobrança (`webhooks/stripe.ts`), identidade
+(`webhooks/clerk.ts`), provisionamento (`webhooks/github_provision.ts`) e do consumidor de
+DSR (`webhooks/dsr_consumer.ts`).
+
+`signup-worker-deploy.yml:65` roda `npm install --legacy-peer-deps`, com o comentário da
+linha 61 explicando: *"`npm ci` cannot run — the lockfile is gitignored"*. Confirmado:
+`git check-ignore -v apps/signup-worker/package-lock.json` aponta `.gitignore:95`. Sem
+lockfile, cada deploy re-resolve a árvore do zero; sem `--ignore-scripts`, todo
+`postinstall` transitivo executa. O runner é auto-hospedado — é o Mac do fundador — e
+carrega as credenciais de deploy da Cloudflare no ambiente.
+
+**E o portão não vê.** O `.gitignore:93` diz *"npm lockfiles — this repo uses pnpm"*, e o
+`pnpm-audit.yml` varre o grafo resolvido pelo `pnpm`. O worker de cobrança sobe com uma
+árvore resolvida pelo `npm`: são grafos diferentes, e o que chega à produção é o que o
+portão não varre. As outras lanes acertam — `admin-ui-deploy.yml:93` e
+`cf-deploy-prod.yml:307` usam `pnpm install --frozen-lockfile`. O `signup-worker` é a
+única exceção, e é justamente o que carrega o segredo do webhook da Stripe. O
+`pnpm-audit.yml:24` ainda traz `TODO(flip-to-blocking)`.
+
+Reparo: commitar o lockfile do worker como exceção explícita ao `.gitignore:95`, e trocar
+por `npm ci --ignore-scripts`.
+
+```backlog
+id: B-090
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'w=.github/workflows/signup-worker-deploy.yml
+  [ -f "$w" ] || { echo "FALHA: a lane de deploy do signup-worker sumiu — reavalie o item."; exit 1; }
+  solto=0; grep -qE "npm install" "$w" && solto=1
+  ci=0; grep -qE "npm ci" "$w" && ci=1
+  noscripts=0; grep -q "ignore-scripts" "$w" && noscripts=1
+  lock=0; [ -f apps/signup-worker/package-lock.json ] && lock=1
+  if [ "$solto" = 0 ] && [ "$ci" = 1 ] && [ "$noscripts" = 1 ]; then
+    echo "FALHA: a lane usa npm ci com --ignore-scripts — feche o item."; exit 1; fi
+  echo "aberto: npm_install_solto=$solto npm_ci=$ci ignore_scripts=$noscripts lockfile_versionado=$lock"'
+verify-means: |
+  open — a lane de deploy ainda usa `npm install` solto, ou não passa `--ignore-scripts`.
+
+  Vira DRIFTED quando as três condições do reparo valerem juntas: sem `npm install`
+  solto, com `npm ci`, com `--ignore-scripts`. O AND é deliberado — pinar sem desligar
+  lifecycle scripts, ou desligar scripts sem pinar, deixa metade do buraco aberto, e num
+  worker que carrega o segredo do webhook da Stripe metade não serve.
+
+  O `lockfile_versionado` é reportado mas não gateado: `npm ci` já falha sem lockfile, então
+  gatear nele seria redundante.
+
+  O que NÃO decide, e admito: se o `pnpm-audit` passa a cobrir o grafo do signup-worker.
+  Essa é a metade "o portão é cego" e depende de decisão de tooling (unificar em pnpm, ou
+  adicionar uma lane npm-audit para este worker). Se a decisão for a segunda, vale item
+  próprio.
+last-verified: 2026-08-30
+```
+
+### B-091 — a cadeia de proveniência de release é não-funcional e o SBOM publicado tem três meses
+
+O `sbom.yml` falha em 8 de 8 por um defeito de uma linha: `cargo cyclonedx --all` escreve
+um arquivo por crate dentro de cada diretório, e o passo seguinte procura um único arquivo
+na raiz — `ls: sbom.cdx.json: No such file or directory`.
+
+No mesmo log, os 75 crates emitem *"invalid license expression (UNLICENSED)"*:
+`Cargo.toml:406` define `license = "UNLICENSED"`, que é convenção npm e não identificador
+SPDX válido. Para software proprietário o correto é `LicenseRef-…`.
+
+O SBOM que existe em `.sbom/cyclonedx-rust.json` foi commitado em 28 de maio e lista 413
+componentes; o `Cargo.lock` hoje tem 652. E `sbom.yml:39` declara
+`CYCLONEDX_CLI_LINUX_SHA256: "placeholder-pin-at-first-use"`, variável que não é usada em
+lugar nenhum e aparenta ser um pin de integridade.
+
+Cross-ref: a impossibilidade do SLSA L3 sem builder hosted é [B-031] (done, decisão
+registrada). Este item cobre o SBOM e o `UNLICENSED`, que são consertáveis sem gasto
+hosted.
+
+```backlog
+id: B-091
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'unl=0; grep -qE "^license[[:space:]]*=[[:space:]]*\"UNLICENSED\"" Cargo.toml && unl=1
+  ph=0; grep -q "placeholder-pin-at-first-use" .github/workflows/sbom.yml 2>/dev/null && ph=1
+  velho=0
+  if [ -f .sbom/cyclonedx-rust.json ]; then
+    comp=$(grep -o "\"bom-ref\"" .sbom/cyclonedx-rust.json 2>/dev/null | wc -l | tr -d " ")
+    lock=$(grep -c "^name = " Cargo.lock 2>/dev/null | tr -d " ")
+    [ "$comp" -gt 0 ] && [ "$lock" -gt 0 ] && [ "$comp" -lt "$((lock * 8 / 10))" ] && velho=1
+  fi
+  soma=$((unl + ph + velho))
+  [ "$soma" -gt 0 ] || { echo "FALHA: license SPDX valida, sem placeholder de pin e SBOM proximo do Cargo.lock — feche o item."; exit 1; }
+  echo "aberto: license_UNLICENSED=$unl placeholder_de_pin=$ph sbom_defasado=$velho (componentes=${comp:-na} vs Cargo.lock=${lock:-na})"'
+verify-means: |
+  open — o `Cargo.toml` ainda declara `UNLICENSED`, ou o `sbom.yml` ainda carrega o
+  placeholder de pin, ou o SBOM commitado tem menos de 80% dos pacotes do `Cargo.lock`.
+
+  Vira DRIFTED quando os três forem resolvidos. Usei o limiar de 80% em vez de igualdade
+  exata porque contagem de componentes CycloneDX e linhas `name =` do `Cargo.lock` não
+  batem uma a uma; o limiar detecta defasagem estrutural (413 vs 652 é 63%) sem reprovar
+  por diferença de método de contagem.
+
+  O que NÃO decide, e admito: se o `sbom.yml` volta a passar. A lane é hosted-blocked por
+  #1434, então gatear no verde dela acorrentaria este item a uma decisão de gasto do
+  owner. O defeito de uma linha no caminho do arquivo é consertável e testável
+  independentemente disso, e é o que este item cobra.
+last-verified: 2026-08-30
+```
+
+### B-092 — a documentação de entrada ensina SHA-256; o CAS é BLAKE3, e o primeiro PUT de todo cliente novo retorna 422
+
+`apps/docs/docs/intro.md` instrui SHA-256 nas linhas 10, 33 e 39. O
+`crates/corelink-hash/src/lib.rs:1` abre com *"CoreLink CAS digest types — BLAKE3"*. Um
+digest de algoritmo errado produz `422 HashMismatch`.
+
+O texto correto **já existe no próprio repositório**, em `apps/docs/docs/api/http.md:58`:
+*"Compute it with `b3sum` — **not** `sha256sum`."* A página de introdução — a primeira que
+um cliente lê — nunca recebeu a correção.
+
+É o defeito de menor esforço de reparo e maior consequência imediata da auditoria: quatro
+linhas separam todo cliente novo de um erro no primeiro comando.
+
+```backlog
+id: B-092
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'i=apps/docs/docs/intro.md
+  [ -f "$i" ] || { echo "FALHA: intro.md sumiu — reavalie o item."; exit 1; }
+  sha=$(grep -ciE "sha-?256|sha256sum" "$i" | tr -d " ")
+  b3=$(grep -ciE "blake3|b3sum" "$i" | tr -d " ")
+  [ "$sha" -gt 0 ] || { echo "FALHA: intro.md nao menciona mais SHA-256 — feche o item."; exit 1; }
+  [ "$b3" = 0 ] || { echo "FALHA: intro.md ja menciona BLAKE3/b3sum ($b3x) — reavalie: o reparo pode estar feito."; exit 1; }
+  echo "aberto: intro.md menciona SHA-256 em $sha lugar(es) e BLAKE3/b3sum em nenhum"'
+verify-means: |
+  open — a página de introdução ainda instrui SHA-256 e não menciona BLAKE3 nem `b3sum`.
+
+  Vira DRIFTED quando o BLAKE3 aparecer, que é o reparo. Uso a ausência de BLAKE3 em vez
+  de exigir zero menções a SHA-256 porque a página pode legitimamente citar SHA-256 ao
+  explicar a superfície Bazel (que aceita sha256 sob `bazel/sha256/`); o que não pode é
+  ensinar SHA-256 SEM ensinar BLAKE3.
+
+  Cross-ref: o texto correto já existe em `apps/docs/docs/api/http.md:58` e é de onde a
+  correção deve ser propagada, não reescrita.
+last-verified: 2026-08-30
+```
+
+### B-093 — quatro tetos diferentes para o tamanho de uma entrada de cache, e o do caminho de escrita nativo é o menor
+
+`main.rs:504` aplica `DefaultBodyLimit::max(10 MiB)` sobre o router inteiro. O Turbo se
+isenta com override próprio (`turbo_v8.rs:1080`, `TURBO_BODY_LIMIT_BYTES = 100 MiB`); o CAS
+nativo e as quatro rotas de escrita do Bazel não têm override — apenas comentários *sobre*
+o limite global. Os quatro tetos:
+
+| Superfície | Teto | Origem |
+|---|---|---|
+| CAS nativo + Bazel (escrita) | 10 MiB | `main.rs:504`, sem override |
+| Leitura do CAS (por objeto) | 64 MiB | `CAS_READ_MAX_OBJECT_BYTES` |
+| Turborepo | 100 MiB | `TURBO_BODY_LIMIT_BYTES` |
+| Bridge Bazel do cliente | 4 GiB | `MAX_BLOB_SIZE_BYTES` |
+
+O cliente Bazel valida um digest declarado de até 4 GiB e recebe 413 aos 10 MiB. O maior
+objeto existente hoje em produção tem **52,3 MB** (enumeração completa do
+`corelink-cas-prod` em 2026-08-26, registrada em `cas.rs:146`) — cinco vezes o teto de
+escrita atual.
+
+**Não é achado novo.** Está em `docs/security/2026-06-15-launch-due-diligence-audit.md`:
+*"[MEDIUM] Bazel CAS write inherits the global 10 MiB body limit (no per-route override) —
+Bazel build outputs >10 MiB cannot be cached."* Aberto há dois meses e meio. É o exemplar
+concreto de [B-101].
+
+O dano não é build quebrado — o Bazel reporta falha de upload como aviso e conclui. O dano
+é o cache silenciosamente não cachear exatamente os artefatos que valem a pena: os grandes.
+
+```backlog
+id: B-093
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'm=crates/corelink-container/src/main.rs
+  [ -f "$m" ] || { echo "FALHA: main.rs sumiu — reavalie o item."; exit 1; }
+  glob=0; grep -qE "GLOBAL_BODY_LIMIT_BYTES.*10[[:space:]]*\*[[:space:]]*1024[[:space:]]*\*[[:space:]]*1024" "$m" && glob=1
+  [ "$glob" = 1 ] || { echo "FALHA: o limite global de 10 MiB mudou — reavalie o item."; exit 1; }
+  ovcas=0; grep -q "DefaultBodyLimit" crates/corelink-container/src/routes/cas.rs 2>/dev/null && \
+    grep -qE "layer\(.*DefaultBodyLimit" crates/corelink-container/src/routes/cas.rs 2>/dev/null && ovcas=1
+  ovbz=0; grep -qE "layer\(.*DefaultBodyLimit" crates/corelink-container/src/routes/bazel_v2.rs 2>/dev/null && ovbz=1
+  if [ "$ovcas" = 1 ] && [ "$ovbz" = 1 ]; then
+    echo "FALHA: CAS e Bazel ja tem override proprio de body limit — feche o item."; exit 1; fi
+  echo "aberto: limite global 10 MiB ativo; override no cas.rs=$ovcas no bazel_v2.rs=$ovbz"'
+verify-means: |
+  open — o limite global de 10 MiB continua aplicado E pelo menos uma das duas superfícies
+  de escrita (CAS nativo, Bazel) não tem override próprio.
+
+  Vira DRIFTED quando as duas tiverem override, que é o reparo — subir o teto exige
+  orçamento de memória, e o precedente no repositório é o guard de concorrência do Turbo.
+  Cross-ref [B-077] e [B-056]: o teto novo tem que caber em 1 GiB.
+
+  O que NÃO decide, e admito: se os quatro tetos passam a ser COERENTES entre si. Detecta
+  a ausência de override, não o alinhamento com o `MAX_BLOB_SIZE_BYTES` de 4 GiB do bridge
+  do cliente. Alinhar os quatro é o reparo completo; este comando cobra o primeiro passo.
+last-verified: 2026-08-30
+```
+
+### B-094 — o material publicado promete gRPC e compatibilidade com Buck2; o código registra que nenhum dos dois existe
+
+A superfície Bazel é REAPI v2 **sobre REST**. O `crates/corelink-container/src/routes/bazel_v2.rs:331`
+anota: *"(Buck2 cannot use these routes — it speaks REAPI over gRPC only.)"* Não há
+servidor gRPC no produto.
+
+O material comercial afirma o contrário. Isto compõe com a nota já registrada no
+repositório sobre hostnames publicados que não resolvem.
+
+Reparo: alinhar o material ao que existe (REAPI v2 sobre REST, sem Buck2), ou registrar o
+gRPC como roadmap explícito em vez de capacidade presente.
+
+```backlog
+id: B-094
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  bash -c 'b=crates/corelink-container/src/routes/bazel_v2.rs
+  [ -f "$b" ] || { echo "FALHA: bazel_v2.rs sumiu — reavalie o item."; exit 1; }
+  admite=0; grep -qi "Buck2 cannot use these routes" "$b" && admite=1
+  [ "$admite" = 1 ] || { echo "FALHA: o codigo nao admite mais que Buck2 nao conecta — reavalie: o gRPC pode existir agora."; exit 1; }
+  promete=$(grep -rliE "buck2|gRPC" marketing/ 2>/dev/null | wc -l | tr -d " ")
+  [ "$promete" -gt 0 ] || { echo "FALHA: o material comercial nao promete mais gRPC/Buck2 — feche o item."; exit 1; }
+  echo "aberto: bazel_v2.rs admite que Buck2 nao conecta e $promete arquivo(s) de marketing prometem gRPC/Buck2"'
+verify-means: |
+  open — não há implementação gRPC no workspace E o material comercial ainda menciona
+  gRPC ou Buck2.
+
+  Vira DRIFTED por qualquer um dos dois reparos: corrigir o material (imediato), ou
+  implementar um servidor gRPC (caro, e é decisão de produto) — neste segundo caso a
+  linha de admissão do `bazel_v2.rs` sai junto e o comando falha por ali.
+
+  NÃO tento detectar "existe gRPC no workspace" automaticamente, e a razão é medida: as
+  duas tentativas anteriores falsearam. Grepar `tonic` casa os comentários que dizem que
+  gRPC NÃO está lá (`INV-BAZEL-NO-GRPC`), e `tonic` é dependência real do
+  `corelink-container` e do `corelink-reapi`; grepar `Server::builder()` casa o
+  middleware de timing-padding do axum. Nenhum predicado barato separa a máquina de gRPC
+  presente no workspace de um servidor gRPC servido ao cliente. Gateio no que é estável e
+  autoritativo: a admissão no código e a promessa no material.
+
+  O que NÃO decide, e admito: se a menção em `marketing/` é uma PROMESSA de capacidade
+  presente ou uma nota de roadmap corretamente rotulada. Gatear por presença de string dá
+  falso positivo se alguém escrever "gRPC está no roadmap para 2027". Quem fechar deve ler
+  as ocorrências e julgar; se sobrarem menções legítimas de roadmap, feche com nota em vez
+  de reescrever o comando para ignorá-las.
+
+  Owner: material comercial.
+last-verified: 2026-08-30
+```
+
+### B-095 — três defeitos funcionais na interface do cliente, dos quais o mais grave mente sobre residência
+
+**Pin de workspace.** `apps/admin-ui/src/components/customer/WorkspacesClient.tsx:161`
+diz ao cliente que Pin mantém o conteúdo *"exempt from eviction"* e é *"billed as a metered
+add-on ($5/mo per 100 GB pinned)"*. O handler
+(`crates/corelink-container/src/routes/workspaces.rs:286`) executa
+`UPDATE workspaces SET pinned = 1 - pinned` e nada mais; o cabeçalho da própria rota
+(:394) admite *"`pinned` = false until snapshot sizing/pinning land"*; e não existe medidor
+de $5/100 GB em código, SQL ou Stripe. Somando com [B-071], não há eviction da qual isentar.
+
+**Convite de time.** `TeamClient.tsx:36` oferece quatro papéis
+`["Owner","Admin","Developer","Viewer"]`; a migração `0074_team_member.sql:41` aceita
+`('owner','admin','member','viewer')`. O `customer_d1.rs:376` mapeia `"owner" | "admin" =>
+"admin"` e tudo mais para `member`, enquanto a resposta ecoa de volta o papel pedido. Dois
+dos quatro papéis oferecidos não existem, e o usuário vê confirmado o papel errado.
+
+**Flag `--region` do instalador.** `apps/get-corelink-worker/src/install.ts:191` — *"`--region`
+remains accepted on the command line as a no-op until a real config key exists for it"*. Um
+cliente com requisito de residência passa `--region=weur`, não recebe erro, e acredita ter
+fixado a região.
+
+O último é o mais sério: residência é a peça central de compliance do produto ([B-085],
+[B-086]), e a interface primária para escolhê-la mente silenciosamente.
+
+```backlog
+id: B-095
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'n=0; det=""
+  i=apps/get-corelink-worker/src/install.ts
+  if [ -f "$i" ] && grep -qi "no-op" "$i" && grep -q "region" "$i"; then n=$((n+1)); det="$det region-noop"; fi
+  t=apps/admin-ui/src/components/customer/TeamClient.tsx
+  if [ -f "$t" ] && grep -q "Developer" "$t"; then
+    m=migrations/d1/0074_team_member.sql
+    if [ -f "$m" ] && ! grep -qi "developer" "$m"; then n=$((n+1)); det="$det papel-developer-inexistente"; fi
+  fi
+  w=crates/corelink-container/src/routes/workspaces.rs
+  if [ -f "$w" ] && grep -q "pinned = 1 - pinned" "$w"; then n=$((n+1)); det="$det pin-e-so-toggle"; fi
+  [ "$n" -gt 0 ] || { echo "FALHA: os tres defeitos de interface sumiram — feche o item."; exit 1; }
+  echo "aberto: $n de 3 defeitos de interface persistem:$det"'
+verify-means: |
+  open — pelo menos um dos três defeitos persiste. Cada um é detectado pelo seu próprio
+  predicado: `--region` ainda documentado como no-op; papel `Developer` oferecido pela
+  interface e ausente do CHECK da migração; e o pin ainda sendo puro toggle.
+
+  Conta 3/2/1 em vez de exigir zero: consertar um reduz o número e o item permanece aberto
+  listando os que faltam. Progresso parcial aparece, e os três são independentes.
+
+  Vira DRIFTED quando os três forem resolvidos. Se a decisão for remover a promessa em vez
+  de implementá-la (remover `--region`, remover `Developer` da interface, remover o texto
+  de $5/100 GB), o comando também fecha — desfechos legítimos, porque a alegação é a
+  DIVERGÊNCIA entre o que a interface promete e o que o sistema faz.
+last-verified: 2026-08-30
+```
+
+### B-096 — o moat de efeito de rede existe, mas cobre seis imagens curadas, não o cache que é vendido
+
+Substitui um candidato refutado: o namespace `_public` é real e está armado em produção —
+`OCI_PUBLIC_DEDUP_ENABLED = "1"` nos cinco blocos, ao lado de `OCI_UPSTREAM_ON_MISS = "1"`.
+
+O que é verdade é mais estreito. A dedup entre tenants cobre **apenas a superfície OCI**, e
+apenas digests de uma allowlist assada no binário
+(`crates/corelink-container/src/public_base_allowlist.manifest`): seis pins curados —
+alpine, debian 12, ubuntu 24.04, node 22-slim, python 3.12-slim, mais o layer alpine
+original. Todo o resto — CAS nativo, Bazel, Turborepo, sccache, npm, pip, brew — é chaveado
+por `blob_key(region, tenant_prefix, digest, algo)` com
+`tenant_prefix = derive_prefix(secret_tdk, tenant_uuid)`, HMAC por tenant. Bytes idênticos
+em dois tenants ocupam duas chaves; o mesmo blob em cinco regiões ocupa cinco. É deliberado
+(camada 5 de `INV-TENANT-ISOLATION`) e correto do ponto de vista de isolamento.
+
+A tese comercial registrada no `CLAUDE.md` e no brief de expansão — *"mais clientes → cache
+mais cheio → mais rápido e mais barato para todos"* — descreve um efeito que hoje opera
+sobre seis imagens base. No caminho realmente vendido, o custo de armazenamento cresce com
+tenants × regiões, sem amortização.
+
+Não é defeito de código. É afirmação de estratégia que a arquitetura ainda não sustenta, e
+a diferença deveria estar escrita onde a tese está.
+
+```backlog
+id: B-096
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  bash -c 'm=crates/corelink-container/src/public_base_allowlist.manifest
+  hmac=0
+  grep -rq "tenant_prefix" crates/corelink-container/src/storage/r2_s3.rs 2>/dev/null && hmac=1
+  [ "$hmac" = 1 ] || { echo "FALHA: a chave do CAS nao usa mais tenant_prefix — reavalie o item."; exit 1; }
+  pins=0
+  [ -f "$m" ] && pins=$(grep -cE "^[[:space:]]*sha256:" "$m" 2>/dev/null | tr -d " ")
+  tese=0
+  grep -qiE "network-effect|efeito de rede|moat" CLAUDE.md 2>/dev/null && tese=1
+  ressalva=0
+  grep -qiE "(apenas|somente|only|restrito|limited).{0,40}(imagens base|OCI base|_public)" CLAUDE.md 2>/dev/null && ressalva=1
+  if [ "$tese" = 0 ] || [ "$ressalva" = 1 ]; then
+    echo "FALHA: a tese saiu do CLAUDE.md ou ja traz a ressalva de escopo — feche o item."; exit 1; fi
+  echo "aberto: CAS chaveado por HMAC per-tenant, allowlist com $pins pin(s), e a tese do moat no CLAUDE.md sem ressalva de escopo"'
+verify-means: |
+  open — o CAS continua chaveado por HMAC por tenant (logo sem dedup cross-tenant fora do
+  `_public`) E o `CLAUDE.md` afirma o efeito de rede sem registrar que ele hoje cobre só a
+  allowlist OCI.
+
+  Vira DRIFTED por qualquer um dos dois reparos: escrever a ressalva de escopo onde a tese
+  está (barato e honesto), ou ampliar a dedup para além da allowlist (decisão de
+  arquitetura que tensiona com `INV-TENANT-ISOLATION`).
+
+  O que NÃO decide, e admito: se a redação da ressalva é ADEQUADA. Detecta a presença de
+  palavras de escopo, não a qualidade da qualificação. Quem fechar deve ler.
+
+  Owner: é afirmação de estratégia, não de engenharia.
+last-verified: 2026-08-30
+```
+
+### B-097 — teto de escala em 200 tenants ativos por região, com o orçamento de vCPU da conta já comprometido
+
+A arquitetura é um contêiner `basic` (0,25 vCPU) por tenant ativo. O comentário do
+`wrangler.toml:503` documenta o teto com honestidade exemplar: *"The BINDING account limit
+is vCPU, NOT instance count […] against total_vcpu=1500 […] A first attempt at 2000
+(=500 vCPU/region) was REJECTED by CF ("Surpassed total account limits: ... vcpus"). Going
+higher — toward real 2000-user scale — requires a Cloudflare account-limit increase […];
+no config can exceed it."*
+
+Contabilidade atual: 5 regiões × 200 × 0,25 = 250 vCPU para o cache, mais 250 × 4 = 1000
+vCPU para a frota de runners. São **1250 de 1500 já alocados**. Ocioso escala a zero, então
+o teto é de tenants *concorrentemente* ativos, não de clientes totais.
+
+Não é defeito. É dependência de plataforma no caminho crítico do crescimento, já testada e
+recusada uma vez. Existe como item porque o tempo de resposta de um aumento de limite da
+Cloudflare não é controlado por nós, e descobrir isso quando o teto for atingido é tarde.
+
+```backlog
+id: B-097
+repo: corelink-server
+owner: owner
+status: open
+verify: manual
+verify-means: |
+  MANUAL, e declaro que o `verify` não decide a alegação.
+
+  A alegação tem duas metades e nenhuma é legível do repositório: o limite de conta vigente
+  na Cloudflare (`total_vcpu`, hoje 1500) e o número de tenants concorrentemente ativos em
+  produção. A primeira só a API/o painel da Cloudflare respondem; a segunda exige medir
+  produção.
+
+  Um `verify` que somasse `max_instances × 0.25` do `wrangler.toml` mediria a RESERVA
+  declarada, não o teto nem o consumo — passaria verde com o teto atingido e passaria
+  vermelho se alguém baixasse o `max_instances` por outro motivo. Portão dominado.
+
+  Procedimento de reverificação: confirmar `total_vcpu` da conta no painel; somar as
+  reservas declaradas (cache + frota de runners); e medir tenants ativos concorrentes em
+  produção. Fecha quando o aumento de limite for concedido, ou quando a arquitetura deixar
+  de ser um contêiner por tenant ativo.
+
+  Owner: pedir aumento de limite à Cloudflare é relação comercial com fornecedor.
+last-verified: 2026-08-30
+```
+
+### B-098 — dezoito worktrees vivem num diretório que o sistema operacional apaga, e uma delas tem trabalho não enviado
+
+Dezoito worktrees estão sob `/private/tmp`, sujeitas à limpeza periódica do macOS. O
+trabalho do PR #1439 está fisicamente num desses diretórios. Não toquei, porque é trabalho
+em andamento de outra sessão — mas precisa sair de lá.
+
+No mesmo eixo, medido em 2026-08-30: 154 branches locais (129 não mergeadas, 24 mergeadas e
+não apagadas), 87 remotas, e a seção `[Unreleased]` do CHANGELOG com 9.911 linhas sem que
+uma release jamais tenha sido cortada — zero tags semver, versão do workspace em `0.1.0`.
+Isto explica parte de [B-091]: a lane `cosign-sign` dispara em tag `v*`, e nunca houve uma.
+
+Itens menores que o mandato de impecabilidade cobre: o `CLAUDE.md` diz "~73 crates" (são
+75), "160 conceitos OKF" (são 165) e "485 specs" (são 486); a conta `gmhelmold` tem token
+inválido no keyring e está marcada como ativa no `gh`; e `corelink-runbook-tracker` é o
+único crate cujos lints copiados divergiram do workspace — faltam `print_stdout` e
+`print_stderr`.
+
+```backlog
+id: B-098
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'tags=$(git tag -l "v*" 2>/dev/null | wc -l | tr -d " ")
+  lints=0
+  f=crates/corelink-runbook-tracker/Cargo.toml
+  if [ -f "$f" ] && grep -q "workspace.lints" -r crates/corelink-runbook-tracker 2>/dev/null; then lints=0; else
+    if [ -f "$f" ] && grep -q "\[lints" "$f" && ! grep -q "print_stdout" "$f"; then lints=1; fi
+  fi
+  crates_reais=$(ls -d crates/*/ 2>/dev/null | wc -l | tr -d " ")
+  crates_doc=$(grep -oE "~?[0-9]+ Rust crates" CLAUDE.md 2>/dev/null | grep -oE "[0-9]+" | head -1)
+  drift=0; [ -n "$crates_doc" ] && [ "$crates_doc" != "$crates_reais" ] && drift=1
+  soma=$((lints + drift))
+  if [ "$tags" -gt 0 ] && [ "$soma" = 0 ]; then
+    echo "FALHA: existe tag semver, lints alinhados e CLAUDE.md com contagem correta — feche o item."; exit 1; fi
+  echo "aberto: tags_semver=$tags lints_divergentes=$lints claude_md_desatualizado=$drift (doc=${crates_doc:-na} real=$crates_reais)"'
+verify-means: |
+  open — não existe nenhuma tag semver, OU os lints do `corelink-runbook-tracker` divergem,
+  OU o `CLAUDE.md` declara um número de crates que não bate com a contagem real.
+
+  Deliberadamente NÃO gateia as worktrees em `/private/tmp` nem a contagem de branches: são
+  estado da máquina do desenvolvedor, não do repositório, e um `verify` que os medisse
+  falharia ou passaria conforme QUEM roda o CI — portão que depende do ambiente é ruído.
+  Ficam na prosa como instantâneo datado e como instrução operacional.
+
+  O que este comando decide é a parte que vive no repositório e é verificável em qualquer
+  clone. A parte das worktrees exige ação humana na máquina e está registrada acima.
+last-verified: 2026-08-30
+```
+
+### B-099 — o `CODEOWNERS` atribui revisão a dez times que o próprio arquivo admite não existirem
+
+O `.github/CODEOWNERS` nomeia dez handles distintos — `@HumanGuardrail/` seguido de
+`appsec`, `architects`, `docops`, `engineering`, `finance`, `founders`, `legal`,
+`marketing`, `privacy`, `sre-leads`. O cabeçalho do arquivo, linha 8, admite: *"Placeholder
+team handles (HumanGuardrail/*) — replace with concrete reviewer names per team once the
+GitHub org has the teams provisioned."* E a regra catch-all é rotulada *"Default owner —
+catch-all so nothing merges unreviewed."*
+
+Uma lane de diligência reportou `gh api orgs/HumanGuardrail/teams` retornando lista vazia;
+**não reconfirmei de forma independente** porque a cota da API do GitHub estourou durante a
+auditoria — registro como pendente de reverificação em vez de afirmar. A evidência local,
+porém, basta para o item: o arquivo diz que os handles aguardam provisionamento.
+
+Combinado com `required checks = []` na proteção de branch (registrado no próprio
+`CLAUDE.md`), a frase *"catch-all so nothing merges unreviewed"* descreve intenção, não
+controle. Importa porque [B-087] atesta "Y" em CCC-07.1 citando *"branch protection;
+CODEOWNERS"* como evidência.
+
+```backlog
+id: B-099
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'c=.github/CODEOWNERS
+  [ -f "$c" ] || { echo "FALHA: CODEOWNERS sumiu — reavalie o item."; exit 1; }
+  admite=0; grep -qi "placeholder team handles" "$c" && admite=1
+  times=$(grep -oE "@[A-Za-z0-9-]+/[A-Za-z0-9-]+" "$c" | sort -u | wc -l | tr -d " ")
+  [ "$admite" = 1 ] || { echo "FALHA: o arquivo nao admite mais handles placeholder — reavalie: os times podem existir agora."; exit 1; }
+  [ "$times" -gt 0 ] || { echo "FALHA: nao ha mais handles de time no CODEOWNERS — feche o item."; exit 1; }
+  echo "aberto: CODEOWNERS admite handles placeholder e atribui revisao a $times time(s)"'
+verify-means: |
+  open — o `CODEOWNERS` ainda carrega a admissão de que os handles são placeholder E ainda
+  atribui revisão a handles de time.
+
+  Vira DRIFTED por qualquer um dos dois reparos: provisionar os times na org (e remover a
+  nota de placeholder), ou substituir os handles por nomes concretos de revisores, que é o
+  que a própria nota instrui.
+
+  O que NÃO decide, e admito explicitamente: se os times EXISTEM na organização do GitHub.
+  Isso exige `gh api orgs/HumanGuardrail/teams`, que não roda no `backlog_verify` e cuja
+  cota estourou durante a auditoria. O comando decide a admissão registrada no arquivo, que
+  é evidência local suficiente para manter o item aberto, e não finge decidir o resto.
+
+  Reverificação pendente: rodar a chamada de API quando a cota permitir e anotar aqui.
+last-verified: 2026-08-30
+```
+
+### B-100 — os avisos de privacidade publicados, nos quatro idiomas, dirigem titulares a endereços de domínio reservado
+
+`apps/admin-ui/src/content/privacy-notice.{en,pt,es,de}` instruem contato em
+`privacy@corelink.example` e `dpo@corelink.example`. O TLD `.example` é reservado pela
+RFC 2606 e não entrega correio.
+
+Um titular exercendo direito do Artigo 15 ou 17, ou um regulador em contato inicial,
+escreve para o vazio. É reparo de substituição de string em quatro arquivos, e é visível a
+quem menos deveria vê-lo.
+
+```backlog
+id: B-100
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'n=$(grep -rlE "[a-z]+@corelink\.example" apps/ --include="*.ts" --include="*.tsx" --include="*.md" --include="*.mdx" 2>/dev/null | grep -v node_modules | wc -l | tr -d " ")
+  [ "$n" -gt 0 ] || { echo "FALHA: nenhum endereco @corelink.example resta em apps/ — feche o item."; exit 1; }
+  echo "aberto: $n arquivo(s) publicados ainda dirigem titulares a @corelink.example (TLD reservado, RFC 2606)"'
+verify-means: |
+  open — ainda existe pelo menos um arquivo sob `apps/` com endereço `@corelink.example`.
+
+  Vira DRIFTED quando o último sair, que é o reparo. Conta arquivos em vez de exigir os
+  quatro idiomas de uma vez: corrigir um reduz o número e o item permanece aberto — mas
+  corrigir só um idioma seria pior que não corrigir nenhum, porque cria divergência entre
+  as versões publicadas. Quem consertar deve fazer os quatro no mesmo commit.
+
+  Escopo deliberado em `apps/`: o endereço pode legitimamente aparecer em exemplos de
+  documentação interna ou em fixtures de teste, e reprovar por isso seria ruído. O que não
+  pode é estar no texto publicado ao titular.
+last-verified: 2026-08-30
+```
+
+### B-101 — auditorias anteriores levantaram 89 achados que nunca entraram no backlog, e o portão não pode enxergá-los
+
+O `BACKLOG.md` é a fonte declarada de verdade, cada item carrega um `verify`, e o
+`backlog_verify.py` falha em DRIFTED ou STALE. É um bom mecanismo. O problema é o que fica
+fora dele.
+
+Medido em 2026-08-30 — achados contados no documento, depois grepado o nome do arquivo no
+`BACKLOG.md`:
+
+| Documento | Achados | Refs no BACKLOG |
+|---|---|---|
+| `docs/security/2026-06-15-launch-due-diligence-audit.md` | 66 | 0 |
+| `reports/audits/2026-08-26-go-live-readiness.md` | 20 | 0 |
+| `docs/security/2026-07-02-pilot-identity-brutal-audit.md` | 3 | 0 |
+
+Verifiquei um deles até o fim: o teto de 10 MiB na escrita do Bazel ([B-093]), classificado
+MEDIUM em 15 de junho, continua verdadeiro dois meses e meio depois — sem item, sem prazo,
+sem dono.
+
+O portão está verde e continuará verde, porque só verifica itens que **estão** no backlog.
+Um achado nunca transcrito é invisível para ele por construção. Não é defeito do portão — é
+o limite dele, e explica por que tantos achados de qualquer auditoria nova já estavam
+escritos em algum lugar do repositório.
+
+**A regra que falta:** nenhuma auditoria fecha sem que cada achado vire item do backlog ou
+seja explicitamente recusado com motivo registrado. Os itens B-063 … B-102 são a aplicação
+dessa regra à auditoria de 2026-08-30 — quarenta achados, quarenta decisões.
+
+```backlog
+id: B-101
+repo: corelink-server
+owner: tl
+status: open
+verify: manual
+verify-means: |
+  MANUAL, e declaro explicitamente que **nenhum comando automático decide esta alegação**
+  — a regra deste arquivo exige admitir isso em vez de fabricar um portão conveniente.
+
+  A primeira versão que escrevi grepava o nome dos três documentos no `BACKLOG.md` e
+  contava os que não apareciam. Ela reprovou no primeiro `backlog_verify`, e reprovou pelo
+  motivo mais instrutivo possível: **os próprios itens B-062 … B-101 citam esses arquivos
+  em prosa**, então o grep passou a encontrá-los e o item se declarou resolvido sem que
+  nenhum dos 89 achados tivesse virado item. Um `verify` que conta a própria menção é
+  exatamente o portão dominado que este item existe para denunciar.
+
+  A alegação real é de COBERTURA: os 66 achados do documento de 2026-06-15, os 20 do de
+  2026-08-26 e os 3 do de 2026-07-02 estão rastreados como itens? Decidir isso exige
+  parsear os achados de cada documento e casá-los um a um com itens do backlog. Esse
+  casador não existe, e escrevê-lo é trabalho de verdade — provavelmente o reparo certo
+  para este item, e nesse dia este `verify: manual` deve ser substituído por ele.
+
+  Enquanto não existir, `manual` honesto é melhor que automático que decide outra coisa.
+
+  Procedimento de reverificação: abrir cada documento, listar seus achados, e conferir
+  quantos têm item correspondente. Fecha quando os três estiverem transcritos ou
+  explicitamente recusados. Decai em 14 dias como todo item manual — e é correto que decaia,
+  porque a resposta muda a cada auditoria nova que ninguém transcreve.
+
+  Nota: este item se aplica a si mesmo. A auditoria de 2026-08-30 está em B-062 … B-101
+  justamente para não virar a quarta linha daquela tabela.
+last-verified: 2026-08-30
+```
+
+### B-102 — um PUT no `/cargo` custa ~1,4s independente do tamanho, e é custo fixo por requisição
+
+Medido contra produção em 2026-08-30, tenant de dogfood `ee30f7ba-…`, PAT `cas:rw`:
+
+```
+PUT  1 KiB → 200  1.685s        GET  1 KiB → 200  0.696s
+PUT  8 MiB → 200  3.338s        GET  8 MiB → 200  1.684s
+PUT 12 MiB → 200  4.072s        GET 12 MiB → 200  2.888s
+
+5 PUTs de 1 KiB em série: 1.367  1.525  1.400  1.446  1.318
+```
+
+Média da série 1,411s, desvio ~0,08s. O custo não escala com o tamanho até 12 MiB, logo é
+por requisição e não por byte. Reproduz o `Average cache write 1.346 s` que a CI mediu no
+run 33326194312.
+
+**Proveniência da medição, e a correção que ela sofreu.** Os números vieram do Mac do
+owner, não de dentro da frota `runs-on: corelink` — a primeira coisa que a revisão
+adversarial atacou. Medi o componente de caminho para dimensioná-lo:
+
+```
+401 rejeitado na borda (não chega ao contêiner): 0.084 0.090 0.081 s
+GET /_health sem auth (200):                     0.078 0.085 0.079 s
+  connect=0.017s  tls=0.056s
+```
+
+O trajeto Mac→borda→Mac custa **0,08s**, ou seja **~6% dos 1,41s**. Da frota seria menor
+ainda, mas o trecho borda→contêiner→armazenamento é o mesmo. Equivalente estimado de
+dentro da frota: **~1,33s**. A objeção de local de medição foi testada e **não derruba a
+alegação** — a inflação é de 6%, não de um fator.
+
+Corroboração de que não é Argon2id: o primeiro PUT da sessão (1,685s) fica 0,275s acima da
+média da série, e 0,275s é praticamente o custo de um Argon2id frio que o #1027 mediu
+(~270ms) e o #1022 memoizou. A memoização funciona; o 1,4s residual é outra coisa, ainda
+não nomeada.
+
+**Cuidado com a comparação fácil.** É tentador dizer "guardar custa 2x compilar" contra o
+`Average compiler 0.678 s`. A frase vale para o caminho de MISS e não descreve a economia
+agregada — ver [B-105], que mede a conta inteira e cuja causa **não** é este item.
+
+```backlog
+id: B-102
+repo: corelink-server
+owner: tl
+status: open
+verify: manual
+verify-means: |
+  MANUAL, e declaro que nenhum comando do `backlog_verify` decide isto — a alegação é
+  sobre latência de produção sob credencial, e o gate roda sem credencial de plano de
+  dados.
+
+  Um `verify` que cronometrasse a borda sem autenticação mediria 0,08s e passaria verde
+  para sempre, medindo o trajeto e não o caminho de escrita. Portão dominado.
+
+  Procedimento: PAT `cas:rw` no tenant de dogfood, cinco `PUT` de 1 KiB em série
+  cronometrados, e reportar a média. Fecha quando a média cair com folga abaixo de 0,5s
+  medida de dentro da frota — número escolhido para deixar o cache com margem real sobre
+  o `Average compiler 0.678 s`, não para ser fácil de atingir.
+
+  **Caminho para tornar automático:** já existe `cargo-cache-latency-probe.yml`
+  (`workflow_dispatch`, hoje só GETs, com acesso ao secret `CORELINK_SCCACHE_TOKEN`).
+  Estender essa lane com um PUT cronometrado e um teto que reprova transforma este item
+  num portão de verdade, medido de dentro da frota, que é onde o número importa. Quem
+  fizer isso deve substituir este `manual`.
+last-verified: 2026-08-30
+```
+
+### B-103 — o caminho de escrita do `/cargo` falha em 87% sob paralelismo e 0% em série
+
+Dois fatos que precisam ser explicados juntos. Em série, contra produção, hoje: cinco
+PUTs, cinco 200, zero falhas ([B-102]). Na CI, com o sccache escrevendo em paralelo
+(run 33326194312, `tenant-path`, PR #1443):
+
+```
+Cache misses          220
+Cache write errors    191      ← 87%
+Cache read errors       0
+```
+
+`read errors = 0` com `write errors = 191`, mesmo token, mesmo host, mesmo TLS. Isso
+exclui rede genérica e credencial: é específico do caminho de escrita, sob concorrência.
+
+**Hipóteses alternativas testadas na revisão adversarial, e o que sobrou:**
+
+- *Quota / byte-accounting estourado.* `cargo.rs:133` chama `resolve_storage_cap` em todo
+  PUT, e um teto atingido explicaria "leitura ok, escrita não" sem concorrência nenhuma.
+  **Refutada pela própria medição:** os PUTs em série de hoje, no mesmo tenant, deram 200.
+  Um teto duro teria reprovado os seriais também.
+- *Timeout do cliente sccache.* Se a escrita custa 1,4s e o cliente desiste antes, os erros
+  aparecem sem qualquer saturação do servidor. **NÃO refutada** — não encontrei
+  configuração de timeout no workflow e não medi o default do backend WebDAV do sccache.
+  É a alternativa viva mais forte, e distingue-se da saturação por um teste barato:
+  poucas escritas concorrentes (2 a 4). Se falharem na mesma proporção, é timeout de
+  cliente, não saturação.
+- *Corrida no auto-seed da linha de quota.* `cargo.rs:104` documenta que a linha
+  `tenant_storage_state` se auto-semeia com o teto real na PRIMEIRA escrita. 220 primeiras
+  escritas concorrentes disputando a semeadura da mesma linha é um mecanismo concreto de
+  falha sob paralelismo, mais acionável que "satura". **Não testada.**
+
+**Medição de concorrência, 2026-08-30, contra produção:**
+
+```
+conc=4    4/4   ok    wall  5,4s  →  0,74 req/s
+conc=16   16/16 ok    wall 10,2s  →  1,57 req/s
+conc=64   60/64 ok    wall 33,4s  →  1,92 req/s   (4 × HTTP 429)
+```
+
+Isso decide duas coisas e abre uma terceira.
+
+**As falhas são 429, não 5xx** — o caminho de escrita não quebra, é o nosso próprio
+limitador que recusa. Mata definitivamente "escrita quebrada".
+
+**Mas o número não fecha com a configuração.** `crates/corelink-ratelimit/src/tier.rs`
+declara `TEAM_REFILL_RPS = 200` e `TEAM_BURST = 1000`; 64 requisições não deveriam encostar
+em nada. Ou o tenant de dogfood não resolve para o tier Team, ou o balde não é por tenant
+como se presume. Ver [B-080], que documenta que o mapeamento de tier tem fallbacks em
+ambas as direções — inclusive um rótulo desconhecido caindo em `Tier::Team`.
+
+**E o achado maior não é o 429, é a vazão.** Concorrência multiplicada por 16 e a vazão
+subiu 2,6x; satura em **~2 req/s**, que é **1% dos 200 rps autorizados**. Mais nítido
+ainda no extremo barato: em série a vazão é `1/1,41 = 0,71 req/s` e com concorrência 4 é
+0,74 req/s — **concorrência 4 entrega ganho praticamente zero.** Isso é assinatura de
+**serialização** em algum ponto do caminho de escrita, ANTES do limitador. Um limitador
+recusa rápido com 429; ele não enfileira.
+
+A cadeia que os dois conjuntos de dados sustentam: serialização ⇒ ~2 req/s ⇒ as 220
+escritas paralelas do sccache levam ~110s ⇒ qualquer timeout razoável do cliente estoura
+⇒ os 191 erros. A hipótese de timeout de cliente, que a revisão adversarial não conseguiu
+refutar, fica mais forte com a vazão medida. A de corrida no auto-seed continua viva e
+agora tem companhia: seja o que serializa, está antes do limitador.
+
+**Nenhuma causa está nomeada, de propósito.** O que serializa ainda não foi identificado.
+
+```backlog
+id: B-103
+repo: corelink-server
+owner: tl
+status: open
+verify: manual
+verify-means: |
+  MANUAL, e admito que não decide — pela mesma razão de [B-102] (exige credencial de
+  produção) e por uma segunda, mais séria: **eu não sei ainda qual das três causas é a
+  verdadeira**, e um `verify` escrito para a causa errada passa verde com o defeito vivo.
+
+  A etapa 1 já foi executada em 2026-08-30 e está registrada acima: o joelho fica em
+  ~2 req/s e as falhas são 429. Falta a etapa 2 — ler o log do servidor durante a rajada,
+  SEM filtro. `wrangler tail --search` retorna zero com a linha presente (comportamento
+  conhecido), então filtrar aqui esconde exatamente a evidência que decide o que serializa.
+
+  ⚠️ **A medição atual é do pin `4f9313e0`, não da `main`** — produção estava 43 commits
+  atrás quando ela foi feita (ver [B-062]). O fix do mapa de tombstone (#1431, balde
+  drenado que voltava cheio ao ser evictado) NÃO estava em produção, e o repin está aberto
+  em #1445. **Remedir depois do roll antes de fixar qualquer teto ou nomear causa:** parte
+  do 429 pode desaparecer sozinha, e atribuir causa antes disso é escolher a explicação
+  errada com número certo.
+
+  Fecha quando N PUTs concorrentes (N na ordem dos 220 do sccache) tiverem taxa de falha
+  zero. Enquanto a causa não estiver nomeada, este item NÃO deve receber conserto — o
+  primeiro reparo escolhido por intuição vai mirar a hipótese errada.
+last-verified: 2026-08-30
+```
+
+### B-104 — um 404 autenticado no `/cargo` levou 3,3s, e é o resíduo que o piloto de agosto nunca explicou
+
+Uma das medições de 2026-08-30 registrou `GET → 404 em 3.318s` num caminho inexistente,
+com credencial válida.
+
+Isto é **2,4 vezes** o custo de um PUT bem-sucedido de 1 KiB (1,41s, [B-102]) — e um miss
+faz estritamente menos trabalho que uma escrita: não grava bytes, não toca contabilidade
+de armazenamento, não semeia linha de quota. Um caminho que faz menos e custa mais é o
+sintoma de que há trabalho no caminho de miss que ninguém enumerou.
+
+Histórico que torna isso pior: o #1033 registrou ~300ms num 404 autenticado puro, disse
+explicitamente que **não era Argon2id** (o #1027 mediu, o #1022 memoizou) e que **não
+estava medido**. Se hoje são 3,3s, ou aquele resíduo piorou por um fator de dez, ou existe
+uma segunda causa somando-se a ele. As duas leituras exigem medição, não escolha.
+
+Registro de honestidade: é **uma** amostra. Pode ser anomalia de rede, de instância fria,
+ou de contenção momentânea. Está aqui como item e não como conclusão porque uma medição
+isolada que contradiz o modelo é exatamente o que não se deve descartar nem promover.
+
+```backlog
+id: B-104
+repo: corelink-server
+owner: tl
+status: open
+verify: manual
+verify-means: |
+  MANUAL — exige credencial de produção, como [B-102] e [B-103].
+
+  Procedimento: dez GETs autenticados em caminhos inexistentes, cronometrados, reportando
+  mediana e p90. A amostra de dez é o mínimo para separar anomalia de comportamento: se a
+  mediana ficar perto de 0,3s e só houver um outlier em 3,3s, o item vira anomalia de rede
+  e fecha; se a mediana ficar acima de 1s, o resíduo de agosto piorou e o item é real.
+
+  Não fixo teto numérico antes de ter a distribuição — fixar limiar a partir de uma única
+  amostra é escolher o número que confirma a suspeita.
+
+  Fecha quando a mediana de um 404 autenticado for compatível com o resíduo de ~300ms que
+  o #1033 registrou, ou quando a causa do excesso for nomeada e virar item próprio.
+last-verified: 2026-08-30
+```
+
+### B-105 — o cache de build custa mais do que economiza, e a causa NÃO é o caminho de escrita
+
+`docs/internal/secrets-checklist.md`, linha 188, registrado em 2026-08-03 sobre a
+superfície `/cargo` com o token de dogfood:
+
+> engaged runs recorded 189 hits / 638 misses and then **827 hits / 0 misses (100 % hit
+> rate) with 0 cache/read/write errors** […] even at a 100 % hit rate the lane ran **631 s
+> against a 409-423 s no-cache baseline**, so the cache cost more than it saved.
+
+É item de **produto**, não de CI: o CoreLink é vendido como cache de build e, no caso
+perfeito — hit total, erro zero — perdeu para compilar frio por ~210s.
+
+**A aritmética, e por que ela desmente a explicação óbvia.** Dos números da própria CI:
+
+| Operação | Custo |
+|---|---|
+| Compilar o artefato (`Average compiler`) | 0,678 s |
+| Ler do cache num hit (`Average cache read hit`) | 0,527 s |
+| Escrever no cache num miss (`Average cache write`) | 1,346 s |
+
+Um hit economiza `0,678 − 0,527 = **0,151 s**`. Um miss custa `+1,346 s`. A taxa de acerto
+de equilíbrio é `1,346 / (1,346 + 0,151) ≈ **90%**` — só para empatar.
+
+Agora o ponto que a revisão adversarial encontrou e que **derruba a explicação natural**:
+na corrida de agosto foram **827 hits e ZERO misses**. Zero misses significa **zero
+escritas**. Um custo de escrita de 1,4s, por maior que seja, não pode explicar uma perda de
+210s numa corrida onde nada foi escrito. **[B-102] não é a causa deste item.** O modelo
+acima previa uma ECONOMIA de `827 × 0,151 ≈ 125 s`; a realidade foi uma perda de ~210s.
+Sobram **~335s de custo que nenhuma das três médias explica.**
+
+E o número mais desconfortável do conjunto está na tabela e não depende nem de escrita nem
+de concorrência: **ler do cache custa 0,527s contra 0,678s para simplesmente compilar** —
+o cache é apenas **22% mais barato que fazer o trabalho**. Para um cache de build, cuja
+proposta de valor é que um acerto seja ordens de grandeza mais barato que compilar, 22%
+não sustenta o produto. Essa razão é o item real, e ela vale mesmo que [B-102] e [B-103]
+sejam consertados amanhã.
+
+```backlog
+id: B-105
+repo: corelink-server
+owner: owner
+status: open
+verify: manual
+verify-means: |
+  MANUAL, e é o item onde um `verify` automático seria mais perigoso: a alegação é uma
+  comparação entre a duração de uma lane COM e SEM cache, e nenhuma das duas está no
+  repositório — vivem no histórico de execuções do GitHub.
+
+  Procedimento: rodar a mesma lane com `CORELINK_SCCACHE_PILOT` ligado e desligado, na
+  mesma máquina, e comparar a duração total. Fecha quando a corrida com cache for
+  consistentemente MAIS RÁPIDA que a sem, por margem que sobreviva à variância do runner.
+
+  **Não fecha por conserto de [B-102] nem de [B-103].** Está registrado acima por que: a
+  corrida de agosto teve zero escritas e ainda assim perdeu 210s. Levar a escrita a custo
+  zero deixa este item intacto. O que decide é a razão leitura-versus-compilação (0,527s
+  contra 0,678s) e os ~335s não explicados — e ambos exigem número novo, não esperança.
+
+  Owner, não tl: a decisão que este item alimenta é se o produto vendido como cache de
+  build entrega aceleração no caso perfeito. É pergunta de produto.
+last-verified: 2026-08-30
+```
