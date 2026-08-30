@@ -217,3 +217,107 @@ não-herdadas. Falha herdada é nomeada e rastreada, nunca ignorada.
 **Leitura do lead:** o valor do handoff não é a lista — é a confissão final,
 *"os 3 PRs mergeados podem ter regressões"*. Podiam e tinham. A ordem correta é
 **consertar o que quebrou → re-cortar → então blindar**, nunca o inverso.
+
+---
+
+# PARTE II — Inventário completo (consolidado após 3 relatórios)
+
+> A Parte I foi escrita antes de dois relatórios chegarem. Esta parte consolida
+> **tudo** que está aberto, de **todas** as fontes, verificado contra `origin/main`.
+> Regra: nada some. Todo item tem destino explícito.
+
+## II.1 — O briefing original de 15 WPs: status medido
+
+Medido pela convenção de branch do próprio briefing (`claude/fix-<WP>`).
+
+| Estado | WPs | Observação |
+|---|---|---|
+| ✅ Mergeados | A, B, C, D1, E, F1, K | 7 de 15 |
+| ✅ Mergeado por OUTRA campanha | **G** (#1379) | Duplicação: a auditoria Edition-2.0 chamou o mesmo defeito de "F-020". Dois nomes, um defeito, trabalho duplicado não contabilizado. |
+| 🔴 Abertos e **TODOS defeituosos** | F2, H, I, J, L, M | 6 de 6. Ver II.2. |
+| ⚪ Nunca iniciado | **D2** (replay de webhook) | Dependia do D1, que **está mergeado** desde então. Desbloqueado, não feito. |
+
+## II.2 — Os 6 WPs abertos: defeito nomeado por PR
+
+Cada um auditado **e refutado** (dupla verificação independente).
+
+| PR | WP | Defeito confirmado |
+|---|---|---|
+| #1399 | L | **Não compila** (`too_many_arguments`). Além disso o consumidor (`audit_drain_cron.ts`) **nunca lê** o campo corrigido — o fix é invisível em produção. |
+| #1400 | J | **Não compila** (`single_component_path_imports`). Conserta um fail-open e **abre outro**: `deleted` sem `status` retorna `Ok(())`, some da fila de recuperação, e a Stripe nunca reenvia. |
+| #1402 | H | Deixa **dois workflows estruturalmente inválidos** — `workflow_dispatch` des-indentado para fora de `on:`. `actionlint` vermelho. Os 19 grupos de concorrência são estáticos, não chaveados por ref: dois PRs cancelam o gate um do outro. |
+| #1396 | M | **Viola instrução explícita do contrato.** O briefing exigia PROVA antes de conserto e "PARE se não provar". O teste existe mas **passa vaziamente** — nunca afirma que a chave-vítima foi removida. E o fix recria o mapa sem limite que diz consertar. |
+| #1398 | I | I.1 atinge **todo tenant sem tier resolvido** — o estado normal do plano gratuito — com ida a D1 em **toda** requisição, num hot path medido em ~95 ms. |
+| #1395 | F2 | O teste **nunca executou** (6 checks, PR conflitante). Contém asserção morta (`.length` sobre booleano → sempre passa). Risco de deploy: chave com newline vira 503 duro em todo o plano PAT. |
+
+**Nenhum entra sem conserto.** Ordem forçada: `#1395 → #1396 → #1398` é pilha acidental — mergear um mergeia os três.
+
+## II.3 — Cegueira estrutural de portões (o padrão dominante)
+
+Quatro portões que **não conseguem ver aquilo que existem para pegar**. Passam verde
+enquanto o defeito existe — pior que não ter portão, porque produzem confiança.
+
+| Portão | Cegueira | Destino |
+|---|---|---|
+| OKF `CITE_RE` | Regex exige caminho ⇒ nunca casa citação abreviada `:N-M` | **B-059** (aberto) |
+| OKF C5 | Valida **posição**, não correspondência semântica — citação pode apontar para rota errada e ficar verde para sempre | **novo item** |
+| `sdk-artifacts` | Filtrado por `apps/docs/**` ⇒ **nunca dispara no PR que causa** a defasagem | **novo item** |
+| Espelho CF-1 | Unidirecional (migrations→registry) ⇒ tabela fantasma no registro é invisível | **B-060** (aberto) |
+
+**Contra-exemplo a imitar:** o C10b **recusa** seed cujo conceito não cite o arquivo —
+ou seja, recusa auto-certificação. É o desenho correto; usar como referência ao
+consertar os outros quatro.
+
+## II.4 — Integridade do OKF
+
+| Item | Medido |
+|---|---|
+| 13 conceitos com `checkpoint_sha` **órfão de squash** | `git merge-base --is-ancestor` falha nos dois SHAs |
+| `index.md` gerado afirma **162**; disco tem **165** | Defasado em 3; é o índice que uma pessoa navega |
+| `planes/container.md:132` cita `main.rs:661-681` como mount do archive | É a **rota de quota**; o archive mounta em 622-639 |
+
+## II.5 — Decisões que são do owner (não implementar)
+
+| # | Item | Estado verificado |
+|---|---|---|
+| OWNER-1 | GC nunca executa; `blob_meta` sem escritor no binário deployado | Confirmado; já documentado em ADR no próprio HEAD |
+| OWNER-2 | 13 arquivos `gc_worker/` "sem backup em lugar nenhum" | ⚠️ **RESOLVIDO por acidente** — sumiram do disco mas estão em `c98ca0f4`, varridos pelo `git add -A` do #1397. **O defeito preservou o trabalho.** Arquivar antes de descartar o #1397. |
+| OWNER-3 | Herança de `[triggers]` põe cron de chaos em prod | **NÃO adicione handler `scheduled()`** — hoje é inerte só por isso |
+| OWNER-4 | Reembolso/disputa não revogam acesso | Decisão de política de produto |
+| OWNER-5 | Sem reconciliação de entitlement Stripe↔D1 | Trabalho novo, custo recorrente |
+| — | **Branch protection ausente nos 3 repos** (`403 Upgrade to GitHub Pro`) | Nada do lado do GitHub impede merge. O portão é inteiramente disciplina. |
+| — | Respostas de compliance revertidas (`Y→N`) em questionários já enviados a clientes | Exposição contratual — counsel |
+| — | Add-on BYOK a $99/mês para funcionalidade que retorna **501** | Comercial/legal |
+| — | Commit com assinatura DCO fabricada na `main` local do checkout raiz | Contido (não está em ref remota); descartar |
+
+## II.6 — Declarados NÃO VERIFICADOS (verificar, não implementar)
+
+O briefing original os deixou de fora **de propósito**. Continuam abertos como
+desconhecidos declarados — não como resolvidos.
+
+- **MED-3** — pad de timing duplicado entre middleware e verifier
+- **MED-4** — propagação de scope/`find_only` com até 60 s de staleness, sem ADR
+- **PERF-1** — alegação de 2 inserts D1 síncronos inline por operação de cache
+  (~100–400 ms). Mesmo se verdadeira, o trade-off é arquitetural: fire-and-forget
+  enfraquece o invariante audit-before-mutation. **Não é conserto óbvio.**
+- **Toda a lista LOW** — dado o índice de erro do relatório original (base errada,
+  2 linhas de tabela falsas, 2 achados apontando para arquivos inexistentes), tratar
+  cada item como não verificado.
+
+## II.7 — Higiene de CI (medida)
+
+| Item | Número |
+|---|---|
+| Lanes com **zero sucesso na vida inteira** | 5 workflows, **1.057 execuções** |
+| `cosign-sign.yml` — assinatura de release | **0 execuções na vida**, apesar de gatilho `push` |
+| `cas-canary` | Job hosted `skipped` ⇒ workflow **verde sem testar** o caminho off-fabric |
+| Crons redundantes (já cobertos por PR/push) | 5 |
+| `docs/internal/sdk-publishing.md` | **Não existe** — mas é o único doc que a mensagem de erro do portão manda ler |
+
+## II.8 — O que ainda NÃO tem dono
+
+1. **WP-D2** (replay de webhook) — desbloqueado, nunca iniciado
+2. **Re-corte do devenv** — 1.377 linhas úteis de 28.642
+3. Os **4 consertos de cegueira de portão**
+4. **Verificação** de MED-3, MED-4, PERF-1 e da lista LOW
+5. Um **quarto relatório** ainda por chegar
