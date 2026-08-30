@@ -3258,7 +3258,7 @@ verify-means: |
 last-verified: 2026-08-29
 ```
 
-### B-119 — o id do BACKLOG e um contador compartilhado sem mecanismo, e colidiu 4x num dia
+### B-122 — a DENSIDADE de ids torna a colisao inevitavel, nao evitavel
 
 Quatro colisoes em 2026-08-30, todas iguais: uma sessao escreve um item, o PR
 espera na fila, outra sessao leva o id, e **nada avisa**. Duas adicoes em
@@ -3269,38 +3269,54 @@ proprio arquivo; e a quebra so aparece quando o CI monta `refs/pull/N/merge`.
 A regra "aloque o id no push" ja estava em vigor nas quatro. Ela pede **atencao
 onde falta mecanismo**, e atencao nao escala para N sessoes concorrentes.
 
-Tres direcoes, com o custo de cada uma:
+**A causa nao e o contador, e a DENSIDADE.** O `backlog_verify.py` reprova com
+`FATAL: BACKLOG.md is missing B-NNN — ids must be dense`. Isso elimina toda
+estrategia de alocacao de uma vez:
 
-**(a) Faixa reservada por sessao.** Cada sessao recebe um bloco (ex.: 200-299).
-Custo: precisa de um alocador de faixas — o mesmo problema um nivel acima, com
-o agravante de que faixas orfas de sessoes mortas nunca sao reclamadas.
-Avaliacao: remendo.
+- **Faixa por sessao** viola densidade por construcao (deixa buraco entre faixas).
+- **Id por conteudo** viola densidade por construcao (nao ha sequencia).
+- **Alocar no push** nao resolve: o vencedor da corrida so e conhecido no MERGE.
 
-**(b) Id derivado de conteudo** (hash curto do titulo, como as ancoras
-`source_blobs` ja fazem). Resolve de raiz e casa com a cultura da casa —
-`checkpoint_sha` sequencial orfana no squash e por isso o blob venceu. Custo
-real: os ids deixam de ser ordenaveis e legiveis, e **todo `verify:` e toda
-referencia cruzada existente passa a citar um hash** — sao 118 itens e dezenas
-de `[B-0xx]` no corpo. Migracao grande e irreversivel na pratica.
+Duas PRs concorrentes que adicionem item **nao podem ambas estar certas**. A
+segunda a mergear renumera, sempre. Isso e propriedade do formato, nao lapso de
+quem escreve — e quem escreveu a regra de densidade provavelmente nao previu
+duas sessoes escrevendo em paralelo.
 
-**(c) Manter o id legivel e mover a deteccao para antes do merge.** O
-`backlog_verify` **ja detecta** o duplicado — o defeito e so que roda tarde. O
-check roda contra `refs/pull/N/merge`, entao **enxerga** a main atualizada; o
-que falta e re-executar obrigatoriamente depois que um irmao mergeia. Custo:
-configuracao de branch protection, nao codigo. Avaliacao: melhor custo-beneficio
-dos tres.
+**Prova de que a coordenacao virou manual:** ao preparar este proprio item eu
+tentei deixar 119-121 livres para a guardia e **nao consegui** — cinco itens meus
+com um buraco de tres reprovam no `FATAL ... must be dense`. Tive de ocupar
+119-123 contiguos, colidindo com o que ela ja tinha reservado. No mesmo dia,
+tres sessoes distintas trocaram mensagens so para dividir numero: a guardia
+reservou 119-121, a `quizzical-varahamihira-6c5bac-17` reivindicou 125, e eu
+precisei anunciar 119-123. **O formato exige um canal humano de sincronizacao
+para uma operacao que devia ser mecanica.**
 
-⚠️ Uma refutacao a (c) que precisa ser respondida antes de escolher: **este repo
-nao tem branch protection** — `GET /branches/main/protection` devolve 403
-"Upgrade to GitHub Pro or make this repository public". Se "re-executar apos
-merge do irmao" depende de required-checks, a opcao (c) **nao e configuravel
-hoje**. Ou vira um passo no `pre-merge-gate-check.sh` (que e o unico portao real
-que existe aqui), ou nao existe.
+Tres saidas reais:
+
+**(1) Manter a densidade e MECANIZAR a renumeracao** como passo de merge, dentro
+do `pre-merge-gate-check.sh` — que ja e o unico caminho de merge e ja conhece o
+estado da `main`. Menor delta, e preserva o que a densidade compra: item apagado
+em vez de resolvido vira buraco visivel.
+
+**(2) Trocar densidade por MONOTONICIDADE** — ids nunca reusados, buracos
+permitidos, e o gate passa a exigir que todo id ja emitido continue presente.
+Preserva exatamente a garantia que motivou a densidade (nada some em silencio) e
+remove a unica propriedade que causa colisao. Custo: um registro do maior id ja
+emitido, ou varredura do historico do git.
+
+**(3) Id por conteudo**, e a densidade morre junto. Custo: ids deixam de ser
+ordenaveis e legiveis, e os 123 itens mais dezenas de `[B-0xx]` no corpo passam
+a citar hash. Migracao grande e irreversivel na pratica.
+
+⚠️ Uma refutacao a qualquer saida que dependa de required-checks: **este repo nao
+tem branch protection** — `GET /branches/main/protection` devolve 403 "Upgrade
+to GitHub Pro". Portanto a mecanizacao da (1) tem de viver no
+`pre-merge-gate-check.sh`, nao em configuracao do GitHub.
 
 Decisao do lead pendente. Nao implementar antes.
 
 ```backlog
-id: B-119
+id: B-122
 repo: corelink-server
 owner: tl
 status: open
@@ -3317,7 +3333,7 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-120 — `protoc` falta na imagem da frota e toda lane que toque o fecho do auth paga a instalacao
+### B-123 — `protoc` falta na imagem da frota e toda lane que toque o fecho do auth paga a instalacao
 
 `corelink-reapi` tem build script que exige `protoc`, e a imagem da frota
 (`corelink-runners/deploy/runner/Dockerfile`) nao o traz — ela instala Rust
@@ -3339,7 +3355,7 @@ neste repo. Registrado para nao virar divida silenciosa: o workaround e
 invisivel no verde.
 
 ```backlog
-id: B-120
+id: B-123
 repo: corelink-runners
 owner: tl
 status: open
@@ -3358,7 +3374,7 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-116 — 50 dos 75 diretorios de crate nunca aparecem num `cargo test` (e o workspace tem 95 pacotes)
+### B-119 — 50 dos 75 diretorios de crate nunca aparecem num `cargo test` (e o workspace tem 95 pacotes)
 
 ⚠️ O DENOMINADOR: 75 e o numero de DIRETORIOS em `crates/`. O workspace tem
 **95 pacotes** — `cargo metadata --no-deps` conta 95, dos quais 20 vivem fora de
@@ -3398,7 +3414,7 @@ auth+pat incondicionais — 13 crates de piso, que ja arrastam `cas`, `server`,
 `worker`, `reapi`, `privacy` e `adapter-host`. Os demais seguem descobertos.
 
 ```backlog
-id: B-116
+id: B-119
 repo: corelink-server
 owner: tl
 status: open
@@ -3418,7 +3434,7 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-117 — as cinco de billing ficam fora do piso incondicional, e o custo esta medido
+### B-120 — as cinco de billing ficam fora do piso incondicional, e o custo esta medido
 
 `rust-affected-tests.yml` roda o fecho reverso do que o diff tocou, mais
 `corelink-auth` e `corelink-pat` sempre. As cinco de billing **nao** estao nesse
@@ -3438,7 +3454,7 @@ nomeavel: a regressao de billing apareceria DEPOIS do merge, possivelmente com
 outro PR ja em cima.
 
 ```backlog
-id: B-117
+id: B-120
 repo: corelink-server
 owner: tl
 status: open
@@ -3457,7 +3473,7 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-118 — a lane profunda precisa ser LIDA, senao vira decoracao
+### B-121 — a lane profunda precisa ser LIDA, senao vira decoracao
 
 `rust-deep-property.yml` roda as propriedades em intensidade cheia e os testes
 `#[ignore]`d. Ela e a rede que sustenta o recorte da lane de PR — se ficar
@@ -3469,7 +3485,7 @@ historicos**, varias rodando por meses sem que o vermelho movesse ninguem
 ([B-110], [B-113]). Lane agendada sem leitor e a mesma coisa.
 
 ```backlog
-id: B-118
+id: B-121
 repo: corelink-server
 owner: tl
 status: open
