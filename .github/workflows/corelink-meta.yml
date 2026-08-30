@@ -99,6 +99,42 @@ jobs:
         with:
           workspaces: ". -> target"
 
+      # ── sccache -> CoreLink `/cargo` (dogfood) ──────────────────────────
+      # `cargo`/`rustc` nao tem protocolo de cache remoto nativo — ao contrario
+      # de Bazel (REAPI, `routes/bazel_v2.rs`) e Turborepo (`routes/turbo_v8.rs`),
+      # que o CoreLink ja serve nativamente. sccache e a ponte: fala WebDAV, e
+      # `/cargo/<tenant>` e superficie NOSSA (`routes/cargo.rs`). O rustc deste
+      # CI compra cache do proprio produto.
+      #
+      # Tres guardas, todas fail-open — uma lane de PR nunca fica vermelha por
+      # causa do cache: sem a var do piloto o step nao roda; sem o secret (fork)
+      # sai 0 com notice; sem sccache na imagem sai 0 com notice.
+      # CARGO_INCREMENTAL=0 e obrigatorio: artefato incremental embute caminho
+      # por invocacao, o que faria o sccache guardar e nunca acertar.
+      - name: Point sccache at CoreLink (no-op without the secret)
+        if: vars.CORELINK_SCCACHE_PILOT == 'on'
+        env:
+          SCCACHE_TOKEN: ${{ secrets.CORELINK_SCCACHE_TOKEN }}
+          SCCACHE_TENANT: ee30f7ba-fc25-4d71-939e-ebe130b4c6a3
+        run: |
+          set -euo pipefail
+          if [ -z "${SCCACHE_TOKEN:-}" ]; then
+            echo "::notice::CORELINK_SCCACHE_TOKEN absent (fork PR?) — lane compiles cold, unchanged"
+            exit 0
+          fi
+          if ! command -v sccache >/dev/null 2>&1; then
+            echo "::notice::sccache not on the box image — lane compiles cold, nothing breaks"
+            exit 0
+          fi
+          {
+            echo "RUSTC_WRAPPER=sccache"
+            echo "CARGO_INCREMENTAL=0"
+            echo "SCCACHE_WEBDAV_ENDPOINT=https://corelink-api.humangr.com/cargo/${SCCACHE_TENANT}"
+            echo "SCCACHE_WEBDAV_TOKEN=${SCCACHE_TOKEN}"
+            echo "SCCACHE_IGNORE_SERVER_IO_ERROR=1"
+          } >> "$GITHUB_ENV"
+          echo "sccache -> CoreLink /cargo (fail-open)"
+
       - name: cargo clippy (corelink-meta, -D warnings)
         run: cargo clippy --package corelink-meta --all-targets -- -D warnings
 
@@ -110,6 +146,19 @@ jobs:
 
       - name: cargo test (canonical schema vectors — fast smoke)
         run: cargo test --package corelink-meta --test schema_canonical
+
+      # Nomeia o estado em que esta, em vez de imprimir o que encontrar:
+      #   RUSTC_WRAPPER unset -> a fiacao no-opou; esta lane compilou FRIO
+      #   hits == 0           -> paga round-trip e nao compra nada
+      #   hits > 0            -> a alegacao e verdadeira, com numero atras
+      - name: sccache stats (names the state, never guesses)
+        if: always() && vars.CORELINK_SCCACHE_PILOT == 'on'
+        run: |
+          if [ -z "${RUSTC_WRAPPER:-}" ]; then
+            echo "::notice::RUSTC_WRAPPER unset — a fiacao nao rodou; esta lane compilou FRIO"
+            exit 0
+          fi
+          sccache --show-stats || true
 
   wasm-build:
     name: WASM target build (CF Workers compile compatibility)
