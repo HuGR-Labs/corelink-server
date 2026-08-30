@@ -31,7 +31,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::audit::{TurboAuditEvent, TurboAuditEventKind, TurboAuditSink};
 use crate::error::validate_team_id;
-use crate::error::TurboBridgeError;
+use crate::error::{validate_artifact_tag, TurboBridgeError};
 use crate::events::{TurboEventsRequest, TurboEventsResponse};
 use crate::handler::{
     TurboArtifactHandler, TurboGetRequest, TurboGetResponse, TurboPutRequest, TurboPutResponse,
@@ -148,6 +148,33 @@ impl CasWriteStore for InMemoryKvStore {
     }
 }
 
+// ── Artifact-tag sidecar keying ───────────────────────────────────────────────
+
+/// First key segment reserved for the `x-artifact-tag` sidecar.
+///
+/// # Why this cannot collide with an artifact key
+///
+/// An artifact is always stored at `"<team_id>/<hash>"`, and `team_id` is
+/// validated by [`validate_team_id`] to be a NON-EMPTY string over
+/// `[A-Za-z0-9_-]` with no `/`. So the first `/`-delimited segment of every
+/// artifact key is drawn from that charset. `$` is NOT in that charset, so no
+/// client-chosen `(team_id, hash)` pair — however hostile the `hash`, which is
+/// length-bounded but otherwise opaque and unvalidated — can ever produce a key
+/// whose first segment is `$tag`. The two keyspaces are disjoint BY
+/// CONSTRUCTION, not by convention.
+///
+/// This matters: had the sidecar been a suffix (`"<team_id>/<hash>.tag"`), a
+/// client could PUT an artifact under the literal hash `"<hash>.tag"` and land
+/// its own bytes where another artifact's signature belongs — turning the
+/// signature channel into a poisoning primitive.
+const TAG_KEY_NAMESPACE: &str = "$tag";
+
+/// Storage key for an artifact's `x-artifact-tag` sidecar.
+/// See [`TAG_KEY_NAMESPACE`] for the disjointness argument.
+fn tag_storage_key(team_id: &str, hash: &str) -> String {
+    format!("{TAG_KEY_NAMESPACE}/{team_id}/{hash}")
+}
+
 // ── CasAdapterTurboHandler ────────────────────────────────────────────────────
 
 /// [`TurboArtifactHandler`] backed by injected [`CasReadStore`] and
@@ -200,6 +227,15 @@ impl TurboArtifactHandler for CasAdapterTurboHandler {
         // key (`"<team_id>/<hash>"`); reject empty / overlong / `/`-bearing
         // values BEFORE any audit emit or write (mirrors the hash guard above).
         validate_team_id(&req.team_id)?;
+
+        // A PRESENT `x-artifact-tag` must be well-formed — checked here, with
+        // the other input guards, BEFORE any audit emit or storage access. A
+        // malformed tag fails the whole PUT (400) rather than being dropped:
+        // silently discarding it would hand the client a cache entry it
+        // believes is signed. An ABSENT tag skips this — unsigned is normal.
+        if let Some(tag) = req.artifact_tag.as_deref() {
+            validate_artifact_tag(tag)?;
+        }
 
         // No `team_id == caller_tenant` check: `team_id` is a Turborepo team
         // label, NOT the tenant. Isolation is provided solely by the storage
@@ -263,6 +299,29 @@ impl TurboArtifactHandler for CasAdapterTurboHandler {
             .write(&req.caller_tenant, &storage_key, req.bytes)
             .map_err(|e| TurboBridgeError::Internal(e.to_string()))?;
 
+        // Signature sidecar, written AFTER the artifact so it can only ever
+        // exist for an artifact that actually landed. Reaching this line means
+        // the create-only probe above found the key FRESH and the artifact
+        // write succeeded, so no prior tag is being replaced — a refused (409)
+        // re-PUT returns before here and cannot touch the stored tag.
+        //
+        // Only written when the client supplied one: an unsigned PUT leaves no
+        // sidecar, and the matching GET reports `None`.
+        //
+        // A sidecar write failure surfaces as `Internal` (500). That is the
+        // fail-CLOSED direction: the alternative — 200 with the artifact stored
+        // but its signature lost — would serve a signature-enabled client an
+        // entry it cannot verify, on a request it was told succeeded.
+        if let Some(tag) = req.artifact_tag.as_deref() {
+            self.writer
+                .write(
+                    &req.caller_tenant,
+                    &tag_storage_key(&req.team_id, &req.hash),
+                    tag.as_bytes().to_vec(),
+                )
+                .map_err(|e| TurboBridgeError::Internal(e.to_string()))?;
+        }
+
         // PutCommitted AFTER durable store.
         self.audit
             .emit(TurboAuditEvent::new(
@@ -313,6 +372,35 @@ impl TurboArtifactHandler for CasAdapterTurboHandler {
             .reader
             .read(&req.caller_tenant, &format!("{}/{}", req.team_id, req.hash))?;
 
+        // Signature sidecar. Three outcomes, deliberately distinguished:
+        //
+        // - `Ok(raw)`   — a tag was stored; echo it. It was validated as
+        //                 printable ASCII on the way IN, but re-validate on the
+        //                 way OUT so a sidecar corrupted below the API can never
+        //                 be emitted as a header (and so the header-set at the
+        //                 route cannot fail on the value).
+        // - `NotFound`  — no tag was stored: the artifact is unsigned. This is
+        //                 the NORMAL case and is NOT an error.
+        // - other `Err` — the backend failed, so we do NOT know whether a tag
+        //                 exists. Propagate rather than serve the artifact
+        //                 tagless: returning 200 with a silently missing
+        //                 signature is exactly the fail-OPEN this work package
+        //                 exists to remove.
+        let artifact_tag = match self.reader.read(
+            &req.caller_tenant,
+            &tag_storage_key(&req.team_id, &req.hash),
+        ) {
+            Ok(raw) => {
+                let tag = String::from_utf8(raw).map_err(|_| {
+                    TurboBridgeError::Internal("stored artifact tag is not valid utf-8".to_owned())
+                })?;
+                validate_artifact_tag(&tag)?;
+                Some(tag)
+            }
+            Err(TurboBridgeError::NotFound { .. }) => None,
+            Err(e) => return Err(e),
+        };
+
         self.audit
             .emit(TurboAuditEvent::new(
                 TurboAuditEventKind::GetServed,
@@ -324,7 +412,7 @@ impl TurboArtifactHandler for CasAdapterTurboHandler {
             ))
             .map_err(|e| TurboBridgeError::AuditFailed(e.to_string()))?;
 
-        Ok(TurboGetResponse::new(bytes))
+        Ok(TurboGetResponse::new(bytes).with_artifact_tag(artifact_tag))
     }
 
     fn events(&self, _req: TurboEventsRequest) -> Result<TurboEventsResponse, TurboBridgeError> {
@@ -640,5 +728,149 @@ mod tests {
             1,
         ))
         .expect("valid team_id accepted");
+    }
+
+    // ── x-artifact-tag sidecar ────────────────────────────────────────────────
+
+    /// A tag supplied on PUT is stored and returned by the matching GET.
+    #[test]
+    fn adapter_artifact_tag_round_trips() {
+        let (_, _, h) = fixture();
+        let tag = "c2lnbmF0dXJl";
+        h.put(
+            TurboPutRequest::new("h1", "team_a", "s", b"bytes".to_vec(), None, "p", "t1", 1)
+                .with_artifact_tag(Some(tag.to_owned())),
+        )
+        .expect("tagged put");
+        let got = h
+            .get(TurboGetRequest::new("h1", "team_a", "s", "p", "t1", 2))
+            .expect("get");
+        assert_eq!(got.artifact_tag.as_deref(), Some(tag));
+        assert_eq!(got.bytes, b"bytes".to_vec());
+    }
+
+    /// An artifact stored WITHOUT a tag reports `None` and does not error —
+    /// the normal case for a client with no signature key configured.
+    #[test]
+    fn adapter_absent_artifact_tag_is_none_not_an_error() {
+        let (_, _, h) = fixture();
+        h.put(TurboPutRequest::new(
+            "h1",
+            "team_a",
+            "s",
+            b"bytes".to_vec(),
+            None,
+            "p",
+            "t1",
+            1,
+        ))
+        .expect("untagged put succeeds");
+        let got = h
+            .get(TurboGetRequest::new("h1", "team_a", "s", "p", "t1", 2))
+            .expect("untagged get must not error");
+        assert_eq!(got.artifact_tag, None, "no tag stored ⇒ none returned");
+        assert_eq!(got.bytes, b"bytes".to_vec());
+    }
+
+    /// A malformed tag is REFUSED, and refused BEFORE any storage mutation —
+    /// so a bad signature never leaves a half-written artifact behind.
+    #[test]
+    fn adapter_malformed_tag_refused_without_storing_the_artifact() {
+        let (_, store, h) = fixture();
+        let err = h
+            .put(
+                TurboPutRequest::new("h1", "team_a", "s", b"bytes".to_vec(), None, "p", "t1", 1)
+                    .with_artifact_tag(Some("A".repeat(crate::MAX_ARTIFACT_TAG_LEN + 1))),
+            )
+            .expect_err("oversized tag rejected");
+        assert!(matches!(err, TurboBridgeError::ArtifactTagInvalid { .. }));
+        assert!(
+            store.read("t1", "team_a/h1").is_err(),
+            "a PUT refused for a bad tag must not have stored the artifact"
+        );
+    }
+
+    /// The sidecar keyspace is disjoint from the artifact keyspace BY
+    /// CONSTRUCTION. A hostile client picks the `hash` freely (it is opaque and
+    /// only length-bounded), so it may try to aim an artifact PUT at another
+    /// artifact's signature slot. `team_id` is charset-restricted to
+    /// `[A-Za-z0-9_-]`, and the sidecar's first key segment is `$tag`, so no
+    /// artifact key can ever begin with it — the attempt lands in the artifact
+    /// keyspace under a literal hash and cannot overwrite any real tag.
+    #[test]
+    fn tag_sidecar_keyspace_is_unreachable_from_a_client_chosen_hash() {
+        // The sidecar key for a victim artifact.
+        let victim = tag_storage_key("team_a", "h1");
+        assert_eq!(victim, "$tag/team_a/h1");
+
+        // An attacker cannot name it: every artifact key is
+        // "<team_id>/<hash>" with team_id over [A-Za-z0-9_-], so the first
+        // segment can never be "$tag" no matter what the hash contains.
+        for hostile_hash in [
+            "team_a/h1",
+            "../$tag/team_a/h1",
+            "$tag/team_a/h1",
+            "/$tag/team_a/h1",
+        ] {
+            let attacker_key = format!("{}/{}", "team_b", hostile_hash);
+            assert_ne!(
+                attacker_key, victim,
+                "a client-chosen hash must never produce the sidecar key"
+            );
+            assert!(
+                !attacker_key.starts_with(&format!("{TAG_KEY_NAMESPACE}/")),
+                "no artifact key may enter the reserved tag namespace"
+            );
+        }
+
+        // And `validate_team_id` is what makes the first segment safe — the
+        // property above rests on it, so pin it here.
+        assert!(
+            validate_team_id("$tag").is_err(),
+            "'$' is not a legal team_id"
+        );
+    }
+
+    /// Two teams under one tenant do not share a signature slot, and one
+    /// team's tag never leaks into the other's GET.
+    #[test]
+    fn tags_are_partitioned_per_team_like_the_artifacts_they_sign() {
+        let (_, _, h) = fixture();
+        h.put(
+            TurboPutRequest::new("h1", "team_a", "s", b"a".to_vec(), None, "p", "t1", 1)
+                .with_artifact_tag(Some("dGFnLWE=".to_owned())),
+        )
+        .expect("team_a put");
+        h.put(
+            TurboPutRequest::new("h1", "team_b", "s", b"b".to_vec(), None, "p", "t1", 2)
+                .with_artifact_tag(Some("dGFnLWI=".to_owned())),
+        )
+        .expect("team_b put");
+
+        let a = h
+            .get(TurboGetRequest::new("h1", "team_a", "s", "p", "t1", 3))
+            .expect("team_a get");
+        let b = h
+            .get(TurboGetRequest::new("h1", "team_b", "s", "p", "t1", 4))
+            .expect("team_b get");
+        assert_eq!(a.artifact_tag.as_deref(), Some("dGFnLWE="));
+        assert_eq!(b.artifact_tag.as_deref(), Some("dGFnLWI="));
+    }
+
+    /// A tag never crosses the tenant boundary: the sidecar is keyed by the
+    /// same `caller_tenant` dimension as the artifact, so another tenant's GET
+    /// is a MISS, not a tag leak.
+    #[test]
+    fn tags_are_tenant_isolated_like_the_artifacts() {
+        let (_, _, h) = fixture();
+        h.put(
+            TurboPutRequest::new("h1", "shared", "s", b"a".to_vec(), None, "p", "tenantA", 1)
+                .with_artifact_tag(Some("c2VjcmV0".to_owned())),
+        )
+        .expect("tenantA put");
+        let err = h
+            .get(TurboGetRequest::new("h1", "shared", "s", "p", "tenantB", 2))
+            .expect_err("tenantB must not reach tenantA's artifact or its tag");
+        assert!(matches!(err, TurboBridgeError::NotFound { .. }));
     }
 }

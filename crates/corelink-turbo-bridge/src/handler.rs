@@ -22,7 +22,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::audit::{TurboAuditEvent, TurboAuditEventKind, TurboAuditSink};
-use crate::error::{validate_team_id, TurboBridgeError};
+use crate::error::{validate_artifact_tag, validate_team_id, TurboBridgeError};
 use crate::events::{TurboEventsRequest, TurboEventsResponse};
 use crate::status::TurboStatusPayload;
 use crate::{MAX_HASH_LEN, VERCEL_API_VERSION};
@@ -50,6 +50,15 @@ pub struct TurboPutRequest {
     pub caller_tenant: String,
     /// Wall-clock timestamp in unix-millis.
     pub at_unix_ms: u64,
+    /// `x-artifact-tag` header — the Turborepo artifact signature, an OPAQUE
+    /// HMAC the client computed with `TURBO_REMOTE_CACHE_SIGNATURE_KEY`.
+    /// CoreLink never holds that key, so it neither computes nor validates the
+    /// value; it stores it alongside the artifact and echoes it on GET.
+    ///
+    /// `None` is the NORMAL case — most clients do not enable signatures — and
+    /// must never be treated as an error. Set it with
+    /// [`TurboPutRequest::with_artifact_tag`].
+    pub artifact_tag: Option<String>,
 }
 
 impl TurboPutRequest {
@@ -75,7 +84,19 @@ impl TurboPutRequest {
             principal: principal.into(),
             caller_tenant: caller_tenant.into(),
             at_unix_ms,
+            artifact_tag: None,
         }
+    }
+
+    /// Attach the Turborepo `x-artifact-tag` signature to this request.
+    ///
+    /// Kept as a builder rather than a ninth `new()` parameter so every
+    /// existing caller keeps compiling and keeps its exact current behaviour
+    /// (`artifact_tag: None` — the untagged path).
+    #[must_use]
+    pub fn with_artifact_tag(mut self, artifact_tag: Option<String>) -> Self {
+        self.artifact_tag = artifact_tag;
+        self
     }
 }
 
@@ -183,15 +204,30 @@ impl TurboGetRequest {
 pub struct TurboGetResponse {
     /// Artifact bytes.
     pub bytes: Vec<u8>,
+    /// The `x-artifact-tag` stored with this artifact, echoed verbatim so the
+    /// client can verify its own signature.
+    ///
+    /// `None` means no tag was stored with the artifact — the normal case for
+    /// an unsigned upload. The route then omits the header entirely; it must
+    /// NEVER invent one, and a missing tag is not an error.
+    pub artifact_tag: Option<String>,
 }
 
 impl TurboGetResponse {
-    /// Construct a [`TurboGetResponse`] with the given bytes.
+    /// Construct a [`TurboGetResponse`] with the given bytes and no tag.
     #[must_use]
     pub fn new(bytes: impl Into<Vec<u8>>) -> Self {
         Self {
             bytes: bytes.into(),
+            artifact_tag: None,
         }
+    }
+
+    /// Attach the stored `x-artifact-tag` to this response.
+    #[must_use]
+    pub fn with_artifact_tag(mut self, artifact_tag: Option<String>) -> Self {
+        self.artifact_tag = artifact_tag;
+        self
     }
 }
 
@@ -260,6 +296,10 @@ pub trait TurboArtifactHandler: Send + Sync + core::fmt::Debug {
 /// prefix on the opaque Turbo hash — no hash verification.
 pub struct InMemoryTurboHandler {
     objects: Mutex<HashMap<(String, String), Vec<u8>>>,
+    /// `x-artifact-tag` sidecar, keyed identically to `objects`. A key present
+    /// in `objects` but absent here is an artifact stored WITHOUT a signature
+    /// — the normal, valid case.
+    tags: Mutex<HashMap<(String, String), String>>,
     audit: Arc<dyn TurboAuditSink>,
 }
 
@@ -276,6 +316,7 @@ impl InMemoryTurboHandler {
     pub fn new(audit: Arc<dyn TurboAuditSink>) -> Self {
         Self {
             objects: Mutex::new(HashMap::new()),
+            tags: Mutex::new(HashMap::new()),
             audit,
         }
     }
@@ -316,6 +357,13 @@ impl TurboArtifactHandler for InMemoryTurboHandler {
         // is rejected BEFORE any audit emit or mutation (mirrors the hash guard).
         validate_team_id(&req.team_id)?;
 
+        // A PRESENT `x-artifact-tag` must be well-formed. Validated here,
+        // BEFORE any audit emit or mutation, alongside the hash/team_id guards.
+        // An ABSENT tag skips this entirely — unsigned is the normal case.
+        if let Some(tag) = req.artifact_tag.as_deref() {
+            validate_artifact_tag(tag)?;
+        }
+
         // No `team_id == caller_tenant` check: `team_id` is a Turborepo team
         // label, NOT the tenant. Isolation is the storage `tenant =
         // caller_tenant`; `team_id` is a sub-namespace inside it (key prefix).
@@ -352,6 +400,22 @@ impl TurboArtifactHandler for InMemoryTurboHandler {
             )
             .map(|v| v.len() as u64)
         };
+
+        // Store the signature sidecar under the SAME key. Written only when a
+        // tag was supplied, so an unsigned PUT leaves no entry here and the
+        // matching GET reports `None`.
+        if let Some(tag) = req.artifact_tag.clone() {
+            self.tags
+                .lock()
+                .map_err(|_| TurboBridgeError::Internal("tag lock poisoned".into()))?
+                .insert(
+                    (
+                        req.caller_tenant.clone(),
+                        format!("{}/{}", req.team_id, req.hash),
+                    ),
+                    tag,
+                );
+        }
 
         // PutCommitted audit AFTER durable store.
         self.audit
@@ -417,6 +481,18 @@ impl TurboArtifactHandler for InMemoryTurboHandler {
             })?
         };
 
+        // The signature sidecar, if one was stored. A miss here is NOT an
+        // error: it simply means the artifact was uploaded unsigned.
+        let artifact_tag = self
+            .tags
+            .lock()
+            .map_err(|_| TurboBridgeError::Internal("tag lock poisoned".into()))?
+            .get(&(
+                req.caller_tenant.clone(),
+                format!("{}/{}", req.team_id, req.hash),
+            ))
+            .cloned();
+
         // GetServed audit AFTER successful lookup.
         self.audit
             .emit(TurboAuditEvent::new(
@@ -429,7 +505,7 @@ impl TurboArtifactHandler for InMemoryTurboHandler {
             ))
             .map_err(|e| TurboBridgeError::AuditFailed(e.to_string()))?;
 
-        Ok(TurboGetResponse::new(bytes))
+        Ok(TurboGetResponse::new(bytes).with_artifact_tag(artifact_tag))
     }
 
     fn events(&self, _req: TurboEventsRequest) -> Result<TurboEventsResponse, TurboBridgeError> {
