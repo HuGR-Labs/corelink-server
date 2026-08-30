@@ -75,8 +75,26 @@ jobs:
                   guess an empty change set"
             exit 1
           fi
-          TOUCHED="$(printf '%s\n' "$CHANGED_PATHS" \
-            | sed -nE 's|^crates/([a-z0-9-]+)/.*|\1|p' | sort -u)"
+          # Map each changed path to its OWNING package via cargo metadata,
+          # not by regexing `crates/`. 20 of the 95 workspace packages live
+          # outside it — 12 in tests/, 7 in tools/, 1 in apps/ — so a
+          # `crates/`-only regex silently yields NO seed for a PR touching
+          # `tools/corelink-cli` or `tests/e2e-dsr`, and those packages would go
+          # untested even when directly edited.
+          cargo metadata --no-deps --format-version 1 > /tmp/md.json
+          python3 -c "import json,os;md=json.load(open('/tmp/md.json'));r=os.getcwd();print('\\n'.join(os.path.relpath(os.path.dirname(p['manifest_path']),r)+'\\t'+p['name'] for p in md['packages']))" > /tmp/pkgdirs.tsv
+
+          # Longest directory first, so a nested package wins over its parent.
+          : > /tmp/touched.txt
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            while IFS=$'\t' read -r dir name; do
+              case "$path" in
+                "$dir"|"$dir"/*) printf '%s\n' "$name" >> /tmp/touched.txt; break ;;
+              esac
+            done < <(sort -rk1,1 /tmp/pkgdirs.tsv)
+          done <<< "$CHANGED_PATHS"
+          TOUCHED="$(sort -u /tmp/touched.txt)"
 
           # auth + pat are unconditional. See the header.
           SEEDS="$(printf '%s\ncorelink-auth\ncorelink-pat\n' "$TOUCHED" \
