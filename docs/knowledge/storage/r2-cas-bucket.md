@@ -8,6 +8,7 @@ source_files:
   - "crates/corelink-container/src/sli_aggregate.rs"
   - "crates/corelink-region/src/region.rs"
 source_blobs:
+  - "crates/corelink-container/src/sli_aggregate.rs@3af94117723cbc7adb135fa3f8b320121ed95a54"
   - "crates/corelink-container/src/storage/r2_s3.rs@ab99e41642b8914c166f52ebee9ba0ae1fe08394"
 checkpoint_sha: "5ef2dce0fe8400ff95a520e2227bbc856c4224cd"
 provenance: "AUTHORED"

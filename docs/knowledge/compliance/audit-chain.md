@@ -19,6 +19,7 @@ source_files:
   - crates/corelink-transparency-log/src/submit.rs
   - crates/corelink-transparency-log/src/lib.rs
 source_blobs:
+  - "crates/corelink-container/src/routes/audit_cas_attempted.rs@a1a8353d127c9a46c28a9d417f0d7a4f2e991c45"
   - "crates/corelink-container/src/routes/audit_drain.rs@156104e074f9b0a4bf88d98c8195e839a0466a58"
 checkpoint_sha: "5ef2dce0fe8400ff95a520e2227bbc856c4224cd"
 provenance: "AUTHORED"
