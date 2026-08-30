@@ -3258,6 +3258,186 @@ verify-means: |
 last-verified: 2026-08-29
 ```
 
+### B-062 — cinco lanes de CI presas em runner GitHub-hosted, que está billing-blocked
+
+`cas_foundation.yml`, `coverage.yml`, `ffi-matrix-ci.yml`, `mutation-nightly.yml`
+e `semgrep.yml` somam **1.057 execuções e ZERO sucessos**. A causa é a mesma nas
+cinco e é estrutural, não flake: cada uma declara um runner **GitHub-hosted**
+(`ubuntu-latest` ou o larger-runner `ubuntu-x64-4core`), e minutos hosted estão
+billing-blocked nesta org desde 2026-08-24.
+
+Duas assinaturas distintas, ambas explicadas por isso: `coverage` e
+`mutation-nightly` aparecem `cancelled` com `runner_name = NONE` — o job nunca
+recebeu máquina; `cas_foundation`, `semgrep` e `ffi-matrix-ci` chegaram a rodar
+enquanto ainda havia crédito e falharam no conteúdo (`Run Semgrep`,
+`Install valgrind`), mas hoje nem chegam lá.
+
+`semgrep` merece nota: além do job hosted, ela declara
+`runs-on: [self-hosted, Linux, X64]`, e **não existe runner Linux self-hosted
+neste repo** — o inventário é 14-15 `corelink` (frota efêmera CF) e 5
+`self-hosted,macOS,X64,mac,corelink-builder`. Esse job jamais pegaria box mesmo
+com crédito.
+
+Não é conserto de CI: ou o owner libera gasto hosted, ou as cinco migram para a
+frota self-hosted (e `ffi-matrix-ci` já é reconhecidamente parked), ou são
+apagadas. Nenhuma dessas é decisão de higiene.
+
+```backlog
+id: B-062
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  bash -c 'for f in cas_foundation coverage ffi-matrix-ci mutation-nightly semgrep; do
+    grep -qE "runs-on: *(ubuntu-latest|ubuntu-x64-4core)" ".github/workflows/$f.yml" || exit 1
+  done'
+verify-means: |
+  open — passa enquanto TODAS as cinco lanes nomeadas ainda apontam para um
+  runner hosted, que é o bloqueio. Vira vermelho assim que QUALQUER UMA for
+  migrada ou apagada, forçando a revisão do item em vez de deixá-lo cobrir uma
+  lane que já saiu do grupo. O laço é sobre as cinco de propósito: um verify que
+  olhasse só uma seria predicado mais fraco que cinco itens separados.
+last-verified: 2026-08-30
+```
+
+### B-063 — quatro lanes bloqueadas em secrets que não existem no repositório
+
+`terraform-drift.yml`, `sign-linux.yml`, `sign-windows.yml` e
+`notarize-macos.yml` falham antes de fazer qualquer trabalho porque os segredos
+que exigem **não estão provisionados**. O repositório tem 11 secrets; nenhum
+deles é `CF_CLIENT_ID`, `CF_CLIENT_SECRET`, `TF_BACKEND_BUCKET`,
+`GPG_PRIVATE_KEY`, `WINDOWS_CODE_SIGNING_CERT` ou `APPLE_DEVELOPER_ID`.
+
+As lanes estão CERTAS: o `terraform-drift` checa presença e aborta com
+`::error::CF_CLIENT_ID or CF_CLIENT_SECRET missing` em vez de seguir e produzir
+um plano vazio que pareceria "sem drift". Falhar alto é o comportamento
+desejado; o que falta é a credencial.
+
+Consequência a registrar: enquanto isso durar, **não há detecção de drift de
+infraestrutura** e **nenhum binário de release sai assinado** — nem GPG no
+Linux, nem Authenticode no Windows, nem notarização da Apple. Isso é postura de
+supply-chain, não conveniência de CI.
+
+Owner-facing: só quem tem as credenciais pode fechar.
+
+```backlog
+id: B-063
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  bash -c 'have=$(gh api repos/HuGR-Labs/corelink-server/actions/secrets --jq ".secrets[].name" 2>/dev/null)
+  [ -n "$have" ] || exit 0
+  for s in CF_CLIENT_ID CF_CLIENT_SECRET TF_BACKEND_BUCKET GPG_PRIVATE_KEY WINDOWS_CODE_SIGNING_CERT APPLE_DEVELOPER_ID; do
+    echo "$have" | grep -qx "$s" && exit 1
+  done
+  exit 0'
+verify-means: |
+  open — passa enquanto NENHUM dos seis segredos existir, que é o bloqueio
+  compartilhado pelas quatro lanes. Vira vermelho quando o primeiro for
+  provisionado, que é exatamente quando o item precisa ser reavaliado (a lane
+  correspondente passa a poder rodar e a disposição muda). Sai 0 quando a API
+  não responde, para não confundir falha de rede com ausência de segredo — o
+  contrário transformaria um timeout em "provisionado".
+last-verified: 2026-08-30
+```
+
+### B-064 — a cadeia de release nunca produziu um artefato verde, e as lanes a jusante herdam isso
+
+`release-cli.yml` dispara em tag `cli-v*` (as tags existem: `cli-v0.1.0`,
+`cli-v0.1.1`) e morre no step `Build (cargo zigbuild) — Linux + Windows`, na
+frota macOS `corelink-builder`. Como `sign-linux`, `sign-windows` e
+`notarize-macos` disparam por `workflow_run` **atrás dela**, as três aparecem
+com `runner_name = NONE` na mesma data (2026-05-29) — não são três defeitos,
+são um.
+
+`release-slsa3.yml` tem exatamente 1 execução (evento `release`, e existe 1
+release publicado) e os logs já expiraram, então a causa dela é a única deste
+grupo que permanece **não diagnosticada** — registrada como tal em vez de
+suposta.
+
+`cosign-sign.yml` é o caso que NÃO é defeito e não deve ser "consertado":
+**0 execuções** porque dispara em push de tag `v*` e **não existe nenhuma tag
+`v*`** no repositório (só `cli-v*`). Ausência de execução não é execução
+vermelha. Ela também carrega um **waiver humano explícito**
+(`authorized-by: repo owner | 2026-08-11`) para permanecer GitHub-hosted, com
+razão técnica registrada — precisa de `docker` e da identidade OIDC hosted para
+assinatura keyless Cosign, e a frota Firecracker não tem daemon docker.
+**Não migrar, não apagar.**
+
+Ordem de trabalho: o `cargo zigbuild` é a raiz; as três lanes de assinatura só
+podem ser avaliadas depois dele — e mesmo assim continuam bloqueadas por
+[B-063].
+
+```backlog
+id: B-064
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'grep -q "cargo zigbuild" .github/workflows/release-cli.yml || exit 1
+  grep -q "authorized-by: repo owner" .github/workflows/cosign-sign.yml || exit 1
+  git ls-remote --tags origin "refs/tags/v*" 2>/dev/null | grep -q . && exit 1
+  exit 0'
+verify-means: |
+  open — decide as duas alegações estruturais que sustentam o item: o
+  `release-cli` ainda constrói por `cargo zigbuild` (a raiz não foi trocada) e o
+  waiver do `cosign-sign` ainda está no arquivo (ninguém o removeu ao "limpar"
+  lanes hosted). Vira vermelho também se surgir a primeira tag `v*`, porque aí o
+  `cosign-sign` deixa de estar trigger-starved e a análise precisa ser refeita
+  com execução real. Não ancora em histórico de execução: a causa do
+  `release-slsa3` está não-diagnosticada por logs expirados e um verify sobre
+  runs leria isso como verde.
+last-verified: 2026-08-30
+```
+
+### B-065 — seis lanes self-hosted sem sucesso, cada uma por um motivo próprio
+
+Sobram seis do levantamento das 20, e elas NÃO compartilham raiz — agrupá-las
+num predicado só produziria um portão dominado, então ficam nomeadas aqui com o
+que foi lido de cada uma:
+
+- **`nightly.yml`** (103 runs, cron ativo, falhou 2026-08-29): morre em
+  `Install cargo-mutants (pinned, prebuilt)` no `corelink-builder-5`. A lane
+  ainda queima hoje.
+- **`terraform-drift.yml`**: coberta por [B-063], listada aqui só para a
+  contagem das 20 fechar.
+- **`sbom.yml`** (16 runs, 2026-08-25): morre em
+  `Generate SBOM (CycloneDX 1.5+ JSON)` no `corelink-builder-4`.
+- **`buck2-starter-ci.yml`** (77 runs, 2026-08-16): morre em
+  `Install Buck2 latest stable` na frota `corelink`. Também declara
+  `[self-hosted, Linux, X64]`, que não existe aqui.
+- **`fuzz-nightly.yml`** (69 runs, 2026-08-02): `cancelled` no
+  `corelink-builder` — cancelamento, não falha de step, então a causa provável
+  é timeout/concorrência e **não está confirmada**.
+- **`endurance-2h-nightly.yml`** (19 runs, 2026-06-03) e
+  **`load-test-nightly.yml`** (3 runs, 2026-05-31): `runner_name = NONE` na
+  frota `corelink`. Ambas datam de antes da frota atual; se voltariam a pegar
+  box hoje é **não verificado** — provar exige disparar um teste de carga real,
+  que não cabe num PR de higiene.
+- **`billing-health-daily.yml`** (7 runs, cron ativo, falhou 2026-08-29): morre
+  em `Check billing health` num `cf-runner`. Ainda queima hoje.
+
+Três dessas (`nightly`, `billing-health-daily`, e o `terraform-drift` do B-063)
+são as únicas do levantamento inteiro que ainda produzem vermelho diariamente;
+as outras já não disparam. Priorizar por isso, não por volume histórico.
+
+```backlog
+id: B-065
+repo: corelink-server
+owner: tl
+status: open
+verify: manual
+verify-means: |
+  manual e com prazo: as seis têm causas distintas e nenhuma delas é decidível
+  por um comando sobre o repositório — `Install cargo-mutants`, `Install Buck2`
+  e `Generate SBOM` falham por estado da máquina/rede, `fuzz-nightly` cancela
+  sem step, e as duas de carga precisariam de execução real para saber se ainda
+  pegam box. Um verify sintético aqui seria teatro. O decaimento de 14 dias é o
+  que impede este item de virar gaveta.
+last-verified: 2026-08-30
+```
+
 ### B-061 — o roadmap de remediação é o único artefato sem `verify`, e já vazou número errado
 
 `docs/campaigns/remediation/ROADMAP.md` é o artefato de controle da campanha: define
