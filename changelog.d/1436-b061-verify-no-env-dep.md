@@ -1,0 +1,3 @@
+### Fixed
+
+- **O `verify` do B-061 lia falha de ambiente como "a prevenção existe".** A versão anterior chamava `validate_okf.py` e tratava qualquer saída não-zero como prova de que o conserto tinha chegado — mas o validador também sai não-zero por resolução de `--base-ref` no checkout da CI. Medido no #1434: o verify reprovou enquanto o `okf-wiki-validation` do mesmo PR estava verde. O item mandaria fechar sem que nada tivesse sido prevenido. O verify não executa mais o validador: lê o bloco que implementa a tolerância (`if not git.is_ancestor(...): continue`) e decide por ele, saindo INDETERMINADO se o bloco sumir em vez de concluir do desaparecimento.
