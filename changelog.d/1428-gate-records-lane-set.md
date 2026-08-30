@@ -1,0 +1,3 @@
+### Fixed
+
+- **O portão de merge agora registra, no próprio PR, o conjunto de lanes que checou.** O WP-1 exige que todo merge grave quais checks o autorizaram; nove merges seguidos não gravaram, porque o registro dependia de o operador lembrar. A correção não foi cobrar mais disciplina — foi tirar o passo humano: `pre-merge-gate-check.sh --merge` emite o conjunto de lanes no único ponto em que conclui verde, e o posta depois que o GitHub confirma `state=MERGED`. O comentário sai da mesma lista que o portão usou para decidir, então não tem como alegar um conjunto de checks mais verde do que o que autorizou o merge; um `--admin` aparece no registro com a justificativa. Falha ao postar avisa e não muda o código de saída, que segue respondendo só "o PR mergeou?" (#1051).
