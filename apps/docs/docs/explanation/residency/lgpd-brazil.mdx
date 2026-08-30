@@ -63,9 +63,10 @@ in the South America (São Paulo) region:
 - **Action cache (AC) entries** — the build-graph metadata. R2 bucket
   `ac-sam`.
 - **Audit trail** — every action your tenant takes, stored in R2 bucket
-  `audit-sam` with Object Lock 7 years (immutable; we cannot delete an
-  audit event even if a court ordered us to — the lock is enforced by
-  Cloudflare).
+  `audit-sam` as an append-only chain with a keyed, signed head
+  (tamper-evident; tampering is detected at verify time). Backed by R2
+  Object-Lock immutable storage with a 7-year WORM retention window is
+  on the roadmap (WI-S09-007).
 - **D1 metadata** — tenant config, ACLs, residency configuration itself.
   Primary in `sam`, replicas in `sam`.
 
@@ -185,7 +186,7 @@ Brazil revenue or BRL 50M per offence; our availability SLO does not.
 | Data category | Region for `sam` tenant | Legal basis |
 |---|---|---|
 | Tenant workload content (CAS, AC) | `sam` only | Art. 33 caput (no international transfer) |
-| Audit trail | `audit-sam` Object Lock 7y | Art. 33 caput |
+| Audit trail | `audit-sam` append-only chain with signed head (tamper-evident); R2 Object-Lock 7y on roadmap (WI-S09-007) | Art. 33 caput |
 | Tenant config (D1) | `sam` only | Art. 33 caput |
 | Telemetry (Grafana metrics, traces, logs — pseudonymised) | Currently US/EU; pseudonymisation per LIA | Art. 7 IX (legitimate interest, LIA in `legal/lia/`) |
 | Billing detail | Cloudflare D1 (per-tenant `primary_region`) | Art. 33, V (contractual) + SCC Modules 2/3 |
@@ -204,10 +205,14 @@ If your contract with Brazilian data subjects requires:
 - billing detail in Brazil,
 - telemetry suppression for `sam` tenants,
 - bring-your-own-key (BYOK) with AWS São Paulo / GCP São Paulo / Azure
-  Brazil South / self-hosted HashiCorp Vault in `sam`,
+  Brazil South / self-hosted HashiCorp Vault in `sam` — planned as
+  Enterprise BYOK with customer-managed KMS, on the roadmap (not yet
+  shipped; the current endpoint returns HTTP 501),
 - a per-tenant residency attestation extract on a recurring cadence,
 
-these are all available as enterprise DPA amendments. Contact your
+these are all available as enterprise DPA amendments except for BYOK
+(which is planned — Enterprise BYOK with customer-managed KMS is on the
+roadmap and not yet shipped). Contact your
 account manager; the legal turnaround for these amendments is currently
 ~5 business days.
 
@@ -223,6 +228,12 @@ surface but that exist as compliance commitments:
   request the same data via support (SLA 5 business days).
 - **Self-service residency attestation download** — currently manual
   via support. Automation tracked at WI-S13-*.
+- **Enterprise BYOK with customer-managed KMS** — planned; the
+  current endpoint returns HTTP 501 and is not yet wired. Tracked on
+  the roadmap.
+- **R2 Object-Lock immutable storage for `audit-sam` (7-year WORM)** —
+  planned (WI-S09-007); today's guarantee is the append-only chain
+  with keyed, signed head described in §2.
 
 Both are tracked in `specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md`
 §6.2 (mitigation roadmap).

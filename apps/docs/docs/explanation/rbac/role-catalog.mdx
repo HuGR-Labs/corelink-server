@@ -32,7 +32,7 @@ and the SQL `CHECK` constraint lives in `specs/03_architecture/data_model.md`
   - View and mutate billing surface (`admin:billing`).
   - Grant or revoke the `Owner` role on other users.
   - Act as approver for destructive operations.
-  - Initiate Enterprise BYOK setup (KMS root key wrap).
+  - Initiate Enterprise BYOK setup (KMS root key wrap) — *planned — Enterprise BYOK with customer-managed KMS is on the roadmap; the current endpoint returns HTTP 501 (not wired).*
 
 ### Cannot do alone
 
@@ -46,8 +46,7 @@ and the SQL `CHECK` constraint lives in `specs/03_architecture/data_model.md`
 1. Initial tenant setup — first signup user is auto-`Owner`.
 2. Procurement / Finance escalations — Owner reads invoices, applies tax
    exemption, downgrades / upgrades tier.
-3. BYOK setup — Owner configures customer-managed KMS root key for
-   Enterprise tenants.
+3. BYOK setup — *planned — Enterprise BYOK with customer-managed KMS is on the roadmap*; the endpoint currently returns HTTP 501 and is not wired.
 
 ### Example workflow: Roll back a config change
 
@@ -202,6 +201,8 @@ and the SQL `CHECK` constraint lives in `specs/03_architecture/data_model.md`
    revoke endpoint takes no request body) and demotes the membership row
    (deleted_at = now()).
 ```
+
+> **Audit storage note:** The shipped guarantee is an append-only audit chain with a keyed, signed head (tamper-evident, detect-at-verify). R2 Object-Lock immutable storage (WORM-style 7-year retention) is a roadmap item (WI-S09-007), not shipped today.
 
 ---
 
