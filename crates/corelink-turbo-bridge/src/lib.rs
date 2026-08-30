@@ -69,7 +69,7 @@ pub mod handler;
 pub mod status;
 
 pub use audit::{TurboAuditEvent, TurboAuditEventKind, TurboAuditSink};
-pub use error::TurboBridgeError;
+pub use error::{validate_artifact_tag, TurboBridgeError};
 pub use events::{TurboEventsRequest, TurboEventsResponse};
 pub use handler::{
     InMemoryTurboHandler, TurboArtifactHandler, TurboGetRequest, TurboGetResponse, TurboPutRequest,
@@ -84,3 +84,15 @@ pub const VERCEL_API_VERSION: &str = "v8";
 /// Hashes longer than this are rejected with [`TurboBridgeError::HashTooLong`]
 /// as a denial-of-service guard (key-space amplification).
 pub const MAX_HASH_LEN: usize = 128;
+
+/// Maximum byte length of an `x-artifact-tag` value accepted by the bridge.
+///
+/// Turborepo's tag is a base64 HMAC-SHA256 — 44 characters. The bound is set
+/// well above that so a future signature algorithm is not designed out, while
+/// still capping the per-artifact storage the tag sidecar can consume (the
+/// sidecar is NOT byte-accounted against the tenant, so it must be bounded;
+/// see [`adapter::CasAdapterTurboHandler`]). Longer values are rejected with
+/// [`TurboBridgeError::ArtifactTagInvalid`] BEFORE any storage access or audit
+/// emit, mirroring the [`MAX_HASH_LEN`] and
+/// [`error::MAX_TEAM_ID_LEN`] guards.
+pub const MAX_ARTIFACT_TAG_LEN: usize = 512;

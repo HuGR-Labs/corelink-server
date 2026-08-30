@@ -94,6 +94,21 @@ pub const TURBO_EVENTS_ROUTE: &str = "/v8/artifacts/events";
 /// `POST /v8/artifacts/status` — static remote-cache enabled check.
 pub const TURBO_STATUS_ROUTE: &str = "/v8/artifacts/status";
 
+/// The Turborepo artifact-signature header (F-009 / WP-9a).
+///
+/// A turbo client with `TURBO_REMOTE_CACHE_SIGNATURE_KEY` set computes an
+/// HMAC over the artifact hash and body and sends it as `x-artifact-tag` on
+/// PUT; on GET it expects the remote cache to echo the SAME value back and
+/// verifies it locally before trusting the artifact. The signing key is the
+/// CUSTOMER's — CoreLink never holds it and therefore cannot compute or
+/// validate the tag. The server's entire protocol role is **store it
+/// alongside the artifact and hand it back verbatim**; the value is opaque.
+///
+/// Dropping the header (what CoreLink did before this constant existed) is
+/// worse than not supporting signatures at all: the client asks for
+/// verification and gets silence instead of a failure.
+pub const ARTIFACT_TAG_HEADER: &str = "x-artifact-tag";
+
 /// Per-route request-body cap for the `/v8/artifacts/*` routes (100 MiB).
 ///
 /// Turbo build artifacts are legitimately larger than the 10 MiB global body
@@ -1151,7 +1166,33 @@ async fn handle_get(
             state
                 .usage_meter
                 .record(&meter_tenant, crate::usage_meter::UsageEvent::ReadHit);
-            (StatusCode::OK, resp.bytes).into_response()
+            // F-009 / WP-9a: echo the stored Turborepo signature so a client
+            // with `TURBO_REMOTE_CACHE_SIGNATURE_KEY` can verify the artifact.
+            // `None` ⇒ the artifact was stored unsigned: omit the header
+            // entirely and serve the bytes exactly as before. Never invent one.
+            //
+            // The value was validated as printable ASCII both on the way in and
+            // on the way back out of storage, so `from_str` cannot realistically
+            // fail here; if it somehow does, fail CLOSED (500) rather than serve
+            // a hit whose signature we silently dropped.
+            let tag_header = match resp.artifact_tag.as_deref() {
+                None => None,
+                Some(tag) => match axum::http::HeaderValue::from_str(tag) {
+                    Ok(v) => Some(v),
+                    Err(e) => {
+                        tracing::error!(
+                            error = %e,
+                            "turbo: stored artifact tag is not a legal header value; failing closed"
+                        );
+                        return (StatusCode::INTERNAL_SERVER_ERROR, "internal").into_response();
+                    }
+                },
+            };
+            let mut response = (StatusCode::OK, resp.bytes).into_response();
+            if let Some(v) = tag_header {
+                response.headers_mut().insert(ARTIFACT_TAG_HEADER, v);
+            }
+            response
         }
         Err(e) => {
             // usage-metering-roi: a genuine NotFound is a GET MISS; other errors
@@ -1302,6 +1343,15 @@ async fn handle_put(
         format!("anon@{caller_tenant}"),
         caller_tenant.clone(),
         now_ms,
+    )
+    // F-009 / WP-9a: carry the Turborepo signature through. A header that is
+    // present but not valid UTF-8 is treated as PRESENT-and-malformed (an empty
+    // `&str` fails `validate_artifact_tag`) rather than as absent, so a
+    // mangled tag is refused 400 instead of being silently dropped.
+    .with_artifact_tag(
+        headers
+            .get(ARTIFACT_TAG_HEADER)
+            .map(|v| v.to_str().unwrap_or("").to_owned()),
     );
     match state.handler.put(req) {
         Ok(resp) => {
@@ -1513,6 +1563,11 @@ fn map_err(e: TurboBridgeError) -> axum::response::Response {
         TurboBridgeError::TeamIdInvalid { .. } => {
             (StatusCode::BAD_REQUEST, "invalid teamId").into_response()
         }
+        // F-009 / WP-9a: a PRESENT but malformed `x-artifact-tag` → 400. An
+        // ABSENT tag never reaches this arm (it is not an error).
+        TurboBridgeError::ArtifactTagInvalid { .. } => {
+            (StatusCode::BAD_REQUEST, "invalid x-artifact-tag").into_response()
+        }
         TurboBridgeError::CrossTenantDenied { .. } => {
             (StatusCode::FORBIDDEN, "cross-tenant").into_response()
         }
@@ -1674,6 +1729,223 @@ mod tests {
             .await
             .expect("body");
         assert_eq!(response_body.as_ref(), body_bytes.as_slice());
+    }
+
+    // ── x-artifact-tag (Turborepo signature) ──────────────────────────────────
+
+    /// F-009 / WP-9a — protocol conformance for the Turborepo artifact
+    /// signature. A client with `TURBO_REMOTE_CACHE_SIGNATURE_KEY` set sends
+    /// `x-artifact-tag` (an opaque base64 HMAC over the hash + body, computed
+    /// with a key the SERVER never holds) on PUT, and verifies the SAME value
+    /// echoed back on GET. Before this test CoreLink dropped the header
+    /// entirely on both verbs, so a customer who enabled signature
+    /// verification against CoreLink got SILENCE, not verification.
+    ///
+    /// This is the DoD-1 test: a PUT carrying the tag stores it and the
+    /// matching GET returns it. It is written to compile against the
+    /// PRE-fix code (headers are plain strings), so it fails on the
+    /// ASSERTION — not on a compile error — if the feature is reverted.
+    #[tokio::test]
+    async fn artifact_tag_round_trips_put_to_get() {
+        let state = fixture();
+        let app = router(state);
+
+        // A real turbo tag: base64 of an HMAC-SHA256 (44 chars).
+        let tag = "dGhpcy1pcy1hLXR1cmJvLXNpZ25hdHVyZS10YWctdmFsdWU=";
+        let artifact = b"signed-build-output".to_vec();
+
+        let put_req = Request::builder()
+            .method(Method::PUT)
+            .uri("/v8/artifacts/signedhash01?teamId=team_sig")
+            .header("content-type", "application/octet-stream")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
+            .header(ARTIFACT_TAG_HEADER, tag)
+            .body(Body::from(artifact.clone()))
+            .expect("put request");
+        let put_resp = app.clone().oneshot(put_req).await.expect("put oneshot");
+        assert_eq!(put_resp.status(), StatusCode::OK);
+
+        let get_req = Request::builder()
+            .method(Method::GET)
+            .uri("/v8/artifacts/signedhash01?teamId=team_sig")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
+            .body(Body::empty())
+            .expect("get request");
+        let get_resp = app.oneshot(get_req).await.expect("get oneshot");
+        assert_eq!(get_resp.status(), StatusCode::OK);
+
+        let echoed = get_resp
+            .headers()
+            .get(ARTIFACT_TAG_HEADER)
+            .map(|v| v.to_str().unwrap_or("<non-ascii>").to_owned());
+        assert_eq!(
+            echoed.as_deref(),
+            Some(tag),
+            "a GET for an artifact PUT with x-artifact-tag MUST echo that exact tag; \
+             dropping it silently disables the client's signature verification"
+        );
+
+        let body = axum::body::to_bytes(get_resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        assert_eq!(
+            body.as_ref(),
+            artifact.as_slice(),
+            "the artifact bytes must be unchanged by tag handling"
+        );
+    }
+
+    /// DoD-2 + DoD-3 — ABSENCE of a tag stays valid. Most clients never set
+    /// `TURBO_REMOTE_CACHE_SIGNATURE_KEY`, so an untagged PUT is the NORMAL
+    /// case: it must behave exactly as before, and the matching GET must
+    /// return the bytes with NO `x-artifact-tag` header and NO error.
+    /// Fail-closed applies to a tag that is present and malformed, never to
+    /// one that is absent.
+    #[tokio::test]
+    async fn absent_artifact_tag_is_valid_on_both_verbs() {
+        let state = fixture();
+        let app = router(state);
+
+        let artifact = b"unsigned-build-output".to_vec();
+        let put_req = Request::builder()
+            .method(Method::PUT)
+            .uri("/v8/artifacts/unsignedhash01?teamId=team_nosig")
+            .header("content-type", "application/octet-stream")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
+            .body(Body::from(artifact.clone()))
+            .expect("put request");
+        let put_resp = app.clone().oneshot(put_req).await.expect("put oneshot");
+        assert_eq!(
+            put_resp.status(),
+            StatusCode::OK,
+            "an untagged PUT must succeed exactly as before"
+        );
+
+        let get_req = Request::builder()
+            .method(Method::GET)
+            .uri("/v8/artifacts/unsignedhash01?teamId=team_nosig")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
+            .body(Body::empty())
+            .expect("get request");
+        let get_resp = app.oneshot(get_req).await.expect("get oneshot");
+        assert_eq!(
+            get_resp.status(),
+            StatusCode::OK,
+            "a GET for an artifact stored WITHOUT a tag must not error"
+        );
+        assert!(
+            get_resp.headers().get(ARTIFACT_TAG_HEADER).is_none(),
+            "no tag was stored, so none may be invented on the way out"
+        );
+        let body = axum::body::to_bytes(get_resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        assert_eq!(body.as_ref(), artifact.as_slice());
+    }
+
+    /// A PRESENT but malformed tag fails CLOSED with 400 — it is never
+    /// silently dropped, which would hand the client a cache entry it
+    /// believes is signed. (Absence is still fine; see the test above.)
+    #[tokio::test]
+    async fn oversized_artifact_tag_is_rejected_400_not_dropped() {
+        let state = fixture();
+        let app = router(state);
+
+        let too_long = "A".repeat(corelink_turbo_bridge::MAX_ARTIFACT_TAG_LEN + 1);
+        let put_req = Request::builder()
+            .method(Method::PUT)
+            .uri("/v8/artifacts/oversizedtag01?teamId=team_sig")
+            .header("content-type", "application/octet-stream")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
+            .header(ARTIFACT_TAG_HEADER, &too_long)
+            .body(Body::from(b"bytes".to_vec()))
+            .expect("put request");
+        let put_resp = app.clone().oneshot(put_req).await.expect("put oneshot");
+        assert_eq!(
+            put_resp.status(),
+            StatusCode::BAD_REQUEST,
+            "an oversized tag must be refused, never stored or silently dropped"
+        );
+
+        // Nothing was stored: the artifact is still absent.
+        let get_req = Request::builder()
+            .method(Method::GET)
+            .uri("/v8/artifacts/oversizedtag01?teamId=team_sig")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
+            .body(Body::empty())
+            .expect("get request");
+        let get_resp = app.oneshot(get_req).await.expect("get oneshot");
+        assert_eq!(get_resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// The tag sidecar must not weaken the B-024 create-only refusal: a
+    /// second PUT to the same key is still 409, and the FIRST tag survives
+    /// (the refused write never replaces the stored tag either).
+    #[tokio::test]
+    async fn create_only_409_still_holds_with_a_tag_and_first_tag_survives() {
+        let state = fixture();
+        let app = router(state);
+
+        let first_tag = "Zmlyc3QtdGFn";
+        let second_tag = "c2Vjb25kLXRhZw==";
+
+        let mk_put = |tag: &str, body: &'static [u8]| {
+            Request::builder()
+                .method(Method::PUT)
+                .uri("/v8/artifacts/dupetaghash?teamId=team_sig")
+                .header("content-type", "application/octet-stream")
+                .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+                .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
+                .header(ARTIFACT_TAG_HEADER, tag)
+                .body(Body::from(body))
+                .expect("put request")
+        };
+
+        let first = app
+            .clone()
+            .oneshot(mk_put(first_tag, b"first"))
+            .await
+            .expect("first put");
+        assert_eq!(first.status(), StatusCode::OK);
+
+        let second = app
+            .clone()
+            .oneshot(mk_put(second_tag, b"second"))
+            .await
+            .expect("second put");
+        assert_eq!(
+            second.status(),
+            StatusCode::CONFLICT,
+            "B-024 create-only must survive the tag feature"
+        );
+
+        let get_req = Request::builder()
+            .method(Method::GET)
+            .uri("/v8/artifacts/dupetaghash?teamId=team_sig")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
+            .body(Body::empty())
+            .expect("get request");
+        let get_resp = app.oneshot(get_req).await.expect("get oneshot");
+        assert_eq!(get_resp.status(), StatusCode::OK);
+        assert_eq!(
+            get_resp
+                .headers()
+                .get(ARTIFACT_TAG_HEADER)
+                .and_then(|v| v.to_str().ok()),
+            Some(first_tag),
+            "the refused second PUT must not replace the first tag"
+        );
+        let body = axum::body::to_bytes(get_resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        assert_eq!(body.as_ref(), b"first".as_slice());
     }
 
     // ── opaque hash round-trip ────────────────────────────────────────────────
