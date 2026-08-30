@@ -36,8 +36,19 @@ describe("isValidPatSigningKeyHex (WP-F2)", () => {
     // THE defect shape: long enough to pass the old length-only gate,
     // undecodable by hexDecode.
     expect(isValidPatSigningKeyHex("z".repeat(64))).toBe(false);
-    expect(isValidPatSigningKeyHex("not-a-real-key-but-long-enough-xyz!!").length >= 64 &&
-      isValidPatSigningKeyHex("not-a-real-key-but-long-enough-xyz!!")).toBe(false);
+    // This case used to read
+    //   expect(fn(s).length >= 64 && fn(s)).toBe(false)
+    // which asserted NOTHING: `fn` returns a boolean, `.length` on a boolean
+    // is `undefined`, `undefined >= 64` is `false`, and `false && …`
+    // short-circuits before `fn` is ever called a second time — so the whole
+    // expression was the literal `false` and `expect(false).toBe(false)`
+    // passed no matter what the function did. The string it used was also
+    // only 36 chars, so even a live assertion would have been rejected on
+    // LENGTH and never exercised the hex predicate it was written for.
+    const longNonHex = "not-a-real-key-but-long-enough-xyz!!".repeat(2);
+    expect(longNonHex.length).toBeGreaterThanOrEqual(64);
+    expect(longNonHex.length % 2).toBe(0);
+    expect(isValidPatSigningKeyHex(longNonHex)).toBe(false);
   });
 
   it("rejects empty string", () => {
