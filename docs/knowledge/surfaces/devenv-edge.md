@@ -7,7 +7,7 @@ source_files:
   - "worker/src/lib/devenv_guard.ts"
   - "worker/src/lib/openapi_devenv.ts"
   - "wrangler.toml"
-checkpoint_sha: "PLACEHOLDER"
+checkpoint_sha: "672f8f271a7bae558260d97c5c8809c07b7a4fc6"
 provenance: "AUTHORED"
 tags: ["surfaces", "devenv", "worker-edge", "auth", "quota", "durable-object"]
 timestamp: "2026-08-30T00:00:00Z"
