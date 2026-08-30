@@ -3298,16 +3298,28 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  bash -c 'git rev-parse --is-shallow-repository | grep -qx false || { echo "FALHA: clone raso — ancestralidade nao verificavel. O workflow precisa de fetch-depth: 0."; exit 1; }
-  n=0
-  for f in $(git ls-tree -r --name-only HEAD -- docs/knowledge/ | grep "\.md$" | grep -vE "/(index|log)\.md$"); do
-    sha=$(git show "HEAD:$f" | grep -m1 -oE "checkpoint_sha:[[:space:]]*\"?[0-9a-f]{8,40}" | grep -oE "[0-9a-f]{8,40}") || true
-    [ -z "$sha" ] && continue
-    git merge-base --is-ancestor "$sha" HEAD 2>/dev/null || n=$((n+1))
-  done
+  bash -c 'set -o pipefail
+  git rev-parse --is-shallow-repository | grep -qx false || { echo "FALHA: clone raso — ancestralidade nao verificavel. O workflow precisa de fetch-depth: 0."; exit 1; }
+  tmp=$(mktemp -d); trap "rm -rf $tmp" EXIT
+  git ls-tree -r --name-only HEAD -- docs/knowledge/ | grep "\.md$" | grep -vE "/(index|log)\.md$" > "$tmp/files"
+  [ -s "$tmp/files" ] || { echo "INDETERMINADO: nenhum conceito encontrado em docs/knowledge — arvore inesperada."; exit 1; }
+  grep -H -m1 -oE "^checkpoint_sha:[[:space:]]*\"?[0-9a-f]{8,40}" $(cat "$tmp/files") 2>/dev/null \
+    | sed -E "s|^([^:]+):.*[^0-9a-f]([0-9a-f]{8,40})$|\1\t\2|" > "$tmp/pairs"
+  git rev-list HEAD | sort > "$tmp/reach"
+  cut -f2 "$tmp/pairs" | sort -u | sed "s|^|^|" > "$tmp/pat"
+  grep -hoE -f "$tmp/pat" "$tmp/reach" | sort -u > "$tmp/hit"
+  n=$(cut -f2 "$tmp/pairs" | grep -vxF -f "$tmp/hit" | wc -l | tr -d " ")
   [ "$n" -gt 0 ] || { echo "FALHA: zero ancoras inalcancaveis — o apodrecimento acabou, feche o item."; exit 1; }
-  python3 scripts/validate_okf.py >/dev/null 2>&1 || { echo "FALHA: validate_okf REPROVA — a prevencao existe, feche o item."; exit 1; }
-  echo "aberto: $n ancoras inalcancaveis e validate_okf ainda passa (prevencao ausente)"'
+  blk=$(grep -A1 -F "if not git.is_ancestor(str(prev_sha), args.base_ref):" scripts/validate_okf.py) || {
+    echo "INDETERMINADO: o bloco de ancestralidade do C5b nao foi encontrado em validate_okf.py."
+    echo "Alguem refatorou o caminho. NAO estou concluindo nada — olhe a mao e reescreva este verify."
+    exit 1
+  }
+  case "$blk" in
+    *continue*) : ;;
+    *) echo "FALHA: o C5b nao PULA mais ancora inalcancavel — a prevencao existe, feche o item."; exit 1 ;;
+  esac
+  echo "aberto: $n ancoras inalcancaveis e o C5b ainda PULA em vez de reprovar (prevencao ausente)"'
 verify-means: |
   open — existem âncoras inalcançáveis E o `validate_okf.py` ainda passa mesmo
   assim. As duas metades juntas são a definição do item: o apodrecimento é real e
@@ -3335,6 +3347,23 @@ verify-means: |
 
   A contagem continua registrada no ROADMAP como INSTANTÂNEO datado, explicitamente
   não-gateado — número medido apodrece por design, e fingir o contrário foi o defeito.
+
+  NOTA sobre a forma do `verify` (2026-08-30, segunda correção no mesmo dia): a
+  primeira versão do predicado novo chamava `python3 scripts/validate_okf.py` e lia
+  QUALQUER saída não-zero como "a prevenção existe". Isso é falso: o validador sai
+  não-zero por motivos de ambiente também — na CI ele reprovou por resolução de
+  base-ref enquanto o check `okf-wiki-validation` do MESMO PR estava verde, duas
+  invocações com resultados opostos sobre a mesma árvore. O item passaria a mandar
+  FECHAR num momento em que nada foi prevenido: a mesma inversão que o formato novo
+  veio consertar, só que por falha de ambiente em vez de número instável.
+
+  Por isso o verify NÃO executa mais o validador. Ele lê o BLOCO de código que
+  implementa a tolerância (`if not git.is_ancestor(...): continue` em `_check_c5b`) e
+  decide por ele — bloco extraído, não símbolo grepado, porque o símbolo continuaria
+  existindo depois da correção e só o corpo diria se ainda PULA ou se passou a
+  REPROVAR. Se o bloco sumir (refatoração), o verify sai INDETERMINADO e pede olho
+  humano em vez de concluir. Verificado nos três estados: verde hoje; DRIFTED quando
+  o `continue` vira `fails.add`; DRIFTED quando o bloco é refatorado.
 last-verified: 2026-08-30
 # NOTA (aprendida na propria CI): a primeira versao deste verify PASSAVA local e
 # REPROVAVA na CI. Causa: `actions/checkout` sem `fetch-depth: 0` clona RASO, e
