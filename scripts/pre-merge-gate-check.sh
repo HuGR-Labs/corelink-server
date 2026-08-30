@@ -155,10 +155,12 @@ fi
 # from an EXIT trap so it survives `2>&1 | tail -N` too, and so that every exit
 # path (including the early structural refusals) carries it.
 VERDICT_FILE=""
+LANES_FILE=""
 # shellcheck disable=SC2329  # invoked indirectly by `trap on_exit EXIT` below; 0.11 only spots that when the script does not end in an explicit `exit`.
 on_exit() {
   local rc=$?
   if [ -n "$VERDICT_FILE" ]; then rm -f "$VERDICT_FILE"; fi
+  if [ -n "$LANES_FILE" ]; then rm -f "$LANES_FILE"; fi
   if [ "$MODE" != "merge" ] && [ ! -t 1 ]; then
     echo "  ⚠️  stdout is not a terminal — if you are about to chain \`&& gh pr merge\`," >&2
     echo "      DON'T: a pipeline's exit status is the LAST command's (\`tail\` = 0), so" >&2
@@ -250,7 +252,8 @@ run_gate() {
     return 1
   fi
 
-  GATE_JSON="$json" GATE_VERDICT_FILE="$VERDICT_FILE" python3 - "$PR" <<'PY'
+  GATE_JSON="$json" GATE_VERDICT_FILE="$VERDICT_FILE" \
+    GATE_LANES_FILE="$LANES_FILE" python3 - "$PR" <<'PY'
 import os, sys, json
 pr = sys.argv[1]
 data = json.loads(os.environ["GATE_JSON"])
@@ -331,12 +334,23 @@ if fails or pends:
     # finished list whose sole problem is fail/cancel is override-eligible.
     verdict("STRUCTURAL" if pends else "OVERRIDABLE")
     sys.exit(1)
+# The lane set is written HERE, at the only point the gate concludes green, so
+# the record is a by-product of gating rather than a thing the operator must
+# remember to do. WP-1 required every merge to record its checked lanes; nine
+# consecutive merges did not, because it depended on discipline. Discipline is
+# not a mechanism.
+_lanes = os.environ.get("GATE_LANES_FILE") or ""
+if _lanes:
+    with open(_lanes, "w") as fh:
+        for c in sorted(data, key=lambda c: c.get("name", "")):
+            fh.write(f"{c.get('bucket','?')}\t{c.get('name','?')}\n")
 print(f"  ✅ All gates green — OK to merge PR #{pr}.")
 PY
 }
 
 if [ "$MODE" = "merge" ]; then
   VERDICT_FILE="$(mktemp "${TMPDIR:-/tmp}/premergegate.XXXXXX")"
+  LANES_FILE="$(mktemp "${TMPDIR:-/tmp}/premergelanes.XXXXXX")"
 fi
 
 gate_rc=0
@@ -396,6 +410,8 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
+GATED_SHA="$(gh pr view "$PR" --json headRefOid -q .headRefOid 2>/dev/null || echo unknown)"
+
 merge_rc=0
 gh pr merge "$PR" "${MERGE_ARGS[@]}" || merge_rc=$?
 
@@ -431,6 +447,32 @@ if [ "$merge_rc" -ne 0 ]; then
   echo "      because the PR merged. See gh's message above for what it tripped on."
 else
   echo "  ✅ PR #$PR merged."
+fi
+
+# ── Record the checked lane set on the PR (WP-1 DoD) ─────────────────────────
+# Runs only after GitHub has confirmed state=MERGED, and only from the lane set
+# the gate itself computed — so the comment can never claim a greener check set
+# than the one that actually authorised this merge.
+#
+# This is deliberately best-effort and deliberately LAST. This script's exit
+# status answers exactly one question — "is PR #N merged" (#1051) — and a
+# failed comment post must not change that answer. It warns instead, because a
+# silent failure here would rot the record back to the state this fixes.
+if [ -s "$LANES_FILE" ]; then
+  {
+    echo "**Merge gate — checked lane set**"
+    echo
+    echo "Gated at \`$GATED_SHA\`, merged by \`scripts/pre-merge-gate-check.sh --merge $PR\`."
+    if [ -n "$ADMIN_REASON" ]; then
+      echo
+      echo "> ⚠️ **--admin override.** Reason stated by the caller: $ADMIN_REASON"
+    fi
+    echo
+    echo '```'
+    sed 's/^pass\t/[pass]     /; s/^skipping\t/[skipping] /' "$LANES_FILE"
+    echo '```'
+  } | gh pr comment "$PR" --body-file - >/dev/null 2>&1 \
+    || echo "  ⚠️  merged, but recording the lane set on PR #$PR failed (record only; the merge stands)."
 fi
 
 # delete_branch_on_merge=false here, so the head branch survives the merge until
