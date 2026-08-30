@@ -351,15 +351,13 @@ impl PhaseLedger {
             ("ortier", Phase::Tier),
             ("oaudit", Phase::Audit),
         ] {
-            // The four detail phases are gated (see `detail_phases_enabled`);
-            // when off their time is left to fall into `oother`, exactly as
-            // before this split existed.
-            if !detail
-                && matches!(
-                    phase,
-                    Phase::Argon | Phase::Permit | Phase::Tier | Phase::Audit
-                )
-            {
+            // Only the CREDENTIAL-PATH pair is gated (see
+            // `detail_phases_enabled`). `ortier`/`oaudit` publish
+            // unconditionally: they carry no credential oracle, and leaving them
+            // in the residue is what made `oother` an unnamed 139 ms in the
+            // 2026-08-30 measurement (B-109). Enumerating them costs nothing and
+            // is the whole point of the residue being a residue.
+            if !detail && matches!(phase, Phase::Argon | Phase::Permit) {
                 continue;
             }
             if let Some(us) = self.micros(phase) {
@@ -377,7 +375,7 @@ impl PhaseLedger {
     }
 }
 
-/// Whether the four detail phases (`oargon`, `opermit`, `ortier`, `oaudit`) are
+/// Whether the two CREDENTIAL-PATH detail phases (`oargon`, `opermit`) are
 /// published on the wire.
 ///
 /// **Off by default, and that default is load-bearing.** `oargon`/`opermit`
@@ -393,18 +391,26 @@ impl PhaseLedger {
 ///     `token_id` is timing-indistinguishable from a valid one. A header that
 ///     partitions that time by name erodes the padding it is there to provide.
 ///
-/// `ortier` and `oaudit` carry no such credential-oracle risk on their own —
-/// they are gated behind the SAME flag as a matter of a single, conservative
-/// opt-in switch for every phase this split has added since the original
-/// three (`opat`/`oquota`/`ostore`), rather than growing a second flag per
-/// addition. An operator may enable the whole group once they have read this
-/// doc; there is currently no reason to ship `oaudit` alone.
+/// `ortier` and `oaudit` carry no such credential-oracle risk on their own, and
+/// **they are no longer behind this flag.** They were, as a single conservative
+/// opt-in for everything the split added — with the note that there was "currently
+/// no reason to ship `oaudit` alone". B-109 is that reason.
 ///
-/// When off, the four phases are simply not emitted and their time falls into
-/// `oother` — the residue is unchanged in meaning and the header is byte-identical
-/// to what shipped before the split. The ledger still RECORDS them unconditionally
-/// (an `Instant` is free), so turning the flag on needs no rebuild of the timing
-/// code, only a redeploy of this gate.
+/// The 2026-08-30 production profile measured `oother` at 139 ms on a warm PUT
+/// against 1 ms on the GET: real container work, unnamed, because the residue is
+/// computed by subtraction and these two were being subtracted into it. The only
+/// way to enumerate it was to arm this flag in production — which would publish
+/// the credential oracle above to every caller, for as long as the diagnostic
+/// window lasted. **A performance diagnostic must not widen a security window.**
+/// Splitting the gate enumerates the two neutral phases permanently and keeps the
+/// two that are not neutral shut.
+///
+/// What remains gated is exactly what the oracle argument covers: `oargon` and
+/// `opermit`, both on the credential path, both reporting per-process cache state
+/// by their PRESENCE. When off they are not emitted and their time falls into
+/// `oother`, whose meaning is unchanged. The ledger still RECORDS them
+/// unconditionally (an `Instant` is free), so arming the flag needs no rebuild of
+/// the timing code, only a redeploy of this gate.
 ///
 /// Armed with `CORELINK_ORIGIN_TIMING_DETAIL=on`, deliberately, by an operator who
 /// has read the above — never as a default.
@@ -882,14 +888,16 @@ mod tests {
     }
     /// The gate is OFF by default and that default must keep the header exactly
     /// as it was before the PAT-detail split existed: no `oargon`, no `opermit`,
-    /// no `ortier`, no `oaudit`, and their time left inside the `oother` residue.
+    /// their time left inside the `oother` residue — while the two NEUTRAL
+    /// phases (`ortier`, `oaudit`) publish either way.
     ///
     /// This is a security property, not a formatting preference — see
     /// `detail_phases_enabled`. `opermit`'s presence reports whether the
     /// Argon2id flight ran, which reports the state of a per-process cache on
-    /// the credential path.
+    /// the credential path. `ortier`/`oaudit` report neither, which is why
+    /// B-109 could enumerate them without arming the oracle.
     #[test]
-    fn detail_phases_are_absent_when_the_gate_is_off() {
+    fn the_credential_phases_are_absent_when_the_gate_is_off() {
         let ledger = PhaseLedger::new();
         ledger.add(Phase::Pat, 10_000);
         ledger.add(Phase::Argon, 90_000);
@@ -900,30 +908,33 @@ mod tests {
         let off = parse(&ledger.server_timing_value_with(200_000, false));
         assert!(
             !off.contains_key("oargon"),
-            "oargon must not ship by default"
+            "oargon is on the credential path and must not ship by default"
         );
         assert!(
             !off.contains_key("opermit"),
-            "opermit must not ship by default"
+            "opermit's PRESENCE is the oracle — it must not ship by default"
         );
-        assert!(
-            !off.contains_key("ortier"),
-            "ortier must not ship by default"
+        assert_eq!(
+            off.get("ortier"),
+            Some(&20),
+            "ortier carries no credential oracle and is enumerated by default (B-109)"
         );
-        assert!(
-            !off.contains_key("oaudit"),
-            "oaudit must not ship by default"
+        assert_eq!(
+            off.get("oaudit"),
+            Some(&15),
+            "oaudit carries no credential oracle and is enumerated by default (B-109)"
         );
         assert_eq!(
             off.get("opat"),
             Some(&10),
             "the pre-existing phases are untouched"
         );
-        // 200 total - 10 opat = 190; the four gated phases stay in the residue.
+        // 200 total - 10 opat - 20 ortier - 15 oaudit = 155; only the two
+        // credential-path phases stay in the residue.
         assert_eq!(
             off.get("oother"),
-            Some(&190),
-            "gated time falls into oother"
+            Some(&155),
+            "only the gated credential phases fall into oother"
         );
 
         // With the gate on, the same ledger partitions the very same total.
@@ -933,5 +944,27 @@ mod tests {
         assert_eq!(on.get("ortier"), Some(&20));
         assert_eq!(on.get("oaudit"), Some(&15));
         assert_eq!(on.get("oother"), Some(&60), "190 - 90 - 5 - 20 - 15 = 60");
+    }
+
+    /// The residue always closes: named phases plus `oother` sum to the total,
+    /// with the gate OFF as well as ON. This is what makes `oother` a residue
+    /// rather than a guess, and splitting the gate must not break it.
+    #[test]
+    fn phases_plus_residue_sum_to_the_total_on_both_sides_of_the_gate() {
+        let ledger = PhaseLedger::new();
+        ledger.add(Phase::Pat, 10_000);
+        ledger.add(Phase::Argon, 90_000);
+        ledger.add(Phase::Permit, 5_000);
+        ledger.add(Phase::Tier, 20_000);
+        ledger.add(Phase::Audit, 15_000);
+
+        for detail in [false, true] {
+            let parsed = parse(&ledger.server_timing_value_with(200_000, detail));
+            let sum: i64 = parsed.values().copied().sum();
+            assert_eq!(
+                sum, 200,
+                "phases + oother must equal the container total (detail={detail})"
+            );
+        }
     }
 }

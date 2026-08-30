@@ -4203,23 +4203,26 @@ mod tests {
              Header: {header}"
         );
         assert!(
-            !detail_phases_enabled_for_test() || !parsed.contains_key("oaudit"),
+            !parsed.contains_key("oaudit"),
             "the concurrent list()'s audit write must NOT ALSO appear under \
              oaudit — it would double-count the same wall-clock window \
              `ostore` already reports. Header: {header}"
         );
     }
 
-    /// `oaudit`/`ortier`/`opermit`/`oargon` are gated behind
-    /// `CORELINK_ORIGIN_TIMING_DETAIL`; read it the same way
-    /// `origin_timing.rs`'s own tests do, so the assertion above is
-    /// meaningful whether or not the detail phases are published on this
-    /// run.
-    fn detail_phases_enabled_for_test() -> bool {
-        // Mirrors `origin_timing::detail_phases_enabled` exactly (that
-        // function is private to its own module).
-        std::env::var("CORELINK_ORIGIN_TIMING_DETAIL").is_ok_and(|v| v == "on")
-    }
+    // The `oaudit` assertion above used to be guarded by a mirror of
+    // `origin_timing::detail_phases_enabled`, because `oaudit` shipped only with
+    // `CORELINK_ORIGIN_TIMING_DETAIL=on`. B-109 narrowed that flag to the two
+    // credential-path phases (`oargon`/`opermit`), so `oaudit` now publishes
+    // ALWAYS — and the guard had to go with it.
+    //
+    // It was not merely redundant, it had become DOMINATED: with the flag off
+    // (the production default) `!detail_phases_enabled_for_test()` is true, so
+    // the whole assertion short-circuits to `true` and would pass even if the
+    // concurrent `list()` seam started double-counting its audit write under
+    // `oaudit`. A guard that cannot fail in the configuration that actually
+    // ships is not a guard. The assertion is now unconditional, which is what
+    // the double-counting property always required.
 
     // ---------------------------------------------------------------
     // Integration round-trip test (requires live R2 creds)
