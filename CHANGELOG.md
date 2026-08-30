@@ -24,6 +24,17 @@ Each entry cross-references:
 
 ### Fixed
 
+- **`chacha20` 0.10.0 was yanked upstream, blocking every Rust PR.** `cargo deny
+  check` went red on `main` between 08-27 and 08-28 with no commit in between —
+  crates.io yanked the version, which is exactly the class of failure a cron
+  earns its keep on. Relocked to 0.10.2 with `cargo update -p chacha20` alone
+  (two lines of `Cargo.lock`), not a blanket update. 0.10.1 is also yanked, so
+  0.10.2 is the first clean version above ours — checked against the crates.io
+  API rather than assumed, since landing on a second yanked version would have
+  reproduced the failure behind a green-looking diff. `chacha20` reaches us only
+  as a transitive DEV dependency (via `testcontainers`), so nothing shipped
+  changes.
+
 - **The CAS read path had no object-SIZE bound (B-051).** Peak heap for a read
   is `concurrent_reads x object_size`. B-052 bounded the first factor
   (`CAS_READ_CONCURRENCY_LIMIT`, 8/tenant); nothing bounded the second. The
