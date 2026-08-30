@@ -1169,6 +1169,7 @@ mod tests {
     ///   - the expiry sweep must drop what is inert (`deadline <= now`),
     ///   - and must KEEP what is still live, or the sweep silently becomes
     ///     the bypass the tombstone exists to prevent.
+    ///
     /// Fills the map to the cap with expired entries plus one live one, then
     /// forces a further insert: the sweep must reclaim the expired ones and
     /// leave exactly the live tombstone plus the new one.
