@@ -16,7 +16,7 @@ source_blobs:
   - "worker/src/lib/tenant_tier_cache.ts@4a440e51a8199a471bcde1b80ed31a872aee2b53"
   - "worker/src/lib/onboarding_events.ts@13087a3f130b93729ade6e30e9568ea500344c22"
   - "worker/src/lib/internal_auth.ts@4a60c0111b8db4c3512976ffe6e92406e749edfc"
-checkpoint_sha: "4e29e7d901780029d2402c56f10a62ef725cdc43"
+checkpoint_sha: "44c6f55bc7c2aedc0bdef5ee58cc619c50729b2d"
 provenance: "AUTHORED"
 tags: ["planes", "worker", "edge", "auth", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
