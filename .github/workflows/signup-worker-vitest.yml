@@ -42,5 +42,10 @@ jobs:
         # node vitest can install+run. Mirrors worker-vitest.yml.
         run: npm install --legacy-peer-deps
 
-      - name: Run vitest
-        run: npx vitest run
+      - name: Run vitest + coverage floor
+        # `--coverage` is LOAD-BEARING: vitest only evaluates the
+        # `coverage.thresholds` block in vitest.config.ts when the provider is
+        # enabled. Dropping this flag disarms the floor without failing anything,
+        # which is exactly how the sibling worker/ floor sat dormant for months.
+        # Exit code is vitest's own (no pipe, no `|| true`).
+        run: npx vitest run --coverage
