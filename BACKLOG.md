@@ -3258,7 +3258,7 @@ verify-means: |
 last-verified: 2026-08-29
 ```
 
-### B-062 — cinco lanes de CI presas em runner GitHub-hosted, que está billing-blocked
+### B-110 — cinco lanes de CI presas em runner GitHub-hosted, que está billing-blocked
 
 `cas_foundation.yml`, `coverage.yml`, `ffi-matrix-ci.yml`, `mutation-nightly.yml`
 e `semgrep.yml` somam **1.057 execuções e ZERO sucessos**. A causa é a mesma nas
@@ -3283,7 +3283,7 @@ frota self-hosted (e `ffi-matrix-ci` já é reconhecidamente parked), ou são
 apagadas. Nenhuma dessas é decisão de higiene.
 
 ```backlog
-id: B-062
+id: B-110
 repo: corelink-server
 owner: owner
 status: open
@@ -3300,7 +3300,7 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-063 — aquisição de certificados Apple/Windows (o resto dos "secrets ausentes" não era isso)
+### B-111 — aquisição de certificados Apple/Windows (o resto dos "secrets ausentes" não era isso)
 
 Reescrito 2026-08-30 depois que o owner respondeu. A primeira versão deste item
 tratava quatro lanes como um bloqueio só — "os secrets não existem". Ler os
@@ -3324,19 +3324,19 @@ credencial acabou.
 
 O que NÃO está provado, e por isso não é fechamento: nenhuma das duas foi
 executada desde o mint, então "tem o secret" ainda não é "fica verde". O
-`sign-linux` continua atrás do `release-cli` de qualquer forma ([B-064]). A
+`sign-linux` continua atrás do `release-cli` de qualquer forma ([B-112]). A
 próxima execução decide, e ela é barata — o `terraform-drift` é um
 `plan -detailed-exitcode`, leitura pura.
 
 **(c) Não é bloqueio de secret nenhum — `release-cli`.** O único secret que ela
 usa é `CORELINK_CLI_RELEASE_TOKEN`, e **ele já existe**. A falha é o step
-`cargo zigbuild`. Ver [B-064].
+`cargo zigbuild`. Ver [B-112].
 
 Consequência enquanto (a) e (b) durarem: sem detecção de drift de
 infraestrutura, e nenhum binário de release assinado em plataforma alguma.
 
 ```backlog
-id: B-063
+id: B-111
 repo: corelink-server
 owner: owner
 status: open
@@ -3361,7 +3361,7 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-064 — a cadeia de release nunca produziu um artefato verde, e as lanes a jusante herdam isso
+### B-112 — a cadeia de release nunca produziu um artefato verde, e as lanes a jusante herdam isso
 
 `release-cli.yml` dispara em tag `cli-v*` (as tags existem: `cli-v0.1.0`,
 `cli-v0.1.1`) e morre no step `Build (cargo zigbuild) — Linux + Windows`, na
@@ -3404,7 +3404,7 @@ nunca chega a ser produzido. Investigar o que o `zigbuild` reclama antes de
 propor conserto — não presumir toolchain ausente.
 
 ```backlog
-id: B-064
+id: B-112
 repo: corelink-server
 owner: tl
 status: open
@@ -3425,7 +3425,7 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-065 — seis lanes self-hosted sem sucesso, cada uma por um motivo próprio
+### B-113 — seis lanes self-hosted sem sucesso, cada uma por um motivo próprio
 
 Sobram seis do levantamento das 20, e elas NÃO compartilham raiz — agrupá-las
 num predicado só produziria um portão dominado, então ficam nomeadas aqui com o
@@ -3434,7 +3434,7 @@ que foi lido de cada uma:
 - **`nightly.yml`** (103 runs, cron ativo, falhou 2026-08-29): morre em
   `Install cargo-mutants (pinned, prebuilt)` no `corelink-builder-5`. A lane
   ainda queima hoje.
-- **`terraform-drift.yml`**: coberta por [B-063], listada aqui só para a
+- **`terraform-drift.yml`**: coberta por [B-111], listada aqui só para a
   contagem das 20 fechar.
 - **`sbom.yml`** (16 runs, 2026-08-25): morre em
   `Generate SBOM (CycloneDX 1.5+ JSON)` no `corelink-builder-4`.
@@ -3457,7 +3457,7 @@ são as únicas do levantamento inteiro que ainda produzem vermelho diariamente;
 as outras já não disparam. Priorizar por isso, não por volume histórico.
 
 ```backlog
-id: B-065
+id: B-113
 repo: corelink-server
 owner: tl
 status: open
@@ -3663,7 +3663,7 @@ saudáveis. O runbook `RB-AUDIT-ARCHIVE-ABSENT.md` §3.3 antecipa exatamente est
 cego e prescreve tratar partição persistentemente falha como SEV-1 próprio. O detector
 por partição foi construído ([B-022]) precisamente para ele, funciona, e é ignorado.
 
-A causa mecânica é [B-064]. Este item cobre o incidente; aquele cobre o defeito.
+A causa mecânica é [B-112]. Este item cobre o incidente; aquele cobre o defeito.
 
 ```backlog
 id: B-063
@@ -3680,19 +3680,19 @@ verify-means: |
   está no repositório.
 
   Um `verify` que apenas relesse o log do último `audit-archive-lag` seria dominado
-  por [B-064]: assim que o dreno voltar a funcionar o log fica verde, mas o backlog
+  por [B-112]: assim que o dreno voltar a funcionar o log fica verde, mas o backlog
   acumulado continua lá — mediria o alarme, não a condição.
 
   Procedimento: rodar a consulta do runbook §3.3 contra o D1 de prod e conferir se
   alguma partição tem `idle > 3h`. Fecha quando a partição `93da3f7a/enam` drenar
-  E o `audit-archive-lag` voltar a passar. Consertar [B-064] é pré-requisito para
+  E o `audit-archive-lag` voltar a passar. Consertar [B-112] é pré-requisito para
   que ela drene sozinha.
 last-verified: 2026-08-30
 ```
 
 ### B-064 — o selamento da auditoria tem teto de 200 linhas/hora e o laço que o contornaria nunca foi implementado no chamador
 
-Três fatos compõem, e juntos são a causa mecânica de [B-063].
+Três fatos compõem, e juntos são a causa mecânica de [B-111].
 
 **O orçamento.** `audit_drain.rs:409` é `.unwrap_or(200)`, e o comentário da linha 405
 diz textualmente `Global per-call row budget` — é global entre TODAS as partições, não
@@ -3972,7 +3972,7 @@ Os fluxos sem nenhuma cobertura executando são exatamente os de maior consequê
 regulatória e de privilégio: captura e retirada de consentimento, acesso e apagamento
 de DSR (Art. 15 e 17), o visualizador de auditoria e a dupla aprovação administrativa.
 
-Fecha o círculo com [B-062]: a correção do apagamento do Art.17 não está implantada
+Fecha o círculo com [B-110]: a correção do apagamento do Art.17 não está implantada
 **e** o fluxo de interface que a exercitaria nunca roda.
 
 ```backlog
@@ -4011,7 +4011,7 @@ staging para prod"*.
 
 Nenhum workflow faz deploy com `--env staging`. Toda ida a produção é direta, sem soak.
 
-Isto é o que torna [B-062] mais caro do que precisaria ser: sem um ambiente onde a
+Isto é o que torna [B-110] mais caro do que precisaria ser: sem um ambiente onde a
 imagem nova assente antes de ir para as cinco regiões, cada deploy carrega risco que
 um staging absorveria — e é parte de por que o deploy fica represado.
 
@@ -4101,8 +4101,8 @@ e não encontram destino.
 A consequência específica importa mais que o defeito: um desses agendamentos é o drill
 de entrega do PagerDuty. Ele nunca executou.
 
-Isso não é independente de [B-063]. A organização acredita ter validado que o alarme
-chega a um humano, e essa validação nunca correu. O alarme de [B-063] de fato dispara;
+Isso não é independente de [B-111]. A organização acredita ter validado que o alarme
+chega a um humano, e essa validação nunca correu. O alarme de [B-111] de fato dispara;
 o que nunca foi provado é que alguém o recebe — e três dias de SEV-0 sem resposta são
 consistentes com as duas hipóteses.
 
@@ -4126,7 +4126,7 @@ verify-means: |
 
   Se o reparo for implementar o manipulador, quem fechar deve confirmar que o drill do
   PagerDuty efetivamente entrega — presença do handler não prova entrega, e é
-  precisamente a entrega que [B-063] presume e nunca foi provada.
+  precisamente a entrega que [B-111] presume e nunca foi provada.
 last-verified: 2026-08-30
 ```
 
@@ -5856,7 +5856,7 @@ verify-means: |
   independente.
 
   ⚠️ **A medição é do pin `4f9313e0`, não da `main`** — produção estava 43 commits atrás
-  (ver [B-062]). O fix do mapa de tombstone (#1431) NÃO estava em produção; repin em #1445.
+  (ver [B-110]). O fix do mapa de tombstone (#1431) NÃO estava em produção; repin em #1445.
   Remedir após o roll antes de fixar teto ou nomear causa.
 
   Fecha quando N PUTs concorrentes (N na ordem dos 220 do sccache) tiverem taxa de falha
@@ -6068,7 +6068,7 @@ verify-means: |
   o defeito é latência contra armazenamento real, e a única evidência que conta é o
   `Server-Timing` antes e depois, colado lado a lado.
 
-  ⚠️ Medido no pin `4f9313e0`, 43 commits atrás ([B-062]). Remedir após o repin (#1445)
+  ⚠️ Medido no pin `4f9313e0`, 43 commits atrás ([B-110]). Remedir após o repin (#1445)
   ANTES de escrever conserto — parte pode já estar resolvida na `main`, e otimizar o que já
   foi consertado é acertar o número e errar o alvo.
 last-verified: 2026-08-30
