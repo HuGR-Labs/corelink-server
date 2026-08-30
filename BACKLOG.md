@@ -3259,6 +3259,7 @@ owner: tl
 status: open
 verify: |
   bash -c 'grep -qF "63 de 164" docs/campaigns/remediation/ROADMAP.md || exit 1
+  git rev-parse --is-shallow-repository | grep -qx false || { echo "SKIP: clone raso, ancestralidade nao verificavel"; exit 0; }
   n=0
   for f in $(git ls-tree -r --name-only HEAD -- docs/knowledge/ | grep "\.md$" | grep -vE "/(index|log)\.md$"); do
     sha=$(git show "HEAD:$f" | grep -m1 -oE "checkpoint_sha:[[:space:]]*\"?[0-9a-f]{8,40}" | grep -oE "[0-9a-f]{8,40}") || true
@@ -3278,4 +3279,10 @@ verify-means: |
   (content-addressed, sobrevive a rebase E a squash) e fazer o validate_okf reprovar
   âncora inalcançável em vez de degradar para base-ref.
 last-verified: 2026-08-30
+# NOTA (aprendida na propria CI): a primeira versao deste verify PASSAVA local e
+# REPROVAVA na CI. Causa: `actions/checkout` sem `fetch-depth: 0` clona RASO, e
+# `git merge-base --is-ancestor` falha para TODO sha sem historico — medido: 20 de
+# 20 conceitos contados como orfaos num clone raso. O guard de shallow acima e
+# obrigatorio em qualquer verify que use ancestralidade. E a mesma cegueira que
+# este item existe para consertar, mordendo o proprio mecanismo.
 ```
