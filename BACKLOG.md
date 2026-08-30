@@ -6166,3 +6166,110 @@ verify-means: |
   de pronto: enumerar, não otimizar.
 last-verified: 2026-08-30
 ```
+
+### B-114 — a imagem `corelink-runner-devenv` não existe e nenhum workflow a constrói
+
+Descoberto em 2026-08-30 ao destravar o deploy de produção, e a cadeia importa mais que o
+sintoma:
+
+```
+deploy de prod  →  BLOQUEADO: RunnerDevEnvDO não exportado pelo spawn-worker
+  deploy do spawn-worker  →  BLOQUEADO: "Latest tags are not allowed"
+    corelink-runner-devenv:latest  →  A IMAGEM NUNCA FOI CONSTRUÍDA
+      grep -rln "runner-devenv" .github/workflows/  →  VAZIO
+```
+
+O `:latest` é o sintoma — a Cloudflare recusa tags móveis. A causa é que **nada produz a
+imagem**. Os dois contêineres irmãos da frota são pinados por digest; só o DevEnv não é,
+porque não há digest a pinar. O `Dockerfile.runner-devenv` existe no repo da frota e nenhum
+workflow o constrói.
+
+**O custo não foi a feature incompleta, foi o bloqueio colateral.** Enquanto durou, nenhum
+deploy de produção passava, com 43 commits presos — entre eles o #1410, que conserta a
+tabela fantasma que parte o apagamento do **GDPR Art. 17** no meio. Uma feature de
+desenvolvimento incompleta segurou uma correção de conformidade.
+
+Destravado em #1447 desacoplando o binding, deliberadamente **sem** construir a imagem às
+pressas: ligar feature nova pelo caminho apressado só para desbloquear é exatamente como o
+defeito chegou aqui. Este item cobre a dívida que sobrou.
+
+```backlog
+id: B-114
+repo: corelink-runners
+owner: tl
+status: open
+verify: manual
+verify-means: |
+  MANUAL — a alegação é sobre o repositório `corelink-runners`, e o `backlog_verify.py`
+  roda no `corelink-server`. Um `verify` automático aqui grepearia a árvore errada e
+  passaria verde para sempre, medindo a ausência do arquivo no repo onde ele nunca esteve.
+
+  Procedimento, no clone do `corelink-runners`: `grep -rln "runner-devenv"
+  .github/workflows/` — hoje retorna **vazio**, e é essa ausência que é a alegação.
+  Confirmar também que `Dockerfile.runner-devenv` existe (o defeito é o descasamento entre
+  Dockerfile presente e workflow ausente, não a falta do Dockerfile).
+
+  Fecha por qualquer um dos dois desfechos legítimos: existe workflow que constrói e
+  publica a imagem por digest, como os dois irmãos da frota; **ou** a feature DevEnv é
+  removida e o `Dockerfile.runner-devenv` sai junto. O segundo é decisão de produto e vale
+  como recusa registrada.
+
+  NÃO fecha por alguém construir a imagem à mão e pinar o digest. Imagem sem workflow que a
+  reproduza é a mesma dívida com outra roupa — o próximo deploy volta a depender de um
+  artefato que ninguém sabe reconstruir.
+last-verified: 2026-08-30
+```
+
+### B-115 — nenhum portão testa se um PR deixa a produção deployável
+
+Este é o item de maior valor dos dois, porque é uma **classe** de defeito sem portão, não
+um defeito.
+
+O #1432 mergeou verde e tornou a produção não-deployável. Nada no CI mediu isso, porque
+nenhum portão pergunta *"depois deste merge, um deploy ainda passa?"*. A verificação existe
+— é o próprio `cf-deploy-prod` — mas roda **depois** do merge e só quando alguém deploya.
+
+O intervalo entre as duas coisas é o defeito. O deploy seguinte pode ser dias depois, e
+quando falhar vai carregar junto todos os commits que entraram no meio: foi exatamente o
+que aconteceu, com 43 commits presos atrás de um binding quebrado, incluindo uma correção
+de GDPR ([B-114]).
+
+Confirmado em 2026-08-30: `grep -rn "wrangler deploy" .github/workflows/ | grep -i dry`
+retorna **vazio**. Nenhuma lane faz um deploy de ensaio. O `cf-deploy-prod` tem portões de
+secrets e de drift, mas todos pressupõem que a configuração resolve — nenhum verifica que
+ela resolve.
+
+O caso é agravado por dependência entre repositórios: o binding quebrado apontava para um
+Durable Object exportado por **outro** worker, em **outro** repo. Um portão que valide só
+esta árvore não teria pego. O que pegaria é um `wrangler deploy --dry-run` contra a
+configuração real de produção, que resolve bindings de verdade.
+
+```backlog
+id: B-115
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'n=$(grep -rn "wrangler deploy" .github/workflows/ 2>/dev/null | grep -ci "dry-run" | tr -d " ")
+  [ "$n" = 0 ] || { echo "FALHA: $n lane(s) ja fazem deploy de ensaio — feche o item."; exit 1; }
+  echo "aberto: nenhuma lane executa wrangler deploy --dry-run; um PR pode ficar verde e tornar a producao nao-deployavel"'
+verify-means: |
+  open — nenhum workflow executa `wrangler deploy --dry-run`.
+
+  Vira DRIFTED quando alguma lane passar a fazer o ensaio, que é o reparo. Escolhi o
+  predicado mais estreito e mais honesto que existe: mede a **presença do ensaio**, não a
+  ausência de defeitos de deployabilidade — essa segunda coisa nenhum grep decide.
+
+  O que este comando NÃO decide, e admito: se o ensaio, uma vez existindo, **resolve
+  bindings entre repositórios**. O binding que causou [B-114] apontava para um Durable
+  Object exportado por outro worker, em outro repo; um dry-run que só valide a sintaxe
+  desta árvore ficaria verde e o item fecharia sem entregar a proteção. Quem fechar deve
+  provar com o caso concreto: reintroduzir o binding quebrado numa branch descartável e
+  confirmar que a lane REPROVA. Portão que nunca foi visto falhando não é portão.
+
+  Nota de escopo: o reparo natural é uma lane `pull_request` com `wrangler deploy
+  --dry-run` contra a config de produção. Ela não precisa de credencial de deploy — o
+  dry-run resolve e não publica — o que a torna barata e compatível com o mandato de zero
+  gasto hosted, rodando na frota `corelink`.
+last-verified: 2026-08-30
+```
