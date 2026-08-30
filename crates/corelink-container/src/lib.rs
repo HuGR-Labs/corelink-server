@@ -183,6 +183,12 @@ pub mod scope;
 /// into `routes::signup::build_state_from_env()`; the dev/test path
 /// (`build_state_with_key`) keeps `InMemorySignupStore`. See module docs.
 pub mod signup_d1_http;
+/// Constant-memory SLI sink for the deployed CAS + AC handlers (B-057).
+///
+/// Replaces the capture-everything `InMemorySliObserver` the storage
+/// builders used to wire, which retained every observation in a `Vec`
+/// for the life of the container with no production reader.
+pub mod sli_aggregate;
 /// Native-container storage adapters (R2 S3-compatible API + D1 HTTP).
 ///
 /// WP-S1 Phase 1 — provides [`storage::r2_s3::R2CasHandler`] (real

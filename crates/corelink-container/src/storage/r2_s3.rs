@@ -33,6 +33,7 @@
 //! - No `unwrap()` / `expect()` / `panic!()` outside `#[cfg(test)]`.
 
 use std::sync::Arc;
+use std::time::Instant;
 
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::config::{Credentials, Region};
@@ -41,12 +42,16 @@ use corelink_byok::{CryptoContext, CryptoMode, Tcs};
 use corelink_handler_cas::{
     AuditEvent, AuditEventKind, AuditSink, CasDeleteHandler, CasHandlerError, CasListHandler,
     CasReadHandler, CasReadRequest, CasReadResponse, CasWriteHandler, CasWriteRequest,
-    CasWriteResponse, DigestAlgo, InMemorySliObserver, SliObservation, SliObserver,
+    CasWriteResponse, DigestAlgo, SliObservation, SliObserver,
 };
 // `InMemoryAuditSink` is now used only by tests (the deployed builder wires the
 // durable D1 sink); gate the import so the non-test build stays warning-clean.
 #[cfg(test)]
 use corelink_handler_cas::InMemoryAuditSink;
+// Same reason: the capture-everything SLI observer is a TEST fixture now that
+// the deployed builders wire the constant-memory `CountingSliObserver` (B-057).
+#[cfg(test)]
+use corelink_handler_cas::InMemorySliObserver;
 use corelink_hash::Digest;
 use corelink_tenant_path::{derive_prefix, TenantDerivationKey};
 
@@ -1007,15 +1012,38 @@ impl R2CasHandler {
     }
 
     /// Emit both SLI observations (availability + latency).
+    /// Emit the availability + latency pair for one handler entry.
+    ///
+    /// `latency_us` is the wall-clock the handler entry took, which is
+    /// what [`SliObservation`]'s field has always been documented as
+    /// carrying. Every CAS/AC call site used to pass a literal `0`
+    /// here, which made `LatencyCasGetP99` / `LatencyCasPutP99` /
+    /// `LatencyAcHitP99` samples of nothing — a latency SLI whose every
+    /// sample is zero is not a loose measurement (B-057). The callers
+    /// now start an `Instant` at handler entry and pass the elapsed
+    /// microseconds, so the latency SLIs observe the same window the
+    /// availability SLIs count.
     fn emit_sli(
         &self,
         avail: corelink_handler_cas::observer::Sli,
         lat: corelink_handler_cas::observer::Sli,
         is_error: bool,
+        latency_us: u64,
     ) {
-        self.sli.observe(SliObservation::new(avail, is_error, 0));
-        self.sli.observe(SliObservation::new(lat, is_error, 0));
+        self.sli
+            .observe(SliObservation::new(avail, is_error, latency_us));
+        self.sli
+            .observe(SliObservation::new(lat, is_error, latency_us));
     }
+}
+
+/// Elapsed microseconds since `started`, saturating.
+///
+/// `Instant::elapsed` yields a `Duration`; `as_micros` is a `u128` that
+/// cannot fit `u64` only after ~584 000 years, so the saturating cast is
+/// a formality that keeps the call sites free of a `#[allow]`.
+fn elapsed_us(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX)
 }
 
 /// Compute the per-tenant 16-char R2 key prefix (layer 5 of
@@ -1224,8 +1252,16 @@ impl CasReadHandler for R2CasHandler {
     fn read(&self, req: CasReadRequest) -> Result<CasReadResponse, CasHandlerError> {
         use corelink_handler_cas::observer::Sli;
 
+        // B-057: the window the latency SLI reports. Started at handler
+        // entry so it covers the same work the availability SLI counts.
+        let started = Instant::now();
         let emit = |is_error: bool| {
-            self.emit_sli(Sli::AvailCasGet, Sli::LatencyCasGetP99, is_error);
+            self.emit_sli(
+                Sli::AvailCasGet,
+                Sli::LatencyCasGetP99,
+                is_error,
+                elapsed_us(started),
+            );
         };
 
         // Cross-tenant denial — audit BEFORE returning.
@@ -1503,8 +1539,16 @@ impl CasReadHandler for R2CasHandler {
     fn exists(&self, req: CasReadRequest) -> Result<bool, CasHandlerError> {
         use corelink_handler_cas::observer::Sli;
 
+        // B-057: the window the latency SLI reports. Started at handler
+        // entry so it covers the same work the availability SLI counts.
+        let started = Instant::now();
         let emit = |is_error: bool| {
-            self.emit_sli(Sli::AvailCasGet, Sli::LatencyCasGetP99, is_error);
+            self.emit_sli(
+                Sli::AvailCasGet,
+                Sli::LatencyCasGetP99,
+                is_error,
+                elapsed_us(started),
+            );
         };
 
         // Cross-tenant denial — audit BEFORE returning (mirrors `read`).
@@ -1675,8 +1719,16 @@ impl R2CasHandler {
     ) -> Result<Vec<bool>, CasHandlerError> {
         use corelink_handler_cas::observer::Sli;
 
+        // B-057: the window the latency SLI reports. Started at handler
+        // entry so it covers the same work the availability SLI counts.
+        let started = Instant::now();
         let emit = |is_error: bool| {
-            self.emit_sli(Sli::AvailCasGet, Sli::LatencyCasGetP99, is_error);
+            self.emit_sli(
+                Sli::AvailCasGet,
+                Sli::LatencyCasGetP99,
+                is_error,
+                elapsed_us(started),
+            );
         };
 
         // STRICTLY FIRST, before ANY dispatch: cross-tenant denial, audited
@@ -1844,8 +1896,16 @@ impl CasWriteHandler for R2CasHandler {
     fn write(&self, req: CasWriteRequest) -> Result<CasWriteResponse, CasHandlerError> {
         use corelink_handler_cas::observer::Sli;
 
+        // B-057: the window the latency SLI reports. Started at handler
+        // entry so it covers the same work the availability SLI counts.
+        let started = Instant::now();
         let emit = |is_error: bool| {
-            self.emit_sli(Sli::AvailCasPut, Sli::LatencyCasPutP99, is_error);
+            self.emit_sli(
+                Sli::AvailCasPut,
+                Sli::LatencyCasPutP99,
+                is_error,
+                elapsed_us(started),
+            );
         };
 
         // Cross-tenant denial — audit BEFORE returning.
@@ -2053,8 +2113,16 @@ impl CasDeleteHandler for R2CasHandler {
         use corelink_handler_cas::CasDeleteResponse;
 
         // Delete folds availability into the PUT (mutation) SLI bucket.
+        // B-057: the window the latency SLI reports. Started at handler
+        // entry so it covers the same work the availability SLI counts.
+        let started = Instant::now();
         let emit = |is_error: bool| {
-            self.emit_sli(Sli::AvailCasPut, Sli::LatencyCasPutP99, is_error);
+            self.emit_sli(
+                Sli::AvailCasPut,
+                Sli::LatencyCasPutP99,
+                is_error,
+                elapsed_us(started),
+            );
         };
 
         // Cross-tenant denial — audit BEFORE returning.
@@ -2184,8 +2252,16 @@ impl CasListHandler for R2CasHandler {
         use corelink_handler_cas::{CasBlobEntry, CasListResponse};
 
         // List folds availability into the GET (read) SLI bucket.
+        // B-057: the window the latency SLI reports. Started at handler
+        // entry so it covers the same work the availability SLI counts.
+        let started = Instant::now();
         let emit = |is_error: bool| {
-            self.emit_sli(Sli::AvailCasGet, Sli::LatencyCasGetP99, is_error);
+            self.emit_sli(
+                Sli::AvailCasGet,
+                Sli::LatencyCasGetP99,
+                is_error,
+                elapsed_us(started),
+            );
         };
 
         // Cross-tenant denial — audit BEFORE returning.
@@ -2424,7 +2500,11 @@ pub async fn build_r2_cas_handler_from_env(
         }
     };
     let audit: Arc<dyn AuditSink> = audit_concrete.clone();
-    let sli = Arc::new(InMemorySliObserver::new());
+    // B-057: constant-memory aggregate, NOT the capture-everything test
+    // observer. The previous `InMemorySliObserver` here retained every
+    // observation in a `Vec` for the life of the container process, with
+    // no production reader of `snapshot()`/`count()` anywhere.
+    let sli = Arc::new(crate::sli_aggregate::CountingSliObserver::new());
     Some(Ok(R2CasHandler::new(
         client,
         cas_region,
@@ -3558,7 +3638,9 @@ pub async fn build_r2_ac_handler_from_env(
         }
     };
     let audit: Arc<dyn corelink_handler_ac::AuditSink> = audit_concrete.clone();
-    let sli = Arc::new(corelink_handler_ac::InMemorySliObserver::new());
+    // B-057, AC twin of the CAS builder above: constant-memory aggregate
+    // instead of a Vec that grew for the life of the container.
+    let sli = Arc::new(crate::sli_aggregate::CountingSliObserver::new());
     Some(Ok(R2AcHandler::new(
         client,
         ac_region,
@@ -4312,6 +4394,60 @@ mod tests {
         let audit = Arc::new(InMemoryAuditSink::new());
         let sli = Arc::new(InMemorySliObserver::new());
         R2CasHandler::new(client, region, None, audit, sli)
+    }
+
+    /// The latency SLI must observe a REAL window, not a literal zero.
+    ///
+    /// B-057 regression pin. `emit_sli` used to pass `0` for both the
+    /// availability and the latency SLI at every CAS/AC call site, so
+    /// `LatencyCasGetP99` was a stream of zeroes — not a loose
+    /// measurement, an absent one. Reverting `emit_sli` to the old
+    /// `SliObservation::new(lat, is_error, 0)` reds this test.
+    ///
+    /// Driven through the cross-tenant denial arm of `read()` on
+    /// purpose: it emits and returns WITHOUT touching R2, so the pin
+    /// needs no credentials and cannot flake on the network.
+    #[tokio::test]
+    async fn cas_read_emits_a_nonzero_latency_sli() {
+        let stub_env = StorageEnv {
+            r2_endpoint: "https://localhost:1".to_owned(),
+            r2_access_key_id: "test".to_owned(),
+            r2_secret_access_key: "test".to_owned(),
+            cloudflare_account_id: "test".to_owned(),
+            cf_api_token: "test".to_owned(),
+            d1_database_id: "test".to_owned(),
+        };
+        let client = R2S3Client::new(&stub_env, "test-bucket")
+            .await
+            .expect("stub client");
+        let audit = Arc::new(InMemoryAuditSink::new());
+        let sli = Arc::new(InMemorySliObserver::new());
+        let observer: Arc<dyn SliObserver> = Arc::clone(&sli) as Arc<dyn SliObserver>;
+        let handler = R2CasHandler::new(client, "iad", None, audit, observer);
+
+        let req = CasReadRequest::new("tenant-a", "a".repeat(64), "p", "tenant-b", 1);
+        let out = tokio::task::spawn_blocking(move || handler.read(req))
+            .await
+            .expect("join");
+        assert!(out.is_err(), "cross-tenant read must be refused");
+
+        let obs = sli.snapshot().expect("sli");
+        let lat: Vec<_> = obs
+            .iter()
+            .filter(|o| o.sli == corelink_handler_cas::observer::Sli::LatencyCasGetP99)
+            .collect();
+        assert_eq!(lat.len(), 1, "exactly one latency observation: {obs:?}");
+        assert!(
+            lat[0].latency_us > 0,
+            "the latency SLI must carry the measured window, got {} us",
+            lat[0].latency_us
+        );
+        let avail: Vec<_> = obs
+            .iter()
+            .filter(|o| o.sli == corelink_handler_cas::observer::Sli::AvailCasGet)
+            .collect();
+        assert_eq!(avail.len(), 1, "exactly one availability observation");
+        assert!(avail[0].is_error, "a refused read is an error observation");
     }
 
     // ---------------------------------------------------------------

@@ -240,7 +240,7 @@ candidates:
     title: "R2 CAS bucket topology"
     status: "active"
     source_cluster: "storage"
-    seed_from: ["crates/corelink-container/src/storage.rs", "crates/corelink-container/src/storage/r2_s3.rs"]
+    seed_from: ["crates/corelink-container/src/storage.rs", "crates/corelink-container/src/storage/r2_s3.rs", "crates/corelink-container/src/sli_aggregate.rs"]
   - id: "storage/r2-ac-regional"
     type: "StorageComponent"
     title: "R2 AC x5 regional buckets"
