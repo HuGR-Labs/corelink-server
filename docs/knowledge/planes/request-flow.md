@@ -12,13 +12,13 @@ source_files:
   - "crates/corelink-container/src/storage/d1_audit_sink.rs"
   - "crates/corelink-container/src/storage/r2_s3.rs"
 source_blobs:
-  - "worker/src/index.ts@d4f2605e0e46840b641a56e444007304d7f4f2ec"
+  - "worker/src/index.ts@755263aad45417766edeba70a119c587db129e3a"
   - "worker/src/durable_object.ts@bf36fd6a2f94c92c8b5d47872dedb93cfc95d137"
   - "crates/corelink-container/src/routes.rs@90c8f13a942bca512dec0047e7f0bf0b2356c229"
   - "crates/corelink-container/src/origin_timing.rs@305d22a13fa5027f2ba79b6a3bde5914e14393ae"
   - "crates/corelink-container/src/storage/d1_audit_sink.rs@e7469a400d53d76a210a6e7c27bf5c4b5aa87c37"
   - "crates/corelink-container/src/storage/r2_s3.rs@6882c633b816e969236c16a64f568bcdd5b4f8d0"
-checkpoint_sha: "1c07afae418ed2d7e7cb1f6fcae95d8dbe4c476c"
+checkpoint_sha: "aa98b018efa7addd5573647726606cbdfa2a04e8"
 provenance: "AUTHORED"
 tags: ["planes", "request-flow", "topology", "end-to-end"]
 timestamp: "2026-06-26T00:00:00Z"

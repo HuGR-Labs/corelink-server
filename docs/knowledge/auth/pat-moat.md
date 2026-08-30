@@ -11,12 +11,12 @@ source_files:
   - "worker/src/lib/pat_signing_key.ts"
 source_blobs:
   - "worker/src/lib/internal_auth.ts@4a60c0111b8db4c3512976ffe6e92406e749edfc"
-  - "worker/src/index.ts@d4f2605e0e46840b641a56e444007304d7f4f2ec"
+  - "worker/src/index.ts@755263aad45417766edeba70a119c587db129e3a"
   - "worker/src/lib/pat_verify_cache.ts@0714719fb815cd7bddea91f3dac723c7f2c662fa"
   - "worker/src/lib/tenant_suspend_gate.ts@1059c8885c9922f2f08a3abe53344525bf9037e1"
   - "crates/corelink-container/src/adapter_pat.rs@069fb6295e5926ffc0b1263eb91e838addbe1297"
   - "worker/src/lib/pat_signing_key.ts@acb4118380ef013bbcf3e85a313529f4de698e24"
-checkpoint_sha: "1c07afae418ed2d7e7cb1f6fcae95d8dbe4c476c"
+checkpoint_sha: "aa98b018efa7addd5573647726606cbdfa2a04e8"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
