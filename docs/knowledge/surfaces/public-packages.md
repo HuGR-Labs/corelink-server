@@ -12,7 +12,7 @@ source_files:
   - "crates/corelink-container/src/public_base_allowlist.rs"
   - "crates/corelink-container/src/public_base_allowlist.manifest"
   - "wrangler.toml"
-checkpoint_sha: "ddc690a1c6a7fc220e9274b5df5b2ec3c7a3986c"
+checkpoint_sha: "1c07afae418ed2d7e7cb1f6fcae95d8dbe4c476c"
 provenance: "AUTHORED"
 tags: ["surfaces", "public", "npm", "pip", "brew", "oci", "moat"]
 timestamp: "2026-06-26T00:00:00Z"

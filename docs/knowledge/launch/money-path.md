@@ -12,9 +12,9 @@ source_blobs:
   - "crates/corelink-container/src/routes/tier_select_checkout.rs@cd0502f1447c1e8bd0fd4429710d000bf9220ec2"
   - "crates/corelink-container/src/routes/billing_ingest.rs@c733435cad659609fec9b299792de097d131ee1e"
   - "crates/corelink-container/src/main.rs@aac874e646c1963400d4ed067d9ca9645451d1a2"
-  - "worker/src/index.ts@5bec58b1bb61819bb96b4cf056ef34590dd71f09"
+  - "worker/src/index.ts@d4f2605e0e46840b641a56e444007304d7f4f2ec"
   - "docs/operator/stripe-checkout-e2e-2026-05-29.md@ec7f01cfc9c7e538e782b44697a3e2f4ce482bc6"
-checkpoint_sha: "87617d0740e0375c123ae202c52d7cdd87aad018"
+checkpoint_sha: "1c07afae418ed2d7e7cb1f6fcae95d8dbe4c476c"
 provenance: "AUTHORED"
 tags: [launch, billing, stripe, checkout, usage, money-path]
 timestamp: "2026-06-26T00:00:00Z"

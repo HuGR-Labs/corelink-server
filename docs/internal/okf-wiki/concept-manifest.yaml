@@ -316,6 +316,12 @@ candidates:
     status: "active"
     source_cluster: "adr"
     seed_from: ["specs/03_architecture/adrs/ADR-S34-002-cas-read-bound-size-not-protocol.md"]
+  - id: "surfaces/devenv-edge"
+    type: "Surface"
+    title: "DevEnv edge surface"
+    status: "active"
+    source_cluster: "surfaces"
+    seed_from: ["worker/src/lib/devenv_guard.ts", "worker/src/lib/openapi_devenv.ts", "worker/src/index.ts", "wrangler.toml"]
   - id: "flows/cas-integrity-scrub"
     type: "RequestFlow"
     title: "CAS at-rest integrity scrub"
