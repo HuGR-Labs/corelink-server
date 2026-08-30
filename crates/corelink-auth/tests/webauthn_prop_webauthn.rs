@@ -177,11 +177,30 @@ fn prop_replay_resistance_single_use() {
     }
 }
 
+// MEASURED 2026-08-30, and the comment this replaces was wrong.
+//
+// It claimed 100 cycles fit "inside CI's per-test budget". They do not:
+// measured in isolation, this ONE test takes 2029 s (33m49s). The whole file
+// takes 3370 s at the default 10 000 proptest cases, and `corelink-auth` as a
+// whole 3489 s — so this test is ~60% of the file, and the 10k-case proptests
+// above are most of the rest. (An earlier draft of this comment attributed
+// nearly the whole 3370 s to this test; that was over-attribution from the
+// file total, corrected by running it alone.) Argon2id at OWASP-2024 cost is
+// ~0.5 s per hash by design, and 100 mint+verify+reject cycles is ~300 hashes.
+//
+// That cost is the likeliest reason `corelink-auth` and `corelink-pat` had
+// ZERO test execution in CI: nobody puts an hour in a PR gate. The fix is not
+// to weaken the test — it is `#[ignore]`d out of the PR lane
+// (`rust-affected-tests.yml`, PROPTEST_CASES=32) and executed at full cost by
+// `rust-deep-property.yml`, which runs it via `-- --ignored` on every push to
+// main. If that step is ever deleted, this `#[ignore]` becomes silent deletion
+// of the single-use invariant — the two must move together.
+//
+// PROPTEST_CASES does NOT reach this test: it is a plain `#[test]` with a
+// hard-coded 100-cycle loop, not a `proptest!` block.
+#[ignore = "2029s of Argon2id (measured); runs in rust-deep-property.yml via --ignored"]
 #[test]
 fn prop_recovery_otp_single_use_100() {
-    // Argon2id at OWASP-2024 cost (m=65536 KiB, t=3, p=4) gates the
-    // wall-clock budget; 100 mint+verify+rejection cycles is sufficient
-    // to pin the single-use invariant inside CI's per-test budget.
     // The cheap invariants (challenge id uniqueness, sign-count
     // monotonicity, AAGUID policy, origin allowlist) carry the 10k
     // proptest case load above.

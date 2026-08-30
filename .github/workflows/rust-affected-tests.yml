@@ -1,0 +1,138 @@
+# Rust tests for the crates a PR can actually break (WP-TEST).
+#
+# WHY THIS EXISTS: of 75 crates, only 9 had a `cargo test -p` in a lane that
+# runs. 16 more LOOK covered — they are named only in `nightly.yml` (zero
+# successful runs) or `ffi-matrix-ci.yml` (never worked) — and 50 are named
+# nowhere, including `corelink-auth` and `corelink-pat`, the two crates holding
+# the auth primitives. A grep for "crates under test" answers 25; the truthful
+# answer was 9.
+#
+# WHY SELECTION IS THE REVERSE CLOSURE, NOT "crates the diff touched":
+# the dangerous regression comes from ANOTHER crate. Touching
+# `corelink-ratelimit` must pull `corelink-billing`, because billing depends on
+# it — and no curated list stays right about that. `cargo tree --invert` derives
+# it from the Cargo graph instead, so it cannot silently go stale the way the
+# "25 covered crates" list did.
+#
+# Measured closures (2026-08-30): ratelimit 4, billing-stripe-materializer 3,
+# cas 10, auth 4, pat 13 — of 75. The largest is 13, so no ceiling is needed.
+#
+# WHY auth + pat ALWAYS, regardless of the diff: they are where "I did not touch
+# that" is the sentence before the incident. Their closure is 13 crates and
+# already includes cas, server, worker, reapi, privacy and adapter-host, so the
+# unconditional floor buys most of the blast radius for free.
+#
+# WHY PROPTEST_CASES IS LOWERED HERE: `corelink-auth` takes 58 MINUTES at its
+# default of 10 000 cases (measured; `webauthn_prop_webauthn.rs` alone is 3370 s
+# of it) and `corelink-pat` takes 7m18s. That cost is very likely WHY these
+# crates were never wired into CI — the honest reading is consequence, not
+# oversight. The full-intensity run lives in `rust-deep-property.yml`; no
+# property leaves the suite, only the iteration count changes per lane.
+name: rust-affected-tests
+
+on:
+  pull_request:
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/rust-affected-tests.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-affected-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  select:
+    name: select affected crates (reverse closure)
+    runs-on: corelink
+    timeout-minutes: 10
+    outputs:
+      crates: ${{ steps.closure.outputs.crates }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Compute the reverse-dependency closure
+        id: closure
+        run: |
+          set -euo pipefail
+
+          BASE="${{ github.event.pull_request.base.sha }}"
+          [ -n "$BASE" ] || BASE="$(git rev-parse HEAD~1)"
+
+          # Crates the diff touched. An empty result is legitimate (a docs-only
+          # or worker-only PR) and must not be confused with a failed diff, so
+          # the git call is checked separately from the match count.
+          if ! CHANGED_PATHS="$(git diff --name-only "$BASE" HEAD)"; then
+            echo "::error::git diff failed against base $BASE — refusing to \
+                  guess an empty change set"
+            exit 1
+          fi
+          TOUCHED="$(printf '%s\n' "$CHANGED_PATHS" \
+            | sed -nE 's|^crates/([a-z0-9-]+)/.*|\1|p' | sort -u)"
+
+          # auth + pat are unconditional. See the header.
+          SEEDS="$(printf '%s\ncorelink-auth\ncorelink-pat\n' "$TOUCHED" \
+            | grep -v '^$' | sort -u)"
+
+          CLOSURE=""
+          for c in $SEEDS; do
+            # `cargo tree --invert <crate>` — NOT `-i -p <crate>`, which cargo
+            # rejects ("the -i flag requires a package name") and which fails
+            # into an empty parse that reads as "nothing depends on this".
+            if ! OUT="$(cargo tree --invert "$c" --workspace --edges normal 2>/dev/null)"; then
+              echo "::warning::cargo tree --invert failed for $c; including it alone"
+              CLOSURE="$CLOSURE $c"
+              continue
+            fi
+            CLOSURE="$CLOSURE $(printf '%s' "$OUT" \
+              | grep -oE '[a-z0-9-]+ v[0-9]' | sed 's/ v[0-9]//')"
+          done
+
+          # Workspace members only: the closure also names test harnesses under
+          # tests/, which are not `-p` targets of this lane.
+          MEMBERS="$(ls crates)"
+          FINAL="$(printf '%s\n' $CLOSURE | sort -u \
+            | grep -Fx -f <(printf '%s\n' $MEMBERS) || true)"
+
+          if [ -z "$FINAL" ]; then
+            echo "::error::closure came out EMPTY — auth and pat are \
+                  unconditional seeds, so an empty set means the computation \
+                  broke, not that there is nothing to test"
+            exit 1
+          fi
+
+          echo "selected $(printf '%s\n' $FINAL | wc -l | tr -d ' ') crates:"
+          printf '  %s\n' $FINAL
+          echo "crates=$(printf '%s' "$FINAL" | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: cargo test (affected)
+    needs: select
+    runs-on: corelink
+    # The floor (auth+pat closure) measured ~4 min of test time at the reduced
+    # case count, plus a cold compile. Sized COLD on purpose: the `/cargo` cache
+    # is not a premise, it is headroom if it works.
+    timeout-minutes: 45
+    env:
+      # Default is 10 000 (see `proptest_cases()` in
+      # crates/corelink-auth/tests/webauthn_prop_webauthn.rs). The full count
+      # runs in rust-deep-property.yml.
+      PROPTEST_CASES: '32'
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: cargo test (affected crates)
+        run: |
+          set -euo pipefail
+          ARGS=""
+          for c in ${{ needs.select.outputs.crates }}; do ARGS="$ARGS -p $c"; done
+          echo "cargo test$ARGS --all-targets"
+          cargo test $ARGS --all-targets

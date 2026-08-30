@@ -1,0 +1,72 @@
+# Full-intensity property + heavy-cost tests (WP-TEST, deep half).
+#
+# The PR lane (`rust-affected-tests.yml`) runs the same suites at
+# PROPTEST_CASES=32 so a pull request answers in minutes. This lane runs them at
+# their real intensity. NO property leaves the suite between the two lanes —
+# only the iteration count changes, which is the invariant this split had to
+# preserve.
+#
+# It also runs the `#[ignore]`d heavy tests via `--ignored`. That pairing is not
+# optional: an `#[ignore]` with no consumer is deleted coverage wearing a
+# different name.
+#
+# WHY `push` ON main AND NOT A CRON: CLAUDE.md's rule is that a cron earns its
+# keep only when something can change WITHOUT a commit — CVE feeds, prod state,
+# backups, cert drift. Property tests over this repo's own code change only when
+# the code changes, so a clock would re-verify byte-identical code on a
+# schedule, which is exactly what the 2026-08-02 cron purge removed across 14
+# workflows. Post-merge on main gives the same coverage on the event that can
+# actually change the answer.
+#
+# Measured 2026-08-30 on the loaded Mac (cold): corelink-auth 3489 s total, of
+# which webauthn_prop_webauthn.rs is 3370 s; corelink-pat 438 s, of which
+# prop_pat.rs is 228 s. The single `#[ignore]`d test is 2029 s of that file,
+# measured on its own via `-- --ignored` (1 passed). The timeout below is sized
+# against those numbers, not against a hope that the fleet is faster.
+name: rust-deep-property
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/corelink-auth/**'
+      - 'crates/corelink-pat/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/rust-deep-property.yml'
+  workflow_dispatch:
+    inputs:
+      cases:
+        description: 'PROPTEST_CASES override'
+        required: false
+        default: '10000'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-deep-property
+  cancel-in-progress: false
+
+jobs:
+  deep:
+    name: property suites at full intensity
+    runs-on: corelink
+    # corelink-auth alone measured 58 min cold. 150 gives ~2.5x headroom without
+    # letting a wedged box hold a runner for the 360-min GitHub default.
+    timeout-minutes: 150
+    env:
+      PROPTEST_CASES: ${{ inputs.cases || '10000' }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: cargo test — full property intensity
+        run: cargo test -p corelink-auth -p corelink-pat --all-targets
+
+      - name: cargo test — the #[ignore]d heavy tests
+        # `prop_recovery_otp_single_use_100` is a plain #[test] running 100
+        # Argon2id cycles at OWASP-2024 cost, so PROPTEST_CASES does not reach
+        # it. It is `#[ignore]`d out of the PR lane and executed HERE. If this
+        # step is ever removed, the ignore becomes silent deletion.
+        run: cargo test -p corelink-auth -p corelink-pat --all-targets -- --ignored
