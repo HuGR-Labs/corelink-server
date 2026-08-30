@@ -5,7 +5,15 @@ Context for AI agents working in this repo. Keep it lean + high-signal.
 ## What CoreLink is
 
 A **multi-tenant content-addressable cache + storage-governance platform** on
-Cloudflare (Workers + Durable Objects + Containers + R2 + D1). ~73 Rust crates.
+Cloudflare (Workers + Durable Objects + Containers + R2 + D1). **95 Rust packages**
+in the workspace — count them with `cargo metadata`, never by listing `crates/`:
+that directory holds **75** of them, and 20 live under `tests/`, `tools/` and
+`apps/` (the 12 `e2e-*` suites among them). Directory name is also not package
+name — `crates/corelink-container` is the package `corelink-server`,
+`crates/tenant-path` is `corelink-tenant-path`, `tools/dt-cli` is
+`corelink-dt-cli`. A sweep that greps paths is blind to a fifth of the workspace
+and mislabels three of the rest; this line said "~73" until 2026-08-30, and
+nothing compared it to either real number.
 Sold **self-serve to SMBs** — NOT enterprise, and NOT "just a build cache."
 It already exposes multiple cache surfaces: native CAS/AC, **Bazel REAPI v2**
 (`routes/bazel_v2.rs`), **Turborepo** (`routes/turbo_v8.rs`), and **sccache** (WebDAV).
