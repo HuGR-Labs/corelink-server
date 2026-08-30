@@ -147,6 +147,45 @@ if [ -n "$ADMIN_REASON" ] && [ "$MODE" != "merge" ]; then
   exit 2
 fi
 
+# ── The stale-copy footgun ───────────────────────────────────────────────────
+# This script is run from whatever worktree the operator happens to be in, and
+# worktrees sit on feature branches that can be many merges behind `main`. A
+# stale copy still GATES correctly — the checking logic barely changes — so
+# nothing looks wrong; what it silently drops is whatever the newer copy added.
+# That is not hypothetical: PR #1418 was merged on 2026-08-30 by a copy that
+# predated #1428, so the merge produced no lane-set record and the absence was
+# only caught by going to look for it. A gate whose newest behaviour can vanish
+# without a symptom is the same defect class as a check that never ran.
+#
+# So: compare the RUNNING file against the copy on `origin/main` and, in merge
+# mode, refuse on a mismatch. Report-only mode warns instead — reading a stale
+# verdict costs nothing irreversible. If `origin/main`'s copy cannot be resolved
+# (no network, no remote-tracking ref), say so and continue: an unresolvable
+# comparison is not evidence of staleness, and failing closed on it would make
+# the gate unusable offline.
+self_path="${BASH_SOURCE[0]}"
+if running_oid="$(git hash-object "$self_path" 2>/dev/null)" \
+   && main_oid="$(git rev-parse --verify --quiet origin/main:scripts/pre-merge-gate-check.sh 2>/dev/null)" \
+   && [ -n "$running_oid" ] && [ -n "$main_oid" ]; then
+  if [ "$running_oid" != "$main_oid" ]; then
+    echo "  ⛔ this copy of the gate is NOT the one on origin/main." >&2
+    echo "       running: $running_oid  ($self_path)" >&2
+    echo "       main   : $main_oid" >&2
+    echo "     A stale copy gates fine and silently drops whatever the newer one adds" >&2
+    echo "     (#1418: merged with no lane-set record). Run it from a main worktree:" >&2
+    echo "       git worktree add --detach /tmp/wt-gate origin/main" >&2
+    echo "       bash /tmp/wt-gate/scripts/pre-merge-gate-check.sh --merge $PR" >&2
+    if [ "$MODE" = "merge" ]; then
+      echo "     Refusing to merge from a copy that is not main's." >&2
+      exit 2
+    fi
+    echo "  ⚠️  report-only mode — continuing, but read the verdict as possibly incomplete." >&2
+  fi
+else
+  echo "  ⚠️  could not compare this script against origin/main (no ref or not a repo);" >&2
+  echo "      continuing — an unresolvable comparison is not evidence of staleness." >&2
+fi
+
 # ── The pipe footgun, named on stderr ─────────────────────────────────────────
 # `[ -t 1 ]` is false exactly when the caller piped or redirected stdout, i.e.
 # in the `… | tail -3 && gh pr merge …` shape that produced the #1049 incident.
