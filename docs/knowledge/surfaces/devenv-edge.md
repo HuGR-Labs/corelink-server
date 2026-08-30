@@ -7,7 +7,7 @@ source_files:
   - "worker/src/lib/devenv_guard.ts"
   - "worker/src/lib/openapi_devenv.ts"
   - "wrangler.toml"
-checkpoint_sha: "672f8f271a7bae558260d97c5c8809c07b7a4fc6"
+checkpoint_sha: "aa98b018efa7addd5573647726606cbdfa2a04e8"
 provenance: "AUTHORED"
 tags: ["surfaces", "devenv", "worker-edge", "auth", "quota", "durable-object"]
 timestamp: "2026-08-30T00:00:00Z"
@@ -25,11 +25,11 @@ The DO binding is declared with an explicit `script_name`, which is what makes i
 
 # Decision
 
-**Dual credential, single path, decided by shape.** The handler tries `parsePat` first and branches on the RESULT, not on a header or a flag: a value that does not parse as a PAT is treated as a Clerk session and verified as one, and only a parseable PAT takes the PAT path (`worker/src/index.ts:2951-2981`). A viewer role is downgraded to `read-only` scope at the edge, so the DO never has to know Clerk's role vocabulary.
+**Dual credential, single path, decided by shape.** The handler tries `parsePat` first and branches on the RESULT, not on a header or a flag: a value that does not parse as a PAT is treated as a Clerk session and verified as one, and only a parseable PAT takes the PAT path (`worker/src/index.ts:2954-2984`). A viewer role is downgraded to `read-only` scope at the edge, so the DO never has to know Clerk's role vocabulary.
 
 **Quota is checked at the edge, before the DO is touched.** `checkDevenvQuota` reads the tenant's `runners_entitlement` row and refuses an absent or `_anonymous` tenant outright (`worker/src/lib/devenv_guard.ts:16-30`). Doing it here rather than inside the DO keeps a quota-exceeded request from spinning up per-tenant DO state at all.
 
-**Client-supplied trust headers are stripped before forwarding, and the authorization header is dropped entirely.** The edge rebuilds the header set, calls `stripClientTrustHeaders`, deletes `authorization`, and then sets the trust headers itself — tenant id, scope, role, token prefix, request id (`worker/src/index.ts:3002-3015`). The DO therefore cannot be told who the caller is by the caller; the credential does not travel past the boundary that verified it.
+**Client-supplied trust headers are stripped before forwarding, and the authorization header is dropped entirely.** The edge rebuilds the header set, calls `stripClientTrustHeaders`, deletes `authorization`, and then sets the trust headers itself — tenant id, scope, role, token prefix, request id (`worker/src/index.ts:3005-3018`). The DO therefore cannot be told who the caller is by the caller; the credential does not travel past the boundary that verified it.
 
 **The DO binding is mirrored into `env.prod`.** `durable_objects` is non-inheritable in wrangler: an env block replaces the top-level list rather than extending it, so a binding declared only at top level is absent in prod (`wrangler.toml:568-577`).
 
@@ -42,9 +42,9 @@ Quota state lives in `runners_entitlement`, shared with the runner fabric, so a 
 # Citations
 
 1. `worker/src/index.ts:981-984` — `matchRoute` classifies `/v1/customer/devenv*` and `/v1/devenv*` as `devenv_v1`, deferring tenant resolution to the credential.
-2. `worker/src/index.ts:2951-2981` — dual Clerk/PAT auth decided by whether `parsePat` returns null; viewer role downgraded to `read-only`.
+2. `worker/src/index.ts:2954-2984` — dual Clerk/PAT auth decided by whether `parsePat` returns null; viewer role downgraded to `read-only`.
 3. `worker/src/lib/devenv_guard.ts:16-30` — `checkDevenvQuota` refuses an absent/`_anonymous` tenant and reads `runners_entitlement` for the ceiling.
-4. `worker/src/index.ts:3002-3015` — `stripClientTrustHeaders`, `authorization` deleted, and the trust headers set by the edge rather than accepted from the client.
+4. `worker/src/index.ts:3005-3018` — `stripClientTrustHeaders`, `authorization` deleted, and the trust headers set by the edge rather than accepted from the client.
 5. `worker/src/index.ts:2059-2060` — the OpenAPI 3.1 document served from a static module at `GET /openapi.json`.
 6. `worker/src/lib/openapi_devenv.ts:4` — `devenvOpenApiSpec`, the published contract for the surface.
 7. `wrangler.toml:250-256` — the `RUNNER_DEVENV_DO` binding with `script_name`, making it a cross-Worker handle.
