@@ -3258,7 +3258,120 @@ verify-means: |
 last-verified: 2026-08-29
 ```
 
-### B-116 — 50 dos 75 crates nunca aparecem num `cargo test`, e 16 aparecem so em lane morta
+### B-119 — o id do BACKLOG e um contador compartilhado sem mecanismo, e colidiu 4x num dia
+
+Quatro colisoes em 2026-08-30, todas iguais: uma sessao escreve um item, o PR
+espera na fila, outra sessao leva o id, e **nada avisa**. Duas adicoes em
+regioes diferentes do BACKLOG.md nunca conflitam no git, entao o merge e limpo;
+o `backlog_verify` fica verde nos dois lados isoladamente porque cada um so ve o
+proprio arquivo; e a quebra so aparece quando o CI monta `refs/pull/N/merge`.
+
+A regra "aloque o id no push" ja estava em vigor nas quatro. Ela pede **atencao
+onde falta mecanismo**, e atencao nao escala para N sessoes concorrentes.
+
+Tres direcoes, com o custo de cada uma:
+
+**(a) Faixa reservada por sessao.** Cada sessao recebe um bloco (ex.: 200-299).
+Custo: precisa de um alocador de faixas — o mesmo problema um nivel acima, com
+o agravante de que faixas orfas de sessoes mortas nunca sao reclamadas.
+Avaliacao: remendo.
+
+**(b) Id derivado de conteudo** (hash curto do titulo, como as ancoras
+`source_blobs` ja fazem). Resolve de raiz e casa com a cultura da casa —
+`checkpoint_sha` sequencial orfana no squash e por isso o blob venceu. Custo
+real: os ids deixam de ser ordenaveis e legiveis, e **todo `verify:` e toda
+referencia cruzada existente passa a citar um hash** — sao 118 itens e dezenas
+de `[B-0xx]` no corpo. Migracao grande e irreversivel na pratica.
+
+**(c) Manter o id legivel e mover a deteccao para antes do merge.** O
+`backlog_verify` **ja detecta** o duplicado — o defeito e so que roda tarde. O
+check roda contra `refs/pull/N/merge`, entao **enxerga** a main atualizada; o
+que falta e re-executar obrigatoriamente depois que um irmao mergeia. Custo:
+configuracao de branch protection, nao codigo. Avaliacao: melhor custo-beneficio
+dos tres.
+
+⚠️ Uma refutacao a (c) que precisa ser respondida antes de escolher: **este repo
+nao tem branch protection** — `GET /branches/main/protection` devolve 403
+"Upgrade to GitHub Pro or make this repository public". Se "re-executar apos
+merge do irmao" depende de required-checks, a opcao (c) **nao e configuravel
+hoje**. Ou vira um passo no `pre-merge-gate-check.sh` (que e o unico portao real
+que existe aqui), ou nao existe.
+
+Decisao do lead pendente. Nao implementar antes.
+
+```backlog
+id: B-119
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  grep -qE '^id: B-[0-9]+$' BACKLOG.md
+verify-means: |
+  open — passa enquanto os ids forem sequenciais no formato `B-NNN`, que e o
+  contador compartilhado que este item questiona. Vira vermelho se a opcao (b)
+  for adotada e os ids virarem hash, que e um dos desfechos legitimos.
+
+  Deliberadamente NAO tenta detectar colisao: o `backlog_verify` ja faz isso e
+  duplicar o predicado aqui daria um item que fica vermelho por causa de outro
+  problema. Este item e sobre o MECANISMO, nao sobre uma ocorrencia.
+last-verified: 2026-08-30
+```
+
+### B-120 — `protoc` falta na imagem da frota e toda lane que toque o fecho do auth paga a instalacao
+
+`corelink-reapi` tem build script que exige `protoc`, e a imagem da frota
+(`corelink-runners/deploy/runner/Dockerfile`) nao o traz — ela instala Rust
+1.96.0/1.91.1 com rustfmt+clippy, `cargo-deny`, `cargo-audit`, Node, pnpm e
+sccache, mas nao o protoc.
+
+Descoberto pela primeira execucao do `rust-affected-tests.yml`, que morreu em
+`Could not find protoc`. O `corelink-reapi` esta no **piso incondicional**
+dessa lane — vive no fecho reverso do `corelink-auth` — entao **toda** execucao
+chega nele.
+
+Contornado com `arduino/setup-protoc`, a mesma action e o mesmo pin que o
+`corelink-reapi.yml` ja usa nessa frota. Funciona, e cobra: um download de
+ferramenta por execucao, em toda PR que toque qualquer coisa no fecho do auth,
+que e a maioria. Duas lanes ja pagam isso hoje.
+
+O conserto de raiz e por a ferramenta na imagem, e e no `corelink-runners` — nao
+neste repo. Registrado para nao virar divida silenciosa: o workaround e
+invisivel no verde.
+
+```backlog
+id: B-120
+repo: corelink-runners
+owner: tl
+status: open
+verify: |
+  grep -q "arduino/setup-protoc" .github/workflows/rust-affected-tests.yml
+verify-means: |
+  open — passa enquanto a lane precisar instalar o protoc em tempo de execucao,
+  que e o sintoma do que falta na imagem. Vira vermelho quando alguem remover o
+  passo, que e o que se faz DEPOIS de a imagem passar a traze-lo — forcando a
+  revisao deste item no momento certo.
+
+  Ancorado no consumidor (este repo) e nao na imagem, de proposito: o verify roda
+  no `corelink-server` e nao consegue ler o Dockerfile do outro repositorio. Um
+  predicado que dependesse de `gh api` cross-repo leria falha de rede como
+  "imagem consertada".
+last-verified: 2026-08-30
+```
+
+### B-116 — 50 dos 75 diretorios de crate nunca aparecem num `cargo test` (e o workspace tem 95 pacotes)
+
+⚠️ O DENOMINADOR: 75 e o numero de DIRETORIOS em `crates/`. O workspace tem
+**95 pacotes** — `cargo metadata --no-deps` conta 95, dos quais 20 vivem fora de
+`crates/`. E o `CLAUDE.md` afirma "~73 Rust crates", que nao e nenhum dos dois.
+Tres numeros diferentes para a mesma pergunta, e o levantamento abaixo usou o
+de diretorio.
+
+Isso importa alem da contagem: **nome de diretorio nao e nome de pacote.**
+`crates/corelink-container` e o pacote `corelink-server`; `crates/tenant-path` e
+`corelink-tenant-path`. Qualquer varredura por diretorio fica cega para os 20 de
+fora e erra em dois nomes — foi assim que a primeira versao do seletor morreu
+com "package ID specification `corelink-container` did not match any packages".
+O identificador varrido tem de ser o que o sistema consome.
 
 Levantado crate a crate em 2026-08-30, cruzando "nomeado em `cargo test -p`" com
 as 20 lanes de zero sucesso ([B-110], [B-112], [B-113]):
