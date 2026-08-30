@@ -102,7 +102,12 @@ jobs:
           # blind to that — a dependabot PR editing only `Cargo.lock` maps to no
           # package at all and would be tested against the 13-package floor.
           # Measured: those paths yield an EMPTY seed set today.
-          if printf '%s\n' "$CHANGED_PATHS" | grep -qxE 'Cargo\.lock|Cargo\.toml|rust-toolchain\.toml|\.github/workflows/rust-affected-tests\.yml'; then
+          # `grep -q` is forbidden here and the gate is right: -q exits on the
+          # FIRST match, SIGPIPEs `printf`, and under `set -o pipefail` the
+          # pipeline then reports the producer's failure — so it can go false
+          # exactly when it FINDS the thing. Redirecting instead keeps the same
+          # exit status, reads all input, and cannot SIGPIPE.
+          if printf '%s\n' "$CHANGED_PATHS" | grep -xE 'Cargo\.lock|Cargo\.toml|rust-toolchain\.toml|\.github/workflows/rust-affected-tests\.yml' >/dev/null; then
             echo "universal seed: a root manifest/lockfile/toolchain change can break any package"
             cut -f2 /tmp/pkgdirs.tsv | sort -u > /tmp/final.txt
             echo "selected $(wc -l < /tmp/final.txt | tr -d ' ') crates (whole workspace):"
