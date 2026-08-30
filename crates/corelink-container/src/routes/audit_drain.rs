@@ -1530,7 +1530,7 @@ async fn handle_drain(State(state): State<AuditDrainState>, headers: HeaderMap) 
     let ok = audit_drain_ok(partitions_failed);
     (
         StatusCode::OK,
-        Json(build_drain_response_body(
+        Json(build_drain_response_body(&DrainOutcome {
             ok,
             partitions_drained,
             rows_sealed,
@@ -1539,7 +1539,7 @@ async fn handle_drain(State(state): State<AuditDrainState>, headers: HeaderMap) 
             partitions_leased,
             heads_resigned,
             incomplete,
-        )),
+        })),
     )
         .into_response()
 }
@@ -1560,16 +1560,32 @@ pub(crate) const fn audit_drain_ok(partitions_failed: u64) -> bool {
 /// so the `ok: partitions_failed == 0` invariant + the
 /// `incomplete`-independence-from-`ok` invariant are unit-testable without
 /// a live handler / D1.
-pub(crate) fn build_drain_response_body(
-    ok: bool,
-    partitions_drained: u64,
-    rows_sealed: u64,
-    partitions_drifted: u64,
-    partitions_failed: u64,
-    partitions_leased: u64,
-    heads_resigned: u64,
-    incomplete: bool,
-) -> serde_json::Value {
+/// The counters one drain sweep produced. A struct rather than eight
+/// positional parameters: six of them are `u64` and two are `bool`, so any
+/// transposition at a call site type-checks and silently reports the wrong
+/// number. `clippy::too_many_arguments` was flagging exactly that risk.
+pub(crate) struct DrainOutcome {
+    pub(crate) ok: bool,
+    pub(crate) partitions_drained: u64,
+    pub(crate) rows_sealed: u64,
+    pub(crate) partitions_drifted: u64,
+    pub(crate) partitions_failed: u64,
+    pub(crate) partitions_leased: u64,
+    pub(crate) heads_resigned: u64,
+    pub(crate) incomplete: bool,
+}
+
+pub(crate) fn build_drain_response_body(outcome: &DrainOutcome) -> serde_json::Value {
+    let DrainOutcome {
+        ok,
+        partitions_drained,
+        rows_sealed,
+        partitions_drifted,
+        partitions_failed,
+        partitions_leased,
+        heads_resigned,
+        incomplete,
+    } = *outcome;
     serde_json::json!({
         "ok": ok,
         "partitions_drained": partitions_drained,
@@ -2363,11 +2379,29 @@ mod tests {
     #[test]
     fn audit_drain_response_body_ok_field_reflects_partitions_failed() {
         // All-zero → ok:true.
-        let j = build_drain_response_body(true, 0, 0, 0, 0, 0, 0, false);
+        let j = build_drain_response_body(&DrainOutcome {
+            ok: true,
+            partitions_drained: 0,
+            rows_sealed: 0,
+            partitions_drifted: 0,
+            partitions_failed: 0,
+            partitions_leased: 0,
+            heads_resigned: 0,
+            incomplete: false,
+        });
         assert_eq!(j["ok"], serde_json::Value::Bool(true));
         assert_eq!(j["incomplete"], serde_json::Value::Bool(false));
         // partitions_failed > 0 → ok:false (the fix).
-        let j = build_drain_response_body(false, 1, 5, 0, 1, 0, 0, false);
+        let j = build_drain_response_body(&DrainOutcome {
+            ok: false,
+            partitions_drained: 1,
+            rows_sealed: 5,
+            partitions_drifted: 0,
+            partitions_failed: 1,
+            partitions_leased: 0,
+            heads_resigned: 0,
+            incomplete: false,
+        });
         assert_eq!(j["ok"], serde_json::Value::Bool(false));
         assert_eq!(
             j["partitions_failed"],
@@ -2375,11 +2409,29 @@ mod tests {
         );
         // incomplete stays independent of ok (a budget-bound sweep with
         // zero failures is a successful sweep that needs another call).
-        let j = build_drain_response_body(true, 0, 200, 0, 0, 0, 0, true);
+        let j = build_drain_response_body(&DrainOutcome {
+            ok: true,
+            partitions_drained: 0,
+            rows_sealed: 200,
+            partitions_drifted: 0,
+            partitions_failed: 0,
+            partitions_leased: 0,
+            heads_resigned: 0,
+            incomplete: true,
+        });
         assert_eq!(j["ok"], serde_json::Value::Bool(true));
         assert_eq!(j["incomplete"], serde_json::Value::Bool(true));
         // And incomplete combined with a real failure.
-        let j = build_drain_response_body(false, 0, 200, 0, 3, 0, 0, true);
+        let j = build_drain_response_body(&DrainOutcome {
+            ok: false,
+            partitions_drained: 0,
+            rows_sealed: 200,
+            partitions_drifted: 0,
+            partitions_failed: 3,
+            partitions_leased: 0,
+            heads_resigned: 0,
+            incomplete: true,
+        });
         assert_eq!(j["ok"], serde_json::Value::Bool(false));
         assert_eq!(j["incomplete"], serde_json::Value::Bool(true));
     }
