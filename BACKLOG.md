@@ -3258,6 +3258,220 @@ verify-means: |
 last-verified: 2026-08-29
 ```
 
+### B-110 — cinco lanes de CI presas em runner GitHub-hosted, que está billing-blocked
+
+`cas_foundation.yml`, `coverage.yml`, `ffi-matrix-ci.yml`, `mutation-nightly.yml`
+e `semgrep.yml` somam **1.057 execuções e ZERO sucessos**. A causa é a mesma nas
+cinco e é estrutural, não flake: cada uma declara um runner **GitHub-hosted**
+(`ubuntu-latest` ou o larger-runner `ubuntu-x64-4core`), e minutos hosted estão
+billing-blocked nesta org desde 2026-08-24.
+
+Duas assinaturas distintas, ambas explicadas por isso: `coverage` e
+`mutation-nightly` aparecem `cancelled` com `runner_name = NONE` — o job nunca
+recebeu máquina; `cas_foundation`, `semgrep` e `ffi-matrix-ci` chegaram a rodar
+enquanto ainda havia crédito e falharam no conteúdo (`Run Semgrep`,
+`Install valgrind`), mas hoje nem chegam lá.
+
+`semgrep` merece nota: além do job hosted, ela declara
+`runs-on: [self-hosted, Linux, X64]`, e **não existe runner Linux self-hosted
+neste repo** — o inventário é 14-15 `corelink` (frota efêmera CF) e 5
+`self-hosted,macOS,X64,mac,corelink-builder`. Esse job jamais pegaria box mesmo
+com crédito.
+
+Não é conserto de CI: ou o owner libera gasto hosted, ou as cinco migram para a
+frota self-hosted (e `ffi-matrix-ci` já é reconhecidamente parked), ou são
+apagadas. Nenhuma dessas é decisão de higiene.
+
+```backlog
+id: B-110
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  bash -c 'for f in cas_foundation coverage ffi-matrix-ci mutation-nightly semgrep; do
+    grep -qE "runs-on: *(ubuntu-latest|ubuntu-x64-4core)" ".github/workflows/$f.yml" || exit 1
+  done'
+verify-means: |
+  open — passa enquanto TODAS as cinco lanes nomeadas ainda apontam para um
+  runner hosted, que é o bloqueio. Vira vermelho assim que QUALQUER UMA for
+  migrada ou apagada, forçando a revisão do item em vez de deixá-lo cobrir uma
+  lane que já saiu do grupo. O laço é sobre as cinco de propósito: um verify que
+  olhasse só uma seria predicado mais fraco que cinco itens separados.
+last-verified: 2026-08-30
+```
+
+### B-111 — aquisição de certificados Apple/Windows (o resto dos "secrets ausentes" não era isso)
+
+Reescrito 2026-08-30 depois que o owner respondeu. A primeira versão deste item
+tratava quatro lanes como um bloqueio só — "os secrets não existem". Ler os
+nomes exigidos **por lane**, em vez da lista como bloco, mostrou três coisas
+distintas, com donos e horizontes diferentes:
+
+**(a) Aquisição — `notarize-macos` e `sign-windows`.** Não é secret esquecido:
+o owner **não possui** os certificados. Notarização exige conta Apple Developer
+paga (`APPLE_DEVELOPER_ID`, `APPLE_DEVELOPER_ID_PASSWORD`,
+`APPLE_NOTARIZATION_USERNAME`, `APPLE_NOTARIZATION_PASSWORD`, `APPLE_TEAM_ID`) e
+Authenticode exige certificado emitido por CA (`WINDOWS_CODE_SIGNING_CERT`,
+`WINDOWS_CODE_SIGNING_PASSWORD`). Horizonte de compra, não de configuração —
+dizer "secret pendente" sugeriria que alguém só esqueceu de colar.
+
+**(b) RESOLVIDO em 2026-08-30 — `terraform-drift` e `sign-linux`.** O owner
+autorizou o mint e a guardiã de merge emitiu os sete: `CF_CLIENT_ID`,
+`CF_CLIENT_SECRET`, `TF_BACKEND_BUCKET`, `TF_BACKEND_ENDPOINT`,
+`GPG_PRIVATE_KEY`, `GPG_PRIVATE_KEY_PASS`, `GPG_KEY_ID` — o repositório foi de
+11 para 18 secrets. Este item deixa de cobrir essas duas lanes: o bloqueio de
+credencial acabou.
+
+O que NÃO está provado, e por isso não é fechamento: nenhuma das duas foi
+executada desde o mint, então "tem o secret" ainda não é "fica verde". O
+`sign-linux` continua atrás do `release-cli` de qualquer forma ([B-112]). A
+próxima execução decide, e ela é barata — o `terraform-drift` é um
+`plan -detailed-exitcode`, leitura pura.
+
+**(c) Não é bloqueio de secret nenhum — `release-cli`.** O único secret que ela
+usa é `CORELINK_CLI_RELEASE_TOKEN`, e **ele já existe**. A falha é o step
+`cargo zigbuild`. Ver [B-112].
+
+Consequência enquanto (a) e (b) durarem: sem detecção de drift de
+infraestrutura, e nenhum binário de release assinado em plataforma alguma.
+
+```backlog
+id: B-111
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  bash -c 'have=$(gh api repos/HuGR-Labs/corelink-server/actions/secrets --jq ".secrets[].name" 2>/dev/null)
+  [ -n "$have" ] || exit 0
+  for s in APPLE_DEVELOPER_ID APPLE_TEAM_ID APPLE_NOTARIZATION_PASSWORD WINDOWS_CODE_SIGNING_CERT WINDOWS_CODE_SIGNING_PASSWORD; do
+    echo "$have" | grep -qx "$s" && exit 1
+  done
+  exit 0'
+verify-means: |
+  open — passa enquanto NENHUM dos cinco secrets de AQUISIÇÃO existir, que é o
+  bloqueio restante (Apple + Windows). Os do grupo (b) saíram da lista porque
+  foram emitidos em 2026-08-30 e mantê-los aqui deixaria o item vermelho para
+  sempre por uma razão já resolvida.
+
+  Este verify já provou o próprio valor: escrito com os sete do grupo (b) na
+  lista, ficou DRIFTED minutos depois, porque o mint aconteceu enquanto o item
+  era redigido. Foi o gate que avisou, não uma releitura.
+
+  Sai 0 quando a API não responde, para não ler timeout como "provisionado".
+last-verified: 2026-08-30
+```
+
+### B-112 — a cadeia de release nunca produziu um artefato verde, e as lanes a jusante herdam isso
+
+`release-cli.yml` dispara em tag `cli-v*` (as tags existem: `cli-v0.1.0`,
+`cli-v0.1.1`) e morre no step `Build (cargo zigbuild) — Linux + Windows`, na
+frota macOS `corelink-builder`. Como `sign-linux`, `sign-windows` e
+`notarize-macos` disparam por `workflow_run` **atrás dela**, as três aparecem
+com `runner_name = NONE` na mesma data (2026-05-29) — não são três defeitos,
+são um.
+
+`release-slsa3.yml` tem exatamente 1 execução (evento `release`, e existe 1
+release publicado) e os logs já expiraram, então a causa dela é a única deste
+grupo que permanece **não diagnosticada** — registrada como tal em vez de
+suposta.
+
+`cosign-sign.yml` é o caso que NÃO é defeito e não deve ser "consertado":
+**0 execuções** porque dispara em push de tag `v*` e **não existe nenhuma tag
+`v*`** no repositório (só `cli-v*`). Ausência de execução não é execução
+vermelha. Ela também carrega um **waiver humano explícito**
+(`authorized-by: repo owner | 2026-08-11`) para permanecer GitHub-hosted, com
+razão técnica registrada — precisa de `docker` e da identidade OIDC hosted para
+assinatura keyless Cosign, e a frota Firecracker não tem daemon docker.
+**Não migrar, não apagar.**
+
+**A raiz NÃO é falta de secret** — correção de 2026-08-30. O `release-cli` usa
+um único secret, `CORELINK_CLI_RELEASE_TOKEN`, e ele já existe. A falha é
+defeito de build no `cargo zigbuild`, e é a única do grupo que não depende de
+credencial nenhuma.
+
+A ordem importa, porque muda o que adianta consertar primeiro:
+
+```
+release-cli (cargo zigbuild) quebrado
+   └─ sign-linux      → destrava quando o GPG for mintado (B-063 grupo b)
+   └─ sign-windows    → bloqueado por AQUISIÇÃO de certificado (B-063 grupo a)
+   └─ notarize-macos  → bloqueado por AQUISIÇÃO de conta Apple (B-063 grupo a)
+```
+
+Consertar o `release-cli` é **condição necessária das três**: mesmo com os
+certificados Apple e Windows em mãos, nada seria assinado, porque o artefato
+nunca chega a ser produzido. Investigar o que o `zigbuild` reclama antes de
+propor conserto — não presumir toolchain ausente.
+
+```backlog
+id: B-112
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'grep -q "cargo zigbuild" .github/workflows/release-cli.yml || exit 1
+  grep -q "authorized-by: repo owner" .github/workflows/cosign-sign.yml || exit 1
+  git ls-remote --tags origin "refs/tags/v*" 2>/dev/null | grep -q . && exit 1
+  exit 0'
+verify-means: |
+  open — decide as duas alegações estruturais que sustentam o item: o
+  `release-cli` ainda constrói por `cargo zigbuild` (a raiz não foi trocada) e o
+  waiver do `cosign-sign` ainda está no arquivo (ninguém o removeu ao "limpar"
+  lanes hosted). Vira vermelho também se surgir a primeira tag `v*`, porque aí o
+  `cosign-sign` deixa de estar trigger-starved e a análise precisa ser refeita
+  com execução real. Não ancora em histórico de execução: a causa do
+  `release-slsa3` está não-diagnosticada por logs expirados e um verify sobre
+  runs leria isso como verde.
+last-verified: 2026-08-30
+```
+
+### B-113 — seis lanes self-hosted sem sucesso, cada uma por um motivo próprio
+
+Sobram seis do levantamento das 20, e elas NÃO compartilham raiz — agrupá-las
+num predicado só produziria um portão dominado, então ficam nomeadas aqui com o
+que foi lido de cada uma:
+
+- **`nightly.yml`** (103 runs, cron ativo, falhou 2026-08-29): morre em
+  `Install cargo-mutants (pinned, prebuilt)` no `corelink-builder-5`. A lane
+  ainda queima hoje.
+- **`terraform-drift.yml`**: coberta por [B-111], listada aqui só para a
+  contagem das 20 fechar.
+- **`sbom.yml`** (16 runs, 2026-08-25): morre em
+  `Generate SBOM (CycloneDX 1.5+ JSON)` no `corelink-builder-4`.
+- **`buck2-starter-ci.yml`** (77 runs, 2026-08-16): morre em
+  `Install Buck2 latest stable` na frota `corelink`. Também declara
+  `[self-hosted, Linux, X64]`, que não existe aqui.
+- **`fuzz-nightly.yml`** (69 runs, 2026-08-02): `cancelled` no
+  `corelink-builder` — cancelamento, não falha de step, então a causa provável
+  é timeout/concorrência e **não está confirmada**.
+- **`endurance-2h-nightly.yml`** (19 runs, 2026-06-03) e
+  **`load-test-nightly.yml`** (3 runs, 2026-05-31): `runner_name = NONE` na
+  frota `corelink`. Ambas datam de antes da frota atual; se voltariam a pegar
+  box hoje é **não verificado** — provar exige disparar um teste de carga real,
+  que não cabe num PR de higiene.
+- **`billing-health-daily.yml`** (7 runs, cron ativo, falhou 2026-08-29): morre
+  em `Check billing health` num `cf-runner`. Ainda queima hoje.
+
+Três dessas (`nightly`, `billing-health-daily`, e o `terraform-drift` do B-063)
+são as únicas do levantamento inteiro que ainda produzem vermelho diariamente;
+as outras já não disparam. Priorizar por isso, não por volume histórico.
+
+```backlog
+id: B-113
+repo: corelink-server
+owner: tl
+status: open
+verify: manual
+verify-means: |
+  manual e com prazo: as seis têm causas distintas e nenhuma delas é decidível
+  por um comando sobre o repositório — `Install cargo-mutants`, `Install Buck2`
+  e `Generate SBOM` falham por estado da máquina/rede, `fuzz-nightly` cancela
+  sem step, e as duas de carga precisariam de execução real para saber se ainda
+  pegam box. Um verify sintético aqui seria teatro. O decaimento de 14 dias é o
+  que impede este item de virar gaveta.
+last-verified: 2026-08-30
+```
+
 ### B-061 — o roadmap de remediação é o único artefato sem `verify`, e já vazou número errado
 
 `docs/campaigns/remediation/ROADMAP.md` é o artefato de controle da campanha: define
@@ -3449,7 +3663,7 @@ saudáveis. O runbook `RB-AUDIT-ARCHIVE-ABSENT.md` §3.3 antecipa exatamente est
 cego e prescreve tratar partição persistentemente falha como SEV-1 próprio. O detector
 por partição foi construído ([B-022]) precisamente para ele, funciona, e é ignorado.
 
-A causa mecânica é [B-064]. Este item cobre o incidente; aquele cobre o defeito.
+A causa mecânica é [B-112]. Este item cobre o incidente; aquele cobre o defeito.
 
 ```backlog
 id: B-063
@@ -3466,19 +3680,19 @@ verify-means: |
   está no repositório.
 
   Um `verify` que apenas relesse o log do último `audit-archive-lag` seria dominado
-  por [B-064]: assim que o dreno voltar a funcionar o log fica verde, mas o backlog
+  por [B-112]: assim que o dreno voltar a funcionar o log fica verde, mas o backlog
   acumulado continua lá — mediria o alarme, não a condição.
 
   Procedimento: rodar a consulta do runbook §3.3 contra o D1 de prod e conferir se
   alguma partição tem `idle > 3h`. Fecha quando a partição `93da3f7a/enam` drenar
-  E o `audit-archive-lag` voltar a passar. Consertar [B-064] é pré-requisito para
+  E o `audit-archive-lag` voltar a passar. Consertar [B-112] é pré-requisito para
   que ela drene sozinha.
 last-verified: 2026-08-30
 ```
 
 ### B-064 — o selamento da auditoria tem teto de 200 linhas/hora e o laço que o contornaria nunca foi implementado no chamador
 
-Três fatos compõem, e juntos são a causa mecânica de [B-063].
+Três fatos compõem, e juntos são a causa mecânica de [B-111].
 
 **O orçamento.** `audit_drain.rs:409` é `.unwrap_or(200)`, e o comentário da linha 405
 diz textualmente `Global per-call row budget` — é global entre TODAS as partições, não
@@ -3758,7 +3972,7 @@ Os fluxos sem nenhuma cobertura executando são exatamente os de maior consequê
 regulatória e de privilégio: captura e retirada de consentimento, acesso e apagamento
 de DSR (Art. 15 e 17), o visualizador de auditoria e a dupla aprovação administrativa.
 
-Fecha o círculo com [B-062]: a correção do apagamento do Art.17 não está implantada
+Fecha o círculo com [B-110]: a correção do apagamento do Art.17 não está implantada
 **e** o fluxo de interface que a exercitaria nunca roda.
 
 ```backlog
@@ -3797,7 +4011,7 @@ staging para prod"*.
 
 Nenhum workflow faz deploy com `--env staging`. Toda ida a produção é direta, sem soak.
 
-Isto é o que torna [B-062] mais caro do que precisaria ser: sem um ambiente onde a
+Isto é o que torna [B-110] mais caro do que precisaria ser: sem um ambiente onde a
 imagem nova assente antes de ir para as cinco regiões, cada deploy carrega risco que
 um staging absorveria — e é parte de por que o deploy fica represado.
 
@@ -3887,8 +4101,8 @@ e não encontram destino.
 A consequência específica importa mais que o defeito: um desses agendamentos é o drill
 de entrega do PagerDuty. Ele nunca executou.
 
-Isso não é independente de [B-063]. A organização acredita ter validado que o alarme
-chega a um humano, e essa validação nunca correu. O alarme de [B-063] de fato dispara;
+Isso não é independente de [B-111]. A organização acredita ter validado que o alarme
+chega a um humano, e essa validação nunca correu. O alarme de [B-111] de fato dispara;
 o que nunca foi provado é que alguém o recebe — e três dias de SEV-0 sem resposta são
 consistentes com as duas hipóteses.
 
@@ -3912,7 +4126,7 @@ verify-means: |
 
   Se o reparo for implementar o manipulador, quem fechar deve confirmar que o drill do
   PagerDuty efetivamente entrega — presença do handler não prova entrega, e é
-  precisamente a entrega que [B-063] presume e nunca foi provada.
+  precisamente a entrega que [B-111] presume e nunca foi provada.
 last-verified: 2026-08-30
 ```
 
@@ -5642,7 +5856,7 @@ verify-means: |
   independente.
 
   ⚠️ **A medição é do pin `4f9313e0`, não da `main`** — produção estava 43 commits atrás
-  (ver [B-062]). O fix do mapa de tombstone (#1431) NÃO estava em produção; repin em #1445.
+  (ver [B-110]). O fix do mapa de tombstone (#1431) NÃO estava em produção; repin em #1445.
   Remedir após o roll antes de fixar teto ou nomear causa.
 
   Fecha quando N PUTs concorrentes (N na ordem dos 220 do sccache) tiverem taxa de falha
@@ -5854,7 +6068,7 @@ verify-means: |
   o defeito é latência contra armazenamento real, e a única evidência que conta é o
   `Server-Timing` antes e depois, colado lado a lado.
 
-  ⚠️ Medido no pin `4f9313e0`, 43 commits atrás ([B-062]). Remedir após o repin (#1445)
+  ⚠️ Medido no pin `4f9313e0`, 43 commits atrás ([B-110]). Remedir após o repin (#1445)
   ANTES de escrever conserto — parte pode já estar resolvida na `main`, e otimizar o que já
   foi consertado é acertar o número e errar o alvo.
 last-verified: 2026-08-30
