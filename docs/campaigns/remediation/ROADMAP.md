@@ -29,7 +29,7 @@ retórica: o portão foi furado 4 vezes num dia, e três mensagens de commit diz
 | **Pendente é pendente**, mesmo quando o job se diz informativo. | O cabeçalho descreve a intenção do job, não o estado do check. |
 | **A prosa não é evidência.** Verifique no caminho que produção toma. | Um cap de leitura foi ligado no ramo de teste; produção segue sem limite. |
 | **Nenhum teste que passa antes do fix.** Reverta o fix: a suíte tem de ficar vermelha. | Um teste verificava o parâmetro, não o bug. |
-| **Âncora tem de sobreviver ao squash.** Blob final ou commit já em `origin/main`. | 13 conceitos ancorados em commits órfãos. |
+| **Âncora tem de sobreviver ao squash.** Prefira **blob anchor** (content-addressed, sobrevive a rebase); commit anchor é fallback. | **63 de 164 conceitos (38%)** com âncora inalcançável — e `validate_okf` passa **verde localmente** porque o objeto órfão ainda existe no clone. Único check local fiel: `git merge-base --is-ancestor <sha> origin/main`. |
 | **Ao estabelecer um negativo, varra o que depende dele.** | Escreveram no PR que uma proteção não vale em release e deixaram de pé, na wiki, a frase que dependia dela. |
 | **Antes de despachar, verifique se o trabalho já existe.** | Um defeito foi consertado duas vezes por duas auditorias com nomes diferentes. |
 | **Nunca `git add -A`.** Índice compartilhado entre worktrees. | Varreu 54 workflows e um módulo inteiro para dentro de um PR. |
@@ -207,7 +207,10 @@ WP-1 (fila de merge, LEAD) ───┼─► #1412 → #1410 → #1411 → #519
 
 ## 4. Work Packages
 
-### WP-0 — Fragmentos de changelog (DESBLOQUEADOR, sequencial, primeiro)
+### WP-0 — Fragmentos de changelog  ✅ **CONCLUÍDO — #1417 mergeado**
+
+> Desfecho terminal, não estado volátil. **Não redespache.** O branch abaixo já existe
+> na história; recriá-lo produz PR duplicado. Mantido como registro de contrato.
 
 **Problema:** `CHANGELOG.md` é editado por 10 dos 13 PRs abertos. Serializa tudo por construção.
 
@@ -232,7 +235,9 @@ Ordem: `#1412` → `#1410` → `#1411` → `#519` → `#518`.
 Cada merge exige: conjunto de lanes conferido (Q5), zero pendentes (Q7), zero falhas
 não-herdadas. Falha herdada é nomeada e rastreada, nunca ignorada.
 
-### WP-2 — Preservar artefatos do handoff
+### WP-2 — Preservar artefatos do handoff  ✅ **CONCLUÍDO — #1415 mergeado**
+
+> Não redespache. 24 arquivos preservados; os 6 pareceres em `/tmp` confirmados **perdidos**.
 
 - **Worktree:** `/tmp/wt-wp2` · **Branch:** `docs/preserve-m3-artifacts`
 - **Arquivos:** `docs/campaigns/devenv/**` — disjunto de tudo
@@ -244,7 +249,9 @@ não-herdadas. Falha herdada é nomeada e rastreada, nunca ignorada.
   `main.rs` nem `REMEDIATION_PLAN.md` (esses pertencem ao commit em quarentena).
 - **Completeness:** `git status --porcelain` vazio no worktree raiz para `docs/campaigns/`.
 
-### WP-3 — Portão de cobertura
+### WP-3 — Portão de cobertura  🔵 **EM VOO — #1418 (server) + runners #520**
+
+> Não redespache. Achado: o piso existia e **nunca executou** (faltava `--coverage`) — §III.4.
 
 - **Worktree:** `/tmp/wt-wp3` · **Branch:** `ci/coverage-threshold`
 - **Arquivos:** `vitest.config.ts` (2 repos) · **DoD:** CI falha abaixo do piso; provado com PR de teste que baixa cobertura.
@@ -264,7 +271,7 @@ não-herdadas. Falha herdada é nomeada e rastreada, nunca ignorada.
 ### WP-5 — OKF: 13 âncoras órfãs + 2 cegueiras de portão
 
 - **Worktree:** `/tmp/wt-wp5` · **Branch:** `docs/okf-anchor-integrity` · **Depende de:** #1410
-- **Escopo:** re-ancorar 13 conceitos (Q3); corrigir a citação `main.rs:661-681` em
+- **Escopo:** re-ancorar os **63 conceitos** com âncora inalcançável (§IV.2 — não 13; aquele número contava só dois SHAs de um PR) **e** adicionar a prevenção, senão a próxima rodada de rebases recria tudo: (a) `validate_okf` **reprova** âncora inalcançável em vez de cair em silêncio para base-ref; (b) preferir blob anchor. Corrigir também a citação `main.rs:661-681` em
   `planes/container.md:132` (aponta para a rota de quota; o mount real do archive é 622-639);
   fechar **B-059** (`CITE_RE` cego a citação sem caminho — o portão passa verde com citação errada)
   e **B-060** (gate espelho registry→migrations).
@@ -301,7 +308,9 @@ não-herdadas. Falha herdada é nomeada e rastreada, nunca ignorada.
 - **DoD:** cada um compila, tem teste que falha se revertido, e os 3 empilhados são
   desempilhados ou mergeados na ordem forçada.
 
-### WP-8 — Reconstruir artefato SDK
+### WP-8 — Reconstruir artefato SDK  ✅ **CONCLUÍDO — #1416 mergeado**
+
+> Não redespache. Portão verde na `main`, verificado em worktree limpo.
 
 - **Worktree:** `/tmp/wt-wp8` · **Branch:** `fix/sdk-artifact-rebuild`
 - **Problema:** `sdks/js/src/client.ts` mudou (`GET`→`HEAD`) em 26/08 **sem republicar** o pacote.
