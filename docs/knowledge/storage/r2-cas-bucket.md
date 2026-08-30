@@ -8,8 +8,8 @@ source_files:
   - "crates/corelink-container/src/sli_aggregate.rs"
   - "crates/corelink-region/src/region.rs"
 source_blobs:
-  - "crates/corelink-container/src/storage/r2_s3.rs@6882c633b816e969236c16a64f568bcdd5b4f8d0"
-checkpoint_sha: "8be641fa56941e1e8c44e820e72d27c522acdd93"
+  - "crates/corelink-container/src/storage/r2_s3.rs@a250ca6168c1e00f426ef84042a56176c166723d"
+checkpoint_sha: "5ef2dce0fe8400ff95a520e2227bbc856c4224cd"
 provenance: "AUTHORED"
 tags: ["storage", "r2", "cas", "s3", "tenant-isolation"]
 timestamp: "2026-06-29T00:00:00Z"
@@ -142,7 +142,7 @@ The deployed sink is now `CountingSliObserver`
 variant instead of one row per observation — bounded by the closed 18-variant taxonomy regardless of
 traffic — and carries `(errors, total)`, which is exactly the shape
 `corelink_slo::BurnRateCalculator` consumes. It implements BOTH handler observer traits
-(`crates/corelink-container/src/sli_aggregate.rs:138-147`), which is why it lives in the container
+(`crates/corelink-container/src/sli_aggregate.rs:154-163`), which is why it lives in the container
 rather than in either handler crate: those stay free of a `tracing` dependency. Every 256
 observations of an SLI it publishes that SLI's aggregate on the container's ordinary `tracing`
 stream (`crates/corelink-container/src/sli_aggregate.rs:50`), and the call sites now pass real
