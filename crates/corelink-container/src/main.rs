@@ -43,6 +43,7 @@ use corelink_server::routes;
 use corelink_server::routes::audit_analytics::ShadowSinkFactory;
 use corelink_server::webhook::{router as webhook_router, WebhookState};
 use corelink_tier_selection::tier::TierKind;
+use tokio::signal;
 use tracing::{info, warn};
 
 /// Storage backing kind captured once at boot by `main()`.
@@ -250,6 +251,40 @@ async fn health_handler() -> impl IntoResponse {
         )],
         body,
     )
+}
+
+/// F-017: graceful-shutdown signal wiring for the axum server.
+///
+/// On a Cloudflare rollout the platform delivers `SIGTERM` to the
+/// container; the in-flight HTTP requests to the data plane would be
+/// dropped mid-flight without this hook. This future resolves on
+/// either `SIGTERM` (CF rollout) or `SIGINT` (local Ctrl-C, dev/test),
+/// then returns so the `.with_graceful_shutdown` future on the axum
+/// `serve` future can stop accepting new connections, drain the
+/// in-flight requests, and exit cleanly.
+async fn shutdown_signal() {
+    // SIGTERM — the Cloudflare containers rollout signal.
+    let term = async {
+        match signal::unix::signal(signal::unix::SignalKind::terminate()) {
+            Ok(mut s) => {
+                s.recv().await;
+            }
+            Err(e) => {
+                // `signal::unix` is unavailable on non-Unix targets (e.g. the
+                // `windows` test cfg). Fall back to ctrl_c so the future still
+                // resolves and the test can exit cleanly.
+                tracing::warn!(error = %e, "tokio::signal::unix unavailable; falling back to ctrl_c");
+                let _ = signal::ctrl_c().await;
+            }
+        }
+    };
+    // SIGINT (Ctrl-C) — local dev / test convenience.
+    let int = signal::ctrl_c();
+
+    tokio::select! {
+        _ = term => info!(signal = "SIGTERM", "graceful shutdown signal received — stopping accept and draining in-flight requests"),
+        _ = int  => info!(signal = "SIGINT",  "graceful shutdown signal received — stopping accept and draining in-flight requests"),
+    }
 }
 
 #[tokio::main]
@@ -1034,7 +1069,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Single HTTP/1.1 listener on PORT (50051) — the DO's getTcpPort target.
     let listener = tokio::net::TcpListener::bind(serve_addr).await?;
     info!(%serve_addr, "CoreLink HTTP data-plane server starting");
-    axum::serve(listener, app).await?;
+    // F-017 (drain half): wire graceful shutdown so a Cloudflare containers
+    // rollout (SIGTERM) stops accepting new connections and lets the
+    // in-flight HTTP requests finish before the process exits. Without this,
+    // SIGTERM would abort every active request mid-flight during a rollout.
+    // The complementary halves — wrangler containers-rollout drain policy +
+    // the /_health/container storage==r2 readiness assertion — are tracked
+    // separately (see TODO below) and are NOT in this change's scope.
+    // TODO(F-017): wrangler containers-rollout drain policy + /_health/container storage==r2 assertion
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
 
     Ok(())
 }
