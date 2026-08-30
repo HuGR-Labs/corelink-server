@@ -1144,6 +1144,75 @@ mod tests {
         assert!(lim.tombstone_count().unwrap() <= cap);
     }
 
+    /// `tombstone_count` must report the real size, and a single drained key
+    /// must actually leave ONE entry. Without this, a `tombstone_count` that
+    /// always answered `Ok(0)` would satisfy every bound assertion — the
+    /// bound would be "proved" by an accessor that cannot see anything.
+    #[test]
+    fn one_drained_key_leaves_exactly_one_tombstone() {
+        let (lim, _, _) = fresh();
+        let burst = RateLimitConfig::canonical().default_burst_capacity();
+        let key = BucketKey::per_tenant_per_endpoint(ten_a(), "oci.repo.solo".to_string());
+        assert_eq!(lim.tombstone_count().unwrap(), 0, "nothing drained yet");
+        let _ = lim.try_acquire(ten_a(), key.clone(), burst, 1000).unwrap();
+        let out = lim.try_acquire(ten_a(), key, 1, 1000).unwrap();
+        assert!(!out.decision.is_allow(), "the second take must be denied");
+        assert_eq!(
+            lim.tombstone_count().unwrap(),
+            1,
+            "a drained key must leave exactly one tombstone"
+        );
+    }
+
+    /// The two halves of the bound do DIFFERENT jobs, and only a map holding
+    /// BOTH expired and live tombstones tells them apart:
+    ///   - the expiry sweep must drop what is inert (`deadline <= now`),
+    ///   - and must KEEP what is still live, or the sweep silently becomes
+    ///     the bypass the tombstone exists to prevent.
+    /// Fills the map to the cap with expired entries plus one live one, then
+    /// forces a further insert: the sweep must reclaim the expired ones and
+    /// leave exactly the live tombstone plus the new one.
+    #[test]
+    fn expiry_sweep_drops_only_the_expired_tombstones() {
+        let audit = Arc::new(InMemoryRateLimitAuditSink::new());
+        let metrics = Arc::new(InMemoryRateLimitMetrics::new());
+        let cap = 4usize;
+        let lim = InMemoryTokenBucketRateLimiter::new_with_cap(
+            Arc::clone(&audit),
+            Arc::clone(&metrics),
+            RateLimitConfig::canonical(),
+            cap,
+        );
+        let burst = RateLimitConfig::canonical().default_burst_capacity();
+        let drain_at = |t: u64, name: &str| {
+            let key = BucketKey::per_tenant_per_endpoint(ten_a(), name.to_string());
+            let _ = lim.try_acquire(ten_a(), key.clone(), burst, t).unwrap();
+            let out = lim.try_acquire(ten_a(), key, 1, t).unwrap();
+            assert!(!out.decision.is_allow(), "{name} must be denied at t={t}");
+        };
+
+        // Three tombstones that will be expired by the time we come back.
+        for i in 0..3 {
+            drain_at(1000, &format!("oci.repo.old.{i}"));
+        }
+        assert_eq!(lim.tombstone_count().unwrap(), 3);
+
+        // Far enough past the TTL that all three are inert.
+        let later = 1000 + DRAINED_TOMBSTONE_TTL_SECS.saturating_mul(1000) + 1;
+        // Below the cap (3 < 4) so this one is inserted without a sweep.
+        drain_at(later, "oci.repo.live");
+        assert_eq!(lim.tombstone_count().unwrap(), cap, "map is now at the cap");
+
+        // At the cap: the sweep runs, must reclaim the 3 expired and keep the
+        // live one, leaving room for this insert.
+        drain_at(later, "oci.repo.new");
+        assert_eq!(
+            lim.tombstone_count().unwrap(),
+            2,
+            "sweep must drop the 3 expired and KEEP the live one, then insert"
+        );
+    }
+
     /// `next_tick` is the monotonic LRU recency counter — every access stamps a
     /// strictly-increasing tick so the approximate-LRU eviction can pick the
     /// least-recently-accessed bucket. A sabotaged `next_tick` that returned a
