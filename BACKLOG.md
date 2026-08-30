@@ -5497,45 +5497,58 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-102 — um PUT no `/cargo` custa ~1,4s independente do tamanho, e é custo fixo por requisição
+### B-102 — um PUT quente no `/cargo` custa 1,38s contra um alvo de 30-50 ms, e o armazenamento real é só metade disso
 
-Medido contra produção em 2026-08-30, tenant de dogfood `ee30f7ba-…`, PAT `cas:rw`:
+Medido contra produção em 2026-08-30, tenant de dogfood `ee30f7ba-…`, PAT `cas:rw`.
+
+**⚠️ Correção de causa registrada, não apagada.** A primeira versão deste item atribuía o
+custo a uma assimetria entre caminho de leitura e de escrita: o `Server-Timing` mostrava
+`auth desc="d1"` 711ms no PUT contra `desc="kv"` 8ms no GET, e a leitura natural foi "a
+escrita não usa o cache L2 de PAT". **Essa causa está refutada.** O `desc` é a CAMADA DE
+CACHE que serviu a linha, não o caminho de código: `worker/src/lib/pat_verify_cache.ts:146`
+declara `source: "l1" | "kv" | "d1"`, e `worker/src/index.ts:1550` diz textualmente
+*"Observability only — which tier served the row."* Existe **um único** call site de
+`verifyPatRowCached` (`index.ts:1481`); GET e PUT compartilham o roteamento
+(`index.ts:955`); e a cascata de camadas não olha o método HTTP. A medição original foi
+**PUT frio seguido de GET quente**, e a razão de 89x era miss-contra-hit da mesma função.
+
+O mesmo confounder atingia `qtier` e `qresid`: os três caches de quota
+(`tenant_tier_cache`, `quota_storage_cache`, `tenant_residency_cache`) têm arquitetura
+idêntica L1-memória + L2-KV e nenhum deles referencia `method`.
+
+**Perfil quente, três PUTs seguidos com o mesmo token dentro de 60s:**
 
 ```
-PUT  1 KiB → 200  1.685s        GET  1 KiB → 200  0.696s
-PUT  8 MiB → 200  3.338s        GET  8 MiB → 200  1.684s
-PUT 12 MiB → 200  4.072s        GET 12 MiB → 200  2.888s
-
-5 PUTs de 1 KiB em série: 1.367  1.525  1.400  1.446  1.318
+PUT #1  auth 10ms desc="kv"   qtier 4  qbatch 131  qresid 3   →  1,53s
+PUT #2  auth  0ms desc="l1"   qtier 0  qbatch 122  qresid 0   →  1,39s
+PUT #3  auth  6ms desc="kv"   qtier 2  qbatch 116  qresid 2   →  1,38s
 ```
 
-Média da série 1,411s, desvio ~0,08s. O custo não escala com o tamanho até 12 MiB, logo é
-por requisição e não por byte. Reproduz o `Average cache write 1.346 s` que a CI mediu no
-run 33326194312.
+Auth caiu de 711ms para **0-10ms**; `qtier` e `qresid` de 433/332ms para **0-4ms**. A
+alegação de custo fixo por requisição **sobrevive** — 1,38s quente, contra o alvo do owner
+de 30-50 ms, é **28-46x fora** — mas a causa é outra.
 
-**Proveniência da medição, e a correção que ela sofreu.** Os números vieram do Mac do
-owner, não de dentro da frota `runs-on: corelink` — a primeira coisa que a revisão
-adversarial atacou. Medi o componente de caminho para dimensioná-lo:
+**Decomposição quente, e é aqui que o trabalho mora:**
 
 ```
-401 rejeitado na borda (não chega ao contêiner): 0.084 0.090 0.081 s
-GET /_health sem auth (200):                     0.078 0.085 0.079 s
-  connect=0.017s  tls=0.056s
+PUT quente = 1,38s
+  origin  1007ms
+    ostore   647ms   → [B-107]  armazenamento real
+    ohop     153ms
+    oother   139ms   → [B-109]  trabalho sem fase nomeada
+    opat      72ms
+  wdb      278ms
+    qbatch   116ms   → [B-108]  única quota que não cacheia
 ```
 
-O trajeto Mac→borda→Mac custa **0,08s**, ou seja **~6% dos 1,41s**. Da frota seria menor
-ainda, mas o trecho borda→contêiner→armazenamento é o mesmo. Equivalente estimado de
-dentro da frota: **~1,33s**. A objeção de local de medição foi testada e **não derruba a
-alegação** — a inflação é de 6%, não de um fator.
+De 1,38s, o armazenamento real é 647ms: **mais de metade do tempo não é armazenar**. Este
+item é o guarda-chuva; os três alvos têm item próprio, e o custo de verify frio que a
+refutação revelou é [B-106].
 
-Corroboração de que não é Argon2id: o primeiro PUT da sessão (1,685s) fica 0,275s acima da
-média da série, e 0,275s é praticamente o custo de um Argon2id frio que o #1027 mediu
-(~270ms) e o #1022 memoizou. A memoização funciona; o 1,4s residual é outra coisa, ainda
-não nomeada.
-
-**Cuidado com a comparação fácil.** É tentador dizer "guardar custa 2x compilar" contra o
-`Average compiler 0.678 s`. A frase vale para o caminho de MISS e não descreve a economia
-agregada — ver [B-105], que mede a conta inteira e cuja causa **não** é este item.
+**Proveniência.** Medições do Mac do owner, não de dentro da frota. O trajeto Mac→borda
+custa 0,08s (401 rejeitado na borda: 0.084/0.090/0.081s; `/_health`: 0.078/0.085/0.079s),
+ou ~6% do total — objeção testada, não descartada. E o pin era `4f9313e0`, 43 commits
+atrás; remedir após o repin (#1445).
 
 ```backlog
 id: B-102
@@ -5544,57 +5557,31 @@ owner: tl
 status: open
 verify: manual
 verify-means: |
-  MANUAL, e declaro que nenhum comando do `backlog_verify` decide isto — a alegação é
-  sobre latência de produção sob credencial, e o gate roda sem credencial de plano de
-  dados.
+  MANUAL — a alegação é latência de produção sob credencial, e o gate roda sem credencial
+  de plano de dados. Um `verify` que cronometrasse a borda sem autenticar mediria 0,08s e
+  passaria verde para sempre, medindo o trajeto e não o caminho de escrita.
 
-  Um `verify` que cronometrasse a borda sem autenticação mediria 0,08s e passaria verde
-  para sempre, medindo o trajeto e não o caminho de escrita. Portão dominado.
+  Procedimento: PAT `cas:rw` no tenant de dogfood; **três PUTs de 1 KiB em sequência,
+  dentro de 60s**, e ler o `Server-Timing` do terceiro. A sequência é obrigatória, não
+  cosmética: foi exatamente a medição a frio que produziu a causa errada da primeira
+  versão deste item. Um PUT isolado mede cache frio e mente sobre o estado permanente.
 
-  Procedimento: PAT `cas:rw` no tenant de dogfood, cinco `PUT` de 1 KiB em série
-  cronometrados, e reportar a média. Fecha quando a média cair com folga abaixo de 0,5s
-  medida de dentro da frota — número escolhido para deixar o cache com margem real sobre
-  o `Average compiler 0.678 s`, não para ser fácil de atingir.
+  Fecha quando o PUT quente cair para a ordem de 30-50 ms. Enquanto estiver em segundos,
+  os alvos são [B-107], [B-108] e [B-109], e o de maior alcance é [B-106].
 
-  **Caminho para tornar automático:** já existe `cargo-cache-latency-probe.yml`
-  (`workflow_dispatch`, hoje só GETs, com acesso ao secret `CORELINK_SCCACHE_TOKEN`).
-  Estender essa lane com um PUT cronometrado e um teto que reprova transforma este item
-  num portão de verdade, medido de dentro da frota, que é onde o número importa. Quem
-  fizer isso deve substituir este `manual`.
+  **Caminho para automatizar:** `cargo-cache-latency-probe.yml` já é `workflow_dispatch`
+  com acesso ao `CORELINK_SCCACHE_TOKEN` e hoje só faz GETs. Estendê-lo com três PUTs
+  cronometrados e um teto sobre o terceiro transforma isto em portão de verdade, medido de
+  dentro da frota. Quem fizer deve substituir este `manual`.
 last-verified: 2026-08-30
 ```
 
-### B-103 — o caminho de escrita do `/cargo` falha em 87% sob paralelismo e 0% em série
+### B-103 — o caminho de escrita do `/cargo` falha em 87% sob paralelismo e satura em ~2 req/s
 
-Dois fatos que precisam ser explicados juntos. Em série, contra produção, hoje: cinco
-PUTs, cinco 200, zero falhas ([B-102]). Na CI, com o sccache escrevendo em paralelo
-(run 33326194312, `tenant-path`, PR #1443):
-
-```
-Cache misses          220
-Cache write errors    191      ← 87%
-Cache read errors       0
-```
-
-`read errors = 0` com `write errors = 191`, mesmo token, mesmo host, mesmo TLS. Isso
-exclui rede genérica e credencial: é específico do caminho de escrita, sob concorrência.
-
-**Hipóteses alternativas testadas na revisão adversarial, e o que sobrou:**
-
-- *Quota / byte-accounting estourado.* `cargo.rs:133` chama `resolve_storage_cap` em todo
-  PUT, e um teto atingido explicaria "leitura ok, escrita não" sem concorrência nenhuma.
-  **Refutada pela própria medição:** os PUTs em série de hoje, no mesmo tenant, deram 200.
-  Um teto duro teria reprovado os seriais também.
-- *Timeout do cliente sccache.* Se a escrita custa 1,4s e o cliente desiste antes, os erros
-  aparecem sem qualquer saturação do servidor. **NÃO refutada** — não encontrei
-  configuração de timeout no workflow e não medi o default do backend WebDAV do sccache.
-  É a alternativa viva mais forte, e distingue-se da saturação por um teste barato:
-  poucas escritas concorrentes (2 a 4). Se falharem na mesma proporção, é timeout de
-  cliente, não saturação.
-- *Corrida no auto-seed da linha de quota.* `cargo.rs:104` documenta que a linha
-  `tenant_storage_state` se auto-semeia com o teto real na PRIMEIRA escrita. 220 primeiras
-  escritas concorrentes disputando a semeadura da mesma linha é um mecanismo concreto de
-  falha sob paralelismo, mais acionável que "satura". **Não testada.**
+Dois fatos que precisam ser explicados juntos. Em série, cinco PUTs, cinco 200, zero
+falhas. Na CI, com o sccache escrevendo em paralelo (run 33326194312, `tenant-path`,
+PR #1443): **191 erros de escrita em 220 misses**, com `read errors = 0`. Mesmo token,
+mesmo host, mesmo TLS — isso exclui rede genérica e credencial.
 
 **Medição de concorrência, 2026-08-30, contra produção:**
 
@@ -5604,31 +5591,34 @@ conc=16   16/16 ok    wall 10,2s  →  1,57 req/s
 conc=64   60/64 ok    wall 33,4s  →  1,92 req/s   (4 × HTTP 429)
 ```
 
-Isso decide duas coisas e abre uma terceira.
+**As falhas são 429, não 5xx** — o caminho de escrita não quebra; o nosso próprio
+limitador recusa. Mata "escrita quebrada" de vez.
 
-**As falhas são 429, não 5xx** — o caminho de escrita não quebra, é o nosso próprio
-limitador que recusa. Mata definitivamente "escrita quebrada".
+**O número não fecha com a configuração.** `crates/corelink-ratelimit/src/tier.rs` declara
+`TEAM_REFILL_RPS = 200` e `TEAM_BURST = 1000`; 64 requisições não deveriam encostar em
+nada. Ou o tenant de dogfood não resolve para o tier Team, ou o balde não é por tenant como
+se presume. Ver [B-080], que documenta fallbacks de tier em ambas as direções — inclusive
+rótulo desconhecido caindo em `Tier::Team`.
 
-**Mas o número não fecha com a configuração.** `crates/corelink-ratelimit/src/tier.rs`
-declara `TEAM_REFILL_RPS = 200` e `TEAM_BURST = 1000`; 64 requisições não deveriam encostar
-em nada. Ou o tenant de dogfood não resolve para o tier Team, ou o balde não é por tenant
-como se presume. Ver [B-080], que documenta que o mapeamento de tier tem fallbacks em
-ambas as direções — inclusive um rótulo desconhecido caindo em `Tier::Team`.
+**O achado maior é a vazão.** Concorrência multiplicada por 16 e a vazão subiu 2,6x;
+satura em **~2 req/s**, que é **1% dos 200 rps autorizados**. Mais nítido no degrau barato:
+em série a vazão é `1/1,41 = 0,71 req/s` e com concorrência 4 é 0,74 — **ganho
+praticamente zero desde o primeiro degrau**, assinatura de serialização quase total ANTES
+do limitador. Um limitador recusa rápido com 429; ele não enfileira.
 
-**E o achado maior não é o 429, é a vazão.** Concorrência multiplicada por 16 e a vazão
-subiu 2,6x; satura em **~2 req/s**, que é **1% dos 200 rps autorizados**. Mais nítido
-ainda no extremo barato: em série a vazão é `1/1,41 = 0,71 req/s` e com concorrência 4 é
-0,74 req/s — **concorrência 4 entrega ganho praticamente zero.** Isso é assinatura de
-**serialização** em algum ponto do caminho de escrita, ANTES do limitador. Um limitador
-recusa rápido com 429; ele não enfileira.
+Cadeia que os dois conjuntos sustentam: serialização ⇒ ~2 req/s ⇒ as 220 escritas paralelas
+do sccache levam ~110s ⇒ timeout do cliente estoura ⇒ os 191 erros.
 
-A cadeia que os dois conjuntos de dados sustentam: serialização ⇒ ~2 req/s ⇒ as 220
-escritas paralelas do sccache levam ~110s ⇒ qualquer timeout razoável do cliente estoura
-⇒ os 191 erros. A hipótese de timeout de cliente, que a revisão adversarial não conseguiu
-refutar, fica mais forte com a vazão medida. A de corrida no auto-seed continua viva e
-agora tem companhia: seja o que serializa, está antes do limitador.
+**⚠️ Duas causas candidatas foram REFUTADAS e ficam registradas.** *Quota estourada:*
+`cargo.rs:133` chama `resolve_storage_cap` em todo PUT e um teto atingido explicaria
+read=0/write=191 — refutada pelos PUTs em série, que deram 200 no mesmo tenant. *Consultas
+de quota síncronas no caminho quente:* os `qtier`/`qresid` de centenas de ms eram **cache
+frio**, e caem para 0-4ms quentes (ver a correção registrada em [B-102]). Sobram como
+candidatos vivos: o `qbatch` de 116ms que **não** cacheia ([B-108]), o `ostore` de 647ms
+([B-107]), e a corrida no auto-seed da linha de quota (`cargo.rs:104`), não testada.
 
-**Nenhuma causa está nomeada, de propósito.** O que serializa ainda não foi identificado.
+**Nenhuma causa nomeada, de propósito.** O que serializa continua não identificado, e a
+primeira tentativa de nomear já errou uma vez.
 
 ```backlog
 id: B-103
@@ -5637,46 +5627,56 @@ owner: tl
 status: open
 verify: manual
 verify-means: |
-  MANUAL, e admito que não decide — pela mesma razão de [B-102] (exige credencial de
-  produção) e por uma segunda, mais séria: **eu não sei ainda qual das três causas é a
-  verdadeira**, e um `verify` escrito para a causa errada passa verde com o defeito vivo.
+  MANUAL — exige credencial de produção, e admito uma segunda razão mais séria: **a causa
+  ainda não está nomeada**, e um `verify` escrito para a causa errada passa verde com o
+  defeito vivo. Já erramos a causa uma vez neste mesmo item.
 
-  A etapa 1 já foi executada em 2026-08-30 e está registrada acima: o joelho fica em
-  ~2 req/s e as falhas são 429. Falta a etapa 2 — ler o log do servidor durante a rajada,
-  SEM filtro. `wrangler tail --search` retorna zero com a linha presente (comportamento
-  conhecido), então filtrar aqui esconde exatamente a evidência que decide o que serializa.
+  A etapa de concorrência já foi executada e está registrada acima: o joelho fica em
+  ~2 req/s e as falhas são 429. Falta a etapa que decide o que serializa — ler o log do
+  servidor durante a rajada, **SEM filtro**. `wrangler tail --search` retorna zero com a
+  linha presente, então filtrar aqui esconde exatamente a evidência.
 
-  ⚠️ **A medição atual é do pin `4f9313e0`, não da `main`** — produção estava 43 commits
-  atrás quando ela foi feita (ver [B-062]). O fix do mapa de tombstone (#1431, balde
-  drenado que voltava cheio ao ser evictado) NÃO estava em produção, e o repin está aberto
-  em #1445. **Remedir depois do roll antes de fixar qualquer teto ou nomear causa:** parte
-  do 429 pode desaparecer sozinha, e atribuir causa antes disso é escolher a explicação
-  errada com número certo.
+  Ordem correta de ataque: fechar [B-107] e [B-108] primeiro. Se a serialização for o
+  `ostore` ou o `qbatch` disputando a mesma linha de tenant, ela desaparece junto e este
+  item fecha sem conserto próprio. Só se sobreviver aos dois é que merece investigação
+  independente.
+
+  ⚠️ **A medição é do pin `4f9313e0`, não da `main`** — produção estava 43 commits atrás
+  (ver [B-062]). O fix do mapa de tombstone (#1431) NÃO estava em produção; repin em #1445.
+  Remedir após o roll antes de fixar teto ou nomear causa.
 
   Fecha quando N PUTs concorrentes (N na ordem dos 220 do sccache) tiverem taxa de falha
-  zero. Enquanto a causa não estiver nomeada, este item NÃO deve receber conserto — o
-  primeiro reparo escolhido por intuição vai mirar a hipótese errada.
+  zero e a vazão escalar com a concorrência.
 last-verified: 2026-08-30
 ```
 
-### B-104 — um 404 autenticado no `/cargo` levou 3,3s, e é o resíduo que o piloto de agosto nunca explicou
+### B-104 — o 404 autenticado tem mediana de 0,32s e cauda de 2,47s; a mediana é o resíduo que o #1033 nunca explicou
 
-Uma das medições de 2026-08-30 registrou `GET → 404 em 3.318s` num caminho inexistente,
-com credencial válida.
+**⚠️ Correção de magnitude registrada, não apagada.** A primeira versão deste item afirmava
+`GET → 404 em 3.318s` como o custo do caminho de miss, a partir de **uma** amostra. Dez
+amostras desmentem o número:
 
-Isto é **2,4 vezes** o custo de um PUT bem-sucedido de 1 KiB (1,41s, [B-102]) — e um miss
-faz estritamente menos trabalho que uma escrita: não grava bytes, não toca contabilidade
-de armazenamento, não semeia linha de quota. Um caminho que faz menos e custa mais é o
-sintoma de que há trabalho no caminho de miss que ninguém enumerou.
+```
+mediana 0,32s   ·   p90 0,48s   ·   max 2,47s
+```
 
-Histórico que torna isso pior: o #1033 registrou ~300ms num 404 autenticado puro, disse
-explicitamente que **não era Argon2id** (o #1027 mediu, o #1022 memoizou) e que **não
-estava medido**. Se hoje são 3,3s, ou aquele resíduo piorou por um fator de dez, ou existe
-uma segunda causa somando-se a ele. As duas leituras exigem medição, não escolha.
+Os 3,3s eram **cauda**, não típico. O item foi registrado desde o início como uma amostra
+e com a instrução explícita de medir dez antes de fixar qualquer teto — e foi essa
+ressalva que impediu um teto errado de entrar no backlog. Fica aqui como precedente:
+fixar limiar a partir de uma amostra é escolher o número que confirma a suspeita.
 
-Registro de honestidade: é **uma** amostra. Pode ser anomalia de rede, de instância fria,
-ou de contenção momentânea. Está aqui como item e não como conclusão porque uma medição
-isolada que contradiz o modelo é exatamente o que não se deve descartar nem promover.
+**O que sobra, e é real em duas frentes.**
+
+A **mediana de 0,32s** casa quase exatamente com o resíduo de ~300ms que o #1033 registrou
+num 404 autenticado puro, dizendo explicitamente que **não era Argon2id** (o #1027 mediu, o
+#1022 memoizou) e que **não estava medido**. Ou seja: o resíduo não piorou dez vezes, mas
+**continua lá e continua sem causa nomeada**, agora confirmado com dez amostras em vez de
+uma. Um 404 não grava bytes, não toca contabilidade, não semeia linha de quota — 320ms para
+concluir que algo não existe é trabalho não enumerado, o mesmo padrão de [B-109].
+
+A **cauda de 2,47s contra p90 de 0,48s** é a segunda frente: um fator de 5 entre p90 e
+máximo, num caminho que deveria ser o mais barato da superfície. Cauda dessa largura é
+sintoma, não ruído.
 
 ```backlog
 id: B-104
@@ -5687,16 +5687,17 @@ verify: manual
 verify-means: |
   MANUAL — exige credencial de produção, como [B-102] e [B-103].
 
-  Procedimento: dez GETs autenticados em caminhos inexistentes, cronometrados, reportando
-  mediana e p90. A amostra de dez é o mínimo para separar anomalia de comportamento: se a
-  mediana ficar perto de 0,3s e só houver um outlier em 3,3s, o item vira anomalia de rede
-  e fecha; se a mediana ficar acima de 1s, o resíduo de agosto piorou e o item é real.
+  Procedimento: dez ou mais GETs autenticados em caminhos inexistentes, cronometrados,
+  reportando **mediana e p90** — nunca máximo isolado. O teto certo sai do p90; foi o
+  máximo que produziu a primeira versão errada deste item.
 
-  Não fixo teto numérico antes de ter a distribuição — fixar limiar a partir de uma única
-  amostra é escolher o número que confirma a suspeita.
+  Fecha quando a mediana cair para a ordem de dezenas de ms, que é o que um caminho que
+  apenas conclui inexistência deveria custar. NÃO fecha por a cauda melhorar sozinha: os
+  0,32s medianos são o resíduo do #1033 e são a alegação principal.
 
-  Fecha quando a mediana de um 404 autenticado for compatível com o resíduo de ~300ms que
-  o #1033 registrou, ou quando a causa do excesso for nomeada e virar item próprio.
+  Se a causa dos 320ms medianos for identificada e for a mesma de [B-109] (`oother`, fase
+  não nomeada), este item deve ser fechado apontando para lá em vez de receber conserto
+  próprio — é provável, e enumerar antes de otimizar decide isso.
 last-verified: 2026-08-30
 ```
 
@@ -5759,5 +5760,195 @@ verify-means: |
 
   Owner, não tl: a decisão que este item alimenta é se o produto vendido como cache de
   build entrega aceleração no caso perfeito. É pergunta de produto.
+last-verified: 2026-08-30
+```
+
+### B-106 — um verify de PAT frio custa 711 ms e o TTL do KV é 60 s, então todo cliente paga isso continuamente
+
+Achado que só apareceu porque a causa do [B-102] foi refutada: ao provar que o `desc` era
+camada de cache e não caminho de código, o número que sobrou deixou de ser um artefato de
+medição e passou a ser o defeito.
+
+Um verify servido pelo D1 custa **711 ms**; servido pelo KV, **8 ms**; pela L1 de memória,
+**0 ms**. Medido em produção, 2026-08-30.
+
+O alcance é o ponto. `worker/src/lib/pat_verify_cache.ts` documenta as camadas: L1 é
+per-isolate com TTL de ~5 s, e o L2 KV tem TTL de **60 s** — o comentário na linha 92 diz
+que 60 s é o **piso do KV**, não uma escolha. Então a cada 60 segundos, para cada token, em
+cada colo, o primeiro request paga 711 ms. Isso não é caso excepcional: é o estado
+permanente de qualquer tráfego que não seja uma rajada contínua sobre o mesmo token no
+mesmo colo.
+
+Um cliente que faça uma build por minuto paga 711 ms em **toda** build. Um cliente com
+tráfego distribuído por colos paga por colo. Um cliente novo paga sempre.
+
+Atinge **todo cliente autenticado, em toda superfície** — não só o `/cargo`, não só o CI.
+É o item de maior raio do pacote de performance, e o único que não é específico da escrita.
+
+O comentário em `index.ts:1460` já registra a origem: a leitura vai por
+`withSession("first-unconstrained")` para a réplica mais próxima com fallback ao primário,
+*"~tens of ms globally"* — mas o número medido é 711 ms, uma ordem de grandeza acima do que
+o próprio comentário prevê. Ou a sessão de réplica não está sendo usada em produção, ou a
+réplica não existe na região que serviu, ou o fallback ao primário está sendo tomado sempre.
+**Três hipóteses, nenhuma medida.**
+
+```backlog
+id: B-106
+repo: corelink-server
+owner: tl
+status: open
+verify: manual
+verify-means: |
+  MANUAL — exige credencial de produção e, pior, exige medir um estado FRIO, que é
+  destrutivo de si mesmo: a primeira medição aquece o cache e a segunda mede outra coisa.
+
+  Procedimento: um request autenticado com um token que não seja usado há mais de 60 s (ou
+  recém-mintado), lendo o `Server-Timing`. Confirmar `auth;desc="d1"` e cronometrar. Repetir
+  em intervalos maiores que 60 s para amostrar — nunca em sequência, que é exatamente o erro
+  que produziu a causa errada do [B-102].
+
+  Fecha quando um verify frio cair para a ordem de dezenas de ms, que é o que o comentário
+  do `index.ts:1460` já promete (*"~tens of ms globally"*) e que a medição desmente.
+
+  As três hipóteses a separar, antes de qualquer conserto: (a) a sessão de réplica não está
+  ativa em produção; (b) não há réplica na região que serviu; (c) o fallback ao primário é
+  tomado sempre. São consertos diferentes e só uma medição as distingue — não escolha por
+  intuição, que já custou uma causa errada neste pacote.
+
+  NÃO fechar aumentando o TTL do KV. 60 s é o piso do KV, e alongar a janela de cache
+  alarga a janela de revogação — a ADR-0030 fixa 60 s de p99 para revogação, e trocar
+  latência por janela de revogação é trocar performance por furo de segurança.
+last-verified: 2026-08-30
+```
+
+### B-107 — `ostore` custa 647 ms para gravar 1 KiB, 13-21x o alvo do owner
+
+No perfil quente do PUT (ver [B-102]), com todo cache aquecido e a autenticação em 0-10 ms,
+o `ostore` — o armazenamento real — é **647 ms de 1007 ms de `origin`**, para um objeto de
+**1 KiB**.
+
+O alvo declarado pelo owner é 30-50 ms. São **13 a 21 vezes** fora, e não há desculpa de
+cache frio: é o número quente.
+
+Que seja 647 ms para **1 KiB** é o que torna isto um defeito e não um custo. O mesmo perfil
+mostra que o custo não escala com o tamanho até 12 MiB ([B-102]), ou seja, não é banda —
+é custo fixo por operação de armazenamento. Gravar mil bytes não deveria custar dois terços
+de segundo em nenhuma arquitetura.
+
+É o maior item isolado do PUT quente e o alvo principal do pacote de performance.
+
+```backlog
+id: B-107
+repo: corelink-server
+owner: tl
+status: open
+verify: manual
+verify-means: |
+  MANUAL — o número vive no `Server-Timing` de um PUT autenticado contra produção.
+
+  Procedimento: três PUTs de 1 KiB em sequência dentro de 60 s (a sequência é obrigatória,
+  ver [B-102]) e ler `ostore` do terceiro. Fecha quando `ostore` cair para a ordem de
+  30-50 ms.
+
+  **Prova é o header, não a suíte.** Um teste unitário que passe não demonstra nada aqui:
+  o defeito é latência contra armazenamento real, e a única evidência que conta é o
+  `Server-Timing` antes e depois, colado lado a lado.
+
+  ⚠️ Medido no pin `4f9313e0`, 43 commits atrás ([B-062]). Remedir após o repin (#1445)
+  ANTES de escrever conserto — parte pode já estar resolvida na `main`, e otimizar o que já
+  foi consertado é acertar o número e errar o alvo.
+last-verified: 2026-08-30
+```
+
+### B-108 — `qbatch` custa 116-131 ms em todo PUT e é a única quota que o cache não serve
+
+No perfil quente, os três irmãos de quota zeram: `qtier` cai de 433 ms para 0-4 ms e
+`qresid` de 332 ms para 0-4 ms, servidos pelas camadas L1/KV. O `qbatch` **não cai**:
+mantém-se em 116-131 ms nos três PUTs consecutivos.
+
+É a única contabilidade que executa de verdade em toda escrita.
+
+**Isto pode ser correto, e o item registra a pergunta antes de registrar o conserto.** Um
+contador de lote que precisa ser fresco não pode ser cacheado sem furar a cobrança, e
+quota que não é cobrada é receita perdida. Se for esse o caso, o desfecho certo é **fechar
+como aceito, com o motivo registrado** — não otimizar.
+
+O que decide: descobrir se o `qbatch` é (a) um contador que exige leitura fresca por
+correção de cobrança, ou (b) o mesmo padrão dos irmãos sem o cache que eles ganharam. Em
+(a) o item vira recusa registrada; em (b) vira conserto de uma linha.
+
+Nota de composição: 116 ms em toda escrita, disputando a mesma linha de tenant, é um
+mecanismo concreto de serialização — e serialização é exatamente o que [B-103] procura sem
+ter nomeado. Se o `qbatch` for a causa, os dois fecham juntos.
+
+```backlog
+id: B-108
+repo: corelink-server
+owner: tl
+status: open
+verify: manual
+verify-means: |
+  MANUAL, e por uma razão que não é a credencial: **este item pode não ter conserto.** A
+  primeira etapa é uma decisão de correção de cobrança, não uma medição de latência, e um
+  `verify` que exigisse `qbatch` baixo prejulgaria essa decisão — passaria a exigir a
+  remoção de uma checagem que pode ser obrigatória.
+
+  Etapa 1, e é leitura de código, não medição: determinar se o `qbatch` exige leitura
+  fresca por correção de cobrança. Se exigir, **fechar como aceito com o motivo registrado**
+  e a nota de que 116 ms é o preço da cobrança correta.
+
+  Etapa 2, só se a etapa 1 disser que não exige: cachear como os irmãos e provar pelo
+  `Server-Timing` de três PUTs em sequência.
+
+  **Nenhum conserto pode remover a checagem.** O alvo é fazê-la uma vez, em lote, ou fora do
+  caminho quente. Trocar latência por furo de cobrança não é otimização.
+last-verified: 2026-08-30
+```
+
+### B-109 — `oother` custa 139 ms de trabalho de contêiner sem fase nomeada
+
+No perfil quente do PUT, `oother` é 139 ms; no GET, 1 ms. Sobreviveu à correção de cache
+frio que derrubou as causas de `auth`, `qtier` e `qresid`, então não é artefato de ordem de
+medição.
+
+**`oother` é subtração, não medição.** É o resíduo de `origin` menos as fases nomeadas —
+esta casa já registrou que uma fase fora da allowlist de nomes vira "outros", e portanto
+trabalho de contêiner real aparece como categoria vazia. Um número que só existe por
+diferença não diz o que está fazendo.
+
+Por isso o primeiro passo é **enumerar, não otimizar**. Instrumentar as sub-fases que hoje
+caem no resíduo e descobrir o que são. Otimizar uma categoria de subtração é escolher um
+alvo sem saber onde ele está.
+
+Composição provável: a mediana de 320 ms de um 404 autenticado ([B-104]) também é trabalho
+não enumerado num caminho que deveria ser barato. Pode ser o mesmo. Enumerar decide.
+
+```backlog
+id: B-109
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'f=crates/corelink-container/src/routes/cas.rs
+  hint=$(grep -rln "oother\|OOTHER" crates/corelink-container/src --include="*.rs" 2>/dev/null | head -1)
+  [ -n "$hint" ] || { echo "FALHA: nao encontro a emissao de oother — reavalie o item."; exit 1; }
+  fases=$(grep -rhoE "\"o[a-z]+\"" crates/corelink-container/src --include="*.rs" 2>/dev/null | sort -u | wc -l | tr -d " ")
+  [ "$fases" -gt 0 ] || { echo "FALHA: nenhuma fase nomeada encontrada — reavalie."; exit 1; }
+  echo "aberto: $fases fase(s) de origin nomeadas; oother continua sendo o residuo por subtracao"'
+verify-means: |
+  open — existe emissão de `oother` no código, ou seja, ainda há uma categoria de resíduo
+  por subtração no `Server-Timing` de `origin`.
+
+  Admito o que este comando NÃO decide: ele conta fases nomeadas e confirma que o resíduo
+  existe; **não mede quanto tempo cai nele**. Esse número só sai do `Server-Timing` de um
+  PUT autenticado contra produção, e o gate não tem credencial.
+
+  É deliberado que este seja o único dos itens de performance com `verify` automático: a
+  alegação aqui não é "139 ms é muito", é "**existe trabalho de contêiner que nenhuma fase
+  nomeia**". Essa parte é estrutural, vive no repositório, e é decidível sem credencial.
+
+  Vira DRIFTED quando o resíduo deixar de existir — isto é, quando as sub-fases forem
+  enumeradas e o `oother` sumir ou virar constante desprezível. Que é exatamente a definição
+  de pronto: enumerar, não otimizar.
 last-verified: 2026-08-30
 ```
