@@ -859,11 +859,40 @@ check-host injeta o token e o serviço **sobe e serve autenticado**; e é constr
 CI, assado no Dockerfile, e **digest-pinned vivo** no `wrangler.jsonc` com o DO binding
 deployado.
 
-**Resíduo não registrado antes:** o gate vive **só** no `main.rs`; `lib.rs`
-`app_with_auth(None)` ainda constrói um `/exec` **aberto** e apenas avisa. E na trilha
-devenv o fail-closed é **por erro de digitação** (`EXEC_SERVER_TOKEN` injetado vs
-`EXEC_SERVER_AUTH_TOKEN` lido) — **um rename de uma linha armaria um `/exec` sem
-autenticação**.
+**Resíduo não registrado antes — ⚠️ CORRIGIDO 2026-08-30, o texto original está
+abaixo porque a correção é o achado.**
+
+O que este parágrafo afirmava:
+
+> *"o gate vive **só** no `main.rs`; `lib.rs` `app_with_auth(None)` ainda constrói um
+> `/exec` **aberto** e apenas avisa. E na trilha devenv o fail-closed é **por erro de
+> digitação** (`EXEC_SERVER_TOKEN` injetado vs `EXEC_SERVER_AUTH_TOKEN` lido) — **um
+> rename de uma linha armaria um `/exec` sem autenticação**."*
+
+**Era verdade quando foi escrito. Deixou de ser no #521**
+(*"move the fail-closed gate into the LIBRARY — an open `/exec` is now
+unconstructible"*), e o documento não acompanhou. Verificado em
+`corelink-runners@origin/main`:
+
+- `ExecAuth::from_env` (`check-exec-server/src/lib.rs:176`) devolve `bearer` com o
+  token presente e `unauthenticated_opt_in()` sem ele — e esse segundo braço **erra**
+  a menos que `CHECK_EXEC_ALLOW_UNAUTH` esteja explicitamente setado. Esse var **não é
+  setado em lugar nenhum** do caminho de spawn.
+- `main.rs:22` propaga o erro com `?`: sem token, **o processo não serve**.
+- O caminho deployado é o BINÁRIO: `Dockerfile.runner-devenv:41` o constrói e
+  `supervisord.conf:147` roda `/usr/local/bin/exec-server --bind-addr 127.0.0.1:9090`
+  — **loopback**. `main.rs` é o único chamador de produção de `app_with_auth`; o resto
+  é teste.
+
+Logo o rename **arma o `/exec` COM autenticação**, não sem. Hoje o endpoint está
+morto, não aberto. O erro do parágrafo foi tratar a **superfície de API do `lib.rs`**
+(um chamador *poderia* passar `Unauthenticated`) como se fosse o caminho deployado —
+a diferença entre "a função aceita" e "o binário faz".
+
+**Por que isto está registrado em vez de simplesmente apagado:** o aviso quase
+impediu um conserto correto. Risco falso consome a mesma atenção que risco real, e
+uma linha de remediação que envelheceu sem data de validade é indistinguível de uma
+viva. O rename saiu em `corelink-runners#522`.
 
 ## V.6 — A origem real do apodrecimento de âncoras: squash, não só rebase
 
