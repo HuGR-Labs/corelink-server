@@ -174,6 +174,19 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     // as `usage_counter` / `usage_daily` → ERASE per ADR-S11-013
     // (`DELETE ... WHERE tenant_id = ?`; the tenant-leftmost PK covers it).
     "runner_usage_counter",
+    // Monthly aggregated vCPU-second meter for the DevEnv product
+    // (migration 0106). Same class as `runner_usage_counter` above: a
+    // pre-invoice usage aggregate keyed tenant-leftmost, NOT the fiscal
+    // record → ERASE per ADR-S11-013.
+    //
+    // Registered in the SAME PR that adds the migration, deliberately. #1405
+    // put this name in both registries citing a migration that creates a
+    // different table, and the phantom split an Art.17 erasure in half. The
+    // mirror gate added in #1419 now fails a registry name no migration
+    // creates; `every_migrated_tenant_keyed_table_is_classified` fails the
+    // opposite. Shipping the table without this line trades a loud 500 for
+    // silent UNDER-erasure, which is the worse half of that pair.
+    "devenv_monthly_vcpu",
 ];
 
 /// Erase-set tables keyed by a `namespace` column. The bound value is the
@@ -347,6 +360,7 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "workspaces",
     "usage_daily",
     "runner_usage_counter",
+    "devenv_monthly_vcpu",
     // erase-set (namespace)
     "adapter_cache_map",
     "adapter_npm_meta",

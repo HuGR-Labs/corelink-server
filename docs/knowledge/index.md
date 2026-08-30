@@ -26,6 +26,7 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 - [Action Cache (AC) surface](/surfaces/action-cache.md)
 - [Bazel REAPI v2 surface](/surfaces/bazel-reapi.md)
 - [Native CAS surface](/surfaces/native-cas.md)
+- [DevEnv edge surface](/surfaces/devenv-edge.md)
 - [_public package-manager surfaces (npm/pip/brew/oci)](/surfaces/public-packages.md)
 - [sccache / cargo (WebDAV) surface](/surfaces/sccache-cargo.md)
 - [Turborepo v8 remote-cache surface](/surfaces/turborepo.md)

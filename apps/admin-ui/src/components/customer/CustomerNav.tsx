@@ -64,6 +64,7 @@ export function customerNavGroups(locale: string): CustomerNavGroup[] {
       links: [
         { href: `${b}/runners`, label: "Runners", testId: "nav-runners", icon: ICON.runner },
         { href: `${b}/workspaces`, label: "Workspaces", testId: "nav-workspaces", icon: ICON.workspace },
+        { href: `${b}/devenv`, label: "Dev Environments", testId: "nav-devenv", icon: ICON.connect },
       ],
     },
     {
