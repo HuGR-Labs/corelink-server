@@ -386,11 +386,18 @@ where
     /// state, so iteration order is already pseudo-random w.r.t. insertion /
     /// access order — taking the first `K` of `iter()` is a dep-free random
     /// sample (no rng crate). It is APPROXIMATE LRU: the global LRU minimum may
-    /// be missed, but a fresh re-materialise on the victim's next hit makes that
-    /// harmless (eviction only ever resets a bucket to its most-permissive
-    /// "full" state — never a rate-limit bypass), and a hot key is statistically
-    /// unlikely to be the sample's minimum, so an attacker cannot steer
-    /// eviction onto a key they are actively hammering.
+    /// be missed, but a hot key is statistically unlikely to be the sample's
+    /// minimum, so an attacker cannot steer eviction onto a key they are
+    /// actively hammering.
+    ///
+    /// This comment used to also claim that a fresh re-materialise was
+    /// "harmless — never a rate-limit bypass". That was FALSE, and
+    /// `tests/eviction_reset_bypass.rs` reproduces it: evicting a DRAINED
+    /// bucket handed the caller a full one on the next hit, returning the
+    /// whole quota without waiting out the window. Re-materialisation is
+    /// harmless only for a bucket that was not drained; the drained case is
+    /// what the `drained_tombstones` map above exists to carry across an
+    /// eviction.
     fn evict_if_at_cap(map: &mut HashMap<BucketKey, Bucket>, incoming: &BucketKey, cap: usize) {
         if map.len() < cap || map.contains_key(incoming) {
             return;
