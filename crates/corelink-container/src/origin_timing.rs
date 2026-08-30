@@ -451,6 +451,18 @@ pub async fn timed<F: Future>(phase: Phase, fut: F) -> F::Output {
     out
 }
 
+/// Run `fut` with `ledger` installed as the ambient task-local, for tests in
+/// OTHER modules of this crate that need to observe what a real code path
+/// records (e.g. `adapter_cache`'s proof that `MoatCache::put` double-counts
+/// `Phase::Store` when the CAS handler re-enters it).
+///
+/// Test-only: production installs the ledger exactly once, in
+/// [`origin_timing_layer`], and nothing else may scope one.
+#[cfg(test)]
+pub(crate) async fn scope_for_test<F: Future>(ledger: Arc<PhaseLedger>, fut: F) -> F::Output {
+    LEDGER.scope(ledger, fut).await
+}
+
 /// Capture a handle to the CURRENT request's ledger, or `None` if no ledger is
 /// in scope on this task.
 ///
@@ -944,6 +956,57 @@ mod tests {
         assert_eq!(on.get("ortier"), Some(&20));
         assert_eq!(on.get("oaudit"), Some(&15));
         assert_eq!(on.get("oother"), Some(&60), "190 - 90 - 5 - 20 - 15 = 60");
+    }
+
+    /// **A nested re-entry of the SAME phase on the SAME task is counted twice.**
+    ///
+    /// This is a HAZARD guard, not a bug report — and the distinction was
+    /// established by measurement, not by reading. `PhaseScope::enter` stamps an
+    /// `Instant` and `drop` adds the elapsed span unconditionally; there is no
+    /// depth tracking, so two nested scopes of one phase add overlapping windows
+    /// and `Σ(phases)` stops being a partition of the request.
+    ///
+    /// The module doc claims the phases "partition, not label" the request and
+    /// that summing them "can never double-count a millisecond". That holds
+    /// today only because no live path nests one phase on one task. The nesting
+    /// that LOOKS like it does — `MoatCache::put` wrapping `timed(Phase::Store)`
+    /// around a `R2CasHandler::write` that enters `Phase::Store` again — is
+    /// severed by `spawn_blocking`, which moves the handler to another task
+    /// where the task-local ledger is invisible. That is pinned separately by
+    /// `adapter_cache::tests::put_records_the_store_phase_exactly_once`.
+    ///
+    /// So this test does not report a defect. It fixes the COST of one, so that
+    /// whoever swaps a `spawn_blocking` for a `block_in_place` — a change that
+    /// looks like a pure performance tweak — can read here what it does to the
+    /// header: the residue clamps at zero and absorbs the overcount silently.
+    #[test]
+    fn nested_reentry_of_the_same_phase_double_counts() {
+        let ledger = PhaseLedger::new();
+        // Simulate the real shape: an outer Store window that fully contains an
+        // inner Store window, as `MoatCache::put` contains `R2CasHandler::write`.
+        ledger.add(Phase::Store, 100_000); // outer: the whole put (100 ms)
+        ledger.add(Phase::Store, 60_000); //  inner: the R2 call (60 ms), INSIDE it
+
+        let parsed = parse(&ledger.server_timing_value_with(100_000, false));
+        assert_eq!(
+            parsed.get("ostore"),
+            Some(&160),
+            "ostore reports 160 ms for a request that spent 100 ms — the inner \
+             scope re-added a window the outer already covered"
+        );
+        // And the residue absorbs the lie: `oother` clamps at zero instead of
+        // reporting that the parts no longer fit the whole.
+        assert_eq!(
+            parsed.get("oother"),
+            Some(&0),
+            "the (total - attributed).max(0) guard silences the overcount"
+        );
+        let sum: i64 = parsed.values().copied().sum();
+        assert!(
+            sum > 100,
+            "phases + residue ({sum}) EXCEED the container total (100) — the \
+             header is no longer a partition of the request"
+        );
     }
 
     /// The residue always closes: named phases plus `oother` sum to the total,

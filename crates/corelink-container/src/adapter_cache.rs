@@ -493,6 +493,90 @@ mod tests {
         )
     }
 
+    /// **`Phase::Store` is recorded exactly ONCE on the `MoatCache::put` path,
+    /// and the reason is subtle enough to pin with a test.**
+    ///
+    /// `MoatCache::put` wraps the whole write in `timed(Phase::Store, ..)`
+    /// (`Self::put`), and the production CAS handler `R2CasHandler::write`
+    /// (`storage/r2_s3.rs`) enters `Phase::Store` AGAIN around its R2 calls.
+    /// `PhaseScope` has no depth tracking — `enter` stamps an `Instant` and
+    /// `drop` adds the elapsed span unconditionally — so on its face that
+    /// nesting should double-count the R2 window.
+    ///
+    /// It does not, and the reason is `spawn_blocking`. `put_untimed` hands the
+    /// handler to `tokio::task::spawn_blocking`, which runs it on a DIFFERENT
+    /// task, and the ledger is a task-local. The inner `PhaseScope::enter`
+    /// therefore finds no ambient ledger and records nothing; the outer `timed`
+    /// accounts the whole window, once. (`r2_s3.rs` reaches its R2 calls through
+    /// `block_in_place` 49 times against `spawn_blocking` once — `block_in_place`
+    /// stays on the same task, so on the NATIVE plane, where there is no outer
+    /// `timed`, those scopes do record.)
+    ///
+    /// This test was written to prove the opposite — that B-107's 654 ms
+    /// `ostore` was inflated by a double count — and it disproved that. The
+    /// measurement stands. It is kept, inverted, because the property it now
+    /// pins is load-bearing and fragile in BOTH directions: swap
+    /// `spawn_blocking` for `block_in_place` and the R2 window is counted twice;
+    /// drop the outer `timed` and it is counted zero times and falls into
+    /// `oother`.
+    #[tokio::test]
+    async fn put_records_the_store_phase_exactly_once() {
+        use corelink_handler_cas::{CasReadResponse, CasWriteResponse};
+
+        /// A CAS handler that re-enters `Phase::Store`, as `R2CasHandler` does.
+        #[derive(Debug)]
+        struct ReentrantCas;
+        impl CasReadHandler for ReentrantCas {
+            fn read(&self, req: CasReadRequest) -> Result<CasReadResponse, CasHandlerError> {
+                Ok(CasReadResponse::new(Vec::new(), req.hash))
+            }
+        }
+        impl CasWriteHandler for ReentrantCas {
+            fn write(&self, req: CasWriteRequest) -> Result<CasWriteResponse, CasHandlerError> {
+                let _scope =
+                    crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+                std::thread::sleep(std::time::Duration::from_millis(30));
+                Ok(CasWriteResponse::new(req.claimed_hash, true))
+            }
+        }
+
+        let ledger = std::sync::Arc::new(crate::origin_timing::PhaseLedger::new());
+        let cas = Arc::new(ReentrantCas);
+        let m = MoatCache::new(
+            Arc::clone(&cas) as Arc<dyn CasReadHandler>,
+            cas as Arc<dyn CasWriteHandler>,
+            Arc::new(FakeUrlMap::default()),
+            fake_hash,
+            "moat-test",
+        );
+
+        let started = std::time::Instant::now();
+        crate::origin_timing::scope_for_test(std::sync::Arc::clone(&ledger), async {
+            m.put("ns", "k", b"x".to_vec(), None).await.unwrap();
+        })
+        .await;
+        let wall_us = i64::try_from(started.elapsed().as_micros()).unwrap_or(i64::MAX);
+
+        let store_us = ledger
+            .micros(crate::origin_timing::Phase::Store)
+            .expect("the put must have recorded a Store window");
+
+        assert!(
+            store_us <= wall_us,
+            "ostore ({store_us} us) must NOT exceed the wall clock of the put \
+             ({wall_us} us). If it does, the inner PhaseScope started recording \
+             — the R2 window is being counted twice and every `ostore` number, \
+             B-107's baseline included, is inflated."
+        );
+        // And it must not have vanished either: the outer `timed` has to cover
+        // the handler's 30 ms, or the time fell into `oother` unnamed.
+        assert!(
+            store_us >= 25_000,
+            "ostore ({store_us} us) is far below the handler's 30 ms — the outer \
+             `timed` stopped covering the write and the time is now unattributed"
+        );
+    }
+
     #[tokio::test]
     async fn put_then_get_round_trip() {
         let map = Arc::new(FakeUrlMap::default());
