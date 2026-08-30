@@ -118,6 +118,36 @@ mas é **do lead e não é delegável**.
 
 ---
 
+## 0.9 — PRÉ-VOO OBRIGATÓRIO (antes de despachar QUALQUER WP)
+
+> Este documento já falhou nisto. Três dos oito WPs mandavam criar branches que já
+> existiam — dois **mergeados**, um em voo — com o nome exato prescrito aqui. A causa
+> é a mesma que o §III.0 nomeia: **estado codificado dentro do que se apresenta como
+> contrato atemporal.** Um WP é uma definição de trabalho; se o trabalho já existe, o
+> WP está obsoleto e despachá-lo produz PR duplicado.
+
+Rode os DOIS comandos. Um só não basta:
+
+```bash
+WP_BRANCH="<branch do WP>"; WP_SLUG="<palavra-chave do WP>"
+
+git ls-remote --heads origin "$WP_BRANCH"          # branch ainda vivo?
+gh pr list --state merged --search "$WP_SLUG" \
+   --json number,title,mergedAt                    # já mergeado?
+```
+
+**Por que os dois:** o portão de merge **deleta o branch remoto** ao mergear. Um
+`ls-remote` sozinho devolve "livre" para trabalho já concluído — testado: dos três
+branches que colidiram, dois apareciam livres porque já haviam sido mergeados e
+deletados. Consultar só branch vivo é o mesmo erro de "concluir ausência de leitura
+parcial" que o §0.2 proíbe.
+
+**Se qualquer um dos dois acertar: PARE e reporte ao lead. Não despache.**
+
+Vale também entre campanhas: um mesmo defeito já foi consertado **duas vezes** por duas
+auditorias que lhe deram nomes diferentes (§III.3). Busque pelo **sintoma**, não só
+pelo identificador do WP.
+
 ## 1. Regra de isolamento (INVIOLÁVEL)
 
 **Cada WP tem seu próprio worktree, criado a partir de `origin/main`, e ninguém entra no
@@ -347,10 +377,10 @@ enquanto o defeito existe — pior que não ter portão, porque produzem confian
 
 | Portão | Cegueira | Destino |
 |---|---|---|
-| OKF `CITE_RE` | Regex exige caminho ⇒ nunca casa citação abreviada `:N-M` | **B-059** (aberto) |
+| OKF `CITE_RE` | Regex exige caminho ⇒ nunca casa citação abreviada `:N-M` | **B-059** — ⚠️ ainda NÃO existe em `origin/main`; vive em ramo não mergeado. Precisa ser **criado**, não fechado. |
 | OKF C5 | Valida **posição**, não correspondência semântica — citação pode apontar para rota errada e ficar verde para sempre | **novo item** |
 | `sdk-artifacts` | Filtrado por `apps/docs/**` ⇒ **nunca dispara no PR que causa** a defasagem | **novo item** |
-| Espelho CF-1 | Unidirecional (migrations→registry) ⇒ tabela fantasma no registro é invisível | **B-060** (aberto) |
+| Espelho CF-1 | Unidirecional (migrations→registry) ⇒ tabela fantasma no registro é invisível | **B-060** — ⚠️ idem: não existe em `origin/main` ainda. |
 
 **Contra-exemplo a imitar:** o C10b **recusa** seed cujo conceito não cite o arquivo —
 ou seja, recusa auto-certificação. É o desenho correto; usar como referência ao
