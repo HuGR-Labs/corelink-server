@@ -201,7 +201,7 @@ Derivados de defeitos reais desta campanha. Não são conselhos — são condiç
 |---|---|---|
 | Q1 | **A prosa não é evidência.** Toda afirmação do PR é verificada contra o código no caminho que **produção** toma. | Um cap de leitura foi ligado no ramo de teste; produção segue sem limite. |
 | Q2 | **Nenhum teste que passa antes do fix.** Reverta o fix: a suíte tem de ficar vermelha. | Teste que verificava o parâmetro, não o bug. Reverter o fix deixava tudo verde. |
-| Q3 | **Nenhuma âncora que o squash orfana.** Referencie blob do conteúdo final ou commit já em `origin/main` — nunca o HEAD do próprio branch. | 13 conceitos ancorados em commits órfãos. |
+| Q3 | **Nenhuma âncora que o squash orfana.** Referencie blob do conteúdo final ou commit já em `origin/main` — nunca o HEAD do próprio branch. | 63 de 164 conceitos com âncora inalcançável — e o validador passa VERDE localmente. |
 | Q4 | **Ao estabelecer um negativo, varra o que depende dele.** "Compilado fora", "não wired", "sem consumidor" → procure quem afirma o contrário, **no momento do achado**. | Sessão escreveu no corpo do PR que uma proteção não vale em release e deixou de pé, na wiki, a frase que dependia dela. |
 | Q5 | **Contagem ≠ conjunto.** Verificar CI compara o **conjunto** de lanes contra um PR de mesmo escopo, não o número. | Duas lanes trocadas dão a mesma contagem e escondem o que a régua existe para pegar. |
 | Q6 | **`verify` de item concluído é guarda de regressão.** Passa enquanto a asserção existe; DRIFTED se alguém a apagar. Nunca escrito na polaridade "aberto". | Item `done` com `verify` na polaridade errada quebra o portão no merge do PR **seguinte**. |
@@ -962,3 +962,32 @@ Cada um verificado, nenhum atribuído até aqui.
 | **F-010 / F-019** | Reembolso não revoga acesso; ticket de credencial 2 h reusável (pedido real: TTL 7200→600 + `destroy`) | Decisão de produto |
 | **P-A7** | `worker/src/index.ts` provisiona sessão de réplica D1 usada só no auth, nunca repassada às leituras de tier/quota — ida a região distante **por request autenticado** | Perf, do 4º relatório |
 | **exec-server** | O gate vive **só** no `main.rs`; `lib.rs` `app_with_auth(None)` constrói `/exec` **aberto**. Na trilha devenv o fail-closed é **por erro de digitação** — um rename de uma linha arma `/exec` sem auth | Endurecer o ponto de entrada da biblioteca |
+
+
+---
+
+## V.8 — Dívida do lead, varrida e fechada
+
+> Varredura de zero-débito. Estes quatro são **meus**, e três eu introduzi *depois* de
+> escrever a regra que eles violam.
+
+| # | Dívida | Estado |
+|---|---|---|
+| 1 | **Band-aid no `verify` do B-061.** Meu check passava local e reprovava na CI; em vez de consertar a raiz, adicionei um guard que **pulava** em clone raso — fazendo-o passar na CI **sem verificar nada**. Era a forma band-aid do defeito que este documento cataloga sete vezes. | ✅ **Fechado** — o workflow passa a clonar com `fetch-depth: 0`, e o guard virou **recusa** (`exit 1`), não skip. Descobriu-se que **quatro** `verify` do backlog dependiam de histórico e estavam cegos, não só o meu. |
+| 2 | **Número errado vazado.** O "1.057 execuções / 5 lanes" (real: **1.539 / 19**) entrou no corpo de um PR já mergeado, como argumento para escolher um piso de cobertura. | ⚠️ **Aberto** — texto em commit mergeado. Fecha na próxima edição daquele fragmento; não vale reescrever histórico. |
+| 3 | **Não cumpri o DoD do meu próprio WP-1.** Ele exige que *cada merge registre no comentário do PR o conjunto de lanes conferido*. Medido: **9 de 9 merges sem o registro.** Escrevi o contrato e não o segui em nenhum. | ✅ **Fechado por mudança de mecanismo** — ver abaixo. |
+| 4 | **"13 conceitos" obsoleto** sobrevivendo na `main` depois da correção para 63. | ✅ **Fechado** neste commit. |
+
+### Por que o item 3 fecha mudando o mecanismo, e não prometendo cumprir
+
+Um DoD que exige disciplina manual a cada merge **será violado** — foi, nove vezes em
+nove, pelo próprio autor, no mesmo dia em que o escreveu. Prometer cumprir é band-aid;
+o histórico desta campanha mostra que a promessa não é o instrumento.
+
+**O `pre-merge-gate-check.sh` já imprime o conjunto de lanes conferido.** O registro
+deve ser **subproduto do portão**, não ato de vontade do lead: o script grava sua
+própria saída como comentário no PR quando invocado com `--merge`.
+
+Enquanto isso não existe, o DoD do WP-1 fica **honestamente marcado como não cumprido**,
+em vez de reescrito para caber no que eu fiz. **Rebaixar o critério para o
+comportamento observado é a gambiarra que este documento existe para recusar.**
