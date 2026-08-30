@@ -39,7 +39,6 @@ use corelink_billing_stripe_traits::{
     CanonicalWebhookEventType, MaterializerError, StateMaterializer, StripeWebhookEnvelope,
 };
 use corelink_tier_selection::tier::TierKind;
-use tracing;
 
 use crate::audit::{AuditSeverity, BillingAuditEmitter, BillingAuditError, BillingAuditRecord};
 use crate::clock::{default_mat_clock, MatClock};
