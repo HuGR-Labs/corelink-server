@@ -2211,7 +2211,10 @@ const baseHandler: ExportedHandler<Env> = {
           headers: coordHeaders,
           body:
             request.method === "GET" || request.method === "HEAD"
-              ? undefined
+              // `null`, not `undefined`: with `exactOptionalPropertyTypes`
+              // a possibly-undefined `body` is not assignable to RequestInit.
+              // `null` is the spec-correct "no body" for GET/HEAD.
+              ? null
               : await request.clone().arrayBuffer(),
         });
         return applyCors(await coordStub.fetch(coordReq), request);
