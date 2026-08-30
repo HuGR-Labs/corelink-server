@@ -12,7 +12,7 @@ source_files:
   - "crates/corelink-container/src/storage/d1_audit_sink.rs"
   - "crates/corelink-container/src/storage/r2_s3.rs"
 source_blobs:
-  - "worker/src/index.ts@d4f2605e0e46840b641a56e444007304d7f4f2ec"
+  - "worker/src/index.ts@755263aad45417766edeba70a119c587db129e3a"
   - "worker/src/durable_object.ts@bf36fd6a2f94c92c8b5d47872dedb93cfc95d137"
   - "crates/corelink-container/src/routes.rs@90c8f13a942bca512dec0047e7f0bf0b2356c229"
   - "crates/corelink-container/src/origin_timing.rs@1c61b0059b68f2ee697d3b69a111246faea4fa7c"
