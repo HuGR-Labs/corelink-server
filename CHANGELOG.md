@@ -730,6 +730,16 @@ Each entry cross-references:
   RETURNING → idempotent 200 with no delete. Comments in
   `pat_verify_cache`/`tenant_suspend_gate` now describe the real behavior.
 
+- **The PRIMARY PAT signing key skipped the hex validation its rotation
+  siblings had — a malformed key meant silent 401s for every client.**
+  `PAT_SIGNING_KEY` was gated only by raw length (`>= 64`); a 64+-char
+  non-hex value passed, made `hexDecode()` return null on every request,
+  failed HMAC silently and returned 401 to ALL legitimate clients with zero
+  operational signal. The siblings' full predicate (even-length, all-hex,
+  >= 64 chars) is now ONE shared helper (`lib/pat_signing_key.ts`) applied to
+  BOTH the primary key and the rotation siblings — fail-closed CRITICAL log +
+  503 on a malformed main key, identical behavior to the sibling path.
+
 ### Added
 
 - **Governance-mode legal-hold-aware CAS erasure — the retention backend is real,
