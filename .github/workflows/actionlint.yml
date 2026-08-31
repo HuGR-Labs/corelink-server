@@ -60,7 +60,8 @@ jobs:
     # Hosted minutes bill with a 1-MINUTE-PER-JOB FLOOR, so this sub-minute
     # check costs a full paid minute every run; on the fleet it costs $0.
     # Verified running natively on the fleet host (macOS/BSD userland).
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): baixa actionlint+shellcheck pinados e detecta o SO sozinho
+    runs-on: corelink
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0

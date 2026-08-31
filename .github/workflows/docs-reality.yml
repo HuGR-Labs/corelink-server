@@ -92,7 +92,8 @@ jobs:
     # Hosted minutes bill with a 1-MINUTE-PER-JOB FLOOR, so this sub-minute
     # check costs a full paid minute every run; on the fleet it costs $0.
     # Verified running natively on the fleet host (macOS/BSD userland).
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): python3 puro (baked na imagem da frota)
+    runs-on: corelink
     # Bound the job (CI cost diet 2026-08-01): a self-hosted job with no
     # timeout inherits GitHub's 360-min default, so one wedged run can hold
     # 1 of the 4 `corelink-builder` runners for 6h and stall
@@ -119,9 +120,32 @@ jobs:
       # by hand: an ungated test suite is a suite that rots, and the floors it
       # asserts (a scan that inspected nothing is an ERROR) are the only thing
       # standing between this gate and a permanent, meaningless green.
+      # pytest is NOT ambient here. This step used to rely on the mac fleet's
+      # system pytest; on the `corelink` image `/usr/bin/python3` carries none,
+      # so the first run of this lane after the move failed with "No module
+      # named pytest" — a gate whose result depends on which machine picks up
+      # the job. `python-tests.yml` already solved this and its comment names
+      # THIS step as the one to port the fix to; that is what this is. No
+      # `actions/setup-python`: `RUNNER_TOOL_CACHE` is unset on the fleet and it
+      # dies on an unwritable path.
+      - name: Install pytest (venv on system python3)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv .venv
+          .venv/bin/python3 -m pip install --quiet --upgrade pip
+          .venv/bin/python3 -m pip install --quiet -r requirements-ci.txt
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+
       - name: Run the hostname-liveness regression suite
         shell: bash
-        run: python3 -m pytest tests/test_validate_docs_reality_hostnames.py -q
+        run: |
+          set -euo pipefail
+          # Prove which interpreter is about to run, so a future PATH surprise is
+          # visible in the log rather than inferred from a failure.
+          command -v python3
+          python3 -m pytest --version
+          python3 -m pytest tests/test_validate_docs_reality_hostnames.py -q
 
       - name: Summarize results in PR
         if: always()

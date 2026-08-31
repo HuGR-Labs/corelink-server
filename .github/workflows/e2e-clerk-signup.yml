@@ -50,7 +50,8 @@ jobs:
   # owner sets it. (Mirrors the needs-output gate in pentest-findings-sync.yml.)
   gate:
     name: Gate — CLERK_SECRET_KEY present?
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): node/pnpm/python3/curl/jq — todos baked
+    runs-on: corelink
     timeout-minutes: 2
     outputs:
       run: ${{ steps.check.outputs.run }}
@@ -74,7 +75,8 @@ jobs:
     name: Clerk signup E2E (prod)
     needs: gate
     if: needs.gate.outputs.run == 'true'
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): node/pnpm/python3/curl/jq — todos baked
+    runs-on: corelink
     timeout-minutes: 10
     env:
       # Mask secrets at the env layer so they never appear in logs

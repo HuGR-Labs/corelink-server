@@ -28,7 +28,8 @@ concurrency:
 jobs:
   stale-check:
     name: Weekly i18n stale audit
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): jq + actions/github-script (JS action, roda na box)
+    runs-on: corelink
     timeout-minutes: 10
     steps:
       - name: Checkout (full history for git log)
