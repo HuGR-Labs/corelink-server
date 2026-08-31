@@ -2899,10 +2899,45 @@ process-wide `Semaphore` shared by every `TurboRouteState`
 (`crates/corelink-container/src/routes/turbo_v8.rs:374-387`, guard at `:726-733`).
 CAS has the per-tenant half and no process-wide half.
 
-The pattern to copy is in the repo, so this is not a design question — it is the
-second of the two factors ADR-S34-002 named, and the ADR deliberately scoped
-itself to the first. Sizing it needs the same treatment the ceiling got: a
-number argued from the 1024 MiB the container actually has.
+**⚠️ NÃO CONSERTADO — recusa registrada, 2026-08-31 (onda 2).** O item diz *"o padrão a
+copiar está no repo, então isto não é uma questão de desenho"*. **É, e o exemplar é a razão.**
+
+`GLOBAL_TURBO_GET_PERMITS` — o singleton que este item manda copiar — dimensiona-se
+explicitamente contra *"a standard-1 instance (~4 GiB)"* (`turbo_v8.rs:192`; o irmão de PUT
+faz o mesmo em `:168`). Essa caixa **não existe mais**: o #1066 trocou `instance_type` para
+`basic` nos sete blocos do `wrangler.toml`, e o `cas.rs` gravou a medição em
+`CONTAINER_MEMORY_BYTES = 1024 MiB`. O padrão a copiar está calibrado para 4× a máquina real.
+
+Somando o que os comentários do próprio binário declaram, contra os **1024 MiB** físicos:
+
+| sítio | MiB nominais | dimensionado contra |
+|---|---:|---|
+| `cas.rs` leitura por tenant (8 × 64 MiB) | 512 | **1024 MiB (medido)** |
+| `turbo_v8.rs` PUT global (16 × 100 MiB) | 1600 | `standard-1` ~4 GiB |
+| `turbo_v8.rs` GET global (16 × 100 MiB) | 1600 | `standard-1` ~4 GiB |
+| `adapter_pat.rs` Argon2 (16 × 64 MiB) | 1024 | `standard-1` ~4 GiB |
+| **total** | **4736** | **4,6× a caixa** |
+
+**Por que isso bloqueia o reparo em vez de só adorná-lo.** Um `GLOBAL_CAS_READ_BUDGET`
+acrescentado agora deixaria o `verify` deste item **verde** — ele grepa o nome do singleton —
+enquanto a propriedade que o item alega, *"com N tenants o processo continua ilimitado"*,
+continuaria **falsa**: o Turbo sozinho reivindica 3,1× a caixa. Seria um portão decorativo
+sobre o defeito exato que o item existe para nomear. Qualquer número honesto para o CAS exige
+decidir os do Turbo no mesmo movimento, e mexer nos permits do Turbo muda o teto de
+throughput de uma superfície de cache viva — decisão de produto, não de transcrição.
+
+**Achado que propaga para o [B-077], e o alarga.** O B-077 nomeia o `adapter_pat.rs` e conta
+*"~1,5 GiB de orçamento documentado sobre 1 GiB físico"*. **A população é maior:** o
+`turbo_v8.rs` não é citado por ele e é, sozinho, o maior órfão do downsize — 3200 MiB contra
+1024. `CONTAINER_MEMORY_BYTES` continua referenciado por **um único** arquivo (`cas.rs`), e
+os outros três sítios seguem raciocinando sobre a caixa antiga. Medido em 2026-08-31 com
+`grep -rn "standard-1" crates --include "*.rs"`: quatro sítios, três deles dimensionando
+orçamento (o quarto, `cas_erase.rs:559`, só menciona a instância em prosa).
+
+**Sequência correta:** dimensionar `cas`, `turbo` e `argon2` contra `CONTAINER_MEMORY_BYTES`
+**juntos** (é o que o [B-093] já antecipava ao dizer que o teto novo tem de caber em 1 GiB
+junto com este item e o B-077), e prender o conjunto num assert de compilação como o
+`cas.rs:183` já faz — o único que hoje impede a próxima deriva.
 
 ```backlog
 id: B-056
@@ -4756,7 +4791,17 @@ repositório não implanta, contradito por uma constante medida no mesmo binári
 `cas.rs` compile-asserta que pode reivindicar metade da caixa; o Argon2 dimensiona-se
 para a caixa inteira; nenhum dos dois referencia o outro. São ~1,5 GiB de orçamento
 documentado sobre 1 GiB físico. **A metade do CAS é [B-056]; a metade do Argon2 é este
-item.** E não existe portão ligando `instance_type` às constantes derivadas dele: o
+item.**
+
+**Ampliado 2026-08-31 (onda 2): a população é maior que os ~1,5 GiB acima.** Ao verificar a
+premissa do [B-056] antes de aplicá-lo, o `turbo_v8.rs` apareceu como o **maior** órfão do
+downsize, e este item não o citava: `GLOBAL_TURBO_PUT_PERMITS = 16` e
+`GLOBAL_TURBO_GET_PERMITS = 16`, ambos × `TURBO_BODY_LIMIT_BYTES` (100 MiB), com o comentário
+de `:192` dimensionando explicitamente *"on a standard-1 instance (~4 GiB)"* — **3200 MiB
+declarados sobre 1024 MiB físicos**, sozinhos. Somando os quatro sítios: 512 (cas, correto) +
+1600 + 1600 (turbo) + 1024 (argon2) = **4736 MiB, 4,6× a caixa**. Medido com
+`grep -rn "standard-1" crates --include "*.rs"`: quatro ocorrências, três dimensionando
+orçamento. `CONTAINER_MEMORY_BYTES` continua referenciado por um único arquivo. E não existe portão ligando `instance_type` às constantes derivadas dele: o
 próximo redimensionamento repete isto em silêncio.
 
 ```backlog
