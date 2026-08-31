@@ -76,8 +76,58 @@ JOB_START = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$")
 RUNS_ON = re.compile(r"^\s+runs-on:\s*(.+?)\s*$")
 
 
+def _strip_trailing_comment(runs_on: str) -> str:
+    """Drop a trailing `# …` from a scalar `runs-on:` value.
+
+    The repo convention is to justify a runner choice inline:
+
+        runs-on: corelink  # zero-hosted: python3 baked into the image
+
+    Without this strip, `runs_on.strip() == "corelink"` is False for every such
+    job and the job silently LEAVES the inspected set — the guard keeps printing
+    OK while covering less. Measured 2026-08-31 on `main`: 24 live `runs-on:`
+    lines carry a trailing comment, 20 of which resolve to self-hosted/corelink.
+    Those 20 jobs were invisible to this guard, which reported OK throughout —
+    the strip recovers all ~20 at once. The absolute counts are deliberately not
+    quoted here: they are a property of the tree you run this on, not of the
+    guard, so run the script to get today's number instead of trusting a literal.
+
+    Only safe because a `runs-on:` VALUE never legitimately contains `#` in any
+    of the forms this repo actually writes: a bare label, a `[a, b]` flow list,
+    or a `${{ }}` expression. An expression is left alone (it has no bare `#`).
+
+    ⚠️ Two further YAML spellings are legal and are NOT covered — the guard skips
+    such a job silently, exactly like the trailing comment did before this fix.
+    Both were checked against `.github/workflows/` on 2026-08-31 and neither
+    occurs there, so they are LATENT holes, not live ones (the check was
+    positive-controlled: the same greps do match planted instances):
+
+      1. Block sequence — the value sits on the following lines:
+
+             runs-on:
+               - self-hosted
+               - mac
+
+         `RUNS_ON` requires `runs-on:\\s*(.+?)`, so an empty value does not match
+         at all and the job never enters the inspected set.
+
+      2. Quoted scalar — `runs-on: "corelink"` or `runs-on: 'corelink'`. The
+         quotes survive the strip and `value == "corelink"` is then False, so a
+         self-hosted job reads as hosted.
+
+    Closing these means parsing the YAML rather than scanning lines, which is a
+    different change from this one; tracked as B-140. Until then, do not write
+    either form in `.github/workflows/` — the guard will not tell you it stopped
+    looking.
+    """
+    if runs_on.lstrip().startswith("${{"):
+        return runs_on.strip()
+    return runs_on.split("#", 1)[0].strip()
+
+
 def is_self_hosted(runs_on: str) -> bool:
-    return "self-hosted" in runs_on or runs_on.strip() == "corelink"
+    value = _strip_trailing_comment(runs_on)
+    return "self-hosted" in value or value == "corelink"
 
 
 def main() -> int:
