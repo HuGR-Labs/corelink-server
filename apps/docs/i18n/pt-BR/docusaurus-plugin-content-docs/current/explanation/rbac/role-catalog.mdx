@@ -57,19 +57,42 @@ and the SQL `CHECK` constraint lives in `specs/03_architecture/data_model.md`
 3. BYOK setup — Owner configures customer-managed KMS root key for
    Enterprise tenants.
 
-### Example workflow: roll back a config change
+### Example workflow: change a tenant's tier under dual approval
+
+The approval is recorded **first**, on its own route, and the mutation
+presents it afterwards:
 
 ```
-1. Owner-A: clicks "Rollback to version 17" in admin UI
-   → POST /v1/admin/ops with op_type=ConfigRollback
-2. UI prompts: "This requires a second approver. Send the approval link?"
-3. Owner-A: copies the link, sends to Admin-B in Slack
-4. Admin-B: clicks link → MFA challenge → HMAC-sign request
-5. Server: dual-approval gate verifies (clock-skew + MFA fresh + caller ≠
-   approver + signature + collusion-rotation + nonce + audit emit)
-6. Rollback executes. Audit chain entry written
-   (corelink.admin.op.executed CloudEvent).
+1. Approver-B: POST /v1/admin/approve
+     { "approval_id": "<fresh uuid>", "op_kind": "set_tenant_tier",
+       "tenant": "<tenant_id>" }
+   Gated by CORELINK_ADMIN_APPROVER_AUTH_KEY — a DIFFERENT credential
+   from the mutate gate, so one key holder cannot both approve and mutate.
+2. Operator-A: POST /v1/admin/mutate
+     { "op_kind": "set_tenant_tier", "tenant": "<tenant_id>",
+       "tier": "<tier>", "approval_id": "<same uuid>" }
+   Gated by the x-corelink-internal-auth header (fail-CLOSED 403; the
+   body is not even parsed until the gate passes).
+3. Server: the approval_id must exist in the ledger (else 403
+   "dual-approval not found"), must bind to the same derived resource
+   (else 403 "dual-approval scope mismatch"), must not be self-approved
+   (403), and is single-use (replay → 409 "dual-approval already used").
+4. Mutation executes; the handler returns the resource string.
 ```
+
+`POST /v1/admin/approve` is a route of its own
+(`crates/corelink-container/src/routes/admin.rs:129`), not a field on the
+mutate body. The served admin plane accepts exactly two `op_kind` values —
+`set_tenant_tier` and `rotate_admin_token` (`admin.rs:1056-1071`). The
+`AdminOpType` variants named further down this page (`ConfigRollback` and
+siblings) are **not served by this handler**. The type lives in
+`crates/corelink-dual-approval`, which *is* reachable from
+`corelink-server` in the dependency graph — but only under
+`cargo tree --target all`: the edge is `wasm32`-gated
+(`crates/corelink-clerk-cf/Cargo.toml:108`). It therefore does not enter
+the container binary, which builds for `x86_64-unknown-linux-gnu` —
+a target `Dockerfile:182` reaches **by absence of `--target`**, so
+searching that file for the triple finds nothing.
 
 ---
 
