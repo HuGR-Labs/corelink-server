@@ -8583,3 +8583,155 @@ verify-means: |
   item existe para ser resolvido ANTES da flip, não por ela.
 last-verified: 2026-08-31
 ```
+
+### B-142 — todo job `ubuntu-*` não inicia por bloqueio de faturamento, e o CodeQL nightly — o único SAST do repo — está morto desde 2026-08-25
+
+**Medido, no nível do job.** `codeql.yml` run **33306916966** (2026-08-30, `schedule`):
+**3 de 3** jobs com `conclusion=failure`, `runner_name` **vazio**, `labels=[ubuntu-latest]`,
+`steps=0`. A anotação, literal:
+
+> The job was not started because recent account payments have failed or your spending
+> limit needs to be increased. Please check the 'Billing & plans' section in your settings
+
+`steps=0` + `runner_name` vazio é a assinatura de um job que **nunca recebeu máquina** — não
+é falha de conteúdo, não é flake, e nenhum retry a resolve.
+
+**Início datado.** CodeQL teve `success` em **2026-08-24** (run 32695847790) e `failure` em
+**6 execuções seguidas** — 08-25, 08-26, 08-27, 08-28, 08-29, 08-30. `codeql.yml:64` declara
+`cron: '30 5 * * *'`; `codeql.yml:87` declara `runs-on: ubuntu-latest`. A consequência que
+ninguém escreveu: **este repo não produz análise SAST há 6 dias.** O CodeQL é o único
+scanner noturno que sobrou depois que semgrep virou dispatch-only.
+
+Detalhe que fecha a porta do "mas ele tem preflight": o CodeQL tem sim um gate próprio
+(`steps.preflight.outputs.enabled`, `codeql.yml:150+`), mas é um gate de **step**. Um gate de
+step não salva um job que nunca ganhou box — ele nem chega a ser avaliado.
+
+**A mesma assinatura, byte a byte, no `secrets-drift`.** Run **33304296490** (2026-08-30,
+`schedule`): 1 job, `conclusion=failure`, `runner_name` vazio, `labels=[ubuntu-latest]`,
+`steps=0`, anotação idêntica caractere a caractere. Datas idênticas: `success` em 08-24
+(run 32690458869), 6 `failure` seguidas depois. E aqui mora a razão de ninguém ter visto:
+`secrets-drift.yml:79` declara
+
+```yaml
+runs-on: ${{ github.event_name == 'schedule' && 'ubuntu-latest' || fromJSON('["self-hosted","mac","corelink-builder"]') }}
+```
+
+— ou seja, **em PR ele vai para o Mac e passa; só no cron ele é hospedado e morre.** As
+últimas 40 execuções por `pull_request` são todas `success`. O verde que todo mundo vê no PR
+é de uma lane *diferente* da que está morta.
+
+**O falso contraexemplo, confirmado como falso.** `cas-canary.yml` aparenta **6/6 `success`**
+no nível do workflow. Não é contraexemplo: em cada uma das 6, o job `corelink` roda
+(`runner=cf-runner-*`, `steps=5`) e o job `ubuntu-latest` sai **`skipped`** com `runner=null`
+e `steps=0`. A causa é declarada — `cas-canary.yml:79` traz
+`if: vars.HOSTED_ACTIONS_AVAILABLE == 'true'`, e a variável **não está setada** no repo
+(confirmado via `gh api .../actions/variables`: ela não aparece na lista). O mesmo idioma está
+em `smoke-install.yml:112`.
+
+Isso é achado por si só, e é o **mecanismo de mascaramento** deste item: um canário que
+declara duas vantagens de rede (fabric e datacenter de terceiro) segue **verde** medindo
+apenas uma, e a métrica que sumiu não deixa rastro vermelho em lugar nenhum.
+
+**Por que isto não caiu no B-005 nem no B-110** — e é por isso que não é duplicata:
+
+- **B-005** (`hosted lanes still fire on PR/push`, `status: done`) tem `verify` que **descarta
+  explicitamente** qualquer workflow sem gatilho real de `pull_request`/`push`. O job do
+  CodeQL é `schedule` puro: ele é **estruturalmente invisível** para aquele portão.
+- **B-110** nomeia **cinco** lanes — `cas_foundation`, `coverage`, `ffi-matrix-ci`,
+  `mutation-nightly`, `semgrep`. **Nem `codeql` nem `secrets-drift` estão entre elas**, e o
+  `verify` do B-110 é um laço fechado sobre exatamente esses cinco arquivos.
+
+As duas lanes que estão de fato morrendo **toda noite** caem no vão entre os dois predicados.
+O bloqueio de faturamento em si é o B-110 e o resíduo de owner do B-005; **este item é a
+vítima que nenhum dos dois cobre** — a lane de cron desprotegida, e o SAST que ela servia.
+
+**Aritmética do parque, medida — e a correção de uma suposição.** 19 jobs hospedados em 10
+workflows (`.github/workflows/*.yml`, parseado como YAML; o `_TEMPLATE.yml.md` **não** é
+workflow e não entra — contá-lo já inflou uma contagem antes, e uma linha de `runs-on` dentro
+de comentário em `fuzz-nightly.yml:37` também não). Deles:
+
+| grupo | quantos | base |
+|---|---|---|
+| cron desprotegido, **morte medida** | 2 (`codeql`, `secrets-drift`) | 6 runs cada, anotação de billing |
+| guardado por `HOSTED_ACTIONS_AVAILABLE`, `skipped` limpo | 2 (`cas-canary`, `smoke-install`) | 6/6 runs, `runner=null` |
+| desprotegido, mas só `workflow_dispatch`/`push` | 15 | última tentativa **anterior** ao bloqueio |
+
+Sobre os 15: `coverage` (08-04), `mutation-nightly` (08-03), `cas_foundation` (08-05),
+`ffi-matrix-ci` (08-06), `semgrep` (08-10) — todos `workflow_dispatch`-only, última tentativa
+antes de 08-25. `cosign-sign` é `push`+`dispatch` e tem **zero execuções na história do
+repositório** (`total_count: 0`). Que esses 15 também não iniciariam hoje é **inferência pelo
+mecanismo compartilhado, não medição** — ninguém os disparou depois do bloqueio, e este item
+não afirma o contrário.
+
+**Encaminhamento.** O repo já tem o idioma do conserto (`vars.HOSTED_ACTIONS_AVAILABLE`) e o
+aplicou a 2 lanes; ao CodeQL, não. Mas aplicá-lo ao CodeQL seria **piorar**: um SAST que sai
+`skipped` em silêncio é pior que um que sai vermelho, porque o vermelho ao menos é um sinal.
+As saídas reais são excludentes e nenhuma é higiene: (a) o owner desbloqueia o gasto hospedado;
+(b) o CodeQL migra para a frota self-hosted; (c) assume-se por escrito que o repo fica sem SAST.
+
+```backlog
+id: B-142
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  python3 - <<'PY'
+  import glob, sys, yaml
+  files = sorted(glob.glob(".github/workflows/*.yml"))
+  if len(files) < 50:
+      print(f"INSTRUMENTO QUEBRADO: globbed {len(files)} workflows, esperado >=50", file=sys.stderr)
+      sys.exit(2)
+  hosted, naked = 0, []
+  for p in files:
+      try:
+          doc = yaml.safe_load(open(p).read())
+      except yaml.YAMLError as e:
+          print(f"INSTRUMENTO QUEBRADO: {p} nao parseia: {e}", file=sys.stderr)
+          sys.exit(2)
+      if not isinstance(doc, dict):
+          continue
+      on = doc.get(True, doc.get("on"))
+      trig = set(on) if isinstance(on, (dict, list)) else ({on} if isinstance(on, str) else set())
+      for jid, j in (doc.get("jobs") or {}).items():
+          if not isinstance(j, dict):
+              continue
+          ro = j.get("runs-on")
+          vals = ((ro.get("labels") or []) + [ro.get("group") or ""]) if isinstance(ro, dict) \
+                 else ro if isinstance(ro, list) else [ro] if ro is not None else []
+          if not any(isinstance(v, str) and "ubuntu" in v for v in vals):
+              continue
+          hosted += 1
+          if "schedule" in trig and "HOSTED_ACTIONS_AVAILABLE" not in str(j.get("if", "")):
+              naked.append(f"{p}:{jid}")
+  print(f"jobs ubuntu-* declarados: {hosted}; em cron SEM guard HOSTED_ACTIONS_AVAILABLE: {len(naked)}")
+  for n in naked:
+      print("  ", n)
+  sys.exit(0 if naked else 1)
+  PY
+verify-means: |
+  **Polaridade `open`:** sai 0 — item confirmado aberto — enquanto existir ao menos UM job
+  hospedado (`ubuntu-*`) alcançável por `schedule` e **sem** o guard
+  `HOSTED_ACTIONS_AVAILABLE`. Hoje isso seleciona exatamente `codeql:analyze` e
+  `secrets-drift:secrets-drift` — as duas lanes cuja morte foi medida, e nada mais.
+
+  **Por que parseia YAML em vez de grepar:** `runs-on` tem pelo menos cinco grafias legais
+  (escalar; escalar com comentário no fim da linha; lista inline `[a, b]`; sequência em bloco;
+  e `${{ }}` interpolado, que é justamente a forma do `secrets-drift`). O B-140 documenta um
+  guard deste mesmo repo que perdeu jobs por casar só a forma escalar. Ler
+  `jobs[*].runs-on` como estrutura é a única leitura que não tem uma próxima grafia surpresa
+  atrás dela. O glob `*.yml` também exclui o `_TEMPLATE.yml.md` por construção, e o parser
+  nunca vê linha de comentário.
+
+  **Não pode passar por vacuidade:** menos de 50 workflows lidos, ou qualquer arquivo que não
+  parseie, sai **2** com mensagem nomeada — nunca "consertado". Os três desfechos são
+  distintos: 0 = aberto, 1 = pode fechar, 2 = o instrumento quebrou.
+
+  **O que ele NÃO decide, e está declarado de propósito:** ele mede a **presença de lane de
+  cron hospedada e desprotegida**, não se o faturamento foi desbloqueado. As duas coisas são
+  independentes, e a diferença importa: **apagar ou guardar as duas lanes fecha este portão
+  sem que nada tenha melhorado** — o CodeQL continuaria sem rodar, só que em silêncio em vez
+  de em vermelho. Quem vir este `verify` virar 1 deve confirmar QUAL das três saídas do corpo
+  aconteceu antes de marcar `done`; se foi guard ou remoção, o item não fechou, mudou de forma.
+  O estado do faturamento não é observável a partir do repo — só pela conta do owner.
+last-verified: 2026-08-31
+```
