@@ -380,6 +380,28 @@ linhas.
 
 ---
 
+## 8.1 O critério de completude, com o controle ao lado
+
+O pacote termina quando isto volta vazio — ou só com a exceção nomeada:
+
+```console
+$ grep -rlE 'runs-on:.*ubuntu' .github/workflows/ | wc -l
+11                                    # baseline hoje, 2026-08-31
+
+$ grep -rlE 'runs-on:.*corelink' .github/workflows/ | wc -l
+115                                   # CONTROLE: a mesma consulta ACHA quando há o que achar
+```
+
+**O controle não é decoração.** Sem ele, «voltou vazio» e «meu grep quebrou» têm
+exatamente a mesma saída — e essa é a classe de defeito dominante desta campanha. Todo
+relatório de progresso deste pacote cita **os dois** números.
+
+Alvo final: **1** (`cas-canary`, §5) — não 0. Os 11 de hoje são os 10 workflows hosted
+mais o `secrets-drift`, cuja expressão condicional contém a string `ubuntu-latest` num
+dos braços.
+
+---
+
 ## 9. PRs abertos por este pacote
 
 | PR | repo | o quê |
