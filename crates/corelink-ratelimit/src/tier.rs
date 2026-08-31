@@ -61,9 +61,27 @@ pub const TIER_RATE_LADDER: [(Tier, u32, u32); 5] = [
 ///
 /// `Tier` is `#[non_exhaustive]` upstream so future tier additions
 /// don't break this crate's compile; the wildcard arm falls back to
-/// the enterprise rate (most-permissive default — preferred over
-/// crashing or denying when an unknown tier is observed in
-/// production).
+/// the **Team** rate — the same default [`tier_for_billing_label`]
+/// uses, and the one `RateLimitConfig::canonical()` already gives an
+/// unresolved tenant.
+///
+/// B-079: this arm used to fall back to the ENTERPRISE rate (10 000
+/// rps / 50 000 burst — 1000× Free, 50× the documented default) under
+/// a "most-permissive, conservative-on-availability" rationale. On a
+/// control that is **metered and sold**, most-permissive is the
+/// revenue-leaking direction: an enum variant this crate has not been
+/// taught about would silently receive the top contract-negotiated
+/// rate. Team keeps the availability property the old arm was defending
+/// (an unknown tier is never throttled below the system default, never
+/// crashes, never denies) while removing the free ride, and it makes
+/// the two fallback paths in this module agree on one number instead of
+/// disagreeing by 50×.
+#[expect(
+    clippy::match_same_arms,
+    reason = "B-079: the Team arm and the unknown-variant arm are the same VALUE by \
+              deliberate ratification, not by accident — keeping them textually \
+              separate is what makes a future divergence a one-line edit"
+)]
 #[must_use]
 pub fn refill_rate_for_tier(tier: Tier) -> (u32, u32) {
     match tier {
@@ -72,11 +90,13 @@ pub fn refill_rate_for_tier(tier: Tier) -> (u32, u32) {
         Tier::Team => (TEAM_REFILL_RPS, TEAM_BURST),
         Tier::Business => (BUSINESS_REFILL_RPS, BUSINESS_BURST),
         Tier::Enterprise => (ENTERPRISE_REFILL_RPS, ENTERPRISE_BURST),
-        // Forward-compatibility — unknown tier gets enterprise default
-        // (most-permissive; conservative-on-availability per §10
-        // anti-scope: we never accidentally over-throttle a legit
-        // tenant whose plan got renamed in a follow-on sprint).
-        _ => (ENTERPRISE_REFILL_RPS, ENTERPRISE_BURST),
+        // Forward-compatibility — unknown tier gets the TEAM default
+        // (B-079). Never over-throttles a legit tenant whose plan got
+        // renamed in a follow-on sprint (Team is the canonical()
+        // default, not a punishment), and never hands out the
+        // contract-negotiated Enterprise rate to a variant nobody
+        // priced.
+        _ => (TEAM_REFILL_RPS, TEAM_BURST),
     }
 }
 
@@ -103,9 +123,11 @@ pub fn refill_rate_for_tier(tier: Tier) -> (u32, u32) {
 /// The `pilot`/unknown → `Team` fallback is **zero behavior change**:
 /// `RateLimitConfig::canonical()` already gives every unresolved tenant
 /// the Team rate (200 rps / 1000 burst). It deliberately narrows ONLY
-/// at the string level — the enum **wildcard-arm** fallback in
-/// [`refill_rate_for_tier`] (unknown `Tier` variant → Enterprise rate)
-/// is a different, forward-compatibility concern and stays untouched.
+/// at the string level. The enum **wildcard-arm** fallback in
+/// [`refill_rate_for_tier`] (unknown `Tier` variant) is a separate,
+/// forward-compatibility concern; B-079 moved it from the Enterprise
+/// rate to the Team rate so both "we don't know this tenant's plan"
+/// paths now answer with the same number.
 ///
 /// Labels are matched exactly (canonical wire strings are lower
 /// snake_case); any non-canonical spelling takes the `Team` fallback.
@@ -198,6 +220,78 @@ mod tests {
             refill_rate_for_tier(Tier::Enterprise),
             (ENTERPRISE_REFILL_RPS, ENTERPRISE_BURST),
         );
+    }
+
+    /// B-079 — the `refill_rate_for_tier` wildcard arm MUST NOT hand out a
+    /// paid ceiling to a `Tier` variant this crate was never taught about.
+    ///
+    /// Why this test reads the source instead of calling the function: `Tier`
+    /// is `#[non_exhaustive]` **upstream**, and today it has exactly five
+    /// variants, all matched explicitly above. There is therefore no value a
+    /// test can construct that reaches the wildcard arm — the defect is
+    /// LATENT, and the only instrument that can see it is the text of the arm
+    /// itself. Asserting on behaviour we cannot produce would be a test that
+    /// passes for the wrong reason.
+    ///
+    /// The control below is what stops this from passing vacuously: if the
+    /// embedded source ever stops containing the *explicit* Enterprise arm,
+    /// the reader is broken (wrong file, empty include, arm renamed) and the
+    /// test fails rather than reporting a clean absence.
+    #[test]
+    fn unknown_tier_fallback_is_not_a_paid_ceiling() {
+        let src = include_str!("tier.rs");
+
+        // The needles are ASSEMBLED at runtime and never written as a single
+        // literal. A test that greps its own file for a string it contains is
+        // the classic self-counting gate: it reads its own assertion text as
+        // the defect and can never go green.
+        let arm = |prefix: &str, t: &str| format!("{prefix} => ({t}_REFILL_RPS, {t}_BURST)");
+        let wildcard_enterprise = arm("_", "ENTERPRISE");
+        let wildcard_team = arm("_", "TEAM");
+        let explicit_enterprise = arm("Tier::Enterprise", "ENTERPRISE");
+
+        // CONTROL: prove the reader can see this file's match arms at all.
+        // `Tier::Enterprise` is deliberately STILL mapped to the Enterprise
+        // rate, so the explicit arm MUST be present. If it is not, the reader
+        // is broken (wrong file, empty include, arm renamed) and every
+        // "absence" asserted below would be worthless — so we fail here first.
+        assert!(
+            src.contains(&explicit_enterprise),
+            "control failed: cannot see `{explicit_enterprise}` in this file — \
+             the source reader is broken, so the absence checks below prove nothing"
+        );
+
+        // The wildcard arm resolves to Team, the documented canonical default.
+        assert!(
+            src.contains(&wildcard_team),
+            "the unknown-Tier fallback must resolve to the Team default \
+             (expected `{wildcard_team}`)"
+        );
+        // And specifically NOT to the contract-negotiated Enterprise rate.
+        assert!(
+            !src.contains(&wildcard_enterprise),
+            "B-079 regression: `{wildcard_enterprise}` hands an unpriced Tier \
+             variant the Enterprise rate ({ENTERPRISE_REFILL_RPS} rps — {}× Free)",
+            ENTERPRISE_REFILL_RPS / FREE_REFILL_RPS
+        );
+    }
+
+    /// B-079 — the two fallback paths in this module must agree on ONE
+    /// number. Before the fix they disagreed by 50× (Team 200 vs Enterprise
+    /// 10 000), which meant "we don't know this tenant's plan" produced a
+    /// wildly different answer depending on WHICH of the two lookups was the
+    /// one that didn't know.
+    #[test]
+    fn both_unknown_fallbacks_land_on_the_same_rate() {
+        // String path: an unknown billing label → Team → Team rate.
+        assert_eq!(
+            refill_rate_for_tier(tier_for_billing_label("pilot")),
+            (TEAM_REFILL_RPS, TEAM_BURST)
+        );
+        // Enum path: asserted at the source level above (unreachable at
+        // runtime while `Tier` has exactly five variants). What IS assertable
+        // here is that the ratified default is Team on both sides.
+        assert_eq!(tier_for_billing_label("no_such_tier_2026"), Tier::Team);
     }
 
     #[test]

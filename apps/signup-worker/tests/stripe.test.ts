@@ -3067,3 +3067,124 @@ describe("tierFromSubscriptionPrice / detectTierPriceMismatch", () => {
         expect(tierUpdate!.params).toContain("team");
     });
 });
+
+// ---------------------------------------------------------------------------
+// B-076 link 4 — the silent subscription clobber
+// ---------------------------------------------------------------------------
+
+/**
+ * D1 stub whose `first()` answers the `upsertBillingPaid` orphan pre-read with
+ * a PRE-EXISTING `tenant_billing` row. Everything else behaves like `fakeDb`.
+ *
+ * `tenant_billing` is one row per tenant and the `ON CONFLICT (tenant_id)`
+ * branch replaces `stripe_subscription_id` unconditionally, so this is the
+ * exact shape of the money-path defect: the tenant already has a live
+ * subscription on file and a second paid checkout is about to erase the only
+ * reference to it.
+ */
+function fakeDbWithPriorBilling(prior: {
+    stripe_subscription_id: string | null;
+    plan: string | null;
+}): { prepare: Mock } {
+    const prepare = vi.fn((sql: string) => {
+        const stmt = {
+            bind: vi.fn(() => stmt),
+            run: vi.fn(async () => ({ meta: { changes: 1 } })),
+            first: vi.fn(async () =>
+                sql.includes("SELECT stripe_subscription_id") ? prior : null,
+            ),
+        };
+        return stmt;
+    });
+    return { prepare };
+}
+
+describe("B-076 — superseded subscription is never erased silently", () => {
+    beforeEach(() => {
+        vi.spyOn(globalThis, "fetch").mockResolvedValue({
+            ok: true,
+            status: 200,
+            text: async () => "",
+        } as unknown as Response);
+    });
+
+    /** Build a paid `checkout.session.completed` for `tenant_two_subs`. */
+    const secondCheckout = (subscriptionId: string, tier: string) => ({
+        id: `evt_second_checkout_${subscriptionId}`,
+        type: "checkout.session.completed",
+        data: {
+            object: {
+                customer: "cus_two_subs",
+                subscription: subscriptionId,
+                amount_total: 14900,
+                payment_status: "paid",
+                metadata: { tenant_id: "tenant_two_subs", tier },
+            },
+        },
+    });
+
+    it("logs ORPHANED_SUBSCRIPTION when a DIFFERENT live subscription id is about to be replaced", async () => {
+        const errors: string[] = [];
+        vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => {
+            errors.push(a.map(String).join(" "));
+        });
+
+        const db = fakeDbWithPriorBilling({
+            stripe_subscription_id: "sub_FIRST_still_charging",
+            plan: "solo",
+        });
+        const req = await makeStripeRequest(
+            secondCheckout("sub_SECOND", "max"),
+            TEST_SECRET,
+            Date.now(),
+        );
+        const res = await handleStripeWebhook(
+            req,
+            baseEnv(db as unknown as ReturnType<typeof fakeDb>),
+            fakeCtx(),
+        );
+
+        // The customer PAID — the write must still land, and we must still ack.
+        expect(res.status).toBe(200);
+        expect(db.prepare).toHaveBeenCalledWith(
+            expect.stringContaining("INSERT INTO tenant_billing"),
+        );
+
+        // …and the subscription we just made untrackable must be named, with
+        // both ids, so an operator can reconcile it against live Stripe.
+        const orphan = errors.filter((e) => e.includes("ORPHANED_SUBSCRIPTION"));
+        expect(orphan).toHaveLength(1);
+        expect(orphan[0]).toContain("sub_FIRST_still_charging");
+        expect(orphan[0]).toContain("sub_SECOND");
+        expect(orphan[0]).toContain("tenant_two_subs");
+    });
+
+    it("stays SILENT on a plain Stripe redelivery of the same subscription (the signal must not cry wolf)", async () => {
+        // CONTROL for the test above: same code path, same pre-read, same
+        // prior row — the ONLY difference is that the incoming subscription id
+        // MATCHES. If this also logged, the assertion above would be proving
+        // nothing but "the pre-read ran".
+        const errors: string[] = [];
+        vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => {
+            errors.push(a.map(String).join(" "));
+        });
+
+        const db = fakeDbWithPriorBilling({
+            stripe_subscription_id: "sub_SAME",
+            plan: "max",
+        });
+        const req = await makeStripeRequest(
+            secondCheckout("sub_SAME", "max"),
+            TEST_SECRET,
+            Date.now(),
+        );
+        const res = await handleStripeWebhook(
+            req,
+            baseEnv(db as unknown as ReturnType<typeof fakeDb>),
+            fakeCtx(),
+        );
+
+        expect(res.status).toBe(200);
+        expect(errors.filter((e) => e.includes("ORPHANED_SUBSCRIPTION"))).toHaveLength(0);
+    });
+});

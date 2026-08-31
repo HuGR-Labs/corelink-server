@@ -49,20 +49,35 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Set up pnpm
+        uses: ./.github/actions/setup-pnpm
+
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
-          # No `cache:` — the corelink runner is ephemeral (fresh box each run),
-          # so a GH-cache round-trip is pure cost, and signup-worker's lockfile is
-          # gitignored (there is nothing to key a cache on). Mirrors docs-ci /
-          # signup-worker-vitest.
+          # ⛔ No `cache:` — the corelink runner is ephemeral (fresh box each run),
+          # so a GH-cache round-trip is pure cost; also sidesteps the shared-$HOME
+          # guard. Mirrors admin-ui-deploy.yml.
 
-      # `npm ci` cannot run — the lockfile is gitignored here (same as
-      # signup-worker-vitest.yml). --legacy-peer-deps: a fresh install floats
-      # wrangler ≥4.108 whose peerOPTIONAL ERESOLVEs under strict resolution.
+      # B-090: this lane used to run `npm install --legacy-peer-deps`, on the
+      # premise that "`npm ci` cannot run — the lockfile is gitignored". That
+      # premise was FALSE: `apps/signup-worker` is a pnpm workspace member
+      # (`pnpm-workspace.yaml`) with a fully-resolved importer in the COMMITTED
+      # `pnpm-lock.yaml`. The deploy of the live Stripe/Clerk/DSR handler was
+      # therefore re-resolving its whole tree on every run, on the founder's Mac,
+      # with the Cloudflare deploy credentials in the environment — and shipping a
+      # graph that `pnpm-audit.yml` (which scans the pnpm graph) never saw.
+      #
+      # `--frozen-lockfile` pins the exact graph the audit lane scans; the repo
+      # convention (`.gitignore:93`) stays intact — no package-lock.json is
+      # committed. `--ignore-scripts` is belt-and-braces: pnpm 10 already refuses
+      # dependency lifecycle scripts unless allowlisted via
+      # `onlyBuiltDependencies` (this repo declares none), and stating it makes
+      # the property gateable instead of implicit.
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        working-directory: .
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       # wrangler is a devDependency of signup-worker, but pin the global CLI to
       # the repo-wide exact version for parity with the other deploy lanes (v3

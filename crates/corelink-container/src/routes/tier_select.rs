@@ -729,10 +729,16 @@ pub trait TierSelectStore {
         correlation_id: &str,
     ) -> impl std::future::Future<Output = Result<(), String>> + Send;
 
-    /// Release the row lock (best-effort; lock also self-expires at 60s).
+    /// Release the row lock **we** acquired (best-effort; lock also
+    /// self-expires at 60s).
+    ///
+    /// B-076: `correlation_id` identifies the holder. A release that does not
+    /// name the holder can delete a lock acquired by a LATER request after this
+    /// one overran the 60s TTL — see `release_lock` in `tier_select_store.rs`.
     fn release_lock(
         &self,
         tenant_id: &str,
+        correlation_id: &str,
     ) -> impl std::future::Future<Output = Result<(), String>> + Send;
 }
 
@@ -824,7 +830,7 @@ where
     .await;
     if result.is_err() {
         // Best-effort release; the 60s window also self-expires.
-        let _ = store.release_lock(tenant_id).await;
+        let _ = store.release_lock(tenant_id, correlation_id).await;
     }
     result
 }
@@ -930,7 +936,7 @@ where
                 .await
                 .map_err(|_| TierSelectHttpError::Internal)?;
         }
-        let _ = store.release_lock(tenant_id).await;
+        let _ = store.release_lock(tenant_id, correlation_id).await;
         Ok(TierSelectResponse {
             checkout_url: Some(created.checkout_url),
             session_id: created.session_id,
@@ -945,7 +951,7 @@ where
             .persist_free_active(tenant_id, now_ms, correlation_id)
             .await
             .map_err(|_| TierSelectHttpError::Internal)?;
-        let _ = store.release_lock(tenant_id).await;
+        let _ = store.release_lock(tenant_id, correlation_id).await;
         Ok(TierSelectResponse {
             checkout_url: None,
             session_id: format!("free_activation:{tenant_id}"),
@@ -1294,7 +1300,7 @@ mod tests {
             self.persisted.lock().unwrap().push(format!("free:{t}"));
             Ok(())
         }
-        async fn release_lock(&self, t: &str) -> Result<(), String> {
+        async fn release_lock(&self, t: &str, _correlation_id: &str) -> Result<(), String> {
             self.locks.lock().unwrap().remove(t);
             Ok(())
         }

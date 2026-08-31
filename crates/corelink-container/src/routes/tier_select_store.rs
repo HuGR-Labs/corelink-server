@@ -30,7 +30,9 @@
 //! - `persist_free_active`    → `UPDATE tier_selections SET tier='free',
 //!   subscription_state='active' ...`.
 //! - `release_lock`           → `DELETE FROM tier_selection_locks WHERE
-//!   tenant_id = ?1` (best-effort; the 60s window also self-expires).
+//!   tenant_id = ?1 AND correlation_id = ?2` (best-effort; the 60s window also
+//!   self-expires). The `correlation_id` predicate is load-bearing — see
+//!   [`RELEASE_TIER_SELECTION_LOCK_SQL`].
 //!
 //! # SECURITY INVARIANTS (preserved by WP-A — do NOT regress)
 //!
@@ -67,6 +69,24 @@ const LOCK_TTL_MS: i64 = 60_000;
 /// made every signed-up tenant 409 `already_active` on their first upgrade.
 const HAS_ACTIVE_PAID_CACHE_SUBSCRIPTION_SQL: &str = "SELECT 1 FROM tier_selections \
      WHERE tenant_id = ?1 AND subscription_state = 'active' AND tier != 'free' LIMIT 1";
+
+/// The lock release behind [`TierSelectStore::release_lock`].
+///
+/// Named (rather than inlined at the call site) for the same reason
+/// [`HAS_ACTIVE_PAID_CACHE_SUBSCRIPTION_SQL`] is: the real behaviour can only
+/// be proven against live D1 (`#[ignore]` harness), so a cheap always-on test
+/// asserts the statement still carries the `correlation_id` predicate.
+///
+/// B-076 link 3: without `AND correlation_id = ?2` this DELETE releases
+/// WHOEVER'S lock is on the row. `LOCK_TTL_MS` is 60s and the orchestration
+/// holds the lock across a live Stripe round-trip; a request that overruns the
+/// window has its lock self-expire, a second request acquires a fresh one, and
+/// the first request's late release then frees the second request's lock
+/// mid-orchestration — two concurrent Stripe checkouts for one tenant, which is
+/// exactly the mutex's job to prevent. Naming the holder makes the late release
+/// a no-op.
+const RELEASE_TIER_SELECTION_LOCK_SQL: &str =
+    "DELETE FROM tier_selection_locks WHERE tenant_id = ?1 AND correlation_id = ?2";
 
 /// Map `RequestedTier` → the exact snake_case label the D1 `tier` CHECK
 /// constraints accept (`tier_selections` / `stripe_checkout_sessions`).
@@ -320,13 +340,25 @@ impl TierSelectStore for D1HttpTierSelectStore {
         Ok(())
     }
 
-    async fn release_lock(&self, tenant_id: &str) -> Result<(), String> {
-        // Best-effort release; the 60s window also self-expires, so a delete
-        // failure is not fatal to the already-completed orchestration.
+    async fn release_lock(&self, tenant_id: &str, correlation_id: &str) -> Result<(), String> {
+        // B-076 link 3 — release ONLY the lock we ourselves acquired.
+        //
+        // This used to be `DELETE … WHERE tenant_id = ?1`, discarding the
+        // `correlation_id` column that `acquire_lock` writes. `LOCK_TTL_MS` is
+        // 60s and the orchestration makes live Stripe API calls inside the
+        // window; when request A overruns 60s, its lock self-expires, request B
+        // acquires a NEW lock for the same tenant, and A's late release then
+        // deletes B's lock in the middle of B's orchestration — handing the
+        // mutex to a third request while two are already talking to Stripe
+        // about the same tenant. Deleting only our own row makes A's late
+        // release a harmless no-op, which is exactly what it should be.
+        //
+        // Still best-effort: the 60s window self-expires, so a delete failure
+        // is not fatal to an already-completed orchestration.
         self.d1
             .query(
-                "DELETE FROM tier_selection_locks WHERE tenant_id = ?1",
-                &[json!(tenant_id)],
+                RELEASE_TIER_SELECTION_LOCK_SQL,
+                &[json!(tenant_id), json!(correlation_id)],
             )
             .await?;
         Ok(())
@@ -440,7 +472,7 @@ mod tests {
 
         // Release, then re-acquire succeeds again.
         store
-            .release_lock(&tenant)
+            .release_lock(&tenant, cid)
             .await
             .expect("release_lock query");
 
@@ -452,7 +484,7 @@ mod tests {
 
         // Best-effort cleanup so the lock row does not linger.
         store
-            .release_lock(&tenant)
+            .release_lock(&tenant, cid)
             .await
             .expect("final release_lock query");
     }
@@ -552,6 +584,40 @@ mod tests {
         assert!(
             sql.contains("tenant_id = ?1"),
             "tenant must stay parameterised (never interpolated). Statement was: {sql}"
+        );
+    }
+
+    /// B-076 link 3 — always-on (no live D1) guard on the release statement.
+    ///
+    /// Same reasoning as the test above: the behavioural proof needs a real
+    /// database (`d1_acquire_lock_then_held_then_release`, `#[ignore]`), so
+    /// nothing in CI would catch someone dropping the holder predicate. This
+    /// runs on every PR.
+    ///
+    /// The scenario the predicate defends against, concretely:
+    /// request A acquires the lock at t=0 with `corr-A`; A's Stripe call takes
+    /// 65s; at t=61 the lock has self-expired and request B acquires a fresh
+    /// one with `corr-B`; at t=65 A finishes and releases. Without
+    /// `AND correlation_id = ?2` that release deletes **B's** lock while B is
+    /// still mid-orchestration, so a third request can acquire and start a
+    /// second Checkout Session for the same tenant.
+    #[test]
+    fn release_lock_sql_only_deletes_the_lock_we_hold() {
+        let sql = RELEASE_TIER_SELECTION_LOCK_SQL;
+        assert!(
+            sql.contains("correlation_id = ?2"),
+            "the holder predicate is load-bearing: a bare `WHERE tenant_id = ?1` \
+             lets a request that overran the 60s LOCK_TTL_MS release a LATER \
+             request's lock mid-orchestration, defeating the cross-isolate mutex \
+             on the money path. Statement was: {sql}"
+        );
+        assert!(
+            sql.contains("tenant_id = ?1"),
+            "tenant must stay parameterised (never interpolated). Statement was: {sql}"
+        );
+        assert!(
+            sql.starts_with("DELETE FROM tier_selection_locks"),
+            "must still target the lock table only. Statement was: {sql}"
         );
     }
 }

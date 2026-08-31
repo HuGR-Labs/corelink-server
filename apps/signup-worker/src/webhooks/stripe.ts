@@ -133,6 +133,12 @@ interface D1RunResult {
 interface D1PreparedStatement {
     bind(...values: unknown[]): D1PreparedStatement;
     run(): Promise<D1RunResult>;
+    // OPTIONAL on purpose (B-076): the real `D1PreparedStatement` always has
+    // `first()`, but this repo's test doubles implement only what they need.
+    // Declaring it optional lets the orphan pre-read in `upsertBillingPaid`
+    // degrade to a no-op against an older double instead of throwing on the
+    // money path.
+    first?<T>(): Promise<T | null>;
 }
 interface D1DatabaseLike {
     prepare(query: string): D1PreparedStatement;
@@ -564,9 +570,36 @@ async function claimWebhookEvent(
 // ---------------------------------------------------------------------------
 
 /**
+ * Machine-greppable tag for the B-076 link-4 signal. Stable — operator
+ * runbooks and log filters key on this exact string.
+ */
+export const ORPHANED_SUBSCRIPTION_TAG = "ORPHANED_SUBSCRIPTION";
+
+/**
  * Upsert a tenant_billing row on `checkout.session.completed`.
  *
  * Uses INSERT … ON CONFLICT (tenant_id) DO UPDATE so Stripe retries are safe.
+ *
+ * B-076 link 4 — `tenant_billing` is ONE ROW PER TENANT, and the conflict
+ * branch overwrites `stripe_subscription_id` unconditionally. That is the
+ * right behaviour for the ordinary case (a retry, or a genuine upgrade where
+ * Stripe replaced the subscription): entitlement should follow the newest paid
+ * subscription. It is NOT acceptable for it to happen **silently**, because
+ * when the previous subscription is still live in Stripe the overwrite is the
+ * moment a paying subscription stops existing for the platform: nothing keys
+ * on it any more, `deactivateTierSelectionBySubscription` can no longer resolve
+ * its tenant, and cancelling the tracked one revokes the entitlement the
+ * untracked one is still funding.
+ *
+ * So: read the row first and, when we are about to replace a DIFFERENT,
+ * non-null subscription id, say so loudly with a stable tag before doing it.
+ * This does not change the write — it converts a silent clobber into a signal
+ * an operator can search for and reconcile against live Stripe.
+ *
+ * What this deliberately does NOT do: block the write. Refusing the upsert
+ * here would strand a customer who has already paid, which is strictly worse
+ * than an orphan we can see. Closing the loop needs the reconciliation pass
+ * B-076 names as its prerequisite.
  */
 async function upsertBillingPaid(
     db: D1DatabaseLike,
@@ -579,6 +612,36 @@ async function upsertBillingPaid(
         nowMs: number;
     },
 ): Promise<void> {
+    // Best-effort pre-read: a failure here must never cost the customer their
+    // billing row, so it is caught and the upsert proceeds regardless.
+    try {
+        const stmt = db
+            .prepare(
+                `SELECT stripe_subscription_id, plan FROM tenant_billing WHERE tenant_id = ?1`,
+            )
+            .bind(opts.tenantId);
+        const prior = stmt.first
+            ? await stmt.first<{ stripe_subscription_id: string | null; plan: string | null }>()
+            : null;
+        const priorSub = prior?.stripe_subscription_id ?? null;
+        if (priorSub && priorSub !== opts.stripeSubscriptionId) {
+            console.error(
+                `[stripe-webhook] ${ORPHANED_SUBSCRIPTION_TAG} tenant=${opts.tenantId} ` +
+                    `superseded=${priorSub} (plan=${prior?.plan ?? "unknown"}) ` +
+                    `by=${opts.stripeSubscriptionId ?? "null"} (plan=${opts.plan ?? "unknown"}); ` +
+                    `tenant_billing holds ONE row per tenant, so the superseded ` +
+                    `subscription is now untracked — if it is still active in Stripe it ` +
+                    `keeps charging and no cancellation path can reach it. Reconcile ` +
+                    `this tenant against live Stripe.`,
+            );
+        }
+    } catch (e: unknown) {
+        console.warn(
+            `[stripe-webhook] orphan pre-read failed for tenant=${opts.tenantId} ` +
+                `(upserting anyway): ${(e as Error).message}`,
+        );
+    }
+
     await db
         .prepare(
             `INSERT INTO tenant_billing

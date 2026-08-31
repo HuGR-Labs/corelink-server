@@ -3788,15 +3788,71 @@ Também não está quebrado: reporta `BILLING HEALTH: 1 anomaly(ies) found` e de
 `customer.subscription.deleted (1/1)`, `customer.subscription.updated (2/2)`,
 `invoice.payment_failed (2/2)`.
 
-O detector (`scripts/check_billing_health.py:169`) explica o mecanismo:
+O detector (`scripts/check_billing_health.py:167`) explica o mecanismo:
 `stripe_webhook_events_processed` deduplica por `event_id` como chave primária, o que
 só protege retentativas sob o *mesmo* esquema de identificador. Um endpoint grava o
 `evt_…` da Stripe, o outro grava um hash derivado da mesma entrega; as duas linhas não
 colidem e o evento é processado duas vezes.
 
-Processamento duplicado de `subscription.deleted` e `subscription.updated` afeta estado
-de direito de acesso, não apenas contagem. O reparo é no painel da Stripe — aposentar o
-endpoint redundante — e portanto é ação exclusiva do owner.
+**CONFIRMADO — e os dois endpoints são NOSSOS, ambos deliberados. Não há endpoint
+desconhecido a caçar.** Os dois escritores estão no código:
+
+- **Esquema canônico (`evt_…`)** — `apps/signup-worker/src/webhooks/stripe.ts`, que grava
+  `opts.eventId` (o id da Stripe) direto no `INSERT OR IGNORE INTO
+  stripe_webhook_events_processed`. Rota pública: `POST corelink-signup.humangr.com/webhooks/stripe`
+  (`apps/signup-worker/src/index.ts:48`, `wrangler.toml:78`).
+- **Esquema derivado (64 hex)** — o contêiner, via
+  `crates/corelink-billing-stripe-materializer/src/idempotency.rs`: o
+  `D1IdempotencyStore` grava `token.to_hex()`, e o token *"derives from BLAKE3(event_id)"*.
+  Rota pública: `POST corelink-api.humangr.com/v1/billing/stripe-webhook`
+  (`crates/corelink-container/src/webhook.rs:56`, pass-through do Worker em
+  `worker/src/index.ts:1149`).
+
+**A prova de que são estes dois, e não um terceiro:** os tipos de evento duplicados são
+EXATAMENTE a interseção das duas taxonomias declaradas em código. O contêiner materializa
+9 tipos (`EVENT_MATERIALIZATION_MATRIX`, `handler.rs:54`); o signup-worker trata 7
+(`case "…"` em `stripe.ts`). A interseção é
+`{subscription.updated, subscription.created, subscription.deleted, invoice.payment_failed}`
+— e o detector acusa 3 deles. O quarto (`subscription.created`) simplesmente não ocorreu
+na janela de 30d. Complemento decisivo: `checkout.session.completed` — o ÚNICO caminho de
+concessão, tratado só pelo signup-worker — **não aparece** na lista de duplicados, que é
+o que se esperaria se a duplicidade fosse um endpoint espelho e não uma interseção.
+
+**Por que dói.** Não é "a mesma escrita aplicada duas vezes" — são dois consumidores
+distintos. O problema é que ambos escrevem DIREITO DE ACESSO sobre os mesmos 4 eventos,
+sem ordenação entre si: o signup-worker mexe em `tenant_billing` / `tier_selections` /
+`runners_entitlement`, e o materializer roda `reconcile_tier` / `reconcile_runners`
+(`handler.rs:409-473`), que CONCEDEM e REVOGAM. Duas autoridades de direito para o mesmo
+evento é last-writer-wins. E, transversalmente, as duas metades compartilham a tabela de
+dedupe sob esquemas que não colidem, então **nenhuma das duas dedupes protege a outra** e
+toda contagem sobre aquela tabela sai inflada.
+
+**AÇÃO DO OWNER (um clique, no painel da Stripe → Developers → Webhooks).** O reparo
+NÃO é "apagar um destino" — apagar qualquer um dos dois perde cobertura real. É tornar as
+duas listas de eventos DISJUNTAS. O signup-worker fica sendo a autoridade única de
+direito de acesso, porque é o único que trata `checkout.session.completed` (a concessão)
+e o único que trata Runners; o contêiner fica sendo só forense/materialização.
+
+1. Destino que aponta para **`corelink-api.humangr.com/v1/billing/stripe-webhook`** →
+   editar "events to send" e **DESMARCAR os 4**: `customer.subscription.created`,
+   `customer.subscription.updated`, `customer.subscription.deleted`,
+   `invoice.payment_failed`.
+   **Mantém**: `invoice.paid`, `charge.dispute.created`, `charge.refunded`,
+   `customer.created`, `customer.subscription.trial_will_end`.
+2. Destino que aponta para **`corelink-signup.humangr.com/webhooks/stripe`** (o
+   "Corelink prd") → não mexer. Mantém os 7 que já trata.
+3. Fecha quando `billing-health-daily` passar em três execuções consecutivas.
+
+**Custo aceito, explicitamente:** a `stripe_subscriptions` do contêiner deixa de ser
+materializada, então ela não pode ser usada como base de reconciliação de assinaturas
+órfãs (ver [B-076] elo 5) — a reconciliação tem de ser contra a Stripe viva, que é o que
+o B-076 já exige de qualquer modo. Se o owner preferir preservar a materialização de
+assinatura, a alternativa é código, não painel: desligar `reconcile_tier`/`reconcile_runners`
+no materializer e unificar o esquema de id da tabela de dedupe — mais trabalho, mesmo
+efeito sobre a duplicidade.
+
+**B-I1 respeitado:** nada em produção de billing foi tocado por esta sessão. Isto é a
+recomendação; a execução é do owner.
 
 ```backlog
 id: B-065
@@ -3807,21 +3863,26 @@ verify: manual
 verify-means: |
   MANUAL, e o `verify` NÃO decide a alegação. Declaro em vez de fingir.
 
-  A alegação é sobre a configuração de destinos de webhook na conta Stripe, que não
-  está no repositório e não é legível do CI sem a chave da conta. Pior: a lista v1 da
-  API Stripe é CEGA a destinos v2, então mesmo com credencial um `verify` ingênuo
-  reportaria zero e passaria verde — portão dominado, exatamente o que este item não
-  pode ter.
+  A alegação final é sobre a LISTA DE EVENTOS de cada destino de webhook na conta
+  Stripe, que não está no repositório e não é legível do CI sem a chave da conta.
+  Pior: a lista v1 da API Stripe é CEGA a destinos v2, então mesmo com credencial
+  um `verify` ingênuo reportaria zero e passaria verde — portão dominado,
+  exatamente o que este item não pode ter. "0% de erro" naquela listagem pode
+  significar ZERO ENTREGAS, não sucesso.
 
-  O sinal correto já existe e é o `billing-health-daily`, que detecta a duplicidade
-  pelo lado dos dados. Este item não recria esse detector; ele rastreia a AÇÃO no
-  painel da Stripe, que só o owner executa.
+  O sinal correto já existe e é o `billing-health-daily`, que detecta a
+  duplicidade pelo lado dos DADOS — imune à cegueira v1/v2, porque conta linhas
+  que só existem se a entrega aconteceu. Este item não recria esse detector; ele
+  rastreia a AÇÃO no painel, que só o owner executa.
 
-  Procedimento: no painel Stripe, manter o destino "Corelink prd" apontando para o
-  signup-worker e aposentar o redundante. Fecha quando `billing-health-daily` voltar
-  a passar por três execuções consecutivas.
-last-verified: 2026-08-30
+  O que MUDOU em 2026-08-31: a identidade dos dois endpoints deixou de ser
+  hipótese. Ambos estão nomeados no corpo do item com arquivo e linha, e a
+  correspondência exata entre os tipos duplicados e a interseção das duas
+  taxonomias em código é a prova pelo lado do consumidor (B-Q2). A recomendação
+  virou uma lista de caixas a desmarcar, não "investigar".
+last-verified: 2026-08-31
 ```
+
 
 ### B-066 — RECUSADO: o `smoke-install` já está portado atrás do gate de Actions hosted
 
@@ -4334,32 +4395,62 @@ last-verified: 2026-08-30
 
 ### B-076 — o mesmo tenant pode manter duas assinaturas pagáveis abertas, e a segunda apaga o registro da primeira
 
-Cinco elos, todos verificados:
+Cinco elos. **Quatro se sustentam; um (elo 2) é REFUTADO. Dois foram reparados; dois
+seguem abertos.**
 
-1. **O guard só olha assinaturas ativas.** `HAS_ACTIVE_PAID_CACHE_SUBSCRIPTION_SQL`
-   (`tier_select_store.rs:68`) é `subscription_state = 'active' AND tier != 'free'`. Um
-   tenant parado em `pending_checkout` não é `'active'` e passa.
-2. **As chaves de idempotência divergem no campo errado.** `client.rs:800` é
-   `format!("checkout:{}:{}", tenant_id, tier)` — inclui o tier; `client.rs:821` é
-   `format!("customer:{}", tenant_id)` — mesmo cliente. Tiers diferentes produzem duas
-   páginas hospedadas independentemente pagáveis sobre o mesmo `cus_`, vivas pelas 24h
-   padrão de expiração de sessão da Stripe.
-3. **O lock não identifica quem o detém.** `release_lock` (`tier_select_store.rs:323`) é
-   `DELETE FROM tier_selection_locks WHERE tenant_id = ?1` — a coluna `correlation_id`
-   existe e é descartada. Com TTL de 60s, uma chamada à Stripe que passe disso faz a
-   requisição A liberar o lock que já pertence à B, no meio da orquestração dela.
-4. **O empate é resolvido destruindo o registro.** `upsertBillingPaid`
-   (`apps/signup-worker/src/webhooks/stripe.ts:591`) faz
-   `ON CONFLICT (tenant_id) DO UPDATE SET stripe_subscription_id = excluded.…` sem
-   guarda. Uma linha por tenant: a segunda assinatura sobrescreve o id da primeira, que
-   continua cobrando e deixa de existir para a plataforma — inclusive para o
-   `deactivateTierSelectionBySubscription`, que resolve o tenant por esse mapa e é um
-   no-op documentado quando não acha nada.
-5. **Nada detecta.** `FROM stripe_checkout_sessions` em todo `.rs` e `.ts`: zero
-   ocorrências — a tabela é escrita e nunca lida. O `tier_select_store.rs:287` se apoia
-   numa *"daily reconciliation cron"* chamada
+1. **[ABERTO] O guard só olha assinaturas ativas.** `HAS_ACTIVE_PAID_CACHE_SUBSCRIPTION_SQL`
+   (`tier_select_store.rs:70`) é `subscription_state = 'active' AND tier != 'free'`. Um
+   tenant parado em `pending_checkout` não é `'active'` e passa. **Não reparado de
+   propósito:** um `pending_checkout` PRECISA continuar retentável (é o caminho normal de
+   quem abandonou o checkout), e o predicado do guard é literalmente o que já derrubou o
+   caminho do dinheiro uma vez quando alguém o apertou. O reparo certo não é endurecer o
+   `SELECT` — é EXPIRAR a sessão anterior na Stripe
+   (`POST /v1/checkout/sessions/{id}/expire`) quando um novo checkout supera um pendente
+   de outro tier, o que também dá o primeiro LEITOR real à `stripe_checkout_sessions` e
+   fecha o elo 5 junto. É trabalho de crate de cobrança, não conserto de uma linha.
+2. **[REFUTADO] As chaves de idempotência NÃO divergem no campo errado.** A alegação era
+   que `client.rs:800` (`checkout:{tenant}:{tier}`) e `client.rs:821`
+   (`customer:{tenant}`) divergem por um incluir o tier e o outro não. As duas chaves
+   endereçam **objetos Stripe diferentes**: a primeira é a idempotência da *Checkout
+   Session* e é certa por `(tenant, tier)`; a segunda é a idempotência do *Customer*
+   (`create_customer`, `client.rs:821-824`) e é certa por tenant — incluir o tier ali
+   criaria um `cus_` por tier, que é o defeito oposto e pior. O comentário no código diz
+   isso explicitamente: *"Idempotent per tenant so a retry within the lock window reuses
+   the same customer (no orphan spam)"*. O EFEITO descrito no item — duas páginas
+   hospedadas pagáveis sobre o mesmo `cus_` — é real, mas é consequência do elo 1, não
+   das chaves.
+3. **[REPARADO] O lock não identificava quem o detinha.** `release_lock` era
+   `DELETE FROM tier_selection_locks WHERE tenant_id = ?1`, descartando a coluna
+   `correlation_id` que o `acquire_lock` escreve. Com `LOCK_TTL_MS` de 60s e uma chamada
+   viva à Stripe dentro da janela: A adquire em t=0 com `corr-A`; A demora 65s; em t=61 o
+   lock de A auto-expira e B adquire um NOVO com `corr-B`; em t=65 A termina e libera —
+   deletando o lock de **B** no meio da orquestração de B. Agora é
+   `WHERE tenant_id = ?1 AND correlation_id = ?2`
+   (`RELEASE_TIER_SELECTION_LOCK_SQL`, `tier_select_store.rs:88`), então a liberação
+   atrasada de A é o no-op que sempre deveria ter sido. A assinatura do trait
+   `TierSelectStore::release_lock` ganhou o `correlation_id`. Teste sempre-ligado sobre o
+   literal SQL (a prova comportamental exige D1 vivo e mora atrás de `#[ignore]`), no
+   mesmo padrão do `has_active_subscription_sql_excludes_the_free_seed_row`.
+4. **[REPARADO — o silêncio, não o empate] O empate era resolvido destruindo o registro
+   em silêncio.** `upsertBillingPaid` (`apps/signup-worker/src/webhooks/stripe.ts`) faz
+   `ON CONFLICT (tenant_id) DO UPDATE SET stripe_subscription_id = excluded.…`. Uma linha
+   por tenant: a segunda assinatura sobrescreve o id da primeira, que continua cobrando e
+   deixa de existir para a plataforma — inclusive para o
+   `deactivateTierSelectionBySubscription`, que resolve o tenant por esse mapa. O
+   sobrescrever em si NÃO foi bloqueado, deliberadamente: recusar a escrita deixaria em
+   pé um cliente que já pagou, o que é pior que um órfão visível, e no caso ordinário
+   (retentativa, ou upgrade em que a Stripe trocou a assinatura) o direito DEVE seguir a
+   assinatura nova. O que foi consertado é o silêncio: uma pré-leitura marca a linha
+   anterior e emite `ORPHANED_SUBSCRIPTION` com os dois ids e o tenant antes de escrever.
+   Dois testes, um deles CONTROLE (redelivery com o MESMO id não pode logar, senão a
+   primeira asserção só provaria que a pré-leitura rodou).
+5. **[ABERTO] Nada detecta.** `FROM stripe_checkout_sessions` em todo `.rs` e `.ts`: zero
+   ocorrências — a tabela é escrita e nunca lida. O `tier_select_store.rs` se apoia numa
+   *"daily reconciliation cron"* chamada
    `corelink_onboarding_stripe_customer_id_drift_total`; esse nome aparece em quatro
-   lugares no repositório e **nenhum deles é código executável**.
+   lugares no repositório e **nenhum deles é código executável**. O
+   `ORPHANED_SUBSCRIPTION` do elo 4 é sinal de log, não detector — cobre o órfão criado a
+   partir de agora, não o estoque existente.
 
 Ordem importa e piora: pagar Solo e depois Pro faz o guard `subscription_state <>
 'active'` bloquear a troca de tier enquanto o `upsertBillingPaid` sobrescreve id E plano
@@ -4367,9 +4458,10 @@ Ordem importa e piora: pagar Solo e depois Pro faz o guard `subscription_state <
 contradizendo `tier_selections.tier='solo'`. Cancelar a rastreada revoga o direito que a
 não-rastreada financia.
 
-**Antes de reparar:** reconciliar as assinaturas vivas na Stripe contra `tenant_billing`
-para dimensionar a exposição existente. Colisão: **#1400** está em voo tocando
-`billing-stripe-materializer`; confira antes de escrever código.
+**Pré-requisito que segue de pé:** reconciliar as assinaturas vivas na Stripe contra
+`tenant_billing` para dimensionar a exposição já existente. Nenhum dos dois reparos deste
+ciclo mede isso. Colisão **#1400 resolvida**: mergeada, e não toca nenhum destes arquivos
+(só `billing-stripe-materializer/src/handler.rs`).
 
 ```backlog
 id: B-076
@@ -4378,35 +4470,41 @@ owner: tl
 status: open
 verify: |
   bash -c 's=crates/corelink-container/src/routes/tier_select_store.rs
-  c=crates/corelink-stripe-real/src/client.rs
   w=apps/signup-worker/src/webhooks/stripe.ts
-  [ -f "$s" ] && [ -f "$c" ] && [ -f "$w" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
-  lock=0; awk "/fn release_lock/,/^    }/" "$s" | grep -q "correlation_id" || lock=1
-  idem=0; grep -qE "format!\(\"customer:\{\}\"" "$c" && idem=1
-  clob=0; awk "/ON CONFLICT \(tenant_id\)/,/updated_at_ms/" "$w" | grep -q "stripe_subscription_id[[:space:]]*=[[:space:]]*excluded" && clob=1
-  leitor=$(grep -rl "FROM stripe_checkout_sessions" --include="*.rs" --include="*.ts" . 2>/dev/null | grep -v "/target/" | wc -l | tr -d " ")
-  soma=$((lock + idem + clob))
+  [ -f "$s" ] && [ -f "$w" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
+  grep -q "HAS_ACTIVE_PAID_CACHE_SUBSCRIPTION_SQL" "$s" || { echo "FALHA (controle): nao acho nem o SELECT do guard em $s — o instrumento nao esta lendo o arquivo certo."; exit 1; }
+  lock=0; grep -q "AND correlation_id = ?2" "$s" || lock=1
+  clob=0; grep -q "ORPHANED_SUBSCRIPTION" "$w" || clob=1
+  pend=0; grep -q "pending_checkout" "$s" && grep -qE "subscription_state = .active. AND tier" "$s" && pend=1
+  leitor=$(grep -rl "FROM stripe_checkout_sessions" --include="*.rs" --include="*.ts" --exclude-dir=node_modules --exclude-dir=target --exclude-dir=.git . 2>/dev/null | wc -l | tr -d " ")
+  soma=$((lock + clob + pend))
   if [ "$soma" = 0 ] && [ "$leitor" -gt 0 ]; then
-    echo "FALHA: lock por correlation_id, idempotencia por cliente corrigida, clobber guardado e a tabela tem leitor — feche o item."; exit 1; fi
-  echo "aberto: lock_sem_correlation=$lock idem_customer_sem_tier=$idem clobber_sem_guarda=$clob leitores_da_tabela=$leitor"'
+    echo "FALHA: lock por correlation_id, clobber sinalizado, guard cobre pending_checkout e a tabela tem leitor — feche o item."; exit 1; fi
+  echo "aberto: lock_sem_correlation=$lock clobber_sem_sinal=$clob guard_cego_a_pending=$pend leitores_da_tabela=$leitor"'
 verify-means: |
   open — pelo menos um dos três defeitos de código persiste, OU a
   `stripe_checkout_sessions` continua sem nenhum leitor.
 
-  Vira DRIFTED só quando os quatro forem resolvidos juntos. Escolhi o AND porque este
-  item é uma CADEIA de dinheiro: consertar o clobber sem consertar o lock, ou vice-versa,
-  deixa cobrança indevida possível por outro caminho. Um portão que fecha a 1/4 do
-  reparo, num caminho de cobrança, é pior que portão nenhum.
+  Mudou em 2026-08-31: a cláusula de idempotência (`customer:{}` sem tier) SAIU,
+  porque foi REFUTADA — as duas chaves endereçam objetos Stripe diferentes e
+  ambas estão certas. Tirar uma cláusula falsa é FORTALECIMENTO: havia um jeito a
+  menos de o item parecer aberto por um defeito que não existe. Entrou no lugar a
+  cláusula `guard_cego_a_pending`, que é o elo 1 de verdade e continua aberto.
+  A primeira asserção é CONTROLE: sem achar o nome do SELECT do guard, os greps
+  seguintes reportariam ausência por estarem lendo o arquivo errado.
 
-  O contador `leitores_da_tabela` é o que decide a metade "nada detecta": hoje é 0, e
-  qualquer leitor real (uma reconciliação de verdade, não o comentário fantasma) o
-  levanta.
+  Vira DRIFTED só quando os quatro forem resolvidos juntos. O AND é deliberado:
+  este item é uma CADEIA de dinheiro, e fechar a 1/4 do reparo num caminho de
+  cobrança é pior que portão nenhum.
 
-  O que NÃO decide, e admito: a exposição JÁ EXISTENTE em produção — quantas assinaturas
-  órfãs estão cobrando agora. Isso só a reconciliação contra a Stripe viva mede, e é
-  pré-requisito do reparo, não consequência dele.
-last-verified: 2026-08-30
+  O que NÃO decide, e admito: (a) a exposição JÁ EXISTENTE em produção — quantas
+  assinaturas órfãs estão cobrando agora; só a reconciliação contra a Stripe viva
+  mede, e é pré-requisito do reparo, não consequência dele; (b) se alguém está
+  LENDO o `ORPHANED_SUBSCRIPTION` — é sinal de log, e log que ninguém varre é
+  silêncio com passos extras.
+last-verified: 2026-08-31
 ```
+
 
 ### B-077 — o repositório mediu o próprio contêiner e guardou o número numa constante que só um subsistema enxerga
 
@@ -4527,61 +4625,79 @@ last-verified: 2026-08-30
 
 ### B-079 — o tier Max é publicado a 4.000 rps e limitado a 1.000, e as duas resoluções de tier falham na direção mais generosa
 
-**Na direção do cliente que paga.** `crates/corelink-ratelimit/src/tier.rs:124` mapeia
-`"pro" | "org" | "max" => Tier::Business`, que é 1.000 rps / 5.000 burst. A página
-publicada (`apps/docs/docs/explanation/rate-limits.mdx:45`) anuncia Max a 4.000 / 20.000.
-Um cliente Max paga $149/mês e recebe um quarto da taxa publicada — dano faturável e
-diretamente demonstrável por ele. O `tier.rs:97` documenta a decisão deliberadamente
-(*"`max` | `Business` — NOT Enterprise (ratified Q5a…)"*); a página nunca acompanhou.
+**Metade 1 — REFUTADA (já corrigida antes deste item ser escrito).** A alegação era que
+`apps/docs/docs/explanation/rate-limits.mdx:45` anuncia Max a 4.000 / 20.000. Não anuncia
+mais, e não anunciava quando o item foi redigido: a linha 45 hoje é a linha do
+**Enterprise**, e a do Business (linha 44) diz literalmente
+`` | Business | `pro`, `max` | 1 000 | 5 000 | Production teams. `pro` and `max` share the Business bucket. ``,
+com um parágrafo abaixo explicando *"there is no separate higher 'Max' bucket"*.
+`git log` aponta o conserto: **#1356** (`docs(go-live): WP-2 purge false/contradictory
+customer-facing claims`). Uma varredura por `4[ ,.]?000` no arquivo devolve zero
+ocorrências — **com controle**: a mesma expressão para `10 000` devolve a linha do
+Enterprise, e `1 000` devolve 3 linhas, então o instrumento enxerga. O item herdou a
+alegação de uma auditoria anterior ao #1356 e ninguém repropagou o conserto.
 
-**Na direção oposta.** `tier_for_billing_label` termina em `_ => Tier::Team` (200 rps,
-20× o gratuito) e `refill_rate_for_tier` termina em `_ => ENTERPRISE_RATE` (10.000 rps,
-1000× o gratuito). Um rótulo de cobrança corrompido, com erro de grafia, ou de um tier
-futuro recebe taxa paga; uma variante de enum desconhecida recebe taxa Enterprise. Ambas
-documentadas como escolha deliberada (*"most-permissive default"*), postura defensável
-para disponibilidade — mas num controle **medido e vendido** significa que o limitador
-falha na direção do vazamento de receita.
+**Metade 2 — CONFIRMADA e reparada.** `refill_rate_for_tier` terminava em
+`_ => (ENTERPRISE_REFILL_RPS, ENTERPRISE_BURST)` — 10.000 rps, 1000× o gratuito e **50× o
+default do próprio sistema** — para qualquer variante de `Tier` que este crate ainda não
+conhecesse, enquanto o irmão `tier_for_billing_label` cai em `Team`. Dois caminhos que
+dizem "não sei o plano deste tenant" respondendo com números que diferem 50×.
+Reparado em `crates/corelink-ratelimit/src/tier.rs`: o braço curinga agora resolve
+`Team`, o mesmo default que `RateLimitConfig::canonical()` já dá a tenant não resolvido.
+Isso preserva a propriedade que o braço antigo defendia (variante desconhecida nunca é
+estrangulada abaixo do default, nunca entra em pânico, nunca nega) e remove a carona.
+
+**Decisão de produto tomada e registrada aqui:** `Team` é o default ÚNICO dos dois
+fallbacks. Não caem para `Free`, porque um rótulo de cobrança corrompido pertence a um
+tenant que provavelmente PAGA, e 10 rps quebraria o cliente por um defeito nosso — Team
+já era o comportamento histórico de tenant não resolvido, e agora é o dos dois lados.
+
+O braço curinga é **inalcançável em runtime** (o `Tier` tem exatamente 5 variantes, todas
+casadas explicitamente; `#[non_exhaustive]` só obriga o curinga a existir), então nenhum
+valor construível o exercita. O teste
+`unknown_tier_fallback_is_not_a_paid_ceiling` assume isso e assere sobre o TEXTO do
+braço, com controle que falha se o leitor de fonte quebrar, e com as agulhas montadas em
+runtime para não contar a própria asserção. Vermelho antes, verde depois (provado por
+mutação: restaurar o braço Enterprise reprova o teste).
 
 Nota composta com [B-071]: o comentário do `tier.rs` observa que este mapeamento também
 seleciona a escada de TTL de eviction e é portanto uma *"customer-visible retention
 promise"* — promessa hoje inerte, porque não há eviction rodando.
 
-Reparo: decidir qual dos dois números é a verdade (a página ou o código) e alinhar; e
-decidir se os fallbacks devem cair para `Free` em vez de para tier pago.
-
 ```backlog
 id: B-079
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   bash -c 't=crates/corelink-ratelimit/src/tier.rs
   d=apps/docs/docs/explanation/rate-limits.mdx
   [ -f "$t" ] || { echo "FALHA: tier.rs sumiu — reavalie o item."; exit 1; }
-  maxbiz=0; grep -qE "\"max\"[^=]*=>[[:space:]]*Tier::Business|\|[[:space:]]*\"max\"[[:space:]]*=>" "$t" && maxbiz=1
-  docs4k=0; [ -f "$d" ] && grep -qE "4[ ,.]?000" "$d" && docs4k=1
-  fbteam=0; grep -qE "_[[:space:]]*=>[[:space:]]*Tier::Team" "$t" && fbteam=1
-  fbent=0; grep -qE "_[[:space:]]*=>[[:space:]]*\(ENTERPRISE_REFILL_RPS" "$t" && fbent=1
-  desalinhado=0; [ "$maxbiz" = 1 ] && [ "$docs4k" = 1 ] && desalinhado=1
-  soma=$((desalinhado + fbteam + fbent))
-  [ "$soma" -gt 0 ] || { echo "FALHA: Max alinhado com a pagina E fallbacks nao caem mais em tier pago — feche o item."; exit 1; }
-  echo "aberto: max_mapeado_para_business_com_docs_dizendo_4000=$desalinhado fallback_string_para_Team=$fbteam fallback_enum_para_Enterprise=$fbent"'
+  [ -f "$d" ] || { echo "FALHA: a pagina publicada de rate-limits sumiu — reavalie o item."; exit 1; }
+  grep -q "1 000" "$d" || { echo "FALHA (controle): a pagina nao contem nem a taxa Business — o instrumento nao esta lendo a tabela, entao a ausencia de 4.000 abaixo nao prova nada."; exit 1; }
+  grep -qE "4[ ,.]?000" "$d" && { echo "REGRESSAO: a pagina voltou a publicar 4.000 para o Max enquanto o codigo mapeia max->Business."; exit 1; }
+  grep -qE "_[[:space:]]*=>[[:space:]]*\(ENTERPRISE_REFILL_RPS" "$t" && { echo "REGRESSAO: o fallback de variante desconhecida voltou a entregar a taxa Enterprise."; exit 1; }
+  grep -qE "_[[:space:]]*=>[[:space:]]*\(TEAM_REFILL_RPS" "$t" || { echo "REGRESSAO: o fallback de variante desconhecida nao resolve mais o default Team."; exit 1; }
+  echo "ok: pagina e codigo concordam no Max (Business, 1.000) e nenhum fallback entrega acima do default Team"'
 verify-means: |
-  open — o Max continua mapeado para `Business` enquanto a página publica 4.000, OU
-  algum dos dois fallbacks continua caindo em tier pago.
+  POLARIDADE INVERTIDA (status done): passa enquanto valer, falha na REGRESSAO.
 
-  Vira DRIFTED quando os três forem resolvidos. Aceita QUALQUER das duas correções do
-  desalinhamento: mudar o código para `Enterprise`, ou corrigir a página para 1.000 —
-  são decisões de produto diferentes com o mesmo efeito sobre a alegação, que é a
-  DIVERGÊNCIA, não qual dos lados está certo.
+  A primeira asserção é CONTROLE, não conteúdo: se a página não contiver sequer
+  "1 000", o grep está lendo o arquivo errado (ou vazio) e a ausência de "4.000"
+  logo abaixo seria um zero mentiroso. Sem ela este portão passaria verde com a
+  página deletada — exatamente o modo de falha que o item original tinha.
 
-  O que NÃO decide, e admito: se o número novo da página bate exatamente com a constante
-  nova do código. O comando detecta a presença de "4.000" na página e o mapeamento para
-  `Business`; um terceiro valor em ambos os lados passaria despercebido. Um `verify`
-  robusto exigiria parsear a tabela da página e a escada do `tier.rs` e compará-las —
-  vale escrever quando alguém consertar, e aí substituir este comando.
-last-verified: 2026-08-30
+  O que NÃO decide, e admito, igual à redação anterior: se um TERCEIRO valor
+  aparecer nos dois lados (código e página migrando juntos para 2.000, por
+  exemplo) o portão passa. Comparar de verdade exigiria parsear a tabela da
+  página e a escada do `tier.rs`; o que este comando garante é a ausência da
+  divergência CONHECIDA e a direção dos fallbacks.
+
+  Também não decide o fallback de STRING (`_ => Tier::Team`): ele foi ratificado
+  como o default único, não removido, e por isso não é gateado aqui.
+last-verified: 2026-08-31
 ```
+
 
 ### B-080 — metade dos escopos canônicos de PAT não é verificada por nenhum ponto de aplicação
 
@@ -5125,62 +5241,111 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-090 — o worker que processa Stripe, Clerk e DSR implanta a partir de `npm install` sem lockfile, e o portão de supply-chain é cego a ele
+### B-130 — o deploy do signup-worker instala o wrangler globalmente pelo npm, fora do lockfile e com lifecycle scripts
 
-O `signup-worker` é o handler vivo de cobrança (`webhooks/stripe.ts`), identidade
-(`webhooks/clerk.ts`), provisionamento (`webhooks/github_provision.ts`) e do consumidor de
-DSR (`webhooks/dsr_consumer.ts`).
+Descoberto ao reparar o [B-090]. A lane `signup-worker-deploy.yml` deixou de re-resolver
+as dependências do worker (agora é `pnpm install --frozen-lockfile --ignore-scripts`),
+mas o passo seguinte segue sendo `npm install -g wrangler@4.95.0`: instalação global,
+fora do `pnpm-lock.yaml`, cujo grafo transitivo o `pnpm-audit.yml` não varre e cujos
+`postinstall` rodam. É o mesmo Mac do fundador, com as credenciais de deploy da
+Cloudflare no ambiente.
 
-`signup-worker-deploy.yml:65` roda `npm install --legacy-peer-deps`, com o comentário da
-linha 61 explicando: *"`npm ci` cannot run — the lockfile is gitignored"*. Confirmado:
-`git check-ignore -v apps/signup-worker/package-lock.json` aponta `.gitignore:95`. Sem
-lockfile, cada deploy re-resolve a árvore do zero; sem `--ignore-scripts`, todo
-`postinstall` transitivo executa. O runner é auto-hospedado — é o Mac do fundador — e
-carrega as credenciais de deploy da Cloudflare no ambiente.
+Não foi consertado junto de propósito: o `wrangler` do lockfile é **4.111.0** e o global
+é **4.95.0**, e como o passo de deploy resolve `wrangler` pelo PATH, trocar por
+`pnpm exec wrangler` mudaria a versão que implanta o handler vivo de Stripe/Clerk/DSR.
+Mudança de comportamento no caminho do dinheiro não entra de carona num PR de
+supply-chain.
 
-**E o portão não vê.** O `.gitignore:93` diz *"npm lockfiles — this repo uses pnpm"*, e o
-`pnpm-audit.yml` varre o grafo resolvido pelo `pnpm`. O worker de cobrança sobe com uma
-árvore resolvida pelo `npm`: são grafos diferentes, e o que chega à produção é o que o
-portão não varre. As outras lanes acertam — `admin-ui-deploy.yml:93` e
-`cf-deploy-prod.yml:307` usam `pnpm install --frozen-lockfile`. O `signup-worker` é a
-única exceção, e é justamente o que carrega o segredo do webhook da Stripe. O
-`pnpm-audit.yml:24` ainda traz `TODO(flip-to-blocking)`.
-
-Reparo: commitar o lockfile do worker como exceção explícita ao `.gitignore:95`, e trocar
-por `npm ci --ignore-scripts`.
+Reparo: decidir a versão (alinhar o lockfile em 4.95.0, ou aceitar 4.111.0), trocar o
+passo por `pnpm exec wrangler deploy`, e apagar o `npm install -g`. Um deploy de
+verificação depois.
 
 ```backlog
-id: B-090
+id: B-130
 repo: corelink-server
 owner: tl
 status: open
 verify: |
   bash -c 'w=.github/workflows/signup-worker-deploy.yml
   [ -f "$w" ] || { echo "FALHA: a lane de deploy do signup-worker sumiu — reavalie o item."; exit 1; }
-  solto=0; grep -qE "npm install" "$w" && solto=1
-  ci=0; grep -qE "npm ci" "$w" && ci=1
-  noscripts=0; grep -q "ignore-scripts" "$w" && noscripts=1
-  lock=0; [ -f apps/signup-worker/package-lock.json ] && lock=1
-  if [ "$solto" = 0 ] && [ "$ci" = 1 ] && [ "$noscripts" = 1 ]; then
-    echo "FALHA: a lane usa npm ci com --ignore-scripts — feche o item."; exit 1; fi
-  echo "aberto: npm_install_solto=$solto npm_ci=$ci ignore_scripts=$noscripts lockfile_versionado=$lock"'
+  grep -qE "^[^#]*runs-on" "$w" || { echo "FALHA (controle): nao acho nem o runs-on em $w — o instrumento nao esta lendo o arquivo."; exit 1; }
+  grep -qE "^[^#]*npm install -g wrangler" "$w" || { echo "FALHA: a lane nao instala mais o wrangler global pelo npm — feche o item."; exit 1; }
+  echo "aberto: npm install -g wrangler ainda presente na lane de deploy do signup-worker"'
 verify-means: |
-  open — a lane de deploy ainda usa `npm install` solto, ou não passa `--ignore-scripts`.
+  open — a lane ainda instala o wrangler globalmente pelo npm, fora do lockfile.
 
-  Vira DRIFTED quando as três condições do reparo valerem juntas: sem `npm install`
-  solto, com `npm ci`, com `--ignore-scripts`. O AND é deliberado — pinar sem desligar
-  lifecycle scripts, ou desligar scripts sem pinar, deixa metade do buraco aberto, e num
-  worker que carrega o segredo do webhook da Stripe metade não serve.
+  Vira DRIFTED quando o passo sumir. A primeira asserção é CONTROLE: sem achar o
+  `runs-on`, a ausência do `npm install -g` seria um zero produzido por estar
+  lendo o arquivo errado, não pelo reparo.
 
-  O `lockfile_versionado` é reportado mas não gateado: `npm ci` já falha sem lockfile, então
-  gatear nele seria redundante.
-
-  O que NÃO decide, e admito: se o `pnpm-audit` passa a cobrir o grafo do signup-worker.
-  Essa é a metade "o portão é cego" e depende de decisão de tooling (unificar em pnpm, ou
-  adicionar uma lane npm-audit para este worker). Se a decisão for a segunda, vale item
-  próprio.
-last-verified: 2026-08-30
+  O que NÃO decide: qual versão de wrangler deve implantar. Isso é decisão a
+  tomar no reparo, não condição de fechamento deste comando.
+last-verified: 2026-08-31
 ```
+
+
+### B-090 — o worker que processa Stripe, Clerk e DSR implanta a partir de `npm install` sem lockfile, e o portão de supply-chain é cego a ele
+
+**CONFIRMADO e reparado.** O `signup-worker` é o handler vivo de cobrança
+(`webhooks/stripe.ts`), identidade (`webhooks/clerk.ts`), provisionamento
+(`webhooks/github_provision.ts`) e do consumidor de DSR (`webhooks/dsr_consumer.ts`).
+A lane rodava `npm install --legacy-peer-deps`: cada deploy re-resolvia a árvore do
+zero, no Mac do fundador, com as credenciais de deploy da Cloudflare no ambiente, e
+subia um grafo que o `pnpm-audit.yml` nunca varreu.
+
+**A premissa do reparo proposto era falsa.** O comentário da lane dizia *"`npm ci`
+cannot run — the lockfile is gitignored"*, e este item repetia isso propondo commitar
+um `package-lock.json` como exceção ao `.gitignore:95`. Não é preciso, e teria criado um
+segundo grafo permanente: `apps/signup-worker` **já é membro do workspace pnpm**
+(`pnpm-workspace.yaml`) e já tem importer resolvido no `pnpm-lock.yaml` **versionado**
+(`pnpm-lock.yaml:349`), em sincronia exata com o `package.json` do worker. O que faltava
+não era um lockfile — era a lane usá-lo.
+
+Reparo aplicado: `pnpm install --frozen-lockfile --ignore-scripts` na raiz, igual ao
+`admin-ui-deploy.yml:93` e ao `cf-deploy-prod.yml:307`. Isso fecha **as duas** metades —
+o grafo passa a ser o pinado, e é o MESMO grafo que o `pnpm-audit.yml` varre, então o
+portão deixa de ser cego. O `--ignore-scripts` é redundante hoje (pnpm 10 já recusa
+lifecycle script de dependência sem `onlyBuiltDependencies`, que este repo não declara) e
+está explícito de propósito: torna a propriedade gateável em vez de implícita.
+Comando validado localmente contra o lockfile da `main`: instala 2111 pacotes, zero
+resolução nova.
+
+**O que este item NÃO decide:** o passo seguinte da mesma lane,
+`npm install -g wrangler@4.95.0`, continua sendo uma instalação global fora do lockfile
+que roda lifecycle scripts. Trocá-la por `pnpm exec wrangler` mudaria a versão que
+implanta hoje (4.95.0 → 4.111.0 do lockfile) e isso é mudança de comportamento no deploy
+do caminho do dinheiro — fica como [B-130].
+
+```backlog
+id: B-090
+repo: corelink-server
+owner: tl
+status: done
+verify: |
+  bash -c 'w=.github/workflows/signup-worker-deploy.yml
+  [ -f "$w" ] || { echo "FALHA: a lane de deploy do signup-worker sumiu — reavalie o item."; exit 1; }
+  grep -qE "^[^#]*npm install --legacy-peer-deps" "$w" && { echo "REGRESSAO: a lane voltou ao npm install solto."; exit 1; }
+  grep -qE "^[^#]*pnpm install --frozen-lockfile" "$w" || { echo "REGRESSAO: a lane nao instala mais pelo lockfile pinado."; exit 1; }
+  grep -qE "^[^#]*pnpm install[^#]*--ignore-scripts" "$w" || { echo "REGRESSAO: a lane nao passa mais --ignore-scripts."; exit 1; }
+  grep -q "apps/signup-worker" pnpm-lock.yaml || { echo "REGRESSAO: o signup-worker saiu do pnpm-lock.yaml — --frozen-lockfile vai falhar ou instalar nada."; exit 1; }
+  echo "ok: lane instala pelo pnpm-lock versionado, sem scripts, e o grafo e o mesmo que o pnpm-audit varre"'
+verify-means: |
+  POLARIDADE INVERTIDA (status done): passa enquanto o reparo valer, e falha na
+  REGRESSAO. Quatro asserções, todas necessárias: sem `npm install` solto, com
+  `--frozen-lockfile`, com `--ignore-scripts`, e com o worker ainda presente no
+  `pnpm-lock.yaml` — essa última é o controle anti-vacuidade: sem ela,
+  `--frozen-lockfile` continuaria escrito na lane depois de alguém tirar o worker
+  do workspace, e a asserção passaria instalando NADA.
+
+  O `^[^#]*` em cada grep impede que o comando conte o comentário que explica o
+  reparo em vez da linha que o executa.
+
+  O que NÃO decide: o `npm install -g wrangler@4.95.0` da mesma lane ([B-130]), e
+  se o `pnpm-audit.yml` sai do `TODO(flip-to-blocking)` (`pnpm-audit.yml:24`) —
+  o grafo agora É varrido, mas o achado ainda não bloqueia.
+last-verified: 2026-08-31
+```
+
 
 ### B-091 — a cadeia de proveniência de release é não-funcional e o SBOM publicado tem três meses
 
