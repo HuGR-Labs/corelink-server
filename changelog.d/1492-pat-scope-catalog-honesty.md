@@ -50,3 +50,17 @@
   enforcement de menor-privilégio entregue: o card agora nomeia o que é aplicado hoje
   (cache read/write/find-missing e admin) e diz explicitamente que os três reservados não
   concedem nada.
+- **A referência RBAC publicada contradizia o novo significado do bit 4.**
+  `apps/docs/docs/reference/rbac/permissions.mdx` documentava o bit 4 como
+  `admin:tenant-read` — "List tenant config", concedido por padrão a `Owner`,
+  `Admin` **e `Viewer`** — enquanto o bit 4 passou a ser `SCOPE_ADMIN`, o superset
+  owner-grade. Ou seja, a superfície que o cliente lê anunciava que `Viewer` tinha
+  o bit que hoje é admin. Corrigidos 5 documentos × 4 locales (20 arquivos):
+  contagens 12→7, o bloco dos seis substituído pelo `admin` com aviso explícito de
+  que os granulares nunca foram implementados, bits 5..=9 documentados como
+  retirados e fail-closed, `cache:delete` marcado como NÃO aplicado, a coluna
+  *Scope* da matriz deixando de citar escopos inexistentes (administrativo →
+  `session role`, billing → `billing`), e o pré-requisito acionável **falso** do
+  guia de auditoria ("You hold `admin:audit` scope") substituído pelo gate real
+  (`requires_billing_admin`). Os locales de `audit-role-changes` são tradução
+  genuína e foram reescritos em de/es/pt, não colados do inglês.
