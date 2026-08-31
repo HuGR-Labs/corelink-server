@@ -8373,3 +8373,213 @@ verify-means: |
   efêmera da frota. Um `verify` que cubra os dois mede a máquina errada em metade dos casos.
 last-verified: 2026-08-31
 ```
+
+### B-139 — o semgrep reprova com 4228 achados bloqueantes, e repontar o `runs-on:` não muda isso
+
+O #1505 tira o `semgrep.yml` do Mac e o põe em `runs-on: corelink`. A troca de label está
+certa e medida, mas ela **não** é o que separa esta lane de um dispatch verde.
+
+Medido no histórico de execuções, e é o ponto que a versão anterior do comentário do #1505
+errava: o 0/388 desta lane **não** é "o faturamento não concede box hospedada". A run
+`31365335113` (2026-08-10) **obteve** runner hospedado — `runner_name: "GitHub Actions
+1000003886"`, labels `[ubuntu-latest]` —, rodou 6m35s e falhou **dentro do scan**:
+
+```
+Ran 474 rules on 6345 files: 4228 findings (4228 blocking)
+```
+
+Com `--error`, isso é exit 1. Mesma assinatura em `29481995796` e `30801766782`. Atrás dela
+ainda existe uma **segunda falha independente**: o upload do SARIF exige Advanced Security
+habilitado para code scanning, e não está.
+
+(As outras 346 das 388 execuções são anteriores a 2026-06-19, quando o `ubuntu-latest` entrou
+no arquivo — essas morreram no label morto `[self-hosted, Linux, X64]` e na imagem placeholder
+`returntocorp/semgrep@sha256:000…0`. São **duas** causas históricas, não uma.)
+
+Este item é o trabalho que sobra: **triagem do rulepack + decisão de política sobre o
+`--error`**. Da contagem, ~3920 vêm do pack local (`semgrep.yml` na raiz), o que sugere que a
+maior parte é regra nossa calibrada larga, não achado importado — mas essa divisão é a
+primeira coisa a **remedir**, não a herdar deste texto.
+
+O que decidir, e são decisões separadas:
+
+1. Quais das 474 regras merecem `ERROR` e quais viram `WARNING`/`INFO`.
+2. Se o gate segue fail-closed (`--error`) ou se passa a reprovar só em severidade ERROR das
+   regras custom — a política atual está descrita no cabeçalho do workflow e **não** é o que
+   o comando executa.
+3. Habilitar Advanced Security, ou remover o passo de upload de SARIF. Hoje ele falha de
+   qualquer jeito.
+
+**Não fechar este item porque o #1505 mergeou.** O #1505 mudou onde a lane roda; esta lane
+segue reprovando no primeiro dispatch, e o WP-CI não pode fechar declarando-a consertada.
+
+```backlog
+id: B-139
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'set -o pipefail
+  f=".github/workflows/semgrep.yml"
+  [ -f "$f" ] || { echo "FALHA: $f nao existe — a premissa deste item mudou; reavalie em vez de fechar."; exit 1; }
+  if grep -q -- "--error" "$f"; then
+    echo "AINDA ABERTO: semgrep segue fail-closed com --error e sem triagem registrada dos 4228 achados"
+    exit 0
+  fi
+  echo "FECHADO?: --error saiu de $f — a politica mudou. Confirme com um dispatch VERDE (nao apenas com a ausencia da flag) e so entao feche."
+  exit 1'
+verify-means: |
+  O portão mede a **política**, não o resultado: enquanto o `--error` estiver no workflow e
+  ninguém tiver triado o rulepack, o próximo dispatch reprova, e o item continua aberto.
+
+  Isto é deliberadamente um proxy LOCAL e barato, e a limitação está declarada: ele não
+  observa uma execução. Fechar exige as duas coisas juntas —
+
+    1. um `gh workflow run semgrep.yml` **verde**, com o run-id colado aqui; e
+    2. a decisão de política registrada (quais regras são ERROR, e o que acontece com o
+       upload de SARIF sem Advanced Security).
+
+  Remover o `--error` sozinho faz o portão virar, e por isso ele exige o dispatch verde no
+  texto: uma lane que passou a não reprovar não é uma lane que passou.
+last-verified: 2026-08-31
+```
+
+### B-140 — o guard de `runs-on:` continua cego para escalar aspeado e sequência em bloco
+
+O #1500 consertou a forma que estava **viva** no repo: um comentário no fim da linha
+(`runs-on: corelink  # …`) fazia o job sair silenciosamente do conjunto inspecionado — o guard
+imprimia `OK` cobrindo menos. Reach mediu 173 → 193 com o conserto.
+
+Sobram **duas** formas legais de YAML que o guard também não vê, e que o `_strip_trailing_comment`
+não alcança porque o problema não está no strip:
+
+1. **Sequência em bloco** — o valor fica nas linhas seguintes:
+
+   ```yaml
+   runs-on:
+     - self-hosted
+     - mac
+   ```
+
+   O `RUNS_ON` exige `runs-on:\s*(.+?)`; com valor vazio ele **não casa**, e o job nunca entra
+   no conjunto.
+
+2. **Escalar aspeado** — `runs-on: "corelink"`. As aspas sobrevivem ao strip e
+   `value == "corelink"` passa a ser False, então um job self-hosted lê como hospedado.
+
+**Nenhuma das duas existe em `.github/workflows/` hoje** — verificado com controle positivo:
+os mesmos greps casam instâncias plantadas. São buracos **latentes**, não achados vivos, e
+estão nomeados na docstring do script para que ninguém escreva essas formas sem saber.
+
+O conserto real não é mais um regex: é **parsear o YAML** e ler `jobs[*].runs-on` como
+estrutura, que é a única forma que não tem uma próxima grafia surpresa atrás dela. É uma
+mudança de mecanismo, por isso é item próprio e não emenda do #1500.
+
+```backlog
+id: B-140
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'set -o pipefail
+  s="scripts/validate_no_shared_rustup_mutation.py"
+  [ -f "$s" ] || { echo "FALHA: $s nao existe — reavalie este item em vez de fecha-lo."; exit 1; }
+  r=$(pwd); d=$(mktemp -d); trap "rm -rf $d" EXIT
+  mkdir -p "$d/.github/workflows"
+  printf "name: probe\non:\n  workflow_dispatch:\njobs:\n  quoted:\n    runs-on: \"corelink\"\n    steps:\n      - run: echo hi\n  blockseq:\n    runs-on:\n      - self-hosted\n      - mac\n    steps:\n      - run: echo hi\n" > "$d/.github/workflows/probe.yml"
+  out=$(cd "$d" && python3 "$r/$s" 2>&1 || true)
+  case "$out" in
+    *"ZERO self-hosted jobs"*)
+      echo "AINDA ABERTO: o guard inspecionou ZERO dos 2 jobs self-hosted plantados (escalar aspeado + sequencia em bloco)"
+      exit 0 ;;
+    *)
+      echo "FECHADO?: o guard passou a enxergar ao menos uma das duas formas — saida: $out. Confirme que ambas sao cobertas e atualize este item."
+      exit 1 ;;
+  esac'
+verify-means: |
+  O comando **planta** as duas formas num diretório de workflows descartável e roda o guard
+  contra ele. É um controle positivo, não uma varredura: se o guard enxergasse qualquer uma
+  das duas, ele inspecionaria ao menos 1 job e não emitiria o bail-out de ZERO.
+
+  Por isso ele não pode passar por vacuidade — a única forma de o comando dizer "ainda
+  aberto" é o guard genuinamente não ver dois jobs self-hosted que estão bem na frente dele.
+
+  Fecha quando o guard parsear o YAML e as duas formas entrarem no conjunto inspecionado; aí
+  este `verify` **inverte de polaridade** e precisa ser reescrito junto com o `status: done`.
+last-verified: 2026-08-31
+```
+
+### B-141 — `pull_request_target` sem gate de ator: hoje só a visibilidade do repo segura
+
+O #1502 põe `pr-labels.yml` e `welcome-first-pr.yml` na frota efêmera. Os dois disparam em
+`pull_request_target` (e o `welcome` também em `issues`) **sem nenhum `if:` de ator**, então,
+depois desse PR, cada evento desses **spawna microVM da nossa frota Cloudflare**.
+
+O que limita isso hoje **não está nesses arquivos**: é a **visibilidade do repositório**.
+Medido em 2026-08-31 — repo **PRIVADO**, **0 forks** —, então só membros da org e
+colaboradores convidados levantam o evento, que é o mesmo conjunto de pessoas que já
+enfileirava trabalho na frota. Ou seja, **não é um furo vivo**, e registrá-lo como se fosse
+seria exagerar.
+
+O que o torna um item, e não uma nota: `pull_request_target` é **isento** da política "exigir
+aprovação para contribuidor de primeira viagem" que protege `pull_request`. No dia em que
+este repo virar público — o que o lançamento do produto torna plausível — essas duas lanes
+viram gatilho de spawn **não autenticado**, sem que ninguém precise tocar em CI para causar
+isso. É uma mudança de configuração, num outro lugar, que arma um defeito aqui.
+
+Risco secundário, independente de quem dispara: **spawn recusado deixa o job `queued`**, e
+`timeout-minutes` **não limita fila** — ele começa quando o job está RODANDO. O
+`redriveOrphanedJobs` da frota (cron de 1 min) retenta, mas só `MAX_ORPHAN_ATTEMPTS = 3`,
+com dead-letter de 30 min; passado isso, o job nunca é revisitado. Em `pr-labels`, que roda em
+**todo** PR, um job encalhado não reprova o PR — vira check **pendente**, que o
+`scripts/pre-merge-gate-check.sh` pontua como ⛔ DO NOT MERGE.
+
+**O que este item NÃO decide:** o **teto de spawn** da frota. Ele vive no spawn worker, em
+`corelink-runners`, e não é observável daqui — não afirmo que exista nem que não exista. Quem
+pegar o item mede isso primeiro: sem teto, o pior caso deixa de ser "fila" e passa a ser
+custo.
+
+Encaminhamentos possíveis, e são excludentes:
+
+1. Gate de ator nas duas lanes (mata o propósito do `welcome`, que existe para saudar quem
+   ainda não é contribuidor).
+2. Manter só o `welcome-first-pr` no Mac — é a única disparada por não-colaborador.
+3. Teto de spawn por ator/evento na frota, que é o conserto no lugar certo.
+
+A decisão é barata **antes** de o repo virar público e cara depois.
+
+```backlog
+id: B-141
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'set -o pipefail
+  n=0
+  for f in .github/workflows/pr-labels.yml .github/workflows/welcome-first-pr.yml; do
+    [ -f "$f" ] || { echo "FALHA: $f nao existe — a premissa deste item mudou; reavalie em vez de fechar."; exit 1; }
+    grep -q "pull_request_target" "$f" || { echo "FALHA: $f nao dispara mais em pull_request_target — releia o item antes de confiar neste portao."; exit 1; }
+    if grep -qE "^[[:space:]]+if:.*(github\.actor|author_association)" "$f"; then
+      echo "gate de ator PRESENTE em $f"
+    else
+      n=$((n+1))
+    fi
+  done
+  if [ "$n" -gt 0 ]; then
+    echo "AINDA ABERTO: $n de 2 lanes pull_request_target seguem sem gate de ator"
+    exit 0
+  fi
+  echo "FECHADO?: ambas ganharam gate de ator — confirme que o welcome ainda sauda quem deve e atualize este item."
+  exit 1'
+verify-means: |
+  O portão mede a **ausência do gate**, que é a condição do item, e falha alto se qualquer uma
+  das duas premissas se mover (arquivo sumiu, ou o workflow deixou de ser
+  `pull_request_target`) — assim ele não fica verde por vacuidade se o mundo mudar de forma.
+
+  O que ele **não** mede, e está declarado de propósito: a visibilidade do repositório, que é
+  a coisa que hoje realmente segura o risco. Um `gh repo view --json isPrivate` aqui tornaria
+  o portão dependente de rede e de token, e — pior — faria o item **fechar sozinho** enquanto
+  o repo continuasse privado, que é exatamente o momento em que ele deve continuar aberto. O
+  item existe para ser resolvido ANTES da flip, não por ela.
+last-verified: 2026-08-31
+```
