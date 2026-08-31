@@ -26,7 +26,7 @@ name: backlog-verify
 # so a new push to the SAME PR still cancels its own stale run — which is the
 # behaviour cancel-in-progress is for.
 concurrency:
-  group: "ci-backlog-verify-${{ github.ref }}"
+  group: "ci-backlog-verify-${{ github.event_name }}-${{ github.ref }}"
   cancel-in-progress: true
 
 on:

@@ -8663,54 +8663,49 @@ grupo único; o #1503 é melhora estrita. Este item é o resíduo que sobrou, le
 revisão fria retroativa daquele PR
 (`docs/campaigns/RELATORIO-concurrency-global-backlog-verify.md`, §7.1).
 
-Conserto conhecido e de uma linha: incluir o evento no grupo,
-`group: "ci-backlog-verify-${{ github.event_name }}-${{ github.ref }}"`. Push novo no mesmo
-PR continua cancelando o próprio run velho — mesmo `event_name`, mesmo ref — que é o
-comportamento para o qual o ajuste existe.
-
-**O que este item NÃO decide:** se o `schedule` do `backlog-verify` deve continuar
-existindo. Se algum dia a resposta for não, o item perde o objeto em vez de ser consertado.
+**Consertado 2026-08-31 (este PR).** O grupo passou a
+`"ci-backlog-verify-${{ github.event_name }}-${{ github.ref }}"` — o conserto de uma linha
+que o corpo já trazia escrito. Push novo no mesmo PR continua cancelando o próprio run velho
+(mesmo `event_name`, mesmo ref), que é o comportamento para o qual o ajuste existe.
 
 ```backlog
 id: B-136
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   bash -c 'set -o pipefail
   w=.github/workflows/backlog-verify.yml
   [ -f "$w" ] || { echo "FALHA: $w nao existe — este item pressupoe o gate do backlog; reavalie."; exit 1; }
   g=$(awk "/^concurrency:/{c=1;next} c&&/^[^ ]/{exit} c&&/^ *group *:/{print;exit}" "$w")
   [ -n "$g" ] || { echo "FALHA: nao achei a linha group: no bloco concurrency de $w — o bloco mudou de forma; releia antes de confiar neste portao."; exit 1; }
-  echo "$g" | grep -q "github.event_name" && { echo "FALHA: o grupo ja inclui github.event_name — o conserto entrou, feche este item."; exit 1; }
-  echo "$g" | grep -q "\${{" || { echo "FALHA: o grupo voltou a ser CONSTANTE — isso e o defeito do #1503 de volta, pior que este item; reavalie com urgencia."; exit 1; }
+  echo "$g" | grep -q "github.event_name" || { echo "REGRESSAO: o grupo voltou a NAO incluir github.event_name — push, schedule e workflow_dispatch na main colapsam no mesmo grupo e o cron do backlog volta a poder morrer calado. grupo=$g"; exit 1; }
+  echo "$g" | grep -q "github.ref" || { echo "REGRESSAO: o grupo escopa por evento mas perdeu o ref — dois PRs distintos passam a cancelar um ao outro dentro do mesmo evento, que e o defeito do #1503 de volta. grupo=$g"; exit 1; }
   c=$(awk "/^concurrency:/{c=1;next} c&&/^[^ ]/{exit} c&&/^ *cancel-in-progress *:/{print;exit}" "$w")
-  echo "$c" | grep -q "true" || { echo "FALHA: cancel-in-progress nao esta mais ligado — sem cancelamento nao ha colisao; feche este item."; exit 1; }
+  echo "$c" | grep -q "true" || { echo "nota: cancel-in-progress nao esta mais ligado — sem cancelamento nao ha colisao, entao o item segue fechado por outro caminho ($c)"; exit 0; }
   ev=$(awk "/^on:/{o=1;next} o&&/^[^ ]/{exit} o&&/^  [a-z_]+:/{gsub(/[ :]/,\"\");print}" "$w" | tr "\n" " ")
-  echo "$ev" | grep -q schedule || { echo "FALHA: o gatilho schedule sumiu de $w — sem cron nao ha colisao cron-vs-push; o item perdeu o objeto, reavalie."; exit 1; }
-  echo "$ev" | grep -q push || { echo "FALHA: o gatilho push sumiu de $w — reavalie a colisao antes de fechar."; exit 1; }
-  echo "aberto: grupo=$g escopa por ref mas nao por evento, com cancel ligado, e os gatilhos [$ev] colapsam push/schedule/dispatch em refs/heads/main"'
+  echo "fechado: grupo=$g escopa por evento E por ref, com cancel ligado, sobre os gatilhos [$ev]"'
 verify-means: |
-  open — o grupo de concorrência do `backlog-verify` interpola o ref mas **não** o evento, o
-  cancelamento em voo está ligado, e os gatilhos `push` e `schedule` coexistem.
+  **Polaridade INVERTIDA (`done`):** sai 0 — fechado — enquanto o grupo de concorrência do
+  `backlog-verify` interpolar **as duas** coisas: o evento **e** o ref. Sai 1 se qualquer uma
+  das duas sumir.
 
-  As três condições são a alegação inteira, e cada uma falha com mensagem própria. Só uma
-  delas fecha o item (`github.event_name` presente = o conserto entrou). As outras mandam
-  **reavaliar**, porque cada uma some por mais de um motivo: `cancel-in-progress` desligado
-  elimina a colisão de verdade; o `schedule` sumindo pode significar que a decisão do cron
-  mudou, não que este item foi resolvido.
+  A polaridade `open` original ficaria verde neste PR e **vermelha no merge seguinte**,
+  contaminando todo PR irmão. Invertida junto com o `status`, não depois.
 
-  O ramo do grupo CONSTANTE é a defesa contra regressão silenciosa: se alguém reverter o
-  #1503, este portão não fica verde por acidente — ele grita que o defeito maior voltou, em
-  vez de medir a ausência do defeito menor dentro do maior.
+  **Os dois predicados são o conteúdo.** Gatear só no `github.event_name` aceitaria
+  `group: "ci-backlog-verify-${{ github.event_name }}"` — que conserta esta colisão e
+  **reintroduz** a do #1503, com todo PR cancelando o gate do irmão. O ref sozinho é o estado
+  pré-conserto. As duas metades juntas, ou não é conserto.
 
-  O primeiro ramo é a defesa contra o item se pressupor: sem o arquivo, ele não tem sobre o
-  que falar. O segundo é anti-vacuidade — se o bloco `concurrency:` mudar de forma, o `awk`
-  devolveria string vazia e todos os `grep` seguintes passariam por vacuidade; a linha vazia
-  é falha nomeada, não sucesso.
+  **`cancel-in-progress` desligado sai 0 com nota, não 1.** Sem cancelamento não existe
+  colisão: o item continua fechado, só que por outro mecanismo. Tratar isso como regressão
+  faria o portão exigir uma implementação específica em vez da propriedade.
 
-  O que este comando NÃO decide: se o `schedule` deve existir. Ele mede a colisão, não a
-  política do cron.
+  **Anti-vacuidade:** arquivo ausente ou bloco `concurrency:` sem linha `group:` ⇒ falha
+  alta, nunca "fechado". O `awk` lê o bloco `concurrency:` de topo, não faz `grep` solto —
+  um `github.event_name` em qualquer outro ponto do arquivo (e há: `byok_matrix_weekly` tem
+  um) não pode satisfazer este portão.
 last-verified: 2026-08-31
 ```
 
@@ -8743,63 +8738,68 @@ nomeada no relatório da campanha (`docs/campaigns/RELATORIO-concurrency-global-
 §5, §6 e §8). Não confundir as duas: esta aqui é granularidade de ref; aquela é ausência de
 ref.
 
-Conserto idêntico ao do [B-136]: incluir `github.event_name` no grupo dos cinco.
+**Consertado 2026-08-31 (este PR).** As cinco receberam `${{ github.event_name }}` no grupo —
+a mesma linha do [B-136], nos cinco. Nenhuma teve o `cancel-in-progress` mexido: a pergunta
+"serializar em vez de escopar" continua aberta e legítima, mas escopar fecha a colisão sem
+mudar o custo de nenhuma noturna, então é o reparo de menor efeito colateral.
 
-**O que este item NÃO decide:** se essas cinco lanes deveriam manter `cancel-in-progress`.
-Para uma noturna cara, serializar (`false`) pode ser melhor que escopar — é a pergunta de
-quem pegar o item, e as duas respostas fecham a colisão.
+**População medida antes e depois, não amostrada:** 5 de 5 tinham o grupo sem
+`github.event_name`; 5 de 5 têm agora. Os outros seis workflows escopados pelo #1503
+continuam fora por gatilho único, e os dois restantes pelos dois mecanismos que o corpo já
+registra (`release-slsa3` sem `cancel-in-progress`, `sbom` em `refs/tags/*`).
 
 ```backlog
 id: B-137
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   bash -c 'set -o pipefail
-  n=0; open=0
+  n=0; fechados=0; abertos=""
   for w in byok_kill_switch_drill_weekly byok_matrix_weekly dr-drill-monthly nightly perf-nightly; do
     f=".github/workflows/$w.yml"
-    [ -f "$f" ] || { echo "FALHA: $f nao existe — a lista deste item ficou defasada; reavalie em vez de fechar."; exit 1; }
+    [ -f "$f" ] || { echo "FALHA: $f nao existe — a lista deste item ficou defasada; reavalie em vez de confiar neste portao."; exit 1; }
     n=$((n+1))
     g=$(awk "/^concurrency:/{c=1;next} c&&/^[^ ]/{exit} c&&/^ *group *:/{print;exit}" "$f")
     [ -n "$g" ] || { echo "FALHA: sem linha group: no bloco concurrency de $f — o bloco mudou de forma; releia antes de confiar neste portao."; exit 1; }
     c=$(awk "/^concurrency:/{c=1;next} c&&/^[^ ]/{exit} c&&/^ *cancel-in-progress *:/{print;exit}" "$f")
     ev=$(awk "/^on:/{o=1;next} o&&/^[^ ]/{exit} o&&/^  [a-z_]+:/{gsub(/[ :]/,\"\");print}" "$f" | tr "\n" " ")
-    echo "$g" | grep -q "github.event_name" && continue
-    echo "$c" | grep -q "true" || continue
-    echo "$ev" | grep -q schedule || continue
-    echo "$ev" | grep -q workflow_dispatch || continue
-    open=$((open+1))
+    # Fechada por qualquer um dos tres caminhos, e o verify nao opina sobre qual.
+    if echo "$g" | grep -q "github.event_name"; then
+      # Escopar por evento so vale se o ref continuar la: um grupo com evento e
+      # SEM ref serializa todas as noturnas agendadas entre si.
+      echo "$g" | grep -q "github.ref" || { echo "REGRESSAO em $w: o grupo escopa por evento mas perdeu o ref — grupo=$g"; exit 1; }
+      fechados=$((fechados+1)); continue
+    fi
+    echo "$c" | grep -q "true" || { fechados=$((fechados+1)); continue; }
+    echo "$ev" | grep -q schedule || { fechados=$((fechados+1)); continue; }
+    echo "$ev" | grep -q workflow_dispatch || { fechados=$((fechados+1)); continue; }
+    abertos="$abertos $w"
   done
   [ "$n" -eq 5 ] || { echo "FALHA: esperava 5 workflows na lista e varri $n — reavalie o item."; exit 1; }
-  [ "$open" -gt 0 ] || { echo "FALHA: nenhum dos 5 colide mais (evento no grupo, cancelamento desligado, ou gatilho removido) — feche este item."; exit 1; }
-  echo "aberto: $open de $n noturnas ainda colidem schedule x workflow_dispatch em refs/heads/main"'
+  [ "$fechados" -eq 5 ] || { echo "REGRESSAO: $fechados de $n fechadas; ainda colidem schedule x workflow_dispatch em refs/heads/main:$abertos"; exit 1; }
+  echo "fechado: $fechados de $n noturnas escopadas por evento (ou sem colisao possivel)"'
 verify-means: |
-  open — pelo menos uma das cinco noturnas ainda tem grupo sem `github.event_name`,
-  cancelamento em voo ligado, e os gatilhos `schedule` + `workflow_dispatch` juntos.
+  **Polaridade INVERTIDA (`done`):** sai 0 — fechado — só quando **as cinco** estiverem
+  fechadas. Sai 1 nomeando quais voltaram a colidir.
 
-  O item fecha por **exaustão**, não por amostra: conta quantas ainda colidem e só fica verde
-  enquanto for pelo menos uma. Consertar três das cinco mantém o item aberto com contagem
-  menor, que é o comportamento certo para um item de lista.
+  **Fecha por exaustão, e a inversão preserva isso.** A versão `open` contava quantas ainda
+  colidiam e ficava verde com **pelo menos uma**; a invertida exige `fechados == 5`. Se a
+  polaridade tivesse sido invertida por negação simples do exit code, consertar uma só das
+  cinco fecharia o item — que é exatamente o passe falso que o item original recusava.
 
-  A anti-vacuidade tem **duas** camadas, e a versão anterior deste texto atribuía o trabalho
-  à camada errada. Quem carrega é o guard de existência dentro do laço: apagar ou renomear
-  qualquer um dos cinco aborta no PRIMEIRO ausente, com a mensagem daquele arquivo. Medido
-  por mutação — apagando `nightly.yml` sai *"nightly.yml nao existe"*, e apagando os cinco sai
-  a do primeiro, nunca a de contagem. **Apagar os arquivos nunca fecharia o item**, com ou sem
-  a linha de contagem.
+  **Três caminhos de fechamento por lane, e o portão não opina sobre qual:** evento no grupo,
+  `cancel-in-progress` desligado (serializa em vez de matar), ou gatilho removido. O corpo
+  registra que serializar é resposta legítima para uma noturna cara.
 
-  O `[ "$n" -eq 5 ]` protege contra outra coisa, e por isso fica: se a **lista deste item**
-  for editada para varrer menos workflows, os arquivos continuam existindo, o guard de
-  existência não dispara, e `open=0` reportaria "consertado" sobre lane que ninguém tocou. É
-  redundância contra edição do próprio portão, não contra sumiço de arquivo.
+  **A checagem do ref é a armadilha que este verify fecha.** Um grupo com `github.event_name`
+  e **sem** `github.ref` passaria por "escopado" e faria todas as execuções agendadas caírem
+  no mesmo grupo — colisão pior, com o portão verde. Por isso o caminho "escopado por evento"
+  exige as duas metades.
 
-  Os `continue` são deliberadamente silenciosos porque qualquer um dos três significa que
-  **aquela** lane parou de colidir, por conserto ou por decisão — as duas fecham a colisão, e
-  distinguir qual é trabalho de quem ler a contagem, não do portão.
-
-  O que este comando NÃO decide: se escopar por evento é melhor que desligar o cancelamento.
-  Ele mede a colisão, não escolhe o remédio.
+  **Anti-vacuidade:** arquivo sumido ou `n != 5` ⇒ falha alta com o número lido, nunca
+  "fechado". O `awk` lê o bloco `concurrency:` de topo — `github.event_name` em outro ponto
+  do arquivo não satisfaz o portão.
 last-verified: 2026-08-31
 ```
 
