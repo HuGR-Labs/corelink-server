@@ -8075,7 +8075,7 @@ verify-means: |
 last-verified: 2026-08-31
 ```
 
-### B-138 — a imagem do runner foi assada com `CORELINK_NIGHTLY` e a frota `corelink` não a está servindo
+### B-138 — a imagem do runner nunca foi reassada depois do `corelink-runners#523`
 
 O #1506 tira seis lanes do Mac do dono e as põe em `runs-on: corelink`, confiando que a
 imagem da frota exporta `CORELINK_NIGHTLY` — o nome do nightly datado que ela assa, conforme
@@ -8085,22 +8085,31 @@ imagem da frota exporta `CORELINK_NIGHTLY` — o nome do nightly datado que ela 
 CORELINK_NIGHTLY: the runner image must export CORELINK_NIGHTLY (corelink-runners#523)
 ```
 
-**O `corelink-runners#523` já mergeou** (05:04:33Z de 2026-08-31) e há **três builds de
-imagem verdes depois dele** — 05:09, 05:20 e 05:32. Mesmo assim, re-execuções às
-**05:43:37Z** e **05:43:46Z** — posteriores aos três — falham com a variável **ausente**, em
-dois workflows independentes (`tenant-path`, `corelink-worker`), ambos no label `corelink`,
-servidos pelos runners efêmeros `cf-runner-a408130b` e `cf-runner-ed67570e`.
+A causa não é roll atrasado nem `#523` incompleto. É mais simples e pior: **ninguém assou a
+imagem.**
 
-A conclusão que sobra: **imagem assada não é imagem servida.** A frota `corelink` são
-contêineres efêmeros na Cloudflare, e contêiner não troca de imagem porque um build passou —
-precisa do repin. É o mesmo mecanismo já registrado para os contêineres de produção, onde
-deploy do Worker não reinicia contêiner e só imagem nova substitui.
+| | |
+|---|---|
+| `corelink-runners#523` mergeado | **2026-08-31T05:04:33Z** |
+| último build **da imagem do runner** (`build-cf-container-images.yml`) | **2026-08-24T17:42:01Z** |
 
-**O que este item NÃO decide, e é a primeira pergunta de quem pegá-lo:** se a frota está
-apenas atrasada no roll, ou se a imagem foi assada **sem** a variável apesar do `#523`. Os
-dois produzem exatamente este sintoma e se distinguem inspecionando a imagem que a frota
-serve hoje — não daqui. Registro a ambiguidade em vez de escolher a hipótese mais
-confortável.
+Sete dias **antes**. A imagem que a frota serve hoje é anterior ao `#523` inteiro — sem
+`nightly`, sem `llvm-tools`, sem `cargo-fuzz`. Se o #1506 entrasse assim, moveria seis lanes
+de fuzz para uma box que não as roda.
+
+A confusão que atrasou este diagnóstico vale registro, porque é reutilizável: houve **três
+builds verdes** em `corelink-runners` depois do `#523` — 05:09, 05:20, 05:32 — mas são
+`build-fabricd-image`, que assa `deploy/fabricd`. **Outra imagem.** A do runner sai de
+`build-cf-container-images.yml` (contexto `deploy/runner`), que é `workflow_dispatch`-only.
+Nome parecido, artefato diferente. Foi por isso que duas re-execuções às 05:43:37Z e
+05:43:46Z, "depois dos builds", ainda falharam: aqueles builds não eram desta imagem.
+
+Build disparado às 05:46:32Z (run `33361720897`). Quando ficar verde, aí sim re-rodar o
+#1506 mede alguma coisa; antes disso o vermelho é esperado e re-rodar só queima o Mac.
+
+**O que este item NÃO decide:** se, depois de um build verde, a frota vai **servir** a
+imagem nova. Contêiner efêmero não troca de imagem porque um build passou — precisa do
+repin. Essa é a segunda pergunta, e ela só nasce depois da primeira ser respondida.
 
 Enquanto isso o #1506 fica vermelho, e o vermelho é honesto: o guard novo está acusando uma
 lacuna real. O passo que ele substitui era `echo "$HOME/.rustup/toolchains/nightly-…/bin" >>
@@ -8114,21 +8123,36 @@ owner: tl
 status: open
 verify: manual
 verify-means: |
-  manual — a pergunta é sobre a imagem que a frota `corelink` **serve**, e nada neste
-  repositório a observa. Um `grep` daqui mediria o workflow, não o runner, e ficaria verde
-  por vacuidade enquanto a frota continuasse servindo a imagem velha.
+  manual, e **não** por falta de pergunta objetiva. A primeira pergunta agora é objetiva e
+  responder-se-ia com uma linha:
 
-  Como decidir, em ordem de custo:
+      gh run list --repo HuGR-Labs/corelink-runners \
+        --workflow build-cf-container-images.yml --limit 1 --json createdAt,conclusion
 
-  1. Re-rodar um job de fuzz do #1506 e ler o passo `Put the baked nightly toolchain on
-     PATH`. Se `CORELINK_NIGHTLY` resolver, a frota rolou e este item fecha.
-  2. Se persistir, comparar a imagem fixada para a frota `corelink` com a produzida pelo
-     último build verde de `corelink-runners`. Divergência = roll pendente; convergência com
-     a variável ausente = a imagem foi assada sem ela, e o defeito é do `#523`, não do
-     deploy.
+  comparado com o `mergedAt` do `corelink-runners#523` (2026-08-31T05:04:33Z). Build verde
+  posterior = primeiro degrau vencido.
 
-  Não fechar por "o #1506 ficou verde" sozinho: se alguém reverter o `runs-on: corelink` de
-  volta para o Mac, o PR fica verde e este item continua **aberto** — a frota seguiria sem a
-  variável para toda lane futura que dependa dela.
+  **Mas esse comando não pode virar `verify` automático**, e o motivo está escrito no próprio
+  `backlog-verify.yml`: o token do Actions é escopado a ESTE repositório. Uma consulta a
+  `corelink-runners` receberia 403 no CI e produziria um vermelho que não diz nada sobre o
+  item — a mesma razão pela qual todo item sobre repo irmão aqui é `manual`. Automatizar
+  daria a aparência de rigor com um portão que mede permissão, não realidade.
+
+  Escada de decisão, em ordem de custo:
+
+  1. A imagem foi assada depois do `#523`? Comando acima. Se não, o item está aberto e não há
+     mais nada a medir.
+  2. Se sim, re-rodar um job de fuzz do #1506 e ler o passo `Put the baked nightly toolchain
+     on PATH`. Se `CORELINK_NIGHTLY` resolver, fecha.
+  3. Se persistir **depois** de um build verde, aí é repin/roll da frota — pergunta
+     genuinamente irrespondível deste repositório, e o item continua manual por mérito.
+
+  **Não fechar por "o #1506 ficou verde" sozinho.** Se alguém reverter o `runs-on: corelink`
+  de volta para o Mac, o PR fica verde e a frota segue sem a variável para toda lane futura
+  que dependa dela. O item é sobre a imagem, não sobre o PR.
+
+  **Não confundir `build-fabricd-image` com `build-cf-container-images`.** Foi exatamente
+  esse erro que produziu o diagnóstico errado de "frota atrasada no roll", e o comando do
+  degrau 1 é escrito com `--workflow` explícito por isso.
 last-verified: 2026-08-31
 ```
