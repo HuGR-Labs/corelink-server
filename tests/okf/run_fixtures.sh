@@ -334,6 +334,195 @@ EOF
   rm -rf "$tmp"
 }
 
+# --- C5c: a MOVED blob anchor must be paid for with renumbering (B-123) --------
+# The defect: `cited_range_drifted` short-circuits when the working tree's blob
+# equals the `source_blobs` anchor, so re-pointing the anchor at the file as it
+# is NOW makes C5 compare the file with ITSELF and every citation to it goes
+# vacuously green, whatever line it names. Measured 2026-08-30: #1389 shipped 17
+# of 18 wrong `main.rs` citations and #1393 16 more, `0 stale` throughout.
+#
+# Harness: commit a concept blob-anchored on src.txt citing line 3; then a PR
+# commit that inserts a line at the top (so the content moves to 4) and advances
+# the anchor. POSITIVE — citation left at 3 -> [C5c] MUST fire. NEGATIVE control —
+# citation renumbered to 4 -> [C5c] MUST NOT fire, because renumbering is exactly
+# the work the check is demanding and a gate that fires on the correct fix too is
+# worthless.
+assert_c5c() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    # Distinct lines: the shift must be UNIQUELY locatable by content.
+    printf 'alpha\nbeta\ngamma\ndelta\nepsilon\nzeta\n' > src.txt
+    git add src.txt
+    git commit -q -m base
+    sha0="$(git rev-parse HEAD)"
+    blob0="$(git hash-object src.txt)"
+
+    mkdir -p docs/knowledge/auth
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [x](/auth/x.md)
+EOF
+    write_concept() {  # $1 = cited range, $2 = blob anchor, $3 = lead sentence
+      cat > docs/knowledge/auth/x.md <<EOF
+---
+type: "AuthMechanism"
+title: "Anchor re-verification (git harness)"
+description: "the anchor moves; the citation must move with it."
+source_files:
+  - "src.txt"
+source_blobs:
+  - "src.txt@$2"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# Anchor re-verification (git harness)
+
+$3
+
+# How it works
+- the source anchor line (\`src.txt:$1\`).
+
+# Invariants
+- the anchor stays present (\`src.txt:$1\`).
+
+# Citations
+1. \`src.txt:$1\` — the anchor.
+EOF
+    }
+    write_concept 3 "$blob0" "Lead paragraph as first authored."
+    git add -A
+    git commit -q -m A
+    sha_a="$(git rev-parse HEAD)"
+
+    # PR commit: gamma slides from line 3 to line 4.
+    printf 'PREPENDED\nalpha\nbeta\ngamma\ndelta\nepsilon\nzeta\n' > src.txt
+    blob1="$(git hash-object -w src.txt)"
+
+    # POSITIVE: anchor advanced, citation left behind. The body edit is there so
+    # this is a C5c finding and not a C5b phantom-reconcile finding.
+    write_concept 3 "$blob1" "Lead paragraph edited so C5b is satisfied."
+    git add -A
+    git commit -q -m B
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" --base-ref "$sha_a" > "$tmp/.pos_out" 2>&1 || true
+
+    # NEGATIVE: same anchor advance, citation renumbered to where gamma now is.
+    write_concept 4 "$blob1" "Lead paragraph edited so C5b is satisfied."
+    git add -A
+    git commit -q -m C
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" --base-ref "$sha_a" > "$tmp/.neg_out" 2>&1 || true
+  )
+
+  total=$((total + 1))
+  if grep -q '^\[C5c\]' "$tmp/.pos_out" 2>/dev/null; then
+    ok "C5c git-harness: advanced anchor + un-renumbered citation fires [C5c]"
+  else
+    miss "C5c git-harness positive (no [C5c]): $(tail -1 "$tmp/.pos_out" 2>/dev/null)" "C5c-pos"
+  fi
+  total=$((total + 1))
+  if grep -q '^\[C5c\]' "$tmp/.neg_out" 2>/dev/null; then
+    miss "C5c negative control fired [C5c] on a correctly renumbered citation" "C5c-neg"
+  else
+    ok "C5c git-harness: renumbered citation does NOT fire [C5c] (negative control)"
+  fi
+  rm -rf "$tmp"
+}
+
+# --- abbreviated citations are first-class (B-059) ----------------------------
+# `CITE_RE` used to require a non-empty path, so the bare `:N-M` continuation
+# form the wiki writes after naming a path was dropped by `_collect_cites` and
+# checked by NOTHING. Measured on this corpus at the time of the fix: 107 such
+# citations across 20 concepts, invisible to C3/C5/C6.
+#
+# POSITIVE: an abbreviated citation past EOF must fire [C6]. NEGATIVE control: an
+# in-bounds abbreviated citation must not — otherwise the fix would just be a new
+# way to be red. Also asserts the BARE-PATH referent arm (a path named without a
+# line number is what the following `:N` continues from).
+assert_abbrev_cites() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    printf 'alpha\nbeta\ngamma\ndelta\n' > src.txt
+    git add src.txt
+    git commit -q -m base
+    sha0="$(git rev-parse HEAD)"
+
+    mkdir -p docs/knowledge/auth
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [x](/auth/x.md)
+EOF
+    write_abbrev() {  # $1 = abbreviated range
+      cat > docs/knowledge/auth/x.md <<EOF
+---
+type: "AuthMechanism"
+title: "Abbreviated citation (git harness)"
+description: "the bare continuation form is a citation like any other."
+source_files:
+  - "src.txt"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# Abbreviated citation (git harness)
+
+The referent is named without a line number — \`src.txt\` — and continued
+abbreviated below, which is how the wiki avoids repeating a long path.
+
+# How it works
+- the source anchor line (\`src.txt:1\`), continued at \`:$1\`.
+
+# Invariants
+- the anchor stays present (\`src.txt:1\`).
+
+# Citations
+1. \`src.txt:1\` — the anchor.
+EOF
+    }
+    write_abbrev 99
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" --base-ref "$sha0" > "$tmp/.pos_out" 2>&1 || true
+    write_abbrev 3
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" --base-ref "$sha0" > "$tmp/.neg_out" 2>&1 || true
+  )
+
+  total=$((total + 1))
+  if grep -q 'src.txt:99' "$tmp/.pos_out" 2>/dev/null; then
+    ok "abbreviated cite: out-of-bounds \`:99\` is SEEN and reported"
+  else
+    miss "abbreviated cite positive: \`:99\` invisible to the gate" "abbrev-pos"
+  fi
+  total=$((total + 1))
+  if grep -q '^✅' "$tmp/.neg_out" 2>/dev/null; then
+    ok "abbreviated cite: in-bounds \`:3\` passes (negative control)"
+  else
+    miss "abbreviated cite negative control failed: $(tail -1 "$tmp/.neg_out" 2>/dev/null)" "abbrev-neg"
+  fi
+  rm -rf "$tmp"
+}
+
 # --- C5b orphaned-checkpoint REPAIR exemption ---------------------------------
 # When the PREVIOUS checkpoint_sha (the base-ref version) is not an ancestor of
 # the base ref, it is an ORPHANED pointer (a pre-merge branch tip git rewrote at
@@ -3353,6 +3542,8 @@ assert_c4b_entry_shapes
 assert_c4b_blob_must_be_reachable
 assert_c5b
 assert_c5b_orphan_exempt
+assert_c5c
+assert_abbrev_cites
 assert_c4_squash_orphan_tolerant
 assert_c4_orphan_no_base_fail_closed
 assert_bad C6  C6  --bundle "$FIX/bad/C6"  --manifest "$NONE"
