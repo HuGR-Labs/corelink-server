@@ -57,7 +57,7 @@ shipped). It speaks the bazel-remote-cache protocol over REST (Bazel
 REAPI v2), ships across 4 regions with active-active failover,
 and we are at the tail end of a 60-day GA gate that requires us to recruit
 3 lighthouse customers — one of those slots is reserved for an OSS project
-that uses Bazel or Buck2 in real CI traffic.
+that uses Bazel in real CI traffic. (Buck2 is gRPC-only and cannot connect to CoreLink today — see the roadmap note above.)
 
 The offer is:
   • 6 months free on our Team tier

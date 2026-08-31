@@ -10,7 +10,7 @@ Hi Product Hunt — Gustavo here, founder of HuGR Labs and Maker of CoreLink.
 
 Quick context on what we're shipping and why we think it matters.
 
-**What CoreLink is.** A multi-tenant, content-addressable remote cache built on Cloudflare's edge, designed as a drop-in for Bazel, Buck2, and Remote Build Execution workloads. We are conformant with the REAPI family, which means most existing Bazel / Buck2 configurations work with a `--remote_cache` URL change.
+**What CoreLink is.** A multi-tenant, content-addressable remote cache built on Cloudflare's edge, designed as a drop-in for Bazel. We serve REAPI v2 over **HTTP/REST**, which means most existing Bazel configurations work with a `--remote_cache` URL change. We serve no gRPC, so Buck2, Pants and NativeLink — which speak REAPI over gRPC only — cannot connect today.
 
 **What's actually different.** Three things, in order of how much we agonized over them:
 
@@ -18,7 +18,7 @@ Quick context on what we're shipping and why we think it matters.
 2. **BYOK is real on AWS KMS** (GCP KMS, Azure Key Vault, and HashiCorp Vault are on the roadmap). Customer-managed kill switch. Verifiable crypto-erasure (a customer-served Ed25519 attestation is on the roadmap). The vendor cannot read your bytes unilaterally — that's the property, not the marketing.
 3. **Engineering gate separated from launch.** We split GA into a binary engineering gate (PRR + pentest + 30d staging + 3 lighthouse customers attested) and a soft-gate launch orchestration (this post, the press release, the blog series). The engineering gate is binary, unappealable, and gated the launch — not the other way around.
 
-**Who it's for.** Build-heavy engineering teams running Bazel or Buck2 at scale, particularly teams with residency, BYOK, or audit requirements that existing remote caches paper over.
+**Who it's for.** Build-heavy engineering teams running Bazel at scale, particularly teams with residency, BYOK, or audit requirements that existing remote caches paper over.
 
 **What we'd love from you.** Honest technical questions. We'll answer in this thread. If you're a Bazel / Buck2 / RBE practitioner and CoreLink intersects something you actually do, we want the rough-edge feedback.
 

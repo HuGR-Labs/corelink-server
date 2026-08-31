@@ -62,7 +62,7 @@
     font-family="system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif"
     font-size="36"
     font-weight="400"
-    fill="#94A3B8">Bazel · Buck2 · Cargo · npm · OCI</text>
+    fill="#94A3B8">Bazel · Cargo · npm · OCI</text>
 
   <!-- Accent separator -->
   <rect x="112" y="415" width="120" height="3" fill="#22D3EE" rx="1.5"/>

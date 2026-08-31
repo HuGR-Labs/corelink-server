@@ -478,7 +478,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 - **Single-pipeline pilot:** D+0 sign → D+1 first cache write → D+7 measurable hit ratio → D+14 cutover-ready.
 - **Full monorepo cutover:** D+0 → D+30 (the lighthouse playbook timeline; runs in parallel with attestation).
-- **Multi-team enterprise migration:** D+0 → D+60–90 depending on team count and tooling heterogeneity (Bazel + Buck2 + Pants + Gradle in the same shop is the typical worst case).
+- **Multi-team enterprise migration:** D+0 → D+60–90 depending on team count and tooling heterogeneity (Bazel + Gradle + a home-grown HTTP cache in the same shop is the typical worst case; the Buck2 and Pants teams in such a shop cannot migrate at all today — both are gRPC-only).
 
 The mirror-then-cutover pattern means you're not blocked on full cutover to get value — you start measuring hit ratio and latency from D+1.
 

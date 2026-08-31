@@ -17,7 +17,7 @@ Three 1280×640 PNG social-preview images for HuGR CoreLink repos.
 | File                        | Repo                                     | Title              | Subtitle                                           |
 |-----------------------------|------------------------------------------|--------------------|----------------------------------------------------|
 | `corelink-server.png`       | `HuGR-Labs/corelink-server`           | CoreLink           | REAPI v2 build cache. BYOK. Verifiable audit log.  |
-| `corelink-cli.png`          | `HuGR-Labs/corelink-cli`              | corelink CLI       | Bazel · Buck2 · Cargo · npm · OCI                  |
+| `corelink-cli.png`          | `HuGR-Labs/corelink-cli`              | corelink CLI       | Bazel · Cargo · npm · OCI                          |
 | `corelink-bazel-example.png`| `HuGR-Labs/corelink-bazel-example`    | CoreLink + Bazel   | 5-minute setup walkthrough                         |
 
 ## Regen from scratch (macOS)

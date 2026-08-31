@@ -58,7 +58,7 @@ GA · May 2026
 
 **Voiceover (~18s):**
 
-> "CoreLink is a multi-tenant content-addressable cache for Bazel, Buck2, container images, and ML model weights — with per-tenant audit trails, customer-managed encryption keys across four providers, and a region-pinning model that respects data residency. In the next five minutes, we'll walk a brand-new tenant from signup to a production-grade BYOK configuration."
+> "CoreLink is a multi-tenant content-addressable cache for Bazel, container images, and ML model weights — with per-tenant audit trails, customer-managed encryption keys across four providers, and a region-pinning model that respects data residency. In the next five minutes, we'll walk a brand-new tenant from signup to a production-grade BYOK configuration."
 
 **Cut:** crossfade into the admin UI sign-in page (`/sign-in`).
 

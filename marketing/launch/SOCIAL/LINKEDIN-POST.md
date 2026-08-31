@@ -8,7 +8,7 @@
 
 Today is the day CoreLink, HuGR Labs' first commercial product, reaches General Availability.
 
-For background: CoreLink is a multi-tenant, content-addressable remote cache built on Cloudflare's edge platform, designed as a drop-in for Bazel, Buck2, and Remote Build Execution workloads. It is, in 2026, the cache for teams that have outgrown the "single-tenant SaaS or self-host" dichotomy.
+For background: CoreLink is a multi-tenant, content-addressable remote cache built on Cloudflare's edge platform, designed as a drop-in for Bazel and other REAPI-over-HTTP workloads. There is no gRPC ingress, so gRPC-only clients (Buck2, Pants, NativeLink) cannot connect today. It is, in 2026, the cache for teams that have outgrown the "single-tenant SaaS or self-host" dichotomy.
 
 Some technical decisions I am proud of, in the order I am proud of them:
 
@@ -31,7 +31,7 @@ If your build cache is the bottleneck in your inner loop, I would like to hear f
 — Gustavo
 Founder, HuGR Labs
 
-#CoreLink #DevInfra #Bazel #Buck2 #RemoteCache #FormalVerification #BYOK
+#CoreLink #DevInfra #Bazel #RemoteCache #FormalVerification #BYOK
 
 ---
 

@@ -68,7 +68,7 @@
 
 > Looking for:
 >
-> - Build infra teams on Bazel / Buck2 / Pants / Nix
+> - Build infra teams on Bazel or Nix (Buck2 / Pants are gRPC-only — not supported today)
 > - Docker / OCI registry operators
 > - ML platform teams shipping content-addressed model registries
 > - Internal package registry maintainers (npm / PyPI / cargo)

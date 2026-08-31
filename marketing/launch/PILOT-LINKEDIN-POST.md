@@ -10,7 +10,7 @@
 
 > Today we are opening pilot enrolment for CoreLink.
 >
-> CoreLink is a shared, tenant-isolated, content-addressable cache. It is REAPI-compatible (Bazel, Buck2, Pants, Remote Build Execution) and exposes a generic content-addressable API for any workload that benefits from cryptographic addressing and dedup — Docker layer caches, Nix store mirrors, internal package registries (npm / PyPI / cargo / Maven), and ML model and dataset registries.
+> CoreLink is a shared, tenant-isolated, content-addressable cache. It serves REAPI v2 over HTTP/REST — Bazel speaks that natively; Buck2 and Pants speak REAPI over gRPC only and cannot connect today. It also exposes a generic content-addressable API for any workload that benefits from cryptographic addressing and dedup — Docker layer caches, Nix store mirrors, internal package registries (npm / PyPI / cargo / Maven), and ML model and dataset registries.
 >
 > Three properties are not optional in our design:
 >
@@ -26,7 +26,7 @@
 >
 > 10 slots. Token-gated signup. Apply at `corelink-docs.humangr.com/pilot/apply`.
 >
-> We need ≥3 active pilots before we cut GA. If your team runs Bazel / Buck2 / Pants / Nix remote caches, a Docker / OCI registry, an ML model registry, or an internal package mirror, this is the call.
+> We need ≥3 active pilots before we cut GA. If your team runs Bazel or Nix remote caches, a Docker / OCI registry, an ML model registry, or an internal package mirror, this is the call.
 
 ---
 

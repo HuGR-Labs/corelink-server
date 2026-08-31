@@ -176,7 +176,7 @@ There are conversations we will lose on purpose and the customer should win:
 - **HIPAA / PHI workloads.** Out of scope by design. Do not push us in. See FAQ C5.
 - **FedRAMP-required deployments.** We don't have it and don't have a 12-18 month plan to get it. NIST 800-53 Rev 5 crosswalk at 87% today, informational only. See FAQ C7.
 - **Air-gapped on-prem.** On-prem and self-hosted offerings are post-GA roadmap; we don't ship them today.
-- **Customers whose primary build tool is not in {Bazel, Buck2, Pants, generic-HTTP-CAS-client}.** We won't admit a lighthouse customer if integration requires new product work. Lower-tier paid customers are welcome to use the HTTP/REAPI surface; we just won't promise a built-in integration we don't have.
+- **Customers whose primary build tool is not in {Bazel, generic-HTTP-CAS-client}.** (Buck2 and Pants are gRPC-only REAPI clients and cannot connect to CoreLink today — do not count them as in-scope.) We won't admit a lighthouse customer if integration requires new product work. Lower-tier paid customers are welcome to use the HTTP/REAPI surface; we just won't promise a built-in integration we don't have.
 - **Customers who need explicit cross-tenant deduplication via convergent encryption.** We deliberately do not do this — cross-tenant ciphertext convergence is a side channel. If you want convergent dedup across tenants, we're a no.
 
 ---

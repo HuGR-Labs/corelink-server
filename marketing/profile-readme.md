@@ -13,7 +13,7 @@ roadmap). RFC-6962-style audit chain
 + Durable Objects + Containers + R2 + D1. Free tier: 10 GB / 500k req/mo.
 
 **[corelink-cli](https://github.com/HuGR-Labs/corelink-cli)**
-Install in one line; drop into any Bazel, Buck2, Cargo, Docker, or ML
+Install in one line; drop into any Bazel, Cargo, Docker, or ML
 pipeline. Cross-compiled binaries for Linux x64/arm64, macOS arm64/x64,
 and Alpine. Zero config after `corelink login` — it saves your token and
 resolves your tenant; `corelink bazel-init` wires a Bazel repo in one shot.

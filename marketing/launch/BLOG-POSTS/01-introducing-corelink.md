@@ -28,7 +28,9 @@ Each of these is a serious project, and we recommend any of them to teams whose 
 
 ## What CoreLink is
 
-CoreLink is a multi-tenant, content-addressable cache built on Cloudflare's global edge platform, designed to be a drop-in remote cache for Bazel, Buck2, and Remote Build Execution (REAPI-conformant) workloads. It ships, today, at General Availability after twenty-one engineering sprints, an external pentest with post-remediation retest, thirty days of sustained staging, and three lighthouse customer attestations.
+CoreLink is a multi-tenant, content-addressable cache built on Cloudflare's global edge platform, designed to be a drop-in remote cache for Bazel and other clients that speak REAPI v2 over HTTP/REST. There is no gRPC ingress, so Buck2, Pants and NativeLink cannot use it today.
+
+> **Two claims were removed from this paragraph.** It previously said CoreLink shipped "after … an external pentest with post-remediation retest … and three lighthouse customer attestations." No external pentest has been commissioned (`reports/pentest-rfp-tracker.json`: every vendor `NOT_CONTACTED`). Neither claim may be reinstated without evidence.
 
 CoreLink is opinionated in three places where the existing market is not.
 
@@ -42,7 +44,7 @@ Third, **BYOK is real.** AWS KMS is available at GA (GCP Cloud KMS, Azure Key Va
 
 CoreLink targets four overlapping audiences.
 
-- **Build-heavy engineering teams** running Bazel or Buck2 at scale, particularly those whose CI is bottlenecked on download bandwidth rather than compute.
+- **Build-heavy engineering teams** running Bazel at scale, particularly those whose CI is bottlenecked on download bandwidth rather than compute.
 - **Regulated-industry developer infrastructure groups** that need residency, BYOK, and an auditable substrate for any caching layer they introduce into the SDLC.
 - **OSS maintainers** of large polyglot monorepos who want the operational simplicity of a managed cache without surrendering control over residency or erasure.
 - **Procurement teams** evaluating remote-cache vendors against modern compliance baselines: GDPR, Schrems II, LGPD, SOC 2, and the crypto-sovereignty requirements that increasingly follow them.
@@ -104,7 +106,7 @@ Phase 2 — Remote Execution — opens in the next sprint cycle and brings execu
 
 ## Get started in five minutes
 
-If you have a working Bazel or Buck2 toolchain, the on-ramp is short. Sign up at `humangr.com/corelink/sign-up`, generate a project token, drop two lines into your `.bazelrc` (or the Buck2 equivalent), and re-run your build. The first run populates the cache; the second tells you whether the latency story we are claiming is the latency story you measure.
+If you have a working Bazel toolchain, the on-ramp is short. Sign up at `humangr.com/corelink/sign-up`, generate a project token, drop two lines into your `.bazelrc`, and re-run your build. (There is no Buck2 equivalent to offer: Buck2's cache client is gRPC-only.) The first run populates the cache; the second tells you whether the latency story we are claiming is the latency story you measure.
 
 - **Sign up:** `humangr.com/corelink/sign-up`
 - **Docs:** `corelink-docs.humangr.com`

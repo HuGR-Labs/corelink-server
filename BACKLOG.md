@@ -5047,35 +5047,74 @@ O aviso correto existe, está escrito, e não alcançou o comunicado. É a forma
 do padrão de [B-101]: falha de propagação, não de conhecimento. Reparo: remover as
 afirmações e o marcador `[CEO_NAME]`, propagando o texto que o `PROOF-POINTS.md` já tem.
 
+**Fechado 2026-08-31 (PR WP-C).** O comunicado passou a declarar, no lugar do bullet
+afirmativo, que **nenhum pentest externo foi contratado**, citando o tracker (todo vendor
+`NOT_CONTACTED`, `rfp_sent_date: null`), a página pública que já dizia isso
+(`apps/docs/docs/explanation/compliance/pentest-summary.mdx`: *"No vendor has been
+contracted"*) e o §2.12 do `PROOF-POINTS.md`. A afirmação também saiu do sub-título e da
+citação do CEO, com o texto retirado transcrito no lugar para que a reversão seja visível
+em vez de silenciosa. O marcador `[CEO_NAME]` saiu das três posições, substituído por uma
+instrução explícita de que a atribuição precisa ser fornecida e aprovada pela pessoa antes
+da distribuição. A mesma afirmação saiu de
+`marketing/launch/BLOG-POSTS/01-introducing-corelink.md`, que dizia que o produto enviava
+"after … an external pentest with post-remediation retest".
+
 ```backlog
 id: B-088
 repo: corelink-server
 owner: owner
-status: open
+status: done
 verify: |
   bash -c 'p=marketing/launch/PRESS-RELEASE.md
   t=reports/pentest-rfp-tracker.json
-  [ -f "$p" ] || { echo "FALHA: o press release sumiu — feche o item."; exit 1; }
-  afirma=0; grep -qiE "external pentest|pentest.*clean" "$p" && afirma=1
+  [ -f "$p" ] || { echo "FALHA: o press release sumiu — o reparo nao pode ser verificado."; exit 1; }
+  n=$(wc -l < "$p" | tr -d " ")
+  [ "$n" -gt 50 ] || { echo "FALHA: o press release tem so $n linhas — o comando perdeu o objeto e nao pode concluir ausencia."; exit 1; }
+  neg=$(grep -c "No external pentest has been commissioned" "$p" | tr -d " ")
+  [ "$neg" -gt 0 ] || { echo "FALHA: o comunicado nao declara mais que nenhum pentest externo foi contratado — o reparo regrediu."; exit 1; }
   ceo=0; grep -q "CEO_NAME" "$p" && ceo=1
-  contratado=0
-  if [ -f "$t" ]; then grep -qE "\"rfp_sent_date\"[[:space:]]*:[[:space:]]*\"" "$t" && contratado=1; fi
-  if [ "$afirma" = 0 ] && [ "$ceo" = 0 ]; then
-    echo "FALHA: o comunicado nao afirma mais pentest nem carrega CEO_NAME — feche o item."; exit 1; fi
-  if [ "$contratado" = 1 ]; then
-    echo "FALHA: o tracker registra RFP enviada — reavalie: talvez o pentest exista agora."; exit 1; fi
-  echo "aberto: comunicado afirma_pentest=$afirma tem_CEO_NAME=$ceo e o tracker nao registra nenhuma RFP enviada"'
+  [ "$ceo" = 0 ] || { echo "FALHA: o marcador CEO_NAME voltou ao comunicado — o reparo regrediu."; exit 1; }
+  af=0; grep -qE "\\*\\*External pentest, clean\\.\\*\\*" "$p" && af=1
+  [ "$af" = 0 ] || { echo "FALHA: o bullet afirmativo de pentest limpo voltou — o reparo regrediu."; exit 1; }
+  echo "done: o comunicado declara a ausencia de pentest externo, nao carrega CEO_NAME e nao traz o bullet afirmativo"'
 verify-means: |
-  open — o comunicado ainda afirma pentest externo (ou ainda carrega o marcador
-  `[CEO_NAME]`) E o tracker não registra nenhuma RFP efetivamente enviada.
+  done — polaridade INVERTIDA em relação à versão `open`. Agora falha se a declaração de
+  ausência sair, se o marcador `CEO_NAME` voltar, ou se o bullet afirmativo
+  (`**External pentest, clean.**`) reaparecer. Deixar a polaridade `open` passaria no PR
+  do reparo e vermelharia o merge seguinte.
 
-  Vira DRIFTED por qualquer um dos dois reparos: remover as afirmações do comunicado (o
-  imediato), ou de fato contratar o pentest e registrar no tracker (o caro). A segunda
-  saída é legítima e por isso o comando a detecta em vez de ignorá-la.
+  Duas escolhas de desenho merecem registro, porque as duas nasceram de erro:
 
-  O que NÃO decide: se o comunicado já foi distribuído a jornalistas ou prospects. Fora
-  do repositório, pertence ao owner.
-last-verified: 2026-08-30
+  1. **Gateio a frase de negação, não a ausência da string "external pentest".** O texto
+     corrigido PRECISA dizer "No external pentest has been commissioned" — a string
+     "external pentest" está lá de propósito. Um comando que proibisse a string proibiria
+     a retratação junto com a afirmação. É a mesma armadilha que apareceu em [B-085].
+  2. **O bullet afirmativo é gateado pela forma em negrito** (`**External pentest,
+     clean.**`), que é como ele aparecia. O parágrafo de retratação cita a frase antiga
+     entre aspas em itálico, sem os asteriscos, e por isso não dispara o gate.
+
+  A contagem de linhas do arquivo é o **controle do instrumento**: um comunicado
+  esvaziado ou truncado passaria em todos os testes de ausência. Ele falha em vez de
+  declarar vitória sobre um arquivo vazio.
+
+  O que NÃO decide, e admito, em quatro pontos:
+
+  1. Se o comunicado já foi distribuído a jornalistas ou prospects. Fora do repositório,
+     pertence ao owner. O cabeçalho diz `NOT FOR DISTRIBUTION` até o embargo, mas isso é
+     uma instrução, não uma prova.
+  2. As demais afirmações não verificadas do mesmo comunicado, que este item não cobre e
+     que continuam lá: "three lighthouse customers attested", "24/7 incident response"
+     com rotações PagerDuty em três regiões, "SBOM published, signed", "SOC 2 gap analysis
+     delivered", e os quatro depoimentos de clientes com placeholders. Cada um merece
+     medição própria; nenhum foi medido aqui.
+  3. A mesma afirmação de pentest em `marketing/sales/PROOF-POINTS.md` §2.15
+     ("Rekor transparency-log entries per release"), que contradiz o `STA-11.1` do CAIQ —
+     agora "N", "no transparency-log entry has ever been created". É achado adjacente,
+     não é deste item, e precisa de item próprio.
+  4. Se remover o marcador `CEO_NAME` é suficiente: o comunicado ainda carrega
+     `[CITY]`, `[DATE]`, `[FOUNDER_NAME(S)]`, `[HQ_LOCATION]`, `[INVESTOR_PLACEHOLDERS]` e
+     outros. São slots normais de rascunho, mas nenhum deles pode ir ao fio.
+last-verified: 2026-08-31
 ```
 
 ### B-089 — o SLA promete créditos automáticos como remédio exclusivo e não existe código que emita crédito
@@ -5342,43 +5381,91 @@ repositório sobre hostnames publicados que não resolvem.
 Reparo: alinhar o material ao que existe (REAPI v2 sobre REST, sem Buck2), ou registrar o
 gRPC como roadmap explícito em vez de capacidade presente.
 
+**Fechado 2026-08-31 (PR WP-C).** Corrigi 20 arquivos de `marketing/` que vendiam Buck2 e
+RBE como clientes suportados — os dois READMEs de organização, os cinco materiais de
+piloto, os três posts sociais, os quatro do Product Hunt, o blog de lançamento, o roteiro
+de demo, a matriz competitiva, o FAQ de vendas, o case-study OSS, o e-mail de outreach, o
+comunicado, e o OG asset do CLI. Cada um passa a dizer o que o produto FAZ: REAPI v2 sobre
+HTTP/REST, que o Bazel fala nativamente, sem ingresso gRPC — e por isso Buck2, Pants e
+NativeLink não conectam.
+
+As menções que sobraram foram lidas uma a uma e são legítimas: o card `near-ready` do
+`corelink-feature-catalog.html` (roadmap corretamente rotulado, "not yet mounted"), a
+pergunta do `API-STABILITY-FAQ.md` respondida com "REST-only", as três seções de "not
+supported today" do `CUSTOMER-PLAYBOOK.md`, listas de público-alvo, métricas de menção na
+imprensa, descrições de concorrente, e o rádio de formulário que pergunta a ferramenta do
+prospect. Fecho com essa nota em vez de reescrever o comando para ignorá-las, como o
+`verify-means` da versão `open` mandava.
+
 ```backlog
 id: B-094
 repo: corelink-server
 owner: owner
-status: open
+status: done
 verify: |
   bash -c 'b=crates/corelink-container/src/routes/bazel_v2.rs
-  [ -f "$b" ] || { echo "FALHA: bazel_v2.rs sumiu — reavalie o item."; exit 1; }
+  [ -f "$b" ] || { echo "FALHA: bazel_v2.rs sumiu — o reparo nao pode ser verificado."; exit 1; }
   admite=0; grep -qi "Buck2 cannot use these routes" "$b" && admite=1
-  [ "$admite" = 1 ] || { echo "FALHA: o codigo nao admite mais que Buck2 nao conecta — reavalie: o gRPC pode existir agora."; exit 1; }
-  promete=$(grep -rliE "buck2|gRPC" marketing/ 2>/dev/null | wc -l | tr -d " ")
-  [ "$promete" -gt 0 ] || { echo "FALHA: o material comercial nao promete mais gRPC/Buck2 — feche o item."; exit 1; }
-  echo "aberto: bazel_v2.rs admite que Buck2 nao conecta e $promete arquivo(s) de marketing prometem gRPC/Buck2"'
+  [ "$admite" = 1 ] || { echo "FALHA: o codigo nao admite mais que Buck2 nao conecta — reavalie: o gRPC pode existir agora, e ai o material deve VOLTAR a prometer."; exit 1; }
+  corpus=$(grep -rliE "buck2|grpc" marketing/ 2>/dev/null | wc -l | tr -d " ")
+  [ "$corpus" -gt 10 ] || { echo "FALHA: so $corpus arquivo(s) de marketing mencionam buck2/grpc — o comando perdeu o corpus e nao pode concluir ausencia."; exit 1; }
+  ressalva=$(grep -rliE "no gRPC ingress|gRPC-only|serves no gRPC|has no gRPC|REST-only|not supported today" marketing/ 2>/dev/null | wc -l | tr -d " ")
+  [ "$ressalva" -gt 10 ] || { echo "FALHA: so $ressalva arquivo(s) de marketing carregam a ressalva de gRPC ausente — o reparo regrediu."; exit 1; }
+  frases=$(grep -rlE "REAPI-compatible \\(Bazel|Bazel, Buck2, and (RBE|Remote Build Execution)|Bazel, Buck2, Cargo|drop into any Bazel, Buck2|REAPI-compatible for Bazel|Bazel / Buck2 configurations work" marketing/ 2>/dev/null | wc -l | tr -d " ")
+  [ "$frases" = 0 ] || { echo "FALHA: $frases arquivo(s) voltaram a prometer Buck2 como cliente suportado — o reparo regrediu."; exit 1; }
+  echo "done: $corpus arquivos citam buck2/grpc, $ressalva carregam a ressalva, e nenhuma das frases de promessa retirada voltou"'
 verify-means: |
-  open — não há implementação gRPC no workspace E o material comercial ainda menciona
-  gRPC ou Buck2.
+  done — polaridade INVERTIDA em relação à versão `open`. Deixar a polaridade `open`
+  passaria no PR do reparo e vermelharia o merge seguinte.
 
-  Vira DRIFTED por qualquer um dos dois reparos: corrigir o material (imediato), ou
-  implementar um servidor gRPC (caro, e é decisão de produto) — neste segundo caso a
-  linha de admissão do `bazel_v2.rs` sai junto e o comando falha por ali.
+  A primeira metade é herdada e continua sendo o **âncora do item**: se o `bazel_v2.rs`
+  parar de admitir que Buck2 não conecta, o gRPC pode ter passado a existir — e nesse caso
+  o material comercial deve VOLTAR a prometê-lo. O comando falha para forçar a releitura
+  em vez de silenciosamente aprovar um material que virou pessimista demais.
 
-  NÃO tento detectar "existe gRPC no workspace" automaticamente, e a razão é medida: as
-  duas tentativas anteriores falsearam. Grepar `tonic` casa os comentários que dizem que
-  gRPC NÃO está lá (`INV-BAZEL-NO-GRPC`), e `tonic` é dependência real do
-  `corelink-container` e do `corelink-reapi`; grepar `Server::builder()` casa o
-  middleware de timing-padding do axum. Nenhum predicado barato separa a máquina de gRPC
-  presente no workspace de um servidor gRPC servido ao cliente. Gateio no que é estável e
-  autoritativo: a admissão no código e a promessa no material.
+  As duas metades do meio são **controle do instrumento**, e existem porque as três
+  varreduras deste item podem devolver vazio por motivos opostos: exigem que o corpus de
+  `marketing/` ainda cite `buck2`/`grpc` em mais de 10 arquivos, e que mais de 10 arquivos
+  carreguem a ressalva ("no gRPC ingress" / "gRPC-only" / "REST-only" / "not supported
+  today"). Deletar o diretório `marketing/` satisfaria qualquer teste de ausência
+  sozinho; aqui ele falha.
 
-  O que NÃO decide, e admito: se a menção em `marketing/` é uma PROMESSA de capacidade
-  presente ou uma nota de roadmap corretamente rotulada. Gatear por presença de string dá
-  falso positivo se alguém escrever "gRPC está no roadmap para 2027". Quem fechar deve ler
-  as ocorrências e julgar; se sobrarem menções legítimas de roadmap, feche com nota em vez
-  de reescrever o comando para ignorá-las.
+  A última metade gateia as **frases de promessa efetivamente retiradas**, uma a uma, e
+  não a palavra "Buck2". Isso é deliberado: como o `verify-means` da versão `open` já
+  previa, sobram menções legítimas — e eu as li, uma por uma, em vez de reescrever o
+  comando para ignorá-las.
+
+  As menções que ficaram, e por que ficam:
+
+  - `marketing/corelink-feature-catalog.html:255-262` — o card "gRPC REAPI v2
+    host-server" está rotulado `data-status="near-ready"`, "not yet mounted", "NOT merged
+    into the container router today", e cita o arquivo que o implementa
+    (`crates/corelink-reapi/src/handler.rs`) e a ausência dele na lista de mount do
+    `routes.rs`. É roadmap corretamente rotulado, que é exatamente o caso que a versão
+    `open` mandava fechar com nota.
+  - `marketing/sales/API-STABILITY-FAQ.md:176-183` — a menção é a PERGUNTA, respondida
+    com "We don't offer a gRPC transport … REAPI v2 é servido REST-only".
+  - `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md:142-152` — três seções explícitas de
+    "not supported today" para BES, Buck2 e Pants, com a razão técnica.
+  - Listas de público-alvo, nomes de comunidade, métricas de menção na imprensa,
+    descrições de concorrente (`bazel-remote` atende Bazel e Buck2 — verdade sobre ELE),
+    e o rádio de formulário que pergunta a ferramenta do PROSPECT. Nenhuma é promessa
+    de capacidade.
+
+  O que NÃO decide, e admito, em três pontos:
+
+  1. Se um servidor gRPC existe no workspace. Mantenho a recusa medida da versão `open`:
+     grepar `tonic` casa os comentários que dizem que ele NÃO está lá, e `tonic` é
+     dependência real de duas crates; grepar `Server::builder()` casa o middleware de
+     timing-padding do axum. Continuo gateando na admissão do código.
+  2. Se o material comercial já circulou na forma antiga. Fora do repositório.
+  3. As afirmações NÃO relacionadas a gRPC que sobrevivem nos mesmos arquivos —
+     notadamente "three lighthouse customers attested" no
+     `marketing/launch/SOCIAL/TWITTER-THREAD.md:83` e no comunicado. São de [B-088] e de
+     itens ainda não escritos; este item não as tocou.
 
   Owner: material comercial.
-last-verified: 2026-08-30
+last-verified: 2026-08-31
 ```
 
 ### B-095 — três defeitos funcionais na interface do cliente, dos quais o mais grave mente sobre residência
