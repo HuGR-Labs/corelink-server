@@ -15,6 +15,7 @@ source_files:
   - "crates/corelink-ratelimit/src/audit.rs"
   - "crates/corelink-ratelimit/src/metrics.rs"
 source_blobs:
+  - "crates/corelink-container/src/routes.rs@b7853a5dc1490abd82679346bbde7d8040c6ea0a"
   - "crates/corelink-container/src/routes/ratelimit_layer.rs@146494b7d0718f7371d08a5e8d3d72347bb0668d"
 checkpoint_sha: "e5f095f9cd5a3a47ba001e19f4df395557919ace"
 provenance: "AUTHORED"
@@ -131,7 +132,7 @@ self-service plane. It rests on the same trusted tenant id established by
 # Gotchas
 
 - The limiter is wired with bounded NoOp sinks in production — `RateLimitLayerState::new` /
-  `with_tier_resolver` construct them (`crates/corelink-container/src/routes.rs:1081-1099`); the crate's
+  `with_tier_resolver` construct them (`crates/corelink-container/src/routes.rs:1089-1107`); the crate's
   `InMemoryRateLimitAuditSink` / `InMemoryRateLimitMetrics` capture sinks
   (`crates/corelink-ratelimit/src/audit.rs:147`, `crates/corelink-ratelimit/src/metrics.rs:177`) push every
   decision onto unbounded `Vec`/`HashMap`s and would self-OOM the container if wired here by mistake (the
@@ -146,7 +147,7 @@ self-service plane. It rests on the same trusted tenant id established by
 1. `crates/corelink-container/src/routes/ratelimit_layer.rs:505-531` — the EXECUTED `rate_limit_layer` enforcer (the `:15-49` ranges are the module `//!` doc-comments describing it).
 2. `crates/corelink-container/src/routes.rs:1118-1121` — the single `.layer(...)` wiring; `/_health` + `/_internal/*` are merged AFTER it in `main.rs`, so exclusion is structural (not a path check inside the layer).
 3. `crates/corelink-container/src/routes/ratelimit_layer.rs:510-515` — the executed keying: read of the edge-injected `TENANT_HEADER` (`x-corelink-tenant-id`).
-4. `crates/corelink-ratelimit/src/audit.rs:147`, `crates/corelink-ratelimit/src/metrics.rs:177` — the `InMemoryRateLimit*` capture sinks (unbounded `Vec`/`HashMap`); the prod NoOp sinks are constructed at `crates/corelink-container/src/routes.rs:1081-1099`.
+4. `crates/corelink-ratelimit/src/audit.rs:147`, `crates/corelink-ratelimit/src/metrics.rs:177` — the `InMemoryRateLimit*` capture sinks (unbounded `Vec`/`HashMap`); the prod NoOp sinks are constructed at `crates/corelink-container/src/routes.rs:1089-1107`.
 5. `crates/corelink-container/src/routes/ratelimit_layer.rs:483` — `tenant_key_uuid` stable 128-bit bucket key.
 6. `crates/corelink-container/src/routes/customer.rs:206` — the `/v1/customer/*` router (overview/usage/audit/billing/keys/team).
 7. `crates/corelink-container/src/routes/customer.rs:251-261` — `tenant()`: fail-CLOSED resolution returning `Err` on missing/sentinel before storage access (handler maps to `401`).
