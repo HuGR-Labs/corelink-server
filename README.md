@@ -168,7 +168,7 @@ shows the leaf → root path.
 #### Offline audit-chain verify (WI-S09-008)
 
 Customers download a streaming NDJSON dump of their audit log via
-`GET /v1/audit/export?since=<rfc3339>&until=<rfc3339>` (one
+`GET /v1/audit/<tenant>/export?from=<rfc3339|epoch-ms>&to=<rfc3339|epoch-ms>` (one
 `{event, proof}` line per audit row + a trailing
 `{"manifest": <ExportManifest>}` line). The response header
 `X-CoreLink-Audit-Export-Chain-Head-Anchor` carries the 64-char

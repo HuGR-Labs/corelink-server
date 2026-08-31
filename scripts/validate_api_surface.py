@@ -2,9 +2,17 @@
 """Compare the DOCUMENTED API surface against the SERVED one (B-121).
 
 The documented surface is `openapi/corelink-v1.yaml` — the hand-written spec
-that `scripts/gen-api-reference.py` turns into the 45 MDX pages under
-`apps/docs/docs/reference/api/endpoints/`.  The pages are propagation, not
-source: regenerating them fixes nothing.  The spec is what drifts.
+that `scripts/gen-api-reference.py` turns into the MDX pages under
+`apps/docs/docs/reference/api/endpoints/` (one per operation; 35 at the time of
+writing — the generator derives the count, this comment does not).  The pages
+are propagation, not source: regenerating them fixes nothing.  The spec is what
+drifts.
+
+The generator does NOT maintain the translated mirrors under
+`apps/docs/i18n/*/docusaurus-plugin-content-docs/current/reference/api/`.  Those
+are MT-stub copies and they went on publishing 45 pages for endpoints that had
+already been deleted from EN.  This gate does not see them either; deleting a
+path means deleting its translated pages and index rows by hand.
 
 The served surface COVERED HERE is `crates/` plus `worker/src` — the API data
 plane — and nothing else.  Two registration sites:
@@ -32,14 +40,21 @@ one known instance of each form before any absence is believed.
 
 Two directions, one instrument:
 
-  MISSING_ROUTE  a documented path that nothing serves   (B-116/119/120/121)
+  MISSING_ROUTE  a documented path that nothing serves — a published lie
   MISSING_DOC    a served public path that nothing documents          (B-117)
 
-Known divergences are carried in the ledger below, each pinned to its backlog
-id.  The gate fails on anything NOT in the ledger, and equally on a ledger
-entry that no longer diverges — so a fix cannot land while leaving its excuse
-behind.  `--strict` ignores the ledger entirely and reports the raw truth;
-that is the mode that must be seen accusing the eight known divergences.
+The two are NOT treated alike.  MISSING_ROUTE has NO ledger: any occurrence
+fails the gate, and a re-populated `LEDGER_MISSING_ROUTE` fails it too.  (It
+used to be ledgerable, and 14 entries kept this gate green while 60 reference
+pages shipped for endpoints that 404 — see the comment on that dict.)
+
+MISSING_DOC keeps its ledger, each entry pinned to its backlog id.  The gate
+fails on anything NOT in that ledger, and equally on a ledger entry that no
+longer diverges (STALE_LEDGER) — so a fix cannot land while leaving its excuse
+behind.  `--strict` ignores the ledger entirely and reports the raw truth.
+
+Neither the ledger nor this docstring is the oracle for the counts: every
+number the gate prints is derived from the lists it just built.
 
 stdlib only, on purpose: this runs in a `pull_request` lane with no install
 step.
@@ -78,27 +93,30 @@ HTTP_METHODS = {
 # repaired makes the gate FAIL (STALE_LEDGER) so the excuse is removed with
 # the fix.
 # --------------------------------------------------------------------------
-LEDGER_MISSING_ROUTE: dict[str, str] = {
-    # --- ABSENCE: the spec promises an endpoint nothing registers ----------
-    "/v1/admin/ops": "B-119",
-    "/v1/admin/ops/{op_id}": "B-119",
-    "/v1/admin/ops/{op_id}/approve": "B-119",
-    "/v1/admin/ops/{op_id}/reject": "B-119",
-    "/v1/enterprise/inquire": "B-120",
-    "/v1/admin/audit/events": "B-121",
-    "/v1/admin/tenants": "B-121 (only the /{tenant_id}/... sub-routes exist)",
-    "/v1/data-categories": "B-121 (only admin-ui/src/lib/dsr-client.ts calls it)",
-    "/v1/pats": "B-121 (only /v1/admin/tenants/{tenant_id}/pats exists)",
-    "/v1/pats/{pat_id}": "B-121 (only the admin variant exists)",
-    # --- PATH DIVERGENCE: the endpoint exists under a different path -------
-    # Worse for the caller than absence: the doc looks right and the call
-    # 404s AFTER authenticating.  Each of these has a MISSING_DOC twin below.
-    "/v1/dpa/accept": "B-116 (served at /v1/onboarding/dpa-accept; Clerk, not PAT)",
-    "/v1/dpa/re-accept": "B-116 (same family; no route anywhere — only a proptest names it)",
-    "/v1/audit/export": "B-121 (served at /v1/audit/{tenant}/export — the tenant segment is missing)",
-    # --- WRONG SERVICE ------------------------------------------------------
-    "/api/csp-report": "B-121 (served by apps/admin-ui, not the API; it does not belong in this spec)",
-}
+# MISSING_ROUTE IS NOT LEDGERABLE.  This dict exists only so the gate can
+# refuse a non-empty one; it must stay empty.
+#
+# The two directions are not symmetric.  MISSING_DOC (served, undocumented) is
+# a gap in our writing: a customer who never reads about the endpoint is not
+# harmed by it.  MISSING_ROUTE (documented, not served) is a PUBLISHED LIE —
+# `scripts/gen-api-reference.py` turns every documented path into a reference
+# page with copy-pasteable curl/Rust/Python/Go/JS snippets aimed at
+# `https://corelink-api.humangr.com<path>`, in EN plus three translated
+# mirrors.  A caller who follows it authenticates and then 404s.
+#
+# That direction was ledgered anyway: 14 entries carrying B-116/119/120/121
+# kept the gate GREEN across every one of them, and 15 EN + 45 translated
+# reference pages shipped for endpoints that do not exist.  A declared
+# exception is meant to be a rare, tracked pause; a whole customer-facing
+# failure class parked behind four backlog ids is the gate being talked out of
+# its own verdict.
+#
+# So the exception mechanism is removed for this direction.  A path that is
+# documented and not served must be fixed in the spec in the SAME change —
+# repointed at what is actually served, or deleted.  If a genuinely
+# unimplemented endpoint must be published ahead of its route, that is a
+# deliberate product decision and needs a human waiver, not a dict entry.
+LEDGER_MISSING_ROUTE: dict[str, str] = {}
 
 LEDGER_MISSING_DOC: dict[str, str] = {
     # --- the two B-117 named -----------------------------------------------
@@ -108,8 +126,6 @@ LEDGER_MISSING_DOC: dict[str, str] = {
     "/v1/customer/audit": "B-117 (same customer-portal family; never documented)",
     "/v1/customer/billing": "B-117 (same customer-portal family; never documented)",
     "/v1/customer/billing/portal": "B-117 (same customer-portal family; never documented)",
-    "/v1/customer/keys": "B-117 (same customer-portal family; never documented)",
-    "/v1/customer/keys/{pat_id}/revoke": "B-117 (same customer-portal family; never documented)",
     "/v1/customer/overview": "B-117 (same customer-portal family; never documented)",
     "/v1/customer/runners/allowlist": "B-117 (same customer-portal family; never documented)",
     "/v1/customer/runners/entitlement": "B-117 (same customer-portal family; never documented)",
@@ -122,8 +138,6 @@ LEDGER_MISSING_DOC: dict[str, str] = {
     "/v1/customer/workspaces/{workspace_id}": "B-117 (same customer-portal family; never documented)",
     "/v1/customer/workspaces/{workspace_id}/pin": "B-117 (same customer-portal family; never documented)",
     # --- twins of the path divergences above --------------------------------
-    "/v1/onboarding/dpa-accept": "B-116 (the real path behind the documented /v1/dpa/accept)",
-    "/v1/audit/{tenant}/export": "B-121 (the real path behind the documented /v1/audit/export)",
     # --- admin surface served, absent from the spec -------------------------
     "/v1/admin/approve": "B-121 (admin surface served, absent from the spec)",
     "/v1/admin/byok/activate": "B-121 (admin surface served, absent from the spec)",
@@ -637,22 +651,43 @@ def main() -> int:
         print(f"\n--strict: ledger ignored. {total} raw divergence(s).")
         return 1 if total else 0
 
-    undeclared_route = [p for p in missing_route if p not in LEDGER_MISSING_ROUTE]
+    # MISSING_ROUTE is not ledgerable — see the comment on LEDGER_MISSING_ROUTE.
+    # Refuse a re-populated dict rather than honouring it: otherwise the next
+    # author reopens the exception with one line and the gate goes quiet again.
+    if LEDGER_MISSING_ROUTE:
+        print()
+        print(
+            "FAIL: LEDGER_MISSING_ROUTE is non-empty. That direction is a\n"
+            "PUBLISHED LIE (a reference page with working snippets for an\n"
+            "endpoint that 404s) and carries no exception mechanism. Fix the\n"
+            "spec — repoint the path at what is served, or delete it."
+        )
+        for p, why in sorted(LEDGER_MISSING_ROUTE.items()):
+            print(f"  - {p}  [{why}]")
+        return 1
+
+    undeclared_route = list(missing_route)
     undeclared_doc = [p for p, _ in missing_doc if p not in LEDGER_MISSING_DOC]
-    stale_route = [p for p in LEDGER_MISSING_ROUTE if p not in set(missing_route)]
+    stale_route: list[str] = []
     stale_doc = [p for p in LEDGER_MISSING_DOC if p not in {q for q, _ in missing_doc}]
 
     print()
     if undeclared_route or undeclared_doc:
-        print("FAIL: undeclared divergence between the documented and served surface.")
+        print("FAIL: divergence between the documented and served surface.")
         for p in undeclared_route:
             print(f"  - documented but not served: {p}")
         for p in undeclared_doc:
             print(f"  - served but not documented: {p}")
         print(
-            "\nFix openapi/corelink-v1.yaml or the route. If the divergence is\n"
-            "known and tracked, add it to the ledger in this script WITH its\n"
-            "backlog id — an unexplained entry is a silenced gate."
+            "\nDocumented-but-not-served has NO ledger: fix openapi/corelink-v1.yaml\n"
+            "in this change — repoint the path at the route that is actually\n"
+            "registered, or remove it (and regenerate the reference pages with\n"
+            "`python3 scripts/gen-api-reference.py`, including the i18n mirrors\n"
+            "under apps/docs/i18n/*/…/reference/api/, which the generator does\n"
+            "NOT maintain).\n"
+            "Served-but-not-documented may be declared: add it to\n"
+            "LEDGER_MISSING_DOC WITH its backlog id — an unexplained entry is a\n"
+            "silenced gate."
         )
     if stale_route or stale_doc:
         print("FAIL: STALE_LEDGER — these no longer diverge; remove their entries.")

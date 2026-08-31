@@ -135,19 +135,26 @@ curl -s https://corelink-api.humangr.com/api/health
 
 ---
 
-### PAT management (`GET`/`POST /v1/pats`, `DELETE /v1/pats/:pat_id`) — planned, not yet live
+### PAT management (`GET`/`POST /v1/customer/keys`, `POST /v1/customer/keys/:pat_id/revoke`)
 
-These routes are specified for a future self-service PAT-management surface
-(list, create, revoke) but are **not mounted today** — calling any of them
-returns `404`. The only PAT-creation path that is live is the automatic
-starter PAT issued by the sign-up wizard. An admin-only, read-only surface
-exists for support to inspect a tenant's PATs
-(`GET /v1/admin/tenants/{tenant_id}/pats`), but it requires an admin PAT and
-is not something a regular customer token can call.
+Self-service list / create / revoke, served by the customer portal
+(`crates/corelink-container/src/routes/customer.rs:212,216`). Note the shapes,
+because an earlier draft of this page documented a `/v1/pats` surface that was
+never mounted:
 
-Until self-service PAT management ships, email
-[support@humangr.com](mailto:support@humangr.com) to mint an additional PAT
-or revoke one.
+- `GET /v1/customer/keys` → `{ "pats": [ … ], "byok": { … } }`. Metadata only.
+- `POST /v1/customer/keys` with `{ "name": "...", "scopes": [ … ] }` → `201
+  { "pat": { … }, "token": "…" }`. The token is shown once.
+- `POST /v1/customer/keys/:pat_id/revoke` → `200 { "pat": { … } }`. Revocation
+  is a POST to a sub-path, **not** a `DELETE` on the token.
+
+All three are admin-grade operations on the tenant's credentials and require a
+cache-write capability; a read-only (`cas:r`) token gets `403` for each. A
+read-only token also cannot mint a write-scoped token for itself.
+
+An admin-only, read-only surface exists for support to inspect a tenant's PATs
+(`GET /v1/admin/tenants/{tenant_id}/pats`); it requires an admin PAT and is not
+something a regular customer token can call.
 
 ---
 

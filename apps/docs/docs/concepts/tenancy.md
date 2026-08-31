@@ -35,7 +35,7 @@ PATs are the only credential type CoreLink accepts for API calls. There are no A
 | Format | `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` — `<env>` is `pat` (user PAT), `ci` (CI runner token), or `ro` (read-only token) |
 | Scoped to | Exactly one tenant at issue time |
 | Shown once | Displayed in plaintext only on creation; never stored in plaintext server-side |
-| Revocable | Only the starter PAT issued at sign-up exists self-service today; revoking or minting additional PATs (`DELETE /v1/pats/:pat_id`, `POST /v1/pats`) is not yet wired to a route — email support in the meantime |
+| Revocable | Yes, self-service, from the dashboard's **Keys** page or via `POST /v1/customer/keys/{pat_id}/revoke`. Minting additional PATs is `POST /v1/customer/keys`. Both require a cache-write capability — a read-only (`cas:r`) token can do neither |
 | Expiry | Optional; set at creation time; defaults to non-expiring |
 
 ### PAT scopes
@@ -54,10 +54,9 @@ Omitting a scope means the PAT cannot perform that operation. The starter PAT is
 
 ### CI/CD best practice
 
-Do not use your personal starter PAT in CI. Self-service creation of a
-dedicated CI PAT (`POST /v1/pats`) is planned but not yet wired to a route.
-Until it ships, email [support@humangr.com](mailto:support@humangr.com) to
-request a dedicated CI PAT with the minimum required scopes (typically
+Do not use your personal starter PAT in CI. Mint a dedicated CI PAT with the
+minimum required scopes from the dashboard's **Keys** page, or with
+`POST /v1/customer/keys` (typically
 `cas:read cas:write ac:read ac:write`, no `admin`).
 
 Store the returned token value in GitHub Actions secrets, Vault, or your secrets manager of choice.
@@ -82,12 +81,16 @@ A common pattern in the meantime: create separate accounts for `acme-prod` and `
 
 ## Listing and revoking PATs
 
-There is no self-service PAT listing or revocation route today (`GET/POST
-/v1/pats`, `DELETE /v1/pats/:pat_id` are planned but not yet mounted). An
-admin-only read surface exists for support to inspect a tenant's PATs
-(`GET /v1/admin/tenants/{tenant_id}/pats`), but it is not customer-callable
-with a regular PAT. To revoke a PAT, email
-[support@humangr.com](mailto:support@humangr.com).
+Listing and revocation are self-service: `GET /v1/customer/keys` lists the
+tenant's PATs (metadata only — no token material) alongside its BYOK status,
+and `POST /v1/customer/keys/{pat_id}/revoke` revokes one. Both are admin-grade
+operations on the tenant's credentials, so both require a cache-write
+capability; a read-only (`cas:r`) token gets `403` rather than being allowed to
+enumerate or revoke its tenant's credentials.
+
+A separate admin-only read surface exists for support to inspect a tenant's
+PATs (`GET /v1/admin/tenants/{tenant_id}/pats`); it needs an admin PAT and is
+not callable with a regular customer token.
 
 Once revocation ships (self-service or via support), any in-flight requests
 using that PAT will receive `401 Unauthorized`.

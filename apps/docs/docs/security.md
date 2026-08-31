@@ -15,8 +15,10 @@ Personal Access Tokens (PATs) are the only credential type CoreLink accepts. Und
 
 PATs are created in two places:
 
-1. **Sign-up wizard** — issues a starter PAT with `cas:read cas:write ac:read ac:write` scopes automatically. This is the only PAT-creation path that is live today.
-2. **Self-service PAT issuance** (`POST /v1/pats`, creating additional PATs with a custom scope subset) is planned but not yet wired to a route — it will 404 today. Until it ships, ask support to mint additional PATs for your tenant.
+1. **Sign-up wizard** — issues a starter PAT with `cas:read cas:write ac:read ac:write` scopes automatically.
+2. **Self-service PAT issuance** — the **Keys** page in the dashboard, backed by [`POST /v1/customer/keys`](./reference/api/endpoints/post-v1-customer-keys.mdx). Send `{"name": "...", "scopes": ["cas:r", "cas:rw"]}` and the response carries the new token once.
+
+   Minting a token that holds any write or admin scope requires the caller to already hold a cache-write capability — a read-only (`cas:r`) token cannot mint itself a write token, and gets `403`.
 
 At creation time, the plaintext token is displayed **exactly once**. CoreLink never stores the plaintext. There is no retrieval endpoint.
 
@@ -49,18 +51,22 @@ self-service issuance ships:
 | CI/CD | 90 days or on team change |
 | Integration (shared) | 30 days |
 
-**Self-service PAT creation and revocation (`POST /v1/pats`,
-`DELETE /v1/pats/:pat_id`) are not yet live** — the routes are not mounted.
-Until they ship, email [support@humangr.com](mailto:support@humangr.com) to
-mint a replacement PAT and to revoke the old one; there is no in-product way
-to do either today.
+Rotation is self-service: mint the replacement on the **Keys** page, cut your
+clients over, then revoke the old token from the same page.
 
 ### Revocation
 
-Revocation currently goes through support — email
-[support@humangr.com](mailto:support@humangr.com) with the PAT's label or
-tenant ID. Once revoked, in-flight requests using that PAT fail with `401`
-within the Cloudflare edge propagation window (typically < 100 ms).
+Revoke from the **Keys** page in the dashboard, or call
+[`POST /v1/customer/keys/{pat_id}/revoke`](./reference/api/endpoints/post-v1-customer-keys-by-pat_id-revoke.mdx)
+directly. Note the shape: revocation is a `POST` to a `/revoke` sub-path, not a
+`DELETE` on the token.
+
+Revoking is a destructive, tenant-wide operation, so it needs a cache-write
+capability — a read-only (`cas:r`) token cannot revoke anything, including its
+own tenant's other tokens, and gets `403`.
+
+Once revoked, in-flight requests using that PAT fail with `401` within the
+Cloudflare edge propagation window (typically < 100 ms).
 
 ## Scopes
 
