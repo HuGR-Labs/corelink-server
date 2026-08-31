@@ -10,8 +10,8 @@
   covered less, and the only anti-vacuity check it carried
   (`self_hosted_jobs == 0`) could never fire because the set shrinks one job at a
   time. Measured on `main`: 24 live `runs-on:` lines carry a trailing comment, 20
-  of which resolve to self-hosted/corelink; inspected count went **173 → 193**
-  once the value is stripped before classification, and stayed green — the 20
+  of which resolve to self-hosted/corelink; stripping the value before
+  classification recovers **all ~20 at once**, and the guard stayed green — the
   recovered jobs were hiding nothing, so what was lost was reach, not compliance.
   Found by teeth-testing the guard while migrating CI off the owner's Mac
   (WP-CI): injecting `uses: dtolnay/rust-toolchain@stable` into a freshly
@@ -26,12 +26,26 @@
   Two follow-up repairs from a cold review of this PR:
 
   - **The anti-vacuity floor was below the defect it guards.** The suite asserted
-    `inspected >= 150` against a live reach of 193 — but reverting the fix leaves
-    reach at 173, so the mutation *passed* that assertion and the one check meant
-    to notice a silent shrink could not see the very class this PR closes. The
-    floor is now 188: measured to fail the mutant (173 < 188) while leaving room
-    for ordinary job churn. Re-probed after the change — the mutant is killed
-    (8 of 17 cases fail), and the unmutated suite is 17/17 green.
+    `inspected >= 150`, but reverting the fix leaves reach *above* 150, so the
+    mutation *passed* that assertion and the one check meant to notice a silent
+    shrink could not see the very class this PR closes. The floor is now **188**,
+    and the property it has to hold is a relation, not a literal:
+    `mutant reach < 188 <= live reach`. Re-probed after the change — the mutant
+    is killed and the unmutated suite is 17/17 green, on both trees: 8 of 17
+    cases fail under the mutation on this branch, 4 of 17 on `main` with the fix
+    applied. The count differs because the two trees hold different workflows;
+    what does not differ is that `test_live_repo_reach_is_not_vacuous` is among
+    the failures in both, which is the case the floor exists for.
+
+    The absolute reach is a property of the tree you measure, so it is recorded
+    with the tree attached rather than stated bare — both readings are correct
+    and they differ, which is exactly how a number like this misleads a reader a
+    month later. Snapshot 2026-08-31: on this branch (base `af42b328`)
+    live **193** / mutant **173**; on `main` with the fix applied — the tree the
+    gate sees *after* merge — live **195** / mutant **174**. 188 kills the mutant
+    and clears live reach in both. The comments in the suite and in the script
+    now carry the relation and the reproduce command instead of a literal that
+    goes stale on the next workflow that gains or loses a self-hosted job.
   - **The new docstring enumerated three `runs-on:` spellings and omitted two the
     guard still cannot see**: a block sequence (value on the following lines,
     which `RUNS_ON`'s `(.+?)` does not match at all) and a quoted scalar

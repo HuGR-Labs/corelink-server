@@ -12,8 +12,8 @@ convention of justifying a runner inline —
     runs-on: corelink  # zero-hosted: python3 baked into the image
 
 — silently removed the job from the inspected set. The guard never failed; it
-just covered less and kept printing OK. Measured on `main` that day: 20
-self-hosted jobs invisible, inspected count 173 instead of 193.
+just covered less and kept printing OK. Measured that day: ~20 self-hosted jobs
+invisible, which is the gap between the mutant reach and the live reach below.
 
 That is the failure mode this suite exists to make impossible to reintroduce:
 **a guard whose reach shrinks without anyone being told.**
@@ -201,12 +201,30 @@ def test_live_repo_reach_is_not_vacuous() -> None:
     out = buf.getvalue()
     inspected = int(out.split("self-hosted job(s)")[0].split()[-1])
     # The floor must sit ABOVE the reach of the defect this PR exists to close,
-    # or the anti-vacuity check cannot see that class at all. Measured
-    # 2026-08-31: live reach is 193; with `_strip_trailing_comment` reverted to
-    # `runs_on.strip()` — i.e. the bug — reach is 173. A floor of 150 PASSES
-    # under that mutation, which made this assertion decorative for the very
-    # regression it guards. 188 fails the mutant (173 < 188) while leaving 5 jobs
-    # of ordinary churn before it becomes a maintenance tripwire. If a legitimate
-    # change drops reach below this, RAISE the number deliberately with the new
-    # measured value — never lower it to make the suite pass.
+    # or the anti-vacuity check cannot see that class at all. The relation is
+    # what matters, and it is the only thing stated as fact here:
+    #
+    #     mutant reach  <  188  <=  live reach
+    #
+    # where "mutant" is `_strip_trailing_comment` reverted to `runs_on.strip()`
+    # — i.e. the bug. A floor of 150 sits BELOW the mutant reach, so the mutation
+    # passed it: the assertion was decorative for the very regression it guards.
+    #
+    # Deliberately NOT pinned to an absolute live count, because that count is a
+    # property of the tree you measure, not of the guard: it moves whenever a
+    # workflow gains or loses a self-hosted job, so a number written here is
+    # already two off by the time someone reads it a month from now. Reproduce
+    # the current pair instead of trusting a literal:
+    #
+    #     python3 scripts/validate_no_shared_rustup_mutation.py          # live
+    #     # then edit line ~127 to `value = runs_on.strip()` and re-run # mutant
+    #
+    # Snapshot 2026-08-31, given with the tree it was taken on precisely because
+    # the two disagree and neither reading is wrong: on THIS branch (base
+    # af42b328) live=193 / mutant=173; on `main` with this fix applied, which is
+    # the tree the gate sees after merge, live=195 / mutant=174. 188 kills the
+    # mutant in both readings and clears both live reaches with room for ordinary
+    # churn. If a legitimate change drops live reach below the floor, RAISE the
+    # floor deliberately with the newly measured pair — never lower it to make
+    # the suite pass.
     assert inspected >= 188, f"guard reach collapsed to {inspected}: {out!r}"

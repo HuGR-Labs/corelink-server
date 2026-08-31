@@ -88,7 +88,9 @@ def _strip_trailing_comment(runs_on: str) -> str:
     OK while covering less. Measured 2026-08-31 on `main`: 24 live `runs-on:`
     lines carry a trailing comment, 20 of which resolve to self-hosted/corelink.
     Those 20 jobs were invisible to this guard, which reported OK throughout —
-    inspected count went 173 -> 193 the moment this strip was added.
+    the strip recovers all ~20 at once. The absolute counts are deliberately not
+    quoted here: they are a property of the tree you run this on, not of the
+    guard, so run the script to get today's number instead of trusting a literal.
 
     Only safe because a `runs-on:` VALUE never legitimately contains `#` in any
     of the forms this repo actually writes: a bare label, a `[a, b]` flow list,
