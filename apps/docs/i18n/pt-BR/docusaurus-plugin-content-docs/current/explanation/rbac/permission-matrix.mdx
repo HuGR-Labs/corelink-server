@@ -97,7 +97,7 @@ full served surface with source line numbers.
 > escalation (`customer.rs:929-941`).
 >
 > PAT list, mint and revoke gate on the cache-**write** capability
-> (`customer.rs:740`, `:793`, `:849`), not on a role. Revoke resolves the
+> (`customer.rs:740`, `:796-798`, `:849`), not on a role. Revoke resolves the
 > target with `WHERE pat_id = ?1 AND tenant_id = ?2`
 > (`customer_d1.rs:1379`) — scoped to the tenant, **not** to the calling
 > principal — so any `read-write` holder can revoke any PAT in the
@@ -209,7 +209,7 @@ dashboard action, so the role columns are omitted.
 |---|---|---|
 | `TenantTombstone` (S-11 erasure pipeline) | `POST /v1/admin/mutate`, dual-approval | operator key |
 | Delete the whole account | `POST /v1/customer/account/delete` (`customer.rs:223`) | role `owner` only (`:1065`) |
-| Data-subject requests (access / portability / rectification / erasure) | `POST /v1/privacy/dsr/{access,portability,rectification,erasure}` (`routes/dsr/portal.rs:719-722`) | privacy portal |
+| Data-subject requests (the six GDPR rights) | `POST /v1/privacy/dsr/{access,portability,rectification,erasure,restriction,objection}` (`routes/dsr/portal.rs:719-724`) | privacy portal |
 | Review a tenant's DSR / consent state | `GET /v1/admin/tenants/{tenant_id}/{dsr,consents}` (`admin_tenant_detail.rs:131,134`) | operator key |
 
 Account deletion erases the whole tenant, which is why it is the one

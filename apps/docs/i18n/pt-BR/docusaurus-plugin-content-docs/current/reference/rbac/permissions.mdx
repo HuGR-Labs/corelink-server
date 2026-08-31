@@ -28,12 +28,20 @@ The full canonical permission catalog. Two layers:
    dual-approval gate where applicable.
 
 :::warning[The bitset is a mint-time record, not the enforcement input]
-No served route reads the `PatScopes` bitset. Every request is authorized
-from the **`x-corelink-scope` header**, a space/comma-separated token
-string the Worker sets and the container parses with
-`crates/corelink-container/src/scope.rs`. `PatScopes::has()` appears only
-inside test modules (`routes/internal_pat.rs:1025-1058`); there is no
-production call site.
+No route **served by the container** reads the `PatScopes` bitset. Every
+request is authorized from the **`x-corelink-scope` header**, a
+space/comma-separated token string the Worker sets and the container
+parses with `crates/corelink-container/src/scope.rs`. Inside
+`crates/corelink-container`, `PatScopes::has()` appears only in test
+modules (`routes/internal_pat.rs:1025-1058`).
+
+The bitset does have one production reader, and it is not on the served
+path: the `corelink-worker` crate (the REAPI wasm surface) calls it from
+`middleware/auth_ctx.rs:190-192`, via `reapi/ac/handler/handler_impl.rs:82`
+and `reapi/cas/split_splice/handler.rs:116,126`. `corelink-container` does
+not depend on that crate, and it is not the deployed entrypoint — the
+Worker that ships is TypeScript (`wrangler.toml:15` sets
+`main = "worker/src/index.ts"`).
 
 The tokens the predicates actually match are `read-only`, `read-write`,
 `cas:r`, `cas:rw`, `cas:w`, `find-missing`, `billing`, `admin` and
