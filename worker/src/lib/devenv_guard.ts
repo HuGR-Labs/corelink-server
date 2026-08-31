@@ -54,10 +54,10 @@ interface EntitlementRow {
  * predicate, so no value of it — including a negative or zero one — can change
  * the outcome. `max_concurrency` is the only field this guard decides on. That
  * is not an oversight to be closed by adding a `max_vcpu_h > 0` check: 0072
- * ratifies that an absent `max_vcpu_h` walls off and PROCEEDS, and all 8
- * `runners_entitlement` rows in prod carry `max_vcpu_h = NULL`, so the wall-off
- * branch is the only live one and refusing on it would change declared
- * semantics, not enforce them. Enforcement would need a CONSUMPTION side, and
+ * ratifies that an absent `max_vcpu_h` walls off and PROCEEDS, and 6 of the 8
+ * `runners_entitlement` rows in prod carry `max_vcpu_h = NULL`; the other two
+ * carry real provisioned ceilings (600 and 100 vCPU-h) that this guard reads
+ * and IGNORES. Enforcing either would need a CONSUMPTION side, and
  * there is none: `devenv_monthly_vcpu` (migration 0106) is referenced only by
  * its own migration and the DSR erase set — nothing writes it and nothing reads
  * it — and `customer_runners.rs` reports `consumed_vcpu_h` as a literal `0`
