@@ -1,7 +1,10 @@
 name: mutation-nightly (R2 baseline + 5-crate expansion + wave-24 large-crate lane)
 
 concurrency:
-  group: "ci-mutation-nightly-r2-baseline-5-crate-expansion-wave-24-large-crate-lane"
+  # Escopo por ref. Grupo CONSTANTE torna o grupo repo-global: duas execucoes
+  # `workflow_dispatch` deste mesmo workflow em branches DIFERENTES cancelam uma
+  # a outra. Foi o que matou tres dispatches em 2026-08-31.
+  group: "ci-mutation-nightly-r2-baseline-5-crate-expansion-wave-24-large-crate-lane-${{ github.event.pull_request.number || github.ref }}"
   cancel-in-progress: true
 
 # Nightly cargo-mutants gate on 11 critical crates:

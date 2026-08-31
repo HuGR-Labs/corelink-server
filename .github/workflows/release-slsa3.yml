@@ -1,8 +1,14 @@
 name: Release — SLSA L2 Build Provenance, self-hosted (WI-S12-001)
 
 concurrency:
+  # SEM cancelamento em voo, de proposito, por restauracao de intencao declarada.
+  # O commit que introduziu estes blocos (50741f7c) afirma que seis workflows de
+  # prod-build/signing/notarize OMITEM o flag porque "cancelar deploy/sign em-flight
+  # e pior que enfileirar o proximo". Cinco dos seis honram; este NAO honrava —
+  # uma build de proveniencia SLSA L2 em voo podia ser cancelada por um
+  # segundo release ou dispatch, que e exatamente o desfecho contra o qual a decisao
+  # foi tomada. Grupo constante e sem o flag = serializa em vez de matar.
   group: "ci-release-slsa-l2-build-provenance-self-hosted-wi-s12-001"
-  cancel-in-progress: true
 
 # Generates SLSA Build **Level 2** provenance for CoreLink releases on the
 # self-hosted `corelink-builder` fleet.
