@@ -2,7 +2,8 @@
 //!
 //! `parse` turns a `Server-Timing` value into a name-to-ms map. It lives here
 //! rather than inside one of the test files because three of the four need it,
-//! and importing it from a sibling would make that sibling look load-bearing.
+//! and importing it from a sibling would make that sibling look load-bearing
+//! for the others when it is only a neighbour.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -12,16 +13,6 @@
 )]
 
 use std::collections::HashMap;
-
-use std::sync::Arc;
-
-use axum::body::Body;
-use axum::http::{Request as HttpRequest, StatusCode};
-use axum::routing::get;
-use axum::Router;
-use tower::ServiceExt;
-
-use super::{current_ledger, origin_timing_layer, timed, Phase, PhaseLedger, PhaseScope, LEDGER};
 
 /// Parse a `Server-Timing` value into `{ name: dur_ms }`.
 pub(super) fn parse(value: &str) -> HashMap<String, i64> {
