@@ -27,9 +27,8 @@
 
 use corelink_pat::{
     compute_hmac_sig, parse_env, verify_hmac_sig, PatEnv, PatError, PatScopes, PatSigningKey,
-    PatTokenId, SCOPE_ADMIN_AUDIT, SCOPE_ADMIN_BILLING, SCOPE_ADMIN_TENANT_R, SCOPE_ADMIN_TENANT_W,
-    SCOPE_ADMIN_TOKENS, SCOPE_ADMIN_USERS, SCOPE_CACHE_DELETE, SCOPE_CACHE_FIND, SCOPE_CACHE_R,
-    SCOPE_CACHE_RW, SCOPE_CACHE_W, SCOPE_EXECUTE_ACTION, SCOPE_KNOWN_MASK, SCOPE_REPORT_RESULT,
+    PatTokenId, SCOPE_ADMIN, SCOPE_CACHE_DELETE, SCOPE_CACHE_FIND, SCOPE_CACHE_R, SCOPE_CACHE_RW,
+    SCOPE_CACHE_W, SCOPE_EXECUTE_ACTION, SCOPE_KNOWN_MASK, SCOPE_REPORT_RESULT,
 };
 
 // =====================================================================
@@ -91,8 +90,14 @@ fn pat_env_display_matches_as_wire() {
 // =====================================================================
 
 #[test]
-fn pat_scopes_known_mask_covers_exactly_twelve_bits() {
-    // SCOPE_KNOWN_MASK is the bitwise union of 12 canonical scope bits.
+fn pat_scopes_known_mask_covers_exactly_seven_bits() {
+    // SCOPE_KNOWN_MASK is the bitwise union of 7 canonical scope bits
+    // (bits 5..=9 retired with the decorative `admin:*` scopes, B-080).
+    assert_eq!(
+        SCOPE_KNOWN_MASK.count_ones(),
+        7,
+        "canonical catalog must be exactly 7 bits"
+    );
     // Mutating from_u64 to drop the mask would let reserved bits leak
     // through; we assert .to_u64() drops them.
     let with_reserved: u64 = SCOPE_KNOWN_MASK | (1u64 << 63);
@@ -106,14 +111,14 @@ fn pat_scopes_known_mask_covers_exactly_twelve_bits() {
 
 #[test]
 fn pat_scopes_has_required_returns_true_only_when_all_bits_set() {
-    let admin = PatScopes::from_u64(SCOPE_ADMIN_TENANT_R | SCOPE_ADMIN_TENANT_W);
-    assert!(admin.has(SCOPE_ADMIN_TENANT_R));
-    assert!(admin.has(SCOPE_ADMIN_TENANT_W));
-    assert!(admin.has(SCOPE_ADMIN_TENANT_R | SCOPE_ADMIN_TENANT_W));
+    let admin = PatScopes::from_u64(SCOPE_ADMIN | SCOPE_CACHE_DELETE);
+    assert!(admin.has(SCOPE_ADMIN));
+    assert!(admin.has(SCOPE_CACHE_DELETE));
+    assert!(admin.has(SCOPE_ADMIN | SCOPE_CACHE_DELETE));
     // Missing a bit → false (kills `==` → `!=` mutation on the final
     // equality check at line 125).
     assert!(!admin.has(SCOPE_CACHE_R));
-    assert!(!admin.has(SCOPE_ADMIN_TENANT_R | SCOPE_CACHE_R));
+    assert!(!admin.has(SCOPE_ADMIN | SCOPE_CACHE_R));
     // Empty required → vacuously true (a tautology that holds for any
     // self).
     assert!(admin.has(0));
@@ -138,7 +143,7 @@ fn pat_scopes_is_empty_distinguishes_zero_from_one_bit() {
     assert!(PatScopes::empty().is_empty());
     // ANY single bit must make is_empty false → kills `is_empty -> true`.
     assert!(!PatScopes::from_u64(SCOPE_CACHE_R).is_empty());
-    assert!(!PatScopes::from_u64(SCOPE_ADMIN_AUDIT).is_empty());
+    assert!(!PatScopes::from_u64(SCOPE_ADMIN).is_empty());
 }
 
 #[test]
@@ -158,12 +163,7 @@ fn pat_scopes_names_returns_distinct_entries_for_each_known_bit() {
         (SCOPE_CACHE_W, "cache:w"),
         (SCOPE_CACHE_FIND, "cache:find-missing"),
         (SCOPE_CACHE_DELETE, "cache:delete"),
-        (SCOPE_ADMIN_TENANT_R, "admin:tenant-read"),
-        (SCOPE_ADMIN_TENANT_W, "admin:tenant-write"),
-        (SCOPE_ADMIN_TOKENS, "admin:tokens"),
-        (SCOPE_ADMIN_BILLING, "admin:billing"),
-        (SCOPE_ADMIN_AUDIT, "admin:audit"),
-        (SCOPE_ADMIN_USERS, "admin:users"),
+        (SCOPE_ADMIN, "admin"),
         (SCOPE_EXECUTE_ACTION, "execute:action"),
         (SCOPE_REPORT_RESULT, "report:result"),
     ];
@@ -172,13 +172,13 @@ fn pat_scopes_names_returns_distinct_entries_for_each_known_bit() {
         assert_eq!(n.len(), 1, "single bit must surface single name");
         assert_eq!(n[0], name);
     }
-    // All 12 set → 12 names, all distinct.
+    // All 7 set → 7 names, all distinct.
     let all = PatScopes::from_u64(SCOPE_KNOWN_MASK).names();
-    assert_eq!(all.len(), 12);
+    assert_eq!(all.len(), 7);
     let mut sorted: Vec<&str> = all.to_vec();
     sorted.sort_unstable();
     sorted.dedup();
-    assert_eq!(sorted.len(), 12);
+    assert_eq!(sorted.len(), 7);
 }
 
 #[test]
@@ -379,9 +379,9 @@ fn parse_env_rejects_7_byte_truncated_input() {
 /// Kill `scopes.rs:110:20 & → |` and `& → ^` in `PatScopes::single`.
 /// The unmutated body is `Self(scope & SCOPE_KNOWN_MASK)` — single bit
 /// in, single bit out. Mutants:
-/// - `scope | SCOPE_KNOWN_MASK` → all 12 bits set (popcount 12).
-/// - `scope ^ SCOPE_KNOWN_MASK` → 11 bits set (popcount 11) when
-///   input is one of the 12 canonical bits.
+/// - `scope | SCOPE_KNOWN_MASK` → all 7 bits set (popcount 7).
+/// - `scope ^ SCOPE_KNOWN_MASK` → 6 bits set (popcount 6) when
+///   input is one of the 7 canonical bits.
 #[test]
 fn pat_scopes_single_returns_exactly_the_input_canonical_bit() {
     let r = PatScopes::single(SCOPE_CACHE_R);
