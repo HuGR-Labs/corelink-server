@@ -564,8 +564,10 @@ exige uma credencial que **não existe em lugar nenhum**: o único segredo de
 PagerDuty provisionado — no `.env.local` e nos 18 segredos do repo — é
 `PAGERDUTY_ROUTING_KEY`, chave de **escrita** da Events API v2, que enfileira
 eventos e não lê incidentes. `PAGERDUTY_API_KEY` (o token REST v2, esse sim de
-leitura) aparece só em doc-comments de `crates/corelink-ops/src/oncall.rs` e
-`oncall/pagerduty.rs`; nunca foi provisionado — designed, não wired. Portanto o
+leitura) aparece em exatamente três doc-comments — `corelink-ops/src/oncall.rs:62`,
+`corelink-ops/src/oncall/pagerduty.rs:8` e
+`corelink-telemetry/src/synthetic_pager.rs:50` — e em nenhum código que o leia;
+nunca foi provisionado, em repo, environments ou dependabot. Designed, não wired. Portanto o
 próximo passo, saber se alguma página chegou a um humano, é literalmente
 impossível sem a conta dele. Se um dia uma chave de leitura for provisionada,
 isto vira engenharia comum e o campo move para `tl` — mas provisioná-la é
@@ -1534,8 +1536,11 @@ today, what each option costs, and what happens if the answer is "not now".
 **Por que `owner:` (reconfirmado 2026-08-31).** A frase acima — *"the reviews
 themselves need Drata … so this is the human's"* — foi verificada e se sustenta:
 não há credencial do Drata em lugar nenhum. Nem `DRATA_API_KEY` nem
-`DRATA_API_BASE_URL` estão no `.env.local` ou entre os 18 segredos do repo (os
-nomes aparecem só numa lista de auditoria selada de 2026-05-26). O login é dele.
+`DRATA_API_BASE_URL` estão no `.env.local` ou entre os 18 segredos do repo. E não
+é ausência inofensiva de um nome só documentado: `crates/corelink-ops/src/drata/
+drata.rs:130-133` faz `std::env::var("DRATA_API_KEY")` de verdade e devolve
+`DrataClientError::Misconfigured("DRATA_API_KEY unset")`. O cliente existe,
+compila e falha por falta da chave — o código quer a credencial que só ele tem.
 ```backlog
 id: B-032
 repo: corelink-server
@@ -2095,10 +2100,18 @@ secret, one purpose.
 
 **Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
 today, what each option costs, and what happens if the answer is "not now".
+**Decisão explícita 2026-08-31 — fica `owner:`, e por quê.** A pergunta levantada
+foi: o `gh` desta máquina já está autenticado como o owner (`gmhelmold`), isso não
+torna o item `tl`? Não. **O GitHub não expõe API para criar fine-grained PAT** — o
+antigo `POST /authorizations` foi removido em 2020 e nunca houve substituto; criar
+um é fluxo de UI web com re-autenticação, e criar um GitHub App exige o
+app-manifest, também web. O token presente é um `gho_` OAuth de escopos `gist,
+read:org, repo, workflow`, que não cunha credencial nenhuma. Mesma classe do
+[B-013]: UI na conta dele.
 ```backlog
 id: B-012
 repo: corelink-server
-owner: tl
+owner: owner
 status: open
 verify: manual
 verify-means: settled when a bot-opened PR shows checks
@@ -2489,10 +2502,13 @@ havia nenhuma.** Ao contrário de [B-031] (fechado na fala do owner, *"usa
 corelink runners"*), [B-041] (*"OWNER DECISION, 2026-08-24: do not pay"*) e
 [B-042] (o owner autorizou as credenciais Clerk live), **este item não registra
 decisão de owner alguma**: o corpo acima narra prova técnica — migração, probe de
-acquire/refuse/steal no D1 real, roll de imagem, dreno saudável — e o item não
-aparece no `docs/internal/2026-08-24-owner-decision-brief.md`, onde os outros
-aparecem. Uma varredura por `owner|dono|decis|autoriz` neste item devolvia
-exatamente uma linha: a do próprio campo. Aqui `owner: owner` **nunca foi
+acquire/refuse/steal no D1 real, roll de imagem, dreno saudável — e uma varredura
+por `owner|dono|decis|autoriz` neste item devolvia exatamente uma linha: a do
+próprio campo. O item também não aparece em `docs/` em lugar nenhum. (Precisão,
+porque a primeira versão desta frase errava: o `owner-decision-brief` cobre
+B-005/007/008/009/012/013/029/030/031/032/035 — dos quatro `done` aqui em causa,
+só [B-031] está lá. A procedência de [B-041] e [B-042] vive no corpo dos próprios
+itens, não no brief.) Aqui `owner: owner` **nunca foi
 procedência — foi rótulo errado**, o mesmo defeito que este PR conserta, e este é
 o espécime mais limpo dele. Registrado em vez de inventada uma decisão que não
 houve.
@@ -4207,8 +4223,11 @@ verify-means: |
   bytes recuperados medidos em produção — a mesma exigência de "prove a execução, não a
   ausência de reclamação" que este repositório aplica em todo lugar.
 
-  Owner, não tl: rodar GC pela primeira vez em dados de cliente é decisão de produto e
-  de risco, não de higiene de engenharia.
+  A decisão A JUSANTE é do owner: rodar GC pela primeira vez em dados de cliente é
+  decisão de produto e de risco, não de higiene de engenharia. O PRÓXIMO PASSO deste
+  item, porém, é `tl` — medir o que o GC apagaria, escrever o mecanismo e deixá-lo
+  pronto atrás de um flag desligado. Ele decide se liga; ninguém depende dele para
+  chegar até lá.
 last-verified: 2026-08-30
 ```
 
@@ -4890,8 +4909,10 @@ verify-means: |
   necessária, não suficiente. Quem fechar deve provar com um drill REAL — que é
   exatamente o que [B-084] cobra — e não com a presença da flag.
 
-  Owner, não tl: embarcar BYOK real toca credencial de KMS de cliente e muda a superfície
-  vendida. Não é decisão de engenharia.
+  A decisão A JUSANTE é do owner: embarcar BYOK real toca credencial de KMS de cliente
+  e muda a superfície vendida. O PRÓXIMO PASSO é `tl` — implementar e provar o caminho
+  contra um KMS de teste, e corrigir o material que já o vende. Embarcar em cliente
+  real é a decisão dele, e vem depois.
 last-verified: 2026-08-30
 ```
 
@@ -5001,7 +5022,9 @@ verify-means: |
   reconciliação — não porque sejam menos graves, mas porque exigem revisão jurídica e não
   cabem no mesmo PR de documentação.
 
-  Owner: corrigir texto publicado a titulares e reguladores não é decisão de engenharia.
+  A decisão A JUSANTE é do owner: publicar texto corrigido a titulares e reguladores
+  não é decisão de engenharia. O PRÓXIMO PASSO é `tl` — apurar a divergência e redigir
+  a correção. Publicar é dele.
 last-verified: 2026-08-30
 ```
 
@@ -5028,10 +5051,14 @@ de impacto de transferência para divulgar dados pessoais de plano de controle r
 nos EUA. É base de transferência do Art. 46 — não é questão que se resolva depois do
 lançamento.
 
+**Por que `owner:` (reconfirmado 2026-08-31).** Os dois reparos são provisionar D1
+por jurisdição **ou** emendar `legal/dpa-residency-amendment.md` — instrumento
+assinado, a mesma classe que mantém [B-035] e [B-089]. Rebaixar isto e manter
+aqueles seria aplicar o mesmo critério com decisão oposta.
 ```backlog
 id: B-086
 repo: corelink-server
-owner: tl
+owner: owner
 status: open
 verify: |
   bash -c 'ids=$(grep -E "^database_id[[:space:]]*=" wrangler.toml | grep -oE "\"[0-9a-f-]{36}\"" | sort -u | wc -l | tr -d " ")
@@ -5058,7 +5085,9 @@ verify-means: |
   verificável é a divergência entre um banco único e um contrato que promete fixação por
   tenant; a localização do primário exigiria a API da Cloudflare e não muda a conclusão.
 
-  Owner: base de transferência internacional é decisão jurídica.
+  Owner, e o campo concorda: a base de transferência internacional é decisão
+  jurídica, e um dos dois reparos emenda `legal/dpa-residency-amendment.md` —
+  instrumento assinado, a mesma classe que mantém [B-035] e [B-089].
 last-verified: 2026-08-30
 ```
 
@@ -5490,7 +5519,9 @@ verify-means: |
   as ocorrências e julgar; se sobrarem menções legítimas de roadmap, feche com nota em vez
   de reescrever o comando para ignorá-las.
 
-  Owner: material comercial.
+  A decisão A JUSANTE é do owner: material comercial é a voz dele. O PRÓXIMO PASSO é
+  `tl` — provar contra o produto o que a peça afirma e redigir o texto honesto.
+  Publicar é dele.
 last-verified: 2026-08-30
 ```
 
@@ -5605,7 +5636,9 @@ verify-means: |
   O que NÃO decide, e admito: se a redação da ressalva é ADEQUADA. Detecta a presença de
   palavras de escopo, não a qualidade da qualificação. Quem fechar deve ler.
 
-  Owner: é afirmação de estratégia, não de engenharia.
+  A decisão A JUSANTE é do owner: é afirmação de estratégia, não de engenharia. O
+  PRÓXIMO PASSO é `tl` — medir o que hoje é verdade e escrever a alternativa. Escolher
+  qual afirmar é dele.
 last-verified: 2026-08-30
 ```
 
@@ -5626,10 +5659,13 @@ Não é defeito. É dependência de plataforma no caminho crítico do cresciment
 recusada uma vez. Existe como item porque o tempo de resposta de um aumento de limite da
 Cloudflare não é controlado por nós, e descobrir isso quando o teto for atingido é tarde.
 
+**Por que `owner:` (reconfirmado 2026-08-31).** Pedir aumento de cota à Cloudflare é
+abrir ticket na conta comercial dele — a mesma forma que mantém [B-065] ("ação no
+dashboard dele"). Medir e documentar o teto é `tl` e já está feito; pedir não é.
 ```backlog
 id: B-097
 repo: corelink-server
-owner: tl
+owner: owner
 status: open
 verify: manual
 verify-means: |
@@ -6158,8 +6194,10 @@ verify-means: |
   frota seria menos. A rede não é o termo dominante, então o piso mora no servidor ou no
   cliente, e distinguir os dois exige nomear o `qother`.
 
-  Owner, não tl: a decisão que este item alimenta é se o produto vendido como cache de
-  build entrega aceleração no caso perfeito. É pergunta de produto.
+  A decisão A JUSANTE é do owner: o que este item alimenta é se o produto vendido como
+  cache de build entrega aceleração no caso perfeito — pergunta de produto. O PRÓXIMO
+  PASSO é `tl`: medir. A medição não depende dele, e é ela que torna a pergunta
+  respondível.
 last-verified: 2026-08-30
 ```
 

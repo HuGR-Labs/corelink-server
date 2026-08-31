@@ -89,6 +89,24 @@ cell "a heading and its block naming different ids is a hard failure" 2 "heading
 cell "a block with no heading above it is a hard failure" 2 "no \`### B-" \
   "$(printf '```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
 
+# `owner: owner` is a claim about the PRESENT — the next step is impossible without
+# him right now. It used to double as a provenance note ("this was his call once"),
+# and that second meaning is what parked 19 items behind a person who did not know
+# he was being waited for. A closed item cannot be blocked on anybody, so the two
+# fields cannot hold those values together. Without these cells the rule is a
+# snapshot that decays silently the next time one of those items closes.
+item_owner() { # $1 id, $2 status, $3 owner
+  printf '### %s — fixture\n\n```backlog\nid: %s\nrepo: corelink-server\nowner: %s\nstatus: %s\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n' \
+    "$1" "$1" "$3" "$2"
+}
+
+cell "a done item still blocked on the owner is BROKEN" 1 BROKEN "$(item_owner B-1 done owner)"
+cell "a parked item still blocked on the owner is BROKEN" 1 BROKEN "$(item_owner B-1 parked owner)"
+# The two controls that keep the rule from being over-broad: it must fire ONLY on
+# the closed×owner corner, never on a legitimately blocked open item.
+cell "an OPEN item blocked on the owner is fine" 0 CONFIRMED "$(item_owner B-1 open owner)"
+cell "a done item owned by tl is fine" 0 CONFIRMED "$(item_owner B-1 done tl)"
+
 echo
 if [[ "$fails" -eq 0 ]]; then echo "backlog gate: all cells passed"; exit 0; fi
 echo "backlog gate: $fails cell(s) failed"; exit 1

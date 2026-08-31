@@ -152,6 +152,20 @@ def validate_schema(item: Item) -> None:
         item.problems.append(f"status must be one of {VALID_STATUS}, got {d.get('status')!r}")
     if d.get("owner") not in VALID_OWNER and "owner" in d:
         item.problems.append(f"owner must be one of {VALID_OWNER}, got {d.get('owner')!r}")
+    # `owner: owner` means ONE thing: the next step is impossible without the owner
+    # RIGHT NOW — his credential, his money, his signature, his machine. That is a
+    # statement about the present, so a closed item cannot be making it. The field
+    # used to double as a provenance note ("this was his call once"), and that second
+    # meaning is what let 19 items sit in the queue waiting on a person who did not
+    # know he was being waited for. Provenance belongs in the item's prose, with a
+    # date; the field carries state. Without this check the rule is a snapshot that
+    # decays the next time any of these items closes.
+    if d.get("status") in ("done", "parked") and d.get("owner") == "owner":
+        item.problems.append(
+            f"status is {d.get('status')!r} but owner is 'owner' — the field means "
+            "'blocked on the owner RIGHT NOW', which a closed item cannot be. If he "
+            "decided something here, write it in the body with a date and set owner: tl"
+        )
     if "last-verified" in d:
         try:
             parse_date(d["last-verified"])

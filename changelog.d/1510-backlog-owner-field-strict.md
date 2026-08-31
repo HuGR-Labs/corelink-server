@@ -10,25 +10,33 @@
   literalmente impossível sem o dono — a credencial dele, o dinheiro dele, a
   assinatura dele, a máquina dele; investigar, medir e deixar o conserto pronto nunca
   conta, mesmo que a última tecla seja dele. As linhas `owner: owner` caíram de **28
-  para 9**, e nenhum item `done` carrega mais o campo: ele agora é estritamente
-  presente **e** exclusivo de itens abertos. Uma revisão fria refutou quatro
-  rebaixamentos da primeira passada e eles foram revertidos, cada um por credencial
-  ou assinatura ausente: `B-008` (não existe chave de LEITURA da PagerDuty — só a
-  `PAGERDUTY_ROUTING_KEY` de escrita; a `PAGERDUTY_API_KEY` do doc-comment nunca foi
-  provisionada), `B-032` (nenhuma credencial do Drata em lugar nenhum), `B-035`
-  (emenda de instrumento assinado que o próprio item diz não poder ser auto-aprovada)
-  e `B-089` (emenda de SLA, ou comprometer-se a devolver dinheiro contra fatura).
-  Sobre os `done`: `B-031`, `B-041` e `B-042` registram no corpo uma decisão datada do
-  owner, então a procedência não se perde ao mover o campo; `B-043` **não registrava
-  nenhuma** — apurado contra o brief de decisões e por varredura do item — e isso foi
-  escrito no corpo em vez de se inventar uma decisão que não houve. `B-046` mantém o
-  campo, com o corpo reconciliado para dizer que o bloqueio é da **Cloudflare** (R2
-  responde `NotImplemented` a Object Lock) e que o único resíduo de owner é pagar por
-  um segundo backend. No mesmo passo, `B-062` fechou: o `GET` por `{id}` na API de
-  Containers — nunca pela LISTA, que serve visão defasada — mostra as cinco
-  aplicações de produção convergidas em `ddd95560-r1`, cujo commit é ancestral de
-  `main`, com os quatro commits que o item dava como presos fora (Art.17 do GDPR,
-  leitura do CAS sem limite, assinatura do Turborepo, coleções sem limite) já em
-  produção; seu `verify` continua `manual` — um check de `wrangler.toml` vs `HEAD`
-  seria portão dominado, pois mediria a configuração e não o que executa — e foi
-  reescrito com polaridade invertida, como `done` exige.
+  para 12**. Duas revisões frias refutaram sete rebaixamentos da primeira passada,
+  cada um por credencial ou assinatura verificadamente ausente: `B-008` (não existe
+  chave de LEITURA da PagerDuty — só a `PAGERDUTY_ROUTING_KEY` de escrita), `B-032`
+  (nenhuma credencial do Drata, embora `corelink-ops/src/drata/drata.rs:132` faça
+  `env::var` dela de verdade), `B-035` e `B-089` (emenda de instrumento assinado),
+  `B-086` (emenda do adendo de residência), `B-097` (ticket na conta comercial) e
+  `B-012` (o GitHub não expõe API para cunhar fine-grained PAT — é UI na conta dele).
+  Os seis que permanecem `tl` de mérito tiveram a **prosa reconciliada**: deixar
+  "Owner, não tl" de pé sob `owner: tl` apenas trocaria "o campo mente" por "a prosa
+  mente", então cada um agora distingue a decisão a jusante, que é do owner, do
+  próximo passo, que é medir e deixar pronto.
+- **`scripts/backlog_verify.py` agora recusa `status: done|parked` combinado com
+  `owner: owner`.** O critério acima era uma fotografia: valia no dia em que foi
+  escrito e voltaria a quebrar no instante em que qualquer um dos itens fechasse sem
+  que alguém lembrasse de tirar o campo à mão. O gate validava `owner ∈ {tl, owner}`
+  e não tinha opinião nenhuma sobre a combinação com `status`. Agora tem, e o
+  auto-teste `scripts/test_backlog_verify.sh` ganhou quatro células: as duas que
+  provam o vermelho (`done`×`owner` e `parked`×`owner` viram BROKEN) e as duas de
+  controle que impedem a regra de ser ampla demais (um item `open` bloqueado no dono
+  continua válido; um `done` sob `tl` também).
+- **`B-062` fechou** — o `GET` por `{id}` na API de Containers, nunca pela LISTA que
+  serve visão defasada, mostra as cinco aplicações de produção convergidas em
+  `ddd95560-r1`, cujo commit é ancestral de `main`, com os quatro commits que o item
+  dava como presos fora (Art.17 do GDPR, leitura do CAS sem limite, assinatura do
+  Turborepo, coleções sem limite) já em produção. Seu `verify` continua `manual` — um
+  check de `wrangler.toml` vs `HEAD` seria portão dominado, pois mediria a
+  configuração e não o que executa — reescrito com polaridade invertida. Registre-se
+  que um `verify: manual` recém-datado é um cronômetro de 14 dias: o que sustenta
+  este fechamento é a reverificação por região registrada no corpo, não o verde do
+  gate.
