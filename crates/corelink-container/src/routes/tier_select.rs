@@ -591,21 +591,20 @@ pub fn router(state: TierSelectRouteState) -> Router {
 
 /// Assemble the production [`TierSelectRouteState`] from the environment, or
 /// `None` when the route must NOT be mounted. **Fail-safe:** the money path is
-/// mounted ONLY when the internal-auth secret (≥16 chars), the D1 config, the
-/// Stripe config, AND the current DPA version are all present; a missing/short
-/// secret or any client-init failure leaves `/v1/onboarding/tier-select`
-/// unmounted (404) rather than half-wired. Mirrors
-/// [`super::internal_pat::build_state_from_env`].
+/// mounted ONLY when the internal-auth secret, the D1 config, the Stripe
+/// config, AND the current DPA version are all present; a missing/short secret
+/// or any client-init failure leaves `/v1/onboarding/tier-select` unmounted
+/// (404) rather than half-wired. The secret resolves through
+/// [`super::admin::resolve_internal_auth_key`] with the dedicated
+/// `CORELINK_TIER_SELECT_AUTH_KEY` falling back to the shared key (B-074), so
+/// the money path inherits the 32-char floor and gains a rotation path.
 #[must_use]
 pub fn build_state_from_env() -> Option<TierSelectRouteState> {
-    let auth_key = std::env::var("CORELINK_INTERNAL_AUTH_KEY").ok()?;
-    if auth_key.len() < 16 {
-        tracing::warn!(
-            "CORELINK_INTERNAL_AUTH_KEY too short (< 16 chars); \
-             /v1/onboarding/tier-select NOT mounted"
-        );
+    let Some(auth_key) = super::admin::resolve_internal_auth_key("CORELINK_TIER_SELECT_AUTH_KEY")
+    else {
+        tracing::warn!("no internal-auth key ≥32 chars; tier-select NOT mounted");
         return None;
-    }
+    };
 
     let Some(dpa_version) = std::env::var("CORELINK_DPA_VERSION")
         .ok()
@@ -636,7 +635,7 @@ pub fn build_state_from_env() -> Option<TierSelectRouteState> {
     };
 
     Some(TierSelectRouteState {
-        internal_auth_key: Arc::from(auth_key),
+        internal_auth_key: auth_key,
         store: Arc::new(super::tier_select_store::D1HttpTierSelectStore::new(
             Arc::clone(&d1),
         )),

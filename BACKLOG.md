@@ -4506,30 +4506,60 @@ variável dedicada, herdando o piso de 32 e o fallback documentado.
 id: B-074
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'n=0; det=""
+  bash -c 'set -u
+  t=crates/corelink-container/tests/money_path_internal_auth.rs
+  [ -f "$t" ] || { echo "FALHA: o teste de regressao $t sumiu — o piso de 32 do caminho do dinheiro perdeu sua prova."; exit 1; }
+  ruim=0; det=""
   for f in crates/corelink-container/src/routes/tier_select.rs crates/corelink-container/src/routes/dpa_accept.rs; do
-    [ -f "$f" ] || continue
-    cru=0; grep -qE "env::var\(\"CORELINK_INTERNAL_AUTH_KEY\"\)" "$f" && cru=1
-    helper=0; grep -q "resolve_internal_auth_key" "$f" && helper=1
-    if [ "$cru" = 1 ] && [ "$helper" = 0 ]; then n=$((n+1)); det="$det $(basename $f)"; fi
+    [ -f "$f" ] || { echo "FALHA: $f sumiu — reavalie o item."; exit 1; }
+    if ! grep -qE "resolve_internal_auth_key\(\"CORELINK_[A-Z_]+_AUTH_KEY\"\)" "$f"; then
+      ruim=$((ruim+1)); det="$det $(basename $f):sem-chamada-do-helper"
+    fi
+    if grep -qE "env::var\(\"CORELINK_INTERNAL_AUTH_KEY\"\)" "$f"; then
+      ruim=$((ruim+1)); det="$det $(basename $f):leitura-crua"
+    fi
+    if grep -qE "auth_key\.len\(\) *< *16" "$f"; then
+      ruim=$((ruim+1)); det="$det $(basename $f):piso-16"
+    fi
   done
-  [ "$n" -gt 0 ] || { echo "FALHA: nenhum dos dois arquivos le a chave compartilhada crua — feche o item."; exit 1; }
-  echo "aberto: $n arquivo(s) do caminho do dinheiro leem CORELINK_INTERNAL_AUTH_KEY cru sem o helper:$det"'
+  for a in CORELINK_TIER_SELECT_AUTH_KEY CORELINK_DPA_ACCEPT_AUTH_KEY POSITIVE CONTROL FAILED; do
+    grep -q "$a" "$t" || { ruim=$((ruim+1)); det="$det teste:sem-$a"; }
+  done
+  [ "$ruim" = 0 ] || { echo "REGRESSAO B-074: $ruim defeito(s) —$det"; exit 1; }
+  echo "fechado: os dois arquivos do caminho do dinheiro resolvem pelo helper (piso 32) e o teste de regressao com controle positivo esta no lugar"'
 verify-means: |
-  open — `tier_select.rs` e/ou `dpa_accept.rs` leem `CORELINK_INTERNAL_AUTH_KEY` por
-  `env::var` direto SEM chamar `resolve_internal_auth_key`.
+  done — polaridade INVERTIDA (I-6). Agora o comando afirma a propriedade CORRETA e
+  falha se ela regredir; a forma `open` (que passava quando o defeito existia) ficaria
+  verde no PR que consertou e vermelha em todo PR irmão seguinte.
 
-  Vira DRIFTED quando os dois passarem pelo helper, que é o reparo — e o helper traz o
-  piso de 32 junto, então não preciso medir o `16` separadamente. Medir o literal `16`
-  seria frágil: alguém poderia trocar para `32` mantendo a leitura crua, o que conserta
-  a entropia e deixa a impossibilidade de rotação intacta. Gatear no HELPER decide as
-  duas metades da alegação com um único predicado.
+  Assere quatro coisas, cada uma quebrando uma metade da alegação original se voltar:
+  `tier_select.rs` e `dpa_accept.rs` (1) CHAMAM `resolve_internal_auth_key` com uma
+  variável dedicada — o predicado exige o parêntese e o nome da variável, porque a
+  primeira versão deste gate aceitava a menção do helper num doc-comment e um
+  mutation-probe mostrou que só a checagem de leitura crua estava segurando —, (2) não
+  voltaram a ler `CORELINK_INTERNAL_AUTH_KEY` por `env::var` direto, e (3) não têm mais
+  o piso literal `< 16`; e (4) o teste de regressão existe e ainda contém as duas
+  variáveis dedicadas mais o seu CONTROLE POSITIVO.
 
-  Conta arquivos em vez de exigir os dois: consertar um só reduz o número e mantém o
-  item aberto com o detalhe de qual falta. Progresso parcial não é punido nem escondido.
-last-verified: 2026-08-30
+  A checagem do controle positivo é deliberada. O teste é feito de asserções de NEGAÇÃO
+  (`is_none()`), e negação passa vazia se o harness deixar de satisfazer as outras
+  pré-condições (D1, Stripe, versão do DPA, chave de assinatura): a rota devolveria
+  `None` por motivo alheio à chave e o teste ficaria verde medindo nada. Quem apagar a
+  linha `POSITIVE CONTROL FAILED` esvazia o teste sem quebrá-lo — por isso o gate conta
+  essa string, não só o arquivo.
+
+  O que NÃO decide, e admito: não EXECUTA o teste — isso exigiria compilar o workspace
+  dentro do `backlog_verify`, caro demais para rodar a cada item num Mac que também é o
+  runner do CI. A execução é responsabilidade do CI. Este comando decide que o reparo e
+  sua prova continuam no lugar, não que a prova passou nesta árvore.
+
+  Também não decide a força do próprio helper: se alguém baixar
+  `INTERNAL_AUTH_KEY_MIN_LEN` em `admin.rs`, os dois arquivos continuam "corretos" aqui
+  e o piso cai para todas as superfícies internas de uma vez. Esse é o predicado do
+  helper, e pertence a um item do helper — não a este.
+last-verified: 2026-08-31
 ```
 
 ### B-075 — o plano de computação DevEnv autoriza por omissão, e uma falha do D1 também autoriza

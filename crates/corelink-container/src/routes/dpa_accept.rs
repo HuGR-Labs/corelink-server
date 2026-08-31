@@ -578,17 +578,26 @@ fn parse_signing_key(pem: &str) -> Option<RsaPrivateKeyPem> {
 
 /// Assemble the production [`DpaAcceptRouteState`] from the environment, or
 /// `None` when the route must NOT be mounted (fail-CLOSED). Mounted ONLY when
-/// the internal-auth secret (≥16 chars), the DPA version, the RS256 signing key
-/// (`DPA_RECEIPT_SIGNING_KEY`, valid PEM), AND the D1 config are all present.
+/// the internal-auth secret (≥32 chars, the shared
+/// [`super::admin::INTERNAL_AUTH_KEY_MIN_LEN`] floor), the DPA version, the
+/// RS256 signing key (`DPA_RECEIPT_SIGNING_KEY`, valid PEM), AND the D1 config
+/// are all present.
+///
+/// Resolves through [`super::admin::resolve_internal_auth_key`] with the
+/// dedicated `CORELINK_DPA_ACCEPT_AUTH_KEY`, falling back to the shared
+/// `CORELINK_INTERNAL_AUTH_KEY` (B-074). The DPA receipt is a legally binding
+/// consent record; it now carries the same entropy floor as every other
+/// internal surface, plus a rotation path to its own credential.
 #[must_use]
 pub fn build_state_from_env() -> Option<DpaAcceptRouteState> {
-    let auth_key = std::env::var("CORELINK_INTERNAL_AUTH_KEY").ok()?;
-    if auth_key.len() < 16 {
+    let Some(auth_key) = super::admin::resolve_internal_auth_key("CORELINK_DPA_ACCEPT_AUTH_KEY")
+    else {
         tracing::warn!(
-            "CORELINK_INTERNAL_AUTH_KEY too short (< 16 chars); /v1/onboarding/dpa-accept NOT mounted"
+            "no internal-auth key ≥32 chars (CORELINK_DPA_ACCEPT_AUTH_KEY / \
+             CORELINK_INTERNAL_AUTH_KEY); /v1/onboarding/dpa-accept NOT mounted"
         );
         return None;
-    }
+    };
     let Some(dpa_version) = std::env::var("CORELINK_DPA_VERSION")
         .ok()
         .filter(|v| !v.is_empty())
@@ -617,7 +626,7 @@ pub fn build_state_from_env() -> Option<DpaAcceptRouteState> {
     };
 
     Some(DpaAcceptRouteState {
-        internal_auth_key: Arc::from(auth_key),
+        internal_auth_key: auth_key,
         store: Arc::new(super::dpa_accept_store::D1HttpDpaAcceptStore::new(
             Arc::new(d1),
         )),
