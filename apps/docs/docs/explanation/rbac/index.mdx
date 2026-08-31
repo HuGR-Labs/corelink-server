@@ -36,25 +36,41 @@ The `membership.role` column is constrained to exactly four values
 | `Viewer`    | Per-user surface  | Read-only CAS + audit-log read; cannot mint PATs.                       |
 
 > **The "Billing" role is NOT a separate membership role.** Billing is a
-> permission scope (`admin:billing`) granted exclusively to the `Owner` role.
-> A tenant may have multiple Owners, all of whom see the billing surface.
+> capability the Worker forwards as `billing` in `x-corelink-scope` for an
+> owner/admin dashboard session, and the container enforces it with
+> `requires_billing_admin`. A tenant may have multiple Owners, all of whom
+> see the billing surface. A minted cache PAT is never granted `billing`,
+> so a leaked CI token cannot reach it.
 
 See [Role catalog](./role-catalog.mdx) for the per-role detail page.
 
 ## Permission categories
 
-The 12 canonical PAT scopes
-(`crates/corelink-pat/src/scopes.rs`) fall into five customer-facing
-categories:
+The 7 canonical PAT scopes
+(`crates/corelink-pat/src/scopes.rs`) fall into these customer-facing
+categories. **PAT scopes govern the cache surface**; the administrative
+capabilities below are carried by the dashboard *session* role, not by a
+PAT scope — see the note under the table.
 
 | Category    | Scopes                                                                                          | Notes                                                |
 |-------------|-------------------------------------------------------------------------------------------------|------------------------------------------------------|
-| **CAS**     | `cache:r`, `cache:w`, `cache:find-missing`, `cache:delete`                                      | Read/write content-addressable storage + AC results. |
-| **BYOK**    | `admin:tenant-read`, `admin:tenant-write` (KMS config subset)                                   | Roadmap — Enterprise BYOK with customer-managed KMS is on the roadmap (the current handler returns HTTP 501, not wired). |
-| **Audit**   | `admin:audit`                                                                                   | Tenant audit-log read.                               |
-| **Billing** | `admin:billing`                                                                                 | View / mutate billing surface.                       |
-| **Members** | `admin:users`, `admin:tokens`                                                                   | Invite / demote users; mint / revoke PATs.           |
-| **Executor**| `execute:action`, `report:result`                                                               | Phase-2 executor only; not granted to humans.        |
+| **CAS**     | `cache:r`, `cache:w`, `cache:find-missing`, `cache:delete` *(not enforced)*                      | Read/write content-addressable storage + AC results. Blob deletion is gated on `cache:w`, not on `cache:delete`. |
+| **Admin**   | `admin`                                                                                         | Owner-grade superset (cache read + write, plus billing / account-PII). Never self-serve-grantable. |
+| **Executor**| `execute:action`, `report:result`                                                               | Phase-2 executor only; **not implemented** — these names grant nothing today. |
+
+:::warning[Administrative access is not carried by a PAT scope]
+Earlier revisions of this page listed six granular admin scopes —
+`admin:tenant-read`, `admin:tenant-write`, `admin:tokens`,
+`admin:billing`, `admin:audit`, `admin:users`. **They were never
+implemented and have been removed** (B-080): no mint path ever accepted
+them, `pat.scope` could never store them, and no enforcement point read
+them. Do not build a least-privilege plan on those names.
+
+Billing, audit-log and member management are gated on the **dashboard
+session role** (Clerk owner/admin), which the Worker expresses as the
+`billing` capability, plus the owner-grade `admin` / `owner` tokens —
+not on granular PAT scopes.
+:::
 
 For the full ID-by-ID reference see [`permissions.mdx`](../../reference/rbac/permissions.mdx).
 For the role × permission matrix see [`permission-matrix.mdx`](./permission-matrix.mdx).

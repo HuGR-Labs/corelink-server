@@ -1,16 +1,26 @@
-//! `PatScopes` u64 bitset — compact representation of the 13 canonical
-//! `auth_model.md §3.1` scopes plus 51 reserved bits for future
+//! `PatScopes` u64 bitset — compact representation of the 7 canonical
+//! `auth_model.md §3.1` scopes plus reserved bits for future
 //! expansion (cap = 64; ADR-0026 documents the migration path to u128
 //! when the canonical scope catalog exceeds 64 entries).
 //!
 //! # Layout
 //!
-//! Bits 0..=11 cover the 13 canonical scopes (note: `cache-rw` is an
-//! alias of `cache-r | cache-w` and shares no dedicated bit). Bits
-//! 12..=63 are reserved; the `Self::from_u64` constructor masks
-//! reserved bits to zero so a forward-compatible DB row whose bitset
-//! includes future flags gracefully degrades on a current-generation
-//! reader instead of returning a malformed scope set.
+//! Bits 0..=4 and 10..=11 cover the 7 canonical scopes (note: `cache-rw`
+//! is an alias of `cache-r | cache-w` and shares no dedicated bit). Bits
+//! 5..=9 are RETIRED (the six decorative `admin:*` scopes, B-080 — see
+//! [`SCOPE_ADMIN`]) and bits 12..=63 are reserved; the `Self::from_u64`
+//! constructor masks non-canonical bits to zero so a forward-compatible
+//! DB row whose bitset includes future flags gracefully degrades on a
+//! current-generation reader instead of returning a malformed scope set.
+//!
+//! # A published name must have an enforcement point behind it
+//!
+//! Every name [`PatScopes::names`] returns is a capability claim. Publishing a
+//! name that no enforcement point consults invites a least-privilege plan that
+//! is purely decorative — the B-080 defect. `crates/corelink-container/tests/
+//! scope_catalog_closure.rs` fails if a name is added here without a predicate
+//! in `corelink_server::scope` reading it (or an explicit, reasoned entry in
+//! that test's declared-exception ledger).
 //!
 //! # Why u64 (not `Vec<String>`)
 //!
@@ -40,18 +50,35 @@ pub const SCOPE_CACHE_W: u64 = 1 << 1;
 pub const SCOPE_CACHE_FIND: u64 = 1 << 2;
 /// `cache:delete` — admin blob deletion (rare).
 pub const SCOPE_CACHE_DELETE: u64 = 1 << 3;
-/// `admin:tenant-read` — list tenant config.
-pub const SCOPE_ADMIN_TENANT_R: u64 = 1 << 4;
-/// `admin:tenant-write` — mutate tenant config.
-pub const SCOPE_ADMIN_TENANT_W: u64 = 1 << 5;
-/// `admin:tokens` — mint / revoke tokens.
-pub const SCOPE_ADMIN_TOKENS: u64 = 1 << 6;
-/// `admin:billing` — view / mutate billing surface.
-pub const SCOPE_ADMIN_BILLING: u64 = 1 << 7;
-/// `admin:audit` — read tenant audit logs.
-pub const SCOPE_ADMIN_AUDIT: u64 = 1 << 8;
-/// `admin:users` — manage tenant users.
-pub const SCOPE_ADMIN_USERS: u64 = 1 << 9;
+/// `admin` — owner-grade superset: cache rw + tenant administration.
+///
+/// **This bit replaced six decorative predecessors (B-080).** The catalog used
+/// to publish `admin:tenant-read`, `admin:tenant-write`, `admin:tokens`,
+/// `admin:billing`, `admin:audit` and `admin:users` as distinct bits 4..=9. None
+/// was ever enforceable, and none was ever individually grantable:
+///
+/// - **Not mintable.** The self-serve classifier
+///   (`corelink_server::scope::classify_requested_scopes`) returns `Err` for any
+///   `admin:*` token, and the internal mint
+///   (`routes::internal_pat::scope_label_to_bits`) accepts only the labels
+///   `admin`, `cas:rw`, `read-write` and `read-only` — it set the six bits only
+///   ever *en bloc*, behind the single `admin` label.
+/// - **Not persistable.** `pat.scope` is
+///   `TEXT CHECK (scope IN ('read-write','read-only','admin'))`
+///   (`migrations/d1/0037`). There is no bitset column at all: this u64 is a
+///   mint-time in-memory artifact, and what reaches enforcement is the coarse
+///   scope STRING on the `x-corelink-scope` header.
+/// - **No consumer.** The natural consumer — the admin dashboard — authenticates
+///   with a Clerk session, not a PAT. That granularity IS enforced, under a
+///   different vocabulary: `requires_billing_admin` (`billing`/`admin`/`owner`)
+///   gates `/v1/customer/billing*` and `/v1/customer/audit`.
+///
+/// Bits 5..=9 are therefore RETIRED, and fold back into the reserved range.
+/// Reintroducing granular admin scopes is a security-surface expansion and is
+/// subject to `auth_model.md` §3.4 (ADR + security review) in full.
+/// `crates/corelink-container/tests/scope_catalog_closure.rs` fails if any name
+/// is published here without an enforcement point behind it.
+pub const SCOPE_ADMIN: u64 = 1 << 4;
 /// `execute:action` — Phase 2 executor reports action start.
 pub const SCOPE_EXECUTE_ACTION: u64 = 1 << 10;
 /// `report:result` — Phase 2 executor reports result.
@@ -60,19 +87,19 @@ pub const SCOPE_REPORT_RESULT: u64 = 1 << 11;
 /// Convenience union: read + write CAS in a single mask.
 pub const SCOPE_CACHE_RW: u64 = SCOPE_CACHE_R | SCOPE_CACHE_W;
 
-/// Mask of all 12 currently-known canonical bits. Any bit outside this
+/// Mask of all 7 currently-known canonical bits. Any bit outside this
 /// mask is reserved for future expansion and silently dropped by
 /// [`PatScopes::from_u64`].
+///
+/// Bits 5..=9 were retired with the six decorative `admin:*` scopes (B-080,
+/// see [`SCOPE_ADMIN`]) and are reserved again. Dropping them from the mask is
+/// safe precisely because nothing persists a bitset: `pat.scope` stores a coarse
+/// label string, so no stored row can carry a retired bit into a current reader.
 pub const SCOPE_KNOWN_MASK: u64 = SCOPE_CACHE_R
     | SCOPE_CACHE_W
     | SCOPE_CACHE_FIND
     | SCOPE_CACHE_DELETE
-    | SCOPE_ADMIN_TENANT_R
-    | SCOPE_ADMIN_TENANT_W
-    | SCOPE_ADMIN_TOKENS
-    | SCOPE_ADMIN_BILLING
-    | SCOPE_ADMIN_AUDIT
-    | SCOPE_ADMIN_USERS
+    | SCOPE_ADMIN
     | SCOPE_EXECUTE_ACTION
     | SCOPE_REPORT_RESULT;
 
@@ -110,8 +137,20 @@ impl PatScopes {
         Self(scope & SCOPE_KNOWN_MASK)
     }
 
-    /// Returns the raw u64 representation suitable for DB persistence
-    /// (Neon `pat.scopes` BIGINT column, per data_model.md §4.1).
+    /// Returns the raw u64 bitset.
+    ///
+    /// **This is NOT persisted anywhere.** The doc comment used to promise a
+    /// "Neon `pat.scopes` BIGINT column, per data_model.md §4.1"; no such
+    /// column exists in any migration. The live store is D1, where
+    /// `pat.scope` is a coarse label
+    /// (`TEXT CHECK (scope IN ('read-write','read-only','admin'))`,
+    /// `migrations/d1/0037`) — so this bitset is a mint-time in-memory
+    /// artifact only, and what reaches enforcement is the scope STRING on
+    /// the `x-corelink-scope` header. The only production consumer is a log
+    /// field (`routes::internal_pat`, `scope_bits =`).
+    ///
+    /// That absence is load-bearing: because no row stores a bitset, retiring
+    /// a bit can never reinterpret an existing PAT (see [`SCOPE_ADMIN`]).
     #[must_use]
     pub const fn to_u64(self) -> u64 {
         self.0
@@ -158,12 +197,7 @@ impl PatScopes {
             (SCOPE_CACHE_W, "cache:w"),
             (SCOPE_CACHE_FIND, "cache:find-missing"),
             (SCOPE_CACHE_DELETE, "cache:delete"),
-            (SCOPE_ADMIN_TENANT_R, "admin:tenant-read"),
-            (SCOPE_ADMIN_TENANT_W, "admin:tenant-write"),
-            (SCOPE_ADMIN_TOKENS, "admin:tokens"),
-            (SCOPE_ADMIN_BILLING, "admin:billing"),
-            (SCOPE_ADMIN_AUDIT, "admin:audit"),
-            (SCOPE_ADMIN_USERS, "admin:users"),
+            (SCOPE_ADMIN, "admin"),
             (SCOPE_EXECUTE_ACTION, "execute:action"),
             (SCOPE_REPORT_RESULT, "report:result"),
         ];

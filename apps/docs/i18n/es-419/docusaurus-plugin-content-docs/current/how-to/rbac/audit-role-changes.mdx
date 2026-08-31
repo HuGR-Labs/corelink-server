@@ -39,12 +39,33 @@ busca de cambios de rol y eventos de doble aprobación.
 
 ## Requisitos previos
 
-- Cuentas con el alcance `admin:audit`.
-- Un PAT con ese alcance
-  (`Authorization: Bearer corelink_<env>_…`), o una sesión de Clerk en el
-  panel. Crea y lista PATs con `POST /v1/customer/keys`
-  (`{name, scopes[]}`) y `GET /v1/customer/keys`; revócalos con
+- **Cualquier PAT con capacidad de lectura**
+  (`Authorization: Bearer corelink_<env>_…`). Las rutas `/v1/audit/*` que
+  usa esta guía están protegidas por `requires_audit_read`, que concede
+  ante cualquier capacidad de lectura: un token cuyo alcance sea
+  `read-write`, `read-only`, `cas:r`, `cas:rw`, `cas:w`, `admin` u
+  `owner`. **El token que el panel emite por defecto (`read-write`) es
+  suficiente**; no necesitas un token de rango owner para exportar tu
+  propio registro de auditoría.
+- Fail-closed: un PAT solo de `find-missing`, o una solicitud sin alcance
+  alguno, es rechazada.
+- Crea y lista PATs con `POST /v1/customer/keys` (`{name, scopes[]}`) y
+  `GET /v1/customer/keys`; revócalos con
   `POST /v1/customer/keys/{pat_id}/revoke`.
+
+:::note
+La **página de registro de auditoría** del panel
+(`GET /v1/customer/audit`) es otra superficie, con un control más
+estricto: `requires_billing_admin` (`billing` / `admin` / `owner`),
+porque esa vista contiene PII de facturación y de cuenta. Esa restricción
+**no** aplica a las rutas `/v1/audit/*` que se usan abajo.
+:::
+
+:::note
+No existe el alcance `admin:audit`. Figuraba aquí como requisito, pero
+nunca se implementó y ya fue eliminado (B-080): ningún camino de emisión
+lo aceptó jamás y ningún punto de aplicación lo leyó nunca.
+:::
 - URL base de la API: `https://corelink-api.humangr.com`.
 
 ## La cadena de auditoría en un párrafo

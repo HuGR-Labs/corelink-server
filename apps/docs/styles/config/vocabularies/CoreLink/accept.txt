@@ -276,6 +276,7 @@ stdout
 subcommand
 subcommands
 substring
+superset
 sysexits
 takedown
 teamId

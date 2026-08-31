@@ -32,12 +32,32 @@ and dual-approval events.
 
 ## Prerequisites
 
-- You hold `admin:audit` scope.
-- A PAT with that scope
-  (`Authorization: Bearer corelink_<env>_…`), or a Clerk session in the
-  dashboard. Mint and list PATs with `POST /v1/customer/keys`
-  (`{name, scopes[]}`) and `GET /v1/customer/keys`; revoke with
+- **Any read-capable PAT** (`Authorization: Bearer corelink_<env>_…`).
+  The `/v1/audit/*` routes used in this guide are gated by
+  `requires_audit_read`, which grants on any read capability — a token
+  whose scope is `read-write`, `read-only`, `cas:r`, `cas:rw`, `cas:w`,
+  `admin` or `owner`. **The default token the dashboard mints
+  (`read-write`) is enough**; you do not need an owner-grade token to
+  export your own audit log.
+- Fail-closed: a `find-missing`-only PAT, or a request with no scope at
+  all, is refused.
+- Mint and list PATs with `POST /v1/customer/keys` (`{name, scopes[]}`)
+  and `GET /v1/customer/keys`; revoke with
   `POST /v1/customer/keys/{pat_id}/revoke`.
+
+:::note
+The dashboard's own **Audit log page** (`GET /v1/customer/audit`) is a
+different surface with a stricter gate — `requires_billing_admin`
+(`billing` / `admin` / `owner`), because that view carries billing and
+account PII. That restriction does **not** apply to the `/v1/audit/*`
+routes below.
+:::
+
+:::note
+There is no `admin:audit` scope. It was listed here as a prerequisite,
+but it was never implemented and has been removed (B-080) — no mint path
+ever accepted it and no enforcement point ever read it.
+:::
 - API base URL: `https://corelink-api.humangr.com`.
 
 ## The audit chain in one paragraph

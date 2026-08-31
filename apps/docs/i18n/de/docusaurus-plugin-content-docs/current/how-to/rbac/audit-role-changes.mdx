@@ -39,13 +39,34 @@ Rollenänderungen und Vier-Augen-Ereignissen abfragen.
 
 ## Voraussetzungen
 
-- Sie besitzen den Scope `admin:audit`.
-- Ein PAT mit diesem Scope
-  (`Authorization: Bearer corelink_<env>_…`) oder eine Clerk-Session im
-  Dashboard. PATs erzeugen und auflisten Sie mit
-  `POST /v1/customer/keys` (`{name, scopes[]}`) und
-  `GET /v1/customer/keys`; widerrufen mit
+- **Ein beliebiges PAT mit Lesefähigkeit**
+  (`Authorization: Bearer corelink_<env>_…`). Die in dieser Anleitung
+  verwendeten `/v1/audit/*`-Routen sind mit `requires_audit_read`
+  geschützt, das bei jeder Lesefähigkeit gewährt — also bei einem Token
+  mit dem Scope `read-write`, `read-only`, `cas:r`, `cas:rw`, `cas:w`,
+  `admin` oder `owner`. **Das Standard-Token, das das Dashboard ausgibt
+  (`read-write`), genügt**; für den Export Ihres eigenen Audit-Logs
+  brauchen Sie kein Token mit Owner-Rang.
+- Fail-closed: Ein PAT nur mit `find-missing` oder eine Anfrage ganz ohne
+  Scope wird abgewiesen.
+- PATs erzeugen und auflisten Sie mit `POST /v1/customer/keys`
+  (`{name, scopes[]}`) und `GET /v1/customer/keys`; widerrufen mit
   `POST /v1/customer/keys/{pat_id}/revoke`.
+
+:::note
+Die **Audit-Log-Seite** des Dashboards (`GET /v1/customer/audit`) ist
+eine andere Oberfläche mit strengerem Schutz — `requires_billing_admin`
+(`billing` / `admin` / `owner`), weil diese Ansicht Abrechnungs- und
+Konto-PII enthält. Diese Einschränkung gilt **nicht** für die unten
+verwendeten `/v1/audit/*`-Routen.
+:::
+
+:::note
+Einen Scope `admin:audit` gibt es nicht. Er stand hier als
+Voraussetzung, wurde aber nie implementiert und ist inzwischen entfernt
+(B-080) — kein Ausgabepfad hat ihn je akzeptiert und keine
+Durchsetzungsstelle hat ihn je gelesen.
+:::
 - API-Basis-URL: `https://corelink-api.humangr.com`.
 
 ## Die Audit-Kette in einem Absatz

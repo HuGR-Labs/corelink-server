@@ -23,7 +23,7 @@
 
 use corelink_pat::mint::{mint_with_entropy, DeterministicMintInput};
 use corelink_pat::scopes::{
-    PatScopes, SCOPE_ADMIN_AUDIT, SCOPE_CACHE_FIND, SCOPE_CACHE_RW, SCOPE_KNOWN_MASK,
+    PatScopes, SCOPE_ADMIN, SCOPE_CACHE_FIND, SCOPE_CACHE_RW, SCOPE_KNOWN_MASK,
 };
 use corelink_pat::types::PAT_TOKEN_ID_LEN;
 use corelink_pat::types::{PatEnv, PatSigningKey, PrincipalId, TenantId};
@@ -202,31 +202,35 @@ proptest! {
     }
 }
 
-/// Compile-time pin that the canonical scope mask covers exactly 12
-/// bits (13 named scopes minus the alias `SCOPE_CACHE_RW`).
+/// Compile-time pin that the canonical scope mask covers exactly 7 bits
+/// (8 named scopes minus the alias `SCOPE_CACHE_RW`).
+///
+/// Was 12. Bits 5..=9 were retired with the six decorative `admin:*` scopes,
+/// which no enforcement point ever consulted and no mint path could ever grant
+/// individually (B-080); they collapsed into the single `SCOPE_ADMIN` bit.
 #[test]
-fn scope_known_mask_covers_twelve_bits() {
-    assert_eq!(SCOPE_KNOWN_MASK.count_ones(), 12);
+fn scope_known_mask_covers_seven_bits() {
+    assert_eq!(SCOPE_KNOWN_MASK.count_ones(), 7);
 }
 
 /// Smoke test that scope semantics are stable.
 #[test]
-fn scope_admin_audit_disjoint_from_cache_find() {
+fn scope_admin_disjoint_from_cache_find() {
     let s = PatScopes::from_u64(SCOPE_CACHE_FIND);
-    assert!(!s.has(SCOPE_ADMIN_AUDIT));
-    let s2 = s.add(SCOPE_ADMIN_AUDIT);
-    assert!(s2.has(SCOPE_ADMIN_AUDIT));
+    assert!(!s.has(SCOPE_ADMIN));
+    let s2 = s.add(SCOPE_ADMIN);
+    assert!(s2.has(SCOPE_ADMIN));
     assert!(s2.has(SCOPE_CACHE_FIND));
     let s3 = s2.remove(SCOPE_CACHE_FIND);
     assert!(!s3.has(SCOPE_CACHE_FIND));
-    assert!(s3.has(SCOPE_ADMIN_AUDIT));
+    assert!(s3.has(SCOPE_ADMIN));
 }
 
 /// Smoke: union/intersection align with bitwise semantics.
 #[test]
 fn scope_union_intersection_smoke() {
     let a = PatScopes::from_u64(SCOPE_CACHE_RW);
-    let b = PatScopes::from_u64(SCOPE_ADMIN_AUDIT);
-    assert_eq!((a | b).to_u64(), SCOPE_CACHE_RW | SCOPE_ADMIN_AUDIT);
+    let b = PatScopes::from_u64(SCOPE_ADMIN);
+    assert_eq!((a | b).to_u64(), SCOPE_CACHE_RW | SCOPE_ADMIN);
     assert_eq!((a & b).to_u64(), 0);
 }

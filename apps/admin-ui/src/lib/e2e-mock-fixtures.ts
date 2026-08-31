@@ -218,19 +218,25 @@ function makeCustomerAudit(): CustomerAuditEvent[] {
   ];
 }
 
+// The `scopes` values below MUST come from the real codomain of
+// `customer_d1.rs::scope_to_list`, which is the only producer the dashboard
+// ever sees: ["cache:read"], ["cache:read","cache:write"],
+// ["cache:find-missing"] (find-only is EXCLUSIVE — never combined with
+// read/write), [] , or an unrecognized legacy value surfaced verbatim.
+// `cache:r` / `cache:w` are REQUEST-side spellings and are never returned.
 function makeCustomerPats(): CustomerPat[] {
   return [
     {
       pat_id: "pat_001",
       name: "ci-runner",
-      scopes: ["cache:r", "cache:w", "cache:find-missing"],
+      scopes: ["cache:read", "cache:write"],
       created_at: "2026-04-15T09:00:00Z",
       last_used_at: "2026-05-14T22:01:00Z",
     },
     {
       pat_id: "pat_002",
       name: "dashboard-readonly",
-      scopes: ["cache:r", "admin:audit"],
+      scopes: ["cache:read"],
       created_at: "2026-03-20T12:00:00Z",
       last_used_at: "2026-05-13T18:42:00Z",
     },
@@ -680,7 +686,7 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
     const pat: CustomerPat = {
       pat_id: `pat_${String(state.customer.pats.length + 1).padStart(3, "0")}`,
       name: b.name ?? "unnamed",
-      scopes: b.scopes ?? ["cache:r"],
+      scopes: b.scopes ?? ["cache:read"],
       created_at: new Date().toISOString(),
     };
     state.customer.pats.unshift(pat);

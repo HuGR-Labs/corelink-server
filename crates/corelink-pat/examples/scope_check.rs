@@ -10,8 +10,7 @@
 #![allow(clippy::uninlined_format_args, clippy::format_in_format_args)]
 
 use corelink_pat::{
-    PatScopes, SCOPE_ADMIN_AUDIT, SCOPE_ADMIN_TOKENS, SCOPE_CACHE_FIND, SCOPE_CACHE_R,
-    SCOPE_CACHE_RW, SCOPE_CACHE_W,
+    PatScopes, SCOPE_ADMIN, SCOPE_CACHE_FIND, SCOPE_CACHE_R, SCOPE_CACHE_RW, SCOPE_CACHE_W,
 };
 
 fn main() {
@@ -20,7 +19,7 @@ fn main() {
     println!("CI scope set: {:?}", ci_scopes);
     assert!(ci_scopes.has(SCOPE_CACHE_R));
     assert!(ci_scopes.has(SCOPE_CACHE_W));
-    assert!(!ci_scopes.has(SCOPE_ADMIN_TOKENS));
+    assert!(!ci_scopes.has(SCOPE_ADMIN));
 
     // Read-only token: only cache:r and find-missing.
     let ro_scopes = PatScopes::from_u64(SCOPE_CACHE_R | SCOPE_CACHE_FIND);
@@ -28,7 +27,7 @@ fn main() {
     println!("RO names: {:?}", ro_scopes.names());
 
     // Bitwise operators.
-    let combined = ci_scopes | PatScopes::from_u64(SCOPE_ADMIN_AUDIT);
+    let combined = ci_scopes | PatScopes::from_u64(SCOPE_ADMIN);
     println!("Combined names: {:?}", combined.names());
     let intersection = ci_scopes & PatScopes::from_u64(SCOPE_CACHE_W);
     println!("Intersection names: {:?}", intersection.names());

@@ -8,7 +8,7 @@ tags: [rbac, security, admin, explanation]
 last_updated: "2026-05-15"
 sources:
   - "crates/corelink-auth-schema/src/sim.rs (Role enum)"
-  - "crates/corelink-pat/src/scopes.rs (12 canonical PAT scopes)"
+  - "crates/corelink-pat/src/scopes.rs (7 canonical PAT scopes; bits 5..=9 retired per B-080)"
   - "crates/corelink-dual-approval/src/types.rs (AdminOpType taxonomy)"
   - "specs/03_architecture/data_model.md §4.1 (membership.role CHECK constraint)"
   - "specs/03_architecture/invariant_registry.md (INV-ADMIN-DUAL-APPROVAL)"
@@ -24,7 +24,7 @@ sources:
 # RBAC overview
 
 CoreLink uses a **4-role** membership model scoped to each tenant, layered with
-**12 canonical permission scopes** carried by Personal Access Tokens (PATs), and
+**7 canonical permission scopes** carried by Personal Access Tokens (PATs), and
 gated by a **dual-approval requirement** on destructive admin operations.
 
 This page is the customer-facing map from the roles you see in the tenant admin
@@ -43,25 +43,38 @@ The `membership.role` column is constrained to exactly four values
 | `Viewer`    | Per-user surface  | Read-only CAS + audit-log read; cannot mint PATs.                       |
 
 > **The "Billing" role is NOT a separate membership role.** Billing is a
-> permission scope (`admin:billing`) granted exclusively to the `Owner` role.
+> capability (`billing`) the Worker forwards for an owner/admin dashboard
+> session and the container enforces with `requires_billing_admin`.
 > A tenant may have multiple Owners, all of whom see the billing surface.
 
 See [Role catalog](./role-catalog.mdx) for the per-role detail page.
 
 ## Permission categories
 
-The 12 canonical PAT scopes
+The 7 canonical PAT scopes
 (`crates/corelink-pat/src/scopes.rs`) fall into five customer-facing
 categories:
 
 | Category    | Scopes                                                                                          | Notes                                                |
 |-------------|-------------------------------------------------------------------------------------------------|------------------------------------------------------|
-| **CAS**     | `cache:r`, `cache:w`, `cache:find-missing`, `cache:delete`                                      | Read/write content-addressable storage + AC results. |
-| **BYOK**    | `admin:tenant-read`, `admin:tenant-write` (KMS config subset)                                   | Bring-your-own-key root config (Enterprise tier).    |
-| **Audit**   | `admin:audit`                                                                                   | Tenant audit-log read.                               |
-| **Billing** | `admin:billing`                                                                                 | View / mutate billing surface.                       |
-| **Members** | `admin:users`, `admin:tokens`                                                                   | Invite / demote users; mint / revoke PATs.           |
-| **Executor**| `execute:action`, `report:result`                                                               | Phase-2 executor only; not granted to humans.        |
+| **CAS**     | `cache:r`, `cache:w`, `cache:find-missing`, `cache:delete` *(not enforced)*                      | Read/write content-addressable storage + AC results. Blob deletion is gated on `cache:w`, not on `cache:delete`. |
+| **Admin**   | `admin`                                                                                         | Owner-grade superset (cache read + write, plus billing / account-PII). Never self-serve-grantable. |
+| **Executor**| `execute:action`, `report:result`                                                               | Phase-2 executor only; **not implemented** — these names grant nothing today. |
+
+:::warning[Administrative access is not carried by a PAT scope]
+Earlier revisions of this page listed six granular admin scopes —
+`admin:tenant-read`, `admin:tenant-write`, `admin:tokens`,
+`admin:billing`, `admin:audit`, `admin:users`. **They were never
+implemented and have been removed** (B-080): no mint path ever accepted
+them, `pat.scope` could never store them, and no enforcement point read
+them. Do not build a least-privilege plan on those names.
+
+Billing, audit-log and member management are gated on the **dashboard
+session role** (Clerk owner/admin), which the Worker expresses as the
+`billing` capability, plus the owner-grade `admin` / `owner` tokens —
+not on granular PAT scopes.
+:::
+
 
 For the full ID-by-ID reference see [`permissions.mdx`](../../reference/rbac/permissions.mdx).
 For the role × permission matrix see [`permission-matrix.mdx`](./permission-matrix.mdx).

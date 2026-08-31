@@ -125,19 +125,19 @@ use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
 use corelink_pat::{
-    mint::mint, PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId, SCOPE_ADMIN_AUDIT,
-    SCOPE_ADMIN_BILLING, SCOPE_ADMIN_TENANT_R, SCOPE_ADMIN_TENANT_W, SCOPE_ADMIN_TOKENS,
-    SCOPE_ADMIN_USERS, SCOPE_CACHE_R, SCOPE_CACHE_RW,
+    mint::mint, PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId, SCOPE_ADMIN,
+    SCOPE_CACHE_R, SCOPE_CACHE_RW,
 };
 
-/// Full admin scope: all admin + cache bits.
-const SCOPE_ADMIN_ALL: u64 = SCOPE_CACHE_RW
-    | SCOPE_ADMIN_TENANT_R
-    | SCOPE_ADMIN_TENANT_W
-    | SCOPE_ADMIN_TOKENS
-    | SCOPE_ADMIN_BILLING
-    | SCOPE_ADMIN_AUDIT
-    | SCOPE_ADMIN_USERS;
+/// Full admin scope: the admin bit + cache rw.
+///
+/// Formerly the union of six granular `admin:*` bits. Those were decorative —
+/// never individually requestable here (this mint accepts only the four labels
+/// in [`scope_label_to_bits`], so the six were only ever set *together*), never
+/// storable (`pat.scope` is `CHECK (scope IN ('read-write','read-only','admin'))`),
+/// and never read by any enforcement point. Collapsed into the single
+/// [`SCOPE_ADMIN`] bit (B-080); the granted capability is unchanged.
+const SCOPE_ADMIN_ALL: u64 = SCOPE_CACHE_RW | SCOPE_ADMIN;
 
 /// Map a mint-request scope LABEL to its canonical PAT bitset.
 ///
@@ -1004,7 +1004,7 @@ mod tests {
 
     #[test]
     fn scope_labels_reconcile_bits_and_persist_check() {
-        use corelink_pat::{SCOPE_ADMIN_TOKENS, SCOPE_CACHE_W};
+        use corelink_pat::{SCOPE_ADMIN, SCOPE_CACHE_W};
 
         // (label, expects_read, expects_write, expects_admin)
         let cases = [
@@ -1031,11 +1031,7 @@ mod tests {
                 want_write,
                 "{label}: cache-WRITE bit"
             );
-            assert_eq!(
-                bits.has(SCOPE_ADMIN_TOKENS),
-                want_admin,
-                "{label}: admin bit"
-            );
+            assert_eq!(bits.has(SCOPE_ADMIN), want_admin, "{label}: admin bit");
 
             // 3. It canonicalizes into the persisted CHECK domain (a
             //    CHECK-valid row) — and `cas:rw` persists as `read-write`.
