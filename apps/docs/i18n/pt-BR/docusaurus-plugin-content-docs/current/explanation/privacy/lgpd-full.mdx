@@ -205,9 +205,12 @@ with. The full list is at
 [/privacy/sub-processors](/privacy/sub-processors). The short version, for
 a default Brazilian tenant configuration (no BYOK, no opt-in analytics):
 
-- **Cloudflare** — runs our infrastructure (Workers, R2, D1, KV, DO). Data
-  stays in São Paulo for `sam`-region tenants (see the
-  [residency page](/residency/lgpd-brazil)).
+- **Cloudflare** — runs our infrastructure (Workers, R2, D1, KV, DO).
+  **Brazilian data does not stay in Brazil**: Cloudflare has no South-America
+  region for R2 or D1, so there is no São Paulo bucket to pin to and `sam`
+  residency is not offered. Brazilian tenants are served from an available
+  region (US or EU), which is an international transfer under Art. 33. See the
+  [residency page](/residency/lgpd-brazil) for the measured detail.
 - **Neon EU** — runs our control-plane Postgres. **This is an
   international transfer**: Neon does not currently offer a Brazilian
   region, so billing detail for Brazilian tenants is in Frankfurt. We rely
@@ -219,9 +222,15 @@ a default Brazilian tenant configuration (no BYOK, no opt-in analytics):
   No card data ever touches CoreLink.
 - **Clerk** — handles authentication tokens. US-hosted; Art. 33 §V; only
   auth tokens + email cross the border.
-- **AWS São Paulo / GCP southamerica-east1 / Azure Brazil South** — host
-  your BYOK envelope key if you opt in to BYOK. Brazilian regions only for
-  Brazilian tenants. We never see the underlying key material.
+- **BYOK external key managers (AWS KMS / GCP KMS / Azure Key Vault)** —
+  **not a sub-processor today, because BYOK is not shipped.** The activation
+  endpoint `POST /v1/admin/byok/activate` fails closed with
+  `501 Not Implemented` / `byok_not_available` in the shipped binary
+  (`crates/corelink-container/src/routes/byok_admin.rs:245-257`), and the only
+  key provider compiled in is an in-memory fake. No customer envelope key is
+  held anywhere, in Brazil or elsewhere. This entry is retained so the earlier
+  claim — that these three clouds hold your BYOK envelope key in Brazilian
+  regions — is visibly withdrawn rather than silently deleted.
 
 Four other sub-processors (Sentry, PostHog, LogRocket, Stripe Atlas
 counsel) are **disabled by default for Brazilian tenants** until we
