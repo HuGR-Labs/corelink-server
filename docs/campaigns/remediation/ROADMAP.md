@@ -355,6 +355,42 @@ não-herdadas. Falha herdada é nomeada e rastreada, nunca ignorada.
   fechar **B-059** (`CITE_RE` cego a citação sem caminho — o portão passa verde com citação errada)
   e **B-060** (gate espelho registry→migrations).
 - **DoD:** `validate_okf` 0 stale / 0 drift **e** os dois `verify` na polaridade de regressão (Q6).
+
+> **Atualização 2026-08-31 (WP-H) — a PREVENÇÃO landou; a RE-ANCORAGEM não.**
+> As duas metades deste WP sempre foram separáveis e agora estão em estados
+> diferentes, então registrá-las juntas era o que produzia a leitura errada.
+>
+> **Feito:** o **B-059** fechou (`CITE_RE` enxerga a citação abreviada `:N-M`;
+> eram **107 citações em 20 conceitos** invisíveis a C3/C5/C6). O **B-123**
+> fechou com o check **C5c**, que recusa âncora de blob movida sem renumeração —
+> é a "prevenção" deste WP na forma que realmente muda o comportamento, porque
+> ataca o INCENTIVO: antes, avançar a âncora era um comando e ficava verde na
+> hora, enquanto renumerar custava script mais verificação byte a byte, e as duas
+> terminavam verdes. O **B-124** fechou com `scripts/okf_shift_citations.py`,
+> deslocador por conteúdo que recusa arquivo já editado à mão e arquivo com
+> marcador de conflito.
+>
+> **Não feito, e não por falta de tempo:** re-ancorar os conceitos órfãos.
+> **Medido em 2026-08-31: 66 de 165** (não 63 — o número apodrece por design; ver
+> o INSTANTÂNEO em §IV.2). A "Armadilha 1" continua de pé sem alteração: recusar
+> âncora inalcançável cria deadlock, e o `_check_c5b` mais o C4-avisa existem
+> justamente para mantê-lo aberto. Fica em **[B-049]**, agora desbloqueado para a
+> metade "criar blob anchor no primeiro reconcile" — que só era perigosa enquanto
+> o blob anchor era o atalho barato, e deixou de ser.
+
+```verify
+# WP-5 — o que este WP afirma sobre SI MESMO, re-derivado. Falha se o texto
+# acima e o repositório discordarem. (Padrão a copiar para os outros 8 WPs:
+# ver B-061, que registra por que os demais ainda não têm um.)
+set -eu
+grep -qF '_check_anchor_content_reverify(args, git, bundle_root, concepts, fails)' scripts/validate_okf.py \
+  || { echo 'FALHA: C5c nao esta ligado — a prevencao que este WP declara feita nao existe'; exit 1; }
+grep -qF 'assert_c5c' tests/okf/run_fixtures.sh \
+  || { echo 'FALHA: C5c sem harness de dentes — prevencao nao provada'; exit 1; }
+test -x scripts/okf_shift_citations.py \
+  || { echo 'FALHA: o deslocador por conteudo (B-124) sumiu'; exit 1; }
+echo 'WP-5: prevencao presente e provada; re-ancoragem segue aberta em B-049'
+```
 - **Invariants:** nenhuma âncora avançada sem reler a claim (avançar sem reler **mascara** drift futuro).
 - **Completeness — CRITÉRIO CORRIGIDO.** O anterior (`grep -c` de **duas** SHAs = 0)
   **certificava um conserto 5% completo como pronto**: há **32 SHAs distintos** órfãos

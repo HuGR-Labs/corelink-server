@@ -8,10 +8,21 @@
 # the git/PR mechanics are owned by the workflow (not the model), and a PR is opened ONLY
 # if the wiki gate (validate + fixtures) is green.
 #
-# ── TWO ONE-TIME HUMAN STEPS (the workflow is inert until these are done) ──
-#   1. Add the repo secret  ANTHROPIC_API_KEY  (Settings → Secrets → Actions). The CLI
-#      cannot run without it. This is the only thing blocking "it works".
-#   2. (optional) If you want the okf-wiki-validation gate to RE-RUN on the auto-PR, set a
+# ── THE ANTHROPIC_API_KEY NOTE THAT USED TO LIVE HERE WAS FALSE (B-058) ──
+# It said the repo secret ANTHROPIC_API_KEY was "the only thing blocking it works".
+# The secret does not exist, and the CLI does not authenticate from one: `claude`
+# reads the login in `~/.claude` of the user the runner process runs as. The real
+# blocker was the RUNNER — `runs-on: corelink` is the ephemeral container fleet,
+# which has no `~/.claude` and no login, so this lane never once executed. Of its
+# last 60 runs, 56 were `stale_count == 0` no-ops with the claude step `skipped`
+# and the rest died at `claude: command not found` / exit 127. The four-line fix
+# B-058 recorded is now applied below (persistent Mac, $HOME/.local/bin on PATH,
+# no `npm install -g`, no phantom API-key env), so the dispatch button does what
+# it says. Automatic triggers stay OFF — that is the owner's standing decision,
+# not an oversight.
+#
+# ── ONE OPTIONAL HUMAN STEP ──
+#   1. If you want the okf-wiki-validation gate to RE-RUN on the auto-PR, set a
 #      PAT secret `OKF_BOT_PAT` (repo+workflow scope) and swap GITHUB_TOKEN → OKF_BOT_PAT in
 #      the "open PR" step. With the default GITHUB_TOKEN, GitHub suppresses workflow runs on
 #      the bot PR (anti-recursion) — but the workflow ALREADY validated green before opening
@@ -56,11 +67,12 @@ permissions:
 
 jobs:
   autoreconcile:
-    # corelink: CoreLink's own ephemeral runner fabric (zero-hosted migration).
-    # node 22 / npm are baked into the image, so `npm install -g
-    # @anthropic-ai/claude-code` below needs no explicit setup-node step —
-    # same convention as admin-ui-ci.yml. No docker/browser deps here.
-    runs-on: corelink
+    # The PERSISTENT Mac, not the ephemeral `corelink` container fleet. The runner
+    # process there runs as the founder's own user, so it sees the Claude Code CLI
+    # and the login in `~/.claude`; a container has neither, which is why every
+    # run of this lane on `corelink` died at exit 127. Still zero hosted spend
+    # (I-2): self-hosted either way.
+    runs-on: [self-hosted, macOS, X64]
     timeout-minutes: 20
     steps:
       - name: Checkout (full history — reconcile compares cited lines across SHAs)
@@ -82,14 +94,27 @@ jobs:
         if: steps.drift.outputs.stale_count == '0' && github.event.inputs.force != 'true'
         run: echo "No OKF drift — nothing to reconcile. Exiting clean (zero agent cost)."
 
-      - name: Install Claude Code CLI
+      - name: Put the operator's Claude Code CLI on PATH
+        # NOT `npm install -g @anthropic-ai/claude-code`. That step reported
+        # success while its bin never reached the next step's PATH, and on this
+        # runner it would install OVER the operator's own binary — needless risk
+        # for a lane that only needs the binary already installed. Fail loudly
+        # here if it is absent, rather than three steps later as exit 127.
         if: steps.drift.outputs.stale_count != '0' || github.event.inputs.force == 'true'
-        run: npm install -g @anthropic-ai/claude-code
+        run: |
+          set -euo pipefail
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          command -v claude >/dev/null 2>&1 || [ -x "$HOME/.local/bin/claude" ] || {
+            echo "claude CLI not found on this runner. This lane authenticates from the"
+            echo "CLI login in \$HOME/.claude — it cannot run on a machine without one."
+            exit 1
+          }
 
       - name: Run the okf-reconcile skill (Claude Code headless)
+        # No `env: ANTHROPIC_API_KEY`. The secret does not exist and the auth is
+        # the CLI's own login; declaring it advertised a dependency that was not
+        # real and sent three people looking for a missing secret (B-058).
         if: steps.drift.outputs.stale_count != '0' || github.event.inputs.force == 'true'
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           set -euo pipefail
           claude -p "$(cat <<'PROMPT'

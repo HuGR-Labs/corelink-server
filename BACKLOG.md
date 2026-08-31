@@ -2606,6 +2606,26 @@ The knowledge already exists in two memories
 and the workflow still does not enforce it, which is the definition of a gap the
 tooling should close rather than a habit to remember harder.
 
+**Re-measured 2026-08-31 (WP-H): 66 of 165, up from 57.** The rot compounds at
+roughly one concept per merge, exactly as predicted — it is not converging on its
+own. 34 of 165 concepts now carry a `source_blobs` anchor (up from 30), so the
+migration is moving at about one concept per two days against a corpus of 165.
+
+**Change 1 is still refused, and now for a second reason.** Failing on an
+unreachable `checkpoint_sha` is the deadlock this file already names: the squash
+orphans the anchor written by the very PR that repaired it. The second reason is
+new — `_check_c5b`'s orphan-repair exemption and C4's warn-don't-fail both exist
+to hold that deadlock open, so flipping C4 without dismantling those two makes
+the repair PR unmergeable rather than making the anchors reachable.
+
+**Change 2 was addressed sideways, and that is the part worth recording.** The
+reason this item wanted blob anchors on first reconcile is that they survive
+rewriting — but until [B-123] landed, a blob anchor was ALSO the cheap way to buy
+a vacuously-green C5, so making them automatic would have industrialised the
+wrong fix at the same time as the right one. With C5c in place a blob anchor no
+longer excuses a stale citation, so auto-creating one on reconcile is now safe to
+build. That is the remaining work on this item, and it is unblocked, not done.
+
 Two changes would end it:
 
 1. **Make `validate_okf` fail on an unreachable `checkpoint_sha`** instead of
@@ -3069,6 +3089,24 @@ Standing cost of leaving it manual: every PR that touches a cited file needs a
 hand re-anchor. That was paid three times on 2026-08-29 alone (#1408, #1411,
 and the OKF half of the read-ceiling work).
 
+**2026-08-31 (WP-H) — o diagnóstico foi APLICADO ao arquivo; o gatilho continua
+manual.** O item registrava a correção de quatro linhas "para não ser
+re-derivada", mas o workflow ainda a contradizia em três pontos, e o cabeçalho
+ainda dizia em texto puro que o segredo `ANTHROPIC_API_KEY` era *"the only thing
+blocking it works"* — a mesma leitura errada que este item existe para corrigir,
+sobrevivendo dentro do arquivo corrigido. Agora: `runs-on: [self-hosted, macOS,
+X64]`, `$HOME/.local/bin` no `$GITHUB_PATH` com falha explícita se o CLI não
+estiver lá, `npm install -g` removido (instalava por cima do binário do operador
+e o bin nunca chegava ao PATH do passo seguinte), e o bloco `env:
+ANTHROPIC_API_KEY` removido. **Nenhum gatilho automático foi adicionado** — a
+decisão do owner (local/manual) continua valendo e o `verify` deste item segue
+sendo exatamente o que a protege. O que mudou é que o botão de dispatch agora faz
+o que promete, em vez de ser uma promessa que só falha quando alguém aperta.
+
+O custo permanente de deixar manual, contudo, caiu: `scripts/okf_shift_citations.py`
+([B-124]) faz a renumeração por conteúdo que era o grosso do re-anchor à mão, e o
+C5c ([B-123]) recusa o atalho que tornava o trabalho manual tentador de pular.
+
 ```backlog
 id: B-058
 repo: corelink-server
@@ -3200,15 +3238,33 @@ generally.
 id: B-059
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  grep -qF '(?P<path>[A-Za-z0-9._/\-]+):(?P<l1>' scripts/validate_okf.py
+  grep -qF 'CITE_RE = re.compile(r"^(?P<path>[A-Za-z0-9._/\-]+)?:(?P<l1>' scripts/validate_okf.py \
+    && grep -qF 'assert_abbrev_cites' tests/okf/run_fixtures.sh
 verify-means: |
-  open — passes while the citation regex still requires a non-empty path, i.e.
-  while abbreviated `:N-M` citations are invisible to the OKF gates. Closes when
-  the pattern admits a path-less citation (resolved against the preceding
-  full-path one) and the gates validate it like any other.
-last-verified: 2026-08-29
+  done (REGRESSION GUARD, polarity inverted per Q6) — passes while `CITE_RE`
+  still admits a PATH-LESS citation and the fixture suite still carries the
+  harness that proves it. Both halves are required and neither is a symbol grep:
+  the first extracts the ASSIGNMENT LINE, because a `CITE_RE` that went back to
+  requiring a path would still be named `CITE_RE`; the second is the teeth test
+  (out-of-bounds `:99` must be reported, in-bounds `:3` must not), because a
+  pattern that matches but is never collected is the same blindness by another
+  route. Goes DRIFTED the moment either is removed.
+
+  Fixed by making the abbreviated form first-class in `_collect_cites`, resolved
+  against the nearest preceding backticked file reference — a full citation OR a
+  bare path declared in `source_files`. The bare-path arm is load-bearing:
+  `crates/handler-trait-seam.md` names `customer_d1.rs` with no line number and
+  continues `(`:947`, …)`; without it those six resolve to the wrong file and
+  report six phantom failures. Measured after: 107 of 107 abbreviated citations
+  resolve, 107 of 107 in bounds.
+
+  The block-local C6c grounding checks keep the OLD strict shape (`CITE_FULL_RE`)
+  on purpose — one bullet at a time has no "nearest preceding", so admitting a
+  bare `:42` there would let an invariant be grounded on nothing. The change is a
+  strict STRENGTHENING: more citations validated, no check weakened.
+last-verified: 2026-08-31
 ```
 
 ### B-060 — the DSR registry→migrations mirror gate
@@ -3525,6 +3581,21 @@ faz consigo mesmo.
 **O `verify` abaixo re-deriva os dois números estruturais do documento** (âncoras OKF
 inalcançáveis e lanes com zero sucesso) e falha se o texto divergir da medição — o
 mesmo mecanismo que este arquivo aplica a todo o resto.
+
+**Confirmado por medição 2026-08-31 (WP-H).** `grep -c '^verify:'` sobre o
+`ROADMAP.md` = **0**. O documento tem 9 blocos `### WP-*` e **nenhum** deles carrega
+comando de verificação. A ação que o próprio §V.7 do roadmap prescreveu — *"cada WP
+ganha `verify:` executável"* — não foi aplicada: o que existe é o registro deste item
+no `BACKLOG.md`, que gateia a alegação ESTRUTURAL (âncoras + ausência de prevenção),
+não o conteúdo de cada WP. A ironia que o item aponta continua literalmente verdadeira.
+
+**Recusa registrada, com o motivo, para não virar silêncio (Q-8).** Autorar os 9
+`verify:` exigiria decidir o critério de conclusão de trabalho que pertence a outros
+donos — três WPs estão concluídos, um em voo — e escrever o predicado de conclusão
+alheio é exatamente o defeito de "critério que certifica 5% como pronto" que este item
+cataloga. O WP-5 é a exceção e recebeu um `verify:` executável nesta passagem: seu
+escopo é o OKF, os fatos foram medidos aqui, e ele serve de padrão a copiar — não de
+fechamento do item.
 
 **Polaridade deliberada:** passa **enquanto** o roadmap declarar números que batem com a
 realidade medida. Vira DRIFTED quando alguém consertar as âncoras sem atualizar o
@@ -6884,17 +6955,38 @@ squash/rebase) and [B-124].
 id: B-123
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  grep -q 'source_blobs' scripts/validate_okf.py \
-    && ! grep -q 'anchor_content_reverify' scripts/validate_okf.py
+  grep -qF '_check_anchor_content_reverify(args, git, bundle_root, concepts, fails)' scripts/validate_okf.py \
+    && grep -qF 'assert_c5c' tests/okf/run_fixtures.sh
 verify-means: |
-  open — passes while validate_okf still honours a source_blobs anchor without
-  any content re-verification of the citations it covers, i.e. while the anchor
-  remains a vacuously-green shortcut. Closes when the gate carries a named
-  re-verification step. It does NOT prove any specific concept is wrong today —
-  only that the cheap wrong fix is still available and still rewarded.
-last-verified: 2026-08-30
+  done (REGRESSION GUARD, polarity inverted per Q6) — passes while the C5c
+  re-verification is WIRED (the call site, not merely the definition: a check
+  that exists and is never called is the vacuity this item is about) and while
+  its two-directional harness is still in the fixture suite. DRIFTED if either
+  disappears.
+
+  Closed by C5c / `_check_anchor_content_reverify`. It fires only when a
+  `source_blobs` anchor is ADDED or CHANGED against the concept's base version —
+  the exact operation that buys the vacuous green — and then, for each citation
+  to that file in the PREVIOUS body, locates the authored CONTENT in the current
+  tree: renumbered to where the content went, PASS; content sits somewhere else
+  and nothing cites it there, FAIL naming the lines to write; content rewritten
+  or position not uniquely identifiable even with a widened context window,
+  SILENT. Equal citation-count only, so re-authoring is never mistaken for a
+  skipped renumber.
+
+  Teeth, both directions, on the real corpus: insert one line in
+  `crates/corelink-container/src/routes/cas.rs`, advance the anchor of
+  `crates/handler-trait-seam.md`, leave the citations — 8 C5c findings, each
+  naming the correct new line. Renumber with `scripts/okf_shift_citations.py`
+  (B-124) instead — 0 findings. The gate now costs the same either way, which is
+  the whole point: the incentive, not the discipline, was the defect.
+
+  What it does NOT do: it does not remove the blob anchor (without one the gate
+  red-flags a file the branch legitimately alters), does not migrate any concept
+  to `source_blobs`, and does not touch the orphaned commit anchors of [B-049].
+last-verified: 2026-08-31
 ```
 
 ### B-124 — hand-edits and a bulk shifter over the same file double-shift it
@@ -6924,15 +7016,32 @@ in this repo (replacing `file:N` corrupts a neighbouring `file:N-M`).
 id: B-124
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  ! test -x scripts/okf_shift_citations.py
+  test -x scripts/okf_shift_citations.py \
+    && grep -qF 'already differ from base' scripts/okf_shift_citations.py \
+    && grep -qF 'CONFLICT_RE' scripts/okf_shift_citations.py
 verify-means: |
-  open — passes while there is no repo-owned, idempotent citation shifter, so
-  each session writes its own throwaway and re-meets this hazard. Closes when a
-  shared tool exists that is safe to run twice. It does NOT prove any concept
-  is currently double-shifted; that is what content verification is for.
-last-verified: 2026-08-30
+  done (REGRESSION GUARD, polarity inverted per Q6) — passes while the shared
+  shifter exists AND still carries the two properties that make it safe rather
+  than merely present: the per-FILE refusal when the citations already differ
+  from base (what makes a second run decline instead of double-shifting), and
+  the conflict-marker refusal (Q-10: a bulk transformation must not run over a
+  file mid-rebase). A shifter without those is the throwaway `sed` this item was
+  filed about, wearing a filename.
+
+  `scripts/okf_shift_citations.py` never adds an offset to a number. It reads the
+  content the citation named at the base revision and finds where that content
+  lives now, widening with surrounding lines until the position is unique;
+  ambiguous or vanished content is LEFT INTACT and reported, never guessed. It
+  rewrites by character SPAN, right-to-left, which is the structural reason it
+  cannot corrupt a neighbouring `file:N-M` while rewriting `file:N`.
+
+  Measured on a one-line shift of `routes/cas.rs`: 91 citations renumbered, 0
+  unresolved, 0 refused — and the SECOND run of the same command rewrote 0 and
+  refused 5, i.e. it recognises its own output. Abbreviated `:N-M` citations are
+  first-class here too, which is the half that #1410 left wrong.
+last-verified: 2026-08-31
 ```
 
 ### B-125 — the audit chain seals 200 rows/hour, so evidence lags the event by hours
