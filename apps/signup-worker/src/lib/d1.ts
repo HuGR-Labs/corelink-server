@@ -279,6 +279,22 @@ interface InvitedMemberRow {
 }
 
 /**
+ * How long an outstanding `invited` seat stays redeemable — 14 days.
+ *
+ * Why 14 and not "forever" (the previous behavior): the invite carries no token
+ * and no tenant scope, so its whole security rests on "the right person signs up
+ * with this address next". That assumption decays — corporate mailboxes get
+ * reassigned, aliases get recycled — so the window must be bounded. Why not
+ * shorter: an invite is often sent to someone who is on leave, or who needs a
+ * manager's sign-off before creating an account, and a 7-day window routinely
+ * expires under that (14 days is the conventional seat-invitation TTL, matching
+ * GitHub/Slack-class products). Expired invites are re-sendable, so the cost of
+ * being wrong here is one re-invite, while the cost of being unbounded is a
+ * permanent transferable bearer credential.
+ */
+export const TEAM_INVITATION_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
  * Accept an outstanding team invitation (C-ACCEPT, ADR-S33-001 WP-4).
  *
  * When a Clerk `user.created` event fires for an email that was previously
@@ -294,6 +310,17 @@ interface InvitedMemberRow {
  * The UPDATE re-asserts `status='invited'` so a concurrent acceptance (double
  * webhook delivery) cannot double-flip or clobber an already-`active` seat.
  *
+ * EXPIRY (B-073 defense 3): an invite older than {@link TEAM_INVITATION_TTL_MS}
+ * is refused. The predicate lives in the SQL (`invited_at_ms > ?3`), NOT in JS
+ * after the fact: with `LIMIT 1` a JS-side filter would let the database pick a
+ * stale row and then report "no invitation" while a still-valid row sat further
+ * down the table. The clock is passed in (`nowMs`) rather than read inside the
+ * query so callers and tests control it.
+ *
+ * What this does NOT decide: within the window the invite is still an
+ * unauthenticated bearer — no invitation token, no `tenant_id` scope on the
+ * lookup, and no read of Clerk's email-verification field. See B-073.
+ *
  * DUAL-READ (safe EMAIL_HASH_SALT activation): `emailHashCandidates` is the
  * deduped set `{salted, legacy}` — one value when the salt is unset (identical
  * to today), two once it is set. Matching `email_hash IN (...)` binds an invite
@@ -305,6 +332,7 @@ export async function acceptTeamInvitation(
   db: D1Database,
   clerkUserId: string,
   emailHashCandidates: string[],
+  nowMs: number = Date.now(),
 ): Promise<boolean> {
   // Deduped 1-or-2 candidates → a fixed 2-slot IN list. Padding the single-salt
   // case with a repeat of the same value keeps ONE prepared statement shape and
@@ -316,9 +344,11 @@ export async function acceptTeamInvitation(
   const invited = await db
     .prepare(
       "SELECT tenant_id, user_id FROM team_member " +
-        "WHERE email_hash IN (?1, ?2) AND status = 'invited' LIMIT 1",
+        "WHERE email_hash IN (?1, ?2) AND status = 'invited' " +
+        // Half-open window: an age of EXACTLY the TTL is already expired.
+        "AND invited_at_ms > ?3 LIMIT 1",
     )
-    .bind(c0, c1)
+    .bind(c0, c1, nowMs - TEAM_INVITATION_TTL_MS)
     .first<InvitedMemberRow>();
   if (invited === null) return false;
 
@@ -328,7 +358,7 @@ export async function acceptTeamInvitation(
         "SET status = 'active', joined_at_ms = ?1, user_id = ?2 " +
         "WHERE tenant_id = ?3 AND user_id = ?4 AND status = 'invited'",
     )
-    .bind(Date.now(), clerkUserId, invited.tenant_id, invited.user_id)
+    .bind(nowMs, clerkUserId, invited.tenant_id, invited.user_id)
     .run();
   return true;
 }
