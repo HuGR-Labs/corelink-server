@@ -118,6 +118,47 @@ cell "a \`### B-\` inside a fenced example is not a heading" 0 "" \
 cell "a block with no heading above it is a hard failure" 2 "no \`### B-" \
   "$(printf '```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
 
+# B-143: a malformed id used to be SKIPPED by the heading check and INVISIBLE to
+# the density check, so it merged CONFIRMED. Both loud checks (gap, duplicate)
+# presuppose a well-formed id. Four spellings, because a gate that matches the
+# literal `B-UNALLOCATED` would pass one cell and be decorative.
+malformed() { # $1 the id to plant
+  printf '### B-1 — fixture\n\n```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n\n'
+  printf '### %s — fixture\n\n```backlog\nid: %s\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n' "$1" "$1"
+}
+for bad in B-UNALLOCATED B-131a b-131 B-TBD; do
+  cell "a placeholder id ($bad) is a hard failure, not a silent skip" 2 "is not \`B-<digits>\`" \
+    "$(malformed "$bad")"
+done
+
+# The negative side of the same rule: the canonical form must still pass. A cell
+# that only watches the gate go red cannot see a gate that reds on everything.
+cell "a canonical id is NOT flagged as malformed" 0 CONFIRMED \
+  "$(item B-1 open '"true"' 2026-08-23)" "is not \`B-<digits>\`"
+
+# B-167, the KNOWN RESIDUE of B-143, pinned as a cell so it is not mistaken for
+# coverage: `B-0142` satisfies `^B-\d+$`, keeps density happy (int("0142")==142)
+# and does not collide (the duplicate check compares strings). This cell asserts
+# TODAY'S behaviour — it must be INVERTED when B-167 is fixed, and its failure is
+# the reminder.
+cell "KNOWN GAP (B-167): a leading-zero id still aliases its twin" 0 CONFIRMED \
+  "$(item B-1 open '"true"' 2026-08-23; item B-01 open '"true"' 2026-08-23)"
+
+# B-147: `status` and `owner` were validated independently and never crossed.
+# `owner: owner` means "still needs the human"; a done item does not.
+cell "done + owner: owner is BROKEN — a finished item cannot still need the human" 1 BROKEN \
+  "$(printf '### B-1 — fixture\n\n```backlog\nid: B-1\nrepo: corelink-server\nowner: owner\nstatus: done\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
+
+# Both negative sides, so the cross-check cannot be satisfied by rejecting
+# `owner: owner` outright or by reading `!= open`. `parked` is EXCLUDED on
+# purpose: an item parked because it waits on the owner is legitimate.
+cell "done + owner: tl passes" 0 CONFIRMED \
+  "$(printf '### B-1 — fixture\n\n```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: done\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
+cell "open + owner: owner passes — the legitimate case" 0 CONFIRMED \
+  "$(printf '### B-1 — fixture\n\n```backlog\nid: B-1\nrepo: corelink-server\nowner: owner\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
+cell "parked + owner: owner passes — deliberately OUT of the rule" 0 CONFIRMED \
+  "$(printf '### B-1 — fixture\n\n```backlog\nid: B-1\nrepo: corelink-server\nowner: owner\nstatus: parked\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
+
 echo
 if [[ "$fails" -eq 0 ]]; then echo "backlog gate: all cells passed"; exit 0; fi
 echo "backlog gate: $fails cell(s) failed"; exit 1
