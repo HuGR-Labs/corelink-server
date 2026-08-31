@@ -8179,9 +8179,49 @@ sozinha:
 **Desfavorecida não é decidida.** H2 continua na mesa até alguém medir a box diretamente; o
 que mudou é que ela deixou de ser equiprovável.
 
-**As quatro saídas na mesa**, e a escolha é da guardiã — este item não a faz:
+### A box não está subdimensionada — está sendo usada para outro trabalho
 
-1. **Construir numa box maior.** Leitura preferida da frente que mediu.
+Lido do clone local de `corelink-runners`, `deploy/cloudflare/wrangler.jsonc`, bloco do
+`RunnerContainer`:
+
+```
+instance_type  = standard-4      // 4 vCPU / 12 GiB / 20 GB de disco
+max_instances  = 250
+```
+
+O comentário ao lado do `instance_type` diz, com todas as letras, que esse tamanho
+*"clears the runner disk floor (`RUNNER_EPHEMERAL_STORAGE_FLOOR_MB`)"* e **"fits CI"**. Isto
+é: os 20 GB foram dimensionados para **rodar** CI, não para **construir** a imagem. Construir
+precisa segurar cache de build + tarball + unpack ao mesmo tempo — o pico medido no log, que
+rodar um job não tem.
+
+Duas consequências.
+
+**O disco é um campo de config, não um fato da infraestrutura.** A saída (1) abaixo deixa de
+ser "arranjar uma box maior" e passa a ser **trocar uma linha** — um `instance_type` maior no
+`wrangler.jsonc`. Isso muda o custo relativo das cinco saídas e provavelmente a escolha.
+
+**O gargalo de concorrência da frota não é o teto.** `max_instances` é **250**, e a
+capacidade observada durante esta investigação foi de ~1. Os dois números não se
+contradizem — eles localizam o problema **entre** o teto e a realidade, no caminho de spawn
+ou de registro do runner. Nenhuma contagem de "quantos runners aparecem online" encontra
+isso, e este item **não** é o lugar de investigá-lo; registro só para que a próxima pessoa
+não confunda o teto com o gargalo.
+
+**Procedência, e ela limita o peso disto:** os três números vêm do clone local em
+`pr-0c-d4-openrouter`, HEAD de **2026-08-27** — quatro dias defasado e fora da `main`. Não
+foi feito `fetch`. São **indício forte, não estado confirmado**, e uma única leitura de
+`deploy/cloudflare/wrangler.jsonc` na `main` confirma ou derruba os três de uma vez. Trate
+como hipótese até lá.
+
+*(Nota lateral, porque afeta quem for ler o arquivo: três linhas acima do `max_instances:
+250` está o comentário `// O7 hardening (2026-07-06): raised 2 → 6`. O dado está certo e a
+explicação ao lado, não — e a explicação é o que uma pessoa lê para decidir.)*
+
+**As cinco saídas na mesa**, e a escolha é da guardiã — este item não a faz:
+
+1. **Construir numa box maior** — hoje, trocar `instance_type` no `wrangler.jsonc`, não
+   provisionar infraestrutura. Leitura preferida da frente que mediu.
 2. **Limpar o `containerd` antes do build.** Provavelmente **não basta**: o problema é o
    **pico** — tarball e unpack coexistindo — e não lixo acumulado. Limpar resíduo não cria
    espaço para dois artefatos simultâneos.
