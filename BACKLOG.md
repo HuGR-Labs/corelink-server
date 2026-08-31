@@ -5649,26 +5649,57 @@ Um titular exercendo direito do Artigo 15 ou 17, ou um regulador em contato inic
 escreve para o vazio. É reparo de substituição de string em quatro arquivos, e é visível a
 quem menos deveria vê-lo.
 
+**Fechado 2026-08-31 (PR WP-C).** Os oito arquivos (quatro idiomas × `.md` + `.ts`)
+foram corrigidos no mesmo commit para `privacy@humangr.com` e `dpo@humangr.com` — os
+endereços que o `legal/` já usa 51 e 19 vezes, não endereços novos. As caixas
+localizadas `privacidade@` e `privacidad@` foram unificadas na canônica em vez de
+inventar duas caixas a mais.
+
+No mesmo reparo saiu o endereço postal *"350 Mission St, Suite 1200, San Francisco"*,
+que aparecia em `privacy-notice.{en,de}.{md,ts}` e **em nenhum outro lugar do
+repositório** — enquanto `legal/breach-notification/lgpd-anpd-template.pt-br.md:56`
+registra o endereço da entidade como *"(a completar pré-GA)"*. Um endereço postal não
+corroborado num aviso de privacidade é o mesmo defeito do e-mail, e removê-lo é
+estritamente melhor que mantê-lo.
+
+Dois achados adjacentes que este item NÃO fecha, registrados para não se perderem:
+o aviso alemão (`privacy-notice.de.{md,ts}`) está integralmente **em inglês**; e há
+três domínios concorrentes para a mesma caixa no repositório — `privacy@humangr.com`
+(51×), `privacy@hugr.com` (24×) e `privacy@hugr.dev` (14×, usado por
+`legal/privacy-notice/v1.0.0/`).
+
 ```backlog
 id: B-100
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   bash -c 'n=$(grep -rlE "[a-z]+@corelink\.example" apps/ --include="*.ts" --include="*.tsx" --include="*.md" --include="*.mdx" 2>/dev/null | grep -v node_modules | wc -l | tr -d " ")
-  [ "$n" -gt 0 ] || { echo "FALHA: nenhum endereco @corelink.example resta em apps/ — feche o item."; exit 1; }
-  echo "aberto: $n arquivo(s) publicados ainda dirigem titulares a @corelink.example (TLD reservado, RFC 2606)"'
+  [ "$n" = 0 ] || { echo "FALHA: $n arquivo(s) sob apps/ voltaram a dirigir titulares a @corelink.example — o reparo regrediu."; exit 1; }
+  c=$(ls apps/admin-ui/src/content/privacy-notice.* 2>/dev/null | wc -l | tr -d " ")
+  [ "$c" -gt 0 ] || { echo "FALHA: os avisos de privacidade sumiram de apps/admin-ui/src/content/ — o comando perdeu o objeto e nao pode concluir ausencia."; exit 1; }
+  ok=$(grep -rlE "privacy@humangr\.com|dpo@humangr\.com" apps/admin-ui/src/content/ 2>/dev/null | wc -l | tr -d " ")
+  [ "$ok" -gt 0 ] || { echo "FALHA: nenhum dos $c avisos aponta para privacy@/dpo@humangr.com — o endereco correto sumiu."; exit 1; }
+  echo "done: 0 enderecos @corelink.example em apps/; $ok de $c avisos apontam para humangr.com"'
 verify-means: |
-  open — ainda existe pelo menos um arquivo sob `apps/` com endereço `@corelink.example`.
+  done — polaridade INVERTIDA em relação à versão `open`. Agora falha se um endereço
+  `@corelink.example` reaparecer sob `apps/`. Deixar a polaridade `open` passaria no PR
+  do reparo e vermelharia o merge seguinte.
 
-  Vira DRIFTED quando o último sair, que é o reparo. Conta arquivos em vez de exigir os
-  quatro idiomas de uma vez: corrigir um reduz o número e o item permanece aberto — mas
-  corrigir só um idioma seria pior que não corrigir nenhum, porque cria divergência entre
-  as versões publicadas. Quem consertar deve fazer os quatro no mesmo commit.
+  A segunda e a terceira metades são o **controle do instrumento**, e existem porque um
+  `grep` que não acha nada e um `grep` cujo alvo sumiu produzem a mesma saída vazia: o
+  comando conta os arquivos de aviso e exige que o endereço CORRETO esteja presente. Se
+  alguém deletar `apps/admin-ui/src/content/`, este `verify` falha em vez de declarar
+  vitória sobre um diretório vazio.
 
-  Escopo deliberado em `apps/`: o endereço pode legitimamente aparecer em exemplos de
-  documentação interna ou em fixtures de teste, e reprovar por isso seria ruído. O que não
-  pode é estar no texto publicado ao titular.
+  O que NÃO decide, e admito: se `privacy@humangr.com` e `dpo@humangr.com` de fato
+  entregam correio. O comando prova que o TLD reservado saiu e que o endereço canônico do
+  `legal/` entrou; não prova que a caixa existe. Quem for a GA deve enviar uma mensagem
+  de teste a cada uma — nenhum grep substitui isso.
+
+  Também NÃO decide os dois achados adjacentes registrados na prosa (o aviso alemão em
+  inglês; os três domínios concorrentes `humangr.com` / `hugr.com` / `hugr.dev`). São
+  itens próprios, não estas quatro páginas.
 last-verified: 2026-08-30
 ```
 

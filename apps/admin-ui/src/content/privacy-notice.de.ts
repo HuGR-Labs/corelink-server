@@ -47,7 +47,7 @@ Default retention windows: authentication logs 90 days; audit trail 7 years
 You may exercise the rights of access, rectification, deletion, restriction,
 objection, and portability granted by GDPR Articles 15–22, LGPD Articles 18–22,
 and analogous US-state statutes via the Data-Subject Request (DSR) flow in
-your account, or by emailing **privacy@corelink.example**. We respond within
+your account, or by emailing **privacy@humangr.com**. We respond within
 30 days (45 under CCPA, with one 45-day extension permitted).
 
 ## 5. International transfers
@@ -64,7 +64,7 @@ least 30 days in advance via in-app banner and email to administrators.
 
 ## 7. Contact
 
-Data Protection Officer — **dpo@corelink.example**
-Postal address — CoreLink Privacy Team, 350 Mission St, Suite 1200,
-San Francisco, CA 94105, USA.
+Data Protection Officer — **dpo@humangr.com**
+Postal address — on request; write to the address above and we will
+supply the registered postal address of the controlling entity.
 `;
