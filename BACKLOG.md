@@ -2353,11 +2353,58 @@ repo: corelink-server
 owner: owner
 status: done
 verify: |
-  [ -z "$(dig +short status.corelink.humangr.com 2>/dev/null)" ] && curl -sS -o /dev/null --max-time 15 https://hugrl.betteruptime.com/
+  command -v python3 >/dev/null 2>&1 || { echo "FALHA: nao consigo decidir DNS — instrumento python3, nao achado."; exit 124; }
+  command -v curl >/dev/null 2>&1 || { echo "FALHA: nao consigo decidir a pagina de status — instrumento curl, nao achado."; exit 124; }
+  python3 - <<"PY" || exit $?
+  import socket, sys
+  DEAD = "status.corelink.humangr.com"
+  CTL = "corelink-api.humangr.com"
+
+  def resolve(h):
+      try:
+          return socket.getaddrinfo(h, None)[0][4][0]
+      except OSError:
+          return ""
+      except Exception as e:
+          print(f"FALHA: nao consigo decidir DNS — instrumento (getaddrinfo) levantou {e!r}.")
+          sys.exit(124)
+
+  ctl = resolve(CTL)
+  if not ctl:
+      print(f"FALHA: nao consigo decidir DNS — o controle positivo {CTL} tambem nao resolveu; instrumento (resolucao DNS), nao achado.")
+      sys.exit(124)
+  res = resolve(DEAD)
+  if res:
+      print(f"DRIFT: {DEAD} voltou a resolver ({res}) — o host aposentado foi recriado; reabra o item.")
+      sys.exit(1)
+  print(f"ok: {DEAD} nao resolve (controle {CTL} -> {ctl})")
+  PY
+  curl -sS -o /dev/null --max-time 15 https://hugrl.betteruptime.com/
 verify-means: |
   done while the retired hostname resolves to nothing AND the vendor status page
   serves. Goes red if the dead name comes back (someone re-created the record) or
   if the page customers are pointed at stops answering.
+
+  **Why `python3 socket.getaddrinfo` and not `dig` (changed 2026-08-31).** The old
+  predicate was `[ -z "$(dig +short <host>)" ] && curl …`: with `dig` absent the
+  substitution is empty, `-z` is TRUE, and the gate passes **without having resolved
+  anything** — it measured the absence of `dig`, not the absence of the DNS record.
+  That is not hypothetical: the `corelink` fleet runner has no `dig` while this Mac
+  does, so the SAME gate decided different things depending on which runner picked it
+  up, and the answer it gave in CI was the false green. `python3` is a hard dependency
+  of `backlog_verify.py` itself, so it is guaranteed in both environments.
+
+  **Three states, not two.** (1) the host does NOT resolve and the vendor page serves
+  → exit 0, CONFIRMED, which is what this `done` item claims (inverted polarity: green
+  means the retired name is still dead). (2) the host RESOLVES → exit 1, DRIFTED — the
+  record came back. (3) the instrument is unavailable — no `python3`, no `curl`, or the
+  positive control `corelink-api.humangr.com` fails to resolve (no DNS / no network) —
+  → exit **124**, which `backlog_verify.run_verify` reports as **BROKEN**, "the check
+  itself is broken, not that the item drifted". It never exits 0 on a missing tool.
+
+  **The positive control is what separates "dead host" and "no DNS".** A machine with
+  no resolver returns the same `gaierror` for a live host and a dead one, so the dead
+  name is only trusted after a host known to resolve actually resolved in the same run.
 last-verified: 2026-08-24
 ```
 
