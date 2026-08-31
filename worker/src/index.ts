@@ -523,6 +523,7 @@ type RouteKind =
   | "customer_v1"
   | "devenv_v1"
   | "openapi"
+  | "openapi_devenv"
   | "public_attestation"
   | "reapi_v1"
   | "bazel_v2"
@@ -973,9 +974,23 @@ function matchRoute(url: URL): RouteMatch {
     return { tenantId: "_anonymous", pathSuffix: path, routeKind: "signup" };
   }
 
-  // Public OpenAPI 3.1 schema — /openapi.json (WP-08)
+  // Public OpenAPI 3.1 schema.
+  //
+  //   /openapi.json          → the CoreLink API contract (openapi/corelink-v1.json)
+  //   /openapi/devenv.json   → the DevEnv sub-surface, and ONLY where it is wired
+  //
+  // These used to be one route serving one spec, and that spec was DevEnv's:
+  // `/openapi.json` was introduced by the DevEnv package (#1432) and took the
+  // canonical public path with it, so the only API contract CoreLink published
+  // in production described eight DevEnv endpoints and none of the rest of the
+  // product. Verified against prod, not inferred:
+  // `GET https://corelink-api.humangr.com/openapi.json` → 200, 7707 bytes,
+  // `info.title = "CoreLink DevEnv API"`, 8 paths, all `/v1/customer/devenv*`.
   if (path === "/openapi.json" || path === "/v1/openapi.json") {
     return { tenantId: "_system", pathSuffix: path, routeKind: "openapi" };
+  }
+  if (path === "/openapi/devenv.json") {
+    return { tenantId: "_system", pathSuffix: path, routeKind: "openapi_devenv" };
   }
 
   // DevEnv cloud development environments — /v1/customer/devenv* (WP-08)
@@ -2055,6 +2070,57 @@ const baseHandler: ExportedHandler<Env> = {
     if (route.routeKind === "openapi") {
       if (request.method !== "GET" && request.method !== "HEAD") {
         return new Response("Method Not Allowed", { status: 405 });
+      }
+      // The canonical contract. `openapi_v1.ts` is GENERATED from
+      // `openapi/corelink-v1.yaml` by `scripts/openapi_sync.py`, and
+      // `--check` fails the PR on drift — so this adds no second source of
+      // truth to keep in step: it is a projection of the one we review.
+      //
+      // Dynamic so the spec is not parsed on isolate start for the requests
+      // that never ask for it.
+      const { corelinkV1Spec } = await import("./lib/openapi_v1.js");
+      const spec = corelinkV1Spec;
+      const resp = new Response(JSON.stringify(spec), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "public, max-age=300",
+          "X-Request-Id": requestId,
+        },
+      });
+      return applyCors(resp, request);
+    }
+
+    // DevEnv sub-surface spec — published ONLY where the feature is wired.
+    //
+    // Every one of the eight DevEnv endpoints answers 503 unless the
+    // `RUNNER_DEVENV_DO` binding exists (see the `devenv_v1` arm below), and
+    // that binding is absent from every deployed environment — measured against
+    // the live Worker through the Cloudflare API, not inferred from the repo:
+    // `corelink-prod` has 97 bindings and 6 Durable Object bindings
+    // (CORELINK_SERVER, EVENT_LOG_DO, REPLICATION_COORDINATOR_DO,
+    // REQUEST_METER_COORDINATOR_DO, REQUEST_METER_SHARD_DO, ROLLOUT_DO), and
+    // RUNNER_DEVENV_DO is not among them.
+    //
+    // So the spec is gated on the same binding the endpoints are gated on. A
+    // contract cannot outlive the thing it describes: where DevEnv is wired the
+    // spec is published, and where it is not, asking for it is a 404 rather
+    // than a document promising eight endpoints that cannot answer. When the
+    // binding is deployed this starts serving on its own — nothing to remember.
+    if (route.routeKind === "openapi_devenv") {
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        return new Response("Method Not Allowed", { status: 405 });
+      }
+      if (!env.RUNNER_DEVENV_DO) {
+        return applyCors(
+          reapiError(
+            "NOT_FOUND",
+            "DevEnv is not enabled in this environment; its API contract is not published here.",
+            404,
+            requestId,
+          ),
+          request,
+        );
       }
       const { devenvOpenApiSpec } = await import("./lib/openapi_devenv.js");
       const resp = new Response(JSON.stringify(devenvOpenApiSpec), {

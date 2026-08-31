@@ -16,6 +16,11 @@ on:
       - "openapi/**"
       - "tools/openapi/**"
       - "scripts/openapi_sync.py"
+      # The Worker module served at GET /openapi.json is GENERATED from the
+      # YAML by openapi_sync.py. Without it in this filter, hand-editing the
+      # generated file alone would skip the drift check entirely — the gate
+      # would fail OPEN on the one edit it exists to catch.
+      - "worker/src/lib/openapi_v1.ts"
       - ".github/workflows/openapi-validate.yml"
   push:
     branches: [main]
@@ -23,6 +28,7 @@ on:
       - "openapi/**"
       - "tools/openapi/**"
       - "scripts/openapi_sync.py"
+      - "worker/src/lib/openapi_v1.ts"
       - ".github/workflows/openapi-validate.yml"
   workflow_dispatch:
 

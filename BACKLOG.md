@@ -11633,3 +11633,88 @@ verify-means: |
   sobre um teste que não testa mais nada.
 last-verified: 2026-08-31
 ```
+
+---
+
+### B-169 — `RUNNER_DEVENV_DO` não existe em NENHUM ambiente implantado: os 8 endpoints DevEnv são 503 estrutural
+
+O handler DevEnv (`worker/src/index.ts`, arm `devenv_v1`) abre com
+
+```
+if (!env.RUNNER_DEVENV_DO) {
+  return reapiError("SERVICE_UNAVAILABLE", "RUNNER_DEVENV_DO binding not configured", 503, …)
+}
+```
+
+e **o binding não existe em nenhum ambiente implantado.** Medido contra o Worker VIVO
+pela API da Cloudflare, não pelo repo:
+
+```
+GET /accounts/6a1fc1c6…/workers/scripts/corelink-prod/bindings  → 200
+97 bindings; 6 durable-object bindings:
+  CORELINK_SERVER, EVENT_LOG_DO, REPLICATION_COORDINATOR_DO,
+  REQUEST_METER_COORDINATOR_DO, REQUEST_METER_SHARD_DO, ROLLOUT_DO
+RUNNER_DEVENV_DO present: False
+```
+
+Os 6 DOs reais aparecendo na mesma resposta são o **controle positivo**: a leitura
+alcança o que existe, então a ausência é do mundo, não do instrumento. Uma sonda HTTP
+não decide isto — `GET /v1/customer/devenv` sem credencial devolve `401 clerk session
+required` **antes** de rotear, e portão autenticado não vê o que o cliente vê.
+
+**O #1397 é o dono do DevEnv e adiciona o binding — mas não onde importa.** No head do
+branch dele, `RUNNER_DEVENV_DO` aparece **uma única vez**, na `wrangler.toml` linha 242,
+que fica **acima** de `[env.prod]` (linha 298) — ou seja, só na seção top-level (dev).
+Seções `[env.X]` do wrangler **não herdam** bindings do topo; cada uma redeclara os seus.
+Controle interno no mesmo arquivo: `CORELINK_SERVER` aparece 7 vezes — uma no topo e uma
+em cada um dos 6 ambientes. Então **mergear o #1397 como está não liga o DevEnv em
+prod/staging/prod-sam/prod-lhr/prod-nrt/prod-syd**; os 8 endpoints seguem 503 em todos.
+
+Não é "ordem de merge": é uma correção que falta ao próprio #1397.
+
+O contrato publicado já não mente mais sobre isso — `GET /openapi/devenv.json` só serve
+a spec onde o binding existe, e 404 onde não existe. Este item cobre a outra metade: ou
+o binding entra nos ambientes, ou a superfície DevEnv sai.
+
+⚠️ **Decisão de produto pendente** (owner): lançar DevEnv ou remover a superfície. Este
+item não a toma; ele impede que o estado atual volte a ficar invisível.
+
+```backlog
+id: B-169
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  bash -c 'set -o pipefail
+  f=wrangler.toml
+  [ -f "$f" ] || { echo "FALHA: wrangler.toml sumiu — o instrumento perdeu o alvo, nao concluir ausencia."; exit 1; }
+  ctrl=$(grep -c "^name = \"CORELINK_SERVER\"" "$f" | tr -d " ")
+  [ "$ctrl" -ge 2 ] || { echo "FALHA: controle positivo falhou — so $ctrl declaracao(oes) de CORELINK_SERVER; o padrao de leitura quebrou, o zero abaixo nao vale nada."; exit 1; }
+  envs=$(grep -c "^\[env\.[a-z-]*\]$" "$f" | tr -d " ")
+  [ "$envs" -ge 1 ] || { echo "FALHA: nenhuma secao [env.*] encontrada — leitura quebrada."; exit 1; }
+  dev=$(grep -c "^name = \"RUNNER_DEVENV_DO\"" "$f" | tr -d " ")
+  [ "$dev" -lt "$envs" ] || { echo "FALHA: RUNNER_DEVENV_DO declarado $dev vez(es) para $envs secao(oes) [env.*] — o binding alcanca todos os ambientes agora; confirme contra a API da Cloudflare e feche o item."; exit 1; }
+  echo "aberto: $dev declaracao(oes) de RUNNER_DEVENV_DO para $envs secao(oes) [env.*] (controle: $ctrl de CORELINK_SERVER)"'
+verify-means: |
+  open — o binding não alcança os ambientes implantados.
+
+  O predicado conta **declarações por ambiente**, não presença. Um `grep -c
+  RUNNER_DEVENV_DO` simples devolveria 1 assim que o #1397 mergear e o item fecharia
+  sozinho com prod ainda em 503 — o defeito exato que este item existe para nomear.
+  Como `[env.X]` do wrangler não herda bindings do topo, o binding só chegou a todo
+  lugar quando as declarações forem pelo menos tantas quanto as seções de ambiente.
+
+  O controle positivo vem primeiro e é obrigatório: `CORELINK_SERVER` — um DO que
+  comprovadamente está em todos os ambientes — tem de casar com o MESMO padrão de
+  leitura. Se ele não casar, o zero do outro é do instrumento e o comando falha alto
+  em vez de reportar "aberto".
+
+  O que este comando NÃO decide: se o binding **implantado** existe. Ele lê o arquivo,
+  e arquivo não é ambiente — a verdade está na API da Cloudflare
+  (`/workers/scripts/corelink-prod/bindings`), que precisa de credencial e não cabe num
+  `verify` de repo. Quem fechar tem de conferir lá, com os 6 DOs reais como controle.
+
+  Também não decide **se o DevEnv deve existir**. Remover a superfície fecha este item
+  tão legitimamente quanto ligá-la, e essa é decisão do owner.
+last-verified: 2026-08-31
+```
