@@ -274,15 +274,21 @@ def main() -> int:
     #
     # An item that is missing is indistinguishable from an item that is malformed
     # unless something compares the two populations. This does that.
-    block_ids = set()
-    for m in BLOCK_RE.finditer(text):
-        try:
-            data = yaml.load(m.group(1), Loader=_NoDuplicateKeysLoader) or {}
-        except yaml.YAMLError:
-            continue
-        if isinstance(data, dict) and re.fullmatch(r"B-\d+", str(data.get("id", ""))):
-            block_ids.add(str(data["id"]))
-    orphan_headings = [h for _, h in headings if h not in block_ids]
+    # POSITION, not parseability. A block whose YAML is unparseable IS a block —
+    # `parse()` already reports it as BROKEN (exit 1), and treating it as absent
+    # here would upgrade every malformed-YAML case to a FATAL exit 2 and swallow
+    # the more precise diagnosis. Caught by this repo's own gate-for-gates suite:
+    # `FAIL  unparseable YAML is BROKEN (exit 2, want 1)`.
+    #
+    # So the question is only: does a fence open between this heading and the
+    # next one? A heading with no fence at all is the item that vanishes.
+    block_starts = [m.start() for m in BLOCK_RE.finditer(text)]
+    bounds = [pos for pos, _ in headings] + [len(text)]
+    orphan_headings = [
+        h
+        for i, (pos, h) in enumerate(headings)
+        if not any(pos < b < bounds[i + 1] for b in block_starts)
+    ]
     if orphan_headings:
         print(
             "FATAL: heading(s) sem bloco ```backlog parseavel: "
@@ -290,7 +296,7 @@ def main() -> int:
             + "\nO item existe como titulo e NAO existe para nenhuma verificacao deste\n"
             "arquivo — some do portao sem que o portao reclame, porque ele conta o que\n"
             "consegue parsear e nada compara esse numero com quantos titulos ha.\n"
-            f"(titulos: {len(headings)}, blocos com id valido: {len(block_ids)})",
+            f"(titulos: {len(headings)}, blocos abertos: {len(block_starts)})",
             file=sys.stderr,
         )
         return 2
