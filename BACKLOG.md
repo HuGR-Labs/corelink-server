@@ -3316,8 +3316,9 @@ o `[self-hosted, Linux, X64]` aparecia só num **comentário** descrevendo o val
 ANTERIOR. Confundir comentário com código é o mesmo defeito que [B-128] registra
 no próprio `verify`. Lida a lane inteira, o quadro real era melhor: o corpo do
 job já tinha sido reescrito em 2026-06-02 para a frota macOS (sem docker, sem
-`container:`, `python3`/`pip3` do host em vez de `actions/setup-python`) e só a
-linha `runs-on:` ficou para trás. Uma linha — migrada nesta mesma mudança.
+`container:`, um venv próprio a partir do `python3` do host em vez de
+`actions/setup-python` — o passo nunca chama um `pip3` do host) e só a linha
+`runs-on:` ficou para trás. Uma linha — migrada nesta mesma mudança.
 
 ```backlog
 id: B-110
@@ -3325,10 +3326,23 @@ repo: corelink-server
 owner: owner
 status: open
 verify: |
-  bash -c 'for f in cas_foundation coverage ffi-matrix-ci mutation-nightly; do
-    grep -qE "runs-on: *(ubuntu-latest|ubuntu-x64-4core)" ".github/workflows/$f.yml" || exit 1
+  bash -c 'set -u
+  for f in cas_foundation coverage ffi-matrix-ci mutation-nightly; do
+    p=".github/workflows/$f.yml"
+    [ -f "$p" ] || { echo "FALHA: $p sumiu — a lane saiu do grupo que este item descreve; reavalie o item."; exit 1; }
+    grep -qE "^[[:space:]]*runs-on:[[:space:]]*(ubuntu-latest|ubuntu-x64-4core)" "$p" || { echo "FALHA: $f nao declara mais runner GitHub-hosted em NENHUM job (migrada, apagada ou reescrita) — o grupo das quatro mudou; reavalie o item."; exit 1; }
   done
-  grep -qE "^ *runs-on: *\[self-hosted, mac, corelink-builder\]" .github/workflows/semgrep.yml || exit 1'
+  s=.github/workflows/semgrep.yml
+  [ -f "$s" ] || { echo "FALHA: $s sumiu — a catraca perdeu o objeto que ela guarda; reavalie o item."; exit 1; }
+  linhas=$(grep -E "^[[:space:]]*runs-on:" "$s" || true)
+  [ -n "$linhas" ] || { echo "FALHA: semgrep.yml nao tem NENHUMA linha runs-on: de codigo (so comentario, ou o job sumiu) — anti-vacuidade: sem essa checagem a catraca passaria verde num arquivo sem job."; exit 1; }
+  n=$(printf "%s\n" "$linhas" | grep -c .)
+  [ "$n" = 1 ] || { echo "FALHA: semgrep.yml tem $n linhas runs-on: de codigo; a catraca so decide sobre uma. Reavalie o item."; exit 1; }
+  case "$linhas" in
+    *ubuntu-*|*macos-*|*macOS-*|*windows-*|*Windows-*)
+      echo "FALHA: catraca disparou — a semgrep voltou para runner GitHub-hosted ($linhas). Sao CINCO lanes bloqueadas por billing, nao quatro: reescreva o item."; exit 1;;
+  esac
+  echo "aberto: as 4 lanes seguem em runner GitHub-hosted (o bloqueio) e a semgrep segue FORA do hosted ($linhas)."'
 verify-means: |
   open — passa enquanto TODAS as quatro lanes nomeadas ainda apontam para um
   runner hosted, que é o bloqueio. Vira vermelho assim que QUALQUER UMA for
@@ -3337,9 +3351,26 @@ verify-means: |
   olhasse só uma seria predicado mais fraco que quatro itens separados.
 
   A quinta cláusula é uma catraca, não decoração: ela exige que a `semgrep`
-  PERMANEÇA na frota self-hosted. Sem ela, alguém poderia reverter a migração e
-  o item continuaria verde descrevendo quatro lanes enquanto cinco estão
-  bloqueadas — o modo de falha que a versão anterior deste item tinha.
+  PERMANEÇA fora do runner GitHub-hosted. Sem ela, alguém poderia reverter a
+  migração e o item continuaria verde descrevendo quatro lanes enquanto cinco
+  estão bloqueadas — o modo de falha que a versão anterior deste item tinha.
+
+  **Reescrita 2026-08-31 (#1505).** A catraca era o LITERAL `[self-hosted, mac,
+  corelink-builder]`, o destino que o #1475 tinha escolhido. O #1505 reaponta a
+  mesma lane para `corelink` (a frota efêmera de contêineres CF, também
+  self-hosted) para não construir dependência nova na máquina do owner. Contra
+  esse destino o literal antigo dava **DRIFTED** — e não aqui: o
+  `pull_request.paths` do `backlog-verify` não inclui `.github/workflows/**`,
+  então o vermelho só apareceria no próximo PR que tocasse o `BACKLOG.md`,
+  atribuído a quem não tem culpa. A catraca agora mede a **alegação real** do
+  item — "esta lane não está no runner hosted que o billing bloqueia" — em vez de
+  um destino self-hosted específico, que não é o que o item afirma. Ela é
+  NEGATIVA e por isso vem com as duas guardas de anti-vacuidade que uma negativa
+  exige: falha se não houver nenhuma linha `runs-on:` de código (arquivo sem job,
+  ou só comentário) e falha se houver mais de uma (a catraca não saberia qual
+  julgar). As cinco leituras de `runs-on:` são ancoradas em `^` de propósito:
+  `semgrep.yml` cita `runs-on:` dentro de comentários históricos, e confundir
+  comentário com código é exatamente o defeito que [B-128] registra.
 last-verified: 2026-08-31
 ```
 

@@ -34,6 +34,23 @@
   `python3 -m venv .semgrep-venv` and never calls a host `pip3`) and the
   destination rationale, both of which measure out.
 
+- **The step comment 20 lines below no longer contradicts that correction.** It
+  still said Semgrep was "installed via the host pip3 into a throwaway venv" —
+  the exact claim the block above refutes, in the same file, in a PR whose
+  deliverable IS the comment. Rewritten off the `run:` block: the host `python3`
+  is used for one thing (`python3 -m venv .semgrep-venv`) and every install goes
+  through that venv's own pip.
+
+- **`B-110.verify` no longer breaks on this change.** Its ratchet pinned the
+  literal `runs-on: [self-hosted, mac, corelink-builder]` in `semgrep.yml`, so
+  this PR turned the item **DRIFTED** — and not visibly here, because
+  `backlog-verify`'s `pull_request.paths` does not include
+  `.github/workflows/**`: the red would have landed on the next PR to touch
+  `BACKLOG.md`. The ratchet now measures the item's actual claim ("this lane is
+  not on the GitHub-hosted runner that billing blocks") instead of one specific
+  self-hosted destination, with the two anti-vacuity guards a negative predicate
+  requires: no code-level `runs-on:` line at all, and more than one, both fail.
+
   Repointing `runs-on:` is necessary and **not sufficient** — the first green
   dispatch still needs the 4228 blocking findings triaged and an `--error` policy
   decision. Tracked as **B-139**, so that WP-CI does not close declaring this

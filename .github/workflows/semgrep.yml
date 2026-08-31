@@ -141,9 +141,16 @@ jobs:
       - name: Run Semgrep (bundled rulesets + CoreLink custom pack)
         id: semgrep
         shell: bash
-        # Semgrep 1.164.0 installed via the host pip3 into a throwaway venv (no
-        # Docker, no setup-python). Pinned per HIGH_RISK FF-HR-005 + ADR-S12-045
-        # §6 — bump only via ADR + Security review (§14.s12.004.1).
+        # Semgrep 1.164.0 installed into a throwaway venv (no Docker, no
+        # setup-python). Read off the `run:` block below, which is the only
+        # authority here: the host `python3` is resolved with `command -v` and
+        # used for exactly ONE thing — `python3 -m venv .semgrep-venv`. After
+        # `source .semgrep-venv/bin/activate`, every install goes through THAT
+        # venv's own pip (`python -m pip install …`). No host `pip3` is ever
+        # invoked; the only host dependency is `python3` plus the `python3-venv`
+        # apt package baked into the runner image. Pinned per HIGH_RISK
+        # FF-HR-005 + ADR-S12-045 §6 — bump only via ADR + Security review
+        # (§14.s12.004.1).
         #
         # The `--config` flags mirror the former SEMGREP_RULES list: bundled
         # rulepacks first, the repo-local CoreLink pack LAST (local wins
