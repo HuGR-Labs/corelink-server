@@ -28,7 +28,8 @@ concurrency:
 jobs:
   label:
     name: Apply path-based labels
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): gh + actions/labeler (JS action) — gh assado na imagem
+    runs-on: corelink
     steps:
       - name: Apply labels
         uses: actions/labeler@b8dd2d9be0f68b860e7dae5dae7d772984eacd6d # v6.2.0
@@ -42,7 +43,8 @@ jobs:
 
   size:
     name: Compute size bucket
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): gh + actions/labeler (JS action) — gh assado na imagem
+    runs-on: corelink
     steps:
       # Native implementation (no container action). The previous
       # `codelytv/pr-size-labeler` is a Docker container action — Linux-only —

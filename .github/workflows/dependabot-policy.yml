@@ -76,7 +76,8 @@ jobs:
   # -----------------------------------------------------------------------
   sentinel:
     name: dependabot-policy sentinel
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): gh + cargo-deny assados; e o merge-ref do PR passa a ser avaliado em microVM descartável, não no Mac do owner
+    runs-on: corelink
     timeout-minutes: 1
     if: github.actor != 'dependabot[bot]'
     steps:
@@ -89,7 +90,8 @@ jobs:
   # -----------------------------------------------------------------------
   policy-gate:
     name: Dependabot policy gate
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): gh + cargo-deny assados; e o merge-ref do PR passa a ser avaliado em microVM descartável, não no Mac do owner
+    runs-on: corelink
     timeout-minutes: 10
     if: github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'
 

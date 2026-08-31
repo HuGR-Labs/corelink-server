@@ -47,7 +47,8 @@ concurrency:
 jobs:
   welcome:
     name: Post welcome comment
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): gh assado na imagem; implementação nativa em gh, feita para fugir de container action
+    runs-on: corelink
     steps:
       - name: Greet first-time contributor
         shell: bash
