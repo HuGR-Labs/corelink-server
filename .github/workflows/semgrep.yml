@@ -74,7 +74,15 @@ jobs:
     # run Semgrep natively via the host `python3`/`pip3` — NOT
     # `actions/setup-python`, whose RUNNER_TOOL_CACHE provisioning is unwritable
     # on the fleet. (2026-06-02)
-    runs-on: ubuntu-latest
+    #
+    # 2026-08-31 — the `runs-on:` was the ONE line left behind by that rewrite.
+    # The step body above was already ported to the macOS fleet (no docker, no
+    # container:, host python3/pip3), but the runner label still read
+    # `ubuntu-latest`, so every dispatch since 2026-08-24 asked for a hosted box
+    # that billing will not grant. That is the whole of this lane's 388-run /
+    # 0-success record — nothing in the job body needed to change. Repointed to
+    # the fleet the body was written for.
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 20
 
     # Skip duplicate runs on dependabot push events (PR already covers them).
