@@ -368,7 +368,7 @@ mais fácil de errar do lote.
 | `coverage.yml` | 1 | `ubuntu-x64-4core` | `corelink` (**G-D**) | Mesmo argumento de núcleos. Falta `llvm-tools` na imagem (§1.2). `cargo-llvm-cov` instrumenta o workspace inteiro: **maior risco de disco da lista.** |
 | `mutation-nightly.yml` | 1 | `ubuntu-x64-4core` | `corelink` (**G-H**) | «~4,5 h; 2-core estoura o teto de 6 h» — em 4 vCPU o tempo é comparável. O job de agregação **já roda em `corelink`**. `gh` existe. **Desbloqueado.** |
 | `codeql.yml` | 1 | `ubuntu-latest` | `corelink` (**G-D**) | `cargo build --workspace` + banco CodeQL. Última execução **falhou** (2026-08-30) — investigar antes, não junto. Disco. |
-| `semgrep.yml` | 1 | `ubuntu-latest` | `corelink` (**G-H**) | python3 presente; `pip3` **ausente** → binário pinado. Última execução falhou (2026-08-10) — **investigar antes de mover.** |
+| `semgrep.yml` | 1 | ~~`ubuntu-latest`~~ → **Mac** (#1475) | `corelink` (**#1505**) | O #1475 achou o defeito real (o corpo já era sem-docker; o `runs-on:` era a linha esquecida, daí 388 execuções / 0 sucessos) mas mandou para o **Mac do owner**. O `pip3` ausente **não importa**: o passo cria o próprio venv (`python3 -m venv`) e usa o pip DELE — o comentário do arquivo superestimava a dependência. |
 | `ffi-matrix-ci.yml` | 5 | `ubuntu-latest` | — | `go` ausente; `actions/setup-go` resolveria. **Mas esta lane nunca passou** (parked, `workflow_dispatch`-only). Migrar não conserta isso. **Item de backlog, não PR.** |
 | `cas-canary.yml` | 1 | `ubuntu-latest` | **fica hosted** | O job irmão já está em `corelink`. Este existe **para sair da nossa rede**: `# datacenter IP genuinely outside our provider`. Movê-lo apaga o que o canário mede. **A ÚNICA exceção `ubuntu-*` justificada por desenho** — as outras duas são pendências, não exceções. |
 | `smoke-install.yml` | 1 | `ubuntu-latest` | **experimento** | `installer smoke (real Docker daemon required)`. A frota tem um **shim** `docker` (nerdctl) desde 2026-08-13, **não** um daemon — se o instalador sobrevive a isso é **desconhecido**. Uma execução decide. §1.3. |
@@ -403,7 +403,7 @@ medição do zero com controle ao lado.
 | **G-A1** | 20 | 25 | python3/bash/node/jq — uma linha por arquivo | pronto |
 | **G-A2** | 7 | 15 | idem + `taiki-e`/`setup-terraform`/`setup-java` | pronto |
 | **G-A3** | 6 | 9 | mesma troca, mas **exercem token de escrita** — agrupado por risco | pronto |
-| **G-B** | 7 | 16 | o path darwin colado à mão | ⛔ espera o PR de imagem (`nightly` + `cargo-fuzz`) |
+| **G-B** | **6** | **16** | o path darwin colado à mão | ✅ **#1506** — imagem pronta (`corelink-runners`#523 mergeado) |
 | **G-H** | 2 | 2 | `semgrep` + `mutation-nightly` — cada um com uma falha própria a investigar antes | investigar |
 | **G-D** | 5 | — | **disco de 18 GB não medido** — em série, uma por PR, `df -h`, a 1ª é experimento | serial |
 
@@ -455,8 +455,32 @@ dos braços.
 
 ## 9. PRs abertos por este pacote
 
-| PR | repo | o quê |
-|---|---|---|
-| **#1488** | `corelink-server` | esta tabela |
-| **#1495** | `corelink-server` | corrige `ci-runner-fabric-box.md` — pool misto refutado, §4/§5 desatualizados, sonda inexecutável |
-| **#523** | `corelink-runners` | assa `nightly` + `llvm-tools` + `cargo-fuzz` — desbloqueia o Grupo B |
+| PR | repo | o quê | estado |
+|---|---|---|---|
+| **#523** | `corelink-runners` | assa `nightly` + `llvm-tools` + `cargo-fuzz` | ✅ **mergeado** |
+| **#1498** | `corelink-server` | **G-A1** — 19 workflows / 21 jobs | ✅ **mergeado** |
+| **#1488** | `corelink-server` | esta tabela | aberto |
+| **#1495** | `corelink-server` | corrige `ci-runner-fabric-box.md` | aberto |
+| **#1500** | `corelink-server` | o guard de rustup que encolhia sozinho | aberto |
+| **#1501** | `corelink-server` | **G-A2** — 6 workflows / 15 jobs | aberto |
+| **#1502** | `corelink-server` | **G-A3** — 4 lanes com token de escrita / 6 jobs | aberto |
+| **#1504** | `corelink-server` | B-131..B-135 | aberto |
+| **#1505** | `corelink-server` | `semgrep` → `corelink` (a segunda metade do #1475) | aberto |
+| **#1506** | `corelink-server` | **G-B** — 6 workflows / 16 jobs de fuzz | aberto |
+
+### 9.1 ⚠️ Dois pacotes disjuntos por TEMA, sobrepostos por ARQUIVO
+
+O **#1475 (WP-E)** repontou `semgrep` de `ubuntu-latest` para
+`[self-hosted, mac, corelink-builder]` — **o Mac do owner** — e foi mergeado com
+revisão fria aprovada. As quatro perguntas daquela revisão estavam **todas certas
+dentro do PR**: o corpo é linux-compatível, o label existe, o portão ainda pode
+reprovar, o verde não é por deixar de trabalhar.
+
+**Nenhuma delas é «este destino é compatível com a campanha que está esvaziando o
+Mac?»** — porque revisão fria escopada a **um PR** não enxerga **conflito de direção
+entre pacotes**. É trabalho de lead, e o mapa de conflito tem de ser **por arquivo**,
+não por tema.
+
+O #1475 consertou um defeito real (388 execuções / 0 sucessos). O **destino** é que
+precisava de síntese, e é o #1505. Registrado aqui porque a próxima campanha vai
+tropeçar no mesmo lugar se isto ficar só no histórico do git.
