@@ -42,7 +42,42 @@ if [ -z "${CHANNEL:-}" ]; then
     exit 2
 fi
 
-HOST_TRIPLE="${HOST_TRIPLE:-x86_64-apple-darwin}"
+# Host triple: DETECTED, with an explicit override still honoured.
+#
+# This used to default to `x86_64-apple-darwin` unconditionally, from when the
+# only self-hosted fleet was the owner's Macs. The moment a caller runs on the
+# Linux fabric (`runs-on: corelink`) that default sends it looking for
+# `…/toolchains/1.91.1-x86_64-apple-darwin` on a Linux box, which cannot exist —
+# and the script then reports "not installed on this runner host", i.e. it blames
+# the host for a triple the script itself invented. Detecting is the fix; a
+# second hardcoded triple would just move the assumption.
+#
+# `uname -m` reports `arm64` on Apple Silicon and `aarch64` on Linux for the same
+# architecture, so the mapping is per-OS rather than a single table.
+if [ -z "${HOST_TRIPLE:-}" ]; then
+    _os="$(uname -s)"
+    _arch="$(uname -m)"
+    case "${_os}" in
+        Darwin)
+            case "${_arch}" in
+                arm64|aarch64) HOST_TRIPLE="aarch64-apple-darwin" ;;
+                x86_64)        HOST_TRIPLE="x86_64-apple-darwin" ;;
+                *)             HOST_TRIPLE="${_arch}-apple-darwin" ;;
+            esac
+            ;;
+        Linux)
+            case "${_arch}" in
+                aarch64|arm64) HOST_TRIPLE="aarch64-unknown-linux-gnu" ;;
+                x86_64)        HOST_TRIPLE="x86_64-unknown-linux-gnu" ;;
+                *)             HOST_TRIPLE="${_arch}-unknown-linux-gnu" ;;
+            esac
+            ;;
+        *)
+            echo "::error::ci-use-host-toolchain: unsupported host OS '${_os}'. Set HOST_TRIPLE explicitly." >&2
+            exit 2
+            ;;
+    esac
+fi
 TC="$HOME/.rustup/toolchains/${CHANNEL}-${HOST_TRIPLE}"
 
 if [ ! -x "$TC/bin/cargo" ] || [ ! -x "$TC/bin/rustc" ]; then
