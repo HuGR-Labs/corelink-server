@@ -6994,3 +6994,90 @@ verify-means: |
   guarantees the item cannot be silently closed while the drain is untouched.
 last-verified: 2026-08-30
 ```
+
+---
+
+### B-126 — 81 arquivos acima de 1000 linhas, e nenhum portão os impede de crescer
+
+**Decisão do owner (2026-08-31): todo arquivo acima de 1000 linhas é refatorado em
+arquivos menores.** Este item rastreia a campanha e o portão que a torna irreversível.
+
+Inventário em `reports/refactor/god-files-2026-08-31.tsv`, gerado por comando e não por
+memória: **81 arquivos, 143 667 linhas**. Para calibrar — o repo tem 691 622 linhas
+rastreadas em `.rs`/`.ts`/`.tsx`/`.py`, então **21% do código vive em arquivos que o owner
+já declarou grandes demais**. Contando a partir de 800 linhas seriam 139 arquivos e 28%.
+
+Concentração, que decide a sequência: **32 dos 81 estão em `crates/corelink-container`**,
+5 em `corelink-gc`, 4 em `apps/signup-worker`. Os quatro maiores:
+
+| linhas | arquivo |
+|---|---|
+| 5 738 | `crates/corelink-container/src/storage/r2_s3.rs` |
+| 4 788 | `worker/src/index.ts` |
+| 4 603 | `crates/corelink-container/src/adapter_pat.rs` |
+| 4 535 | `crates/corelink-container/src/customer_d1.rs` |
+
+**Isto não é higiene abstrata — os quatro do topo já custaram trabalho medido hoje.** O
+`r2_s3.rs` é onde a investigação de performance foi procurar por que o `ostore` agrega R2
+com D1 de contabilidade, e a resposta exigiu ler cinco camadas num arquivo só. O
+`index.ts` é onde as citações OKF deslocam a cada mudança — o conserto de citações de um
+único PR mexeu em 45 delas hoje, e um branch teve **17 de 18 apontando para linha errada**
+com o portão verde.
+
+**O risco da própria campanha, dito antes de começar.** Mover código entre arquivos
+invalida **toda** citação OKF que aponte para ele, e o conceito continua verde se a âncora
+for de blob — porque a âncora faz o C5 comparar a árvore consigo mesma. Uma refatoração
+grande feita com âncora e sem renumeração por conteúdo produz uma wiki inteiramente
+plausível e inteiramente errada, sem nenhum portão reclamar. Quem executar tem de
+renumerar por conteúdo, arquivo por arquivo, e conferir **depois**.
+
+**Ordem de execução, e a razão de cada degrau:**
+1. **O portão primeiro**, em catraca: arquivo novo acima do teto reprova; arquivo já acima
+   reprova se **crescer**. Sem ele, os 81 voltam a crescer enquanto a campanha corre, e a
+   campanha não converge.
+2. **A cauda longa antes da cabeça** — os que estão entre 1000 e 1500 saem com corte
+   simples e derrubam a contagem rápido, dando sinal de progresso real.
+3. **Os quatro maiores por último e um por vez**, porque cada um deles é superfície citada
+   pela wiki e por medições em voo.
+
+```backlog
+id: B-126
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'inv=reports/refactor/god-files-2026-08-31.tsv
+  test -f "$inv" || { echo "INDETERMINADO: inventario $inv sumiu — o item mede contra ele; restaure antes de concluir."; exit 0; }
+  ctl=$(git ls-files "*.rs" | grep -vc "^$" | tr -d " ")
+  [ "${ctl:-0}" -gt 100 ] || { echo "INDETERMINADO: git ls-files devolveu $ctl arquivos .rs — o instrumento falhou, nao o repo."; exit 0; }
+  n=$(git ls-files "*.rs" "*.ts" "*.tsx" "*.py" | grep -vE "node_modules|/target/" | xargs wc -l 2>/dev/null | grep -v " total$" | awk "\$1>1000" | wc -l | tr -d " ")
+  [ "$n" -gt 0 ] || { echo "FALHA: zero arquivos acima de 1000 linhas — a campanha terminou, feche o item."; exit 1; }
+  base=$(wc -l < "$inv" | tr -d " ")
+  echo "aberto: $n arquivo(s) acima de 1000 linhas (linha de base do inventario: $base)"'
+verify-means: |
+  open — ainda existe arquivo acima de 1000 linhas.
+
+  O predicado **recontará do zero** a cada execução em vez de confiar no inventário: o
+  arquivo `.tsv` é a linha de base histórica, e a contagem viva é o estado. Se os dois
+  divergirem, a mensagem mostra os dois números — progresso e regressão ficam visíveis
+  na mesma linha, sem que ninguém precise abrir o arquivo.
+
+  A consulta de controle (`git ls-files "*.rs"` > 100) existe porque a contagem real pode
+  cair a zero por dois motivos opostos: a campanha terminou, ou o comando parou de
+  enxergar arquivos. Sem o controle, os dois são indistinguíveis — e a segunda leitura
+  fecharia o item declarando vitória. Essa é a classe de defeito dominante desta campanha
+  e não entra aqui pela porta de trás.
+
+  O que este comando NÃO decide, e é o mais importante: **se a refatoração melhorou alguma
+  coisa.** Contagem de linhas é métrica de superfície; um arquivo de 4 000 linhas partido
+  em cinco de 800 com as mesmas responsabilidades embaralhadas fecha este `verify` e
+  piora o código. Quem fechar precisa mostrar, por arquivo dividido, qual responsabilidade
+  cada parte passou a ter — e que os testes que cobriam o original continuam cobrindo as
+  partes.
+
+  Também não decide o estado da wiki. Mover código invalida citações OKF, e a âncora de
+  blob deixa o C5 **vacuamente verde** para o arquivo ancorado — ver [B-123]. Cada PR
+  desta campanha tem de renumerar citações por conteúdo e conferir depois, e um `validate_okf`
+  verde **não** é prova de que isso foi feito.
+last-verified: 2026-08-31
+```
