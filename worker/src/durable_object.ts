@@ -846,6 +846,27 @@ export class CoreLinkServer implements DurableObject {
           // 403s `dpa_required` (the DPA row never gets written).
           DPA_RECEIPT_SIGNING_KEY: this.env.DPA_RECEIPT_SIGNING_KEY ?? "",
           PAT_SIGNING_KEY: this.env.PAT_SIGNING_KEY ?? "",
+          // B-081: the rotation OVERLAP siblings. The container already accepts
+          // them — `adapter_pat.rs:1466` folds `PAT_SIGNING_KEY_PREV` and
+          // `PAT_SIGNING_KEY_NEW` into the HMAC key set, so a PAT minted under
+          // either still verifies during a rotation window
+          // (`key_management.md §3.2.1`). Only the CURRENT key was forwarded, so
+          // that mechanism was UNREACHABLE: an operator following the documented
+          // rotation runbook invalidated every live PAT the instant they swapped
+          // the key — a self-inflicted outage at the worst possible moment,
+          // since rotation is what you do when a key is compromised.
+          //
+          // `?? ""` is safe here and is not a placeholder: the container reads
+          // these through `non_empty_env` (`storage.rs:119`), which trims and
+          // treats EMPTY exactly like ABSENT, so an unset secret forwards `""`
+          // and the sibling is simply omitted from the overlap set. That matters
+          // because a sibling that is present-but-MALFORMED fails CLOSED —
+          // `from_env` returns `None` and the adapter routes do not mount at all
+          // (`adapter_pat.rs:1470`). Forwarding a placeholder that read as
+          // "present" would have turned an unset optional secret into a total
+          // PAT-auth outage; forwarding "" cannot.
+          PAT_SIGNING_KEY_PREV: this.env.PAT_SIGNING_KEY_PREV ?? "",
+          PAT_SIGNING_KEY_NEW: this.env.PAT_SIGNING_KEY_NEW ?? "",
           // L3 money path: `POST /v1/onboarding/tier-select` runs INSIDE the
           // container and reads these from its OWN process env
           // (`tier_select::build_state_from_env` + `StripeRealClient::from_env`).

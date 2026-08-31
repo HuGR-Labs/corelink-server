@@ -5061,40 +5061,93 @@ documentado invalida todos os PATs emitidos sob a chave anterior no instante da 
 antes, e não depois — o custo de descobrir isto durante uma rotação de emergência é uma
 indisponibilidade autoinfligida no pior momento possível.
 
-Reparo: duas linhas no `container.start({ env })`, mais uma linha na matriz de secrets
-para cada uma das duas variáveis.
+**Consertado 2026-08-31 (este PR).** `worker/src/durable_object.ts` passa a encaminhar as
+duas irmãs no bloco `container.start({ env })`, ao lado da chave corrente. As linhas #204 e
+#205 da matriz de secrets já existiam — mas descreviam **só a metade da borda**
+(`worker/src/index.ts`); foram corrigidas para registrar a metade do contêiner e o motivo de
+ela ter sido inalcançável.
+
+**⚠️ O detalhe que decidia entre conserto e apagão, seguido até o leitor final.** O contêiner
+falha **FECHADO** quando uma irmã está *presente mas malformada*: `from_env` devolve `None` e
+as rotas do adapter **não montam** (`adapter_pat.rs:1470`) — não é degradação, é PAT-auth
+morto. Encaminhar um *placeholder* qualquer, ou qualquer literal não-vazio, transformaria um
+segredo opcional **não-provisionado** (e nenhuma das duas está bound em prod hoje) num apagão
+total. `?? ""` é seguro **por uma propriedade específica e verificada**, não por convenção:
+o contêiner lê essas variáveis por `non_empty_env` (`storage.rs:119`), que faz `trim` e trata
+**VAZIO exatamente como AUSENTE** — então a variável vazia é simplesmente omitida do conjunto
+de overlap.
+
+Medido: `tsc --noEmit` no `worker/` dá **16 erros com e sem a mudança** (todos pré-existentes,
+em `replication_coordinator_do.ts` e 4 já em `durable_object.ts`) — zero erro novo. O tipo
+`Env` já declarava `PAT_SIGNING_KEY_PREV?` / `_NEW?` (`index.ts:175-176`). Gates de secrets:
+`secrets-checklist-verify` OK sem drift, `validate_secrets_matrix` `code_only=0`.
+
+**Sobre a dependência declarada de [B-067]:** o item registra que este é reparo de credencial
+e que `corelink-pat` não tem execução de teste em CI. **Nada em Rust mudou aqui** — o
+contêiner já aceitava as irmãs, e o defeito era inteiramente do lado do Worker. A dependência
+continua valendo para o próximo reparo que toque o crate, não para este.
 
 ```backlog
 id: B-081
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'a=crates/corelink-container/src/adapter_pat.rs
+  bash -c 'set -uo pipefail
+  a=crates/corelink-container/src/adapter_pat.rs
   d=worker/src/durable_object.ts
-  [ -f "$a" ] && [ -f "$d" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
-  aceita=0; grep -q "PAT_SIGNING_KEY_PREV" "$a" && aceita=1
-  [ "$aceita" = 1 ] || { echo "FALHA: o container nao aceita mais chaves de transicao — reavalie o item."; exit 1; }
+  s=crates/corelink-container/src/storage.rs
+  for f in "$a" "$d" "$s"; do [ -f "$f" ] || { echo "FALHA: $f sumiu — reavalie o item."; exit 1; }; done
+  grep -q "PAT_SIGNING_KEY_PREV" "$a" || { echo "FALHA: o container nao aceita mais chaves de transicao — a rotacao sem interrupcao deixou de existir; isso merece item de recusa proprio, nao o fechamento silencioso deste."; exit 1; }
+  # As duas irmas tem de ser encaminhadas no bloco de env do container.start.
   enc=0
-  grep -q "PAT_SIGNING_KEY_PREV" "$d" && enc=$((enc+1))
-  grep -q "PAT_SIGNING_KEY_NEW" "$d" && enc=$((enc+1))
-  [ "$enc" -lt 2 ] || { echo "FALHA: o DO ja encaminha as duas chaves de transicao — feche o item."; exit 1; }
-  echo "aberto: container aceita PREV/NEW e o DO encaminha $enc de 2"'
+  for k in PAT_SIGNING_KEY_PREV PAT_SIGNING_KEY_NEW; do
+    grep -qE "^[[:space:]]+$k: this\.env\.$k \?\? \"\"," "$d" && enc=$((enc+1))
+  done
+  [ "$enc" = 2 ] || { echo "REGRESSAO: o DO encaminha $enc de 2 chaves de transicao no formato esperado. Encaminhar so uma e reparo pela metade que AINDA quebra a rotacao."; exit 1; }
+  # A propriedade que separa conserto de apagao: o container so pode tratar
+  # VAZIO como AUSENTE. Se non_empty_env parar de fazer isso, o `?? ""` acima
+  # passa a ser lido como presente-mas-malformado => from_env devolve None =>
+  # as rotas do adapter NAO montam. Um segredo opcional nao-provisionado viraria
+  # apagao total de PAT-auth. Isto nao e paranoia: nenhuma das duas irmas esta
+  # bound em prod hoje, entao o caminho vazio e o caminho REAL.
+  grep -q "fn non_empty_env" "$s" || { echo "FALHA: non_empty_env sumiu de $s — o encaminhamento com \`?? \"\"\" deixou de ter garantia; releia antes de confiar neste portao."; exit 1; }
+  awk "/fn non_empty_env/,/^}/" "$s" | grep -q "is_empty()" || { echo "REGRESSAO CRITICA: non_empty_env nao trata mais VAZIO como ausente. O DO encaminha \`?? \"\"\" para duas variaveis nao-bound em prod; sem essa propriedade elas passam a ser lidas como presentes-mas-malformadas e as rotas do adapter NAO MONTAM."; exit 1; }
+  echo "fechado: container aceita PREV/NEW, o DO encaminha as 2, e non_empty_env ainda trata vazio como ausente"'
 verify-means: |
-  open — o contêiner aceita `PAT_SIGNING_KEY_PREV` E o Durable Object encaminha menos
-  que as duas chaves de transição.
+  **Polaridade INVERTIDA (`done`):** sai 0 — fechado — enquanto o contêiner aceitar as irmãs
+  de transição, o DO encaminhar **as duas**, e `non_empty_env` continuar tratando vazio como
+  ausente. Sai 1 nomeando qual das três regrediu.
 
-  Vira DRIFTED quando o DO encaminhar as duas, que é o reparo. Fecharia também se o
-  contêiner deixasse de aceitar chaves de transição — mas nesse caso a rotação sem
-  interrupção deixa de existir por decisão, e isso merece item próprio de recusa, não o
-  fechamento silencioso deste.
+  A polaridade `open` ficaria verde neste PR e **vermelha no merge seguinte**, contaminando
+  todo PR irmão. Invertida junto com o `status`.
 
-  Conta 0/1/2 em vez de exigir ambas: encaminhar só uma é um reparo pela metade que
-  ainda quebra a rotação, e o número mostra isso em vez de esconder.
+  **Conta 0/1/2 em vez de "existe", herdado da versão `open`:** encaminhar só uma é reparo
+  pela metade que ainda quebra a rotação, e o número mostra isso em vez de esconder.
 
-  Depende de [B-067] na sequência: é reparo de credencial, e `corelink-pat` hoje não tem
-  execução de teste em CI.
-last-verified: 2026-08-30
+  **O terceiro predicado é o que este verify acrescenta, e ele não é decorativo.** O DO
+  encaminha `?? ""` para duas variáveis que **não estão bound em prod** — verificado contra a
+  conta viva em 2026-08-24 (linhas #204/#205 da matriz) —, então o caminho vazio é o caminho
+  REAL, não um caso de borda. Ele só é seguro porque `non_empty_env` (`storage.rs:119`) faz
+  `trim` e trata vazio como ausente. Se essa propriedade cair, o contêiner passa a ler as duas
+  como *presentes-mas-malformadas*, `from_env` devolve `None`, e as rotas do adapter **não
+  montam** (`adapter_pat.rs:1470`): um segredo opcional não-provisionado vira apagão total de
+  PAT-auth. Um portão que gateasse só o encaminhamento ficaria verde durante exatamente essa
+  regressão.
+
+  **Casa o formato exato do encaminhamento**, não a menção do nome. `grep -q
+  "PAT_SIGNING_KEY_PREV" "$d"` casaria o **comentário** que este PR escreveu explicando o
+  conserto — a armadilha do grep que casa a própria prosa. A âncora exige
+  `^\s+K: this.env.K ?? "",`, que também recusa um placeholder não-vazio: e um placeholder
+  não-vazio é precisamente o apagão descrito acima.
+
+  **Fecharia também se o contêiner deixasse de aceitar chaves de transição** — mas nesse caso
+  a rotação sem interrupção deixa de existir por decisão, e o comando trata isso como FALHA
+  alta que manda abrir item de recusa, não como fechamento silencioso.
+
+  **O que NÃO decide:** se as irmãs serão provisionadas em prod. São opcionais por desenho e
+  só se tornam ativas durante uma janela de rotação; bind é decisão de operação.
+last-verified: 2026-08-31
 ```
 
 ### B-082 — a sonda profunda de saúde do contêiner existe, funciona, e não é alcançável por ninguém
