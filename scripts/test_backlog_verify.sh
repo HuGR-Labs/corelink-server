@@ -16,9 +16,11 @@ fails=0
 pass() { echo "  PASS  $1"; }
 fail() { echo "  FAIL  $1"; fails=$((fails + 1)); }
 
-# $1 name, $2 expected exit, $3 expected verdict substring (or "-"), $4 body
+# $1 name, $2 expected exit, $3 expected verdict substring (or "-"), $4 body,
+# $5 OPTIONAL substring that must NOT appear — a cell that only asserts the right
+# message was printed cannot see a WRONG message printed alongside it.
 cell() {
-  local name="$1" want="$2" verdict="$3" body="$4" out rc
+  local name="$1" want="$2" verdict="$3" body="$4" forbidden="${5:-}" out rc
   printf '%s\n' "$body" > "$SANDBOX/b.md"
   out="$(python3 "$VERIFY" --file "$SANDBOX/b.md" --today 2026-08-23 2>&1)"; rc=$?
   if [[ "$rc" -ne "$want" ]]; then
@@ -26,6 +28,9 @@ cell() {
   fi
   if [[ "$verdict" != "-" ]] && ! grep -q "$verdict" <<<"$out"; then
     fail "$name (no $verdict in output)"; echo "$out" | sed 's/^/        /'; return
+  fi
+  if [[ -n "$forbidden" ]] && grep -q "$forbidden" <<<"$out"; then
+    fail "$name (unwanted '$forbidden' in output)"; echo "$out" | sed 's/^/        /'; return
   fi
   pass "$name"
 }
@@ -86,6 +91,30 @@ cell "a heading and its block naming different ids is a hard failure" 2 "heading
 
 # A block with no heading at all is orphaned prose-side: nothing outside the
 # file can cite it, and a reader scrolling past sees no item there.
+cell "a heading whose block lost its opening fence is a hard failure" 2 "B-2" \
+  "$(printf '### B-1\n\n```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n\n### B-2\n\nid: B-2\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
+
+# Every other cell in this file uses a 1- or 2-item fixture, and NONE of them can
+# see this: fence pairing is SEQUENTIAL from the top of the file, so a lost opener
+# leaves an odd count and shifts every LATER pairing by one. With only the last
+# item damaged there is no "later" to shift. Three items, middle one damaged, is
+# the smallest fixture where the shift exists — and it is the common case, since
+# a conflict resolution eats a fence wherever the conflict was.
+#
+# The right answer here is DENSITY (B-002 vanished, leaving a gap) — the exact
+# message `main` printed before the orphan check was added. The wrong answer is a
+# cascade of `heading says …, block says id: …` for every item after the damage,
+# with the density rule never reached; that is what feeding the fence-MASKED
+# headings into the divergence loop produces. Hence the forbidden substring.
+cell "the MIDDLE item losing its fence reports DENSITY, not a shifted-heading cascade" 2 "missing B-002" \
+  "$(item B-1 open '"true"' 2026-08-23
+     printf '### B-2 — fixture\n\nid: B-2\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n\n'
+     item B-3 open '"true"' 2026-08-23)" \
+  "heading says"
+
+cell "a \`### B-\` inside a fenced example is not a heading" 0 "" \
+  "$(printf '### B-1\n\n```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n\n```text\n### B-42\nexample of the item format\n```\n')"
+
 cell "a block with no heading above it is a hard failure" 2 "no \`### B-" \
   "$(printf '```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
 

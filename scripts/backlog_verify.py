@@ -264,6 +264,71 @@ def main() -> int:
             mismatches.append(f"  line {line}: block `id: {block_id}` has no `### B-…` heading above it")
         elif prior[-1] != block_id:
             mismatches.append(f"  line {line}: heading says {prior[-1]}, block says id: {block_id}")
+    # The loop above walks BLOCKS and finds their heading. It is therefore blind
+    # to the reverse failure: a heading whose block LOST ITS FENCE — a conflict
+    # resolution that ate the ```backlog line, or the `id:` inside it. That item
+    # simply stops existing for every check in this file, and the gate reports
+    # all-green over the survivors. Observed 2026-08-31: 129 headings, 128 parsed
+    # blocks, `confirmed=128, drifted=0, broken=0`. The item would have merged
+    # green and vanished from the register.
+    #
+    # An item that is missing is indistinguishable from an item that is malformed
+    # unless something compares the two populations. This does that.
+    #
+    # SCOPE, stated because the prose is what survives: the density rule above
+    # already catches an item lost from the MIDDLE of the file (it leaves a gap).
+    # The blind window is the item with the MAXIMUM id — the only one whose loss
+    # leaves the sequence dense. That is the freshly added item, which is exactly
+    # the one most likely to be born from a conflict resolution.
+    # POSITION, not parseability. A block whose YAML is unparseable IS a block —
+    # `parse()` already reports it as BROKEN (exit 1), and treating it as absent
+    # here would upgrade every malformed-YAML case to a FATAL exit 2 and swallow
+    # the more precise diagnosis. Caught by this repo's own gate-for-gates suite:
+    # `FAIL  unparseable YAML is BROKEN (exit 2, want 1)`.
+    #
+    # So the question is only: does a fence open between this heading and the
+    # next one? A heading with no fence at all is the item that vanishes.
+    #
+    # This check — and ONLY this check — reads headings from a fence-MASKED copy.
+    # `### B-NN` inside a fenced block is an EXAMPLE, not an item: documenting the
+    # item format inside BACKLOG.md itself would otherwise be flagged as an item
+    # whose block is missing, naming an id that does not exist.
+    #
+    # The mask must NOT feed the divergence loop above. Fence pairing is
+    # SEQUENTIAL from the top of the file, so the very defect this check hunts —
+    # a lost fence opener — leaves an odd count and shifts EVERY later pairing by
+    # one. Each subsequent `### B-NN` then falls inside a region believed to be
+    # fenced and drops out of `headings`, and the divergence loop attributes every
+    # later block to the last surviving heading. Measured on the real BACKLOG.md
+    # (129 items) with B-062's opener removed: masked headings produced 64 spurious
+    # `heading says B-062, block says id: B-0NN` lines and returned before the
+    # density rule could run; unmasked headings give `FATAL: BACKLOG.md is missing
+    # B-062 — ids must be dense.`, one exact line, as `main` did. Losing the LAST
+    # item's fence — the case this check exists for — misaligns no block from its
+    # heading, so the divergence loop stays silent and the orphan check is reached
+    # intact either way. Masked here, unmasked there.
+    #
+    # SCOPE of the mask, not fixed here because it is unreachable today: `^```
+    # only sees a fence in COLUMN 0. Measured 2026-08-31, BACKLOG.md carries 0
+    # indented (`^\s+``` `) fences and 0 `~~~` fences — every fence in it opens in
+    # column 0, so the mask pairs all of them. A `### B-NN` written in column 0
+    # *inside* an indented fence, or a `~~~` fence, would still register as a
+    # phantom heading here. Neither construct exists in the file; if one is ever
+    # added, this mask needs a real fence tokenizer rather than a regex.
+    masked = re.sub(
+        r"^```.*?^```",
+        lambda m: re.sub(r"[^\n]", " ", m.group(0)),
+        text,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    masked_headings = [(m.start(), m.group(1)) for m in HEADING_RE.finditer(masked)]
+    block_starts = [m.start() for m in BLOCK_RE.finditer(text)]
+    bounds = [pos for pos, _ in masked_headings] + [len(text)]
+    orphan_headings = [
+        h
+        for i, (pos, h) in enumerate(masked_headings)
+        if not any(pos < b < bounds[i + 1] for b in block_starts)
+    ]
     if mismatches:
         print(
             "FATAL: a heading and its block disagree about which item they are.\n"
@@ -279,6 +344,18 @@ def main() -> int:
     # while the record silently loses work. This happened on 2026-08-23: an edit
     # that rewrote one item removed its neighbour, and the gate reported all-green.
     # So ids must stay DENSE. Retiring an item means marking it, never deleting it.
+    if orphan_headings:
+        print(
+            "FATAL: heading(s) sem bloco ```backlog parseavel: "
+            + ", ".join(sorted(set(orphan_headings)))
+            + "\nO item existe como titulo e NAO existe para nenhuma verificacao deste\n"
+            "arquivo — some do portao sem que o portao reclame, porque ele conta o que\n"
+            "consegue parsear e nada compara esse numero com quantos titulos ha.\n"
+            f"(titulos: {len(masked_headings)}, blocos abertos: {len(block_starts)})",
+            file=sys.stderr,
+        )
+        return 2
+
     numbered = sorted(
         int(m.group(1))
         for i in items
