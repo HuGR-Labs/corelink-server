@@ -64,7 +64,7 @@ concurrency:
 jobs:
   semgrep:
     name: Semgrep scan
-    # macOS self-hosted fleet. The previous `runs-on: [self-hosted, Linux, X64]`
+    # Ephemeral Cloudflare fabric. The previous `runs-on: [self-hosted, Linux, X64]`
     # matched ZERO runners after the 2026-05-31 macOS-only cutover (the same
     # fault class the actionlint fix closed), so the job hung pending forever;
     # and the dead `returntocorp/semgrep@sha256:000…0` placeholder image + the
@@ -76,17 +76,45 @@ jobs:
     # on the fleet. (2026-06-02)
     #
     # 2026-08-31 (#1475, WP-E) — the `runs-on:` was the ONE line left behind by
-    # that rewrite. The step body was already ported off Docker (no container:,
-    # host python3), but the runner label still read `ubuntu-latest`, so every
-    # dispatch since 2026-08-24 asked for a hosted box that billing will not
-    # grant. That is the whole of this lane's 388-run / 0-success record, and
-    # #1475 was right that nothing in the job body needed to change.
+    # that rewrite, and it is repointed here. But the 388-run / 0-success record
+    # is NOT one story, and an earlier draft of this comment got it wrong in a
+    # way worth leaving on the record, because the wrong version predicts a lane
+    # that goes green and the right one predicts a lane that fails on its first
+    # dispatch. Measured against the run history, the 0/388 has TWO historical
+    # causes and neither is "billing will not grant a hosted box":
+    #
+    #   1. Dead label + placeholder image (346 of the 388 runs). `ubuntu-latest`
+    #      only entered this file on 2026-06-19 (3b21a297, #389), so the
+    #      MAJORITY of the record predates the label entirely: those runs asked
+    #      for `[self-hosted, Linux, X64]` — matching zero runners — and/or the
+    #      `returntocorp/semgrep@sha256:000…0` placeholder image.
+    #   2. In the `ubuntu-latest` era the lane DID get a hosted runner and
+    #      failed INSIDE the scan. Run 31365335113 (2026-08-10) reports
+    #      `runner_name: "GitHub Actions 1000003886"`, ran 6m35s, and ended:
+    #      `Ran 474 rules on 6345 files: 4228 findings (4228 blocking)` — with
+    #      `--error`, that is exit 1. Same signature in 29481995796 and
+    #      30801766782. A second, independent failure follows it: the SARIF
+    #      upload needs Advanced Security enabled for code scanning, and it is
+    #      not.
+    #
+    # So repointing `runs-on:` is necessary and not sufficient: the FIRST green
+    # dispatch also needs the 4228 blocking findings triaged and an `--error`
+    # policy decision. That is tracked as a backlog item, not fixed here.
+    #
+    # Temporal note, stated the way it measures: this lane has not executed
+    # since 2026-08-10, and its `on:` block is `workflow_dispatch` ONLY (the
+    # `schedule:` has been commented out since 2026-08-10). Nothing dispatches
+    # it on a clock.
     #
     # 2026-08-31 (WP-CI) — the DESTINATION is the half that needed synthesis.
     # #1475 sent it to `[self-hosted, mac, corelink-builder]`, which is the
     # owner's Mac: the same machine that hit load average 234 and 95% disk on
-    # 2026-08-30, and the machine this campaign exists to empty. Repointing a
-    # 20-minute multi-rulepack scan there trades a DEAD lane for LIVE load on it.
+    # 2026-08-30, and the machine this campaign exists to empty. Stated
+    # precisely — because the `on:` block above is `workflow_dispatch` ONLY,
+    # NEITHER destination generates automatic load; nothing schedules this scan.
+    # The choice is therefore about where a ~20-minute multi-rulepack scan lands
+    # WHEN someone dispatches it, and about not building a new dependency on the
+    # Mac in the campaign whose whole purpose is to remove them.
     #
     # `corelink` runs it and the Mac does not have to. The body's two real
     # requirements are met there and were measured, not assumed:
