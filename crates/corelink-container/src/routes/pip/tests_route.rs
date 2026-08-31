@@ -31,9 +31,7 @@ use std::sync::Arc;
 
 use axum::http::StatusCode;
 use corelink_adapter_host::pip::wheel::sha256_hex;
-use corelink_pat::{
-    mint, PatEnv, PatScopes, PrincipalId, TenantId as PatTenantId, SCOPE_CACHE_RW,
-};
+use corelink_pat::{mint, PatEnv, PatScopes, PrincipalId, TenantId as PatTenantId, SCOPE_CACHE_RW};
 use tower::ServiceExt; // for `.oneshot`
 use uuid::Uuid;
 
