@@ -1,0 +1,50 @@
+name: file-size ratchet (god files, B-126)
+
+# The owner's 2026-08-31 decision — every source file above 1000 lines gets
+# refactored into smaller files — needs a gate, or the 81 files in the baseline
+# keep growing while the campaign runs and it never converges.
+#
+# `pull_request` only, deliberately. No cron: this can only change when code
+# changes, and this repo's standing rule is that a schedule earns its keep ONLY
+# when something can change WITHOUT a commit (CVE feeds, prod state, backups,
+# cert drift, billing reconciliation). A clock here would re-verify byte-identical
+# code on the owner's own Mac.
+#
+# Runs on the `corelink` self-hosted fleet: the zero-hosted-spend mandate is
+# absolute (`ubuntu-latest` is billing-blocked). Needs nothing but python3 and
+# git — no toolchain, no cargo, no cache — so it is seconds, not minutes, and
+# adds no meaningful load to a machine that is also the CI runner.
+
+on:
+  pull_request:
+    paths:
+      - '**/*.rs'
+      - '**/*.ts'
+      - '**/*.tsx'
+      - '**/*.py'
+      - 'reports/refactor/god-files-2026-08-31.tsv'
+      - 'scripts/validate_file_size_ratchet.py'
+      - '.github/workflows/file-size-ratchet.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: file-size-ratchet-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ratchet:
+    name: no file grows past the god-file baseline
+    runs-on: corelink
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # No `--depth` fetch anywhere in this job. The gate reads only the working
+      # tree, so shallow is fine — but see #1462: a `--depth=1` fetch added later
+      # would silently undo a `fetch-depth: 0` if one is ever needed here.
+      - name: Ratchet
+        run: python3 scripts/validate_file_size_ratchet.py
