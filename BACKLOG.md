@@ -9186,13 +9186,13 @@ verify-means: |
 last-verified: 2026-08-31
 ```
 
-### B-148 — 41 itens dependem de `.github/workflows/**` e o gate do backlog não roda quando um PR mexe lá
+### B-148 — 44 itens dependem de `.github/workflows/**` e o gate do backlog não roda quando um PR mexe lá
 
 `backlog-verify.yml` declara `pull_request.paths` = `BACKLOG.md`,
 `scripts/backlog_verify.py`, `scripts/test_backlog_verify.sh` e **ele mesmo**. Um PR que
 altera qualquer outro workflow **não** dispara o gate.
 
-Medido nesta árvore: **41 de 143 itens (28%)** têm `verify` que lê `.github/workflows`. Um PR
+Medido nesta árvore: **44 de 165 itens (27%)** têm `verify` que lê `.github/workflows`. Um PR
 de workflow pode derrubar qualquer um deles **sem que o gate rode nesse PR**; o vermelho
 aparece no próximo PR que toque `BACKLOG.md`, que é quase sempre de outra pessoa e de outro
 assunto. **Já aconteceu** — [B-110] × #1505.
@@ -9253,7 +9253,7 @@ verify-means: |
   `BACKLOG.md`, declarado explicitamente como instrumento quebrado. Nenhum desses estados
   devolve "aberto".
 
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 41 de 143 itens …
+  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 44 de 165 itens …
   nao cobre"* e exit 0. Numa cópia com `.github/workflows/**` acrescentado ao `paths`, sai
   *"FALHA: paths ja cobre .github/workflows/**"* e exit 1.
 
@@ -9753,7 +9753,7 @@ verify-means: |
 last-verified: 2026-08-31
 ```
 
-### B-155 — 91 de 120 `verify` fazem `grep` de padrão não-ancorado: o comentário do arquivo alvo satisfaz o portão
+### B-155 — 93 de 134 `verify` fazem `grep` de padrão não-ancorado: o comentário do arquivo alvo satisfaz o portão
 
 O terceiro caso desta campanha, e é o que o promove de caso a classe.
 
@@ -9767,13 +9767,13 @@ Os outros dois: **B-118** punia a confissão da remoção (o `verify` casava o t
 descrevia o conserto) e **B-112** punia a explicação do repontamento. Três formas do mesmo
 erro: **o portão lê a prosa sobre o código em vez do código.**
 
-Varredura desta árvore: **91 de 120** `verify` com comando invocam `grep` com um padrão que
+Varredura desta árvore: **93 de 134** `verify` com comando invocam `grep` com um padrão que
 não começa em `^` e sem filtro de comentário — [B-007], [B-015], [B-016], [B-019], [B-020],
-[B-021] e mais 85. Não é um bug em 91 itens; é a ausência de uma convenção mecanizada.
+[B-021] e mais 87. Não é um bug em 93 itens; é a ausência de uma convenção mecanizada.
 
 ⚠️ **Contado não é triado, e a distinção é a parte útil.** Boa parte dos 91 grepa arquivo sem
 comentário de linha, ou padrão que nenhum comentário plausível conteria — são falsos
-positivos legítimos da varredura. O trabalho do item é **triar** os 91 e ancorar os que podem
+positivos legítimos da varredura. O trabalho do item é **triar** os 93 e ancorar os que podem
 ser satisfeitos por comentário; a contagem serve para saber quando parar, não para acusar.
 
 **O que este item NÃO decide:** se o reparo é ancorar caso a caso ou proibir `grep` nu num
@@ -9825,13 +9825,13 @@ verify-means: |
   ⚠️ **Contado não é triado, e o `verify` argumenta por construção a favor de manter aberto.**
   A contagem inclui greps sobre arquivos sem comentário de linha e padrões que nenhum
   comentário plausível conteria. Fechar este item **não** é levar a contagem a zero por
-  reescrita mecânica — é triar os 91, ancorar os que podem ser satisfeitos por comentário, e
+  reescrita mecânica — é triar os 93, ancorar os que podem ser satisfeitos por comentário, e
   então trocar este `verify` pelo portão-de-portões que recusa `grep` nu em `verify` novo.
   Zerar a contagem sem triar seria o mesmo vício que o item denuncia, uma camada acima.
 
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 91 de 120 …"* e
+  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 93 de 134 …"* e
   exit 0. Numa cópia do `BACKLOG.md` com todo padrão de `grep` prefixado por `^[^#]*`, sai
-  *"FALHA: nenhum dos 120 verifies com comando usa grep de padrao nao-ancorado"* e exit 1.
+  *"FALHA: nenhum dos 134 verifies com comando usa grep de padrao nao-ancorado"* e exit 1.
 last-verified: 2026-08-31
 ```
 
@@ -10320,5 +10320,350 @@ verify-means: |
   aviso, sai *"FALHA: a pagina nao manda mais exportar o PAT"* e exit 1.
 
   O que ele **não** decide: consertar a receita ou retirar a integração.
+last-verified: 2026-08-31
+```
+
+### B-162 — 🔴 nenhum PAT publicado tem forma que o produto parseia, e o servidor não dá oráculo para o cliente descobrir
+
+A forma canônica é fixada em `crates/corelink-pat/src/format.rs:104-113`: **95 ou 96 chars**
+(env de 2 = `ci`/`ro` → 95; env de 3 = `pat` → 96), prefixo `corelink_`, e **dois pontos**
+separando `token_id . random_secret . hmac_sig`. Fora desse envelope,
+`parse_plaintext` devolve `Malformed` **antes de olhar qualquer byte de segredo**.
+
+Varredura de `apps/docs/docs/**` (`.md` + `.mdx`), 2026-08-31 — 9 literais distintos com
+forma de PAT, **zero canônicos**:
+
+| literal | chars | pontos | arquivos |
+|---|---:|---:|---:|
+| `corelink_pat_...` | 16 | 3 | 6 |
+| `corelink_pat_xxx` | 16 | 0 | 1 |
+| `corelink_pat_XXXXXXXXXXXX` | 25 | 0 | 5 |
+| `corelink_dev_t_xxx.xxx.xxx` | 26 | 2 | 5 |
+| `corelink_pat_XXXX…` (24 X) | 37 | 0 | 2 |
+| `corelink_pat_XXXX…` (40 X) | 53 | 0 | 3 |
+| `corelink_pat_XXXX.YYY.ZZZ` | 56 | 2 | 1 |
+| `corelink_pat_01ARZ3…` | 90 | 2 | 3 |
+| `corelink_pat_XXXX.YYY.ZZZ` (longo) | 94 | 2 | 1 |
+
+As **páginas de integração** (`bazel`, `pip`, `npm`, `turborepo`, `oci-registry`,
+`homebrew`, `raw-curl`, `sccache-cargo`) acertam o prefixo `corelink_pat_` e **erram a
+forma**. O `tutorial/02-first-pat.mdx:23` faz o contrário: acerta a estrutura de três
+segmentos e **erra o env** — declara *"`dev`, `staging`, or `prod`"* enquanto
+`format.rs:65` fixa `ENV_LITERALS = ["pat", "ci", "ro"]`. Nenhum dos dois é copiável.
+
+**Controle positivo, e é o que separa "exemplo feio" de "exemplo inútil":** um token de 96
+chars com a forma canônica **passa** o portão local do `corelink login` e falha só no
+servidor. Os publicados nem chegam lá.
+
+**O agravante é a ausência de oráculo.** O servidor responde **401 idêntico** para cinco
+formas diferentes de token errado — malformado, bem-formado com assinatura errada, revogado,
+de outro tenant, expirado. Isso é a decisão de segurança certa (não vazar qual metade está
+errada), e tem um custo que ninguém pagou: **o cliente não consegue descobrir sozinho** que o
+problema é a forma do exemplo que ele copiou da nossa página. Ele vai concluir que o token
+dele está errado.
+
+**O que este item NÃO decide:** se os exemplos passam a ser tokens sintéticos de 96 chars
+(copiáveis, e o cliente descobre o erro só no servidor) ou placeholders explicitamente
+marcados como não-copiáveis (`<seu-pat-de-96-chars>`). A segunda é honesta e a primeira é
+testável; escolher é de quem escreve a doc.
+
+```backlog
+id: B-162
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  python3 - <<"PY"
+  import glob, pathlib, re, sys
+  fmt = pathlib.Path("crates/corelink-pat/src/format.rs")
+  if not fmt.is_file():
+      print("FALHA: format.rs sumiu — sem a forma canonica este portao nao decide nada; reavalie."); sys.exit(1)
+  src = fmt.read_text()
+  envs = re.findall(r'b"([a-z]{2,3})"', src.split("ENV_LITERALS")[1][:120]) if "ENV_LITERALS" in src else []
+  if sorted(envs) != ["ci", "pat", "ro"]:
+      print(f"FALHA: ENV_LITERALS mudou (li {envs}) — a forma canonica se moveu; releia o item antes de confiar neste portao."); sys.exit(1)
+  TOK = re.compile(r"corelink_[A-Za-z0-9]+_[A-Za-z0-9._-]+")
+  achados = {}
+  for f in glob.glob("apps/docs/docs/**/*", recursive=True):
+      p = pathlib.Path(f)
+      if not p.is_file() or p.suffix not in (".md", ".mdx"): continue
+      for m in TOK.finditer(p.read_text(errors="ignore")):
+          t = m.group(0)
+          if t.count(".") == 2 or t.startswith("corelink_pat_"):
+              achados.setdefault(t, set()).add(f)
+  if not achados:
+      print("FALHA: a varredura nao achou NENHUM literal com forma de PAT em apps/docs/docs — instrumento quebrado, nao doc limpa."); sys.exit(1)
+  def canon(t):
+      return len(t) in (95, 96) and t.split("_")[1] in ("pat", "ci", "ro") and t.count(".") == 2
+  bons = [t for t in achados if canon(t)]
+  if bons:
+      print(f"FALHA: {len(bons)} de {len(achados)} literais publicados JA tem a forma canonica — o reparo comecou; reavalie e feche quando todos tiverem."); sys.exit(1)
+  print(f"aberto: {len(achados)} literais com forma de PAT publicados em apps/docs/docs, ZERO canonicos (envelope: 95/96 chars, env em pat|ci|ro, 2 pontos)")
+  PY
+verify-means: |
+  open — nenhum dos literais com forma de PAT publicados na documentação satisfaz o envelope
+  que `parse_plaintext` exige.
+
+  **O envelope é LIDO do código, não constante no portão.** O comando extrai `ENV_LITERALS`
+  de `format.rs` e **falha alto** se ele deixar de ser `pat|ci|ro` — se a forma canônica
+  mudar, este portão para em vez de julgar a doc contra uma regra morta. Um `95|96` escrito à
+  mão aqui envelheceria em silêncio, que é a doença que este arquivo tenta não ter.
+
+  **Controle positivo embutido:** se a varredura não achar **nenhum** literal, isso é
+  declarado instrumento quebrado, não documentação consertada. Sem essa guarda, renomear o
+  diretório de docs faria o item se declarar resolvido.
+
+  **Fecha por exaustão, não por amostra:** o primeiro literal canônico publicado já faz o
+  comando parar e pedir reavaliação, porque a partir dali a alegação "nenhum" deixou de valer
+  e o item precisa ser reescrito para "quantos ainda faltam".
+
+  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 9 literais … ZERO
+  canonicos"* e exit 0. Numa cópia com um literal de 96 chars (`corelink_pat_` + 3 segmentos)
+  numa página, sai *"FALHA: 1 de 10 literais publicados JA tem a forma canonica"* e exit 1.
+
+  **O que ele NÃO mede:** a ausência de oráculo no servidor (401 idêntico para cinco causas).
+  Isso exige um PAT real e cinco requisições a produção — depende de [B-160]. Está no corpo
+  porque é a metade que explica por que o defeito não é auto-corrigível pelo cliente, e é o
+  que impede fechar este item apenas ajeitando os exemplos e declarando vitória.
+last-verified: 2026-08-31
+```
+
+### B-163 — 🔴 a receita publicada "Upload a directory" monta a URL com o digest VAZIO e imprime sucesso com o digest certo
+
+`apps/docs/docs/integrations/raw-curl.md:80-91`:
+
+```bash
+tar -czf - ./dist/ \
+  | tee >(b3sum | awk '{print $1}' > /tmp/digest.txt) \
+  | curl -s -X PUT … \
+      "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$(cat /tmp/digest.txt)"
+
+echo "Uploaded as $(cat /tmp/digest.txt)"
+```
+
+**O shell expande `$(cat /tmp/digest.txt)` ao montar o pipeline** — antes de `b3sum` ter
+escrito qualquer coisa. A URL sai com o digest **vazio** (ou, pior, com o digest de uma
+execução **anterior**). O `echo` da linha seguinte roda **depois** e lê o arquivo já
+preenchido: imprime `Uploaded as <digest-correto>`.
+
+**Sucesso silencioso, publicado.** O usuário vê o digest certo na tela e acredita que o
+upload foi feito com ele. Confirmado em **zsh e bash**, com um stand-in de `curl` que registra
+a URL recebida.
+
+**Bônus que torna a receita irrecuperável como está:** `tar -czf -` **não é determinístico** —
+mtimes, ordem de diretório e o timestamp embutido pelo gzip mudam a saída. Quatro execuções
+sobre o mesmo conteúdo produziram quatro digests. Ou seja, mesmo com a URL corrigida, a
+receita **não reproduz o próprio resultado**, e um cache endereçado por conteúdo alimentado
+assim tem taxa de acerto zero por construção.
+
+**O que este item NÃO decide:** o reparo tem duas metades independentes. A da URL é trivial
+(materializar o arquivo antes: `tar … > /tmp/a.tgz; d=$(b3sum …); curl … "$d"`). A do
+determinismo exige escolher entre `tar --sort=name --mtime=… --owner=0 --group=0` + `gzip -n`,
+ou parar de sugerir tar e mandar subir os arquivos individualmente — que é o que um cache CAS
+quer de qualquer forma. A segunda escolha é de produto.
+
+```backlog
+id: B-163
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'set -e
+  p=apps/docs/docs/integrations/raw-curl.md
+  [ -f "$p" ] || { echo "FALHA: $p sumiu — reavalie o item em vez de fecha-lo."; exit 1; }
+  bloco=$(awk "/^## Upload a directory/{c=1} c{print} c&&/^## /&&!/^## Upload a directory/{exit}" "$p")
+  [ -n "$bloco" ] || { echo "FALHA: a secao Upload a directory nao existe mais — se foi removida esse pode ser o reparo; confirme e feche o item explicitamente."; exit 1; }
+  url=0; det=0
+  printf "%s\n" "$bloco" | grep -qE "^[^#]*/v1/cas/.*\\\$\(cat " && url=1
+  printf "%s\n" "$bloco" | grep -qE "^[^#]*tar -czf -" && det=1
+  sort=0
+  printf "%s\n" "$bloco" | grep -qE "^[^#]*(--sort=name|--mtime|gzip -n)" && sort=1
+  n=0
+  [ "$url" = 1 ] && n=$((n+1))
+  [ "$det" = 1 ] && [ "$sort" = 0 ] && n=$((n+1))
+  [ "$n" -gt 0 ] || { echo "FALHA: a receita nao monta mais a URL com \$(cat …) e o tar nao e mais nao-deterministico — feche o item."; exit 1; }
+  echo "aberto: $n de 2 defeitos na receita publicada (url-com-cat-no-mesmo-pipeline=$url, tar-czf-sem-flags-de-determinismo=$det/sort=$sort)"'
+verify-means: |
+  open — a receita ainda monta a URL com `$(cat …)` do arquivo que o **próprio pipeline**
+  escreve, **ou** ainda usa `tar -czf -` sem nenhuma flag de determinismo.
+
+  **Mede o BLOCO recortado, não o arquivo.** A página tem várias receitas e outras usam
+  `$(cat …)` legitimamente, depois do arquivo existir; o que decide é o uso **dentro da
+  seção** cujo pipeline escreve e lê o mesmo arquivo. Recortar de `## Upload a directory` até
+  o próximo `##` é o que torna a medida sobre a receita e não sobre a página.
+
+  **Âncoras `^[^#]*` em todos os greps** — a página é markdown com cabeçalhos e comentários
+  de shell começando em `#`, e o reparo provável é justamente comentar a linha ruim com uma
+  explicação. Sem a âncora, o item ficaria aberto para sempre por causa do próprio conserto.
+
+  **A seção sumir NÃO fecha o item sozinho:** remover a receita pode ser o reparo certo, mas
+  o comando falha alto e exige que quem removeu escreva isso, em vez de o portão inferir.
+
+  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 2 de 2 defeitos"* e
+  exit 0. Numa cópia com o tar materializado num arquivo antes do `curl` e
+  `--sort=name --mtime` no `tar`, sai *"FALHA: a receita nao monta mais a URL com \$(cat …)"*
+  e exit 1.
+
+  **Fecha por exaustão:** consertar só a URL mantém o item aberto com contagem 1, que é o
+  certo — a receita corrigida pela metade continua não reproduzindo o próprio resultado.
+last-verified: 2026-08-31
+```
+
+### B-164 — o `corelink doctor` rotula 401 como `COR_QUOTA_EXCEEDED`, e a doc do npm manda rodar um comando impossível para o cliente
+
+Dois instrumentos que o cliente usa **para descobrir o que está errado** e que apontam para o
+lugar errado. Medidos nesta árvore; os dois são estáticos e baratos de consertar.
+
+**1. Diagnóstico que manda o cliente para o lugar errado.** `tools/cli/src/doctor.rs:374-379`
+— o check de quota mapeia **`Err(_)`**, isto é, *qualquer* falha ao ler
+`GET /v1/customer/usage`, para o código `COR_QUOTA_EXCEEDED`, com a mensagem *"Cannot read
+usage … Verify plan + contact support"*. Um **401** (PAT errado, expirado, revogado) sai como
+"cota estourada". O cliente com um token ruim é mandado falar com o comercial sobre upgrade
+de plano. E [B-162] mostra que **token ruim é o estado mais provável de um cliente novo**, já
+que todo exemplo publicado é inválido: as duas se compõem na pior direção.
+
+O contraste dentro do mesmo arquivo mostra que não é convenção da casa: o check de rede
+(`:170-175`) usa `COR_NET_UNREACHABLE`, e o de auth (`:190`) tem código próprio. **Só o de
+quota colapsa todas as causas num código que nomeia uma delas.**
+
+**2. Comando de troubleshooting impossível de executar.**
+`apps/docs/docs/integrations/npm.md:65` — e as três traduções — manda, diante de "instalações
+ainda vão para `registry.npmjs.org`", *"execute novamente `npm config get registry`"*. Um
+cliente de CoreLink configura o registry por **escopo** (`@scope:registry=`) num `.npmrc`;
+`npm config get registry` devolve o registry **global**, que continua sendo o do npmjs e
+**está correto que assim seja**. O comando sempre "confirma" o sintoma. É conselho que produz
+um falso positivo garantido, nos quatro idiomas.
+
+**Duas alegações do mesmo achado que NÃO reproduzem nesta árvore, e registro as duas para que
+ninguém as re-abra sem medir.**
+
+- *"o doctor acusa o firewall do cliente por `corelink.humangr.com`, que não tem DNS"* — o
+  endpoint padrão do CLI é `corelink-api.humangr.com` (`tools/cli/src/config.rs:105`), e a
+  mensagem de rede (`doctor.rs:175`) interpola **o endpoint configurado**, não um host fixo.
+  O único uso de `corelink.humangr.com` no CLI é o subdomínio de telemetria
+  (`telemetry.rs:24`), que o `doctor` **não** sonda. Provavelmente corrigido junto com o
+  commit `2d1b19b3`.
+- *"`Server-Timing` ausente em 5 de 6 superfícies"* — não é decidível estaticamente e é a
+  mesma família do [B-129] (o `Server-Timing` foi desenhado para somar, e somar é compatível
+  com esconder). Quem for medir cobertura de fases deve fazê-lo **sob** o B-129, não aqui.
+
+**O que este item NÃO decide:** se `check_quota` deve propagar o status HTTP (o mais útil) ou
+apenas cair para um `COR_UNKNOWN` (o mais barato). A primeira exige que o cliente HTTP exponha
+o status, o que é mudança de assinatura.
+
+```backlog
+id: B-164
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'set -e
+  d=tools/cli/src/doctor.rs
+  n=apps/docs/docs/integrations/npm.md
+  [ -f "$d" ] || { echo "FALHA: $d sumiu — reavalie o item."; exit 1; }
+  [ -f "$n" ] || { echo "FALHA: $n sumiu — reavalie o item."; exit 1; }
+  bloco=$(awk "/async fn check_quota/{c=1} c{print} c&&/^}/{exit}" "$d" | grep -v "^[[:space:]]*//")
+  [ -n "$bloco" ] || { echo "FALHA: nao recortei check_quota — a funcao mudou de forma; releia antes de confiar neste portao."; exit 1; }
+  ctl=0; grep -qE "^[^/]*COR_NET_UNREACHABLE" "$d" && ctl=1
+  [ "$ctl" = 1 ] || { echo "FALHA: o controle sumiu — o doctor nao usa mais codigo de erro proprio para rede; sem contraste este portao mede estilo, nao escolha."; exit 1; }
+  arm=$(printf "%s\n" "$bloco" | awk "/Err\(_\)/{c=1} c{print}")
+  [ -n "$arm" ] || { echo "FALHA: check_quota nao tem mais braco Err(_) — a funcao mudou de forma; releia antes de confiar neste portao."; exit 1; }
+  codigo=$(printf "%s\n" "$arm" | grep -oE "^[[:space:]]*\"COR_[A-Z_]+\"," | head -1 | tr -d " \",")
+  [ -n "$codigo" ] || { echo "FALHA: nao achei o codigo de erro do braco Err(_) — a forma do DoctorCheck::fail mudou; releia."; exit 1; }
+  colapsa=0
+  [ "$codigo" = "COR_QUOTA_EXCEEDED" ] && colapsa=1
+  locales=$(grep -rlE "^[^#]*npm config get registry" apps/docs/docs/integrations/npm.md apps/docs/i18n/*/docusaurus-plugin-content-docs/current/integrations/npm.md 2>/dev/null | wc -l | tr -d " ")
+  soma=$((colapsa + (locales > 0 ? 1 : 0)))
+  [ "$soma" -gt 0 ] || { echo "FALHA: check_quota nao colapsa mais Err(_) em COR_QUOTA_EXCEEDED E nenhuma pagina do npm manda rodar npm config get registry — feche o item."; exit 1; }
+  echo "aberto: o braco Err(_) do check_quota devolve o codigo $codigo (colapsa=$colapsa) (controle COR_NET_UNREACHABLE=$ctl); paginas do npm mandando rodar npm config get registry=$locales"'
+verify-means: |
+  open — o `check_quota` ainda mapeia `Err(_)` para `COR_QUOTA_EXCEEDED`, **ou** alguma das
+  quatro páginas do npm ainda manda rodar `npm config get registry`. Fecha só quando as duas
+  caírem.
+
+  **O recorte de função com comentários removidos é o que impede o falso positivo.** O
+  arquivo tem um doc-comment que menciona `COR_QUOTA_EXCEEDED` (`:342`) e testes que o
+  afirmam (`:601`); grepar o arquivo casaria os três e o portão continuaria "aberto" com o
+  código já consertado.
+
+  **O controle é premissa e falha ALTO:** se `COR_NET_UNREACHABLE` sumir do doctor, o comando
+  para — sem um código de erro específico vivo no mesmo arquivo, "quota para tudo" deixa de
+  ser uma escolha deste caminho e vira o estilo da ferramenta, e o item precisa ser reescrito.
+
+  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: … =1 … paginas do
+  npm … =4"* e exit 0. Numa cópia com o braço `Err(_)` do `check_quota` devolvendo
+  `COR_UNKNOWN` e a linha retirada das quatro páginas do npm, sai *"FALHA: check_quota nao
+  colapsa mais…"* e exit 1.
+
+  **O que ele NÃO cobre, por decisão:** as duas alegações do achado original que **não
+  reproduziram** (o host de DNS no `doctor`, refutado por `config.rs:105`) e a cobertura de
+  `Server-Timing`, que pertence a [B-129]. Estão nomeadas no corpo para que a próxima
+  varredura não as reabra como novidade.
+last-verified: 2026-08-31
+```
+
+### B-165 — o caminho de RECUSA já custa 52–195 ms contra um alvo de 15–30 ms, e o caminho SERVIDO segue sem número
+
+Medido do Mac ao edge GRU, frio e quente declarados, contêiner `ddd95560-r1`
+(`version=143` sam / `178` prod), por `GET` resolvido por `{id}`:
+
+| rota | medido | alvo |
+|---|---|---|
+| `/v1`, `/npm`, `/pip` | **52–61 ms** | 15–30 ms |
+| `/v2/` OCI | **195 ms** | 15–30 ms (teto cross-region 50 ms) |
+
+⚠️ **A população medida é a recusa de autenticação, não o caminho servido.** Isto é o custo
+de **dizer não** — o pedido nem chega a tocar CAS, R2 ou D1 de dados. Que a recusa custe
+2× a 6,5× o alvo do caminho **completo** é o achado; e o OCI a 195 ms está quase 4× acima do
+próprio teto cross-region.
+
+**O caminho servido continua sem número**, e essa é a parte que não pode ser esquecida:
+medi-lo exige um PAT de cliente, que é o [B-160]. Os itens de latência que já existem medem
+outra população — [B-102] mede PUT quente no `/cargo` (1,38 s), [B-104] mede 404
+**autenticado** (0,32 s medianos), [B-106] mede verify de PAT frio (711 ms). Nenhum mede a
+recusa **não autenticada** na borda, que é o primeiro milissegundo que qualquer cliente novo
+experimenta — e o único que um atacante consegue medir de graça, em volume.
+
+**O que este item NÃO decide:** se 15–30 ms é o alvo certo para uma recusa. Pode ser que a
+recusa deva custar **mais** de propósito (padding contra oráculo de temporização, que este
+repositório já pratica em outros pontos). Se for esse o caso, o número tem de estar escrito
+como decisão em algum lugar — e não está, o que é um achado por si só.
+
+```backlog
+id: B-165
+repo: corelink-server
+owner: tl
+status: open
+verify: manual
+verify-means: |
+  MANUAL, e a razão é estrutural — a mesma de [B-102], [B-103] e [B-104], e uma segunda que é
+  própria deste item.
+
+  **1. Exige rede até produção.** Nenhum arquivo desta árvore muda quando a latência muda. Um
+  `verify` que medisse latência acoplaria o portão do `BACKLOG.md` a produção e à rede da
+  máquina de CI, e transformaria queda de link em DRIFTED — falha de instrumento se
+  disfarçando de achado, que é a doença que este arquivo mais tenta evitar.
+
+  **2. Metade da alegação é INVERIFICÁVEL hoje, por bloqueio conhecido.** A segunda linha do
+  item é que o caminho **servido** não tem número, e ele não tem porque falta o PAT
+  ([B-160]). Um comando que medisse só a recusa daria verde sobre a metade fácil e esconderia
+  que a metade que importa segue sem instrumento.
+
+  **Procedimento de reverificação** (quinzenal, e é o que o `last-verified` cobra) — sem
+  credencial, porque a população é a recusa:
+
+      for p in /v1/cas/x/y /npm/x /pip/simple/x /v2/x/manifests/latest; do
+        curl -s -o /dev/null -w "$p %{time_total}\n" \
+          "https://corelink-api.humangr.com$p"
+      done
+
+  Rodar **dez vezes**, descartar a primeira (frio), e reportar **mediana e p90** — nunca o
+  máximo isolado, que foi o que produziu a primeira versão errada do [B-104].
+
+  **Fecha quando a mediana da recusa entrar na faixa de dezenas baixas de ms E o caminho
+  servido tiver número.** NÃO fecha por a cauda melhorar sozinha, e NÃO fecha medindo só a
+  recusa. Se a decisão for que a recusa deve custar mais por padding de temporização, o
+  fechamento é escrever essa decisão com o número escolhido — e aí este item vira `done` com
+  `verify` invertido apontando para onde a decisão está registrada.
 last-verified: 2026-08-31
 ```
