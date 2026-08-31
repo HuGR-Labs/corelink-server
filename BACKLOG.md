@@ -4296,40 +4296,69 @@ omissão significa que um tenant sem direito ao SKU, ou qualquer tenant durante 
 indisponibilidade do D1, consome computação faturável.
 
 Nota de colisão: **#1397 está em voo** e toca superfície devenv. Antes de escrever
-código para este item, confira se aquele PR já move este guard.
+código para este item, confira se aquele PR já move este guard. (Verificado em
+2026-08-31: a lista de arquivos de #1397 **não** inclui `worker/src/lib/devenv_guard.ts`
+— não houve colisão.)
+
+**Fechado 2026-08-31.** O guard agora falha FECHADO nos dois caminhos denunciados
+(sem linha de entitlement → nega; exceção do D1 → nega) e também quando `CONFIG_DB`
+está inteiramente desligado — `CONFIG_DB` é não-opcional em `Env` e está ligado nos
+**sete** ambientes do `wrangler.toml`, então binding ausente é defeito de configuração,
+nunca autorização; o próprio call site (`worker/src/index.ts`) já responde 503 quando
+`RUNNER_DEVENV_DO` falta. A negação por ausência de linha é a semântica que a tabela
+já documentava: `migrations/d1/0070_runners_entitlement.sql` diz literalmente *"Empty
+table = no cap = reject"* — o guard do DevEnv era o único leitor que autorizava por
+omissão.
+
+O `verify` abaixo está **invertido e não é mais grep de estrutura**: ele EXECUTA
+`worker/tests/devenv_guard.test.ts`, como o `verify-means` original pedia. Fica
+vermelho se o guard voltar a fail-open.
 
 ```backlog
 id: B-075
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'f=worker/src/lib/devenv_guard.ts
-  [ -f "$f" ] || { echo "FALHA: devenv_guard.ts nao existe mais — reavalie o item."; exit 1; }
-  temelse=0; grep -qE "^[[:space:]]*\}[[:space:]]*else[[:space:]]*\{|return[[:space:]]+\{[[:space:]]*allowed:[[:space:]]*false" "$f" && temelse=1
-  temcatch=0; grep -qE "catch" "$f" && temcatch=1
-  falhafechado=0
-  if [ "$temcatch" = 1 ]; then
-    awk "/catch/,/^[[:space:]]*\}/" "$f" | grep -qiE "allowed:[[:space:]]*false|deny|throw|503|403" && falhafechado=1
+  bash -c 'set -u
+  g=worker/src/lib/devenv_guard.ts
+  t=worker/tests/devenv_guard.test.ts
+  [ -f "$g" ] || { echo "FALHA: $g sumiu — o guard que este item fechou nao existe mais; reavalie o item."; exit 1; }
+  [ -f "$t" ] || { echo "FALHA: $t foi removido — sem o teste este item volta a ser indefeso."; exit 1; }
+  for caso in "DENIES a tenant with no runners_entitlement row" "DENIES when D1 throws at" "DENIES when env.CONFIG_DB is absent" "ALLOWS a tenant with a valid, non-suspended row"; do
+    grep -qF "$caso" "$t" || { echo "FALHA: o teste perdeu o caso [$caso] — anti-vacuidade: um teste esvaziado passaria verde."; exit 1; }
+  done
+  cd worker || { echo "FALHA: nao existe diretorio worker/."; exit 1; }
+  if [ ! -d node_modules ]; then
+    timeout 75 npm install --legacy-peer-deps --no-audit --no-fund >/dev/null 2>&1 || { echo "FALHA: nao consegui instalar as deps do worker para EXECUTAR o teste — este verify nunca reporta verde sem rodar."; exit 1; }
   fi
-  if [ "$temelse" = 1 ] && [ "$falhafechado" = 1 ]; then
-    echo "FALHA: guard tem ramo de negacao explicito E catch que falha fechado — feche o item."; exit 1; fi
-  echo "aberto: devenv_guard sem negacao por omissao (else=$temelse) e/ou catch que nao fecha (catch=$temcatch fecha=$falhafechado)"'
+  out=$(npx vitest run tests/devenv_guard.test.ts 2>&1) || { echo "FALHA: o guard DevEnv regrediu para fail-open — o teste de B-075 esta vermelho:"; echo "$out" | grep -E "AssertionError|×" | head -20; exit 1; }
+  n=$(echo "$out" | grep -E "^ *Tests " | grep -oE "[0-9]+ passed" | head -1 | grep -oE "[0-9]+")
+  [ "${n:-0}" -ge 13 ] || { echo "FALHA: o teste rodou com apenas ${n:-0} casos verdes (<13) — foi mutilado."; exit 1; }
+  echo "done: guard DevEnv falha FECHADO (sem linha, D1 lancando em prepare/bind/first, CONFIG_DB ausente, suspenso) + controle positivo; $n casos verdes."'
 verify-means: |
-  open — o guard não tem ramo explícito de negação para "sem linha de entitlement", ou
-  seu `catch` não fecha o acesso.
+  done — o guard nega em TODO caminho que não produza um direito positivo, e a prova é
+  a execução do teste, não a forma do TypeScript. Polaridade invertida: antes o comando
+  saía 0 enquanto o buraco existia; agora sai 0 só enquanto o buraco está tapado.
 
-  Vira DRIFTED quando AMBOS existirem: negação explícita no caminho sem-linha E `catch`
-  que nega. As duas metades são a alegação (falha aberta por omissão E por exceção), e
-  consertar só uma deixa o buraco pela outra.
+  Vira DRIFTED se qualquer um voltar a autorizar: sem linha em `runners_entitlement`,
+  `prepare`/`bind`/`first` lançando, `CONFIG_DB` desligado, ou `install_status`
+  suspenso. O controle positivo (linha válida não-suspensa → `allowed: true`) está no
+  mesmo arquivo de propósito: sem ele, um guard que negasse TUDO também passaria, e o
+  teste não provaria nada sobre a capacidade de observar sucesso.
 
-  O que NÃO decide, e admito francamente: este é o `verify` mais frágil do lote, porque
-  lê ESTRUTURA de TypeScript por regex em vez de executar o guard. Um refator que mude
-  o formato do fluxo pode falsear em qualquer direção. O certo seria um teste unitário
-  do guard com D1 ausente e D1 lançando — e é isso que quem consertar deve escrever,
-  fechando este item pelo teste e não pelo grep. Registro a fragilidade aqui em vez de
-  deixá-la implícita.
-last-verified: 2026-08-30
+  Anti-vacuidade: antes de rodar, o comando exige que os quatro casos-chave ainda
+  existam no arquivo por nome. Esvaziar o teste para ficar verde reprova aqui.
+
+  O que NÃO decide, e registro em vez de deixar implícito: o comando precisa das
+  dependências node do `worker/` para executar. Se `worker/node_modules` faltar, ele
+  tenta instalar dentro de um `timeout 75` e, se não conseguir, **reprova** com uma
+  mensagem que nomeia o motivo — deliberadamente nunca verde por não ter conseguido
+  rodar. Na prática o runner `corelink` compartilha o workspace com `worker-vitest.yml`,
+  que já instala essas deps, então o caminho comum é só rodar o vitest (~5s). O gate de
+  PR de verdade para este teste é `worker-vitest.yml` (dispara em `worker/**`); este
+  `verify` é a checagem diária de que a propriedade continua valendo.
+last-verified: 2026-08-31
 ```
 
 ### B-076 — o mesmo tenant pode manter duas assinaturas pagáveis abertas, e a segunda apaga o registro da primeira
