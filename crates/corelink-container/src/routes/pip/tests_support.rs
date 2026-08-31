@@ -223,6 +223,24 @@ pub(super) fn router_with_quota(
     kv: Arc<dyn KvStore>,
     verifier: Arc<PatVerifier>,
 ) -> Router {
+    router_with_quota_observable(cas_read, cas_write, map, kv, verifier).0
+}
+
+/// [`router_with_quota`], plus a handle on the quota store the gate charges.
+///
+/// Status alone cannot answer *which* tenant was billed: the fixture's $1/op
+/// against a fresh tenant is admitted whichever label is used, so an
+/// attribution bug is invisible from the response. Reading the store back
+/// through `QuotaStore::get` is what makes the REV-S3 claim — that a write is
+/// charged to the PAT-derived tenant and not to a caller-supplied header —
+/// an assertion rather than an inference.
+pub(super) fn router_with_quota_observable(
+    cas_read: Arc<dyn CasReadHandler>,
+    cas_write: Arc<dyn CasWriteHandler>,
+    map: Arc<dyn UrlMapStore>,
+    kv: Arc<dyn KvStore>,
+    verifier: Arc<PatVerifier>,
+) -> (Router, Arc<crate::tenant_quota::InMemoryQuotaStore>) {
     let moat = Arc::new(MoatCache::production(
         cas_read,
         cas_write,
@@ -254,7 +272,10 @@ pub(super) fn router_with_quota(
     let clock = Arc::new(crate::wall_clock::InMemoryFakeWallClock::at_unix_ms(
         1_700_000_000_000,
     ));
-    let guard = Arc::new(crate::tenant_quota::QuotaGuard::new(store, clock));
+    let guard = Arc::new(crate::tenant_quota::QuotaGuard::new(
+        Arc::clone(&store) as Arc<dyn crate::tenant_quota::QuotaStore>,
+        clock,
+    ));
     // $1/op flat cost — a fresh tenant (under the $5 tripwire) would be
     // ADMITTED, so a 503 here is unambiguously the no-tenant fail-CLOSED
     // path, not an over-ceiling 402.
@@ -263,9 +284,10 @@ pub(super) fn router_with_quota(
         resolver,
         quota: Some(gate),
     };
-    Router::new()
+    let router = Router::new()
         .nest_service("/pip", adapter)
-        .layer(middleware::from_fn_with_state(gate_state, pip_gate))
+        .layer(middleware::from_fn_with_state(gate_state, pip_gate));
+    (router, store)
 }
 
 /// Router whose verifier rejects ALL PATs (empty lookup); stores unused.
@@ -288,6 +310,32 @@ pub(super) fn get(uri: &str, pat: Option<&str>, scope: Option<&str>) -> HttpRequ
     }
     if let Some(s) = scope {
         b = b.header(SCOPE_HEADER, s);
+    }
+    b.body(Body::empty()).unwrap()
+}
+
+/// A PUT, the only method that reaches the F27 two-layer write arm.
+///
+/// Carries the tenant header separately from the PAT on purpose: the whole
+/// point of F27/REV-S3 is that these two can DISAGREE, and every interesting
+/// case is one where they do. `tenant_header` is `Option` so a test can omit
+/// it entirely and prove the write still has an attribution key — which only
+/// holds if that key came from the PAT.
+pub(super) fn put(
+    uri: &str,
+    pat: Option<&str>,
+    scope: Option<&str>,
+    tenant_header: Option<&str>,
+) -> HttpRequest<Body> {
+    let mut b = HttpRequest::builder().method(Method::PUT).uri(uri);
+    if let Some(p) = pat {
+        b = b.header("authorization", format!("Bearer {p}"));
+    }
+    if let Some(s) = scope {
+        b = b.header(SCOPE_HEADER, s);
+    }
+    if let Some(t) = tenant_header {
+        b = b.header("x-corelink-tenant-id", t);
     }
     b.body(Body::empty()).unwrap()
 }

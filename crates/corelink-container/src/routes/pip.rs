@@ -552,11 +552,15 @@ async fn pip_gate(
 //                        is what proves the request reached the adapter).
 //   `tests_gate_quota` — the `$`-ceiling gate with no attributable tenant
 //                        fails CLOSED (503); it never skips the charge.
+//   `tests_gate_write` — F27 + REV-S3: a write is admitted only when the PAT's
+//                        own D1 row authorises it (the scope header alone is
+//                        never enough), and is billed to the tenant that row
+//                        names rather than to a caller-supplied header.
 //   `tests_route`      — the served read path end to end: tenant-segment
 //                        strip, Option-B resolve, index KV, moat get, and the
 //                        sha256↔blake3 digest fork.
 //   `tests_support`    — the hermetic doubles + router builders, shared by all
-//                        four, here rather than in a sibling so no test file
+//                        five, here rather than in a sibling so no test file
 //                        looks load-bearing for the others.
 
 #[cfg(test)]
@@ -570,6 +574,9 @@ mod tests_gate_quota;
 
 #[cfg(test)]
 mod tests_gate_scope;
+
+#[cfg(test)]
+mod tests_gate_write;
 
 #[cfg(test)]
 mod tests_route;
