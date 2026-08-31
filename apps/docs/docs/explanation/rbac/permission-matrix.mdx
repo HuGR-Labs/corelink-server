@@ -87,7 +87,7 @@ full served surface with source line numbers.
 > \* `Admin` cannot revoke an `Owner`. Last-Owner safeguard applies — at
 > least one Owner must remain.
 >
-> The **`owner` role is never grantable by invite**: the handler rejects
+> The **`owner` role can never be granted by invite**: the handler rejects
 > it for every caller, closing the invite-owner → accept → delete-tenant
 > escalation (`customer.rs:929-941`).
 >
@@ -127,7 +127,7 @@ in the body of the same `mutate` route; none has an endpoint of its own.
 
 ## Audit
 
-Two different predicates guard "audit", and they disagree about
+Two different predicates guard the audit surface, and they disagree about
 `Viewer`. Merging them into one row is what made the old table wrong.
 
 | Permission | Served route | Gate | Owner | Admin | Developer | Viewer |
