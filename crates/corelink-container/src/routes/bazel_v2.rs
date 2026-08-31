@@ -238,7 +238,7 @@ impl FromRequestParts<BazelRouteState> for BazelPutGuard {
 ///
 /// # Production path
 ///
-/// In production, callers of `build_with_factory` (in `routes.rs`) will
+/// In production, callers of `build_with_factory` (in `routes/build.rs`) will
 /// call `cas::build_handlers()` and `ac::build_handlers()` first and
 /// PASS those trait objects here, ensuring a single shared handler
 /// instance. This overload is used by that composition; the
@@ -270,7 +270,7 @@ pub fn build_handlers_from(
 /// Build a standalone [`BazelRouteState`] with fresh `InMemory` handlers.
 ///
 /// Used by tests and dev paths where no shared CAS/AC state is needed.
-/// The production `build_with_factory` in `routes.rs` uses
+/// The production `build_with_factory` in `routes/build.rs` uses
 /// [`build_handlers_from`] to share the existing CAS/AC trait objects.
 #[must_use]
 pub fn build_handlers() -> BazelRouteState {
