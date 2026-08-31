@@ -4904,16 +4904,26 @@ corpo original do item:
   normal` (controle: a mesma árvore devolve `corelink-privacy-erasure-worker` e
   `corelink-privacy-pseudonymize`) — junto com a rota
   `POST /v1/admin/tenant/region-migration`, que só existe como doc-comment nessa crate.
-- **O failover de LEITURA cruza região automaticamente.** A página afirmava que o
-  CoreLink "não faz failover automático para outra região" e "segura a disponibilidade
-  refém da residência". `crates/corelink-container/src/routes/failover.rs` bloqueia
-  **escrita** com `503 failover_readonly` mas deixa a **leitura** passar carimbada com
-  `x-corelink-failover-read-region: <irmão>`, e o edge reroteia. Sem dupla aprovação, sem
-  `legal_emergency`, sem cooldown. Pares: WNAM↔ENAM e WEUR↔SAM.
+- **O failover de escrita é fail-closed; o de LEITURA é uma dica que ninguém lê.** A
+  página afirmava que o CoreLink "não faz failover automático para outra região" e
+  "segura a disponibilidade refém da residência". `crates/corelink-container/src/routes/failover.rs`
+  bloqueia **escrita** com `503 failover_readonly` — isso é real e é a metade que sustenta
+  peso. A **leitura** passa, carimbada com `x-corelink-failover-read-region: <irmão>` e
+  `x-corelink-failover-active: 1`, mas é **servida localmente**: nenhum consumidor da dica
+  existe. Medido: `grep -rn 'failover-read-region\|FAILOVER_READ_REGION' --include='*.ts'
+  --include='*.js' --include='*.toml'` devolve **zero**. Controle do instrumento: o mesmo
+  padrão em `--include='*.rs'` devolve o emissor (`failover.rs:28,87`), e
+  `x-corelink-primary-region` — cabeçalho que o edge de fato escreve — devolve 5 linhas em
+  `worker/src/`. O único fundamento da palavra "reroteia" era o doc-comment do próprio
+  emissor (`failover.rs:30-31`: *"the actual reroute is the edge's job"*) — intenção, não
+  fiação. Pares que o cabeçalho nomearia: WNAM↔ENAM e WEUR↔SAM.
 
-Esse último ponto é **achado novo** e precisa de item próprio: um tenant `weur` pode ter
-leituras servidas fora da UE por um caminho automático. É matéria de produto e jurídico,
-não de documentação, e este item não o resolve.
+Esse último ponto é **achado novo** e precisa de item próprio, mas com a severidade
+corrigida: **hoje nenhuma leitura cruza região por esse caminho** — o risco é **latente**,
+não ativo. O que existe é um emissor embarcado e uma intenção de projeto sem portão de
+dupla aprovação a segurá-la; no dia em que o edge ganhar o consumidor correspondente, as
+leituras de um tenant `weur` passariam a ser servidas de `sam` automaticamente. É matéria
+de produto e jurídico, não de documentação, e este item não o resolve.
 
 ```backlog
 id: B-085
@@ -4921,15 +4931,23 @@ repo: corelink-server
 owner: owner
 status: done
 verify: |
-  bash -c 'p=apps/docs/docs/explanation/residency/lgpd-brazil.mdx
-  [ -f "$p" ] || { echo "FALHA: a pagina LGPD sumiu — o reparo nao pode ser verificado."; exit 1; }
-  ndisc=$(grep -ciE "residency is not available|nao esta disponivel" "$p" | tr -d " ")
-  [ "$ndisc" -gt 0 ] || { echo "FALHA: a pagina nao declara mais que a residencia no Brasil NAO existe — o reparo regrediu."; exit 1; }
-  retrat=$(grep -ciE "A lawful order to delete is technically executable" "$p" | tr -d " ")
-  [ "$retrat" -gt 0 ] || { echo "FALHA: a pagina nao retrata mais a imutabilidade a prova de ordem judicial — o reparo regrediu."; exit 1; }
-  fis=0; grep -qiE "physically located in the South America" "$p" && fis=1
-  [ "$fis" = 0 ] || { echo "FALHA: a pagina voltou a afirmar localizacao fisica na America do Sul — o reparo regrediu."; exit 1; }
-  echo "done: a pagina declara a indisponibilidade da residencia no Brasil, retrata a imutabilidade judicial, e nao afirma localizacao fisica na America do Sul"'
+  bash -c 'set -u
+  paths="apps/docs/docs/explanation/residency/lgpd-brazil.mdx"
+  for loc in de es-419 pt-BR; do
+    paths="$paths apps/docs/i18n/$loc/docusaurus-plugin-content-docs/current/explanation/residency/lgpd-brazil.mdx"
+  done
+  n=0
+  for p in $paths; do
+    n=$((n+1))
+    [ -f "$p" ] || { echo "FALHA: $p sumiu — o reparo nao pode ser verificado nessa locale."; exit 1; }
+    grep -qiE "residency is not available|nao esta disponivel" "$p" || { echo "FALHA: $p nao declara mais que a residencia no Brasil NAO existe — o reparo regrediu."; exit 1; }
+    grep -qiE "A lawful order to delete is technically executable" "$p" || { echo "FALHA: $p nao retrata mais a imutabilidade a prova de ordem judicial — o reparo regrediu."; exit 1; }
+    ! grep -qiE "physically located in the South America" "$p" || { echo "FALHA: $p voltou a afirmar localizacao fisica na America do Sul — o reparo regrediu."; exit 1; }
+    ! grep -qiE "re-routes the read to the sibling region" "$p" || { echo "FALHA: $p voltou a afirmar que o edge reroteia a leitura para a regiao irma — nenhum consumidor do cabecalho existe."; exit 1; }
+    grep -qiE "served by this same region" "$p" || { echo "FALHA: $p nao declara mais que a leitura em failover e servida pela propria regiao — o reparo regrediu."; exit 1; }
+  done
+  [ "$n" = 4 ] || { echo "FALHA: esperava 4 locales (EN + de + es-419 + pt-BR), varri $n — o portao nao cobre o que diz cobrir."; exit 1; }
+  echo "done: nas $n locales a pagina declara a indisponibilidade da residencia no Brasil, retrata a imutabilidade judicial, nao afirma localizacao fisica na America do Sul, e descreve o failover de leitura como servido localmente"'
 verify-means: |
   done — polaridade INVERTIDA em relação à versão `open`. Agora falha se a página parar
   de declarar a indisponibilidade, ou se voltar a afirmar localização física na América
@@ -4948,6 +4966,13 @@ verify-means: |
   ("A lawful order to delete is technically executable"), que a promessa falsa não pode
   coexistir com.
 
+  O portão varre as **quatro** locales publicadas (EN + `de` + `es-419` + `pt-BR`), não só
+  o caminho EN, e conta-as: se o laço varrer menos de 4 arquivos ele **falha em vez de
+  passar vazio**. Isso importa porque `pt-BR` é a locale do titular que a LGPD protege —
+  gatear só o EN deixaria justamente a cópia lida pelo brasileiro sem portão. E duas
+  metades novas cobrem o achado do failover: proíbem a volta de *"re-routes the read to
+  the sibling region"* e exigem a presença positiva de *"served by this same region"*.
+
   Não gateio mais o `prod-sam` → `corelink-cas-prod` do `wrangler.toml`. Ele continua
   verdadeiro e continua sendo a razão do item, mas com a página corrigida ele deixou de
   ser uma divergência: é apenas o fato que a página agora relata.
@@ -4962,12 +4987,17 @@ verify-means: |
      texto agora é verdadeiro; ser verdadeiro não é o mesmo que estar aprovado.
   3. Se algum tenant `sam` foi criado antes de o `PROVISIONED_MACROS` excluí-lo. O
      comando lê a página, não o D1 de produção.
-  4. O achado novo levantado durante o reparo — o failover de LEITURA cruza região
-     automaticamente (`503 failover_readonly` só para escrita; leitura passa com
-     `x-corelink-failover-read-region: <irmão>` e o edge reroteia), com os pares
-     WNAM↔ENAM e WEUR↔SAM. A página agora o descreve honestamente, mas a questão de
-     transferência internacional que ele levanta para um tenant `weur` é matéria de
-     produto e jurídico, não de documentação. Precisa de item próprio.
+  4. O achado novo levantado durante o reparo — o failover: `503 failover_readonly` só
+     para escrita, leitura passando carimbada com `x-corelink-failover-read-region:
+     <irmão>` que **nenhum consumidor do edge lê** (medido: zero em `*.ts`/`*.js`/`*.toml`;
+     controle positivo em `*.rs` e em `x-corelink-primary-region`). A página agora
+     descreve o comportamento medido — leitura servida localmente, risco **latente** — mas
+     a intenção de projeto de cruzar região não tem portão de dupla aprovação a segurá-la,
+     e essa questão para um tenant `weur` é matéria de produto e jurídico, não de
+     documentação. Precisa de item próprio.
+  5. **A publicação.** O comando lê os arquivos-fonte das quatro locales no repositório,
+     não `corelink-docs.humangr.com`. Uma página corrigida no repo e não implantada
+     continua mentindo para o titular; isso é [B-062], não este item.
 last-verified: 2026-08-31
 ```
 

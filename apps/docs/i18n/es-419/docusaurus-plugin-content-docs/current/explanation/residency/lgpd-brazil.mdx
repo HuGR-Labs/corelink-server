@@ -213,8 +213,9 @@ current as the last time someone ran it.
 **Within-region failover:** handled by Cloudflare inside the region — D1 replica
 promotion, multi-AZ R2. No cross-region action occurs.
 
-**Regional degradation — reads DO cross regions, automatically.** This is the
-most important correction on this page for anyone building a residency argument.
+**Regional degradation — writes fail closed; reads stay in-region, but the
+design intends them to cross.** This is the most important correction on this
+page for anyone building a residency argument.
 
 The earlier version said CoreLink *"does not automatically fail over to another
 region"*, returns `HTTP 503 — Regional Residency Constraint`, and that a
@@ -232,19 +233,41 @@ failures over a sustained window). When the region is judged degraded:
   `failover.detected` audit event is emitted before the rejection. So the "503"
   half of the old claim is roughly right, for writes only, and under a different
   name.
-- **Reads pass through**, stamped with
-  `x-corelink-failover-read-region: <sibling>` and
-  `x-corelink-failover-active: 1`, so the edge Worker — which holds the
-  cross-region Service Bindings — **re-routes the read to the sibling region**.
+- **Reads pass through and are served by this same region**, stamped with two
+  **advisory** response headers, `x-corelink-failover-read-region: <sibling>`
+  and `x-corelink-failover-active: 1`. The container cannot reach a sibling
+  region's R2 itself; the headers are a hint addressed to the edge Worker, which
+  is the tier that holds the cross-region Service Bindings.
 
-There is no dual approval on that path, no `legal_emergency` event, and no
-30-day cooldown. It is automatic, and it is a read served from a sibling
-region's storage. The sibling pairs are WNAM↔ENAM and WEUR↔SAM; each APAC colo
-has no sibling, so the layer is inert there.
+**No consumer of that hint exists today.** Measured on this commit:
+`grep -rn 'failover-read-region\|FAILOVER_READ_REGION' --include='*.ts'
+--include='*.js' --include='*.toml'` returns **zero** matches — nothing in the
+edge Worker or its configuration reads the header. (Instrument control: the same
+pattern over `--include='*.rs'` returns the emitter at
+`crates/corelink-container/src/routes/failover.rs:28,87`, and
+`x-corelink-primary-region` — a header the edge genuinely does set — returns 5
+matches under `worker/src/`. The scan can see both languages; the edge side is
+empty because it is empty.) The only basis for the word "re-routes" was the
+emitter's own doc-comment (`failover.rs:30-31`: *"the actual reroute is the
+edge's job"*) — a statement of intent, not of wiring.
 
-If your transfer analysis depends on a `weur` tenant's reads never being served
-from outside the EU, **this is the mechanism to assess**, and you should raise it
-with us rather than rely on the withdrawn text above.
+So, precisely, today:
+
+- Writes into a degraded region **fail closed** (`503 failover_readonly`). That
+  half is live, and it is the load-bearing behaviour.
+- Reads during failover are **served locally**, from the degraded region's own
+  storage. **No cross-region read occurs.** A `weur` tenant's reads are not
+  served from outside the EU by this path.
+- The sibling pairs the header would name are WNAM↔ENAM and WEUR↔SAM; each APAC
+  colo has no sibling, so the layer is inert there entirely.
+
+The risk this mechanism carries is therefore **latent, not active**: the design
+intends a cross-region read, the emitter is shipped, and the day the edge grows
+the matching consumer a `weur` tenant's reads would be served from `sam` with no
+dual approval, no `legal_emergency` event and no cooldown. If your transfer
+analysis depends on that never happening, **assess the design intent, not just
+today's behaviour**, and raise it with us. There is no dual-approval gate
+waiting to stop it.
 
 ## 6. What we are not building, and what we are
 
