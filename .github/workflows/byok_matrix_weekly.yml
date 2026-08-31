@@ -4,7 +4,7 @@ concurrency:
   # Escopo por ref. Grupo CONSTANTE torna o grupo repo-global: duas execucoes
   # `workflow_dispatch` deste mesmo workflow em branches DIFERENTES cancelam uma
   # a outra. Foi o que matou tres dispatches em 2026-08-31.
-  group: "ci-byok-matrix-weekly-staging-wi-s14-005-${{ github.event.pull_request.number || github.ref }}"
+  group: "ci-byok-matrix-weekly-staging-wi-s14-005-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}"
   cancel-in-progress: true
 
 # Weekly cron staging run of the 16-combination matrix test
