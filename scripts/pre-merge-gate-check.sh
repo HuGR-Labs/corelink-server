@@ -494,13 +494,33 @@ lines = [
     "     um rename pousar num id que o rename seguinte ainda usa como origem,",
     "     e os dois itens virariam um so:",
 ]
+# The id does NOT live only in BACKLOG.md. A single item is routinely cited by
+# its dossier under `reports/` and by its `changelog.d/` fragment, and nothing
+# checks that those agree with the backlog. Naming only BACKLOG.md here would
+# hand the author a command that renumbers the item and leaves its own
+# documentation pointing at the old number — silently, because no gate reads
+# those files for ids. A gate that gives incomplete instructions is worse than
+# one that gives none: the incomplete one looks authoritative.
 for src, dst in pairs:
-    lines.append(f"       perl -0pi -e 's/B-{src:03d}(?![0-9])/B-{dst:03d}/g' BACKLOG.md")
+    lines.append(
+        f"       for f in $(grep -rl 'B-{src:03d}' --include='*.md' .); do "
+        f"perl -0pi -e 's/B-{src:03d}(?![0-9])/B-{dst:03d}/g' \"$f\"; done"
+    )
 lines += [
     "",
     "     O `(?![0-9])` nao e opcional: sem ele `B-116` corrompe `B-1160`.",
+    "",
+    "     O laco sobre `grep -rl` tambem nao e enfeite: o mesmo id aparece no",
+    "     dossie em `reports/` e no fragmento de `changelog.d/`, e nenhum portao",
+    "     confere que esses tres concordam. Renumerar so o BACKLOG.md deixa a",
+    "     documentacao do proprio item apontando para o numero antigo.",
+    "",
     "     E confira DEPOIS, nao so antes — se um rebase trouxe ids de outra",
     "     sessao para o seu arquivo, a substituicao alcanca os dela tambem.",
+    "",
+    "     Nunca rode isto com um rebase em andamento ou com arquivo em conflito:",
+    "     a substituicao passa por cima dos marcadores `<<<<<<<` e o estrago fica",
+    "     dentro do que parece um conserto. Termine o rebase, depois renumere.",
 ]
 print("\n".join(lines))
 PYIDS
