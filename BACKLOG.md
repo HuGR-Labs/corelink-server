@@ -4827,6 +4827,31 @@ BYOK como entregue:
 - `apps/docs/docs/explanation/security/byok.mdx:55` — *"BYOK is available on the
   **Enterprise** tier"* — × 4 locales.
 
+**Segunda passada 2026-08-31 — revisão fria adversarial sobre o próprio PR.** Dois defeitos
+que o reparo anterior criou:
+
+- **Uma citação, dois números.** A frase *"offers no cryptographic confidentiality"* era
+  citada como `:295` em `P3` (`FAQ-MASTER.md:71`) e como `:296` em `S1` (`:131`). Medido:
+  o comentário do `IN_MEMORY_FAKE_MASK` começa em
+  `crates/corelink-container/src/byok_orchestrator.rs:295` mas a **frase citada está
+  inteira na linha `:296`**. Renumerado por conteúdo: as duas ocorrências agora dizem
+  `:296`. As outras 4 citações de código reusadas por `P3` e `S1` foram reconferidas e
+  batem — `byok_admin.rs:249` (`if !REAL_KMS_PROVIDER_WIRED`), `Dockerfile:182`
+  (`cargo build … -p corelink-server` sem `--features`), `Cargo.toml:16` (`default = []`),
+  `byok_orchestrator.rs:263-271` (o arm `#[cfg(not(any(…)))]` que constrói `InMemoryFake`).
+- **`P3` negava demais e contradizia o PR irmão.** O texto dizia *"No such drill runs."*
+  **sem qualificação**, enquanto `.github/workflows/byok_kill_switch_drill_weekly.yml`
+  **roda** (`cron: 0 3 * * 0`; as 8 execuções mais recentes, todas `schedule`, 2026-07-05 →
+  2026-08-30, verdes) e o PR de [B-087] — mesmo pacote de procurement — afirma isso. Um rep
+  levaria um FAQ que nega o que o CAIQ afirma. `P3` passou à mesma forma qualificada do
+  `S11` (*"on any tenant, against any KMS"*) e aponta para o `S11`; o `S11` ganhou o
+  parágrafo que descreve o que de fato roda, **com a mesma redação do CAIQ `CEK-10.1` e do
+  SIG-LITE `N.6`**: `scripts/byok_kill_switch_drill.sh` não contata KMS, nem API, nem
+  binário do CoreLink; os PASS são literais (`:51`, `:82`, `:100`, `:101`, `:129`); o
+  "≤ 5 min" é `date +%s` atravessando um `sleep 2`; o verde é estruturalmente inevitável; e
+  o step de report commita sem `push`, então `ls specs/_audits/ | grep -c
+  byok-kill-switch-drill` = **0**.
+
 ```backlog
 id: B-083
 repo: corelink-server

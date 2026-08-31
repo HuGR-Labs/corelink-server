@@ -51,3 +51,25 @@
   (case study com **citação atribuída a cliente**), `README.md:94` (*"BYOK is real across
   four KMS providers"*), as **6** páginas `compare/vs-*.mdx`, e
   `explanation/security/byok.mdx:55` × 4 locales.
+
+- **O reparo anterior citava DOIS números para a MESMA citação (B-083).** A frase
+  *"offers no cryptographic confidentiality"* aparecia como `:295` em `P3`
+  (`FAQ-MASTER.md:71`) e como `:296` em `S1` (`:131`). Medido: o comentário do
+  `IN_MEMORY_FAKE_MASK` começa em
+  `crates/corelink-container/src/byok_orchestrator.rs:295`, mas a frase citada está inteira
+  na linha `:296`. Renumerado por conteúdo — as duas ocorrências dizem `:296`. As outras 4
+  citações de código reusadas por `P3` e `S1` foram reconferidas e batem
+  (`byok_admin.rs:249`, `Dockerfile:182`, `Cargo.toml:16`, `byok_orchestrator.rs:263-271`).
+
+- **`P3` negava demais e contradizia o CAIQ do mesmo pacote de procurement (B-083).** Dizia
+  *"No such drill runs."* sem qualificação, enquanto
+  `.github/workflows/byok_kill_switch_drill_weekly.yml` roda (`cron: 0 3 * * 0`; as 8
+  execuções mais recentes, todas `schedule`, 2026-07-05 → 2026-08-30, verdes) — e o PR de
+  B-087 escreve exatamente isso. `P3` passou à mesma forma qualificada do `S11` (*"on any
+  tenant, against any KMS"*) e remete a ele; `S11` ganhou, com a mesma redação do CAIQ
+  `CEK-10.1` e do SIG-LITE `N.6`, a descrição do que de fato roda:
+  `scripts/byok_kill_switch_drill.sh` não contata KMS, nem API, nem binário do CoreLink; os
+  valores de PASS são literais de shell (`:51`, `:82`, `:100`, `:101`, `:129`); o "≤ 5 min"
+  é `date +%s` atravessando um `sleep 2` (`:62`, `:81`, `:112`); nenhuma asserção pode ser
+  falsa, logo o verde é estruturalmente inevitável; e o step de report faz `git commit` sem
+  `git push`, então `ls specs/_audits/ | grep -c byok-kill-switch-drill` = **0**.
