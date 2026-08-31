@@ -2987,16 +2987,37 @@ is BLOCKED by [B-057] (the SLI stream has no consumer).
 id: B-055
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  grep -qE 'EDGE_FIND_MISSING[[:space:]]*=[[:space:]]*"on"' wrangler.toml \
-    && ! grep -q 'AvailCasGet' crates/corelink-container/src/routes/audit_cas_attempted.rs
+  bash -c 'f=crates/corelink-container/src/routes/audit_cas_attempted.rs
+  grep -q "Sli::AvailCasGet" "$f" || { echo "FALHA: a emissao de AvailCasGet sumiu do caminho da costura de auditoria — a regressao desfez o reparo."; exit 1; }
+  grep -q "Sli::LatencyCasGetP99" "$f" || { echo "FALHA: AvailCasGet existe mas LatencyCasGetP99 nao — a emissao ficou pela metade; a disponibilidade e observada e a latencia nao."; exit 1; }
+  grep -q "edge_ms" "$f" || { echo "FALHA: a emissao existe mas nao carrega edge_ms — a latencia observada seria a do container, nao a da borda."; exit 1; }
+  echo "done: a costura /_internal/audit/cas-attempted emite AvailCasGet e LatencyCasGetP99 com a janela edge_ms"'
 verify-means: |
-  open — passes while the serve flag is ON and the audit-seam route still emits
-  no CAS SLI, i.e. while edge-served requests are missing from the SLOs. Closes
-  when the SLI is emitted on that path (or turns moot if the flag goes back off,
-  which flips this to DRIFTED and forces a re-read rather than silently passing).
-last-verified: 2026-08-27
+  done — o caminho servido pela borda deixou de ser invisivel para os SLOs. O
+  `serveEdgeFindMissing` manda `edge_ms` na chamada da costura de auditoria que
+  ja fazia, e o handler emite as duas SLIs a partir dela (#1440).
+
+  **A polaridade foi invertida junto com o status, de proposito.** A versao
+  `open` passava enquanto `AvailCasGet` estivesse AUSENTE. Mantê-la depois do
+  reparo deixaria o item verde no PR que o consertou e vermelho no merge
+  seguinte — foi exatamente o que aconteceu: a `main` ficou DRIFTED em B-055 no
+  instante em que o #1440 entrou.
+
+  As tres condicoes sao separadas porque falham por motivos diferentes e o
+  reparo difere: emissao ausente e regressao; `AvailCasGet` sem
+  `LatencyCasGetP99` e emissao pela metade, que observa disponibilidade e nao
+  latencia; e emissao sem `edge_ms` mediria o relogio do container num pedido
+  que o container nunca viu. Uma condicao unica esconderia as duas ultimas.
+
+  **O que este comando NAO decide, e o item nao fecha isso:** se alguem LE essa
+  SLI. O [B-057] segue aberto — o fluxo de SLI de CAS/AC nao tem consumidor de
+  producao e nunca teve. A observacao agora existe; continuar sem leitor e o
+  problema do B-057, nao deste item. Registrar a distincao importa: a versao
+  original deste item foi escrita supondo que os SLOs mediam alguma coisa, e
+  essa suposicao era falsa.
+last-verified: 2026-08-31
 ```
 
 
