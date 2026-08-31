@@ -36,6 +36,41 @@ SLA_SECONDS=360
 log() { echo "[$(date -u +%H:%M:%S)] $*"; }
 fail() { echo "[FAIL] $*" >&2; exit 1; }
 
+# ---------------------------------------------------------------------------
+# B-084 — THIS HARNESS IS SIMULATED, AND IT MUST NOT EMIT AN ATTESTATION.
+#
+# Every phase below is a placeholder: the provider calls are commented out
+# (`aws kms disable-key`, `gcloud kms keys versions destroy`, …), the credentials
+# in byok_kill_switch_drill_weekly.yml are commented out, detection is a
+# `sleep 2`, and `SLA_RESULT` was hardcoded to "PASS". The script then wrote
+# specs/_audits/<date>-byok-kill-switch-drill-*.md with a table of PASS rows —
+# and lighthouse-kit/05-sla-attestation-instructions.md:61 instructs that that
+# file be forwarded to the customer's SRE as SLA evidence.
+#
+# That is an automatic generator of false security evidence. It is CATEGORICALLY
+# different from a missing control (B-083): there the control is absent; here we
+# manufactured proof that it exists.
+#
+# So: unless the drill is explicitly declared REAL, refuse — BEFORE the report is
+# written, not after. Exiting non-zero at the end would still leave the PASS
+# table on disk for the workflow's `if: always()` commit step to pick up, and the
+# file is the thing that reaches the customer.
+#
+# Setting CORELINK_DRILL_REAL=1 does NOT make the drill real. It is the operator
+# asserting that the provider calls above have been uncommented and the staging
+# KMS credentials are wired. Flipping it without doing that work puts the fake
+# attestation back, which is why the assertion is explicit and named.
+# ---------------------------------------------------------------------------
+if [[ "${CORELINK_DRILL_REAL:-0}" != "1" ]]; then
+    echo "[REFUSED] BYOK kill switch drill is SIMULATED — no CMK was revoked, no" >&2
+    echo "          detector was polled, no cache was inspected. Nothing was measured," >&2
+    echo "          so there is nothing to attest, and NO report will be written." >&2
+    echo "          The provider calls in this script and the staging KMS credentials in" >&2
+    echo "          .github/workflows/byok_kill_switch_drill_weekly.yml are commented out." >&2
+    echo "          Wire them, then set CORELINK_DRILL_REAL=1. See B-084 / B-083." >&2
+    exit 1
+fi
+
 log "=== BYOK Kill Switch Chaos Drill ==="
 log "Provider: ${PROVIDER}"
 log "Tenant: ${STAGING_TENANT}"

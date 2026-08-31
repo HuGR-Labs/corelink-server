@@ -10,10 +10,12 @@ name: dpa-legal-review
 #      (`specs/_runbooks/RB-DPA-CHANGE.md`).
 #
 # The merge block itself is enforced via:
-#   - the `legal-review-required` branch protection rule on `main`
-#     (configured outside the repo), AND
-#   - `.github/CODEOWNERS` requiring `@HumanGuardrail/legal` review for
-#     `legal/dpa/` (see CODEOWNERS update in this WI).
+# ⚠️ THERE IS NO MERGE BLOCK. Corrected 2026-08-31 (B-099). Both claimed
+# enforcers are absent: branch protection is not available on this repo's plan
+# (HTTP 403 "Upgrade to GitHub Pro" on `/branches/main/protection` and
+# `/rulesets`, measured 2026-08-31), and `@HumanGuardrail/legal` named NOBODY —
+# `gh api orgs/HumanGuardrail/teams` returns an empty list. CODEOWNERS only
+# REQUESTS review. This workflow posts a CHECKLIST; a human must read it.
 
 on:
   pull_request:
@@ -72,8 +74,9 @@ jobs:
               "- [ ] `legal_review_status` frontmatter advanced to `approved`",
               "- [ ] `specs/_audits/YYYY-MM-DD-legal-review-dpa-vX.Y.Z.md` committed",
               "",
-              "CODEOWNERS automatically requires `@HumanGuardrail/legal` ",
-              "review. Do **not** bypass.",
+              "⚠️ Nothing here is enforced: branch protection is unavailable on this ",
+              "repo's plan, and CODEOWNERS only REQUESTS review — from the sole owner, ",
+              "who is usually the author. This is a checklist, not a gate (B-099).",
             ].join("\n");
             const comments = await github.rest.issues.listComments({
               owner, repo, issue_number, per_page: 100,
