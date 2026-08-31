@@ -9834,3 +9834,491 @@ verify-means: |
   *"FALHA: nenhum dos 120 verifies com comando usa grep de padrao nao-ancorado"* e exit 1.
 last-verified: 2026-08-31
 ```
+
+### B-156 — o resíduo de afirmação falsa na superfície publicada é uma ordem de grandeza maior do que os itens que o descrevem
+
+[B-083] mede o `Dockerfile` e o `Cargo.toml`. [B-088] mede o `PRESS-RELEASE.md` e o tracker
+de RFP. [B-094] conta arquivos de `marketing/`. Os três estão certos, e os três medem o
+**recorte** que descobriu o defeito, não a extensão dele.
+
+Varredura própria, 2026-08-31, sobre a superfície que o cliente lê — `apps/docs/`,
+`marketing/`, `legal/`:
+
+| alegação (menção) | posições | arquivos |
+|---|---:|---:|
+| `BYOK` | **915** | 242 |
+| `Buck2` | **240** | 123 |
+| `pentest` | **121** | 60 |
+
+**86 dos arquivos com `Buck2` estão fora de `marketing/`** — isto é, fora do único diretório
+que o `verify` do [B-094] conta. É esse número que faz o item: fechar o [B-094] esvaziando
+`marketing/` deixaria 86 arquivos vivos e o portão ficaria verde.
+
+Amostras que mostram a natureza do resíduo, não só o tamanho: a **tabela de preços** com
+checkmark de Buck2 em todos os tiers; o `$99/mo` de BYOK numa planilha de preços; e uma
+**linha de log fabricada** em `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md:219` —
+*"scheduled BYOK chaos drill, kill-switch RTT 3m12s (target ≤ 5 min, PASS)"* — dentro de um
+bloco que imita a saída de um relatório operacional. É a mesma família do [B-084]: não é
+promessa exagerada, é **evidência fabricada**.
+
+⚠️ **Contado não é triado, e o `verify` argumenta por construção a favor de manter aberto.**
+Uma parte das posições é **legítima**: `apps/docs/docs/tutorial/04-buck2-quickstart.mdx`
+existe para dizer que Buck2 **não** é suportado (*"CoreLink does not expose a gRPC
+remote-execution endpoint"*) e entra na conta do mesmo jeito, porque a palavra está lá. Um
+comando que conta menções nunca vai chegar a zero e não deve. **O trabalho do item é a
+triagem**; a contagem serve para dimensionar e para notar crescimento, não para acusar linha
+a linha.
+
+**Números diferentes dos que a fila trazia, e o motivo importa.** A fila registrava
+1055/244/65. A diferença é de **predicado**, não de repositório: um escopo mais largo, ou
+"BYOK como entregue" em vez de "menção a BYOK". Anotei os meus com o comando que os produz
+para que a próxima medição compare a mesma coisa — foi a falta disso que fez os três itens
+anteriores medirem recortes incomparáveis.
+
+**O que este item NÃO decide:** o destino de cada menção. Corrigir, remover a página, ou
+construir a capacidade são saídas diferentes por arquivo, e algumas são decisão comercial do
+owner ([B-083], [B-088], [B-094] já são `owner:`). Este item é `tl` porque o que falta é a
+**triagem**, que é minha.
+
+```backlog
+id: B-156
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'set -e
+  for d in apps/docs marketing legal; do [ -d "$d" ] || { echo "FALHA: $d nao existe — a superficie publicada mudou de lugar; reavalie o item."; exit 1; }; done
+  ctl=$(grep -rlI "CoreLink" apps/docs marketing legal 2>/dev/null | wc -l | tr -d " ")
+  [ "$ctl" -ge 50 ] || { echo "FALHA: o controle positivo achou so $ctl arquivos com CoreLink — a varredura nao esta enxergando; instrumento, nao arvore limpa."; exit 1; }
+  byok=$(grep -rlI "BYOK" apps/docs marketing legal 2>/dev/null | wc -l | tr -d " ")
+  buck=$(grep -rlI "Buck2" apps/docs marketing legal 2>/dev/null | wc -l | tr -d " ")
+  fora=$(grep -rlI "Buck2" apps/docs legal 2>/dev/null | wc -l | tr -d " ")
+  pen=$(grep -rlI "pentest" apps/docs marketing legal 2>/dev/null | wc -l | tr -d " ")
+  fab=0
+  p=marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md
+  [ -f "$p" ] && grep -qE "^[^#]*kill-switch RTT" "$p" && fab=1
+  soma=$((byok + buck + pen))
+  [ "$soma" -gt 30 ] || { echo "FALHA: o residuo caiu para $soma arquivos (byok=$byok buck2=$buck pentest=$pen) — a triagem avancou de verdade; reavalie o item e feche-o se acabou."; exit 1; }
+  echo "aberto: byok=$byok buck2=$buck (fora de marketing/: $fora) pentest=$pen arquivos na superficie publicada; linha de log fabricada no playbook=$fab; controle CoreLink=$ctl"'
+verify-means: |
+  open — o resíduo na superfície publicada (`apps/docs/`, `marketing/`, `legal/`) segue na
+  casa das centenas de arquivos.
+
+  **Tem controle positivo, e ele é o que separa "árvore limpa" de "grep cego".** Antes de
+  contar qualquer alegação o comando conta arquivos com a palavra `CoreLink`; menos de 50 é
+  declarado **falha de instrumento**. Sem isso, um `grep` que deixasse de enxergar o
+  diretório (renomeação, `--exclude` mal posto) reportaria zero resíduo e o item se fecharia
+  no momento em que perdeu a visão.
+
+  ⚠️ **Contado não é triado, e este `verify` sempre argumenta por manter aberto.** Ele conta
+  **menções**, e menções incluem páginas que existem justamente para negar a capacidade —
+  `tutorial/04-buck2-quickstart.mdx` diz que Buck2 não é suportado e entra na conta. O item
+  **não** fecha levando a contagem a zero: fecha quando a triagem estiver feita, cada menção
+  classificada em legítima / corrigida / removida, e este `verify` for **substituído** por um
+  que meça as não-triadas. Um sucessor que continue contando menções seria um portão que
+  nunca pode ficar verde, e isso é um defeito, não rigor.
+
+  **O limiar de 30 é uma guarda de reavaliação, não a definição de pronto.** Se a contagem
+  cair abaixo dele, o comando **falha e manda reavaliar** em vez de fechar sozinho — porque
+  uma queda dessa ordem tanto pode ser triagem real quanto uma pasta que sumiu.
+
+  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: byok=242 buck2=123
+  (fora de marketing/: 86) pentest=60 … fabricada=1"* e exit 0. Numa cópia do repositório com
+  as três palavras removidas da superfície publicada, sai *"FALHA: o residuo caiu para 0
+  arquivos"* e exit 1.
+last-verified: 2026-08-31
+```
+
+### B-157 — 🔴 SEGURANÇA: a página publicada do Bazel manda copiar um `.bazelrc` que vaza o PAT no stderr de todo build
+
+`apps/docs/docs/integrations/bazel.md:51` instrui o cliente a escrever, no `.bazelrc`:
+
+```
+build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+```
+
+Três defeitos compostos, e o terceiro é o que faz disto segurança e não usabilidade:
+
+1. **`.bazelrc` não expande variável de ambiente.** O arquivo não faz interpolação; o Bazel
+   lê `${CORELINK_PAT}` como texto literal. A receita **nunca funcionou** para ninguém.
+2. **O espaço em `Bearer <token>` quebra a flag.** `--remote_header=Authorization=Bearer` e
+   `${CORELINK_PAT}` viram dois argumentos, e o segundo é interpretado como **alvo de build**.
+3. **O Bazel imprime o alvo verbatim no stderr.** Ou seja: quando o cliente **corrige** a
+   receita para expandir a variável — o passo seguinte natural, e o que faz a receita
+   "funcionar" — **o PAT vai para o log de todo build, e para o log de CI de toda equipe.**
+
+**Não é erro de usabilidade: é a documentação instruindo o vazamento.** Um segredo em log de
+CI é retido pela plataforma, visível a todos os leitores do repositório, e sobrevive à
+rotação de quem não souber que vazou.
+
+**O controle é o que fecha o argumento.** O próprio repositório traz a forma correta em
+`examples/bazel-starter/.bazelrc`, e ela existe **exatamente por causa disto**: o cabeçalho
+do arquivo documenta `CTRL-CRED-001` e diz, textualmente, que o PAT *"is NEVER placed in
+argv (no `--remote_header=Authorization:...` which would expose the secret in `ps aux`
+output)"* — usando o **credential helper** do Bazel 6+, com o helper escopado ao host. A casa
+já sabia, escreveu o porquê num arquivo, e **a página publicada ensina o contrário.**
+
+**O que este item NÃO decide:** se a página deve ensinar o credential helper (a forma
+correta, mais longa) ou apenas apontar para `examples/bazel-starter/`. O reparo mínimo — tirar
+a linha do `--remote_header` — é obrigatório nos dois caminhos e não depende dessa escolha.
+
+**Fronteira:** o esquema de URL da mesma página está errado por outro motivo e é o [B-158].
+Consertar um não conserta o outro.
+
+```backlog
+id: B-157
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'set -e
+  p=apps/docs/docs/integrations/bazel.md
+  e=examples/bazel-starter/.bazelrc
+  [ -f "$p" ] || { echo "FALHA: $p sumiu — reavalie o item em vez de fecha-lo."; exit 1; }
+  [ -f "$e" ] || { echo "FALHA: $e sumiu — sem o controle este portao nao consegue mostrar que a casa conhece a forma correta; reavalie."; exit 1; }
+  grep -qE "^[^#]*credential_helper" "$e" || { echo "FALHA: o exemplo do repo nao usa mais credential helper — o controle mudou; releia antes de confiar neste portao."; exit 1; }
+  vaza=0
+  grep -qE "^[^#]*remote_header=Authorization=Bearer" "$p" && vaza=1
+  if [ "$vaza" = 0 ]; then
+    echo "FALHA: a pagina nao instrui mais o --remote_header com Bearer — o reparo aterrissou; feche o item."; exit 1; fi
+  echo "aberto: bazel.md ainda manda escrever --remote_header=Authorization=Bearer com o PAT no .bazelrc, enquanto examples/bazel-starter/.bazelrc usa credential helper por CTRL-CRED-001"'
+verify-means: |
+  open — a página publicada ainda carrega a linha do `--remote_header` **e** o exemplo
+  correto do repositório continua existindo como controle.
+
+  **O grep na página é ancorado em `^[^#]*`** porque a correção provável é transformar a
+  linha em prosa de aviso (*"# não faça `--remote_header=Authorization=Bearer …`"*) dentro de
+  um bloco de exemplo ou de um cabeçalho markdown — e um grep nu continuaria vendo o defeito
+  depois de consertado, mantendo o item aberto para sempre. O grep no exemplo é ancorado pelo
+  motivo simétrico.
+
+  **O controle é premissa e falha ALTO.** Se `examples/bazel-starter/.bazelrc` sumir ou
+  deixar de usar credential helper, o comando **para** — sem ele, o item vira opinião sobre
+  qual forma é melhor, e deixa de ser a constatação de que a casa documentou a forma segura e
+  publicou a insegura.
+
+  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: bazel.md ainda
+  manda escrever --remote_header…"* e exit 0. Numa cópia com a linha 51 trocada pelo bloco de
+  credential helper do exemplo, sai *"FALHA: a pagina nao instrui mais o --remote_header"* e
+  exit 1.
+
+  O que ele **não** decide: se a página passa a ensinar o helper ou a apontar para o exemplo.
+  E **não** cobre o esquema de URL errado da mesma página, que é [B-158] — os dois podem ser
+  consertados em ordens diferentes e por pessoas diferentes.
+last-verified: 2026-08-31
+```
+
+### B-158 — o `.bazelrc` publicado aponta `--remote_cache` para `/bazel/v2`, prefixo em que o Bazel stock emite `/bazel/v2/cas/<hash>` — rota não registrada
+
+**Uma correção ao enunciado com que este achado chegou, e ela é o motivo de o item existir na
+forma abaixo.** A alegação original era que a página inventa o esquema `/blobs/`. **É falsa** —
+`crates/corelink-container/src/routes/bazel_v2.rs:306-322` registra de fato
+`/bazel/v2/{instance}/blobs/{hash}/{size}`, com segmento de instância. Verifiquei antes de
+escrever, e o resto do item só se sustenta por causa dessa verificação.
+
+O defeito real é de **casamento entre o prefixo publicado e o cliente que a página configura**.
+O servidor expõe **duas** famílias (`:302-345`):
+
+- **REAPI/ByteStream** — `/bazel/v2/{instance}/blobs/{hash}/{size}`, com `{instance}`;
+- **alias HTTP stock** — `/bazel/cache/cas/{hash}` e `/bazel/cache/ac/{hash}`, **sem**
+  instância e **sem** size, com o comentário do código dizendo que é a forma que
+  *"stock Bazel emits"*.
+
+O bloco de configuração publicado (`bazel.md:44-51`) é um `.bazelrc` de **Bazel stock** — não
+há cliente ByteStream nele — e manda:
+
+```
+build --remote_cache=https://corelink-api.humangr.com/bazel/v2
+build --remote_instance_name=${CORELINK_TENANT}
+```
+
+O Bazel stock trata `--remote_cache` como **prefixo de cache HTTP** e emite
+`<prefixo>/cas/<sha256>` e `<prefixo>/ac/<sha256>`. Com esse prefixo, isso é
+`/bazel/v2/cas/<hash>` — **que não é rota registrada**. As registradas sob `/bazel/v2/` exigem
+`{instance}/blobs/{hash}/{size}`. Resultado: **404 em todo request**, com a configuração que a
+própria página recomenda. O alias que funcionaria (`/bazel/cache`) está descrito num `:::tip`
+logo acima e **não** é o que o bloco copiável usa.
+
+**Consequência colateral, e é a que confunde mais.** `--remote_instance_name` é campo do
+protocolo **gRPC**; o cliente HTTP do Bazel não o transmite. Então a linha de troubleshooting
+de 403 (`:85`) — *"Instance name is not your tenant → Set `--remote_instance_name` to your
+tenant UUID"* — manda ajustar algo que **não chega ao fio**. Quem seguir o conselho não muda
+nada e conclui que o problema é dele.
+
+**A pergunta de isolamento que este achado abria está RESPONDIDA, e registro isso para que
+ninguém a reabra.** No alias stock não há tenant no caminho; o código diz onde ele está
+(`:333-337`): *"the tenant (== REAPI `instance`) is derived from the Worker-injected
+`x-corelink-tenant-id` header (fail-CLOSED via `caller_tenant`), so isolation is by the
+per-tenant namespace"*. O mecanismo existe e é fail-closed. O que continua **não medido** é o
+comportamento observável com dois tenants reais — e isso depende de [B-160], não deste item.
+
+**O que este item NÃO decide:** se o reparo é trocar o prefixo do bloco copiável para
+`/bazel/cache` (mínimo, imediato), ou reescrever a página para dois blocos completos e
+rotulados. E **não** cobre o vazamento de PAT da mesma página, que é [B-157].
+
+```backlog
+id: B-158
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'set -e
+  p=apps/docs/docs/integrations/bazel.md
+  r=crates/corelink-container/src/routes/bazel_v2.rs
+  [ -f "$p" ] || { echo "FALHA: $p sumiu — reavalie o item."; exit 1; }
+  [ -f "$r" ] || { echo "FALHA: $r sumiu — sem as rotas servidas nao consigo contrastar; reavalie."; exit 1; }
+  grep -qE "^[^/]*\"/bazel/cache/cas/" "$r" || { echo "FALHA: o alias HTTP stock /bazel/cache/cas nao esta mais registrado — a premissa mudou; releia antes de confiar neste portao."; exit 1; }
+  if grep -qE "^[^/]*\"/bazel/v2/(cas|ac)/" "$r"; then
+    echo "FALHA: o servidor passou a registrar /bazel/v2/cas ou /bazel/v2/ac — o prefixo publicado ficou valido; feche o item."; exit 1; fi
+  aponta=0
+  grep -qE "^[^#]*remote_cache=.*bazel/v2[^/]*$" "$p" && aponta=1
+  aconselha=0
+  grep -qE "^[^#]*remote_instance_name" "$p" && aconselha=1
+  [ "$aponta" = 1 ] || { echo "FALHA: o bloco publicado nao aponta mais --remote_cache para o prefixo /bazel/v2 — o reparo aterrissou; feche o item."; exit 1; }
+  echo "aberto: bazel.md manda --remote_cache=.../bazel/v2 (aponta=$aponta) mas o servidor so registra /bazel/v2/{instance}/blobs/... e /bazel/cache/{cas,ac}/{hash}; a pagina ainda aconselha --remote_instance_name=$aconselha, que o transporte HTTP nao transmite"'
+verify-means: |
+  open — a página ainda manda apontar `--remote_cache` para o prefixo `/bazel/v2`, **e** o
+  servidor continua sem registrar `/bazel/v2/cas` ou `/bazel/v2/ac`, que é o que o Bazel
+  stock derivaria desse prefixo.
+
+  **As duas condições do código são premissas e falham ALTO, em direções opostas.** Se o
+  alias `/bazel/cache/cas` sumir, o comando para (a comparação perdeu o outro lado). Se
+  alguém **registrar** `/bazel/v2/cas`, o comando manda fechar — porque nesse mundo a página
+  passou a estar certa sem ninguém tocar nela, e essa é uma saída legítima do item.
+
+  **Âncoras:** `^[^/]*` no Rust (o arquivo tem 31 ocorrências de `/blobs/` em comentários e
+  em `format!` de teste — foi exatamente por não ancorar que a primeira versão deste portão
+  concluiu o oposto do verdadeiro) e `^[^#]*` no markdown. O `[^/]*$` no fim do padrão de
+  `remote_cache` é o que separa o prefixo `/bazel/v2` de um `/bazel/v2/algo`.
+
+  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: bazel.md manda
+  --remote_cache=.../bazel/v2 …"* e exit 0. Numa cópia com o bloco apontando para
+  `/bazel/cache`, sai *"FALHA: o bloco publicado nao aponta mais…"* e exit 1.
+
+  **O que ele NÃO mede:** o 404 de verdade. Provar o 404 exige rodar Bazel contra produção
+  com um PAT ([B-160]); o que este comando decide é a **incompatibilidade estrutural** entre
+  o prefixo publicado e as rotas registradas, que é decidível sem rede e é suficiente para o
+  item existir.
+last-verified: 2026-08-31
+```
+
+### B-159 — sccache: sonda de escrita falha ⇒ cache vazio para sempre, build verde, e a página subdeclara o contrato
+
+Duas metades, e a primeira é a classe dominante deste repositório: **sucesso silencioso**.
+
+**1. A falha que não aparece.** Quando a sonda de escrita do backend falha, o sccache marca o
+backend **read-only pelo resto da vida do daemon**. O build continua verde, o cache **nunca
+enche**, e a única evidência é um contador em `sccache --show-stats`. O cliente paga por um
+cache que não guarda nada e não recebe nenhum sinal — nem erro, nem aviso, nem lentidão
+óbvia, porque compilar do zero é o comportamento normal de um cache frio.
+
+`apps/docs/docs/integrations/sccache-cargo.md` menciona `--show-stats` (`:99`, `:102`,
+`:135`) como ferramenta de inspeção de **hit rate** e de misses por entrada não-determinística.
+Em nenhum ponto ela diz que uma **falha de escrita** trava o backend em read-only, nem manda
+conferir o contador de erros — que é a única maneira de descobrir.
+
+**2. O contrato publicado é menor que o exigido.** A página declara (`:73`) que o sccache
+emite *"`GET`, `PUT`, and `HEAD`"*. O cliente real também exige **`PROPFIND`** e **`MKCOL`**.
+Isto **não** é um defeito de servidor: `crates/corelink-container/src/routes/cargo.rs` serve
+PROPFIND (`:204`, `:265`, `:302`) e trata MKCOL (`:286`). O defeito é de **contrato
+publicado** — quem for pôr um proxy, um WAF ou uma regra de firewall na frente lê a página,
+libera três métodos, e o cache entra exatamente no modo read-only silencioso da primeira
+metade. **As duas metades compõem.**
+
+**O que este item NÃO decide:** se o reparo do lado do produto é só documental (declarar os
+cinco métodos + ensinar a ler o contador) ou se o CoreLink deve emitir sinal próprio quando
+um cliente só lê e nunca escreve — um tenant com milhares de GET e zero PUT é observável do
+nosso lado, e seria o sinal que o cliente não tem. A segunda é mais valiosa e é trabalho de
+telemetria, não de documentação.
+
+```backlog
+id: B-159
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'set -e
+  p=apps/docs/docs/integrations/sccache-cargo.md
+  c=crates/corelink-container/src/routes/cargo.rs
+  [ -f "$p" ] || { echo "FALHA: $p sumiu — reavalie o item."; exit 1; }
+  [ -f "$c" ] || { echo "FALHA: $c sumiu — sem a rota servida nao consigo mostrar que o servidor faz mais do que a doc declara; reavalie."; exit 1; }
+  grep -qE "^[^/]*PROPFIND" "$c" || { echo "FALHA: o servidor nao trata mais PROPFIND em linha executavel — a premissa mudou; releia antes de confiar neste portao."; exit 1; }
+  n=0; det=""
+  grep -qE "^[^#]*PROPFIND" "$p" || { n=$((n+1)); det="$det doc-omite-PROPFIND"; }
+  grep -qE "^[^#]*MKCOL" "$p" || { n=$((n+1)); det="$det doc-omite-MKCOL"; }
+  grep -qiE "^[^#]*(read-only|somente leitura).*(resto|rest of|daemon)" "$p" || { n=$((n+1)); det="$det doc-nao-avisa-do-latch-read-only"; }
+  [ "$n" -gt 0 ] || { echo "FALHA: a pagina declara os cinco metodos E avisa do latch read-only — feche o item."; exit 1; }
+  echo "aberto: $n de 3 lacunas na pagina do sccache:$det (o servidor trata PROPFIND/MKCOL; quem le a doc libera menos do que o cliente exige)"'
+verify-means: |
+  open — a página omite `PROPFIND`, omite `MKCOL`, ou não avisa que uma falha de escrita
+  trava o backend em read-only pelo resto da vida do daemon. Fecha só quando as três caírem.
+
+  **A capacidade do servidor é premissa, e falha ALTO.** O comando exige que
+  `routes/cargo.rs` trate PROPFIND em **linha executável** (`^[^/]*`, não doc-comment). Se o
+  servidor deixar de tratá-lo, o item para de ser "doc menor que o produto" e vira outro
+  problema — o comando manda reler em vez de decidir.
+
+  **Os greps na página são ancorados em `^[^#]*`** pelo motivo usual: cabeçalho markdown ou
+  linha de aviso contendo a palavra satisfaria um grep nu, e o portão declararia consertado
+  um texto que só passou a **mencionar** o método.
+
+  **A terceira condição é a mais frágil e digo isso aqui.** Ela procura um aviso sobre o
+  latch por padrão de texto; uma página que avise com outras palavras a deixaria "aberta"
+  injustamente. É o melhor predicado barato que consegui para a metade que importa mais, e
+  quem fechar o item deve substituí-lo por uma âncora explícita (um marcador na página) em
+  vez de afrouxar a busca.
+
+  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 3 de 3 lacunas"* e
+  exit 0. Numa cópia com os cinco métodos declarados e um parágrafo sobre o latch read-only,
+  sai *"FALHA: a pagina declara os cinco metodos E avisa do latch read-only"* e exit 1.
+last-verified: 2026-08-31
+```
+
+### B-160 — ⛔ OWNER: não existe caminho self-service para obter um PAT de cliente, e isso bloqueia toda medição do caminho servido
+
+**Bloqueia pelo menos três medições já enfileiradas, e provavelmente toda a série que mede o
+produto como cliente.**
+
+O caminho publicado — `apps/docs/docs/quickstart.md:16-20`,
+`apps/docs/docs/tutorial/02-first-pat.mdx` — é um wizard do Clerk que exige **criar conta com
+senha**, o que um agente não pode fazer nem deve. E `apps/docs/docs/concepts/tenancy.md`
+confirma que o PAT inicial do sign-up é a **única** rota self-service: `POST /v1/pats` **não
+está montado** em servidor nenhum (só aparece em `apps/admin-ui/playwright/fixtures/api-mocks.ts`
+e numa server-action do onboarding).
+
+`CORELINK_PAT_MINT_AUTH_KEY` existe no `.env.local` e **não foi usado**, deliberadamente: é
+credencial de operador, e usá-la faria a medição percorrer um caminho que **o cliente não
+tem**. Um gate autenticado com credencial de operador mede permissão e finge medir realidade
+— é o modo de falha que este repositório já registrou.
+
+**O que destrava, exatamente:** o owner cria a conta e entrega **dois PATs de tenants
+distintos**. Um só fecha as lentes *Funciona / Rápido / Registrado*. **Dois** são necessários
+para o invariante de **isolamento**, que é a promessa central da página do sccache e a
+pergunta aberta do [B-158] — sem tenant no caminho, só um segundo token de outro tenant
+decide o que separa um do outro.
+
+**Por que é `owner:` pelo critério estrito:** o próximo passo é criar conta com senha num
+provedor de identidade. Não é caro, não é demorado, e **não é executável por mim** — nem com
+mais tempo, nem com mais rigor.
+
+```backlog
+id: B-160
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  bash -c 'set -e
+  q=apps/docs/docs/quickstart.md
+  [ -f "$q" ] || { echo "FALHA: $q sumiu — o caminho publicado e a premissa deste item; reavalie."; exit 1; }
+  montada=$(grep -rlE "^[^/]*\"/v1/pats\"" crates/ worker/ 2>/dev/null | wc -l | tr -d " ")
+  [ "$montada" = 0 ] || { echo "FALHA: $montada arquivo(s) de servidor registram /v1/pats — pode existir rota self-service agora; releia e feche o item se for o caso."; exit 1; }
+  ctl=$(grep -rlE "^[^/]*\"/v1/cas" crates/ 2>/dev/null | wc -l | tr -d " ")
+  [ "$ctl" -ge 1 ] || { echo "FALHA: o controle nao achou nem a rota /v1/cas registrada — a varredura de rotas nao esta enxergando; instrumento, nao achado."; exit 1; }
+  grep -qiE "^[^#]*(sign up|sign-up|dashboard|onboarding|wizard)" "$q" || { echo "FALHA: o quickstart nao aponta mais para o wizard de sign-up — o caminho de obtencao mudou; releia antes de confiar neste portao."; exit 1; }
+  echo "aberto: nenhuma rota /v1/pats registrada em crates/ ou worker/ (controle /v1/cas encontrado em $ctl arquivo(s)); o unico caminho publicado e o wizard de conta com senha"'
+verify-means: |
+  open — nenhum servidor registra `/v1/pats`, o controle positivo confirma que a varredura
+  **enxerga** rotas registradas, e o quickstart continua apontando para o wizard.
+
+  **O controle positivo é o coração deste portão.** "Não achei a rota" e "não sei procurar
+  rota" são a mesma saída de um grep, e este repositório já produziu 32 ausências fantasmas
+  exatamente assim ([B-121]). Por isso o comando exige achar `/v1/cas` — uma rota que
+  sabidamente existe — antes de acreditar na ausência de `/v1/pats`.
+
+  **Âncoras:** `^[^/]*` nas buscas em Rust (um doc-comment mencionando `/v1/pats` não é
+  registro de rota — e existe pelo menos um) e `^[^#]*` no markdown.
+
+  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: nenhuma rota
+  /v1/pats registrada … (controle /v1/cas encontrado em 2 arquivo(s))"* e exit 0. Numa cópia
+  com `.route("/v1/pats", post(mint))` acrescentado a um crate de rotas, sai *"FALHA: 1
+  arquivo(s) de servidor registram /v1/pats"* e exit 1.
+
+  **`owner:` pelo critério estrito:** o desbloqueio é criar conta com senha e entregar **dois**
+  PATs de tenants distintos. Nenhuma parte disso é executável sem o owner, e usar
+  `CORELINK_PAT_MINT_AUTH_KEY` no lugar seria medir um caminho que o cliente não tem.
+
+  O que ele **não** decide: se o produto **deve** ter `POST /v1/pats` self-service. O item é
+  sobre o bloqueio de medição; a decisão de superfície é outra conversa.
+last-verified: 2026-08-31
+```
+
+### B-161 — 🔴 SEGURANÇA: a página do Homebrew manda o cliente exportar o PAT como credencial do `ghcr.io`
+
+Segundo caso de **documentação publicada instruindo vazamento de credencial**, independente do
+[B-157] e por outro mecanismo.
+
+`apps/docs/docs/integrations/homebrew.md:47-51` instrui:
+
+```
+export HOMEBREW_ARTIFACT_DOMAIN="https://corelink-api.humangr.com/brew/<your-tenant-id>"
+export HOMEBREW_DOCKER_REGISTRY_TOKEN="corelink_pat_XXXXXXXXXXXXXXXXXXXXXXXX"
+```
+
+O problema está na primeira metade da própria página: `:12` registra, medido, que o Homebrew
+busca bottles **como blobs OCI direto do `ghcr.io`** e **ignora `HOMEBREW_ARTIFACT_DOMAIN`**
+nesse caminho. Com `HOMEBREW_DOCKER_REGISTRY_TOKEN` exportado, o `brew` apresenta o **PAT do
+CoreLink** ao `ghcr.io` — um terceiro.
+
+**Isolado com três controles, e o discriminante é o código de status:**
+
+| condição | resultado |
+|---|---|
+| sem nenhuma env do CoreLink | `brew` funciona, `rc=0` |
+| só o artifact domain | ghcr responde **401** (nenhuma credencial apresentada) |
+| com `HOMEBREW_DOCKER_REGISTRY_TOKEN` | ghcr responde **403** (credencial **apresentada** e rejeitada) |
+
+**401 vs 403 é a prova.** 401 é "não me deu credencial"; 403 é "me deu e não serve". O 403
+demonstra que o token **foi transmitido** ao `ghcr.io`. Duas alternativas foram refutadas no
+mesmo experimento: o **valor** do token é irrelevante (qualquer string produz 403) e o
+**artifact domain** é irrelevante (o token sozinho basta). **Agravante:** a receita ainda
+**quebra um `brew` que funcionava** — o cliente sai de `rc=0` para falha em todo download.
+
+**O que este item NÃO decide:** se a integração Homebrew deve existir. A própria página já
+admite que o caminho de bottle não passa por nós; talvez o reparo certo seja **retirar a
+receita** em vez de consertá-la. Retirar é mais barato e remove a exposição; consertar exige
+descobrir se existe algum caminho em que o `ARTIFACT_DOMAIN` seja honrado.
+
+```backlog
+id: B-161
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'set -e
+  p=apps/docs/docs/integrations/homebrew.md
+  [ -f "$p" ] || { echo "FALHA: $p sumiu — se a pagina foi retirada, esse pode ser o reparo; confirme e feche o item explicitamente."; exit 1; }
+  manda=0
+  grep -qE "^[^#]*HOMEBREW_DOCKER_REGISTRY_TOKEN=.*corelink_pat" "$p" && manda=1
+  admite=0
+  grep -qiE "^[^#]*ignores .*HOMEBREW_ARTIFACT_DOMAIN|^[^#]*directly from .*ghcr\.io" "$p" && admite=1
+  aviso=0
+  grep -qiE "^[^#]*(nao exporte|do not export|never export|leak|vaza)" "$p" && aviso=1
+  if [ "$manda" = 0 ]; then
+    echo "FALHA: a pagina nao manda mais exportar o PAT em HOMEBREW_DOCKER_REGISTRY_TOKEN — o reparo aterrissou; feche o item."; exit 1; fi
+  [ "$admite" = 1 ] || { echo "FALHA: a pagina nao registra mais que o brew busca do ghcr.io ignorando o artifact domain — a premissa medida mudou; releia antes de confiar neste portao."; exit 1; }
+  echo "aberto: homebrew.md manda exportar o PAT como HOMEBREW_DOCKER_REGISTRY_TOKEN (manda=$manda) na MESMA pagina que admite que o brew busca do ghcr.io ignorando o artifact domain (admite=$admite); aviso de vazamento presente=$aviso"'
+verify-means: |
+  open — a página ainda instrui exportar o PAT como credencial de registry **e** ela mesma
+  ainda registra que o `brew` busca do `ghcr.io` ignorando o artifact domain. As duas juntas
+  são o que faz a instrução vazar; por isso o portão exige as duas.
+
+  **A segunda condição falha ALTO**, não fecha o item: se a página deixar de admitir o
+  comportamento do `brew`, o comando manda reler — porque nesse mundo ou o Homebrew mudou, ou
+  a página apagou a medição que sustenta o achado, e as duas exigem olho humano.
+
+  **Todos os greps são ancorados em `^[^#]*`.** O reparo mais provável desta página é
+  transformar a receita num bloco de aviso (*"não exporte `HOMEBREW_DOCKER_REGISTRY_TOKEN`"*),
+  e um grep nu continuaria acusando o defeito depois de consertado — o item ficaria aberto
+  para sempre por causa do próprio conserto. Foi assim que [B-118] puniu a confissão da
+  remoção.
+
+  **A página sumir NÃO fecha o item sozinho:** retirar a receita pode ser o reparo certo, mas
+  o comando falha e exige que quem retirou diga isso no item, em vez de o portão inferir.
+
+  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: homebrew.md manda
+  exportar o PAT…"* e exit 0. Numa cópia com as duas linhas de `export` trocadas por um
+  aviso, sai *"FALHA: a pagina nao manda mais exportar o PAT"* e exit 1.
+
+  O que ele **não** decide: consertar a receita ou retirar a integração.
+last-verified: 2026-08-31
+```
