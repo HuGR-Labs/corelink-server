@@ -188,8 +188,17 @@ const baseHandler: ExportedHandler<SignupEnv> = {
             );
           } else {
             console.log(
-              `[audit-drain-cron] ok=${r.ok} status=${r.status} sealed=${r.sealed} partitions=${r.partitions}`,
+              `[audit-drain-cron] ok=${r.ok} status=${r.status} calls=${r.calls} sealed=${r.sealed} partitions=${r.partitions} failed_partitions=${r.partitionsFailed} incomplete=${r.incomplete}`,
             );
+            // B-064: `incomplete` after the whole bounded loop means the seal
+            // backlog outlived this tick's budget. Sealing latency is the exact
+            // window in which the tamper-evident chain does not yet cover a
+            // row, so this cannot hide inside a routine success line.
+            if (r.incomplete) {
+              console.warn(
+                `[audit-drain-cron] incomplete=true after calls=${r.calls} — seal backlog exceeded this tick's budget; next tick continues`,
+              );
+            }
           }
         })
         .catch((err: unknown) => {
