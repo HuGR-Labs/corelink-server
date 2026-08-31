@@ -2565,10 +2565,13 @@ that it also shows main-side changes.
 id: B-048
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  grep -qE 'git fetch --no-tags --depth=1 origin "\$BASE_REF"' .github/workflows/mutation-pr.yml
+  ! grep -qE 'git fetch --no-tags --depth=1 origin "\$BASE_REF"' .github/workflows/mutation-pr.yml
 verify-means: |
+  done — INVERTED into a regression guard when #1462 fixed the world: it now
+  passes while the depth-1 base fetch is ABSENT, and goes DRIFTED if anyone
+  reintroduces it. The original polarity was
   open — fails while the depth-1 base fetch is still the thing feeding a
   three-dot diff in mutation-pr.yml. Closes when the fetch is deepened (or the
   diff no longer needs a merge base). The check is deliberately about the FETCH,
