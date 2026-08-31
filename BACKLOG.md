@@ -8869,3 +8869,483 @@ verify-means: |
   finge cobrir isso.
 last-verified: 2026-08-31
 ```
+
+### B-144 — o revoke de PAT resolve o alvo por tenant, não por portador: qualquer `read-write` do tenant revoga o PAT do owner
+
+`POST /v1/customer/keys/{pat_id}/revoke` resolve o alvo com
+`FROM pat WHERE pat_id = ?1 AND tenant_id = ?2`
+(`crates/corelink-container/src/customer_d1.rs:1379`). O `req.principal` está disponível
+logo acima (`:1370-1372`), é passado ao `emit_audit` da mesma função, e **não entra no
+SELECT**.
+
+**O controle é o que transforma isto em achado, e não em estilo.** O mesmo arquivo escreve
+`AND principal_id = ?2` em `:1597` e `:1608`, no caminho de remoção de assento — ou seja, a
+casa **sabe** escrever o predicado por portador e escolheu não escrever aqui. Sem esse
+controle, um SELECT tenant-scoped seria só a convenção do arquivo.
+
+O comentário imediatamente acima declara a intenção que o código cumpre: *"Tenant-scoped
+SELECT … cross-tenant safe by construction"*. **Cross-tenant está de fato seguro** — um PAT
+de outro tenant é invisível e vira `NotFound`. A afirmação não é falsa; ela é **mais estreita
+que o risco**, e é por isso que passou. Dentro do tenant, qualquer portador que satisfaça o
+gate do dashboard (`routes/customer.rs:738`) revoga **qualquer** PAT do tenant, inclusive o
+do owner. Revogar é irreversível e derruba CI de terceiros no ato.
+
+**O que este item NÃO decide, e é o motivo de ele ser `owner:`… não é.** Ele é `tl` porque a
+medição e o reparo são meus; o que ele não decide é a **política**: revogar o PAT de um
+colega pode ser legítimo para um papel administrativo, e nesse caso o reparo certo é
+`principal_id` no SELECT **mais** um caminho admin explícito, não `principal_id` sozinho.
+O que não é defensável em nenhuma leitura é `read-write` genérico ter esse poder por
+omissão. Quem pegar o item leva a pergunta de produto ao owner **antes** de escolher entre as
+duas formas.
+
+Relação com [B-080] (escopos canônicos sem ponto de aplicação): lá o defeito é escopo
+declarado que ninguém verifica; aqui o escopo é verificado e o **predicado de linha** é que
+está largo. São camadas diferentes do mesmo caminho.
+
+```backlog
+id: B-144
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'f=crates/corelink-container/src/customer_d1.rs
+  [ -f "$f" ] || { echo "FALHA: $f sumiu — reavalie o item em vez de fecha-lo."; exit 1; }
+  bloco=$(awk "/fn revoke\(&self, req: KeyRevokeRequest\)/{c=1} c{print} c&&/LIMIT 1/{exit}" "$f")
+  [ -n "$bloco" ] || { echo "FALHA: nao achei o corpo de revoke() ate o SELECT — a funcao mudou de forma; releia antes de confiar neste portao."; exit 1; }
+  sel=$(printf "%s\n" "$bloco" | grep -v "^[[:space:]]*//" | grep "FROM pat WHERE")
+  [ -n "$sel" ] || { echo "FALHA: revoke() nao le mais FROM pat WHERE — a consulta mudou; reavalie."; exit 1; }
+  ctl=$(grep -c "principal_id = ?2" "$f")
+  [ "$ctl" -ge 2 ] || { echo "FALHA: o controle sumiu — o arquivo usa principal_id = ?2 em apenas $ctl caminho(s); sem controle este portao mede estilo, nao escolha."; exit 1; }
+  if printf "%s\n" "$sel" | grep -q "principal_id"; then
+    echo "FALHA: o SELECT de revoke() ja filtra por principal_id — o reparo aterrissou; feche o item."; exit 1; fi
+  echo "aberto: o SELECT de revoke() resolve o alvo so por tenant_id, e o mesmo arquivo usa principal_id = ?2 em $ctl outros caminhos"'
+verify-means: |
+  open — o SELECT que resolve o alvo do revoke **não** contém `principal_id`, E o controle
+  (o mesmo arquivo sabendo escrever `principal_id = ?2` em outro caminho) continua presente.
+
+  **O bloco é extraído, não grepado por símbolo.** Grepar `principal_id` no arquivo inteiro
+  responderia "sim" e esconderia o defeito, porque o identificador existe — em OUTRA
+  consulta. O que decide é o campo dentro do `WHERE` **desta** função, e por isso o comando
+  recorta de `fn revoke(` até o `LIMIT 1` antes de olhar.
+
+  **Comentário não conta.** O corpo recortado passa por `grep -v "^[[:space:]]*//"` antes da
+  medição, senão a linha *"Tenant-scoped SELECT … cross-tenant safe by construction"* — que
+  contém as duas palavras que interessam — satisfaria o portão sozinha. Foi exatamente essa
+  a falha de instrumento de [B-155].
+
+  **Anti-vacuidade em três camadas, cada uma com falha nomeada:** arquivo ausente, recorte
+  vazio (a função mudou de forma), e consulta sem `FROM pat WHERE`. Nenhuma delas devolve
+  "aberto"; todas param o portão.
+
+  Fecha quando o SELECT ganhar `principal_id` — ou quando o owner decidir que o
+  comportamento atual é a política e o item for reescrito como `done` com `verify`
+  **invertido** (guarda de regressão sobre a forma escolhida). O que este comando **não**
+  decide: qual das duas saídas é a certa.
+last-verified: 2026-08-31
+```
+
+### B-145 — o portão de docs-vs-realidade não decide endpoint: `/v1/zzz-nonexistent` resolve `True`, e um achado nem poderia reprovar
+
+[B-121] fechou entregando `scripts/validate_docs_reality.py`, o comparador entre superfície
+documentada e superfície servida. O comparador existe e o **extrator** é bom — o self-test
+prova, com controle positivo, que ele enxerga as quatro formas de registro de rota. O defeito
+não está no alcance; está no **resolvedor**, e ele anula a decisão de endpoint por duas causas
+independentes:
+
+1. **`_route_to_regex:470` anexa `(?:/.*)?$` a toda rota**, com o comentário
+   *"exact OR a deeper path under this route (nesting)"*. Somado ao fato de `collect_routes()`
+   recolher `/{*path}`, `/{pkg}` e um `/v1` nu, **qualquer** caminho sob `/v1` casa. Medido:
+   `/v1/zzz-nonexistent-probe` → `endpoint_resolves` devolve `True` contra as 329 rotas
+   coletadas.
+2. **`endpoint.flagship_files` é `[]`** em `scripts/docs_reality_allowlist.json`, e o próprio
+   `_comment` do arquivo declara a consequência: *"Unresolved paths WARN (non-fatal)"*.
+   Mesmo que o resolvedor recusasse, um achado só poderia **avisar**.
+
+As duas juntas fecham o círculo: o portão não consegue nem produzir o achado, nem reprovar
+com ele. **É o mecanismo pelo qual endpoints fantasma foram publicados sob portão verde** —
+[B-116], [B-119], [B-120] estão no ledger porque alguém os encontrou à mão, não porque este
+portão os pegou.
+
+**Por que não é duplicata de [B-121].** Aquele item pedia *que o comparador existisse*, e o
+`verify` que o fechou mede quatro coisas — script + lane não-hosted, self-test do extrator,
+acusação nominal em `--strict`, e ledger sem entrada obsoleta. **Nenhuma das quatro toca o
+resolvedor de caminho no modo normal**, que é onde este defeito mora. Um portão pode acusar
+nominalmente as oito famílias que já estão na sua lista e ainda assim aceitar a nona: é
+precisamente essa a lacuna medida aqui.
+
+**O que este item NÃO decide:** se o reparo é apertar o regex, separar rotas catch-all das
+exatas, ou popular `flagship_files`. As três são defensáveis e a escolha muda o custo de
+falso-positivo — que é a razão pela qual `flagship_files` nasceu vazio.
+
+```backlog
+id: B-145
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  python3 - <<"PY"
+  import json, sys, importlib.util, pathlib
+  p = pathlib.Path("scripts/validate_docs_reality.py")
+  a = pathlib.Path("scripts/docs_reality_allowlist.json")
+  if not p.is_file() or not a.is_file():
+      print("FALHA: o comparador ou seu allowlist sumiu — reavalie o item em vez de fecha-lo."); sys.exit(1)
+  spec = importlib.util.spec_from_file_location("vdr", p)
+  m = importlib.util.module_from_spec(spec); sys.modules["vdr"] = m
+  spec.loader.exec_module(m)
+  routes = m.collect_routes()
+  if len(routes) < 100:
+      print(f"FALHA: collect_routes devolveu so {len(routes)} rotas — o extrator quebrou; e o instrumento, nao a arvore."); sys.exit(1)
+  rx = [m._route_to_regex(r) for r in routes]
+  pref = {r for r in routes if "{" not in r and ":" not in r}
+  fantasma = "/v1/zzz-nonexistent-probe"
+  resolve = m.endpoint_resolves(fantasma, rx, pref)
+  flag = json.loads(a.read_text()).get("endpoint", {}).get("flagship_files", [])
+  if not resolve and flag:
+      print("FALHA: o resolvedor recusa o caminho fantasma E ha flagship_files — o portao decide endpoint agora; feche o item."); sys.exit(1)
+  print(f"aberto: {fantasma} resolve={resolve} contra {len(routes)} rotas coletadas, flagship_files={len(flag)}")
+  PY
+verify-means: |
+  open — o resolvedor ainda aceita um caminho que ninguém serve, **ou** `flagship_files`
+  ainda está vazio (um achado só avisa). Fecha quando as **duas** condições caírem juntas,
+  que é o mínimo para o portão poder reprovar um endpoint fantasma.
+
+  **É um controle positivo, não uma varredura.** O comando planta um caminho que
+  comprovadamente não existe e pergunta ao próprio resolvedor do portão o que ele acha. Não
+  há como isso passar por vacuidade: para dizer "aberto" o resolvedor precisa genuinamente
+  aceitar `/v1/zzz-nonexistent-probe`.
+
+  **Anti-vacuidade com falha nomeada:** arquivo ausente para de vez; e um `collect_routes`
+  que devolva menos de 100 rotas é declarado **falha de instrumento**, não achado — sem essa
+  guarda, um extrator quebrado (zero rotas ⇒ zero casamentos ⇒ `resolve=False`) faria o
+  portão anunciar que o defeito foi consertado exatamente quando ele piorou.
+
+  **Medido pelos dois lados (2026-08-31):** no estado atual sai
+  `resolve=True … flagship_files=0` e exit 0. Numa cópia do repositório com
+  `endpoint_resolves` trocado por casamento exato **e** um `flagship_files` não-vazio, sai
+  *"FALHA: o resolvedor recusa o caminho fantasma E ha flagship_files"* e exit 1.
+
+  O que ele **não** decide: se as divergências já catalogadas foram consertadas — isso é dos
+  itens donos ([B-116], [B-119], [B-120], [B-151]). Este mede só a capacidade de decidir.
+last-verified: 2026-08-31
+```
+
+### B-146 — `backlog_verify.py` é agnóstico ao `status`: um `done` falso sai CONFIRMED até o mundo mudar
+
+A regra que abre este arquivo diz que um item `done` carrega o `verify` **invertido**, e o
+próprio texto chama o `done` com polaridade `open` de *"a forma mais nasty deste arquivo"*
+(achada no B-060, 2026-08-29). É verdade, e é **convenção de autoria — nada a mecaniza.**
+
+`check()` (`scripts/backlog_verify.py:198-220`) lê `item.raw["verify"]`, roda, e mapeia
+`exit 0 → CONFIRMED` / `≠0 → DRIFTED`. O `status` entra em **exatamente um** lugar: a string
+da mensagem de DRIFTED (`f"the item claims status \`{item.raw['status']}\`"`) e a coluna
+impressa. Ele não muda predicado nenhum.
+
+Consequência exata, e é mais estreita do que parece: um item marcado `done` cujo `verify`
+ainda mede a **existência do defeito** sai CONFIRMED — o portão concorda com um item que diz
+"pronto" enquanto mede "quebrado". O erro fica invisível **no PR que o escreve** (o trabalho
+ainda não está na árvore) e só aparece como vermelho no merge **seguinte**, cobrando de quem
+não causou. Foi assim no B-060.
+
+**O que este item NÃO decide.** Não existe predicado geral que decida polaridade a partir do
+comando — decidir isso é o problema da parada. O que é mecanizável é mais modesto e vale a
+pena: exigir que um item `done` declare a inversão (um campo, ou uma marca no
+`verify-means`), e reprovar o `done` que não a declare. Escolher entre "campo novo" e "marca
+convencionada" é do implementador; este item não escolhe.
+
+Relação com [B-143]: lá o portão falha aberto para um **id** malformado; aqui ele falha
+aberto para a **polaridade**. Mesma classe — o portão só verifica o que já entrou na sua
+gramática — mecanismos distintos.
+
+```backlog
+id: B-146
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'set -e
+  s=scripts/backlog_verify.py
+  [ -f "$s" ] || { echo "FALHA: $s sumiu — reavalie o item."; exit 1; }
+  d=$(mktemp -d); trap "rm -rf $d" EXIT
+  hoje=$(date +%Y-%m-%d)
+  cerca=$(printf "\140\140\140")
+  {
+    printf "### B-001 — sonda\n\n"
+    printf "%sbacklog\n" "$cerca"
+    printf "id: B-001\nrepo: corelink-server\nowner: tl\nstatus: done\n"
+    printf "verify: |\n  true\n"
+    printf "verify-means: |\n  polaridade de item ABERTO num item marcado done — a forma que o B-060 produziu\n"
+    printf "last-verified: %s\n" "$hoje"
+    printf "%s\n" "$cerca"
+  } > "$d/sonda.md"
+  out=$(python3 "$s" --file "$d/sonda.md" --format json 2>&1) || true
+  printf "%s" "$out" | grep -q "\"id\": \"B-001\"" || { echo "FALHA: a sonda nao foi parseada pelo script (--file mudou de contrato?) — saida: $(printf "%s" "$out" | tr "\n" " " | cut -c1-160)"; exit 1; }
+  if printf "%s" "$out" | grep -q "CONFIRMED"; then
+    echo "aberto: item status=done com verify de polaridade ABERTA sai CONFIRMED — o script nao le status para decidir nada"
+    exit 0
+  fi
+  echo "FALHA: a sonda done-com-polaridade-aberta NAO saiu CONFIRMED — o script passou a considerar status; feche o item."
+  exit 1'
+verify-means: |
+  open — o script ainda emite CONFIRMED para um item que se declara `done` carregando um
+  `verify` de polaridade **aberta**.
+
+  **Controle positivo sobre arquivo sintético, via a interface que o próprio script expõe
+  para isso (`--file`, usada pelo self-test).** Não toca no `BACKLOG.md` real e não depende
+  de nenhum item existente estar num estado específico — o que ele mede é o comportamento do
+  script diante de uma forma que ele deveria recusar.
+
+  **Anti-vacuidade:** se a sonda não for sequer parseada (o contrato de `--file` mudou), o
+  comando **falha alto** com a saída recortada, em vez de concluir "aberto" a partir de um
+  silêncio. Um portão que confunde "não mediu" com "mediu e achou" é o defeito que este
+  próprio item descreve, e seria vergonhoso reproduzi-lo aqui.
+
+  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: item status=done …
+  sai CONFIRMED"* e exit 0. Numa cópia do repositório com três linhas em `check()` que
+  reprovam `status == "done"` sem inversão declarada, sai *"FALHA: a sonda … NAO saiu
+  CONFIRMED"* e exit 1.
+
+  Fecha quando o script recusar essa forma. O que ele **não** decide: qual mecanismo de
+  declaração (campo próprio ou marca no `verify-means`) — nem tenta, porque decidir
+  polaridade a partir do comando é indecidível e um portão que finja isso seria pior que
+  nenhum.
+last-verified: 2026-08-31
+```
+
+### B-147 — o invariante `owner:` × `status` não é mecanizado: um item `done` com `owner: owner` passa
+
+`BACKLOG.md` declara que `owner: owner` significa *"precisa do humano"* — credencial,
+pagamento, deleção, decisão jurídica. Um item que **já está pronto** não pode continuar
+precisando do humano: `status != open` com `owner: owner` é contradição na cara.
+
+Hoje **nenhum item `done` carrega `owner: owner`** — verificado sobre o `BACKLOG.md` desta
+árvore. Isso é **propriedade deste commit, não garantia**: `validate_schema()`
+(`scripts/backlog_verify.py:135-160`) valida `status` contra `VALID_STATUS` e `owner` contra
+`VALID_OWNER` **independentemente**, e nunca cruza os dois. O próximo item a fechar com o
+campo esquecido entra sem ruído — e o efeito prático não é cosmético: é a fila do owner
+acumulando trabalho que ninguém mais precisa fazer, que foi exatamente o que o [B-137] e o
+#1510 tiveram de limpar à mão (28 → 12).
+
+Reparo: ~3 linhas em `validate_schema` — `status != "open" and owner == "owner"` ⇒ problema.
+É barato o bastante para que o custo real do item seja escrever o teste do portão, não o
+portão.
+
+**O que este item NÃO decide:** se `parked` deve contar junto com `done`. Um item parqueado
+esperando decisão do owner é legítimo, e a leitura estrita (`!= open`) o proibiria. Quem
+implementar decide entre `status == "done"` e `status != "open"`, e o teste tem de fixar a
+escolha, senão o portão vira folclore.
+
+```backlog
+id: B-147
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'set -e
+  s=scripts/backlog_verify.py
+  [ -f "$s" ] || { echo "FALHA: $s sumiu — reavalie o item."; exit 1; }
+  d=$(mktemp -d); trap "rm -rf $d" EXIT
+  hoje=$(date +%Y-%m-%d)
+  cerca=$(printf "\140\140\140")
+  {
+    printf "### B-001 — sonda\n\n"
+    printf "%sbacklog\n" "$cerca"
+    printf "id: B-001\nrepo: corelink-server\nowner: owner\nstatus: done\n"
+    printf "verify: |\n  true\n"
+    printf "verify-means: |\n  done E owner: owner ao mesmo tempo — a contradicao que nenhum portao mede\n"
+    printf "last-verified: %s\n" "$hoje"
+    printf "%s\n" "$cerca"
+  } > "$d/sonda.md"
+  out=$(python3 "$s" --file "$d/sonda.md" --format json 2>&1) || true
+  printf "%s" "$out" | grep -q "\"id\": \"B-001\"" || { echo "FALHA: a sonda nao foi parseada (--file mudou de contrato?) — saida: $(printf "%s" "$out" | tr "\n" " " | cut -c1-160)"; exit 1; }
+  if printf "%s" "$out" | grep -q "BROKEN"; then
+    echo "FALHA: o script ja recusa done+owner:owner — feche o item."; exit 1; fi
+  echo "aberto: sonda done+owner:owner passa sem BROKEN; nada no script cruza os dois campos"'
+verify-means: |
+  open — o script aceita, sem reclamar, um item que se declara `done` **e** `owner: owner`.
+
+  **Mede a ausência do portão, não a ausência de violação**, e essa distinção é a razão de
+  ser do item: hoje a contagem de violações vivas é zero, então um `verify` que contasse
+  violações estaria verde e o item pareceria fechado enquanto nada o impede de voltar. Por
+  isso o predicado é a sonda; a contagem viva vai junto só como contexto impresso.
+
+  **A contagem de violações vivas ficou FORA do comando, de propósito.** Medida à mão em
+  2026-08-31: **zero** itens `done` ou `parked` carregam `owner: owner`. Contá-la dentro do
+  `verify` seria o erro que o próprio item denuncia — com zero violações, um portão que
+  contasse violações ficaria verde e o item pareceria fechado enquanto nada impede a
+  primeira.
+
+  **Anti-vacuidade:** sonda não parseada ⇒ falha alta com a saída recortada, nunca "aberto".
+
+  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: sonda
+  done+owner:owner passa sem BROKEN"* e exit 0. Numa cópia com as três
+  linhas em `validate_schema` que cruzam os dois campos, a sonda sai BROKEN e o comando
+  imprime *"FALHA: o script ja recusa done+owner:owner"* com exit 1.
+
+  Fecha quando o cruzamento existir. O que ele **não** decide: se `parked` entra na regra —
+  a sonda usa `done`, que é o caso incontroverso, de propósito.
+last-verified: 2026-08-31
+```
+
+### B-148 — 41 itens dependem de `.github/workflows/**` e o gate do backlog não roda quando um PR mexe lá
+
+`backlog-verify.yml` declara `pull_request.paths` = `BACKLOG.md`,
+`scripts/backlog_verify.py`, `scripts/test_backlog_verify.sh` e **ele mesmo**. Um PR que
+altera qualquer outro workflow **não** dispara o gate.
+
+Medido nesta árvore: **41 de 143 itens (28%)** têm `verify` que lê `.github/workflows`. Um PR
+de workflow pode derrubar qualquer um deles **sem que o gate rode nesse PR**; o vermelho
+aparece no próximo PR que toque `BACKLOG.md`, que é quase sempre de outra pessoa e de outro
+assunto. **Já aconteceu** — [B-110] × #1505.
+
+O custo não é o vermelho: é a **atribuição errada**. Quem recebe o vermelho lê um item que
+não conhece, sobre uma lane que não tocou, e a saída barata é mexer no item até ficar verde.
+Foi assim que dois `verify` desta campanha ganharam predicado mais fraco.
+
+**O que este item NÃO decide:** acrescentar `.github/workflows/**` ao `paths` é a correção
+óbvia e tem custo próprio — o gate passa a rodar 143 `verify` (dos quais dezenas invocam
+`gh`, `curl`, `cargo`) em **todo** PR de CI, e este repositório já mede que
+`backlog_verify.py` sem `--id` dispara ~24 ferramentas externas. As alternativas são executar
+só o subconjunto dos 41, ou rodar o conjunto completo num gatilho separado. Quem pegar o item
+mede o tempo antes de escolher.
+
+```backlog
+id: B-148
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  python3 - <<"PY"
+  import re, sys, yaml
+  w = ".github/workflows/backlog-verify.yml"
+  try:
+      d = yaml.safe_load(open(w))
+  except FileNotFoundError:
+      print(f"FALHA: {w} sumiu — o gate do backlog nao existe mais; reavalie o item."); sys.exit(1)
+  on = d.get(True, d.get("on")) or {}
+  pr = on.get("pull_request")
+  if pr is None:
+      print("FALHA: backlog-verify.yml nao dispara mais em pull_request — a premissa mudou; releia antes de confiar neste portao."); sys.exit(1)
+  paths = (pr or {}).get("paths")
+  if paths is None:
+      print("FALHA: pull_request sem `paths` — o gate roda em TODO PR; feche o item."); sys.exit(1)
+  cobre = any(p.startswith(".github/workflows/") and p.rstrip("/").endswith("**") for p in paths)
+  t = open("BACKLOG.md").read()
+  blocos = re.findall(r"```backlog\n(.*?)\n```", t, re.S)
+  if len(blocos) < 100:
+      print(f"FALHA: so {len(blocos)} blocos parseados no BACKLOG.md — instrumento quebrado, nao arvore limpa."); sys.exit(1)
+  dep = 0
+  for b in blocos:
+      try: it = yaml.safe_load(b) or {}
+      except Exception: continue
+      if ".github/workflows" in str(it.get("verify", "")): dep += 1
+  if cobre:
+      print(f"FALHA: paths ja cobre .github/workflows/** — feche o item (itens dependentes: {dep})."); sys.exit(1)
+  print(f"aberto: {dep} de {len(blocos)} itens tem verify lendo .github/workflows, e o paths do gate ({paths}) nao cobre .github/workflows/**")
+  PY
+verify-means: |
+  open — o `paths` do gate **não** cobre `.github/workflows/**`, enquanto N itens dependem
+  desse diretório. O comando parseia o YAML em vez de grepar, então um comentário
+  `# .github/workflows/**` no workflow não o satisfaz.
+
+  **Anti-vacuidade, cada caminho com falha nomeada:** workflow ausente; `pull_request`
+  removido; `paths` ausente (que significa "roda em todo PR", isto é, item **fechado**, e o
+  comando diz isso em vez de confundir com o defeito); e menos de 100 blocos parseados no
+  `BACKLOG.md`, declarado explicitamente como instrumento quebrado. Nenhum desses estados
+  devolve "aberto".
+
+  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 41 de 143 itens …
+  nao cobre"* e exit 0. Numa cópia com `.github/workflows/**` acrescentado ao `paths`, sai
+  *"FALHA: paths ja cobre .github/workflows/**"* e exit 1.
+
+  O que ele **não** decide: se cobrir o diretório inteiro é o reparo certo — o item registra
+  que ele tem custo de tempo próprio e que há duas alternativas mais baratas.
+last-verified: 2026-08-31
+```
+
+### B-149 — três testes que passam sem afirmar nada, e um quarto que delega por escrito ao mais fraco deles
+
+Medidos no código de 2026-08-31. Não são testes fracos por descuido de nomenclatura: os três
+**nomeiam** uma propriedade que não verificam.
+
+1. **`empty_batch_issues_no_statement_at_all`**
+   (`crates/corelink-container/src/storage/d1_audit_sink.rs:919`) — o nome promete que
+   **nenhum statement é emitido**. A única asserção é
+   `.append_batch_async(Vec::new()).await.expect(…)`, isto é, "não devolveu erro". Um
+   `append_batch_async` que emitisse um `json_each('[]')` degenerado e voltasse `Ok(())`
+   passaria. O comentário do próprio teste explica que ele *"never reaches D1"* — o que
+   torna a asserção sobre statements não apenas ausente, mas inalcançável na forma atual.
+
+2. **`build_state_returns_none_when_secret_absent`**
+   (`routes/billing_ingest.rs:1155`, e um homônimo em `routes/auth_introspect.rs:1609`) — o
+   corpo inteiro está dentro de
+   `if std::env::var("BILLING_INGEST_AUTH_KEY").is_err() { … }`. **Com a variável definida o
+   teste não afirma nada e passa** — e uma máquina de CI que exporte o segredo apaga o teste
+   sem apagar o verde. Some-se a isso que `build_state_from_env()` devolve `None` por mais de
+   um motivo, e a asserção `is_none()` não distingue "ausência do segredo" das outras causas:
+   o teste não decide a proposição do seu próprio nome.
+
+3. **`validate_record_reasons_pinned`** (`routes/billing_ingest.rs:1129`) — "reasons",
+   plural. `RecordError` (`:397-411`) tem **seis** variantes: `BadTenantId`,
+   `BadBillingPeriod`, `BadRegion`, `BadIdemKey`, `EmptySource`, `SourceTooLong`. O teste fixa
+   **uma** — `BadRegion`. As outras cinco podem trocar de código de razão sem que nada caia.
+
+**O agravante é o quarto teste.** `bad_tenant_id_is_skipped_not_fatal` (`:897`) traz no
+comentário: *"The reason-code mapping is pinned separately in
+`validate_record_reasons_pinned`."* Ele **abre mão** de verificar o mapeamento por escrito,
+delegando ao teste que cobre 1 de 6 — e `BadTenantId`, justamente o que ele deixa de checar,
+**não** é a variante fixada. A cobertura declarada e a cobertura real se contradizem, e a
+contradição está escrita no arquivo.
+
+**O que este item NÃO decide:** se a resposta é reforçar os três testes ou substituí-los por
+teste de propriedade sobre `RecordError` (que fixa as seis de uma vez e não decai quando uma
+sétima nascer). A segunda é mais forte e mais cara.
+
+```backlog
+id: B-149
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'set -e
+  a=crates/corelink-container/src/storage/d1_audit_sink.rs
+  b=crates/corelink-container/src/routes/billing_ingest.rs
+  for f in "$a" "$b"; do [ -f "$f" ] || { echo "FALHA: $f sumiu — reavalie o item."; exit 1; }; done
+  n=0; det=""
+  corpo=$(awk "/fn empty_batch_issues_no_statement_at_all/{c=1} c{print} c&&/^    }/{exit}" "$a" | grep -v "^[[:space:]]*//")
+  [ -n "$corpo" ] || { echo "FALHA: nao recortei o corpo de empty_batch_issues_no_statement_at_all — o teste mudou de forma; releia."; exit 1; }
+  printf "%s\n" "$corpo" | grep -qiE "assert.*(statement|sql|query|stmt)" || { n=$((n+1)); det="$det empty_batch-sem-asercao-de-statement"; }
+  corpo=$(awk "/fn build_state_returns_none_when_secret_absent/{c=1} c{print} c&&/^    }/{exit}" "$b" | grep -v "^[[:space:]]*//")
+  [ -n "$corpo" ] || { echo "FALHA: nao recortei o corpo de build_state_returns_none_when_secret_absent — releia."; exit 1; }
+  printf "%s\n" "$corpo" | grep -qE "if std::env::var" && { n=$((n+1)); det="$det build_state-condicional-ao-ambiente"; }
+  vars=$(awk "/^enum RecordError/{c=1;next} c&&/^}/{exit} c&&/^    [A-Z][A-Za-z]+,/{n++} END{print n+0}" "$b")
+  [ "$vars" -ge 2 ] || { echo "FALHA: contei $vars variantes em RecordError — o enum mudou de forma; instrumento quebrado."; exit 1; }
+  corpo=$(awk "/fn validate_record_reasons_pinned/{c=1} c{print} c&&/^    }/{exit}" "$b" | grep -v "^[[:space:]]*//")
+  fix=$(printf "%s\n" "$corpo" | grep -c "RecordError::" || true)
+  [ "$fix" -lt "$vars" ] && { n=$((n+1)); det="$det reasons_pinned-fixa-$fix-de-$vars"; }
+  [ "$n" -gt 0 ] || { echo "FALHA: nenhum dos tres testes vacuos persiste — feche o item."; exit 1; }
+  echo "aberto: $n de 3 testes seguem vacuos:$det"'
+verify-means: |
+  open — pelo menos um dos três testes ainda satisfaz a forma vazia que o item descreve.
+  Fecha por **exaustão**: consertar dois mantém o item aberto com contagem menor, que é o
+  comportamento certo para item de lista.
+
+  **Cada medida é sobre o corpo RECORTADO do teste, com os comentários removidos.** Grepar o
+  arquivo inteiro responderia sobre o vizinho; e sem tirar comentário, a linha
+  *"The reason-code mapping is pinned separately in `validate_record_reasons_pinned`"* — que
+  é justamente a delegação que este item denuncia — casaria como se fosse asserção.
+
+  **A contagem de variantes é derivada, não constante.** `validate_record_reasons_pinned`
+  reprova por `fixadas < variantes do enum`, então nascer uma sétima variante **reabre** o
+  item sozinho. Uma constante `6` escrita à mão envelheceria em silêncio, que é a doença que
+  este arquivo tenta não ter.
+
+  **Anti-vacuidade:** arquivo ausente, recorte vazio (o teste mudou de forma) e enum com
+  menos de 2 variantes são **falhas de instrumento** com mensagem própria — nenhuma devolve
+  "aberto".
+
+  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 3 de 3 testes
+  seguem vacuos"* e exit 0. Numa cópia com uma asserção sobre statements no primeiro, o `if
+  std::env::var` removido do segundo, e as seis variantes fixadas no terceiro, sai *"FALHA:
+  nenhum dos tres testes vacuos persiste"* e exit 1.
+last-verified: 2026-08-31
+```
