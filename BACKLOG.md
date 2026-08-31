@@ -3365,7 +3365,7 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-123 — `protoc` falta na imagem da frota e toda lane que toque o fecho do auth paga a instalacao
+### B-123 — a imagem da frota nao tem `protoc` nem toolchain de FFI, e a lane paga ou desvia
 
 `corelink-reapi` tem build script que exige `protoc`, e a imagem da frota
 (`corelink-runners/deploy/runner/Dockerfile`) nao o traz — ela instala Rust
@@ -3382,9 +3382,19 @@ Contornado com `arduino/setup-protoc`, a mesma action e o mesmo pin que o
 ferramenta por execucao, em toda PR que toque qualquer coisa no fecho do auth,
 que e a maioria. Duas lanes ja pagam isso hoje.
 
-O conserto de raiz e por a ferramenta na imagem, e e no `corelink-runners` — nao
-neste repo. Registrado para nao virar divida silenciosa: o workaround e
-invisivel no verde.
+**Nao e so o protoc.** A execucao com seed universal (que seleciona os 95)
+tambem morreu em `rust-lld: unable to find library -lpython3.12`, no
+`corelink-py`. A imagem nao carrega o toolchain Python de desenvolvimento.
+
+`corelink-py`, `corelink-go` e `corelink-wasm` ficam **excluidos** do
+`rust-affected-tests.yml`, com o motivo escrito no proprio arquivo. Eles ja tem
+lane propria — `ffi-matrix-ci.yml` — que e uma das 20 de zero sucesso e esta
+parked; inclui-los faria esta lane herdar o bloqueio de uma lane parada. A
+exclusao e declarada, nao silenciosa, e este item e o rastro.
+
+O conserto de raiz e por as ferramentas na imagem (`protoc`, `python3-dev`, e o
+que as outras folhas exigirem), e e no `corelink-runners` — nao neste repo.
+Registrado para nao virar divida silenciosa: o workaround e invisivel no verde.
 
 ```backlog
 id: B-123

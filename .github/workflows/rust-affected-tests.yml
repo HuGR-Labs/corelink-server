@@ -109,7 +109,9 @@ jobs:
           # exit status, reads all input, and cannot SIGPIPE.
           if printf '%s\n' "$CHANGED_PATHS" | grep -xE 'Cargo\.lock|Cargo\.toml|rust-toolchain\.toml|\.github/workflows/rust-affected-tests\.yml' >/dev/null; then
             echo "universal seed: a root manifest/lockfile/toolchain change can break any package"
-            cut -f2 /tmp/pkgdirs.tsv | sort -u > /tmp/final.txt
+            printf '%s\n' corelink-py corelink-go corelink-wasm > /tmp/ffi-exclude.txt
+            cut -f2 /tmp/pkgdirs.tsv | sort -u \
+              | grep -Fxv -f /tmp/ffi-exclude.txt > /tmp/final.txt
             echo "selected $(wc -l < /tmp/final.txt | tr -d ' ') crates (whole workspace):"
             sed 's/^/  /' /tmp/final.txt
             echo "crates=$(tr '\n' ' ' < /tmp/final.txt)" >> "$GITHUB_OUTPUT"
@@ -150,7 +152,17 @@ jobs:
           cargo metadata --no-deps --format-version 1 \
             | python3 -c 'import json,sys; [print(p["name"]) for p in json.load(sys.stdin)["packages"]]' \
             > /tmp/members.txt
-          sort -u /tmp/closure.txt | grep -Fx -f /tmp/members.txt > /tmp/final.txt || true
+          # FFI/SDK leaves need a non-Rust toolchain the fleet image does not
+          # carry — `corelink-py` links against libpython3.12 and fails at
+          # `rust-lld: unable to find library -lpython3.12`. They already have
+          # their own lane (`ffi-matrix-ci.yml`), which is one of the 20
+          # zero-success lanes and is parked; pulling them in here would make
+          # this lane inherit a parked lane's blocker. Excluded WITH the reason,
+          # and tracked, rather than silently dropped. See B-123.
+          printf '%s\n' corelink-py corelink-go corelink-wasm > /tmp/ffi-exclude.txt
+
+          sort -u /tmp/closure.txt | grep -Fx -f /tmp/members.txt \
+            | grep -Fxv -f /tmp/ffi-exclude.txt > /tmp/final.txt || true
 
           if [ ! -s /tmp/final.txt ]; then
             echo "::error::closure came out EMPTY — auth and pat are unconditional seeds, so an empty set means the computation broke, not that there is nothing to test"
