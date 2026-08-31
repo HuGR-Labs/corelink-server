@@ -295,8 +295,6 @@ jobs:
   # personal gmhelmold account; the get-corelink-worker RELEASE_ORIGIN is pinned
   # to it). Anyone changing where releases are published MUST repin that var and
   # redeploy the worker, or the installer keeps fetching the old location.
-  # - The install script (apps/get-corelink-worker) is updated in lock-
-  #   step to point at HumanGuardrail/corelink-server/releases/latest.
   # -------------------------------------------------------------------
   release:
     name: create release (HuGR-Labs/corelink-cli)

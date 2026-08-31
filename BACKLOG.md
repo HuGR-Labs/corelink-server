@@ -3435,6 +3435,8 @@ status: open
 verify: |
   bash -c 'grep -q "cargo zigbuild" .github/workflows/release-cli.yml || exit 1
   grep -q "authorized-by: repo owner" .github/workflows/cosign-sign.yml || exit 1
+  uses=$(grep -cE -- "--repo[[:space:]]+HumanGuardrail/corelink-cli" .github/workflows/release-cli.yml 2>/dev/null || true)
+  [ "${uses:-0}" = 0 ] || { echo "FALHA: $uses uso(s) executavel(is) de --repo HumanGuardrail/corelink-cli em release-cli.yml — o repontamento deste PR foi revertido e a lane volta a publicar num repo que responde 404."; exit 1; }
   git ls-remote --tags origin "refs/tags/v*" 2>/dev/null | grep -q . && exit 1
   exit 0'
 verify-means: |
