@@ -297,3 +297,5 @@ walkthroughs
 webpack
 workerd
 zstd
+[Ss]emgrep
+[Tt]rivy
