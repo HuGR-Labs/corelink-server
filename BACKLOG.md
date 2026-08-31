@@ -4990,7 +4990,19 @@ por PR e está hosted-blocked (#1434), o Semgrep foi estacionado com zero sucess
 Ressalva justa e registrada: a linha CCC-07.1 sobre commits assinados **se sustenta** —
 os commits carregam `gpgsig`.
 
-Este item também é o guarda-chuva da reconciliação dos demais instrumentos assinados: o
+**Parcialmente reparado 2026-08-31 (PR WP-C) — o item SEGUE ABERTO.** As três linhas do
+CAIQ estão corrigidas: `STA-08.1` (agora "P") e `STA-11.1` (agora "N") caíram numa purga
+de claims anterior; a `AIS-04.1` caiu neste PR. Ela agora responde **"P"** e nomeia os
+gatilhos reais em vez da lista de ferramentas: `codeql.yml` é
+`schedule: '30 5 * * *'` + `workflow_dispatch` **sem lane `pull_request`**; o cron do
+`semgrep.yml` está comentado desde 2026-08-10 (0 de 8 execuções bem-sucedidas); o cron do
+`fuzz-nightly.yml` está comentado e o arquivo diz que o dispatch é *"currently the ONLY
+trigger"*. Em troca, a linha declara o que de fato gateia um PR que toca Rust — clippy
+`-D warnings`, `cargo test`, `cargo-audit`, `cargo-deny` — com a ressalva de que o filtro
+de `paths` desses lanes não alcança um PR só de documentação.
+
+O item continua aberto porque a metade cara não foi feita: ele também é o guarda-chuva da
+reconciliação dos demais instrumentos assinados: o
 BYOK do SLA ([B-083]), o Object Lock do DPA e dos templates a reguladores ([B-085]), e a
 residência do D1 ([B-086]). Um CAIQ entra no processo de risco do comprador e costuma ser
 garantido como verdadeiro no contrato principal — correção é barata antes de assinar e
@@ -5004,31 +5016,56 @@ status: open
 verify: |
   bash -c 'q=marketing/sales/legal-questionnaires/CAIQ-V4-pre-filled.md
   [ -f "$q" ] || { echo "FALHA: o CAIQ sumiu — feche o item ou reescreva-o."; exit 1; }
+  linhas=0
+  for k in "STA-08\.1" "STA-11\.1" "AIS-04\.1"; do
+    grep -qE "^\|[[:space:]]*$k" "$q" && linhas=$((linhas+1))
+  done
+  [ "$linhas" = 3 ] || { echo "FALHA: so $linhas das 3 linhas nomeadas existem no CAIQ — o comando perdeu o objeto e nao pode concluir ausencia."; exit 1; }
   ys=0
   grep -E "^\|[[:space:]]*STA-08\.1" "$q" | grep -q "| Y " && ys=$((ys+1))
   grep -E "^\|[[:space:]]*STA-11\.1" "$q" | grep -q "| Y " && ys=$((ys+1))
   grep -E "^\|[[:space:]]*AIS-04\.1" "$q" | grep -q "| Y " && ys=$((ys+1))
   ph=0
   grep -rqE "SIGNING PLACEHOLDER|ZONE_ID_PLACEHOLDER" .github/workflows/ && ph=1
-  if [ "$ys" = 0 ]; then echo "FALHA: as tres linhas do CAIQ nao atestam mais Y — feche o item."; exit 1; fi
+  if [ "$ys" = 0 ]; then echo "ok-parcial: as 3 linhas nomeadas nao atestam mais Y; o item segue ABERTO pela reconciliacao dos instrumentos assinados (DPA, SLA, templates a reguladores) — feche-o so quando ela terminar."; exit 0; fi
   if [ "$ph" = 0 ]; then echo "FALHA: os placeholders de assinatura sumiram — reavalie: talvez o controle exista agora."; exit 1; fi
   echo "aberto: $ys de 3 linhas do CAIQ ainda atestam Y e os placeholders de assinatura seguem no CI"'
 verify-means: |
-  open — pelo menos uma das três linhas ainda atesta "Y" E os placeholders de assinatura
-  continuam nos workflows. As duas metades são a alegação: a afirmação existe E o
-  controle que ela nomeia não.
+  open — o item continua aberto, mas por uma razão diferente da original, e o comando foi
+  reescrito para dizer isso em vez de mentir nos dois sentidos.
 
-  Vira DRIFTED por qualquer um dos dois reparos: corrigir as linhas para "N"/"P" com
-  plano datado (barato, honesto, imediato), ou implementar de fato a assinatura e a
-  proveniência (caro, e SLSA L3 já foi recusado em [B-031]).
+  **As três linhas do CAIQ estão corrigidas.** `STA-08.1` (P) e `STA-11.1` (N) caíram
+  numa das purgas de claims anteriores; `AIS-04.1` caiu em 2026-08-31 (PR WP-C), medida
+  contra os gatilhos reais: `codeql.yml` é `schedule: '30 5 * * *'` + `workflow_dispatch`
+  **sem lane `pull_request`**; o cron do `semgrep.yml` está comentado (parado em
+  2026-08-10 após 0 de 8 execuções bem-sucedidas); o cron do `fuzz-nightly.yml` está
+  comentado e o próprio arquivo diz que o dispatch é *"currently the ONLY trigger"*.
 
-  Conta 3/2/1 em vez de exigir zero: corrigir uma linha reduz o número e mantém o item
-  aberto. Progresso parcial aparece.
+  O item permanece aberto porque ele é o **guarda-chuva da reconciliação dos instrumentos
+  assinados** — o BYOK do SLA ([B-083]), o Object Lock do DPA e dos templates a
+  reguladores ([B-085]), a residência do D1 ([B-086]). Essa parte não foi feita.
 
-  O que NÃO decide, e admito: quais prospects já receberam a versão atual do documento, e
-  se precisam ser notificados. Isso é registro comercial fora do repositório e pertence
-  ao owner — deve virar item próprio se a decisão for notificar.
-last-verified: 2026-08-30
+  Por isso o `ys = 0` agora sai com `exit 0` e uma mensagem que nomeia a razão restante,
+  em vez de `exit 1` mandando fechar. Um comando que manda fechar o item quando só a
+  metade barata foi feita é pior que nenhum: ele converte progresso parcial em ordem de
+  encerramento.
+
+  A primeira metade nova é o **controle do instrumento**: conta se as três linhas
+  nomeadas ainda EXISTEM no arquivo antes de julgar seus valores. Sem isso, renomear
+  `AIS-04.1` ou deletar a seção produziria a mesma saída que corrigi-la — "não achei Y" e
+  "não achei a linha" deixam de compartilhar saída.
+
+  O que NÃO decide, e admito, em três pontos:
+
+  1. Quais prospects já receberam a versão anterior do documento, e se precisam ser
+     notificados. É registro comercial fora do repositório e pertence ao owner; vira item
+     próprio se a decisão for notificar.
+  2. As outras ~190 linhas do CAIQ. Só as três nomeadas foram auditadas. Um questionário
+     em que três linhas atestavam controles inexistentes merece uma varredura completa, e
+     ela não foi feita.
+  3. Se o texto novo da `AIS-04.1` está juridicamente adequado como resposta "P" num
+     processo de procurement. Ele é factualmente verdadeiro; adequação é do owner.
+last-verified: 2026-08-31
 ```
 
 ### B-088 — o comunicado de lançamento afirma pentest externo limpo; o próprio repositório instrui a não afirmar isso
