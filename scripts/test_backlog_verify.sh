@@ -86,6 +86,12 @@ cell "a heading and its block naming different ids is a hard failure" 2 "heading
 
 # A block with no heading at all is orphaned prose-side: nothing outside the
 # file can cite it, and a reader scrolling past sees no item there.
+cell "a heading whose block lost its opening fence is a hard failure" 2 "B-2" \
+  "$(printf '### B-1\n\n```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n\n### B-2\n\nid: B-2\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
+
+cell "a \`### B-\` inside a fenced example is not a heading" 0 "" \
+  "$(printf '### B-1\n\n```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n\n```text\n### B-42\nexample of the item format\n```\n')"
+
 cell "a block with no heading above it is a hard failure" 2 "no \`### B-" \
   "$(printf '```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
 

@@ -246,7 +246,18 @@ def main() -> int:
     # the per-item verifies so a mislabelled item cannot be "confirmed" under a
     # heading that describes different work.
     text = path.read_text()
-    headings = [(m.start(), m.group(1)) for m in HEADING_RE.finditer(text)]
+    # `### B-NN` inside a fenced block is an EXAMPLE, not an item. Without this
+    # mask, documenting the item format inside BACKLOG.md itself would turn the
+    # example into a phantom heading and fail the gate naming an id that does not
+    # exist. Fail-closed, so not dangerous — but it is exactly "reject for the
+    # wrong reason", which is the failure mode this whole block exists to avoid.
+    masked = re.sub(
+        r"^```.*?^```",
+        lambda m: re.sub(r"[^\n]", " ", m.group(0)),
+        text,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    headings = [(m.start(), m.group(1)) for m in HEADING_RE.finditer(masked)]
     mismatches: list[str] = []
     for m in BLOCK_RE.finditer(text):
         line = text[: m.start()].count("\n") + 1
@@ -274,6 +285,12 @@ def main() -> int:
     #
     # An item that is missing is indistinguishable from an item that is malformed
     # unless something compares the two populations. This does that.
+    #
+    # SCOPE, stated because the prose is what survives: the density rule above
+    # already catches an item lost from the MIDDLE of the file (it leaves a gap).
+    # The blind window is the item with the MAXIMUM id — the only one whose loss
+    # leaves the sequence dense. That is the freshly added item, which is exactly
+    # the one most likely to be born from a conflict resolution.
     # POSITION, not parseability. A block whose YAML is unparseable IS a block —
     # `parse()` already reports it as BROKEN (exit 1), and treating it as absent
     # here would upgrade every malformed-YAML case to a FATAL exit 2 and swallow
@@ -289,18 +306,6 @@ def main() -> int:
         for i, (pos, h) in enumerate(headings)
         if not any(pos < b < bounds[i + 1] for b in block_starts)
     ]
-    if orphan_headings:
-        print(
-            "FATAL: heading(s) sem bloco ```backlog parseavel: "
-            + ", ".join(sorted(set(orphan_headings)))
-            + "\nO item existe como titulo e NAO existe para nenhuma verificacao deste\n"
-            "arquivo — some do portao sem que o portao reclame, porque ele conta o que\n"
-            "consegue parsear e nada compara esse numero com quantos titulos ha.\n"
-            f"(titulos: {len(headings)}, blocos abertos: {len(block_starts)})",
-            file=sys.stderr,
-        )
-        return 2
-
     if mismatches:
         print(
             "FATAL: a heading and its block disagree about which item they are.\n"
@@ -316,6 +321,18 @@ def main() -> int:
     # while the record silently loses work. This happened on 2026-08-23: an edit
     # that rewrote one item removed its neighbour, and the gate reported all-green.
     # So ids must stay DENSE. Retiring an item means marking it, never deleting it.
+    if orphan_headings:
+        print(
+            "FATAL: heading(s) sem bloco ```backlog parseavel: "
+            + ", ".join(sorted(set(orphan_headings)))
+            + "\nO item existe como titulo e NAO existe para nenhuma verificacao deste\n"
+            "arquivo — some do portao sem que o portao reclame, porque ele conta o que\n"
+            "consegue parsear e nada compara esse numero com quantos titulos ha.\n"
+            f"(titulos: {len(headings)}, blocos abertos: {len(block_starts)})",
+            file=sys.stderr,
+        )
+        return 2
+
     numbered = sorted(
         int(m.group(1))
         for i in items
