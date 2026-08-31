@@ -5047,73 +5047,112 @@ O aviso correto existe, está escrito, e não alcançou o comunicado. É a forma
 do padrão de [B-101]: falha de propagação, não de conhecimento. Reparo: remover as
 afirmações e o marcador `[CEO_NAME]`, propagando o texto que o `PROOF-POINTS.md` já tem.
 
-**Fechado 2026-08-31 (PR WP-C).** O comunicado passou a declarar, no lugar do bullet
-afirmativo, que **nenhum pentest externo foi contratado**, citando o tracker (todo vendor
-`NOT_CONTACTED`, `rfp_sent_date: null`), a página pública que já dizia isso
-(`apps/docs/docs/explanation/compliance/pentest-summary.mdx`: *"No vendor has been
-contracted"*) e o §2.12 do `PROOF-POINTS.md`. A afirmação também saiu do sub-título e da
-citação do CEO, com o texto retirado transcrito no lugar para que a reversão seja visível
-em vez de silenciosa. O marcador `[CEO_NAME]` saiu das três posições, substituído por uma
-instrução explícita de que a atribuição precisa ser fornecida e aprovada pela pessoa antes
-da distribuição. A mesma afirmação saiu de
-`marketing/launch/BLOG-POSTS/01-introducing-corelink.md`, que dizia que o produto enviava
-"after … an external pentest with post-remediation retest".
+**Parcialmente reparado 2026-08-31 (PR WP-C) — o item SEGUE ABERTO.** O comunicado passou
+a declarar, no lugar do bullet afirmativo, que **nenhum pentest externo foi contratado**,
+citando o tracker (todo vendor `NOT_CONTACTED`, `rfp_sent_date: null`), a página pública
+que já dizia isso (`apps/docs/docs/explanation/compliance/pentest-summary.mdx`: *"No
+vendor has been contracted"*) e o §2.12 do `PROOF-POINTS.md`. A afirmação saiu do
+sub-título e da citação do CEO, com o texto retirado transcrito no lugar para que a
+reversão seja visível em vez de silenciosa. O marcador `[CEO_NAME]` saiu das três
+posições. A mesma afirmação saiu de
+`marketing/launch/BLOG-POSTS/01-introducing-corelink.md:31`.
+
+**Uma revisão fria adversarial reverteu o `done` deste item.** Ele havia sido fechado com
+a afirmação **viva em pelo menos 30 arquivos e 65 posições**, várias delas nos próprios
+arquivos que o PR editou — o PR corrigiu uma linha e deixou a irmã duas telas abaixo. O
+resíduo **medido** neste commit:
+
+- `marketing/launch/PRODUCT-HUNT/PH-FAQ.md:52` — *"External pentest **is engaged** with one
+  of Schellman, A-LIGN, or Trail of Bits"*. **O PR editou a linha 26 deste mesmo arquivo e
+  deixou a 52.** Também `:20`.
+- `marketing/launch/BLOG-POSTS/01-introducing-corelink.md:93` — **o PR corrigiu a `:31` e
+  deixou a `:93`.**
+- `marketing/launch/PRODUCT-HUNT/PH-MAKER-COMMENT.md:19`;
+  `marketing/launch/SOCIAL/HACKERNEWS-SHOW-HN.md:30`;
+  `marketing/launch/SOCIAL/LINKEDIN-POST.md:15` e `:25`;
+  `marketing/launch/SOCIAL/TWITTER-THREAD.md:76` — *"PRR + pentest + 30d staging"* como
+  portão de engenharia já cumprido.
+- `marketing/launch/demos/5-MIN-DEEPDIVE.md:335`;
+  `marketing/lighthouse-kit/01-outreach-email.md:125` (*"pentest letter on request"*);
+  `marketing/lighthouse-kit/02-intro-deck.md:124` (*"External pentest report available
+  under NDA (last pass D-30)"*) e `:189`;
+  `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md:357` (*"Our Pentest-1 …"*);
+  `marketing/launch/CASE-STUDIES/enterprise-byok.md:38` (*"External pentest report with
+  retest, available under NDA pre-purchase"*).
+- `marketing/sales/FAQ-MASTER.md`, `marketing/sales/OBJECTION-HANDLING.md`,
+  `marketing/sales/legal-questionnaires/{CAIQ-V4,SIG-LITE-2026,VENDOR-QUESTIONNAIRE-RESPONSE-TEMPLATE,RESPONSE-SLA-POLICY}`.
+- **E a superfície publicada, que o `verify` deste item nunca varreu:**
+  `apps/docs/docs/trust/fedramp-info.mdx:63` — tabela citando *"Schellman / Bishop Fox"*
+  como fornecedores do *"Pentest report (annual external)"* —, mais
+  `apps/docs/docs/trust/{iso27001,compliance,index}.mdx`, **cada uma × 4 locales**.
+
+O item volta a `status: open` com a polaridade `open` restaurada. O texto já corrigido
+**fica** — o `verify` protege-o contra regressão — mas o item não pode ser declarado
+fechado enquanto o comprador continuar lendo, na página de confiança publicada, o nome de
+duas firmas de pentest que nunca foram contatadas.
 
 ```backlog
 id: B-088
 repo: corelink-server
 owner: owner
-status: done
+status: open
 verify: |
   bash -c 'p=marketing/launch/PRESS-RELEASE.md
-  t=reports/pentest-rfp-tracker.json
-  [ -f "$p" ] || { echo "FALHA: o press release sumiu — o reparo nao pode ser verificado."; exit 1; }
+  [ -f "$p" ] || { echo "FALHA: o press release sumiu — o reparo ja feito nao pode ser verificado."; exit 1; }
   n=$(wc -l < "$p" | tr -d " ")
   [ "$n" -gt 50 ] || { echo "FALHA: o press release tem so $n linhas — o comando perdeu o objeto e nao pode concluir ausencia."; exit 1; }
-  neg=$(grep -c "No external pentest has been commissioned" "$p" | tr -d " ")
-  [ "$neg" -gt 0 ] || { echo "FALHA: o comunicado nao declara mais que nenhum pentest externo foi contratado — o reparo regrediu."; exit 1; }
-  ceo=0; grep -q "CEO_NAME" "$p" && ceo=1
-  [ "$ceo" = 0 ] || { echo "FALHA: o marcador CEO_NAME voltou ao comunicado — o reparo regrediu."; exit 1; }
-  af=0; grep -qE "\\*\\*External pentest, clean\\.\\*\\*" "$p" && af=1
-  [ "$af" = 0 ] || { echo "FALHA: o bullet afirmativo de pentest limpo voltou — o reparo regrediu."; exit 1; }
-  echo "done: o comunicado declara a ausencia de pentest externo, nao carrega CEO_NAME e nao traz o bullet afirmativo"'
+  grep -q "No external pentest has been commissioned" "$p" || { echo "FALHA: o comunicado nao declara mais que nenhum pentest externo foi contratado — o reparo JA FEITO regrediu; conserte antes de qualquer outra coisa."; exit 1; }
+  ! grep -q "CEO_NAME" "$p" || { echo "FALHA: o marcador CEO_NAME voltou ao comunicado — o reparo JA FEITO regrediu."; exit 1; }
+  ! grep -qE "\*\*External pentest, clean\.\*\*" "$p" || { echo "FALHA: o bullet afirmativo de pentest limpo voltou ao comunicado — o reparo JA FEITO regrediu."; exit 1; }
+  corpus=$(grep -rli "pentest" --include="*.md" --include="*.mdx" marketing/ apps/docs/ README.md 2>/dev/null | wc -l | tr -d " ")
+  [ "$corpus" -gt 20 ] || { echo "FALHA: so $corpus arquivo(s) do corpus citam pentest — a varredura perdeu o corpus e nao pode concluir ausencia."; exit 1; }
+  res=$(grep -rlE "External pentest is engaged|pentest letter on request|External pentest report|External pentest pass|PRR \+ pentest|pentest \+ 30d|Pentest-1|Schellman|Bishop Fox" --include="*.md" --include="*.mdx" marketing/ apps/docs/ README.md 2>/dev/null | grep -v "PENTEST-RFP-EMAIL" | wc -l | tr -d " ")
+  if [ "$res" -gt 0 ]; then
+    echo "aberto: o comunicado esta corrigido, mas a afirmacao de pentest externo segue viva em $res arquivo(s) do material publicado (inclui apps/docs/docs/trust/fedramp-info.mdx e iso27001/compliance/index x 4 locales). Estender o diff a apps/docs/** e ao README, ou fechar so quando res=0."
+    exit 0
+  fi
+  echo "FALHA: o residuo de pentest chegou a zero — a razao restante deste item acabou. Feche B-088 (status: done) com verify de polaridade INVERTIDA."
+  exit 1'
 verify-means: |
-  done — polaridade INVERTIDA em relação à versão `open`. Agora falha se a declaração de
-  ausência sair, se o marcador `CEO_NAME` voltar, ou se o bullet afirmativo
-  (`**External pentest, clean.**`) reaparecer. Deixar a polaridade `open` passaria no PR
-  do reparo e vermelharia o merge seguinte.
+  open — e a polaridade voltou a ser `open` **de propósito**, revertendo um `done`
+  prematuro. O item havia sido fechado com a afirmação viva em 30 arquivos e 65 posições,
+  incluindo linhas nos MESMOS arquivos que o PR editou (`PH-FAQ.md`: corrigida a 26,
+  deixada a 52; `01-introducing-corelink.md`: corrigida a 31, deixada a 93).
 
-  Duas escolhas de desenho merecem registro, porque as duas nasceram de erro:
+  O comando tem duas metades com papéis opostos, e isso é deliberado:
 
-  1. **Gateio a frase de negação, não a ausência da string "external pentest".** O texto
-     corrigido PRECISA dizer "No external pentest has been commissioned" — a string
-     "external pentest" está lá de propósito. Um comando que proibisse a string proibiria
-     a retratação junto com a afirmação. É a mesma armadilha que apareceu em [B-085].
-  2. **O bullet afirmativo é gateado pela forma em negrito** (`**External pentest,
-     clean.**`), que é como ele aparecia. O parágrafo de retratação cita a frase antiga
-     entre aspas em itálico, sem os asteriscos, e por isso não dispara o gate.
+  1. **Protege o reparo já feito.** Se o comunicado parar de declarar a ausência, se o
+     `CEO_NAME` voltar, ou se o bullet `**External pentest, clean.**` reaparecer, o
+     comando fica **vermelho** — mesmo com o item `open`. Um item aberto não é licença
+     para regredir a parte já corrigida.
+  2. **Mede o resíduo.** Enquanto sobrar ao menos um arquivo com afirmação ativa, o item
+     está legitimamente `open` e o comando sai `exit 0`. Quando o resíduo chegar a zero,
+     o comando fica **vermelho** mandando fechar com polaridade invertida.
 
-  A contagem de linhas do arquivo é o **controle do instrumento**: um comunicado
-  esvaziado ou truncado passaria em todos os testes de ausência. Ele falha em vez de
-  declarar vitória sobre um arquivo vazio.
+  Gateio a frase de negação, não a ausência da string "pentest": o texto corrigido PRECISA
+  dizer *"No external pentest has been commissioned"*. Um comando que proibisse a string
+  proibiria a retratação junto com a afirmação — a mesma armadilha de [B-085].
 
-  O que NÃO decide, e admito, em quatro pontos:
+  A contagem de linhas do comunicado e a contagem do corpus são **controle do
+  instrumento**: um comunicado truncado, ou um `apps/docs/` deletado, passariam em
+  qualquer teste de ausência. Aqui falham. E os `PENTEST-RFP-EMAIL-*.md` são excluídos da
+  varredura de resíduo porque neles nomear Schellman / Bishop Fox / Trail of Bits é o
+  propósito legítimo do arquivo — é o e-mail que os CONVIDA.
 
-  1. Se o comunicado já foi distribuído a jornalistas ou prospects. Fora do repositório,
-     pertence ao owner. O cabeçalho diz `NOT FOR DISTRIBUTION` até o embargo, mas isso é
-     uma instrução, não uma prova.
-  2. As demais afirmações não verificadas do mesmo comunicado, que este item não cobre e
-     que continuam lá: "three lighthouse customers attested", "24/7 incident response"
-     com rotações PagerDuty em três regiões, "SBOM published, signed", "SOC 2 gap analysis
-     delivered", e os quatro depoimentos de clientes com placeholders. Cada um merece
-     medição própria; nenhum foi medido aqui.
-  3. A mesma afirmação de pentest em `marketing/sales/PROOF-POINTS.md` §2.15
-     ("Rekor transparency-log entries per release"), que contradiz o `STA-11.1` do CAIQ —
-     agora "N", "no transparency-log entry has ever been created". É achado adjacente,
-     não é deste item, e precisa de item próprio.
-  4. Se remover o marcador `CEO_NAME` é suficiente: o comunicado ainda carrega
-     `[CITY]`, `[DATE]`, `[FOUNDER_NAME(S)]`, `[HQ_LOCATION]`, `[INVESTOR_PLACEHOLDERS]` e
-     outros. São slots normais de rascunho, mas nenhum deles pode ir ao fio.
+  O que NÃO decide, e admito, em cinco pontos:
+
+  1. **Paráfrase.** Medido: inserir *"Independent security assessment, clean"* num arquivo
+     de marketing **passa** neste comando. O portão cobre as formulações medidas, não a
+     ideia. Uma reescrita que evite todas elas e continue afirmando a mesma coisa não é
+     detectada — a defesa real é a revisão humana, não este `grep`.
+  2. Se o comunicado já foi distribuído a jornalistas ou prospects. Fora do repositório.
+  3. As demais afirmações não verificadas do mesmo comunicado: *"three lighthouse
+     customers attested"*, *"24/7 incident response"*, *"SBOM published, signed"*, *"SOC 2
+     gap analysis delivered"*, e os quatro depoimentos com placeholders.
+  4. Os demais marcadores do comunicado — `[CITY]`, `[DATE]`, `[FOUNDER_NAME(S)]`,
+     `[HQ_LOCATION]`, `[INVESTOR_PLACEHOLDERS]`.
+  5. A afirmação de Rekor em `marketing/sales/PROOF-POINTS.md` §2.15, que contradiz o
+     `STA-11.1` do CAIQ (agora "N"). Achado adjacente, precisa de item próprio.
 last-verified: 2026-08-31
 ```
 
@@ -5381,88 +5420,102 @@ repositório sobre hostnames publicados que não resolvem.
 Reparo: alinhar o material ao que existe (REAPI v2 sobre REST, sem Buck2), ou registrar o
 gRPC como roadmap explícito em vez de capacidade presente.
 
-**Fechado 2026-08-31 (PR WP-C).** Corrigi 20 arquivos de `marketing/` que vendiam Buck2 e
-RBE como clientes suportados — os dois READMEs de organização, os cinco materiais de
-piloto, os três posts sociais, os quatro do Product Hunt, o blog de lançamento, o roteiro
-de demo, a matriz competitiva, o FAQ de vendas, o case-study OSS, o e-mail de outreach, o
-comunicado, e o OG asset do CLI. Cada um passa a dizer o que o produto FAZ: REAPI v2 sobre
-HTTP/REST, que o Bazel fala nativamente, sem ingresso gRPC — e por isso Buck2, Pants e
-NativeLink não conectam.
+**Parcialmente reparado 2026-08-31 (PR WP-C) — o item SEGUE ABERTO.** Corrigi 20 arquivos
+de `marketing/` que vendiam Buck2 e RBE como clientes suportados — os dois READMEs de
+organização, os cinco materiais de piloto, os três posts sociais, os quatro do Product
+Hunt, o blog de lançamento, o roteiro de demo, a matriz competitiva, o FAQ de vendas, o
+case-study OSS, o e-mail de outreach, o comunicado, e o OG asset do CLI. Cada um passa a
+dizer o que o produto FAZ: REAPI v2 sobre HTTP/REST, que o Bazel fala nativamente, sem
+ingresso gRPC — e por isso Buck2, Pants e NativeLink não conectam.
 
-As menções que sobraram foram lidas uma a uma e são legítimas: o card `near-ready` do
-`corelink-feature-catalog.html` (roadmap corretamente rotulado, "not yet mounted"), a
-pergunta do `API-STABILITY-FAQ.md` respondida com "REST-only", as três seções de "not
-supported today" do `CUSTOMER-PLAYBOOK.md`, listas de público-alvo, métricas de menção na
-imprensa, descrições de concorrente, e o rádio de formulário que pergunta a ferramenta do
-prospect. Fecho com essa nota em vez de reescrever o comando para ignorá-las, como o
-`verify-means` da versão `open` mandava.
+**Uma revisão fria adversarial reverteu o `done` deste item.** O título do item diz
+*"material **publicado**"*, e o `verify` ancorava a varredura em `marketing/` — **cego
+justamente para a superfície mais publicada que existe**, `apps/docs/`, que é o site que o
+cliente lê. Resíduo medido neste commit: **244 menções a Buck2 em 115 arquivos, 83 deles
+fora de `marketing/`**. Entre eles:
+
+- **`apps/docs/docs/pricing/index.mdx:45` — `| Bazel / Buck2 / Pants integration | ✓ | ✓ |
+  ✓ | ✓ | ✓ |`: checkmark de Buck2 em TODOS os tiers, na página de preços.** É a promessa
+  no ponto exato da decisão de compra.
+- `apps/docs/docs/reference/reapi/index.mdx:11`; `apps/docs/docs/intro.md:12` e `:16`
+  (*"Teams running Bazel or Buck2"* como público a quem o produto serve);
+  `apps/docs/docs/how-to/migrate/index.mdx:39`; `apps/docs/docs/how-to/index.mdx:39`
+  (*"Integrate CoreLink with Buck2 remote cache — `.buckconfig`"*, como se fosse um
+  how-to existente); `README.md:300`.
+- **E o site se autocontradiz:** `apps/docs/docs/tutorial/04-buck2-quickstart.mdx:10` diz
+  corretamente *":::warning Buck2 is not yet supported"*. A verdade já está publicada, na
+  mesma pasta, e não alcançou a página de preços.
+
+O item volta a `status: open` com a polaridade `open` restaurada, e o `verify` deixa de
+ancorar só em `marketing/`. O texto já corrigido **fica** — o `verify` protege-o contra
+regressão. Reparo restante: estender o diff a `apps/docs/**` e ao `README.md`, começando
+pela linha de preços.
 
 ```backlog
 id: B-094
 repo: corelink-server
 owner: owner
-status: done
+status: open
 verify: |
   bash -c 'b=crates/corelink-container/src/routes/bazel_v2.rs
-  [ -f "$b" ] || { echo "FALHA: bazel_v2.rs sumiu — o reparo nao pode ser verificado."; exit 1; }
-  admite=0; grep -qi "Buck2 cannot use these routes" "$b" && admite=1
-  [ "$admite" = 1 ] || { echo "FALHA: o codigo nao admite mais que Buck2 nao conecta — reavalie: o gRPC pode existir agora, e ai o material deve VOLTAR a prometer."; exit 1; }
-  corpus=$(grep -rliE "buck2|grpc" marketing/ 2>/dev/null | wc -l | tr -d " ")
-  [ "$corpus" -gt 10 ] || { echo "FALHA: so $corpus arquivo(s) de marketing mencionam buck2/grpc — o comando perdeu o corpus e nao pode concluir ausencia."; exit 1; }
-  ressalva=$(grep -rliE "no gRPC ingress|gRPC-only|serves no gRPC|has no gRPC|REST-only|not supported today" marketing/ 2>/dev/null | wc -l | tr -d " ")
-  [ "$ressalva" -gt 10 ] || { echo "FALHA: so $ressalva arquivo(s) de marketing carregam a ressalva de gRPC ausente — o reparo regrediu."; exit 1; }
-  frases=$(grep -rlE "REAPI-compatible \\(Bazel|Bazel, Buck2, and (RBE|Remote Build Execution)|Bazel, Buck2, Cargo|drop into any Bazel, Buck2|REAPI-compatible for Bazel|Bazel / Buck2 configurations work" marketing/ 2>/dev/null | wc -l | tr -d " ")
-  [ "$frases" = 0 ] || { echo "FALHA: $frases arquivo(s) voltaram a prometer Buck2 como cliente suportado — o reparo regrediu."; exit 1; }
-  echo "done: $corpus arquivos citam buck2/grpc, $ressalva carregam a ressalva, e nenhuma das frases de promessa retirada voltou"'
+  [ -f "$b" ] || { echo "FALHA: bazel_v2.rs sumiu — o item nao pode ser verificado."; exit 1; }
+  grep -qi "Buck2 cannot use these routes" "$b" || { echo "FALHA: o codigo nao admite mais que Buck2 nao conecta — reavalie: o gRPC pode existir agora, e ai o material deve VOLTAR a prometer."; exit 1; }
+  corpus=$(grep -rliE "buck2|grpc" --include="*.md" --include="*.mdx" --include="*.html" marketing/ apps/docs/ README.md 2>/dev/null | wc -l | tr -d " ")
+  [ "$corpus" -gt 20 ] || { echo "FALHA: so $corpus arquivo(s) do corpus citam buck2/grpc — a varredura perdeu o corpus e nao pode concluir ausencia."; exit 1; }
+  ressalva=$(grep -rliE "no gRPC ingress|gRPC-only|serves no gRPC|has no gRPC|REST-only|not supported today|not yet supported" marketing/ apps/docs/ 2>/dev/null | wc -l | tr -d " ")
+  [ "$ressalva" -gt 10 ] || { echo "FALHA: so $ressalva arquivo(s) carregam a ressalva de gRPC ausente — o reparo JA FEITO regrediu."; exit 1; }
+  reg=$(grep -rlE "REAPI-compatible \(Bazel|Bazel, Buck2, and (RBE|Remote Build Execution)|Bazel, Buck2, Cargo|drop into any Bazel, Buck2|REAPI-compatible for Bazel|Bazel / Buck2 configurations work" marketing/ 2>/dev/null | wc -l | tr -d " ")
+  [ "$reg" = 0 ] || { echo "FALHA: $reg arquivo(s) de marketing voltaram a prometer Buck2 como cliente suportado — o reparo JA FEITO regrediu."; exit 1; }
+  precos=apps/docs/docs/pricing/index.mdx
+  [ -f "$precos" ] || { echo "FALHA: a pagina de precos sumiu — o comando perdeu o pior caso e nao pode concluir."; exit 1; }
+  res=$(grep -rliE "buck2" --include="*.md" --include="*.mdx" apps/docs/docs/ README.md 2>/dev/null | wc -l | tr -d " ")
+  if [ "$res" -gt 0 ]; then
+    echo "aberto: os 20 arquivos de marketing/ estao corrigidos, mas a SUPERFICIE PUBLICADA segue vendendo Buck2 em $res arquivo(s) de apps/docs/docs/ + README.md — incluindo o checkmark de todos os tiers em $precos:45, enquanto tutorial/04-buck2-quickstart.mdx diz que Buck2 nao e suportado. Estender o diff a apps/docs/** e ao README."
+    exit 0
+  fi
+  echo "FALHA: nenhum arquivo de apps/docs/docs/ ou do README cita mais Buck2 — a razao restante deste item acabou. Feche B-094 (status: done) com verify de polaridade INVERTIDA."
+  exit 1'
 verify-means: |
-  done — polaridade INVERTIDA em relação à versão `open`. Deixar a polaridade `open`
-  passaria no PR do reparo e vermelharia o merge seguinte.
+  open — e a polaridade voltou a ser `open` **de propósito**, revertendo um `done`
+  prematuro. O defeito do fechamento anterior não foi o texto (que está correto), foi o
+  **alcance do portão**: o item se chama "material **publicado**" e o `verify` varria
+  `marketing/`, deixando de fora `apps/docs/` — o site que o cliente de fato lê. Medido:
+  **244 menções a Buck2 em 115 arquivos, 83 fora de `marketing/`.**
 
-  A primeira metade é herdada e continua sendo o **âncora do item**: se o `bazel_v2.rs`
-  parar de admitir que Buck2 não conecta, o gRPC pode ter passado a existir — e nesse caso
-  o material comercial deve VOLTAR a prometê-lo. O comando falha para forçar a releitura
-  em vez de silenciosamente aprovar um material que virou pessimista demais.
+  O comando tem três papéis, e vale distingui-los:
 
-  As duas metades do meio são **controle do instrumento**, e existem porque as três
-  varreduras deste item podem devolver vazio por motivos opostos: exigem que o corpus de
-  `marketing/` ainda cite `buck2`/`grpc` em mais de 10 arquivos, e que mais de 10 arquivos
-  carreguem a ressalva ("no gRPC ingress" / "gRPC-only" / "REST-only" / "not supported
-  today"). Deletar o diretório `marketing/` satisfaria qualquer teste de ausência
-  sozinho; aqui ele falha.
+  1. **Âncora do item** (herdada): se o `bazel_v2.rs` parar de admitir que Buck2 não
+     conecta, o gRPC pode ter passado a existir — e nesse caso o material deve VOLTAR a
+     prometê-lo. O comando falha para forçar a releitura, em vez de aprovar em silêncio um
+     material que virou pessimista demais. Esse é o sentido inverso, e ele é real.
+  2. **Protege o reparo já feito**: se as frases de promessa retiradas voltarem a
+     `marketing/`, ou se a contagem de arquivos com a ressalva cair, fica vermelho mesmo
+     com o item `open`.
+  3. **Mede o resíduo**: enquanto `apps/docs/docs/` ou o `README.md` citarem Buck2, o item
+     é `open` e o comando sai `exit 0`. Quando chegar a zero, fica **vermelho** mandando
+     fechar com polaridade invertida.
 
-  A última metade gateia as **frases de promessa efetivamente retiradas**, uma a uma, e
-  não a palavra "Buck2". Isso é deliberado: como o `verify-means` da versão `open` já
-  previa, sobram menções legítimas — e eu as li, uma por uma, em vez de reescrever o
-  comando para ignorá-las.
+  As contagens de corpus e a exigência de que a página de preços exista são **controle do
+  instrumento**: deletar `apps/docs/` satisfaria qualquer teste de ausência sozinho; aqui
+  falha.
 
-  As menções que ficaram, e por que ficam:
+  O que NÃO decide, e admito, em cinco pontos:
 
-  - `marketing/corelink-feature-catalog.html:255-262` — o card "gRPC REAPI v2
-    host-server" está rotulado `data-status="near-ready"`, "not yet mounted", "NOT merged
-    into the container router today", e cita o arquivo que o implementa
-    (`crates/corelink-reapi/src/handler.rs`) e a ausência dele na lista de mount do
-    `routes.rs`. É roadmap corretamente rotulado, que é exatamente o caso que a versão
-    `open` mandava fechar com nota.
-  - `marketing/sales/API-STABILITY-FAQ.md:176-183` — a menção é a PERGUNTA, respondida
-    com "We don't offer a gRPC transport … REAPI v2 é servido REST-only".
-  - `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md:142-152` — três seções explícitas de
-    "not supported today" para BES, Buck2 e Pants, com a razão técnica.
-  - Listas de público-alvo, nomes de comunidade, métricas de menção na imprensa,
-    descrições de concorrente (`bazel-remote` atende Bazel e Buck2 — verdade sobre ELE),
-    e o rádio de formulário que pergunta a ferramenta do PROSPECT. Nenhuma é promessa
-    de capacidade.
-
-  O que NÃO decide, e admito, em três pontos:
-
-  1. Se um servidor gRPC existe no workspace. Mantenho a recusa medida da versão `open`:
+  1. **Paráfrase.** O portão mede as formulações medidas, não a ideia. Um texto que
+     prometa compatibilidade com "qualquer cliente REAPI" sem escrever "Buck2" passa. A
+     defesa real é revisão humana.
+  2. **A metade `apps/docs/` do resíduo é medida, não triada.** As 83 posições não foram
+     lidas uma a uma; algumas serão legítimas (o próprio
+     `tutorial/04-buck2-quickstart.mdx`, que diz que Buck2 NÃO é suportado, está entre
+     elas). O comando as conta como resíduo de propósito: conta a favor de manter o item
+     aberto, nunca a favor de fechá-lo.
+  3. Se um servidor gRPC existe no workspace. Mantenho a recusa medida da versão original:
      grepar `tonic` casa os comentários que dizem que ele NÃO está lá, e `tonic` é
      dependência real de duas crates; grepar `Server::builder()` casa o middleware de
      timing-padding do axum. Continuo gateando na admissão do código.
-  2. Se o material comercial já circulou na forma antiga. Fora do repositório.
-  3. As afirmações NÃO relacionadas a gRPC que sobrevivem nos mesmos arquivos —
-     notadamente "three lighthouse customers attested" no
-     `marketing/launch/SOCIAL/TWITTER-THREAD.md:83` e no comunicado. São de [B-088] e de
-     itens ainda não escritos; este item não as tocou.
+  4. Se o material comercial já circulou na forma antiga. Fora do repositório.
+  5. As afirmações NÃO relacionadas a gRPC nos mesmos arquivos — *"three lighthouse
+     customers attested"* no `TWITTER-THREAD.md:83` e no comunicado. São de [B-088].
 
   Owner: material comercial.
 last-verified: 2026-08-31
