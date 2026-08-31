@@ -36,8 +36,8 @@ provisioned with `locationHint=enam` — Eastern North America — and the CAS
 binding for the `prod-sam` environment points at `corelink-cas-prod`, the US
 bucket (`wrangler.toml`, `[[env.prod-sam.r2_buckets]]`).
 
-Because of exactly this, `sam` is **excluded from the provisionable set at
-signup** (`worker/src/region-map.ts`, `PROVISIONED_MACROS`), with the reason
+Because of exactly this, `sam` is **excluded from the set of regions that can be
+provisioned at signup** (`worker/src/region-map.ts`, `PROVISIONED_MACROS`), with the reason
 stated in the code: its data *"would mis-land in US R2 under a false residency
 label."* Signup rejects `sam` rather than accepting a tenant it cannot honour.
 
@@ -78,7 +78,7 @@ The authoritative list is `PROVISIONED_MACROS` in `worker/src/region-map.ts`.
 
 CoreLink processes Brazilian personal data **outside Brazil**, in the US and the
 EU. That is an international transfer under LGPD Art. 33, and it must be handled
-on a transfer basis — not represented as "no transfer occurred".
+on a transfer basis, not represented as though no transfer had occurred.
 
 The basis CoreLink relies on is Art. 33, V (contractual necessity) together with
 the standard clauses in the DPA (`legal/dpa/`), for every category of data:
@@ -116,7 +116,7 @@ Region choice happens at signup. `sam` and `afr` are rejected there.
 **There is no self-service region-migration endpoint served today.** The earlier
 version of this page told customers to `POST /v1/admin/tenant/region-migration`
 and described a 30-day cooldown and dual Privacy-Officer + Compliance approval
-"enforced at the API level, not just procedurally". That path is a design
+"enforced at the API level, not just procedurally." That path is a design
 documented in `crates/corelink-privacy/src/residency/migration.rs` — a crate
 that is **not in the dependency tree of the shipped `corelink-server` binary**
 (`cargo tree -p corelink-server --edges normal` does not reach it). The route is
@@ -144,7 +144,7 @@ There **is** a served, fail-closed residency guard, and it works in two layers:
   with zero storage I/O on the reject path
   (`crates/corelink-container/src/routes/residency.rs`, wired at
   `crates/corelink-container/src/routes.rs:1063`). A mismatch — or a header
-  naming an unprovisioned macro such as `afr` — is rejected.
+  naming a macro region that is not provisioned, such as `afr` — is rejected.
 
 Two corrections to what the earlier text said about this:
 
@@ -152,7 +152,7 @@ Two corrections to what the earlier text said about this:
   `451 Unavailable for Legal Reasons` with a `legal_residency_violation` body.
   There is no `451` anywhere in `worker/src/`; the 451 mapping is defined in
   `crates/corelink-privacy/src/residency/error.rs`, in the unlinked crate of §3.
-- The hostname pattern was wrong. Production hostnames are flat: the `prod-sam`
+- The hostname pattern was wrong. Every production host name is flat: the `prod-sam`
   route is `sam.corelink-api.humangr.com` (`wrangler.toml`), not
   `<tenant_id>.<region>.corelink.humangr.com`.
 
@@ -230,8 +230,8 @@ failures over a sustained window). When the region is judged degraded:
 
 There is no dual approval on that path, no `legal_emergency` event, and no
 30-day cooldown. It is automatic, and it is a read served from a sibling
-region's storage. The sibling pairs are WNAM↔ENAM and WEUR↔SAM; the APAC colos
-have no sibling, so the layer is inert there.
+region's storage. The sibling pairs are WNAM↔ENAM and WEUR↔SAM; each APAC colo
+has no sibling, so the layer is inert there.
 
 If your transfer analysis depends on a `weur` tenant's reads never being served
 from outside the EU, **this is the mechanism to assess**, and you should raise it
