@@ -77,9 +77,14 @@ presents it afterwards:
 mutate body. The served admin plane accepts exactly two `op_kind` values —
 `set_tenant_tier` and `rotate_admin_token` (`admin.rs:1056-1071`). The
 `AdminOpType` variants named further down this page (`ConfigRollback` and
-siblings) belong to the internal ops plane (`crates/corelink-ops`,
-`crates/corelink-dual-approval`), which the served container does not
-depend on and does not expose over HTTP.
+siblings) are **not served by this handler**. The type lives in
+`crates/corelink-dual-approval`, which *is* reachable from
+`corelink-server` in the dependency graph — but only under
+`cargo tree --target all`: the edge is `wasm32`-gated
+(`crates/corelink-clerk-cf/Cargo.toml:108`). It therefore does not enter
+the container binary, which builds for `x86_64-unknown-linux-gnu` —
+a target `Dockerfile:182` reaches **by absence of `--target`**, so
+searching that file for the triple finds nothing.
 
 ---
 

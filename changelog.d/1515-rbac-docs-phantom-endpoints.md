@@ -17,9 +17,14 @@
   cerca de código ilustrativa em `explanation/rbac/role-catalog.mdx` (× 4
   locales), que os censos por tabela não olhavam. Aquele fluxo era ficção em
   três eixos: a rota não existe, o campo chama-se `op_kind` (não `op_type`,
-  `admin.rs:719`), e `ConfigRollback` é variante de `AdminOpType` do plano
-  interno (`corelink-ops` / `corelink-dual-approval`), do qual o contêiner
-  servido **não depende**. O fluxo foi reescrito contra o que `admin.rs`
+  `admin.rs:719`), e `ConfigRollback` é variante de `AdminOpType` que o handler
+  **não serve**. O tipo vive em `corelink-dual-approval`, que *está* no grafo
+  a partir do `corelink-server`, mas **só sob `cargo tree --target all`**: a
+  aresta é `wasm32`-gated (`corelink-clerk-cf/Cargo.toml:108`), logo não entra
+  no binário do contêiner, que constrói para `x86_64-unknown-linux-gnu` — alvo
+  a que o `Dockerfile:182` chega **por ausência de `--target`**. O `cargo tree`
+  no alvo do contêiner responde `warning: nothing to print`, que é o
+  **resultado** correto, não um erro. O fluxo foi reescrito contra o que `admin.rs`
   serve de fato: `POST /v1/admin/approve` primeiro (rota própria,
   `admin.rs:129`, com credencial DIFERENTE da do mutate, `admin.rs:1079-1081`),
   depois `POST /v1/admin/mutate` apresentando o mesmo `approval_id`. Censo
