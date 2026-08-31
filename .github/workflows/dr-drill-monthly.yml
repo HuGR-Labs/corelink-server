@@ -4,7 +4,12 @@ concurrency:
   # Escopo por ref. Grupo CONSTANTE torna o grupo repo-global: duas execucoes
   # `workflow_dispatch` deste mesmo workflow em branches DIFERENTES cancelam uma
   # a outra. Foi o que matou tres dispatches em 2026-08-31.
-  group: "ci-dr-drill-monthly-cycle-1-quarterly-${{ github.event.pull_request.number || github.ref }}"
+  # Escopo por EVENTO tambem (B-137): `schedule` e `workflow_dispatch` resolvem
+  # `github.ref` para o MESMO `refs/heads/main`, entao sem o `github.event_name`
+  # um dispatch manual CANCELA a execucao agendada em voo — e a noturna nao fica
+  # vermelha, fica AUSENTE, sem ninguem saber. Push novo no mesmo PR continua
+  # cancelando o proprio run velho: mesmo evento, mesmo ref.
+  group: "ci-dr-drill-monthly-cycle-1-quarterly-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}"
   cancel-in-progress: true
 
 # Runs DR drill cycle 1 (CF region failover) quarterly against STAGING ONLY.
