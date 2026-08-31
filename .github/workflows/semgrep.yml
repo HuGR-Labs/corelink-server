@@ -64,7 +64,7 @@ concurrency:
 jobs:
   semgrep:
     name: Semgrep scan
-    # macOS self-hosted fleet. The previous `runs-on: [self-hosted, Linux, X64]`
+    # Ephemeral Cloudflare fabric. The previous `runs-on: [self-hosted, Linux, X64]`
     # matched ZERO runners after the 2026-05-31 macOS-only cutover (the same
     # fault class the actionlint fix closed), so the job hung pending forever;
     # and the dead `returntocorp/semgrep@sha256:000…0` placeholder image + the
@@ -75,14 +75,59 @@ jobs:
     # `actions/setup-python`, whose RUNNER_TOOL_CACHE provisioning is unwritable
     # on the fleet. (2026-06-02)
     #
-    # 2026-08-31 — the `runs-on:` was the ONE line left behind by that rewrite.
-    # The step body above was already ported to the macOS fleet (no docker, no
-    # container:, host python3/pip3), but the runner label still read
-    # `ubuntu-latest`, so every dispatch since 2026-08-24 asked for a hosted box
-    # that billing will not grant. That is the whole of this lane's 388-run /
-    # 0-success record — nothing in the job body needed to change. Repointed to
-    # the fleet the body was written for.
-    runs-on: [self-hosted, mac, corelink-builder]
+    # 2026-08-31 (#1475, WP-E) — the `runs-on:` was the ONE line left behind by
+    # that rewrite, and it is repointed here. But the 388-run / 0-success record
+    # is NOT one story, and an earlier draft of this comment got it wrong in a
+    # way worth leaving on the record, because the wrong version predicts a lane
+    # that goes green and the right one predicts a lane that fails on its first
+    # dispatch. Measured against the run history, the 0/388 has TWO historical
+    # causes and neither is "billing will not grant a hosted box":
+    #
+    #   1. Dead label + placeholder image (346 of the 388 runs). `ubuntu-latest`
+    #      only entered this file on 2026-06-19 (3b21a297, #389), so the
+    #      MAJORITY of the record predates the label entirely: those runs asked
+    #      for `[self-hosted, Linux, X64]` — matching zero runners — and/or the
+    #      `returntocorp/semgrep@sha256:000…0` placeholder image.
+    #   2. In the `ubuntu-latest` era the lane DID get a hosted runner and
+    #      failed INSIDE the scan. Run 31365335113 (2026-08-10) reports
+    #      `runner_name: "GitHub Actions 1000003886"`, ran 6m35s, and ended:
+    #      `Ran 474 rules on 6345 files: 4228 findings (4228 blocking)` — with
+    #      `--error`, that is exit 1. Same signature in 29481995796 and
+    #      30801766782. A second, independent failure follows it: the SARIF
+    #      upload needs Advanced Security enabled for code scanning, and it is
+    #      not.
+    #
+    # So repointing `runs-on:` is necessary and not sufficient: the FIRST green
+    # dispatch also needs the 4228 blocking findings triaged and an `--error`
+    # policy decision. That is tracked as a backlog item, not fixed here.
+    #
+    # Temporal note, stated the way it measures: this lane has not executed
+    # since 2026-08-10, and its `on:` block is `workflow_dispatch` ONLY (the
+    # `schedule:` has been commented out since 2026-08-10). Nothing dispatches
+    # it on a clock.
+    #
+    # 2026-08-31 (WP-CI) — the DESTINATION is the half that needed synthesis.
+    # #1475 sent it to `[self-hosted, mac, corelink-builder]`, which is the
+    # owner's Mac: the same machine that hit load average 234 and 95% disk on
+    # 2026-08-30, and the machine this campaign exists to empty. Stated
+    # precisely — because the `on:` block above is `workflow_dispatch` ONLY,
+    # NEITHER destination generates automatic load; nothing schedules this scan.
+    # The choice is therefore about where a ~20-minute multi-rulepack scan lands
+    # WHEN someone dispatches it, and about not building a new dependency on the
+    # Mac in the campaign whose whole purpose is to remove them.
+    #
+    # `corelink` runs it and the Mac does not have to. The body's two real
+    # requirements are met there and were measured, not assumed:
+    #   - "no docker": the fleet has no daemon, which is precisely why the
+    #     container: form was dropped — the constraint is satisfied, not fought.
+    #   - python3: 3.12.3 is baked into the image, and the install step below
+    #     builds its OWN venv (`python3 -m venv .semgrep-venv`) and then uses
+    #     that venv's pip. It never calls a host `pip3` — so the older comment's
+    #     "host python3/pip3" overstated the dependency. `python3-venv` is an
+    #     apt package in the runner image, so the venv resolves.
+    # No `actions/setup-python` either way: RUNNER_TOOL_CACHE is unset on both
+    # self-hosted fleets and the action dies on an unwritable path.
+    runs-on: corelink
     timeout-minutes: 20
 
     # Skip duplicate runs on dependabot push events (PR already covers them).
@@ -96,9 +141,16 @@ jobs:
       - name: Run Semgrep (bundled rulesets + CoreLink custom pack)
         id: semgrep
         shell: bash
-        # Semgrep 1.164.0 installed via the host pip3 into a throwaway venv (no
-        # Docker, no setup-python). Pinned per HIGH_RISK FF-HR-005 + ADR-S12-045
-        # §6 — bump only via ADR + Security review (§14.s12.004.1).
+        # Semgrep 1.164.0 installed into a throwaway venv (no Docker, no
+        # setup-python). Read off the `run:` block below, which is the only
+        # authority here: the host `python3` is resolved with `command -v` and
+        # used for exactly ONE thing — `python3 -m venv .semgrep-venv`. After
+        # `source .semgrep-venv/bin/activate`, every install goes through THAT
+        # venv's own pip (`python -m pip install …`). No host `pip3` is ever
+        # invoked; the only host dependency is `python3` plus the `python3-venv`
+        # apt package baked into the runner image. Pinned per HIGH_RISK
+        # FF-HR-005 + ADR-S12-045 §6 — bump only via ADR + Security review
+        # (§14.s12.004.1).
         #
         # The `--config` flags mirror the former SEMGREP_RULES list: bundled
         # rulepacks first, the repo-local CoreLink pack LAST (local wins
