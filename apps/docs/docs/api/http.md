@@ -13,12 +13,7 @@ All endpoints require HTTPS. HTTP is not accepted.
 
 ## Authentication
 
-Most requests must carry an `Authorization: Bearer <PAT>` header. The
-customer PAT-issuance POST is the browser exception: the dashboard sends an
-edge-validated Clerk session cookie (`__session`), while CLI callers may use a
-canonical PAT for compatibility. The Worker resolves the tenant from the
-credential and strips the Clerk JWT before forwarding to the tenant Durable
-Object; clients never provide a tenant id.
+Every request must carry a `Authorization: Bearer <PAT>` header.
 
 ```bash
 curl --silent --config - <<EOF
@@ -27,10 +22,7 @@ header = "Authorization: Bearer ${CORELINK_PAT}"
 EOF
 ```
 
-No other authentication scheme (Basic, API key header, query param) is accepted.
-For `POST /v1/pats` (and its dashboard alias `POST /v1/customer/keys`), use a
-validated Clerk session cookie for browser traffic or a canonical PAT for CLI
-traffic. Missing or malformed authentication is rejected with `401`.
+No other authentication scheme (Basic, API key header, query param) is accepted. If the header is missing or malformed, the API returns `401`.
 
 ## Endpoints
 
@@ -149,7 +141,7 @@ curl -s https://corelink-api.humangr.com/api/health
 
 ---
 
-### PAT issuance (`POST /v1/pats`)
+### PAT management (`GET`/`POST /v1/customer/keys`, `POST /v1/customer/keys/:pat_id/revoke`)
 
 This live self-service route issues an additional tenant-scoped PAT. Browser
 callers authenticate with a validated Clerk session cookie; CLI callers may
@@ -164,12 +156,21 @@ or unavailable limiter state fails closed with `503`. Listing is
 `DELETE /v1/pats/{pat_id}` operations remain planned, and are not aliases for
 the dashboard route.
 
-Error media types depend on the layer. A `401` rejected by the edge Worker
-uses the JSON `{error, message, request_id}` envelope. A request that reaches
-the customer handler uses `text/plain` for its `400/401/403/429/500/503`
-responses. Invalid or ungrantable `admin`/`owner` scope requests are handler
-`401`, not `422`; a read-only caller requesting a write credential is `403`.
-Rate-limited responses include `Retry-After`.
+The exact customer-portal shapes are:
+
+- `GET /v1/customer/keys` → `{ "pats": [ … ], "byok": { … } }`. Metadata only.
+- `POST /v1/customer/keys` with `{ "name": "...", "scopes": [ … ] }` → `201
+  { "pat": { … }, "token": "…" }`. The token is shown once.
+- `POST /v1/customer/keys/:pat_id/revoke` → `200 { "pat": { … } }`. Revocation
+  is a POST to a sub-path, **not** a `DELETE` on the token.
+
+All three are admin-grade operations on the tenant's credentials and require a
+cache-write capability; a read-only (`cas:r`) token gets `403` for each. A
+read-only token also cannot mint a write-scoped token for itself.
+
+An admin-only, read-only surface exists for support to inspect a tenant's PATs
+(`GET /v1/admin/tenants/{tenant_id}/pats`); it requires an admin PAT and is not
+something a regular customer token can call.
 
 ---
 
@@ -186,9 +187,7 @@ Rate-limited responses include `Retry-After`.
 | `429 Too Many Requests` | `rate_limited` | Request rate exceeded | Back off and retry; see `Retry-After` header |
 | `503 Service Unavailable` | `audit_closed` | Tenant's audit period is closed — writes temporarily suspended | Contact support; reads still work |
 
-REAPI and customer endpoints other than PAT issuance normally use this JSON
-shape. PAT issuance is the documented layer exception described above: edge
-errors are JSON, while handler errors are `text/plain`.
+All error responses share this shape:
 
 ```json
 {

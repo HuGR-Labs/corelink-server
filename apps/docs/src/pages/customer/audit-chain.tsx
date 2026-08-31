@@ -13,7 +13,7 @@
  *       (wave-19 `apps/server/src/routes/audit_analytics.rs`)
  *   - `GET /v1/audit/analytics/timeline?from=&to=&granularity=`
  *       (wave-19 ibid.)
- *   - `GET /v1/audit/export?from=&to=`
+ *   - `GET /v1/audit/{tenant}/export?from=&to=`
  *       (wave-15 + wave-18 streaming + wave-19 schema lift —
  *        `apps/server/src/routes/audit_export.rs`, commit `3d835cb`)
  *
@@ -130,7 +130,7 @@ function formatBytes(n: number): string {
  * Probe the chain-head anchor + analytics for the selected window.
  *
  * Strategy: issue a `Range: bytes=0-0`-style HEAD via `fetch` with method
- * `HEAD` against `/v1/audit/export` to recover the
+ * `HEAD` against `/v1/audit/{tenant}/export` to recover the
  * `X-CoreLink-Audit-Export-Chain-Head-Anchor` response header without
  * downloading the NDJSON body. Then issue parallel GETs against the
  * event-count + timeline analytics endpoints.
@@ -145,7 +145,11 @@ async function probeChain(
   const auth = `Bearer ${token}`;
   const tenantHeader = { "x-tenant-id": tenantId } as const;
 
-  const exportUrl = `/v1/audit/export?from=${fromMs}&to=${toMs}`;
+  // The served route carries the tenant as a PATH segment
+  // (`crates/corelink-container/src/routes/audit_export/types.rs:20`
+  //  = `/v1/audit/{tenant}/export`). This used to omit it and 404 after
+  // authenticating; `tenant` as a query param was never a served shape.
+  const exportUrl = `/v1/audit/${encodeURIComponent(tenantId)}/export?from=${fromMs}&to=${toMs}`;
   const eventCountUrl = `/v1/audit/analytics/event-count?from=${fromMs}&to=${toMs}`;
   const timelineUrl = `/v1/audit/analytics/timeline?from=${fromMs}&to=${toMs}&granularity=${granularityMs}`;
 
@@ -283,13 +287,16 @@ function AuditChainViz(): ReactElement {
       return;
     }
     const token = await shell.getToken();
-    if (!token) {
+    if (!token || !shell.tenantId) {
+      // The tenant is now load-bearing, not decorative: it is a PATH segment
+      // of the served route, so we cannot fall back to `?? ""` and still get a
+      // real URL. No tenant => no export, said out loud.
       setShellMissing(true);
       return;
     }
     // Triggers the wave-18 true-streaming NDJSON path. The browser handles
     // the response as a download via Content-Disposition (set by the route).
-    const url = `/v1/audit/export?from=${fromMs}&to=${toMs}`;
+    const url = `/v1/audit/${encodeURIComponent(shell.tenantId)}/export?from=${fromMs}&to=${toMs}`;
     // We use a temporary anchor with `download` so the bearer + tenant
     // header still flow via a fetch-then-blob round-trip; a direct `<a>`
     // cannot inject Authorization headers.
@@ -298,7 +305,7 @@ function AuditChainViz(): ReactElement {
         method: "GET",
         headers: {
           authorization: `Bearer ${token}`,
-          "x-tenant-id": shell.tenantId ?? "",
+          "x-tenant-id": shell.tenantId,
           accept: "application/x-ndjson",
         },
         credentials: "omit",

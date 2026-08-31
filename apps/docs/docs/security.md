@@ -9,14 +9,16 @@ description: PAT lifecycle, scopes, rotation policy, audit log, and the INV-TENA
 
 ## PAT lifecycle
 
-Personal Access Tokens (PATs) are the only programmatic credential type CoreLink accepts; browser customer flows also use validated Clerk sessions. Understanding their lifecycle is critical for operating securely.
+Personal Access Tokens (PATs) are the only credential type CoreLink accepts. Understanding their lifecycle is critical for operating securely.
 
 ### Creation
 
 PATs are created in two places:
 
-1. **Sign-up wizard** — issues a starter PAT with `cas:read cas:write ac:read ac:write` scopes automatically. This is one of the two live PAT-creation paths.
-2. **Self-service PAT issuance** (`POST /v1/pats`, creating additional PATs with a custom scope subset) is live. Browser callers use a validated Clerk session; CLI callers may use a canonical PAT for compatibility. The tenant is derived server-side and the plaintext is returned exactly once.
+1. **Sign-up wizard** — issues a starter PAT with `cas:read cas:write ac:read ac:write` scopes automatically.
+2. **Self-service PAT issuance** — the **Keys** page in the dashboard, backed by [`POST /v1/customer/keys`](./reference/api/endpoints/post-v1-customer-keys.mdx). Send `{"name": "...", "scopes": ["cas:r", "cas:rw"]}` and the response carries the new token once.
+
+   Minting a token that holds any write or admin scope requires the caller to already hold a cache-write capability — a read-only (`cas:r`) token cannot mint itself a write token, and gets `403`.
 
 At creation time, the plaintext token is displayed **exactly once**. CoreLink never stores the plaintext. There is no retrieval endpoint.
 
@@ -40,7 +42,8 @@ CoreLink does not serve HTTP. All API traffic uses TLS 1.2 or TLS 1.3. HTTPS is 
 
 ### Rotation
 
-PATs have no automatic rotation. Recommended rotation cadence for self-service-issued PATs:
+PATs have no automatic rotation. Recommended rotation cadence once
+self-service issuance ships:
 
 | PAT type | Cadence |
 |---|---|
@@ -48,15 +51,22 @@ PATs have no automatic rotation. Recommended rotation cadence for self-service-i
 | CI/CD | 90 days or on team change |
 | Integration (shared) | 30 days |
 
-**Self-service PAT issuance (`POST /v1/pats`) and the dashboard alias (`POST /v1/customer/keys`) are live. Both share the `pat-issue` per-tenant policy: burst 10 and refill 10/hour (one token every 360 seconds), enforced before mint and audit. A `429` includes `Retry-After`. Revocation is available through the dashboard route `POST /v1/customer/keys/{pat_id}/revoke`; public `DELETE /v1/pats/{pat_id}` remains planned.
+Rotation is self-service: mint the replacement on the **Keys** page, cut your
+clients over, then revoke the old token from the same page.
 
 ### Revocation
 
-The dashboard revocation route `POST /v1/customer/keys/{pat_id}/revoke` is
-tenant-scoped and requires a write-capable caller. The public
-`DELETE /v1/pats/{pat_id}` operation is not live. Once revoked, in-flight
-requests using that PAT fail with `401` within the Cloudflare edge propagation
-window (typically < 100 ms).
+Revoke from the **Keys** page in the dashboard, or call
+[`POST /v1/customer/keys/{pat_id}/revoke`](./reference/api/endpoints/post-v1-customer-keys-by-pat_id-revoke.mdx)
+directly. Note the shape: revocation is a `POST` to a `/revoke` sub-path, not a
+`DELETE` on the token.
+
+Revoking is a destructive, tenant-wide operation, so it needs a cache-write
+capability — a read-only (`cas:r`) token cannot revoke anything, including its
+own tenant's other tokens, and gets `403`.
+
+Once revoked, in-flight requests using that PAT fail with `401` within the
+Cloudflare edge propagation window (typically < 100 ms).
 
 ## Scopes
 

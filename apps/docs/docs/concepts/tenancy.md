@@ -35,8 +35,8 @@ PATs are the only credential type CoreLink accepts for API calls. There are no A
 | Format | `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` — `<env>` is `pat` (user PAT), `ci` (CI runner token), or `ro` (read-only token) |
 | Scoped to | Exactly one tenant at issue time |
 | Shown once | Displayed in plaintext only on creation; never stored in plaintext server-side |
-| Revocable | The starter PAT and new self-service PATs are tenant-scoped. `POST /v1/pats` creates an additional PAT; use the dashboard key-management surface for listing and revocation. |
-| Expiry | Self-service PATs expire after 90 days |
+| Revocable | Yes, self-service, from the dashboard's **Keys** page or via `POST /v1/customer/keys/{pat_id}/revoke`. Minting additional PATs is `POST /v1/customer/keys`. Both require a cache-write capability — a read-only (`cas:r`) token can do neither |
+| Expiry | Optional; set at creation time; defaults to non-expiring |
 
 ### PAT scopes
 
@@ -54,10 +54,10 @@ Omitting a scope means the PAT cannot perform that operation. The starter PAT is
 
 ### CI/CD best practice
 
-Do not use your personal starter PAT in CI. Create a dedicated CI PAT through
-[`POST /v1/pats`](../reference/api/endpoints/post-v1-pats.mdx) with the minimum
-required scopes (typically `cache:read cache:write`). Self-service issuance
-never grants `admin`.
+Do not use your personal starter PAT in CI. Mint a dedicated CI PAT with the
+minimum required scopes from the dashboard's **Keys** page, or with
+`POST /v1/customer/keys` (typically
+`cas:read cas:write ac:read ac:write`, no `admin`).
 
 Store the returned token value in GitHub Actions secrets, Vault, or your secrets manager of choice.
 
@@ -88,3 +88,14 @@ every 360 seconds) before mint and audit. Its bucket is durably serialized by
 the tenant Durable Object across restarts and container replacement; malformed
 or unavailable state fails closed with `503`. A revoked PAT receives `401
 Unauthorized` on subsequent requests.
+
+Listing and revocation are self-service: `GET /v1/customer/keys` lists the
+tenant's PATs (metadata only — no token material) alongside its BYOK status,
+and `POST /v1/customer/keys/{pat_id}/revoke` revokes one. Both are admin-grade
+operations on the tenant's credentials, so both require a cache-write
+capability; a read-only (`cas:r`) token gets `403` rather than being allowed to
+enumerate or revoke its tenant's credentials.
+
+A separate admin-only read surface exists for support to inspect a tenant's
+PATs (`GET /v1/admin/tenants/{tenant_id}/pats`); it needs an admin PAT and is
+not callable with a regular customer token.

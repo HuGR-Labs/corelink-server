@@ -109,37 +109,13 @@ export async function installApiMocks(page: Page): Promise<void> {
     }
 
     // ----- PAT lifecycle -----
-    if (path === "/v1/pats" && method === "POST") {
-      return route.fulfill({
-        status: 201,
-        contentType: "application/json",
-        body: JSON.stringify({
-          pat_id: "pat_e2e_001",
-          // PAT shown once — CTRL-CRED-001 reflection.
-          token: "corelink_pat_live_E2E_DO_NOT_LEAK_abcdef0123456789",
-          scope: "read-write",
-          expires_at: "2027-05-14T00:00:00Z",
-        }),
-      });
-    }
-    if (path === "/v1/pats" && method === "GET") {
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          items: [
-            {
-              pat_id: "pat_e2e_001",
-              name: "first-pat",
-              scope: "read-write",
-              last_used: null,
-              expires_at: "2027-05-14T00:00:00Z",
-            },
-          ],
-          cursor: null,
-        }),
-      });
-    }
+    // The `/v1/pats` GET/POST mocks that used to sit here are GONE. No route in
+    // the workspace registers `/v1/pats`, so a mock answering it could only
+    // ever confirm itself — the suite would stay green against an endpoint that
+    // 404s in every environment. The served PAT surface is
+    // `/v1/customer/keys` (`crates/corelink-container/src/routes/customer.rs:212`),
+    // which `src/lib/e2e-mock-fixtures.ts` mocks against the real shape. No
+    // spec referenced the removed handlers.
 
     // ----- Consent -----
     if (path === "/v1/consent/grant" && method === "POST") {

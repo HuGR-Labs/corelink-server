@@ -57,7 +57,7 @@ corelink audit export --tenant <tenant_id> --since <ms> --until <ms> \
 
 To re-check an export you already hold, `corelink audit verify <path>`.
 
-For the streaming NDJSON envelope from `GET /v1/audit/export` — one
+For the streaming NDJSON envelope from `GET /v1/audit/{tenant}/export` — one
 `{event, proof}` line per audit row plus a trailing manifest line —
 `corelink audit verify-ndjson` re-verifies the whole chain against the
 chain-head anchor the server publishes in the
