@@ -46,7 +46,8 @@ concurrency:
 jobs:
   license-policy:
     name: cargo-license + allowlist policy gate
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): cargo + taiki-e/install-action (tool-cache da frota é gravável)
+    runs-on: corelink
     timeout-minutes: 15
     steps:
       - name: Checkout
