@@ -70,7 +70,6 @@
 1044	crates/corelink-billing/src/quota/core/check.rs
 1040	crates/corelink-container/src/routes/pip.rs
 1035	crates/corelink-byok/src/byok_gcp/real.rs
-1031	crates/corelink-container/src/storage/d1_audit_sink.rs
 1025	crates/corelink-gc/src/run.rs
 1019	crates/corelink-dsr/src/event.rs
 1010	tests/e2e-user-journeys/src/journeys/adapters.rs
