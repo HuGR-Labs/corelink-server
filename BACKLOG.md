@@ -8075,46 +8075,78 @@ verify-means: |
 last-verified: 2026-08-31
 ```
 
-### B-138 — a imagem do runner nunca foi reassada depois do `corelink-runners#523`
+### B-138 — a imagem do runner foi assada e **não coube na box que a constrói**
 
 O #1506 tira seis lanes do Mac do dono e as põe em `runs-on: corelink`, confiando que a
-imagem da frota exporta `CORELINK_NIGHTLY` — o nome do nightly datado que ela assa, conforme
-`corelink-runners#523`. O passo falha alto se a variável não existir:
+imagem da frota exporta `CORELINK_NIGHTLY`, conforme `corelink-runners#523`. O passo falha
+alto se a variável não existir, e falha desde então.
+
+A causa passou por três leituras erradas antes desta. **Não** é roll atrasado da frota,
+**não** é o `#523` incompleto, e **não** é "ninguém assou". Assaram, às 05:46:32Z, e o build
+estourou o disco oito minutos dentro:
 
 ```
-CORELINK_NIGHTLY: the runner image must export CORELINK_NIGHTLY (corelink-runners#523)
+level=fatal msg="apply layer error for corelink-spawn-worker-runnercontainer:
+  failed to extract layer sha256:3296627a…: write
+  /var/lib/containerd/…/fs/home/runner/.rustup/toolchains/
+  nightly-2026-08-31-x86_64-unknown-linux-gnu/lib/librustc_driver-….so:
+  no space left on device"
 ```
 
-A causa não é roll atrasado nem `#523` incompleto. É mais simples e pior: **ninguém assou a
-imagem.**
+O caminho que estourou é **exatamente o que o `#523` acrescentou**. A box encheu assando o
+nightly — o próprio conteúdo que o #1506 precisa.
 
-| | |
+**Isto NÃO é o [B-128].** O B-128 é o disco do Mac do dono. Aqui é `/var/lib/containerd` e
+`/opt/actions-runner` da box efêmera da frota, outra máquina. Mesma classe de defeito,
+hardware diferente — e se os dois virarem um item só, o `verify` de um passa a medir a
+máquina do outro.
+
+### O que decide o conserto, e por que ainda não está decidido
+
+Duas hipóteses substantivas. Nenhuma é "rodar de novo".
+
+**H1 — a imagem é grande demais para a box de build.** Conserto no `deploy/runner/Dockerfile`
+do repo irmão: juntar `nightly` + `llvm-tools` + `cargo-fuzz` num só layer, limpar cache do
+rustup/cargo no mesmo `RUN`, ou build multi-stage que copie só o que a lane de fuzz usa.
+
+**H2 — a box tem disco recuperável.** Se houver resíduo de builds anteriores, um `prune`
+antes do build pode bastar. Mas seria conserto que esconde o problema até a imagem crescer de
+novo, e o `build-cf-container-images.yml` **não tem passo de limpeza nenhum** hoje.
+
+**H2 depende de a box ser reusada, e sobre isso o repositório se contradiz.** Registro a
+contradição em vez de escolher o lado conveniente:
+
+| fonte | afirma |
 |---|---|
-| `corelink-runners#523` mergeado | **2026-08-31T05:04:33Z** |
-| último build **da imagem do runner** (`build-cf-container-images.yml`) | **2026-08-24T17:42:01Z** |
+| `build-cf-container-images.yml:84-85` | *"Unpoison a stale docker-shim lock (**warm-box** bootstrap) — a **warm-reused** RunnerContainer can carry a root-owned…"* |
+| texto do `corelink-runners#523` | *"…seven workflows running on boxes that are **destroyed after each job**"* |
 
-Sete dias **antes**. A imagem que a frota serve hoje é anterior ao `#523` inteiro — sem
-`nightly`, sem `llvm-tools`, sem `cargo-fuzz`. Se o #1506 entrasse assim, moveria seis lanes
-de fuzz para uma box que não as roda.
+As duas são prosa de dentro do repo, e prosa foi o que já errou duas vezes nesta
+investigação — a doc da frota sobre o tamanho da box, e o `build-fabricd-image` confundido
+com o `build-cf-container-images`. **Não decidir por elas é deliberado.**
 
-A confusão que atrasou este diagnóstico vale registro, porque é reutilizável: houve **três
-builds verdes** em `corelink-runners` depois do `#523` — 05:09, 05:20, 05:32 — mas são
-`build-fabricd-image`, que assa `deploy/fabricd`. **Outra imagem.** A do runner sai de
-`build-cf-container-images.yml` (contexto `deploy/runner`), que é `workflow_dispatch`-only.
-Nome parecido, artefato diferente. Foi por isso que duas re-execuções às 05:43:37Z e
-05:43:46Z, "depois dos builds", ainda falharam: aqueles builds não eram desta imagem.
+O único sinal direto disponível é fraco e não conclui: os três builds da imagem foram
+servidos por runners de nomes distintos (`cf-runner-9fe67af0`, `ca3c1880`, `8d4c2700`), o que
+é consistente com efêmera — mas um volume reciclado também registra nome novo a cada spawn.
 
-Build disparado às 05:46:32Z (run `33361720897`). Quando ficar verde, aí sim re-rodar o
-#1506 mede alguma coisa; antes disso o vermelho é esperado e re-rodar só queima o Mac.
+**H1, ao contrário de H2, não depende dessa pergunta.** Os builds de 2026-08-23 e 2026-08-24
+passaram; o `#523` acrescentou um toolchain nightly inteiro mais `llvm-tools` mais
+`cargo-fuzz`; o build seguinte estourou escrevendo justamente esse caminho. Mesmo uma box
+imaculada precisa caber os layers novos. Por isso H1 é o ponto de partida, e H2 só vira
+relevante se a pergunta do reuso for respondida com evidência — não com prosa.
 
-**O que este item NÃO decide:** se, depois de um build verde, a frota vai **servir** a
-imagem nova. Contêiner efêmero não troca de imagem porque um build passou — precisa do
-repin. Essa é a segunda pergunta, e ela só nasce depois da primeira ser respondida.
+Ironia útil: o Dockerfile do `#523` **imprime `du -sh` do toolchain instalado**. O build morre
+antes de chegar lá, então o número que dimensionaria H1 existe e nunca foi emitido.
 
-Enquanto isso o #1506 fica vermelho, e o vermelho é honesto: o guard novo está acusando uma
-lacuna real. O passo que ele substitui era `echo "$HOME/.rustup/toolchains/nightly-…/bin" >>
-"$GITHUB_PATH"`, que **sai 0 num diretório inexistente** e deixaria o job **verde rodando o
-`cargo` errado**. Este item existe porque o gate passou a falhar alto, não apesar disso.
+### O que fica bloqueado
+
+O #1506 **não tem caminho** enquanto isso não resolver — não é ordem de merge, é pré-condição
+inexistente. E o vermelho dele continua honesto: o guard novo acusa uma lacuna real. O passo
+que ele substitui era `echo "$HOME/.rustup/toolchains/nightly-…/bin" >> "$GITHUB_PATH"`, que
+**sai 0 num diretório inexistente** e deixaria o job **verde rodando o `cargo` errado**.
+
+**Não re-rodar o build** antes de mudar a imagem ou provar espaço recuperável: a mesma box dá
+o mesmo erro e queima oito minutos da frota.
 
 ```backlog
 id: B-138
@@ -8123,36 +8155,38 @@ owner: tl
 status: open
 verify: manual
 verify-means: |
-  manual, e **não** por falta de pergunta objetiva. A primeira pergunta agora é objetiva e
-  responder-se-ia com uma linha:
+  manual, e **não** por falta de pergunta objetiva. Todas as perguntas desta escada são
+  objetivas; nenhuma é respondível deste repositório.
 
-      gh run list --repo HuGR-Labs/corelink-runners \
-        --workflow build-cf-container-images.yml --limit 1 --json createdAt,conclusion
-
-  comparado com o `mergedAt` do `corelink-runners#523` (2026-08-31T05:04:33Z). Build verde
-  posterior = primeiro degrau vencido.
-
-  **Mas esse comando não pode virar `verify` automático**, e o motivo está escrito no próprio
-  `backlog-verify.yml`: o token do Actions é escopado a ESTE repositório. Uma consulta a
-  `corelink-runners` receberia 403 no CI e produziria um vermelho que não diz nada sobre o
-  item — a mesma razão pela qual todo item sobre repo irmão aqui é `manual`. Automatizar
-  daria a aparência de rigor com um portão que mede permissão, não realidade.
+  O token do Actions é escopado a ESTE repo — é o que o próprio `backlog-verify.yml` declara,
+  e a razão pela qual todo item sobre repo irmão aqui é manual. Uma consulta a
+  `corelink-runners` tomaria 403 no CI e produziria vermelho que **mede permissão e finge
+  medir realidade**. Isso é pior que manual, não melhor.
 
   Escada de decisão, em ordem de custo:
 
-  1. A imagem foi assada depois do `#523`? Comando acima. Se não, o item está aberto e não há
-     mais nada a medir.
-  2. Se sim, re-rodar um job de fuzz do #1506 e ler o passo `Put the baked nightly toolchain
-     on PATH`. Se `CORELINK_NIGHTLY` resolver, fecha.
-  3. Se persistir **depois** de um build verde, aí é repin/roll da frota — pergunta
-     genuinamente irrespondível deste repositório, e o item continua manual por mérito.
+  1. **O último build da imagem passou?**
+
+         gh run list --repo HuGR-Labs/corelink-runners \
+           --workflow build-cf-container-images.yml --limit 1 \
+           --json createdAt,conclusion
+
+     `--workflow` explícito de propósito: `build-fabricd-image` assa `deploy/fabricd`, outra
+     imagem, e confundir as duas foi o que produziu o diagnóstico errado de "frota atrasada
+     no roll". Enquanto a última execução for `failure` por disco, o item está aberto e não
+     há mais nada a medir.
+  2. **A box é reusada?** Só depois de responder isto por evidência direta — não pela prosa
+     do passo 4 nem pela do `#523`, que se contradizem — é que H2 entra na mesa.
+  3. **Assado com sucesso, a frota serve a imagem nova?** Contêiner não troca de imagem
+     porque um build passou; precisa do repin. Esta é a única pergunta que só nasce depois de
+     as duas primeiras estarem fechadas.
 
   **Não fechar por "o #1506 ficou verde" sozinho.** Se alguém reverter o `runs-on: corelink`
   de volta para o Mac, o PR fica verde e a frota segue sem a variável para toda lane futura
-  que dependa dela. O item é sobre a imagem, não sobre o PR.
+  que dependa dela — e agora sabe-se que ninguém consegue assar a imagem que a proveria. O
+  item é sobre a imagem, não sobre o PR.
 
-  **Não confundir `build-fabricd-image` com `build-cf-container-images`.** Foi exatamente
-  esse erro que produziu o diagnóstico errado de "frota atrasada no roll", e o comando do
-  degrau 1 é escrito com `--workflow` explícito por isso.
+  **Não fundir com o [B-128].** Aquele mede o disco do Mac do dono; este mede o disco da box
+  efêmera da frota. Um `verify` que cubra os dois mede a máquina errada em metade dos casos.
 last-verified: 2026-08-31
 ```
