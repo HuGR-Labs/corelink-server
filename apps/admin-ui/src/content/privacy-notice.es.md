@@ -42,7 +42,7 @@ Puede ejercer los derechos de acceso, rectificación, supresión, oposición,
 limitación y portabilidad reconocidos por los artículos 15–22 del RGPD y
 normas equivalentes en LATAM y EE. UU. mediante el flujo de Solicitud del
 Titular (DSR) en su cuenta o por correo electrónico a
-**privacidad@corelink.example**. Respondemos en un plazo máximo de 30 días.
+**privacy@humangr.com**. Respondemos en un plazo máximo de 30 días.
 
 ## 5. Transferencias internacionales
 
@@ -59,4 +59,4 @@ administradores.
 
 ## 7. Contacto
 
-Delegado de Protección de Datos — **dpo@corelink.example**.
+Delegado de Protección de Datos — **dpo@humangr.com**.

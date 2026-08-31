@@ -44,7 +44,7 @@ Você pode exercer os direitos de acesso, retificação, eliminação, oposiçã
 portabilidade, anonimização, informação sobre uso compartilhado e revogação de
 consentimento previstos nos artigos 18–22 da LGPD e correlatos do RGPD por
 meio do fluxo de Requisição do Titular (DSR) em sua conta ou pelo e-mail
-**privacidade@corelink.example**. Respondemos em até 15 dias (LGPD).
+**privacy@humangr.com**. Respondemos em até 15 dias (LGPD).
 
 ## 5. Transferências internacionais
 
@@ -60,5 +60,5 @@ com 30 dias de antecedência via banner no produto e e-mail aos administradores.
 
 ## 7. Contato
 
-Encarregado pelo Tratamento de Dados — **dpo@corelink.example**.
+Encarregado pelo Tratamento de Dados — **dpo@humangr.com**.
 `;
