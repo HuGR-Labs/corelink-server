@@ -5,7 +5,7 @@ description: "The container-side defense-in-depth gate that re-proves PAT posses
 source_files:
   - "crates/corelink-container/src/native_pat_gate.rs"
   - "crates/corelink-container/src/main.rs"
-checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
+checkpoint_sha: "ee065d0ff74186f615f0dd3be0a67faff3e70a6f"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path", "native-plane"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -71,8 +71,8 @@ absent in dev/CI, mandatory in prod (`crates/corelink-container/src/native_pat_g
 - In prod a `None` from the builder is a SILENT security downgrade; the container's boot path treats it
   as FATAL when prod is detected — the teeth live in `main.rs`, not this builder
   (`crates/corelink-container/src/native_pat_gate.rs:268-283`; the prod-fatal backstop is
-  `should_fatal_on_missing_gate` at `crates/corelink-container/src/main.rs:77` wired at
-  `crates/corelink-container/src/main.rs:300`).
+  `should_fatal_on_missing_gate` at `crates/corelink-container/src/main.rs:78` wired at
+  `crates/corelink-container/src/main.rs:335`).
 - The single-flight shards are a FIXED 256-entry array, not a per-token map — bounded memory by
   construction (`crates/corelink-container/src/native_pat_gate.rs:72-77`).
 
@@ -85,5 +85,5 @@ absent in dev/CI, mandatory in prod (`crates/corelink-container/src/native_pat_g
 5. `crates/corelink-container/src/native_pat_gate.rs:247-251` — the uniform 401 (no rejection oracle).
 6. `crates/corelink-container/src/native_pat_gate.rs:257-261` — SHA-256 fingerprint cache key, never the plaintext.
 7. `crates/corelink-container/src/native_pat_gate.rs:268-283` — env-gated builder; prod-fatal on a missing gate.
-8. `crates/corelink-container/src/main.rs:77` — `should_fatal_on_missing_gate` (prod && !gate_present).
-9. `crates/corelink-container/src/main.rs:300` — boot-path call site enforcing the prod-fatal backstop.
+8. `crates/corelink-container/src/main.rs:78` — `should_fatal_on_missing_gate` (prod && !gate_present).
+9. `crates/corelink-container/src/main.rs:335` — boot-path call site enforcing the prod-fatal backstop.
