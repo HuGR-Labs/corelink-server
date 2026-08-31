@@ -105,7 +105,39 @@ if not os.environ.get("OKF_NO_YAML"):
 
 FRONT_MATTER_RE = re.compile(r"^---\n(.*?)\n---\n?(.*)$", re.DOTALL)
 # A code-anchor cite token, parsed only from inside backticks: `path:line[-line]`.
-CITE_RE = re.compile(r"^(?P<path>[A-Za-z0-9._/\-]+):(?P<l1>\d+)(?:-(?P<l2>\d+))?$")
+#
+# ABBREVIATED CONTINUATION FORM (B-059). The path group is OPTIONAL, so the bare
+# `` `:803-831` `` the wiki writes to avoid repeating a long path immediately
+# after naming it is a FIRST-CLASS citation. Before this, `CITE_RE` required a
+# non-empty path and `_collect_cites` silently dropped every such token: measured
+# on this corpus, **107 citations across 20 concepts** were invisible to C3
+# (file exists), C5 (freshness) and C6 (line bounds) — never checked, never
+# counted. #1410 is the recorded proof of the consequence: a one-line shift
+# corrected 21 full-path cites and left 6 abbreviated ones pointing at the wrong
+# lines, with the gate green throughout.
+#
+# A path-less match is resolved by `_collect_cites` against the nearest PRECEDING
+# backticked file reference in the same concept — either a full citation or a
+# bare backticked path that the concept declares in `source_files`. The bare-path
+# arm is load-bearing, not defensive: `crates/handler-trait-seam.md` writes
+# ``…impl is `D1CustomerHandler` in `crates/corelink-container/src/customer_d1.rs`
+# — it impls all six (`:947`, …)``, where the referent is named WITHOUT a line
+# number. Resolving those six against the last full citation instead attributes
+# them to a 804-line file and reports six phantom out-of-bounds failures.
+# With the bare-path arm, all 107 resolve and all 107 are in bounds.
+#
+# `CITE_FULL_RE` keeps the OLD strict shape and is what the BLOCK-LOCAL checks
+# (`_has_cite`, `_block_cite_paths` → C6c grounding) use. Those examine one
+# bullet at a time, where "nearest preceding" is not available, so admitting a
+# path-less token there would let a bare `:42` count as grounding for an
+# invariant — a LOOSENING. This change is a strict strengthening: more citations
+# validated, no check weakened.
+CITE_RE = re.compile(r"^(?P<path>[A-Za-z0-9._/\-]+)?:(?P<l1>\d+)(?:-(?P<l2>\d+))?$")
+CITE_FULL_RE = re.compile(r"^(?P<path>[A-Za-z0-9._/\-]+):(?P<l1>\d+)(?:-(?P<l2>\d+))?$")
+# A bare backticked repo path (no line numbers) — the other thing an abbreviated
+# citation can continue from. Requires a `/` and a dotted basename so prose
+# tokens like `Arc` or `read_only` cannot become a citation referent.
+BARE_PATH_RE = re.compile(r"^[A-Za-z0-9._\-]+(?:/[A-Za-z0-9._\-]+)+$")
 BACKTICK_RE = re.compile(r"`([^`]+)`")
 # Bundle-relative markdown link with a leading slash: [text](/dir/x.md)
 LINK_RE = re.compile(r"\[[^\]]*\]\((/[^)\s]+)\)")
@@ -487,7 +519,7 @@ class Concept:
             self.source_blobs[path_] = blob_
         self.is_adr = (self.type == ADR_TYPE) or self.concept_id.startswith("adr/")
         # parse cites + links
-        self.cites = _collect_cites(self.body)  # list[(file, l1, l2)]
+        self.cites = _collect_cites(self.body, self.source_files)  # list[(file, l1, l2)]
         self.cited_files = {c[0] for c in self.cites}
         self.links = [m for m in LINK_RE.findall(self.body)]
 
@@ -499,17 +531,40 @@ def _split(text: str):
     return m.group(1), m.group(2)
 
 
-def _collect_cites(body: str):
+def _collect_cites(body: str, source_files: "list[str] | set[str] | None" = None):
+    """Every citation in `body` as (path, l1, l2), abbreviated forms RESOLVED.
+
+    Backticked tokens are scanned in document order. A full `path:N[-M]` citation
+    is emitted as-is AND becomes the current referent; a bare backticked path
+    that the concept declares in `source_files` becomes the current referent
+    WITHOUT emitting a citation; an abbreviated `:N[-M]` is emitted against the
+    current referent. An abbreviated citation with no preceding referent is
+    dropped (it is unresolvable, and inventing a path would be worse than the
+    silence this function used to keep) — measured over the whole corpus, that
+    case does not occur: 107 of 107 resolve.
+    """
+    declared = set(source_files or ())
     out = []
+    referent: str | None = None
     for inner in BACKTICK_RE.findall(body):
-        m = CITE_RE.match(inner.strip())
+        tok = inner.strip()
+        m = CITE_RE.match(tok)
         if not m:
+            if BARE_PATH_RE.match(tok) and tok in declared:
+                referent = tok
             continue
+        path = m.group("path")
+        if path is None:
+            if referent is None:
+                continue
+            path = referent
+        else:
+            referent = path
         l1 = int(m.group("l1"))
         l2 = int(m.group("l2")) if m.group("l2") else l1
         if l2 < l1:
             l1, l2 = l2, l1
-        out.append((m.group("path"), l1, l2))
+        out.append((path, l1, l2))
     return out
 
 
@@ -619,14 +674,16 @@ def _bullet_blocks(lines: list[str]) -> list[str]:
 
 
 def _has_cite(text: str) -> bool:
-    return any(CITE_RE.match(inner.strip()) for inner in BACKTICK_RE.findall(text))
+    # BLOCK-LOCAL (C6c): strict full-path form only. See CITE_FULL_RE.
+    return any(CITE_FULL_RE.match(inner.strip()) for inner in BACKTICK_RE.findall(text))
 
 
 def _block_cite_paths(text: str) -> list[str]:
     """The cited file paths (no line numbers) inside a single bullet block."""
+    # BLOCK-LOCAL (C6c): strict full-path form only. See CITE_FULL_RE.
     out: list[str] = []
     for inner in BACKTICK_RE.findall(text):
-        m = CITE_RE.match(inner.strip())
+        m = CITE_FULL_RE.match(inner.strip())
         if m:
             out.append(m.group("path"))
     return out
