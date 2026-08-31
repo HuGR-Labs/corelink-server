@@ -8101,6 +8101,30 @@ nightly — o próprio conteúdo que o #1506 precisa.
 hardware diferente — e se os dois virarem um item só, o `verify` de um passa a medir a
 máquina do outro.
 
+### O tamanho, que era o número que faltava
+
+O `#523` **declarou a própria lacuna** e ninguém a fechou antes de assar. Do corpo dele:
+
+> **Não mede o tamanho INSTALADO em disco.** Ninguém mediu, e eu não instalo nightly no Mac
+> do owner a 95% de disco. A build imprime `du -sh` do toolchain do nightly — **a primeira
+> build É essa medição**, e ela importa: a box tem **18 GB** de disco.
+
+A primeira build foi essa medição. Ela mediu falhando.
+
+| | |
+|---|---:|
+| download citado no `#523` (xz) | **~121 MiB** (nightly) + ~35,7 MiB (`llvm-tools`) |
+| **instalado em disco** | **680 MB** |
+| expansão | **~5,6×** |
+
+Os 680 MB **não foram medidos aqui** — vêm de outra frente da campanha, e o autor do `#523`
+reconheceu que *"a minha citação de custo estava correta e era a métrica errada"*. Registro a
+procedência porque o `du -sh` do Dockerfile nunca chegou a imprimir: o build morre antes.
+
+Numa box de 18 GB que precisa caber, ao mesmo tempo, SO + cache de build + o tarball + a
+imagem desempacotada, 680 MB entram **várias vezes**. Isso fecha H1 sem depender da pergunta
+do warm-box.
+
 ### O que decide o conserto, e por que ainda não está decidido
 
 Duas hipóteses substantivas. Nenhuma é "rodar de novo".
@@ -8128,6 +8152,18 @@ com o `build-cf-container-images`. **Não decidir por elas é deliberado.**
 O único sinal direto disponível é fraco e não conclui: os três builds da imagem foram
 servidos por runners de nomes distintos (`cf-runner-9fe67af0`, `ca3c1880`, `8d4c2700`), o que
 é consistente com efêmera — mas um volume reciclado também registra nome novo a cada spawn.
+
+**As quatro saídas na mesa**, e a escolha é da guardiã — este item não a faz:
+
+1. **Construir numa box maior.** Leitura preferida da frente que mediu.
+2. **Limpar o `containerd` antes do build.** Provavelmente **não basta**: o problema é o
+   **pico** — tarball e unpack coexistindo — e não lixo acumulado. Limpar resíduo não cria
+   espaço para dois artefatos simultâneos.
+3. **Emagrecer o bake** (layer único, limpeza de cache no mesmo `RUN`, multi-stage).
+4. **Reverter o nightly** da imagem, o que devolve as sete lanes ao Mac.
+
+A ressalva de (2) é o que separa esta decisão de um `prune` reflexo: pico e resíduo têm o
+mesmo sintoma e conserto diferente, e só (1) e (3) atacam pico.
 
 **H1, ao contrário de H2, não depende dessa pergunta.** Os builds de 2026-08-23 e 2026-08-24
 passaram; o `#523` acrescentou um toolchain nightly inteiro mais `llvm-tools` mais
