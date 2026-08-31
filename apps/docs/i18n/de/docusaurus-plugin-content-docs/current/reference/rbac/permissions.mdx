@@ -269,7 +269,7 @@ The RFC 6962 inclusion proof has **no route of its own**: each exported
 row is verified inline and the result is emitted as part of the export
 stream (`routes/audit_export/stream.rs:251`).
 
-**Two different gates guard "audit".** `GET /v1/customer/audit` — the
+**Two different gates guard the audit surface.** `GET /v1/customer/audit` — the
 dashboard log — is gated on `requires_billing_admin` (`scope.rs:229`),
 which accepts only `billing`, `admin` or `owner`. The export and
 analytics routes are gated on `requires_audit_read` (`scope.rs:251`),
