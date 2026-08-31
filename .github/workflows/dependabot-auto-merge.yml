@@ -64,7 +64,8 @@ jobs:
   # -----------------------------------------------------------------------
   auto-merge:
     name: Dependabot security-patch auto-merge gate
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): gh 2.97.0 assado na imagem (corelink-runners#453, exercitado em run 33347274511)
+    runs-on: corelink
     timeout-minutes: 10
     # Only run for Dependabot PRs — hard-gate at the job level.
     if: github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'

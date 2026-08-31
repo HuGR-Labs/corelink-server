@@ -76,7 +76,8 @@ jobs:
   # -----------------------------------------------------------------------
   sentinel:
     name: dependabot-policy sentinel
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): gh + cargo-deny assados; e o merge-ref do PR passa a ser avaliado em microVM descartável, não no Mac do owner
+    runs-on: corelink
     timeout-minutes: 1
     if: github.actor != 'dependabot[bot]'
     steps:
@@ -89,7 +90,8 @@ jobs:
   # -----------------------------------------------------------------------
   policy-gate:
     name: Dependabot policy gate
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): gh + cargo-deny assados; e o merge-ref do PR passa a ser avaliado em microVM descartável, não no Mac do owner
+    runs-on: corelink
     timeout-minutes: 10
     if: github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'
 
@@ -142,8 +144,21 @@ jobs:
       # for a day on 2026-06-15 — and (b) `rustup default` rewrites the MACHINE-GLOBAL
       # default, silently moving every concurrent job off the ADR-0015 reproducibility
       # pin. Full reasoning: scripts/ci-use-host-toolchain.sh header.
+      #
+      # ⚠️ `HOST_TRIPLE` is set EXPLICITLY, and that is what keeps this PR
+      # independent of merge order. The script on `main` today resolves the
+      # triple as `HOST_TRIPLE="${HOST_TRIPLE:-x86_64-apple-darwin}"` — a default
+      # from when the only self-hosted fleet was the owner's Macs. On this job's
+      # new Linux host it would look for
+      # `$HOME/.rustup/toolchains/<channel>-x86_64-apple-darwin`, not find it,
+      # and exit 1: this PR alone on `main` would break the Dependabot
+      # supply-chain gate. #1501 teaches the script to detect the triple from
+      # `uname`, but naming it here costs two lines and removes the coupling
+      # entirely — correct whether #1501 lands first, later, or never.
       - name: Use the workspace-pinned host toolchain (provisions nothing)
         if: hashFiles('Cargo.toml') != ''
+        env:
+          HOST_TRIPLE: x86_64-unknown-linux-gnu
         run: bash scripts/ci-use-host-toolchain.sh
 
       - name: Install cargo-deny (SHA-pinned)
