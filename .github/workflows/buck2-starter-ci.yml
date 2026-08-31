@@ -50,16 +50,32 @@ on:
   #      stale 2023 `latest` tag that carries no matching asset — fixed by
   #      pinning `BUCK2_VERSION` to a real dated tag (see the env: block
   #      below).
-  #   3. Past the fixed URL, the job still fails with `buck2: command not
-  #      found` in the later steps — the downloaded binary is not reliably
-  #      ending up executable-on-PATH for the shells that run
-  #      `buck2 build :hello`. Root cause NOT YET diagnosed (possible
-  #      candidates: the `corelink` fabric not persisting `$GITHUB_PATH`
-  #      additions the way the never-existed Linux pool would have, or the
-  #      pinned zstd/apt path silently no-op'ing via the `|| true` in the
-  #      install step). The buck2-starter EXAMPLE build itself has therefore
-  #      never been proven to actually work on ANY runner this repo has ever
-  #      had.
+  #   3. DIAGNOSED 2026-08-31 (WP-E) — was "root cause NOT YET diagnosed".
+  #      The `buck2: command not found` is not in "the later steps": it is the
+  #      LAST LINE OF THE INSTALL STEP ITSELF. That step wrote
+  #      `$BUCK2_INSTALL_DIR` into `$GITHUB_PATH` and then immediately ran
+  #      `buck2 --version` — but `$GITHUB_PATH` only takes effect in SUBSEQUENT
+  #      steps, never in the one that writes it. Verbatim tail of run
+  #      31978160612:
+  #
+  #        /opt/actions-runner/_work/_temp/e625eb87-….sh: line 19: buck2: command not found
+  #        ##[error]Process completed with exit code 127
+  #
+  #      Both candidates named above are REFUTED by that same log, and both
+  #      mattered because each would have implied a much larger fix:
+  #        - the `corelink` fabric DOES persist `$GITHUB_PATH` normally; nothing
+  #          about the fabric is involved.
+  #        - the apt/zstd path did NOT silently no-op — the log shows
+  #          `Setting up zstd (1.5.5+dfsg2-2build1.1)` and a successful
+  #          decompress of `/tmp/buck2.zst : 133202112 bytes`. The `|| true`
+  #          never fired, and the `BUCK2_VERSION` pin is live (the tag resolves,
+  #          it does not 404).
+  #      Fixed by invoking the binary by absolute path in that step.
+  #
+  #      Note this bug is NOT present in the second job's installer, which
+  #      appends to `$GITHUB_PATH` and does not invoke `buck2` in-step. So job 2
+  #      fails later or not at all — its state is simply unknown, because 77
+  #      runs never got past step 2.
   #
   # Per the no-gate-that-proves-nothing rule: a gate this broken must not
   # block real PRs while it's diagnosed. `workflow_dispatch` keeps it
@@ -138,8 +154,14 @@ jobs:
           zstd -d /tmp/buck2.zst -o "${BUCK2_INSTALL_DIR}/buck2"
           chmod +x "${BUCK2_INSTALL_DIR}/buck2"
 
+          # `$GITHUB_PATH` only takes effect in SUBSEQUENT steps — never in the
+          # step that writes it. The smoke check below therefore ran before the
+          # PATH entry existed and exited 127 with `buck2: command not found`,
+          # which is the entirety of this lane's 77-run / 0-success record.
+          # Call the binary by its absolute path here; the `>> $GITHUB_PATH`
+          # above is still what serves every LATER step.
           echo "${BUCK2_INSTALL_DIR}" >> "${GITHUB_PATH}"
-          buck2 --version
+          "${BUCK2_INSTALL_DIR}/buck2" --version
 
       # ── C++ toolchain ─────────────────────────────────────────────────────
       - name: Install C++ toolchain
