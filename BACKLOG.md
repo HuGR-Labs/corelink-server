@@ -6040,55 +6040,79 @@ verify: |
   grep -q "No external pentest has been commissioned" "$p" || { echo "FALHA: o comunicado nao declara mais que nenhum pentest externo foi contratado — o reparo JA FEITO regrediu; conserte antes de qualquer outra coisa."; exit 1; }
   ! grep -q "CEO_NAME" "$p" || { echo "FALHA: o marcador CEO_NAME voltou ao comunicado — o reparo JA FEITO regrediu."; exit 1; }
   ! grep -qE "\*\*External pentest, clean\.\*\*" "$p" || { echo "FALHA: o bullet afirmativo de pentest limpo voltou ao comunicado — o reparo JA FEITO regrediu."; exit 1; }
-  corpus=$(grep -rli "pentest" --include="*.md" --include="*.mdx" marketing/ apps/docs/ README.md 2>/dev/null | wc -l | tr -d " ")
+  t=reports/pentest-rfp-tracker.json
+  [ -f "$t" ] || { echo "FALHA: o rastreador de RFP sumiu — a ancora factual do item nao pode ser lida; reavalie a mao."; exit 1; }
+  nc=$(grep -o NOT_CONTACTED "$t" | wc -l | tr -d " ")
+  tot=$(grep -oE "(NOT_CONTACTED|RFP_SENT|ENGAGED|IN_PROGRESS|COMPLETE)" "$t" | wc -l | tr -d " ")
+  [ "$tot" -ge 3 ] || { echo "FALHA: o rastreador expos so $tot estado(s) de fornecedor — o comando perdeu o objeto e nao pode concluir que ninguem foi contratado."; exit 1; }
+  [ "$nc" = "$tot" ] || { echo "FALHA: $nc de $tot fornecedores estao NOT_CONTACTED — algum saiu desse estado. REAVALIE: se um pentest foi mesmo contratado, o material PODE voltar a cita-lo e este item muda de premissa."; exit 1; }
+  ctl=$(grep -rlI "CoreLink" apps/docs marketing legal README.md 2>/dev/null | wc -l | tr -d " ")
+  [ "$ctl" -ge 50 ] || { echo "FALHA: o controle positivo achou so $ctl arquivos com CoreLink — instrumento cego, nao arvore limpa."; exit 1; }
+  corpus=$(grep -rliE "pentest|penetration test" apps/docs marketing legal README.md 2>/dev/null | wc -l | tr -d " ")
   [ "$corpus" -gt 20 ] || { echo "FALHA: so $corpus arquivo(s) do corpus citam pentest — a varredura perdeu o corpus e nao pode concluir ausencia."; exit 1; }
-  res=$(grep -rlE "External pentest is engaged|pentest letter on request|External pentest report|External pentest pass|PRR \+ pentest|pentest \+ 30d|Pentest-1|Schellman|Bishop Fox" --include="*.md" --include="*.mdx" marketing/ apps/docs/ README.md 2>/dev/null | grep -v "PENTEST-RFP-EMAIL" | wc -l | tr -d " ")
-  if [ "$res" -gt 0 ]; then
-    echo "aberto: o comunicado esta corrigido, mas a afirmacao de pentest externo segue viva em $res arquivo(s) do material publicado (inclui apps/docs/docs/trust/fedramp-info.mdx e iso27001/compliance/index x 4 locales). Estender o diff a apps/docs/** e ao README, ou fechar so quando res=0."
+  mkt=$(grep -rnIE "External pentest is engaged|External pentest report|External pentest pass|PRR \+ pentest|pentest \+ 30d|Pentest-1 firm|pentest clean with retest|third-party pentest letter|SBOM, pentest|pentest summary letter \(NDA|to the pentest firm|external pentest engagement\)|Schellman / Bishop Fox" apps/docs marketing README.md 2>/dev/null | wc -l | tr -d " ")
+  [ "$mkt" = 0 ] || { echo "FALHA: $mkt formulacao(oes) de pentest contratado/limpo voltaram a apps/docs ou marketing — a alegacao REGREDIU. Rode o mesmo grep para ver onde."; exit 1; }
+  leg=$(grep -rniE "annual external penetration test|annual external pentest|Pentest externo anual|Pentest externo anual|Pentest externo anual" legal/dpa 2>/dev/null | wc -l | tr -d " ")
+  if [ "$leg" -gt 0 ]; then
+    echo "aberto: apps/docs e marketing estao limpos (0 formulacoes), mas $leg linha(s) de legal/dpa ainda REPRESENTAM contratualmente um pentest externo anual como medida tecnica vigente (v1.0.0 en-US/pt-BR/es-419 + STANDARD-CONTRACTUAL-CLAUSES-EU). Sao documentos com legal_review_status: approved e effective_date — corrigir e EMENDA CONTRATUAL, decisao do owner com assessoria. Feche so quando leg=0."
     exit 0
   fi
-  echo "FALHA: o residuo de pentest chegou a zero — a razao restante deste item acabou. Feche B-088 (status: done) com verify de polaridade INVERTIDA."
+  echo "FALHA: o residuo de pentest chegou a zero, inclusive em legal/dpa — a razao restante deste item acabou. Feche B-088 (status: done) com verify de polaridade INVERTIDA."
   exit 1'
 verify-means: |
-  open — e a polaridade voltou a ser `open` **de propósito**, revertendo um `done`
-  prematuro. O item havia sido fechado com a afirmação viva em 30 arquivos e 65 posições,
-  incluindo linhas nos MESMOS arquivos que o PR editou (`PH-FAQ.md`: corrigida a 26,
-  deixada a 52; `01-introducing-corelink.md`: corrigida a 31, deixada a 93).
+  open — e continua `open` por um resto **triado**, nao contado: **4 linhas de `legal/dpa`**
+  que representam contratualmente *"annual external penetration test"* como medida tecnica
+  vigente. Nao as toquei de proposito: os arquivos tem `legal_review_status: approved` e
+  `effective_date: 2026-05-14`, entao corrigi-las e **emenda contratual**, nao conserto de
+  doc — decisao do owner, com assessoria.
 
-  O comando tem duas metades com papéis opostos, e isso é deliberado:
+  **Reparo do proprio portao (2026-08-31) — a metade `res` era um instrumento QUEBRADO.**
+  O padrao anterior incluia `Schellman` e `Bishop Fox` soltos, e `Schellman` e o **auditor de
+  SOC 2 / ISO 27001**, um engajamento diferente, sobre o qual as paginas ja sao honestas
+  (*"Audit partner: not yet engaged"*, *"certification target Q1-2027"*). Medido: dos 30
+  arquivos que o `res` acusava, a maioria casava por **SOC 2**, e varios outros casavam
+  justamente por **retratacoes** que citam a frase falsa para desmenti-la
+  (`PROOF-POINTS.md:71` tem `~~External pentest clean + retest~~ **NOT A CLAIM**`). Esse
+  portao **nunca poderia chegar a zero** sem apagar texto verdadeiro — e um portao que so
+  fecha corrompendo a verdade e defeito, nao rigor. Categoria da mudanca: **reparo**
+  (precisao), nao afrouxamento: o novo padrao pega tudo que o antigo pegava de verdade
+  **mais** `Schellman / Bishop Fox` na tabela de pentest do FedRAMP, e para de acusar SOC 2.
 
-  1. **Protege o reparo já feito.** Se o comunicado parar de declarar a ausência, se o
-     `CEO_NAME` voltar, ou se o bullet `**External pentest, clean.**` reaparecer, o
-     comando fica **vermelho** — mesmo com o item `open`. Um item aberto não é licença
-     para regredir a parte já corrigida.
-  2. **Mede o resíduo.** Enquanto sobrar ao menos um arquivo com afirmação ativa, o item
-     está legitimamente `open` e o comando sai `exit 0`. Quando o resíduo chegar a zero,
-     o comando fica **vermelho** mandando fechar com polaridade invertida.
+  **Triagem (2026-08-31), sobre `apps/docs/`, `marketing/`, `legal/`, `README.md` —
+  213 posicoes em 73 arquivos na base `0ec772dc`:**
 
-  Gateio a frase de negação, não a ausência da string "pentest": o texto corrigido PRECISA
-  dizer *"No external pentest has been commissioned"*. Um comando que proibisse a string
-  proibiria a retratação junto com a afirmação — a mesma armadilha de [B-085].
+  | classe | posicoes |
+  |---|---:|
+  | **falsa** (reescrita) | **39** |
+  | **ja retratada** (intocada) | **34** |
+  | **legitima** (intocada) | **140** |
+  | **soma** | **213** ✅ |
 
-  A contagem de linhas do comunicado e a contagem do corpus são **controle do
-  instrumento**: um comunicado truncado, ou um `apps/docs/` deletado, passariam em
-  qualquer teste de ausência. Aqui falham. E os `PENTEST-RFP-EMAIL-*.md` são excluídos da
-  varredura de resíduo porque neles nomear Schellman / Bishop Fox / Trail of Bits é o
-  propósito legítimo do arquivo — é o e-mail que os CONVIDA.
+  As legitimas incluem os tres templates `PENTEST-RFP-EMAIL-*` (existem para **solicitar** o
+  teste), o runbook de crise, a lista de vocabulario do Vale, e as paginas `draft: true`.
 
-  O que NÃO decide, e admito, em cinco pontos:
+  **A pior era publicada.** `apps/docs/docs/trust/fedramp-info.mdx` tem `draft: false` e
+  listava *"Pentest report (annual external) | Schellman / Bishop Fox"* — duas firmas que
+  nunca foram contatadas — com contato NDA-gated, em 4 locales. Junto com
+  `src/pages/trust/center.tsx`, que afirmava *"RFP sent to Schellman / A-LIGN / Bishop Fox"*
+  com status `IN-AUDIT`; agora e `POST-GA`, que e o valor que o proprio arquivo define para
+  *"nao comecado"*.
 
-  1. **Paráfrase.** Medido: inserir *"Independent security assessment, clean"* num arquivo
-     de marketing **passa** neste comando. O portão cobre as formulações medidas, não a
-     ideia. Uma reescrita que evite todas elas e continue afirmando a mesma coisa não é
-     detectada — a defesa real é a revisão humana, não este `grep`.
-  2. Se o comunicado já foi distribuído a jornalistas ou prospects. Fora do repositório.
-  3. As demais afirmações não verificadas do mesmo comunicado: *"three lighthouse
-     customers attested"*, *"24/7 incident response"*, *"SBOM published, signed"*, *"SOC 2
-     gap analysis delivered"*, e os quatro depoimentos com placeholders.
-  4. Os demais marcadores do comunicado — `[CITY]`, `[DATE]`, `[FOUNDER_NAME(S)]`,
-     `[HQ_LOCATION]`, `[INVESTOR_PLACEHOLDERS]`.
-  5. A afirmação de Rekor em `marketing/sales/PROOF-POINTS.md` §2.15, que contradiz o
-     `STA-11.1` do CAIQ (agora "N"). Achado adjacente, precisa de item próprio.
+  **Nao troquei promessa por vagueza, e verifiquei o sentido inverso.** Onde tirei o pentest
+  nomeei o que EXISTE, depois de confirmar que existe: specs TLA+ em `specs/tla/`,
+  `codeql.yml`, `cargo-audit.yml`, `semgrep.yml`, `trivy.yml`, e o resumo selado
+  `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md`. Nao escrevi "nao temos teste
+  de seguranca nenhum", que seria o erro inverso.
+
+  **Q-7 nos dois lados, medido:** padrao de promessa = **0** na arvore corrigida e **30** na
+  base `0ec772dc`; controle positivo `CoreLink` = 649 arquivos; rastreador = 5/5
+  `NOT_CONTACTED`, e se algum deixar de estar o comando manda **reavaliar** em vez de aprovar.
+
+  **O que NAO cobre:** parafrase (o padrao e um conjunto fechado das formulacoes que
+  existiam); e a contradicao `PROOF-POINTS.md:84` *"SOC 2 auditor: Schellman & Co. LLC
+  (engagement letter executed)"* versus `trust/compliance.mdx:41` *"Audit partner: not yet
+  engaged"* — **uma das duas e falsa**, e alegacao de SOC 2, nao de pentest. Fica registrada
+  aqui e nao foi corrigida por mim.
 last-verified: 2026-08-31
 ```
 

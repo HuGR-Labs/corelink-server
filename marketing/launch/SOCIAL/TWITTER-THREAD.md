@@ -73,7 +73,7 @@
 
 > We split GA into two gates:
 >
-> 1. Engineering gate (binary, unappealable): PRR + pentest + 30d staging + 3 lighthouse customers + zero CRITICAL waivers.
+> 1. Engineering gate (binary, unappealable): PRR + 30d staging + 3 lighthouse customers + zero CRITICAL waivers. (No external pentest — we have not commissioned one, and we are not going to pretend we did.)
 > 2. Launch orchestration (soft gate): this thread.
 >
 > Engineering gate decided whether we ship. Not the other way around.

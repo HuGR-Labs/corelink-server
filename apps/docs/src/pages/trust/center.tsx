@@ -19,8 +19,9 @@
  *     on CoreLink (e.g. SAQ-A self-attestation, LGPD ROPA, sub-processor
  *     register, status page, security.txt).
  *   - IN-AUDIT → independent verification is engaged but not yet complete
- *     (e.g. SOC 2 Type I report being drafted, ISO 27001 Stage-1 prep,
- *     external pentest engagement).
+ *     (e.g. SOC 2 Type I report being drafted, ISO 27001 Stage-1 prep).
+ *     NOTE: the external pentest is NOT an IN-AUDIT item — no firm is
+ *     engaged and no RFP has been sent; it is POST-GA.
  *   - POST-GA → roadmap item not yet started or only internally scoped
  *     (e.g. SOC 2 Type II 6-month observation window, ISO 27001 Stage-2
  *     surveillance audit, FedRAMP sponsorship path).
@@ -153,11 +154,11 @@ const QUADRANTS: readonly TrustQuadrant[] = [
           "Coordinated VDP with safe-harbor, 90-day disclosure window, severity matrix, and PGP-encrypted intake — see report-security policy.",
       },
       {
-        title: "External pentest engagement",
+        title: "External pentest — not yet commissioned",
         href: "/trust/compliance#pentest",
-        status: "IN-AUDIT",
+        status: "POST-GA",
         summary:
-          "RFP sent to Schellman / A-LIGN / Bishop Fox (wave-25); engagement target T-14d pre-GA. Reports published post-engagement with redactions.",
+          "No external penetration test has been commissioned and no RFP has been sent — every vendor in reports/pentest-rfp-tracker.json is NOT_CONTACTED. Assurance today is internal: TLA+ invariants gated in CI, CodeQL / cargo-audit / semgrep / trivy scanning, sealed cargo-fuzz summaries, and internal adversarial review waves.",
       },
     ],
   },
@@ -474,7 +475,7 @@ export default function TrustCenter(): ReactElement {
                 >
                   Independent verification is engaged but not yet complete
                   (e.g. SOC 2 Type I report being drafted, ISO 27001 Stage-1
-                  prep, external pentest engagement).
+                  prep).
                 </Translate>
               }
             />
