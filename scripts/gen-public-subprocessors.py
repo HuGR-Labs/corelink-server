@@ -455,10 +455,13 @@ zero-retention guarantee and no-customer-data scope, please raise it via
 The following appear in our internal registers but are **not**
 sub-processors:
 
-- **Sigstore (Linux Foundation)** — keyless signing (`.github/workflows/cosign-sign.yml`)
-  over CoreLink's **own build artifacts** as part of our supply-chain pipeline.
-  It never receives customer data and is not a customer-data sub-processor;
-  captured in `legal/sub-processors.md` for completeness only.
+- **Sigstore (Linux Foundation)** — listed historically as a planned
+  supply-chain dependency for keyless signing over CoreLink's **own build
+  artifacts**. As of 2026-08-31 **CoreLink does not use Sigstore**: the signing
+  workflow was removed after review established it had never executed, so no
+  Fulcio certificate and no Rekor entry has ever been issued on our behalf. It
+  never received customer data and was never a customer-data sub-processor;
+  retained here so the register shows the removal rather than going silent.
 - **Self-hosted Dependency-Track** — operated by CoreLink; no third party.
 - **Per-customer HashiCorp Vault instances** — customer-side infrastructure
   outside CoreLink's processor relationship.
