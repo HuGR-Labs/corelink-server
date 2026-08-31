@@ -3439,8 +3439,6 @@ status: open
 verify: |
   bash -c 'grep -q "cargo zigbuild" .github/workflows/release-cli.yml || exit 1
   test -e .github/workflows/cosign-sign.yml && exit 1
-  uses=$(grep -cE -- "--repo[[:space:]]+HumanGuardrail/corelink-cli" .github/workflows/release-cli.yml 2>/dev/null || true)
-  [ "${uses:-0}" = 0 ] || { echo "FALHA: $uses uso(s) executaveis de --repo HumanGuardrail/corelink-cli em release-cli.yml — a lane publica no repo que responde 404."; exit 1; }
   grep -q "GITHUB_REPOSITORY" .github/workflows/release-slsa3.yml || exit 1
   exit 0'
 verify-means: |
@@ -3456,19 +3454,16 @@ verify-means: |
      SEPARADO. Essa é a raiz compartilhada das duas lanes: ninguém decidiu onde
      os releases do CLI moram.
 
-  A cláusula do `HumanGuardrail/corelink-cli` é catraca: ela exige que o repo de
-  publicação PERMANEÇA repontado para `HuGR-Labs/corelink-cli`. Um revert
-  silencioso devolveria um `--repo` que responde 404, e sem a cláusula o item
-  continuaria verde por cima disso.
-
-  Ela conta **uso executável** (`--repo <org>/corelink-cli`), não presença do
-  literal. A versão anterior grepava a string em qualquer posição e por isso
-  acusava **três** falsos: dois comentários de cabeçalho e um `name:` de job — e,
-  o que é pior, acusaria o comentário que o próprio repontamento escreve para
-  explicar o 404. Portão que pune a explicação do conserto ensina a consertar em
-  silêncio. Medido: no branch que reponta restam 2 ocorrências do literal, **ambas
-  em comentário**, e a cláusula nova passa; se alguém devolver um `--repo` para o
-  repo morto, ela acusa.
+  **A catraca do `corelink-cli` NÃO mora aqui**, e a tentativa de instalá-la neste
+  item foi retirada. Ela exige que o repo de publicação esteja repontado para
+  `HuGR-Labs/corelink-cli` — mas o repontamento é trabalho de OUTRO PR, e uma
+  catraca instalada antes de existir o que ela ratcheia é vermelho verdadeiro sobre
+  uma condição que este PR não causou e não pode consertar. Medido no branch deste
+  PR: `release-cli.yml` carrega **cinco** ocorrências do literal, das quais **duas
+  são uso executável de verdade** (`gh release create --repo …` e
+  `gh release upload --repo … --clobber`). A lane publica mesmo num repo que
+  responde 404 — e é o PR do repontamento que paga essa dívida, com a catraca
+  junto.
 
   O que este comando NÃO decide, e é a parte maior: POR QUE a matriz de build
   reprova. Um verify sobre histórico de execução leria os logs expirados como
