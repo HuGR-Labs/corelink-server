@@ -45,26 +45,26 @@ item() { # $1 id, $2 status, $3 verify, $4 last-verified
 
 echo "backlog gate"
 
-cell "a truthful item passes" 0 CONFIRMED "$(item B-1 open '"true"' 2026-08-23)"
+cell "a truthful item passes" 0 CONFIRMED "$(item B-001 open '"true"' 2026-08-23)"
 
 # YAML reads a bare `true` as a boolean, which silently stops being a command.
 # This file's own first draft made exactly that mistake and CI caught it.
-cell "an unquoted YAML boolean verify is BROKEN, not run" 1 BROKEN "$(item B-1 open true 2026-08-23)"
+cell "an unquoted YAML boolean verify is BROKEN, not run" 1 BROKEN "$(item B-001 open true 2026-08-23)"
 
 # The core contract: the world moved, the file did not.
-cell "a claim the repo contradicts is DRIFTED" 1 DRIFTED "$(item B-1 open '"false"' 2026-08-23)"
+cell "a claim the repo contradicts is DRIFTED" 1 DRIFTED "$(item B-001 open '"false"' 2026-08-23)"
 
 # The decay rule — the thing that would have caught this project's stale notes.
-cell "an unverifiable claim goes STALE once it ages out" 1 STALE "$(item B-1 open manual 2026-07-01)"
-cell "a freshly verified manual claim is fine" 0 CONFIRMED "$(item B-1 open manual 2026-08-20)"
+cell "an unverifiable claim goes STALE once it ages out" 1 STALE "$(item B-001 open manual 2026-07-01)"
+cell "a freshly verified manual claim is fine" 0 CONFIRMED "$(item B-001 open manual 2026-08-20)"
 
 # A malformed item must never be silently skipped: skipping is the failure mode
 # the whole gate exists to prevent.
 cell "a missing required field is BROKEN, not ignored" 1 BROKEN \
-  "$(printf '### B-1 — fixture\n\n```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: open\n```\n')"
-cell "an invalid status is BROKEN" 1 BROKEN "$(item B-1 nearly-done '"true"' 2026-08-23)"
-cell "a duplicate id is BROKEN" 1 BROKEN "$(item B-1 open '"true"' 2026-08-23; item B-1 open '"true"' 2026-08-23)"
-cell "unparseable YAML is BROKEN" 1 BROKEN "$(printf '### B-1 — fixture\n\n```backlog\nid: [B-1\n```\n')"
+  "$(printf '### B-001 — fixture\n\n```backlog\nid: B-001\nrepo: corelink-server\nowner: tl\nstatus: open\n```\n')"
+cell "an invalid status is BROKEN" 1 BROKEN "$(item B-001 nearly-done '"true"' 2026-08-23)"
+cell "a duplicate id is BROKEN" 1 BROKEN "$(item B-001 open '"true"' 2026-08-23; item B-001 open '"true"' 2026-08-23)"
+cell "unparseable YAML is BROKEN" 1 BROKEN "$(printf '### B-001 — fixture\n\n```backlog\nid: [B-001\n```\n')"
 
 # PyYAML's default for a repeated key is last-wins, SILENTLY. On 2026-08-24 a
 # B-039 `verify:` was pasted into the B-040 block; both parsed, both were unique
@@ -72,13 +72,13 @@ cell "unparseable YAML is BROKEN" 1 BROKEN "$(printf '### B-1 — fixture\n\n```
 # at the time, so nothing went red — the register would have started lying the
 # moment they diverged.
 cell "a duplicate key inside one block is BROKEN, not last-wins" 1 BROKEN \
-  "$(printf '### B-1 — fixture\n\n```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify: "false"\nverify-means: |\n  fixture\nlast-verified: 2026-08-23\n```\n')"
+  "$(printf '### B-001 — fixture\n\n```backlog\nid: B-001\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify: "false"\nverify-means: |\n  fixture\nlast-verified: 2026-08-23\n```\n')"
 
 # A deleted item passes every per-item check — the survivors are all still true.
 # Only density catches it. This cell exists because exactly that happened while
 # this file was being written, and the gate reported all-green.
 cell "a gap in the ids is a hard failure (an item was deleted)" 2 - \
-  "$(item B-1 open '"true"' 2026-08-23; item B-3 open '"true"' 2026-08-23)"
+  "$(item B-001 open '"true"' 2026-08-23; item B-003 open '"true"' 2026-08-23)"
 
 # An empty file is far more likely to be a broken format than genuinely no work.
 cell "an empty backlog is a hard failure, not a pass" 2 - "$(printf 'no items here\n')"
@@ -86,13 +86,13 @@ cell "an empty backlog is a hard failure, not a pass" 2 - "$(printf 'no items he
 # Every reference from outside BACKLOG.md cites the HEADING; the gate reads the
 # BLOCK. On 2026-08-24 two items held each other's ids — both unique, so the
 # duplicate check was satisfied while the register pointed at the wrong work.
-cell "a heading and its block naming different ids is a hard failure" 2 "heading says B-1" \
-  "$(printf '### B-1 — fixture\n\n```backlog\nid: B-2\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
+cell "a heading and its block naming different ids is a hard failure" 2 "heading says B-001" \
+  "$(printf '### B-001 — fixture\n\n```backlog\nid: B-002\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
 
 # A block with no heading at all is orphaned prose-side: nothing outside the
 # file can cite it, and a reader scrolling past sees no item there.
-cell "a heading whose block lost its opening fence is a hard failure" 2 "B-2" \
-  "$(printf '### B-1\n\n```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n\n### B-2\n\nid: B-2\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
+cell "a heading whose block lost its opening fence is a hard failure" 2 "B-002" \
+  "$(printf '### B-001\n\n```backlog\nid: B-001\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n\n### B-002\n\nid: B-002\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
 
 # Every other cell in this file uses a 1- or 2-item fixture, and NONE of them can
 # see this: fence pairing is SEQUENTIAL from the top of the file, so a lost opener
@@ -107,23 +107,23 @@ cell "a heading whose block lost its opening fence is a hard failure" 2 "B-2" \
 # with the density rule never reached; that is what feeding the fence-MASKED
 # headings into the divergence loop produces. Hence the forbidden substring.
 cell "the MIDDLE item losing its fence reports DENSITY, not a shifted-heading cascade" 2 "missing B-002" \
-  "$(item B-1 open '"true"' 2026-08-23
-     printf '### B-2 — fixture\n\nid: B-2\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n\n'
-     item B-3 open '"true"' 2026-08-23)" \
+  "$(item B-001 open '"true"' 2026-08-23
+     printf '### B-002 — fixture\n\nid: B-002\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n\n'
+     item B-003 open '"true"' 2026-08-23)" \
   "heading says"
 
 cell "a \`### B-\` inside a fenced example is not a heading" 0 "" \
-  "$(printf '### B-1\n\n```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n\n```text\n### B-42\nexample of the item format\n```\n')"
+  "$(printf '### B-001\n\n```backlog\nid: B-001\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n\n```text\n### B-042\nexample of the item format\n```\n')"
 
 cell "a block with no heading above it is a hard failure" 2 "no \`### B-" \
-  "$(printf '```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
+  "$(printf '```backlog\nid: B-001\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
 
 # B-143: a malformed id used to be SKIPPED by the heading check and INVISIBLE to
 # the density check, so it merged CONFIRMED. Both loud checks (gap, duplicate)
 # presuppose a well-formed id. Four spellings, because a gate that matches the
 # literal `B-UNALLOCATED` would pass one cell and be decorative.
 malformed() { # $1 the id to plant
-  printf '### B-1 — fixture\n\n```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n\n'
+  printf '### B-001 — fixture\n\n```backlog\nid: B-001\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n\n'
   printf '### %s — fixture\n\n```backlog\nid: %s\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n' "$1" "$1"
 }
 for bad in B-UNALLOCATED B-131a b-131 B-TBD; do
@@ -134,30 +134,66 @@ done
 # The negative side of the same rule: the canonical form must still pass. A cell
 # that only watches the gate go red cannot see a gate that reds on everything.
 cell "a canonical id is NOT flagged as malformed" 0 CONFIRMED \
-  "$(item B-1 open '"true"' 2026-08-23)" "is not \`B-<digits>\`"
+  "$(item B-001 open '"true"' 2026-08-23)" "is not \`B-<digits>\`"
 
-# B-167, the KNOWN RESIDUE of B-143, pinned as a cell so it is not mistaken for
-# coverage: `B-0142` satisfies `^B-\d+$`, keeps density happy (int("0142")==142)
-# and does not collide (the duplicate check compares strings). This cell asserts
-# TODAY'S behaviour — it must be INVERTED when B-167 is fixed, and its failure is
-# the reminder.
-cell "KNOWN GAP (B-167): a leading-zero id still aliases its twin" 0 CONFIRMED \
-  "$(item B-1 open '"true"' 2026-08-23; item B-01 open '"true"' 2026-08-23)"
+# B-167 CLOSED — this cell was pinned in its "KNOWN GAP" polarity with the note
+# that it "must be INVERTED when B-167 is fixed, and its failure is the reminder".
+# The reminder fired; this is the inversion. `B-01` satisfies `^B-\d+$`, keeps
+# density happy (int("01")==1) and does not collide (the duplicate check compares
+# strings), so nothing but a canonical-form rule can see it.
+cell "a leading-zero id no longer aliases its twin (B-167)" 2 "is not canonical" \
+  "$(item B-001 open '"true"' 2026-08-23; item B-01 open '"true"' 2026-08-23)" "CONFIRMED"
 
 # B-147: `status` and `owner` were validated independently and never crossed.
 # `owner: owner` means "still needs the human"; a done item does not.
 cell "done + owner: owner is BROKEN — a finished item cannot still need the human" 1 BROKEN \
-  "$(printf '### B-1 — fixture\n\n```backlog\nid: B-1\nrepo: corelink-server\nowner: owner\nstatus: done\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
+  "$(printf '### B-001 — fixture\n\n```backlog\nid: B-001\nrepo: corelink-server\nowner: owner\nstatus: done\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
 
 # Both negative sides, so the cross-check cannot be satisfied by rejecting
 # `owner: owner` outright or by reading `!= open`. `parked` is EXCLUDED on
 # purpose: an item parked because it waits on the owner is legitimate.
 cell "done + owner: tl passes" 0 CONFIRMED \
-  "$(printf '### B-1 — fixture\n\n```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: done\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
+  "$(printf '### B-001 — fixture\n\n```backlog\nid: B-001\nrepo: corelink-server\nowner: tl\nstatus: done\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
 cell "open + owner: owner passes — the legitimate case" 0 CONFIRMED \
-  "$(printf '### B-1 — fixture\n\n```backlog\nid: B-1\nrepo: corelink-server\nowner: owner\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
+  "$(printf '### B-001 — fixture\n\n```backlog\nid: B-001\nrepo: corelink-server\nowner: owner\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
 cell "parked + owner: owner passes — deliberately OUT of the rule" 0 CONFIRMED \
-  "$(printf '### B-1 — fixture\n\n```backlog\nid: B-1\nrepo: corelink-server\nowner: owner\nstatus: parked\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
+  "$(printf '### B-001 — fixture\n\n```backlog\nid: B-001\nrepo: corelink-server\nowner: owner\nstatus: parked\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
+
+# ── B-167: the canonical id form ────────────────────────────────────────────
+# `^B-\d+$` (B-143) was necessary and not sufficient. `B-0142` satisfies it,
+# `int("0142") == 142` keeps density happy, and the duplicate check compares
+# STRINGS — so it merged alongside the real B-142 as a silent alias. Measured
+# on main before this rule: `CONFIRMED B-0142 open`, rc=0.
+#
+# The rule chosen (of the three B-167 enumerated): the spelling must equal
+# `f"B-{int(n):03d}"`.
+alias_pair() { # $1 the non-canonical spelling of item 1
+  item B-001 open '"true"' 2026-08-23
+  printf '\n### %s — fixture\n\n```backlog\nid: %s\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n' "$1" "$1"
+}
+# The other half of "canonical": under-padding is refused too, so there is exactly
+# ONE spelling per number rather than a rule that only bans the padded variant.
+cell "an UNDER-padded id (B-1, where canonical is B-001) is refused" 2 "is not canonical" \
+  "$(printf '### B-1 — fixture\n\n```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: open\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')" "CONFIRMED"
+
+# The negative controls. Without them, "refuse every id" passes both cells above
+# and takes the whole register red.
+cell "the canonical three-digit form (B-001) passes" 0 CONFIRMED \
+  "$(item B-001 open '"true"' 2026-08-23)" "is not canonical"
+
+# The reason this rule is `f"B-{int(n):03d}"` and NOT `^B-\d{3}$`: four-digit ids
+# must keep working, or the gate forbids the day the register reaches B-1000.
+# `^B-\d{3}$` passes every other cell in this file and fails only this one.
+cell "a four-digit id (B-1000) is canonical too — width is not frozen" 0 CONFIRMED \
+  "$(python3 - <<'PYGEN'
+for n in range(1, 1001):
+    print(f"### B-{n:03d} — fixture\n")
+    print("```backlog")
+    print(f"id: B-{n:03d}\nrepo: corelink-server\nowner: tl\nstatus: open")
+    print('verify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23')
+    print("```\n")
+PYGEN
+)" "is not canonical"
 
 echo
 if [[ "$fails" -eq 0 ]]; then echo "backlog gate: all cells passed"; exit 0; fi

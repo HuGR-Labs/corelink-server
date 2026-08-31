@@ -11977,22 +11977,35 @@ necessária. **Não é suficiente.**
 O resultado é dois itens que qualquer humano lê como o mesmo número, ambos CONFIRMED, e toda
 citação de fora (`[B-142]`) apontando para um dos dois por acidente.
 
-**A decisão que falta, e é por isso que não entrou no [B-143]:** qual é a forma canônica.
-Todos os 167 ids de hoje são `B-` + **três** dígitos zero-padded, então `^B-\d{3}$` fecha o
-buraco exatamente — e proíbe o dia em que houver `B-1000`. As alternativas — normalizar por
-`int()` na checagem de duplicata (aceita a grafia, recusa o alias), ou exigir que a grafia
-seja igual a `f"B-{int(n):03d}"` (canoniza sem travar a largura) — mudam o que acontece com
-uma renumeração futura. Não é edição de uma linha; é escolher o contrato do id.
+**Consertado 2026-08-31 — e a decisão que faltava foi TOMADA e registrada.**
 
-**O que este item NÃO decide:** se ids devem virar largura variável. Ele exige que **uma**
-grafia seja canônica e que as outras sejam recusadas por nome, não qual das três regras
-implementa isso.
+**A regra escolhida, das três que este item enumerou, é a terceira:** a grafia tem de ser
+igual a `f"B-{int(n):03d}"`.
+
+- **NÃO `^B-\d{3}$`** — fecha o buraco exatamente para os ids de hoje e **proíbe o dia em que
+  houver `B-1000`**, que é a ressalva que o próprio item levanta. Esse mutante passa em todas
+  as outras células do arquivo de teste e morre só na célula do `B-1000`, que existe para isso.
+- **NÃO normalizar apenas a chave de duplicata** — aceita a grafia e recusa só a colisão, então
+  um `B-0500` sozinho continuaria mergeando e continuaria sendo lido como número diferente do
+  que é. Recusa o alias, não a forma.
+- **Sim `f"B-{int(n):03d}"`** — canoniza **sem congelar a largura**: `B-1000` faz round-trip
+  (`f"B-{1000:03d}" == "B-1000"`), e os 167 ids de hoje já a satisfazem. Uma grafia por número,
+  e a renumeração futura não fica proibida.
+
+Recusa por nome, com a grafia certa impressa (`write it as B-142`), no mesmo ponto onde o
+[B-143] recusa as formas malformadas.
+
+Três células novas em `scripts/test_backlog_verify.sh`, e a célula que este item havia fixado
+na polaridade "KNOWN GAP" — com a nota *"must be INVERTED when B-167 is fixed, and its failure
+is the reminder"* — foi **invertida**, que era o combinado. Os 45 ids de fixture não-canônicos
+do arquivo (`B-1`, `B-2`, `B-3`, `B-42`) foram canonizados junto: a regra vale para o teste
+também, senão ela não valeria.
 
 ```backlog
 id: B-167
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   python3 - <<'PY'
   import re, subprocess, sys, tempfile, pathlib
@@ -12026,12 +12039,30 @@ verify: |
                          capture_output=True, text=True)
   out = r.stdout + r.stderr
   if r.returncode == 0 and "CONFIRMED" in out:
-      print(f"AINDA ABERTO: `id: {alias}` sai CONFIRMED convivendo com o {alvo} real — "
-            "densidade satisfeita por int(), duplicata comparada como string.")
-      sys.exit(0)
-  print(f"FECHADO?: o script recusou `{alias}` (rc={r.returncode}). Confirme QUAL regra "
-        "canonica entrou e atualize este item com a escolha.\n" + out.strip())
-  sys.exit(1)
+      print(f"REGRESSAO: `id: {alias}` voltou a sair CONFIRMED convivendo com o {alvo} real — "
+            "densidade satisfeita por int(), duplicata comparada como string. A regra canonica sumiu.")
+      sys.exit(1)
+  if "is not canonical" not in out:
+      print(f"FALHA: `{alias}` foi recusado (rc={r.returncode}) mas NAO pela regra canonica — "
+            "pode estar sendo pego por outra checagem, por acidente. Releia antes de confiar "
+            "neste portao.\n" + out.strip())
+      sys.exit(1)
+  # CONTROLE NEGATIVO: uma regra que recusasse TODO id satisfaria o teste acima e
+  # reprovaria os 167 itens do arquivo. O `B-168` canonico tem de continuar passando.
+  ctl = "B-168"
+  probe_ctl = (f"\n### {ctl} — sonda\n\nSonda de controle do verify do B-167.\n\n"
+               f"```backlog\nid: {ctl}\nrepo: corelink-server\nowner: tl\n"
+               'status: open\nverify: "true"\nverify-means: sonda\nlast-verified: 2026-08-31\n```\n')
+  with tempfile.TemporaryDirectory() as d:
+      f = pathlib.Path(d, "ctl.md"); f.write_text(text + probe_ctl)
+      rc2 = subprocess.run([sys.executable, str(script), "--file", str(f), "--id", ctl],
+                           capture_output=True, text=True)
+  if rc2.returncode != 0 or "CONFIRMED" not in (rc2.stdout + rc2.stderr):
+      print(f"CONTROLE NEGATIVO FALHOU: um id canonico novo ({ctl}) foi recusado "
+            f"(rc={rc2.returncode}) — a regra virou recusa-tudo.\n" + (rc2.stdout + rc2.stderr).strip()[:400])
+      sys.exit(1)
+  print(f"fechado: `{alias}` recusado pela forma canonica, e o {ctl} canonico ainda passa")
+  sys.exit(0)
   PY
 verify-means: |
   **Polaridade `open`:** sai 0 — aberto — enquanto `backlog_verify.py` continuar dando
