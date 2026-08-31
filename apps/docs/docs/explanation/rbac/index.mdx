@@ -54,7 +54,7 @@ PAT scope — see the note under the table.
 
 | Category    | Scopes                                                                                          | Notes                                                |
 |-------------|-------------------------------------------------------------------------------------------------|------------------------------------------------------|
-| **CAS**     | `cache:r`, `cache:w`, `cache:find-missing`, `cache:delete`                                      | Read/write content-addressable storage + AC results. |
+| **CAS**     | `cache:r`, `cache:w`, `cache:find-missing`, `cache:delete` *(not enforced)*                      | Read/write content-addressable storage + AC results. Blob deletion is gated on `cache:w`, not on `cache:delete`. |
 | **Admin**   | `admin`                                                                                         | Owner-grade superset (cache read + write, plus billing / account-PII). Never self-serve-grantable. |
 | **Executor**| `execute:action`, `report:result`                                                               | Phase-2 executor only; **not implemented** — these names grant nothing today. |
 

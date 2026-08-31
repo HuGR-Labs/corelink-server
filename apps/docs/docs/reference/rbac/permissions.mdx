@@ -63,9 +63,12 @@ The full canonical permission catalog. Two layers:
 
 - **Bit position:** 3 (`SCOPE_CACHE_DELETE`).
 - **Granted to roles by default:** none.
-- **Status:** **not enforced.** No blob-delete route is served on any
-  customer surface, so this name currently grants nothing. It is carried
-  in an explicit declared-exception ledger
+- **Status:** **not enforced.** A blob-delete route *does* exist
+  (`DELETE /v1/cas/{tenant}/{hash}`), but it is gated on the cache-WRITE
+  capability (`CacheScope::can_write`) — **not** on this scope. So
+  `cache:delete` grants nothing distinct, and any write-capable token
+  (`read-write` / `cas:rw` / `cas:w`) can delete a blob. Carried in an
+  explicit declared-exception ledger
   (`crates/corelink-container/tests/scope_catalog_closure.rs`) so the gap
   stays visible rather than silent.
 

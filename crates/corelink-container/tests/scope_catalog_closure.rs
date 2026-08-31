@@ -44,7 +44,8 @@ use corelink_server::scope::{
 const UNENFORCED_BY_DESIGN: &[(&str, &str)] = &[
     (
         "cache:delete",
-        "no blob-delete route exists on any customer surface",
+        "blob delete IS served but is gated on cache-WRITE (CacheScope::can_write), \
+         never on this scope — so the name grants nothing distinct",
     ),
     (
         "execute:action",
@@ -58,6 +59,23 @@ const UNENFORCED_BY_DESIGN: &[(&str, &str)] = &[
 
 /// Every way the container's enforcement surface can consult a scope token.
 /// A name is "enforced" iff at least one of these consults it.
+///
+/// # Known limit of this predicate
+///
+/// This proves **"some code knows this string"**, not **"this string grants a
+/// DISTINCT privilege"**. The `mintable` arm is satisfied by
+/// `classify_requested_scopes` alone, which is the only consultor of
+/// `cache:r` / `cache:w`. So a future scope that is mintable but collapses
+/// into an existing class — granting nothing its siblings do not already
+/// grant — would pass this gate green.
+///
+/// That is exactly the pre-ADR-0071 history of `cache:find-missing`: it was a
+/// recognized token long before `requires_find_missing` gave it a distinct
+/// meaning. Closing that hole needs a *differential* check (mint two PATs
+/// differing only in the new bit, assert some request succeeds for one and
+/// fails for the other), which is a live-plane test, not a predicate unit
+/// test. Tracked separately; the class this file closes is the narrower and
+/// still-valuable "published name nobody reads at all".
 fn is_recognized_by_enforcement(name: &str) -> bool {
     // The mint-side classifier: does the self-serve grammar know this token?
     let mintable = classify_requested_scopes(&[name.to_owned()]).is_ok();

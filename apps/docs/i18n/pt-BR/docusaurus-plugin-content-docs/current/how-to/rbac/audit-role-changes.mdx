@@ -39,18 +39,27 @@ busca de mudanças de papel e de eventos de dupla aprovação.
 
 ## Pré-requisitos
 
-- Uma sessão Clerk no painel como `Owner` ou `Admin`, ou um PAT de nível
-  owner (`admin`, `Authorization: Bearer corelink_<env>_…`). O log de
-  auditoria expõe PII de segurança e de conta, por isso o contêiner o
-  protege com `requires_billing_admin` — a capacidade `billing` que o
-  Worker encaminha para uma sessão owner/admin, ou um token `admin` ou
-  `owner`. Um PAT apenas de cache (`read-write` / `cache:r`) **não**
-  alcança esse endpoint.
+- **Qualquer PAT com capacidade de leitura**
+  (`Authorization: Bearer corelink_<env>_…`). As rotas `/v1/audit/*`
+  usadas neste guia são protegidas por `requires_audit_read`, que concede
+  diante de qualquer capacidade de leitura — um token cujo escopo seja
+  `read-write`, `read-only`, `cas:r`, `cas:rw`, `cas:w`, `admin` ou
+  `owner`. **O token que o painel emite por padrão (`read-write`)
+  basta**; você não precisa de um token de nível owner para exportar o
+  seu próprio log de auditoria.
+- Fail-closed: um PAT apenas de `find-missing`, ou uma requisição sem
+  escopo algum, é recusada.
 - Emita e liste PATs com `POST /v1/customer/keys` (`{name, scopes[]}`) e
   `GET /v1/customer/keys`; revogue com
-  `POST /v1/customer/keys/{pat_id}/revoke`. Note que a emissão
-  self-service concede apenas escopos de cache — `admin` nunca é
-  concedido por esse caminho.
+  `POST /v1/customer/keys/{pat_id}/revoke`.
+
+:::note
+A **página de log de auditoria** do painel (`GET /v1/customer/audit`) é
+outra superfície, com controle mais estrito — `requires_billing_admin`
+(`billing` / `admin` / `owner`), porque essa visão carrega PII de
+faturamento e de conta. Essa restrição **não** se aplica às rotas
+`/v1/audit/*` usadas abaixo.
+:::
 
 :::note
 Não existe o escopo `admin:audit`. Ele constava aqui como pré-requisito,

@@ -146,7 +146,10 @@ and the SQL `CHECK` constraint lives in `specs/03_architecture/data_model.md`
 
 ### Cannot do
 
-- Delete CAS blobs (`cache:delete` — admin-only).
+- *(Correction: a Developer **can** delete CAS blobs. `DELETE /v1/cas/{tenant}/{hash}`
+  is gated on the cache-WRITE capability, not on a delete-specific scope, so any
+  write-capable token deletes. The `cache:delete` scope is defined but no
+  enforcement point reads it.)*
 - Mint PATs for other users.
 - Read tenant config or audit log.
 - Invite, demote, or revoke users.
@@ -183,9 +186,11 @@ and the SQL `CHECK` constraint lives in `specs/03_architecture/data_model.md`
 ### Can do
 
 - Read CAS blobs and AC results (`cache:r`).
-- Read tenant audit log — useful for SecOps observers (via the dashboard
-  session; the audit surface is owner/admin-gated, so a `Viewer` reads it
-  in the dashboard, not with a PAT).
+- Read tenant audit log — useful for SecOps observers. The `/v1/audit/*`
+  routes (analytics + export) are gated by `requires_audit_read`, which
+  any read-capable token satisfies, so a read-scoped PAT works. The
+  dashboard's own Audit log page (`GET /v1/customer/audit`) is stricter
+  (`requires_billing_admin`) because it carries billing / account PII.
 - View tenant config.
 
 ### Cannot do

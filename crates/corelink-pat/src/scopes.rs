@@ -137,8 +137,20 @@ impl PatScopes {
         Self(scope & SCOPE_KNOWN_MASK)
     }
 
-    /// Returns the raw u64 representation suitable for DB persistence
-    /// (Neon `pat.scopes` BIGINT column, per data_model.md §4.1).
+    /// Returns the raw u64 bitset.
+    ///
+    /// **This is NOT persisted anywhere.** The doc comment used to promise a
+    /// "Neon `pat.scopes` BIGINT column, per data_model.md §4.1"; no such
+    /// column exists in any migration. The live store is D1, where
+    /// `pat.scope` is a coarse label
+    /// (`TEXT CHECK (scope IN ('read-write','read-only','admin'))`,
+    /// `migrations/d1/0037`) — so this bitset is a mint-time in-memory
+    /// artifact only, and what reaches enforcement is the scope STRING on
+    /// the `x-corelink-scope` header. The only production consumer is a log
+    /// field (`routes::internal_pat`, `scope_bits =`).
+    ///
+    /// That absence is load-bearing: because no row stores a bitset, retiring
+    /// a bit can never reinterpret an existing PAT (see [`SCOPE_ADMIN`]).
     #[must_use]
     pub const fn to_u64(self) -> u64 {
         self.0

@@ -186,7 +186,7 @@ Scopes seguem padrão `<resource>-<action>`. Lista completa:
 | `cache-w` (wire: `cache:w`) | Write CAS blobs + AC results | CI token, dev token |
 | `cache-rw` (wire: `cache:r` + `cache:w` set) | Abrev: `cache-r` + `cache-w` | CI token, dev token |
 | `cache-find-missing` | Executar `FindMissingBlobs` (não implica download) | read-only token, CI |
-| `cache-delete` | Delete blobs (rare, admin) | ⚠️ **NÃO IMPLEMENTADO** — não existe rota de delete de blob; o nome não concede nada |
+| `cache-delete` | Delete blobs (rare, admin) | ⚠️ **NÃO APLICADO** — a rota `DELETE /v1/cas/{tenant}/{hash}` existe, mas é gateada por `CacheScope::can_write` (cache-WRITE), nunca por este escopo; o nome não concede nada distinto |
 | `admin` (wire: `admin`) | Superset owner-grade: cache rw + administração do tenant | admin token legado, mint interno (`internal_pat`) |
 | `execute-action` | (Fase 2) Executor pode reportar action start | ⚠️ **NÃO IMPLEMENTADO** (Fase 2) — não existe executor |
 | `report-result` | (Fase 2) Executor pode reportar result | ⚠️ **NÃO IMPLEMENTADO** (Fase 2) — não existe executor |

@@ -39,7 +39,13 @@ Legend:
 | Read CAS blobs + AC         | `cache:r`             |   ✅  |   ✅  |     ✅     |   ✅   |
 | Write CAS blobs + AC        | `cache:w`             |   ✅  |   ✅  |     ✅     |   ❌   |
 | FindMissingBlobs            | `cache:find-missing`  |   ✅  |   ✅  |     ✅     |   ❌   |
-| Admin blob deletion         | `cache:delete`        |   ✅  |   ✅  |     ❌     |   ❌   |
+| Blob deletion               | `cache:w` †           |   ✅  |   ✅  |     ✅     |   ❌   |
+
+† Blob deletion is gated on the cache-WRITE capability
+(`CacheScope::can_write`), not on a delete-specific scope. The
+`cache:delete` scope name is defined in the catalog but **no enforcement
+point reads it**, so it grants nothing distinct — any write-capable token
+can delete a blob.
 
 :::warning[How the administrative rows are actually gated]
 The **Scope** column below said `admin:tenant-read`, `admin:tenant-write`,
