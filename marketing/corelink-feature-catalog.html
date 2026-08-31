@@ -850,14 +850,14 @@ footer{text-align:center;color:var(--muted);font-size:12.5px;padding:36px 20px}
           <p class="prob"><span class="probl">Solves</span> Rejects forged/guessed tokens in &lt;100us without burning CPU on Argon2id, while still proving real possession — kills both the &#x27;any string accepted&#x27; bug and timing oracles.</p>
           <code class="ev">crates/corelink-pat/src/verify.rs:46</code>
         </div>
-        <div class="card" data-status="shipped" data-text="patscopes u64 bitset (13 canonical scopes) compact u64 bitset of cache:r/w/find-missing/delete, admin:tenant-read/write/tokens/billing/audit/users, execute:action, report:result, with cache:rw as a union; reserved bits masked off on load for forward-compat; single-instruction (scopes &amp; required)==required check. lets the hot auth path enforce least-privilege scope on every request with zero allocation, and lets future scopes be added without breaking current-generation readers. authorization">
+        <div class="card" data-status="shipped" data-text="patscopes u64 bitset (7 canonical scopes) compact u64 bitset of cache:r/w/find-missing/delete, admin, execute:action, report:result, with cache:rw as a union; reserved bits masked off on load for forward-compat; single-instruction (scopes &amp; required)==required check. lets the hot auth path enforce cache read/write/find-missing and admin least-privilege on every request with zero allocation, and lets future scopes be added without breaking current-generation readers. authorization">
           <div class="chead">
-            <h3>PatScopes u64 bitset (13 canonical scopes)</h3>
+            <h3>PatScopes u64 bitset (7 canonical scopes)</h3>
             <span class="badge" style="color:#1a7f37;background:#dafbe1">Shipped</span>
           </div>
           <div class="cat">authorization</div>
-          <p class="what">Compact u64 bitset of cache:r/w/find-missing/delete, admin:tenant-read/write/tokens/billing/audit/users, execute:action, report:result, with cache:rw as a union; reserved bits masked off on load for forward-compat; single-instruction (scopes &amp; required)==required check.</p>
-          <p class="prob"><span class="probl">Solves</span> Lets the hot auth path enforce least-privilege scope on every request with zero allocation, and lets future scopes be added without breaking current-generation readers.</p>
+          <p class="what">Compact u64 bitset of cache:r/w/find-missing/delete, admin, execute:action, report:result, with cache:rw as a union; reserved bits masked off on load for forward-compat; single-instruction (scopes &amp; required)==required check.</p>
+          <p class="prob"><span class="probl">Solves</span> Lets the hot auth path enforce least-privilege on every request with zero allocation. Enforced today: cache read, cache write, find-missing and admin. <em>cache:delete, execute:action and report:result are reserved for capabilities not yet built and grant nothing</em> — a machine-checked ledger keeps that list honest, so a scope name can never again be published without an enforcement point behind it.</p>
           <code class="ev">crates/corelink-pat/src/scopes.rs:36</code>
         </div>
         <div class="card" data-status="shipped" data-text="argon2id pat hashing (owasp-2024 params) hashes/verifies the pat random secret with argon2id at m_cost=65536 kib (64 mib), t_cost=3, p_cost=4, 32-byte output; rejects stored hashes below the owasp-2024 m_cost floor; constant-time-ish cold-path padding. makes a stolen d1 pat_hash effectively un-bruteforceable, so a database leak does not yield usable credentials. credentials">

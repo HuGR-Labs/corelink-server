@@ -3,9 +3,9 @@ id: "AUTH-MODEL"
 type: "auth_model"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.2.0"
+version: "0.3.0"
 created: "2026-04-24"
-updated: "2026-04-29"
+updated: "2026-08-31"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -17,8 +17,8 @@ tags: ["architecture", "security", "auth", "multi-tenant"]
 # Auth Model — Principals, Scopes, Rotation, Revocation
 
 > **doc_status:** DRAFT
-> **Versão:** 0.2.0
-> **Última atualização:** 2026-04-29
+> **Versão:** 0.3.0
+> **Última atualização:** 2026-08-31
 > **Owner:** Gustavo Schneiter
 > **Aprovador Final:** Gustavo Schneiter
 > **Revisores:** ⚠️ **staffing-blocked** — promoção a `doc_status: FROZEN` bloqueada até ≥ 2 reviewers nomeados conforme roles indicados (endereça F-09 audit Lote 3+4)
@@ -186,15 +186,45 @@ Scopes seguem padrão `<resource>-<action>`. Lista completa:
 | `cache-w` (wire: `cache:w`) | Write CAS blobs + AC results | CI token, dev token |
 | `cache-rw` (wire: `cache:r` + `cache:w` set) | Abrev: `cache-r` + `cache-w` | CI token, dev token |
 | `cache-find-missing` | Executar `FindMissingBlobs` (não implica download) | read-only token, CI |
-| `cache-delete` | Delete blobs (rare, admin) | admin token |
-| `admin-tenant-read` | Listar config do tenant | admin dashboard |
-| `admin-tenant-write` | Mudar config do tenant | admin dashboard |
-| `admin-tokens` | Gerar/revogar tokens | admin dashboard |
-| `admin-billing` | Ver/mudar billing | admin dashboard |
-| `admin-audit` | Ler audit logs do tenant | admin dashboard + compliance |
-| `admin-users` | Gerenciar users do tenant | admin dashboard |
-| `execute-action` | (Fase 2) Executor pode reportar action start | executor |
-| `report-result` | (Fase 2) Executor pode reportar result | executor |
+| `cache-delete` | Delete blobs (rare, admin) | ⚠️ **NÃO IMPLEMENTADO** — não existe rota de delete de blob; o nome não concede nada |
+| `admin` (wire: `admin`) | Superset owner-grade: cache rw + administração do tenant | admin token legado, mint interno (`internal_pat`) |
+| `execute-action` | (Fase 2) Executor pode reportar action start | ⚠️ **NÃO IMPLEMENTADO** (Fase 2) — não existe executor |
+| `report-result` | (Fase 2) Executor pode reportar result | ⚠️ **NÃO IMPLEMENTADO** (Fase 2) — não existe executor |
+
+#### 3.1.1 Os seis `admin-*` granulares: PLANEJADOS, nunca implementados (B-080)
+
+A taxonomia original listava seis escopos administrativos granulares —
+`admin-tenant-read`, `admin-tenant-write`, `admin-tokens`, `admin-billing`,
+`admin-audit`, `admin-users`. **Nenhum deles jamais foi aplicado, e nenhum jamais pôde
+sequer ser cunhado.** Foram removidos do catálogo canônico em código
+(`crates/corelink-pat/src/scopes.rs`) e colapsados no único nome que é de facto
+cunhável, persistível e aplicado: `admin`.
+
+Por que a granularidade não existia:
+
+1. **Não cunháveis.** O classificador self-serve
+   (`corelink_server::scope::classify_requested_scopes`) devolve `Err` para qualquer
+   token `admin:*`; o mint interno (`routes::internal_pat::scope_label_to_bits`) aceita
+   apenas os rótulos `admin`, `cas:rw`, `read-write` e `read-only`.
+2. **Não persistíveis.** `pat.scope` é
+   `TEXT CHECK (scope IN ('read-write','read-only','admin'))`
+   (`migrations/d1/0037_signup_orchestration.sql`). Não existe coluna de bitset — o
+   `PatScopes` u64 é artefato de mint em memória, nunca armazenado.
+3. **Sem consumidor.** O consumidor natural (o dashboard admin) **não usa PAT** para a
+   superfície administrativa: usa sessão Clerk, e o Worker emite o token `billing` para
+   uma sessão owner/admin. Essa granularidade É aplicada hoje, sob outro vocabulário —
+   `requires_billing_admin` (`billing` / `admin` / `owner`) gateia
+   `/v1/customer/billing*` e `/v1/customer/audit`.
+
+Publicar nomes que não concedem nada convida plano de menor-privilégio decorativo. Um
+guard de classe (`crates/corelink-container/tests/scope_catalog_closure.rs`) agora
+reprova qualquer nome de escopo publicado sem ponto de aplicação por trás — com ledger
+explícita e motivada para as exceções declaradas acima.
+
+> **Nota de governança:** §3.4 exige ADR + security review para **adicionar** escopo.
+> Esta mudança **remove** uma alegação não implementada e não expande superfície de
+> segurança, portanto não dispara FF-HR-005. Reintroduzir qualquer um dos seis como
+> escopo real continua sujeito a §3.4 na íntegra.
 
 ### 3.2 Escopos são **aditivos**
 
@@ -492,6 +522,7 @@ Ver framework §38 Red Team e Adversarial Review. Auth model **DEVE** ser alvo d
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 0.1.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | Versão inicial (Lote 4). 7 tipos de principal + 13 scopes + 5 camadas de tenant isolation + rotation/revocation com SLA 60s + audit trail completo. |
+| 0.3.0 | 2026-08-31 | Gustavo (via Claude Opus 4.8) | **B-080** — §3.1 passa a distinguir escopo APLICADO de escopo apenas planejado. Os seis `admin-*` granulares (`tenant-read`/`tenant-write`/`tokens`/`billing`/`audit`/`users`) nunca foram cunháveis, persistíveis nem consultados: removidos do catálogo em código e colapsados em `admin` (§3.1.1). `cache-delete`, `execute-action` e `report-result` ficam marcados NÃO IMPLEMENTADOS. Remoção de alegação, não expansão de superfície — §3.4/FF-HR-005 não dispara. |
 
 ---
 

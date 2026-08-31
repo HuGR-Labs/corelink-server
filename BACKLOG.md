@@ -4606,35 +4606,57 @@ mais barato; o primeiro é o que o produto promete.
 id: B-080
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   bash -c 's=crates/corelink-pat/src/scopes.rs
-  e=crates/corelink-container/src/scope.rs
-  [ -f "$s" ] && [ -f "$e" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
-  naoaplicados=0; faltando=""
+  t=crates/corelink-container/tests/scope_catalog_closure.rs
+  [ -f "$s" ] || { echo "FALHA: scopes.rs sumiu — reavalie o item."; exit 1; }
+  [ -f "$t" ] || { echo "FALHA: o teste que fecha a CLASSE sumiu — sem ele o item reabre."; exit 1; }
+  # 1. Os seis nomes decorativos continuam FORA do catalogo canonico.
+  revividos=""
   for sc in admin:tenant-read admin:tenant-write admin:tokens admin:billing admin:audit admin:users; do
-    if grep -q "$sc" "$s" 2>/dev/null; then
-      grep -q "$sc" "$e" 2>/dev/null || { naoaplicados=$((naoaplicados+1)); faltando="$faltando $sc"; }
-    fi
+    grep -q "\"$sc\"" "$s" 2>/dev/null && revividos="$revividos $sc"
   done
-  [ "$naoaplicados" -gt 0 ] || { echo "FALHA: todo escopo admin:* definido tambem aparece no ponto de aplicacao — feche o item."; exit 1; }
-  echo "aberto: $naoaplicados escopo(s) admin:* definidos e nunca verificados:$faltando"'
+  [ -z "$revividos" ] || { echo "FALHA: escopo decorativo RESSUSCITOU no catalogo:$revividos"; exit 1; }
+  # 2. A assercao que fecha a classe continua no teste (ninguem a esvaziou).
+  grep -q "every_canonical_scope_name_is_enforced_or_declared" "$t" \
+    || { echo "FALHA: a assercao que fecha a classe sumiu do teste."; exit 1; }
+  grep -q "removed_admin_scope_names_are_denied_everywhere" "$t" \
+    || { echo "FALHA: a prova de NEGACAO sumiu do teste."; exit 1; }
+  # 3. A ledger de excecoes declaradas nao cresceu (3 entradas, cada uma com motivo).
+  # Conta so as linhas de NOME (contem `:`), nunca as de motivo — calibrado:
+  # o padrao ingenuo `^ *"` conta nome+motivo e devolveria 6.
+  n=$(sed -n "/UNENFORCED_BY_DESIGN: /,/^];/p" "$t" | grep -cE "^ *\"[a-z-]+:[a-z-]+\",$")
+  [ "$n" -eq 3 ] || { echo "FALHA: ledger de excecoes tem $n nome(s), esperado 3 — alguem declarou um escopo decorativo novo."; exit 1; }
+  echo "fechado: 0 escopos decorativos; guarda de classe presente; ledger=3"'
 verify-means: |
-  open — existe pelo menos um escopo `admin:*` definido em `scopes.rs` que não aparece
-  em `scope.rs`.
+  done — POLARIDADE INVERTIDA (era `open`). Falha se o defeito voltar.
 
-  Vira DRIFTED por qualquer um dos dois reparos: os escopos passam a ser verificados (o
-  bom), ou são removidos da definição (o honesto). O laço só conta escopos que EXISTEM
-  na definição, então remover fecha o item naturalmente.
+  Fecha por (b): os seis `admin:*` foram REMOVIDOS do catálogo canônico e colapsados no
+  único nome que é de facto cunhável, persistível e aplicado — `admin`. Evidência que
+  decidiu: (i) nenhum caminho de cunhagem aceita os seis — o self-serve
+  (`classify_requested_scopes`) devolve `Err`, e o interno (`internal_pat::
+  scope_label_to_bits`) só aceita os rótulos `admin`/`cas:rw`/`read-write`/`read-only`;
+  (ii) o D1 não consegue armazená-los — `pat.scope` é `TEXT CHECK (scope IN
+  ('read-write','read-only','admin'))` (`migrations/d1/0037`), e não existe coluna de
+  bitset; (iii) o consumidor natural JÁ é aplicado, com outro vocabulário —
+  `requires_billing_admin` (`billing`/`admin`/`owner`) gateia `/v1/customer/billing*` e
+  `/v1/customer/audit`. Implementar (a) seria ensinar o ponto de aplicação a reconhecer
+  strings que nenhum cunhador emite — e ABRIRIA um caminho novo para billing.
 
-  Conta em vez de exigir zero-ou-tudo: implementar dois dos seis reduz o número e mantém
-  o item aberto listando os que faltam. Progresso parcial aparece.
+  O que este comando decide: (1) nenhum dos seis nomes voltou ao catálogo; (2) as duas
+  asserções que fecham a classe continuam no teste; (3) a ledger de exceções declaradas
+  não cresceu além das 3 entradas (`cache:delete`, `execute:action`, `report:result` —
+  capacidades não construídas, dívida agora VISÍVEL em vez de invisível).
 
-  O que NÃO decide, e admito: se a menção em `scope.rs` é uma verificação REAL ou só o
-  nome aparecendo numa lista. É a fraqueza de gatear por presença de string. Quem
-  consertar deve acompanhar de teste que prove negação — um token com `admin:audit`
-  recusado numa rota de billing — e trocar este comando por ele.
-last-verified: 2026-08-30
+  O que NÃO decide, e admito: não EXECUTA o teste. `backlog_verify.py` tem
+  `VERIFY_TIMEOUT_S = 120` e um build de teste de `corelink-server` nesta máquina leva
+  20+ min — um verify que rodasse `cargo test` daria SEMPRE exit 124, ou seja, um portão
+  que mente. A verificação autoritativa é
+  `cargo test -p corelink-server --test scope_catalog_closure`, que roda no lane de PR;
+  este comando guarda os invariantes estruturais que aquele teste aplica, e falha se
+  alguém apagar o teste ou alargar a ledger em silêncio.
+last-verified: 2026-08-31
 ```
 
 ### B-081 — seguir o runbook de rotação da chave de assinatura de PAT causa indisponibilidade
