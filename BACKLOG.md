@@ -8075,7 +8075,7 @@ verify-means: |
 last-verified: 2026-08-31
 ```
 
-### B-138 — a imagem do runner foi assada e **não coube na box que a constrói**
+### B-138 — o build da imagem do runner estoura o disco da box ao importar o nightly do `#523`
 
 O #1506 tira seis lanes do Mac do dono e as põe em `runs-on: corelink`, confiando que a
 imagem da frota exporta `CORELINK_NIGHTLY`, conforme `corelink-runners#523`. O passo falha
@@ -8093,8 +8093,20 @@ level=fatal msg="apply layer error for corelink-spawn-worker-runnercontainer:
   no space left on device"
 ```
 
-O caminho que estourou é **exatamente o que o `#523` acrescentou**. A box encheu assando o
-nightly — o próprio conteúdo que o #1506 precisa.
+O caminho que estourou é **exatamente o que o `#523` acrescentou**. Mas a precisão importa,
+e a versão anterior deste parágrafo errava nela: **a camada do nightly não falhou durante o
+`RUN` que a instala — falhou na importação.**
+
+O log mostra o buildkit **terminando**: `#44 exporting manifest … done`,
+`#44 sending tarball 14.6s done`, `#44 DONE 80.4s` às 05:55:16Z. Só então vem
+`unpacking docker.io/library/corelink-spawn-worker-runnercontainer:…` e, 34 segundos depois,
+o ENOSPC. O build **produziu** a imagem; a box não coube **desempacotá-la**.
+
+Isso muda o que está em jogo: o `docker build` passa pelo shim do nerdctl, então o buildkit
+exporta um **tarball** e o nerdctl **desempacota na image store do containerd** antes de
+qualquer push. A box precisa segurar cache de build **+** tarball **+** camadas
+desempacotadas **ao mesmo tempo**. É pico de coexistência, não tamanho de uma camada
+isolada.
 
 **Isto NÃO é o [B-128].** O B-128 é o disco do Mac do dono. Aqui é `/var/lib/containerd` e
 `/opt/actions-runner` da box efêmera da frota, outra máquina. Mesma classe de defeito,
@@ -8149,9 +8161,23 @@ As duas são prosa de dentro do repo, e prosa foi o que já errou duas vezes nes
 investigação — a doc da frota sobre o tamanho da box, e o `build-fabricd-image` confundido
 com o `build-cf-container-images`. **Não decidir por elas é deliberado.**
 
-O único sinal direto disponível é fraco e não conclui: os três builds da imagem foram
-servidos por runners de nomes distintos (`cf-runner-9fe67af0`, `ca3c1880`, `8d4c2700`), o que
-é consistente com efêmera — mas um volume reciclado também registra nome novo a cada spawn.
+Os sinais diretos **desfavorecem** H2 sem fechá-la. Três medições, nenhuma conclusiva
+sozinha:
+
+- **`CACHED` aparece 0 vezes no log**, contra um controle de **44 linhas `DONE`**. Zero cache
+  hits do buildkit: o `apt-get install` desempacotou tudo do zero e o cargo recompilou.
+  Box quente com resíduo recuperável quase certamente mostraria hits.
+- **O passo 4, que é a única evidência textual de warm-box, é um no-op.** Ele é, por inteiro,
+  `sudo rm -f /tmp/corelink-docker-shim.lock || true` — não produz saída e não faz nada em
+  box nova. A alegação de reuso está no **nome** do passo e no comentário, não no que ele
+  executa. Ou seja: a fonte que eu citava era do tipo *"inferido do nome"*, que é o erro
+  contra o qual este item avisa dois parágrafos acima.
+- Os três builds foram servidos por runners de nomes distintos (`cf-runner-9fe67af0`,
+  `ca3c1880`, `8d4c2700`), consistente com efêmera — mas volume reciclado também registra
+  nome novo a cada spawn.
+
+**Desfavorecida não é decidida.** H2 continua na mesa até alguém medir a box diretamente; o
+que mudou é que ela deixou de ser equiprovável.
 
 **As quatro saídas na mesa**, e a escolha é da guardiã — este item não a faz:
 
@@ -8160,7 +8186,13 @@ servidos por runners de nomes distintos (`cf-runner-9fe67af0`, `ca3c1880`, `8d4c
    **pico** — tarball e unpack coexistindo — e não lixo acumulado. Limpar resíduo não cria
    espaço para dois artefatos simultâneos.
 3. **Emagrecer o bake** (layer único, limpeza de cache no mesmo `RUN`, multi-stage).
-4. **Reverter o nightly** da imagem, o que devolve as sete lanes ao Mac.
+4. **Não materializar localmente** — empurrar direto do buildkit para o registry
+   (`--output type=registry` ou equivalente), eliminando tarball e unpack da box. Resolve a
+   falha **sem encolher uma única camada**, e é a única saída que ataca a causa medida (o
+   pico é na importação, não no `RUN`). Não estava nesta lista até a revisão fria apontar; um
+   item cujo valor é enumerar hipóteses com honestidade não pode omitir a que o próprio log
+   indica.
+5. **Reverter o nightly** da imagem, o que devolve as sete lanes ao Mac.
 
 A ressalva de (2) é o que separa esta decisão de um `prune` reflexo: pico e resíduo têm o
 mesmo sintoma e conserto diferente, e só (1) e (3) atacam pico.
