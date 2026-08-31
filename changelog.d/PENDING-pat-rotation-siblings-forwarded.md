@@ -38,3 +38,20 @@
   for `corelink-pat`) because it is a credential repair. The container half
   already existed; the defect was entirely Worker-side. That dependency still
   holds for the next repair that touches the crate — not for this one.
+
+### Fixed (pre-existing, surfaced by this PR)
+
+- **Five OKF citations in `docs/knowledge/planes/durable-object.md` pointed at the
+  wrong lines, and had on `main` too.** `R2_AUDIT_BUCKET` was cited at `:899`
+  (actually `NEAR_CEILING_ALERT_SINK`), `AUDIT_ARCHIVE_BATCH_LIMIT` at `:900`, and
+  `CORELINK_ORIGIN_TIMING_DETAIL` / `OCI_PUBLIC_DEDUP_ENABLED` /
+  `OCI_UPSTREAM_ON_MISS` at `:909` / `:1015` / `:1016` — all five landing on
+  comment lines. Verified against `origin/main` before touching them: the content
+  at those lines is byte-identical there, so this is pre-existing drift, not
+  displacement caused by this PR (this branch's file is net-zero lines and differs
+  from `main` only in 836-848).
+
+  Corrected by CONTENT to `:912`, `:913`, `:929`, `:1028`, `:1029`, and the block
+  range `774-1018` → `774-1031` (the env object actually closes at `:1031`).
+  Re-anchoring alone would have restored a green gate over five wrong citations —
+  the failure mode this repo has already paid for.
