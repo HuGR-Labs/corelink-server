@@ -11,8 +11,8 @@ source_files:
   - "apps/signup-worker/src/sentry-scrub.ts"
 source_blobs:
   - "apps/signup-worker/src/webhooks/github_provision.ts@3e0792e5dd32d3808960fce61a16e155eadfa142"
-  - apps/signup-worker/src/index.ts@e6af410e8fe11c4b47ee2bbbb2c1c1f91c0d373d
-checkpoint_sha: "1d3cbd5ec9279b901cedfeec24a75821ad15ca6a"
+  - apps/signup-worker/src/index.ts@8caf7d163752ce98831fc8bb7199c1a16a24c2cd
+checkpoint_sha: "559dee51ab0b54db6fa358101d27569e539edd09"
 provenance: "AUTHORED"
 tags: ["flows", "signup", "clerk", "webhook", "dsr", "erasure", "worker-edge"]
 timestamp: "2026-07-03T00:00:00Z"

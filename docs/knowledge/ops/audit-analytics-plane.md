@@ -25,7 +25,7 @@ source_files:
 source_blobs:
   - "docs/cli/audit-export.md@813c70f0a1807411138d865e73c44bb16143102e"
   - "crates/corelink-container/src/routes/audit_drain.rs@7bb7c98950850977c0b0df66d7abda3a32236cfd"
-checkpoint_sha: "efb831b69bc387d4a287a1623e03812fabf5c569"
+checkpoint_sha: "559dee51ab0b54db6fa358101d27569e539edd09"
 provenance: "AUTHORED"
 tags: ["ops", "audit", "export", "analytics", "compliance", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
