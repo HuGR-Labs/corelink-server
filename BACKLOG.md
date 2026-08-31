@@ -3399,14 +3399,18 @@ release publicado) e os logs já expiraram, então a causa dela é a única dest
 grupo que permanece **não diagnosticada** — registrada como tal em vez de
 suposta.
 
-`cosign-sign.yml` é o caso que NÃO é defeito e não deve ser "consertado":
-**0 execuções** porque dispara em push de tag `v*` e **não existe nenhuma tag
-`v*`** no repositório (só `cli-v*`). Ausência de execução não é execução
-vermelha. Ela também carrega um **waiver humano explícito**
-(`authorized-by: repo owner | 2026-08-11`) para permanecer GitHub-hosted, com
-razão técnica registrada — precisa de `docker` e da identidade OIDC hosted para
-assinatura keyless Cosign, e a frota Firecracker não tem daemon docker.
-**Não migrar, não apagar.**
+**`cosign-sign.yml` foi APAGADA em 2026-08-31 (WP-E).** A leitura anterior deste
+item — "não é defeito, apenas trigger-starved; não migrar, não apagar" — parou
+no gatilho e não abriu o corpo do workflow. É verdade que não havia tag `v*`
+(confirmado: 0 contra 4 `cli-v*`), mas isso era a PRIMEIRA de cinco paredes, e as
+outras quatro tornavam a lane inexecutável em qualquer cenário. Ver [B-118], que
+carrega o inventário completo. Resumo: ela empurrava para
+`ghcr.io/HumanGuardrail/*` com o `GITHUB_TOKEN` de um repo em `HuGR-Labs` (e o
+próprio arquivo trazia um `TODO(org-rename)` admitindo isso), construía o
+`Dockerfile` da raiz — que é o CONTÊINER — e o rotulava `corelink-worker`,
+carregava `ZONE_ID_PLACEHOLDER` no payload de deploy, e seu passo de atestação
+SLSA era um `echo` declarado como stub. O waiver do owner era real e sua razão
+técnica era correta; ele apenas protegia uma lane que não podia funcionar.
 
 **A raiz NÃO é falta de secret** — correção de 2026-08-30. O `release-cli` usa
 um único secret, `CORELINK_CLI_RELEASE_TOKEN`, e ele já existe. A falha é
@@ -3434,19 +3438,34 @@ owner: tl
 status: open
 verify: |
   bash -c 'grep -q "cargo zigbuild" .github/workflows/release-cli.yml || exit 1
-  grep -q "authorized-by: repo owner" .github/workflows/cosign-sign.yml || exit 1
-  git ls-remote --tags origin "refs/tags/v*" 2>/dev/null | grep -q . && exit 1
+  test -e .github/workflows/cosign-sign.yml && exit 1
+  grep -rn "HumanGuardrail/corelink-cli" .github/workflows/release-cli.yml && exit 1
+  grep -q "GITHUB_REPOSITORY" .github/workflows/release-slsa3.yml || exit 1
   exit 0'
 verify-means: |
-  open — decide as duas alegações estruturais que sustentam o item: o
-  `release-cli` ainda constrói por `cargo zigbuild` (a raiz não foi trocada) e o
-  waiver do `cosign-sign` ainda está no arquivo (ninguém o removeu ao "limpar"
-  lanes hosted). Vira vermelho também se surgir a primeira tag `v*`, porque aí o
-  `cosign-sign` deixa de estar trigger-starved e a análise precisa ser refeita
-  com execução real. Não ancora em histórico de execução: a causa do
-  `release-slsa3` está não-diagnosticada por logs expirados e um verify sobre
-  runs leria isso como verde.
-last-verified: 2026-08-30
+  open — decide as três alegações estruturais que ainda sustentam o item:
+
+  1. o `release-cli` ainda constrói por `cargo zigbuild`, ou seja a raiz da
+     falha de build NÃO foi trocada (e ela continua sem diagnóstico: os logs
+     das 8 execuções expiraram com HTTP 410);
+  2. a `cosign-sign.yml` NÃO existe mais — se alguém a recriar sem refazer a
+     análise das cinco paredes do [B-118], este item fica vermelho de propósito;
+  3. o `release-slsa3` ainda baixa os sujeitos de `${GITHUB_REPOSITORY}`, isto é,
+     deste repo — enquanto o `release-cli` publica no repo `corelink-cli`
+     SEPARADO. Essa é a raiz compartilhada das duas lanes: ninguém decidiu onde
+     os releases do CLI moram.
+
+  A cláusula do `HumanGuardrail/corelink-cli` é catraca: ela exige que o repo de
+  publicação PERMANEÇA repontado para `HuGR-Labs/corelink-cli`. Um revert
+  silencioso devolveria um `--repo` que responde 404, e sem a cláusula o item
+  continuaria verde por cima disso.
+
+  O que este comando NÃO decide, e é a parte maior: POR QUE a matriz de build
+  reprova. Um verify sobre histórico de execução leria os logs expirados como
+  verde, então ele não ancora ali. O próximo passo é uma tag descartável e ler o
+  erro real — a evidência lateral aponta a perna `x86_64-pc-windows-gnu`, a única
+  sem artefato no release `cli-v0.1.0`.
+last-verified: 2026-08-31
 ```
 
 ### B-113 — seis lanes self-hosted sem sucesso, cada uma por um motivo próprio
@@ -6488,69 +6507,103 @@ last-verified: 2026-08-30
 
 ---
 
-### B-118 — a única lane hosted protegida por waiver nunca executou
+### B-118 — a única lane hosted protegida por waiver nunca executou — RESOLVIDO, lane apagada
 
-`cosign-sign.yml` assina a imagem OCI do Worker com Cosign keyless e publica no Rekor. Ela
-é a **única** lane que o owner autorizou manter hospedada na GitHub, com waiver escrito no
-cabeçalho do arquivo (2026-08-11), sob o argumento de que o custo é desprezível porque só
-dispara em tag de release.
+**Fechado 2026-08-31 (WP-E), saída = APAGAR.** O item pedia que quem fechasse
+dissesse **por que** a lane nunca rodou, "com o corpo do workflow na mão".
+Aqui está: não foi um motivo, foram **cinco**, e só o primeiro era o gatilho.
 
-O argumento está certo. O efeito é que o waiver protege uma lane que **nunca assinou
-nada**:
+`cosign-sign.yml` assinava a imagem OCI do Worker com Cosign keyless e publicava
+no Rekor. Era a **única** lane que o owner autorizou manter hospedada na GitHub,
+com waiver escrito no cabeçalho (2026-08-11). O argumento de custo do waiver
+estava certo e sua razão técnica também — Cosign keyless precisa de `docker` e da
+identidade OIDC hosted, e a frota Firecracker não tem daemon docker. Ele apenas
+protegia uma lane que **não podia funcionar**.
 
 ```
 gh run list --workflow=cosign-sign.yml --limit 5   →  zero linhas
-gh run list --workflow=nightly.yml     --limit 2   →  2 linhas
+gh run list --workflow=nightly.yml     --limit 2   →  2 linhas    (controle)
 ```
 
-A segunda consulta existe para provar o mecanismo: a mesma chamada devolve linhas quando há
-linhas, então o vazio da primeira é ausência real e não consulta quebrada.
+A segunda consulta prova o mecanismo: a mesma chamada devolve linhas quando há
+linhas, então o vazio da primeira era ausência real, não consulta quebrada.
 
-Ela é, portanto, mais uma lane com zero sucessos — só que do lado protegido da fronteira,
-onde a varredura de lanes hosted não a procura porque o waiver a marca como resolvida.
+**As cinco paredes, todas lidas do arquivo:**
 
-**Consequência que já chegou ao cliente.** O `apps/docs/docs/trust/index.mdx` prometia
-entradas de transparência Sigstore/Rekor para a imagem do Worker, "verificáveis com
-`cosign verify` contra o emissor `token.actions.githubusercontent.com`, sem chave nossa".
-Nada disso jamais foi emitido. O #1356 remove a promessa — e a remoção deixa de ser
-plausível e passa a ser provada por este item.
+1. **Gatilho faminto.** Disparava em push de tag `v[0-9]+.[0-9]+.[0-9]+`, e não
+   existe nenhuma tag `v*` no repo — só `cli-v*`. Medido:
+   `git ls-remote --tags origin` devolve **0** para `refs/tags/v[0-9]` e **4**
+   para `refs/tags/cli-v`. Esta era a única parede que a análise anterior tinha
+   visto, e por isso o item foi classificado como "não é defeito".
+2. **Empurrão impossível.** `IMAGE_NAME: HumanGuardrail/corelink-worker`, com
+   `password: ${{ secrets.GITHUB_TOKEN }}` de um repo em **HuGR-Labs**. O
+   `GITHUB_TOKEN` só tem `packages: write` no namespace do próprio repo. O
+   arquivo trazia um `TODO(org-rename): HumanGuardrail→HuGR-Labs pending`
+   admitindo a pendência.
+3. **Sujeito errado.** `context: .` constrói o `Dockerfile` da raiz, que é o
+   **contêiner**, e rotulava o resultado `corelink-worker`. O Worker é um
+   Cloudflare Worker; não existe imagem OCI dele para assinar.
+4. **Placeholder no caminho de deploy.** O job `trigger-cf-deploy` montava o
+   payload com `zone_id: "ZONE_ID_PLACEHOLDER"` literal, e o postava em
+   `CF_DEPLOY_VERIFIER_URL`.
+5. **Atestação que era um `echo`.** O passo "Attest SLSA provenance" está
+   declarado no próprio nome como *stub* e só imprimia texto — nenhuma atestação
+   era produzida.
 
-O precedente que define o padrão de reparo é a `reproducible-build`: zero verdes por motivo
-**estrutural**, não por flake — ela hasheava um artefato wasm que o build não produz, e
-ninguém tinha lido o que a lane fazia. Leia o corpo desta antes de classificar.
+Some-se que o caminho de deploy real deste repo é
+`container-build-push-prod → PR de repin → cf-deploy-prod`, então a lane também
+**duplicava e contradizia** o mecanismo que de fato entrega produção.
+
+**A promessa ao cliente saiu junto, como manda a regra** — lane apagada leva
+consigo toda promessa que sustentava. Nove arquivos da doc pública foram
+corrigidos no mesmo PR: `trust/subprocessors.mdx` (que nomeava o arquivo do
+workflow), `trust/compliance.mdx` (×2), `trust/iso27001.mdx`, `trust/index.mdx`,
+`explanation/security/index.mdx` (×2, incluindo a linha da tabela de criptografia
+que anunciava "Ed25519 via Sigstore/cosign | offline HSM-backed key" — não existe
+chave), `trust/fedramp-info.mdx`, `pricing/comparison.mdx`,
+`explanation/compliance/sbom-access.mdx` (que ensinava um `cosign verify-blob`
+contra uma chave `$TBD` que nunca foi publicada) e `explanation/privacy/gdpr.mdx`
+(Sigstore listado como destinatário de transferência internacional).
+
+**O que este fechamento NÃO decide.** Se CoreLink *deve* assinar releases — deve,
+e a ausência agora está dita em voz alta na doc em vez de prometida. Refazer isso
+é trabalho novo, com um desenho que funcione (registro no namespace correto, um
+sujeito que exista, e um runner com docker), e não a ressurreição deste arquivo.
+Rastreado como parte do [B-091], a cadeia de proveniência de release.
 
 ```backlog
 id: B-118
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'test -f .github/workflows/cosign-sign.yml || { echo "FALHA: cosign-sign.yml nao existe mais — se foi apagada por decisao, feche o item registrando o motivo."; exit 1; }
-  ctrl=$(gh api "repos/HuGR-Labs/corelink-server/actions/workflows/nightly.yml/runs?per_page=1" --jq ".total_count" 2>/dev/null || echo "")
-  case "$ctrl" in ""|0) echo "INDETERMINADO: a consulta de controle (nightly.yml) nao devolveu execucoes; sem gh/rede autenticada este predicado nao decide nada — nao interprete como ausencia."; exit 0 ;; esac
-  n=$(gh api "repos/HuGR-Labs/corelink-server/actions/workflows/cosign-sign.yml/runs?per_page=1" --jq ".total_count" 2>/dev/null || echo "")
-  case "$n" in "") echo "INDETERMINADO: a consulta da cosign-sign falhou enquanto a de controle funcionou; investigue em vez de concluir."; exit 0 ;; esac
-  [ "$n" = 0 ] || { echo "FALHA: cosign-sign.yml ja executou $n vez(es) — a lane saiu do zero, feche ou reescreva o item."; exit 1; }
-  echo "aberto: cosign-sign.yml tem 0 execucoes (controle nightly.yml: $ctrl) e segue com waiver de custo hosted"'
+  bash -c 'test -e .github/workflows/cosign-sign.yml && { echo "FALHA: cosign-sign.yml voltou a existir — o item foi fechado APAGANDO a lane; se ela foi recriada, refaça a analise das cinco paredes antes de reabrir."; exit 1; }
+  ctl=$(ls apps/docs/docs/trust/*.mdx 2>/dev/null | wc -l | tr -d " ")
+  [ "${ctl:-0}" -gt 0 ] || { echo "INDETERMINADO: nenhum arquivo em apps/docs/docs/trust/ — o instrumento falhou, nao a arvore."; exit 0; }
+  bad=$(grep -rlE "Ed25519 via Sigstore/cosign|cosign verify-blob|Rekor transparency-log entries for every release|carries a Sigstore" apps/docs/docs/ 2>/dev/null | wc -l | tr -d " ")
+  [ "$bad" = 0 ] || { echo "FALHA: $bad arquivo(s) da doc publica voltaram a prometer assinatura Sigstore/Cosign que nao existe."; exit 1; }
+  echo "done: cosign-sign.yml apagada e nenhuma promessa de assinatura ressuscitou na doc (controle: $ctl arquivos em trust/)"'
 verify-means: |
-  open — a lane existe, tem waiver, e nunca rodou.
+  done — polaridade INVERTIDA, como exige um item fechado: ele agora falha se a
+  lane VOLTAR, não se ela existir.
 
-  A consulta de controle não é enfeite. Este predicado depende de rede autenticada, e a
-  classe de defeito dominante desta campanha é concluir ausência a partir de saída vazia.
-  Sem `gh`, sem rede ou sem permissão, a chamada devolve vazio — que se parece com "zero
-  execuções" e significa outra coisa. O controle separa as duas leituras, e o item sai
-  como INDETERMINADO em vez de mentir nos dois sentidos.
+  Duas cláusulas, porque o fechamento tem duas metades e deixar só a primeira
+  seria um portão pela metade. A primeira exige que `cosign-sign.yml` continue
+  ausente. A segunda é a que importa mais e é a razão de o item existir: exige
+  que as promessas de assinatura **não ressuscitem na doc do cliente**. Foi
+  exatamente esse o dano — o waiver marcava a lane como resolvida, a varredura de
+  lanes hosted não a procurava do lado protegido da fronteira, e enquanto isso a
+  doc pública prometia entradas Sigstore/Rekor que nunca foram emitidas.
 
-  O que este comando NÃO decide: **por que** ela nunca rodou. Zero execuções é compatível
-  com "nunca houve tag de release" e com "o gatilho está quebrado", e o reparo é
-  completamente diferente nos dois casos. Quem fechar precisa dizer qual é, com o corpo do
-  workflow na mão.
+  A cláusula de controle (`ls apps/docs/docs/trust/*.mdx`) existe porque um
+  `grep -rl` num diretório que sumiu devolve zero — e zero, aqui, significaria
+  "tudo limpo". Sem o controle, uma reorganização da doc fecharia este portão
+  silenciosamente. Com ele, o item sai como INDETERMINADO e pede investigação.
 
-  Saídas aceitáveis, as mesmas três de qualquer lane sem sucesso: consertar na raiz e
-  fazê-la ficar verde; apagá-la, com o motivo no corpo do PR — e nesse caso **toda**
-  promessa de assinatura na doc do cliente sai junto; ou documentar o bloqueio. Nenhuma
-  fica no meio, e "flaky, deixa quieto" não é saída.
-last-verified: 2026-08-30
+  O que este comando NÃO decide: se CoreLink voltou a assinar releases de verdade.
+  Ele só garante que a doc não promete o que não existe. Assinatura real é
+  trabalho novo, rastreado no [B-091].
+last-verified: 2026-08-31
 ```
 
 ---
