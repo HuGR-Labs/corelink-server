@@ -121,7 +121,25 @@ jobs:
         run: |
           set -euo pipefail
           base="origin/$BASE_REF"
-          git fetch --no-tags --depth=1 origin "$BASE_REF" || true
+          # NOT `--depth=1`. The checkout above deliberately asks for
+          # `fetch-depth: 0` because the three-dot diff below needs a merge
+          # base — and a `--depth=1` fetch afterwards CONVERTS THE REPO BACK TO
+          # SHALLOW, throwing away the history that was just fetched for this
+          # exact purpose. The result is `fatal: origin/main...HEAD: no merge
+          # base` and exit 128, which surfaces as a red `cargo-mutants` check
+          # that has nothing to do with mutants or with the PR's code. It bites
+          # whenever the branch was rebased or the base moved far enough that
+          # one commit cannot reach the merge base — i.e. exactly on the busy
+          # days, and never on a quiet one.
+          git fetch --no-tags origin "$BASE_REF" || true
+          # Fail loudly rather than diffing against nothing: an empty `pr.diff`
+          # would make `--in-diff` mutate zero lines and the lane would report
+          # SUCCESS while having tested nothing.
+          if ! git merge-base "$base" HEAD >/dev/null 2>&1; then
+            echo "::error::no merge base between $base and HEAD — the diff would be" \
+                 "meaningless and an empty diff would pass this lane vacuously."
+            exit 1
+          fi
           # Three-dot: changes introduced by this PR relative to the merge-base.
           git diff "$base"...HEAD > pr.diff
           echo "diff lines: $(wc -l < pr.diff)"
