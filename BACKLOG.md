@@ -7384,3 +7384,81 @@ verify-means: |
   re-running the queries in reports/go-live/D-3-dpa-consent.md.
 last-verified: 2026-08-31
 ```
+
+### B-131 — the shipped binary compiles the BYOK provider that says "Not for production"
+
+Measured 2026-08-31. Prod containers verified at **`ddd95560-r1`** in all five
+regions by `GET` per application id. Full method in
+`reports/go-live/D-4-byok.md`. The three levels are kept apart on purpose —
+**exists**, **linked**, **reached** — because a crate that compiles proves only
+the first.
+
+| level | result |
+|---|---|
+| exists | **yes** — `crates/corelink-byok`, 57 files, real AWS/GCP/Azure/Vault providers |
+| linked | **yes** — `cargo tree -p corelink-server --edges normal` shows it at depth 1 (control: `corelink-handler-cas` → 5 hits) |
+| reached | **yes, and it lands on `InMemoryFake`** |
+
+Provider selection is **compile-time**
+(`byok_orchestrator.rs::build_active`, `#[cfg(feature = "byok-*-real")]` arms with
+a `#[cfg(not(any(...)))]` fallback). `corelink-server` declares
+`[features] default = []`, and the Dockerfile builds
+`cargo build --release --locked -p corelink-server --bin corelink-server` with
+**zero** occurrences of `--features`. So the fallback arm is what ships:
+`Ok(Arc::new(InMemoryFake::new()))`.
+
+`InMemoryFake`'s own doc-comment: **"Not for production."** It wraps a DEK by
+XOR-ing it against `IN_MEMORY_FAKE_MASK`, a hard-coded 32-byte constant in the
+source, and the comment adds that it *"offers no cryptographic confidentiality"*.
+
+⚠️ **A correction to the prevailing shorthand.** "BYOK is an in-memory XOR" is
+right about the provider, but is sometimes supported by citing `aad_fingerprint`
+in the AWS provider, which also XORs. That is an 8-byte AAD tamper-check used in
+**mock mode**, not the key wrap. The finding does not need it and citing it
+weakens the case.
+
+**Second, independent finding — the status column cannot mean what readers think.**
+
+| query | control | result |
+|---|---|---|
+| rows in `tenant_byok_config` | `tenant` → **262** | **0** |
+| rows in `byok_envelope` | same | **0** |
+| tenants with `byok_status = 'active'` | same | **262 — all of them** |
+
+`migrations/d1/0031_byok_tenant_status.sql` declares
+`ALTER TABLE tenant ADD COLUMN byok_status TEXT DEFAULT 'active'`. **The column's
+default IS the affirmative value**, so it reads `active` for every tenant who
+never bought BYOK, never configured it and has no envelope. A dashboard, export
+or compliance answer reading `byok_status` as an entitlement reads `active` 262
+times out of 262.
+
+**Not decided here, and deliberately:** whether anyone was billed for BYOK, and
+whether the SLA text promises what [B-083] says. This lane is the BINARY; the
+documentary lane is separate, and the two verdicts are meant to be compared after
+each is settled independently.
+
+**Cheapest next step:** `make_provider` emits `provider = <label>` at
+`corelink.byok.orchestrator.audit` on boot. Reading that line from a prod
+container log confirms every claim above from the running process rather than
+from the build recipe.
+
+Relates to [B-083] (the documentary side) and to [B-130] / [B-127] (records that
+assert more than they can support).
+
+```backlog
+id: B-131
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  grep -q '^default = \[\]' crates/corelink-container/Cargo.toml \
+    && ! grep -q -- '--features' Dockerfile
+verify-means: |
+  open — passes while the shipped build enables NO byok-*-real feature, which is
+  the precise condition that makes build_active() fall through to InMemoryFake.
+  It checks the BUILD RECIPE, not the crate: the crate compiles identically
+  whether or not it is reached. It does NOT prove what a running container does —
+  the boot audit line at corelink.byok.orchestrator.audit is that check, and it
+  needs a log read, which a gate should not depend on.
+last-verified: 2026-08-31
+```
