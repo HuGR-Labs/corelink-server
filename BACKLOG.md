@@ -10758,21 +10758,40 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  bash -c 'set -e
-  v=tools/cli/src/commands/version.rs
-  [ -f "$v" ] || { echo "FALHA: $v sumiu — reavalie o item em vez de fecha-lo."; exit 1; }
-  command -v dig >/dev/null 2>&1 || { echo "FALHA: dig indisponivel — nao consigo decidir DNS; instrumento, nao achado."; exit 1; }
-  ctl=$(dig +short corelink-api.humangr.com 2>/dev/null | head -1)
-  [ -n "$ctl" ] || { echo "FALHA: o controle corelink-api.humangr.com tambem nao resolveu — sem rede ou sem DNS; instrumento, nao achado."; exit 1; }
-  host=$(grep -E "^[^/]*https://[a-z.-]+/attestations/cli/" "$v" | head -1 | sed -E "s|.*https://([a-z.-]+)/attestations/cli/.*|\1|")
-  [ -n "$host" ] || { echo "FALHA: nao achei a URL de atestacao em linha executavel de $v — o campo mudou de forma ou sumiu; releia antes de confiar neste portao."; exit 1; }
-  res=$(dig +short "$host" 2>/dev/null | head -1)
-  if [ -n "$res" ]; then
-    echo "FALHA: o host da atestacao ($host) resolve para $res — o reparo aterrissou; feche o item."; exit 1; fi
-  doc=0
-  d=docs/cli/json-output-schema.md
-  [ -f "$d" ] && grep -qE "^[^#]*https://$host/attestations/cli/" "$d" && doc=1
-  echo "aberto: corelink --version imprime atestacao em https://$host/... que NAO resolve (controle corelink-api -> $ctl); schema JSON publicado repete o host morto=$doc"'
+  python3 - <<"PY"
+  import pathlib, re, socket, sys
+  v = pathlib.Path("tools/cli/src/commands/version.rs")
+  if not v.is_file():
+      print("FALHA: version.rs sumiu — reavalie o item em vez de fecha-lo."); sys.exit(1)
+
+  def resolve(h):
+      try:
+          return socket.getaddrinfo(h, None)[0][4][0]
+      except OSError:
+          return ""
+
+  ctl = resolve("corelink-api.humangr.com")
+  if not ctl:
+      print("FALHA: o controle corelink-api.humangr.com tambem nao resolveu — sem rede ou sem DNS; instrumento, nao achado."); sys.exit(1)
+  host = ""
+  for ln in v.read_text().splitlines():
+      s = ln.lstrip()
+      if s.startswith("//"):
+          continue
+      m = re.search(r"https://([a-z0-9.-]+)/attestations/cli/", ln)
+      if m:
+          host = m.group(1); break
+  if not host:
+      print("FALHA: nao achei a URL de atestacao em linha executavel de version.rs — o campo mudou de forma ou sumiu; releia antes de confiar neste portao."); sys.exit(1)
+  res = resolve(host)
+  if res:
+      print(f"FALHA: o host da atestacao ({host}) resolve para {res} — o reparo aterrissou; feche o item."); sys.exit(1)
+  d = pathlib.Path("docs/cli/json-output-schema.md")
+  doc = 1 if (d.is_file() and any(
+      f"https://{host}/attestations/cli/" in ln and not ln.lstrip().startswith("#")
+      for ln in d.read_text().splitlines())) else 0
+  print(f"aberto: corelink --version imprime atestacao em https://{host}/... que NAO resolve (controle corelink-api -> {ctl}); schema JSON publicado repete o host morto={doc}")
+  PY
 verify-means: |
   open — o host da URL de atestação que o CLI imprime **não resolve**, enquanto o controle
   positivo na mesma execução resolve.
@@ -10791,11 +10810,12 @@ verify-means: |
   **Âncoras:** `^[^/]*` em Rust (o arquivo cita a URL também numa asserção de teste na `:91`,
   e comentários futuros a citariam) e `^[^#]*` no markdown do schema.
 
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: corelink --version
-  imprime atestacao em https://corelink.humangr.com/... que NAO resolve (controle
-  corelink-api -> 172.67.167.13); schema JSON publicado repete o host morto=1"* e exit 0.
-  Numa cópia com a URL apontando para `corelink-api.humangr.com`, sai *"FALHA: o host da
-  atestacao (corelink-api.humangr.com) resolve para 172.67.167.13"* e exit 1.
+  **Medido pelos dois lados (2026-08-31), e com `PATH` reduzido a `/usr/bin:/bin` para
+  reproduzir o runner sem `dig`:** no estado atual sai *"aberto: corelink --version imprime
+  atestacao em https://corelink.humangr.com/... que NAO resolve (controle corelink-api ->
+  2606:4700:3035::ac43:a70d); schema JSON publicado repete o host morto=1"* e exit 0. Numa
+  cópia com a URL apontando para `corelink-api.humangr.com`, sai *"FALHA: o host da atestacao
+  (corelink-api.humangr.com) resolve para …"* e exit 1.
 
   **O que ele NÃO decide, e é metade do problema:** se o artefato **existe**. Mesmo com o
   host resolvendo, o caminho promete `slsa3.json` de uma cadeia que é **L2** ([B-045], cujo
