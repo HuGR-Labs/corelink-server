@@ -7301,15 +7301,42 @@ vê o que o cliente vê, e sonda não autenticada não vê o roteamento.
 id: B-116
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'docs=$(grep -rl -- "/v1/dpa/accept" apps/docs/ 2>/dev/null | wc -l | tr -d " ")
-  code=$(grep -rn -- "\"/v1/dpa/accept\"" crates/ worker/src/ 2>/dev/null | wc -l | tr -d " ")
-  [ "$docs" -gt 0 ] || { echo "FALHA: a doc nao menciona mais /v1/dpa/accept — ou foi corrigida (feche o item) ou o grep quebrou; conte o sinal antes de fechar."; exit 1; }
-  [ "$code" = 0 ] || { echo "FALHA: /v1/dpa/accept agora esta registrado no codigo — a divergencia acabou, feche o item."; exit 1; }
-  echo "aberto: $docs arquivo(s) de doc publicam /v1/dpa/accept e 0 sitio de codigo registra essa rota"'
+  bash -c 'set -o pipefail
+  real=$(grep -rn -- "\"/v1/onboarding/dpa-accept\"" crates/ 2>/dev/null | wc -l | tr -d " ")
+  [ "$real" -gt 0 ] || { echo "FALHA: /v1/onboarding/dpa-accept nao esta registrado em crates/ — ou a rota sumiu, ou o grep quebrou. Nao conclua ausencia de uma saida vazia."; exit 1; }
+  spec=$(python3 -c "import yaml;d=yaml.safe_load(open(\"openapi/corelink-v1.yaml\"));print(\"yes\" if \"/v1/onboarding/dpa-accept\" in d[\"paths\"] else \"no\")")
+  [ "$spec" = yes ] || { echo "FALHA: o contrato publicado nao traz mais /v1/onboarding/dpa-accept — a doc voltou a divergir do servido."; exit 1; }
+  ghost=$(grep -rl -- "/v1/dpa/accept" apps/docs/docs apps/docs/src apps/docs/i18n openapi 2>/dev/null | wc -l | tr -d " ")
+  [ "$ghost" = 0 ] || { echo "FALHA: $ghost arquivo(s) da superficie publicada voltaram a citar o fantasma /v1/dpa/accept."; exit 1; }
+  python3 scripts/validate_api_surface.py >/dev/null || { echo "FALHA: o comparador doc-x-servido reprovou."; exit 1; }
+  echo "done: /v1/onboarding/dpa-accept registrado em $real sitio(s), publicado no contrato, 0 ocorrencia do fantasma na superficie publicada, comparador verde"'
 verify-means: |
-  open — a doc publica o caminho e o código não o registra.
+  done — o caminho publicado agora É o caminho servido.
+
+  A polaridade inverteu junto com o status. O predicado `open` media a **presença** do
+  fantasma; este mede quatro coisas que só o reparo satisfaz ao mesmo tempo: a rota real
+  registrada, o caminho real no contrato publicado, **zero** ocorrência do fantasma na
+  superfície publicada, e o comparador `validate_api_surface.py` verde. Um predicado que
+  só contasse o fantasma fecharia sozinho se alguém apagasse a página sem publicar o
+  caminho real — trocando uma mentira por um silêncio.
+
+  O reparo escolhido foi o primeiro dos dois que o `verify-means` anterior enumerou:
+  **publicar o caminho real**, não registrar um alias no caminho falso. Justificativa: o
+  alias preservaria integrações escritas contra a doc, mas nenhuma existe (o caminho nunca
+  respondeu), e um alias eterniza um segundo nome para a mesma rota.
+
+  O `verify-means` anterior exigia também que a página dissesse a **credencial** certa —
+  "corrigir o caminho e deixar o mecanismo de auth errado troca um 404 por um 401". Feito:
+  o bloco do contrato agora diz que o tenant vem da sessão Clerk na borda e nunca do corpo,
+  que campos desconhecidos são recusados, e traz os códigos reais (200 idempotente, e
+  `{"error": …}` em vez do `ErrorEnvelope` compartilhado) — a doc anterior descrevia um
+  `DpaAcceptanceRequest` cujos campos o handler recusaria um a um.
+
+  O que este comando NÃO decide: se o corpo documentado bate campo a campo com
+  `DpaAcceptRequestBody`. Ele foi transcrito do struct, não gerado a partir dele; um
+  gerador seria o passo seguinte.
 
   Os dois lados são medidos, de propósito. Um predicado que só olhasse a doc fecharia
   sozinho se alguém apagasse a página sem criar a rota, e um que só olhasse o código

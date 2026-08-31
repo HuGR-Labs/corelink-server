@@ -47,17 +47,13 @@ npx @redocly/cli build-docs https://corelink-docs.humangr.com/openapi-corelink-v
 | Tag | Path |
 | --- | --- |
 | signup | `POST /v1/signup` |
-| dpa | `POST /v1/dpa/accept` |
-| dpa | `POST /v1/dpa/re-accept` |
+| dpa | `POST /v1/onboarding/dpa-accept` |
 | tier | `POST /v1/onboarding/tier-select` |
-| pat | `POST /v1/pats`, `GET /v1/pats`, `DELETE /v1/pats/{pat_id}` |
+| pat | `GET`/`POST /v1/customer/keys`, `POST /v1/customer/keys/{pat_id}/revoke` |
 | billing | `POST /v1/billing/stripe-webhook` |
 | privacy-dsr | `POST /v1/privacy/dsr/{action}` (6 actions), `GET /v1/privacy/dsr/{request_id}/status` |
-| admin | `POST /v1/admin/ops`, `GET /v1/admin/ops/{op_id}`, `POST /v1/admin/ops/{op_id}/approve`, `POST /v1/admin/ops/{op_id}/reject`, `GET /v1/admin/audit/events`, `GET /v1/admin/tenants` |
-| enterprise | `POST /v1/enterprise/inquire` |
 | users | `GET /v1/users/me`, `PATCH /v1/users/me` |
-| data-categories | `GET /v1/data-categories` |
-| ops | `GET /api/health`, `POST /api/csp-report` |
+| ops | `GET /api/health`, `GET /_health` |
 
 ## Authentication
 
