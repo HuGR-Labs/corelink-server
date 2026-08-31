@@ -8300,6 +8300,18 @@ explicação ao lado, não — e a explicação é o que uma pessoa lê para dec
 A ressalva de (2) é o que separa esta decisão de um `prune` reflexo: pico e resíduo têm o
 mesmo sintoma e conserto diferente, e só (1) e (3) atacam pico.
 
+**As quatro saídas na mesa**, e a escolha é da guardiã — este item não a faz:
+
+1. **Construir numa box maior.** Leitura preferida da frente que mediu.
+2. **Limpar o `containerd` antes do build.** Provavelmente **não basta**: o problema é o
+   **pico** — tarball e unpack coexistindo — e não lixo acumulado. Limpar resíduo não cria
+   espaço para dois artefatos simultâneos.
+3. **Emagrecer o bake** (layer único, limpeza de cache no mesmo `RUN`, multi-stage).
+4. **Reverter o nightly** da imagem, o que devolve as sete lanes ao Mac.
+
+A ressalva de (2) é o que separa esta decisão de um `prune` reflexo: pico e resíduo têm o
+mesmo sintoma e conserto diferente, e só (1) e (3) atacam pico.
+
 **H1, ao contrário de H2, não depende dessa pergunta.** Os builds de 2026-08-23 e 2026-08-24
 passaram; o `#523` acrescentou um toolchain nightly inteiro mais `llvm-tools` mais
 `cargo-fuzz`; o build seguinte estourou escrevendo justamente esse caminho. Mesmo uma box
@@ -8359,5 +8371,501 @@ verify-means: |
 
   **Não fundir com o [B-128].** Aquele mede o disco do Mac do dono; este mede o disco da box
   efêmera da frota. Um `verify` que cubra os dois mede a máquina errada em metade dos casos.
+last-verified: 2026-08-31
+```
+
+### B-139 — o semgrep reprova com 4228 achados bloqueantes, e repontar o `runs-on:` não muda isso
+
+O #1505 tira o `semgrep.yml` do Mac e o põe em `runs-on: corelink`. A troca de label está
+certa e medida, mas ela **não** é o que separa esta lane de um dispatch verde.
+
+Medido no histórico de execuções, e é o ponto que a versão anterior do comentário do #1505
+errava: o 0/388 desta lane **não** é "o faturamento não concede box hospedada". A run
+`31365335113` (2026-08-10) **obteve** runner hospedado — `runner_name: "GitHub Actions
+1000003886"`, labels `[ubuntu-latest]` —, rodou 6m35s e falhou **dentro do scan**:
+
+```
+Ran 474 rules on 6345 files: 4228 findings (4228 blocking)
+```
+
+Com `--error`, isso é exit 1. Mesma assinatura em `29481995796` e `30801766782`. Atrás dela
+ainda existe uma **segunda falha independente**: o upload do SARIF exige Advanced Security
+habilitado para code scanning, e não está.
+
+(As outras 346 das 388 execuções são anteriores a 2026-06-19, quando o `ubuntu-latest` entrou
+no arquivo — essas morreram no label morto `[self-hosted, Linux, X64]` e na imagem placeholder
+`returntocorp/semgrep@sha256:000…0`. São **duas** causas históricas, não uma.)
+
+Este item é o trabalho que sobra: **triagem do rulepack + decisão de política sobre o
+`--error`**. Da contagem, ~3920 vêm do pack local (`semgrep.yml` na raiz), o que sugere que a
+maior parte é regra nossa calibrada larga, não achado importado — mas essa divisão é a
+primeira coisa a **remedir**, não a herdar deste texto.
+
+O que decidir, e são decisões separadas:
+
+1. Quais das 474 regras merecem `ERROR` e quais viram `WARNING`/`INFO`.
+2. Se o gate segue fail-closed (`--error`) ou se passa a reprovar só em severidade ERROR das
+   regras custom — a política atual está descrita no cabeçalho do workflow e **não** é o que
+   o comando executa.
+3. Habilitar Advanced Security, ou remover o passo de upload de SARIF. Hoje ele falha de
+   qualquer jeito.
+
+**Não fechar este item porque o #1505 mergeou.** O #1505 mudou onde a lane roda; esta lane
+segue reprovando no primeiro dispatch, e o WP-CI não pode fechar declarando-a consertada.
+
+```backlog
+id: B-139
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'set -o pipefail
+  f=".github/workflows/semgrep.yml"
+  [ -f "$f" ] || { echo "FALHA: $f nao existe — a premissa deste item mudou; reavalie em vez de fechar."; exit 1; }
+  if grep -q -- "--error" "$f"; then
+    echo "AINDA ABERTO: semgrep segue fail-closed com --error e sem triagem registrada dos 4228 achados"
+    exit 0
+  fi
+  echo "FECHADO?: --error saiu de $f — a politica mudou. Confirme com um dispatch VERDE (nao apenas com a ausencia da flag) e so entao feche."
+  exit 1'
+verify-means: |
+  O portão mede a **política**, não o resultado: enquanto o `--error` estiver no workflow e
+  ninguém tiver triado o rulepack, o próximo dispatch reprova, e o item continua aberto.
+
+  Isto é deliberadamente um proxy LOCAL e barato, e a limitação está declarada: ele não
+  observa uma execução. Fechar exige as duas coisas juntas —
+
+    1. um `gh workflow run semgrep.yml` **verde**, com o run-id colado aqui; e
+    2. a decisão de política registrada (quais regras são ERROR, e o que acontece com o
+       upload de SARIF sem Advanced Security).
+
+  Remover o `--error` sozinho faz o portão virar, e por isso ele exige o dispatch verde no
+  texto: uma lane que passou a não reprovar não é uma lane que passou.
+last-verified: 2026-08-31
+```
+
+### B-140 — o guard de `runs-on:` continua cego para escalar aspeado e sequência em bloco
+
+O #1500 consertou a forma que estava **viva** no repo: um comentário no fim da linha
+(`runs-on: corelink  # …`) fazia o job sair silenciosamente do conjunto inspecionado — o guard
+imprimia `OK` cobrindo menos. Reach mediu 173 → 193 com o conserto.
+
+Sobram **duas** formas legais de YAML que o guard também não vê, e que o `_strip_trailing_comment`
+não alcança porque o problema não está no strip:
+
+1. **Sequência em bloco** — o valor fica nas linhas seguintes:
+
+   ```yaml
+   runs-on:
+     - self-hosted
+     - mac
+   ```
+
+   O `RUNS_ON` exige `runs-on:\s*(.+?)`; com valor vazio ele **não casa**, e o job nunca entra
+   no conjunto.
+
+2. **Escalar aspeado** — `runs-on: "corelink"`. As aspas sobrevivem ao strip e
+   `value == "corelink"` passa a ser False, então um job self-hosted lê como hospedado.
+
+**Nenhuma das duas existe em `.github/workflows/` hoje** — verificado com controle positivo:
+os mesmos greps casam instâncias plantadas. São buracos **latentes**, não achados vivos, e
+estão nomeados na docstring do script para que ninguém escreva essas formas sem saber.
+
+O conserto real não é mais um regex: é **parsear o YAML** e ler `jobs[*].runs-on` como
+estrutura, que é a única forma que não tem uma próxima grafia surpresa atrás dela. É uma
+mudança de mecanismo, por isso é item próprio e não emenda do #1500.
+
+```backlog
+id: B-140
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'set -o pipefail
+  s="scripts/validate_no_shared_rustup_mutation.py"
+  [ -f "$s" ] || { echo "FALHA: $s nao existe — reavalie este item em vez de fecha-lo."; exit 1; }
+  r=$(pwd); d=$(mktemp -d); trap "rm -rf $d" EXIT
+  mkdir -p "$d/.github/workflows"
+  printf "name: probe\non:\n  workflow_dispatch:\njobs:\n  quoted:\n    runs-on: \"corelink\"\n    steps:\n      - run: echo hi\n  blockseq:\n    runs-on:\n      - self-hosted\n      - mac\n    steps:\n      - run: echo hi\n" > "$d/.github/workflows/probe.yml"
+  out=$(cd "$d" && python3 "$r/$s" 2>&1 || true)
+  case "$out" in
+    *"ZERO self-hosted jobs"*)
+      echo "AINDA ABERTO: o guard inspecionou ZERO dos 2 jobs self-hosted plantados (escalar aspeado + sequencia em bloco)"
+      exit 0 ;;
+    *)
+      echo "FECHADO?: o guard passou a enxergar ao menos uma das duas formas — saida: $out. Confirme que ambas sao cobertas e atualize este item."
+      exit 1 ;;
+  esac'
+verify-means: |
+  O comando **planta** as duas formas num diretório de workflows descartável e roda o guard
+  contra ele. É um controle positivo, não uma varredura: se o guard enxergasse qualquer uma
+  das duas, ele inspecionaria ao menos 1 job e não emitiria o bail-out de ZERO.
+
+  Por isso ele não pode passar por vacuidade — a única forma de o comando dizer "ainda
+  aberto" é o guard genuinamente não ver dois jobs self-hosted que estão bem na frente dele.
+
+  Fecha quando o guard parsear o YAML e as duas formas entrarem no conjunto inspecionado; aí
+  este `verify` **inverte de polaridade** e precisa ser reescrito junto com o `status: done`.
+last-verified: 2026-08-31
+```
+
+### B-141 — `pull_request_target` sem gate de ator: hoje só a visibilidade do repo segura
+
+O #1502 põe `pr-labels.yml` e `welcome-first-pr.yml` na frota efêmera. Os dois disparam em
+`pull_request_target` (e o `welcome` também em `issues`) **sem nenhum `if:` de ator**, então,
+depois desse PR, cada evento desses **spawna microVM da nossa frota Cloudflare**.
+
+O que limita isso hoje **não está nesses arquivos**: é a **visibilidade do repositório**.
+Medido em 2026-08-31 — repo **PRIVADO**, **0 forks** —, então só membros da org e
+colaboradores convidados levantam o evento, que é o mesmo conjunto de pessoas que já
+enfileirava trabalho na frota. Ou seja, **não é um furo vivo**, e registrá-lo como se fosse
+seria exagerar.
+
+O que o torna um item, e não uma nota: `pull_request_target` é **isento** da política "exigir
+aprovação para contribuidor de primeira viagem" que protege `pull_request`. No dia em que
+este repo virar público — o que o lançamento do produto torna plausível — essas duas lanes
+viram gatilho de spawn **não autenticado**, sem que ninguém precise tocar em CI para causar
+isso. É uma mudança de configuração, num outro lugar, que arma um defeito aqui.
+
+Risco secundário, independente de quem dispara: **spawn recusado deixa o job `queued`**, e
+`timeout-minutes` **não limita fila** — ele começa quando o job está RODANDO. O
+`redriveOrphanedJobs` da frota (cron de 1 min) retenta, mas só `MAX_ORPHAN_ATTEMPTS = 3`,
+com dead-letter de 30 min; passado isso, o job nunca é revisitado. Em `pr-labels`, que roda em
+**todo** PR, um job encalhado não reprova o PR — vira check **pendente**, que o
+`scripts/pre-merge-gate-check.sh` pontua como ⛔ DO NOT MERGE.
+
+**O que este item NÃO decide:** o **teto de spawn** da frota. Ele vive no spawn worker, em
+`corelink-runners`, e não é observável daqui — não afirmo que exista nem que não exista. Quem
+pegar o item mede isso primeiro: sem teto, o pior caso deixa de ser "fila" e passa a ser
+custo.
+
+Encaminhamentos possíveis, e são excludentes:
+
+1. Gate de ator nas duas lanes (mata o propósito do `welcome`, que existe para saudar quem
+   ainda não é contribuidor).
+2. Manter só o `welcome-first-pr` no Mac — é a única disparada por não-colaborador.
+3. Teto de spawn por ator/evento na frota, que é o conserto no lugar certo.
+
+A decisão é barata **antes** de o repo virar público e cara depois.
+
+```backlog
+id: B-141
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'set -o pipefail
+  n=0
+  for f in .github/workflows/pr-labels.yml .github/workflows/welcome-first-pr.yml; do
+    [ -f "$f" ] || { echo "FALHA: $f nao existe — a premissa deste item mudou; reavalie em vez de fechar."; exit 1; }
+    grep -q "pull_request_target" "$f" || { echo "FALHA: $f nao dispara mais em pull_request_target — releia o item antes de confiar neste portao."; exit 1; }
+    if grep -qE "^[[:space:]]+if:.*(github\.actor|author_association)" "$f"; then
+      echo "gate de ator PRESENTE em $f"
+    else
+      n=$((n+1))
+    fi
+  done
+  if [ "$n" -gt 0 ]; then
+    echo "AINDA ABERTO: $n de 2 lanes pull_request_target seguem sem gate de ator"
+    exit 0
+  fi
+  echo "FECHADO?: ambas ganharam gate de ator — confirme que o welcome ainda sauda quem deve e atualize este item."
+  exit 1'
+verify-means: |
+  O portão mede a **ausência do gate**, que é a condição do item, e falha alto se qualquer uma
+  das duas premissas se mover (arquivo sumiu, ou o workflow deixou de ser
+  `pull_request_target`) — assim ele não fica verde por vacuidade se o mundo mudar de forma.
+
+  O que ele **não** mede, e está declarado de propósito: a visibilidade do repositório, que é
+  a coisa que hoje realmente segura o risco. Um `gh repo view --json isPrivate` aqui tornaria
+  o portão dependente de rede e de token, e — pior — faria o item **fechar sozinho** enquanto
+  o repo continuasse privado, que é exatamente o momento em que ele deve continuar aberto. O
+  item existe para ser resolvido ANTES da flip, não por ela.
+last-verified: 2026-08-31
+```
+
+### B-142 — todo job `ubuntu-*` não inicia por bloqueio de faturamento, e o CodeQL nightly — o único SAST do repo — está morto desde 2026-08-25
+
+**Medido, no nível do job.** `codeql.yml` run **33306916966** (2026-08-30, `schedule`):
+**3 de 3** jobs com `conclusion=failure`, `runner_name` **vazio**, `labels=[ubuntu-latest]`,
+`steps=0`. A anotação, literal:
+
+> The job was not started because recent account payments have failed or your spending
+> limit needs to be increased. Please check the 'Billing & plans' section in your settings
+
+`steps=0` + `runner_name` vazio é a assinatura de um job que **nunca recebeu máquina** — não
+é falha de conteúdo, não é flake, e nenhum retry a resolve.
+
+**Início datado.** CodeQL teve `success` em **2026-08-24** (run 32695847790) e `failure` em
+**6 execuções seguidas** — 08-25, 08-26, 08-27, 08-28, 08-29, 08-30. `codeql.yml:64` declara
+`cron: '30 5 * * *'`; `codeql.yml:87` declara `runs-on: ubuntu-latest`. A consequência que
+ninguém escreveu: **este repo não produz análise SAST há 6 dias.** O CodeQL é o único
+scanner noturno que sobrou depois que semgrep virou dispatch-only.
+
+Detalhe que fecha a porta do "mas ele tem preflight": o CodeQL tem sim um gate próprio
+(`steps.preflight.outputs.enabled`, `codeql.yml:150+`), mas é um gate de **step**. Um gate de
+step não salva um job que nunca ganhou box — ele nem chega a ser avaliado.
+
+**A mesma assinatura, byte a byte, no `secrets-drift`.** Run **33304296490** (2026-08-30,
+`schedule`): 1 job, `conclusion=failure`, `runner_name` vazio, `labels=[ubuntu-latest]`,
+`steps=0`, anotação idêntica caractere a caractere. Datas idênticas: `success` em 08-24
+(run 32690458869), 6 `failure` seguidas depois. E aqui mora a razão de ninguém ter visto:
+`secrets-drift.yml:79` declara
+
+```yaml
+runs-on: ${{ github.event_name == 'schedule' && 'ubuntu-latest' || fromJSON('["self-hosted","mac","corelink-builder"]') }}
+```
+
+— ou seja, **em PR ele vai para o Mac e passa; só no cron ele é hospedado e morre.** As
+últimas 40 execuções por `pull_request` são todas `success`. O verde que todo mundo vê no PR
+é de uma lane *diferente* da que está morta.
+
+**O falso contraexemplo, confirmado como falso.** `cas-canary.yml` aparenta **6/6 `success`**
+no nível do workflow. Não é contraexemplo: em cada uma das 6, o job `corelink` roda
+(`runner=cf-runner-*`, `steps=5`) e o job `ubuntu-latest` sai **`skipped`** com `runner=null`
+e `steps=0`. A causa é declarada — `cas-canary.yml:79` traz
+`if: vars.HOSTED_ACTIONS_AVAILABLE == 'true'`, e a variável **não está setada** no repo
+(confirmado via `gh api .../actions/variables`: ela não aparece na lista). O mesmo idioma está
+em `smoke-install.yml:112`.
+
+Isso é achado por si só, e é o **mecanismo de mascaramento** deste item: um canário que
+declara duas vantagens de rede (fabric e datacenter de terceiro) segue **verde** medindo
+apenas uma, e a métrica que sumiu não deixa rastro vermelho em lugar nenhum.
+
+**Por que isto não caiu no B-005 nem no B-110** — e é por isso que não é duplicata:
+
+- **B-005** (`hosted lanes still fire on PR/push`, `status: done`) tem `verify` que **descarta
+  explicitamente** qualquer workflow sem gatilho real de `pull_request`/`push`. O job do
+  CodeQL é `schedule` puro: ele é **estruturalmente invisível** para aquele portão.
+- **B-110** nomeia **cinco** lanes — `cas_foundation`, `coverage`, `ffi-matrix-ci`,
+  `mutation-nightly`, `semgrep`. **Nem `codeql` nem `secrets-drift` estão entre elas**, e o
+  `verify` do B-110 é um laço fechado sobre exatamente esses cinco arquivos.
+
+As duas lanes que estão de fato morrendo **toda noite** caem no vão entre os dois predicados.
+O bloqueio de faturamento em si é o B-110 e o resíduo de owner do B-005; **este item é a
+vítima que nenhum dos dois cobre** — a lane de cron desprotegida, e o SAST que ela servia.
+
+**Aritmética do parque, medida — e a correção de uma suposição.** 19 jobs hospedados em 10
+workflows (`.github/workflows/*.yml`, parseado como YAML; o `_TEMPLATE.yml.md` **não** é
+workflow e não entra — contá-lo já inflou uma contagem antes, e uma linha de `runs-on` dentro
+de comentário em `fuzz-nightly.yml:37` também não). Deles:
+
+| grupo | quantos | base |
+|---|---|---|
+| cron desprotegido, **morte medida** | 2 (`codeql`, `secrets-drift`) | 6 runs cada, anotação de billing |
+| guardado por `HOSTED_ACTIONS_AVAILABLE`, `skipped` limpo | 2 (`cas-canary`, `smoke-install`) | 6/6 runs, `runner=null` |
+| desprotegido, mas só `workflow_dispatch`/`push` | 15 | última tentativa **anterior** ao bloqueio |
+
+Sobre os 15: `coverage` (08-04), `mutation-nightly` (08-03), `cas_foundation` (08-05),
+`ffi-matrix-ci` (08-06), `semgrep` (08-10) — todos `workflow_dispatch`-only, última tentativa
+antes de 08-25. `cosign-sign` é `push`+`dispatch` e tem **zero execuções na história do
+repositório** (`total_count: 0`). Que esses 15 também não iniciariam hoje é **inferência pelo
+mecanismo compartilhado, não medição** — ninguém os disparou depois do bloqueio, e este item
+não afirma o contrário.
+
+**Encaminhamento.** O repo já tem o idioma do conserto (`vars.HOSTED_ACTIONS_AVAILABLE`) e o
+aplicou a 2 lanes; ao CodeQL, não. Mas aplicá-lo ao CodeQL seria **piorar**: um SAST que sai
+`skipped` em silêncio é pior que um que sai vermelho, porque o vermelho ao menos é um sinal.
+As saídas reais são excludentes e nenhuma é higiene: (a) o owner desbloqueia o gasto hospedado;
+(b) o CodeQL migra para a frota self-hosted; (c) assume-se por escrito que o repo fica sem SAST.
+
+```backlog
+id: B-142
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  python3 - <<'PY'
+  import glob, sys, yaml
+  files = sorted(glob.glob(".github/workflows/*.yml"))
+  if len(files) < 50:
+      print(f"INSTRUMENTO QUEBRADO: globbed {len(files)} workflows, esperado >=50", file=sys.stderr)
+      sys.exit(2)
+  hosted, naked = 0, []
+  for p in files:
+      try:
+          doc = yaml.safe_load(open(p).read())
+      except yaml.YAMLError as e:
+          print(f"INSTRUMENTO QUEBRADO: {p} nao parseia: {e}", file=sys.stderr)
+          sys.exit(2)
+      if not isinstance(doc, dict):
+          continue
+      on = doc.get(True, doc.get("on"))
+      trig = set(on) if isinstance(on, (dict, list)) else ({on} if isinstance(on, str) else set())
+      for jid, j in (doc.get("jobs") or {}).items():
+          if not isinstance(j, dict):
+              continue
+          ro = j.get("runs-on")
+          vals = ((ro.get("labels") or []) + [ro.get("group") or ""]) if isinstance(ro, dict) \
+                 else ro if isinstance(ro, list) else [ro] if ro is not None else []
+          if not any(isinstance(v, str) and "ubuntu" in v for v in vals):
+              continue
+          hosted += 1
+          if "schedule" in trig and "HOSTED_ACTIONS_AVAILABLE" not in str(j.get("if", "")):
+              naked.append(f"{p}:{jid}")
+  print(f"jobs ubuntu-* declarados: {hosted}; em cron SEM guard HOSTED_ACTIONS_AVAILABLE: {len(naked)}")
+  for n in naked:
+      print("  ", n)
+  sys.exit(0 if naked else 1)
+  PY
+verify-means: |
+  **Polaridade `open`:** sai 0 — item confirmado aberto — enquanto existir ao menos UM job
+  hospedado (`ubuntu-*`) alcançável por `schedule` e **sem** o guard
+  `HOSTED_ACTIONS_AVAILABLE`. Hoje isso seleciona exatamente `codeql:analyze` e
+  `secrets-drift:secrets-drift` — as duas lanes cuja morte foi medida, e nada mais.
+
+  **Por que parseia YAML em vez de grepar:** `runs-on` tem pelo menos cinco grafias legais
+  (escalar; escalar com comentário no fim da linha; lista inline `[a, b]`; sequência em bloco;
+  e `${{ }}` interpolado, que é justamente a forma do `secrets-drift`). O B-140 documenta um
+  guard deste mesmo repo que perdeu jobs por casar só a forma escalar. Ler
+  `jobs[*].runs-on` como estrutura é a única leitura que não tem uma próxima grafia surpresa
+  atrás dela. O glob `*.yml` também exclui o `_TEMPLATE.yml.md` por construção, e o parser
+  nunca vê linha de comentário.
+
+  **Não pode passar por vacuidade:** menos de 50 workflows lidos, ou qualquer arquivo que não
+  parseie, sai **2** com mensagem nomeada — nunca "consertado". Os três desfechos são
+  distintos: 0 = aberto, 1 = pode fechar, 2 = o instrumento quebrou.
+
+  **O que ele NÃO decide, e está declarado de propósito:** ele mede a **presença de lane de
+  cron hospedada e desprotegida**, não se o faturamento foi desbloqueado. As duas coisas são
+  independentes, e a diferença importa: **apagar ou guardar as duas lanes fecha este portão
+  sem que nada tenha melhorado** — o CodeQL continuaria sem rodar, só que em silêncio em vez
+  de em vermelho. Quem vir este `verify` virar 1 deve confirmar QUAL das três saídas do corpo
+  aconteceu antes de marcar `done`; se foi guard ou remoção, o item não fechou, mudou de forma.
+  O estado do faturamento não é observável a partir do repo — só pela conta do owner.
+last-verified: 2026-08-31
+```
+
+### B-143 — `id:` de placeholder passa CONFIRMED e a checagem de densidade não o vê: o portão do BACKLOG falha ABERTO
+
+Um bloco com `id: B-UNALLOCATED` **mergeia em silêncio**. Medido, com sonda calibrada:
+
+```
+$ python3 scripts/backlog_verify.py --file <copia+sonda> --id B-UNALLOCATED
+  CONFIRMED B-UNALLOCATED  open   verify agrees with the declared status
+  1 item(s): confirmed=1, drifted=0, stale=0, broken=0     (rc=0)
+```
+
+E **não é só a literal**: `B-131a`, `b-131` e `B-TBD` saem CONFIRMED do mesmo jeito. Quem
+escrever um `verify` que grepe pela string `B-UNALLOCATED` faz um portão decorativo — a regra
+tem que ser geral (`^B-\d+$`).
+
+**As duas portas por onde ele passa**, ambas em `scripts/backlog_verify.py`:
+
+1. **`backlog_verify.py:260`** — a checagem que exige que heading e bloco concordem começa com
+
+   ```python
+   if not re.fullmatch(r"B-\d+", block_id):
+       continue
+   ```
+
+   Um id malformado é **pulado**, não reprovado. A checagem existe para impedir que um bloco
+   se esconda sob uma heading errada, e o caso em que o id nem tem forma de id é justamente o
+   que ela deixa passar.
+
+2. **`backlog_verify.py:282-286`** — a densidade só coleta o que casa `B-(\d+)`:
+
+   ```python
+   numbered = sorted(int(m.group(1)) for i in items if (m := re.fullmatch(r"B-(\d+)", i.id)))
+   ```
+
+   O id malformado não entra em `numbered`, então não abre lacuna, não colide, não é contado.
+   O portão que existe para garantir que **todo item tem número** não olha para ele.
+
+Confirmado com **controle positivo** de que o instrumento enxerga: a mesma invocação
+(`--id` que não casa nada, para que zero verifies externos disparem) **pega** uma lacuna real —
+apagar o B-140 produz `FATAL: BACKLOG.md is missing B-140`. Ou seja, a checagem de densidade
+**roda** nesse modo e ainda assim é cega para o id malformado. Sem esse controle a medição
+não valeria: a primeira sonda que escrevi saiu BROKEN por motivo errado (`verify: true` sem
+aspas vira `bool` em YAML), o que teria "refutado" o achado por acidente.
+
+**Por que isto é pior que colisão e que lacuna:** as duas **falham alto** — `FATAL: missing
+B-140`, `duplicate`. Esta **passa**. E não é hipotética: a corrente de ids travada
+(`#1504 → #1509 → #1511 → #1512`) faz com que se escreva placeholder exatamente enquanto se
+espera número, que é o momento em que o buraco está armado. Este próprio item foi encontrado
+alocando o id do B-142 nessa corrente.
+
+**Achado adjacente, do mesmo teste:** `id: B-0142` passa **até com a regra `^B-\d+$`
+aplicada**, e sai CONFIRMED convivendo com o `B-142` real — `int("0142") == 142` mantém a
+densidade satisfeita, e a checagem de duplicata compara **strings**, então `B-0142` e `B-142`
+não colidem. É um **alias silencioso**. A regra geral é necessária mas não suficiente; a forma
+canônica também precisa recusar zero à esquerda.
+
+**O conserto de verdade é no `backlog_verify.py`, não num item de backlog.** Este item
+**rastreia o buraco e propõe o conserto**; ele não finge ser o conserto. O `verify` abaixo é
+o próprio registro se auditando — funciona, e é honesto sobre ser um paliativo —, mas o
+portão deveria recusar isso **estruturalmente**, no ponto onde lê o id. A emenda medida é de
+**duas linhas** em `backlog_verify.py:260`: trocar o `continue` mudo por um `mismatches.append(...)`
+antes dele, o que reaproveita o `FATAL` que já existe logo abaixo e faz o bloco ser nomeado
+por arquivo e linha. Verificado numa cópia descartável: com a emenda, as quatro formas
+malformadas passam a ser recusadas por nome.
+
+```backlog
+id: B-143
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  python3 - <<'PY'
+  import re, subprocess, sys, tempfile, pathlib
+  src = pathlib.Path("BACKLOG.md"); script = pathlib.Path("scripts/backlog_verify.py")
+  for p in (src, script):
+      if not p.is_file():
+          print(f"INSTRUMENTO QUEBRADO: {p} nao existe", file=sys.stderr); sys.exit(2)
+  text = src.read_text()
+  blocks = re.findall(r"```backlog\n(.*?)```", text, re.S)
+  if len(blocks) < 100:
+      print(f"INSTRUMENTO QUEBRADO: li {len(blocks)} blocos backlog, esperado >=100", file=sys.stderr)
+      sys.exit(2)
+  live = [m for b in blocks if (m := re.search(r"(?m)^id:\s*(\S+)", b))
+          and not re.fullmatch(r"B-\d+", m.group(1))]
+  if live:
+      print("DEFEITO VIVO: id malformado ja esta em BACKLOG.md: "
+            + ", ".join(m.group(1) for m in live), file=sys.stderr)
+      sys.exit(2)
+  probe = ("\n### B-UNALLOCATED — sonda\n\nSonda plantada pelo verify do B-143.\n\n"
+           "```backlog\nid: B-UNALLOCATED\nrepo: corelink-server\nowner: tl\n"
+           'status: open\nverify: "true"\nverify-means: sonda\nlast-verified: 2026-08-31\n```\n')
+  with tempfile.TemporaryDirectory() as d:
+      f = pathlib.Path(d, "probe.md"); f.write_text(text + probe)
+      r = subprocess.run([sys.executable, str(script), "--file", str(f), "--id", "B-UNALLOCATED"],
+                         capture_output=True, text=True)
+  out = r.stdout + r.stderr
+  if r.returncode == 0 and "CONFIRMED" in out:
+      print("AINDA ABERTO: backlog_verify.py deu CONFIRMED a um bloco com `id: B-UNALLOCATED` — "
+            "nem a checagem heading/bloco nem a de densidade o enxergam.")
+      sys.exit(0)
+  print(f"FECHADO?: o script rejeitou o id malformado (rc={r.returncode}). "
+        f"Confirme que a regra e geral (`^B-\\d+$`, nao a literal) e atualize este item.\n{out.strip()}")
+  sys.exit(1)
+  PY
+verify-means: |
+  **Polaridade `open`:** sai 0 — aberto — enquanto `backlog_verify.py` continuar dando
+  CONFIRMED a um bloco cujo `id:` não é `B-<dígitos>`. É um **controle positivo**: ele
+  **planta** a sonda numa cópia descartável e roda o script de verdade contra ela. Não pode
+  passar por vacuidade — a única forma de dizer "ainda aberto" é o portão genuinamente
+  aprovar um id que não é id.
+
+  A sonda usa `--id B-UNALLOCATED`, então **um único** `verify` roda (`"true"`); ela nunca
+  dispara a matriz de ~140 comandos externos (cargo/wrangler/gh/curl) que um
+  `backlog_verify.py` sem `--id` dispara.
+
+  **Três desfechos distintos, nenhum silencioso:** 0 = buraco presente (aberto);
+  1 = o script passou a recusar — reveja e feche, **confirmando antes que a regra é geral
+  (`^B-\d+$`) e não um casamento com a literal `B-UNALLOCATED`**, que passaria neste mesmo
+  teste sendo decorativo; 2 = instrumento quebrado (arquivo sumiu, menos de 100 blocos lidos)
+  **ou defeito vivo** — um id malformado já está em `BACKLOG.md` agora, que é a coisa que este
+  item quer impedir e portanto merece parar tudo, não virar aviso.
+
+  **O que ele NÃO decide:** ele não conserta o portão, e não impede que o próximo item entre
+  com placeholder — só grita depois. Enquanto `backlog_verify.py:260` continuar com o
+  `continue` mudo, a proteção depende deste item ser executado, e um item pode ser removido
+  do laço. O conserto estrutural é no script; este `verify` é o paliativo que mede a falta
+  dele, não um substituto.
+
+  **Fora de alcance de propósito:** `id: B-0142` — zero à esquerda — **passa** tanto hoje
+  quanto com a emenda de `^B-\d+$`, criando alias silencioso do `B-142`. Está no corpo como
+  achado adjacente; quem for consertar o script deve tratar os dois, mas este portão não
+  finge cobrir isso.
 last-verified: 2026-08-31
 ```
