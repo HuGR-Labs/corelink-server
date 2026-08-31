@@ -58,7 +58,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use axum::extract::Request;
-use axum::http::{Method, StatusCode, Uri};
+use axum::http::{header, HeaderValue, Method, StatusCode, Uri};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::Router;
@@ -230,11 +230,11 @@ impl KvStore for PipIndexKvStore {
 /// brew's string port).
 ///
 /// `VerifyError::Backend` — a D1 fault OR an Argon2id permit-pool load shed —
-/// maps to `PipAdapterError::VerifierOverloaded`. pip already answered 503
-/// here (it borrowed `Cas`), so this is a naming/`Retry-After` correction, not
-/// a status change: a shed is not a storage fault, and the client needs a
-/// bounded back-off. The variant split also keeps the container's symmetric
-/// shed (`INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`) legible end-to-end.
+/// maps to `PipAdapterError::VerifierOverloaded` (503 + `Retry-After`), NOT
+/// `Auth` (401): the verifier reached no credential verdict, so a client with
+/// a valid PAT must retry rather than discard it. The split keeps the
+/// container's symmetric shed (`INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`) legible
+/// end-to-end.
 #[derive(Debug)]
 struct PipPatResolver(Arc<PatVerifier>);
 
@@ -267,9 +267,7 @@ impl TenantResolver for PipPatResolver {
                 .await
                 .map_err(|e| match e {
                     VerifyError::InvalidPat => PipAdapterError::Auth("invalid PAT".to_owned()),
-                    VerifyError::Backend(m) => {
-                        PipAdapterError::Cas(format!("verifier backend: {m}"))
-                    }
+                    VerifyError::Backend(m) => PipAdapterError::VerifierOverloaded(m),
                 })?;
         let uuid = uuid::Uuid::parse_str(&tenant_text).map_err(|e| {
             PipAdapterError::Cas(format!(
@@ -289,6 +287,30 @@ impl TenantResolver for PipPatResolver {
 struct PipGateState {
     resolver: TenantResolverHandle,
     quota: Option<crate::routes::QuotaGate>,
+}
+
+/// Shape a failed F27 resolver call without misreporting a verifier shed as an
+/// invalid credential. The adapter's normal read path performs this mapping in
+/// its own error response; writes stop at this outer gate, so they must retain
+/// the same 503 + bounded `Retry-After` contract here.
+fn write_resolver_error_response(error: &PipAdapterError) -> Response {
+    match error {
+        PipAdapterError::VerifierOverloaded(_) => {
+            let mut response = (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "authentication service overloaded; retry",
+            )
+                .into_response();
+            // Mirrors `corelink_adapter_host::overload::SHED_RETRY_AFTER_SECS`
+            // (currently the RFC-minimum one second) without exposing backend
+            // detail or treating a shed as an auth verdict.
+            response
+                .headers_mut()
+                .insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
+            response
+        }
+        _ => (StatusCode::UNAUTHORIZED, "invalid PAT").into_response(),
+    }
 }
 
 /// Build the `/pip/*` sub-router from shared CAS handlers + the
@@ -432,8 +454,9 @@ async fn pip_gate(
     // (`resolve_with_capability` — HMAC + Argon2id against D1). This ensures a
     // Worker-side scope-header mistake cannot grant a write that the PAT's D1
     // record does not authorise — without a redundant second verify. The pip
-    // resolver collapses every verification failure into a `PipAdapterError`,
-    // so any resolver `Err` is treated as a fail-CLOSED write denial (401).
+    // resolver preserves a verifier/backend shed as `VerifierOverloaded` so it
+    // remains fail-CLOSED but retryable (503 + `Retry-After`); a rejected PAT
+    // stays the non-retryable 401 auth verdict.
     //
     // REV-S3 (mirror cargo_gate): for a write, the PAT-derived tenant id from
     // the F27 verify is the AUTHORITATIVE cost-attribution key (it cannot be
@@ -467,7 +490,7 @@ async fn pip_gate(
                     }
                     Err(e) => {
                         tracing::warn!(error = %e, "pip: PUT denied — PAT re-verify failed (F27)");
-                        return (StatusCode::UNAUTHORIZED, "invalid PAT").into_response();
+                        return write_resolver_error_response(&e);
                     }
                 }
             }
@@ -552,11 +575,15 @@ async fn pip_gate(
 //                        is what proves the request reached the adapter).
 //   `tests_gate_quota` — the `$`-ceiling gate with no attributable tenant
 //                        fails CLOSED (503); it never skips the charge.
+//   `tests_gate_write` — F27 + REV-S3: a write is admitted only when the PAT's
+//                        own D1 row authorises it (the scope header alone is
+//                        never enough), and is billed to the tenant that row
+//                        names rather than to a caller-supplied header.
 //   `tests_route`      — the served read path end to end: tenant-segment
 //                        strip, Option-B resolve, index KV, moat get, and the
 //                        sha256↔blake3 digest fork.
 //   `tests_support`    — the hermetic doubles + router builders, shared by all
-//                        four, here rather than in a sibling so no test file
+//                        five, here rather than in a sibling so no test file
 //                        looks load-bearing for the others.
 
 #[cfg(test)]
@@ -570,6 +597,9 @@ mod tests_gate_quota;
 
 #[cfg(test)]
 mod tests_gate_scope;
+
+#[cfg(test)]
+mod tests_gate_write;
 
 #[cfg(test)]
 mod tests_route;

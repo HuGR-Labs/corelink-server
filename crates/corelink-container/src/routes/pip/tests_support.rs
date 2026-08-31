@@ -1,21 +1,22 @@
 //! Shared fixtures for the `routes::pip` test modules.
 //!
-//! Every hermetic double the pip route tests need lives here — the two
-//! `PatRowLookup` shells (one known token / nothing known), the in-memory
-//! moat halves (`StubCas` + `FakeMap`), the in-memory index KV, and the
-//! three router builders that mirror the production [`super::router`]
-//! wiring while swapping the D1-backed index store for `FakeKv`.
+//! Every hermetic double the pip route tests need lives here — the three
+//! `PatRowLookup` shells (known token / absent token / backend fault), the
+//! in-memory moat halves (`StubCas` + `FakeMap`), the in-memory index KV, and
+//! five router builders that mirror the production [`super::router`] wiring
+//! while swapping the D1-backed index store for `FakeKv`.
 //!
 //! It is a fixture file, not a property file: nothing here asserts. It sits
 //! in its own module rather than inside one of the test files because all
-//! four of them draw on it, and hosting it in a sibling would make that
+//! five property files draw on it, and hosting it in a sibling would make that
 //! sibling look load-bearing for the others when it is only a neighbour.
 //!
-//! The builders are the load-bearing part: `router_with` and
-//! `router_with_quota` must keep mirroring `super::router`'s layering — the
-//! gate as an OUTER layer wrapping the `/pip` mount, and ONE resolver shared
-//! by the adapter and the gate. A test that builds the layers differently
-//! from production stops testing production.
+//! The builders are the load-bearing part: `router_with`,
+//! `router_with_put_probe`, `router_with_quota`,
+//! `router_with_quota_observable`, and `router_rejecting` must keep mirroring
+//! `super::router`'s layering — the gate as an OUTER layer wrapping the `/pip`
+//! mount, and ONE resolver shared by the adapter and the gate. A test that
+//! builds the layers differently from production stops testing production.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -25,10 +26,11 @@
 )]
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use axum::body::Body;
-use axum::http::Request as HttpRequest;
+use axum::http::{Request as HttpRequest, StatusCode};
 use corelink_handler_cas::{
     CasHandlerError, CasReadRequest, CasReadResponse, CasWriteRequest, CasWriteResponse,
 };
@@ -60,6 +62,27 @@ pub(super) struct EmptyLookup;
 impl PatRowLookup for EmptyLookup {
     async fn lookup(&self, _token_id: &str) -> Result<Option<PatRow>, String> {
         Ok(None)
+    }
+}
+
+/// `PatRowLookup` whose D1-equivalent read failed. Kept distinct from
+/// [`EmptyLookup`]: an absent row is an invalid credential, while this error
+/// must prove the F27 resolver-error arm fails closed before the request can
+/// reach the adapter.
+#[derive(Default)]
+pub(super) struct FailingLookup {
+    calls: AtomicUsize,
+}
+impl FailingLookup {
+    pub(super) fn calls(&self) -> usize {
+        self.calls.load(Ordering::SeqCst)
+    }
+}
+#[async_trait]
+impl PatRowLookup for FailingLookup {
+    async fn lookup(&self, _token_id: &str) -> Result<Option<PatRow>, String> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Err("test D1 lookup unavailable".to_owned())
     }
 }
 
@@ -212,6 +235,64 @@ pub(super) fn router_with(
         .layer(middleware::from_fn_with_state(gate_state, pip_gate))
 }
 
+/// Like [`router_with`], except the otherwise-unmapped test PUT has a tiny
+/// downstream handler. This makes the valid-write control prove the gate
+/// called `next.run`: a gate-local 405 cannot impersonate this 204 response.
+pub(super) fn router_with_put_probe(
+    cas_read: Arc<dyn CasReadHandler>,
+    cas_write: Arc<dyn CasWriteHandler>,
+    map: Arc<dyn UrlMapStore>,
+    kv: Arc<dyn KvStore>,
+    verifier: Arc<PatVerifier>,
+) -> (Router, Arc<AtomicUsize>) {
+    let moat = Arc::new(MoatCache::production(
+        cas_read,
+        cas_write,
+        map,
+        PIP_SERVICE_PRINCIPAL,
+    ));
+    let cas: Arc<dyn CasStore> = Arc::new(PipMoatStore { moat });
+    let resolver: TenantResolverHandle = Arc::new(PipPatResolver(verifier));
+    let auditor: Arc<dyn AuditEmitter> = Arc::new(InMemoryAuditEmitter::new());
+    let upstream_pypi = Url::parse(PIP_UPSTREAM_DEFAULT).unwrap();
+    let upstream = Arc::new(UpstreamClient::new(upstream_pypi.clone()).unwrap());
+    let config = PipAdapterConfig::new(
+        SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
+        upstream_pypi,
+        DEFAULT_INDEX_TTL_SECONDS,
+        DEFAULT_WHEEL_SIZE_LIMIT_BYTES,
+        true,
+        cas,
+        kv,
+        resolver.clone(),
+        auditor,
+    );
+    let state = AdapterState {
+        config: Arc::new(config),
+        upstream,
+    };
+    let probe = Arc::new(AtomicUsize::new(0));
+    let probe_for_handler = Arc::clone(&probe);
+    let adapter = build_router(state).route(
+        "/simple/requests/",
+        axum::routing::put(move || {
+            let probe = Arc::clone(&probe_for_handler);
+            async move {
+                probe.fetch_add(1, Ordering::SeqCst);
+                StatusCode::NO_CONTENT
+            }
+        }),
+    );
+    let gate_state = PipGateState {
+        resolver,
+        quota: None,
+    };
+    let router = Router::new()
+        .nest_service("/pip", adapter)
+        .layer(middleware::from_fn_with_state(gate_state, pip_gate));
+    (router, probe)
+}
+
 /// Like [`router_with`] but with an ACTIVE per-tenant `$`-ceiling quota
 /// gate (hermetic in-memory store + fake clock). Used to prove the gate's
 /// cost-attribution does NOT fall open when no tenant id is available
@@ -223,6 +304,24 @@ pub(super) fn router_with_quota(
     kv: Arc<dyn KvStore>,
     verifier: Arc<PatVerifier>,
 ) -> Router {
+    router_with_quota_observable(cas_read, cas_write, map, kv, verifier).0
+}
+
+/// [`router_with_quota`], plus a handle on the quota store the gate charges.
+///
+/// Status alone cannot answer *which* tenant was billed: the fixture's $1/op
+/// against a fresh tenant is admitted whichever label is used, so an
+/// attribution bug is invisible from the response. Reading the store back
+/// through `QuotaStore::get` is what makes the REV-S3 claim — that a write is
+/// charged to the PAT-derived tenant and not to a caller-supplied header —
+/// an assertion rather than an inference.
+pub(super) fn router_with_quota_observable(
+    cas_read: Arc<dyn CasReadHandler>,
+    cas_write: Arc<dyn CasWriteHandler>,
+    map: Arc<dyn UrlMapStore>,
+    kv: Arc<dyn KvStore>,
+    verifier: Arc<PatVerifier>,
+) -> (Router, Arc<crate::tenant_quota::InMemoryQuotaStore>) {
     let moat = Arc::new(MoatCache::production(
         cas_read,
         cas_write,
@@ -254,7 +353,10 @@ pub(super) fn router_with_quota(
     let clock = Arc::new(crate::wall_clock::InMemoryFakeWallClock::at_unix_ms(
         1_700_000_000_000,
     ));
-    let guard = Arc::new(crate::tenant_quota::QuotaGuard::new(store, clock));
+    let guard = Arc::new(crate::tenant_quota::QuotaGuard::new(
+        Arc::clone(&store) as Arc<dyn crate::tenant_quota::QuotaStore>,
+        clock,
+    ));
     // $1/op flat cost — a fresh tenant (under the $5 tripwire) would be
     // ADMITTED, so a 503 here is unambiguously the no-tenant fail-CLOSED
     // path, not an over-ceiling 402.
@@ -263,9 +365,10 @@ pub(super) fn router_with_quota(
         resolver,
         quota: Some(gate),
     };
-    Router::new()
+    let router = Router::new()
         .nest_service("/pip", adapter)
-        .layer(middleware::from_fn_with_state(gate_state, pip_gate))
+        .layer(middleware::from_fn_with_state(gate_state, pip_gate));
+    (router, store)
 }
 
 /// Router whose verifier rejects ALL PATs (empty lookup); stores unused.
@@ -288,6 +391,32 @@ pub(super) fn get(uri: &str, pat: Option<&str>, scope: Option<&str>) -> HttpRequ
     }
     if let Some(s) = scope {
         b = b.header(SCOPE_HEADER, s);
+    }
+    b.body(Body::empty()).unwrap()
+}
+
+/// A PUT, the only method that reaches the F27 two-layer write arm.
+///
+/// Carries the tenant header separately from the PAT on purpose: the whole
+/// point of F27/REV-S3 is that these two can DISAGREE, and every interesting
+/// case is one where they do. `tenant_header` is `Option` so a test can omit
+/// it entirely and prove the write still has an attribution key — which only
+/// holds if that key came from the PAT.
+pub(super) fn put(
+    uri: &str,
+    pat: Option<&str>,
+    scope: Option<&str>,
+    tenant_header: Option<&str>,
+) -> HttpRequest<Body> {
+    let mut b = HttpRequest::builder().method(Method::PUT).uri(uri);
+    if let Some(p) = pat {
+        b = b.header("authorization", format!("Bearer {p}"));
+    }
+    if let Some(s) = scope {
+        b = b.header(SCOPE_HEADER, s);
+    }
+    if let Some(t) = tenant_header {
+        b = b.header("x-corelink-tenant-id", t);
     }
     b.body(Body::empty()).unwrap()
 }
