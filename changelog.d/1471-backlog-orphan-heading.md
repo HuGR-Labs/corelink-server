@@ -16,5 +16,25 @@
   próprio `BACKLOG.md` derrubaria o portão nomeando um id inexistente — falha
   fechada, mas pelo motivo errado.
 
-  A checagem roda **depois** do relatório de título↔bloco divergente, para não
+  A máscara alimenta **só** esta checagem nova; o laço de divergência
+  título↔bloco continua lendo os títulos **sem máscara**, como antes. O
+  emparelhamento de cercas é sequencial a partir do topo do arquivo, então uma
+  abertura perdida deixa a contagem ímpar e **desloca todo emparelhamento
+  seguinte em um**: cada `### B-NN` posterior cai numa região tida como cercada e
+  some da lista. Medido no `BACKLOG.md` real (129 itens) com a abertura do
+  **B-062** removida — títulos mascarados produziam **64 linhas espúrias**
+  `heading says B-062, block says id: B-0NN` e retornavam **antes** da regra de
+  densidade; sem máscara sai `FATAL: BACKLOG.md is missing B-062 — ids must be
+  dense.`, uma linha exata, idêntica à da `main`. Perder a cerca do **último**
+  item — o caso que esta checagem existe para pegar — não desalinha bloco nenhum
+  do seu título, então o laço fica calado e a checagem de órfão é alcançada
+  intacta nos dois casos.
+
+  A checagem de órfão roda **depois** do relatório de divergência, para não
   mascarar o diagnóstico mais preciso.
+
+  A suíte `scripts/test_backlog_verify.sh` ganhou a célula que faltava: **três
+  itens, cerca do do meio removida**, esperando a mensagem de densidade e
+  proibindo a cascata. Nenhuma das 16 células anteriores podia enxergar isto —
+  todas usam fixtures de 1–2 itens, e com só o último danificado não há "depois"
+  para deslocar.

@@ -246,18 +246,7 @@ def main() -> int:
     # the per-item verifies so a mislabelled item cannot be "confirmed" under a
     # heading that describes different work.
     text = path.read_text()
-    # `### B-NN` inside a fenced block is an EXAMPLE, not an item. Without this
-    # mask, documenting the item format inside BACKLOG.md itself would turn the
-    # example into a phantom heading and fail the gate naming an id that does not
-    # exist. Fail-closed, so not dangerous — but it is exactly "reject for the
-    # wrong reason", which is the failure mode this whole block exists to avoid.
-    masked = re.sub(
-        r"^```.*?^```",
-        lambda m: re.sub(r"[^\n]", " ", m.group(0)),
-        text,
-        flags=re.MULTILINE | re.DOTALL,
-    )
-    headings = [(m.start(), m.group(1)) for m in HEADING_RE.finditer(masked)]
+    headings = [(m.start(), m.group(1)) for m in HEADING_RE.finditer(text)]
     mismatches: list[str] = []
     for m in BLOCK_RE.finditer(text):
         line = text[: m.start()].count("\n") + 1
@@ -299,11 +288,45 @@ def main() -> int:
     #
     # So the question is only: does a fence open between this heading and the
     # next one? A heading with no fence at all is the item that vanishes.
+    #
+    # This check — and ONLY this check — reads headings from a fence-MASKED copy.
+    # `### B-NN` inside a fenced block is an EXAMPLE, not an item: documenting the
+    # item format inside BACKLOG.md itself would otherwise be flagged as an item
+    # whose block is missing, naming an id that does not exist.
+    #
+    # The mask must NOT feed the divergence loop above. Fence pairing is
+    # SEQUENTIAL from the top of the file, so the very defect this check hunts —
+    # a lost fence opener — leaves an odd count and shifts EVERY later pairing by
+    # one. Each subsequent `### B-NN` then falls inside a region believed to be
+    # fenced and drops out of `headings`, and the divergence loop attributes every
+    # later block to the last surviving heading. Measured on the real BACKLOG.md
+    # (129 items) with B-062's opener removed: masked headings produced 64 spurious
+    # `heading says B-062, block says id: B-0NN` lines and returned before the
+    # density rule could run; unmasked headings give `FATAL: BACKLOG.md is missing
+    # B-062 — ids must be dense.`, one exact line, as `main` did. Losing the LAST
+    # item's fence — the case this check exists for — misaligns no block from its
+    # heading, so the divergence loop stays silent and the orphan check is reached
+    # intact either way. Masked here, unmasked there.
+    #
+    # SCOPE of the mask, not fixed here because it is unreachable today: `^```
+    # only sees a fence in COLUMN 0. Measured 2026-08-31, BACKLOG.md carries 0
+    # indented (`^\s+``` `) fences and 0 `~~~` fences — every fence in it opens in
+    # column 0, so the mask pairs all of them. A `### B-NN` written in column 0
+    # *inside* an indented fence, or a `~~~` fence, would still register as a
+    # phantom heading here. Neither construct exists in the file; if one is ever
+    # added, this mask needs a real fence tokenizer rather than a regex.
+    masked = re.sub(
+        r"^```.*?^```",
+        lambda m: re.sub(r"[^\n]", " ", m.group(0)),
+        text,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    masked_headings = [(m.start(), m.group(1)) for m in HEADING_RE.finditer(masked)]
     block_starts = [m.start() for m in BLOCK_RE.finditer(text)]
-    bounds = [pos for pos, _ in headings] + [len(text)]
+    bounds = [pos for pos, _ in masked_headings] + [len(text)]
     orphan_headings = [
         h
-        for i, (pos, h) in enumerate(headings)
+        for i, (pos, h) in enumerate(masked_headings)
         if not any(pos < b < bounds[i + 1] for b in block_starts)
     ]
     if mismatches:
@@ -328,7 +351,7 @@ def main() -> int:
             + "\nO item existe como titulo e NAO existe para nenhuma verificacao deste\n"
             "arquivo — some do portao sem que o portao reclame, porque ele conta o que\n"
             "consegue parsear e nada compara esse numero com quantos titulos ha.\n"
-            f"(titulos: {len(headings)}, blocos abertos: {len(block_starts)})",
+            f"(titulos: {len(masked_headings)}, blocos abertos: {len(block_starts)})",
             file=sys.stderr,
         )
         return 2
