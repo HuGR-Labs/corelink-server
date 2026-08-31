@@ -24,19 +24,33 @@ on:
         description: "Release version override (e.g. 0.1.2)"
         required: false
         default: ""
-  schedule:
-    # Weekly drift check — Tuesdays 03:17 UTC
-    - cron: "17 3 * * 2"
+  # The weekly `schedule: cron "17 3 * * 2"` was removed 2026-08-31 (WP-E).
+  # This SBOM is derived from `Cargo.lock` + the workspace manifests, so it
+  # cannot drift WITHOUT a commit — and the standing rule in CLAUDE.md is that a
+  # cron earns its keep only for what changes without one (CVE feeds, prod
+  # state, backups, cert drift, billing reconciliation). Advisory drift is
+  # already `cargo-audit.yml`'s job, not this lane's. What the cron actually did
+  # was fire 16 red runs at the founder's Mac — which IS the runner — for an
+  # `ls` that could never find its file. `release: published` + dispatch cover
+  # the real need. Re-add a cron only with a reason that survives that test.
 
 permissions:
   contents: write   # upload release assets
   id-token: write   # OIDC (reserved for future Cosign keyless; no-op now)
 
 env:
-  CARGO_CYCLONEDX_VERSION: "0.5.4"
+  # 0.5.9 is the version ADR-0044 canonicalizes for SBOM generation, and the one
+  # `sbom-consolidated.yml` — the only lane in this group with a successful run —
+  # installs. This lane was pinned to 0.5.4 and drifted off the canonical pin.
+  CARGO_CYCLONEDX_VERSION: "0.5.9"
   CYCLONEDX_CLI_VERSION: "0.27.2"
-  # SHA-256 digests of the tool binaries (verified on first install; pinned for supply-chain).
-  CYCLONEDX_CLI_LINUX_SHA256: "placeholder-pin-at-first-use"
+  # SHA-256 digests of the cyclonedx-cli release binaries, pinned for supply
+  # chain and ENFORCED in the install step below. The previous entry here was
+  # `CYCLONEDX_CLI_LINUX_SHA256: "placeholder-pin-at-first-use"` — a literal
+  # placeholder that no step ever read, i.e. a pin that pinned nothing, on a
+  # Linux asset this macOS job could not have executed anyway.
+  CYCLONEDX_CLI_OSX_X64_SHA256: "331c2245ef7dadf09fa3d2710a2aaab071ff6bea2ba3e5df8f95a4f3f6e825e9"
+  CYCLONEDX_CLI_OSX_ARM64_SHA256: "2d24c331c2ccc5e4061722bd4780c8b295041b2569d130bbe80cf7da95b97171"
   TSA_URL: "https://tsa.sigstore.dev/api/v1/timestamp"
 
 jobs:
@@ -99,13 +113,29 @@ jobs:
             echo "version=drift-check-$(date +%Y%m%d)" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Generate SBOM (CycloneDX 1.5+ JSON)
+      # `cargo cyclonedx --all` emits ONE SBOM PER PACKAGE, each written into that
+      # package's own manifest directory — it does NOT produce a workspace-wide
+      # document at the repo root. With 70+ crates this scattered 70+ files named
+      # `sbom.cdx.json` through `crates/*/` and left NOTHING here, so the `ls`
+      # below it failed every single time:
+      #
+      #     ls: sbom.cdx.json: No such file or directory
+      #     ##[error]Process completed with exit code 1
+      #
+      # That is the whole of this lane's 16-run / 0-success record — the same
+      # fault class as `reproducible-build` hashing a wasm artifact the build
+      # cannot produce. `scripts/sbom-aggregate.sh` is the repo's answer to
+      # exactly this: its header says it "wraps [cargo-cyclonedx] and stitches
+      # the per-crate components into one canonical workspace bom". It is already
+      # proven — `sbom-consolidated.yml` runs it and is the ONE lane in this
+      # group with a successful run.
+      - name: Generate SBOM (CycloneDX 1.5+ JSON — consolidated workspace bom)
+        env:
+          SBOM_REF: ${{ steps.version.outputs.version }}
         run: |
-          cargo cyclonedx \
-            --all \
-            --format json \
-            --spec-version 1.5 \
-            --override-filename sbom.cdx
+          set -euo pipefail
+          bash scripts/sbom-aggregate.sh
+          cp target/sbom/corelink-workspace.cdx.json sbom.cdx.json
           echo "SBOM generation complete"
           ls -lh sbom.cdx.json
 
@@ -134,10 +164,40 @@ jobs:
         with:
           name: sbom-cdx-json
 
+      # This job runs on the macOS fleet, and the download below asked for
+      # `cyclonedx-linux-x64` — a Linux ELF binary that macOS cannot exec. It was
+      # a second wall standing behind the job-1 failure and had never been
+      # reached, so it had never been observed. Same fault class as
+      # `reproducible-build`: a lane naming an artifact the platform cannot use.
+      #
+      # Arch is now selected from `uname -m` (the fleet self-reports the `X64`
+      # label, which does not settle whether the host is Apple Silicon), and the
+      # binary is verified against a SHA-256 pinned in the `env:` block above
+      # BEFORE it is made executable. The previous pin,
+      # `CYCLONEDX_CLI_LINUX_SHA256: "placeholder-pin-at-first-use"`, was a
+      # literal placeholder referenced by nothing — a supply-chain pin that
+      # pinned nothing. Digests computed from the upstream v0.27.2 release
+      # assets on 2026-08-31.
       - name: Install CycloneDX CLI ${{ env.CYCLONEDX_CLI_VERSION }}
         run: |
-          CDXCLI_URL="https://github.com/CycloneDX/cyclonedx-cli/releases/download/v${CYCLONEDX_CLI_VERSION}/cyclonedx-linux-x64"
-          curl -fsSL -o cyclonedx-cli "$CDXCLI_URL"
+          set -euo pipefail
+          case "$(uname -s)/$(uname -m)" in
+            Darwin/arm64)  ASSET="cyclonedx-osx-arm64"; WANT="${CYCLONEDX_CLI_OSX_ARM64_SHA256}" ;;
+            Darwin/x86_64) ASSET="cyclonedx-osx-x64";   WANT="${CYCLONEDX_CLI_OSX_X64_SHA256}" ;;
+            *)
+              echo "::error::Unsupported host $(uname -s)/$(uname -m) for cyclonedx-cli. This job targets the macOS corelink-builder fleet; add the digest for this platform rather than dropping the pin."
+              exit 1
+              ;;
+          esac
+          CDXCLI_URL="https://github.com/CycloneDX/cyclonedx-cli/releases/download/v${CYCLONEDX_CLI_VERSION}/${ASSET}"
+          echo "Downloading ${ASSET} from ${CDXCLI_URL}"
+          curl -fsSL --retry 3 -o cyclonedx-cli "$CDXCLI_URL"
+          GOT="$(shasum -a 256 cyclonedx-cli | awk '{print $1}')"
+          if [ "$GOT" != "$WANT" ]; then
+            echo "::error::cyclonedx-cli SHA-256 pin violation for ${ASSET}: expected ${WANT}, got ${GOT}. Do NOT re-pin against the mutable upstream URL without a Security review."
+            exit 1
+          fi
+          echo "SHA-256 pin OK: ${GOT}"
           chmod +x cyclonedx-cli
           # Verify binary works
           ./cyclonedx-cli --version
@@ -217,6 +277,10 @@ jobs:
     needs: [sbom-generate, sbom-ntia-validate]
     # DT ingestion is non-blocking: continue even if DT is down
     continue-on-error: true
+    # Gate the WHOLE job, not just the POST: the steps below compile
+    # `sbom-publish` from source on the founder's Mac before they would discover
+    # there is nowhere to send the result. See the note on the ingest step.
+    if: vars.DT_ENDPOINT != ''
 
     steps:
       - name: Checkout
@@ -240,12 +304,24 @@ jobs:
       - name: Build sbom-publish binary
         run: cargo build --release -p sbom-publish
 
+      # The hard-coded fallback `https://dt.corelink.humangr.com` is NXDOMAIN
+      # (checked 2026-08-31; the control `corelink-api.humangr.com` resolves), so
+      # with `vars.DT_ENDPOINT` unset this step could only ever warn — after
+      # paying for a full `cargo build --release -p sbom-publish` on the founder's
+      # Mac. The endpoint is now required rather than defaulted: no
+      # Dependency-Track configured means the job says so and skips, instead of
+      # compiling a binary to POST at a host that does not exist.
       - name: Ingest SBOM into Dependency-Track
         env:
           DT_API_KEY: ${{ secrets.DT_API_KEY }}
+          DT_ENDPOINT: ${{ vars.DT_ENDPOINT }}
         run: |
           VERSION="${{ needs.sbom-generate.outputs.version }}"
-          DT_URL="${{ vars.DT_ENDPOINT || 'https://dt.corelink.humangr.com' }}"
+          DT_URL="${DT_ENDPOINT:-}"
+          if [ -z "$DT_URL" ]; then
+            echo "::notice::vars.DT_ENDPOINT is not set — no Dependency-Track instance is configured for this repo, so there is nothing to ingest into. Skipping (not a failure). Set the variable to enable ingestion."
+            exit 0
+          fi
 
           ./target/release/sbom-publish ingest-dt \
             --input sbom.cdx.json \
@@ -262,7 +338,15 @@ jobs:
   sbom-release-upload:
     name: "Upload release assets"
     runs-on: [self-hosted, mac, corelink-builder]
-    needs: [sbom-tsa-attest, sbom-dt-ingest]
+    # `sbom-dt-ingest` was dropped from `needs` on 2026-08-31 (WP-E). Now that it
+    # is conditional on `vars.DT_ENDPOINT`, keeping it here would SKIP the
+    # release upload whenever Dependency-Track is unconfigured — a skipped
+    # dependency skips its dependents. That is the wrong coupling regardless:
+    # this job publishes the SBOM and its RFC-3161 timestamp as release assets,
+    # and it needs neither the existence nor the success of an external
+    # vulnerability-tracker POST (which was already `continue-on-error: true`,
+    # i.e. explicitly declared non-blocking).
+    needs: [sbom-tsa-attest]
     if: github.event_name == 'release'
 
     steps:
