@@ -7464,7 +7464,7 @@ verify-means: |
 last-verified: 2026-08-31
 ```
 
-### B-132 — a evidencia SOC 2 que fica hosted "para nao ter lacuna invisivel" esta com lacuna ha dias
+### B-132 — o braco `schedule` do `secrets-drift` roteia para hosted sob uma justificativa de evidencia SOC 2 que a medicao contradiz
 
 `secrets-drift.yml` roteia por evento: `pull_request` vai para self-hosted, `schedule`
 fica em `ubuntu-latest`. A razao esta escrita no arquivo:
@@ -7546,6 +7546,24 @@ verify-means: |
   do portao.
 
   Vira DRIFTED quando o braco schedule mudar de destino.
+
+  **O titulo foi reescrito em 2026-08-31 para dizer o que o portao de fato mede.** Ele
+  prometia "a evidencia SOC 2 esta com lacuna" e media roteamento — duas coisas
+  diferentes, com duas consequencias erradas: mover o braco para a frota **fechava** o
+  item sem ninguem provar que a evidencia voltou a ser produzida, e consertar o
+  faturamento — o defeito real — **nao** fechava. Das duas saidas possiveis (renomear o
+  item, ou exigir no fechamento prova de artefato produzido) escolhi renomear, porque e a
+  unica em que titulo, portao e condicao de fechamento coincidem e sao todos verificados
+  por maquina; a outra deixaria o titulo prometendo o que so uma inspecao manual poderia
+  sustentar, e este repo ja tem historico de riders manuais que decaem. Nao inventei um
+  portao que sonde SOC 2: nenhum grep decide se um artefato de evidencia existe.
+
+  **O que este item, agora, explicitamente NAO prova ao fechar:** que a evidencia diaria
+  voltou a ser gerada. Mudar o destino do braco satisfaz este portao e nada mais. O
+  defeito subjacente — todo job `ubuntu-*` deste repo nao inicia por bloqueio de
+  faturamento, sem passos e sem log, com a anotacao visivel so via API — continua **sem
+  item proprio** e esta registrado na prosa acima sob "Generalizacao que este item NAO
+  fecha". Quem fechar este deve abrir aquele, ou recusar por escrito.
 last-verified: 2026-08-31
 ```
 
@@ -7596,7 +7614,7 @@ verify: |
   bash -c 'w=.github/workflows/dependabot-policy.yml
   [ -f "$w" ] || { echo "FALHA: dependabot-policy.yml sumiu — reavalie o item."; exit 1; }
   grep -q "refs/pull/" "$w" || { echo "FALHA: nao ha mais checkout do merge-ref — feche o item."; exit 1; }
-  grep -q "ci-use-host-toolchain.sh" "$w" || {
+  grep -qE "^[[:space:]]+run: bash scripts/ci-use-host-toolchain\.sh[[:space:]]*$" "$w" || {
     echo "FALHA: o passo que executa script da arvore checada sumiu — feche o item (verify invertido)."; exit 1; }
   echo "aberto: checkout de refs/pull/N/merge seguido de bash de um script da arvore checada"'
 verify-means: |
@@ -7604,6 +7622,17 @@ verify-means: |
 
   Vira DRIFTED assim que um dos dois sumir: o checkout do merge-ref, ou o `bash` do script
   da arvore. Qualquer dos dois fecha o furo; o verify nao opina sobre qual.
+
+  O terceiro predicado casa o **`run:`**, nao o nome do script em qualquer lugar do
+  arquivo. Um `grep -q "ci-use-host-toolchain.sh"` solto casava tambem a **linha 144**,
+  que e prosa de comentario ("Full reasoning: scripts/ci-use-host-toolchain.sh header."):
+  o portao continuava dizendo "aberto" mesmo depois de o passo executavel sumir. Dois
+  mutantes sobreviviam, e o pior dos dois era **o conserto que este item recomenda** —
+  trocar o passo por `bash _base/scripts/ci-use-host-toolchain.sh`, a partir de um
+  checkout do ref BASE. Um item de seguranca cujo portao nao reconhece o proprio reparo
+  fica aberto para sempre ou e fechado a mao, sem prova. A ancora `^[[:space:]]+run: `
+  e o `$` final casam 1x hoje (so a 147); `run: echo skipped` e o caminho `_base/…`
+  agora ficam ambos DRIFTED.
 last-verified: 2026-08-31
 ```
 
