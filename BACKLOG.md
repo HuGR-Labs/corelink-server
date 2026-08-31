@@ -4798,6 +4798,35 @@ O que NÃO foi tocado, deliberadamente: `legal/sla/v1.0.0.md:46`, que compromete
 *"BYOK kill-switch p99 ≤ 5 min"* para Enterprise. É instrumento assinado, a correção é de
 [B-087], e emendá-lo não é decisão de engenharia.
 
+**O resíduo, medido — porque um item que fica aberto sem nomear o que sobra não é
+rastreamento, é esperança.** `grep -rli byok --include='*.md' --include='*.mdx' marketing/
+apps/docs/ README.md` devolve **231 arquivos / 1055 posições**. A triagem das que vendem
+BYOK como entregue:
+
+- `marketing/sales/PROOF-POINTS.md:72` — §2.13, *"Weekly synthetic BYOK chaos drill on
+  lighthouse tenants"* como proof point.
+- **`marketing/sales/PRICING-WORKSHEET.md:155` — *"With BYOK add-on at $99/mo"*. O preço
+  que o FAQ acabou de remover continua na planilha** que o rep usa para montar a proposta.
+- `marketing/sales/legal-questionnaires/SIG-LITE-2026-pre-filled.md:232` (N.6) e
+  `marketing/sales/legal-questionnaires/CAIQ-V4-pre-filled.md:120` (CEK-10.1) — em reparo
+  no PR de [B-087]; ficam listadas aqui porque a `main` ainda as carrega.
+- `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md:47`, `:200` e **`:219`** — a `:219` é uma
+  **linha de log fabricada**: *"2026-MM-DD 14:22Z: scheduled BYOK chaos drill, kill-switch
+  RTT 3m12s (target ≤ 5 min, PASS)"*. Um número de medição que nunca foi medido, num
+  documento entregue ao cliente.
+- `marketing/lighthouse-kit/03-integration-timeline.md:88` e `:110`;
+  `marketing/lighthouse-kit/02-intro-deck.md:66` e `:190`.
+- **`marketing/launch/CASE-STUDIES/enterprise-byok.md:54` e `:59`** — case study inteiro
+  sobre um kill-switch *"executed as a contractual test"*, **com citação atribuída a um
+  cliente**. É a forma mais cara do defeito: retratá-lo depois de circular exige falar com
+  a pessoa citada.
+- `README.md:94` — *"**BYOK is real across four KMS providers.**"*
+- As **6** páginas `apps/docs/src/pages/compare/vs-*.mdx` (`vs-bazel-remote-s3`,
+  `vs-buildbuddy`, `vs-engflow`, `vs-nx-cloud`, `vs-sccache-s3`, `vs-turborepo`) — a
+  revisão que originou esta lista dizia 5; são 6.
+- `apps/docs/docs/explanation/security/byok.mdx:55` — *"BYOK is available on the
+  **Enterprise** tier"* — × 4 locales.
+
 ```backlog
 id: B-083
 repo: corelink-server
@@ -4807,8 +4836,8 @@ verify: |
   bash -c 'd=Dockerfile
   c=crates/corelink-container/Cargo.toml
   [ -f "$d" ] && [ -f "$c" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
-  buildline=$(grep -E "cargo build.*-p corelink-server" "$d" | head -1)
-  [ -n "$buildline" ] || { echo "FALHA: a linha de build do corelink-server mudou — reavalie o item."; exit 1; }
+  buildline=$(grep -E "^[^#]*cargo build[^#]*-p corelink-server" "$d" | head -1)
+  [ -n "$buildline" ] || { echo "FALHA: nenhuma linha NAO-COMENTADA de build do corelink-server no Dockerfile — o comando perdeu o objeto e nao pode concluir ausencia de feature; reavalie o item a mao."; exit 1; }
   temfeat=0; printf "%s" "$buildline" | grep -qE "byok-(aws|gcp|azure|vault)-real" && temfeat=1
   defvazio=0; grep -qE "^default[[:space:]]*=[[:space:]]*\[\]" "$c" && defvazio=1
   defbyok=0; grep -E "^default[[:space:]]*=" "$c" | grep -q "byok" && defbyok=1
@@ -4823,10 +4852,27 @@ verify-means: |
   Vira DRIFTED quando qualquer um dos dois caminhos passar a embarcar um provedor real,
   que é o reparo.
 
-  O que NÃO decide, e admito: se o provedor embarcado FUNCIONA contra um KMS real, e se
-  o `run_loop` do kill switch passa a ser chamado. Compilar a feature é condição
-  necessária, não suficiente. Quem fechar deve provar com um drill REAL — que é
-  exatamente o que [B-084] cobra — e não com a presença da flag.
+  **Corrigido 2026-08-31 — a metade de linha de comando estava MORTA e não podia disparar.**
+  O `grep -E "cargo build.*-p corelink-server" Dockerfile | head -1` casava primeiro o
+  **comentário do `Dockerfile:8`** (`# \`cargo build -p corelink-server\`, delete the
+  stubs, …`), não a linha real de build do `:182`. Consequência medida: acrescentar
+  `--features byok-aws-real` à linha real **passava verde**, e apagar a linha real também
+  — o "controle do instrumento" nunca podia falhar, porque o comentário sempre estava lá
+  para satisfazê-lo. Ancorei em `^[^#]*cargo build[^#]*-p corelink-server`, e as duas
+  mutações agora ficam vermelhas.
+
+  O que NÃO decide, e admito, em três pontos:
+
+  1. Se o provedor embarcado FUNCIONA contra um KMS real, e se o `run_loop` do kill switch
+     passa a ser chamado. Compilar a feature é condição necessária, não suficiente. Quem
+     fechar deve provar com um drill REAL — que é exatamente o que [B-084] cobra — e não
+     com a presença da flag.
+  2. **O resíduo documental**, que o comando não lê: 231 arquivos / 1055 posições citam
+     BYOK em `marketing/`, `apps/docs/` e no `README.md`, e a lista triada está no corpo
+     do item. Nenhum portão a cobre; o `verify` mede a condição de CÓDIGO, que é a raiz.
+  3. Que o `Dockerfile:182` alcança o alvo do contêiner **por ausência de `--target`**.
+     Uma mudança de alvo padrão do builder trocaria a árvore compilada sem tocar nesta
+     linha, e o comando não veria.
 
   Owner, não tl: embarcar BYOK real toca credencial de KMS de cliente e muda a superfície
   vendida. Não é decisão de engenharia.
