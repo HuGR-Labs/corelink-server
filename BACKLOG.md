@@ -5032,11 +5032,15 @@ passada consertou uma linha e deixou treze vendendo o mesmo controle inexistente
   `DEK_CACHE_EMPTY=true` (`:100`), `TENANT_STATUS_POST="degraded_read_only"` (`:101`),
   `RECOVERY_STATUS="active"` (`:129`); as chamadas de provider existem só como comentário
   (`:64-67`, `:125`). O número `byok-kill-switch-rtt ≤ 5 min` é `date +%s` antes e depois
-  de um `sleep 2` (`:62`, `:81`, `:112`): **não mede coisa alguma**, e como nenhuma
-  asserção pode ser falsa, o verde é estruturalmente inevitável. Nenhuma execução deixou
-  evidência: o step "Commit drill report" faz `git commit` **sem `git push`** (workflow
-  `:56-68`) e `ls specs/_audits/ | grep -c byok-kill-switch-drill` = **0**. CAIQ `CEK-10.1`
-  e SIG-LITE `N.6` agora dizem exatamente isso.
+  de um `sleep 2` (`:62`, `:81`, `:112`): **não mede coisa alguma**. Com precisão:
+  `DETECT_LATENCY_S` (`:75`→`:86`) e `TOTAL_S` (`:62`→`:112`) atravessam o **mesmo** e
+  único `sleep 2` — não são duas medidas independentes — e os dois `sleep 1` (`:126`,
+  `:128`) rodam depois de `:112`, fora das duas. E como nenhuma asserção pode ser falsa, o
+  verde é estruturalmente inevitável. Nenhuma execução deixou evidência: o step "Commit
+  drill report" faz `git commit` **sem `git push`** (citado pelo NOME do step: o range de
+  linhas já se deslocou uma vez na `main`) e
+  `ls specs/_audits/ | grep -c byok-kill-switch-drill` = **0**. CAIQ `CEK-10.1` e SIG-LITE
+  `N.6` carregam os mesmos FATOS (a redação difere entre os três documentos).
 - **Terceira passada — B4 tinha propagado pela metade dentro do arquivo que o PR editou.**
   No `SIG-LITE-2026-pre-filled.md`, `K.10` ainda vendia *"supplementary measures (BYOK
   envelope encryption, EU-region pin)"* — a mesma afirmação pela qual o `DSP-09.1` do CAIQ
@@ -5062,6 +5066,30 @@ passada consertou uma linha e deixou treze vendendo o mesmo controle inexistente
   providers … drilled weekly"* e em `N.4` o envelope BYOK opcional. Ambas corrigidas.
   Estava fora do diff da primeira passada.
 
+**Quarta passada 2026-08-31 — o achado maior, que estava nomeado em prosa e medido por
+nada.** O `SLA_SECONDS=360` (6 min) do script é número INTERNO. O **5** vem de instrumento
+**assinado**, em dois lugares, ambos conferidos por conteúdo:
+
+- `legal/sla/v1.0.0.md:46`, linha **Enterprise** da tabela de SLO: *"BYOK kill-switch p99
+  ≤ 5 min"*, com créditos de serviço por §4 + *"enhanced remedies"* atrás dela.
+- `legal/dpa-residency-amendment.md:230`, linha **Right to Erasure**: *"Customer revokes
+  CMK (BYOK kill switch) → crypto-erase ≤ 5 min globally"* — o kill-switch é oferecido
+  como **o mecanismo de Direito ao Esquecimento do GDPR**, com prazo técnico *"≤ 5 min"*.
+  O mesmo documento repete a promessa em `:351` como medida de evidência (*"BYOK kill
+  switch ≤ 5 min global revocation"*).
+
+Contra isso: `POST /v1/admin/byok/activate` devolve `501 byok_not_available`
+(`crates/corelink-container/src/routes/byok_admin.rs:245-257`). **Um SLA assinado promete 5
+minutos para uma feature que devolve `501`**, e o único instrumento que "mede" esse número
+tem orçamento de 6 minutos e não mede nada.
+
+O buraco de RASTREAMENTO era este: o corpo do [B-083] **cita** a linha do SLA e roteia a
+correção para cá, mas o `verify` deste item lia apenas a string *"immutable R2 with Object
+Lock"* no DPA — não lia `legal/sla/` nem o `dpa-residency-amendment`. Achado nomeado em
+prosa e medido por nada é exatamente a classe "achado que nunca vira item". O `verify`
+agora lê os dois instrumentos. **Ele não emenda ato jurídico assinado — só mede que ele
+afirma o que afirma.** Emendar é do owner.
+
 ```backlog
 id: B-087
 repo: corelink-server
@@ -5086,14 +5114,44 @@ verify: |
   done
   grep -E "^\|[[:space:]]*N\.6[[:space:]]*\|" "$s" | grep -q "| Y |" && ys=$((ys+1))
   [ "$ys" = 0 ] || { echo "FALHA: $ys linhas de procurement voltaram a atestar Y para controles nao entregues (BYOK / WORM / pagina sintetica / supply chain) — o reparo regrediu."; exit 1; }
+  sla=legal/sla/v1.0.0.md
+  amd=legal/dpa-residency-amendment.md
+  byok=crates/corelink-container/src/routes/byok_admin.rs
+  for f in "$sla" "$amd" "$byok"; do
+    [ -f "$f" ] || { echo "FALHA: $f sumiu — o comando perdeu o objeto que mede e nao pode concluir nada."; exit 1; }
+  done
+  grep -q "^sla_version:" "$sla" || { echo "FALHA: $sla nao tem front-matter sla_version — nao e mais o SLA que este portao acha que le; reavalie a mao."; exit 1; }
+  grep -q "DPA-RESIDENCY-AMENDMENT" "$amd" || { echo "FALHA: $amd nao se identifica mais como DPA-RESIDENCY-AMENDMENT — reavalie a mao."; exit 1; }
+  grep -q "REAL_KMS_PROVIDER_WIRED" "$byok" || { echo "FALHA: o gate REAL_KMS_PROVIDER_WIRED sumiu de $byok — a condicao que este portao pressupoe mudou de forma; reavalie a mao."; exit 1; }
+  if grep -q "byok_not_available" "$byok"; then n501=1; else n501=0; fi
+  [ "$n501" = 1 ] || { echo "FALHA: /v1/admin/byok/activate nao devolve mais 501 byok_not_available — se o BYOK embarcou, a premissa desta metade caiu e o item tem de ser reavaliado a mao (progresso, nao regressao)."; exit 1; }
+  p5="BYOK kill-switch p99 <= 5 min"
+  p5u=$(printf "BYOK kill-switch p99 \xe2\x89\xa4 5 min")
+  e5=$(printf "crypto-erase \xe2\x89\xa4 5 min globally")
+  sla_promete=0
+  grep -qF "$p5u" "$sla" && sla_promete=1
+  grep -qF "$e5" "$amd" && sla_promete=1
   worm="immutable R2 with Object Lock"
   ctl=$(grep -c "Object Lock" "$d" | tr -d " ")
   [ "$ctl" -ge 1 ] || { echo "FALHA: a string de controle \"Object Lock\" nao aparece em $d — o DPA foi reescrito ou o comando esta lendo o arquivo errado; reavalie o item a mao."; exit 1; }
+  razoes=0
+  msg=""
   if grep -qF "$worm" "$d"; then
-    echo "aberto: o CAIQ e o SIG-LITE estao corrigidos, mas o DPA EXECUTADO ainda declara \"$worm\" por 7 anos e o R2 devolve NotImplemented. Enquanto essa linha existir o item fica aberto — emendar um ato juridico e do owner, nao deste portao."
+    razoes=$((razoes+1))
+    msg="$msg
+  - o DPA EXECUTADO ($d) ainda declara \"$worm\" por 7 anos e o R2 devolve NotImplemented."
+  fi
+  if [ "$sla_promete" = 1 ]; then
+    razoes=$((razoes+1))
+    msg="$msg
+  - instrumento assinado ainda promete o kill-switch de 5 min contra um endpoint que devolve 501: \"$p5\" no tier Enterprise do $sla, e/ou \"crypto-erase <= 5 min globally\" como Direito ao Esquecimento em $amd."
+  fi
+  if [ "$razoes" -gt 0 ]; then
+    echo "aberto: o CAIQ e o SIG-LITE estao corrigidos, mas $razoes razao(oes) juridica(s) seguem de pe:$msg
+  Emendar ato juridico assinado e do owner, nao deste portao — ele so mede que o instrumento afirma o que afirma."
     exit 0
   fi
-  echo "FALHA: o DPA nao declara mais \"$worm\" — a razao restante deste item acabou. Feche B-087 (status: done) com verify de polaridade INVERTIDA, ou reescreva o item nomeando a razao que sobrou."
+  echo "FALHA: nenhuma das razoes medidas (WORM no DPA; kill-switch de 5 min no SLA/amendment) continua de pe. REESCREVA o item nomeando a razao que sobrou — os demais instrumentos assinados, os templates a reguladores e as ~180 linhas nao varridas do CAIQ nao sao medidos aqui. So se NENHUMA razao sobrar, feche B-087 (status: done) com verify de polaridade INVERTIDA."
   exit 1'
 verify-means: |
   open — e a **polaridade agora tem dentes nos dois sentidos**, que era o defeito da
@@ -5107,13 +5165,40 @@ verify-means: |
   uma razão que nenhum comando lê e nenhum relógio cobra fica aberto para sempre sem que
   ninguém perceba.
 
-  **O que o comando mede agora é a condição REMANESCENTE, não a já resolvida:**
-  `legal/dpa/v1.0.0.en-US.md` ainda declara *"immutable R2 with Object Lock"* por 7 anos,
-  contra um R2 que devolve `NotImplemented`. Enquanto essa linha existir, o item está
-  legitimamente aberto e o comando sai `exit 0`. **Quando ela deixar de casar, o comando
-  fica VERMELHO** e manda fechar o item ou renomear a razão que sobrou. É um portão que
-  pode reprovar, e reprova por progresso — que é o comportamento correto para um item
-  `open`.
+  **O que o comando mede agora são as condições REMANESCENTES, não a já resolvida**, e são
+  DUAS, contadas independentemente:
+
+  1. `legal/dpa/v1.0.0.en-US.md` ainda declara *"immutable R2 with Object Lock"* por 7
+     anos, contra um R2 que devolve `NotImplemented`.
+  2. **(nova)** Instrumento assinado ainda promete o kill-switch de 5 minutos contra um
+     endpoint que devolve `501`: `legal/sla/v1.0.0.md:46` no tier Enterprise (*"BYOK
+     kill-switch p99 ≤ 5 min"*) e `legal/dpa-residency-amendment.md:230` como Direito ao
+     Esquecimento (*"crypto-erase ≤ 5 min globally"*, repetido em `:351`). Esta metade
+     existia só em prosa — no corpo do [B-083], que roteava o achado para cá — e **nenhum
+     comando a lia**. O `verify` antigo lia apenas a string do DPA, então o achado maior
+     deste item era literalmente não-medido.
+
+  Enquanto QUALQUER uma das duas casar, o item está legitimamente aberto e o comando sai
+  `exit 0` nomeando quais razões seguem de pé. **Quando as duas deixarem de casar, o
+  comando fica VERMELHO** — reprova por progresso, que é o comportamento correto para um
+  item `open`. A mensagem de reprovação manda **reescrever o item primeiro** e só oferece
+  o fechamento por último, de propósito: a reprovação também dispara numa reescrita
+  meramente cosmética de qualquer um dos instrumentos, e "feche" como primeira opção é
+  caminho para dar o item por resolvido com a alegação viva, apenas reformulada.
+
+  **Q-7 nos dois lados, medido (mutação nos arquivos reais, restaurados depois):**
+
+  - WORM tirado do DPA, promessas de 5 min intactas → `CONFIRMED open` (a metade nova
+    sustenta sozinha; o comando ANTIGO ficaria vermelho aqui mandando fechar).
+  - Só a linha do SLA tirada, o amendment intacto → `CONFIRMED open`.
+  - WORM + as duas promessas de 5 min tiradas → `DRIFTED`, "nenhuma das razoes medidas …
+    continua de pe. REESCREVA o item …".
+  - `legal/sla/v1.0.0.md` deletado → `DRIFTED`, "sumiu — o comando perdeu o objeto".
+  - front-matter `sla_version:` renomeado → `DRIFTED`, "nao e mais o SLA que este portao
+    acha que le".
+  - `byok_not_available` sumido do handler → `DRIFTED`, "a premissa desta metade caiu …
+    (progresso, nao regressao)".
+  - `REAL_KMS_PROVIDER_WIRED` renomeado → `DRIFTED`, controle de forma.
 
   Emendar o DPA **não é trabalho deste portão nem deste PR**: é ato jurídico executado, e
   a decisão é do owner. O portão o observa; não o toca.
@@ -5129,6 +5214,14 @@ verify-means: |
      a string de controle mais fraca `"Object Lock"` apareça ao menos uma vez. Se o DPA
      inteiro for reescrito ou o caminho mudar, o comando **falha pedindo reavaliação
      manual** em vez de concluir "consertado" a partir de um arquivo que não está lendo.
+  4. Para a metade nova: os três objetos (`legal/sla/v1.0.0.md`,
+     `legal/dpa-residency-amendment.md`, `crates/…/byok_admin.rs`) precisam **existir** e
+     ainda se **identificar** — front-matter `sla_version:`, o id `DPA-RESIDENCY-AMENDMENT`,
+     e a constante `REAL_KMS_PROVIDER_WIRED`. Sumiço, renomeação ou caminho errado saem
+     como FALHA nomeada, nunca como "consertado".
+  5. A condição que torna a promessa falsa — o `501 byok_not_available` — é ela mesma
+     medida. Se o BYOK embarcar, o comando fica VERMELHO pedindo reavaliação manual em vez
+     de continuar afirmando que o SLA promete o impossível.
 
   E a metade de regressão cobre as nove linhas de procurement (CAIQ + SIG-LITE): se
   qualquer uma voltar a atestar `Y` para BYOK, WORM, página sintética ou supply chain, o
@@ -5147,6 +5240,10 @@ verify-means: |
   5. Os demais instrumentos assinados que herdam a mesma afirmação de Object Lock — avisos
      de privacidade publicados e os templates de notificação de violação à DPC irlandesa e
      à ANPD. O comando lê o DPA; a varredura dos templates não foi feita.
+  6. Se o número **6 min** interno (`SLA_SECONDS=360` em `scripts/byok_kill_switch_drill.sh:34`)
+     deve ser reconciliado com o **5 min** contratual, ou o contrário. O comando não opina:
+     mede que o instrumento assinado diz 5 e que o endpoint diz `501`. A reconciliação —
+     e a decisão de emendar SLA ou amendment — é do owner e do jurídico.
 last-verified: 2026-08-31
 ```
 

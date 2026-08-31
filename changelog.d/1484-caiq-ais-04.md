@@ -38,7 +38,7 @@
   `date +%s` antes e depois de um `sleep 2` (`:62`, `:81`, `:112`) e **não mede coisa
   alguma**; nenhuma asserção pode ser falsa, logo o verde é estruturalmente inevitável. E
   nenhuma execução deixou evidência: o step "Commit drill report" faz `git commit` **sem
-  `git push`** (workflow `:56-68`), e `ls specs/_audits/ | grep -c byok-kill-switch-drill`
+  `git push`** (citado pelo nome do step — o range de linhas já se deslocou na `main`), e `ls specs/_audits/ | grep -c byok-kill-switch-drill`
   = **0**. População do verde: as 8 execuções mais recentes do workflow, todas `schedule`,
   2026-07-05 → 2026-08-30, todas `success`. CAIQ `CEK-10.1` e SIG-LITE `N.6` reescritos
   para dizer isso.
@@ -72,6 +72,8 @@
   medida por nada — tendo ainda escapado do relógio de 14 dias, que `backlog_verify.py:196`
   só aplica a `verify: manual`. Agora gateia a condição **remanescente**: enquanto o DPA
   declarar *"immutable R2 with Object Lock"* o item fica `open`; quando parar, o comando
-  fica **vermelho** mandando fechá-lo ou renomear a razão. Três controles do instrumento
-  impedem que sumiço e conserto compartilhem saída (contagem das 9 linhas do CAIQ, a
-  existência de `N.6` no SIG-LITE, e uma string de controle mais fraca no DPA).
+  fica **vermelho** mandando reescrever o item (ou, só então, fechá-lo). Controles do
+  instrumento impedem que sumiço e conserto compartilhem saída (contagem das 9 linhas do
+  CAIQ, a existência de `N.6` no SIG-LITE, e uma string de controle mais fraca no DPA).
+  A entrada seguinte acrescenta a **segunda** razão medida — o kill-switch de 5 min do SLA
+  assinado — que esta primeira versão ainda não lia.
