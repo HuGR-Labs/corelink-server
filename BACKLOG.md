@@ -7536,3 +7536,337 @@ verify-means: |
   instrumento, não a política de contrato público.
 last-verified: 2026-08-31
 ```
+
+### B-131 — o doc da frota manda re-rodar uma sonda que nao existe mais
+
+`docs/internal/ci-runner-fabric-box.md` e o que alguem le antes de planejar contra a
+frota, e sua instrucao central e: **"Re-run it (`workflow_dispatch`) rather than trusting
+this page"**, apontando para `.github/workflows/runner-probe.yml`.
+
+**Esse arquivo nao esta mais na `main`.** So o historico de execucoes sobrevive — a mais
+recente e a run 31454999820, de **2026-08-11T03:18Z**.
+
+**Por que isso e pior que documentacao desatualizada.** Documento velho engana; instrucao
+inexecutavel faz a pessoa concluir que **nao conseguiu medir** quando o que faltou foi o
+instrumento. As duas saidas — "medi e nao ha" e "meu instrumento nao existe" — ficam
+indistinguiveis, que e a classe de defeito dominante desta campanha.
+
+**Ja cobrou o preco.** A revisao 1 da tabela do WP-CI (#1488) tratou aquela sonda de
+03:18Z como inventario presente e declarou seis workflows bloqueados por falta de `gh`.
+O `gh` tinha sido assado **as 20:53Z do mesmo dia** (corelink-runners#453). Dezessete
+horas. A retratacao esta em #1495.
+
+**O conserto nao e so restaurar o arquivo.** Uma sonda restaurada volta a envelhecer no
+dia seguinte. O que falta e o segundo passo: comparar a **data da sonda** com o `git log`
+do `deploy/runner/Dockerfile`. Uma sonda mais velha que o ultimo commit da imagem e
+registro historico, nao inventario — e so o par (sonda, data-da-imagem) responde "o que a
+box tem HOJE".
+
+**O que este item NAO decide:** se a sonda deve voltar como workflow, como passo de um
+lane existente, ou como cron — e um cron aqui **se justifica** pela regra do repo, porque
+a imagem muda sem commit neste repo.
+
+```backlog
+id: B-131
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'doc=docs/internal/ci-runner-fabric-box.md
+  [ -f "$doc" ] || { echo "FALHA: o doc da frota sumiu — reavalie o item."; exit 1; }
+  grep -q "runner-probe" "$doc" || { echo "FALHA: o doc nao cita mais runner-probe — feche ou reescreva."; exit 1; }
+  if [ -f .github/workflows/runner-probe.yml ]; then
+    echo "FALHA: runner-probe.yml VOLTOU para a main — feche o item (status: done + verify invertido)."; exit 1
+  fi
+  echo "aberto: o doc manda re-rodar runner-probe.yml, que nao existe em .github/workflows/"'
+verify-means: |
+  open — o doc instrui a re-rodar uma sonda ausente da arvore.
+
+  Vira DRIFTED quando `runner-probe.yml` voltar (ai o item fecha e a polaridade do verify
+  INVERTE), ou quando o doc parar de citar a sonda.
+last-verified: 2026-08-31
+```
+
+### B-132 — o braco `schedule` do `secrets-drift` roteia para hosted sob uma justificativa de evidencia SOC 2 que a medicao contradiz
+
+`secrets-drift.yml` roteia por evento: `pull_request` vai para self-hosted, `schedule`
+fica em `ubuntu-latest`. A razao esta escrita no arquivo:
+
+> `schedule` -> stays GitHub-hosted. The DAILY run is SOC 2 CC6.1 evidence (it uploads the
+> JSON report artifact); a scheduled run that silently does not happen because the fleet is
+> offline would be an **invisible evidence gap**, which is exactly the failure mode
+> compliance cannot tolerate.
+
+**O argumento e bom. A medicao o contradiz.** Eventos `schedule` na janela 2026-08-24..31:
+
+```
+2026-08-30T09:32 failure   2026-08-27T14:50 failure
+2026-08-29T10:32 failure   2026-08-26T04:28 failure
+2026-08-28T15:45 failure   2026-08-25T04:27 failure
+```
+
+**Seis de seis falharam.** O lane que existe para nao ter lacuna invisivel de evidencia
+esta com lacuna ha pelo menos seis dias, e ninguem percebeu — precisamente o modo de falha
+que a justificativa dizia nao tolerar. Uma justificativa de desenho **nao se verifica
+sozinha**: esta descrevia a intencao, e a intencao nao estava acontecendo.
+
+**A causa, agora ESTABELECIDA.** Na primeira redacao deste item eu estava rate-limitado e
+escrevi "nao afirmo que e o bloqueio de faturamento". Voltei com o `gh` saudavel
+(`rate_limit` 5000/5000) e a resposta e literal — anotacao do run 33304296490:
+
+> The job was not started because recent account payments have failed or your spending
+> limit needs to be increased.
+
+O job tem **`runner=` vazio, `labels=ubuntu-latest`, ZERO passos, 3 segundos de duracao**.
+Ele nunca comecou. Nao e um gate que rodou e reprovou: e um gate que **nao existe** desde
+que o bloqueio de faturamento entrou.
+
+**Isso INVERTE a premissa do proprio arquivo.** A justificativa para manter o `schedule`
+hosted e que a frota poderia estar offline e a evidencia sumiria em silencio. Medido: o
+**hosted** e que esta permanentemente indisponivel para nos, e a evidencia sumiu em
+silencio por esse caminho. O runner considerado "mais confiavel para compliance" e o unico
+dos dois que tem **0% de sucesso**.
+
+*Verificado com controle positivo, porque "6 de 6 falharam" e exatamente o formato de
+resultado que um `gh` rate-limitado produz devolvendo vazio com exit 0:* a mesma consulta,
+mesma janela, mesmo tipo de evento, contra `cargo-audit.yml` (que roda na frota) devolve
+**6 de 6 `success`**. Uma lane toda-falha e a irma toda-sucesso na mesma leitura — o
+instrumento enxerga.
+
+**Generalizacao que este item NAO fecha:** o mecanismo nao e especifico do
+`secrets-drift`. **Todo** job `ubuntu-*` deste repo falha assim — sem passos, sem log,
+com uma anotacao que so aparece via API. Quantos outros gates estao "vermelhos por
+faturamento" e sendo lidos como flake, ninguem contou.
+
+**Por que nao foi consertado de carona.** O WP-CI deixou `secrets-drift` de fora da onda
+mecanica (#1498) de proposito: mover um lane de evidencia de compliance e decisao de
+compliance, e enfiar isso num diff de 19 arquivos e o "ja que estou aqui" que o DoD
+proibe.
+
+**O que este item NAO decide:** se a resposta e mover o braco `schedule` para a frota
+(barato, mas troca o modo de falha de "hosted bloqueado" por "frota offline"), consertar a
+causa mantendo hosted, ou alarmar sobre a ausencia da evidencia — que e o unico conserto
+que sobrevive aos outros dois falharem.
+
+```backlog
+id: B-132
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'w=.github/workflows/secrets-drift.yml
+  [ -f "$w" ] || { echo "FALHA: secrets-drift.yml sumiu — reavalie o item."; exit 1; }
+  grep -qE "^\s+runs-on:.*schedule.*ubuntu-latest" "$w" || {
+    echo "FALHA: o braco schedule nao aponta mais para ubuntu-latest — reavalie/feche o item."; exit 1; }
+  grep -q "CC6.1" "$w" || echo "  aviso: a justificativa SOC 2 nao esta mais citada no arquivo"
+  echo "aberto: o braco schedule ainda roteia para ubuntu-latest sob a justificativa de evidencia SOC 2"'
+verify-means: |
+  open — o roteamento por evento continua mandando o run diario para hosted.
+
+  Este verify NAO consulta o historico de execucoes de proposito: chamar a API do Actions
+  num gate que roda em todo PR e custo escondido, e o fato que importa (a justificativa
+  ainda em vigor) esta no arquivo. A contagem de falhas e evidencia do corpo do item, nao
+  do portao.
+
+  Vira DRIFTED quando o braco schedule mudar de destino.
+
+  **O titulo foi reescrito em 2026-08-31 para dizer o que o portao de fato mede.** Ele
+  prometia "a evidencia SOC 2 esta com lacuna" e media roteamento — duas coisas
+  diferentes, com duas consequencias erradas: mover o braco para a frota **fechava** o
+  item sem ninguem provar que a evidencia voltou a ser produzida, e consertar o
+  faturamento — o defeito real — **nao** fechava. Das duas saidas possiveis (renomear o
+  item, ou exigir no fechamento prova de artefato produzido) escolhi renomear, porque e a
+  unica em que titulo, portao e condicao de fechamento coincidem e sao todos verificados
+  por maquina; a outra deixaria o titulo prometendo o que so uma inspecao manual poderia
+  sustentar, e este repo ja tem historico de riders manuais que decaem. Nao inventei um
+  portao que sonde SOC 2: nenhum grep decide se um artefato de evidencia existe.
+
+  **O que este item, agora, explicitamente NAO prova ao fechar:** que a evidencia diaria
+  voltou a ser gerada. Mudar o destino do braco satisfaz este portao e nada mais. O
+  defeito subjacente — todo job `ubuntu-*` deste repo nao inicia por bloqueio de
+  faturamento, sem passos e sem log, com a anotacao visivel so via API — continua **sem
+  item proprio** e esta registrado na prosa acima sob "Generalizacao que este item NAO
+  fecha". Quem fechar este deve abrir aquele, ou recusar por escrito.
+last-verified: 2026-08-31
+```
+
+### B-133 — o `dependabot-policy` executa codigo vindo do PR, violando a invariante escrita no proprio arquivo
+
+`dependabot-policy.yml` roda em `pull_request_target` e faz checkout de
+`refs/pull/N/merge` — conteudo do PR. O arquivo declara, em maiusculas, a condicao que o
+torna seguro:
+
+> SECURITY NOTE: [...] safe ONLY because **no subsequent step executes code from the
+> checked-out tree**. The only consumer is `cargo deny check licenses bans` — a static
+> analyzer. **Any future step that builds, installs, or runs PR-supplied code MUST undergo
+> a security review** before being added here.
+
+**A invariante ja esta violada.** Depois do checkout:
+
+```yaml
+- name: Use the workspace-pinned host toolchain (provisions nothing)
+  run: bash scripts/ci-use-host-toolchain.sh     # <- da arvore RECEM-CHECADA
+```
+
+O checkout substituiu a arvore pelo merge-ref, entao esse `bash` executa **a versao do
+script vinda do PR**. E "runs PR-supplied code", exatamente o que a nota proibe sem
+revisao.
+
+**Mitigacoes reais, para nao superdimensionar.** O job tem
+`if: github.actor == "dependabot[bot]" && github.event.pull_request.user.login ==
+"dependabot[bot]"`, e PRs do dependabot vem de branches **do proprio repo**, nao de forks
+— o vetor pratico e estreito. O token do job e read-only. E existe o passo "Forbid
+governance-file modifications", que so roda **depois** (tarde demais para este).
+
+**O que mudou com o WP-CI, e o que nao mudou.** Depois de #1502 esse `bash` executa numa
+microVM descartavel em vez do Mac do owner com `$HOME` compartilhado — **melhora o
+ambiente, nao conserta o defeito**. A invariante continua violada.
+
+**O que este item NAO decide:** se o conserto e rodar o script a partir do ref BASE
+(`actions/checkout` para um caminho separado), nao roda-lo, ou reescrever a nota para
+descrever o que o arquivo realmente faz. **A ultima opcao e legitima e e a mais perigosa
+de escolher por preguica** — reescrever a invariante para caber no codigo e como
+invariantes morrem.
+
+```backlog
+id: B-133
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'w=.github/workflows/dependabot-policy.yml
+  [ -f "$w" ] || { echo "FALHA: dependabot-policy.yml sumiu — reavalie o item."; exit 1; }
+  grep -q "refs/pull/" "$w" || { echo "FALHA: nao ha mais checkout do merge-ref — feche o item."; exit 1; }
+  grep -qE "^[[:space:]]+run: bash scripts/ci-use-host-toolchain\.sh[[:space:]]*$" "$w" || {
+    echo "FALHA: o passo que executa script da arvore checada sumiu — feche o item (verify invertido)."; exit 1; }
+  echo "aberto: checkout de refs/pull/N/merge seguido de bash de um script da arvore checada"'
+verify-means: |
+  open — o arquivo ainda faz checkout do conteudo do PR E executa um script vindo dele.
+
+  Vira DRIFTED assim que um dos dois sumir: o checkout do merge-ref, ou o `bash` do script
+  da arvore. Qualquer dos dois fecha o furo; o verify nao opina sobre qual.
+
+  O terceiro predicado casa o **`run:`**, nao o nome do script em qualquer lugar do
+  arquivo. Um `grep -q "ci-use-host-toolchain.sh"` solto casava tambem a **linha 144**,
+  que e prosa de comentario ("Full reasoning: scripts/ci-use-host-toolchain.sh header."):
+  o portao continuava dizendo "aberto" mesmo depois de o passo executavel sumir. Dois
+  mutantes sobreviviam, e o pior dos dois era **o conserto que este item recomenda** —
+  trocar o passo por `bash _base/scripts/ci-use-host-toolchain.sh`, a partir de um
+  checkout do ref BASE. Um item de seguranca cujo portao nao reconhece o proprio reparo
+  fica aberto para sempre ou e fechado a mao, sem prova. A ancora `^[[:space:]]+run: `
+  e o `$` final casam 1x hoje (so a 147); `run: echo skipped` e o caminho `_base/…`
+  agora ficam ambos DRIFTED.
+last-verified: 2026-08-31
+```
+
+### B-134 — "shim nao e daemon": ninguem observou `smoke-install` nem `cosign-sign` rodando na frota
+
+A imagem da frota ganhou um **drop-in** `docker` em corelink-runners#459 (2026-08-13):
+`docker-shim.sh` fazendo `exec nerdctl` sobre containerd + BuildKit. **Nao e um daemon
+Docker.**
+
+Dois workflows dependem de docker e continuam hosted:
+
+- `smoke-install.yml` — "installer smoke (**real Docker daemon required**)"
+- `cosign-sign.yml` — `docker/build-push-action`, que quer um builder `buildx`; o shim
+  mapeia `buildx build` para `nerdctl build`, o que **pode** bastar
+
+**O que se sabe:** build de imagem funciona na frota — `container-build-push-prod.yml`
+esta verde (2026-08-31T00:39). **Mas ele chama `buildctl` DIRETO**, nao passa pelo shim.
+Isso nao prova nada sobre os dois acima.
+
+**O experimento e barato e decide os dois:** despachar cada um uma vez com
+`runs-on: corelink` e ler o resultado. Enquanto isso nao acontece, a afirmacao "eles
+precisam ficar hosted" e **herdada, nao medida** — o comentario em `cargo-deny.yml:102`
+("the `corelink` box image ships no docker at all") ja esta desatualizado pelo mesmo
+motivo.
+
+**Este item existe para "shim nao e daemon" nao virar promessa esquecida.** Recusar trocar
+um bloqueio falso por uma promessa foi a decisao certa; deixar a promessa sem dono seria a
+errada.
+
+**O que este item NAO decide:** se `smoke-install` **deve** migrar mesmo que funcione — um
+smoke de instalador que valida a experiencia real do cliente pode ter razao para rodar num
+ambiente parecido com o do cliente, e isso e argumento de produto, nao de custo.
+
+```backlog
+id: B-134
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'n=0
+  for w in .github/workflows/smoke-install.yml .github/workflows/cosign-sign.yml; do
+    [ -f "$w" ] || continue
+    grep -qE "^\s+runs-on: ubuntu" "$w" && n=$((n+1))
+  done
+  [ "$n" -ge 1 ] || { echo "FALHA: nenhum dos dois esta mais em ubuntu-* — feche ou reescreva o item."; exit 1; }
+  echo "aberto: $n de 2 (smoke-install, cosign-sign) ainda em ubuntu-*, sem experimento na frota"'
+verify-means: |
+  open — pelo menos um dos dois segue hosted com a hipotese "precisa de docker de verdade"
+  nao testada.
+
+  Vira DRIFTED quando os dois sairem de `ubuntu-*` — por migracao ou por remocao
+  (`cosign-sign` pode simplesmente morrer, ver B-118).
+last-verified: 2026-08-31
+```
+
+### B-135 — a imagem do runner nao e construida por nenhum gatilho de PR, e carrega rotulos que ninguem le
+
+Dois defeitos da mesma familia em `corelink-runners/deploy/runner/Dockerfile`: **coisas
+que so falham depois que ninguem esta olhando.**
+
+**1. Nenhum PR constroi a imagem.** `build-cf-container-images.yml` existe e roda
+`docker build -t "$IMAGE:$TAG" deploy/runner` (linha 110), mas e **`workflow_dispatch`
+apenas**, por decisao explicita de custo ("a heavy image build should not fire on every
+merge"). O efeito para quem abre PR: **um `RUN` quebrado passa verde.**
+
+Aconteceu: corelink-runners#523 escrevia em `/usr/local/bin` **depois** de `USER runner`,
+sem `sudo`, num diretorio `root:root 0755` — `EACCES`, cadeia `&&` quebrada, build
+falhando. Pegou na revisao fria, **estaticamente**, porque nenhum portao o construiria.
+
+*Nota de calibragem:* a revisao afirmou que "nenhum workflow constroi essa imagem"; isso
+e **falso** — a lane existe, e so manual. A varredura do revisor devolveu vazio para um
+padrao que casa com as linhas 109-110. Vazio sem controle positivo nao distingue "nao ha"
+de "meu comando quebrou". A conclusao dele sobrevive; a evidencia nao.
+
+**2. Rotulos que nada consome.** `corelink.rust.*`, `corelink.gh.version`,
+`corelink.node.version` e irmaos sao literais mantidos a mao, e **nada os le**:
+
+```
+grep -rn "corelink.rust|corelink.gh.version" --include=*.yml --include=*.sh --include=*.py .
+  | grep -v Dockerfile   -> vazio
+CONTROLE: a mesma varredura sem o filtro acha deploy/runner/Dockerfile:376
+```
+
+Um rotulo que ninguem le nao e documentacao: e uma afirmacao sobre a imagem que **nunca
+sera contradita**, por mais errada que fique. Foi assim que este repo passou dias com um
+doc dizendo que `node`/`gh` estavam ausentes.
+
+*O que ja foi feito:* o #523 introduziu tres rotulos novos e, na revisao, a duplicacao foi
+**removida** — `NIGHTLY_DATE` e `CARGO_FUZZ_VERSION` viraram ARG unico alimentando rotulo e
+instalacao. **Este item e sobre o padrao pre-existente, nao sobre os que eu acrescentei.**
+
+**O que este item NAO decide:** se a lane de build deve passar a rodar em PR que toca
+`deploy/runner/**` (duas builds pesadas por PR nessa area — pode valer, pode nao), ou se
+basta um `hadolint`/dry-run barato que pegue erro de forma sem construir. E nao decide se
+os rotulos devem ganhar consumidor ou desaparecer.
+
+```backlog
+id: B-135
+repo: corelink-runners
+owner: tl
+status: open
+verify: manual
+verify-means: |
+  vive em corelink-runners; o token do Actions nao le repo irmao, entao nao da para
+  automatizar ate [B-012] entregar credencial cross-repo.
+
+  Checagem manual, dois comandos no clone de corelink-runners:
+    grep -n "workflow_dispatch\|pull_request" .github/workflows/build-cf-container-images.yml
+      -> so workflow_dispatch  => item aberto
+    grep -rn "corelink.rust\|corelink.gh.version" --include=*.yml --include=*.sh --include=*.py .
+      | grep -v Dockerfile
+      -> vazio  => rotulos sem consumidor, item aberto
+last-verified: 2026-08-31
+```
