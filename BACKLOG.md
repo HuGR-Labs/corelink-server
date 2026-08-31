@@ -6035,21 +6035,47 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-107 — `ostore` custa 647 ms para gravar 1 KiB, 13-21x o alvo do owner
+### B-107 — `ostore` custa 654 ms para gravar 1 KiB, e NAO e otimizavel como uma coisa so
 
-No perfil quente do PUT (ver [B-102]), com todo cache aquecido e a autenticação em 0-10 ms,
-o `ostore` — o armazenamento real — é **647 ms de 1007 ms de `origin`**, para um objeto de
-**1 KiB**.
+No perfil quente do PUT (ver [B-102]), com todo cache aquecido e a autenticacao em 0-10 ms,
+o `ostore` — nomeado "armazenamento" — e **654 ms de mediana** (min 568, max 714, n=10) para
+um objeto de **1 KiB**. O alvo declarado pelo owner e 30-50 ms: **13 a 21 vezes** fora.
 
-O alvo declarado pelo owner é 30-50 ms. São **13 a 21 vezes** fora, e não há desculpa de
-cache frio: é o número quente.
+A linha de base e confiavel, e isso foi testado em vez de suposto. A suspeita de que
+estivesse inflada por dupla contagem foi levantada e **refutada**: `MoatCache::put` envolve a
+escrita em `timed(Phase::Store)` e o `R2CasHandler::write` reentra na mesma fase, mas o
+`spawn_blocking` do `put_untimed` troca de task e o ledger e task-local, entao o escopo
+interno nao registra. Medido: `ostore` 33 537 us contra 33 639 us de relogio de parede do
+`put` inteiro (`adapter_cache::tests::put_records_the_store_phase_exactly_once`).
 
-Que seja 647 ms para **1 KiB** é o que torna isto um defeito e não um custo. O mesmo perfil
-mostra que o custo não escala com o tamanho até 12 MiB ([B-102]), ou seja, não é banda —
-é custo fixo por operação de armazenamento. Gravar mil bytes não deveria custar dois terços
-de segundo em nenhuma arquitetura.
+**Correcao de FORMA, e e o que muda este item.** A versao anterior pressupunha que os 654 ms
+fossem um alvo unico a reduzir. **Nao sao.** O `ostore` agrega, sob um so nome, o PUT no R2
+**e** ate cinco idas sequenciais ao D1: as ate quatro consultas de `check_and_accrue`
+(`byte_accounting.rs:306-486`) mais a do `map.put` (`adapter_cache.rs:393`). O
+`byte_accounting.rs` nao abre fase nenhuma — **zero** referencias a `origin_timing` — entao
+todo esse D1 cai dentro do `ostore`.
 
-É o maior item isolado do PUT quente e o alvo principal do pacote de performance.
+E a agregacao **nao e descuido**: e a forma do decorator. O accounting **envolve** a escrita
+em vez de ficar ao lado dela (accrue -> write interno -> commit/release, interleaved dentro
+do `handler.write`). Separar D1-de-contabilidade de R2 exige **mover onde as fases abrem**,
+nao acrescentar um nome — ver [B-122], que e o bloqueio.
+
+Duas tentativas de contornar foram medidas e descartadas ANTES de virar codigo. Levar o
+handle do ledger no `CasWriteRequest` inverteria uma dependencia de crate (o tipo vive no
+`corelink-handler-cas`, o `PhaseLedger` no `corelink-container`, e a seta aponta
+container->handler). E abrir um `oaccrue` sob o `Store` externo quebraria a particao: o
+`ostore` ja cobre a janela do accrue, entao a fase nova cobriria a mesma janela outra vez e
+`Sigma(fases) > total` — sem saida pela borda, porque o Worker deriva o `ohop` por subtracao
+das fases nomeadas e nao existe categoria "informativa que se sobrepoe".
+
+**Enquanto [B-122] nao fechar, este item nao tem alvo mensuravel.** "Otimizar o
+`ostore`" mira duas coisas ao mesmo tempo por construcao, e qualquer melhora medida seria
+inatribuivel entre R2 e contabilidade.
+
+**A cauda entra no item.** Total: mediana 1,409 s, media 1,907, desvio 0,942, max 4,064
+(n=10) — cauda de 3x sobre a mediana. Otimizar a mediana e deixar a cauda em 4 s entrega um
+produto que parece rapido e trava de vez em quando: a versao de performance do sucesso
+silencioso.
 
 ```backlog
 id: B-107
@@ -6058,19 +6084,22 @@ owner: tl
 status: open
 verify: manual
 verify-means: |
-  MANUAL — o número vive no `Server-Timing` de um PUT autenticado contra produção.
+  MANUAL — a alegacao e latencia de producao sob credencial, e o gate roda sem credencial de
+  plano de dados.
 
-  Procedimento: três PUTs de 1 KiB em sequência dentro de 60 s (a sequência é obrigatória,
-  ver [B-102]) e ler `ostore` do terceiro. Fecha quando `ostore` cair para a ordem de
-  30-50 ms.
+  Procedimento: PAT `cas:rw` no tenant de dogfood; TRES PUTs de 1 KiB em sequencia dentro de
+  60 s (a sequencia e obrigatoria — foi a medicao a frio que produziu a causa errada da
+  primeira versao de [B-102]); ler `ostore` do terceiro. Registrar a VERSAO de producao
+  medida junto do numero: prod fica atras da `main`, e comparar numero novo com codigo
+  diferente nao atribui causa.
 
-  **Prova é o header, não a suíte.** Um teste unitário que passe não demonstra nada aqui:
-  o defeito é latência contra armazenamento real, e a única evidência que conta é o
-  `Server-Timing` antes e depois, colado lado a lado.
+  **NAO fecha por o `ostore` cair.** Enquanto [B-122] nao separar D1-de-contabilidade
+  de R2, uma queda nao diz qual dos dois melhorou, e um item que aceita melhora
+  inatribuivel aceita coincidencia como prova. Fecha quando (1) as duas partes forem
+  mensuraveis separadamente E (2) a soma delas cair para a ordem de 30-50 ms.
 
-  ⚠️ Medido no pin `4f9313e0`, 43 commits atrás ([B-110]). Remedir após o repin (#1445)
-  ANTES de escrever conserto — parte pode já estar resolvida na `main`, e otimizar o que já
-  foi consertado é acertar o número e errar o alvo.
+  A metade da cauda tem criterio proprio: p90 e p99 medidos, nao so mediana. Um p99 de 4 s
+  com mediana de 1,4 s continua sendo defeito depois de a mediana melhorar.
 last-verified: 2026-08-30
 ```
 
@@ -6641,5 +6670,92 @@ verify-means: |
   Nota de escopo: o comparador natural é bidirecional. Uma direção pega doc sem rota
   (o que está aqui); a outra pega rota sem doc, que é [B-117]. Um único instrumento
   fecha as duas famílias.
+last-verified: 2026-08-30
+```
+
+### B-122 — regiao de fase sob `spawn_blocking` nao registra nada, e o `ostore` nao se separa sem mover as fronteiras
+
+Dois defeitos que so aparecem juntos, e o segundo e a razao pela qual o [B-107] esta
+bloqueado.
+
+**Primeiro: existe tempo real que nao aparece em fase nenhuma.** O ledger de fases e um
+task-local. `tokio::task::spawn_blocking` troca de task, entao qualquer
+`PhaseScope::enter` alcancado dentro de um closure de `spawn_blocking` nao acha ledger
+ambiente e **registra zero, em silencio**. O mecanismo correto existe e ja e usado — o
+`adapter_pat.rs` captura `current_ledger()` antes da fronteira e usa
+`PhaseScope::with_handle` no caminho do Argon2id. O `adapter_cache.rs` **nao**: tem dois
+sitios sob `spawn_blocking`, a leitura (`:305`) e a escrita (`:389`), e **nenhum dos dois
+captura handle**.
+
+Consequencia, dita sem suavizar: **existe tempo real que nao aparece em fase nenhuma, e
+ninguem sabe se e 5 ms ou 300 ms.** Ele nao some do total — cai no residuo `oother`, que e
+subtracao — mas some da atribuicao, que e o que decide o que otimizar.
+
+**Segundo: mesmo resolvido o primeiro, o `ostore` continua inseparavel.** O
+`Phase::Store` externo (`adapter_cache.rs:351-353`) envolve o `put_untimed` inteiro, e o
+accrue acontece dentro do `handler.write` que ele envolve. Uma fase nova para a
+contabilidade cobriria a **mesma janela** que o `ostore` ja cobre, e como sao fases
+distintas o resultado nao e dobra dentro de um nome: e `Sigma(fases) > total`.
+
+E nao ha saida pela borda. O Worker deriva o `ohop` por subtracao das fases nomeadas
+(`ORIGIN_CONTAINER_PHASES`): nome fora da allowlist cai em `ohop` e vira "rede"; nome dentro
+e subtraido. **Nao existe terceira categoria** — um campo "informativo que se sobrepoe" nao
+cabe no formato, e publicar um quebraria a propriedade que o `Server-Timing` do produto
+vende.
+
+A causa e a forma do decorator: o accounting **envolve** a escrita em vez de ficar ao lado
+dela. Separar exige mover ONDE as fases abrem.
+
+**As tres pecas sao ACOPLADAS e o item so fecha com as tres.**
+
+1. **Fallback de handle para regiao bloqueante** — de modo que uma fase alcancada sob
+   `spawn_blocking` registre.
+2. **Controle de profundidade no `PhaseScope`** — OBRIGATORIO no mesmo movimento. Sem ele, o
+   `Phase::Store` interno do `R2CasHandler::write` passa a registrar assim que a peca 1
+   entrar, a janela do R2 e contada duas vezes, e o `(total - attributed).max(0)` do `oother`
+   **grampeia em zero e absorve a diferenca em silencio**.
+3. **Remedicao de TODA linha de base existente** — os numeros mudam para todo caminho que
+   hoje perde tempo em `spawn_blocking`, inclusive os 654 ms do [B-107] e o perfil de
+   [B-102]. Trocar a regua invalida a comparabilidade do que ja foi levantado.
+
+**Criterio de aceitacao, literal: nao fazer isto pela metade.** Fallback sem profundidade
+entrega numeros MAIORES que o relogio de parede e um residuo grampeado — pior que a cegueira
+atual, porque parece medicao. Um item que pode ser fechado por uma das tres pecas vai ser
+fechado por uma das tres pecas.
+
+```backlog
+id: B-122
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'a=crates/corelink-container/src/adapter_cache.rs
+  [ -f "$a" ] || { echo "FALHA: adapter_cache.rs sumiu — reavalie o item."; exit 1; }
+  sb=$(grep -c "spawn_blocking" "$a" | tr -d " ")
+  [ "$sb" -gt 0 ] || { echo "FALHA: nao ha mais spawn_blocking no adapter_cache — reavalie."; exit 1; }
+  handle=$(grep -c "with_handle\|current_ledger" "$a" | tr -d " ")
+  [ "$handle" = 0 ] || { echo "FALHA: o adapter_cache ja captura handle de ledger — feche ou reescreva o item."; exit 1; }
+  echo "aberto: $sb sitio(s) de spawn_blocking no adapter_cache e ZERO captura de handle"'
+verify-means: |
+  open — o `adapter_cache` ainda entrega trabalho a `spawn_blocking` sem capturar handle do
+  ledger, logo qualquer fase alcancada la dentro registra zero.
+
+  Vira DRIFTED quando o `adapter_cache` passar a capturar handle, que e a peca 1.
+
+  **O que este comando NAO decide, e admito, porque e a maior parte do item:** as pecas 2 e
+  3. Ele nao ve se o `PhaseScope` ganhou controle de profundidade, e nao ve se as linhas de
+  base foram remedidas. Um `verify` que fechasse so na peca 1 seria exatamente o portao
+  dominado que o criterio de aceitacao proibe — e eu prefiro dizer isso a fabricar um
+  comando que parece decidir tres coisas.
+
+  Quem fechar deve provar as tres a mao: (1) uma fase sob `spawn_blocking` aparecendo no
+  header; (2) um teste que aninhe a MESMA fase na MESMA task e mostre `Sigma(fases) <=
+  total` — hoje `origin_timing::nested_reentry_of_the_same_phase_double_counts` fixa o
+  comportamento oposto e teria de ser invertido, o que e o sinal de que a peca 2 entrou;
+  (3) linhas de base novas para [B-102] e [B-107], com a versao de producao registrada.
+
+  Nota de ordem: [B-107] esta BLOQUEADO por este item e nao deve receber otimizacao antes
+  dele. Enquanto o `ostore` agregar R2 com contabilidade D1, qualquer melhora medida e
+  inatribuivel entre os dois.
 last-verified: 2026-08-30
 ```
