@@ -103,42 +103,13 @@ if not os.environ.get("OKF_NO_YAML"):
         _USE_YAML = False
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 FRONT_MATTER_RE = re.compile(r"^---\n(.*?)\n---\n?(.*)$", re.DOTALL)
-# A code-anchor cite token, parsed only from inside backticks: `path:line[-line]`.
-#
-# ABBREVIATED CONTINUATION FORM (B-059). The path group is OPTIONAL, so the bare
-# `` `:803-831` `` the wiki writes to avoid repeating a long path immediately
-# after naming it is a FIRST-CLASS citation. Before this, `CITE_RE` required a
-# non-empty path and `_collect_cites` silently dropped every such token: measured
-# on this corpus, **107 citations across 20 concepts** were invisible to C3
-# (file exists), C5 (freshness) and C6 (line bounds) — never checked, never
-# counted. #1410 is the recorded proof of the consequence: a one-line shift
-# corrected 21 full-path cites and left 6 abbreviated ones pointing at the wrong
-# lines, with the gate green throughout.
-#
-# A path-less match is resolved by `_collect_cites` against the nearest PRECEDING
-# backticked file reference in the same concept — either a full citation or a
-# bare backticked path that the concept declares in `source_files`. The bare-path
-# arm is load-bearing, not defensive: `crates/handler-trait-seam.md` writes
-# ``…impl is `D1CustomerHandler` in `crates/corelink-container/src/customer_d1.rs`
-# — it impls all six (`:947`, …)``, where the referent is named WITHOUT a line
-# number. Resolving those six against the last full citation instead attributes
-# them to a 804-line file and reports six phantom out-of-bounds failures.
-# With the bare-path arm, all 107 resolve and all 107 are in bounds.
-#
-# `CITE_FULL_RE` keeps the OLD strict shape and is what the BLOCK-LOCAL checks
-# (`_has_cite`, `_block_cite_paths` → C6c grounding) use. Those examine one
-# bullet at a time, where "nearest preceding" is not available, so admitting a
-# path-less token there would let a bare `:42` count as grounding for an
-# invariant — a LOOSENING. This change is a strict strengthening: more citations
-# validated, no check weakened.
-CITE_RE = re.compile(r"^(?P<path>[A-Za-z0-9._/\-]+)?:(?P<l1>\d+)(?:-(?P<l2>\d+))?$")
-CITE_FULL_RE = re.compile(r"^(?P<path>[A-Za-z0-9._/\-]+):(?P<l1>\d+)(?:-(?P<l2>\d+))?$")
-# A bare backticked repo path (no line numbers) — the other thing an abbreviated
-# citation can continue from. Requires a `/` and a dotted basename so prose
-# tokens like `Arc` or `read_only` cannot become a citation referent.
-BARE_PATH_RE = re.compile(r"^[A-Za-z0-9._\-]+(?:/[A-Za-z0-9._\-]+)+$")
-BACKTICK_RE = re.compile(r"`([^`]+)`")
+# The citation model (incl. the abbreviated `:N-M` form, B-059) lives in
+# `okf_citations`; re-exported because the sibling tools read it off this module.
+from okf_citations import (  # noqa: E402
+    BACKTICK_RE, BARE_PATH_RE, CITE_FULL_RE, CITE_RE, _collect_cites, _norm_block)
 # Bundle-relative markdown link with a leading slash: [text](/dir/x.md)
 LINK_RE = re.compile(r"\[[^\]]*\]\((/[^)\s]+)\)")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*$")
@@ -411,36 +382,15 @@ class Git:
             return None
 
     def merge_base(self, ref: str):
-        """The fork point of HEAD from the base ref, resolved through the SAME
-        tolerance `resolve_base` applies.
-
-        The bare-ref-only version of this was wrong in both directions at once,
-        and silently. In CI (`actions/checkout` at `fetch-depth: 0`, detached
-        HEAD) a bare `main` does not resolve at all, so this returned None and
-        every check that needs a 'previous version' — C5b's anti-phantom
-        reconcile guard, C4c's blob ratchet — degraded to a NO-OP without saying
-        so. On a developer clone or a long-lived worktree the opposite: a stale
-        local `main` resolves fine and those checks compare against a base from
-        weeks ago, manufacturing failures about anchors nobody touched. Measured
-        in this worktree: local `main` was 100+ commits behind `origin/main`.
-        The remote-tracking ref is tried FIRST here (the reverse of
-        `resolve_base`, whose caller wants any reachable base commit at all):
-        the fork point of a PR is the REMOTE branch it will merge into, and a
-        local branch of the same name is a private bookmark that may be
-        arbitrarily old. Bare `<ref>` remains the fallback so a clone with no
-        `origin` still works."""
-        base = None
+        """Fork point of HEAD from the base ref: `origin/<ref>` FIRST, bare
+        `<ref>` as fallback. Resolving only the bare ref was wrong in BOTH
+        directions and silently — see `okf_anchor_reverify` for the measurement."""
         for cand in (f"origin/{ref}", ref):
             cp = self.run(["rev-parse", "--verify", "--quiet", f"{cand}^{{commit}}"])
             if cp.returncode == 0 and cp.stdout.strip():
-                base = cp.stdout.strip()
-                break
-        if base is None:
-            return None
-        cp = self.run(["merge-base", "HEAD", base])
-        if cp.returncode != 0:
-            return None
-        return cp.stdout.strip() or None
+                mb = self.run(["merge-base", "HEAD", cp.stdout.strip()])
+                return (mb.stdout.strip() or None) if mb.returncode == 0 else None
+        return None
 
     def is_ancestor(self, sha: str, ref: str) -> bool:
         """True iff `sha` is an ancestor of `ref` (reachable on that history).
@@ -557,49 +507,6 @@ def _split(text: str):
     return m.group(1), m.group(2)
 
 
-def _collect_cites(body: str, source_files: "list[str] | set[str] | None" = None):
-    """Every citation in `body` as (path, l1, l2), abbreviated forms RESOLVED.
-
-    Backticked tokens are scanned in document order. A full `path:N[-M]` citation
-    is emitted as-is AND becomes the current referent; a bare backticked path
-    that the concept declares in `source_files` becomes the current referent
-    WITHOUT emitting a citation; an abbreviated `:N[-M]` is emitted against the
-    current referent. An abbreviated citation with no preceding referent is
-    dropped (it is unresolvable, and inventing a path would be worse than the
-    silence this function used to keep) — measured over the whole corpus, that
-    case does not occur: 107 of 107 resolve.
-    """
-    declared = set(source_files or ())
-    out = []
-    referent: str | None = None
-    for inner in BACKTICK_RE.findall(body):
-        tok = inner.strip()
-        m = CITE_RE.match(tok)
-        if not m:
-            if BARE_PATH_RE.match(tok) and tok in declared:
-                referent = tok
-            continue
-        path = m.group("path")
-        if path is None:
-            if referent is None:
-                continue
-            path = referent
-        else:
-            referent = path
-        l1 = int(m.group("l1"))
-        l2 = int(m.group("l2")) if m.group("l2") else l1
-        if l2 < l1:
-            l1, l2 = l2, l1
-        out.append((path, l1, l2))
-    return out
-
-
-def _norm_block(lines: list[str], l1: int, l2: int) -> list[str]:
-    """1-based inclusive slice of `lines`, each line trailing-whitespace-stripped
-    (internal whitespace preserved — the comparison stays faithful)."""
-    return [ln.rstrip() for ln in lines[l1 - 1 : l2]]
-
-
 def cited_range_drifted(
     git: "Git",
     checkpoint_sha: str,
@@ -700,7 +607,6 @@ def _bullet_blocks(lines: list[str]) -> list[str]:
 
 
 def _has_cite(text: str) -> bool:
-    # BLOCK-LOCAL (C6c): strict full-path form only. See CITE_FULL_RE.
     return any(CITE_FULL_RE.match(inner.strip()) for inner in BACKTICK_RE.findall(text))
 
 
@@ -1707,6 +1613,7 @@ def run_checks(args, git: Git, fails: Failures):
     _check_c4c(args, git, bundle_root, concepts, fails)
 
     # --- C5c: a MOVED blob anchor must be paid for with renumbering (B-123) ---
+    from okf_anchor_reverify import _check_anchor_content_reverify  # noqa: E402
     _check_anchor_content_reverify(args, git, bundle_root, concepts, fails)
 
     # --- C10 / C10b: manifest (skip-with-warning when absent/unparseable) ---
@@ -1848,205 +1755,6 @@ def _check_c4c(args, git: Git, bundle_root: Path, concepts: list[Concept], fails
                 "a declared source — blob addressing is a ratchet (dropping it would "
                 "restore the squash-orphan base-ref fallback this concept no longer uses)",
             )
-
-
-def _block_starts(new_lines: list[str], block: list[str]) -> list[int]:
-    """Every 1-based start line at which `block` occurs in `new_lines`."""
-    n, k = len(new_lines), len(block)
-    if k == 0 or k > n:
-        return []
-    return [
-        s + 1
-        for s in range(0, n - k + 1)
-        if [ln.rstrip() for ln in new_lines[s : s + k]] == block
-    ]
-
-
-# Context sizes tried, in order, when the cited block alone is ambiguous.
-_C5C_CONTEXT_STEPS = (2, 5, 12, 30)
-
-
-def _unique_shift(old_lines: list[str], new_lines: list[str], l1: int, l2: int):
-    """The single offset `d` at which the base's lines l1..l2 reappear in
-    `new_lines`, or None when that is not unique.
-
-    The cited block alone is usually NOT enough to identify a position: a
-    one-line citation of `}` or `match state.write.write(req) {` occurs dozens of
-    times in the same file (measured on `routes/cas.rs`: 61 and 44 occurrences).
-    So when the block is ambiguous it is widened with the base file's own
-    surrounding lines until exactly one match survives, and the offset is folded
-    back onto the cited range. Widening only ever narrows the candidate set, so a
-    hit found with context is still a byte-identical match of the cited lines
-    themselves. Still ambiguous at the widest window -> None, and the caller says
-    nothing: this check reports the shortcut it can PROVE, never a suspicion."""
-    block = _norm_block(old_lines, l1, l2)
-    hits = _block_starts(new_lines, block)
-    if len(hits) == 1:
-        return hits[0] - l1
-    if not hits:
-        return None
-    for ctx in _C5C_CONTEXT_STEPS:
-        a = max(1, l1 - ctx)
-        b = min(len(old_lines), l2 + ctx)
-        wide = _block_starts(new_lines, _norm_block(old_lines, a, b))
-        if len(wide) == 1:
-            return (wide[0] + (l1 - a)) - l1
-        if not wide:
-            return None  # the neighbourhood changed — undecidable, stay silent
-    return None
-
-
-def _check_anchor_content_reverify(
-    args, git: Git, bundle_root: Path, concepts: list[Concept], fails: Failures
-):
-    """C5c — `anchor_content_reverify`: a blob anchor MOVED in this change must be
-    paid for with the renumbering it is standing in for (B-123).
-
-    THE DEFECT THIS CLOSES. `cited_range_drifted` short-circuits the moment the
-    working tree's blob equals the `source_blobs` anchor — so the instant an
-    author re-points the anchor at the file as it is NOW, every citation to that
-    file is fresh by construction, whatever line it names. C5 stops comparing the
-    tree to the authored baseline and starts comparing it to ITSELF. That is not
-    a gap in the author's discipline; it is a defect of INCENTIVE in the gate:
-    advancing the anchor is one command and green immediately, renumbering the
-    citations is a script plus byte-for-byte verification plus a manual sweep, and
-    both end green. Measured 2026-08-30 on two independent branches whose authors
-    BOTH knew the caveat: #1389 shipped 17 of 18 `main.rs` citations pointing at
-    wrong lines and #1393 shipped 16 more, `validate_okf` reporting `0 stale`
-    throughout. A cost ratio like that does not get fixed by asking harder.
-
-    WHAT IT CHECKS. Only when a `source_blobs` anchor for a path is ADDED or
-    CHANGED between the base version of the concept and this one — i.e. exactly
-    the operation that buys the vacuous green. For each citation to that path in
-    the PREVIOUS body, the check reads the authored CONTENT at the OLD numbers
-    from the OLD baseline, then locates that byte-identical content in the NEW
-    blob:
-
-      • found at offset d, and this concept now cites (l1+d, l2+d) — PASS. The
-        renumbering was done. d == 0 with the citation unchanged is the ordinary
-        no-shift case and passes through the same arm.
-      • found at offset d, and nothing cites it there — FAIL, naming the exact
-        lines to write. This is the shortcut, and it is also how a DOUBLE SHIFT
-        surfaces (B-124): a citation hand-corrected 48-55 -> 49-56 and then moved
-        again by a bulk shifter to 50-57 does not sit on its own content, so the
-        one candidate offset is reported against it.
-      • found nowhere — SKIP, no failure. The cited code was genuinely rewritten,
-        so the anchor advance is real re-authoring and there is no old position to
-        renumber to. Refusing here would punish the honest case and the gate would
-        be routed around within a week.
-
-    WHAT IT DOES NOT DO. It does not remove the anchor and it does not replace
-    renumbering — the two solve different problems (the anchor makes the gate
-    compare against the right tree; renumbering makes the citation TRUE) and the
-    whole failure is that they collapse into one in a hurry. It is silent on
-    `main` and on any branch that does not move an anchor: the teeth are aimed at
-    one operation.
-    """
-    base_bundle = Path(args.base_bundle).resolve() if args.base_bundle else None
-    base_rev = None if base_bundle is not None else git.merge_base(args.base_ref)
-
-    for c in concepts:
-        if c.is_deferred or not c.source_blobs:
-            continue
-        prev_text = None
-        if base_bundle is not None:
-            prev_path = base_bundle / c.rel
-            if prev_path.exists():
-                prev_text = prev_path.read_text(encoding="utf-8")
-        elif base_rev and _under(c.path, git.repo_root):
-            repo_rel = c.path.relative_to(git.repo_root).as_posix()
-            prev_text = git.show_file(base_rev, repo_rel)
-        if prev_text is None:
-            continue  # new concept — no anchor was moved, nothing was bypassed
-        prev_block, prev_body = _split(prev_text)
-        if prev_block is None:
-            continue
-        try:
-            prev_fm = parse_frontmatter(prev_block)
-        except Exception:
-            continue
-
-        prev_sources = [s for s in (prev_fm.get("source_files") or []) if isinstance(s, str)]
-        prev_blobs: dict[str, str] = {}
-        for entry in prev_fm.get("source_blobs") or []:
-            if not isinstance(entry, str):
-                continue
-            m = SOURCE_BLOB_RE.match(entry.strip())
-            if m:
-                prev_blobs[m.group("path")] = m.group("blob").lower()
-        prev_ckpt = prev_fm.get("checkpoint_sha")
-
-        loc = (
-            c.path.relative_to(git.repo_root).as_posix()
-            if _under(c.path, git.repo_root)
-            else f"{bundle_root.name}/{c.rel}"
-        )
-
-        prev_cites = _collect_cites(prev_body or "", prev_sources)
-
-        for path, new_blob in sorted(c.source_blobs.items()):
-            old_blob = prev_blobs.get(path)
-            if old_blob is not None and old_blob == new_blob.lower():
-                continue  # anchor did not move — C5 still has its real baseline
-
-            # The baseline the citations were written against. A CHANGED anchor
-            # names it directly; a NEWLY ADDED anchor inherits the commit anchor
-            # the concept used before, which is what C5 would have compared to.
-            if old_blob is not None:
-                old_lines = git.blob_lines(old_blob)
-            elif isinstance(prev_ckpt, str) and HEX40_RE.match(prev_ckpt) and git.sha_exists(prev_ckpt):
-                old_lines = git.show_lines(prev_ckpt, path)
-            elif base_rev:
-                old_lines = git.show_lines(base_rev, path)
-            else:
-                old_lines = None
-            # The NEW side is the WORKING TREE, not the anchored blob — the same
-            # tree C3/C6 validate and C5's HEAD side reads. A citation's job is to
-            # name a line of the code as it now stands; if the freshly written
-            # anchor and the tree have already diverged, the tree is what the
-            # reader will open. Falls back to the blob only when the path is gone
-            # from the tree (C3 reports that separately).
-            new_lines = git.worktree_lines(path) or git.blob_lines(new_blob)
-            if old_lines is None or new_lines is None:
-                # Baseline unresolvable. C4b already hard-fails an unresolvable
-                # NEW anchor; an unresolvable OLD one means there is nothing to
-                # re-verify against, so stay silent rather than invent a claim.
-                continue
-
-            prev_for = [(a, b) for (p, a, b) in prev_cites if p == path]
-            cur_for = [(a, b) for (p, a, b) in c.cites if p == path]
-            # A RENUMBER preserves the citation count for the file; a change that
-            # adds or drops citations to it is a re-AUTHORING, where "the content
-            # that used to be cited moved to line X" is not a defect — the author
-            # deliberately cites something else now. Restricting the check to the
-            # equal-count case removes that entire false-positive class, and costs
-            # nothing against the operation it is aimed at: the shortcut touches
-            # the anchor and leaves the prose alone by definition.
-            if len(prev_for) != len(cur_for):
-                continue
-            cur_ranges = set(cur_for)
-            for (l1, l2) in dict.fromkeys(prev_for):
-                if l2 > len(old_lines) or l1 < 1:
-                    continue  # citation was already out of bounds in the base — C6's job
-                if not any(ln.strip() for ln in _norm_block(old_lines, l1, l2)):
-                    continue  # blank range carries no identity to track
-                d = _unique_shift(old_lines, new_lines, l1, l2)
-                if d is None:
-                    continue  # rewritten or ambiguous — undecidable, stay silent
-                if (l1 + d, l2 + d) in cur_ranges:
-                    continue  # renumbered (or never moved) — paid for
-                fails.add(
-                    "C5c",
-                    loc,
-                    f"`source_blobs` anchor for `{path}` was "
-                    + ("advanced" if old_blob is not None else "added")
-                    + f" but the citation `{path}:{l1}-{l2}` was NOT renumbered: its "
-                    f"authored content is byte-identical at `{l1 + d}-{l2 + d}` in the "
-                    "working tree. Advancing an anchor makes C5 compare the file with "
-                    "itself — it does NOT re-verify the citations it covers (B-123). "
-                    "`python3 scripts/okf_shift_citations.py --apply "
-                    f"{path}` renumbers by content; then re-anchor.",
-                )
 
 
 def _strip_ckpt_line(text: str) -> str:

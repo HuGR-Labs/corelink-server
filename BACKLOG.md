@@ -3240,7 +3240,8 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  grep -qF 'CITE_RE = re.compile(r"^(?P<path>[A-Za-z0-9._/\-]+)?:(?P<l1>' scripts/validate_okf.py \
+  grep -qF 'CITE_RE = re.compile(r"^(?P<path>[A-Za-z0-9._/\-]+)?:(?P<l1>' scripts/okf_citations.py \
+    && grep -qF 'CITE_RE' scripts/validate_okf.py \
     && grep -qF 'assert_abbrev_cites' tests/okf/run_fixtures.sh
 verify-means: |
   done (REGRESSION GUARD, polarity inverted per Q6) — passes while `CITE_RE`
