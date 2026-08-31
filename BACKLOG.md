@@ -38,8 +38,21 @@ in *another* repo, which happens with no commit to this one.
 
 - **Fix the item or fix the world. Never delete the check.** A DRIFTED item means
   reality moved; the answer is to update the status or finish the work.
-- **`owner: owner` means it needs the human** — a credential, a payment, a
-  deletion, a legal call. Everything else is `owner: tl` and is mine.
+- **`owner: owner` means the NEXT STEP is physically impossible without him RIGHT
+  NOW** — his credential, his money, his signature, his machine. It is a claim about
+  the present, not provenance: "he decided this once" belongs in the body with a date,
+  never in the field. Investigating, measuring, reproducing, writing the fix and
+  leaving the PR ready is **never** `owner:` — not even when the last keystroke is his.
+  Operational test: if an agent with the repo, `.env.local` and the network can reach
+  *"it is ready, you just have to press it"*, the item is `owner: tl`, and what is left
+  for him is one line in the body. "It is a product decision", "it is commercial copy",
+  "it is a risk/compliance question" are **not** grounds — the preparation is mine and
+  the downstream decision does not block the item. A decision that is itself
+  **conditional on something that does not exist yet** (a customer contract, a tier
+  nobody bought) is downstream twice over and is not grounds either. Everything else
+  is `owner: tl`.
+  Tightened 2026-08-31 after the field, read loosely, parked 19 items behind a person
+  who did not know he was being waited for.
 - **A `verify` for an `open` item must exit 0 while the work is unfinished** and
   start failing once it lands. That is what makes the file self-closing: finishing
   the work turns the gate red until the status is updated to match.
@@ -163,10 +176,18 @@ metric), ship INERT, then flip `RECONCILE_ORPHAN_TEARDOWN` (a SECRET, not a var)
 or, if orphans are type-2/none, declare programmatic teardown blocked and keep
 observe + alert as the honest outcome.
 
+
+**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: observar o log até aparecer um
+órfão real, classificá-lo type-1/type-2 e, se type-1, construir o teardown INERTE atrás de
+`RECONCILE_ORPHAN_TEARDOWN` desligado. **Nada disso precisa do owner:** o prereq de
+credencial está `DONE` (os secrets já foram provisionados e o observe está LIVE), e o 403 do
+instance-delete é limite da API da Cloudflare, não decisão dele. Ligar o flag em produção é
+ato de deploy, que passa pela guardiã de merge — não bloqueia o item.
+
 ```backlog
 id: B-044
 repo: corelink-runners
-owner: owner
+owner: tl
 status: open
 verify: manual
 verify-means: |
@@ -558,6 +579,13 @@ system raises has ever reached anybody.
 
 **Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
 today, what each option costs, and what happens if the answer is "not now".
+
+**Só ele (reconfirmado 2026-08-31) — o ato: emitir uma read API key no painel da PagerDuty da
+conta dele.** Ler o incident log exige credencial de **leitura** que não existe em lugar
+nenhum — o único segredo provisionado, no `.env.local` e nos secrets do repo, é
+`PAGERDUTY_ROUTING_KEY`, de escrita. `PAGERDUTY_API_KEY` aparece em doc-comments e em nenhum
+código que o leia. Provisioná-la é a conta dele.
+
 ```backlog
 id: B-008
 repo: corelink-server
@@ -640,10 +668,21 @@ Compliance at the point a contract requires it"). Admitting a `'compliance'` val
 to `cas_retention.mode` is then also a table-REBUILD migration (D1 cannot widen an
 inline CHECK).
 
+
+**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: **re-sondar o R2** e registrar a
+resposta com data — que é literalmente o que o `verify-means` deste item prescreve, e medição
+não é ato de owner. O bloqueio, como o corpo já afirma, é **da plataforma** (o R2 devolve
+`NotImplemented` para Object Lock), *not on an owner infra decision*. A única saída que
+custaria dinheiro — pagar um segundo backend com Object Lock — está **condicionada a um
+contrato de cliente que ainda não existe**: é decisão a jusante de uma decisão a jusante, e
+essa é exatamente a classe que esta passada declara não ser fundamento para `owner:`. No dia
+em que o contrato existir, o item volta a `owner:` com o ato nomeado — **assinar a compra do
+segundo backend**.
+
 ```backlog
 id: B-046
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: manual
 verify-means: |
@@ -1156,7 +1195,10 @@ see it either — its second clause asks whether the archiver wrote ANYTHING
 recently, and the healthy partitions keep it false. That is exactly [B-022],
 now with a live instance instead of a hypothesis.
 
-**The open decision is remediation, and it is not mine.** Re-sequencing sealed
+**The open decision was remediation, and it was not mine** (precision, 2026-08-31: *was* —
+the owner took that decision on 2026-08-24, recorded two paragraphs below, and what is left
+is applying the migration and observing, which is mine; that is why the field is `tl`).
+Re-sequencing sealed
 rows would rewrite the very evidence the chain exists to protect. The plausible
 options — archive the clean prefix up to the first fork and quarantine the
 remainder; archive both branches with an explicit fork marker; or accept the
@@ -1506,6 +1548,12 @@ decision, not a rendering one.
 
 **Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
 today, what each option costs, and what happens if the answer is "not now".
+
+**Só ele (reconfirmado 2026-08-31) — o ato: emitir a API key do Drata na conta dele.** Não há
+credencial do Drata em lugar nenhum, e a ausência não é inofensiva:
+`crates/corelink-ops/src/drata/drata.rs` faz `std::env::var("DRATA_API_KEY")` de verdade e
+devolve `Misconfigured`. O código **quer** a chave que só a conta dele emite.
+
 ```backlog
 id: B-032
 repo: corelink-server
@@ -1664,10 +1712,16 @@ assert "SLSA L3 **implemented**" (a claim that was already false, since the lane
 had never produced a bundle) — is tracked separately as [B-045] because it is a
 distinct concern (attestation-text accuracy, OKF-anchored) and must not gate the
 engineering fix.
+
+**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: nenhum; o item está `done`, e o
+que resta é manter verde o `verify` de regressão. A decisão de custo do owner (*"usa corelink
+runners"*) é **procedência datada**, não bloqueio presente — o campo carrega estado, não
+história.
+
 ```backlog
 id: B-031
 repo: corelink-server
-owner: owner
+owner: tl
 status: done
 verify: |
   ! grep -q "slsa-github-generator" .github/workflows/release-slsa3.yml
@@ -1794,6 +1848,10 @@ claims at all. It passed vacuously while all eight lines still said 1.3. The
 verify now counts the actual drift in the eight files.
 
 **Owner decision brief:** `docs/internal/2026-08-24-owner-decision-brief.md` §7.
+
+**Só ele (reconfirmado 2026-08-31) — o ato: contratar counsel e assinar o `v1.0.1`.** Redigir
+o texto eu faço; **aprová-lo** sem counsel seria uma segunda mentira.
+
 ```backlog
 id: B-035
 repo: corelink-server
@@ -2048,6 +2106,13 @@ last-verified: 2026-08-25
 These are not mine to do: they need a credential, a permanent deletion, or a
 decision only the owner can make.
 
+⚠️ **This heading is a historical grouping, not a classification — the `owner:` field
+inside each block is the authority.** Measured 2026-08-31 over all 166 items: only 12
+still carry `owner: owner`, and several of them do not sit under this heading at all
+while several items filed here carry `owner: tl`. Items are left where they sit on
+purpose: relocating blocks produces a diff that conflicts with every sibling PR and
+buys nothing, since no gate reads the heading. Read the field.
+
 ### B-012 — a non-Actions credential so bot PRs get CI
 
 `GITHUB_TOKEN`-created events do not trigger workflows — a recursion guard — so
@@ -2058,6 +2123,12 @@ secret, one purpose.
 
 **Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
 today, what each option costs, and what happens if the answer is "not now".
+
+**Só ele (reconfirmado 2026-08-31) — o ato: cunhar o fine-grained PAT (ou criar o GitHub App)
+no fluxo web autenticado da conta dele.** O GitHub **não expõe API para cunhar fine-grained
+PAT** — `POST /authorizations` saiu em 2020 sem substituto — e criar GitHub App exige o
+app-manifest web.
+
 ```backlog
 id: B-012
 repo: corelink-server
@@ -2086,6 +2157,11 @@ not permanently delete data. `rm -P` overwrites before unlinking.
 
 **Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
 today, what each option costs, and what happens if the answer is "not now".
+
+**Só ele (reconfirmado 2026-08-31) — o ato: rodar `rm -P` na chave privada dentro do
+`~/Downloads` da máquina dele.** É diretório de usuário, fora de qualquer repo e vedado a
+agentes, e a ação é **deleção permanente** de chave privada — que eu não executo por regra.
+
 ```backlog
 id: B-013
 repo: corelink-server
@@ -2347,10 +2423,15 @@ ourselves would put the status page behind the infrastructure it exists to repor
 hostname is deliberately not written out here: naming a dead host in a shipped file is
 what the hostname-liveness gate exists to catch, and it caught this note.
 
+
+**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: manter verde o `verify` de
+regressão. A decisão do owner de 2026-08-24 (*não pagar pela página de status hospedada*) já
+foi tomada e está registrada acima; um item `done` não pode estar bloqueado em ninguém.
+
 ```backlog
 id: B-041
 repo: corelink-server
-owner: owner
+owner: tl
 status: done
 verify: |
   command -v python3 >/dev/null 2>&1 || { echo "FALHA: nao consigo decidir DNS — instrumento python3, nao achado."; exit 124; }
@@ -2438,10 +2519,15 @@ real blast radius handed to CI on the owner's explicit call; the fixture
 DSR-deletes the throwaway user on teardown. Kept `workflow_dispatch`-only;
 promoting to a `schedule:` is a separate, deferred decision.
 
+
+**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: manter verde o `verify` de
+regressão. A autorização do owner às credenciais Clerk live já foi dada e está registrada
+acima — procedência, não bloqueio.
+
 ```backlog
 id: B-042
 repo: corelink-server
-owner: owner
+owner: tl
 status: done
 verify: manual
 verify-means: |
@@ -2494,10 +2580,16 @@ acquire/refuse/steal proof (step 2) + the merged self-fence unit test; the live
 observation confirms no regression. Monitored via `dup_groups` (must stay 1505)
 and the audit-archive-lag census.
 
+
+**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: manter verde o `verify` de
+regressão. Varrido o corpo inteiro, ele **não registra decisão de owner nenhuma** — narra
+prova técnica. Aqui `owner: owner` nunca foi procedência: foi rótulo errado, e é o espécime
+mais limpo do defeito que esta passada conserta.
+
 ```backlog
 id: B-043
 repo: corelink-server
-owner: owner
+owner: tl
 status: done
 verify: |
   grep -q 'AUDIT_DRAIN_LEASE_ENABLED = "1"' wrangler.toml
@@ -3116,10 +3208,16 @@ Standing cost of leaving it manual: every PR that touches a cited file needs a
 hand re-anchor. That was paid three times on 2026-08-29 alone (#1408, #1411,
 and the OKF half of the read-ceiling work).
 
+
+**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: manter a lane `workflow_dispatch`-only
+e pagar o re-anchor à mão a cada PR que toque arquivo citado. A decisão do owner de 2026-08-29
+(*robô OKF fica local/manual*) **já foi tomada** e está registrada acima; o que resta — inclusive
+o conserto de quatro linhas, se a decisão mudar — é engenharia comum.
+
 ```backlog
 id: B-058
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: |
   ! grep -qE '^\s+push:' .github/workflows/okf-autoreconcile.yml
@@ -3367,6 +3465,12 @@ job já tinha sido reescrito em 2026-06-02 para a frota macOS (sem docker, sem
 `actions/setup-python` — o passo nunca chama um `pip3` do host) e só a linha
 `runs-on:` ficou para trás. Uma linha — migrada nesta mesma mudança.
 
+
+**Só ele (reconfirmado 2026-08-31) — o ato: pagar.** As três saídas são desbloquear o gasto
+hospedado (cartão dele), pagar um box Linux multi-core self-hosted (dinheiro dele), ou apagar
+as lanes — e a terceira ele tem de autorizar, porque apaga cobertura (mutation, coverage,
+cas-foundation).
+
 ```backlog
 id: B-110
 repo: corelink-server
@@ -3455,6 +3559,10 @@ usa é `CORELINK_CLI_RELEASE_TOKEN`, e **ele já existe**. A falha é o step
 
 Consequência enquanto (a) e (b) durarem: sem detecção de drift de
 infraestrutura, e nenhum binário de release assinado em plataforma alguma.
+
+
+**Só ele (reconfirmado 2026-08-31) — o ato: comprar a conta Apple Developer e o certificado
+Authenticode, com verificação de identidade em nome dele.** Nenhuma parte é configuração.
 
 ```backlog
 id: B-111
@@ -3742,10 +3850,18 @@ anulada nesta costura: **um merge impecável que não chega à produção não p
 ninguém.** Deploy é decisão do owner; este item existe para que a distância entre
 `main` e produção seja rastreada, não para disparar o deploy.
 
+
+**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: `GET` por `{id}` nas cinco
+aplicações da API de Containers (**nunca pela LISTA**, que serve visão defasada), comparar as
+tags entre si e checar `git merge-base --is-ancestor`. Isso é medição, e a credencial
+(`CLOUDFLARE_CONTAINERS_API_TOKEN`) existe. O deploy em si é CI-driven
+(`container-build-push-prod` → PR de repin → `cf-deploy-prod`) e passa pela guardiã de merge:
+é ato operacional, não um bloqueio que este item precise esperar.
+
 ```backlog
 id: B-062
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: manual
 verify-means: |
@@ -3788,10 +3904,17 @@ por partição foi construído ([B-022]) precisamente para ele, funciona, e é i
 
 A causa mecânica é [B-112]. Este item cobre o incidente; aquele cobre o defeito.
 
+
+**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: rodar a consulta do runbook §3.3
+contra o D1 de produção e consertar [B-112], que é a causa mecânica. O token do `.env.local`
+tem D1 read/write, então a medição **não** depende do owner; o estado do PagerDuty é
+confirmação secundária, não o próximo passo (e a lacuna de credencial de leitura da PagerDuty
+é [B-008], que segue `owner:`).
+
 ```backlog
 id: B-063
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: manual
 verify-means: |
@@ -3896,6 +4019,11 @@ colidem e o evento é processado duas vezes.
 Processamento duplicado de `subscription.deleted` e `subscription.updated` afeta estado
 de direito de acesso, não apenas contagem. O reparo é no painel da Stripe — aposentar o
 endpoint redundante — e portanto é ação exclusiva do owner.
+
+
+**Só ele (reconfirmado 2026-08-31) — o ato: clicar em "disable" no endpoint redundante, no
+painel Stripe da conta dele.** Eu não tenho — e não devo ter — sessão autenticada nesse
+painel.
 
 ```backlog
 id: B-065
@@ -4182,10 +4310,17 @@ comentário como *"customer-visible retention promise"* — promessa hoje inerte
 É o exemplo mais caro do padrão que a auditoria inteira encontrou: trabalho excelente
 construído, formalmente verificado, e com a última costura aberta.
 
+
+**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: medir o que o GC apagaria hoje e
+embarcá-lo no build **atrás de um flag desligado**. Nada disso precisa do owner. A decisão a
+jusante — apertar o botão a primeira vez sobre dados de cliente — é dele, e é decisão de
+produto e risco; mas ela vem **depois** de o mecanismo estar pronto, e ninguém depende dele
+para chegar até lá.
+
 ```backlog
 id: B-071
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: |
   bash -c '[ -d crates/corelink-gc ] || { echo "FALHA: crate corelink-gc sumiu — reavalie o item."; exit 1; }
@@ -4209,8 +4344,10 @@ verify-means: |
   bytes recuperados medidos em produção — a mesma exigência de "prove a execução, não a
   ausência de reclamação" que este repositório aplica em todo lugar.
 
-  Owner, não tl: rodar GC pela primeira vez em dados de cliente é decisão de produto e
-  de risco, não de higiene de engenharia.
+  Reconciliado 2026-08-31 (o campo é `tl`): a decisão A JUSANTE é do owner — rodar GC pela
+  primeira vez em dados de cliente é decisão de produto e de risco. O PRÓXIMO PASSO não é:
+  medir o que seria apagado e embarcar o mecanismo atrás de flag desligado é higiene de
+  engenharia, e é minha.
 last-verified: 2026-08-30
 ```
 
@@ -5091,10 +5228,17 @@ que o reparo anterior criou:
   o step de report commita sem `push`, então `ls specs/_audits/ | grep -c
   byok-kill-switch-drill` = **0**.
 
+
+**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: ativar as quatro features
+`byok-*-real` no build, chamar o `run_loop` do kill switch a partir do binário, e provar o
+caminho contra um KMS de teste. Tudo isso é engenharia. A decisão a jusante — embarcar BYOK
+real contra a credencial de KMS de um cliente pagante — é do owner, e vem depois de o caminho
+existir. A reconciliação dos instrumentos assinados é [B-154]/[B-087], que seguem `owner:`.
+
 ```backlog
 id: B-083
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: |
   bash -c 'd=Dockerfile
@@ -5152,8 +5296,10 @@ verify-means: |
      Uma mudança de alvo padrão do builder trocaria a árvore compilada sem tocar nesta
      linha, e o comando não veria.
 
-  Owner, não tl: embarcar BYOK real toca credencial de KMS de cliente e muda a superfície
-  vendida. Não é decisão de engenharia.
+  Reconciliado 2026-08-31 (o campo é `tl`): a decisão A JUSANTE é do owner — embarcar BYOK
+  real toca credencial de KMS de cliente e muda a superfície vendida. O PRÓXIMO PASSO não é:
+  ativar as features, chamar o kill switch do binário e provar contra um KMS de teste é
+  engenharia, e é minha.
 last-verified: 2026-08-30
 ```
 
@@ -5284,10 +5430,16 @@ dupla aprovação a segurá-la; no dia em que o edge ganhar o consumidor corresp
 leituras de um tenant `weur` passariam a ser servidas de `sam` automaticamente. É matéria
 de produto e jurídico, não de documentação, e este item não o resolve.
 
+
+**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: manter verde o `verify` de
+regressão. O item está `done`, o reparo foi **redigir a página** — trabalho meu — e o corpo
+não carrega uma linha de bloqueio no owner. O que exige revisão jurídica está explicitamente
+atribuído a [B-087], não a este item.
+
 ```backlog
 id: B-085
 repo: corelink-server
-owner: owner
+owner: tl
 status: done
 verify: |
   bash -c 'set -u
@@ -5382,6 +5534,12 @@ caminhos: provisionar D1 por jurisdição, ou emendar as cláusulas contratuais 
 de impacto de transferência para divulgar dados pessoais de plano de controle residentes
 nos EUA. É base de transferência do Art. 46 — não é questão que se resolva depois do
 lançamento.
+
+
+**Só ele (reconfirmado 2026-08-31) — o ato: assinar a emenda de residência
+(`legal/dpa-residency-amendment.md`).** É **instrumento assinado** — mesma classe que mantém
+[B-035], [B-089] e [B-154]. Eu entrego o texto da emenda e a medição da divergência; a
+assinatura é dele.
 
 ```backlog
 id: B-086
@@ -5542,10 +5700,16 @@ prosa e medido por nada é exatamente a classe "achado que nunca vira item". O `
 agora lê os dois instrumentos. **Ele não emenda ato jurídico assinado — só mede que ele
 afirma o que afirma.** Emendar é do owner.
 
+
+**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: corrigir as linhas do CAIQ para
+`N`/`P` com plano datado — edição de texto, minha. O resíduo de owner é decidir se os
+prospects que já receberam a versão atual precisam ser notificados, e o próprio `verify-means`
+abaixo já o declara **fora deste item**.
+
 ```backlog
 id: B-087
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: |
   bash -c 'q=marketing/sales/legal-questionnaires/CAIQ-V4-pre-filled.md
@@ -5759,10 +5923,16 @@ O item volta a `status: open` com a polaridade `open` restaurada. O texto já co
 fechado enquanto o comprador continuar lendo, na página de confiança publicada, o nome de
 duas firmas de pentest que nunca foram contatadas.
 
+
+**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: varrer o resíduo medido e
+retratar a afirmação. Corrigir texto que afirma um pentest que não existe é conserto, não
+decisão comercial — e o repositório já contém a instrução de não afirmá-lo. Distribuir o
+comunicado corrigido é dele; escrevê-lo é meu.
+
 ```backlog
 id: B-088
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: |
   bash -c 'p=marketing/launch/PRESS-RELEASE.md
@@ -5873,6 +6043,11 @@ defeito de outra forma.
 Owner + jurídico decidem qual das duas saídas seguir; a terceira contradição (Termos ×
 tabela de preços × teste) precisa entrar na decisão junto, porque qualquer emenda que
 ignore uma das três deixa duas discordando.
+
+
+**Só ele (reconfirmado 2026-08-31) — o ato: assinar a emenda do SLA e autorizar a emissão
+automática de crédito.** Ligar a emissão é comprometer a empresa a **devolver dinheiro contra
+fatura**. Escrever o código e ligá-lo são atos diferentes; o segundo gasta o dinheiro dele.
 
 ```backlog
 id: B-089
@@ -6162,10 +6337,16 @@ ancorar só em `marketing/`. O texto já corrigido **fica** — o `verify` prote
 regressão. Reparo restante: estender o diff a `apps/docs/**` e ao `README.md`, começando
 pela linha de preços.
 
+
+**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: provar contra o produto o que a
+peça afirma e redigir o texto honesto. Corrigir material comercial **falso** é conserto, não
+voz de marca. A decisão a jusante — o que a empresa quer afirmar no lugar — é do owner, e ele
+a toma sobre um texto pronto.
+
 ```backlog
 id: B-094
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: |
   bash -c 'b=crates/corelink-container/src/routes/bazel_v2.rs
@@ -6228,7 +6409,9 @@ verify-means: |
   5. As afirmações NÃO relacionadas a gRPC nos mesmos arquivos — *"three lighthouse
      customers attested"* no `TWITTER-THREAD.md:83` e no comunicado. São de [B-088].
 
-  Owner: material comercial.
+  Reconciliado 2026-08-31 (o campo é `tl`): é material comercial, e a voz é dele — mas
+  corrigir uma afirmação FALSA é conserto, não redação de marca. Provar contra o produto e
+  redigir o texto honesto é meu; publicar é dele.
 last-verified: 2026-08-31
 ```
 
@@ -6312,10 +6495,15 @@ tenants × regiões, sem amortização.
 Não é defeito de código. É afirmação de estratégia que a arquitetura ainda não sustenta, e
 a diferença deveria estar escrita onde a tese está.
 
+
+**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: medir o que hoje é verdade sobre a
+allowlist pública e redigir a ressalva de escopo. Medir e escrever a alternativa é meu;
+escolher qual afirmação de estratégia sustentar é dele, sobre texto já pronto.
+
 ```backlog
 id: B-096
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: |
   bash -c 'm=crates/corelink-container/src/public_base_allowlist.manifest
@@ -6343,7 +6531,8 @@ verify-means: |
   O que NÃO decide, e admito: se a redação da ressalva é ADEQUADA. Detecta a presença de
   palavras de escopo, não a qualidade da qualificação. Quem fechar deve ler.
 
-  Owner: é afirmação de estratégia, não de engenharia.
+  Reconciliado 2026-08-31 (o campo é `tl`): escolher qual afirmação de estratégia sustentar é
+  dele. Medir o que hoje é verdade e redigir a ressalva de escopo é meu, e é o próximo passo.
 last-verified: 2026-08-30
 ```
 
@@ -6363,6 +6552,11 @@ o teto é de tenants *concorrentemente* ativos, não de clientes totais.
 Não é defeito. É dependência de plataforma no caminho crítico do crescimento, já testada e
 recusada uma vez. Existe como item porque o tempo de resposta de um aumento de limite da
 Cloudflare não é controlado por nós, e descobrir isso quando o teto for atingido é tarde.
+
+
+**Só ele (reconfirmado 2026-08-31) — o ato: abrir o ticket de aumento de cota na conta
+comercial da Cloudflare, em nome e faturamento dele.** É relação de fornecedor. Medir e
+documentar o teto é meu e já está feito.
 
 ```backlog
 id: B-097
@@ -6900,10 +7094,17 @@ depende de comparar médias de populações diferentes — compara a **duração
 com e sem cache. A razão 0,527/0,678 deve ser tratada como indício, não como medida, até
 alguém comparar as MESMAS unidades nos dois regimes.
 
+
+**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: rodar a MESMA lane com
+`CORELINK_SCCACHE_PILOT` ligado e desligado, na mesma máquina, e comparar a duração — e
+nomear o `qother` que hoje esconde 384 ms do `wdb`. É medição, e não depende dele. A decisão
+a jusante — se o produto vendido como cache de build entrega aceleração — é de produto, e a
+medição é justamente o que a torna respondível.
+
 ```backlog
 id: B-105
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: manual
 verify-means: |
@@ -6937,8 +7138,10 @@ verify-means: |
   frota seria menos. A rede não é o termo dominante, então o piso mora no servidor ou no
   cliente, e distinguir os dois exige nomear o `qother`.
 
-  Owner, não tl: a decisão que este item alimenta é se o produto vendido como cache de
-  build entrega aceleração no caso perfeito. É pergunta de produto.
+  Reconciliado 2026-08-31 (o campo é `tl`): a decisão que este item alimenta — se o produto
+  vendido como cache de build entrega aceleração no caso perfeito — é pergunta de produto e é
+  dele. O PRÓXIMO PASSO é medir, e a medição não depende dele; é ela que torna a pergunta
+  respondível.
 last-verified: 2026-08-30
 ```
 
@@ -9343,10 +9546,18 @@ aplicou a 2 lanes; ao CodeQL, não. Mas aplicá-lo ao CodeQL seria **piorar**: u
 As saídas reais são excludentes e nenhuma é higiene: (a) o owner desbloqueia o gasto hospedado;
 (b) o CodeQL migra para a frota self-hosted; (c) assume-se por escrito que o repo fica sem SAST.
 
+
+**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: **saída (b)** — migrar o `codeql`
+e o `secrets-drift` para a frota self-hosted, que é exatamente o mandato permanente de zero
+gasto em Actions hospedado. É trabalho de workflow, e é meu. A saída (a) — desbloquear o
+gasto hospedado — é dinheiro dele, mas ela já é rastreada por [B-110], que segue `owner:`;
+repetir aqui o mesmo bloqueio duplicaria a fila dele por um item que **tem** caminho de
+engenharia.
+
 ```backlog
 id: B-142
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: |
   python3 - <<'PY'
@@ -9795,6 +10006,14 @@ last-verified: 2026-08-31
 pagamento, deleção, decisão jurídica. Um item que **já está pronto** não pode continuar
 precisando do humano: `status != open` com `owner: owner` é contradição na cara.
 
+⚠️ **Correção 2026-08-31 — a frase abaixo era verdadeira quando escrita e ficou FALSA sem que
+nada apitasse, que é exatamente a tese do item.** Na medição desta árvore eram **cinco** os
+itens `done` com `owner: owner` — B-031, B-041, B-042, B-043 e B-085 — e o `backlog_verify`
+passou verde o tempo todo, porque o `verify` deste item mede a **ausência do portão** e não a
+contagem viva. Os cinco foram reclassificados nesta mesma passada, então a contagem voltou a
+zero; ela voltará a subir na próxima vez, e é por isso que o item continua `open`. A prova de
+que o defeito é real deixou de ser hipotética: **ele já aconteceu, cinco vezes.**
+
 Hoje **nenhum item `done` carrega `owner: owner`** — verificado sobre o `BACKLOG.md` desta
 árvore. Isso é **propriedade deste commit, não garantia**: `validate_schema()`
 (`scripts/backlog_verify.py:135-160`) valida `status` contra `VALID_STATUS` e `owner` contra
@@ -9847,7 +10066,11 @@ verify-means: |
   isso o predicado é a sonda; a contagem viva vai junto só como contexto impresso.
 
   **A contagem de violações vivas ficou FORA do comando, de propósito.** Medida à mão em
-  2026-08-31: **zero** itens `done` ou `parked` carregam `owner: owner`. Contá-la dentro do
+  2026-08-31, **depois** da reclassificação do campo `owner:`: **zero** itens `done` ou
+  `parked` carregam `owner: owner`. Antes dela eram **cinco** (B-031, B-041, B-042, B-043,
+  B-085) e este `verify` esteve verde durante todas as cinco — o que é o comportamento
+  desejado (ele mede o portão, não a violação) e ao mesmo tempo a prova de que o defeito não é
+  hipotético. Contá-la dentro do
   `verify` seria o erro que o próprio item denuncia — com zero violações, um portão que
   contasse violações ficaria verde e o item pareceria fechado enquanto nada impede a
   primeira.
@@ -10396,6 +10619,13 @@ tomar em cada instrumento. Emendar (aditivo com contraparte), notificar (comunic
 quem já assinou), ou construir a capacidade. As três envolvem contraparte, dinheiro ou
 assinatura, e nenhuma é minha.
 
+
+**Só ele — e apenas isto (precisado 2026-08-31): a ASSINATURA.** O texto do aditivo, a minuta
+da notificação formal e o parecer de qual das três saídas é mais barata por instrumento **eu
+entrego prontos** — isso é redação, e é minha. O que não é executável sem ele é **executar o
+instrumento**: assinar o aditivo, notificar formalmente a contraparte, ou pagar a construção
+da capacidade.
+
 ```backlog
 id: B-154
 repo: corelink-server
@@ -10574,8 +10804,11 @@ anteriores medirem recortes incomparáveis.
 
 **O que este item NÃO decide:** o destino de cada menção. Corrigir, remover a página, ou
 construir a capacidade são saídas diferentes por arquivo, e algumas são decisão comercial do
-owner ([B-083], [B-088], [B-094] já são `owner:`). Este item é `tl` porque o que falta é a
-**triagem**, que é minha.
+owner. (Precisão, 2026-08-31: a versão anterior desta frase dizia que *"[B-083], [B-088],
+[B-094] já são `owner:`"*. **Não são mais** — os três desceram para `tl` na reclassificação do
+campo, porque em todos o próximo passo é medir e redigir. O que continua sendo dele nessa
+vizinhança são os instrumentos assinados: [B-154], [B-086], [B-089].) Este item é `tl` porque
+o que falta é a **triagem**, que é minha.
 
 ```backlog
 id: B-156
@@ -10871,7 +11104,15 @@ verify-means: |
 last-verified: 2026-08-31
 ```
 
-### B-160 — ⛔ OWNER: não existe caminho self-service para obter um PAT de cliente, e isso bloqueia toda medição do caminho servido
+### B-160 — não existe rota self-service para o cliente cunhar um PAT: `POST /v1/pats` não está montado
+
+**Reescrito 2026-08-31 — o bloqueio de owner acabou, a lacuna de produto não.** A versão
+anterior deste item era *"o owner precisa criar a conta e me entregar dois PATs"*. O owner
+**autorizou o uso de `CORELINK_PAT_MINT_AUTH_KEY`** do `.env.local`, então a medição deixou de
+depender dele e o campo desce para `tl`. O que o item passa a rastrear é **só a lacuna real**,
+que a autorização não toca: **não existe caminho self-service para o cliente obter um PAT** —
+`POST /v1/pats` não está montado em servidor nenhum, e a única rota publicada é um wizard de
+sign-up com senha. Isso é defeito de superfície de produto, não de acesso meu.
 
 **Bloqueia pelo menos três medições já enfileiradas, e provavelmente toda a série que mede o
 produto como cliente.**
@@ -10883,25 +11124,28 @@ confirma que o PAT inicial do sign-up é a **única** rota self-service: `POST /
 está montado** em servidor nenhum (só aparece em `apps/admin-ui/playwright/fixtures/api-mocks.ts`
 e numa server-action do onboarding).
 
-`CORELINK_PAT_MINT_AUTH_KEY` existe no `.env.local` e **não foi usado**, deliberadamente: é
-credencial de operador, e usá-la faria a medição percorrer um caminho que **o cliente não
-tem**. Um gate autenticado com credencial de operador mede permissão e finge medir realidade
-— é o modo de falha que este repositório já registrou.
+`CORELINK_PAT_MINT_AUTH_KEY` existe no `.env.local` e **agora está autorizado** pelo owner.
+Com ela eu cunho os **dois PATs de tenants distintos** que as medições exigem — um só fecha as
+lentes *Funciona / Rápido / Registrado*; **dois** são necessários para o invariante de
+**isolamento**, que é a promessa central da página do sccache e a pergunta aberta do [B-158].
+Isso desbloqueia [B-158], [B-105] e a série de latência.
 
-**O que destrava, exatamente:** o owner cria a conta e entrega **dois PATs de tenants
-distintos**. Um só fecha as lentes *Funciona / Rápido / Registrado*. **Dois** são necessários
-para o invariante de **isolamento**, que é a promessa central da página do sccache e a
-pergunta aberta do [B-158] — sem tenant no caminho, só um segundo token de outro tenant
-decide o que separa um do outro.
+⚠️ **E a autorização NÃO fecha este item — fecha o bloqueio, não a lacuna.** A ressalva
+original continua literalmente verdadeira e é o que sobrou: **a chave de mint é credencial de
+OPERADOR**, e um gate autenticado com credencial de operador mede permissão e finge medir
+realidade. O caminho que eu percorro com ela **não é o caminho que o cliente tem**, e essa
+diferença é o defeito que este item rastreia. Toda medição feita por essa rota deve declarar,
+na própria medição, que percorreu a rota de operador.
 
-**Por que é `owner:` pelo critério estrito:** o próximo passo é criar conta com senha num
-provedor de identidade. Não é caro, não é demorado, e **não é executável por mim** — nem com
-mais tempo, nem com mais rigor.
+**Próximo passo, e por que é `tl`:** montar `POST /v1/pats` (ou registrar por escrito a recusa
+de tê-lo, com o wizard como superfície única e deliberada). É trabalho de rota, autorização e
+escopo — engenharia comum, minha. Nada aqui espera credencial, dinheiro, assinatura ou máquina
+do owner.
 
 ```backlog
 id: B-160
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: |
   bash -c 'set -e
@@ -10930,12 +11174,16 @@ verify-means: |
   com `.route("/v1/pats", post(mint))` acrescentado a um crate de rotas, sai *"FALHA: 1
   arquivo(s) de servidor registram /v1/pats"* e exit 1.
 
-  **`owner:` pelo critério estrito:** o desbloqueio é criar conta com senha e entregar **dois**
-  PATs de tenants distintos. Nenhuma parte disso é executável sem o owner, e usar
-  `CORELINK_PAT_MINT_AUTH_KEY` no lugar seria medir um caminho que o cliente não tem.
+  **`tl` pelo critério estrito (reclassificado 2026-08-31).** O item era `owner:` porque o
+  desbloqueio exigia que ele criasse conta com senha e me entregasse os PATs. Ele autorizou
+  `CORELINK_PAT_MINT_AUTH_KEY` no lugar, então esse bloqueio deixou de existir. **A ressalva
+  fica registrada: essa chave é credencial de OPERADOR — ela mede permissão, não a rota do
+  cliente.** O que o `verify` mede **não mudou uma linha** — ele sempre mediu a ausência da
+  rota, nunca a falta do meu acesso — e é essa ausência que continua sendo o item.
 
-  O que ele **não** decide: se o produto **deve** ter `POST /v1/pats` self-service. O item é
-  sobre o bloqueio de medição; a decisão de superfície é outra conversa.
+  O que ele **não** decide, e é a única coisa a jusante: se o produto **deve** ter
+  `POST /v1/pats` self-service. Se a resposta for não, o item fecha como **recusa registrada**
+  (com polaridade invertida guardando o wizard como superfície única), não apagado.
 last-verified: 2026-08-31
 ```
 
