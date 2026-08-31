@@ -1,7 +1,10 @@
 name: CAS Foundation CI (WI-S01-007)
 
 concurrency:
-  group: "ci-cas-foundation-ci-wi-s01-007"
+  # Escopo por ref. Grupo CONSTANTE torna o grupo repo-global: duas execucoes
+  # `workflow_dispatch` deste mesmo workflow em branches DIFERENTES cancelam uma
+  # a outra. Foi o que matou tres dispatches em 2026-08-31.
+  group: "ci-cas-foundation-ci-wi-s01-007-${{ github.event.pull_request.number || github.ref }}"
   cancel-in-progress: true
 
 # Sprint-level convergence workflow per WI-S01-007.

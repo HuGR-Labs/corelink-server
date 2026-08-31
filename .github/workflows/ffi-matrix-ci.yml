@@ -1,7 +1,10 @@
 name: FFI Matrix CI (Python × Go × JS)
 
 concurrency:
-  group: "ci-ffi-matrix-ci-python-go-js"
+  # Escopo por ref. Grupo CONSTANTE torna o grupo repo-global: duas execucoes
+  # `workflow_dispatch` deste mesmo workflow em branches DIFERENTES cancelam uma
+  # a outra. Foi o que matou tres dispatches em 2026-08-31.
+  group: "ci-ffi-matrix-ci-python-go-js-${{ github.event.pull_request.number || github.ref }}"
   cancel-in-progress: true
 
 # WI-S15-004: Cross-language × cross-runtime CI matrix.

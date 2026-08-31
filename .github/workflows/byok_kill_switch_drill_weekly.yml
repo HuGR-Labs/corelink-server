@@ -1,7 +1,10 @@
 name: BYOK Kill Switch Chaos Drill (Weekly)
 
 concurrency:
-  group: "ci-byok-kill-switch-chaos-drill-weekly"
+  # Escopo por ref. Grupo CONSTANTE torna o grupo repo-global: duas execucoes
+  # `workflow_dispatch` deste mesmo workflow em branches DIFERENTES cancelam uma
+  # a outra. Foi o que matou tres dispatches em 2026-08-31.
+  group: "ci-byok-kill-switch-chaos-drill-weekly-${{ github.event.pull_request.number || github.ref }}"
   cancel-in-progress: true
 
 on:

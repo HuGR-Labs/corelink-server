@@ -12,8 +12,21 @@
 # the file drift silently between merges — which is the exact failure this replaces.
 name: backlog-verify
 
+# The group MUST vary by ref. With a constant group and `cancel-in-progress`,
+# every PR in the repo shares ONE slot: the next PR to touch BACKLOG.md cancels
+# the gate of the one before it. That is not a slow gate — it is a gate that
+# silently stops having an opinion, and a cancelled check looks like "no failure"
+# to anyone who asks "are there failures?" instead of counting the set.
+#
+# Measured 2026-08-31: this lane was cancelled twice on one PR and only went
+# green after a manual `gh run rerun`. The re-runs I issued across the queue all
+# day were this, not flake.
+#
+# `github.ref` is the PR's merge ref on `pull_request` and the branch on `push`,
+# so a new push to the SAME PR still cancels its own stale run — which is the
+# behaviour cancel-in-progress is for.
 concurrency:
-  group: "ci-backlog-verify"
+  group: "ci-backlog-verify-${{ github.ref }}"
   cancel-in-progress: true
 
 on:
