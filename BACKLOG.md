@@ -9320,7 +9320,7 @@ verify: |
   vars=$(awk "/^enum RecordError/{c=1;next} c&&/^}/{exit} c&&/^    [A-Z][A-Za-z]+,/{n++} END{print n+0}" "$b")
   [ "$vars" -ge 2 ] || { echo "FALHA: contei $vars variantes em RecordError — o enum mudou de forma; instrumento quebrado."; exit 1; }
   corpo=$(awk "/fn validate_record_reasons_pinned/{c=1} c{print} c&&/^    }/{exit}" "$b" | grep -v "^[[:space:]]*//")
-  fix=$(printf "%s\n" "$corpo" | grep -c "RecordError::" || true)
+  fix=$(printf "%s\n" "$corpo" | grep -oE "RecordError::[A-Za-z]+" | sort -u | wc -l | tr -d " ")
   [ "$fix" -lt "$vars" ] && { n=$((n+1)); det="$det reasons_pinned-fixa-$fix-de-$vars"; }
   [ "$n" -gt 0 ] || { echo "FALHA: nenhum dos tres testes vacuos persiste — feche o item."; exit 1; }
   echo "aberto: $n de 3 testes seguem vacuos:$det"'
@@ -9347,5 +9347,490 @@ verify-means: |
   seguem vacuos"* e exit 0. Numa cópia com uma asserção sobre statements no primeiro, o `if
   std::env::var` removido do segundo, e as seis variantes fixadas no terceiro, sai *"FALHA:
   nenhum dos tres testes vacuos persiste"* e exit 1.
+last-verified: 2026-08-31
+```
+
+### B-150 — a colisão de ref do [B-136]/[B-137] vale para mais 28 workflows que ninguém escopou
+
+[B-136] cobre `backlog-verify`; [B-137] cobre cinco noturnas. **Seis.** Varrendo os 123
+workflows com bloco `concurrency` desta árvore com o mesmo predicado — grupo que interpola
+`github.ref`, `cancel-in-progress` ligado, e **dois ou mais** gatilhos que resolvem `github.ref`
+para `refs/heads/main` (`push`, `schedule`, `workflow_dispatch`, `workflow_run`,
+`repository_dispatch`) — saem **34**. Os outros **28** já eram assim antes do #1503; ninguém
+os escopou porque o #1503 tinha um recorte próprio e o recorte virou, sem querer, a definição
+do problema.
+
+A lista inclui lanes que importam: `e2e-prod`, `docs-ci`, `secrets-drift`, `smoke-install`,
+`cargo-audit`, `cargo-deny`, `codeql`, `gitleaks`, `trivy`, `pnpm-audit`, `license-policy`,
+`admin-ui-e2e`, `dr-drill-monthly`, `perf-nightly`, `subprocessors-sync`, `tls-floor-drift`.
+Metade delas é exatamente a classe que a regra da casa manda manter em cron — feed de CVE,
+estado de produção, drift de infra — ou seja, **as que mais têm um agendado em voo para um
+dispatch manual matar**.
+
+O modo de falha é o do [B-136], e é o que o torna caro: a execução cancelada **não fica
+vermelha, fica ausente**. Quem disparou à mão vê a sua verde e não sabe que matou a de cima;
+quem depende do noturno não vê nada. Um scanner de CVE cancelado é indistinguível de um
+scanner que rodou e não achou nada.
+
+**O que este item NÃO decide:** o reparo por lane. Pôr `github.event_name` no grupo separa os
+eventos, mas multiplica grupos numa lane em que a serialização era intencional; desligar
+`cancel-in-progress` serializa e pode enfileirar trabalho no Mac do owner, que é recurso
+escasso. E há uma classe **terceira**, já nomeada no corpo do [B-137] e ainda sem item — o
+grupo que interpola `${{ github.workflow }}`, constante disfarçada de expressão. Este item
+**não** a cobre; é granularidade de ref, não ausência de ref.
+
+```backlog
+id: B-150
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  python3 - <<"PY"
+  import glob, sys, yaml
+  COBERTOS = {"backlog-verify", "byok_kill_switch_drill_weekly", "byok_matrix_weekly",
+              "dr-drill-monthly", "nightly", "perf-nightly"}
+  MAIN = {"push", "schedule", "workflow_dispatch", "workflow_run", "repository_dispatch"}
+  arqs = sorted(glob.glob(".github/workflows/*.yml")) + sorted(glob.glob(".github/workflows/*.yaml"))
+  if len(arqs) < 50:
+      print(f"FALHA: so {len(arqs)} workflows encontrados — instrumento quebrado, nao arvore limpa."); sys.exit(1)
+  com_conc = 0; achados = []
+  for f in arqs:
+      try: d = yaml.safe_load(open(f))
+      except Exception: continue
+      if not isinstance(d, dict): continue
+      c = d.get("concurrency")
+      if not isinstance(c, dict): continue
+      com_conc += 1
+      nome = f.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+      if nome in COBERTOS: continue
+      g = str(c.get("group", ""))
+      if "github.ref" not in g: continue
+      if "github.event_name" in g: continue   # o grupo ja separa os eventos: reparado
+      if not c.get("cancel-in-progress"): continue
+      on = d.get(True, d.get("on"))
+      evs = set(on) if isinstance(on, (dict, list)) else {on}
+      if len(MAIN & evs) >= 2: achados.append(nome)
+  if com_conc < 20:
+      print(f"FALHA: so {com_conc} workflows com bloco concurrency — o parser nao esta enxergando; instrumento."); sys.exit(1)
+  if not achados:
+      print(f"FALHA: nenhum workflow fora dos {len(COBERTOS)} ja escopados colide (de {com_conc} com concurrency) — feche o item."); sys.exit(1)
+  print(f"aberto: {len(achados)} de {com_conc} workflows com concurrency colidem em refs/heads/main fora do recorte de B-136/B-137: {', '.join(sorted(achados)[:8])}…")
+  PY
+verify-means: |
+  open — existe pelo menos um workflow, **fora** dos seis já escopados por [B-136]/[B-137],
+  com grupo interpolando `github.ref`, cancelamento em voo ligado, e dois ou mais gatilhos
+  que resolvem para `refs/heads/main`.
+
+  **Parseia YAML, não grepa.** As três condições vivem em lugares diferentes do arquivo e
+  duas delas são estruturais (o conjunto de chaves sob `on:`); um grep responderia sobre
+  linhas soltas e casaria comentário. O `on:` é lido por `d.get(True, d.get("on"))` porque o
+  YAML transforma a chave nua `on` em booleano `True` — ler só `"on"` devolveria vazio e o
+  portão diria "nenhum colide" sobre um repositório inteiro.
+
+  **Anti-vacuidade com falha nomeada em três pontos:** menos de 50 workflows no diretório;
+  menos de 20 com bloco `concurrency` (o parser deixou de enxergar); e a lista de cobertos
+  é uma exclusão explícita, não um filtro silencioso. Nenhum desses estados devolve "aberto".
+
+  Fecha por **exaustão**, não por amostra: consertar dez mantém o item aberto com contagem
+  menor. E fecha sozinho se [B-136]/[B-137] forem generalizados para o repositório inteiro,
+  que é o desfecho desejável.
+
+  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 28 de 123 …"* e
+  exit 0. Numa cópia do repositório com `github.event_name` acrescentado ao grupo dos 28,
+  sai *"FALHA: nenhum workflow fora dos 6 ja escopados colide"* e exit 1.
+
+  O que ele **não** decide: a classe do grupo `${{ github.workflow }}` constante, nomeada no
+  [B-137] e ainda sem item — o predicado aqui exige `github.ref`, então aquela é invisível
+  para este comando de propósito.
+last-verified: 2026-08-31
+```
+
+### B-151 — um SEGUNDO contrato OpenAPI é publicado com 21 dos 40 caminhos, e nenhum portão compara os dois
+
+[B-121] estabeleceu que a fonte da divergência é `openapi/corelink-v1.yaml` — a spec escrita
+à mão — e entregou o comparador spec × rotas servidas. Ficou de fora uma coisa que o recorte
+não previa: **existe uma segunda cópia da spec, publicada ao cliente, e ela não é gerada da
+primeira.**
+
+Medido nesta árvore: `openapi/corelink-v1.yaml` declara **40** caminhos;
+`apps/docs/static/openapi-corelink-v1.yaml` — servido pelo site de documentação, o arquivo
+que um cliente baixa para gerar cliente — declara **21**. Nenhum script gera um do outro e
+nenhum portão compara os dois. O `gen-api-reference.py` lê a canônica e gera **MDX**; o
+`static/` é cópia manual congelada em algum ponto do passado.
+
+A consequência é pior que a de uma página errada: quem baixa a spec publicada e gera um SDK
+recebe **um produto menor que o real**, sem erro nenhum, e não tem como saber. E como o
+[B-145] mostra que o comparador de endpoint não decide, nada nesta cadeia reprova.
+
+**Segundo resíduo, medido junto, de outra natureza.** `explanation/rbac/index.mdx:55` diz
+*"fall into five customer-facing categories"* sobre uma tabela de **três** linhas — nos três
+locales (`pt-BR`, `de`, `es-419`). O texto em inglês já foi corrigido; **as traduções não**,
+e é a forma clássica: o reparo alcançou a fonte e parou ali.
+
+**O que este item NÃO cobre, e é deliberado:** os oito caminhos documentados-sem-rota da
+canônica ([B-121], ledger), `POST /v1/admin/ops` e seus chamadores ([B-119]), e
+`POST /v1/enterprise/inquire` ([B-120]). Grepei os três antes de abrir. O que sobra e não
+tem dono é a **segunda spec** e o resíduo de tradução.
+
+```backlog
+id: B-151
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  python3 - <<"PY"
+  import glob, sys, yaml
+  can = "openapi/corelink-v1.yaml"
+  pub = "apps/docs/static/openapi-corelink-v1.yaml"
+  try:
+      c = yaml.safe_load(open(can)) or {}
+  except FileNotFoundError:
+      print(f"FALHA: {can} sumiu — a spec canonica e a premissa deste item; reavalie."); sys.exit(1)
+  nc = len(c.get("paths") or {})
+  if nc < 10:
+      print(f"FALHA: a spec canonica declara so {nc} caminhos — instrumento ou spec quebrada, nao achado."); sys.exit(1)
+  try:
+      p = yaml.safe_load(open(pub)) or {}
+      np = len(p.get("paths") or {})
+      div = np != nc
+  except FileNotFoundError:
+      print(f"FALHA: {pub} nao existe mais — a segunda spec foi removida; feche esta metade e reavalie o item."); sys.exit(1)
+  loc = [f for f in sorted(glob.glob("apps/docs/i18n/*/docusaurus-plugin-content-docs/current/explanation/rbac/index.mdx"))
+         if "five customer-facing" in open(f).read()]
+  if not div and not loc:
+      print(f"FALHA: a spec publicada tem os mesmos {nc} caminhos E nenhum locale diz 'five customer-facing' — feche o item."); sys.exit(1)
+  print(f"aberto: spec publicada declara {np} caminhos contra {nc} da canonica (divergem={div}); locales ainda dizendo 'five customer-facing' sobre tabela de 3 linhas: {len(loc)}")
+  PY
+verify-means: |
+  open — a spec publicada diverge da canônica em número de caminhos, **ou** algum locale
+  ainda afirma cinco categorias sobre a tabela de três. Fecha só quando as duas caírem.
+
+  **Compara os dois arquivos parseados, não grepa nenhum dos dois.** Contar `paths:` por
+  grep casaria a chave dentro de exemplos e descrições; o que decide é a estrutura.
+
+  **Anti-vacuidade com falha nomeada:** canônica ausente; canônica com menos de 10 caminhos
+  (spec ou parser quebrado, nunca "consertado"); e a **ausência da segunda spec** é tratada
+  como mudança de premissa que exige releitura, não como fechamento automático — apagar o
+  arquivo publicado pode ser o reparo certo, mas quem o apagar tem de dizer isso no item.
+
+  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: spec publicada
+  declara 21 caminhos contra 40 da canonica (divergem=True); locales … 3"* e exit 0. Numa
+  cópia com a spec publicada substituída pela canônica **e** os três locales corrigidos, sai
+  *"FALHA: a spec publicada tem os mesmos 40 caminhos E nenhum locale…"* e exit 1.
+
+  O que ele **não** decide: se a segunda spec deve ser gerada, symlinkada ou removida — as
+  três fecham o item e têm custos diferentes para quem publica documentação versionada.
+last-verified: 2026-08-31
+```
+
+### B-152 — cinco jobs mortos aos ~10m00s no MESMO PR, em lanes independentes: é padrão, e o vermelho parece defeito de código
+
+Medido em 2026-08-31 sobre o PR #1492: **cinco** ocorrências num único PR, em jobs que não
+compartilham suíte nem linguagem — `typecheck + lint + test + build`, `playwright
+critical-flows`, `axe-core` e outros dois. Assinatura idêntica: morte aos **~10m00s–10m01s**
+com um passo ainda `in_progress`. Em um dos casos o `actions/checkout` **nem havia
+terminado** — o job morreu antes de chegar ao trabalho, o que exclui de saída qualquer
+explicação baseada no conteúdo da suíte.
+
+**Duas hipóteses refutadas, e cada refutação vale o item.**
+
+- **Não é o [B-128]** (disco cheio no Mac): nenhum `ENOSPC`, `os error 28` ou `Bus error` nos
+  logs. A assinatura do B-128 é outra e aparece nos logs; esta não aparece em lugar nenhum.
+- **Não é `timeout-minutes` do job**: um dos workflows declara **30 min** e morreu aos 10. A
+  parada vem de fora da declaração — de dentro da suíte, do `webServer` do Playwright, ou do
+  runner.
+
+**Por que isto custa caro e não é ruído.** O vermelho chega com cara de defeito de código, e
+cada ocorrência consome uma investigação honesta — a cara. Numa delas, um agente teve de
+conferir que `CustomerPat.scopes` é `string[]` (logo literais diferentes não podem quebrar o
+typecheck) e que o spec afere token e status e nunca escopos, **só então** re-rodou e passou.
+O trabalho de refutar o falso positivo é maior que o de consertá-lo.
+
+**O que o item precisa medir para fechar** — e nada disso está feito: a **taxa** (quantos jobs
+por dia morrem em ~10m00s), a distribuição por lane, e a causa comum. **Não fecha por "rerun
+passou".** Rerun passar é o sintoma da intermitência, não a cura; fechar por aí é o que
+mantém o defeito vivo há semanas.
+
+```backlog
+id: B-152
+repo: corelink-server
+owner: tl
+status: open
+verify: manual
+verify-means: |
+  MANUAL, e a razão é estrutural, não preguiça — são duas razões e as duas seguram sozinhas.
+
+  **1. O registro não está na árvore, e expira.** O que decide a alegação são os tempos de
+  job e os `steps` da Actions API. Nenhum arquivo deste repositório muda quando o defeito
+  ocorre nem quando ele for consertado, e os logs de job têm janela de retenção: passada
+  ela, o comando não pode mais decidir nem para um lado nem para o outro.
+
+  **2. Um portão sobre janela recente fecharia o item pelo motivo errado.** A alegação é uma
+  **taxa**. Se a intermitência sumir por uma semana sem nada ter sido consertado, um `verify`
+  que consultasse os últimos N runs ficaria verde e o item seria fechado por "rerun passou" —
+  exatamente o desfecho que o item proíbe no corpo. Um portão assim mede a janela, e finge
+  medir a causa.
+
+  **Procedimento de reverificação** (quinzenal, e é o que o `last-verified` cobra):
+
+      gh api "repos/HuGR-Labs/corelink-server/actions/runs?per_page=50" --jq \
+        '.workflow_runs[] | select(.conclusion=="failure") | .id' \
+      | while read -r r; do
+          gh api "repos/HuGR-Labs/corelink-server/actions/runs/$r/jobs" --jq \
+            '.jobs[] | select(.conclusion=="failure")
+             | [.name, ((.completed_at|fromdate) - (.started_at|fromdate))] | @tsv'
+        done | awk -F'\t' '$2 >= 594 && $2 <= 615'
+
+  Cada linha de saída é uma ocorrência: job falho cuja duração cai na janela de 10 minutos.
+  **Zero linhas NÃO fecha o item** — fecha quando a causa comum for nomeada e removida.
+
+  Fronteira com [B-128]: se aparecer `ENOSPC` / `os error 28` / `Bus error` no log, é aquele
+  item e não este. A ausência dessas três strings foi o que separou os dois na medição.
+last-verified: 2026-08-31
+```
+
+### B-153 — nada compara permissão PUBLICADA com permissão APLICADA, e a direção permissiva passa por todos os portões
+
+Achado com um caso concreto e já reparado: a matriz publicada dizia **`Developer ❌`** para
+deleção de blob. `DELETE /v1/cas/{tenant}/{hash}` **existe** (`routes/cas.rs:709`, handler
+`:1556`) e é gateado por `scope.can_write()` (`:1584`), **nunca** por `cache:delete`. Como o
+papel Developer tem write, ele **pode** deletar. A linha foi corrigida para `✅` com nota, e
+`permission-matrix.mdx:43-45` hoje está certa. **O caso fechou; o mecanismo que o deixou
+entrar não.**
+
+**A lição de método é o item.** Dois agentes mediram `SCOPE_CACHE_DELETE`
+(`crates/corelink-pat/src/scopes.rs:52`) e acharam **zero consumidor de enforcement** —
+medição correta. **Nenhum dos dois checou se a ROTA existia.** Um agente que apenas
+propagasse "escopo não implementado" teria deixado a linha permissiva intacta, e teria
+achado que estava sendo rigoroso. **Escopo sem enforcement ≠ operação indisponível.**
+
+**O que está aberto, medido:** nenhum arquivo em `scripts/` ou `.github/workflows/` lê
+`permission-matrix.mdx`, `role-catalog.mdx` ou `reference/rbac/permissions.mdx`. As únicas
+referências a esses caminhos no repositório estão em auditorias seladas de `specs/_audits/`.
+Ou seja: as três páginas que dizem ao cliente **o que cada papel pode fazer** não são
+confrontadas com o código por nada, em nenhuma direção.
+
+E as duas direções não são simétricas. Doc que **promete** permissão inexistente frustra o
+cliente e ele reclama — tem sinal. Doc que **nega** permissão que o código **concede** não
+frustra ninguém: o cliente simplesmente não tenta, e o excesso de privilégio segue vivo,
+descrito ao contrário no material que o auditor dele vai ler. **A direção permissiva é a que
+não tem sinal**, e é por isso que ela é a que precisa de portão.
+
+**O que este item NÃO decide, e a fraqueza do próprio portão.** Ele **não** cobre
+[B-080] — escopos canônicos sem ponto de aplicação — que é o defeito de engenharia e tem
+item próprio; aqui o assunto é o instrumento. E o `verify` abaixo mede a **ausência de
+qualquer instrumento**, não a ausência de mentira: um script que apenas cite os arquivos o
+satisfaria. É o mínimo honesto enquanto o instrumento não existe, e quem o construir tem de
+substituir este `verify` por um que plante a linha permissiva e exija que o portão a pegue.
+
+```backlog
+id: B-153
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'set -e
+  m=apps/docs/docs/explanation/rbac/permission-matrix.mdx
+  c=crates/corelink-container/src/routes/cas.rs
+  [ -f "$m" ] || { echo "FALHA: $m sumiu — a matriz publicada e a premissa deste item; reavalie."; exit 1; }
+  [ -f "$c" ] || { echo "FALHA: $c sumiu — reavalie o item."; exit 1; }
+  linhas=$(grep -cE "^\| " "$m")
+  [ "$linhas" -ge 4 ] || { echo "FALHA: so $linhas linhas de tabela em $m — a matriz mudou de forma; instrumento, nao achado."; exit 1; }
+  grep -qE "^[^/]*can_write\(\)" "$c" || { echo "FALHA: cas.rs nao gateia mais por can_write() em linha executavel — a premissa mudou; releia antes de confiar neste portao."; exit 1; }
+  leitores=$(grep -rlE "permission-matrix|role-catalog|reference/rbac/permissions" scripts/ .github/workflows/ 2>/dev/null | wc -l | tr -d " ")
+  [ "$leitores" = 0 ] || { echo "FALHA: $leitores instrumento(s) em scripts/ ou .github/workflows/ ja leem a matriz de permissoes — verifique o que eles decidem e feche o item."; exit 1; }
+  echo "aberto: $linhas linhas de matriz publicada, gate real por can_write() no codigo, e ZERO instrumentos em scripts/ ou .github/workflows/ leem a matriz"'
+verify-means: |
+  open — a matriz publicada existe, o gate real do código continua sendo `can_write()`, e
+  **nenhum** script ou workflow lê qualquer uma das três páginas de permissão.
+
+  **Duas âncoras contra comentário.** `grep -cE "^\| "` conta linha de tabela markdown a
+  partir do início da linha, então prosa que cite um pipe não infla a contagem. E
+  `grep -qE "^[^/]*can_write\(\)"` exige a chamada numa linha que **não** comece com `//` —
+  sem isso, os doc-comments do `cas.rs` que descrevem o gate satisfariam a premissa mesmo se
+  o gate tivesse sido removido, que é a falha de instrumento do [B-155].
+
+  **Anti-vacuidade com falha nomeada:** matriz ausente; matriz com menos de 4 linhas de
+  tabela (mudou de forma — instrumento, não achado); `can_write()` sumido do código
+  executável (a premissa mudou, releia). Nenhum devolve "aberto".
+
+  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: … ZERO
+  instrumentos"* e exit 0. Numa cópia com um script em `scripts/` que abre
+  `permission-matrix.mdx`, sai *"FALHA: 1 instrumento(s) … ja leem a matriz"* e exit 1.
+
+  **A fraqueza, escrita porque é o texto que sobrevive:** este portão é satisfeito por um
+  instrumento que apenas **cite** os arquivos. Ele mede ausência total de leitor, que é o
+  estado de hoje; não mede se o leitor decide. Quem construir o portão de verdade **troca
+  este `verify`** por um que plante `Developer ❌` na linha de deleção e exija reprovação —
+  e essa troca é parte do fechamento, não opcional.
+last-verified: 2026-08-31
+```
+
+### B-154 — ⛔ OWNER: dois instrumentos jurídicos executados afirmam capacidades que a plataforma devolve como não-implementadas
+
+Não são páginas de marketing. São atos jurídicos assinados, e por isso **nenhuma linha deles
+pode ser emendada sem o owner** — a correção de um instrumento executado é um aditivo, não um
+commit.
+
+- **`legal/dpa/v1.0.0.en-US.md:110`** — *"Audit events are retained in immutable R2 with
+  Object Lock"*. **R2 não implementa Object Lock**; a API devolve `NotImplemented`, o que
+  está registrado neste repositório e é a razão de [B-046] existir como item bloqueado por
+  plataforma. O DPA é o instrumento que o comprador anexa ao contrato dele.
+- **`legal/sla/v1.0.0.md:46`** — a linha Enterprise compromete *"BYOK kill-switch p99 ≤
+  5 min"*. O BYOK devolve **501** (`routes/byok_admin.rs:249`) e o único provider compilado
+  no binário embarcado é o fake — é o [B-083], que já aponta para cá ao dizer que *"a
+  reconciliação dos instrumentos assinados"* é de outro item.
+- **`marketing/launch/CASE-STUDIES/enterprise-byok.md:59`** — depoimento atribuído que afirma
+  que *"o drill de kill-switch produziu o artefato de que a equipe de compliance precisava"*.
+  O drill é o [B-084]: emite `PASS` a partir de um `sleep`.
+
+**Uma correção ao enunciado original, e ela muda o custo para melhor.** A atribuição do
+depoimento é hoje `[ENTERPRISE_CUSTOMER_TITLE]` / `[ENTERPRISE_CUSTOMER_NAME or
+SANITIZED_DESCRIPTOR]` — **marcadores, não uma pessoa**. Ninguém foi citado ainda. Retratar
+custa **zero** agora e passa a exigir uma conversa com um cliente real no minuto em que
+alguém preencher o marcador antes do drill ser real. É o item mais barato desta leva e o que
+mais encarece se esperar.
+
+**Por que não é duplicata de [B-009]/[B-046]/[B-083]/[B-084]/[B-087].** Aqueles cinco cobrem
+o **defeito de engenharia** (o stub, o binário, o script do drill) e o **CAIQ**. Nenhum deles
+nomeia `legal/dpa/*` nem `legal/sla/*`, e nenhum dos `verify` deles lê esses arquivos —
+conferido. A diferença é material: consertar o binário não retira a afirmação do instrumento
+assinado, e retirar a afirmação não conserta o binário.
+
+**O que este item NÃO decide** — e é exatamente o que o torna `owner:`: qual das três saídas
+tomar em cada instrumento. Emendar (aditivo com contraparte), notificar (comunicação formal a
+quem já assinou), ou construir a capacidade. As três envolvem contraparte, dinheiro ou
+assinatura, e nenhuma é minha.
+
+```backlog
+id: B-154
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  bash -c 'set -e
+  d=legal/dpa/v1.0.0.en-US.md
+  s=legal/sla/v1.0.0.md
+  b=crates/corelink-container/src/routes/byok_admin.rs
+  for f in "$d" "$s"; do [ -f "$f" ] || { echo "FALHA: $f sumiu — um instrumento executado nao some sozinho; reavalie o item."; exit 1; }; done
+  n=0; det=""
+  grep -qE "^[^#]*Object Lock" "$d" && { n=$((n+1)); det="$det dpa-afirma-object-lock"; }
+  grep -qE "^[^#]*BYOK kill-switch" "$s" && { n=$((n+1)); det="$det sla-compromete-kill-switch"; }
+  if [ -f "$b" ]; then
+    grep -qE "^[^/]*NOT_IMPLEMENTED" "$b" || { echo "FALHA: byok_admin.rs nao devolve mais NOT_IMPLEMENTED em linha executavel — o BYOK pode ter sido construido; releia o item antes de confiar neste portao."; exit 1; }
+  else
+    echo "FALHA: $b sumiu — sem ele nao consigo sustentar que o SLA promete o que nao existe."; exit 1
+  fi
+  [ "$n" -gt 0 ] || { echo "FALHA: nenhum dos dois instrumentos assinados carrega mais a afirmacao — feche o item registrando COMO foi resolvido (aditivo, notificacao ou capacidade construida)."; exit 1; }
+  echo "aberto: $n de 2 instrumentos executados ainda afirmam capacidade nao entregue:$det (BYOK segue 501 no codigo)"'
+verify-means: |
+  open — pelo menos um dos dois instrumentos assinados ainda carrega a afirmação, **e** o
+  código continua devolvendo `NOT_IMPLEMENTED` no caminho do BYOK.
+
+  **Os greps nos instrumentos são ancorados em `^[^#]*`** — markdown não tem comentário de
+  linha, mas as duas páginas usam `#` de cabeçalho, e um título futuro como
+  *"## Object Lock — o que não fazemos"* satisfaria um grep nu e manteria o item verde
+  descrevendo o oposto. O grep no código usa `^[^/]*` pelo motivo padrão: doc-comment não é
+  enforcement.
+
+  **A condição do código é premissa, não achado, e por isso falha ALTO.** Se o BYOK deixar de
+  responder 501, o comando **para** e manda reler, em vez de decidir sozinho — porque nesse
+  cenário a linha do SLA pode ter passado a ser verdadeira, e um portão não deve tomar essa
+  decisão no lugar do owner.
+
+  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 2 de 2
+  instrumentos…"* e exit 0. Numa cópia com as duas linhas retiradas dos instrumentos, sai
+  *"FALHA: nenhum dos dois instrumentos assinados carrega mais a afirmacao"* e exit 1.
+
+  **O depoimento do case study ficou FORA do predicado, de propósito.** Ele é hoje um
+  marcador não preenchido — retratá-lo é barato e não muda o veredito deste item; medi-lo
+  junto faria o item parecer resolvido quando só a parte fácil tivesse sido feita. Está no
+  corpo, com o caminho e a linha, para quem fechar tratar os três juntos.
+
+  Este item é `owner:` pelo critério estrito: o próximo passo é um aditivo contratual, uma
+  notificação formal a quem já assinou, ou a construção da capacidade. Nenhum é executável
+  sem a assinatura ou o dinheiro do owner.
+last-verified: 2026-08-31
+```
+
+### B-155 — 91 de 120 `verify` fazem `grep` de padrão não-ancorado: o comentário do arquivo alvo satisfaz o portão
+
+O terceiro caso desta campanha, e é o que o promove de caso a classe.
+
+`B-083.verify` fazia `grep -E "cargo build.*-p corelink-server" Dockerfile | head -1` e casava
+o **comentário da linha 8**, não a linha de build da **182**. Consequência medida: acrescentar
+`--features byok-aws-real` à linha real **passava verde** — e **apagar a linha real também
+passava**. O controle de instrumento nunca podia disparar, porque o comentário sempre o
+satisfazia.
+
+Os outros dois: **B-118** punia a confissão da remoção (o `verify` casava o texto que
+descrevia o conserto) e **B-112** punia a explicação do repontamento. Três formas do mesmo
+erro: **o portão lê a prosa sobre o código em vez do código.**
+
+Varredura desta árvore: **91 de 120** `verify` com comando invocam `grep` com um padrão que
+não começa em `^` e sem filtro de comentário — [B-007], [B-015], [B-016], [B-019], [B-020],
+[B-021] e mais 85. Não é um bug em 91 itens; é a ausência de uma convenção mecanizada.
+
+⚠️ **Contado não é triado, e a distinção é a parte útil.** Boa parte dos 91 grepa arquivo sem
+comentário de linha, ou padrão que nenhum comentário plausível conteria — são falsos
+positivos legítimos da varredura. O trabalho do item é **triar** os 91 e ancorar os que podem
+ser satisfeitos por comentário; a contagem serve para saber quando parar, não para acusar.
+
+**O que este item NÃO decide:** se o reparo é ancorar caso a caso ou proibir `grep` nu num
+portão-de-portões que reprove novos `verify`. A segunda é mais forte e faz este arquivo
+gastar mais uma verificação por PR.
+
+```backlog
+id: B-155
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  python3 - <<"PY"
+  import re, sys, yaml, pathlib
+  SEGURO = re.compile(r"""grep\s+-[A-Za-z]*v[A-Za-z]*\s|^\s*#|\bawk\b|\bpython3\b|\byaml\b""")
+  PADRAO = re.compile(r"""grep\s+(?:-[A-Za-z]+\s+)*(?P<q>["'])(?P<pat>.*?)(?P=q)""")
+  t = pathlib.Path("BACKLOG.md").read_text()
+  blocos = re.findall(r"```backlog\n(.*?)\n```", t, re.S)
+  if len(blocos) < 100:
+      print(f"FALHA: so {len(blocos)} blocos parseados — instrumento quebrado, nao arvore limpa."); sys.exit(1)
+  total = 0; suspeitos = []
+  for b in blocos:
+      try: d = yaml.safe_load(b) or {}
+      except Exception: continue
+      v = d.get("verify")
+      if not isinstance(v, str) or v.strip() == "manual": continue
+      total += 1
+      for ln in v.splitlines():
+          if "grep" not in ln or SEGURO.search(ln): continue
+          if any(not m.group("pat").startswith("^") for m in PADRAO.finditer(ln)):
+              suspeitos.append(str(d.get("id"))); break
+  if not suspeitos:
+      print(f"FALHA: nenhum dos {total} verifies com comando usa grep de padrao nao-ancorado — a triagem de classe terminou; feche o item."); sys.exit(1)
+  print(f"aberto: {len(suspeitos)} de {total} verifies com comando fazem grep de padrao nao-ancorado; primeiros: {', '.join(suspeitos[:6])}")
+  PY
+verify-means: |
+  open — pelo menos um `verify` com comando ainda invoca `grep` com padrão que não começa em
+  `^` e sem filtro de comentário.
+
+  **O detector é sobre o PADRÃO, não sobre a linha.** Ele extrai o argumento entre aspas de
+  cada `grep` e pergunta se ele está ancorado; uma linha que já filtre comentário
+  (`grep -v`), ou que delegue a `awk`/`python3`/parser YAML, é considerada segura e sai da
+  conta. Isso é o que impede o próprio detector de casar prosa.
+
+  **Anti-vacuidade:** menos de 100 blocos parseados é declarado instrumento quebrado, com
+  falha alta. Sem essa guarda, quebrar o parser zeraria a lista e o item se declararia
+  resolvido no exato momento em que perdeu a capacidade de medir.
+
+  ⚠️ **Contado não é triado, e o `verify` argumenta por construção a favor de manter aberto.**
+  A contagem inclui greps sobre arquivos sem comentário de linha e padrões que nenhum
+  comentário plausível conteria. Fechar este item **não** é levar a contagem a zero por
+  reescrita mecânica — é triar os 91, ancorar os que podem ser satisfeitos por comentário, e
+  então trocar este `verify` pelo portão-de-portões que recusa `grep` nu em `verify` novo.
+  Zerar a contagem sem triar seria o mesmo vício que o item denuncia, uma camada acima.
+
+  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 91 de 120 …"* e
+  exit 0. Numa cópia do `BACKLOG.md` com todo padrão de `grep` prefixado por `^[^#]*`, sai
+  *"FALHA: nenhum dos 120 verifies com comando usa grep de padrao nao-ancorado"* e exit 1.
 last-verified: 2026-08-31
 ```
