@@ -1,16 +1,18 @@
 ---
 title: "Brazil residency & LGPD (Art. 33 §1º)"
 slug: "/residency/lgpd-brazil"
-description: "How CoreLink pins data of Brazilian tenants to the `sam` region, how to verify it, and what we do during failover."
+description: "Brazil (`sam`) residency is NOT available on CoreLink today. What that means under LGPD, which regions are available, and how to verify what we do serve."
 cross_functional_review: pending
 pending_signoff:
   - "Legal"
   - "DPO"
 sources:
-  - "specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md"
+  - "worker/src/region-map.ts"
+  - "wrangler.toml"
+  - "scripts/provision-cf-corelink-prod.sh"
+  - "crates/corelink-container/src/routes/residency.rs"
   - "specs/03_architecture/privacy_model.md"
-  - "crates/corelink-privacy-residency-enforcement/"
-last_updated: "2026-05-15"
+last_updated: "2026-08-31"
 ---
 
 import { DraftBanner } from "../../../src/components/DraftBanner";
@@ -19,231 +21,264 @@ import { DraftBanner } from "../../../src/components/DraftBanner";
 
 # Brazil residency & LGPD (Art. 33 §1º)
 
-> **DRAFT — pending Legal + DPO review.** Technical claims below are
-> accurate as of 2026-05-15 and pinned to commit `fb9f56e`. The compliance
-> bundle (`specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md`)
-> is the source of truth; this page is the public-facing summary.
+:::danger Brazil residency is not available today
 
-Brazilian customers and customers processing data of Brazilian data subjects
-need to know two things about CoreLink:
+**CoreLink does not offer data residency in Brazil.** Cloudflare — the substrate
+CoreLink runs on — has no South-America region for R2 or D1. There is no
+São Paulo bucket, and there is no way for us to create one.
 
-1. **Where the data physically lives.**
-2. **What happens when something goes wrong with the region the data lives in.**
+An earlier version of this page stated that tenants pinned to `sam` had their
+blobs, action-cache entries, audit trail and metadata *"physically located in the
+South America (São Paulo) region"*, in buckets named `cas-sam`, `ac-sam` and
+`audit-sam`. **That was not true and has been withdrawn.** Those buckets do not
+exist; the one bucket that carries a `sam` name (`corelink-ac-sam`) is
+provisioned with `locationHint=enam` — Eastern North America — and the CAS
+binding for the `prod-sam` environment points at `corelink-cas-prod`, the US
+bucket (`wrangler.toml`, `[[env.prod-sam.r2_buckets]]`).
 
-This page answers both, in operator language. It also explains how you can
-*verify* the answers — not just trust us.
+Because of exactly this, `sam` is **excluded from the provisionable set at
+signup** (`worker/src/region-map.ts`, `PROVISIONED_MACROS`), with the reason
+stated in the code: its data *"would mis-land in US R2 under a false residency
+label."* Signup rejects `sam` rather than accepting a tenant it cannot honour.
 
-## 1. The flag
+If your obligations to Brazilian data subjects require in-country storage,
+CoreLink cannot meet them today. Please do not treat any part of this page as
+an attestation that it can.
 
-Every CoreLink tenant has a `primary_region` value, chosen at signup. The
-six possible values are a closed enum (you cannot pass an arbitrary string
-— the system rejects open-string drift):
+:::
 
-| Value | Geographic area | Primary regulatory framework |
+This page now describes two things honestly:
+
+1. **What CoreLink actually does with region pinning**, and which regions are
+   really provisioned.
+2. **What is claimed versus what is served**, so that a buyer, a DPO or a
+   regulator can check us rather than trust us.
+
+## 1. The flag, and which values are real
+
+Every CoreLink tenant carries a `primary_region` value. The six values are a
+closed enum — you cannot pass an arbitrary string. But **the enum being closed
+is not the same as every value being provisioned**, and the earlier version of
+this page conflated the two:
+
+| Value | Geographic area | Provisioned today? | Where the bytes actually are |
+|---|---|---|---|
+| `wnam` | Western North America | **yes** | US R2 (`corelink-cas-prod`), served via `iad` |
+| `enam` | Eastern North America | **yes** | US R2 (`corelink-cas-prod`), served via `iad` |
+| `weur` | Western Europe | **yes** | EU R2 — CAS and AC blobs in physically-EU buckets, served via `lhr` |
+| `apac` | Asia-Pacific | **yes** | `corelink-cas-apac` (Tokyo), served via `nrt`. A *location* hint for latency — R2 offers no APAC residency jurisdiction |
+| `sam` | South America | **no — rejected at signup** | n/a. No Cloudflare SAM region exists |
+| `afr` | Africa | **no — rejected at signup** | n/a. No provisioned colo |
+
+The authoritative list is `PROVISIONED_MACROS` in `worker/src/region-map.ts`.
+`weur` is the only value that carries a *jurisdictional* residency guarantee;
+`apac` is a physical location hint, not a legal one.
+
+## 2. What LGPD Art. 33 means for a CoreLink tenant today
+
+CoreLink processes Brazilian personal data **outside Brazil**, in the US and the
+EU. That is an international transfer under LGPD Art. 33, and it must be handled
+on a transfer basis — not represented as "no transfer occurred".
+
+The basis CoreLink relies on is Art. 33, V (contractual necessity) together with
+the standard clauses in the DPA (`legal/dpa/`), for every category of data:
+workload content, action-cache entries, audit trail, tenant configuration,
+billing detail, payment processing and auth tokens alike. The earlier version of
+this page claimed Art. 33 *caput* — "no international transfer" — for workload
+content, audit trail and tenant config. It cannot: there is no Brazilian storage
+for those categories to stay in.
+
+| Data category | Where it actually is | Basis |
 |---|---|---|
-| `wnam` | Western North America (CA) | PIPEDA, CCPA |
-| `enam` | Eastern North America (US) | CCPA, HIPAA-opt-in |
-| `weur` | Western Europe (NL/DE) | GDPR |
-| `sam` | South America (BR) | LGPD |
-| `apac` | Asia-Pacific (SG) | PDPA, APPI |
-| `afr` | Africa (ZA) | POPIA |
+| Workload content (CAS) | US R2, or EU R2 for a `weur` tenant | Art. 33, V + DPA clauses |
+| Action-cache entries (AC) | US R2 (`corelink-ac-*`), or EU for `weur` | Art. 33, V + DPA clauses |
+| Audit trail | US R2. Append-only chain with a keyed, signed head — **tamper-evident, not immutable** | Art. 33, V + DPA clauses |
+| Tenant config (D1) | Cloudflare D1 — no SAM region exists | Art. 33, V + DPA clauses |
+| Telemetry (pseudonymised) | US/EU; pseudonymisation per LIA in `legal/lia/` | Art. 7 IX (legitimate interest) |
+| Billing detail | Cloudflare D1 | Art. 33, V (contractual) |
+| Payment processing | Stripe (global). CoreLink never sees card data | Art. 33, V + PCI-DSS handling |
+| Auth tokens | Clerk (US). Email and PAT identifiers only | Art. 33, V (contractual) |
 
-For Brazilian residency, the canonical value is `sam`. The closed-enum
-discipline is deliberate: it makes the system inspectable, makes audit
-trails parsable, and makes the legal posture provable rather than asserted.
+**On the audit trail specifically:** it is an append-only chain with a keyed,
+signed head, so tampering is *detected at verify time*. It is **not** immutable
+storage. Cloudflare R2 does not implement Object Lock — the API returns
+`NotImplemented` — so a 7-year WORM retention window is not something CoreLink
+can ship on this substrate, and it is not on a delivery schedule. An earlier
+version of this page described a WORM window as "on the roadmap"; that was still
+misleading, because the platform does not offer the primitive. And an earlier
+version than that claimed we *"cannot delete an audit event even under a court
+order."* We can. A lawful order to delete is technically executable.
 
-## 2. What "data stays in `sam`" actually means
+## 3. Changing the region
 
-When your tenant is pinned to `sam`, the following are physically located
-in the South America (São Paulo) region:
+Region choice happens at signup. `sam` and `afr` are rejected there.
 
-- **Content-addressable storage (CAS)** — the actual blobs you push. R2 bucket
-  `cas-sam` with locationHint `wnam-southamerica-east1`. Cloudflare R2
-  enforces the placement.
-- **Action cache (AC) entries** — the build-graph metadata. R2 bucket
-  `ac-sam`.
-- **Audit trail** — every action your tenant takes, stored in R2 bucket
-  `audit-sam` as an append-only chain with a keyed, signed head
-  (tamper-evident; tampering is detected at verify time). Backed by R2
-  Object-Lock immutable storage with a 7-year WORM retention window is
-  on the roadmap (WI-S09-007).
-- **D1 metadata** — tenant config, ACLs, residency configuration itself.
-  Primary in `sam`, replicas in `sam`.
+**There is no self-service region-migration endpoint served today.** The earlier
+version of this page told customers to `POST /v1/admin/tenant/region-migration`
+and described a 30-day cooldown and dual Privacy-Officer + Compliance approval
+"enforced at the API level, not just procedurally". That path is a design
+documented in `crates/corelink-privacy/src/residency/migration.rs` — a crate
+that is **not in the dependency tree of the shipped `corelink-server` binary**
+(`cargo tree -p corelink-server --edges normal` does not reach it). The route is
+not registered on the served router.
 
-The following are **not** pinned to `sam` by default, and are subject to
-contractual / SCC-based international transfer:
+To change region today, contact support. The move is operational and manual.
 
-- **Billing detail** (Cloudflare D1, region per the tenant's `primary_region`
-  pin) — under Art. 33, V LGPD (contractual necessity for billing) and SCC
-  Modules 2/3 in the DPA.
-- **Payment processing** (Stripe) — under Art. 33, V and PCI-DSS-scoped
-  handling. CoreLink never sees card data; only pseudonymised customer IDs
-  and amounts.
-- **Auth tokens** (Clerk) — under Art. 33, V. Email and PAT identifiers
-  only; not workload content.
+## 4. What you can actually verify
 
-If your contractual obligations to Brazilian data subjects require that
-*even billing detail* stays in Brazil, contact us — this is an enterprise
-DPA amendment, not a default. (Note: Cloudflare has no South-America region for D1/R2, so a Brazil-resident
-billing-detail store is not available on the current substrate — treat this as
-an enterprise DPA amendment to scope explicitly, not a default we can switch on.)
+The earlier version of this page offered four verification layers, and described
+them with the wrong status code, the wrong hostname and a crate name that does
+not exist. A verification instruction that fails is worse than none — it teaches
+you that you checked when you did not. Here is what is actually served.
 
-## 3. How to set the flag
+### 4.1 The cross-region guard is real, and it returns 409 — not 451
 
-At signup, the admin UI presents the six regions with the regulatory note
-shown above. Pick `sam` for Brazilian residency. After signup, changing the
-region requires:
+There **is** a served, fail-closed residency guard, and it works in two layers:
 
-- A formal **region-migration request** (POST `/v1/admin/tenant/region-migration`).
-- **30-day cooldown** between successive migrations.
-- **Dual approval**: Privacy Officer + Compliance review.
+- The edge Worker resolves the tenant's `primary_region` from D1, strips any
+  client-supplied value, fans the request out to that macro's regional Worker,
+  and stamps the trusted header `x-corelink-primary-region`
+  (`worker/src/index.ts`).
+- The container independently re-checks that header against the colo it actually
+  serves (`R2_CAS_REGION`) as a router `layer` that runs **before any handler**,
+  with zero storage I/O on the reject path
+  (`crates/corelink-container/src/routes/residency.rs`, wired at
+  `crates/corelink-container/src/routes.rs:1063`). A mismatch — or a header
+  naming an unprovisioned macro such as `afr` — is rejected.
 
-The cooldown is enforced at the API level, not just procedurally. The dual
-approval is enforced at the API level too. There is no admin-bypass.
+Two corrections to what the earlier text said about this:
 
-## 4. How to verify the flag actually works
+- The rejection status is **`409 residency_violation`**, not
+  `451 Unavailable for Legal Reasons` with a `legal_residency_violation` body.
+  There is no `451` anywhere in `worker/src/`; the 451 mapping is defined in
+  `crates/corelink-privacy/src/residency/error.rs`, in the unlinked crate of §3.
+- The hostname pattern was wrong. Production hostnames are flat: the `prod-sam`
+  route is `sam.corelink-api.humangr.com` (`wrangler.toml`), not
+  `<tenant_id>.<region>.corelink.humangr.com`.
 
-Three independent layers, all of which are auditable:
-
-### 4.1 DNS-level routing
-
-Every request to your tenant lands at `<tenant_id>.<region>.corelink.humangr.com`.
-For a `sam` tenant, that is `<tenant_id>.sam.corelink.humangr.com`. If you point
-your client at a different region's hostname (say,
-`<tenant_id>.weur.corelink.humangr.com`), the server **rejects the request with
-HTTP 451 `Unavailable for Legal Reasons`** and a body like:
-
-```json
-{
-  "error": "legal_residency_violation",
-  "tenant_region": "sam",
-  "request_region": "weur"
-}
-```
-
-This is fail-CLOSED. There is no silent passthrough. There is no "warning"
-header. The request does not execute.
+Note also what the guard does and does not prove. It enforces that a request is
+served by the container for the tenant's macro region. It cannot make a macro
+region exist: for `sam` there is no in-region storage to be routed to, which is
+why signup rejects `sam` outright rather than leaning on this guard.
 
 ### 4.2 Insert-level checks
 
-Even if a routing layer were misconfigured, every write operation
-(CAS PUT, AC PUT, audit emit, billing-events emit) performs a pre-flight
-check comparing the bucket region to the tenant's pinned region. Mismatch
-→ rejection + a `dev.hugr.corelink.residency.write_rejected_cross_region.v1`
-CloudEvent in the `audit-<region>` bucket. The D1 schema also enforces
-this via `CHECK` constraints (defense-in-depth).
+The per-write pre-flight comparison of bucket region against the tenant's pinned
+region, and the
+`dev.hugr.corelink.residency.write_rejected_cross_region.v1` CloudEvent, belong
+to the unlinked `corelink-privacy` crate. Treat them as designed, not as served.
+The guard described in §4.1 is the one that runs; do not count these as a second,
+independent layer in a compliance argument.
 
-### 4.3 The 20k property test
+### 4.3 The property test
 
-The runtime crate `corelink-privacy-residency-enforcement` ships with a
-20,000-case property test that generates random tenant configurations,
-random request patterns, and random failover scenarios — and asserts that
-**zero cross-region leaks** occur. The test runs in CI on every commit and
-in the nightly attestation job. The current pass rate is, mathematically,
-100% (0 leaks across 20,000 × 5 = 100,000 operations).
-
-You can re-run it yourself if you fork:
+There is a real region-pinning property test:
+`crates/corelink-privacy/tests/residency_property_region_pinning_30k.rs`. Run it
+with:
 
 ```bash
-cargo test -p corelink-privacy-residency-enforcement --all-features
+cargo test -p corelink-privacy --test residency_property_region_pinning_30k
 ```
 
-### 4.4 Production verifier
+The earlier text named a crate that **does not exist** in this repository
+(`corelink-privacy-residency-enforcement`), quoted 20,000 cases rather than the
+test's own configured count, and said it "runs in CI on every commit and in the
+nightly attestation job". Neither the crate nor the nightly attestation job
+exists. The `cargo test -p corelink-privacy-residency-enforcement` command
+printed in the earlier version could never have succeeded for anyone who tried
+it.
 
-The script `scripts/verify-lgpd-residency.py` queries R2 + D1 directly
-for a sample of test tenant IDs and confirms that every BR-residency
-tenant's stored object metadata carries only `sam` region tags. It exits
-non-zero with diagnostic output if a violation is found. We run it
-nightly. The output is summarised in the monthly DPO checklist.
+Note the scope limit that follows from §3 and §4.1: the test exercises the
+residency logic **in a crate the served binary does not link**. It is evidence
+about the design, not about production.
 
-## 5. What happens during failover
+### 4.4 The production verifier
 
-This is where most "residency-pinned" stories quietly break. Here is ours.
+`scripts/verify-lgpd-residency.py` exists and runs. It is **not scheduled** —
+no workflow under `.github/workflows/` invokes it. The earlier text said "we run
+it nightly"; we do not. It is an on-demand tool, and its results are only as
+current as the last time someone ran it.
 
-**Within-region failover (default):** if a D1 primary in `sam` fails,
-failover goes to a `sam` replica. If an R2 origin in São Paulo fails,
-Cloudflare's multi-AZ R2 handles it within the same region. No
-cross-region action occurs.
+## 5. Failover
 
-**Catastrophic regional outage:** if the entire `sam` region goes down
-(São Paulo offline, no replicas available), CoreLink does *not*
-automatically fail over to another region. Instead, the customer-facing
-surface returns **HTTP 503 — Regional Residency Constraint**. We hold
-availability hostage to residency, not the other way round.
+**Within-region failover:** handled by Cloudflare inside the region — D1 replica
+promotion, multi-AZ R2. No cross-region action occurs.
 
-A cross-region failover is **possible only with dual approval** (Privacy
-Officer + Compliance) and triggers a logged `legal_emergency` event. This
-is identical to the region-migration approval surface — same code path,
-same audit trail. The 30-day cooldown can be waived under `legal_emergency`
-but only with the dual signature.
+**Regional degradation — reads DO cross regions, automatically.** This is the
+most important correction on this page for anyone building a residency argument.
 
-The 503 default + dual-approval-to-bypass model is by design. LGPD
-Art. 33 §1º violations carry penalties up to 2% of the controller's
-Brazil revenue or BRL 50M per offence; our availability SLO does not.
+The earlier version said CoreLink *"does not automatically fail over to another
+region"*, returns `HTTP 503 — Regional Residency Constraint`, and that a
+cross-region failover is *"possible only with dual approval (Privacy Officer +
+Compliance)"* — *"we hold availability hostage to residency, not the other way
+round."*
 
-## 6. What we hold + where (the short version)
+What the shipped binary actually does
+(`crates/corelink-container/src/routes/failover.rs`, layered in
+`crates/corelink-container/src/routes.rs`): a `RollingMetricsHealthProbe`
+watches this container's own live traffic (5xx rate, p99 latency, consecutive
+failures over a sustained window). When the region is judged degraded:
 
-| Data category | Region for `sam` tenant | Legal basis |
-|---|---|---|
-| Tenant workload content (CAS, AC) | `sam` only | Art. 33 caput (no international transfer) |
-| Audit trail | `audit-sam` append-only chain with signed head (tamper-evident); R2 Object-Lock 7y on roadmap (WI-S09-007) | Art. 33 caput |
-| Tenant config (D1) | `sam` only | Art. 33 caput |
-| Telemetry (Grafana metrics, traces, logs — pseudonymised) | Currently US/EU; pseudonymisation per LIA | Art. 7 IX (legitimate interest, LIA in `legal/lia/`) |
-| Billing detail | Cloudflare D1 (per-tenant `primary_region`) | Art. 33, V (contractual) + SCC Modules 2/3 |
-| Payment processing | Stripe (global) | Art. 33, V (contractual) + PCI-DSS handling |
-| Auth tokens | Clerk (US) | Art. 33, V (contractual) |
+- **Writes** are blocked fail-closed with `503 failover_readonly`, and a
+  `failover.detected` audit event is emitted before the rejection. So the "503"
+  half of the old claim is roughly right, for writes only, and under a different
+  name.
+- **Reads pass through**, stamped with
+  `x-corelink-failover-read-region: <sibling>` and
+  `x-corelink-failover-active: 1`, so the edge Worker — which holds the
+  cross-region Service Bindings — **re-routes the read to the sibling region**.
 
-The full sub-processor analysis (with LGPD posture per vendor) is at
-[sub-processors](/trust/subprocessors). The compliance bundle that
-attests to all of this — including signed sign-off — is referenced from
-the DPA page.
+There is no dual approval on that path, no `legal_emergency` event, and no
+30-day cooldown. It is automatic, and it is a read served from a sibling
+region's storage. The sibling pairs are WNAM↔ENAM and WEUR↔SAM; the APAC colos
+have no sibling, so the layer is inert there.
 
-## 7. If you have stricter requirements
+If your transfer analysis depends on a `weur` tenant's reads never being served
+from outside the EU, **this is the mechanism to assess**, and you should raise it
+with us rather than rely on the withdrawn text above.
 
-If your contract with Brazilian data subjects requires:
+## 6. What we are not building, and what we are
 
-- billing detail in Brazil,
-- telemetry suppression for `sam` tenants,
-- bring-your-own-key (BYOK) with AWS São Paulo / GCP São Paulo / Azure
-  Brazil South / self-hosted HashiCorp Vault in `sam` — planned as
-  Enterprise BYOK with customer-managed KMS, on the roadmap (not yet
-  shipped; the current endpoint returns HTTP 501),
-- a per-tenant residency attestation extract on a recurring cadence,
+Stated plainly, because LGPD Art. 6 III asks for transparency and because the
+previous list mixed the two categories:
 
-these are all available as enterprise DPA amendments except for BYOK
-(which is planned — Enterprise BYOK with customer-managed KMS is on the
-roadmap and not yet shipped). Contact your
-account manager; the legal turnaround for these amendments is currently
-~5 business days.
+**Not available, and not scheduled — platform limits, not backlog:**
 
-## 8. What we are still building
+- **Brazil (`sam`) residency.** Cloudflare has no SAM region for R2 or D1.
+- **R2 Object-Lock / 7-year WORM for the audit trail.** R2 returns
+  `NotImplemented` for Object Lock. The append-only signed chain is what exists.
 
-In the interest of honesty (LGPD Art. 6 III — transparency), here are
-the residency-adjacent things that are currently *not* in the customer-facing
-surface but that exist as compliance commitments:
+**Designed but not served — do not rely on these today:**
 
-- **Admin-UI residency tile** — a dashboard panel showing your tenant's
-  `primary_region`, last 24h request-routing summary, and any 451
-  rejections. Coming in the S-13 admin plane track. Until it ships,
-  request the same data via support (SLA 5 business days).
-- **Self-service residency attestation download** — currently manual
-  via support. Automation tracked at WI-S13-*.
-- **Enterprise BYOK with customer-managed KMS** — planned; the
-  current endpoint returns HTTP 501 and is not yet wired. Tracked on
-  the roadmap.
-- **R2 Object-Lock immutable storage for `audit-sam` (7-year WORM)** —
-  planned (WI-S09-007); today's guarantee is the append-only chain
-  with keyed, signed head described in §2.
+- The `451` residency status mapping, the insert-level cross-region write
+  rejection, and the region-migration endpoint with cooldown and dual approval.
+  All live in `crates/corelink-privacy`, which the shipped binary does not link.
 
-Both are tracked in `specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md`
-§6.2 (mitigation roadmap).
+**Genuinely available:**
+
+- The two-layer cross-region guard of §4.1 — edge fan-out by `primary_region`
+  plus the container-side `409 residency_violation` backstop.
+- EU (`weur`) residency, with CAS and AC blobs in physically-EU R2 buckets.
+- APAC (`apac`) as a **latency** location hint (Tokyo), not a residency
+  jurisdiction.
+- The append-only, signed, tamper-evident audit chain.
+- Enterprise DPA amendments for telemetry suppression and for a recurring
+  residency-attestation extract. Ask your account manager; legal turnaround is
+  around 5 business days.
+
+**Enterprise BYOK with customer-managed KMS** is not shipped. The activation
+endpoint returns `501 byok_not_available`, and the provider integrations are not
+compiled into the released binary.
 
 ---
 
-**Source-of-truth pointers** (commit-pinned):
+**Source-of-truth pointers:**
 
-- Compliance bundle: `specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md`
+- Provisioned region set: `worker/src/region-map.ts` (`PROVISIONED_MACROS`)
+- Bucket bindings per environment: `wrangler.toml`
+- Bucket provisioning and location hints: `scripts/provision-cf-corelink-prod.sh`
+- Residency design (not linked into the served binary):
+  `crates/corelink-privacy/src/residency/`
 - Privacy model §7 (residency): `specs/03_architecture/privacy_model.md`
-- Runtime enforcement: `crates/corelink-privacy-residency-enforcement/`
 - Residency-leak runbook: `specs/_runbooks/RB-DATA-RESIDENCY-LEAK.md`
 - Sub-processor register: `legal/sub-processors.md`

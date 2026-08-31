@@ -4874,38 +4874,101 @@ Cross-ref: a impossibilidade técnica do WORM em R2 já é [B-046] (`NotImplemen
 contra a conta de produção). **Este item não a duplica** — cobre a página LGPD publicada
 e a propagação da afirmação para os instrumentos.
 
+**Fechado 2026-08-31 (PR WP-C).** A página foi reescrita para declarar, em bloco
+`:::danger` no topo, que **residência no Brasil não existe** no CoreLink: a Cloudflare não
+tem região SAM para R2 nem D1, o único bucket com nome `sam` (`corelink-ac-sam`) é
+provisionado com `locationHint=enam`, o binding de CAS do `prod-sam` é o
+`corelink-cas-prod` dos EUA, e o `PROVISIONED_MACROS` do `worker/src/region-map.ts`
+exclui `sam` do signup exatamente por isso. A tabela do Art. 33 passou de *caput* ("sem
+transferência internacional") para Art. 33, V + cláusulas do DPA em todas as categorias.
+
+Quatro afirmações a mais caíram no mesmo reparo, todas medidas, e nenhuma delas estava no
+corpo original do item:
+
+- **A trilha de auditoria não é imutável.** A página falava de WORM "no roadmap"; o R2
+  responde `NotImplemented` a Object Lock ([B-046]) e a primitiva não existe na
+  plataforma. O que existe é a cadeia append-only com cabeça assinada — *tamper-evident*,
+  não imutável.
+- **O `451` não é servido por nada.** Não há `451` em `worker/src/` (controle: `403`
+  aparece 74× e `503` 64× na mesma varredura). O que É servido é um guarda de duas
+  camadas que devolve **`409 residency_violation`**
+  (`crates/corelink-container/src/routes/residency.rs`, ligado em `routes.rs:1063`), com
+  o edge carimbando `x-corelink-primary-region`. A página agora descreve o 409 real em
+  vez de negar o 451 e parar aí.
+- **A crate citada não existe.** A página mandava rodar
+  `cargo test -p corelink-privacy-residency-enforcement --all-features`; esse pacote não
+  está em `crates/` (controle: `ls -d crates/*/` devolve 75 diretórios, e
+  `crates/*residency*` não casa nenhum). O teste real é
+  `crates/corelink-privacy/tests/residency_property_region_pinning_30k.rs`. E a
+  `corelink-privacy` **não é alcançada** por `cargo tree -p corelink-server --edges
+  normal` (controle: a mesma árvore devolve `corelink-privacy-erasure-worker` e
+  `corelink-privacy-pseudonymize`) — junto com a rota
+  `POST /v1/admin/tenant/region-migration`, que só existe como doc-comment nessa crate.
+- **O failover de LEITURA cruza região automaticamente.** A página afirmava que o
+  CoreLink "não faz failover automático para outra região" e "segura a disponibilidade
+  refém da residência". `crates/corelink-container/src/routes/failover.rs` bloqueia
+  **escrita** com `503 failover_readonly` mas deixa a **leitura** passar carimbada com
+  `x-corelink-failover-read-region: <irmão>`, e o edge reroteia. Sem dupla aprovação, sem
+  `legal_emergency`, sem cooldown. Pares: WNAM↔ENAM e WEUR↔SAM.
+
+Esse último ponto é **achado novo** e precisa de item próprio: um tenant `weur` pode ter
+leituras servidas fora da UE por um caminho automático. É matéria de produto e jurídico,
+não de documentação, e este item não o resolve.
+
 ```backlog
 id: B-085
 repo: corelink-server
 owner: owner
-status: open
+status: done
 verify: |
   bash -c 'p=apps/docs/docs/explanation/residency/lgpd-brazil.mdx
-  [ -f "$p" ] || { echo "FALHA: a pagina LGPD sumiu — feche o item ou reescreva-o."; exit 1; }
-  saopaulo=0; grep -qiE "sao paulo|são paulo|cas-sam" "$p" && saopaulo=1
-  lock=0; grep -qiE "object lock|ordem judicial|court order" "$p" && lock=1
-  busketeua=0; grep -A6 "env.prod-sam.r2_buckets" wrangler.toml 2>/dev/null | grep -q "corelink-cas-prod" && busketeua=1
-  soma=$((saopaulo + lock))
-  if [ "$soma" = 0 ]; then echo "FALHA: a pagina nao promete mais Sao Paulo nem Object Lock — feche o item."; exit 1; fi
-  if [ "$busketeua" = 0 ]; then echo "FALHA: prod-sam nao aponta mais para o bucket dos EUA — reavalie o item."; exit 1; fi
-  echo "aberto: pagina promete sao_paulo=$saopaulo object_lock=$lock e prod-sam ainda liga ao corelink-cas-prod"'
+  [ -f "$p" ] || { echo "FALHA: a pagina LGPD sumiu — o reparo nao pode ser verificado."; exit 1; }
+  ndisc=$(grep -ciE "residency is not available|nao esta disponivel" "$p" | tr -d " ")
+  [ "$ndisc" -gt 0 ] || { echo "FALHA: a pagina nao declara mais que a residencia no Brasil NAO existe — o reparo regrediu."; exit 1; }
+  retrat=$(grep -ciE "A lawful order to delete is technically executable" "$p" | tr -d " ")
+  [ "$retrat" -gt 0 ] || { echo "FALHA: a pagina nao retrata mais a imutabilidade a prova de ordem judicial — o reparo regrediu."; exit 1; }
+  fis=0; grep -qiE "physically located in the South America" "$p" && fis=1
+  [ "$fis" = 0 ] || { echo "FALHA: a pagina voltou a afirmar localizacao fisica na America do Sul — o reparo regrediu."; exit 1; }
+  echo "done: a pagina declara a indisponibilidade da residencia no Brasil, retrata a imutabilidade judicial, e nao afirma localizacao fisica na America do Sul"'
 verify-means: |
-  open — a página publicada ainda promete localização em São Paulo ou imutabilidade por
-  Object Lock, E o `prod-sam` ainda liga ao bucket dos EUA. As duas metades juntas são a
-  divergência.
+  done — polaridade INVERTIDA em relação à versão `open`. Agora falha se a página parar
+  de declarar a indisponibilidade, ou se voltar a afirmar localização física na América
+  do Sul ou imutabilidade à prova de ordem judicial. Deixar a polaridade `open` passaria
+  no PR do reparo e vermelharia o merge seguinte.
 
-  Vira DRIFTED por qualquer um dos dois reparos legítimos: corrigir a página (barato,
-  imediato, e é o que a realidade permite hoje), ou provisionar de fato armazenamento em
-  São Paulo com WORM (caro, e hoje impossível em R2 — ver [B-046]).
+  Duas das três metades são **controle do instrumento**: em vez de só verificar a ausência
+  de strings — que também seria satisfeita por uma página vazia, deletada, ou reescrita em
+  outro idioma — elas exigem a presença POSITIVA da declaração de indisponibilidade e da
+  frase de retratação. Ausência e alvo-sumido deixam de compartilhar saída.
 
-  O que NÃO decide, e admito: a propagação da mesma afirmação para o DPA executado, os
-  avisos de privacidade e os dois templates para reguladores. Esses arquivos são
-  instrumentos jurídicos e a correção deles é de [B-087] junto com o resto da
-  reconciliação — não porque sejam menos graves, mas porque exigem revisão jurídica e não
-  cabem no mesmo PR de documentação.
+  A metade da retratação é positiva por uma razão medida, não por gosto: a primeira versão
+  deste comando reprovava por ausência da string "cannot delete an audit event", e o
+  próprio parágrafo que RETRATA a promessa a cita entre aspas para dizer que era falsa.
+  Um comando que proíbe a string proíbe a retratação junto. Gateio a frase afirmativa
+  ("A lawful order to delete is technically executable"), que a promessa falsa não pode
+  coexistir com.
 
-  Owner: corrigir texto publicado a titulares e reguladores não é decisão de engenharia.
-last-verified: 2026-08-30
+  Não gateio mais o `prod-sam` → `corelink-cas-prod` do `wrangler.toml`. Ele continua
+  verdadeiro e continua sendo a razão do item, mas com a página corrigida ele deixou de
+  ser uma divergência: é apenas o fato que a página agora relata.
+
+  O que NÃO decide, e admito, em quatro pontos:
+
+  1. A propagação da afirmação de Object Lock para o DPA executado
+     (`legal/dpa/v1.0.0.en-US.md:110`), para os avisos de privacidade e para os dois
+     templates de notificação de violação endereçados à DPC irlandesa e à ANPD. É de
+     [B-087], e exige revisão jurídica.
+  2. O sign-off Legal + DPO que o próprio front-matter da página declara `pending`. O
+     texto agora é verdadeiro; ser verdadeiro não é o mesmo que estar aprovado.
+  3. Se algum tenant `sam` foi criado antes de o `PROVISIONED_MACROS` excluí-lo. O
+     comando lê a página, não o D1 de produção.
+  4. O achado novo levantado durante o reparo — o failover de LEITURA cruza região
+     automaticamente (`503 failover_readonly` só para escrita; leitura passa com
+     `x-corelink-failover-read-region: <irmão>` e o edge reroteia), com os pares
+     WNAM↔ENAM e WEUR↔SAM. A página agora o descreve honestamente, mas a questão de
+     transferência internacional que ele levanta para um tenant `weur` é matéria de
+     produto e jurídico, não de documentação. Precisa de item próprio.
+last-verified: 2026-08-31
 ```
 
 ### B-086 — um único D1 global atende as cinco regiões, enquanto o instrumento assinado nomeia o D1 entre os serviços fixados por tenant
