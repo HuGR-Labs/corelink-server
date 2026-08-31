@@ -1031,11 +1031,7 @@ mod tests {
                 want_write,
                 "{label}: cache-WRITE bit"
             );
-            assert_eq!(
-                bits.has(SCOPE_ADMIN),
-                want_admin,
-                "{label}: admin bit"
-            );
+            assert_eq!(bits.has(SCOPE_ADMIN), want_admin, "{label}: admin bit");
 
             // 3. It canonicalizes into the persisted CHECK domain (a
             //    CHECK-valid row) — and `cas:rw` persists as `read-write`.
