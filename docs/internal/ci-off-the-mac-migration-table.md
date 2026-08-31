@@ -170,11 +170,22 @@ elas.
 **Disco — o risco real.** 18 GB por box. Medido na sonda: **um único crate**
 (`corelink-hash`) leva `~/.cargo` de 415 M → **1002 M** e cria `target/` de **996 M** —
 **~1 GB por crate**, disco em 5,1 G usados / 13 G livres depois. **Uma build de workspace
-inteiro NUNCA foi medida nesta box.** O repo tem ~73 crates. Seis lanes fazem exatamente
-isso:
+inteiro NUNCA foi medida nesta box.** O repo tem ~73 crates. **Cinco** lanes fazem
+exatamente isso:
 
-`cas_foundation` · `coverage` · `codeql` · `nightly` · `workspace-lint` ·
-`welcome-first-pr`
+`cas_foundation` · `coverage` · `codeql` · `nightly` · `workspace-lint`
+
+> **Correção — eram seis, e a sexta era falso positivo meu.** Eu tinha listado
+> `welcome-first-pr` aqui. Ele **não roda cargo nenhum**: seu único passo é um `run:`
+> que posta um comentário, e as strings `cargo build --workspace` / `cargo clippy
+> --workspace` / `cargo test --workspace` estão **dentro do texto da saudação** ao
+> contribuidor (linhas 89–90), citando o CONTRIBUTING.
+>
+> A varredura que me enganou tirava **comentários** (`sed 's/#.*//'`) e depois grepava
+> `cargo …`. Tirar comentário não é tirar **conteúdo de string YAML** — e um workflow
+> que fala *sobre* comandos parece, para o grep, um workflow que os *executa*.
+> **Grepe o identificador que o sistema consome, não o que se parece com ele:** aqui o
+> que o sistema consome é um passo `run:`, e ele tem exatamente um.
 
 **Regra combinada com a guardiã: em série, uma por PR, `df -h` antes e depois, e a
 PRIMEIRA execução é EXPERIMENTO, não migração — o número vai para ela antes de a segunda
@@ -354,7 +365,7 @@ medição do zero com controle ao lado.
 | **G-A3** | 6 | 9 | mesma troca, mas **exercem token de escrita** — agrupado por risco | pronto |
 | **G-B** | 7 | 16 | o path darwin colado à mão | ⛔ espera o PR de imagem (`nightly` + `cargo-fuzz`) |
 | **G-H** | 2 | 2 | `semgrep` + `mutation-nightly` — cada um com uma falha própria a investigar antes | investigar |
-| **G-D** | 6 | — | **disco de 18 GB não medido** — em série, uma por PR, `df -h`, a 1ª é experimento | serial |
+| **G-D** | 5 | — | **disco de 18 GB não medido** — em série, uma por PR, `df -h`, a 1ª é experimento | serial |
 
 Nenhum grupo precisa ser partido por tamanho. G-A1 são 20 arquivos e um diff de 20
 linhas.
