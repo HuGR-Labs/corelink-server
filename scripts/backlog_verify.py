@@ -264,6 +264,37 @@ def main() -> int:
             mismatches.append(f"  line {line}: block `id: {block_id}` has no `### B-…` heading above it")
         elif prior[-1] != block_id:
             mismatches.append(f"  line {line}: heading says {prior[-1]}, block says id: {block_id}")
+    # The loop above walks BLOCKS and finds their heading. It is therefore blind
+    # to the reverse failure: a heading whose block LOST ITS FENCE — a conflict
+    # resolution that ate the ```backlog line, or the `id:` inside it. That item
+    # simply stops existing for every check in this file, and the gate reports
+    # all-green over the survivors. Observed 2026-08-31: 129 headings, 128 parsed
+    # blocks, `confirmed=128, drifted=0, broken=0`. The item would have merged
+    # green and vanished from the register.
+    #
+    # An item that is missing is indistinguishable from an item that is malformed
+    # unless something compares the two populations. This does that.
+    block_ids = set()
+    for m in BLOCK_RE.finditer(text):
+        try:
+            data = yaml.load(m.group(1), Loader=_NoDuplicateKeysLoader) or {}
+        except yaml.YAMLError:
+            continue
+        if isinstance(data, dict) and re.fullmatch(r"B-\d+", str(data.get("id", ""))):
+            block_ids.add(str(data["id"]))
+    orphan_headings = [h for _, h in headings if h not in block_ids]
+    if orphan_headings:
+        print(
+            "FATAL: heading(s) sem bloco ```backlog parseavel: "
+            + ", ".join(sorted(set(orphan_headings)))
+            + "\nO item existe como titulo e NAO existe para nenhuma verificacao deste\n"
+            "arquivo — some do portao sem que o portao reclame, porque ele conta o que\n"
+            "consegue parsear e nada compara esse numero com quantos titulos ha.\n"
+            f"(titulos: {len(headings)}, blocos com id valido: {len(block_ids)})",
+            file=sys.stderr,
+        )
+        return 2
+
     if mismatches:
         print(
             "FATAL: a heading and its block disagree about which item they are.\n"
