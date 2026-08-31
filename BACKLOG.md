@@ -2565,10 +2565,13 @@ that it also shows main-side changes.
 id: B-048
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  grep -qE 'git fetch --no-tags --depth=1 origin "\$BASE_REF"' .github/workflows/mutation-pr.yml
+  ! grep -qE 'git fetch --no-tags --depth=1 origin "\$BASE_REF"' .github/workflows/mutation-pr.yml
 verify-means: |
+  done — INVERTED into a regression guard when #1462 fixed the world: it now
+  passes while the depth-1 base fetch is ABSENT, and goes DRIFTED if anyone
+  reintroduces it. The original polarity was
   open — fails while the depth-1 base fetch is still the thing feeding a
   three-dot diff in mutation-pr.yml. Closes when the fetch is deepened (or the
   diff no longer needs a merge base). The check is deliberately about the FETCH,
@@ -6929,5 +6932,65 @@ verify-means: |
   each session writes its own throwaway and re-meets this hazard. Closes when a
   shared tool exists that is safe to run twice. It does NOT prove any concept
   is currently double-shifted; that is what content verification is for.
+last-verified: 2026-08-30
+```
+
+### B-125 — the audit chain seals 200 rows/hour, so evidence lags the event by hours
+
+Measured against production D1 (`d64742ea`) on 2026-08-30, with a control query
+beside every count so a zero means absence and not a broken instrument. Full
+method in `reports/go-live/D-1-audit-trail.md`.
+
+| measure | value |
+|---|---|
+| rows sealed per hour, six consecutive hours | **200, 200, 200, 200, 200, 200** |
+| seal latency, last 24 h (n=2692) | min **12 s**, mean **1 h 28 min**, max **5 h 13 min** |
+| unsealed backlog | **4 243** of 77 935 |
+| oldest unsealed row | **6.8 h** |
+| arrivals over the same window | 86, 300, 2, 30, 88, 92 (mean ≈ 100/h) |
+
+Six identical integers is a hard cap, not a load curve. The drain currently
+outpaces the mean arrival rate, so the backlog shrinks — but the entire margin is
+a factor of two against a bursty process whose **observed peak of 300/h already
+exceeds the ceiling**. A sustained burst accumulates and then drains only at
+200/h.
+
+**What the customer gets:** an event is not tamper-evident when it happens. It
+becomes so ~1.5 h later on average, and in the observed tail **over 5 h** later.
+Anything read from `audit_outbox` inside that window is present but outside the
+chain.
+
+**Not decided here, deliberately:** where the 200 comes from. It is not a literal
+in `routes/audit_drain.rs` — grep returned 0 there against a control of 5 hits
+for another string in the same file, so the absence is real; the value is passed
+by the caller and the caller was not identified. Guessing it would be the kind of
+claim this campaign keeps retracting.
+
+**What IS settled and should stop being re-litigated:** the chain head signing is
+correct and live — 365 of 365 heads carry an Ed25519 signature, and the seed is a
+**write-only Cloudflare secret** (`ERASURE_ATTESTATION_SEED_HEX`, reused by
+design), with **zero** occurrences in `wrangler.toml` against a control of 5. An
+earlier claim of a plaintext seed in the repo was mine, made from memory without
+measuring, and is retired.
+
+Relates to [B-054] (the per-link hash is un-keyed, so the head signature carries
+the whole tamper-evidence guarantee — which makes seal LATENCY the window in
+which there is no guarantee at all).
+
+```backlog
+id: B-125
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  grep -q 'fn resolve_seed' crates/corelink-container/src/routes/audit_drain.rs
+verify-means: |
+  open — a STRUCTURAL pin, not a measurement: it passes while the drain still
+  exists in its current shape. It deliberately does NOT assert a throughput
+  number, because a verify that greps for "200" would go green the moment
+  someone changed the constant without changing the latency, and a verify that
+  queried prod would make the gate depend on the network. The real check is
+  re-running the queries in reports/go-live/D-1-audit-trail.md; this line only
+  guarantees the item cannot be silently closed while the drain is untouched.
 last-verified: 2026-08-30
 ```
