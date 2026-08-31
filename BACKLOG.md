@@ -10093,8 +10093,22 @@ acumulando trabalho que ninguém mais precisa fazer, que foi exatamente o que o 
 
 **A escolha de escopo, fixada para o portão não virar folclore:** a regra é `status == "done"`,
 **não** `status != "open"`. `parked` fica **de fora** de propósito — um item parqueado
-justamente porque espera o owner é legítimo, e a leitura estrita o proibiria. O `verify`
-abaixo prova a escolha pelos dois lados: `done`+`owner` recusa, `open`+`owner` passa.
+justamente porque espera o owner é legítimo, e a leitura estrita o proibiria. `parked` **é** o
+estado que significa *"esperando alguém de fora"*, então cruzá-lo com `owner:` puniria o uso
+correto. O `verify` abaixo prova a escolha pelos quatro lados: `done`+`owner` recusa;
+`done`+`tl`, `open`+`owner` e `parked`+`owner` passam — a última sonda existe justamente para
+**pinar a exclusão como predicado**, para que ninguém "conserte" o que é intencional.
+
+**Segunda metade, acrescentada 2026-08-31 — o `verify` agora lê o `BACKLOG.md` VIVO.** O que
+estava escrito acima permanece verdadeiro e é a razão de o predicado ser a sonda: um `verify`
+que **só** contasse violações teria ficado verde na árvore onde a contagem era zero. Mas a
+recíproca também vale, e era a metade que faltava: o `verify` anterior montava as sondas num
+`mktemp -d` e **nunca abria o arquivo vivo** — era estruturalmente incapaz de contar violações,
+e foi exatamente assim que ficou verde enquanto as **cinco** existiam. O portão do #1523
+impede violação **nova**; nada olhava para as **existentes**. São coisas diferentes, e só uma
+estava consertada. Agora o predicado exige **as duas**: as quatro sondas *e* zero violações no
+arquivo real — contadas com o parser do próprio `backlog_verify`, sob um controle positivo que
+recusa acreditar em "zero" antes de ver ≥ 100 itens.
 
 ```backlog
 id: B-147
@@ -10102,66 +10116,138 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  bash -c 's=scripts/backlog_verify.py
-  [ -f "$s" ] || { echo "FALHA: $s sumiu — reavalie o item."; exit 1; }
-  d=$(mktemp -d) || exit 1; trap "rm -rf $d" EXIT
-  hoje=$(date +%Y-%m-%d)
-  cerca=$(printf "\140\140\140")
-  mk() {
-    printf "### B-001 — sonda\n\n"
-    printf "%sbacklog\n" "$cerca"
-    printf "id: B-001\nrepo: corelink-server\nowner: %s\nstatus: %s\n" "$1" "$2"
-    printf "verify: |\n  true\n"
-    printf "verify-means: |\n  sonda do B-147\n"
-    printf "last-verified: %s\n" "$hoje"
-    printf "%s\n" "$cerca"
-  }
-  mk owner done > "$d/viola.md"
-  mk tl    done > "$d/ok.md"
-  mk owner open > "$d/aberto.md"
-  v=$(python3 "$s" --file "$d/viola.md"  --format json 2>&1)
-  o=$(python3 "$s" --file "$d/ok.md"     --format json 2>&1)
-  a=$(python3 "$s" --file "$d/aberto.md" --format json 2>&1)
-  for x in "$v" "$o" "$a"; do
-    case "$x" in
-      *"\"id\": \"B-001\""*) ;;
-      *) echo "FALHA: sonda nao foi parseada (--file mudou de contrato?) — saida: $(printf "%s" "$x" | tr "\n" " " | cut -c1-200)"; exit 1;;
-    esac
-  done
-  case "$v" in
-    *BROKEN*) ;;
-    *) echo "REGRESSAO: done+owner:owner passou sem BROKEN — o cruzamento sumiu de validate_schema."; exit 1;;
-  esac
-  case "$o" in
-    *BROKEN*) echo "FALHA: done+owner:tl foi recusado — o portao ficou largo demais e recusa o estado CERTO."; exit 1;;
-  esac
-  case "$a" in
-    *BROKEN*) echo "FALHA: open+owner:owner foi recusado — o portao mordeu o caso legitimo (item aberto que espera o humano)."; exit 1;;
-  esac
-  echo "done: done+owner:owner => BROKEN; done+owner:tl e open+owner:owner passam. Escopo fixado em done; parked FORA."'
+  python3 - <<'PY'
+  # Roda como `sh -c` a partir do REPO_ROOT (`run_verify`, shell=True). Depende de
+  # `sh` + `python3` e de NADA MAIS -- sem mktemp/date/tr/cut. O runner self-hosted
+  # ja provou nao ter `dig` (B-041); `python3` e dependencia dura do proprio
+  # backlog_verify.py, entao e o unico interpretador garantido nos dois ambientes.
+  import datetime, os, subprocess, sys, tempfile
+  
+  S, B, FENCE = "scripts/backlog_verify.py", "BACKLOG.md", chr(96) * 3
+  
+  def falha(msg):
+      print("FALHA: " + msg)
+      raise SystemExit(1)
+  
+  for f in (S, B):
+      if not os.path.isfile(f):
+          falha(f + " sumiu -- reavalie o item.")
+  
+  tmp = tempfile.mkdtemp()
+  hoje = datetime.date.today().isoformat()
+  
+  def sonda(owner, status):
+      corpo = (
+          "### B-001 -- sonda\n\n"
+          + FENCE + "backlog\n"
+          + "id: B-001\nrepo: corelink-server\nowner: %s\nstatus: %s\n" % (owner, status)
+          + 'verify: "true"\n'
+          + "verify-means: sonda do B-147\n"
+          + "last-verified: %s\n" % hoje
+          + FENCE + "\n"
+      )
+      p = os.path.join(tmp, "%s-%s.md" % (status, owner))
+      with open(p, "w") as fh:
+          fh.write(corpo)
+      r = subprocess.run([sys.executable, S, "--file", p, "--format", "json"],
+                         capture_output=True, text=True)
+      saida = (r.stdout or "") + (r.stderr or "")
+      # anti-vacuidade: "nao achei BROKEN" e "nao consegui rodar a sonda" sao a mesma
+      # string vazia. Exigir o id de volta separa as duas.
+      if '"id": "B-001"' not in saida:
+          falha("a sonda %s+%s nao foi parseada (--file mudou de contrato?) -- saida: %s"
+                % (status, owner, " ".join(saida.split())[:200]))
+      return "BROKEN" in saida
+  
+  # ---- LADO 1: o portao existe e tem o escopo certo (o que a versao anterior media)
+  if not sonda("owner", "done"):
+      falha("REGRESSAO: done+owner:owner passou sem BROKEN -- o cruzamento sumiu de validate_schema.")
+  # As tres negativas sao o que impede um portao LARGO de passar por consertado.
+  if sonda("tl", "done"):
+      falha("done+owner:tl foi recusado -- o portao ficou largo demais e recusa o estado CERTO.")
+  if sonda("owner", "open"):
+      falha("open+owner:owner foi recusado -- o portao mordeu o caso legitimo (item aberto que espera o humano).")
+  if sonda("owner", "parked"):
+      falha("parked+owner:owner foi recusado -- `parked` esta FORA da regra de proposito "
+            "(um item parqueado porque espera o owner e legitimo). Ver #1523.")
+  
+  # ---- LADO 2: o BACKLOG.md VIVO nao carrega violacao (o que a versao anterior NAO media)
+  # Usa o parser do PROPRIO backlog_verify: dois lexers podem discordar; um so, nao.
+  sys.path.insert(0, "scripts")
+  import backlog_verify as bv
+  itens = bv.parse(open(bv.BACKLOG_PATH).read())
+  # Controle positivo, duas clausulas: "nao achei violacao" e "nao sei ler o arquivo"
+  # sao a MESMA saida de um parser. O portao nao pode ficar verde por ter lido zero item.
+  if len(itens) < 100:
+      falha("o contador viu %d itens no BACKLOG.md -- a varredura nao esta enxergando os "
+            "blocos; instrumento, nao achado." % len(itens))
+  if not any(i.raw.get("id") == "B-147" for i in itens):
+      falha("o parser nao achou o proprio B-147 no BACKLOG.md -- instrumento, nao achado.")
+  viola = [i.raw.get("id", "?") for i in itens
+           if i.raw.get("status") == "done" and i.raw.get("owner") == "owner"]
+  if viola:
+      falha("%d item(ns) `done` carregam owner: owner no BACKLOG.md VIVO: %s"
+            % (len(viola), ", ".join(viola)))
+  
+  print("done: o cruzamento recusa done+owner:owner e aceita done+tl, open+owner e "
+        "parked+owner; e os %d itens VIVOS tem 0 violacoes." % len(itens))
+  PY
 verify-means: |
   **Polaridade `done` — INVERTIDA em relação à versão `open` deste item.** Sai 0 enquanto o
-  cruzamento existir; sai 1 no instante em que `done`+`owner: owner` voltar a passar.
+  cruzamento existir **e** o arquivo vivo estiver limpo; sai 1 no instante em que qualquer um
+  dos dois deixar de valer.
 
-  **Mede a presença do portão, não a ausência de violação.** A distinção é a razão de ser do
-  item, e o conserto provou o ponto: a contagem viva que o corpo antigo dava como zero era
-  **cinco**. Um `verify` que contasse violações teria ficado verde na árvore errada.
+  **Mede os DOIS lados, e antes media só um.** A versão anterior montava três sondas num
+  `mktemp -d` e perguntava se o *script* recusava a combinação — **nunca abria o `BACKLOG.md`
+  vivo**. Era estruturalmente incapaz de contar violações, e foi exatamente assim que ficou
+  verde enquanto **cinco** itens (`B-031`, `B-041`, `B-042`, `B-043`, `B-085`) as carregavam.
+  O portão do #1523 impede violação **nova**; sem esta segunda metade, nada olhava para as
+  **existentes**. São coisas diferentes e só uma estava consertada.
 
-  **Três sondas, e as duas negativas são o que impede o portão largo.** `done`+`tl` e
-  `open`+`owner` **têm** de passar: o primeiro é o estado correto depois do conserto, o
-  segundo é o caso legítimo (item aberto que de fato espera o humano). Um portão que
-  reprovasse `owner: owner` em geral, ou `!= open`, seria pego por elas.
+  **LADO 1 — o portão existe e tem o escopo certo.** Quatro sondas. `done`+`owner` ⇒ BROKEN.
+  As outras três são negativas e existem para que um portão **largo** não passe por
+  consertado: `done`+`tl`, `open`+`owner` e `parked`+`owner` **têm** de passar.
 
-  **Anti-vacuidade:** sonda não parseada ⇒ falha alta com a saída recortada, nunca "done". Os
-  `case` substituem `grep -q` de propósito — não há pipeline, logo não há SIGPIPE nem exit
-  code escondido.
+  **LADO 2 — o arquivo vivo.** Conta itens `done` com `owner: owner` no `BACKLOG.md` real,
+  **usando o parser do próprio `backlog_verify`** (`bv.parse`) em vez de um segundo lexer:
+  dois parsers podem discordar sobre o que é um bloco, um só não pode. O escopo espelha o do
+  portão — `done` apenas — porque uma contagem mais larga que a regra vermelharia um
+  `parked`+`owner` legítimo.
 
-  **Medido pelos dois lados (2026-08-31):** com o cruzamento em `validate_schema`, sai
-  *"done: done+owner:owner => BROKEN; …"* e exit 0. Removendo as três linhas do cruzamento
-  numa cópia, sai *"REGRESSAO: done+owner:owner passou sem BROKEN"* e exit 1.
+  **`parked` está FORA da regra de propósito, e a quarta sonda existe para pinar isso.**
+  A decisão é do #1523 e está certa: `parked` **é** o estado que significa "esperando alguém
+  de fora", então cruzá-lo com `owner:` puniria o uso correto. A sonda `parked`+`owner` ⇒
+  passa transforma a decisão em predicado, para que ninguém a "conserte" por engano — quem
+  quiser mudá-la tem de mudar a sonda, e aí é uma escolha, não um deslize.
 
-  O que ele **não** decide: se `parked` deveria entrar na regra. A escolha (`done` só) está
-  fixada aqui e no comentário do script, e mudá-la exige mudar a sonda.
+  **Anti-vacuidade, três cláusulas.** (1) Sonda não parseada ⇒ falha alta com a saída
+  recortada, nunca silêncio: *"não achei BROKEN"* e *"não consegui rodar a sonda"* são a mesma
+  string vazia, e exigir o `"id": "B-001"` de volta separa as duas. (2) O contador exige ver
+  **≥ 100 itens** antes de acreditar em "zero violações" — é o que impede o portão de ficar
+  verde por ter lido **zero** item, que é a vacuidade que já produziu 32 ausências fantasmas
+  aqui ([B-121]). (3) Controle positivo nominal: o parser tem de achar o **próprio B-147**.
+
+  **Dependências, medidas contra o runner e não assumidas:** `sh` + `python3`, e nada mais.
+  A versão anterior usava `bash -c` com `mktemp`, `date`, `tr` e `cut`; esta não usa nenhum —
+  o runner self-hosted já provou não ter `dig` ([B-041]), e `python3` é dependência dura do
+  próprio `backlog_verify.py`, logo é o único interpretador garantido nos dois ambientes.
+  Rodado sob `/bin/sh -c` (o mesmo `shell=True` de `run_verify`), não só sob o shell local.
+
+  **Medido pelos dois lados (2026-08-31), mutando por CONTEÚDO e contando ocorrências
+  antes/depois — o número mudou em todas as mutações:**
+
+  | mutação | resultado |
+  |---|---|
+  | árvore limpa | `CONFIRMED` |
+  | `B-031` plantado `done`+`owner: owner` no `BACKLOG.md` **vivo** (12→13 ocorrências) | `DRIFTED` — *"1 item(ns) `done` carregam owner: owner no BACKLOG.md VIVO: B-031"* |
+  | cruzamento de `validate_schema` trocado por `if False:` (1→0) | `DRIFTED` — *"REGRESSAO: done+owner:owner passou sem BROKEN"* |
+  | predicado alargado para `owner == "owner"` sozinho | `DRIFTED` — *"open+owner:owner foi recusado"* |
+  | escopo alargado para `!= "open"` | `DRIFTED` — *"parked+owner:owner foi recusado … Ver #1523"* |
+  | arquivo reduzido a 3 itens (167→3) | `DRIFTED` — *"o contador viu 3 itens … instrumento, nao achado"*, **não** "0 violações" |
+
+  O que ele **não** decide: se `parked` deveria entrar na regra. A escolha está fixada aqui,
+  na sonda, na célula do `test_backlog_verify.sh` e no comentário do script; mudá-la exige
+  mudar os quatro.
 last-verified: 2026-08-31
 ```
 
