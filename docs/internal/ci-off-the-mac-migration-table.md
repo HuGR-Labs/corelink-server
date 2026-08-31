@@ -3,10 +3,15 @@
 Medido em **2026-08-31** contra `origin/main` @ `af42b328`. Esta página é a
 **decisão**; os PRs são execução. Nada em `.github/workflows/` foi editado antes dela.
 
-> **Revisão 2 (2026-08-31T04:0xZ) — eu me corrigi.** A revisão 1 afirmava que `gh`
-> estava ausente da frota. **Estava errada, e o erro era do instrumento, não do repo.**
-> Ver §1.1. A correção elimina uma classe inteira de bloqueio e muda a partição de
-> 27/7/6/5 para **33/7/5**.
+> **Revisão 2 (2026-08-31 ~04:10Z) — eu me corrigi, duas vezes.** A revisão 1 afirmava
+> que `gh` e `docker` estavam ausentes da frota. **As duas afirmações estavam erradas, e
+> o erro era do instrumento, não do repo:** a sonda que li é anterior aos bakes. Ver §1.1
+> e §1.3. Consequências: a partição vai de 27/7/6/5 para **33/7/5**, e duas das três
+> «exceções hosted» viram **experimento pendente** em vez de bloqueio.
+>
+> A revisão 2 também mede a premissa do pacote inteiro, que ninguém tinha medido: **o
+> label `corelink` não toca nenhum Mac** (§1.0). Se tocasse — e um documento interno
+> afirmava que tocava — este WP não moveria nada.
 
 ---
 
@@ -38,7 +43,31 @@ execuções, última verde 2026-08-31 — a consulta enxerga.
 | OS | Ubuntu 24.04.4 LTS x86_64 |
 | Rust | `1.91.1` + `1.96.0` (default), ambos **linux-gnu**. `wasm32` só no 1.91.1 |
 | PRESENTE | `cargo` `rustc` `rustup` `clippy` `rustfmt` `sccache 0.17` `cargo-deny 0.19.8` `cargo-audit 0.22.2` · `node 22.23.2` `npm 10.9.8` `pnpm 10.32.1` `npx` · `python3 3.12.3` (+ PyYAML, requests, jsonschema) · `jq` `git` `curl` `unzip` `tar` `make` `cc 13.3` `ld 2.42` `apt-get` `sudo` · `clw 0.1.4` · **`gh 2.97.0`** (§1.1) |
-| AUSENTE | **`docker`** · `go` · `java` · `pip3` · `wget` · **nenhum toolchain `nightly`** · **nenhum `llvm-tools`** · **`cargo-fuzz` não instalado** |
+| AUSENTE | `go` · `java` · `pip3` · `wget` · **nenhum toolchain `nightly`** · **nenhum `llvm-tools`** · **`cargo-fuzz` não instalado** |
+| `docker` | **shim, não daemon** — `docker-shim.sh` → `nerdctl`/containerd/BuildKit, assado em `corelink-runners`#459 (2026-08-13). Ver §1.3 |
+
+### 1.0 O alvo é mesmo fora do Mac? Sim — medido no registro de runners
+
+Antes de qualquer outra coisa, a premissa do pacote inteiro. `gh api
+/repos/HuGR-Labs/corelink-server/actions/runners`, 2026-08-31 ~04:05Z:
+
+| | |
+|---|---:|
+| runners com o label **`corelink`** | **27** |
+| …dos quais macOS | **0** |
+| Mac builders `corelink-builder-1…5` | 5 — labels `self-hosted, macOS, X64, mac, corelink-builder`, **nenhum com `corelink`** |
+
+**Os dois pools são disjuntos por label: `runs-on: corelink` não pode cair no Mac.**
+Isso **refuta** a nota de 2026-08-17 em `ci-runner-fabric-box.md` («o label `corelink`
+é um pool MISTO … o scheduler escolhe qualquer um»), que, se fosse verdade, invalidaria
+este WP inteiro. Corrigido lá em PR **#1495**.
+
+*Alcance declarado:* é o registro **de repositório**; o de organização devolve 403 para
+o token em uso. Os 5 Macs e os 27 da frota aparecem no nível de repo, então o pool contra
+o qual este repo agenda é o medido.
+
+**E a contenção, na mesma leitura: os 5 de 5 Macs estavam `online` E `busy`.** É essa a
+fila que este pacote drena.
 
 ### 1.1 ⚠️ A correção: `gh` ESTÁ na imagem, e eu disse o contrário
 
@@ -73,6 +102,29 @@ imagem para `gh`, e a frase em `api-reference-sync.yml:64` está **correta**.
 verdade presente, compare a data dela com a data da última mudança do que ela mediu.*
 Nesta frota a imagem «muda sem aviso» — o próprio `ci-runner-fabric-box.md` §7 diz
 isso, e foi assim que a Rust foi de 1.91.1 para 1.96.0 em dois dias.
+
+### 1.3 `docker`: existe um shim, e isso NÃO é licença para mover `smoke-install`
+
+Mesma armadilha de data, segundo caso. A sonda de 2026-08-11T03:18Z diz `docker
+ABSENT`; um **drop-in** `docker` foi assado em `corelink-runners`#459 (`b6d75be`,
+**2026-08-13**), dois dias depois. É `docker-shim.sh` fazendo `exec nerdctl` sobre
+containerd + BuildKit — **não** é um daemon Docker. O comentário em
+`cargo-deny.yml:102` («the `corelink` box image ships no docker at all») está **stale**
+pela mesma razão.
+
+Prova contemporânea de que build de imagem funciona na frota:
+`container-build-push-prod.yml` (`runs-on: corelink`) verde em **2026-08-31T00:39** —
+**mas ele chama `buildctl` DIRETO** (`--frontend dockerfile.v0`), não passa pelo shim.
+
+**O que NÃO está estabelecido, e eu não vou fingir que está:** se
+`docker/build-push-action` (que quer um builder `buildx`) e o `smoke-install`
+(«real Docker daemon required») funcionam **através** do shim. Ninguém rodou.
+Portanto:
+
+- `smoke-install` e `cosign-sign` **saem de «fica hosted porque não há docker»** e
+  entram em **«experimento pendente»**. Ver §5.
+- **Um experimento, não um PR de migração**: dispare cada um uma vez em
+  `runs-on: corelink` e leia o resultado. Barato, e decide os dois.
 
 ### 1.2 O que a imagem realmente NÃO tem
 
@@ -267,9 +319,9 @@ mais fácil de errar do lote.
 | `codeql.yml` | 1 | `ubuntu-latest` | `corelink` (**G-D**) | `cargo build --workspace` + banco CodeQL. Última execução **falhou** (2026-08-30) — investigar antes, não junto. Disco. |
 | `semgrep.yml` | 1 | `ubuntu-latest` | `corelink` (**G-H**) | python3 presente; `pip3` **ausente** → binário pinado. Última execução falhou (2026-08-10) — **investigar antes de mover.** |
 | `ffi-matrix-ci.yml` | 5 | `ubuntu-latest` | — | `go` ausente; `actions/setup-go` resolveria. **Mas esta lane nunca passou** (parked, `workflow_dispatch`-only). Migrar não conserta isso. **Item de backlog, não PR.** |
-| `cas-canary.yml` | 1 | `ubuntu-latest` | **fica hosted** | O job irmão já está em `corelink`. Este existe **para sair da nossa rede**: `# datacenter IP genuinely outside our provider`. Movê-lo apaga o que o canário mede. **Exceção nomeada nº 1.** |
-| `smoke-install.yml` | 1 | `ubuntu-latest` | **fica hosted** | `installer smoke (real Docker daemon required)`. **`docker` ausente na frota** (sonda + `cargo-deny.yml:102`). **Exceção nomeada nº 2.** |
-| `cosign-sign.yml` | 2 | `ubuntu-latest` | **veredito, não migração** | `docker/build-push-action` → precisa de daemon. Waiver de custo. **E 0 execuções na vida** — §6. **Exceção nomeada nº 3.** |
+| `cas-canary.yml` | 1 | `ubuntu-latest` | **fica hosted** | O job irmão já está em `corelink`. Este existe **para sair da nossa rede**: `# datacenter IP genuinely outside our provider`. Movê-lo apaga o que o canário mede. **A ÚNICA exceção `ubuntu-*` justificada por desenho** — as outras duas são pendências, não exceções. |
+| `smoke-install.yml` | 1 | `ubuntu-latest` | **experimento** | `installer smoke (real Docker daemon required)`. A frota tem um **shim** `docker` (nerdctl) desde 2026-08-13, **não** um daemon — se o instalador sobrevive a isso é **desconhecido**. Uma execução decide. §1.3. |
+| `cosign-sign.yml` | 2 | `ubuntu-latest` | **veredito, não migração** | `docker/build-push-action` quer um builder `buildx`; o shim mapeia `buildx build` → `nerdctl build` — **não verificado**. Mas o problema real não é esse: **0 execuções na vida** (§6). Migrar um workflow morto é a ordem errada. |
 | `secrets-drift.yml` | 1 | condicional | `corelink` | Contado no A1. |
 
 ---
@@ -320,6 +372,18 @@ linhas.
   da imagem, são as medições.
 - **Não afirma que a frota aguenta 205 jobs.** Afirma o modo de falha (spawn recusado →
   `queued` sem teto) e que a exposição dobra.
+- **Não decide se `smoke-install` / `cosign-sign` rodam através do shim `docker`.** É um
+  experimento de uma execução cada, nomeado em §1.3 e não feito aqui.
 - **Não afirma que a imagem de hoje é a de amanhã.** §7 do `ci-runner-fabric-box.md`
-  documenta que ela muda sem aviso; §1.1 desta página é a prova de que isso já me pegou
-  uma vez.
+  documenta que ela muda sem aviso; §1.1 e §1.3 desta página são a prova de que isso já
+  me pegou **duas** vezes no mesmo dia.
+
+---
+
+## 9. PRs abertos por este pacote
+
+| PR | repo | o quê |
+|---|---|---|
+| **#1488** | `corelink-server` | esta tabela |
+| **#1495** | `corelink-server` | corrige `ci-runner-fabric-box.md` — pool misto refutado, §4/§5 desatualizados, sonda inexecutável |
+| **#523** | `corelink-runners` | assa `nightly` + `llvm-tools` + `cargo-fuzz` — desbloqueia o Grupo B |
