@@ -167,6 +167,46 @@ Isso não gera falso-verde — `scripts/pre-merge-gate-check.sh` pontua pendente
 argumento que decide o **ritmo**: migrar em ondas, uma por PR, observando a fila entre
 elas.
 
+### 2.1 ⚠️ O spawn perdido tem uma SEGUNDA cara, e ela é pior
+
+Observado nos PRs deste próprio pacote em 2026-08-31: um spawn perdido nem sempre deixa
+o job `queued`. Ele também pode terminar **`cancelled`**.
+
+| run | job | `runner_name` | onde morreu |
+|---|---|---|---|
+| 33357947311 (#1504) | `verify` | **vazio** — nunca foi pego | antes do passo 1 |
+| 33357703931 (#1498) | `validate deprecation lead-times` | `cf-runner-cf37c60d` | passo 3 de 18 |
+
+Em ambos, **a mesma workflow tinha passado num commit anterior do mesmo branch**, e não
+havia run mais novo que os tivesse substituído — ou seja, não é `cancel-in-progress`.
+
+**Por que é pior que a cara `queued`:** um job parado em `queued` é obviamente um job
+parado. Um `cancelled` aparece no PR como **check vermelho**, indistinguível de um gate
+que rodou e reprovou. O sinal de infra se disfarça de defeito de código — a mesma família
+do B-128 (`os error 28` lido como erro de link).
+
+**E há uma armadilha de ferramenta em cima disso:** `gh pr checks` classifica `cancelled`
+no balde **`fail`**. Quem relatar "N verdes / M pendentes / K vermelhos" lendo o balde
+**superestima os vermelhos** e chama de defeito o que é spawn perdido. Leia o
+`conclusion` de cada job, não o balde:
+
+```console
+$ gh pr checks <PR> --json name,state,bucket   # bucket: cancelled cai em "fail"
+$ gh api repos/<owner>/<repo>/actions/jobs/<id> -q '.conclusion'   # a verdade
+```
+
+**Diagnóstico em um comando** — `runner_name` vazio distingue "nunca foi pego" de "morreu
+rodando":
+
+```console
+$ gh api repos/HuGR-Labs/corelink-server/actions/jobs/<id> \
+    -q '"\(.conclusion) runner=\(.runner_name) steps=\(.steps|length)"'
+```
+
+**A conduta:** antes de desfazer qualquer coisa por um `cancelled`, cheque `runner_name` e
+a contagem de passos. Se o job não tem passos ou morreu no passo 1-3 sem log de erro,
+**re-rode** — não é o seu diff.
+
 **Disco — o risco real.** 18 GB por box. Medido na sonda: **um único crate**
 (`corelink-hash`) leva `~/.cargo` de 415 M → **1002 M** e cria `target/` de **996 M** —
 **~1 GB por crate**, disco em 5,1 G usados / 13 G livres depois. **Uma build de workspace
