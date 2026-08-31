@@ -5947,10 +5947,42 @@ Sobram **~335s de custo que nenhuma das três médias explica.**
 
 E o número mais desconfortável do conjunto está na tabela e não depende nem de escrita nem
 de concorrência: **ler do cache custa 0,527s contra 0,678s para simplesmente compilar** —
-o cache é apenas **22% mais barato que fazer o trabalho**. Para um cache de build, cuja
-proposta de valor é que um acerto seja ordens de grandeza mais barato que compilar, 22%
-não sustenta o produto. Essa razão é o item real, e ela vale mesmo que [B-102] e [B-103]
-sejam consertados amanhã.
+o cache aparentaria ser apenas **22% mais barato que fazer o trabalho**.
+
+**⚠️ Essa razão de 22% NÃO é confiável, e o viés corre a favor do cache.** Verificado no log
+bruto do run 33326194312, não na citação:
+
+```
+Compile requests            337
+Compile requests executed   259
+Cache hits                   35     Cache misses          220
+Non-cacheable calls          74     Forced recaches         0
+Cache read errors             0     Cache write errors    191
+Average cache write       1.346 s
+Average compiler          0.678 s
+Average cache read hit    0.527 s
+```
+
+As duas médias percorrem **populações disjuntas e de tamanhos muito diferentes**: uma
+unidade de compilação ou acerta o cache ou é compilada, nunca as duas. `Average cache read
+hit` é a média sobre **35** unidades; `Average compiler` é a média sobre as **~220-259** que
+executaram. Comparar as duas pressupõe que os dois conjuntos têm a mesma distribuição de
+custo — e não há razão para terem. Numa lane de PR, o que acerta são dependências estáveis
+inalteradas; o que erra é o crate em trabalho e o que depende dele.
+
+E há um segundo viés, específico deste run: **os 35 acertos aconteceram contra um cache com
+191 falhas de escrita**. O que está no cache é, por construção, o subconjunto cuja escrita
+teve sucesso. Se a falha de escrita correlaciona com tamanho — plausível e não medido — o
+cache contém preferencialmente objetos **pequenos**, os acertos são preferencialmente
+unidades **pequenas**, e 0,527 s para buscar uma unidade pequena está sendo comparado com
+0,678 s para compilar uma unidade média. **A razão real por unidade seria PIOR que 22%, não
+melhor.**
+
+O que sobrevive à objeção: a corrida de agosto, com 827 acertos, 0 erros e 100% de hit,
+ainda perdeu ~210 s para compilar frio. Essa é a evidência sólida do item, porque não
+depende de comparar médias de populações diferentes — compara a **duração da mesma lane**
+com e sem cache. A razão 0,527/0,678 deve ser tratada como indício, não como medida, até
+alguém comparar as MESMAS unidades nos dois regimes.
 
 ```backlog
 id: B-105
@@ -5969,8 +6001,25 @@ verify-means: |
 
   **Não fecha por conserto de [B-102] nem de [B-103].** Está registrado acima por que: a
   corrida de agosto teve zero escritas e ainda assim perdeu 210s. Levar a escrita a custo
-  zero deixa este item intacto. O que decide é a razão leitura-versus-compilação (0,527s
-  contra 0,678s) e os ~335s não explicados — e ambos exigem número novo, não esperança.
+  zero deixa este item intacto.
+
+  **E não fecha pela razão 0,527/0,678 melhorar**, porque essa razão compara médias sobre
+  populações disjuntas de tamanhos muito diferentes (35 acertos contra ~220 compilações) e
+  está enviesada a favor do cache. A medida que decide é a duração da MESMA lane com e sem
+  cache — que é o que a corrida de agosto já fez e o que qualquer fechamento tem de refazer.
+
+  **Piso irredutível de uma leitura: hoje NÃO é calculável, e a razão é instrumental.** Na
+  decomposição medida de um GET (total 1001 ms): `auth` 8, `wdb` 391 dos quais só 7 são
+  nomeados (`qtier` 3 + `qresid` 4), e `origin` 602 dos quais 372 são nomeados (`ostore`
+  371 + `oother` 1). Sobram **384 ms no resíduo do `wdb`** e **230 ms no `ohop`** — ou seja,
+  **61% da leitura está em dois resíduos**, e o `qother` que nomearia o primeiro é publicado
+  só atrás de flag. Não dá para dizer se o piso é rede, servidor ou cliente enquanto a maior
+  parcela do caminho não tem nome.
+
+  O que JÁ dá para excluir: **não é rede.** O trajeto até a borda medido do pior ponto de
+  vista disponível (o Mac do owner, fora da frota) é 0,08 s — 8% de um GET de 1001 ms, e da
+  frota seria menos. A rede não é o termo dominante, então o piso mora no servidor ou no
+  cliente, e distinguir os dois exige nomear o `qother`.
 
   Owner, não tl: a decisão que este item alimenta é se o produto vendido como cache de
   build entrega aceleração no caso perfeito. É pergunta de produto.
