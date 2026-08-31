@@ -4317,38 +4317,142 @@ indisponibilidade do D1, consome computação faturável.
 Nota de colisão: **#1397 está em voo** e toca superfície devenv. Antes de escrever
 código para este item, confira se aquele PR já move este guard.
 
+**Colisão resolvida — e o aviso é RISCO DE ORDEM DE MERGE, não de duplicação.** #1397
+(173 arquivos) **carrega sim** `worker/src/lib/devenv_guard.ts`, na posição 169, como
+`new file mode` cujo conteúdo é **byte-idêntico à versão fail-open** — mesmo `if (row)`
+sem `else`, mesmo `catch` com o comentário "Fail-open". Ou seja: #1397 **não conserta**
+o defeito e **não duplica** este trabalho, mas o merge dele DEPOIS do #1482 pode
+**reintroduzir** a versão fail-open por cima do reparo, porque a merge-base dele é
+anterior ao commit que criou o arquivo. Quem landar #1397 tem de reconferir
+`devenv_guard.ts` depois. O teste de regressão é o que pega isso — mais um motivo para
+este `verify` EXECUTAR o teste em vez de grepar estrutura.
+
+*Nota de método, porque quase passou batido:* a primeira checagem usou
+`gh pr view 1397 --json files`, que **corta silenciosamente em 100 arquivos** e
+reportou zero ocorrências de `devenv_guard`. Em PRs grandes use
+`gh pr diff <n> --name-only`, que devolve a lista inteira.
+
+**A premissa original deste item estava ERRADA, e a correção inverte o diagnóstico.**
+`install_status` **não é uma coluna** — nenhuma migração a cria. Medido contra o D1 de
+produção em 2026-08-31, com controle de instrumento (`PRAGMA table_info(tenant)` → 19
+colunas, alcançável):
+
+```
+PRAGMA table_info(runners_entitlement)
+  → tenant_id, max_concurrency, plan, created_at_ms, max_vcpu_h
+SELECT max_concurrency, max_vcpu_h FROM runners_entitlement       → success=True  [controle]
+SELECT max_concurrency, max_vcpu_h, install_status FROM …         → success=False
+      'no such column: install_status at offset 36: SQLITE_ERROR'
+SELECT COUNT(*) FROM runners_entitlement                          → 8 linhas
+```
+
+`install_status` é campo **sintetizado na resposta JSON** — `customer_runners.rs:285`
+grava `"installed"` fixo porque a linha existe, e a união publicada em
+`customer-types.ts:142` é `"installed" | "not_installed"`. **Nada, em lugar nenhum,
+escreve `"suspended"`.**
+
+Consequência: a query lançava em **toda** chamada, o `catch` vazio engolia, e o guard
+autorizava **100%** das requisições. Não havia "buraco do caminho sem-linha" — esse
+caminho nunca era alcançado. O guard era integralmente vazio.
+
+E isso condena o reparo ingênuo: fazer o mesmo `catch` negar, sem tirar a coluna
+fantasma, troca **sempre-autoriza** por **sempre-nega** — 403 para todo tenant,
+inclusive os **8 que têm linha real** — ou seja, indisponibilidade total da superfície.
+Foi exatamente o que a primeira versão do #1482 fez, e por isso foi rejeitada.
+
+**Fechado 2026-08-31 (segunda tentativa).** O `SELECT` passa a nomear só colunas reais
+(`max_concurrency, max_vcpu_h`) e o predicado é **transcrito das migrações**, não
+inventado: `0072` diz com todas as letras que `max_concurrency` ausente ⇒ sem
+entitlement ⇒ REJECT, enquanto `max_vcpu_h` ausente ⇒ wall-off ⇒ prossegue; `0070`
+completa com `CHECK (max_concurrency > 0)`, que proíbe linha de cap zero e portanto faz
+da PRESENÇA da linha a expressão do direito. Nega em: sem tenant, `CONFIG_DB`
+desligado, D1 lançando, sem linha, e linha sem cap positivo. Autoriza só no fim disso.
+`CONFIG_DB` desligado nega porque o campo é não-opcional em `Env`, está ligado nos
+**sete** ambientes do `wrangler.toml`, e o próprio call site já responde 503 quando
+`RUNNER_DEVENV_DO` falta.
+
+**O teto mensal de vCPU continua NÃO aplicado, e isso fica dito em vez de insinuado.**
+`devenv_monthly_vcpu` (migração 0106) é referenciada **só** pela própria migração e pelo
+conjunto de erase do DSR — ninguém escreve, ninguém lê — e `customer_runners.rs` devolve
+`consumed_vcpu_h` como `0` literal marcado `[stub]`. Aplicar teto contra tabela que
+ninguém escreve seria no-op ou negação universal. O guard real de metering é
+pré-requisito rastreado em `docs/campaigns/remediation/devenv-manifest.tsv:170`.
+
+O `verify` abaixo está **invertido e não é mais grep de estrutura**: ele EXECUTA
+`worker/tests/devenv_guard.test.ts`, como o `verify-means` original pedia. Fica
+vermelho se o guard voltar a fail-open.
+
 ```backlog
 id: B-075
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'f=worker/src/lib/devenv_guard.ts
-  [ -f "$f" ] || { echo "FALHA: devenv_guard.ts nao existe mais — reavalie o item."; exit 1; }
-  temelse=0; grep -qE "^[[:space:]]*\}[[:space:]]*else[[:space:]]*\{|return[[:space:]]+\{[[:space:]]*allowed:[[:space:]]*false" "$f" && temelse=1
-  temcatch=0; grep -qE "catch" "$f" && temcatch=1
-  falhafechado=0
-  if [ "$temcatch" = 1 ]; then
-    awk "/catch/,/^[[:space:]]*\}/" "$f" | grep -qiE "allowed:[[:space:]]*false|deny|throw|503|403" && falhafechado=1
+  bash -c 'set -u
+  g=worker/src/lib/devenv_guard.ts
+  t=worker/tests/devenv_guard.test.ts
+  [ -f "$g" ] || { echo "FALHA: $g sumiu — o guard que este item fechou nao existe mais; reavalie o item."; exit 1; }
+  [ -f "$t" ] || { echo "FALHA: $t foi removido — sem o teste este item volta a ser indefeso."; exit 1; }
+  grep -qE "install_status" "$g" && grep -qE "SELECT .*install_status|COLUMNS = .*install_status" "$g" && { echo "FALHA: o guard voltou a nomear install_status numa query — coluna FANTASMA: o D1 lanca no such column em TODA chamada e o guard passa a decidir 100% pelo catch."; exit 1; }
+  for caso in "selects ONLY columns the migrations actually create" "does not select the phantom install_status column" "the D1 stub REJECTS an invented column" "DENIES a tenant with no runners_entitlement row" "DENIES when D1 throws at" "DENIES when env.CONFIG_DB is absent" "ALLOWS a tenant with a positive concurrency cap" "query survives the schema-faithful stub end to end" "is the STRING" "the column is inert"; do
+    grep -qF "$caso" "$t" || { echo "FALHA: o teste perdeu o caso [$caso] — anti-vacuidade: um teste esvaziado passaria verde."; exit 1; }
+  done
+  cd worker || { echo "FALHA: nao existe diretorio worker/."; exit 1; }
+  if [ ! -d node_modules ]; then
+    timeout 75 npm install --legacy-peer-deps --no-audit --no-fund >/dev/null 2>&1 || { echo "FALHA: nao consegui instalar as deps do worker para EXECUTAR o teste — este verify nunca reporta verde sem rodar."; exit 1; }
   fi
-  if [ "$temelse" = 1 ] && [ "$falhafechado" = 1 ]; then
-    echo "FALHA: guard tem ramo de negacao explicito E catch que falha fechado — feche o item."; exit 1; fi
-  echo "aberto: devenv_guard sem negacao por omissao (else=$temelse) e/ou catch que nao fecha (catch=$temcatch fecha=$falhafechado)"'
+  j=$(mktemp) || { echo "FALHA: nao consegui criar arquivo temporario para o relatorio do vitest."; exit 1; }
+  npx vitest run tests/devenv_guard.test.ts --reporter=json --outputFile="$j" >/dev/null 2>&1
+  rc=$?
+  ok=$(grep -oE "\"numPassedTests\" *: *[0-9]+" "$j" 2>/dev/null | grep -oE "[0-9]+$")
+  bad=$(grep -oE "\"numFailedTests\" *: *[0-9]+" "$j" 2>/dev/null | grep -oE "[0-9]+$")
+  rm -f "$j"
+  [ -n "$ok" ] && [ -n "$bad" ] || { echo "FALHA: o vitest nao produziu um relatorio JSON legivel (exit $rc) — este verify nunca reporta verde sem ler os numeros."; exit 1; }
+  [ "$bad" = "0" ] || { echo "FALHA: o guard DevEnv regrediu — $bad caso(s) do teste de B-075 falharam (pode ser fail-open OU nega-tudo: os controles positivos pegam a segunda direcao)."; exit 1; }
+  [ "$rc" = "0" ] || { echo "FALHA: vitest saiu $rc mesmo com 0 falhas declaradas — trate como vermelho."; exit 1; }
+  [ "$ok" -ge 24 ] || { echo "FALHA: o teste rodou com apenas $ok casos verdes (<24) — foi mutilado."; exit 1; }
+  echo "done: guard DevEnv falha FECHADO (sem linha, D1 lancando em prepare/bind/first, CONFIG_DB ausente, cap nao-positivo), colunas fixadas contra as migracoes, + controles positivos; $ok casos verdes."'
 verify-means: |
-  open — o guard não tem ramo explícito de negação para "sem linha de entitlement", ou
-  seu `catch` não fecha o acesso.
+  done — o guard nega em TODO caminho que não produza um direito positivo, e a prova é
+  a execução do teste, não a forma do TypeScript. Polaridade invertida: antes o comando
+  saía 0 enquanto o buraco existia; agora sai 0 só enquanto o buraco está tapado.
 
-  Vira DRIFTED quando AMBOS existirem: negação explícita no caminho sem-linha E `catch`
-  que nega. As duas metades são a alegação (falha aberta por omissão E por exceção), e
-  consertar só uma deixa o buraco pela outra.
+  Vira DRIFTED se qualquer um voltar a autorizar: sem linha em `runners_entitlement`,
+  `prepare`/`bind`/`first` lançando, `CONFIG_DB` desligado, ou linha sem cap positivo.
+  E vira DRIFTED **também na direção oposta**, que é a que quase passou: os controles
+  positivos (`ALLOWS a tenant with a positive concurrency cap` e `query survives the
+  schema-faithful stub end to end`) reprovam um guard que negue TUDO. Sem eles, a
+  primeira tentativa deste reparo — que trocou sempre-autoriza por sempre-nega e
+  derrubaria os 8 tenants com linha real — teria passado em todos os outros casos.
 
-  O que NÃO decide, e admito francamente: este é o `verify` mais frágil do lote, porque
-  lê ESTRUTURA de TypeScript por regex em vez de executar o guard. Um refator que mude
-  o formato do fluxo pode falsear em qualquer direção. O certo seria um teste unitário
-  do guard com D1 ausente e D1 lançando — e é isso que quem consertar deve escrever,
-  fechando este item pelo teste e não pelo grep. Registro a fragilidade aqui em vez de
-  deixá-la implícita.
-last-verified: 2026-08-30
+  Anti-vacuidade em três camadas, porque a versão anterior deste teste falhou
+  exatamente aqui: (1) o comando exige que os oito casos-chave existam por nome; (2)
+  reprova se o guard voltar a nomear `install_status` numa query; (3) o próprio teste
+  **parseia as migrações `0070`/`0072`** e fixa a lista de colunas contra o DDL real,
+  em vez de contra a expectativa do autor. A lição que motivou (3): o mock anterior
+  FABRICAVA a linha `{max_concurrency, max_vcpu_h, install_status}` e só assertava
+  `sql.toContain("runners_entitlement")`, então
+  `SELECT totally_nonexistent_column` passava 13/13. **Mock que inventa schema não
+  testa schema.** O stub de D1 agora lança `no such column` para qualquer coluna que as
+  migrações não criem, e tem teeth test próprio.
+
+  Mutation-testado contra três guards, todos vermelhos: o fail-open original (14
+  falhas), a coluna fantasma reintroduzida (7 falhas — a suíte antiga passava esta),
+  e o sempre-nega rejeitado (8 falhas, incluindo os dois controles positivos).
+
+  O que NÃO decide, e registro em vez de deixar implícito: o comando precisa das
+  dependências node do `worker/` para executar. Se `worker/node_modules` faltar, ele
+  tenta instalar dentro de um `timeout 75` e, se não conseguir, **reprova** com uma
+  mensagem que nomeia o motivo — deliberadamente nunca verde por não ter conseguido
+  rodar. Lê o **relatório JSON** do vitest, não o texto: a primeira versão deste
+  comando fazia `grep` na linha `Tests  N passed` e ficou vermelha na CI porque o
+  vitest emite ANSI lá, coisa que não aparece rodando à mão num terminal local. Toda
+  forma de NÃO obter os dois números (`numPassedTests`/`numFailedTests`) é uma falha
+  nomeada, nunca um verde por omissão. Na prática o runner `corelink` compartilha o workspace com `worker-vitest.yml`,
+  que já instala essas deps, então o caminho comum é só rodar o vitest (~5s). O gate de
+  PR de verdade para este teste é `worker-vitest.yml` (dispara em `worker/**`); este
+  `verify` é a checagem diária de que a propriedade continua valendo.
+last-verified: 2026-08-31
 ```
 
 ### B-076 — o mesmo tenant pode manter duas assinaturas pagáveis abertas, e a segunda apaga o registro da primeira

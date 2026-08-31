@@ -7,7 +7,11 @@ source_files:
   - "worker/src/lib/devenv_guard.ts"
   - "worker/src/lib/openapi_devenv.ts"
   - "wrangler.toml"
-checkpoint_sha: "07bb61ee80779947e6bff8cdc01f895414088fc9"
+  - "migrations/d1/0070_runners_entitlement.sql"
+  - "migrations/d1/0072_runners_entitlement_max_vcpu_h.sql"
+  - "migrations/d1/0106_devenv_monthly_vcpu.sql"
+  - "crates/corelink-container/src/routes/customer_runners.rs"
+checkpoint_sha: "ac6a174c4c7f43eb9dea35a0efc4a02646cf69d6"
 provenance: "AUTHORED"
 tags: ["surfaces", "devenv", "worker-edge", "auth", "quota", "durable-object"]
 timestamp: "2026-08-30T00:00:00Z"
@@ -27,7 +31,13 @@ The DO binding is **not declared today.** It was a cross-Worker reference — an
 
 **Dual credential, single path, decided by shape.** The handler tries `parsePat` first and branches on the RESULT, not on a header or a flag: a value that does not parse as a PAT is treated as a Clerk session and verified as one, and only a parseable PAT takes the PAT path (`worker/src/index.ts:2954-2984`). A viewer role is downgraded to `read-only` scope at the edge, so the DO never has to know Clerk's role vocabulary.
 
-**Quota is checked at the edge, before the DO is touched.** `checkDevenvQuota` reads the tenant's `runners_entitlement` row and refuses an absent or `_anonymous` tenant outright (`worker/src/lib/devenv_guard.ts:16-30`). Doing it here rather than inside the DO keeps a quota-exceeded request from spinning up per-tenant DO state at all.
+**Quota is checked at the edge, before the DO is touched.** `checkDevenvQuota` refuses an absent or `_anonymous` tenant outright (`worker/src/lib/devenv_guard.ts:103-105`) and otherwise reads the tenant's `runners_entitlement` row (`worker/src/lib/devenv_guard.ts:121-125`). Doing it here rather than inside the DO keeps a quota-exceeded request from spinning up per-tenant DO state at all.
+
+**Every way of not obtaining a positive entitlement is a denial, and the predicate is the migration's.** The guard has four deny arms and exactly one `allowed: true` exit: `CONFIG_DB` unbound denies (`worker/src/lib/devenv_guard.ts:111-116`), a throwing D1 read denies (`worker/src/lib/devenv_guard.ts:126-134`), no `runners_entitlement` row denies (`worker/src/lib/devenv_guard.ts:136-141`), and a row whose `max_concurrency` is not a positive number denies (`worker/src/lib/devenv_guard.ts:147-152`); the allow is reachable only past all four (`worker/src/lib/devenv_guard.ts:154`). None of that is this file's policy — `migrations/d1/0072_runners_entitlement_max_vcpu_h.sql:54` adds `max_vcpu_h` under a header stating that an absent `max_concurrency` means no entitlement and REJECTS while an absent `max_vcpu_h` walls off and proceeds, and `migrations/d1/0070_runners_entitlement.sql:52` supplies the other half: `CHECK (max_concurrency > 0)` forbids a zero-valued row, so a zero cap is expressed by the ABSENCE of a row and the presence of a row with a positive cap is what expresses the entitlement.
+
+**The column list is pinned to the schema, because a phantom column once made this guard vacuous.** Until 2026-08-31 the query selected `install_status`, which no migration creates — it is synthesised into the API response by `crates/corelink-container/src/routes/customer_runners.rs:285`, which hardcodes `"installed"` whenever a row exists. D1 therefore threw `no such column` on EVERY call, the then-empty `catch` swallowed it, and the guard authorised 100% of requests: not a fail-open edge case but the only path. The columns it reads are now a named export (`worker/src/lib/devenv_guard.ts:22`) that `worker/tests/devenv_guard.test.ts` pins against DDL parsed from the migrations, so the schema — not the author's expectation — decides.
+
+**The monthly vCPU ceiling is NOT enforced here, and the concept says so rather than implying it.** `devenv_monthly_vcpu` (`migrations/d1/0106_devenv_monthly_vcpu.sql:5`) is referenced only by its own migration and the DSR erase set; nothing writes it and nothing reads it, and `crates/corelink-container/src/routes/customer_runners.rs:284` returns `consumed_vcpu_h` as a literal `0` marked `[stub]`. A ceiling enforced against a table nobody writes is either a no-op or a universal denial, so the guard leaves metering to the prerequisite work. `max_vcpu_h` is SELECTed (`worker/src/lib/devenv_guard.ts:22`) and typed on the row (`worker/src/lib/devenv_guard.ts:26`), and that is all: its value never enters a predicate, and the guard's single condition on a present row is on `max_concurrency` alone (`worker/src/lib/devenv_guard.ts:147`). Honouring 0072's wall-off rule takes ZERO reads of the column, so the selection is inert, not a policy — a `max_vcpu_h` of `-5` is allowed exactly as `NULL` is.
 
 **Client-supplied trust headers are stripped before forwarding, and the authorization header is dropped entirely.** The edge rebuilds the header set, calls `stripClientTrustHeaders`, deletes `authorization`, and then sets the trust headers itself — tenant id, scope, role, token prefix, request id (`worker/src/index.ts:3005-3018`). The DO therefore cannot be told who the caller is by the caller; the credential does not travel past the boundary that verified it.
 
@@ -43,7 +53,19 @@ Quota state lives in `runners_entitlement`, shared with the runner fabric, so a 
 
 1. `worker/src/index.ts:981-984` — `matchRoute` classifies `/v1/customer/devenv*` and `/v1/devenv*` as `devenv_v1`, deferring tenant resolution to the credential.
 2. `worker/src/index.ts:2954-2984` — dual Clerk/PAT auth decided by whether `parsePat` returns null; viewer role downgraded to `read-only`.
-3. `worker/src/lib/devenv_guard.ts:16-30` — `checkDevenvQuota` refuses an absent/`_anonymous` tenant and reads `runners_entitlement` for the ceiling.
+3. `worker/src/lib/devenv_guard.ts:103-105` — `checkDevenvQuota` refuses an absent/`_anonymous` tenant before touching D1 at all.
+3a. `worker/src/lib/devenv_guard.ts:121-125` — the single keyed read of `runners_entitlement`, its column list built from the pinned export.
+3b. `worker/src/lib/devenv_guard.ts:111-116` — deny arm for `CONFIG_DB` unbound: a missing binding is a service fault, never an authorisation.
+3c. `worker/src/lib/devenv_guard.ts:126-134` — deny arm for a throwing D1 read.
+3d. `worker/src/lib/devenv_guard.ts:136-141` — deny arm for NO entitlement row.
+3e. `worker/src/lib/devenv_guard.ts:147-152` — deny arm for a row carrying no positive concurrency cap.
+3f. `worker/src/lib/devenv_guard.ts:154` — the single `allowed: true` exit, reachable only past all four deny arms.
+3g. `worker/src/lib/devenv_guard.ts:22` — `DEVENV_ENTITLEMENT_COLUMNS`, the column list pinned against the migrations by the guard's test.
+3h. `migrations/d1/0070_runners_entitlement.sql:52` — `CHECK (max_concurrency > 0)`: a zero cap is expressed by the absence of a row, so an absent row is a reject.
+3i. `migrations/d1/0072_runners_entitlement_max_vcpu_h.sql:54` — the `max_vcpu_h` column whose header ratifies absent-cap ⇒ REJECT vs absent-vcpu ⇒ wall-off.
+3j. `crates/corelink-container/src/routes/customer_runners.rs:285` — `install_status` is SYNTHESISED into the response as a literal `"installed"`; it is not a column, which is why selecting it made every read throw.
+3k. `crates/corelink-container/src/routes/customer_runners.rs:284` — `consumed_vcpu_h` returned as a literal `0`, marked `[stub]`.
+3l. `migrations/d1/0106_devenv_monthly_vcpu.sql:5` — the monthly vCPU table that nothing writes and nothing reads.
 4. `worker/src/index.ts:3005-3018` — `stripClientTrustHeaders`, `authorization` deleted, and the trust headers set by the edge rather than accepted from the client.
 5. `worker/src/index.ts:2059-2060` — the OpenAPI 3.1 document served from a static module at `GET /openapi.json`.
 6. `worker/src/lib/openapi_devenv.ts:4` — `devenvOpenApiSpec`, the published contract for the surface.
