@@ -38,7 +38,7 @@ tags: ["sales", "faq", "objection-handling", "r-prep", "ga", "customer-facing-so
 
 **Q:** What do I actually get at each tier?
 
-**A:** Six tiers on one self-serve ladder — Free is instant-activation, Solo / Starter / Pro / Max self-serve via Stripe Checkout, and Enterprise routes through the inquiry form. The differences that matter at sales time are storage cap, egress allowance, audit retention, BYOK availability, region count, and the SLA we sign — not capability (every tier runs the same data plane and SLO catalog).
+**A:** Six tiers on one self-serve ladder — Free is instant-activation, Solo / Starter / Pro / Max self-serve via Stripe Checkout, and Enterprise routes through the inquiry form. The differences that matter at sales time are storage cap, egress allowance, audit retention, region count, and the SLA we sign (BYOK is **not shipped on any tier** — see P3/S1) — not capability (every tier runs the same data plane and SLO catalog).
 
 | Limit | **Free** | **Solo** | **Starter** | **Pro** | **Max** | **Enterprise** |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -46,7 +46,7 @@ tags: ["sales", "faq", "objection-handling", "r-prep", "ga", "customer-facing-so
 | Storage cap | 10 GB | 50 GB | 150 GB | 500 GB | 2 TB | Custom |
 | Egress / mo | 50 GB | 500 GB | 1.5 TB | 5 TB | 20 TB | Custom |
 | Audit retention | 7d | 30d | 30d | 90d | 90d | 365d+ |
-| BYOK | — | — | — | — | optional add-on ($99/mo) | included |
+| BYOK | **not shipped** | **not shipped** | **not shipped** | **not shipped** | **not shipped** (was listed as a $99/mo add-on) | **not shipped** (was listed as included) |
 | Region pin | shared | 1 of 4 | 1 of 4 | up to 2 | up to 2 | all 4 |
 | Uptime SLO | best-effort | 99.5% | 99.5% | 99.9% | 99.9% | 99.95% |
 
@@ -68,7 +68,9 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** What does BYOK actually cost on top of Enterprise base?
 
-**A:** BYOK is included on Enterprise and available as an optional add-on on Max ($99/mo) — it's not sold as an add-on to Free / Solo / Starter / Pro. The premium versus a hypothetical "Enterprise without BYOK" is governed by your order form (negotiated; Sales recreates from the live Finance model — `marketing/lighthouse-kit/07-pricing-comparison-internal.md` §5). The premium reflects four real costs: (1) per-tenant KMS call volume to your AWS / GCP / Azure / Vault provider, (2) dedicated incident channels for kill-switch events, (3) FIPS-endpoint pinning per provider, and (4) the weekly synthetic kill-switch chaos drill we run on your tenant. No, we don't run BYOK as a marketing checkbox; the kill switch is exercised on a schedule and recorded in the audit chain.
+**A:** **BYOK is not shipped, and must not be sold or priced today.** The activation endpoint returns `501 byok_not_available`: `crates/corelink-container/src/routes/byok_admin.rs:249` refuses activation whenever no real KMS provider is compiled in, and none is — `Dockerfile:182` builds `corelink-server` with no `--features`, and `crates/corelink-container/Cargo.toml:16` declares `default = []`, so the four `byok-*-real` features (AWS, GCP, Azure, Vault) are not enabled by any build path. The provider that the released binary actually links is selected at **compile time**: `crates/corelink-container/src/byok_orchestrator.rs:263-271` carries a `#[cfg(not(any(feature = "byok-aws-real", … "byok-vault-real")))]` arm whose body is `Ok(Arc::new(InMemoryFake::new()))`. With no feature set, that arm is the one compiled. `InMemoryFake`'s own doc comment (`:279`) says **"Not for production"** and describes wrapping a DEK by "storing the plaintext bytes as the ciphertext (XOR-masked with a fixed module-private key)"; the mask constant at `:295` states that it "offers no cryptographic confidentiality".
+
+A prior version of this answer sold BYOK as included on Enterprise and as a $99/mo add-on on Max, and justified the premium with "(4) the weekly synthetic kill-switch chaos drill we run on your tenant", closing with *"we don't run BYOK as a marketing checkbox; the kill switch is exercised on a schedule and recorded in the audit chain."* No such drill runs. Reps must not quote a BYOK price or a drill cadence until the feature ships; pricing is a fresh decision at that point, not a restatement of the withdrawn numbers.
 
 **Sources:** `marketing/launch/BLOG-POSTS/02-byok-deep-dive.md`; `apps/docs/docs/trust/data-handling.mdx#encryption`.
 
@@ -76,7 +78,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** What levers do you have on price?
 
-**A:** Three structural levers, in order of usual impact: (1) **multi-year commit** — 1y / 2y / 3y discounts; the 3y is the largest single move and triggers Founder-level approval. (2) **annual prepay** vs. monthly. (3) **volume commit** — committed storage / egress / TPS bands negotiated above the next-tier list. We do *not* discount on SLO (the SLO catalog is canonical — adding or weakening SLOs requires a spec contract waiver, see `marketing/lighthouse-kit/07-pricing-comparison-internal.md` §4). We do *not* discount on BYOK kill-switch latency or audit-chain retention — both are structural invariants, not negotiable line items.
+**A:** Three structural levers, in order of usual impact: (1) **multi-year commit** — 1y / 2y / 3y discounts; the 3y is the largest single move and triggers Founder-level approval. (2) **annual prepay** vs. monthly. (3) **volume commit** — committed storage / egress / TPS bands negotiated above the next-tier list. We do *not* discount on SLO (the SLO catalog is canonical — adding or weakening SLOs requires a spec contract waiver, see `marketing/lighthouse-kit/07-pricing-comparison-internal.md` §4). We do *not* discount on audit-chain retention — it is a structural invariant, not a negotiable line item. (A prior version of this line also listed "BYOK kill-switch latency" as non-negotiable; BYOK is not shipped, so there is no latency to negotiate or refuse — see P3/S1.)
 
 **Sources:** `marketing/lighthouse-kit/07-pricing-comparison-internal.md` §4 (decision rules for negotiating off standard offer).
 
@@ -126,7 +128,9 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** Is your BYOK real, or is it "we'll let you bring an opaque token we still hold the keys to"?
 
-**A:** Real. Concretely: your KMS holds the **Key Encryption Key (KEK)**. CoreLink generates per-blob **Data Encryption Keys (DEKs)**, wraps each DEK under your KEK, and stores the wrapped DEK alongside ciphertext. To read a blob we call your KMS to unwrap. We do **not** hold a copy of your KEK, encrypted or otherwise. There is **no break-glass path** that re-derives plaintext from CoreLink-side material alone. The DEK cache TTL is **hard-capped at 5 minutes** — a code path, not a config knob — which bounds your kill-switch window. When you disable your KEK, within 5 minutes every in-flight DEK expires and CoreLink simply cannot read your data. This is the `INV-BYOK-CRYPTO-SOVEREIGNTY` CRITICAL invariant.
+**A:** **Not today — the design below is what BYOK *will* do, and none of it is in the released binary.** The activation endpoint returns `501 byok_not_available` (`crates/corelink-container/src/routes/byok_admin.rs:249`), because no real KMS provider is compiled in (`Dockerfile:182`, no `--features`; `Cargo.toml:16`, `default = []`). The provider that *is* linked is chosen at compile time by the `#[cfg(not(any(feature = "byok-aws-real", …)))]` arm at `crates/corelink-container/src/byok_orchestrator.rs:263-271`, which constructs `InMemoryFake` — documented at `:279` as **"Not for production"**, wrapping a DEK by storing the plaintext XOR-masked with a fixed module-private key whose own comment (`:295`) says it "offers no cryptographic confidentiality". A prior version of this answer opened with the single word "Real." — it must not be restored. What follows is the DESIGN, and every sentence of it should be read in the future tense.
+
+Your KMS holds the **Key Encryption Key (KEK)**. CoreLink generates per-blob **Data Encryption Keys (DEKs)**, wraps each DEK under your KEK, and stores the wrapped DEK alongside ciphertext. To read a blob we call your KMS to unwrap. We do **not** hold a copy of your KEK, encrypted or otherwise. There is **no break-glass path** that re-derives plaintext from CoreLink-side material alone. The DEK cache TTL is **hard-capped at 5 minutes** — a code path, not a config knob — which bounds your kill-switch window. When you disable your KEK, within 5 minutes every in-flight DEK expires and CoreLink simply cannot read your data. This is the `INV-BYOK-CRYPTO-SOVEREIGNTY` CRITICAL invariant.
 
 **Sources:** `marketing/launch/BLOG-POSTS/02-byok-deep-dive.md` (full deep-dive); `ADR-S14-004 / S14-005 / S14-006`; `apps/docs/docs/trust/data-handling.mdx#encryption`.
 
@@ -166,7 +170,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** At rest, in flight, in use — be specific.
 
-**A:** **At rest:** AES-256-GCM. R2 blobs are Cloudflare-managed SSE by default; with BYOK enabled, additional customer-side envelope encryption per blob (per-tenant DEK wrapped by your KMS root). D1, KV, DO are Cloudflare-managed encryption at rest. Backups same envelope as source. **In flight:** TLS 1.2 minimum (TLS 1.3 negotiated with every client that supports it — the 1.2 floor is deliberate so `native-tls`/SecureTransport clients like `sccache` connect, per ADR-0072); HSTS (`max-age=63072000; includeSubDomains; preload`); HTTP/2 + HTTP/3 available; cipher suites limited to AEAD (AES-256-GCM, ChaCha20-Poly1305); mTLS edge-to-origin per CTRL-NET-002. **In use:** Worker isolates provide per-request memory isolation (V8 isolate model); customer bytes are not held in long-lived memory across requests; with BYOK, plaintext DEKs never leave the request scope and are discarded before the isolate recycles.
+**A:** **At rest:** AES-256-GCM. R2 blobs are Cloudflare-managed SSE by default. Customer-side envelope encryption per blob (per-tenant DEK wrapped by your KMS root) is what BYOK **will** add; BYOK is not shipped today, so Cloudflare-managed SSE is the whole of the at-rest story right now — see S1. D1, KV, DO are Cloudflare-managed encryption at rest. Backups same envelope as source. **In flight:** TLS 1.2 minimum (TLS 1.3 negotiated with every client that supports it — the 1.2 floor is deliberate so `native-tls`/SecureTransport clients like `sccache` connect, per ADR-0072); HSTS (`max-age=63072000; includeSubDomains; preload`); HTTP/2 + HTTP/3 available; cipher suites limited to AEAD (AES-256-GCM, ChaCha20-Poly1305); mTLS edge-to-origin per CTRL-NET-002. **In use:** Worker isolates provide per-request memory isolation (V8 isolate model); customer bytes are not held in long-lived memory across requests; under the BYOK design, plaintext DEKs would never leave the request scope and would be discarded before the isolate recycles — but BYOK is not shipped, so this is design, not a current property.
 
 **Sources:** `apps/docs/docs/trust/data-handling.mdx#encryption`; `marketing/launch/BLOG-POSTS/02-byok-deep-dive.md`.
 
@@ -206,7 +210,9 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** "We support BYOK kill switch" is easy to claim. How do you exercise it?
 
-**A:** **Weekly synthetic chaos drill** scheduled at a time you prefer, on your tenant, against your KMS. Drill measures kill-switch round-trip time (target ≤ 5 min) and is recorded in your audit chain. For lighthouse customers, the drill is part of the 30-day SLA observation window with the `byok-kill-switch-rtt` SLO sampled. Internally we additionally run cross-tenant adversarial scenarios in the staging environment; the kill switch under load is the part we're proudest of — one tenant being killed does not slow down other tenants' data paths.
+**A:** **Nothing proves it, because it has never run.** There is no weekly synthetic chaos drill, on any tenant, against any KMS. The kill-switch loop is written — `crates/corelink-byok/src/byok_revocation/detector.rs:147` defines `pub async fn run_loop(self)`, described in its own comment as *"the core kill switch implementation"* — but its only callers are inside that crate and its tests. No path in the released binary invokes it, and BYOK activation itself returns `501` (see S1).
+
+A prior version of this answer described a *"**Weekly synthetic chaos drill** scheduled at a time you prefer, on your tenant, against your KMS"*, measuring round-trip time against a ≤ 5 min target and recorded in the audit chain, plus cross-tenant adversarial scenarios in staging. **None of that happens.** If a prospect asks how the kill switch is exercised, the honest answer is that it is not, and that BYOK is not available.
 
 **Sources:** `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#what-were-measuring-daily-automated`; `marketing/launch/BLOG-POSTS/02-byok-deep-dive.md#the-kill-switch`.
 
@@ -242,7 +248,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** Are you GDPR compliant?
 
-**A:** Yes — compliant as a processor (joint controller for limited service-telemetry purposes). DPA template at `legal/dpa/v1.0.0` — three locales reviewed by external counsel (English EU+UK, Portuguese Brazil, Spanish LATAM). Schrems II: SCC Modules 2/3 plus supplementary measures (BYOK envelope encryption, EU-region pin). **EU data residency is live:** EU (`weur`) tenants are served from a physically-EU region (served via our London/`lhr` cluster) whose CAS and AC blobs are stored in physically-EU Cloudflare R2 buckets — EU-origin data stays in the EU, so for those tenants there is no third-country transfer to assess. Breach notification 72h to supervisory authority (Art. 33) and without-undue-delay to high-risk affected data subjects (Art. 34). DSR rights (Arts. 15–22) supported with verifiable erasure (`INV-DATA-ERASURE-COMPLETE`, `INV-ERASURE-ATTESTATION-SIGNED`). Sub-processor change notice 30 calendar days advance.
+**A:** Yes — compliant as a processor (joint controller for limited service-telemetry purposes). DPA template at `legal/dpa/v1.0.0` — three locales reviewed by external counsel (English EU+UK, Portuguese Brazil, Spanish LATAM). Schrems II: SCC Modules 2/3 plus the EU-region pin as a supplementary measure. (A prior version of this answer also listed "BYOK envelope encryption" among the supplementary measures in place; BYOK is not shipped — see S1 — and must not be offered to a DPO as an existing safeguard.) **EU data residency is live:** EU (`weur`) tenants are served from a physically-EU region (served via our London/`lhr` cluster) whose CAS and AC blobs are stored in physically-EU Cloudflare R2 buckets — EU-origin data stays in the EU, so for those tenants there is no third-country transfer to assess. Breach notification 72h to supervisory authority (Art. 33) and without-undue-delay to high-risk affected data subjects (Art. 34). DSR rights (Arts. 15–22) supported with verifiable erasure (`INV-DATA-ERASURE-COMPLETE`, `INV-ERASURE-ATTESTATION-SIGNED`). Sub-processor change notice 30 calendar days advance.
 
 **Sources:** `apps/docs/docs/trust/compliance.mdx#gdpr`; `marketing/launch/BLOG-POSTS/04-multi-region-residency.md`.
 
@@ -320,7 +326,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** When the cache *doesn't* have it, what's the cost?
 
-**A:** Cache-miss = first PUT against an unseen digest. The cost is **the upload itself** (size-bound, on your CI runner's egress) plus a small CoreLink-side append (typically < 50 ms over the upload). There is no "miss penalty" beyond the actual transfer; we don't synthesize artificial backoff on misses. For BYOK with cold DEK cache the read miss adds one KMS unwrap RTT (provider-specific; usually < 100 ms p99).
+**A:** Cache-miss = first PUT against an unseen digest. The cost is **the upload itself** (size-bound, on your CI runner's egress) plus a small CoreLink-side append (typically < 50 ms over the upload). There is no "miss penalty" beyond the actual transfer; we don't synthesize artificial backoff on misses. Once BYOK ships, a cold DEK cache will add one KMS unwrap RTT to a read miss (provider-specific; expected < 100 ms p99). BYOK is not shipped today, so no read path pays that cost — see S1.
 
 **Sources:** `marketing/launch/BLOG-POSTS/05-fast-cache-hit-economics.md`; `marketing/launch/BLOG-POSTS/02-byok-deep-dive.md`.
 

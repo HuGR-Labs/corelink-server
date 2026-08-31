@@ -4763,6 +4763,41 @@ exercised on a schedule."*
 Este item cobre o defeito de engenharia (o binário). A reconciliação dos instrumentos
 assinados é [B-087] e a evidência falsa é [B-084].
 
+**Correção de evidência 2026-08-31.** A afirmação "é um XOR em memória" é verdadeira, mas
+a citação que a sustenta tem de ser a **seleção em tempo de compilação**, não um
+fingerprint de AAD do provedor AWS — aquilo são 8 bytes de AAD em modo mock, não o wrap da
+chave, e uma citação frágil dá ao contestador um ponto legítimo que derruba a conclusão
+correta junto. A evidência que aguenta contestação é
+`crates/corelink-container/src/byok_orchestrator.rs:263-271`: o braço
+`#[cfg(not(any(feature = "byok-aws-real", … "byok-vault-real")))]` cujo corpo é
+`Ok(Arc::new(InMemoryFake::new()))`. Sem nenhuma feature, é esse braço que compila. O
+doc-comment do `InMemoryFake` (`:279`) diz **"Not for production"** e descreve o wrap como
+"storing the plaintext bytes as the ciphertext (XOR-masked with a fixed module-private
+key)"; a constante da máscara (`:295`) diz que ela "offers no cryptographic
+confidentiality".
+
+**O item SEGUE ABERTO. 2026-08-31 (PR WP-C) reparou só a metade documental**, porque o
+reparo do defeito real é embarcar um provedor de KMS — trabalho de CÓDIGO, sobre
+credencial de KMS de cliente, e decisão do owner. Não foi feito e não deve ser feito por
+um PR de documentação.
+
+O que foi corrigido: `marketing/sales/FAQ-MASTER.md`, em nove posições, parou de vender
+BYOK como capacidade presente. A linha de preço deixou de anunciar o add-on de $99/mês; a
+P3 deixou de justificar o prêmio com *"the weekly synthetic kill-switch chaos drill we run
+on your tenant"* e de afirmar *"we don't run BYOK as a marketing checkbox; the kill switch
+is exercised on a schedule"*; a S1 deixou de abrir com a palavra *"Real."* e passou a
+marcar o parágrafo inteiro como DESIGN; a S11 — *"How is the kill switch tested? What
+proves it actually works?"* — passou a responder que **nada prova, porque nunca rodou**,
+citando o `detector.rs:147` e a ausência de qualquer chamador no binário. Saíram também a
+alegação de BYOK como medida suplementar de Schrems II e as duas menções que tratavam o
+envelope por DEK como propriedade corrente.
+
+Em cada posição transcrevi o texto retirado. Uma reversão silenciosa reaparece.
+
+O que NÃO foi tocado, deliberadamente: `legal/sla/v1.0.0.md:46`, que compromete
+*"BYOK kill-switch p99 ≤ 5 min"* para Enterprise. É instrumento assinado, a correção é de
+[B-087], e emendá-lo não é decisão de engenharia.
+
 ```backlog
 id: B-083
 repo: corelink-server
@@ -5094,6 +5129,39 @@ preços marca como `slaCredits: false`.
 
 Uma cláusula de remédio exclusivo que não pode ser cumprida é a primeira a cair, e sua
 queda expõe danos sem teto.
+
+**Reverificado 2026-08-31 (WP-C) — SEGUE ABERTO, e deliberadamente NÃO reparado.** As três
+afirmações do corpo continuam de pé, e uma quarta foi medida:
+
+- `legal/sla/v1.0.0.md:74` ainda promete créditos *"issued automatically against the next
+  invoice"*, e a §4 (linha 113) ainda os declara *"Customer's sole and exclusive remedy"*.
+- **Zero** arquivos de `crates/`, `worker/src/` e `apps/` implementam emissão de crédito
+  (`service_credit|sla_credit|credit_note|balance_transaction`). O **controle**: a mesma
+  varredura por `checkout.session|subscription` nos mesmos diretórios devolve **99**
+  arquivos — o instrumento enxerga a superfície Stripe, e o zero é leitura, não comando
+  quebrado.
+- O SLA define **quatro** tiers (`Free`, `Starter`, `Pro`, `Enterprise` — linha 30)
+  enquanto o produto vende **seis**. Um cliente Solo ($15) ou Max ($149) não tem tier no
+  instrumento assinado.
+- **Novo:** a contradição do `terms.tsx` agora tem o outro lado medido.
+  `apps/docs/src/pages/terms.tsx` concede ao tier Pro *"a service credit equal to 10% of
+  the affected month's fees, applied automatically to the next invoice"*, enquanto
+  `apps/docs/src/lib/pricing.ts:203` marca o Pro com `slaCredits: false` — e
+  `apps/docs/src/lib/pricing.test.ts:75` **testa** que só o Enterprise tem
+  `slaCredits: true`. Os Termos publicados e a tabela de preços publicada, no mesmo site,
+  discordam sobre o mesmo tier, e há um teste verde defendendo o lado que os Termos
+  contradizem.
+
+**Por que WP-C não reparou.** Os dois reparos possíveis estão fora de um PR de
+documentação: implementar a emissão é trabalho de CÓDIGO sobre o caminho de billing; e
+emendar a cláusula de remédio exclusivo de um instrumento assinado — ou os Termos de
+Serviço que o cliente aceita — é ato jurídico, não alinhamento de texto à realidade.
+Alterar unilateralmente o remédio de um cliente num PR de documentação seria o mesmo
+defeito de outra forma.
+
+Owner + jurídico decidem qual das duas saídas seguir; a terceira contradição (Termos ×
+tabela de preços × teste) precisa entrar na decisão junto, porque qualquer emenda que
+ignore uma das três deixa duas discordando.
 
 ```backlog
 id: B-089
