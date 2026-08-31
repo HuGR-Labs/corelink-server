@@ -75,7 +75,8 @@ env:
 jobs:
   fuzz-matrix-expansion:
     name: fuzz 30m (${{ matrix.crate }}::${{ matrix.target }})
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): nightly + cargo-fuzz assados na imagem (corelink-runners#523)
+    runs-on: corelink
     timeout-minutes: 40
     strategy:
       fail-fast: false
@@ -100,8 +101,17 @@ jobs:
       # pattern the per-crate fuzz-smoke jobs already use (corelink-meta/worker/
       # hash/...). It never installs/mutates rustup, so it cannot corrupt the
       # shared toolchain.
-      - name: Put host nightly toolchain on PATH (cargo-fuzz needs nightly; no rustup mutation)
-        run: echo "$HOME/.rustup/toolchains/nightly-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
+      - name: Put the baked nightly toolchain on PATH (cargo-fuzz needs nightly)
+        run: |
+          set -euo pipefail
+          # The image bakes a DATED nightly and exports its name (corelink-runners#523).
+          # `:?` fails LOUDLY if that ever stops — unlike the old
+          # `echo <path> >> $GITHUB_PATH`, which exits 0 on a directory that does not
+          # exist and left the job GREEN running the wrong cargo.
+          : "${CORELINK_NIGHTLY:?the runner image must export CORELINK_NIGHTLY (corelink-runners#523)}"
+          SYSROOT="$(rustup run "$CORELINK_NIGHTLY" rustc --print sysroot)"
+          test -x "$SYSROOT/bin/cargo"
+          echo "$SYSROOT/bin" >> "$GITHUB_PATH"
 
       # `cargo install` compiles cargo-fuzz's OWN dependency tree (aws-lc-sys, syn,
       # tokio, ctutils, parking_lot …) into whatever CARGO_HOME points at. Pointed at
@@ -118,19 +128,25 @@ jobs:
       #
       # Fix: build it into a PER-RUNNER CARGO_HOME. Isolated, so the shared registry
       # is never written; persistent, so each runner pays the compile at most once.
-      - name: Install cargo-fuzz (isolated CARGO_HOME — never the shared one)
+      - name: Use the cargo-fuzz baked into the image (no compile, no registry write)
         run: |
           set -euo pipefail
-          TOOLS="$HOME/.cargo-tools/${RUNNER_NAME:-default}"
-          mkdir -p "$TOOLS/bin"
-          echo "$TOOLS/bin" >> "$GITHUB_PATH"
-          if "$TOOLS/bin/cargo-fuzz" --version 2>/dev/null | grep '0.13.1' >/dev/null; then
-            echo "cargo-fuzz 0.13.1 already in $TOOLS — no compile, no shared-registry write"
-          else
-            echo "compiling cargo-fuzz 0.13.1 into $TOOLS (isolated from ~/.cargo)"
-            CARGO_HOME="$TOOLS" cargo install cargo-fuzz --locked --version =0.13.1
+          # The isolated-CARGO_HOME compile existed because the Mac shares $HOME
+          # between concurrent jobs. The fabric box is single-use and destroyed
+          # after the job, so there is no shared registry to protect — and the
+          # binary is already on the image, so there is nothing to compile.
+          #
+          # The version is ASSERTED, not assumed: the image can move without a
+          # commit here (it went Rust 1.91.1 -> 1.96.0 in two days once), and a
+          # fuzz driver that silently changed under us would invalidate results.
+          EXPECTED=0.13.2
+          command -v cargo-fuzz
+          GOT="$(cargo-fuzz --version | awk '{print $2}')"
+          if [ "$GOT" != "$EXPECTED" ]; then
+            echo "::error::cargo-fuzz na imagem e $GOT, esta lane fixa $EXPECTED (corelink-runners deploy/runner/Dockerfile). Reconcilie antes de confiar no resultado do fuzz."
+            exit 1
           fi
-
+          echo "cargo-fuzz $GOT vindo da imagem — sem compilar, sem escrever no registry"
       - name: Rust target cache
         uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
