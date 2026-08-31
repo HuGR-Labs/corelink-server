@@ -152,6 +152,20 @@ def validate_schema(item: Item) -> None:
         item.problems.append(f"status must be one of {VALID_STATUS}, got {d.get('status')!r}")
     if d.get("owner") not in VALID_OWNER and "owner" in d:
         item.problems.append(f"owner must be one of {VALID_OWNER}, got {d.get('owner')!r}")
+    # `status` and `owner` were validated INDEPENDENTLY and never crossed (B-147).
+    # `owner: owner` means "still needs the human" — a credential, a payment, a
+    # deletion, a legal call. A finished item does not still need the human, so
+    # `done` + `owner: owner` is a contradiction on its face, and the practical
+    # cost is the owner's queue accumulating work nobody has to do any more (28 → 12
+    # when it was last cleaned by hand, in #1510).
+    # SCOPE, fixed here so the gate does not become folklore: `done` ONLY. `parked`
+    # is deliberately EXCLUDED — an item parked precisely because it is waiting on
+    # the owner is legitimate, and the strict reading (`!= open`) would forbid it.
+    if d.get("status") == "done" and d.get("owner") == "owner":
+        item.problems.append(
+            "status: done with owner: owner — `owner: owner` means the item still needs "
+            "the human, and a finished item does not. Set `owner: tl`, or reopen it."
+        )
     if "last-verified" in d:
         try:
             parse_date(d["last-verified"])
@@ -248,6 +262,15 @@ def main() -> int:
     text = path.read_text()
     headings = [(m.start(), m.group(1)) for m in HEADING_RE.finditer(text)]
     mismatches: list[str] = []
+    # An id that is not `B-<digits>` used to be SKIPPED here, and that silence was
+    # the gate failing OPEN (B-143): `id: B-UNALLOCATED`, `B-131a`, `b-131` and
+    # `B-TBD` all merged CONFIRMED. The heading check skipped them, and the density
+    # check below only collects ids matching `B-(\d+)` — so a malformed id opens no
+    # gap, collides with nothing, and is counted by nothing. The two checks that DO
+    # fail loudly (missing id = gap, duplicate id) both presuppose a well-formed id.
+    # The rule must be the GENERAL form, never a match on the literal placeholder:
+    # a gate that greps for `B-UNALLOCATED` is decorative.
+    malformed_ids: list[str] = []
     for m in BLOCK_RE.finditer(text):
         line = text[: m.start()].count("\n") + 1
         block_id = ""
@@ -258,6 +281,9 @@ def main() -> int:
         except yaml.YAMLError:
             continue  # already reported as BROKEN by parse()
         if not re.fullmatch(r"B-\d+", block_id):
+            malformed_ids.append(
+                f"  line {line}: block `id: {block_id or '<missing>'}` is not `B-<digits>`"
+            )
             continue
         prior = [h for pos, h in headings if pos < m.start()]
         if not prior:
@@ -329,6 +355,24 @@ def main() -> int:
         for i, (pos, h) in enumerate(masked_headings)
         if not any(pos < b < bounds[i + 1] for b in block_starts)
     ]
+    # Named separately from `mismatches` on purpose. Both exit 2, but the FATAL
+    # below says "a heading and its block disagree", which is FALSE for a
+    # malformed id — the heading may agree perfectly. A gate whose own message
+    # misdescribes what it caught is the prose that lies first.
+    if malformed_ids:
+        print(
+            "FATAL: backlog block(s) with an id that is not `B-<digits>`.\n"
+            + "\n".join(malformed_ids)
+            + "\nA placeholder or malformed id is invisible to BOTH loud checks: it opens\n"
+            "no gap in the density rule and collides with nothing, so it merges in\n"
+            "silence. Allocate the real id before merging.\n"
+            "KNOWN RESIDUE (B-167): a leading-zero id such as `B-0142` satisfies this\n"
+            "rule and still aliases `B-142` — `int(\"0142\") == 142` keeps density happy\n"
+            "and the duplicate check compares strings. This check does NOT cover it.",
+            file=sys.stderr,
+        )
+        return 2
+
     if mismatches:
         print(
             "FATAL: a heading and its block disagree about which item they are.\n"
