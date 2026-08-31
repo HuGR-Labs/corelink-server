@@ -5023,10 +5023,27 @@ passada consertou uma linha e deixou treze vendendo o mesmo controle inexistente
   **P** — *"No BYOK at GA today … gated-inert"*.
 - **A ressalva honesta que o reparo carrega, porque a metade oposta também é falsa:** o
   workflow `.github/workflows/byok_kill_switch_drill_weekly.yml` **existe, está em
-  `cron: 0 3 * * 0`, e as 5 últimas execuções estão verdes.** Não é "um job que nunca
-  rodou". É um job que drila o **fake**: toda credencial de KMS no step está comentada
-  (`# AWS_ACCESS_KEY_ID: …`), nenhum KMS de cliente é contatado, e o número
-  `byok-kill-switch-rtt ≤ 5 min` mede o fake. As duas metades entraram no texto.
+  `cron: 0 3 * * 0`, e as 8 execuções mais recentes (todas `schedule`, 2026-07-05 →
+  2026-08-30) estão verdes.** Não é "um job que nunca rodou". **Terceira passada
+  2026-08-31 — a segunda passada errou a segunda metade:** escrevi que o job "drila o
+  `InMemoryFake`". Ele não drila nada. `scripts/byok_kill_switch_drill.sh` (181 linhas)
+  **não invoca binário algum do CoreLink**, logo não toca nem o fake; e todo valor de PASS
+  é literal de shell — `TENANT_STATUS="active"` (`:51`), `DETECTED=true` (`:82`),
+  `DEK_CACHE_EMPTY=true` (`:100`), `TENANT_STATUS_POST="degraded_read_only"` (`:101`),
+  `RECOVERY_STATUS="active"` (`:129`); as chamadas de provider existem só como comentário
+  (`:64-67`, `:125`). O número `byok-kill-switch-rtt ≤ 5 min` é `date +%s` antes e depois
+  de um `sleep 2` (`:62`, `:81`, `:112`): **não mede coisa alguma**, e como nenhuma
+  asserção pode ser falsa, o verde é estruturalmente inevitável. Nenhuma execução deixou
+  evidência: o step "Commit drill report" faz `git commit` **sem `git push`** (workflow
+  `:56-68`) e `ls specs/_audits/ | grep -c byok-kill-switch-drill` = **0**. CAIQ `CEK-10.1`
+  e SIG-LITE `N.6` agora dizem exatamente isso.
+- **Terceira passada — B4 tinha propagado pela metade dentro do arquivo que o PR editou.**
+  No `SIG-LITE-2026-pre-filled.md`, `K.10` ainda vendia *"supplementary measures (BYOK
+  envelope encryption, EU-region pin)"* — a mesma afirmação pela qual o `DSP-09.1` do CAIQ
+  foi corrigido na passada anterior — e `N.2` ainda listava AWS/GCP/Azure/Vault como
+  *"customer-side BYOK KMS providers"* em serviço. Ambas corrigidas: `K.10` declara **uma**
+  medida suplementar (o pin de região) e diz que a TIA precisa ser refeita sem as chaves do
+  cliente; `N.2` diz que nenhum tenant alcança esses provedores hoje.
 - **`LOG-03.1` — "Audit log immutability enforced? Y".** O R2 não tem Object Lock
   (`NotImplemented`, [B-046]). Passou a **P**, e diz *tamper-evident, não imutável*: a
   adulteração é **detectada na verificação**, não impedida. A raiz jurídica está no **DPA
