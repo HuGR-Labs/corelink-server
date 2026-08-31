@@ -6829,3 +6829,105 @@ verify-means: |
   inatribuivel entre os dois.
 last-verified: 2026-08-30
 ```
+
+### B-123 — the OKF gate pays for the wrong fix: a blob anchor is vacuously green
+
+When a branch shifts lines in a cited file, there are two things a person can
+do, and the gate cannot tell them apart:
+
+| | cost | gate result |
+|---|---|---|
+| advance the `source_blobs` anchor | one command | **green immediately** |
+| renumber every citation | a script, byte-for-byte content verification, plus a manual sweep of the abbreviated citations no gate can see | green, eventually |
+
+**The atalho is cheap and the gate rewards it.** That is not a discipline
+problem to be solved with more care — it is a defect of INCENTIVE in the gate,
+and it will keep recurring for exactly as long as that cost ratio holds.
+
+**The root, stated plainly:** with a `source_blobs` anchor present, C5 compares
+the tree **with itself** for that file. It is therefore **vacuously true** for
+the anchored file — it detects drift introduced AFTER the anchor and hides the
+drift the anchor was written on top of.
+
+**Hard evidence, one day, two independent sessions, 100% recurrence:** on
+2026-08-30 the anchor shortcut was taken on #1389 and on #1393 — by two
+different sessions, **both of which knew the caveat** — and in both cases
+`validate_okf` reported **0 stale** while citations pointed at wrong lines: 17
+of 18 `main.rs` citations in `planes/container.md` (#1389) and 16 more in
+#1393. A sample of two with total recurrence, among people who knew better, is
+not anecdote.
+
+**The remedy is NOT to remove the anchor.** Without it the gate red-flags a file
+the branch legitimately alters, which is a real need. The point is that the
+anchor **does not substitute** for renumbering — the two solve different
+problems and collapse into one in the mind of anyone in a hurry, including the
+author of the instruction that recommended it.
+
+**[B-059] is the amplifier.** A citation in the abbreviated `` `:N-M` ``
+continuation form is invisible to `CITE_RE`, so those are never reported by any
+gate, ever. A vacuously-green anchor **plus** a blind surface is how 17 wrong
+citations survive two reviews. Seven of the ones corrected on #1389 were in
+that form.
+
+What would close this: C5 should refuse to treat an anchored file as fresh
+without evidence the citations were re-verified — e.g. require the citation's
+line CONTENT to match across the anchor boundary rather than comparing the file
+to itself.
+
+Relates to [B-059] (the blind surface), [B-049] (anchors orphaned by
+squash/rebase) and [B-124].
+
+```backlog
+id: B-123
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  grep -q 'source_blobs' scripts/validate_okf.py \
+    && ! grep -q 'anchor_content_reverify' scripts/validate_okf.py
+verify-means: |
+  open — passes while validate_okf still honours a source_blobs anchor without
+  any content re-verification of the citations it covers, i.e. while the anchor
+  remains a vacuously-green shortcut. Closes when the gate carries a named
+  re-verification step. It does NOT prove any specific concept is wrong today —
+  only that the cheap wrong fix is still available and still rewarded.
+last-verified: 2026-08-30
+```
+
+### B-124 — hand-edits and a bulk shifter over the same file double-shift it
+
+A bulk citation shifter computes each offset from the ORIGINAL line numbers, so
+it is **not idempotent** against a partially hand-corrected file: a citation
+already fixed by hand gets moved a second time.
+
+Reproduced on #1389: `main.rs:48-55` was corrected by hand to `49-56`, then the
+programmatic shifter ran over the same concept and produced **`50-57`**, which
+points at a blank line. Nothing failed — `validate_okf` was green, because the
+checkpoint had been advanced in the same operation.
+
+**The rule, and it is per FILE, not per session:** pick one method and stay with
+it. If a hand edit already happened, `git checkout -- <file>` back to the base
+and let the script do all of them; if the script cannot handle a case, exclude
+that file from the script entirely and do it all by hand.
+
+**The check that catches it either way** is content verification: the line at
+the OLD number in the base must be byte-identical to the line at the NEW number
+in the branch. A double shift fails that immediately.
+
+Relates to [B-123] and to the citation-token replacement hazard already known
+in this repo (replacing `file:N` corrupts a neighbouring `file:N-M`).
+
+```backlog
+id: B-124
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  ! test -x scripts/okf_shift_citations.py
+verify-means: |
+  open — passes while there is no repo-owned, idempotent citation shifter, so
+  each session writes its own throwaway and re-meets this hazard. Closes when a
+  shared tool exists that is safe to run twice. It does NOT prove any concept
+  is currently double-shifted; that is what content verification is for.
+last-verified: 2026-08-30
+```
