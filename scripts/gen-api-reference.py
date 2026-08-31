@@ -787,7 +787,7 @@ def render_endpoint_mdx(endpoint: Endpoint, spec: Spec) -> str:
     parts.append(
         "_Snippets are auto-generated from the OpenAPI contract. "
         "Replace `<YOUR_PAT>` with a Personal Access Token issued via "
-        "[`POST /v1/pats`](./post-v1-pats.mdx)._\n\n"
+        "[`POST /v1/customer/keys`](./post-v1-customer-keys.mdx)._\n\n"
     )
     # The PAT page was already published with one terminal LF before it was
     # brought back under generation. Preserve that byte-level contract while
