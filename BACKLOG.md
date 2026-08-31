@@ -10000,90 +10000,149 @@ verify-means: |
 last-verified: 2026-08-31
 ```
 
-### B-147 — o invariante `owner:` × `status` não é mecanizado: um item `done` com `owner: owner` passa
+### B-147 — o invariante `owner:` × `status` agora é mecanizado: `done`/`parked` com `owner: owner` é BROKEN
 
-`BACKLOG.md` declara que `owner: owner` significa *"precisa do humano"* — credencial,
-pagamento, deleção, decisão jurídica. Um item que **já está pronto** não pode continuar
-precisando do humano: `status != open` com `owner: owner` é contradição na cara.
+`BACKLOG.md` declara que `owner: owner` significa *"o próximo passo é fisicamente impossível
+sem ele AGORA"* — credencial, dinheiro, assinatura, máquina. Um item que **já está fechado**
+não pode continuar bloqueado em ninguém: `status ∈ {done, parked}` com `owner: owner` é
+contradição na cara.
 
-⚠️ **Correção 2026-08-31 — a frase abaixo era verdadeira quando escrita e ficou FALSA sem que
-nada apitasse, que é exatamente a tese do item.** Na medição desta árvore eram **cinco** os
-itens `done` com `owner: owner` — B-031, B-041, B-042, B-043 e B-085 — e o `backlog_verify`
-passou verde o tempo todo, porque o `verify` deste item mede a **ausência do portão** e não a
-contagem viva. Os cinco foram reclassificados nesta mesma passada, então a contagem voltou a
-zero; ela voltará a subir na próxima vez, e é por isso que o item continua `open`. A prova de
-que o defeito é real deixou de ser hipotética: **ele já aconteceu, cinco vezes.**
+**Isso não era hipotético, e o custo de descobrir foi o item inteiro.** Quando este item foi
+redigido, zero itens `done` carregavam o campo, e a redação dizia justamente isso. Na medição
+de 2026-08-31 eram **cinco** — B-031, B-041, B-042, B-043 e B-085 — e o `backlog_verify`
+esteve **verde durante todos eles**. A razão é a tese do item: `validate_schema()` validava
+`status` contra `VALID_STATUS` e `owner` contra `VALID_OWNER` **independentemente**, e nunca
+cruzava os dois.
 
-Hoje **nenhum item `done` carrega `owner: owner`** — verificado sobre o `BACKLOG.md` desta
-árvore. Isso é **propriedade deste commit, não garantia**: `validate_schema()`
-(`scripts/backlog_verify.py:135-160`) valida `status` contra `VALID_STATUS` e `owner` contra
-`VALID_OWNER` **independentemente**, e nunca cruza os dois. O próximo item a fechar com o
-campo esquecido entra sem ruído — e o efeito prático não é cosmético: é a fila do owner
-acumulando trabalho que ninguém mais precisa fazer, que foi exatamente o que o [B-137] e o
-#1510 tiveram de limpar à mão (28 → 12).
+**E o `verify` deste próprio item era o segundo espécime do mesmo defeito.** Ele montava uma
+sonda sintética num `mktemp -d` e perguntava se o *script* recusava a combinação. **Nunca leu
+o `BACKLOG.md` vivo** — era estruturalmente incapaz de contar violações, e por isso ficou
+verde enquanto cinco viviam no arquivo que ele diz guardar. É a classe *"portão que mede a
+ausência do portão, não a violação"*.
 
-Reparo: ~3 linhas em `validate_schema` — `status != "open" and owner == "owner"` ⇒ problema.
-É barato o bastante para que o custo real do item seja escrever o teste do portão, não o
-portão.
+**Reparo (2026-08-31):** 14 linhas em `validate_schema` cruzam os dois campos, e 4 células em
+`scripts/test_backlog_verify.sh` fixam a escolha — **duas de dente** (`done`+`owner`,
+`parked`+`owner` ⇒ BROKEN) e **duas de não-sobre-alcance** (`open`+`owner` e `done`+`tl`
+continuam CONFIRMED). Os dois controles negativos não são enfeite: sem eles, um portão que
+recusasse **tudo** passaria nas duas primeiras células e pareceria provado.
 
-**O que este item NÃO decide:** se `parked` deve contar junto com `done`. Um item parqueado
-esperando decisão do owner é legítimo, e a leitura estrita (`!= open`) o proibiria. Quem
-implementar decide entre `status == "done"` e `status != "open"`, e o teste tem de fixar a
-escolha, senão o portão vira folclore.
+**A pergunta que o item deixava em aberto está decidida: `parked` conta junto com `done`.**
+A leitura estrita `!= open` foi rejeitada porque incluiria estados futuros ainda não
+inventados; a lista explícita `{done, parked}` diz o que quer dizer. Um item parqueado
+esperando decisão do owner registra essa espera **no corpo, com data** — o campo carrega
+estado presente, não história.
 
 ```backlog
 id: B-147
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'set -e
+  set -u
   s=scripts/backlog_verify.py
   [ -f "$s" ] || { echo "FALHA: $s sumiu — reavalie o item."; exit 1; }
-  d=$(mktemp -d); trap "rm -rf $d" EXIT
+  [ -f BACKLOG.md ] || { echo "FALHA: BACKLOG.md sumiu — reavalie o item."; exit 1; }
+  d=$(mktemp -d) || { echo "FALHA: mktemp -d falhou — instrumento, nao achado."; exit 1; }
+  trap 'rm -rf "$d"' EXIT
   hoje=$(date +%Y-%m-%d)
-  cerca=$(printf "\140\140\140")
-  {
-    printf "### B-001 — sonda\n\n"
-    printf "%sbacklog\n" "$cerca"
-    printf "id: B-001\nrepo: corelink-server\nowner: owner\nstatus: done\n"
-    printf "verify: |\n  true\n"
-    printf "verify-means: |\n  done E owner: owner ao mesmo tempo — a contradicao que nenhum portao mede\n"
-    printf "last-verified: %s\n" "$hoje"
-    printf "%s\n" "$cerca"
-  } > "$d/sonda.md"
-  out=$(python3 "$s" --file "$d/sonda.md" --format json 2>&1) || true
-  printf "%s" "$out" | grep -q "\"id\": \"B-001\"" || { echo "FALHA: a sonda nao foi parseada (--file mudou de contrato?) — saida: $(printf "%s" "$out" | tr "\n" " " | cut -c1-160)"; exit 1; }
-  if printf "%s" "$out" | grep -q "BROKEN"; then
-    echo "FALHA: o script ja recusa done+owner:owner — feche o item."; exit 1; fi
-  echo "aberto: sonda done+owner:owner passa sem BROKEN; nada no script cruza os dois campos"'
+  cerca=$(printf '\140\140\140')
+  sonda() { # $1 status, $2 owner -> imprime o veredito; FALHA em stderr e sai 1
+    f="$d/probe-$1-$2.md"
+    {
+      printf '### B-001 — sonda\n\n'
+      printf '%sbacklog\n' "$cerca"
+      printf 'id: B-001\nrepo: corelink-server\nowner: %s\nstatus: %s\n' "$2" "$1"
+      printf 'verify: "true"\n'
+      printf 'verify-means: sonda do cruzamento owner x status\n'
+      printf 'last-verified: %s\n' "$hoje"
+      printf '%s\n' "$cerca"
+    } > "$f"
+    o=$(python3 "$s" --file "$f" --format json 2>&1) || true
+    case "$o" in
+      *'"id": "B-001"'*) ;;
+      *) echo "FALHA: a sonda $1+$2 nao foi parseada (--file mudou de contrato?) — saida: $(printf '%s' "$o" | tr '\n' ' ' | cut -c1-160)" >&2; exit 1;;
+    esac
+    printf '%s' "$o"
+  }
+  # dente: os dois cantos fechados x owner tem de ser recusados
+  for st in done parked; do
+    o=$(sonda "$st" owner) || exit 1
+    case "$o" in
+      *BROKEN*) ;;
+      *) echo "FALHA: o portao NAO recusa $st+owner:owner — a checagem cruzada sumiu de validate_schema."; exit 1;;
+    esac
+  done
+  # nao-sobre-alcance: sem estes dois, um portao que recusasse TUDO passaria acima
+  for par in 'open owner' 'done tl'; do
+    set -- $par
+    o=$(sonda "$1" "$2") || exit 1
+    case "$o" in
+      *BROKEN*) echo "FALHA: o portao recusa $1+owner:$2 — esta SOBRE-ALCANCANDO; a regra vale so no canto fechado x owner."; exit 1;;
+    esac
+  done
+  # a contagem VIVA — o que o verify anterior deste item era incapaz de ler
+  python3 - > "$d/viv.txt" <<'PY'
+  b = chr(96) * 3
+  cur, bad, n, inb = {}, [], 0, False
+  for line in open("BACKLOG.md"):
+      t = line.rstrip("\n")
+      if t == b + "backlog":
+          inb, cur = True, {}
+          continue
+      if inb and t == b:
+          inb = False
+          n += 1
+          if cur.get("status") in ("done", "parked") and cur.get("owner") == "owner":
+              bad.append(cur.get("id", "?"))
+          continue
+      if inb and ":" in t and not t.startswith(" "):
+          k, _, v = t.partition(":")
+          cur[k.strip()] = v.strip()
+  print(n, len(bad), ",".join(bad))
+  PY
+  total=$(cut -d' ' -f1 "$d/viv.txt"); viol=$(cut -d' ' -f2 "$d/viv.txt"); ids=$(cut -d' ' -f3- "$d/viv.txt")
+  [ "${total:-0}" -ge 100 ] || { echo "FALHA: o contador viu ${total:-0} itens no BACKLOG.md — a varredura nao esta enxergando os blocos; instrumento, nao achado."; exit 1; }
+  [ "$viol" = 0 ] || { echo "FALHA: $viol item(ns) fechados carregam owner: owner no BACKLOG.md vivo: $ids"; exit 1; }
+  echo "fechado: validate_schema recusa done+owner e parked+owner, aceita open+owner e done+tl, e os $total itens vivos tem 0 violacoes"
 verify-means: |
-  open — o script aceita, sem reclamar, um item que se declara `done` **e** `owner: owner`.
+  done — polaridade INVERTIDA. O `verify` anterior exigia que o script **aceitasse** a
+  combinação (predicado de item aberto); este exige que ele a **recuse**, e vermelha no dia em
+  que a checagem cruzada for removida de `validate_schema`.
 
-  **Mede a ausência do portão, não a ausência de violação**, e essa distinção é a razão de
-  ser do item: hoje a contagem de violações vivas é zero, então um `verify` que contasse
-  violações estaria verde e o item pareceria fechado enquanto nada o impede de voltar. Por
-  isso o predicado é a sonda; a contagem viva vai junto só como contexto impresso.
+  **Mede as duas coisas que o antecessor não media.** (1) O **dente**, por execução: uma sonda
+  `done`+`owner:owner` e outra `parked`+`owner:owner` têm de sair BROKEN. (2) A **contagem
+  viva** sobre o `BACKLOG.md` real — o antecessor montava a sonda num `mktemp -d` e nunca abria
+  o arquivo que diz guardar, então ficou verde enquanto **cinco** itens `done` carregavam
+  `owner: owner`. Essa cegueira era o item.
 
-  **A contagem de violações vivas ficou FORA do comando, de propósito.** Medida à mão em
-  2026-08-31, **depois** da reclassificação do campo `owner:`: **zero** itens `done` ou
-  `parked` carregam `owner: owner`. Antes dela eram **cinco** (B-031, B-041, B-042, B-043,
-  B-085) e este `verify` esteve verde durante todas as cinco — o que é o comportamento
-  desejado (ele mede o portão, não a violação) e ao mesmo tempo a prova de que o defeito não é
-  hipotético. Contá-la dentro do
-  `verify` seria o erro que o próprio item denuncia — com zero violações, um portão que
-  contasse violações ficaria verde e o item pareceria fechado enquanto nada impede a
-  primeira.
+  **Os dois controles de NÃO-SOBRE-ALCANCE são parte da prova, não enfeite.** `open`+`owner` e
+  `done`+`tl` têm de sair CONFIRMED. Sem eles, um portão que reprovasse **tudo** passaria nas
+  duas células de dente e pareceria provado.
 
-  **Anti-vacuidade:** sonda não parseada ⇒ falha alta com a saída recortada, nunca "aberto".
+  **Anti-vacuidade, três cláusulas:** sonda não parseada ⇒ falha alta com a saída recortada,
+  nunca silêncio; `mktemp -d` que falha ⇒ falha alta; e o contador vivo exige ver **≥ 100
+  itens** antes de acreditar em "zero violações" — "não achei violação" e "não sei ler o
+  arquivo" são a mesma saída de um parser, e este repositório já produziu ausências fantasmas
+  exatamente assim ([B-121]).
 
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: sonda
-  done+owner:owner passa sem BROKEN"* e exit 0. Numa cópia com as três
-  linhas em `validate_schema` que cruzam os dois campos, a sonda sai BROKEN e o comando
-  imprime *"FALHA: o script ja recusa done+owner:owner"* com exit 1.
+  **Medido pelos dois lados (2026-08-31), mutando por CONTEÚDO e contando ocorrências
+  antes/depois — o número mudou em todas:**
 
-  Fecha quando o cruzamento existir. O que ele **não** decide: se `parked` entra na regra —
-  a sonda usa `done`, que é o caso incontroverso, de propósito.
+  | mutação | resultado |
+  |---|---|
+  | árvore limpa | `CONFIRMED` |
+  | `if ... status in (done, parked) ...` → `if False:` no script (1→0 ocorrências) | `DRIFTED` — *"o portao NAO recusa done+owner:owner"* |
+  | predicado alargado para `owner == "owner"` sozinho | `DRIFTED` — *"esta SOBRE-ALCANCANDO"* |
+  | `B-031` plantado `done` + `owner: owner` no `BACKLOG.md` vivo | `DRIFTED` — *"1 item(ns) fechados carregam owner: owner … B-031"* |
+  | cercas ```` ```backlog ```` renomeadas (166→0) | falha alta do contador, nunca "zero violações" |
+
+  As mesmas cinco linhas da tabela do enunciado foram medidas contra o **portão** em
+  `scripts/test_backlog_verify.sh` (células `done`+`owner` e `parked`+`owner` ⇒ BROKEN;
+  `open`+`owner` e `done`+`tl` ⇒ CONFIRMED) e contra o `BACKLOG.md` **vivo** via `--id`.
+
+  O que ele **não** decide: se a lista `{done, parked}` deveria ser `!= open`. A escolha está
+  fixada nas células do `test_backlog_verify.sh` e justificada no corpo; mudá-la exige mudar o
+  teste, que é o ponto.
 last-verified: 2026-08-31
 ```
 
