@@ -5308,11 +5308,105 @@ por PR e está hosted-blocked (#1434), o Semgrep foi estacionado com zero sucess
 Ressalva justa e registrada: a linha CCC-07.1 sobre commits assinados **se sustenta** —
 os commits carregam `gpgsig`.
 
-Este item também é o guarda-chuva da reconciliação dos demais instrumentos assinados: o
+**Parcialmente reparado 2026-08-31 (PR WP-C) — o item SEGUE ABERTO.** As três linhas do
+CAIQ estão corrigidas: `STA-08.1` (agora "P") e `STA-11.1` (agora "N") caíram numa purga
+de claims anterior; a `AIS-04.1` caiu neste PR. Ela agora responde **"P"** e nomeia os
+gatilhos reais em vez da lista de ferramentas: `codeql.yml` é
+`schedule: '30 5 * * *'` + `workflow_dispatch` **sem lane `pull_request`**; o cron do
+`semgrep.yml` está comentado desde 2026-08-10 (0 de 8 execuções bem-sucedidas); o cron do
+`fuzz-nightly.yml` está comentado e o arquivo diz que o dispatch é *"currently the ONLY
+trigger"*. Em troca, a linha declara o que de fato gateia um PR que toca Rust — clippy
+`-D warnings`, `cargo test`, `cargo-audit`, `cargo-deny` — com a ressalva de que o filtro
+de `paths` desses lanes não alcança um PR só de documentação.
+
+O item continua aberto porque a metade cara não foi feita: ele também é o guarda-chuva da
+reconciliação dos demais instrumentos assinados: o
 BYOK do SLA ([B-083]), o Object Lock do DPA e dos templates a reguladores ([B-085]), e a
 residência do D1 ([B-086]). Um CAIQ entra no processo de risco do comprador e costuma ser
 garantido como verdadeiro no contrato principal — correção é barata antes de assinar e
 cara depois.
+
+**Segunda passada 2026-08-31 — revisão fria adversarial sobre o próprio PR.** A primeira
+passada consertou uma linha e deixou treze vendendo o mesmo controle inexistente:
+
+- **BYOK vendido como entregue em 13 linhas.** `CEK-02.1` ("optional BYOK envelope"),
+  `CEK-10.1` ("Y — drilled weekly"), `CEK-11.1` ("Y — HSM-backed"), `CEK-18.1` (citando
+  `apps/docs/docs/security/byok`, **caminho que não existe** — o real é
+  `apps/docs/docs/explanation/security/byok.mdx`), `DSP-09.1` (BYOK como medida
+  suplementar de SCC), `BCR-04.1`, e mais `CEK-04.1/05.1/06.1/07.1/16.1/17.1/19.1`, que
+  descrevem um ciclo de vida de CMK do cliente inteiro. Medido: `POST
+  /v1/admin/byok/activate` devolve `501 byok_not_available`
+  (`crates/corelink-container/src/routes/byok_admin.rs:245-257`) e o único provider
+  compilado é `InMemoryFake`. O documento **já se autocontradizia**: `CEK-09.1` responde
+  **P** — *"No BYOK at GA today … gated-inert"*.
+- **A ressalva honesta que o reparo carrega, porque a metade oposta também é falsa:** o
+  workflow `.github/workflows/byok_kill_switch_drill_weekly.yml` **existe, está em
+  `cron: 0 3 * * 0`, e as 8 execuções mais recentes (todas `schedule`, 2026-07-05 →
+  2026-08-30) estão verdes.** Não é "um job que nunca rodou". **Terceira passada
+  2026-08-31 — a segunda passada errou a segunda metade:** escrevi que o job "drila o
+  `InMemoryFake`". Ele não drila nada. `scripts/byok_kill_switch_drill.sh` (181 linhas)
+  **não invoca binário algum do CoreLink**, logo não toca nem o fake; e todo valor de PASS
+  é literal de shell — `TENANT_STATUS="active"` (`:51`), `DETECTED=true` (`:82`),
+  `DEK_CACHE_EMPTY=true` (`:100`), `TENANT_STATUS_POST="degraded_read_only"` (`:101`),
+  `RECOVERY_STATUS="active"` (`:129`); as chamadas de provider existem só como comentário
+  (`:64-67`, `:125`). O número `byok-kill-switch-rtt ≤ 5 min` é `date +%s` antes e depois
+  de um `sleep 2` (`:62`, `:81`, `:112`): **não mede coisa alguma**. Com precisão:
+  `DETECT_LATENCY_S` (`:75`→`:86`) e `TOTAL_S` (`:62`→`:112`) atravessam o **mesmo** e
+  único `sleep 2` — não são duas medidas independentes — e os dois `sleep 1` (`:126`,
+  `:128`) rodam depois de `:112`, fora das duas. E como nenhuma asserção pode ser falsa, o
+  verde é estruturalmente inevitável. Nenhuma execução deixou evidência: o step "Commit
+  drill report" faz `git commit` **sem `git push`** (citado pelo NOME do step: o range de
+  linhas já se deslocou uma vez na `main`) e
+  `ls specs/_audits/ | grep -c byok-kill-switch-drill` = **0**. CAIQ `CEK-10.1` e SIG-LITE
+  `N.6` carregam os mesmos FATOS (a redação difere entre os três documentos).
+- **Terceira passada — B4 tinha propagado pela metade dentro do arquivo que o PR editou.**
+  No `SIG-LITE-2026-pre-filled.md`, `K.10` ainda vendia *"supplementary measures (BYOK
+  envelope encryption, EU-region pin)"* — a mesma afirmação pela qual o `DSP-09.1` do CAIQ
+  foi corrigido na passada anterior — e `N.2` ainda listava AWS/GCP/Azure/Vault como
+  *"customer-side BYOK KMS providers"* em serviço. Ambas corrigidas: `K.10` declara **uma**
+  medida suplementar (o pin de região) e diz que a TIA precisa ser refeita sem as chaves do
+  cliente; `N.2` diz que nenhum tenant alcança esses provedores hoje.
+- **`LOG-03.1` — "Audit log immutability enforced? Y".** O R2 não tem Object Lock
+  (`NotImplemented`, [B-046]). Passou a **P**, e diz *tamper-evident, não imutável*: a
+  adulteração é **detectada na verificação**, não impedida. A raiz jurídica está no **DPA
+  executado** (`legal/dpa/v1.0.0.en-US.md:110-111`, *"immutable R2 with Object Lock for 7
+  years"*) e **não foi emendada aqui** — emendar ato jurídico é do owner. É exatamente a
+  razão pela qual este item segue aberto, e agora é o que o `verify` mede.
+- **`SEF-03.1` — "24×7 detection? Y — weekly synthetic page".** O drill **não dispara em
+  produção**: o cron de segunda 14:00 UTC vive no `[triggers]` default e no
+  `[env.staging.triggers]`; o `wrangler.toml:262-264` diz no próprio comentário que
+  *"production env intentionally omits `[triggers]`"*, e a imagem do pager sintético segue
+  com `<PIN_AT_RELEASE>` (`wrangler.toml:278`). Passou a **P**. A rotação PagerDuty 24/7
+  **não é mensurável deste repositório** — vive na conta PagerDuty — então a linha não a
+  afirma **nem a nega**: pede o export da escala.
+- **Propagação ao arquivo irmão.** `marketing/sales/legal-questionnaires/SIG-LITE-2026-pre-filled.md`
+  — mesmo pacote de procurement, mesma pasta — atestava em `N.6` *"Y — BYOK across 4
+  providers … drilled weekly"* e em `N.4` o envelope BYOK opcional. Ambas corrigidas.
+  Estava fora do diff da primeira passada.
+
+**Quarta passada 2026-08-31 — o achado maior, que estava nomeado em prosa e medido por
+nada.** O `SLA_SECONDS=360` (6 min) do script é número INTERNO. O **5** vem de instrumento
+**assinado**, em dois lugares, ambos conferidos por conteúdo:
+
+- `legal/sla/v1.0.0.md:46`, linha **Enterprise** da tabela de SLO: *"BYOK kill-switch p99
+  ≤ 5 min"*, com créditos de serviço por §4 + *"enhanced remedies"* atrás dela.
+- `legal/dpa-residency-amendment.md:230`, linha **Right to Erasure**: *"Customer revokes
+  CMK (BYOK kill switch) → crypto-erase ≤ 5 min globally"* — o kill-switch é oferecido
+  como **o mecanismo de Direito ao Esquecimento do GDPR**, com prazo técnico *"≤ 5 min"*.
+  O mesmo documento repete a promessa em `:351` como medida de evidência (*"BYOK kill
+  switch ≤ 5 min global revocation"*).
+
+Contra isso: `POST /v1/admin/byok/activate` devolve `501 byok_not_available`
+(`crates/corelink-container/src/routes/byok_admin.rs:245-257`). **Um SLA assinado promete 5
+minutos para uma feature que devolve `501`**, e o único instrumento que "mede" esse número
+tem orçamento de 6 minutos e não mede nada.
+
+O buraco de RASTREAMENTO era este: o corpo do [B-083] **cita** a linha do SLA e roteia a
+correção para cá, mas o `verify` deste item lia apenas a string *"immutable R2 with Object
+Lock"* no DPA — não lia `legal/sla/` nem o `dpa-residency-amendment`. Achado nomeado em
+prosa e medido por nada é exatamente a classe "achado que nunca vira item". O `verify`
+agora lê os dois instrumentos. **Ele não emenda ato jurídico assinado — só mede que ele
+afirma o que afirma.** Emendar é do owner.
 
 ```backlog
 id: B-087
@@ -5321,32 +5415,154 @@ owner: owner
 status: open
 verify: |
   bash -c 'q=marketing/sales/legal-questionnaires/CAIQ-V4-pre-filled.md
-  [ -f "$q" ] || { echo "FALHA: o CAIQ sumiu — feche o item ou reescreva-o."; exit 1; }
+  s=marketing/sales/legal-questionnaires/SIG-LITE-2026-pre-filled.md
+  d=legal/dpa/v1.0.0.en-US.md
+  for f in "$q" "$s" "$d"; do
+    [ -f "$f" ] || { echo "FALHA: $f sumiu — o comando perdeu o objeto e nao pode concluir nada."; exit 1; }
+  done
+  linhas=0
+  for k in "STA-08\.1" "STA-11\.1" "AIS-04\.1" "CEK-09\.1" "CEK-10\.1" "CEK-11\.1" "LOG-03\.1" "SEF-03\.1" "DSP-09\.1"; do
+    grep -qE "^\|[[:space:]]*$k" "$q" && linhas=$((linhas+1))
+  done
+  [ "$linhas" = 9 ] || { echo "FALHA: so $linhas das 9 linhas nomeadas existem no CAIQ — renomear ou deletar uma secao nao pode compartilhar saida com corrigi-la."; exit 1; }
+  grep -qE "^\|[[:space:]]*N\.6[[:space:]]*\|" "$s" || { echo "FALHA: a linha N.6 do SIG-LITE sumiu — o comando perdeu o objeto irmao."; exit 1; }
   ys=0
-  grep -E "^\|[[:space:]]*STA-08\.1" "$q" | grep -q "| Y " && ys=$((ys+1))
-  grep -E "^\|[[:space:]]*STA-11\.1" "$q" | grep -q "| Y " && ys=$((ys+1))
-  grep -E "^\|[[:space:]]*AIS-04\.1" "$q" | grep -q "| Y " && ys=$((ys+1))
-  ph=0
-  grep -rqE "SIGNING PLACEHOLDER|ZONE_ID_PLACEHOLDER" .github/workflows/ && ph=1
-  if [ "$ys" = 0 ]; then echo "FALHA: as tres linhas do CAIQ nao atestam mais Y — feche o item."; exit 1; fi
-  if [ "$ph" = 0 ]; then echo "FALHA: os placeholders de assinatura sumiram — reavalie: talvez o controle exista agora."; exit 1; fi
-  echo "aberto: $ys de 3 linhas do CAIQ ainda atestam Y e os placeholders de assinatura seguem no CI"'
+  for k in "STA-08\.1" "STA-11\.1" "AIS-04\.1" "CEK-10\.1" "CEK-11\.1" "LOG-03\.1" "SEF-03\.1" "DSP-09\.1"; do
+    grep -E "^\|[[:space:]]*$k" "$q" | grep -q "| Y |" && ys=$((ys+1))
+  done
+  grep -E "^\|[[:space:]]*N\.6[[:space:]]*\|" "$s" | grep -q "| Y |" && ys=$((ys+1))
+  [ "$ys" = 0 ] || { echo "FALHA: $ys linhas de procurement voltaram a atestar Y para controles nao entregues (BYOK / WORM / pagina sintetica / supply chain) — o reparo regrediu."; exit 1; }
+  sla=legal/sla/v1.0.0.md
+  amd=legal/dpa-residency-amendment.md
+  byok=crates/corelink-container/src/routes/byok_admin.rs
+  for f in "$sla" "$amd" "$byok"; do
+    [ -f "$f" ] || { echo "FALHA: $f sumiu — o comando perdeu o objeto que mede e nao pode concluir nada."; exit 1; }
+  done
+  grep -q "^sla_version:" "$sla" || { echo "FALHA: $sla nao tem front-matter sla_version — nao e mais o SLA que este portao acha que le; reavalie a mao."; exit 1; }
+  grep -q "DPA-RESIDENCY-AMENDMENT" "$amd" || { echo "FALHA: $amd nao se identifica mais como DPA-RESIDENCY-AMENDMENT — reavalie a mao."; exit 1; }
+  grep -q "REAL_KMS_PROVIDER_WIRED" "$byok" || { echo "FALHA: o gate REAL_KMS_PROVIDER_WIRED sumiu de $byok — a condicao que este portao pressupoe mudou de forma; reavalie a mao."; exit 1; }
+  if grep -q "byok_not_available" "$byok"; then n501=1; else n501=0; fi
+  [ "$n501" = 1 ] || { echo "FALHA: /v1/admin/byok/activate nao devolve mais 501 byok_not_available — se o BYOK embarcou, a premissa desta metade caiu e o item tem de ser reavaliado a mao (progresso, nao regressao)."; exit 1; }
+  p5="BYOK kill-switch p99 <= 5 min"
+  p5u=$(printf "BYOK kill-switch p99 \xe2\x89\xa4 5 min")
+  e5=$(printf "crypto-erase \xe2\x89\xa4 5 min globally")
+  sla_promete=0
+  grep -qF "$p5u" "$sla" && sla_promete=1
+  grep -qF "$e5" "$amd" && sla_promete=1
+  worm="immutable R2 with Object Lock"
+  ctl=$(grep -c "Object Lock" "$d" | tr -d " ")
+  [ "$ctl" -ge 1 ] || { echo "FALHA: a string de controle \"Object Lock\" nao aparece em $d — o DPA foi reescrito ou o comando esta lendo o arquivo errado; reavalie o item a mao."; exit 1; }
+  razoes=0
+  msg=""
+  if grep -qF "$worm" "$d"; then
+    razoes=$((razoes+1))
+    msg="$msg
+  - o DPA EXECUTADO ($d) ainda declara \"$worm\" por 7 anos e o R2 devolve NotImplemented."
+  fi
+  if [ "$sla_promete" = 1 ]; then
+    razoes=$((razoes+1))
+    msg="$msg
+  - instrumento assinado ainda promete o kill-switch de 5 min contra um endpoint que devolve 501: \"$p5\" no tier Enterprise do $sla, e/ou \"crypto-erase <= 5 min globally\" como Direito ao Esquecimento em $amd."
+  fi
+  if [ "$razoes" -gt 0 ]; then
+    echo "aberto: o CAIQ e o SIG-LITE estao corrigidos, mas $razoes razao(oes) juridica(s) seguem de pe:$msg
+  Emendar ato juridico assinado e do owner, nao deste portao — ele so mede que o instrumento afirma o que afirma."
+    exit 0
+  fi
+  echo "FALHA: nenhuma das razoes medidas (WORM no DPA; kill-switch de 5 min no SLA/amendment) continua de pe. REESCREVA o item nomeando a razao que sobrou — os demais instrumentos assinados, os templates a reguladores e as ~180 linhas nao varridas do CAIQ nao sao medidos aqui. So se NENHUMA razao sobrar, feche B-087 (status: done) com verify de polaridade INVERTIDA."
+  exit 1'
 verify-means: |
-  open — pelo menos uma das três linhas ainda atesta "Y" E os placeholders de assinatura
-  continuam nos workflows. As duas metades são a alegação: a afirmação existe E o
-  controle que ela nomeia não.
+  open — e a **polaridade agora tem dentes nos dois sentidos**, que era o defeito da
+  primeira versão deste comando.
 
-  Vira DRIFTED por qualquer um dos dois reparos: corrigir as linhas para "N"/"P" com
-  plano datado (barato, honesto, imediato), ou implementar de fato a assinatura e a
-  proveniência (caro, e SLSA L3 já foi recusado em [B-031]).
+  O comando anterior era incapaz de ficar vermelho. Com as três linhas já corrigidas,
+  `ys=0` era permanente, e o ramo `ys=0` saía `exit 0` "ok-parcial" — sempre. A razão
+  declarada para o item seguir aberto (a reconciliação dos instrumentos assinados) não era
+  medida por nada. Pior: ao virar script, ele escapou também do relógio de 14 dias, porque
+  `scripts/backlog_verify.py:196` só aplica STALE a `verify: manual`. Um item aberto por
+  uma razão que nenhum comando lê e nenhum relógio cobra fica aberto para sempre sem que
+  ninguém perceba.
 
-  Conta 3/2/1 em vez de exigir zero: corrigir uma linha reduz o número e mantém o item
-  aberto. Progresso parcial aparece.
+  **O que o comando mede agora são as condições REMANESCENTES, não a já resolvida**, e são
+  DUAS, contadas independentemente:
 
-  O que NÃO decide, e admito: quais prospects já receberam a versão atual do documento, e
-  se precisam ser notificados. Isso é registro comercial fora do repositório e pertence
-  ao owner — deve virar item próprio se a decisão for notificar.
-last-verified: 2026-08-30
+  1. `legal/dpa/v1.0.0.en-US.md` ainda declara *"immutable R2 with Object Lock"* por 7
+     anos, contra um R2 que devolve `NotImplemented`.
+  2. **(nova)** Instrumento assinado ainda promete o kill-switch de 5 minutos contra um
+     endpoint que devolve `501`: `legal/sla/v1.0.0.md:46` no tier Enterprise (*"BYOK
+     kill-switch p99 ≤ 5 min"*) e `legal/dpa-residency-amendment.md:230` como Direito ao
+     Esquecimento (*"crypto-erase ≤ 5 min globally"*, repetido em `:351`). Esta metade
+     existia só em prosa — no corpo do [B-083], que roteava o achado para cá — e **nenhum
+     comando a lia**. O `verify` antigo lia apenas a string do DPA, então o achado maior
+     deste item era literalmente não-medido.
+
+  Enquanto QUALQUER uma das duas casar, o item está legitimamente aberto e o comando sai
+  `exit 0` nomeando quais razões seguem de pé. **Quando as duas deixarem de casar, o
+  comando fica VERMELHO** — reprova por progresso, que é o comportamento correto para um
+  item `open`. A mensagem de reprovação manda **reescrever o item primeiro** e só oferece
+  o fechamento por último, de propósito: a reprovação também dispara numa reescrita
+  meramente cosmética de qualquer um dos instrumentos, e "feche" como primeira opção é
+  caminho para dar o item por resolvido com a alegação viva, apenas reformulada.
+
+  **Q-7 nos dois lados, medido (mutação nos arquivos reais, restaurados depois):**
+
+  - WORM tirado do DPA, promessas de 5 min intactas → `CONFIRMED open` (a metade nova
+    sustenta sozinha; o comando ANTIGO ficaria vermelho aqui mandando fechar).
+  - Só a linha do SLA tirada, o amendment intacto → `CONFIRMED open`.
+  - WORM + as duas promessas de 5 min tiradas → `DRIFTED`, "nenhuma das razoes medidas …
+    continua de pe. REESCREVA o item …".
+  - `legal/sla/v1.0.0.md` deletado → `DRIFTED`, "sumiu — o comando perdeu o objeto".
+  - front-matter `sla_version:` renomeado → `DRIFTED`, "nao e mais o SLA que este portao
+    acha que le".
+  - `byok_not_available` sumido do handler → `DRIFTED`, "a premissa desta metade caiu …
+    (progresso, nao regressao)".
+  - `REAL_KMS_PROVIDER_WIRED` renomeado → `DRIFTED`, controle de forma.
+
+  Emendar o DPA **não é trabalho deste portão nem deste PR**: é ato jurídico executado, e
+  a decisão é do owner. O portão o observa; não o toca.
+
+  Três metades são **controle do instrumento**, para que sumiço e conserto nunca
+  compartilhem saída:
+
+  1. Conta se as **nove** linhas nomeadas ainda existem no CAIQ (as 3 originais + as 6
+     novas) e falha se forem menos — renomear ou deletar uma seção não pode passar.
+  2. Exige a existência da linha `N.6` no SIG-LITE, o arquivo irmão que a primeira passada
+     não tocou.
+  3. Antes de decidir pela ausência de *"immutable R2 with Object Lock"* no DPA, exige que
+     a string de controle mais fraca `"Object Lock"` apareça ao menos uma vez. Se o DPA
+     inteiro for reescrito ou o caminho mudar, o comando **falha pedindo reavaliação
+     manual** em vez de concluir "consertado" a partir de um arquivo que não está lendo.
+  4. Para a metade nova: os três objetos (`legal/sla/v1.0.0.md`,
+     `legal/dpa-residency-amendment.md`, `crates/…/byok_admin.rs`) precisam **existir** e
+     ainda se **identificar** — front-matter `sla_version:`, o id `DPA-RESIDENCY-AMENDMENT`,
+     e a constante `REAL_KMS_PROVIDER_WIRED`. Sumiço, renomeação ou caminho errado saem
+     como FALHA nomeada, nunca como "consertado".
+  5. A condição que torna a promessa falsa — o `501 byok_not_available` — é ela mesma
+     medida. Se o BYOK embarcar, o comando fica VERMELHO pedindo reavaliação manual em vez
+     de continuar afirmando que o SLA promete o impossível.
+
+  E a metade de regressão cobre as nove linhas de procurement (CAIQ + SIG-LITE): se
+  qualquer uma voltar a atestar `Y` para BYOK, WORM, página sintética ou supply chain, o
+  comando fica vermelho.
+
+  O que NÃO decide, e admito, em cinco pontos:
+
+  1. Quais prospects já receberam a versão anterior do CAIQ ou do SIG-LITE, e se precisam
+     ser notificados. É registro comercial fora do repositório e pertence ao owner.
+  2. As demais ~180 linhas do CAIQ. Foram auditadas as 9 nomeadas mais os 7 vizinhos
+     `CEK-*` que dependiam do mesmo BYOK. O resto do questionário segue sem varredura.
+  3. **A rotação PagerDuty 24/7 do `SEF-03.1`.** Ela vive na conta PagerDuty, não no
+     repositório. O comando não a afirma nem a nega, e a linha do CAIQ faz o mesmo.
+  4. Se um "P" é resposta juridicamente adequada num processo de procurement. O texto é
+     factualmente verdadeiro; adequação é do owner e do jurídico.
+  5. Os demais instrumentos assinados que herdam a mesma afirmação de Object Lock — avisos
+     de privacidade publicados e os templates de notificação de violação à DPC irlandesa e
+     à ANPD. O comando lê o DPA; a varredura dos templates não foi feita.
+  6. Se o número **6 min** interno (`SLA_SECONDS=360` em `scripts/byok_kill_switch_drill.sh:34`)
+     deve ser reconciliado com o **5 min** contratual, ou o contrário. O comando não opina:
+     mede que o instrumento assinado diz 5 e que o endpoint diz `501`. A reconciliação —
+     e a decisão de emendar SLA ou amendment — é do owner e do jurídico.
+last-verified: 2026-08-31
 ```
 
 ### B-088 — o comunicado de lançamento afirma pentest externo limpo; o próprio repositório instrui a não afirmar isso
