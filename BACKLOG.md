@@ -5678,8 +5678,8 @@ verify: |
   [ "$n" = 0 ] || { echo "FALHA: $n arquivo(s) sob apps/ voltaram a dirigir titulares a @corelink.example — o reparo regrediu."; exit 1; }
   c=$(ls apps/admin-ui/src/content/privacy-notice.* 2>/dev/null | wc -l | tr -d " ")
   [ "$c" -gt 0 ] || { echo "FALHA: os avisos de privacidade sumiram de apps/admin-ui/src/content/ — o comando perdeu o objeto e nao pode concluir ausencia."; exit 1; }
-  ok=$(grep -rlE "privacy@humangr\.com|dpo@humangr\.com" apps/admin-ui/src/content/ 2>/dev/null | wc -l | tr -d " ")
-  [ "$ok" -gt 0 ] || { echo "FALHA: nenhum dos $c avisos aponta para privacy@/dpo@humangr.com — o endereco correto sumiu."; exit 1; }
+  ok=$(grep -lE "privacy@humangr\.com|dpo@humangr\.com" apps/admin-ui/src/content/privacy-notice.* 2>/dev/null | wc -l | tr -d " ")
+  [ "$ok" = "$c" ] || { echo "FALHA: so $ok de $c avisos apontam para privacy@/dpo@humangr.com — divergencia entre idiomas publicados."; exit 1; }
   echo "done: 0 enderecos @corelink.example em apps/; $ok de $c avisos apontam para humangr.com"'
 verify-means: |
   done — polaridade INVERTIDA em relação à versão `open`. Agora falha se um endereço
@@ -5691,6 +5691,16 @@ verify-means: |
   comando conta os arquivos de aviso e exige que o endereço CORRETO esteja presente. Se
   alguém deletar `apps/admin-ui/src/content/`, este `verify` falha em vez de declarar
   vitória sobre um diretório vazio.
+
+  A exigência é **`ok = c`, não `ok > 0`**, e a diferença é o item inteiro: a prosa acima
+  diz que "corrigir só um idioma seria pior que não corrigir nenhum", e um limiar `> 0`
+  aceita exatamente isso. Com `> 0` dois mutantes passavam — 7 dos 8 avisos regredindo
+  para `hugr.dev` com só o `en.ts` certo, e apagar o endereço de `pt.ts`+`es.ts` — que são
+  a divergência entre idiomas publicados que este item existe para impedir. O `grep` do
+  `ok` é escopado ao mesmo conjunto `privacy-notice.*` que o `c` conta (antes varria o
+  diretório inteiro, onde `dpa.*` e `tos.*` também vivem): dois escopos diferentes não
+  podem ser comparados por igualdade sem que um endereço novo num `dpa.*` vermelhe o
+  portão por acidente.
 
   O que NÃO decide, e admito: se `privacy@humangr.com` e `dpo@humangr.com` de fato
   entregam correio. O comando prova que o TLD reservado saiu e que o endereço canônico do
