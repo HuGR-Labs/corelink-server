@@ -31,6 +31,11 @@ on:
       # location or proto edits silently skip the drift gate.
       - "crates/corelink-reapi/proto/**"
       - "crates/corelink-container/proto/**"
+      # The React-page internal-link gate lives outside apps/docs, so a change
+      # to the gate itself must re-run it (otherwise the gate can be weakened
+      # without ever executing).
+      - "scripts/check_docs_react_links.py"
+      - "requirements-ci.txt"
   push:
     branches: [main]
     paths:
@@ -44,6 +49,11 @@ on:
       - ".github/actions/setup-pnpm/**"
       - "crates/corelink-reapi/proto/**"
       - "crates/corelink-container/proto/**"
+      # The React-page internal-link gate lives outside apps/docs, so a change
+      # to the gate itself must re-run it (otherwise the gate can be weakened
+      # without ever executing).
+      - "scripts/check_docs_react_links.py"
+      - "requirements-ci.txt"
   schedule:
     # Lighthouse baseline at 08:00 UTC (absorbed from docs-lighthouse.yml).
     # Tag-trigger surface from old docs-lighthouse.yml (docs-v*, v*) is
@@ -333,6 +343,51 @@ jobs:
         # change under sdks/ that forgets to republish would leave customers
         # downloading a stale SDK. This rebuilds both and fails on any drift.
         run: bash scripts/verify-sdk-artifacts.sh
+
+  react-link-check:
+    name: React-page internal links resolve to published routes
+    # WHY THIS JOB EXISTS. `onBrokenLinks: "throw"` (docusaurus.config.ts) only
+    # covers links Docusaurus resolves itself — Markdown/MDX links and <Link>.
+    # A raw `<a href="/...">` typed into a React page under
+    # apps/docs/src/pages/** is invisible to it, and the `broken-links` job
+    # above (lychee, against the BUILD output) did not catch these either.
+    # Measured on 2026-08-31: 9 such hrefs on the LIVE legal pages resolved to
+    # nothing — /explanation/compliance/dpa (x6), /explanation/privacy/gdpr,
+    # /explanation/privacy/lgpd-full, /explanation/sre/slo — with every gate in
+    # the repo green. Confirmed against production:
+    # `curl -o /dev/null -w '%{http_code}' https://humangr.com/corelink/docs/explanation/compliance/dpa`
+    # returned 404.
+    #
+    # Independent of the `build` artifact by design: it reads sources, not
+    # build output, so it still runs (and still fails) when the build breaks.
+    #
+    # ── Runner: `corelink` fabric — see the `build` job above for the full
+    # ephemeral-box / queued-spawn note. This job is python3-only; the image
+    # ships /usr/bin/python3 (the same idiom `spec_validation.yml` has used on
+    # this fleet since 2026-06-03), and pyyaml comes from requirements-ci.txt
+    # in a repo-local venv rather than being assumed present.
+    runs-on: corelink
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install dependencies (venv on system python3)
+        # No actions/setup-python: it cannot provision Python on the
+        # self-hosted fleets (RUNNER_TOOL_CACHE unset -> unwritable
+        # /Users/runner). Same recipe as spec_validation.yml.
+        run: |
+          set -euo pipefail
+          python3 -m venv .venv
+          .venv/bin/python3 -m pip install --upgrade pip
+          .venv/bin/python3 -m pip install -r requirements-ci.txt
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: Resolve every internal href in apps/docs/src/**/*.tsx
+        # --verbose prints the POPULATION (hrefs checked, destinations known,
+        # drafts excluded) so a run that checked nothing is visible in the log
+        # instead of reading as a pass. The script itself fails loudly on every
+        # empty-list path; it cannot pass vacuously.
+        run: python3 scripts/check_docs_react_links.py --verbose
 
   vale:
     name: Vale prose lint
