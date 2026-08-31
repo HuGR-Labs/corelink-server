@@ -4773,8 +4773,9 @@ correta junto. A evidência que aguenta contestação é
 `Ok(Arc::new(InMemoryFake::new()))`. Sem nenhuma feature, é esse braço que compila. O
 doc-comment do `InMemoryFake` (`:279`) diz **"Not for production"** e descreve o wrap como
 "storing the plaintext bytes as the ciphertext (XOR-masked with a fixed module-private
-key)"; a constante da máscara (`:295`) diz que ela "offers no cryptographic
-confidentiality".
+key)"; a constante da máscara diz que ela "offers no cryptographic confidentiality" —
+citada por conteúdo como `:296`, que é onde a frase inteira está (`:295` é só a primeira
+linha do doc-comment).
 
 **O item SEGUE ABERTO. 2026-08-31 (PR WP-C) reparou só a metade documental**, porque o
 reparo do defeito real é embarcar um provedor de KMS — trabalho de CÓDIGO, sobre
@@ -4826,6 +4827,19 @@ BYOK como entregue:
   revisão que originou esta lista dizia 5; são 6.
 - `apps/docs/docs/explanation/security/byok.mdx:55` — *"BYOK is available on the
   **Enterprise** tier"* — × 4 locales.
+- **`apps/docs/docs/trust/subprocessors.mdx:105-113`** — página do Trust Center: tabela
+  AWS KMS / GCP Cloud KMS / Azure Key Vault / HashiCorp Vault como sub-processadores em
+  *"Customer-controlled CMK (BYOK option)"*, precedida de *"CoreLink only holds wrapped
+  DEKs"*. Falso hoje: com BYOK inerte nenhum tenant alcança esses provedores, e o que o
+  binário embarca é `InMemoryFake`. **Não reparada neste PR** — o reparo é do PR que
+  varrer o resíduo documental —, mas nomeada aqui porque *achado nomeado só em prosa é
+  achado que nunca vira item*. Verificado 2026-08-31 que **nenhum PR aberto a conserta**.
+  População medida: **25 PRs abertos** (72 branches remotas). **Dois** tocam o arquivo, e
+  **nenhum dos dois toca a tabela**: #1490 (`claude/wp-e-cosign`) edita `:133+` (Sigstore),
+  e #1397 (`feat/devenv-ingress-control-plane-wp08-wp09`) edita o cabeçalho e a seção de
+  canais de notificação — este último a partir de base defasada, revertendo `last_updated`
+  de `2026-08-24` para `2026-05-27` e a contagem do registro de 22 para 19 vendors, o que é
+  um defeito à parte e NÃO deste item.
 
 **Segunda passada 2026-08-31 — revisão fria adversarial sobre o próprio PR.** Dois defeitos
 que o reparo anterior criou:
@@ -4867,7 +4881,7 @@ verify: |
   defvazio=0; grep -qE "^default[[:space:]]*=[[:space:]]*\[\]" "$c" && defvazio=1
   defbyok=0; grep -E "^default[[:space:]]*=" "$c" | grep -q "byok" && defbyok=1
   if [ "$temfeat" = 1 ] || [ "$defbyok" = 1 ]; then
-    echo "FALHA: o build embarca alguma feature byok-*-real (cmdline=$temfeat default=$defbyok) — feche o item."; exit 1; fi
+    echo "FALHA: o build embarca alguma feature byok-*-real (cmdline=$temfeat default=$defbyok). REAVALIE o item: compilar a feature e condicao NECESSARIA, nao suficiente — o [B-084] cobra um drill REAL contra um KMS real, e o residuo documental (231 arquivos) nao e lido por este comando. So feche (status: done) depois disso, com verify de polaridade INVERTIDA."; exit 1; fi
   echo "aberto: Dockerfile constroi sem --features byok-*-real e default=[] (default_vazio=$defvazio)"'
 verify-means: |
   open — a linha de build do `Dockerfile` não passa nenhuma feature `byok-*-real` E o
@@ -4885,6 +4899,20 @@ verify-means: |
   — o "controle do instrumento" nunca podia falhar, porque o comentário sempre estava lá
   para satisfazê-lo. Ancorei em `^[^#]*cargo build[^#]*-p corelink-server`, e as duas
   mutações agora ficam vermelhas.
+
+  **Q-7 nos dois lados, remedido 2026-08-31 por mutação nos arquivos reais (restaurados):**
+
+  - estado real → `CONFIRMED open`.
+  - `--features byok-aws-real` na linha REAL de build → `DRIFTED` (`cmdline=1 default=0`).
+  - linha REAL de build apagada, comentário do `Dockerfile:8` intacto → `DRIFTED`,
+    "perdeu o objeto" — que era exatamente o que a versão anterior não conseguia fazer.
+  - `default = ["byok-aws-real"]` no `Cargo.toml` → `DRIFTED` (`cmdline=0 default=1`).
+
+  **Ordem das opções corrigida na mesma passada.** A mensagem de reprovação dizia "feche o
+  item" e nada mais, o que contradizia o próprio `verify-means` logo abaixo: compilar a
+  feature é condição necessária, não suficiente. Agora manda **reavaliar** primeiro,
+  nomeando o que ainda não está coberto (o drill real de [B-084], o resíduo documental), e
+  o fechamento vem por último.
 
   O que NÃO decide, e admito, em três pontos:
 
