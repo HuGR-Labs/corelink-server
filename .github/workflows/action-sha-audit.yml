@@ -40,7 +40,7 @@ jobs:
     # Hosted minutes bill with a 1-MINUTE-PER-JOB FLOOR, so this sub-minute
     # check costs a full paid minute every run; on the fleet it costs $0.
     # Verified running natively on the fleet host (macOS/BSD userland).
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: corelink  # zero-hosted (WP-CI): python3 puro (baked na imagem da frota)
     timeout-minutes: 5
     steps:
       - name: Checkout repository

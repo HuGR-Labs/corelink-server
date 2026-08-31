@@ -86,7 +86,7 @@ jobs:
     name: pipelines cannot invert on match; every shell script parses
     # Self-hosted fleet (zero hosted Actions spend). Pure stdlib python3 plus
     # `bash -n`; sub-minute, no toolchain, no network.
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: corelink  # zero-hosted (WP-CI): python3 puro (baked na imagem da frota)
     timeout-minutes: 5
     steps:
       - name: Checkout
