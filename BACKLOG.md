@@ -5247,30 +5247,40 @@ um cliente lê — nunca recebeu a correção.
 É o defeito de menor esforço de reparo e maior consequência imediata da auditoria: quatro
 linhas separam todo cliente novo de um erro no primeiro comando.
 
+**Fechado 2026-08-31 (PR WP-C).** `apps/docs/docs/intro.md` agora ensina BLAKE3 nas três
+posições (parágrafo de abertura, o parágrafo do endereçamento, e a tabela de
+capacidades), com a mesma frase autoritativa do `apps/docs/docs/api/http.md:58` —
+*"compute it with `b3sum`, **not** `sha256sum`"* — mais o `422 content hash mismatch` que
+o algoritmo errado produz. A única menção remanescente a `sha256sum` é a negativa
+explícita nessa frase. O diagrama passou a mostrar `<b3>` no lugar de `<hash>`.
+
 ```backlog
 id: B-092
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   bash -c 'i=apps/docs/docs/intro.md
-  [ -f "$i" ] || { echo "FALHA: intro.md sumiu — reavalie o item."; exit 1; }
-  sha=$(grep -ciE "sha-?256|sha256sum" "$i" | tr -d " ")
+  [ -f "$i" ] || { echo "FALHA: intro.md sumiu — o reparo nao pode ser verificado."; exit 1; }
   b3=$(grep -ciE "blake3|b3sum" "$i" | tr -d " ")
-  [ "$sha" -gt 0 ] || { echo "FALHA: intro.md nao menciona mais SHA-256 — feche o item."; exit 1; }
-  [ "$b3" = 0 ] || { echo "FALHA: intro.md ja menciona BLAKE3/b3sum ($b3x) — reavalie: o reparo pode estar feito."; exit 1; }
-  echo "aberto: intro.md menciona SHA-256 em $sha lugar(es) e BLAKE3/b3sum em nenhum"'
+  [ "$b3" -gt 0 ] || { echo "FALHA: intro.md voltou a nao mencionar BLAKE3/b3sum — o reparo regrediu."; exit 1; }
+  ensina=$(grep -inE "sha-?256" "$i" | grep -viE "not.{0,4}sha256sum" | wc -l | tr -d " ")
+  [ "$ensina" = 0 ] || { echo "FALHA: intro.md voltou a ensinar SHA-256 em $ensina linha(s) fora da negativa — o reparo regrediu."; exit 1; }
+  echo "done: intro.md ensina BLAKE3/b3sum em $b3 lugar(es) e nenhuma linha ensina SHA-256"'
 verify-means: |
-  open — a página de introdução ainda instrui SHA-256 e não menciona BLAKE3 nem `b3sum`.
+  done — polaridade INVERTIDA em relação à versão `open`. Agora falha se o BLAKE3 sumir
+  da página OU se voltar a existir uma linha ensinando SHA-256 fora da negativa
+  ("not `sha256sum`"). Enquanto `open`, o comando exigia exatamente o contrário; deixá-lo
+  como estava passaria no PR do reparo e vermelharia o merge seguinte.
 
-  Vira DRIFTED quando o BLAKE3 aparecer, que é o reparo. Uso a ausência de BLAKE3 em vez
-  de exigir zero menções a SHA-256 porque a página pode legitimamente citar SHA-256 ao
-  explicar a superfície Bazel (que aceita sha256 sob `bazel/sha256/`); o que não pode é
-  ensinar SHA-256 SEM ensinar BLAKE3.
+  O filtro da negativa é deliberado: a frase correta CITA `sha256sum` para dizer que não
+  é ele. Exigir zero ocorrências de "sha256" apagaria justamente a instrução que corrige
+  o cliente.
 
-  Cross-ref: o texto correto já existe em `apps/docs/docs/api/http.md:58` e é de onde a
-  correção deve ser propagada, não reescrita.
-last-verified: 2026-08-30
+  O que NÃO decide, e admito: as demais páginas de `apps/docs/`. Este comando é escopado
+  ao `intro.md`, que era o objeto do item. Uma varredura da superfície publicada inteira
+  é trabalho maior e não cabe neste `verify`.
+last-verified: 2026-08-31
 ```
 
 ### B-093 — quatro tetos diferentes para o tamanho de uma entrada de cache, e o do caminho de escrita nativo é o menor
