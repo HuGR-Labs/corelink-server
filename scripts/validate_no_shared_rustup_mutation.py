@@ -76,8 +76,33 @@ JOB_START = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$")
 RUNS_ON = re.compile(r"^\s+runs-on:\s*(.+?)\s*$")
 
 
+def _strip_trailing_comment(runs_on: str) -> str:
+    """Drop a trailing `# …` from a scalar `runs-on:` value.
+
+    The repo convention is to justify a runner choice inline:
+
+        runs-on: corelink  # zero-hosted: python3 baked into the image
+
+    Without this strip, `runs_on.strip() == "corelink"` is False for every such
+    job and the job silently LEAVES the inspected set — the guard keeps printing
+    OK while covering less. Measured 2026-08-31 on `main`: 24 live `runs-on:`
+    lines carry a trailing comment, 20 of which resolve to self-hosted/corelink.
+    Those 20 jobs were invisible to this guard, which reported OK throughout —
+    inspected count went 173 -> 193 the moment this strip was added.
+
+    Only safe because a `runs-on:` VALUE never legitimately contains `#`: it is a
+    label, a `[a, b]` list, or a `${{ }}` expression. An expression is left alone
+    (it has no bare `#`), and a quoted value keeps its quotes, which never equal
+    a bare label anyway.
+    """
+    if runs_on.lstrip().startswith("${{"):
+        return runs_on.strip()
+    return runs_on.split("#", 1)[0].strip()
+
+
 def is_self_hosted(runs_on: str) -> bool:
-    return "self-hosted" in runs_on or runs_on.strip() == "corelink"
+    value = _strip_trailing_comment(runs_on)
+    return "self-hosted" in value or value == "corelink"
 
 
 def main() -> int:
