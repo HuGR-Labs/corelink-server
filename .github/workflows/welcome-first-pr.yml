@@ -48,6 +48,26 @@ jobs:
   welcome:
     name: Post welcome comment
     # zero-hosted (WP-CI): gh assado na imagem; implementação nativa em gh, feita para fugir de container action
+    #
+    # ⚠️ EXPOSURE NOTE — this job has NO actor gate, by design: it exists to greet
+    # people who are not yet contributors. What bounds it is repository
+    # VISIBILITY, not a check in this file. Measured 2026-08-31: the repo is
+    # PRIVATE with 0 forks, so `issues`/`pull_request_target` can only be raised
+    # by org members and invited collaborators, and the trigger surface is the
+    # same set of people who could already queue fleet work. THE DAY THIS REPO
+    # GOES PUBLIC that stops being true: an unauthenticated stranger opening
+    # issues would spawn one ephemeral microVM per event, and `pull_request_target`
+    # is exempt from the "require approval for first-time contributors" policy
+    # that gates `pull_request`. Gate on actor (or move this lane back to a host
+    # that costs nothing per event) BEFORE flipping visibility.
+    #
+    # Secondary hazard, independent of who triggers it: a REFUSED or dropped
+    # spawn leaves the job `queued`, and `timeout-minutes` does not bound queued
+    # time — it starts once a job is RUNNING. The fabric's `redriveOrphanedJobs`
+    # reconciler (1-min cron) retries, but only `MAX_ORPHAN_ATTEMPTS = 3` with a
+    # 30-minute dead-letter TTL; past that the job is never revisited. This
+    # workflow is a greeter with no assertion, so a stranded run cannot block a
+    # merge — unlike `pr-labels`, where it can. See docs/internal/ci-runner-fabric-box.md.
     runs-on: corelink
     steps:
       - name: Greet first-time contributor
