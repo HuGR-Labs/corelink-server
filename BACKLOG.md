@@ -8074,3 +8074,227 @@ verify-means: |
   Ele mede a colisão, não escolhe o remédio.
 last-verified: 2026-08-31
 ```
+
+### B-138 — o build da imagem do runner estoura o disco da box ao importar o nightly do `#523`
+
+O #1506 tira seis lanes do Mac do dono e as põe em `runs-on: corelink`, confiando que a
+imagem da frota exporta `CORELINK_NIGHTLY`, conforme `corelink-runners#523`. O passo falha
+alto se a variável não existir, e falha desde então.
+
+A causa passou por três leituras erradas antes desta. **Não** é roll atrasado da frota,
+**não** é o `#523` incompleto, e **não** é "ninguém assou". Assaram, às 05:46:32Z, e o build
+estourou o disco oito minutos dentro:
+
+```
+level=fatal msg="apply layer error for corelink-spawn-worker-runnercontainer:
+  failed to extract layer sha256:3296627a…: write
+  /var/lib/containerd/…/fs/home/runner/.rustup/toolchains/
+  nightly-2026-08-31-x86_64-unknown-linux-gnu/lib/librustc_driver-….so:
+  no space left on device"
+```
+
+O caminho que estourou é **exatamente o que o `#523` acrescentou**. Mas a precisão importa,
+e a versão anterior deste parágrafo errava nela: **a camada do nightly não falhou durante o
+`RUN` que a instala — falhou na importação.**
+
+O log mostra o buildkit **terminando**: `#44 exporting manifest … done`,
+`#44 sending tarball 14.6s done`, `#44 DONE 80.4s` às 05:55:16Z. Só então vem
+`unpacking docker.io/library/corelink-spawn-worker-runnercontainer:…` e, 34 segundos depois,
+o ENOSPC. O build **produziu** a imagem; a box não coube **desempacotá-la**.
+
+Isso muda o que está em jogo: o `docker build` passa pelo shim do nerdctl, então o buildkit
+exporta um **tarball** e o nerdctl **desempacota na image store do containerd** antes de
+qualquer push. A box precisa segurar cache de build **+** tarball **+** camadas
+desempacotadas **ao mesmo tempo**. É pico de coexistência, não tamanho de uma camada
+isolada.
+
+**Isto NÃO é o [B-128].** O B-128 é o disco do Mac do dono. Aqui é `/var/lib/containerd` e
+`/opt/actions-runner` da box efêmera da frota, outra máquina. Mesma classe de defeito,
+hardware diferente — e se os dois virarem um item só, o `verify` de um passa a medir a
+máquina do outro.
+
+### O tamanho, que era o número que faltava
+
+O `#523` **declarou a própria lacuna** e ninguém a fechou antes de assar. Do corpo dele:
+
+> **Não mede o tamanho INSTALADO em disco.** Ninguém mediu, e eu não instalo nightly no Mac
+> do owner a 95% de disco. A build imprime `du -sh` do toolchain do nightly — **a primeira
+> build É essa medição**, e ela importa: a box tem **18 GB** de disco.
+
+A primeira build foi essa medição. Ela mediu falhando.
+
+| | |
+|---|---:|
+| download citado no `#523` (xz) | **~121 MiB** (nightly) + ~35,7 MiB (`llvm-tools`) |
+| **instalado em disco** | **680 MB** |
+| expansão | **~5,6×** |
+
+Os 680 MB **não foram medidos aqui** — vêm de outra frente da campanha, e o autor do `#523`
+reconheceu que *"a minha citação de custo estava correta e era a métrica errada"*. Registro a
+procedência porque o `du -sh` do Dockerfile nunca chegou a imprimir: o build morre antes.
+
+Numa box de 18 GB que precisa caber, ao mesmo tempo, SO + cache de build + o tarball + a
+imagem desempacotada, 680 MB entram **várias vezes**. Isso fecha H1 sem depender da pergunta
+do warm-box.
+
+### O que decide o conserto, e por que ainda não está decidido
+
+Duas hipóteses substantivas. Nenhuma é "rodar de novo".
+
+**H1 — a imagem é grande demais para a box de build.** Conserto no `deploy/runner/Dockerfile`
+do repo irmão: juntar `nightly` + `llvm-tools` + `cargo-fuzz` num só layer, limpar cache do
+rustup/cargo no mesmo `RUN`, ou build multi-stage que copie só o que a lane de fuzz usa.
+
+**H2 — a box tem disco recuperável.** Se houver resíduo de builds anteriores, um `prune`
+antes do build pode bastar. Mas seria conserto que esconde o problema até a imagem crescer de
+novo, e o `build-cf-container-images.yml` **não tem passo de limpeza nenhum** hoje.
+
+**H2 depende de a box ser reusada, e sobre isso o repositório se contradiz.** Registro a
+contradição em vez de escolher o lado conveniente:
+
+| fonte | afirma |
+|---|---|
+| `build-cf-container-images.yml:84-85` | *"Unpoison a stale docker-shim lock (**warm-box** bootstrap) — a **warm-reused** RunnerContainer can carry a root-owned…"* |
+| texto do `corelink-runners#523` | *"…seven workflows running on boxes that are **destroyed after each job**"* |
+
+As duas são prosa de dentro do repo, e prosa foi o que já errou duas vezes nesta
+investigação — a doc da frota sobre o tamanho da box, e o `build-fabricd-image` confundido
+com o `build-cf-container-images`. **Não decidir por elas é deliberado.**
+
+Os sinais diretos **desfavorecem** H2 sem fechá-la. Três medições, nenhuma conclusiva
+sozinha:
+
+- **`CACHED` aparece 0 vezes no log**, contra um controle de **44 linhas `DONE`**. Zero cache
+  hits do buildkit: o `apt-get install` desempacotou tudo do zero e o cargo recompilou.
+  Box quente com resíduo recuperável quase certamente mostraria hits.
+- **O passo 4, que é a única evidência textual de warm-box, é um no-op.** Ele é, por inteiro,
+  `sudo rm -f /tmp/corelink-docker-shim.lock || true` — não produz saída e não faz nada em
+  box nova. A alegação de reuso está no **nome** do passo e no comentário, não no que ele
+  executa. Ou seja: a fonte que eu citava era do tipo *"inferido do nome"*, que é o erro
+  contra o qual este item avisa dois parágrafos acima.
+- Os três builds foram servidos por runners de nomes distintos (`cf-runner-9fe67af0`,
+  `ca3c1880`, `8d4c2700`), consistente com efêmera — mas volume reciclado também registra
+  nome novo a cada spawn.
+
+**Desfavorecida não é decidida.** H2 continua na mesa até alguém medir a box diretamente; o
+que mudou é que ela deixou de ser equiprovável.
+
+### A box não está subdimensionada — está sendo usada para outro trabalho
+
+Lido do clone local de `corelink-runners`, `deploy/cloudflare/wrangler.jsonc`, bloco do
+`RunnerContainer`:
+
+```
+instance_type  = standard-4      // 4 vCPU / 12 GiB / 20 GB de disco
+max_instances  = 250
+```
+
+O comentário ao lado do `instance_type` diz, com todas as letras, que esse tamanho
+*"clears the runner disk floor (`RUNNER_EPHEMERAL_STORAGE_FLOOR_MB`)"* e **"fits CI"**. Isto
+é: os 20 GB foram dimensionados para **rodar** CI, não para **construir** a imagem. Construir
+precisa segurar cache de build + tarball + unpack ao mesmo tempo — o pico medido no log, que
+rodar um job não tem.
+
+Duas consequências.
+
+**O disco é um campo de config, não um fato da infraestrutura.** A saída (1) abaixo deixa de
+ser "arranjar uma box maior" e passa a ser **trocar uma linha** — um `instance_type` maior no
+`wrangler.jsonc`. Isso muda o custo relativo das cinco saídas e provavelmente a escolha.
+
+**O gargalo de concorrência da frota não é o teto.** `max_instances` é **250**, e a
+capacidade observada durante esta investigação foi de ~1. Os dois números não se
+contradizem — eles localizam o problema **entre** o teto e a realidade, no caminho de spawn
+ou de registro do runner. Nenhuma contagem de "quantos runners aparecem online" encontra
+isso, e este item **não** é o lugar de investigá-lo; registro só para que a próxima pessoa
+não confunda o teto com o gargalo.
+
+**Procedência, e ela limita o peso disto:** os três números vêm do clone local em
+`pr-0c-d4-openrouter`, HEAD de **2026-08-27** — quatro dias defasado e fora da `main`. Não
+foi feito `fetch`. São **indício forte, não estado confirmado**, e uma única leitura de
+`deploy/cloudflare/wrangler.jsonc` na `main` confirma ou derruba os três de uma vez. Trate
+como hipótese até lá.
+
+*(Nota lateral, porque afeta quem for ler o arquivo: três linhas acima do `max_instances:
+250` está o comentário `// O7 hardening (2026-07-06): raised 2 → 6`. O dado está certo e a
+explicação ao lado, não — e a explicação é o que uma pessoa lê para decidir.)*
+
+**As cinco saídas na mesa**, e a escolha é da guardiã — este item não a faz:
+
+1. **Construir numa box maior** — hoje, trocar `instance_type` no `wrangler.jsonc`, não
+   provisionar infraestrutura. Leitura preferida da frente que mediu.
+2. **Limpar o `containerd` antes do build.** Provavelmente **não basta**: o problema é o
+   **pico** — tarball e unpack coexistindo — e não lixo acumulado. Limpar resíduo não cria
+   espaço para dois artefatos simultâneos.
+3. **Emagrecer o bake** (layer único, limpeza de cache no mesmo `RUN`, multi-stage).
+4. **Não materializar localmente** — empurrar direto do buildkit para o registry
+   (`--output type=registry` ou equivalente), eliminando tarball e unpack da box. Resolve a
+   falha **sem encolher uma única camada**, e é a única saída que ataca a causa medida (o
+   pico é na importação, não no `RUN`). Não estava nesta lista até a revisão fria apontar; um
+   item cujo valor é enumerar hipóteses com honestidade não pode omitir a que o próprio log
+   indica.
+5. **Reverter o nightly** da imagem, o que devolve as sete lanes ao Mac.
+
+A ressalva de (2) é o que separa esta decisão de um `prune` reflexo: pico e resíduo têm o
+mesmo sintoma e conserto diferente, e só (1) e (3) atacam pico.
+
+**H1, ao contrário de H2, não depende dessa pergunta.** Os builds de 2026-08-23 e 2026-08-24
+passaram; o `#523` acrescentou um toolchain nightly inteiro mais `llvm-tools` mais
+`cargo-fuzz`; o build seguinte estourou escrevendo justamente esse caminho. Mesmo uma box
+imaculada precisa caber os layers novos. Por isso H1 é o ponto de partida, e H2 só vira
+relevante se a pergunta do reuso for respondida com evidência — não com prosa.
+
+Ironia útil: o Dockerfile do `#523` **imprime `du -sh` do toolchain instalado**. O build morre
+antes de chegar lá, então o número que dimensionaria H1 existe e nunca foi emitido.
+
+### O que fica bloqueado
+
+O #1506 **não tem caminho** enquanto isso não resolver — não é ordem de merge, é pré-condição
+inexistente. E o vermelho dele continua honesto: o guard novo acusa uma lacuna real. O passo
+que ele substitui era `echo "$HOME/.rustup/toolchains/nightly-…/bin" >> "$GITHUB_PATH"`, que
+**sai 0 num diretório inexistente** e deixaria o job **verde rodando o `cargo` errado**.
+
+**Não re-rodar o build** antes de mudar a imagem ou provar espaço recuperável: a mesma box dá
+o mesmo erro e queima oito minutos da frota.
+
+```backlog
+id: B-138
+repo: corelink-runners
+owner: tl
+status: open
+verify: manual
+verify-means: |
+  manual, e **não** por falta de pergunta objetiva. Todas as perguntas desta escada são
+  objetivas; nenhuma é respondível deste repositório.
+
+  O token do Actions é escopado a ESTE repo — é o que o próprio `backlog-verify.yml` declara,
+  e a razão pela qual todo item sobre repo irmão aqui é manual. Uma consulta a
+  `corelink-runners` tomaria 403 no CI e produziria vermelho que **mede permissão e finge
+  medir realidade**. Isso é pior que manual, não melhor.
+
+  Escada de decisão, em ordem de custo:
+
+  1. **O último build da imagem passou?**
+
+         gh run list --repo HuGR-Labs/corelink-runners \
+           --workflow build-cf-container-images.yml --limit 1 \
+           --json createdAt,conclusion
+
+     `--workflow` explícito de propósito: `build-fabricd-image` assa `deploy/fabricd`, outra
+     imagem, e confundir as duas foi o que produziu o diagnóstico errado de "frota atrasada
+     no roll". Enquanto a última execução for `failure` por disco, o item está aberto e não
+     há mais nada a medir.
+  2. **A box é reusada?** Só depois de responder isto por evidência direta — não pela prosa
+     do passo 4 nem pela do `#523`, que se contradizem — é que H2 entra na mesa.
+  3. **Assado com sucesso, a frota serve a imagem nova?** Contêiner não troca de imagem
+     porque um build passou; precisa do repin. Esta é a única pergunta que só nasce depois de
+     as duas primeiras estarem fechadas.
+
+  **Não fechar por "o #1506 ficou verde" sozinho.** Se alguém reverter o `runs-on: corelink`
+  de volta para o Mac, o PR fica verde e a frota segue sem a variável para toda lane futura
+  que dependa dela — e agora sabe-se que ninguém consegue assar a imagem que a proveria. O
+  item é sobre a imagem, não sobre o PR.
+
+  **Não fundir com o [B-128].** Aquele mede o disco do Mac do dono; este mede o disco da box
+  efêmera da frota. Um `verify` que cubra os dois mede a máquina errada em metade dos casos.
+last-verified: 2026-08-31
+```
