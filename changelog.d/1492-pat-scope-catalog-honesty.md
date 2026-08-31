@@ -64,3 +64,20 @@
   guia de auditoria ("You hold `admin:audit` scope") substituído pelo gate real
   (`requires_billing_admin`). Os locales de `audit-role-changes` são tradução
   genuína e foram reescritos em de/es/pt, não colados do inglês.
+- **Correção de rota: `cache:delete` não é aplicado, mas a deleção de blob EXISTE
+  — e é gateada por cache-WRITE.** A primeira versão desta mudança afirmou que
+  "não existe rota de delete de blob". Falso: `DELETE /v1/cas/{tenant}/{hash}`
+  existe (`routes/cas.rs:709`, handler em 1556) e é gateada por
+  `scope.can_write()`, nunca por `cache:delete`. O escopo segue sem ponto de
+  aplicação; a capacidade, não. Consequência de segurança na matriz publicada:
+  ela marcava `Developer ❌` para deleção de blob, mas como o gate é cache-WRITE e
+  o Developer tem write, o Developer **pode** deletar — a linha estava errada na
+  direção permissiva e foi corrigida.
+- **O guia de auditoria passou a exigir um token que o self-service nunca emite.**
+  As rotas `/v1/audit/analytics/*` e `/v1/audit/{tenant}/export` — as três que o
+  próprio guia demonstra com `curl` — são gateadas por `requires_audit_read`
+  (= `requires_cache_read || "owner"`), satisfeito por qualquer token com leitura,
+  incluindo o `read-write` padrão do painel. O texto que citava
+  `requires_billing_admin` descrevia outra superfície
+  (`GET /v1/customer/audit`, a página do painel) e tornava o guia mais restritivo
+  que o produto. Corrigido em EN + de/es/pt.
