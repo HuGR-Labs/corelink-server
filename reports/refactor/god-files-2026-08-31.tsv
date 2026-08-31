@@ -69,7 +69,6 @@
 1072	crates/corelink-gc/src/sweep_runner.rs
 1047	crates/corelink-enterprise-inquiry/src/ledger.rs
 1044	crates/corelink-billing/src/quota/core/check.rs
-1040	crates/corelink-container/src/routes/pip.rs
 1035	crates/corelink-byok/src/byok_gcp/real.rs
 1033	crates/corelink-container/src/origin_timing.rs
 1031	crates/corelink-container/src/storage/d1_audit_sink.rs
