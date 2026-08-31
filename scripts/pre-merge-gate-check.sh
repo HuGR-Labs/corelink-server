@@ -423,6 +423,100 @@ if [ "$gate_rc" -ne 0 ]; then
   fi
 fi
 
+# ── BACKLOG id precheck ─────────────────────────────────────────────────────
+# `backlog_verify.py` requires DENSE ids. That single rule makes id collisions
+# between concurrent PRs unavoidable, and it does so in a way that punishes the
+# careful: a session that tries to LEAVE A GAP for a sibling is failed by the
+# gate for trying, because the gap it leaves is itself a density violation.
+# There is therefore no allocation any author can perform ahead of time — the
+# correct id is only knowable at the instant of merge, which is here.
+#
+# Marking the slot with a placeholder does not work either: `B-NNN` is not a
+# valid id and the item lands BROKEN, so the PR is red before it can be gated.
+# (Measured 2026-08-31: `122 item(s): confirmed=120, drifted=1, broken=1`.)
+#
+# So this block does the one thing that CAN be done here: it refuses the merge
+# BEFORE it happens and prints the exact renumber command. Without it, the
+# collision is discovered by the SECOND merge — at which point main is already
+# red and every open PR in the repo inherits the failure.
+#
+# It deliberately does not rewrite the branch. Renumbering is an edit to someone
+# else's PR; the gate names the fix and lets the author apply it.
+# Runs under --dry-run too: a rehearsal that hides the one refusal the operator
+# would hit for real is worse than no rehearsal.
+{
+  bk_head="$(gh pr view "$PR" --json headRefOid --jq .headRefOid 2>/dev/null || true)"
+  if [ -n "$bk_head" ]; then
+    bk_tmp="$(mktemp -d "${TMPDIR:-/tmp}/bkids.XXXXXX")"
+    # `Accept: raw` returns the file bytes directly — no base64, and so no
+    # dependence on whether this host's `base64` spells the decode flag `-d`
+    # (GNU) or `-D` (BSD/macOS). This script runs on both.
+    gh api -H "Accept: application/vnd.github.raw" \
+      "repos/{owner}/{repo}/contents/BACKLOG.md?ref=$bk_head" \
+      > "$bk_tmp/pr.md" 2>/dev/null || true
+    gh api -H "Accept: application/vnd.github.raw" \
+      "repos/{owner}/{repo}/contents/BACKLOG.md?ref=main" \
+      > "$bk_tmp/main.md" 2>/dev/null || true
+    if [ -s "$bk_tmp/pr.md" ] && [ -s "$bk_tmp/main.md" ]; then
+      bk_msg="$(python3 - "$bk_tmp/pr.md" "$bk_tmp/main.md" <<'PYIDS'
+import re, sys
+ids = lambda p: sorted({int(m) for m in re.findall(r'^id:\s*B-(\d+)\s*$',
+                                                   open(p, encoding='utf-8').read(), re.M)})
+pr, mn = ids(sys.argv[1]), ids(sys.argv[2])
+if not pr or not mn:
+    # A degenerate parse must NOT be read as "no new ids" — but it must also not
+    # block a merge, because this check is a courtesy and the real gate is
+    # `backlog_verify`. Warn on stderr (which the caller does not capture) and
+    # leave stdout empty so the merge proceeds.
+    print("  ⚠️  precheck de id do BACKLOG: nao extrai ids de um dos lados "
+          "(pr=%d, main=%d) — nao concluo nada e sigo." % (len(pr), len(mn)),
+          file=sys.stderr)
+    raise SystemExit
+new = [i for i in pr if i not in set(mn)]
+if not new:
+    raise SystemExit                      # PR adds no items — nothing to check.
+want = list(range(max(mn) + 1, max(mn) + 1 + len(new)))
+if new == want:
+    raise SystemExit                      # already correct.
+# Rename order is NOT a style choice: applied in the wrong order, one rename
+# lands on an id that a later rename still needs as its source, and the two
+# items collapse into one. Moving ids UP is safe descending (highest first);
+# moving them DOWN is safe ascending. Deriving it from the direction is the
+# whole point — a fixed "always descending" is correct only half the time.
+up = want[0] > new[0]
+pairs = sorted(zip(new, want), reverse=up)
+order = "DECRESCENTE (o maior primeiro)" if up else "CRESCENTE (o menor primeiro)"
+lines = [
+    f"os ids novos deste PR sao {new}, mas a main esta em B-{max(mn):03d},",
+    f"     entao o intervalo correto e {want}.",
+    "",
+    f"     Renumere NA ORDEM {order} — nesta direcao, a ordem inversa faria",
+    "     um rename pousar num id que o rename seguinte ainda usa como origem,",
+    "     e os dois itens virariam um so:",
+]
+for src, dst in pairs:
+    lines.append(f"       perl -0pi -e 's/B-{src:03d}(?![0-9])/B-{dst:03d}/g' BACKLOG.md")
+lines += [
+    "",
+    "     O `(?![0-9])` nao e opcional: sem ele `B-116` corrompe `B-1160`.",
+    "     E confira DEPOIS, nao so antes — se um rebase trouxe ids de outra",
+    "     sessao para o seu arquivo, a substituicao alcanca os dela tambem.",
+]
+print("\n".join(lines))
+PYIDS
+)" || bk_msg=""
+      if [ -n "$bk_msg" ]; then
+        echo
+        echo "  ⛔ NO MERGE ISSUED for PR #$PR — colisao de id no BACKLOG.md:"
+        echo "     $bk_msg"
+        rm -rf "$bk_tmp"
+        exit 1
+      fi
+    fi
+    rm -rf "$bk_tmp"
+  fi
+}
+
 # squash is house practice: every PR merged since #1013 landed as a single
 # `… (#NNNN)` squash commit on main.
 #
