@@ -5,7 +5,7 @@ name: release-cli
 # Triggers on version tags cli-v* in HumanGuardrail/corelink-server.
 # Builds 5 platform binaries via cargo-zigbuild (Option A: single
 # ubuntu-22.04 runner, zig cross-compile toolchain), then creates a
-# GitHub Release in the SEPARATE repo HumanGuardrail/corelink-cli.
+# GitHub Release in the SEPARATE repo HuGR-Labs/corelink-cli.
 #
 # Binary names match the install script contract:
 #   URL="${RELEASE_ORIGIN}/corelink-${OS}-${ARCH}"
@@ -20,7 +20,7 @@ name: release-cli
 #
 # Required GH Secret (set MANUALLY by operator):
 #   CORELINK_CLI_RELEASE_TOKEN  PAT with `repo` scope on
-#                               HumanGuardrail/corelink-cli
+#                               HuGR-Labs/corelink-cli
 #
 # TODO (v2): cosign keyless signing via GH OIDC.
 #   Wired as a placeholder below; un-stub when ready.
@@ -275,15 +275,29 @@ jobs:
   # updated. The installer downloads from corelink-cli, so the latest CLI a
   # customer can install is v0.1.1 — not the cli-v0.1.0 in this repo.
   #
+  # REPOINTED 2026-08-31 (WP-E): the five `HumanGuardrail/corelink-cli` strings in
+  # this file — including the two `gh release create` / `gh release upload`
+  # `--repo` flags below — named a repo that returns 404. `gh api
+  # repos/HumanGuardrail/corelink-cli` → `404 Not Found`, while the control
+  # `gh api repos/HuGR-Labs/corelink-cli` resolves. So the `release` job could
+  # not have succeeded even with a fully green build matrix, and the comment
+  # immediately below had said the canonical home was HuGR-Labs since 2026-08-02
+  # while the code two dozen lines down was never updated to match.
+  #
+  # NOTE the asymmetry, deliberately left alone: the `HumanGuardrail/corelink-server`
+  # strings elsewhere in this file are NOT broken and were NOT touched. GitHub
+  # keeps a permanent redirect after a transfer, and `gh api
+  # repos/HumanGuardrail/corelink-server` resolves to `HuGR-Labs/corelink-server`.
+  # `corelink-cli` has no such redirect because it came from a personal account,
+  # not from that org — which is exactly why one 404s and the other does not.
+  #
   # Canonical home is now HuGR-Labs/corelink-cli (transferred 2026-08-02 off the
   # personal gmhelmold account; the get-corelink-worker RELEASE_ORIGIN is pinned
   # to it). Anyone changing where releases are published MUST repin that var and
   # redeploy the worker, or the installer keeps fetching the old location.
-  # - The install script (apps/get-corelink-worker) is updated in lock-
-  #   step to point at HumanGuardrail/corelink-server/releases/latest.
   # -------------------------------------------------------------------
   release:
-    name: create release (HumanGuardrail/corelink-cli)
+    name: create release (HuGR-Labs/corelink-cli)
     needs: build
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 15
@@ -351,7 +365,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" --repo HumanGuardrail/corelink-cli \
+          gh release create "${GITHUB_REF_NAME}" --repo HuGR-Labs/corelink-cli \
             --title "CoreLink CLI ${GITHUB_REF_NAME#cli-}" \
             --notes-file /tmp/release-notes.md
 
@@ -359,4 +373,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
         run: |
-          gh release upload "${GITHUB_REF_NAME}" dist/* --repo HumanGuardrail/corelink-cli --clobber
+          gh release upload "${GITHUB_REF_NAME}" dist/* --repo HuGR-Labs/corelink-cli --clobber
