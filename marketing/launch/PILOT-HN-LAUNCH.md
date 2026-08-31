@@ -20,7 +20,7 @@
 
 > Hi HN — Gustavo from HuGR Labs.
 >
-> We're opening pilot enrolment for CoreLink, a shared, tenant-isolated, content-addressable cache. It's REAPI-compatible for Bazel / Buck2 / Pants / RBE, and exposes a generic CAS API for Docker layer caches, Nix store mirrors, package registries, and ML model registries.
+> We're opening pilot enrolment for CoreLink, a shared, tenant-isolated, content-addressable cache. It serves REAPI v2 over HTTP/REST, which Bazel speaks natively — there is no gRPC ingress, so Buck2 and Pants cannot use it today. It also exposes a generic CAS API for Docker layer caches, Nix store mirrors, package registries, and ML model registries.
 >
 > What's actually built and verifiable today:
 >

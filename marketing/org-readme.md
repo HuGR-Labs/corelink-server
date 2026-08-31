@@ -10,7 +10,7 @@ tools that default to BYOK, residency honesty, and verifiable audit logs.
 [corelink-server](https://github.com/HuGR-Labs/corelink-server) |
 [corelink-cli](https://github.com/HuGR-Labs/corelink-cli)
 
-REAPI v2 compatible cache for Bazel, Buck2, Cargo, npm, pip, OCI Docker
+REAPI v2 (over HTTP/REST) cache for Bazel, plus Cargo, npm, pip, OCI Docker
 layers, and ML model registries. Multi-tenant. Per-tenant BYOK is on the
 roadmap, with AWS KMS planned first (GCP Cloud KMS, Azure Key Vault, and
 HashiCorp Vault to follow) — not yet shipped. An RFC-6962-style append-only

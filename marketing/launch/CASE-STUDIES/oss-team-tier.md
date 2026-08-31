@@ -29,7 +29,7 @@ Open-source projects in the build-tools ecosystem face a structural disadvantage
 
 [OSS_PROJECT_NAME] selected CoreLink for the lighthouse OSS engagement based on three factors:
 
-1. **REAPI conformance** meant no protocol divergence from their existing Bazel / Buck2 configuration.
+1. **REAPI v2 over HTTP/REST** meant no protocol divergence from their existing Bazel configuration. (A Buck2 project could not have run this migration: Buck2's REAPI client is gRPC-only and CoreLink has no gRPC ingress.)
 2. **Tenant isolation as a TLA+ invariant** addressed a procurement concern — even though OSS data is typically less sensitive, the project's contributor base spans jurisdictions where structural isolation matters.
 3. **Audit chain transparency** appealed to the project's existing supply-chain posture; many of the OSS projects in this ecosystem maintain strong SBOM / provenance hygiene and CoreLink's audit chain integrates naturally.
 

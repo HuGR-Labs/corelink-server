@@ -8,7 +8,7 @@
 
 ## Tweet 1 — Hook
 
-> Today we're announcing GA of CoreLink — a multi-tenant content-addressable remote cache for Bazel, Buck2, and RBE, built on Cloudflare's edge.
+> Today we're announcing GA of CoreLink — a multi-tenant content-addressable remote cache for Bazel and other REAPI-over-HTTP clients, built on Cloudflare's edge. (No gRPC ingress — Buck2 and Pants are not supported.)
 >
 > Why now, and what we did differently. A thread. 🧵
 >

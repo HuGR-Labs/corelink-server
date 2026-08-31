@@ -9,11 +9,11 @@
 
 | # | Tagline | Chars | Notes |
 |---|---|---|---|
-| 1 | **Multi-tenant remote cache for Bazel, Buck2 & RBE.** | 51 | Plain. Anchors to ecosystem. |
+| 1 | **Multi-tenant remote cache for Bazel & REAPI-over-HTTP.** | 51 | Plain. Anchors to ecosystem. No Buck2/RBE claim: no gRPC ingress. |
 | 2 | **The remote cache your auditor signed off on.** | 46 | Trust-positioning. Auditor angle. |
 | 3 | **Multi-tenant Bazel cache, TLA+ verified, BYOK-ready.** | 53 | Technical credibility-forward. |
 | 4 | **Build cache for teams that take residency seriously.** | 53 | Compliance-forward. |
-| 5 | **Bazel/Buck2 remote cache with BYOK + kill switch.** | 51 | BYOK feature-forward. |
+| 5 | **Bazel remote cache with BYOK + kill switch.** | 45 | BYOK feature-forward. Buck2 removed: not supported. |
 
 ## Recommended
 

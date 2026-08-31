@@ -9,21 +9,27 @@
 
 ## Headline
 
-**HuGR Labs Launches CoreLink: Multi-Tenant Content-Addressable Cache Built on Cloudflare for Bazel, Buck2 and Remote Build Execution Workloads**
+**HuGR Labs Launches CoreLink: Multi-Tenant Content-Addressable Cache Built on Cloudflare for Bazel and REAPI-over-HTTP Build Workloads**
 
 ## Sub-headline
 
-CoreLink delivers TLA+ formally verified multi-tenant isolation, a BYOK enterprise tier on AWS KMS (GCP / Azure / Vault providers on the roadmap), customer-managed kill switch, and Schrems-II-compliant residency across three regions today — WNAM, ENAM, WEUR, with additional regions on the roadmap — backed by 30 days of sustained staging, external pentest with retest, and three lighthouse customer attestations.
+CoreLink delivers TLA+ formally verified multi-tenant isolation, a BYOK enterprise tier on AWS KMS (GCP / Azure / Vault providers on the roadmap), customer-managed kill switch, and Schrems-II-compliant residency across three regions today — WNAM, ENAM, WEUR, with additional regions on the roadmap.
+
+> **NO PENTEST CLAIM.** An earlier draft of this sub-headline said "external pentest with retest". **No external pentest has been commissioned.** See the Highlights section and `marketing/sales/PROOF-POINTS.md` §2.12.
 
 ## Dateline
 
-**[CITY], [STATE/COUNTRY] — [DATE]** — HuGR Labs today announced General Availability (GA) of **CoreLink**, a multi-tenant, content-addressable cache built on Cloudflare's global edge platform. CoreLink targets developer teams using Bazel, Buck2, and Remote Build Execution (RBE) protocols who need shared build artifact caching with tenant-grade isolation, regulated-industry residency, and customer-controlled cryptography.
+**[CITY], [STATE/COUNTRY] — [DATE]** — HuGR Labs today announced General Availability (GA) of **CoreLink**, a multi-tenant, content-addressable cache built on Cloudflare's global edge platform. CoreLink targets developer teams using Bazel and other Remote Execution API (REAPI) clients that speak **REAPI over HTTP/REST** — CoreLink serves no gRPC ingress, so gRPC-only clients such as Buck2 and NativeLink cannot connect — who need shared build artifact caching with tenant-grade isolation, regulated-industry residency, and customer-controlled cryptography.
 
 ## Lead paragraphs
 
 For build-heavy engineering organizations, the cache is the single most leveraged latency primitive in the inner loop. Existing remote-cache offerings force a choice between operational simplicity (single-tenant SaaS without isolation or residency guarantees) and full self-hosting (operational burden, blob-sprawl, eviction tuning, GC correctness gaps). CoreLink resolves that trade-off by combining (a) a content-addressable storage model conformant with the Remote Execution API (REAPI) family, (b) tenant isolation modeled in TLA+ with the safety property mechanically checked in CI, and (c) optional BYOK with envelope encryption on AWS KMS today, with GCP KMS, Azure Key Vault, and HashiCorp Vault on the roadmap.
 
-"CoreLink was built on a single non-negotiable rule: a tenant's bytes belong to that tenant, full stop — provable in TLA+, enforced at the data path, and revocable at any moment through customer-held keys," said **[CEO_NAME], CEO of HuGR Labs**. "GA means we have third-party pentest evidence, thirty days of sustained staging, three lighthouse customers in production, and an external compliance gap analysis on file. We will not announce GA on any other basis."
+"CoreLink was built on a single non-negotiable rule: a tenant's bytes belong to that tenant, full stop — provable in TLA+, enforced at the data path, and revocable at any moment through customer-held keys," said the CEO of HuGR Labs.
+
+> **ATTRIBUTION NOT SET.** The speaker's name must be supplied and approved by that person before distribution. An earlier draft carried an unfilled CEO-name placeholder marker here and in the quote slots below, which would have shipped a bracketed template token into a wire release.
+>
+> **A SENTENCE WAS REMOVED FROM THIS QUOTE.** It read: *"GA means we have third-party pentest evidence, thirty days of sustained staging, three lighthouse customers in production, and an external compliance gap analysis on file."* The pentest half is false — no external pentest has been commissioned. The quote must not be reinstated in that form.
 
 ## Highlights (verified claims)
 
@@ -36,7 +42,7 @@ Every claim below traces to a canonical CoreLink spec source, an external letter
 - **Three enumerated regions live at GA** — WNAM, ENAM, WEUR — with no-cross-region-leak invariant (INV-REGION-NO-CROSS-LEAK) and Schrems-II Transfer Impact Assessment on file; SAM and APAC are on the roadmap.
 - **Append-only audit chain.** A tamper-evident, BLAKE3-linked hash chain (each event chained to the previous event's hash), daily head publication (INV-AUDIT-APPEND-ONLY).
 - **SBOM published, signed.** CycloneDX 1.5+ format, signed and published per sprint S-12.
-- **External pentest, clean.** Independent firm engagement plus post-remediation retest; zero HIGH/CRITICAL findings pending (CAP-GA-002).
+- **No external pentest — this is not a claim we can make.** No firm has been engaged and no report exists: every vendor in `reports/pentest-rfp-tracker.json` is `NOT_CONTACTED` with `rfp_sent_date: null`. The public docs page states this correctly (`apps/docs/docs/explanation/compliance/pentest-summary.mdx`: "No vendor has been contracted"), as does `marketing/sales/PROOF-POINTS.md` §2.12: *"Reps must not assert any pentest result."* An earlier draft of this bullet read *"External pentest, clean. Independent firm engagement plus post-remediation retest; zero HIGH/CRITICAL findings pending (CAP-GA-002)."* CAP-GA-002 is an unmet gate, not evidence.
 - **SOC 2 gap analysis delivered.** Continuous-compliance tooling stood up; concrete GAP-XX items with remediation timeline. Type I engagement scheduled six months post-GA (CAP-GA-003).
 - **Three lighthouse customers attested.** Two team-tier deployments and one enterprise BYOK deployment, each with SLA claims met across a sustained 30-day observation window (CAP-GA-004).
 - **24/7 incident response.** PagerDuty rotations across three regions, weekly synthetic page exercise with sub-five-minute response sustained 30 days (CAP-GA-006).
@@ -47,11 +53,12 @@ Tiered pricing across Free / Team / Enterprise. Specific list prices are availab
 
 ## Quote slots
 
-> **CEO QUOTE** — `[CEO_NAME], CEO, HuGR Labs`
+> **CEO QUOTE** — attribution not set; name must be supplied and approved by the speaker before distribution.
 > "CoreLink GA is the artifact of a deliberate two-track gate: an engineering gate that is binary and unappealable, and a launch orchestration track that exists only to communicate what engineering has already proven. We did the harder one first."
 
-> **CTO QUOTE** — `[CTO_NAME], CTO, HuGR Labs`
-> "We chose to publish our TLA+ specifications, our SBOM, our pentest summary, and our compliance gap list because we want customers to evaluate CoreLink the way we evaluate vendors ourselves: from primary sources, not screenshots."
+> **CTO QUOTE** — attribution not set; name must be supplied and approved by the speaker before distribution.
+> "We chose to publish our TLA+ specifications, our SBOM, and our compliance gap list because we want customers to evaluate CoreLink the way we evaluate vendors ourselves: from primary sources, not screenshots."
+> _"our pentest summary" was removed from this quote: there is no pentest summary to publish._
 
 > **LIGHTHOUSE CUSTOMER #1 (TEAM / FORGE) QUOTE** — `[FORGE_LEAD_NAME], Engineering Lead, HuGR Forge`
 > "Forge was CoreLink's customer-zero. Over the 30-day observation window we hit the published SLAs without an exception, and the audit chain gave us, for the first time, a single artifact we can hand to an external auditor instead of a transcript of Slack threads."

@@ -26,7 +26,7 @@ Recommended default: **A**. B has higher open rates but pulls more low-intent re
 
 > Hi {{lead_name}},
 >
-> Gustavo from HuGR Labs. Quick one — we are opening pilot enrolment for **CoreLink**, a shared, tenant-isolated, content-addressable cache. Bazel / Buck2 / Pants / Nix on the build side, plus a generic CAS API for Docker layer caches, package registries, and ML model registries.
+> Gustavo from HuGR Labs. Quick one — we are opening pilot enrolment for **CoreLink**, a shared, tenant-isolated, content-addressable cache. Bazel and Nix on the build side (Buck2 and Pants are gRPC-only and not supported today), plus a generic CAS API for Docker layer caches, package registries, and ML model registries.
 >
 > Reaching out specifically because {{lead_company}}'s build / platform footprint looks like a clean fit for the pilot cohort.
 >

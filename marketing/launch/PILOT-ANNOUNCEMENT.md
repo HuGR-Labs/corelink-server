@@ -32,13 +32,13 @@ Run by HuGR Labs. Free during the pilot period. 30-day evaluation. Pre-GA.
 
 ## What CoreLink is (one paragraph)
 
-CoreLink is a **shared, tenant-isolated, content-addressable cache** for any workload that benefits from blob deduplication and cryptographic addressing. It is REAPI-compatible (Bazel / Buck2 / Pants / Remote Build Execution) and exposes a generic S3-style content-addressable API for non-build workloads — Docker layer caches, Nix store mirrors, package registries (npm, PyPI, cargo), and ML model / dataset registries. Built on Cloudflare R2 + Workers + D1. Multi-region replication across three regions today — WNAM (US-West), ENAM (US-East), WEUR (EU-West) — with more regions on the roadmap. Per-tenant cryptographic audit chain: an append-only, tamper-evident hash chain (BLAKE3-linked, each event chained to the previous one).
+CoreLink is a **shared, tenant-isolated, content-addressable cache** for any workload that benefits from blob deduplication and cryptographic addressing. It serves REAPI v2 **over HTTP/REST** — which Bazel speaks natively. gRPC-only REAPI clients (Buck2, Pants, NativeLink) cannot connect: CoreLink exposes no gRPC ingress. It also exposes a generic S3-style content-addressable API for non-build workloads — Docker layer caches, Nix store mirrors, package registries (npm, PyPI, cargo), and ML model / dataset registries. Built on Cloudflare R2 + Workers + D1. Multi-region replication across three regions today — WNAM (US-West), ENAM (US-East), WEUR (EU-West) — with more regions on the roadmap. Per-tenant cryptographic audit chain: an append-only, tamper-evident hash chain (BLAKE3-linked, each event chained to the previous one).
 
 ## Who we are looking for
 
 You are a fit for the pilot if **at least one** is true:
 
-- Your team runs **Bazel / Buck2 / Pants / Nix** remote build caches and the current cache is single-tenant, self-hosted, or operationally expensive.
+- Your team runs **Bazel** or **Nix** remote build caches and the current cache is single-tenant, self-hosted, or operationally expensive. (Buck2 and Pants speak REAPI over gRPC only and cannot use CoreLink today.)
 - You run a **Docker layer cache** or **OCI registry** and want cross-region dedup + audit-chain provenance.
 - You operate an **ML model / dataset registry** and need content-addressed, cryptographically verifiable artefact storage.
 - You run an **internal package registry** (npm / PyPI / cargo / Maven mirror) and want shared, deduplicated, audit-logged storage.
@@ -79,7 +79,8 @@ Slots are limited to the **first 10 qualified applicants** (DEBT-027 minimum to 
 | Tenant isolation modelled in TLA+ | yes | yes |
 | Audit chain (append-only hash chain) | yes | yes |
 | Multi-region replication (3 regions today) | yes | yes |
-| REAPI compatibility (Bazel / Buck2) | yes | yes |
+| REAPI v2 over HTTP/REST (Bazel) | yes | yes |
+| REAPI over gRPC (Buck2 / Pants / NativeLink) | no | no |
 | Generic S3-style API (Docker / Nix / ML) | yes | yes |
 | **BYOK (AWS KMS at GA; GCP/Azure/Vault roadmap)** | **no** | yes (AWS KMS) |
 | **SOC 2 Type II report** | **no — gap analysis only** | yes (observation window begins at GA) |

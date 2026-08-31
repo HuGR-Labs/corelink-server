@@ -23,7 +23,7 @@ Source: spec contract S-20 §6.1.
 ## Technical
 
 **Q: Is CoreLink REAPI-conformant?**
-A: Yes. CoreLink is conformant with the Remote Execution API family (CAS + AC), which means existing Bazel / Buck2 configurations work with a `--remote_cache` URL change.
+A: For Bazel, yes. CoreLink serves the Remote Execution API family (CAS + AC) over **HTTP/REST**, so existing Bazel configurations work with a `--remote_cache` URL change. For Buck2 and Pants, no: their REAPI clients speak gRPC only, and CoreLink exposes no gRPC ingress.
 Source: REMOTE-CACHE-PRODUCT-PROFILE.
 
 **Q: What hash algorithm does CoreLink use for content addressing?**
