@@ -200,4 +200,13 @@ def test_live_repo_reach_is_not_vacuous() -> None:
         os.chdir(cwd)
     out = buf.getvalue()
     inspected = int(out.split("self-hosted job(s)")[0].split()[-1])
-    assert inspected >= 150, f"guard reach collapsed to {inspected}: {out!r}"
+    # The floor must sit ABOVE the reach of the defect this PR exists to close,
+    # or the anti-vacuity check cannot see that class at all. Measured
+    # 2026-08-31: live reach is 193; with `_strip_trailing_comment` reverted to
+    # `runs_on.strip()` — i.e. the bug — reach is 173. A floor of 150 PASSES
+    # under that mutation, which made this assertion decorative for the very
+    # regression it guards. 188 fails the mutant (173 < 188) while leaving 5 jobs
+    # of ordinary churn before it becomes a maintenance tripwire. If a legitimate
+    # change drops reach below this, RAISE the number deliberately with the new
+    # measured value — never lower it to make the suite pass.
+    assert inspected >= 188, f"guard reach collapsed to {inspected}: {out!r}"

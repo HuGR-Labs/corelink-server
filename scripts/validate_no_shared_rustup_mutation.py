@@ -90,10 +90,33 @@ def _strip_trailing_comment(runs_on: str) -> str:
     Those 20 jobs were invisible to this guard, which reported OK throughout —
     inspected count went 173 -> 193 the moment this strip was added.
 
-    Only safe because a `runs-on:` VALUE never legitimately contains `#`: it is a
-    label, a `[a, b]` list, or a `${{ }}` expression. An expression is left alone
-    (it has no bare `#`), and a quoted value keeps its quotes, which never equal
-    a bare label anyway.
+    Only safe because a `runs-on:` VALUE never legitimately contains `#` in any
+    of the forms this repo actually writes: a bare label, a `[a, b]` flow list,
+    or a `${{ }}` expression. An expression is left alone (it has no bare `#`).
+
+    ⚠️ Two further YAML spellings are legal and are NOT covered — the guard skips
+    such a job silently, exactly like the trailing comment did before this fix.
+    Both were checked against `.github/workflows/` on 2026-08-31 and neither
+    occurs there, so they are LATENT holes, not live ones (the check was
+    positive-controlled: the same greps do match planted instances):
+
+      1. Block sequence — the value sits on the following lines:
+
+             runs-on:
+               - self-hosted
+               - mac
+
+         `RUNS_ON` requires `runs-on:\\s*(.+?)`, so an empty value does not match
+         at all and the job never enters the inspected set.
+
+      2. Quoted scalar — `runs-on: "corelink"` or `runs-on: 'corelink'`. The
+         quotes survive the strip and `value == "corelink"` is then False, so a
+         self-hosted job reads as hosted.
+
+    Closing these means parsing the YAML rather than scanning lines, which is a
+    different change from this one; tracked as B-140. Until then, do not write
+    either form in `.github/workflows/` — the guard will not tell you it stopped
+    looking.
     """
     if runs_on.lstrip().startswith("${{"):
         return runs_on.strip()
