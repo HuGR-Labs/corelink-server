@@ -60,7 +60,6 @@
 1171	crates/corelink-cas/src/lru_tracker/tracker.rs
 1165	crates/corelink-container/src/routes/public_revoke.rs
 1164	crates/corelink-cf-bindings/src/d1_real.rs
-1160	crates/corelink-container/src/routes/billing_ingest.rs
 1144	tests/e2e-tenant-isolation/tests/adversarial.rs
 1120	crates/corelink-telemetry/src/logpush/redaction.rs
 1100	crates/corelink-clerk-cf/src/clerk_health_do.rs
