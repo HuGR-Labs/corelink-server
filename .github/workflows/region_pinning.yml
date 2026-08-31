@@ -74,7 +74,8 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   clippy-and-existing-tests:
     name: clippy -D warnings + corelink-privacy all tests
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): python3 + cargo por crate; 4 jobs irmãos deste arquivo já rodam aqui
+    runs-on: corelink
     # Timeout raised 20 → 35 (2026-08-01). The original 20 was never calibrated
     # against a real run — the authoring commit (cc65c4ee) sealed on a fabricated
     # verification block, so NO number in this workflow was ever observed green.
@@ -132,7 +133,8 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   proptest-30k:
     name: 30k property test — INV-REGION-NO-CROSS-LEAK (PR gate)
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): python3 + cargo por crate; 4 jobs irmãos deste arquivo já rodam aqui
+    runs-on: corelink
     # Timeout raised 30 → 50 (2026-08-01). Never calibrated against a real run
     # (see the clippy job's note); observed cancelled at 30m22s on the shared
     # self-hosted Mac (run 30715557213) — a cold `--release` build of the
@@ -179,7 +181,8 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   adversarial-tests:
     name: adversarial regression tests (10 scenarios)
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): python3 + cargo por crate; 4 jobs irmãos deste arquivo já rodam aqui
+    runs-on: corelink
     # Timeout raised 10 → 30 (2026-08-01). Never calibrated against a real run
     # (see the clippy job's note). Measured twice: cancelled at 10m31s under the
     # original 10 (run 30715557213), then under a first-pass 25 the TEST STEP
@@ -280,7 +283,8 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   proptest-100k-nightly:
     name: 100k property test NIGHTLY — sustained INV-REGION-NO-CROSS-LEAK
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): python3 + cargo por crate; 4 jobs irmãos deste arquivo já rodam aqui
+    runs-on: corelink
     timeout-minutes: 60
     # Only runs on schedule or manual dispatch with explicit override
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

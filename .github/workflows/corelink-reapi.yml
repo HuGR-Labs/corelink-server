@@ -419,7 +419,8 @@ jobs:
 
   mutants-nightly:
     name: cargo-mutants kill-rate ≥ 80%
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): cargo por crate; os outros 2 jobs deste arquivo já rodam aqui
+    runs-on: corelink
     if: github.event_name == 'schedule'
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0

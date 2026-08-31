@@ -62,7 +62,8 @@ concurrency:
 
 jobs:
   tla-check:
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): actions/setup-java + tla2tools; tool-cache da frota é gravável
+    runs-on: corelink
     timeout-minutes: 30
     steps:
       - name: Checkout

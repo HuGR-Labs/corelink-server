@@ -51,7 +51,8 @@ jobs:
   # -----------------------------------------------------------------------
   drift-check:
     name: Drift — ${{ matrix.region }}
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): hashicorp/setup-terraform — mesmo caminho do terraform-lint, que já roda aqui
+    runs-on: corelink
     timeout-minutes: 15
 
     strategy:
@@ -291,7 +292,8 @@ jobs:
   # -----------------------------------------------------------------------
   drift-aggregator:
     name: Drift aggregator summary
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): hashicorp/setup-terraform — mesmo caminho do terraform-lint, que já roda aqui
+    runs-on: corelink
     timeout-minutes: 5
     needs: drift-check
     if: always()
@@ -351,7 +353,8 @@ jobs:
   # -----------------------------------------------------------------------
   no-apply-guard:
     name: Auto-apply forbidden check
-    runs-on: [self-hosted, mac, corelink-builder]
+    # zero-hosted (WP-CI): hashicorp/setup-terraform — mesmo caminho do terraform-lint, que já roda aqui
+    runs-on: corelink
     timeout-minutes: 3
     if: github.event_name != 'schedule'
 
