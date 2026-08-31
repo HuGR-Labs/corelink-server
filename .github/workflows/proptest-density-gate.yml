@@ -41,7 +41,8 @@ jobs:
     # Hosted minutes bill with a 1-MINUTE-PER-JOB FLOOR, so this sub-minute
     # check costs a full paid minute every run; on the fleet it costs $0.
     # Verified running natively on the fleet host (macOS/BSD userland).
-    runs-on: corelink  # zero-hosted (WP-CI): bash puro
+    # zero-hosted (WP-CI): bash puro
+    runs-on: corelink
     timeout-minutes: 5
     steps:
       - name: Checkout

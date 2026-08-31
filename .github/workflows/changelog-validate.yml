@@ -56,7 +56,8 @@ jobs:
     # Hosted minutes bill with a 1-MINUTE-PER-JOB FLOOR, so this sub-minute
     # check costs a full paid minute every run; on the fleet it costs $0.
     # Verified running natively on the fleet host (macOS/BSD userland).
-    runs-on: corelink  # zero-hosted (WP-CI): python3 + bash (baked na imagem da frota)
+    # zero-hosted (WP-CI): python3 + bash (baked na imagem da frota)
+    runs-on: corelink
     # Bound the job (CI cost diet 2026-08-01): a self-hosted job with no
     # timeout inherits GitHub's 360-min default, so one wedged run can hold
     # 1 of the 4 `corelink-builder` runners for 6h and stall
