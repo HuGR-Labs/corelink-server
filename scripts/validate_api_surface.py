@@ -6,7 +6,8 @@ that `scripts/gen-api-reference.py` turns into the 45 MDX pages under
 `apps/docs/docs/reference/api/endpoints/`.  The pages are propagation, not
 source: regenerating them fixes nothing.  The spec is what drifts.
 
-The served surface is every route the code actually registers:
+The served surface COVERED HERE is `crates/` plus `worker/src` — the API data
+plane — and nothing else.  Two registration sites:
 
   * axum `.route(<path-expr>, ...)` in `crates/` — the path expression may be
     a string literal, may sit on the line AFTER `.route(`, and is frequently a
@@ -14,6 +15,15 @@ The served surface is every route the code actually registers:
   * exact path comparisons in the Worker's `matchRoute` table
     (`worker/src/index.ts`) — `path === "/api/health"` and friends, which are
     served AT THE EDGE and never reach the container.
+
+`apps/**` is OUT OF REACH, deliberately and for now: the sibling Workers
+(`apps/signup-worker`, `apps/analytics-worker`, …) dispatch on `url.pathname`
+in ~376 TypeScript files, and neither the extractor nor the workflow's `paths:`
+filter looks there.  This is a NAMED hole, not an oversight — `/v1/event` and
+`/v1/digest/preview` are served by `apps/analytics-worker/src/index.ts` and
+appear in no spec, and this gate does not see them.  B-130 owns closing it.
+Widening the reach is new scope, so the honest move is to declare it here
+rather than let this header claim more than the enumeration below delivers.
 
 A line-oriented `grep '\\.route("'` sees only the first of those three forms.
 That instrument reported 32 phantom absences once already; the extractor here
@@ -470,6 +480,20 @@ def self_test(documented, rust_routes, worker_routes) -> int:
         "openapi paths parsed",
         len(documented) >= 30,
         f"{len(documented)} documented paths (expected >= 30)",
+    )
+    # A spec with no `paths:` block must RAISE, never return {}.  An empty
+    # documented surface silently satisfies every MISSING_ROUTE check, so a
+    # parser that degrades to {} on malformed input is a gate that passes
+    # because it read nothing.
+    try:
+        parse_openapi_paths("openapi: 3.1.0\ninfo:\n  title: no paths here\n")
+        raised = False
+    except SystemExit:
+        raised = True
+    check(
+        "malformed spec REFUSES rather than reporting an empty surface",
+        raised,
+        "a `paths:`-less spec raises instead of returning {}",
     )
     check(
         "rust routes extracted",
