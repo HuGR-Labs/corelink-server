@@ -8074,3 +8074,61 @@ verify-means: |
   Ele mede a colisão, não escolhe o remédio.
 last-verified: 2026-08-31
 ```
+
+### B-138 — a imagem do runner foi assada com `CORELINK_NIGHTLY` e a frota `corelink` não a está servindo
+
+O #1506 tira seis lanes do Mac do dono e as põe em `runs-on: corelink`, confiando que a
+imagem da frota exporta `CORELINK_NIGHTLY` — o nome do nightly datado que ela assa, conforme
+`corelink-runners#523`. O passo falha alto se a variável não existir:
+
+```
+CORELINK_NIGHTLY: the runner image must export CORELINK_NIGHTLY (corelink-runners#523)
+```
+
+**O `corelink-runners#523` já mergeou** (05:04:33Z de 2026-08-31) e há **três builds de
+imagem verdes depois dele** — 05:09, 05:20 e 05:32. Mesmo assim, re-execuções às
+**05:43:37Z** e **05:43:46Z** — posteriores aos três — falham com a variável **ausente**, em
+dois workflows independentes (`tenant-path`, `corelink-worker`), ambos no label `corelink`,
+servidos pelos runners efêmeros `cf-runner-a408130b` e `cf-runner-ed67570e`.
+
+A conclusão que sobra: **imagem assada não é imagem servida.** A frota `corelink` são
+contêineres efêmeros na Cloudflare, e contêiner não troca de imagem porque um build passou —
+precisa do repin. É o mesmo mecanismo já registrado para os contêineres de produção, onde
+deploy do Worker não reinicia contêiner e só imagem nova substitui.
+
+**O que este item NÃO decide, e é a primeira pergunta de quem pegá-lo:** se a frota está
+apenas atrasada no roll, ou se a imagem foi assada **sem** a variável apesar do `#523`. Os
+dois produzem exatamente este sintoma e se distinguem inspecionando a imagem que a frota
+serve hoje — não daqui. Registro a ambiguidade em vez de escolher a hipótese mais
+confortável.
+
+Enquanto isso o #1506 fica vermelho, e o vermelho é honesto: o guard novo está acusando uma
+lacuna real. O passo que ele substitui era `echo "$HOME/.rustup/toolchains/nightly-…/bin" >>
+"$GITHUB_PATH"`, que **sai 0 num diretório inexistente** e deixaria o job **verde rodando o
+`cargo` errado**. Este item existe porque o gate passou a falhar alto, não apesar disso.
+
+```backlog
+id: B-138
+repo: corelink-runners
+owner: tl
+status: open
+verify: manual
+verify-means: |
+  manual — a pergunta é sobre a imagem que a frota `corelink` **serve**, e nada neste
+  repositório a observa. Um `grep` daqui mediria o workflow, não o runner, e ficaria verde
+  por vacuidade enquanto a frota continuasse servindo a imagem velha.
+
+  Como decidir, em ordem de custo:
+
+  1. Re-rodar um job de fuzz do #1506 e ler o passo `Put the baked nightly toolchain on
+     PATH`. Se `CORELINK_NIGHTLY` resolver, a frota rolou e este item fecha.
+  2. Se persistir, comparar a imagem fixada para a frota `corelink` com a produzida pelo
+     último build verde de `corelink-runners`. Divergência = roll pendente; convergência com
+     a variável ausente = a imagem foi assada sem ela, e o defeito é do `#523`, não do
+     deploy.
+
+  Não fechar por "o #1506 ficou verde" sozinho: se alguém reverter o `runs-on: corelink` de
+  volta para o Mac, o PR fica verde e este item continua **aberto** — a frota seguiria sem a
+  variável para toda lane futura que dependa dela.
+last-verified: 2026-08-31
+```
