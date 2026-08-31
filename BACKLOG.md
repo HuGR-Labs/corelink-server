@@ -3439,7 +3439,8 @@ status: open
 verify: |
   bash -c 'grep -q "cargo zigbuild" .github/workflows/release-cli.yml || exit 1
   test -e .github/workflows/cosign-sign.yml && exit 1
-  grep -rn "HumanGuardrail/corelink-cli" .github/workflows/release-cli.yml && exit 1
+  uses=$(grep -cE -- "--repo[[:space:]]+HumanGuardrail/corelink-cli" .github/workflows/release-cli.yml 2>/dev/null || true)
+  [ "${uses:-0}" = 0 ] || { echo "FALHA: $uses uso(s) executaveis de --repo HumanGuardrail/corelink-cli em release-cli.yml — a lane publica no repo que responde 404."; exit 1; }
   grep -q "GITHUB_REPOSITORY" .github/workflows/release-slsa3.yml || exit 1
   exit 0'
 verify-means: |
@@ -3459,6 +3460,15 @@ verify-means: |
   publicação PERMANEÇA repontado para `HuGR-Labs/corelink-cli`. Um revert
   silencioso devolveria um `--repo` que responde 404, e sem a cláusula o item
   continuaria verde por cima disso.
+
+  Ela conta **uso executável** (`--repo <org>/corelink-cli`), não presença do
+  literal. A versão anterior grepava a string em qualquer posição e por isso
+  acusava **três** falsos: dois comentários de cabeçalho e um `name:` de job — e,
+  o que é pior, acusaria o comentário que o próprio repontamento escreve para
+  explicar o 404. Portão que pune a explicação do conserto ensina a consertar em
+  silêncio. Medido: no branch que reponta restam 2 ocorrências do literal, **ambas
+  em comentário**, e a cláusula nova passa; se alguém devolver um `--repo` para o
+  repo morto, ela acusa.
 
   O que este comando NÃO decide, e é a parte maior: POR QUE a matriz de build
   reprova. Um verify sobre histórico de execução leria os logs expirados como
@@ -6580,8 +6590,10 @@ verify: |
   bash -c 'test -e .github/workflows/cosign-sign.yml && { echo "FALHA: cosign-sign.yml voltou a existir — o item foi fechado APAGANDO a lane; se ela foi recriada, refaça a analise das cinco paredes antes de reabrir."; exit 1; }
   ctl=$(ls apps/docs/docs/trust/*.mdx 2>/dev/null | wc -l | tr -d " ")
   [ "${ctl:-0}" -gt 0 ] || { echo "INDETERMINADO: nenhum arquivo em apps/docs/docs/trust/ — o instrumento falhou, nao a arvore."; exit 0; }
-  bad=$(grep -rlE "Ed25519 via Sigstore/cosign|cosign verify-blob|Rekor transparency-log entries for every release|carries a Sigstore" apps/docs/docs/ 2>/dev/null | wc -l | tr -d " ")
-  [ "$bad" = 0 ] || { echo "FALHA: $bad arquivo(s) da doc publica voltaram a prometer assinatura Sigstore/Cosign que nao existe."; exit 1; }
+  claim=$(grep -rlE "Ed25519 via Sigstore/cosign|Rekor transparency-log entries for every release|carries a Sigstore" apps/docs/docs/ 2>/dev/null | wc -l | tr -d " ")
+  cmd=$(find apps/docs/docs -type f \( -name "*.mdx" -o -name "*.md" \) -exec awk "match(\$0,/^[ \t]*\`\`\`/){f=!f;next} f && /cosign verify-blob/{print FILENAME; exit}" {} \; 2>/dev/null | sort -u | wc -l | tr -d " ")
+  bad=$((claim + cmd))
+  [ "$bad" = 0 ] || { echo "FALHA: $bad arquivo(s) da doc publica prometem assinatura Sigstore/Cosign que nao existe (promessa declarativa: $claim; comando dentro de cerca de codigo: $cmd)."; exit 1; }
   echo "done: cosign-sign.yml apagada e nenhuma promessa de assinatura ressuscitou na doc (controle: $ctl arquivos em trust/)"'
 verify-means: |
   done — polaridade INVERTIDA, como exige um item fechado: ele agora falha se a
