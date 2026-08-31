@@ -152,6 +152,23 @@ def validate_schema(item: Item) -> None:
         item.problems.append(f"status must be one of {VALID_STATUS}, got {d.get('status')!r}")
     if d.get("owner") not in VALID_OWNER and "owner" in d:
         item.problems.append(f"owner must be one of {VALID_OWNER}, got {d.get('owner')!r}")
+    # `owner: owner` means "this needs the human" — a credential, a payment, a
+    # deletion, a legal call. An item that is already DONE cannot still need one.
+    # Validating the two fields independently (which is all the two checks above
+    # do) lets a closed item keep sitting in the owner's queue forever; #1510 and
+    # #1522 had to drain exactly that backlog by hand (28 -> 12, then 31 -> 13).
+    #
+    # SCOPE, fixed here so it does not become folklore: `done` ONLY, not
+    # `!= open`. A `parked` item waiting on an owner decision is legitimate and
+    # the strict reading would forbid it. B-147 left this choice to whoever
+    # implemented the rule and required the test to pin it; the cell
+    # "a parked item may still carry owner: owner" in test_backlog_verify.sh is
+    # that pin.
+    if d.get("status") == "done" and d.get("owner") == "owner":
+        item.problems.append(
+            "status: done with owner: owner — a finished item cannot still be "
+            "waiting on the human; set owner: tl (or reopen it)"
+        )
     if "last-verified" in d:
         try:
             parse_date(d["last-verified"])
@@ -257,7 +274,36 @@ def main() -> int:
                 block_id = str(data.get("id", ""))
         except yaml.YAMLError:
             continue  # already reported as BROKEN by parse()
-        if not re.fullmatch(r"B-\d+", block_id):
+        # An id that is not of the form B-<digits> used to be SKIPPED here — the
+        # gate's own fail-open hole (B-143). `id: B-UNALLOCATED`, `B-TBD`,
+        # `B-131a` and `b-131` all merged CONFIRMED: they escape this divergence
+        # check by the `continue`, and they escape the density rule below because
+        # it only collects ids matching `B-(\d+)`. The gate that exists to
+        # guarantee every item has a number was the one not looking. Placeholder
+        # ids are not hypothetical — a blocked id chain (#1504 -> #1509 -> #1511
+        # -> #1512) is exactly when one gets written.
+        #
+        # The zero-padding half of B-143 is handled at the DUPLICATE check, not
+        # here, and the item's suggested rule would have been wrong. B-143 reads
+        # `B-0142` as a defect of "leading zeros" and asks the canonical form to
+        # refuse padding. Measured against this file instead of assumed: **99 of
+        # the 166 blocks are zero-padded** — `B-001` through `B-099` are the
+        # repo's own convention, and `B-100`+ are three digits without padding.
+        # Refusing leading zeros would reject 60% of the register. The real
+        # defect `B-0142` exposes is that the duplicate check compares STRINGS,
+        # so it aliases silently onto `B-142`; that is closed where duplicates
+        # are detected.
+        #
+        # A block with NO `id:` at all is left to `parse()`, which already reports
+        # it as BROKEN ("missing required field `id`", exit 1). Flagging it here
+        # too would upgrade it to a FATAL exit 2 and swallow the precise message —
+        # the same trap the orphan check below documents.
+        if block_id and not re.fullmatch(r"B-\d+", block_id):
+            mismatches.append(
+                f"  line {line}: block `id: {block_id!r}` is not a canonical item id "
+                f"(want B-<digits>) — a malformed id escapes both this check and the "
+                f"density rule, so the item merges unnoticed"
+            )
             continue
         prior = [h for pos, h in headings if pos < m.start()]
         if not prior:
@@ -372,13 +418,28 @@ def main() -> int:
             )
             return 2
 
+    # Duplicates are compared on the NUMBER, not the string. `B-0142` and `B-142`
+    # are the same item to every other check in this file — `int("0142") == 142`
+    # keeps the density rule satisfied — but a string compare sees two distinct
+    # ids and lets them coexist as a silent alias. Two headings, two blocks, one
+    # number: every citation from outside the file resolves to whichever one the
+    # reader happened to scroll to. (B-143, adjacent finding.)
+    #
+    # This repo zero-pads to three digits by convention (99 of 166 ids), so the
+    # normalisation is over-padding, not padding itself: `B-001` and `B-1` would
+    # also collide, correctly.
+    def _key(item_id: str) -> str:
+        m = re.fullmatch(r"B-(\d+)", item_id)
+        return f"B-{int(m.group(1))}" if m else item_id
+
     seen: dict[str, int] = {}
     for it in items:
-        if it.id in seen:
+        k = _key(it.id)
+        if k in seen:
             it.verdict = BROKEN
-            it.detail = f"duplicate id — also declared at line {seen[it.id]}"
+            it.detail = f"duplicate id — also declared at line {seen[k]}"
         else:
-            seen[it.id] = it.line
+            seen[k] = it.line
 
     selected = [i for i in items if not args.id or i.id == args.id]
     if args.id and not selected:

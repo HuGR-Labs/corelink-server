@@ -9465,20 +9465,29 @@ densidade satisfeita, e a checagem de duplicata compara **strings**, então `B-0
 não colidem. É um **alias silencioso**. A regra geral é necessária mas não suficiente; a forma
 canônica também precisa recusar zero à esquerda.
 
-**O conserto de verdade é no `backlog_verify.py`, não num item de backlog.** Este item
-**rastreia o buraco e propõe o conserto**; ele não finge ser o conserto. O `verify` abaixo é
-o próprio registro se auditando — funciona, e é honesto sobre ser um paliativo —, mas o
-portão deveria recusar isso **estruturalmente**, no ponto onde lê o id. A emenda medida é de
-**duas linhas** em `backlog_verify.py:260`: trocar o `continue` mudo por um `mismatches.append(...)`
-antes dele, o que reaproveita o `FATAL` que já existe logo abaixo e faz o bloco ser nomeado
-por arquivo e linha. Verificado numa cópia descartável: com a emenda, as quatro formas
-malformadas passam a ser recusadas por nome.
+**Consertado 2026-08-31 (este PR).** As duas portas estão fechadas em
+`scripts/backlog_verify.py`: o `continue` mudo virou `mismatches.append(...)`, e o alias de
+zero à esquerda foi fechado **onde os duplicados são detectados**, não na forma canônica.
+
+⚠️ **A emenda que este item propunha para o `B-0142` estava errada, e a população diz por
+quê.** O corpo pedia que a forma canônica "recusasse zero à esquerda". Medido contra o
+próprio arquivo em vez de suposto: **99 dos 166 blocos são zero-padded** — `B-001` a `B-099`
+são a convenção do repositório, e `B-100`+ têm três dígitos sem padding. Recusar zero à
+esquerda reprovaria 60% do registro. O defeito real que o `B-0142` expõe não é o padding: é
+que a checagem de duplicata comparava **strings**. Agora ela normaliza pelo número, então
+`B-0142` colide com `B-142` e sai `BROKEN`, e `B-001` continua legal.
+
+Sete células novas em `scripts/test_backlog_verify.sh`, medidas **pelos dois lados** contra o
+script pré-conserto (não contra um mutante escrito à mão): as quatro formas malformadas, o
+alias, e **dois controles negativos** — um id canônico e um id zero-padded real, que teriam
+pegado a emenda errada. Contra o `HEAD` anterior as seis células vermelhas saem todas com
+`exit 0` — o fail-open que o item descreve, reproduzido, não deduzido.
 
 ```backlog
 id: B-143
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   python3 - <<'PY'
   import re, subprocess, sys, tempfile, pathlib
@@ -9497,50 +9506,71 @@ verify: |
       print("DEFEITO VIVO: id malformado ja esta em BACKLOG.md: "
             + ", ".join(m.group(1) for m in live), file=sys.stderr)
       sys.exit(2)
-  probe = ("\n### B-UNALLOCATED — sonda\n\nSonda plantada pelo verify do B-143.\n\n"
-           "```backlog\nid: B-UNALLOCATED\nrepo: corelink-server\nowner: tl\n"
-           'status: open\nverify: "true"\nverify-means: sonda\nlast-verified: 2026-08-31\n```\n')
-  with tempfile.TemporaryDirectory() as d:
-      f = pathlib.Path(d, "probe.md"); f.write_text(text + probe)
-      r = subprocess.run([sys.executable, str(script), "--file", str(f), "--id", "B-UNALLOCATED"],
-                         capture_output=True, text=True)
-  out = r.stdout + r.stderr
-  if r.returncode == 0 and "CONFIRMED" in out:
-      print("AINDA ABERTO: backlog_verify.py deu CONFIRMED a um bloco com `id: B-UNALLOCATED` — "
-            "nem a checagem heading/bloco nem a de densidade o enxergam.")
-      sys.exit(0)
-  print(f"FECHADO?: o script rejeitou o id malformado (rc={r.returncode}). "
-        f"Confirme que a regra e geral (`^B-\\d+$`, nao a literal) e atualize este item.\n{out.strip()}")
-  sys.exit(1)
+  def probe(pid, status="open"):
+      return (f"\n### {pid} — sonda\n\nSonda plantada pelo verify do B-143.\n\n"
+              f"```backlog\nid: {pid}\nrepo: corelink-server\nowner: tl\n"
+              f'status: {status}\nverify: "true"\nverify-means: sonda\nlast-verified: 2026-08-31\n```\n')
+  def run(extra, sel):
+      with tempfile.TemporaryDirectory() as d:
+          f = pathlib.Path(d, "probe.md"); f.write_text(text + extra)
+          r = subprocess.run([sys.executable, str(script), "--file", str(f), "--id", sel],
+                             capture_output=True, text=True)
+      return r.returncode, r.stdout + r.stderr
+  falhas = []
+  # 1. as quatro formas malformadas tem de ser RECUSADAS, cada uma por nome.
+  for pid in ("B-UNALLOCATED", "B-TBD", "B-131a", "b-131"):
+      rc, out = run(probe(pid), pid)
+      if rc == 0 and "CONFIRMED" in out:
+          falhas.append(f"{pid}: CONFIRMED rc=0 — o fail-open do B-143 voltou")
+      elif "canonical item id" not in out:
+          falhas.append(f"{pid}: recusado (rc={rc}) mas SEM a mensagem de id canonico — "
+                        "pode estar sendo pego por outra checagem, por acidente")
+  # 2. o alias de zero a esquerda tem de colidir com o item real, nao coexistir.
+  rc, out = run(probe("B-0143"), "B-0143")
+  if rc == 0 and "CONFIRMED" in out:
+      falhas.append("B-0143: CONFIRMED ao lado do B-143 real — alias silencioso de volta")
+  elif "duplicate id" not in out:
+      falhas.append(f"B-0143: rejeitado (rc={rc}) mas nao como DUPLICATA — se voltou a ser "
+                    "recusado pela forma canonica, os 99 ids zero-padded do arquivo estao em risco")
+  # 3. CONTROLE NEGATIVO: um id canonico normal continua passando. Sem ele,
+  #    "recusa tudo" satisfaria os dois testes acima.
+  rc, out = run(probe("B-167"), "B-167")
+  if rc != 0 or "CONFIRMED" not in out:
+      falhas.append(f"CONTROLE NEGATIVO FALHOU: um id canonico novo (B-167) foi recusado "
+                    f"(rc={rc}) — o portao virou recusa-tudo.\n{out.strip()[:400]}")
+  if falhas:
+      print("REGRESSAO — o portao voltou a falhar ABERTO:\n  " + "\n  ".join(falhas))
+      sys.exit(1)
+  print("fechado: as 4 formas malformadas sao recusadas por nome, o alias zero-padded "
+        "colide como duplicata, e um id canonico ainda passa (controle negativo)")
+  sys.exit(0)
   PY
 verify-means: |
-  **Polaridade `open`:** sai 0 — aberto — enquanto `backlog_verify.py` continuar dando
-  CONFIRMED a um bloco cujo `id:` não é `B-<dígitos>`. É um **controle positivo**: ele
-  **planta** a sonda numa cópia descartável e roda o script de verdade contra ela. Não pode
-  passar por vacuidade — a única forma de dizer "ainda aberto" é o portão genuinamente
-  aprovar um id que não é id.
+  **Polaridade INVERTIDA (`done`):** sai 0 — fechado — enquanto `backlog_verify.py`
+  **recusar** as quatro formas malformadas E fizer o alias zero-padded colidir como
+  duplicata E ainda aprovar um id canônico. Sai 1 se qualquer uma dessas três voltar atrás.
 
-  A sonda usa `--id B-UNALLOCATED`, então **um único** `verify` roda (`"true"`); ela nunca
-  dispara a matriz de ~140 comandos externos (cargo/wrangler/gh/curl) que um
-  `backlog_verify.py` sem `--id` dispara.
+  A polaridade `open` original ficaria verde no PR que consertou e **vermelha no merge
+  seguinte**, contaminando todo PR irmão. Por isso ela foi invertida junto com o `status`, e
+  não depois.
 
-  **Três desfechos distintos, nenhum silencioso:** 0 = buraco presente (aberto);
-  1 = o script passou a recusar — reveja e feche, **confirmando antes que a regra é geral
-  (`^B-\d+$`) e não um casamento com a literal `B-UNALLOCATED`**, que passaria neste mesmo
-  teste sendo decorativo; 2 = instrumento quebrado (arquivo sumiu, menos de 100 blocos lidos)
-  **ou defeito vivo** — um id malformado já está em `BACKLOG.md` agora, que é a coisa que este
-  item quer impedir e portanto merece parar tudo, não virar aviso.
+  **Continua sendo um controle positivo:** planta a sonda numa cópia descartável e roda o
+  script de verdade contra ela — a única forma de dizer "fechado" é o portão genuinamente
+  recusar. Cada sonda usa `--id`, então **um** `verify` (`"true"`) roda por sonda; nunca a
+  matriz de ~166 comandos externos que um `backlog_verify.py` sem `--id` dispara.
 
-  **O que ele NÃO decide:** ele não conserta o portão, e não impede que o próximo item entre
-  com placeholder — só grita depois. Enquanto `backlog_verify.py:260` continuar com o
-  `continue` mudo, a proteção depende deste item ser executado, e um item pode ser removido
-  do laço. O conserto estrutural é no script; este `verify` é o paliativo que mede a falta
-  dele, não um substituto.
+  **O controle negativo (`B-167`) é o que impede o passe fácil.** Um portão que recusasse
+  *todo* id satisfaria os dois primeiros testes e destruiria o arquivo. Com ele, "recusa
+  tudo" é uma falha nomeada.
 
-  **Fora de alcance de propósito:** `id: B-0142` — zero à esquerda — **passa** tanto hoje
-  quanto com a emenda de `^B-\d+$`, criando alias silencioso do `B-142`. Está no corpo como
-  achado adjacente; quem for consertar o script deve tratar os dois, mas este portão não
-  finge cobrir isso.
+  **A checagem de alias exige `duplicate id` na saída, não só a recusa.** Se alguém
+  "consertar" o `B-0143` voltando a proibir zero à esquerda na forma canônica, este verify
+  falha com a razão escrita — porque essa emenda reprovaria os **99 ids zero-padded** que o
+  arquivo realmente tem.
+
+  **Três desfechos, nenhum silencioso:** 0 = fechado; 1 = regressão, com qual das três
+  metades voltou; 2 = instrumento quebrado (arquivo sumiu, menos de 100 blocos)
+  **ou** defeito vivo — um id malformado já está em `BACKLOG.md` agora.
 last-verified: 2026-08-31
 ```
 
@@ -9803,20 +9833,26 @@ campo esquecido entra sem ruído — e o efeito prático não é cosmético: é 
 acumulando trabalho que ninguém mais precisa fazer, que foi exatamente o que o [B-137] e o
 #1510 tiveram de limpar à mão (28 → 12).
 
-Reparo: ~3 linhas em `validate_schema` — `status != "open" and owner == "owner"` ⇒ problema.
-É barato o bastante para que o custo real do item seja escrever o teste do portão, não o
-portão.
+**Consertado 2026-08-31 (este PR).** `validate_schema()` passa a cruzar os dois campos:
+`status == "done" and owner == "owner"` ⇒ `BROKEN`, com a mensagem dizendo o que fazer
+(`set owner: tl (or reopen it)`).
 
-**O que este item NÃO decide:** se `parked` deve contar junto com `done`. Um item parqueado
-esperando decisão do owner é legítimo, e a leitura estrita (`!= open`) o proibiria. Quem
-implementar decide entre `status == "done"` e `status != "open"`, e o teste tem de fixar a
-escolha, senão o portão vira folclore.
+**A escolha de escopo que o item exigia fixar: `== "done"`, não `!= "open"`.** Um item
+`parked` esperando decisão do owner é exatamente para o que `parked` serve, e a leitura
+estrita o proibiria. A escolha está presa por célula de teste — *"a parked item may still
+carry owner: owner"* — então alargá-la depois vira decisão explícita, com o teste ficando
+vermelho, em vez de deriva.
+
+Três células novas em `scripts/test_backlog_verify.sh`, e duas delas são **controles
+negativos** (`parked` e `open` com `owner: owner` continuam passando). Sem eles,
+`status != "open"` — ou pior, qualquer `owner: owner` — satisfaria a célula vermelha e
+reprovaria metade da fila do owner.
 
 ```backlog
 id: B-147
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   bash -c 'set -e
   s=scripts/backlog_verify.py
@@ -9824,43 +9860,51 @@ verify: |
   d=$(mktemp -d); trap "rm -rf $d" EXIT
   hoje=$(date +%Y-%m-%d)
   cerca=$(printf "\140\140\140")
-  {
+  sonda() { # $1 status, $2 owner
     printf "### B-001 — sonda\n\n"
     printf "%sbacklog\n" "$cerca"
-    printf "id: B-001\nrepo: corelink-server\nowner: owner\nstatus: done\n"
+    printf "id: B-001\nrepo: corelink-server\nowner: %s\nstatus: %s\n" "$2" "$1"
     printf "verify: |\n  true\n"
-    printf "verify-means: |\n  done E owner: owner ao mesmo tempo — a contradicao que nenhum portao mede\n"
+    printf "verify-means: |\n  sonda do verify do B-147\n"
     printf "last-verified: %s\n" "$hoje"
     printf "%s\n" "$cerca"
-  } > "$d/sonda.md"
-  out=$(python3 "$s" --file "$d/sonda.md" --format json 2>&1) || true
-  printf "%s" "$out" | grep -q "\"id\": \"B-001\"" || { echo "FALHA: a sonda nao foi parseada (--file mudou de contrato?) — saida: $(printf "%s" "$out" | tr "\n" " " | cut -c1-160)"; exit 1; }
-  if printf "%s" "$out" | grep -q "BROKEN"; then
-    echo "FALHA: o script ja recusa done+owner:owner — feche o item."; exit 1; fi
-  echo "aberto: sonda done+owner:owner passa sem BROKEN; nada no script cruza os dois campos"'
+  }
+  roda() { sonda "$1" "$2" > "$d/s.md"; python3 "$s" --file "$d/s.md" --format json 2>&1 || true; }
+  # 1. o caso proibido: done + owner:owner tem de sair BROKEN.
+  out=$(roda done owner)
+  printf "%s" "$out" | grep -q "\"id\": \"B-001\"" || {
+    echo "INSTRUMENTO QUEBRADO: a sonda nao foi parseada (--file/--format mudou de contrato?) — saida: $(printf "%s" "$out" | tr "\n" " " | cut -c1-200)"; exit 2; }
+  printf "%s" "$out" | grep -q "BROKEN" || {
+    echo "REGRESSAO: done+owner:owner voltou a passar sem BROKEN — o cruzamento sumiu de validate_schema."; exit 1; }
+  # 2. CONTROLE NEGATIVO A: parked+owner:owner e LEGITIMO e tem de continuar passando.
+  #    Sem esta checagem, alargar a regra para != "open" passaria despercebido.
+  out=$(roda parked owner)
+  printf "%s" "$out" | grep -q "BROKEN" && {
+    echo "ESCOPO ALARGADO: parked+owner:owner virou BROKEN — a regra deveria ser == done. Um item parqueado esperando o owner e legitimo."; exit 1; }
+  # 3. CONTROLE NEGATIVO B: open+owner:owner e o estado NORMAL da fila do owner.
+  out=$(roda open owner)
+  printf "%s" "$out" | grep -q "BROKEN" && {
+    echo "ESCOPO ALARGADO: open+owner:owner virou BROKEN — isso reprovaria a fila inteira do owner."; exit 1; }
+  echo "fechado: done+owner:owner sai BROKEN; parked e open com owner:owner continuam passando"'
 verify-means: |
-  open — o script aceita, sem reclamar, um item que se declara `done` **e** `owner: owner`.
+  **Polaridade INVERTIDA (`done`):** sai 0 — fechado — enquanto o script **recusar**
+  `done` + `owner: owner` **e** continuar aceitando `parked` e `open` com `owner: owner`.
+  Sai 1 se o cruzamento sumir (regressão) ou se alguém alargar o escopo.
 
-  **Mede a ausência do portão, não a ausência de violação**, e essa distinção é a razão de
-  ser do item: hoje a contagem de violações vivas é zero, então um `verify` que contasse
-  violações estaria verde e o item pareceria fechado enquanto nada o impede de voltar. Por
-  isso o predicado é a sonda; a contagem viva vai junto só como contexto impresso.
+  A polaridade `open` original ficaria verde no PR que consertou e **vermelha no merge
+  seguinte**, contaminando todo PR irmão. Invertida junto com o `status`, não depois.
 
-  **A contagem de violações vivas ficou FORA do comando, de propósito.** Medida à mão em
-  2026-08-31: **zero** itens `done` ou `parked` carregam `owner: owner`. Contá-la dentro do
-  `verify` seria o erro que o próprio item denuncia — com zero violações, um portão que
-  contasse violações ficaria verde e o item pareceria fechado enquanto nada impede a
-  primeira.
+  **Continua medindo a existência do PORTÃO, não a ausência de violação** — que era a razão
+  de ser do item. A contagem de violações vivas segue **fora** do comando de propósito: hoje
+  é zero, então um verify que contasse violações ficaria verde tanto com portão quanto sem.
 
-  **Anti-vacuidade:** sonda não parseada ⇒ falha alta com a saída recortada, nunca "aberto".
+  **Os dois controles negativos são o conteúdo real deste verify.** A célula vermelha
+  sozinha é satisfeita por `owner == "owner"` puro, que reprovaria os itens `open` da fila do
+  owner — a maioria do arquivo. Eles prendem o escopo em `== "done"`, que é a escolha que o
+  item exigia que alguém fizesse e registrasse.
 
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: sonda
-  done+owner:owner passa sem BROKEN"* e exit 0. Numa cópia com as três
-  linhas em `validate_schema` que cruzam os dois campos, a sonda sai BROKEN e o comando
-  imprime *"FALHA: o script ja recusa done+owner:owner"* com exit 1.
-
-  Fecha quando o cruzamento existir. O que ele **não** decide: se `parked` entra na regra —
-  a sonda usa `done`, que é o caso incontroverso, de propósito.
+  **Anti-vacuidade:** sonda não parseada ⇒ exit **2** com a saída recortada, nunca "fechado".
+  Um contrato de `--file`/`--format` que mude não pode ser lido como sucesso.
 last-verified: 2026-08-31
 ```
 
