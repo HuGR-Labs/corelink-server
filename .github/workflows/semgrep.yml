@@ -75,14 +75,31 @@ jobs:
     # `actions/setup-python`, whose RUNNER_TOOL_CACHE provisioning is unwritable
     # on the fleet. (2026-06-02)
     #
-    # 2026-08-31 — the `runs-on:` was the ONE line left behind by that rewrite.
-    # The step body above was already ported to the macOS fleet (no docker, no
-    # container:, host python3/pip3), but the runner label still read
-    # `ubuntu-latest`, so every dispatch since 2026-08-24 asked for a hosted box
-    # that billing will not grant. That is the whole of this lane's 388-run /
-    # 0-success record — nothing in the job body needed to change. Repointed to
-    # the fleet the body was written for.
-    runs-on: [self-hosted, mac, corelink-builder]
+    # 2026-08-31 (#1475, WP-E) — the `runs-on:` was the ONE line left behind by
+    # that rewrite. The step body was already ported off Docker (no container:,
+    # host python3), but the runner label still read `ubuntu-latest`, so every
+    # dispatch since 2026-08-24 asked for a hosted box that billing will not
+    # grant. That is the whole of this lane's 388-run / 0-success record, and
+    # #1475 was right that nothing in the job body needed to change.
+    #
+    # 2026-08-31 (WP-CI) — the DESTINATION is the half that needed synthesis.
+    # #1475 sent it to `[self-hosted, mac, corelink-builder]`, which is the
+    # owner's Mac: the same machine that hit load average 234 and 95% disk on
+    # 2026-08-30, and the machine this campaign exists to empty. Repointing a
+    # 20-minute multi-rulepack scan there trades a DEAD lane for LIVE load on it.
+    #
+    # `corelink` runs it and the Mac does not have to. The body's two real
+    # requirements are met there and were measured, not assumed:
+    #   - "no docker": the fleet has no daemon, which is precisely why the
+    #     container: form was dropped — the constraint is satisfied, not fought.
+    #   - python3: 3.12.3 is baked into the image, and the install step below
+    #     builds its OWN venv (`python3 -m venv .semgrep-venv`) and then uses
+    #     that venv's pip. It never calls a host `pip3` — so the older comment's
+    #     "host python3/pip3" overstated the dependency. `python3-venv` is an
+    #     apt package in the runner image, so the venv resolves.
+    # No `actions/setup-python` either way: RUNNER_TOOL_CACHE is unset on both
+    # self-hosted fleets and the action dies on an unwritable path.
+    runs-on: corelink
     timeout-minutes: 20
 
     # Skip duplicate runs on dependabot push events (PR already covers them).
