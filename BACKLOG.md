@@ -7153,3 +7153,76 @@ verify-means: |
   silently closed while the mechanism is untouched.
 last-verified: 2026-08-30
 ```
+
+---
+
+### B-128 — os runners ficam sem disco e o resultado é vermelho falso, não erro de disco
+
+Em um único dia, **três** execuções distintas reprovaram por falta de espaço, e nenhuma
+delas se anunciou como problema de infraestrutura:
+
+```
+#1393  6 portões vermelhos, logs inexistentes           (Mac, volume em 95 MB livres)
+#1450  error: could not create incremental compilation crate directory
+       …: No space left on device (os error 28)          (runner Linux, /opt/actions-runner)
+       collect2: fatal error: ld terminated with signal 7 [Bus error]
+```
+
+**A forma do defeito é o que importa.** Um `ld` morto com `Bus error` e um crate que "não
+compila" leem-se como defeito do PR. Quem recebe isso vai investigar o próprio código —
+foi o que eu fiz, duas vezes, antes de achar a linha do `os error 28` enterrada no meio do
+log. E na primeira ocorrência os logs nem existiam, então não havia nada para ler.
+
+Pior: o vermelho é **atribuído ao PR errado**. Quem estiver na fila quando o disco encher
+recebe a falha, e quem encheu o disco não recebe nada.
+
+**As duas máquinas têm causas diferentes e reparos diferentes:**
+- **Mac** — é o runner E a máquina do owner E onde as sessões compilam. Encheu porque 30
+  worktrees acumularam `target/`; três deles somavam 31 GB. Reparo: higiene (apagar
+  `target/` ao fim de cada pacote) mais, idealmente, um teto.
+- **Runner Linux** — `/opt/actions-runner/_work/…/target` cresce entre execuções e nada o
+  poda. Reparo é no `corelink-runners`: dimensionar o disco da imagem ou limpar `target/`
+  no fim do job.
+
+**Por que isto vira item agora e não depois.** A campanha B-126 vai gerar dezenas de PRs de
+refatoração, cada um disparando compilação. Se o disco enche no meio, os vermelhos falsos
+vão parecer defeitos de divisão de módulo — exatamente a leitura mais cara possível, porque
+manda o autor desfazer um trabalho correto.
+
+```backlog
+id: B-128
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'ctl=$(ls .github/workflows/*.yml 2>/dev/null | wc -l | tr -d " ")
+  [ "${ctl:-0}" -gt 50 ] || { echo "INDETERMINADO: so $ctl workflows encontrados — o instrumento falhou, nao a arvore."; exit 0; }
+  guard=$(grep -rln "df -[hH]" .github/workflows/ 2>/dev/null | wc -l | tr -d " ")
+  live=$(grep -rnE "No space left on device|ENOSPC" scripts/ .github/workflows/ 2>/dev/null | grep -vE ":[[:space:]]*#|# " | wc -l | tr -d " ")
+  [ "$guard" = 0 ] || { echo "FALHA: $guard workflow(s) ja checam espaco com df — pode ser o reparo; verifique e feche."; exit 1; }
+  [ "$live" = 0 ] || { echo "FALHA: $live linha(s) NAO-comentario ja tratam ENOSPC — pode ser o reparo; verifique e feche."; exit 1; }
+  echo "aberto: nenhum workflow checa espaco com df e nenhuma linha executavel trata ENOSPC; a exaustao chega como vermelho generico"'
+verify-means: |
+  open — nada no repo distingue "sem espaço" de "seu código quebrou".
+
+  O predicado mede **tratamento executável**, não menção. A primeira versão contava
+  qualquer ocorrência da string e nasceu DRIFTED: os dois arquivos que ela achou —
+  `pre-merge-gate-check.sh` e `run_tla_suite.sh` — mencionam ENOSPC em **comentário**,
+  descrevendo o sintoma, sem detectar nada. Um predicado que confunde comentário com
+  código fecharia este item por prosa.
+
+  Ele mede também a **presença de tratamento**, não a ausência de incidentes. Contar
+  incidentes exigiria consultar execuções pela rede, e um `verify` que depende de rede
+  falha por motivo errado; além disso um dia sem incidente não é conserto.
+
+  O que este comando NÃO decide: **se o tratamento, quando existir, funciona.** Um passo
+  que só imprima "disco cheio" no fim do job fecharia este `verify` sem mudar nada — o
+  ponto é o vermelho ser **atribuído** corretamente, não ser explicado depois. Quem fechar
+  precisa mostrar um job que, com o disco cheio, sai com uma mensagem que o autor do PR
+  reconhece como "não é você" **antes** de investigar o próprio código.
+
+  Também não decide o reparo do lado do `corelink-runners` — dimensionar o disco da imagem
+  ou podar `target/` no fim do job é trabalho naquele repo, e este item só rastreia o lado
+  do servidor. Fechar aqui sem o outro lado deixa a causa viva.
+last-verified: 2026-08-31
+```
