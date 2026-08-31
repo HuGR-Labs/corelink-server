@@ -8735,3 +8735,137 @@ verify-means: |
   O estado do faturamento não é observável a partir do repo — só pela conta do owner.
 last-verified: 2026-08-31
 ```
+
+### B-143 — `id:` de placeholder passa CONFIRMED e a checagem de densidade não o vê: o portão do BACKLOG falha ABERTO
+
+Um bloco com `id: B-UNALLOCATED` **mergeia em silêncio**. Medido, com sonda calibrada:
+
+```
+$ python3 scripts/backlog_verify.py --file <copia+sonda> --id B-UNALLOCATED
+  CONFIRMED B-UNALLOCATED  open   verify agrees with the declared status
+  1 item(s): confirmed=1, drifted=0, stale=0, broken=0     (rc=0)
+```
+
+E **não é só a literal**: `B-131a`, `b-131` e `B-TBD` saem CONFIRMED do mesmo jeito. Quem
+escrever um `verify` que grepe pela string `B-UNALLOCATED` faz um portão decorativo — a regra
+tem que ser geral (`^B-\d+$`).
+
+**As duas portas por onde ele passa**, ambas em `scripts/backlog_verify.py`:
+
+1. **`backlog_verify.py:260`** — a checagem que exige que heading e bloco concordem começa com
+
+   ```python
+   if not re.fullmatch(r"B-\d+", block_id):
+       continue
+   ```
+
+   Um id malformado é **pulado**, não reprovado. A checagem existe para impedir que um bloco
+   se esconda sob uma heading errada, e o caso em que o id nem tem forma de id é justamente o
+   que ela deixa passar.
+
+2. **`backlog_verify.py:282-286`** — a densidade só coleta o que casa `B-(\d+)`:
+
+   ```python
+   numbered = sorted(int(m.group(1)) for i in items if (m := re.fullmatch(r"B-(\d+)", i.id)))
+   ```
+
+   O id malformado não entra em `numbered`, então não abre lacuna, não colide, não é contado.
+   O portão que existe para garantir que **todo item tem número** não olha para ele.
+
+Confirmado com **controle positivo** de que o instrumento enxerga: a mesma invocação
+(`--id` que não casa nada, para que zero verifies externos disparem) **pega** uma lacuna real —
+apagar o B-140 produz `FATAL: BACKLOG.md is missing B-140`. Ou seja, a checagem de densidade
+**roda** nesse modo e ainda assim é cega para o id malformado. Sem esse controle a medição
+não valeria: a primeira sonda que escrevi saiu BROKEN por motivo errado (`verify: true` sem
+aspas vira `bool` em YAML), o que teria "refutado" o achado por acidente.
+
+**Por que isto é pior que colisão e que lacuna:** as duas **falham alto** — `FATAL: missing
+B-140`, `duplicate`. Esta **passa**. E não é hipotética: a corrente de ids travada
+(`#1504 → #1509 → #1511 → #1512`) faz com que se escreva placeholder exatamente enquanto se
+espera número, que é o momento em que o buraco está armado. Este próprio item foi encontrado
+alocando o id do B-142 nessa corrente.
+
+**Achado adjacente, do mesmo teste:** `id: B-0142` passa **até com a regra `^B-\d+$`
+aplicada**, e sai CONFIRMED convivendo com o `B-142` real — `int("0142") == 142` mantém a
+densidade satisfeita, e a checagem de duplicata compara **strings**, então `B-0142` e `B-142`
+não colidem. É um **alias silencioso**. A regra geral é necessária mas não suficiente; a forma
+canônica também precisa recusar zero à esquerda.
+
+**O conserto de verdade é no `backlog_verify.py`, não num item de backlog.** Este item
+**rastreia o buraco e propõe o conserto**; ele não finge ser o conserto. O `verify` abaixo é
+o próprio registro se auditando — funciona, e é honesto sobre ser um paliativo —, mas o
+portão deveria recusar isso **estruturalmente**, no ponto onde lê o id. A emenda medida é de
+**duas linhas** em `backlog_verify.py:260`: trocar o `continue` mudo por um `mismatches.append(...)`
+antes dele, o que reaproveita o `FATAL` que já existe logo abaixo e faz o bloco ser nomeado
+por arquivo e linha. Verificado numa cópia descartável: com a emenda, as quatro formas
+malformadas passam a ser recusadas por nome.
+
+```backlog
+id: B-143
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  python3 - <<'PY'
+  import re, subprocess, sys, tempfile, pathlib
+  src = pathlib.Path("BACKLOG.md"); script = pathlib.Path("scripts/backlog_verify.py")
+  for p in (src, script):
+      if not p.is_file():
+          print(f"INSTRUMENTO QUEBRADO: {p} nao existe", file=sys.stderr); sys.exit(2)
+  text = src.read_text()
+  blocks = re.findall(r"```backlog\n(.*?)```", text, re.S)
+  if len(blocks) < 100:
+      print(f"INSTRUMENTO QUEBRADO: li {len(blocks)} blocos backlog, esperado >=100", file=sys.stderr)
+      sys.exit(2)
+  live = [m for b in blocks if (m := re.search(r"(?m)^id:\s*(\S+)", b))
+          and not re.fullmatch(r"B-\d+", m.group(1))]
+  if live:
+      print("DEFEITO VIVO: id malformado ja esta em BACKLOG.md: "
+            + ", ".join(m.group(1) for m in live), file=sys.stderr)
+      sys.exit(2)
+  probe = ("\n### B-UNALLOCATED — sonda\n\nSonda plantada pelo verify do B-143.\n\n"
+           "```backlog\nid: B-UNALLOCATED\nrepo: corelink-server\nowner: tl\n"
+           'status: open\nverify: "true"\nverify-means: sonda\nlast-verified: 2026-08-31\n```\n')
+  with tempfile.TemporaryDirectory() as d:
+      f = pathlib.Path(d, "probe.md"); f.write_text(text + probe)
+      r = subprocess.run([sys.executable, str(script), "--file", str(f), "--id", "B-UNALLOCATED"],
+                         capture_output=True, text=True)
+  out = r.stdout + r.stderr
+  if r.returncode == 0 and "CONFIRMED" in out:
+      print("AINDA ABERTO: backlog_verify.py deu CONFIRMED a um bloco com `id: B-UNALLOCATED` — "
+            "nem a checagem heading/bloco nem a de densidade o enxergam.")
+      sys.exit(0)
+  print(f"FECHADO?: o script rejeitou o id malformado (rc={r.returncode}). "
+        f"Confirme que a regra e geral (`^B-\\d+$`, nao a literal) e atualize este item.\n{out.strip()}")
+  sys.exit(1)
+  PY
+verify-means: |
+  **Polaridade `open`:** sai 0 — aberto — enquanto `backlog_verify.py` continuar dando
+  CONFIRMED a um bloco cujo `id:` não é `B-<dígitos>`. É um **controle positivo**: ele
+  **planta** a sonda numa cópia descartável e roda o script de verdade contra ela. Não pode
+  passar por vacuidade — a única forma de dizer "ainda aberto" é o portão genuinamente
+  aprovar um id que não é id.
+
+  A sonda usa `--id B-UNALLOCATED`, então **um único** `verify` roda (`"true"`); ela nunca
+  dispara a matriz de ~140 comandos externos (cargo/wrangler/gh/curl) que um
+  `backlog_verify.py` sem `--id` dispara.
+
+  **Três desfechos distintos, nenhum silencioso:** 0 = buraco presente (aberto);
+  1 = o script passou a recusar — reveja e feche, **confirmando antes que a regra é geral
+  (`^B-\d+$`) e não um casamento com a literal `B-UNALLOCATED`**, que passaria neste mesmo
+  teste sendo decorativo; 2 = instrumento quebrado (arquivo sumiu, menos de 100 blocos lidos)
+  **ou defeito vivo** — um id malformado já está em `BACKLOG.md` agora, que é a coisa que este
+  item quer impedir e portanto merece parar tudo, não virar aviso.
+
+  **O que ele NÃO decide:** ele não conserta o portão, e não impede que o próximo item entre
+  com placeholder — só grita depois. Enquanto `backlog_verify.py:260` continuar com o
+  `continue` mudo, a proteção depende deste item ser executado, e um item pode ser removido
+  do laço. O conserto estrutural é no script; este `verify` é o paliativo que mede a falta
+  dele, não um substituto.
+
+  **Fora de alcance de propósito:** `id: B-0142` — zero à esquerda — **passa** tanto hoje
+  quanto com a emenda de `^B-\d+$`, criando alias silencioso do `B-142`. Está no corpo como
+  achado adjacente; quem for consertar o script deve tratar os dois, mas este portão não
+  finge cobrir isso.
+last-verified: 2026-08-31
+```
