@@ -13,13 +13,13 @@ description: CoreLink ist ein mandantenfähiger, inhaltsadressierbarer Cache fü
 
 # Was ist CoreLink?
 
-CoreLink ist ein gehosteter, mandantenfähiger **inhaltsadressierbarer Cache** für Build-Artefakte. Er speichert jeden Blob genau einmal anhand seines SHA-256-Digests und liefert ihn vom Cloudflare-Edge aus, der jedem Client am nächsten liegt.
+CoreLink ist ein gehosteter, mandantenfähiger **inhaltsadressierbarer Cache** für Build-Artefakte. Er speichert jeden Blob genau einmal anhand seines BLAKE3-Digests und liefert ihn vom Cloudflare-Edge aus, der jedem Client am nächsten liegt.
 
-Build-Werkzeuge, die die [Remote Execution API (REAPI)](https://github.com/bazelbuild/remote-apis) unterstützen — Bazel, Buck2, NativeLink und andere — können ohne Codeänderungen direkt auf CoreLink verweisen. Turborepo verbindet sich über eine einzige Umgebungsvariable. Rohe HTTP-Clients nutzen die REST-Endpunkte.
+Build-Werkzeuge, die die [Remote Execution API (REAPI)](https://github.com/bazelbuild/remote-apis) **über HTTP/REST** sprechen — Bazel und andere REST-fähige REAPI-Clients — können ohne Codeänderungen direkt auf CoreLink verweisen. CoreLink bietet keinen gRPC-Zugang, daher können REAPI-Clients, die ausschließlich gRPC sprechen (Buck2, NativeLink), sich heute nicht verbinden. Turborepo verbindet sich über eine einzige Umgebungsvariable. Rohe HTTP-Clients nutzen die REST-Endpunkte.
 
 ## Für wen es gedacht ist
 
-- **Teams, die Bazel oder Buck2 einsetzen** und einen verwalteten Remote-Cache wollen, ohne selbst S3-Buckets, Redis oder `bazel-remote` zu betreiben.
+- **Teams, die Bazel einsetzen** und einen verwalteten Remote-Cache wollen, ohne selbst S3-Buckets, Redis oder `bazel-remote` zu betreiben.
 - **Turborepo-Monorepos**, die einen benutzerdefinierten Remote-Cache außerhalb des gehosteten Angebots von Vercel wollen.
 - **Plattform-Engineering-Teams**, die Mandantenisolierung, Audit-Logs und BYOK-Verschlüsselung in einem Dienst wollen.
 
@@ -32,17 +32,17 @@ CoreLink ist keine Remote-Execution-Engine. Es speichert und ruft Inhalte anhand
 ```
 build tool                CoreLink API (Cloudflare Worker)       R2 / KV
 ─────────────────────     ─────────────────────────────────     ─────────
-PUT /v1/cas/<t>/<hash> ─► auth (PAT) → tenant isolation        → stored once
-GET /v1/cas/<t>/<hash> ◄─ cache-hit lookup                     ← returned
+PUT /v1/cas/<t>/<b3>   ─► auth (PAT) → tenant isolation        → stored once
+GET /v1/cas/<t>/<b3>   ◄─ cache-hit lookup                     ← returned
 ```
 
-Jeder Blob wird anhand seines SHA-256-Digests adressiert. Wenn zwei Mandanten dieselben Bytes hochladen, zahlt jeder Mandant für eine Kopie und hat eine unabhängige Zugriffssteuerung — der Inhalt wird auf der Speicherebene geteilt, der Zugriff nicht.
+Jeder Blob wird anhand seines BLAKE3-Digests adressiert — berechnen Sie ihn mit `b3sum`, **nicht** mit `sha256sum`; ein Digest des falschen Algorithmus wird mit `422 content hash mismatch` abgelehnt. Wenn zwei Mandanten dieselben Bytes hochladen, zahlt jeder Mandant für eine Kopie und hat eine unabhängige Zugriffssteuerung — der Inhalt wird auf der Speicherebene geteilt, der Zugriff nicht.
 
 ## Wichtige Funktionen
 
 | Funktion | Details |
 |---|---|
-| Inhaltsadressierbarer Speicher (CAS) | SHA-256-basierter Blob-Speicher. Dedupliziert automatisch. |
+| Inhaltsadressierbarer Speicher (CAS) | BLAKE3-basierter Blob-Speicher (`b3sum`). Dedupliziert automatisch. |
 | Action Cache (AC) | Ordnet `(action_digest) → (output_digest)` zu, sodass Bazel identische Aktionen überspringt. |
 | Mandantenfähigkeit | Jeder Mandant ist auf PAT-Ebene isoliert. Mandantenübergreifende Lesezugriffe sind niemals möglich. |
 | BYOK-Verschlüsselung | Mandanten im Enterprise-Plan können ihren eigenen AES-256-Schlüssel bereitstellen. |

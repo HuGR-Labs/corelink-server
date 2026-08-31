@@ -13,13 +13,13 @@ description: CoreLink es un caché multiinquilino direccionable por contenido pa
 
 # ¿Qué es CoreLink?
 
-CoreLink es un **caché direccionable por contenido** alojado y multiinquilino para artefactos de compilación. Almacena cualquier blob exactamente una vez por su digest SHA-256 y lo sirve desde el borde de Cloudflare más cercano a cada cliente.
+CoreLink es un **caché direccionable por contenido** alojado y multiinquilino para artefactos de compilación. Almacena cualquier blob exactamente una vez por su digest BLAKE3 y lo sirve desde el borde de Cloudflare más cercano a cada cliente.
 
-Las herramientas de compilación que admiten la [Remote Execution API (REAPI)](https://github.com/bazelbuild/remote-apis) — Bazel, Buck2, NativeLink y otras — pueden apuntar directamente a CoreLink sin cambios de código. Turborepo se conecta mediante una sola variable de entorno. Los clientes HTTP sin procesar usan los endpoints REST.
+Las herramientas de compilación que hablan la [Remote Execution API (REAPI)](https://github.com/bazelbuild/remote-apis) **sobre HTTP/REST** — Bazel y otros clientes REAPI capaces de REST — pueden apuntar directamente a CoreLink sin cambios de código. CoreLink no expone ingreso gRPC, por lo que los clientes REAPI que solo hablan gRPC (Buck2, NativeLink) no pueden conectarse hoy. Turborepo se conecta mediante una sola variable de entorno. Los clientes HTTP sin procesar usan los endpoints REST.
 
 ## Para quién es
 
-- **Equipos que ejecutan Bazel o Buck2** que quieren un caché remoto administrado sin operar buckets de S3, Redis ni `bazel-remote` por su cuenta.
+- **Equipos que ejecutan Bazel** que quieren un caché remoto administrado sin operar buckets de S3, Redis ni `bazel-remote` por su cuenta.
 - **Monorepos de Turborepo** que quieren un caché remoto personalizado fuera de la oferta alojada de Vercel.
 - **Equipos de ingeniería de plataforma** que quieren aislamiento de inquilinos, registros de auditoría y cifrado BYOK en un solo servicio.
 
@@ -32,17 +32,17 @@ CoreLink no es un motor de ejecución remota. Almacena y recupera contenido por 
 ```
 build tool                CoreLink API (Cloudflare Worker)       R2 / KV
 ─────────────────────     ─────────────────────────────────     ─────────
-PUT /v1/cas/<t>/<hash> ─► auth (PAT) → tenant isolation        → stored once
-GET /v1/cas/<t>/<hash> ◄─ cache-hit lookup                     ← returned
+PUT /v1/cas/<t>/<b3>   ─► auth (PAT) → tenant isolation        → stored once
+GET /v1/cas/<t>/<b3>   ◄─ cache-hit lookup                     ← returned
 ```
 
-Cada blob se direcciona por su digest SHA-256. Si dos inquilinos suben los mismos bytes, cada inquilino paga por una copia y tiene control de acceso independiente — el contenido se comparte en la capa de almacenamiento, el acceso no.
+Cada blob se direcciona por su digest BLAKE3 — calcúlelo con `b3sum`, **no** con `sha256sum`; un digest del algoritmo equivocado se rechaza con `422 content hash mismatch`. Si dos inquilinos suben los mismos bytes, cada inquilino paga por una copia y tiene control de acceso independiente — el contenido se comparte en la capa de almacenamiento, el acceso no.
 
 ## Capacidades clave
 
 | Capacidad | Detalles |
 |---|---|
-| Almacenamiento direccionable por contenido (CAS) | Almacén de blobs indexado por SHA-256. Deduplica automáticamente. |
+| Almacenamiento direccionable por contenido (CAS) | Almacén de blobs indexado por BLAKE3 (`b3sum`). Deduplica automáticamente. |
 | Action cache (AC) | Asigna `(action_digest) → (output_digest)` para que Bazel omita acciones idénticas. |
 | Multiinquilino | Cada inquilino está aislado a nivel de PAT. Las lecturas entre inquilinos nunca son posibles. |
 | Cifrado BYOK | Los inquilinos del plan Enterprise pueden suministrar su propia clave AES-256. |
