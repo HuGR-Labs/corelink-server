@@ -9,10 +9,17 @@ name: legal-changes-review
 #   3. Posts (or updates) a sticky PR comment listing the gates.
 #
 # The merge block is enforced via:
-#   - the `legal-review-required` branch-protection rule on `main`
-#     (configured outside the repo); AND
+# ⚠️ THERE IS NO MERGE BLOCK. Corrected 2026-08-31 (B-099). This header used to
+# claim two enforcers and NEITHER exists:
+#   - the `legal-review-required` branch-protection rule on `main` — branch
+#     protection is not available on this repo's plan at all: on 2026-08-31
+#     `GET /branches/main/protection` and `/rulesets` both answered HTTP 403,
+#     "Upgrade to GitHub Pro or make this repository public";
 #   - `.github/CODEOWNERS` requiring `@HumanGuardrail/legal` and
-#     `@HumanGuardrail/privacy` (DPO) review for `/legal/**`.
+#     `@HumanGuardrail/privacy` (DPO) review for `/legal/**` — those team
+#     handles named NOBODY (`gh api orgs/HumanGuardrail/teams` is empty), and
+#     CODEOWNERS only REQUESTS review; it never required it.
+# This workflow posts a CHECKLIST. A human still has to read it.
 #
 # Note: This workflow extends, but does NOT replace, `dpa-legal-review.yml`
 # (legacy WI-S19-002 hook, DPA-specific). The two coexist; legal/dpa
@@ -76,8 +83,9 @@ jobs:
               "- [ ] Canonical compliance matrix linked: `specs/03_architecture/compliance_matrix.md`",
               "- [ ] Audit evidence committed under `specs/_audits/YYYY-MM-DD-legal-review-<doc>.md`",
               "",
-              "CODEOWNERS automatically requires `@HumanGuardrail/legal` ",
-              "and `@HumanGuardrail/privacy` review. Do **not** bypass.",
+              "⚠️ Nothing here is enforced: branch protection is unavailable on this ",
+              "repo's plan, and CODEOWNERS only REQUESTS review — from the sole owner, ",
+              "who is usually the author. This is a checklist, not a gate (B-099).",
             ].join("\n");
             const comments = await github.rest.issues.listComments({
               owner, repo, issue_number, per_page: 100,

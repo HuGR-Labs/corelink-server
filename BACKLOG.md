@@ -5157,55 +5157,112 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-084 — o drill do kill switch emite atestado de aprovação a partir de um `sleep`, e o atestado é encaminhado a clientes
+### B-084 — o drill do kill switch emitia atestado de aprovação a partir de um `sleep`, e o atestado era encaminhado a clientes — FECHADO
 
-`scripts/byok_kill_switch_drill.sh` produz um relatório de aprovação sem exercitar nada:
-`:50 # Here: simulated pass in CI.`, `:80-81 # CI: simulate detection after 2s. / sleep 2`,
-`:99 # CI: simulated pass.`, `:116 SLA_RESULT="PASS"`, `:126 sleep 1 # simulated`,
-`:136 cat > "${REPORT_FILE}" << EOF`.
+**Fechado 2026-08-31.** O script passa a **recusar antes de escrever**, e nenhum relatório é
+produzido em modo simulado.
 
-As chamadas reais ao KMS estão comentadas; todas as credenciais no workflow
-(`byok_kill_switch_drill_weekly.yml:48-51`) estão comentadas. O script então escreve
-`specs/_audits/AAAA-MM-DD-byok-kill-switch-drill-*.md` com uma tabela de aprovação, e
-esse arquivo é encaminhado ao SRE do cliente como evidência de SLA por instrução de
+`scripts/byok_kill_switch_drill.sh` produzia um relatório de aprovação sem exercitar nada:
+as chamadas ao KMS estão comentadas (`aws kms disable-key`, `gcloud kms keys versions
+destroy`, …), todas as credenciais no workflow (`byok_kill_switch_drill_weekly.yml`) estão
+comentadas, a detecção é um `sleep 2`, e o `SLA_RESULT` saía `PASS`. O script então escrevia
+`specs/_audits/AAAA-MM-DD-byok-kill-switch-drill-*.md` com uma tabela de aprovação, e esse
+arquivo é encaminhado ao SRE do cliente como evidência de SLA por instrução de
 `lighthouse-kit/05-sla-attestation-instructions.md:61`.
 
-É um gerador automático de evidência de segurança falsa. Categoricamente diferente de um
-controle ausente ([B-083]): ali falta o controle; aqui se produz prova de que ele existe.
+Era um gerador automático de evidência de segurança falsa. Categoricamente diferente de um
+controle ausente ([B-083]): ali falta o controle; aqui se produzia prova de que ele existe.
 
-**Reparo mínimo, uma linha:** fazer o script sair com código diferente de zero em modo
-simulado, para que não possa emitir `PASS`. É a melhor relação entre exposição removida e
-esforço de todo o repositório, e não depende de [B-083] estar resolvido.
+**Divergência deliberada do reparo que o corpo antigo prescrevia, e a razão importa.** O corpo
+dizia *"uma linha: fazer o script sair com código diferente de zero em modo simulado"*. Sair
+não-zero **no fim** deixaria a tabela de `PASS` **em disco**, e o passo `Commit drill report`
+do workflow roda com `if: always()` — o arquivo, que é a coisa que chega ao cliente, seria
+commitado do mesmo jeito. A recusa foi para o **começo**: nenhuma medição aconteceu, logo não
+há o que atestar, logo nada é escrito. `exit 1` antes da primeira fase.
+
+`CORELINK_DRILL_REAL=1` é a saída. Ela **não torna o drill real** — é o operador afirmando que
+descomentou as chamadas de provedor e ligou as credenciais de staging. A afirmação é explícita
+e nomeada justamente porque virá o dia em que alguém a ligue sem fazer o trabalho.
+
+**Achado do próprio conserto: o `verify` antigo era CEGO para ele.** Aquele comando procurava
+`exit [1-9]` numa janela de **12 linhas depois** de `SLA_RESULT=`; a recusa está no topo do
+arquivo, e o `verify` antigo continuava dizendo *"aberto"* com o defeito consertado. Um portão
+ancorado na vizinhança de uma linha mede a linha, não a propriedade.
+
+**Consequência aceita e NOMEADA:** a lane semanal
+(`.github/workflows/byok_kill_switch_drill_weekly.yml`) passa a falhar toda semana até que
+alguém ligue as credenciais de staging ou desligue o `schedule`. **É o estado honesto** — a
+lane vinha reportando verde para um `sleep` — mas vermelho crônico treina todo mundo a ignorar
+o sinal, que é a lição registrada no [B-058]. A decisão entre ligar as credenciais e aposentar
+a lane é do owner, junto com o [B-083]; **não foi tomada aqui, e não foi escondida.**
+
+**O que este item continua NÃO decidindo:** se o atestado JÁ EMITIDO e encaminhado a clientes
+será retratado. Arquivos em `specs/_audits/` com tabela de PASS existem e foram distribuídos.
+Retratá-los é decisão de comunicação com cliente, pertence ao owner, e deve virar item próprio
+se a decisão for retratar.
 
 ```backlog
 id: B-084
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   bash -c 's=scripts/byok_kill_switch_drill.sh
-  [ -f "$s" ] || { echo "FALHA: o script do drill sumiu — feche o item ou reescreva-o."; exit 1; }
-  hard=0; grep -qE "SLA_RESULT=\"?PASS\"?" "$s" && hard=1
-  sim=0; grep -qiE "simulated|simulate detection" "$s" && sim=1
-  guarda=0
-  awk "/SLA_RESULT=/{n=NR} n&&NR>n&&NR<n+12&&/exit[[:space:]]+[1-9]/{print;exit}" "$s" | grep -q . && guarda=1
-  if [ "$hard" = 0 ] || [ "$guarda" = 1 ]; then
-    echo "FALHA: PASS hardcoded removido ($hard) ou ha saida nao-zero no caminho simulado ($guarda) — feche o item."; exit 1; fi
-  echo "aberto: SLA_RESULT=PASS hardcoded e modo simulado ainda sai zero (sim=$sim)"'
+  [ -f "$s" ] || { echo "FALHA: o script do drill sumiu — reavalie o item em vez de fecha-lo por ausencia."; exit 1; }
+  d=$(mktemp -d) || exit 1; trap "rm -rf $d" EXIT
+  mkdir -p "$d/scripts" || exit 1
+  cp "$s" "$d/scripts/" || exit 1
+  # Sandbox: o script deriva REPORT_DIR de dirname(\$0)/.., entao a copia escreve
+  # em \$d/specs/_audits. Uma REGRESSAO cria o atestado falso AQUI, nunca no repo.
+  out=$(cd "$d" && CORELINK_DRILL_REAL=0 bash "$d/scripts/byok_kill_switch_drill.sh" aws 2>&1); rc=$?
+  n=$(ls "$d"/specs/_audits/*byok-kill-switch-drill* 2>/dev/null | wc -l | tr -d " ")
+  if [ "$rc" = 0 ]; then
+    echo "REGRESSAO: o drill simulado saiu ZERO — ele voltou a poder emitir atestado. Saida: $(printf "%s" "$out" | tr "\n" " " | cut -c1-200)"; exit 1; fi
+  if [ "$n" != 0 ]; then
+    echo "REGRESSAO: o drill simulado ESCREVEU $n relatorio(s) apesar de sair $rc — sair nao-zero no fim nao basta, o passo de commit do workflow roda com if: always() e o arquivo e o que chega ao cliente."; exit 1; fi
+  case "$out" in
+    *REFUSED*) ;;
+    *) echo "FALHA: o script nao saiu zero e nao escreveu nada, mas tambem nao disse por que (sem REFUSED na saida) — pode ter quebrado por outro motivo. Saida: $(printf "%s" "$out" | tr "\n" " " | cut -c1-200)"; exit 1;;
+  esac
+  # Controle positivo do proprio predicado: a sandbox TEM de conseguir receber um
+  # relatorio. Sem isto, um caminho errado faria o "nenhum arquivo" passar por vacuidade.
+  ctl=$(cd "$d" && CORELINK_DRILL_REAL=1 bash "$d/scripts/byok_kill_switch_drill.sh" aws 2>&1) || true
+  m=$(ls "$d"/specs/_audits/*byok-kill-switch-drill* 2>/dev/null | wc -l | tr -d " ")
+  [ "$m" -ge 1 ] || { echo "INSTRUMENTO QUEBRADO: com CORELINK_DRILL_REAL=1 a sandbox tambem nao produziu relatorio ($m) — o predicado \"nenhum arquivo\" nao prova nada, porque o caminho pode estar errado. Saida: $(printf "%s" "$ctl" | tr "\n" " " | cut -c1-200)"; exit 1; }
+  echo "done: em modo simulado o drill recusa (rc=$rc), NAO escreve relatorio (0), e o controle positivo confirma que a sandbox receberia um ($m)"'
 verify-means: |
-  open — o script ainda contém `SLA_RESULT="PASS"` fixo E não há saída não-zero no
-  caminho simulado.
+  **Polaridade `done` — INVERTIDA em relação à versão `open` deste item.** Sai 0 enquanto o
+  drill simulado **recusar e não escrever**; sai 1 assim que ele voltar a sair zero **ou** a
+  deixar um relatório em disco.
 
-  Vira DRIFTED por qualquer um dos dois reparos: remover o `PASS` hardcoded (o drill
-  passa a derivar o resultado do que mediu), ou fazer o modo simulado sair não-zero (o
-  reparo de uma linha). Aceito os dois porque ambos impedem a emissão de atestado falso,
-  que é a alegação.
+  **As duas condições são separadas de propósito, e a segunda é o coração.** O reparo que o
+  corpo antigo prescrevia — sair não-zero no fim — satisfaria a primeira e falharia a segunda:
+  a tabela de `PASS` continuaria em disco, e o passo `Commit drill report` roda com
+  `if: always()`. **O arquivo é o que chega ao cliente**, não o exit code.
 
-  O que NÃO decide, e admito: se o atestado JÁ EMITIDO e encaminhado a clientes será
-  retratado. Arquivos em `specs/_audits/` com tabela de PASS existem e foram distribuídos.
-  Retratá-los é decisão de comunicação com cliente, pertence ao owner, e deve virar item
-  próprio se a decisão for retratar.
-last-verified: 2026-08-30
+  **Roda numa cópia em sandbox, nunca o script do repo.** O script deriva `REPORT_DIR` de
+  `dirname($0)/..`, então a cópia escreve em `$d/specs/_audits`. Se o conserto regredir, o
+  atestado falso é criado **na sandbox descartável** — um `verify` que produzisse a evidência
+  falsa que denuncia seria o próprio defeito.
+
+  **Controle positivo obrigatório.** "Nenhum arquivo foi escrito" é exatamente o tipo de
+  asserção que passa por vacuidade quando o caminho está errado. Por isso o comando roda o
+  drill uma segunda vez com `CORELINK_DRILL_REAL=1` e **exige** que aí um relatório apareça.
+  Se nem assim aparecer, o veredito é INSTRUMENTO QUEBRADO, nunca "done".
+
+  **Terceiro ramo, nomeado:** saiu não-zero, não escreveu nada, mas não imprimiu `REFUSED` —
+  pode ter quebrado por outro motivo (dependência, sintaxe). Falha alta com a saída recortada,
+  em vez de creditar ao conserto uma quebra acidental.
+
+  **Medido pelos dois lados (2026-08-31):** com a recusa, sai *"done: em modo simulado o drill
+  recusa (rc=1), NAO escreve relatorio (0)…"* e exit 0. Removendo o bloco de recusa numa cópia,
+  o drill volta a sair 0 e a escrever o relatório na sandbox, e o comando sai
+  *"REGRESSAO: o drill simulado saiu ZERO"* com exit 1.
+
+  **O que ele NÃO decide:** se `CORELINK_DRILL_REAL=1` corresponde à verdade. Ninguém pode
+  medir isso a partir do repo — é uma afirmação do operador sobre credenciais que vivem fora
+  dele. O portão garante que a afirmação seja **explícita**, não que seja honesta.
+last-verified: 2026-08-31
 ```
 
 ### B-085 — a página LGPD promete São Paulo e imutabilidade à prova de ordem judicial; os dados estão nos EUA e são deletáveis
@@ -6441,53 +6498,105 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-099 — o `CODEOWNERS` atribui revisão a dez times que o próprio arquivo admite não existirem
+### B-099 — o `CODEOWNERS` atribuía revisão a dez times que o próprio arquivo admitia não existirem — FECHADO, e a reverificação CONFIRMOU zero times
 
-O `.github/CODEOWNERS` nomeia dez handles distintos — `@HumanGuardrail/` seguido de
-`appsec`, `architects`, `docops`, `engineering`, `finance`, `founders`, `legal`,
-`marketing`, `privacy`, `sre-leads`. O cabeçalho do arquivo, linha 8, admite: *"Placeholder
+**Fechado 2026-08-31.** Os dez handles fantasma foram substituídos pelo único revisor que
+existe, e as duas frases que descreviam o arquivo como controle foram retiradas.
+
+O `.github/CODEOWNERS` nomeava dez handles distintos — `@HumanGuardrail/` seguido de
+`appsec`, `architects`, `docops`, `engineering`, `finance`, `founders`, `legal`, `marketing`,
+`privacy`, `sre-leads` —, 101 ocorrências em 66 linhas. O cabeçalho admitia: *"Placeholder
 team handles (HumanGuardrail/*) — replace with concrete reviewer names per team once the
-GitHub org has the teams provisioned."* E a regra catch-all é rotulada *"Default owner —
-catch-all so nothing merges unreviewed."*
+GitHub org has the teams provisioned."*
 
-Uma lane de diligência reportou `gh api orgs/HumanGuardrail/teams` retornando lista vazia;
-**não reconfirmei de forma independente** porque a cota da API do GitHub estourou durante a
-auditoria — registro como pendente de reverificação em vez de afirmar. A evidência local,
-porém, basta para o item: o arquivo diz que os handles aguardam provisionamento.
+**A reverificação pendente foi feita e confirma o achado.** `gh api orgs/HumanGuardrail/teams`
+devolve lista **vazia**. O instrumento está calibrado: a mesma credencial, no mesmo escopo de
+org, lista os **membros** e devolve dois (`gmhelmold`, `cachorronarigudo26-lang`) — a lista
+vazia é a resposta, não uma falha de permissão. Os dez handles nomeavam **ninguém**.
 
-Combinado com `required checks = []` na proteção de branch (registrado no próprio
-`CLAUDE.md`), a frase *"catch-all so nothing merges unreviewed"* descreve intenção, não
-controle. Importa porque [B-087] atesta "Y" em CCC-07.1 citando *"branch protection;
-CODEOWNERS"* como evidência.
+**Achado NOVO da reverificação, mais forte do que o item alegava.** O item dizia que a frase
+*"catch-all so nothing merges unreviewed"* descrevia intenção e não controle, apoiando-se em
+`required checks = []`. É pior: em 2026-08-31,
+`GET /repos/HuGR-Labs/corelink-server/branches/main/protection` e `/rulesets` respondem **HTTP
+403 — "Upgrade to GitHub Pro or make this repository public to enable this feature"**. Não é
+que a proteção de branch esteja vazia: ela **não está disponível no plano deste repositório**.
+Somado a isso, o único dono agora é também o autor habitual, e o GitHub não pede revisão ao
+autor do PR — na maioria dos PRs o arquivo não pede nada.
+
+**O conserto**, o que o próprio cabeçalho instruía: os 101 handles viraram `@gmhelmold`, as
+linhas com dois times viraram um dono só, e o cabeçalho passou a abrir com *"ROUTING, NOT A
+CONTROL"*, registrando as duas medições acima. Os **caminhos** ficaram, porque continuam
+registrando qual especialidade cada área pede quando houver a quem rotear.
+
+**Propagação — a mesma afirmação falsa vivia em outros dois lugares, e era postada em PR.**
+`legal-changes-review.yml` e `dpa-legal-review.yml` comentavam em cada PR *"CODEOWNERS
+automatically requires `@HumanGuardrail/legal` review. Do not bypass."*, e seus cabeçalhos
+citavam uma regra `legal-review-required` de proteção de branch. Nenhum dos dois enforcers
+existe. Os quatro trechos foram corrigidos no mesmo PR: os workflows postam uma **checklist**,
+e agora dizem isso.
+
+**O que este item NÃO fecha:** o [B-087] atesta "Y" em CCC-07.1 citando *"branch protection;
+CODEOWNERS"* como evidência. Essa citação não sobrevive ao que foi medido aqui, e retratá-la é
+trabalho do [B-087] — instrumento assinado, decisão do owner.
 
 ```backlog
 id: B-099
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   bash -c 'c=.github/CODEOWNERS
-  [ -f "$c" ] || { echo "FALHA: CODEOWNERS sumiu — reavalie o item."; exit 1; }
-  admite=0; grep -qi "placeholder team handles" "$c" && admite=1
-  times=$(grep -oE "@[A-Za-z0-9-]+/[A-Za-z0-9-]+" "$c" | sort -u | wc -l | tr -d " ")
-  [ "$admite" = 1 ] || { echo "FALHA: o arquivo nao admite mais handles placeholder — reavalie: os times podem existir agora."; exit 1; }
-  [ "$times" -gt 0 ] || { echo "FALHA: nao ha mais handles de time no CODEOWNERS — feche o item."; exit 1; }
-  echo "aberto: CODEOWNERS admite handles placeholder e atribui revisao a $times time(s)"'
+  [ -f "$c" ] || { echo "FALHA: CODEOWNERS sumiu — reavalie o item em vez de fecha-lo por ausencia."; exit 1; }
+  fantasma=$(grep -oE "@HumanGuardrail/[A-Za-z0-9-]+" "$c" | grep -v "^@HumanGuardrail/\\*$" | sort -u | tr "\n" " ")
+  # `grep -c` conta LINHAS; aqui interessa quantas regras tem dono, entao conto
+  # linhas de regra (nao-comentario, com @) — uma linha de comentario que cite um
+  # handle fantasma no texto da correcao nao pode contar como regra.
+  regras=$(grep -vE "^[[:space:]]*#" "$c" | grep -cE "@[A-Za-z0-9-]+" | tr -d " ")
+  [ "$regras" -gt 0 ] || { echo "FALHA: o CODEOWNERS ficou sem NENHUMA linha de regra com dono — isso nao e o conserto deste item, e sim o arquivo esvaziado."; exit 1; }
+  # A checagem de fantasma le so as linhas de REGRA: o cabecalho novo cita os dez
+  # handles mortos de proposito, para registrar o que foi removido.
+  vivo=$(grep -vE "^[[:space:]]*#" "$c" | grep -oE "@HumanGuardrail/[A-Za-z0-9-]+" | sort -u | tr "\n" " ")
+  [ -z "$vivo" ] || { echo "REGRESSAO: handles de time fantasma voltaram as REGRAS do CODEOWNERS:$vivo — gh api orgs/HumanGuardrail/teams devolve lista vazia."; exit 1; }
+  grep -q "ROUTING, NOT A CONTROL" "$c" || { echo "REGRESSAO: o cabecalho perdeu a ressalva de que o CODEOWNERS nao enforca nada — sem ela o arquivo volta a ser citavel como controle."; exit 1; }
+  grep -qi "catch-all so nothing merges unreviewed" "$c" && { echo "REGRESSAO: a frase \"catch-all so nothing merges unreviewed\" voltou ao CODEOWNERS, e ela e falsa."; exit 1; }
+  falso=""
+  for w in .github/workflows/legal-changes-review.yml .github/workflows/dpa-legal-review.yml; do
+    [ -f "$w" ] || continue
+    grep -q "CODEOWNERS automatically requires" "$w" && falso="$falso $w"
+  done
+  [ -z "$falso" ] || { echo "REGRESSAO: a afirmacao \"CODEOWNERS automatically requires\" voltou e volta a ser POSTADA em cada PR:$falso"; exit 1; }
+  echo "done: $regras regra(s) com dono, zero handles de time nas regras, ressalva de nao-enforcement presente, e nenhum workflow postando a afirmacao falsa"'
 verify-means: |
-  open — o `CODEOWNERS` ainda carrega a admissão de que os handles são placeholder E ainda
-  atribui revisão a handles de time.
+  **Polaridade `done` — INVERTIDA em relação à versão `open` deste item.** Sai 0 enquanto as
+  regras do `CODEOWNERS` não carregarem handle de time, a ressalva de não-enforcement estiver
+  no cabeçalho, e nenhum workflow postar *"CODEOWNERS automatically requires"*. Sai 1 assim
+  que qualquer um dos três voltar, com mensagem própria.
 
-  Vira DRIFTED por qualquer um dos dois reparos: provisionar os times na org (e remover a
-  nota de placeholder), ou substituir os handles por nomes concretos de revisores, que é o
-  que a própria nota instrui.
+  **A leitura é por linha de REGRA, não pelo arquivo inteiro, e isso é o ponto fino.** O
+  cabeçalho novo **cita os dez handles mortos de propósito**, para registrar o que foi
+  removido — um `grep` ingênuo sobre o arquivo inteiro casaria a própria correção e reportaria
+  regressão eterna. É a armadilha do `verify` que lê o próprio comentário, e ela foi evitada
+  filtrando `^[[:space:]]*#` antes.
 
-  O que NÃO decide, e admito explicitamente: se os times EXISTEM na organização do GitHub.
-  Isso exige `gh api orgs/HumanGuardrail/teams`, que não roda no `backlog_verify` e cuja
-  cota estourou durante a auditoria. O comando decide a admissão registrada no arquivo, que
-  é evidência local suficiente para manter o item aberto, e não finge decidir o resto.
+  **Anti-vacuidade em duas camadas.** Sem o arquivo, falha alta — o item não fecha por
+  ausência do objeto. E `regras > 0` é obrigatório: **esvaziar o `CODEOWNERS` satisfaria
+  trivialmente "zero handles fantasma"**, e isso não é o conserto, é o arquivo apagado.
 
-  Reverificação pendente: rodar a chamada de API quando a cota permitir e anotar aqui.
-last-verified: 2026-08-30
+  **O terceiro ramo mede a PROPAGAÇÃO, não o arquivo.** A mesma afirmação falsa era postada em
+  cada PR por dois workflows. Um portão que só olhasse o `CODEOWNERS` ficaria verde com a
+  mentira ainda saindo no comentário — que é o lugar onde um humano de fato a lê.
+
+  **Medido pelos dois lados (2026-08-31):** no estado consertado sai *"done: 66 regra(s) com
+  dono, zero handles de time nas regras…"* e exit 0. Repondo `@HumanGuardrail/appsec` numa
+  linha de regra, sai *"REGRESSAO: handles de time fantasma voltaram as REGRAS"* e exit 1.
+
+  **O que ele NÃO decide:** se os times existem na org **hoje**. Isso exige
+  `gh api orgs/HumanGuardrail/teams`, que não roda dentro do `backlog_verify` (rede +
+  credencial). A medição de 2026-08-31 — lista vazia, com controle positivo pelos membros —
+  está no cabeçalho do arquivo, datada. Se os times forem provisionados, o conserto certo é
+  restaurar os handles por domínio, e **este portão ficará vermelho** até que alguém reescreva
+  o item, que é o comportamento desejado: a mudança tem de ser deliberada.
+last-verified: 2026-08-31
 ```
 
 ### B-100 — os avisos de privacidade publicados, nos quatro idiomas, dirigem titulares a endereços de domínio reservado
