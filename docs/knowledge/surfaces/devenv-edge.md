@@ -7,7 +7,8 @@ source_files:
   - "worker/src/lib/devenv_guard.ts"
   - "worker/src/lib/openapi_devenv.ts"
   - "wrangler.toml"
-checkpoint_sha: "07bb61ee80779947e6bff8cdc01f895414088fc9"
+  - "migrations/d1/0070_runners_entitlement.sql"
+checkpoint_sha: "7e1565a3dd54edc91a8e0287f8addaf7e9edfb1e"
 provenance: "AUTHORED"
 tags: ["surfaces", "devenv", "worker-edge", "auth", "quota", "durable-object"]
 timestamp: "2026-08-30T00:00:00Z"
@@ -27,7 +28,9 @@ The DO binding is **not declared today.** It was a cross-Worker reference — an
 
 **Dual credential, single path, decided by shape.** The handler tries `parsePat` first and branches on the RESULT, not on a header or a flag: a value that does not parse as a PAT is treated as a Clerk session and verified as one, and only a parseable PAT takes the PAT path (`worker/src/index.ts:2954-2984`). A viewer role is downgraded to `read-only` scope at the edge, so the DO never has to know Clerk's role vocabulary.
 
-**Quota is checked at the edge, before the DO is touched.** `checkDevenvQuota` reads the tenant's `runners_entitlement` row and refuses an absent or `_anonymous` tenant outright (`worker/src/lib/devenv_guard.ts:16-30`). Doing it here rather than inside the DO keeps a quota-exceeded request from spinning up per-tenant DO state at all.
+**Quota is checked at the edge, before the DO is touched.** `checkDevenvQuota` refuses an absent or `_anonymous` tenant outright (`worker/src/lib/devenv_guard.ts:44-46`) and otherwise reads the tenant's `runners_entitlement` row (`worker/src/lib/devenv_guard.ts:66-70`). Doing it here rather than inside the DO keeps a quota-exceeded request from spinning up per-tenant DO state at all.
+
+**Every way of not obtaining a positive entitlement is a denial.** The guard has four separate deny arms and exactly one `allowed: true` exit, and reaching that exit requires a row: `CONFIG_DB` unbound denies (`worker/src/lib/devenv_guard.ts:52-57`), a throwing D1 read denies (`worker/src/lib/devenv_guard.ts:75-83`), no `runners_entitlement` row denies (`worker/src/lib/devenv_guard.ts:85-90`), and `install_status = "suspended"` denies (`worker/src/lib/devenv_guard.ts:92-94`). This is not defensive decoration — it is the correction of B-075. Until 2026-08-31 the guard denied ONLY on `suspended`, and both the no-row path and the `catch` fell through to `allowed: true`, so a tenant that never bought the SKU got billable compute and EVERY tenant got it for the duration of any D1 outage. The no-row denial is the semantics the table's own schema already encodes: `CHECK (max_concurrency > 0)` forbids a zero-valued row (`migrations/d1/0070_runners_entitlement.sql:52`), so a cap of zero can only be expressed by the ABSENCE of a row — which makes the PRESENCE of a row the thing that expresses a positive entitlement, and its absence a reject. The `CONFIG_DB`-unbound denial matches the call site's own treatment of a missing binding as a service fault rather than an authorisation (`worker/src/index.ts:2995-2997`).
 
 **Client-supplied trust headers are stripped before forwarding, and the authorization header is dropped entirely.** The edge rebuilds the header set, calls `stripClientTrustHeaders`, deletes `authorization`, and then sets the trust headers itself — tenant id, scope, role, token prefix, request id (`worker/src/index.ts:3005-3018`). The DO therefore cannot be told who the caller is by the caller; the credential does not travel past the boundary that verified it.
 
@@ -43,7 +46,14 @@ Quota state lives in `runners_entitlement`, shared with the runner fabric, so a 
 
 1. `worker/src/index.ts:981-984` — `matchRoute` classifies `/v1/customer/devenv*` and `/v1/devenv*` as `devenv_v1`, deferring tenant resolution to the credential.
 2. `worker/src/index.ts:2954-2984` — dual Clerk/PAT auth decided by whether `parsePat` returns null; viewer role downgraded to `read-only`.
-3. `worker/src/lib/devenv_guard.ts:16-30` — `checkDevenvQuota` refuses an absent/`_anonymous` tenant and reads `runners_entitlement` for the ceiling.
+3. `worker/src/lib/devenv_guard.ts:44-46` — `checkDevenvQuota` refuses an absent/`_anonymous` tenant before touching D1 at all.
+3a. `worker/src/lib/devenv_guard.ts:66-70` — the single keyed read of `runners_entitlement` for the tenant's ceiling.
+3b. `worker/src/lib/devenv_guard.ts:52-57` — deny arm for `CONFIG_DB` unbound: a missing binding is a service fault, never an authorisation.
+3c. `worker/src/lib/devenv_guard.ts:75-83` — deny arm for a throwing D1 read; the B-075 fail-open `catch` that authorised through an outage.
+3d. `worker/src/lib/devenv_guard.ts:85-90` — deny arm for NO entitlement row; the B-075 `if (row)` that had no `else`.
+3e. `worker/src/lib/devenv_guard.ts:92-94` — deny arm for `install_status = "suspended"`, the only arm that existed before 2026-08-31.
+3f. `worker/src/lib/devenv_guard.ts:96` — the single `allowed: true` exit, reachable only past all four deny arms.
+3g. `migrations/d1/0070_runners_entitlement.sql:52` — `CHECK (max_concurrency > 0)`: a zero cap is expressed by the absence of a row, so an absent row is a reject.
 4. `worker/src/index.ts:3005-3018` — `stripClientTrustHeaders`, `authorization` deleted, and the trust headers set by the edge rather than accepted from the client.
 5. `worker/src/index.ts:2059-2060` — the OpenAPI 3.1 document served from a static module at `GET /openapi.json`.
 6. `worker/src/lib/openapi_devenv.ts:4` — `devenvOpenApiSpec`, the published contract for the surface.

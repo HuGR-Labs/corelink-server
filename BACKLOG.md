@@ -4296,9 +4296,22 @@ omissão significa que um tenant sem direito ao SKU, ou qualquer tenant durante 
 indisponibilidade do D1, consome computação faturável.
 
 Nota de colisão: **#1397 está em voo** e toca superfície devenv. Antes de escrever
-código para este item, confira se aquele PR já move este guard. (Verificado em
-2026-08-31: a lista de arquivos de #1397 **não** inclui `worker/src/lib/devenv_guard.ts`
-— não houve colisão.)
+código para este item, confira se aquele PR já move este guard.
+
+**Colisão resolvida — e o aviso é RISCO DE ORDEM DE MERGE, não de duplicação.** #1397
+(173 arquivos) **carrega sim** `worker/src/lib/devenv_guard.ts`, na posição 169, como
+`new file mode` cujo conteúdo é **byte-idêntico à versão fail-open** — mesmo `if (row)`
+sem `else`, mesmo `catch` com o comentário "Fail-open". Ou seja: #1397 **não conserta**
+o defeito e **não duplica** este trabalho, mas o merge dele DEPOIS do #1482 pode
+**reintroduzir** a versão fail-open por cima do reparo, porque a merge-base dele é
+anterior ao commit que criou o arquivo. Quem landar #1397 tem de reconferir
+`devenv_guard.ts` depois. O teste de regressão é o que pega isso — mais um motivo para
+este `verify` EXECUTAR o teste em vez de grepar estrutura.
+
+*Nota de método, porque quase passou batido:* a primeira checagem usou
+`gh pr view 1397 --json files`, que **corta silenciosamente em 100 arquivos** e
+reportou zero ocorrências de `devenv_guard`. Em PRs grandes use
+`gh pr diff <n> --name-only`, que devolve a lista inteira.
 
 **Fechado 2026-08-31.** O guard agora falha FECHADO nos dois caminhos denunciados
 (sem linha de entitlement → nega; exceção do D1 → nega) e também quando `CONFIG_DB`
@@ -4332,10 +4345,17 @@ verify: |
   if [ ! -d node_modules ]; then
     timeout 75 npm install --legacy-peer-deps --no-audit --no-fund >/dev/null 2>&1 || { echo "FALHA: nao consegui instalar as deps do worker para EXECUTAR o teste — este verify nunca reporta verde sem rodar."; exit 1; }
   fi
-  out=$(npx vitest run tests/devenv_guard.test.ts 2>&1) || { echo "FALHA: o guard DevEnv regrediu para fail-open — o teste de B-075 esta vermelho:"; echo "$out" | grep -E "AssertionError|×" | head -20; exit 1; }
-  n=$(echo "$out" | grep -E "^ *Tests " | grep -oE "[0-9]+ passed" | head -1 | grep -oE "[0-9]+")
-  [ "${n:-0}" -ge 13 ] || { echo "FALHA: o teste rodou com apenas ${n:-0} casos verdes (<13) — foi mutilado."; exit 1; }
-  echo "done: guard DevEnv falha FECHADO (sem linha, D1 lancando em prepare/bind/first, CONFIG_DB ausente, suspenso) + controle positivo; $n casos verdes."'
+  j=$(mktemp) || { echo "FALHA: nao consegui criar arquivo temporario para o relatorio do vitest."; exit 1; }
+  npx vitest run tests/devenv_guard.test.ts --reporter=json --outputFile="$j" >/dev/null 2>&1
+  rc=$?
+  ok=$(grep -oE "\"numPassedTests\" *: *[0-9]+" "$j" 2>/dev/null | grep -oE "[0-9]+$")
+  bad=$(grep -oE "\"numFailedTests\" *: *[0-9]+" "$j" 2>/dev/null | grep -oE "[0-9]+$")
+  rm -f "$j"
+  [ -n "$ok" ] && [ -n "$bad" ] || { echo "FALHA: o vitest nao produziu um relatorio JSON legivel (exit $rc) — este verify nunca reporta verde sem ler os numeros."; exit 1; }
+  [ "$bad" = "0" ] || { echo "FALHA: o guard DevEnv regrediu para fail-open — $bad caso(s) do teste de B-075 falharam."; exit 1; }
+  [ "$rc" = "0" ] || { echo "FALHA: vitest saiu $rc mesmo com 0 falhas declaradas — trate como vermelho."; exit 1; }
+  [ "$ok" -ge 13 ] || { echo "FALHA: o teste rodou com apenas $ok casos verdes (<13) — foi mutilado."; exit 1; }
+  echo "done: guard DevEnv falha FECHADO (sem linha, D1 lancando em prepare/bind/first, CONFIG_DB ausente, suspenso) + controle positivo; $ok casos verdes."'
 verify-means: |
   done — o guard nega em TODO caminho que não produza um direito positivo, e a prova é
   a execução do teste, não a forma do TypeScript. Polaridade invertida: antes o comando
@@ -4354,7 +4374,11 @@ verify-means: |
   dependências node do `worker/` para executar. Se `worker/node_modules` faltar, ele
   tenta instalar dentro de um `timeout 75` e, se não conseguir, **reprova** com uma
   mensagem que nomeia o motivo — deliberadamente nunca verde por não ter conseguido
-  rodar. Na prática o runner `corelink` compartilha o workspace com `worker-vitest.yml`,
+  rodar. Lê o **relatório JSON** do vitest, não o texto: a primeira versão deste
+  comando fazia `grep` na linha `Tests  N passed` e ficou vermelha na CI porque o
+  vitest emite ANSI lá, coisa que não aparece rodando à mão num terminal local. Toda
+  forma de NÃO obter os dois números (`numPassedTests`/`numFailedTests`) é uma falha
+  nomeada, nunca um verde por omissão. Na prática o runner `corelink` compartilha o workspace com `worker-vitest.yml`,
   que já instala essas deps, então o caminho comum é só rodar o vitest (~5s). O gate de
   PR de verdade para este teste é `worker-vitest.yml` (dispara em `worker/**`); este
   `verify` é a checagem diária de que a propriedade continua valendo.
