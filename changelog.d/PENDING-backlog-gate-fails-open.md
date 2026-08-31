@@ -39,3 +39,13 @@
   zero-padded id, `parked`+`owner: owner`, `open`+`owner: owner`) are what stop
   "reject everything" and "reject every `owner: owner`" from passing the suite;
   each of those two over-broad mutants is killed by a named cell.
+
+### Fixed (found by the new gate, on its first run)
+
+- **Five finished items were still sitting in the owner's queue.** `B-031`,
+  `B-041`, `B-042`, `B-043` and `B-085` were all `status: done` with
+  `owner: owner`; they are now `owner: tl`. B-147's body asserted there were
+  **zero** — that claim was measured item-by-item (`--id B-NNN`, which selects one
+  block) rather than over the population, so it was right about its sample and
+  wrong about the file. The gate saw the file. Corrected in the item, because a
+  register that quietly drops a refuted claim is the thing this campaign is about.

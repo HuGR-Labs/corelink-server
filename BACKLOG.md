@@ -1667,7 +1667,7 @@ engineering fix.
 ```backlog
 id: B-031
 repo: corelink-server
-owner: owner
+owner: tl
 status: done
 verify: |
   ! grep -q "slsa-github-generator" .github/workflows/release-slsa3.yml
@@ -2350,7 +2350,7 @@ what the hostname-liveness gate exists to catch, and it caught this note.
 ```backlog
 id: B-041
 repo: corelink-server
-owner: owner
+owner: tl
 status: done
 verify: |
   command -v python3 >/dev/null 2>&1 || { echo "FALHA: nao consigo decidir DNS — instrumento python3, nao achado."; exit 124; }
@@ -2441,7 +2441,7 @@ promoting to a `schedule:` is a separate, deferred decision.
 ```backlog
 id: B-042
 repo: corelink-server
-owner: owner
+owner: tl
 status: done
 verify: manual
 verify-means: |
@@ -2497,7 +2497,7 @@ and the audit-archive-lag census.
 ```backlog
 id: B-043
 repo: corelink-server
-owner: owner
+owner: tl
 status: done
 verify: |
   grep -q 'AUDIT_DRAIN_LEASE_ENABLED = "1"' wrangler.toml
@@ -5287,7 +5287,7 @@ de produto e jurídico, não de documentação, e este item não o resolve.
 ```backlog
 id: B-085
 repo: corelink-server
-owner: owner
+owner: tl
 status: done
 verify: |
   bash -c 'set -u
@@ -9825,8 +9825,18 @@ last-verified: 2026-08-31
 pagamento, deleção, decisão jurídica. Um item que **já está pronto** não pode continuar
 precisando do humano: `status != open` com `owner: owner` é contradição na cara.
 
-Hoje **nenhum item `done` carrega `owner: owner`** — verificado sobre o `BACKLOG.md` desta
-árvore. Isso é **propriedade deste commit, não garantia**: `validate_schema()`
+~~Hoje **nenhum item `done` carrega `owner: owner`**~~ — **essa afirmação era FALSA, e o
+portão a refutou na primeira execução.** Ao rodar sobre o arquivo inteiro em CI,
+`validate_schema()` reprovou **5 de 166**: `B-031`, `B-041`, `B-042`, `B-043` e `B-085`, todos
+`status: done` com `owner: owner`. Os cinco foram corrigidos para `owner: tl` no mesmo PR.
+
+Por que a contagem original errou, registrado porque o erro é o da campanha inteira: ela foi
+medida **item a item** (`backlog_verify.py --id B-NNN`, que seleciona UM bloco) em vez de
+sobre a população. Número certo para a amostra, população errada. O portão vê o arquivo; a
+medição à mão não via.
+
+Isso torna o item **mais** necessário, não menos: a fila do owner já carregava cinco itens
+prontos. `validate_schema()`
 (`scripts/backlog_verify.py:135-160`) valida `status` contra `VALID_STATUS` e `owner` contra
 `VALID_OWNER` **independentemente**, e nunca cruza os dois. O próximo item a fechar com o
 campo esquecido entra sem ruído — e o efeito prático não é cosmético: é a fila do owner
