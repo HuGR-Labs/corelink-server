@@ -18,7 +18,6 @@ sources:
 >
 > Canonical EN source: `docs/explanation/rbac/permission-matrix.mdx`
 
-
 # Permission matrix
 
 The master table: every CoreLink permission against every role.
@@ -26,33 +25,36 @@ The master table: every CoreLink permission against every role.
 Legend:
 
 - ✅ granted (single-actor; no approver needed).
-- 2P **dual-approval** — granted but the operation routes through
-  `POST /v1/admin/ops` with `X-Dual-Approver`/`X-Approver-Signature` headers.
+- 2P **dual-approval** — granted but the operation is submitted to
+  `POST /v1/admin/mutate` and countersigned at `POST /v1/admin/approve`,
+  with `X-Dual-Approver`/`X-Approver-Signature` headers.
   See [INV-ADMIN-DUAL-APPROVAL](./index.mdx#dual-approval-gate--why-some-buttons-require-a-second-person).
 - ❌ denied.
 - self only — operation is permitted only against the actor's own account
-  (e.g. mint a PAT for yourself).
+  (for example, mint a PAT for yourself).
 
-> **Note (v1, manual):** This matrix is hand-maintained from
-> `crates/corelink-pat/src/scopes.rs` and
-> `crates/corelink-dual-approval/src/types.rs`. A future iteration will
-> auto-generate via a `scripts/codegen_rbac_matrix.py` reader so the table
-> cannot drift from code (planned for S-19).
+> **Note (manual):** This matrix is hand-maintained against the route
+> tables in `crates/corelink-container/src/routes/` and the predicates in
+> `crates/corelink-container/src/scope.rs`. **No gate checks it.** Verify
+> a row against the cited source before relying on it.
 
 ## CAS — cache surface
 
-| Permission                  | Scope                 | Owner | Admin | Developer | Viewer |
-|-----------------------------|-----------------------|:-----:|:-----:|:---------:|:------:|
-| Read CAS blobs + AC         | `cache:r`             |   ✅  |   ✅  |     ✅     |   ✅   |
-| Write CAS blobs + AC        | `cache:w`             |   ✅  |   ✅  |     ✅     |   ❌   |
-| FindMissingBlobs            | `cache:find-missing`  |   ✅  |   ✅  |     ✅     |   ❌   |
-| Blob deletion               | `cache:w` †           |   ✅  |   ✅  |     ✅     |   ❌   |
+| Permission                  | Scope                 | Served route | Owner | Admin | Developer | Viewer |
+|-----------------------------|-----------------------|--------------|:-----:|:-----:|:---------:|:------:|
+| Read CAS blobs + AC         | `cache:r`             | `GET /v1/cas/{tenant}/{hash}`, `GET /v1/ac/{tenant}/{action_digest}` |   ✅  |   ✅  |     ✅     |   ✅   |
+| Write CAS blobs + AC        | `cache:w`             | `PUT` on the same two paths |   ✅  |   ✅  |     ✅     |   ❌   |
+| FindMissingBlobs            | `cache:find-missing`  | REAPI `FindMissingBlobs` |   ✅  |   ✅  |     ✅     |   ❌   |
+| Delete a CAS blob / AC ref  | `cache:w` (**not** `cache:delete`) | `DELETE` on the same two paths |   ✅  |   ✅  |     ✅     |   ❌   |
 
-† Blob deletion is gated on the cache-WRITE capability
-(`CacheScope::can_write`), not on a delete-specific scope. The
-`cache:delete` scope name is defined in the catalog but **no enforcement
-point reads it**, so it grants nothing distinct — any write-capable token
-can delete a blob.
+> **`cache:delete` grants nothing.** Deletion is served
+> (`cas.rs:709`, `ac.rs:451`) but is gated on the cache-**write**
+> capability — `scope.can_write()` at `cas.rs:1584` and `ac.rs:707` —
+> so any `read-write` / `cas:rw` holder can delete, including a
+> `Developer`. No mint path ever emits the `SCOPE_CACHE_DELETE` bit
+> (`customer_d1.rs:1267-1273`, `internal_pat.rs:134-140`) and no route
+> reads it. A runner-job credential is refused outright
+> (`cas.rs:1576-1582`).
 
 :::warning[How the administrative rows are actually gated]
 The **Scope** column below said `admin:tenant-read`, `admin:tenant-write`,
@@ -67,76 +69,152 @@ owner/admin), shown here as `session role`, plus the `billing` capability
 the Worker forwards for billing / account-PII. PAT scopes govern the
 cache surface (`cache:*`) and the owner-grade `admin` superset.
 
-The role columns describe the intended RBAC model. Parts of the admin
-API they reference are not yet served — treat the ✅/❌ cells as the
-design, and the [permissions reference](../../reference/rbac/permissions.mdx)
-as the authority on what a PAT scope actually grants today.
+Each table below now names the **served route** that enforces the row.
+Where no route is served, the row says so in that column rather than
+carrying a ✅/❌ that nothing can honour. The
+[permissions reference](../../reference/rbac/permissions.mdx) lists the
+full served surface with source line numbers.
 :::
 
 ## Members — users and tokens
 
-| Permission                       | Scope            | Owner | Admin | Developer | Viewer |
-|----------------------------------|------------------|:-----:|:-----:|:---------:|:------:|
-| Invite user (Developer / Viewer) | session role    |   ✅  |   ✅  |     ❌     |   ❌   |
-| Invite user (Admin)              | session role    |   ✅  |   ✅  |     ❌     |   ❌   |
-| Invite user (Owner)              | session role    |   ✅  |   ❌  |     ❌     |   ❌   |
-| Demote user                      | session role    |   ✅  |   ✅* |     ❌     |   ❌   |
-| Revoke user (soft-delete row)    | session role    |   ✅  |   ✅* |     ❌     |   ❌   |
-| Mint PAT for self                | session role   |   ✅  |   ✅  |  self only |   ❌   |
-| Mint PAT for another user        | session role   |   ✅  |   ✅  |     ❌     |   ❌   |
-| Revoke any PAT in tenant         | session role   |   ✅  |   ✅  |     ❌     |   ❌   |
-| Revoke own PAT                   | session role   |   ✅  |   ✅  |     ✅     |   ❌   |
+| Permission | Served route | Gate | Owner | Admin | Developer | Viewer |
+|---|---|---|:-----:|:-----:|:---------:|:------:|
+| Invite user (Developer / Viewer) | `POST /v1/customer/team/invite` | role `owner`/`admin` | ✅ | ✅ | ❌ | ❌ |
+| Invite user (Admin) | `POST /v1/customer/team/invite` | caller must be `owner` | ✅ | ❌ | ❌ | ❌ |
+| Invite user (Owner) | — refused for every caller | `customer.rs:936-941` | ❌ | ❌ | ❌ | ❌ |
+| Revoke user (soft-delete row) | `DELETE /v1/customer/team/{user_id}` | role `owner`/`admin` | ✅ | ✅* | ❌ | ❌ |
+| List PATs in tenant | `GET /v1/customer/keys` | `requires_cache_write` | ✅ | ✅ | ✅ | ❌ |
+| Mint PAT | `POST /v1/customer/keys` | `requires_cache_write` | ✅ | ✅ | ✅ | ❌ |
+| Revoke a PAT in tenant | `POST /v1/customer/keys/{pat_id}/revoke` | `requires_cache_write` | ✅ | ✅ | ✅ | ❌ |
+| Delete the whole account | `POST /v1/customer/account/delete` | role `owner` only | ✅ | ❌ | ❌ | ❌ |
 
-> \* `Admin` cannot demote or revoke an `Owner`. Last-Owner safeguard
-> applies — at least one Owner must remain.
+> \* `Admin` cannot revoke an `Owner`. Last-Owner safeguard applies — at
+> least one Owner must remain.
+>
+> The **`owner` role is never grantable by invite**: the handler rejects
+> it for every caller, closing the invite-owner → accept → delete-tenant
+> escalation (`customer.rs:929-941`).
+>
+> PAT list, mint and revoke gate on the cache-**write** capability
+> (`customer.rs:740`, `:793`, `:849`), not on a role. Revoke resolves the
+> target with `WHERE pat_id = ?1 AND tenant_id = ?2`
+> (`customer_d1.rs:1379`) — scoped to the tenant, **not** to the calling
+> principal — so any `read-write` holder can revoke any PAT in the
+> tenant, including the owner's. A `Viewer` (`read-only`) can do none of
+> the three. There is no "revoke own PAT only" narrowing in the served
+> handler.
+>
+> **Changing a member's role is not served.** `/v1/customer/team/{user_id}`
+> accepts `DELETE` only (`customer.rs:222`); there is no `PATCH`. A
+> demotion has no endpoint.
 
 ## Tenant config
 
-| Permission                            | Scope                | Owner | Admin | Developer | Viewer |
-|---------------------------------------|----------------------|:-----:|:-----:|:---------:|:------:|
-| List / read tenant config             | session role  |   ✅  |   ✅  |     ❌     |   ✅   |
-| Mutate tenant config (forward)        | session role |   ✅  |   ✅  |     ❌     |   ❌   |
-| `ConfigRollback`                      | session role |  2P   |  2P   |     ❌     |   ❌   |
-| `RetentionPolicyReduce`               | session role |  2P   |  2P   |     ❌     |   ❌   |
-| `FeatureFlagToggleSafe` (rollout ↑)   | session role |   ✅  |   ✅  |     ❌     |   ❌   |
-| `FeatureFlagDisable`                  | session role |  2P   |  2P   |     ❌     |   ❌   |
-| `RateLimitAdjustUp` (conservative ↑)  | session role |   ✅  |   ✅  |     ❌     |   ❌   |
+These are **operator** routes, authenticated with the internal auth key
+— not a customer dashboard session and not a customer PAT. No role
+column applies to a tenant's own users, so the roles are omitted rather
+than filled with cells no route can honour.
+
+| Operation | Served route |
+|---|---|
+| Read an operator resource | `GET /v1/admin/read/{resource}` (`admin.rs:121,694`) |
+| Submit any `AdminOpType` | `POST /v1/admin/mutate` (`admin.rs:124,695`) |
+| Countersign a destructive op (2P) | `POST /v1/admin/approve` (`admin.rs:129,696`) |
+| Per-tenant usage / billing / consents / DSR / PATs | `GET /v1/admin/tenants/{tenant_id}/{usage,billing,consents,dsr,pats}` (`admin_tenant_detail.rs:128-135`) |
+
+The five destructive `AdminOpType` variants — `ConfigRollback`,
+`RetentionPolicyReduce`, `FeatureFlagDisable`, `SecretRotationStart`,
+`TenantTombstone` — require the dual-approval countersignature. The two
+non-destructive ones, `FeatureFlagToggleSafe` and `RateLimitAdjustUp`,
+do not (`corelink-dual-approval/src/types.rs:68-77`). All seven travel
+in the body of the same `mutate` route; none has an endpoint of its own.
 
 ## Audit
 
-| Permission                          | Scope         | Owner | Admin | Developer | Viewer |
-|-------------------------------------|---------------|:-----:|:-----:|:---------:|:------:|
-| Read tenant audit log               | session role |   ✅  |   ✅  |     ❌     |   ✅   |
-| Request RFC 6962 inclusion proof    | session role |   ✅  |   ✅  |     ❌     |   ✅   |
-| Query `admin_op_log` (role changes) | session role |   ✅  |   ✅  |     ❌     |   ✅   |
+Two different predicates guard "audit", and they disagree about
+`Viewer`. Merging them into one row is what made the old table wrong.
+
+| Permission | Served route | Gate | Owner | Admin | Developer | Viewer |
+|---|---|---|:-----:|:-----:|:---------:|:------:|
+| Read audit log of the tenant (dashboard) | `GET /v1/customer/audit` | `requires_billing_admin` | ✅ | ✅ | ❌ | **❌ (403)** |
+| Export audit log / analytics | `GET /v1/audit/{tenant}/export`, `GET /v1/audit/analytics/*` | `requires_audit_read` | ✅ | ✅ | ✅ | **✅** |
+| RFC 6962 inclusion proof | embedded in the export — **no route of its own** | `requires_audit_read` | ✅ | ✅ | ✅ | ✅ |
+| Query `admin_op_log` | **no route served** | — | — | — | — | — |
+
+Why the two gates differ:
+
+- The Worker is the **sole** setter of `x-corelink-scope`
+  (`worker/src/index.ts:3100-3107`): a `viewer` session gets exactly
+  `read-only`; `owner`/`admin` get `read-write billing`; everyone else
+  gets `read-write`.
+- `GET /v1/customer/audit` (`routes/customer.rs:209`) runs
+  `billing_pii_gate_reject` (`:606`), which calls `requires_billing_admin`
+  (`:426`). That predicate accepts only `billing`, `admin` or `owner`
+  (`scope.rs:229-231`). `read-only` is in none of them, so a Viewer gets
+  **403**. Pinned by `read_only_caller_cannot_read_audit`
+  (`customer.rs:1900-1915`) and `requires_billing_admin_denies_cache_credentials`
+  (`scope.rs:640-652`).
+- Export and analytics run `requires_audit_read` (`scope.rs:251`), which
+  is `requires_cache_read(scope) || token == "owner"` — and
+  `requires_cache_read` accepts `read-only` (`scope.rs:73-80`). So a
+  Viewer **can** export. The predicate's own doc-comment gives the
+  reason: self-serve PATs can never be `admin`, so gating on admin would
+  lock a customer out of exporting their own audit log.
+- `admin_op_log` is written by `crates/corelink-dual-approval` and read
+  back by nothing — there is no endpoint, for any role.
+
+:::note[Open question for the owner — not resolved here]
+`handle_audit` uses the narrow gate while its three sibling audit routes
+use the wide one. `scope.rs:233-241` argues explicitly for the wide gate.
+This page documents the behaviour as built; it does not take a position
+on which gate is correct. Loosening a PII access control is effectively
+irreversible, so the decision is deliberately left open.
+:::
 
 ## Billing
 
-| Permission                       | Scope            | Owner | Admin | Developer | Viewer |
-|----------------------------------|------------------|:-----:|:-----:|:---------:|:------:|
-| View invoices                    | `billing`  |   ✅  |   ❌  |     ❌     |   ❌   |
-| Update payment method            | `billing`  |   ✅  |   ❌  |     ❌     |   ❌   |
-| Apply tax exemption              | `billing`  |   ✅  |   ❌  |     ❌     |   ❌   |
-| Change tier (upgrade)            | `billing`  |   ✅  |   ❌  |     ❌     |   ❌   |
-| Change tier (downgrade)          | `billing`  |  2P   |   ❌  |     ❌     |   ❌   |
+| Permission | Served route | Gate | Owner | Admin | Developer | Viewer |
+|---|---|---|:-----:|:-----:|:---------:|:------:|
+| View billing detail | `GET /v1/customer/billing` | `requires_billing_admin` | ✅ | ✅ | ❌ | ❌ |
+| Manage payment method / cancel subscription | `POST /v1/customer/billing/portal` (mints a Stripe portal link) | `requires_billing_admin` | ✅ | ✅ | ❌ | ❌ |
+| Select / change tier | `POST /v1/onboarding/tier-select` (`tier_select.rs:588`) | onboarding flow | ✅ | ✅ | ❌ | ❌ |
+| Apply tax exemption | **no route served** | — | — | — | — | — |
+
+`Admin` is ✅ here, not ❌: the Worker grants the `billing` capability to
+**both** `owner` and `admin` dashboard sessions
+(`worker/src/index.ts:3104-3105`), and `requires_billing_admin` accepts
+`billing`, `admin` or `owner` (`scope.rs:229-231`). Payment-method
+management and cancellation happen in Stripe's hosted portal, so there
+is no separate CoreLink route for them — the container only mints the
+portal link. Tier change is a single route with no separate
+upgrade/downgrade split and no dual-approval step.
 
 ## BYOK (Enterprise tier)
 
-| Permission                                       | Scope                 | Owner | Admin | Developer | Viewer |
-|--------------------------------------------------|-----------------------|:-----:|:-----:|:---------:|:------:|
-| View BYOK config                                 | session role   |   ✅  |   ✅  |     ❌     |   ❌   |
-| Configure customer-managed KMS root key          | session role  |   ✅  |   ❌  |     ❌     |   ❌   |
-| Rotate KMS root key                              | session role  |  2P   |   ❌  |     ❌     |   ❌   |
-| `SecretRotationStart` (per-tenant DEK rotation)  | session role  |  2P   |  2P   |     ❌     |   ❌   |
-| Trigger BYOK kill-switch                         | session role  |  2P   |   ❌  |     ❌     |   ❌   |
+BYOK is an **operator** surface (internal auth key), not a customer
+dashboard action, so the role columns are omitted.
+
+| Operation | Served route | Status |
+|---|---|---|
+| Activate BYOK for a tenant | `POST /v1/admin/byok/activate` (`byok_admin.rs:57,148`) | Returns **501 Not Implemented** without a real provider, and does not mutate state (`byok_admin.rs:245-257`) |
+| Deactivate BYOK for a tenant | `POST /v1/admin/byok/deactivate` (`byok_admin.rs:60,149`) | Served |
+| `SecretRotationStart` (per-tenant DEK rotation) | `POST /v1/admin/mutate`, dual-approval | Served |
+| Configure / rotate a customer-managed KMS root key | **no route served** | — |
+| Trigger a BYOK kill-switch | **no route served** | — |
 
 ## Lifecycle / destructive
 
-| Permission                                  | Scope                | Owner | Admin | Developer | Viewer |
-|---------------------------------------------|----------------------|:-----:|:-----:|:---------:|:------:|
-| `TenantTombstone` (S-11 erasure pipeline)   | session role |  2P   |  2P   |     ❌     |   ❌   |
-| Issue DSR (erasure) for tenant data         | session role |   ✅  |   ✅  |     ❌     |   ❌   |
-| Withdraw consent / pause processing         | session role |   ✅  |   ✅  |     ❌     |   ❌   |
+| Operation | Served route | Gate |
+|---|---|---|
+| `TenantTombstone` (S-11 erasure pipeline) | `POST /v1/admin/mutate`, dual-approval | operator key |
+| Delete the whole account | `POST /v1/customer/account/delete` (`customer.rs:223`) | role `owner` only (`:1065`) |
+| Data-subject requests (access / portability / rectification / erasure) | `POST /v1/privacy/dsr/{access,portability,rectification,erasure}` (`routes/dsr/portal.rs:719-722`) | privacy portal |
+| Review a tenant's DSR / consent state | `GET /v1/admin/tenants/{tenant_id}/{dsr,consents}` (`admin_tenant_detail.rs:131,134`) | operator key |
+
+Account deletion erases the whole tenant, which is why it is the one
+customer route gated on the `owner` role directly rather than on a
+scope.
 
 ## Executor (Phase 2 only — not granted to humans)
 
@@ -150,15 +228,20 @@ as the authority on what a PAT scope actually grants today.
 
 ## Counters
 
-- **Roles documented:** 4 (`Owner`, `Admin`, `Developer`, `Viewer`).
-- **Permissions documented:** 33 across 7 categories.
-- **Dual-approval gated:** 9 (matches the 5 destructive `AdminOpType`
-  variants plus 4 derived flows: tier downgrade, BYOK rotate, BYOK
-  kill-switch, KMS root rotate).
+- **Roles:** 4 (`Owner`, `Admin`, `Developer`, `Viewer`). The Worker
+  collapses them to three scope strings —
+  `viewer` → `read-only`, `owner`/`admin` → `read-write billing`,
+  everyone else → `read-write` (`worker/src/index.ts:3100-3107`) — plus
+  the separately forwarded `x-corelink-role`, which is what the
+  team-management and account-deletion gates read.
+- **Dual-approval gated:** 5 — exactly the destructive `AdminOpType`
+  variants (`corelink-dual-approval/src/types.rs:68-77`). The four
+  previously listed "derived flows" (tier downgrade, BYOK rotate, BYOK
+  kill-switch, KMS root rotate) have no served route.
 
 ## Cross-references
 
 - [Role catalog](./role-catalog.mdx) — narrative version.
-- [Permissions reference](../../reference/rbac/permissions.mdx) — ID-by-ID
-  with gated endpoints.
+- [Permissions reference](../../reference/rbac/permissions.mdx) — scope by
+  scope, with the served routes that enforce each one.
 - [INV-ADMIN-DUAL-APPROVAL](./index.mdx#dual-approval-gate--why-some-buttons-require-a-second-person)

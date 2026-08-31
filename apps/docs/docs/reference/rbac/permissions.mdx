@@ -3,11 +3,12 @@ id: rbac-permissions
 title: "Permissions reference"
 slug: "/reference/rbac/permissions"
 sidebar_label: "Permissions"
-description: "Every CoreLink permission ID, its canonical wire-form scope name, what it grants, and which endpoint(s) it gates."
+description: "Every CoreLink permission ID, its canonical wire-form scope name, what it grants, and which served endpoint(s) enforce it."
 tags: [rbac, reference, security]
-last_updated: "2026-05-15"
+last_updated: "2026-08-31"
 sources:
   - "crates/corelink-pat/src/scopes.rs (7 canonical PAT scopes; bits 5..=9 retired per B-080)"
+  - "crates/corelink-container/src/scope.rs (the predicates the served routes actually call)"
   - "crates/corelink-dual-approval/src/types.rs (AdminOpType — 7 variants)"
 ---
 
@@ -15,12 +16,26 @@ sources:
 
 The full canonical permission catalog. Two layers:
 
-1. **PAT scopes** — the 7 bits in the `PatScopes` u64 bitset. Each PAT
-   carries exactly the subset of bits granted at mint time. Middleware
-   enforces `(scopes & required) == required` per request.
+1. **PAT scopes** — the 7 bits in the `PatScopes` u64 bitset, recorded on
+   a PAT at mint time.
 2. **Admin op types** — the 7 destructive/non-destructive operation
-   variants routed through `POST /v1/admin/ops` with the dual-approval
-   gate where applicable.
+   variants carried in the body of `POST /v1/admin/mutate`, with the
+   dual-approval gate where applicable.
+
+:::warning[The bitset is a mint-time record, not the enforcement input]
+No served route reads the `PatScopes` bitset. Every request is authorized
+from the **`x-corelink-scope` header**, a space/comma-separated token
+string the Worker sets and the container parses with
+`crates/corelink-container/src/scope.rs`. `PatScopes::has()` appears only
+inside test modules (`routes/internal_pat.rs:1025-1058`); there is no
+production call site.
+
+The tokens the predicates actually match are `read-only`, `read-write`,
+`cas:r`, `cas:rw`, `cas:w`, `find-missing`, `billing`, `admin` and
+`owner` (`scope.rs:60-64` defines the grammar; matching is exact-token,
+never substring). Where a bit below has no matching predicate, it grants
+nothing at request time — those are called out per scope.
+:::
 
 > The wire-form scope strings are stable; bit positions are stable for
 > the lifetime of the u64 (ADR-0026 covers the u128 migration path when
@@ -36,39 +51,54 @@ The full canonical permission catalog. Two layers:
 ### `cache:r` — Read CAS blobs + AC results
 
 - **Bit position:** 0 (`SCOPE_CACHE_R = 1 << 0`).
-- **Granted to roles by default:** `Owner`, `Admin`, `Developer`,
-  `Viewer`.
-- **Gates endpoints:**
-  - `GET /v1/cas/blobs/{digest}` (REAPI Bytestream Read).
-  - `GET /v1/ac/{action_digest}` (Action Cache lookup).
-  - `BatchReadBlobs` gRPC.
+- **Wire tokens that satisfy it:** `read-only`, `read-write`, `cas:r`,
+  `cas:rw`, `cas:w`, `admin` (`scope.rs:73-80`, `requires_cache_read`).
+- **Enforced on:**
+  - `GET /v1/cas/{tenant}/{hash}` (`routes/cas.rs:87,707`).
+  - `GET /v1/ac/{tenant}/{action_digest}` (`routes/ac.rs:96,449`).
+  - `GET /v1/cas/{tenant}` and `GET /v1/ac/{tenant}` (listings;
+    `cas.rs:49`, `ac.rs:59`).
 
 ### `cache:w` — Write CAS blobs + AC results
 
 - **Bit position:** 1 (`SCOPE_CACHE_W`).
-- **Granted to roles by default:** `Owner`, `Admin`, `Developer`.
-- **Gates endpoints:**
-  - `PUT /v1/cas/blobs/{digest}` (REAPI Bytestream Write).
-  - `PUT /v1/ac/{action_digest}`.
-  - `BatchUpdateBlobs` gRPC.
+- **Wire tokens that satisfy it:** `read-write`, `cas:w`, `cas:rw`,
+  `admin` (`scope.rs:93-95`, `requires_cache_write`). `read-only` does
+  not.
+- **Enforced on:**
+  - `PUT /v1/cas/{tenant}/{hash}` (`routes/cas.rs:707-710`).
+  - `PUT /v1/ac/{tenant}/{action_digest}` (`routes/ac.rs:449-452`).
 
 ### `cache:find-missing` — Execute FindMissingBlobs
 
 - **Bit position:** 2 (`SCOPE_CACHE_FIND`).
-- **Granted to roles by default:** `Owner`, `Admin`, `Developer`.
-- **Gates endpoints:**
-  - `FindMissingBlobs` gRPC. (No implicit download.)
+- **Wire tokens that satisfy it:** the explicit `find-missing` /
+  `cache:find-missing` least-privilege token, plus any read grant — read
+  is a superset of an existence probe (`scope.rs:107`,
+  `requires_find_missing`; ADR-0071).
+- **Enforced on:** the REAPI `FindMissingBlobs` operation. A
+  find-missing-only PAT probes existence and can download nothing.
 
 ### `cache:delete` — Admin blob deletion
 
 - **Bit position:** 3 (`SCOPE_CACHE_DELETE`).
-- **Granted to roles by default:** none.
-- **Status:** **not enforced.** A blob-delete route *does* exist
-  (`DELETE /v1/cas/{tenant}/{hash}`), but it is gated on the cache-WRITE
-  capability (`CacheScope::can_write`) — **not** on this scope. So
-  `cache:delete` grants nothing distinct, and any write-capable token
-  (`read-write` / `cas:rw` / `cas:w`) can delete a blob. Carried in an
-  explicit declared-exception ledger
+- **Granted to roles by default:** none. No mint path emits this bit —
+  the self-serve classifier only ever sets `SCOPE_CACHE_FIND`,
+  `SCOPE_CACHE_RW` or `SCOPE_CACHE_R` (`customer_d1.rs:1267-1273`), and
+  the internal mint's admin bundle does not include it
+  (`routes/internal_pat.rs:134-140`).
+- **Status:** **this bit is not an enforcement input.** Deletion *is*
+  served — `DELETE /v1/cas/{tenant}/{hash}` (`cas.rs:709`, handler at
+  `cas.rs:1556`) and `DELETE /v1/ac/{tenant}/{action_digest}`
+  (`ac.rs:451`, handler at `ac.rs:679`) both exist — but they are gated
+  on the **cache-write** capability, not on `cache:delete`:
+  `cas.rs:1584` and the AC mirror both call `scope.can_write()`. A
+  runner-job credential is refused outright before that check
+  (`cas.rs:1576-1582`), and a cross-tenant path is refused before any
+  storage access (`cas.rs:1565`).
+- Holding `cache:delete` therefore grants nothing; holding `cas:rw`
+  already permits deletion. The name is carried in an explicit
+  declared-exception ledger
   (`crates/corelink-container/tests/scope_catalog_closure.rs`) so the gap
   stays visible rather than silent.
 
@@ -128,9 +158,11 @@ been reserved for future scopes.
 
 ## Admin operation types (7 variants)
 
-Routed through `POST /v1/admin/ops`. Destructive variants require
-`X-Dual-Approver`, `X-Approver-Signature`, `X-Approver-Nonce`,
-`X-Request-Ts-Ms` headers and run through the 7-step gate.
+Submitted to `POST /v1/admin/mutate`; the second signature goes to
+`POST /v1/admin/approve` (`routes/admin.rs:124,129,695,696`). Destructive
+variants require `X-Dual-Approver`, `X-Approver-Signature`,
+`X-Approver-Nonce`, `X-Request-Ts-Ms` headers and run through the 7-step
+gate.
 
 ### Destructive (dual-approval required)
 
@@ -170,6 +202,75 @@ Every gate evaluation writes one of these strings to `admin_op_log.outcome`
 | `denied_approver_not_admin`   | Approver does not hold an active `Owner`/`Admin` role.   |
 | `denied_nonce_replay`         | Nonce already seen.                                      |
 | `denied_clock_skew`           | `ts_ms` differs from server now > 60s.                   |
+
+`admin_op_log` is written by `crates/corelink-dual-approval`. **There is
+no route that reads it back** — the table name appears nowhere outside
+that crate's `types.rs`, `audit.rs` and `collusion.rs`. Approval history
+is not retrievable over the API today.
+
+---
+
+## Served admin and account routes
+
+The operator and account surfaces below are the ones actually mounted.
+They are listed here because earlier revisions of this page named an
+admin API that was never served; these are the endpoint names to use.
+
+### Operator surface (internal auth key, not a customer PAT)
+
+| Route | Source |
+|---|---|
+| `POST /v1/admin/mutate` | `routes/admin.rs:124,695` |
+| `POST /v1/admin/approve` | `routes/admin.rs:129,696` |
+| `GET /v1/admin/read/{resource}` | `routes/admin.rs:121,694` |
+| `GET /v1/admin/tenants/{tenant_id}/usage` | `routes/admin_tenant_detail.rs:128` |
+| `GET /v1/admin/tenants/{tenant_id}/billing` | `routes/admin_tenant_detail.rs:129` |
+| `GET /v1/admin/tenants/{tenant_id}/consents` | `routes/admin_tenant_detail.rs:131` |
+| `GET /v1/admin/tenants/{tenant_id}/dsr` | `routes/admin_tenant_detail.rs:134` |
+| `GET /v1/admin/tenants/{tenant_id}/pats` | `routes/admin_tenant_detail.rs:135` |
+| `POST /v1/admin/byok/activate` | `routes/byok_admin.rs:57,148` |
+| `POST /v1/admin/byok/deactivate` | `routes/byok_admin.rs:60,149` |
+| `GET /v1/admin/pilots` | `routes/admin_pilot.rs:107` |
+| `POST /v1/admin/pilots/{tenant_id}/grant-tier` | `routes/admin_pilot.rs:110` |
+| `POST /v1/admin/pilots/{tenant_id}/checkin` | `routes/admin_pilot.rs:113` |
+
+The tenant path segment is **plural** (`/tenants/`). BYOK activation
+returns **501 Not Implemented** in any build without a real provider and
+does not mutate state (`routes/byok_admin.rs:245-257`).
+
+### Account surface (customer dashboard session or PAT)
+
+| Route | Gate | Source |
+|---|---|---|
+| `GET /v1/customer/audit` | `requires_billing_admin` | `routes/customer.rs:209`, gate at `:606` |
+| `GET /v1/customer/billing` | `requires_billing_admin` | `routes/customer.rs:210` |
+| `POST /v1/customer/billing/portal` | `requires_billing_admin` | `routes/customer.rs:211`, gate at `:706` |
+| `GET`/`POST /v1/customer/keys` | `requires_cache_write` | `routes/customer.rs:212-215`, gate at `:740` |
+| `POST /v1/customer/keys/{pat_id}/revoke` | `requires_cache_write` | `routes/customer.rs:216-219`, gate at `:849` |
+| `POST /v1/customer/team/invite` | role `owner`/`admin` | `routes/customer.rs:221`, gate at `:943` |
+| `DELETE /v1/customer/team/{user_id}` | role `owner`/`admin` | `routes/customer.rs:222`, gate at `:999` |
+| `POST /v1/customer/account/delete` | role `owner` only | `routes/customer.rs:223`, gate at `:1065` |
+| `POST /v1/onboarding/tier-select` | onboarding flow | `routes/tier_select.rs:588` |
+
+### Audit surface
+
+| Route | Gate | Source |
+|---|---|---|
+| `GET /v1/audit/{tenant}/export` | `requires_audit_read` | `routes/audit_export/types.rs:20`, gate at `handler.rs:111` |
+| `GET /v1/audit/analytics/event-count` | `requires_audit_read` | `routes/audit_analytics/types.rs:15`, gate at `handler_event_count.rs:62` |
+| `GET /v1/audit/analytics/timeline` | `requires_audit_read` | `routes/audit_analytics/types.rs:18`, gate at `handler_timeline.rs:60` |
+
+The RFC 6962 inclusion proof has **no route of its own**: each exported
+row is verified inline and the result is emitted as part of the export
+stream (`routes/audit_export/stream.rs:251`).
+
+**Two different gates guard "audit".** `GET /v1/customer/audit` — the
+dashboard log — is gated on `requires_billing_admin` (`scope.rs:229`),
+which accepts only `billing`, `admin` or `owner`. The export and
+analytics routes are gated on `requires_audit_read` (`scope.rs:251`),
+which accepts any read-capable token. A `read-only` credential is
+therefore **refused (403)** by the first and **accepted** by the other
+three. See the [permission matrix](../../explanation/rbac/permission-matrix).
 
 ## Related
 
