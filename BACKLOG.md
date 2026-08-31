@@ -4988,6 +4988,109 @@ exercised on a schedule."*
 Este item cobre o defeito de engenharia (o binário). A reconciliação dos instrumentos
 assinados é [B-087] e a evidência falsa é [B-084].
 
+**Correção de evidência 2026-08-31.** A afirmação "é um XOR em memória" é verdadeira, mas
+a citação que a sustenta tem de ser a **seleção em tempo de compilação**, não um
+fingerprint de AAD do provedor AWS — aquilo são 8 bytes de AAD em modo mock, não o wrap da
+chave, e uma citação frágil dá ao contestador um ponto legítimo que derruba a conclusão
+correta junto. A evidência que aguenta contestação é
+`crates/corelink-container/src/byok_orchestrator.rs:263-271`: o braço
+`#[cfg(not(any(feature = "byok-aws-real", … "byok-vault-real")))]` cujo corpo é
+`Ok(Arc::new(InMemoryFake::new()))`. Sem nenhuma feature, é esse braço que compila. O
+doc-comment do `InMemoryFake` (`:279`) diz **"Not for production"** e descreve o wrap como
+"storing the plaintext bytes as the ciphertext (XOR-masked with a fixed module-private
+key)"; a constante da máscara diz que ela "offers no cryptographic confidentiality" —
+citada por conteúdo como `:296`, que é onde a frase inteira está (`:295` é só a primeira
+linha do doc-comment).
+
+**O item SEGUE ABERTO. 2026-08-31 (PR WP-C) reparou só a metade documental**, porque o
+reparo do defeito real é embarcar um provedor de KMS — trabalho de CÓDIGO, sobre
+credencial de KMS de cliente, e decisão do owner. Não foi feito e não deve ser feito por
+um PR de documentação.
+
+O que foi corrigido: `marketing/sales/FAQ-MASTER.md`, em nove posições, parou de vender
+BYOK como capacidade presente. A linha de preço deixou de anunciar o add-on de $99/mês; a
+P3 deixou de justificar o prêmio com *"the weekly synthetic kill-switch chaos drill we run
+on your tenant"* e de afirmar *"we don't run BYOK as a marketing checkbox; the kill switch
+is exercised on a schedule"*; a S1 deixou de abrir com a palavra *"Real."* e passou a
+marcar o parágrafo inteiro como DESIGN; a S11 — *"How is the kill switch tested? What
+proves it actually works?"* — passou a responder que **nada prova, porque nunca rodou**,
+citando o `detector.rs:147` e a ausência de qualquer chamador no binário. Saíram também a
+alegação de BYOK como medida suplementar de Schrems II e as duas menções que tratavam o
+envelope por DEK como propriedade corrente.
+
+Em cada posição transcrevi o texto retirado. Uma reversão silenciosa reaparece.
+
+O que NÃO foi tocado, deliberadamente: `legal/sla/v1.0.0.md:46`, que compromete
+*"BYOK kill-switch p99 ≤ 5 min"* para Enterprise. É instrumento assinado, a correção é de
+[B-087], e emendá-lo não é decisão de engenharia.
+
+**O resíduo, medido — porque um item que fica aberto sem nomear o que sobra não é
+rastreamento, é esperança.** `grep -rli byok --include='*.md' --include='*.mdx' marketing/
+apps/docs/ README.md` devolve **231 arquivos / 1055 posições**. A triagem das que vendem
+BYOK como entregue:
+
+- `marketing/sales/PROOF-POINTS.md:72` — §2.13, *"Weekly synthetic BYOK chaos drill on
+  lighthouse tenants"* como proof point.
+- **`marketing/sales/PRICING-WORKSHEET.md:155` — *"With BYOK add-on at $99/mo"*. O preço
+  que o FAQ acabou de remover continua na planilha** que o rep usa para montar a proposta.
+- `marketing/sales/legal-questionnaires/SIG-LITE-2026-pre-filled.md:232` (N.6) e
+  `marketing/sales/legal-questionnaires/CAIQ-V4-pre-filled.md:120` (CEK-10.1) — em reparo
+  no PR de [B-087]; ficam listadas aqui porque a `main` ainda as carrega.
+- `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md:47`, `:200` e **`:219`** — a `:219` é uma
+  **linha de log fabricada**: *"2026-MM-DD 14:22Z: scheduled BYOK chaos drill, kill-switch
+  RTT 3m12s (target ≤ 5 min, PASS)"*. Um número de medição que nunca foi medido, num
+  documento entregue ao cliente.
+- `marketing/lighthouse-kit/03-integration-timeline.md:88` e `:110`;
+  `marketing/lighthouse-kit/02-intro-deck.md:66` e `:190`.
+- **`marketing/launch/CASE-STUDIES/enterprise-byok.md:54` e `:59`** — case study inteiro
+  sobre um kill-switch *"executed as a contractual test"*, **com citação atribuída a um
+  cliente**. É a forma mais cara do defeito: retratá-lo depois de circular exige falar com
+  a pessoa citada.
+- `README.md:94` — *"**BYOK is real across four KMS providers.**"*
+- As **6** páginas `apps/docs/src/pages/compare/vs-*.mdx` (`vs-bazel-remote-s3`,
+  `vs-buildbuddy`, `vs-engflow`, `vs-nx-cloud`, `vs-sccache-s3`, `vs-turborepo`) — a
+  revisão que originou esta lista dizia 5; são 6.
+- `apps/docs/docs/explanation/security/byok.mdx:55` — *"BYOK is available on the
+  **Enterprise** tier"* — × 4 locales.
+- **`apps/docs/docs/trust/subprocessors.mdx:105-113`** — página do Trust Center: tabela
+  AWS KMS / GCP Cloud KMS / Azure Key Vault / HashiCorp Vault como sub-processadores em
+  *"Customer-controlled CMK (BYOK option)"*, precedida de *"CoreLink only holds wrapped
+  DEKs"*. Falso hoje: com BYOK inerte nenhum tenant alcança esses provedores, e o que o
+  binário embarca é `InMemoryFake`. **Não reparada neste PR** — o reparo é do PR que
+  varrer o resíduo documental —, mas nomeada aqui porque *achado nomeado só em prosa é
+  achado que nunca vira item*. Verificado 2026-08-31 que **nenhum PR aberto a conserta**.
+  População medida: **25 PRs abertos** (72 branches remotas). **Dois** tocam o arquivo, e
+  **nenhum dos dois toca a tabela**: #1490 (`claude/wp-e-cosign`) edita `:133+` (Sigstore),
+  e #1397 (`feat/devenv-ingress-control-plane-wp08-wp09`) edita o cabeçalho e a seção de
+  canais de notificação — este último a partir de base defasada, revertendo `last_updated`
+  de `2026-08-24` para `2026-05-27` e a contagem do registro de 22 para 19 vendors, o que é
+  um defeito à parte e NÃO deste item.
+
+**Segunda passada 2026-08-31 — revisão fria adversarial sobre o próprio PR.** Dois defeitos
+que o reparo anterior criou:
+
+- **Uma citação, dois números.** A frase *"offers no cryptographic confidentiality"* era
+  citada como `:295` em `P3` (`FAQ-MASTER.md:71`) e como `:296` em `S1` (`:131`). Medido:
+  o comentário do `IN_MEMORY_FAKE_MASK` começa em
+  `crates/corelink-container/src/byok_orchestrator.rs:295` mas a **frase citada está
+  inteira na linha `:296`**. Renumerado por conteúdo: as duas ocorrências agora dizem
+  `:296`. As outras 4 citações de código reusadas por `P3` e `S1` foram reconferidas e
+  batem — `byok_admin.rs:249` (`if !REAL_KMS_PROVIDER_WIRED`), `Dockerfile:182`
+  (`cargo build … -p corelink-server` sem `--features`), `Cargo.toml:16` (`default = []`),
+  `byok_orchestrator.rs:263-271` (o arm `#[cfg(not(any(…)))]` que constrói `InMemoryFake`).
+- **`P3` negava demais e contradizia o PR irmão.** O texto dizia *"No such drill runs."*
+  **sem qualificação**, enquanto `.github/workflows/byok_kill_switch_drill_weekly.yml`
+  **roda** (`cron: 0 3 * * 0`; as 8 execuções mais recentes, todas `schedule`, 2026-07-05 →
+  2026-08-30, verdes) e o PR de [B-087] — mesmo pacote de procurement — afirma isso. Um rep
+  levaria um FAQ que nega o que o CAIQ afirma. `P3` passou à mesma forma qualificada do
+  `S11` (*"on any tenant, against any KMS"*) e aponta para o `S11`; o `S11` ganhou o
+  parágrafo que descreve o que de fato roda, **com a mesma redação do CAIQ `CEK-10.1` e do
+  SIG-LITE `N.6`**: `scripts/byok_kill_switch_drill.sh` não contata KMS, nem API, nem
+  binário do CoreLink; os PASS são literais (`:51`, `:82`, `:100`, `:101`, `:129`); o
+  "≤ 5 min" é `date +%s` atravessando um `sleep 2`; o verde é estruturalmente inevitável; e
+  o step de report commita sem `push`, então `ls specs/_audits/ | grep -c
+  byok-kill-switch-drill` = **0**.
+
 ```backlog
 id: B-083
 repo: corelink-server
@@ -4997,13 +5100,13 @@ verify: |
   bash -c 'd=Dockerfile
   c=crates/corelink-container/Cargo.toml
   [ -f "$d" ] && [ -f "$c" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
-  buildline=$(grep -E "cargo build.*-p corelink-server" "$d" | head -1)
-  [ -n "$buildline" ] || { echo "FALHA: a linha de build do corelink-server mudou — reavalie o item."; exit 1; }
+  buildline=$(grep -E "^[^#]*cargo build[^#]*-p corelink-server" "$d" | head -1)
+  [ -n "$buildline" ] || { echo "FALHA: nenhuma linha NAO-COMENTADA de build do corelink-server no Dockerfile — o comando perdeu o objeto e nao pode concluir ausencia de feature; reavalie o item a mao."; exit 1; }
   temfeat=0; printf "%s" "$buildline" | grep -qE "byok-(aws|gcp|azure|vault)-real" && temfeat=1
   defvazio=0; grep -qE "^default[[:space:]]*=[[:space:]]*\[\]" "$c" && defvazio=1
   defbyok=0; grep -E "^default[[:space:]]*=" "$c" | grep -q "byok" && defbyok=1
   if [ "$temfeat" = 1 ] || [ "$defbyok" = 1 ]; then
-    echo "FALHA: o build embarca alguma feature byok-*-real (cmdline=$temfeat default=$defbyok) — feche o item."; exit 1; fi
+    echo "FALHA: o build embarca alguma feature byok-*-real (cmdline=$temfeat default=$defbyok). REAVALIE o item: compilar a feature e condicao NECESSARIA, nao suficiente — o [B-084] cobra um drill REAL contra um KMS real, e o residuo documental (231 arquivos) nao e lido por este comando. So feche (status: done) depois disso, com verify de polaridade INVERTIDA."; exit 1; fi
   echo "aberto: Dockerfile constroi sem --features byok-*-real e default=[] (default_vazio=$defvazio)"'
 verify-means: |
   open — a linha de build do `Dockerfile` não passa nenhuma feature `byok-*-real` E o
@@ -5013,10 +5116,41 @@ verify-means: |
   Vira DRIFTED quando qualquer um dos dois caminhos passar a embarcar um provedor real,
   que é o reparo.
 
-  O que NÃO decide, e admito: se o provedor embarcado FUNCIONA contra um KMS real, e se
-  o `run_loop` do kill switch passa a ser chamado. Compilar a feature é condição
-  necessária, não suficiente. Quem fechar deve provar com um drill REAL — que é
-  exatamente o que [B-084] cobra — e não com a presença da flag.
+  **Corrigido 2026-08-31 — a metade de linha de comando estava MORTA e não podia disparar.**
+  O `grep -E "cargo build.*-p corelink-server" Dockerfile | head -1` casava primeiro o
+  **comentário do `Dockerfile:8`** (`# \`cargo build -p corelink-server\`, delete the
+  stubs, …`), não a linha real de build do `:182`. Consequência medida: acrescentar
+  `--features byok-aws-real` à linha real **passava verde**, e apagar a linha real também
+  — o "controle do instrumento" nunca podia falhar, porque o comentário sempre estava lá
+  para satisfazê-lo. Ancorei em `^[^#]*cargo build[^#]*-p corelink-server`, e as duas
+  mutações agora ficam vermelhas.
+
+  **Q-7 nos dois lados, remedido 2026-08-31 por mutação nos arquivos reais (restaurados):**
+
+  - estado real → `CONFIRMED open`.
+  - `--features byok-aws-real` na linha REAL de build → `DRIFTED` (`cmdline=1 default=0`).
+  - linha REAL de build apagada, comentário do `Dockerfile:8` intacto → `DRIFTED`,
+    "perdeu o objeto" — que era exatamente o que a versão anterior não conseguia fazer.
+  - `default = ["byok-aws-real"]` no `Cargo.toml` → `DRIFTED` (`cmdline=0 default=1`).
+
+  **Ordem das opções corrigida na mesma passada.** A mensagem de reprovação dizia "feche o
+  item" e nada mais, o que contradizia o próprio `verify-means` logo abaixo: compilar a
+  feature é condição necessária, não suficiente. Agora manda **reavaliar** primeiro,
+  nomeando o que ainda não está coberto (o drill real de [B-084], o resíduo documental), e
+  o fechamento vem por último.
+
+  O que NÃO decide, e admito, em três pontos:
+
+  1. Se o provedor embarcado FUNCIONA contra um KMS real, e se o `run_loop` do kill switch
+     passa a ser chamado. Compilar a feature é condição necessária, não suficiente. Quem
+     fechar deve provar com um drill REAL — que é exatamente o que [B-084] cobra — e não
+     com a presença da flag.
+  2. **O resíduo documental**, que o comando não lê: 231 arquivos / 1055 posições citam
+     BYOK em `marketing/`, `apps/docs/` e no `README.md`, e a lista triada está no corpo
+     do item. Nenhum portão a cobre; o `verify` mede a condição de CÓDIGO, que é a raiz.
+  3. Que o `Dockerfile:182` alcança o alvo do contêiner **por ausência de `--target`**.
+     Uma mudança de alvo padrão do builder trocaria a árvore compilada sem tocar nesta
+     linha, e o comando não veria.
 
   Owner, não tl: embarcar BYOK real toca credencial de KMS de cliente e muda a superfície
   vendida. Não é decisão de engenharia.
@@ -5706,6 +5840,39 @@ preços marca como `slaCredits: false`.
 
 Uma cláusula de remédio exclusivo que não pode ser cumprida é a primeira a cair, e sua
 queda expõe danos sem teto.
+
+**Reverificado 2026-08-31 (WP-C) — SEGUE ABERTO, e deliberadamente NÃO reparado.** As três
+afirmações do corpo continuam de pé, e uma quarta foi medida:
+
+- `legal/sla/v1.0.0.md:74` ainda promete créditos *"issued automatically against the next
+  invoice"*, e a §4 (linha 113) ainda os declara *"Customer's sole and exclusive remedy"*.
+- **Zero** arquivos de `crates/`, `worker/src/` e `apps/` implementam emissão de crédito
+  (`service_credit|sla_credit|credit_note|balance_transaction`). O **controle**: a mesma
+  varredura por `checkout.session|subscription` nos mesmos diretórios devolve **99**
+  arquivos — o instrumento enxerga a superfície Stripe, e o zero é leitura, não comando
+  quebrado.
+- O SLA define **quatro** tiers (`Free`, `Starter`, `Pro`, `Enterprise` — linha 30)
+  enquanto o produto vende **seis**. Um cliente Solo ($15) ou Max ($149) não tem tier no
+  instrumento assinado.
+- **Novo:** a contradição do `terms.tsx` agora tem o outro lado medido.
+  `apps/docs/src/pages/terms.tsx` concede ao tier Pro *"a service credit equal to 10% of
+  the affected month's fees, applied automatically to the next invoice"*, enquanto
+  `apps/docs/src/lib/pricing.ts:203` marca o Pro com `slaCredits: false` — e
+  `apps/docs/src/lib/pricing.test.ts:75` **testa** que só o Enterprise tem
+  `slaCredits: true`. Os Termos publicados e a tabela de preços publicada, no mesmo site,
+  discordam sobre o mesmo tier, e há um teste verde defendendo o lado que os Termos
+  contradizem.
+
+**Por que WP-C não reparou.** Os dois reparos possíveis estão fora de um PR de
+documentação: implementar a emissão é trabalho de CÓDIGO sobre o caminho de billing; e
+emendar a cláusula de remédio exclusivo de um instrumento assinado — ou os Termos de
+Serviço que o cliente aceita — é ato jurídico, não alinhamento de texto à realidade.
+Alterar unilateralmente o remédio de um cliente num PR de documentação seria o mesmo
+defeito de outra forma.
+
+Owner + jurídico decidem qual das duas saídas seguir; a terceira contradição (Termos ×
+tabela de preços × teste) precisa entrar na decisão junto, porque qualquer emenda que
+ignore uma das três deixa duas discordando.
 
 ```backlog
 id: B-089
