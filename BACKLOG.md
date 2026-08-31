@@ -8300,6 +8300,18 @@ explicação ao lado, não — e a explicação é o que uma pessoa lê para dec
 A ressalva de (2) é o que separa esta decisão de um `prune` reflexo: pico e resíduo têm o
 mesmo sintoma e conserto diferente, e só (1) e (3) atacam pico.
 
+**As quatro saídas na mesa**, e a escolha é da guardiã — este item não a faz:
+
+1. **Construir numa box maior.** Leitura preferida da frente que mediu.
+2. **Limpar o `containerd` antes do build.** Provavelmente **não basta**: o problema é o
+   **pico** — tarball e unpack coexistindo — e não lixo acumulado. Limpar resíduo não cria
+   espaço para dois artefatos simultâneos.
+3. **Emagrecer o bake** (layer único, limpeza de cache no mesmo `RUN`, multi-stage).
+4. **Reverter o nightly** da imagem, o que devolve as sete lanes ao Mac.
+
+A ressalva de (2) é o que separa esta decisão de um `prune` reflexo: pico e resíduo têm o
+mesmo sintoma e conserto diferente, e só (1) e (3) atacam pico.
+
 **H1, ao contrário de H2, não depende dessa pergunta.** Os builds de 2026-08-23 e 2026-08-24
 passaram; o `#523` acrescentou um toolchain nightly inteiro mais `llvm-tools` mais
 `cargo-fuzz`; o build seguinte estourou escrevendo justamente esse caminho. Mesmo uma box
