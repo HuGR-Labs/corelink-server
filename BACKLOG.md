@@ -6129,40 +6129,101 @@ portão não varre. As outras lanes acertam — `admin-ui-deploy.yml:93` e
 única exceção, e é justamente o que carrega o segredo do webhook da Stripe. O
 `pnpm-audit.yml:24` ainda traz `TODO(flip-to-blocking)`.
 
-Reparo: commitar o lockfile do worker como exceção explícita ao `.gitignore:95`, e trocar
-por `npm ci --ignore-scripts`.
+**Consertado 2026-08-31 (este PR) — mas NÃO pelo reparo que este item prescrevia.**
+
+⚠️ **A premissa central do item estava incompleta, e a diferença muda o conserto.** O corpo
+diz *"`npm ci` cannot run — the lockfile is gitignored"* e conclui: commitar um
+`package-lock.json` como exceção ao `.gitignore:95`. Verificado antes de aplicar:
+**`apps/signup-worker` já é membro do workspace pnpm** (`pnpm-workspace.yaml`) **e já tem
+entrada pinada e commitada no `pnpm-lock.yaml`** (importer `apps/signup-worker`, linha 349,
+com os cinco specifiers batendo com o `package.json`). O lockfile **npm** é gitignored; um
+lockfile pinado para este pacote existia o tempo todo — a lane é que não o usava.
+
+Commitar um `package-lock.json` teria criado um **segundo lockfile divergente** para um
+pacote que já tem um, contra o texto do próprio `.gitignore:93` (*"this repo uses pnpm …
+never commit package-lock.json"*). O conserto certo é instalar como **todas as outras lanes
+de deploy já instalam** (`admin-ui-deploy.yml:93`, `cf-deploy-prod.yml:307`), que é o que
+este PR faz, nas duas lanes do worker (deploy e vitest):
+
+```
+pnpm install --frozen-lockfile --filter @corelink/signup-worker... --ignore-scripts
+```
+
+**Isso fecha também a metade que o item declarava indecidida.** O que sobe passa a ser o
+**mesmo grafo pnpm que o `pnpm-audit.yml` varre**, em vez de uma árvore resolvida pelo npm
+que portão nenhum enxergava. Não era preciso decidir entre "unificar em pnpm" e "adicionar
+lane npm-audit": a unificação já estava commitada e só esta lane ficara fora.
+
+**`--legacy-peer-deps` saiu junto com a causa.** Ele existia porque um `npm install` fresco
+**flutuava** o wrangler ≥4.108, cujo peer OPTIONAL em `workers-types@^5` dava ERESOLVE contra
+o 4.x pinado deste worker. Instalação congelada não flutua, então não há ERESOLVE. Medido: o
+install roda em 5s (`Lockfile is up to date`), o `wrangler deploy --dry-run` empacota
+545,21 KiB com os seis bindings resolvidos, e a suíte vitest passa **250/250 em 15 arquivos**
+com o piso de cobertura satisfeito.
+
+**Dois resíduos registrados, deliberadamente NÃO consertados aqui:**
+
+1. O passo `npm install -g wrangler@4.95.0` da lane de deploy continua, e **diverge do pino
+   do lockfile** (`wrangler 4.111.0`). Trocar qual wrangler executa o deploy é mudança de
+   comportamento no caminho do dinheiro e merece item próprio. O passo não carrega a
+   credencial da Cloudflare — ela está no `env:` do passo `Deploy Worker`, não no do install.
+2. O `.gitignore:95` fica como está. Sem `package-lock.json` para commitar, não há exceção a
+   abrir.
 
 ```backlog
 id: B-090
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'w=.github/workflows/signup-worker-deploy.yml
-  [ -f "$w" ] || { echo "FALHA: a lane de deploy do signup-worker sumiu — reavalie o item."; exit 1; }
-  solto=0; grep -qE "npm install" "$w" && solto=1
-  ci=0; grep -qE "npm ci" "$w" && ci=1
-  noscripts=0; grep -q "ignore-scripts" "$w" && noscripts=1
-  lock=0; [ -f apps/signup-worker/package-lock.json ] && lock=1
-  if [ "$solto" = 0 ] && [ "$ci" = 1 ] && [ "$noscripts" = 1 ]; then
-    echo "FALHA: a lane usa npm ci com --ignore-scripts — feche o item."; exit 1; fi
-  echo "aberto: npm_install_solto=$solto npm_ci=$ci ignore_scripts=$noscripts lockfile_versionado=$lock"'
+  bash -c 'set -uo pipefail
+  n=0
+  for w in .github/workflows/signup-worker-deploy.yml .github/workflows/signup-worker-vitest.yml; do
+    [ -f "$w" ] || { echo "FALHA: $w nao existe — reavalie o item em vez de fechar."; exit 1; }
+    n=$((n+1))
+    dep=$(grep -cE "^[[:space:]]+run: *npm (install|ci)[[:space:]]+[^-]" "$w")
+    [ "$dep" = 0 ] || { echo "REGRESSAO em $w: $dep linha(s) run: instalam as dependencias do worker por npm — a arvore volta a ser resolvida fora do lockfile pinado e fora do grafo que o pnpm-audit varre."; exit 1; }
+    i=$(grep -cE "^[[:space:]]+run: *pnpm install .*--frozen-lockfile" "$w")
+    [ "$i" -ge 1 ] || { echo "REGRESSAO em $w: nenhuma linha run: com pnpm install --frozen-lockfile."; exit 1; }
+    s=$(grep -cE "^[[:space:]]+run: *pnpm install .*--frozen-lockfile.*--ignore-scripts" "$w")
+    [ "$s" -ge 1 ] || { echo "REGRESSAO em $w: instala congelado mas SEM --ignore-scripts — pinar sem desligar lifecycle scripts deixa metade do buraco aberto, e num worker que carrega o segredo do webhook da Stripe metade nao serve."; exit 1; }
+  done
+  [ "$n" = 2 ] || { echo "FALHA: esperava 2 lanes do signup-worker e varri $n — reavalie."; exit 1; }
+  python3 scripts/check_signup_worker_pin.py || exit 1
+  echo "fechado: as $n lanes do signup-worker instalam com pnpm --frozen-lockfile --ignore-scripts, contra o importer pinado do pnpm-lock.yaml"'
 verify-means: |
-  open — a lane de deploy ainda usa `npm install` solto, ou não passa `--ignore-scripts`.
+  **Polaridade INVERTIDA (`done`):** sai 0 — fechado — enquanto **as duas** lanes do
+  `signup-worker` instalarem com `pnpm install --frozen-lockfile … --ignore-scripts`, nenhuma
+  delas instalar as dependências do worker por `npm`, **e** o pino do lockfile for real. Sai 1
+  nomeando a lane e qual metade regrediu.
 
-  Vira DRIFTED quando as três condições do reparo valerem juntas: sem `npm install`
-  solto, com `npm ci`, com `--ignore-scripts`. O AND é deliberado — pinar sem desligar
-  lifecycle scripts, ou desligar scripts sem pinar, deixa metade do buraco aberto, e num
-  worker que carrega o segredo do webhook da Stripe metade não serve.
+  A polaridade `open` ficaria verde neste PR e **vermelha no merge seguinte**, contaminando
+  todo PR irmão. Invertida junto com o `status`.
 
-  O `lockfile_versionado` é reportado mas não gateado: `npm ci` já falha sem lockfile, então
-  gatear nele seria redundante.
+  ⚠️ **O `grep` ANCORADO é o conteúdo, não estilo.** A versão `open` deste verify fazia
+  `grep -qE "npm install" "$w"` **solto**. Este PR escreveu comentários que explicam o defeito
+  antigo e portanto **contêm a string**: medido, 4 menções contra 1 linha executável na lane de
+  deploy. O verify solto teria dito "ainda aberto" para sempre depois do conserto — a armadilha
+  do grep que casa o próprio comentário, aqui num caso real e medido, não hipotético.
 
-  O que NÃO decide, e admito: se o `pnpm-audit` passa a cobrir o grafo do signup-worker.
-  Essa é a metade "o portão é cego" e depende de decisão de tooling (unificar em pnpm, ou
-  adicionar uma lane npm-audit para este worker). Se a decisão for a segunda, vale item
-  próprio.
-last-verified: 2026-08-30
+  O `[^-]` exclui `npm install -g wrangler`, que instala **ferramenta**, não as dependências do
+  worker. Esse passo continua na lane, está registrado como resíduo no corpo, e o verify não
+  finge cobri-lo.
+
+  **O AND das duas metades é deliberado**, herdado da versão `open`: pinar sem desligar
+  lifecycle scripts, ou desligar scripts sem pinar, deixa metade do buraco aberto.
+
+  **Anti-vacuidade — a metade que impede o portão decorativo.** `--frozen-lockfile` apontando
+  para um lockfile **sem este pacote** não pina nada: a flag estaria lá, a lane pareceria
+  consertada, e o deploy resolveria a árvore do zero. Por isso `scripts/check_signup_worker_pin.py`
+  parseia o YAML e o JSON de verdade e exige que **todo** `dependency`/`devDependency` do
+  `package.json` tenha `specifier:` sob o importer `apps/signup-worker`. Mede o **pino**, não a
+  presença da flag. Hoje: 6/6.
+
+  **O que NÃO decide:** qual wrangler executa o deploy (o global `4.95.0` diverge do `4.111.0`
+  do lockfile — resíduo registrado, merece item próprio), e se o `pnpm-audit.yml` deixa de ser
+  `TODO(flip-to-blocking)`.
+last-verified: 2026-08-31
 ```
 
 ### B-091 — a cadeia de proveniência de release é não-funcional e o SBOM publicado tem três meses
