@@ -8898,9 +8898,13 @@ O que não é defensável em nenhuma leitura é `read-write` genérico ter esse 
 omissão. Quem pegar o item leva a pergunta de produto ao owner **antes** de escolher entre as
 duas formas.
 
-Relação com [B-080] (escopos canônicos sem ponto de aplicação): lá o defeito é escopo
-declarado que ninguém verifica; aqui o escopo é verificado e o **predicado de linha** é que
-está largo. São camadas diferentes do mesmo caminho.
+Relação com o resíduo de escopo, **e o ponteiro certo**: [B-080] está `done` — fechou
+removendo os seis `admin:*`. O escopo que sobra sem ponto de aplicação é o `cache:delete`
+(`crates/corelink-pat/src/scopes.rs:52`, `:199`), e ele é rastreado no ledger
+`UNENFORCED_BY_DESIGN` de `crates/corelink-container/tests/scope_catalog_closure.rs:44-49`,
+que diz textualmente *"tracked separately from B-080"*. Lá o defeito é um **nome de escopo
+que não concede nada distinto**; aqui o escopo é verificado e o **predicado de linha** é que
+está largo. Camadas diferentes do mesmo caminho.
 
 ```backlog
 id: B-144
@@ -9233,11 +9237,13 @@ verify: |
   blocos = re.findall(r"```backlog\n(.*?)\n```", t, re.S)
   if len(blocos) < 100:
       print(f"FALHA: so {len(blocos)} blocos parseados no BACKLOG.md — instrumento quebrado, nao arvore limpa."); sys.exit(1)
-  dep = 0
+  dep = 0; ilegiveis = 0
   for b in blocos:
       try: it = yaml.safe_load(b) or {}
-      except Exception: continue
+      except Exception: ilegiveis += 1; continue
       if ".github/workflows" in str(it.get("verify", "")): dep += 1
+  if ilegiveis:
+      print(f"FALHA: {ilegiveis} bloco(s) backlog com YAML ilegivel — bloco que nao parseia sai da conta em SILENCIO e encolhe o numero; conserte o YAML antes de acreditar neste portao."); sys.exit(1)
   if cobre:
       print(f"FALHA: paths ja cobre .github/workflows/** — feche o item (itens dependentes: {dep})."); sys.exit(1)
   print(f"aberto: {dep} de {len(blocos)} itens tem verify lendo .github/workflows, e o paths do gate ({paths}) nao cobre .github/workflows/**")
@@ -9249,9 +9255,11 @@ verify-means: |
 
   **Anti-vacuidade, cada caminho com falha nomeada:** workflow ausente; `pull_request`
   removido; `paths` ausente (que significa "roda em todo PR", isto é, item **fechado**, e o
-  comando diz isso em vez de confundir com o defeito); e menos de 100 blocos parseados no
-  `BACKLOG.md`, declarado explicitamente como instrumento quebrado. Nenhum desses estados
-  devolve "aberto".
+  comando diz isso em vez de confundir com o defeito); menos de 100 blocos parseados no
+  `BACKLOG.md`; e **bloco com YAML ilegível**, que é o caminho que a primeira versão deste
+  comando engolia com um `except Exception: continue` mudo — um item que não parseia sai da
+  contagem em silêncio e **encolhe** o número que o portão publica. Agora ele reprova alto.
+  Nenhum desses estados devolve "aberto".
 
   **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 44 de 165 itens …
   nao cobre"* e exit 0. Numa cópia com `.github/workflows/**` acrescentado ao `paths`, sai
@@ -9393,10 +9401,10 @@ verify: |
   arqs = sorted(glob.glob(".github/workflows/*.yml")) + sorted(glob.glob(".github/workflows/*.yaml"))
   if len(arqs) < 50:
       print(f"FALHA: so {len(arqs)} workflows encontrados — instrumento quebrado, nao arvore limpa."); sys.exit(1)
-  com_conc = 0; achados = []
+  com_conc = 0; achados = []; ilegiveis = []
   for f in arqs:
       try: d = yaml.safe_load(open(f))
-      except Exception: continue
+      except Exception: ilegiveis.append(f.rsplit("/", 1)[-1]); continue
       if not isinstance(d, dict): continue
       c = d.get("concurrency")
       if not isinstance(c, dict): continue
@@ -9410,6 +9418,8 @@ verify: |
       on = d.get(True, d.get("on"))
       evs = set(on) if isinstance(on, (dict, list)) else {on}
       if len(MAIN & evs) >= 2: achados.append(nome)
+  if ilegiveis:
+      print(f"FALHA: {len(ilegiveis)} workflow(s) com YAML ilegivel ({', '.join(sorted(ilegiveis)[:5])}) — workflow que nao parseia sai da varredura em SILENCIO, e sabotar exatamente os infratores zeraria a contagem; conserte antes de acreditar neste portao."); sys.exit(1)
   if com_conc < 20:
       print(f"FALHA: so {com_conc} workflows com bloco concurrency — o parser nao esta enxergando; instrumento."); sys.exit(1)
   if not achados:
@@ -9427,9 +9437,17 @@ verify-means: |
   YAML transforma a chave nua `on` em booleano `True` — ler só `"on"` devolveria vazio e o
   portão diria "nenhum colide" sobre um repositório inteiro.
 
-  **Anti-vacuidade com falha nomeada em três pontos:** menos de 50 workflows no diretório;
-  menos de 20 com bloco `concurrency` (o parser deixou de enxergar); e a lista de cobertos
-  é uma exclusão explícita, não um filtro silencioso. Nenhum desses estados devolve "aberto".
+  **Anti-vacuidade com falha nomeada em QUATRO pontos:** menos de 50 workflows no diretório;
+  menos de 20 com bloco `concurrency` (o parser deixou de enxergar); a lista de cobertos é
+  uma exclusão explícita, não um filtro silencioso; e **qualquer YAML ilegível reprova alto**.
+
+  O quarto ponto foi acrescentado depois de uma revisão fria **demonstrar** o buraco: com o
+  `except Exception: continue` mudo da primeira versão, sabotar o YAML **exatamente dos 28
+  infratores** fazia o comando imprimir *"FALHA: nenhum workflow fora dos 6 ja escopados
+  colide"* — isto é, o portão anunciava o conserto no momento em que perdeu a visão. Era o
+  caminho que o `verify-means` prometia estar coberto e não estava.
+
+  Nenhum desses estados devolve "aberto".
 
   Fecha por **exaustão**, não por amostra: consertar dez mantém o item aberto com contagem
   menor. E fecha sozinho se [B-136]/[B-137] forem generalizados para o repositório inteiro,
@@ -9616,9 +9634,11 @@ frustra ninguém: o cliente simplesmente não tenta, e o excesso de privilégio 
 descrito ao contrário no material que o auditor dele vai ler. **A direção permissiva é a que
 não tem sinal**, e é por isso que ela é a que precisa de portão.
 
-**O que este item NÃO decide, e a fraqueza do próprio portão.** Ele **não** cobre
-[B-080] — escopos canônicos sem ponto de aplicação — que é o defeito de engenharia e tem
-item próprio; aqui o assunto é o instrumento. E o `verify` abaixo mede a **ausência de
+**O que este item NÃO decide, e a fraqueza do próprio portão.** Ele **não** cobre o
+escopo sem ponto de aplicação, que é o defeito de engenharia e já tem dono — não [B-080],
+que está `done` e fechou sobre os seis `admin:*`, mas o ledger `UNENFORCED_BY_DESIGN` em
+`crates/corelink-container/tests/scope_catalog_closure.rs:44-49`, onde `cache:delete` está
+declarado com motivo e sob teste. Aqui o assunto é o instrumento. E o `verify` abaixo mede a **ausência de
 qualquer instrumento**, não a ausência de mentira: um script que apenas cite os arquivos o
 satisfaria. É o mínimo honesto enquanto o instrumento não existe, e quem o construir tem de
 substituir este `verify` por um que plante a linha permissiva e exija que o portão a pegue.
@@ -9794,10 +9814,10 @@ verify: |
   blocos = re.findall(r"```backlog\n(.*?)\n```", t, re.S)
   if len(blocos) < 100:
       print(f"FALHA: so {len(blocos)} blocos parseados — instrumento quebrado, nao arvore limpa."); sys.exit(1)
-  total = 0; suspeitos = []
+  total = 0; suspeitos = []; ilegiveis = 0
   for b in blocos:
       try: d = yaml.safe_load(b) or {}
-      except Exception: continue
+      except Exception: ilegiveis += 1; continue
       v = d.get("verify")
       if not isinstance(v, str) or v.strip() == "manual": continue
       total += 1
@@ -9805,6 +9825,8 @@ verify: |
           if "grep" not in ln or SEGURO.search(ln): continue
           if any(not m.group("pat").startswith("^") for m in PADRAO.finditer(ln)):
               suspeitos.append(str(d.get("id"))); break
+  if ilegiveis:
+      print(f"FALHA: {ilegiveis} bloco(s) backlog com YAML ilegivel — sairiam da varredura em silencio e encolheriam a contagem; conserte o YAML antes de acreditar neste portao."); sys.exit(1)
   if not suspeitos:
       print(f"FALHA: nenhum dos {total} verifies com comando usa grep de padrao nao-ancorado — a triagem de classe terminou; feche o item."); sys.exit(1)
   print(f"aberto: {len(suspeitos)} de {total} verifies com comando fazem grep de padrao nao-ancorado; primeiros: {', '.join(suspeitos[:6])}")
@@ -9818,9 +9840,10 @@ verify-means: |
   (`grep -v`), ou que delegue a `awk`/`python3`/parser YAML, é considerada segura e sai da
   conta. Isso é o que impede o próprio detector de casar prosa.
 
-  **Anti-vacuidade:** menos de 100 blocos parseados é declarado instrumento quebrado, com
-  falha alta. Sem essa guarda, quebrar o parser zeraria a lista e o item se declararia
-  resolvido no exato momento em que perdeu a capacidade de medir.
+  **Anti-vacuidade, dois caminhos:** menos de 100 blocos parseados é declarado instrumento
+  quebrado; e **bloco com YAML ilegível reprova alto** em vez de sair da conta calado. Sem
+  essas guardas, quebrar o parser — ou só o YAML dos itens infratores — zeraria a lista e o
+  item se declararia resolvido no exato momento em que perdeu a capacidade de medir.
 
   ⚠️ **Contado não é triado, e o `verify` argumenta por construção a favor de manter aberto.**
   A contagem inclui greps sobre arquivos sem comentário de linha e padrões que nenhum
@@ -10229,7 +10252,7 @@ verify-means: |
   registro de rota — e existe pelo menos um) e `^[^#]*` no markdown.
 
   **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: nenhuma rota
-  /v1/pats registrada … (controle /v1/cas encontrado em 2 arquivo(s))"* e exit 0. Numa cópia
+  /v1/pats registrada … (controle /v1/cas encontrado em 14 arquivo(s))"* e exit 0. Numa cópia
   com `.route("/v1/pats", post(mint))` acrescentado a um crate de rotas, sai *"FALHA: 1
   arquivo(s) de servidor registram /v1/pats"* e exit 1.
 
@@ -10537,12 +10560,21 @@ um falso positivo garantido, nos quatro idiomas.
 **Duas alegações do mesmo achado que NÃO reproduzem nesta árvore, e registro as duas para que
 ninguém as re-abra sem medir.**
 
-- *"o doctor acusa o firewall do cliente por `corelink.humangr.com`, que não tem DNS"* — o
-  endpoint padrão do CLI é `corelink-api.humangr.com` (`tools/cli/src/config.rs:105`), e a
-  mensagem de rede (`doctor.rs:175`) interpola **o endpoint configurado**, não um host fixo.
-  O único uso de `corelink.humangr.com` no CLI é o subdomínio de telemetria
-  (`telemetry.rs:24`), que o `doctor` **não** sonda. Provavelmente corrigido junto com o
-  commit `2d1b19b3`.
+- *"o doctor acusa o firewall do cliente por `corelink.humangr.com`, que não tem DNS"* — a
+  **conclusão** vale, mas por um motivo mais estreito do que o achado sugeria: o endpoint
+  padrão do CLI é `corelink-api.humangr.com` (`tools/cli/src/config.rs:105`), e a mensagem de
+  rede (`doctor.rs:175`) interpola **o endpoint configurado**, não um host fixo — então o
+  `doctor` não culpa aquele hostname.
+
+  ⚠️ **Não confundir isso com "o hostname não é usado".** Ele é, em dois lugares que o
+  `doctor` não sonda: `tools/cli/src/commands/version.rs:58` monta e **imprime ao cliente**
+  `https://corelink.humangr.com/attestations/cli/{version}/{git_rev}/slsa3.json`, e
+  `telemetry.rs:24` aponta para `telemetry.corelink.humangr.com`. **Nenhum dos dois
+  resolve** (medido: `corelink-api.humangr.com` → `104.21.57.218`; os outros dois → vazio).
+  Esse resíduo é [B-166], e está fora deste item. Registro a distinção aqui porque a versão
+  anterior desta frase dizia que o único uso era a telemetria — falso, e do pior tipo: uma
+  frase escrita para impedir a redescoberta, que **vacinava** contra a redescoberta de um
+  defeito real.
 - *"`Server-Timing` ausente em 5 de 6 superfícies"* — não é decidível estaticamente e é a
   mesma família do [B-129] (o `Server-Timing` foi desenhado para somar, e somar é compatível
   com esconder). Quem for medir cobertura de fases deve fazê-lo **sob** o B-129, não aqui.
@@ -10665,5 +10697,110 @@ verify-means: |
   recusa. Se a decisão for que a recusa deve custar mais por padding de temporização, o
   fechamento é escrever essa decisão com o número escolhido — e aí este item vira `done` com
   `verify` invertido apontando para onde a decisão está registrada.
+last-verified: 2026-08-31
+```
+
+### B-166 — `corelink --version` imprime ao cliente uma URL de atestação SLSA num hostname que não tem DNS
+
+`tools/cli/src/commands/version.rs:58` monta, e o CLI **entrega ao cliente**, no campo
+`slsa_attestation` de `corelink --version`:
+
+```
+https://corelink.humangr.com/attestations/cli/{version}/{git_rev}/slsa3.json
+```
+
+**O hostname não resolve.** Medido 2026-08-31, com controle positivo na mesma execução:
+
+| hostname | `dig +short` |
+|---|---|
+| `corelink-api.humangr.com` (controle) | `172.67.167.13`, `104.21.57.218` |
+| `corelink.humangr.com` | **vazio** |
+| `telemetry.corelink.humangr.com` | **vazio** |
+
+Não é um link de documentação: é a **resposta de um comando do produto**, no campo que existe
+exatamente para o cliente **verificar** a proveniência do binário que acabou de instalar. Quem
+seguir o link não recebe um 404 — recebe falha de resolução, que é indistinguível de problema
+de rede dele. É a mesma forma do [B-041] (`status.corelink.humangr.com` anunciado em 224
+lugares e servindo nada) numa superfície diferente: lá é doc, aqui é saída de programa.
+
+**Três coisas o tornam mais caro do que uma URL errada, e são independentes:**
+
+1. **O contrato publicado repete o hostname morto.** `docs/cli/json-output-schema.md:162`
+   traz o campo com o mesmo host, então a doc do schema JSON — que times de CI usam para
+   parsear a saída — canoniza o endereço quebrado.
+2. **Um teste fixa o hostname.** `version.rs:91` asserta
+   `.starts_with("https://corelink.humangr.com/attestations/cli/")`. Corrigir o host **quebra
+   o teste**, o que é o comportamento certo, mas significa que o reparo não é de uma linha e
+   que ninguém o fez por acidente.
+3. **O caminho promete `slsa3.json`**, e a lane de proveniência **é L2**, não L3 — [B-045]
+   nomeia dez documentos que ainda afirmam SLSA L3, mas o `verify` dele é um laço fechado
+   sobre **doze arquivos de `specs/` e `ARCHITECTURE.md`**; `tools/` está fora, conferido. Ou
+   seja: mesmo se o hostname resolvesse, o artefato apontado afirmaria um nível que a cadeia
+   não produz — e [B-091] registra que essa cadeia nunca emitiu bundle nenhum.
+
+**Como este item nasceu, porque a lição é o mais reaproveitável dele.** O achado adjacente
+(*"o `doctor` acusa o firewall do cliente por `corelink.humangr.com`"*) **não reproduz** — o
+`doctor` interpola o endpoint configurado, e o padrão é `corelink-api`. Ao registrar essa
+refutação no [B-164], escrevi que *"o único uso de `corelink.humangr.com` no CLI é a
+telemetria"*. **Era falso**, e do pior tipo: uma frase escrita para **impedir a
+redescoberta**, que teria vacinado a próxima varredura contra este item. Refutar uma alegação
+não autoriza generalizar sobre a vizinhança dela sem medir a vizinhança.
+
+**O que este item NÃO decide:** se o reparo é apontar o campo para um host que existe
+(`corelink-api.humangr.com`, ou o domínio de artefatos), publicar de fato os atestados, ou
+**omitir o campo** enquanto a cadeia de proveniência não produz nada ([B-091]). A terceira é
+a mais honesta e a mais barata, e é decisão de produto — um cliente que não vê o campo sabe
+menos, mas não é enganado.
+
+```backlog
+id: B-166
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'set -e
+  v=tools/cli/src/commands/version.rs
+  [ -f "$v" ] || { echo "FALHA: $v sumiu — reavalie o item em vez de fecha-lo."; exit 1; }
+  command -v dig >/dev/null 2>&1 || { echo "FALHA: dig indisponivel — nao consigo decidir DNS; instrumento, nao achado."; exit 1; }
+  ctl=$(dig +short corelink-api.humangr.com 2>/dev/null | head -1)
+  [ -n "$ctl" ] || { echo "FALHA: o controle corelink-api.humangr.com tambem nao resolveu — sem rede ou sem DNS; instrumento, nao achado."; exit 1; }
+  host=$(grep -E "^[^/]*https://[a-z.-]+/attestations/cli/" "$v" | head -1 | sed -E "s|.*https://([a-z.-]+)/attestations/cli/.*|\1|")
+  [ -n "$host" ] || { echo "FALHA: nao achei a URL de atestacao em linha executavel de $v — o campo mudou de forma ou sumiu; releia antes de confiar neste portao."; exit 1; }
+  res=$(dig +short "$host" 2>/dev/null | head -1)
+  if [ -n "$res" ]; then
+    echo "FALHA: o host da atestacao ($host) resolve para $res — o reparo aterrissou; feche o item."; exit 1; fi
+  doc=0
+  d=docs/cli/json-output-schema.md
+  [ -f "$d" ] && grep -qE "^[^#]*https://$host/attestations/cli/" "$d" && doc=1
+  echo "aberto: corelink --version imprime atestacao em https://$host/... que NAO resolve (controle corelink-api -> $ctl); schema JSON publicado repete o host morto=$doc"'
+verify-means: |
+  open — o host da URL de atestação que o CLI imprime **não resolve**, enquanto o controle
+  positivo na mesma execução resolve.
+
+  **O hostname é EXTRAÍDO do código, não escrito no portão.** O comando lê a URL da linha
+  executável de `version.rs` e resolve o que encontrar. Um `dig corelink.humangr.com` fixo
+  aqui continuaria vermelho — corretamente — depois de alguém corrigir o campo para outro
+  host, e o item nunca fecharia.
+
+  **O controle positivo é o que separa "host morto" de "sem rede".** `corelink-api.humangr.com`
+  é resolvido primeiro; se ele falhar, o comando declara **falha de instrumento** em vez de
+  concluir que o host da atestação morreu. Sem isso, uma máquina de CI sem DNS reportaria o
+  defeito como presente todo dia, e um portão que grita sempre é um portão que ninguém lê.
+  `dig` ausente é a terceira falha nomeada.
+
+  **Âncoras:** `^[^/]*` em Rust (o arquivo cita a URL também numa asserção de teste na `:91`,
+  e comentários futuros a citariam) e `^[^#]*` no markdown do schema.
+
+  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: corelink --version
+  imprime atestacao em https://corelink.humangr.com/... que NAO resolve (controle
+  corelink-api -> 172.67.167.13); schema JSON publicado repete o host morto=1"* e exit 0.
+  Numa cópia com a URL apontando para `corelink-api.humangr.com`, sai *"FALHA: o host da
+  atestacao (corelink-api.humangr.com) resolve para 172.67.167.13"* e exit 1.
+
+  **O que ele NÃO decide, e é metade do problema:** se o artefato **existe**. Mesmo com o
+  host resolvendo, o caminho promete `slsa3.json` de uma cadeia que é **L2** ([B-045], cujo
+  `verify` é um laço fechado sobre doze arquivos de `specs/` — `tools/` está fora) e que
+  nunca emitiu bundle ([B-091]). Fechar este item pelo DNS e parar aí trocaria um erro de
+  resolução por um 404, o que é pior: o 404 parece nossa culpa e é.
 last-verified: 2026-08-31
 ```
