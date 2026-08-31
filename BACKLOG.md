@@ -7315,3 +7315,72 @@ verify-means: |
   obviamente a resposta).
 last-verified: 2026-08-30
 ```
+
+### B-130 — the DPA acceptance record is client-asserted, and prod holds 3 hashes for one version
+
+Measured 2026-08-31 against prod D1 (`d64742ea`), containers verified at
+**`ddd95560-r1`** in all five regions by `GET` per application id (the list
+endpoint serves a stale view). Full method in
+`reports/go-live/D-3-dpa-consent.md`.
+
+`routes/dpa_accept.rs` stores the **client-attested** `notice_hash` and does not
+re-derive it, validating only well-formedness (hex64). Its own module doc states
+the reason and argues the choice is forensically preferable to re-deriving
+against a divergent second copy. The consequence is unstated anywhere a reader of
+the RECORD would see it: the acceptance answers "what did the customer see?" with
+**whatever the client said it saw**.
+
+**Two things make that worse than a documented trade-off:**
+
+**1. The justification cites a file that is not in the repository.** The comment
+names `legal/dpa/v1.0.0.<locale>.md` as the diverging legal artifact. It does not
+exist — there is no `legal/dpa/` tree at all (control: `legal/**` holds 41 files
+and lists fine; `apps/admin-ui/src/content/dpa.en.md` is present at 2 151 bytes).
+The conclusion may still be correct; the argument for it is not checkable as
+written.
+
+**2. Production already shows the divergence.** 24 acceptances, ALL of version
+`1.0.0` locale `en-US`, carry **3 distinct `notice_hash` values**:
+
+| hash | accepts | first | last |
+|---|---|---|---|
+| `acd4f7b5704c` | 12 | 2026-07-10 22:30 | 2026-07-11 13:08 |
+| `2d711642b726` | **1** | 2026-07-11 03:37 | (same) |
+| `0b8d023331a3` | 11 | 2026-07-11 15:20 | 2026-08-25 19:06 |
+
+`acd4f7b5` → `0b8d0233` is a clean succession two hours apart, consistent with the
+notice text being edited **without a version bump** — notable on its own, since
+the version is what `dpa:{tenant}:{version}` and the re-accept gate key on.
+
+**`2d711642` is the finding: a singleton INSIDE the first cluster's window**, nine
+hours after it opened, while every other client was attesting `acd4f7b5`. One
+customer attested bytes nobody else did, and nothing checked. Stale cache,
+partial render, wrong locale asset or a hand-made request are indistinguishable
+in the record — and remain so after the fact, because no server-side copy was
+kept to compare against.
+
+What would close this: keep the exact served notice bytes (or a server-side hash
+of them) per version+locale at serve time, so an acceptance can be resolved to
+text later; and bump the version when the text changes, so the uniqueness key
+means what it says.
+
+Relates to [B-127] (the same shape: a record that cannot be evaluated, with
+nothing marking it unevaluable).
+
+```backlog
+id: B-130
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  grep -q 'CLIENT-ATTESTED hash (validated well-formed)' \
+    crates/corelink-container/src/routes/dpa_accept.rs
+verify-means: |
+  open — passes while the route still records the client's hash without a
+  server-side re-derivation, i.e. while the record remains client-asserted. It
+  asserts NO count: a verify pinned to "3 distinct hashes" would go green when a
+  fourth appeared, which is the wrong direction, and one that queried production
+  would make the gate depend on the network and on credentials. The real check is
+  re-running the queries in reports/go-live/D-3-dpa-consent.md.
+last-verified: 2026-08-31
+```
