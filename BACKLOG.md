@@ -8506,15 +8506,24 @@ ou de registro do runner. Nenhuma contagem de "quantos runners aparecem online" 
 isso, e este item **não** é o lugar de investigá-lo; registro só para que a próxima pessoa
 não confunda o teto com o gargalo.
 
-**Procedência, e ela limita o peso disto:** os três números vêm do clone local em
-`pr-0c-d4-openrouter`, HEAD de **2026-08-27** — quatro dias defasado e fora da `main`. Não
-foi feito `fetch`. São **indício forte, não estado confirmado**, e uma única leitura de
-`deploy/cloudflare/wrangler.jsonc` na `main` confirma ou derruba os três de uma vez. Trate
-como hipótese até lá.
+**Confirmado contra a `main` em 2026-08-31**, lendo
+`deploy/cloudflare/wrangler.jsonc` pela API em vez do clone local: os três valores batem
+exatamente (`standard-4`, `max_instances: 250`, e os vizinhos `CheckHostContainer: 1` e
+`RunnerDevEnvDO: 10`). A primeira leitura tinha vindo de um clone quatro dias defasado e foi
+registrada como hipótese até esta confirmação.
 
 *(Nota lateral, porque afeta quem for ler o arquivo: três linhas acima do `max_instances:
 250` está o comentário `// O7 hardening (2026-07-06): raised 2 → 6`. O dado está certo e a
 explicação ao lado, não — e a explicação é o que uma pessoa lê para decidir.)*
+
+**Armadilha de instrumento, para quem for medir a fila da frota:** o campo `startedAt` de um
+**run** NÃO mede espera por runner. Medido em 2026-08-31 sobre 200 runs consecutivos:
+`startedAt == createdAt` em **200 de 200**, o que produz mediana, p90 e máximo de **0s** — um
+número que se lê como "não há fila" e que na verdade responde outra pergunta. A espera por
+runner acontece no nível de **job**: use `created_at` contra `started_at` de
+`/actions/runs/<id>/jobs`, onde os mesmos runs mostram esperas reais de 2s a 275s. É a mesma
+família do `121 MiB` contra `680 MB` acima — o número não estava errado, estava respondendo
+outra pergunta.
 
 **As cinco saídas na mesa**, e a escolha é da guardiã — este item não a faz:
 
