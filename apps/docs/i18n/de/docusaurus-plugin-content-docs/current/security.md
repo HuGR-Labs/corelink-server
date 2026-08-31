@@ -21,8 +21,10 @@ Personal Access Tokens (PATs) sind der einzige Anmeldeinformationstyp, den CoreL
 
 PATs werden an zwei Stellen erstellt:
 
-1. **Registrierungsassistent** — stellt automatisch ein Starter-PAT mit den Scopes `cas:read cas:write ac:read ac:write` aus. Dies ist heute der einzige produktive Weg, ein PAT zu erstellen.
-2. **Self-Service-PAT-Ausstellung** (`POST /v1/pats`, ein PAT mit einer beliebigen Teilmenge von Scopes) ist geplant, aber noch nicht auf eine Route verdrahtet — der Aufruf liefert heute `404`. Wenden Sie sich bis dahin an den Support, um weitere PATs für Ihren Mandanten ausstellen zu lassen.
+1. **Registrierungsassistent** — stellt automatisch ein Starter-PAT mit den Scopes `cas:read cas:write ac:read ac:write` aus.
+2. **Self-Service-PAT-Ausstellung** — die Seite **Keys** im Dashboard, bereitgestellt von [`POST /v1/customer/keys`](./reference/api/endpoints/post-v1-customer-keys.mdx). Senden Sie `{"name": "...", "scopes": ["cas:r", "cas:rw"]}`; die Antwort enthält das neue Token genau einmal.
+
+   Das Ausstellen eines Tokens mit einem Schreib- oder Admin-Scope setzt voraus, dass der Aufrufer bereits eine Cache-Schreibberechtigung besitzt — ein reines Lese-Token (`cas:r`) kann sich selbst kein Schreib-Token ausstellen und erhält `403`.
 
 Bei der Erstellung wird der Klartext-Token **genau einmal** angezeigt. CoreLink speichert den Klartext niemals. Es gibt keinen Endpunkt zum Abrufen.
 
@@ -46,7 +48,7 @@ CoreLink stellt kein HTTP bereit. Der gesamte API-Verkehr verwendet TLS 1.2 oder
 
 ### Rotation
 
-PATs haben keine automatische Rotation. Empfohlene Rotationskadenz, sobald die Self-Service-Ausstellung verfügbar ist:
+PATs haben keine automatische Rotation. Empfohlene Rotationskadenz:
 
 | PAT-Typ | Kadenz |
 |---|---|
@@ -54,11 +56,22 @@ PATs haben keine automatische Rotation. Empfohlene Rotationskadenz, sobald die S
 | CI/CD | 90 Tage oder bei Teamwechsel |
 | Integration (gemeinsam genutzt) | 30 Tage |
 
-**Self-Service-PAT-Erstellung und -Widerruf (`POST /v1/pats`, `DELETE /v1/pats/:pat_id`) sind noch nicht produktiv** — die Routen sind nicht verdrahtet. Wenden Sie sich bis dahin an [support@humangr.com](mailto:support@humangr.com), um ein Ersatz-PAT ausstellen zu lassen und das alte zu widerrufen; es gibt heute keinen Weg im Produkt selbst.
+Die Rotation ist Self-Service: Stellen Sie das Ersatz-Token auf der Seite **Keys** aus, stellen Sie Ihre Clients darauf um und widerrufen Sie dann das alte Token auf derselben Seite.
 
 ### Widerruf
 
-Der Widerruf läuft aktuell über den Support — schreiben Sie an [support@humangr.com](mailto:support@humangr.com) mit dem Label des PATs oder der Mandanten-ID. Nach dem Widerruf schlagen laufende Anfragen mit diesem PAT innerhalb des Cloudflare-Edge-Propagationsfensters (typischerweise < 100 ms) mit `401` fehl.
+Widerrufen Sie über die Seite **Keys** im Dashboard oder rufen Sie direkt
+[`POST /v1/customer/keys/{pat_id}/revoke`](./reference/api/endpoints/post-v1-customer-keys-by-pat_id-revoke.mdx)
+auf. Beachten Sie die Form: Der Widerruf ist ein `POST` auf einen
+`/revoke`-Unterpfad, kein `DELETE` auf das Token.
+
+Ein Widerruf ist eine destruktive, mandantenweite Operation und erfordert
+deshalb eine Cache-Schreibberechtigung — ein reines Lese-Token (`cas:r`)
+widerruft nichts, auch nicht die übrigen Tokens des eigenen Mandanten, und
+erhält `403`.
+
+Nach dem Widerruf schlagen laufende Anfragen mit diesem PAT innerhalb des
+Cloudflare-Edge-Propagationsfensters (typischerweise < 100 ms) mit `401` fehl.
 
 ## Scopes
 

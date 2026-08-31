@@ -66,7 +66,7 @@ corelink audit export --tenant <tenant_id> --since <ms> --until <ms> \
 Para volver a revisar una exportación que ya tienes, usa
 `corelink audit verify <ruta>`.
 
-Para el sobre NDJSON en streaming de `GET /v1/audit/export` — una línea
+Para el sobre NDJSON en streaming de `GET /v1/audit/{tenant}/export` — una línea
 `{event, proof}` por registro de auditoría más una línea final de
 manifiesto — `corelink audit verify-ndjson` revalida la cadena completa
 contra el ancla de cabeza de cadena que el servidor publica en el

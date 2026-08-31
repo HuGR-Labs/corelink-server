@@ -141,20 +141,27 @@ curl -s https://corelink-api.humangr.com/api/health
 
 ---
 
-### Gerenciamento de PATs (`GET`/`POST /v1/pats`, `DELETE /v1/pats/:pat_id`) — planejado, ainda não em produção
+### Gerenciamento de PATs (`GET`/`POST /v1/customer/keys`, `POST /v1/customer/keys/:pat_id/revoke`)
 
-Essas rotas são especificadas para uma futura superfície self-service de
-gerenciamento de PATs (listar, criar, revogar), mas **não estão conectadas
-hoje** — chamar qualquer uma delas retorna `404`. O único caminho de criação
-de PAT em produção é o PAT inicial automático emitido pelo assistente de
-cadastro. Existe uma superfície admin-only, somente leitura, para o suporte
-inspecionar os PATs de um tenant (`GET /v1/admin/tenants/{tenant_id}/pats`),
-mas ela exige um PAT de administrador e não é chamável com um token comum de
-cliente.
+Listar / criar / revogar self-service, servido pelo portal do cliente
+(`crates/corelink-container/src/routes/customer.rs:212,216`). Repare nos
+formatos, porque uma versão anterior desta página documentava uma superfície
+`/v1/pats` que nunca esteve conectada:
 
-Até que o gerenciamento self-service de PATs esteja disponível, escreva para
-[support@humangr.com](mailto:support@humangr.com) para emitir um PAT
-adicional ou revogar um existente.
+- `GET /v1/customer/keys` → `{ "pats": [ … ], "byok": { … } }`. Apenas metadados.
+- `POST /v1/customer/keys` com `{ "name": "...", "scopes": [ … ] }` → `201
+  { "pat": { … }, "token": "…" }`. O token é exibido uma única vez.
+- `POST /v1/customer/keys/:pat_id/revoke` → `200 { "pat": { … } }`. A revogação
+  é um POST para um sub-caminho, e **não** um `DELETE` sobre o token.
+
+As três são operações admin-grade sobre as credenciais do tenant e exigem uma
+capacidade de escrita no cache; um token somente leitura (`cas:r`) recebe `403`
+em todas. Um token somente leitura também não consegue emitir para si mesmo um
+token com escopo de escrita.
+
+Existe uma superfície admin-only, somente leitura, para o suporte inspecionar os
+PATs de um tenant (`GET /v1/admin/tenants/{tenant_id}/pats`); ela exige um PAT de
+administrador e não é chamável com um token comum de cliente.
 
 ---
 

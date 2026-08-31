@@ -67,7 +67,7 @@ corelink audit export --tenant <tenant_id> --since <ms> --until <ms> \
 Um einen bereits vorliegenden Export erneut zu prüfen, nutzen Sie
 `corelink audit verify <pfad>`.
 
-Für den gestreamten NDJSON-Umschlag aus `GET /v1/audit/export` — je eine
+Für den gestreamten NDJSON-Umschlag aus `GET /v1/audit/{tenant}/export` — je eine
 `{event, proof}`-Zeile pro Audit-Datensatz plus eine abschließende
 Manifest-Zeile — verifiziert `corelink audit verify-ndjson` die gesamte
 Kette gegen den Chain-Head-Anker, den der Server im Antwort-Header

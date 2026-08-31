@@ -142,7 +142,7 @@ Each row carries the canonical CloudEvents 1.0 attribute set + CoreLink extensio
 
 **Verify reports "chain break".** Stop — that's a SEV-0 signal. Open a support ticket at [`support@hugr.com`](mailto:support@hugr.com) **with the export file attached**. Internal triage runbook: `RB-AUDIT-EXPORT-INTEGRITY`.
 
-**"production server-side endpoint not yet wired".** Today the CLI requires `--fixture` for offline / regression mode while the CF Worker `GET /v1/audit/export/window` impl lands. Production wiring goes live in the audit-export-worker rollout — track `ROADMAP-TO-GA.md` §4 R-4.
+**"production server-side endpoint not yet wired".** Stale message. The route is mounted: `GET /v1/audit/{tenant}/export` (`crates/corelink-container/src/routes/audit_export/types.rs:20`), reached through the Worker's generic `/v1/*` forward. `--fixture` is for offline / regression runs, not a stand-in for a missing endpoint. Note the shape if you are hand-rolling the call: the tenant is a **path segment**, and the window is `from`/`to` — a `/v1/audit/export` with the tenant in the query string was never served.
 
 ## Related
 

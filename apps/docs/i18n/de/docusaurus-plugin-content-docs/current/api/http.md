@@ -141,19 +141,27 @@ curl -s https://corelink-api.humangr.com/api/health
 
 ---
 
-### Verwaltung von PATs (`GET`/`POST /v1/pats`, `DELETE /v1/pats/:pat_id`) — geplant, noch nicht live
+### Verwaltung von PATs (`GET`/`POST /v1/customer/keys`, `POST /v1/customer/keys/:pat_id/revoke`)
 
-Diese Routen sind für eine zukünftige Self-Service-PAT-Verwaltung (Liste,
-Erstellung, Widerruf) spezifiziert, aber **heute nicht verdrahtet** — jeder
-Aufruf liefert `404`. Der einzige aktive PAT-Erstellungsweg ist der
-automatische Start-PAT des Registrierungsassistenten. Eine Admin-only,
-nur lesende Oberfläche existiert, damit der Support die PATs eines Tenants
-einsehen kann (`GET /v1/admin/tenants/{tenant_id}/pats`), erfordert aber
-ein Admin-PAT und ist nicht mit einem normalen Kunden-Token aufrufbar.
+Self-Service zum Auflisten / Erstellen / Widerrufen, bereitgestellt vom
+Kundenportal (`crates/corelink-container/src/routes/customer.rs:212,216`).
+Beachten Sie die Formen, denn eine frühere Fassung dieser Seite dokumentierte
+eine `/v1/pats`-Oberfläche, die nie verdrahtet war:
 
-Bis die Self-Service-PAT-Verwaltung verfügbar ist, schreiben Sie an
-[support@humangr.com](mailto:support@humangr.com), um ein zusätzliches PAT
-ausstellen oder eines widerrufen zu lassen.
+- `GET /v1/customer/keys` → `{ "pats": [ … ], "byok": { … } }`. Nur Metadaten.
+- `POST /v1/customer/keys` mit `{ "name": "...", "scopes": [ … ] }` → `201
+  { "pat": { … }, "token": "…" }`. Das Token wird genau einmal angezeigt.
+- `POST /v1/customer/keys/:pat_id/revoke` → `200 { "pat": { … } }`. Der Widerruf
+  ist ein POST auf einen Unterpfad, **kein** `DELETE` auf das Token.
+
+Alle drei sind Admin-Grade-Operationen auf den Anmeldeinformationen des Tenants
+und erfordern eine Cache-Schreibberechtigung; ein reines Lese-Token (`cas:r`)
+erhält bei jeder davon `403`. Ein reines Lese-Token kann sich außerdem kein
+Token mit Schreib-Scope ausstellen.
+
+Eine Admin-only, nur lesende Oberfläche existiert, damit der Support die PATs
+eines Tenants einsehen kann (`GET /v1/admin/tenants/{tenant_id}/pats`); sie
+erfordert ein Admin-PAT und ist nicht mit einem normalen Kunden-Token aufrufbar.
 
 ---
 

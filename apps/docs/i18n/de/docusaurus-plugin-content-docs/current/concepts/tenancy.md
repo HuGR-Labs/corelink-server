@@ -46,7 +46,7 @@ akzeptiert. Es gibt keine API-Schlüssel, OAuth-Tokens oder Dienstkonten — ein
 | Format | `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` — `<env>` ist `pat` (Nutzer-PAT), `ci` (CI-Runner-Token) oder `ro` (Nur-Lese-Token) |
 | Geltungsbereich | Genau ein Tenant zum Zeitpunkt der Ausstellung |
 | Einmal angezeigt | Wird nur bei der Erstellung im Klartext angezeigt; niemals im Klartext serverseitig gespeichert |
-| Widerrufbar | Nur der bei der Registrierung ausgestellte Start-PAT existiert heute self-service; Widerruf oder Ausstellung weiterer PATs (`DELETE /v1/pats/:pat_id`, `POST /v1/pats`) ist noch nicht auf eine Route verdrahtet — wenden Sie sich in der Zwischenzeit an den Support |
+| Widerrufbar | Ja, self-service, über die Seite **Keys** im Dashboard oder via `POST /v1/customer/keys/{pat_id}/revoke`. Weitere PATs stellt `POST /v1/customer/keys` aus. Beides erfordert eine Cache-Schreibberechtigung — ein reines Lese-Token (`cas:r`) kann weder das eine noch das andere |
 | Ablauf | Optional; bei der Erstellung festgelegt; standardmäßig ohne Ablauf |
 
 ### PAT-Geltungsbereiche
@@ -68,10 +68,9 @@ ausführen kann. Der bei der Registrierung ausgestellte Start-PAT hat
 
 ### CI/CD-Best-Practice
 
-Verwenden Sie Ihren persönlichen Start-PAT nicht in der CI. Die Self-Service-Erstellung
-eines dedizierten CI-PAT (`POST /v1/pats`) ist geplant, aber noch nicht auf eine
-Route verdrahtet. Wenden Sie sich bis dahin an [support@humangr.com](mailto:support@humangr.com)
-und fordern Sie einen dedizierten CI-PAT mit minimalen Geltungsbereichen an
+Verwenden Sie Ihren persönlichen Start-PAT nicht in der CI. Stellen Sie einen
+dedizierten CI-PAT mit den minimal erforderlichen Geltungsbereichen über die
+Seite **Keys** im Dashboard oder mit `POST /v1/customer/keys` aus
 (typischerweise `cas:read cas:write ac:read ac:write`, ohne `admin`).
 
 Speichern Sie den zurückgegebenen Token-Wert in den GitHub-Actions-Secrets, in
@@ -116,12 +115,17 @@ werden pro Umgebung konfiguriert.
 
 ## PATs auflisten und widerrufen
 
-Es gibt heute keine Self-Service-Route zum Auflisten oder Widerrufen von PATs
-(`GET`/`POST /v1/pats`, `DELETE /v1/pats/:pat_id` sind geplant, aber nicht
-verdrahtet). Eine Admin-only-Leseoberfläche existiert für den Support, um die
-PATs eines Tenants einzusehen (`GET /v1/admin/tenants/{tenant_id}/pats`), ist
-aber nicht mit einem regulären PAT aufrufbar. Um ein PAT zu widerrufen, schreiben
-Sie an [support@humangr.com](mailto:support@humangr.com).
+Auflisten und Widerrufen sind Self-Service: `GET /v1/customer/keys` listet die
+PATs des Tenants auf (nur Metadaten — kein Token-Material) zusammen mit dessen
+BYOK-Status, und `POST /v1/customer/keys/{pat_id}/revoke` widerruft einen davon.
+Beides sind Admin-Grade-Operationen auf den Anmeldeinformationen des Tenants und
+erfordern deshalb eine Cache-Schreibberechtigung; ein reines Lese-Token
+(`cas:r`) erhält `403`, statt die Anmeldeinformationen seines Tenants auflisten
+oder widerrufen zu dürfen.
 
-Sobald der Widerruf verfügbar ist (self-service oder über den Support), erhalten
-laufende Anfragen mit diesem PAT `401 Unauthorized`.
+Daneben existiert eine Admin-only-Leseoberfläche, mit der der Support die PATs
+eines Tenants einsehen kann (`GET /v1/admin/tenants/{tenant_id}/pats`); sie
+erfordert ein Admin-PAT und ist mit einem regulären Kunden-Token nicht aufrufbar.
+
+Nach dem Widerruf erhalten laufende Anfragen mit diesem PAT
+`401 Unauthorized`.

@@ -141,20 +141,27 @@ curl -s https://corelink-api.humangr.com/api/health
 
 ---
 
-### Gestión de PATs (`GET`/`POST /v1/pats`, `DELETE /v1/pats/:pat_id`) — planificado, aún no activo
+### Gestión de PATs (`GET`/`POST /v1/customer/keys`, `POST /v1/customer/keys/:pat_id/revoke`)
 
-Estas rutas están especificadas para una futura superficie self-service de
-gestión de PATs (listar, crear, revocar) pero **no están conectadas hoy** —
-llamar a cualquiera de ellas devuelve `404`. La única vía de creación de PAT
-activa es el PAT inicial automático emitido por el asistente de registro.
-Existe una superficie admin-only de solo lectura para que soporte inspeccione
-los PAT de un tenant (`GET /v1/admin/tenants/{tenant_id}/pats`), pero requiere
-un PAT de administrador y no es algo que un token de cliente normal pueda
-llamar.
+Listar / crear / revocar self-service, servido por el portal del cliente
+(`crates/corelink-container/src/routes/customer.rs:212,216`). Note las formas,
+porque una versión anterior de esta página documentaba una superficie
+`/v1/pats` que nunca estuvo conectada:
 
-Hasta que la gestión self-service de PATs esté disponible, escriba a
-[support@humangr.com](mailto:support@humangr.com) para emitir un PAT adicional
-o revocar uno.
+- `GET /v1/customer/keys` → `{ "pats": [ … ], "byok": { … } }`. Solo metadatos.
+- `POST /v1/customer/keys` con `{ "name": "...", "scopes": [ … ] }` → `201
+  { "pat": { … }, "token": "…" }`. El token se muestra una sola vez.
+- `POST /v1/customer/keys/:pat_id/revoke` → `200 { "pat": { … } }`. La revocación
+  es un POST a un sub-camino, **no** un `DELETE` sobre el token.
+
+Las tres son operaciones admin-grade sobre las credenciales del tenant y exigen
+una capacidad de escritura en el caché; un token de solo lectura (`cas:r`) recibe
+`403` en todas. Un token de solo lectura tampoco puede emitirse a sí mismo un
+token con scope de escritura.
+
+Existe una superficie admin-only de solo lectura para que soporte inspeccione los
+PAT de un tenant (`GET /v1/admin/tenants/{tenant_id}/pats`); requiere un PAT de
+administrador y no es algo que un token de cliente normal pueda llamar.
 
 ---
 

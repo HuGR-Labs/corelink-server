@@ -107,11 +107,17 @@ jobs:
 
 ## Job-scoped PATs
 
-Hoy no hay una API de autoservicio para generar un PAT de corta
-duración por pipeline (vea [Security model](../../security.md)) —
-escriba a [support@humangr.com](mailto:support@humangr.com) para
-solicitar un PAT de CI dedicado, y luego inyéctelo mediante el
-almacén de secretos de su proveedor de CI como se muestra arriba.
+Emita usted mismo un PAT de CI dedicado — desde la página **Keys** del panel
+o con `POST /v1/customer/keys` y el cuerpo `{"name": "...", "scopes": [ … ]}`
+(vea [Security model](../../security.md)) — y luego inyéctelo mediante el
+almacén de secretos de su proveedor de CI como se muestra arriba. Para
+revocarlo, use `POST /v1/customer/keys/{pat_id}/revoke`.
+
+El cuerpo de creación acepta solo `{name, scopes}`: no hay campo de TTL, así que
+un PAT no vence por sí solo — un token por pipeline significa emitir-y-revocar,
+no un token con vencimiento. Emitir un PAT con scope de escritura también exige
+que quien llama ya tenga una capacidad de escritura en el caché; un token de
+solo lectura (`cas:r`) recibe `403`.
 
 ## Next steps
 

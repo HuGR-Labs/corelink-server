@@ -90,10 +90,16 @@ jobs:
 
 ## Job-scoped PATs (recommended)
 
-There is no self-service API to mint a short-lived PAT per pipeline today
-(see [Security model](../../security.md)) — email
-[support@humangr.com](mailto:support@humangr.com) to request a dedicated CI
-PAT, then inject it via your CI provider's secret store as shown above.
+Mint a dedicated CI PAT yourself — the **Keys** page in the dashboard, or
+`POST /v1/customer/keys` with `{"name": "...", "scopes": [ … ]}` (see
+[Security model](../../security.md)) — then inject it via your CI provider's
+secret store as shown above. Revoke it with
+`POST /v1/customer/keys/{pat_id}/revoke`.
+
+The create body is `{name, scopes}` only: there is no TTL field, so a PAT does
+not expire on its own — a per-pipeline token means mint-then-revoke, not an
+expiring token. Minting a write-scoped PAT also requires a caller that already
+holds a cache-write capability; a read-only (`cas:r`) token gets `403`.
 
 ## Next steps
 

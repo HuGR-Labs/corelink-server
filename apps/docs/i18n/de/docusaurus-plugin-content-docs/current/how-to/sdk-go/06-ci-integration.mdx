@@ -109,11 +109,18 @@ jobs:
 
 ## Job-gebundene PATs
 
-Es gibt heute keine Self-Service-API, um pro Pipeline einen kurzlebigen
-PAT zu erstellen (siehe [Security model](../../security.md)) — schreiben
-Sie an [support@humangr.com](mailto:support@humangr.com), um einen
-dedizierten CI-PAT anzufordern, und binden Sie ihn dann wie oben gezeigt
-über den Secret-Store Ihres CI-Anbieters ein.
+Stellen Sie einen dedizierten CI-PAT selbst aus — über die Seite **Keys** im
+Dashboard oder mit `POST /v1/customer/keys` und dem Body
+`{"name": "...", "scopes": [ … ]}` (siehe
+[Security model](../../security.md)) — und binden Sie ihn dann wie oben gezeigt
+über den Secret-Store Ihres CI-Anbieters ein. Widerrufen wird er mit
+`POST /v1/customer/keys/{pat_id}/revoke`.
+
+Der Erstellungs-Body akzeptiert nur `{name, scopes}`: Es gibt kein TTL-Feld, ein
+PAT läuft also nicht von selbst ab — ein Token pro Pipeline heißt ausstellen und
+wieder widerrufen, nicht ein ablaufendes Token. Das Ausstellen eines PAT mit
+Schreib-Scope setzt außerdem voraus, dass der Aufrufer bereits eine
+Cache-Schreibberechtigung besitzt; ein reines Lese-Token (`cas:r`) erhält `403`.
 
 ## Nächste Schritte
 

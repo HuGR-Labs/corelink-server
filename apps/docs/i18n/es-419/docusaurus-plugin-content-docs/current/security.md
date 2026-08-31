@@ -21,8 +21,10 @@ Los Personal Access Tokens (PAT) son el único tipo de credencial que CoreLink a
 
 Los PAT se crean en dos lugares:
 
-1. **Asistente de registro** — emite automáticamente un PAT inicial con los scopes `cas:read cas:write ac:read ac:write`. Esta es la única vía de creación de PAT que está activa hoy.
-2. **Emisión self-service de PAT** (`POST /v1/pats`, creando PATs adicionales con un subconjunto de scopes personalizado) está planificada pero aún no conectada a una ruta — hoy devuelve `404`. Mientras tanto, pida a soporte que emita PATs adicionales para su tenant.
+1. **Asistente de registro** — emite automáticamente un PAT inicial con los scopes `cas:read cas:write ac:read ac:write`.
+2. **Emisión self-service de PAT** — la página **Keys** del panel, servida por [`POST /v1/customer/keys`](./reference/api/endpoints/post-v1-customer-keys.mdx). Envíe `{"name": "...", "scopes": ["cas:r", "cas:rw"]}` y la respuesta trae el nuevo token una sola vez.
+
+   Emitir un token que lleve cualquier scope de escritura o de admin exige que quien llama ya tenga una capacidad de escritura en el caché — un token de solo lectura (`cas:r`) no puede emitirse a sí mismo un token de escritura, y recibe `403`.
 
 En el momento de la creación, el token en texto plano se muestra **exactamente una vez**. CoreLink nunca almacena el texto plano. No existe un endpoint de recuperación.
 
@@ -46,7 +48,7 @@ CoreLink no sirve HTTP. Todo el tráfico de la API usa TLS 1.2 o TLS 1.3. HTTPS 
 
 ### Rotación
 
-Los PAT no tienen rotación automática. Cadencia de rotación recomendada una vez que la emisión self-service esté disponible:
+Los PAT no tienen rotación automática. Cadencia de rotación recomendada:
 
 | Tipo de PAT | Cadencia |
 |---|---|
@@ -54,11 +56,22 @@ Los PAT no tienen rotación automática. Cadencia de rotación recomendada una v
 | CI/CD | 90 días o ante un cambio de equipo |
 | Integración (compartido) | 30 días |
 
-**La creación y revocación self-service de PATs (`POST /v1/pats`, `DELETE /v1/pats/:pat_id`) todavía no están activas** — las rutas no están conectadas. Mientras tanto, escriba a [support@humangr.com](mailto:support@humangr.com) para que le emitan un PAT de reemplazo y revoquen el anterior; hoy no hay forma de hacerlo desde el producto.
+La rotación es self-service: emita el reemplazo en la página **Keys**, migre sus clientes a él y luego revoque el token anterior desde la misma página.
 
 ### Revocación
 
-Hoy la revocación se gestiona a través de soporte — escriba a [support@humangr.com](mailto:support@humangr.com) con la etiqueta del PAT o el ID del tenant. Una vez revocado, las solicitudes en curso con ese PAT fallarán con `401` dentro de la ventana de propagación del borde de Cloudflare (típicamente < 100 ms).
+Revoque desde la página **Keys** del panel, o llame directamente a
+[`POST /v1/customer/keys/{pat_id}/revoke`](./reference/api/endpoints/post-v1-customer-keys-by-pat_id-revoke.mdx).
+Note la forma: la revocación es un `POST` a un sub-camino `/revoke`, no un
+`DELETE` sobre el token.
+
+Revocar es una operación destructiva y de alcance para todo el tenant, así que
+exige una capacidad de escritura en el caché — un token de solo lectura
+(`cas:r`) no revoca nada, ni siquiera los demás tokens de su propio tenant, y
+recibe `403`.
+
+Una vez revocado, las solicitudes en curso con ese PAT fallan con `401` dentro
+de la ventana de propagación del borde de Cloudflare (típicamente < 100 ms).
 
 ## Scopes
 
