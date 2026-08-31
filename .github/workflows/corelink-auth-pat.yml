@@ -1,0 +1,113 @@
+name: corelink-auth + corelink-pat (B-067)
+
+# CI gate for the product's two AUTHENTICATION primitive crates.
+#
+# Why this file exists (B-067, 2026-08-31)
+# ----------------------------------------
+# Before this lane, `corelink-auth` (WebAuthn, recovery OTP) and `corelink-pat`
+# (Argon2id, credential verification) appeared in EXACTLY ONE workflow in the
+# whole repo — `mutation-nightly.yml` — and there only as a MUTATION matrix, not
+# as a test run. That lane asks for `runs-on: ubuntu-x64-4core`, carries no
+# `schedule:`, and has 0 successes in 35 runs (hosted minutes are billing-blocked
+# since 2026-08-24). Net: ZERO test execution in CI for the crates that hold the
+# product's credential primitives, while they carry ~438 test functions.
+#
+# Measured with a control so "I found nothing" and "my query broke" could not
+# share an output:
+#   grep -rlE 'corelink-(auth|pat)\b' .github/workflows/   →  1 file
+#   grep -rlE 'corelink-hash\b'       .github/workflows/   →  10 files   (control)
+#
+# The compensation the other crate lanes point at does not hold either: they say
+# workspace-wide gates "live in cas_foundation.yml::workspace-build-test per
+# CI-OPT-001", and THAT lane is `workflow_dispatch`-only, hosted, and has 0
+# successes in 321 runs. So nothing downstream was covering these two.
+#
+# B-067 states the sequencing plainly, and it is the reason this is a PR gate and
+# not a nightly: this comes BEFORE any credential repair ([B-073], [B-074],
+# [B-081]). Fixing authentication with no test execution is gambling.
+#
+# NOTE on scope: this lane runs the crates' NORMAL tests. The `#[ignore]` tests
+# in `corelink-pat` (2 files) cover a real end-to-end PAT path and are NOT run
+# here — nothing in the repo runs them, which is [B-068], a separate item with a
+# separate blocker (they need real D1/R2/Stripe credentials).
+
+on:
+  pull_request:
+    paths:
+      - 'crates/corelink-auth/**'
+      - 'crates/corelink-pat/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/corelink-auth-pat.yml'
+  # NO `push: branches:[main]` and NO `schedule:`, deliberately, matching the
+  # sibling crate lanes. A cron only earns its keep when something can change
+  # WITHOUT a commit (CVE feeds, prod state, backups, certs); these crates change
+  # only when someone commits to them, and the `pull_request` trigger above
+  # already catches exactly that. Re-verifying byte-identical code on a clock is
+  # what the 2026-08-02 sweep removed from 14 workflows.
+
+permissions:
+  contents: read
+
+# Cancel a superseded PR run on re-push (don't waste runner minutes).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  pr-gate:
+    name: PR gate (clippy + tests — corelink-auth, corelink-pat)
+    # `corelink` — CoreLink's own ephemeral Linux fabric (zero GitHub billing).
+    # Chosen over the macOS `corelink-builder` fleet on purpose: these are two
+    # crate-scoped compiles, which the ephemeral box handles at ~4 vCPU / 12.5 GB
+    # with a pre-seeded ~/.cargo, and it keeps this OFF the founder's Mac — which
+    # is simultaneously the CI runner, the dev machine, and at 95% disk ([B-128]).
+    #
+    # NOT `ubuntu-latest`: hosted minutes are billing-blocked on this org, which
+    # is the whole of [B-110]. A hosted lane here would simply never run, which is
+    # the failure mode this file exists to end.
+    #
+    # ⚠️ The `Swatinem/rust-cache` step below is gated `runner.environment ==
+    # 'github-hosted'`, so it SKIPS here and this lane compiles cold every run.
+    # Do NOT re-enable it for self-hosted: that guard exists because the MAC
+    # fleet shares one $HOME and rust-cache's prune deletes a sibling job's
+    # registry mid-compile (#979/#980).
+    runs-on: corelink
+    # Argon2id is deliberately slow, and the crates carry ~438 test functions, so
+    # this is set well above the sibling lanes' 15 min rather than assuming
+    # parity. Bounds RUNNING time only — it does not cap time spent QUEUED on a
+    # fabric spawn.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+
+      # `rust-toolchain.toml` pins 1.91.1 and lists clippy/rustfmt, and rustup
+      # honours that file over any `rustup default`. Asserting it makes image
+      # drift fail loudly instead of silently changing the compiler.
+      - name: Assert the workspace-pinned toolchain (rust-toolchain.toml)
+        run: bash scripts/ci-assert-pinned-toolchain.sh
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
+        if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
+        with:
+          workspaces: ". -> target"
+
+      - name: cargo clippy (corelink-auth, -D warnings)
+        run: cargo clippy --package corelink-auth --all-targets -- -D warnings
+
+      - name: cargo clippy (corelink-pat, -D warnings)
+        run: cargo clippy --package corelink-pat --all-targets -- -D warnings
+
+      # `--all-targets` so unit, integration and doc-adjacent test targets all
+      # EXECUTE. This is the step whose absence B-067 is about: the point is not
+      # that the crates compile, it is that their tests run.
+      - name: cargo test (corelink-auth, debug)
+        run: cargo test --package corelink-auth --all-targets
+
+      - name: cargo test (corelink-pat, debug)
+        run: cargo test --package corelink-pat --all-targets
