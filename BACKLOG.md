@@ -5260,13 +5260,22 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  bash -c 'i=apps/docs/docs/intro.md
-  [ -f "$i" ] || { echo "FALHA: intro.md sumiu — o reparo nao pode ser verificado."; exit 1; }
-  b3=$(grep -ciE "blake3|b3sum" "$i" | tr -d " ")
-  [ "$b3" -gt 0 ] || { echo "FALHA: intro.md voltou a nao mencionar BLAKE3/b3sum — o reparo regrediu."; exit 1; }
-  ensina=$(grep -inE "sha-?256" "$i" | grep -viE "not.{0,4}sha256sum" | wc -l | tr -d " ")
-  [ "$ensina" = 0 ] || { echo "FALHA: intro.md voltou a ensinar SHA-256 em $ensina linha(s) fora da negativa — o reparo regrediu."; exit 1; }
-  echo "done: intro.md ensina BLAKE3/b3sum em $b3 lugar(es) e nenhuma linha ensina SHA-256"'
+  bash -c 'set -e
+  fs="apps/docs/docs/intro.md"
+  for loc in pt-BR es-419 de; do
+    fs="$fs apps/docs/i18n/$loc/docusaurus-plugin-content-docs/current/intro.md"
+  done
+  n=0
+  for i in $fs; do
+    [ -f "$i" ] || { echo "FALHA: $i sumiu — o reparo nao pode ser verificado."; exit 1; }
+    n=$((n+1))
+    b3=$(grep -ciE "blake3|b3sum" "$i" | tr -d " ")
+    [ "$b3" -gt 0 ] || { echo "FALHA: $i voltou a nao mencionar BLAKE3/b3sum — o reparo regrediu."; exit 1; }
+    ensina=$(grep -inE "sha-?256" "$i" | grep -vic "b3sum" | tr -d " ")
+    [ "$ensina" = 0 ] || { echo "FALHA: $i voltou a ensinar SHA-256 em $ensina linha(s) fora da negativa — o reparo regrediu."; exit 1; }
+  done
+  [ "$n" = 4 ] || { echo "FALHA: so $n dos 4 introduzidos foram checados — o comando perdeu arquivos."; exit 1; }
+  echo "done: os $n intro.md (EN + pt-BR + es-419 + de) ensinam BLAKE3/b3sum e nenhum ensina SHA-256"'
 verify-means: |
   done — polaridade INVERTIDA em relação à versão `open`. Agora falha se o BLAKE3 sumir
   da página OU se voltar a existir uma linha ensinando SHA-256 fora da negativa
@@ -5277,9 +5286,24 @@ verify-means: |
   é ele. Exigir zero ocorrências de "sha256" apagaria justamente a instrução que corrige
   o cliente.
 
-  O que NÃO decide, e admito: as demais páginas de `apps/docs/`. Este comando é escopado
-  ao `intro.md`, que era o objeto do item. Uma varredura da superfície publicada inteira
-  é trabalho maior e não cabe neste `verify`.
+  O predicado de "ensina SHA-256" é: a linha cita `sha-256` **e não cita `b3sum`**. Cheguei
+  a ele por eliminação, e registro porque a primeira tentativa era pior. Eu gateava a
+  distância entre o `**` da negação e a palavra `sha256sum` — mas a frase corrigida em
+  português diz "**não** com `sha256sum`" e em alemão "**nicht** mit `sha256sum`": entre
+  os asteriscos e a palavra há LETRAS, em quantidade que varia por idioma. Uma classe de
+  caracteres que as excluía reprovava as três traduções e aprovava o inglês. O `b3sum` na
+  mesma linha é o marcador estável: a frase que corrige o cliente sempre nomeia a
+  ferramenta certa, em qualquer idioma. Teeth test: `"Every blob is addressed by its
+  SHA-256 digest."` e `"| CAS | SHA-256-keyed blob store. |"` são ambas capturadas.
+
+  O comando cobre os **quatro** `intro.md` — o EN e os três espelhos traduzidos
+  (`pt-BR`, `es-419`, `de`) — e exige que os quatro existam. A primeira versão cobria só
+  o EN, e essa lacuna era real: os três espelhos ficaram ensinando SHA-256 depois de o EN
+  já estar corrigido. Um gate escopado ao arquivo que eu lembrei de editar aprova a
+  correção pela metade.
+
+  O que NÃO decide, e admito: as demais páginas de `apps/docs/` e seus espelhos. Uma
+  varredura da superfície publicada inteira é trabalho maior e não cabe neste `verify`.
 last-verified: 2026-08-31
 ```
 
