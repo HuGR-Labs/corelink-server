@@ -36,6 +36,33 @@ SLA_SECONDS=360
 log() { echo "[$(date -u +%H:%M:%S)] $*"; }
 fail() { echo "[FAIL] $*" >&2; exit 1; }
 
+# ---------------------------------------------------------------------------
+# B-084: this harness must not be able to emit a passing attestation for work
+# it did not do.
+#
+# Every phase below whose provider call is still a comment assigns a hardcoded
+# constant — `TENANT_STATUS="active"`, `DETECTED=true`,
+# `TENANT_STATUS_POST="degraded_read_only"`, `RECOVERY_STATUS="active"` — and
+# `SLA_RESULT` was likewise pinned to "PASS". The report written in phase 7
+# therefore said PASS regardless of the world, and that file is forwarded to
+# customer SRE as SLA evidence by
+# marketing/lighthouse-kit/05-sla-attestation-instructions.md.
+#
+# That is categorically worse than a missing control (B-083, which tracks
+# BUILDING this): a missing control leaves a gap, this manufactures proof the
+# gap is closed.
+#
+# The mechanism: each stubbed phase registers itself here. At report time, a
+# non-empty ledger means NO report is written and the script exits non-zero.
+# There is deliberately no override flag — an env var that re-enables the
+# attestation is the hole again, one indirection further away.
+#
+# TO CLOSE A PHASE: implement its real provider call and DELETE its
+# `drill_stub` line. The attestation becomes reachable when the ledger empties,
+# and not one phase before.
+STUBBED_PHASES=()
+drill_stub() { STUBBED_PHASES+=("$1"); log "  [STUB] $1 — no measurement taken"; }
+
 log "=== BYOK Kill Switch Chaos Drill ==="
 log "Provider: ${PROVIDER}"
 log "Tenant: ${STAGING_TENANT}"
@@ -47,7 +74,8 @@ log "Report: ${REPORT_FILE}"
 # ---------------------------------------------------------------------------
 log "Phase 1: Verify staging tenant..."
 # Production: query D1 staging for tenant byok_status = 'active'.
-# Here: simulated pass in CI.
+# Here: NOT IMPLEMENTED — the constant below is not a measurement.
+drill_stub "phase 1: verify staging tenant is active (D1 query)"
 TENANT_STATUS="active"
 log "Tenant ${STAGING_TENANT} status: ${TENANT_STATUS}"
 
@@ -59,6 +87,7 @@ fi
 # Phase 2: Revoke CMK in staging provider.
 # ---------------------------------------------------------------------------
 log "Phase 2: Revoking CMK in ${PROVIDER} staging..."
+drill_stub "phase 2: revoke the CMK in the provider"
 T_REVOKE_START="$(date +%s)"
 # Production: call provider CLI/API to revoke/disable CMK.
 # AWS: aws kms disable-key --key-id $KEY_ID
@@ -77,7 +106,8 @@ DETECTED=false
 
 for _ in $(seq 1 $DETECT_TIMEOUT); do
     # Production: poll audit_outbox for corelink.byok.cmk_revoked event.
-    # CI: simulate detection after 2s.
+    # CI: NOT IMPLEMENTED — this sleep is not a detection.
+    drill_stub "phase 3: poll audit_outbox for corelink.byok.cmk_revoked"
     sleep 2
     DETECTED=true
     break
@@ -96,7 +126,8 @@ log "Detection latency: ${DETECT_LATENCY_S}s (SLA ≤ 60s): PASS"
 # ---------------------------------------------------------------------------
 log "Phase 4: Verify cache eviction + tenant degrade..."
 # Production: query cache metrics + D1 tenant status.
-# CI: simulated pass.
+# CI: NOT IMPLEMENTED — the constants below are not measurements.
+drill_stub "phase 4: verify DEK cache evicted + tenant degraded"
 DEK_CACHE_EMPTY=true
 TENANT_STATUS_POST="degraded_read_only"
 log "DEK cache empty: ${DEK_CACHE_EMPTY}"
@@ -113,9 +144,12 @@ T_REVOKE_END="$(date +%s)"
 TOTAL_S=$(( T_REVOKE_END - T_REVOKE_START ))
 log "Total kill switch duration: ${TOTAL_S}s (SLA ≤ ${SLA_SECONDS}s)"
 
-SLA_RESULT="PASS"
+# Derived, not pinned. The old `SLA_RESULT="PASS"` here was the literal string
+# that reached the customer-facing table in phase 7.
 if (( TOTAL_S > SLA_SECONDS )); then
     SLA_RESULT="FAIL (SLA MISS: ${TOTAL_S}s > ${SLA_SECONDS}s)"
+else
+    SLA_RESULT="PASS"
 fi
 
 # ---------------------------------------------------------------------------
@@ -123,15 +157,37 @@ fi
 # ---------------------------------------------------------------------------
 log "Phase 6: Re-enabling CMK in ${PROVIDER} staging..."
 # Production: aws kms enable-key ... / gcloud / az / vault
-sleep 1 # simulated
+drill_stub "phase 6: re-enable the CMK and verify recovery"
+sleep 1 # NOT IMPLEMENTED
 log "Recovery check (≤ 60s)..."
-sleep 1 # simulated
+sleep 1 # NOT IMPLEMENTED
 RECOVERY_STATUS="active"
 log "Tenant status after recovery: ${RECOVERY_STATUS}"
 
 # ---------------------------------------------------------------------------
 # Phase 7: Write report.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# The gate. No attestation is written while any phase is a stub.
+#
+# Placed BEFORE `mkdir -p`/`cat >` so the file is never created — not created
+# and then deleted, and not created with a warning banner. A file under
+# specs/_audits/ with a PASS table in it gets forwarded; a banner does not
+# survive a copy-paste into a customer form.
+# ---------------------------------------------------------------------------
+if (( ${#STUBBED_PHASES[@]} > 0 )); then
+    echo >&2
+    echo "[REFUSED] This drill measured nothing, so it will not write an attestation." >&2
+    echo "          ${#STUBBED_PHASES[@]} phase(s) are still stubs:" >&2
+    for phase in "${STUBBED_PHASES[@]}"; do echo "            - ${phase}" >&2; done
+    echo >&2
+    echo "          No report written to ${REPORT_FILE}." >&2
+    echo "          Building the real kill switch is tracked as B-083; implementing a" >&2
+    echo "          phase means writing its provider call and deleting its drill_stub line." >&2
+    echo "          Until the ledger is empty this harness cannot emit PASS. That is the point." >&2
+    exit 1
+fi
+
 mkdir -p "${REPORT_DIR}"
 cat > "${REPORT_FILE}" << EOF
 ---

@@ -5173,39 +5173,97 @@ esse arquivo é encaminhado ao SRE do cliente como evidência de SLA por instru�
 É um gerador automático de evidência de segurança falsa. Categoricamente diferente de um
 controle ausente ([B-083]): ali falta o controle; aqui se produz prova de que ele existe.
 
-**Reparo mínimo, uma linha:** fazer o script sair com código diferente de zero em modo
-simulado, para que não possa emitir `PASS`. É a melhor relação entre exposição removida e
-esforço de todo o repositório, e não depende de [B-083] estar resolvido.
+**Consertado 2026-08-31 (este PR).** O reparo entregue é mais forte que o mínimo de uma
+linha que o corpo propunha, porque a exposição é o **arquivo**, não o código de saída: cada
+fase ainda-stub se registra num ledger (`drill_stub`), e **antes** do `mkdir -p`/`cat >` o
+script recusa — nenhum arquivo é criado, e sai não-zero nomeando as cinco fases. Um relatório
+escrito com banner de aviso não sobrevive a um copy-paste para o formulário do cliente; um
+que não existe, sim. O `SLA_RESULT="PASS"` fixo também virou derivação. **Não há flag de
+override**: uma variável de ambiente que reabilita o atestado é o mesmo buraco, uma
+indireção adiante. Para fechar uma fase, escreva a chamada real e **apague a linha
+`drill_stub` dela**.
+
+**Duas correções medidas ao corpo deste item:**
+
+1. **"Gerador automático" superestima o que estava acontecendo.** A lane reporta `success`
+   toda semana (12 dos últimos 19 runs, o mais recente em 2026-08-30) e **nenhum relatório
+   jamais chegou ao repositório**: o passo "Commit drill report" faz `git add` + `git commit`
+   e **nunca dá `push`**, então o commit morre no checkout efêmero. O único atestado de drill
+   na árvore é `specs/_audits/sealed/2026-05-14-byok-kill-switch-drill-aws.md`, commitado à
+   mão no SEAL do WI-S14-006. A população é **1**, não uma pilha crescente. O `push` ausente
+   está registrado no cabeçalho do workflow — consertá-lo antes de implementar as fases faria
+   os atestados falsos começarem a aterrissar de verdade.
+2. **O `schedule` semanal saiu.** Com a recusa no lugar, um cron semanal vira vermelho
+   crônico que ninguém pode acionar — a lição que o [B-058] já pagou. E pela regra do próprio
+   `CLAUDE.md`, um cron só se justifica quando algo muda **sem commit**: o desfecho deste
+   drill é decidido por constantes no script. `workflow_dispatch` mantido.
+
+O que este item continua **não** decidindo: retratar o atestado de 2026-05-14 já distribuído.
+É decisão de comunicação com cliente e pertence ao owner.
 
 ```backlog
 id: B-084
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 's=scripts/byok_kill_switch_drill.sh
-  [ -f "$s" ] || { echo "FALHA: o script do drill sumiu — feche o item ou reescreva-o."; exit 1; }
-  hard=0; grep -qE "SLA_RESULT=\"?PASS\"?" "$s" && hard=1
-  sim=0; grep -qiE "simulated|simulate detection" "$s" && sim=1
-  guarda=0
-  awk "/SLA_RESULT=/{n=NR} n&&NR>n&&NR<n+12&&/exit[[:space:]]+[1-9]/{print;exit}" "$s" | grep -q . && guarda=1
-  if [ "$hard" = 0 ] || [ "$guarda" = 1 ]; then
-    echo "FALHA: PASS hardcoded removido ($hard) ou ha saida nao-zero no caminho simulado ($guarda) — feche o item."; exit 1; fi
-  echo "aberto: SLA_RESULT=PASS hardcoded e modo simulado ainda sai zero (sim=$sim)"'
+  bash -c 'set -uo pipefail
+  s=scripts/byok_kill_switch_drill.sh
+  [ -f "$s" ] || { echo "FALHA: o script do drill sumiu — reavalie o item."; exit 1; }
+  d=$(mktemp -d); trap "rm -rf $d" EXIT
+  mkdir -p "$d/scripts"
+  # Roda numa ARVORE DESCARTAVEL: o script deriva REPO_ROOT da propria localizacao,
+  # entao uma regressao escreve o atestado em $d/specs/_audits, nunca no repo.
+  cp "$s" "$d/scripts/drill.sh"
+  ( cd "$d" && bash scripts/drill.sh aws ) > "$d/out.txt" 2>&1; rc=$?
+  n=$(find "$d/specs" -name "*byok-kill-switch-drill*" 2>/dev/null | wc -l | tr -d " ")
+  if [ "$rc" = 0 ] || [ "$n" != 0 ]; then
+    echo "REGRESSAO: o drill voltou a emitir atestado sem medir nada (rc=$rc, arquivos=$n)."
+    echo "Trecho: $(tail -5 "$d/out.txt" | tr "\n" " " | cut -c1-300)"; exit 1; fi
+  grep -q "REFUSED" "$d/out.txt" || {
+    echo "FALHA: saiu nao-zero (rc=$rc) mas SEM a recusa — pode estar morrendo por outro motivo (bug, dependencia), o que nao e o conserto. Trecho: $(tail -5 "$d/out.txt" | tr "\n" " " | cut -c1-300)"; exit 1; }
+  # CONTROLE POSITIVO: sem ele, um script que SEMPRE morre passaria neste portao.
+  # Com as chamadas drill_stub removidas — o estado "todas as fases implementadas" —
+  # o atestado TEM de voltar a ser emitido.
+  mkdir -p "$d/ctl/scripts"
+  sed -E "/^[[:space:]]*drill_stub /d" "$s" > "$d/ctl/scripts/drill.sh"
+  if cmp -s "$s" "$d/ctl/scripts/drill.sh"; then
+    echo "FALHA: nenhuma linha drill_stub encontrada — o ledger de fases sumiu do script, entao a recusa acima nao pode vir dele. Releia antes de confiar neste portao."; exit 1; fi
+  ( cd "$d/ctl" && bash scripts/drill.sh aws ) > "$d/ctl_out.txt" 2>&1; crc=$?
+  cn=$(find "$d/ctl/specs" -name "*byok-kill-switch-drill*" 2>/dev/null | wc -l | tr -d " ")
+  [ "$crc" = 0 ] && [ "$cn" = 1 ] || {
+    echo "CONTROLE POSITIVO FALHOU: com o ledger vazio o drill deveria emitir 1 atestado e sair 0, saiu rc=$crc arquivos=$cn — a recusa acima pode ser um script simplesmente quebrado, nao um portao. Trecho: $(tail -5 "$d/ctl_out.txt" | tr "\n" " " | cut -c1-300)"; exit 1; }
+  stubs=$(grep -cE "^[[:space:]]*drill_stub " "$s" | tr -d " ")
+  echo "fechado: o drill recusa e nao escreve atestado ($stubs fases stub, rc=$rc); com o ledger vazio ele volta a emitir 1 relatorio e sair 0"'
 verify-means: |
-  open — o script ainda contém `SLA_RESULT="PASS"` fixo E não há saída não-zero no
-  caminho simulado.
+  **Polaridade INVERTIDA (`done`):** sai 0 — fechado — enquanto o harness **recusar**: sair
+  não-zero **e** não criar arquivo nenhum sob `specs/_audits/`. Sai 1 se voltar a emitir.
 
-  Vira DRIFTED por qualquer um dos dois reparos: remover o `PASS` hardcoded (o drill
-  passa a derivar o resultado do que mediu), ou fazer o modo simulado sair não-zero (o
-  reparo de uma linha). Aceito os dois porque ambos impedem a emissão de atestado falso,
-  que é a alegação.
+  A polaridade `open` original ficaria verde neste PR e **vermelha no merge seguinte**,
+  contaminando todo PR irmão. Invertida junto com o `status`.
 
-  O que NÃO decide, e admito: se o atestado JÁ EMITIDO e encaminhado a clientes será
-  retratado. Arquivos em `specs/_audits/` com tabela de PASS existem e foram distribuídos.
-  Retratá-los é decisão de comunicação com cliente, pertence ao owner, e deve virar item
-  próprio se a decisão for retratar.
-last-verified: 2026-08-30
+  **Executa o script de verdade, não faz grep nele.** A alegação do item é sobre o que o
+  drill *produz*, e a versão `open` decidia por `grep` de `SLA_RESULT="PASS"` — que um
+  refactor cosmético satisfaria sem mudar nada do que chega ao cliente.
+
+  **Roda numa árvore descartável.** O script deriva `REPO_ROOT` da própria localização, então
+  uma regressão escreve em `$TMPDIR`, nunca em `specs/_audits/` do repositório. Um verify que
+  pudesse commitar um atestado falso ao ser executado seria o próprio defeito.
+
+  **O CONTROLE POSITIVO é o conteúdo deste portão.** Um script que morresse por qualquer
+  motivo — dependência faltando, erro de sintaxe, `set -e` disparando cedo — satisfaria
+  "não-zero e sem arquivo" e o item pareceria fechado com o harness simplesmente quebrado.
+  Por isso a segunda metade remove as linhas `drill_stub` (o estado "todas as fases
+  implementadas") e **exige** rc=0 com exatamente 1 atestado. Medido: rc=0, 1 arquivo.
+
+  **Duas guardas anti-vacuidade a mais:** exige a palavra `REFUSED` na saída, para que uma
+  morte por outro motivo não seja lida como recusa; e falha alto se **nenhuma** linha
+  `drill_stub` existir, porque aí o ledger sumiu e a recusa não pode ter vindo dele.
+
+  **O que NÃO decide:** se o atestado de 2026-05-14 já distribuído será retratado — decisão
+  de comunicação com cliente, do owner. E não decide o `push` ausente no workflow, registrado
+  no cabeçalho do arquivo.
+last-verified: 2026-08-31
 ```
 
 ### B-085 — a página LGPD promete São Paulo e imutabilidade à prova de ordem judicial; os dados estão nos EUA e são deletáveis

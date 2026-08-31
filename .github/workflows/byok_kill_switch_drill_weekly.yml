@@ -8,9 +8,30 @@ concurrency:
   cancel-in-progress: true
 
 on:
-  schedule:
-    # Every Sunday at 03:00 UTC (per-provider rotation: 4 providers / 4 weeks).
-    - cron: "0 3 * * 0"
+  # DISPATCH-ONLY as of 2026-08-31 (B-084).
+  #
+  # The `schedule: cron "0 3 * * 0"` that used to fire every Sunday is removed.
+  # Two reasons, both measured:
+  #
+  # 1. Every phase of `scripts/byok_kill_switch_drill.sh` is still a stub, so
+  #    the harness now REFUSES to emit an attestation and exits non-zero. On a
+  #    weekly cron that is a chronic red nobody can act on, and a chronic red
+  #    trains everyone to ignore the signal — the same lesson B-058 recorded
+  #    for the OKF robot.
+  # 2. This repo's own rule (CLAUDE.md): a cron earns its keep only when
+  #    something can change WITHOUT a commit. The drill's outcome is decided
+  #    entirely by constants in the script, so it cannot change until someone
+  #    commits the real provider calls. It belongs on a PR/dispatch trigger.
+  #
+  # Run it on demand while implementing a phase; the lane is one click away.
+  #
+  # WORTH KNOWING BEFORE RE-ARMING THIS: the "Commit drill report" step below
+  # commits but never PUSHES, so no report this lane produced has ever reached
+  # the repo. That is why 12 consecutive `success` runs (2026-06-07..2026-08-30)
+  # left `specs/_audits/` empty — the only drill report in the tree,
+  # `sealed/2026-05-14-byok-kill-switch-drill-aws.md`, was committed by hand.
+  # Fixing the push without first implementing the phases would start the false
+  # attestations actually landing.
   workflow_dispatch:
     inputs:
       provider:
