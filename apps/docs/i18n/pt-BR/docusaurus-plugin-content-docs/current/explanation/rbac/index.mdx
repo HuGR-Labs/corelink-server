@@ -58,7 +58,7 @@ categories:
 | Category    | Scopes                                                                                          | Notes                                                |
 |-------------|-------------------------------------------------------------------------------------------------|------------------------------------------------------|
 | **CAS**     | `cache:r`, `cache:w`, `cache:find-missing`, `cache:delete`                                      | Read/write content-addressable storage + AC results. |
-| **Admin**   | `admin`                                                                                         | Owner-grade superset (cache rw + billing / account-PII). Never self-serve-grantable. |
+| **Admin**   | `admin`                                                                                         | Owner-grade superset (cache read + write, plus billing / account-PII). Never self-serve-grantable. |
 | **Executor**| `execute:action`, `report:result`                                                               | Phase-2 executor only; **not implemented** — these names grant nothing today. |
 
 :::warning[Administrative access is not carried by a PAT scope]
