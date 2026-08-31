@@ -92,5 +92,4 @@ A separate admin-only read surface exists for support to inspect a tenant's
 PATs (`GET /v1/admin/tenants/{tenant_id}/pats`); it needs an admin PAT and is
 not callable with a regular customer token.
 
-Once revocation ships (self-service or via support), any in-flight requests
-using that PAT will receive `401 Unauthorized`.
+Once revoked, any in-flight requests using that PAT receive `401 Unauthorized`.

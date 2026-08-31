@@ -42,8 +42,7 @@ CoreLink does not serve HTTP. All API traffic uses TLS 1.2 or TLS 1.3. HTTPS is 
 
 ### Rotation
 
-PATs have no automatic rotation. Recommended rotation cadence once
-self-service issuance ships:
+PATs have no automatic rotation. Recommended rotation cadence:
 
 | PAT type | Cadence |
 |---|---|
