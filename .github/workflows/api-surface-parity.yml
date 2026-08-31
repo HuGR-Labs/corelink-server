@@ -1,0 +1,74 @@
+name: api surface parity (openapi/corelink-v1.yaml vs the routes the code registers)
+
+# B-121 — the documented API surface and the served one had nothing comparing
+# them, and drifted into eight endpoint families (B-116/B-117/B-119/B-120).
+#
+# This is NOT `api-reference-sync.yml`. That lane keeps the 45 MDX pages under
+# `apps/docs/docs/reference/api/` in sync with the spec — the PROPAGATION.
+# This lane checks the spec against reality — the SOURCE. Both can be green
+# while every documented endpoint 404s, which is exactly what happened.
+#
+# `pull_request` only, no cron: the answer changes only when the spec or a
+# route registration changes, i.e. only with a commit. A cron here would
+# re-verify byte-identical code on a clock, which is the burn the 2026-08-02
+# sweep removed from 14 workflows.
+#
+# Path filter is deliberately WIDE on the Rust side: a route can be registered
+# from any crate, and a filter that misses one turns this lane into a gate that
+# passes because it never ran.
+
+on:
+  pull_request:
+    paths:
+      - "openapi/corelink-v1.yaml"
+      - "crates/**/*.rs"
+      - "worker/src/**/*.ts"
+      - "scripts/validate_api_surface.py"
+      - ".github/workflows/api-surface-parity.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-surface-parity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  parity:
+    name: documented vs served
+    runs-on: corelink # zero-hosted: stdlib python3 only, no install step
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # The positive control runs FIRST and on its own, so a broken extractor
+      # can never be mistaken for a clean surface. An instrument that has gone
+      # blind reports zero divergences; "found nothing" and "my command broke"
+      # are indistinguishable without this step.
+      - name: Self-test the extractor (positive control)
+        run: |
+          set -euo pipefail
+          python3 scripts/validate_api_surface.py --self-test
+
+      - name: Compare the documented surface against the served one
+        run: |
+          set -euo pipefail
+          python3 scripts/validate_api_surface.py
+
+      - name: How to fix
+        if: failure()
+        run: |
+          echo "::error::The documented API surface and the served one disagree."
+          echo "::error::Reproduce locally:  python3 scripts/validate_api_surface.py"
+          echo "::error::See the raw truth:  python3 scripts/validate_api_surface.py --strict"
+          echo "::error::"
+          echo "::error::MISSING_ROUTE = openapi/corelink-v1.yaml promises an endpoint the code"
+          echo "::error::does not register. Fix the SPEC (or add the route) — regenerating the"
+          echo "::error::MDX pages under apps/docs changes nothing, they are propagation."
+          echo "::error::"
+          echo "::error::MISSING_DOC = a public /v1 route nobody can find in the spec."
+          echo "::error::"
+          echo "::error::STALE_LEDGER = a divergence in the ledger is now fixed. Delete its"
+          echo "::error::entry from scripts/validate_api_surface.py in the same PR as the fix."

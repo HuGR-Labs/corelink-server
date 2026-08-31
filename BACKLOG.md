@@ -6727,33 +6727,49 @@ senão vira uma fonte de alarme falso que alguém acaba silenciando.
 id: B-121
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'n=$(grep -rln "reference/api/endpoints" scripts/ .github/workflows/ 2>/dev/null | grep -v "gen-api-reference" | wc -l | tr -d " ")
-  [ "$n" = 0 ] || { echo "FALHA: $n script/lane alem do gerador referencia o diretorio de endpoints — pode ser o comparador nascendo; verifique e feche se for."; exit 1; }
-  eps=$(ls apps/docs/docs/reference/api/endpoints/*.mdx 2>/dev/null | wc -l | tr -d " ")
-  [ "$eps" -gt 0 ] || { echo "FALHA: nenhuma pagina de endpoint encontrada — o item pressupoe que a superficie documentada existe; reavalie."; exit 1; }
-  echo "aberto: $eps endpoints documentados e nenhum script ou lane compara essa lista com as rotas servidas"'
+  bash -c 'set -o pipefail
+  [ -f scripts/validate_api_surface.py ] || { echo "FALHA: o comparador sumiu."; exit 1; }
+  [ -f .github/workflows/api-surface-parity.yml ] || { echo "FALHA: a lane de PR sumiu."; exit 1; }
+  grep -q "runs-on: corelink" .github/workflows/api-surface-parity.yml || { echo "FALHA: a lane nao esta em runner self-hosted."; exit 1; }
+  python3 scripts/validate_api_surface.py --self-test >/dev/null || { echo "FALHA: o self-test do extrator reprovou — o instrumento esta cego e o silencio dele nao vale nada."; exit 1; }
+  raw=$(python3 scripts/validate_api_surface.py --strict 2>&1)
+  for p in "/v1/admin/ops" "/v1/enterprise/inquire" "/v1/dpa/accept" "/v1/audit/export" "/v1/admin/audit/events" "/v1/admin/tenants" "/v1/data-categories" "/v1/pats" "/v1/customer/account/delete" "/v1/customer/account/export"; do
+    printf "%s\n" "$raw" | grep -E "MISSING_(ROUTE|DOC) +.*(  | )${p}\$" >/dev/null || { echo "FALHA: o comparador NAO acusa a divergencia conhecida ${p} — portao que nao pega o defeito conhecido nao e portao."; exit 1; }
+  done
+  python3 scripts/validate_api_surface.py >/dev/null || { echo "FALHA: ha divergencia NAO declarada, ou uma entrada do ledger ficou obsoleta."; exit 1; }
+  echo "done: o comparador existe, o self-test passa, ele acusa as 8 familias conhecidas + as 2 do B-117, e nao ha divergencia fora do ledger"'
 verify-means: |
-  open — a superfície documentada existe e nada a compara com a servida.
+  done — o comparador existe, roda em lane de `pull_request` self-hosted, e foi **visto
+  pegando o defeito conhecido**.
 
-  O predicado mede a **presença do comparador**, não a ausência de divergências. Escolhi o
-  mais estreito e mais honesto: contar divergências dentro de um `verify:` exigiria embutir
-  ali a varredura inteira, e uma varredura frágil dentro de um portão é pior que nenhuma —
-  ela vira alarme falso, alguém a silencia, e a supressão-com-motivo sobrevive muito mais
-  tempo que um build vermelho.
+  A polaridade inverteu junto com o status. O predicado `open` media a **ausência** do
+  comparador; este mede quatro coisas que só um comparador correto satisfaz ao mesmo tempo:
 
-  O que este comando NÃO decide: se o comparador, quando existir, é **correto**. Um que
-  extraia rota por `grep '\.route("'` reprova este item ficando verde e não enxerga nada —
-  foi o que aconteceu na primeira tentativa desta varredura. Quem fechar precisa provar o
-  contrário: rodar o comparador contra as divergências já conhecidas ([B-116], [B-119],
-  [B-120] e as quatro da tabela) e mostrar que ele **acusa as oito**. Portão que nunca foi
-  visto pegando o defeito conhecido não é portão.
+  1. o script e a lane existem, e a lane não é hosted;
+  2. o **self-test do extrator passa** — ele prova, com controle positivo, que enxerga as
+     quatro formas de registro (literal na linha do `.route(`, literal na linha **seguinte**,
+     registro por **constante**, e caminho terminado no Worker). Um extrator cego reporta
+     superfície limpa, e foi exatamente assim que a primeira varredura produziu 32 ausências
+     fantasmas;
+  3. em `--strict`, ele **acusa nominalmente** as oito famílias documentadas-sem-rota mais as
+     duas rotas-sem-doc do [B-117]. Este é o item que o `verify-means` anterior exigiu de
+     quem fechasse, e está mecanizado aqui em vez de prometido em prosa;
+  4. no modo normal, não sobra divergência **fora do ledger** — e uma entrada de ledger cuja
+     divergência já foi consertada também reprova (`STALE_LEDGER`), então o conserto de
+     [B-116]/[B-119]/[B-120]/[B-117] não pode aterrissar deixando a própria desculpa para trás.
 
-  Nota de escopo: o comparador natural é bidirecional. Uma direção pega doc sem rota
-  (o que está aqui); a outra pega rota sem doc, que é [B-117]. Um único instrumento
-  fecha as duas famílias.
-last-verified: 2026-08-30
+  O que este comando NÃO decide: se as divergências foram **consertadas**. Não foram — este
+  item entregava o instrumento, não os reparos. As oito famílias continuam abertas sob
+  [B-116], [B-117], [B-119] e [B-120], agora com um portão que impede a nona.
+
+  Achados novos que a varredura completa trouxe, além dos oito já catalogados: `/v1/dpa/re-accept`
+  (documentado, sem rota em lugar nenhum — só uma proptest o nomeia), `/api/csp-report`
+  (servido pelo `apps/admin-ui`, não pela API — não pertence a esta spec), e a superfície
+  `/v1/customer/*` inteira, `/v1/admin/tenants/{tenant_id}/*`, `/v1/public/*` — todas servidas
+  e ausentes do OpenAPI. Estão no ledger com o item dono de cada uma.
+last-verified: 2026-08-31
 ```
 
 ### B-122 — regiao de fase sob `spawn_blocking` nao registra nada, e o `ostore` nao se separa sem mover as fronteiras
@@ -7324,4 +7340,76 @@ verify-means: |
   (adicionar UM nome ja colidiu com a particao, que e a evidencia de que "mais nomes" nao e
   obviamente a resposta).
 last-verified: 2026-08-30
+```
+
+### B-130 — o comparador de superfície de API não enxerga `apps/**`, e há rota pública lá
+
+O [B-121] entregou o comparador `scripts/validate_api_surface.py`. Ele cobre `crates/` e
+`worker/src` — o plano de dados da API — e **nada além disso**. Os Workers irmãos sob
+`apps/` despacham por `url.pathname` em ~376 arquivos TypeScript, e nem o extrator nem o
+filtro `paths:` da lane `api-surface-parity.yml` olham para lá.
+
+A lacuna não é hipotética. `apps/analytics-worker/src/index.ts:28` e `:38` servem
+`POST /v1/event` e `GET /v1/digest/preview`; nenhum dos dois aparece em
+`openapi/corelink-v1.yaml`. São exatamente a classe `MISSING_DOC` que o [B-117] descreve —
+rota pública `/v1` sem documento — e o portão que existe para acusá-la **não a alcança**.
+`apps/signup-worker/src/index.ts:51` serve ainda
+`/internal/v1/runner/provision-installation`, que o prefixo `/internal/` excluiria de
+qualquer forma, mas que ilustra que a superfície servida por `apps/**` é real e não
+inventariada.
+
+Registro a assimetria porque ela é a parte enganosa: a lane fica **verde** hoje, e a
+verdura é honesta dentro do alcance declarado e **muda** se alguém ler o cabeçalho do
+script como "todas as rotas do repo". Por isso o cabeçalho declara a exclusão em vez de
+prometer cobertura total — a mentira teria sido mais barata e é o defeito que o [B-121]
+existia para impedir.
+
+Ampliar o comparador é **escopo novo**, não conserto do [B-121]: exige um segundo extrator
+(despacho por `url.pathname` em Worker, não registro axum), uma decisão sobre quais Workers
+de `apps/` fazem parte do contrato público de API, e alargar o filtro `paths:` da lane.
+Nada disso se decide dentro do PR que entregou o instrumento.
+
+**O que este item NÃO decide:** se `/v1/event` e `/v1/digest/preview` *devem* estar na spec
+pública ou se são superfície interna de telemetria. Essa é a primeira pergunta de quem
+pegar o item, e a resposta pode ser "documentar" ou "declarar fora do contrato" — mas hoje
+não é nenhuma das duas, é ninguém tendo perguntado.
+
+```backlog
+id: B-130
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'set -o pipefail
+  s=scripts/validate_api_surface.py
+  [ -f "$s" ] || { echo "FALHA: o comparador do B-121 sumiu — este item pressupoe que ele existe; reavalie."; exit 1; }
+  grep -E "^CRATES = |^WORKER = " "$s" >/dev/null || { echo "FALHA: as raizes varridas mudaram de forma — releia o script antes de confiar neste portao."; exit 1; }
+  grep -E "REPO / \"apps\"" "$s" >/dev/null && { echo "FALHA: o comparador agora varre apps/ — feche este item."; exit 1; }
+  grep -E "^ *- \"apps/" .github/workflows/api-surface-parity.yml >/dev/null && { echo "FALHA: a lane agora dispara em apps/ — feche este item."; exit 1; }
+  hit=$(grep -rlE "pathname === \"/v1/(event|digest/preview)\"" apps/ --include="*.ts" 2>/dev/null | wc -l | tr -d " ")
+  [ "$hit" -gt 0 ] || { echo "FALHA: as rotas /v1/event e /v1/digest/preview nao estao mais em apps/ — ou foram movidas para o alcance do portao, ou removidas; reavalie o item em vez de fecha-lo cego."; exit 1; }
+  grep -E "^  /v1/event:|^  /v1/digest/preview:" openapi/corelink-v1.yaml >/dev/null && { echo "FALHA: as rotas foram documentadas na spec — reavalie: falta so alargar o alcance do portao."; exit 1; }
+  echo "aberto: apps/ serve rota publica /v1 ($hit arquivo(s)) que nao esta na spec e que o comparador nao alcanca"'
+verify-means: |
+  open — o comparador não varre `apps/`, a lane não dispara em `apps/`, e existe pelo menos
+  uma rota pública `/v1` servida de lá que a spec não documenta.
+
+  As quatro metades são a alegação inteira, e cada uma falha com mensagem própria em vez de
+  um `exit 1` mudo. Duas delas fecham o item por si (`o comparador agora varre apps/`, `a
+  lane agora dispara em apps/`) — é o conserto, e o portão o reconhece.
+
+  As outras duas mandam **reavaliar**, não fechar: se `/v1/event` sumir de `apps/`, pode ter
+  sido movida para dentro do alcance (conserto) ou apagada (o item perdeu o objeto); se
+  aparecer na spec, o inventário foi feito à mão e falta só alargar o alcance. Prefiro um
+  portão que peça julgamento a um que aprove qualquer mudança que apague o sintoma.
+
+  O primeiro ramo é a defesa contra o item se pressupor: se o comparador do [B-121] não
+  existir, este item não tem sobre o que falar, e diz isso em vez de reportar uma lacuna
+  imaginária. O segundo detecta o script ter sido reescrito de forma que os greves seguintes
+  passem a medir outra coisa — sem ele, uma refatoração das constantes deixaria este portão
+  verde por vacuidade.
+
+  O que este comando NÃO decide: se as rotas **devem** ser documentadas. Ele mede alcance do
+  instrumento, não a política de contrato público.
+last-verified: 2026-08-31
 ```
