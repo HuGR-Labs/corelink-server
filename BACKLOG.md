@@ -3282,29 +3282,42 @@ verify-means: |
 last-verified: 2026-08-29
 ```
 
-### B-110 — cinco lanes de CI presas em runner GitHub-hosted, que está billing-blocked
+### B-110 — quatro lanes de CI presas em runner GitHub-hosted, que está billing-blocked
 
-`cas_foundation.yml`, `coverage.yml`, `ffi-matrix-ci.yml`, `mutation-nightly.yml`
-e `semgrep.yml` somam **1.057 execuções e ZERO sucessos**. A causa é a mesma nas
-cinco e é estrutural, não flake: cada uma declara um runner **GitHub-hosted**
-(`ubuntu-latest` ou o larger-runner `ubuntu-x64-4core`), e minutos hosted estão
-billing-blocked nesta org desde 2026-08-24.
+**Reescrito 2026-08-31 (WP-E).** Eram cinco; `semgrep` saiu, consertada na raiz —
+ver abaixo. As quatro que restam (`cas_foundation.yml`, `coverage.yml`,
+`ffi-matrix-ci.yml`, `mutation-nightly.yml`) somam **669 execuções e ZERO
+sucessos**. A causa é a mesma nas quatro e é estrutural, não flake: cada uma
+declara um runner **GitHub-hosted** (`ubuntu-latest` ou o larger-runner
+`ubuntu-x64-4core`), e minutos hosted estão billing-blocked nesta org desde
+2026-08-24.
 
 Duas assinaturas distintas, ambas explicadas por isso: `coverage` e
 `mutation-nightly` aparecem `cancelled` com `runner_name = NONE` — o job nunca
-recebeu máquina; `cas_foundation`, `semgrep` e `ffi-matrix-ci` chegaram a rodar
-enquanto ainda havia crédito e falharam no conteúdo (`Run Semgrep`,
-`Install valgrind`), mas hoje nem chegam lá.
+recebeu máquina; `cas_foundation` e `ffi-matrix-ci` chegaram a rodar enquanto
+ainda havia crédito e falharam no conteúdo (`Install valgrind`), mas hoje nem
+chegam lá.
 
-`semgrep` merece nota: além do job hosted, ela declara
-`runs-on: [self-hosted, Linux, X64]`, e **não existe runner Linux self-hosted
-neste repo** — o inventário é 14-15 `corelink` (frota efêmera CF) e 5
-`self-hosted,macOS,X64,mac,corelink-builder`. Esse job jamais pegaria box mesmo
-com crédito.
+**Por que estas quatro NÃO migram junto com a `semgrep`.** Três delas
+(`cas_foundation`, `coverage`, `mutation-nightly`) pedem `ubuntu-x64-4core`, e o
+comentário na própria linha `runs-on:` registra o motivo medido: o link do teste
+de workspace inteiro e a instrumentação do `cargo-llvm-cov` estouram memória em
+2 núcleos (`ld` morto com `Bus error`, signal 7) — é exatamente a assinatura que
+[B-128] descreve, e mandá-las para a frota macOS do owner reproduz o problema em
+cima da máquina que já está a 95% de disco. `ffi-matrix-ci` é reconhecidamente
+parked (nunca passou; 6 camadas). Nenhuma dessas é decisão de higiene: ou o
+owner libera gasto hosted, ou provisiona um box Linux multi-core self-hosted, ou
+elas são apagadas.
 
-Não é conserto de CI: ou o owner libera gasto hosted, ou as cinco migram para a
-frota self-hosted (e `ffi-matrix-ci` já é reconhecidamente parked), ou são
-apagadas. Nenhuma dessas é decisão de higiene.
+**Correção de fato — a nota antiga sobre a `semgrep` estava desatualizada.** O
+item afirmava que a `semgrep` declarava também `runs-on: [self-hosted, Linux,
+X64]`, um pool inexistente. Ela não declarava: o arquivo dizia `ubuntu-latest`, e
+o `[self-hosted, Linux, X64]` aparecia só num **comentário** descrevendo o valor
+ANTERIOR. Confundir comentário com código é o mesmo defeito que [B-128] registra
+no próprio `verify`. Lida a lane inteira, o quadro real era melhor: o corpo do
+job já tinha sido reescrito em 2026-06-02 para a frota macOS (sem docker, sem
+`container:`, `python3`/`pip3` do host em vez de `actions/setup-python`) e só a
+linha `runs-on:` ficou para trás. Uma linha — migrada nesta mesma mudança.
 
 ```backlog
 id: B-110
@@ -3312,16 +3325,22 @@ repo: corelink-server
 owner: owner
 status: open
 verify: |
-  bash -c 'for f in cas_foundation coverage ffi-matrix-ci mutation-nightly semgrep; do
+  bash -c 'for f in cas_foundation coverage ffi-matrix-ci mutation-nightly; do
     grep -qE "runs-on: *(ubuntu-latest|ubuntu-x64-4core)" ".github/workflows/$f.yml" || exit 1
-  done'
+  done
+  grep -qE "^ *runs-on: *\[self-hosted, mac, corelink-builder\]" .github/workflows/semgrep.yml || exit 1'
 verify-means: |
-  open — passa enquanto TODAS as cinco lanes nomeadas ainda apontam para um
+  open — passa enquanto TODAS as quatro lanes nomeadas ainda apontam para um
   runner hosted, que é o bloqueio. Vira vermelho assim que QUALQUER UMA for
   migrada ou apagada, forçando a revisão do item em vez de deixá-lo cobrir uma
-  lane que já saiu do grupo. O laço é sobre as cinco de propósito: um verify que
-  olhasse só uma seria predicado mais fraco que cinco itens separados.
-last-verified: 2026-08-30
+  lane que já saiu do grupo. O laço é sobre as quatro de propósito: um verify que
+  olhasse só uma seria predicado mais fraco que quatro itens separados.
+
+  A quinta cláusula é uma catraca, não decoração: ela exige que a `semgrep`
+  PERMANEÇA na frota self-hosted. Sem ela, alguém poderia reverter a migração e
+  o item continuaria verde descrevendo quatro lanes enquanto cinco estão
+  bloqueadas — o modo de falha que a versão anterior deste item tinha.
+last-verified: 2026-08-31
 ```
 
 ### B-111 — aquisição de certificados Apple/Windows (o resto dos "secrets ausentes" não era isso)
