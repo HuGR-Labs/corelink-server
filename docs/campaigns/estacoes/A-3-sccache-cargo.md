@@ -242,3 +242,27 @@ certificaria a porta dos fundos.
 Para fechar A-3: **um** PAT fecha Funciona/Rápido/Registrado e, o mais importante,
 responde se `PROPFIND`/`MKCOL` existem em produção. **Dois** PATs de tenants
 distintos fecham I-1.
+
+---
+
+## RODADA 2 (2026-08-31) — lentes fechadas com DOIS tenants
+
+O bloqueio de credencial foi **levantado**: o owner autorizou explicitamente o uso de
+`CORELINK_PAT_MINT_AUTH_KEY` para provisionar tenants de teste. Dois tenants distintos
+— **ACME** e **RIVAL** — foram criados, e as lentes que estavam em branco foram medidas.
+
+- Provisionamento, calibração do instrumento e a ressalva do que este caminho **não**
+  prova (o funil de cadastro): `PROVISIONAMENTO-tenants-de-teste.md`
+- Medições, os 11 ataques, os invariantes e os controles: `RODADA-2-lentes-com-dois-tenants.md`
+
+**Resultado desta superfície:**
+
+- **Funciona:** SIM — 37 B byte-idênticos em `/cargo/<tenant>/f/1/a/<hash>`. Ciclo PUT→GET completo.
+- **Isolamento:** SUSTENTADO — RIVAL recebe 404 no caminho equivalente.
+- **Rápido:** `total;dur` 683 ms quente — **~23x fora** do alvo.
+- **Registrado:** ver `RODADA-2 §4`.
+
+**O veredito da rodada 1 desta estação não muda por causa disto.** Ele era sobre a
+documentação publicada e o cliente real, não sobre credencial. **Nenhum conserto de
+produto foi feito para esta estação passar** — achado é entrega.
+

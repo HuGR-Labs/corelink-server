@@ -210,3 +210,25 @@ válido, porque o cliente real nunca alcança o CoreLink. O que **não** consegu
 se o endpoint `/brew/<tenant>/` de fato serve bottles quando autenticado (a página afirma
 que "the mirror endpoint itself works"). Essa afirmação **permanece não verificada** —
 exige PAT de tenant real.
+
+---
+
+## RODADA 2 (2026-08-31) — lentes fechadas com DOIS tenants
+
+O bloqueio de credencial foi **levantado**: o owner autorizou explicitamente o uso de
+`CORELINK_PAT_MINT_AUTH_KEY` para provisionar tenants de teste. Dois tenants distintos
+— **ACME** e **RIVAL** — foram criados, e as lentes que estavam em branco foram medidas.
+
+- Provisionamento, calibração do instrumento e a ressalva do que este caminho **não**
+  prova (o funil de cadastro): `PROVISIONAMENTO-tenants-de-teste.md`
+- Medições, os 11 ataques, os invariantes e os controles: `RODADA-2-lentes-com-dois-tenants.md`
+
+**Resultado desta superfície:**
+
+- **NÃO exercida como escrita.** `PUT` devolve **405** (é espelho read-only) e a forma de caminho que tentei foi recusada com **403 `forbidden repo path`**. **A forma correta de caminho de bottle não foi determinada** — não afirmo nada sobre esta superfície além disto.
+- **O veredito `FALHOU` da rodada 1 segue de pé, inteiro** — a página manda o cliente exfiltrar o PAT para o `ghcr.io` e quebra um `brew` que funcionava. Nada disso dependia de credencial, e nada disso foi consertado aqui.
+
+**O veredito da rodada 1 desta estação não muda por causa disto.** Ele era sobre a
+documentação publicada e o cliente real, não sobre credencial. **Nenhum conserto de
+produto foi feito para esta estação passar** — achado é entrega.
+

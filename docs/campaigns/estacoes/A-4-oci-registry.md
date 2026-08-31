@@ -215,3 +215,27 @@ promessa "any standard OCI client".
 importa da lente *Seguro* (cross-tenant com credencial válida) também. Adicionalmente
 **não subi o daemon do Docker** — decisão consciente, o Mac é o runner do CI e o `pull`
 terminaria no mesmo 401.
+
+---
+
+## RODADA 2 (2026-08-31) — lentes fechadas com DOIS tenants
+
+O bloqueio de credencial foi **levantado**: o owner autorizou explicitamente o uso de
+`CORELINK_PAT_MINT_AUTH_KEY` para provisionar tenants de teste. Dois tenants distintos
+— **ACME** e **RIVAL** — foram criados, e as lentes que estavam em branco foram medidas.
+
+- Provisionamento, calibração do instrumento e a ressalva do que este caminho **não**
+  prova (o funil de cadastro): `PROVISIONAMENTO-tenants-de-teste.md`
+- Medições, os 11 ataques, os invariantes e os controles: `RODADA-2-lentes-com-dois-tenants.md`
+
+**Resultado desta superfície:**
+
+- **Funciona:** SIM, **via troca de token** — `/v2/` direto com o PAT devolve 401 (Bearer **e** Basic). O `WWW-Authenticate` aponta o realm `https://corelink-oci.humangr.com/token`, que **aceita o PAT via Basic** e emite um registry token; com ele, `/v2/` devolve **200**. É o fluxo padrão do `docker login`, e ele fecha.
+- **Isolamento:** SUSTENTADO — o RIVAL pedindo `scope=repository:<ACME>/app:pull` recebe 200, **mas o token traz o tenant do RIVAL**: o escopo de repo enviado pelo cliente não influencia a tenancy.
+- **Rápido:** não medido — o que exercitei é handshake de auth, não plano de dados.
+- **Correção do veredito de bloqueio:** o `BLOQUEADO` da rodada 1 era por falta de credencial. Com PAT, o handshake funciona.
+
+**O veredito da rodada 1 desta estação não muda por causa disto.** Ele era sobre a
+documentação publicada e o cliente real, não sobre credencial. **Nenhum conserto de
+produto foi feito para esta estação passar** — achado é entrega.
+

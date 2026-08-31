@@ -213,3 +213,27 @@ aberta.**
 **Parei no primeiro `pip install`.** Sem PAT de tenant criado pelo funil real não há
 índice resolvido, não há wheel, não há segundo install, não há número contra o alvo e não
 há trilha a ler. Os dois achados acima não dependem disso.
+
+---
+
+## RODADA 2 (2026-08-31) — lentes fechadas com DOIS tenants
+
+O bloqueio de credencial foi **levantado**: o owner autorizou explicitamente o uso de
+`CORELINK_PAT_MINT_AUTH_KEY` para provisionar tenants de teste. Dois tenants distintos
+— **ACME** e **RIVAL** — foram criados, e as lentes que estavam em branco foram medidas.
+
+- Provisionamento, calibração do instrumento e a ressalva do que este caminho **não**
+  prova (o funil de cadastro): `PROVISIONAMENTO-tenants-de-teste.md`
+- Medições, os 11 ataques, os invariantes e os controles: `RODADA-2-lentes-com-dois-tenants.md`
+
+**Resultado desta superfície:**
+
+- **Funciona:** SIM — `/pip/<tenant>/simple/six/` devolve o índice, 14 807 B. (`/pip/<t>/six/` e `/pip/<t>/simple/` dão 404 — o prefixo `simple/` é obrigatório.)
+- **Isolamento:** SUSTENTADO — RIVAL no caminho do ACME recebe **403 `tenant mismatch`**.
+- **Rápido:** `total;dur` 263 / 288 / 304 ms (n=3) — **a mais rápida das oito superfícies, e ainda ~10x fora** do alvo.
+- **Correção do veredito de bloqueio:** era por falta de credencial.
+
+**O veredito da rodada 1 desta estação não muda por causa disto.** Ele era sobre a
+documentação publicada e o cliente real, não sobre credencial. **Nenhum conserto de
+produto foi feito para esta estação passar** — achado é entrega.
+

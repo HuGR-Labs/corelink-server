@@ -211,3 +211,27 @@ que esta sessão pode fazer; e `CORELINK_PAT_MINT_AUTH_KEY` (presente em `.env.l
 
 Para fechar A-2 preciso de **um** PAT (lentes Funciona/Rápido/Registrado) e de **dois**,
 de tenants distintos, para I-1.
+
+---
+
+## RODADA 2 (2026-08-31) — lentes fechadas com DOIS tenants
+
+O bloqueio de credencial foi **levantado**: o owner autorizou explicitamente o uso de
+`CORELINK_PAT_MINT_AUTH_KEY` para provisionar tenants de teste. Dois tenants distintos
+— **ACME** e **RIVAL** — foram criados, e as lentes que estavam em branco foram medidas.
+
+- Provisionamento, calibração do instrumento e a ressalva do que este caminho **não**
+  prova (o funil de cadastro): `PROVISIONAMENTO-tenants-de-teste.md`
+- Medições, os 11 ataques, os invariantes e os controles: `RODADA-2-lentes-com-dois-tenants.md`
+
+**Resultado desta superfície:**
+
+- **Funciona:** SIM — 37 B byte-idênticos. **Exige `?teamId=`**; sem ele, 400 `missing field teamId` (minha primeira sonda estava malformada e foi refeita).
+- **Isolamento:** SUSTENTADO — RIVAL recebe 404 tanto com o `teamId` próprio quanto com o `teamId` **do ACME**.
+- **Rápido:** `total;dur` 339 ms quente — **~11x fora** do alvo.
+- **Registrado:** ver `RODADA-2 §4`.
+
+**O veredito da rodada 1 desta estação não muda por causa disto.** Ele era sobre a
+documentação publicada e o cliente real, não sobre credencial. **Nenhum conserto de
+produto foi feito para esta estação passar** — achado é entrega.
+

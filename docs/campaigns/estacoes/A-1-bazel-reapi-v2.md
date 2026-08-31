@@ -277,3 +277,28 @@ Dois bloqueios somados:
 
 **Consequência honesta: a estação A-1 não pode receber "validado" hoje.** O que
 está provado é o protocolo e o defeito da doc; produção segue não exercida.
+
+---
+
+## RODADA 2 (2026-08-31) — lentes fechadas com DOIS tenants
+
+O bloqueio de credencial foi **levantado**: o owner autorizou explicitamente o uso de
+`CORELINK_PAT_MINT_AUTH_KEY` para provisionar tenants de teste. Dois tenants distintos
+— **ACME** e **RIVAL** — foram criados, e as lentes que estavam em branco foram medidas.
+
+- Provisionamento, calibração do instrumento e a ressalva do que este caminho **não**
+  prova (o funil de cadastro): `PROVISIONAMENTO-tenants-de-teste.md`
+- Medições, os 11 ataques, os invariantes e os controles: `RODADA-2-lentes-com-dois-tenants.md`
+
+**Resultado desta superfície:**
+
+- **Funciona:** SIM — 29 B byte-idênticos em `/bazel/cache/cas/<sha256>`.
+- **Isolamento:** SUSTENTADO — RIVAL recebe 404 no **mesmo caminho sem tenant**, com controle positivo do ACME (200 + bytes) provando que a escrita havia pegado. **A pergunta que estava aberta está respondida: o tenant vem do PAT.**
+- **Rápido:** `total;dur` ~497 ms quente (mediana, n=6, faixa 366-630) — **~17x fora** do alvo de 30 ms. PUT frio 2463 ms.
+- **Registrado:** 48 eventos no outbox dos dois tenants, **0** na trilha visível ao cliente.
+- **ACHADO NOVO (corrobora #3/#4 pelo lado do servidor):** `/bazel/v2/cas/<sha>` — exatamente o que o binário real emite quando apontado para `.../bazel/v2` — responde **403 `tenant mismatch`**, porque o segmento após `v2` é lido como tenant. A população de rotas Bazel montadas é **6**, e **nenhuma** tem a forma `/bazel/v2/{ac,cas}/<hash>`.
+
+**O veredito da rodada 1 desta estação não muda por causa disto.** Ele era sobre a
+documentação publicada e o cliente real, não sobre credencial. **Nenhum conserto de
+produto foi feito para esta estação passar** — achado é entrega.
+

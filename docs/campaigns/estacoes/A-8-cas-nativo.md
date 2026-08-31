@@ -371,3 +371,29 @@ expirado, escalada de escopo (`cache:read` escrevendo), replay. **Toda a metade
 
 **Não instalei o binário em `/usr/local/bin` via `sudo`** — declarado, e sem efeito sobre
 os achados, já que o binário exercitado é byte-idêntico ao publicado (checksum colado).
+
+---
+
+## RODADA 2 (2026-08-31) — lentes fechadas com DOIS tenants
+
+O bloqueio de credencial foi **levantado**: o owner autorizou explicitamente o uso de
+`CORELINK_PAT_MINT_AUTH_KEY` para provisionar tenants de teste. Dois tenants distintos
+— **ACME** e **RIVAL** — foram criados, e as lentes que estavam em branco foram medidas.
+
+- Provisionamento, calibração do instrumento e a ressalva do que este caminho **não**
+  prova (o funil de cadastro): `PROVISIONAMENTO-tenants-de-teste.md`
+- Medições, os 11 ataques, os invariantes e os controles: `RODADA-2-lentes-com-dois-tenants.md`
+
+**Resultado desta superfície:**
+
+- **Funciona:** SIM — 47 B byte-idênticos (`PUT` 201 → `GET` 200 com o mesmo conteúdo).
+- **Isolamento:** SUSTENTADO — RIVAL pedindo o **mesmo digest** no próprio tenant recebe 404; MALICE (PAT do RIVAL no caminho do ACME) recebe **403 `cross-tenant`** em 195 ms; traversal `../` → 403; tenant adivinhado (UUID zerado) → 403.
+- **Negativas, com controle ao lado de cada uma:** digest errado → **422 `content hash mismatch`** (controle: o mesmo corpo com digest certo → 201). PAT `read-only` escrevendo → **403 `insufficient scope`** (dois controles: o PAT `read-write` escreve 201 no mesmo lugar, e o próprio `read-only` **lê** 200 — logo o 403 é escopo, não credencial quebrada).
+- **Rápido:** `total;dur` ~493 ms quente (mediana, n=6, faixa 426-579) — **~16x fora** do alvo.
+- **ACHADO — atribuição:** o principal gravado na trilha é `anon@<tenant-id>`. As superfícies de adaptador (Bazel/npm/pip/cargo) gravam o `token_prefix` e **dizem qual credencial agiu**; o plano nativo **não**. Numa investigação de token vazado, `/v1/cas` não responde.
+- **ACHADO — idempotência:** três `PUT` idênticos dão 201/200/200 (efeito não duplica), mas `usage_daily.writes` sobe **+3**. Retry após timeout é cobrado de novo (`RODADA-2 §4.4`).
+
+**O veredito da rodada 1 desta estação não muda por causa disto.** Ele era sobre a
+documentação publicada e o cliente real, não sobre credencial. **Nenhum conserto de
+produto foi feito para esta estação passar** — achado é entrega.
+

@@ -195,3 +195,27 @@ tenant — **a metade decisiva de I-1, e ela está aberta.**
 **Parei no primeiro `npm install`.** Sem PAT de tenant criado pelo funil real, não há
 população de cache, não há segundo install, não há hit, não há número contra o alvo, e não
 há trilha a ler. Os três achados acima **não** dependem disso e ficam de pé.
+
+---
+
+## RODADA 2 (2026-08-31) — lentes fechadas com DOIS tenants
+
+O bloqueio de credencial foi **levantado**: o owner autorizou explicitamente o uso de
+`CORELINK_PAT_MINT_AUTH_KEY` para provisionar tenants de teste. Dois tenants distintos
+— **ACME** e **RIVAL** — foram criados, e as lentes que estavam em branco foram medidas.
+
+- Provisionamento, calibração do instrumento e a ressalva do que este caminho **não**
+  prova (o funil de cadastro): `PROVISIONAMENTO-tenants-de-teste.md`
+- Medições, os 11 ataques, os invariantes e os controles: `RODADA-2-lentes-com-dois-tenants.md`
+
+**Resultado desta superfície:**
+
+- **Funciona:** SIM, **com artefato real na mão** — `/npm/<tenant>/left-pad/-/left-pad-1.3.0.tgz` devolve 3 619 B, `sha1 = 5b8a3a7765dfe001261dde915589e782f8c94d1e`, **idêntico ao `registry.npmjs.org`** (baixado e comparado com `cmp`). `tar tzf` lista `package/package.json`. **I-7 sustentado contra o upstream, não contra mim mesmo.**
+- **Isolamento:** SUSTENTADO — RIVAL no caminho do ACME recebe **403 `tenant mismatch`**.
+- **Rápido:** `total;dur` 596 / 665 / 1213 ms (n=3) — **~22x fora** do alvo.
+- **Correção do veredito de bloqueio:** o `BLOQUEADO` era por falta de credencial; o espelho serve pacote real com PAT.
+
+**O veredito da rodada 1 desta estação não muda por causa disto.** Ele era sobre a
+documentação publicada e o cliente real, não sobre credencial. **Nenhum conserto de
+produto foi feito para esta estação passar** — achado é entrega.
+

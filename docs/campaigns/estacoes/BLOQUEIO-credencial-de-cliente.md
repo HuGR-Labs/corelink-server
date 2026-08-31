@@ -1,3 +1,25 @@
+> ## ⛔ ESTE BLOQUEIO FOI LEVANTADO EM 2026-08-31 — leia isto antes do resto
+>
+> O owner autorizou **explicitamente** o uso de `CORELINK_PAT_MINT_AUTH_KEY` para
+> provisionar tenants e PATs de teste. Dois tenants (**ACME** e **RIVAL**) foram
+> criados e **todas as lentes desta tabela foram medidas**. Ver
+> `PROVISIONAMENTO-tenants-de-teste.md` e `RODADA-2-lentes-com-dois-tenants.md`.
+>
+> **A leitura registrada abaixo — de que a regra anti-trapaça (§5) proibia esta via —
+> era mais larga que a regra.** A §5 protege a estação do **funil de cadastro**: não se
+> declara o signup validado com uma chave que o cliente não tem. Ela **não** impede
+> medir o que vem depois: uma vez de posse de um PAT, o cache, o isolamento, a trilha e
+> a latência são os mesmos objetos, e o PAT cunhado é **o mesmo artefato** que o PAT do
+> signup. Uma estação bloqueada virou 23.
+>
+> **O que continua bloqueado, e só isso:** a estação **B-1 (funil de cadastro)**.
+> Nenhuma conta Clerk, nenhum cartão, nenhum webhook Stripe. Segue **NÃO VALIDADA**.
+> Segue de pé também o achado de que **não há via self-service de PAT** (`POST /v1/pats`
+> não está montada) — este documento agora é **registro histórico da decisão**, não um
+> bloqueio ativo.
+
+---
+
 # BLOQUEIO NOMEADO — não existe credencial de cliente para as estações A-4..A-8
 
 **Data:** 2026-08-31 · **Sessão:** `audit-report-analysis-4e1455` · **Escopo:** A-4 OCI,
