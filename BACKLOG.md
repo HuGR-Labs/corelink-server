@@ -4375,7 +4375,7 @@ verify: |
   [ -f "$g" ] || { echo "FALHA: $g sumiu — o guard que este item fechou nao existe mais; reavalie o item."; exit 1; }
   [ -f "$t" ] || { echo "FALHA: $t foi removido — sem o teste este item volta a ser indefeso."; exit 1; }
   grep -qE "install_status" "$g" && grep -qE "SELECT .*install_status|COLUMNS = .*install_status" "$g" && { echo "FALHA: o guard voltou a nomear install_status numa query — coluna FANTASMA: o D1 lanca no such column em TODA chamada e o guard passa a decidir 100% pelo catch."; exit 1; }
-  for caso in "selects ONLY columns the migrations actually create" "does not select the phantom install_status column" "the D1 stub REJECTS an invented column" "DENIES a tenant with no runners_entitlement row" "DENIES when D1 throws at" "DENIES when env.CONFIG_DB is absent" "ALLOWS a tenant with a positive concurrency cap" "query survives the schema-faithful stub end to end"; do
+  for caso in "selects ONLY columns the migrations actually create" "does not select the phantom install_status column" "the D1 stub REJECTS an invented column" "DENIES a tenant with no runners_entitlement row" "DENIES when D1 throws at" "DENIES when env.CONFIG_DB is absent" "ALLOWS a tenant with a positive concurrency cap" "query survives the schema-faithful stub end to end" "is the STRING" "the column is inert"; do
     grep -qF "$caso" "$t" || { echo "FALHA: o teste perdeu o caso [$caso] — anti-vacuidade: um teste esvaziado passaria verde."; exit 1; }
   done
   cd worker || { echo "FALHA: nao existe diretorio worker/."; exit 1; }
@@ -4391,7 +4391,7 @@ verify: |
   [ -n "$ok" ] && [ -n "$bad" ] || { echo "FALHA: o vitest nao produziu um relatorio JSON legivel (exit $rc) — este verify nunca reporta verde sem ler os numeros."; exit 1; }
   [ "$bad" = "0" ] || { echo "FALHA: o guard DevEnv regrediu — $bad caso(s) do teste de B-075 falharam (pode ser fail-open OU nega-tudo: os controles positivos pegam a segunda direcao)."; exit 1; }
   [ "$rc" = "0" ] || { echo "FALHA: vitest saiu $rc mesmo com 0 falhas declaradas — trate como vermelho."; exit 1; }
-  [ "$ok" -ge 22 ] || { echo "FALHA: o teste rodou com apenas $ok casos verdes (<22) — foi mutilado."; exit 1; }
+  [ "$ok" -ge 24 ] || { echo "FALHA: o teste rodou com apenas $ok casos verdes (<24) — foi mutilado."; exit 1; }
   echo "done: guard DevEnv falha FECHADO (sem linha, D1 lancando em prepare/bind/first, CONFIG_DB ausente, cap nao-positivo), colunas fixadas contra as migracoes, + controles positivos; $ok casos verdes."'
 verify-means: |
   done — o guard nega em TODO caminho que não produza um direito positivo, e a prova é

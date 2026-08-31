@@ -105,7 +105,10 @@ function selectedColumns(sql: string): string[] {
   return m[1]!.split(",").map((c) => c.trim()).filter(Boolean);
 }
 
-type Row = { max_concurrency?: number | null; max_vcpu_h?: number | null };
+type Row = {
+  max_concurrency?: number | null | string;
+  max_vcpu_h?: number | null;
+};
 
 /**
  * CONFIG_DB stub shaped like the guard's call chain — `prepare(sql).bind(id).first()`
@@ -257,6 +260,31 @@ describe("checkDevenvQuota — fail-closed contract (B-075)", () => {
         expect(r.allowed).toBe(false);
       },
     );
+
+    // The `typeof … !== "number"` half of that condition was the ONE surviving
+    // mutant of 9: delete it and every other case here still passed, because
+    // `"8" > 0` is true in JS. It is not hypothetical in this repo — D1 over the
+    // REST binding is known to return numeric columns as REAL/strings, so a
+    // non-number cap is a shape the transport can actually deliver, and without
+    // the typeof check it would AUTHORISE.
+    it("DENIES a row whose max_concurrency is the STRING \"8\", not a number", async () => {
+      const { db } = makeConfigDb({ row: { max_concurrency: "8" } });
+      const r = await checkDevenvQuota(makeEnv(db), TENANT);
+      expect(r.allowed).toBe(false);
+      expect(r.reason).toBeTruthy();
+    });
+  });
+
+  describe("max_vcpu_h is SELECTed but decides nothing", () => {
+    // Pins the docstring's claim so it cannot rot back into the lie it replaced:
+    // the guard used to say max_vcpu_h "is read so that a non-positive value can
+    // be refused", which was false. Adding that refusal would red THIS test and
+    // force the doc (and migration 0072's wall-off semantics) to be revisited
+    // deliberately rather than silently.
+    it("ALLOWS a positive cap even with a NEGATIVE max_vcpu_h — the column is inert", async () => {
+      const { db } = makeConfigDb({ row: { max_concurrency: 8, max_vcpu_h: -5 } });
+      await expect(checkDevenvQuota(makeEnv(db), TENANT)).resolves.toEqual({ allowed: true });
+    });
   });
 });
 
