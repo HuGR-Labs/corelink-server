@@ -7969,8 +7969,20 @@ voo.** É o mesmo mecanismo do [B-136] com aposta menor — ninguém depende des
 merge — mas com o mesmo modo de falha: a noturna não fica vermelha, fica ausente, e quem
 disparou a mão nem fica sabendo que matou a de cima.
 
-Os outros oito workflows escopados pelo #1503 têm gatilho único e **não** colidem. Registro
-isso para que o item não seja lido como "todos os 13".
+Os outros **seis** workflows escopados pelo #1503 têm gatilho único e não colidem:
+`cas_foundation`, `coverage`, `fabric-soak-proof`, `ffi-matrix-ci`, `fuzz-nightly`,
+`mutation-nightly`. Os dois restantes têm **dois** gatilhos cada e mesmo assim ficam de fora,
+por motivos diferentes: `release-slsa3` porque o #1503 lhe **removeu** o `cancel-in-progress`
+de propósito, então ele serializa em vez de matar; e `sbom` porque `release` resolve para
+`refs/tags/*`, que não colide com `refs/heads/main`. Registro os dois mecanismos porque
+"gatilho único" descreveria mal os dois e o número certo é seis, não oito.
+
+**Este item não fecha o assunto de concorrência.** Existe uma classe **separada** e maior — o
+grupo que interpola mas não varia, `${{ github.workflow }}`, constante disfarçado de
+expressão — que o #1503 nunca tocou e que está sem item. Ela é SEV-1, não SEV-4, e está
+nomeada no relatório da campanha (`docs/campaigns/RELATORIO-concurrency-global-backlog-verify.md`,
+§5, §6 e §8). Não confundir as duas: esta aqui é granularidade de ref; aquela é ausência de
+ref.
 
 Conserto idêntico ao do [B-136]: incluir `github.event_name` no grupo dos cinco.
 
@@ -8011,9 +8023,17 @@ verify-means: |
   enquanto for pelo menos uma. Consertar três das cinco mantém o item aberto com contagem
   menor, que é o comportamento certo para um item de lista.
 
-  O `[ "$n" -eq 5 ]` é a cláusula anti-vacuidade, e é a que mais importa aqui: se um arquivo
-  for renomeado, o laço varreria menos e `open=0` reportaria "consertado" sobre um workflow
-  que ninguém tocou. Sem essa linha, apagar os cinco arquivos fecharia o item.
+  A anti-vacuidade tem **duas** camadas, e a versão anterior deste texto atribuía o trabalho
+  à camada errada. Quem carrega é o guard de existência dentro do laço: apagar ou renomear
+  qualquer um dos cinco aborta no PRIMEIRO ausente, com a mensagem daquele arquivo. Medido
+  por mutação — apagando `nightly.yml` sai *"nightly.yml nao existe"*, e apagando os cinco sai
+  a do primeiro, nunca a de contagem. **Apagar os arquivos nunca fecharia o item**, com ou sem
+  a linha de contagem.
+
+  O `[ "$n" -eq 5 ]` protege contra outra coisa, e por isso fica: se a **lista deste item**
+  for editada para varrer menos workflows, os arquivos continuam existindo, o guard de
+  existência não dispara, e `open=0` reportaria "consertado" sobre lane que ninguém tocou. É
+  redundância contra edição do próprio portão, não contra sumiço de arquivo.
 
   Os `continue` são deliberadamente silenciosos porque qualquer um dos três significa que
   **aquela** lane parou de colidir, por conserto ou por decisão — as duas fecham a colisão, e
