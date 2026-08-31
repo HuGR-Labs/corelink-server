@@ -166,7 +166,7 @@ observe + alert as the honest outcome.
 ```backlog
 id: B-044
 repo: corelink-runners
-owner: owner
+owner: tl
 status: open
 verify: manual
 verify-means: |
@@ -561,7 +561,7 @@ today, what each option costs, and what happens if the answer is "not now".
 ```backlog
 id: B-008
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: manual
 verify-means: only the owner or the PagerDuty incident log can say whether a page ever arrived
@@ -639,6 +639,16 @@ actually requiring storage-enforced immutability (owner brief §4: "Governance n
 Compliance at the point a contract requires it"). Admitting a `'compliance'` value
 to `cas_retention.mode` is then also a table-REBUILD migration (D1 cannot widen an
 inline CHECK).
+
+**Why this still carries `owner:` — read the field carefully.** `owner:` now means
+exactly one thing: *the next step is impossible without the owner right now.* The
+**blocker here is Cloudflare's, not the owner's** — R2 answers `NotImplemented`, and
+no decision of his unblocks that. The field is set because the only path that does
+NOT wait on Cloudflare is option (b), a second Object-Lock-capable backend (S3/GCS),
+and that is his money. So: nothing is pending on his desk about R2 itself; do not
+read this row as a question he has failed to answer. If Cloudflare ships Object
+Lock, this becomes ordinary engineering and the field must move to `tl` the same
+day.
 
 ```backlog
 id: B-046
@@ -1509,7 +1519,7 @@ today, what each option costs, and what happens if the answer is "not now".
 ```backlog
 id: B-032
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: |
   python3 scripts/compliance-weekly-digest.py --dry-run --json \
@@ -1667,7 +1677,7 @@ engineering fix.
 ```backlog
 id: B-031
 repo: corelink-server
-owner: owner
+owner: tl
 status: done
 verify: |
   ! grep -q "slsa-github-generator" .github/workflows/release-slsa3.yml
@@ -1797,7 +1807,7 @@ verify now counts the actual drift in the eight files.
 ```backlog
 id: B-035
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: |
   test $(grep -lE 'TLS 1\.3\+|\(TLS 1\.3\)' \
@@ -2061,7 +2071,7 @@ today, what each option costs, and what happens if the answer is "not now".
 ```backlog
 id: B-012
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: manual
 verify-means: settled when a bot-opened PR shows checks
@@ -2350,7 +2360,7 @@ what the hostname-liveness gate exists to catch, and it caught this note.
 ```backlog
 id: B-041
 repo: corelink-server
-owner: owner
+owner: tl
 status: done
 verify: |
   [ -z "$(dig +short status.corelink.humangr.com 2>/dev/null)" ] && curl -sS -o /dev/null --max-time 15 https://hugrl.betteruptime.com/
@@ -2394,7 +2404,7 @@ promoting to a `schedule:` is a separate, deferred decision.
 ```backlog
 id: B-042
 repo: corelink-server
-owner: owner
+owner: tl
 status: done
 verify: manual
 verify-means: |
@@ -2450,7 +2460,7 @@ and the audit-archive-lag census.
 ```backlog
 id: B-043
 repo: corelink-server
-owner: owner
+owner: tl
 status: done
 verify: |
   grep -q 'AUDIT_DRAIN_LEASE_ENABLED = "1"' wrangler.toml
@@ -3072,7 +3082,7 @@ and the OKF half of the read-ceiling work).
 ```backlog
 id: B-058
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: |
   ! grep -qE '^\s+push:' .github/workflows/okf-autoreconcile.yml
@@ -3662,11 +3672,32 @@ anulada nesta costura: **um merge impecável que não chega à produção não p
 ninguém.** Deploy é decisão do owner; este item existe para que a distância entre
 `main` e produção seja rastreada, não para disparar o deploy.
 
+**Fechado 2026-08-31 — produção convergiu.** GET por `{id}` nas cinco aplicações da
+API de Containers (nunca pela LISTA) devolve a MESMA imagem em todas:
+`…-corelinkserver-prod:ddd95560-r1` (`corelink-prod` v178, `prod-sam` v143,
+`prod-lhr` v139, `prod-nrt` v151, `prod-syd` v149). O commit de origem `ddd95560`
+(#1459) é **ancestral de `origin/main`** — condição de fechamento deste item.
+
+Os quatro commits nomeados acima como presos fora saíram: `3ec2a76e`, `06048762`,
+`cbd68c73` e `b1235dbe` são todos ancestrais do pin implantado, ou seja o apagamento
+do Art.17, o limite de leitura do CAS, a verificação da assinatura do Turborepo e as
+três coleções limitadas **estão em produção**. A distância caiu de 39 commits para
+19, e destes **um único** toca `crates/corelink-container/`: `af42b328` (#1470), um
+refactor que move testes entre arquivos sem mudar o código do contêiner — nenhuma
+correção de comportamento ficou para trás.
+
+Honestidade sobre o instrumento: a LISTA concordou com o GET desta vez. Isso **não**
+promove a LISTA a fonte confiável — a leitura que vale continua sendo o GET por
+`{id}`, e foi ela que decidiu. O item fecha sobre a convergência, não sobre a
+distância ser zero; a distância volta a crescer por construção a cada merge, e quem
+a governa é o repin de rotina (`scripts/check-container-pin-fresh.sh` + o PR de
+repin), não este item.
+
 ```backlog
 id: B-062
 repo: corelink-server
-owner: owner
-status: open
+owner: tl
+status: done
 verify: manual
 verify-means: |
   MANUAL, e o `verify` NÃO decide a alegação — declaro isso em vez de fingir.
@@ -3683,11 +3714,18 @@ verify-means: |
   ainda vivo, porque um deploy de Worker não reinicia contêiner — só uma imagem NOVA
   substitui).
 
-  Procedimento de reverificação: GET por id nas cinco aplicações, comparar a tag com
-  `git rev-parse --short HEAD`, e contar `git log --oneline <tag-commit>..HEAD --
-  crates/corelink-container/`. Fecha quando as cinco convergirem para um pin cuja
-  origem seja um commit alcançável a partir da `main`.
-last-verified: 2026-08-30
+  POLARIDADE INVERTIDA (o item está `done`): esta checagem descreve o que precisa
+  continuar VERDADEIRO, não o que falta fazer. **Done enquanto as cinco aplicações
+  seguirem na MESMA tag e essa tag nascer de um commit alcançável a partir da
+  `main`.** REABRE se qualquer uma divergir das outras, ou se o pin comum deixar de
+  ser ancestral da `main` (deploy a partir de um branch, rollback para uma imagem
+  órfã), ou se voltar a haver correção de comportamento no crate do contêiner presa
+  fora de produção.
+
+  Procedimento de reverificação: GET por id nas cinco aplicações, comparar as cinco
+  tags entre si, `git merge-base --is-ancestor <tag-commit> origin/main`, e contar
+  `git log --oneline <tag-commit>..origin/main -- crates/corelink-container/`.
+last-verified: 2026-08-31
 ```
 
 ### B-063 — uma partição da trilha de auditoria não drena há 82h, disparando SEV-0 diário para ninguém
@@ -3711,7 +3749,7 @@ A causa mecânica é [B-112]. Este item cobre o incidente; aquele cobre o defeit
 ```backlog
 id: B-063
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: manual
 verify-means: |
@@ -4105,7 +4143,7 @@ construído, formalmente verificado, e com a última costura aberta.
 ```backlog
 id: B-071
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: |
   bash -c '[ -d crates/corelink-gc ] || { echo "FALHA: crate corelink-gc sumiu — reavalie o item."; exit 1; }
@@ -4785,7 +4823,7 @@ assinados é [B-087] e a evidência falsa é [B-084].
 ```backlog
 id: B-083
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: |
   bash -c 'd=Dockerfile
@@ -4896,7 +4934,7 @@ e a propagação da afirmação para os instrumentos.
 ```backlog
 id: B-085
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: |
   bash -c 'p=apps/docs/docs/explanation/residency/lgpd-brazil.mdx
@@ -4953,7 +4991,7 @@ lançamento.
 ```backlog
 id: B-086
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: |
   bash -c 'ids=$(grep -E "^database_id[[:space:]]*=" wrangler.toml | grep -oE "\"[0-9a-f-]{36}\"" | sort -u | wc -l | tr -d " ")
@@ -5018,7 +5056,7 @@ cara depois.
 ```backlog
 id: B-087
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: |
   bash -c 'q=marketing/sales/legal-questionnaires/CAIQ-V4-pre-filled.md
@@ -5069,7 +5107,7 @@ afirmações e o marcador `[CEO_NAME]`, propagando o texto que o `PROOF-POINTS.m
 ```backlog
 id: B-088
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: |
   bash -c 'p=marketing/launch/PRESS-RELEASE.md
@@ -5117,7 +5155,7 @@ queda expõe danos sem teto.
 ```backlog
 id: B-089
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: |
   bash -c 's=legal/sla/v1.0.0.md
@@ -5374,7 +5412,7 @@ gRPC como roadmap explícito em vez de capacidade presente.
 ```backlog
 id: B-094
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: |
   bash -c 'b=crates/corelink-container/src/routes/bazel_v2.rs
@@ -5493,7 +5531,7 @@ a diferença deveria estar escrita onde a tese está.
 ```backlog
 id: B-096
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: |
   bash -c 'm=crates/corelink-container/src/public_base_allowlist.manifest
@@ -5545,7 +5583,7 @@ Cloudflare não é controlado por nós, e descobrir isso quando o teto for ating
 ```backlog
 id: B-097
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: manual
 verify-means: |
@@ -6040,7 +6078,7 @@ alguém comparar as MESMAS unidades nos dois regimes.
 ```backlog
 id: B-105
 repo: corelink-server
-owner: owner
+owner: tl
 status: open
 verify: manual
 verify-means: |
