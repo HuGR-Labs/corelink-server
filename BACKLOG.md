@@ -7081,3 +7081,75 @@ verify-means: |
   verde **não** é prova de que isso foi feito.
 last-verified: 2026-08-31
 ```
+
+### B-127 — 3 670 audit rows have no tenant, so the residency predicate is unevaluable — and a JOIN check reports clean
+
+Measured against production D1 (`d64742ea`) on 2026-08-30, containers running
+`cab16a3a-r1` (21 commits behind `main`, 5 of them container-affecting). Full
+method in `reports/go-live/D-2-residency.md`.
+
+| measure | value |
+|---|---|
+| rows in `audit_outbox` | **77 935** |
+| rows that join to a `tenant` row | **74 333** |
+| rows whose `tenant_id` has NO `tenant` row | **3 670** (175 distinct ids) |
+| residency violations among the joinable rows | **0** |
+| rows in `weur` | **4** — and **no tenant** declares `weur` |
+| do those 4 have a tenant row? | **no, 0 of 4** |
+
+**The finding is not the violation count.** It is that the invariant is
+**unevaluable** for 4.7% of the population, and that the obvious way to check it
+— join `audit_outbox` to `tenant` and compare `region` to `primary_region` —
+**drops exactly those rows without saying so**. "0 violations" was computed over
+a population the query had already trimmed.
+
+Unevaluable is a third state, weaker than satisfied and different from violated,
+and nothing in the system currently distinguishes it from satisfied.
+
+Four of the orphans sit in `weur`, a region **no tenant is provisioned for**. The
+count is trivial; the property is not — a row exists in a region whose residency
+predicate has nothing to check against.
+
+Secondary, and it bounds what any green result here means: **76 129 of 77 935
+rows (97.7%) are `enam`**. The cross-region rejection path (409
+`residency_violation`, plus the migration-0023 `RAISE(ABORT)` triggers) is real
+code that production traffic has barely exercised. A control that never fires has
+not been shown to fire.
+
+**Cause, separated rather than left open** (control: `dsr_erasure_log` holds
+2 044 rows, so the lookup is live): **170 of the 175** orphan tenants — **3 526
+of the 3 670 rows** — appear in `dsr_erasure_log`. Those are CORRECT: audit rows
+are RETAIN-class evidence under Art. 5(2) and must survive an Art. 17 erasure.
+That shrinks the unexplained residual to **5 tenants / 144 rows** (3 in `wnam`,
+1 in `weur`, 1 in `apac`) — including the `weur` rows above, which are therefore
+NOT explained by erasure.
+
+Recorded that way deliberately: the first measurement supported a much larger
+claim, and the second one shrank it. The item states the smaller true number.
+
+What would close this: a residency check that counts unevaluable rows as a
+FAILING third bucket rather than dropping them — correct orphans and unexplained
+orphans are equally invisible to a `JOIN` — plus an explanation for the residual
+5.
+
+Relates to [B-125] (the same audit table, seal latency) and to the erasure path,
+which is the most likely legitimate producer of tenant-less rows.
+
+```backlog
+id: B-127
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  grep -rq "region" migrations/d1/0023_residency_check_constraints.sql
+verify-means: |
+  open — a STRUCTURAL pin: it passes while the residency constraint migration is
+  in the tree, i.e. while the mechanism this item is about still exists. It
+  deliberately asserts NO count: a verify that hard-coded 3670 would go green on
+  any change to the number rather than on the defect being fixed, and one that
+  queried production would make the gate depend on the network and on
+  credentials. The real check is re-running the queries in
+  reports/go-live/D-2-residency.md. This line only guarantees the item cannot be
+  silently closed while the mechanism is untouched.
+last-verified: 2026-08-30
+```
