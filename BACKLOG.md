@@ -6726,7 +6726,7 @@ verify: |
   python3 scripts/validate_api_surface.py --self-test >/dev/null || { echo "FALHA: o self-test do extrator reprovou — o instrumento esta cego e o silencio dele nao vale nada."; exit 1; }
   raw=$(python3 scripts/validate_api_surface.py --strict 2>&1)
   for p in "/v1/admin/ops" "/v1/enterprise/inquire" "/v1/dpa/accept" "/v1/audit/export" "/v1/admin/audit/events" "/v1/admin/tenants" "/v1/data-categories" "/v1/pats" "/v1/customer/account/delete" "/v1/customer/account/export"; do
-    printf "%s\n" "$raw" | grep -qE "MISSING_(ROUTE|DOC) +.*(  | )${p}\$" || { echo "FALHA: o comparador NAO acusa a divergencia conhecida ${p} — portao que nao pega o defeito conhecido nao e portao."; exit 1; }
+    printf "%s\n" "$raw" | grep -E "MISSING_(ROUTE|DOC) +.*(  | )${p}\$" >/dev/null || { echo "FALHA: o comparador NAO acusa a divergencia conhecida ${p} — portao que nao pega o defeito conhecido nao e portao."; exit 1; }
   done
   python3 scripts/validate_api_surface.py >/dev/null || { echo "FALHA: ha divergencia NAO declarada, ou uma entrada do ledger ficou obsoleta."; exit 1; }
   echo "done: o comparador existe, o self-test passa, ele acusa as 8 familias conhecidas + as 2 do B-117, e nao ha divergencia fora do ledger"'
