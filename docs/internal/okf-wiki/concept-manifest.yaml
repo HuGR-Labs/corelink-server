@@ -167,7 +167,7 @@ candidates:
     title: "Rust container compute plane"
     status: "active"
     source_cluster: "planes"
-    seed_from: ["crates/corelink-container/src/main.rs", "crates/corelink-container/src/routes.rs", "crates/corelink-container/src/lib.rs", "crates/corelink-container/src/storage/r2_kv.rs", "crates/corelink-container/src/routes/failover.rs", "crates/corelink-container/src/routes/otel_layer.rs"]
+    seed_from: ["crates/corelink-container/src/main.rs", "crates/corelink-container/src/routes/build.rs", "crates/corelink-container/src/lib.rs", "crates/corelink-container/src/storage/r2_kv.rs", "crates/corelink-container/src/routes/failover.rs", "crates/corelink-container/src/routes/otel_layer.rs"]
   - id: "planes/request-flow"
     type: "Plane"
     title: "Worker -> DO -> Container request flow"

@@ -49,7 +49,6 @@
 1307	crates/corelink-ratelimit/src/limiter.rs
 1298	crates/corelink-container/src/main.rs
 1278	crates/corelink-audit/src/events.rs
-1273	crates/corelink-container/src/routes.rs
 1246	crates/corelink-container/src/routes/public_mirror.rs
 1232	scripts/validate_docs_reality.py
 1223	crates/corelink-billing-stripe-materializer/src/d1.rs
@@ -71,7 +70,6 @@
 1044	crates/corelink-billing/src/quota/core/check.rs
 1040	crates/corelink-container/src/routes/pip.rs
 1035	crates/corelink-byok/src/byok_gcp/real.rs
-1033	crates/corelink-container/src/origin_timing.rs
 1031	crates/corelink-container/src/storage/d1_audit_sink.rs
 1025	crates/corelink-gc/src/run.rs
 1019	crates/corelink-dsr/src/event.rs
