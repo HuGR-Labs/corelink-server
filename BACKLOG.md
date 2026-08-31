@@ -6717,33 +6717,49 @@ senão vira uma fonte de alarme falso que alguém acaba silenciando.
 id: B-121
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'n=$(grep -rln "reference/api/endpoints" scripts/ .github/workflows/ 2>/dev/null | grep -v "gen-api-reference" | wc -l | tr -d " ")
-  [ "$n" = 0 ] || { echo "FALHA: $n script/lane alem do gerador referencia o diretorio de endpoints — pode ser o comparador nascendo; verifique e feche se for."; exit 1; }
-  eps=$(ls apps/docs/docs/reference/api/endpoints/*.mdx 2>/dev/null | wc -l | tr -d " ")
-  [ "$eps" -gt 0 ] || { echo "FALHA: nenhuma pagina de endpoint encontrada — o item pressupoe que a superficie documentada existe; reavalie."; exit 1; }
-  echo "aberto: $eps endpoints documentados e nenhum script ou lane compara essa lista com as rotas servidas"'
+  bash -c 'set -o pipefail
+  [ -f scripts/validate_api_surface.py ] || { echo "FALHA: o comparador sumiu."; exit 1; }
+  [ -f .github/workflows/api-surface-parity.yml ] || { echo "FALHA: a lane de PR sumiu."; exit 1; }
+  grep -q "runs-on: corelink" .github/workflows/api-surface-parity.yml || { echo "FALHA: a lane nao esta em runner self-hosted."; exit 1; }
+  python3 scripts/validate_api_surface.py --self-test >/dev/null || { echo "FALHA: o self-test do extrator reprovou — o instrumento esta cego e o silencio dele nao vale nada."; exit 1; }
+  raw=$(python3 scripts/validate_api_surface.py --strict 2>&1)
+  for p in "/v1/admin/ops" "/v1/enterprise/inquire" "/v1/dpa/accept" "/v1/audit/export" "/v1/admin/audit/events" "/v1/admin/tenants" "/v1/data-categories" "/v1/pats" "/v1/customer/account/delete" "/v1/customer/account/export"; do
+    printf "%s\n" "$raw" | grep -qE "MISSING_(ROUTE|DOC) +.*(  | )${p}\$" || { echo "FALHA: o comparador NAO acusa a divergencia conhecida ${p} — portao que nao pega o defeito conhecido nao e portao."; exit 1; }
+  done
+  python3 scripts/validate_api_surface.py >/dev/null || { echo "FALHA: ha divergencia NAO declarada, ou uma entrada do ledger ficou obsoleta."; exit 1; }
+  echo "done: o comparador existe, o self-test passa, ele acusa as 8 familias conhecidas + as 2 do B-117, e nao ha divergencia fora do ledger"'
 verify-means: |
-  open — a superfície documentada existe e nada a compara com a servida.
+  done — o comparador existe, roda em lane de `pull_request` self-hosted, e foi **visto
+  pegando o defeito conhecido**.
 
-  O predicado mede a **presença do comparador**, não a ausência de divergências. Escolhi o
-  mais estreito e mais honesto: contar divergências dentro de um `verify:` exigiria embutir
-  ali a varredura inteira, e uma varredura frágil dentro de um portão é pior que nenhuma —
-  ela vira alarme falso, alguém a silencia, e a supressão-com-motivo sobrevive muito mais
-  tempo que um build vermelho.
+  A polaridade inverteu junto com o status. O predicado `open` media a **ausência** do
+  comparador; este mede quatro coisas que só um comparador correto satisfaz ao mesmo tempo:
 
-  O que este comando NÃO decide: se o comparador, quando existir, é **correto**. Um que
-  extraia rota por `grep '\.route("'` reprova este item ficando verde e não enxerga nada —
-  foi o que aconteceu na primeira tentativa desta varredura. Quem fechar precisa provar o
-  contrário: rodar o comparador contra as divergências já conhecidas ([B-116], [B-119],
-  [B-120] e as quatro da tabela) e mostrar que ele **acusa as oito**. Portão que nunca foi
-  visto pegando o defeito conhecido não é portão.
+  1. o script e a lane existem, e a lane não é hosted;
+  2. o **self-test do extrator passa** — ele prova, com controle positivo, que enxerga as
+     quatro formas de registro (literal na linha do `.route(`, literal na linha **seguinte**,
+     registro por **constante**, e caminho terminado no Worker). Um extrator cego reporta
+     superfície limpa, e foi exatamente assim que a primeira varredura produziu 32 ausências
+     fantasmas;
+  3. em `--strict`, ele **acusa nominalmente** as oito famílias documentadas-sem-rota mais as
+     duas rotas-sem-doc do [B-117]. Este é o item que o `verify-means` anterior exigiu de
+     quem fechasse, e está mecanizado aqui em vez de prometido em prosa;
+  4. no modo normal, não sobra divergência **fora do ledger** — e uma entrada de ledger cuja
+     divergência já foi consertada também reprova (`STALE_LEDGER`), então o conserto de
+     [B-116]/[B-119]/[B-120]/[B-117] não pode aterrissar deixando a própria desculpa para trás.
 
-  Nota de escopo: o comparador natural é bidirecional. Uma direção pega doc sem rota
-  (o que está aqui); a outra pega rota sem doc, que é [B-117]. Um único instrumento
-  fecha as duas famílias.
-last-verified: 2026-08-30
+  O que este comando NÃO decide: se as divergências foram **consertadas**. Não foram — este
+  item entregava o instrumento, não os reparos. As oito famílias continuam abertas sob
+  [B-116], [B-117], [B-119] e [B-120], agora com um portão que impede a nona.
+
+  Achados novos que a varredura completa trouxe, além dos oito já catalogados: `/v1/dpa/re-accept`
+  (documentado, sem rota em lugar nenhum — só uma proptest o nomeia), `/api/csp-report`
+  (servido pelo `apps/admin-ui`, não pela API — não pertence a esta spec), e a superfície
+  `/v1/customer/*` inteira, `/v1/admin/tenants/{tenant_id}/*`, `/v1/public/*` — todas servidas
+  e ausentes do OpenAPI. Estão no ledger com o item dono de cada uma.
+last-verified: 2026-08-31
 ```
 
 ### B-122 — regiao de fase sob `spawn_blocking` nao registra nada, e o `ostore` nao se separa sem mover as fronteiras
