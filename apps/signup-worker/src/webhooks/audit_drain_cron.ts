@@ -16,8 +16,9 @@
  *    `{ ok, partitions_drained, rows_sealed, partitions_drifted,
  *    partitions_failed, partitions_leased, heads_resigned, incomplete }`
  *    (`crates/corelink-container/src/routes/audit_drain.rs`, summary built at
- *    ~:1535). This caller read `j.sealed` / `j.partitions` — keys that do not
- *    exist — so `Number(undefined ?? 0)` made the log line read
+ *    ~:1535). This caller read the response's `sealed` / `partitions` fields —
+ *    names the handler has never emitted — so those keys were always absent, and
+ *    `Number(undefined ?? 0)` made the log line read
  *    `sealed=0 partitions=0` on every run since the cron was wired, no matter
  *    how much work the drain actually did. A sweep that sealed 200 rows and a
  *    sweep that sealed none were byte-identical in the log.

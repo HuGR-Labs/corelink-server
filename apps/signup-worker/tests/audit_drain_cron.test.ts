@@ -74,9 +74,9 @@ describe("runAuditDrainSweep", () => {
     });
   });
 
-  it("reports ZERO for the OLD keys — the exact prod defect (`j.sealed`)", async () => {
+  it("reports ZERO for the OLD keys — the exact prod defect", async () => {
     // Regression teeth: a body carrying only the pre-B-064 key names must not
-    // be readable as work done. If someone reintroduces `j.sealed`, this test
+    // be readable as work done. If someone reintroduces the bare `sealed` key, this test
     // is the one that goes red.
     const r = await runAuditDrainSweep(
       env({
