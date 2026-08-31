@@ -29,7 +29,8 @@ and the SQL `CHECK` constraint lives in `specs/03_architecture/data_model.md`
 ### Can do
 
 - Everything an `Admin` can do (see below), **plus**:
-  - View and mutate billing surface (`admin:billing`).
+  - View and mutate billing surface (the `billing` capability of an
+    owner dashboard session; never a minted cache PAT).
   - Grant or revoke the `Owner` role on other users.
   - Act as approver for destructive operations.
   - Initiate Enterprise BYOK setup (KMS root key wrap) — *planned — Enterprise BYOK with customer-managed KMS is on the roadmap; the current endpoint returns HTTP 501 (not wired).*
@@ -71,17 +72,21 @@ and the SQL `CHECK` constraint lives in `specs/03_architecture/data_model.md`
 
 ### Can do
 
-- Read and mutate tenant config (`admin:tenant-read`, `admin:tenant-write`).
-- Mint and revoke PATs for any user in the tenant (`admin:tokens`).
-- Read tenant audit log (`admin:audit`).
-- Invite, demote, and revoke users below `Owner` (`admin:users`).
+- Read and mutate tenant config.
+- Mint and revoke PATs for any user in the tenant.
+- Read tenant audit log.
+- Invite, demote, and revoke users below `Owner`.
+
+  These four are gated on the **dashboard session role**, not on a PAT
+  scope. The granular `admin:*` scope names that used to be cited here
+  were never implemented and were removed in B-080.
 - Act as approver for destructive operations (under
   `INV-ADMIN-DUAL-APPROVAL`).
 - All CAS read/write (`cache:r`, `cache:w`, `cache:find-missing`).
 
 ### Cannot do
 
-- View or mutate billing — `admin:billing` is `Owner`-only.
+- View or mutate billing — the `billing` capability is `Owner`-only.
 - Grant or revoke the `Owner` role.
 - Single-handedly execute any destructive op
   (`ConfigRollback`, `RetentionPolicyReduce`, `FeatureFlagDisable`,
@@ -169,8 +174,10 @@ and the SQL `CHECK` constraint lives in `specs/03_architecture/data_model.md`
 ### Can do
 
 - Read CAS blobs and AC results (`cache:r`).
-- Read tenant audit log (`admin:audit`) — useful for SecOps observers.
-- View tenant config (`admin:tenant-read`).
+- Read tenant audit log — useful for SecOps observers (via the dashboard
+  session; the audit surface is owner/admin-gated, so a `Viewer` reads it
+  in the dashboard, not with a PAT).
+- View tenant config.
 
 ### Cannot do
 
@@ -195,8 +202,9 @@ and the SQL `CHECK` constraint lives in `specs/03_architecture/data_model.md`
 1. Owner or Admin: invites auditor@firm.com with role=Viewer.
 2. Auditor signs in via Clerk SSO; membership row written.
 3. Auditor mints a PAT (forbidden — Viewer cannot mint).
-4. Admin: mints a PAT on the auditor's behalf with cache:r + admin:audit
-   scopes, time-boxed expiry (e.g. 14 days).
+4. Admin: mints a PAT on the auditor's behalf with `cache:r` scope,
+   time-boxed expiry (e.g. 14 days). (There is no `admin:audit` scope to
+   add — it never existed; the audit log is read from the dashboard.)
 5. After audit closes: Admin revokes the PAT (no reason is recorded — the
    revoke endpoint takes no request body) and demotes the membership row
    (deleted_at = now()).

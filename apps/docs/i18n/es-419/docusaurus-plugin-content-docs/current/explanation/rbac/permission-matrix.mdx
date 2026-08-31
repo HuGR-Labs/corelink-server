@@ -48,19 +48,38 @@ Legend:
 | FindMissingBlobs            | `cache:find-missing`  |   ✅  |   ✅  |     ✅     |   ❌   |
 | Admin blob deletion         | `cache:delete`        |   ✅  |   ✅  |     ❌     |   ❌   |
 
+:::warning[How the administrative rows are actually gated]
+The **Scope** column below said `admin:tenant-read`, `admin:tenant-write`,
+`admin:tokens`, `admin:audit` and `admin:users` for the administrative
+rows. **Those six scopes were never implemented and were removed**
+(B-080): no mint path accepted them, `pat.scope` could not store them,
+and no enforcement point read them. Do not build a least-privilege plan
+on those names.
+
+Administrative access is gated on the **dashboard session role** (Clerk
+owner/admin), shown here as `session role`, plus the `billing` capability
+the Worker forwards for billing / account-PII. PAT scopes govern the
+cache surface (`cache:*`) and the owner-grade `admin` superset.
+
+The role columns describe the intended RBAC model. Parts of the admin
+API they reference are not yet served — treat the ✅/❌ cells as the
+design, and the [permissions reference](../../reference/rbac/permissions.mdx)
+as the authority on what a PAT scope actually grants today.
+:::
+
 ## Members — users and tokens
 
 | Permission                       | Scope            | Owner | Admin | Developer | Viewer |
 |----------------------------------|------------------|:-----:|:-----:|:---------:|:------:|
-| Invite user (Developer / Viewer) | `admin:users`    |   ✅  |   ✅  |     ❌     |   ❌   |
-| Invite user (Admin)              | `admin:users`    |   ✅  |   ✅  |     ❌     |   ❌   |
-| Invite user (Owner)              | `admin:users`    |   ✅  |   ❌  |     ❌     |   ❌   |
-| Demote user                      | `admin:users`    |   ✅  |   ✅* |     ❌     |   ❌   |
-| Revoke user (soft-delete row)    | `admin:users`    |   ✅  |   ✅* |     ❌     |   ❌   |
-| Mint PAT for self                | `admin:tokens`   |   ✅  |   ✅  |  self only |   ❌   |
-| Mint PAT for another user        | `admin:tokens`   |   ✅  |   ✅  |     ❌     |   ❌   |
-| Revoke any PAT in tenant         | `admin:tokens`   |   ✅  |   ✅  |     ❌     |   ❌   |
-| Revoke own PAT                   | `admin:tokens`   |   ✅  |   ✅  |     ✅     |   ❌   |
+| Invite user (Developer / Viewer) | session role    |   ✅  |   ✅  |     ❌     |   ❌   |
+| Invite user (Admin)              | session role    |   ✅  |   ✅  |     ❌     |   ❌   |
+| Invite user (Owner)              | session role    |   ✅  |   ❌  |     ❌     |   ❌   |
+| Demote user                      | session role    |   ✅  |   ✅* |     ❌     |   ❌   |
+| Revoke user (soft-delete row)    | session role    |   ✅  |   ✅* |     ❌     |   ❌   |
+| Mint PAT for self                | session role   |   ✅  |   ✅  |  self only |   ❌   |
+| Mint PAT for another user        | session role   |   ✅  |   ✅  |     ❌     |   ❌   |
+| Revoke any PAT in tenant         | session role   |   ✅  |   ✅  |     ❌     |   ❌   |
+| Revoke own PAT                   | session role   |   ✅  |   ✅  |     ✅     |   ❌   |
 
 > \* `Admin` cannot demote or revoke an `Owner`. Last-Owner safeguard
 > applies — at least one Owner must remain.
@@ -69,49 +88,49 @@ Legend:
 
 | Permission                            | Scope                | Owner | Admin | Developer | Viewer |
 |---------------------------------------|----------------------|:-----:|:-----:|:---------:|:------:|
-| List / read tenant config             | `admin:tenant-read`  |   ✅  |   ✅  |     ❌     |   ✅   |
-| Mutate tenant config (forward)        | `admin:tenant-write` |   ✅  |   ✅  |     ❌     |   ❌   |
-| `ConfigRollback`                      | `admin:tenant-write` |  2P   |  2P   |     ❌     |   ❌   |
-| `RetentionPolicyReduce`               | `admin:tenant-write` |  2P   |  2P   |     ❌     |   ❌   |
-| `FeatureFlagToggleSafe` (rollout ↑)   | `admin:tenant-write` |   ✅  |   ✅  |     ❌     |   ❌   |
-| `FeatureFlagDisable`                  | `admin:tenant-write` |  2P   |  2P   |     ❌     |   ❌   |
-| `RateLimitAdjustUp` (conservative ↑)  | `admin:tenant-write` |   ✅  |   ✅  |     ❌     |   ❌   |
+| List / read tenant config             | session role  |   ✅  |   ✅  |     ❌     |   ✅   |
+| Mutate tenant config (forward)        | session role |   ✅  |   ✅  |     ❌     |   ❌   |
+| `ConfigRollback`                      | session role |  2P   |  2P   |     ❌     |   ❌   |
+| `RetentionPolicyReduce`               | session role |  2P   |  2P   |     ❌     |   ❌   |
+| `FeatureFlagToggleSafe` (rollout ↑)   | session role |   ✅  |   ✅  |     ❌     |   ❌   |
+| `FeatureFlagDisable`                  | session role |  2P   |  2P   |     ❌     |   ❌   |
+| `RateLimitAdjustUp` (conservative ↑)  | session role |   ✅  |   ✅  |     ❌     |   ❌   |
 
 ## Audit
 
 | Permission                          | Scope         | Owner | Admin | Developer | Viewer |
 |-------------------------------------|---------------|:-----:|:-----:|:---------:|:------:|
-| Read tenant audit log               | `admin:audit` |   ✅  |   ✅  |     ❌     |   ✅   |
-| Request RFC 6962 inclusion proof    | `admin:audit` |   ✅  |   ✅  |     ❌     |   ✅   |
-| Query `admin_op_log` (role changes) | `admin:audit` |   ✅  |   ✅  |     ❌     |   ✅   |
+| Read tenant audit log               | session role |   ✅  |   ✅  |     ❌     |   ✅   |
+| Request RFC 6962 inclusion proof    | session role |   ✅  |   ✅  |     ❌     |   ✅   |
+| Query `admin_op_log` (role changes) | session role |   ✅  |   ✅  |     ❌     |   ✅   |
 
 ## Billing
 
 | Permission                       | Scope            | Owner | Admin | Developer | Viewer |
 |----------------------------------|------------------|:-----:|:-----:|:---------:|:------:|
-| View invoices                    | `admin:billing`  |   ✅  |   ❌  |     ❌     |   ❌   |
-| Update payment method            | `admin:billing`  |   ✅  |   ❌  |     ❌     |   ❌   |
-| Apply tax exemption              | `admin:billing`  |   ✅  |   ❌  |     ❌     |   ❌   |
-| Change tier (upgrade)            | `admin:billing`  |   ✅  |   ❌  |     ❌     |   ❌   |
-| Change tier (downgrade)          | `admin:billing`  |  2P   |   ❌  |     ❌     |   ❌   |
+| View invoices                    | `billing`  |   ✅  |   ❌  |     ❌     |   ❌   |
+| Update payment method            | `billing`  |   ✅  |   ❌  |     ❌     |   ❌   |
+| Apply tax exemption              | `billing`  |   ✅  |   ❌  |     ❌     |   ❌   |
+| Change tier (upgrade)            | `billing`  |   ✅  |   ❌  |     ❌     |   ❌   |
+| Change tier (downgrade)          | `billing`  |  2P   |   ❌  |     ❌     |   ❌   |
 
 ## BYOK (Enterprise tier)
 
 | Permission                                       | Scope                 | Owner | Admin | Developer | Viewer |
 |--------------------------------------------------|-----------------------|:-----:|:-----:|:---------:|:------:|
-| View BYOK config                                 | `admin:tenant-read`   |   ✅  |   ✅  |     ❌     |   ❌   |
-| Configure customer-managed KMS root key          | `admin:tenant-write`  |   ✅  |   ❌  |     ❌     |   ❌   |
-| Rotate KMS root key                              | `admin:tenant-write`  |  2P   |   ❌  |     ❌     |   ❌   |
-| `SecretRotationStart` (per-tenant DEK rotation)  | `admin:tenant-write`  |  2P   |  2P   |     ❌     |   ❌   |
-| Trigger BYOK kill-switch                         | `admin:tenant-write`  |  2P   |   ❌  |     ❌     |   ❌   |
+| View BYOK config                                 | session role   |   ✅  |   ✅  |     ❌     |   ❌   |
+| Configure customer-managed KMS root key          | session role  |   ✅  |   ❌  |     ❌     |   ❌   |
+| Rotate KMS root key                              | session role  |  2P   |   ❌  |     ❌     |   ❌   |
+| `SecretRotationStart` (per-tenant DEK rotation)  | session role  |  2P   |  2P   |     ❌     |   ❌   |
+| Trigger BYOK kill-switch                         | session role  |  2P   |   ❌  |     ❌     |   ❌   |
 
 ## Lifecycle / destructive
 
 | Permission                                  | Scope                | Owner | Admin | Developer | Viewer |
 |---------------------------------------------|----------------------|:-----:|:-----:|:---------:|:------:|
-| `TenantTombstone` (S-11 erasure pipeline)   | `admin:tenant-write` |  2P   |  2P   |     ❌     |   ❌   |
-| Issue DSR (erasure) for tenant data         | `admin:tenant-write` |   ✅  |   ✅  |     ❌     |   ❌   |
-| Withdraw consent / pause processing         | `admin:tenant-write` |   ✅  |   ✅  |     ❌     |   ❌   |
+| `TenantTombstone` (S-11 erasure pipeline)   | session role |  2P   |  2P   |     ❌     |   ❌   |
+| Issue DSR (erasure) for tenant data         | session role |   ✅  |   ✅  |     ❌     |   ❌   |
+| Withdraw consent / pause processing         | session role |   ✅  |   ✅  |     ❌     |   ❌   |
 
 ## Executor (Phase 2 only — not granted to humans)
 

@@ -39,13 +39,25 @@ Rollenänderungen und Vier-Augen-Ereignissen abfragen.
 
 ## Voraussetzungen
 
-- Sie besitzen den Scope `admin:audit`.
-- Ein PAT mit diesem Scope
-  (`Authorization: Bearer corelink_<env>_…`) oder eine Clerk-Session im
-  Dashboard. PATs erzeugen und auflisten Sie mit
-  `POST /v1/customer/keys` (`{name, scopes[]}`) und
-  `GET /v1/customer/keys`; widerrufen mit
-  `POST /v1/customer/keys/{pat_id}/revoke`.
+- Eine Clerk-Session im Dashboard als `Owner` oder `Admin`, oder ein PAT
+  mit Owner-Rang (`admin`, `Authorization: Bearer corelink_<env>_…`).
+  Das Audit-Log enthält Sicherheits- und Konto-PII, deshalb schützt der
+  Container es mit `requires_billing_admin` — der Fähigkeit `billing`,
+  die der Worker für eine Owner-/Admin-Session weiterreicht, oder einem
+  `admin`- bzw. `owner`-Token. Ein reines Cache-PAT
+  (`read-write` / `cache:r`) erreicht es **nicht**.
+- PATs erzeugen und auflisten Sie mit `POST /v1/customer/keys`
+  (`{name, scopes[]}`) und `GET /v1/customer/keys`; widerrufen mit
+  `POST /v1/customer/keys/{pat_id}/revoke`. Beachten Sie: die
+  Selbstbedienungs-Ausgabe vergibt nur Cache-Scopes — `admin` ist über
+  diesen Weg nie erhältlich.
+
+:::note
+Einen Scope `admin:audit` gibt es nicht. Er stand hier als
+Voraussetzung, wurde aber nie implementiert und ist inzwischen entfernt
+(B-080) — kein Ausgabepfad hat ihn je akzeptiert und keine
+Durchsetzungsstelle hat ihn je gelesen.
+:::
 - API-Basis-URL: `https://corelink-api.humangr.com`.
 
 ## Die Audit-Kette in einem Absatz

@@ -32,12 +32,22 @@ and dual-approval events.
 
 ## Prerequisites
 
-- You hold `admin:audit` scope.
-- A PAT with that scope
-  (`Authorization: Bearer corelink_<env>_…`), or a Clerk session in the
-  dashboard. Mint and list PATs with `POST /v1/customer/keys`
-  (`{name, scopes[]}`) and `GET /v1/customer/keys`; revoke with
-  `POST /v1/customer/keys/{pat_id}/revoke`.
+- An owner or admin Clerk session in the dashboard, or an owner-grade
+  `admin` PAT (`Authorization: Bearer corelink_<env>_…`). The audit log
+  surfaces security and account PII, so the container gates it with
+  `requires_billing_admin` — the `billing` capability the Worker forwards
+  for an owner/admin session, or an `admin` / `owner` token. A plain
+  cache PAT (`read-write` / `cache:r`) does **not** reach it.
+- Mint and list PATs with `POST /v1/customer/keys` (`{name, scopes[]}`)
+  and `GET /v1/customer/keys`; revoke with
+  `POST /v1/customer/keys/{pat_id}/revoke`. Note the self-serve mint only
+  grants cache scopes — `admin` is never self-serve-grantable.
+
+:::note
+There is no `admin:audit` scope. It was listed here as a prerequisite,
+but it was never implemented and has been removed (B-080) — no mint path
+ever accepted it and no enforcement point ever read it.
+:::
 - API base URL: `https://corelink-api.humangr.com`.
 
 ## The audit chain in one paragraph

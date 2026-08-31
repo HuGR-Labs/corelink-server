@@ -230,7 +230,7 @@ function makeCustomerPats(): CustomerPat[] {
     {
       pat_id: "pat_002",
       name: "dashboard-readonly",
-      scopes: ["cache:r", "admin:audit"],
+      scopes: ["cache:r"],
       created_at: "2026-03-20T12:00:00Z",
       last_used_at: "2026-05-13T18:42:00Z",
     },

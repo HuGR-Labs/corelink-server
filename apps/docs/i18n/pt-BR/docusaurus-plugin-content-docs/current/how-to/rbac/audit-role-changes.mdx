@@ -39,12 +39,24 @@ busca de mudanças de papel e de eventos de dupla aprovação.
 
 ## Pré-requisitos
 
-- Você possui o escopo `admin:audit`.
-- Um PAT com esse escopo
-  (`Authorization: Bearer corelink_<env>_…`), ou uma sessão Clerk no
-  painel. Emita e liste PATs com `POST /v1/customer/keys`
-  (`{name, scopes[]}`) e `GET /v1/customer/keys`; revogue com
-  `POST /v1/customer/keys/{pat_id}/revoke`.
+- Uma sessão Clerk no painel como `Owner` ou `Admin`, ou um PAT de nível
+  owner (`admin`, `Authorization: Bearer corelink_<env>_…`). O log de
+  auditoria expõe PII de segurança e de conta, por isso o contêiner o
+  protege com `requires_billing_admin` — a capacidade `billing` que o
+  Worker encaminha para uma sessão owner/admin, ou um token `admin` ou
+  `owner`. Um PAT apenas de cache (`read-write` / `cache:r`) **não**
+  alcança esse endpoint.
+- Emita e liste PATs com `POST /v1/customer/keys` (`{name, scopes[]}`) e
+  `GET /v1/customer/keys`; revogue com
+  `POST /v1/customer/keys/{pat_id}/revoke`. Note que a emissão
+  self-service concede apenas escopos de cache — `admin` nunca é
+  concedido por esse caminho.
+
+:::note
+Não existe o escopo `admin:audit`. Ele constava aqui como pré-requisito,
+mas nunca foi implementado e agora foi removido (B-080) — nenhum caminho
+de cunhagem jamais o aceitou e nenhum ponto de aplicação jamais o leu.
+:::
 - URL base da API: `https://corelink-api.humangr.com`.
 
 ## A cadeia de auditoria em um parágrafo

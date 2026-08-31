@@ -39,12 +39,24 @@ busca de cambios de rol y eventos de doble aprobación.
 
 ## Requisitos previos
 
-- Cuentas con el alcance `admin:audit`.
-- Un PAT con ese alcance
-  (`Authorization: Bearer corelink_<env>_…`), o una sesión de Clerk en el
-  panel. Crea y lista PATs con `POST /v1/customer/keys`
-  (`{name, scopes[]}`) y `GET /v1/customer/keys`; revócalos con
-  `POST /v1/customer/keys/{pat_id}/revoke`.
+- Una sesión de Clerk en el panel como `Owner` o `Admin`, o un PAT de
+  rango owner (`admin`, `Authorization: Bearer corelink_<env>_…`). El
+  registro de auditoría expone PII de seguridad y de cuenta, por eso el
+  contenedor lo protege con `requires_billing_admin`: la capacidad
+  `billing` que el Worker reenvía para una sesión owner/admin, o un token
+  `admin` u `owner`. Un PAT de solo caché (`read-write` / `cache:r`)
+  **no** llega a él.
+- Crea y lista PATs con `POST /v1/customer/keys` (`{name, scopes[]}`) y
+  `GET /v1/customer/keys`; revócalos con
+  `POST /v1/customer/keys/{pat_id}/revoke`. Ten en cuenta que la emisión
+  autoservicio solo concede alcances de caché — `admin` nunca se concede
+  por esa vía.
+
+:::note
+No existe el alcance `admin:audit`. Figuraba aquí como requisito, pero
+nunca se implementó y ya fue eliminado (B-080): ningún camino de emisión
+lo aceptó jamás y ningún punto de aplicación lo leyó nunca.
+:::
 - URL base de la API: `https://corelink-api.humangr.com`.
 
 ## La cadena de auditoría en un párrafo
