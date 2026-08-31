@@ -22,3 +22,30 @@
   Same class as the hand-written `nightly-x86_64-apple-darwin` `$GITHUB_PATH`
   lines catalogued by WP-CI, but hidden inside a shared script, which is why a
   sweep for `apple-darwin` across `.github/workflows/` did not find it.
+
+- **`corelink-reapi::mutants-nightly` was about to reach the fleet with no
+  `timeout-minutes`.** It would have inherited GitHub's 360-minute default — the
+  exact hazard `pr-gate` was given a 25-minute bound for in the same file. It now
+  carries an explicit 180-minute ceiling, documented in-file as *derived, not
+  measured*: the job has never executed (it is `if: github.event_name ==
+  'schedule'` and this workflow's cron was removed on 2026-08-02), so there is no
+  median to take. Half the inherited default caps a wedged box at 3 h instead of
+  6 h; if a real run ever hits it, the answer is to shard the mutant set, not to
+  raise the ceiling.
+
+### Changed
+
+- **`sbom.yml` was pulled out of the G-A2 batch and left on the Mac fleet.**
+  Its `Install CycloneDX CLI` step selects the download with
+  `case "$(uname -s)/$(uname -m)"` and has arms for `Darwin/arm64` and
+  `Darwin/x86_64` only; the `*)` arm exits 1, and the Linux digest was previously
+  removed from the `env:` block as a placeholder that pinned nothing. Moving the
+  five jobs to `runs-on: corelink` (Ubuntu 24.04 / Firecracker) would have made
+  that fall-through a *certain* failure — and `sbom.yml` fires only on
+  `release: published` + `workflow_dispatch`, so no PR would ever have shown it.
+  It would have surfaced on release day, with `sbom-tsa-attest` and
+  `sbom-release-upload` chained behind it by `needs:`, i.e. no SBOM in the
+  release assets. The migration needs a real `cyclonedx-linux-x64` SHA-256 pin,
+  `sha256sum` instead of `shasum -a 256` (the fleet has coreutils, not the macOS
+  tool), and a green `workflow_dispatch` as proof — which is a PR of its own, not
+  a line in a six-file batch.

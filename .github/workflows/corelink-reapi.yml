@@ -421,6 +421,27 @@ jobs:
     name: cargo-mutants kill-rate ≥ 80%
     # zero-hosted (WP-CI): cargo por crate; os outros 2 jobs deste arquivo já rodam aqui
     runs-on: corelink
+    # Bound BEFORE the move, for the same reason `pr-gate` above got one: without
+    # it the job inherits GitHub's 360-min default, and a wedged `cargo mutants`
+    # would pin a fleet box for 6 h.
+    #
+    # How this number was calibrated — it is a CEILING, not a measured p95, and
+    # the honesty matters: this job has NEVER executed. It is gated on
+    # `github.event_name == 'schedule'` and this workflow's cron was removed on
+    # 2026-08-02, so there is no run history to take a median from. The bound is
+    # therefore derived, not observed:
+    #   - `pr-gate` on this same fabric measures 416 s median for a FULL
+    #     build+clippy+test of this crate — that is roughly one mutant cycle's
+    #     worst case, and also the cost of the mutants baseline build.
+    #   - `cargo mutants` runs that suite once per mutant over a ~7.8 kLoC `src`,
+    #     and `--minimum-test-timeout=600` lets a single hung mutant burn 10 min
+    #     on its own, so the total is plausibly hours, not minutes.
+    #   - 180 min is half the inherited default: it still admits a genuinely long
+    #     legitimate sweep, while capping a wedged box at 3 h instead of 6 h.
+    # If a real run ever HITS this bound, the fix is to shard the mutant set (or
+    # `--shard`/`--in-place` scope it), not to raise the ceiling — and to replace
+    # this derivation with the measured median at that point.
+    timeout-minutes: 180
     if: github.event_name == 'schedule'
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0

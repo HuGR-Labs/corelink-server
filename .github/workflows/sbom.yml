@@ -62,8 +62,7 @@ jobs:
   # ---------------------------------------------------------------------------
   sbom-generate:
     name: "Generate SBOM (cargo-cyclonedx)"
-    # zero-hosted (WP-CI): cargo-cyclonedx via taiki-e/install-action + python3
-    runs-on: corelink
+    runs-on: [self-hosted, mac, corelink-builder]
     outputs:
       version: ${{ steps.version.outputs.version }}
       sbom_path: sbom.cdx.json
@@ -156,8 +155,7 @@ jobs:
   # ---------------------------------------------------------------------------
   sbom-ntia-validate:
     name: "NTIA minimum elements check"
-    # zero-hosted (WP-CI): cargo-cyclonedx via taiki-e/install-action + python3
-    runs-on: corelink
+    runs-on: [self-hosted, mac, corelink-builder]
     needs: sbom-generate
 
     steps:
@@ -225,8 +223,7 @@ jobs:
   # ---------------------------------------------------------------------------
   sbom-tsa-attest:
     name: "RFC 3161 TSA timestamp (Sigstore)"
-    # zero-hosted (WP-CI): cargo-cyclonedx via taiki-e/install-action + python3
-    runs-on: corelink
+    runs-on: [self-hosted, mac, corelink-builder]
     needs: sbom-ntia-validate
     outputs:
       tsr_present: ${{ steps.tsa.outputs.tsr_present }}
@@ -279,8 +276,7 @@ jobs:
   # ---------------------------------------------------------------------------
   sbom-dt-ingest:
     name: "Dependency-Track ingestion"
-    # zero-hosted (WP-CI): cargo-cyclonedx via taiki-e/install-action + python3
-    runs-on: corelink
+    runs-on: [self-hosted, mac, corelink-builder]
     needs: [sbom-generate, sbom-ntia-validate]
     # DT ingestion is non-blocking: continue even if DT is down
     continue-on-error: true
@@ -344,8 +340,7 @@ jobs:
   # ---------------------------------------------------------------------------
   sbom-release-upload:
     name: "Upload release assets"
-    # zero-hosted (WP-CI): cargo-cyclonedx via taiki-e/install-action + python3
-    runs-on: corelink
+    runs-on: [self-hosted, mac, corelink-builder]
     # `sbom-dt-ingest` was dropped from `needs` on 2026-08-31 (WP-E). Now that it
     # is conditional on `vars.DT_ENDPOINT`, keeping it here would SKIP the
     # release upload whenever Dependency-Track is unconfigured — a skipped
