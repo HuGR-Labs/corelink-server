@@ -7226,3 +7226,92 @@ verify-means: |
   do servidor. Fechar aqui sem o outro lado deixa a causa viva.
 last-verified: 2026-08-31
 ```
+
+### B-129 — o `Server-Timing` foi desenhado para SOMAR, e somar e compativel com esconder
+
+Item guarda-chuva. **B-107, B-109 e B-105 nao sao tres itens — sao tres sintomas de um
+defeito de desenho, e ha um quarto previsivel.**
+
+**O numero que dói.** Numa leitura de cache autenticada medida em producao (GET, total
+1001 ms):
+
+| fase | ms | nomeado |
+|---|---|---|
+| `auth` | 8 | sim |
+| `wdb` | 391 | **7** (`qtier` 3 + `qresid` 4) |
+| `origin` | 602 | **372** (`ostore` 371 + `oother` 1) |
+
+Sobram **384 ms no residuo do `wdb`** e **230 ms no `ohop`**: **61% de uma leitura de cache
+nao tem nome.** Esse e o argumento; o resto e contexto.
+
+**A tese.** Toda vez que esta campanha tentou atribuir custo, esbarrou num residuo por
+subtracao que nao e publicado. `oother` (139 ms, [B-109]); `ostore` agregando R2 com ate
+cinco idas ao D1 sob um nome que se le como "armazenamento" ([B-107]); `qother` (384 ms,
+aqui). O padrao nao e coincidencia: **uma particao que FECHA e condicao necessaria e NAO
+suficiente para atribuir custo.** Fechar garante que nada sumiu do total — nao garante que
+se saiba onde o tempo esta. O `Server-Timing` foi desenhado para somar, e somar e
+compativel com esconder.
+
+**A instrumentacao que resolveria metade existe e esta desligada.** O `qother` — o residuo
+do `wdb` — e publicado apenas atras de flag (`worker/src/index.ts:278-279`: o padrao
+publica `wdb`/`qtier`/`qbatch`/`qresid`, sem `qdo` e sem `qother`).
+
+Custo de ligar: e um flag de Worker, sem rebuild de contêiner — mais barato que qualquer
+das outras instrumentacoes desta campanha. **O que ligar NAO resolve:** o `qother` nomeia o
+residuo do `wdb` como UM bloco. Ele diz quanto tempo esta la; nao diz do que e feito. Trocar
+"384 ms sem nome" por "384 ms chamados `qother`" e progresso de atribuicao, nao de
+diagnostico — e o `ohop` de 230 ms continua sendo subtracao no lado do Worker.
+
+**A relacao com os outros tres, explicita.** Se este item for resolvido, os tres encolhem:
+[B-107] deixa de comparar um nome que agrega duas coisas, [B-109] deixa de existir como
+categoria, e [B-105] ganha um piso calculavel. Se cada um for atacado sozinho, **o quarto
+residuo aparece** — e a campanha gasta um ciclo por sintoma.
+
+**O que este item NAO decide, e e a parte honesta.** Se publicar todos os residuos e a
+resposta certa. Pode ser que a granularidade correta seja **menos** fases e nao mais: um
+`Server-Timing` com quinze nomes e tao pouco acionavel quanto um com tres, e cada nome novo
+e uma chance de quebrar a particao (ver [B-122], onde adicionar UM nome ja colidia com o
+`Store` externo). Nao tenho dado para escolher entre "mais nomes" e "fronteiras melhores", e
+escolher sem dado e como os `oother` chegaram aqui.
+
+```backlog
+id: B-129
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  bash -c 'w=worker/src/index.ts
+  [ -f "$w" ] || { echo "FALHA: index.ts sumiu — reavalie o item."; exit 1; }
+  gated=0; grep -qE "no .qother.|sem .qother.|without .qother" "$w" && gated=1
+  grep -q "qother" "$w" || { echo "FALHA: qother nao existe mais no Worker — reavalie o item."; exit 1; }
+  residuos=0
+  grep -q "oother" crates/corelink-container/src/origin_timing.rs 2>/dev/null && residuos=$((residuos+1))
+  grep -q "qother" "$w" && residuos=$((residuos+1))
+  grep -q "ohop" "$w" && residuos=$((residuos+1))
+  [ "$residuos" -ge 2 ] || { echo "FALHA: restam menos de 2 residuos por subtracao — feche ou reescreva o item."; exit 1; }
+  echo "aberto: $residuos residuos por subtracao no caminho quente (oother/qother/ohop); qother gated=$gated"'
+verify-means: |
+  open — o caminho quente ainda tem dois ou mais residuos calculados por SUBTRACAO
+  (`oother` no contêiner, `qother` e `ohop` no Worker).
+
+  Vira DRIFTED quando sobrar menos de dois — o que acontece se os residuos forem eliminados
+  por fronteiras melhores, nao por publicacao. Escolhi contar residuos em vez de exigir o
+  flag ligado de proposito: **ligar o `qother` nao fecha este item**, so troca "sem nome"
+  por "um nome que agrega". A alegacao e sobre atribuicao, nao sobre publicacao.
+
+  **O que este comando NAO decide, e e a maior parte:** quanto tempo cai nos residuos. Isso
+  so sai do `Server-Timing` de uma requisicao autenticada contra producao, e o gate nao tem
+  credencial. O comando decide a existencia estrutural dos residuos, que vive no
+  repositorio; o tamanho deles esta na prosa como instantaneo datado (384 ms + 230 ms de
+  1001 ms, medido em 2026-08-30 contra o pin `4f9313e0`).
+
+  Fecha quando uma leitura de cache autenticada tiver **menos de 10% do tempo total** em
+  residuo — numero escolhido para que o resto seja atribuivel, nao para ser facil.
+
+  Cross-ref: [B-107] (o `ostore` agrega e por isso nao e otimizavel como uma coisa so),
+  [B-109] (o `oother`, ja consertado por divisao de portao — o unico dos tres que fechou),
+  [B-105] (o piso de uma leitura nao e calculavel enquanto 61% nao tiver nome), [B-122]
+  (adicionar UM nome ja colidiu com a particao, que e a evidencia de que "mais nomes" nao e
+  obviamente a resposta).
+last-verified: 2026-08-30
+```
