@@ -5008,6 +5008,43 @@ residência do D1 ([B-086]). Um CAIQ entra no processo de risco do comprador e c
 garantido como verdadeiro no contrato principal — correção é barata antes de assinar e
 cara depois.
 
+**Segunda passada 2026-08-31 — revisão fria adversarial sobre o próprio PR.** A primeira
+passada consertou uma linha e deixou treze vendendo o mesmo controle inexistente:
+
+- **BYOK vendido como entregue em 13 linhas.** `CEK-02.1` ("optional BYOK envelope"),
+  `CEK-10.1` ("Y — drilled weekly"), `CEK-11.1` ("Y — HSM-backed"), `CEK-18.1` (citando
+  `apps/docs/docs/security/byok`, **caminho que não existe** — o real é
+  `apps/docs/docs/explanation/security/byok.mdx`), `DSP-09.1` (BYOK como medida
+  suplementar de SCC), `BCR-04.1`, e mais `CEK-04.1/05.1/06.1/07.1/16.1/17.1/19.1`, que
+  descrevem um ciclo de vida de CMK do cliente inteiro. Medido: `POST
+  /v1/admin/byok/activate` devolve `501 byok_not_available`
+  (`crates/corelink-container/src/routes/byok_admin.rs:245-257`) e o único provider
+  compilado é `InMemoryFake`. O documento **já se autocontradizia**: `CEK-09.1` responde
+  **P** — *"No BYOK at GA today … gated-inert"*.
+- **A ressalva honesta que o reparo carrega, porque a metade oposta também é falsa:** o
+  workflow `.github/workflows/byok_kill_switch_drill_weekly.yml` **existe, está em
+  `cron: 0 3 * * 0`, e as 5 últimas execuções estão verdes.** Não é "um job que nunca
+  rodou". É um job que drila o **fake**: toda credencial de KMS no step está comentada
+  (`# AWS_ACCESS_KEY_ID: …`), nenhum KMS de cliente é contatado, e o número
+  `byok-kill-switch-rtt ≤ 5 min` mede o fake. As duas metades entraram no texto.
+- **`LOG-03.1` — "Audit log immutability enforced? Y".** O R2 não tem Object Lock
+  (`NotImplemented`, [B-046]). Passou a **P**, e diz *tamper-evident, não imutável*: a
+  adulteração é **detectada na verificação**, não impedida. A raiz jurídica está no **DPA
+  executado** (`legal/dpa/v1.0.0.en-US.md:110-111`, *"immutable R2 with Object Lock for 7
+  years"*) e **não foi emendada aqui** — emendar ato jurídico é do owner. É exatamente a
+  razão pela qual este item segue aberto, e agora é o que o `verify` mede.
+- **`SEF-03.1` — "24×7 detection? Y — weekly synthetic page".** O drill **não dispara em
+  produção**: o cron de segunda 14:00 UTC vive no `[triggers]` default e no
+  `[env.staging.triggers]`; o `wrangler.toml:262-264` diz no próprio comentário que
+  *"production env intentionally omits `[triggers]`"*, e a imagem do pager sintético segue
+  com `<PIN_AT_RELEASE>` (`wrangler.toml:278`). Passou a **P**. A rotação PagerDuty 24/7
+  **não é mensurável deste repositório** — vive na conta PagerDuty — então a linha não a
+  afirma **nem a nega**: pede o export da escala.
+- **Propagação ao arquivo irmão.** `marketing/sales/legal-questionnaires/SIG-LITE-2026-pre-filled.md`
+  — mesmo pacote de procurement, mesma pasta — atestava em `N.6` *"Y — BYOK across 4
+  providers … drilled weekly"* e em `N.4` o envelope BYOK opcional. Ambas corrigidas.
+  Estava fora do diff da primeira passada.
+
 ```backlog
 id: B-087
 repo: corelink-server
@@ -5015,56 +5052,84 @@ owner: owner
 status: open
 verify: |
   bash -c 'q=marketing/sales/legal-questionnaires/CAIQ-V4-pre-filled.md
-  [ -f "$q" ] || { echo "FALHA: o CAIQ sumiu — feche o item ou reescreva-o."; exit 1; }
+  s=marketing/sales/legal-questionnaires/SIG-LITE-2026-pre-filled.md
+  d=legal/dpa/v1.0.0.en-US.md
+  for f in "$q" "$s" "$d"; do
+    [ -f "$f" ] || { echo "FALHA: $f sumiu — o comando perdeu o objeto e nao pode concluir nada."; exit 1; }
+  done
   linhas=0
-  for k in "STA-08\.1" "STA-11\.1" "AIS-04\.1"; do
+  for k in "STA-08\.1" "STA-11\.1" "AIS-04\.1" "CEK-09\.1" "CEK-10\.1" "CEK-11\.1" "LOG-03\.1" "SEF-03\.1" "DSP-09\.1"; do
     grep -qE "^\|[[:space:]]*$k" "$q" && linhas=$((linhas+1))
   done
-  [ "$linhas" = 3 ] || { echo "FALHA: so $linhas das 3 linhas nomeadas existem no CAIQ — o comando perdeu o objeto e nao pode concluir ausencia."; exit 1; }
+  [ "$linhas" = 9 ] || { echo "FALHA: so $linhas das 9 linhas nomeadas existem no CAIQ — renomear ou deletar uma secao nao pode compartilhar saida com corrigi-la."; exit 1; }
+  grep -qE "^\|[[:space:]]*N\.6[[:space:]]*\|" "$s" || { echo "FALHA: a linha N.6 do SIG-LITE sumiu — o comando perdeu o objeto irmao."; exit 1; }
   ys=0
-  grep -E "^\|[[:space:]]*STA-08\.1" "$q" | grep -q "| Y " && ys=$((ys+1))
-  grep -E "^\|[[:space:]]*STA-11\.1" "$q" | grep -q "| Y " && ys=$((ys+1))
-  grep -E "^\|[[:space:]]*AIS-04\.1" "$q" | grep -q "| Y " && ys=$((ys+1))
-  ph=0
-  grep -rqE "SIGNING PLACEHOLDER|ZONE_ID_PLACEHOLDER" .github/workflows/ && ph=1
-  if [ "$ys" = 0 ]; then echo "ok-parcial: as 3 linhas nomeadas nao atestam mais Y; o item segue ABERTO pela reconciliacao dos instrumentos assinados (DPA, SLA, templates a reguladores) — feche-o so quando ela terminar."; exit 0; fi
-  if [ "$ph" = 0 ]; then echo "FALHA: os placeholders de assinatura sumiram — reavalie: talvez o controle exista agora."; exit 1; fi
-  echo "aberto: $ys de 3 linhas do CAIQ ainda atestam Y e os placeholders de assinatura seguem no CI"'
+  for k in "STA-08\.1" "STA-11\.1" "AIS-04\.1" "CEK-10\.1" "CEK-11\.1" "LOG-03\.1" "SEF-03\.1" "DSP-09\.1"; do
+    grep -E "^\|[[:space:]]*$k" "$q" | grep -q "| Y |" && ys=$((ys+1))
+  done
+  grep -E "^\|[[:space:]]*N\.6[[:space:]]*\|" "$s" | grep -q "| Y |" && ys=$((ys+1))
+  [ "$ys" = 0 ] || { echo "FALHA: $ys linhas de procurement voltaram a atestar Y para controles nao entregues (BYOK / WORM / pagina sintetica / supply chain) — o reparo regrediu."; exit 1; }
+  worm="immutable R2 with Object Lock"
+  ctl=$(grep -c "Object Lock" "$d" | tr -d " ")
+  [ "$ctl" -ge 1 ] || { echo "FALHA: a string de controle \"Object Lock\" nao aparece em $d — o DPA foi reescrito ou o comando esta lendo o arquivo errado; reavalie o item a mao."; exit 1; }
+  if grep -qF "$worm" "$d"; then
+    echo "aberto: o CAIQ e o SIG-LITE estao corrigidos, mas o DPA EXECUTADO ainda declara \"$worm\" por 7 anos e o R2 devolve NotImplemented. Enquanto essa linha existir o item fica aberto — emendar um ato juridico e do owner, nao deste portao."
+    exit 0
+  fi
+  echo "FALHA: o DPA nao declara mais \"$worm\" — a razao restante deste item acabou. Feche B-087 (status: done) com verify de polaridade INVERTIDA, ou reescreva o item nomeando a razao que sobrou."
+  exit 1'
 verify-means: |
-  open — o item continua aberto, mas por uma razão diferente da original, e o comando foi
-  reescrito para dizer isso em vez de mentir nos dois sentidos.
+  open — e a **polaridade agora tem dentes nos dois sentidos**, que era o defeito da
+  primeira versão deste comando.
 
-  **As três linhas do CAIQ estão corrigidas.** `STA-08.1` (P) e `STA-11.1` (N) caíram
-  numa das purgas de claims anteriores; `AIS-04.1` caiu em 2026-08-31 (PR WP-C), medida
-  contra os gatilhos reais: `codeql.yml` é `schedule: '30 5 * * *'` + `workflow_dispatch`
-  **sem lane `pull_request`**; o cron do `semgrep.yml` está comentado (parado em
-  2026-08-10 após 0 de 8 execuções bem-sucedidas); o cron do `fuzz-nightly.yml` está
-  comentado e o próprio arquivo diz que o dispatch é *"currently the ONLY trigger"*.
+  O comando anterior era incapaz de ficar vermelho. Com as três linhas já corrigidas,
+  `ys=0` era permanente, e o ramo `ys=0` saía `exit 0` "ok-parcial" — sempre. A razão
+  declarada para o item seguir aberto (a reconciliação dos instrumentos assinados) não era
+  medida por nada. Pior: ao virar script, ele escapou também do relógio de 14 dias, porque
+  `scripts/backlog_verify.py:196` só aplica STALE a `verify: manual`. Um item aberto por
+  uma razão que nenhum comando lê e nenhum relógio cobra fica aberto para sempre sem que
+  ninguém perceba.
 
-  O item permanece aberto porque ele é o **guarda-chuva da reconciliação dos instrumentos
-  assinados** — o BYOK do SLA ([B-083]), o Object Lock do DPA e dos templates a
-  reguladores ([B-085]), a residência do D1 ([B-086]). Essa parte não foi feita.
+  **O que o comando mede agora é a condição REMANESCENTE, não a já resolvida:**
+  `legal/dpa/v1.0.0.en-US.md` ainda declara *"immutable R2 with Object Lock"* por 7 anos,
+  contra um R2 que devolve `NotImplemented`. Enquanto essa linha existir, o item está
+  legitimamente aberto e o comando sai `exit 0`. **Quando ela deixar de casar, o comando
+  fica VERMELHO** e manda fechar o item ou renomear a razão que sobrou. É um portão que
+  pode reprovar, e reprova por progresso — que é o comportamento correto para um item
+  `open`.
 
-  Por isso o `ys = 0` agora sai com `exit 0` e uma mensagem que nomeia a razão restante,
-  em vez de `exit 1` mandando fechar. Um comando que manda fechar o item quando só a
-  metade barata foi feita é pior que nenhum: ele converte progresso parcial em ordem de
-  encerramento.
+  Emendar o DPA **não é trabalho deste portão nem deste PR**: é ato jurídico executado, e
+  a decisão é do owner. O portão o observa; não o toca.
 
-  A primeira metade nova é o **controle do instrumento**: conta se as três linhas
-  nomeadas ainda EXISTEM no arquivo antes de julgar seus valores. Sem isso, renomear
-  `AIS-04.1` ou deletar a seção produziria a mesma saída que corrigi-la — "não achei Y" e
-  "não achei a linha" deixam de compartilhar saída.
+  Três metades são **controle do instrumento**, para que sumiço e conserto nunca
+  compartilhem saída:
 
-  O que NÃO decide, e admito, em três pontos:
+  1. Conta se as **nove** linhas nomeadas ainda existem no CAIQ (as 3 originais + as 6
+     novas) e falha se forem menos — renomear ou deletar uma seção não pode passar.
+  2. Exige a existência da linha `N.6` no SIG-LITE, o arquivo irmão que a primeira passada
+     não tocou.
+  3. Antes de decidir pela ausência de *"immutable R2 with Object Lock"* no DPA, exige que
+     a string de controle mais fraca `"Object Lock"` apareça ao menos uma vez. Se o DPA
+     inteiro for reescrito ou o caminho mudar, o comando **falha pedindo reavaliação
+     manual** em vez de concluir "consertado" a partir de um arquivo que não está lendo.
 
-  1. Quais prospects já receberam a versão anterior do documento, e se precisam ser
-     notificados. É registro comercial fora do repositório e pertence ao owner; vira item
-     próprio se a decisão for notificar.
-  2. As outras ~190 linhas do CAIQ. Só as três nomeadas foram auditadas. Um questionário
-     em que três linhas atestavam controles inexistentes merece uma varredura completa, e
-     ela não foi feita.
-  3. Se o texto novo da `AIS-04.1` está juridicamente adequado como resposta "P" num
-     processo de procurement. Ele é factualmente verdadeiro; adequação é do owner.
+  E a metade de regressão cobre as nove linhas de procurement (CAIQ + SIG-LITE): se
+  qualquer uma voltar a atestar `Y` para BYOK, WORM, página sintética ou supply chain, o
+  comando fica vermelho.
+
+  O que NÃO decide, e admito, em cinco pontos:
+
+  1. Quais prospects já receberam a versão anterior do CAIQ ou do SIG-LITE, e se precisam
+     ser notificados. É registro comercial fora do repositório e pertence ao owner.
+  2. As demais ~180 linhas do CAIQ. Foram auditadas as 9 nomeadas mais os 7 vizinhos
+     `CEK-*` que dependiam do mesmo BYOK. O resto do questionário segue sem varredura.
+  3. **A rotação PagerDuty 24/7 do `SEF-03.1`.** Ela vive na conta PagerDuty, não no
+     repositório. O comando não a afirma nem a nega, e a linha do CAIQ faz o mesmo.
+  4. Se um "P" é resposta juridicamente adequada num processo de procurement. O texto é
+     factualmente verdadeiro; adequação é do owner e do jurídico.
+  5. Os demais instrumentos assinados que herdam a mesma afirmação de Object Lock — avisos
+     de privacidade publicados e os templates de notificação de violação à DPC irlandesa e
+     à ANPD. O comando lê o DPA; a varredura dos templates não foi feita.
 last-verified: 2026-08-31
 ```
 
