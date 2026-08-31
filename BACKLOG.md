@@ -558,10 +558,22 @@ system raises has ever reached anybody.
 
 **Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
 today, what each option costs, and what happens if the answer is "not now".
+
+**Por que `owner:` (reconfirmado 2026-08-31).** Ler o incident log da PagerDuty
+exige uma credencial que **não existe em lugar nenhum**: o único segredo de
+PagerDuty provisionado — no `.env.local` e nos 18 segredos do repo — é
+`PAGERDUTY_ROUTING_KEY`, chave de **escrita** da Events API v2, que enfileira
+eventos e não lê incidentes. `PAGERDUTY_API_KEY` (o token REST v2, esse sim de
+leitura) aparece só em doc-comments de `crates/corelink-ops/src/oncall.rs` e
+`oncall/pagerduty.rs`; nunca foi provisionado — designed, não wired. Portanto o
+próximo passo, saber se alguma página chegou a um humano, é literalmente
+impossível sem a conta dele. Se um dia uma chave de leitura for provisionada,
+isto vira engenharia comum e o campo move para `tl` — mas provisioná-la é
+trabalho novo, não este item.
 ```backlog
 id: B-008
 repo: corelink-server
-owner: tl
+owner: owner
 status: open
 verify: manual
 verify-means: only the owner or the PagerDuty incident log can say whether a page ever arrived
@@ -618,8 +630,10 @@ Follow-up to [B-009]. Governance-mode CAS legal-hold retention now ships
 **Compliance mode** — R2/S3 Object-Lock so NOT EVEN an admin can delete before the
 retention term expires — is deferred.
 
-**BLOCKED AT THE R2 PLATFORM LEVEL, not on an owner infra decision (probed
-2026-08-25).** Direct probe against the prod account with the `.env.local` R2 S3
+**BLOCKED AT THE R2 PLATFORM LEVEL (probed 2026-08-25) — nothing the owner can
+decide will unblock R2 itself; the only owner-shaped residue is paying for a
+second, Object-Lock-capable backend, which is option (b) below.** Direct probe
+against the prod account with the `.env.local` R2 S3
 creds: `create-bucket --object-lock-enabled-for-bucket` → **`NotImplemented`**, and
 `put-object --object-lock-mode GOVERNANCE --object-lock-retain-until-date …` on a
 plain bucket → **`NotImplemented`**. So R2 implements neither bucket-level nor
@@ -1516,10 +1530,16 @@ decision, not a rendering one.
 
 **Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
 today, what each option costs, and what happens if the answer is "not now".
+
+**Por que `owner:` (reconfirmado 2026-08-31).** A frase acima — *"the reviews
+themselves need Drata … so this is the human's"* — foi verificada e se sustenta:
+não há credencial do Drata em lugar nenhum. Nem `DRATA_API_KEY` nem
+`DRATA_API_BASE_URL` estão no `.env.local` ou entre os 18 segredos do repo (os
+nomes aparecem só numa lista de auditoria selada de 2026-05-26). O login é dele.
 ```backlog
 id: B-032
 repo: corelink-server
-owner: tl
+owner: owner
 status: open
 verify: |
   python3 scripts/compliance-weekly-digest.py --dry-run --json \
@@ -1804,10 +1824,17 @@ claims at all. It passed vacuously while all eight lines still said 1.3. The
 verify now counts the actual drift in the eight files.
 
 **Owner decision brief:** `docs/internal/2026-08-24-owner-decision-brief.md` §7.
+
+**Por que `owner:` (reconfirmado 2026-08-31).** O corpo acima já decide: os dois
+caminhos honestos *"both need counsel/owner"*, e a opção (a) declara que um
+`v1.0.1` **não pode ser auto-aprovado** — pôr `legal_review_status: approved` sem
+counsel seria *"a second lie"*. Counsel é contratado por ele, e o instrumento é
+assinado. A opção (b) é pior: rebaixa uma superfície de cache viva. Nenhum dos
+dois é "deixar o conserto pronto"; ambos terminam na assinatura dele.
 ```backlog
 id: B-035
 repo: corelink-server
-owner: tl
+owner: owner
 status: open
 verify: |
   test $(grep -lE 'TLS 1\.3\+|\(TLS 1\.3\)' \
@@ -2456,6 +2483,19 @@ a real-data dup check. Active concurrent-fork prevention is covered by the D1
 acquire/refuse/steal proof (step 2) + the merged self-fence unit test; the live
 observation confirms no regression. Monitored via `dup_groups` (must stay 1505)
 and the audit-archive-lag census.
+
+**Procedência do campo `owner:`, apurada 2026-08-31 — e a resposta é que não
+havia nenhuma.** Ao contrário de [B-031] (fechado na fala do owner, *"usa
+corelink runners"*), [B-041] (*"OWNER DECISION, 2026-08-24: do not pay"*) e
+[B-042] (o owner autorizou as credenciais Clerk live), **este item não registra
+decisão de owner alguma**: o corpo acima narra prova técnica — migração, probe de
+acquire/refuse/steal no D1 real, roll de imagem, dreno saudável — e o item não
+aparece no `docs/internal/2026-08-24-owner-decision-brief.md`, onde os outros
+aparecem. Uma varredura por `owner|dono|decis|autoriz` neste item devolvia
+exatamente uma linha: a do próprio campo. Aqui `owner: owner` **nunca foi
+procedência — foi rótulo errado**, o mesmo defeito que este PR conserta, e este é
+o espécime mais limpo dele. Registrado em vez de inventada uma decisão que não
+houve.
 
 ```backlog
 id: B-043
@@ -5152,10 +5192,16 @@ preços marca como `slaCredits: false`.
 Uma cláusula de remédio exclusivo que não pode ser cumprida é a primeira a cair, e sua
 queda expõe danos sem teto.
 
+**Por que `owner:` (reconfirmado 2026-08-31).** O próprio `verify-means` deste
+item termina em *"Owner: emenda de instrumento assinado"*, e os dois reparos
+possíveis morrem nele: emendar o SLA é assinatura, e implementar a emissão
+automática de crédito é comprometer a empresa a **devolver dinheiro contra
+fatura** — nenhum dos dois é conserto que se deixa pronto na prateleira. Escrever
+o código e ligá-lo são atos diferentes, e o segundo gasta o dinheiro dele.
 ```backlog
 id: B-089
 repo: corelink-server
-owner: tl
+owner: owner
 status: open
 verify: |
   bash -c 's=legal/sla/v1.0.0.md
