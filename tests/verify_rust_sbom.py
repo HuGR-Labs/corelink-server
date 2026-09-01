@@ -28,7 +28,7 @@ try:
     from license_expression import ExpressionError, get_spdx_licensing
 except ImportError as error:
     raise SystemExit(
-        "missing SPDX expression validator; install requirements-ci.txt before running this harness"
+        "missing SPDX expression validator; install requirements-sbom.txt before running this harness"
     ) from error
 
 

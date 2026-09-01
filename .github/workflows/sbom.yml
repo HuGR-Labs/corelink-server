@@ -110,8 +110,27 @@ jobs:
       - name: Verify committed Cargo.lock SBOM is reproducible and complete
         run: |
           set -euo pipefail
-          python3 -m pip install --quiet -r requirements-ci.txt
-          python3 tests/verify_rust_sbom.py --check
+          # The self-hosted fleet shares its host Python installation.  Keep
+          # this SBOM-only dependency closure private to this job and under
+          # RUNNER_TEMP, rather than mutating that shared interpreter or
+          # pulling in every CI validator.  --require-hashes makes a changed
+          # or substituted wheel a hard failure; --only-binary avoids an
+          # unpinned source-build dependency surprise.
+          SBOM_VENV="${RUNNER_TEMP}/corelink-sbom-venv"
+          python3 -m venv "$SBOM_VENV"
+          SBOM_PYTHON="${SBOM_VENV}/bin/python"
+          "$SBOM_PYTHON" -m pip install \
+            --quiet \
+            --disable-pip-version-check \
+            --no-input \
+            --require-hashes \
+            --only-binary=:all: \
+            --no-deps \
+            -r requirements-sbom.txt
+          "$SBOM_PYTHON" -c \
+            'import boolean, license_expression, pathlib, sys; prefix = pathlib.Path(sys.prefix).resolve(); temp = pathlib.Path(sys.argv[1]).resolve(); assert temp in prefix.parents or prefix == temp, (prefix, temp); print(f"SBOM venv: {prefix}"); print(f"SPDX parser: {license_expression.__file__}"); print(f"boolean.py: {boolean.__file__}")' \
+            "$RUNNER_TEMP"
+          "$SBOM_PYTHON" tests/verify_rust_sbom.py --check
           cp .sbom/cyclonedx-rust.json sbom.cdx.json
           echo "SBOM reproducibility and lock coverage verified"
           ls -lh sbom.cdx.json
