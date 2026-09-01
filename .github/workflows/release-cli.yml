@@ -263,10 +263,22 @@ jobs:
           cp "$SRC" "$PACKAGE_DIR/corelink${{ matrix.target.ext }}"
           if [ "${{ matrix.target.triple }}" = "x86_64-pc-windows-gnu" ]; then
             ARCHIVE="${{ matrix.target.signer_name }}.zip"
-            # ditto is supplied by the macOS builder and preserves the expected
-            # `corelink.exe` member name consumed by sign-windows.yml.
-            ditto -c -k --sequesterRsrc --keepParent \
-              "$PACKAGE_DIR/corelink.exe" "out/${ARCHIVE}"
+            # The Windows signer extracts and signs exactly
+            # `./assets/extracted/corelink.exe`.  Do not use ditto --keepParent:
+            # it nests the binary below the package directory (and can add
+            # __MACOSX), leaving no binary at that signer path.  zip -j produces
+            # one deterministic member named corelink.exe instead.
+            command -v zip
+            command -v unzip
+            ARCHIVE_PATH="$(pwd)/out/${ARCHIVE}"
+            rm -f "$ARCHIVE_PATH"
+            (cd "$PACKAGE_DIR" && zip -q -X "$ARCHIVE_PATH" corelink.exe)
+            unzip -t "$ARCHIVE_PATH"
+            ARCHIVE_MEMBERS="$(unzip -Z1 "$ARCHIVE_PATH")"
+            if [ "$ARCHIVE_MEMBERS" != "corelink.exe" ]; then
+              echo "::error::Windows signer archive must contain exactly corelink.exe, got: ${ARCHIVE_MEMBERS}" >&2
+              exit 1
+            fi
           else
             ARCHIVE="${{ matrix.target.signer_name }}.tar.gz"
             tar -czf "out/${ARCHIVE}" -C "$PACKAGE_DIR" "corelink${{ matrix.target.ext }}"

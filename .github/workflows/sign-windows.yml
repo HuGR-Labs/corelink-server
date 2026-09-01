@@ -1,6 +1,6 @@
 # CoreLink CLI — Windows Authenticode signing workflow (WI-S15-006 §6.4).
 #
-# Activates on the same `v*` tag trigger as `release-cli.yml`. After the
+# Activates after the same `cli-v*` tag release as `release-cli.yml`. After the
 # release-cli pipeline produces the unsigned Windows binary
 # (`windows-x86_64`), this workflow:
 #
@@ -34,11 +34,15 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to Authenticode-sign (e.g. v0.1.0)"
+        description: "Release tag to Authenticode-sign (e.g. cli-v0.1.0)"
         required: true
         type: string
   workflow_run:
-    workflows: ["release-cli"]
+    # Release-root asset writers are an explicit chain, rather than a shared
+    # concurrency group: GitHub replaces queued runs in a concurrency group.
+    # sign-linux completes (or is explicitly credential-gated) before Windows
+    # replaces its archive and checksums.txt.
+    workflows: ["sign-linux"]
     types: [completed]
 
 permissions:
@@ -77,7 +81,9 @@ jobs:
   sign:
     name: osslsigncode authenticode (windows-x86_64, cross-signed on Linux)
     needs: windows-cert-present
-    if: needs.windows-cert-present.outputs.ready == 'true'
+    if: >-
+      needs.windows-cert-present.outputs.ready == 'true' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
     # Runner: `corelink` — see the `windows-cert-present` job above for why the
     # previous `[self-hosted, Linux, X64]` pool does not exist. `corelink` is
     # Ubuntu 24.04 with apt-get + passwordless sudo, exactly what the
@@ -114,13 +120,18 @@ jobs:
       - name: Download release asset
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # This source repository's GITHUB_TOKEN cannot read the separate
+          # release root. Restrict the cross-repo PAT to gh steps only.
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
           TAG: ${{ steps.tag.outputs.tag }}
           ASSET: corelink-windows-x86_64.zip
         run: |
+          set -euo pipefail
           mkdir -p ./assets
-          gh release download "${TAG}" --pattern "${ASSET}" --dir ./assets
+          gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" --pattern "${ASSET}" --dir ./assets
           7z x "./assets/${ASSET}" -o./assets/extracted
+          test -f ./assets/extracted/corelink.exe
           ls -la ./assets/extracted
 
       - name: Decode signing cert
@@ -171,14 +182,46 @@ jobs:
           (cd ./assets/extracted && 7z a "../${ASSET}" corelink.exe)
           ls -la ./assets
 
-      - name: Attach signed binary to release
+      - name: Refresh checksums for the signed Windows archive
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
           TAG: ${{ steps.tag.outputs.tag }}
           ASSET: corelink-windows-x86_64.zip
         run: |
-          gh release upload "${TAG}" "./assets/${ASSET}" --clobber
+          set -euo pipefail
+          gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" \
+            --pattern 'corelink-*.sha256' --dir ./assets --clobber
+          (cd ./assets && shasum -a 256 "${ASSET}" > "${ASSET}.sha256")
+          (cd ./assets && LC_ALL=C sort corelink-*.sha256 > checksums.txt)
+          (cd ./assets && shasum -a 256 -c "${ASSET}.sha256")
+
+      - name: Attach signed binary and refreshed checksums to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
+          TAG: ${{ steps.tag.outputs.tag }}
+          ASSET: corelink-windows-x86_64.zip
+        run: |
+          set -euo pipefail
+          gh release upload "${TAG}" --repo "${RELEASE_REPOSITORY}" --clobber \
+            "./assets/${ASSET}" "./assets/${ASSET}.sha256" ./assets/checksums.txt
+
+      - name: Read back signer-updated release checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          PUBLISHED="${RUNNER_TEMP}/corelink-sign-windows-readback"
+          mkdir -p "$PUBLISHED"
+          gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" --dir "$PUBLISHED" \
+            --pattern 'corelink-*' --pattern checksums.txt --clobber
+          (cd "$PUBLISHED" && shasum -a 256 -c checksums.txt)
 
       - name: Wipe cert
         if: always()

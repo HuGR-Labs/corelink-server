@@ -1,6 +1,6 @@
 # CoreLink CLI — macOS notarization workflow (WI-S15-006 §6.2).
 #
-# Activates on the same `v*` tag trigger as `release-cli.yml`. After the
+# Activates after the same `cli-v*` tag release as `release-cli.yml`. After the
 # release-cli pipeline produces unsigned macOS binaries (`darwin-arm64`,
 # `darwin-x86_64`), this workflow:
 #
@@ -38,11 +38,14 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to notarize (e.g. v0.1.0)"
+        description: "Release tag to notarize (e.g. cli-v0.1.0)"
         required: true
         type: string
   workflow_run:
-    workflows: ["release-cli"]
+    # Follow the Linux → Windows → macOS release-asset writer chain. A shared
+    # Actions concurrency group is unsafe here because it can replace a queued
+    # signer run and silently omit an artifact update.
+    workflows: ["sign-windows"]
     types: [completed]
 
 permissions:
@@ -83,10 +86,13 @@ jobs:
   notarize:
     name: codesign + notarytool + staple (${{ matrix.asset_suffix }})
     needs: apple-cert-present
-    if: needs.apple-cert-present.outputs.ready == 'true'
+    if: >-
+      needs.apple-cert-present.outputs.ready == 'true' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
     runs-on: [self-hosted, mac, corelink-builder]
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - asset_suffix: darwin-arm64
@@ -114,11 +120,16 @@ jobs:
 
       - name: Download release asset
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The public CLI release is in a different repository. Keep this PAT
+          # scoped to the exact gh read/write steps, never the notarization work.
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
           TAG: ${{ steps.tag.outputs.tag }}
           ASSET: corelink-${{ matrix.asset_suffix }}.tar.gz
         run: |
-          gh release download "${TAG}" --pattern "${ASSET}" --dir ./assets
+          set -euo pipefail
+          mkdir -p ./assets
+          gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" --pattern "${ASSET}" --dir ./assets
           tar -xzf "./assets/${ASSET}" -C ./assets
           ls -la ./assets
 
@@ -203,13 +214,45 @@ jobs:
         run: |
           tar -czf "./assets/${ASSET}" -C ./assets "${BINARY}"
 
-      - name: Attach stapled binary to release
+      - name: Refresh checksums for the notarized archive
+        shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
           TAG: ${{ steps.tag.outputs.tag }}
           ASSET: corelink-${{ matrix.asset_suffix }}.tar.gz
         run: |
-          gh release upload "${TAG}" "./assets/${ASSET}" --clobber
+          set -euo pipefail
+          gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" \
+            --pattern 'corelink-*.sha256' --dir ./assets --clobber
+          (cd ./assets && shasum -a 256 "${ASSET}" > "${ASSET}.sha256")
+          (cd ./assets && LC_ALL=C sort corelink-*.sha256 > checksums.txt)
+          (cd ./assets && shasum -a 256 -c "${ASSET}.sha256")
+
+      - name: Attach stapled binary and refreshed checksums to release
+        env:
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
+          TAG: ${{ steps.tag.outputs.tag }}
+          ASSET: corelink-${{ matrix.asset_suffix }}.tar.gz
+        run: |
+          set -euo pipefail
+          gh release upload "${TAG}" --repo "${RELEASE_REPOSITORY}" --clobber \
+            "./assets/${ASSET}" "./assets/${ASSET}.sha256" ./assets/checksums.txt
+
+      - name: Read back signer-updated release checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          PUBLISHED="${RUNNER_TEMP}/corelink-notarize-readback-${{ matrix.asset_suffix }}"
+          mkdir -p "$PUBLISHED"
+          gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" --dir "$PUBLISHED" \
+            --pattern 'corelink-*' --pattern checksums.txt --clobber
+          (cd "$PUBLISHED" && shasum -a 256 -c checksums.txt)
 
       - name: Clean keychain
         if: always()

@@ -71,7 +71,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release tag to generate provenance for (e.g., v0.1.0)'
+        description: 'Release tag to generate provenance for (e.g., cli-v0.1.0)'
         required: true
         type: string
 
@@ -107,13 +107,16 @@ jobs:
       # downloaded the one you published?"
       - name: Download the published release binaries
         env:
-          GH_TOKEN: ${{ github.token }}
+          # The release root is distinct from this source repository. This
+          # credential is available only to the gh release steps that need it.
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
           TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
         run: |
           set -euo pipefail
           mkdir -p release-assets
           gh release download "${TAG}" \
-            --repo "${GITHUB_REPOSITORY}" \
+            --repo "${RELEASE_REPOSITORY}" \
             --dir release-assets \
             --pattern 'corelink-*'
           # Checksums and signatures are not subjects; the executables are.
@@ -341,12 +344,13 @@ jobs:
 
       - name: Upload provenance to the release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
           TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
         run: |
           set -euo pipefail
           gh release upload "${TAG}" \
-            --repo "${GITHUB_REPOSITORY}" \
+            --repo "${RELEASE_REPOSITORY}" \
             --clobber \
             provenance.intoto.jsonl \
             provenance.intoto.jsonl.bundle
@@ -372,13 +376,14 @@ jobs:
       # with a valid-looking bundle that describes different bytes.
       - name: Re-download and re-hash the release binaries
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
           TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
         run: |
           set -euo pipefail
           mkdir -p verify-assets
           gh release download "${TAG}" \
-            --repo "${GITHUB_REPOSITORY}" \
+            --repo "${RELEASE_REPOSITORY}" \
             --dir verify-assets \
             --pattern 'corelink-*'
           find verify-assets -name '*.sha256' -delete
