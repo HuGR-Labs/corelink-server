@@ -97,7 +97,8 @@ export interface CustomerPat {
 export interface CustomerTeamMember {
   user_id: string;
   email: string;
-  role: "Owner" | "Admin" | "Developer" | "Viewer";
+  /** Matches the frozen `team_member.role` CHECK and customer API wire. */
+  role: "owner" | "admin" | "member" | "viewer";
   joined_at: string;
   status: "active" | "invited" | "suspended";
 }
@@ -185,4 +186,3 @@ export interface CreateDevenvRequest {
   tier?: DevenvTier;
   clw_token: string;
 }
-

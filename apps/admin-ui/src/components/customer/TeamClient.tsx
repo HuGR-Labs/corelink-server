@@ -31,17 +31,27 @@ import {
 } from "@/components/ui/linear";
 
 type Role = CustomerTeamMember["role"];
+type InviteRole = Exclude<Role, "owner">;
 type Status = CustomerTeamMember["status"];
 
-const ROLES: Role[] = ["Owner", "Admin", "Developer", "Viewer"];
+// These values intentionally match `team_member.role` on the wire. `owner` is
+// the tenant creator and is never grantable through a self-serve invite.
+export const INVITABLE_ROLES: InviteRole[] = ["admin", "member", "viewer"];
+
+const ROLE_LABEL: Record<Role, string> = {
+  owner: "Owner",
+  admin: "Admin",
+  member: "Member",
+  viewer: "Viewer",
+};
 
 /** Plain-language description of what each RBAC role can do (the audit found
  *  roles were unexplained). Surfaced via a HelpPopover on every role badge. */
 const ROLE_HELP: Record<Role, string> = {
-  Owner: "Full control — manage members, tokens, billing, and delete the account.",
-  Admin: "Manage members and API tokens. Cannot change billing or delete the account.",
-  Developer: "Read and write the cache and mint their own tokens. No member management.",
-  Viewer: "Read-only access to usage and the audit log. Cannot change anything.",
+  owner: "Full control — manage members, tokens, billing, and delete the account.",
+  admin: "Manage members and API tokens. Cannot change billing or delete the account.",
+  member: "Read and write the cache and mint their own tokens. No member management.",
+  viewer: "Read-only access to usage and the audit log. Cannot change anything.",
 };
 
 const STATUS_TONE: Record<Status, "success" | "warn" | "neutral"> = {
@@ -68,7 +78,7 @@ function TeamInner(): React.ReactElement {
 
   const [members, setMembers] = React.useState<CustomerTeamMember[]>([]);
   const [email, setEmail] = React.useState("");
-  const [role, setRole] = React.useState<Role>("Developer");
+  const [role, setRole] = React.useState<InviteRole>("member");
   const [inviting, setInviting] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState<unknown | null>(null);
@@ -134,7 +144,7 @@ function TeamInner(): React.ReactElement {
   // groups (the audit found invited members rendered inline with no management).
   const activeMembers = members.filter((m) => m.status !== "invited");
   const pendingInvites = members.filter((m) => m.status === "invited");
-  const ownerCount = members.filter((m) => m.role === "Owner").length;
+  const ownerCount = members.filter((m) => m.role === "owner").length;
   const singleOwnerOnly =
     activeMembers.length === 1 && ownerCount === 1 && pendingInvites.length === 0;
   // Seat cap is NOT on the wire — listTeam returns only the member array (no
@@ -176,11 +186,11 @@ function TeamInner(): React.ReactElement {
               id="team-invite-role-select"
               data-testid="team-invite-role"
               value={role}
-              onChange={(e) => setRole(e.target.value as Role)}
+              onChange={(e) => setRole(e.target.value as InviteRole)}
             >
-              {ROLES.map((r) => (
+              {INVITABLE_ROLES.map((r) => (
                 <option key={r} value={r}>
-                  {r}
+                  {ROLE_LABEL[r]}
                 </option>
               ))}
             </Select>
@@ -237,13 +247,13 @@ function TeamInner(): React.ReactElement {
               </thead>
               <tbody>
                 {activeMembers.map((m) => {
-                  const isOwner = m.role === "Owner";
+                  const isOwner = m.role === "owner";
                   return (
                     <tr key={m.user_id} data-testid={`team-row-${m.user_id}`}>
                       <td>{m.email}</td>
                       <td data-testid={`team-role-${m.user_id}`}>
-                        <Badge tone="neutral">{m.role}</Badge>{" "}
-                        <HelpPopover label={`What can a ${m.role} do?`}>
+                        <Badge tone="neutral">{ROLE_LABEL[m.role]}</Badge>{" "}
+                        <HelpPopover label={`What can a ${ROLE_LABEL[m.role]} do?`}>
                           {ROLE_HELP[m.role]}
                         </HelpPopover>
                       </td>
@@ -295,8 +305,8 @@ function TeamInner(): React.ReactElement {
                 <tr key={m.user_id} data-testid={`team-row-${m.user_id}`}>
                   <td>{m.email}</td>
                   <td>
-                    <Badge tone="neutral">{m.role}</Badge>{" "}
-                    <HelpPopover label={`What can a ${m.role} do?`}>
+                    <Badge tone="neutral">{ROLE_LABEL[m.role]}</Badge>{" "}
+                    <HelpPopover label={`What can a ${ROLE_LABEL[m.role]} do?`}>
                       {ROLE_HELP[m.role]}
                     </HelpPopover>
                   </td>

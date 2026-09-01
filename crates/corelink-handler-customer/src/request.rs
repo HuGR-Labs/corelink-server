@@ -698,6 +698,28 @@ impl KeyRevokeResponse {
 
 // ─── Team ────────────────────────────────────────────────────────────────────
 
+/// The only role values a self-serve team invite may persist and return.
+///
+/// `owner` remains a valid stored role for the tenant creator, but is never
+/// grantable through this mutation.
+pub const ASSIGNABLE_TEAM_ROLES: [&str; 3] = ["admin", "member", "viewer"];
+
+/// Canonicalize an assignable team-invite role to the frozen D1 CHECK domain.
+///
+/// The public API accepts capitalization and surrounding whitespace from older
+/// clients, but its storage and response value is always the canonical lowercase
+/// role. Unknown roles — including the retired `Developer` spelling and `owner`
+/// — are rejected rather than silently downgraded to a different permission.
+#[must_use]
+pub fn canonical_invite_role(role: &str) -> Option<&'static str> {
+    match role.trim().to_ascii_lowercase().as_str() {
+        "admin" => Some("admin"),
+        "member" => Some("member"),
+        "viewer" => Some("viewer"),
+        _ => None,
+    }
+}
+
 /// One team member row.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -706,7 +728,7 @@ pub struct TeamMemberRow {
     pub user_id: String,
     /// User's email address.
     pub email: String,
-    /// One of `"Owner"` / `"Admin"` / `"Developer"` / `"Viewer"`.
+    /// One of `"owner"` / `"admin"` / `"member"` / `"viewer"`.
     pub role: String,
     /// ISO-8601 timestamp when the user joined (accepted invite).
     pub joined_at: String,

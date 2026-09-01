@@ -93,7 +93,7 @@ const TEAM_LIST_WIRE = {
     {
       user_id: "usr_owner",
       email: "owner@company.com",
-      role: "Owner",
+    role: "owner",
       joined_at: "2026-04-01T00:00:00Z",
       status: "active",
     },
@@ -105,7 +105,7 @@ const TEAM_INVITE_WIRE = {
   member: {
     user_id: "usr_invited",
     email: "teammate@company.com",
-    role: "Developer",
+    role: "member",
     joined_at: "2026-08-01T00:00:00Z",
     status: "invited",
   },

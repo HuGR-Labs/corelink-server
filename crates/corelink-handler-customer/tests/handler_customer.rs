@@ -350,7 +350,7 @@ fn team_list_happy_path() {
     let member = corelink_handler_customer::request::TeamMemberRow::new(
         "user_001",
         "alice@acme.com",
-        "Developer",
+        "member",
         "2026-05-01T00:00:00Z",
         "active",
     );
@@ -367,10 +367,11 @@ fn team_list_happy_path() {
 #[test]
 fn team_invite_happy_path() {
     let (h, audit, sli) = make_handler();
-    let req = TeamInviteRequest::new("tenant_a", "user:alice", "bob@acme.com", "Developer", 2_000);
+    let req = TeamInviteRequest::new("tenant_a", "user:alice", "bob@acme.com", "Member", 2_000);
     let resp = h.invite(req).unwrap();
 
     assert_eq!(resp.member.email, "bob@acme.com");
+    assert_eq!(resp.member.role, "member");
     assert_eq!(resp.member.status, "invited");
 
     let rows = audit.snapshot().unwrap();
@@ -378,6 +379,34 @@ fn team_invite_happy_path() {
     assert_eq!(rows[1].kind, AuditEventKind::TeamInviteCommitted);
     assert_eq!(sli.count(Sli::AvailControlPlane).unwrap(), 1);
     assert!(!sli.snapshot().unwrap()[0].is_error);
+}
+
+#[test]
+fn team_invite_rejects_unknown_role_without_mutation() {
+    let (h, audit, sli) = make_handler();
+    let req = TeamInviteRequest::new("tenant_a", "user:alice", "bob@acme.com", "Developer", 2_000);
+
+    let err = h.invite(req).unwrap_err();
+    assert!(matches!(
+        err,
+        corelink_handler_customer::CustomerHandlerError::InvalidRequest(_)
+    ));
+    assert!(
+        audit.snapshot().unwrap().is_empty(),
+        "invalid role must not be audited as an invite"
+    );
+    assert!(
+        sli.snapshot().unwrap()[0].is_error,
+        "invalid role must emit an error SLI"
+    );
+
+    let members =
+        CustomerTeamHandler::list(&h, TeamListRequest::new("tenant_a", "user:alice", 3_000))
+            .unwrap();
+    assert!(
+        members.members.is_empty(),
+        "invalid role must not be stored"
+    );
 }
 
 // ─── Audit query tests ────────────────────────────────────────────────────────
@@ -523,7 +552,7 @@ fn team_invite_audit_fail_propagates_before_mutation() {
     let (h, audit, _sli) = make_handler();
     audit.inject_failure("sink down").unwrap();
 
-    let req = TeamInviteRequest::new("tenant_a", "user:alice", "bob@acme.com", "Viewer", 3_000);
+    let req = TeamInviteRequest::new("tenant_a", "user:alice", "bob@acme.com", "viewer", 3_000);
     let err = h.invite(req).unwrap_err();
 
     assert!(matches!(

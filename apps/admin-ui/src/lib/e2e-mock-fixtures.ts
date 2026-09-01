@@ -79,6 +79,24 @@ function rfc7807(status: number, title: string, detail: string): MockResponse {
   };
 }
 
+// Must stay aligned with `canonical_invite_role` in
+// `corelink-handler-customer`: these are the only roles an invite can persist.
+// The tenant creator's `owner` role is a valid stored role, but never grantable
+// through this endpoint.
+const ASSIGNABLE_TEAM_INVITE_ROLES = new Set<CustomerTeamMember["role"]>([
+  "admin",
+  "member",
+  "viewer",
+]);
+
+function canonicalFixtureInviteRole(role: unknown): CustomerTeamMember["role"] | undefined {
+  if (typeof role !== "string") return undefined;
+  const normalized = role.trim().toLowerCase();
+  return ASSIGNABLE_TEAM_INVITE_ROLES.has(normalized as CustomerTeamMember["role"])
+    ? (normalized as CustomerTeamMember["role"])
+    : undefined;
+}
+
 function makeTenants(): Tenant[] {
   const regions: Array<Tenant["region"]> = ["us-east", "us-west", "eu-west", "ap-south"];
   const plans: Array<Tenant["plan"]> = [
@@ -248,21 +266,21 @@ function makeCustomerTeam(): CustomerTeamMember[] {
     {
       user_id: "user_e2e_admin",
       email: "admin@acme.example",
-      role: "Owner",
+      role: "owner",
       joined_at: "2026-01-15T09:00:00Z",
       status: "active",
     },
     {
       user_id: "user_e2e_approver",
       email: "approver@acme.example",
-      role: "Admin",
+      role: "admin",
       joined_at: "2026-02-01T09:00:00Z",
       status: "active",
     },
     {
       user_id: "user_e2e_member",
       email: "member@acme.example",
-      role: "Developer",
+      role: "member",
       joined_at: "2026-03-10T09:00:00Z",
       status: "active",
     },
@@ -731,12 +749,24 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
     return { status: 200, body: { members: state.customer.team } };
   }
   if (path === "/v1/customer/team/invite" && method === "POST") {
-    const b = (body ?? {}) as { email?: string; role?: CustomerTeamMember["role"] };
+    const b = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
+    // Axum rejects an absent/non-string required `role` field during JSON
+    // extraction (422), before the real route can make a handler request.
+    if (!("role" in b) || typeof b.role !== "string") {
+      return rfc7807(422, "Unprocessable Entity", "role is required");
+    }
     if (!b.email) return rfc7807(400, "Bad Request", "email required");
+    // Keep the non-grantable-owner response distinct from generic unknown
+    // roles, matching `handle_team_invite` before the canonical-role check.
+    if (b.role.trim().toLowerCase() === "owner") {
+      return rfc7807(403, "Forbidden", "the owner role is not grantable via a team invite");
+    }
+    const role = canonicalFixtureInviteRole(b.role);
+    if (!role) return rfc7807(400, "Bad Request", "unsupported team invite role");
     const m: CustomerTeamMember = {
       user_id: `user_invite_${state.customer.team.length + 1}`,
-      email: b.email,
-      role: b.role ?? "Developer",
+      email: String(b.email),
+      role,
       joined_at: new Date().toISOString(),
       status: "invited",
     };

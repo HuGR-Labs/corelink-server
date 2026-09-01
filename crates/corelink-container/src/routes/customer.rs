@@ -40,6 +40,7 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
+use corelink_handler_customer::request::canonical_invite_role;
 use corelink_handler_customer::{
     AuditQueryRequest, BillingRequest, CustomerAuditHandler, CustomerBillingHandler,
     CustomerHandlerError, CustomerKeysHandler, CustomerOverviewHandler, CustomerTeamHandler,
@@ -368,7 +369,7 @@ fn mint_requests_write(scopes: &[String]) -> bool {
 
 /// True when `role` is a privileged team role (`Owner` / `Admin`) — granting it
 /// is a write/admin mutation a read-only principal must not perform (cluster A).
-/// `Developer` / `Viewer` are non-privileged and allowed from any authenticated
+/// `member` / `viewer` are non-privileged and allowed from any authenticated
 /// caller. Case-insensitive exact match.
 fn role_is_privileged(role: &str) -> bool {
     matches!(role.trim().to_ascii_lowercase().as_str(), "owner" | "admin")
@@ -473,7 +474,7 @@ pub struct CreatePatBody {
 pub struct InviteBody {
     /// Email address to invite.
     pub email: String,
-    /// Role to assign (`"Owner"` / `"Admin"` / `"Developer"` / `"Viewer"`).
+    /// Role to assign (`"admin"` / `"member"` / `"viewer"`).
     pub role: String,
 }
 
@@ -929,7 +930,7 @@ async fn handle_team_invite(
     //   1. `owner` is NEVER self-serve-invitable — there is exactly one owner (the
     //      tenant creator). Reject outright so the escalation chain (invite-owner →
     //      accept → resolve owner → delete tenant) is closed at the source.
-    //      (`normalize_invite_role` also maps owner→admin as defense-in-depth.)
+    //      (the persistence layer independently rejects it.)
     //   2. inviting a privileged `admin` requires the caller be the OWNER.
     //   3. any invite at all requires the caller be owner OR admin (a plain
     //      member/viewer cannot add seats).
@@ -954,8 +955,11 @@ async fn handle_team_invite(
         )
             .into_response();
     }
+    let Some(role) = canonical_invite_role(&body.role) else {
+        return (StatusCode::BAD_REQUEST, "unsupported team invite role").into_response();
+    };
     let p = principal(&headers);
-    let req = TeamInviteRequest::new(t, p, body.email, body.role, now_ms());
+    let req = TeamInviteRequest::new(t, p, body.email, role, now_ms());
     match state.team.invite(req) {
         Ok(resp) => {
             let json_body: Value = json!({
@@ -1469,6 +1473,9 @@ impl AccountDeletionRequester for D1AccountDeletionRequester {
 fn map_err(e: CustomerHandlerError) -> axum::response::Response {
     tracing::warn!(error = ?e, "customer handler error");
     match e {
+        CustomerHandlerError::InvalidRequest(_) => {
+            (StatusCode::BAD_REQUEST, "invalid request").into_response()
+        }
         CustomerHandlerError::Unauthorized(_) => {
             (StatusCode::UNAUTHORIZED, "unauthorized").into_response()
         }
@@ -2043,7 +2050,7 @@ mod tests {
         let app = router(state);
         let body = serde_json::to_string(&serde_json::json!({
             "email": "alice@example.com",
-            "role": "Developer"
+            "role": "Member"
         }))
         .unwrap();
         let req = Request::builder()
@@ -2060,8 +2067,93 @@ mod tests {
         let bytes = to_bytes(resp.into_body(), 1 << 20).await.expect("body");
         let v: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
         assert_eq!(v["member"]["email"], "alice@example.com");
-        assert_eq!(v["member"]["role"], "Developer");
+        assert_eq!(v["member"]["role"], "member");
         assert_eq!(v["member"]["status"], "invited");
+    }
+
+    #[tokio::test]
+    async fn team_invite_role_matrix_persists_and_returns_only_effective_roles() {
+        let (state, _) = fixture();
+        let app = router(state);
+
+        for (requested, effective) in [
+            ("Admin", "admin"),
+            (" MEMBER ", "member"),
+            ("viewer", "viewer"),
+        ] {
+            let body = serde_json::to_string(&serde_json::json!({
+                "email": format!("{effective}@example.com"),
+                "role": requested,
+            }))
+            .unwrap();
+            let req = Request::builder()
+                .uri("/v1/customer/team/invite")
+                .method("POST")
+                .header("x-corelink-tenant-id", "t7")
+                .header("x-corelink-token-prefix", "clpat_t7")
+                .header("x-corelink-role", "owner")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap();
+            let response = app.clone().oneshot(req).await.unwrap();
+            assert_eq!(response.status(), StatusCode::CREATED, "{requested:?}");
+            let body = to_bytes(response.into_body(), 1 << 20).await.unwrap();
+            let response: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(response["member"]["role"], effective, "{requested:?}");
+        }
+
+        let list = Request::builder()
+            .uri("/v1/customer/team")
+            .method("GET")
+            .header("x-corelink-tenant-id", "t7")
+            .header("x-corelink-token-prefix", "clpat_t7")
+            .body(Body::empty())
+            .unwrap();
+        let response = app.oneshot(list).await.unwrap();
+        let body = to_bytes(response.into_body(), 1 << 20).await.unwrap();
+        let response: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let mut roles: Vec<_> = response["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|member| member["role"].as_str().unwrap())
+            .collect();
+        roles.sort_unstable();
+        assert_eq!(roles, vec!["admin", "member", "viewer"]);
+
+        for rejected in ["Developer", "", "operator"] {
+            let body = serde_json::to_string(&serde_json::json!({
+                "email": "rejected@example.com", "role": rejected,
+            }))
+            .unwrap();
+            let req = Request::builder()
+                .uri("/v1/customer/team/invite")
+                .method("POST")
+                .header("x-corelink-tenant-id", "t7")
+                .header("x-corelink-token-prefix", "clpat_t7")
+                .header("x-corelink-role", "owner")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap();
+            assert_eq!(
+                app.clone().oneshot(req).await.unwrap().status(),
+                StatusCode::BAD_REQUEST
+            );
+        }
+
+        let missing_role = Request::builder()
+            .uri("/v1/customer/team/invite")
+            .method("POST")
+            .header("x-corelink-tenant-id", "t7")
+            .header("x-corelink-token-prefix", "clpat_t7")
+            .header("x-corelink-role", "owner")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"email":"missing@example.com"}"#))
+            .unwrap();
+        assert_eq!(
+            app.clone().oneshot(missing_role).await.unwrap().status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
     }
 
     /// RBAC hardening (#103): the escalation chain the account-delete audit found
@@ -2118,11 +2210,7 @@ mod tests {
         };
         // member / viewer / unknown cannot invite at all → 403.
         for caller in ["member", "viewer", ""] {
-            let r = app
-                .clone()
-                .oneshot(invite(caller, "Developer"))
-                .await
-                .unwrap();
+            let r = app.clone().oneshot(invite(caller, "member")).await.unwrap();
             assert_eq!(
                 r.status(),
                 StatusCode::FORBIDDEN,
@@ -2132,7 +2220,7 @@ mod tests {
         // admin can invite a non-privileged member → 201, but NOT a privileged admin → 403.
         assert_eq!(
             app.clone()
-                .oneshot(invite("admin", "Developer"))
+                .oneshot(invite("admin", "member"))
                 .await
                 .unwrap()
                 .status(),
@@ -2140,7 +2228,7 @@ mod tests {
         );
         assert_eq!(
             app.clone()
-                .oneshot(invite("admin", "Admin"))
+                .oneshot(invite("admin", "admin"))
                 .await
                 .unwrap()
                 .status(),
@@ -2150,7 +2238,7 @@ mod tests {
         // owner can invite an admin → 201.
         assert_eq!(
             app.clone()
-                .oneshot(invite("owner", "Admin"))
+                .oneshot(invite("owner", "admin"))
                 .await
                 .unwrap()
                 .status(),
@@ -2207,7 +2295,7 @@ mod tests {
         let (state, _) = fixture();
         let app = router(state);
         let invite_body = serde_json::to_string(&serde_json::json!({
-            "email": "bob@example.com", "role": "Developer"
+            "email": "bob@example.com", "role": "member"
         }))
         .unwrap();
         let invite = Request::builder()
@@ -2698,8 +2786,8 @@ mod tests {
     fn role_is_privileged_classifier() {
         assert!(role_is_privileged("Owner"));
         assert!(role_is_privileged("admin"));
-        assert!(!role_is_privileged("Developer"));
-        assert!(!role_is_privileged("Viewer"));
+        assert!(!role_is_privileged("member"));
+        assert!(!role_is_privileged("viewer"));
         assert!(!role_is_privileged(""));
     }
 

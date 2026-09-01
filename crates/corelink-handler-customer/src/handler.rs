@@ -23,8 +23,8 @@ use crate::audit::{AuditEvent, AuditEventKind, AuditSink};
 use crate::error::CustomerHandlerError;
 use crate::observer::{Sli, SliObservation, SliObserver};
 use crate::request::{
-    AuditQueryRequest, AuditQueryResponse, BillingRequest, BillingResponse, ByokStatus,
-    CustomerAuditEventRow, KeyCreateRequest, KeyCreateResponse, KeyRevokeRequest,
+    canonical_invite_role, AuditQueryRequest, AuditQueryResponse, BillingRequest, BillingResponse,
+    ByokStatus, CustomerAuditEventRow, KeyCreateRequest, KeyCreateResponse, KeyRevokeRequest,
     KeyRevokeResponse, KeysListRequest, KeysListResponse, OverviewRequest, OverviewResponse,
     PatRow, PortalRequest, PortalResponse, TeamInviteRequest, TeamInviteResponse, TeamListRequest,
     TeamListResponse, TeamMemberRow, TeamRemoveRequest, TeamRemoveResponse, UsageRequest,
@@ -672,6 +672,12 @@ impl CustomerTeamHandler for InMemoryCustomerHandler {
     }
 
     fn invite(&self, req: TeamInviteRequest) -> Result<TeamInviteResponse, CustomerHandlerError> {
+        let Some(role) = canonical_invite_role(&req.role) else {
+            self.emit_sli(true);
+            return Err(CustomerHandlerError::InvalidRequest(
+                "unsupported team invite role".to_owned(),
+            ));
+        };
         // Emit TeamInviteAttempted BEFORE mutation (fail-CLOSED ordering).
         self.emit_audit(
             AuditEventKind::TeamInviteAttempted,
@@ -687,7 +693,7 @@ impl CustomerTeamHandler for InMemoryCustomerHandler {
         let member = TeamMemberRow::new(
             user_id.clone(),
             req.email.clone(),
-            req.role.clone(),
+            role,
             joined_at,
             "invited",
         );
