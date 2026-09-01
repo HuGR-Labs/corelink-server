@@ -42,10 +42,6 @@ permissions:
   id-token: write   # OIDC (reserved for future Cosign keyless; no-op now)
 
 env:
-  # 0.5.9 is the version ADR-0044 canonicalizes for SBOM generation, and the one
-  # `sbom-consolidated.yml` — the only lane in this group with a successful run —
-  # installs. This lane was pinned to 0.5.4 and drifted off the canonical pin.
-  CARGO_CYCLONEDX_VERSION: "0.5.9"
   CYCLONEDX_CLI_VERSION: "0.27.2"
   # SHA-256 digests of the cyclonedx-cli release binaries, pinned for supply
   # chain and ENFORCED in the install step below. The previous entry here was
@@ -61,7 +57,7 @@ jobs:
   # Job 1: Setup + SBOM generation
   # ---------------------------------------------------------------------------
   sbom-generate:
-    name: "Generate SBOM (cargo-cyclonedx)"
+    name: "Verify committed Cargo.lock SBOM"
     runs-on: [self-hosted, mac, corelink-builder]
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -95,16 +91,6 @@ jobs:
           key: ${{ runner.os }}-cargo-sbom-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-sbom-
 
-      # Prebuilt binary, NOT `cargo install` — a from-source install compiles its
-      # own dep tree into the SHARED `~/.cargo` used by all 5 self-hosted runners
-      # at once, which is the documented `os error 2` race (same reasoning as
-      # mutation-pr.yml / lockfile-diff.yml). The version stays driven by
-      # env.CARGO_CYCLONEDX_VERSION so there is still exactly ONE pin to bump.
-      - name: Install cargo-cyclonedx ${{ env.CARGO_CYCLONEDX_VERSION }} (prebuilt)
-        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
-        with:
-          tool: cargo-cyclonedx@${{ env.CARGO_CYCLONEDX_VERSION }}
-
       - name: Determine release version
         id: version
         run: |
@@ -116,30 +102,17 @@ jobs:
             echo "version=drift-check-$(date +%Y%m%d)" >> "$GITHUB_OUTPUT"
           fi
 
-      # `cargo cyclonedx --all` emits ONE SBOM PER PACKAGE, each written into that
-      # package's own manifest directory — it does NOT produce a workspace-wide
-      # document at the repo root. With 70+ crates this scattered 70+ files named
-      # `sbom.cdx.json` through `crates/*/` and left NOTHING here, so the `ls`
-      # below it failed every single time:
-      #
-      #     ls: sbom.cdx.json: No such file or directory
-      #     ##[error]Process completed with exit code 1
-      #
-      # That is the whole of this lane's 16-run / 0-success record — the same
-      # fault class as `reproducible-build` hashing a wasm artifact the build
-      # cannot produce. `scripts/sbom-aggregate.sh` is the repo's answer to
-      # exactly this: its header says it "wraps [cargo-cyclonedx] and stitches
-      # the per-crate components into one canonical workspace bom". It is already
-      # proven — `sbom-consolidated.yml` runs it and is the ONE lane in this
-      # group with a successful run.
-      - name: Generate SBOM (CycloneDX 1.5+ JSON — consolidated workspace bom)
-        env:
-          SBOM_REF: ${{ steps.version.outputs.version }}
+      # The committed SBOM is a deterministic projection of the complete
+      # Cargo.lock population.  Unlike a cargo-cyclonedx binary aggregate, this
+      # cannot lose inactive lock entries, include host paths, or get a fresh
+      # timestamp/UUID on each run.  The harness calls `cargo metadata --locked`
+      # and fails closed when metadata, the artifact, or the population differs.
+      - name: Verify committed Cargo.lock SBOM is reproducible and complete
         run: |
           set -euo pipefail
-          bash scripts/sbom-aggregate.sh
-          cp target/sbom/corelink-workspace.cdx.json sbom.cdx.json
-          echo "SBOM generation complete"
+          python3 tests/verify_rust_sbom.py --check
+          cp .sbom/cyclonedx-rust.json sbom.cdx.json
+          echo "SBOM reproducibility and lock coverage verified"
           ls -lh sbom.cdx.json
 
       - name: Upload SBOM artifact (between jobs)
