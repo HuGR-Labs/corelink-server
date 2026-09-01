@@ -155,8 +155,12 @@ DOC_ROOTS_WITH_EXCLUDES = [
 # get a gate allowlisted into uselessness (see `scripts/docs_reality_allowlist.json`).
 ROOT_DOC_GLOBS = ["*.md"]
 ROOT_DOC_EXCLUDE = {"CHANGELOG.md"}
-# Route sources for the best-effort endpoint check.
-ROUTE_SOURCE_ROOTS = [REPO_ROOT / "crates", REPO_ROOT / "worker" / "src"]
+# Route sources for the endpoint check.  Adapter-host crates expose independent
+# listener tables (including a service-local `/{*path}`), so including every
+# crate would make every API path appear wired by that unrelated catch-all.  The
+# customer API table is the container router plus the Worker dispatch literals.
+ROUTE_SOURCE_ROOTS = [REPO_ROOT / "crates" / "corelink-container",
+                      REPO_ROOT / "worker" / "src"]
 
 DOC_EXTS = {".md", ".mdx", ".mdc", ".html", ".htm", ".txt"}
 WALK_EXCLUDE_DIRS = {"node_modules", ".git", "build", "dist", ".open-next",
@@ -422,7 +426,7 @@ def extract_cli_refs(doc: DocFile) -> list[CliRef]:
 # ---------------------------------------------------------------------------
 # Route inventory (best-effort endpoint check)
 # ---------------------------------------------------------------------------
-_ROUTE_DECL_RE = re.compile(r"\.(?:route|nest|nest_service)\(\s*\"([^\"]+)\"")
+_ROUTE_DECL_RE = re.compile(r"\.(?:route|nest|nest_service)\(\s*['\"]([^'\"]+)['\"]")
 # Worker route literals + bare "/path" table entries. Best-effort: any string
 # literal that looks like an absolute product route.
 _WORKER_PATH_RE = re.compile(r"[\"'](/(?:v1|v2|turbo|bazel|npm|nix|cache|cas|ac|"
@@ -430,7 +434,76 @@ _WORKER_PATH_RE = re.compile(r"[\"'](/(?:v1|v2|turbo|bazel|npm|nix|cache|cas|ac|
                              r"_internal|healthz|_health)[A-Za-z0-9/_{}:.*-]*)[\"']")
 
 
+_SOURCE_COMMENT_RE = re.compile(r"//[^\n]*|/\*.*?\*/", re.DOTALL)
+
+
+def _strip_source_comments(text: str) -> str:
+    """Remove Rust/JS/TS comments while preserving the source line count.
+
+    Route discovery is intentionally source-only.  A route-shaped string in a
+    comment is prose about the product, not a registered handler; counting it
+    would let a comment make a documented endpoint appear wired.  Preserve line
+    positions while removing both line and block comments.
+    """
+    def replace(match: re.Match[str]) -> str:
+        # Keep the line count; route extraction has no source-line diagnostics.
+        return "\n" * match.group(0).count("\n")
+
+    return _SOURCE_COMMENT_RE.sub(replace, text)
+
+
+_PARAMETER_SEGMENT_RE = re.compile(r"(?:\{[^{}]+\}|:[A-Za-z_][A-Za-z0-9_]*)")
+_CATCH_ALL_SEGMENT_RE = re.compile(r"(?:\{\*[^{}]+\}|\*[^/]*)")
+
+
+@dataclass(frozen=True)
+class RouteInventory:
+    """The route table with distinct matching semantics.
+
+    ``exact`` means one literal path only.  ``parameterized`` means one path
+    segment per ``{name}``/``:name`` marker.  ``catch_all`` is the only class
+    allowed to consume a deeper path.  ``bare`` is a diagnostic subset of exact
+    routes such as ``/v1``; it is deliberately *not* a prefix table.
+    """
+
+    exact: frozenset[str] = frozenset()
+    parameterized: frozenset[str] = frozenset()
+    catch_all: frozenset[str] = frozenset()
+
+    @property
+    def bare(self) -> frozenset[str]:
+        return frozenset(r for r in self.exact if r.count("/") <= 1)
+
+    @property
+    def all(self) -> frozenset[str]:
+        return self.exact | self.parameterized | self.catch_all
+
+    @classmethod
+    def from_routes(cls, routes: set[str] | list[str]) -> "RouteInventory":
+        exact: set[str] = set()
+        parameterized: set[str] = set()
+        catch_all: set[str] = set()
+        for route in routes:
+            if _CATCH_ALL_SEGMENT_RE.search(route):
+                catch_all.add(route)
+            elif _PARAMETER_SEGMENT_RE.search(route):
+                parameterized.add(route)
+            else:
+                exact.add(route)
+        return cls(frozenset(exact), frozenset(parameterized),
+                   frozenset(catch_all))
+
+    def resolves(self, path: str) -> bool:
+        return any(_route_to_regex(route).fullmatch(path)
+                   for route in self.all)
+
+
 def collect_routes() -> set[str]:
+    """Collect route-shaped literals from live source, excluding comments.
+
+    Kept as a set-returning compatibility seam for the backlog probes; callers
+    that need matching semantics should use :func:`collect_route_inventory`.
+    """
     routes: set[str] = set()
     for root in ROUTE_SOURCE_ROOTS:
         if not root.exists():
@@ -444,41 +517,76 @@ def collect_routes() -> set[str]:
                 t = p.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
                 continue
-            for m in _ROUTE_DECL_RE.findall(t):
+            source = _strip_source_comments(t)
+            for m in _ROUTE_DECL_RE.findall(source):
                 routes.add(m)
-            for m in _WORKER_PATH_RE.findall(t):
+            for m in _WORKER_PATH_RE.findall(source):
                 routes.add(m)
     return routes
 
 
+def collect_route_inventory() -> RouteInventory:
+    """Collect and classify the live route population deterministically."""
+    return RouteInventory.from_routes(collect_routes())
+
+
+MIN_ROUTE_COUNT = 100
+
+
+def validate_route_population(inventory: RouteInventory,
+                              minimum: int = MIN_ROUTE_COUNT) -> list[str]:
+    """Fail closed when route extraction returns an empty/truncated table."""
+    count = len(inventory.all)
+    if count == 0:
+        return ["[endpoint-existence] ROUTE SCAN EMPTY — no wired routes found"]
+    if count < minimum:
+        return [f"[endpoint-existence] ROUTE SCAN TOO SMALL — found {count} "
+                f"routes, expected at least {minimum}"]
+    return []
+
+
 def _route_to_regex(route: str) -> re.Pattern:
-    """axum/itty path -> regex. `{param}` / `:param` / `{*rest}` / `*` are
-    wildcards; a trailing wildcard also matches deeper (nested) paths."""
-    tmp = re.sub(r"\{\*[^}]+\}", "\x00", route)            # {*rest} -> catch-all
-    tmp = re.sub(r"\{[^}]+\}", "\x01", tmp)                # {param} -> one segment
-    tmp = re.sub(r":[A-Za-z_][A-Za-z0-9_]*", "\x01", tmp)  # :param -> one segment
-    out = ["^"]
-    for ch in tmp:
-        if ch == "\x00":
-            out.append(".*")
-        elif ch == "\x01":
-            out.append("[^/]+")
-        elif ch == "*":
-            out.append(".*")
-        else:
-            out.append(re.escape(ch))
-    out.append(r"(?:/.*)?$")  # exact OR a deeper path under this route (nesting)
-    return re.compile("".join(out))
+    """Compile one route without inventing a prefix or suffix match.
+
+    Exact and parameterized routes use a strict end anchor.  Only an explicit
+    catch-all marker (``{*rest}`` or ``*rest``) can consume deeper segments.
+    ``re.escape`` is applied to every literal fragment so a route containing a
+    regex metacharacter cannot accidentally widen the match.
+    """
+    catch = _CATCH_ALL_SEGMENT_RE.search(route)
+    if catch:
+        # Catch-all route syntax is a terminal path segment in axum/itty.  Make
+        # the slash and remainder optional so `/v1/{*rest}` covers `/v1/foo`
+        # and the base mount, but never any unrelated sibling prefix.
+        segment_start = route.rfind("/", 0, catch.start())
+        if segment_start >= 0 and catch.end() == len(route):
+            prefix = route[:segment_start].rstrip("/") or "/"
+            if prefix == "/":
+                return re.compile(r"/.*$")
+            return re.compile(re.escape(prefix) + r"(?:/.*)?$")
+
+    parts: list[str] = []
+    pos = 0
+    for match in _PARAMETER_SEGMENT_RE.finditer(route):
+        parts.append(re.escape(route[pos:match.start()]))
+        parts.append(r"[^/]+")
+        pos = match.end()
+    parts.append(re.escape(route[pos:]))
+    return re.compile("^" + "".join(parts) + "$")
 
 
-def endpoint_resolves(path: str, route_regexes: list[re.Pattern],
-                      route_prefixes: set[str]) -> bool:
+def endpoint_resolves(path: str, route_regexes: list[re.Pattern] | RouteInventory,
+                      route_prefixes: set[str] | None = None) -> bool:
+    """Return whether ``path`` matches a declared route.
+
+    ``route_prefixes`` remains accepted for old probes, but is intentionally
+    ignored: a literal ``/v1`` route is not evidence that `/v1/anything``
+    exists.  Prefix semantics belong only to an explicit catch-all route.
+    """
+    if isinstance(route_regexes, RouteInventory):
+        return route_regexes.resolves(path)
     for rx in route_regexes:
-        if rx.match(path):
-            return True
-    for pref in route_prefixes:
-        base = pref.rstrip("/")
-        if base and (path == base or path.startswith(base + "/")):
+        if rx.fullmatch(path):
             return True
     return False
 
@@ -505,6 +613,11 @@ def extract_doc_endpoints(doc: DocFile) -> list[tuple[int, str]]:
             continue
         candidates = []
         if in_fence:
+            # A commented-out example is prose, not a customer invocation.
+            # Keep this narrow: executable shell commands and structured code
+            # remain eligible for endpoint extraction.
+            if re.match(r"^\s*(?:#|//|/\*|\*|<!--)", ln):
+                continue
             candidates = _DOC_PATH_RE.findall(ln)
         else:
             for span in _INLINE_CODE_RE.findall(ln):
@@ -745,6 +858,66 @@ def load_allowlist(path: Path) -> dict:
         return {}
 
 
+def validate_allowlist(allow: object) -> list[str]:
+    """Validate the gate configuration before using any suppressions.
+
+    An empty or malformed allowlist must never silently downgrade endpoint
+    findings to warnings.  ``endpoint.flagship_files`` is the high-severity
+    contract: at least one shipped recipe must be named so an unresolved route
+    can fail the gate.
+    """
+    errors: list[str] = []
+    if not isinstance(allow, dict) or not allow:
+        return ["[allowlist] EMPTY/MALFORMED — expected a non-empty JSON object"]
+
+    for key in ("cli", "deferred_coherence", "hostname", "endpoint"):
+        if key not in allow:
+            errors.append(f"[allowlist] missing required section `{key}`")
+    if not isinstance(allow.get("cli"), dict):
+        errors.append("[allowlist] `cli` must be an object")
+    deferred = allow.get("deferred_coherence")
+    if not isinstance(deferred, list):
+        errors.append("[allowlist] `deferred_coherence` must be an array")
+    elif any(not isinstance(rule, dict) for rule in deferred):
+        errors.append("[allowlist] deferred_coherence entries must be objects")
+    if not isinstance(allow.get("hostname"), dict):
+        errors.append("[allowlist] `hostname` must be an object")
+
+    endpoint = allow.get("endpoint")
+    if not isinstance(endpoint, dict):
+        errors.append("[allowlist] `endpoint` must be an object")
+        return errors
+    flagship = endpoint.get("flagship_files")
+    if not isinstance(flagship, list) or not flagship:
+        errors.append("[allowlist] endpoint.flagship_files must name at least "
+                      "one shipped recipe (fail-closed endpoint gate)")
+    elif any(not isinstance(path, str) or not path.strip() for path in flagship):
+        errors.append("[allowlist] endpoint.flagship_files entries must be "
+                      "non-empty strings")
+    if (isinstance(flagship, list)
+            and all(isinstance(path, str) for path in flagship)
+            and len(set(flagship)) != len(flagship)):
+        errors.append("[allowlist] endpoint.flagship_files contains duplicates")
+    ignore = endpoint.get("ignore_path_prefixes", [])
+    if not isinstance(ignore, list) or any(not isinstance(x, str) for x in ignore):
+        errors.append("[allowlist] endpoint.ignore_path_prefixes must be an "
+                      "array of strings")
+
+    cli = allow.get("cli")
+    if isinstance(cli, dict):
+        for bucket in ("roadmap_allow", "tracked_drift"):
+            if bucket in cli and not isinstance(cli[bucket], (dict, list)):
+                errors.append(f"[allowlist] cli.{bucket} must be an object or "
+                              "array")
+    hostname = allow.get("hostname")
+    if isinstance(hostname, dict):
+        for key, expected in (("live_allow", dict), ("tracked_dead", dict),
+                              ("live_patterns", list)):
+            if key in hostname and not isinstance(hostname[key], expected):
+                errors.append(f"[allowlist] hostname.{key} has invalid type")
+    return errors
+
+
 # ---------------------------------------------------------------------------
 # okf-deferred-coherence rules
 # ---------------------------------------------------------------------------
@@ -845,8 +1018,11 @@ def run_hostname_liveness(host_cfg: dict, *, repo_root: Path | None = None,
     res = HostnameResult()
 
     live_allow = {h.strip().lower() for h in host_cfg.get("live_allow", {})}
+    live_patterns_cfg = host_cfg.get("live_patterns", [])
+    if not isinstance(live_patterns_cfg, list):
+        live_patterns_cfg = []
     live_patterns = [re.compile(p["pattern"], re.IGNORECASE)
-                     for p in host_cfg.get("live_patterns", [])
+                     for p in live_patterns_cfg
                      if isinstance(p, dict) and p.get("pattern")]
     tracked_cfg = host_cfg.get("tracked_dead", {})
     tracked_dead = {h.strip().lower() for h in tracked_cfg}
@@ -950,17 +1126,33 @@ def main() -> int:
     args = ap.parse_args()
 
     allow = load_allowlist(Path(args.allowlist))
+    allowlist_errors = validate_allowlist(allow)
     cli_allow = allow.get("cli", {})
-    roadmap_allow = {k.strip() for k in cli_allow.get("roadmap_allow", {})}
-    tracked_drift = {k.strip() for k in cli_allow.get("tracked_drift", {})}
+    if not isinstance(cli_allow, dict):
+        cli_allow = {}
+    roadmap_cfg = cli_allow.get("roadmap_allow", {})
+    tracked_cfg = cli_allow.get("tracked_drift", {})
+    roadmap_allow = {k.strip() for k in roadmap_cfg} if isinstance(
+        roadmap_cfg, (dict, list, tuple, set)) else set()
+    tracked_drift = {k.strip() for k in tracked_cfg} if isinstance(
+        tracked_cfg, (dict, list, tuple, set)) else set()
 
     # --- [hostname-liveness] corpus (needed early for --list-hosts/--verify-dns) ---
     host_cfg = allow.get("hostname", {})
-    live_allow = {h.strip().lower() for h in host_cfg.get("live_allow", {})}
+    if not isinstance(host_cfg, dict):
+        host_cfg = {}
+    live_cfg = host_cfg.get("live_allow", {})
+    live_allow = {h.strip().lower() for h in live_cfg} if isinstance(
+        live_cfg, dict) else set()
+    live_patterns_cfg = host_cfg.get("live_patterns", [])
+    if not isinstance(live_patterns_cfg, list):
+        live_patterns_cfg = []
     live_patterns = [re.compile(p["pattern"], re.IGNORECASE)
-                     for p in host_cfg.get("live_patterns", [])
+                     for p in live_patterns_cfg
                      if isinstance(p, dict) and p.get("pattern")]
     tracked_dead_cfg = host_cfg.get("tracked_dead", {})
+    if not isinstance(tracked_dead_cfg, dict):
+        tracked_dead_cfg = {}
     tracked_dead = {h.strip().lower() for h in tracked_dead_cfg}
 
     if args.verify_dns or args.list_hosts:
@@ -1074,6 +1266,10 @@ def main() -> int:
 
     # --- [okf-deferred-coherence] ---
     deferred_rules = allow.get("deferred_coherence", [])
+    if not isinstance(deferred_rules, list):
+        deferred_rules = []
+    deferred_rules = [rule for rule in deferred_rules
+                      if isinstance(rule, dict)]
     deferred_findings = run_deferred_coherence(deferred_rules, docs, warnings)
     deferred_tracked_ids = {r["id"] for r in deferred_rules if r.get("tracked")}
     deferred_fatal = [f for f in deferred_findings
@@ -1082,10 +1278,12 @@ def main() -> int:
                             if f.rule_id in deferred_tracked_ids and not args.strict]
 
     # --- [endpoint-existence] (best-effort, WARN unless flagship) ---
-    routes = collect_routes()
-    route_regexes = [_route_to_regex(r) for r in routes]
-    route_prefixes = {r for r in routes if "{" not in r and ":" not in r}
+    route_inventory = collect_route_inventory()
+    route_population_errors = validate_route_population(route_inventory)
+    route_regexes = [_route_to_regex(r) for r in route_inventory.all]
     endpoint_cfg = allow.get("endpoint", {})
+    if not isinstance(endpoint_cfg, dict):
+        endpoint_cfg = {}
     flagship_files = set(endpoint_cfg.get("flagship_files", []))
     ignore_prefixes = tuple(endpoint_cfg.get("ignore_path_prefixes", []))
     endpoint_warns: list[str] = []
@@ -1098,7 +1296,7 @@ def main() -> int:
                 continue
             if ignore_prefixes and norm.startswith(ignore_prefixes):
                 continue
-            if endpoint_resolves(norm, route_regexes, route_prefixes):
+            if endpoint_resolves(norm, route_regexes):
                 continue
             key = (d.rel, norm)
             if key in seen_ep:
@@ -1128,6 +1326,7 @@ def main() -> int:
     # -----------------------------------------------------------------------
     total_fail = (len(cli_failures) + len(strict_tracked_fail) +
                   len(deferred_fatal) + len(endpoint_fatal) +
+                  len(allowlist_errors) + len(route_population_errors) +
                   len(host_failures) + len(host_strict_fail) +
                   len(host_scan_errors) + len(host_expiry_fail))
 
@@ -1156,6 +1355,18 @@ def main() -> int:
         print("== [endpoint-existence] FAIL — flagship recipe path is not wired ==")
         for m in endpoint_fatal:
             print(f"  {m}")
+        print()
+
+    if allowlist_errors:
+        print("== [allowlist] FAIL — gate configuration is not trustworthy ==")
+        for message in allowlist_errors:
+            print(f"  {message}")
+        print()
+
+    if route_population_errors:
+        print("== [endpoint-existence] FAIL — route inventory is not trustworthy ==")
+        for message in route_population_errors:
+            print(f"  {message}")
         print()
 
     if host_scan_errors:

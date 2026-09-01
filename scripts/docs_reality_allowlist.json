@@ -557,8 +557,10 @@
     ]
   },
   "endpoint": {
-    "_comment": "Best-effort HTTP-path check. Unresolved paths WARN (non-fatal). Add a doc file to flagship_files to escalate its unresolved paths to a hard FAIL once its recipe is verified end-to-end. ignore_path_prefixes drops noisy non-route matches (illustrative/placeholder paths).",
-    "flagship_files": [],
+    "_comment": "HTTP-path check is fail-closed for the flagship recipe. Unresolved paths in flagship_files are hard failures; other unresolved paths remain best-effort warnings. Prefixes are never treated as routes, and ignore_path_prefixes is only for explicitly illustrative/placeholder paths.",
+    "flagship_files": [
+      "apps/docs/docs/reference/cli/doctor.mdx"
+    ],
     "ignore_path_prefixes": []
   }
 }
