@@ -3,6 +3,7 @@ name: Audit finding coverage
 on:
   pull_request:
     paths:
+      - 'BACKLOG.md'
       - 'docs/security/2026-06-15-launch-due-diligence-audit.md'
       - 'reports/audits/2026-08-26-go-live-readiness.md'
       - 'docs/security/2026-07-02-pilot-identity-brutal-audit.md'
@@ -13,6 +14,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'BACKLOG.md'
       - 'docs/security/2026-06-15-launch-due-diligence-audit.md'
       - 'reports/audits/2026-08-26-go-live-readiness.md'
       - 'docs/security/2026-07-02-pilot-identity-brutal-audit.md'

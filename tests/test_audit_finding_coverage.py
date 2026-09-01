@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -11,6 +12,7 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+WORKFLOW = ROOT / ".github/workflows/audit-finding-coverage.yml"
 sys.path.insert(0, str(ROOT / "scripts"))
 import verify_audit_finding_coverage as coverage  # noqa: E402
 
@@ -74,3 +76,22 @@ def test_truncated_or_renumbered_due_diligence_findings_are_red() -> None:
 
     with pytest.raises(coverage.CoverageError, match="contiguous DD-001"):
         coverage.parse_due_diligence(source.replace("### 1. [HIGH]", "### 99. [HIGH]", 1), "fixture.md")
+
+
+def test_backlog_changes_trigger_the_coverage_gate_on_pull_request_and_push() -> None:
+    """Keep the gate load-bearing when a backlog decision is changed."""
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    for event in ("pull_request", "push"):
+        event_block = re.search(
+            rf"(?ms)^  {event}:\n(.*?)(?=^  [A-Za-z_]+:|\Z)",
+            workflow,
+        )
+        assert event_block, f"audit workflow must define the {event} trigger"
+        paths_block = re.search(
+            r"(?ms)^    paths:\n(.*?)(?=^    [A-Za-z_]+:|\Z)",
+            event_block.group(1),
+        )
+        assert paths_block, f"{event} trigger must declare path filters"
+        assert re.search(r"^      - ['\"]?BACKLOG\.md['\"]?\s*$", paths_block.group(1), re.MULTILINE), (
+            f"BACKLOG.md must trigger the {event} coverage gate"
+        )
