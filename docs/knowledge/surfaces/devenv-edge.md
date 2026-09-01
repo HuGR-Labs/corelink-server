@@ -11,7 +11,7 @@ source_files:
   - "migrations/d1/0072_runners_entitlement_max_vcpu_h.sql"
   - "migrations/d1/0106_devenv_monthly_vcpu.sql"
   - "crates/corelink-container/src/routes/customer_runners.rs"
-checkpoint_sha: "ac6a174c4c7f43eb9dea35a0efc4a02646cf69d6"
+checkpoint_sha: "ad80465e6be0a60fc325729a4d0122a0e54039ed"
 provenance: "AUTHORED"
 tags: ["surfaces", "devenv", "worker-edge", "auth", "quota", "durable-object"]
 timestamp: "2026-08-30T00:00:00Z"
@@ -41,7 +41,7 @@ The DO binding is **not declared today.** It was a cross-Worker reference — an
 
 **Client-supplied trust headers are stripped before forwarding, and the authorization header is dropped entirely.** The edge rebuilds the header set, calls `stripClientTrustHeaders`, deletes `authorization`, and then sets the trust headers itself — tenant id, scope, role, token prefix, request id (`worker/src/index.ts:3005-3018`). The DO therefore cannot be told who the caller is by the caller; the credential does not travel past the boundary that verified it.
 
-**When the binding returns, it must be mirrored into `env.prod`.** `durable_objects` is non-inheritable in wrangler: an env block replaces the top-level list rather than extending it, so a binding declared only at top level is absent in prod. The comment recording that rule outlived the binding it governed (`wrangler.toml:566-568`) — worth keeping, because shipping only the top-level binding makes DevEnv green in dev and a permanent 503 in prod.
+**When the binding returns, it must be mirrored into `env.prod`.** `durable_objects` is non-inheritable in wrangler: an env block replaces the top-level list rather than extending it, so a binding declared only at top level is absent in prod. The comment recording that rule outlived the binding it governed (`wrangler.toml:567-571`) — worth keeping, because shipping only the top-level binding makes DevEnv green in dev and a permanent 503 in prod.
 
 # Consequences
 
@@ -70,6 +70,6 @@ Quota state lives in `runners_entitlement`, shared with the runner fabric, so a 
 5. `worker/src/index.ts:2059-2060` — the OpenAPI 3.1 document served from a static module at `GET /openapi.json`.
 6. `worker/src/lib/openapi_devenv.ts:4` — `devenvOpenApiSpec`, the published contract for the surface.
 7. `wrangler.toml:250-251` — the surviving comment where the `RUNNER_DEVENV_DO` cross-Worker binding stood before #1447 removed it.
-8. `wrangler.toml:566-568` — the mirroring rule the binding must obey when it returns: top-level-only ships green in dev and a permanent 503 in prod.
+8. `wrangler.toml:567-571` — the mirroring rule the binding must obey when it returns: top-level-only ships green in dev and a permanent 503 in prod.
 8a. `worker/src/index.ts:164` — `RUNNER_DEVENV_DO?` is OPTIONAL in the `Env` type, which is why the absent binding is a 503 and not a boot failure.
 8b. `worker/src/index.ts:2995-2997` — the handler's explicit absent-binding arm: `SERVICE_UNAVAILABLE`, not a throw.

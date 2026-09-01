@@ -296,6 +296,9 @@ crons = [
 #   HKDF-SHA256(CORELINK_MASTER_KEY, "corelink-pat-signing-salt-v1",
 #     b"corelink-v1-pat-signing-key", 32)
 #   Set via: wrangler secret put PAT_SIGNING_KEY --env prod
+#   Rotation siblings PAT_SIGNING_KEY_PREV / PAT_SIGNING_KEY_NEW are secrets too,
+#   but rotation is BLOCKED until the per-tenant population ritual in
+#   specs/_runbooks/RB-PAT-SIGNING-KEY-ROTATION.md is executable in all 5 envs.
 
 # Produção (rodar com --env prod)
 [env.prod]

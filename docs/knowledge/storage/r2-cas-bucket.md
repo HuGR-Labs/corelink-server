@@ -10,7 +10,7 @@ source_files:
 source_blobs:
   - "crates/corelink-container/src/sli_aggregate.rs@3af94117723cbc7adb135fa3f8b320121ed95a54"
   - "crates/corelink-container/src/storage/r2_s3.rs@ab99e41642b8914c166f52ebee9ba0ae1fe08394"
-checkpoint_sha: "5ef2dce0fe8400ff95a520e2227bbc856c4224cd"
+checkpoint_sha: "ad80465e6be0a60fc325729a4d0122a0e54039ed"
 provenance: "AUTHORED"
 tags: ["storage", "r2", "cas", "s3", "tenant-isolation"]
 timestamp: "2026-06-29T00:00:00Z"
@@ -57,7 +57,7 @@ unchanged — only the `<digest>` component is hardened for an active tenant.
    same bytes reclaimed (`crates/corelink-container/src/storage/r2_s3.rs:79-96`).
 6. Bucket / region env reads route through `env_or` so an absent OR empty value falls back to the
    container default instead of producing a request-breaking empty bucket name
-   (`crates/corelink-container/src/storage.rs:129-141`).
+   (`crates/corelink-container/src/storage.rs:145-160`).
 7. The production CAS handler builder wires a DURABLE audit trail, not a volatile one: with storage creds
    present (the real data plane) `build_r2_cas_handler_from_env` constructs the D1 `audit_outbox` sink via
    `cas_audit_sink_from_d1_concrete(D1HttpClient::new(&env))` and REFUSES to build the handler if that sink

@@ -169,8 +169,8 @@ export interface Env {
   // PAT_SIGNING_KEY_NEW) so a PAT minted under either sibling still
   // HMAC-verifies through the overlap window — rotation (incl. rotate-on-
   // compromise) is then NOT an instant fleet-wide auth outage. Each is a
-  // hex string (≥ 32 bytes decoded); a malformed sibling is ignored (the
-  // current key remains the load-bearing gate). Bound via:
+  // hex string (≥ 32 bytes decoded); a present-but-malformed sibling fails
+  // CLOSED + LOUD with 503, matching the container verifier. Bound via:
   // `wrangler secret put PAT_SIGNING_KEY_PREV` / `..._NEW`.
   PAT_SIGNING_KEY_PREV?: string;
   PAT_SIGNING_KEY_NEW?: string;
@@ -2313,8 +2313,8 @@ const baseHandler: ExportedHandler<Env> = {
       // container.destroy()); the operator gate is THIS apex internal-auth check
       // (admin consumer key). Best-effort + idempotent: destroying a cold/fresh
       // container is harmless (it just reboots), so — unlike the erase fan-out — it
-      // reports per-region status instead of failing closed. Fans to every regional
-      // worker so one call converges the whole fleet onto the current start-env.
+      // reports per-region status instead of failing closed. Fan-out converges only the five
+      // `_system` instances, never the per-tenant population or its start-time credentials.
       if (route.pathSuffix === "/_internal/admin/recycle-system") {
         const stopLocal = async (): Promise<boolean> => {
           const stopUrl = new URL(request.url);
@@ -2340,7 +2340,7 @@ const baseHandler: ExportedHandler<Env> = {
             status,
             headers: { "Content-Type": "application/json", "X-Request-Id": requestId },
           });
-        // A fan-out target (a regional worker) recycles ONLY its own local container.
+        // A fan-out target recycles ONLY its own regional `_system` container.
         if (request.headers.has("x-corelink-fanout-from")) {
           const ok = await stopLocal();
           return applyCors(

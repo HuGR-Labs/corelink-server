@@ -117,7 +117,13 @@ impl StorageEnv {
 
 /// Return the value of `var` trimmed to a non-empty string, or `None`.
 pub(crate) fn non_empty_env(var: &str) -> Option<String> {
-    let v = std::env::var(var).ok()?;
+    non_empty_value(std::env::var(var).ok())
+}
+
+/// Pure core of [`non_empty_env`], split out so EMPTY-as-ABSENT is tested
+/// without mutating the process environment in a parallel test suite.
+fn non_empty_value(raw: Option<String>) -> Option<String> {
+    let v = raw?;
     let v = v.trim().to_owned();
     if v.is_empty() {
         None
@@ -187,7 +193,21 @@ mod tests {
 
 #[cfg(test)]
 mod env_or_tests {
-    use super::pick_non_empty;
+    use super::{non_empty_value, pick_non_empty};
+
+    /// B-081 teeth: the DO deliberately forwards an unbound optional rotation
+    /// sibling as `""`. If EMPTY ever becomes PRESENT, PAT auth fails closed at
+    /// container boot. The non-empty control prevents a constant-None helper.
+    #[test]
+    fn non_empty_value_absent_empty_blank_none_set_trimmed() {
+        assert_eq!(non_empty_value(None), None);
+        assert_eq!(non_empty_value(Some(String::new())), None);
+        assert_eq!(non_empty_value(Some("   ".to_owned())), None);
+        assert_eq!(
+            non_empty_value(Some("  abcd  ".to_owned())),
+            Some("abcd".to_owned())
+        );
+    }
 
     /// The 2026-06-05 prod incident contract: absent AND empty AND
     /// whitespace-only all mean "use the default"; set means the value.

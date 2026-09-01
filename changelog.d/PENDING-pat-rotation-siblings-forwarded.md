@@ -11,9 +11,13 @@
   do when a key is compromised.
 
   `worker/src/durable_object.ts` now forwards both siblings in the
-  `container.start({ env })` block. Secrets-matrix rows #204/#205 already
+  `container.start({ env })` block, and a behavioral test observes that exact
+  start object for present and absent siblings. Secrets-matrix rows #204/#205 already
   existed but described only the edge half (`worker/src/index.ts`); they now
-  record the container half and why it was unreachable.
+  record the container half and why it was unreachable. This repairs the code
+  path but does **not** close B-081: start-time env does not update the active
+  population — every per-tenant container plus the shared `_oci` container that
+  authenticates OCI PATs at `/token` and serves `/v2/*` in each environment.
 
 ### Notes
 
@@ -24,9 +28,17 @@
   an *unprovisioned optional secret* into total PAT-auth downtime — and neither
   sibling is bound in prod today, so the empty path is the **real** path, not an
   edge case. It works because the container reads these through `non_empty_env`
-  (`storage.rs:119`), which trims and treats EMPTY exactly like ABSENT. The
-  item's closing verify gates on that property directly, so a change to
-  `non_empty_env` cannot silently arm the outage.
+  (`storage.rs:119-133`), which trims and treats EMPTY exactly like ABSENT. A
+  focused semantic unit test covers absent, empty, blank, and non-empty values,
+  so the proof does not depend on grepping for an implementation token.
+
+- **Operational rollout remains blocked.** The normal data plane has one
+  `CoreLinkServer` per tenant, while `/_internal/admin/recycle-system` reaches
+  only the five regional `_system` instances. There is no active-population
+  enumerator, exact-population recycle ledger, or boot-generation attestation.
+  B-081 therefore remains open; the non-executable safe ritual and its unblock
+  conditions are recorded in
+  `specs/_runbooks/RB-PAT-SIGNING-KEY-ROTATION.md`.
 
 - Measured: `tsc --noEmit` on `worker/` reports **16 errors with and without this
   change** — all pre-existing (`replication_coordinator_do.ts`, plus 4 already in
@@ -34,10 +46,10 @@
   optional (`index.ts:175-176`). `secrets-checklist-verify` OK (no drift);
   `validate_secrets_matrix` `code_only=0`.
 
-- **No Rust changed.** B-081 declares a dependency on B-067 (no CI test execution
-  for `corelink-pat`) because it is a credential repair. The container half
-  already existed; the defect was entirely Worker-side. That dependency still
-  holds for the next repair that touches the crate — not for this one.
+- The verifier behavior is unchanged. Rust now factors its existing
+  EMPTY-as-ABSENT rule through a pure helper solely so the load-bearing semantic
+  contract has an executable unit test. B-067 remains relevant to authoritative
+  CI execution for credential code.
 
 ### Fixed (pre-existing, surfaced by this PR)
 
@@ -53,5 +65,7 @@
 
   Corrected by CONTENT to `:912`, `:913`, `:929`, `:1028`, `:1029`, and the block
   range `774-1018` → `774-1031` (the env object actually closes at `:1031`).
+  Cold review also caught the newly added B-081 citation landing on Stripe
+  runner prices (`:868-869`); its actual siblings are at `:847-848`.
   Re-anchoring alone would have restored a green gate over five wrong citations —
   the failure mode this repo has already paid for.
