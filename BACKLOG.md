@@ -12080,72 +12080,128 @@ verify: |
       print(f"INSTRUMENTO QUEBRADO: li {len(blocks)} blocos backlog, esperado >=100", file=sys.stderr)
       sys.exit(2)
   ids = [m.group(1) for b in blocks if (m := re.search(r"(?m)^id:\s*(\S+)", b))]
-  vivos = [i for i in ids
-           if (m := re.fullmatch(r"B-(\d+)", i))
-           and (int(m.group(1)) <= 0 or i != f"B-{int(m.group(1)):03d}")]
-  if vivos:
+  if len(ids) != len(blocks):
+      print(f"INSTRUMENTO QUEBRADO: extraí {len(ids)} ids de {len(blocks)} blocos — "
+            "um bloco sem id não pode ser confundido com uma sonda canônica", file=sys.stderr)
+      sys.exit(2)
+  from collections import Counter
+  duplicates = sorted(i for i, n in Counter(ids).items() if n > 1)
+  if duplicates:
+      print("INSTRUMENTO QUEBRADO: ids duplicados já existem no BACKLOG.md: "
+            + ", ".join(duplicates) + " — a sonda não pode mascarar essa falha", file=sys.stderr)
+      sys.exit(2)
+  invalid = [i for i in ids
+             if not (m := re.fullmatch(r"B-(\d+)", i))
+             or int(m.group(1)) <= 0
+             or i != f"B-{int(m.group(1)):03d}"]
+  if invalid:
       print("DEFEITO VIVO: id nao-canonico ou nao-positivo ja esta em BACKLOG.md: "
-            + ", ".join(vivos), file=sys.stderr)
+            + ", ".join(invalid), file=sys.stderr)
       sys.exit(2)
   alvo = "B-142"
-  if alvo not in ids:
-      print(f"INSTRUMENTO QUEBRADO: {alvo} sumiu do BACKLOG — escolha outro alvo para a sonda de alias",
-            file=sys.stderr)
+  if ids.count(alvo) != 1:
+      print(f"INSTRUMENTO QUEBRADO: esperado exatamente um {alvo} para provar o alias, "
+            f"encontrei {ids.count(alvo)}", file=sys.stderr)
       sys.exit(2)
   alias = "B-0142"
-  probe = (f"\n### {alias} — sonda\n\nSonda plantada pelo verify do B-167.\n\n"
-           f"```backlog\nid: {alias}\nrepo: corelink-server\nowner: tl\n"
-           'status: open\nverify: "true"\nverify-means: sonda\nlast-verified: 2026-08-31\n```\n')
+  if alias in ids:
+      print(f"DEFEITO VIVO: `{alias}` ja esta no BACKLOG.md; a sonda nao pode provar "
+            "que uma nova grafia seria recusada", file=sys.stderr)
+      sys.exit(2)
+  numbers = [int(re.fullmatch(r"B-(\d+)", i).group(1)) for i in ids]
+  fresh = f"B-{max(numbers) + 1:03d}"
+  if fresh in ids:
+      print(f"INSTRUMENTO QUEBRADO: a sonda canônica calculada ({fresh}) não está ausente",
+            file=sys.stderr)
+      sys.exit(2)
+
+  def probe(probe_id):
+      return (f"\n### {probe_id} — sonda\n\nSonda plantada pelo verify do B-167.\n\n"
+              f"```backlog\nid: {probe_id}\nrepo: corelink-server\nowner: tl\n"
+              'status: open\nverify: "true"\nverify-means: sonda\nlast-verified: 2026-09-01\n```\n')
+
+  # POSITIVE CONTROL: B-0142 must fail specifically at the canonical-form gate,
+  # not merely because the fixture became duplicate or otherwise malformed.
   with tempfile.TemporaryDirectory() as d:
-      f = pathlib.Path(d, "probe.md"); f.write_text(text + probe)
+      f = pathlib.Path(d, "alias.md"); f.write_text(text + probe(alias))
       r = subprocess.run([sys.executable, str(script), "--file", str(f), "--id", alias],
                          capture_output=True, text=True)
   out = r.stdout + r.stderr
-  if r.returncode == 0 and "CONFIRMED" in out:
-      print(f"REGRESSAO: `id: {alias}` voltou a sair CONFIRMED convivendo com o {alvo} real — "
+  if r.returncode == 0 or "CONFIRMED" in out:
+      print(f"REGRESSAO: `id: {alias}` saiu aceito/CONFIRMED convivendo com o {alvo} real — "
             "densidade satisfeita por int(), duplicata comparada como string. A regra canonica sumiu.")
       sys.exit(1)
   if "is not canonical" not in out:
       print(f"FALHA: `{alias}` foi recusado (rc={r.returncode}) mas NAO pela regra canonica — "
             "pode estar sendo pego por outra checagem, por acidente. Releia antes de confiar "
-            "neste portao.\n" + out.strip())
+            "neste portao.\n" + out.strip(), file=sys.stderr)
       sys.exit(1)
-  # CONTROLE NEGATIVO: uma regra que recusasse TODO id satisfaria o teste acima e
-  # reprovaria os 167 itens do arquivo. O `B-168` canonico tem de continuar passando.
-  ctl = "B-168"
-  probe_ctl = (f"\n### {ctl} — sonda\n\nSonda de controle do verify do B-167.\n\n"
-               f"```backlog\nid: {ctl}\nrepo: corelink-server\nowner: tl\n"
-               'status: open\nverify: "true"\nverify-means: sonda\nlast-verified: 2026-08-31\n```\n')
+
+  # NEGATIVE CONTROL: a fresh canonical id is absent by construction and must
+  # pass. This catches a rule that simply refuses every new id, and a duplicate
+  # control (the old B-168 probe) cannot masquerade as this proof.
   with tempfile.TemporaryDirectory() as d:
-      f = pathlib.Path(d, "ctl.md"); f.write_text(text + probe_ctl)
-      rc2 = subprocess.run([sys.executable, str(script), "--file", str(f), "--id", ctl],
+      f = pathlib.Path(d, "fresh.md"); f.write_text(text + probe(fresh))
+      rc2 = subprocess.run([sys.executable, str(script), "--file", str(f), "--id", fresh],
                            capture_output=True, text=True)
-  if rc2.returncode != 0 or "CONFIRMED" not in (rc2.stdout + rc2.stderr):
-      print(f"CONTROLE NEGATIVO FALHOU: um id canonico novo ({ctl}) foi recusado "
-            f"(rc={rc2.returncode}) — a regra virou recusa-tudo.\n" + (rc2.stdout + rc2.stderr).strip()[:400])
+  out2 = rc2.stdout + rc2.stderr
+  if rc2.returncode != 0 or "CONFIRMED" not in out2 or "duplicate" in out2.lower():
+      print(f"CONTROLE NEGATIVO FALHOU: um id canonico novo e ausente ({fresh}) foi recusado "
+            f"(rc={rc2.returncode}) ou mascarado por duplicata — a regra virou recusa-tudo.\n"
+            + out2.strip()[:600], file=sys.stderr)
       sys.exit(1)
-  print(f"fechado: `{alias}` recusado pela forma canonica, e o {ctl} canonico ainda passa")
+
+  # MUTATION CONTROL: disable only the canonical-form branch in a temporary copy
+  # of the real verifier. The old alias must then become CONFIRMED; otherwise this
+  # contract could pass because another check happened to reject it.
+  source = script.read_text()
+  marker = "if block_id != canonical:"
+  if source.count(marker) != 1:
+      print("INSTRUMENTO QUEBRADO: não encontrei exatamente uma guarda canônica "
+            "mutável em backlog_verify.py", file=sys.stderr)
+      sys.exit(2)
+  with tempfile.TemporaryDirectory() as d:
+      mutated = pathlib.Path(d, "scripts", "backlog_verify.py")
+      mutated.parent.mkdir()
+      mutated.write_text(source.replace(marker, "if False and block_id != canonical:", 1))
+      f = pathlib.Path(d, "alias.md"); f.write_text(text + probe(alias))
+      rm = subprocess.run([sys.executable, str(mutated), "--file", str(f), "--id", alias],
+                          capture_output=True, text=True)
+  mout = rm.stdout + rm.stderr
+  if rm.returncode != 0 or "CONFIRMED" not in mout:
+      print("MUTACAO FALHOU: removendo apenas a guarda canonica o alias deveria voltar a "
+            f"CONFIRMED (rc={rm.returncode}).\n" + mout.strip()[:600], file=sys.stderr)
+      sys.exit(1)
+  print(f"fechado: `{alias}` recusado pela forma canonica, e {fresh} canonico novo passa; "
+        "a mutacao sem a guarda reabre o alias")
   sys.exit(0)
   PY
 verify-means: |
   **Polaridade `done`:** sai 0 — fechado — enquanto `backlog_verify.py` recusar
-  `id: B-0142` pela forma canônica e o controle `B-168` continuar passando. É um **controle
-  positivo**: planta a sonda numa cópia descartável e roda o script de verdade contra ela.
+  `id: B-0142` pela forma canônica e um id canônico novo, calculado como o máximo existente
+  + 1, continuar passando. É um **controle positivo**: planta cada sonda numa cópia descartável
+  e roda o script de verdade contra ela.
   Não pode passar por vacuidade — dizer "fechado" exige o portão genuinamente recusar o
   alias pela regra escolhida.
 
   A sonda usa `--id B-0142`, então **um único** `verify` roda (`"true"`); nunca dispara a
   matriz de ~140 comandos externos que um `backlog_verify.py` sem `--id` dispara.
 
-  **Três desfechos, nenhum silencioso:** 0 = alias recusado pela forma canônica (fechado);
-  1 = o alias voltou a ser aceito, ou a recusa veio de outra checagem — reabra e investigue;
-  2 = instrumento quebrado (arquivo sumiu, menos de 100 blocos, ou o `B-142` sumiu e a sonda
-  perdeu o par) **ou defeito vivo** — um id não-canônico já está no arquivo agora.
+  **A mutação tem dentes:** uma cópia temporária do verificador tem somente a guarda canônica
+  desabilitada; nessa cópia o alias tem de voltar a sair `CONFIRMED`. Se não voltar, outra regra
+  está mascarando o defeito. O controle novo é calculado do arquivo, exige ausência e é conferido
+  contra duplicata — não há um literal `B-168` que envelheça para dentro do backlog.
+
+  **Três desfechos, nenhum silencioso:** 0 = alias recusado pela forma canônica, controle novo
+  confirmado e mutação reabre o alias (fechado); 1 = o alias voltou a ser aceito, a recusa veio
+  de outra checagem, ou o controle novo foi recusado — reabra e investigue; 2 = instrumento
+  quebrado (arquivo sumiu, menos de 100 blocos, id ausente/duplicado, ou o `B-142` sumiu e a
+  sonda perdeu o par) **ou defeito vivo** — um id não-canônico já está no arquivo agora.
 
   **O alvo do alias é verificado, não suposto.** Se o `B-142` deixar de existir, a sonda
   deixa de ser um alias de coisa nenhuma e o comando falha alto em vez de reportar "fechado"
   sobre um teste que não testa mais nada.
-last-verified: 2026-08-31
+last-verified: 2026-09-01
 ```
 
 ### B-168 — `onBrokenLinks: "throw"` não vê `<a href>` cru: 9 links mortos nas páginas legais VIVAS, com todos os portões verdes
