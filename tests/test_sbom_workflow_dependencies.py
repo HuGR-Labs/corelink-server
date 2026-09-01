@@ -11,8 +11,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "sbom.yml"
+PYTHON_TESTS_WORKFLOW = ROOT / ".github" / "workflows" / "python-tests.yml"
 SBOM_REQUIREMENTS = ROOT / "requirements-sbom.txt"
 CI_REQUIREMENTS = ROOT / "requirements-ci.txt"
+
+SBOM_TRIGGER_CENSUS = {
+    "requirements-sbom.txt",
+    ".github/workflows/sbom.yml",
+    "tests/verify_rust_sbom.py",
+    "tests/test_sbom_workflow_dependencies.py",
+}
+
+
+def _has_complete_sbom_census(workflow: str) -> bool:
+    return all(workflow.count(f"      - '{path}'") == 2 for path in SBOM_TRIGGER_CENSUS)
 
 
 class SbomWorkflowDependencyTest(unittest.TestCase):
@@ -66,6 +78,24 @@ class SbomWorkflowDependencyTest(unittest.TestCase):
         self.assertIn("-r requirements-sbom.txt", workflow)
         self.assertIn('"$SBOM_PYTHON" tests/verify_rust_sbom.py --check', workflow)
         self.assertNotIn("python3 -m pip install --quiet -r requirements-ci.txt", workflow)
+
+    def test_regular_pr_trigger_has_exact_sbom_input_census(self) -> None:
+        workflow = PYTHON_TESTS_WORKFLOW.read_text(encoding="utf-8")
+        self.assertTrue(_has_complete_sbom_census(workflow))
+        for path in SBOM_TRIGGER_CENSUS:
+            with self.subTest(path=path):
+                self.assertEqual(workflow.count(f"      - '{path}'"), 2)
+        self.assertIn(".venv/bin/python3 tests/verify_rust_sbom.py --check", workflow)
+        self.assertIn("tests/*.py", workflow)
+        self.assertIn("SBOM dependency teeth file was not collected", workflow)
+
+    def test_census_mutation_removes_each_load_bearing_entry(self) -> None:
+        """Removing any exact census line must make the census contract fail."""
+        workflow = PYTHON_TESTS_WORKFLOW.read_text(encoding="utf-8")
+        for path in SBOM_TRIGGER_CENSUS:
+            with self.subTest(path=path):
+                mutant = workflow.replace(f"      - '{path}'\n", "")
+                self.assertFalse(_has_complete_sbom_census(mutant))
 
     def test_general_ci_requirements_do_not_pull_sbom_parser(self) -> None:
         requirements = CI_REQUIREMENTS.read_text(encoding="utf-8")

@@ -24,6 +24,12 @@ on:
       - 'tests/*.py'
       - 'scripts/**'
       - 'requirements-ci.txt'
+      # Explicit SBOM census: these inputs must run the read-only teeth and
+      # SBOM verifier on every regular PR before a release can publish assets.
+      - 'requirements-sbom.txt'
+      - '.github/workflows/sbom.yml'
+      - 'tests/verify_rust_sbom.py'
+      - 'tests/test_sbom_workflow_dependencies.py'
       - '.github/workflows/python-tests.yml'
   push:
     branches: [main]
@@ -31,6 +37,10 @@ on:
       - 'tests/*.py'
       - 'scripts/**'
       - 'requirements-ci.txt'
+      - 'requirements-sbom.txt'
+      - '.github/workflows/sbom.yml'
+      - 'tests/verify_rust_sbom.py'
+      - 'tests/test_sbom_workflow_dependencies.py'
       - '.github/workflows/python-tests.yml'
   workflow_dispatch:
 
@@ -70,7 +80,24 @@ jobs:
           python3 -m venv .venv
           .venv/bin/python3 -m pip install --quiet --upgrade pip
           .venv/bin/python3 -m pip install --quiet -r requirements-ci.txt
+          # The SBOM script is intentionally outside requirements-ci.txt.
+          # Install its exact closure into this job-private venv so the
+          # top-level suite can import it and the explicit check below can run.
+          .venv/bin/python3 -m pip install \
+            --quiet \
+            --disable-pip-version-check \
+            --no-input \
+            --require-hashes \
+            --only-binary=:all: \
+            --no-deps \
+            -r requirements-sbom.txt
           echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: Verify SBOM lock coverage (read-only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv/bin/python3 tests/verify_rust_sbom.py --check
 
       - name: Collect and run
         shell: bash
@@ -89,6 +116,15 @@ jobs:
             echo "::error::no top-level test files matched tests/*.py — refusing to report green over an empty collection"
             exit 1
           fi
+          # The SBOM dependency/isolation regression is a required piece of
+          # this lane, not merely an optional file that happens to match today.
+          case " ${FILES[*]} " in
+            *" tests/test_sbom_workflow_dependencies.py "*) ;;
+            *)
+              echo "::error::SBOM dependency teeth file was not collected by tests/*.py"
+              exit 1
+              ;;
+          esac
           echo "Collected ${#FILES[@]} file(s):"
           printf '  %s\n' "${FILES[@]}"
           python3 -m pytest "${FILES[@]}" -q
