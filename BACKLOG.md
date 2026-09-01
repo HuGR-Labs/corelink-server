@@ -12334,3 +12334,219 @@ verify-means: |
   nunca 0. Script ou workflow ausentes, e PyYAML ausente, também saem 2.
 last-verified: 2026-08-31
 ```
+---
+
+### B-169 — o scanner de segredos ENUMERAVA nomes em vez de casar a FORMA, e a seed Ed25519 da cadeia de auditoria está em texto claro na `main`
+
+**Descoberto 2026-08-31.** A antiga regra `corelink-internal-auth-hex` enumerava nomes
+(`CORELINK_[A-Z_]*AUTH_KEY` e `PAT_SIGNING_KEY[A-Z_]*`). Portanto um valor gerado por
+`openssl rand -hex 32` sob outro identificador era invisível. O PR **#1415** (merge
+`fc3c6e4a`) passou com `gitleaks` verde e deixou um literal de 64 hex atribuído a
+`AUDIT_CHAIN_SIGNING_SEED_HEX` em
+`reports/audits/2026-08-25-comprehensive-audit-and-verification.md:103`; o relatório de
+auditoria copiou o segredo que registrava. O valor não é repetido aqui.
+
+**Reparo entregue, mas item ainda aberto.** A regra agora é
+`corelink-secret-shaped-hex`: qualquer identificador recebe um valor contínuo, nu, de **64
+hex**. Não usa `keywords`, portanto o identificador pode ser opaco. A cobertura é
+deliberadamente limitada às classes de ingresso que o regex consegue classificar sem virar um
+detector genérico de hashes: `wrangler.toml`/`wrangler.json`/`wrangler.jsonc`, `.env` e
+`.env.<sufixo>`, TOML/INI/CONF cujo nome contém `secret` ou `credential`, e Markdown sob
+`reports/audits/`. `scripts/`, `src/`, workflow YAML e outros arquivos não pertencem a esta
+regra customizada; continuam sujeitos às regras padrão do gitleaks. Prefixos `0x`, hífens e
+32-hex também estão fora deste critério e exigiriam regra medida separadamente.
+
+**Exceções são sintáticas e estreitas.** Não há allowlist de caminho adicionada à regra. A
+primeira allowlist aceita somente contexto explícito de digest/checksum (por exemplo
+`sha256 =` ou `blake3 =`), acoplado ao texto da atribuição, e a segunda aceita somente formas
+óbvias de placeholder. Isto evita mutar o mesmo valor se ele mudar de contexto. O harness
+versionado chama o **gitleaks 8.30.1 real** com a configuração real: oito positivos, um por
+classe de caminho (inclusive identificador opaco), são vermelhos; digest/checksum explícito e
+fixture versionado são verdes; e retirar o bloco da regra torna o positivo opaco verde.
+
+**O residual é uma rotação, não uma alteração de regex.** A seed assina cabeças da cadeia de
+auditoria; quem a possui pode forjá-las. O HEAD ainda a contém e a varredura de histórico de
+`origin/main` é intencionalmente vermelha até uma transição controlada. Redigir apenas o HEAD
+não prova rotação: é preciso provisionar uma seed nova por `wrangler secret put`, avançar
+`AUDIT_CHAIN_SIGNING_KEY_ID`, preservar uma janela de verificação com os dois `key_id`, e
+registrar a revogação antes de introduzir uma exceção histórica limitada a commit + caminho +
+contexto. Não se fecha isso com allowlist de valor ou caminho amplo.
+
+```backlog
+id: B-169
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  python3 - <<'PY'
+  import json, pathlib, subprocess, sys, tempfile
+
+  rule = "corelink-secret-shaped-hex"
+  config = pathlib.Path(".gitleaks.toml")
+  harness = pathlib.Path("scripts/tests/gitleaks-shape-regression.sh")
+  expected_path = "reports/audits/2026-08-25-comprehensive-audit-and-verification.md"
+  if not config.is_file() or not harness.is_file():
+      print("INSTRUMENTO QUEBRADO: config ou harness da regra de forma ausente", file=sys.stderr)
+      sys.exit(2)
+
+  # O harness usa o binario e TOML reais; nunca replique parcialmente o regex
+  # do scanner neste verify.
+  proof = subprocess.run(["bash", str(harness)], text=True, capture_output=True)
+  if proof.returncode:
+      print("DEFEITO VIVO/INSTRUMENTO QUEBRADO: regressao da regra de forma falhou", file=sys.stderr)
+      sys.exit(2)
+
+  with tempfile.TemporaryDirectory(prefix="corelink-b169-") as directory:
+      report = pathlib.Path(directory, "report.json")
+      scan = subprocess.run([
+          "gitleaks", "detect", "--no-git", "--source", ".", "--config", str(config),
+          "--enable-rule", rule, "--redact", "--no-banner", "--exit-code", "1",
+          "--report-format", "json", "--report-path", str(report),
+      ], text=True, capture_output=True)
+      if scan.returncode not in (0, 1) or not report.is_file():
+          print("INSTRUMENTO QUEBRADO: gitleaks nao produziu o relatorio esperado", file=sys.stderr)
+          sys.exit(2)
+      try:
+          findings = json.loads(report.read_text())
+      except (OSError, json.JSONDecodeError) as exc:
+          print(f"INSTRUMENTO QUEBRADO: relatorio ilegivel: {exc}", file=sys.stderr)
+          sys.exit(2)
+
+  unexpected = [f for f in findings if f.get("RuleID") != rule or f.get("File") != expected_path]
+  if unexpected or len(findings) > 1:
+      print("DEFEITO VIVO: a populacao da regra mudou; revise a regra e este contrato", file=sys.stderr)
+      sys.exit(2)
+  if len(findings) == 1 and scan.returncode == 1:
+      print("ABERTO: harness passou e gitleaks real ainda encontra uma seed no relatorio de auditoria.")
+      sys.exit(0)
+  if not findings and scan.returncode == 0:
+      print("TRANSICAO: o literal saiu do HEAD. Isto prova redacao, NAO rotacao; confirme a "
+            "seed nova, key_id e revogacao antes de fechar e inverter a polaridade.")
+      sys.exit(1)
+  print("INSTRUMENTO QUEBRADO: combinacao incoerente entre exit do gitleaks e relatorio", file=sys.stderr)
+  sys.exit(2)
+  PY
+verify-means: |
+  **Polaridade `open`:** 0 significa que duas condições coexistem: o harness do scanner real
+  passou e a varredura real, limitada à regra `corelink-secret-shaped-hex`, ainda encontra
+  exatamente um achado na cópia de auditoria conhecida. Não declara o problema fechado só
+  porque a regra foi entregue.
+
+  **O que é provado:** `scripts/tests/gitleaks-shape-regression.sh` chama o gitleaks instalado
+  com `.gitleaks.toml`, não um regex copiado. Ele prova oito positivos vermelhos nas oito
+  classes de caminho, digest/checksum e fixture verdes, e a mutação que remove a regra deixando
+  o positivo opaco verde. Depois o verify usa o mesmo binário/config para ler JSON redigido do
+  HEAD e exige regra, caminho e população exatos; não imprime bytes secretos.
+
+  **Três estados honestos:** 0 = aberto, instrumento com dentes e uma seed ainda exposta; 1 =
+  **transição de redação**, pois o literal saiu do HEAD, mas isso não demonstra que houve
+  rotação/revogação nem a janela de dois `key_id`; 2 = harness/config/binário/relatório
+  quebrado, regressão da regra, ou população inesperada. Para fechar, realizar a rotação e
+  documentar a exceção histórica estreita; então inverter este verify junto com `status: done`.
+last-verified: 2026-09-01
+```
+
+---
+
+### B-170 — um PR em CONFLITO nunca tem o conteúdo escaneado; o merge é barrado, mas o vazamento não é DETECTADO
+
+**Item separado do [B-169] de propósito, e com a severidade rebaixada depois de medir.** A
+suspeita inicial era que este defeito fosse a porta de entrada da seed. **Não é** — a medição
+refuta isso, e vale registrar a refutação junto com o achado.
+
+**O que está medido (2026-08-31).** O PR **#1397** é `mergeable=CONFLICTING` e reporta
+**5 checks** — `path-based`, `policy`, `security-patch`, `sentinel`, `size` — contra **31** de
+um irmão saudável (#1533). Nenhum dos 5 lê conteúdo: são jobs de metadados
+(`pull_request_target`). `gitleaks` **não está entre eles**. A causa é estrutural: um PR em
+conflito não tem merge-ref construível, então os workflows `on: pull_request` simplesmente não
+disparam. E **um check ausente nunca fica pendente** — quem conta falhas ou pendências não vê
+nada errado.
+
+**O que JÁ protege, e é preciso dizer.** `scripts/pre-merge-gate-check.sh` já tem a "Defense 2":
+`REQUIRED_PRESENT = ["dco", "gitleaks", "changelog"]` — a **ausência** desses gates é
+STRUCTURAL e não é sobreponível por `--admin-reason`. Rodado contra o #1397, o portão recusa
+corretamente, citando o `CONFLICTING` e dizendo que qualquer verde ali "prova NADA". Portanto o
+mecanismo de detecção-no-merge que se poderia propor **já existe e funciona**; não há o que
+construir nesse ponto.
+
+**A lacuna residual, que é o que este item rastreia.** O portão impede o **merge**; ele não
+**detecta** o segredo. Enquanto o PR ficar em conflito, o material sensível no head dele nunca
+é varrido por ninguém — não há lane que escaneie heads de PR independentemente do merge-ref.
+No caso concreto isso foi contido por acidente: a seed entrou na `main` por **outra** porta
+(#1415, que era mergeable, RODOU o gitleaks e passou verde por causa do furo do [B-169]). Ou
+seja, o defeito de ingresso foi 100% a regra; este aqui é **lacuna de observabilidade**, não de
+contenção.
+
+**Mecanismo possível, deliberadamente NÃO construído neste PR:** uma lane `pull_request_target`
+(que roda no head real, sem depender do merge-ref) escaneando o head de PRs em conflito, ou um
+cron que enumere PRs abertos sem `gitleaks` no conjunto de checks. Ambos têm superfície de
+segurança própria — `pull_request_target` roda com credenciais do repo base sobre código de
+terceiro — e por isso a decisão é de projeto, não de correção de regra. Deve ser desenhada,
+não improvisada junto de uma mudança de regex.
+
+```backlog
+id: B-170
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  python3 - <<'PY'
+  import pathlib, re, sys
+
+  gate = pathlib.Path("scripts/pre-merge-gate-check.sh")
+  wfdir = pathlib.Path(".github/workflows")
+  if not gate.is_file():
+      print("INSTRUMENTO QUEBRADO: scripts/pre-merge-gate-check.sh nao existe", file=sys.stderr); sys.exit(2)
+  if not wfdir.is_dir():
+      print("INSTRUMENTO QUEBRADO: .github/workflows nao existe", file=sys.stderr); sys.exit(2)
+  wfs = sorted(wfdir.glob("*.yml")) + sorted(wfdir.glob("*.yaml"))
+  if len(wfs) < 10:
+      print(f"INSTRUMENTO QUEBRADO: li {len(wfs)} workflows, esperado >=10", file=sys.stderr); sys.exit(2)
+
+  # O unico anteparo existente: a ausencia de `gitleaks` na lista de gates
+  # obrigatoriamente PRESENTES e' motivo STRUCTURAL de recusa de merge.
+  m = re.search(r"REQUIRED_PRESENT\s*=\s*\[([^\]]*)\]", gate.read_text())
+  if not m:
+      print("DEFEITO VIVO: a Defense 2 (REQUIRED_PRESENT) sumiu do pre-merge-gate-check.sh — "
+            "um PR em conflito passaria a nao ter anteparo nenhum", file=sys.stderr); sys.exit(2)
+  if "gitleaks" not in m.group(1):
+      print("DEFEITO VIVO: `gitleaks` saiu de REQUIRED_PRESENT — a ausencia do scanner "
+            "deixou de barrar o merge", file=sys.stderr); sys.exit(2)
+
+  # A lacuna: nenhum workflow escaneia segredos no HEAD de um PR independentemente
+  # do merge-ref. `pull_request_target` e' o unico gatilho que roda nesse caso.
+  cobre = []
+  for w in wfs:
+      t = w.read_text(errors="ignore")
+      if "gitleaks" in t.lower() and re.search(r"(?m)^\s*pull_request_target\s*:", t):
+          cobre.append(w.name)
+  if cobre:
+      print("FECHADO?: agora existe lane que varre segredos no head de PR sem depender do "
+            "merge-ref (" + ", ".join(cobre) + "). Revise a superficie de seguranca dessa "
+            "lane, feche o item e INVERTA a polaridade.")
+      sys.exit(1)
+  print(f"ABERTO: {len(wfs)} workflows lidos; nenhum varre segredos no head de um PR em "
+        "conflito. Anteparo unico = Defense 2 do pre-merge-gate-check.sh (barra o merge, "
+        "nao detecta o segredo).")
+  sys.exit(0)
+  PY
+verify-means: |
+  **Polaridade `open`:** sai 0 — aberto — enquanto (a) o único anteparo existente continuar
+  no lugar (`gitleaks` dentro de `REQUIRED_PRESENT`), E (b) nenhum workflow varrer segredos
+  no head de um PR sem depender do merge-ref.
+
+  **Offline e determinístico de propósito.** Não chama a API do GitHub: um predicado do tipo
+  "existe PR aberto sem check de gitleaks" oscilaria com o estado do mundo e dispararia
+  limite secundário de rate. O que este item rastreia é uma propriedade do **repositório** —
+  não existe lane com essa cobertura — e isso se lê nos arquivos.
+
+  **Testado por mutação, por conteúdo (2026-08-31):** remover `gitleaks` de
+  `REQUIRED_PRESENT` → `exit 2`; remover a linha `REQUIRED_PRESENT` inteira → `exit 2`;
+  plantar um workflow com `pull_request_target:` mencionando gitleaks → `exit 1`. Restaurado
+  → `exit 0`.
+
+  **Três desfechos:** 0 = lacuna aberta, anteparo intacto; 1 = a lane passou a existir —
+  revise a superfície de segurança dela e feche invertendo; 2 = instrumento quebrado (menos
+  de 10 workflows, arquivos ausentes) **ou defeito vivo** — o anteparo de merge caiu.
+last-verified: 2026-08-31
+```

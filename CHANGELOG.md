@@ -24,6 +24,23 @@ Each entry cross-references:
 
 ### Fixed
 
+- **The secret scanner enumerated variable names instead of matching the shape
+  of deployed secret material.** `corelink-secret-shaped-hex` now rejects any
+  assigned 64-hex value (`openssl rand -hex 32`) in deployable configuration
+  and audit reports without relying on the identifier: both
+  `AUDIT_CHAIN_SIGNING_SEED_HEX` and opaque `opaque_material` are regression
+  positives. A versioned harness invokes the exact gitleaks config and proves
+  those cells red, explicit public digest/checksum contexts and versioned
+  fixtures green, and the opaque cell green when the custom rule is removed.
+  The public-digest exception is bound to that syntax, not to a reusable value.
+  The safe history census (`scripts/tests/gitleaks-shape-history-census.sh
+  origin/main`) currently reports one finding, one path and one commit, and the
+  operational full-history gate therefore remains red. The historical audit-chain
+  seed remains an open rotation/redaction issue tracked by `B-169`; neither the
+  test nor this entry discloses its bytes. This rule covers only continuous
+  bare 64-hex assignments in its declared artifact classes; prefixes, hyphens
+  and 32-hex forms are intentionally outside this criterion.
+
 - **`chacha20` 0.10.0 was yanked upstream, blocking every Rust PR.** `cargo deny
   check` went red on `main` between 08-27 and 08-28 with no commit in between —
   crates.io yanked the version, which is exactly the class of failure a cron

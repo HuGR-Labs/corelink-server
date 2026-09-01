@@ -74,12 +74,80 @@ paths = ['''^docs/operator/stripe-checkout-e2e-2026-05-29\.md$''']
 regexTarget = "line"
 regexes = ['''we_1TcaMDLh0hhAZjwol9KDCJTp''']
 
+# ── Raw-hex secret material: a SHAPE rule, not a name enumeration ────────────
+# Supersedes `corelink-internal-auth-hex`, which enumerated exactly two name
+# patterns — `CORELINK_[A-Z_]*AUTH_KEY` and `PAT_SIGNING_KEY[A-Z_]*` — and was
+# therefore blind to every OTHER `openssl rand -hex`-shaped credential this
+# codebase mints. Measured 2026-08-31 with the pinned gitleaks 8.30.1: the old
+# rule reported ZERO findings for
+#     vars = { …, AUDIT_CHAIN_SIGNING_SEED_HEX = "<64 hex>", … }
+# (3/3 high-entropy trials), while the SAME scan fired correctly on
+# `CORELINK_INTERNAL_AUTH_KEY`. The miss was not entropy and not the value — it
+# was the name not being on the list. That exact literal is committed to `main`
+# today (reports/audits/2026-08-25-comprehensive-audit-and-verification.md, via
+# fc3c6e4a / PR #1415: an audit report that quoted the secret it was reporting),
+# and the old rule never saw it — gitleaks ran GREEN on #1415 in 8 s. See
+# BACKLOG.md B-169.
+#
+# The criterion replacing the enumeration: a 64-hex literal ASSIGNED to any
+# identifier. It does not need a suggestive variable name to be dangerous: an
+# opaque `opaque_material = "<64 hex>"` assignment is exactly as readable from
+# git as `AUDIT_CHAIN_SIGNING_SEED_HEX = "<64 hex>"`. 64 hex is the project
+# standard `openssl rand -hex 32` output, so this deliberately detects the
+# deployed-secret shape rather than attempting to infer secretness from a name.
+# Both old names still match, but are no longer part of the criterion.
+#
+# FALSE POSITIVES — the rule is deliberately limited to these exact artifact
+# classes: `wrangler.toml` / `wrangler.json` / `wrangler.jsonc`, `.env` and
+# `.env.<suffix>` files,
+# `*secret*` or `*credential*` TOML/INI/CONF files, and Markdown below
+# `reports/audits/`. A repo-wide assignment matcher has no honest way to
+# distinguish `opaque_material = <hex secret>` from a source-code variable
+# holding a public digest; a 2026-09-01 history sweep measured 111 such matches,
+# chiefly tool SHA256 pins. Thus `scripts/`, `src/`, ordinary workflow YAML and
+# arbitrary code/config files are intentionally OUTSIDE this custom raw-hex
+# rule. That is a bounded coverage tradeoff, not an allowlist claim: default
+# gitleaks rules still scan them, while this rule protects the deployed-secret
+# and audit-disclosure ingress without becoming an entropy catch-all. The audit
+# report class remains in scope because it is the exact disclosure route this
+# rule is meant to catch.
+#
+# LIMITS (deliberate and tested): this rule matches only a *continuous*, bare
+# 64-hex assignment. Prefixed values (`0x...`), hyphenated values, and 32-hex
+# values are outside its criterion; do not claim those representations are
+# covered by this rule. Add a separately-measured rule if a deployed surface
+# adopts one of them.
+#
+# ALLOWLISTED PATHS: none were added for this rule — none were needed, because
+# nothing false fired. It inherits the repo-wide `[allowlist]` at the bottom of
+# this file, which already excludes the deliberate-fixture trees (`tests?/`,
+# `specs/`, `apps/docs/`, `conformance/`, `openapi/`, `tools/cli/tests/`, and
+# this config itself). This custom rule is deliberately narrower than the
+# repo-wide scan: only its declared deploy-config and `reports/audits/` path
+# classes are in scope. If a future fixture in one of those classes trips this,
+# allowlist the FIXTURE PATH here with a written reason; do not loosen the regex.
 [[rules]]
-id = "corelink-internal-auth-hex"
-description = "A 64-hex internal-auth/signing key assigned to a CORELINK_*_AUTH_KEY / PAT_SIGNING_KEY (openssl rand -hex 32)"
-regex = '''(?i)(CORELINK_[A-Z_]*AUTH_KEY|PAT_SIGNING_KEY[A-Z_]*)\s*[:=]\s*["']?([a-f0-9]{64})["']?'''
+id = "corelink-secret-shaped-hex"
+description = "A 64-hex credential (openssl rand -hex 32) assigned to any identifier, independent of its name"
+regex = '''(?im)\b([a-z_][a-z0-9_.-]{0,127}\s*[:=]\s*["'`]?)\s*([a-f0-9]{64})["'`]?\s*(?:[,;#}]|$)'''
 secretGroup = 2
-keywords = ["auth_key", "signing_key", "CORELINK_", "PAT_SIGNING"]
+path = '''(?i)(?:^|/)(?:wrangler\.toml|wrangler\.jsonc?|.*\.env(?:\.[a-z0-9_-]+)?|.*(?:secrets?|credentials?)\.(?:toml|ini|conf)|reports/audits/.*\.md)$'''
+
+# A value-only allowlist would mute the same text wherever it moved. Keep the
+# exception coupled to the public-digest syntax instead. `regexTarget = match`
+# sees the assignment prefix captured by this rule, not merely the hex group.
+[[rules.allowlists]]
+description = "Public 64-hex digests/checksums in explicit digest syntax, not credential assignments."
+regexTarget = "match"
+regexes = ['''(?im)\b(?:sha(?:2)?[-_]?256|sha3[-_]?256|blake(?:2b?|3)|checksum|digest|content[-_]?hash)\b\s*[:=]\s*["'`]?[a-f0-9]{64}["'`]?\s*(?:[,;#}]|$)''']
+
+# Degenerate hex that is a PLACEHOLDER by construction, never a generated key:
+# single-character runs and repeats of the usual filler words. Same family as
+# the `generic-api-key` stopwords above. A real `openssl rand -hex` value cannot
+# take these shapes, so this cannot blind a live credential.
+[[rules.allowlists]]
+description = "Placeholder hex shapes (all-zeros/ones/a/f runs, deadbeef/cafebabe/0123456789abcdef repeats) — documentation filler, not key material."
+regexes = ['''(?i)^(?:0+|1+|a+|f+|(?:deadbeef)+|(?:cafebabe)+|(?:0123456789abcdef)+|(?:abcdef0123456789)+)$''']
 
 # ── Upstream rules re-declared to fix a DETECTION defect ─────────────────────
 # gitleaks merges an extending config into the default ruleset per rule id:
@@ -145,7 +213,7 @@ description = "generic high-entropy credential — upstream rule, extended with 
 # NO `regex` key on purpose: the upstream pattern, entropy floor (3.5), keyword
 # list and ~1.3k stopwords stay exactly as shipped. The blocks below only add
 # value-shape predicates to the heuristic CATCH-ALL rule; every purpose-built
-# rule (stripe, aws, github, whsec_, corelink-internal-auth-hex, …) is untouched.
+# rule (stripe, aws, github, whsec_, corelink-secret-shaped-hex, …) is untouched.
 
 [[rules.allowlists]]
 description = "Ascending alphabet/digit walks — a placeholder shape, never a generated key. Same family as upstream's own `000000` / `aaaaaa` stopwords."
