@@ -1,0 +1,20 @@
+name: p0-corelink-runner-canary
+
+on:
+  push:
+    branches:
+      - codex/p0-actions-canary-1788304796
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    runs-on: corelink
+    timeout-minutes: 5
+    steps:
+      - name: Prove scheduler reached Corelink
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'corelink-runner-canary=%s\n' "$RUNNER_NAME"
