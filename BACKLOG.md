@@ -6033,32 +6033,107 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  bash -c 'p=marketing/launch/PRESS-RELEASE.md
+  bash -c 'set -eu
+  for path in apps/docs marketing legal legal/dpa README.md; do
+    [ -e "$path" ] || { echo "FALHA: a populacao contratual $path sumiu — instrumento cego, nao superficie limpa."; exit 1; }
+  done
+  sentinel=apps/docs/docs/trust/fedramp-info.mdx
+  [ -f "$sentinel" ] || { echo "FALHA: a sentinela publicada $sentinel sumiu — nao e possivel concluir que a superficie publica esta limpa."; exit 1; }
+  grep -qiE "^draft: false$" "$sentinel" || { echo "FALHA: a sentinela publicada $sentinel deixou de declarar draft: false — reavalie a populacao publicada, nao aprove a ausencia."; exit 1; }
+  grep -qi "No external penetration test has been commissioned" "$sentinel" || { echo "FALHA: a sentinela publicada perdeu a declaracao de que nenhum pentest externo foi contratado — o reparo regrediu."; exit 1; }
+  ctl=$(grep -rlI "CoreLink" apps/docs marketing legal README.md 2>/dev/null | wc -l | tr -d " ")
+  [ "$ctl" -ge 649 ] || { echo "FALHA: o censo-controle da populacao nomeada (apps/docs + marketing + legal + README.md) caiu para $ctl, piso auditado 649 — a populacao mudou ou a varredura ficou cega; reavalie a mao."; exit 1; }
+  published=$(grep -rlI "CoreLink" apps/docs marketing 2>/dev/null | wc -l | tr -d " ")
+  [ "$published" -ge 622 ] || { echo "FALHA: o censo da populacao publicada apps/docs + marketing caiu para $published, piso auditado 622 — ausencia nao e aprovacao."; exit 1; }
+  p=marketing/launch/PRESS-RELEASE.md
   [ -f "$p" ] || { echo "FALHA: o press release sumiu — o reparo ja feito nao pode ser verificado."; exit 1; }
   n=$(wc -l < "$p" | tr -d " ")
   [ "$n" -gt 50 ] || { echo "FALHA: o press release tem so $n linhas — o comando perdeu o objeto e nao pode concluir ausencia."; exit 1; }
-  grep -q "No external pentest has been commissioned" "$p" || { echo "FALHA: o comunicado nao declara mais que nenhum pentest externo foi contratado — o reparo JA FEITO regrediu; conserte antes de qualquer outra coisa."; exit 1; }
-  ! grep -q "CEO_NAME" "$p" || { echo "FALHA: o marcador CEO_NAME voltou ao comunicado — o reparo JA FEITO regrediu."; exit 1; }
-  ! grep -qE "\*\*External pentest, clean\.\*\*" "$p" || { echo "FALHA: o bullet afirmativo de pentest limpo voltou ao comunicado — o reparo JA FEITO regrediu."; exit 1; }
+  grep -qi "No external pentest has been commissioned" "$p" || { echo "FALHA: o comunicado nao declara mais que nenhum pentest externo foi contratado — o reparo JA FEITO regrediu; conserte antes de qualquer outra coisa."; exit 1; }
+  ! grep -qi "CEO_NAME" "$p" || { echo "FALHA: o marcador CEO_NAME voltou ao comunicado — o reparo JA FEITO regrediu."; exit 1; }
+  ! grep -qiE "\*\*External pentest, clean\.\*\*" "$p" || { echo "FALHA: o bullet afirmativo de pentest limpo voltou ao comunicado — o reparo JA FEITO regrediu."; exit 1; }
   t=reports/pentest-rfp-tracker.json
   [ -f "$t" ] || { echo "FALHA: o rastreador de RFP sumiu — a ancora factual do item nao pode ser lida; reavalie a mao."; exit 1; }
   nc=$(grep -o NOT_CONTACTED "$t" | wc -l | tr -d " ")
   tot=$(grep -oE "(NOT_CONTACTED|RFP_SENT|ENGAGED|IN_PROGRESS|COMPLETE)" "$t" | wc -l | tr -d " ")
   [ "$tot" -ge 3 ] || { echo "FALHA: o rastreador expos so $tot estado(s) de fornecedor — o comando perdeu o objeto e nao pode concluir que ninguem foi contratado."; exit 1; }
   [ "$nc" = "$tot" ] || { echo "FALHA: $nc de $tot fornecedores estao NOT_CONTACTED — algum saiu desse estado. REAVALIE: se um pentest foi mesmo contratado, o material PODE voltar a cita-lo e este item muda de premissa."; exit 1; }
-  ctl=$(grep -rlI "CoreLink" apps/docs marketing legal README.md 2>/dev/null | wc -l | tr -d " ")
-  [ "$ctl" -ge 50 ] || { echo "FALHA: o controle positivo achou so $ctl arquivos com CoreLink — instrumento cego, nao arvore limpa."; exit 1; }
   corpus=$(grep -rliE "pentest|penetration test" apps/docs marketing legal README.md 2>/dev/null | wc -l | tr -d " ")
   [ "$corpus" -gt 20 ] || { echo "FALHA: so $corpus arquivo(s) do corpus citam pentest — a varredura perdeu o corpus e nao pode concluir ausencia."; exit 1; }
-  mkt=$(grep -rnIE "External pentest is engaged|External pentest report|External pentest pass|PRR \+ pentest|pentest \+ 30d|Pentest-1 firm|pentest clean with retest|third-party pentest letter|SBOM, pentest|pentest summary letter \(NDA|to the pentest firm|external pentest engagement\)|Schellman / Bishop Fox" apps/docs marketing README.md 2>/dev/null | wc -l | tr -d " ")
-  [ "$mkt" = 0 ] || { echo "FALHA: $mkt formulacao(oes) de pentest contratado/limpo voltaram a apps/docs ou marketing — a alegacao REGREDIU. Rode o mesmo grep para ver onde."; exit 1; }
-  leg=$(grep -rniE "annual external penetration test|annual external pentest|Pentest externo anual|Pentest externo anual|Pentest externo anual" legal/dpa 2>/dev/null | wc -l | tr -d " ")
-  if [ "$leg" -gt 0 ]; then
-    echo "aberto: apps/docs e marketing estao limpos (0 formulacoes), mas $leg linha(s) de legal/dpa ainda REPRESENTAM contratualmente um pentest externo anual como medida tecnica vigente (v1.0.0 en-US/pt-BR/es-419 + STANDARD-CONTRACTUAL-CLAUSES-EU). Sao documentos com legal_review_status: approved e effective_date — corrigir e EMENDA CONTRATUAL, decisao do owner com assessoria. Feche so quando leg=0."
-    exit 0
-  fi
-  echo "FALHA: o residuo de pentest chegou a zero, inclusive em legal/dpa — a razao restante deste item acabou. Feche B-088 (status: done) com verify de polaridade INVERTIDA."
-  exit 1'
+  mkt=$(python3 - <<"PY"
+  from pathlib import Path
+  import re
+  import sys
+
+  CLAIM = re.compile(
+      r"external pentest is engaged|"
+      r"external pentest report (?:with retest|available(?: under NDA)?|on request)|"
+      r"external pentest pass|PRR \+ (?:external )?pentest|pentest \+ 30d|"
+      r"Pentest-1 firm|pentest clean with retest|third-party pentest letter(?: is |, |$)|"
+      r"SBOM, pentest(?: summary| letter|$)|pentest summary letter \(NDA|"
+      r"to the pentest firm|external pentest engagement\)|Schellman / Bishop Fox",
+      re.IGNORECASE,
+  )
+  NEGATION = re.compile(r"\b(?:no|not|without)(?:[\s,:;—-]+[A-Za-z]+){0,5}[\s,:;—-]*$", re.IGNORECASE)
+
+  def positive(line):
+      return any(not NEGATION.search(line[:match.start()]) for match in CLAIM.finditer(line))
+
+  stems = (
+      "external pentest is engaged", "external pentest report with retest",
+      "external pentest report available under NDA", "external pentest report on request",
+      "external pentest pass", "PRR + pentest", "pentest + 30d", "Pentest-1 firm",
+      "pentest clean with retest", "third-party pentest letter is available",
+      "SBOM, pentest summary", "pentest summary letter (NDA", "to the pentest firm",
+      "external pentest engagement)", "Schellman / Bishop Fox",
+  )
+  for stem in stems:
+      for value, expected in ((stem, True), (stem.upper(), True), ("No " + stem, False), ("NO " + stem.upper(), False)):
+          if positive(value) != expected:
+              raise SystemExit(f"FALHA: classificador B-088 nao classificou a celula {value!r} como {expected}.")
+  for value in (
+      "There is not an external pentest report available under NDA.",
+      "Without an external pentest pass is on file.",
+      "No — external pentest is engaged.",
+      "No, external pentest pass is on file.",
+      "No: external pentest report available under NDA.",
+  ):
+      if positive(value):
+          raise SystemExit(f"FALHA: classificador B-088 tratou a retratacao {value!r} como promessa.")
+
+  hits = []
+  for root in (Path("apps/docs"), Path("marketing"), Path("README.md")):
+      paths = [root] if root.is_file() else sorted(path for path in root.rglob("*") if path.is_file())
+      for path in paths:
+          data = path.read_bytes()
+          if b"\0" in data:
+              continue
+          for number, line in enumerate(data.decode("utf-8", errors="replace").splitlines(), 1):
+              if positive(line):
+                  hits.append(f"{path}:{number}:{line}")
+  for hit in hits:
+      print(hit, file=sys.stderr)
+  print(len(hits))
+  PY
+  )
+  [ "$mkt" = 0 ] || { echo "FALHA: $mkt formulacao(oes) positiva(s) de pentest contratado/limpo voltaram a apps/docs ou marketing (casamento sem distinguir maiusculas/minusculas) — a alegacao REGREDIU. Rode o mesmo grep para ver onde."; exit 1; }
+  residue() {
+    file=$1
+    pattern=$2
+    label=$3
+    lines=$(grep -niE "$pattern" "$file" || true)
+    count=$(printf "%s\\n" "$lines" | grep -c . || true)
+    [ "$count" = 1 ] || { echo "FALHA: residuo contratual $label em $file tem $count linha(s), esperado exatamente 1 — nao altere contrato sem decisao do owner/juridico."; exit 1; }
+    printf "aberto: residuo contratual %s: %s\\n" "$label" "$lines"
+  }
+  residue legal/dpa/v1.0.0.en-US.md "annual external penetration test" "DPA v1.0.0 en-US"
+  residue legal/dpa/v1.0.0.pt-BR.md "Pentest externo anual" "DPA v1.0.0 pt-BR"
+  residue legal/dpa/v1.0.0.es-419.md "Pentest externo anual" "DPA v1.0.0 es-419"
+  residue legal/dpa/STANDARD-CONTRACTUAL-CLAUSES-EU.md "annual external pentest" "SCC EU"
+  leg=$(grep -rniE "annual external penetration test|annual external pentest|Pentest externo anual" legal/dpa 2>/dev/null | wc -l | tr -d " ")
+  [ "$leg" = 4 ] || { echo "FALHA: legal/dpa contem $leg residuos contratuais de pentest externo anual, esperado exatamente 4 — se chegou a zero, B-088 deve ser fechado; se mudou, reavalie com owner/juridico."; exit 1; }
+  echo "aberto: populacao-controle=$ctl (piso=649); publicada=$published (piso=622); corpus=$corpus; apps/docs e marketing estao limpos (0 formulacoes positivas); os 4 residuos contratuais acima mantem B-088 aberto."
+  exit 0'
 verify-means: |
   open — e continua `open` por um resto **triado**, nao contado: **4 linhas de `legal/dpa`**
   que representam contratualmente *"annual external penetration test"* como medida tecnica
@@ -6104,6 +6179,30 @@ verify-means: |
   `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md`. Nao escrevi "nao temos teste
   de seguranca nenhum", que seria o erro inverso.
 
+  **Portao nao-vacuo (2026-09-01).** O comando agora exige as raizes `apps/docs/`,
+  `marketing/`, `legal/`, `legal/dpa/` e `README.md`, faz o censo-controle de **649**
+  arquivos com `CoreLink` como **piso nao-decrescente** (adicoes inofensivas nao quebram o
+  portao), e exige **622** na populacao publicada `apps/docs/` + `marketing/`, tambem como
+  piso, alem da sentinela publicada
+  `apps/docs/docs/trust/fedramp-info.mdx` com `draft: false` e a retratacao factual. Assim,
+  apagar a populacao publicada nao vira um zero verde. Um classificador Python pequeno,
+  deterministico e sem rede casa todas as formulacoes positivas sem distinguir
+  maiusculas/minusculas, mas descarta uma ocorrencia quando a janela imediatamente anterior
+  traz `no`, `not` ou `without` (inclusive `not an` e os separadores naturais `—`, `,` e `:`): a frase honesta *"no external pentest
+  report exists yet"*, *"No external pentest is engaged"*, *"No external pentest pass is on
+  file"*, *"There is not an external pentest report available under NDA"* e *"No — external
+  pentest is engaged"* nao sao promessas.
+  As celulas internas cobrem cada ramo positivo, cada caixa e a retratacao equivalente. O portao imprime,
+  individualmente, os quatro residuos contratuais esperados — DPA en-US, pt-BR, es-419 e SCC
+  EU — e falha tanto se qualquer um mudar quanto se o total deixar de ser quatro.
+
+  **Celulas de mutacao (2026-09-01).** Na mesma populacao, inserir
+  `external pentest report available under NDA` em minusculas ou `EXTERNAL PENTEST REPORT
+  AVAILABLE UNDER NDA` em maiusculas falha pela formulacao positiva; inserir a negacao
+  `No external pentest report available under NDA` permanece verde. Adicionar um novo documento
+  publicado inofensivo com `CoreLink` tambem permanece verde (os censos sao pisos); esconder
+  `apps/docs/` ou a sentinela publicada falha pelo motivo nomeado.
+
   **Q-7 nos dois lados, medido:** padrao de promessa = **0** na arvore corrigida e **30** na
   base `0ec772dc`; controle positivo `CoreLink` = 649 arquivos; rastreador = 5/5
   `NOT_CONTACTED`, e se algum deixar de estar o comando manda **reavaliar** em vez de aprovar.
@@ -6113,7 +6212,7 @@ verify-means: |
   (engagement letter executed)"* versus `trust/compliance.mdx:41` *"Audit partner: not yet
   engaged"* — **uma das duas e falsa**, e alegacao de SOC 2, nao de pentest. Fica registrada
   aqui e nao foi corrigida por mim.
-last-verified: 2026-08-31
+last-verified: 2026-09-01
 ```
 
 ### B-089 — o SLA promete créditos automáticos como remédio exclusivo e não existe código que emita crédito
