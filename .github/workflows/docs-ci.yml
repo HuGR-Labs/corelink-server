@@ -35,6 +35,7 @@ on:
       # to the gate itself must re-run it (otherwise the gate can be weakened
       # without ever executing).
       - "scripts/check_docs_react_links.py"
+      - "tests/test_check_docs_react_links.py"
       - "requirements-ci.txt"
   push:
     branches: [main]
@@ -53,6 +54,7 @@ on:
       # to the gate itself must re-run it (otherwise the gate can be weakened
       # without ever executing).
       - "scripts/check_docs_react_links.py"
+      - "tests/test_check_docs_react_links.py"
       - "requirements-ci.txt"
   schedule:
     # Lighthouse baseline at 08:00 UTC (absorbed from docs-lighthouse.yml).
@@ -381,6 +383,9 @@ jobs:
           .venv/bin/python3 -m pip install --upgrade pip
           .venv/bin/python3 -m pip install -r requirements-ci.txt
           echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: Prove the JSX-link scanner rejects malformed, empty, and dead routes
+        run: python3 -m unittest tests/test_check_docs_react_links.py
 
       - name: Resolve every internal href in apps/docs/src/**/*.tsx
         # --verbose prints the POPULATION (hrefs checked, destinations known,

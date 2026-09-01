@@ -16,9 +16,12 @@ in production while every gate in the repo was green:
     /explanation/privacy/lgpd-full      -- ditto, slug `/privacy/lgpd-full`
     /explanation/sre/slo                -- no such directory at all
 
-This script closes that hole: it collects every internal `href=` / `to=`
-string literal in `apps/docs/src/**/*.{tsx,jsx}` and resolves it against the
-set of destinations the PRODUCTION build actually serves.
+This script closes that hole: it classifies every `href=` / `to=` attribute in
+JSX opening tags under `apps/docs/src/**/*.{tsx,jsx}`. Site-root string
+literals (single- or double-quoted) are resolved against destinations the
+PRODUCTION build actually serves; empty/malformed literals fail. Balanced
+dynamic expressions are explicitly counted and reported as unverified rather
+than being silently mistaken for a checked route.
 
 ANTI-VACUITY CONTRACT
 ---------------------
@@ -31,6 +34,7 @@ failing to obtain a list is a named, loud `fail()` here:
   * zero doc destinations, zero page destinations,
     zero static destinations, zero redirects, or zero
     scanned hrefs                                      -> named failure
+  * a live source population below the measured B-168 floor -> named failure
   * `routeBasePath` / `baseUrl` cannot be read from
     docusaurus.config.ts                               -> named failure
 
@@ -46,6 +50,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 try:
@@ -80,10 +85,37 @@ BLOG_GENERATED_ROUTES = ("/blog", "/blog/archive", "/blog/tags")
 # Docusaurus `numberPrefixParser` default: `01-foo` / `1.foo` -> `foo`.
 NUMBER_PREFIX_RE = re.compile(r"^\d+[-._]\s*")
 
-# `href="/..."` / `to="/..."` string literals in JSX.
-HREF_RE = re.compile(r'\b(?:href|to)\s*=\s*"([^"]*)"')
+# This is deliberately a small JSX *attribute* scanner rather than a whole
+# TypeScript parser.  The previous regex only recognised double-quoted values,
+# and silently ignored a single quote, an empty value, a malformed attribute,
+# and every expression.  Parsing opening tags means strings/comments elsewhere
+# in a .tsx file are not mistaken for links, while keeping this gate dependency
+# free on the runner.
+LINK_ATTRIBUTE_NAMES = frozenset(("href", "to"))
+ATTRIBUTE_NAME_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_:-."
+)
 
 FAILURES: list[str] = []
+
+
+@dataclass(frozen=True)
+class LinkAttribute:
+    """One href/to attribute found in a JSX opening tag.
+
+    ``kind`` is one of ``literal``, ``dynamic``, or ``malformed``.  Dynamic
+    expressions are intentionally *classified*, printed in the population, and
+    never treated as a route this source-only gate has resolved.  A code review
+    must establish their runtime target; a new literal site-root route is
+    covered here automatically.  Empty and malformed values are failures.
+    """
+
+    path: Path
+    line: int
+    name: str
+    kind: str
+    value: str | None = None
+    detail: str = ""
 
 
 def fail(kind: str, message: str) -> None:
@@ -285,10 +317,243 @@ def collect_redirect_sources(verbose: bool) -> set[str]:
 
 SCANNED_FILE_COUNT = 0
 
+# Floors measured on the live source tree at B-168's repair (2026-09-01).
+# These are lower bounds, not a frozen inventory: adding pages/links is fine;
+# deleting the population that gives this gate something to prove is not.
+MIN_SCANNED_FILE_COUNT = 20
+MIN_LITERAL_ATTRIBUTE_COUNT = 61
+MIN_DYNAMIC_ATTRIBUTE_COUNT = 12
+MIN_INTERNAL_HREF_COUNT = 30
 
-def collect_hrefs(verbose: bool) -> list[tuple[Path, int, str]]:
+
+def _line_number(text: str, offset: int) -> int:
+    return text.count("\n", 0, offset) + 1
+
+
+def _skip_quoted(text: str, start: int) -> int | None:
+    """Return the offset after a JS/JSX quoted string, or ``None`` if open."""
+    quote = text[start]
+    index = start + 1
+    while index < len(text):
+        if text[index] == "\\":
+            index += 2
+            continue
+        if text[index] == quote:
+            return index + 1
+        index += 1
+    return None
+
+
+def _skip_expression(text: str, start: int) -> int | None:
+    """Return after a balanced JSX expression, respecting quoted strings."""
+    if text[start] != "{":
+        raise ValueError("expression must begin with '{'")
+    depth = 1
+    index = start + 1
+    while index < len(text):
+        char = text[index]
+        if char in "'\"`":
+            end = _skip_quoted(text, index)
+            if end is None:
+                return None
+            index = end
+            continue
+        if text.startswith("//", index):
+            newline = text.find("\n", index + 2)
+            index = len(text) if newline == -1 else newline + 1
+            continue
+        if text.startswith("/*", index):
+            end_comment = text.find("*/", index + 2)
+            if end_comment == -1:
+                return None
+            index = end_comment + 2
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return index + 1
+        index += 1
+    return None
+
+
+def _literal_expression_value(expression: str) -> str | None:
+    """Return a static value for ``{\"/route\"}``; otherwise it is dynamic."""
+    match = re.fullmatch(r"\s*(['\"])(.*)\1\s*", expression, flags=re.DOTALL)
+    return match.group(2) if match else None
+
+
+def _parse_jsx_opening_tag(text: str, start: int, path: Path) -> tuple[list[LinkAttribute], int]:
+    """Parse one JSX opening tag, returning attributes and the next offset.
+
+    The caller enters only while in executable JSX/TS code (not a JS string or
+    comment). A complete ``>``/``/>`` is mandatory once a link attribute has
+    been seen: accepting a value from an unclosed tag would turn malformed JSX
+    into a false green.
+    """
+    attributes: list[LinkAttribute] = []
+    cursor = start + 1
+    while cursor < len(text) and text[cursor] in ATTRIBUTE_NAME_CHARS:
+        cursor += 1
+    tag_line = _line_number(text, start)
+    saw_link = False
+
+    def malformed(name: str, line: int, detail: str) -> None:
+        nonlocal saw_link
+        saw_link = True
+        attributes.append(LinkAttribute(path, line, name, "malformed", detail=detail))
+
+    while cursor < len(text):
+        while cursor < len(text) and text[cursor].isspace():
+            cursor += 1
+        if text.startswith("/>", cursor):
+            return attributes, cursor + 2
+        if cursor < len(text) and text[cursor] == ">":
+            return attributes, cursor + 1
+        if cursor >= len(text):
+            break
+        if text[cursor] == "{":
+            end = _skip_expression(text, cursor)
+            if end is None:
+                if saw_link:
+                    malformed("jsx", tag_line, "unbalanced JSX expression in opening tag")
+                return attributes, len(text)
+            cursor = end
+            continue
+        if text[cursor] not in ATTRIBUTE_NAME_CHARS:
+            # A nested '<' cannot occur in an opening tag. Stop here rather
+            # than accidentally treating the following child tag as attrs.
+            if saw_link:
+                malformed("jsx", tag_line, "opening tag has no closing '>'")
+            return attributes, cursor + 1
+
+        name_start = cursor
+        while cursor < len(text) and text[cursor] in ATTRIBUTE_NAME_CHARS:
+            cursor += 1
+        name = text[name_start:cursor]
+        while cursor < len(text) and text[cursor].isspace():
+            cursor += 1
+        line = _line_number(text, name_start)
+        if cursor >= len(text) or text[cursor] != "=":
+            if name in LINK_ATTRIBUTE_NAMES:
+                malformed(name, line, "attribute has no assigned value")
+            continue
+
+        cursor += 1
+        while cursor < len(text) and text[cursor].isspace():
+            cursor += 1
+        if cursor >= len(text):
+            if name in LINK_ATTRIBUTE_NAMES:
+                malformed(name, line, "attribute ends after '='")
+            break
+        if text[cursor] in "'\"":
+            value_start = cursor + 1
+            end = _skip_quoted(text, cursor)
+            if end is None:
+                if name in LINK_ATTRIBUTE_NAMES:
+                    malformed(name, line, "unterminated quoted value")
+                return attributes, len(text)
+            if name in LINK_ATTRIBUTE_NAMES:
+                saw_link = True
+                attributes.append(LinkAttribute(path, line, name, "literal", value=text[value_start:end - 1]))
+            cursor = end
+            continue
+        if text[cursor] == "{":
+            expression_start = cursor + 1
+            end = _skip_expression(text, cursor)
+            if end is None:
+                if name in LINK_ATTRIBUTE_NAMES:
+                    malformed(name, line, "unbalanced JSX expression")
+                return attributes, len(text)
+            if name in LINK_ATTRIBUTE_NAMES:
+                expression = text[expression_start:end - 1]
+                if not expression.strip():
+                    malformed(name, line, "empty JSX expression")
+                else:
+                    saw_link = True
+                    literal = _literal_expression_value(expression)
+                    if literal is None:
+                        attributes.append(LinkAttribute(path, line, name, "dynamic",
+                                                        detail="balanced nonempty JSX expression"))
+                    else:
+                        attributes.append(LinkAttribute(path, line, name, "literal", value=literal))
+            cursor = end
+            continue
+        if name in LINK_ATTRIBUTE_NAMES:
+            malformed(name, line, "value must be quoted or a nonempty JSX expression")
+        while cursor < len(text) and not text[cursor].isspace() and text[cursor] not in ">":
+            cursor += 1
+
+    if saw_link:
+        malformed("jsx", tag_line, "opening tag has no closing '>'")
+    return attributes, len(text)
+
+
+def scan_jsx_link_attributes(text: str, path: Path) -> list[LinkAttribute]:
+    """Classify every href/to on JSX opening tags in one .tsx/.jsx source.
+
+    Closed-world policy: quoted values (single or double) and ``{\"literal\"}``
+    are literals; balanced non-literal ``{...}`` values are explicitly reported
+    as dynamic; an empty, bare, or unclosed value is malformed and fails.
+    """
+    attributes: list[LinkAttribute] = []
+    index = 0
+    jsx_depth = 0
+    while index < len(text):
+        in_jsx_text = jsx_depth > 0
+        # In executable JS/TS code, a JSX-looking snippet in a string or
+        # comment must not contribute to (or poison) the population. In JSX
+        # text those same characters are prose (e.g. `region's storage`) and
+        # must not switch the lexer into a fake JS-string state.
+        if not in_jsx_text and text[index] in "'\"`":
+            end = _skip_quoted(text, index)
+            index = len(text) if end is None else end
+            continue
+        if not in_jsx_text and text.startswith("//", index):
+            newline = text.find("\n", index + 2)
+            index = len(text) if newline == -1 else newline + 1
+            continue
+        if not in_jsx_text and text.startswith("/*", index):
+            end_comment = text.find("*/", index + 2)
+            index = len(text) if end_comment == -1 else end_comment + 2
+            continue
+        if in_jsx_text and text.startswith("{/*", index):
+            end_comment = text.find("*/}", index + 3)
+            index = len(text) if end_comment == -1 else end_comment + 3
+            continue
+        if in_jsx_text and text.startswith("</", index):
+            close = text.find(">", index + 2)
+            if close == -1:
+                # No link can be safely reported past a syntactically open
+                # closing tag; leave the compiler to diagnose the unrelated
+                # JSX error rather than inventing an attribute population.
+                break
+            jsx_depth -= 1
+            index = close + 1
+            continue
+        if text[index] != "<" or index + 1 >= len(text) or not (
+            text[index + 1].isalpha() or text[index + 1] == "_"
+        ):
+            index += 1
+            continue
+        # `Array<Foo>` / `value<T>` is TypeScript generic syntax, not JSX. A
+        # tag may follow punctuation/whitespace/`return`, but not an identifier
+        # character, dot, or closing bracket immediately before '<'.
+        if not in_jsx_text and index and (text[index - 1].isalnum() or text[index - 1] in "_.$])"):
+            index += 1
+            continue
+        parsed, next_index = _parse_jsx_opening_tag(text, index, path)
+        attributes.extend(parsed)
+        if next_index <= len(text) and text[max(index, next_index - 2):next_index] != "/>":
+            jsx_depth += 1
+        index = max(next_index, index + 1)
+    return attributes
+
+
+def collect_hrefs(verbose: bool) -> list[LinkAttribute]:
     global SCANNED_FILE_COUNT
-    found: list[tuple[Path, int, str]] = []
+    found: list[LinkAttribute] = []
     if not require_dir(SCAN_DIR, "scan"):
         return found
     files = sorted(p for p in SCAN_DIR.rglob("*") if p.suffix in SCAN_EXTS and p.is_file())
@@ -297,13 +562,32 @@ def collect_hrefs(verbose: bool) -> list[tuple[Path, int, str]]:
         return found
     SCANNED_FILE_COUNT = len(files)
     for path in files:
-        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            for match in HREF_RE.finditer(line):
-                found.append((path, lineno, match.group(1)))
+        try:
+            found.extend(scan_jsx_link_attributes(path.read_text(encoding="utf-8"), path))
+        except OSError as exc:
+            fail("scan", f"{path}: unreadable ({exc})")
     if not found:
-        fail("scan", f"ZERO href=/to= literals found across {len(files)} files under {SCAN_DIR}")
+        fail("scan", f"ZERO href=/to= attributes found across {len(files)} files under {SCAN_DIR}")
+    for attribute in (item for item in found if item.kind == "malformed"):
+        fail(
+            "jsx",
+            f"{attribute.path.relative_to(REPO_ROOT)}:{attribute.line}: malformed {attribute.name}= "
+            f"({attribute.detail})",
+        )
     if verbose:
-        print(f"  scan: {len(found)} href/to literals across {len(files)} tsx/jsx files")
+        literals = sum(attribute.kind == "literal" for attribute in found)
+        dynamics = [attribute for attribute in found if attribute.kind == "dynamic"]
+        print(
+            f"  scan: {literals} literal + {len(dynamics)} dynamic-classified href/to attributes "
+            f"across {len(files)} tsx/jsx files"
+        )
+        if dynamics:
+            print("  dynamic policy: expressions below are counted, but not route-resolved by this static gate")
+            for attribute in dynamics:
+                print(
+                    f"    {attribute.path.relative_to(REPO_ROOT)}:{attribute.line}: "
+                    f"{attribute.name}={{{attribute.detail}}}"
+                )
     return found
 
 
@@ -316,11 +600,32 @@ def is_internal(href: str) -> bool:
     return href.startswith("/")
 
 
+def enforce_population_floor(
+    *, scanned_files: int, literals: int, dynamics: int, internal: int
+) -> None:
+    """Fail if the live population shrinks below B-168's measured baseline."""
+    floors = (
+        ("tsx/jsx files scanned", scanned_files, MIN_SCANNED_FILE_COUNT),
+        ("literal href/to attributes", literals, MIN_LITERAL_ATTRIBUTE_COUNT),
+        ("dynamic-classified href/to attributes", dynamics, MIN_DYNAMIC_ATTRIBUTE_COUNT),
+        ("internal site-root href/to literals", internal, MIN_INTERNAL_HREF_COUNT),
+    )
+    for label, actual, minimum in floors:
+        if actual < minimum:
+            fail(
+                "population",
+                f"{label} fell to {actual}, below the measured B-168 floor {minimum}; "
+                "the gate may have stopped seeing live source",
+            )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
+    # Unit tests invoke main repeatedly against temporary source trees.
+    FAILURES.clear()
     print("docs React-page internal-link gate")
     base_url = assert_config(args.verbose)
 
@@ -335,10 +640,37 @@ def main() -> int:
     if not known:
         fail("destinations", "ZERO published destinations were derived -- gate would be vacuous")
 
-    hrefs = collect_hrefs(args.verbose)
-    internal = [(p, n, h) for (p, n, h) in hrefs if is_internal(h)]
-    if hrefs and not internal:
-        fail("scan", f"{len(hrefs)} href/to literals found but ZERO are internal '/'-rooted -- gate would be vacuous")
+    attributes = collect_hrefs(args.verbose)
+    literals = [attribute for attribute in attributes if attribute.kind == "literal"]
+    dynamics = [attribute for attribute in attributes if attribute.kind == "dynamic"]
+    empty = [attribute for attribute in literals if attribute.value == ""]
+    for attribute in empty:
+        fail(
+            "jsx",
+            f"{attribute.path.relative_to(REPO_ROOT)}:{attribute.line}: empty {attribute.name}= is not a route",
+        )
+    unsupported_relative = [
+        attribute
+        for attribute in literals
+        if attribute.value and not is_internal(attribute.value)
+        and not attribute.value.lower().startswith(("http://", "https://", "mailto:", "tel:", "//", "#", "data:"))
+    ]
+    for attribute in unsupported_relative:
+        fail(
+            "jsx",
+            f"{attribute.path.relative_to(REPO_ROOT)}:{attribute.line}: {attribute.name}={attribute.value!r} "
+            "is a relative/unsupported literal; use a site-root route, an allowed external scheme, or a "
+            "documented dynamic expression",
+        )
+    internal = [attribute for attribute in literals if attribute.value and is_internal(attribute.value)]
+    if literals and not internal:
+        fail("scan", f"{len(literals)} literal href/to attributes found but ZERO are internal '/'-rooted -- gate would be vacuous")
+    enforce_population_floor(
+        scanned_files=SCANNED_FILE_COUNT,
+        literals=len(literals),
+        dynamics=len(dynamics),
+        internal=len(internal),
+    )
 
     if FAILURES:
         print()
@@ -352,7 +684,9 @@ def main() -> int:
 
     base_prefix = normalize(base_url) if base_url and base_url != "/" else ""
     broken: list[tuple[Path, int, str]] = []
-    for path, lineno, href in internal:
+    for attribute in internal:
+        path, lineno, href = attribute.path, attribute.line, attribute.value
+        assert href is not None
         target = href.split("#", 1)[0].split("?", 1)[0]
         if not target:
             continue
@@ -366,12 +700,17 @@ def main() -> int:
     print()
     print(
         f"POPULATION: {len(internal)} internal hrefs "
-        f"({len(hrefs)} href/to literals total, in "
-        f"{len({p for p, _, _ in hrefs})} of {SCANNED_FILE_COUNT} scanned tsx/jsx files "
+        f"({len(literals)} literal href/to attributes; {len(dynamics)} dynamic-classified (not route-resolved) "
+        f"in {len({attribute.path for attribute in attributes})} of {SCANNED_FILE_COUNT} scanned tsx/jsx files "
         f"under apps/docs/src), "
         f"resolved against {len(known)} published destinations "
         f"(docs={len(doc_routes)}, blog={len(blog_routes)}, pages={len(page_routes)}, "
         f"static={len(static_routes)}, redirects={len(redirect_routes)})."
+    )
+    print(
+        "FLOOR: "
+        f"files>={MIN_SCANNED_FILE_COUNT}, literals>={MIN_LITERAL_ATTRIBUTE_COUNT}, "
+        f"dynamic>={MIN_DYNAMIC_ATTRIBUTE_COUNT}, internal>={MIN_INTERNAL_HREF_COUNT}."
     )
 
     if broken:

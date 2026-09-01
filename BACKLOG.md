@@ -12089,12 +12089,19 @@ destino aproximado. Onde não existe destino publicado (DPA, explainers de
 GDPR/LGPD, documento de SLO), o link saiu e a prosa passou a dizer o que é
 verdade (o DPA não é publicado no site; peça a `legal@humangr.com`; os
 explainers estão pendentes de Legal + DPO). E o buraco de portão foi fechado:
-`scripts/check_docs_react_links.py` resolve todo `href=`/`to=` interno de
-`apps/docs/src/**/*.{tsx,jsx}` contra as rotas **publicadas** (slugs de
-front-matter parseados com PyYAML, `draft: true` excluído, mais páginas React,
-estáticos e redirects), e roda no job `react-link-check` de `docs-ci.yml`
-(`runs-on: corelink`, zero minuto hospedado). Dentes provados nas duas direções
-no PR.
+`scripts/check_docs_react_links.py` classifica **todo** atributo JSX `href=`/
+`to=` em `apps/docs/src/**/*.{tsx,jsx}`: literais de rota absoluta (aspas
+simples ou duplas) são resolvidos contra as rotas **publicadas** (slugs de
+front-matter parseados com PyYAML, rascunhos excluídos, mais páginas React,
+estáticos e redirects); vazio, sintaxe malformada e literal relativo falham com
+arquivo+linha; expressões dinâmicas balanceadas aparecem na população como
+`dynamic-classified`, explicitamente não resolvidas por um gate estático. Os
+testes de mutação cobrem as duas aspas, vazio, sintaxe, dinâmico, rota morta e
+rota publicada; o job `react-link-check` de `docs-ci.yml` roda ambos testes e
+gate (`runs-on: corelink`, zero minuto hospedado). Para não encolher de volta
+em silêncio, o gate aplica os pisos medidos da população viva: 20 arquivos
+TSX/JSX, 61 literais, 12 dinâmicos classificados e 30 rotas internas. Dentes
+provados nas duas direções no PR.
 
 ```backlog
 id: B-168
