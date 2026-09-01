@@ -1,177 +1,408 @@
-//! B-074 — the money path must carry the same internal-auth entropy floor as
-//! every other internal surface, and must have a rotation path of its own.
+//! B-074 — prove that both money-path mount gates use the canonical internal
+//! auth resolver, and that an auth denial stops before every external effect.
 //!
-//! `/v1/onboarding/tier-select` (paid checkout) and `/v1/onboarding/dpa-accept`
-//! (the legally binding consent receipt) used to read the shared
-//! `CORELINK_INTERNAL_AUTH_KEY` raw, with a **16**-char floor, while every other
-//! internal surface resolved through
-//! [`corelink_server::routes::admin::resolve_internal_auth_key`] at a **32**-char
-//! floor. Two consequences, both closed by this test:
+//! The two routes share the resolver's security contract: an absent dedicated
+//! key may use the shared key, but a present dedicated key is authoritative.
+//! Therefore a short dedicated value MUST NOT silently fall back to a valid
+//! shared value. The test exercises every resolver state for both routes.
 //!
-//! 1. **Entropy.** A 16–31-char secret was accepted precisely where money and
-//!    consent pass. The `must_not_mount_*` cases pin the 32 floor.
-//! 2. **Rotation.** Because the helper was never called, neither route could
-//!    ever be moved to its own credential. The `dedicated_key_alone_mounts_*`
-//!    cases pin that the dedicated env var is honoured on its own.
-//!
-//! ## Why this file is ONE `#[test]`
-//!
-//! `build_state_from_env` reads the process environment, and Rust runs the test
-//! functions of a binary on a thread pool. Splitting these cases into separate
-//! `#[test]` fns would let them race on the same globals and flake. One
-//! sequential function is the honest way to test env-driven construction
-//! without adding a dependency on a serialisation crate.
-//!
-//! ## The positive control is load-bearing, not decoration
-//!
-//! Every assertion here is `is_none()` — a *denial*. Denial assertions pass
-//! vacuously if the harness never manages to satisfy the OTHER preconditions
-//! (D1 config, Stripe config, DPA version, signing key): the route would return
-//! `None` for a reason that has nothing to do with the auth key, and the test
-//! would be green while measuring nothing. So each block asserts a
-//! **`Some(...)` positive control first** with a properly sized key, proving the
-//! harness can reach a MOUNTED state, and only then flips the key to a
-//! sub-floor value and demands `None`.
+//! This is deliberately one sequential test. `build_state_from_env` reads the
+//! process environment, so separate test functions would race over global
+//! state. `EnvGuard` restores every touched variable even on an assertion
+//! failure, keeping this integration-test binary hermetic.
 
+use std::{
+    env,
+    ffi::OsString,
+    io::{Read, Write},
+    net::{TcpListener, TcpStream},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc,
+    },
+    thread::{self, JoinHandle},
+    time::Duration,
+};
+
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+};
 use corelink_server::routes::{dpa_accept, tier_select};
 use rsa::pkcs8::{EncodePrivateKey, LineEnding};
 use rsa::RsaPrivateKey;
+use tower::ServiceExt;
 
-/// A key at the shared 32-char floor (`INTERNAL_AUTH_KEY_MIN_LEN`), generously
-/// sized like the `openssl rand -hex 32` the secrets-checklist prescribes.
+/// Deliberately synthetic test material, not a Stripe-shaped credential.
 const KEY_64: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-
-/// 20 chars: comfortably past the OLD `< 16` gate, comfortably below the 32
-/// floor. This is the exact band B-074 is about — the value that the money path
-/// used to accept and every other internal surface already refused.
+const OTHER_KEY_64: &str = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+const WRONG_KEY_64: &str = "89abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234567";
 const KEY_20: &str = "01234567890123456789";
 
-/// Satisfy every NON-auth precondition of both `build_state_from_env`s, so the
-/// only variable left in the experiment is the internal-auth key.
-///
-/// All of these are pure env reads that construct clients without performing
-/// I/O (`StorageEnv::from_env`, `D1HttpClient::new`,
-/// `StripeRealClient::from_env`), so obviously-fake values are sufficient and
-/// nothing here talks to Cloudflare or Stripe.
-fn set_common_env(signing_key_pem: &str) {
-    std::env::set_var("CORELINK_DPA_VERSION", "1.0.0");
-    std::env::set_var("R2_S3_ENDPOINT", "https://example.invalid");
-    std::env::set_var("R2_S3_ACCESS_KEY_ID", "test-access-key-id");
-    std::env::set_var("R2_S3_SECRET_ACCESS_KEY", "test-secret-access-key");
-    std::env::set_var("CLOUDFLARE_ACCOUNT_ID", "0123456789abcdef0123456789abcdef");
-    std::env::set_var("CF_API_TOKEN", "test-cf-api-token");
-    std::env::set_var("D1_DATABASE_ID", "00000000-0000-0000-0000-000000000000");
-    std::env::set_var("STRIPE_AUTH_MODE", "direct");
-    std::env::set_var("STRIPE_SECRET_KEY", "sk_test_0123456789");
-    std::env::set_var("DPA_RECEIPT_SIGNING_KEY", signing_key_pem);
+const ENV_VARS: &[&str] = &[
+    "ALL_PROXY",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "all_proxy",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CF_API_TOKEN",
+    "CORELINK_DPA_VERSION",
+    "CORELINK_DPA_ACCEPT_AUTH_KEY",
+    "CORELINK_INTERNAL_AUTH_KEY",
+    "CORELINK_TIER_SELECT_AUTH_KEY",
+    "D1_DATABASE_ID",
+    "DPA_RECEIPT_SIGNING_KEY",
+    "R2_S3_ACCESS_KEY_ID",
+    "R2_S3_ENDPOINT",
+    "R2_S3_SECRET_ACCESS_KEY",
+    "STRIPE_API_BASE",
+    "STRIPE_AUTH_MODE",
+    "STRIPE_SECRET_KEY",
+];
+
+/// Restores process-global configuration on every exit path.
+struct EnvGuard {
+    saved: Vec<(&'static str, Option<OsString>)>,
 }
 
-/// Clear every internal-auth env var so each case starts from a known state.
-/// Without this the cases would inherit each other's keys and the later
-/// assertions would measure the earlier ones.
+impl EnvGuard {
+    fn capture(names: &'static [&'static str]) -> Self {
+        Self {
+            saved: names
+                .iter()
+                .map(|name| (*name, env::var_os(name)))
+                .collect(),
+        }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        for (name, value) in &self.saved {
+            if let Some(value) = value {
+                env::set_var(name, value);
+            } else {
+                env::remove_var(name);
+            }
+        }
+    }
+}
+
+/// A local, refusing proxy/effect probe. It counts CONNECTs as D1 attempts and
+/// ordinary HTTP requests as Stripe attempts. It never forwards traffic.
+struct EffectProbe {
+    d1_requests: Arc<AtomicUsize>,
+    stripe_requests: Arc<AtomicUsize>,
+    stop: Arc<AtomicBool>,
+    worker: Option<JoinHandle<()>>,
+    url: String,
+}
+
+impl EffectProbe {
+    fn start() -> Result<Self, Box<dyn std::error::Error>> {
+        let listener = TcpListener::bind(("127.0.0.1", 0))?;
+        listener.set_nonblocking(true)?;
+        let address = listener.local_addr()?;
+        let d1_requests = Arc::new(AtomicUsize::new(0));
+        let stripe_requests = Arc::new(AtomicUsize::new(0));
+        let stop = Arc::new(AtomicBool::new(false));
+        let d1_for_thread = Arc::clone(&d1_requests);
+        let stripe_for_thread = Arc::clone(&stripe_requests);
+        let stop_for_thread = Arc::clone(&stop);
+        let worker = thread::Builder::new()
+            .name("money-path-effect-probe".to_owned())
+            .spawn(move || {
+                while !stop_for_thread.load(Ordering::Acquire) {
+                    match listener.accept() {
+                        Ok((stream, _)) => {
+                            classify_and_refuse(stream, &d1_for_thread, &stripe_for_thread);
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(_) => break,
+                    }
+                }
+            })?;
+        Ok(Self {
+            d1_requests,
+            stripe_requests,
+            stop,
+            worker: Some(worker),
+            url: format!("http://{address}"),
+        })
+    }
+
+    fn reset(&self) {
+        self.d1_requests.store(0, Ordering::Release);
+        self.stripe_requests.store(0, Ordering::Release);
+    }
+
+    fn d1_requests(&self) -> usize {
+        self.d1_requests.load(Ordering::Acquire)
+    }
+
+    fn stripe_requests(&self) -> usize {
+        self.stripe_requests.load(Ordering::Acquire)
+    }
+}
+
+impl Drop for EffectProbe {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+fn classify_and_refuse(
+    mut stream: TcpStream,
+    d1_requests: &AtomicUsize,
+    stripe_requests: &AtomicUsize,
+) {
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(1)));
+    let mut request = [0_u8; 1024];
+    let bytes_read = stream.read(&mut request).unwrap_or(0);
+    if request[..bytes_read].starts_with(b"CONNECT ") {
+        d1_requests.fetch_add(1, Ordering::AcqRel);
+    } else {
+        stripe_requests.fetch_add(1, Ordering::AcqRel);
+    }
+    let _ = stream.write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n");
+}
+
+fn set_common_env(signing_key_pem: &str, probe_url: &str) {
+    env::set_var("CORELINK_DPA_VERSION", "1.0.0");
+    env::set_var("R2_S3_ENDPOINT", "https://example.invalid");
+    env::set_var("R2_S3_ACCESS_KEY_ID", "test-r2-access-id");
+    env::set_var("R2_S3_SECRET_ACCESS_KEY", "test-r2-placeholder");
+    env::set_var("CLOUDFLARE_ACCOUNT_ID", "0123456789abcdef0123456789abcdef");
+    env::set_var("CF_API_TOKEN", "test-cf-placeholder");
+    env::set_var("D1_DATABASE_ID", "00000000-0000-0000-0000-000000000000");
+    env::set_var("STRIPE_AUTH_MODE", "direct");
+    env::set_var("STRIPE_API_BASE", probe_url);
+    env::set_var("STRIPE_SECRET_KEY", "test-stripe-placeholder");
+    env::set_var("DPA_RECEIPT_SIGNING_KEY", signing_key_pem);
+    // The D1 client uses HTTPS and the local probe refuses CONNECT rather than
+    // forwarding it. This makes any accidental effect observable and keeps the
+    // test entirely off-network.
+    for name in [
+        "ALL_PROXY",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "all_proxy",
+        "http_proxy",
+        "https_proxy",
+    ] {
+        env::set_var(name, probe_url);
+    }
+    for name in ["NO_PROXY", "no_proxy"] {
+        env::remove_var(name);
+    }
+}
+
 fn clear_auth_env() {
-    std::env::remove_var("CORELINK_INTERNAL_AUTH_KEY");
-    std::env::remove_var("CORELINK_TIER_SELECT_AUTH_KEY");
-    std::env::remove_var("CORELINK_DPA_ACCEPT_AUTH_KEY");
+    env::remove_var("CORELINK_INTERNAL_AUTH_KEY");
+    env::remove_var("CORELINK_TIER_SELECT_AUTH_KEY");
+    env::remove_var("CORELINK_DPA_ACCEPT_AUTH_KEY");
 }
 
-fn test_signing_key_pem() -> String {
+fn test_signing_key_pem() -> Result<String, Box<dyn std::error::Error>> {
     let mut rng = rand::thread_rng();
-    let key = RsaPrivateKey::new(&mut rng, 2048).expect("rsa keygen");
-    key.to_pkcs8_pem(LineEnding::LF)
-        .expect("pkcs8 pem")
-        .to_string()
+    let key = RsaPrivateKey::new(&mut rng, 2048)?;
+    Ok(key.to_pkcs8_pem(LineEnding::LF)?.to_string())
 }
 
-#[test]
-fn money_path_enforces_the_32_char_floor_and_honours_a_dedicated_key() {
-    let pem = test_signing_key_pem();
-    set_common_env(&pem);
-
-    // ── tier-select ─────────────────────────────────────────────────────────
-    //
-    // POSITIVE CONTROL. A properly sized SHARED key must MOUNT the route. If
-    // this is `None`, the harness has not satisfied the non-auth preconditions
-    // and every denial below would be vacuous — so this assertion is what makes
-    // the rest of the test mean anything.
+fn assert_resolver_matrix<T>(route: &str, dedicated_env: &str, build: impl Fn() -> Option<T>) {
     clear_auth_env();
-    std::env::set_var("CORELINK_INTERNAL_AUTH_KEY", KEY_64);
+    env::set_var("CORELINK_INTERNAL_AUTH_KEY", KEY_64);
     assert!(
-        tier_select::build_state_from_env().is_some(),
-        "POSITIVE CONTROL FAILED: a 64-char shared key with all other env set \
-         must mount /v1/onboarding/tier-select. Because it did not, the denial \
-         assertions in this test would pass vacuously and prove nothing. Fix \
-         the harness (some non-auth precondition is unmet) before trusting any \
-         other case here."
-    );
-
-    // THE DEFECT (B-074). A 20-char shared key sits above the old `< 16` gate
-    // and below the 32 floor. Before the fix this MOUNTED the paid-checkout
-    // route; it must now be refused.
-    clear_auth_env();
-    std::env::set_var("CORELINK_INTERNAL_AUTH_KEY", KEY_20);
-    assert!(
-        tier_select::build_state_from_env().is_none(),
-        "B-074: a 20-char CORELINK_INTERNAL_AUTH_KEY is below the 32-char \
-         INTERNAL_AUTH_KEY_MIN_LEN floor and MUST NOT mount the paid-checkout \
-         route (the old gate was `< 16` and let this through)"
-    );
-
-    // ROTATION. The dedicated key alone — no shared key present at all — must
-    // mount the route. Before the fix the helper was never called, so the
-    // dedicated var was dead config and this returned `None`.
-    clear_auth_env();
-    std::env::set_var("CORELINK_TIER_SELECT_AUTH_KEY", KEY_64);
-    assert!(
-        tier_select::build_state_from_env().is_some(),
-        "B-074: CORELINK_TIER_SELECT_AUTH_KEY must mount tier-select on its own, \
-         with no CORELINK_INTERNAL_AUTH_KEY set — that is the rotation path"
-    );
-
-    // A sub-floor DEDICATED key with no shared fallback must fail CLOSED rather
-    // than silently widening to "no gate".
-    clear_auth_env();
-    std::env::set_var("CORELINK_TIER_SELECT_AUTH_KEY", KEY_20);
-    assert!(
-        tier_select::build_state_from_env().is_none(),
-        "B-074: a sub-floor dedicated key with no shared fallback must fail CLOSED"
-    );
-
-    // ── dpa-accept ──────────────────────────────────────────────────────────
-    //
-    // Same three-part shape. The DPA receipt is the legally binding consent
-    // record, so it carries the identical floor and rotation guarantees.
-    clear_auth_env();
-    std::env::set_var("CORELINK_INTERNAL_AUTH_KEY", KEY_64);
-    assert!(
-        dpa_accept::build_state_from_env().is_some(),
-        "POSITIVE CONTROL FAILED: a 64-char shared key with all other env set \
-         must mount /v1/onboarding/dpa-accept. Until this holds, the dpa-accept \
-         denial assertions below are vacuous."
+        build().is_some(),
+        "{route}: valid shared key must mount when dedicated is unset"
     );
 
     clear_auth_env();
-    std::env::set_var("CORELINK_INTERNAL_AUTH_KEY", KEY_20);
+    env::set_var(dedicated_env, KEY_64);
     assert!(
-        dpa_accept::build_state_from_env().is_none(),
-        "B-074: a 20-char CORELINK_INTERNAL_AUTH_KEY is below the 32-char floor \
-         and MUST NOT mount the DPA consent-receipt route"
+        build().is_some(),
+        "{route}: valid dedicated key alone must mount"
     );
 
     clear_auth_env();
-    std::env::set_var("CORELINK_DPA_ACCEPT_AUTH_KEY", KEY_64);
     assert!(
-        dpa_accept::build_state_from_env().is_some(),
-        "B-074: CORELINK_DPA_ACCEPT_AUTH_KEY must mount dpa-accept on its own — \
-         the rotation path"
+        build().is_none(),
+        "{route}: all auth keys absent must leave route unmounted"
     );
 
     clear_auth_env();
-    std::env::set_var("CORELINK_DPA_ACCEPT_AUTH_KEY", KEY_20);
+    env::set_var("CORELINK_INTERNAL_AUTH_KEY", KEY_20);
     assert!(
-        dpa_accept::build_state_from_env().is_none(),
-        "B-074: a sub-floor dedicated key with no shared fallback must fail CLOSED"
+        build().is_none(),
+        "{route}: a short shared key must leave route unmounted"
     );
 
     clear_auth_env();
+    env::set_var("CORELINK_INTERNAL_AUTH_KEY", KEY_64);
+    env::set_var(dedicated_env, KEY_20);
+    assert!(
+        build().is_none(),
+        "{route}: short dedicated key must fail closed rather than fall back to valid shared key"
+    );
+
+    clear_auth_env();
+    env::set_var("CORELINK_INTERNAL_AUTH_KEY", KEY_20);
+    env::set_var(dedicated_env, KEY_20);
+    assert!(
+        build().is_none(),
+        "{route}: both short keys must leave route unmounted"
+    );
+}
+
+fn tier_request(auth: &str) -> Result<Request<Body>, http::Error> {
+    Request::builder()
+        .method("POST")
+        .uri("/v1/onboarding/tier-select")
+        .header(tier_select::INTERNAL_AUTH_HEADER, auth)
+        .header(tier_select::TENANT_HEADER, "tenant-money-proof")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"tier":"free","success_url":"https://humangr.com/success","cancel_url":"https://humangr.com/cancel"}"#,
+        ))
+}
+
+fn dpa_request(auth: &str) -> Result<Request<Body>, http::Error> {
+    Request::builder()
+        .method("POST")
+        .uri("/v1/onboarding/dpa-accept")
+        .header(tier_select::INTERNAL_AUTH_HEADER, auth)
+        .header(tier_select::TENANT_HEADER, "tenant-money-proof")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"dpa_version":"1.0.0","dpa_locale":"en","notice_text_hash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}"#,
+        ))
+}
+
+fn assert_no_effects(probe: &EffectProbe, route: &str, case: &str) {
+    assert_eq!(
+        probe.d1_requests(),
+        0,
+        "{route}: {case} must make exactly zero D1 requests"
+    );
+    assert_eq!(
+        probe.stripe_requests(),
+        0,
+        "{route}: {case} must make exactly zero Stripe requests"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn money_path_enforces_resolver_matrix_and_stops_unauthenticated_requests_before_effects(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let _env = EnvGuard::capture(ENV_VARS);
+    let probe = EffectProbe::start()?;
+    let pem = test_signing_key_pem()?;
+    set_common_env(&pem, &probe.url);
+
+    assert_resolver_matrix(
+        "tier-select",
+        "CORELINK_TIER_SELECT_AUTH_KEY",
+        tier_select::build_state_from_env,
+    );
+    assert_resolver_matrix(
+        "dpa-accept",
+        "CORELINK_DPA_ACCEPT_AUTH_KEY",
+        dpa_accept::build_state_from_env,
+    );
+
+    // Use two different valid keys. A request carrying the shared key is a
+    // real mismatch when the dedicated key is configured; it MUST NOT silently
+    // authenticate through the fallback.
+    clear_auth_env();
+    env::set_var("CORELINK_INTERNAL_AUTH_KEY", OTHER_KEY_64);
+    env::set_var("CORELINK_TIER_SELECT_AUTH_KEY", KEY_64);
+    let tier_state = tier_select::build_state_from_env().ok_or("tier-select did not mount")?;
+    env::set_var("CORELINK_DPA_ACCEPT_AUTH_KEY", KEY_64);
+    let dpa_state = dpa_accept::build_state_from_env().ok_or("dpa-accept did not mount")?;
+
+    // Positive controls: a correct dedicated key crosses the handler gate and
+    // reaches the first durable D1 boundary exactly once. The probe refuses
+    // that request, so neither test can accidentally call the internet.
+    probe.reset();
+    let response = tier_select::router(tier_state.clone())
+        .oneshot(tier_request(KEY_64)?)
+        .await?;
+    assert_ne!(
+        response.status(),
+        StatusCode::UNAUTHORIZED,
+        "tier-select positive control must clear auth"
+    );
+    assert_eq!(
+        probe.d1_requests(),
+        1,
+        "tier-select positive control must reach D1 exactly once"
+    );
+    assert_eq!(
+        probe.stripe_requests(),
+        0,
+        "tier-select audit failure must stop before Stripe"
+    );
+
+    probe.reset();
+    let response = dpa_accept::router(dpa_state.clone())
+        .oneshot(dpa_request(KEY_64)?)
+        .await?;
+    assert_ne!(
+        response.status(),
+        StatusCode::UNAUTHORIZED,
+        "dpa-accept positive control must clear auth"
+    );
+    assert_eq!(
+        probe.d1_requests(),
+        1,
+        "dpa-accept positive control must reach D1 exactly once"
+    );
+    assert_eq!(
+        probe.stripe_requests(),
+        0,
+        "dpa-accept has no Stripe collaborator"
+    );
+
+    // Both a wrong same-length value and the valid-but-wrong shared key must
+    // return 401 before D1, Stripe, or consent persistence. Exact zeroes make
+    // the "before effects" assertion observable instead of documentary.
+    for (case, presented) in [
+        ("wrong", WRONG_KEY_64),
+        ("shared-mismatch", OTHER_KEY_64),
+        ("empty", ""),
+    ] {
+        probe.reset();
+        let response = tier_select::router(tier_state.clone())
+            .oneshot(tier_request(presented)?)
+            .await?;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "tier-select: {case} auth must return 401"
+        );
+        assert_no_effects(&probe, "tier-select", case);
+
+        probe.reset();
+        let response = dpa_accept::router(dpa_state.clone())
+            .oneshot(dpa_request(presented)?)
+            .await?;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "dpa-accept: {case} auth must return 401"
+        );
+        assert_no_effects(&probe, "dpa-accept", case);
+    }
+
+    clear_auth_env();
+    Ok(())
 }
