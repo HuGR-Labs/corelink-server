@@ -17,3 +17,6 @@ pyyaml>=6.0.0,<7.0.0
 # `corelink` Firecracker image's /usr/bin/python3 has no pytest at all. A gate
 # that depends on which machine picks up the job is not a gate.
 pytest>=9.0.0,<10.0.0
+# SPDX identifier list and expression parser used by the deterministic Rust SBOM
+# verifier.  The harness must validate identifiers, not merely expression shape.
+license-expression==30.4.4

@@ -110,6 +110,7 @@ jobs:
       - name: Verify committed Cargo.lock SBOM is reproducible and complete
         run: |
           set -euo pipefail
+          python3 -m pip install --quiet -r requirements-ci.txt
           python3 tests/verify_rust_sbom.py --check
           cp .sbom/cyclonedx-rust.json sbom.cdx.json
           echo "SBOM reproducibility and lock coverage verified"

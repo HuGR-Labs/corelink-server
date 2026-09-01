@@ -18,12 +18,18 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 import tomllib
 from pathlib import Path
 from urllib.parse import quote
+
+try:
+    from license_expression import ExpressionError, get_spdx_licensing
+except ImportError as error:
+    raise SystemExit(
+        "missing SPDX expression validator; install requirements-ci.txt before running this harness"
+    ) from error
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,6 +38,7 @@ SBOM_PATH = ROOT / ".sbom" / "cyclonedx-rust.json"
 SOURCE_PROPERTY = "corelink:cargo:source"
 CHECKSUM_PROPERTY = "corelink:cargo:checksum"
 LICENSE_REF = "LicenseRef-CoreLink-Proprietary"
+SPDX_LICENSING = get_spdx_licensing()
 
 # These are present in Cargo.lock but absent from `cargo metadata --locked`
 # because no current workspace member resolves them.  Keeping this exact map is
@@ -46,9 +53,6 @@ INACTIVE_LOCK_LICENSES = {
     ("tokio-postgres-rustls", "0.14.0", "registry+https://github.com/rust-lang/crates.io-index"): "MIT",
     ("x509-cert", "0.2.5", "registry+https://github.com/rust-lang/crates.io-index"): "Apache-2.0 OR MIT",
 }
-
-SPDX_TOKEN = re.compile(r"LicenseRef-[A-Za-z0-9.+-]+|[A-Za-z0-9.+-]+|[()]")
-
 
 def identity(package: dict[str, object]) -> tuple[str, str, str]:
     return (
@@ -74,42 +78,46 @@ def cargo_metadata() -> dict[str, object]:
         raise SystemExit(f"cargo metadata returned invalid JSON: {error}") from error
 
 
-def normalized_license(value: object) -> str:
-    """Make legacy Cargo slash alternatives valid SPDX OR expressions."""
-    license_expression = str(value).strip().replace("/", " OR ")
-    license_expression = re.sub(r"\s+", " ", license_expression)
+def is_local_path_package(package: dict[str, object]) -> bool:
+    """Return whether cargo identified this package as a path under this checkout."""
+    if package.get("source") is not None:
+        return False
+    manifest = package.get("manifest_path")
+    if not isinstance(manifest, str):
+        return False
+    try:
+        Path(manifest).resolve().relative_to(ROOT.resolve())
+    except ValueError:
+        return False
+    return True
+
+
+def normalized_license(package: dict[str, object]) -> str:
+    """Validate SPDX metadata, with one local-only proprietary exception."""
+    value = package.get("license")
+    license_expression = " ".join(str(value).strip().replace("/", " OR ").split())
     if license_expression == "UNLICENSED":
+        if not is_local_path_package(package):
+            raise SystemExit(f"external package declares UNLICENSED: {identity(package)}")
         return LICENSE_REF
-    if not valid_spdx_expression(license_expression):
-        raise SystemExit(f"invalid SPDX license expression: {license_expression!r}")
+    if license_expression == LICENSE_REF:
+        if not is_local_path_package(package):
+            raise SystemExit(f"external package uses proprietary license reference: {identity(package)}")
+        return LICENSE_REF
+    try:
+        SPDX_LICENSING.parse(license_expression, validate=True, strict=True)
+    except ExpressionError as error:
+        raise SystemExit(f"invalid SPDX license expression: {license_expression!r}") from error
     return license_expression
 
 
 def valid_spdx_expression(expression: str) -> bool:
-    """Reject malformed expressions while allowing SPDX's parenthesized form."""
-    tokens = SPDX_TOKEN.findall(expression)
-    if not tokens or "".join(tokens) != re.sub(r"\s+", "", expression):
+    """Use the SPDX identifier list and expression parser; never accept syntax alone."""
+    try:
+        SPDX_LICENSING.parse(expression, validate=True, strict=True)
+    except ExpressionError:
         return False
-    expect_term, depth = True, 0
-    for token in tokens:
-        if token == "(":
-            if not expect_term:
-                return False
-            depth += 1
-        elif token == ")":
-            if expect_term or depth == 0:
-                return False
-            depth -= 1
-            expect_term = False
-        elif token in {"AND", "OR", "WITH"}:
-            if expect_term:
-                return False
-            expect_term = True
-        else:
-            if not expect_term:
-                return False
-            expect_term = False
-    return not expect_term and depth == 0
+    return True
 
 
 def lock_packages() -> list[dict[str, object]]:
@@ -148,7 +156,7 @@ def build_sbom() -> dict[str, object]:
     packages = lock_packages()
     metadata = cargo_metadata()
     licenses = {
-        identity(package): normalized_license(package.get("license"))
+        identity(package): normalized_license(package)
         for package in metadata["packages"]
         if package.get("license")
     }
@@ -201,7 +209,12 @@ def component_identities(sbom: dict[str, object]) -> set[tuple[str, str, str]]:
         if not isinstance(source, str):
             raise SystemExit(f"component has no {SOURCE_PROPERTY}: {component.get('name')}")
         expression = component.get("licenses", [{}])[0].get("expression")
-        if not isinstance(expression, str) or expression == "UNLICENSED" or not valid_spdx_expression(expression):
+        if not isinstance(expression, str) or expression == "UNLICENSED":
+            raise SystemExit(f"component has invalid SPDX license: {component.get('name')}")
+        if expression == LICENSE_REF:
+            if source != "path":
+                raise SystemExit(f"external component uses proprietary license reference: {component.get('name')}")
+        elif not valid_spdx_expression(expression):
             raise SystemExit(f"component has invalid SPDX license: {component.get('name')}")
         found.add((str(component.get("name")), str(component.get("version")), source))
     if len(found) != len(components):
