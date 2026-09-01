@@ -12,16 +12,45 @@ you have no evidence which one you have.
 
 ## The procedure
 
-1. **Run it clean.** Record the exact count and the exact printed string — not
-   the exit code. (Exit codes lie: see below.)
-2. **Mutate the thing under test.** One mutation, chosen so the gate *must*
-   notice it.
-3. **Verify the mutation actually applied** — diff the file, or grep for the new
-   content. This step is not optional; see "the false pass" below.
-4. **Run again.** It must be RED, and the failure message must name the right
-   thing. Quote the failing line.
-5. **Restore. Run again. Green.**
-6. **Report the count before and after each mutation**, not just "it went red".
+Use a disposable, isolated copy for the entire drill. Record the current
+`HEAD` and `git status --short` first. For a normal checkout, create a separate
+index and worktree (or an archive copy) and run the gate from there:
+
+```sh
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/teeth.XXXXXX")
+git worktree add --detach "$tmp" HEAD
+trap 'git worktree remove --force "$tmp"' EXIT
+```
+
+If that setup fails, **HALT**. Do not mutate the user's checkout, index, or
+working tree to continue. The `trap` target is the newly-created, exact temp
+path; it must not be replaced by a broad directory or by the user's worktree.
+When the gate is meant to test an uncommitted change, apply the tracked diff (and
+copy explicitly named untracked inputs) into `$tmp` before the clean run; verify
+the resulting diff there. Never stage the user's index just to transport a
+change into the drill.
+
+1. **Run it clean.** In `$tmp`, record the exact count, population, and printed
+   string — not only the exit code. (Exit codes lie: see below.)
+2. **Choose the mutation and expected failure first.** Name the invariant it
+   violates, the exact diagnostic that must appear, and the non-zero result
+   expected. A mutation that cannot be load-bearing for this gate is not a
+   teeth test; choose another one or **HALT**.
+3. **Mutate by content in `$tmp`**, then prove it applied: assert the exact
+   executable predicate (not a comment, label, or broad name match) occurs once,
+   the replacement occurs once, and `git -C "$tmp" diff --` shows the intended
+   file. If the predicate is not uniquely addressable, or any assertion fails,
+   **HALT**; the gate was not tested.
+4. **Run again from `$tmp`.** It must be RED, with the expected non-zero result
+   and diagnostic naming the right thing. Quote the failing line. A green result,
+   an unexpected error, or a failure without the expected diagnostic is a
+   failed drill, not evidence of teeth.
+5. **Restore only the disposable copy** with
+   `git -C "$tmp" restore --source=HEAD --worktree -- <file>`, prove its diff is
+   empty, and run again. It must be GREEN with the original count and string.
+6. Remove the temp worktree via the trap and verify the original `HEAD` and
+   `git status --short` are byte-for-byte unchanged. Report the count and
+   population before mutation, after mutation, and after restore.
 
 ## Mutate by CONTENT, never by line number
 
@@ -47,8 +76,10 @@ It was caught only by comparing the **printed string** against the expected
 string. Accepting the green would have shipped the old gate wrapped in new prose,
 with a neighbouring item silently deleted.
 
-**Always `git add` before mutating**, so `git checkout --` restores exactly what
-you touched and nothing else.
+Never `git add`, `git checkout --`, `git reset`, or `git restore` in the user's
+worktree as part of this drill. The isolated worktree has its own index and is
+the only place mutation and restoration occur; pre-existing user changes are
+therefore neither staged nor overwritten.
 
 ## The hole this catches most often: the comparator is uncovered
 
@@ -64,6 +95,29 @@ incremented, reset the counters. Now neutering the comparator turns the suite re
 Ask of every suite: *what single edit to the harness would make every case pass
 regardless of the code?* If such an edit exists and nothing catches it, the suite
 is decorative.
+
+For a finite case suite, declare the expected cell-ID set before running it and
+assert that every ID occurs exactly once: no missing, duplicate, or unknown
+cell. Declare the expected RED and GREEN partitions as well, and compare the
+observed partition to those exact sets. A total count or population floor can
+remain unchanged while a cell disappears or changes polarity, so neither is a
+substitute for the set comparison.
+
+For these campaign drills, the contract can be written explicitly as:
+
+```text
+expected = {b081.clean, b081.mutated, b081.restored,
+            b133.clean, b133.mutated, b133.restored,
+            b167.clean, b167.mutated, b167.restored}
+expected_red = {b081.mutated, b133.mutated, b167.mutated}
+expected_green = expected - expected_red
+assert observed_ids == expected
+assert observed_red == expected_red
+assert observed_green == expected_green
+```
+
+Reject duplicate IDs before comparing sets; otherwise two cells can cancel a
+missing cell and still produce the same set.
 
 ## The discriminating DoD for a test file
 
@@ -83,11 +137,13 @@ A gate that counts violations and reports zero must prove it was looking at
 something:
 
 1. **Positive control, by name** — the parser must find a specific known item. If
-   it cannot, fail loudly.
+   it cannot, **HALT** and report the source and expected control.
 2. **Population floor** — refuse to believe "zero violations" unless the scan saw
-   a plausible number of items. A truncated file otherwise reports perfect health.
-3. **Unparsed input fails HIGH**, with the offending output excerpted — never
-   silently counts as clean.
+   a plausible number of items. A zero-item result, empty source, or truncated
+   input is **HALT**, never a clean result.
+3. **Unparsed input fails HIGH** — malformed records, parser warnings, pagination
+   markers, and incomplete output are **HALT**, with the offending output excerpted.
+   Never silently count them as clean.
 
 Reuse the **same parser** the thing under test uses. Two parsers can disagree
 about what a block is; one cannot.
@@ -106,6 +162,39 @@ about what a block is; one cannot.
 
 **An empty result from a filtered command is not evidence of absence.** Re-run
 unfiltered and read `$?`.
+
+## Three case drills from this campaign
+
+The mutation must exercise the shipped check, not merely edit a nearby comment:
+
+- **B-081 (Worker → container):** target the exact executable rotation-key
+  predicate in the container adapter (the `for name in ["PAT_SIGNING_KEY_PREV",
+  "PAT_SIGNING_KEY_NEW"]` array), not a comment or a repository-wide name grep.
+  Assert that predicate occurs once. Until a real executable behavior test or
+  assertion covers that predicate, **HALT**. The B-081 `grep` over names cannot
+  prove behavior, so do not invent a RED diagnostic or claim a teeth result. Once
+  the test path exists, mutate `PAT_SIGNING_KEY_PREV` in that array and require
+  the exact failure emitted by that test, captured from its clean run; then
+  restore it.
+- **B-133 (CI/workflow):** target the exact executable `working-directory: _base`
+  field attached to the trusted-tree script step, remove only that field while
+  retaining the executable `run:` and PR merge checkout. Require emitted output
+  containing both of these exact emitted phrases: "MAS sem \`working-directory: _base\`" and "rust-toolchain.toml do PR". The output must identify the trusted-tree failure;
+  do not invent a diagnostic from the mutation description. If that uniquely
+  attached field is absent, **HALT**; changing a script path, comment, or any
+  broad `working-directory` is not this mutation.
+- **B-167 (backlog parser):** use the production parser in
+  `scripts/backlog_verify.py` to enumerate blocks and run `--id B-167`; do not
+  recreate its block/ID regex in the drill. Remove the real `B-142` control that
+  the production verify requires. Expected RED: require the exact non-zero
+  diagnostic actually emitted by the production parser (for example, a known
+  residue or instrument-broken line); never invent a message from the mutation.
+  Restore and require the original parser-reported population. Any malformed or
+  unparsed block, zero population, or parser output that cannot report the
+  population is **HALT**.
+
+For each case, capture the clean, mutated, and restored count plus the exact
+diagnostic. Do not report only “it went red”.
 
 ## Placement
 

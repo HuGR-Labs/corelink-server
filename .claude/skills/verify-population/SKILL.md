@@ -43,6 +43,16 @@ same sentence, where it cannot be separated from the number.
 A sentence with a number and no population is where the defect lives. If you
 cannot name the population in a few words, you do not yet know what you measured.
 
+## Hard stop before accepting a result
+
+Build and record the population inventory before interpreting the number. An
+empty source, a zero-item parse, a truncated or paginated response, a parser
+warning, or any unparsed/malformed record is **HALT: INSTRUMENT BROKEN**. Do not
+turn it into `0 violations`, `100%`, “all clear”, or a claim with a caveat. Include
+the source, observed count, expected floor or page count, and a short offending
+excerpt. A claim is admissible only after the complete population is parsed and
+the measured set is shown to be the set named by the sentence.
+
 ## Three detectors, ordered by how much they demand of you
 
 ### 1. Degenerate result — property of the OUTPUT, needs no domain knowledge
@@ -52,9 +62,10 @@ Every value identical.
 
 > **Zero variance in a large sample is a symptom of the INSTRUMENT, not the world.**
 
-`X − Y == 0` in 100% of the sample is not a finding — it is a sign that X and Y
-are the same field. When the result is the degenerate value, **suspect the field
-before you suspect the world.**
+`X − Y == 0` in 100% of the sample is not a finding. It is a **HALT** until an
+independent check proves that X and Y are distinct fields and that the complete
+sample was read. Do not publish the number while the instrument could be
+collapsing both values into one field.
 
 This detector is first because it fires without you knowing anything about the
 domain. Use it as a reflex on every measurement.
@@ -67,6 +78,9 @@ it reached *everything the claim covers*.
 Enumerate the **surface** the sentence promises, then show the filter covers it.
 A sweep with `--include` that omits an extension has a green control sitting next
 to a blind spot — the control was real, the coverage was not.
+
+If the promised surface cannot be enumerated, or the filter's population is
+empty, truncated, or partly unparsed, **HALT**. “No matches” is not coverage.
 
 ### 3. Expectation written BEFORE measuring
 
@@ -98,12 +112,31 @@ property of the output instead of waiting for someone to find the number odd.
 Ask one question per number: **"what set does this count, and is that the set the
 sentence is about?"**
 
+If that set cannot be re-derived completely, stop the report. A zero, a perfect
+rate, or an all-identical sample never overrides the population stop rule.
+
 Two extra traps:
 - **Self-accusing reports skip scrutiny.** A claim that indicts its own author does
   not trigger the suspicion a defensive claim triggers — and it is wrong just as
   often. Re-derive it anyway. (A working monitor was switched off this way.)
 - **A caveat is not the same as not asserting.** Hedging the sentence does not fix
   a wrong population.
+
+### Campaign examples
+
+- **B-081:** “two transition keys” must mean the two executable env entries in
+  the Worker DO → container launch block, not every occurrence of either name in
+  the repository. Report “2/2 keys in `container.start({ env })`” (or HALT if
+  that block is empty, truncated, or unparsed).
+- **B-133:** the population is executable `run:` steps in
+  `dependabot-policy.yml`, not comments or prose. Say “the one executable PR-tree
+  script step in this workflow”, not “the repo does/does not execute PR code”.
+- **B-167:** “all IDs are canonical” means every block returned by the production
+  parser in `scripts/backlog_verify.py`, including blocks that fail its numeric
+  regex. Do not build an independent `re.findall` census: two parsers can
+  disagree. A regex subset, zero blocks, truncated `BACKLOG.md`, or an unparsed
+  block is **HALT**, not zero defects; if the production parser cannot expose its
+  complete population, stop rather than inventing a second parser.
 
 ## Related
 
