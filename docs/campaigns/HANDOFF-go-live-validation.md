@@ -1,12 +1,15 @@
 # HANDOFF — go-live validation campaign
 
-**As of:** 2026-08-31
-**Written by:** the merge-guardian session (`audit-report-analysis-4e1455-0f`)
+**Measured:** 2026-09-01T17:13:10Z
+**Measurement ref:** `origin/main` @ `4a72560a6a1f77a60c10fd462f338c86011e89c3`
+**Written by:** a merge-guardian session (the session identifier is historical)
 **For:** any model, session, or harness picking this campaign up.
 
 This document is written so that a reader with **no memory of the campaign** can
-continue it. Everything asserted here was measured on `origin/main` at the time of
-writing; commands are included so you can re-derive rather than trust.
+continue it. Mutable state below is measured against the ref and timestamp above;
+commands are included so a later session can re-derive rather than trust this
+snapshot. Claims from older audit reports are labelled with their own ref and
+timestamp.
 
 ---
 
@@ -39,15 +42,17 @@ items rather than another review round.
 
 ## 2. Role and authority
 
-One session acts as **sole merge guardian** for all three repos. At the time of
-writing that is `audit-report-analysis-4e1455-0f`.
+One session acts as **sole merge guardian** for all three repos. The identity of
+that session is runtime state, not a durable fact; query the active session before
+merging.
 
 - **Merging is done with exactly one command**, never piped:
   ```bash
   bash scripts/pre-merge-gate-check.sh --merge <PR>
   ```
   A pipeline's exit status is the last command's, so `... | tail -5 && gh pr merge`
-  discards the gate's refusal. That is how a PR merged with 4 checks pending.
+  discards the gate's refusal. That is how a PR can merge while checks are
+  pending; count the checks in the explicit run before treating the gate as green.
 - **No PR merges without an adversarial cold review.** The reviewer contract is
   reproduced in §7.
 - The guardian **does not deploy**. Prod deploys and container repins are the
@@ -60,22 +65,36 @@ writing that is `audit-report-analysis-4e1455-0f`.
 ### Backlog
 
 ```bash
+git fetch origin main
 python3 - <<'PY'
 import re,collections
-s=open('BACKLOG.md').read()
+import subprocess
+s=subprocess.check_output(['git','show','origin/main:BACKLOG.md'], text=True)
 blocks=re.findall(r'```backlog\n(.*?)```',s,re.S)
 st=collections.Counter(); ow=collections.Counter(); ids=[]
 for b in blocks:
     ids.append(re.search(r'^id:\s*(\S+)',b,re.M).group(1))
     st[re.search(r'^status:\s*(\S+)',b,re.M).group(1)]+=1
     ow[re.search(r'^owner:\s*(\S+)',b,re.M).group(1)]+=1
-print(len(blocks), dict(st), dict(ow))
+assert len(ids) == len(set(ids)), 'duplicate backlog IDs'
+assert all(re.fullmatch(r'B-\d{3}', i) for i in ids), 'non-canonical backlog ID'
+numbers=[int(i[2:]) for i in ids]
+assert sorted(numbers) == list(range(1, max(numbers)+1)), 'backlog ID gap'
+next_id=f'B-{max(numbers)+1:03d}'
+print(len(blocks), dict(st), dict(ow), 'next', next_id)
 PY
 ```
 
-Result at handoff: **167 items — 110 open, 56 done, 1 parked.** Owner field: 155
-`tl`, 12 `owner`. Ids run **B-001 … B-167 with no gaps**, so the next free id is
-**B-168**.
+Result at the measured ref: **167 items — 110 open, 56 done, 1 parked.** Owner
+field: 155 `tl`, 12 `owner`. IDs run **B-001 … B-167 with no gaps**, so the next
+free ID is **B-168**. The command asserts duplicate-free canonical IDs and no
+gaps, and prints `next B-168`; it reads the fetched `origin/main` blob, not the
+current checkout, and must be rerun after every merge before allocating an ID.
+
+The 12 `owner` items at this measurement are: **B-008, B-012, B-013, B-032,
+B-035, B-065, B-086, B-089, B-097, B-110, B-111, B-154**. This is a census of
+the `owner:` field, not a claim that every item is currently actionable; read each
+block for its specific external dependency.
 
 **Id allocation is a race.** Two sessions writing `B-168` do **not** produce a
 merge conflict — the density gate refuses **gaps**, and `id: B-UNALLOCATED` passes
@@ -86,27 +105,30 @@ time**, not while drafting.
 polarity goes green in the PR that fixes it and **red on the next merge**,
 contaminating every sibling PR. Check polarity before marking anything done.
 
-**`python3 scripts/backlog_verify.py` with no `--id` fires ~24 external tools**
-(cargo, wrangler, curl). Use `--id B-NNN`.
+**`python3 scripts/backlog_verify.py` with no `--id` fires external tools**
+(including cargo, wrangler, and curl). Use `--id B-NNN` so the selected item is
+the population being verified.
 
 ### Open PRs
 
-30 open in `corelink-server`, 1 in `corelink-runners` (#516, conflicting), 3 in
-`corelink-workspaces` (#255 plus two drafts marked do-not-merge).
+At the measurement timestamp there were **33 open PRs in `corelink-server`, 1 in
+`corelink-runners` (#516), and 2 in `corelink-workspaces` (#256 plus draft #247)**.
+The former workspace #255 is already merged (2026-09-01); #1530 in the server
+repo is closed (not merged). No current conflicting set is asserted here;
+recompute mergeability from the live inventory before choosing a rebase wave.
 
-Six `corelink-server` PRs are **CONFLICTING** and need a rebase before anything
-else: **#1530, #1497, #1493, #1490, #1450, #1397, #1393**.
-
-> ⚠️ **A conflicting PR gets either ~6 trivial checks or 54 stale ones, and the
+> ⚠️ **A conflicting PR can expose an incomplete or stale check set, and the
 > gate can read that as green.** Do not ask "are there failures?" — **count the
-> checks against a sibling PR**. An absent check never becomes pending.
+> checks against a sibling PR at the same base**. An absent check never becomes
+> pending.
 
 Re-derive the list:
 ```bash
+date -u '+%Y-%m-%dT%H:%M:%SZ'
 for r in corelink-server corelink-runners corelink-workspaces; do
   gh pr list -R HuGR-Labs/$r --state open --limit 60 \
-    --json number,title,isDraft,mergeable \
-    --jq '.[]|"\(.number)\t\(if .isDraft then "DRAFT" else .mergeable end)\t\(.title[0:78])"'
+    --json number,title,isDraft,mergeable,headRefOid,baseRefOid,updatedAt \
+    --jq '.[]|"\(.number)\t\(if .isDraft then "DRAFT" else .mergeable end)\t\(.headRefOid)\t\(.baseRefOid)\t\(.updatedAt)\t\(.title[0:78])"'
   sleep 2
 done
 ```
@@ -118,6 +140,10 @@ done
 **The owner has said BYOK must be turned on** (*"Sim tem que ligar"*), and, when
 told the design was single-provider, rejected that as implausible for a product —
 correctly.
+
+The code observations in the next table are from `origin/main` at the measurement
+ref/time in §3. The `file:line` values are locators into that snapshot, not
+permanent identifiers; re-run `git show origin/main:<path>` after a merge.
 
 ### What was measured
 
@@ -142,6 +168,7 @@ was retracted. See `.claude/skills/built-not-wired/`.
 
 Only the **construction site** (`#[cfg(feature = "byok-*-real")]` around where the
 real type is built) and the mutual-exclusion `compile_error!` guards in
+`crates/corelink-container/src/byok_orchestrator.rs:76-117` and
 `crates/corelink-byok/src/lib.rs:105-118`. The Cargo.toml comment states the guard
 checks **only the public features**, and `_matrix-test` already combines all four
 `_internal-*` flags — so combining is not architecturally forbidden.
@@ -178,22 +205,62 @@ The owner's instruction if this turns out to be too large: *"Se for muito
 complexo, escolhemos 1 ou 2 provedores iniciais."* It is **not** too large — the
 hard part (four clients, trait, type erasure, per-tenant schema) already exists.
 
+### Independent evidence lanes (do not join them into one conclusion)
+
+These are deliberately separate populations and dates. A green result in one
+lane does not prove either of the others:
+
+| lane | evidence and population | status to revalidate |
+|---|---|---|
+| BYOK | Static code/build evidence above: four provider client files exist, but `Dockerfile` builds with no real-provider feature. This says what the tree can compile, not what a tenant can use. | Product decision remains open; no production enablement is claimed. |
+| audit drain | `B-064` in `BACKLOG.md` at `origin/main` @ `4a72560a` records the server/cron contract mismatch (`rows_sealed`/`partitions_drained`/`incomplete` versus `j.sealed`/`j.partitions`). A separate historical production observation in `B-026` reports **45,836** archived rows and **11,818** quarantined rows across **8** forked partitions on 2026-08-24. Those rows are `audit_outbox` evidence, not `customer_audit_events`, and do not prove that the current drain is healthy. | B-064 is still `open`; rerun the source-contract check and obtain a fresh production observation before closing it. |
+| billing | `B-065` records a historical detector result of **8/8** failed `billing-health-daily` runs as of 2026-08-30, with **3** event types observed under both ID schemes in the last **30 days**. This is the detector's event population, not proof of a current Stripe configuration. | Owner-only Stripe action; do not infer billing health from BYOK or audit evidence. |
+
+The command for the repository portions is fixed and non-secret:
+
+```bash
+git show origin/main:BACKLOG.md | rg -n -A45 '^### B-064|^### B-065'
+```
+
+The production portions require the owner-controlled systems and must be
+re-measured with their native read-only instruments; no credential or payload is
+to be copied into this handoff.
+
 ---
 
 ## 5. In-flight work at handoff
 
-Background agents were running against these; check the PRs' current state rather
-than assuming the work landed.
+The inventory above is the live population. The table below preserves review
+findings as historical evidence; it is not a claim that any finding is still
+unfixed. Re-open the PR at its recorded head and re-run the cold review before
+merging.
 
 | target | what was dispatched |
 |---|---|
-| `corelink-server#1531` | cold review returned **FIX-FIRST**. The B-090 `verify` uses `[^-]` to exclude `npm install -g`, which also excludes **every flag-first npm install** including `npm install --legacy-peer-deps` — the exact command the PR removes. Reviewer reintroduced it and the gate stayed **green, exit 0**. Plus 6 lower findings (wrong specifier count, neither modified lane runs on this PR, wrangler version divergence in a bundle-size claim, changelog fragment filename). |
-| `corelink-workspaces#255` | cold review returned **FIX-FIRST**. Replacing the selftest's own comparator with `if true` leaves it **green at 12/12**, and it stays green with the PR's own blocking defect reintroduced. Same hole exists at `scripts/gate-lane-selftest.sh:47` — **file that as a backlog item, it is out of scope for #255**. |
+| `corelink-server#1531` | cold review returned **FIX-FIRST**. The B-090 `verify` uses `[^-]` to exclude `npm install -g`, which also excludes **every flag-first npm install** including `npm install --legacy-peer-deps` — the exact command the PR removes. Reviewer reintroduced it and the gate stayed **green, exit 0**. Additional findings covered the specifier count, modified-lane coverage, wrangler-version provenance, and changelog fragment filename; revalidate them at the PR head before merging. |
+| `corelink-workspaces#255` | **MERGED 2026-09-01**. Its historical cold review returned **FIX-FIRST**: replacing the selftest's own comparator with `if true` left it green despite the forced mutation, and it stayed green with the PR's blocking defect reintroduced. The separate hole at `scripts/gate-lane-selftest.sh:47` remains out of scope for that merged PR; revalidate it as a new backlog item. |
 | BYOK / Buck2 / pentest residue | measuring how many published claims assert "4 providers" versus "BYOK exists", and what enabling requires beyond `--features`. |
-| C-4 contract findings | ToS SLA credits with no mechanism, `/openapi.json` serving the DevEnv spec, 13 phantom paths, 8 dead DevEnv endpoints, 4 live 404s. |
+| C-4 contract findings | Historical C-4 snapshot below: ToS SLA credits with no mechanism, `/openapi.json` serving the DevEnv spec, **13** phantom paths, **8** dead DevEnv endpoints, and **4** live legal/trust 404s. These counts belong to the C-4 report ref/time, not automatically to the current tree. |
 
-Also open and unreviewed: **#1540** (this campaign's three maintenance skills),
-**#1533/#1534/#1535/#1536/#1537/#1538/#1539**.
+At the measurement timestamp, the current server PR set also included open work
+on **#1540, #1533, #1534, #1535, #1536, #1538, #1539, and #1542–#1544**.
+`#1537` merged at 2026-09-01T17:01:37Z and is not part of the open set.
+Their review status and heads are mutable; use the inventory command above rather
+than treating this list as a dispatch ledger.
+
+### C-4 numeric provenance
+
+The C-4 figures are not one current population. The report
+`de3ec37c` is dated **2026-08-31** and states its own base as `origin/main` @
+`0dd4a31b`. Its **44** rows are capability claims over the report's published
+surface (the report enumerates **1,148** files and **512** EN files); its
+**13** phantom paths are the canonical OpenAPI YAML population discussed by
+#1542; its **8** dead DevEnv endpoints are the one production `/openapi.json`
+response sampled by #1542; and its **4** live 404s are the legal/trust-link
+population in the C-4 report. The strict route comparator used by #1539 reports
+**14** missing routes because it measures a broader documented-route population.
+These numbers must not be added together or described as a live post-merge
+count. Re-run the relevant instrument at the current ref after #1539/#1542 land.
 
 ---
 
@@ -209,8 +276,8 @@ Also open and unreviewed: **#1540** (this campaign's three maintenance skills),
   Worktrees share the clone, index and stash: **never `git add -A`** (it steals
   other sessions' WIP) and never bare `git stash` / `git stash pop`.
 - **Scratchpad filenames must be unique per agent.** Generic names have been
-  overwritten by parallel sessions, and the victim then executed the other
-  session's script in its own worktree — once producing 4,083 modified files.
+  overwritten by parallel sessions, and a victim then executed the other
+  session's script in its own worktree, producing a large unintended diff.
 - **Do not touch `~/Downloads`** — it holds B-013 private keys, an owner action.
 - **`.env.local` contains LIVE keys under `*_LIVE_*` names.** Never paste secret
   values; redact by **name**.
@@ -219,14 +286,16 @@ Also open and unreviewed: **#1540** (this campaign's three maintenance skills),
   Signed-off-by: Gustavo Schneiter <cachorronarigudo26@gmail.com>
   Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
   ```
-- **Measure the intersection of ITEMS, not themes, before opening a wave.** Two
-  waves with overlapping item lists produced four duplicate PRs that were all
-  closed.
-- **`gh api rate_limit` is blind to the secondary limit.** It read 4935/5000 while
-  the next call took a 403. The secondary limit triggers on **rate**, not volume
-  (65 calls in one second was enough), and retrying **extends** the window. The
-  fix is to **serialize**, not to wait. Architecturally: CI measurement was taken
-  *out* of the reviewers — one session measures, reviewers read code from disk.
+- **Measure the intersection of ITEMS, not themes, before opening a wave.**
+  Overlapping waves have produced duplicate PRs that were later closed; compare
+  the exact backlog IDs and owned files before dispatch.
+- **`gh api rate_limit` is blind to the secondary limit.** A prior probe read the
+  primary quota as available and the next burst still hit a secondary-limit
+  response.
+  The secondary limit triggers on **rate**, not volume, and retrying **extends**
+  the window. The fix is to **serialize**, not to wait. Architecturally: CI
+  measurement was taken *out* of the reviewers — one session measures, reviewers
+  read code from disk.
 
 ---
 
@@ -262,9 +331,10 @@ with a sibling PR.
 These are now written up as skills in `.claude/skills/` (PR #1540 at handoff):
 
 - **`verify-population`** — the dominant class: *the number is correct about the
-  set it measures, and that set is not what the sentence promises.* Six measured
-  instances. No gate catches it because tests check the number, review checks the
-  prose, and **nobody checks the join**.
+  set it measures, and that set is not what the sentence promises.* Multiple
+  measured instances are recorded in the corresponding backlog blocks. No gate
+  catches it because tests check the number, review checks the prose, and
+  **nobody checks the join**.
 - **`teeth-test`** — a gate that has never failed has not been tested. Includes a
   measured false pass where a `verify` replacement exited 0 and printed CONFIRMED
   **while running the old predicate**, having silently deleted a neighbouring
@@ -285,26 +355,38 @@ Two further rules worth carrying:
 
 ## 9. Genuinely owner-blocked (do not attempt; do not re-file)
 
-**B-008** PagerDuty escalation · **B-013** three private keys in `~/Downloads` ·
-**B-028** three advisories with no upstream patch · **B-032** Drata evidence ·
-**B-065** Stripe dashboard · **B-111** Apple/Windows certificates · **B-160**
-account plus two PATs.
+At the measured `origin/main` ref, the owner field names these 12 items:
+**B-008** PagerDuty escalation · **B-012** non-Actions CI credential · **B-013**
+three private keys in `~/Downloads` · **B-032** Drata evidence · **B-035** TLS
+contract decision · **B-065** Stripe dashboard · **B-086** D1 residency decision ·
+**B-089** SLA-credit/legal decision · **B-097** account scale/quota decision ·
+**B-110** hosted-Actions billing · **B-111** Apple/Windows certificates ·
+**B-154** executed legal instruments.
 
-Also awaiting an owner decision: the **Neon quota suspension** — the
-`corelink-fabricd` control plane has been down since 2026-08-19; either raise the
-plan or accept the degraded in-memory ledger.
+This list is the owner-field census, not a claim that all 12 are blocked by the
+same person or have the same next action. Read the corresponding backlog block
+at the measurement ref before attempting any action. In particular, the former
+references to **B-028** and **B-160** here were stale and have been removed.
+
+Also awaiting an owner decision: the **Neon quota suspension**. The
+`corelink-fabricd` control-plane status is external and must be checked live; the
+decision is whether to raise the plan or accept the degraded in-memory ledger.
 
 ---
 
 ## 10. First moves for whoever picks this up
 
 1. Re-derive §3 (backlog census, open PRs) — **do not trust the numbers above**;
-   they were true at the moment of writing.
-2. Rebase or close the conflicting PRs, counting checks against a sibling.
-3. Land the reviewed-and-fixed PRs, one cold review each, via
+   they are a timestamped snapshot. Fetch `origin/main` first and record the new
+   SHA/time.
+2. Inspect the live PR list before rebasing. #1530 is closed, #255 is merged, and
+   #256 is the current workspace PR; do not resurrect the stale references.
+3. Rebase or close only PRs that are actually conflicting, counting checks against
+   a sibling when GitHub reports `UNKNOWN`.
+4. Land the reviewed-and-fixed PRs, one cold review each, via
    `pre-merge-gate-check.sh --merge`.
-4. Get the owner's answer on BYOK scope, then freeze the contract in §4 and
+5. Get the owner's answer on BYOK scope, then freeze the contract in §4 and
    dispatch WP-1 and WP-2 in parallel.
-5. Keep writing skills as classes emerge. That is an explicit owner instruction:
+6. Keep writing skills as classes emerge. That is an explicit owner instruction:
    *"vai criando skills de manutenção com essas coisas, pra não perdermos tempo
    outras vezes."*
