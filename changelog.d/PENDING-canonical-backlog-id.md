@@ -8,7 +8,8 @@
   citation from outside resolving to whichever one it happened to hit.
 
   **The decision B-167 required has been made and recorded: of its three
-  candidate rules, the third.** An id's spelling must equal `f"B-{int(n):03d}"`.
+  candidate rules, the third, with a positive-number guard.** An id's spelling must equal
+  `f"B-{int(n):03d}"` for `n > 0`; `B-000` and every other zero form are rejected.
 
   - **Not `^B-\d{3}$`** — it closes the hole exactly for today's ids and forbids
     the day the register reaches `B-1000`, which is the caveat the item itself
@@ -17,16 +18,18 @@
   - **Not normalising only the duplicate key** — that accepts the spelling and
     rejects only the collision, so a lone `B-0500` would still merge and still
     read as a different number than it is. It refuses the alias, not the form.
-  - **`f"B-{int(n):03d}"`** canonicalises *without freezing the width*: `B-1000`
-    round-trips, and all 167 ids today already satisfy it. One spelling per
-    number, and future renumbering is not forbidden.
+  - **`f"B-{int(n):03d}"` for positive `n`** canonicalises *without freezing the width*:
+    `B-1000` round-trips, while `B-000` is rejected as non-positive. All 167 ids today
+    already satisfy it. One spelling per positive number, and future renumbering is not forbidden.
 
 ### Changed
 
-- **`scripts/test_backlog_verify.sh`: 30 cells.** The cell B-167 had pinned in its
+- **`scripts/test_backlog_verify.sh`: 32 cells.** The cell B-167 had pinned in its
   "KNOWN GAP" polarity — carrying the note that it *"must be INVERTED when B-167
   is fixed, and its failure is the reminder"* — fired, and is now inverted, as
   agreed in the file. Three new cells: the alias refused, an under-padded `B-1`
   refused, and `B-1000` accepted (the control that kills the width-freezing rule).
   The suite's own 45 non-canonical fixture ids (`B-1`, `B-2`, `B-3`, `B-42`) were
   canonicalised too — the rule applies to the test or it is not a rule.
+  Two permanent negative cells cover `B-000` and `B-00`, so zero cannot become a valid
+  alias through a different padding width.

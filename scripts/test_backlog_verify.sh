@@ -136,6 +136,13 @@ done
 cell "a canonical id is NOT flagged as malformed" 0 CONFIRMED \
   "$(item B-001 open '"true"' 2026-08-23)" "is not \`B-<digits>\`"
 
+# Zero is not an allocatable backlog id. Test two spellings so the gate cannot
+# merely reject the three-digit spelling while allowing another zero alias.
+for zero in B-000 B-00; do
+  cell "a non-positive id ($zero) is rejected" 2 "non-positive" \
+    "$(item "$zero" open '"true"' 2026-08-23)" "CONFIRMED"
+done
+
 # B-167 CLOSED — this cell was pinned in its "KNOWN GAP" polarity with the note
 # that it "must be INVERTED when B-167 is fixed, and its failure is the reminder".
 # The reminder fired; this is the inversion. `B-01` satisfies `^B-\d+$`, keeps

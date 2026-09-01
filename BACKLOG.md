@@ -9789,13 +9789,12 @@ block disagree about which item they are"*, o que é **falso** para um id malfor
 heading pode concordar perfeitamente. Um portão cuja própria mensagem descreve errado o que
 pegou é a prosa que mente primeiro. Ficaram duas listas e dois `FATAL`, ambos `rc=2`.
 
-**Resíduo nomeado, NÃO consertado — virou [B-167].** `id: B-0142` — zero à esquerda — **passa**
-com a regra `^B-\d+$` aplicada, e convive com o `B-142` real: `int("0142") == 142` mantém a
-densidade satisfeita, e a checagem de duplicata compara **strings**, então `B-0142` e `B-142`
-não colidem. É um **alias silencioso**. A regra geral era necessária e não é suficiente; a
-forma canônica também precisa recusar zero à esquerda, e essa decisão (`B-\d{3}`? quantos
-dígitos? e o dia em que houver `B-1000`?) não é a deste item. O `FATAL` novo diz isso em voz
-alta, citando o `B-167`, para o próximo leitor não achar que a cobertura é total.
+**Resíduo nomeado, fechado em [B-167].** Antes desse reparo, `id: B-0142` — zero à esquerda —
+**passava** com a regra `^B-\d+$` aplicada e convivia com o `B-142` real: `int("0142") == 142`
+mantinha a densidade satisfeita, e a checagem de duplicata comparava **strings**, então
+`B-0142` e `B-142` não colidiam. Era um **alias silencioso**. O [B-167] escolheu a forma
+canônica, recusa grafias não-canônicas e também rejeita ids não-positivos; o portão agora
+descreve a violação sem alegar que essa cobertura ainda falta.
 
 ```backlog
 id: B-143
@@ -9862,9 +9861,9 @@ verify-means: |
   de 100 blocos lidos) **ou defeito vivo** — um id malformado já está em `BACKLOG.md` agora,
   que merece parar tudo em vez de virar aviso.
 
-  **Fora de alcance de propósito, e agora rastreado:** `id: B-0142` — zero à esquerda — passa
-  com `^B-\d+$` e cria alias silencioso do `B-142`. É o **[B-167]**, item próprio; este portão
-  não finge cobrir isso, e o `FATAL` do script o nomeia.
+  **Cobertura transferida para [B-167]:** antes do reparo, `id: B-0142` — zero à esquerda —
+  passava com `^B-\d+$` e criava alias silencioso do `B-142`. A forma canônica e a positividade
+  agora são portões próprios em `backlog_verify.py`; este item não duplica a decisão.
 last-verified: 2026-08-31
 ```
 
@@ -11956,16 +11955,17 @@ verify-means: |
 last-verified: 2026-08-31
 ```
 
-### B-167 — `id: B-0142` é um alias silencioso do `B-142`: a forma canônica do id não recusa zero à esquerda
+### B-167 — `id: B-0142` era um alias silencioso do `B-142`: a forma canônica do id não recusava zero à esquerda — FECHADO
 
-Resíduo **nomeado e não consertado** do [B-143], separado porque exige uma decisão que aquele
-item não tomava.
+Achado **derivado e fechado** do [B-143], separado porque exigia uma decisão que aquele item
+não tomava.
 
-O [B-143] fechou a porta grande: `scripts/backlog_verify.py` agora recusa por nome qualquer
-`id:` que não case `^B-\d+$` — `B-UNALLOCATED`, `B-131a`, `b-131`, `B-TBD`. A regra geral era
-necessária. **Não é suficiente.**
+O [B-143] havia fechado a porta grande: `scripts/backlog_verify.py` passou a recusar por nome
+qualquer `id:` que não casasse `^B-\d+$` — `B-UNALLOCATED`, `B-131a`, `b-131`, `B-TBD`. A
+regra geral era necessária, mas **não era suficiente** para as grafias numéricas alternativas.
 
-`id: B-0142` casa `^B-\d+$` e convive com o `B-142` real, sem nenhum portão reclamar:
+Antes do reparo, `id: B-0142` casava `^B-\d+$` e convivia com o `B-142` real, sem nenhum portão
+reclamar:
 
 - a **densidade** faz `int(m.group(1))`, e `int("0142") == 142` — a sequência continua densa,
   nenhuma lacuna aparece;
@@ -12020,9 +12020,11 @@ verify: |
       sys.exit(2)
   ids = [m.group(1) for b in blocks if (m := re.search(r"(?m)^id:\s*(\S+)", b))]
   vivos = [i for i in ids
-           if (m := re.fullmatch(r"B-(\d+)", i)) and i != f"B-{int(m.group(1)):03d}"]
+           if (m := re.fullmatch(r"B-(\d+)", i))
+           and (int(m.group(1)) <= 0 or i != f"B-{int(m.group(1)):03d}")]
   if vivos:
-      print("DEFEITO VIVO: id nao-canonico ja esta em BACKLOG.md: " + ", ".join(vivos), file=sys.stderr)
+      print("DEFEITO VIVO: id nao-canonico ou nao-positivo ja esta em BACKLOG.md: "
+            + ", ".join(vivos), file=sys.stderr)
       sys.exit(2)
   alvo = "B-142"
   if alvo not in ids:

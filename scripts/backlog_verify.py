@@ -271,6 +271,7 @@ def main() -> int:
     # The rule must be the GENERAL form, never a match on the literal placeholder:
     # a gate that greps for `B-UNALLOCATED` is decorative.
     malformed_ids: list[str] = []
+    non_positive_ids: list[str] = []
     for m in BLOCK_RE.finditer(text):
         line = text[: m.start()].count("\n") + 1
         block_id = ""
@@ -300,7 +301,13 @@ def main() -> int:
         # (`f"B-{1000:03d}" == "B-1000"`), and all 167 ids today already satisfy it.
         canonical = ""
         if (mm := re.fullmatch(r"B-(\d+)", block_id)):
-            canonical = f"B-{int(mm.group(1)):03d}"
+            number = int(mm.group(1))
+            if number <= 0:
+                non_positive_ids.append(
+                    f"  line {line}: block `id: {block_id}` is non-positive — write it as `B-001` or greater"
+                )
+                continue
+            canonical = f"B-{number:03d}"
         if not canonical:
             malformed_ids.append(
                 f"  line {line}: block `id: {block_id or '<missing>'}` is not `B-<digits>`"
@@ -394,9 +401,17 @@ def main() -> int:
             + "\nA placeholder or malformed id is invisible to BOTH loud checks: it opens\n"
             "no gap in the density rule and collides with nothing, so it merges in\n"
             "silence. Allocate the real id before merging.\n"
-            "KNOWN RESIDUE (B-167): a leading-zero id such as `B-0142` satisfies this\n"
-            "rule and still aliases `B-142` — `int(\"0142\") == 142` keeps density happy\n"
-            "and the duplicate check compares strings. This check does NOT cover it.",
+            "A non-canonical id is rejected before density or duplicate checks, so it cannot\n"
+            "silently alias another item. Allocate the canonical positive id before merging.",
+            file=sys.stderr,
+        )
+        return 2
+
+    if non_positive_ids:
+        print(
+            "FATAL: backlog block(s) with a non-positive id.\n"
+            + "\n".join(non_positive_ids)
+            + "\nIds are positive integers; B-000 and other zero forms are not allocatable.",
             file=sys.stderr,
         )
         return 2
