@@ -271,6 +271,7 @@ def main() -> int:
     # The rule must be the GENERAL form, never a match on the literal placeholder:
     # a gate that greps for `B-UNALLOCATED` is decorative.
     malformed_ids: list[str] = []
+    non_positive_ids: list[str] = []
     for m in BLOCK_RE.finditer(text):
         line = text[: m.start()].count("\n") + 1
         block_id = ""
@@ -280,9 +281,43 @@ def main() -> int:
                 block_id = str(data.get("id", ""))
         except yaml.YAMLError:
             continue  # already reported as BROKEN by parse()
-        if not re.fullmatch(r"B-\d+", block_id):
+        # B-167 — THE CANONICAL FORM, and the choice the item required be made.
+        #
+        # `^B-\d+$` was necessary and NOT sufficient. `B-0142` satisfies it and
+        # coexists with the real `B-142`: density does `int("0142") == 142` so the
+        # sequence stays dense, the duplicate check compares STRINGS so nothing
+        # collides, and a `### B-0142` heading satisfies the heading/block check.
+        # Two items every human reads as one number, both CONFIRMED, and every
+        # `[B-142]` citation from outside resolving to whichever one it hits.
+        #
+        # Of the three rules B-167 enumerated, this is the THIRD: the spelling must
+        # equal `f"B-{int(n):03d}"`.
+        #   - NOT `^B-\d{3}$`: that closes the hole exactly for today's ids and
+        #     forbids the day there is a `B-1000`.
+        #   - NOT normalising only the duplicate key: that accepts the spelling and
+        #     rejects only the collision, so `B-0500` would still merge as a lone
+        #     item and read as a different number than it is.
+        # This one canonicalises WITHOUT freezing the width — `B-1000` round-trips
+        # (`f"B-{1000:03d}" == "B-1000"`), and all 167 ids today already satisfy it.
+        canonical = ""
+        if (mm := re.fullmatch(r"B-(\d+)", block_id)):
+            number = int(mm.group(1))
+            if number <= 0:
+                non_positive_ids.append(
+                    f"  line {line}: block `id: {block_id}` is non-positive — write it as `B-001` or greater"
+                )
+                continue
+            canonical = f"B-{number:03d}"
+        if not canonical:
             malformed_ids.append(
                 f"  line {line}: block `id: {block_id or '<missing>'}` is not `B-<digits>`"
+            )
+            continue
+        if block_id != canonical:
+            malformed_ids.append(
+                f"  line {line}: block `id: {block_id}` is not canonical — write it as "
+                f"`{canonical}`. A zero-padded variant aliases the real item silently: "
+                f"density satisfies int(), and the duplicate check compares strings"
             )
             continue
         prior = [h for pos, h in headings if pos < m.start()]
@@ -366,9 +401,17 @@ def main() -> int:
             + "\nA placeholder or malformed id is invisible to BOTH loud checks: it opens\n"
             "no gap in the density rule and collides with nothing, so it merges in\n"
             "silence. Allocate the real id before merging.\n"
-            "KNOWN RESIDUE (B-167): a leading-zero id such as `B-0142` satisfies this\n"
-            "rule and still aliases `B-142` — `int(\"0142\") == 142` keeps density happy\n"
-            "and the duplicate check compares strings. This check does NOT cover it.",
+            "A non-canonical id is rejected before density or duplicate checks, so it cannot\n"
+            "silently alias another item. Allocate the canonical positive id before merging.",
+            file=sys.stderr,
+        )
+        return 2
+
+    if non_positive_ids:
+        print(
+            "FATAL: backlog block(s) with a non-positive id.\n"
+            + "\n".join(non_positive_ids)
+            + "\nIds are positive integers; B-000 and other zero forms are not allocatable.",
             file=sys.stderr,
         )
         return 2

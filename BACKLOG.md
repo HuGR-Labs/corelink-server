@@ -9850,13 +9850,12 @@ block disagree about which item they are"*, o que é **falso** para um id malfor
 heading pode concordar perfeitamente. Um portão cuja própria mensagem descreve errado o que
 pegou é a prosa que mente primeiro. Ficaram duas listas e dois `FATAL`, ambos `rc=2`.
 
-**Resíduo nomeado, NÃO consertado — virou [B-167].** `id: B-0142` — zero à esquerda — **passa**
-com a regra `^B-\d+$` aplicada, e convive com o `B-142` real: `int("0142") == 142` mantém a
-densidade satisfeita, e a checagem de duplicata compara **strings**, então `B-0142` e `B-142`
-não colidem. É um **alias silencioso**. A regra geral era necessária e não é suficiente; a
-forma canônica também precisa recusar zero à esquerda, e essa decisão (`B-\d{3}`? quantos
-dígitos? e o dia em que houver `B-1000`?) não é a deste item. O `FATAL` novo diz isso em voz
-alta, citando o `B-167`, para o próximo leitor não achar que a cobertura é total.
+**Resíduo nomeado, fechado em [B-167].** Antes desse reparo, `id: B-0142` — zero à esquerda —
+**passava** com a regra `^B-\d+$` aplicada e convivia com o `B-142` real: `int("0142") == 142`
+mantinha a densidade satisfeita, e a checagem de duplicata comparava **strings**, então
+`B-0142` e `B-142` não colidiam. Era um **alias silencioso**. O [B-167] escolheu a forma
+canônica, recusa grafias não-canônicas e também rejeita ids não-positivos; o portão agora
+descreve a violação sem alegar que essa cobertura ainda falta.
 
 ```backlog
 id: B-143
@@ -9923,9 +9922,9 @@ verify-means: |
   de 100 blocos lidos) **ou defeito vivo** — um id malformado já está em `BACKLOG.md` agora,
   que merece parar tudo em vez de virar aviso.
 
-  **Fora de alcance de propósito, e agora rastreado:** `id: B-0142` — zero à esquerda — passa
-  com `^B-\d+$` e cria alias silencioso do `B-142`. É o **[B-167]**, item próprio; este portão
-  não finge cobrir isso, e o `FATAL` do script o nomeia.
+  **Cobertura transferida para [B-167]:** antes do reparo, `id: B-0142` — zero à esquerda —
+  passava com `^B-\d+$` e criava alias silencioso do `B-142`. A forma canônica e a positividade
+  agora são portões próprios em `backlog_verify.py`; este item não duplica a decisão.
 last-verified: 2026-08-31
 ```
 
@@ -12017,16 +12016,17 @@ verify-means: |
 last-verified: 2026-08-31
 ```
 
-### B-167 — `id: B-0142` é um alias silencioso do `B-142`: a forma canônica do id não recusa zero à esquerda
+### B-167 — `id: B-0142` era um alias silencioso do `B-142`: a forma canônica do id não recusava zero à esquerda — FECHADO
 
-Resíduo **nomeado e não consertado** do [B-143], separado porque exige uma decisão que aquele
-item não tomava.
+Achado **derivado e fechado** do [B-143], separado porque exigia uma decisão que aquele item
+não tomava.
 
-O [B-143] fechou a porta grande: `scripts/backlog_verify.py` agora recusa por nome qualquer
-`id:` que não case `^B-\d+$` — `B-UNALLOCATED`, `B-131a`, `b-131`, `B-TBD`. A regra geral era
-necessária. **Não é suficiente.**
+O [B-143] havia fechado a porta grande: `scripts/backlog_verify.py` passou a recusar por nome
+qualquer `id:` que não casasse `^B-\d+$` — `B-UNALLOCATED`, `B-131a`, `b-131`, `B-TBD`. A
+regra geral era necessária, mas **não era suficiente** para as grafias numéricas alternativas.
 
-`id: B-0142` casa `^B-\d+$` e convive com o `B-142` real, sem nenhum portão reclamar:
+Antes do reparo, `id: B-0142` casava `^B-\d+$` e convivia com o `B-142` real, sem nenhum portão
+reclamar:
 
 - a **densidade** faz `int(m.group(1))`, e `int("0142") == 142` — a sequência continua densa,
   nenhuma lacuna aparece;
@@ -12038,22 +12038,35 @@ necessária. **Não é suficiente.**
 O resultado é dois itens que qualquer humano lê como o mesmo número, ambos CONFIRMED, e toda
 citação de fora (`[B-142]`) apontando para um dos dois por acidente.
 
-**A decisão que falta, e é por isso que não entrou no [B-143]:** qual é a forma canônica.
-Todos os 167 ids de hoje são `B-` + **três** dígitos zero-padded, então `^B-\d{3}$` fecha o
-buraco exatamente — e proíbe o dia em que houver `B-1000`. As alternativas — normalizar por
-`int()` na checagem de duplicata (aceita a grafia, recusa o alias), ou exigir que a grafia
-seja igual a `f"B-{int(n):03d}"` (canoniza sem travar a largura) — mudam o que acontece com
-uma renumeração futura. Não é edição de uma linha; é escolher o contrato do id.
+**Consertado 2026-08-31 — e a decisão que faltava foi TOMADA e registrada.**
 
-**O que este item NÃO decide:** se ids devem virar largura variável. Ele exige que **uma**
-grafia seja canônica e que as outras sejam recusadas por nome, não qual das três regras
-implementa isso.
+**A regra escolhida, das três que este item enumerou, é a terceira:** a grafia tem de ser
+igual a `f"B-{int(n):03d}"`.
+
+- **NÃO `^B-\d{3}$`** — fecha o buraco exatamente para os ids de hoje e **proíbe o dia em que
+  houver `B-1000`**, que é a ressalva que o próprio item levanta. Esse mutante passa em todas
+  as outras células do arquivo de teste e morre só na célula do `B-1000`, que existe para isso.
+- **NÃO normalizar apenas a chave de duplicata** — aceita a grafia e recusa só a colisão, então
+  um `B-0500` sozinho continuaria mergeando e continuaria sendo lido como número diferente do
+  que é. Recusa o alias, não a forma.
+- **Sim `f"B-{int(n):03d}"`** — canoniza **sem congelar a largura**: `B-1000` faz round-trip
+  (`f"B-{1000:03d}" == "B-1000"`), e os 167 ids de hoje já a satisfazem. Uma grafia por número,
+  e a renumeração futura não fica proibida.
+
+Recusa por nome, com a grafia certa impressa (`write it as B-142`), no mesmo ponto onde o
+[B-143] recusa as formas malformadas.
+
+Três células novas em `scripts/test_backlog_verify.sh`, e a célula que este item havia fixado
+na polaridade "KNOWN GAP" — com a nota *"must be INVERTED when B-167 is fixed, and its failure
+is the reminder"* — foi **invertida**, que era o combinado. Os 45 ids de fixture não-canônicos
+do arquivo (`B-1`, `B-2`, `B-3`, `B-42`) foram canonizados junto: a regra vale para o teste
+também, senão ela não valeria.
 
 ```backlog
 id: B-167
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   python3 - <<'PY'
   import re, subprocess, sys, tempfile, pathlib
@@ -12068,9 +12081,11 @@ verify: |
       sys.exit(2)
   ids = [m.group(1) for b in blocks if (m := re.search(r"(?m)^id:\s*(\S+)", b))]
   vivos = [i for i in ids
-           if (m := re.fullmatch(r"B-(\d+)", i)) and i != f"B-{int(m.group(1)):03d}"]
+           if (m := re.fullmatch(r"B-(\d+)", i))
+           and (int(m.group(1)) <= 0 or i != f"B-{int(m.group(1)):03d}")]
   if vivos:
-      print("DEFEITO VIVO: id nao-canonico ja esta em BACKLOG.md: " + ", ".join(vivos), file=sys.stderr)
+      print("DEFEITO VIVO: id nao-canonico ou nao-positivo ja esta em BACKLOG.md: "
+            + ", ".join(vivos), file=sys.stderr)
       sys.exit(2)
   alvo = "B-142"
   if alvo not in ids:
@@ -12087,31 +12102,48 @@ verify: |
                          capture_output=True, text=True)
   out = r.stdout + r.stderr
   if r.returncode == 0 and "CONFIRMED" in out:
-      print(f"AINDA ABERTO: `id: {alias}` sai CONFIRMED convivendo com o {alvo} real — "
-            "densidade satisfeita por int(), duplicata comparada como string.")
-      sys.exit(0)
-  print(f"FECHADO?: o script recusou `{alias}` (rc={r.returncode}). Confirme QUAL regra "
-        "canonica entrou e atualize este item com a escolha.\n" + out.strip())
-  sys.exit(1)
+      print(f"REGRESSAO: `id: {alias}` voltou a sair CONFIRMED convivendo com o {alvo} real — "
+            "densidade satisfeita por int(), duplicata comparada como string. A regra canonica sumiu.")
+      sys.exit(1)
+  if "is not canonical" not in out:
+      print(f"FALHA: `{alias}` foi recusado (rc={r.returncode}) mas NAO pela regra canonica — "
+            "pode estar sendo pego por outra checagem, por acidente. Releia antes de confiar "
+            "neste portao.\n" + out.strip())
+      sys.exit(1)
+  # CONTROLE NEGATIVO: uma regra que recusasse TODO id satisfaria o teste acima e
+  # reprovaria os 167 itens do arquivo. O `B-168` canonico tem de continuar passando.
+  ctl = "B-168"
+  probe_ctl = (f"\n### {ctl} — sonda\n\nSonda de controle do verify do B-167.\n\n"
+               f"```backlog\nid: {ctl}\nrepo: corelink-server\nowner: tl\n"
+               'status: open\nverify: "true"\nverify-means: sonda\nlast-verified: 2026-08-31\n```\n')
+  with tempfile.TemporaryDirectory() as d:
+      f = pathlib.Path(d, "ctl.md"); f.write_text(text + probe_ctl)
+      rc2 = subprocess.run([sys.executable, str(script), "--file", str(f), "--id", ctl],
+                           capture_output=True, text=True)
+  if rc2.returncode != 0 or "CONFIRMED" not in (rc2.stdout + rc2.stderr):
+      print(f"CONTROLE NEGATIVO FALHOU: um id canonico novo ({ctl}) foi recusado "
+            f"(rc={rc2.returncode}) — a regra virou recusa-tudo.\n" + (rc2.stdout + rc2.stderr).strip()[:400])
+      sys.exit(1)
+  print(f"fechado: `{alias}` recusado pela forma canonica, e o {ctl} canonico ainda passa")
+  sys.exit(0)
   PY
 verify-means: |
-  **Polaridade `open`:** sai 0 — aberto — enquanto `backlog_verify.py` continuar dando
-  CONFIRMED a `id: B-0142` num arquivo que já contém o `B-142` real. É um **controle
+  **Polaridade `done`:** sai 0 — fechado — enquanto `backlog_verify.py` recusar
+  `id: B-0142` pela forma canônica e o controle `B-168` continuar passando. É um **controle
   positivo**: planta a sonda numa cópia descartável e roda o script de verdade contra ela.
-  Não pode passar por vacuidade — dizer "ainda aberto" exige o portão genuinamente aprovar o
-  alias.
+  Não pode passar por vacuidade — dizer "fechado" exige o portão genuinamente recusar o
+  alias pela regra escolhida.
 
   A sonda usa `--id B-0142`, então **um único** `verify` roda (`"true"`); nunca dispara a
   matriz de ~140 comandos externos que um `backlog_verify.py` sem `--id` dispara.
 
-  **Três desfechos, nenhum silencioso:** 0 = alias aceito (aberto); 1 = o script passou a
-  recusar — reveja e feche, **registrando qual das três regras entrou**, porque elas diferem
-  no que permitem depois; 2 = instrumento quebrado (arquivo sumiu, menos de 100 blocos, ou o
-  `B-142` sumiu e a sonda perdeu o par) **ou defeito vivo** — um id não-canônico já está no
-  arquivo agora.
+  **Três desfechos, nenhum silencioso:** 0 = alias recusado pela forma canônica (fechado);
+  1 = o alias voltou a ser aceito, ou a recusa veio de outra checagem — reabra e investigue;
+  2 = instrumento quebrado (arquivo sumiu, menos de 100 blocos, ou o `B-142` sumiu e a sonda
+  perdeu o par) **ou defeito vivo** — um id não-canônico já está no arquivo agora.
 
   **O alvo do alias é verificado, não suposto.** Se o `B-142` deixar de existir, a sonda
-  deixa de ser um alias de coisa nenhuma e o comando falha alto em vez de reportar "aberto"
+  deixa de ser um alias de coisa nenhuma e o comando falha alto em vez de reportar "fechado"
   sobre um teste que não testa mais nada.
 last-verified: 2026-08-31
 ```
