@@ -10,6 +10,12 @@ on:
   pull_request:
     paths:
       - "apps/signup-worker/**"
+      - ".github/workflows/signup-worker-vitest.yml"
+      - ".github/actions/setup-pnpm/action.yml"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - "scripts/check_signup_worker_pin.py"
   workflow_dispatch:
 
 concurrency:
@@ -42,6 +48,10 @@ jobs:
       - name: Install dependencies
         working-directory: .
         run: pnpm install --frozen-lockfile --filter @corelink/signup-worker... --ignore-scripts
+
+      - name: Verify signup-worker lockfile pin
+        working-directory: .
+        run: python3 scripts/check_signup_worker_pin.py
 
       - name: Run vitest + coverage floor
         # `--coverage` is LOAD-BEARING: vitest only evaluates the
