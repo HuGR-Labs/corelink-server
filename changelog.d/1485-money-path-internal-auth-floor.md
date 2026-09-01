@@ -7,8 +7,10 @@
   superfície interna já resolvia por `resolve_internal_auth_key` com piso de **32**. Eram
   os dois únicos arquivos de fora — e justamente os dois por onde passam dinheiro e
   consentimento. Ambos agora resolvem pelo helper, com variável dedicada
-  (`CORELINK_TIER_SELECT_AUTH_KEY`, `CORELINK_DPA_ACCEPT_AUTH_KEY`) e fallback
-  documentado para a compartilhada, fechando as duas metades do defeito: a entropia e a
+  (`CORELINK_TIER_SELECT_AUTH_KEY`, `CORELINK_DPA_ACCEPT_AUTH_KEY`) e fallback para a
+  compartilhada **somente quando a dedicada está ausente**. Uma dedicada em branco,
+  composta apenas de espaço ou abaixo do piso falha fechada e não amplia autorização
+  para a chave compartilhada, fechando as duas metades do defeito: a entropia e a
   ausência de caminho de rotação para credencial própria.
 
   **Nota de operação:** se o segredo compartilhado vivo em produção tiver menos de 32

@@ -549,9 +549,9 @@ const ONBOARDING_AUTH_KEY_MIN_LENGTH = 32;
 /**
  * Resolve the authority for an onboarding endpoint without collapsing the two
  * money paths into the generic onboarding credential. A dedicated key is
- * allowed to fall back only when it is absent. A present-but-short key is an
- * operator misconfiguration and must fail closed rather than widening that
- * endpoint back to the shared authority.
+ * allowed to fall back only when it is absent. A present-but-short or
+ * whitespace-only key is an operator misconfiguration and must fail closed
+ * rather than widening that endpoint back to the shared authority.
  *
  * Non-money onboarding routes deliberately retain their existing shared-key
  * behavior; this function only applies the 32-character floor to the two
@@ -568,7 +568,9 @@ function resolveOnboardingAuthKey(pathSuffix: string, env: Env): string | null {
   }
 
   if (dedicatedKey !== undefined) {
-    return dedicatedKey.length >= ONBOARDING_AUTH_KEY_MIN_LENGTH ? dedicatedKey : null;
+    return dedicatedKey.length >= ONBOARDING_AUTH_KEY_MIN_LENGTH && dedicatedKey.trim().length > 0
+      ? dedicatedKey
+      : null;
   }
 
   const sharedKey = env.CORELINK_INTERNAL_AUTH_KEY;

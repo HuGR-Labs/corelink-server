@@ -4524,7 +4524,7 @@ verify: |
       ruim=$((ruim+1)); det="$det $(basename $f):piso-16"
     fi
   done
-  for a in CORELINK_TIER_SELECT_AUTH_KEY CORELINK_DPA_ACCEPT_AUTH_KEY POSITIVE CONTROL FAILED; do
+  for a in CORELINK_TIER_SELECT_AUTH_KEY CORELINK_DPA_ACCEPT_AUTH_KEY "positive control"; do
     grep -q "$a" "$t" || { ruim=$((ruim+1)); det="$det teste:sem-$a"; }
   done
   [ "$ruim" = 0 ] || { echo "REGRESSAO B-074: $ruim defeito(s) —$det"; exit 1; }

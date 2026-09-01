@@ -199,6 +199,25 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
     expect(captured.req).toBeUndefined();
   });
 
+  it("fails CLOSED before the DO when the dedicated money key is whitespace-only", async () => {
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_abc",
+      azp: "https://humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
+    const captured: { req?: Request } = {};
+    const env = makeOnbEnv({
+      captured,
+      clerkUserToTenant: new Map([["user_abc", "acme-default"]]),
+      tierSelectKey: " ".repeat(32),
+    });
+
+    const resp = await onbFetch(env, { Authorization: "Bearer clerk.jwt.token" });
+
+    expect(resp.status).toBe(403);
+    expect(captured.req).toBeUndefined();
+  });
+
   it("keeps non-money onboarding on its existing shared-key path", async () => {
     mockVerifyToken.mockResolvedValue({
       sub: "user_abc",

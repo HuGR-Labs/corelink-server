@@ -168,7 +168,10 @@ fn classify_and_refuse(
     let _ = stream.set_read_timeout(Some(Duration::from_secs(1)));
     let mut request = [0_u8; 1024];
     let bytes_read = stream.read(&mut request).unwrap_or(0);
-    if request[..bytes_read].starts_with(b"CONNECT ") {
+    if request
+        .get(..bytes_read)
+        .is_some_and(|request| request.starts_with(b"CONNECT "))
+    {
         d1_requests.fetch_add(1, Ordering::AcqRel);
     } else {
         stripe_requests.fetch_add(1, Ordering::AcqRel);
@@ -300,8 +303,8 @@ fn assert_no_effects(probe: &EffectProbe, route: &str, case: &str) {
     );
 }
 
-#[tokio::test(flavor = "current_thread")]
-async fn money_path_enforces_resolver_matrix_and_stops_unauthenticated_requests_before_effects(
+#[test]
+fn money_path_enforces_resolver_matrix_and_stops_unauthenticated_requests_before_effects(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let _env = EnvGuard::capture(ENV_VARS);
     let probe = EffectProbe::start()?;
@@ -329,80 +332,91 @@ async fn money_path_enforces_resolver_matrix_and_stops_unauthenticated_requests_
     env::set_var("CORELINK_DPA_ACCEPT_AUTH_KEY", KEY_64);
     let dpa_state = dpa_accept::build_state_from_env().ok_or("dpa-accept did not mount")?;
 
-    // Positive controls: a correct dedicated key crosses the handler gate and
-    // reaches the first durable D1 boundary exactly once. The probe refuses
-    // that request, so neither test can accidentally call the internet.
-    probe.reset();
-    let response = tier_select::router(tier_state.clone())
-        .oneshot(tier_request(KEY_64)?)
-        .await?;
-    assert_ne!(
-        response.status(),
-        StatusCode::UNAUTHORIZED,
-        "tier-select positive control must clear auth"
-    );
-    assert_eq!(
-        probe.d1_requests(),
-        1,
-        "tier-select positive control must reach D1 exactly once"
-    );
-    assert_eq!(
-        probe.stripe_requests(),
-        0,
-        "tier-select audit failure must stop before Stripe"
-    );
-
-    probe.reset();
-    let response = dpa_accept::router(dpa_state.clone())
-        .oneshot(dpa_request(KEY_64)?)
-        .await?;
-    assert_ne!(
-        response.status(),
-        StatusCode::UNAUTHORIZED,
-        "dpa-accept positive control must clear auth"
-    );
-    assert_eq!(
-        probe.d1_requests(),
-        1,
-        "dpa-accept positive control must reach D1 exactly once"
-    );
-    assert_eq!(
-        probe.stripe_requests(),
-        0,
-        "dpa-accept has no Stripe collaborator"
-    );
-
-    // Both a wrong same-length value and the valid-but-wrong shared key must
-    // return 401 before D1, Stripe, or consent persistence. Exact zeroes make
-    // the "before effects" assertion observable instead of documentary.
-    for (case, presented) in [
-        ("wrong", WRONG_KEY_64),
-        ("shared-mismatch", OTHER_KEY_64),
-        ("empty", ""),
-    ] {
+    // `D1Http*Store` owns a blocking reqwest client. It must be dropped after,
+    // not inside, an async runtime; otherwise reqwest attempts its blocking
+    // shutdown while Tokio forbids blocking and panics. Keep state outside this
+    // deliberately scoped runtime, then run only the router futures inside it.
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    let result = runtime.block_on(async {
+        // Positive controls: a correct dedicated key crosses the handler gate and
+        // reaches the first durable D1 boundary exactly once. The probe refuses
+        // that request, so neither test can accidentally call the internet.
         probe.reset();
         let response = tier_select::router(tier_state.clone())
-            .oneshot(tier_request(presented)?)
+            .oneshot(tier_request(KEY_64)?)
             .await?;
-        assert_eq!(
+        assert_ne!(
             response.status(),
             StatusCode::UNAUTHORIZED,
-            "tier-select: {case} auth must return 401"
+            "tier-select positive control must clear auth"
         );
-        assert_no_effects(&probe, "tier-select", case);
+        assert_eq!(
+            probe.d1_requests(),
+            1,
+            "tier-select positive control must reach D1 exactly once"
+        );
+        assert_eq!(
+            probe.stripe_requests(),
+            0,
+            "tier-select audit failure must stop before Stripe"
+        );
 
         probe.reset();
         let response = dpa_accept::router(dpa_state.clone())
-            .oneshot(dpa_request(presented)?)
+            .oneshot(dpa_request(KEY_64)?)
             .await?;
-        assert_eq!(
+        assert_ne!(
             response.status(),
             StatusCode::UNAUTHORIZED,
-            "dpa-accept: {case} auth must return 401"
+            "dpa-accept positive control must clear auth"
         );
-        assert_no_effects(&probe, "dpa-accept", case);
-    }
+        assert_eq!(
+            probe.d1_requests(),
+            1,
+            "dpa-accept positive control must reach D1 exactly once"
+        );
+        assert_eq!(
+            probe.stripe_requests(),
+            0,
+            "dpa-accept has no Stripe collaborator"
+        );
 
+        // Both a wrong same-length value and the valid-but-wrong shared key must
+        // return 401 before D1, Stripe, or consent persistence. Exact zeroes make
+        // the "before effects" assertion observable instead of documentary.
+        for (case, presented) in [
+            ("wrong", WRONG_KEY_64),
+            ("shared-mismatch", OTHER_KEY_64),
+            ("empty", ""),
+        ] {
+            probe.reset();
+            let response = tier_select::router(tier_state.clone())
+                .oneshot(tier_request(presented)?)
+                .await?;
+            assert_eq!(
+                response.status(),
+                StatusCode::UNAUTHORIZED,
+                "tier-select: {case} auth must return 401"
+            );
+            assert_no_effects(&probe, "tier-select", case);
+
+            probe.reset();
+            let response = dpa_accept::router(dpa_state.clone())
+                .oneshot(dpa_request(presented)?)
+                .await?;
+            assert_eq!(
+                response.status(),
+                StatusCode::UNAUTHORIZED,
+                "dpa-accept: {case} auth must return 401"
+            );
+            assert_no_effects(&probe, "dpa-accept", case);
+        }
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    });
+    drop(runtime);
     clear_auth_env();
-    Ok(())
+    result
 }
