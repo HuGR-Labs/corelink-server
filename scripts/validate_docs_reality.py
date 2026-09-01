@@ -96,7 +96,8 @@ Exit contract (mirrors validate_okf.py / validate_specs.py):
     non-zero -> per-check offender list, then
                 "DOCS-REALITY INVALID: <k> failures"
 
-Dependencies: Python stdlib only (json + re + argparse). No PyYAML required.
+Dependencies: Python stdlib only (json + re + argparse + urllib.parse). No PyYAML
+required.
 """
 
 from __future__ import annotations
@@ -108,6 +109,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 # ---------------------------------------------------------------------------
 # Repo layout
@@ -591,9 +593,41 @@ def endpoint_resolves(path: str, route_regexes: list[re.Pattern] | RouteInventor
     return False
 
 
-_DOC_PATH_RE = re.compile(r"(grpcs?://[A-Za-z0-9./_{}:-]+|/(?:v1|v2|turbo|bazel|"
-                          r"npm|nix|cache|cas|ac|sccache|pip|cargo|brew)"
-                          r"[A-Za-z0-9/_{}:.-]*)")
+_URI_TOKEN_CHARS = r"[^\s<>\"'`]"
+_DOC_PATH_RE = re.compile(
+    r"([A-Za-z][A-Za-z0-9+.-]*://" + _URI_TOKEN_CHARS + r"+|/(?:v1|v2|turbo|bazel|"
+    r"npm|nix|cache|cas|ac|sccache|pip|cargo|brew)" + _URI_TOKEN_CHARS + r"*)"
+)
+
+
+def _strip_doc_block_comments(line: str, closing: str | None) -> tuple[str, str | None]:
+    """Remove C/HTML block comments while carrying state across lines.
+
+    Fenced shell examples sometimes use a multi-line ``/* ... */`` or
+    ``<!-- ... -->`` wrapper. Looking only at the first character of each line
+    lets a route-shaped line in the middle of that wrapper through.
+    """
+    openings = (("/*", "*/"), ("<!--", "-->"))
+    visible: list[str] = []
+    pos = 0
+    while pos < len(line):
+        if closing is not None:
+            end = line.find(closing, pos)
+            if end < 0:
+                return "".join(visible), closing
+            pos = end + len(closing)
+            closing = None
+            continue
+        starts = [(line.find(opening, pos), terminator)
+                  for opening, terminator in openings]
+        starts = [(at, terminator) for at, terminator in starts if at >= 0]
+        if not starts:
+            visible.append(line[pos:])
+            break
+        at, closing = min(starts, key=lambda item: item[0])
+        visible.append(line[pos:at])
+        pos = at + (2 if closing == "*/" else 4)
+    return "".join(visible), closing
 
 
 def extract_doc_endpoints(doc: DocFile) -> list[tuple[int, str]]:
@@ -602,21 +636,25 @@ def extract_doc_endpoints(doc: DocFile) -> list[tuple[int, str]]:
     lines = doc.text.splitlines()
     in_fence = False
     fence_marker = ""
+    fenced_comment: str | None = None
     for idx, ln in enumerate(lines, start=1):
         fm = _FENCE_RE.match(ln)
         if fm and (not in_fence or ln.strip().startswith(fence_marker)):
             if not in_fence:
                 in_fence = True
                 fence_marker = fm.group(2)[0] * 3
+                fenced_comment = None
             else:
                 in_fence = False
+                fenced_comment = None
             continue
         candidates = []
         if in_fence:
+            ln, fenced_comment = _strip_doc_block_comments(ln, fenced_comment)
             # A commented-out example is prose, not a customer invocation.
             # Keep this narrow: executable shell commands and structured code
             # remain eligible for endpoint extraction.
-            if re.match(r"^\s*(?:#|//|/\*|\*|<!--)", ln):
+            if re.match(r"^\s*(?:#|//|/\*|\*|<!--|-->)", ln):
                 continue
             candidates = _DOC_PATH_RE.findall(ln)
         else:
@@ -628,14 +666,39 @@ def extract_doc_endpoints(doc: DocFile) -> list[tuple[int, str]]:
 
 
 def _normalise_endpoint(raw: str) -> str | None:
-    raw = raw.strip().rstrip(".,);:'\"")
-    if raw.startswith("grpc"):
-        m = re.match(r"grpcs?://[^/]+(/.*)?", raw)
-        if m and m.group(1):
-            return m.group(1).split("?")[0]
-        return None  # bare grpc host — resolution out of scope
-    path = raw.split("?")[0].split("#")[0]
-    if not path.startswith("/"):
+    """Parse the complete URI token and return its decoded path.
+
+    The extractor must not stop at an unknown suffix and accidentally turn
+    ``/v1/exact%2Fnot-wired`` into the wired ``/v1/exact`` endpoint. Parse the
+    whole token, reject malformed percent escapes, and decode only the path
+    component. Trailing punctuation is rejected rather than stripped: it may
+    be part of the documented URI and silently dropping it would create a
+    false proof of wiring.
+    """
+    raw = raw.strip()
+    if not raw or raw[-1] in ".,);:":
+        return None
+    if re.search(r"%(?![0-9A-Fa-f]{2})", raw):
+        return None
+    try:
+        parsed = urlsplit(raw)
+    except ValueError:
+        return None
+    if parsed.scheme in ("http", "https", "grpc", "grpcs"):
+        if not parsed.netloc or not parsed.path:
+            return None  # bare grpc host — resolution out of scope
+    elif raw.startswith("/"):
+        if parsed.scheme or parsed.netloc or not parsed.path:
+            return None
+    else:
+        return None
+    try:
+        path = unquote(parsed.path, encoding="utf-8", errors="strict")
+    except UnicodeDecodeError:
+        return None
+    if not path.startswith("/") or any(
+        ord(ch) < 0x20 or ord(ch) == 0x7F for ch in path
+    ):
         return None
     return path
 
