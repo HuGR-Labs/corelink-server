@@ -9,6 +9,8 @@
 #     - CLERK_WEBHOOK_SECRET  — Svix signature on inbound Clerk webhooks
 #     - CLERK_SECRET_KEY      — Clerk Backend API (writes tenant metadata)
 #     - CORELINK_INTERNAL_AUTH_KEY — calls /_internal/pat/mint on the container
+#     - CORELINK_ERASE_AUTH_KEY — dedicated ≥32-char key for irreversible
+#       /_internal/audit/drain; never falls back to the shared key
 #     - STRIPE_WEBHOOK_SECRET — Stripe webhook signature (the LIVE money path)
 #     - STRIPE_PRICE_ID_TEAM / _PRO / _STARTER — tier resolution
 #   But this Worker is deployed SEPARATELY from the main worker: it is a
@@ -17,13 +19,14 @@
 #   cf-deploy-prod.yml secret gate (both target the main `--env prod`
 #   worker). If any of these is unset on corelink-signup-worker, signups /
 #   Stripe webhooks fail SILENTLY (4xx at the Worker; Svix/Stripe stop
-#   retrying) — and nothing in CI catches it today.
+#   retrying) unless this gate stops the signup-worker deploy first.
 #
-#   This script is the operator's manual pre-launch gate. It is read-only:
-#   it lists deployed secret NAMES via wrangler (never values) and reports
-#   any required name that is missing. It is intentionally NOT wired into a
-#   deploy workflow (the signup-worker has no deploy workflow yet) so it can
-#   never false-fail an unrelated deploy.
+#   This read-only name check is wired immediately before `wrangler deploy` in
+#   `.github/workflows/signup-worker-deploy.yml`; it lists deployed secret NAMES
+#   (never values) and fails that Worker deployment when a required name is
+#   missing. It remains useful as the operator's manual pre-launch check. The
+#   workflow is scoped to signup-worker, this script, and itself, so it cannot
+#   false-fail an unrelated deployment.
 #
 # USAGE:
 #   bash scripts/verify-signup-worker-secrets.sh            # report
@@ -47,6 +50,7 @@ REQUIRED=(
   CLERK_WEBHOOK_SECRET
   CLERK_SECRET_KEY
   CORELINK_INTERNAL_AUTH_KEY
+  CORELINK_ERASE_AUTH_KEY
   STRIPE_WEBHOOK_SECRET
   STRIPE_PRICE_ID_TEAM
   STRIPE_PRICE_ID_PRO

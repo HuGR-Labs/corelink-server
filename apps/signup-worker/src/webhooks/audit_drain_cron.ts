@@ -42,14 +42,14 @@
  * The call carries NO body that the handler requires — it sweeps all pending
  * partitions — but we send `{}` so the request is a well-formed JSON POST.
  *
- * Auth: the `/_internal/audit/*` surface reuses the erase/DSR consumer key
- * (erase-first, shared-fallback — see `resolveEraseAuthKey`); no new secret.
- * Inert (no-op-with-log) until that key is bound (task #46) — exactly like the
- * DSR verify cron, so a cron run on an unprovisioned env is a clean skip rather
- * than a 401 storm.
+ * Auth: the `/_internal/audit/drain` route is an irreversible control and
+ * accepts only the dedicated `CORELINK_ERASE_AUTH_KEY` (at least 32 non-blank
+ * characters). `CORELINK_INTERNAL_AUTH_KEY` is never a fallback here. A
+ * shared-only or malformed configuration is an explicit skipped/fail-closed
+ * result, never a request that can exercise the route with a broad key.
  */
 
-import { resolveEraseAuthKey } from "../lib/erase-auth-key.js";
+import { resolveDedicatedEraseAuthKey } from "../lib/erase-auth-key.js";
 
 /**
  * Hard cap on drain calls per cron tick. At the prod default of 200 rows per
@@ -72,12 +72,11 @@ export interface AuditDrainCronEnv {
   /** Base URL of the CoreLink API (container host). */
   CORELINK_API_BASE: string;
   /**
-   * Dedicated erase/DSR consumer secret (red-team #3 split). Preferred for the
-   * `x-corelink-internal-auth` header so it matches the main-Worker / container
-   * erase gate in the full-split config (rt-nuclear #23); shared-key fallback.
+   * Dedicated erase key required by the audit-drain route. The key must be at
+   * least 32 non-blank characters; shorter values fail closed before a request.
    */
   CORELINK_ERASE_AUTH_KEY?: string;
-  /** Shared secret for the `x-corelink-internal-auth` header. */
+  /** Present for other Worker duties; audit drain deliberately ignores it. */
   CORELINK_INTERNAL_AUTH_KEY?: string;
   /** Service binding to the main CoreLink Worker (bypasses CF edge error 1014). */
   CORELINK_API_SVC?: { fetch: typeof fetch };
@@ -98,13 +97,68 @@ export interface AuditDrainSweepResult {
   /** How many times the endpoint was called this tick. */
   calls: number;
   /**
-   * True when the LAST successful call still reported `incomplete: true` — the
-   * backlog outlived this tick's budget and the next hourly tick continues it.
-   * A sweep that stopped on an error leaves this as the last value it saw.
+   * True when the backlog was not verified complete: the handler returned
+   * `incomplete`, a bounded tick ended early, or a response/transport failure
+   * made completion unknowable. This is intentionally true on every failure so
+   * the scheduled seam cannot make an uncertain sweep look ordinary.
    */
   incomplete: boolean;
-  /** True when neither internal-auth key is bound (inert, not a failure to seal). */
+  /** True when the required dedicated key is not safely bound (no request sent). */
   skipped: boolean;
+}
+
+interface AuditDrainResponse {
+  ok: boolean;
+  partitions_drained: number;
+  rows_sealed: number;
+  partitions_drifted: number;
+  partitions_failed: number;
+  partitions_leased: number;
+  heads_resigned: number;
+  incomplete: boolean;
+}
+
+const DRAIN_COUNTER_FIELDS = [
+  "partitions_drained",
+  "rows_sealed",
+  "partitions_drifted",
+  "partitions_failed",
+  "partitions_leased",
+  "heads_resigned",
+] as const;
+
+/** Decode the Rust handler's complete JSON contract; unknown is never success. */
+function parseAuditDrainResponse(value: unknown):
+  | { value: AuditDrainResponse }
+  | { error: string } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { error: "body is not an object" };
+  }
+
+  const body = value as Record<string, unknown>;
+  if (typeof body.ok !== "boolean") {
+    return { error: "missing or non-boolean ok" };
+  }
+  if (typeof body.incomplete !== "boolean") {
+    return { error: "missing or non-boolean incomplete" };
+  }
+  for (const field of DRAIN_COUNTER_FIELDS) {
+    const counter = body[field];
+    if (
+      typeof counter !== "number" ||
+      !Number.isSafeInteger(counter) ||
+      counter < 0
+    ) {
+      return { error: `missing or invalid ${field}` };
+    }
+  }
+
+  return { value: body as unknown as AuditDrainResponse };
+}
+
+/** A true incomplete response without any counter movement cannot converge. */
+function madeDrainProgress(body: AuditDrainResponse): boolean {
+  return DRAIN_COUNTER_FIELDS.some((field) => body[field] > 0);
 }
 
 /**
@@ -114,17 +168,15 @@ export interface AuditDrainSweepResult {
  * (transport/parse errors are reported as `ok:false`) so a cron failure cannot
  * escape `scheduled()`.
  *
- * `skipped: true` (and zero counts) when NEITHER the dedicated erase key nor the
- * shared key is bound — the cron is inert until provisioning (task #46).
+ * `skipped: true` (and zero counts) when the dedicated erase key is absent,
+ * blank, or short. The shared key is not a substitute for this irreversible
+ * control.
  */
 export async function runAuditDrainSweep(
   env: AuditDrainCronEnv,
   _nowMs: number,
 ): Promise<AuditDrainSweepResult> {
-  // Inert only when NEITHER the dedicated erase key nor the shared key is bound
-  // (rt-nuclear #23: same erase-first, shared-fallback resolution as the DSR
-  // verify cron).
-  const eraseAuthKey = resolveEraseAuthKey(env);
+  const eraseAuthKey = resolveDedicatedEraseAuthKey(env);
   if (!eraseAuthKey) {
     return {
       ok: false,
@@ -179,7 +231,7 @@ export async function runAuditDrainSweep(
         partitions,
         partitionsFailed,
         calls,
-        incomplete,
+        incomplete: true,
         skipped: false,
       };
     }
@@ -189,34 +241,63 @@ export async function runAuditDrainSweep(
       // A non-2xx is terminal for this tick: re-calling a failing endpoint nine
       // more times turns one bad hour into a request storm.
       ok = false;
+      incomplete = true;
       break;
     }
 
-    // The keys are the handler's, verbatim: `rows_sealed`, `partitions_drained`,
-    // `partitions_failed`, `incomplete`. Reading anything else is how this cron
-    // logged `sealed=0` for its entire life.
-    let body: {
-      rows_sealed?: number;
-      partitions_drained?: number;
-      partitions_failed?: number;
-      incomplete?: boolean;
-    };
+    // This boundary deliberately accepts only the handler's complete, typed
+    // contract. A 200 with malformed/missing counters is not proof of completion
+    // and must never trigger another blind retry.
+    let rawBody: unknown;
     try {
-      body = (await resp.json()) as typeof body;
+      rawBody = await resp.json();
     } catch {
-      // non-JSON 200 — a successful transport with unknown counts. We cannot
-      // know whether work remains, so stop rather than loop blind.
-      incomplete = false;
+      console.error(
+        `[audit-drain-cron] drain call ${calls} returned malformed 2xx JSON; completion is unknown`,
+      );
+      ok = false;
+      incomplete = true;
       break;
     }
 
-    sealed += Number(body.rows_sealed ?? 0);
-    partitions += Number(body.partitions_drained ?? 0);
-    partitionsFailed += Number(body.partitions_failed ?? 0);
-    incomplete = Boolean(body.incomplete ?? false);
+    const parsed = parseAuditDrainResponse(rawBody);
+    if ("error" in parsed) {
+      console.error(
+        `[audit-drain-cron] drain call ${calls} returned invalid 2xx contract: ${parsed.error}`,
+      );
+      ok = false;
+      incomplete = true;
+      break;
+    }
+    const body = parsed.value;
+
+    sealed += body.rows_sealed;
+    partitions += body.partitions_drained;
+    partitionsFailed += body.partitions_failed;
+    incomplete = body.incomplete;
+
+    // The server explicitly sets ok=false when a partition failed. Treat either
+    // half of that invariant as terminal: retrying an acknowledged failure in a
+    // tight loop hides it and can turn one failed partition into a request storm.
+    if (!body.ok || body.partitions_failed > 0) {
+      console.error(
+        `[audit-drain-cron] drain call ${calls} was non-complete: ok=${body.ok} partitions_failed=${body.partitions_failed}`,
+      );
+      ok = false;
+      incomplete = true;
+      break;
+    }
 
     // Done: the handler says the backlog is drained.
     if (!incomplete) {
+      break;
+    }
+    if (!madeDrainProgress(body)) {
+      console.error(
+        `[audit-drain-cron] drain call ${calls} reported incomplete with no counter progress; refusing blind retry`,
+      );
+      ok = false;
+      incomplete = true;
       break;
     }
     // Budget spent: leave the rest for the next hourly tick. The endpoint is

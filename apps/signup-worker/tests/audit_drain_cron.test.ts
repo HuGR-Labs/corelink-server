@@ -1,21 +1,45 @@
 /**
  * Unit tests for the S-09 audit-chain drain sweep cron (B-064).
  *
- * The container call is mocked via `env.CORELINK_API_SVC`. Two things are under
- * test and both were broken in prod: the sweep must read the keys the Rust
- * handler actually emits (`rows_sealed` / `partitions_drained`, NOT
- * `sealed` / `partitions`), and it must re-call while the handler reports
- * `incomplete: true` instead of leaving a per-call row budget to act as a
- * per-hour platform ceiling.
+ * The container call is mocked via `env.CORELINK_API_SVC`. The boundary accepts
+ * only the handler's complete response contract: HTTP success alone is never
+ * proof that an irreversible audit drain completed.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   runAuditDrainSweep,
+  DRAIN_WALL_BUDGET_MS,
   MAX_DRAIN_CALLS,
   type AuditDrainCronEnv,
 } from "../src/webhooks/audit_drain_cron.js";
 
 const KEY = "e".repeat(32);
+
+type DrainResponse = {
+  ok: boolean;
+  partitions_drained: number;
+  rows_sealed: number;
+  partitions_drifted: number;
+  partitions_failed: number;
+  partitions_leased: number;
+  heads_resigned: number;
+  incomplete: boolean;
+};
+
+/** A full wire contract; individual tests override exactly one dimension. */
+function drainResponse(overrides: Partial<DrainResponse> = {}): DrainResponse {
+  return {
+    ok: true,
+    partitions_drained: 0,
+    rows_sealed: 0,
+    partitions_drifted: 0,
+    partitions_failed: 0,
+    partitions_leased: 0,
+    heads_resigned: 0,
+    incomplete: false,
+    ...overrides,
+  };
+}
 
 /** Stub service binding replaying `bodies` in order; the last one repeats. */
 function svcSeq(
@@ -45,24 +69,27 @@ function env(over: Partial<AuditDrainCronEnv> = {}): AuditDrainCronEnv {
 }
 
 describe("runAuditDrainSweep", () => {
-  it("reads the handler's real keys — `rows_sealed`/`partitions_drained`", async () => {
+  it("sends only the dedicated ≥32-char erase key and reads the real fields", async () => {
+    let header: string | null = null;
     const r = await runAuditDrainSweep(
       env({
-        CORELINK_API_SVC: svcSeq([
-          {
-            status: 200,
-            body: {
-              ok: true,
-              rows_sealed: 200,
-              partitions_drained: 3,
-              partitions_failed: 0,
-              incomplete: false,
-            },
-          },
-        ]),
+        CORELINK_INTERNAL_AUTH_KEY: "shared-key-that-must-not-be-used",
+        CORELINK_API_SVC: {
+          fetch: (async (request: Request) => {
+            header = request.headers.get("x-corelink-internal-auth");
+            return new Response(
+              JSON.stringify(
+                drainResponse({ rows_sealed: 200, partitions_drained: 3 }),
+              ),
+              { status: 200, headers: { "content-type": "application/json" } },
+            );
+          }) as unknown as typeof fetch,
+        },
       }),
       0,
     );
+
+    expect(header).toBe(KEY);
     expect(r).toMatchObject({
       ok: true,
       status: 200,
@@ -74,111 +101,190 @@ describe("runAuditDrainSweep", () => {
     });
   });
 
-  it("reports ZERO for the OLD keys — the exact prod defect", async () => {
-    // Regression teeth: a body carrying only the pre-B-064 key names must not
-    // be readable as work done. If someone reintroduces the bare `sealed` key, this test
-    // is the one that goes red.
+  it("shared-only configuration skips fail-closed and never sends a request", async () => {
+    const svc = svcSeq([{ status: 200, body: drainResponse({ rows_sealed: 1 }) }]);
     const r = await runAuditDrainSweep(
       env({
-        CORELINK_API_SVC: svcSeq([
-          { status: 200, body: { ok: true, sealed: 200, partitions: 3 } },
-        ]),
+        CORELINK_ERASE_AUTH_KEY: undefined,
+        CORELINK_INTERNAL_AUTH_KEY: "s".repeat(32),
+        CORELINK_API_SVC: svc,
       }),
       0,
     );
-    expect(r.sealed).toBe(0);
-    expect(r.partitions).toBe(0);
+    expect(r).toMatchObject({ ok: false, skipped: true, calls: 0 });
+    expect(svc.calls()).toBe(0);
   });
 
-  it("re-calls while `incomplete` is true and SUMS the rows", async () => {
-    const svc = svcSeq([
-      { status: 200, body: { rows_sealed: 200, partitions_drained: 2, incomplete: true } },
-      { status: 200, body: { rows_sealed: 200, partitions_drained: 2, incomplete: true } },
-      { status: 200, body: { rows_sealed: 40, partitions_drained: 1, incomplete: false } },
-    ]);
-    const r = await runAuditDrainSweep(env({ CORELINK_API_SVC: svc }), 0);
-    expect(r.calls).toBe(3);
-    expect(r.sealed).toBe(440);
-    expect(r.partitions).toBe(5);
-    expect(r.incomplete).toBe(false);
-    expect(r.ok).toBe(true);
+  it("short dedicated key also skips even when a shared key exists", async () => {
+    const svc = svcSeq([{ status: 200, body: drainResponse({ rows_sealed: 1 }) }]);
+    const r = await runAuditDrainSweep(
+      env({
+        CORELINK_ERASE_AUTH_KEY: "too-short",
+        CORELINK_INTERNAL_AUTH_KEY: "s".repeat(32),
+        CORELINK_API_SVC: svc,
+      }),
+      0,
+    );
+    expect(r).toMatchObject({ ok: false, skipped: true, calls: 0 });
+    expect(svc.calls()).toBe(0);
   });
 
-  it("stops at MAX_DRAIN_CALLS and reports `incomplete: true`", async () => {
-    // A backlog that never says "done" must be bounded, and the leftover must
-    // be VISIBLE — an exhausted budget that reads as success is the defect
-    // class this whole item is about.
+  it("re-calls while `incomplete` is true and sums real handler counters", async () => {
     const svc = svcSeq([
-      { status: 200, body: { rows_sealed: 200, partitions_drained: 1, incomplete: true } },
+      { status: 200, body: drainResponse({ rows_sealed: 200, partitions_drained: 2, incomplete: true }) },
+      { status: 200, body: drainResponse({ rows_sealed: 200, partitions_drained: 2, incomplete: true }) },
+      { status: 200, body: drainResponse({ rows_sealed: 40, partitions_drained: 1 }) },
     ]);
     const r = await runAuditDrainSweep(env({ CORELINK_API_SVC: svc }), 0);
-    expect(r.calls).toBe(MAX_DRAIN_CALLS);
-    expect(r.sealed).toBe(200 * MAX_DRAIN_CALLS);
-    expect(r.incomplete).toBe(true);
+    expect(r).toMatchObject({ calls: 3, sealed: 440, partitions: 5, incomplete: false, ok: true });
+  });
+
+  it("stops at MAX_DRAIN_CALLS and leaves an honestly incomplete success visible", async () => {
+    const svc = svcSeq([
+      { status: 200, body: drainResponse({ rows_sealed: 200, partitions_drained: 1, incomplete: true }) },
+    ]);
+    const r = await runAuditDrainSweep(env({ CORELINK_API_SVC: svc }), 0);
+    expect(r).toMatchObject({
+      calls: MAX_DRAIN_CALLS,
+      sealed: 200 * MAX_DRAIN_CALLS,
+      incomplete: true,
+      ok: true,
+    });
+  });
+
+  it("stops at the wall-clock deadline without starting another call", async () => {
+    const now = vi.spyOn(Date, "now")
+      .mockReturnValueOnce(1_000)
+      .mockReturnValueOnce(1_000 + DRAIN_WALL_BUDGET_MS);
+    try {
+      const svc = svcSeq([
+        { status: 200, body: drainResponse({ rows_sealed: 1, incomplete: true }) },
+      ]);
+      const r = await runAuditDrainSweep(env({ CORELINK_API_SVC: svc }), 0);
+      expect(r).toMatchObject({ calls: 1, sealed: 1, incomplete: true, ok: true });
+      expect(svc.calls()).toBe(1);
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it("stops the loop on a non-2xx instead of storming the endpoint", async () => {
     const svc = svcSeq([
-      { status: 200, body: { rows_sealed: 200, partitions_drained: 1, incomplete: true } },
+      { status: 200, body: drainResponse({ rows_sealed: 200, partitions_drained: 1, incomplete: true }) },
       { status: 503, body: "unavailable" },
     ]);
     const r = await runAuditDrainSweep(env({ CORELINK_API_SVC: svc }), 0);
-    expect(r.calls).toBe(2);
-    expect(r.ok).toBe(false);
-    expect(r.status).toBe(503);
-    // The rows the first call DID seal are still reported.
-    expect(r.sealed).toBe(200);
+    expect(r).toMatchObject({ calls: 2, ok: false, status: 503, sealed: 200, incomplete: true });
   });
 
-  it("carries `partitions_failed` through instead of dropping it", async () => {
-    const r = await runAuditDrainSweep(
-      env({
-        CORELINK_API_SVC: svcSeq([
-          {
-            status: 200,
-            body: {
-              rows_sealed: 10,
-              partitions_drained: 1,
-              partitions_failed: 2,
-              incomplete: false,
-            },
-          },
-        ]),
-      }),
-      0,
-    );
-    expect(r.partitionsFailed).toBe(2);
-  });
-
-  it("stops after one call on a non-JSON 200 rather than looping blind", async () => {
-    const svc = svcSeq([{ status: 200, body: "not json at all" }]);
-    const r = await runAuditDrainSweep(env({ CORELINK_API_SVC: svc }), 0);
-    expect(r.calls).toBe(1);
-    expect(r.ok).toBe(true);
-    expect(r.incomplete).toBe(false);
-  });
-
-  it("skips (and never calls) when no internal-auth key is bound", async () => {
-    const svc = svcSeq([{ status: 200, body: { rows_sealed: 1 } }]);
-    const r = await runAuditDrainSweep(
+  it("treats a 200 ok:false with failed partitions as a terminal non-complete result", async () => {
+    const svc = svcSeq([
       {
-        CORELINK_API_BASE: "https://corelink-api.example",
-        CORELINK_API_SVC: svc,
+        status: 200,
+        body: drainResponse({
+          ok: false,
+          rows_sealed: 10,
+          partitions_drained: 1,
+          partitions_failed: 2,
+          incomplete: false,
+        }),
       },
-      0,
-    );
-    expect(r.skipped).toBe(true);
-    expect(r.calls).toBe(0);
-    expect(svc.calls()).toBe(0);
+    ]);
+    const r = await runAuditDrainSweep(env({ CORELINK_API_SVC: svc }), 0);
+    expect(r).toMatchObject({
+      calls: 1,
+      ok: false,
+      incomplete: true,
+      sealed: 10,
+      partitions: 1,
+      partitionsFailed: 2,
+    });
+    expect(svc.calls()).toBe(1);
   });
 
-  it("reports ok:false and the rows already sealed when the transport throws", async () => {
+  it("treats a 200 ok:false as terminal even when partitions_failed is zero", async () => {
+    // Mutation tooth: deleting the `!body.ok` arm while retaining the counter
+    // check turns this exact 200 into a false green. The wire contract makes
+    // `ok` independently load-bearing, so disagreement is never normalized.
+    const svc = svcSeq([
+      {
+        status: 200,
+        body: drainResponse({
+          ok: false,
+          rows_sealed: 10,
+          partitions_drained: 1,
+          partitions_failed: 0,
+          incomplete: false,
+        }),
+      },
+    ]);
+    const r = await runAuditDrainSweep(env({ CORELINK_API_SVC: svc }), 0);
+    expect(r).toMatchObject({
+      calls: 1,
+      ok: false,
+      incomplete: true,
+      sealed: 10,
+      partitions: 1,
+      partitionsFailed: 0,
+    });
+    expect(svc.calls()).toBe(1);
+  });
+
+  it.each([
+    ["non-JSON body", () => "not json at all"],
+    ["missing counter", () => {
+      const body = drainResponse();
+      delete (body as Partial<DrainResponse>).rows_sealed;
+      return body;
+    }],
+    ["missing ok", () => {
+      const body = drainResponse({ rows_sealed: 1 });
+      delete (body as Partial<DrainResponse>).ok;
+      return body;
+    }],
+    ["non-boolean ok", () => ({
+      ...drainResponse({ rows_sealed: 1 }),
+      // Mutation tooth: without `typeof body.ok !== "boolean"`, this truthy
+      // value bypasses `!body.ok` and turns a malformed 200 into false green.
+      ok: "true",
+    })],
+    ["missing incomplete", () => {
+      const body = drainResponse({ rows_sealed: 1 });
+      delete (body as Partial<DrainResponse>).incomplete;
+      return body;
+    }],
+    ["non-boolean incomplete", () => ({
+      ...drainResponse({ rows_sealed: 1 }),
+      // Mutation tooth: without `typeof body.incomplete !== "boolean"`, this
+      // truthy value makes repeated calls look like a valid incomplete sweep.
+      incomplete: "true",
+    })],
+    ["negative counter", () => drainResponse({ partitions_failed: -1 })],
+    [
+      "non-finite counter",
+      () => '{"ok":true,"partitions_drained":0,"rows_sealed":1e400,"partitions_drifted":0,"partitions_failed":0,"partitions_leased":0,"heads_resigned":0,"incomplete":false}',
+    ],
+  ])("treats a 200 with %s as a terminal non-complete failure", async (_name, body) => {
+    const svc = svcSeq([{ status: 200, body: body() }]);
+    const r = await runAuditDrainSweep(env({ CORELINK_API_SVC: svc }), 0);
+    expect(r).toMatchObject({ calls: 1, ok: false, incomplete: true, sealed: 0, partitions: 0 });
+    expect(svc.calls()).toBe(1);
+  });
+
+  it("rejects incomplete-with-no-progress instead of blindly retrying", async () => {
+    const svc = svcSeq([{ status: 200, body: drainResponse({ incomplete: true }) }]);
+    const r = await runAuditDrainSweep(env({ CORELINK_API_SVC: svc }), 0);
+    expect(r).toMatchObject({ calls: 1, ok: false, incomplete: true });
+    expect(svc.calls()).toBe(1);
+  });
+
+  it("preserves completed work before a transport failure and marks it non-complete", async () => {
     let n = 0;
     const fetchImpl = (async () => {
       n++;
       if (n === 1) {
         return new Response(
-          JSON.stringify({ rows_sealed: 200, partitions_drained: 1, incomplete: true }),
+          JSON.stringify(drainResponse({ rows_sealed: 200, partitions_drained: 1, incomplete: true })),
           { status: 200, headers: { "content-type": "application/json" } },
         );
       }
@@ -188,9 +294,6 @@ describe("runAuditDrainSweep", () => {
       env({ CORELINK_API_SVC: { fetch: fetchImpl } }),
       0,
     );
-    expect(r.ok).toBe(false);
-    expect(r.status).toBe(0);
-    expect(r.sealed).toBe(200);
-    expect(r.calls).toBe(2);
+    expect(r).toMatchObject({ ok: false, status: 0, sealed: 200, calls: 2, incomplete: true });
   });
 });
