@@ -12065,23 +12065,22 @@ verify: |
   sys.exit(0)
   PY
 verify-means: |
-  **Polaridade `open`:** sai 0 — aberto — enquanto `backlog_verify.py` continuar dando
-  CONFIRMED a `id: B-0142` num arquivo que já contém o `B-142` real. É um **controle
+  **Polaridade `done`:** sai 0 — fechado — enquanto `backlog_verify.py` recusar
+  `id: B-0142` pela forma canônica e o controle `B-168` continuar passando. É um **controle
   positivo**: planta a sonda numa cópia descartável e roda o script de verdade contra ela.
-  Não pode passar por vacuidade — dizer "ainda aberto" exige o portão genuinamente aprovar o
-  alias.
+  Não pode passar por vacuidade — dizer "fechado" exige o portão genuinamente recusar o
+  alias pela regra escolhida.
 
   A sonda usa `--id B-0142`, então **um único** `verify` roda (`"true"`); nunca dispara a
   matriz de ~140 comandos externos que um `backlog_verify.py` sem `--id` dispara.
 
-  **Três desfechos, nenhum silencioso:** 0 = alias aceito (aberto); 1 = o script passou a
-  recusar — reveja e feche, **registrando qual das três regras entrou**, porque elas diferem
-  no que permitem depois; 2 = instrumento quebrado (arquivo sumiu, menos de 100 blocos, ou o
-  `B-142` sumiu e a sonda perdeu o par) **ou defeito vivo** — um id não-canônico já está no
-  arquivo agora.
+  **Três desfechos, nenhum silencioso:** 0 = alias recusado pela forma canônica (fechado);
+  1 = o alias voltou a ser aceito, ou a recusa veio de outra checagem — reabra e investigue;
+  2 = instrumento quebrado (arquivo sumiu, menos de 100 blocos, ou o `B-142` sumiu e a sonda
+  perdeu o par) **ou defeito vivo** — um id não-canônico já está no arquivo agora.
 
   **O alvo do alias é verificado, não suposto.** Se o `B-142` deixar de existir, a sonda
-  deixa de ser um alias de coisa nenhuma e o comando falha alto em vez de reportar "aberto"
+  deixa de ser um alias de coisa nenhuma e o comando falha alto em vez de reportar "fechado"
   sobre um teste que não testa mais nada.
 last-verified: 2026-08-31
 ```
