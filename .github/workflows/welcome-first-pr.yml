@@ -109,9 +109,10 @@ jobs:
             1. **Read `CONTRIBUTING.md`** for build + test + lint expectations
                (`cargo build --workspace`, `cargo clippy --workspace --tests
                -- -D warnings`, `cargo test --workspace`). Run all three
-               locally before you push — CI gates are **crate-scoped**, so a
-               PR-triggered lane only tests the crates your change touches.
-               A workspace-wide `cargo test` is not part of the PR gate today.
+               locally before you push — CI selects targeted lanes by changed
+               dependency surface, rather than running one workspace-wide test
+               command on every PR. A workspace-wide `cargo test` is not part
+               of the PR gate today.
             2. **Walk the PR template** (`.github/PULL_REQUEST_TEMPLATE.md`) —
                every Author Pre-PR Checklist row should be ticked before
                review.
