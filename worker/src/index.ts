@@ -198,6 +198,11 @@ export interface Env {
   CORELINK_ERASE_AUTH_KEY_PREVIOUS?: string; // outgoing erase key during a rotation (dual-key; forwarded to the container)
   CORELINK_AUDIT_ATTEMPTED_AUTH_KEY?: string; // dedicated key for the container's /_internal/audit/cas-attempted (no shared fallback; forwarded to the container)
   CORELINK_DSR_ANCHOR_AUTH_KEY?: string; // gate for `/_internal/dsr/anchor` (per-user DSR legitimacy anchor; held by githugr, distinct from the eraser's ERASE key)
+  // Money onboarding endpoints have distinct authorities. An explicitly-bound
+  // but sub-floor dedicated key FAILS CLOSED; only an absent dedicated binding
+  // may fall back to CORELINK_INTERNAL_AUTH_KEY (see resolveOnboardingAuthKey).
+  CORELINK_TIER_SELECT_AUTH_KEY?: string; // `/v1/onboarding/tier-select`
+  CORELINK_DPA_ACCEPT_AUTH_KEY?: string; // `/v1/onboarding/dpa-accept`
   DSR_RECEIPT_SIGNING_KEY?: string; // HMAC signer for DSR customer-portal receipt JWTs (union #717; read by dsr/portal.rs, forwarded to the container)
   DPA_RECEIPT_SIGNING_KEY?: string; // RS256 (RSA PKCS#8/PKCS#1 PEM) signer for DPA-acceptance receipt JWTs (read by routes/dpa_accept.rs, forwarded to the container; route unmounts fail-CLOSED when absent)
   CORELINK_RUNNER_MINT_AUTH_KEY?: string; // gate for `/internal/v1/runner/{mint,revoke}` (runner dispatcher; scoped away from signup's pat_mint)
@@ -538,6 +543,39 @@ type RouteKind =
   | "internal"
   | "health_container"
   | "not_found";
+
+const ONBOARDING_AUTH_KEY_MIN_LENGTH = 32;
+
+/**
+ * Resolve the authority for an onboarding endpoint without collapsing the two
+ * money paths into the generic onboarding credential. A dedicated key is
+ * allowed to fall back only when it is absent. A present-but-short key is an
+ * operator misconfiguration and must fail closed rather than widening that
+ * endpoint back to the shared authority.
+ *
+ * Non-money onboarding routes deliberately retain their existing shared-key
+ * behavior; this function only applies the 32-character floor to the two
+ * endpoint-specific money authorities.
+ */
+function resolveOnboardingAuthKey(pathSuffix: string, env: Env): string | null {
+  let dedicatedKey: string | undefined;
+  if (pathSuffix === "/v1/onboarding/tier-select") {
+    dedicatedKey = env.CORELINK_TIER_SELECT_AUTH_KEY;
+  } else if (pathSuffix === "/v1/onboarding/dpa-accept") {
+    dedicatedKey = env.CORELINK_DPA_ACCEPT_AUTH_KEY;
+  } else {
+    return env.CORELINK_INTERNAL_AUTH_KEY ?? null;
+  }
+
+  if (dedicatedKey !== undefined) {
+    return dedicatedKey.length >= ONBOARDING_AUTH_KEY_MIN_LENGTH ? dedicatedKey : null;
+  }
+
+  const sharedKey = env.CORELINK_INTERNAL_AUTH_KEY;
+  return sharedKey !== undefined && sharedKey.length >= ONBOARDING_AUTH_KEY_MIN_LENGTH
+    ? sharedKey
+    : null;
+}
 
 /** Auth extraction result from the Authorization header. */
 type AuthResult =
@@ -2571,7 +2609,7 @@ const baseHandler: ExportedHandler<Env> = {
     // internal-auth secret NEVER leaves the backend and is NEVER accepted from the
     // client (inbound trust headers are stripped before injection).
     if (route.routeKind === "onboarding") {
-      const internalAuthKey = env.CORELINK_INTERNAL_AUTH_KEY;
+      const internalAuthKey = resolveOnboardingAuthKey(route.pathSuffix, env);
       const clerkSecretKey = env.CLERK_SECRET_KEY;
       if (!internalAuthKey || internalAuthKey.length === 0 || !clerkSecretKey) {
         // A required server secret is unbound — deny (fail-CLOSED).
