@@ -1,0 +1,643 @@
+{
+  "version": 1,
+  "documents": {
+    "due_diligence_2026_06_15": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+    "go_live_2026_08_26": "reports/audits/2026-08-26-go-live-readiness.md",
+    "pilot_identity_2026_07_02": "docs/security/2026-07-02-pilot-identity-brutal-audit.md"
+  },
+  "source_sha256": {
+    "due_diligence_2026_06_15": "0ac20e7bf0b0674d06a195cf7ba676816deac91c038ed85c9385235cc93dae56",
+    "go_live_2026_08_26": "a6661037b0ada6a244c80bd727c193c371d86c8371d15f7486fa1043e6d8f08a",
+    "pilot_identity_2026_07_02": "e252f3053c497b05d2ea9b3243d64bd095ebc290de47402ae5437a8da1807a96"
+  },
+  "decisions": [
+    {
+      "source_id": "DD-001",
+      "kind": "tracked",
+      "backlog_id": "B-081"
+    },
+    {
+      "source_id": "DD-002",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Degraded-prefix fallback produces a SHARED (not isolated) namespace and the storage op still PROCEEDS — empty prefix collapses all non-UUID tenants into one keyspace"
+    },
+    {
+      "source_id": "DD-003",
+      "kind": "tracked",
+      "backlog_id": "B-092"
+    },
+    {
+      "source_id": "DD-004",
+      "kind": "tracked",
+      "backlog_id": "B-024"
+    },
+    {
+      "source_id": "DD-005",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: OCI manifest PUT has NO body-size limit — unbounded heap allocation DoS"
+    },
+    {
+      "source_id": "DD-006",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: OCI upload buffers are in-memory, per-session up to 5 GiB, no global cap and no abandoned-session reaper — shared-process memory exhaustion"
+    },
+    {
+      "source_id": "DD-007",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: 0064 tenant rebuild (DROP TABLE) is documented as un-appliable via the canonical apply scripts, but BOTH prod apply scripts use only `wrangler d1 migrations apply` — a fresh-apply / DR-restore against a populated DB will fail mid-migration"
+    },
+    {
+      "source_id": "DD-008",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: OCI cache surface bypasses residency routing entirely — EU tenant image layers land in US (IAD) storage"
+    },
+    {
+      "source_id": "DD-009",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Erasure attestation signature is never persisted and there is no serving endpoint — the GDPR Art.17 proof-of-erasure artifact is non-verifiable"
+    },
+    {
+      "source_id": "DD-010",
+      "kind": "tracked",
+      "backlog_id": "B-085"
+    },
+    {
+      "source_id": "DD-011",
+      "kind": "tracked",
+      "backlog_id": "B-083"
+    },
+    {
+      "source_id": "DD-012",
+      "kind": "tracked",
+      "backlog_id": "B-095"
+    },
+    {
+      "source_id": "DD-013",
+      "kind": "tracked",
+      "backlog_id": "B-095"
+    },
+    {
+      "source_id": "DD-014",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Data-plane (CAS/AC/Bazel/Turbo/OCI/cargo/npm/pip/brew) has NO request-rate limiting — only storage quota + a repo-invisible CF zone rule"
+    },
+    {
+      "source_id": "DD-015",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: checkRequestQuota is a hard-coded no-op — per-tier monthly request caps are documented and advertised but never enforced"
+    },
+    {
+      "source_id": "DD-016",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Sole data-plane request-rate defense is an unversioned, dashboard-only Cloudflare zone WAF rule that already caused a self-DoS"
+    },
+    {
+      "source_id": "DD-017",
+      "kind": "tracked",
+      "backlog_id": "B-085"
+    },
+    {
+      "source_id": "DD-018",
+      "kind": "tracked",
+      "backlog_id": "B-073"
+    },
+    {
+      "source_id": "DD-019",
+      "kind": "tracked",
+      "backlog_id": "B-085"
+    },
+    {
+      "source_id": "DD-020",
+      "kind": "tracked",
+      "backlog_id": "B-085"
+    },
+    {
+      "source_id": "DD-021",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: OCI token-key env-name drift: prod deploy gate binds/verifies HUGR_OCI_TOKEN_KEY but the code reads CORELINK_OCI_TOKEN_KEY → OCI registry route silently never mounts in prod"
+    },
+    {
+      "source_id": "DD-022",
+      "kind": "tracked",
+      "backlog_id": "B-076"
+    },
+    {
+      "source_id": "DD-023",
+      "kind": "tracked",
+      "backlog_id": "B-065"
+    },
+    {
+      "source_id": "DD-024",
+      "kind": "tracked",
+      "backlog_id": "B-079"
+    },
+    {
+      "source_id": "DD-025",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Quota storage check fails OPEN on D1 error and on the F21 d1Error path — over-quota tenants pass during partial D1 outages"
+    },
+    {
+      "source_id": "DD-026",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Expiry semantics diverge between Worker native auth and container adapter verifier (expires_ms=0 sentinel)"
+    },
+    {
+      "source_id": "DD-027",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Container adapter verifier collapses Argon2id HashError (DB corruption) into InvalidPat (401) instead of Backend (503), contradicting the documented contract"
+    },
+    {
+      "source_id": "DD-028",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: No-expiry PAT (expires_ms=0) divergence: Worker treats it as EXPIRED, container treats it as never-expiring"
+    },
+    {
+      "source_id": "DD-029",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: M2 issuer pin runs in weak shape-check fallback in production because CLERK_ISSUER_URL is not yet bound"
+    },
+    {
+      "source_id": "DD-030",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: E2E synthetic-session cookie auth-bypass is gated correctly but relies on a build-time NEXT_PUBLIC_ flag — verify the prod build never ships with it set"
+    },
+    {
+      "source_id": "DD-031",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Runners max_concurrency ladder is keyed on phantom tiers (team/scale) and omits a real one (solo) — diverges from the canonical TierKind set; latent wrong-cap when Runners entitlement lights up"
+    },
+    {
+      "source_id": "DD-032",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: AuthTenant extractor accepts any non-sentinel string as the tenant id (no UUID validation) — the only structural check before storage keying"
+    },
+    {
+      "source_id": "DD-033",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Native plane trusts Worker-injected tenant with no container-side Argon2id re-verify (documented F3/F17 posture)"
+    },
+    {
+      "source_id": "DD-034",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: CAS/AC R2 object key is built from the raw client-supplied digest, not the canonical lowercase digest — uppercase-hex requests fragment the cache and silently bypass content dedup"
+    },
+    {
+      "source_id": "DD-035",
+      "kind": "tracked",
+      "backlog_id": "B-085"
+    },
+    {
+      "source_id": "DD-036",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: AC divergent-body immutability guard is a GET-then-PUT with a TOCTOU window (no compare-and-swap)"
+    },
+    {
+      "source_id": "DD-037",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Bazel CAS write inherits the global 10 MiB body limit (no per-route override) — Bazel build outputs >10 MiB cannot be cached"
+    },
+    {
+      "source_id": "DD-038",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: AuthTenant does not validate that the tenant id is a canonical UUID, so a non-UUID tenant reaches the Turbo store's pad16 public-prefix arm even with TDK present"
+    },
+    {
+      "source_id": "DD-039",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: OCI blob finalize persists bytes BEFORE digest verification; on digest mismatch the unverified bytes are left in the tenant's blob slot (content-address integrity break)"
+    },
+    {
+      "source_id": "DD-040",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Live R2 outage returns HTTP 500, not the documented 503 — only the build-refused path is sentinel-tagged for fail-closed 503"
+    },
+    {
+      "source_id": "DD-041",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: AC update divergent-body protection is a non-atomic GET-then-PUT (TOCTOU) — concurrent divergent writers can both pass the check and last-writer-wins overwrites a proven ActionResult"
+    },
+    {
+      "source_id": "DD-042",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Duplicate migration sequence number 0044 (two files share the 0044 prefix)"
+    },
+    {
+      "source_id": "DD-043",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Two unbounded D1 `.all()` scans in the DSR verify cron (no LIMIT) — server-side only, self-limiting, but worth a cap for defense-in-depth"
+    },
+    {
+      "source_id": "DD-044",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Residency provisioning is enforced ONLY at signup; the data-plane never re-checks it, so apac is fully servable despite being 'must-reject'"
+    },
+    {
+      "source_id": "DD-045",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Three divergent PROVISIONED_MACROS definitions; the worker/container source-of-truth disagrees with the live signup gate and has no live caller"
+    },
+    {
+      "source_id": "DD-046",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: sam macro and sam colo share the literal string 'sam' — fragile self-collision in the residency comparison"
+    },
+    {
+      "source_id": "DD-047",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: dsr_verify_cron requested-anchor query never self-expires a permanently-stuck DSR (comment contradicts code)"
+    },
+    {
+      "source_id": "DD-048",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: R2 AC erasure + verification rely on the ac_meta D1 index, not LIST-by-prefix — an unindexed R2 AC orphan is neither erased nor detected"
+    },
+    {
+      "source_id": "DD-049",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Even if WEUR/SAM were served, CAS blob bytes physically land in the single US bucket corelink-cas-prod — region var only changes the object key prefix"
+    },
+    {
+      "source_id": "DD-050",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: PROVISIONED_MACROS contract drift: region_map (Rust + worker) says 4 regions {wnam,enam,weur,sam}; signup-worker says 2 {wnam,enam}"
+    },
+    {
+      "source_id": "DD-051",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: DPA evidence-pack references a BYOK FIPS document that does not exist in the repo"
+    },
+    {
+      "source_id": "DD-052",
+      "kind": "tracked",
+      "backlog_id": "B-095"
+    },
+    {
+      "source_id": "DD-053",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: In-memory token-bucket limiters (signup + audit-analytics) reset on container cold-start, yielding a per-recycle burst bypass"
+    },
+    {
+      "source_id": "DD-054",
+      "kind": "tracked",
+      "backlog_id": "B-085"
+    },
+    {
+      "source_id": "DD-055",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Idle-stop relies on in-memory setTimeout that does not survive DO eviction → containers outlive the 5-min idle window (cost leak)"
+    },
+    {
+      "source_id": "DD-056",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Concurrent fetch race: no blockConcurrencyWhile around container start → two in-flight requests both cold-start, double telemetry / start flap"
+    },
+    {
+      "source_id": "DD-057",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: OCI cache surface bypasses region fan-out entirely — OCI tenant data is always stored at IAD regardless of residency"
+    },
+    {
+      "source_id": "DD-058",
+      "kind": "tracked",
+      "backlog_id": "B-074"
+    },
+    {
+      "source_id": "DD-059",
+      "kind": "tracked",
+      "backlog_id": "B-028"
+    },
+    {
+      "source_id": "DD-060",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Consent API client calls /v1/consent/* same-origin with no Authorization header (inconsistent auth wiring vs. customer/dsr clients)"
+    },
+    {
+      "source_id": "DD-061",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Onboarding server actions accept a client-supplied tenantId injected into /v1/tenants/{tenantId}/* (IDOR surface; depends on backend JWT cross-check)"
+    },
+    {
+      "source_id": "DD-062",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates (ordering only safe because the singleton adminClient sends no token)"
+    },
+    {
+      "source_id": "DD-063",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Customer audit-visualization page has NO server-side guard (only unguarded authenticated page)"
+    },
+    {
+      "source_id": "DD-064",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Edge middleware fails OPEN when NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is unset or clerkMiddleware export is absent"
+    },
+    {
+      "source_id": "DD-065",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: isPublicPath uses unbounded startsWith for the flat PUBLIC_PATH_PREFIXES (no path-boundary check)"
+    },
+    {
+      "source_id": "DD-066",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: No email-verification gate — user.created provisions a free tenant + read-write PAT for unverified/fake emails"
+    },
+    {
+      "source_id": "DD-067",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: African colos are silently downgraded to US (enam) instead of rejected — residency-leak that backlog #29 claims to close"
+    },
+    {
+      "source_id": "DD-068",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: DSR erasure dead-letter queue has no consumer and no alerting — exhausted right-to-erasure requests are silently parked forever"
+    },
+    {
+      "source_id": "DD-069",
+      "kind": "tracked",
+      "backlog_id": "B-027"
+    },
+    {
+      "source_id": "DD-070",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: user.created handler never validates event.data.id before using it as tenant owner / idempotency key"
+    },
+    {
+      "source_id": "DD-071",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Inconsistent length floor on CORELINK_INTERNAL_AUTH_KEY: tier-select accepts ≥16 chars; admin/dsr/internal_pat all require ≥32"
+    },
+    {
+      "source_id": "DD-072",
+      "kind": "tracked",
+      "backlog_id": "B-090"
+    },
+    {
+      "source_id": "DD-073",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Ed25519 erasure-attestation verifier trusts the attestation's own carried canonical bytes instead of re-canonicalizing the payload (signature does not bind payload fields)"
+    },
+    {
+      "source_id": "DD-074",
+      "kind": "tracked",
+      "backlog_id": "B-090"
+    },
+    {
+      "source_id": "DD-075",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Stale doc comment on smuggled-tenant constant-time compare claims zero-padding that the code does not do"
+    },
+    {
+      "source_id": "DD-076",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: session-exchange in-memory mint throttle is a monotonic counter with no time-window and no eviction — falsely 429s a legitimate principal and leaks memory"
+    },
+    {
+      "source_id": "DD-077",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Concurrent duplicate Clerk user.created delivery double-mints a second live PAT for the same tenant (orphan credential)"
+    },
+    {
+      "source_id": "DD-078",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Durable Object fetch() not single-flighted: concurrent cold requests can both call startContainer (double cold-start telemetry + double start)"
+    },
+    {
+      "source_id": "DD-079",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Read-through proxy HTTP clients follow redirects with no policy → SSRF same-origin guard bypassable by upstream 3xx"
+    },
+    {
+      "source_id": "DD-080",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: npm metadata fetch buffers the full upstream response with NO size cap"
+    },
+    {
+      "source_id": "DD-081",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: OCI PATCH oversize check fires AFTER the chunk is appended to the in-memory session buffer"
+    },
+    {
+      "source_id": "DD-082",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Revocation/alert channels are stubbed in production: dashboard & in_app fake Success, email & slack return Failed('not wired')"
+    },
+    {
+      "source_id": "DD-083",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Container runs at debug log level by default in prod, enabling full SQL-text logging"
+    },
+    {
+      "source_id": "DD-084",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Worker-injected principal header logged without control-char sanitization (log-injection vector if Worker is bypassed)"
+    },
+    {
+      "source_id": "DD-085",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it gates inbound Clerk webhook signature verification on the provisioning path"
+    },
+    {
+      "source_id": "DD-086",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: prod env [vars] omits R2_CHUNK_BUCKET / R2_CHUNK_REGION that all 4 regional envs set — IAD multipart-chunk region config is implicit"
+    },
+    {
+      "source_id": "DD-087",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: OCI token-key env-name drift — code reads CORELINK_OCI_TOKEN_KEY, secrets tooling provisions HUGR_OCI_TOKEN_KEY"
+    },
+    {
+      "source_id": "F-001",
+      "kind": "tracked",
+      "backlog_id": "B-046"
+    },
+    {
+      "source_id": "F-002",
+      "kind": "tracked",
+      "backlog_id": "B-094"
+    },
+    {
+      "source_id": "F-003",
+      "kind": "tracked",
+      "backlog_id": "B-083"
+    },
+    {
+      "source_id": "F-004",
+      "kind": "tracked",
+      "backlog_id": "B-041"
+    },
+    {
+      "source_id": "F-005",
+      "kind": "tracked",
+      "backlog_id": "B-085"
+    },
+    {
+      "source_id": "F-006",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Taxonomia pricing 4 vias"
+    },
+    {
+      "source_id": "F-007",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: `_public` ilimitado Brew/Pip à custa do dono"
+    },
+    {
+      "source_id": "F-008",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Stale cap alto após downgrade em Brew/Pip"
+    },
+    {
+      "source_id": "F-009",
+      "kind": "tracked",
+      "backlog_id": "B-024"
+    },
+    {
+      "source_id": "F-010",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Refund echo mantém tier 30d"
+    },
+    {
+      "source_id": "F-011",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: DLQ volatile + claim-antes perde"
+    },
+    {
+      "source_id": "F-012",
+      "kind": "tracked",
+      "backlog_id": "B-013"
+    },
+    {
+      "source_id": "F-013",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Matriz segredos drift + gate incompleto"
+    },
+    {
+      "source_id": "F-014",
+      "kind": "tracked",
+      "backlog_id": "B-142"
+    },
+    {
+      "source_id": "F-015",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Janela revogação 65s"
+    },
+    {
+      "source_id": "F-016",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Enum região 4 vs 6 Afr/Apac unattestable"
+    },
+    {
+      "source_id": "F-017",
+      "kind": "tracked",
+      "backlog_id": "B-030"
+    },
+    {
+      "source_id": "F-018",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: Hash DPA forjável"
+    },
+    {
+      "source_id": "F-019",
+      "kind": "tracked",
+      "backlog_id": "B-001"
+    },
+    {
+      "source_id": "F-020",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: `kid` flood + LIKE wildcard"
+    },
+    {
+      "source_id": "PI-001",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: resolve-tenant is a POST-auth enumeration/topology oracle.** Any configured fabric key"
+    },
+    {
+      "source_id": "PI-002",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: salt-drift across the 6 EMAIL_HASH_SALT targets** → a mismatched value makes legit invites"
+    },
+    {
+      "source_id": "PI-003",
+      "kind": "declined",
+      "reason": "No existing canonical B-ID was identified during B-101 ingestion; this records a deliberate non-duplication decision rather than inventing a backlog item.",
+      "price": "The risk described by this finding remains explicitly accepted: `tenant_org_map` dual-writer** — the signup-worker (CoreLink Clerk, `user.id` fallback) and the"
+    }
+  ]
+}
