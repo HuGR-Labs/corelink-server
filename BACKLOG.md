@@ -4182,12 +4182,22 @@ cobertura real dos caminhos de produção: D1 real, round-trip R2 real, checkout
 real, shadow Neon, e2e de PAT. Exemplo típico em `tier_select_store.rs:131`:
 *"behavioural coverage of the real SQL uses the standard `#[ignore]` harness"*.
 
-Procurei quem os executa. `--ignored` e `include-ignored` não aparecem em nenhum
-workflow, em nenhum script, e o `.config/nextest.toml` não define `run-ignored` em
-profile algum.
+**Recenso em 2026-09-01.** A lane B-067 é configurada para selecionar
+`corelink-pat/tests/constant_time.rs` em release, mas esse alvo não é `#[ignore]` e
+não demonstra os caminhos reais deste item. A evidência operacional do runner só
+existirá após uma execução nova de PR. Em `corelink-pat` resta somente
+`emit_e2e_seed`: harness deliberadamente ignorado que exige
+`CORELINK_PAT_SIGNING_KEY_HEX` e imprime um PAT novo e SQL de seed. Ele não pode
+receber segredo nem ser executado por código de PR. Isso é uma separação de segurança,
+não cobertura pendente disfarçada.
 
-Distribuição medida em 2026-08-30: `corelink-container` 28, `corelink-audit-chain` 14,
-`corelink-stripe-real` 7, `corelink-pat` 2, `corelink-cas` 1.
+Os harnesses reais D1, R2 e Stripe continuam sem executor. `--ignored` e
+`include-ignored` não aparecem em workflow ou script, e `.config/nextest.toml` não
+define `run-ignored` em profile algum.
+
+O item não usa mais uma contagem por crate como condição: ela muda sem alterar a
+ausência de execução. O fato verificável é que os harnesses reais ainda existem e
+nenhuma infraestrutura os seleciona; o PAT secreto é explicitamente excluído.
 
 O SQL real, o R2 real e o Stripe real têm zero execuções — enquanto os comentários de
 código afirmam que essa é justamente a camada onde eles são cobertos. É o padrão que
@@ -4200,26 +4210,40 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  bash -c 'n=$(grep -rl "#\[ignore" crates/ --include="*.rs" 2>/dev/null | wc -l | tr -d " ")
-  [ "$n" -gt 0 ] || { echo "FALHA: nao ha mais testes #[ignore] — feche o item."; exit 1; }
-  exec_wf=$(grep -rlE "\-\-ignored|include-ignored" .github/workflows/ scripts/ 2>/dev/null | wc -l | tr -d " ")
-  exec_nt=0; [ -f .config/nextest.toml ] && grep -q "run-ignored" .config/nextest.toml && exec_nt=1
-  if [ "$exec_wf" -gt 0 ] || [ "$exec_nt" = 1 ]; then
-    echo "FALHA: existe executor de #[ignore] (workflows/scripts=$exec_wf nextest=$exec_nt) — feche o item."; exit 1; fi
-  echo "aberto: $n arquivos com #[ignore] e ZERO executores"'
+  bash -c 'set -euo pipefail
+  seed=crates/corelink-pat/tests/emit_e2e_seed.rs
+  lane=.github/workflows/corelink-auth-pat.yml
+  ignored_pat=$(grep -rl "#\[ignore" crates/corelink-pat --include="*.rs" | sort)
+  test "$ignored_pat" = "$seed"
+  grep -q "#\[ignore" "$seed"
+  grep -q "CORELINK_PAT_SIGNING_KEY_HEX" "$seed"
+  grep -q "PAT_PLAINTEXT" "$seed"
+  grep -q "cargo test --locked --release --package corelink-pat --test constant_time" "$lane"
+  grep -q "persist-credentials: false" "$lane"
+  ! grep -qE "secrets\." "$lane"
+  ! grep -qE "cargo test.*emit_e2e_seed|--test emit_e2e_seed" "$lane"
+  grep -q "requires live CF D1 credentials" crates/corelink-container/src/storage/d1_http.rs
+  grep -q "requires live R2 credentials" crates/corelink-container/src/storage/r2_s3.rs
+  grep -q "#\[ignore = \"live network\"\]" crates/corelink-stripe-real/tests/live_integration.rs
+  ! grep -rlE "\-\-ignored|include-ignored" .github/workflows/ scripts/ 2>/dev/null
+  ! { test -f .config/nextest.toml && grep -q "run-ignored" .config/nextest.toml; }
+  echo "aberto: harnesses reais D1/R2/Stripe seguem ignorados; constant_time e selecionado em release; seed PAT secreto nao e executado"'
 verify-means: |
-  open — existem testes `#[ignore]` no repositório E nenhum workflow, script ou profile
-  do nextest os executa.
+  open — os harnesses reais de D1, R2 e Stripe seguem `#[ignore]` sem executor. O
+  `constant_time` de PAT é selecionado em release, mas não é esse caminho real; uma
+  execução de PR ainda deve provar o runner. O único harness PAT ignorado,
+  `emit_e2e_seed`, exige chave de assinatura e imprime credencial/SQL: ele deve ficar
+  fora de PR e nunca receber `secrets` por esta lane.
 
-  Vira DRIFTED quando aparecer um executor — `--ignored` num workflow, num script, ou
-  `run-ignored` no `.config/nextest.toml`. Também fecha, legitimamente, se os testes
-  `#[ignore]` deixarem de existir (alguém os converteu em testes normais ou os apagou).
-  Os dois desfechos são reparos válidos e o comando aceita ambos.
+  Vira DRIFTED se aparecer executor de testes ignorados, se o seed secreto for chamado
+  pela lane auth/PAT, ou se a lane ganhar referência a `secrets`. Cada uma dessas
+  mudanças exige novo recenso: um executor parcial não fecha por si só os caminhos
+  reais restantes, e executar o seed em PR é falha de segurança, não reparo.
 
-  Escrito para a alegação — a AUSÊNCIA DO EXECUTOR — e não para a contagem. Um número
-  exato de testes `#[ignore]` apodrece a cada PR que adiciona um, e derrubaria PRs sem
-  relação nenhuma. A contagem por crate fica na prosa como instantâneo datado.
-last-verified: 2026-08-30
+  A prova não depende de contagem: ela pinça uma fonte ignorada de cada classe real e
+  classifica separadamente o seed secreto. Assim uma alteração de quantidade não muda
+  o veredito sem mudar a alegação.
+last-verified: 2026-09-01
 ```
 
 ### B-069 — os nove arquivos de E2E da interface autenticada estão em `test.fixme`, inclusive apagamento GDPR e dupla aprovação

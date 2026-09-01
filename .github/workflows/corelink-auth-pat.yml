@@ -1,0 +1,122 @@
+name: corelink-auth + corelink-pat (B-067)
+
+# PR gate for the authentication primitives. It deliberately runs normal test
+# targets only: `emit_e2e_seed` remains a separately-classified B-068 harness,
+# because it requires CORELINK_PAT_SIGNING_KEY_HEX and prints a fresh PAT plus
+# seed SQL. A pull-request workflow must neither receive that secret nor emit
+# that credential material.
+#
+# Trigger population is intentionally `crates/**`, rather than a brittle list
+# of immediate dependencies. `cargo metadata` for the native all-targets build
+# reaches local crates through corelink-auth -> corelink-clerk-cf ->
+# corelink-cf-bindings -> corelink-cas and through corelink-worker; a change in
+# any member of that closure can change this test build. The closure has the
+# auth schema plus unconditional `include_str!` inputs under `migrations/d1/`
+# through meta, AC, CAS, eviction and analytics. `migrations/d1/**` is kept as
+# one complete population rather than a stale list of migration numbers. Cargo
+# manifests, lockfile, toolchain/config, assertion script and this workflow can
+# each alter what executes and are included.
+
+on:
+  pull_request:
+    paths:
+      - 'crates/**'
+      - 'migrations/002_auth_tables.sql'
+      - 'migrations/d1/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - '.cargo/config.toml'
+      - 'scripts/ci-assert-pinned-toolchain.sh'
+      - '.github/workflows/corelink-auth-pat.yml'
+
+permissions:
+  contents: read
+
+# Cancel a superseded PR run without colliding with a run from another event.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  pr-gate:
+    name: PR gate (clippy + tests — corelink-auth, corelink-pat)
+    # CoreLink's ephemeral Linux fabric keeps this Argon2-bearing lane off the
+    # shared-home founder Mac. No cache action runs on a self-hosted runner.
+    runs-on: corelink
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+        with:
+          # pull_request code must not retain a credential after checkout.
+          persist-credentials: false
+
+      - name: Assert the workspace-pinned toolchain (rust-toolchain.toml)
+        run: bash scripts/ci-assert-pinned-toolchain.sh
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
+        if: runner.environment == 'github-hosted'  # shared-$HOME guard
+        with:
+          workspaces: '. -> target'
+
+      - name: cargo clippy (corelink-auth, all targets, deny warnings)
+        run: cargo clippy --locked --package corelink-auth --all-targets -- -D warnings
+
+      - name: cargo clippy (corelink-pat, all targets, deny warnings)
+        run: cargo clippy --locked --package corelink-pat --all-targets -- -D warnings
+
+      - name: cargo test (corelink-auth, debug, all targets)
+        run: cargo test --locked --package corelink-auth --all-targets
+
+      - name: cargo test (corelink-pat, debug, all targets)
+        run: cargo test --locked --package corelink-pat --all-targets
+
+      # The mutation proof below is Python code. Fail before touching the
+      # checked-out migration if the runner image ever loses that prerequisite.
+      - name: Assert Python prerequisite for mutation proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v python3
+          python3 --version
+
+      # Negative control: the exact schema assertion must kill deletion of the
+      # pgcrypto extension. Restore before this step exits so later steps and
+      # any diagnostic artifact see the checked-out source, never the mutant.
+      - name: Mutation proof (pgcrypto deletion makes schema test fail)
+        shell: bash
+        run: |
+          set -euo pipefail
+          migration='migrations/002_auth_tables.sql'
+          backup="$(mktemp)"
+          cp "$migration" "$backup"
+          restore() { mv "$backup" "$migration"; }
+          trap restore EXIT
+          python3 - "$migration" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          needle = "CREATE EXTENSION IF NOT EXISTS pgcrypto"
+          text = path.read_text()
+          if text.count(needle) != 1:
+              raise SystemExit(f"expected one pgcrypto extension declaration, found {text.count(needle)}")
+          path.write_text(text.replace(needle, "CREATE EXTENSION IF NOT EXISTS extension_removed"))
+          PY
+          set +e
+          cargo test --locked --package corelink-auth --test schema_migration_canonical \
+            pgcrypto_extension_and_email_hash_guard_present > /tmp/auth-pgcrypto-mutation.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/auth-pgcrypto-mutation.log
+          test "$status" -ne 0
+          grep -F 'pgcrypto_extension_and_email_hash_guard_present' /tmp/auth-pgcrypto-mutation.log
+          grep -F 'FAILED' /tmp/auth-pgcrypto-mutation.log
+
+      - name: cargo test (corelink-pat, release constant-time gate)
+        run: cargo test --locked --release --package corelink-pat --test constant_time
