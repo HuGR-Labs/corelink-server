@@ -12,6 +12,8 @@
  *      output.
  *   6. End-of-file "Next:" hint is present (this is the developer's
  *      next-action signpost from the Phase 0 plan).
+ *   7. The removed `--region` option is rejected as unsupported, and the
+ *      usage/help text does not advertise a client-side residency selector.
  */
 
 import { spawnSync } from "node:child_process";
@@ -64,6 +66,23 @@ const FIXTURE = {
   defaultApiEndpoint: "https://corelink-api.humangr.com",
 } as const;
 
+/** Extract and execute only the installer's argument parser. */
+function parseArgs(args: string[]): { status: number; stdout: string; stderr: string } {
+  const script = renderInstallScript(FIXTURE);
+  const parser = script.match(/TOKEN=""\nwhile \[ \$# -gt 0 \]; do[\s\S]*?^done/m)?.[0];
+  if (!parser) throw new Error("install argument parser not found");
+  const result = spawnSync(
+    "sh",
+    ["-c", `${parser}\nprintf 'TOKEN=%s\\n' "$TOKEN"`, "install", ...args],
+    { encoding: "utf8" },
+  );
+  return {
+    status: result.status ?? -1,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
+}
+
 describe("renderInstallScript", () => {
   it("starts with a POSIX-sh shebang", () => {
     const script = renderInstallScript(FIXTURE);
@@ -86,6 +105,70 @@ describe("renderInstallScript", () => {
     expect(script).toContain('if [ -z "$TOKEN" ]; then');
     expect(script).toContain('echo "FATAL: --token required" >&2');
     expect(script).toContain("exit 2");
+  });
+
+  it("parser :: accepts a token and propagates its exact value", () => {
+    const result = parseArgs(["--token=ct_test_propagation"]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("TOKEN=ct_test_propagation\n");
+    expect(result.stderr).toBe("");
+  });
+
+  it("parser :: rejects the removed region option instead of silently accepting it", () => {
+    for (const args of [
+      ["--token=ct_test_rejection", "--region=weur"],
+      ["--region", "weur", "--token=ct_test_rejection"],
+    ]) {
+      const result = parseArgs(args);
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain("FATAL: unsupported option: --region");
+      expect(result.stdout).toBe("");
+    }
+  });
+
+  it("parser :: rejects unknown options while retaining positional-argument warning behavior", () => {
+    const result = parseArgs(["--token=ct_test_control", "--unexpected"]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("FATAL: unsupported option: --unexpected");
+
+    const positional = parseArgs(["--token=ct_test_control", "extra"]);
+    expect(positional.status).toBe(0);
+    expect(positional.stdout).toBe("TOKEN=ct_test_control\n");
+    expect(positional.stderr).toContain("WARN: ignoring unknown arg: extra");
+  });
+
+  it("help :: required-token usage does not advertise a residency option", () => {
+    const script = renderInstallScript(FIXTURE);
+    const usage = script.split("\n").find((line) => line.includes("Usage:"));
+    expect(usage?.trim()).toBe(
+      'echo "Usage: curl -fsSL https://corelink-get.humangr.com | sh -s -- --token=<PAT>" >&2',
+    );
+    expect(usage).not.toMatch(/region/i);
+  });
+
+  it("surface inventory :: parser, Worker call site, and README have no region population", () => {
+    const installSource = readFileSync(
+      fileURLToPath(new URL("../src/install.ts", import.meta.url)),
+      "utf8",
+    );
+    expect(installSource).not.toMatch(/--region|\bREGION\b/);
+
+    const workerSource = readFileSync(
+      fileURLToPath(new URL("../src/index.ts", import.meta.url)),
+      "utf8",
+    );
+    const renderCall = /renderInstallScript\(\{([\s\S]*?)\}\)/.exec(workerSource)?.[1] ?? "";
+    expect(renderCall).toContain("releaseOrigin");
+    expect(renderCall).toContain("defaultApiEndpoint");
+    expect(renderCall).not.toMatch(/\bregion\b/i);
+
+    const readme = readFileSync(
+      fileURLToPath(new URL("../README.md", import.meta.url)),
+      "utf8",
+    );
+    expect(readme).toContain("--token=$PAT");
+    expect(readme).toContain("--token=$TEST_TOKEN");
+    expect(readme).not.toMatch(/--region(?:=|\b)/);
   });
 
   it("invariant 3 :: derives OS from `uname -s` (lowercased) and ARCH from `uname -m`", () => {

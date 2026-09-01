@@ -43,6 +43,8 @@
  *      file that serves the public installer is an executable surface the
  *      docs-reality gate cannot scan, which is precisely where an unshipped
  *      claim survives longest.
+ *   5. Unsupported options are rejected rather than silently ignored; the
+ *      installer exposes no client-side residency selector.
  *
  * Bash conventions:
  *   - `#!/bin/sh` (POSIX sh, NOT bash) so macOS default + Alpine/BusyBox both work.
@@ -96,11 +98,13 @@ const INSTALL_SCRIPT_TEMPLATE = `#!/bin/sh
 set -eu
 
 TOKEN=""
-REGION=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --token=*) TOKEN="\${1#--token=}" ;;
-    --region=*) REGION="\${1#--region=}" ;;
+    -*)
+      echo "FATAL: unsupported option: $1" >&2
+      exit 2
+      ;;
     *) echo "WARN: ignoring unknown arg: $1" >&2 ;;
   esac
   shift
@@ -108,7 +112,7 @@ done
 
 if [ -z "$TOKEN" ]; then
   echo "FATAL: --token required" >&2
-  echo "Usage: curl -fsSL https://corelink-get.humangr.com | sh -s -- --token=<PAT> [--region=<region>]" >&2
+  echo "Usage: curl -fsSL https://corelink-get.humangr.com | sh -s -- --token=<PAT>" >&2
   exit 2
 fi
 
@@ -187,10 +191,9 @@ mkdir -p "$HOME/.corelink"
 # \`cfg.auth.pat\` stays None), so this script's own \`corelink whoami\` call
 # below always failed with "No PAT found" regardless of how valid $TOKEN
 # was — and under \`set -eu\` that aborted the whole one-liner non-zero,
-# taking any caller-side \`&& corelink ...\` with it. There is no
-# \`[defaults].region\` (or any region) config key in the CLI today, so
-# \$REGION is intentionally not persisted here; \`--region\` remains accepted
-# on the command line as a no-op until a real config key exists for it.
+# taking any caller-side \`&& corelink ...\` with it. The installer writes
+# only configuration fields consumed by the CLI; residency is not a
+# client-side install setting.
 cat > "$HOME/.corelink/config.toml" <<EOF
 [auth]
 pat = "$TOKEN"
