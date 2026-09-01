@@ -10,7 +10,7 @@ source_files:
   - "worker/src/lib/onboarding_events.ts"
   - "worker/src/lib/internal_auth.ts"
 source_blobs:
-  - "worker/src/index.ts@755263aad45417766edeba70a119c587db129e3a"
+  - "worker/src/index.ts@5ccaa75fdff6f17fc330f96f13d3314c2799679a"
   - "worker/src/sentry-scrub.ts@e9cd0d761cab3aaa83ea618f7d270e8b77adc316"
   - "worker/src/lib/tenant_residency_cache.ts@dc42b4123dae51e9887264168efcc5d8f6ab817b"
   - "worker/src/lib/tenant_tier_cache.ts@4a440e51a8199a471bcde1b80ed31a872aee2b53"

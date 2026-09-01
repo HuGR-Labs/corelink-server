@@ -11,6 +11,8 @@ source_files:
   - "migrations/d1/0072_runners_entitlement_max_vcpu_h.sql"
   - "migrations/d1/0106_devenv_monthly_vcpu.sql"
   - "crates/corelink-container/src/routes/customer_runners.rs"
+source_blobs:
+  - "worker/src/index.ts@5ccaa75fdff6f17fc330f96f13d3314c2799679a"
 checkpoint_sha: "ac6a174c4c7f43eb9dea35a0efc4a02646cf69d6"
 provenance: "AUTHORED"
 tags: ["surfaces", "devenv", "worker-edge", "auth", "quota", "durable-object"]

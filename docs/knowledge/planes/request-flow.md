@@ -15,8 +15,8 @@ source_files:
 source_blobs:
   - "worker/src/lib/edge_find_missing.ts@17ca8cfe8bfbf233d031cd600ccb7802ab7f28b8"
   - "crates/corelink-container/src/routes/audit_cas_attempted.rs@a1a8353d127c9a46c28a9d417f0d7a4f2e991c45"
-  - "worker/src/index.ts@755263aad45417766edeba70a119c587db129e3a"
-  - "worker/src/durable_object.ts@bf36fd6a2f94c92c8b5d47872dedb93cfc95d137"
+  - "worker/src/index.ts@5ccaa75fdff6f17fc330f96f13d3314c2799679a"
+  - "worker/src/durable_object.ts@28533a0ae0785576c2a9946c6fa16fbe406dd489"
   - "crates/corelink-container/src/routes.rs@90c8f13a942bca512dec0047e7f0bf0b2356c229"
   - "crates/corelink-container/src/origin_timing.rs@d649a806e8e6c62adffd0cafe7f1bab2d1b1725a"
   - "crates/corelink-container/src/storage/d1_audit_sink.rs@e7469a400d53d76a210a6e7c27bf5c4b5aa87c37"
