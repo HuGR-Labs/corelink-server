@@ -10,6 +10,12 @@ on:
   pull_request:
     paths:
       - "apps/signup-worker/**"
+      - ".github/workflows/signup-worker-vitest.yml"
+      - ".github/actions/setup-pnpm/action.yml"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - "scripts/check_signup_worker_pin.py"
   workflow_dispatch:
 
 concurrency:
@@ -25,22 +31,27 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      - name: Set up pnpm
+        uses: ./.github/actions/setup-pnpm
+
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
 
+      # B-090, same change as signup-worker-deploy.yml and for the same reason:
+      # this package is already a pnpm-workspace member with a pinned entry in
+      # the committed `pnpm-lock.yaml`. `npm install --legacy-peer-deps` re-floated
+      # the tree on every run, so the versions the tests ran against were not the
+      # versions anything else pinned — and `--legacy-peer-deps` was only needed
+      # BECAUSE the install floated. Frozen install removes both.
       - name: Install dependencies
-        # package-lock.json is gitignored (.gitignore **/package-lock.json), so
-        # `npm ci` cannot run — use `npm install` like worker-vitest.yml.
-        # --legacy-peer-deps: wrangler ≥4.108 declares a peerOPTIONAL on
-        # @cloudflare/workers-types@^5, but this worker pins workers-types 4.x (for
-        # @sentry/cloudflare compat, which peers workers-types ^4). Since the
-        # lockfile is gitignored here, a fresh npm install floats wrangler and
-        # strict peer resolution ERESOLVEs on that OPTIONAL peer. --legacy-peer-deps
-        # skips the optional-peer check (it does not weaken anything real) so the
-        # node vitest can install+run. Mirrors worker-vitest.yml.
-        run: npm install --legacy-peer-deps
+        working-directory: .
+        run: pnpm install --frozen-lockfile --filter @corelink/signup-worker... --ignore-scripts
+
+      - name: Verify signup-worker lockfile pin
+        working-directory: .
+        run: python3 scripts/check_signup_worker_pin.py
 
       - name: Run vitest + coverage floor
         # `--coverage` is LOAD-BEARING: vitest only evaluates the

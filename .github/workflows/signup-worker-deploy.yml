@@ -49,20 +49,45 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Set up pnpm
+        uses: ./.github/actions/setup-pnpm
+
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           # No `cache:` — the corelink runner is ephemeral (fresh box each run),
-          # so a GH-cache round-trip is pure cost, and signup-worker's lockfile is
-          # gitignored (there is nothing to key a cache on). Mirrors docs-ci /
-          # signup-worker-vitest.
+          # so a GH-cache round-trip is pure cost. Mirrors admin-ui-deploy.
 
-      # `npm ci` cannot run — the lockfile is gitignored here (same as
-      # signup-worker-vitest.yml). --legacy-peer-deps: a fresh install floats
-      # wrangler ≥4.108 whose peerOPTIONAL ERESOLVEs under strict resolution.
+      # B-090: this lane used to run `npm install --legacy-peer-deps` — an
+      # UNPINNED install, resolving the whole tree fresh on every deploy, with
+      # every transitive `postinstall` executing, on a self-hosted runner that
+      # holds the Cloudflare deploy credential. This worker is the live handler
+      # for Stripe billing, Clerk identity, GitHub provisioning and DSR.
+      #
+      # The old comment said "`npm ci` cannot run — the lockfile is gitignored".
+      # True of the NPM lockfile, and it hid the thing that matters: this package
+      # is ALREADY a member of the pnpm workspace (pnpm-workspace.yaml) and
+      # ALREADY has a pinned, committed entry in `pnpm-lock.yaml` (importer
+      # `apps/signup-worker`). There was a pinned lockfile the whole time; this
+      # lane just did not use it.
+      #
+      # So the fix is NOT to commit a second, divergent `package-lock.json`
+      # against `.gitignore:93` ("this repo uses pnpm ... never commit
+      # package-lock.json"). It is to install the way every other deploy lane
+      # already does — `admin-ui-deploy.yml:93`, `cf-deploy-prod.yml:307`.
+      #
+      # This also closes the half B-090 called undecided: what ships is now the
+      # same pnpm graph `pnpm-audit.yml` scans, instead of an npm-resolved tree
+      # no gate ever saw.
+      #
+      # `--legacy-peer-deps` is gone with the cause: it existed because a FRESH
+      # npm install floated wrangler ≥4.108 whose OPTIONAL peer on
+      # workers-types@^5 ERESOLVEd against this worker's pinned 4.x. Frozen
+      # install, no floating, no ERESOLVE.
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        working-directory: .
+        run: pnpm install --frozen-lockfile --filter @corelink/signup-worker... --ignore-scripts
 
       # wrangler is a devDependency of signup-worker, but pin the global CLI to
       # the repo-wide exact version for parity with the other deploy lanes (v3
