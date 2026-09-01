@@ -18,9 +18,10 @@ name: release-cli
 #   corelink-darwin-aarch64     aarch64-apple-darwin
 #   corelink-windows-x86_64.exe x86_64-pc-windows-gnu
 #
-# Required GH Secret (set MANUALLY by operator):
+# Required GH Secret (set MANUALLY by operator, used only by `release`):
 #   CORELINK_CLI_RELEASE_TOKEN  PAT with `repo` scope on
-#                               HuGR-Labs/corelink-cli
+#                               HuGR-Labs/corelink-cli. Build jobs never receive
+#                               this credential.
 #
 # TODO (v2): cosign keyless signing via GH OIDC.
 #   Wired as a placeholder below; un-stub when ready.
@@ -82,18 +83,23 @@ jobs:
         target:
           - triple: x86_64-unknown-linux-gnu
             name: corelink-linux-x86_64
+            signer_name: corelink-linux-x86_64
             ext: ""
           - triple: aarch64-unknown-linux-gnu
             name: corelink-linux-aarch64
+            signer_name: corelink-linux-arm64
             ext: ""
           - triple: x86_64-apple-darwin
             name: corelink-darwin-x86_64
+            signer_name: corelink-darwin-x86_64
             ext: ""
           - triple: aarch64-apple-darwin
             name: corelink-darwin-aarch64
+            signer_name: corelink-darwin-arm64
             ext: ""
           - triple: x86_64-pc-windows-gnu
             name: corelink-windows-x86_64
+            signer_name: corelink-windows-x86_64
             ext: ".exe"
 
     steps:
@@ -124,21 +130,24 @@ jobs:
       # cross-compiles fine using the system linker; using zigcc for
       # darwin-on-darwin triggers an upstream iconv/charset linker bug.
       #
-      # Optimization: skip the action download/install if `zig` is already
-      # on PATH (self-hosted runner host has it via `brew install zig`).
-      - name: Install Zig (Linux + Windows only, if not present)
+      # Do not treat an arbitrary Homebrew Zig as good enough: cargo-zigbuild's
+      # generated wrappers are coupled to Zig's CLI. The failed release chain
+      # had no recorded tool versions, so an incompatible host upgrade was
+      # indistinguishable from a source failure. This pin is checked, not
+      # assumed, before every cross build.
+      - name: Verify pinned Zig (Linux + Windows)
         if: ${{ !contains(matrix.target.triple, 'apple-darwin') }}
         shell: bash
         run: |
-          if command -v zig > /dev/null 2>&1; then
-            echo "  zig found at $(command -v zig) — skipping setup-zig"
-          else
-            echo "  zig not in PATH; falling back to setup-zig"
-            # Fallback action would go here; for now hard-fail with a
-            # clear message so the operator knows to `brew install zig`.
-            echo "ERROR: zig is required but not installed. On the self-hosted runner host, run: brew install zig" >&2
+          set -euo pipefail
+          EXPECTED_ZIG_VERSION=0.16.0
+          command -v zig
+          ACTUAL_ZIG_VERSION="$(zig version)"
+          if [ "$ACTUAL_ZIG_VERSION" != "$EXPECTED_ZIG_VERSION" ]; then
+            echo "::error::release-cli needs Zig ${EXPECTED_ZIG_VERSION}, got ${ACTUAL_ZIG_VERSION}. Install the pinned Zig on the builder before dispatching cli-v*." >&2
             exit 1
           fi
+          zig version
 
       # Prebuilt binary, NOT `cargo install`. The old form compiled cargo-zigbuild
       # from source into the SHARED `~/.cargo` that all 5 self-hosted runners use
@@ -153,22 +162,26 @@ jobs:
         with:
           tool: cargo-zigbuild@0.19.8
 
-      # Exit-126 fix: cargo-zigbuild writes zigcc-*.sh linker wrapper scripts to
-      # ~/Library/Caches/cargo-zigbuild/<version>/. Swatinem/rust-cache restores
-      # these files but macOS tar strips the execute bit on restore. The scripts
-      # are tiny (~100 bytes) so we unconditionally chmod +x rather than trying
-      # to detect whether they were cache-restored vs. freshly created.
-      # Ref: https://github.com/rust-cross/cargo-zigbuild/issues/XXX
-      - name: Fix zigcc linker-script permissions (exit-126 guard)
+      # cargo-zigbuild places linker wrappers in its cache. That cache was
+      # previously shared through $HOME; a non-executable restored wrapper led
+      # to exit 126 and, worse, one matrix leg could reuse another's partial
+      # wrapper. A per-job cache makes wrapper creation atomic from this job's
+      # point of view and removes the chmod-after-the-fact race.
+      - name: Verify cargo-zigbuild and isolate its wrapper cache
         if: ${{ !contains(matrix.target.triple, 'apple-darwin') }}
+        shell: bash
         run: |
-          ZIGBUILD_CACHE="$HOME/Library/Caches/cargo-zigbuild"
-          if [ -d "$ZIGBUILD_CACHE" ]; then
-            find "$ZIGBUILD_CACHE" -name '*.sh' -exec chmod +x {} +
-            echo "Permissions fixed for zigcc wrapper scripts in $ZIGBUILD_CACHE"
-          else
-            echo "No zigcc cache dir yet — scripts will be created fresh by zigbuild"
+          set -euo pipefail
+          EXPECTED_CARGO_ZIGBUILD_VERSION=0.19.8
+          ACTUAL_CARGO_ZIGBUILD_VERSION="$(cargo zigbuild --version | awk '{print $2}')"
+          if [ "$ACTUAL_CARGO_ZIGBUILD_VERSION" != "$EXPECTED_CARGO_ZIGBUILD_VERSION" ]; then
+            echo "::error::release-cli needs cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}, got ${ACTUAL_CARGO_ZIGBUILD_VERSION}." >&2
+            exit 1
           fi
+          ZIGBUILD_CACHE="${RUNNER_TEMP}/cargo-zigbuild/${{ matrix.target.triple }}"
+          mkdir -p "$ZIGBUILD_CACHE"
+          echo "CARGO_ZIGBUILD_CACHE_DIR=${ZIGBUILD_CACHE}" >> "$GITHUB_ENV"
+          cargo zigbuild --version
 
       # Reproducible build: SOURCE_DATE_EPOCH from git commit timestamp.
       - name: Set SOURCE_DATE_EPOCH
@@ -231,20 +244,37 @@ jobs:
 
       # Binary stripping is handled by [profile.release] strip = true
       # in the workspace Cargo.toml — no explicit strip step needed.
-      - name: Prepare artifact (rename + SHA-256 checksum)
+      #
+      # Keep the raw binary for the public installer AND publish the archive
+      # consumed by sign-linux/sign-windows/notarize-macos. Previously only the
+      # former existed, so every downstream signer asked the release root for a
+      # .tar.gz/.zip that did not exist.
+      - name: Prepare installer + signer artifacts and SHA-256 checksums
         shell: bash
         run: |
+          set -euo pipefail
           SRC="target/${{ matrix.target.triple }}/release/corelink"
           SRC="${SRC}${{ matrix.target.ext }}"
           ASSET="${{ matrix.target.name }}${{ matrix.target.ext }}"
           mkdir -p out
           cp "$SRC" "out/${ASSET}"
-          # sha256sum (Linux); shasum -a 256 fallback (macOS).
-          if command -v sha256sum > /dev/null 2>&1; then
-            (cd out && sha256sum "${ASSET}" > "${ASSET}.sha256")
+          PACKAGE_DIR="${RUNNER_TEMP}/corelink-package-${{ matrix.target.name }}"
+          mkdir -p "$PACKAGE_DIR"
+          cp "$SRC" "$PACKAGE_DIR/corelink${{ matrix.target.ext }}"
+          if [ "${{ matrix.target.triple }}" = "x86_64-pc-windows-gnu" ]; then
+            ARCHIVE="${{ matrix.target.signer_name }}.zip"
+            # ditto is supplied by the macOS builder and preserves the expected
+            # `corelink.exe` member name consumed by sign-windows.yml.
+            ditto -c -k --sequesterRsrc --keepParent \
+              "$PACKAGE_DIR/corelink.exe" "out/${ARCHIVE}"
           else
-            (cd out && shasum -a 256 "${ASSET}" > "${ASSET}.sha256")
+            ARCHIVE="${{ matrix.target.signer_name }}.tar.gz"
+            tar -czf "out/${ARCHIVE}" -C "$PACKAGE_DIR" "corelink${{ matrix.target.ext }}"
           fi
+          for FILE in "$ASSET" "$ARCHIVE"; do
+            (cd out && shasum -a 256 "$FILE" > "${FILE}.sha256")
+            (cd out && shasum -a 256 -c "${FILE}.sha256")
+          done
           echo "ASSET=${ASSET}" >> "$GITHUB_ENV"
 
       # TODO (v2): cosign keyless signing
@@ -262,7 +292,7 @@ jobs:
           retention-days: 1
 
   # -------------------------------------------------------------------
-  # release — collect artifacts, create GH Release in THIS repo
+  # release — collect artifacts and create the public CLI release
   #
   # ⚠️ STALE COMMENT CORRECTED 2026-08-02. The block here claimed the release
   # had been "switched to publishing in this repo's Releases" and that the
@@ -301,8 +331,11 @@ jobs:
     needs: build
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 15
+    # The source-repo GITHUB_TOKEN cannot publish cross-repo. The only write
+    # credential is injected in the two release steps below as the external,
+    # manually provisioned CORELINK_CLI_RELEASE_TOKEN.
     permissions:
-      contents: write  # default GITHUB_TOKEN writes to this repo's Releases
+      contents: read
 
     steps:
       - name: Download all build artifacts
@@ -311,21 +344,28 @@ jobs:
           path: dist/
           merge-multiple: true
 
-      - name: Verify artifact count (expect 10 = 5 binaries + 5 checksums)
+      - name: Verify artifact inventory and individual checksums
         shell: bash
         run: |
+          set -euo pipefail
           echo "=== dist/ contents ==="
           find dist/ -maxdepth 1 -type f | sort
-          EXPECTED=10
+          # 5 installer binaries + 5 signer archives, each with its own digest.
+          EXPECTED=20
           ACTUAL=$(find dist/ -maxdepth 1 -type f | wc -l | tr -d ' ')
           if [ "$ACTUAL" -ne "$EXPECTED" ]; then
             echo "ERROR: expected ${EXPECTED} files, got ${ACTUAL}" >&2
             exit 1
           fi
+          for CHECKSUM in dist/*.sha256; do
+            (cd dist && shasum -a 256 -c "$(basename "$CHECKSUM")")
+          done
 
       - name: Build combined checksums.txt
+        shell: bash
         run: |
-          cat dist/*.sha256 > dist/checksums.txt
+          set -euo pipefail
+          LC_ALL=C sort dist/*.sha256 > dist/checksums.txt
           echo "=== checksums.txt ==="
           cat dist/checksums.txt
 
@@ -361,7 +401,19 @@ jobs:
           echo "Built from \`HumanGuardrail/corelink-server\` tag \`${GITHUB_REF_NAME}\`." \
             >> /tmp/release-notes.md
 
-      - name: Create GitHub Release in this repo
+      - name: Assert external cross-repository release credential
+        env:
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::CORELINK_CLI_RELEASE_TOKEN is required only to publish to HuGR-Labs/corelink-cli; it is intentionally unavailable to build jobs." >&2
+            exit 1
+          fi
+          gh api --method GET repos/HuGR-Labs/corelink-cli >/dev/null
+
+      - name: Create GitHub Release in HuGR-Labs/corelink-cli
         env:
           GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
         run: |
@@ -374,3 +426,25 @@ jobs:
           GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
         run: |
           gh release upload "${GITHUB_REF_NAME}" dist/* --repo HuGR-Labs/corelink-cli --clobber
+
+      - name: Read back published artifacts and verify release-root digests
+        env:
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLISHED="${RUNNER_TEMP}/corelink-release-readback"
+          mkdir -p "$PUBLISHED"
+          gh release download "${GITHUB_REF_NAME}" \
+            --repo HuGR-Labs/corelink-cli \
+            --dir "$PUBLISHED" \
+            --pattern 'corelink-*' \
+            --pattern 'checksums.txt' \
+            --clobber
+          ACTUAL=$(find "$PUBLISHED" -maxdepth 1 -type f | wc -l | tr -d ' ')
+          if [ "$ACTUAL" -ne 21 ]; then
+            echo "::error::release root must expose 20 artifacts plus checksums.txt; got ${ACTUAL}." >&2
+            find "$PUBLISHED" -maxdepth 1 -type f -print | sort >&2
+            exit 1
+          fi
+          (cd "$PUBLISHED" && shasum -a 256 -c checksums.txt)
