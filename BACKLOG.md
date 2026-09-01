@@ -12147,3 +12147,110 @@ verify-means: |
   sobre um teste que não testa mais nada.
 last-verified: 2026-08-31
 ```
+
+### B-168 — `onBrokenLinks: "throw"` não vê `<a href>` cru: 9 links mortos nas páginas legais VIVAS, com todos os portões verdes
+
+`apps/docs/docusaurus.config.ts:148` põe `onBrokenLinks: "throw"`. Isso valida
+apenas o que o próprio Docusaurus resolve — links Markdown/MDX e `<Link>`. Um
+`<a href="/...">` escrito à mão numa página React sob `apps/docs/src/pages/**`
+é **invisível** para esse portão. O job `broken-links` (lychee, contra o build)
+também não pegou.
+
+Medido em 2026-08-31, contra produção, não por leitura:
+
+```
+curl -o /dev/null -w '%{http_code}' https://humangr.com/corelink/docs/explanation/compliance/dpa  -> 404
+curl -o /dev/null -w '%{http_code}' https://humangr.com/corelink/docs/explanation/sre/slo         -> 404
+```
+
+**9** hrefs internos mortos (o achado original nomeava 4; a varredura completa
+achou 9 — e atribuía dois deles a `trust.tsx`, quando vivem em
+`legal/privacy.tsx`):
+
+| href | ocorrências | por que 404 |
+| --- | --- | --- |
+| `/explanation/compliance/dpa` | 6 | arquivo existe, mas `draft: true` **e** declara `slug: "/compliance/dpa"` |
+| `/explanation/privacy/gdpr` | 1 | idem, `slug: "/privacy/gdpr"` |
+| `/explanation/privacy/lgpd-full` | 1 | idem, `slug: "/privacy/lgpd-full"` |
+| `/explanation/sre/slo` | 1 | o diretório `docs/explanation/sre/` **não existe** |
+
+Errados duas vezes: rascunho (excluído do build de produção) *e* apontando para
+um caminho que o front-matter não declara.
+
+**Fechado.** Os 9 links foram corrigidos honestamente — nenhum trocado por
+destino aproximado. Onde não existe destino publicado (DPA, explainers de
+GDPR/LGPD, documento de SLO), o link saiu e a prosa passou a dizer o que é
+verdade (o DPA não é publicado no site; peça a `legal@humangr.com`; os
+explainers estão pendentes de Legal + DPO). E o buraco de portão foi fechado:
+`scripts/check_docs_react_links.py` classifica **todo** atributo JSX `href=`/
+`to=` em `apps/docs/src/**/*.{tsx,jsx}`: literais de rota absoluta (aspas
+simples ou duplas) são resolvidos contra as rotas **publicadas** (slugs de
+front-matter parseados com PyYAML, rascunhos excluídos, mais páginas React,
+estáticos e redirects); vazio, sintaxe malformada e literal relativo falham com
+arquivo+linha; expressões dinâmicas balanceadas aparecem na população como
+`dynamic-classified`, explicitamente não resolvidas por um gate estático. Os
+testes de mutação cobrem as duas aspas, vazio, sintaxe, dinâmico, rota morta e
+rota publicada; o job `react-link-check` de `docs-ci.yml` roda ambos testes e
+gate (`runs-on: corelink`, zero minuto hospedado). Para não encolher de volta
+em silêncio, o gate aplica os pisos medidos da população viva: 20 arquivos
+TSX/JSX, 61 literais, 12 dinâmicos classificados e 30 rotas internas. Dentes
+provados nas duas direções no PR.
+
+```backlog
+id: B-168
+repo: corelink-server
+owner: tl
+status: done
+verify: |
+  python3 - <<'PY'
+  import pathlib, re, subprocess, sys
+  script = pathlib.Path("scripts/check_docs_react_links.py")
+  wf = pathlib.Path(".github/workflows/docs-ci.yml")
+  for p in (script, wf):
+      if not p.is_file():
+          print(f"INSTRUMENTO QUEBRADO: {p} nao existe", file=sys.stderr); sys.exit(2)
+  try:
+      import yaml
+  except ImportError:
+      print("INSTRUMENTO QUEBRADO: PyYAML ausente", file=sys.stderr); sys.exit(2)
+  jobs = yaml.safe_load(wf.read_text()).get("jobs", {})
+  job = jobs.get("react-link-check")
+  if not job:
+      print("REABERTO: docs-ci.yml nao tem mais o job `react-link-check`", file=sys.stderr)
+      sys.exit(1)
+  if job.get("runs-on") != "corelink":
+      print(f"REABERTO: react-link-check saiu do runner self-hosted (runs-on={job.get('runs-on')!r})",
+            file=sys.stderr)
+      sys.exit(1)
+  if not any(script.as_posix() in str(s.get("run", "")) for s in job.get("steps", [])):
+      print("REABERTO: o job react-link-check nao invoca mais o script", file=sys.stderr)
+      sys.exit(1)
+  r = subprocess.run([sys.executable, str(script), "--verbose"], capture_output=True, text=True)
+  out = r.stdout + r.stderr
+  m = re.search(r"POPULATION: (\d+) internal hrefs", out)
+  if not m:
+      print("INSTRUMENTO QUEBRADO: o gate nao imprimiu a linha POPULATION\n" + out.strip(),
+            file=sys.stderr)
+      sys.exit(2)
+  n = int(m.group(1))
+  if n == 0:
+      print("INSTRUMENTO QUEBRADO: o gate checou 0 hrefs — vacuo", file=sys.stderr); sys.exit(2)
+  if r.returncode != 0:
+      print(f"REABERTO: {n} hrefs checados e o gate FALHOU:\n" + out.strip(), file=sys.stderr)
+      sys.exit(1)
+  print(f"FECHADO: {n} hrefs internos resolvem, e o job react-link-check (runs-on: corelink) "
+        "roda este script em todo PR que toca apps/docs.")
+  sys.exit(0)
+  PY
+verify-means: |
+  **Polaridade `done` (invertida):** sai 0 SOMENTE porque a correção está no
+  lugar. Reverter qualquer metade reddena: se os links mortos voltarem, o gate
+  sai != 0 e o verify sai 1; se o job `react-link-check` for removido de
+  `docs-ci.yml`, movido para fora do runner self-hosted, ou parar de invocar o
+  script, sai 1 sem sequer rodar o gate.
+
+  **Não pode passar por vacuidade:** exige a linha `POPULATION: N internal
+  hrefs` com N > 0. Um gate que checou zero href sai 2 (instrumento quebrado),
+  nunca 0. Script ou workflow ausentes, e PyYAML ausente, também saem 2.
+last-verified: 2026-08-31
+```

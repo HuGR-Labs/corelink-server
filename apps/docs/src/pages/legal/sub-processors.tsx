@@ -89,9 +89,8 @@ export default function SubProcessorsPage(): ReactElement {
           <p>
             Any enterprise customer may request a counter-signed DPA. The
             default Common Paper DPA template applies otherwise. Executed DPAs
-            are available from the{" "}
-            <a href="/explanation/compliance/dpa">Data Processing Addendum</a>{" "}
-            page.
+            are not published on this site; request a copy at{" "}
+            <a href="mailto:legal@humangr.com">legal@humangr.com</a>.
           </p>
         </section>
 
@@ -371,7 +370,9 @@ export default function SubProcessorsPage(): ReactElement {
           See also:{" "}
           <a href="/legal/privacy">Privacy Notice</a> &middot;{" "}
           <a href="/legal/terms">Terms of Service</a> &middot;{" "}
-          <a href="/explanation/compliance/dpa">Data Processing Addendum</a>
+          <a href="mailto:legal@humangr.com">
+            Data Processing Addendum (on request)
+          </a>
           {" "}&middot;{" "}
           <a href={`mailto:${PRIVACY_EMAIL}`}>
             Ask for prior versions of this list

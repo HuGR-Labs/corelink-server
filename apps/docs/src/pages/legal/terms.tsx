@@ -182,11 +182,10 @@ export default function TermsPage(): ReactElement {
             operation. The detailed data-handling terms — including
             sub-processor list, transfer mechanisms, retention windows, and
             erasure procedures — are governed by the{" "}
-            <a href="/legal/privacy">Privacy Notice</a> and the{" "}
-            <a href="/explanation/compliance/dpa">
-              Data Processing Addendum
-            </a>
-            .
+            <a href="/legal/privacy">Privacy Notice</a> and the Data
+            Processing Addendum. The DPA is not published on this site;
+            request a counter-signed copy at{" "}
+            <a href="mailto:legal@humangr.com">legal@humangr.com</a>.
           </p>
         </section>
 
@@ -307,11 +306,8 @@ export default function TermsPage(): ReactElement {
           <h2>13. Miscellaneous</h2>
           <p>
             These Terms, together with the{" "}
-            <a href="/legal/privacy">Privacy Notice</a>, the{" "}
-            <a href="/explanation/compliance/dpa">
-              Data Processing Addendum
-            </a>
-            , and any executed Order Form, constitute the entire agreement
+            <a href="/legal/privacy">Privacy Notice</a>, the Data Processing
+            Addendum, and any executed Order Form, constitute the entire agreement
             between the parties and supersede any prior agreement on the
             subject. If any provision is held unenforceable, the remainder
             stays in effect. Neither party&rsquo;s failure to enforce a right
@@ -329,7 +325,6 @@ export default function TermsPage(): ReactElement {
             For paid tiers (Pro and Enterprise), CoreLink targets a monthly
             uptime of 99.9% for the API control plane and the Admin UI.
             Availability is measured against the synthetic probe set
-            documented at <a href="/explanation/sre/slo">SLO targets</a> and
             reported publicly on the Statuspage. If the measured monthly
             uptime falls below 99.9%, Pro-tier customers are entitled to a
             service credit equal to 10% of the affected month&rsquo;s fees,
@@ -388,7 +383,9 @@ export default function TermsPage(): ReactElement {
         <p className={styles.footnote}>
           See also: <a href="/legal/privacy">Privacy Notice</a> ·{" "}
           <a href="/legal/sub-processors">Sub-processors</a> ·{" "}
-          <a href="/explanation/compliance/dpa">Data Processing Addendum</a>
+          <a href="mailto:legal@humangr.com">
+            Data Processing Addendum (on request)
+          </a>
         </p>
       </main>
     </Layout>

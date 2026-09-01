@@ -212,11 +212,13 @@ export default function PrivacyPage(): ReactElement {
             human summary.
           </p>
           <p>
-            For the full article-by-article SLA table, the WebAuthn step-up
+            The full article-by-article SLA table, the WebAuthn step-up
             policy for destructive requests, and the backend-by-backend
-            erasure detail, see the explainers at{" "}
-            <a href="/explanation/privacy/gdpr">GDPR rights</a> and{" "}
-            <a href="/explanation/privacy/lgpd-full">LGPD rights</a>.
+            erasure detail live in the GDPR-rights and LGPD-rights
+            explainers, which are still pending Legal and DPO sign-off and
+            are therefore not published on this site yet. Until they are,
+            request them from{" "}
+            <a href="mailto:privacy@humangr.com">privacy@humangr.com</a>.
           </p>
         </section>
 
@@ -422,7 +424,9 @@ export default function PrivacyPage(): ReactElement {
         <p className={styles.footnote}>
           See also: <a href="/legal/terms">Terms of Service</a> ·{" "}
           <a href="/legal/sub-processors">Sub-processors</a> ·{" "}
-          <a href="/explanation/compliance/dpa">Data Processing Addendum</a>
+          <a href="mailto:legal@humangr.com">
+            Data Processing Addendum (on request)
+          </a>
         </p>
       </main>
     </Layout>
