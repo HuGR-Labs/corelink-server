@@ -549,33 +549,39 @@ pub(crate) const INTERNAL_AUTH_KEY_MIN_LEN: usize = 32;
 /// high-privilege internal surfaces (any-tenant PAT mint, GDPR erase,
 /// CAS erase, admin, pilots) — one leak granted ALL of them. This helper
 /// reads a **consumer-specific** key first and only falls back to the
-/// shared key when the specific one is unset/blank/too-short, so each
+/// shared key when the specific one is unset. A present but malformed
+/// declaration fails CLOSED rather than widening authorization to the shared
+/// key, so each
 /// surface can be rotated to its own credential without a flag day
 /// (mirrors the #8 OCI dual-name pattern — additive, deployable BEFORE
 /// the new prod secrets exist).
 ///
 /// Resolution order (fail-CLOSED at each step):
 /// 1. `specific_env` — used iff set AND ≥ [`INTERNAL_AUTH_KEY_MIN_LEN`];
-/// 2. else `CORELINK_INTERNAL_AUTH_KEY` — used iff set AND ≥ floor;
+/// 2. only when `specific_env` is unset, `CORELINK_INTERNAL_AUTH_KEY` — used
+///    iff set AND ≥ floor;
 /// 3. else `None` — the handler fails CLOSED (403), exactly as today.
 ///
-/// A set-but-too-short `specific_env` does NOT hard-fail the surface; it
-/// is treated as absent and the shared key is tried (so a misconfigured
-/// new secret degrades to today's behaviour rather than locking the
-/// surface out). Both too-short ⇒ `None`.
+/// A set-but-too-short (including whitespace) `specific_env` hard-fails the
+/// surface. Treating that declaration as absent would let a malformed
+/// consumer-specific credential silently authorize through the broader shared
+/// secret. A deliberately unset specific variable retains the shared-key
+/// migration fallback; a short shared key still yields `None`.
 #[must_use]
 pub(crate) fn resolve_internal_auth_key(specific_env: &str) -> Option<Arc<str>> {
     // 1. Consumer-specific key, when present and properly sized.
     match std::env::var(specific_env) {
-        Ok(key) if key.len() >= INTERNAL_AUTH_KEY_MIN_LEN => {
+        Ok(key) if key.len() >= INTERNAL_AUTH_KEY_MIN_LEN && !key.trim().is_empty() => {
             return Some(Arc::from(key.as_str()));
         }
-        Ok(key) if !key.is_empty() => {
+        Ok(_) => {
             tracing::warn!(
                 env = specific_env,
-                "consumer-specific internal-auth key set but < 32 chars; \
-                 falling back to CORELINK_INTERNAL_AUTH_KEY (use `openssl rand -hex 32`)"
+                "consumer-specific internal-auth key set but blank or < 32 chars; \
+                 this surface will fail CLOSED (403), with NO shared-key fallback \
+                 (use `openssl rand -hex 32`)"
             );
+            return None;
         }
         _ => {}
     }
@@ -596,7 +602,7 @@ pub(crate) fn resolve_internal_auth_key(specific_env: &str) -> Option<Arc<str>> 
 /// environment (red-team #3).
 ///
 /// Reads `CORELINK_ADMIN_AUTH_KEY` first, falling back to the shared
-/// `CORELINK_INTERNAL_AUTH_KEY` when unset/blank/too-short (see
+/// `CORELINK_INTERNAL_AUTH_KEY` only when the dedicated variable is unset (see
 /// [`resolve_internal_auth_key`]). When `None`, the admin handlers fail
 /// CLOSED (403) — privileged logic never runs without a properly sized
 /// gate.
@@ -1713,6 +1719,8 @@ mod tests {
         std::env::remove_var("CORELINK_ERASE_AUTH_KEY");
         std::env::remove_var("CORELINK_DSR_ANCHOR_AUTH_KEY");
         std::env::remove_var("CORELINK_PAT_MINT_AUTH_KEY");
+        std::env::remove_var("CORELINK_TIER_SELECT_AUTH_KEY");
+        std::env::remove_var("CORELINK_DPA_ACCEPT_AUTH_KEY");
     }
 
     const KEY_A: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"; // 32 chars
@@ -1750,18 +1758,76 @@ mod tests {
         clear_key_env();
     }
 
-    /// #3: a set-but-too-short specific key is treated as absent and the
-    /// shared key is used (a misconfigured new secret degrades, never locks
-    /// the surface out).
+    /// B-074: the money-path resolver must never widen from a malformed
+    /// endpoint-specific declaration to `CORELINK_INTERNAL_AUTH_KEY`.
+    ///
+    /// The matrix pins both exact money endpoint variables. A deliberately
+    /// unset dedicated key retains the migration fallback, but any present
+    /// blank/whitespace value or value below the 32-character floor is a
+    /// malformed declaration and fails CLOSED even if the shared key is valid.
     #[test]
-    fn split_specific_too_short_falls_back_to_shared() {
+    fn money_resolver_matrix_rejects_malformed_dedicated_without_shared_widening() {
         let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        for (specific_env, dedicated, shared, expected) in [
+            // Dedicated unset: the explicitly retained migration fallback.
+            (
+                "CORELINK_TIER_SELECT_AUTH_KEY",
+                None,
+                Some(KEY_A),
+                Some(KEY_A),
+            ),
+            // Valid dedicated values keep winning over a valid shared value.
+            (
+                "CORELINK_DPA_ACCEPT_AUTH_KEY",
+                Some(KEY_B),
+                Some(KEY_A),
+                Some(KEY_B),
+            ),
+            // Regression cell: a 20-char dedicated declaration MUST NOT widen
+            // to a 64-char shared credential.
+            (
+                "CORELINK_TIER_SELECT_AUTH_KEY",
+                Some("dddddddddddddddddddd"),
+                Some("ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"),
+                None,
+            ),
+            // Whitespace is present input, not an unset declaration.
+            (
+                "CORELINK_DPA_ACCEPT_AUTH_KEY",
+                Some("                    "),
+                Some(KEY_A),
+                None,
+            ),
+            // An explicitly empty declaration is also not an unset variable.
+            ("CORELINK_TIER_SELECT_AUTH_KEY", Some(""), Some(KEY_A), None),
+            // With neither usable declaration, the route remains unmounted.
+            ("CORELINK_TIER_SELECT_AUTH_KEY", None, None, None),
+            // A short shared value is rejected even when the dedicated key is unset.
+            ("CORELINK_DPA_ACCEPT_AUTH_KEY", None, Some("short"), None),
+        ] {
+            clear_key_env();
+            if let Some(dedicated) = dedicated {
+                std::env::set_var(specific_env, dedicated);
+            }
+            if let Some(shared) = shared {
+                std::env::set_var("CORELINK_INTERNAL_AUTH_KEY", shared);
+            }
+            assert_eq!(
+                resolve_internal_auth_key(specific_env).as_deref(),
+                expected,
+                "specific_env={specific_env} dedicated={dedicated:?} shared_present={}",
+                shared.is_some()
+            );
+        }
+        // Whitespace remains malformed even when its byte length reaches the
+        // floor; length alone must not turn an empty credential into a valid key.
         clear_key_env();
+        std::env::set_var("CORELINK_DPA_ACCEPT_AUTH_KEY", " ".repeat(32));
         std::env::set_var("CORELINK_INTERNAL_AUTH_KEY", KEY_A);
-        std::env::set_var("CORELINK_PAT_MINT_AUTH_KEY", "too-short"); // < 32
-        let resolved = resolve_internal_auth_key("CORELINK_PAT_MINT_AUTH_KEY")
-            .expect("too-short specific → shared fallback");
-        assert_eq!(&*resolved, KEY_A);
+        assert!(
+            resolve_internal_auth_key("CORELINK_DPA_ACCEPT_AUTH_KEY").is_none(),
+            "a whitespace-only dedicated key must not widen to the shared key"
+        );
         clear_key_env();
     }
 
