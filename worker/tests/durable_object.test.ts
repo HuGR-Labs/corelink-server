@@ -67,6 +67,132 @@ function makeEnv(): Env {
   };
 }
 
+type MoneyPathEnv = Env & {
+  CORELINK_TIER_SELECT_AUTH_KEY?: string;
+  CORELINK_DPA_ACCEPT_AUTH_KEY?: string;
+};
+
+interface MoneyPathStartHarness {
+  do_: CoreLinkServer;
+  starts: Array<Record<string, string>>;
+}
+
+/**
+ * Build a DO whose container records every boot environment. The container
+ * starts stopped so each explicit `startContainer` call exercises the real
+ * boot path, including a restart after the first container is stopped.
+ */
+async function makeMoneyPathStartHarness(
+  envOverrides: Pick<MoneyPathEnv, "CORELINK_TIER_SELECT_AUTH_KEY" | "CORELINK_DPA_ACCEPT_AUTH_KEY"> = {},
+): Promise<MoneyPathStartHarness> {
+  const state = makeMockState();
+  const starts: Array<Record<string, string>> = [];
+  const container = {
+    running: false,
+    start: (options: { env?: Record<string, string> }) => {
+      starts.push({ ...(options.env ?? {}) });
+      container.running = true;
+    },
+    destroy: vi.fn(async () => { container.running = false; }),
+    getTcpPort: () => ({ fetch: async () => new Response(null, { status: 200 }) }),
+    setInactivityTimeout: vi.fn(async (_ms: number) => {}),
+    monitor: () => new Promise<void>(() => {}),
+  };
+  (state as unknown as { container: unknown }).container = container;
+
+  const do_ = new CoreLinkServer(state, {
+    ...makeEnv(),
+    ...envOverrides,
+  } as MoneyPathEnv);
+  await new Promise<void>((resolve) => setTimeout(resolve, 5));
+  (do_ as unknown as { lifecycleState: Record<string, unknown> }).lifecycleState = {
+    containerStatus: "stopped",
+    lastHealthCheckMs: 0,
+    coldStartCount: 0,
+    tenantId: "money-path-test-tenant",
+  };
+  return { do_, starts };
+}
+
+async function startMoneyPathContainer(do_: CoreLinkServer): Promise<void> {
+  const result = await (
+    do_ as unknown as {
+      startContainer: (requestId: string) => Promise<{ ok: boolean; reason?: string }>;
+    }
+  ).startContainer("money-path-env-test");
+  expect(result).toEqual({ ok: true });
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// B-074 money-path auth env propagation
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("money-path auth keys reach every container boot", () => {
+  const tierKey = "tier-select-dedicated-key-012345678901234567890123";
+  const dpaKey = "dpa-accept-dedicated-key-0123456789012345678901234";
+
+  it("forwards both dedicated keys exactly, without swapping or conflating them", async () => {
+    const { do_, starts } = await makeMoneyPathStartHarness({
+      CORELINK_TIER_SELECT_AUTH_KEY: tierKey,
+      CORELINK_DPA_ACCEPT_AUTH_KEY: dpaKey,
+    });
+
+    await startMoneyPathContainer(do_);
+
+    expect(starts).toHaveLength(1);
+    expect(starts[0]?.CORELINK_TIER_SELECT_AUTH_KEY).toBe(tierKey);
+    expect(starts[0]?.CORELINK_DPA_ACCEPT_AUTH_KEY).toBe(dpaKey);
+    expect(starts[0]?.CORELINK_TIER_SELECT_AUTH_KEY).not.toBe(dpaKey);
+    expect(starts[0]?.CORELINK_DPA_ACCEPT_AUTH_KEY).not.toBe(tierKey);
+  });
+
+  it.each([
+    ["tier-select only", { CORELINK_TIER_SELECT_AUTH_KEY: tierKey }, "CORELINK_TIER_SELECT_AUTH_KEY", tierKey],
+    ["dpa-accept only", { CORELINK_DPA_ACCEPT_AUTH_KEY: dpaKey }, "CORELINK_DPA_ACCEPT_AUTH_KEY", dpaKey],
+  ] as const)("preserves the %s dedicated binding independently", async (_label, overrides, expectedName, expectedValue) => {
+    const { do_, starts } = await makeMoneyPathStartHarness(overrides);
+
+    await startMoneyPathContainer(do_);
+
+    expect(starts[0]?.[expectedName]).toBe(expectedValue);
+    const otherName = expectedName === "CORELINK_TIER_SELECT_AUTH_KEY"
+      ? "CORELINK_DPA_ACCEPT_AUTH_KEY"
+      : "CORELINK_TIER_SELECT_AUTH_KEY";
+    expect(Object.hasOwn(starts[0] ?? {}, otherName)).toBe(false);
+  });
+
+  it("does not synthesize either dedicated binding when both are absent", async () => {
+    const { do_, starts } = await makeMoneyPathStartHarness();
+
+    await startMoneyPathContainer(do_);
+
+    expect(Object.hasOwn(starts[0] ?? {}, "CORELINK_TIER_SELECT_AUTH_KEY")).toBe(false);
+    expect(Object.hasOwn(starts[0] ?? {}, "CORELINK_DPA_ACCEPT_AUTH_KEY")).toBe(false);
+  });
+
+  it("repeats the exact bindings on a restart/container-start", async () => {
+    const { do_, starts } = await makeMoneyPathStartHarness({
+      CORELINK_TIER_SELECT_AUTH_KEY: tierKey,
+      CORELINK_DPA_ACCEPT_AUTH_KEY: dpaKey,
+    });
+
+    await startMoneyPathContainer(do_);
+    (do_ as unknown as { lifecycleState: Record<string, unknown> }).lifecycleState = {
+      containerStatus: "stopped",
+      lastHealthCheckMs: 0,
+      coldStartCount: 1,
+      tenantId: "money-path-test-tenant",
+    };
+    await startMoneyPathContainer(do_);
+
+    expect(starts).toHaveLength(2);
+    expect(starts[0]?.CORELINK_TIER_SELECT_AUTH_KEY).toBe(tierKey);
+    expect(starts[1]?.CORELINK_TIER_SELECT_AUTH_KEY).toBe(tierKey);
+    expect(starts[0]?.CORELINK_DPA_ACCEPT_AUTH_KEY).toBe(dpaKey);
+    expect(starts[1]?.CORELINK_DPA_ACCEPT_AUTH_KEY).toBe(dpaKey);
+  });
+});
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Idempotent-start guard (multi-region cold-start thrash fix, 2026-08-18)
 // ──────────────────────────────────────────────────────────────────────────────

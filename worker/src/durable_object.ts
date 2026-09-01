@@ -34,6 +34,20 @@ import type {
 } from "@cloudflare/workers-types";
 import type { Env } from "./index.js";
 
+/**
+ * Container-facing additions to the Worker environment contract.
+ *
+ * These bindings intentionally stay optional: local/test Workers do not need
+ * to provision the money-path credentials, and an omitted dedicated key must
+ * remain omitted at container boot so the Rust resolver can use its shared-key
+ * fallback. The two names are deliberately separate; neither is an alias of
+ * the other or of CORELINK_INTERNAL_AUTH_KEY.
+ */
+interface ContainerEnv extends Env {
+  CORELINK_TIER_SELECT_AUTH_KEY?: string;
+  CORELINK_DPA_ACCEPT_AUTH_KEY?: string;
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
 // ──────────────────────────────────────────────────────────────────────────────
@@ -509,7 +523,7 @@ async function resolveDoColo(): Promise<{ colo: string | null; error: string | n
 export class CoreLinkServer implements DurableObject {
   private readonly state: DurableObjectState;
   private readonly storage: DurableObjectStorage;
-  private readonly env: Env;
+  private readonly env: ContainerEnv;
   private lifecycleState: LifecycleState = {
     containerStatus: "stopped",
     lastHealthCheckMs: 0,
@@ -519,7 +533,7 @@ export class CoreLinkServer implements DurableObject {
   private healthFailures = 0;
   private doIdHash = "";
 
-  constructor(state: DurableObjectState, env: Env) {
+  constructor(state: DurableObjectState, env: ContainerEnv) {
     this.state = state;
     this.storage = state.storage;
     this.env = env;
@@ -845,6 +859,13 @@ export class CoreLinkServer implements DurableObject {
           // or the route stays UNMOUNTED (fail-CLOSED) and every paid checkout
           // 403s `dpa_required` (the DPA row never gets written).
           DPA_RECEIPT_SIGNING_KEY: this.env.DPA_RECEIPT_SIGNING_KEY ?? "",
+          // B-074 money-path consumer split: each route has its own optional
+          // dedicated gate. Preserve an omitted binding as omitted so the
+          // container resolver can apply its documented shared-key fallback;
+          // never substitute one route's key for the other.
+          ...(this.env.CORELINK_DPA_ACCEPT_AUTH_KEY === undefined
+            ? {}
+            : { CORELINK_DPA_ACCEPT_AUTH_KEY: this.env.CORELINK_DPA_ACCEPT_AUTH_KEY }),
           PAT_SIGNING_KEY: this.env.PAT_SIGNING_KEY ?? "",
           // L3 money path: `POST /v1/onboarding/tier-select` runs INSIDE the
           // container and reads these from its OWN process env
@@ -869,6 +890,9 @@ export class CoreLinkServer implements DurableObject {
           STRIPE_PRICE_ID_RUNNER_SCALE: this.env.STRIPE_PRICE_ID_RUNNER_SCALE ?? "",
           STRIPE_PRICE_ID_RUNNER_MAX: this.env.STRIPE_PRICE_ID_RUNNER_MAX ?? "",
           CORELINK_DPA_VERSION: this.env.CORELINK_DPA_VERSION ?? "",
+          ...(this.env.CORELINK_TIER_SELECT_AUTH_KEY === undefined
+            ? {}
+            : { CORELINK_TIER_SELECT_AUTH_KEY: this.env.CORELINK_TIER_SELECT_AUTH_KEY }),
           // DSR Wave 1 (#254): the container's erasure adapters derive the
           // pseudonymization/idempotency salt from ERASURE_SALT_KEY. If absent the
           // container falls back to a PREDICTABLE non-secret salt — forward it so
