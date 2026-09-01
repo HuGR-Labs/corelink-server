@@ -37,12 +37,14 @@ head_sampling_rate = 1
 #                                  MUST be bound here for the Clerk auto-provision
 #                                  mint to authenticate. Unset ⇒ the mint falls back
 #                                  to CORELINK_INTERNAL_AUTH_KEY (additive).
-#   CORELINK_ERASE_AUTH_KEY      — OPTIONAL dedicated erase/DSR consumer secret
-#                                  (red-team #3 split). When the full-split config
-#                                  provisions this on the container + main worker,
-#                                  it MUST also be bound here so the DSR erase/verify
-#                                  calls authenticate (rt-nuclear #23). Unset ⇒ the
-#                                  DSR path falls back to CORELINK_INTERNAL_AUTH_KEY.
+#   CORELINK_ERASE_AUTH_KEY      — REQUIRED dedicated erase/audit-drain consumer
+#                                  secret (≥32 non-blank characters), distinct from
+#                                  CORELINK_INTERNAL_AUTH_KEY. The irreversible
+#                                  `/_internal/audit/drain` caller sends ONLY this
+#                                  key: unset, blank, short, or shared-only config
+#                                  skips/fails closed and cannot drain the chain.
+#                                  Bind it before deploy; the deploy workflow checks
+#                                  its NAME with scripts/verify-signup-worker-secrets.sh.
 #
 # D1 bindings:
 #   CONFIG_DB  — corelink-prod-d1 (tenant, pat, tenant_billing tables).

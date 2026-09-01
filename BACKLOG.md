@@ -3986,33 +3986,41 @@ for verdadeiro. Reparo estrutural: selar em lote, como a emissão já faz.
 id: B-064
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   bash -c 'cron=apps/signup-worker/src/webhooks/audit_drain_cron.ts
   h=crates/corelink-container/src/routes/audit_drain.rs
-  [ -f "$cron" ] && [ -f "$h" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
-  emite_novo=0; grep -q "\"rows_sealed\"" "$h" && emite_novo=1
-  le_velho=0; grep -qE "j\.sealed|j\.partitions" "$cron" && le_velho=1
-  le_incomplete=0; grep -q "incomplete" "$cron" && le_incomplete=1
-  [ "$emite_novo" = 1 ] || { echo "FALHA: handler nao emite mais rows_sealed — a alegacao mudou, reavalie."; exit 1; }
-  if [ "$le_velho" = 0 ] && [ "$le_incomplete" = 1 ]; then
-    echo "FALHA: o cron le as chaves certas E consulta incomplete — feche o item."; exit 1; fi
-  echo "aberto: handler emite rows_sealed; cron le_chaves_velhas=$le_velho le_incomplete=$le_incomplete"'
+  t=apps/signup-worker/tests/audit_drain_cron.test.ts
+  s=scripts/verify-signup-worker-secrets.sh
+  w=.github/workflows/signup-worker-deploy.yml
+  [ -f "$cron" ] && [ -f "$h" ] && [ -f "$t" ] && [ -f "$s" ] && [ -f "$w" ] || { echo "FALHA: superficie do reparo sumiu — reavalie."; exit 1; }
+  grep -q "\"rows_sealed\"" "$h" || { echo "FALHA: handler nao emite mais rows_sealed — a alegacao mudou, reavalie."; exit 1; }
+  grep -q "resolveDedicatedEraseAuthKey" "$cron" || { echo "FALHA: drain perdeu a chave dedicada sem fallback — reabra."; exit 1; }
+  grep -q "parseAuditDrainResponse" "$cron" || { echo "FALHA: 2xx sem contrato estrito voltou a parecer sucesso — reabra."; exit 1; }
+  grep -q "!body.ok || body.partitions_failed > 0" "$cron" || { echo "FALHA: ok:false/falha de particao pode voltar a parecer completa — reabra."; exit 1; }
+  grep -q "!madeDrainProgress(body)" "$cron" || { echo "FALHA: incomplete sem progresso pode voltar a repetir cego — reabra."; exit 1; }
+  grep -q "CORELINK_ERASE_AUTH_KEY" "$s" && grep -q "verify-signup-worker-secrets.sh" "$w" || { echo "FALHA: chave dedicada nao esta presa ao gate de deploy — reabra."; exit 1; }
+  grep -q "ok:false as terminal even when partitions_failed is zero" "$t" && grep -q "missing ok" "$t" && grep -q "non-boolean ok" "$t" && grep -q "missing incomplete" "$t" && grep -q "non-boolean incomplete" "$t" && grep -q "non-finite counter" "$t" && grep -q "incomplete-with-no-progress" "$t" || { echo "FALHA: dentes de contrato incompletos — reabra."; exit 1; }
+  echo "fechado: caller dedicado, contrato 2xx estrito, falhas/no-progress terminais e segredo preso ao deploy"'
 verify-means: |
-  open — o handler emite `rows_sealed`/`partitions_drained`/`incomplete` E o cron
-  continua lendo `j.sealed`/`j.partitions`, ou continua sem consultar `incomplete`.
-  As duas metades juntas são a alegação: o contrato existe do lado do servidor e não
-  tem implementação do lado de quem chama.
+  done — polaridade invertida. Passa somente enquanto o caller usa
+  `resolveDedicatedEraseAuthKey` (≥32, sem fallback compartilhado), decodifica o
+  contrato COMPLETO do handler antes de somar ou continuar, e trata `ok:false`,
+  contador inválido, resposta malformada e `incomplete` sem qualquer progresso como
+  resultado terminal não-completo. O verify também exige dentes para `ok:false` sem
+  contador-falha e `ok`/`incomplete` ausentes ou não-bool — os ramos que uma mutação
+  de predicado ou tipo deixaria verdes — além da costura `script → deploy`; uma simples
+  presença de `ok` ou `incomplete` no arquivo não é mais suficiente.
 
-  Vira DRIFTED (e o item TEM de ser fechado) quando o cron passar a ler as chaves
-  corretas E a consultar `incomplete` — que é exatamente o reparo de duas linhas.
+  Fechado por este WP em 2026-09-01. O laço ainda é limitado por chamadas e relógio;
+  parar cedo só adia trabalho idempotente, nunca bifurca ou sela duas vezes. As
+  garantias de fonte de recuperação (`audit_outbox`), CAS de cabeça e lease/fence ficam
+  inteiramente no handler Rust e não são alteradas pelo caller.
 
-  O que este verify NÃO decide, e admito: o teto de 200 em si. Ele é o `unwrap_or`
-  default e continuará no código mesmo depois do laço existir — corretamente, porque
-  com laço o teto por chamada deixa de ser um teto por hora. Medir o `200` daria um
-  portão que nunca fecha. A alegação verificável é o contrato quebrado, e é essa que
-  o comando decide.
-last-verified: 2026-08-30
+  Isto NÃO prova taxa/latência em produção. O [B-125] continua aberto até nova medição
+  de throughput provar que o backlog deixa de bater no teto — não confundir reparo de
+  contrato com evidência de capacidade.
+last-verified: 2026-09-01
 ```
 
 ### B-065 — dois endpoints Stripe vivos processam o mesmo evento duas vezes, há mais de sete dias

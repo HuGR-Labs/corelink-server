@@ -14,7 +14,8 @@ name: signup-worker — CF Worker deploy
 # Deploy auth: CF_API_TOKEN + CF_ACCOUNT_ID (GH Actions secrets). The worker's
 # RUNTIME secrets (CLERK_WEBHOOK_SECRET, CLERK_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
 # STRIPE_SECRET_KEY, CORELINK_INTERNAL_AUTH_KEY, CORELINK_PAT_MINT_AUTH_KEY,
-# ERASURE_SALT_KEY, …) are bound out-of-band via `wrangler secret put` — NOT by
+# CORELINK_ERASE_AUTH_KEY, ERASURE_SALT_KEY, …) are bound out-of-band via
+# `wrangler secret put` — NOT by
 # this workflow — and are already populated in prod. `wrangler deploy` never
 # clears existing secrets, so a deploy is safe w.r.t. them.
 #
@@ -25,6 +26,8 @@ on:
     branches: [main]
     paths:
       - 'apps/signup-worker/**'
+      - 'scripts/verify-signup-worker-secrets.sh'
+      - '.github/workflows/signup-worker-deploy.yml'
   workflow_dispatch:
 
 permissions:
@@ -95,6 +98,15 @@ jobs:
       - name: Install wrangler
         working-directory: .
         run: npm install -g wrangler@4.95.0
+
+      # The drain route is fail-closed on its dedicated erase key. `wrangler
+      # deploy` preserves secrets, so check the deployed secret names before
+      # shipping code that depends on them; values are never listed or logged.
+      - name: Verify required runtime secrets
+        run: bash ../../scripts/verify-signup-worker-secrets.sh
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
 
       # `wrangler deploy` esbuild-bundles src/index.ts and reads
       # apps/signup-worker/wrangler.toml (single default env — no [env.*] blocks —

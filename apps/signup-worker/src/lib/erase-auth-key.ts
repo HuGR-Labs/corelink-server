@@ -5,10 +5,10 @@
  * # Why this exists (rt-nuclear #23)
  *
  * The erase/DSR internal surface is gated by a PER-CONSUMER key split (red-team
- * #3): the dedicated `CORELINK_ERASE_AUTH_KEY`, falling back to the shared
- * `CORELINK_INTERNAL_AUTH_KEY` when the dedicated one is unset. Both peers that
- * sit on the erase path already resolve the key this way — erase-first,
- * shared-fallback:
+ * #3). Older, additive callers still use the legacy erase-first/shared-fallback
+ * resolver below. Irreversible audit-drain calls use the separate strict resolver
+ * because the container's `/_internal/audit/drain` mount requires the dedicated
+ * key with no shared fallback.
  *
  *   - the container's `erase_auth_key_from_env()` (server PR #317), and
  *   - the main Worker's `/_internal/dsr/*` verify gate
@@ -23,8 +23,10 @@
  * the moment the dedicated erase key is deployed — silently breaking the GDPR
  * erasure path in exactly the full-split config #23 warns about.
  *
- * This resolver mirrors the peers' resolution so the key always matches: prefer
- * `CORELINK_ERASE_AUTH_KEY`, fall back to the shared `CORELINK_INTERNAL_AUTH_KEY`.
+ * `resolveEraseAuthKey` mirrors the legacy peers: prefer
+ * `CORELINK_ERASE_AUTH_KEY`, fall back to the shared
+ * `CORELINK_INTERNAL_AUTH_KEY`. `resolveDedicatedEraseAuthKey` is deliberately
+ * stricter and is the only resolver audit-drain may use.
  *
  * The ≥32-char floor is enforced AUTHORITATIVELY at the two verify gates (main
  * Worker + container); this resolver intentionally only selects WHICH key to
@@ -38,6 +40,22 @@ export interface EraseAuthKeyEnv {
   CORELINK_ERASE_AUTH_KEY?: string;
   /** Shared internal-auth secret. Fallback when the dedicated key is unset. */
   CORELINK_INTERNAL_AUTH_KEY?: string;
+}
+
+/** The key floor the container enforces before it mounts irreversible routes. */
+export const MIN_ERASE_AUTH_KEY_LENGTH = 32;
+
+/**
+ * Return a dedicated erase key only when it is non-blank and meets the
+ * container's minimum length. The shared internal key is intentionally ignored:
+ * possession of it must never authorize an audit-chain drain.
+ */
+export function resolveDedicatedEraseAuthKey(env: EraseAuthKeyEnv): string | null {
+  const dedicated = env.CORELINK_ERASE_AUTH_KEY;
+  if (!dedicated || dedicated.trim().length < MIN_ERASE_AUTH_KEY_LENGTH) {
+    return null;
+  }
+  return dedicated;
 }
 
 /**
