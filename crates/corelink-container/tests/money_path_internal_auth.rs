@@ -21,7 +21,7 @@ use std::{
         Arc,
     },
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use axum::{
@@ -303,6 +303,21 @@ fn assert_no_effects(probe: &EffectProbe, route: &str, case: &str) {
     );
 }
 
+fn assert_d1_effect(probe: &EffectProbe, route: &str) {
+    // The route's response can be produced as the local refusal is in flight;
+    // wait for the dedicated probe thread to classify that connection rather
+    // than racing its non-blocking accept loop.
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while probe.d1_requests() == 0 && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        probe.d1_requests(),
+        1,
+        "{route} positive control must reach D1 exactly once"
+    );
+}
+
 #[test]
 fn money_path_enforces_resolver_matrix_and_stops_unauthenticated_requests_before_effects(
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -352,11 +367,7 @@ fn money_path_enforces_resolver_matrix_and_stops_unauthenticated_requests_before
             StatusCode::UNAUTHORIZED,
             "tier-select positive control must clear auth"
         );
-        assert_eq!(
-            probe.d1_requests(),
-            1,
-            "tier-select positive control must reach D1 exactly once"
-        );
+        assert_d1_effect(&probe, "tier-select");
         assert_eq!(
             probe.stripe_requests(),
             0,
@@ -372,11 +383,7 @@ fn money_path_enforces_resolver_matrix_and_stops_unauthenticated_requests_before
             StatusCode::UNAUTHORIZED,
             "dpa-accept positive control must clear auth"
         );
-        assert_eq!(
-            probe.d1_requests(),
-            1,
-            "dpa-accept positive control must reach D1 exactly once"
-        );
+        assert_d1_effect(&probe, "dpa-accept");
         assert_eq!(
             probe.stripe_requests(),
             0,
