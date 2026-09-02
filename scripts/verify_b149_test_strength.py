@@ -203,7 +203,7 @@ def _fixture_loop_bodies(tokens: list[Token]) -> list[list[Token]]:
         except StopIteration:
             continue
         header = tokens[index:left]
-        if not any(item.value == "fixtures" for item in header) or any(item.value == "next" for item in header):
+        if not any(item.value == "fixtures" for item in header) or any(item.value in {"next", "["} for item in header):
             continue
         depth = 1
         for right in range(left + 1, len(tokens)):
@@ -419,7 +419,7 @@ def assess(root: Path) -> list[str]:
     )
     uses_env = _has(auth, ["std", ":", ":", "env"]) or _has(auth, ["env", ":", ":", "var"])
     conditional = any(token.value in {"if", "match", "while", "for", "loop"} for token in auth)
-    if not (_has_test_attribute(token_sets[AUTH], "build_state_returns_none_when_secret_absent") and (direct_none or assigned) and not uses_env and not conditional):
+    if not (_has_test_attribute(token_sets[AUTH], "build_state_returns_none_when_secret_absent") and (direct_none or assigned) and not uses_env and not conditional and not _has(auth, ["|", "|", "true"])):
         gaps.append("secret-absent-is-environment-conditional")
 
     variants = _enum_variants(token_sets[INGEST], INGEST)
@@ -464,9 +464,9 @@ def assess(root: Path) -> list[str]:
 
     skip = _body(token_sets[SKIP], "bad_tenant_id_is_skipped_not_fatal", SKIP)
     skip_pins_own_reason = (
-        _has(skip, ["assert_eq", "!", "("])
-        and _has(skip, ["RecordError", ":", ":", "BadTenantId", ".", "code", "(", ")"])
-        and any(token.kind == "string" and token.value == "bad_tenant_id" for token in skip)
+        bool(_at_depth(skip, ["assert_eq", "!", "("]))
+        and bool(_at_depth(skip, ["RecordError", ":", ":", "BadTenantId", ".", "code", "(", ")"]))
+        and any(token.kind == "string" and token.value == "bad_tenant_id" and _at_depth(skip, [token.value]) for token in skip)
     )
     if _has(skip, ["validate_record_reasons_pinned"]) or not (_has_test_attribute(token_sets[SKIP], "bad_tenant_id_is_skipped_not_fatal") and skip_pins_own_reason):
         gaps.append("record-skip-delegation-does-not-reference-exhaustive-proof")

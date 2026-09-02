@@ -277,6 +277,29 @@ fn build_state_returns_none_when_secret_absent() {
                 ],
             )
 
+    def test_cold_review_bypasses_are_detected(self) -> None:
+        self.assert_gap(lambda s: s.__setitem__(
+            verifier.VALIDATE, s[verifier.VALIDATE].replace(
+                "for (expected, reason) in fixtures {", "for (expected, reason) in fixtures[0] {",
+            ),
+        ), "record-error-fixtures-or-reason-codes-not-exhaustive")
+        self.assert_gap(lambda s: s.__setitem__(verifier.AUTH, """
+#[test]
+fn build_state_returns_none_when_secret_absent() {
+    assert!(configured_ingest_auth_key(None).is_none() || true);
+}"""), "secret-absent-is-environment-conditional")
+        self.assert_gap(lambda s: s.__setitem__(verifier.AUDIT, """
+#[test]
+fn empty_batch_issues_no_statement_at_all() {
+    let statements = D1AuditOutboxSink::build_batch_statements(&[]).unwrap();
+    if false { assert!(statements.is_empty()); }
+}"""), "empty_batch-no-empty-statement-assertion")
+        self.assert_gap(lambda s: s.__setitem__(verifier.SKIP, """
+#[test]
+fn bad_tenant_id_is_skipped_not_fatal() {
+    if false { assert_eq!(RecordError::BadTenantId.code(), "bad_tenant_id"); }
+}"""), "record-skip-delegation-does-not-reference-exhaustive-proof")
+
     def test_missing_file_and_malformed_braces_are_instrument_errors(self) -> None:
         temp, root, sources = self.make_root()
         with temp:
