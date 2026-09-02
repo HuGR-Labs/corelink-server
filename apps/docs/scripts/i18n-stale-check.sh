@@ -10,6 +10,9 @@
 #     For every locale in {pt-BR, es-419, de}:
 #       Compare git log -1 last-modified date of EN vs locale shadow.
 #       If EN newer by more than $MAX_STALE_DAYS, flag as stale.
+#   Then walk every locale tree and flag files with no EN counterpart as
+#   ORPHAN. This reverse check catches translated pages left behind after a
+#   canonical endpoint or section is removed.
 #
 # Output:
 #   - Human-readable summary on stdout.
@@ -158,6 +161,22 @@ while IFS= read -r -d '' en_file; do
     fi
   done
 done < <(find "$SRC_REL" -type f \( -name "*.md" -o -name "*.mdx" \) -print0)
+
+# Also walk locale trees in the other direction. A translated page whose EN
+# counterpart was removed is an orphan and must not silently survive in the
+# published locale. This catches stale endpoint pages as well as future
+# canonical deletions.
+for loc in "${LOCALES[@]}"; do
+  locale_root="$I18N_REL/$loc/docusaurus-plugin-content-docs/current"
+  while IFS= read -r -d '' locale_file; do
+    rel="${locale_file#"$locale_root/"}"
+    if [[ ! -e "$SRC_REL/$rel" ]]; then
+      STALE_ROWS+=("$loc|$rel|ORPHAN|n/a|locale-only")
+      JSON_ROWS+=("{\"locale\":\"$loc\",\"file\":\"$rel\",\"status\":\"orphan\",\"en_age_days\":null,\"locale_age_days\":null}")
+      total_stale=$(( total_stale + 1 ))
+    fi
+  done < <(find "$locale_root" -type f \( -name "*.md" -o -name "*.mdx" \) -print0)
+done
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Render summary
