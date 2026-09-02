@@ -339,6 +339,32 @@ def require_actionlint_clean(paths: list[Path]) -> None:
         raise ValueError(f"actionlint rejected a supposedly valid fixture: {details}")
 
 
+def require_actionlint_rejected(paths: list[Path]) -> None:
+    """Prove every declared lint exception remains a deliberate bad fixture.
+
+    The scanner must handle invalid workflow text without treating it as a clean
+    result, but an invalid fixture must never be silently left out of the
+    actionlint census. Keep this separate from ``require_actionlint_clean`` so
+    adding a fixture forces an explicit decision: lintable, or rejected for a
+    named and tested reason.
+    """
+    actionlint = shutil.which("actionlint")
+    if actionlint is None:
+        raise ValueError("actionlint is required for --self-test but is not on PATH")
+    for path in paths:
+        result = subprocess.run(
+            [actionlint, "-no-color", str(path)],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            raise ValueError(
+                f"actionlint unexpectedly accepted declared-invalid fixture {path.name}; "
+                "move it to the lintable census"
+            )
+
+
 def self_test() -> int:
     """Prove the scanner can be red, including its former false-green shapes."""
     temporary = Path(tempfile.mkdtemp(prefix="concurrency-scope-scan-"))
@@ -347,7 +373,12 @@ def self_test() -> int:
             write_workflow(temporary, "constant.yml", "literal", "true"),
             write_workflow(temporary, "workflow-name.yml", "${{ github.workflow }}", "true"),
         ]
-        write_workflow(temporary, "matrix.yml", "ci-${{ matrix.os }}", "true")
+        # Top-level `concurrency` cannot use `matrix` in Actions. We keep this
+        # scanner-negative malformed fixture, but require actionlint to reject
+        # it explicitly instead of silently omitting it from fixture coverage.
+        actionlint_rejected = [
+            write_workflow(temporary, "matrix.yml", "ci-${{ matrix.os }}", "true")
+        ]
         actionlint_clean.extend([
             write_workflow(temporary, "sha.yml", "ci-${{ github.sha }}", "true"),
             write_workflow(temporary, "trailing-comment.yml", "literal", "true  # not false"),
@@ -417,8 +448,47 @@ def self_test() -> int:
                 "ci-${{ false && github.run_id || 'global' }}",
                 "true",
             ),
+            # These are deliberately close to the two audited fallbacks. A
+            # fullmatch-to-search mutation would classify them as safe; none
+            # may become a new allowlist entry without a separate proof.
+            write_workflow(
+                temporary,
+                "pr-number-or-ref-third-fallback.yml",
+                "ci-${{ github.event.pull_request.number || github.ref || 'global' }}",
+                "true",
+            ),
+            write_workflow(
+                temporary,
+                "false-guarded-pr-number-or-ref.yml",
+                "ci-${{ false && (github.event.pull_request.number || github.ref) || 'global' }}",
+                "true",
+            ),
+            write_workflow(
+                temporary,
+                "issue-or-pr-third-fallback.yml",
+                "ci-${{ github.event.issue.number || github.event.pull_request.number || 'global' }}",
+                "true",
+                "  issues:\n  pull_request:\n",
+            ),
+            write_workflow(
+                temporary,
+                "false-guarded-issue-or-pr.yml",
+                "ci-${{ false && (github.event.issue.number || github.event.pull_request.number) || 'global' }}",
+                "true",
+                "  issues:\n  pull_request:\n",
+            ),
         ])
+        # The census is load-bearing. The four critical false-guard/comparison
+        # fixtures are part of `actionlint_clean`; matrix is the sole,
+        # deliberately tested invalid exception.
+        if len(actionlint_clean) != 21 or len(actionlint_rejected) != 1:
+            print(
+                "SELF-TEST FAILED: expected 21 actionlint-clean fixtures and "
+                "1 explicit actionlint-rejected matrix fixture"
+            )
+            return 1
         require_actionlint_clean(actionlint_clean)
+        require_actionlint_rejected(actionlint_rejected)
         violations, total, safe = scan(str(temporary))
         names = {entry[0] for entry in violations}
         expected = {
@@ -434,10 +504,14 @@ def self_test() -> int:
             "ref-comparison.yml",
             "false-pr-number-guard.yml",
             "false-run-id-guard.yml",
+            "pr-number-or-ref-third-fallback.yml",
+            "false-guarded-pr-number-or-ref.yml",
+            "issue-or-pr-third-fallback.yml",
+            "false-guarded-issue-or-pr.yml",
         }
-        if total != 18 or safe != 6 or names != expected:
+        if total != 22 or safe != 6 or names != expected:
             print(
-                "SELF-TEST FAILED: expected 18 blocks / 6 safe / violations "
+                "SELF-TEST FAILED: expected 22 blocks / 6 safe / violations "
                 f"{sorted(expected)}, got {total} / {safe} / {sorted(names)}"
             )
             return 1
@@ -483,7 +557,7 @@ def self_test() -> int:
                 print(f"SELF-TEST FAILED: {duplicate_name} reported a clean scan")
                 return 1
 
-        print("SELF-TEST OK: actionlint-clean comments/literals, matrix/SHA, conditional discriminator collapse, PR event scope, duplicate keys, and bad input have teeth")
+        print("SELF-TEST OK: 21 actionlint-clean + 1 explicit-invalid matrix fixtures; comments/literals, conditional and near-fallback discriminator collapse, PR scope, duplicate keys, and bad input have teeth")
         return 0
     finally:
         shutil.rmtree(temporary)
