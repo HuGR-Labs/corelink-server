@@ -5,7 +5,8 @@
   separada do diagnóstico que permanece `warning` enquanto os 38 achados
   existentes são reescritos. A suíte cobre herança de âncora completa e
   path-only, inclusive fonte na raiz como `README.md`, limites/ranges e
-  traversal. A âncora path-only só herda quando é path válido, está em
+  traversal. A âncora path-only usa a mesma gramática do `CITE_RE`, portanto
+  inclui `.gitignore` e `.github/workflows/*.yml`, mas só herda quando está em
   `source_files` do conceito e abre como arquivo do repositório: identificadores
   pontilhados como eventos não podem mais virar contexto. `SourceCache` continua
   recusando qualquer caminho que escape a raiz. O `verify` open-polarity de B-059 agora falha fechado se `CITE_RE` sumir

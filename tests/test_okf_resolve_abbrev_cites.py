@@ -86,17 +86,23 @@ class AbbreviatedCitationResolverTest(unittest.TestCase):
         seen, findings = self.scan(
             "---\nsource_files:\n"
             "  - crates/example/src/customer_d1.rs\n"
-            "  - README.md\n---\n"
+            "  - README.md\n"
+            "  - .github/workflows/foo.yml\n"
+            "  - .gitignore\n---\n"
             "# Citations\n"
             "Nested source `crates/example/src/customer_d1.rs`; see `:1` and `:2`.\n"
-            "Root source `README.md`; see `:1` and `:2`.\n",
+            "Root source `README.md`; see `:1` and `:2`.\n"
+            "Dot path `.github/workflows/foo.yml`; see `:1`.\n"
+            "Dotfile `.gitignore`; see `:1`.\n",
             {
                 "crates/example/src/customer_d1.rs": "impl Customer {\nfn method() {}\n}\n",
                 "README.md": "CoreLink production service.\nOperational notes.\n",
+                ".github/workflows/foo.yml": "name: test\n",
+                ".gitignore": "target/\n",
             },
         )
 
-        self.assertEqual(seen, 4)
+        self.assertEqual(seen, 6)
         self.assertEqual(findings, [])
 
     def test_path_only_traversal_is_rejected_and_plain_identifiers_do_not_inherit(self) -> None:
@@ -140,6 +146,19 @@ class AbbreviatedCitationResolverTest(unittest.TestCase):
             self.assertEqual(
                 RESOLVER._path_only_source_anchor("`README.md`", {"README.md"}, cache),
                 "README.md",
+            )
+            (root / ".gitignore").write_text("target/\n", encoding="utf-8")
+            (root / ".github" / "workflows").mkdir(parents=True)
+            (root / ".github" / "workflows" / "foo.yml").write_text("name: test\n", encoding="utf-8")
+            self.assertEqual(
+                RESOLVER._path_only_source_anchor("`.gitignore`", {".gitignore"}, cache),
+                ".gitignore",
+            )
+            self.assertEqual(
+                RESOLVER._path_only_source_anchor(
+                    "`.github/workflows/foo.yml`", {".github/workflows/foo.yml"}, cache
+                ),
+                ".github/workflows/foo.yml",
             )
             self.assertIsNone(
                 RESOLVER._path_only_source_anchor(

@@ -76,9 +76,14 @@ BARE_CITE = r"`:(\d+)(?:-(\d+))?`"
 # file is equally valid: `` `README.md` ... `:12` ``.  Syntax alone is NOT an
 # authority: dotted event names such as `customer.subscription.deleted` look
 # like paths.  A path-only token inherits only when it is a grammar-valid,
-# declared `source_files` member and a readable regular repo file.  This keeps
+# declared `source_files` member and a readable repo file.  This keeps
 # the resolver fail-closed without a second, divergent frontmatter parser.
-PATH_ONLY_CITE = r"`(?P<path>[A-Za-z0-9][A-Za-z0-9._/\-]*[A-Za-z0-9])`"
+# Keep this path alphabet identical to CITE_RE.  Authority comes from the
+# exact declared-source + readable-file checks below, not from a narrower
+# spelling heuristic: valid repo paths include `.github/workflows/foo.yml` and
+# `.gitignore`, while dotted event identifiers remain untrusted unless they
+# are declared real source files.
+PATH_ONLY_CITE = r"`(?P<path>[A-Za-z0-9._/\-]+)`"
 BACKTICK_TOKEN = r"`([^`\n]*)`"
 MALFORMED_BARE_CITE = r":\d+-.*"
 MALFORMED_FULL_CITE = r"[A-Za-z0-9._/\-]+:\d+-.*"

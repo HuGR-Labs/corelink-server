@@ -3404,8 +3404,9 @@ verify: |
     exit 1
   fi
   b059_mutant="$(mktemp "${TMPDIR:-/tmp}/b059-validate-okf.XXXXXX")" || exit 1
-  trap 'rm -f "$b059_mutant"' EXIT
-  python3 - "$b059_mutant" <<'PY'
+  b059_mutant_log="$(mktemp "${TMPDIR:-/tmp}/b059-validate-okf-log.XXXXXX")" || exit 1
+  trap 'rm -f "$b059_mutant" "$b059_mutant_log"' EXIT
+  if ! python3 - "$b059_mutant" <<'PY'
   from pathlib import Path
   import sys
   source = Path("scripts/validate_okf.py").read_text(encoding="utf-8")
@@ -3415,13 +3416,40 @@ verify: |
       raise SystemExit("CITE_RE mutation target is missing or ambiguous")
   Path(sys.argv[1]).write_text("".join(kept), encoding="utf-8")
   PY
-  if python3 "$b059_mutant" --bundle docs/knowledge >/dev/null 2>&1; then
+  then
+    echo 'INDETERMINADO: nao foi possivel gerar o artefato CITE_RE mutado.' >&2
+    exit 1
+  fi
+  # Do not let ENOSPC, a partial write, or a syntax error masquerade as the
+  # intended runtime mutation.  The executable must be the exact one-line
+  # removal of the checked-in validator before its result has any meaning.
+  if ! python3 - "$b059_mutant" <<'PY'
+  from pathlib import Path
+  import sys
+  source = Path("scripts/validate_okf.py").read_text(encoding="utf-8")
+  expected = "".join(
+      line for line in source.splitlines(keepends=True) if not line.startswith("CITE_RE = ")
+  )
+  artifact = Path(sys.argv[1]).read_text(encoding="utf-8")
+  if artifact != expected:
+      raise SystemExit("mutant artifact is not the exact CITE_RE deletion")
+  compile(artifact, str(Path(sys.argv[1])), "exec")
+  PY
+  then
+    echo 'INDETERMINADO: artefato CITE_RE mutado ausente, parcial ou invalido.' >&2
+    exit 1
+  fi
+  if python3 "$b059_mutant" --bundle docs/knowledge >"$b059_mutant_log" 2>&1; then
     mutant_rc=0
   else
     mutant_rc=$?
   fi
   if [ "$mutant_rc" -eq 0 ]; then
     echo 'FALHA: mutacao sem CITE_RE sobreviveu ao validador.' >&2
+    exit 1
+  fi
+  if ! grep -qF "NameError: name 'CITE_RE' is not defined" "$b059_mutant_log"; then
+    echo 'INDETERMINADO: mutante falhou fora da guarda CITE_RE esperada.' >&2
     exit 1
   fi
   python3 scripts/okf_resolve_abbrev_cites.py --quiet; rc=$?; test "$rc" -eq 1
