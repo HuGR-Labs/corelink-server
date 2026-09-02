@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
+import stat
 import sys
 from pathlib import Path
 
@@ -39,17 +41,46 @@ class InstrumentError(RuntimeError):
     """A required checkpoint cannot be read, so no verdict is trustworthy."""
 
 
+def _read_checkpoint(root: Path, relative: str) -> bytes:
+    """Read one regular, non-symlinked file anchored below ``root``."""
+    relative_path = Path(relative)
+    try:
+        resolved_root = root.resolve(strict=True)
+    except (OSError, RuntimeError) as error:
+        raise InstrumentError(f"cannot resolve repo root: {error}") from error
+    candidate = resolved_root / relative_path
+    if relative_path.is_absolute() or ".." in relative_path.parts or not candidate.resolve(strict=False).is_relative_to(resolved_root):
+        raise InstrumentError(f"checkpoint path escapes resolved repo root: {relative}")
+    directory_fd = file_fd = -1
+    flags = os.O_RDONLY | os.O_NOFOLLOW
+    try:
+        directory_fd = os.open(resolved_root, flags | os.O_DIRECTORY)
+        if not stat.S_ISDIR(os.fstat(directory_fd).st_mode):
+            raise InstrumentError("resolved repo root is not a directory")
+        for component in relative_path.parts[:-1]:
+            next_fd = os.open(component, flags | os.O_DIRECTORY, dir_fd=directory_fd)
+            os.close(directory_fd)
+            directory_fd = next_fd
+        file_fd = os.open(relative_path.name, flags, dir_fd=directory_fd)
+        if not stat.S_ISREG(os.fstat(file_fd).st_mode):
+            raise InstrumentError(f"checkpoint is not a regular file: {relative}")
+        with os.fdopen(file_fd, "rb", closefd=True) as source:
+            file_fd = -1
+            return source.read()
+    except OSError as error:
+        raise InstrumentError(f"unsafe checkpoint path {relative}: {error}") from error
+    finally:
+        if file_fd >= 0:
+            os.close(file_fd)
+        if directory_fd >= 0:
+            os.close(directory_fd)
+
+
 def checkpoint_digests(root: Path) -> dict[str, str]:
     """Return all protected-file digests or fail instead of making a vacuous call."""
     digests: dict[str, str] = {}
     for relative in CHECKPOINTS:
-        source = root / relative
-        if not source.is_file():
-            raise InstrumentError(f"required source is missing: {relative}")
-        try:
-            digests[relative] = hashlib.sha256(source.read_bytes()).hexdigest()
-        except OSError as error:
-            raise InstrumentError(f"cannot read {relative}: {error}") from error
+        digests[relative] = hashlib.sha256(_read_checkpoint(root, relative)).hexdigest()
     return digests
 
 

@@ -113,6 +113,42 @@ class B149VerifierTests(unittest.TestCase):
             with self.assertRaises(verifier.InstrumentError):
                 verifier.assess(root)
 
+    def test_symlink_to_approved_tree_and_path_swap_fail_closed(self) -> None:
+        approved_temp, approved = self.approved_root()
+        target_temp, root = self.approved_root()
+        with approved_temp, target_temp:
+            target = root / verifier.AUDIT
+            target.unlink()
+            target.symlink_to(approved / verifier.AUDIT)
+            with self.assertRaises(verifier.InstrumentError):
+                verifier.assess(root)
+        temp, root = self.approved_root()
+        with temp:
+            target = root / verifier.AUDIT
+            alias = target.with_name("approved-copy.rs")
+            alias.write_bytes(target.read_bytes())
+            target.unlink()
+            target.symlink_to(alias.name)
+            with self.assertRaises(verifier.InstrumentError):
+                verifier.assess(root)
+
+    def test_escaping_checkpoint_and_non_regular_swap_are_instrument_errors(self) -> None:
+        temp, root = self.approved_root()
+        checkpoints = verifier.CHECKPOINTS
+        try:
+            verifier.CHECKPOINTS = {"../outside.rs": "0" * 64}
+            with temp, self.assertRaises(verifier.InstrumentError):
+                verifier.assess(root)
+        finally:
+            verifier.CHECKPOINTS = checkpoints
+        temp, root = self.approved_root()
+        with temp:
+            target = root / verifier.AUTH
+            target.unlink()
+            target.mkdir()
+            with self.assertRaises(verifier.InstrumentError):
+                verifier.assess(root)
+
 
 if __name__ == "__main__":
     unittest.main()

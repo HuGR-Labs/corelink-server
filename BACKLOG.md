@@ -10496,9 +10496,11 @@ delegando ao teste que cobre 1 de 6 — e `BadTenantId`, justamente o que ele de
 **não** é a variante fixada. A cobertura declarada e a cobertura real se contradizem, e a
 contradição está escrita no arquivo.
 
-**Critério de fechamento:** os três testes precisam afirmar suas propriedades; a cobertura
-de `RecordError` deve ser exaustiva no compilador e ter uma fixture de rejeição por variante;
-e o quarto teste deve apontar para essa prova real, não para o teste parcial antigo.
+**Critério de fechamento:** o reparo aprovado afirma as três propriedades, cobre
+`RecordError` exaustivamente com uma fixture de rejeição por variante e fixa a delegação do
+quarto teste. Para que essa prova não volte a ser enfraquecida por uma forma sintática nova,
+o fechamento operacional é o conjunto exato de arquivos revisto, não uma nova interpretação
+parcial do Rust pelo verificador.
 
 ```backlog
 id: B-149
@@ -10508,34 +10510,30 @@ status: open
 verify: |
   python3 scripts/verify_b149_test_strength.py --expect open
 verify-means: |
-  open — pelo menos uma das quatro provas ainda satisfaz a forma vazia que o item descreve.
-  Fecha por **exaustão**: consertar dois mantém o item aberto com contagem menor, que é o
-  comportamento certo para item de lista.
+  open — pelo menos um dos cinco checkpoints SHA-256 diverge do reparo B-149 aprovado
+  (`627ec21`): os quatro arquivos de teste relevantes e
+  `routes/billing_ingest.rs`, que contém o mapeamento de produção. As quatro mensagens
+  continuam a identificar qual propriedade do item exige revisão; qualquer byte divergente
+  é `review required`, mesmo que pareça uma mudança inocente.
 
-  **Finding reconciliado em 2026-09-02:** os testes foram separados em módulos por
-  `#1499`/`#1513`, mas o instrumento ainda recortava funções nos antigos arquivos-pai e
-  ficou DRIFTED sem que B-149 tivesse sido concluído. O verify agora mede os três módulos
-  efetivamente compilados: lista de statements vazia, segredo ausente independente do
-  ambiente e enum exaustivo com uma fixture de rejeição por variante.
+  done — os cinco arquivos completos são byte a byte iguais ao conjunto revisto. Os hashes
+  são a autoridade para `done`; o verify não tenta provar novamente semântica Rust com lexer,
+  regex ou recortes de função, pois essas aproximações aceitaram várias formas mortas ou
+  desconectadas de evidência.
 
-  **A população de variantes é derivada, não constante.** Um lexer Rust mínimo, sem
-  dependências, ignora comentários e strings, recorta as funções por chaves balanceadas e
-  deriva o enum mesmo quando a variante final não tem vírgula. O helper exaustivo, a matriz
-  de fixtures e o `RecordError::code()` precisam cobrir exatamente a mesma população, sem
-  wildcard, duplicata ou razão estável trocada. Nascer uma sétima variante reabre o item e
-  também quebra a compilação do `match`; uma constante `6` envelheceria em silêncio.
+  **Anti-vacuidade e caminho seguro:** cada checkpoint precisa ser arquivo regular sob a
+  raiz do repositório resolvida. Symlink (inclusive em diretório intermediário), caminho que
+  resolve para fora da raiz e arquivo ausente falham como erro de instrumento; a leitura é
+  ancorada em descritores sem seguir links, de modo que uma troca por arquivo regular vira
+  drift de hash e uma troca por link falha fechada.
 
-  **Anti-vacuidade:** arquivo ausente, comentário/string vizinha que apenas cita os tokens,
-  chaves malformadas e enum inutilizável são falhas explícitas de instrumento. Helper ou
-  matriz ausente contam como lacuna; wildcard com qualquer nome, fixture ausente/duplicada,
-  razão trocada e asserção fora da função nomeada não recebem crédito. A suíte
-  `tests/test_verify_b149_test_strength.py` mutation-testa esses dentes e também a mutação
-  do mapeamento de razão na produção.
+  **Manutenção intencional:** uma edição legítima nesses arquivos reabre B-149. Ela requer
+  nova revisão da prova, atualização explícita dos cinco hashes no verifier e das mutações
+  correspondentes; não se aceita uma regra permissiva para preservar verde automaticamente.
 
-  **Medido pelos dois lados (2026-09-02):** no estado atual as quatro lacunas são
-  detectadas e o comando sai 0. Aplicar as três provas fortes sem corrigir a delegação ainda
-  deixa uma lacuna; somente ao apontar o quarto teste para a prova exaustiva o comando sai 1
-  e exige a transição do item para `done` com verificador invertido.
+  **Medido pelos dois lados (2026-09-02):** a árvore de higiene permanece `open` com as
+  quatro lacunas; uma fixture que reproduz exatamente `627ec21` é `done`, e qualquer mutação
+  de byte volta a `open`.
 last-verified: 2026-09-02
 ```
 
