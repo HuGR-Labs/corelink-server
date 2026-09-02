@@ -646,515 +646,61 @@ pub fn build_state_from_env() -> Option<BillingIngestRouteState> {
 // Tests
 // ──────────────────────────────────────────────────────────────────────────────
 
+// The tests live in the sibling `billing_ingest/` directory, ONE FILE PER
+// PROPERTY — no `mod.rs` (this repo has none), following `origin_timing.rs`
+// (#1470). Each file's `//!` names the single property it fixes:
+//
+//   tests_support         — the in-memory staging store + request/JSON helpers
+//                           the others share, here so that no sibling looks
+//                           load-bearing for its neighbours.
+//   tests_auth            — the dedicated `BILLING_INGEST_AUTH_KEY` is the only
+//                           key to this route: absent, the route is not mounted
+//                           at all; unmatched, the request is 401.
+//   tests_dedup           — a `(tenant_id, idem_key)` coordinate stages exactly
+//                           once: across requests, within one batch, and in
+//                           either hex case. The double-billing guard.
+//   tests_batch_faults    — a fault that makes the BATCH un-interpretable
+//                           rejects the whole request with 400 and stages
+//                           nothing.
+//   tests_record_skip     — one invalid RECORD is counted in `rejected` and
+//                           skipped with 202: it never blocks its batch-mates
+//                           and never leaves the runner re-POSTing forever.
+//   tests_region_canon    — `region` is canonicalized by ASCII case-folding
+//                           ONLY, and anything that is not three ASCII letters
+//                           fails closed as `BadRegion`.
+//   tests_backend_fault   — a staging-backend failure surfaces as 503, never as
+//                           a 202 that claims a batch landed when nothing was
+//                           written.
+//   tests_validate_record — the acceptance boundary of `validate_record`: the
+//                           canonical record passes through intact, and a field
+//                           is refused the first byte past its bound.
+//   tests_payload_hash    — the `event_payload_hash` binding the billable
+//                           fields is deterministic 64-hex, so the staged-row
+//                           tamper check actually detects tampering.
+
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    reason = "tests are allowed to use these primitives"
-)]
-mod tests {
-    use std::collections::HashSet;
-    use std::sync::Mutex;
+mod tests_support;
 
-    use axum::body::Body;
-    use axum::http::{self, Request};
-    use tower::ServiceExt;
+#[cfg(test)]
+mod tests_auth;
 
-    use super::*;
+#[cfg(test)]
+mod tests_dedup;
 
-    const TEST_AUTH_KEY: &str = "billing-ingest-test-key-32-chars!!!!";
+#[cfg(test)]
+mod tests_batch_faults;
 
-    /// In-memory staging store: dedups by `(tenant_id, idem_key)` exactly
-    /// like the D1 PRIMARY KEY. `backend_err` forces a 503 path.
-    #[derive(Debug, Default)]
-    struct FakeStore {
-        seen: Mutex<HashSet<(Uuid, String)>>,
-        backend_err: Option<String>,
-    }
+#[cfg(test)]
+mod tests_record_skip;
 
-    impl FakeStore {
-        fn new() -> Self {
-            Self::default()
-        }
-        fn failing(err: &str) -> Self {
-            Self {
-                seen: Mutex::new(HashSet::new()),
-                backend_err: Some(err.to_owned()),
-            }
-        }
-    }
+#[cfg(test)]
+mod tests_region_canon;
 
-    #[async_trait]
-    impl UsageStagingStore for FakeStore {
-        async fn stage(&self, record: &StagedUsageRecord) -> Result<StageOutcome, String> {
-            if let Some(e) = &self.backend_err {
-                return Err(e.clone());
-            }
-            let mut g = self.seen.lock().unwrap();
-            let key = (record.tenant_id, record.idem_key.clone());
-            if g.insert(key) {
-                Ok(StageOutcome::Inserted)
-            } else {
-                Ok(StageOutcome::Deduped)
-            }
-        }
-    }
+#[cfg(test)]
+mod tests_backend_fault;
 
-    fn state_with(store: Arc<dyn UsageStagingStore>) -> BillingIngestRouteState {
-        BillingIngestRouteState::new(Arc::from(TEST_AUTH_KEY), store)
-    }
+#[cfg(test)]
+mod tests_validate_record;
 
-    fn record_json(tenant: &str, idem: &str) -> serde_json::Value {
-        serde_json::json!({
-            "tenant_id": tenant,
-            "event_kind": "runner_slot_seconds",
-            "qty": 7200u64,
-            "billing_period": "2026-06",
-            "region": "iad",
-            "source": "corelink/runner/iad",
-            "time_ms": 1_718_000_000_000u64,
-            "idem_key": idem,
-        })
-    }
-
-    fn tenant_a() -> String {
-        "11111111-1111-4111-8111-111111111111".to_owned()
-    }
-
-    fn hex64(byte: u8) -> String {
-        format!("{byte:02x}").repeat(32)
-    }
-
-    fn ingest_request(auth: Option<&str>, body: serde_json::Value) -> Request<Body> {
-        let mut b = Request::builder()
-            .method(http::Method::POST)
-            .uri("/internal/v1/billing/usage")
-            .header("content-type", "application/json");
-        if let Some(a) = auth {
-            b = b.header("x-corelink-internal-auth", a);
-        }
-        b.body(Body::from(serde_json::to_string(&body).unwrap()))
-            .unwrap()
-    }
-
-    async fn body_json(resp: Response) -> serde_json::Value {
-        let bytes = axum::body::to_bytes(resp.into_body(), 16_384)
-            .await
-            .unwrap();
-        if bytes.is_empty() {
-            return serde_json::Value::Null;
-        }
-        serde_json::from_slice(&bytes).unwrap()
-    }
-
-    // ── Caller auth ──────────────────────────────────────────────────────────
-
-    #[tokio::test]
-    async fn missing_service_secret_returns_401() {
-        let app = router(state_with(Arc::new(FakeStore::new())));
-        let req = ingest_request(
-            None,
-            serde_json::json!([record_json(&tenant_a(), &hex64(0xAB))]),
-        );
-        let resp = app.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn wrong_service_secret_returns_401() {
-        let app = router(state_with(Arc::new(FakeStore::new())));
-        let req = ingest_request(
-            Some("wrong-secret-which-is-also-32-chars!!"),
-            serde_json::json!([record_json(&tenant_a(), &hex64(0xAB))]),
-        );
-        let resp = app.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    // ── Happy path + idempotent dedup ────────────────────────────────────────
-
-    #[tokio::test]
-    async fn fresh_batch_all_accepted() {
-        let store = Arc::new(FakeStore::new());
-        let app = router(state_with(store));
-        let body = serde_json::json!([
-            record_json(&tenant_a(), &hex64(0x01)),
-            record_json(&tenant_a(), &hex64(0x02)),
-        ]);
-        let resp = app
-            .oneshot(ingest_request(Some(TEST_AUTH_KEY), body))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::ACCEPTED);
-        let v = body_json(resp).await;
-        assert_eq!(v["accepted"], serde_json::json!(2));
-        assert_eq!(v["deduped"], serde_json::json!(0));
-        assert_eq!(v["total"], serde_json::json!(2));
-    }
-
-    #[tokio::test]
-    async fn repush_same_idem_key_is_deduped() {
-        // Push a record, then re-push the SAME (tenant, idem_key): the second
-        // push must be a no-op (deduped), never a double-count. The store is
-        // shared across both requests (clone shares the Arc).
-        let store: Arc<dyn UsageStagingStore> = Arc::new(FakeStore::new());
-        let idem = hex64(0x07);
-
-        let app1 = router(state_with(Arc::clone(&store)));
-        let resp1 = app1
-            .oneshot(ingest_request(
-                Some(TEST_AUTH_KEY),
-                serde_json::json!([record_json(&tenant_a(), &idem)]),
-            ))
-            .await
-            .unwrap();
-        assert_eq!(resp1.status(), StatusCode::ACCEPTED);
-        assert_eq!(body_json(resp1).await["accepted"], serde_json::json!(1));
-
-        let app2 = router(state_with(Arc::clone(&store)));
-        let resp2 = app2
-            .oneshot(ingest_request(
-                Some(TEST_AUTH_KEY),
-                serde_json::json!([record_json(&tenant_a(), &idem)]),
-            ))
-            .await
-            .unwrap();
-        assert_eq!(resp2.status(), StatusCode::ACCEPTED);
-        let v = body_json(resp2).await;
-        assert_eq!(
-            v["accepted"],
-            serde_json::json!(0),
-            "re-push must not insert again"
-        );
-        assert_eq!(v["deduped"], serde_json::json!(1), "re-push must dedup");
-    }
-
-    #[tokio::test]
-    async fn intra_batch_duplicate_idem_key_deduped() {
-        // The SAME idem_key twice WITHIN one batch: first inserts, second
-        // dedups — the tally is accepted=1, deduped=1.
-        let store = Arc::new(FakeStore::new());
-        let app = router(state_with(store));
-        let idem = hex64(0x09);
-        let body = serde_json::json!([
-            record_json(&tenant_a(), &idem),
-            record_json(&tenant_a(), &idem),
-        ]);
-        let resp = app
-            .oneshot(ingest_request(Some(TEST_AUTH_KEY), body))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::ACCEPTED);
-        let v = body_json(resp).await;
-        assert_eq!(v["accepted"], serde_json::json!(1));
-        assert_eq!(v["deduped"], serde_json::json!(1));
-    }
-
-    // ── Bad body / validation → 400 ──────────────────────────────────────────
-
-    #[tokio::test]
-    async fn empty_batch_is_400() {
-        let app = router(state_with(Arc::new(FakeStore::new())));
-        let resp = app
-            .oneshot(ingest_request(Some(TEST_AUTH_KEY), serde_json::json!([])))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn malformed_json_is_400() {
-        let req = Request::builder()
-            .method(http::Method::POST)
-            .uri("/internal/v1/billing/usage")
-            .header("content-type", "application/json")
-            .header("x-corelink-internal-auth", TEST_AUTH_KEY)
-            .body(Body::from("{not-json"))
-            .unwrap();
-        let app = router(state_with(Arc::new(FakeStore::new())));
-        let resp = app.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn unknown_event_kind_is_400() {
-        let mut rec = record_json(&tenant_a(), &hex64(0x11));
-        rec["event_kind"] = serde_json::json!("not_a_real_kind");
-        let app = router(state_with(Arc::new(FakeStore::new())));
-        let resp = app
-            .oneshot(ingest_request(
-                Some(TEST_AUTH_KEY),
-                serde_json::json!([rec]),
-            ))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn bad_tenant_id_is_skipped_not_fatal() {
-        // A single malformed record is SKIPPED (202, rejected:1, nothing staged),
-        // NOT a 400 — the per-record-skip contract. The reason-code mapping is
-        // pinned separately in `validate_record_reasons_pinned`.
-        let store = Arc::new(FakeStore::new());
-        let app = router(state_with(Arc::clone(&store) as Arc<dyn UsageStagingStore>));
-        let resp = app
-            .oneshot(ingest_request(
-                Some(TEST_AUTH_KEY),
-                serde_json::json!([record_json("not-a-uuid", &hex64(0x12))]),
-            ))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::ACCEPTED);
-        let ir: IngestResponse = serde_json::from_value(body_json(resp).await).unwrap();
-        assert_eq!((ir.accepted, ir.rejected, ir.total), (0, 1, 0));
-        assert!(store.seen.lock().unwrap().is_empty());
-    }
-
-    #[tokio::test]
-    async fn bad_billing_period_is_skipped_not_fatal() {
-        let store = Arc::new(FakeStore::new());
-        let app = router(state_with(Arc::clone(&store) as Arc<dyn UsageStagingStore>));
-        let mut rec = record_json(&tenant_a(), &hex64(0x13));
-        rec["billing_period"] = serde_json::json!("2026-13");
-        let resp = app
-            .oneshot(ingest_request(
-                Some(TEST_AUTH_KEY),
-                serde_json::json!([rec]),
-            ))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::ACCEPTED);
-        let ir: IngestResponse = serde_json::from_value(body_json(resp).await).unwrap();
-        assert_eq!((ir.accepted, ir.rejected, ir.total), (0, 1, 0));
-        assert!(store.seen.lock().unwrap().is_empty());
-    }
-
-    #[tokio::test]
-    async fn uppercase_region_is_canonicalized_and_accepted() {
-        // Regression for the live `bad_region` flood: a box misconfigured with
-        // BILLING_REGION="IAD" (uppercase) emits the SAME colo as "iad". It must
-        // be canonicalized + ACCEPTED (202), staged as "iad" — never a 400 that
-        // makes the runner retain-and-retry the batch forever.
-        let store = Arc::new(FakeStore::new());
-        let app = router(state_with(Arc::clone(&store) as Arc<dyn UsageStagingStore>));
-        let mut rec = record_json(&tenant_a(), &hex64(0x14));
-        rec["region"] = serde_json::json!("IAD");
-        let resp = app
-            .oneshot(ingest_request(
-                Some(TEST_AUTH_KEY),
-                serde_json::json!([rec]),
-            ))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::ACCEPTED);
-        assert_eq!(
-            store.seen.lock().unwrap().len(),
-            1,
-            "the upper-cased colo must be staged, not dropped"
-        );
-    }
-
-    #[test]
-    fn region_uppercase_canonicalizes_to_lowercase() {
-        let wire: UsageRecordWire = serde_json::from_value({
-            let mut r = record_json(&tenant_a(), &hex64(0x14));
-            r["region"] = serde_json::json!("IaD");
-            r
-        })
-        .unwrap();
-        assert_eq!(validate_record(wire).unwrap().region, "iad");
-    }
-
-    #[test]
-    fn region_with_non_letters_is_bad_region_even_after_lowercasing() {
-        for bad in ["i2d", "us", "iada", "i-d"] {
-            let wire: UsageRecordWire = serde_json::from_value({
-                let mut r = record_json(&tenant_a(), &hex64(0x14));
-                r["region"] = serde_json::json!(bad);
-                r
-            })
-            .unwrap();
-            assert_eq!(
-                validate_record(wire),
-                Err(RecordError::BadRegion),
-                "region {bad:?} must fail-closed"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn bad_idem_key_is_skipped_not_fatal() {
-        let store = Arc::new(FakeStore::new());
-        let app = router(state_with(Arc::clone(&store) as Arc<dyn UsageStagingStore>));
-        let resp = app
-            .oneshot(ingest_request(
-                Some(TEST_AUTH_KEY),
-                serde_json::json!([record_json(&tenant_a(), "too-short")]),
-            ))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::ACCEPTED);
-        let ir: IngestResponse = serde_json::from_value(body_json(resp).await).unwrap();
-        assert_eq!((ir.accepted, ir.rejected, ir.total), (0, 1, 0));
-        assert!(store.seen.lock().unwrap().is_empty());
-    }
-
-    #[tokio::test]
-    async fn malformed_record_is_skipped_good_record_staged() {
-        // A batch with one GOOD then one BAD record must stage the GOOD one and
-        // SKIP the bad one (202, `rejected:1`) — NOT 400 the whole batch. The old
-        // all-or-nothing behaviour let one poison record block its batch-mates
-        // AND flood the ingest (the runner retains + re-POSTs a non-2xx forever).
-        let store = Arc::new(FakeStore::new());
-        let app = router(state_with(Arc::clone(&store) as Arc<dyn UsageStagingStore>));
-        let mut bad = record_json(&tenant_a(), &hex64(0x15));
-        bad["billing_period"] = serde_json::json!("nope");
-        let body = serde_json::json!([record_json(&tenant_a(), &hex64(0x16)), bad]);
-        let resp = app
-            .oneshot(ingest_request(Some(TEST_AUTH_KEY), body))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::ACCEPTED);
-        let ir: IngestResponse = serde_json::from_value(body_json(resp).await).unwrap();
-        assert_eq!(ir.accepted, 1, "the good record is staged");
-        assert_eq!(ir.rejected, 1, "the bad record is counted, not fatal");
-        assert_eq!(ir.total, 1, "total counts only successfully-staged rows");
-        assert_eq!(
-            store.seen.lock().unwrap().len(),
-            1,
-            "exactly the good record is staged"
-        );
-    }
-
-    #[tokio::test]
-    async fn all_records_invalid_still_drains_202() {
-        // Even an ALL-bad batch must drain (202, `rejected:N`, nothing staged),
-        // so a runner buffer full of poison records empties instead of re-POSTing
-        // forever. Batch-LEVEL faults (empty / oversized / unparseable) stay 400.
-        let store = Arc::new(FakeStore::new());
-        let app = router(state_with(Arc::clone(&store) as Arc<dyn UsageStagingStore>));
-        let mut b1 = record_json(&tenant_a(), &hex64(0x18));
-        b1["region"] = serde_json::json!("nope4"); // > 3 chars → BadRegion
-        let mut b2 = record_json(&tenant_a(), &hex64(0x19));
-        b2["billing_period"] = serde_json::json!("2026-13");
-        let resp = app
-            .oneshot(ingest_request(
-                Some(TEST_AUTH_KEY),
-                serde_json::json!([b1, b2]),
-            ))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::ACCEPTED);
-        let ir: IngestResponse = serde_json::from_value(body_json(resp).await).unwrap();
-        assert_eq!(
-            (ir.accepted, ir.deduped, ir.rejected, ir.total),
-            (0, 0, 2, 0)
-        );
-        assert!(store.seen.lock().unwrap().is_empty());
-    }
-
-    // ── Backend fault → 503 (fail-CLOSED) ────────────────────────────────────
-
-    #[tokio::test]
-    async fn backend_fault_returns_503() {
-        let app = router(state_with(Arc::new(FakeStore::failing("d1 unreachable"))));
-        let resp = app
-            .oneshot(ingest_request(
-                Some(TEST_AUTH_KEY),
-                serde_json::json!([record_json(&tenant_a(), &hex64(0x17))]),
-            ))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
-    }
-
-    // ── Pure validation unit tests ───────────────────────────────────────────
-
-    #[test]
-    fn validate_record_accepts_canonical() {
-        let wire: UsageRecordWire =
-            serde_json::from_value(record_json(&tenant_a(), &hex64(0x20))).unwrap();
-        let rec = validate_record(wire).unwrap();
-        assert_eq!(rec.event_kind, UsageEventKind::RunnerSlotSeconds);
-        assert_eq!(rec.region, "iad");
-        assert_eq!(rec.qty, 7200);
-    }
-
-    #[test]
-    fn idem_key_is_canonicalized_lowercase() {
-        // The SAME BLAKE3 key spelled upper- vs lower-case must canonicalize to
-        // ONE coordinate, else the `(tenant_id, idem_key)` dedup is bypassable.
-        let lower = hex64(0xab); // "abab…" (32×"ab")
-        let upper = lower.to_ascii_uppercase(); // "ABAB…"
-        assert_ne!(lower, upper, "fixture must actually differ in case");
-
-        let wire_lower: UsageRecordWire =
-            serde_json::from_value(record_json(&tenant_a(), &lower)).unwrap();
-        let wire_upper: UsageRecordWire =
-            serde_json::from_value(record_json(&tenant_a(), &upper)).unwrap();
-
-        let rec_lower = validate_record(wire_lower).unwrap();
-        let rec_upper = validate_record(wire_upper).unwrap();
-
-        // Both collapse to the same canonical (lowercase) idem_key → one row.
-        assert_eq!(rec_lower.idem_key, lower);
-        assert_eq!(rec_upper.idem_key, lower);
-        assert_eq!(rec_lower.idem_key, rec_upper.idem_key);
-    }
-
-    #[test]
-    fn source_over_cap_is_rejected() {
-        let too_long: UsageRecordWire = serde_json::from_value({
-            let mut r = record_json(&tenant_a(), &hex64(0x23));
-            r["source"] = serde_json::json!("x".repeat(MAX_SOURCE_LEN + 1));
-            r
-        })
-        .unwrap();
-        assert_eq!(validate_record(too_long), Err(RecordError::SourceTooLong));
-
-        // A source exactly at the cap is still accepted.
-        let at_cap: UsageRecordWire = serde_json::from_value({
-            let mut r = record_json(&tenant_a(), &hex64(0x24));
-            r["source"] = serde_json::json!("x".repeat(MAX_SOURCE_LEN));
-            r
-        })
-        .unwrap();
-        assert!(validate_record(at_cap).is_ok());
-    }
-
-    #[test]
-    fn validate_record_reasons_pinned() {
-        let bad_region: UsageRecordWire = serde_json::from_value({
-            let mut r = record_json(&tenant_a(), &hex64(0x21));
-            r["region"] = serde_json::json!("us");
-            r
-        })
-        .unwrap();
-        assert_eq!(validate_record(bad_region), Err(RecordError::BadRegion));
-    }
-
-    #[test]
-    fn payload_hash_is_64_hex_and_deterministic() {
-        let wire: UsageRecordWire =
-            serde_json::from_value(record_json(&tenant_a(), &hex64(0x22))).unwrap();
-        let rec = validate_record(wire).unwrap();
-        let h1 = D1UsageStagingStore::payload_hash(&rec);
-        let h2 = D1UsageStagingStore::payload_hash(&rec);
-        assert_eq!(h1.len(), 64, "BLAKE3-256 hex must be 64 chars");
-        assert!(h1.bytes().all(|b| b.is_ascii_hexdigit()));
-        assert_eq!(
-            h1, h2,
-            "the same record must reproduce the same payload hash"
-        );
-    }
-
-    #[test]
-    fn build_state_returns_none_when_secret_absent() {
-        if std::env::var("BILLING_INGEST_AUTH_KEY").is_err() {
-            assert!(build_state_from_env().is_none());
-        }
-    }
-}
+#[cfg(test)]
+mod tests_payload_hash;
