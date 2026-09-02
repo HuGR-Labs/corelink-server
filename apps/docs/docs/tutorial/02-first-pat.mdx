@@ -25,6 +25,20 @@ CoreLink authenticates every cache read and write with a personal access token (
    - **Expiry**: 30 / 90 / 365 days (or custom).
 4. Click **Create**. The token is shown **once** — copy it.
 
+For a dedicated CI token after you have your starter PAT, call the same
+self-service surface directly. The caller's tenant is derived from the
+credential; never send a tenant ID or an operator mint key.
+
+```bash
+curl -X POST https://corelink-api.humangr.com/v1/pats \
+  -H "Authorization: Bearer $CORELINK_PAT" \
+  -H "Content-Type: application/json" \
+  --data '{"label":"ci-runner","scopes":["cache:read","cache:write"]}'
+```
+
+The response returns `token` exactly once. Store it immediately; self-service
+tokens expire after 90 days and cannot be granted `admin`.
+
 ## 3. Token format
 
 CoreLink PATs follow the canonical format defined in the spec:

@@ -1557,6 +1557,45 @@ describe("route resolution — /v1/* family", () => {
     expect(captured.routeKind).toBe("customer_v1");
   });
 
+  it("POST /v1/pats uses the customer-authorized route, never generic reapi_v1", async () => {
+    const { env, captured } = makeCapturingEnv();
+    const token = TEST_PAT_TOKEN;
+    const resp = await workerFetch(
+      "http://localhost/v1/pats",
+      { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ label: "ci-key" }) },
+      env,
+    );
+    expect(resp.status).toBe(200);
+    expect(captured.routeKind).toBe("customer_v1");
+  });
+
+  it("POST /v1/pats without credentials returns the same 401 envelope", async () => {
+    const resp = await workerFetch("http://localhost/v1/pats", { method: "POST" });
+    expect(resp.status).toBe(401);
+    const body = await resp.json() as { error: string };
+    expect(body.error).toBe("UNAUTHORIZED");
+  });
+
+  it("POST /v1/pats rejects an expired canonical PAT before forwarding", async () => {
+    const expiredTokenId = "CCCCCCCCCCCCCCCC";
+    const expiredPat =
+      "corelink_ci_" +
+      expiredTokenId +
+      ".AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+      ".AAAAAAAAAAAAAAAAAAAAAA";
+    const d1WithExpired = makeD1Mock(new Map([
+      [expiredTokenId, { tenant_id: TEST_TENANT_ID, expires_ms: Date.now() - 1000 }],
+    ]));
+
+    const resp = await workerFetch(
+      "http://localhost/v1/pats",
+      { method: "POST", headers: { Authorization: `Bearer ${expiredPat}` } },
+      { CONFIG_DB: d1WithExpired },
+    );
+
+    expect(resp.status).toBe(401);
+  });
+
   it("POST /v1/customer/keys/:id/revoke forwards to DO as routeKind=customer_v1", async () => {
     const { env, captured } = makeCapturingEnv();
     const token = TEST_PAT_TOKEN;

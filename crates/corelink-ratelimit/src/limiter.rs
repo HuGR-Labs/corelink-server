@@ -494,9 +494,9 @@ where
             Err(_) => {
                 // Poisoned: treat as if the tombstone is absent (fail-
                 // OPEN on a poison edge to keep the limiter available).
-                return TokenBucketState::new_full(
+                return TokenBucketState::new_full_exact(
                     self.config.default_burst_capacity(),
-                    self.config.default_refill_rate_per_sec(),
+                    self.config.default_refill_rate_per_sec_exact(),
                     now_ms,
                 );
             }
@@ -508,18 +508,18 @@ where
                 // tombstone is consumed-on-re-materialise so the
                 // bucket can refuel naturally after the cooldown.
                 tombstones.remove(bucket_key);
-                return TokenBucketState::new_exhausted(
+                return TokenBucketState::new_exhausted_exact(
                     self.config.default_burst_capacity(),
-                    self.config.default_refill_rate_per_sec(),
+                    self.config.default_refill_rate_per_sec_exact(),
                     now_ms,
                 );
             }
             // Expired: clear and fall through to the full bucket.
             tombstones.remove(bucket_key);
         }
-        TokenBucketState::new_full(
+        TokenBucketState::new_full_exact(
             self.config.default_burst_capacity(),
-            self.config.default_refill_rate_per_sec(),
+            self.config.default_refill_rate_per_sec_exact(),
             now_ms,
         )
     }

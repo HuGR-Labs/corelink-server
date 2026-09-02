@@ -41,6 +41,11 @@ pub struct RateLimitConfig {
     /// Default refill rate (tokens / second) per WI §6.1.4 — applied
     /// when a fresh bucket is materialised before any plan resolution.
     default_refill_rate_per_sec: u32,
+    /// Exact refill-rate ratio. Keeping numerator and denominator separately
+    /// matters for slow buckets: `10 / 3600` must not first be truncated to an
+    /// integer number of nanounits and turn a 360-second boundary into 361s.
+    default_refill_rate_numerator: u64,
+    default_refill_rate_denominator: u64,
     /// Default burst capacity (tokens) per WI §6.1.4.
     default_burst_capacity: u32,
     /// Retry-After floor (seconds; default 1s per RFC 6585 §4).
@@ -58,6 +63,8 @@ impl RateLimitConfig {
     pub const fn canonical() -> Self {
         Self {
             default_refill_rate_per_sec: DEFAULT_REFILL_RATE_PER_SEC,
+            default_refill_rate_numerator: DEFAULT_REFILL_RATE_PER_SEC as u64,
+            default_refill_rate_denominator: 1,
             default_burst_capacity: DEFAULT_BURST_CAPACITY,
             retry_after_floor_secs: DEFAULT_RETRY_AFTER_FLOOR_SECS,
             retry_after_hard_ceiling_secs: RETRY_AFTER_HARD_CEILING_SECS,
@@ -95,6 +102,8 @@ impl RateLimitConfig {
         }
         Some(Self {
             default_refill_rate_per_sec,
+            default_refill_rate_numerator: default_refill_rate_per_sec as u64,
+            default_refill_rate_denominator: 1,
             default_burst_capacity,
             retry_after_floor_secs,
             retry_after_hard_ceiling_secs,
@@ -102,10 +111,72 @@ impl RateLimitConfig {
         })
     }
 
+    /// Construct a config with an exact fractional refill rate.
+    ///
+    /// The ratio is deliberately retained rather than being truncated into a
+    /// fixed decimal representation. For example, use `(10, 3600)` for ten
+    /// tokens/hour; the bucket can then admit exactly at 360 seconds.
+    #[must_use]
+    pub const fn with_fractional_refill_ratio(
+        refill_rate_numerator: u64,
+        refill_rate_denominator: u64,
+        burst_capacity: u32,
+        retry_after_floor_secs: u64,
+        retry_after_hard_ceiling_secs: u64,
+        retry_after_canceled_tenant_secs: u64,
+    ) -> Option<Self> {
+        if burst_capacity == 0 || refill_rate_denominator == 0 {
+            return None;
+        }
+        if retry_after_floor_secs >= retry_after_hard_ceiling_secs {
+            return None;
+        }
+        if retry_after_canceled_tenant_secs < retry_after_hard_ceiling_secs {
+            return None;
+        }
+        Some(Self {
+            default_refill_rate_per_sec: (refill_rate_numerator / refill_rate_denominator) as u32,
+            default_refill_rate_numerator: refill_rate_numerator,
+            default_refill_rate_denominator: refill_rate_denominator,
+            default_burst_capacity: burst_capacity,
+            retry_after_floor_secs,
+            retry_after_hard_ceiling_secs,
+            retry_after_canceled_tenant_secs,
+        })
+    }
+
+    /// Legacy fixed-point fractional constructor.
+    ///
+    /// New low-volume buckets should use [`Self::with_fractional_refill_ratio`]
+    /// so a non-terminating decimal is never pre-truncated.
+    #[must_use]
+    pub const fn with_fractional_refill_nanos(
+        refill_rate_nanos: u64,
+        burst_capacity: u32,
+        retry_after_floor_secs: u64,
+        retry_after_hard_ceiling_secs: u64,
+        retry_after_canceled_tenant_secs: u64,
+    ) -> Option<Self> {
+        Self::with_fractional_refill_ratio(
+            refill_rate_nanos,
+            REFILL_RATE_NANOS,
+            burst_capacity,
+            retry_after_floor_secs,
+            retry_after_hard_ceiling_secs,
+            retry_after_canceled_tenant_secs,
+        )
+    }
+
     /// Default refill rate (tokens / second).
     #[must_use]
     pub const fn default_refill_rate_per_sec(&self) -> u32 {
         self.default_refill_rate_per_sec
+    }
+
+    /// Exact default refill rate in tokens/second.
+    #[must_use]
+    pub const fn default_refill_rate_per_sec_exact(&self) -> f64 {
+        self.default_refill_rate_numerator as f64 / self.default_refill_rate_denominator as f64
     }
 
     /// Default burst capacity (tokens).
@@ -132,6 +203,9 @@ impl RateLimitConfig {
         self.retry_after_canceled_tenant_secs
     }
 }
+
+/// Fixed-point scale used for exact low-volume refill rates.
+const REFILL_RATE_NANOS: u64 = 1_000_000_000;
 
 impl Default for RateLimitConfig {
     fn default() -> Self {
@@ -182,6 +256,19 @@ mod tests {
         assert_eq!(c.retry_after_floor_secs(), 5);
         assert_eq!(c.retry_after_hard_ceiling_secs(), 3600);
         assert_eq!(c.retry_after_canceled_tenant_secs(), 86_400);
+    }
+
+    #[test]
+    fn fractional_refill_preserves_low_volume_rate() {
+        let c = RateLimitConfig::with_fractional_refill_ratio(10, 3600, 10, 1, 86_400, 7 * 86_400)
+            .unwrap();
+        assert_eq!(c.default_burst_capacity(), 10);
+        assert!((c.default_refill_rate_per_sec_exact() - (1.0 / 360.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn fractional_ratio_rejects_zero_denominator() {
+        assert!(RateLimitConfig::with_fractional_refill_ratio(1, 0, 10, 1, 60, 86_400).is_none());
     }
 
     #[test]

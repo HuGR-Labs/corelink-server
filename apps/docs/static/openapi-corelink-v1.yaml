@@ -285,9 +285,12 @@ paths:
       summary: Issue a new Personal Access Token.
       operationId: patIssue
       description: |
-        Returns the raw token material **once** (`shown_once`). The token is
-        hashed (BLAKE3-keyed) before storage; subsequent reads only ever
-        return the hash prefix and metadata.
+        Creates a PAT for the caller's authenticated tenant. The Worker derives
+        the tenant from a validated Clerk session or canonical PAT; clients
+        cannot supply a tenant id and this endpoint never accepts the
+        operator-only mint authority. The raw token is returned exactly once in
+        `token` and is never logged or retrievable later. Self-service tokens
+        expire after 90 days and cannot grant `admin`.
       requestBody:
         required: true
         content:
@@ -304,35 +307,6 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "422": { $ref: "#/components/responses/Unprocessable" }
         "429": { $ref: "#/components/responses/RateLimited" }
-        "500": { $ref: "#/components/responses/InternalError" }
-    get:
-      tags: [pat]
-      summary: List the caller's Personal Access Tokens.
-      operationId: patList
-      responses:
-        "200":
-          description: PAT list (metadata only — no raw token material).
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/PatMetadata"
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "500": { $ref: "#/components/responses/InternalError" }
-  /v1/pats/{pat_id}:
-    delete:
-      tags: [pat]
-      summary: Revoke a Personal Access Token by id.
-      operationId: patRevoke
-      parameters:
-        - $ref: "#/components/parameters/PatId"
-      responses:
-        "204":
-          description: Revoked. Subsequent uses MUST fail closed (`INV-PAT-REVOKE-PROPAGATION`).
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
         "500": { $ref: "#/components/responses/InternalError" }
   /v1/billing/stripe-webhook:
     post:
@@ -991,22 +965,30 @@ components:
           type: array
           items:
             type: string
-            enum: [cas.read, cas.write, ac.read, ac.write, admin]
-          default: [cas.read, cas.write, ac.read, ac.write]
-        expires_at_ms:
-          type: integer
-          format: int64
-          nullable: true
+            enum: [cache:read, cache:write, cache:find-missing]
+          default: [cache:read]
     PatIssueResponse:
-      allOf:
-        - $ref: "#/components/schemas/PatMetadata"
-        - type: object
-          required: [shown_once_token]
-          properties:
-            shown_once_token:
-              type: string
-              description: Raw PAT material — **shown exactly once**. Stored
-                BLAKE3-keyed; never retrievable again.
+      type: object
+      required: [pat, token]
+      properties:
+        pat:
+          $ref: "#/components/schemas/CustomerPatMetadata"
+        token:
+          type: string
+          description: Canonical raw PAT material — **shown exactly once** and
+            never logged or retrievable again.
+    CustomerPatMetadata:
+      type: object
+      required: [pat_id, name, scopes, created_at]
+      properties:
+        pat_id: { type: string }
+        name: { type: string }
+        scopes:
+          type: array
+          items: { type: string }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time, nullable: true }
+        revoked_at: { type: string, format: date-time, nullable: true }
     PatMetadata:
       type: object
       required: [pat_id, label, scopes, created_at_ms, prefix]

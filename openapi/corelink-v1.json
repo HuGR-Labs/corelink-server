@@ -372,17 +372,17 @@
       }
     },
     "/v1/pats": {
-      "x-status": "planned",
-      "x-binding": "cf-worker-pending",
+      "x-status": "implemented",
+      "x-implementing-handler": "crates/corelink-container/src/routes/customer.rs",
       "x-implementing-crate": "corelink-pat",
-      "x-reconciliation-note": "PAT primitives (`mint`, `verify`, `format`, `argon`, `scopes`) all\nship in `crates/corelink-pat`. SDK quickstarts (`quickstart_put.py`,\n`quickstart_list.py`) target this path; the binding is on the\nCF Worker entry-crate deferral list.\n",
+      "x-reconciliation-note": "Customer-authorized issuance is mounted by `customer::router` and routed\nthrough the Worker `customer_v1` auth family. The Worker derives the\ntenant from a Clerk session or canonical PAT and never forwards the\noperator-only PAT mint authority.\n",
       "post": {
         "tags": [
           "pat"
         ],
         "summary": "Issue a new Personal Access Token.",
         "operationId": "patIssue",
-        "description": "Returns the raw token material **once** (`shown_once`). The token is\nhashed (BLAKE3-keyed) before storage; subsequent reads only ever\nreturn the hash prefix and metadata.\n",
+        "description": "Creates a PAT for the caller's authenticated tenant. The Worker derives\nthe tenant from a validated Clerk session or canonical PAT; clients\ncannot supply a tenant id and this endpoint never accepts the\noperator-only mint authority. The raw token is returned exactly once in\n`token` and is never logged or retrievable later. Self-service tokens\nexpire after 90 days and cannot grant `admin`.\n",
         "requestBody": {
           "required": true,
           "content": {
@@ -412,68 +412,6 @@
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
-          }
-        }
-      },
-      "get": {
-        "tags": [
-          "pat"
-        ],
-        "summary": "List the caller's Personal Access Tokens.",
-        "operationId": "patList",
-        "responses": {
-          "200": {
-            "description": "PAT list (metadata only \u2014 no raw token material).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/PatMetadata"
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
-          }
-        }
-      }
-    },
-    "/v1/pats/{pat_id}": {
-      "x-status": "planned",
-      "x-binding": "cf-worker-pending",
-      "x-implementing-crate": "corelink-pat",
-      "delete": {
-        "tags": [
-          "pat"
-        ],
-        "summary": "Revoke a Personal Access Token by id.",
-        "operationId": "patRevoke",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/PatId"
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Revoked. Subsequent uses MUST fail closed (`INV-PAT-REVOKE-PROPAGATION`)."
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
           },
           "500": {
             "$ref": "#/components/responses/InternalError"
@@ -3185,47 +3123,73 @@
             "items": {
               "type": "string",
               "enum": [
-                "cas.read",
-                "cas.write",
-                "ac.read",
-                "ac.write",
-                "admin"
+                "cache:read",
+                "cache:write",
+                "cache:find-missing"
               ]
             },
             "default": [
-              "cas.read",
-              "cas.write",
-              "ac.read",
-              "ac.write"
+              "cache:read"
             ]
-          },
-          "expires_at_ms": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64"
           }
         }
       },
       "PatIssueResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/PatMetadata"
+        "type": "object",
+        "required": [
+          "pat",
+          "token"
+        ],
+        "properties": {
+          "pat": {
+            "$ref": "#/components/schemas/CustomerPatMetadata"
           },
-          {
-            "type": "object",
-            "required": [
-              "shown_once_token"
-            ],
-            "properties": {
-              "shown_once_token": {
-                "type": "string",
-                "description": "Raw PAT material \u2014 **shown exactly once**. Stored BLAKE3-keyed; never retrievable again."
-              }
-            }
+          "token": {
+            "type": "string",
+            "description": "Canonical raw PAT material \u2014 **shown exactly once** and never logged or retrievable again."
           }
-        ]
+        }
+      },
+      "CustomerPatMetadata": {
+        "type": "object",
+        "required": [
+          "pat_id",
+          "name",
+          "scopes",
+          "created_at"
+        ],
+        "properties": {
+          "pat_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_used_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "revoked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
       },
       "PatMetadata": {
         "type": "object",
