@@ -21,7 +21,7 @@ source_files:
 source_blobs:
   - "crates/corelink-container/src/routes/audit_cas_attempted.rs@a1a8353d127c9a46c28a9d417f0d7a4f2e991c45"
   - "crates/corelink-container/src/routes/audit_drain.rs@156104e074f9b0a4bf88d98c8195e839a0466a58"
-checkpoint_sha: "78a7aaa3e19661ba8413e7b072bb01435f4987eb"
+checkpoint_sha: "26676864f29a763f342fa59f7c3db9ca9081ea15"
 provenance: "AUTHORED"
 tags: [compliance, audit, transparency, hash-chain, blake3, rekor, sigstore, cloudevents, tamper-evidence, soc2]
 timestamp: "2026-06-26T00:00:00Z"
