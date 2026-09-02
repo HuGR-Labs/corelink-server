@@ -13,6 +13,7 @@ import os
 import stat
 import sys
 from pathlib import Path
+from types import MappingProxyType
 
 
 AUDIT = "crates/corelink-container/src/storage/d1_audit_sink/tests_batch_limits.rs"
@@ -21,14 +22,18 @@ VALIDATE = "crates/corelink-container/src/routes/billing_ingest/tests_validate_r
 SKIP = "crates/corelink-container/src/routes/billing_ingest/tests_record_skip.rs"
 INGEST = "crates/corelink-container/src/routes/billing_ingest.rs"
 
-# SHA-256 of complete source files at approved B-149 repair 627ec21.
-CHECKPOINTS = {
+# SHA-256 of complete source files at approved B-149 repair 627ec21.  This is
+# deliberately a read-only public view, not the authority used by `assess`:
+# the authority is repeated as literals in `_validated_checkpoints` so that an
+# accidental reassignment, omission, or extension cannot turn this verifier
+# into a vacuous green check.
+CHECKPOINTS = MappingProxyType({
     AUDIT: "450a24475c926d91dac2c89ab50647b3ee9cb68f8d167022ffe6d93441417824",
     AUTH: "db769f5120c69e362f0fcacf9c8a205e74097d81af009393646bd78226d99481",
     VALIDATE: "69d17ce8bffd1726f18dbaae7cb65550eadd2ef7740564c71ce80dce20f136b5",
     SKIP: "af709a075ac78c71b39611fb028b9c30c6cbc548ad561229428e9e8f11d1a6f8",
     INGEST: "b7d9016ce4a12fb73d14ea78f593ffbe0eda2cc52631063ae182d5a793b4f04e",
-}
+})
 GAPS = (
     "empty_batch-no-empty-statement-assertion",
     "secret-absent-is-environment-conditional",
@@ -41,9 +46,41 @@ class InstrumentError(RuntimeError):
     """A required checkpoint cannot be read, so no verdict is trustworthy."""
 
 
+def _validated_checkpoints() -> dict[str, str]:
+    """Return precisely the reviewed five-file certificate, or fail closed.
+
+    `CHECKPOINTS` is intentionally checked as configuration too.  The
+    canonical literals below are the reviewed B-149 certificate; a missing,
+    added, or changed entry is an instrument failure, never a zero-gap result.
+    Keeping the public mapping read-only prevents ordinary accidental edits,
+    while this comparison also catches module-level reassignment in tests and
+    future refactors.
+    """
+    approved = {
+        "crates/corelink-container/src/storage/d1_audit_sink/tests_batch_limits.rs": "450a24475c926d91dac2c89ab50647b3ee9cb68f8d167022ffe6d93441417824",
+        "crates/corelink-container/src/routes/billing_ingest/tests_auth.rs": "db769f5120c69e362f0fcacf9c8a205e74097d81af009393646bd78226d99481",
+        "crates/corelink-container/src/routes/billing_ingest/tests_validate_record.rs": "69d17ce8bffd1726f18dbaae7cb65550eadd2ef7740564c71ce80dce20f136b5",
+        "crates/corelink-container/src/routes/billing_ingest/tests_record_skip.rs": "af709a075ac78c71b39611fb028b9c30c6cbc548ad561229428e9e8f11d1a6f8",
+        "crates/corelink-container/src/routes/billing_ingest.rs": "b7d9016ce4a12fb73d14ea78f593ffbe0eda2cc52631063ae182d5a793b4f04e",
+    }
+    try:
+        configured = dict(CHECKPOINTS)
+    except (TypeError, ValueError) as error:
+        raise InstrumentError(f"invalid checkpoint registry: {error}") from error
+    if configured != approved:
+        raise InstrumentError(
+            "checkpoint registry must contain exactly the five approved B-149 path/digest pairs"
+        )
+    return approved
+
+
 def _read_checkpoint(root: Path, relative: str) -> bytes:
     """Read one regular, non-symlinked file anchored below ``root``."""
     relative_path = Path(relative)
+    # Do not silently canonicalize an alias for the repository root.  The
+    # certificate is about the named tree supplied to this invocation.
+    if root.is_symlink():
+        raise InstrumentError("repo root must not be a symlink")
     try:
         resolved_root = root.resolve(strict=True)
     except (OSError, RuntimeError) as error:
@@ -52,7 +89,9 @@ def _read_checkpoint(root: Path, relative: str) -> bytes:
     if relative_path.is_absolute() or ".." in relative_path.parts or not candidate.resolve(strict=False).is_relative_to(resolved_root):
         raise InstrumentError(f"checkpoint path escapes resolved repo root: {relative}")
     directory_fd = file_fd = -1
-    flags = os.O_RDONLY | os.O_NOFOLLOW
+    # O_NONBLOCK is essential before fstat: opening a FIFO with O_RDONLY would
+    # otherwise wait forever for a writer, preventing a fail-closed verdict.
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
     try:
         directory_fd = os.open(resolved_root, flags | os.O_DIRECTORY)
         if not stat.S_ISDIR(os.fstat(directory_fd).st_mode):
@@ -79,15 +118,18 @@ def _read_checkpoint(root: Path, relative: str) -> bytes:
 def checkpoint_digests(root: Path) -> dict[str, str]:
     """Return all protected-file digests or fail instead of making a vacuous call."""
     digests: dict[str, str] = {}
-    for relative in CHECKPOINTS:
+    for relative in _validated_checkpoints():
         digests[relative] = hashlib.sha256(_read_checkpoint(root, relative)).hexdigest()
     return digests
 
 
 def assess(root: Path) -> list[str]:
     """Return B-149 gaps. Zero gaps is possible only at every checkpoint."""
-    actual = checkpoint_digests(root.resolve())
-    drifted = {path for path, digest in actual.items() if digest != CHECKPOINTS[path]}
+    checkpoints = _validated_checkpoints()
+    # Preserve the caller spelling until `_read_checkpoint` has rejected a
+    # symlinked root; resolving here would erase that evidence.
+    actual = checkpoint_digests(root)
+    drifted = {path for path, digest in actual.items() if digest != checkpoints[path]}
     gaps: list[str] = []
     if AUDIT in drifted:
         gaps.append(GAPS[0])

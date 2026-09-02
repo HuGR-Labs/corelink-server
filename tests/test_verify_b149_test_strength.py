@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 import sys
 import tempfile
@@ -113,6 +114,34 @@ class B149VerifierTests(unittest.TestCase):
             with self.assertRaises(verifier.InstrumentError):
                 verifier.assess(root)
 
+    def test_checkpoint_registry_must_remain_the_exact_five_reviewed_pairs(self) -> None:
+        temp, root = self.approved_root()
+        approved = verifier.CHECKPOINTS
+        altered = dict(approved)
+        first_path = next(iter(altered))
+        altered[first_path] = "0" * 64
+        extra = dict(approved)
+        extra["unexpected.rs"] = "0" * 64
+        mutations = {
+            "empty": {},
+            "omitted": dict(list(approved.items())[1:]),
+            "extra": extra,
+            "digest-altered": altered,
+        }
+        try:
+            with temp:
+                for label, mutation in mutations.items():
+                    with self.subTest(label=label):
+                        verifier.CHECKPOINTS = mutation
+                        with self.assertRaisesRegex(verifier.InstrumentError, "exactly the five"):
+                            verifier.assess(root)
+        finally:
+            verifier.CHECKPOINTS = approved
+
+    def test_checkpoint_registry_view_is_not_mutable_in_place(self) -> None:
+        with self.assertRaises(TypeError):
+            verifier.CHECKPOINTS[verifier.AUDIT] = "0" * 64
+
     def test_symlink_to_approved_tree_and_path_swap_fail_closed(self) -> None:
         approved_temp, approved = self.approved_root()
         target_temp, root = self.approved_root()
@@ -122,6 +151,14 @@ class B149VerifierTests(unittest.TestCase):
             target.symlink_to(approved / verifier.AUDIT)
             with self.assertRaises(verifier.InstrumentError):
                 verifier.assess(root)
+
+    def test_symlinked_repository_root_is_an_instrument_error(self) -> None:
+        temp, root = self.approved_root()
+        with temp:
+            alias = root.parent / f"repo-alias-{root.name}"
+            alias.symlink_to(root, target_is_directory=True)
+            with self.assertRaisesRegex(verifier.InstrumentError, "root must not be a symlink"):
+                verifier.assess(alias)
         temp, root = self.approved_root()
         with temp:
             target = root / verifier.AUDIT
@@ -148,6 +185,22 @@ class B149VerifierTests(unittest.TestCase):
             target.mkdir()
             with self.assertRaises(verifier.InstrumentError):
                 verifier.assess(root)
+
+    def test_fifo_checkpoint_fails_before_the_subprocess_deadline(self) -> None:
+        temp, root = self.approved_root()
+        with temp:
+            target = root / verifier.AUTH
+            target.unlink()
+            os.mkfifo(target)
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT), "--root", str(root), "--expect", "done"],
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=2,
+            )
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertIn("checkpoint is not a regular file", result.stderr)
 
 
 if __name__ == "__main__":
