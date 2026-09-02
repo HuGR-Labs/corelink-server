@@ -1,23 +1,23 @@
-# OKF auto-reconcile — the "LLM half" of the self-healing loop, automated on merge.
+# OKF auto-reconcile — the "LLM half" of the self-healing loop, operator-dispatched.
 #
 # WHAT IT DOES: after a merge to main that touches source code, it checks whether any
 # OKF concept's cited lines drifted (the deterministic reporter `okf_reconcile.py`). If
-# drift exists, it launches the Claude Code CLI headless to run the `okf-reconcile` skill
+# drift exists, it launches Codex headless to run the `okf-reconcile` skill
 # — reconciling the stale concepts' citations to the current code + advancing checkpoints —
 # then DETERMINISTIC steps validate the result and open a PR. The agent only EDITS docs;
 # the git/PR mechanics are owned by the workflow (not the model), and a PR is opened ONLY
 # if the wiki gate (validate + fixtures) is green.
 #
 # ── TWO ONE-TIME HUMAN STEPS (the workflow is inert until these are done) ──
-#   1. Add the repo secret  ANTHROPIC_API_KEY  (Settings → Secrets → Actions). The CLI
-#      cannot run without it. This is the only thing blocking "it works".
+#   1. Add the repo secret  OPENAI_API_KEY  (Settings → Secrets → Actions). The
+#      Codex Action cannot run without it. This is the only thing blocking "it works".
 #   2. (optional) If you want the okf-wiki-validation gate to RE-RUN on the auto-PR, set a
-#      PAT secret `OKF_BOT_PAT` (repo+workflow scope) and swap GITHUB_TOKEN → OKF_BOT_PAT in
-#      the "open PR" step. With the default GITHUB_TOKEN, GitHub suppresses workflow runs on
+#      PAT secret `OKF_BOT_PAT` (repo+workflow scope). The open-PR step already prefers it
+#      and falls back to GITHUB_TOKEN. With the default token, GitHub suppresses workflows on
 #      the bot PR (anti-recursion) — but the workflow ALREADY validated green before opening
 #      it, so the PR is pre-proven; you just review + merge.
 #
-# COST/SAFETY: fires only on source-tree changes; spends tokens only when drift is real
+# COST/SAFETY: runs only on explicit dispatch; spends tokens only when drift is real
 # (stale_count > 0); 20-min hard timeout; bounded by the finite worklist; never touches
 # non-doc code (enforced in the prompt + a post-run guard).
 
@@ -27,18 +27,13 @@ on:
   # DISPATCH-ONLY as of 2026-08-29 (owner decision: the OKF robot stays
   # local/manual — `scripts/okf-reconcile-local.sh`).
   #
-  # The `push: branches: [main]` trigger that used to live here is removed, not
-  # commented out, because this lane has NEVER once executed: `claude`
-  # authenticates from the CLI logged in on the founder's Mac (`~/.claude`), and
-  # `runs-on: corelink` is the EPHEMERAL container fleet, which has no such
-  # directory and no login. Every run either skipped (nothing stale) or died at
-  # `claude: command not found` / exit 127. An automatic trigger on a lane that
-  # can only fail is chronic red, and chronic red nobody acts on trains everyone
-  # to ignore the signal.
+  # The `push: branches: [main]` trigger that used to live here remains removed:
+  # this lane is intentionally operator-dispatched. While GitHub Actions is
+  # unavailable, invoke `scripts/okf-reconcile-local.sh` with the authenticated
+  # Codex CLI instead of pretending a dispatch occurred.
   #
-  # Kept dispatchable so it is one click away if the decision changes. Before
-  # re-arming any automatic trigger, apply the four-line fix recorded in B-058 —
-  # otherwise this just goes back to failing 100% of the time.
+  # Kept dispatchable so it is one click away when Actions is healthy and the
+  # OPENAI_API_KEY repository secret has been provisioned.
   workflow_dispatch:
     inputs:
       force:
@@ -57,9 +52,9 @@ permissions:
 jobs:
   autoreconcile:
     # corelink: CoreLink's own ephemeral runner fabric (zero-hosted migration).
-    # node 22 / npm are baked into the image, so `npm install -g
-    # @anthropic-ai/claude-code` below needs no explicit setup-node step —
-    # same convention as admin-ui-ci.yml. No docker/browser deps here.
+    # The Codex Action's default drop-sudo safety strategy is intentionally
+    # irreversible, so this job must never move to the persistent founder-Mac
+    # `corelink-builder` label.
     runs-on: corelink
     timeout-minutes: 20
     steps:
@@ -67,58 +62,59 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Detect OKF drift (deterministic reporter — no LLM, no cost)
         id: drift
         run: |
           set -euo pipefail
-          python3 scripts/okf_reconcile.py --json > /tmp/okf_worklist.json
-          stale=$(python3 -c "import json,sys; print(json.load(open('/tmp/okf_worklist.json'))['stale_count'])")
+          python3 scripts/okf_reconcile.py --json > .okf_worklist.json
+          stale=$(python3 -c "import json,sys; print(json.load(open('.okf_worklist.json'))['stale_count'])")
           echo "stale_count=$stale" >> "$GITHUB_OUTPUT"
           echo "OKF reconcile reporter: stale_count=$stale"
           python3 scripts/okf_reconcile.py || true   # human-readable worklist into the log
 
       - name: Skip cleanly when nothing drifted
         if: steps.drift.outputs.stale_count == '0' && github.event.inputs.force != 'true'
-        run: echo "No OKF drift — nothing to reconcile. Exiting clean (zero agent cost)."
-
-      - name: Install Claude Code CLI
-        if: steps.drift.outputs.stale_count != '0' || github.event.inputs.force == 'true'
-        run: npm install -g @anthropic-ai/claude-code
-
-      - name: Run the okf-reconcile skill (Claude Code headless)
-        if: steps.drift.outputs.stale_count != '0' || github.event.inputs.force == 'true'
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          set -euo pipefail
-          claude -p "$(cat <<'PROMPT'
-          You are running headless in CI to reconcile the OKF architecture wiki after a code merge.
-          A deterministic reporter has already identified the drifted concepts — its worklist is at
-          /tmp/okf_worklist.json (fields: stale_count, worklist[] with concept + drifted cited ranges).
+          rm -f .okf_worklist.json
+          echo "No OKF drift — nothing to reconcile. Exiting clean (zero agent cost)."
 
-          TASK — follow the repo skill `.claude/skills/okf-reconcile/SKILL.md` exactly:
-          1. Run `python3 scripts/okf_reconcile.py` to see the worklist; for EACH stale concept, open its
-             cited code at the CURRENT HEAD and find where the cited CONTENT moved.
-          2. Update that concept's `# Citations` line ranges (and any inline path:line) to the CURRENT
-             correct lines. CONFIRM the claim still HOLDS at the new location — if the code CHANGED the
-             behavior, UPDATE the claim to the current truth HONESTLY (never blind-bump). This is the whole
-             point: keep the wiki TRUE, not just green.
-          3. Advance each touched concept's `checkpoint_sha` to the current HEAD commit SHA. The gate's C5b
-             anti-phantom check REQUIRES a real body edit alongside a checkpoint bump — your cite/claim edit
-             satisfies it; never bump a checkpoint with no body change.
-          4. Regenerate the index: `python3 scripts/okf_index.py`.
+      - name: Run the okf-reconcile skill (Codex headless)
+        if: steps.drift.outputs.stale_count != '0' || github.event.inputs.force == 'true'
+        uses: openai/codex-action@86365089eb2b84e0a8fb0717b304f8bdcb13b20e # v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          permission-profile: ':workspace'
+          codex-version: '0.152.1'
+          model: 'gpt-5.6-luna'
+          effort: 'high'
+          codex-args: '["--ephemeral"]'
+          prompt: |
+            You are running headless in CI to reconcile the OKF architecture wiki after a code merge.
+            A deterministic reporter has already identified the drifted concepts — its worklist is at
+            .okf_worklist.json (fields: stale_count, worklist[] with concept + drifted cited ranges).
 
-          HARD CONSTRAINTS:
-          - EDIT ONLY files under docs/knowledge/** and docs/internal/okf-wiki/** and docs/knowledge/index.md.
-            NEVER edit code (crates/, worker/, apps/, scripts/, migrations/) — you are documenting it, not
-            changing it. If a concept can't be reconciled without a code change, leave it and note it.
-          - Every `# Citations` entry must resolve to a real path:line that PERFORMS the claim; every cited
-            file must be in that concept's source_files.
-          - Do NOT run git. Do NOT open a PR. The workflow does that. Just leave the reconciled files edited.
-          STOP when `python3 scripts/validate_okf.py` reports 0 stale / 0 drift for the concepts you fixed.
-          PROMPT
-          )" --dangerously-skip-permissions --max-turns 80
+            TASK — follow the repo skill `.claude/skills/okf-reconcile/SKILL.md` exactly:
+            1. Run `python3 scripts/okf_reconcile.py` to see the worklist; for EACH stale concept, open its
+               cited code at the CURRENT HEAD and find where the cited CONTENT moved.
+            2. Update that concept's `# Citations` line ranges (and any inline path:line) to the CURRENT
+               correct lines. CONFIRM the claim still HOLDS at the new location — if the code CHANGED the
+               behavior, UPDATE the claim to the current truth HONESTLY (never blind-bump). This is the whole
+               point: keep the wiki TRUE, not just green.
+            3. Advance each touched concept's `checkpoint_sha` to the current HEAD commit SHA. The gate's C5b
+               anti-phantom check REQUIRES a real body edit alongside a checkpoint bump — your cite/claim edit
+               satisfies it; never bump a checkpoint with no body change.
+            4. Regenerate the index: `python3 scripts/okf_index.py`.
+
+            HARD CONSTRAINTS:
+            - EDIT ONLY files under docs/knowledge/** and docs/internal/okf-wiki/** and docs/knowledge/index.md.
+              NEVER edit code (crates/, worker/, apps/, scripts/, migrations/) — you are documenting it, not
+              changing it. If a concept can't be reconciled without a code change, leave it and note it.
+            - Every `# Citations` entry must resolve to a real path:line that PERFORMS the claim; every cited
+              file must be in that concept's source_files.
+            - Do NOT run git. Do NOT open a PR. The workflow does that. Just leave the reconciled files edited.
+            STOP when `python3 scripts/validate_okf.py` reports 0 stale / 0 drift for the concepts you fixed.
 
       - name: Validate the reconcile (gate — no PR unless green)
         id: validate
@@ -126,13 +122,24 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/okf_index.py
-          # Fail the job if the agent touched anything outside the doc trees (safety net).
-          if git diff --name-only | grep -vE '^docs/knowledge/|^docs/internal/okf-wiki/' | grep . >/dev/null; then
-            echo "::error::agent edited files outside docs/knowledge — refusing to open a PR"; git diff --name-only; exit 1
+          rm -f .okf_worklist.json
+          # Fail if the agent touched anything outside the doc trees. Include
+          # untracked files: `git diff --name-only` alone would miss them.
+          outside=()
+          while IFS= read -r -d '' path; do
+            case "$path" in
+              docs/knowledge/*|docs/internal/okf-wiki/*) ;;
+              *) outside+=("$path") ;;
+            esac
+          done < <({ git diff --name-only -z HEAD; git ls-files --others --exclude-standard -z; })
+          if (( ${#outside[@]} )); then
+            echo "::error::agent edited files outside OKF docs — refusing to open a PR"
+            printf '%s\n' "${outside[@]}"
+            exit 1
           fi
           python3 scripts/validate_okf.py
           bash tests/okf/run_fixtures.sh
-          if git diff --quiet; then
+          if [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"; echo "Agent made no changes — nothing to PR."
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -144,6 +151,7 @@ jobs:
           GH_TOKEN: ${{ secrets.OKF_BOT_PAT || github.token }}
         run: |
           set -euo pipefail
+          gh auth setup-git
           BR="auto/okf-reconcile-${{ github.run_id }}"
           git config user.name  "okf-autoreconcile[bot]"
           git config user.email "okf-autoreconcile@users.noreply.github.com"
@@ -152,10 +160,12 @@ jobs:
           git commit -q -m "docs(okf): auto-reconcile concept citations after ${{ github.sha }}" \
             -m "Deterministic reporter flagged drifted cited lines after a code merge; the okf-reconcile skill reconciled the affected concepts to current code (cites re-anchored, claims re-verified, checkpoints advanced). validate + fixtures green." \
             -m "Signed-off-by: okf-autoreconcile[bot] <okf-autoreconcile@users.noreply.github.com>" \
-            -m "Co-Authored-By: Claude <noreply@anthropic.com>"
+            -m "Co-Authored-By: Codex <noreply@openai.com>"
           git push -q origin "$BR"
           gh pr create --base main --head "$BR" \
             --title "docs(okf): auto-reconcile after ${{ github.sha }}" \
             --body "Automated OKF self-healing: a code merge drifted cited lines; the \`okf-reconcile\` skill re-anchored the affected concepts to current code and re-verified the claims. **Pre-validated green** by this workflow (validate_okf + fixtures) before opening. Review the diff for claim-correctness (the gate proves freshness, not semantic correctness — that's the human check) and merge.
 
-          🤖 okf-autoreconcile · run ${{ github.run_id }}"
+          🤖 okf-autoreconcile · run ${{ github.run_id }}
+
+          Generated with Codex."

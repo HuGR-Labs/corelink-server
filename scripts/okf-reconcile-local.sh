@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# okf-reconcile-local.sh — the OKF self-healing "LLM half", run LOCALLY with your Claude
-# Code CLI auth (your login/subscription — NO ANTHROPIC_API_KEY, no CI secret, no API billing).
+# okf-reconcile-local.sh — the OKF self-healing "LLM half", run LOCALLY with your
+# Codex CLI auth (your ChatGPT login/subscription — no CI secret or API key).
 #
 # It detects whether a code change drifted any OKF concept's cited lines (the deterministic
-# `okf_reconcile.py` reporter) and, only if drift exists, runs the `claude` CLI headless on the
+# `okf_reconcile.py` reporter) and, only if drift exists, runs `codex exec` headless on the
 # `okf-reconcile` skill to re-anchor the affected concepts to current code (claims re-verified,
 # checkpoints advanced), then validates fail-closed.
 #
@@ -13,7 +13,7 @@
 #   scripts/okf-reconcile-local.sh --pr      # reconcile in an ISOLATED worktree off origin/main, validate,
 #                                            # commit + open a PR (never touches your working tree)
 #
-# REQUIRES: `claude` on PATH (you're already logged in); `gh` for --pr. Run from the repo root.
+# REQUIRES: `codex` on PATH (you're already logged in); `gh` for --pr. Run from the repo root.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -30,7 +30,7 @@ fi
 if [[ "$STALE" == "0" ]]; then
   echo "OKF: 0 drift — nothing to reconcile."; exit 0
 fi
-command -v claude >/dev/null || { echo "ERROR: 'claude' CLI not on PATH (log in to Claude Code first)."; exit 2; }
+command -v codex >/dev/null || { echo "ERROR: 'codex' CLI not on PATH (run 'codex login' first)."; exit 2; }
 
 # Quoted heredoc, not a single-quoted string: the prompt below contains an
 # apostrophe ("file's anchor"), which terminated the old PROMPT='...' early and
@@ -55,12 +55,26 @@ OKF_PROMPT
 )
 
 run_agent_and_validate() {
-  echo ">> $STALE concept(s) drifted — running the okf-reconcile skill (claude, local auth)…"
-  claude -p "$PROMPT" --dangerously-skip-permissions --max-turns 80
+  echo ">> $STALE concept(s) drifted — running the okf-reconcile skill (Codex, local auth)…"
+  printf '%s\n' "$PROMPT" | codex exec \
+    --ephemeral \
+    --ignore-user-config \
+    --sandbox workspace-write \
+    -
   python3 scripts/okf_index.py
-  # safety net: refuse if the agent touched anything outside the doc trees
-  if git diff --name-only | grep -vE '^docs/knowledge/|^docs/internal/okf-wiki/' | grep . >/dev/null; then
-    echo "ERROR: agent edited files outside docs/knowledge — aborting."; git diff --name-only; exit 1
+  # Safety net: refuse tracked OR untracked changes outside the doc trees.
+  # `git diff --name-only` alone misses newly created files.
+  local outside=()
+  while IFS= read -r -d '' path; do
+    case "$path" in
+      docs/knowledge/*|docs/internal/okf-wiki/*) ;;
+      *) outside+=("$path") ;;
+    esac
+  done < <({ git diff --name-only -z HEAD; git ls-files --others --exclude-standard -z; })
+  if (( ${#outside[@]} )); then
+    echo "ERROR: agent edited files outside OKF docs — aborting."
+    printf '%s\n' "${outside[@]}"
+    exit 1
   fi
   python3 scripts/validate_okf.py
   bash tests/okf/run_fixtures.sh
@@ -76,16 +90,21 @@ if [[ "$MODE" == "--pr" ]]; then
   trap 'popd >/dev/null 2>&1 || true; git worktree remove --force "$WT" 2>/dev/null || true' EXIT
   if [[ "$(drift_count)" == "0" ]]; then echo "drift cleared on origin/main — nothing to do."; exit 0; fi
   run_agent_and_validate
-  if git diff --quiet; then echo "agent made no changes — nothing to PR."; exit 0; fi
+  if [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]]; then
+    echo "agent made no changes — nothing to PR."; exit 0
+  fi
   HEAD_SHA="$(git -C "$(git rev-parse --show-toplevel)" rev-parse origin/main)"
   git add -A
   git commit -q -m "docs(okf): auto-reconcile concept citations after $HEAD_SHA" \
     -m "Local self-healing run (okf-reconcile skill, your CLI auth): drifted cited lines re-anchored to current code, claims re-verified, checkpoints advanced. validate + fixtures green." \
-    -m "$(printf 'Signed-off-by: %s <%s>' "$(git config user.name)" "$(git config user.email)")"
+    -m "$(printf 'Signed-off-by: %s <%s>' "$(git config user.name)" "$(git config user.email)")" \
+    -m "Co-Authored-By: Codex <noreply@openai.com>"
   git push -q -u origin "$BR"
   gh pr create --base main --head "$BR" \
     --title "docs(okf): local auto-reconcile $TS" \
-    --body "Self-healing OKF reconcile run locally with the Claude Code CLI (your auth — no API key). Pre-validated green (validate_okf + fixtures). Review the diff for claim-correctness and merge."
+    --body "Self-healing OKF reconcile run locally with the Codex CLI (your ChatGPT auth — no API key). Pre-validated green (validate_okf + fixtures). Review the diff for claim-correctness and merge.
+
+Generated with Codex."
   echo ">> PR opened. (isolated worktree auto-removed)"
   exit 0
 fi
