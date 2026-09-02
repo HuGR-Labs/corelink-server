@@ -581,7 +581,9 @@ impl BlobStore for OciMoatStore {
             })?;
         // Persist content-addressed, mapping the OCI digest (`blob_key`) → blake3
         // content hash. Namespace + cap depend on the flag-gated `_public`
-        // routing decision (the SAME predicate the read path uses):
+        // routing decision. Writes use the stricter owner-pinned allowlist
+        // predicate; reads may additionally use the existence-based `_public`
+        // superset without admitting new public content:
         //   * allowlisted owner-pinned digest → shared `_public`, uncapped
         //     (`Some(0)`). This includes index-shaped bytes when they arrive via
         //     blob upload/finalize. The write-time `verify_against_bytes` above
@@ -1848,7 +1850,8 @@ mod tests {
 
     #[tokio::test]
     async fn inc6_write_namespace_equals_read_namespace_no_split_brain() {
-        // DoD (parity / split-brain): the SAME predicate guards write and read.
+        // DoD (parity / split-brain): the write predicate is the strict subset;
+        // the read path may also use existence-based `_public` resolution.
         // (1) An allowlisted push lands ONLY in `_public` (no per-tenant row), yet
         //     get_blob still returns it → the read resolved `_public`, matching the
         //     write. (2) The predicate is stable across paths and gated by BOTH the
