@@ -23,6 +23,8 @@ on:
     paths:
       - 'tests/*.py'
       - 'scripts/**'
+      - 'docs/campaigns/remediation/BACKLOG-WP-LEDGER.md'
+      - 'docs/campaigns/remediation/work-packages/**'
       - 'requirements-ci.txt'
       - '.github/workflows/python-tests.yml'
   push:
@@ -30,6 +32,8 @@ on:
     paths:
       - 'tests/*.py'
       - 'scripts/**'
+      - 'docs/campaigns/remediation/BACKLOG-WP-LEDGER.md'
+      - 'docs/campaigns/remediation/work-packages/**'
       - 'requirements-ci.txt'
       - '.github/workflows/python-tests.yml'
   workflow_dispatch:
@@ -92,3 +96,7 @@ jobs:
           echo "Collected ${#FILES[@]} file(s):"
           printf '  %s\n' "${FILES[@]}"
           python3 -m pytest "${FILES[@]}" -q
+
+      - name: Verify backlog work-package ledger
+        shell: bash
+        run: python3 scripts/verify_backlog_wp_ledger.py

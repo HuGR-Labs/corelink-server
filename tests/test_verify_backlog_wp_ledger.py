@@ -1,0 +1,363 @@
+from pathlib import Path
+import sys
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import verify_backlog_wp_ledger as ledger
+
+from verify_backlog_wp_ledger import (
+    LedgerError,
+    compare,
+    contract_section,
+    declared_wp_names,
+    parse_catalog,
+    validate_contract_section,
+    validate_predecessors,
+    parse_structured_allowlist,
+    validate_structured_allowlist,
+    parse_workflow_ownership,
+    validate_workflow_ownership,
+    parse_ledger_state,
+    validate_ledger_state,
+    parse_wp_dependency_order,
+    validate_wp_dependency_order,
+)
+
+
+def test_catalog_requires_one_nonempty_parseable_fence():
+    with pytest.raises(LedgerError, match="exactly one"):
+        parse_catalog("no fence", "x.md", 1, 45)
+    with pytest.raises(LedgerError, match="empty"):
+        parse_catalog("```wp-coverage\n```\n", "x.md", 1, 45)
+    with pytest.raises(LedgerError, match="unparseable"):
+        parse_catalog("```wp-coverage\nB-008\n```\n", "x.md", 1, 45)
+    with pytest.raises(LedgerError, match="nested"):
+        parse_catalog(
+            "````markdown\n```wp-coverage\nB-008 WP-B008\n```\n````\n",
+            "x.md",
+            1,
+            45,
+        )
+    with pytest.raises(LedgerError, match="closing must be exactly"):
+        parse_catalog("```wp-coverage\nB-008 WP-B008\n``` suffix\n", "x.md", 1, 45)
+
+
+def test_catalog_rejects_noncanonical_and_out_of_range_ids():
+    with pytest.raises(LedgerError, match="non-canonical"):
+        parse_catalog("```wp-coverage\nB-08 WP-B008\n```\n", "x.md", 1, 45)
+    with pytest.raises(LedgerError, match="outside"):
+        parse_catalog("```wp-coverage\nB-046 WP-B046\n```\n", "x.md", 1, 45)
+
+
+def test_fence_scanner_handles_tildes_lengths_and_delimiter_mismatches():
+    assert parse_catalog(
+        "~~~~wp-coverage\nB-008 WP-B008\n~~~~~\n", "x.md", 1, 45
+    ) == [("B-008", "WP-B008")]
+    with pytest.raises(LedgerError, match="unterminated"):
+        parse_catalog("~~~~wp-coverage\nB-008 WP-B008\n~~~\n", "x.md", 1, 45)
+    with pytest.raises(LedgerError, match="unterminated"):
+        parse_catalog("```wp-coverage\nB-008 WP-B008\n~~~\n", "x.md", 1, 45)
+    with pytest.raises(LedgerError, match="nested"):
+        parse_catalog(
+            "~~~markdown\n```wp-coverage\nB-008 WP-B008\n```\n~~~\n",
+            "x.md",
+            1,
+            45,
+        )
+
+
+def test_fence_scanner_ignores_fake_wp_headings_and_fields_inside_code():
+    text = """
+```markdown
+## WP-FAKE
+**Scope / allowlist.** fake
+**Read first.** fake
+**Decided change.** fake
+**Invariants.** fake
+```
+~~~text
+### WP-ALSO-FAKE
+**Completeness.** fake
+**Definition of Done.** fake
+~~~
+## WP-REAL — real contract
+**Scope / allowlist.** real only
+"""
+    assert declared_wp_names(text, "fixture.md") == {"WP-REAL"}
+    section = contract_section(text, "WP-REAL", "fixture.md")
+    assert "WP-FAKE" not in section
+    with pytest.raises(LedgerError, match="missing contract fields"):
+        validate_contract_section(section, "WP-REAL", "fixture.md")
+
+
+def test_compare_accepts_exact_partition():
+    compare(
+        {"B-008", "B-012"},
+        [("B-008", "WP-B008", "a.md"), ("B-012", "WP-B012", "a.md")],
+    )
+
+
+def test_compare_rejects_phantom_wp_name():
+    with pytest.raises(LedgerError, match="phantom WP names"):
+        compare(
+            {"B-008"},
+            [("B-008", "WP-NOT-DECLARED", "a.md")],
+            {"WP-B008"},
+        )
+
+
+def test_contract_requires_all_execution_fields():
+    complete = """
+    **Scope / allowlist.** `scripts/example.py` only.
+    **Read first.** `docs/example.md`.
+    **Decided change.** Apply the specified repair.
+    **Non-goals.** No unrelated changes.
+    **Invariants.** Fail closed.
+    **Completeness.** Empty input is indeterminate.
+    **Definition of Done.** Behavior test and review.
+    **Quality.** Mutation and lint are green.
+    **Predecessor / integration.** None; integrate after review.
+    **Return card.** Base, head, paths, results, and residual.
+    """
+    validate_contract_section(complete, "WP-EXAMPLE", "fixture.md")
+    for field, pattern in (
+        ("Read first", r"\*\*Read first\.\*\*[^\n]*\n"),
+        ("Decided change", r"\*\*Decided change\.\*\*[^\n]*\n"),
+        ("Non-goals", r"\*\*Non-goals\.\*\*[^\n]*\n"),
+        ("Invariants", r"\*\*Invariants\.\*\*[^\n]*\n"),
+        ("Completeness", r"\*\*Completeness\.\*\*[^\n]*\n"),
+        ("Definition of Done", r"\*\*Definition of Done\.\*\*[^\n]*\n"),
+        ("Quality", r"\*\*Quality\.\*\*[^\n]*\n"),
+        ("Predecessor / integration", r"\*\*Predecessor / integration\.\*\*[^\n]*\n"),
+        ("Return card", r"\*\*Return card\.\*\*[^\n]*\n"),
+    ):
+        import re
+
+        broken = re.sub(pattern, "", complete, count=1)
+        with pytest.raises(LedgerError, match="missing contract fields"):
+            validate_contract_section(broken, "WP-EXAMPLE", "fixture.md")
+
+
+@pytest.mark.parametrize(
+    ("assignments", "message"),
+    [
+        ([("B-008", "WP-A", "a.md")], "missing open IDs"),
+        (
+            [
+                ("B-008", "WP-A", "a.md"),
+                ("B-008", "WP-B", "b.md"),
+                ("B-012", "WP-C", "a.md"),
+            ],
+            "duplicate assignments",
+        ),
+        (
+            [
+                ("B-008", "WP-A", "a.md"),
+                ("B-012", "WP-B", "a.md"),
+                ("B-013", "WP-C", "a.md"),
+            ],
+            "assigned non-open IDs",
+        ),
+    ],
+)
+def test_compare_rejects_incomplete_duplicate_or_terminal(assignments, message):
+    with pytest.raises(LedgerError, match=message):
+        compare({"B-008", "B-012"}, assignments)
+
+
+def test_compare_rejects_terminal_done_or_parked_redispatch():
+    with pytest.raises(LedgerError, match="assigned non-open IDs"):
+        compare(
+            {"B-008"},
+            [("B-008", "WP-A", "a.md"), ("B-168", "WP-B", "b.md")],
+        )
+
+
+def test_dependency_order_is_executable_and_rejects_cycle():
+    valid = {"WP-140", "WP-146", "WP-148", "WP-150"}
+    order = parse_wp_dependency_order(
+        """```wp-dependency-order
+WP-140 | none
+WP-146 | none
+WP-148 | WP-140,WP-146
+WP-150 | WP-148
+```""",
+        "ledger.md",
+    )
+    required = {
+        "WP-140": (),
+        "WP-146": (),
+        "WP-148": ("WP-140", "WP-146"),
+        "WP-150": ("WP-148",),
+    }
+    validate_wp_dependency_order(order, valid, "ledger.md", required=required)
+    with pytest.raises(LedgerError, match="cyclic"):
+        validate_wp_dependency_order(
+            [("WP-148", ("WP-150",)), ("WP-150", ("WP-148",))],
+            valid,
+            "ledger.md",
+        )
+    with pytest.raises(LedgerError, match="outside order"):
+        validate_wp_dependency_order(
+            [("WP-148", ("WP-140",))],
+            valid,
+            "ledger.md",
+        )
+    with pytest.raises(LedgerError, match="required executable order"):
+        validate_wp_dependency_order(
+            [
+                ("WP-140", ()),
+                ("WP-146", ()),
+                ("WP-148", ("WP-146",)),
+                ("WP-150", ("WP-148",)),
+            ],
+            valid,
+            "ledger.md",
+            required=required,
+        )
+
+
+def test_ledger_state_rejects_stale_base_and_population():
+    state = parse_ledger_state(
+        """```ledger-state
+base-ref: origin/main
+base-sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+observed-at: 2026-09-02
+item-count: 168
+open-count: 107
+done-count: 60
+parked-count: 1
+catalog-counts: B001-B045=8,B046-B090=31,B091-B130=36,B131-B167=32
+```""",
+        "ledger.md",
+    )
+    kwargs = dict(
+        source="ledger.md",
+        item_count=168,
+        status_counts={"open": 107, "done": 60, "parked": 1},
+        catalog_counts={"B001-B045": 8, "B046-B090": 31, "B091-B130": 36, "B131-B167": 32},
+        expected_base_sha="a" * 40,
+    )
+    validate_ledger_state(state, **kwargs)
+    stale_base = dict(state, **{"base-sha": "b" * 40})
+    with pytest.raises(LedgerError, match="stale ledger base-sha"):
+        validate_ledger_state(stale_base, **kwargs)
+    stale_population = dict(state, **{"open-count": "108"})
+    with pytest.raises(LedgerError, match="stale ledger open-count"):
+        validate_ledger_state(stale_population, **kwargs)
+
+
+def test_main_rejects_tampered_base_sha_end_to_end(monkeypatch, tmp_path):
+    source = ledger.LEDGER_PATH.read_text()
+    tampered = source.replace(
+        "base-sha: 76fa37de9bcf12b5e562edce129ad1328f9f8be2",
+        "base-sha: 0000000000000000000000000000000000000000",
+    )
+    path = tmp_path / "BACKLOG-WP-LEDGER.md"
+    path.write_text(tampered)
+    monkeypatch.setattr(ledger, "LEDGER_PATH", path)
+    assert ledger.main() == 1
+
+
+@pytest.mark.parametrize("missing", ["WP-140", "WP-146"])
+def test_main_rejects_missing_ci_predecessor_end_to_end(monkeypatch, tmp_path, missing):
+    source = ledger.LEDGER_PATH.read_text()
+    remaining = "WP-146" if missing == "WP-140" else "WP-140"
+    tampered = source.replace("WP-148 | WP-140,WP-146", f"WP-148 | {remaining}")
+    path = tmp_path / "BACKLOG-WP-LEDGER.md"
+    path.write_text(tampered)
+    monkeypatch.setattr(ledger, "LEDGER_PATH", path)
+    assert ledger.main() == 1
+
+
+def test_predecessor_references_must_resolve_to_backlog_or_declared_wp():
+    with pytest.raises(LedgerError, match="does not resolve"):
+        validate_predecessors(
+            "**Predecessor / integration.** after B-999 and WP-NOT-DECLARED.",
+            "WP-B008",
+            "fixture.md",
+            {"B-008"},
+            {"WP-B008"},
+        )
+    validate_predecessors(
+        "**Predecessor / integration.** after B-008, WP-B008, and #1234.",
+        "WP-B009",
+        "fixture.md",
+        {"B-008", "B-009"},
+        {"WP-B008", "WP-B009"},
+    )
+
+
+def test_structured_allowlist_requires_explicit_path_order():
+    valid = {"WP-A", "WP-B", "WP-C", "WP-X", "WP-Y"}
+    with pytest.raises(LedgerError, match="exactly one initial owner"):
+        validate_structured_allowlist(
+            [("shared/file.py", "WP-A", "WP-X"), ("shared/file.py", "WP-B", "WP-Y")],
+            valid,
+        )
+    validate_structured_allowlist(
+        [("shared/file.py", "WP-A", "none"), ("shared/file.py", "WP-B", "WP-A")],
+        valid,
+    )
+    with pytest.raises(LedgerError, match="multiple immediate successors"):
+        validate_structured_allowlist(
+            [
+                ("shared/file.py", "WP-A", "none"),
+                ("shared/file.py", "WP-B", "WP-A"),
+                ("shared/file.py", "WP-C", "WP-A"),
+            ],
+            valid,
+        )
+
+
+def test_structured_allowlist_does_not_treat_read_first_as_editable():
+    text = """
+```wp-editable-allowlist
+crates/corelink-container/src/routes/cas.rs | WP-A | none
+```
+**Read first.** `crates/corelink-container/src/routes/cas.rs`.
+"""
+    entries = parse_structured_allowlist(text, "fixture.md")
+    assert entries == [("crates/corelink-container/src/routes/cas.rs", "WP-A", "none")]
+    validate_structured_allowlist(entries, {"WP-A"})
+
+
+def test_workflow_ownership_is_closed_and_wp150_is_read_only():
+    valid = {"WP-A", "WP-150"}
+    actual = {".github/workflows/a.yml", ".github/workflows/b.yml"}
+    with pytest.raises(LedgerError, match="WP-150 cannot own"):
+        validate_workflow_ownership(
+            [(".github/workflows/a.yml", "WP-150", "owned"),
+             (".github/workflows/b.yml", "LEAD-BLOCKED", "blocked")],
+            valid,
+            actual,
+        )
+    with pytest.raises(LedgerError, match="does not exist"):
+        validate_workflow_ownership(
+            [(".github/workflows/missing.yml", "LEAD-BLOCKED", "blocked")],
+            valid,
+            actual,
+        )
+    with pytest.raises(LedgerError, match="outside ownership map"):
+        validate_workflow_ownership(
+            [(".github/workflows/a.yml", "LEAD-BLOCKED", "blocked")],
+            valid,
+            actual,
+        )
+
+
+def test_workflow_ownership_parser_uses_strict_top_level_fence():
+    text = """
+```wp-workflow-ownership
+.github/workflows/a.yml | LEAD-BLOCKED | blocked
+```
+"""
+    assert parse_workflow_ownership(text, "fixture.md") == [
+        (".github/workflows/a.yml", "LEAD-BLOCKED", "blocked")
+    ]
+    with pytest.raises(LedgerError, match="nested"):
+        parse_workflow_ownership(
+            "````markdown\n```wp-workflow-ownership\na | LEAD-BLOCKED | blocked\n```\n````",
+            "fixture.md",
+        )
