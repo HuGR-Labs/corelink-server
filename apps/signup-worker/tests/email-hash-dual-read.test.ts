@@ -99,7 +99,7 @@ function fakeDbWithInvite(storedEmailHash: string | null) {
           return null;
         },
         async run() {
-          return { success: true };
+          return { success: true, meta: { changes: 1 } };
         },
       };
       return stmt;
