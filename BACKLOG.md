@@ -4435,19 +4435,22 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-073 — um assento em outro tenant é concedido por hash de e-mail, sem token, sem expiração e sem verificação, e vira PAT `cas:rw` daquele tenant
+### B-073 — um assento em outro tenant é concedido por hash de e-mail, ainda sem token, escopo ou verificação (expiração já limitada)
 
 É o único achado da auditoria que entrega dado de um cliente a outro. O isolamento no
 plano de dados é sólido e não cedeu sob ataque; a brecha é em quem recebe um assento.
 
 Convidar um colega grava `team_member` com `status='invited'` e `email_hash`, sem o
-e-mail em claro — decisão de privacidade correta. O problema é o resgate. Seis elos,
-cada um verificado no código de 2026-08-30:
+e-mail em claro — decisão de privacidade correta. O problema é o resgate. A defesa de
+expiração foi incorporada em #1489: a janela agora é de 14 dias, meio-aberta, aplicada
+no SQL e usando o mesmo instante no `joined_at_ms`. Permanecem três defesas ausentes.
+Seis elos, cada um verificado no código de 2026-09-02:
 
 1. `apps/signup-worker/src/lib/d1.ts:316` — `SELECT tenant_id, user_id FROM team_member
-   WHERE email_hash IN (?1, ?2) AND status = 'invited' LIMIT 1`. Sem escopo de tenant,
-   sem token, sem nonce, sem expiração: a primeira linha convidada do banco INTEIRO que
-   casar com o hash é transferida ao novo usuário Clerk.
+   WHERE email_hash IN (?1, ?2) AND status = 'invited' AND invited_at_ms > ?3 LIMIT 1`.
+   A expiração agora limita a janela a 14 dias, mas continuam sem escopo de tenant,
+   token e nonce: a primeira linha convidada elegível do banco INTEIRO que casar com o
+   hash é transferida ao novo usuário Clerk.
 2. `grep -n "verification\|email_verified" apps/signup-worker/src/webhooks/clerk.ts`
    retorna **zero linhas**. O tipo do evento sequer modela o campo, então a checagem é
    estruturalmente impossível no código atual.
@@ -4459,16 +4462,16 @@ cada um verificado no código de 2026-08-30:
 6. `team_member` está em `TENANT_ID_TABLES`, ou seja, o apagamento DSR é chaveado por
    `tenant_id`: um assento mantido em OUTRO tenant sobrevive ao apagamento do próprio.
 
-Toda a segurança dessa transição repousa numa suposição sobre um terceiro que o código
+Toda a segurança das defesas que ainda faltam nessa transição repousa numa suposição sobre um terceiro que o código
 não declara nem impõe: que a Clerk sempre verifica posse do e-mail antes de emitir
 `user.created`. E mesmo supondo que sempre verifique, os elos 1, 3 e 6 permanecem — o
-convite é um **portador permanente, transferível e reciclável**, e um endereço
-corporativo reatribuído entrega o assento antigo ao novo titular. Ao contrário do
+convite ainda é um portador **transferível e reciclável dentro da janela de 14 dias**, e um endereço
+corporativo reatribuído pode entregar o assento antigo ao novo titular nesse intervalo. Ao contrário do
 convite (que emite `team.invited` na auditoria), a ACEITAÇÃO não emite evento nenhum.
 
 Quatro reparos independentes, cada um quebrando a cadeia sozinho: token de convite
-exigido no resgate; escopo de `tenant_id` na consulta; expiração; e leitura do campo de
-verificação da Clerk. Somar evento de auditoria na aceitação.
+exigido no resgate; escopo de `tenant_id` na consulta; expiração (FEITO em #1489); e
+leitura do campo de verificação da Clerk. Somar evento de auditoria na aceitação.
 
 **Sequência:** depende de [B-067]. Não mergear conserto de auth contra CI que não roda
 os testes de `corelink-auth`/`corelink-pat`.
@@ -4488,14 +4491,14 @@ verify: |
   temtenant=0; printf "%s" "$sel" | grep -qE "WHERE[^\"]*tenant_id[[:space:]]*=" && temtenant=1
   temexp=0; printf "%s" "$sel" | grep -qiE "expires_at|expiry|invited_at_ms[[:space:]]*>" && temexp=1
   temver=0; grep -qE "email_verified|verification" "$c" && temver=1
-  soma=$((temtoken + temtenant + temexp + temver))
-  [ "$soma" = 0 ] || { echo "FALHA: $soma de 4 defesas ja presentes (token=$temtoken tenant=$temtenant exp=$temexp verif=$temver) — reavalie e feche ou reescreva o item."; exit 1; }
-  echo "aberto: aceitacao de convite sem token, sem escopo de tenant, sem expiracao e sem checagem de verificacao"'
+  [ "$temexp" = 1 ] && [ "$temtoken" = 0 ] && [ "$temtenant" = 0 ] && [ "$temver" = 0 ] || {
+    echo "FALHA: estado mudou (token=$temtoken tenant=$temtenant exp=$temexp verif=$temver) — reavalie e feche ou reescreva o item."; exit 1; }
+  echo "aberto: aceitacao de convite ainda sem token, escopo de tenant e checagem de verificacao; expiracao confirmada"'
 verify-means: |
-  open — NENHUMA das quatro defesas existe. Escolhi o "zero de quatro" em vez de "menos
-  de quatro" de propósito: cada defesa quebra a cadeia sozinha, então a primeira que
-  aparecer já muda a alegação do item, e o item deve ser reavaliado e reescrito para o
-  que sobrou — não continuar aberto afirmando algo que deixou de ser verdade.
+  open — a expiração está confirmada, mas token, escopo de tenant e verificação de
+  e-mail ainda estão ausentes. O portão exige exatamente esse estado residual. Qualquer
+  nova defesa, ou a remoção da expiração, torna o item DRIFTED e exige reescrita antes
+  de qualquer fechamento.
 
   Vira DRIFTED assim que qualquer defesa entrar. Isso é intencional e é o oposto de
   ruído: é o sinal de que a alegação precisa ser reescrita, e a mensagem de falha diz
@@ -4506,7 +4509,7 @@ verify-means: |
   são comportamento correto isoladamente e só compõem a cadeia junto com o elo 1 —
   gatear neles daria falso positivo permanente. O comando decide a RAIZ, que é a
   aceitação não autenticada; se a raiz for fechada, a cadeia não existe mais.
-last-verified: 2026-08-30
+last-verified: 2026-09-02
 ```
 
 ### B-074 — o caminho do dinheiro aceita chave interna com metade do piso de entropia e não pode ser estreitado

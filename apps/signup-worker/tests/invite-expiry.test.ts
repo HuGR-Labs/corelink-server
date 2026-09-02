@@ -48,15 +48,22 @@ function fakeDbWithInvite(invitedAtMs: number) {
           if (!query.includes("WHERE email_hash IN")) return null;
           if (!stmt._binds.slice(0, 2).includes(HASH)) return null;
           // The expiry predicate is applied by the DATABASE, exactly as the SQL
-          // declares it — absent from the query means absent from the fake.
-          if (query.includes("invited_at_ms >")) {
+          // declares it — absent from the query means absent from the fake. Keep
+          // the operator data-driven so a mutation from `>` to `>=` is observable
+          // at the exact-TTL boundary instead of being masked by the fixture.
+          const expiry = query.match(/invited_at_ms\s*(>=|>)\s*\?3/);
+          if (expiry) {
             const cutoff = stmt._binds[2] as number;
             if (typeof cutoff !== "number") {
               throw new Error(
                 "expiry predicate present but cutoff bind ?3 is not a number",
               );
             }
-            if (!(invitedAtMs > cutoff)) return null;
+            const isFresh =
+              expiry[1] === ">"
+                ? invitedAtMs > cutoff
+                : invitedAtMs >= cutoff;
+            if (!isFresh) return null;
           }
           return { tenant_id: "t_1", user_id: "inv_1" } as unknown as T;
         },
