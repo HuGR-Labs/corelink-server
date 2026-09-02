@@ -1,0 +1,453 @@
+#!/usr/bin/env python3
+"""Find top-level workflow concurrency groups that can cancel another ref.
+
+``concurrency.group`` is scoped per repository, not per workflow file. A group
+that is constant across refs plus ``cancel-in-progress: true`` lets a new run on
+one ref cancel an in-flight run on another. That failure is absent rather than
+red: a cancelled required check has no failure result to inspect.
+
+This scanner asks a narrow question: can this top-level group be proved safe
+from *cross-ref* cancellation? A group is safe only when it carries one of:
+
+* ``github.ref`` (the complete Git ref),
+* ``github.run_id`` (unique per run; this also disables supersession), or
+* ``github.event.pull_request.number`` in a workflow triggered exclusively by
+  ``pull_request`` and/or ``pull_request_target``.
+
+Everything else is unsafe until proven otherwise. ``github.workflow`` is a name,
+``matrix.*`` is normally shared by refs, ``github.sha`` can be shared by refs,
+and ``github.head_ref`` is empty outside pull-request events. Treating any
+interpolation as a ref discriminator was a false green; treating a matrix axis
+as one would be the same false green in a different costume.
+
+This is not the event-collision scanner. ``github.ref`` separates PR refs from
+one another, but does not separate ``push``, ``schedule``, and manual dispatch
+on ``main``; that broader issue is B-150. The live constant-group findings are
+tracked by B-172. The exit code never claims either item is fixed.
+
+Usage:
+    python3 scripts/concurrency_scope_scan.py [dir]  # default .github/workflows
+    python3 scripts/concurrency_scope_scan.py --self-test
+
+Exit 0 = no cross-ref violations, 1 = violations or unreadable input.
+"""
+
+from __future__ import annotations
+
+import glob
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+
+import yaml
+
+
+TOP_LEVEL_CONCURRENCY = re.compile(r"^concurrency\s*:\s*(?:#.*)?$")
+TOP_LEVEL_CONCURRENCY_KEY = re.compile(r"^concurrency\s*:")
+GROUP_KEY = re.compile(r"\s*group\s*:")
+CANCEL_KEY = re.compile(r"\s*cancel-in-progress\s*:")
+REF_DISCRIMINATOR = re.compile(r"(?<![\w.])github\.ref(?![\w.])")
+RUN_UNIQUE_DISCRIMINATOR = re.compile(r"(?<![\w.])github\.run_id(?![\w.])")
+PR_NUMBER_DISCRIMINATOR = re.compile(
+    r"(?<![\w.])github\.event\.pull_request\.number(?![\w.])"
+)
+ISSUE_NUMBER_DISCRIMINATOR = re.compile(
+    r"(?<![\w.])github\.event\.issue\.number(?![\w.])"
+)
+PR_ONLY_EVENTS = frozenset({"pull_request", "pull_request_target"})
+ISSUE_OR_PR_EVENTS = frozenset({"issues", "pull_request", "pull_request_target"})
+
+
+@dataclass(frozen=True)
+class Group:
+    line: str
+    value: str
+
+
+def strip_comment(value: str) -> str:
+    """Drop a YAML comment while preserving quoted ``#`` and escaped quotes.
+
+    YAML starts a comment only when ``#`` is outside a quote and follows
+    whitespace. Treating every hash as a comment would turn ``true#suffix``
+    into true and could manufacture a clean scan from an unknown scalar.
+    """
+    quote = None
+    escaped = False
+    for index, char in enumerate(value):
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+        elif char in "\"'":
+            quote = char
+        elif char == "#" and (index == 0 or value[index - 1].isspace()):
+            return value[:index].rstrip()
+    return value.rstrip()
+
+
+def parse_bool(raw: str) -> bool:
+    """Read Actions' boolean-ish flag, failing closed for an unknown scalar."""
+    raw = strip_comment(raw).strip()
+    if "${{" in raw:
+        return True
+    try:
+        value = yaml.safe_load(raw)
+    except yaml.YAMLError as error:
+        raise ValueError(f"cannot parse cancel-in-progress {raw!r}") from error
+    if isinstance(value, bool):
+        return value
+    if value is None or value == "":
+        return False
+    if isinstance(value, str):
+        word = value.strip().lower()
+        if word in ("true", "yes", "on", "1"):
+            return True
+        if word in ("false", "no", "off", "0"):
+            return False
+    raise ValueError(
+        f"cancel-in-progress is {raw!r}, neither a boolean nor an expression; "
+        "refusing to guess"
+    )
+
+
+def expression_mentions(value: str, discriminator: re.Pattern[str]) -> bool:
+    """Whether an Actions expression references a discriminator, not spells it.
+
+    A literal group such as ``ci-github.ref`` is still repo-global, as is
+    ``${{ 'github.ref' }}``. Looking through the whole YAML scalar would accept
+    both. GitHub expressions use single quotes, but accepting double quotes here
+    as literals too is the conservative choice if a future parser permits them.
+    """
+    start = 0
+    while True:
+        opening = value.find("${{", start)
+        if opening < 0:
+            return False
+        closing = value.find("}}", opening + 3)
+        if closing < 0:
+            # An unfinished expression cannot prove safety. `parse_bool` already
+            # treats its analogous uncertainty as cancelling.
+            return False
+        expression = value[opening + 3 : closing]
+        unquoted: list[str] = []
+        quote = None
+        index = 0
+        while index < len(expression):
+            character = expression[index]
+            if quote is None:
+                if character in "\"'":
+                    quote = character
+                    unquoted.append(" ")
+                else:
+                    unquoted.append(character)
+            elif character == quote:
+                # GitHub single-quote escaping is doubled (`''`). Do not end a
+                # literal at its escaped quote.
+                if index + 1 < len(expression) and expression[index + 1] == quote:
+                    unquoted.extend((" ", " "))
+                    index += 1
+                else:
+                    quote = None
+                    unquoted.append(" ")
+            else:
+                unquoted.append(" ")
+            index += 1
+        if discriminator.search("".join(unquoted)):
+            return True
+        start = closing + 2
+
+
+def workflow_events(path: str) -> frozenset[str]:
+    """Return trigger names, or fail rather than silently omit malformed YAML."""
+    try:
+        with open(path, encoding="utf-8") as source:
+            document = yaml.safe_load(source)
+    except (OSError, yaml.YAMLError) as error:
+        raise ValueError(f"cannot parse workflow {path}: {error}") from error
+    if not isinstance(document, dict):
+        raise ValueError(f"workflow {path} is not a YAML mapping")
+    # PyYAML 1.1 resolves the unquoted Actions key `on` as boolean True.
+    triggers = document.get(True, document.get("on"))
+    if isinstance(triggers, dict):
+        return frozenset(str(key) for key in triggers)
+    if isinstance(triggers, list):
+        return frozenset(str(value) for value in triggers)
+    if isinstance(triggers, str):
+        return frozenset({triggers})
+    raise ValueError(f"workflow {path} has no readable top-level on: trigger")
+
+
+def top_level_groups(path: str) -> list[tuple[Group, str]]:
+    """Read only a top-level concurrency block; comments cannot impersonate keys."""
+    try:
+        with open(path, encoding="utf-8") as source:
+            lines = source.read().splitlines()
+    except OSError as error:
+        raise ValueError(f"cannot read workflow {path}: {error}") from error
+
+    found: list[tuple[Group, str]] = []
+    for index, line in enumerate(lines):
+        if not TOP_LEVEL_CONCURRENCY_KEY.match(line):
+            continue
+        if not TOP_LEVEL_CONCURRENCY.match(line):
+            raise ValueError(
+                f"{path}:{index + 1}: unsupported inline concurrency value; "
+                "use a block mapping so this scanner cannot skip it"
+            )
+        block: list[str] = []
+        for nested in lines[index + 1 :]:
+            if nested and not nested[0].isspace():
+                break
+            block.append(nested)
+        keys = [nested for nested in block if not nested.lstrip().startswith("#")]
+        groups = [
+            nested
+            for nested in keys
+            if GROUP_KEY.match(strip_comment(nested))
+        ]
+        if len(groups) > 1:
+            raise ValueError(
+                f"{path}:{index + 1}: duplicate group keys in concurrency block; "
+                "refusing first-wins interpretation"
+            )
+        if not groups:
+            continue
+        cancels = [
+            nested
+            for nested in keys
+            if CANCEL_KEY.match(strip_comment(nested))
+        ]
+        if len(cancels) > 1:
+            raise ValueError(
+                f"{path}:{index + 1}: duplicate cancel-in-progress keys in concurrency block; "
+                "refusing first-wins interpretation"
+            )
+        group_line = groups[0]
+        group_value = strip_comment(group_line).split(":", 1)[1].strip()
+        cancel_value = cancels[0].split(":", 1)[1].strip() if cancels else "false"
+        found.append((Group(group_line.strip(), group_value), cancel_value))
+    return found
+
+
+def is_cross_ref_safe(group_value: str, events: frozenset[str]) -> bool:
+    """Accept only discriminators whose safety follows from their semantics."""
+    if expression_mentions(group_value, REF_DISCRIMINATOR):
+        return True
+    if expression_mentions(group_value, RUN_UNIQUE_DISCRIMINATOR):
+        return True
+    if expression_mentions(group_value, PR_NUMBER_DISCRIMINATOR) and events <= PR_ONLY_EVENTS:
+        return True
+    # `welcome-first-pr` legitimately handles both issues and pull requests. A
+    # number from only one payload would be empty for the other event and hence
+    # unsafe; the explicit pair covers every event it admits.
+    return bool(
+        events <= ISSUE_OR_PR_EVENTS
+        and expression_mentions(group_value, ISSUE_NUMBER_DISCRIMINATOR)
+        and expression_mentions(group_value, PR_NUMBER_DISCRIMINATOR)
+    )
+
+
+def scan(directory: str) -> tuple[list[tuple[str, str, str]], int, int]:
+    """Return (violations, blocks, safe_blocks), failing closed on unreadable input."""
+    files = sorted(
+        set(
+            glob.glob(os.path.join(directory, "*.yml"))
+            + glob.glob(os.path.join(directory, "*.yaml"))
+        )
+    )
+    if not files:
+        raise ValueError(f"no workflow files found under {directory!r}")
+
+    violations: list[tuple[str, str, str]] = []
+    total = safe = 0
+    for path in files:
+        events = workflow_events(path)
+        for group, cancel_value in top_level_groups(path):
+            total += 1
+            try:
+                cancels = parse_bool(cancel_value)
+            except ValueError as error:
+                raise ValueError(f"{path}: {error}") from error
+            if is_cross_ref_safe(group.value, events):
+                safe += 1
+            elif cancels:
+                violations.append((os.path.basename(path), group.line[:70], cancel_value))
+    return violations, total, safe
+
+
+def write_workflow(
+    directory: Path,
+    name: str,
+    group: str,
+    cancel: str,
+    triggers: str = "  push:\n",
+    concurrency_header: str = "concurrency:",
+) -> Path:
+    path = directory / name
+    path.write_text(
+        f"on:\n{triggers}{concurrency_header}\n  group: {group}\n"
+        f"  cancel-in-progress: {cancel}\n"
+        "jobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: 'true'\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def require_actionlint_clean(paths: list[Path]) -> None:
+    """Keep adversarial fixtures valid GitHub Actions, not parser inventions."""
+    actionlint = shutil.which("actionlint")
+    if actionlint is None:
+        raise ValueError("actionlint is required for --self-test but is not on PATH")
+    result = subprocess.run(
+        [actionlint, "-no-color", *(str(path) for path in paths)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode:
+        details = (result.stdout + result.stderr).strip()
+        raise ValueError(f"actionlint rejected a supposedly valid fixture: {details}")
+
+
+def self_test() -> int:
+    """Prove the scanner can be red, including its former false-green shapes."""
+    temporary = Path(tempfile.mkdtemp(prefix="concurrency-scope-scan-"))
+    try:
+        actionlint_clean = [
+            write_workflow(temporary, "constant.yml", "literal", "true"),
+            write_workflow(temporary, "workflow-name.yml", "${{ github.workflow }}", "true"),
+        ]
+        write_workflow(temporary, "matrix.yml", "ci-${{ matrix.os }}", "true")
+        actionlint_clean.extend([
+            write_workflow(temporary, "sha.yml", "ci-${{ github.sha }}", "true"),
+            write_workflow(temporary, "trailing-comment.yml", "literal", "true  # not false"),
+            write_workflow(temporary, "ref.yml", "ci-${{ github.ref }}", "true"),
+            write_workflow(temporary, "run.yml", "ci-${{ github.run_id }}", "true"),
+            write_workflow(
+                temporary,
+                "pr-number.yml",
+                "ci-${{ github.event.pull_request.number }}",
+                "true",
+                "  pull_request:\n",
+            ),
+            write_workflow(
+                temporary,
+                "pr-number-on-push.yml",
+                "ci-${{ github.event.pull_request.number }}",
+                "true",
+            ),
+            write_workflow(
+                temporary,
+                "issue-or-pr.yml",
+                "ci-${{ github.event.issue.number || github.event.pull_request.number }}",
+                "true",
+                "  issues:\n  pull_request:\n",
+            ),
+            write_workflow(temporary, "literal-ref.yml", "ci-github.ref", "true"),
+            write_workflow(temporary, "quoted-ref.yml", "${{ 'github.ref' }}", "true"),
+            write_workflow(
+                temporary,
+                "commented-header.yml",
+                "ci-${{ github.ref }}",
+                "true",
+                concurrency_header="concurrency: # a YAML comment is still this mapping",
+            ),
+        ])
+        require_actionlint_clean(actionlint_clean)
+        violations, total, safe = scan(str(temporary))
+        names = {entry[0] for entry in violations}
+        expected = {
+            "constant.yml",
+            "workflow-name.yml",
+            "matrix.yml",
+            "pr-number-on-push.yml",
+            "literal-ref.yml",
+            "quoted-ref.yml",
+            "sha.yml",
+            "trailing-comment.yml",
+        }
+        if total != 13 or safe != 5 or names != expected:
+            print(
+                "SELF-TEST FAILED: expected 13 blocks / 5 safe / violations "
+                f"{sorted(expected)}, got {total} / {safe} / {sorted(names)}"
+            )
+            return 1
+
+        empty = temporary / "empty"
+        empty.mkdir()
+        try:
+            scan(str(empty))
+        except ValueError:
+            pass
+        else:
+            print("SELF-TEST FAILED: empty directory reported a clean scan")
+            return 1
+
+        malformed = temporary / "malformed"
+        malformed.mkdir()
+        (malformed / "broken.yml").write_text("on: [unclosed\n", encoding="utf-8")
+        try:
+            scan(str(malformed))
+        except ValueError:
+            pass
+        else:
+            print("SELF-TEST FAILED: malformed YAML reported a clean scan")
+            return 1
+
+        for duplicate_name, duplicate_lines in (
+            ("duplicate-group", "  group: first\n  group: second\n  cancel-in-progress: true\n"),
+            ("duplicate-cancel", "  group: literal\n  cancel-in-progress: false\n  cancel-in-progress: true\n"),
+        ):
+            ambiguous = temporary / duplicate_name
+            ambiguous.mkdir()
+            (ambiguous / "ambiguous.yml").write_text(
+                "on:\n  push:\nconcurrency:\n"
+                + duplicate_lines
+                + "jobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: 'true'\n",
+                encoding="utf-8",
+            )
+            try:
+                scan(str(ambiguous))
+            except ValueError:
+                pass
+            else:
+                print(f"SELF-TEST FAILED: {duplicate_name} reported a clean scan")
+                return 1
+
+        print("SELF-TEST OK: actionlint-clean comments/literals, matrix/SHA, PR event scope, duplicate keys, and bad input have teeth")
+        return 0
+    finally:
+        shutil.rmtree(temporary)
+
+
+def main() -> int:
+    if sys.argv[1:] == ["--self-test"]:
+        return self_test()
+    if len(sys.argv) > 2:
+        print("usage: concurrency_scope_scan.py [dir] | --self-test", file=sys.stderr)
+        return 2
+    directory = sys.argv[1] if len(sys.argv) == 2 else ".github/workflows"
+    try:
+        violations, total, safe = scan(directory)
+    except ValueError as error:
+        print(f"FATAL: {error}", file=sys.stderr)
+        return 1
+    print(
+        f"scanned blocks={total} cross-ref-safe={safe} "
+        f"not-cross-ref-safe={total - safe} VIOLATIONS={len(violations)}"
+    )
+    for violation in violations:
+        print("  VIOLATION:", violation)
+    return 1 if violations else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
