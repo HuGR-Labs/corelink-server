@@ -70,11 +70,42 @@ Then build as normal:
 cargo build --release
 ```
 
-When a lookup misses the local layer, sccache issues `GET`, `PUT`, and `HEAD`
-requests to `<SCCACHE_WEBDAV_ENDPOINT>/<key>`; CoreLink authenticates the bearer
-PAT, resolves your tenant from it, and serves or stores each artifact in your
-tenant CAS. A `GET`/`HEAD` miss returns 404 and sccache falls back to compiling
-locally (then `PUT`s the result).
+When a lookup misses the local layer, sccache uses the following six methods at
+`<SCCACHE_WEBDAV_ENDPOINT>/<key>`:
+
+| Method | Purpose |
+|---|---|
+| `GET` | Read a cached artifact. A miss returns `404`, so sccache compiles locally. |
+| `PUT` | Store the compiled artifact after a local compilation. |
+| `HEAD` | Check whether an artifact exists without downloading its body. |
+| `PROPFIND` | WebDAV stat used by sccache to check a key and its byte length. |
+| `MKCOL` | WebDAV parent-directory probe; CoreLink treats the implicit cache directories as a no-op. |
+| `DELETE` | Remove a cache key; requires cache-write scope and a PAT with write capability. The operation is idempotent (`204`). |
+
+CoreLink authenticates the bearer PAT, resolves your tenant from it, and serves
+or stores each artifact in that tenant's CAS. The six methods above are the
+published sccache contract: a proxy, WAF, or firewall in front of CoreLink must
+allow all six. `DELETE` is a public authenticated write operation; it is not
+internal-only. A normal PAT may remove an arbitrary cache key in its tenant.
+
+During its startup/write health probe, sccache sends `PUT`, `GET`, and then
+`DELETE` for `.sccache_check`. That key is reserved for this probe and cleanup:
+it is **probe-only**, not a build-artifact key. This does not change the fact
+that `DELETE` is also available for ordinary cache keys. A method-filtering
+proxy must allow all six methods, including this control request.
+
+:::warning A failed write makes sccache read-only
+The sccache daemon performs a write probe when it starts. If that probe or a
+later `PUT` fails, sccache marks the WebDAV backend **read-only for the rest of
+the daemon's lifetime**. Builds can remain green, but new artifacts are not
+stored, so a successful `GET`, `HEAD`, or `PROPFIND` does not prove that writes
+are healthy. Fix the PAT, endpoint, or proxy, restart the daemon with
+`sccache --stop-server`, and then verify the next build.
+
+Always inspect `sccache --show-stats` after a write failure. Check `Cache errors`
+alongside the hit and miss counters; a cold build with no new writes can look
+normal while the daemon is latched read-only.
+:::
 
 :::note Tenant comes from the PAT
 The `<tenant>` in the endpoint is used only for request routing; the

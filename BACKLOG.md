@@ -11321,16 +11321,23 @@ cache que não guarda nada e não recebe nenhum sinal — nem erro, nem aviso, n
 Em nenhum ponto ela diz que uma **falha de escrita** trava o backend em read-only, nem manda
 conferir o contador de erros — que é a única maneira de descobrir.
 
-**2. O contrato publicado é menor que o exigido.** A página declara (`:73`) que o sccache
-emite *"`GET`, `PUT`, and `HEAD`"*. O cliente real também exige **`PROPFIND`** e **`MKCOL`**.
-Isto **não** é um defeito de servidor: `crates/corelink-container/src/routes/cargo.rs` serve
-PROPFIND (`:204`, `:265`, `:302`) e trata MKCOL (`:286`). O defeito é de **contrato
-publicado** — quem for pôr um proxy, um WAF ou uma regra de firewall na frente lê a página,
-libera três métodos, e o cache entra exatamente no modo read-only silencioso da primeira
-metade. **As duas metades compõem.**
+**2. O contrato publicado é menor que o exigido.** A página declarava (`:73`) que o sccache
+emitia apenas *"`GET`, `PUT`, and `HEAD`"*. O cliente real também exige **`PROPFIND`** e
+**`MKCOL`**, e o runtime publica **`DELETE`** como operação autenticada de escrita para uma
+chave arbitrária. Isto **não** é um defeito de servidor: `crates/corelink-container/src/routes/cargo.rs`
+trata os seis métodos; o defeito era de **contrato publicado** — quem põe um proxy, WAF ou
+regra de firewall na frente lê a página, libera menos métodos, e o cache entra exatamente no
+modo read-only silencioso da primeira metade. **As duas metades compõem.**
+
+**Reparo concluído (2026-09-01).** A página canônica e as três traduções agora publicam os
+seis métodos (`GET`, `PUT`, `HEAD`, `PROPFIND`, `MKCOL` e `DELETE`), explicam que `DELETE` é
+uma operação pública que exige escopo de escrita e PAT com capacidade de escrita, e registram
+que `.sccache_check` é apenas a chave particular da sonda/limpeza de saúde. As quatro páginas
+explicam o latch de somente leitura e orientam a conferir `Cache errors` em
+`sccache --show-stats`.
 
 **O que este item NÃO decide:** se o reparo do lado do produto é só documental (declarar os
-cinco métodos + ensinar a ler o contador) ou se o CoreLink deve emitir sinal próprio quando
+seis métodos + ensinar a ler o contador) ou se o CoreLink deve emitir sinal próprio quando
 um cliente só lê e nunca escreve — um tenant com milhares de GET e zero PUT é observável do
 nosso lado, e seria o sinal que o cliente não tem. A segunda é mais valiosa e é trabalho de
 telemetria, não de documentação.
@@ -11339,43 +11346,83 @@ telemetria, não de documentação.
 id: B-159
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   bash -c 'set -e
   p=apps/docs/docs/integrations/sccache-cargo.md
   c=crates/corelink-container/src/routes/cargo.rs
+  locales="apps/docs/docs/integrations/sccache-cargo.md
+  apps/docs/i18n/de/docusaurus-plugin-content-docs/current/integrations/sccache-cargo.md
+  apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/integrations/sccache-cargo.md
+  apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/integrations/sccache-cargo.md"
+  methods="GET PUT HEAD PROPFIND MKCOL DELETE"
   [ -f "$p" ] || { echo "FALHA: $p sumiu — reavalie o item."; exit 1; }
-  [ -f "$c" ] || { echo "FALHA: $c sumiu — sem a rota servida nao consigo mostrar que o servidor faz mais do que a doc declara; reavalie."; exit 1; }
-  grep -qE "^[^/]*PROPFIND" "$c" || { echo "FALHA: o servidor nao trata mais PROPFIND em linha executavel — a premissa mudou; releia antes de confiar neste portao."; exit 1; }
-  n=0; det=""
-  grep -qE "^[^#]*PROPFIND" "$p" || { n=$((n+1)); det="$det doc-omite-PROPFIND"; }
-  grep -qE "^[^#]*MKCOL" "$p" || { n=$((n+1)); det="$det doc-omite-MKCOL"; }
-  grep -qiE "^[^#]*(read-only|somente leitura).*(resto|rest of|daemon)" "$p" || { n=$((n+1)); det="$det doc-nao-avisa-do-latch-read-only"; }
-  [ "$n" -gt 0 ] || { echo "FALHA: a pagina declara os cinco metodos E avisa do latch read-only — feche o item."; exit 1; }
-  echo "aberto: $n de 3 lacunas na pagina do sccache:$det (o servidor trata PROPFIND/MKCOL; quem le a doc libera menos do que o cliente exige)"'
+  [ -f "$c" ] || { echo "FALHA: $c sumiu — sem a rota servida nao consigo medir o contrato; reavalie."; exit 1; }
+  for q in $locales; do
+    [ -f "$q" ] || { echo "FALHA: tradução ausente: $q"; exit 1; }
+    for m in $methods; do
+      count=$(grep -cE "^\\|[[:space:]]*\`$m\`[[:space:]]*\\|" "$q" || true)
+      [ "$count" -eq 1 ] || { echo "FALHA: $q deve ter exatamente uma linha de tabela para $m (count=$count)"; exit 1; }
+    done
+    grep -qiE "read-only|Nur-Lesen|solo lectura|somente leitura" "$q" || { echo "FALHA: $q nao explica o latch read-only"; exit 1; }
+    grep -qiE "failed write|Schreibfehler|fallo de escritura|falha de escrita" "$q" || { echo "FALHA: $q nao liga falha de escrita ao latch"; exit 1; }
+    grep -q "Cache errors" "$q" || { echo "FALHA: $q nao manda conferir Cache errors"; exit 1; }
+    grep -q "sccache --show-stats" "$q" || { echo "FALHA: $q nao aponta para --show-stats"; exit 1; }
+    grep -q "\\.sccache_check" "$q" || { echo "FALHA: $q nao identifica a chave particular da sonda"; exit 1; }
+    sed -n "/\\.sccache_check/,+4p" "$q" | grep -qiE "probe-only|ausschließlich für die Sonde bestimmt|exclusiva de la sonda|exclusiva da sonda" || {
+      echo "FALHA: $q nao mantém .sccache_check exclusiva da sonda"; exit 1;
+    }
+    if sed -n "/\\.sccache_check/,+4p" "$q" | grep -qiE "internal cleanup|internal-only|not as a public|nicht nur intern|nicht als öffentliche|no solo interna|no como un método público|limpieza de control interno|não apenas interna|não como método público"; then
+      echo "FALHA: $q rebaixa DELETE a cleanup interno em vez de publicar a operação"; exit 1
+    fi
+  done
+  # Strip Rust comments before checking executable routing. Comments are not a
+  # capability proof (B-155); every method must have a live branch/arm.
+  runtime=$(sed -E "/^[[:space:]]*\\/\\//d; /\\/\\*/,/\\*\\//d" "$c")
+  [ -n "$runtime" ] || { echo "FALHA: runtime vazio apos remover comentarios"; exit 1; }
+  grep -qE "Method::GET" <<<"$runtime" || { echo "FALHA: GET nao aparece no runtime"; exit 1; }
+  grep -qE "Method::PUT" <<<"$runtime" || { echo "FALHA: PUT nao aparece no runtime"; exit 1; }
+  grep -qE "Method::HEAD" <<<"$runtime" || { echo "FALHA: HEAD nao aparece no runtime"; exit 1; }
+  grep -qE "req\\.method\\(\\)\\.as_str\\(\\) == .*PROPFIND" <<<"$runtime" || { echo "FALHA: PROPFIND nao aparece em branch executavel"; exit 1; }
+  grep -qE "req\\.method\\(\\)\\.as_str\\(\\) == .*MKCOL" <<<"$runtime" || { echo "FALHA: MKCOL nao aparece em branch executavel"; exit 1; }
+  grep -qE "if req\\.method\\(\\) == Method::DELETE" <<<"$runtime" || { echo "FALHA: DELETE nao aparece em branch executavel"; exit 1; }
+  grep -qE "async fn handle_delete" <<<"$runtime" || { echo "FALHA: handler DELETE sumiu"; exit 1; }
+  grep -qE "resolve_with_capability" <<<"$runtime" || { echo "FALHA: DELETE perdeu auth de capacidade"; exit 1; }
+  grep -qE "normal_pat_can_still_delete_an_artifact|delete_existing_key_is_204_and_removes_it" "$c" || { echo "FALHA: sem teste funcional de DELETE no runtime"; exit 1; }
+  [ -f package.json ] || { echo "FALHA: package.json ausente; nao ha contrato de dependencias reproduzivel"; exit 1; }
+  [ -f pnpm-lock.yaml ] || { echo "FALHA: pnpm-lock.yaml ausente; nao ha lockfile hermetico"; exit 1; }
+  grep -q "packageManager" package.json && grep -q "pnpm@10.32.1" package.json || { echo "FALHA: package.json nao fixa packageManager pnpm@10.32.1"; exit 1; }
+  command -v pnpm >/dev/null 2>&1 || { echo "FALHA: pnpm@10.32.1 necessario para o contrato Vitest"; exit 1; }
+  [ "$(pnpm --version)" = "10.32.1" ] || { echo "FALHA: pnpm $(pnpm --version) detectado; esperado 10.32.1"; exit 1; }
+  pnpm install --frozen-lockfile --offline --ignore-scripts >/dev/null 2>&1 || { echo "FALHA: pnpm install --frozen-lockfile --offline nao conseguiu preparar as dependencias; ausencias nao podem virar sucesso"; exit 1; }
+  pnpm --dir apps/docs exec vitest run tests/sccache-cargo-contract.test.ts
+  echo "fechado: 4 locales x 6 metodos, probe .sccache_check particular, auth DELETE, teste funcional e Vitest com mutacoes vermelhas"'
 verify-means: |
-  open — a página omite `PROPFIND`, omite `MKCOL`, ou não avisa que uma falha de escrita
-  trava o backend em read-only pelo resto da vida do daemon. Fecha só quando as três caírem.
+  done — o portão exige uma linha de tabela para cada método (`GET`, `PUT`, `HEAD`,
+  `PROPFIND`, `MKCOL`, `DELETE`) em cada um dos quatro locais, além do latch, `Cache errors`,
+  `sccache --show-stats` e da chave `.sccache_check`, explicitamente exclusiva da sonda. A janela em torno de `.sccache_check`
+  rejeita a antiga afirmação de que `DELETE` seria apenas cleanup interno: a chave é especial
+  para a sonda, mas o método é público e autenticado.
 
-  **A capacidade do servidor é premissa, e falha ALTO.** O comando exige que
-  `routes/cargo.rs` trate PROPFIND em **linha executável** (`^[^/]*`, não doc-comment). Se o
-  servidor deixar de tratá-lo, o item para de ser "doc menor que o produto" e vira outro
-  problema — o comando manda reler em vez de decidir.
+  O lado do runtime é medido depois de remover comentários: os seis métodos precisam aparecer
+  em braços executáveis, `DELETE` precisa chamar o handler e a verificação de capacidade, e
+  `cargo.rs` precisa conservar um teste funcional de remoção. O Vitest canônico também executa
+  para os quatro arquivos e contém mutações que removem cada método, o latch, a branch executável
+  de `PROPFIND` e a branch executável de `DELETE`; cada mutação deve falhar. Isso cobre tanto
+  byte-identity do contrato publicado quanto comportamento da rota, sem inventar restrição
+  internal-only.
 
-  **Os greps na página são ancorados em `^[^#]*`** pelo motivo usual: cabeçalho markdown ou
-  linha de aviso contendo a palavra satisfaria um grep nu, e o portão declararia consertado
-  um texto que só passou a **mencionar** o método.
+  Antes do Vitest, o portão exige o contrato de instalação do repositório (`package.json` fixa
+  `pnpm@10.32.1`, `pnpm-lock.yaml` existe, a versão do binário bate e
+  `pnpm install --frozen-lockfile --offline --ignore-scripts` termina com sucesso). Dependência
+  ausente ou package manager incorreto sai com mensagem explícita e exit 1; nunca é convertido em
+  sucesso por `|| true` ou por um teste omitido.
 
-  **A terceira condição é a mais frágil e digo isso aqui.** Ela procura um aviso sobre o
-  latch por padrão de texto; uma página que avise com outras palavras a deixaria "aberta"
-  injustamente. É o melhor predicado barato que consegui para a metade que importa mais, e
-  quem fechar o item deve substituí-lo por uma âncora explícita (um marcador na página) em
-  vez de afrouxar a busca.
-
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 3 de 3 lacunas"* e
-  exit 0. Numa cópia com os cinco métodos declarados e um parágrafo sobre o latch read-only,
-  sai *"FALHA: a pagina declara os cinco metodos E avisa do latch read-only"* e exit 1.
-last-verified: 2026-08-31
+  **Medido (2026-09-01):** em ambiente preparado, `python3 scripts/backlog_verify.py --id B-159`
+  sai `CONFIRMED`; Vitest passa com 12 testes, incluindo autorização semântica por locale e
+  mutações de docs/runtime. Com `PATH` sem pnpm, o mesmo backlog verify sai `DRIFTED` e imprime
+  `FALHA: pnpm@10.32.1 necessario`, demonstrando que dependência ausente não vira sucesso.
+last-verified: 2026-09-01
 ```
 
 ### B-160 — não existe rota self-service para o cliente cunhar um PAT: `POST /v1/pats` não está montado
