@@ -13,7 +13,7 @@ import {
  * whoever next signed up with that address — including the next holder of a
  * reassigned corporate mailbox, years later.
  *
- * The window is enforced IN THE SQL (`invited_at_ms > ?3`), not in JS after the
+ * The window is enforced IN THE SQL (`invited_at_ms > ?3 AND invited_at_ms <= ?4`), not in JS after the
  * fact: with `LIMIT 1`, a JS-side filter would let the database pick a stale row
  * and then report "no invitation" while a valid row sat further down the table.
  * The fake D1 below therefore models the predicate the way SQLite would — it
@@ -30,10 +30,11 @@ const NOW = 1_800_000_000_000; // fixed clock; the helper takes `nowMs` in.
 
 /**
  * Fake D1 holding ONE `team_member` invite row, honoring the accept-lookup
- * `WHERE email_hash IN (?1, ?2) AND status = 'invited' [AND invited_at_ms > ?3]`.
+ * `WHERE email_hash IN (?1, ?2) AND status = 'invited'
+ * [AND invited_at_ms > ?3 AND invited_at_ms <= ?4]`.
  * Records every UPDATE so a refusal can be asserted as "row NOT flipped".
  */
-function fakeDbWithInvite(invitedAtMs: number) {
+function fakeDbWithInvite(invitedAtMs: number, updateChanges = 1) {
   const flips: unknown[][] = [];
   const db = {
     prepare(query: string) {
@@ -65,10 +66,19 @@ function fakeDbWithInvite(invitedAtMs: number) {
                 : invitedAtMs >= cutoff;
             if (!isFresh) return null;
           }
+          if (query.includes("invited_at_ms <= ?4")) {
+            const upperBound = stmt._binds[3] as number;
+            if (typeof upperBound !== "number") {
+              throw new Error(
+                "future-date predicate present but upper-bound bind ?4 is not a number",
+              );
+            }
+            if (invitedAtMs > upperBound) return null;
+          }
           return { tenant_id: "t_1", user_id: "inv_1" } as unknown as T;
         },
         async run() {
-          return { success: true };
+          return { success: true, meta: { changes: updateChanges } };
         },
       };
       return stmt;
@@ -96,6 +106,7 @@ describe("acceptTeamInvitation — invitation expiry (B-073 defense 3)", () => {
     const ok = await acceptTeamInvitation(db, "clerk_user_x", [HASH], NOW);
     expect(ok).toBe(true);
     expect(flips).toHaveLength(1);
+    expect(flips[0]?.[0]).toBe(NOW);
   });
 
   it("accepts an invitation issued this instant", async () => {
@@ -103,6 +114,13 @@ describe("acceptTeamInvitation — invitation expiry (B-073 defense 3)", () => {
     const ok = await acceptTeamInvitation(db, "clerk_user_x", [HASH], NOW);
     expect(ok).toBe(true);
     expect(flips).toHaveLength(1);
+    expect(flips[0]?.[0]).toBe(NOW);
+  });
+
+  it("refuses a future-dated invitation", async () => {
+    const future = fakeDbWithInvite(NOW + 1);
+    expect(await acceptTeamInvitation(future.db, "u", [HASH], NOW)).toBe(false);
+    expect(future.flips).toHaveLength(0);
   });
 
   it("refuses an invitation older than the TTL and does NOT flip the row", async () => {
@@ -121,9 +139,9 @@ describe("acceptTeamInvitation — invitation expiry (B-073 defense 3)", () => {
     expect(flips).toHaveLength(0);
   });
 
-  // BOUNDARY: the predicate is `invited_at_ms > nowMs - TTL`, so an age of
-  // EXACTLY the TTL falls on the REFUSED side (the window is half-open); one
-  // millisecond younger is accepted.
+  // BOUNDARY: the lower predicate is `invited_at_ms > nowMs - TTL`, so an age
+  // of EXACTLY the TTL falls on the REFUSED side (the window is half-open);
+  // one millisecond younger is accepted. Future timestamps are also refused.
   it("refuses at exactly the TTL edge and accepts one ms inside it", async () => {
     const edge = fakeDbWithInvite(NOW - TEAM_INVITATION_TTL_MS);
     expect(await acceptTeamInvitation(edge.db, "u", [HASH], NOW)).toBe(false);
@@ -132,6 +150,14 @@ describe("acceptTeamInvitation — invitation expiry (B-073 defense 3)", () => {
     const inside = fakeDbWithInvite(NOW - TEAM_INVITATION_TTL_MS + 1);
     expect(await acceptTeamInvitation(inside.db, "u", [HASH], NOW)).toBe(true);
     expect(inside.flips).toHaveLength(1);
+    expect(inside.flips[0]?.[0]).toBe(NOW);
+  });
+
+  it("returns false when a concurrent acceptance makes the UPDATE change zero rows", async () => {
+    const raced = fakeDbWithInvite(NOW - TEAM_INVITATION_TTL_MS / 2, 0);
+    expect(await acceptTeamInvitation(raced.db, "u", [HASH], NOW)).toBe(false);
+    expect(raced.flips).toHaveLength(1);
+    expect(raced.flips[0]?.[0]).toBe(NOW);
   });
 
   it("defaults the clock to now when no nowMs is supplied", async () => {

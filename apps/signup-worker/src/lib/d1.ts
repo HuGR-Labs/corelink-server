@@ -12,7 +12,11 @@
 // to keep the unit-test surface independent of the runtime types package.
 interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
-  run(): Promise<{ success: boolean; error?: string }>;
+  run(): Promise<{
+    success: boolean;
+    error?: string;
+    meta?: { changes?: number };
+  }>;
   first<T = unknown>(): Promise<T | null>;
 }
 export interface D1Database {
@@ -311,7 +315,8 @@ export const TEAM_INVITATION_TTL_MS = 14 * 24 * 60 * 60 * 1000;
  * webhook delivery) cannot double-flip or clobber an already-`active` seat.
  *
  * EXPIRY (B-073 defense 3): an invite older than {@link TEAM_INVITATION_TTL_MS}
- * is refused. The predicate lives in the SQL (`invited_at_ms > ?3`), NOT in JS
+ * or issued in the future is refused. The predicate lives in the SQL
+ * (`invited_at_ms > ?3 AND invited_at_ms <= ?4`), NOT in JS
  * after the fact: with `LIMIT 1` a JS-side filter would let the database pick a
  * stale row and then report "no invitation" while a still-valid row sat further
  * down the table. The clock is passed in (`nowMs`) rather than read inside the
@@ -345,14 +350,15 @@ export async function acceptTeamInvitation(
     .prepare(
       "SELECT tenant_id, user_id FROM team_member " +
         "WHERE email_hash IN (?1, ?2) AND status = 'invited' " +
-        // Half-open window: an age of EXACTLY the TTL is already expired.
-        "AND invited_at_ms > ?3 LIMIT 1",
+        // Half-open window: an age of EXACTLY the TTL is already expired; a
+        // future-dated row is not eligible until a real invitation instant exists.
+        "AND invited_at_ms > ?3 AND invited_at_ms <= ?4 LIMIT 1",
     )
-    .bind(c0, c1, nowMs - TEAM_INVITATION_TTL_MS)
+    .bind(c0, c1, nowMs - TEAM_INVITATION_TTL_MS, nowMs)
     .first<InvitedMemberRow>();
   if (invited === null) return false;
 
-  await db
+  const result = await db
     .prepare(
       "UPDATE team_member " +
         "SET status = 'active', joined_at_ms = ?1, user_id = ?2 " +
@@ -360,5 +366,5 @@ export async function acceptTeamInvitation(
     )
     .bind(nowMs, clerkUserId, invited.tenant_id, invited.user_id)
     .run();
-  return true;
+  return result.meta?.changes === 1;
 }

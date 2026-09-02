@@ -4443,12 +4443,15 @@ plano de dados é sólido e não cedeu sob ataque; a brecha é em quem recebe um
 Convidar um colega grava `team_member` com `status='invited'` e `email_hash`, sem o
 e-mail em claro — decisão de privacidade correta. O problema é o resgate. A defesa de
 expiração foi incorporada em #1489: a janela agora é de 14 dias, meio-aberta, aplicada
-no SQL e usando o mesmo instante no `joined_at_ms`. Permanecem três defesas ausentes.
+no SQL como `invited_at_ms > nowMs - TTL AND invited_at_ms <= nowMs`, usando o mesmo
+instante no `joined_at_ms`; uma atualização só é reportada como aceita quando altera
+exatamente uma linha. Permanecem três defesas ausentes.
 Seis elos, cada um verificado no código de 2026-09-02:
 
-1. `apps/signup-worker/src/lib/d1.ts:316` — `SELECT tenant_id, user_id FROM team_member
-   WHERE email_hash IN (?1, ?2) AND status = 'invited' AND invited_at_ms > ?3 LIMIT 1`.
-   A expiração agora limita a janela a 14 dias, mas continuam sem escopo de tenant,
+1. `apps/signup-worker/src/lib/d1.ts:351` — `SELECT tenant_id, user_id FROM team_member
+   WHERE email_hash IN (?1, ?2) AND status = 'invited' AND invited_at_ms > ?3
+   AND invited_at_ms <= ?4 LIMIT 1`.
+   A expiração agora limita a janela a 14 dias e recusa convites datados no futuro, mas continuam sem escopo de tenant,
    token e nonce: a primeira linha convidada elegível do banco INTEIRO que casar com o
    hash é transferida ao novo usuário Clerk.
 2. `grep -n "verification\|email_verified" apps/signup-worker/src/webhooks/clerk.ts`
@@ -4490,10 +4493,11 @@ verify: |
   temtoken=0; printf "%s" "$sel" | grep -qiE "invit(e|ation)_token|nonce" && temtoken=1
   temtenant=0; printf "%s" "$sel" | grep -qE "WHERE[^\"]*tenant_id[[:space:]]*=" && temtenant=1
   temexp=0; printf "%s" "$sel" | grep -qiE "expires_at|expiry|invited_at_ms[[:space:]]*>" && temexp=1
+  temfuture=0; printf "%s" "$sel" | grep -qE "invited_at_ms[[:space:]]*<=[[:space:]]*\\?4" && temfuture=1
   temver=0; grep -qE "email_verified|verification" "$c" && temver=1
-  [ "$temexp" = 1 ] && [ "$temtoken" = 0 ] && [ "$temtenant" = 0 ] && [ "$temver" = 0 ] || {
-    echo "FALHA: estado mudou (token=$temtoken tenant=$temtenant exp=$temexp verif=$temver) — reavalie e feche ou reescreva o item."; exit 1; }
-  echo "aberto: aceitacao de convite ainda sem token, escopo de tenant e checagem de verificacao; expiracao confirmada"'
+  [ "$temexp" = 1 ] && [ "$temfuture" = 1 ] && [ "$temtoken" = 0 ] && [ "$temtenant" = 0 ] && [ "$temver" = 0 ] || {
+    echo "FALHA: estado mudou (token=$temtoken tenant=$temtenant exp=$temexp future=$temfuture verif=$temver) — reavalie e feche ou reescreva o item."; exit 1; }
+  echo "aberto: aceitacao de convite ainda sem token, escopo de tenant e checagem de verificacao; expiracao e limite futuro confirmados"'
 verify-means: |
   open — a expiração está confirmada, mas token, escopo de tenant e verificação de
   e-mail ainda estão ausentes. O portão exige exatamente esse estado residual. Qualquer
