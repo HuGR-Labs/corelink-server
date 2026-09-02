@@ -3385,7 +3385,7 @@ owner: tl
 status: open
 verify: |
   grep -qF '(?P<path>[A-Za-z0-9._/\-]+):(?P<l1>' scripts/validate_okf.py &&
-  ! python3 scripts/okf_resolve_abbrev_cites.py --quiet
+  python3 scripts/okf_resolve_abbrev_cites.py --quiet; rc=$?; test "$rc" -eq 1
 verify-means: |
   open — passes while the citation regex still requires a non-empty path, i.e.
   while abbreviated `:N-M` citations are invisible to the OKF gates, AND while
