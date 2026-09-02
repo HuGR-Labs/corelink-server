@@ -9540,13 +9540,13 @@ verify-means: |
 last-verified: 2026-08-31
 ```
 
-### B-140 — o guard de `runs-on:` continua cego para escalar aspeado e sequência em bloco
+### B-140 — o guard de `runs-on:` continua cego para escalar aspeado e sequência em bloco — FECHADO
 
 O #1500 consertou a forma que estava **viva** no repo: um comentário no fim da linha
 (`runs-on: corelink  # …`) fazia o job sair silenciosamente do conjunto inspecionado — o guard
 imprimia `OK` cobrindo menos. Reach mediu 173 → 193 com o conserto.
 
-Sobram **duas** formas legais de YAML que o guard também não vê, e que o `_strip_trailing_comment`
+Sobravam **duas** formas legais de YAML que o guard também não via, e que o `_strip_trailing_comment`
 não alcança porque o problema não está no strip:
 
 1. **Sequência em bloco** — o valor fica nas linhas seguintes:
@@ -9563,46 +9563,52 @@ não alcança porque o problema não está no strip:
 2. **Escalar aspeado** — `runs-on: "corelink"`. As aspas sobrevivem ao strip e
    `value == "corelink"` passa a ser False, então um job self-hosted lê como hospedado.
 
-**Nenhuma das duas existe em `.github/workflows/` hoje** — verificado com controle positivo:
+**Nenhuma das duas existia em `.github/workflows/` na medição** — verificado com controle positivo:
 os mesmos greps casam instâncias plantadas. São buracos **latentes**, não achados vivos, e
 estão nomeados na docstring do script para que ninguém escreva essas formas sem saber.
 
-O conserto real não é mais um regex: é **parsear o YAML** e ler `jobs[*].runs-on` como
-estrutura, que é a única forma que não tem uma próxima grafia surpresa atrás dela. É uma
-mudança de mecanismo, por isso é item próprio e não emenda do #1500.
+O conserto que entrou não é mais um regex: ele lê `jobs[*].runs-on` como estrutura YAML e
+também lê `steps[*].uses` como estrutura, pois uma action flow é tão executável quanto a
+grafia em bloco. O fallback stdlib-only decodifica escapes YAML suportados no scalar duplamente
+aspeado antes de classificar a label e falha alto em escape, alias ou formato de step que não
+consegue resolver. É uma mudança de mecanismo, por isso foi item próprio e não emenda do #1500.
 
 ```backlog
 id: B-140
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   bash -c 'set -o pipefail
   s="scripts/validate_no_shared_rustup_mutation.py"
   [ -f "$s" ] || { echo "FALHA: $s nao existe — reavalie este item em vez de fecha-lo."; exit 1; }
   r=$(pwd); d=$(mktemp -d); trap "rm -rf $d" EXIT
   mkdir -p "$d/.github/workflows"
-  printf "name: probe\non:\n  workflow_dispatch:\njobs:\n  quoted:\n    runs-on: \"corelink\"\n    steps:\n      - run: echo hi\n  blockseq:\n    runs-on:\n      - self-hosted\n      - mac\n    steps:\n      - run: echo hi\n" > "$d/.github/workflows/probe.yml"
-  out=$(cd "$d" && python3 "$r/$s" 2>&1 || true)
-  case "$out" in
-    *"ZERO self-hosted jobs"*)
-      echo "AINDA ABERTO: o guard inspecionou ZERO dos 2 jobs self-hosted plantados (escalar aspeado + sequencia em bloco)"
-      exit 0 ;;
-    *)
-      echo "FECHADO?: o guard passou a enxergar ao menos uma das duas formas — saida: $out. Confirme que ambas sao cobertas e atualize este item."
-      exit 1 ;;
-  esac'
+  printf "name: probe\non:\n  workflow_dispatch:\njobs:\n  escaped-flow:\n    runs-on: \"core\\u006cink\"\n    steps: [{uses: dtolnay/rust-toolchain@stable}]\n" > "$d/.github/workflows/probe.yml"
+  normal=$(cd "$d" && python3 "$r/$s" 2>&1 || true)
+  fallback=$(cd "$d" && python3 -c "import importlib.util, sys; spec=importlib.util.spec_from_file_location(\"guard\", sys.argv[1]); guard=importlib.util.module_from_spec(spec); sys.modules[spec.name]=guard; spec.loader.exec_module(guard); guard.yaml=None; raise SystemExit(guard.main())" "$r/$s" 2>&1 || true)
+  case "$normal" in
+    *"provisions a toolchain"*) ;;
+    *) echo "DRIFTED: PyYAML nao pegou runs-on escapado + step flow: $normal"; exit 1 ;;
+  esac
+  case "$fallback" in
+    *"provisions a toolchain"*) ;;
+    *) echo "DRIFTED: fallback nao pegou runs-on escapado + step flow: $fallback"; exit 1 ;;
+  esac
+  echo "CONFIRMED: ambos os parsers pegam o runner escapado e o uses em flow."
+  exit 0'
 verify-means: |
-  O comando **planta** as duas formas num diretório de workflows descartável e roda o guard
-  contra ele. É um controle positivo, não uma varredura: se o guard enxergasse qualquer uma
-  das duas, ele inspecionaria ao menos 1 job e não emitiria o bail-out de ZERO.
+  **Polaridade `done`:** o controle positivo planta um único job que só é perigoso se as duas
+  leituras estruturais estiverem corretas: o scalar YAML duplamente aspeado resolve para
+  `corelink`, e a sequência flow contém a chave `uses` proibida. O comando roda tanto a
+  leitura PyYAML quanto o fallback stdlib-only; cada uma tem de reprovar pelo provisionamento,
+  não por ZERO jobs ou por falha do instrumento.
 
-  Por isso ele não pode passar por vacuidade — a única forma de o comando dizer "ainda
-  aberto" é o guard genuinamente não ver dois jobs self-hosted que estão bem na frente dele.
-
-  Fecha quando o guard parsear o YAML e as duas formas entrarem no conjunto inspecionado; aí
-  este `verify` **inverte de polaridade** e precisa ser reescrito junto com o `status: done`.
-last-verified: 2026-08-31
+  Assim a prova fecha as grafias originais de B-140 (scalar aspeado e sequência em bloco,
+  ambas cobertas pela suíte) e os dois limites que a revisão posterior encontrou: escapes que
+  mudam a label e step maps em flow. Se qualquer parser voltar a deixar o job sair do conjunto
+  ou a não ler a ação, o verify sai não-zero e o item done fica DRIFTED.
+last-verified: 2026-09-01
 ```
 
 ### B-141 — `pull_request_target` sem gate de ator: hoje só a visibilidade do repo segura
