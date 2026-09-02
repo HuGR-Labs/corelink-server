@@ -16,12 +16,12 @@ characters (6 active / 6 unique):
 
 | Manifest line | Kind | Provenance | Digest |
 |---:|---|---|---|
-| 93 | OCI layer blob | `docker.io/library/alpine:3.20` (amd64 rootfs layer) | `sha256:25f1d6b1951ac8eb3740558fe94cb83d377bdadf95fd9f98b50d2e1b96130471` |
-| 96 | OCI image index | `docker.io/library/alpine:3.20` (multi-arch image index) | `sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc` |
-| 97 | OCI image index | `docker.io/library/debian:12` (multi-arch image index) | `sha256:813017f3d62be4b5891a7acca6a01bdcd4b8513daa81b1ab99d3a50385b26931` |
-| 98 | OCI image index | `docker.io/library/ubuntu:24.04` (multi-arch image index) | `sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517` |
-| 99 | OCI image index | `docker.io/library/node:22-slim` (multi-arch image index) | `sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436` |
-| 100 | OCI image index | `docker.io/library/python:3.12-slim` (multi-arch image index) | `sha256:2c941e860699f878900b0edc2403613c234d4b32eda3cc9fa7036991a2a63c4a` |
+| 96 | OCI layer blob | `docker.io/library/alpine:3.20` (amd64 rootfs layer) | `sha256:25f1d6b1951ac8eb3740558fe94cb83d377bdadf95fd9f98b50d2e1b96130471` |
+| 99 | OCI image index | `docker.io/library/alpine:3.20` (multi-arch image index) | `sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc` |
+| 100 | OCI image index | `docker.io/library/debian:12` (multi-arch image index) | `sha256:813017f3d62be4b5891a7acca6a01bdcd4b8513daa81b1ab99d3a50385b26931` |
+| 101 | OCI image index | `docker.io/library/ubuntu:24.04` (multi-arch image index) | `sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517` |
+| 102 | OCI image index | `docker.io/library/node:22-slim` (multi-arch image index) | `sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436` |
+| 103 | OCI image index | `docker.io/library/python:3.12-slim` (multi-arch image index) | `sha256:2c941e860699f878900b0edc2403613c234d4b32eda3cc9fa7036991a2a63c4a` |
 
 The six entries are roots, not six total stored objects. The five image-index pins can
 server-side promote their digest-verified manifest/config/layer closure into `_public`.
@@ -75,19 +75,19 @@ npm public metadata, and curated OCI `_public` — not CAS-wide cross-tenant sha
 
 ## Citations
 
-1. `crates/corelink-container/src/public_base_allowlist.manifest:93,96-100` — the complete
+1. `crates/corelink-container/src/public_base_allowlist.manifest:96,99-103` — the complete
    six-pin population and provenance.
-2. `crates/corelink-container/src/public_base_allowlist.rs:25-28,45-55,63-78` — binary-baked
+2. `crates/corelink-container/src/public_base_allowlist.rs:26-29,45-56,63-79` — binary-baked
    manifest, canonical digest parsing, and fail-closed load.
-3. `crates/corelink-container/src/public_base_allowlist.rs:148-186` — executable test
+3. `crates/corelink-container/src/public_base_allowlist.rs:148-194` — executable test
    asserting the six M3 pins and rejecting the old non-active layer example.
 4. `wrangler.toml:313,765-766,922-923,1088-1089,1248-1249` — both OCI boot flags in all
    five production blocks.
-5. `crates/corelink-container/src/routes/oci.rs:825-858` — one shared flag/allowlist
+5. `crates/corelink-container/src/routes/oci.rs:825-864` — one shared flag/allowlist
    load wired into the blob store and resolver.
-6. `crates/corelink-container/src/routes/oci.rs:283-291,570-598` — the single
+6. `crates/corelink-container/src/routes/oci.rs:283-296,570-604` — the single
    allowlist-gated client-write predicate and namespace choice.
-7. `crates/corelink-container/src/routes/oci.rs:626-660` — existence-based `_public`
+7. `crates/corelink-container/src/routes/oci.rs:632-665` — existence-based `_public`
    read followed by the tenant fallback.
 8. `crates/corelink-container/src/routes/public_pullthrough.rs:157-166,460-523` — an
    allowlisted image-index root promotes its verified closure server-side.

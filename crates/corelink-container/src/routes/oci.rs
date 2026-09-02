@@ -284,12 +284,12 @@ impl OciMoatStore {
         }
     }
 
-    /// The SINGLE flag+allowlist predicate deciding whether an owner-pinned digest
-    /// routes to the shared `_public` namespace. Used IDENTICALLY on the write
-    /// ([`BlobStore::finalize_upload`]) and read ([`BlobStore::get_blob`]) paths,
-    /// so a blob is never written to one namespace and read from another (no
-    /// split-brain). This predicate deliberately has no media-type input: it
-    /// admits exactly the baked digest set, including its pinned index digests.
+    /// The SINGLE flag+allowlist predicate deciding whether a client-finalized,
+    /// owner-pinned digest routes to the shared `_public` namespace. The write
+    /// path ([`BlobStore::finalize_upload`]) uses this predicate; the read path
+    /// ([`BlobStore::get_blob`]) is deliberately the existence-based superset and
+    /// consults `_public` whenever `dedup` is on. This predicate has no media-type
+    /// input: it admits exactly the baked digest set, including pinned indexes.
     /// It is used only for blob upload/finalize storage; manifest PUT uses the
     /// tenant-scoped `ManifestKvStore` instead.
     fn routes_to_public(&self, blob_key: &str) -> bool {

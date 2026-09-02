@@ -28,10 +28,11 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # HOW AN ENTRY IS ADDED (owner-gated admission and trusted population)
 # ─────────────────────────────────────────────────────────────────────────────
-# Every active entry is an owner decision. For a layer pin, the trusted mirror
-# verifies and populates `_public` before the pin is activated. For an image-index
-# pin, the M2 resolver performs that same trusted, digest-verified closure
-# population on demand. The separate client blob upload/finalize route is also
+# Every active entry is an owner decision. Before activation, the owner resolves
+# and verifies the proposed immutable digest out of band; that verification does
+# not write `_public`. After activation, the trusted mirror (layer pin) or M2
+# resolver (image-index pin) performs digest-verified population. The separate
+# client blob upload/finalize route is also
 # digest-only: once a pin is active, a client may supply bytes matching ANY active
 # pin (including index-shaped bytes), and `finalize_upload` verifies the bytes
 # before routing the slot to `_public`. It cannot widen the set or write a
@@ -39,10 +40,12 @@
 # as both a trusted-mirror root and a digest-only client blob admission.
 #   1. Owner pins an upstream OCI object OUT OF BAND: resolve `repo:tag` to its
 #      immutable `sha256:` digest (for an index or layer) and record provenance.
-#   2. The trusted mirror/resolver verifies the pinned bytes (or closure) before
-#      server-side promotion; this is the population path for index roots.
-#   3. The owner commits the active pin below and ships it in a redeploy. The
-#      client finalize path may then populate only matching bytes for that pin.
+#   2. Owner verifies the proposed bytes/closure OUT OF BAND, then commits the
+#      active pin below and ships it in a redeploy. This step does not populate
+#      `_public`.
+#   3. After activation, the trusted mirror/resolver re-verifies bytes or closure
+#      before server-side promotion. The client finalize path may likewise
+#      populate only bytes matching that active pin.
 # Revocation of a compromised base is the B1b `_public` blocklist kill-switch
 # (`/_internal/public/revoke`) — orthogonal to this file.
 #
