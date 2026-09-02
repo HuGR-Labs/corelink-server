@@ -46,3 +46,82 @@ fn source_over_cap_is_rejected() {
     .unwrap();
     assert!(validate_record(at_cap).is_ok());
 }
+
+/// This deliberately has no wildcard: adding a [`RecordError`] variant makes
+/// this test stop compiling until its rejection fixture is added below.
+fn record_error_variant_name(error: &RecordError) -> &'static str {
+    match error {
+        RecordError::BadTenantId => "bad tenant ID",
+        RecordError::BadBillingPeriod => "bad billing period",
+        RecordError::BadRegion => "bad region",
+        RecordError::BadIdemKey => "bad idempotency key",
+        RecordError::EmptySource => "empty source",
+        RecordError::SourceTooLong => "oversized source",
+    }
+}
+
+#[test]
+fn every_record_error_variant_has_a_rejection_fixture() {
+    let cases: Vec<(UsageRecordWire, RecordError, &str)> = vec![
+        (
+            serde_json::from_value(record_json("not-a-uuid", &hex64(0x30))).unwrap(),
+            RecordError::BadTenantId,
+            "bad_tenant_id",
+        ),
+        (
+            serde_json::from_value({
+                let mut record = record_json(&tenant_a(), &hex64(0x31));
+                record["billing_period"] = serde_json::json!("2026-13");
+                record
+            })
+            .unwrap(),
+            RecordError::BadBillingPeriod,
+            "bad_billing_period",
+        ),
+        (
+            serde_json::from_value({
+                let mut record = record_json(&tenant_a(), &hex64(0x32));
+                record["region"] = serde_json::json!("i2d");
+                record
+            })
+            .unwrap(),
+            RecordError::BadRegion,
+            "bad_region",
+        ),
+        (
+            serde_json::from_value(record_json(&tenant_a(), "not-64-hex")).unwrap(),
+            RecordError::BadIdemKey,
+            "bad_idem_key",
+        ),
+        (
+            serde_json::from_value({
+                let mut record = record_json(&tenant_a(), &hex64(0x33));
+                record["source"] = serde_json::json!("");
+                record
+            })
+            .unwrap(),
+            RecordError::EmptySource,
+            "empty_source",
+        ),
+        (
+            serde_json::from_value({
+                let mut record = record_json(&tenant_a(), &hex64(0x34));
+                record["source"] = serde_json::json!("x".repeat(MAX_SOURCE_LEN + 1));
+                record
+            })
+            .unwrap(),
+            RecordError::SourceTooLong,
+            "source_too_long",
+        ),
+    ];
+
+    for (wire, expected, expected_code) in cases {
+        let label = record_error_variant_name(&expected);
+        assert_eq!(
+            expected.code(),
+            expected_code,
+            "{label} has a stable reason code"
+        );
+        assert_eq!(validate_record(wire), Err(expected), "{label} is rejected");
+    }
+}

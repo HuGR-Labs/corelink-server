@@ -619,15 +619,7 @@ fn bad_request(reason: &str) -> Response {
 /// logs a warning and skips mounting the route (dev/CI without secrets).
 #[must_use]
 pub fn build_state_from_env() -> Option<BillingIngestRouteState> {
-    let auth_key = std::env::var("BILLING_INGEST_AUTH_KEY").ok()?;
-    if auth_key.len() < MIN_INGEST_AUTH_KEY_LEN {
-        tracing::warn!(
-            "BILLING_INGEST_AUTH_KEY absent or too short (< 32 chars); \
-             /internal/v1/billing/usage route NOT mounted"
-        );
-        return None;
-    }
-
+    let auth_key = configured_ingest_auth_key(std::env::var("BILLING_INGEST_AUTH_KEY").ok())?;
     let storage_env = crate::storage::StorageEnv::from_env()?;
     let d1 = D1HttpClient::new(&storage_env)
         .map_err(|e| {
@@ -640,6 +632,22 @@ pub fn build_state_from_env() -> Option<BillingIngestRouteState> {
         Arc::from(auth_key.as_str()),
         store,
     ))
+}
+
+/// Accept only a configured dedicated ingest key with the minimum safe length.
+///
+/// Kept separate from process-environment lookup so the absence case is
+/// testable without mutating or depending on ambient test-process state.
+fn configured_ingest_auth_key(auth_key: Option<String>) -> Option<String> {
+    let auth_key = auth_key?;
+    if auth_key.len() < MIN_INGEST_AUTH_KEY_LEN {
+        tracing::warn!(
+            "BILLING_INGEST_AUTH_KEY absent or too short (< 32 chars); \
+             /internal/v1/billing/usage route NOT mounted"
+        );
+        return None;
+    }
+    Some(auth_key)
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

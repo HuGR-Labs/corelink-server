@@ -42,7 +42,5 @@ async fn wrong_service_secret_returns_401() {
 
 #[test]
 fn build_state_returns_none_when_secret_absent() {
-    if std::env::var("BILLING_INGEST_AUTH_KEY").is_err() {
-        assert!(build_state_from_env().is_none());
-    }
+    assert!(configured_ingest_auth_key(None).is_none());
 }

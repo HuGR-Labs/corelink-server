@@ -10497,14 +10497,13 @@ e o quarto teste deve apontar para essa prova real, não para o teste parcial an
 id: B-149
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  python3 scripts/verify_b149_test_strength.py --expect open
+  python3 scripts/verify_b149_test_strength.py --expect done
 verify-means: |
-  open — pelo menos uma das quatro provas ainda satisfaz a forma vazia que o item descreve.
-  Fecha por **exaustão**: consertar dois mantém o item aberto com contagem menor, que é o
-  comportamento certo para item de lista.
-
+  done — as quatro lacunas foram fechadas e o instrumento invertido agora guarda a
+  regressão. Qualquer prova vazia, fixture ausente/duplicada, wildcard, razão estável
+  trocada ou retorno da delegação ao teste parcial torna o item DRIFTED.
   **Finding reconciliado em 2026-09-02:** os testes foram separados em módulos por
   `#1499`/`#1513`, mas o instrumento ainda recortava funções nos antigos arquivos-pai e
   ficou DRIFTED sem que B-149 tivesse sido concluído. O verify agora mede os três módulos
@@ -10525,10 +10524,9 @@ verify-means: |
   `tests/test_verify_b149_test_strength.py` mutation-testa esses dentes e também a mutação
   do mapeamento de razão na produção.
 
-  **Medido pelos dois lados (2026-09-02):** no estado atual as quatro lacunas são
-  detectadas e o comando sai 0. Aplicar as três provas fortes sem corrigir a delegação ainda
-  deixa uma lacuna; somente ao apontar o quarto teste para a prova exaustiva o comando sai 1
-  e exige a transição do item para `done` com verificador invertido.
+  **Medido pelos dois lados (2026-09-02):** com as três provas fortes e a delegação
+  corrigida, o comando sai 0. Reintroduzir isoladamente qualquer uma das quatro formas
+  antigas produz contagem não-zero e saída 1.
 last-verified: 2026-09-02
 ```
 

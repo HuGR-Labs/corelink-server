@@ -25,7 +25,8 @@ use super::*;
 async fn bad_tenant_id_is_skipped_not_fatal() {
     // A single malformed record is SKIPPED (202, rejected:1, nothing staged),
     // NOT a 400 — the per-record-skip contract. The reason-code mapping is
-    // pinned separately in `validate_record_reasons_pinned`.
+    // pinned exhaustively in `every_record_error_variant_has_a_rejection_fixture`.
+    assert_eq!(RecordError::BadTenantId.code(), "bad_tenant_id");
     let store = Arc::new(FakeStore::new());
     let app = router(state_with(Arc::clone(&store) as Arc<dyn UsageStagingStore>));
     let resp = app

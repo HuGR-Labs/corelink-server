@@ -63,13 +63,13 @@ fn batch_chunking_respects_d1s_value_size_cap_at_the_find_missing_cap() {
     assert_eq!(total, 4096, "every requested digest still gets its own row");
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn empty_batch_issues_no_statement_at_all() {
-    // Zero events must not produce a degenerate `json_each('[]')` round
-    // trip. This runs with no network because it must never reach D1 —
-    // if it ever did, the stub credentials would make it fail loudly.
-    stub_sink()
-        .append_batch_async(Vec::new())
-        .await
-        .expect("an empty batch is a no-op, not an error");
+#[test]
+fn empty_batch_issues_no_statement_at_all() {
+    // `append_batch_async` dispatches precisely this list. Zero events must
+    // therefore produce no `json_each('[]')` statement or D1 round trip.
+    let statements = D1AuditOutboxSink::build_batch_statements(&[]).expect("batch builds");
+    assert!(
+        statements.is_empty(),
+        "an empty batch emits zero statements"
+    );
 }
