@@ -136,6 +136,18 @@ jobs:
               exit 1
               ;;
           esac
+          # B-152's diagnostic is deliberately kept next to its executable
+          # collector in scripts/, rather than pretending it is a generic
+          # tests/ fixture.  Keep it explicit and assert its presence: a glob
+          # change must never make this CI gate green over a missing suite.
+          REQUIRED_SUITES=(scripts/test_b152_actions_diagnostic.py)
+          for suite in "${REQUIRED_SUITES[@]}"; do
+            if [ ! -f "$suite" ]; then
+              echo "::error::required Python regression suite is missing: $suite"
+              exit 1
+            fi
+          done
           echo "Collected ${#FILES[@]} file(s):"
           printf '  %s\n' "${FILES[@]}"
-          python3 -m pytest "${FILES[@]}" -q
+          printf '  %s\n' "${REQUIRED_SUITES[@]}"
+          python3 -m pytest "${FILES[@]}" "${REQUIRED_SUITES[@]}" -q
