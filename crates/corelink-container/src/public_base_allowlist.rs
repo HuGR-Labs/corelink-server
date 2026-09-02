@@ -2,8 +2,8 @@
 //! trust root.
 //!
 //! The `_public` namespace ([`crate::adapter_cache::PUBLIC_NAMESPACE`]) dedups
-//! content-addressed blobs across EVERY tenant, so the set of upstream layers
-//! eligible to enter it is a security boundary (design BLOCKER-3 / Control 1+2 in
+//! content-addressed blobs across EVERY tenant, so the set of owner-pinned OCI
+//! digests eligible to enter it is a security boundary (design BLOCKER-3 / Control 1+2 in
 //! `docs/design/2026-08-13-f3-cross-tenant-public-layer-cache.md`). This module
 //! is that boundary's read side: it loads the owner-curated
 //! [`MANIFEST`](self::MANIFEST) — **baked into the container binary** — validates
@@ -15,10 +15,11 @@
 //! compromised token / D1 write cannot widen what may enter `_public` (design
 //! Contradiction-2). The read side is consumed by the server-only public mirror
 //! ([`crate::routes::public_mirror`]), which promotes a digest into `_public`
-//! only if it `is_allowlisted`. **WP-E Roll-1:** the baked manifest carries
-//! exactly the alpine pin (no longer deny-all); the mirror can now populate
-//! `_public` for alpine while client dedup stays OFF, honouring the
-//! server-populates-first order (design GAP-E).
+//! only if it `is_allowlisted`. **WP-G M3:** the baked manifest carries six
+//! active pins (one layer plus five image indexes), and production enables the
+//! digest-only client blob dedup gate (`OCI_PUBLIC_DEDUP_ENABLED = "1"`). That
+//! gate applies only to blob upload/finalize; OCI manifest PUT remains in the
+//! tenant-scoped `ManifestKvStore` and never writes `_public`.
 
 use std::collections::HashSet;
 
@@ -146,8 +147,10 @@ mod tests {
         "sha256:039e6f9f9752f74a3ff4a6a224f64c7c864da16ed98f882107704328f41b9c42";
 
     // WP-G M3 base-image INDEX pins (multi-arch manifest-list digests), resolved
-    // 2026-08-19. These gate the M2 `_public` closure-promote (server-side,
-    // upstream-verified), NOT the client-push layer route.
+    // 2026-08-19. These are eligible for the digest-only client BLOB
+    // upload/finalize route and gate the M2 `_public` closure-promote
+    // (server-side, upstream-verified). A manifest PUT still remains in the
+    // tenant-scoped ManifestKvStore.
     const IDX_ALPINE: &str =
         "sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc";
     const IDX_DEBIAN12: &str =
@@ -162,7 +165,8 @@ mod tests {
     #[test]
     fn baked_manifest_has_m3_pins_active() {
         // WP-G M3: the shipped trust root MUST parse (no malformed active entry)
-        // and carries the alpine WP-E LAYER pin plus the 5 base-image INDEX pins.
+        // and carries the alpine WP-E LAYER pin plus the 5 base-image INDEX pins;
+        // production's client blob dedup gate is ON, while manifest PUT stays KV.
         let al =
             PublicBaseAllowlist::from_baked_manifest().expect("baked manifest must be well-formed");
         assert!(!al.is_empty(), "the shipped allowlist is not deny-all");

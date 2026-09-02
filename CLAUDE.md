@@ -190,8 +190,12 @@ Datadog/other runners, `hugr-juiceshop`, etc.). **Only work on CoreLink.**
   ephemeral runners on cheap third-party infra (Hetzner-class) + the cache. It is a
   **feature / natural evolution of CoreLink, NOT a separate product.** The economic
   engine: the cache makes builds **faster (customer loves it) AND cheaper to run (our
-  margin)** — a true **win-win** — and a multi-tenant content-addressed cache has a
-  **network-effect moat** (more customers → fuller cache → faster+cheaper for everyone;
-  share public deterministic deps, isolate private). Solo $30/mo, COGS ~$5 (~80% margin).
+  margin)** — a true **win-win** — and there is a **network-effect moat** with a narrow,
+  implemented boundary: public pip wheels/sdists and Homebrew bottles are shared
+  cross-tenant; npm shares only unscoped package metadata (tarball bytes remain
+  per-tenant); and OCI shares owner-pinned digests in `_public` when its boot flags are
+  enabled. Native CAS, Bazel, Turborepo, sccache, and private package content remain
+  tenant-isolated. More customers can warm those eligible public artifacts for one
+  another, while private content stays isolated. Solo $30/mo, COGS ~$5 (~80% margin).
   Tailwind: GitHub starts charging for self-hosted runners Mar 2026.
   **Full brief: `marketing/expansion/ci-build-acceleration.md`.**

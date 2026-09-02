@@ -6639,68 +6639,48 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-096 — o moat de efeito de rede existe, mas cobre seis imagens curadas, não o cache que é vendido
+### B-096 — documentação do moat reconciliada com as superfícies cross-tenant reais
 
-Substitui um candidato refutado: o namespace `_public` é real e está armado em produção —
-`OCI_PUBLIC_DEDUP_ENABLED = "1"` nos cinco blocos, ao lado de `OCI_UPSTREAM_ON_MISS = "1"`.
+O namespace `_public` está armado em produção para OCI (`OCI_PUBLIC_DEDUP_ENABLED = "1"`
+e `OCI_UPSTREAM_ON_MISS = "1"` nos cinco blocos), mas não é a única superfície
+cross-tenant. pip compartilha wheels/sdists públicos e brew compartilha bottles públicos;
+npm compartilha somente metadata não-escopada, mantendo bytes de tarball por tenant. OCI
+admite os seis digests pinados pelo owner (um layer e cinco índices) e a promoção de
+closure verificada do resolver. CAS nativo, Bazel, Turborepo, sccache e conteúdo privado
+permanecem sob chaves HMAC por tenant.
 
-O que é verdade é mais estreito. A dedup entre tenants cobre **apenas a superfície OCI**, e
-apenas digests de uma allowlist assada no binário
-(`crates/corelink-container/src/public_base_allowlist.manifest`): seis pins curados —
-alpine, debian 12, ubuntu 24.04, node 22-slim, python 3.12-slim, mais o layer alpine
-original. Todo o resto — CAS nativo, Bazel, Turborepo, sccache, npm, pip, brew — é chaveado
-por `blob_key(region, tenant_prefix, digest, algo)` com
-`tenant_prefix = derive_prefix(secret_tdk, tenant_uuid)`, HMAC por tenant. Bytes idênticos
-em dois tenants ocupam duas chaves; o mesmo blob em cinco regiões ocupa cinco. É deliberado
-(camada 5 de `INV-TENANT-ISOLATION`) e correto do ponto de vista de isolamento.
-
-A tese comercial registrada no `CLAUDE.md` e no brief de expansão — *"mais clientes → cache
-mais cheio → mais rápido e mais barato para todos"* — descreve um efeito que hoje opera
-sobre seis imagens base. No caminho realmente vendido, o custo de armazenamento cresce com
-tenants × regiões, sem amortização.
-
-Não é defeito de código. É afirmação de estratégia que a arquitetura ainda não sustenta, e
-a diferença deveria estar escrita onde a tese está.
-
-
-**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: medir o que hoje é verdade sobre a
-allowlist pública e redigir a ressalva de escopo. Medir e escrever a alternativa é meu;
-escolher qual afirmação de estratégia sustentar é dele, sobre texto já pronto.
+A documentação de estratégia e o OKF agora descrevem esses limites. O predicado de escrita
+OCI é por digest, não media type: um cliente pode preencher somente bytes que verifiquem
+contra um dos pins já escolhidos pelo owner; não pode alargar a allowlist nem substituir
+conteúdo sob um digest. Isso é uma decisão de admissão controlada pelo owner, não uma
+promessa de dedup universal.
 
 ```backlog
 id: B-096
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   bash -c 'm=crates/corelink-container/src/public_base_allowlist.manifest
-  hmac=0
-  grep -rq "tenant_prefix" crates/corelink-container/src/storage/r2_s3.rs 2>/dev/null && hmac=1
-  [ "$hmac" = 1 ] || { echo "FALHA: a chave do CAS nao usa mais tenant_prefix — reavalie o item."; exit 1; }
-  pins=0
-  [ -f "$m" ] && pins=$(grep -cE "^[[:space:]]*sha256:" "$m" 2>/dev/null | tr -d " ")
-  tese=0
-  grep -qiE "network-effect|efeito de rede|moat" CLAUDE.md 2>/dev/null && tese=1
-  ressalva=0
-  grep -qiE "(apenas|somente|only|restrito|limited).{0,40}(imagens base|OCI base|_public)" CLAUDE.md 2>/dev/null && ressalva=1
-  if [ "$tese" = 0 ] || [ "$ressalva" = 1 ]; then
-    echo "FALHA: a tese saiu do CLAUDE.md ou ja traz a ressalva de escopo — feche o item."; exit 1; fi
-  echo "aberto: CAS chaveado por HMAC per-tenant, allowlist com $pins pin(s), e a tese do moat no CLAUDE.md sem ressalva de escopo"'
+  [ "$(grep -cE "^[[:space:]]*sha256:" "$m" | tr -d " ")" = 6 ] || exit 1
+  grep -q "PipMoatStore" crates/corelink-container/src/routes/pip.rs || exit 1
+  grep -q "BrewMoatStore" crates/corelink-container/src/routes/brew.rs || exit 1
+  grep -q "namespace_for_meta_key" crates/corelink-container/src/routes/npm.rs || exit 1
+  grep -q "is_allowlisted(blob_key)" crates/corelink-container/src/routes/oci.rs || exit 1
+  grep -q "pip wheels/sdists" CLAUDE.md || exit 1
+  grep -q "npm shares only unscoped package metadata" CLAUDE.md || exit 1
+  grep -q "applies only to" docs/internal/b096-oci-public-scope.md && grep -q "OCI blob upload/finalize" docs/internal/b096-oci-public-scope.md || exit 1
+  grep -q "tenant-scoped.*ManifestKvStore" docs/internal/b096-oci-public-scope.md && grep -q "never in.*_public" docs/internal/b096-oci-public-scope.md || exit 1
+  grep -q "inc6_owner_pinned_index_shaped_blob_routes_via_finalize_only" crates/corelink-container/src/routes/oci.rs || exit 1
+  grep -q "inc6_manifest_put_index_stays_tenant_scoped" crates/corelink-container/src/routes/oci.rs || exit 1
+  grep -q "client blob dedup gate.*ON" crates/corelink-container/src/public_base_allowlist.rs || exit 1
+  grep -q "tenant_prefix" crates/corelink-container/src/storage/r2_s3.rs || exit 1
+  echo "done: docs enumerate pip/brew bytes, npm metadata, owner-pinned OCI, and native HMAC isolation"'
 verify-means: |
-  open — o CAS continua chaveado por HMAC por tenant (logo sem dedup cross-tenant fora do
-  `_public`) E o `CLAUDE.md` afirma o efeito de rede sem registrar que ele hoje cobre só a
-  allowlist OCI.
-
-  Vira DRIFTED por qualquer um dos dois reparos: escrever a ressalva de escopo onde a tese
-  está (barato e honesto), ou ampliar a dedup para além da allowlist (decisão de
-  arquitetura que tensiona com `INV-TENANT-ISOLATION`).
-
-  O que NÃO decide, e admito: se a redação da ressalva é ADEQUADA. Detecta a presença de
-  palavras de escopo, não a qualidade da qualificação. Quem fechar deve ler.
-
-  Reconciliado 2026-08-31 (o campo é `tl`): escolher qual afirmação de estratégia sustentar é
-  dele. Medir o que hoje é verdade e redigir a ressalva de escopo é meu, e é o próximo passo.
-last-verified: 2026-08-30
+  done — o verificador confirma a população de seis pins, os enforcers de pip/brew/npm/OCI,
+  a redação de escopo no CLAUDE e a derivação HMAC do CAS nativo. Qualquer divergência entre
+  estes fatos e a documentação faz o item DRIFTED para nova revisão.
+last-verified: 2026-09-01
 ```
 
 ### B-097 — teto de escala em 200 tenants ativos por região, com o orçamento de vCPU da conta já comprometido
