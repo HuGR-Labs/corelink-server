@@ -12,7 +12,7 @@ source_files:
 source_blobs:
   - "apps/signup-worker/src/webhooks/github_provision.ts@3e0792e5dd32d3808960fce61a16e155eadfa142"
   - apps/signup-worker/src/index.ts@8caf7d163752ce98831fc8bb7199c1a16a24c2cd
-checkpoint_sha: "b0ceb38d43dae300869e8ca65b59072e2035f45e"
+checkpoint_sha: "19ba96312fe5a22a242121ee610cdcdbb19c7d2f"
 provenance: "AUTHORED"
 tags: ["flows", "signup", "clerk", "webhook", "dsr", "erasure", "worker-edge"]
 timestamp: "2026-07-03T00:00:00Z"
