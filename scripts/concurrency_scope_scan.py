@@ -56,8 +56,14 @@ RUN_UNIQUE_DISCRIMINATOR = re.compile(r"(?<![\w.])github\.run_id(?![\w.])")
 PR_NUMBER_DISCRIMINATOR = re.compile(
     r"(?<![\w.])github\.event\.pull_request\.number(?![\w.])"
 )
-ISSUE_NUMBER_DISCRIMINATOR = re.compile(
-    r"(?<![\w.])github\.event\.issue\.number(?![\w.])"
+# These are the two established, mechanically auditable fallback forms.  They
+# must stay exact: accepting a merely similar expression would reinstate the
+# conditional-collapse false green this scanner exists to prevent.
+PR_NUMBER_OR_REF = re.compile(
+    r"github\.event\.pull_request\.number\s*\|\|\s*github\.ref"
+)
+ISSUE_OR_PR_NUMBER = re.compile(
+    r"github\.event\.issue\.number\s*\|\|\s*github\.event\.pull_request\.number"
 )
 PR_ONLY_EVENTS = frozenset({"pull_request", "pull_request_target"})
 ISSUE_OR_PR_EVENTS = frozenset({"issues", "pull_request", "pull_request_target"})
@@ -118,51 +124,61 @@ def parse_bool(raw: str) -> bool:
     )
 
 
-def expression_mentions(value: str, discriminator: re.Pattern[str]) -> bool:
-    """Whether an Actions expression references a discriminator, not spells it.
+def expressions(value: str) -> tuple[str, ...] | None:
+    """Return complete Actions expressions, or ``None`` for malformed input.
 
-    A literal group such as ``ci-github.ref`` is still repo-global, as is
-    ``${{ 'github.ref' }}``. Looking through the whole YAML scalar would accept
-    both. GitHub expressions use single quotes, but accepting double quotes here
-    as literals too is the conservative choice if a future parser permits them.
+    This deliberately does not try to evaluate the Actions language. A scanner
+    that cannot prove what an expression emits must leave its group unsafe.
+    ``None`` therefore represents both malformed interpolation and a value with
+    no expression; neither can establish a cross-ref discriminator.
     """
+    found: list[str] = []
     start = 0
     while True:
         opening = value.find("${{", start)
         if opening < 0:
-            return False
+            return tuple(found) if found else None
         closing = value.find("}}", opening + 3)
         if closing < 0:
             # An unfinished expression cannot prove safety. `parse_bool` already
             # treats its analogous uncertainty as cancelling.
-            return False
-        expression = value[opening + 3 : closing]
-        unquoted: list[str] = []
-        quote = None
-        index = 0
-        while index < len(expression):
-            character = expression[index]
-            if quote is None:
-                if character in "\"'":
-                    quote = character
-                    unquoted.append(" ")
-                else:
-                    unquoted.append(character)
-            elif character == quote:
-                # GitHub single-quote escaping is doubled (`''`). Do not end a
-                # literal at its escaped quote.
-                if index + 1 < len(expression) and expression[index + 1] == quote:
-                    unquoted.extend((" ", " "))
-                    index += 1
-                else:
-                    quote = None
-                    unquoted.append(" ")
-            else:
-                unquoted.append(" ")
-            index += 1
-        if discriminator.search("".join(unquoted)):
-            return True
+            return None
+        found.append(value[opening + 3 : closing])
         start = closing + 2
+
+
+def has_unconditional_discriminator(
+    group_value: str, discriminator: re.Pattern[str]
+) -> bool:
+    """Whether a group includes a discriminator as a direct expression result.
+
+    Mentioning a context is not enough. The Actions idiom ``A && B || C`` is a
+    conditional, and can turn a discriminator into one constant fallback. For
+    example, ``${{ false && github.ref || 'global' }}`` and
+    ``${{ github.ref == 'refs/heads/main' && 'main' || 'other' }}`` both used to
+    pass the scanner despite creating repo-global groups. We accept only a
+    complete expression whose entire result is the relevant context field. This
+    is intentionally narrow: functions, operators, property comparisons, and
+    future expression syntax stay unsafe until their isolation is proved.
+    """
+    parsed = expressions(group_value)
+    return bool(
+        parsed
+        and any(discriminator.fullmatch(expression.strip()) for expression in parsed)
+    )
+
+
+def has_exact_fallback(group_value: str, safe_form: re.Pattern[str]) -> bool:
+    """Whether a group carries one deliberately supported fallback form.
+
+    The fallback is accepted only when the *entire* expression is the audited
+    two-operand form. In particular, a false guard, comparison, function call,
+    or a third operand cannot accidentally inherit the approval.
+    """
+    parsed = expressions(group_value)
+    return bool(
+        parsed and any(safe_form.fullmatch(expression.strip()) for expression in parsed)
+    )
 
 
 def workflow_events(path: str) -> frozenset[str]:
@@ -239,19 +255,25 @@ def top_level_groups(path: str) -> list[tuple[Group, str]]:
 
 def is_cross_ref_safe(group_value: str, events: frozenset[str]) -> bool:
     """Accept only discriminators whose safety follows from their semantics."""
-    if expression_mentions(group_value, REF_DISCRIMINATOR):
+    if has_unconditional_discriminator(group_value, REF_DISCRIMINATOR):
         return True
-    if expression_mentions(group_value, RUN_UNIQUE_DISCRIMINATOR):
+    if has_unconditional_discriminator(group_value, RUN_UNIQUE_DISCRIMINATOR):
         return True
-    if expression_mentions(group_value, PR_NUMBER_DISCRIMINATOR) and events <= PR_ONLY_EVENTS:
+    if has_unconditional_discriminator(
+        group_value, PR_NUMBER_DISCRIMINATOR
+    ) and events <= PR_ONLY_EVENTS:
+        return True
+    # This established Actions normal form yields a PR number for PR runs and
+    # the full ref otherwise. It is cross-ref unique, but event collisions on a
+    # shared ref remain intentionally out of this scanner's B-150 scope.
+    if has_exact_fallback(group_value, PR_NUMBER_OR_REF):
         return True
     # `welcome-first-pr` legitimately handles both issues and pull requests. A
     # number from only one payload would be empty for the other event and hence
-    # unsafe; the explicit pair covers every event it admits.
+    # unsafe; the exact pair covers every event it admits.
     return bool(
         events <= ISSUE_OR_PR_EVENTS
-        and expression_mentions(group_value, ISSUE_NUMBER_DISCRIMINATOR)
-        and expression_mentions(group_value, PR_NUMBER_DISCRIMINATOR)
+        and has_exact_fallback(group_value, ISSUE_OR_PR_NUMBER)
     )
 
 
@@ -346,6 +368,12 @@ def self_test() -> int:
             ),
             write_workflow(
                 temporary,
+                "pr-number-or-ref.yml",
+                "ci-${{ github.event.pull_request.number || github.ref }}",
+                "true",
+            ),
+            write_workflow(
+                temporary,
                 "issue-or-pr.yml",
                 "ci-${{ github.event.issue.number || github.event.pull_request.number }}",
                 "true",
@@ -360,6 +388,35 @@ def self_test() -> int:
                 "true",
                 concurrency_header="concurrency: # a YAML comment is still this mapping",
             ),
+            # A discriminator hidden behind a conditional is not a
+            # discriminator. These are valid Actions expressions that all
+            # collapse to a shared group, and are regression/mutation fixtures
+            # for the former "mentions context" implementation.
+            write_workflow(
+                temporary,
+                "false-ref-guard.yml",
+                "ci-${{ false && github.ref || 'global' }}",
+                "true",
+            ),
+            write_workflow(
+                temporary,
+                "ref-comparison.yml",
+                "ci-${{ github.ref == 'refs/heads/main' && 'main' || 'other' }}",
+                "true",
+            ),
+            write_workflow(
+                temporary,
+                "false-pr-number-guard.yml",
+                "ci-${{ false && github.event.pull_request.number || 'global' }}",
+                "true",
+                "  pull_request:\n",
+            ),
+            write_workflow(
+                temporary,
+                "false-run-id-guard.yml",
+                "ci-${{ false && github.run_id || 'global' }}",
+                "true",
+            ),
         ])
         require_actionlint_clean(actionlint_clean)
         violations, total, safe = scan(str(temporary))
@@ -373,10 +430,14 @@ def self_test() -> int:
             "quoted-ref.yml",
             "sha.yml",
             "trailing-comment.yml",
+            "false-ref-guard.yml",
+            "ref-comparison.yml",
+            "false-pr-number-guard.yml",
+            "false-run-id-guard.yml",
         }
-        if total != 13 or safe != 5 or names != expected:
+        if total != 18 or safe != 6 or names != expected:
             print(
-                "SELF-TEST FAILED: expected 13 blocks / 5 safe / violations "
+                "SELF-TEST FAILED: expected 18 blocks / 6 safe / violations "
                 f"{sorted(expected)}, got {total} / {safe} / {sorted(names)}"
             )
             return 1
@@ -422,7 +483,7 @@ def self_test() -> int:
                 print(f"SELF-TEST FAILED: {duplicate_name} reported a clean scan")
                 return 1
 
-        print("SELF-TEST OK: actionlint-clean comments/literals, matrix/SHA, PR event scope, duplicate keys, and bad input have teeth")
+        print("SELF-TEST OK: actionlint-clean comments/literals, matrix/SHA, conditional discriminator collapse, PR event scope, duplicate keys, and bad input have teeth")
         return 0
     finally:
         shutil.rmtree(temporary)

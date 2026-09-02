@@ -39,11 +39,15 @@ o mesmo eixo em refs distintos e o segundo pode apontar para o mesmo commit. Os
 dois agora são violações, não uma passagem implícita. O `--self-test` constrói
 casos sintéticos para grupo literal, nome de workflow, matriz, SHA, comentário de
 cauda, ref completo, run único, número de PR, comentário após `concurrency:`,
-referência escrita só como literal e diretório vazio. Expressões só contam quando
-referenciam o contexto de fato — `ci-github.ref` e `${{ 'github.ref' }}` não são
-isolamento — e chaves duplicadas ou YAML ilegível fazem a varredura falhar, nunca
-escolher silenciosamente a primeira. Assim o zero só é aceito quando o próprio
-instrumento ainda consegue ficar vermelho.
+referência escrita só como literal, fallback legítimo de número de PR/ref, e
+diretório vazio. Expressões só contam quando o seu **resultado inteiro** é um
+discriminador auditado (ou um dos dois fallbacks exatos documentados): mera
+menção não basta. Assim `ci-github.ref`, `${{ 'github.ref' }}`,
+`${{ false && github.ref || 'global' }}` e
+`${{ github.ref == 'refs/heads/main' && 'main' || 'other' }}` não são isolamento.
+Chaves duplicadas ou YAML ilegível fazem a varredura falhar, nunca escolher
+silenciosamente a primeira. Assim o zero só é aceito quando o próprio instrumento
+ainda consegue ficar vermelho.
 
 ---
 
@@ -243,6 +247,10 @@ primeiros existiam na versão anterior; os três últimos nasceram do SEV-1 da �
 | 6 | `group: ${{ github.workflow }}` sozinho | **acusa** | acusa |
 | 7 | `group: ${{ github.workflow }}-${{ github.ref }}` | passa | passa |
 | 8 | `cancel-in-progress:` como `True` / `"true"` | acusa as duas | acusa as duas |
+| 9 | `false && github.ref || 'global'` | acusa | acusa |
+| 10 | `github.ref == main && 'main' || 'other'` | acusa | acusa |
+| 11 | `false && pull_request.number || 'global'` | acusa | acusa |
+| 12 | `false && run_id || 'global'` | acusa | acusa |
 
 O eixo 2 é o que mais mudou: a versão anterior media **14** ali. O número certo sempre foi
 **17** — ela não enxergava as 3 da §5, nem antes nem depois do #1503.
@@ -283,9 +291,15 @@ porque ele também só procurou grupo literal.
 (`REF_VARYING`) para exigir algo que parecesse diferir entre refs, em vez de deixar qualquer
 expressão passar. Isso corrigiu o verde-falso do nome de workflow, mas a atualização de
 integração acima identificou que `matrix.` e `github.sha` também não demonstram separação por
-ref. O scanner atual aceita somente um discriminador cuja segurança pode ser justificada pelo
-seu significado (ref completo, run único, ou número de PR em workflow exclusivamente de PR),
-e recusa o resto até haver essa justificativa.
+ref. A atualização seguinte achou uma terceira classe: **menção condicional não
+é resultado**. `false && github.ref || 'global'`, a comparação de ref que escolhe
+entre dois literais e guards falsos de número de PR/run-id contêm discriminadores,
+mas todos colapsam para grupo compartilhado. O scanner agora aceita apenas uma
+expressão completa cujo resultado seja ref completo, run único ou número de PR em
+workflow exclusivamente de PR; preserva somente os fallbacks exatos e auditados
+`pull_request.number || github.ref` e `issue.number || pull_request.number`
+(este último limitado aos seus eventos). Operadores, funções, comparações e
+sintaxe futura permanecem inseguros até terem prova própria.
 
 ### 5.1 O SEV-2 do booleano
 
