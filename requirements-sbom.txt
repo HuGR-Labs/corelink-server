@@ -1,0 +1,12 @@
+# Only the deterministic Rust SBOM verifier's runtime closure belongs here.
+# Keep this file separate from requirements-ci.txt: the SBOM workflow installs
+# it in a job-private venv and must never mutate the shared runner interpreter.
+#
+# Both packages are pure-Python wheels.  The hashes are intentionally pinned
+# so an altered download fails closed instead of silently changing the SBOM
+# verifier.  boolean.py is an explicit entry because license-expression uses
+# it at runtime; do not rely on dependency resolution to discover the closure.
+license-expression==30.4.4 \
+    --hash=sha256:421788fdcadb41f049d2dc934ce666626265aeccefddd25e162a26f23bcbf8a4
+boolean.py==5.0 \
+    --hash=sha256:ef28a70bd43115208441b53a045d1549e2f0ec6e3d08a9d142cbc41c1938e8d9
