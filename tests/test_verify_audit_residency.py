@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -146,6 +147,37 @@ def test_missing_evidence_source_is_indeterminate() -> None:
     with pytest.raises(SystemExit) as exited:
         verifier.main(["--environment", "test"])
     assert exited.value.code == 2
+
+
+@pytest.mark.parametrize("result_success", [False, None, 0, 1, "true"])
+def test_result_set_success_must_be_exact_boolean_true(result_success: object) -> None:
+    payload = response()
+    payload["result"][0]["success"] = result_success
+    with pytest.raises(verifier.Indeterminate):
+        verifier.parse_d1_response(payload)
+
+
+def test_result_set_success_is_required() -> None:
+    payload = response()
+    del payload["result"][0]["success"]
+    with pytest.raises(verifier.Indeterminate):
+        verifier.parse_d1_response(payload)
+
+
+@pytest.mark.parametrize("result_success", [False, None, 0, 1, "true"])
+def test_incomplete_result_set_evidence_exits_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], result_success: object
+) -> None:
+    payload = response()
+    payload["result"][0]["success"] = result_success
+    evidence = tmp_path / "d1-response.json"
+    evidence.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exited:
+        verifier.main(["--environment", "production", "--input", str(evidence)])
+
+    assert exited.value.code == 2
+    assert "status=INDETERMINATE" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(

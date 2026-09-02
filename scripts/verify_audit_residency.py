@@ -135,8 +135,8 @@ def parse_d1_response(payload: object) -> Counts:
     if not isinstance(result, list) or len(result) != 1 or not isinstance(result[0], dict):
         raise Indeterminate("D1 response must contain exactly one result set")
     result_set = result[0]
-    if result_set.get("success") is False:
-        raise Indeterminate("D1 reported an unsuccessful result set")
+    if result_set.get("success") is not True:
+        raise Indeterminate("D1 result set is missing success=true")
     rows = result_set.get("results")
     if not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], dict):
         raise Indeterminate("D1 response must contain exactly one aggregate row")
