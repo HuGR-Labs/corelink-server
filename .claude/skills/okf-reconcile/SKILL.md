@@ -86,8 +86,9 @@ the stale concept so every claim is true again, and advance its checkpoint.
 4. **Open a reconciliation PR.** One concern: the drifted concepts and their
    checkpoint advances (plus any `source_files`/citation corrections). Title e.g.
    `docs(okf): reconcile <N> concept(s) drifted by <change>`. The okf_wiki.yml gate
-   must pass. End the commit with the `Co-Authored-By: Claude …` trailer and the PR
-   body with the Generated-with footer.
+   must pass. End the commit with the
+   `Co-Authored-By: Codex <noreply@openai.com>` trailer and the PR body with the
+   Generated-with footer.
 
 ## Guardrails
 
