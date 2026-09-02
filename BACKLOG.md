@@ -4666,12 +4666,13 @@ verify: |
   for caso in "selects ONLY columns the migrations actually create" "does not select the phantom install_status column" "the D1 stub REJECTS an invented column" "DENIES a tenant with no runners_entitlement row" "DENIES when D1 throws at" "DENIES when env.CONFIG_DB is absent" "ALLOWS a tenant with a positive concurrency cap" "query survives the schema-faithful stub end to end" "is the STRING" "the column is inert"; do
     grep -qF "$caso" "$t" || { echo "FALHA: o teste perdeu o caso [$caso] — anti-vacuidade: um teste esvaziado passaria verde."; exit 1; }
   done
-  cd worker || { echo "FALHA: nao existe diretorio worker/."; exit 1; }
-  if [ ! -d node_modules ]; then
-    timeout 75 npm install --legacy-peer-deps --no-audit --no-fund >/dev/null 2>&1 || { echo "FALHA: nao consegui instalar as deps do worker para EXECUTAR o teste — este verify nunca reporta verde sem rodar."; exit 1; }
+  command -v pnpm >/dev/null 2>&1 || { echo "FALHA: pnpm nao esta disponivel para executar o teste do worker."; exit 1; }
+  if [ ! -x worker/node_modules/.bin/vitest ] || [ ! -f worker/node_modules/vitest/vitest.mjs ]; then
+    pnpm --filter @corelink/worker install --frozen-lockfile --prefer-offline >/dev/null 2>&1 || { echo "FALHA: nao consegui instalar as deps congeladas do worker para EXECUTAR o teste — este verify nunca reporta verde sem rodar."; exit 1; }
   fi
+  [ -x worker/node_modules/.bin/vitest ] && [ -f worker/node_modules/vitest/vitest.mjs ] || { echo "FALHA: worker/node_modules tem shim ou pacote vitest ausente — instalacao parcial nao conta como prova."; exit 1; }
   j=$(mktemp) || { echo "FALHA: nao consegui criar arquivo temporario para o relatorio do vitest."; exit 1; }
-  npx vitest run tests/devenv_guard.test.ts --reporter=json --outputFile="$j" >/dev/null 2>&1
+  pnpm --filter @corelink/worker exec vitest run tests/devenv_guard.test.ts --reporter=json --outputFile="$j" >/dev/null 2>&1
   rc=$?
   ok=$(grep -oE "\"numPassedTests\" *: *[0-9]+" "$j" 2>/dev/null | grep -oE "[0-9]+$")
   bad=$(grep -oE "\"numFailedTests\" *: *[0-9]+" "$j" 2>/dev/null | grep -oE "[0-9]+$")
@@ -4694,8 +4695,16 @@ verify-means: |
   primeira tentativa deste reparo — que trocou sempre-autoriza por sempre-nega e
   derrubaria os 8 tenants com linha real — teria passado em todos os outros casos.
 
+  **Finding reconciliado em 2026-09-02:** testar apenas a existência do diretório
+  `worker/node_modules` aceitava uma instalação parcial sem `vitest`, pulava a instalação
+  e produzia um DRIFTED sem diagnóstico. Exigir apenas o shim executável `.bin/vitest`
+  também foi insuficiente: um prune interrompido deixou o shim, mas removeu o entrypoint
+  `worker/node_modules/vitest/vitest.mjs`. O verify agora exige os dois, reinstala se
+  qualquer um faltar, usa o gerenciador e lockfile canônicos do monorepo e recusa
+  explicitamente ambos os estados parciais.
+
   Anti-vacuidade em três camadas, porque a versão anterior deste teste falhou
-  exatamente aqui: (1) o comando exige que os oito casos-chave existam por nome; (2)
+  exatamente aqui: (1) o comando exige que os dez casos-chave existam por nome; (2)
   reprova se o guard voltar a nomear `install_status` numa query; (3) o próprio teste
   **parseia as migrações `0070`/`0072`** e fixa a lista de colunas contra o DDL real,
   em vez de contra a expectativa do autor. A lição que motivou (3): o mock anterior
@@ -4710,8 +4719,9 @@ verify-means: |
   e o sempre-nega rejeitado (8 falhas, incluindo os dois controles positivos).
 
   O que NÃO decide, e registro em vez de deixar implícito: o comando precisa das
-  dependências node do `worker/` para executar. Se `worker/node_modules` faltar, ele
-  tenta instalar dentro de um `timeout 75` e, se não conseguir, **reprova** com uma
+  dependências node do `worker/` para executar. Se o shim
+  `worker/node_modules/.bin/vitest` ou seu entrypoint `vitest/vitest.mjs` faltar, ele tenta instalar as dependências pelo
+  `pnpm` e lockfile canônicos e, se não conseguir, **reprova** com uma
   mensagem que nomeia o motivo — deliberadamente nunca verde por não ter conseguido
   rodar. Lê o **relatório JSON** do vitest, não o texto: a primeira versão deste
   comando fazia `grep` na linha `Tests  N passed` e ficou vermelha na CI porque o
@@ -4721,7 +4731,7 @@ verify-means: |
   que já instala essas deps, então o caminho comum é só rodar o vitest (~5s). O gate de
   PR de verdade para este teste é `worker-vitest.yml` (dispara em `worker/**`); este
   `verify` é a checagem diária de que a propriedade continua valendo.
-last-verified: 2026-08-31
+last-verified: 2026-09-02
 ```
 
 ### B-076 — o mesmo tenant pode manter duas assinaturas pagáveis abertas, e a segunda apaga o registro da primeira
@@ -10450,11 +10460,12 @@ last-verified: 2026-08-31
 
 ### B-149 — três testes que passam sem afirmar nada, e um quarto que delega por escrito ao mais fraco deles
 
-Medidos no código de 2026-08-31. Não são testes fracos por descuido de nomenclatura: os três
-**nomeiam** uma propriedade que não verificam.
+Medidos no código de 2026-09-02, depois de `#1499` e `#1513` separarem os testes dos
+arquivos-pai. Não são testes fracos por descuido de nomenclatura: os três **nomeiam** uma
+propriedade que não verificam.
 
 1. **`empty_batch_issues_no_statement_at_all`**
-   (`crates/corelink-container/src/storage/d1_audit_sink.rs:919`) — o nome promete que
+   (`crates/corelink-container/src/storage/d1_audit_sink/tests_batch_limits.rs`) — o nome promete que
    **nenhum statement é emitido**. A única asserção é
    `.append_batch_async(Vec::new()).await.expect(…)`, isto é, "não devolveu erro". Um
    `append_batch_async` que emitisse um `json_each('[]')` degenerado e voltasse `Ok(())`
@@ -10462,7 +10473,8 @@ Medidos no código de 2026-08-31. Não são testes fracos por descuido de nomenc
    torna a asserção sobre statements não apenas ausente, mas inalcançável na forma atual.
 
 2. **`build_state_returns_none_when_secret_absent`**
-   (`routes/billing_ingest.rs:1155`, e um homônimo em `routes/auth_introspect.rs:1609`) — o
+   (`routes/billing_ingest/tests_auth.rs`; há um homônimo fora deste escopo em
+   `routes/auth_introspect.rs`) — o
    corpo inteiro está dentro de
    `if std::env::var("BILLING_INGEST_AUTH_KEY").is_err() { … }`. **Com a variável definida o
    teste não afirma nada e passa** — e uma máquina de CI que exporte o segredo apaga o teste
@@ -10470,21 +10482,25 @@ Medidos no código de 2026-08-31. Não são testes fracos por descuido de nomenc
    um motivo, e a asserção `is_none()` não distingue "ausência do segredo" das outras causas:
    o teste não decide a proposição do seu próprio nome.
 
-3. **`validate_record_reasons_pinned`** (`routes/billing_ingest.rs:1129`) — "reasons",
-   plural. `RecordError` (`:397-411`) tem **seis** variantes: `BadTenantId`,
+3. **`validate_record_reasons_pinned`**
+   (`routes/billing_ingest/tests_region_canon.rs`) — "reasons", plural. `RecordError`
+   (`routes/billing_ingest.rs`) tem **seis** variantes: `BadTenantId`,
    `BadBillingPeriod`, `BadRegion`, `BadIdemKey`, `EmptySource`, `SourceTooLong`. O teste fixa
    **uma** — `BadRegion`. As outras cinco podem trocar de código de razão sem que nada caia.
 
-**O agravante é o quarto teste.** `bad_tenant_id_is_skipped_not_fatal` (`:897`) traz no
+**O agravante é o quarto teste.** `bad_tenant_id_is_skipped_not_fatal`
+(`routes/billing_ingest/tests_record_skip.rs`) traz no
 comentário: *"The reason-code mapping is pinned separately in
 `validate_record_reasons_pinned`."* Ele **abre mão** de verificar o mapeamento por escrito,
 delegando ao teste que cobre 1 de 6 — e `BadTenantId`, justamente o que ele deixa de checar,
 **não** é a variante fixada. A cobertura declarada e a cobertura real se contradizem, e a
 contradição está escrita no arquivo.
 
-**O que este item NÃO decide:** se a resposta é reforçar os três testes ou substituí-los por
-teste de propriedade sobre `RecordError` (que fixa as seis de uma vez e não decai quando uma
-sétima nascer). A segunda é mais forte e mais cara.
+**Critério de fechamento:** o reparo aprovado afirma as três propriedades, cobre
+`RecordError` exaustivamente com uma fixture de rejeição por variante e fixa a delegação do
+quarto teste. Para que essa prova não volte a ser enfraquecida por uma forma sintática nova,
+o fechamento operacional é o conjunto exato de arquivos revisto, não uma nova interpretação
+parcial do Rust pelo verificador.
 
 ```backlog
 id: B-149
@@ -10492,48 +10508,38 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  bash -c 'set -e
-  a=crates/corelink-container/src/storage/d1_audit_sink.rs
-  b=crates/corelink-container/src/routes/billing_ingest.rs
-  for f in "$a" "$b"; do [ -f "$f" ] || { echo "FALHA: $f sumiu — reavalie o item."; exit 1; }; done
-  n=0; det=""
-  corpo=$(awk "/fn empty_batch_issues_no_statement_at_all/{c=1} c{print} c&&/^    }/{exit}" "$a" | grep -v "^[[:space:]]*//")
-  [ -n "$corpo" ] || { echo "FALHA: nao recortei o corpo de empty_batch_issues_no_statement_at_all — o teste mudou de forma; releia."; exit 1; }
-  printf "%s\n" "$corpo" | grep -qiE "assert.*(statement|sql|query|stmt)" || { n=$((n+1)); det="$det empty_batch-sem-asercao-de-statement"; }
-  corpo=$(awk "/fn build_state_returns_none_when_secret_absent/{c=1} c{print} c&&/^    }/{exit}" "$b" | grep -v "^[[:space:]]*//")
-  [ -n "$corpo" ] || { echo "FALHA: nao recortei o corpo de build_state_returns_none_when_secret_absent — releia."; exit 1; }
-  printf "%s\n" "$corpo" | grep -qE "if std::env::var" && { n=$((n+1)); det="$det build_state-condicional-ao-ambiente"; }
-  vars=$(awk "/^enum RecordError/{c=1;next} c&&/^}/{exit} c&&/^    [A-Z][A-Za-z]+,/{n++} END{print n+0}" "$b")
-  [ "$vars" -ge 2 ] || { echo "FALHA: contei $vars variantes em RecordError — o enum mudou de forma; instrumento quebrado."; exit 1; }
-  corpo=$(awk "/fn validate_record_reasons_pinned/{c=1} c{print} c&&/^    }/{exit}" "$b" | grep -v "^[[:space:]]*//")
-  fix=$(printf "%s\n" "$corpo" | grep -oE "RecordError::[A-Za-z]+" | sort -u | wc -l | tr -d " ")
-  [ "$fix" -lt "$vars" ] && { n=$((n+1)); det="$det reasons_pinned-fixa-$fix-de-$vars"; }
-  [ "$n" -gt 0 ] || { echo "FALHA: nenhum dos tres testes vacuos persiste — feche o item."; exit 1; }
-  echo "aberto: $n de 3 testes seguem vacuos:$det"'
+  python3 scripts/verify_b149_test_strength.py --expect open
 verify-means: |
-  open — pelo menos um dos três testes ainda satisfaz a forma vazia que o item descreve.
-  Fecha por **exaustão**: consertar dois mantém o item aberto com contagem menor, que é o
-  comportamento certo para item de lista.
+  open — pelo menos um dos cinco checkpoints SHA-256 diverge do reparo B-149 aprovado
+  (`627ec21`): os quatro arquivos de teste relevantes e
+  `routes/billing_ingest.rs`, que contém o mapeamento de produção. As quatro mensagens
+  continuam a identificar qual propriedade do item exige revisão; qualquer byte divergente
+  é `review required`, mesmo que pareça uma mudança inocente.
 
-  **Cada medida é sobre o corpo RECORTADO do teste, com os comentários removidos.** Grepar o
-  arquivo inteiro responderia sobre o vizinho; e sem tirar comentário, a linha
-  *"The reason-code mapping is pinned separately in `validate_record_reasons_pinned`"* — que
-  é justamente a delegação que este item denuncia — casaria como se fosse asserção.
+  done — os cinco arquivos completos são byte a byte iguais ao conjunto revisto. Os hashes
+  são a autoridade para `done`; o verify não tenta provar novamente semântica Rust com lexer,
+  regex ou recortes de função, pois essas aproximações aceitaram várias formas mortas ou
+  desconectadas de evidência.
 
-  **A contagem de variantes é derivada, não constante.** `validate_record_reasons_pinned`
-  reprova por `fixadas < variantes do enum`, então nascer uma sétima variante **reabre** o
-  item sozinho. Uma constante `6` escrita à mão envelheceria em silêncio, que é a doença que
-  este arquivo tenta não ter.
+  **Anti-vacuidade e caminho seguro:** o registro é exatamente os cinco pares
+  `path`/SHA-256 revisados; vazio, omissão, entrada extra ou digest alterado são erro de
+  instrumento, nunca verde. Cada checkpoint precisa ser arquivo regular sob uma raiz de
+  repositório que não é symlink. Symlink (inclusive em diretório intermediário), FIFO ou
+  outro arquivo não regular, caminho que
+  resolve para fora da raiz e arquivo ausente falham como erro de instrumento; a raiz é
+  aberta uma única vez com `O_NOFOLLOW|O_DIRECTORY` e toda a leitura é ancorada naquele
+  descritor, sem resolver novamente seu pathname. Assim, uma troca concorrente da raiz por
+  link não pode redirecionar a prova; uma troca por arquivo regular vira drift de hash e uma
+  troca por link falha fechada.
 
-  **Anti-vacuidade:** arquivo ausente, recorte vazio (o teste mudou de forma) e enum com
-  menos de 2 variantes são **falhas de instrumento** com mensagem própria — nenhuma devolve
-  "aberto".
+  **Manutenção intencional:** uma edição legítima nesses arquivos reabre B-149. Ela requer
+  nova revisão da prova, atualização explícita dos cinco hashes no verifier e das mutações
+  correspondentes; não se aceita uma regra permissiva para preservar verde automaticamente.
 
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 3 de 3 testes
-  seguem vacuos"* e exit 0. Numa cópia com uma asserção sobre statements no primeiro, o `if
-  std::env::var` removido do segundo, e as seis variantes fixadas no terceiro, sai *"FALHA:
-  nenhum dos tres testes vacuos persiste"* e exit 1.
-last-verified: 2026-08-31
+  **Medido pelos dois lados (2026-09-02):** a árvore de higiene permanece `open` com as
+  quatro lacunas; uma fixture que reproduz exatamente `627ec21` é `done`, e qualquer mutação
+  de byte volta a `open`.
+last-verified: 2026-09-02
 ```
 
 ### B-150 — a colisão de ref do [B-136]/[B-137] vale para mais 28 workflows que ninguém escopou
