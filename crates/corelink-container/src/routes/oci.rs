@@ -188,14 +188,17 @@ struct UploadSession {
 ///
 /// Images are stored under the PER-TENANT namespace (the `tenant` arg's
 /// canonical text) — isolated by default. **F3.2 increment 6** adds
-/// flag-gated cross-tenant dedup: when `dedup` is on AND a LAYER-BLOB
+/// flag-gated cross-tenant dedup: when `dedup` is on AND an owner-pinned
 /// digest is [`is_allowlisted`](PublicBaseAllowlist::is_allowlisted), that
-/// blob's put/get is routed to the shared
+/// blob upload/finalize put and blob get are routed to the shared
 /// [`crate::adapter_cache::PUBLIC_NAMESPACE`] (uncapped) via the SAME
-/// predicate on both paths ([`Self::routes_to_public`]) — never manifests or
-/// config objects (their digests are not layer-blob allowlist entries).
-/// The flag defaults OFF, so this shell is INERT until the WP-E repin flips
-/// it; the shipped allowlist is deny-all until then regardless.
+/// predicate on both paths ([`Self::routes_to_public`]). The predicate has a
+/// digest but no media type, so the five baked index digests are eligible too;
+/// the upload bytes must still verify against the declared digest before write.
+/// This predicate does not govern `PUT /v2/<repo>/manifests/<reference>`:
+/// manifest/index JSON remains in the tenant-scoped `ManifestKvStore`.
+/// The flag defaults OFF for safe fallback behavior; production enables it via
+/// the boot flag after the owner-reviewed six-pin manifest is baked in.
 ///
 /// Upload sessions are buffered in-process in `uploads` keyed by the
 /// server-allocated UUID; `finalize_upload` flushes the assembled bytes
@@ -229,16 +232,17 @@ struct OciMoatStore {
     /// with the buffer extend; pruned to zero on release.
     tenant_inflight: Mutex<HashMap<String, u64>>,
     /// F3.2 inc6: is flag-gated cross-tenant `_public` routing of allowlisted
-    /// base layers enabled? PROD injects
+    /// OCI digests enabled? PROD injects
     /// [`crate::public_flags::oci_public_dedup_enabled`] (boot-read, default
     /// OFF); tests inject a literal. When `false` this store is byte-identical
     /// to the per-tenant-only pre-inc6 behavior (the whole WP is a no-op).
     dedup: bool,
     /// The owner-curated, digest-pinned public-base allowlist consulted ONLY
     /// when `dedup` is on. Fail-CLOSED: a malformed baked manifest degrades to
-    /// deny-all (empty), never a partially-trusted set. Contains LAYER-blob
-    /// digests only, so manifests/config objects can never match → never route
-    /// to `_public`.
+    /// deny-all (empty), never a partially-trusted set. Contains only baked
+    /// owner-pinned digests. The predicate deliberately receives no OCI media type:
+    /// any owner-pinned digest can route to `_public`, but unpinned digests do
+    /// not.
     allowlist: PublicBaseAllowlist,
 }
 
@@ -267,8 +271,8 @@ impl OciMoatStore {
 
     /// Constructor with an explicit allowlist. The production [`Self::new`]
     /// delegates here with the baked manifest; tests inject a hermetic allowlist
-    /// so `_public` routing can be exercised without depending on the shipped
-    /// deny-all manifest (which never matches → dedup would silently never fire).
+    /// so `_public` routing can be exercised with a hermetic allowlist instead of
+    /// depending on the production manifest population.
     fn with_allowlist(moat: Arc<MoatCache>, dedup: bool, allowlist: PublicBaseAllowlist) -> Self {
         Self {
             moat,
@@ -280,12 +284,14 @@ impl OciMoatStore {
         }
     }
 
-    /// The SINGLE flag+allowlist predicate deciding whether a LAYER-BLOB digest
-    /// routes to the shared `_public` namespace. Used IDENTICALLY on the write
-    /// ([`BlobStore::finalize_upload`]) and read ([`BlobStore::get_blob`]) paths,
-    /// so a blob is never written to one namespace and read from another (no
-    /// split-brain). Config/manifest objects never match: the allowlist holds
-    /// only owner-pinned layer-blob digests.
+    /// The SINGLE flag+allowlist predicate deciding whether a client-finalized,
+    /// owner-pinned digest routes to the shared `_public` namespace. The write
+    /// path ([`BlobStore::finalize_upload`]) uses this predicate; the read path
+    /// ([`BlobStore::get_blob`]) is deliberately the existence-based superset and
+    /// consults `_public` whenever `dedup` is on. This predicate has no media-type
+    /// input: it admits exactly the baked digest set, including pinned indexes.
+    /// It is used only for blob upload/finalize storage; manifest PUT uses the
+    /// tenant-scoped `ManifestKvStore` instead.
     fn routes_to_public(&self, blob_key: &str) -> bool {
         self.dedup && self.allowlist.is_allowlisted(blob_key)
     }
@@ -576,12 +582,12 @@ impl BlobStore for OciMoatStore {
         // Persist content-addressed, mapping the OCI digest (`blob_key`) → blake3
         // content hash. Namespace + cap depend on the flag-gated `_public`
         // routing decision (the SAME predicate the read path uses):
-        //   * allowlisted base layer → shared `_public`, uncapped (`Some(0)`).
-        //     This is the ONLY route to the uncapped quota-seed — public base
-        //     bytes are not charged to any tenant (network-effect moat). The
-        //     write-time `verify_against_bytes` above STILL guards this path
-        //     (fail-closed; a digest-lie never reaches the shared slot).
-        //   * everything else (private layers, config objects, any blob when the
+        //   * allowlisted owner-pinned digest → shared `_public`, uncapped
+        //     (`Some(0)`). This includes index-shaped bytes when they arrive via
+        //     blob upload/finalize. The write-time `verify_against_bytes` above
+        //     STILL guards this path (fail-closed; a digest-lie never reaches
+        //     the shared slot).
+        //   * everything else (unlisted blob/config bytes, any blob when the
         //     flag is OFF or the allowlist is deny-all) → PER-TENANT namespace
         //     with the RESOLVED per-tier storage cap threaded from the verified
         //     bearer, so a DOWNGRADED tenant is rejected once over the resolved
@@ -1682,13 +1688,12 @@ mod tests {
             .map(|_| ())
     }
 
-    // ── F3.2 inc6 (WP-B): flag-gated `_public` routing of allowlisted base
-    //    layers ─────────────────────────────────────────────────────────────
+    // ── F3.2 inc6 (WP-B): flag-gated `_public` routing of allowlisted OCI
+    //    digests ────────────────────────────────────────────────────────────
     //
     // These prove the routing contract WITHOUT `env::set_var` (the flag is a
-    // constructor param) and WITHOUT the shipped deny-all manifest (tests inject
-    // a hermetic allowlist via `with_allowlist`, whose only production consumer is
-    // `OciMoatStore::new`).
+    // constructor param) and with a hermetic allowlist via `with_allowlist`
+    // (production loads the six-pin baked manifest once at the router).
 
     /// The `sha256:<hex>` wire digest of `bytes` — the exact string the allowlist
     /// must contain for `routes_to_public` to fire.
@@ -1782,7 +1787,7 @@ mod tests {
 
     #[tokio::test]
     async fn inc6_two_tenants_same_allowlisted_base_share_one_public_row() {
-        // DoD: two DISTINCT tenants push the SAME allowlisted base layer → exactly
+        // DoD: two DISTINCT tenants push the SAME allowlisted digest → exactly
         // ONE shared `_public` row (cross-tenant content dedup — the moat).
         let base = b"alpine-3.20-base-layer-bytes".as_slice();
         let wire = digest_wire(base);
@@ -1957,10 +1962,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn inc6_config_object_never_lands_in_public() {
-        // DoD: manifests/config objects NEVER route to `_public` — only layer-blob
-        // digests are allowlisted, so a config blob's digest can never match, even
-        // with the flag ON and a valid layer allowlisted.
+    async fn inc6_unallowlisted_config_object_stays_per_tenant() {
+        // The routing predicate is digest-only. This config-shaped payload is
+        // intentionally NOT in the owner allowlist, so it stays per-tenant.
         let layer = b"a-real-allowlisted-layer".as_slice();
         let layer_wire = digest_wire(layer);
         let config = br#"{"architecture":"amd64","os":"linux"}"#.as_slice();
@@ -1968,11 +1972,11 @@ mod tests {
         let allowlist = PublicBaseAllowlist::parse(&layer_wire).unwrap();
         let (store, map) = dedup_store(true, allowlist);
 
-        // The layer routes public; the config (never an allowlist entry) does not.
+        // The listed digest routes public; the unlisted config digest does not.
         assert!(store.routes_to_public(&layer_wire));
         assert!(
             !store.routes_to_public(&config_wire),
-            "a config/manifest digest is never a layer-blob allowlist entry"
+            "an unlisted digest must stay private regardless of payload shape"
         );
 
         let t = TenantId::from_uuid(Uuid::from_u128(0xE5));
@@ -1980,13 +1984,74 @@ mod tests {
         assert_eq!(
             rows_in_ns(&map, PUBLIC_NAMESPACE),
             0,
-            "a config object must never land in `_public`"
+            "an unlisted config object must not land in `_public`"
         );
         assert_eq!(
             rows_in_ns(&map, &t.to_canonical_text()),
             1,
-            "the config object stays per-tenant"
+            "the unlisted config object stays per-tenant"
         );
+    }
+
+    #[tokio::test]
+    async fn inc6_owner_pinned_index_shaped_blob_routes_via_finalize_only() {
+        // Adversarial truth control: `routes_to_public` has only a digest, not
+        // an OCI media type. An owner-listed index-shaped BLOB payload therefore
+        // routes public through upload/finalize, but its exact bytes remain
+        // content-address-verified before persistence. This does not imply that
+        // a manifest PUT can write `_public`; that path uses ManifestKvStore.
+        let index = br#"{"schemaVersion":2,"manifests":[]}"#.as_slice();
+        let index_wire = digest_wire(index);
+        let allowlist = PublicBaseAllowlist::parse(&index_wire).unwrap();
+        let (store, map) = dedup_store(true, allowlist);
+        let tenant = TenantId::from_uuid(Uuid::from_u128(0xE6));
+
+        assert!(store.routes_to_public(&index_wire));
+        push_bytes(&store, &tenant, index, Some(1_000))
+            .await
+            .unwrap();
+        assert_eq!(rows_in_ns(&map, PUBLIC_NAMESPACE), 1);
+        assert_eq!(rows_in_ns(&map, &tenant.to_canonical_text()), 0);
+    }
+
+    #[tokio::test]
+    async fn inc6_manifest_put_index_stays_tenant_scoped() {
+        // The same index-shaped JSON is a manifest when sent to the manifest
+        // endpoint. Its PUT path writes only the tenant-keyed ManifestKvStore,
+        // never the blob moat or `_public` namespace.
+        let index = Bytes::from_static(
+            br#"{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","size":1}]}"#,
+        );
+        let tenant = TenantId::from_uuid(Uuid::from_u128(0xE7));
+        let other = TenantId::from_uuid(Uuid::from_u128(0xE8));
+        let kv = OciKvFake::default();
+        let auditor = InMemoryAuditEmitter::new();
+        let scope =
+            corelink_adapter_host::oci::auth::OciScope::new("alpine", vec!["push".to_owned()]);
+
+        corelink_adapter_host::oci::push::manifest::put(
+            &kv,
+            &auditor,
+            &tenant,
+            &scope,
+            "alpine",
+            "latest",
+            "application/vnd.oci.image.index.v1+json",
+            index.clone(),
+            1_000,
+        )
+        .await
+        .expect("index manifest PUT should be accepted");
+
+        let rows = kv.0.lock().unwrap();
+        assert!(!rows.is_empty(), "manifest PUT must persist tenant KV rows");
+        assert!(rows.keys().all(|(t, _)| t == &tenant.to_canonical_text()));
+        drop(rows);
+        assert!(kv
+            .get(&other, "oci_manifest:alpine:latest")
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]

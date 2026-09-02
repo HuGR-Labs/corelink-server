@@ -1,6 +1,6 @@
 # CoreLink — public-base-allowlist (F3.2 increment 3: the digest-pinned,
-# owner-gated trust root that governs which upstream layers may EVER reside in
-# the cross-tenant `_public` cache).
+# owner-gated trust root that governs which owner-pinned OCI digests may EVER
+# reside in the cross-tenant `_public` cache).
 #
 # ─────────────────────────────────────────────────────────────────────────────
 # WHY THIS FILE IS THE TRUST ROOT
@@ -26,19 +26,26 @@
 #     to arm rather than trust a partially-valid allowlist.
 #
 # ─────────────────────────────────────────────────────────────────────────────
-# HOW AN ENTRY IS ADDED (the owner-gated, populate-then-allowlist procedure)
+# HOW AN ENTRY IS ADDED (owner-gated admission and trusted population)
 # ─────────────────────────────────────────────────────────────────────────────
-# ORDERING INVARIANT (design GAP-E): a digest may be added here ONLY AFTER the
-# server's own trusted mirror has already populated `_public` for it (the
-# increment-4 SSRF-safe server-only mirror job). Allowlisting a digest the server
-# has NOT yet mirrored would let a CLIENT push be the one that populates the
-# shared blob — the exact hole this control closes. So the procedure is:
-#   1. Owner pins an upstream base layer OUT OF BAND: resolve `repo:tag` to its
-#      immutable `sha256:` layer digest yourself (e.g. `docker buildx imagetools
-#      inspect`), and record the pin below with provenance.
-#   2. The increment-4 mirror job pulls THAT pinned digest through the trusted
-#      registry path, verifies the bytes, and populates `_public`.
-#   3. ONLY THEN is the digest un-commented here and shipped in a redeploy.
+# Every active entry is an owner decision. Before activation, the owner resolves
+# and verifies the proposed immutable digest out of band; that verification does
+# not write `_public`. After activation, the trusted mirror (layer pin) or M2
+# resolver (image-index pin) performs digest-verified population. The separate
+# client blob upload/finalize route is also
+# digest-only: once a pin is active, a client may supply bytes matching ANY active
+# pin (including index-shaped bytes), and `finalize_upload` verifies the bytes
+# before routing the slot to `_public`. It cannot widen the set or write a
+# different value under a pin. Therefore the owner must review every active pin
+# as both a trusted-mirror root and a digest-only client blob admission.
+#   1. Owner pins an upstream OCI object OUT OF BAND: resolve `repo:tag` to its
+#      immutable `sha256:` digest (for an index or layer) and record provenance.
+#   2. Owner verifies the proposed bytes/closure OUT OF BAND, then commits the
+#      active pin below and ships it in a redeploy. This step does not populate
+#      `_public`.
+#   3. After activation, the trusted mirror/resolver re-verifies bytes or closure
+#      before server-side promotion. The client finalize path may likewise
+#      populate only bytes matching that active pin.
 # Revocation of a compromised base is the B1b `_public` blocklist kill-switch
 # (`/_internal/public/revoke`) — orthogonal to this file.
 #
@@ -56,9 +63,10 @@
 # TWO KINDS of entry now coexist, both digest-pinned + owner-gated:
 #
 #  1. LAYER-blob digest (WP-E model). A single upstream rootfs LAYER blob. Gates
-#     BOTH the client-push `_public` route (`finalize_upload` `routes_to_public`)
-#     and the server mirror (`/_internal/admin/public-mirror/promote`). The alpine
-#     amd64 rootfs layer below is the one such pin.
+#     BOTH the client blob upload/finalize `_public` route
+#     (`finalize_upload` `routes_to_public`) and the server mirror
+#     (`/_internal/admin/public-mirror/promote`). The alpine amd64 rootfs layer
+#     below is the one such pin.
 #
 #  2. base-image INDEX/manifest digest (WP-G M2 model). An immutable multi-arch
 #     INDEX (or image-manifest) digest. On the FIRST request for
@@ -69,10 +77,11 @@
 #     fail-CLOSED, and promotes the whole closure into `_public`; later tenants
 #     serve it cross-tenant by EXISTENCE. This SUPERSEDES GAP-E's separate
 #     "mirror-populates-first" step: the on-demand promote IS the trusted server
-#     populate, and it is fused with the read. It opens NO client-push hole —
-#     client pushes route by LAYER digest and these index digests are NOT layer
-#     digests, so a client can never populate `_public` for them; only the
-#     server-side, upstream-verified closure promote can.
+#     populate, and it is fused with the read. The client blob upload/finalize
+#     predicate is independent of media type and routes by digest, so a client
+#     can also populate an active index-shaped slot when its bytes verify against
+#     that pinned digest; manifest/index PUT remains tenant-scoped and cannot
+#     write `_public`.
 #
 # ACTIVATION (M3): both `OCI_PUBLIC_DEDUP_ENABLED` and `OCI_UPSTREAM_ON_MISS` are
 # "1" in prod (baked-boot flags; activation is a repin). Revocation of any
