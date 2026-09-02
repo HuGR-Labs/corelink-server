@@ -37,6 +37,7 @@ def fixture_sources() -> dict[str, str]:
     )
     return {
         verifier.AUDIT: """
+#[test]
 fn empty_batch_issues_no_statement_at_all() {
     let rows: Vec<AuditRow> = Vec::new();
     let statements = D1AuditOutboxSink::build_batch_statements(&rows).unwrap();
@@ -44,6 +45,7 @@ fn empty_batch_issues_no_statement_at_all() {
 }
 """,
         verifier.AUTH: """
+#[test]
 fn build_state_returns_none_when_secret_absent() {
     let key = configured_ingest_auth_key(None);
     assert!(key.is_none());
@@ -67,6 +69,7 @@ fn record_error_variant_name(error: RecordError) -> &'static str {{
         {arms}
     }}
 }}
+#[test]
 fn every_record_error_variant_has_a_rejection_fixture() {{
     let fixtures = [
         {cases}
@@ -79,6 +82,7 @@ fn every_record_error_variant_has_a_rejection_fixture() {{
 }}
 """,
         verifier.SKIP: """
+#[test]
 fn bad_tenant_id_is_skipped_not_fatal() {
     assert_eq!(RecordError::BadTenantId.code(), "bad_tenant_id");
 }
@@ -236,6 +240,42 @@ fn build_state_returns_none_when_secret_absent() {
                 'Self::BadTenantId => "bad_region"',
             ),
         ), "record-error-fixtures-or-reason-codes-not-exhaustive")
+
+    def test_new_hygiene_bypasses_are_detected(self) -> None:
+        self.assert_gap(lambda s: s.__setitem__(verifier.AUDIT, """
+#[test]
+fn empty_batch_issues_no_statement_at_all() {
+    let statements = D1AuditOutboxSink::build_batch_statements(&[]).unwrap();
+    let statements: Vec<Statement> = Vec::new(); assert!(statements.is_empty());
+}"""), "empty_batch-no-empty-statement-assertion")
+        self.assert_gap(lambda s: s.__setitem__(verifier.AUTH, """
+#[test]
+fn build_state_returns_none_when_secret_absent() {
+    let assertion = || { assert!(configured_ingest_auth_key(None).is_none()); };
+}"""), "secret-absent-is-environment-conditional")
+        self.assert_gap(lambda s: s.__setitem__(
+            verifier.VALIDATE, s[verifier.VALIDATE].replace(
+                "for (expected, reason) in fixtures {", "for (expected, reason) in fixtures.into_iter().next() {",
+            ),
+        ), "record-error-fixtures-or-reason-codes-not-exhaustive")
+        def remove_attributes(s):
+            for relative in (verifier.AUDIT, verifier.AUTH, verifier.VALIDATE, verifier.SKIP):
+                s[relative] = s[relative].replace("#[test]\n", "")
+        self.assert_gap(remove_attributes, "empty_batch-no-empty-statement-assertion")
+        temp, root, sources = self.make_root()
+        with temp:
+            remove_attributes(sources)
+            for relative, content in sources.items():
+                (root / relative).write_text(content, encoding="utf-8")
+            self.assertEqual(
+                verifier.assess(root),
+                [
+                    "empty_batch-no-empty-statement-assertion",
+                    "secret-absent-is-environment-conditional",
+                    "record-error-fixtures-or-reason-codes-not-exhaustive",
+                    "record-skip-delegation-does-not-reference-exhaustive-proof",
+                ],
+            )
 
     def test_missing_file_and_malformed_braces_are_instrument_errors(self) -> None:
         temp, root, sources = self.make_root()

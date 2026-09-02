@@ -165,6 +165,58 @@ def _has(tokens: list[Token], values: list[str]) -> bool:
     return any([t.value for t in tokens[i:i + len(values)]] == values for i in range(len(tokens) - len(values) + 1))
 
 
+def _at_depth(tokens: list[Token], values: list[str], wanted: int = 0) -> list[int]:
+    """Find a token sequence only at a lexical brace depth."""
+    found: list[int] = []
+    depth = 0
+    for i, token in enumerate(tokens):
+        if depth == wanted and [item.value for item in tokens[i:i + len(values)]] == values:
+            found.append(i)
+        if token.value == "{":
+            depth += 1
+        elif token.value == "}":
+            depth -= 1
+    return found
+
+
+def _has_test_attribute(tokens: list[Token], name: str) -> bool:
+    starts = [i for i in range(len(tokens) - 1) if tokens[i].value == "fn" and tokens[i + 1].value == name]
+    if len(starts) != 1:
+        return False
+    end = starts[0] - 1
+    if end >= 0 and tokens[end].value == "async":
+        end -= 1
+    if end < 1 or tokens[end].value != "]":
+        return False
+    left = next((i for i in range(end - 1, -1, -1) if tokens[i].value == "["), -1)
+    values = [token.value for token in tokens[left + 1:end]] if left > 0 and tokens[left - 1].value == "#" else []
+    return values[:1] == ["test"] or values[:3] == ["tokio", ":", ":"] and len(values) > 3 and values[3] == "test"
+
+
+def _fixture_loop_bodies(tokens: list[Token]) -> list[list[Token]]:
+    bodies: list[list[Token]] = []
+    for index, token in enumerate(tokens):
+        if token.value != "for":
+            continue
+        try:
+            left = next(i for i in range(index + 1, len(tokens)) if tokens[i].value == "{")
+        except StopIteration:
+            continue
+        header = tokens[index:left]
+        if not any(item.value == "fixtures" for item in header) or any(item.value == "next" for item in header):
+            continue
+        depth = 1
+        for right in range(left + 1, len(tokens)):
+            if tokens[right].value == "{":
+                depth += 1
+            elif tokens[right].value == "}":
+                depth -= 1
+                if not depth:
+                    bodies.append(tokens[left + 1:right])
+                    break
+    return bodies
+
+
 def _all_count(tokens: list[Token], values: list[str]) -> int:
     return sum([t.value for t in tokens[i:i + len(values)]] == values for i in range(len(tokens) - len(values) + 1))
 
@@ -343,25 +395,31 @@ def assess(root: Path) -> list[str]:
             ],
         )
     )
-    empty_build = empty_build_direct or empty_build_named
-    empty_assert = _has(audit, ["assert", "!", "(", "statements", ".", "is_empty", "(", ")"])
-    if not (empty_build and empty_assert):
+    # All three observations must share function scope; a later `let
+    # statements` would otherwise shadow the actual builder result.
+    empty_build = (
+        (bool(_at_depth(audit, ["let", "statements", "=", "D1AuditOutboxSink", ":", ":", "build_batch_statements"])) and (empty_build_direct or empty_build_named))
+        and len(_at_depth(audit, ["let", "statements"])) == 1
+    )
+    empty_assert = bool(_at_depth(audit, ["assert", "!", "(", "statements", ".", "is_empty", "(", ")"]))
+    if not (_has_test_attribute(token_sets[AUDIT], "empty_batch_issues_no_statement_at_all") and empty_build and empty_assert):
         gaps.append("empty_batch-no-empty-statement-assertion")
 
     auth = _body(token_sets[AUTH], "build_state_returns_none_when_secret_absent", AUTH)
     direct_none = (
-        _has(auth, ["assert_eq", "!", "(", "configured_ingest_auth_key", "(", "None", ")", ",", "None", ")"])
-        or _has(auth, ["assert", "!", "(", "configured_ingest_auth_key", "(", "None", ")", ".", "is_none", "(", ")"])
+        bool(_at_depth(auth, ["assert_eq", "!", "(", "configured_ingest_auth_key", "(", "None", ")", ",", "None", ")"]))
+        or bool(_at_depth(auth, ["assert", "!", "(", "configured_ingest_auth_key", "(", "None", ")", ".", "is_none", "(", ")"]))
     )
+    top_lets = set(_at_depth(auth, ["let"]))
     assigned = any(
-        _has(auth[i:i + 12], ["let", auth[i + 1].value, "=", "configured_ingest_auth_key", "(", "None", ")"])
-        and (_has(auth, ["assert", "!", "(", auth[i + 1].value, ".", "is_none", "(", ")", ")"])
-             or _has(auth, ["assert_eq", "!", "(", auth[i + 1].value, ",", "None", ")"]))
+        i in top_lets and _has(auth[i:i + 12], ["let", auth[i + 1].value, "=", "configured_ingest_auth_key", "(", "None", ")"])
+        and (bool(_at_depth(auth, ["assert", "!", "(", auth[i + 1].value, ".", "is_none", "(", ")", ")"]))
+             or bool(_at_depth(auth, ["assert_eq", "!", "(", auth[i + 1].value, ",", "None", ")"])))
         for i in range(max(0, len(auth) - 6)) if auth[i].value == "let" and auth[i + 1].kind == "ident"
     )
     uses_env = _has(auth, ["std", ":", ":", "env"]) or _has(auth, ["env", ":", ":", "var"])
     conditional = any(token.value in {"if", "match", "while", "for", "loop"} for token in auth)
-    if not ((direct_none or assigned) and not uses_env and not conditional):
+    if not (_has_test_attribute(token_sets[AUTH], "build_state_returns_none_when_secret_absent") and (direct_none or assigned) and not uses_env and not conditional):
         gaps.append("secret-absent-is-environment-conditional")
 
     variants = _enum_variants(token_sets[INGEST], INGEST)
@@ -383,22 +441,22 @@ def assess(root: Path) -> list[str]:
                 if any(item.kind == "string" and item.value == target for item in nearby):
                     return True
         return False
+    fixture_loops = _fixture_loop_bodies(fixtures or [])
+    def loop_asserts_each_fixture(loop: list[Token]) -> bool:
+        return (
+            (_has(loop, ["assert_eq", "!", "(", "validate_record", "(", "wire", ")", ",", "Err", "(", "expected", ")"])
+             or (_has(loop, ["let", "actual", "=", "validate_record", "("])
+                 and _has(loop, ["assert_eq", "!", "(", "actual", ",", "Err", "(", "expected", ")"])))
+            and (_has(loop, ["assert_eq", "!", "(", "expected", ".", "code", "(", ")", ",", "reason"])
+                 or _has(loop, ["assert_eq", "!", "(", "expected", ".", "code", "(", ")", ",", "expected_code"]))
+        )
     fixture_proof = (
         helper is not None and fixtures is not None
+        and _has_test_attribute(token_sets[VALIDATE], "every_record_error_variant_has_a_rejection_fixture")
         and _match_arms_are_exhaustive(helper, variants)
         and code_mapping == stable_codes
         and all(count == 1 for count in mentions.values())
-        and (
-            _has(fixtures or [], ["assert_eq", "!", "(", "validate_record", "(", "wire", ")", ",", "Err", "(", "expected", ")"])
-            or (
-                _has(fixtures or [], ["let", "actual", "=", "validate_record", "("])
-                and _has(fixtures or [], ["assert_eq", "!", "(", "actual", ",", "Err", "(", "expected", ")"])
-            )
-        )
-        and (
-            _has(fixtures or [], ["assert_eq", "!", "(", "expected", ".", "code", "(", ")", ",", "reason"])
-            or _has(fixtures or [], ["assert_eq", "!", "(", "expected", ".", "code", "(", ")", ",", "expected_code"])
-        )
+        and any(loop_asserts_each_fixture(loop) for loop in fixture_loops)
         and all(fixture_has_expected_reason(variant) for variant in variants)
     )
     if not fixture_proof:
@@ -410,7 +468,7 @@ def assess(root: Path) -> list[str]:
         and _has(skip, ["RecordError", ":", ":", "BadTenantId", ".", "code", "(", ")"])
         and any(token.kind == "string" and token.value == "bad_tenant_id" for token in skip)
     )
-    if _has(skip, ["validate_record_reasons_pinned"]) or not skip_pins_own_reason:
+    if _has(skip, ["validate_record_reasons_pinned"]) or not (_has_test_attribute(token_sets[SKIP], "bad_tenant_id_is_skipped_not_fatal") and skip_pins_own_reason):
         gaps.append("record-skip-delegation-does-not-reference-exhaustive-proof")
     return gaps
 
