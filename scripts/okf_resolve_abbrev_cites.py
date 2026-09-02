@@ -52,6 +52,14 @@ import re
 import sys
 from pathlib import Path
 
+# `python scripts/...` puts this directory on sys.path, but the contract suite
+# imports this module by file path.  Keep the canonical frontmatter parser
+# import stable in both execution modes.
+SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+from validate_okf import FRONT_MATTER_RE, parse_frontmatter
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WIKI = REPO_ROOT / "docs" / "knowledge"
 
@@ -65,11 +73,12 @@ BARE_CITE = r"`:(\d+)(?:-(\d+))?`"
 # A path-only backtick is an explicit source anchor.  It is needed for prose
 # such as `` `customer_d1.rs` — ... (`:947`, `:1011`) `` where the path is
 # named without a line number before the abbreviated citations.  A root source
-# file is equally valid: `` `README.md` ... `:12` ``.  Require either a slash
-# or a dot, rather than a slash alone, so ordinary inline identifiers do not
-# silently become inherited paths.  SourceCache still makes every accepted
-# path repo-relative and rejects traversal/symlink escapes before reading it.
-PATH_ONLY_CITE = r"`((?=[A-Za-z0-9._/\-]*[/.])[A-Za-z0-9._/\-]+)`"
+# file is equally valid: `` `README.md` ... `:12` ``.  Syntax alone is NOT an
+# authority: dotted event names such as `customer.subscription.deleted` look
+# like paths.  A path-only token inherits only when it is a grammar-valid,
+# declared `source_files` member and a readable regular repo file.  This keeps
+# the resolver fail-closed without a second, divergent frontmatter parser.
+PATH_ONLY_CITE = r"`(?P<path>[A-Za-z0-9][A-Za-z0-9._/\-]*[A-Za-z0-9])`"
 BACKTICK_TOKEN = r"`([^`\n]*)`"
 MALFORMED_BARE_CITE = r":\d+-.*"
 MALFORMED_FULL_CITE = r"[A-Za-z0-9._/\-]+:\d+-.*"
@@ -110,6 +119,43 @@ class SourceCache:
             except (OSError, ValueError, UnicodeError):
                 self._cache[rel] = None
         return self._cache[rel]
+
+
+def _declared_source_files(text: str) -> set[str]:
+    """Return the exact valid `source_files` context for path-only anchors.
+
+    `validate_okf` owns frontmatter parsing and C6 owns its validity.  Reusing
+    its parser prevents the resolver from accepting a YAML shape the validator
+    rejected (or the reverse).  Absent/malformed context is deliberately an
+    empty set: a bare-looking token must never create an inherited path.
+    """
+    frontmatter = FRONT_MATTER_RE.match(text)
+    if not frontmatter:
+        return set()
+    try:
+        value = parse_frontmatter(frontmatter.group(1)).get("source_files", [])
+    except Exception:
+        return set()
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        return set()
+    return set(value)
+
+
+def _path_only_source_anchor(
+    raw: str,
+    declared_sources: set[str],
+    cache: SourceCache,
+) -> str | None:
+    """Resolve a safe path-only anchor, never merely a dotted identifier."""
+    match = re.fullmatch(PATH_ONLY_CITE, raw)
+    if not match:
+        return None
+    candidate = match.group("path")
+    if candidate not in declared_sources:
+        return None
+    if cache.lines(candidate) is None:
+        return None
+    return candidate
 
 
 def classify(cache: SourceCache, path: str | None, first: int) -> tuple[str, str]:
@@ -174,6 +220,7 @@ def scan_concept(path: Path, cache: SourceCache, full_re, bare_re) -> tuple[int,
         raise ScanError(f"concept {path} is outside repository {REPO_ROOT}") from exc
 
     inherited: str | None = None
+    declared_sources = _declared_source_files(text)
 
     for lineno, line in enumerate(text.splitlines(), 1):
         # Walk every backtick token in source order.  This preserves path-only
@@ -221,9 +268,9 @@ def scan_concept(path: Path, cache: SourceCache, full_re, bare_re) -> tuple[int,
                     "full citations must be `path:N` or `path:N-M` with a numeric end"
                 )
                 continue
-            path_only = re.fullmatch(PATH_ONLY_CITE, raw)
-            if path_only:
-                inherited = path_only.group(1)
+            path_only = _path_only_source_anchor(raw, declared_sources, cache)
+            if path_only is not None:
+                inherited = path_only
 
     return seen, findings
 

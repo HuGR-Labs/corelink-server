@@ -3370,7 +3370,10 @@ generally. The repo-owned diagnostic `scripts/okf_resolve_abbrev_cites.py` now
 runs in the official `okf_wiki.yml` gate, so this surface is no longer silently
 ignored. It validates full-path ranges as well as abbreviated ranges, recognizes
 a path-only source anchor before abbreviated lines, and rejects malformed forms
-such as `` `:999-` ``. On the current tree it finds **38 of 107** abbreviated
+such as `` `:999-` ``. A path-only anchor is accepted only when its exact,
+grammar-valid repo path is declared in the concept's `source_files` and resolves
+to a readable source file; dotted inline identifiers never retarget a later
+abbreviation. On the current tree it finds **38 of 107** abbreviated
 citations still landing on a blank, comment, or delimiter; those residuals keep
 this item `open`. The six historical `past-eof` citations in the handler seam
 are no longer reported because the naked `customer_d1.rs` source anchor is now
@@ -3391,7 +3394,15 @@ verify: |
   # Mutation: removing the load-bearing CITE_RE declaration must make the real
   # validator RED.  A positive baseline prevents unrelated bundle failure from
   # being mistaken for mutation detection.
-  python3 scripts/validate_okf.py >/dev/null
+  if python3 scripts/validate_okf.py >/dev/null; then
+    baseline_rc=0
+  else
+    baseline_rc=$?
+  fi
+  if [ "$baseline_rc" -ne 0 ]; then
+    echo "INDETERMINADO: baseline validate_okf saiu $baseline_rc; mutacao nao e evidencia." >&2
+    exit 1
+  fi
   b059_mutant="$(mktemp "${TMPDIR:-/tmp}/b059-validate-okf.XXXXXX")" || exit 1
   trap 'rm -f "$b059_mutant"' EXIT
   python3 - "$b059_mutant" <<'PY'
@@ -3405,6 +3416,11 @@ verify: |
   Path(sys.argv[1]).write_text("".join(kept), encoding="utf-8")
   PY
   if python3 "$b059_mutant" --bundle docs/knowledge >/dev/null 2>&1; then
+    mutant_rc=0
+  else
+    mutant_rc=$?
+  fi
+  if [ "$mutant_rc" -eq 0 ]; then
     echo 'FALHA: mutacao sem CITE_RE sobreviveu ao validador.' >&2
     exit 1
   fi
@@ -3415,7 +3431,9 @@ verify-means: |
   the official resolver reports at least one residual finding. The resolver
   resolves against the nearest preceding full or path-only source anchor in the
   same concept, validates 1-based range bounds through EOF, and rejects malformed
-  tokens. Closes only after the validator admits path-less citations and the
+  tokens. Path-only inheritance additionally requires the exact path in that
+  concept's `source_files` plus a readable repo file, so a dotted identifier
+  cannot manufacture context. Closes only after the validator admits path-less citations and the
   resolver exits 0, at which point this open-polarity assertion is inverted.
 last-verified: 2026-09-02
 ```
