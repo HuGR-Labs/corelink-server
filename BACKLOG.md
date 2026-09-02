@@ -10526,9 +10526,11 @@ verify-means: |
   instrumento, nunca verde. Cada checkpoint precisa ser arquivo regular sob uma raiz de
   repositório que não é symlink. Symlink (inclusive em diretório intermediário), FIFO ou
   outro arquivo não regular, caminho que
-  resolve para fora da raiz e arquivo ausente falham como erro de instrumento; a leitura é
-  ancorada em descritores sem seguir links, de modo que uma troca por arquivo regular vira
-  drift de hash e uma troca por link falha fechada.
+  resolve para fora da raiz e arquivo ausente falham como erro de instrumento; a raiz é
+  aberta uma única vez com `O_NOFOLLOW|O_DIRECTORY` e toda a leitura é ancorada naquele
+  descritor, sem resolver novamente seu pathname. Assim, uma troca concorrente da raiz por
+  link não pode redirecionar a prova; uma troca por arquivo regular vira drift de hash e uma
+  troca por link falha fechada.
 
   **Manutenção intencional:** uma edição legítima nesses arquivos reabre B-149. Ela requer
   nova revisão da prova, atualização explícita dos cinco hashes no verifier e das mutações

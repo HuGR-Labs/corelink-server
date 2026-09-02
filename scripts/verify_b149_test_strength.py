@@ -14,6 +14,7 @@ import stat
 import sys
 from pathlib import Path
 from types import MappingProxyType
+from typing import Callable
 
 
 AUDIT = "crates/corelink-container/src/storage/d1_audit_sink/tests_batch_limits.rs"
@@ -74,28 +75,35 @@ def _validated_checkpoints() -> dict[str, str]:
     return approved
 
 
-def _read_checkpoint(root: Path, relative: str) -> bytes:
-    """Read one regular, non-symlinked file anchored below ``root``."""
-    relative_path = Path(relative)
-    # Do not silently canonicalize an alias for the repository root.  The
-    # certificate is about the named tree supplied to this invocation.
-    if root.is_symlink():
-        raise InstrumentError("repo root must not be a symlink")
+def _open_repo_root(root: Path) -> int:
+    """Open the supplied root once, rejecting a symlink before traversal starts."""
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_DIRECTORY
     try:
-        resolved_root = root.resolve(strict=True)
-    except (OSError, RuntimeError) as error:
-        raise InstrumentError(f"cannot resolve repo root: {error}") from error
-    candidate = resolved_root / relative_path
-    if relative_path.is_absolute() or ".." in relative_path.parts or not candidate.resolve(strict=False).is_relative_to(resolved_root):
-        raise InstrumentError(f"checkpoint path escapes resolved repo root: {relative}")
+        root_fd = os.open(root, flags)
+    except OSError as error:
+        raise InstrumentError(f"unsafe repo root: {error}") from error
+    try:
+        root_mode = os.fstat(root_fd).st_mode
+    except OSError as error:
+        os.close(root_fd)
+        raise InstrumentError(f"cannot inspect repo root: {error}") from error
+    if not stat.S_ISDIR(root_mode):
+        os.close(root_fd)
+        raise InstrumentError("repo root is not a directory")
+    return root_fd
+
+
+def _read_checkpoint(root_fd: int, relative: str) -> bytes:
+    """Read a regular, non-symlinked file below an already-open root descriptor."""
+    relative_path = Path(relative)
+    if relative_path.is_absolute() or ".." in relative_path.parts or not relative_path.parts:
+        raise InstrumentError(f"checkpoint path escapes repo root: {relative}")
     directory_fd = file_fd = -1
     # O_NONBLOCK is essential before fstat: opening a FIFO with O_RDONLY would
     # otherwise wait forever for a writer, preventing a fail-closed verdict.
     flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
     try:
-        directory_fd = os.open(resolved_root, flags | os.O_DIRECTORY)
-        if not stat.S_ISDIR(os.fstat(directory_fd).st_mode):
-            raise InstrumentError("resolved repo root is not a directory")
+        directory_fd = os.dup(root_fd)
         for component in relative_path.parts[:-1]:
             next_fd = os.open(component, flags | os.O_DIRECTORY, dir_fd=directory_fd)
             os.close(directory_fd)
@@ -115,20 +123,33 @@ def _read_checkpoint(root: Path, relative: str) -> bytes:
             os.close(directory_fd)
 
 
-def checkpoint_digests(root: Path) -> dict[str, str]:
-    """Return all protected-file digests or fail instead of making a vacuous call."""
-    digests: dict[str, str] = {}
-    for relative in _validated_checkpoints():
-        digests[relative] = hashlib.sha256(_read_checkpoint(root, relative)).hexdigest()
-    return digests
+def checkpoint_digests(
+    root: Path, *, after_root_open: Callable[[], None] | None = None
+) -> dict[str, str]:
+    """Return digests from one root descriptor; never re-resolve its pathname.
+
+    ``after_root_open`` is an internal test seam for the root-replacement race:
+    it runs only after the original path is already held by ``root_fd``.
+    """
+    checkpoints = _validated_checkpoints()
+    root_fd = _open_repo_root(root)
+    try:
+        if after_root_open is not None:
+            after_root_open()
+        return {
+            relative: hashlib.sha256(_read_checkpoint(root_fd, relative)).hexdigest()
+            for relative in checkpoints
+        }
+    finally:
+        os.close(root_fd)
 
 
-def assess(root: Path) -> list[str]:
+def assess(
+    root: Path, *, after_root_open: Callable[[], None] | None = None
+) -> list[str]:
     """Return B-149 gaps. Zero gaps is possible only at every checkpoint."""
     checkpoints = _validated_checkpoints()
-    # Preserve the caller spelling until `_read_checkpoint` has rejected a
-    # symlinked root; resolving here would erase that evidence.
-    actual = checkpoint_digests(root)
+    actual = checkpoint_digests(root, after_root_open=after_root_open)
     drifted = {path for path, digest in actual.items() if digest != checkpoints[path]}
     gaps: list[str] = []
     if AUDIT in drifted:

@@ -23,6 +23,10 @@ class B149VerifierTests(unittest.TestCase):
     def approved_root(self) -> tuple[tempfile.TemporaryDirectory[str], Path]:
         temp = tempfile.TemporaryDirectory()
         root = Path(temp.name)
+        self.populate_approved_root(root)
+        return temp, root
+
+    def populate_approved_root(self, root: Path) -> None:
         for relative in verifier.CHECKPOINTS:
             content = subprocess.check_output(
                 ["git", "show", f"{APPROVED}:{relative}"], cwd=ROOT
@@ -30,7 +34,6 @@ class B149VerifierTests(unittest.TestCase):
             target = root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
-        return temp, root
 
     def mutate(self, relative: str, suffix: bytes = b"\n// review mutation\n") -> list[str]:
         temp, root = self.approved_root()
@@ -157,7 +160,7 @@ class B149VerifierTests(unittest.TestCase):
         with temp:
             alias = root.parent / f"repo-alias-{root.name}"
             alias.symlink_to(root, target_is_directory=True)
-            with self.assertRaisesRegex(verifier.InstrumentError, "root must not be a symlink"):
+            with self.assertRaisesRegex(verifier.InstrumentError, "unsafe repo root"):
                 verifier.assess(alias)
         temp, root = self.approved_root()
         with temp:
@@ -168,6 +171,32 @@ class B149VerifierTests(unittest.TestCase):
             target.symlink_to(alias.name)
             with self.assertRaises(verifier.InstrumentError):
                 verifier.assess(root)
+
+    def test_root_swap_after_open_stays_bound_to_the_original_tree(self) -> None:
+        """A path replacement after open cannot redirect the certificate read."""
+        with tempfile.TemporaryDirectory() as temp:
+            workspace = Path(temp)
+            live = workspace / "live"
+            replacement = workspace / "approved-replacement"
+            original = workspace / "original-after-swap"
+            self.populate_approved_root(live)
+            self.populate_approved_root(replacement)
+            audit = live / verifier.AUDIT
+            audit.write_bytes(audit.read_bytes() + b"\n// original-tree drift\n")
+
+            def replace_root_path() -> None:
+                live.rename(original)
+                live.symlink_to(replacement, target_is_directory=True)
+
+            # The original tree is drifted. An unsafe resolve/open sequence
+            # would follow the replacement's approved tree and report done.
+            self.assertEqual(
+                verifier.assess(live, after_root_open=replace_root_path),
+                [verifier.GAPS[0]],
+            )
+            self.assertTrue(live.is_symlink())
+            with self.assertRaisesRegex(verifier.InstrumentError, "unsafe repo root"):
+                verifier.assess(live)
 
     def test_escaping_checkpoint_and_non_regular_swap_are_instrument_errors(self) -> None:
         temp, root = self.approved_root()
