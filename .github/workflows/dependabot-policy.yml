@@ -93,7 +93,11 @@ jobs:
     # zero-hosted (WP-CI): gh + cargo-deny assados; e o merge-ref do PR passa a ser avaliado em microVM descartável, não no Mac do owner
     runs-on: corelink
     timeout-minutes: 10
-    if: github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'
+    # `github.actor` is whoever caused this event (for example, an owner
+    # adding a label), not necessarily the PR author. Gate on the immutable PR
+    # author from the event so a maintainer-triggered synchronize/label cannot
+    # downgrade a Dependabot PR into the pass-through sentinel.
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
 
     # Pass the PR base branch via env (NOT interpolated directly into run: shell) —
     # template-injection-safe (a branch name can carry shell metacharacters). The
@@ -101,6 +105,48 @@ jobs:
     # so this is defense-in-depth.
     env:
       BASE_REF: ${{ github.event.pull_request.base.ref }}
+      # These must remain process-level sinks, never PR-controlled config.
+      # Individual steps that consume PR data set HOME/CARGO_HOME to fresh
+      # runner.temp directories below.  HOME cannot be changed at job scope:
+      # the preceding BASE-only host-toolchain assertion deliberately reads the
+      # preinstalled toolchain from the runner's real home.
+      # Cargo config is untrusted input in the PR tree.  The policy check runs
+      # from POLICY_TREE (a config-free git archive below), and these explicit
+      # empty values are a second boundary against a runner-level wrapper.
+      CARGO_BUILD_RUSTC_WRAPPER: ""
+      CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER: ""
+      CARGO_BUILD_RUSTFLAGS: ""
+      RUSTC_WRAPPER: ""
+      RUSTC_WORKSPACE_WRAPPER: ""
+      # The BASE-only host-toolchain step prepends its direct rustc binary to
+      # PATH. Naming the command resets any inherited RUSTC override without
+      # using an empty value (which Cargo treats as an executable named "").
+      RUSTC: rustc
+      RUSTFLAGS: ""
+      CARGO_NET_GIT_FETCH_WITH_CLI: "false"
+      # cargo-deny calls cargo-metadata directly and its dependency honors
+      # $CARGO. A direct cargo-deny binary is not enough if this inherited
+      # executable selector points at an attacker wrapper. `cargo` resolves
+      # through the trusted host-toolchain path added before this step.
+      CARGO: cargo
+      CARGO_REGISTRY_TOKEN: ""
+      CARGO_REGISTRIES_CRATES_IO_TOKEN: ""
+      CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS: ""
+      CARGO_REGISTRIES_CRATES_IO_CREDENTIAL_PROVIDER: ""
+      CARGO_ALIAS_DENY: ""
+      BASH_ENV: /dev/null
+      ENV: /dev/null
+      GIT_CONFIG_NOSYSTEM: "1"
+      GIT_CONFIG_GLOBAL: /dev/null
+      GIT_CONFIG_COUNT: "0"
+      GIT_CONFIG_KEY_0: ""
+      GIT_CONFIG_VALUE_0: ""
+      GIT_CONFIG_PARAMETERS: ""
+      GIT_EXTERNAL_DIFF: /bin/false
+      GIT_PAGER: cat
+      GIT_TERMINAL_PROMPT: "0"
+      GIT_ASKPASS: /bin/false
+      GIT_SSH_COMMAND: "ssh -F /dev/null -oBatchMode=yes -oIdentitiesOnly=yes"
 
     steps:
       # ---------------------------------------------------------------------
@@ -108,12 +154,32 @@ jobs:
       # We use the merge-ref so the lockfile reflects post-merge state.
       #
       # SECURITY NOTE: this step checks out PR-HEAD content (refs/pull/N/merge)
-      # on a SELF-HOSTED runner. This is intentional and safe ONLY because no
-      # subsequent step executes code from the checked-out tree (see the
-      # pull_request_target sentinel comment at the top of this file). The
-      # only consumer is `cargo deny check licenses bans` — a static analyzer.
-      # Any future step that builds, installs, or runs PR-supplied code MUST
-      # undergo a security review before being added here.
+      # on a SELF-HOSTED runner. That is safe ONLY while no subsequent step
+      # executes code — or reads trust-bearing DATA — from this tree. The
+      # intended consumer is `cargo deny check licenses bans`, a static
+      # analyzer. Any future step that builds, installs, or runs PR-supplied
+      # code MUST undergo a security review before being added here.
+      #
+      # B-133: that invariant WAS violated, and this note asserted it anyway —
+      # the prose stayed true-sounding while the file stopped obeying it. The
+      # "Use the workspace-pinned host toolchain" step below ran
+      # `bash scripts/ci-use-host-toolchain.sh` straight out of THIS tree, i.e.
+      # the PR's version of the script. Fixed below by running it from a
+      # separate BASE-ref checkout (`_base/`).
+      #
+      # The second half, which B-133 did not name and which the code half alone
+      # would NOT have closed: that script reads the toolchain channel from
+      # `rust-toolchain.toml` and `cd`s to the git toplevel of its WORKING
+      # DIRECTORY — so running trusted code with the PR tree as cwd still fed it
+      # attacker-controlled data. `CHANNEL` was interpolated unvalidated into
+      # `TC="$HOME/.rustup/toolchains/${CHANNEL}-${HOST_TRIPLE}"`, and `$TC/bin`
+      # is appended to `$GITHUB_PATH`. A channel of `../../../<workspace>/evil`
+      # therefore pointed at a directory inside the PR checkout itself — where
+      # the attacker controls `bin/cargo` and `bin/rustc`, executable bits and
+      # all — and every later step would have run their `cargo`. Closed twice
+      # over: `working-directory: _base` below (so the toml is read from the
+      # base tree too), and a hard character-class check on `CHANNEL` in the
+      # script, which protects all 25 of its callers rather than just this lane.
       # ---------------------------------------------------------------------
       - name: Checkout PR merge ref (SHA-pinned)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
@@ -121,6 +187,124 @@ jobs:
           ref: refs/pull/${{ github.event.pull_request.number }}/merge
           fetch-depth: 0
           persist-credentials: false
+
+      # ---------------------------------------------------------------------
+      # Step 1b — the TRUSTED tree (B-133).
+      #
+      # `github.event.pull_request.base.sha` is the base commit this PR targets,
+      # supplied by the event payload, NOT by the PR's contents. Checked out to
+      # its own path so it cannot be reached by anything the PR wrote, and AFTER
+      # the PR checkout — actions/checkout cleans its destination, so a `_base`
+      # created first would be swept away by the checkout above.
+      #
+      # Sparse: only what the toolchain step reads. A full second checkout would
+      # be pure cost, and a narrow one makes the trusted surface auditable at a
+      # glance — if a future step needs another file from base, adding it here is
+      # a visible decision.
+      # ---------------------------------------------------------------------
+      - name: Checkout BASE ref into _base (trusted tree; SHA-pinned)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: _base
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: |
+            .github/workflows/dependabot-policy.yml
+            scripts/ci-use-host-toolchain.sh
+            scripts/check_dependabot_policy_trusted_tree.py
+            .github/workflows/dependabot-policy-trust-boundary.yml
+            rust-toolchain.toml
+            deny.toml
+          sparse-checkout-cone-mode: false
+
+      # ---------------------------------------------------------------------
+      # Step 1c — make a data-only Cargo tree.
+      #
+      # cargo metadata (which cargo-deny calls) asks rustc for version/target
+      # information.  Cargo loads .cargo/config.toml before doing that, and a
+      # PR-controlled [build] rustc-wrapper is therefore executable code, not
+      # inert data.  A separate archive removes every Cargo config and
+      # rust-toolchain override before the analyzer sees the PR manifests.
+      # CARGO_HOME is also empty/ephemeral, so runner credentials and global
+      # credential providers cannot cross this boundary.
+      # ---------------------------------------------------------------------
+      - name: Assert trust-boundary wiring (BASE checker)
+        # This checker is code from the BASE ref, not `scripts/...` from the
+        # merge ref.  It proves that every post-checkout executable step has a
+        # declared trust source before any PR data is consumed.
+        working-directory: _base
+        run: python3 scripts/check_dependabot_policy_trusted_tree.py
+
+      - name: Prepare isolated Cargo policy tree (PR data only)
+        env:
+          POLICY_TREE: ${{ runner.temp }}/corelink-dependabot-policy-tree
+          POLICY_HOME: ${{ runner.temp }}/corelink-dependabot-policy-home
+          HOME: ${{ runner.temp }}/corelink-dependabot-policy-home
+          CARGO_HOME: ${{ runner.temp }}/corelink-dependabot-cargo-home
+          DENY_CONFIG: ${{ runner.temp }}/corelink-dependabot-deny.toml
+          POLICY_ARCHIVE: ${{ runner.temp }}/corelink-dependabot-policy-tree.tar
+        run: |
+          set -euo pipefail
+          rm -rf "$POLICY_TREE" "$POLICY_HOME" "$CARGO_HOME" "$POLICY_ARCHIVE" "$DENY_CONFIG"
+          mkdir -p "$POLICY_TREE" "$POLICY_HOME" "$CARGO_HOME"
+          chmod 700 "$POLICY_HOME" "$CARGO_HOME"
+
+          # `git archive | tar -x` is not a data boundary if the archive can
+          # carry symlinks: an attacker can make a later "regular" filename
+          # resolve outside POLICY_TREE. Reject every symlink/submodule while
+          # still in Git's typed tree, before tar receives any PR bytes.
+          unsafe_entries="$(git ls-tree -r --full-tree HEAD | awk '$1 == "120000" || $1 == "160000" { print $1 " " $4 }')"
+          if [ -n "$unsafe_entries" ]; then
+            echo "::error::Refusing PR archive with symlink/submodule entries before extraction:" >&2
+            printf '%s\n' "$unsafe_entries" >&2
+            exit 1
+          fi
+
+          git archive --format=tar --output="$POLICY_ARCHIVE" HEAD
+          tar -x -f "$POLICY_ARCHIVE" -C "$POLICY_TREE"
+          rm -rf "$POLICY_TREE/.cargo"
+          rm -f "$POLICY_TREE/rust-toolchain" "$POLICY_TREE/rust-toolchain.toml"
+          test ! -e "$POLICY_TREE/.cargo"
+          test ! -e "$POLICY_TREE/rust-toolchain"
+          test ! -e "$POLICY_TREE/rust-toolchain.toml"
+          for manifest in Cargo.toml Cargo.lock deny.toml; do
+            if [ ! -f "$POLICY_TREE/$manifest" ] || [ -L "$POLICY_TREE/$manifest" ]; then
+              echo "::error::Refusing PR: required regular $manifest is missing after archive extraction." >&2
+              exit 1
+            fi
+          done
+
+          # This is the no-network source preflight. `deny.toml` permits only
+          # crates.io and no Git sources, so reject every resolved source that
+          # could make Cargo contact or inspect a different origin before the
+          # trusted cargo-deny binary gets a turn. Workspace packages omit
+          # `source` and remain legitimate.
+          invalid_sources="$(awk '
+            /^[[:space:]]*source[[:space:]]*=[[:space:]]*/ {
+              source_value = $0
+              sub(/^[[:space:]]*source[[:space:]]*=[[:space:]]*/, "", source_value)
+              if (source_value != "\"registry+https://github.com/rust-lang/crates.io-index\"") {
+                print FNR ": " $0
+              }
+            }
+          ' "$POLICY_TREE/Cargo.lock")"
+          if [ -n "$invalid_sources" ]; then
+            echo "::error::Refusing Cargo.lock with non-crates.io source before Cargo/network:" >&2
+            printf '%s\n' "$invalid_sources" >&2
+            exit 1
+          fi
+
+          # The graph (Cargo.toml/Cargo.lock) is PR data; the policy deciding
+          # whether that graph is acceptable is from the trusted BASE ref.
+          # Copy it outside POLICY_TREE and pass it explicitly below so the PR
+          # cannot replace or remove the enforcement policy.
+          if [ ! -f _base/deny.toml ] || [ -L _base/deny.toml ]; then
+            echo "::error::Trusted BASE deny.toml is missing or not a regular file." >&2
+            exit 1
+          fi
+          cp _base/deny.toml "$DENY_CONFIG"
+          test -f "$DENY_CONFIG" && test ! -L "$DENY_CONFIG"
 
       - name: Fetch Dependabot metadata
         id: metadata
@@ -155,25 +339,52 @@ jobs:
       # supply-chain gate. #1501 teaches the script to detect the triple from
       # `uname`, but naming it here costs two lines and removes the coupling
       # entirely — correct whether #1501 lands first, later, or never.
-      - name: Use the workspace-pinned host toolchain (provisions nothing)
-        if: hashFiles('Cargo.toml') != ''
+      # B-133: `working-directory: _base` is LOAD-BEARING, not tidiness. The
+      # script does `cd "$(git rev-parse --show-toplevel)"`, so the cwd decides
+      # which `rust-toolchain.toml` it reads. Running trusted code from the PR's
+      # directory would still hand it the PR's channel string. Both halves —
+      # the script and the toml — come from `_base`.
+      - name: Use the workspace-pinned host toolchain (from the BASE tree; provisions nothing)
+        working-directory: _base
         env:
           HOST_TRIPLE: x86_64-unknown-linux-gnu
         run: bash scripts/ci-use-host-toolchain.sh
 
       - name: Install cargo-deny (SHA-pinned)
-        if: hashFiles('Cargo.toml') != ''
         uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b  # v2.83.4
+        env:
+          # install-action falls back to $HOME/.install-action/bin when the
+          # trusted host Cargo is outside this per-job CARGO_HOME. Both
+          # possible install locations are therefore runner.temp, never the
+          # shared runner home or its credential/config stores.
+          HOME: ${{ runner.temp }}/corelink-dependabot-policy-home
+          CARGO_HOME: ${{ runner.temp }}/corelink-dependabot-cargo-home
         with:
           tool: cargo-deny@0.19.8
+          # Never compile a fallback from PR-provided Cargo.toml, and never
+          # give the installer a token it could pass to a fallback client.
+          fallback: none
 
       - name: Run cargo-deny licenses (fail-closed)
-        if: hashFiles('Cargo.toml') != ''
+        working-directory: ${{ runner.temp }}/corelink-dependabot-policy-tree
+        env:
+          POLICY_TREE: ${{ runner.temp }}/corelink-dependabot-policy-tree
+          HOME: ${{ runner.temp }}/corelink-dependabot-policy-home
+          CARGO_HOME: ${{ runner.temp }}/corelink-dependabot-cargo-home
+          DENY_CONFIG: ${{ runner.temp }}/corelink-dependabot-deny.toml
+          # install-action's pinned implementation uses this deterministic
+          # per-job location when host Cargo is outside the empty CARGO_HOME.
+          # Invoke its binary directly: `cargo deny` could resolve a Cargo
+          # alias from an ancestor config or CARGO_ALIAS_DENY instead.
+          CARGO_DENY_BIN: ${{ runner.temp }}/corelink-dependabot-policy-home/.install-action/bin/cargo-deny
         run: |
           set -euo pipefail
           echo "::group::cargo-deny licenses"
-          # Fail fast on any banned license OR yanked crate OR advisory.
-          cargo deny --all-features check licenses bans
+          test -x "$CARGO_DENY_BIN"
+          # Source policy is intentionally included after its static lockfile
+          # preflight above. The correct cargo-deny grammar puts --config on
+          # the `check` subcommand, before all required checks.
+          "$CARGO_DENY_BIN" --all-features --locked check --config "$DENY_CONFIG" sources licenses bans
           echo "::endgroup::"
 
       # ---------------------------------------------------------------------
@@ -184,7 +395,9 @@ jobs:
       # cases where cargo-deny misclassifies a SPDX expression.
       # ---------------------------------------------------------------------
       - name: Banned-license signature scan (Cargo.lock)
-        if: hashFiles('Cargo.lock') != ''
+        env:
+          HOME: ${{ runner.temp }}/corelink-dependabot-policy-home
+          CARGO_HOME: ${{ runner.temp }}/corelink-dependabot-cargo-home
         run: |
           set -euo pipefail
           banned_regex='(AGPL|GPL-[23]|SSPL|Commons-Clause|BUSL|CDLA-Sharing|CDLA-Permissive-1\.0$)'
@@ -201,12 +414,16 @@ jobs:
       # Step 4 — npm license scan (if PR touches a package-lock).
       # ---------------------------------------------------------------------
       - name: npm banned-license scan
+        env:
+          HOME: ${{ runner.temp }}/corelink-dependabot-policy-home
+          CARGO_HOME: ${{ runner.temp }}/corelink-dependabot-cargo-home
         run: |
           set -euo pipefail
           banned_regex='(AGPL|GPL-[23]|SSPL|Commons-Clause|BUSL|CDLA-Sharing)'
           found=0
-          for f in $(git diff --name-only "origin/$BASE_REF"...HEAD -- '*package-lock.json' '*pnpm-lock.yaml' 'apps/**/package.json' 'crates/**/package.json' 'package.json' 2>/dev/null || true); do
-            if grep -E "\"license\".*${banned_regex}" "$f" 2>/dev/null; then
+          mapfile -t changed_npm < <(git diff --no-ext-diff --name-only "origin/$BASE_REF"...HEAD -- '*package-lock.json' '*pnpm-lock.yaml' 'apps/**/package.json' 'crates/**/package.json' 'package.json')
+          for f in "${changed_npm[@]}"; do
+            if grep -E "\"license\".*${banned_regex}" -- "$f" 2>/dev/null; then
               echo "::error::Banned license in $f"
               found=1
             fi
@@ -220,6 +437,9 @@ jobs:
       # Step 5 — Commit-message hygiene: forbid skip-hook flags.
       # ---------------------------------------------------------------------
       - name: Forbid skip-hook / skip-ci flags
+        env:
+          HOME: ${{ runner.temp }}/corelink-dependabot-policy-home
+          CARGO_HOME: ${{ runner.temp }}/corelink-dependabot-cargo-home
         run: |
           set -euo pipefail
           base="origin/$BASE_REF"
@@ -235,10 +455,13 @@ jobs:
       # release manifests, or workflow files. If it does, fail closed.
       # ---------------------------------------------------------------------
       - name: Forbid governance-file modifications
+        env:
+          HOME: ${{ runner.temp }}/corelink-dependabot-policy-home
+          CARGO_HOME: ${{ runner.temp }}/corelink-dependabot-cargo-home
         run: |
           set -euo pipefail
           base="origin/$BASE_REF"
-          mapfile -t changed < <(git diff --name-only "${base}"...HEAD)
+          mapfile -t changed < <(git diff --no-ext-diff --name-only "${base}"...HEAD)
           forbidden_regex='^(\.github/(CODEOWNERS|workflows/.*\.yml|dependabot\.yml)|SECURITY\.md|deny\.toml|cosign\.pub|\.well-known/.*|specs/_security/.*)$'
           violations=()
           for f in "${changed[@]}"; do
@@ -275,6 +498,8 @@ jobs:
       # ---------------------------------------------------------------------
       - name: Verify required checks are present
         env:
+          HOME: ${{ runner.temp }}/corelink-dependabot-policy-home
+          CARGO_HOME: ${{ runner.temp }}/corelink-dependabot-cargo-home
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           REPO: ${{ github.repository }}
@@ -282,7 +507,7 @@ jobs:
           set -euo pipefail
 
           base="origin/$BASE_REF"
-          mapfile -t changed < <(git diff --name-only "${base}"...HEAD)
+          mapfile -t changed < <(git diff --no-ext-diff --name-only "${base}"...HEAD)
           echo "::group::Changed files (${#changed[@]})"
           printf '  %s\n' "${changed[@]}"
           echo "::endgroup::"
@@ -353,16 +578,29 @@ jobs:
       # Step 8 — Annotate audit-log emission (deferred to audit-chain).
       # ---------------------------------------------------------------------
       - name: Policy-gate audit log
+        # Dependabot metadata is data, not shell source. Passing it through
+        # env and jq --arg preserves arbitrary dependency names as JSON values
+        # rather than letting a quote/newline alter this `run:` program.
+        env:
+          AUDIT_PR_NUMBER: ${{ github.event.pull_request.number }}
+          AUDIT_ECOSYSTEM: ${{ steps.metadata.outputs.package-ecosystem }}
+          AUDIT_DEPENDENCY_NAMES: ${{ steps.metadata.outputs.dependency-names }}
+          AUDIT_UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+          AUDIT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          cat <<EOF
-          {
-            "event": "corelink.security.dependabot_policy_gate_pass",
-            "schema": "corelink.audit.v1",
-            "pr_number": ${{ github.event.pull_request.number }},
-            "ecosystem": "${{ steps.metadata.outputs.package-ecosystem }}",
-            "dependency_names": "${{ steps.metadata.outputs.dependency-names }}",
-            "update_type": "${{ steps.metadata.outputs.update-type }}",
-            "head_sha": "${{ github.event.pull_request.head.sha }}",
-            "ts": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          }
-          EOF
+          set -euo pipefail
+          case "$AUDIT_PR_NUMBER" in
+            ''|*[!0-9]*) echo "::error::invalid PR number in event payload" >&2; exit 1 ;;
+          esac
+          jq -n \
+            --arg event "corelink.security.dependabot_policy_gate_pass" \
+            --arg schema "corelink.audit.v1" \
+            --argjson pr_number "$AUDIT_PR_NUMBER" \
+            --arg ecosystem "$AUDIT_ECOSYSTEM" \
+            --arg dependency_names "$AUDIT_DEPENDENCY_NAMES" \
+            --arg update_type "$AUDIT_UPDATE_TYPE" \
+            --arg head_sha "$AUDIT_HEAD_SHA" \
+            --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{event: $event, schema: $schema, pr_number: $pr_number, ecosystem: $ecosystem,
+              dependency_names: $dependency_names, update_type: $update_type,
+              head_sha: $head_sha, ts: $ts}'

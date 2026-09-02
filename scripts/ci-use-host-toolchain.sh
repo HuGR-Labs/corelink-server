@@ -35,12 +35,65 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-CHANNEL="$(sed -n 's/^[[:space:]]*channel[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' rust-toolchain.toml)"
-CHANNEL=${CHANNEL%%$'\n'*}
-if [ -z "${CHANNEL:-}" ]; then
+# Do not parse TOML with a line regex.  `channel` is meaningful only under
+# `[toolchain]`; a homonymous key in another table must neither select a
+# toolchain nor make a safe pin fail.  Python's stdlib TOML parser also handles
+# the legal whitespace and trailing-comment forms that a regex routinely gets
+# wrong.  It prints only the typed `[toolchain].channel` string.
+if ! CHANNEL="$(python3 - rust-toolchain.toml <<'PY'
+import sys
+try:
+    import tomllib
+    with open(sys.argv[1], "rb") as handle:
+        document = tomllib.load(handle)
+    toolchain = document.get("toolchain")
+    channel = toolchain.get("channel") if isinstance(toolchain, dict) else None
+    if not isinstance(channel, str) or not channel:
+        raise ValueError("[toolchain].channel must be a non-empty string")
+except (OSError, ValueError, tomllib.TOMLDecodeError) as exc:
+    print(f"ci-use-host-toolchain: invalid rust-toolchain.toml: {exc}", file=sys.stderr)
+    raise SystemExit(2)
+print(channel)
+PY
+)"; then
     echo "::error::ci-use-host-toolchain: could not parse [toolchain] channel from rust-toolchain.toml." >&2
     exit 2
 fi
+
+# CHANNEL is interpolated into a PATH that is then appended to $GITHUB_PATH:
+#
+#     TC="$HOME/.rustup/toolchains/${CHANNEL}-${HOST_TRIPLE}"
+#     echo "$TC/bin" >> "$GITHUB_PATH"
+#
+# so whoever controls `rust-toolchain.toml` controls which directory becomes the
+# front of PATH for every later step in the job. Unvalidated, a channel of
+# `../../../<somewhere>` escapes ~/.rustup entirely; point it at a directory that
+# already holds executable `bin/cargo` and `bin/rustc` and every subsequent
+# `cargo` invocation is the attacker's. Found while fixing B-133, where
+# `dependabot-policy.yml` ran this script against a `pull_request_target`
+# checkout of PR content — the traversal target being the PR's own tree, whose
+# executable bits git preserves.
+#
+# A rustup channel is a closed, documented form: a version (`1.91.1`), a named
+# channel (`stable`, `beta`, `nightly`), optionally dated (`nightly-2026-01-01`)
+# and optionally host-suffixed. Every legal spelling is alphanumerics, dots,
+# underscores and hyphens — so this is a whitelist, not a blacklist of the
+# traversals someone thought of. `/` and `..` cannot survive it.
+case "$CHANNEL" in
+    *[!A-Za-z0-9._-]*)
+        echo "::error::ci-use-host-toolchain: refusing toolchain channel '${CHANNEL}' — a channel may contain only letters, digits, dot, underscore and hyphen." >&2
+        echo "::error::This string is interpolated into a filesystem path that is prepended to \$GITHUB_PATH; anything else is a path-traversal primitive, not a channel." >&2
+        exit 2
+        ;;
+esac
+# `..` is alphanumeric-free but passes the class above (dots are legal in
+# `1.91.1`), so the traversal spelling is refused on its own.
+case "$CHANNEL" in
+    .. | ..* | *..*)
+        echo "::error::ci-use-host-toolchain: refusing toolchain channel '${CHANNEL}' — it contains '..', which walks out of ~/.rustup/toolchains." >&2
+        exit 2
+        ;;
+esac
 
 # Host triple: DETECTED, with an explicit override still honoured.
 #
