@@ -13,8 +13,8 @@ The abbreviated form drops the path to avoid repeating it in the same sentence:
 is invisible to C5 (freshness), C6/C6b (citation<->source_files agreement) and to
 the citation count. That is B-059. This script is the missing half: it resolves
 each abbreviated citation the way a reader does — against the nearest preceding
-full-path citation IN THE SAME LINE — and then checks that the resolved target is
-a real, load-bearing line of the file it names.
+full-path citation in the SAME CONCEPT — and then checks that the resolved target
+is a real, load-bearing line of the file it names.
 
 Six ways an abbreviated citation fails, each reported by name:
 
@@ -55,7 +55,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 WIKI = REPO_ROOT / "docs" / "knowledge"
 
 # A full citation: `path/to/file.ext:123` or `path/to/file.ext:123-456`.
-FULL_CITE = r"`([A-Za-z0-9_][A-Za-z0-9_./-]*\.(?:rs|ts|mts|cts|tsx|js|mjs|cjs|jsx|toml|jsonc|json|py|sh|md|yaml|yml)):(\d+)(?:-(\d+))?`"
+# Keep the path grammar in lockstep with validate_okf.py's CITE_RE.  Do not
+# enumerate extensions: the repo cites SQL, workflow files, manifests, and
+# plain-text artifacts as well as source files.
+FULL_CITE = r"`([A-Za-z0-9._/\-]+):(\d+)(?:-(\d+))?`"
 # An abbreviated citation: `:123` or `:123-456`, with no path.
 BARE_CITE = r"`:(\d+)(?:-(\d+))?`"
 
@@ -69,6 +72,10 @@ def _compile():
     return re.compile(FULL_CITE), re.compile(BARE_CITE)
 
 
+class ScanError(Exception):
+    """The scan could not be trusted; this is distinct from a finding."""
+
+
 class SourceCache:
     """Reads each cited file at most once."""
 
@@ -78,10 +85,17 @@ class SourceCache:
 
     def lines(self, rel: str) -> list[str] | None:
         if rel not in self._cache:
-            path = self._root / rel
+            path = (self._root / rel).resolve()
             try:
-                self._cache[rel] = path.read_text(errors="replace").splitlines()
-            except (OSError, ValueError):
+                path.relative_to(self._root.resolve())
+            except ValueError:
+                # A citation is repo-relative by contract. Never let a crafted
+                # path make the verifier read outside the repository.
+                self._cache[rel] = None
+                return None
+            try:
+                self._cache[rel] = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            except (OSError, ValueError, UnicodeError):
                 self._cache[rel] = None
         return self._cache[rel]
 
@@ -108,23 +122,27 @@ def classify(cache: SourceCache, path: str | None, first: int) -> tuple[str, str
 def scan_concept(path: Path, cache: SourceCache, full_re, bare_re) -> tuple[int, list[str]]:
     """Return (abbreviated citations seen, findings) for one concept."""
     try:
-        text = path.read_text()
-    except OSError as exc:  # a concept we cannot read is a scan failure, not a pass
-        raise SystemExit(f"[okf-abbrev] FATAL: cannot read {path}: {exc}") from exc
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:  # unreadable is not a pass
+        raise ScanError(f"cannot read {path}: {exc}") from exc
 
     seen = 0
     findings: list[str] = []
-    rel = path.relative_to(REPO_ROOT)
+    try:
+        rel = path.relative_to(REPO_ROOT)
+    except ValueError as exc:
+        raise ScanError(f"concept {path} is outside repository {REPO_ROOT}") from exc
+
+    inherited: str | None = None
 
     for lineno, line in enumerate(text.splitlines(), 1):
         # Walk full and abbreviated citations in position order, so an
         # abbreviated one inherits the nearest full path that precedes it on
-        # the same line — which is how the sentence reads.
+        # the same concept — which is how a numbered citation list reads.
         tokens = sorted(
             [(m.start(), "full", m.group(1), int(m.group(2))) for m in full_re.finditer(line)]
             + [(m.start(), "bare", None, int(m.group(1))) for m in bare_re.finditer(line)]
         )
-        inherited: str | None = None
         for _pos, kind, cited_path, number in tokens:
             if kind == "full":
                 inherited = cited_path
@@ -154,7 +172,11 @@ def main() -> int:
     total_seen = 0
     all_findings: list[str] = []
     for concept in concepts:
-        seen, findings = scan_concept(concept.resolve(), cache, full_re, bare_re)
+        try:
+            seen, findings = scan_concept(concept.resolve(), cache, full_re, bare_re)
+        except ScanError as exc:
+            print(f"[okf-abbrev] FATAL: {exc}", file=sys.stderr)
+            return 2
         total_seen += seen
         all_findings.extend(findings)
 
