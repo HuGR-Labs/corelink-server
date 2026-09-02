@@ -4,6 +4,26 @@
 [§7 The image changes without notice](#7-the-image-changes-without-notice)
 before you rely on any line below.
 
+> **Reconciliation 2026-09-02 00:45Z (repo-level registry):** the 2026-08-31
+> reading of **27 `corelink` runners and 5 Mac builders** is historical evidence,
+> not today's inventory. The same endpoint now reports **17 runners total: 12
+> `corelink` runners, all `offline` with `os=unknown`, and 5 Mac builders,
+> `online` and idle, labelled `mac,corelink-builder` (none labelled `corelink`).**
+> This registry does not prove which image a future ephemeral box will serve.
+>
+> **Image contents and served fleet are separate facts.**
+> `corelink-runners@main` (Dockerfile observed 2026-09-02) contains Node/npm/
+> pnpm, Python, `gh`, the nerdctl-backed `docker` shim, `CORELINK_NIGHTLY`,
+> `llvm-tools`, and `cargo-fuzz`. That is not a rollout assertion: #1506
+> recorded `CORELINK_NIGHTLY` absent on a `corelink` box after #523, so the
+> effectively served image remains **unconfirmed** here. Do not classify a lane
+> from the Dockerfile alone.
+>
+> The missing probe is still real: `runner-probe.yml` is absent from the current
+> `main`; `runner-fleet-health.yml` is the available current fleet tooling.
+> Restoring a probe and confirming image rollout are **open owner actions**;
+> no backlog ID has been allocated, and this page does not close or invent one.
+
 > **Update 2026-08-17 (delta since the snapshot):** `lighthouse-ci` was **deleted** —
 > low-value perf score on admin-ui, not worth baking system Chrome, and dead under the
 > block today so nothing green is lost. The class-D `lighthouse-ci` row below is stale.
@@ -27,16 +47,18 @@ Why this doc exists: reading `deploy/runner/Dockerfile` (in the
 has"* — and on two decisive points the answers differ. Everything here was
 **measured on the box**, not inferred.
 
-**Provenance — every fact below traces to one of two probe runs:**
+**Provenance — the original inventory below traces to two probe runs; later
+reconciliations are explicitly dated and must not be read as probe results:**
 
 | ref | run | workflow | date |
 |---|---|---|---|
 | **P1** | [`30724931256`](https://github.com/HuGR-Labs/corelink-server/actions/runs/30724931256) | `probe-corelink-box` (from the now-closed PR #932) | 2026-08-02 |
 | **P2** | [`30825772599`](https://github.com/HuGR-Labs/corelink-server/actions/runs/30825772599) | `.github/workflows/runner-probe.yml` (on `main`) | 2026-08-03 |
 
-`runner-probe.yml` is the live, re-runnable version and is a strict superset of
-P1's probe. **Re-run it (`workflow_dispatch`) rather than trusting this page**
-whenever the runner image may have moved.
+`runner-probe.yml` was the live, re-runnable version at P2, but is no longer in
+`main`. Use `runner-fleet-health.yml` for the current fleet signal and do not
+claim an image inventory until a probe is restored and run against the served
+box. The P1/P2 tables remain historical measurements.
 
 ---
 
@@ -66,6 +88,12 @@ not network-restricted in any way that blocks a normal gate.
 ---
 
 ## 2. ⚠️ The counter-intuitive fact: `rustup` honours `rust-toolchain.toml`
+
+> **Current image caveat (2026-09-02):** the historical P1/P2 statements in
+> this section describe the image then probed. The current
+> `corelink-runners@main` Dockerfile declares the image's newer toolchain
+> payload, including `CORELINK_NIGHTLY` and `llvm-tools`; whether that image is
+> actually served is unconfirmed (see the reconciliation at the top).
 
 **This is the single most misleading thing about the box, and it has already
 misled people in both directions.** Read it carefully.
@@ -131,6 +159,11 @@ but that is the floor, not headroom.
 
 ## 3. ⚠️ Node: JS *Actions* run; `run:` steps calling `node` do **not**
 
+> The ABSENT claims in this historical section are P1/P2 observations. The
+> current runner-image source contains Node/npm/pnpm, but no current probe has
+> established that every served box has them. Keep the date and source attached
+> to either claim.
+
 Another fact that reads backwards. Both of these are true:
 
 - **`node` / `npm` / `npx` / `pnpm` are ABSENT from `PATH`** (P1, P2). The full
@@ -164,6 +197,10 @@ inventory saying "node: ABSENT". Both observations were correct.
 
 ## 4. What is present
 
+The list immediately below is the **P1 historical probe**, not a current image
+contract. Current image source and served-fleet status are reconciled at the top
+of this page.
+
 `jq 1.7` · `git 2.43.0` · `curl 8.5.0` · `unzip 6.00` · `tar 1.35 (GNU)` ·
 `make 4.3` · `cc 13.3.0` (Ubuntu gcc) · `ld 2.42` · `sha256sum` (coreutils 9.4) ·
 `apt-get 2.8.3` · `sudo` · `rustup 1.29.0`
@@ -172,6 +209,12 @@ CoreLink-specific: **`clw 0.1.4`**, `cargo-deny 0.19.8`, `cargo-audit 0.22.2`
 (P1).
 
 ## 5. What is ABSENT from `PATH`
+
+The list immediately below is the **P2 historical probe**. It must not be used
+as a current inventory after the image changes recorded above. In particular,
+the current image source declares `gh`, Node/npm/pnpm, Python, the docker shim,
+nightly, llvm-tools, and cargo-fuzz; #1506 demonstrated that source presence did
+not establish that the served fleet exported `CORELINK_NIGHTLY`.
 
 **`node` · `npm` · `npx` · `pnpm` · `python3` · `pip3` · `docker` · `gh` ·
 `go` · `java` · `wget`** (P2; P1 agrees on the subset it probed).
@@ -220,12 +263,14 @@ contents.
 Practical consequences:
 
 1. **Every fact on this page has a date on it and may already be false.**
-   `runner-probe.yml` is the authority; this doc is a cached read of it.
+   `runner-fleet-health.yml` is the current fleet-health signal; it is not an
+   image-inventory probe, and this doc is not a current image contract.
 2. **Do not encode image contents into a gate's assumptions** without a step
    that asserts them. A gate that silently depends on the image is a gate that
    fails on a Tuesday for no reason attributable to the diff.
-3. Re-run `runner-probe.yml` after any unexplained self-hosted failure **before**
-   blaming the change under test.
+3. Use `runner-fleet-health.yml` for the available current signal. A probe must
+   be restored and rerun after any unexplained self-hosted failure **before**
+   blaming the change under test; until then, image contents remain unconfirmed.
 
 ---
 
@@ -339,12 +384,19 @@ $39/mo** — roughly **a quarter** of what node+pnpm in the image would unlock.
 
 ### 9.1 The conclusion the data supports
 
-> **The next high-leverage move is a one-file image change (add `node` +
-> `pnpm` to `corelink-runners`' `deploy/runner/Dockerfile`), not another
-> label-swap wave.**
+> **The next high-leverage move is to build, publish, roll out, and verify the
+> already-updated `corelink-runners` image, not to add `node` + `pnpm` again and
+> not to do another blind label-swap wave.** The source Dockerfile already
+> contains Node/npm/pnpm (and the other current image payload); the served-fleet
+> state is the unresolved fact.
 
-Another wave of `runs-on:` edits chases the smaller quarter of the bill. One
-Dockerfile line unlocks the 66%.
+The required owner sequence is: dispatch the image build/publish, roll the
+published image to the fleet, restore and run an image probe that asserts the
+served tools (including `CORELINK_NIGHTLY`), and fail closed when the assertion
+is missing. `runner-fleet-health.yml` remains useful for runner registration and
+queue health, but it cannot establish image contents. Until that sequence is
+complete, do not claim that the image has rolled out or that the four workflows
+are unblocked by the source Dockerfile.
 
 **One honest caveat, so nobody over-claims this.** The four heavy workflows are
 not *hard*-blocked today. Each already carries `actions/setup-node`, and the
@@ -402,14 +454,26 @@ just its label.**
 
 ## 11. Re-measuring
 
+While GitHub Actions is unavailable, measure the fleet directly from a trusted
+operator checkout with a repository-admin token (the slot census requires
+`Administration: read`):
+
 ```bash
-gh workflow run runner-probe.yml --repo HuGR-Labs/corelink-server
-gh run list --repo HuGR-Labs/corelink-server --workflow runner-probe.yml --limit 1
+GH_TOKEN="$REPO_ADMIN_TOKEN" python3 scripts/check_runner_fleet.py \
+  --repo HuGR-Labs/corelink-server
 ```
 
-It is `workflow_dispatch`-only and is **not** a gate: it reports and never
-fails a PR for anything it finds absent. Update this doc's snapshot date and
-any changed rows when you run it.
+When Actions is available again, `runner-fleet-health.yml` is the automated
+equivalent for queue health. Its current `GITHUB_TOKEN` cannot perform the
+admin-only slot census, so it sets `FLEET_SLOT_CENSUS=skip`; do not substitute
+that workflow for the direct command above when certifying the registered
+slots.
+
+Both routes measure fleet health only: neither inspects the runner image's
+installed tools. A separate image probe must be restored by the owner before
+it can be run; until then, update this doc only with explicitly dated
+registry/source evidence and do not claim rollout. Fleet health is **not** a
+gate for image contents.
 
 ---
 
@@ -419,8 +483,8 @@ Sections 1–8 were salvaged from PR **#932**
 ("ci: inventory the fabric box, then move the first PR gate onto it"), which
 was closed unmerged on 2026-08-03. Its measurement work was sound and is
 preserved here; its code was superseded by **#1003** (migration wave 1),
-**#1005** (wave 2), and `runner-probe.yml` on `main`. Sections 9–10 post-date
-#932 and revise its priority order.
+**#1005** (wave 2), and the historical `runner-probe.yml` (since removed from
+`main`). Sections 9–10 post-date #932 and revise its priority order.
 
 ---
 
