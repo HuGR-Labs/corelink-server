@@ -4667,10 +4667,10 @@ verify: |
     grep -qF "$caso" "$t" || { echo "FALHA: o teste perdeu o caso [$caso] — anti-vacuidade: um teste esvaziado passaria verde."; exit 1; }
   done
   command -v pnpm >/dev/null 2>&1 || { echo "FALHA: pnpm nao esta disponivel para executar o teste do worker."; exit 1; }
-  if [ ! -x worker/node_modules/.bin/vitest ]; then
+  if [ ! -x worker/node_modules/.bin/vitest ] || [ ! -f worker/node_modules/vitest/vitest.mjs ]; then
     pnpm --filter @corelink/worker install --frozen-lockfile --prefer-offline >/dev/null 2>&1 || { echo "FALHA: nao consegui instalar as deps congeladas do worker para EXECUTAR o teste — este verify nunca reporta verde sem rodar."; exit 1; }
   fi
-  [ -x worker/node_modules/.bin/vitest ] || { echo "FALHA: worker/node_modules existe mas nao contem vitest executavel — instalacao parcial nao conta como prova."; exit 1; }
+  [ -x worker/node_modules/.bin/vitest ] && [ -f worker/node_modules/vitest/vitest.mjs ] || { echo "FALHA: worker/node_modules tem shim ou pacote vitest ausente — instalacao parcial nao conta como prova."; exit 1; }
   j=$(mktemp) || { echo "FALHA: nao consegui criar arquivo temporario para o relatorio do vitest."; exit 1; }
   pnpm --filter @corelink/worker exec vitest run tests/devenv_guard.test.ts --reporter=json --outputFile="$j" >/dev/null 2>&1
   rc=$?
@@ -4697,8 +4697,11 @@ verify-means: |
 
   **Finding reconciliado em 2026-09-02:** testar apenas a existência do diretório
   `worker/node_modules` aceitava uma instalação parcial sem `vitest`, pulava a instalação
-  e produzia um DRIFTED sem diagnóstico. O verify agora exige o binário executável, usa o
-  gerenciador e lockfile canônicos do monorepo e recusa explicitamente esse estado parcial.
+  e produzia um DRIFTED sem diagnóstico. Exigir apenas o shim executável `.bin/vitest`
+  também foi insuficiente: um prune interrompido deixou o shim, mas removeu o entrypoint
+  `worker/node_modules/vitest/vitest.mjs`. O verify agora exige os dois, reinstala se
+  qualquer um faltar, usa o gerenciador e lockfile canônicos do monorepo e recusa
+  explicitamente ambos os estados parciais.
 
   Anti-vacuidade em três camadas, porque a versão anterior deste teste falhou
   exatamente aqui: (1) o comando exige que os dez casos-chave existam por nome; (2)
@@ -4716,8 +4719,9 @@ verify-means: |
   e o sempre-nega rejeitado (8 falhas, incluindo os dois controles positivos).
 
   O que NÃO decide, e registro em vez de deixar implícito: o comando precisa das
-  dependências node do `worker/` para executar. Se `worker/node_modules` faltar, ele
-  tenta instalar dentro de um `timeout 75` e, se não conseguir, **reprova** com uma
+  dependências node do `worker/` para executar. Se o shim
+  `worker/node_modules/.bin/vitest` ou seu entrypoint `vitest/vitest.mjs` faltar, ele tenta instalar as dependências pelo
+  `pnpm` e lockfile canônicos e, se não conseguir, **reprova** com uma
   mensagem que nomeia o motivo — deliberadamente nunca verde por não ter conseguido
   rodar. Lê o **relatório JSON** do vitest, não o texto: a primeira versão deste
   comando fazia `grep` na linha `Tests  N passed` e ficou vermelha na CI porque o
@@ -4727,7 +4731,7 @@ verify-means: |
   que já instala essas deps, então o caminho comum é só rodar o vitest (~5s). O gate de
   PR de verdade para este teste é `worker-vitest.yml` (dispara em `worker/**`); este
   `verify` é a checagem diária de que a propriedade continua valendo.
-last-verified: 2026-08-31
+last-verified: 2026-09-02
 ```
 
 ### B-076 — o mesmo tenant pode manter duas assinaturas pagáveis abertas, e a segunda apaga o registro da primeira
@@ -10502,30 +10506,9 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  bash -c 'set -u
-  a=crates/corelink-container/src/storage/d1_audit_sink/tests_batch_limits.rs
-  b=crates/corelink-container/src/routes/billing_ingest/tests_auth.rs
-  c=crates/corelink-container/src/routes/billing_ingest/tests_validate_record.rs
-  d=crates/corelink-container/src/routes/billing_ingest/tests_record_skip.rs
-  p=crates/corelink-container/src/routes/billing_ingest.rs
-  for f in "$a" "$b" "$c" "$d" "$p"; do [ -f "$f" ] || { echo "FALHA: $f sumiu — reavalie o item."; exit 1; }; done
-  n=0; det=""
-  grep -qF "build_batch_statements(&[])" "$a" && grep -qF "statements.is_empty()" "$a" || { n=$((n+1)); det="$det empty_batch-sem-asercao-de-statement"; }
-  if ! grep -qF "configured_ingest_auth_key(None)" "$b" || grep -qF "if std::env::var" "$b"; then n=$((n+1)); det="$det secret-ausente-condicional-ao-ambiente"; fi
-  vars=$(awk "/^enum RecordError/{x=1;next} x&&/^}/{exit} x&&/^    [A-Z][A-Za-z]+,/{n++} END{print n+0}" "$p")
-  [ "$vars" -ge 2 ] || { echo "FALHA: contei $vars variantes em RecordError — o enum mudou de forma; instrumento quebrado."; exit 1; }
-  helper=$(awk "/fn record_error_variant_name/{x=1} x{print} x&&/^}/{exit}" "$c" | grep -v "^[[:space:]]*//")
-  casos=$(awk "/fn every_record_error_variant_has_a_rejection_fixture/{x=1} x{print} x&&/^}/{exit}" "$c" | grep -v "^[[:space:]]*//")
-  hfix=$(printf "%s\n" "$helper" | grep -oE "RecordError::[A-Za-z]+" | sort -u | wc -l | tr -d " ")
-  cfix=$(printf "%s\n" "$casos" | grep -oE "RecordError::[A-Za-z]+" | sort -u | wc -l | tr -d " ")
-  if [ "$hfix" -lt "$vars" ] || [ "$cfix" -lt "$vars" ] || printf "%s\n" "$helper" | grep -qE "^[[:space:]]*(_|other)[[:space:]]*=>"; then
-    n=$((n+1)); det="$det rejection-fixtures-fixam-helper-$hfix-e-casos-$cfix-de-$vars"
-  fi
-  grep -qF "validate_record_reasons_pinned" "$d" && { n=$((n+1)); det="$det delegacao-ainda-aponta-para-teste-parcial"; }
-  [ "$n" -gt 0 ] || { echo "FALHA: nenhuma das quatro lacunas persiste — feche o item."; exit 1; }
-  echo "aberto: $n de 4 lacunas persistem:$det"'
+  python3 scripts/verify_b149_test_strength.py --expect open
 verify-means: |
-  open — pelo menos um dos três testes ainda satisfaz a forma vazia que o item descreve.
+  open — pelo menos uma das quatro provas ainda satisfaz a forma vazia que o item descreve.
   Fecha por **exaustão**: consertar dois mantém o item aberto com contagem menor, que é o
   comportamento certo para item de lista.
 
@@ -10535,14 +10518,19 @@ verify-means: |
   efetivamente compilados: lista de statements vazia, segredo ausente independente do
   ambiente e enum exaustivo com uma fixture de rejeição por variante.
 
-  **A contagem de variantes é derivada, não constante.** O helper exaustivo e a matriz de
-  fixtures são recortados separadamente e ambos precisam citar todas as variantes do enum;
-  nascer uma sétima variante reabre o item e também quebra a compilação do `match`. Uma
-  constante `6` escrita à mão envelheceria em silêncio.
+  **A população de variantes é derivada, não constante.** Um lexer Rust mínimo, sem
+  dependências, ignora comentários e strings, recorta as funções por chaves balanceadas e
+  deriva o enum mesmo quando a variante final não tem vírgula. O helper exaustivo, a matriz
+  de fixtures e o `RecordError::code()` precisam cobrir exatamente a mesma população, sem
+  wildcard, duplicata ou razão estável trocada. Nascer uma sétima variante reabre o item e
+  também quebra a compilação do `match`; uma constante `6` envelheceria em silêncio.
 
-  **Anti-vacuidade:** arquivo ausente e enum com menos de 2 variantes são falhas de
-  instrumento. Helper ou matriz ausente contam como a lacuna ainda aberta; wildcard no
-  helper também conta como aberto, pois permitiria uma variante nova sem quebrar compilação.
+  **Anti-vacuidade:** arquivo ausente, comentário/string vizinha que apenas cita os tokens,
+  chaves malformadas e enum inutilizável são falhas explícitas de instrumento. Helper ou
+  matriz ausente contam como lacuna; wildcard com qualquer nome, fixture ausente/duplicada,
+  razão trocada e asserção fora da função nomeada não recebem crédito. A suíte
+  `tests/test_verify_b149_test_strength.py` mutation-testa esses dentes e também a mutação
+  do mapeamento de razão na produção.
 
   **Medido pelos dois lados (2026-09-02):** no estado atual as quatro lacunas são
   detectadas e o comando sai 0. Aplicar as três provas fortes sem corrigir a delegação ainda
