@@ -76,12 +76,42 @@ Depois, compile normalmente:
 cargo build --release
 ```
 
-Quando uma busca não encontra nada na camada local, o sccache emite requisições
-`GET`, `PUT` e `HEAD` para
-`<SCCACHE_WEBDAV_ENDPOINT>/<key>`; o CoreLink autentica o PAT bearer,
-resolve o seu tenant a partir dele e serve ou armazena cada artefato no CAS do seu
-tenant. Uma falha de `GET`/`HEAD` retorna 404 e o sccache recorre à compilação
-local (e então faz `PUT` do resultado).
+Quando uma busca não encontra nada na camada local, o sccache usa os seis métodos
+seguintes em `<SCCACHE_WEBDAV_ENDPOINT>/<key>`:
+
+| Método | Finalidade |
+|---|---|
+| `GET` | Ler um artefato armazenado. Um miss retorna `404`, e o sccache compila localmente. |
+| `PUT` | Armazenar o artefato compilado depois de uma compilação local. |
+| `HEAD` | Verificar se um artefato existe sem baixar seu corpo. |
+| `PROPFIND` | Fazer stat WebDAV da chave e verificar seu tamanho em bytes. |
+| `MKCOL` | Sondar o diretório-pai WebDAV; o CoreLink trata os diretórios implícitos do cache como no-op. |
+| `DELETE` | Remover uma chave do cache; exige escopo de escrita no cache e um PAT com capacidade de escrita. É idempotente (`204`). |
+
+O CoreLink autentica o PAT bearer, resolve o seu tenant a partir dele e serve ou
+armazena cada artefato no CAS desse tenant. Os seis métodos acima são o contrato
+público de artefatos do sccache: um proxy, WAF ou firewall na frente do CoreLink
+precisa permitir todos eles. `DELETE` é uma operação pública de escrita autenticada,
+não apenas interna. Um PAT normal pode remover qualquer chave de cache do seu tenant.
+
+Durante a sonda de saúde de escrita na inicialização, o sccache envia `PUT`, `GET` e
+depois `DELETE` para `.sccache_check`. Essa chave é reservada para essa sonda e sua
+limpeza: é **exclusiva da sonda**, não uma chave de artefato de build. `DELETE`
+também está disponível para chaves de cache comuns. Um proxy que filtra métodos
+precisa permitir os seis, incluindo essa requisição de controle.
+
+:::warning Uma falha de escrita torna o sccache somente leitura
+O daemon do sccache faz uma sonda de escrita ao iniciar. Se essa sonda ou um
+`PUT` posterior falhar, o sccache marca o backend como **somente leitura pelo
+resto da vida do daemon**. Os builds podem continuar verdes, mas novos artefatos
+não são armazenados; portanto, um `GET`, `HEAD` ou `PROPFIND` bem-sucedido não
+prova que as escritas estão saudáveis. Corrija o PAT, endpoint ou proxy, reinicie
+o daemon com `sccache --stop-server` e verifique o build seguinte.
+
+Sempre inspecione `sccache --show-stats` após uma falha de escrita. Confira
+`Cache errors` junto com os contadores de hits e misses; um build frio sem novas
+escritas pode parecer normal enquanto o daemon está travado em somente leitura.
+:::
 
 :::note O tenant vem do PAT
 O `<tenant>` no endpoint é usado apenas para o roteamento de requisições; o

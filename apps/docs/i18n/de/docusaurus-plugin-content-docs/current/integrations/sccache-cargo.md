@@ -78,12 +78,46 @@ Bauen Sie anschließend wie gewohnt:
 cargo build --release
 ```
 
-Wenn eine Suche die lokale Ebene verfehlt, stellt sccache `GET`-, `PUT`- und
-`HEAD`-Anfragen an
-`<SCCACHE_WEBDAV_ENDPOINT>/<key>`; CoreLink authentifiziert den Bearer-PAT,
-löst daraus Ihren Tenant auf und bedient oder speichert jedes Artefakt im CAS Ihres
-Tenants. Ein `GET`/`HEAD`-Fehlschlag gibt 404 zurück, und sccache greift auf lokales
-Kompilieren zurück (und macht dann ein `PUT` des Ergebnisses).
+Wenn eine Suche die lokale Ebene verfehlt, verwendet sccache die folgenden sechs
+Methoden unter `<SCCACHE_WEBDAV_ENDPOINT>/<key>`:
+
+| Methode | Zweck |
+|---|---|
+| `GET` | Ein Cache-Artefakt lesen. Ein Miss gibt `404` zurück, daher kompiliert sccache lokal. |
+| `PUT` | Das kompilierte Artefakt nach einer lokalen Kompilierung speichern. |
+| `HEAD` | Prüfen, ob ein Artefakt existiert, ohne seinen Inhalt herunterzuladen. |
+| `PROPFIND` | Einen WebDAV-Stat für einen Schlüssel ausführen und seine Byte-Länge prüfen. |
+| `MKCOL` | Das WebDAV-Elternverzeichnis prüfen; CoreLink behandelt implizite Cache-Verzeichnisse als No-op. |
+| `DELETE` | Einen Cache-Schlüssel entfernen; erfordert Cache-Schreibberechtigung und einen PAT mit Schreibberechtigung. Idempotent (`204`). |
+
+CoreLink authentifiziert den Bearer-PAT, löst daraus Ihren Tenant auf und bedient
+oder speichert jedes Artefakt im CAS dieses Tenants. Die sechs Methoden oben sind
+der veröffentlichte Artefaktvertrag von sccache: Ein Proxy, WAF oder eine Firewall
+vor CoreLink muss alle sechs zulassen. `DELETE` ist eine öffentliche authentifizierte
+Schreiboperation, nicht nur intern. Ein normaler PAT kann einen beliebigen Cache-Schlüssel
+seines Tenants entfernen.
+
+Während der Schreib-Gesundheitsprüfung beim Start sendet sccache `PUT`, `GET` und
+dann `DELETE` für `.sccache_check`. Dieser Schlüssel ist für diese Sonde und ihre
+Bereinigung reserviert: Er ist **ausschließlich für die Sonde bestimmt**, kein
+Build-Artefakt-Schlüssel. `DELETE` bleibt trotzdem auch für gewöhnliche
+Cache-Schlüssel verfügbar. Ein Proxy mit Methodenfilter muss alle sechs Methoden
+einschließlich dieser Kontrollanfrage zulassen.
+
+:::warning Ein Schreibfehler schaltet sccache auf Nur-Lesen
+Der sccache-Daemon führt beim Start eine Schreibprüfung aus. Wenn diese Prüfung
+oder ein späteres `PUT` fehlschlägt, markiert sccache das Backend für den **Rest
+der Lebensdauer des Daemons als Nur-Lesen**. Builds können grün bleiben, aber neue
+Artefakte werden nicht gespeichert. Ein erfolgreicher `GET`, `HEAD` oder
+`PROPFIND` beweist daher nicht, dass Schreibvorgänge funktionieren. Beheben Sie
+PAT, Endpunkt oder Proxy, starten Sie den Daemon mit `sccache --stop-server` neu
+und prüfen Sie den nächsten Build.
+
+Prüfen Sie nach einem Schreibfehler immer `sccache --show-stats`. Kontrollieren
+Sie `Cache errors` zusammen mit den Hit- und Miss-Zählern; ein kalter Build ohne
+neue Schreibvorgänge kann normal aussehen, während der Daemon auf Nur-Lesen
+festgesetzt ist.
+:::
 
 :::note Der Tenant stammt aus dem PAT
 Der `<tenant>` im Endpunkt wird nur für das Anfrage-Routing verwendet; der
