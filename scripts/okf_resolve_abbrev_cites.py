@@ -64,9 +64,12 @@ FULL_CITE = r"`([A-Za-z0-9._/\-]+):(\d+)(?:-(\d+))?`"
 BARE_CITE = r"`:(\d+)(?:-(\d+))?`"
 # A path-only backtick is an explicit source anchor.  It is needed for prose
 # such as `` `customer_d1.rs` — ... (`:947`, `:1011`) `` where the path is
-# named without a line number before the abbreviated citations.  Requiring a
-# slash avoids treating ordinary inline identifiers as source paths.
-PATH_ONLY_CITE = r"`([A-Za-z0-9._/\-]+/[A-Za-z0-9._\-]+)`"
+# named without a line number before the abbreviated citations.  A root source
+# file is equally valid: `` `README.md` ... `:12` ``.  Require either a slash
+# or a dot, rather than a slash alone, so ordinary inline identifiers do not
+# silently become inherited paths.  SourceCache still makes every accepted
+# path repo-relative and rejects traversal/symlink escapes before reading it.
+PATH_ONLY_CITE = r"`((?=[A-Za-z0-9._/\-]*[/.])[A-Za-z0-9._/\-]+)`"
 BACKTICK_TOKEN = r"`([^`\n]*)`"
 MALFORMED_BARE_CITE = r":\d+-.*"
 MALFORMED_FULL_CITE = r"[A-Za-z0-9._/\-]+:\d+-.*"

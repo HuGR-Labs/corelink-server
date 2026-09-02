@@ -33,6 +33,8 @@ on:
       - 'apps/**'
       - 'scripts/validate_okf.py'
       - 'scripts/okf_resolve_abbrev_cites.py'
+      - 'tests/okf/**'
+      - 'tests/test_okf_resolve_abbrev_cites.py'
 
 permissions:
   contents: read
@@ -70,6 +72,13 @@ jobs:
 
       - name: Validate OKF-CoreLink knowledge bundle
         run: python3 scripts/validate_okf.py
+
+      - name: Test abbreviated-citation resolver contract (B-059)
+        # This is deliberately separate from the diagnostic below: a warning
+        # result over the current residual worklist is not proof that the
+        # resolver still understands inheritance, traversal, EOF, or malformed
+        # ranges.  The test is stdlib-only and runs with this job's interpreter.
+        run: python3 tests/test_okf_resolve_abbrev_cites.py
 
       - name: Diagnose abbreviated OKF citations (B-059)
         # B-059 remains open while the existing 38 findings are re-authored.

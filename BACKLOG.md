@@ -3384,7 +3384,30 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  grep -qF '(?P<path>[A-Za-z0-9._/\-]+):(?P<l1>' scripts/validate_okf.py &&
+  if ! grep -qF '(?P<path>[A-Za-z0-9._/\-]+):(?P<l1>' scripts/validate_okf.py; then
+    echo 'INDETERMINADO: CITE_RE mudou ou sumiu; nao execute o resolver como substituto.' >&2
+    exit 1
+  fi
+  # Mutation: removing the load-bearing CITE_RE declaration must make the real
+  # validator RED.  A positive baseline prevents unrelated bundle failure from
+  # being mistaken for mutation detection.
+  python3 scripts/validate_okf.py >/dev/null
+  b059_mutant="$(mktemp "${TMPDIR:-/tmp}/b059-validate-okf.XXXXXX")" || exit 1
+  trap 'rm -f "$b059_mutant"' EXIT
+  python3 - "$b059_mutant" <<'PY'
+  from pathlib import Path
+  import sys
+  source = Path("scripts/validate_okf.py").read_text(encoding="utf-8")
+  lines = source.splitlines(keepends=True)
+  kept = [line for line in lines if not line.startswith("CITE_RE = ")]
+  if len(kept) != len(lines) - 1:
+      raise SystemExit("CITE_RE mutation target is missing or ambiguous")
+  Path(sys.argv[1]).write_text("".join(kept), encoding="utf-8")
+  PY
+  if python3 "$b059_mutant" --bundle docs/knowledge >/dev/null 2>&1; then
+    echo 'FALHA: mutacao sem CITE_RE sobreviveu ao validador.' >&2
+    exit 1
+  fi
   python3 scripts/okf_resolve_abbrev_cites.py --quiet; rc=$?; test "$rc" -eq 1
 verify-means: |
   open — passes while the citation regex still requires a non-empty path, i.e.
