@@ -4666,12 +4666,13 @@ verify: |
   for caso in "selects ONLY columns the migrations actually create" "does not select the phantom install_status column" "the D1 stub REJECTS an invented column" "DENIES a tenant with no runners_entitlement row" "DENIES when D1 throws at" "DENIES when env.CONFIG_DB is absent" "ALLOWS a tenant with a positive concurrency cap" "query survives the schema-faithful stub end to end" "is the STRING" "the column is inert"; do
     grep -qF "$caso" "$t" || { echo "FALHA: o teste perdeu o caso [$caso] — anti-vacuidade: um teste esvaziado passaria verde."; exit 1; }
   done
-  cd worker || { echo "FALHA: nao existe diretorio worker/."; exit 1; }
-  if [ ! -d node_modules ]; then
-    timeout 75 npm install --legacy-peer-deps --no-audit --no-fund >/dev/null 2>&1 || { echo "FALHA: nao consegui instalar as deps do worker para EXECUTAR o teste — este verify nunca reporta verde sem rodar."; exit 1; }
+  command -v pnpm >/dev/null 2>&1 || { echo "FALHA: pnpm nao esta disponivel para executar o teste do worker."; exit 1; }
+  if [ ! -x worker/node_modules/.bin/vitest ]; then
+    pnpm --filter @corelink/worker install --frozen-lockfile --prefer-offline >/dev/null 2>&1 || { echo "FALHA: nao consegui instalar as deps congeladas do worker para EXECUTAR o teste — este verify nunca reporta verde sem rodar."; exit 1; }
   fi
+  [ -x worker/node_modules/.bin/vitest ] || { echo "FALHA: worker/node_modules existe mas nao contem vitest executavel — instalacao parcial nao conta como prova."; exit 1; }
   j=$(mktemp) || { echo "FALHA: nao consegui criar arquivo temporario para o relatorio do vitest."; exit 1; }
-  npx vitest run tests/devenv_guard.test.ts --reporter=json --outputFile="$j" >/dev/null 2>&1
+  pnpm --filter @corelink/worker exec vitest run tests/devenv_guard.test.ts --reporter=json --outputFile="$j" >/dev/null 2>&1
   rc=$?
   ok=$(grep -oE "\"numPassedTests\" *: *[0-9]+" "$j" 2>/dev/null | grep -oE "[0-9]+$")
   bad=$(grep -oE "\"numFailedTests\" *: *[0-9]+" "$j" 2>/dev/null | grep -oE "[0-9]+$")
@@ -4694,8 +4695,13 @@ verify-means: |
   primeira tentativa deste reparo — que trocou sempre-autoriza por sempre-nega e
   derrubaria os 8 tenants com linha real — teria passado em todos os outros casos.
 
+  **Finding reconciliado em 2026-09-02:** testar apenas a existência do diretório
+  `worker/node_modules` aceitava uma instalação parcial sem `vitest`, pulava a instalação
+  e produzia um DRIFTED sem diagnóstico. O verify agora exige o binário executável, usa o
+  gerenciador e lockfile canônicos do monorepo e recusa explicitamente esse estado parcial.
+
   Anti-vacuidade em três camadas, porque a versão anterior deste teste falhou
-  exatamente aqui: (1) o comando exige que os oito casos-chave existam por nome; (2)
+  exatamente aqui: (1) o comando exige que os dez casos-chave existam por nome; (2)
   reprova se o guard voltar a nomear `install_status` numa query; (3) o próprio teste
   **parseia as migrações `0070`/`0072`** e fixa a lista de colunas contra o DDL real,
   em vez de contra a expectativa do autor. A lição que motivou (3): o mock anterior
@@ -10450,11 +10456,12 @@ last-verified: 2026-08-31
 
 ### B-149 — três testes que passam sem afirmar nada, e um quarto que delega por escrito ao mais fraco deles
 
-Medidos no código de 2026-08-31. Não são testes fracos por descuido de nomenclatura: os três
-**nomeiam** uma propriedade que não verificam.
+Medidos no código de 2026-09-02, depois de `#1499` e `#1513` separarem os testes dos
+arquivos-pai. Não são testes fracos por descuido de nomenclatura: os três **nomeiam** uma
+propriedade que não verificam.
 
 1. **`empty_batch_issues_no_statement_at_all`**
-   (`crates/corelink-container/src/storage/d1_audit_sink.rs:919`) — o nome promete que
+   (`crates/corelink-container/src/storage/d1_audit_sink/tests_batch_limits.rs`) — o nome promete que
    **nenhum statement é emitido**. A única asserção é
    `.append_batch_async(Vec::new()).await.expect(…)`, isto é, "não devolveu erro". Um
    `append_batch_async` que emitisse um `json_each('[]')` degenerado e voltasse `Ok(())`
@@ -10462,7 +10469,8 @@ Medidos no código de 2026-08-31. Não são testes fracos por descuido de nomenc
    torna a asserção sobre statements não apenas ausente, mas inalcançável na forma atual.
 
 2. **`build_state_returns_none_when_secret_absent`**
-   (`routes/billing_ingest.rs:1155`, e um homônimo em `routes/auth_introspect.rs:1609`) — o
+   (`routes/billing_ingest/tests_auth.rs`; há um homônimo fora deste escopo em
+   `routes/auth_introspect.rs`) — o
    corpo inteiro está dentro de
    `if std::env::var("BILLING_INGEST_AUTH_KEY").is_err() { … }`. **Com a variável definida o
    teste não afirma nada e passa** — e uma máquina de CI que exporte o segredo apaga o teste
@@ -10470,21 +10478,23 @@ Medidos no código de 2026-08-31. Não são testes fracos por descuido de nomenc
    um motivo, e a asserção `is_none()` não distingue "ausência do segredo" das outras causas:
    o teste não decide a proposição do seu próprio nome.
 
-3. **`validate_record_reasons_pinned`** (`routes/billing_ingest.rs:1129`) — "reasons",
-   plural. `RecordError` (`:397-411`) tem **seis** variantes: `BadTenantId`,
+3. **`validate_record_reasons_pinned`**
+   (`routes/billing_ingest/tests_region_canon.rs`) — "reasons", plural. `RecordError`
+   (`routes/billing_ingest.rs`) tem **seis** variantes: `BadTenantId`,
    `BadBillingPeriod`, `BadRegion`, `BadIdemKey`, `EmptySource`, `SourceTooLong`. O teste fixa
    **uma** — `BadRegion`. As outras cinco podem trocar de código de razão sem que nada caia.
 
-**O agravante é o quarto teste.** `bad_tenant_id_is_skipped_not_fatal` (`:897`) traz no
+**O agravante é o quarto teste.** `bad_tenant_id_is_skipped_not_fatal`
+(`routes/billing_ingest/tests_record_skip.rs`) traz no
 comentário: *"The reason-code mapping is pinned separately in
 `validate_record_reasons_pinned`."* Ele **abre mão** de verificar o mapeamento por escrito,
 delegando ao teste que cobre 1 de 6 — e `BadTenantId`, justamente o que ele deixa de checar,
 **não** é a variante fixada. A cobertura declarada e a cobertura real se contradizem, e a
 contradição está escrita no arquivo.
 
-**O que este item NÃO decide:** se a resposta é reforçar os três testes ou substituí-los por
-teste de propriedade sobre `RecordError` (que fixa as seis de uma vez e não decai quando uma
-sétima nascer). A segunda é mais forte e mais cara.
+**Critério de fechamento:** os três testes precisam afirmar suas propriedades; a cobertura
+de `RecordError` deve ser exaustiva no compilador e ter uma fixture de rejeição por variante;
+e o quarto teste deve apontar para essa prova real, não para o teste parcial antigo.
 
 ```backlog
 id: B-149
@@ -10492,48 +10502,53 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  bash -c 'set -e
-  a=crates/corelink-container/src/storage/d1_audit_sink.rs
-  b=crates/corelink-container/src/routes/billing_ingest.rs
-  for f in "$a" "$b"; do [ -f "$f" ] || { echo "FALHA: $f sumiu — reavalie o item."; exit 1; }; done
+  bash -c 'set -u
+  a=crates/corelink-container/src/storage/d1_audit_sink/tests_batch_limits.rs
+  b=crates/corelink-container/src/routes/billing_ingest/tests_auth.rs
+  c=crates/corelink-container/src/routes/billing_ingest/tests_validate_record.rs
+  d=crates/corelink-container/src/routes/billing_ingest/tests_record_skip.rs
+  p=crates/corelink-container/src/routes/billing_ingest.rs
+  for f in "$a" "$b" "$c" "$d" "$p"; do [ -f "$f" ] || { echo "FALHA: $f sumiu — reavalie o item."; exit 1; }; done
   n=0; det=""
-  corpo=$(awk "/fn empty_batch_issues_no_statement_at_all/{c=1} c{print} c&&/^    }/{exit}" "$a" | grep -v "^[[:space:]]*//")
-  [ -n "$corpo" ] || { echo "FALHA: nao recortei o corpo de empty_batch_issues_no_statement_at_all — o teste mudou de forma; releia."; exit 1; }
-  printf "%s\n" "$corpo" | grep -qiE "assert.*(statement|sql|query|stmt)" || { n=$((n+1)); det="$det empty_batch-sem-asercao-de-statement"; }
-  corpo=$(awk "/fn build_state_returns_none_when_secret_absent/{c=1} c{print} c&&/^    }/{exit}" "$b" | grep -v "^[[:space:]]*//")
-  [ -n "$corpo" ] || { echo "FALHA: nao recortei o corpo de build_state_returns_none_when_secret_absent — releia."; exit 1; }
-  printf "%s\n" "$corpo" | grep -qE "if std::env::var" && { n=$((n+1)); det="$det build_state-condicional-ao-ambiente"; }
-  vars=$(awk "/^enum RecordError/{c=1;next} c&&/^}/{exit} c&&/^    [A-Z][A-Za-z]+,/{n++} END{print n+0}" "$b")
+  grep -qF "build_batch_statements(&[])" "$a" && grep -qF "statements.is_empty()" "$a" || { n=$((n+1)); det="$det empty_batch-sem-asercao-de-statement"; }
+  if ! grep -qF "configured_ingest_auth_key(None)" "$b" || grep -qF "if std::env::var" "$b"; then n=$((n+1)); det="$det secret-ausente-condicional-ao-ambiente"; fi
+  vars=$(awk "/^enum RecordError/{x=1;next} x&&/^}/{exit} x&&/^    [A-Z][A-Za-z]+,/{n++} END{print n+0}" "$p")
   [ "$vars" -ge 2 ] || { echo "FALHA: contei $vars variantes em RecordError — o enum mudou de forma; instrumento quebrado."; exit 1; }
-  corpo=$(awk "/fn validate_record_reasons_pinned/{c=1} c{print} c&&/^    }/{exit}" "$b" | grep -v "^[[:space:]]*//")
-  fix=$(printf "%s\n" "$corpo" | grep -oE "RecordError::[A-Za-z]+" | sort -u | wc -l | tr -d " ")
-  [ "$fix" -lt "$vars" ] && { n=$((n+1)); det="$det reasons_pinned-fixa-$fix-de-$vars"; }
-  [ "$n" -gt 0 ] || { echo "FALHA: nenhum dos tres testes vacuos persiste — feche o item."; exit 1; }
-  echo "aberto: $n de 3 testes seguem vacuos:$det"'
+  helper=$(awk "/fn record_error_variant_name/{x=1} x{print} x&&/^}/{exit}" "$c" | grep -v "^[[:space:]]*//")
+  casos=$(awk "/fn every_record_error_variant_has_a_rejection_fixture/{x=1} x{print} x&&/^}/{exit}" "$c" | grep -v "^[[:space:]]*//")
+  hfix=$(printf "%s\n" "$helper" | grep -oE "RecordError::[A-Za-z]+" | sort -u | wc -l | tr -d " ")
+  cfix=$(printf "%s\n" "$casos" | grep -oE "RecordError::[A-Za-z]+" | sort -u | wc -l | tr -d " ")
+  if [ "$hfix" -lt "$vars" ] || [ "$cfix" -lt "$vars" ] || printf "%s\n" "$helper" | grep -qE "^[[:space:]]*(_|other)[[:space:]]*=>"; then
+    n=$((n+1)); det="$det rejection-fixtures-fixam-helper-$hfix-e-casos-$cfix-de-$vars"
+  fi
+  grep -qF "validate_record_reasons_pinned" "$d" && { n=$((n+1)); det="$det delegacao-ainda-aponta-para-teste-parcial"; }
+  [ "$n" -gt 0 ] || { echo "FALHA: nenhuma das quatro lacunas persiste — feche o item."; exit 1; }
+  echo "aberto: $n de 4 lacunas persistem:$det"'
 verify-means: |
   open — pelo menos um dos três testes ainda satisfaz a forma vazia que o item descreve.
   Fecha por **exaustão**: consertar dois mantém o item aberto com contagem menor, que é o
   comportamento certo para item de lista.
 
-  **Cada medida é sobre o corpo RECORTADO do teste, com os comentários removidos.** Grepar o
-  arquivo inteiro responderia sobre o vizinho; e sem tirar comentário, a linha
-  *"The reason-code mapping is pinned separately in `validate_record_reasons_pinned`"* — que
-  é justamente a delegação que este item denuncia — casaria como se fosse asserção.
+  **Finding reconciliado em 2026-09-02:** os testes foram separados em módulos por
+  `#1499`/`#1513`, mas o instrumento ainda recortava funções nos antigos arquivos-pai e
+  ficou DRIFTED sem que B-149 tivesse sido concluído. O verify agora mede os três módulos
+  efetivamente compilados: lista de statements vazia, segredo ausente independente do
+  ambiente e enum exaustivo com uma fixture de rejeição por variante.
 
-  **A contagem de variantes é derivada, não constante.** `validate_record_reasons_pinned`
-  reprova por `fixadas < variantes do enum`, então nascer uma sétima variante **reabre** o
-  item sozinho. Uma constante `6` escrita à mão envelheceria em silêncio, que é a doença que
-  este arquivo tenta não ter.
+  **A contagem de variantes é derivada, não constante.** O helper exaustivo e a matriz de
+  fixtures são recortados separadamente e ambos precisam citar todas as variantes do enum;
+  nascer uma sétima variante reabre o item e também quebra a compilação do `match`. Uma
+  constante `6` escrita à mão envelheceria em silêncio.
 
-  **Anti-vacuidade:** arquivo ausente, recorte vazio (o teste mudou de forma) e enum com
-  menos de 2 variantes são **falhas de instrumento** com mensagem própria — nenhuma devolve
-  "aberto".
+  **Anti-vacuidade:** arquivo ausente e enum com menos de 2 variantes são falhas de
+  instrumento. Helper ou matriz ausente contam como a lacuna ainda aberta; wildcard no
+  helper também conta como aberto, pois permitiria uma variante nova sem quebrar compilação.
 
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 3 de 3 testes
-  seguem vacuos"* e exit 0. Numa cópia com uma asserção sobre statements no primeiro, o `if
-  std::env::var` removido do segundo, e as seis variantes fixadas no terceiro, sai *"FALHA:
-  nenhum dos tres testes vacuos persiste"* e exit 1.
-last-verified: 2026-08-31
+  **Medido pelos dois lados (2026-09-02):** no estado atual as quatro lacunas são
+  detectadas e o comando sai 0. Aplicar as três provas fortes sem corrigir a delegação ainda
+  deixa uma lacuna; somente ao apontar o quarto teste para a prova exaustiva o comando sai 1
+  e exige a transição do item para `done` com verificador invertido.
+last-verified: 2026-09-02
 ```
 
 ### B-150 — a colisão de ref do [B-136]/[B-137] vale para mais 28 workflows que ninguém escopou
