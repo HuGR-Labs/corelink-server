@@ -11635,80 +11635,107 @@ last-verified: 2026-08-31
 Segundo caso de **documentação publicada instruindo vazamento de credencial**, independente do
 [B-157] e por outro mecanismo.
 
-`apps/docs/docs/integrations/homebrew.md:47-51` instrui:
+`apps/docs/docs/integrations/homebrew.md` instrui a receita antiga:
 
 ```
 export HOMEBREW_ARTIFACT_DOMAIN="https://corelink-api.humangr.com/brew/<your-tenant-id>"
 export HOMEBREW_DOCKER_REGISTRY_TOKEN="corelink_pat_XXXXXXXXXXXXXXXXXXXXXXXX"
 ```
 
-O problema está na primeira metade da própria página: `:12` registra, medido, que o Homebrew
-busca bottles **como blobs OCI direto do `ghcr.io`** e **ignora `HOMEBREW_ARTIFACT_DOMAIN`**
-nesse caminho. Com `HOMEBREW_DOCKER_REGISTRY_TOKEN` exportado, o `brew` apresenta o **PAT do
-CoreLink** ao `ghcr.io` — um terceiro.
+O problema era a ausência de `HOMEBREW_ARTIFACT_DOMAIN_NO_FALLBACK`: quando o espelho falhava,
+o Homebrew podia tentar a URL original do `ghcr.io` com o **PAT do CoreLink** — um terceiro.
+O Homebrew atual preserva a estratégia GitHub Packages quando `HOMEBREW_ARTIFACT_DOMAIN` é
+definido e reescreve a URL para o endpoint do CoreLink; a receita segura precisa bloquear o
+fallback antes de fornecer o token.
 
 **Isolado com três controles, e o discriminante é o código de status:**
 
 | condição | resultado |
 |---|---|
 | sem nenhuma env do CoreLink | `brew` funciona, `rc=0` |
-| só o artifact domain | ghcr responde **401** (nenhuma credencial apresentada) |
-| com `HOMEBREW_DOCKER_REGISTRY_TOKEN` | ghcr responde **403** (credencial **apresentada** e rejeitada) |
+| artifact domain + no-fallback, sem token | CoreLink responde **401** (nenhuma credencial apresentada) |
+| artifact domain + no-fallback + token | CoreLink recebe **`Authorization: Bearer <token>`** |
+| token sem no-fallback | o fallback pode chegar ao `ghcr.io` com **403** |
 
 **401 vs 403 é a prova.** 401 é "não me deu credencial"; 403 é "me deu e não serve". O 403
-demonstra que o token **foi transmitido** ao `ghcr.io`. Duas alternativas foram refutadas no
-mesmo experimento: o **valor** do token é irrelevante (qualquer string produz 403) e o
-**artifact domain** é irrelevante (o token sozinho basta). **Agravante:** a receita ainda
-**quebra um `brew` que funcionava** — o cliente sai de `rc=0` para falha em todo download.
+é o sintoma do fallback inseguro; com o no-fallback, o bearer fica no domínio do CoreLink.
+O caminho público sem configuração continua com `rc=0`, e o caminho autenticado deve falhar
+fechado quando o espelho não responde.
 
-**O que este item NÃO decide:** se a integração Homebrew deve existir. A própria página já
-admite que o caminho de bottle não passa por nós; talvez o reparo certo seja **retirar a
-receita** em vez de consertá-la. Retirar é mais barato e remove a exposição; consertar exige
-descobrir se existe algum caminho em que o `ARTIFACT_DOMAIN` seja honrado.
+**Reparo R4 entregue (2026-09-01).** A integração é preservada com o fluxo autenticado seguro:
+as quatro páginas exigem `HOMEBREW_ARTIFACT_DOMAIN_NO_FALLBACK=1` antes do bearer, explicam que
+o Homebrew converte o token em `Authorization: Bearer`, e mantêm o fluxo público sem env.
+O teste versionado verifica exatamente as quatro páginas publicadas e tem três mutações negativas:
+token sem espelho, remoção do no-fallback e reintrodução do domínio legado `HOMEBREW_BOTTLE_DOMAIN`.
 
 ```backlog
 id: B-161
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'set -e
-  p=apps/docs/docs/integrations/homebrew.md
-  [ -f "$p" ] || { echo "FALHA: $p sumiu — se a pagina foi retirada, esse pode ser o reparo; confirme e feche o item explicitamente."; exit 1; }
-  manda=0
-  grep -qE "^[^#]*HOMEBREW_DOCKER_REGISTRY_TOKEN=.*corelink_pat" "$p" && manda=1
-  admite=0
-  grep -qiE "^[^#]*ignores .*HOMEBREW_ARTIFACT_DOMAIN|^[^#]*directly from .*ghcr\.io" "$p" && admite=1
-  aviso=0
-  grep -qiE "^[^#]*(nao exporte|do not export|never export|leak|vaza)" "$p" && aviso=1
-  if [ "$manda" = 0 ]; then
-    echo "FALHA: a pagina nao manda mais exportar o PAT em HOMEBREW_DOCKER_REGISTRY_TOKEN — o reparo aterrissou; feche o item."; exit 1; fi
-  [ "$admite" = 1 ] || { echo "FALHA: a pagina nao registra mais que o brew busca do ghcr.io ignorando o artifact domain — a premissa medida mudou; releia antes de confiar neste portao."; exit 1; }
-  echo "aberto: homebrew.md manda exportar o PAT como HOMEBREW_DOCKER_REGISTRY_TOKEN (manda=$manda) na MESMA pagina que admite que o brew busca do ghcr.io ignorando o artifact domain (admite=$admite); aviso de vazamento presente=$aviso"'
+  python3 - <<'PY'
+  import json, pathlib, re, subprocess, sys, tempfile
+
+  test = pathlib.Path("apps/docs/tests/homebrew-security.test.ts")
+  if not test.is_file():
+      print("INSTRUMENTO QUEBRADO: missing load-bearing Homebrew security regression", file=sys.stderr)
+      sys.exit(2)
+  source = test.read_text()
+  expected_paths = {
+      "docs/integrations/homebrew.md",
+      "i18n/de/docusaurus-plugin-content-docs/current/integrations/homebrew.md",
+      "i18n/es-419/docusaurus-plugin-content-docs/current/integrations/homebrew.md",
+      "i18n/pt-BR/docusaurus-plugin-content-docs/current/integrations/homebrew.md",
+  }
+  paths = set(re.findall(r'"((?:docs|i18n/[^" ]+)/integrations/homebrew\.md)"', source))
+  if paths != expected_paths:
+      print(f"INSTRUMENTO QUEBRADO: test lists {sorted(paths)!r}, expected exactly four published locales", file=sys.stderr)
+      sys.exit(2)
+  required_tests = (
+      "keeps the focused no-env evidence fixture deterministic and secret-free",
+      "covers every locale with the safe authenticated classification",
+      "turns red when a token export is added without the pinned mirror",
+      "turns red when the no-fallback pin is removed",
+      "turns red when the legacy bottle domain is added",
+  )
+  missing = [name for name in required_tests if name not in source]
+  if missing:
+      print(f"INSTRUMENTO QUEBRADO: Homebrew regression lost test teeth: {missing!r}", file=sys.stderr)
+      sys.exit(2)
+  for tooth in ("homebrew-no-env-proof.txt", "HOMEBREW_DOCKER_REGISTRY_TOKEN", "HOMEBREW_BOTTLE_DOMAIN", "NO_FALLBACK", "without the pinned mirror"):
+      if tooth not in source:
+          print(f"INSTRUMENTO QUEBRADO: Homebrew regression lost tooth {tooth!r}", file=sys.stderr)
+          sys.exit(2)
+
+  with tempfile.NamedTemporaryFile(prefix="b161-vitest-", suffix=".json") as report:
+      result = subprocess.run([
+          "pnpm", "--dir", "apps/docs", "exec", "vitest", "run",
+          "tests/homebrew-security.test.ts", "--reporter=json",
+          f"--outputFile={report.name}",
+      ], capture_output=True, text=True)
+      try:
+          data = json.loads(pathlib.Path(report.name).read_text())
+      except (OSError, json.JSONDecodeError) as exc:
+          print(f"INSTRUMENTO QUEBRADO: Vitest did not produce readable JSON ({exc}); exit {result.returncode}", file=sys.stderr)
+          sys.exit(2)
+  passed = data.get("numPassedTests")
+  failed = data.get("numFailedTests")
+  total = data.get("numTotalTests")
+  if (passed, failed, total) != (5, 0, 5) or result.returncode != 0:
+      print(f"REABERTO: B-161 Vitest result is {passed}/{total} passed, {failed} failed (exit {result.returncode})", file=sys.stderr)
+      sys.exit(1)
+  print("B-161 confirmed: exactly four locale docs; focused Vitest 5/5 passed, 0 failed; unsafe-token, missing-pin, and legacy-domain mutations red")
+  PY
 verify-means: |
-  open — a página ainda instrui exportar o PAT como credencial de registry **e** ela mesma
-  ainda registra que o `brew` busca do `ghcr.io` ignorando o artifact domain. As duas juntas
-  são o que faz a instrução vazar; por isso o portão exige as duas.
-
-  **A segunda condição falha ALTO**, não fecha o item: se a página deixar de admitir o
-  comportamento do `brew`, o comando manda reler — porque nesse mundo ou o Homebrew mudou, ou
-  a página apagou a medição que sustenta o achado, e as duas exigem olho humano.
-
-  **Todos os greps são ancorados em `^[^#]*`.** O reparo mais provável desta página é
-  transformar a receita num bloco de aviso (*"não exporte `HOMEBREW_DOCKER_REGISTRY_TOKEN`"*),
-  e um grep nu continuaria acusando o defeito depois de consertado — o item ficaria aberto
-  para sempre por causa do próprio conserto. Foi assim que [B-118] puniu a confissão da
-  remoção.
-
-  **A página sumir NÃO fecha o item sozinho:** retirar a receita pode ser o reparo certo, mas
-  o comando falha e exige que quem retirou diga isso no item, em vez de o portão inferir.
-
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: homebrew.md manda
-  exportar o PAT…"* e exit 0. Numa cópia com as duas linhas de `export` trocadas por um
-  aviso, sai *"FALHA: a pagina nao manda mais exportar o PAT"* e exit 1.
-
-  O que ele **não** decide: consertar a receita ou retirar a integração.
-last-verified: 2026-08-31
+  done — as quatro páginas publicadas existem, cada uma contém o bloco autenticado com
+  `HOMEBREW_ARTIFACT_DOMAIN`, `HOMEBREW_ARTIFACT_DOMAIN_NO_FALLBACK=1` e token bearer, e
+  nenhuma receita usa `HOMEBREW_BOTTLE_DOMAIN`. Todas preservam `ghcr.io`, `401`, `403` e a
+  explicação de `Authorization: Bearer`. O teste versionado exige exatamente quatro páginas,
+  roda cinco casos e mata as três mutações: token fora do bloco, remoção da trava e atribuição
+  do domínio legado. O próprio `verify` executa esse Vitest e lê o JSON `5/5`, não apenas grepa
+  a forma do teste; qualquer ausência, falha ou redução de cobertura reabre o item.
+last-verified: 2026-09-01
 ```
 
 ### B-162 — 🔴 nenhum PAT publicado tem forma que o produto parseia, e o servidor não dá oráculo para o cliente descobrir
