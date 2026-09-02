@@ -48,6 +48,7 @@ Exit: 0 when every abbreviated citation resolves to a real code line;
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -61,6 +62,14 @@ WIKI = REPO_ROOT / "docs" / "knowledge"
 FULL_CITE = r"`([A-Za-z0-9._/\-]+):(\d+)(?:-(\d+))?`"
 # An abbreviated citation: `:123` or `:123-456`, with no path.
 BARE_CITE = r"`:(\d+)(?:-(\d+))?`"
+# A path-only backtick is an explicit source anchor.  It is needed for prose
+# such as `` `customer_d1.rs` — ... (`:947`, `:1011`) `` where the path is
+# named without a line number before the abbreviated citations.  Requiring a
+# slash avoids treating ordinary inline identifiers as source paths.
+PATH_ONLY_CITE = r"`([A-Za-z0-9._/\-]+/[A-Za-z0-9._\-]+)`"
+BACKTICK_TOKEN = r"`([^`\n]*)`"
+MALFORMED_BARE_CITE = r":\d+-.*"
+MALFORMED_FULL_CITE = r"[A-Za-z0-9._/\-]+:\d+-.*"
 
 COMMENT_STARTS = ("//", "///", "//!", "#", "*", "/*", "<!--")
 DELIMITERS = {"}", "};", ")", ");", "},", "]", "];", "},)", "})", "});"}
@@ -102,13 +111,13 @@ class SourceCache:
 
 def classify(cache: SourceCache, path: str | None, first: int) -> tuple[str, str]:
     """Return (verdict, evidence). Verdict 'ok' means the citation lands on code."""
+    bounds = validate_range_bounds(cache, path, first, None)
+    if bounds[0] != "ok":
+        return bounds
     if path is None:
         return "no-inherited-path", "no full-path citation precedes it"
     lines = cache.lines(path)
-    if lines is None:
-        return "file-missing", f"{path} is not a readable file"
-    if first > len(lines):
-        return "past-eof", f"{path} has {len(lines)} lines"
+    assert lines is not None
     body = lines[first - 1].strip()
     if not body:
         return "blank", "resolves to a blank line"
@@ -117,6 +126,34 @@ def classify(cache: SourceCache, path: str | None, first: int) -> tuple[str, str
     if body.startswith(COMMENT_STARTS):
         return "comment", f"resolves to a comment: {body[:60]}"
     return "ok", body[:60]
+
+
+def validate_range_bounds(
+    cache: SourceCache,
+    path: str | None,
+    first: int,
+    last: int | None,
+) -> tuple[str, str]:
+    """Validate only citation bounds, including full-path ranges.
+
+    Full citations are not otherwise classified here: an intentional range may
+    end at a closing brace or comment even though its first line is executable.
+    The invariant this helper owns is that both endpoints are real, 1-based
+    lines and the range is ordered.
+    """
+    if path is None:
+        return "no-inherited-path", "no full-path citation precedes it"
+    lines = cache.lines(path)
+    if lines is None:
+        return "file-missing", f"{path} is not a readable file"
+    end = first if last is None else last
+    if first < 1 or end < 1:
+        return "line-before-start", f"citation range starts before line 1 ({first}-{end})"
+    if end < first:
+        return "malformed-range", f"citation range is reversed ({first}-{end})"
+    if end > len(lines):
+        return "past-eof", f"{path} has {len(lines)} lines"
+    return "ok", ""
 
 
 def scan_concept(path: Path, cache: SourceCache, full_re, bare_re) -> tuple[int, list[str]]:
@@ -136,21 +173,54 @@ def scan_concept(path: Path, cache: SourceCache, full_re, bare_re) -> tuple[int,
     inherited: str | None = None
 
     for lineno, line in enumerate(text.splitlines(), 1):
-        # Walk full and abbreviated citations in position order, so an
-        # abbreviated one inherits the nearest full path that precedes it on
-        # the same concept — which is how a numbered citation list reads.
-        tokens = sorted(
-            [(m.start(), "full", m.group(1), int(m.group(2))) for m in full_re.finditer(line)]
-            + [(m.start(), "bare", None, int(m.group(1))) for m in bare_re.finditer(line)]
-        )
-        for _pos, kind, cited_path, number in tokens:
-            if kind == "full":
+        # Walk every backtick token in source order.  This preserves path-only
+        # anchors and lets an abbreviated citation inherit the nearest full or
+        # path-only source anchor anywhere earlier in the same concept.
+        for token in re.finditer(BACKTICK_TOKEN, line):
+            raw = token.group(0)
+            inner = token.group(1)
+            full = full_re.fullmatch(raw)
+            bare = bare_re.fullmatch(raw)
+            if full:
+                cited_path = full.group(1)
+                first = int(full.group(2))
+                last = int(full.group(3)) if full.group(3) is not None else None
                 inherited = cited_path
+                verdict, evidence = validate_range_bounds(cache, cited_path, first, last)
+                if verdict != "ok":
+                    suffix = f"-{last}" if last is not None else ""
+                    findings.append(
+                        f"  {rel}:{lineno}  `{cited_path}:{first}{suffix}`  "
+                        f"[full-{verdict}]  {evidence}"
+                    )
                 continue
-            seen += 1
-            verdict, evidence = classify(cache, inherited, number)
-            if verdict != "ok":
-                findings.append(f"  {rel}:{lineno}  `:{number}`  [{verdict}]  {evidence}")
+            if bare:
+                seen += 1
+                first = int(bare.group(1))
+                last = int(bare.group(2)) if bare.group(2) is not None else None
+                verdict, evidence = validate_range_bounds(cache, inherited, first, last)
+                if verdict == "ok":
+                    verdict, evidence = classify(cache, inherited, first)
+                if verdict != "ok":
+                    suffix = f"-{last}" if last is not None else ""
+                    findings.append(f"  {rel}:{lineno}  `:{first}{suffix}`  [{verdict}]  {evidence}")
+                continue
+            if re.fullmatch(MALFORMED_BARE_CITE, inner):
+                seen += 1
+                findings.append(
+                    f"  {rel}:{lineno}  `{inner}`  [malformed-range]  "
+                    "abbreviated citations must be `:N` or `:N-M` with a numeric end"
+                )
+                continue
+            if re.fullmatch(MALFORMED_FULL_CITE, inner):
+                findings.append(
+                    f"  {rel}:{lineno}  `{inner}`  [malformed-range]  "
+                    "full citations must be `path:N` or `path:N-M` with a numeric end"
+                )
+                continue
+            path_only = re.fullmatch(PATH_ONLY_CITE, raw)
+            if path_only:
+                inherited = path_only.group(1)
 
     return seen, findings
 

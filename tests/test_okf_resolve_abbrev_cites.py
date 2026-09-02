@@ -55,8 +55,37 @@ def test_repo_relative_path_cannot_escape_source_root(tmp_path: Path) -> None:
     )
 
     assert seen == 1
-    assert len(findings) == 1
-    assert "file-missing" in findings[0]
+    assert len(findings) == 2
+    assert "full-file-missing" in findings[0]
+    assert "file-missing" in findings[1]
+
+
+def test_rejects_zero_and_past_eof_ranges_and_malformed_bare_range(tmp_path: Path) -> None:
+    seen, findings = _scan(
+        tmp_path,
+        "# Citations\n"
+        "1. `src/live.rs:0`\n"
+        "2. `src/live.rs:1-4`\n"
+        "3. `src/live.rs:1` then `:999-`\n",
+        {"src/live.rs": "fn live() {}\n"},
+    )
+
+    assert seen == 1
+    assert any("full-line-before-start" in finding for finding in findings)
+    assert any("full-past-eof" in finding for finding in findings)
+    assert any("malformed-range" in finding for finding in findings)
+
+
+def test_path_only_anchor_resolves_following_abbreviated_citations(tmp_path: Path) -> None:
+    seen, findings = _scan(
+        tmp_path,
+        "# Citations\n"
+        "The implementation is `crates/example/src/customer_d1.rs`; see `:1` and `:2`.\n",
+        {"crates/example/src/customer_d1.rs": "impl Customer {\nfn method() {}\n}\n"},
+    )
+
+    assert seen == 2
+    assert findings == []
 
 
 def test_missing_named_concept_is_a_fatal_scan_failure() -> None:

@@ -3366,7 +3366,17 @@ other. Until then, every re-anchor that touches a file cited in abbreviated
 form is silently unverified.
 
 Relates to [B-058] (the OKF reconcile backlog) and to the C5 freshness gate
-generally.
+generally. The repo-owned diagnostic `scripts/okf_resolve_abbrev_cites.py` now
+runs in the official `okf_wiki.yml` gate, so this surface is no longer silently
+ignored. It validates full-path ranges as well as abbreviated ranges, recognizes
+a path-only source anchor before abbreviated lines, and rejects malformed forms
+such as `` `:999-` ``. On the current tree it finds **38 of 107** abbreviated
+citations still landing on a blank, comment, or delimiter; those residuals keep
+this item `open`. The six historical `past-eof` citations in the handler seam
+are no longer reported because the naked `customer_d1.rs` source anchor is now
+recognized. Exit 2 remains a fatal scan failure; exit 1 is surfaced as a warning
+until the residual citations are re-authored, after which this step becomes
+blocking.
 
 ```backlog
 id: B-059
@@ -3374,13 +3384,17 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  grep -qF '(?P<path>[A-Za-z0-9._/\-]+):(?P<l1>' scripts/validate_okf.py
+  grep -qF '(?P<path>[A-Za-z0-9._/\-]+):(?P<l1>' scripts/validate_okf.py &&
+  ! python3 scripts/okf_resolve_abbrev_cites.py --quiet
 verify-means: |
   open — passes while the citation regex still requires a non-empty path, i.e.
-  while abbreviated `:N-M` citations are invisible to the OKF gates. Closes when
-  the pattern admits a path-less citation (resolved against the preceding
-  full-path one) and the gates validate it like any other.
-last-verified: 2026-08-29
+  while abbreviated `:N-M` citations are invisible to the OKF gates, AND while
+  the official resolver reports at least one residual finding. The resolver
+  resolves against the nearest preceding full or path-only source anchor in the
+  same concept, validates 1-based range bounds through EOF, and rejects malformed
+  tokens. Closes only after the validator admits path-less citations and the
+  resolver exits 0, at which point this open-polarity assertion is inverted.
+last-verified: 2026-09-02
 ```
 
 ### B-060 — the DSR registry→migrations mirror gate
