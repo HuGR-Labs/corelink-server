@@ -16,12 +16,12 @@ characters (6 active / 6 unique):
 
 | Manifest line | Kind | Provenance | Digest |
 |---:|---|---|---|
-| 87 | OCI layer blob | `docker.io/library/alpine:3.20` (amd64 rootfs layer) | `sha256:25f1d6b1951ac8eb3740558fe94cb83d377bdadf95fd9f98b50d2e1b96130471` |
-| 90 | OCI image index | `docker.io/library/alpine:3.20` (multi-arch image index) | `sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc` |
-| 91 | OCI image index | `docker.io/library/debian:12` (multi-arch image index) | `sha256:813017f3d62be4b5891a7acca6a01bdcd4b8513daa81b1ab99d3a50385b26931` |
-| 92 | OCI image index | `docker.io/library/ubuntu:24.04` (multi-arch image index) | `sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517` |
-| 93 | OCI image index | `docker.io/library/node:22-slim` (multi-arch image index) | `sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436` |
-| 94 | OCI image index | `docker.io/library/python:3.12-slim` (multi-arch image index) | `sha256:2c941e860699f878900b0edc2403613c234d4b32eda3cc9fa7036991a2a63c4a` |
+| 93 | OCI layer blob | `docker.io/library/alpine:3.20` (amd64 rootfs layer) | `sha256:25f1d6b1951ac8eb3740558fe94cb83d377bdadf95fd9f98b50d2e1b96130471` |
+| 96 | OCI image index | `docker.io/library/alpine:3.20` (multi-arch image index) | `sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc` |
+| 97 | OCI image index | `docker.io/library/debian:12` (multi-arch image index) | `sha256:813017f3d62be4b5891a7acca6a01bdcd4b8513daa81b1ab99d3a50385b26931` |
+| 98 | OCI image index | `docker.io/library/ubuntu:24.04` (multi-arch image index) | `sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517` |
+| 99 | OCI image index | `docker.io/library/node:22-slim` (multi-arch image index) | `sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436` |
+| 100 | OCI image index | `docker.io/library/python:3.12-slim` (multi-arch image index) | `sha256:2c941e860699f878900b0edc2403613c234d4b32eda3cc9fa7036991a2a63c4a` |
 
 The six entries are roots, not six total stored objects. The five image-index pins can
 server-side promote their digest-verified manifest/config/layer closure into `_public`.
@@ -75,7 +75,7 @@ npm public metadata, and curated OCI `_public` — not CAS-wide cross-tenant sha
 
 ## Citations
 
-1. `crates/corelink-container/src/public_base_allowlist.manifest:87,90-94` — the complete
+1. `crates/corelink-container/src/public_base_allowlist.manifest:93,96-100` — the complete
    six-pin population and provenance.
 2. `crates/corelink-container/src/public_base_allowlist.rs:25-28,45-55,63-78` — binary-baked
    manifest, canonical digest parsing, and fail-closed load.
@@ -101,9 +101,7 @@ rows above. The focused `corelink-server inc6_ --lib` Cargo test was attempted w
 jobs, but package-cache locking and concurrent workspace builds prevented completion;
 this note makes no passing-Cargo claim. `validate_okf.py` then reported **165 concepts,
 1 deferred, 0 stale/drift**, and `okf_status.py --check` reported no manifest drift;
-`validate_docs_reality.py` exited 0 with its pre-existing non-fatal warning set. A
-qualifier-deletion mutation was also checked:
-removing the phrase
-`cross-tenant sharing is limited to the curated OCI \`_public\` allowlist` makes the
-scope assertion fail (expected **RED**), so the strategy qualification is load-bearing
-for review rather than decorative prose.
+`validate_docs_reality.py` exited 0 with its pre-existing non-fatal warning set. The
+static checks cover the six-pin population, digest-only finalize predicate, and
+tenant-scoped manifest route; this record makes no claim that a prose-qualifier deletion
+was independently enforced by an executable mutation verifier.
