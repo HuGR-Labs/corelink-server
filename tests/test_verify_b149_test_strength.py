@@ -170,6 +170,15 @@ fn unrelated() { let rows: Vec<AuditRow> = Vec::new(); let statements = rows.map
             with self.subTest(mutation=mutation.__name__):
                 self.assert_gap(mutation, "empty_batch-no-empty-statement-assertion")
 
+    def test_disconnected_audit_result_does_not_count(self) -> None:
+        self.assert_gap(lambda s: s.__setitem__(verifier.AUDIT, """
+fn empty_batch_issues_no_statement_at_all() {
+    let _ignored = D1AuditOutboxSink::build_batch_statements(&[]).unwrap();
+    let statements: Vec<Statement> = Vec::new();
+    assert!(statements.is_empty());
+}
+"""), "empty_batch-no-empty-statement-assertion")
+
     def test_auth_requires_direct_none_without_environment_access(self) -> None:
         self.assert_gap(lambda s: s.__setitem__(verifier.AUTH, """
 fn build_state_returns_none_when_secret_absent() {
@@ -177,10 +186,27 @@ fn build_state_returns_none_when_secret_absent() {
         let key = configured_ingest_auth_key(None); assert!(key.is_none());
     }
 }"""), "secret-absent-is-environment-conditional")
+        self.assert_gap(lambda s: s.__setitem__(verifier.AUTH, """
+fn build_state_returns_none_when_secret_absent() {
+    if false { assert!(configured_ingest_auth_key(None).is_none()); }
+}
+"""), "secret-absent-is-environment-conditional")
 
     def test_fixture_removal_and_duplicate_replacement_are_detected(self) -> None:
         self.assert_gap(lambda s: s.__setitem__(
             verifier.VALIDATE, s[verifier.VALIDATE].replace('(RecordError::BadRegion, "bad_region"),', ""),
+        ), "record-error-fixtures-or-reason-codes-not-exhaustive")
+
+    def test_discarded_validation_and_code_results_do_not_count(self) -> None:
+        self.assert_gap(lambda s: s.__setitem__(
+            verifier.VALIDATE,
+            s[verifier.VALIDATE].replace(
+                """let actual = validate_record(wire_for(expected));
+        assert_eq!(actual, Err(expected));
+        assert_eq!(expected.code(), reason);""",
+                """let _actual = validate_record(wire_for(expected));
+        let _code = expected.code();""",
+            ),
         ), "record-error-fixtures-or-reason-codes-not-exhaustive")
         self.assert_gap(lambda s: s.__setitem__(
             verifier.VALIDATE, s[verifier.VALIDATE].replace('(RecordError::BadRegion, "bad_region"),', '(RecordError::BadTenantId, "bad_region"),'),

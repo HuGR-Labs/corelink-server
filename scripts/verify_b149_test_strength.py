@@ -317,12 +317,33 @@ def assess(root: Path) -> list[str]:
 
     gaps: list[str] = []
     audit = _body(token_sets[AUDIT], "empty_batch_issues_no_statement_at_all", AUDIT)
-    # The production implementation dispatches exactly the Vec returned by
-    # `build_batch_statements`.  Accept either an empty slice or an
-    # explicitly-created empty Vec, but insist that this named test reaches
-    # that dispatch seam before asserting on its returned collection.
-    empty_input = _has(audit, ["&", "[", "]"]) or _has(audit, ["Vec", ":", ":", "new", "(", ")"])
-    empty_build = _has(audit, ["build_batch_statements"]) and empty_input and any(t.value == "statements" for t in audit)
+    # Bind the exact dispatch seam's empty-slice result to the collection that
+    # is asserted.  Merely calling the builder and separately asserting an
+    # unrelated empty Vec is a false proof.
+    empty_build_direct = _has(
+        audit,
+        [
+            "let", "statements", "=", "D1AuditOutboxSink", ":", ":",
+            "build_batch_statements", "(", "&", "[", "]", ")",
+        ],
+    )
+    empty_build_named = (
+        _has(
+            audit,
+            [
+                "let", "rows", ":", "Vec", "<", "AuditRow", ">", "=",
+                "Vec", ":", ":", "new", "(", ")",
+            ],
+        )
+        and _has(
+            audit,
+            [
+                "let", "statements", "=", "D1AuditOutboxSink", ":", ":",
+                "build_batch_statements", "(", "&", "rows", ")",
+            ],
+        )
+    )
+    empty_build = empty_build_direct or empty_build_named
     empty_assert = _has(audit, ["assert", "!", "(", "statements", ".", "is_empty", "(", ")"])
     if not (empty_build and empty_assert):
         gaps.append("empty_batch-no-empty-statement-assertion")
@@ -339,7 +360,8 @@ def assess(root: Path) -> list[str]:
         for i in range(max(0, len(auth) - 6)) if auth[i].value == "let" and auth[i + 1].kind == "ident"
     )
     uses_env = _has(auth, ["std", ":", ":", "env"]) or _has(auth, ["env", ":", ":", "var"])
-    if not ((direct_none or assigned) and not uses_env):
+    conditional = any(token.value in {"if", "match", "while", "for", "loop"} for token in auth)
+    if not ((direct_none or assigned) and not uses_env and not conditional):
         gaps.append("secret-absent-is-environment-conditional")
 
     variants = _enum_variants(token_sets[INGEST], INGEST)
@@ -366,8 +388,17 @@ def assess(root: Path) -> list[str]:
         and _match_arms_are_exhaustive(helper, variants)
         and code_mapping == stable_codes
         and all(count == 1 for count in mentions.values())
-        and _has(fixtures or [], ["validate_record", "("])
-        and _has(fixtures or [], ["code", "(", ")"])
+        and (
+            _has(fixtures or [], ["assert_eq", "!", "(", "validate_record", "(", "wire", ")", ",", "Err", "(", "expected", ")"])
+            or (
+                _has(fixtures or [], ["let", "actual", "=", "validate_record", "("])
+                and _has(fixtures or [], ["assert_eq", "!", "(", "actual", ",", "Err", "(", "expected", ")"])
+            )
+        )
+        and (
+            _has(fixtures or [], ["assert_eq", "!", "(", "expected", ".", "code", "(", ")", ",", "reason"])
+            or _has(fixtures or [], ["assert_eq", "!", "(", "expected", ".", "code", "(", ")", ",", "expected_code"])
+        )
         and all(fixture_has_expected_reason(variant) for variant in variants)
     )
     if not fixture_proof:

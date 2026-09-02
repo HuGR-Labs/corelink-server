@@ -7,4 +7,6 @@
   evidence, wildcard enum coverage, incomplete fixtures, and stable reason-code
   drift. B-075 now validates both the executable Vitest shim and its package
   entrypoint, repairing the exact interrupted-prune state that can leave only
-  the shim behind.
+  the shim behind. The B-149 instrument also requires each observed result to
+  flow into the named assertion, rejecting disconnected empty values,
+  conditionally dead secret checks, and discarded validation/reason results.
