@@ -1317,26 +1317,32 @@ verify-means: |
 last-verified: 2026-08-24
 ```
 
-### B-028 — six Dependabot alerts have never been triaged
+### B-028 — Dependabot alert census is triaged but still has three unpatched highs
 
-`HuGR-Labs/corelink-server` carries **4 high and 2 moderate** open Dependabot
-alerts. Every `git push` prints the banner; nobody has read them. The repo runs
-`cargo-audit`, `cargo-deny`, `semgrep`, `trivy` and `gitleaks` on schedules, so
-the gap is not tooling — GitHub's own advisory feed simply has no owner.
+The issue is an owner-reviewed alert census, not a blanket dependency update.
+The repository runs `cargo-audit`, `cargo-deny`, `semgrep`, `trivy`, and
+`gitleaks`; none replaces GitHub's advisory feed or the decision to take a
+published npm patch. An unread high advisory remains unacceptable even when the
+affected path is build-time-only.
 
-Triage, not blanket upgrade: each alert needs a verdict (fix / not-reachable /
-accepted-with-reason). An unread high advisory on a product that sells storage
-governance is a bad look independent of exploitability.
+**Re-verified 2026-09-02 with an authenticated Dependabot API query.** The
+pre-merge census contains five open alerts. `#29` and `#30` are the same low
+severity `postcss-selector-parser` advisory (`GHSA-w9m9-85wc-3x92`), against
+the 6.x and 7.x resolution paths respectively. This change adds two narrowly
+scoped root overrides and the corresponding frozen-lockfile re-resolution:
+`6.1.2 → 6.1.3` and `7.1.1 → 7.1.3`, with no unrelated package resolution
+change. Those are the two patchable lows and must disappear from GitHub's
+census after the exact lockfile reaches the default branch.
 
-**Triaged 2026-08-24.** Three of the six — `ip-address` ≤ 10.3.0, reached via
-`socks` → `proxy-agent` → `@puppeteer/browsers` — had a published patch and are
-fixed in `#1259` by a `pnpm.overrides` entry lifting them to 10.5.0. The other
-three have **no patched version at all**: `extract-zip` ≤ 2.0.1 (via
-`@puppeteer/browsers`) and two `image-size` ≤ 2.0.2 advisories (via
-`@docusaurus/mdx-loader`). Both are build-time-only paths; neither package
-reaches a Worker or container bundle. They stay OPEN rather than dismissed,
-because dismissing removes the reminder to take the patch when one lands — so
-this item stays open too, and its verify keeps counting them.
+The item deliberately remains **OPEN** for the three high alerts that have no
+published patched version: `#26` and `#27`, both `image-size` via
+`@docusaurus/mdx-loader` (`GHSA-w3rx-r6r6-pgpr` and
+`GHSA-5p2g-fcmc-qvqq`), and `#28`, `extract-zip` via
+`@puppeteer/browsers` (`GHSA-jmr9-qjv8-65gv`). They are currently build-time
+paths rather than Worker or container bundle dependencies, but are not
+dismissed: a newly published patch, a changed dependency path, a new alert, or
+an alert reopening requires a fresh owner triage. Open is a reminder and not a
+claim that the risk disappeared.
 
 ```backlog
 id: B-028
@@ -1345,14 +1351,22 @@ owner: tl
 status: open
 verify: manual
 verify-means: |
-  open while any Dependabot alert is still open and unadjudicated. NOT
-  CI-checkable: the Actions GITHUB_TOKEN cannot read the Dependabot alerts API,
-  and a command that returns empty under CI's credentials would make this check
-  pass by accident — the failure mode this register exists to prevent. Run it
-  where gh is authenticated:
+  status remains open while the three explicitly triaged, unpatched highs are
+  open. This is deliberately manual: the Actions GITHUB_TOKEN cannot read the
+  Dependabot alerts API, and treating its permission failure as an empty census
+  would create a false green. With authenticated `gh`, after this exact
+  lockfile change is on the default branch, require this exact residual census
+  (numbers, packages, GHSA IDs, and severity), sorted by number:
     gh api /repos/HuGR-Labs/corelink-server/dependabot/alerts --paginate \
-      -q '[.[]|select(.state=="open")]|length'
-last-verified: 2026-08-24
+      --jq '[.[] | select(.state == "open") | {number, package: .dependency.package.name, ghsa: .security_advisory.ghsa_id, severity: .security_advisory.severity}] | sort_by(.number)'
+  It must contain only #26 image-size GHSA-w3rx-r6r6-pgpr high, #27 image-size
+  GHSA-5p2g-fcmc-qvqq high, and #28 extract-zip GHSA-jmr9-qjv8-65gv high. Also
+  confirm #29/#30 are closed and that `pnpm-lock.yaml` contains no
+  `postcss-selector-parser@6.1.2` or `@7.1.1` entry while retaining only the
+  two intended root overrides. Any other count, alert identity, severity,
+  state, or resolution is drift and requires re-triage; do not silently update
+  this date.
+last-verified: 2026-09-02
 ```
 
 ### B-033 — the workspace lint gate runs nowhere, and its stated compensation does not hold
