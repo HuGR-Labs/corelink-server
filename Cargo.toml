@@ -403,7 +403,10 @@ exclude = [
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
-license = "UNLICENSED"
+# Cargo's publication sentinel is not an SPDX identifier. The workspace is
+# proprietary; CycloneDX represents that truth using the SPDX
+# extension point below rather than emitting an invalid license expression.
+license = "LicenseRef-CoreLink-Proprietary"
 publish = false
 
 [workspace.lints.rust]

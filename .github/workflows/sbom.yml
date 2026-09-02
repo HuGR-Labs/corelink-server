@@ -4,10 +4,10 @@
 # Trigger:
 #   - release: { types: [published] }        — primary gate (release asset upload)
 #   - workflow_dispatch                        — manual run (ops / dev)
-#   - schedule (weekly)                        — drift check (SBOM freshness)
+#   - regular PR/push (via python-tests.yml)   — committed-input drift gate
 #
 # All SHA-pinned per CoreLink hard constraints.
-# Permissions: contents:write (release asset upload), id-token:write (OIDC for future Cosign).
+# Permissions: read by default; release upload elevates only its own job.
 
 name: "SBOM — CycloneDX 1.5+ (WI-S12-002)"
 
@@ -38,20 +38,14 @@ on:
   # the real need. Re-add a cron only with a reason that survives that test.
 
 permissions:
-  contents: write   # upload release assets
-  id-token: write   # OIDC (reserved for future Cosign keyless; no-op now)
+  contents: read
 
 env:
-  # 0.5.9 is the version ADR-0044 canonicalizes for SBOM generation, and the one
-  # `sbom-consolidated.yml` — the only lane in this group with a successful run —
-  # installs. This lane was pinned to 0.5.4 and drifted off the canonical pin.
-  CARGO_CYCLONEDX_VERSION: "0.5.9"
   CYCLONEDX_CLI_VERSION: "0.27.2"
   # SHA-256 digests of the cyclonedx-cli release binaries, pinned for supply
-  # chain and ENFORCED in the install step below. The previous entry here was
-  # `CYCLONEDX_CLI_LINUX_SHA256: "placeholder-pin-at-first-use"` — a literal
-  # placeholder that no step ever read, i.e. a pin that pinned nothing, on a
-  # Linux asset this macOS job could not have executed anyway.
+  # chain and ENFORCED in the install step below.
+  # SHA-256 digests of the macOS tool binaries, enforced before execution.
+  # The lane is intentionally macOS-only, matching the corelink-builder fleet.
   CYCLONEDX_CLI_OSX_X64_SHA256: "331c2245ef7dadf09fa3d2710a2aaab071ff6bea2ba3e5df8f95a4f3f6e825e9"
   CYCLONEDX_CLI_OSX_ARM64_SHA256: "2d24c331c2ccc5e4061722bd4780c8b295041b2569d130bbe80cf7da95b97171"
   TSA_URL: "https://tsa.sigstore.dev/api/v1/timestamp"
@@ -61,7 +55,7 @@ jobs:
   # Job 1: Setup + SBOM generation
   # ---------------------------------------------------------------------------
   sbom-generate:
-    name: "Generate SBOM (cargo-cyclonedx)"
+    name: "Verify committed Cargo.lock SBOM"
     runs-on: [self-hosted, mac, corelink-builder]
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -95,16 +89,6 @@ jobs:
           key: ${{ runner.os }}-cargo-sbom-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-sbom-
 
-      # Prebuilt binary, NOT `cargo install` — a from-source install compiles its
-      # own dep tree into the SHARED `~/.cargo` used by all 5 self-hosted runners
-      # at once, which is the documented `os error 2` race (same reasoning as
-      # mutation-pr.yml / lockfile-diff.yml). The version stays driven by
-      # env.CARGO_CYCLONEDX_VERSION so there is still exactly ONE pin to bump.
-      - name: Install cargo-cyclonedx ${{ env.CARGO_CYCLONEDX_VERSION }} (prebuilt)
-        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
-        with:
-          tool: cargo-cyclonedx@${{ env.CARGO_CYCLONEDX_VERSION }}
-
       - name: Determine release version
         id: version
         run: |
@@ -116,30 +100,37 @@ jobs:
             echo "version=drift-check-$(date +%Y%m%d)" >> "$GITHUB_OUTPUT"
           fi
 
-      # `cargo cyclonedx --all` emits ONE SBOM PER PACKAGE, each written into that
-      # package's own manifest directory — it does NOT produce a workspace-wide
-      # document at the repo root. With 70+ crates this scattered 70+ files named
-      # `sbom.cdx.json` through `crates/*/` and left NOTHING here, so the `ls`
-      # below it failed every single time:
-      #
-      #     ls: sbom.cdx.json: No such file or directory
-      #     ##[error]Process completed with exit code 1
-      #
-      # That is the whole of this lane's 16-run / 0-success record — the same
-      # fault class as `reproducible-build` hashing a wasm artifact the build
-      # cannot produce. `scripts/sbom-aggregate.sh` is the repo's answer to
-      # exactly this: its header says it "wraps [cargo-cyclonedx] and stitches
-      # the per-crate components into one canonical workspace bom". It is already
-      # proven — `sbom-consolidated.yml` runs it and is the ONE lane in this
-      # group with a successful run.
-      - name: Generate SBOM (CycloneDX 1.5+ JSON — consolidated workspace bom)
-        env:
-          SBOM_REF: ${{ steps.version.outputs.version }}
+      # The committed SBOM is a deterministic projection of the complete
+      # Cargo.lock population.  Unlike a cargo-cyclonedx binary aggregate, this
+      # cannot lose inactive lock entries, include host paths, or get a fresh
+      # timestamp/UUID on each run.  The harness calls `cargo metadata --locked`
+      # and fails closed when metadata, the artifact, or the population differs.
+      - name: Verify committed Cargo.lock SBOM is reproducible and complete
         run: |
           set -euo pipefail
-          bash scripts/sbom-aggregate.sh
-          cp target/sbom/corelink-workspace.cdx.json sbom.cdx.json
-          echo "SBOM generation complete"
+          # The self-hosted fleet shares its host Python installation.  Keep
+          # this SBOM-only dependency closure private to this job and under
+          # RUNNER_TEMP, rather than mutating that shared interpreter or
+          # pulling in every CI validator.  --require-hashes makes a changed
+          # or substituted wheel a hard failure; --only-binary avoids an
+          # unpinned source-build dependency surprise.
+          SBOM_VENV="${RUNNER_TEMP}/corelink-sbom-venv"
+          python3 -m venv "$SBOM_VENV"
+          SBOM_PYTHON="${SBOM_VENV}/bin/python"
+          "$SBOM_PYTHON" -m pip install \
+            --quiet \
+            --disable-pip-version-check \
+            --no-input \
+            --require-hashes \
+            --only-binary=:all: \
+            --no-deps \
+            -r requirements-sbom.txt
+          "$SBOM_PYTHON" -c \
+            'import boolean, license_expression, pathlib, sys; prefix = pathlib.Path(sys.prefix).resolve(); temp = pathlib.Path(sys.argv[1]).resolve(); assert temp in prefix.parents or prefix == temp, (prefix, temp); print(f"SBOM venv: {prefix}"); print(f"SPDX parser: {license_expression.__file__}"); print(f"boolean.py: {boolean.__file__}")' \
+            "$RUNNER_TEMP"
+          "$SBOM_PYTHON" tests/verify_rust_sbom.py --check
+          cp .sbom/cyclonedx-rust.json sbom.cdx.json
+          echo "SBOM reproducibility and lock coverage verified"
           ls -lh sbom.cdx.json
 
       - name: Upload SBOM artifact (between jobs)
@@ -176,11 +167,8 @@ jobs:
       # Arch is now selected from `uname -m` (the fleet self-reports the `X64`
       # label, which does not settle whether the host is Apple Silicon), and the
       # binary is verified against a SHA-256 pinned in the `env:` block above
-      # BEFORE it is made executable. The previous pin,
-      # `CYCLONEDX_CLI_LINUX_SHA256: "placeholder-pin-at-first-use"`, was a
-      # literal placeholder referenced by nothing — a supply-chain pin that
-      # pinned nothing. Digests computed from the upstream v0.27.2 release
-      # assets on 2026-08-31.
+      # BEFORE it is made executable. Digests are computed from the upstream
+      # v0.27.2 release assets on 2026-08-31.
       - name: Install CycloneDX CLI ${{ env.CYCLONEDX_CLI_VERSION }}
         run: |
           set -euo pipefail
@@ -351,6 +339,8 @@ jobs:
     # i.e. explicitly declared non-blocking).
     needs: [sbom-tsa-attest]
     if: github.event_name == 'release'
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout

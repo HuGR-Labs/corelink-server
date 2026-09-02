@@ -6326,33 +6326,20 @@ hosted.
 id: B-091
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'unl=0; grep -qE "^license[[:space:]]*=[[:space:]]*\"UNLICENSED\"" Cargo.toml && unl=1
-  ph=0; grep -q "placeholder-pin-at-first-use" .github/workflows/sbom.yml 2>/dev/null && ph=1
-  velho=0
-  if [ -f .sbom/cyclonedx-rust.json ]; then
-    comp=$(grep -o "\"bom-ref\"" .sbom/cyclonedx-rust.json 2>/dev/null | wc -l | tr -d " ")
-    lock=$(grep -c "^name = " Cargo.lock 2>/dev/null | tr -d " ")
-    [ "$comp" -gt 0 ] && [ "$lock" -gt 0 ] && [ "$comp" -lt "$((lock * 8 / 10))" ] && velho=1
-  fi
-  soma=$((unl + ph + velho))
-  [ "$soma" -gt 0 ] || { echo "FALHA: license SPDX valida, sem placeholder de pin e SBOM proximo do Cargo.lock — feche o item."; exit 1; }
-  echo "aberto: license_UNLICENSED=$unl placeholder_de_pin=$ph sbom_defasado=$velho (componentes=${comp:-na} vs Cargo.lock=${lock:-na})"'
+  grep -q '^license = "LicenseRef-CoreLink-Proprietary"$' Cargo.toml \
+    && ! grep -q 'UNLICENSED' Cargo.toml \
+    && ! grep -Eiq 'placeholder[^[:space:]]*[[:space:]-]*pin|pin[^[:space:]]*[[:space:]-]*placeholder' .github/workflows/sbom.yml \
+    && python3 tests/verify_rust_sbom.py --check \
+    && python3 -m pytest -q tests/test_sbom_workflow_dependencies.py
 verify-means: |
-  open — o `Cargo.toml` ainda declara `UNLICENSED`, ou o `sbom.yml` ainda carrega o
-  placeholder de pin, ou o SBOM commitado tem menos de 80% dos pacotes do `Cargo.lock`.
-
-  Vira DRIFTED quando os três forem resolvidos. Usei o limiar de 80% em vez de igualdade
-  exata porque contagem de componentes CycloneDX e linhas `name =` do `Cargo.lock` não
-  batem uma a uma; o limiar detecta defasagem estrutural (413 vs 652 é 63%) sem reprovar
-  por diferença de método de contagem.
-
-  O que NÃO decide, e admito: se o `sbom.yml` volta a passar. A lane é hosted-blocked por
-  #1434, então gatear no verde dela acorrentaria este item a uma decisão de gasto do
-  owner. O defeito de uma linha no caminho do arquivo é consertável e testável
-  independentemente disso, e é o que este item cobra.
-last-verified: 2026-08-30
+  done — a deterministic lock-population verifier, complete SBOM dependency
+  census, recursive workspace-manifest trigger, real CycloneDX macOS digests,
+  and mutation coverage are present. The check intentionally turns red if the
+  committed SBOM, license normalization, trigger census, or verifier contract
+  drifts. SLSA provenance scope is not part of this closure (see B-031).
+last-verified: 2026-09-02
 ```
 
 ### B-092 — a documentação de entrada ensina SHA-256; o CAS é BLAKE3, e o primeiro PUT de todo cliente novo retorna 422
