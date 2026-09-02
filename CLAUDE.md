@@ -138,6 +138,44 @@ until you do.** Fix the item or fix the world; never delete the check.
   pushes to `main`). End commit messages with the
   `Co-Authored-By: Claude …` trailer; end PR bodies with the Generated-with footer.
 
+### Delivery anchor — throughput is a correctness property
+
+For backlog orchestration, activity is not delivery. Tokens spent, agents spawned,
+plans written, tests run and local candidates produced count as work in progress;
+only a merged change plus the corresponding `BACKLOG.md` state transition counts
+as delivered backlog progress.
+
+- **Integration lane stays hot.** While a cold-LAND candidate exists, the lead's
+  next action is to integrate it through all existing required gates or record the
+  exact blocking SHA/gate. Do not run another full census, redesign the plan or
+  investigate unrelated infrastructure first.
+- **Merge serialization never serializes authorship.** A serial merge queue is not
+  permission to idle disjoint authors. Keep at least half of available agent slots
+  on new, file-disjoint implementation whenever that many executable items exist;
+  use the remainder for repair and cold review.
+- **Stack to avoid duplicate CI.** Build the integration queue on the last
+  certified candidate tree. After its parent squash-merges, reanchor the child on
+  the new `main` and compare trees. If the reanchored tree is byte-identical, reuse
+  tree-bound heavy-CI evidence and rerun only commit/head-bound gates plus exact-SHA
+  cold review. Any tree difference invalidates the evidence and requires the full
+  applicable CI bundle again.
+- **Partition tests by evidence scope.** Authors run their WP's focal behavior and
+  mutation tests plus cheap commit-bound checks; they do not each repeat universal
+  repository suites. The lead runs specs, OKF, docs-reality, secrets, global
+  workflow validation and other path-equivalent/heavy gates once on the cumulative
+  stacked bundle tree. A gate stays per-WP only when combining candidates would
+  obscure which invariant or mutation it proves.
+- **A pending planning PR is not a fleet stop.** A reviewed contract may be consumed
+  read-only from its candidate tree while authors branch from current `main`; the
+  lead revalidates the contract before integration. Halt only on a concrete stale
+  invariant or file collision, not because the ledger has not merged yet.
+- **Census is incremental.** Recount only after `BACKLOG.md` or `main` changes in a
+  way that affects the population. Do not repeatedly rediscover the same queue.
+- **Checkpoint the delivery ratio.** Every orchestration handoff records merged
+  items, open items, landable candidates and active author lanes. Two consecutive
+  checkpoints with zero merge/state transitions while a LAND candidate existed is
+  an orchestration failure: stop planning and drain the integration queue.
+
 ## Don't touch
 
 Other projects share the parent dir (`hugr-wallet`, `HuGR-Smith`, `HuGR-Arsenal`,
