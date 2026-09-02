@@ -78,17 +78,42 @@ curl -s -I \
 Useful for caching build output directories:
 
 ```bash
-# Archive, compute digest, upload in one pipeline
-tar -czf - ./dist/ \
-  | tee >(b3sum | awk '{print $1}' > /tmp/digest.txt) \
-  | curl -s -X PUT \
+set -eu
+
+# Materialize the exact bytes first; the digest and upload both use this file.
+ARCHIVE="$(mktemp "${TMPDIR:-/tmp}/corelink-dist.XXXXXX")"
+trap 'rm -f "$ARCHIVE"' EXIT
+tar -czf "$ARCHIVE" ./dist/
+
+DIGEST="$(b3sum "$ARCHIVE" | awk '{print $1}')"
+[ -n "$DIGEST" ] || { echo "Could not compute an archive digest" >&2; exit 1; }
+
+curl --fail-with-body -sS -X PUT \
       -H "Authorization: Bearer $CORELINK_PAT" \
       -H "Content-Type: application/octet-stream" \
-      --data-binary @- \
-      "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$(cat /tmp/digest.txt)"
+      --data-binary "@$ARCHIVE" \
+      "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$DIGEST"
 
-echo "Uploaded as $(cat /tmp/digest.txt)"
+echo "Uploaded as $DIGEST"
 ```
+
+The `--fail-with-body` flag makes the command exit non-zero for HTTP 4xx/5xx
+responses while retaining the server's response body for diagnosis, so the
+success message below is never printed for a rejected upload.
+
+This deliberately computes the digest after the archive exists. Do not use a
+sidecar digest file written by the upload pipeline: shell expansion can read it
+before the producer has written it, or reuse a value left by an earlier run.
+Materializing one file also makes the URL digest bind to the exact bytes sent
+with `--data-binary`; the server can reject any mismatch with `422`.
+
+The archive itself is not promised to be reproducible across runs. The `tar`
+and gzip implementations available on supported macOS and Linux systems do not
+share a portable recipe for normalizing entry order, file mtimes, and the gzip
+timestamp. If byte-for-byte reproducibility is required, create the archive
+with your build system's reproducible-archive tooling first, then use the
+[upload a file](#upload-a-file) recipe. This recipe guarantees only that the
+digest in the URL is the digest of the bytes uploaded.
 
 ## Scripted push + pull in GitHub Actions
 

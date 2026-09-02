@@ -84,17 +84,44 @@ curl -s -I \
 Útil para almacenar en caché directorios de salida de build:
 
 ```bash
-# Archive, compute digest, upload in one pipeline
-tar -czf - ./dist/ \
-  | tee >(b3sum | awk '{print $1}' > /tmp/digest.txt) \
-  | curl -s -X PUT \
+set -eu
+
+# Materializa primero los bytes exactos; el digest y la carga usan este archivo.
+ARCHIVE="$(mktemp "${TMPDIR:-/tmp}/corelink-dist.XXXXXX")"
+trap 'rm -f "$ARCHIVE"' EXIT
+tar -czf "$ARCHIVE" ./dist/
+
+DIGEST="$(b3sum "$ARCHIVE" | awk '{print $1}')"
+[ -n "$DIGEST" ] || { echo "No se pudo calcular el digest del archivo" >&2; exit 1; }
+
+curl --fail-with-body -sS -X PUT \
       -H "Authorization: Bearer $CORELINK_PAT" \
       -H "Content-Type: application/octet-stream" \
-      --data-binary @- \
-      "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$(cat /tmp/digest.txt)"
+      --data-binary "@$ARCHIVE" \
+      "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$DIGEST"
 
-echo "Uploaded as $(cat /tmp/digest.txt)"
+echo "Subido como $DIGEST"
 ```
+
+La opción `--fail-with-body` hace que el comando termine con código distinto de
+cero para respuestas HTTP 4xx/5xx y conserva el cuerpo de respuesta para
+diagnóstico; por eso el mensaje de éxito no se imprime si la carga es rechazada.
+
+El digest se calcula deliberadamente después de que exista el archivo
+comprimido. No uses un archivo auxiliar de digest escrito por el pipeline de
+carga: la expansión del shell puede leerlo antes de que el productor lo
+escriba, o reutilizar un valor de una ejecución anterior. Materializar un solo
+archivo hace que el digest de la URL corresponda a los bytes exactos enviados
+con `--data-binary`; el servidor rechaza una divergencia con `422`.
+
+El archivo comprimido no se promete como reproducible entre ejecuciones. Las
+implementaciones de `tar` y gzip disponibles en macOS y Linux no comparten una
+receta portátil para normalizar el orden de las entradas, los mtimes de los
+archivos y el timestamp de gzip. Si necesitas reproducibilidad byte a byte,
+crea primero el archivo con las herramientas de archivos reproducibles de tu
+build y luego usa la receta de [subir un archivo](#subir-un-archivo). Esta
+receta solo garantiza que el digest de la URL sea el digest de los bytes
+enviados.
 
 ## Push + pull con script en GitHub Actions
 

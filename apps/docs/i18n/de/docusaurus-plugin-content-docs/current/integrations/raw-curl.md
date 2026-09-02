@@ -84,17 +84,44 @@ curl -s -I \
 Nützlich zum Zwischenspeichern von Build-Ausgabeverzeichnissen:
 
 ```bash
-# Archive, compute digest, upload in one pipeline
-tar -czf - ./dist/ \
-  | tee >(b3sum | awk '{print $1}' > /tmp/digest.txt) \
-  | curl -s -X PUT \
+set -eu
+
+# Zuerst die exakten Bytes materialisieren; Digest und Upload verwenden diese Datei.
+ARCHIVE="$(mktemp "${TMPDIR:-/tmp}/corelink-dist.XXXXXX")"
+trap 'rm -f "$ARCHIVE"' EXIT
+tar -czf "$ARCHIVE" ./dist/
+
+DIGEST="$(b3sum "$ARCHIVE" | awk '{print $1}')"
+[ -n "$DIGEST" ] || { echo "Archiv-Digest konnte nicht berechnet werden" >&2; exit 1; }
+
+curl --fail-with-body -sS -X PUT \
       -H "Authorization: Bearer $CORELINK_PAT" \
       -H "Content-Type: application/octet-stream" \
-      --data-binary @- \
-      "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$(cat /tmp/digest.txt)"
+      --data-binary "@$ARCHIVE" \
+      "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$DIGEST"
 
-echo "Uploaded as $(cat /tmp/digest.txt)"
+echo "Hochgeladen als $DIGEST"
 ```
+
+Die Option `--fail-with-body` beendet den Befehl bei HTTP-4xx/5xx mit einem
+Fehlercode und bewahrt den Antworttext zur Diagnose auf; dadurch wird die
+Erfolgsmeldung bei einem abgelehnten Upload nie ausgegeben.
+
+Der Digest wird absichtlich erst berechnet, nachdem das Archiv existiert.
+Verwende keine Digest-Datei, die von der Upload-Pipeline geschrieben wird: Die
+Shell kann sie expandieren, bevor der Erzeuger sie geschrieben hat, oder einen
+Wert aus einem früheren Lauf wiederverwenden. Eine materialisierte Datei bindet
+den URL-Digest an genau die mit `--data-binary` gesendeten Bytes; der Server
+weist eine Abweichung mit `422` zurück.
+
+Für das Archiv selbst wird keine Reproduzierbarkeit zwischen Läufen versprochen.
+Die auf macOS und Linux verfügbaren `tar`- und gzip-Implementierungen teilen
+keine portable Methode, um Eintragsreihenfolge, Datei-mtimes und den gzip-
+Zeitstempel zu normalisieren. Wenn Byte-für-Byte-Reproduzierbarkeit erforderlich
+ist, erstelle das Archiv zuerst mit den reproduzierbaren Archivwerkzeugen deines
+Build-Systems und verwende anschließend die [Datei-Upload-Rezeptur](#eine-datei-hochladen).
+Diese Rezeptur garantiert nur, dass der Digest in der URL dem Digest der
+hochgeladenen Bytes entspricht.
 
 ## Gescriptetes Push + Pull in GitHub Actions
 
