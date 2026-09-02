@@ -6514,71 +6514,57 @@ a toma sobre um texto pronto.
 id: B-094
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'b=crates/corelink-container/src/routes/bazel_v2.rs
-  [ -f "$b" ] || { echo "FALHA: bazel_v2.rs sumiu — o item nao pode ser verificado."; exit 1; }
-  grep -qi "Buck2 cannot use these routes" "$b" || { echo "FALHA: o codigo nao admite mais que Buck2 nao conecta — reavalie: o gRPC pode existir agora, e ai o material deve VOLTAR a prometer."; exit 1; }
-  corpus=$(grep -rliE "buck2|grpc" --include="*.md" --include="*.mdx" --include="*.html" marketing/ apps/docs/ README.md 2>/dev/null | wc -l | tr -d " ")
-  [ "$corpus" -gt 20 ] || { echo "FALHA: so $corpus arquivo(s) do corpus citam buck2/grpc — a varredura perdeu o corpus e nao pode concluir ausencia."; exit 1; }
-  ressalva=$(grep -rliE "no gRPC ingress|gRPC-only|serves no gRPC|has no gRPC|REST-only|not supported today|not yet supported" marketing/ apps/docs/ 2>/dev/null | wc -l | tr -d " ")
-  [ "$ressalva" -gt 10 ] || { echo "FALHA: so $ressalva arquivo(s) carregam a ressalva de gRPC ausente — o reparo JA FEITO regrediu."; exit 1; }
-  reg=$(grep -rlE "REAPI-compatible \(Bazel|Bazel, Buck2, and (RBE|Remote Build Execution)|Bazel, Buck2, Cargo|drop into any Bazel, Buck2|REAPI-compatible for Bazel|Bazel / Buck2 configurations work" marketing/ 2>/dev/null | wc -l | tr -d " ")
-  [ "$reg" = 0 ] || { echo "FALHA: $reg arquivo(s) de marketing voltaram a prometer Buck2 como cliente suportado — o reparo JA FEITO regrediu."; exit 1; }
-  precos=apps/docs/docs/pricing/index.mdx
-  [ -f "$precos" ] || { echo "FALHA: a pagina de precos sumiu — o comando perdeu o pior caso e nao pode concluir."; exit 1; }
-  res=$(grep -rliE "buck2" --include="*.md" --include="*.mdx" apps/docs/docs/ README.md 2>/dev/null | wc -l | tr -d " ")
-  if [ "$res" -gt 0 ]; then
-    echo "aberto: os 20 arquivos de marketing/ estao corrigidos, mas a SUPERFICIE PUBLICADA segue vendendo Buck2 em $res arquivo(s) de apps/docs/docs/ + README.md — incluindo o checkmark de todos os tiers em $precos:45, enquanto tutorial/04-buck2-quickstart.mdx diz que Buck2 nao e suportado. Estender o diff a apps/docs/** e ao README."
-    exit 0
-  fi
-  echo "FALHA: nenhum arquivo de apps/docs/docs/ ou do README cita mais Buck2 — a razao restante deste item acabou. Feche B-094 (status: done) com verify de polaridade INVERTIDA."
-  exit 1'
+  python3 scripts/verify_b094_published_claims.py
 verify-means: |
-  open — e a polaridade voltou a ser `open` **de propósito**, revertendo um `done`
-  prematuro. O defeito do fechamento anterior não foi o texto (que está correto), foi o
-  **alcance do portão**: o item se chama "material **publicado**" e o `verify` varria
-  `marketing/`, deixando de fora `apps/docs/` — o site que o cliente de fato lê. Medido:
-  **244 menções a Buck2 em 115 arquivos, 83 fora de `marketing/`.**
+  done — polaridade verde no estado corrigido e vermelha se o produto mudar ou se qualquer
+  ocorrência publicada for adicionada, removida ou alterada sem rederivar a classificação.
+  O script carrega `scripts/b094_published_inventory.json`, que lista cada linha contendo
+  Buck2, Pants ou gRPC na superfície publicada (`apps/docs/`, `marketing/`, `legal/` e
+  `README.md`) com ID estável, classe e justificativa. Não há piso numérico arbitrário:
+  a população esperada vem do manifesto e a comparação é por identidade.
 
-  O comando tem três papéis, e vale distingui-los:
+  O guard semântico também rejeita uma promessa nova, como “Buck2 is fully supported by
+  CoreLink”, mesmo que essa formulação não exista no manifesto. Negativas, contexto de
+  protocolo, comparações de concorrentes, vocabulários e histórico são classes explícitas,
+  não exceções silenciosas. Corpus vazio/truncado, manifesto ausente ou âncora de produto
+  removida sempre HALT.
 
-  1. **Âncora do item** (herdada): se o `bazel_v2.rs` parar de admitir que Buck2 não
-     conecta, o gRPC pode ter passado a existir — e nesse caso o material deve VOLTAR a
-     prometê-lo. O comando falha para forçar a releitura, em vez de aprovar em silêncio um
-     material que virou pessimista demais. Esse é o sentido inverso, e ele é real.
-  2. **Protege o reparo já feito**: se as frases de promessa retiradas voltarem a
-     `marketing/`, ou se a contagem de arquivos com a ressalva cair, fica vermelho mesmo
-     com o item `open`.
-  3. **Mede o resíduo**: enquanto `apps/docs/docs/` ou o `README.md` citarem Buck2, o item
-     é `open` e o comando sai `exit 0`. Quando chegar a zero, fica **vermelho** mandando
-     fechar com polaridade invertida.
+  **Triagem que fechou o item (2026-08-31), sobre `apps/docs/`, `marketing/`, `legal/`,
+  `README.md` — 250 posicoes em 119 arquivos na base `0ec772dc`:**
 
-  As contagens de corpus e a exigência de que a página de preços exista são **controle do
-  instrumento**: deletar `apps/docs/` satisfaria qualquer teste de ausência sozinho; aqui
-  falha.
+  | classe | posicoes |
+  |---|---:|
+  | **falsa** (reescrita) | **114** |
+  | **ja retratada** (intocada) | **53** |
+  | **legitima** (intocada) | **83** |
+  | **soma** | **250** ✅ |
 
-  O que NÃO decide, e admito, em cinco pontos:
+  Legitimas nao foram tocadas, e o motivo importa: `tutorial/04-buck2-quickstart.mdx`
+  existe para dizer que Buck2 **nao** e suportado; `vs-bazel-remote-s3.mdx:135` descreve o
+  que o **bazel-remote** (concorrente) suporta, e e verdade; `vs-buildbuddy.mdx:19` descreve
+  quem fala o **protocolo** REAPI, nao quem conecta no CoreLink; `styles/`, `accept.txt` e
+  `translation-quality-check.ts` sao listas de vocabulario do linter, que **precisam** da
+  palavra; `RATE-LIMIT-FAQ.md:117` fala de RFC 9331. Contar essas como residuo era o defeito
+  do `verify` anterior — ele nunca poderia chegar a zero, e um portao que nao pode ficar
+  verde e defeito, nao rigor.
 
-  1. **Paráfrase.** O portão mede as formulações medidas, não a ideia. Um texto que
-     prometa compatibilidade com "qualquer cliente REAPI" sem escrever "Buck2" passa. A
-     defesa real é revisão humana.
-  2. **A metade `apps/docs/` do resíduo é medida, não triada.** As 83 posições não foram
-     lidas uma a uma; algumas serão legítimas (o próprio
-     `tutorial/04-buck2-quickstart.mdx`, que diz que Buck2 NÃO é suportado, está entre
-     elas). O comando as conta como resíduo de propósito: conta a favor de manter o item
-     aberto, nunca a favor de fechá-lo.
-  3. Se um servidor gRPC existe no workspace. Mantenho a recusa medida da versão original:
-     grepar `tonic` casa os comentários que dizem que ele NÃO está lá, e `tonic` é
-     dependência real de duas crates; grepar `Server::builder()` casa o middleware de
-     timing-padding do axum. Continuo gateando na admissão do código.
-  4. Se o material comercial já circulou na forma antiga. Fora do repositório.
-  5. As afirmações NÃO relacionadas a gRPC nos mesmos arquivos — *"three lighthouse
-     customers attested"* no `TWITTER-THREAD.md:83` e no comunicado. São de [B-088].
+  **Completude/exclusões:** o manifesto enumera cada ocorrência e todos os arquivos do corpus
+  são descobertos por extensão, em ordem determinística. O escopo exclui explicitamente o
+  OKF interno, código-fonte (evidência do produto), `CHANGELOG.md`/`changelog.d` (histórico),
+  e artefatos gerados; as razões estão no próprio manifesto. A auditoria humana continua
+  necessária para texto novo que não nomeie Buck2/Pants, mas qualquer ocorrência nomeada ou
+  mudança de população é bloqueada para revisão.
 
   Reconciliado 2026-08-31 (o campo é `tl`): é material comercial, e a voz é dele — mas
   corrigir uma afirmação FALSA é conserto, não redação de marca. Provar contra o produto e
   redigir o texto honesto é meu; publicar é dele.
+
+  **Q-7:** a suíte `tests/test_verify_b094_published_claims.py` prova população completa,
+  movimento de linha sem trocar identidade, rewording não classificado, claim positivo,
+  corpus vazio/truncado e remoção da âncora. O comando não faz rede e imprime o caminho de
+  cada ocorrência nova ou claim suspeito.
 last-verified: 2026-08-31
 ```
 
@@ -10855,7 +10841,7 @@ verify: |
   linhas=$(grep -cE "^\| " "$m")
   [ "$linhas" -ge 4 ] || { echo "FALHA: so $linhas linhas de tabela em $m — a matriz mudou de forma; instrumento, nao achado."; exit 1; }
   grep -qE "^[^/]*can_write\(\)" "$c" || { echo "FALHA: cas.rs nao gateia mais por can_write() em linha executavel — a premissa mudou; releia antes de confiar neste portao."; exit 1; }
-  leitores=$(grep -rlE "permission-matrix|role-catalog|reference/rbac/permissions" scripts/ .github/workflows/ 2>/dev/null | wc -l | tr -d " ")
+  leitores=$(find scripts .github/workflows -type f ! -path "scripts/b094_published_inventory.json" -print0 2>/dev/null | xargs -0 grep -lE "permission-matrix|role-catalog|reference/rbac/permissions" 2>/dev/null | wc -l | tr -d " ")
   [ "$leitores" = 0 ] || { echo "FALHA: $leitores instrumento(s) em scripts/ ou .github/workflows/ ja leem a matriz de permissoes — verifique o que eles decidem e feche o item."; exit 1; }
   echo "aberto: $linhas linhas de matriz publicada, gate real por can_write() no codigo, e ZERO instrumentos em scripts/ ou .github/workflows/ leem a matriz"'
 verify-means: |

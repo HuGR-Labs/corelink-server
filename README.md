@@ -297,9 +297,9 @@ A minimal request-flow sketch:
 
 ```mermaid
 flowchart LR
-    client[REAPI client<br/>Bazel / Buck2 / sccache] -->|TLS 1.3| edge[Cloudflare edge<br/>WAF + rate limit]
+    client[REAPI-over-HTTP client<br/>Bazel / sccache] -->|TLS 1.3| edge[Cloudflare edge<br/>WAF + rate limit]
     edge -->|service binding| cp[Control plane<br/>corelink-worker]
-    cp -->|signed intent| dp[Data plane<br/>Rust REAPI gRPC]
+    cp -->|signed intent| dp[Data plane<br/>Rust REAPI over HTTP/REST]
     dp -->|BLAKE3 + dedup| r2[(R2<br/>blobs + AC + audit)]
     dp -->|hot meta| d1[(D1)]
     dp -->|event| ac[corelink-audit-chain<br/>hash-chained append-only]

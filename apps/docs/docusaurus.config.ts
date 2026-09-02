@@ -190,7 +190,7 @@ const config: Config = {
         operatingSystem: "Linux, macOS, Windows",
         url: SITE_URL,
         description:
-          "Multi-tenant content-addressable cache for Bazel / Buck2 / REAPI remote builds.",
+          "Multi-tenant content-addressable cache for Bazel and REAPI-over-HTTP remote builds.",
         offers: {
           "@type": "Offer",
           url: `${SITE_URL}/pricing`,
@@ -398,7 +398,7 @@ const config: Config = {
       { name: "keywords", content: "corelink, cache, content-addressable, bazel, buck2, remote cache, REAPI" },
       // OpenGraph (Facebook, LinkedIn, Slack, Discord, GitHub previews)
       { property: "og:title", content: "CoreLink — Multi-tenant content-addressable cache" },
-      { property: "og:description", content: "Drop-in Bazel / Buck2 / REAPI remote cache on Cloudflare. Content-addressable, multi-tenant, BYOK-capable." },
+      { property: "og:description", content: "Drop-in Bazel / REAPI-over-HTTP remote cache on Cloudflare. Content-addressable, multi-tenant, BYOK-capable." },
       { property: "og:type", content: "website" },
       { property: "og:url", content: SITE_URL },
       { property: "og:image", content: `${SITE_URL}/img/og-image.png` },
@@ -406,7 +406,7 @@ const config: Config = {
       // Twitter / X large-image card
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: "CoreLink — Multi-tenant content-addressable cache" },
-      { name: "twitter:description", content: "Drop-in Bazel / Buck2 / REAPI remote cache on Cloudflare. Content-addressable, multi-tenant, BYOK-capable." },
+      { name: "twitter:description", content: "Drop-in Bazel / REAPI-over-HTTP remote cache on Cloudflare. Content-addressable, multi-tenant, BYOK-capable." },
       { name: "twitter:image", content: `${SITE_URL}/img/og-image.png` },
     ],
     navbar: {

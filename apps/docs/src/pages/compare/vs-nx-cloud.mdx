@@ -23,8 +23,9 @@ deeply integrated with the Nx CLI, ships an analytics dashboard, and
 markets Nx Agents as "4× faster, 30% cheaper than GitHub Actions" for
 Nx workspaces.
 
-CoreLink is a REAPI v2 polyglot cache (Bazel, Buck2, Pants, Please,
-BuildStream, recc — plus Cargo, npm, pip, brew, OCI adapters) with
+CoreLink is a REAPI v2 polyglot cache (Bazel and any other REAPI
+client that speaks HTTP/REST — not gRPC-only clients such as Buck2 or
+Pants — plus Cargo, npm, pip, brew, OCI adapters) with
 BYOK on four KMS providers and an RFC 6962 audit chain. We do **not**
 run a JavaScript / TypeScript monorepo CLI; we are the cache and the
 trust layer underneath whichever build tool you already use.
@@ -38,7 +39,7 @@ This page lays out the honest tradeoffs. Dated **2026-05-27**.
   analytics, and the per-contributor + per-credit + per-connection
   billing shape is acceptable to your finance team.
 - **Pick CoreLink if** you want a flat-priced REAPI v2 cache that works
-  with Bazel / Buck2 / Pants / Cargo / npm / pip / brew / OCI from one
+  with Bazel / Cargo / npm / pip / brew / OCI from one
   workspace, with BYOK across four KMS providers and an
   auditor-re-derivable audit chain. CoreLink is not Nx-native; if you
   rely on `nx affected` task graph distribution, Nx Cloud is the
@@ -57,7 +58,7 @@ This page lays out the honest tradeoffs. Dated **2026-05-27**.
 | Free tier | 10 GB cache, 500k req/mo, 1 workspace, no card | "Hobby": 50,000 credits/mo (resets), 5 contributors, 10 concurrent CI connections |
 | Pricing axis | Flat tier (one number) | Hybrid: per-seat + per-credit + per-CI-connection |
 | Wire protocol | REAPI v2 (CAS + ActionCache + Capabilities) | Nx-native protocol (proprietary) — not REAPI |
-| Build-tool surface | Bazel, Buck2, Pants, Please, BuildStream, recc + Cargo / npm / pip / brew / OCI adapters | Nx CLI (JavaScript / TypeScript monorepos); some plugin coverage for adjacent tools |
+| Build-tool surface | Bazel and other REAPI-over-HTTP clients (**not** gRPC-only Buck2 / Pants) + Cargo / npm / pip / brew / OCI adapters | Nx CLI (JavaScript / TypeScript monorepos); some plugin coverage for adjacent tools |
 | Task distribution / DTE | No — cache only, no executor / agent fleet | Yes — Nx Agents, marketed "4× faster, 30% cheaper than GitHub Actions" for Nx workspaces |
 | BYOK across 4 KMS (AWS / GCP / Azure / Vault) | Yes — customer-held KEK, 5-min DEK cap, Ed25519 erasure attest | Not advertised on the public pricing page |
 | Audit chain (RFC 6962 / RFC 3161) | Yes — re-derivable Merkle root | Not advertised |
@@ -107,8 +108,9 @@ Nx Cloud is the cleanest answer for a specific buyer; we will name it.
 Honest differentiation, not shade.
 
 1. **REAPI v2 vs Nx-native protocol.** CoreLink speaks the open REAPI
-   v2 wire protocol. Any REAPI client works — Bazel, Buck2, Pants,
-   Please, BuildStream, recc — without a CoreLink-specific SDK. Nx
+   v2 wire protocol. Any REAPI client that speaks HTTP/REST works —
+   Bazel included — without a CoreLink-specific SDK. gRPC-only clients
+   (Buck2, Pants, NativeLink) do not: CoreLink serves no gRPC ingress. Nx
    Cloud speaks Nx's proprietary protocol; you commit to the Nx CLI as
    the build tool. If you are evaluating monorepo tools, REAPI keeps
    your options open.
