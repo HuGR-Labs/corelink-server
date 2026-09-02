@@ -2,10 +2,11 @@
 import argparse
 import datetime as dt
 import pathlib
+import subprocess
 import sys
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import b152_actions_diagnostic as diag
@@ -134,6 +135,45 @@ class B152DiagnosticTests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(diag.EvidenceUnavailable):
                 diag.classify_job(job, run(1, "2026-08-31T04:00:00Z"), 594, 615)
 
+    def test_non_string_step_statuses_fail_closed_without_typeerror(self):
+        job = {
+            "id": 27,
+            "name": "lane",
+            "created_at": "2026-08-31T03:59:00Z",
+            "started_at": "2026-08-31T04:00:00Z",
+            "completed_at": "2026-08-31T04:10:00Z",
+            "steps": [],
+        }
+        for status in ([], {}, None, False, 0, 1):
+            job["steps"] = [{"name": "Build", "status": status}]
+            with self.subTest(status=repr(status)), self.assertRaises(diag.EvidenceUnavailable) as error:
+                diag.classify_job(job, run(1, "2026-08-31T04:00:00Z"), 594, 615)
+            self.assertEqual(str(error.exception), "job has malformed step evidence")
+
+    def test_non_string_step_statuses_exit_indeterminate_without_traceback(self):
+        base_job = {
+            "id": 28,
+            "name": "lane",
+            "conclusion": "failure",
+            "created_at": "2026-08-31T03:59:00Z",
+            "started_at": "2026-08-31T04:00:00Z",
+            "completed_at": "2026-08-31T04:10:00Z",
+            "steps": [],
+        }
+        failed_run = run(1, "2026-08-31T04:00:00Z")
+        for status in ([], {}, None, False, 0, 1):
+            job = dict(base_job, steps=[{"name": "Build", "status": status}])
+            with self.subTest(status=repr(status)), \
+                 patch.object(diag, "collect_runs", return_value=[failed_run]), \
+                 patch.object(diag, "collect_jobs", return_value=[job]), \
+                 patch("sys.stderr") as stderr:
+                self.assertEqual(diag.main([
+                    "--start", "2026-08-31T00:00:00Z",
+                    "--end", "2026-08-31T01:00:00Z",
+                ]), 2)
+            rendered = "".join(call.args[0] for call in stderr.write.call_args_list)
+            self.assertEqual(rendered, "INDETERMINATE: job has malformed step evidence\n")
+
     def test_truncated_page_splits_and_applies_half_open_bounds(self):
         start = dt.datetime(2026, 8, 31, tzinfo=UTC)
         end = start + dt.timedelta(hours=2)
@@ -221,12 +261,90 @@ class B152DiagnosticTests(unittest.TestCase):
 
     def test_unavailable_log_is_structured_indeterminate(self):
         failed = SimpleNamespace(returncode=1, stderr="HTTP 404 BlobNotFound")
-        with patch.object(diag.subprocess, "run", return_value=failed):
+        with patch.object(diag.subprocess, "run", return_value=failed), patch.object(diag.time, "sleep") as sleep:
             logs = diag.fetch_logs("o/r", [{"job_id": 42}])
         self.assertEqual(logs[0]["status"], "indeterminate")
         self.assertEqual(logs[0]["causal"], "indeterminate")
         self.assertEqual(logs[0]["job_id"], 42)
         self.assertEqual(logs[0]["error"], "log retrieval failed")
+        self.assertEqual(sleep.call_args_list, [call(1), call(2)])
+
+    def test_run_gh_retries_bounded_timeouts_with_an_explicit_timeout(self):
+        timeout = subprocess.TimeoutExpired(["gh", "api", "secret-endpoint"], diag.GH_API_TIMEOUT_SECONDS)
+        success = SimpleNamespace(returncode=0, stdout='{"value": 7}')
+        with patch.object(diag.subprocess, "run", side_effect=[timeout, timeout, success]) as command, \
+             patch.object(diag.time, "sleep") as sleep:
+            self.assertEqual(diag.run_gh("o/r", "repos/o/r/actions/runs"), {"value": 7})
+        self.assertEqual(command.call_count, diag.GH_MAX_ATTEMPTS)
+        self.assertTrue(all(call.kwargs["timeout"] == diag.GH_API_TIMEOUT_SECONDS for call in command.call_args_list))
+        self.assertEqual(sleep.call_args_list, [call(1), call(2)])
+
+    def test_run_gh_timeout_is_sanitized_after_bounded_retries(self):
+        timeout = subprocess.TimeoutExpired(["gh", "api", "secret-endpoint"], diag.GH_API_TIMEOUT_SECONDS)
+        with patch.object(diag.subprocess, "run", side_effect=[timeout, timeout, timeout]) as command, \
+             patch.object(diag.time, "sleep") as sleep, \
+             self.assertRaises(diag.EvidenceUnavailable) as error:
+            diag.run_gh("o/r", "repos/o/r/actions/runs")
+        self.assertEqual(str(error.exception), "gh api timed out after retries")
+        self.assertNotIn("secret-endpoint", str(error.exception))
+        self.assertEqual(command.call_count, diag.GH_MAX_ATTEMPTS)
+        self.assertEqual(sleep.call_args_list, [call(1), call(2)])
+
+    def test_cli_timeout_exits_indeterminate_without_exposing_command_data(self):
+        timeout = subprocess.TimeoutExpired(["gh", "api", "secret-endpoint"], diag.GH_API_TIMEOUT_SECONDS)
+        with patch.object(diag.subprocess, "run", side_effect=[timeout, timeout, timeout]) as command, \
+             patch.object(diag.time, "sleep") as sleep, \
+             patch("sys.stderr") as stderr:
+            self.assertEqual(diag.main([
+                "--start", "2026-08-31T00:00:00Z",
+                "--end", "2026-08-31T01:00:00Z",
+            ]), 2)
+        rendered = "".join(call.args[0] for call in stderr.write.call_args_list)
+        self.assertEqual(rendered, "INDETERMINATE: gh api timed out after retries\n")
+        self.assertNotIn("secret-endpoint", rendered)
+        self.assertEqual(command.call_count, diag.GH_MAX_ATTEMPTS)
+        self.assertEqual(sleep.call_args_list, [call(1), call(2)])
+
+    def test_fetch_logs_retries_timeout_and_never_exposes_timeout_payload(self):
+        timeout = subprocess.TimeoutExpired(
+            ["gh", "api", "secret-log-endpoint"],
+            diag.GH_API_TIMEOUT_SECONDS,
+            output="secret output",
+            stderr="secret stderr",
+        )
+        success = SimpleNamespace(returncode=0)
+        with patch.object(diag.subprocess, "run", side_effect=[timeout, success]) as command, \
+             patch.object(diag.time, "sleep") as sleep:
+            logs = diag.fetch_logs("o/r", [{"job_id": 42}])
+        self.assertTrue(logs[0]["available"])
+        self.assertIsNone(logs[0]["error"])
+        self.assertEqual(command.call_count, 2)
+        self.assertTrue(all(call.kwargs["timeout"] == diag.GH_API_TIMEOUT_SECONDS for call in command.call_args_list))
+        self.assertEqual(sleep.call_args_list, [call(1)])
+
+    def test_fetch_logs_reports_final_timeout_as_sanitized_indeterminate(self):
+        timeout = subprocess.TimeoutExpired(["gh", "api", "secret-log-endpoint"], diag.GH_API_TIMEOUT_SECONDS)
+        with patch.object(diag.subprocess, "run", side_effect=[timeout, timeout, timeout]) as command, \
+             patch.object(diag.time, "sleep") as sleep:
+            logs = diag.fetch_logs("o/r", [{"job_id": 42}])
+        self.assertFalse(logs[0]["available"])
+        self.assertEqual(logs[0]["status"], "indeterminate")
+        self.assertEqual(logs[0]["error"], "log retrieval timed out")
+        self.assertNotIn("secret-log-endpoint", logs[0]["error"])
+        self.assertEqual(command.call_count, diag.GH_MAX_ATTEMPTS)
+        self.assertEqual(sleep.call_args_list, [call(1), call(2)])
+
+    def test_official_python_ci_collects_the_b152_suite_on_all_required_triggers(self):
+        workflow = (pathlib.Path(__file__).resolve().parent.parent / ".github/workflows/python-tests.yml").read_text(encoding="utf-8")
+        # This is a load-bearing mutation test: removing either the required
+        # suite declaration or its pytest invocation turns this test red.
+        self.assertIn("pull_request:", workflow)
+        self.assertIn("push:", workflow)
+        self.assertIn("branches: [main]", workflow)
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("- 'scripts/**'", workflow)
+        self.assertIn("REQUIRED_SUITES=(scripts/test_b152_actions_diagnostic.py)", workflow)
+        self.assertIn('python3 -m pytest "${FILES[@]}" "${REQUIRED_SUITES[@]}" -q', workflow)
 
     def test_missing_gh_is_sanitized_indeterminate_not_a_traceback(self):
         with patch.object(diag.subprocess, "run", side_effect=FileNotFoundError("secret path")), patch("sys.stderr") as stderr:

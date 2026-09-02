@@ -29,6 +29,12 @@ MAX_SEARCH_RESULTS = 1_000
 PAGE_SIZE = 100
 STEP_STATUSES = frozenset({"queued", "in_progress", "completed"})
 FRACTIONAL_COMPONENTS = re.compile(r"[.,](\d+)")
+# Keep every external API invocation bounded.  The retry delays are constants so
+# the tests can replace ``time.sleep`` and prove both the bound and the retry
+# path without waiting for a wall-clock timeout.
+GH_API_TIMEOUT_SECONDS = 30
+GH_RETRY_DELAYS_SECONDS = (1, 2)
+GH_MAX_ATTEMPTS = len(GH_RETRY_DELAYS_SECONDS) + 1
 
 
 class EvidenceUnavailable(RuntimeError):
@@ -55,14 +61,22 @@ def iso(value: dt.datetime) -> str:
 
 def run_gh(repo: str, endpoint: str) -> Any:
     """Read one API page through gh, keeping credentials out of argv/output."""
-    for attempt in range(3):
+    for attempt in range(GH_MAX_ATTEMPTS):
         try:
             proc = subprocess.run(
                 ["gh", "api", endpoint],
                 check=False,
                 capture_output=True,
                 text=True,
+                timeout=GH_API_TIMEOUT_SECONDS,
             )
+        except subprocess.TimeoutExpired as exc:
+            if attempt < GH_MAX_ATTEMPTS - 1:
+                time.sleep(GH_RETRY_DELAYS_SECONDS[attempt])
+                continue
+            # Do not render ``exc``: command arguments and partial output may
+            # contain credentials or server-provided text.
+            raise EvidenceUnavailable("gh api timed out after retries") from exc
         except OSError as exc:
             raise EvidenceUnavailable("gh api could not be started") from exc
         if proc.returncode == 0:
@@ -70,8 +84,8 @@ def run_gh(repo: str, endpoint: str) -> Any:
                 return json.loads(proc.stdout)
             except json.JSONDecodeError as exc:
                 raise EvidenceUnavailable("gh api returned non-JSON") from exc
-        if attempt < 2:
-            time.sleep(2**attempt)
+        if attempt < GH_MAX_ATTEMPTS - 1:
+            time.sleep(GH_RETRY_DELAYS_SECONDS[attempt])
     raise EvidenceUnavailable("gh api failed after retries")
 
 
@@ -258,7 +272,11 @@ def classify_job(job: dict[str, Any], run: dict[str, Any], low: int, high: int) 
         raise EvidenceUnavailable("job has malformed step evidence")
     if any(
         not isinstance(step.get("name"), str)
-        or step.get("status") not in STEP_STATUSES
+        # Membership in a set raises TypeError for list/dict statuses.  Check
+        # the JSON scalar type first so every malformed API value becomes the
+        # same sanitized, fail-closed evidence result.
+        or not isinstance(step.get("status"), str)
+        or step["status"] not in STEP_STATUSES
         for step in steps
     ):
         raise EvidenceUnavailable("job has malformed step evidence")
@@ -329,11 +347,9 @@ def collect_evidence(repo: str, start: dt.datetime, end: dt.datetime, low: int, 
     }
 
 
-def fetch_logs(repo: str, records: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Fetch logs without persisting them; 404/transport errors remain indeterminate."""
-    result = []
-    for record in records:
-        job_id = record["job_id"]
+def fetch_job_log(repo: str, job_id: int) -> tuple[bool, str | None]:
+    """Return log availability after a bounded, sanitized retrieval attempt."""
+    for attempt in range(GH_MAX_ATTEMPTS):
         try:
             proc = subprocess.run(
                 ["gh", "api", f"repos/{repo}/actions/jobs/{job_id}/logs"],
@@ -341,15 +357,34 @@ def fetch_logs(repo: str, records: Iterable[dict[str, Any]]) -> list[dict[str, A
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 text=True,
+                timeout=GH_API_TIMEOUT_SECONDS,
             )
+        except subprocess.TimeoutExpired:
+            if attempt < GH_MAX_ATTEMPTS - 1:
+                time.sleep(GH_RETRY_DELAYS_SECONDS[attempt])
+                continue
+            return False, "log retrieval timed out"
         except OSError as exc:
             raise EvidenceUnavailable("gh api could not be started while fetching logs") from exc
+        if proc.returncode == 0:
+            return True, None
+        if attempt < GH_MAX_ATTEMPTS - 1:
+            time.sleep(GH_RETRY_DELAYS_SECONDS[attempt])
+    return False, "log retrieval failed"
+
+
+def fetch_logs(repo: str, records: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Fetch logs without persisting them; 404/transport errors remain indeterminate."""
+    result = []
+    for record in records:
+        job_id = record["job_id"]
+        available, error = fetch_job_log(repo, job_id)
         result.append({
             "job_id": job_id,
-            "available": proc.returncode == 0,
-            "status": "available" if proc.returncode == 0 else "indeterminate",
-            "causal": False if proc.returncode == 0 else "indeterminate",
-            "error": None if proc.returncode == 0 else "log retrieval failed",
+            "available": available,
+            "status": "available" if available else "indeterminate",
+            "causal": False if available else "indeterminate",
+            "error": error,
         })
     return result
 

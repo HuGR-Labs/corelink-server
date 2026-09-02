@@ -78,13 +78,20 @@ log contents or raw command errors. Fractional runtime/queue values are rejected
 rather than truncated, while fractional CLI bounds through six digits are
 preserved in the API query; greater precision is rejected rather than rounded.
 Step status evidence is limited to the API states `queued`, `in_progress`, and
-`completed`; any other value exits `INDETERMINATE`. API/network failures,
-malformed or truncated pages, and output-write failures exit with
-`INDETERMINATE`. The test suite includes a load-bearing mutation where a page
-claims 1,000 results: the collector must split the interval and apply exact
-half-open UTC bounds instead of silently accepting a capped result. It also rejects a
-short page whose declared total requires further records; an available log alone
-must remain `not_established`, never a causal attribution.
+`completed`; any other value, including a non-string JSON value, exits
+`INDETERMINATE`. Each `gh` request has a 30-second timeout and at most three
+attempts with bounded 1/2-second retry delays. API/network failures, malformed
+or truncated pages, exhausted API timeouts, and output-write failures exit with
+`INDETERMINATE`; an exhausted log-download timeout remains the structured,
+non-causal `indeterminate` outcome because it does not invalidate the metadata
+walk. The test suite includes a load-bearing mutation where a page claims 1,000
+results: the collector must split the interval and apply exact half-open UTC
+bounds instead of silently accepting a capped result. It also rejects a short
+page whose declared total requires further records; an available log alone must
+remain `not_established`, never a causal attribution. The same suite is an
+explicit required input to `.github/workflows/python-tests.yml` on pull requests,
+pushes to `main`, and manual dispatch; deleting either its required-suite entry
+or its pytest invocation makes the suite red.
 
 ```sh
 python3 scripts/test_b152_actions_diagnostic.py
