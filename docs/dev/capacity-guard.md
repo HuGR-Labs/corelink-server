@@ -29,11 +29,15 @@ infinite capacity.
 Each worktree retains its own `target/`, `node_modules/`, `.turbo/`, and
 `.pnpm-store/`; those are the only paths the guard will describe as removable.
 The report labels each worktree independently as `active` (unmerged or
-detached branch), `dirty`, `untracked`, `clean`, or `unavailable`. Active, dirty, or untracked
-worktrees are never cleanup candidates.
-Cache byte totals are measured only for `clean` worktrees; live/dirty/untracked
+detached branch), `dirty`, `untracked`, `ignored`, `clean`, or `unavailable`.
+Active, dirty, untracked, or ignored worktrees are never cleanup candidates.
+Cache byte totals are measured only for `clean` worktrees; live/dirty/untracked/ignored
 worktrees are intentionally not traversed, so reporting cannot turn their
 contents into a cleanup suggestion or an unbounded scan.
+Any cache read error or bounded-scan overflow is indeterminate (exit `2`), not
+reported as a zero-byte cache. `main` and `master` are trusted only when their
+local commit exactly equals `origin/main`; other branches are stale candidates
+only after Git proves ancestry into `origin/main`.
 
 Cargo registries, `sccache`, package-manager stores under `$HOME`, Docker
 images/volumes, branches, and worktrees may be shared or contain owner data.
@@ -67,11 +71,15 @@ python3 scripts/capacity_guard.py --cleanup --cleanup-target target
 ```
 
 It accepts only `target`, `node_modules`, `.turbo`, and `.pnpm-store`, direct
-non-symlink directories below the exact current git worktree root. Paths,
-globs, environment expansion, `..`, symlinks, filesystem root, and worktree
-subdirectories are refused. It never automatically deletes code, untracked
-files, dirty work, branches, a worktree, Docker, a Docker volume, or shared
-`$HOME` caches.
+non-symlink directories below the exact current git worktree root. Before any
+delete it proves, with a NUL-delimited `git ls-files` query, that the cache has
+no tracked paths; ignored data outside those four exact cache roots also
+refuses cleanup. Paths, globs, environment expansion, `..`, symlinks,
+filesystem root, and worktree subdirectories are refused. Deletion requires a
+no-follow directory descriptor rooted at the validated worktree and a
+symlink-resistant `rmtree`; if the platform cannot provide that guarantee the
+guard refuses. It never automatically deletes code, untracked files, dirty
+work, branches, a worktree, Docker, a Docker volume, or shared `$HOME` caches.
 
 Actual removal additionally requires `--execute` and the exact acknowledgement
 `CORELINK_CAPACITY_ALLOW_DELETE=delete-regenerable-cache`; inspect the dry-run

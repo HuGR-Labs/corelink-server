@@ -23,6 +23,7 @@ import fcntl
 import math
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -38,6 +39,7 @@ MAX_CACHE_SCAN_ENTRIES = 100_000
 MAX_CACHE_REPORT_BYTES = 1 << 40  # Keep inventory bounded at 1 TiB per cache.
 GIT_COMMAND_TIMEOUT_SECONDS = 5
 MAX_REPORT_SECONDS = 90
+MAX_IGNORED_PATHS = 100_000
 
 # These names are deliberately not paths.  Accepting arbitrary paths, globs,
 # environment expansion or ``..`` here would turn a diagnostic into a delete
@@ -115,6 +117,7 @@ def git(root: Path, *args: str) -> str:
             capture_output=True,
             check=False,
             timeout=GIT_COMMAND_TIMEOUT_SECONDS,
+            errors="surrogateescape",
         )
     except subprocess.TimeoutExpired as error:
         raise GuardError(f"git command timed out after {GIT_COMMAND_TIMEOUT_SECONDS}s") from error
@@ -160,15 +163,18 @@ def filesystem_capacity(path: Path) -> FilesystemCapacity:
 def directory_size(path: Path) -> int:
     """Size regular files below a cache, with an explicit read-only scan bound.
 
-    A cache can contain millions of files.  Bounded traversal keeps this guard
-    observable on a nearly-full disk; reaching a bound reports a conservative
-    lower bound rather than turning a preflight into an unbounded walk.
+    A cache can contain millions of files. Bounded traversal keeps this guard
+    observable on a nearly-full disk; reaching a bound is indeterminate rather
+    than an inaccurate size claim.
     """
     try:
-        if path.is_symlink() or not path.is_dir():
+        metadata = path.lstat()
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
             return 0
-    except OSError:
+    except FileNotFoundError:
         return 0
+    except OSError as error:
+        raise GuardError(f"cannot read cache metadata: {path}: {error}") from error
     total = 0
     scanned = 0
     pending = [path]
@@ -176,13 +182,15 @@ def directory_size(path: Path) -> int:
         directory = pending.pop()
         try:
             entries = os.scandir(directory)
-        except OSError:
-            continue
+        except OSError as error:
+            raise GuardError(f"cannot read cache directory: {directory}: {error}") from error
         with entries:
             for entry in entries:
                 scanned += 1
                 if scanned > MAX_CACHE_SCAN_ENTRIES:
-                    break
+                    raise GuardError(
+                        f"cache scan exceeded {MAX_CACHE_SCAN_ENTRIES} entries: {path}"
+                    )
                 try:
                     if entry.is_symlink():
                         continue
@@ -191,12 +199,40 @@ def directory_size(path: Path) -> int:
                     elif entry.is_file(follow_symlinks=False):
                         total = min(total + entry.stat(follow_symlinks=False).st_size,
                                     MAX_CACHE_REPORT_BYTES)
-                except OSError:
-                    # A concurrently changing cache cannot make the report
-                    # unsafe: count what was observable and keep cleanup gated
-                    # by the worktree state below.
-                    continue
+                except OSError as error:
+                    raise GuardError(f"cannot read cache entry: {entry.path}: {error}") from error
+                if total >= MAX_CACHE_REPORT_BYTES:
+                    raise GuardError(
+                        f"cache size exceeded {MAX_CACHE_REPORT_BYTES} bytes: {path}"
+                    )
+    if pending:
+        raise GuardError(f"cache scan exceeded {MAX_CACHE_SCAN_ENTRIES} entries: {path}")
     return total
+
+
+def nul_paths(output: str, *, limit: int = MAX_IGNORED_PATHS) -> list[str]:
+    """Parse a NUL-delimited git path stream without newline ambiguity."""
+    if not output:
+        return []
+    if not output.endswith("\0"):
+        raise GuardError("git returned a malformed NUL-delimited path list")
+    paths = output[:-1].split("\0")
+    if len(paths) > limit:
+        raise GuardError(f"git path evidence exceeded {limit} entries")
+    return paths
+
+
+def tracked_cache_paths(root: Path, target: str) -> list[str]:
+    """Return tracked index paths under one fixed cache name, NUL-safe."""
+    output = git(root, "ls-files", "-z", "--", target, f"{target}/")
+    return nul_paths(output)
+
+
+def ignored_non_cache_paths(root: Path) -> list[str]:
+    """Return ignored paths outside the four explicitly disposable caches."""
+    output = git(root, "ls-files", "--others", "--ignored", "--exclude-standard", "-z")
+    paths = nul_paths(output)
+    return [path for path in paths if path.split("/", 1)[0] not in REGENERABLE_WORKTREE_CACHES]
 
 
 def parse_worktree_list(root: Path) -> list[tuple[Path, str | None]]:
@@ -221,13 +257,18 @@ def parse_worktree_list(root: Path) -> list[tuple[Path, str | None]]:
 
 
 def unsafe_branch(root: Path, branch: str | None) -> bool:
-    """A checked-out branch not merged into origin/main is live work, not cache fodder."""
+    """Prove a checked-out branch is safe only against the production ref."""
     # Detached worktrees have no branch ref to prove stale.  They may contain
     # an operator's live checkout, so cleanup must protect them by default.
     if branch is None:
         return True
     if branch in {"main", "master"}:
-        return False
+        try:
+            local = git(root, "rev-parse", "--verify", branch).strip()
+            remote = git(root, "rev-parse", "--verify", "origin/main").strip()
+        except GuardError as error:
+            raise GuardError(f"cannot prove {branch} matches origin/main: {error}") from error
+        return local != remote
     try:
         completed = subprocess.run(
             ["git", "-C", os.fspath(root), "merge-base", "--is-ancestor", branch, "origin/main"],
@@ -253,6 +294,7 @@ def worktree_states(root: Path, branch: str | None) -> tuple[str, ...]:
             untracked = True
         elif line[:2] != "  ":
             tracked_dirty = True
+    ignored = bool(ignored_non_cache_paths(root))
     states: list[str] = []
     if unsafe_branch(root, branch):
         states.append("active")
@@ -260,6 +302,8 @@ def worktree_states(root: Path, branch: str | None) -> tuple[str, ...]:
         states.append("dirty")
     if untracked:
         states.append("untracked")
+    if ignored:
+        states.append("ignored")
     return tuple(states or ["clean"])
 
 
@@ -328,6 +372,13 @@ def cleanup_path(root: Path, target: str) -> Path:
     if target not in REGENERABLE_WORKTREE_CACHES:
         raise GuardError("cleanup target must be one fixed regenerable cache name: "
                          + ", ".join(REGENERABLE_WORKTREE_CACHES))
+    tracked = tracked_cache_paths(root, target)
+    if tracked:
+        raise GuardError("refusing cleanup: tracked files under cache " + ", ".join(tracked[:5]))
+    ignored = ignored_non_cache_paths(root)
+    if ignored:
+        raise GuardError("refusing cleanup with ignored data outside disposable caches: "
+                         + ", ".join(ignored[:5]))
     states = worktree_states(root, git(root, "branch", "--show-current").strip() or None)
     unsafe = set(states) - {"clean"}
     if unsafe:
@@ -344,6 +395,54 @@ def cleanup_path(root: Path, target: str) -> Path:
     if target_path.parent != root or target_path.resolve().parent != root:
         raise GuardError("cleanup target escaped the validated worktree")
     return target_path
+
+
+def remove_cache_safely(root: Path, path: Path) -> None:
+    """Remove one validated cache using a directory descriptor, or refuse.
+
+    Python's fd-based rmtree rejects symlink traversal on supported POSIX
+    platforms. The parent descriptor also keeps the operation rooted at the
+    exact validated worktree instead of a re-resolved path.
+    """
+    if not getattr(shutil.rmtree, "avoids_symlink_attacks", False):
+        raise GuardError("refusing deletion: fd-safe symlink-resistant rmtree unavailable")
+    flags = (getattr(os, "O_RDONLY", 0) | getattr(os, "O_DIRECTORY", 0)
+             | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0))
+    if not getattr(os, "O_DIRECTORY", 0) or not getattr(os, "O_NOFOLLOW", 0):
+        raise GuardError("refusing deletion: directory no-follow descriptors unavailable")
+    try:
+        parent_fd = os.open(os.fspath(root), flags)
+    except OSError as error:
+        raise GuardError(f"cannot open validated worktree descriptor: {error}") from error
+    try:
+        try:
+            target_fd = os.open(path.name, flags, dir_fd=parent_fd)
+        except FileNotFoundError:
+            return
+        except OSError as error:
+            raise GuardError(f"cannot open cache descriptor without following symlinks: {error}") from error
+        try:
+            before = os.fstat(target_fd)
+            if not stat.S_ISDIR(before.st_mode):
+                raise GuardError("cleanup target must remain a directory")
+            current = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+            if (before.st_dev, before.st_ino) != (current.st_dev, current.st_ino):
+                raise GuardError("cache changed during deletion validation")
+            try:
+                shutil.rmtree(path.name, dir_fd=parent_fd)
+            except (FileNotFoundError, NotADirectoryError):
+                # A concurrent remover is an idempotent success only when the
+                # entry is gone; a symlink or replacement is refusal below.
+                pass
+            try:
+                os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                return
+            raise GuardError("cache changed during deletion; refusing replacement")
+        finally:
+            os.close(target_fd)
+    finally:
+        os.close(parent_fd)
 
 
 def dry_run_cleanup(root: Path, targets: list[str], execute: bool) -> None:
@@ -364,12 +463,13 @@ def dry_run_cleanup(root: Path, targets: list[str], execute: bool) -> None:
         return
     if os.environ.get("CORELINK_CAPACITY_ALLOW_DELETE") != "delete-regenerable-cache":
         raise GuardError("execution requires CORELINK_CAPACITY_ALLOW_DELETE=delete-regenerable-cache")
-    for path in paths:
-        if path.exists():
-            # Revalidate immediately before deletion: a cache swapped for a
-            # symlink after dry-run must not be followed.
-            cleanup_path(root, path.name)
-            shutil.rmtree(path)
+    root = validated_root(os.fspath(root))
+    with materialization_lock(root, 0):
+        for path in paths:
+            # Revalidate immediately before descriptor-based deletion: a cache
+            # swapped for a symlink or tracked path is refused, never followed.
+            validated = cleanup_path(root, path.name)
+            remove_cache_safely(root, validated)
     print("explicit regenerable caches removed; no worktree, branch, Docker, volume, or shared HOME cache was touched")
 
 

@@ -77,6 +77,30 @@ class CapacityGuardTests(unittest.TestCase):
         with self.assertRaisesRegex(guard.GuardError, "dirty"):
             guard.cleanup_path(self.root, "target")
 
+    def test_cleanup_refuses_tracked_file_under_cache(self) -> None:
+        (self.root / "target").mkdir()
+        (self.root / "target" / "tracked").write_text("source\n", encoding="utf-8")
+        self.git_run("git", "add", "-f", "target/tracked")
+        with self.assertRaisesRegex(guard.GuardError, "tracked files"):
+            guard.cleanup_path(self.root, "target")
+        self.assertTrue((self.root / "target" / "tracked").exists())
+
+    def test_cleanup_refuses_ignored_data_outside_cache(self) -> None:
+        (self.root / ".git" / "info" / "exclude").write_text(".env\n", encoding="utf-8")
+        (self.root / ".env").write_text("SECRET=keep\n", encoding="utf-8")
+        (self.root / "target").mkdir()
+        with self.assertRaisesRegex(guard.GuardError, "ignored data"):
+            guard.cleanup_path(self.root, "target")
+        self.assertTrue((self.root / ".env").exists())
+
+    def test_cleanup_refuses_divergent_main_even_when_clean(self) -> None:
+        (self.root / "local-only").write_text("local\n", encoding="utf-8")
+        self.git_run("git", "add", "local-only")
+        self.git_run("git", "commit", "-qm", "local divergence")
+        (self.root / "target").mkdir()
+        with self.assertRaisesRegex(guard.GuardError, "active"):
+            guard.cleanup_path(self.root, "target")
+
     def test_cleanup_accepts_only_fixed_direct_cache_name(self) -> None:
         for target in (".", "../target", "/tmp", "target/*", "${HOME}", ".git"):
             with self.subTest(target=target), self.assertRaises(guard.GuardError):
@@ -89,6 +113,25 @@ class CapacityGuardTests(unittest.TestCase):
         (self.root / "target").symlink_to(outside, target_is_directory=True)
         with self.assertRaisesRegex(guard.GuardError, "non-symlink"):
             guard.cleanup_path(self.root, "target")
+        self.assertTrue((outside / "keep").exists())
+
+    def test_execute_refuses_symlink_swap_and_preserves_outside_data(self) -> None:
+        outside = Path(self.temp.name) / "outside"
+        outside.mkdir()
+        (outside / "keep").write_text("keep", encoding="utf-8")
+        (self.root / "target").mkdir()
+        original = guard.shutil.rmtree
+
+        def swap_then_remove(name: str, *, dir_fd: int) -> None:
+            os.rename(self.root / "target", self.root / "target-renamed")
+            (self.root / "target").symlink_to(outside, target_is_directory=True)
+            original(name, dir_fd=dir_fd)
+
+        with mock.patch.dict(os.environ,
+                             {"CORELINK_CAPACITY_ALLOW_DELETE": "delete-regenerable-cache"}), \
+             mock.patch.object(guard.shutil, "rmtree", side_effect=swap_then_remove):
+            with self.assertRaises(OSError):
+                guard.dry_run_cleanup(self.root, ["target"], execute=True)
         self.assertTrue((outside / "keep").exists())
 
     def test_root_rejects_filesystem_root_symlink_glob_and_subdirectory(self) -> None:
@@ -123,6 +166,21 @@ class CapacityGuardTests(unittest.TestCase):
         unavailable = guard.WorktreeReport(self.root, None, ("unavailable",), ())
         with mock.patch.object(guard, "collect_report", return_value=[unavailable]):
             self.assertEqual(guard.main(["--root", str(self.root)]), 2)
+
+    def test_cache_read_error_is_indeterminate(self) -> None:
+        cache = self.root / "target"
+        cache.mkdir()
+        with mock.patch.object(guard.os, "scandir", side_effect=PermissionError("denied")):
+            with self.assertRaisesRegex(guard.GuardError, "cannot read cache directory"):
+                guard.directory_size(cache)
+
+    def test_cache_scan_bound_is_indeterminate(self) -> None:
+        cache = self.root / "target" / "nested"
+        cache.mkdir(parents=True)
+        (cache / "payload").write_bytes(b"x")
+        with mock.patch.object(guard, "MAX_CACHE_SCAN_ENTRIES", 1):
+            with self.assertRaisesRegex(guard.GuardError, "scan exceeded"):
+                guard.directory_size(self.root / "target")
 
     def test_dry_run_never_calls_rmtree(self) -> None:
         (self.root / "target").mkdir()
@@ -165,9 +223,10 @@ class CapacityGuardTests(unittest.TestCase):
         self.assertIn("materialization lock is held", child.stderr)
 
     def test_gate_returns_one_below_floor_and_not_two(self) -> None:
-        capacity = guard.filesystem_capacity(self.root)
-        self.assertEqual(guard.main(["--root", str(self.root), "--gate", "--floor-mib",
-                                     str(guard.mib(capacity.free_bytes) + 2)]), 1)
+        capacity = guard.FilesystemCapacity(8 * 1024 * 1024 + 123, 100)
+        with mock.patch.object(guard, "filesystem_capacity", return_value=capacity):
+            self.assertEqual(guard.main(["--root", str(self.root), "--gate", "--floor-mib",
+                                         "9"]), 1)
 
     def test_gate_returns_one_when_inode_evidence_is_below_floor(self) -> None:
         with mock.patch.object(guard, "filesystem_capacity",
