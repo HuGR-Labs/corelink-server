@@ -45,6 +45,7 @@ MAX_IGNORED_PATHS = 100_000
 MAX_COMMAND_TIMEOUT_SECONDS = 24 * 60 * 60
 MAX_GIT_OUTPUT_BYTES = 16 * 1024 * 1024
 PROCESS_TERM_GRACE_SECONDS = 0.25
+PROCESS_GROUP_VERIFY_SECONDS = 0.5
 
 # These names are deliberately not paths.  Accepting arbitrary paths, globs,
 # environment expansion or ``..`` here would turn a diagnostic into a delete
@@ -128,9 +129,22 @@ def parse_command_timeout(value: str) -> float:
 
 def _kill_process_group(process: subprocess.Popen[object]) -> None:
     """Terminate a bounded subprocess and all descendants in its session."""
+    group_id = process.pid
+
+    def group_alive() -> bool:
+        if os.name != "posix":
+            return process.poll() is None
+        try:
+            os.killpg(group_id, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
     try:
         if os.name == "posix":
-            os.killpg(process.pid, signal.SIGTERM)
+            os.killpg(group_id, signal.SIGTERM)
         else:
             process.terminate()
     except ProcessLookupError:
@@ -142,14 +156,18 @@ def _kill_process_group(process: subprocess.Popen[object]) -> None:
             process.terminate()
         except ProcessLookupError:
             return
-    try:
-        process.wait(timeout=PROCESS_TERM_GRACE_SECONDS)
+    term_deadline = time.monotonic() + PROCESS_TERM_GRACE_SECONDS
+    while group_alive() and time.monotonic() < term_deadline:
+        try:
+            process.wait(timeout=min(0.05, max(0.0, term_deadline - time.monotonic())))
+        except subprocess.TimeoutExpired:
+            pass
+    if not group_alive():
+        process.wait()
         return
-    except subprocess.TimeoutExpired:
-        pass
     try:
         if os.name == "posix":
-            os.killpg(process.pid, signal.SIGKILL)
+            os.killpg(group_id, signal.SIGKILL)
         else:
             process.kill()
     except ProcessLookupError:
@@ -159,6 +177,14 @@ def _kill_process_group(process: subprocess.Popen[object]) -> None:
             process.kill()
         except ProcessLookupError:
             return
+    verify_deadline = time.monotonic() + PROCESS_GROUP_VERIFY_SECONDS
+    while group_alive() and time.monotonic() < verify_deadline:
+        try:
+            process.wait(timeout=min(0.05, max(0.0, verify_deadline - time.monotonic())))
+        except subprocess.TimeoutExpired:
+            pass
+    if group_alive():
+        raise GuardError("timed-out process group did not terminate")
     process.wait()
 
 
@@ -178,9 +204,17 @@ def _run_bounded(command: list[str], *, cwd: Path, timeout: float,
     try:
         stdout, stderr = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired as error:
-        _kill_process_group(process)
-        stdout, stderr = process.communicate()
-        raise subprocess.TimeoutExpired(command, timeout, output=stdout, stderr=stderr) from error
+        try:
+            _kill_process_group(process)
+        finally:
+            # A descendant can retain inherited pipes after the leader exits;
+            # never call communicate() here, since that would wait for it.
+            if process.stdout is not None:
+                process.stdout.close()
+            if process.stderr is not None:
+                process.stderr.close()
+        raise subprocess.TimeoutExpired(command, timeout, output=error.output,
+                                        stderr=error.stderr) from error
     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
@@ -232,8 +266,14 @@ def git_nul_paths(root: Path, *args: str, limit: int = MAX_IGNORED_PATHS,
     deadline_at = time.monotonic() + timeout
 
     def stop(message: str) -> None:
-        _kill_process_group(process)
-        process.communicate()
+        try:
+            _kill_process_group(process)
+        finally:
+            # Descendants may retain these descriptors after the Git leader
+            # exits.  Discard the bounded evidence rather than waiting on
+            # inherited pipe handles during timeout cleanup.
+            process.stdout.close()
+            process.stderr.close()
         raise GuardError(message)
 
     try:
@@ -267,7 +307,11 @@ def git_nul_paths(root: Path, *args: str, limit: int = MAX_IGNORED_PATHS,
         try:
             process.wait(timeout=max(0.0, deadline_at - time.monotonic()))
         except subprocess.TimeoutExpired as error:
-            _kill_process_group(process)
+            try:
+                _kill_process_group(process)
+            finally:
+                process.stdout.close()
+                process.stderr.close()
             raise GuardError(f"git command timed out after {GIT_COMMAND_TIMEOUT_SECONDS}s") from error
     finally:
         selector.close()
@@ -611,13 +655,30 @@ def remove_tree_fd(directory_fd: int) -> None:
                     child_stat = os.fstat(child_fd)
                     if (child_stat.st_dev, child_stat.st_ino) != (observed.st_dev, observed.st_ino):
                         raise GuardError(f"cache entry changed during deletion: {name}")
+                    # A directory descriptor remains usable after its name is
+                    # renamed.  Before recursing, prove that the descriptor is
+                    # still the object at the authorized parent/name.  This
+                    # prevents a child moved outside quarantine between open
+                    # and recursion from becoming an external deletion root.
+                    try:
+                        current_child = os.stat(name, dir_fd=directory_fd,
+                                                follow_symlinks=False)
+                    except FileNotFoundError as error:
+                        raise GuardError(
+                            f"cache directory moved during deletion: {name}"
+                        ) from error
+                    if (current_child.st_dev, current_child.st_ino) != (
+                            child_stat.st_dev, child_stat.st_ino):
+                        raise GuardError(f"cache entry changed during deletion: {name}")
                     remove_tree_fd(child_fd)
                 finally:
                     os.close(child_fd)
                 try:
                     final = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
-                except FileNotFoundError:
-                    continue
+                except FileNotFoundError as error:
+                    raise GuardError(
+                        f"cache directory moved during deletion: {name}"
+                    ) from error
                 if (final.st_dev, final.st_ino) != (observed.st_dev, observed.st_ino):
                     raise GuardError(f"cache entry changed during deletion: {name}")
                 try:
@@ -625,10 +686,32 @@ def remove_tree_fd(directory_fd: int) -> None:
                 except FileNotFoundError:
                     continue
             else:
+                private = f".corelink-capacity-entry-{os.getpid()}-{secrets.token_hex(8)}"
                 try:
-                    os.unlink(name, dir_fd=directory_fd)
+                    # Rename first, then verify the inode that is about to be
+                    # removed.  A swap at the public name therefore moves a
+                    # replacement into `private`; it is detected and never
+                    # unlinked (the original is left recoverable).
+                    os.rename(name, private, src_dir_fd=directory_fd,
+                              dst_dir_fd=directory_fd)
                 except FileNotFoundError:
                     continue
+                except OSError as error:
+                    raise GuardError(f"cannot quarantine cache entry: {name}: {error}") from error
+                try:
+                    moved = os.stat(private, dir_fd=directory_fd, follow_symlinks=False)
+                    if (moved.st_dev, moved.st_ino) != (observed.st_dev, observed.st_ino):
+                        try:
+                            os.rename(private, name, src_dir_fd=directory_fd,
+                                      dst_dir_fd=directory_fd)
+                        except OSError:
+                            # Keep the replacement and the moved object intact
+                            # if an attacker occupied the public name.
+                            pass
+                        raise GuardError(f"cache entry changed during deletion: {name}")
+                    os.unlink(private, dir_fd=directory_fd)
+                except FileNotFoundError:
+                    raise GuardError(f"cache entry disappeared during deletion: {name}")
 
 
 def remove_cache_safely(root: Path, path: Path,

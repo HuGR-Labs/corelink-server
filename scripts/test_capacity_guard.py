@@ -212,6 +212,56 @@ class CapacityGuardTests(unittest.TestCase):
                 guard.dry_run_cleanup(self.root, ["target"], execute=True)
         self.assertTrue((self.root / "target" / "SECRET").exists())
 
+    def test_execute_refuses_descendant_file_rename_swap_without_deleting_replacement(self) -> None:
+        (self.root / "target").mkdir()
+        (self.root / "target" / "SECRET").write_text("original", encoding="utf-8")
+        original_rename = guard.os.rename
+        swapped = False
+
+        def swap_file_before_quarantine(src: str, dst: str, *, src_dir_fd: int,
+                                        dst_dir_fd: int) -> None:
+            nonlocal swapped
+            if src == "SECRET" and not swapped:
+                swapped = True
+                quarantine = next(self.root.glob(".corelink-capacity-quarantine-*"))
+                original_rename(quarantine / "SECRET", quarantine / "original")
+                (quarantine / "SECRET").write_text("replacement", encoding="utf-8")
+            original_rename(src, dst, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd)
+
+        with mock.patch.dict(os.environ,
+                             {"CORELINK_CAPACITY_ALLOW_DELETE": "delete-regenerable-cache"}), \
+             mock.patch.object(guard.os, "rename", side_effect=swap_file_before_quarantine):
+            with self.assertRaisesRegex(guard.GuardError, "entry changed"):
+                guard.dry_run_cleanup(self.root, ["target"], execute=True)
+        quarantine = next(self.root.glob(".corelink-capacity-quarantine-*"))
+        self.assertEqual((quarantine / "original").read_text(encoding="utf-8"), "original")
+        self.assertEqual((quarantine / "SECRET").read_text(encoding="utf-8"), "replacement")
+
+    def test_execute_refuses_descendant_directory_rename_without_deleting_external_secret(self) -> None:
+        (self.root / "target" / "child").mkdir(parents=True)
+        (self.root / "target" / "child" / "SECRET").write_text("keep", encoding="utf-8")
+        outside = Path(self.temp.name) / "outside"
+        outside.mkdir()
+        original_open = guard.os.open
+        moved = False
+
+        def move_child_after_open(name: str, flags: int, *args: object,
+                                  **kwargs: object) -> int:
+            nonlocal moved
+            fd = original_open(name, flags, *args, **kwargs)
+            if name == "child" and kwargs.get("dir_fd") is not None and not moved:
+                moved = True
+                quarantine = next(self.root.glob(".corelink-capacity-quarantine-*"))
+                os.rename(quarantine / "child", outside / "escaped")
+            return fd
+
+        with mock.patch.dict(os.environ,
+                             {"CORELINK_CAPACITY_ALLOW_DELETE": "delete-regenerable-cache"}), \
+             mock.patch.object(guard.os, "open", side_effect=move_child_after_open):
+            with self.assertRaisesRegex(guard.GuardError, "directory moved"):
+                guard.dry_run_cleanup(self.root, ["target"], execute=True)
+        self.assertEqual((outside / "escaped" / "SECRET").read_text(encoding="utf-8"), "keep")
+
     def test_root_rejects_filesystem_root_symlink_glob_and_subdirectory(self) -> None:
         link = Path(self.temp.name) / "repo-link"
         link.symlink_to(self.root, target_is_directory=True)
@@ -401,6 +451,31 @@ class CapacityGuardTests(unittest.TestCase):
         )
         time.sleep(0.4)
         self.assertFalse(marker.exists())
+
+    def test_bounded_timeout_kills_term_ignoring_descendant_after_leader_exits(self) -> None:
+        marker = Path(self.temp.name) / "late-marker"
+        command = (
+            "trap 'exit 0' TERM; "
+            f"/bin/sh -c \"trap '' TERM; i=0; while [ \\$i -lt 30 ]; do "
+            f"i=\\$((i+1)); sleep .1; done; echo leaked > {str(marker)!r}\" & wait"
+        )
+        with self.assertRaises(subprocess.TimeoutExpired):
+            guard._run_bounded(["/bin/sh", "-c", command], cwd=self.root,
+                               timeout=0.1)
+        time.sleep(0.5)
+        self.assertFalse(marker.exists())
+
+    def test_bounded_capture_timeout_does_not_wait_for_descendant_pipe(self) -> None:
+        command = (
+            "trap 'exit 0' TERM; "
+            "/bin/sh -c \"trap '' TERM; i=0; while [ \\$i -lt 60 ]; do "
+            "i=\\$((i+1)); sleep .1; done\" & wait"
+        )
+        started = time.monotonic()
+        with self.assertRaises(subprocess.TimeoutExpired):
+            guard._run_bounded(["/bin/sh", "-c", command], cwd=self.root,
+                               timeout=0.1, capture_output=True)
+        self.assertLess(time.monotonic() - started, 2)
 
     def test_lock_path_replacement_cannot_split_ownership(self) -> None:
         common = Path(guard.git(self.root, "rev-parse", "--git-common-dir").strip())
