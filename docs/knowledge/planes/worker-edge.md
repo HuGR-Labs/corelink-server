@@ -10,7 +10,7 @@ source_files:
   - "worker/src/lib/onboarding_events.ts"
   - "worker/src/lib/internal_auth.ts"
 source_blobs:
-  - "worker/src/index.ts@755263aad45417766edeba70a119c587db129e3a"
+  - "worker/src/index.ts@0e17001b0122bae8d19c0522a7cf1c5a22c82afb"
   - "worker/src/sentry-scrub.ts@e9cd0d761cab3aaa83ea618f7d270e8b77adc316"
   - "worker/src/lib/tenant_residency_cache.ts@dc42b4123dae51e9887264168efcc5d8f6ab817b"
   - "worker/src/lib/tenant_tier_cache.ts@4a440e51a8199a471bcde1b80ed31a872aee2b53"
@@ -51,7 +51,7 @@ keeps forged tokens cheap to reject before any expensive work.
    and matches the route before doing anything else (`worker/src/index.ts:1963-2031`).
 2. `matchRoute` is an ordered first-match table mapping each URL to a `RouteKind` + tenant, with
    specificity ordering (signup/customer/onboarding before the generic `/v1/*` arm)
-   (`worker/src/index.ts:855-1178`). The `/_internal/*` arm (`routeKind="internal"`,
+   (`worker/src/index.ts:856-1179`). The `/_internal/*` arm (`routeKind="internal"`,
    tenant `_system`) is, as of the Inc-2 lockdown (2026-08-19), gated at the NETWORK layer by a
    Cloudflare Access self-hosted app (Service-Auth service tokens) in front of
    `corelink-api.humangr.com/_internal*` — an unauthenticated public request is rejected 403 before the
@@ -279,7 +279,7 @@ keeps forged tokens cheap to reject before any expensive work.
 2. `worker/src/index.ts:542-572` — the `AuthResult` carrying the D1-resolved scope (the Worker is its sole authority).
 3. `worker/src/index.ts:727-796` — the `CLIENT_TRUST_HEADERS` strip list.
 4. `worker/src/index.ts:803-807` — `stripClientTrustHeaders` (delete-then-set discipline).
-5. `worker/src/index.ts:855-1178` — the `matchRoute` ordered route table.
+5. `worker/src/index.ts:856-1179` — the `matchRoute` ordered route table (including the explicit OCI `_oci` and customer `_anonymous` dispatch arms).
 5b. `worker/src/index.ts:1060` / `worker/src/index.ts:1072` / `worker/src/index.ts:1084` — the three exact-path pure-pass-through carve-outs: `/internal/v1/auth/introspect` + `/internal/v1/auth/resolve-tenant` (both `fabric_introspect`, `FABRIC_INTROSPECT_AUTH_KEY`) and `/internal/v1/billing/usage` (`billing_ingest`, `BILLING_INGEST_AUTH_KEY`).
 5c. `worker/src/index.ts:2470` — the `/_internal/public/revoke` internal-forward arm (B1b): it forwards the revoke to the `_system` DO → container (`worker/src/index.ts:2481`) and, only on an `ok` container response with `METADATA_KV` bound (`worker/src/index.ts:2497`), reads the RESOLVED `content_hash` from the container's buffered RESPONSE body (`worker/src/index.ts:2507`, F-1: authoritative for both the raw `content_hash` and the `upstream_digest` revoke spaces) and, gated on it matching `^[0-9a-f]{64}$` (`worker/src/index.ts:2522`), best-effort-writes the content-hash-keyed edge blocklist KV via `ctx.waitUntil(writePublicBlocklistKv(...))` (`worker/src/index.ts:2523`) — collapsing the `_public` edge-serve revocation window from the ~60 s map-cache TTL to KV propagation, never failing the revoke on a KV fault.
 6. `worker/src/index.ts:1292-1318` — `extractAuth` fail-CLOSED on absent/short `PAT_SIGNING_KEY`.
