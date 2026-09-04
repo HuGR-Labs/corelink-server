@@ -11,6 +11,28 @@ import subprocess
 from pathlib import Path
 
 
+def line_count(path: Path, cache: dict[Path, tuple[int, int, int, int, int]] | None = None) -> int:
+    """Count lines using a caller-scoped cache invalidated by file edits."""
+    path = path.resolve()
+    try:
+        stat = path.stat()
+        fingerprint = (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns)
+    except OSError:
+        fingerprint = None
+    if cache is not None and fingerprint is not None:
+        cached = cache.get(path)
+        if cached is not None and cached[:4] == fingerprint:
+            return cached[4]
+    try:
+        with path.open("rb") as fh:
+            count = sum(1 for _ in fh)
+    except OSError:
+        count = 0
+    if cache is not None and fingerprint is not None:
+        cache[path] = (*fingerprint, count)
+    return count
+
+
 def preload_sha_exists(git, shas: list[str]) -> None:
     pending = [sha for sha in dict.fromkeys(shas) if sha not in git._sha_cache]
     if not pending:

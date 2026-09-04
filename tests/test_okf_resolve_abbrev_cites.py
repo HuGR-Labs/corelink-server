@@ -15,11 +15,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "okf_resolve_abbrev_cites.py"
 VALIDATOR = REPO_ROOT / "scripts" / "validate_okf.py"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "okf_wiki.yml"
+sys.path.insert(0, str(VALIDATOR.parent))
 SPEC = importlib.util.spec_from_file_location("okf_resolve_abbrev_cites", SCRIPT)
 assert SPEC and SPEC.loader
 RESOLVER = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = RESOLVER
 SPEC.loader.exec_module(RESOLVER)
+import validate_okf as VALIDATOR_MODULE
 
 
 def _scan(tmp_path: Path, concept_body: str, source_files: dict[str, str]):
@@ -195,13 +197,88 @@ class AbbreviatedCitationResolverTest(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("FATAL", result.stderr)
 
+    def test_validate_okf_production_collector_resolves_bare_cites(self) -> None:
+        self.assertEqual(
+            VALIDATOR_MODULE._collect_cites(
+                "`src/live.rs:1` then `:2-3`", ["src/live.rs"]
+            ),
+            [("src/live.rs", 1, 1), ("src/live.rs", 2, 3)],
+        )
+        self.assertEqual(
+            VALIDATOR_MODULE._collect_cites(
+                "`customer.subscription.deleted` then `:2`", ["README.md"]
+            ),
+            [],
+        )
+
+    def test_production_mutations_make_bare_and_unresolved_cites_red(self) -> None:
+        validator = VALIDATOR.read_text(encoding="utf-8")
+        optional = r"(?P<path>[A-Za-z0-9._/\-]+)?:(?P<l1>"
+        strict = r"(?P<path>[A-Za-z0-9._/\-]+):(?P<l1>"
+        self.assertIn(optional, validator)
+        mutant_validator = validator.replace(optional, strict, 1)
+        mutant = types.ModuleType("validate_okf_without_bare_cites")
+        mutant.__file__ = str(VALIDATOR)
+        exec(compile(mutant_validator, str(VALIDATOR), "exec"), mutant.__dict__)
+        self.assertNotEqual(
+            mutant._collect_cites("`src/live.rs:1` then `:2`", ["src/live.rs"]),
+            [("src/live.rs", 1, 1), ("src/live.rs", 2, 2)],
+        )
+
+        resolver = SCRIPT.read_text(encoding="utf-8")
+        original = '    if end > len(lines):\n        return "past-eof", f"{path} has {len(lines)} lines"\n'
+        self.assertIn(original, resolver)
+        mutant_source = resolver.replace(
+            original, "    if False:\n        return \"past-eof\", \"mutated\"\n", 1
+        )
+        mutant_resolver = types.ModuleType("resolver_without_eof_guard")
+        mutant_resolver.__file__ = str(SCRIPT)
+        exec(compile(mutant_source, str(SCRIPT), "exec"), mutant_resolver.__dict__)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            concept = root / "docs" / "knowledge" / "concept.md"
+            concept.parent.mkdir(parents=True)
+            concept.write_text("`src/live.rs:1` then `:2`\n", encoding="utf-8")
+            (root / "src").mkdir()
+            (root / "src" / "live.rs").write_text("fn live() {}\n", encoding="utf-8")
+            mutant_resolver.REPO_ROOT = root
+            full_re, bare_re = mutant_resolver._compile()
+            with self.assertRaises(IndexError):
+                mutant_resolver.scan_concept(
+                    concept, mutant_resolver.SourceCache(root), full_re, bare_re
+                )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            concept = root / "docs" / "knowledge" / "concept.md"
+            concept.parent.mkdir(parents=True)
+            concept.write_text("`src/live.rs:1` then `:2`\n", encoding="utf-8")
+            (root / "src").mkdir()
+            (root / "src" / "live.rs").write_text("fn live() {}\n", encoding="utf-8")
+            RESOLVER.REPO_ROOT = root
+            full_re, bare_re = RESOLVER._compile()
+            _, findings = RESOLVER.scan_concept(
+                concept, RESOLVER.SourceCache(root), full_re, bare_re
+            )
+            self.assertTrue(any("past-eof" in finding for finding in findings))
+
+    def test_line_count_cache_invalidates_after_worktree_edit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "source.rs"
+            cache = {}
+            path.write_text("fn one() {}\n", encoding="utf-8")
+            self.assertEqual(VALIDATOR_MODULE._line_count(path, cache), 1)
+            path.write_text("fn one() {}\nfn two() {}\n", encoding="utf-8")
+            self.assertEqual(VALIDATOR_MODULE._line_count(path, cache), 2)
+
     def test_official_gate_executes_this_contract_and_cite_re_mutation_is_red(self) -> None:
-        """The B-059 diagnostic warning cannot be its only CI evidence."""
+        """The B-059 resolver and validator integration are both gated."""
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("run: python3 tests/test_okf_resolve_abbrev_cites.py", workflow)
+        self.assertIn("run: python3 scripts/okf_resolve_abbrev_cites.py", workflow)
+        self.assertNotIn('if [ "$rc" -eq 1 ]', workflow)
 
         validator = VALIDATOR.read_text(encoding="utf-8")
-        signature = 'CITE_RE = re.compile(r"^(?P<path>[A-Za-z0-9._/\\-]+):(?P<l1>'
+        signature = 'CITE_RE = re.compile(r"^(?P<path>[A-Za-z0-9._/\\-]+)?:(?P<l1>'
         self.assertIn(signature, validator)
 
         # Mutation proof: the exact signature the open-polarity backlog oracle

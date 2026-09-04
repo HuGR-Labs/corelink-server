@@ -20,6 +20,7 @@ on:
       - 'worker/**'
       - 'apps/**'
       - 'scripts/validate_okf.py'
+      - 'scripts/okf_git_batch.py'
       - 'scripts/okf_resolve_abbrev_cites.py'
       - 'tests/okf/**'
       - 'tests/test_okf_resolve_abbrev_cites.py'
@@ -32,6 +33,7 @@ on:
       - 'worker/**'
       - 'apps/**'
       - 'scripts/validate_okf.py'
+      - 'scripts/okf_git_batch.py'
       - 'scripts/okf_resolve_abbrev_cites.py'
       - 'tests/okf/**'
       - 'tests/test_okf_resolve_abbrev_cites.py'
@@ -74,28 +76,15 @@ jobs:
         run: python3 scripts/validate_okf.py
 
       - name: Test abbreviated-citation resolver contract (B-059)
-        # This is deliberately separate from the diagnostic below: a warning
-        # result over the current residual worklist is not proof that the
-        # resolver still understands inheritance, traversal, EOF, or malformed
-        # ranges.  The test is stdlib-only and runs with this job's interpreter.
+        # The resolver is also integrated into validate_okf's C5/C6 collection;
+        # this focused suite keeps inheritance, traversal, EOF, and malformed
+        # range behavior explicit and mutation-tested.
         run: python3 tests/test_okf_resolve_abbrev_cites.py
 
-      - name: Diagnose abbreviated OKF citations (B-059)
-        # B-059 remains open while the existing 38 findings are re-authored.
-        # Findings are deliberately visible in this official gate's log without
-        # blocking unrelated OKF freshness work; a broken scan (exit 2) remains
-        # fatal. Once B-059 reaches zero findings, remove the rc=1 warning branch
-        # and make this step a blocking gate.
-        run: |
-          set +e
-          python3 scripts/okf_resolve_abbrev_cites.py
-          rc=$?
-          set -e
-          if [ "$rc" -eq 1 ]; then
-            echo "::warning::B-059 is still open: abbreviated citation findings require re-authoring."
-            exit 0
-          fi
-          exit "$rc"
+      - name: Validate abbreviated OKF citations (B-059)
+        # Exit 1 is a real finding and MUST fail this job; exit 2 means the
+        # scan itself was not trustworthy and is likewise fatal.
+        run: python3 scripts/okf_resolve_abbrev_cites.py
 
       - name: Validator acceptance suite (good + per-check bad fixtures)
         # Gates the validator's OWN correctness — proves every contract check

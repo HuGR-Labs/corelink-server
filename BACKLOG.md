@@ -3384,7 +3384,7 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  if ! grep -qF '(?P<path>[A-Za-z0-9._/\-]+):(?P<l1>' scripts/validate_okf.py; then
+  if ! grep -qF 'CITE_RE = re.compile(r"^(?P<path>[A-Za-z0-9._/\-]+)?:(?P<l1>' scripts/validate_okf.py; then
     echo 'INDETERMINADO: CITE_RE mudou ou sumiu; nao execute o resolver como substituto.' >&2
     exit 1
   fi
