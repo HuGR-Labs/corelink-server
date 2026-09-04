@@ -9,7 +9,7 @@
  * signal. Both sites now share ONE predicate so they cannot diverge again.
  */
 import { describe, expect, it } from "vitest";
-import { isValidPatSigningKeyHex } from "../src/lib/pat_signing_key.js";
+import { isValidPatSigningKeyHex, normalizePatSigningKeyEnv } from "../src/lib/pat_signing_key.js";
 
 describe("isValidPatSigningKeyHex (WP-F2)", () => {
   it("accepts a canonical 64-char all-hex key", () => {
@@ -53,5 +53,13 @@ describe("isValidPatSigningKeyHex (WP-F2)", () => {
 
   it("rejects empty string", () => {
     expect(isValidPatSigningKeyHex("")).toBe(false);
+    expect(isValidPatSigningKeyHex("   \t")).toBe(false);
+  });
+
+  it("normalizes empty values to EMPTY and whitespace to a malformed marker", () => {
+    expect(normalizePatSigningKeyEnv(undefined)).toBe("");
+    expect(normalizePatSigningKeyEnv("")).toBe("");
+    expect(normalizePatSigningKeyEnv("   \t")).toBe("__invalid_blank_pat_signing_key__");
+    expect(normalizePatSigningKeyEnv("  abcd  ")).toBe("  abcd  ");
   });
 });

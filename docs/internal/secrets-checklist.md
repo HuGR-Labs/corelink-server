@@ -23,6 +23,14 @@ production requires. Every row maps a logical secret → the canonical env var
 consumed by the runtime → the vendor → acquisition path → rotation cadence →
 rotation owner → compromise response → storage location.
 
+> **B-081 code status:** The Durable Object now forwards
+> `PAT_SIGNING_KEY_PREV` and `PAT_SIGNING_KEY_NEW` to every newly started tenant
+> and shared `_oci` container through the tested helper. This does not authorize
+> a production rotation. Population-safe recycle, boot-generation attestation,
+> probes, and rollback controls remain open; follow the DRAFT/BLOCKED
+> `specs/_runbooks/RB-PAT-SIGNING-KEY-ROTATION.md` only after those controls are
+> independently proven in all five environments.
+
 **Hard rules:**
 
 - **No real secret values in this file.** Placeholders only. Real values live
