@@ -3366,21 +3366,106 @@ other. Until then, every re-anchor that touches a file cited in abbreviated
 form is silently unverified.
 
 Relates to [B-058] (the OKF reconcile backlog) and to the C5 freshness gate
-generally.
+generally. The repo-owned diagnostic `scripts/okf_resolve_abbrev_cites.py` now
+runs in the official `okf_wiki.yml` gate, so this surface is no longer silently
+ignored. It validates full-path ranges as well as abbreviated ranges, recognizes
+a path-only source anchor before abbreviated lines, and rejects malformed forms
+such as `` `:999-` ``. A path-only anchor is accepted only when its exact,
+grammar-valid repo path is declared in the concept's `source_files` and resolves
+to a readable source file; dotted inline identifiers never retarget a later
+abbreviation. On the current tree the resolver reports **0 residuals** across
+all abbreviated citations; the re-anchored references are now checked by the
+full OKF gate as well. Exit 2 remains a fatal scan failure and exit 1 remains a
+resolver finding, so a future unresolved citation cannot silently pass.
 
 ```backlog
 id: B-059
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  grep -qF '(?P<path>[A-Za-z0-9._/\-]+):(?P<l1>' scripts/validate_okf.py
+  if ! grep -qF 'CITE_RE = re.compile(r"^(?P<path>[A-Za-z0-9._/\-]+)?:(?P<l1>' scripts/validate_okf.py; then
+    echo 'INDETERMINADO: CITE_RE mudou ou sumiu; nao execute o resolver como substituto.' >&2
+    exit 1
+  fi
+  # Positive baseline is the focused resolver contract; the complete OKF gate
+  # runs once in the release lane. Re-running its 100s scan here would duplicate
+  # evidence and make this backlog oracle exceed its 120s ceiling.
+  if ! python3 tests/test_okf_resolve_abbrev_cites.py >/dev/null; then
+    echo "FALHA: a suíte focal do resolvedor falhou; mutacao nao e evidencia." >&2
+    exit 1
+  fi
+  b059_mutant="$(mktemp "${TMPDIR:-/tmp}/b059-validate-okf.XXXXXX")" || exit 1
+  b059_mutant_log=''
+  trap 'rm -f "$b059_mutant"; [ -z "${b059_mutant_log:-}" ] || rm -f "$b059_mutant_log"' EXIT
+  b059_mutant_log="$(mktemp "${TMPDIR:-/tmp}/b059-validate-okf-log.XXXXXX")" || exit 1
+  if ! python3 - "$b059_mutant" <<'PY'
+  from pathlib import Path
+  import sys
+  source = Path("scripts/validate_okf.py").read_text(encoding="utf-8")
+  lines = source.splitlines(keepends=True)
+  kept = [line for line in lines if not line.startswith("CITE_RE = ")]
+  if len(kept) != len(lines) - 1:
+      raise SystemExit("CITE_RE mutation target is missing or ambiguous")
+  Path(sys.argv[1]).write_text("".join(kept), encoding="utf-8")
+  PY
+  then
+    echo 'INDETERMINADO: nao foi possivel gerar o artefato CITE_RE mutado.' >&2
+    exit 1
+  fi
+  # Do not let ENOSPC, a partial write, or a syntax error masquerade as the
+  # intended runtime mutation.  The executable must be the exact one-line
+  # removal of the checked-in validator before its result has any meaning.
+  if ! python3 - "$b059_mutant" <<'PY'
+  from pathlib import Path
+  import sys
+  source = Path("scripts/validate_okf.py").read_text(encoding="utf-8")
+  expected = "".join(
+      line for line in source.splitlines(keepends=True) if not line.startswith("CITE_RE = ")
+  )
+  artifact = Path(sys.argv[1]).read_text(encoding="utf-8")
+  if artifact != expected:
+      raise SystemExit("mutant artifact is not the exact CITE_RE deletion")
+  compile(artifact, str(Path(sys.argv[1])), "exec")
+  PY
+  then
+    echo 'INDETERMINADO: artefato CITE_RE mutado ausente, parcial ou invalido.' >&2
+    exit 1
+  fi
+  # Execute only the load-bearing C5 collector on a tiny input. Removing the
+  # declaration must fail exactly at the collector, proving the mutation is
+  # not a dead edit while keeping this oracle below its 120s budget.
+  if python3 - "$b059_mutant" >"$b059_mutant_log" 2>&1 <<'PY'
+  from importlib.machinery import SourceFileLoader
+  import sys
+  sys.path.insert(0, "scripts")
+  module = SourceFileLoader("mutant_validate_okf", sys.argv[1]).load_module()
+  try:
+      module._collect_cites("`crates/example.rs:1`")
+  except NameError as exc:
+      if "CITE_RE" not in str(exc):
+          raise SystemExit(f"unexpected NameError: {exc}")
+  else:
+      raise SystemExit("CITE_RE deletion survived _collect_cites")
+  PY
+  then
+    :
+  else
+    echo 'FALHA: mutacao sem CITE_RE sobreviveu ao coletor.' >&2
+    cat "$b059_mutant_log" >&2
+    exit 1
+  fi
+  python3 scripts/okf_resolve_abbrev_cites.py --quiet; rc=$?; test "$rc" -eq 0
 verify-means: |
-  open — passes while the citation regex still requires a non-empty path, i.e.
-  while abbreviated `:N-M` citations are invisible to the OKF gates. Closes when
-  the pattern admits a path-less citation (resolved against the preceding
-  full-path one) and the gates validate it like any other.
-last-verified: 2026-08-29
+  done — the full validator passes, the resolver exits 0 (no unresolved
+  abbreviations), and the focal CITE_RE deletion is RED at `_collect_cites`.
+  The resolver resolves against the nearest preceding full or path-only source
+  anchor in the same concept, validates 1-based range bounds through EOF, and
+  rejects malformed tokens. Path-only inheritance additionally requires the
+  exact path in that concept's `source_files` plus a readable repo file, so a
+  dotted identifier cannot manufacture context. Any future resolver finding or
+  failed mutation makes this verification fail.
+last-verified: 2026-09-04
 ```
 
 ### B-060 — the DSR registry→migrations mirror gate

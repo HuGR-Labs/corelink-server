@@ -88,6 +88,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from okf_git_batch import file_blob_sha as _file_blob_sha, line_count as _line_count, preload_sha_exists as _preload_sha_exists, preload_show_files as _preload_show_files, worktree_blob_sha as _worktree_blob_sha
 
 # ---------------------------------------------------------------------------
 # Optional YAML — hand-rolled fallback keeps the gate self-contained on
@@ -104,8 +105,12 @@ if not os.environ.get("OKF_NO_YAML"):
 
 
 FRONT_MATTER_RE = re.compile(r"^---\n(.*?)\n---\n?(.*)$", re.DOTALL)
-# A code-anchor cite token, parsed only from inside backticks: `path:line[-line]`.
-CITE_RE = re.compile(r"^(?P<path>[A-Za-z0-9._/\-]+):(?P<l1>\d+)(?:-(?P<l2>\d+))?$")
+# Code-anchor cite token, parsed only from inside backticks; path is optional for
+# abbreviated continuations, while C6c deliberately uses the strict full form.
+CITE_RE = re.compile(r"^(?P<path>[A-Za-z0-9._/\-]+)?:(?P<l1>\d+)(?:-(?P<l2>\d+))?$")
+CITE_FULL_RE = re.compile(r"^(?P<path>[A-Za-z0-9._/\-]+):(?P<l1>\d+)(?:-(?P<l2>\d+))?$")
+# Path-only anchors are accepted only from the concept's exact declared sources.
+BARE_PATH_RE = re.compile(r"^[A-Za-z0-9._/\-]+$")
 BACKTICK_RE = re.compile(r"`([^`]+)`")
 # Bundle-relative markdown link with a leading slash: [text](/dir/x.md)
 LINK_RE = re.compile(r"\[[^\]]*\]\((/[^)\s]+)\)")
@@ -220,13 +225,7 @@ class Git:
     def file_blob_sha(self, rev: str, repo_rel: str):
         """The git blob object id of `repo_rel` at `rev` (None if the path does
         not exist at that rev). Used for the C5 per-file trivially-fresh skip."""
-        key = (rev, repo_rel)
-        if key in self._blob_cache:
-            return self._blob_cache[key]
-        cp = self.run(["rev-parse", "--verify", "--quiet", f"{rev}:{repo_rel}"])
-        val = cp.stdout.strip() if cp.returncode == 0 and cp.stdout.strip() else None
-        self._blob_cache[key] = val
-        return val
+        return _file_blob_sha(self, rev, repo_rel)
 
     def show_lines(self, rev: str, repo_rel: str):
         """Lines of `repo_rel` at `rev` (line terminators stripped), or None if
@@ -244,16 +243,7 @@ class Git:
         (None if the path does not exist on disk). The working-tree analogue of
         `file_blob_sha`, used for the C5 per-file trivially-fresh skip so the
         skip stays correct in a dirty tree (where worktree != HEAD)."""
-        if repo_rel in self._wt_blob_cache:
-            return self._wt_blob_cache[repo_rel]
-        p = self.repo_root / repo_rel
-        if not p.exists():
-            self._wt_blob_cache[repo_rel] = None
-            return None
-        cp = self.run(["hash-object", "--", repo_rel])
-        val = cp.stdout.strip() if cp.returncode == 0 and cp.stdout.strip() else None
-        self._wt_blob_cache[repo_rel] = val
-        return val
+        return _worktree_blob_sha(self, repo_rel)
 
     def worktree_lines(self, repo_rel: str):
         """Lines of the on-disk WORKING-TREE file `repo_rel` (line terminators
@@ -425,7 +415,6 @@ class Git:
         self._show_file_cache[key] = out
         return out
 
-
 # ---------------------------------------------------------------------------
 # Concept model
 # ---------------------------------------------------------------------------
@@ -487,7 +476,7 @@ class Concept:
             self.source_blobs[path_] = blob_
         self.is_adr = (self.type == ADR_TYPE) or self.concept_id.startswith("adr/")
         # parse cites + links
-        self.cites = _collect_cites(self.body)  # list[(file, l1, l2)]
+        self.cites = _collect_cites(self.body, self.source_files)  # list[(file, l1, l2)]
         self.cited_files = {c[0] for c in self.cites}
         self.links = [m for m in LINK_RE.findall(self.body)]
 
@@ -499,17 +488,30 @@ def _split(text: str):
     return m.group(1), m.group(2)
 
 
-def _collect_cites(body: str):
+def _collect_cites(body: str, source_files: "list[str] | set[str] | None" = None):
+    """Collect full and abbreviated citations with concept-local inheritance."""
+    declared = set(source_files or ())
     out = []
+    referent: str | None = None
     for inner in BACKTICK_RE.findall(body):
-        m = CITE_RE.match(inner.strip())
+        token = inner.strip()
+        m = CITE_RE.match(token)
         if not m:
+            if BARE_PATH_RE.fullmatch(token) and token in declared:
+                referent = token
             continue
+        path = m.group("path")
+        if path is None:
+            if referent is None:
+                continue
+            path = referent
+        else:
+            referent = path
         l1 = int(m.group("l1"))
         l2 = int(m.group("l2")) if m.group("l2") else l1
         if l2 < l1:
             l1, l2 = l2, l1
-        out.append((m.group("path"), l1, l2))
+        out.append((path, l1, l2))
     return out
 
 
@@ -619,14 +621,14 @@ def _bullet_blocks(lines: list[str]) -> list[str]:
 
 
 def _has_cite(text: str) -> bool:
-    return any(CITE_RE.match(inner.strip()) for inner in BACKTICK_RE.findall(text))
+    return any(CITE_FULL_RE.match(inner.strip()) for inner in BACKTICK_RE.findall(text))
 
 
 def _block_cite_paths(text: str) -> list[str]:
     """The cited file paths (no line numbers) inside a single bullet block."""
     out: list[str] = []
     for inner in BACKTICK_RE.findall(text):
-        m = CITE_RE.match(inner.strip())
+        m = CITE_FULL_RE.match(inner.strip())
         if m:
             out.append(m.group("path"))
     return out
@@ -1190,14 +1192,6 @@ def _wrangler_config_dirs(surface_root: Path) -> list[Path]:
     return dirs
 
 
-def _line_count(path: Path) -> int:
-    try:
-        with path.open("rb") as fh:
-            return sum(1 for _ in fh)
-    except OSError:
-        return 0
-
-
 # ---------------------------------------------------------------------------
 # Failure collection
 # ---------------------------------------------------------------------------
@@ -1240,6 +1234,7 @@ def load_manifest(path: Path):
 # ---------------------------------------------------------------------------
 def run_checks(args, git: Git, fails: Failures):
     repo_root = git.repo_root
+    line_count_cache: dict[Path, tuple[int, int, int, int, int]] = {}
     bundle_root = Path(args.bundle)
     if not bundle_root.is_absolute():
         bundle_root = (Path.cwd() / bundle_root).resolve()
@@ -1282,6 +1277,8 @@ def run_checks(args, git: Git, fails: Failures):
     # the checkpoint object is also present anyway (local full clone ⇒ ckpt_ok).
     _resolved_base = git.resolve_base(args.base_ref) or args.base_ref
     base_rev_for_c5 = git.merge_base(_resolved_base)
+
+    _preload_sha_exists(git, [c.checkpoint_sha for c in concepts if isinstance(c.checkpoint_sha, str) and HEX40_RE.match(c.checkpoint_sha)])
 
     # Per-concept structural checks.
     for c in concepts:
@@ -1447,7 +1444,7 @@ def run_checks(args, git: Git, fails: Failures):
             if not fpath.exists():
                 fails.add("C6", loc, f"dangling citation — file does not exist: `{f}:{l1}`")
                 continue
-            n = _line_count(fpath)
+            n = _line_count(fpath, line_count_cache)
             if l1 < 1 or l2 > n:
                 fails.add("C6", loc, f"citation out of range: `{f}:{l1}-{l2}` (file has {n} lines)")
         cited_set = {f for (f, _, _) in c.cites}
@@ -1647,6 +1644,9 @@ def _check_c5b(args, git: Git, bundle_root: Path, concepts: list[Concept], fails
     if base_bundle is None:
         mb = git.merge_base(args.base_ref)
         base_rev = mb
+
+    if base_rev:
+        _preload_show_files(git, base_rev, [c.path.relative_to(git.repo_root).as_posix() for c in concepts if not c.is_deferred and c.checkpoint_sha and _under(c.path, git.repo_root)])
 
     for c in concepts:
         if c.is_deferred or not c.checkpoint_sha:

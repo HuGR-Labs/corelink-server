@@ -20,7 +20,10 @@ on:
       - 'worker/**'
       - 'apps/**'
       - 'scripts/validate_okf.py'
+      - 'scripts/okf_git_batch.py'
+      - 'scripts/okf_resolve_abbrev_cites.py'
       - 'tests/okf/**'
+      - 'tests/test_okf_resolve_abbrev_cites.py'
   push:
     branches: [main]
     paths:
@@ -30,6 +33,10 @@ on:
       - 'worker/**'
       - 'apps/**'
       - 'scripts/validate_okf.py'
+      - 'scripts/okf_git_batch.py'
+      - 'scripts/okf_resolve_abbrev_cites.py'
+      - 'tests/okf/**'
+      - 'tests/test_okf_resolve_abbrev_cites.py'
 
 permissions:
   contents: read
@@ -67,6 +74,17 @@ jobs:
 
       - name: Validate OKF-CoreLink knowledge bundle
         run: python3 scripts/validate_okf.py
+
+      - name: Test abbreviated-citation resolver contract (B-059)
+        # The resolver is also integrated into validate_okf's C5/C6 collection;
+        # this focused suite keeps inheritance, traversal, EOF, and malformed
+        # range behavior explicit and mutation-tested.
+        run: python3 tests/test_okf_resolve_abbrev_cites.py
+
+      - name: Validate abbreviated OKF citations (B-059)
+        # Exit 1 is a real finding and MUST fail this job; exit 2 means the
+        # scan itself was not trustworthy and is likewise fatal.
+        run: python3 scripts/okf_resolve_abbrev_cites.py
 
       - name: Validator acceptance suite (good + per-check bad fixtures)
         # Gates the validator's OWN correctness — proves every contract check

@@ -86,7 +86,7 @@ metadata, and dispatches.
 6. `crates/corelink-container/src/routes/bazel_v2.rs:338-345` — stock-Bazel HTTP alias route registration (`/bazel/cache/{cas,ac}/:hash`).
 7. `crates/corelink-container/src/routes/bazel_v2.rs:880-1129` — the four stock-alias handlers (tenant from header; same gate sequence + integrity checks as the REST handlers).
 8. `crates/corelink-container/src/routes/bazel_v2.rs:352-359` — `header_str` Worker-metadata reader.
-9. `crates/corelink-container/src/routes/bazel_v2.rs:513` — `CrossTenantDenied → 403`: the executed enforcer of the REST `:instance` == `x-corelink-tenant-id` isolation rule (the documented rule is in the module doc at `:44-47`).
+9. `crates/corelink-container/src/routes/bazel_v2.rs:513` — `CrossTenantDenied → 403`: the executed enforcer of the REST `:instance` == `x-corelink-tenant-id` isolation rule (also the source of truth for the module's documented rule).
 10. `crates/corelink-container/src/routes/bazel_v2.rs:987` — stock-alias CAS-write SHA-256 content-addressing boundary check.
 11. `crates/corelink-container/src/routes/bazel_v2.rs:1088` — stock-alias AC-write WP5b runner-job AC-key pin.
 12. `crates/corelink-container/src/routes/bazel_v2.rs:59-67` — matchit `{name}` capture-form rule (DEBT-029, post axum-0.8).
