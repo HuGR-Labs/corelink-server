@@ -56,7 +56,6 @@
 1205	crates/corelink-stripe-real/src/webhook_dispatch.rs
 1179	tests/e2e-pilot-onboarding/src/harness.rs
 1173	crates/corelink-ops/src/oncall/events.rs
-1171	crates/corelink-cas/src/lru_tracker/tracker.rs
 1165	crates/corelink-container/src/routes/public_revoke.rs
 1164	crates/corelink-cf-bindings/src/d1_real.rs
 1144	tests/e2e-tenant-isolation/tests/adversarial.rs
