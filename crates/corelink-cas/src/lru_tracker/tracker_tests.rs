@@ -7,7 +7,6 @@
     reason = "tests are allowed to use these primitives"
 )]
 mod tests {
-    use super::*;
     use std::sync::Arc;
 
     use uuid::Uuid;
@@ -20,7 +19,8 @@ mod tests {
     use crate::lru_tracker::clock::{CountingLruClock, FrozenLruClock};
     use crate::lru_tracker::metrics::{InMemoryLruMetrics, LruMetricKind};
     use crate::lru_tracker::{
-        InMemoryLruTracker, LruConfig, LruDecision, LruEventType, LruFlushResult,
+        InMemoryLruTracker, LruConfig, LruDecision, LruError, LruEventType, LruFlushResult,
+        LruTracker,
     };
 
     fn ten_a() -> Uuid {
