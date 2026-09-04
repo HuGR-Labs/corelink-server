@@ -9,7 +9,7 @@ source_files:
   - "worker/src/rollout_controller.ts"
   - "worker/src/replication_coordinator_do.ts"
 source_blobs:
-  - "worker/src/durable_object.ts@e7bbd1d6b4427ca27b501cc58a1c0834fa8b6d62"
+  - "worker/src/durable_object.ts@18f80ca9cf8cbe4de42c40865465de1a572f601d"
   - "worker/src/index.ts@755263aad45417766edeba70a119c587db129e3a"
   - "worker/src/event_log_do.ts@296d814b88a582cae97f9cd01665f5dce7738b05"
   - "worker/src/rollout_controller.ts@989af7c4ac828a39ede4381bd3d036b4bb747267"
