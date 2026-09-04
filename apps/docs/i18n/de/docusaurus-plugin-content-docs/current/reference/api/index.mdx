@@ -33,9 +33,7 @@ See also the raw spec page at [REST API spec](./openapi.mdx).
 | [`POST /v1/dpa/accept`](./endpoints/post-v1-dpa-accept.mdx) | `dpa` | Record click-through acceptance of the current DPA version. |
 | [`POST /v1/dpa/re-accept`](./endpoints/post-v1-dpa-re-accept.mdx) | `dpa` | Re-accept a major-bumped DPA notice within the 30-day grace window. |
 | [`POST /v1/onboarding/tier-select`](./endpoints/post-v1-onboarding-tier-select.mdx) | `tier` | Select a subscription tier and receive a Stripe Checkout session URL. |
-| [`GET /v1/pats`](./endpoints/get-v1-pats.mdx) | `pat` | List the caller's Personal Access Tokens. |
 | [`POST /v1/pats`](./endpoints/post-v1-pats.mdx) | `pat` | Issue a new Personal Access Token. |
-| [`DELETE /v1/pats/{pat_id}`](./endpoints/delete-v1-pats-by-pat_id.mdx) | `pat` | Revoke a Personal Access Token by id. |
 | [`POST /v1/signup`](./endpoints/post-v1-signup.mdx) | `signup` | Provision a new tenant from a verified Clerk identity. |
 | [`GET /v1/users/me`](./endpoints/get-v1-users-me.mdx) | `users` | Reflect the authenticated caller's PAT identity. |
 
