@@ -8,11 +8,20 @@
 )]
 mod tests {
     use super::*;
-    use corelink_eviction::{BlobLruRow, InMemoryBlobMetaSoftDeleteStore};
+    use std::sync::Arc;
+
+    use uuid::Uuid;
+
+    use corelink_eviction::{
+        BlobLruRow, EvictionBlobDigest, EvictionRegion, InMemoryBlobMetaSoftDeleteStore,
+    };
 
     use crate::lru_tracker::audit::{FailingLruAuditSink, InMemoryLruAuditSink};
     use crate::lru_tracker::clock::{CountingLruClock, FrozenLruClock};
     use crate::lru_tracker::metrics::{InMemoryLruMetrics, LruMetricKind};
+    use crate::lru_tracker::{
+        InMemoryLruTracker, LruConfig, LruDecision, LruEventType, LruFlushResult,
+    };
 
     fn ten_a() -> Uuid {
         Uuid::from_u128(0xa)
