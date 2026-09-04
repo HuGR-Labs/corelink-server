@@ -22,8 +22,9 @@ import dataclasses
 import fcntl
 import math
 import os
+import selectors
 import secrets
-import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -42,6 +43,8 @@ GIT_COMMAND_TIMEOUT_SECONDS = 5
 MAX_REPORT_SECONDS = 90
 MAX_IGNORED_PATHS = 100_000
 MAX_COMMAND_TIMEOUT_SECONDS = 24 * 60 * 60
+MAX_GIT_OUTPUT_BYTES = 16 * 1024 * 1024
+PROCESS_TERM_GRACE_SECONDS = 0.25
 
 # These names are deliberately not paths.  Accepting arbitrary paths, globs,
 # environment expansion or ``..`` here would turn a diagnostic into a delete
@@ -123,22 +126,159 @@ def parse_command_timeout(value: str) -> float:
     return parsed
 
 
-def git(root: Path, *args: str) -> str:
+def _kill_process_group(process: subprocess.Popen[object]) -> None:
+    """Terminate a bounded subprocess and all descendants in its session."""
     try:
-        completed = subprocess.run(
-            ["git", "-C", os.fspath(root), *args],
-            text=True,
-            capture_output=True,
-            check=False,
-            timeout=GIT_COMMAND_TIMEOUT_SECONDS,
-            errors="surrogateescape",
-        )
+        if os.name == "posix":
+            os.killpg(process.pid, signal.SIGTERM)
+        else:
+            process.terminate()
+    except ProcessLookupError:
+        return
+    except PermissionError:
+        # A platform may reject killpg despite accepting start_new_session;
+        # still reap the direct child rather than leaking a running process.
+        try:
+            process.terminate()
+        except ProcessLookupError:
+            return
+    try:
+        process.wait(timeout=PROCESS_TERM_GRACE_SECONDS)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        if os.name == "posix":
+            os.killpg(process.pid, signal.SIGKILL)
+        else:
+            process.kill()
+    except ProcessLookupError:
+        return
+    except PermissionError:
+        try:
+            process.kill()
+        except ProcessLookupError:
+            return
+    process.wait()
+
+
+def _run_bounded(command: list[str], *, cwd: Path, timeout: float,
+                 capture_output: bool = False) -> subprocess.CompletedProcess[object]:
+    """Run one command in a private process group with a hard tree timeout."""
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        start_new_session=(os.name == "posix"),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE if capture_output else None,
+        stderr=subprocess.PIPE if capture_output else None,
+        text=capture_output,
+        errors="surrogateescape" if capture_output else None,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired as error:
+        _kill_process_group(process)
+        stdout, stderr = process.communicate()
+        raise subprocess.TimeoutExpired(command, timeout, output=stdout, stderr=stderr) from error
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
+def git(root: Path, *args: str, deadline: float | None = None) -> str:
+    timeout = float(GIT_COMMAND_TIMEOUT_SECONDS)
+    if deadline is not None:
+        timeout = min(timeout, deadline - time.monotonic())
+        if timeout <= 0:
+            raise GuardError(f"worktree report exceeded {MAX_REPORT_SECONDS}s")
+    try:
+        completed = _run_bounded(["git", "-C", os.fspath(root), *args], cwd=root,
+                                 timeout=timeout, capture_output=True)
+    except subprocess.TimeoutExpired as error:
+        if deadline is not None and time.monotonic() >= deadline:
+            raise GuardError(f"worktree report exceeded {MAX_REPORT_SECONDS}s") from error
         raise GuardError(f"git command timed out after {GIT_COMMAND_TIMEOUT_SECONDS}s") from error
     if completed.returncode:
         detail = completed.stderr.strip().splitlines()
         raise GuardError(detail[0] if detail else "git command failed")
     return completed.stdout
+
+
+def git_nul_paths(root: Path, *args: str, limit: int = MAX_IGNORED_PATHS,
+                   deadline: float | None = None) -> list[str]:
+    """Stream a NUL-delimited Git path list with byte and entry bounds."""
+    timeout = float(GIT_COMMAND_TIMEOUT_SECONDS)
+    if deadline is not None:
+        timeout = min(timeout, deadline - time.monotonic())
+        if timeout <= 0:
+            raise GuardError(f"worktree report exceeded {MAX_REPORT_SECONDS}s")
+    command = ["git", "-C", os.fspath(root), *args]
+    process = subprocess.Popen(
+        command,
+        cwd=root,
+        start_new_session=(os.name == "posix"),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert process.stdout is not None
+    assert process.stderr is not None
+    selector = selectors.DefaultSelector()
+    selector.register(process.stdout, selectors.EVENT_READ, "stdout")
+    selector.register(process.stderr, selectors.EVENT_READ, "stderr")
+    current = bytearray()
+    paths: list[str] = []
+    stderr = bytearray()
+    total = 0
+    deadline_at = time.monotonic() + timeout
+
+    def stop(message: str) -> None:
+        _kill_process_group(process)
+        process.communicate()
+        raise GuardError(message)
+
+    try:
+        while selector.get_map():
+            remaining = deadline_at - time.monotonic()
+            if remaining <= 0:
+                stop(f"git command timed out after {GIT_COMMAND_TIMEOUT_SECONDS}s")
+            events = selector.select(remaining)
+            if not events:
+                stop(f"git command timed out after {GIT_COMMAND_TIMEOUT_SECONDS}s")
+            for key, _ in events:
+                data = os.read(key.fd, 64 * 1024)
+                if not data:
+                    selector.unregister(key.fileobj)
+                    continue
+                if key.data == "stderr":
+                    stderr.extend(data)
+                    if len(stderr) > MAX_GIT_OUTPUT_BYTES:
+                        stop(f"git error output exceeded {MAX_GIT_OUTPUT_BYTES} bytes")
+                    continue
+                total += len(data)
+                if total > MAX_GIT_OUTPUT_BYTES:
+                    stop(f"git path evidence exceeded {MAX_GIT_OUTPUT_BYTES} bytes")
+                current.extend(data)
+                while b"\0" in current:
+                    raw, _, rest = current.partition(b"\0")
+                    current = bytearray(rest)
+                    paths.append(raw.decode(errors="surrogateescape"))
+                    if len(paths) > limit:
+                        stop(f"git path evidence exceeded {limit} entries")
+        try:
+            process.wait(timeout=max(0.0, deadline_at - time.monotonic()))
+        except subprocess.TimeoutExpired as error:
+            _kill_process_group(process)
+            raise GuardError(f"git command timed out after {GIT_COMMAND_TIMEOUT_SECONDS}s") from error
+    finally:
+        selector.close()
+        process.stdout.close()
+        process.stderr.close()
+    if process.returncode:
+        detail = bytes(stderr).decode(errors="surrogateescape").strip().splitlines()
+        raise GuardError(detail[0] if detail else "git command failed")
+    if current:
+        raise GuardError("git returned a malformed NUL-delimited path list")
+    return paths
 
 
 def validated_root(raw_root: str) -> Path:
@@ -174,7 +314,7 @@ def filesystem_capacity(path: Path) -> FilesystemCapacity:
     return FilesystemCapacity(stats.f_bavail * stats.f_frsize, free_inodes)
 
 
-def directory_size(path: Path) -> int:
+def directory_size(path: Path, *, deadline: float | None = None) -> int:
     """Size regular files below a cache, with an explicit read-only scan bound.
 
     A cache can contain millions of files. Bounded traversal keeps this guard
@@ -193,6 +333,8 @@ def directory_size(path: Path) -> int:
     scanned = 0
     pending = [path]
     while pending and scanned < MAX_CACHE_SCAN_ENTRIES and total < MAX_CACHE_REPORT_BYTES:
+        if deadline is not None and time.monotonic() >= deadline:
+            raise GuardError(f"worktree report exceeded {MAX_REPORT_SECONDS}s")
         directory = pending.pop()
         try:
             entries = os.scandir(directory)
@@ -200,6 +342,8 @@ def directory_size(path: Path) -> int:
             raise GuardError(f"cannot read cache directory: {directory}: {error}") from error
         with entries:
             for entry in entries:
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise GuardError(f"worktree report exceeded {MAX_REPORT_SECONDS}s")
                 scanned += 1
                 if scanned > MAX_CACHE_SCAN_ENTRIES:
                     raise GuardError(
@@ -236,28 +380,28 @@ def nul_paths(output: str, *, limit: int = MAX_IGNORED_PATHS) -> list[str]:
     return paths
 
 
-def tracked_cache_paths(root: Path, target: str) -> list[str]:
+def tracked_cache_paths(root: Path, target: str, *, deadline: float | None = None) -> list[str]:
     """Return tracked index paths under one fixed cache name, NUL-safe."""
-    output = git(root, "ls-files", "-z", "--", target, f"{target}/")
-    return nul_paths(output, limit=MAX_IGNORED_PATHS)
+    return git_nul_paths(root, "ls-files", "-z", "--", target, f"{target}/",
+                         limit=MAX_IGNORED_PATHS, deadline=deadline)
 
 
-def ignored_non_cache_paths(root: Path) -> list[str]:
+def ignored_non_cache_paths(root: Path, *, deadline: float | None = None) -> list[str]:
     """Return ignored paths outside the four explicitly disposable caches."""
     # Exclude disposable roots in Git itself. This prevents a huge ignored
     # target/node_modules tree from being captured before our path bound runs.
     excludes = tuple(f":(exclude){name}/**" for name in REGENERABLE_WORKTREE_CACHES)
-    output = git(root, "ls-files", "--others", "--ignored", "--exclude-standard", "-z",
-                 "--", ".", *excludes)
-    paths = nul_paths(output, limit=MAX_IGNORED_PATHS)
+    paths = git_nul_paths(root, "ls-files", "--others", "--ignored", "--exclude-standard", "-z",
+                          "--", ".", *excludes, limit=MAX_IGNORED_PATHS,
+                          deadline=deadline)
     return [path for path in paths if path.split("/", 1)[0] not in REGENERABLE_WORKTREE_CACHES]
 
 
-def parse_worktree_list(root: Path) -> list[tuple[Path, str | None]]:
+def parse_worktree_list(root: Path, *, deadline: float | None = None) -> list[tuple[Path, str | None]]:
     records: list[tuple[Path, str | None]] = []
     path: Path | None = None
     branch: str | None = None
-    for line in git(root, "worktree", "list", "--porcelain").splitlines() + [""]:
+    for line in git(root, "worktree", "list", "--porcelain", deadline=deadline).splitlines() + [""]:
         if line.startswith("worktree "):
             path = Path(line.removeprefix("worktree "))
             if not path.is_absolute():
@@ -274,7 +418,7 @@ def parse_worktree_list(root: Path) -> list[tuple[Path, str | None]]:
     return records
 
 
-def unsafe_branch(root: Path, branch: str | None) -> bool:
+def unsafe_branch(root: Path, branch: str | None, *, deadline: float | None = None) -> bool:
     """Prove a checked-out branch is safe only against the production ref."""
     # Detached worktrees have no branch ref to prove stale.  They may contain
     # an operator's live checkout, so cleanup must protect them by default.
@@ -282,19 +426,24 @@ def unsafe_branch(root: Path, branch: str | None) -> bool:
         return True
     if branch in {"main", "master"}:
         try:
-            local = git(root, "rev-parse", "--verify", branch).strip()
-            remote = git(root, "rev-parse", "--verify", "origin/main").strip()
+            local = git(root, "rev-parse", "--verify", branch, deadline=deadline).strip()
+            remote = git(root, "rev-parse", "--verify", "origin/main", deadline=deadline).strip()
         except GuardError as error:
             raise GuardError(f"cannot prove {branch} matches origin/main: {error}") from error
         return local != remote
+    timeout = float(GIT_COMMAND_TIMEOUT_SECONDS)
+    if deadline is not None:
+        timeout = min(timeout, deadline - time.monotonic())
+        if timeout <= 0:
+            raise GuardError(f"worktree report exceeded {MAX_REPORT_SECONDS}s")
     try:
-        completed = subprocess.run(
+        completed = _run_bounded(
             ["git", "-C", os.fspath(root), "merge-base", "--is-ancestor", branch, "origin/main"],
-            capture_output=True,
-            check=False,
-            timeout=GIT_COMMAND_TIMEOUT_SECONDS,
+            cwd=root, timeout=timeout, capture_output=True,
         )
     except subprocess.TimeoutExpired as error:
+        if deadline is not None and time.monotonic() >= deadline:
+            raise GuardError(f"worktree report exceeded {MAX_REPORT_SECONDS}s") from error
         raise GuardError(f"git command timed out after {GIT_COMMAND_TIMEOUT_SECONDS}s") from error
     if completed.returncode == 0:
         return False
@@ -303,8 +452,8 @@ def unsafe_branch(root: Path, branch: str | None) -> bool:
     raise GuardError("cannot determine whether worktree branch is still active")
 
 
-def worktree_states(root: Path, branch: str | None) -> tuple[str, ...]:
-    porcelain = git(root, "status", "--porcelain=v1", "--untracked-files=all")
+def worktree_states(root: Path, branch: str | None, *, deadline: float | None = None) -> tuple[str, ...]:
+    porcelain = git(root, "status", "--porcelain=v1", "--untracked-files=all", deadline=deadline)
     tracked_dirty = False
     untracked = False
     for line in porcelain.splitlines():
@@ -312,9 +461,9 @@ def worktree_states(root: Path, branch: str | None) -> tuple[str, ...]:
             untracked = True
         elif line[:2] != "  ":
             tracked_dirty = True
-    ignored = bool(ignored_non_cache_paths(root))
+    ignored = bool(ignored_non_cache_paths(root, deadline=deadline))
     states: list[str] = []
-    if unsafe_branch(root, branch):
+    if unsafe_branch(root, branch, deadline=deadline):
         states.append("active")
     if tracked_dirty:
         states.append("dirty")
@@ -325,14 +474,14 @@ def worktree_states(root: Path, branch: str | None) -> tuple[str, ...]:
     return tuple(states or ["clean"])
 
 
-def inspect_worktree(path: Path, branch: str | None) -> WorktreeReport:
+def inspect_worktree(path: Path, branch: str | None, *, deadline: float | None = None) -> WorktreeReport:
     # A missing or symlinked listed path is evidence unavailable.  Never follow
     # it to find a cache or to infer a safe candidate.
     if path.is_symlink() or not path.is_dir():
         return WorktreeReport(path, branch, ("unavailable",), ())
     physical = path.resolve()
     try:
-        states = worktree_states(physical, branch)
+        states = worktree_states(physical, branch, deadline=deadline)
     except GuardError:
         states = ("unavailable",)
     # Never spend unbounded time measuring a live/dirty checkout: its cache is
@@ -342,7 +491,7 @@ def inspect_worktree(path: Path, branch: str | None) -> WorktreeReport:
     if set(states) - {"clean"}:
         return WorktreeReport(physical, branch, states, ())
     caches = tuple(
-        (name, directory_size(physical / name))
+        (name, directory_size(physical / name, deadline=deadline))
         for name in REGENERABLE_WORKTREE_CACHES
         if (physical / name).exists() and not (physical / name).is_symlink()
     )
@@ -352,10 +501,13 @@ def inspect_worktree(path: Path, branch: str | None) -> WorktreeReport:
 def collect_report(root: Path) -> list[WorktreeReport]:
     reports: list[WorktreeReport] = []
     deadline = time.monotonic() + MAX_REPORT_SECONDS
-    for path, branch in parse_worktree_list(root):
+    for path, branch in parse_worktree_list(root, deadline=deadline):
         if time.monotonic() >= deadline:
             raise GuardError(f"worktree report exceeded {MAX_REPORT_SECONDS}s")
-        reports.append(inspect_worktree(path, branch))
+        report = inspect_worktree(path, branch, deadline=deadline)
+        if time.monotonic() >= deadline:
+            raise GuardError(f"worktree report exceeded {MAX_REPORT_SECONDS}s")
+        reports.append(report)
     return reports
 
 
@@ -415,15 +567,78 @@ def cleanup_path(root: Path, target: str) -> Path:
     return target_path
 
 
-def remove_cache_safely(root: Path, path: Path) -> None:
+def cache_identity(path: Path) -> tuple[int, int] | None:
+    try:
+        metadata = path.stat(follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        raise GuardError("cleanup target must remain a direct non-symlink cache directory")
+    return metadata.st_dev, metadata.st_ino
+
+
+def remove_tree_fd(directory_fd: int) -> None:
+    """Remove descendants through an authorized directory capability."""
+    try:
+        entries = os.scandir(directory_fd)
+    except OSError as error:
+        raise GuardError(f"cannot scan authorized cache descriptor: {error}") from error
+    with entries:
+        for entry in entries:
+            name = entry.name
+            try:
+                observed = entry.stat(follow_symlinks=False)
+            except FileNotFoundError:
+                continue
+            except OSError as error:
+                raise GuardError(f"cannot inspect cache entry: {name}: {error}") from error
+            try:
+                current = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                continue
+            if (observed.st_dev, observed.st_ino) != (current.st_dev, current.st_ino):
+                raise GuardError(f"cache entry changed during deletion: {name}")
+            if stat.S_ISDIR(current.st_mode) and not stat.S_ISLNK(current.st_mode):
+                flags = (os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                         | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0))
+                try:
+                    child_fd = os.open(name, flags, dir_fd=directory_fd)
+                except FileNotFoundError:
+                    continue
+                except OSError as error:
+                    raise GuardError(f"cannot open cache child without following symlinks: {name}: {error}") from error
+                try:
+                    child_stat = os.fstat(child_fd)
+                    if (child_stat.st_dev, child_stat.st_ino) != (observed.st_dev, observed.st_ino):
+                        raise GuardError(f"cache entry changed during deletion: {name}")
+                    remove_tree_fd(child_fd)
+                finally:
+                    os.close(child_fd)
+                try:
+                    final = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+                except FileNotFoundError:
+                    continue
+                if (final.st_dev, final.st_ino) != (observed.st_dev, observed.st_ino):
+                    raise GuardError(f"cache entry changed during deletion: {name}")
+                try:
+                    os.rmdir(name, dir_fd=directory_fd)
+                except FileNotFoundError:
+                    continue
+            else:
+                try:
+                    os.unlink(name, dir_fd=directory_fd)
+                except FileNotFoundError:
+                    continue
+
+
+def remove_cache_safely(root: Path, path: Path,
+                        expected_identity: tuple[int, int] | None) -> None:
     """Remove one validated cache using a directory descriptor, or refuse.
 
     Python's fd-based rmtree rejects symlink traversal on supported POSIX
     platforms. The parent descriptor also keeps the operation rooted at the
     exact validated worktree instead of a re-resolved path.
     """
-    if not getattr(shutil.rmtree, "avoids_symlink_attacks", False):
-        raise GuardError("refusing deletion: fd-safe symlink-resistant rmtree unavailable")
     flags = (getattr(os, "O_RDONLY", 0) | getattr(os, "O_DIRECTORY", 0)
              | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0))
     if not getattr(os, "O_DIRECTORY", 0) or not getattr(os, "O_NOFOLLOW", 0):
@@ -443,6 +658,10 @@ def remove_cache_safely(root: Path, path: Path) -> None:
             before = os.fstat(target_fd)
             if not stat.S_ISDIR(before.st_mode):
                 raise GuardError("cleanup target must remain a directory")
+            if expected_identity is None:
+                raise GuardError("cleanup target appeared after validation; refusing deletion")
+            if (before.st_dev, before.st_ino) != expected_identity:
+                raise GuardError("cleanup target replacement detected before deletion")
             current = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
             if (before.st_dev, before.st_ino) != (current.st_dev, current.st_ino):
                 raise GuardError("cache changed during deletion validation")
@@ -466,19 +685,20 @@ def remove_cache_safely(root: Path, path: Path) -> None:
                     # both entries untouched rather than deleting either one.
                     pass
                 raise GuardError("cache replacement detected during quarantine; nothing deleted")
+            # Keep the opened descriptor as the deletion capability.  A
+            # replacement at the quarantine pathname cannot redirect this
+            # recursive walk to another directory.
+            remove_tree_fd(target_fd)
             try:
-                shutil.rmtree(quarantine, dir_fd=parent_fd)
-            except (FileNotFoundError, NotADirectoryError):
-                # A concurrent remover is an idempotent success only when the
-                # entry is gone; a symlink or replacement is refusal below.
-                pass
-            try:
-                os.stat(quarantine, dir_fd=parent_fd, follow_symlinks=False)
+                final = os.stat(quarantine, dir_fd=parent_fd, follow_symlinks=False)
             except FileNotFoundError:
-                # The original inode was quarantined and removed. A concurrent
-                # replacement at the public name was never touched.
-                return
-            raise GuardError("cache changed during deletion; refusing quarantine replacement")
+                raise GuardError("quarantine disappeared during deletion; refusing cleanup")
+            if (final.st_dev, final.st_ino) != (before.st_dev, before.st_ino):
+                raise GuardError("quarantine replacement detected after deletion; original retained")
+            try:
+                os.rmdir(quarantine, dir_fd=parent_fd)
+            except FileNotFoundError as error:
+                raise GuardError("quarantine disappeared during deletion; refusing cleanup") from error
         finally:
             os.close(target_fd)
     finally:
@@ -490,11 +710,13 @@ def dry_run_cleanup(root: Path, targets: list[str], execute: bool) -> None:
         raise GuardError("--cleanup requires at least one explicit --cleanup-target")
     paths = []
     seen: set[Path] = set()
+    identities: dict[Path, tuple[int, int] | None] = {}
     for target in targets:
         path = cleanup_path(root, target)
         if path not in seen:
             paths.append(path)
             seen.add(path)
+            identities[path] = cache_identity(path)
     for path in paths:
         print(f"cleanup {'EXECUTE' if execute else 'DRY-RUN'}: {path} ({mib(directory_size(path))} MiB)")
     if not execute:
@@ -509,8 +731,48 @@ def dry_run_cleanup(root: Path, targets: list[str], execute: bool) -> None:
             # Revalidate immediately before descriptor-based deletion: a cache
             # swapped for a symlink or tracked path is refused, never followed.
             validated = cleanup_path(root, path.name)
-            remove_cache_safely(root, validated)
+            remove_cache_safely(root, validated, identities[path])
     print("explicit regenerable caches removed; no worktree, branch, Docker, volume, or shared HOME cache was touched")
+
+
+def _acquire_stable_lock(path: Path, deadline: float) -> tuple[int, os.stat_result]:
+    flags = (os.O_RDWR | getattr(os, "O_CLOEXEC", 0) | os.O_NOFOLLOW
+             | getattr(os, "O_NONBLOCK", 0))
+    try:
+        fd = os.open(path, flags | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        try:
+            fd = os.open(path, flags)
+        except OSError as error:
+            raise GuardError(f"cannot open stable materialization lock: {error}") from error
+    except OSError as error:
+        raise GuardError(f"cannot create stable materialization lock: {error}") from error
+    try:
+        identity = os.fstat(fd)
+        current = os.stat(path, follow_symlinks=False)
+        if not stat.S_ISREG(identity.st_mode) or (identity.st_dev, identity.st_ino) != (
+            current.st_dev, current.st_ino
+        ):
+            raise GuardError("materialization lock path changed or is not a regular file")
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise GuardError("materialization lock is held by another worktree; retry after it finishes")
+                time.sleep(0.05)
+        current = os.stat(path, follow_symlinks=False)
+        if (identity.st_dev, identity.st_ino) != (current.st_dev, current.st_ino):
+            raise GuardError("materialization lock path changed while acquiring lock")
+        return fd, identity
+    except BaseException:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        except OSError:
+            pass
+        os.close(fd)
+        raise
 
 
 @contextlib.contextmanager
@@ -529,43 +791,21 @@ def materialization_lock(root: Path, timeout_seconds: float) -> Iterator[None]:
     if not common.is_dir():
         raise GuardError("git common directory is not a directory")
     lock_path = common / "corelink-capacity-materialization.lock"
-    if not getattr(os, "O_NOFOLLOW", 0):
+    if not getattr(os, "O_NOFOLLOW", 0) or not getattr(os, "O_DIRECTORY", 0):
         raise GuardError("refusing lock: O_NOFOLLOW is unavailable")
-    lock_flags = os.O_RDWR | getattr(os, "O_CLOEXEC", 0) | os.O_NOFOLLOW
+    deadline = time.monotonic() + timeout_seconds
+    guard_path = common / "corelink-capacity-materialization.guard"
+    guard_fd, _ = _acquire_stable_lock(guard_path, deadline)
     try:
-        lock_fd = os.open(lock_path, lock_flags | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError:
+        lock_fd, _ = _acquire_stable_lock(lock_path, deadline)
         try:
-            lock_fd = os.open(lock_path, lock_flags)
-        except OSError as error:
-            raise GuardError(f"cannot open stable materialization lock: {error}") from error
-    except OSError as error:
-        raise GuardError(f"cannot create stable materialization lock: {error}") from error
-    try:
-        lock_stat = os.fstat(lock_fd)
-        path_stat = os.stat(lock_path, follow_symlinks=False)
-        if not stat.S_ISREG(lock_stat.st_mode) or (lock_stat.st_dev, lock_stat.st_ino) != (
-            path_stat.st_dev, path_stat.st_ino
-        ):
-            raise GuardError("materialization lock path changed or is not a regular file")
-        deadline = time.monotonic() + timeout_seconds
-        while True:
-            try:
-                fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except BlockingIOError:
-                if time.monotonic() >= deadline:
-                    raise GuardError("materialization lock is held by another worktree; retry after it finishes")
-                time.sleep(0.05)
-        try:
-            path_stat = os.stat(lock_path, follow_symlinks=False)
-            if (lock_stat.st_dev, lock_stat.st_ino) != (path_stat.st_dev, path_stat.st_ino):
-                raise GuardError("materialization lock path changed while acquiring lock")
             yield
         finally:
             fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            os.close(lock_fd)
     finally:
-        os.close(lock_fd)
+        fcntl.flock(guard_fd, fcntl.LOCK_UN)
+        os.close(guard_fd)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -630,9 +870,8 @@ def main(argv: list[str] | None = None) -> int:
                         )
                         return 1
                 try:
-                    completed = subprocess.run(
-                        args.command, cwd=root, check=False,
-                        timeout=args.command_timeout_seconds,
+                    completed = _run_bounded(
+                        args.command, cwd=root, timeout=args.command_timeout_seconds,
                     )
                 except subprocess.TimeoutExpired as error:
                     raise GuardError(
