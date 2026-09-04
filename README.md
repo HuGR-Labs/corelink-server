@@ -55,6 +55,15 @@ Every byte returned by `get` is re-hashed client-side against the
 requested digest before it leaves the verifier (`CTRL-CAS-002`); a
 mismatch refuses the read and emits a P0 integrity event.
 
+### Self-service PATs
+
+After authenticating a tenant with a Clerk session or canonical PAT, issue an
+additional token with `POST /v1/pats` (`{"label":"ci","scopes":["cache:read"]}`).
+The dashboard-compatible `POST /v1/customer/keys` alias uses the same mint flow.
+Both aliases share the per-tenant `pat-issue` limiter: burst 10, then 10 tokens
+per hour (one every 360 seconds), enforced before mint and audit. A `429`
+includes `Retry-After`; the plaintext token is returned exactly once.
+
 ## Production status
 
 The production data plane is wired and deployed. The Wave 32

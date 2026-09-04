@@ -38,6 +38,13 @@ field) telling you **which protection layer denied the request**:
 The taxonomy is **stable** — your SDK can pattern-match on
 `error.kind` and trust the 5 values will not silently change.
 
+## PAT issuance bucket
+
+\`POST /v1/pats\` and \`POST /v1/customer/keys\` share the \`pat-issue\`
+per-tenant bucket: burst 10, then 10 tokens per hour (one every 360 seconds).
+The limiter runs before mint and audit; \`429\` responses include
+\`Retry-After\`. This policy is independent of the data-plane tier ladder.
+
 ## Per-tier rate-limit ladder
 
 Sustained throughput is controlled by your **rate-limit tier**

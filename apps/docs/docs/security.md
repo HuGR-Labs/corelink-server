@@ -16,7 +16,7 @@ Personal Access Tokens (PATs) are the only credential type CoreLink accepts. Und
 PATs are created in two places:
 
 1. **Sign-up wizard** — issues a starter PAT with `cas:read cas:write ac:read ac:write` scopes automatically. This is the only PAT-creation path that is live today.
-2. **Self-service PAT issuance** (`POST /v1/pats`, creating additional PATs with a custom scope subset) is planned but not yet wired to a route — it will 404 today. Until it ships, ask support to mint additional PATs for your tenant.
+2. **Self-service PAT issuance** (`POST /v1/pats`, creating additional PATs with a custom scope subset) is live. It accepts a validated Clerk session or canonical PAT, derives the tenant server-side, and returns the plaintext exactly once.
 
 At creation time, the plaintext token is displayed **exactly once**. CoreLink never stores the plaintext. There is no retrieval endpoint.
 
@@ -40,8 +40,7 @@ CoreLink does not serve HTTP. All API traffic uses TLS 1.2 or TLS 1.3. HTTPS is 
 
 ### Rotation
 
-PATs have no automatic rotation. Recommended rotation cadence once
-self-service issuance ships:
+PATs have no automatic rotation. Recommended rotation cadence for self-service-issued PATs:
 
 | PAT type | Cadence |
 |---|---|
@@ -49,11 +48,7 @@ self-service issuance ships:
 | CI/CD | 90 days or on team change |
 | Integration (shared) | 30 days |
 
-**Self-service PAT creation and revocation (`POST /v1/pats`,
-`DELETE /v1/pats/:pat_id`) are not yet live** — the routes are not mounted.
-Until they ship, email [support@humangr.com](mailto:support@humangr.com) to
-mint a replacement PAT and to revoke the old one; there is no in-product way
-to do either today.
+**Self-service PAT issuance (`POST /v1/pats`) and the dashboard alias (`POST /v1/customer/keys`) are live. Both share the `pat-issue` per-tenant policy: burst 10 and refill 10/hour (one token every 360 seconds), enforced before mint and audit. A `429` includes `Retry-After`. Revocation remains available through the dashboard route.
 
 ### Revocation
 

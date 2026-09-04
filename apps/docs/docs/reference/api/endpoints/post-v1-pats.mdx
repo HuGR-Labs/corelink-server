@@ -16,6 +16,11 @@ tags: [pat, rest-api]
 - **Tag:** `pat`
 - **Rate-limit class:** pat-issue (10 req/hour/tenant)
 
+This endpoint and the legacy dashboard alias \`POST /v1/customer/keys\` use
+the same customer-plane mint flow and the same per-tenant \`pat-issue\` bucket:
+burst 10, then 10 tokens per hour (one every 360 seconds). The limiter runs
+before mint and audit; a denied request returns \`429\` with \`Retry-After\`.
+
 ## Description
 
 Creates a PAT for the caller's authenticated tenant. The Worker derives
@@ -184,4 +189,3 @@ if (!resp.ok) {
 }
 console.log(await resp.json());
 ```
-

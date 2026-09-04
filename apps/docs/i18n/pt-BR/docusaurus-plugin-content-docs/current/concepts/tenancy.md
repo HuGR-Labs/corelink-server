@@ -47,7 +47,7 @@ serviço.
 | Formato | `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` — `<env>` é `pat` (PAT de usuário), `ci` (token de runner de CI) ou `ro` (token somente leitura) |
 | Escopo | Exatamente um tenant no momento da emissão |
 | Exibido uma vez | Exibido em texto puro apenas na criação; nunca armazenado em texto puro no servidor |
-| Revogável | Apenas o PAT inicial emitido no cadastro existe self-service hoje; revogar ou emitir PATs adicionais (`DELETE /v1/pats/:pat_id`, `POST /v1/pats`) ainda não está conectado a nenhuma rota — até lá, escreva para o suporte |
+| Revogável | O PAT inicial e os PATs adicionais emitidos por `POST /v1/pats` são tenant-scoped; os aliases usam a mesma política `pat-issue` (burst 10, 10/hora), antes do mint e auditoria. |
 | Expiração | Opcional; definida no momento da criação; por padrão não expira |
 
 ### Escopos de PAT
@@ -115,8 +115,7 @@ configurados por ambiente.
 
 ## Listar e revogar PATs
 
-Hoje não existe rota self-service para listar ou revogar PATs (`GET`/`POST
-/v1/pats`, `DELETE /v1/pats/:pat_id` estão planejadas, mas não conectadas).
+`POST /v1/pats` está ativo para emitir PATs adicionais. A listagem e a revogação seguem as superfícies específicas do dashboard.
 Existe uma superfície de leitura admin-only para o suporte inspecionar os PATs
 de um tenant (`GET /v1/admin/tenants/{tenant_id}/pats`), mas não é chamável com
 um PAT comum. Para revogar um PAT, escreva para

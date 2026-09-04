@@ -22,7 +22,7 @@ Personal Access Tokens (PATs) sind der einzige Anmeldeinformationstyp, den CoreL
 PATs werden an zwei Stellen erstellt:
 
 1. **Registrierungsassistent** — stellt automatisch ein Starter-PAT mit den Scopes `cas:read cas:write ac:read ac:write` aus. Dies ist heute der einzige produktive Weg, ein PAT zu erstellen.
-2. **Self-Service-PAT-Ausstellung** (`POST /v1/pats`, ein PAT mit einer beliebigen Teilmenge von Scopes) ist geplant, aber noch nicht auf eine Route verdrahtet — der Aufruf liefert heute `404`. Wenden Sie sich bis dahin an den Support, um weitere PATs für Ihren Mandanten ausstellen zu lassen.
+2. **Self-Service-PAT-Ausstellung** (`POST /v1/pats`) ist für eine validierte Clerk-Sitzung oder ein kanonisches PAT aktiv; der Mandant wird serverseitig abgeleitet und der Klartext-Token wird genau einmal zurückgegeben.
 
 Bei der Erstellung wird der Klartext-Token **genau einmal** angezeigt. CoreLink speichert den Klartext niemals. Es gibt keinen Endpunkt zum Abrufen.
 
@@ -54,7 +54,7 @@ PATs haben keine automatische Rotation. Empfohlene Rotationskadenz, sobald die S
 | CI/CD | 90 Tage oder bei Teamwechsel |
 | Integration (gemeinsam genutzt) | 30 Tage |
 
-**Self-Service-PAT-Erstellung und -Widerruf (`POST /v1/pats`, `DELETE /v1/pats/:pat_id`) sind noch nicht produktiv** — die Routen sind nicht verdrahtet. Wenden Sie sich bis dahin an [support@humangr.com](mailto:support@humangr.com), um ein Ersatz-PAT ausstellen zu lassen und das alte zu widerrufen; es gibt heute keinen Weg im Produkt selbst.
+**Self-Service-PAT-Ausstellung (`POST /v1/pats`) und der Dashboard-Alias (`POST /v1/customer/keys`) sind aktiv. Beide teilen die tenantbezogene `pat-issue`-Richtlinie: Burst 10 und Refill 10/Stunde (ein Token alle 360 Sekunden), vor Mint und Audit. `429`-Antworten enthalten `Retry-After`.
 
 ### Widerruf
 

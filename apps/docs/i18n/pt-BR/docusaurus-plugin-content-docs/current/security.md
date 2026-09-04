@@ -22,7 +22,7 @@ Personal Access Tokens (PATs) são o único tipo de credencial que o CoreLink ac
 PATs são criados em dois lugares:
 
 1. **Assistente de cadastro** — emite automaticamente um PAT inicial com os escopos `cas:read cas:write ac:read ac:write`. Este é o único caminho de criação de PAT em produção hoje.
-2. **Emissão self-service de PAT** (`POST /v1/pats`, criando PATs adicionais com um subconjunto de escopos personalizado) está planejada, mas ainda não conectada a nenhuma rota — hoje retorna `404`. Até lá, peça ao suporte para emitir PATs adicionais para seu tenant.
+2. **Emissão self-service de PAT** (`POST /v1/pats`) está ativa para uma sessão Clerk validada ou PAT canônico; o tenant é derivado no servidor e o token plaintext é retornado uma única vez.
 
 No momento da criação, o token em texto simples é exibido **exatamente uma vez**. O CoreLink nunca armazena o texto simples. Não há endpoint de recuperação.
 
@@ -46,7 +46,7 @@ O CoreLink não serve HTTP. Todo o tráfego da API usa TLS 1.2 ou TLS 1.3. O HTT
 
 ### Rotação
 
-PATs não têm rotação automática. Cadência de rotação recomendada assim que a emissão self-service estiver disponível:
+PATs não têm rotação automática. Cadência de rotação recomendada para PATs emitidos por self-service:
 
 | Tipo de PAT | Cadência |
 |---|---|
@@ -54,7 +54,7 @@ PATs não têm rotação automática. Cadência de rotação recomendada assim q
 | CI/CD | 90 dias ou em mudança de equipe |
 | Integração (compartilhado) | 30 dias |
 
-**A criação e revogação self-service de PATs (`POST /v1/pats`, `DELETE /v1/pats/:pat_id`) ainda não estão em produção** — as rotas não estão conectadas. Até lá, escreva para [support@humangr.com](mailto:support@humangr.com) para emitir um PAT substituto e revogar o antigo; hoje não há como fazer isso pelo produto.
+**A emissão self-service (`POST /v1/pats`) e o alias do painel (`POST /v1/customer/keys`) estão ativos. Ambos compartilham a política `pat-issue` por tenant: burst 10 e refill de 10/hora (um token a cada 360 segundos), aplicada antes do mint e da auditoria. Respostas `429` incluem `Retry-After`.
 
 ### Revogação
 

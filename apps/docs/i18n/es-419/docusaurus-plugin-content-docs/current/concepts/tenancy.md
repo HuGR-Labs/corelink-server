@@ -47,7 +47,7 @@ cuenta de servicio.
 | Formato | `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` — `<env>` es `pat` (PAT de usuario), `ci` (token de runner de CI) o `ro` (token de solo lectura) |
 | Alcance | Exactamente un tenant en el momento de la emisión |
 | Se muestra una vez | Se muestra en texto plano solo en la creación; nunca se almacena en texto plano del lado del servidor |
-| Revocable | Solo el PAT inicial emitido en el registro existe self-service hoy; revocar o emitir PATs adicionales (`DELETE /v1/pats/:pat_id`, `POST /v1/pats`) aún no está conectado a ninguna ruta — mientras tanto, escriba a soporte |
+| Revocable | El PAT inicial y los PATs adicionales emitidos por `POST /v1/pats` están ligados al tenant; los aliases comparten la política `pat-issue` (burst 10, 10/hora), antes del mint y la auditoría. |
 | Vencimiento | Opcional; se establece en el momento de la creación; por defecto no vence |
 
 ### Alcances de PAT
@@ -115,8 +115,7 @@ por entorno.
 
 ## Listar y revocar PATs
 
-Hoy no existe una ruta self-service para listar o revocar PATs (`GET`/`POST
-/v1/pats`, `DELETE /v1/pats/:pat_id` están planificadas pero no conectadas).
+`POST /v1/pats` está activo para emitir PATs adicionales. La lista y revocación siguen en las superficies específicas del panel.
 Existe una superficie de solo lectura admin-only para que soporte inspeccione
 los PAT de un tenant (`GET /v1/admin/tenants/{tenant_id}/pats`), pero no es
 llamable con un PAT normal. Para revocar un PAT, escriba a

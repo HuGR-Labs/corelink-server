@@ -46,7 +46,7 @@ akzeptiert. Es gibt keine API-Schlüssel, OAuth-Tokens oder Dienstkonten — ein
 | Format | `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` — `<env>` ist `pat` (Nutzer-PAT), `ci` (CI-Runner-Token) oder `ro` (Nur-Lese-Token) |
 | Geltungsbereich | Genau ein Tenant zum Zeitpunkt der Ausstellung |
 | Einmal angezeigt | Wird nur bei der Erstellung im Klartext angezeigt; niemals im Klartext serverseitig gespeichert |
-| Widerrufbar | Nur der bei der Registrierung ausgestellte Start-PAT existiert heute self-service; Widerruf oder Ausstellung weiterer PATs (`DELETE /v1/pats/:pat_id`, `POST /v1/pats`) ist noch nicht auf eine Route verdrahtet — wenden Sie sich in der Zwischenzeit an den Support |
+| Widerrufbar | Der Start-PAT und zusätzliche PATs aus `POST /v1/pats` sind mandantenbezogen; beide Aliase verwenden dieselbe `pat-issue`-Richtlinie (Burst 10, 10/Stunde), vor Mint und Audit. |
 | Ablauf | Optional; bei der Erstellung festgelegt; standardmäßig ohne Ablauf |
 
 ### PAT-Geltungsbereiche
