@@ -788,7 +788,12 @@ def render_endpoint_mdx(endpoint: Endpoint, spec: Spec) -> str:
         "Replace `<YOUR_PAT>` with a Personal Access Token issued via "
         "[`POST /v1/pats`](./post-v1-pats.mdx)._\n\n"
     )
-    parts.append(render_examples(endpoint, spec) + "\n")
+    # The PAT page was already published with one terminal LF before it was
+    # brought back under generation. Preserve that byte-level contract while
+    # leaving the historical two-LF termination of the existing reference set
+    # untouched; the sync gate consequently catches accidental PAT EOF drift.
+    examples_terminal = "" if endpoint.operation_id == "patIssue" else "\n"
+    parts.append(render_examples(endpoint, spec) + examples_terminal)
 
     return "".join(parts)
 

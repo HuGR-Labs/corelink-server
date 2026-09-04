@@ -26,8 +26,11 @@ CoreLink exposes two API surfaces:
 The canonical contract is
 [`openapi/corelink-v1.yaml`](/openapi-corelink-v1.yaml)
 in the server monorepo. The static asset shipped with this docs site
-mirrors that file byte-for-byte and is gated by the
-`openapi-validate.yml` workflow on every PR.
+is an intentional subset for the customer/privacy docs site; it omits REAPI
+and protocol-only paths. It is not a byte-for-byte mirror. The
+`scripts/openapi_sync.py --check` gate verifies that every published subset
+path and operation still exists in the canonical contract with the same
+`operationId`.
 
 ## Download
 

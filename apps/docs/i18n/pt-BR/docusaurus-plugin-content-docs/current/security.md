@@ -15,14 +15,14 @@ description: Ciclo de vida do PAT, escopos, política de rotação, log de audit
 
 ## Ciclo de vida do PAT
 
-Personal Access Tokens (PATs) são o único tipo de credencial que o CoreLink aceita. Entender seu ciclo de vida é fundamental para operar com segurança.
+Personal Access Tokens (PATs) são o único tipo de credencial programática que o CoreLink aceita; os fluxos de cliente no navegador também usam sessões Clerk validadas. Entender seu ciclo de vida é fundamental para operar com segurança.
 
 ### Criação
 
 PATs são criados em dois lugares:
 
 1. **Assistente de cadastro** — emite automaticamente um PAT inicial com os escopos `cas:read cas:write ac:read ac:write`. Este é um dos dois caminhos de criação de PAT ativos hoje.
-2. **Emissão self-service de PAT** (`POST /v1/pats`) está ativa para uma sessão Clerk validada ou PAT canônico; o tenant é derivado no servidor e o token plaintext é retornado uma única vez.
+2. **Emissão self-service de PAT** (`POST /v1/pats`) está ativa. O navegador usa uma sessão Clerk validada; a CLI pode usar um PAT canônico por compatibilidade. O tenant é derivado no servidor e o token plaintext é retornado uma única vez.
 
 No momento da criação, o token em texto simples é exibido **exatamente uma vez**. O CoreLink nunca armazena o texto simples. Não há endpoint de recuperação.
 
@@ -54,11 +54,11 @@ PATs não têm rotação automática. Cadência de rotação recomendada para PA
 | CI/CD | 90 dias ou em mudança de equipe |
 | Integração (compartilhado) | 30 dias |
 
-**A emissão self-service (`POST /v1/pats`) e o alias do painel (`POST /v1/customer/keys`) estão ativos. Ambos compartilham a política `pat-issue` por tenant: burst 10 e refill de 10/hora (um token a cada 360 segundos), aplicada antes do mint e da auditoria. Respostas `429` incluem `Retry-After`.
+**A emissão self-service (`POST /v1/pats`) e o alias do painel (`POST /v1/customer/keys`) estão ativos. Ambos compartilham a política `pat-issue` por tenant: burst 10 e refill de 10/hora (um token a cada 360 segundos), aplicada antes do mint e da auditoria. Respostas `429` incluem `Retry-After`. A revogação está disponível em `POST /v1/customer/keys/{pat_id}/revoke`; o `DELETE /v1/pats/{pat_id}` público continua planejado.
 
 ### Revogação
 
-Hoje a revogação passa pelo suporte — escreva para [support@humangr.com](mailto:support@humangr.com) com o rótulo do PAT ou o ID do tenant. Após a revogação, requisições em andamento com aquele PAT falharão com `401` dentro da janela de propagação da borda da Cloudflare (tipicamente < 100 ms).
+A rota de revogação do dashboard, `POST /v1/customer/keys/{pat_id}/revoke`, é vinculada ao tenant e exige um caller com capacidade de escrita. A operação pública `DELETE /v1/pats/{pat_id}` ainda não está ativa. Após a revogação, requisições em andamento com aquele PAT falharão com `401` dentro da janela de propagação da borda da Cloudflare (tipicamente < 100 ms).
 
 ## Escopos
 

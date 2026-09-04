@@ -274,15 +274,22 @@ paths:
     x-reconciliation-note: |
       Customer-authorized issuance is mounted by `customer::router` and routed
       through the Worker `customer_v1` auth family. The Worker derives the
-      tenant from a Clerk session or canonical PAT and never forwards the
-      operator-only PAT mint authority.
+      tenant from an edge-validated Clerk session or canonical PAT and never
+      forwards the operator-only PAT mint authority. A Clerk session is the
+      browser/dashboard authentication for this POST; the JWT is stripped
+      before the tenant Durable Object receives the request.
     post:
       tags: [pat]
       summary: Issue a new Personal Access Token.
       operationId: patIssue
+      security:
+        - ClerkSessionCookie: []
+        - BearerPAT: []
       description: |
-        Creates a PAT for the caller's authenticated tenant. The Worker derives
-        the tenant from a validated Clerk session or canonical PAT; clients
+        Creates a PAT for the caller's authenticated tenant. Browser/dashboard
+        callers authenticate with an edge-validated Clerk session cookie; CLI
+        callers may use a canonical PAT for compatibility. The Worker derives
+        the tenant from that verified credential; clients
         cannot supply a tenant id and this endpoint never accepts the
         operator-only mint authority. The raw token is returned exactly once in
         `token` and is never logged or retrievable later. Self-service tokens
@@ -311,17 +318,22 @@ paths:
             text/plain:
               schema: { type: string }
         "401":
-          description: Missing or invalid trusted tenant credentials.
+          description: |
+            Authentication failed at the edge returns the Worker's JSON
+            `WorkerErrorEnvelope` with `error`, `message`, and `request_id`.
+            A request that reaches the container but has no trusted tenant,
+            or requests an invalid/ungrantable (`admin`/`owner`) scope, returns
+            the handler's plain-text `401`. No PAT is minted in either case.
           content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkerErrorEnvelope" }
             text/plain:
               schema: { type: string }
         "403":
-          description: Caller lacks the scope required to mint the requested credential.
-          content:
-            text/plain:
-              schema: { type: string }
-        "422":
-          description: Schema-valid but semantically invalid payload.
+          description: |
+            The authenticated principal is valid but lacks the write capability
+            required to mint a requested write/admin credential. The container
+            handler returns plain text.
           content:
             text/plain:
               schema: { type: string }
@@ -1839,6 +1851,22 @@ components:
             details:
               type: object
               additionalProperties: true
+    WorkerErrorEnvelope:
+      type: object
+      required: [error, message, request_id]
+      description: JSON envelope emitted by the edge Worker before a request
+        reaches the tenant Durable Object. It contains no credential material.
+      properties:
+        error:
+          type: string
+          description: Stable machine-readable Worker error code.
+          examples: [UNAUTHORIZED, FORBIDDEN, INTERNAL_ERROR]
+        message:
+          type: string
+          description: Safe human-readable message; secrets are never echoed.
+        request_id:
+          type: string
+          description: Worker request correlation identifier.
     SignupRequest:
       type: object
       required: [clerk_event_id, email_hash, locale, idempotency_key, correlation_id]
