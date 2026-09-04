@@ -8297,17 +8297,17 @@ squash/rebase) and [B-124].
 id: B-123
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  grep -q 'source_blobs' scripts/validate_okf.py \
-    && ! grep -q 'anchor_content_reverify' scripts/validate_okf.py
+  grep -qF '_check_anchor_content_reverify(args, git, bundle_root, concepts, fails)' scripts/validate_okf.py \
+    && grep -qF 'assert_c5c' tests/okf/run_fixtures.sh
 verify-means: |
-  open — passes while validate_okf still honours a source_blobs anchor without
-  any content re-verification of the citations it covers, i.e. while the anchor
-  remains a vacuously-green shortcut. Closes when the gate carries a named
-  re-verification step. It does NOT prove any specific concept is wrong today —
-  only that the cheap wrong fix is still available and still rewarded.
-last-verified: 2026-08-30
+  done — the validator call-site and the focused harness are both required. The
+  positive fixture advances a blob anchor while leaving a citation stale and
+  proves [C5c] fires; its negative control renumbers the citation by content and
+  proves the gate stays green. This closes the vacuous-anchor shortcut without
+  importing the separate B059 resolver or B124 shifter.
+last-verified: 2026-09-04
 ```
 
 ### B-124 — hand-edits and a bulk shifter over the same file double-shift it

@@ -1618,7 +1618,7 @@ def run_checks(args, git: Git, fails: Failures):
     _check_c5b(args, git, bundle_root, concepts, fails)
 
     # --- C4c: blob addressing is a RATCHET (needs a 'previous' version) ---
-    _check_c4c(args, git, bundle_root, concepts, fails)
+    _check_c4c(args, git, bundle_root, concepts, fails); __import__("okf_anchor_reverify")._check_anchor_content_reverify(args, git, bundle_root, concepts, fails)
 
     # --- C10 / C10b: manifest (skip-with-warning when absent/unparseable) ---
     # Runs before C7 because it populates the planned-id set used by C7 tolerance.

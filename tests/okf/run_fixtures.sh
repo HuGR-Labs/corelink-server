@@ -334,6 +334,102 @@ EOF
   rm -rf "$tmp"
 }
 
+# --- C5c: a MOVED blob anchor must be paid for with renumbering ----------------
+# A source_blobs anchor is allowed to move when the cited source moves, but the
+# old citation must move with the content.  This harness proves both directions
+# against two real git revisions: stale line numbers fire [C5c], while the exact
+# content-derived renumbering passes.  It intentionally does not exercise the
+# separate B059 abbreviated-citation resolver or B124 shifter.
+assert_c5c() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    printf 'alpha\nbeta\ngamma\ndelta\nepsilon\nzeta\n' > src.txt
+    git add src.txt
+    git commit -q -m base
+    sha0="$(git rev-parse HEAD)"
+    blob0="$(git hash-object src.txt)"
+
+    mkdir -p docs/knowledge/auth
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [x](/auth/x.md)
+EOF
+    write_concept() {
+      cat > docs/knowledge/auth/x.md <<EOF
+---
+type: "AuthMechanism"
+title: "Anchor re-verification (git harness)"
+description: "the anchor moves; the citation must move with it."
+source_files:
+  - "src.txt"
+source_blobs:
+  - "src.txt@$2"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# Anchor re-verification (git harness)
+
+$3
+
+# How it works
+- the source anchor line (\`src.txt:$1\`).
+
+# Invariants
+- the anchor stays present (\`src.txt:$1\`).
+
+# Citations
+1. \`src.txt:$1\` — the anchor.
+EOF
+    }
+    write_concept 3 "$blob0" "Lead paragraph as first authored."
+    git add -A
+    git commit -q -m authored
+    sha_a="$(git rev-parse HEAD)"
+
+    printf 'PREPENDED\nalpha\nbeta\ngamma\ndelta\nepsilon\nzeta\n' > src.txt
+    blob1="$(git hash-object -w src.txt)"
+
+    # Positive: source content moved to line 4 but the old line 3 remains cited.
+    write_concept 3 "$blob1" "Lead paragraph edited so C5b is satisfied."
+    git add -A
+    git commit -q -m stale
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" --base-ref "$sha_a" > "$tmp/.pos_out" 2>&1 || true
+
+    # Negative control: the citation follows the moved content exactly.
+    write_concept 4 "$blob1" "Lead paragraph edited so C5b is satisfied."
+    git add -A
+    git commit -q -m renumbered
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" --base-ref "$sha_a" > "$tmp/.neg_out" 2>&1 || true
+  )
+
+  total=$((total + 1))
+  if grep -q '^\[C5c\]' "$tmp/.pos_out" 2>/dev/null; then
+    ok "C5c: moved anchor with stale citation fires [C5c]"
+  else
+    miss "C5c positive did not fire: $(tail -1 "$tmp/.pos_out" 2>/dev/null)" "C5c-pos"
+  fi
+  total=$((total + 1))
+  if grep -q '^\[C5c\]' "$tmp/.neg_out" 2>/dev/null; then
+    miss "C5c negative control fired on a correctly renumbered citation" "C5c-neg"
+  else
+    ok "C5c: correctly renumbered citation passes (negative control)"
+  fi
+  rm -rf "$tmp"
+}
+
 # --- C5b orphaned-checkpoint REPAIR exemption ---------------------------------
 # When the PREVIOUS checkpoint_sha (the base-ref version) is not an ancestor of
 # the base ref, it is an ORPHANED pointer (a pre-merge branch tip git rewrote at
@@ -3353,6 +3449,7 @@ assert_c4b_entry_shapes
 assert_c4b_blob_must_be_reachable
 assert_c5b
 assert_c5b_orphan_exempt
+assert_c5c
 assert_c4_squash_orphan_tolerant
 assert_c4_orphan_no_base_fail_closed
 assert_bad C6  C6  --bundle "$FIX/bad/C6"  --manifest "$NONE"
