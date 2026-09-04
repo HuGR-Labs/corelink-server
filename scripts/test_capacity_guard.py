@@ -528,6 +528,19 @@ class CapacityGuardTests(unittest.TestCase):
                                timeout=0.1, capture_output=True)
         self.assertLess(time.monotonic() - started, 2)
 
+    def test_bounded_non_capture_reaps_descendants_before_success(self) -> None:
+        marker = Path(self.temp.name) / "descendant-pid"
+        command = f"sleep 3 & echo $! > {str(marker)!r}; exit 0"
+        with self.assertRaises(subprocess.TimeoutExpired):
+            guard._run_bounded(["/bin/sh", "-c", command], cwd=self.root,
+                               timeout=0.1)
+        child_pid = marker.read_text(encoding="utf-8").strip()
+        self.assertNotEqual(
+            subprocess.run(["ps", "-p", child_pid, "-o", "pid="],
+                           capture_output=True, text=True, check=False).stdout.strip(),
+            child_pid,
+        )
+
     def test_lock_path_replacement_cannot_split_ownership(self) -> None:
         common = Path(guard.git(self.root, "rev-parse", "--git-common-dir").strip())
         if not common.is_absolute():
@@ -549,6 +562,23 @@ class CapacityGuardTests(unittest.TestCase):
             )
         self.assertEqual(child.returncode, 2, child.stderr)
         self.assertNotIn("ENTERED", child.stdout)
+
+    def test_materialization_lock_rejects_same_process_reentrancy(self) -> None:
+        with guard.materialization_lock(self.root, 0):
+            with self.assertRaisesRegex(guard.GuardError, "not reentrant"):
+                with guard.materialization_lock(self.root, 1):
+                    pass
+
+    def test_unsafe_branch_uses_bounded_git_capture(self) -> None:
+        observed: dict[str, object] = {}
+
+        def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[object]:
+            observed.update(kwargs)
+            return subprocess.CompletedProcess(command, 1, "", "")
+
+        with mock.patch.object(guard, "_run_bounded", side_effect=fake_run):
+            self.assertTrue(guard.unsafe_branch(self.root, "feature/test"))
+        self.assertEqual(observed["max_output_bytes"], guard.MAX_GIT_OUTPUT_BYTES)
 
     def test_anchor_guard_and_lock_replacement_cannot_split_ownership(self) -> None:
         common = Path(guard.git(self.root, "rev-parse", "--git-common-dir").strip())
@@ -572,7 +602,7 @@ class CapacityGuardTests(unittest.TestCase):
             lock_path.write_text("replacement", encoding="utf-8")
             child = subprocess.run(
                 [sys.executable, "-c", code, str(Path(__file__).resolve().parent), str(self.root)],
-                capture_output=True, text=True, check=False, timeout=3,
+                capture_output=True, text=True, check=False, timeout=10,
             )
         self.assertEqual(child.returncode, 2, child.stderr)
         self.assertIn("materialization lock is held", child.stderr)

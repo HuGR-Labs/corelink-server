@@ -85,6 +85,7 @@ def run_bounded(command: list[str], *, cwd: Path, timeout: float,
                 capture_output: bool = False,
                 max_output_bytes: int | None = None) -> subprocess.CompletedProcess[object]:
     """Run in a private process group, streaming captured output to a hard cap."""
+    deadline = time.monotonic() + timeout
     process = subprocess.Popen(
         command, cwd=cwd, start_new_session=(os.name == "posix"),
         stdin=subprocess.DEVNULL,
@@ -98,7 +99,6 @@ def run_bounded(command: list[str], *, cwd: Path, timeout: float,
         selector.register(process.stdout, selectors.EVENT_READ, "stdout")
         selector.register(process.stderr, selectors.EVENT_READ, "stderr")
         chunks = {"stdout": bytearray(), "stderr": bytearray()}
-        deadline = time.monotonic() + timeout
         try:
             while selector.get_map():
                 remaining = deadline - time.monotonic()
@@ -128,7 +128,7 @@ def run_bounded(command: list[str], *, cwd: Path, timeout: float,
             bytes(chunks["stderr"]).decode(errors="surrogateescape"),
         )
     try:
-        stdout, stderr = process.communicate(timeout=timeout)
+        stdout, stderr = process.communicate(timeout=max(0.0, deadline - time.monotonic()))
     except subprocess.TimeoutExpired as error:
         try:
             kill_process_group(process)
@@ -139,4 +139,23 @@ def run_bounded(command: list[str], *, cwd: Path, timeout: float,
                 process.stderr.close()
         raise subprocess.TimeoutExpired(command, timeout, output=error.output,
                                         stderr=error.stderr) from error
+    # ``communicate`` only waits for the leader when stdout/stderr are not
+    # pipes.  Keep the private process group bounded in that mode as well:
+    # a successful shell which backgrounds a materializer must not release
+    # the caller's lock while that descendant is still running.
+    if os.name == "posix":
+        while True:
+            try:
+                os.killpg(process.pid, 0)
+            except ProcessLookupError:
+                break
+            except PermissionError:
+                raise ProcessBoundsError("cannot inspect timed-out process group")
+            if time.monotonic() >= deadline:
+                try:
+                    kill_process_group(process)
+                except ProcessBoundsError:
+                    raise
+                raise subprocess.TimeoutExpired(command, timeout)
+            time.sleep(0.01)
     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)

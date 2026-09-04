@@ -27,6 +27,7 @@ import secrets
 import stat
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Iterator
@@ -47,6 +48,8 @@ MAX_REPORT_SECONDS = 90
 MAX_IGNORED_PATHS = 100_000
 MAX_COMMAND_TIMEOUT_SECONDS = 24 * 60 * 60
 MAX_GIT_OUTPUT_BYTES = 16 * 1024 * 1024
+_LOCK_STATE = threading.Lock()
+_HELD_COMMON_DIRS: set[Path] = set()
 # These names are deliberately not paths.  Accepting arbitrary paths, globs,
 # environment expansion or ``..`` here would turn a diagnostic into a delete
 # primitive.  All are regenerable build/dependency caches directly below a
@@ -396,6 +399,7 @@ def unsafe_branch(root: Path, branch: str | None, *, deadline: float | None = No
         completed = _run_bounded(
             ["git", "-C", os.fspath(root), "merge-base", "--is-ancestor", branch, "origin/main"],
             cwd=root, timeout=timeout, capture_output=True,
+            max_output_bytes=MAX_GIT_OUTPUT_BYTES,
         )
     except subprocess.TimeoutExpired as error:
         if deadline is not None and time.monotonic() >= deadline:
@@ -826,7 +830,16 @@ def materialization_lock(root: Path, timeout_seconds: float) -> Iterator[None]:
         raise GuardError("refusing lock: O_NOFOLLOW is unavailable")
     deadline = time.monotonic() + timeout_seconds
     guard_path = common / "corelink-capacity-materialization.guard"
+    with _LOCK_STATE:
+        if common in _HELD_COMMON_DIRS:
+            raise GuardError("materialization lock is not reentrant in this process")
     authority_fd = _acquire_directory_authority(common, deadline)
+    with _LOCK_STATE:
+        if common in _HELD_COMMON_DIRS:
+            fcntl.flock(authority_fd, fcntl.LOCK_UN)
+            os.close(authority_fd)
+            raise GuardError("materialization lock is not reentrant in this process")
+        _HELD_COMMON_DIRS.add(common)
     try:
         anchor_fd, _ = _acquire_stable_lock(anchor_path, deadline)
         try:
@@ -845,6 +858,8 @@ def materialization_lock(root: Path, timeout_seconds: float) -> Iterator[None]:
             fcntl.flock(anchor_fd, fcntl.LOCK_UN)
             os.close(anchor_fd)
     finally:
+        with _LOCK_STATE:
+            _HELD_COMMON_DIRS.discard(common)
         fcntl.flock(authority_fd, fcntl.LOCK_UN)
         os.close(authority_fd)
 

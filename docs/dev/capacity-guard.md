@@ -58,13 +58,15 @@ The shared Git common directory is opened with `O_NOFOLLOW|O_DIRECTORY` and
 held with an exclusive flock for the entire critical section; the named anchor,
 guard, and lock files are inspectable compatibility markers, not authority.
 Replacing or recreating all three pathnames therefore cannot create a second
-owner. A symlink or replacement marker fails closed. The command fails
-with exit `2` if another materialization holder exists (or use a finite
-`--lock-timeout-seconds N`, bounded to 24 hours). Git and protected commands
-run in private process groups; timeout termination covers descendants. The
-locked command also has a hard, configurable `--command-timeout-seconds N`
-bound (default 24 hours). Compilation/test execution remains parallel after
-materialization.
+owner. A symlink or replacement marker fails closed. The lock is deliberately
+non-reentrant within one process and fails closed instead of waiting on itself.
+The command fails with exit `2` if another materialization holder exists (or
+use a finite `--lock-timeout-seconds N`, bounded to 24 hours). Git and
+protected commands run in private process groups; the bound covers
+descendants even when the leader exits before them, and timeout termination
+covers the whole group. The locked command also has a hard, configurable
+`--command-timeout-seconds N` bound (default 24 hours). Compilation/test
+execution remains parallel after materialization.
 Callers should invoke
 `--gate` only for the heavy mode that needs the precondition; validators-only
 work should not become red because of an unrelated capacity check.
