@@ -1,190 +1,257 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-validate_file_size_ratchet.py — the god-file ratchet (B-126).
+"""Fail-closed god-file ratchet (B-126).
 
-Owner decision, 2026-08-31: every source file above 1000 lines is refactored
-into smaller files. This gate makes that decision irreversible without making
-it unmergeable on day one.
-
-WHY A RATCHET AND NOT A CEILING
--------------------------------
-A hard ceiling at 1000 would fail on its very first run: 81 tracked files are
-already above it, holding 143 667 lines. A gate that is red the day it lands
-does not get obeyed, it gets loosened — and a loosened gate is worse than no
-gate, because the loosening reads as "reviewed and accepted". So:
-
-  * a file NOT in the baseline may never be created above LIMIT            (hard)
-  * a file IN the baseline may not grow past its recorded size             (ratchet)
-  * a file IN the baseline that drops to <= LIMIT is graduated: it leaves
-    the baseline and is thereafter held to the hard rule                   (one-way)
-
-The baseline is `reports/refactor/god-files-2026-08-31.tsv`, versioned in the
-repo, so every relaxation of it is a reviewable diff rather than a flag.
-
-WHAT THIS GATE DELIBERATELY DOES NOT DECIDE
--------------------------------------------
-Whether a split IMPROVED anything. Line count is a surface metric: a 4 000-line
-file cut into five 800-line files with the same responsibilities shuffled
-between them passes this gate and leaves the code worse. That judgement lives in
-PR review, and B-126's `verify-means` says so explicitly. This script only
-guarantees the number cannot silently go the wrong way.
-
-It also does not see files git does not track, and it excludes vendored and
-generated trees (`node_modules`, `target`) — a gate that scans build output
-measures the build, not the repo.
-
-EXIT
-----
-0 — no new oversized file, nothing in the baseline grew.
-1 — a violation, printed with the exact numbers.
-2 — the gate could not measure (missing baseline, degenerate file list). This is
-    NOT reported as success: "I found no violations" and "I could not look" must
-    never share an exit code.
+CI invokes this validator from the trusted base commit and gives it a
+candidate commit to inspect. Candidate files are read as Git blobs rather
+than through the working tree: a PR cannot replace the validator, baseline, or
+an inspected source with a symlink and make the check observe something else.
 """
 
 from __future__ import annotations
 
+import argparse
+import os
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-BASELINE = REPO_ROOT / "reports" / "refactor" / "god-files-2026-08-31.tsv"
+REPO_ROOT = Path(os.environ.get("GODFILE_REPO_ROOT", Path(__file__).resolve().parent.parent))
+BASELINE_PATH = "reports/refactor/god-files-2026-08-31.tsv"
 LIMIT = 1000
 
-# Extensions the owner's decision covers: hand-written source.
-SUFFIXES = (".rs", ".ts", ".tsx", ".py")
-
-# Vendored or generated. Scanning these would measure the build, not the repo —
-# and `target/` alone can dwarf the entire tracked tree.
-EXCLUDE_PARTS = ("node_modules", "target", ".open-next", ".wrangler")
-
-
-def tracked_sources() -> list[Path]:
-    """Every tracked, hand-written source file, as git sees it."""
-    out = subprocess.run(
-        ["git", "-C", str(REPO_ROOT), "ls-files", *(f"*{s}" for s in SUFFIXES)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if out.returncode != 0:
-        return []
-    files = []
-    for line in out.stdout.splitlines():
-        if not line:
-            continue
-        parts = Path(line).parts
-        if any(p in EXCLUDE_PARTS for p in parts):
-            continue
-        files.append(Path(line))
-    return files
+# Source census. The workflow runs on every path, so changing this declaration
+# cannot evade review through a path filter.
+SOURCE_SUFFIXES = (
+    ".rs", ".ts", ".tsx", ".py", ".js", ".jsx", ".mjs",
+    ".c", ".h", ".cc", ".cpp", ".cxx", ".go", ".java", ".kt",
+    ".kts", ".rb", ".php", ".swift", ".scala", ".cs",
+)
+EXCLUDE_PARTS = frozenset(("node_modules", "target", ".open-next", ".wrangler"))
 
 
-def line_count(rel: Path) -> int | None:
-    """Physical lines, or None if the path is unreadable (deleted, binary, …)."""
-    p = REPO_ROOT / rel
+class MeasurementError(RuntimeError):
+    """The repository could not be measured with trustworthy semantics."""
+
+
+@dataclass(frozen=True)
+class TreeEntry:
+    mode: str
+    object_type: str
+    object_id: str
+    path: str
+
+
+def _git(*args: str) -> bytes:
     try:
-        with p.open("rb") as fh:
-            return sum(1 for _ in fh)
-    except OSError:
-        return None
+        out = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), *args],
+            capture_output=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise MeasurementError(f"git indisponivel: {exc}") from exc
+    if out.returncode != 0:
+        detail = out.stderr.decode("utf-8", "replace").strip()
+        raise MeasurementError(f"git falhou ({out.returncode}): {detail}")
+    return out.stdout
 
 
-def read_baseline() -> dict[str, int] | None:
-    if not BASELINE.exists():
-        return None
+def _is_source(path: str) -> bool:
+    return path.endswith(SOURCE_SUFFIXES)
+
+
+def _is_excluded(path: str) -> bool:
+    return bool(EXCLUDE_PARTS.intersection(Path(path).parts))
+
+
+def parse_tree(raw: bytes) -> list[TreeEntry]:
+    """Parse `git ls-tree -rz` without lossy quoting or path splitting."""
+    entries: list[TreeEntry] = []
+    for record in raw.split(b"\0"):
+        if not record:
+            continue
+        try:
+            header, raw_path = record.split(b"\t", 1)
+            mode, object_type, object_id = header.split()
+            path = raw_path.decode("utf-8")
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise MeasurementError(f"entrada Git invalida: {record!r}") from exc
+        entries.append(TreeEntry(mode.decode(), object_type.decode(), object_id.decode(), path))
+    return entries
+
+
+def tree_entries(ref: str) -> list[TreeEntry]:
+    return parse_tree(_git("ls-tree", "-r", "-z", "--full-tree", ref))
+
+
+def source_entries(ref: str) -> dict[str, TreeEntry]:
+    selected: dict[str, TreeEntry] = {}
+    for entry in tree_entries(ref):
+        if _is_source(entry.path) and not _is_excluded(entry.path):
+            if entry.path in selected:
+                raise MeasurementError(f"path Git duplicado: {entry.path}")
+            selected[entry.path] = entry
+    if len(selected) < 100:
+        raise MeasurementError(f"censo de fontes degenerado: {len(selected)} (<100)")
+    return selected
+
+
+def blob(object_id: str) -> bytes:
+    return _git("cat-file", "blob", object_id)
+
+
+def blob_line_count(object_id: str) -> int:
+    data = blob(object_id)
+    return data.count(b"\n") + (1 if data and not data.endswith(b"\n") else 0)
+
+
+def blob_line_counts(object_ids: list[str]) -> dict[str, int]:
+    """Count all source blobs in one Git process, preserving object framing."""
+    if not object_ids:
+        return {}
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "cat-file", "--batch"],
+            input=("".join(f"{object_id}\n" for object_id in object_ids)).encode(),
+            capture_output=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise MeasurementError(f"git indisponivel: {exc}") from exc
+    if out.returncode != 0:
+        raise MeasurementError(f"git cat-file falhou ({out.returncode})")
+    data = out.stdout
+    counts: dict[str, int] = {}
+    offset = 0
+    for object_id in object_ids:
+        end = data.find(b"\n", offset)
+        if end < 0:
+            raise MeasurementError("cat-file truncado antes do cabecalho")
+        header = data[offset:end].split()
+        offset = end + 1
+        if len(header) != 3 or header[0].decode("ascii", "replace") != object_id:
+            raise MeasurementError("cat-file devolveu objeto inesperado")
+        if header[1] == b"missing":
+            raise MeasurementError(f"blob ausente: {object_id}")
+        try:
+            size = int(header[2])
+        except ValueError as exc:
+            raise MeasurementError("cat-file devolveu tamanho invalido") from exc
+        body = data[offset : offset + size]
+        if len(body) != size or offset + size >= len(data) or data[offset + size : offset + size + 1] != b"\n":
+            raise MeasurementError("cat-file truncado no blob")
+        offset += size + 1
+        counts[object_id] = body.count(b"\n") + (1 if body and not body.endswith(b"\n") else 0)
+    return counts
+
+
+def source_counts(entries: dict[str, TreeEntry]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    valid: list[tuple[str, TreeEntry]] = []
+    for path, entry in entries.items():
+        if entry.mode not in {"100644", "100755"} or entry.object_type != "blob":
+            raise MeasurementError(f"fonte nao-regular ou nao-blob: {path} (mode {entry.mode})")
+        valid.append((path, entry))
+    by_object = blob_line_counts([entry.object_id for _, entry in valid])
+    for path, entry in valid:
+        counts[path] = by_object[entry.object_id]
+    return counts
+
+
+def parse_baseline(text: str) -> dict[str, int]:
     base: dict[str, int] = {}
-    for raw in BASELINE.read_text(encoding="utf-8").splitlines():
+    for number, raw in enumerate(text.splitlines(), start=1):
         if not raw.strip():
             continue
-        n, _, path = raw.partition("\t")
-        try:
-            base[path.strip()] = int(n)
-        except ValueError:
-            # A malformed row must not be read as "no baseline entry" — that
-            # would silently downgrade a ratcheted file to the hard rule and
-            # fail the build for the wrong reason.
-            print(f"⛔ linha malformada na baseline: {raw!r}", file=sys.stderr)
-            return None
+        fields = raw.split("\t")
+        if len(fields) != 2:
+            raise MeasurementError(f"baseline linha {number} malformada: {raw!r}")
+        value, path = fields[0].strip(), fields[1]
+        if not value.isdigit() or int(value) <= LIMIT:
+            raise MeasurementError(f"baseline linha {number} invalida: {raw!r}")
+        if not path or path != path.strip() or "\\" in path or "\x00" in path:
+            raise MeasurementError(f"baseline path invalido na linha {number}: {path!r}")
+        if path in base:
+            raise MeasurementError(f"baseline path duplicado na linha {number}: {path}")
+        raw_parts = path.split("/")
+        if path.startswith("/") or any(part in ("", ".", "..") for part in raw_parts):
+            raise MeasurementError(f"baseline path fora do repo na linha {number}: {path}")
+        base[path] = int(value)
     return base
 
 
-def main() -> int:
-    base = read_baseline()
-    if base is None:
-        print(
-            "⛔ INDETERMINADO: baseline ausente ou malformada em "
-            f"{BASELINE.relative_to(REPO_ROOT)} — a catraca nao pode medir. "
-            "Isto NAO e 'sem violacoes'.",
-            file=sys.stderr,
-        )
-        return 2
+def baseline_text(ref: str | None) -> str:
+    if ref is None:
+        path = REPO_ROOT / BASELINE_PATH
+        try:
+            return path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise MeasurementError(f"baseline indisponivel: {path}") from exc
+    try:
+        return _git("show", f"{ref}:{BASELINE_PATH}").decode("utf-8")
+    except UnicodeError as exc:
+        raise MeasurementError("baseline Git nao esta em UTF-8") from exc
 
-    files = tracked_sources()
-    # A degenerate file list is the failure mode this whole campaign keeps
-    # hitting: an empty result looks exactly like "nothing is oversized".
-    if len(files) < 100:
-        print(
-            f"⛔ INDETERMINADO: git ls-files devolveu {len(files)} arquivos de codigo, "
-            "o que e implausivel neste repo — o instrumento falhou, nao a arvore.",
-            file=sys.stderr,
-        )
-        return 2
 
-    new_offenders: list[tuple[str, int]] = []
-    grew: list[tuple[str, int, int]] = []
-    graduated: list[str] = []
-
-    for rel in files:
-        key = rel.as_posix()
-        n = line_count(rel)
-        if n is None:
+def validate_baseline_transition(previous: dict[str, int], candidate: dict[str, int], counts: dict[str, int]) -> list[str]:
+    violations: list[str] = []
+    for path, old in previous.items():
+        if path not in candidate:
+            if path in counts and counts[path] > LIMIT:
+                violations.append(f"baseline removida antes da graduacao: {path}")
             continue
-        recorded = base.get(key)
-        if recorded is None:
-            if n > LIMIT:
-                new_offenders.append((key, n))
-        else:
-            if n <= LIMIT:
-                graduated.append(key)
-            elif n > recorded:
-                grew.append((key, recorded, n))
+        if candidate[path] > old:
+            violations.append(f"baseline aumentou: {path} {old} -> {candidate[path]}")
+    for path in candidate:
+        if path not in previous:
+            violations.append(f"entrada nova na baseline: {path}")
+    return violations
 
-    still = sum(1 for rel in files
-                if (c := line_count(rel)) is not None and c > LIMIT)
+
+def evaluate(previous: dict[str, int], candidate: dict[str, int], counts: dict[str, int]) -> tuple[list[str], list[str]]:
+    baseline_violations = validate_baseline_transition(previous, candidate, counts)
+    policy: list[str] = []
+    for path, count in counts.items():
+        recorded = previous.get(path)
+        if recorded is None and count > LIMIT:
+            policy.append(f"ARQUIVO NOVO acima de {LIMIT}: {path} tem {count} linhas")
+        elif recorded is not None and count > recorded:
+            policy.append(f"CRESCEU: {path} passou de {recorded} para {count} linhas (+{count - recorded})")
+        if path in candidate and count <= LIMIT:
+            policy.append(f"baseline nao graduada: {path} caiu para {count} linhas")
+    return baseline_violations, policy
+
+
+def run(base_ref: str | None, head_ref: str) -> int:
+    previous = parse_baseline(baseline_text(base_ref or head_ref))
+    candidate = parse_baseline(baseline_text(head_ref))
+    entries = source_entries(head_ref)
+    counts = source_counts(entries)
+    baseline_violations, policy = evaluate(previous, candidate, counts)
     print(f"catraca de tamanho — limite {LIMIT} linhas")
-    print(f"  arquivos de codigo rastreados : {len(files)}")
-    print(f"  acima do limite hoje          : {still}")
-    print(f"  na baseline                   : {len(base)}")
-    if graduated:
-        print(f"  ✅ graduados nesta arvore     : {len(graduated)}")
-        for g in sorted(graduated)[:10]:
-            print(f"       {g}")
-        if len(graduated) > 10:
-            print(f"       … e mais {len(graduated) - 10}")
-        print("     (removem-se da baseline no mesmo PR que os encolheu — a partir")
-        print("      dai valem a regra dura, e voltar a crescer reprova)")
+    print(f"  arquivos de codigo rastreados : {len(counts)}")
+    print(f"  acima do limite hoje          : {sum(n > LIMIT for n in counts.values())}")
+    print(f"  na baseline confiavel         : {len(previous)}")
+    for item in sorted(baseline_violations + policy):
+        print(f"⛔ {item}")
+    if baseline_violations or policy:
+        return 1
+    print("✅ catraca OK: baseline monotona e nenhum arquivo viola o limite.")
+    return 0
 
-    if not new_offenders and not grew:
-        print("✅ catraca OK: nenhum arquivo novo acima do limite, nenhum da baseline cresceu.")
-        return 0
 
-    print()
-    for key, n in sorted(new_offenders, key=lambda t: -t[1]):
-        print(f"⛔ ARQUIVO NOVO acima de {LIMIT}: {key} tem {n} linhas.")
-        print("   Parta antes de mergear. Estilo da casa (zero `mod.rs` no repo):")
-        print("   `foo.rs` PERMANECE como raiz do modulo e ganha um diretorio irmao `foo/`")
-        print("   com os submodulos — assim o caminho citado pela wiki OKF sobrevive e o")
-        print("   modulo pai nao e editado. Ver `routes/audit_export.rs` como precedente.")
-    for key, was, now in sorted(grew, key=lambda t: -(t[2] - t[1])):
-        print(f"⛔ CRESCEU: {key} passou de {was} para {now} linhas (+{now - was}).")
-        print("   Este arquivo ja esta na campanha B-126; ele so pode encolher.")
-    print()
-    print("A catraca so anda para um lado. Se um destes crescimentos for inevitavel,")
-    print("isso e uma decisao a defender no PR, nao um numero a editar na baseline.")
-    return 1
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--base-ref", help="commit confiavel que fornece a baseline")
+    parser.add_argument("--head-ref", default="HEAD", help="commit candidato a medir")
+    args = parser.parse_args(argv)
+    try:
+        return run(args.base_ref, args.head_ref)
+    except MeasurementError as exc:
+        print(f"⛔ INDETERMINADO: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
