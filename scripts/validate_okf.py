@@ -88,6 +88,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from okf_git_batch import file_blob_sha as _file_blob_sha, preload_sha_exists as _preload_sha_exists, preload_show_files as _preload_show_files, worktree_blob_sha as _worktree_blob_sha
 
 # ---------------------------------------------------------------------------
 # Optional YAML — hand-rolled fallback keeps the gate self-contained on
@@ -220,13 +221,7 @@ class Git:
     def file_blob_sha(self, rev: str, repo_rel: str):
         """The git blob object id of `repo_rel` at `rev` (None if the path does
         not exist at that rev). Used for the C5 per-file trivially-fresh skip."""
-        key = (rev, repo_rel)
-        if key in self._blob_cache:
-            return self._blob_cache[key]
-        cp = self.run(["rev-parse", "--verify", "--quiet", f"{rev}:{repo_rel}"])
-        val = cp.stdout.strip() if cp.returncode == 0 and cp.stdout.strip() else None
-        self._blob_cache[key] = val
-        return val
+        return _file_blob_sha(self, rev, repo_rel)
 
     def show_lines(self, rev: str, repo_rel: str):
         """Lines of `repo_rel` at `rev` (line terminators stripped), or None if
@@ -244,16 +239,7 @@ class Git:
         (None if the path does not exist on disk). The working-tree analogue of
         `file_blob_sha`, used for the C5 per-file trivially-fresh skip so the
         skip stays correct in a dirty tree (where worktree != HEAD)."""
-        if repo_rel in self._wt_blob_cache:
-            return self._wt_blob_cache[repo_rel]
-        p = self.repo_root / repo_rel
-        if not p.exists():
-            self._wt_blob_cache[repo_rel] = None
-            return None
-        cp = self.run(["hash-object", "--", repo_rel])
-        val = cp.stdout.strip() if cp.returncode == 0 and cp.stdout.strip() else None
-        self._wt_blob_cache[repo_rel] = val
-        return val
+        return _worktree_blob_sha(self, repo_rel)
 
     def worktree_lines(self, repo_rel: str):
         """Lines of the on-disk WORKING-TREE file `repo_rel` (line terminators
@@ -424,7 +410,6 @@ class Git:
         out = cp.stdout if cp.returncode == 0 else None
         self._show_file_cache[key] = out
         return out
-
 
 # ---------------------------------------------------------------------------
 # Concept model
@@ -1191,11 +1176,19 @@ def _wrangler_config_dirs(surface_root: Path) -> list[Path]:
 
 
 def _line_count(path: Path) -> int:
+    path = path.resolve()
+    cache = getattr(_line_count, "cache", {})
+    cached = cache.get(path)
+    if cached is not None:
+        return cached
     try:
         with path.open("rb") as fh:
-            return sum(1 for _ in fh)
+            count = sum(1 for _ in fh)
     except OSError:
-        return 0
+        count = 0
+    cache[path] = count
+    _line_count.cache = cache
+    return count
 
 
 # ---------------------------------------------------------------------------
@@ -1282,6 +1275,8 @@ def run_checks(args, git: Git, fails: Failures):
     # the checkpoint object is also present anyway (local full clone ⇒ ckpt_ok).
     _resolved_base = git.resolve_base(args.base_ref) or args.base_ref
     base_rev_for_c5 = git.merge_base(_resolved_base)
+
+    _preload_sha_exists(git, [c.checkpoint_sha for c in concepts if isinstance(c.checkpoint_sha, str) and HEX40_RE.match(c.checkpoint_sha)])
 
     # Per-concept structural checks.
     for c in concepts:
@@ -1647,6 +1642,9 @@ def _check_c5b(args, git: Git, bundle_root: Path, concepts: list[Concept], fails
     if base_bundle is None:
         mb = git.merge_base(args.base_ref)
         base_rev = mb
+
+    if base_rev:
+        _preload_show_files(git, base_rev, [c.path.relative_to(git.repo_root).as_posix() for c in concepts if not c.is_deferred and c.checkpoint_sha and _under(c.path, git.repo_root)])
 
     for c in concepts:
         if c.is_deferred or not c.checkpoint_sha:

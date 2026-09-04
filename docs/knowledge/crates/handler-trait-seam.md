@@ -89,7 +89,7 @@ The `Arc<dyn>` (vs a generic `H: CasWriteHandler` type parameter) is deliberate:
 - `crates/corelink-handler-cas/src/handler.rs:162` — `pub trait CasDeleteHandler` definition (`delete`).
 - `crates/corelink-handler-cas/src/handler.rs:182` — `pub trait CasListHandler` definition (`list`).
 - `crates/corelink-handler-cas/src/handler.rs:437` — `InMemoryCasHandler::write` emits `WriteAttempted` before mutation.
-- `crates/corelink-handler-cas/src/handler.rs:477` — durable store happens after the attempt audit.
+- `crates/corelink-handler-cas/src/handler.rs:476-484` — durable store happens after the attempt audit.
 - `crates/corelink-handler-cas/src/lib.rs:70` — public re-export of the CAS handler traits + in-memory fake.
 - `crates/corelink-handler-cas/src/audit.rs:122` — `pub trait AuditSink::emit` (fail-CLOSED collaborator).
 - `crates/corelink-handler-cas/src/observer.rs:47` — `pub trait SliObserver::observe` (infallible collaborator).

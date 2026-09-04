@@ -46,7 +46,7 @@ the authenticated tenant; cross-tenant attempts are denied 403 at the route leve
 # Invariants
 - A non-canonical action digest (not 64 lowercase-hex) is rejected 400 before storage (`crates/corelink-container/src/routes/ac.rs:464-468`).
 - Cross-tenant attempts are rejected **HTTP 403** by the route-level tenant check
-  (`crates/corelink-container/src/routes/ac.rs:522-523`, `:580-581`, `:683-684`), which returns
+  (`crates/corelink-container/src/routes/ac.rs:522-523`, `:585-586`, `:688-689`), which returns
   **before** `lookup`/`update` runs — so this reject path itself writes **no** audit row. (The
   `LookupDenied`/`UpdateDenied` audit rows are emitted by the lookup/update handlers on
   authorized-but-denied paths, not by this route-level cross-tenant 403.)
