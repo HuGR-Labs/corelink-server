@@ -141,19 +141,19 @@ curl -s https://corelink-api.humangr.com/api/health
 
 ---
 
-### Verwaltung von PATs (`GET`/`POST /v1/pats`, `DELETE /v1/pats/:pat_id`) — geplant, noch nicht live
+### PAT-Ausstellung (`POST /v1/pats`)
 
-Diese Routen sind für eine zukünftige Self-Service-PAT-Verwaltung (Liste,
-Erstellung, Widerruf) spezifiziert, aber **heute nicht verdrahtet** — jeder
-Aufruf liefert `404`. Der einzige aktive PAT-Erstellungsweg ist der
-automatische Start-PAT des Registrierungsassistenten. Eine Admin-only,
-nur lesende Oberfläche existiert, damit der Support die PATs eines Tenants
-einsehen kann (`GET /v1/admin/tenants/{tenant_id}/pats`), erfordert aber
-ein Admin-PAT und ist nicht mit einem normalen Kunden-Token aufrufbar.
+Diese aktive Self-Service-Route stellt für eine validierte Clerk-Sitzung oder
+ein kanonisches PAT ein zusätzliches, tenantbezogenes PAT aus. Der Klartext-
+Token wird genau einmal zurückgegeben. Der dashboard-kompatible Alias
+`POST /v1/customer/keys` verwendet denselben Mint-Ablauf und denselben
+tenantbezogenen `pat-issue`-Limiter (Burst 10, danach 10/Stunde; ein Token
+alle 360 Sekunden), vor Mint und Audit. Auflisten und Widerrufen bleiben
+Dashboard-Oberflächen; die Admin-only-Leseoberfläche ist
+`GET /v1/admin/tenants/{tenant_id}/pats`.
 
-Bis die Self-Service-PAT-Verwaltung verfügbar ist, schreiben Sie an
-[support@humangr.com](mailto:support@humangr.com), um ein zusätzliches PAT
-ausstellen oder eines widerrufen zu lassen.
+Fehler bei JSON oder Autorisierung werden als `text/plain` zurückgegeben;
+limitierte Antworten liefern `429` mit `Retry-After`.
 
 ---
 
@@ -171,7 +171,9 @@ ausstellen oder eines widerrufen zu lassen.
 | `429 Too Many Requests` | `rate_limited` | Anfragerate überschritten | Zurückfahren und erneut versuchen; siehe `Retry-After`-Header |
 | `503 Service Unavailable` | `audit_closed` | Der Auditzeitraum des Tenants ist geschlossen — Schreibvorgänge vorübergehend ausgesetzt | Support kontaktieren; Lesevorgänge funktionieren weiterhin |
 
-Alle Fehlerantworten haben dieses Format:
+REAPI- und Kundenendpunkte außer der PAT-Ausstellung verwenden dieses
+JSON-Format. Die oben dokumentierten PAT-Ausstellungsfehler verwenden
+`text/plain`.
 
 ```json
 {

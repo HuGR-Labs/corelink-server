@@ -21,7 +21,7 @@ Personal Access Tokens (PATs) sind der einzige Anmeldeinformationstyp, den CoreL
 
 PATs werden an zwei Stellen erstellt:
 
-1. **Registrierungsassistent** — stellt automatisch ein Starter-PAT mit den Scopes `cas:read cas:write ac:read ac:write` aus. Dies ist heute der einzige produktive Weg, ein PAT zu erstellen.
+1. **Registrierungsassistent** — stellt automatisch ein Starter-PAT mit den Scopes `cas:read cas:write ac:read ac:write` aus. Dies ist einer von zwei heute aktiven Wegen, ein PAT zu erstellen.
 2. **Self-Service-PAT-Ausstellung** (`POST /v1/pats`) ist für eine validierte Clerk-Sitzung oder ein kanonisches PAT aktiv; der Mandant wird serverseitig abgeleitet und der Klartext-Token wird genau einmal zurückgegeben.
 
 Bei der Erstellung wird der Klartext-Token **genau einmal** angezeigt. CoreLink speichert den Klartext niemals. Es gibt keinen Endpunkt zum Abrufen.

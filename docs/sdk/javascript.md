@@ -191,6 +191,6 @@ address on `put` and re-verifies it on `get`. No WASM build step and no native
 dependency, so the package installs and runs anywhere the platform provides
 `fetch`. See `specs/_decisions/ADR-0016-ffi-vs-native-http.md` for the
 native-HTTP vs FFI decision context.
-\n+## PAT issuance
+## PAT issuance
 
 Use the control-plane `POST /v1/pats` endpoint to issue an additional tenant PAT after authenticating with a Clerk session or canonical PAT. `POST /v1/customer/keys` is a compatible alias. Both share the server-side `pat-issue` per-tenant limiter (burst 10, then 10/hour; one token every 360 seconds) before mint and audit; a `429` includes `Retry-After` and the plaintext token is shown once.

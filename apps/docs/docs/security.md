@@ -15,7 +15,7 @@ Personal Access Tokens (PATs) are the only credential type CoreLink accepts. Und
 
 PATs are created in two places:
 
-1. **Sign-up wizard** — issues a starter PAT with `cas:read cas:write ac:read ac:write` scopes automatically. This is the only PAT-creation path that is live today.
+1. **Sign-up wizard** — issues a starter PAT with `cas:read cas:write ac:read ac:write` scopes automatically. This is one of the two live PAT-creation paths.
 2. **Self-service PAT issuance** (`POST /v1/pats`, creating additional PATs with a custom scope subset) is live. It accepts a validated Clerk session or canonical PAT, derives the tenant server-side, and returns the plaintext exactly once.
 
 At creation time, the plaintext token is displayed **exactly once**. CoreLink never stores the plaintext. There is no retrieval endpoint.

@@ -135,19 +135,18 @@ curl -s https://corelink-api.humangr.com/api/health
 
 ---
 
-### PAT management (`GET`/`POST /v1/pats`, `DELETE /v1/pats/:pat_id`) — planned, not yet live
+### PAT issuance (`POST /v1/pats`)
 
-These routes are specified for a future self-service PAT-management surface
-(list, create, revoke) but are **not mounted today** — calling any of them
-returns `404`. The only PAT-creation path that is live is the automatic
-starter PAT issued by the sign-up wizard. An admin-only, read-only surface
-exists for support to inspect a tenant's PATs
-(`GET /v1/admin/tenants/{tenant_id}/pats`), but it requires an admin PAT and
-is not something a regular customer token can call.
+This live self-service route issues an additional tenant-scoped PAT for a
+validated Clerk session or canonical PAT. The plaintext token is returned
+exactly once. The dashboard-compatible alias `POST /v1/customer/keys` uses
+the same mint flow and per-tenant `pat-issue` limiter (burst 10, then 10/hour;
+one token every 360 seconds), applied before mint and audit. Listing and
+revocation remain dashboard surfaces; the admin-only read surface is
+`GET /v1/admin/tenants/{tenant_id}/pats`.
 
-Until self-service PAT management ships, email
-[support@humangr.com](mailto:support@humangr.com) to mint an additional PAT
-or revoke one.
+Malformed or authorization failures return `text/plain`; rate-limited
+responses return `429` with `Retry-After`.
 
 ---
 
@@ -164,7 +163,8 @@ or revoke one.
 | `429 Too Many Requests` | `rate_limited` | Request rate exceeded | Back off and retry; see `Retry-After` header |
 | `503 Service Unavailable` | `audit_closed` | Tenant's audit period is closed — writes temporarily suspended | Contact support; reads still work |
 
-All error responses share this shape:
+REAPI and customer endpoints other than PAT issuance share this JSON shape.
+The PAT issuance responses documented above use `text/plain` for errors.
 
 ```json
 {

@@ -21,7 +21,7 @@ Los Personal Access Tokens (PAT) son el único tipo de credencial que CoreLink a
 
 Los PAT se crean en dos lugares:
 
-1. **Asistente de registro** — emite automáticamente un PAT inicial con los scopes `cas:read cas:write ac:read ac:write`. Esta es la única vía de creación de PAT que está activa hoy.
+1. **Asistente de registro** — emite automáticamente un PAT inicial con los scopes `cas:read cas:write ac:read ac:write`. Esta es una de las dos vías de creación de PAT activas hoy.
 2. **Emisión self-service de PAT** (`POST /v1/pats`) está activa para una sesión Clerk validada o un PAT canónico; el tenant se deriva en el servidor y el token plaintext se devuelve una sola vez.
 
 En el momento de la creación, el token en texto plano se muestra **exactamente una vez**. CoreLink nunca almacena el texto plano. No existe un endpoint de recuperación.

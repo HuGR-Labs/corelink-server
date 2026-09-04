@@ -382,7 +382,7 @@
         ],
         "summary": "Issue a new Personal Access Token.",
         "operationId": "patIssue",
-        "description": "Creates a PAT for the caller's authenticated tenant. The Worker derives\nthe tenant from a validated Clerk session or canonical PAT; clients\ncannot supply a tenant id and this endpoint never accepts the\noperator-only mint authority. The raw token is returned exactly once in\n`token` and is never logged or retrievable later. Self-service tokens\nexpire after 90 days and cannot grant `admin`.\n",
+        "description": "Creates a PAT for the caller's authenticated tenant. The Worker derives\nthe tenant from a validated Clerk session or canonical PAT; clients\ncannot supply a tenant id and this endpoint never accepts the\noperator-only mint authority. The raw token is returned exactly once in\n`token` and is never logged or retrievable later. Self-service tokens\nexpire after 90 days and cannot grant `admin`.\nThis endpoint and the legacy dashboard alias `POST /v1/customer/keys`\nuse the same customer-plane mint flow and the same per-tenant\n`pat-issue` bucket: burst 10, then 10 tokens per hour (one every 360\nseconds). The limiter runs before mint and audit; a denied request\nreturns `429` with `Retry-After`.\n",
         "requestBody": {
           "required": true,
           "content": {
@@ -404,17 +404,83 @@
               }
             }
           },
+          "400": {
+            "description": "Malformed JSON or request body rejected by the HTTP extractor.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "401": {
-            "$ref": "#/components/responses/Unauthorized"
+            "description": "Missing or invalid trusted tenant credentials.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks the scope required to mint the requested credential.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "422": {
-            "$ref": "#/components/responses/Unprocessable"
+            "description": "Schema-valid but semantically invalid payload.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "429": {
-            "$ref": "#/components/responses/RateLimited"
+            "description": "PAT issuance rate limit exceeded.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "500": {
-            "$ref": "#/components/responses/InternalError"
+            "description": "PAT storage or handler failure.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Rate-limit clock or pipeline unavailable; no PAT was minted.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }

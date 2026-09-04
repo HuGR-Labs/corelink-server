@@ -172,6 +172,6 @@ CGO_LDFLAGS="-L../target/release -lcorelink_go" go test -race ./...
 
 Client-verify uses the single Rust truth (`corelink-client-verify`, S-02 SEALED)
 via cgo. See `specs/_decisions/ADR-0016-ffi-vs-native-http.md`.
-\n+## Go SDK PAT issuance
+## Go SDK PAT issuance
 
 The HTTP control-plane client exposes `POST /v1/pats` for additional tenant PATs (Clerk session or canonical PAT authentication). `POST /v1/customer/keys` remains a compatible dashboard alias. Both use the same `pat-issue` per-tenant limiter (burst 10, then 10/hour; one token every 360 seconds), applied before mint and audit; handle `429` and `Retry-After`.

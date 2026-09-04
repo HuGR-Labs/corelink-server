@@ -16,11 +16,6 @@ tags: [pat, rest-api]
 - **Tag:** `pat`
 - **Rate-limit class:** pat-issue (10 req/hour/tenant)
 
-This endpoint and the legacy dashboard alias \`POST /v1/customer/keys\` use
-the same customer-plane mint flow and the same per-tenant \`pat-issue\` bucket:
-burst 10, then 10 tokens per hour (one every 360 seconds). The limiter runs
-before mint and audit; a denied request returns \`429\` with \`Retry-After\`.
-
 ## Description
 
 Creates a PAT for the caller's authenticated tenant. The Worker derives
@@ -29,6 +24,11 @@ cannot supply a tenant id and this endpoint never accepts the
 operator-only mint authority. The raw token is returned exactly once in
 `token` and is never logged or retrievable later. Self-service tokens
 expire after 90 days and cannot grant `admin`.
+This endpoint and the legacy dashboard alias `POST /v1/customer/keys`
+use the same customer-plane mint flow and the same per-tenant
+`pat-issue` bucket: burst 10, then 10 tokens per hour (one every 360
+seconds). The limiter runs before mint and audit; a denied request
+returns `429` with `Retry-After`.
 
 ## Authentication
 
@@ -50,10 +50,13 @@ _None._
 | Status | Schema | Description |
 | --- | --- | --- |
 | `201` | [`PatIssueResponse`](#schema-patissueresponse) | PAT issued. |
-| `401` | [`ErrorEnvelope`](#schema-errorenvelope) | Missing or invalid credentials. |
-| `422` | [`ErrorEnvelope`](#schema-errorenvelope) | Schema-valid but semantically invalid payload. |
-| `429` | [`ErrorEnvelope`](#schema-errorenvelope) | Rate-limit exceeded. |
-| `500` | [`ErrorEnvelope`](#schema-errorenvelope) | Server error. Safe to retry idempotent operations. |
+| `400` | `string` | Malformed JSON or request body rejected by the HTTP extractor. |
+| `401` | `string` | Missing or invalid trusted tenant credentials. |
+| `403` | `string` | Caller lacks the scope required to mint the requested credential. |
+| `422` | `string` | Schema-valid but semantically invalid payload. |
+| `429` | `string` | PAT issuance rate limit exceeded. |
+| `500` | `string` | PAT storage or handler failure. |
+| `503` | `string` | Rate-limit clock or pipeline unavailable; no PAT was minted. |
 
 ## Examples
 

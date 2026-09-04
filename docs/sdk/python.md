@@ -138,6 +138,6 @@ directly in Python (`sdks/python/corelink/cas.py`), not via an FFI call
 into a shared Rust implementation. This differs from the Go SDK, which
 does share a Rust cgo bridge (`tools/sdks/go`) for its verify path — the
 two SDKs are not architecturally symmetric today.
-\n+## Python SDK PAT issuance
+## Python SDK PAT issuance
 
 `client.issue_pat(PatIssueRequest(label="ci", scopes=["cache:read"]))` calls `POST /v1/pats`; the token is returned once. The legacy dashboard alias `POST /v1/customer/keys` is equivalent. Both share the server-side `pat-issue` per-tenant limiter (burst 10, then 10/hour; one token every 360 seconds) before mint and audit; handle `429` and its `Retry-After` header.

@@ -141,20 +141,18 @@ curl -s https://corelink-api.humangr.com/api/health
 
 ---
 
-### Gestión de PATs (`GET`/`POST /v1/pats`, `DELETE /v1/pats/:pat_id`) — planificado, aún no activo
+### Emisión de PAT (`POST /v1/pats`)
 
-Estas rutas están especificadas para una futura superficie self-service de
-gestión de PATs (listar, crear, revocar) pero **no están conectadas hoy** —
-llamar a cualquiera de ellas devuelve `404`. La única vía de creación de PAT
-activa es el PAT inicial automático emitido por el asistente de registro.
-Existe una superficie admin-only de solo lectura para que soporte inspeccione
-los PAT de un tenant (`GET /v1/admin/tenants/{tenant_id}/pats`), pero requiere
-un PAT de administrador y no es algo que un token de cliente normal pueda
-llamar.
+Esta ruta self-service activa emite un PAT adicional ligado al tenant para una
+sesión Clerk validada o un PAT canónico. El token en texto plano se devuelve
+exactamente una vez. El alias compatible con el panel, `POST /v1/customer/keys`,
+usa el mismo flujo de mint y el mismo limitador `pat-issue` por tenant (burst
+10 y luego 10/hora; un token cada 360 segundos), aplicado antes del mint y la
+auditoría. La lista y revocación siguen siendo superficies del panel; la
+superficie de lectura admin-only es `GET /v1/admin/tenants/{tenant_id}/pats`.
 
-Hasta que la gestión self-service de PATs esté disponible, escriba a
-[support@humangr.com](mailto:support@humangr.com) para emitir un PAT adicional
-o revocar uno.
+Los errores de JSON o autorización devuelven `text/plain`; las respuestas
+limitadas devuelven `429` con `Retry-After`.
 
 ---
 
@@ -172,7 +170,9 @@ o revocar uno.
 | `429 Too Many Requests` | `rate_limited` | Se excedió la tasa de solicitudes | Espere y reintente; consulte el encabezado `Retry-After` |
 | `503 Service Unavailable` | `audit_closed` | El período de auditoría del tenant está cerrado — escrituras suspendidas temporalmente | Contacte a soporte; las lecturas siguen funcionando |
 
-Todas las respuestas de error comparten este formato:
+Las respuestas de REAPI y de los endpoints de clientes, excepto la emisión de
+PAT, comparten este formato JSON. Los errores de emisión de PAT documentados
+arriba usan `text/plain`.
 
 ```json
 {

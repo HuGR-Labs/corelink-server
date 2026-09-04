@@ -280,6 +280,9 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
   /v1/pats:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/customer.rs
+    x-implementing-crate: corelink-pat
     post:
       tags: [pat]
       summary: Issue a new Personal Access Token.
@@ -291,6 +294,11 @@ paths:
         operator-only mint authority. The raw token is returned exactly once in
         `token` and is never logged or retrievable later. Self-service tokens
         expire after 90 days and cannot grant `admin`.
+        This endpoint and the legacy dashboard alias `POST /v1/customer/keys`
+        use the same customer-plane mint flow and the same per-tenant
+        `pat-issue` bucket: burst 10, then 10 tokens per hour (one every 360
+        seconds). The limiter runs before mint and audit; a denied request
+        returns `429` with `Retry-After`.
       requestBody:
         required: true
         content:
@@ -304,10 +312,44 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PatIssueResponse"
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "422": { $ref: "#/components/responses/Unprocessable" }
-        "429": { $ref: "#/components/responses/RateLimited" }
-        "500": { $ref: "#/components/responses/InternalError" }
+        "400":
+          description: Malformed JSON or request body rejected by the HTTP extractor.
+          content:
+            text/plain:
+              schema: { type: string }
+        "401":
+          description: Missing or invalid trusted tenant credentials.
+          content:
+            text/plain:
+              schema: { type: string }
+        "403":
+          description: Caller lacks the scope required to mint the requested credential.
+          content:
+            text/plain:
+              schema: { type: string }
+        "422":
+          description: Schema-valid but semantically invalid payload.
+          content:
+            text/plain:
+              schema: { type: string }
+        "429":
+          description: PAT issuance rate limit exceeded.
+          headers:
+            Retry-After:
+              schema: { type: integer, minimum: 1 }
+          content:
+            text/plain:
+              schema: { type: string }
+        "500":
+          description: PAT storage or handler failure.
+          content:
+            text/plain:
+              schema: { type: string }
+        "503":
+          description: Rate-limit clock or pipeline unavailable; no PAT was minted.
+          content:
+            text/plain:
+              schema: { type: string }
   /v1/billing/stripe-webhook:
     post:
       tags: [billing]

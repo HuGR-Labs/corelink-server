@@ -48,7 +48,7 @@ cuenta de servicio.
 | Alcance | Exactamente un tenant en el momento de la emisión |
 | Se muestra una vez | Se muestra en texto plano solo en la creación; nunca se almacena en texto plano del lado del servidor |
 | Revocable | El PAT inicial y los PATs adicionales emitidos por `POST /v1/pats` están ligados al tenant; los aliases comparten la política `pat-issue` (burst 10, 10/hora), antes del mint y la auditoría. |
-| Vencimiento | Opcional; se establece en el momento de la creación; por defecto no vence |
+| Vencimiento | Los PAT emitidos por self-service vencen después de 90 días |
 
 ### Alcances de PAT
 
@@ -68,11 +68,11 @@ suficiente para todas las integraciones de herramientas de build.
 
 ### Buenas prácticas de CI/CD
 
-No use su PAT inicial personal en CI. La creación self-service de un PAT de CI
-dedicado (`POST /v1/pats`) está planificada pero aún no conectada a una ruta.
-Mientras tanto, escriba a [support@humangr.com](mailto:support@humangr.com) para
-solicitar un PAT de CI dedicado con los alcances mínimos requeridos
-(típicamente `cas:read cas:write ac:read ac:write`, sin `admin`).
+No use su PAT inicial personal en CI. Emita un PAT de CI dedicado mediante
+`POST /v1/pats`, con los alcances mínimos requeridos (típicamente `cas:read
+cas:write ac:read ac:write`, sin `admin`). La ruta compatible del panel,
+`POST /v1/customer/keys`, usa el mismo limitador por tenant antes del mint y
+la auditoría.
 
 Almacene el valor del token devuelto en los secrets de GitHub Actions, en Vault o
 en el gestor de secretos de su elección.
@@ -115,11 +115,8 @@ por entorno.
 
 ## Listar y revocar PATs
 
-`POST /v1/pats` está activo para emitir PATs adicionales. La lista y revocación siguen en las superficies específicas del panel.
-Existe una superficie de solo lectura admin-only para que soporte inspeccione
-los PAT de un tenant (`GET /v1/admin/tenants/{tenant_id}/pats`), pero no es
-llamable con un PAT normal. Para revocar un PAT, escriba a
-[support@humangr.com](mailto:support@humangr.com).
-
-Una vez que la revocación esté disponible (self-service o vía soporte),
-cualquier solicitud en curso que use ese PAT recibirá `401 Unauthorized`.
+La emisión de PATs adicionales está activa mediante `POST /v1/pats` y el alias
+compatible `POST /v1/customer/keys`. La lista y revocación siguen en superficies
+del panel. Existe una superficie de lectura admin-only para soporte
+(`GET /v1/admin/tenants/{tenant_id}/pats`), pero no se puede llamar con un PAT
+normal. Un PAT revocado recibe `401 Unauthorized` en solicitudes posteriores.
