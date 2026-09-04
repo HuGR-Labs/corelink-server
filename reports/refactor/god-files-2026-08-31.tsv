@@ -62,7 +62,6 @@
 1144	tests/e2e-tenant-isolation/tests/adversarial.rs
 1120	crates/corelink-telemetry/src/logpush/redaction.rs
 1100	crates/corelink-clerk-cf/src/clerk_health_do.rs
-1081	crates/corelink-eviction/src/phase.rs
 1075	crates/corelink-telemetry/src/lighthouse.rs
 1072	crates/corelink-gc/src/sweep_runner.rs
 1047	crates/corelink-enterprise-inquiry/src/ledger.rs
