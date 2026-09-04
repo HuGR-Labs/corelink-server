@@ -92,6 +92,19 @@ COMMENT_STARTS = ("//", "///", "//!", "#", "*", "/*", "<!--")
 DELIMITERS = {"}", "};", ")", ");", "},", "]", "];", "},)", "})", "});"}
 
 
+def _parse_line_number(raw: str) -> int | None:
+    """Parse a citation number without leaking Python's digit-limit error.
+
+    Citation syntax accepts decimal digits, but Python may reject an otherwise
+    matching number when it exceeds the interpreter's integer conversion limit.
+    Such a token is a malformed citation (exit 1), not a verifier traceback.
+    """
+    try:
+        return int(raw)
+    except (OverflowError, ValueError):
+        return None
+
+
 def _compile():
     import re
 
@@ -238,9 +251,19 @@ def scan_concept(path: Path, cache: SourceCache, full_re, bare_re) -> tuple[int,
             bare = bare_re.fullmatch(raw)
             if full:
                 cited_path = full.group(1)
-                first = int(full.group(2))
-                last = int(full.group(3)) if full.group(3) is not None else None
                 inherited = cited_path
+                first_raw = full.group(2)
+                last_raw = full.group(3)
+                first = _parse_line_number(first_raw)
+                last = _parse_line_number(last_raw) if last_raw is not None else None
+                if first is None or (last_raw is not None and last is None):
+                    suffix = f"-{last_raw}" if last_raw is not None else ""
+                    findings.append(
+                        f"  {rel}:{lineno}  `{cited_path}:{first_raw}{suffix}`  "
+                        "[full-malformed-range]  citation line number is too large "
+                        "to parse"
+                    )
+                    continue
                 verdict, evidence = validate_range_bounds(cache, cited_path, first, last)
                 if verdict != "ok":
                     suffix = f"-{last}" if last is not None else ""
@@ -251,14 +274,25 @@ def scan_concept(path: Path, cache: SourceCache, full_re, bare_re) -> tuple[int,
                 continue
             if bare:
                 seen += 1
-                first = int(bare.group(1))
-                last = int(bare.group(2)) if bare.group(2) is not None else None
+                first_raw = bare.group(1)
+                last_raw = bare.group(2)
+                first = _parse_line_number(first_raw)
+                last = _parse_line_number(last_raw) if last_raw is not None else None
+                if first is None or (last_raw is not None and last is None):
+                    suffix = f"-{last_raw}" if last_raw is not None else ""
+                    findings.append(
+                        f"  {rel}:{lineno}  `:{first_raw}{suffix}`  [malformed-range]  "
+                        "citation line number is too large to parse"
+                    )
+                    continue
                 verdict, evidence = validate_range_bounds(cache, inherited, first, last)
                 if verdict == "ok":
                     verdict, evidence = classify(cache, inherited, first)
                 if verdict != "ok":
                     suffix = f"-{last}" if last is not None else ""
-                    findings.append(f"  {rel}:{lineno}  `:{first}{suffix}`  [{verdict}]  {evidence}")
+                    findings.append(
+                        f"  {rel}:{lineno}  `:{first}{suffix}`  [{verdict}]  {evidence}"
+                    )
                 continue
             if re.fullmatch(MALFORMED_BARE_CITE, inner):
                 seen += 1

@@ -82,6 +82,20 @@ class AbbreviatedCitationResolverTest(unittest.TestCase):
         self.assertTrue(any("full-past-eof" in finding for finding in findings))
         self.assertTrue(any("malformed-range" in finding for finding in findings))
 
+    def test_thousands_digit_numbers_are_findings_not_tracebacks(self) -> None:
+        huge = "9" * 5000
+        seen, findings = self.scan(
+            "# Citations\n"
+            f"1. `src/live.rs:{huge}`\n"
+            f"2. `:{huge}`\n",
+            {"src/live.rs": "fn live() {}\n"},
+        )
+
+        self.assertEqual(seen, 1)
+        self.assertEqual(len(findings), 2)
+        self.assertTrue(all("malformed-range" in finding for finding in findings))
+        self.assertTrue(all("traceback" not in finding.lower() for finding in findings))
+
     def test_path_only_anchor_resolves_nested_and_root_source_files(self) -> None:
         seen, findings = self.scan(
             "---\nsource_files:\n"

@@ -3404,8 +3404,9 @@ verify: |
     exit 1
   fi
   b059_mutant="$(mktemp "${TMPDIR:-/tmp}/b059-validate-okf.XXXXXX")" || exit 1
+  b059_mutant_log=''
+  trap 'rm -f "$b059_mutant"; [ -z "${b059_mutant_log:-}" ] || rm -f "$b059_mutant_log"' EXIT
   b059_mutant_log="$(mktemp "${TMPDIR:-/tmp}/b059-validate-okf-log.XXXXXX")" || exit 1
-  trap 'rm -f "$b059_mutant" "$b059_mutant_log"' EXIT
   if ! python3 - "$b059_mutant" <<'PY'
   from pathlib import Path
   import sys

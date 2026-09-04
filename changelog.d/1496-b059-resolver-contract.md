@@ -12,4 +12,6 @@
   recusando qualquer caminho que escape a raiz. O `verify` open-polarity de B-059 agora falha fechado se `CITE_RE` sumir
   e prova por mutação que removê-lo torna o validador vermelho. O item continua
   aberto: isto endurece a medição e a integração, não transforma os 38 de 107
-  resíduos em citações corretas.
+  resíduos em citações corretas. Números de linha com milhares de dígitos agora
+  viram `malformed-range` (sem `ValueError`/traceback), e o `verify` instala o
+  cleanup imediatamente após o primeiro `mktemp`, inclusive se o segundo falhar.
