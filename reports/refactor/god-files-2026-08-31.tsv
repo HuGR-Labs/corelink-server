@@ -66,7 +66,6 @@
 1047	crates/corelink-enterprise-inquiry/src/ledger.rs
 1035	crates/corelink-byok/src/byok_gcp/real.rs
 1025	crates/corelink-gc/src/run.rs
-1019	crates/corelink-dsr/src/event.rs
 1010	tests/e2e-user-journeys/src/journeys/adapters.rs
 1008	crates/corelink-byok/src/byok_aws/real.rs
 1001	crates/corelink-rate-headers/tests/prop_rate_headers.rs
