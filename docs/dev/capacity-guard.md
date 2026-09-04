@@ -1,0 +1,79 @@
+# Capacity guard for heavy local and CI gates
+
+`scripts/capacity_guard.py` treats build capacity as correctness evidence. A
+full disk or inode table can produce partial artifacts, misleading compiler
+errors, and a false conclusion about the change under test. It therefore
+measures available bytes and inodes before a heavy gate and inventories the
+largest **worktree-local, regenerable** caches.
+
+The default heavy-gate floor is **5 GiB** (`5120 MiB`). This is not a promise
+that a complete workspace build fits in 5 GiB; it is the documented critical
+floor in the tech-lead maintenance checklist, below which Rust/Node materialize
+work has already failed. Configure a higher floor for a known larger operation:
+
+```bash
+CORELINK_CAPACITY_FLOOR_MIB=12288 python3 scripts/capacity_guard.py --gate
+python3 scripts/capacity_guard.py --gate --floor-mib 8192
+```
+
+Exit codes are deliberate: `0` means the report was obtained (and, with
+`--gate`, the byte and inode floors held); `1` means capacity is below the
+requested floor; `2` means arguments or evidence were unsafe/unavailable.
+`--gate` requires at least one available inode by default; use
+`--min-free-inodes N` for an explicit larger bound. Inode evidence is always
+printed, but a filesystem which cannot report it is not silently interpreted as
+infinite capacity.
+
+## Parallel worktrees and shared caches
+
+Each worktree retains its own `target/`, `node_modules/`, `.turbo/`, and
+`.pnpm-store/`; those are the only paths the guard will describe as removable.
+The report labels each worktree independently as `active` (unmerged or
+detached branch), `dirty`, `untracked`, `clean`, or `unavailable`. Active, dirty, or untracked
+worktrees are never cleanup candidates.
+Cache byte totals are measured only for `clean` worktrees; live/dirty/untracked
+worktrees are intentionally not traversed, so reporting cannot turn their
+contents into a cleanup suggestion or an unbounded scan.
+
+Cargo registries, `sccache`, package-manager stores under `$HOME`, Docker
+images/volumes, branches, and worktrees may be shared or contain owner data.
+They are intentionally **not** targets of this tool. The capacity report can
+mention no cleanup recommendation for them; their lifecycle remains an explicit
+operator decision.
+
+Serialize only the write/materialization phase that shares a cache, not all
+tests. The lock lives in git's common directory, so it coordinates separate
+worktrees without relying on `/tmp`:
+
+```bash
+python3 scripts/capacity_guard.py --lock -- pnpm install --frozen-lockfile
+python3 scripts/capacity_guard.py --lock -- cargo fetch
+```
+
+The command fails with exit `2` if another materialization holder exists (or
+use a finite `--lock-timeout-seconds N`, bounded to 24 hours). Compilation/test
+execution remains parallel after materialization. Callers should invoke
+`--gate` only for the heavy mode that needs the precondition; validators-only
+work should not become red because of an unrelated capacity check.
+The child command's non-zero status, including an `ENOSPC` failure, is
+propagated and never turned into a green result.
+
+## Cleanup is opt-in and narrow
+
+Ordinary cleanup is a dry-run and requires each fixed cache name explicitly:
+
+```bash
+python3 scripts/capacity_guard.py --cleanup --cleanup-target target
+```
+
+It accepts only `target`, `node_modules`, `.turbo`, and `.pnpm-store`, direct
+non-symlink directories below the exact current git worktree root. Paths,
+globs, environment expansion, `..`, symlinks, filesystem root, and worktree
+subdirectories are refused. It never automatically deletes code, untracked
+files, dirty work, branches, a worktree, Docker, a Docker volume, or shared
+`$HOME` caches.
+
+Actual removal additionally requires `--execute` and the exact acknowledgement
+`CORELINK_CAPACITY_ALLOW_DELETE=delete-regenerable-cache`; inspect the dry-run
+first. This two-step operation is for a human who has verified the target, not
+for CI or an agent's automatic recovery loop.
