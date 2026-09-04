@@ -229,6 +229,30 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
     expect(mockVerifyToken).not.toHaveBeenCalled();
   });
 
+  it("POST /v1/pats routes valid PATs through customer_v1", async () => {
+    const captured: { req?: Request; doName?: string } = {};
+    const env = makeBridgeEnv({ captured, pats: new Map([[TEST_TOKEN_ID, { tenant_id: TEST_TENANT_ID, expires_ms: Date.now() + 3_600_000 }]]) });
+    const resp = await patsFetch(env, { Authorization: `Bearer ${TEST_PAT_TOKEN}` });
+    expect(resp.status).toBe(200);
+    expect(captured.req?.headers.get("x-corelink-route-kind")).toBe("customer_v1");
+  });
+
+  it("POST /v1/pats without credentials returns 401", async () => {
+    const resp = await patsFetch(makeBridgeEnv({ captured: {} }), {});
+    expect(resp.status).toBe(401);
+    expect((await resp.json() as { error: string }).error).toBe("UNAUTHORIZED");
+  });
+
+  it("POST /v1/pats rejects an expired canonical PAT before forwarding", async () => {
+    const tokenId = "CCCCCCCCCCCCCCCC";
+    const token = await mintTestPat({ tokenId });
+    const captured: { req?: Request; doName?: string } = {};
+    const env = makeBridgeEnv({ captured, pats: new Map([[tokenId, { tenant_id: TEST_TENANT_ID, expires_ms: Date.now() - 1000 }]]) });
+    const resp = await patsFetch(env, { Authorization: `Bearer ${token}` });
+    expect(resp.status).toBe(401);
+    expect(captured.req).toBeUndefined();
+  });
+
   it("POST /v1/pats: a new Clerk customer is tenant-bound without operator authority", async () => {
     mockVerifyToken.mockResolvedValue({
       sub: "user_new_customer",

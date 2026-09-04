@@ -993,14 +993,7 @@ function matchRoute(url: URL): RouteMatch {
   // (unchanged), anything else takes the Clerk-session bridge (edge-verified
   // JWT, tenant from clerk_user_id). Customer routes are NOT pre-tenant
   // (unlike signup).
-  if (
-    path.startsWith("/v1/customer/") ||
-    path === "/v1/customer" ||
-    // B-160: public self-serve PAT mint. It deliberately reuses customer_v1
-    // rather than the generic PAT route, so a Clerk session resolves its own
-    // tenant and no operator mint secret is ever injected into the request.
-    path === "/v1/pats"
-  ) {
+  if (path.startsWith("/v1/customer/") || path === "/v1/customer" || path === "/v1/pats") {
     return { tenantId: "_anonymous", pathSuffix: path, routeKind: "customer_v1" };
   }
 
