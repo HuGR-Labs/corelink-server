@@ -54,10 +54,11 @@ python3 scripts/capacity_guard.py --lock -- pnpm install --frozen-lockfile
 python3 scripts/capacity_guard.py --lock -- cargo fetch
 ```
 
-The lock file is created/opened with `O_NOFOLLOW`, exclusive creation, and
-device/inode checks. A second, stable guard inode is held for the entire
-critical section, so replacing the public lock pathname cannot create a second
-owner; a symlink or replacement guard/lock path fails closed. The command fails
+The shared Git common directory is opened with `O_NOFOLLOW|O_DIRECTORY` and
+held with an exclusive flock for the entire critical section; the named anchor,
+guard, and lock files are inspectable compatibility markers, not authority.
+Replacing or recreating all three pathnames therefore cannot create a second
+owner. A symlink or replacement marker fails closed. The command fails
 with exit `2` if another materialization holder exists (or use a finite
 `--lock-timeout-seconds N`, bounded to 24 hours). Git and protected commands
 run in private process groups; timeout termination covers descendants. The

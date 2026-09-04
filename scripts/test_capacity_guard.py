@@ -148,14 +148,14 @@ class CapacityGuardTests(unittest.TestCase):
         (self.root / "target" / "original").write_text("original", encoding="utf-8")
         original_remove_tree = guard.remove_tree_fd
 
-        def swap_quarantine_then_remove(directory_fd: int) -> None:
+        def swap_quarantine_then_remove(directory_fd: int, **kwargs: object) -> None:
             quarantine = next(self.root.glob(".corelink-capacity-quarantine-*") )
             os.rename(quarantine, self.root / "quarantine-original")
             replacement = self.root / "replacement"
             replacement.mkdir()
             (replacement / "SECRET").write_text("keep", encoding="utf-8")
             os.rename(replacement, quarantine)
-            original_remove_tree(directory_fd)
+            original_remove_tree(directory_fd, **kwargs)
 
         with mock.patch.dict(os.environ,
                              {"CORELINK_CAPACITY_ALLOW_DELETE": "delete-regenerable-cache"}), \
@@ -164,6 +164,26 @@ class CapacityGuardTests(unittest.TestCase):
                 guard.dry_run_cleanup(self.root, ["target"], execute=True)
         replacement = next(self.root.glob(".corelink-capacity-quarantine-*/SECRET"))
         self.assertEqual(replacement.read_text(encoding="utf-8"), "keep")
+
+    def test_execute_refuses_quarantine_move_outside_before_recursive_removal(self) -> None:
+        outside = Path(self.temp.name) / "outside"
+        outside.mkdir()
+        (outside / "SECRET").write_text("keep", encoding="utf-8")
+        (self.root / "target").mkdir()
+        (self.root / "target" / "original").write_text("original", encoding="utf-8")
+        original_remove_tree = guard.remove_tree_fd
+
+        def move_quarantine_outside(directory_fd: int, **kwargs: object) -> None:
+            quarantine = next(self.root.glob(".corelink-capacity-quarantine-*"))
+            os.rename(quarantine, outside / "escaped")
+            original_remove_tree(directory_fd, **kwargs)
+
+        with mock.patch.dict(os.environ,
+                             {"CORELINK_CAPACITY_ALLOW_DELETE": "delete-regenerable-cache"}), \
+             mock.patch.object(guard, "remove_tree_fd", side_effect=move_quarantine_outside):
+            with self.assertRaisesRegex(guard.GuardError, "authorized cache moved"):
+                guard.dry_run_cleanup(self.root, ["target"], execute=True)
+        self.assertTrue((outside / "SECRET").exists())
 
     def test_execute_refuses_directory_swap_without_deleting_replacement(self) -> None:
         (self.root / "target").mkdir()
@@ -262,6 +282,30 @@ class CapacityGuardTests(unittest.TestCase):
                 guard.dry_run_cleanup(self.root, ["target"], execute=True)
         self.assertEqual((outside / "escaped" / "SECRET").read_text(encoding="utf-8"), "keep")
 
+    def test_execute_refuses_descendant_move_after_confinement_check(self) -> None:
+        (self.root / "target" / "child").mkdir(parents=True)
+        (self.root / "target" / "child" / "SECRET").write_text("keep", encoding="utf-8")
+        outside = Path(self.temp.name) / "outside"
+        outside.mkdir()
+        original_remove_tree = guard.remove_tree_fd
+        moved = False
+
+        def move_child_before_recursive(directory_fd: int, **kwargs: object) -> None:
+            nonlocal moved
+            confinement = kwargs.get("_confinement")
+            if not moved and isinstance(confinement, tuple) and len(confinement) == 2:
+                moved = True
+                quarantine = next(self.root.glob(".corelink-capacity-quarantine-*"))
+                os.rename(quarantine / "child", outside / "escaped")
+            original_remove_tree(directory_fd, **kwargs)
+
+        with mock.patch.dict(os.environ,
+                             {"CORELINK_CAPACITY_ALLOW_DELETE": "delete-regenerable-cache"}), \
+             mock.patch.object(guard, "remove_tree_fd", side_effect=move_child_before_recursive):
+            with self.assertRaisesRegex(guard.GuardError, "authorized cache moved"):
+                guard.dry_run_cleanup(self.root, ["target"], execute=True)
+        self.assertTrue((outside / "escaped" / "SECRET").exists())
+
     def test_root_rejects_filesystem_root_symlink_glob_and_subdirectory(self) -> None:
         link = Path(self.temp.name) / "repo-link"
         link.symlink_to(self.root, target_is_directory=True)
@@ -317,6 +361,13 @@ class CapacityGuardTests(unittest.TestCase):
         with mock.patch.object(guard, "MAX_IGNORED_PATHS", 2):
             with self.assertRaisesRegex(guard.GuardError, "path evidence"):
                 guard.ignored_non_cache_paths(self.root)
+
+    def test_status_untracked_output_is_bounded(self) -> None:
+        for number in range(8):
+            (self.root / ("untracked-" + "x" * 20 + str(number))).write_text("x\n", encoding="utf-8")
+        with mock.patch.object(guard, "MAX_GIT_OUTPUT_BYTES", 32):
+            with self.assertRaisesRegex(guard.GuardError, "output exceeded 32 bytes"):
+                guard.git(self.root, "status", "--porcelain=v1", "--untracked-files=all")
 
     def test_ignored_disposable_cache_is_excluded_before_capture(self) -> None:
         (self.root / "target").mkdir()
@@ -497,6 +548,34 @@ class CapacityGuardTests(unittest.TestCase):
                 capture_output=True, text=True, check=False, timeout=3,
             )
         self.assertEqual(child.returncode, 2, child.stderr)
+        self.assertNotIn("ENTERED", child.stdout)
+
+    def test_anchor_guard_and_lock_replacement_cannot_split_ownership(self) -> None:
+        common = Path(guard.git(self.root, "rev-parse", "--git-common-dir").strip())
+        if not common.is_absolute():
+            common = (self.root / common).resolve()
+        anchor_path = common / "corelink-capacity-materialization.anchor"
+        guard_path = common / "corelink-capacity-materialization.guard"
+        lock_path = common / "corelink-capacity-materialization.lock"
+        code = (
+            "import pathlib,sys\n"
+            "sys.path.insert(0,sys.argv[1])\n"
+            "import capacity_guard as g\n"
+            "raise SystemExit(g.main(['--root',sys.argv[2],'--lock','--','true']))\n"
+        )
+        with guard.materialization_lock(self.root, 0):
+            os.rename(anchor_path, common / "old-anchor")
+            anchor_path.write_text("replacement", encoding="utf-8")
+            os.rename(guard_path, common / "old-guard")
+            guard_path.write_text("replacement", encoding="utf-8")
+            os.rename(lock_path, common / "old-lock")
+            lock_path.write_text("replacement", encoding="utf-8")
+            child = subprocess.run(
+                [sys.executable, "-c", code, str(Path(__file__).resolve().parent), str(self.root)],
+                capture_output=True, text=True, check=False, timeout=3,
+            )
+        self.assertEqual(child.returncode, 2, child.stderr)
+        self.assertIn("materialization lock is held", child.stderr)
         self.assertNotIn("ENTERED", child.stdout)
 
     def test_gate_rechecks_capacity_after_waiting_for_lock(self) -> None:

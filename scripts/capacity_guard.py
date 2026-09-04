@@ -24,13 +24,16 @@ import math
 import os
 import selectors
 import secrets
-import signal
 import stat
 import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Iterator
+
+from process_bounds import (BoundedOutputError, ProcessBoundsError,
+                             kill_process_group as _kill_process_group)
+from process_bounds import run_bounded as _run_bounded
 
 
 DEFAULT_FLOOR_MIB = 5 * 1024
@@ -44,9 +47,6 @@ MAX_REPORT_SECONDS = 90
 MAX_IGNORED_PATHS = 100_000
 MAX_COMMAND_TIMEOUT_SECONDS = 24 * 60 * 60
 MAX_GIT_OUTPUT_BYTES = 16 * 1024 * 1024
-PROCESS_TERM_GRACE_SECONDS = 0.25
-PROCESS_GROUP_VERIFY_SECONDS = 0.5
-
 # These names are deliberately not paths.  Accepting arbitrary paths, globs,
 # environment expansion or ``..`` here would turn a diagnostic into a delete
 # primitive.  All are regenerable build/dependency caches directly below a
@@ -127,97 +127,6 @@ def parse_command_timeout(value: str) -> float:
     return parsed
 
 
-def _kill_process_group(process: subprocess.Popen[object]) -> None:
-    """Terminate a bounded subprocess and all descendants in its session."""
-    group_id = process.pid
-
-    def group_alive() -> bool:
-        if os.name != "posix":
-            return process.poll() is None
-        try:
-            os.killpg(group_id, 0)
-        except ProcessLookupError:
-            return False
-        except PermissionError:
-            return True
-        return True
-
-    try:
-        if os.name == "posix":
-            os.killpg(group_id, signal.SIGTERM)
-        else:
-            process.terminate()
-    except ProcessLookupError:
-        return
-    except PermissionError:
-        # A platform may reject killpg despite accepting start_new_session;
-        # still reap the direct child rather than leaking a running process.
-        try:
-            process.terminate()
-        except ProcessLookupError:
-            return
-    term_deadline = time.monotonic() + PROCESS_TERM_GRACE_SECONDS
-    while group_alive() and time.monotonic() < term_deadline:
-        try:
-            process.wait(timeout=min(0.05, max(0.0, term_deadline - time.monotonic())))
-        except subprocess.TimeoutExpired:
-            pass
-    if not group_alive():
-        process.wait()
-        return
-    try:
-        if os.name == "posix":
-            os.killpg(group_id, signal.SIGKILL)
-        else:
-            process.kill()
-    except ProcessLookupError:
-        return
-    except PermissionError:
-        try:
-            process.kill()
-        except ProcessLookupError:
-            return
-    verify_deadline = time.monotonic() + PROCESS_GROUP_VERIFY_SECONDS
-    while group_alive() and time.monotonic() < verify_deadline:
-        try:
-            process.wait(timeout=min(0.05, max(0.0, verify_deadline - time.monotonic())))
-        except subprocess.TimeoutExpired:
-            pass
-    if group_alive():
-        raise GuardError("timed-out process group did not terminate")
-    process.wait()
-
-
-def _run_bounded(command: list[str], *, cwd: Path, timeout: float,
-                 capture_output: bool = False) -> subprocess.CompletedProcess[object]:
-    """Run one command in a private process group with a hard tree timeout."""
-    process = subprocess.Popen(
-        command,
-        cwd=cwd,
-        start_new_session=(os.name == "posix"),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE if capture_output else None,
-        stderr=subprocess.PIPE if capture_output else None,
-        text=capture_output,
-        errors="surrogateescape" if capture_output else None,
-    )
-    try:
-        stdout, stderr = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired as error:
-        try:
-            _kill_process_group(process)
-        finally:
-            # A descendant can retain inherited pipes after the leader exits;
-            # never call communicate() here, since that would wait for it.
-            if process.stdout is not None:
-                process.stdout.close()
-            if process.stderr is not None:
-                process.stderr.close()
-        raise subprocess.TimeoutExpired(command, timeout, output=error.output,
-                                        stderr=error.stderr) from error
-    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
-
-
 def git(root: Path, *args: str, deadline: float | None = None) -> str:
     timeout = float(GIT_COMMAND_TIMEOUT_SECONDS)
     if deadline is not None:
@@ -226,11 +135,14 @@ def git(root: Path, *args: str, deadline: float | None = None) -> str:
             raise GuardError(f"worktree report exceeded {MAX_REPORT_SECONDS}s")
     try:
         completed = _run_bounded(["git", "-C", os.fspath(root), *args], cwd=root,
-                                 timeout=timeout, capture_output=True)
+                                 timeout=timeout, capture_output=True,
+                                 max_output_bytes=MAX_GIT_OUTPUT_BYTES)
     except subprocess.TimeoutExpired as error:
         if deadline is not None and time.monotonic() >= deadline:
             raise GuardError(f"worktree report exceeded {MAX_REPORT_SECONDS}s") from error
         raise GuardError(f"git command timed out after {GIT_COMMAND_TIMEOUT_SECONDS}s") from error
+    except BoundedOutputError as error:
+        raise GuardError(str(error)) from error
     if completed.returncode:
         detail = completed.stderr.strip().splitlines()
         raise GuardError(detail[0] if detail else "git command failed")
@@ -621,8 +533,23 @@ def cache_identity(path: Path) -> tuple[int, int] | None:
     return metadata.st_dev, metadata.st_ino
 
 
-def remove_tree_fd(directory_fd: int) -> None:
-    """Remove descendants through an authorized directory capability."""
+def _assert_confinement(confinement: tuple[tuple[int, str, tuple[int, int]], ...]) -> None:
+    """Prove every authorized directory is still linked below the worktree."""
+    for parent_fd, name, identity in confinement:
+        try:
+            current = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError as error:
+            raise GuardError(f"authorized cache moved during deletion: {name}") from error
+        if (current.st_dev, current.st_ino) != identity:
+            raise GuardError(f"quarantine replacement or authorized cache replacement during deletion: {name}")
+
+
+def remove_tree_fd(directory_fd: int, *,
+                   _confinement: tuple[tuple[int, str, tuple[int, int]], ...] = ()) -> None:
+    """Remove descendants only while every directory remains confined."""
+    if not _confinement:
+        raise GuardError("refusing unconfined directory-descriptor deletion")
+    _assert_confinement(_confinement)
     try:
         entries = os.scandir(directory_fd)
     except OSError as error:
@@ -630,6 +557,7 @@ def remove_tree_fd(directory_fd: int) -> None:
     with entries:
         for entry in entries:
             name = entry.name
+            _assert_confinement(_confinement)
             try:
                 observed = entry.stat(follow_symlinks=False)
             except FileNotFoundError:
@@ -637,6 +565,7 @@ def remove_tree_fd(directory_fd: int) -> None:
             except OSError as error:
                 raise GuardError(f"cannot inspect cache entry: {name}: {error}") from error
             try:
+                _assert_confinement(_confinement)
                 current = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
             except FileNotFoundError:
                 continue
@@ -655,11 +584,6 @@ def remove_tree_fd(directory_fd: int) -> None:
                     child_stat = os.fstat(child_fd)
                     if (child_stat.st_dev, child_stat.st_ino) != (observed.st_dev, observed.st_ino):
                         raise GuardError(f"cache entry changed during deletion: {name}")
-                    # A directory descriptor remains usable after its name is
-                    # renamed.  Before recursing, prove that the descriptor is
-                    # still the object at the authorized parent/name.  This
-                    # prevents a child moved outside quarantine between open
-                    # and recursion from becoming an external deletion root.
                     try:
                         current_child = os.stat(name, dir_fd=directory_fd,
                                                 follow_symlinks=False)
@@ -670,9 +594,11 @@ def remove_tree_fd(directory_fd: int) -> None:
                     if (current_child.st_dev, current_child.st_ino) != (
                             child_stat.st_dev, child_stat.st_ino):
                         raise GuardError(f"cache entry changed during deletion: {name}")
-                    remove_tree_fd(child_fd)
+                    remove_tree_fd(child_fd, _confinement=_confinement + (
+                        (directory_fd, name, (child_stat.st_dev, child_stat.st_ino)),))
                 finally:
                     os.close(child_fd)
+                _assert_confinement(_confinement)
                 try:
                     final = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
                 except FileNotFoundError as error:
@@ -688,10 +614,7 @@ def remove_tree_fd(directory_fd: int) -> None:
             else:
                 private = f".corelink-capacity-entry-{os.getpid()}-{secrets.token_hex(8)}"
                 try:
-                    # Rename first, then verify the inode that is about to be
-                    # removed.  A swap at the public name therefore moves a
-                    # replacement into `private`; it is detected and never
-                    # unlinked (the original is left recoverable).
+                    _assert_confinement(_confinement)
                     os.rename(name, private, src_dir_fd=directory_fd,
                               dst_dir_fd=directory_fd)
                 except FileNotFoundError:
@@ -699,14 +622,13 @@ def remove_tree_fd(directory_fd: int) -> None:
                 except OSError as error:
                     raise GuardError(f"cannot quarantine cache entry: {name}: {error}") from error
                 try:
+                    _assert_confinement(_confinement)
                     moved = os.stat(private, dir_fd=directory_fd, follow_symlinks=False)
                     if (moved.st_dev, moved.st_ino) != (observed.st_dev, observed.st_ino):
                         try:
                             os.rename(private, name, src_dir_fd=directory_fd,
                                       dst_dir_fd=directory_fd)
                         except OSError:
-                            # Keep the replacement and the moved object intact
-                            # if an attacker occupied the public name.
                             pass
                         raise GuardError(f"cache entry changed during deletion: {name}")
                     os.unlink(private, dir_fd=directory_fd)
@@ -771,7 +693,10 @@ def remove_cache_safely(root: Path, path: Path,
             # Keep the opened descriptor as the deletion capability.  A
             # replacement at the quarantine pathname cannot redirect this
             # recursive walk to another directory.
-            remove_tree_fd(target_fd)
+            remove_tree_fd(
+                target_fd,
+                _confinement=((parent_fd, quarantine, (before.st_dev, before.st_ino)),),
+            )
             try:
                 final = os.stat(quarantine, dir_fd=parent_fd, follow_symlinks=False)
             except FileNotFoundError:
@@ -858,6 +783,26 @@ def _acquire_stable_lock(path: Path, deadline: float) -> tuple[int, os.stat_resu
         raise
 
 
+def _acquire_directory_authority(path: Path, deadline: float) -> int:
+    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as error:
+        raise GuardError(f"cannot open lock authority directory: {error}") from error
+    try:
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return fd
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise GuardError("materialization lock is held by another worktree; retry after it finishes")
+                time.sleep(0.05)
+    except BaseException:
+        os.close(fd)
+        raise
+
+
 @contextlib.contextmanager
 def materialization_lock(root: Path, timeout_seconds: float) -> Iterator[None]:
     """A shared git-common-dir advisory lock for package/cache materialization."""
@@ -873,22 +818,35 @@ def materialization_lock(root: Path, timeout_seconds: float) -> Iterator[None]:
         raise GuardError(f"git common directory unavailable: {error}") from error
     if not common.is_dir():
         raise GuardError("git common directory is not a directory")
+    # Keep named files as inspectable compatibility markers; the common-dir fd
+    # below is the authority, so replacing every marker cannot split ownership.
+    anchor_path = common / "corelink-capacity-materialization.anchor"
     lock_path = common / "corelink-capacity-materialization.lock"
     if not getattr(os, "O_NOFOLLOW", 0) or not getattr(os, "O_DIRECTORY", 0):
         raise GuardError("refusing lock: O_NOFOLLOW is unavailable")
     deadline = time.monotonic() + timeout_seconds
     guard_path = common / "corelink-capacity-materialization.guard"
-    guard_fd, _ = _acquire_stable_lock(guard_path, deadline)
+    authority_fd = _acquire_directory_authority(common, deadline)
     try:
-        lock_fd, _ = _acquire_stable_lock(lock_path, deadline)
+        anchor_fd, _ = _acquire_stable_lock(anchor_path, deadline)
         try:
-            yield
+            guard_fd, _ = _acquire_stable_lock(guard_path, deadline)
+            try:
+                lock_fd, _ = _acquire_stable_lock(lock_path, deadline)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                    os.close(lock_fd)
+            finally:
+                fcntl.flock(guard_fd, fcntl.LOCK_UN)
+                os.close(guard_fd)
         finally:
-            fcntl.flock(lock_fd, fcntl.LOCK_UN)
-            os.close(lock_fd)
+            fcntl.flock(anchor_fd, fcntl.LOCK_UN)
+            os.close(anchor_fd)
     finally:
-        fcntl.flock(guard_fd, fcntl.LOCK_UN)
-        os.close(guard_fd)
+        fcntl.flock(authority_fd, fcntl.LOCK_UN)
+        os.close(authority_fd)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -962,7 +920,7 @@ def main(argv: list[str] | None = None) -> int:
                     ) from error
                 return completed.returncode
         return 0
-    except (GuardError, argparse.ArgumentTypeError) as error:
+    except (GuardError, ProcessBoundsError, argparse.ArgumentTypeError) as error:
         print(f"CAPACITY INDETERMINATE: {error}", file=sys.stderr)
         return 2
     except OSError as error:
