@@ -48,10 +48,12 @@ pub(super) const SCOPE_RW: &str = "cas:rw";
 pub(super) struct OneTokenLookup {
     pub(super) token_id: String,
     pub(super) row: PatRow,
+    pub(super) calls: Arc<AtomicUsize>,
 }
 #[async_trait]
 impl PatRowLookup for OneTokenLookup {
     async fn lookup(&self, token_id: &str) -> Result<Option<PatRow>, String> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
         Ok((token_id == self.token_id).then(|| self.row.clone()))
     }
 }

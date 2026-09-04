@@ -61,7 +61,14 @@ const WRITE_URI: &str = "/pip/t/simple/requests/";
 /// `row_scope` is the only lever: the token is always minted `SCOPE_CACHE_RW`,
 /// so a `cas:r` row is a token whose authorisation was narrowed in D1 after
 /// it was issued — which is the case F27 is defending against.
-fn pat_with_row_scope(row_scope: &str) -> (String, Uuid, Arc<PatVerifier>) {
+fn pat_with_row_scope(
+    row_scope: &str,
+) -> (
+    String,
+    Uuid,
+    Arc<PatVerifier>,
+    Arc<std::sync::atomic::AtomicUsize>,
+) {
     let key = test_key();
     let tenant_uuid = Uuid::from_u128(0xBEEF);
     let (plaintext, pat) = mint(
@@ -74,6 +81,7 @@ fn pat_with_row_scope(row_scope: &str) -> (String, Uuid, Arc<PatVerifier>) {
         1,
     )
     .unwrap();
+    let lookup_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let lookup = OneTokenLookup {
         token_id: pat.token_id.as_str().to_owned(),
         row: PatRow {
@@ -83,9 +91,10 @@ fn pat_with_row_scope(row_scope: &str) -> (String, Uuid, Arc<PatVerifier>) {
             find_only: false,
             runner_job: false,
         },
+        calls: Arc::clone(&lookup_calls),
     };
     let verifier = Arc::new(PatVerifier::new(Arc::new(lookup), key));
-    (plaintext.into_string(), tenant_uuid, verifier)
+    (plaintext.into_string(), tenant_uuid, verifier, lookup_calls)
 }
 
 /// The gate-only router (no quota), wired to `verifier`.
@@ -105,7 +114,7 @@ async fn put_without_bearer_token_is_401() {
     // The scope header alone must never be enough to write. With no bearer
     // there is no second layer to consult, so the gate refuses rather than
     // falling back on the header it was given.
-    let (_pt, _tenant, verifier) = pat_with_row_scope(SCOPE_RW);
+    let (_pt, _tenant, verifier, _lookup_calls) = pat_with_row_scope(SCOPE_RW);
     let resp = app_with(verifier)
         .oneshot(put(WRITE_URI, None, Some(SCOPE_RW), None))
         .await
@@ -122,7 +131,7 @@ async fn put_with_read_only_pat_is_403_despite_rw_scope_header() {
     // The F27 case in one request: the Worker-stamped header says the caller
     // may write, and the PAT's D1 row says it may not. The row wins. If this
     // ever returns 2xx, a scope-header mistake upstream has become a write.
-    let (pt, _tenant, verifier) = pat_with_row_scope("cas:r");
+    let (pt, _tenant, verifier, _lookup_calls) = pat_with_row_scope("cas:r");
     let resp = app_with(verifier)
         .oneshot(put(WRITE_URI, Some(&pt), Some(SCOPE_RW), None))
         .await
@@ -172,7 +181,7 @@ async fn put_with_resolver_backend_is_503_retryable_and_fail_closed() {
     // gate must deny that resolver error; it must never continue on the
     // Worker-stamped write scope alone. Unlike a rejected credential, the
     // backend never reached a verdict, so this is retryable 503 + Retry-After.
-    let (pt, _tenant, _verifier) = pat_with_row_scope(SCOPE_RW);
+    let (pt, _tenant, _verifier, _lookup_calls) = pat_with_row_scope(SCOPE_RW);
     let lookup = Arc::new(FailingLookup::default());
     let lookup_for_verifier: Arc<dyn crate::adapter_pat::PatRowLookup> = lookup.clone();
     let resp = app_with(Arc::new(PatVerifier::new(lookup_for_verifier, test_key())))
@@ -204,7 +213,7 @@ async fn put_with_write_capable_pat_reaches_downstream_probe_once() {
     // adapter has no PUT route, whose 405 could be forged inside the gate; this
     // test-only 204 probe exists only beyond `next.run`, so it makes that
     // transition observable and non-vacuous.
-    let (pt, _tenant, verifier) = pat_with_row_scope(SCOPE_RW);
+    let (pt, _tenant, verifier, lookup_calls) = pat_with_row_scope(SCOPE_RW);
     let cas: Arc<StubCas> = Arc::new(StubCas::default());
     let (app, probe) = router_with_put_probe(
         Arc::clone(&cas) as Arc<dyn CasReadHandler>,
@@ -227,6 +236,11 @@ async fn put_with_write_capable_pat_reaches_downstream_probe_once() {
         1,
         "the downstream PUT probe must run exactly once"
     );
+    assert_eq!(
+        lookup_calls.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "a successful write must perform exactly one PAT row lookup"
+    );
 }
 
 #[tokio::test]
@@ -237,7 +251,7 @@ async fn write_is_billed_to_the_pat_tenant_not_the_forged_header() {
     //
     // Status cannot answer this — $1/op against a fresh tenant is admitted
     // under either label — so the assertion reads the quota store back.
-    let (pt, pat_tenant, verifier) = pat_with_row_scope(SCOPE_RW);
+    let (pt, pat_tenant, verifier, _lookup_calls) = pat_with_row_scope(SCOPE_RW);
     let victim = Uuid::from_u128(0xDEAD).to_string();
     assert_ne!(
         victim,
@@ -278,7 +292,7 @@ async fn write_has_an_attribution_key_without_any_tenant_header() {
     // other source for the label. A WRITE with no tenant header must NOT
     // 503 — it already has the PAT-derived tenant. Same gate, same missing
     // header, opposite outcome, and the only difference is the F27 verify.
-    let (pt, pat_tenant, verifier) = pat_with_row_scope(SCOPE_RW);
+    let (pt, pat_tenant, verifier, _lookup_calls) = pat_with_row_scope(SCOPE_RW);
     let cas: Arc<StubCas> = Arc::new(StubCas::default());
     let (app, store) = router_with_quota_observable(
         Arc::clone(&cas) as Arc<dyn CasReadHandler>,

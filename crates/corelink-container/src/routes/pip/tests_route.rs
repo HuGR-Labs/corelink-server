@@ -72,6 +72,7 @@ async fn cache_hit_round_trip_with_tenant_stripped() {
             find_only: false,
             runner_job: false,
         },
+        calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
     };
     let verifier = Arc::new(PatVerifier::new(Arc::new(lookup), key));
 
