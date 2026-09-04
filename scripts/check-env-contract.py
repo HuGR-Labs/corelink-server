@@ -49,6 +49,12 @@ CONTAINER_SRC = REPO_ROOT / "crates" / "corelink-container" / "src"
 
 # The Durable Object TypeScript that boots the container.
 DO_TS = REPO_ROOT / "worker" / "src" / "durable_object.ts"
+# Small cohesive forwarding helpers are part of the same executable env
+# contract.  Keep the helper list explicit so a moved key cannot silently
+# disappear from this static gate.
+DO_FORWARD_HELPERS = (
+    REPO_ROOT / "worker" / "src" / "lib" / "pat_rotation_env.ts",
+)
 
 # ---------------------------------------------------------------------------
 # Env vars the container reads but that are intentionally excluded from the
@@ -295,6 +301,17 @@ def collect_do_forwarded_keys() -> set[str]:
     for m in DO_ENV_KEY_RE.finditer(env_block):
         key = m.group(1)
         forwarded.add(key)
+
+    # A cohesive helper may own a subset of the forwarding object.  Its
+    # returned object is spread into `env`, so scan its object-literal keys as
+    # part of the same contract.
+    for helper in DO_FORWARD_HELPERS:
+        if not helper.is_file():
+            print(f"ERROR: forwarding helper not found: {helper}", file=sys.stderr)
+            sys.exit(1)
+        helper_text = helper.read_text(encoding="utf-8")
+        for m in DO_ENV_KEY_RE.finditer(helper_text):
+            forwarded.add(m.group(1))
 
     return forwarded
 

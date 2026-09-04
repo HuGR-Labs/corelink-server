@@ -82,6 +82,8 @@ excludes:
 
   - surface: "worker/src/lib/pat_signing_key.ts"
     reason: "WP-F2 pure signing-key-validity predicate (`isValidPatSigningKeyHex` -- even-length, all-hex, >=64 chars) shared by the primary `PAT_SIGNING_KEY` gate and its rotation siblings. A single exported constant-fn, no I/O, no deps, no credentials, no request-reachable enforcement on its own; the call sites are owned by the auth/edge-pat-mint-lifecycle concept (primary-key fail-CLOSED in `worker/src/index.ts:1289`; rotation-sibling fail-CLOSED in `worker/src/index.ts:1412`). Same class as `worker/src/lib/blake3.ts` (a 3-line crypto helper) and `worker/src/lib/edge_do_meter.ts` (a boot-read feature flag). The shared-helper extraction IS the fix; this file is the predicate-only leaf -- the F2 fix narrative lives in the auth/edge-pat-mint-lifecycle concept."
+  - surface: "worker/src/lib/pat_rotation_env.ts"
+    reason: "Pure PAT secret normalization/forwarding leaf used by the Durable Object container-start env materializer. It performs only empty/blank normalization and object assembly, with no I/O, persistence, tenant lookup, or standalone enforcement; the load-bearing rotation narrative remains in auth/edge-pat-mint-lifecycle and the durable-object concept."
   - surface: "apps/*/src/types/**"
     reason: "Per-app shared type/binding declarations — types, no runtime behavior."
   - surface: "apps/analytics-worker/src/types.ts"

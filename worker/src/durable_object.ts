@@ -33,6 +33,7 @@ import type {
   Fetcher,
 } from "@cloudflare/workers-types";
 import type { Env } from "./index.js";
+import { patRotationEnv } from "./lib/pat_rotation_env.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
@@ -731,8 +732,7 @@ export class CoreLinkServer implements DurableObject {
     // double-counting cold starts. Closing the race requires flipping the
     // IN-MEMORY status to "starting" SYNCHRONOUSLY here — before the first await
     // — so any concurrent request that runs ensureContainerRunning next sees
-    // "starting" and falls into the waitForContainerReady branch instead of
-    // re-entering this method. (We avoid blockConcurrencyWhile here so we do not
+    // "starting" and falls into the waitForContainerReady branch instead of re-entering this method. (We avoid blockConcurrencyWhile here so we do not
     // serialize ALL fetches for the full ~90s startup window; the in-memory flip
     // is sufficient because the check and this flip are in the same microtask
     // turn with no intervening await.) The persisted write happens via
@@ -845,7 +845,7 @@ export class CoreLinkServer implements DurableObject {
           // or the route stays UNMOUNTED (fail-CLOSED) and every paid checkout
           // 403s `dpa_required` (the DPA row never gets written).
           DPA_RECEIPT_SIGNING_KEY: this.env.DPA_RECEIPT_SIGNING_KEY ?? "",
-          PAT_SIGNING_KEY: this.env.PAT_SIGNING_KEY ?? "",
+          ...patRotationEnv(this.env),
           // L3 money path: `POST /v1/onboarding/tier-select` runs INSIDE the
           // container and reads these from its OWN process env
           // (`tier_select::build_state_from_env` + `StripeRealClient::from_env`).

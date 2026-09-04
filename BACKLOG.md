@@ -5192,33 +5192,43 @@ para cada uma das duas variáveis.
 id: B-081
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   bash -c 'a=crates/corelink-container/src/adapter_pat.rs
   d=worker/src/durable_object.ts
+  h=worker/src/lib/pat_rotation_env.ts
+  t=worker/tests/pat_rotation_forward.test.ts
   [ -f "$a" ] && [ -f "$d" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
+  [ -f "$h" ] && [ -f "$t" ] || { echo "FALHA: prova focal sumiu — reavalie o item."; exit 1; }
   aceita=0; grep -q "PAT_SIGNING_KEY_PREV" "$a" && aceita=1
   [ "$aceita" = 1 ] || { echo "FALHA: o container nao aceita mais chaves de transicao — reavalie o item."; exit 1; }
-  enc=0
-  grep -q "PAT_SIGNING_KEY_PREV" "$d" && enc=$((enc+1))
-  grep -q "PAT_SIGNING_KEY_NEW" "$d" && enc=$((enc+1))
-  [ "$enc" -lt 2 ] || { echo "FALHA: o DO ja encaminha as duas chaves de transicao — feche o item."; exit 1; }
-  echo "aberto: container aceita PREV/NEW e o DO encaminha $enc de 2"'
+  grep -q "PAT_SIGNING_KEY_PREV" "$h" && grep -q "PAT_SIGNING_KEY_NEW" "$h" || { echo "FALHA: helper nao encaminha ambas as chaves."; exit 1; }
+  grep -q "patRotationEnv(this.env)" "$d" || { echo "FALHA: DO nao injeta o helper no container.start."; exit 1; }
+  pnpm --dir worker test:file tests/pat_rotation_forward.test.ts --run >/dev/null || { echo "FALHA: prova focal B-081 nao passou."; exit 1; }
+  echo "concluido: container aceita e o DO encaminha PREV/NEW; prova focal em $t"'
 verify-means: |
-  open — o contêiner aceita `PAT_SIGNING_KEY_PREV` E o Durable Object encaminha menos
-  que as duas chaves de transição.
+  done — o container aceita PREV/NEW, o helper mantém `undefined`/vazio como o
+  sentinel `""` e torna whitespace malformado, o DO
+  injeta esse helper em todo `container.start({ env })`, e o teste focal observa
+  os bytes realmente entregues ao container em uma instância tenant e na `_oci`.
 
-  Vira DRIFTED quando o DO encaminhar as duas, que é o reparo. Fecharia também se o
-  contêiner deixasse de aceitar chaves de transição — mas nesse caso a rotação sem
-  interrupção deixa de existir por decisão, e isso merece item próprio de recusa, não o
-  fechamento silencioso deste.
+  Este status cobre SOMENTE o reparo de código e sua prova focal. Não significa
+  que uma rotação esteja autorizada: o runbook `RB-PAT-SIGNING-KEY-ROTATION`
+  permanece DRAFT/BLOCKED até existir enumerador protegido, recycle idempotente
+  com ledger/retries, boot-generation attestation, probes edge/native incluindo
+  `_oci`, e rollback em todos os cinco ambientes.
 
-  Conta 0/1/2 em vez de exigir ambas: encaminhar só uma é um reparo pela metade que
-  ainda quebra a rotação, e o número mostra isso em vez de esconder.
+  O verificador é decision-bearing para o reparo: se o container deixar de
+  aceitar as chaves, o helper perder uma irmã, a injeção do DO desaparecer, ou
+  a prova focal for removida, este item fica DRIFTED. Ele não fecha nem substitui
+  a dependência operacional de população, que continua explicitamente aberta.
 
   Depende de [B-067] na sequência: é reparo de credencial, e `corelink-pat` hoje não tem
   execução de teste em CI.
-last-verified: 2026-08-30
+  A dependência operacional de população completa, recycle idempotente, attestation,
+  probes e rollback continua bloqueando qualquer rotação em produção; ela deve receber
+  um ID somente quando o allocator B169+ estiver presente neste ledger.
+last-verified: 2026-09-04
 ```
 
 ### B-082 — a sonda profunda de saúde do contêiner existe, funciona, e não é alcançável por ninguém

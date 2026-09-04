@@ -169,8 +169,8 @@ export interface Env {
   // PAT_SIGNING_KEY_NEW) so a PAT minted under either sibling still
   // HMAC-verifies through the overlap window — rotation (incl. rotate-on-
   // compromise) is then NOT an instant fleet-wide auth outage. Each is a
-  // hex string (≥ 32 bytes decoded); a malformed sibling is ignored (the
-  // current key remains the load-bearing gate). Bound via:
+  // hex string (≥ 32 bytes decoded); malformed siblings fail CLOSED (503),
+  // never silently shrinking the overlap set. Bound via:
   // `wrangler secret put PAT_SIGNING_KEY_PREV` / `..._NEW`.
   PAT_SIGNING_KEY_PREV?: string;
   PAT_SIGNING_KEY_NEW?: string;

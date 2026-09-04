@@ -16,3 +16,15 @@
 export function isValidPatSigningKeyHex(key: string): boolean {
   return key.length >= 64 && key.length % 2 === 0 && /^[0-9a-fA-F]+$/.test(key);
 }
+
+/**
+ * Normalize a Worker secret at the auth boundary. Cloudflare may expose an
+ * unset/empty optional secrets are the empty sentinel. Whitespace-only values
+ * use a deterministic malformed marker: the edge rejects the original value
+ * and any direct container start rejects the marker, so blank config can never
+ * become a silently skipped rotation sibling.
+ */
+export function normalizePatSigningKeyEnv(value: string | undefined): string {
+  if (!value) return "";
+  return value.trim().length === 0 ? "__invalid_blank_pat_signing_key__" : value;
+}
