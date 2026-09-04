@@ -22,6 +22,7 @@ import dataclasses
 import fcntl
 import math
 import os
+import secrets
 import shutil
 import stat
 import subprocess
@@ -40,6 +41,7 @@ MAX_CACHE_REPORT_BYTES = 1 << 40  # Keep inventory bounded at 1 TiB per cache.
 GIT_COMMAND_TIMEOUT_SECONDS = 5
 MAX_REPORT_SECONDS = 90
 MAX_IGNORED_PATHS = 100_000
+MAX_COMMAND_TIMEOUT_SECONDS = 24 * 60 * 60
 
 # These names are deliberately not paths.  Accepting arbitrary paths, globs,
 # environment expansion or ``..`` here would turn a diagnostic into a delete
@@ -105,6 +107,18 @@ def parse_timeout(value: str) -> float:
     if not math.isfinite(parsed) or not 0 <= parsed <= MAX_LOCK_TIMEOUT_SECONDS:
         raise argparse.ArgumentTypeError(
             f"lock timeout must be finite and between 0 and {MAX_LOCK_TIMEOUT_SECONDS} seconds"
+        )
+    return parsed
+
+
+def parse_command_timeout(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("command timeout must be a number of seconds") from error
+    if not math.isfinite(parsed) or not 0 < parsed <= MAX_COMMAND_TIMEOUT_SECONDS:
+        raise argparse.ArgumentTypeError(
+            f"command timeout must be finite and between 0 and {MAX_COMMAND_TIMEOUT_SECONDS} seconds"
         )
     return parsed
 
@@ -225,13 +239,17 @@ def nul_paths(output: str, *, limit: int = MAX_IGNORED_PATHS) -> list[str]:
 def tracked_cache_paths(root: Path, target: str) -> list[str]:
     """Return tracked index paths under one fixed cache name, NUL-safe."""
     output = git(root, "ls-files", "-z", "--", target, f"{target}/")
-    return nul_paths(output)
+    return nul_paths(output, limit=MAX_IGNORED_PATHS)
 
 
 def ignored_non_cache_paths(root: Path) -> list[str]:
     """Return ignored paths outside the four explicitly disposable caches."""
-    output = git(root, "ls-files", "--others", "--ignored", "--exclude-standard", "-z")
-    paths = nul_paths(output)
+    # Exclude disposable roots in Git itself. This prevents a huge ignored
+    # target/node_modules tree from being captured before our path bound runs.
+    excludes = tuple(f":(exclude){name}/**" for name in REGENERABLE_WORKTREE_CACHES)
+    output = git(root, "ls-files", "--others", "--ignored", "--exclude-standard", "-z",
+                 "--", ".", *excludes)
+    paths = nul_paths(output, limit=MAX_IGNORED_PATHS)
     return [path for path in paths if path.split("/", 1)[0] not in REGENERABLE_WORKTREE_CACHES]
 
 
@@ -428,17 +446,39 @@ def remove_cache_safely(root: Path, path: Path) -> None:
             current = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
             if (before.st_dev, before.st_ino) != (current.st_dev, current.st_ino):
                 raise GuardError("cache changed during deletion validation")
+            quarantine = f".corelink-capacity-quarantine-{os.getpid()}-{secrets.token_hex(8)}"
             try:
-                shutil.rmtree(path.name, dir_fd=parent_fd)
+                # Move the exact inode to a private sibling first. If an
+                # attacker renames the validated directory and replaces its
+                # public name, the identity check below refuses the replacement
+                # and nothing at the replacement name is deleted.
+                os.rename(path.name, quarantine, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+            except FileNotFoundError:
+                return
+            except OSError as error:
+                raise GuardError(f"cache changed during quarantine: {error}") from error
+            moved = os.stat(quarantine, dir_fd=parent_fd, follow_symlinks=False)
+            if (before.st_dev, before.st_ino) != (moved.st_dev, moved.st_ino):
+                try:
+                    os.rename(quarantine, path.name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+                except OSError:
+                    # If a replacement already occupies the public name, leave
+                    # both entries untouched rather than deleting either one.
+                    pass
+                raise GuardError("cache replacement detected during quarantine; nothing deleted")
+            try:
+                shutil.rmtree(quarantine, dir_fd=parent_fd)
             except (FileNotFoundError, NotADirectoryError):
                 # A concurrent remover is an idempotent success only when the
                 # entry is gone; a symlink or replacement is refusal below.
                 pass
             try:
-                os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+                os.stat(quarantine, dir_fd=parent_fd, follow_symlinks=False)
             except FileNotFoundError:
+                # The original inode was quarantined and removed. A concurrent
+                # replacement at the public name was never touched.
                 return
-            raise GuardError("cache changed during deletion; refusing replacement")
+            raise GuardError("cache changed during deletion; refusing quarantine replacement")
         finally:
             os.close(target_fd)
     finally:
@@ -489,20 +529,43 @@ def materialization_lock(root: Path, timeout_seconds: float) -> Iterator[None]:
     if not common.is_dir():
         raise GuardError("git common directory is not a directory")
     lock_path = common / "corelink-capacity-materialization.lock"
-    with lock_path.open("a+", encoding="utf-8") as lock:
+    if not getattr(os, "O_NOFOLLOW", 0):
+        raise GuardError("refusing lock: O_NOFOLLOW is unavailable")
+    lock_flags = os.O_RDWR | getattr(os, "O_CLOEXEC", 0) | os.O_NOFOLLOW
+    try:
+        lock_fd = os.open(lock_path, lock_flags | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        try:
+            lock_fd = os.open(lock_path, lock_flags)
+        except OSError as error:
+            raise GuardError(f"cannot open stable materialization lock: {error}") from error
+    except OSError as error:
+        raise GuardError(f"cannot create stable materialization lock: {error}") from error
+    try:
+        lock_stat = os.fstat(lock_fd)
+        path_stat = os.stat(lock_path, follow_symlinks=False)
+        if not stat.S_ISREG(lock_stat.st_mode) or (lock_stat.st_dev, lock_stat.st_ino) != (
+            path_stat.st_dev, path_stat.st_ino
+        ):
+            raise GuardError("materialization lock path changed or is not a regular file")
         deadline = time.monotonic() + timeout_seconds
         while True:
             try:
-                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
             except BlockingIOError:
                 if time.monotonic() >= deadline:
                     raise GuardError("materialization lock is held by another worktree; retry after it finishes")
                 time.sleep(0.05)
         try:
+            path_stat = os.stat(lock_path, follow_symlinks=False)
+            if (lock_stat.st_dev, lock_stat.st_ino) != (path_stat.st_dev, path_stat.st_ino):
+                raise GuardError("materialization lock path changed while acquiring lock")
             yield
         finally:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+    finally:
+        os.close(lock_fd)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -521,6 +584,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--min-free-inodes", type=parse_nonnegative_int,
                         default=DEFAULT_MIN_FREE_INODES,
                         help="minimum available inodes required by --gate (default: 1)")
+    parser.add_argument("--command-timeout-seconds", type=parse_command_timeout,
+                        default=float(MAX_COMMAND_TIMEOUT_SECONDS),
+                        help="hard bound for the locked command (default: 24 hours)")
     parser.add_argument("command", nargs=argparse.REMAINDER, help="command to run while --lock is held")
     args = parser.parse_args(argv)
     if args.execute and not args.cleanup:
@@ -563,7 +629,15 @@ def main(argv: list[str] | None = None) -> int:
                             file=sys.stderr,
                         )
                         return 1
-                completed = subprocess.run(args.command, cwd=root, check=False)
+                try:
+                    completed = subprocess.run(
+                        args.command, cwd=root, check=False,
+                        timeout=args.command_timeout_seconds,
+                    )
+                except subprocess.TimeoutExpired as error:
+                    raise GuardError(
+                        f"locked command exceeded {args.command_timeout_seconds:g}s; aborted"
+                    ) from error
                 return completed.returncode
         return 0
     except (GuardError, argparse.ArgumentTypeError) as error:

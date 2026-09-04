@@ -54,9 +54,14 @@ python3 scripts/capacity_guard.py --lock -- pnpm install --frozen-lockfile
 python3 scripts/capacity_guard.py --lock -- cargo fetch
 ```
 
-The command fails with exit `2` if another materialization holder exists (or
-use a finite `--lock-timeout-seconds N`, bounded to 24 hours). Compilation/test
-execution remains parallel after materialization. Callers should invoke
+The lock file is created/opened with `O_NOFOLLOW`, exclusive creation, and
+device/inode checks; a symlink or replacement lock path fails closed. The
+command fails with exit `2` if another materialization holder exists (or
+use a finite `--lock-timeout-seconds N`, bounded to 24 hours). The locked
+command also has a hard, configurable `--command-timeout-seconds N` bound
+(default 24 hours), so a hung Git/process cannot leave the guard waiting
+forever. Compilation/test execution remains parallel after materialization.
+Callers should invoke
 `--gate` only for the heavy mode that needs the precondition; validators-only
 work should not become red because of an unrelated capacity check.
 The child command's non-zero status, including an `ENOSPC` failure, is
@@ -76,9 +81,14 @@ delete it proves, with a NUL-delimited `git ls-files` query, that the cache has
 no tracked paths; ignored data outside those four exact cache roots also
 refuses cleanup. Paths, globs, environment expansion, `..`, symlinks,
 filesystem root, and worktree subdirectories are refused. Deletion requires a
-no-follow directory descriptor rooted at the validated worktree and a
-symlink-resistant `rmtree`; if the platform cannot provide that guarantee the
-guard refuses. It never automatically deletes code, untracked files, dirty
+no-follow directory descriptor rooted at the validated worktree. The validated
+inode is first renamed to a private sibling quarantine; a rename/replacement
+race is detected and restored/refused before any deletion. A
+symlink-resistant `rmtree` then removes only that quarantined inode; if the
+platform cannot provide the descriptor guarantee the guard refuses. Ignored
+cache roots are excluded by Git at the source of the NUL-delimited query, so
+large dependency trees are never captured as cleanup evidence. It never
+automatically deletes code, untracked files, dirty
 work, branches, a worktree, Docker, a Docker volume, or shared `$HOME` caches.
 
 Actual removal additionally requires `--execute` and the exact acknowledgement

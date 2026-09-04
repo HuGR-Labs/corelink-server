@@ -130,9 +130,31 @@ class CapacityGuardTests(unittest.TestCase):
         with mock.patch.dict(os.environ,
                              {"CORELINK_CAPACITY_ALLOW_DELETE": "delete-regenerable-cache"}), \
              mock.patch.object(guard.shutil, "rmtree", side_effect=swap_then_remove):
-            with self.assertRaises(OSError):
+            with self.assertRaisesRegex(guard.GuardError, "quarantine replacement"):
                 guard.dry_run_cleanup(self.root, ["target"], execute=True)
         self.assertTrue((outside / "keep").exists())
+
+    def test_execute_refuses_directory_swap_without_deleting_replacement(self) -> None:
+        (self.root / "target").mkdir()
+        (self.root / "target" / "SECRET").write_text("original", encoding="utf-8")
+        original_rename = guard.os.rename
+
+        def swap_then_rename(src: str, dst: str, *, src_dir_fd: int, dst_dir_fd: int) -> None:
+            if src == "target":
+                original_rename(self.root / "target", self.root / "target-original")
+                (self.root / "target").mkdir()
+                (self.root / "target" / "SECRET").write_text("replacement", encoding="utf-8")
+            original_rename(src, dst, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd)
+
+        with mock.patch.dict(os.environ,
+                             {"CORELINK_CAPACITY_ALLOW_DELETE": "delete-regenerable-cache"}), \
+             mock.patch.object(guard.os, "rename", side_effect=swap_then_rename):
+            with self.assertRaisesRegex(guard.GuardError, "replacement"):
+                guard.dry_run_cleanup(self.root, ["target"], execute=True)
+        self.assertEqual((self.root / "target-original" / "SECRET").read_text(encoding="utf-8"),
+                         "original")
+        self.assertEqual((self.root / "target" / "SECRET").read_text(encoding="utf-8"),
+                         "replacement")
 
     def test_root_rejects_filesystem_root_symlink_glob_and_subdirectory(self) -> None:
         link = Path(self.temp.name) / "repo-link"
@@ -181,6 +203,28 @@ class CapacityGuardTests(unittest.TestCase):
         with mock.patch.object(guard, "MAX_CACHE_SCAN_ENTRIES", 1):
             with self.assertRaisesRegex(guard.GuardError, "scan exceeded"):
                 guard.directory_size(self.root / "target")
+
+    def test_huge_ignored_path_evidence_is_bounded(self) -> None:
+        (self.root / ".git" / "info" / "exclude").write_text("ignored-*\n", encoding="utf-8")
+        for number in range(3):
+            (self.root / f"ignored-{number}").write_text("x\n", encoding="utf-8")
+        with mock.patch.object(guard, "MAX_IGNORED_PATHS", 2):
+            with self.assertRaisesRegex(guard.GuardError, "path evidence"):
+                guard.ignored_non_cache_paths(self.root)
+
+    def test_ignored_disposable_cache_is_excluded_before_capture(self) -> None:
+        (self.root / "target").mkdir()
+        (self.root / ".git" / "info" / "exclude").write_text("target\n", encoding="utf-8")
+        for number in range(3):
+            (self.root / "target" / f"artifact-{number}").write_text("x\n", encoding="utf-8")
+        with mock.patch.object(guard, "MAX_IGNORED_PATHS", 0):
+            self.assertEqual(guard.ignored_non_cache_paths(self.root), [])
+
+    def test_hung_git_evidence_is_indeterminate(self) -> None:
+        timeout = subprocess.TimeoutExpired(["git"], guard.GIT_COMMAND_TIMEOUT_SECONDS)
+        with mock.patch.object(guard.subprocess, "run", side_effect=timeout):
+            with self.assertRaisesRegex(guard.GuardError, "timed out"):
+                guard.git(self.root, "status")
 
     def test_dry_run_never_calls_rmtree(self) -> None:
         (self.root / "target").mkdir()
@@ -245,6 +289,23 @@ class CapacityGuardTests(unittest.TestCase):
             guard.main(["--root", str(self.root), "--lock", "--",
                         sys.executable, "-c", "raise SystemExit(28)"]),
             28,
+        )
+
+    def test_lock_symlink_is_refused_without_following_target(self) -> None:
+        outside = Path(self.temp.name) / "lock-outside"
+        outside.write_text("keep", encoding="utf-8")
+        lock_path = self.root / ".git" / "corelink-capacity-materialization.lock"
+        lock_path.symlink_to(outside)
+        with self.assertRaisesRegex(guard.GuardError, "lock"):
+            with guard.materialization_lock(self.root, 0):
+                pass
+        self.assertEqual(outside.read_text(encoding="utf-8"), "keep")
+
+    def test_locked_command_timeout_is_indeterminate(self) -> None:
+        self.assertEqual(
+            guard.main(["--root", str(self.root), "--lock", "--command-timeout-seconds", "0.01",
+                        "--", sys.executable, "-c", "import time; time.sleep(1)"]),
+            2,
         )
 
     def test_gate_rechecks_capacity_after_waiting_for_lock(self) -> None:
