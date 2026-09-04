@@ -51,10 +51,10 @@ The residency posture governs where tenant bytes physically rest and stops a mis
 
 - `specs/03_architecture/adrs/ADR-S14-009-cas-residency-single-bucket-launch-posture.md:27-33` — single-bucket native-CAS write reality (global `R2_CAS_REGION`, region-in-key).
 - `specs/03_architecture/adrs/ADR-S14-009-cas-residency-single-bucket-launch-posture.md:40-51` — logical-vs-physical, the false-confidence trap.
-- `specs/03_architecture/adrs/ADR-S14-009-cas-residency-single-bucket-launch-posture.md:55-57`, `:75-80` — launch decision + EU-customer guardrail.
-- `docs/security/2026-06-23-secreview-gdpr-residency.md:21-24`, `:99-108` — EU residency is real; US-default honest.
-- `docs/security/2026-06-23-secreview-gdpr-residency.md:126-150`, `:152-162`, `:164-178`, `:202-206` — M-1/L-1/L-2 residuals + the no-SA-region fail-loud.
-- `crates/corelink-container/src/routes/residency.rs:5-13`, `:41-53`, `:62-102`, `:118-129` — the container-side residency guard and pure decision.
+- `specs/03_architecture/adrs/ADR-S14-009-cas-residency-single-bucket-launch-posture.md:55-57`, `:77-80` — launch decision + EU-customer guardrail.
+- `docs/security/2026-06-23-secreview-gdpr-residency.md:21-24`, `:100-108` — EU residency is real; US-default honest.
+- `docs/security/2026-06-23-secreview-gdpr-residency.md:126-150`, `:154-162`, `:166-178`, `:202-206` — M-1/L-1/L-2 residuals + the no-SA-region fail-loud.
+- `crates/corelink-container/src/routes/residency.rs:5-13`, `:51-53`, `:62-102`, `:118-129` — the container-side residency guard and pure decision.
 - `crates/corelink-container/src/storage/region_map.rs:76-84` — `colo_for_macro`: the frozen MACRO→colo map (single source of truth), `None`/reject for `afr` + unrecognised.
 - `crates/corelink-container/src/storage/region_map.rs:52`, `:95-96` — `PROVISIONED_MACROS` = `{wnam, enam, weur, apac}` + `is_provisioned_macro` (apac now provisioned; `sam` the sole routable-but-unprovisioned macro — no CF SAM region; afr rejectable).
 - `crates/corelink-container/src/storage/region_map.rs:1-14` — the Schrems-II leak fix rationale + the byte-for-byte `worker/src/region-map.ts` mirror contract.

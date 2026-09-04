@@ -15,3 +15,6 @@
   resíduos em citações corretas. Números de linha com milhares de dígitos agora
   viram `malformed-range` (sem `ValueError`/traceback), e o `verify` instala o
   cleanup imediatamente após o primeiro `mktemp`, inclusive se o segundo falhar.
+  A reancoragem posterior conferiu os 105 atalhos restantes e o resolvedor agora
+  sai `0` (`OK`, zero resíduos); o ledger permanece `open` até o gate OKF completo
+  confirmar essa reancoragem.

@@ -205,7 +205,7 @@ isolation fix), fail-CLOSED 500 on any D1 fault (never a shared tenant).
 7. `worker/src/lib/clerk_auth.ts:216-230` — production fails CLOSED when `CLERK_ISSUER_URL` is unset.
 8. `worker/src/lib/clerk_auth.ts:247` — verified token without `sub` → 401.
 9. `worker/src/lib/clerk_auth.ts:302-307` — the **team-member-MISS** branch: a subject with no owner row AND no active `team_member` row → 403 (dashboard pipeline). NOT a plain no-row branch — it is reached only after the owner arm misses and the `team_member` fallback also misses.
-10. `worker/src/lib/clerk_auth.ts:284` — owner arm: `SELECT tenant_id FROM tenant WHERE clerk_user_id = ?1` (a hit sets `role = "owner"` at `:293`).
+10. `worker/src/lib/clerk_auth.ts:284` — owner arm: `SELECT tenant_id FROM tenant WHERE clerk_user_id = ?1` (a hit sets `role = "owner"` at `:289`).
 11. `worker/src/lib/clerk_auth.ts:298-301` — additive team-member fallback: `SELECT tenant_id, role FROM team_member WHERE user_id = ?1 AND status = 'active'` resolves to the team-owning tenant and carries the seat's RBAC role (migration 0074); the role fails safe to `viewer` at `:284`.
 11a. `worker/src/lib/clerk_auth.ts:281` — RBAC role default: `role` initialized to the least-privilege `viewer` before either resolution arm runs.
 12. `migrations/d1/0074_team_member.sql:65-66` — the `(user_id, status)` index backing the team-member resolution arm (the `team_member` table is defined at `:28-57`).

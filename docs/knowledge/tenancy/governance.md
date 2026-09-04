@@ -143,7 +143,7 @@ self-service plane. It rests on the same trusted tenant id established by
 
 # Citations
 
-1. `crates/corelink-container/src/routes/ratelimit_layer.rs:505-531` — the EXECUTED `rate_limit_layer` enforcer (the `:15-49` ranges are the module `//!` doc-comments describing it).
+1. `crates/corelink-container/src/routes/ratelimit_layer.rs:505-531` — the EXECUTED `rate_limit_layer` enforcer; the module documentation above it describes the same contract.
 2. `crates/corelink-container/src/routes/build.rs:629-632` — the single `.layer(...)` wiring; `/_health` + `/_internal/*` are merged AFTER it in `main.rs`, so exclusion is structural (not a path check inside the layer).
 3. `crates/corelink-container/src/routes/ratelimit_layer.rs:510-515` — the executed keying: read of the edge-injected `TENANT_HEADER` (`x-corelink-tenant-id`).
 4. `crates/corelink-ratelimit/src/audit.rs:147`, `crates/corelink-ratelimit/src/metrics.rs:177` — the `InMemoryRateLimit*` capture sinks (unbounded `Vec`/`HashMap`); the prod NoOp sinks are constructed at `crates/corelink-container/src/routes/build.rs:592-610`.
