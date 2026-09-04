@@ -65,7 +65,6 @@
 1075	crates/corelink-telemetry/src/lighthouse.rs
 1072	crates/corelink-gc/src/sweep_runner.rs
 1047	crates/corelink-enterprise-inquiry/src/ledger.rs
-1044	crates/corelink-billing/src/quota/core/check.rs
 1035	crates/corelink-byok/src/byok_gcp/real.rs
 1025	crates/corelink-gc/src/run.rs
 1019	crates/corelink-dsr/src/event.rs
