@@ -732,8 +732,7 @@ export class CoreLinkServer implements DurableObject {
     // double-counting cold starts. Closing the race requires flipping the
     // IN-MEMORY status to "starting" SYNCHRONOUSLY here — before the first await
     // — so any concurrent request that runs ensureContainerRunning next sees
-    // "starting" and falls into the waitForContainerReady branch instead of
-    // re-entering this method. (We avoid blockConcurrencyWhile here so we do not
+    // "starting" and falls into the waitForContainerReady branch instead of re-entering this method. (We avoid blockConcurrencyWhile here so we do not
     // serialize ALL fetches for the full ~90s startup window; the in-memory flip
     // is sufficient because the check and this flip are in the same microtask
     // turn with no intervening await.) The persisted write happens via
