@@ -72,5 +72,4 @@
 1019	crates/corelink-dsr/src/event.rs
 1010	tests/e2e-user-journeys/src/journeys/adapters.rs
 1008	crates/corelink-byok/src/byok_aws/real.rs
-1002	crates/corelink-billing/src/quota/cas/cas.rs
 1001	crates/corelink-rate-headers/tests/prop_rate_headers.rs
