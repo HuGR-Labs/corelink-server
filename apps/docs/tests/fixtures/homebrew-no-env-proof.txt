@@ -1,0 +1,5 @@
+WP-B161-AUTH-NO-FALLBACK-20260901
+command: brew fetch --force jq
+result: exit 0
+corelink_environment: absent
+upstream: ghcr.io

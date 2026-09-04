@@ -2,73 +2,97 @@
 id: homebrew
 title: Espelho de bottles do Homebrew
 sidebar_position: 8
-description: Aponte o Homebrew para o CoreLink para cachear downloads de bottles no seu tenant.
+description: O caminho seguro do espelho autenticado de bottles do Homebrew.
 ---
-
-<!-- i18n:MT (pt-BR) — TMX-seeded machine-translation stub; replace with native-speaker translation before GA -->
-
-> MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
->
-> Canonical EN source: `docs/integrations/homebrew.md`
 
 # Espelho de bottles do Homebrew
 
-O CoreLink cacheia **bottles do Homebrew** (os binários `.tar.gz` pré-compilados que o `brew
-install` baixa). Em um acerto de cache, a bottle é servida a partir do CAS do seu tenant;
-em uma falha, o CoreLink a busca do upstream (`ghcr.io`), a cacheia e a transmite
-de volta. Isso acelera reinstalações repetidas entre máquinas e na CI.
+:::caution Caminho seguro do espelho autenticado
+O Homebrew moderno (o padrão `install-from-API`, Homebrew 4.x ou posterior)
+pode reescrever as URLs de bottles do `ghcr.io` por meio de
+`HOMEBREW_ARTIFACT_DOMAIN`. O endpoint `/brew/<tenant>` do CoreLink aceita o
+PAT bearer resultante e obtém a bottle do upstream fixo `ghcr.io`. Esta página
+é mantida porque tanto o fluxo autenticado quanto o fluxo normal do Homebrew
+são suportados. Fontes de taps, casks (`.dmg`/`.pkg`) e `brew bottle` ficam
+fora deste escopo.
 
-Este é um espelho de **caminho de leitura** para o `brew install`. Fontes de taps, casks
-(`.dmg`/`.pkg`) e `brew bottle` estão fora do escopo.
+A opção sem fallback é obrigatória. Sem ela, o Homebrew tenta novamente a URL
+original do `ghcr.io` quando o espelho falha e pode enviar o bearer ao GitHub em
+vez do CoreLink. Nunca use a receita antiga que não tinha essa proteção.
+:::
 
-## Pré-requisitos
+<!-- WP-B161-AUTH-NO-FALLBACK-20260901: o espelho autenticado fica preso ao CoreLink. -->
 
-- Homebrew instalado.
-- Um PAT do CoreLink (`corelink_pat_...`).
-- O UUID do seu tenant.
+## Caminho seguro: espelho autenticado do CoreLink
 
-## Configurar
-
-O Homebrew só anexa um cabeçalho `Authorization` quando o host da bottle é
-alcançado por meio de `HOMEBREW_ARTIFACT_DOMAIN` (que mantém a estratégia de download
-autenticado do GitHub Packages do Homebrew). Defina o domínio de artefatos para o caminho do seu tenant
-e passe o PAT via `HOMEBREW_DOCKER_REGISTRY_TOKEN`:
+Obtenha um PAT real do CoreLink no seu gerenciador de segredos e exponha-o
+somente como `CORELINK_PAT` no shell em que o Homebrew será executado. Não cole
+o token em documentos, no histórico do shell nem em logs. Defina as três
+variáveis juntas:
 
 ```bash
 export HOMEBREW_ARTIFACT_DOMAIN="https://corelink-api.humangr.com/brew/<your-tenant-id>"
-export HOMEBREW_DOCKER_REGISTRY_TOKEN="corelink_pat_XXXXXXXXXXXXXXXXXXXXXXXX"
-brew install <formula>
+export HOMEBREW_ARTIFACT_DOMAIN_NO_FALLBACK=1
+export HOMEBREW_DOCKER_REGISTRY_TOKEN="$CORELINK_PAT"
+brew install jq
 ```
 
-O Homebrew transforma `HOMEBREW_DOCKER_REGISTRY_TOKEN` em
-`Authorization: Bearer corelink_pat_...` em cada download de bottle, que é o que
-o CoreLink autentica.
+O Homebrew mantém sua estratégia de GitHub Packages para a bottle do `ghcr.io`,
+reescreve a URL para o domínio de artefatos e transforma
+`HOMEBREW_DOCKER_REGISTRY_TOKEN` em `Authorization: Bearer <token>`. Com
+`HOMEBREW_ARTIFACT_DOMAIN_NO_FALLBACK=1`, esse bearer é enviado somente ao
+domínio do CoreLink; uma falha do espelho produz um erro, não uma tentativa no
+`ghcr.io`. O adaptador do CoreLink autentica o bearer e busca o conteúdo do
+`ghcr.io` no lado do servidor.
 
-:::warning Use `HOMEBREW_ARTIFACT_DOMAIN`, não `HOMEBREW_BOTTLE_DOMAIN`
-Um `HOMEBREW_BOTTLE_DOMAIN` puro seleciona a estratégia de download simples do Homebrew,
-que **não** envia nenhum cabeçalho de autenticação — então ela não consegue se autenticar no CoreLink e
-todo download falha com 401. `HOMEBREW_ARTIFACT_DOMAIN` é obrigatório.
-:::
-
-## Verificar se funcionou
-
-Instale uma formula pequena duas vezes em máquinas diferentes (ou limpe o cache de
-download local entre as execuções). A segunda instalação puxa a bottle cacheada do
-CoreLink:
+Não substitua o domínio de artefatos por `HOMEBREW_BOTTLE_DOMAIN`. Esse override
+legado de arquivos planos não seleciona a estratégia autenticada do GitHub
+Packages do Homebrew e não consegue fornecer o bearer exigido pelo `/brew`.
 
 ```bash
-brew install --verbose jq 2>&1 | grep corelink-api.humangr.com | head
+brew install jq
 ```
 
-Ver requisições para `corelink-api.humangr.com/brew/...` confirma que o Homebrew está
-usando o espelho.
+Para exercitar somente o download, sem instalar a fórmula, mantenha as mesmas
+três variáveis e execute:
 
-## Resolução de problemas
+```bash
+brew fetch --force jq
+```
 
-| Sintoma | Causa provável | Correção |
+O fluxo público sem configuração também continua válido: remova as três
+variáveis específicas do CoreLink e o Homebrew baixará diretamente do upstream.
+
+## Por que a receita antiga do espelho foi removida
+
+A receita anterior definia `HOMEBREW_ARTIFACT_DOMAIN` e
+`HOMEBREW_DOCKER_REGISTRY_TOKEN`, mas omitia
+`HOMEBREW_ARTIFACT_DOMAIN_NO_FALLBACK`. Essa omissão era insegura: quando o
+espelho falhava, o Homebrew podia tentar o `ghcr.io` novamente com o bearer do
+CoreLink. Um PAT do CoreLink nunca deve ser enviado ao upstream; bloqueie o
+fallback antes de definir o token.
+
+O código de status diferencia os dois casos observados na verificação:
+
+| Teste | Resultado | Significado |
 |---|---|---|
-| `401 Unauthorized` em todo download | Usou `HOMEBREW_BOTTLE_DOMAIN` (sem cabeçalho de autenticação) | Mude para `HOMEBREW_ARTIFACT_DOMAIN` |
-| `401` com o domínio de artefatos definido | Token ausente ou malformado | Defina `HOMEBREW_DOCKER_REGISTRY_TOKEN=corelink_pat_...` |
-| `403 Forbidden` | PAT com escopo para um tenant diferente | Confirme que o `<tenant>` no domínio corresponde ao tenant do seu PAT |
+| Sem variáveis do CoreLink | `brew` termina com `0` | O caminho direto para o upstream funciona. |
+| Domínio de artefatos sem credencial | `401 Unauthorized` | O espelho não recebeu bearer; use o PAT somente no espelho fixado. |
+| Domínio de artefatos com token e sem fallback | `Authorization: Bearer <token>` no CoreLink | O contrato do espelho autenticado está ativo. |
+| Token sem domínio de artefatos ou sem proteção de fallback | `403 Forbidden` pode vir do `ghcr.io` | Configuração insegura; remova-a e reaplique o bloco fixado. |
 
-Referência completa de erros: [Resolução de problemas](../troubleshooting.md).
+A diferença entre `401` e `403` comprova a transmissão de credencial, não é
+uma solução. Não configure um token para transformar `401` em `403` e nunca
+envie um PAT do CoreLink ao `ghcr.io`.
+
+## Solução de problemas
+
+| Sintoma | Significado | Ação |
+|---|---|---|
+| `brew install` funciona sem variáveis do CoreLink | O Homebrew está usando o caminho direto do upstream | Mantenha o fluxo sem configuração. |
+| `401 Unauthorized` do domínio do CoreLink | O bearer está ausente ou inválido | Verifique a origem e o escopo do PAT; não adicione fallback. |
+| `403 Forbidden` do `ghcr.io` | O token foi enviado ao upstream | Pare, remova o token e reaplique o bloco com proteção. |
+| Há domínio personalizado sem `HOMEBREW_ARTIFACT_DOMAIN_NO_FALLBACK=1` | Uma falha pode voltar ao `ghcr.io` | Trate a configuração como insegura até adicionar a proteção. |
+
+Para uma integração de cache compatível, consulte [Solução de problemas](../troubleshooting.md)
+e escolha uma das integrações listadas acima.
