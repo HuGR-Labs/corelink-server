@@ -606,42 +606,169 @@ def collect_app_routes() -> dict[str, set[str]]:
 
 
 def strip_ts_comments(src: str) -> str:
-    """Blank JS/TS line and block comments without shifting source offsets."""
+    """Blank JS/TS comments without shifting source offsets.
+
+    Templates need a little more than ordinary string handling: comments are
+    live only inside a ``${...}`` expression, while the rest of the template
+    is literal text. Every lexical state must terminate before this helper
+    returns; otherwise a truncated fixture could hide a live ``.pathname``
+    token from the parity census.
+    """
     out: list[str] = []
-    i = 0
     n = len(src)
-    quote: str | None = None
-    while i < n:
-        c = src[i]
-        if quote:
-            out.append(c)
-            if c == "\\" and i + 1 < n:
-                out.append(src[i + 1])
-                i += 2
+
+    def looks_like_regex_start(i: int) -> bool:
+        previous = i - 1
+        while previous >= 0 and src[previous].isspace():
+            previous -= 1
+        if previous < 0 or src[previous] in "=([{,:;!&|?":
+            return True
+        end = previous + 1
+        while previous >= 0 and (src[previous].isalnum() or src[previous] in "_$"):
+            previous -= 1
+        return src[previous + 1 : end] in {
+            "case",
+            "delete",
+            "do",
+            "else",
+            "in",
+            "instanceof",
+            "of",
+            "return",
+            "throw",
+            "typeof",
+            "void",
+            "yield",
+        }
+
+    def copy_regex(i: int) -> int:
+        out.append("/")
+        i += 1
+        in_class = False
+        while i < n:
+            character = src[i]
+            out.append(character)
+            i += 1
+            if character == "\\":
+                if i < n:
+                    out.append(src[i])
+                    i += 1
                 continue
-            if c == quote:
-                quote = None
+            if character == "[":
+                in_class = True
+            elif character == "]":
+                in_class = False
+            elif character == "/" and not in_class:
+                while i < n and (src[i].isalnum() or src[i] in "_$"):
+                    out.append(src[i])
+                    i += 1
+                return i
+            elif character == "\n":
+                raise SourceSyntaxError("unterminated regex literal")
+        raise SourceSyntaxError("unterminated regex literal")
+
+    def copy_quoted(i: int, quote: str) -> int:
+        out.append(src[i])
+        i += 1
+        while i < n:
+            character = src[i]
+            out.append(character)
             i += 1
-            continue
-        if c in "\"'`":
-            quote = c
-            out.append(c)
+            if character == "\\":
+                if i < n:
+                    out.append(src[i])
+                    i += 1
+            elif character == quote:
+                return i
+        raise SourceSyntaxError("unterminated quoted string literal")
+
+    def blank_block_comment(i: int) -> int:
+        end = src.find("*/", i + 2)
+        if end < 0:
+            raise SourceSyntaxError("unterminated block comment")
+        end += 2
+        out.extend("\n" if character == "\n" else " " for character in src[i:end])
+        return end
+
+    def copy_template(i: int) -> int:
+        out.append("`")
+        i += 1
+        while i < n:
+            character = src[i]
+            if character == "\\":
+                out.append(character)
+                i += 1
+                if i < n:
+                    out.append(src[i])
+                    i += 1
+                continue
+            if character == "`":
+                out.append(character)
+                return i + 1
+            if src.startswith("${", i):
+                out.extend(("$", "{"))
+                i = copy_template_expression(i + 2)
+                continue
+            out.append(character)
             i += 1
+        raise SourceSyntaxError("unterminated template literal")
+
+    def copy_template_expression(i: int) -> int:
+        depth = 0
+        while i < n:
+            character = src[i]
+            if src.startswith("//", i):
+                end = src.find("\n", i)
+                end = n if end < 0 else end
+                out.extend(" " for _ in range(end - i))
+                i = end
+                continue
+            if src.startswith("/*", i):
+                i = blank_block_comment(i)
+                continue
+            if character in "\"'":
+                i = copy_quoted(i, character)
+                continue
+            if character == "`":
+                i = copy_template(i)
+                continue
+            if character == "{":
+                out.append(character)
+                depth += 1
+                i += 1
+                continue
+            if character == "}":
+                out.append(character)
+                if depth == 0:
+                    return i + 1
+                depth -= 1
+                i += 1
+                continue
+            out.append(character)
+            i += 1
+        raise SourceSyntaxError("unterminated template interpolation")
+
+    i = 0
+    while i < n:
+        if src.startswith("//", i):
+            end = src.find("\n", i)
+            end = n if end < 0 else end
+            out.extend(" " for _ in range(end - i))
+            i = end
             continue
-        if c == "/" and i + 1 < n and src[i + 1] == "/":
-            j = src.find("\n", i)
-            j = n if j == -1 else j
-            out.extend(" " * (j - i))
-            i = j
+        if src.startswith("/*", i):
+            i = blank_block_comment(i)
             continue
-        if c == "/" and i + 1 < n and src[i + 1] == "*":
-            j = src.find("*/", i + 2)
-            j = n if j == -1 else j + 2
-            chunk = src[i:j]
-            out.extend("\n" if ch == "\n" else " " for ch in chunk)
-            i = j
+        if src[i] == "/" and looks_like_regex_start(i):
+            i = copy_regex(i)
             continue
-        out.append(c)
+        if src[i] in "\"'":
+            i = copy_quoted(i, src[i])
+            continue
+        if src[i] == "`":
+            i = copy_template(i)
+            continue
+        out.append(src[i])
         i += 1
     return "".join(out)
 
@@ -727,7 +854,7 @@ def _skip_quoted(src: str, start: int, quote: str) -> int:
     return len(src)
 
 
-def _live_pathname_tokens(src: str) -> list[tuple[int, str]]:
+def _live_pathname_tokens(src: str, *, validated: bool = False) -> list[tuple[int, str]]:
     """Find live ``.pathname`` tokens, including template interpolations.
 
     A regex over source text cannot distinguish a route token from a comment or
@@ -736,6 +863,10 @@ def _live_pathname_tokens(src: str) -> list[tuple[int, str]]:
     code while its literal portions remain inert.  Offsets are preserved so a
     dispatch matcher can consume the exact token it recognized.
     """
+    # Reuse the comment/literal lexer as a syntax precondition. The scanner
+    # below works on the original source to preserve exact token offsets.
+    if not validated:
+        strip_ts_comments(src)
     tokens: list[tuple[int, str]] = []
     n = len(src)
 
@@ -911,7 +1042,9 @@ def collect_app_pathname_census() -> list[str]:
         aliases = app_path_aliases(src)
         spans = app_dispatch_spans(src, aliases)
         relative = str(file.relative_to(REPO))
-        for offset, expression in _live_pathname_tokens(raw):
+        # ``src`` has the same offsets as ``raw`` and has already passed the
+        # syntax-checked comment/literal pass, so avoid lexing each file twice.
+        for offset, expression in _live_pathname_tokens(src, validated=True):
             if any(start <= offset < end for start, end in spans):
                 continue
             if (relative, expression) in APP_NON_DISPATCH_ALLOWLIST:
@@ -1180,6 +1313,39 @@ def app_mutation_self_test() -> list[str]:
                 failures.append("test/spec/Playwright/e2e app fixtures entered production census")
             if any("lexical.ts" in finding for finding in unsupported):
                 failures.append("comments or strings entered live pathname census")
+
+            # A malformed app source must make the real directory walk red at
+            # the lexical state that is incomplete. Otherwise a truncated
+            # comment/string/template can swallow a route and produce a false
+            # green parity report.
+            malformed = (
+                ("unterminated-block.ts", "/* url.pathname\n", "block comment"),
+                ("unterminated-string.ts", 'const hidden = "url.pathname;\n', "quoted string"),
+                ("unterminated-template.ts", "const hidden = `url.pathname;\n", "template literal"),
+                (
+                    "unterminated-interpolation.ts",
+                    "const hidden = `${url.pathname\n",
+                    "template interpolation",
+                ),
+            )
+            for name, source, reason in malformed:
+                path = apps / name
+                path.write_text(source, encoding="utf-8")
+                try:
+                    collect_app_routes()
+                except SourceSyntaxError as exc:
+                    if reason not in str(exc):
+                        failures.append(f"{name} failed for wrong reason: {exc}")
+                else:
+                    failures.append(f"{name} did not fail closed in app route extraction")
+                try:
+                    _live_pathname_tokens(source)
+                except SourceSyntaxError as exc:
+                    if reason not in str(exc):
+                        failures.append(f"{name} live lexer failed for wrong reason: {exc}")
+                else:
+                    failures.append(f"{name} did not fail closed in live pathname lexer")
+                path.unlink()
             # `missing_route` is intentionally unused above: the strict-red
             # assertion is the served -> documented direction exercised here.
             del missing_route
@@ -1428,11 +1594,11 @@ def main() -> int:
     try:
         rust_routes = collect_rust_routes()
         worker_routes = collect_worker_routes()
+        app_routes = collect_app_routes()
+        app_unsupported = collect_app_unsupported()
     except (OSError, UnicodeDecodeError, SourceSyntaxError) as exc:
         print(f"FATAL: route source parse failure: {exc}")
         return 2
-    app_routes = collect_app_routes()
-    app_unsupported = collect_app_unsupported()
 
     if args.self_test:
         print("validate_api_surface self-test (positive controls)\n")
