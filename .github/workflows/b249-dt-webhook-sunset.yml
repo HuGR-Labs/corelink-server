@@ -1,0 +1,36 @@
+name: B249 Dependency-Track webhook sunset guard
+
+# No Cargo/CI: this focal gate checks the source contract and mutation teeth.
+on:
+  pull_request:
+    paths:
+      - 'crates/corelink-dt-webhook/src/handler.rs'
+      - 'scripts/verify_b249_dt_webhook_sunset.py'
+      - 'tests/test_verify_b249_dt_webhook_sunset.py'
+      - 'changelog.d/PENDING-b249-dt-webhook-sunset.md'
+      - '.github/workflows/b249-dt-webhook-sunset.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'crates/corelink-dt-webhook/src/handler.rs'
+      - 'scripts/verify_b249_dt_webhook_sunset.py'
+      - 'tests/test_verify_b249_dt_webhook_sunset.py'
+      - 'changelog.d/PENDING-b249-dt-webhook-sunset.md'
+      - '.github/workflows/b249-dt-webhook-sunset.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  b249-sunset:
+    runs-on: corelink
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+        with:
+          fetch-depth: 1
+      - name: Verify D01 sunset contract and mutations
+        run: python3 scripts/verify_b249_dt_webhook_sunset.py --self-test
+      - name: Run focal verifier tests
+        run: python3 -m unittest -v tests/test_verify_b249_dt_webhook_sunset.py
