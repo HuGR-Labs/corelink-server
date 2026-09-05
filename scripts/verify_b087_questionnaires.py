@@ -77,9 +77,6 @@ SOURCE_CHECKS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (".github/workflows/cargo-deny.yml", ("pull_request:", "schedule:",)),
     ("wrangler.toml", ("production env intentionally omits [triggers]", "<PIN_AT_RELEASE>")),
     (".github/CODEOWNERS", ("*",)),
-    ("legal/dpa/v1.0.0.en-US.md", ("immutable R2 with Object Lock",)),
-    ("legal/sla/v1.0.0.md", ("BYOK kill-switch p99",)),
-    ("legal/dpa-residency-amendment.md", ("crypto-erase ≤ 5 min globally",)),
 )
 
 

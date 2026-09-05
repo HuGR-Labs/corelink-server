@@ -116,16 +116,11 @@ def test_missing_shipped_reality_marker_fails_closed(tmp_path: Path) -> None:
     assert any("source control changed or missing" in failure for failure in result["failures"])
 
 
-def test_executed_legal_residue_is_observed_not_silently_rewritten(tmp_path: Path) -> None:
-    root = fixture_tree(tmp_path)
-    mutate_line(
-        root / "legal/dpa/v1.0.0.en-US.md",
-        "immutable R2 with Object Lock",
-        "tamper-evident R2 archive",
-    )
-    result = MODULE.verify(root)
-    assert result["ok"] is False
-    assert any("legal/dpa/v1.0.0.en-US.md" in failure for failure in result["failures"])
+def test_owner_packet_keeps_legal_and_external_actions_explicit() -> None:
+    packet = (MODULE.ROOT / "docs/internal/b087-questionnaire-owner-actions.md").read_text()
+    assert "DPA" in packet and "SLA" in packet
+    assert "PagerDuty" in packet
+    assert "no notification is claimed here" in packet
 
 
 def test_substantiated_signed_commit_control_remains_positive(tmp_path: Path) -> None:

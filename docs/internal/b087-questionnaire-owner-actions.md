@@ -23,3 +23,19 @@ shipped posture, with a closed population and mutation tests.
 
 This packet records decisions still outside the engineering-closeable portion;
 it is not evidence that an owner, customer, prospect, or regulator was contacted.
+
+## Proposed follow-up item (ID allocated by the canonical backlog owner)
+
+Use the next dense backlog identifier; do not allocate one in this change:
+
+```backlog-proposal
+id: B-<next-dense-id>
+repo: corelink-server
+owner: owner
+status: open
+title: reconcile executed legal claims and external questionnaire recipients
+scope: review the executed DPA Object Lock language, the executed SLA/residency-amendment BYOK five-minute promises, obtain the PagerDuty rotation export, and decide whether recipients of superseded questionnaire copies require notice
+evidence: owner/legal decision record; owner/ops PagerDuty export; owner/sales notification decision
+non-claim: no contract amendment, export, notification, or customer/regulator contact is asserted until its owner records evidence
+verify: manual — owner evidence is external to this repository
+```
