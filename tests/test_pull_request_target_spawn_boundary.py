@@ -65,6 +65,7 @@ EXPECTED_PERMISSIONS = {
 
 
 _YAML_KEY = re.compile(r"^(?P<key>[^:#][^:]*?):(?:[ \t]*(?P<value>.*))?$")
+_TARGET_TOKEN = re.compile(r"\bpull_request_target\b")
 
 
 def _workflow_lines(text: str) -> list[tuple[int, str]]:
@@ -153,10 +154,7 @@ def _parse_workflow_subset(text: str) -> dict:
             raise ValueError(f"duplicate top-level key: {key}")
         if value:
             parsed = _scalar(value)
-            if key == "on" and (
-                parsed == "pull_request_target"
-                or isinstance(parsed, list) and "pull_request_target" in parsed
-            ):
+            if key == "on" and _TARGET_TOKEN.search(value):
                 raise ValueError(
                     "inline/scalar pull_request_target trigger is unsupported; "
                     "use a mapping event key so the boundary can audit it"
@@ -274,14 +272,10 @@ def _census_pull_request_target_workflows(paths: tuple[Path, ...]) -> dict[str, 
                     end += 1
                 if key == "on":
                     if value:
-                        parsed = _scalar(value)
-                        if parsed == "pull_request_target":
+                        _scalar(value)
+                        if _TARGET_TOKEN.search(value):
                             raise ValueError(
-                                "scalar pull_request_target trigger is unsupported"
-                            )
-                        if isinstance(parsed, list) and "pull_request_target" in parsed:
-                            raise ValueError(
-                                "inline pull_request_target trigger is unsupported"
+                                "inline/scalar pull_request_target trigger is unsupported"
                             )
                     else:
                         for event_indent, event_content in lines[start:end]:
@@ -478,6 +472,7 @@ class PullRequestTargetSpawnBoundaryTest(unittest.TestCase):
             "jobs:\n  broken:\n    runs-on: corelink\n    if: >-\n",
             "jobs:\n\tbroken:\n",
             "on: [push, pull_request_target]\n",
+            "on: {push: {}, pull_request_target: {}}\n",
         ):
             with self.subTest(malformed=malformed), self.assertRaises(ValueError):
                 _parse_workflow_subset(malformed)
@@ -523,7 +518,7 @@ jobs:
 
             with self.subTest(spelling="inline sequence"):
                 with self.assertRaisesRegex(
-                    ValueError, r"sixth-inline\.yml: inline pull_request_target"
+                    ValueError, r"sixth-inline\.yml: inline(?:/scalar)? pull_request_target"
                 ):
                     _census_pull_request_target_workflows((*WORKFLOW_PATHS, inline_path))
 
