@@ -100,11 +100,16 @@ pub mod fuzz_api {
             let candidate = &haystack[idx..];
             // PAT total length is 95 or 96; clip to 96 + safety margin.
             let end = candidate.len().min(128);
-            let window = &candidate[..end];
+            // Keep this fuzz helper panic-free for arbitrary Unicode: never
+            // slice a `str` at a non-UTF-8 byte boundary.
+            let window = candidate
+                .as_bytes()
+                .get(..end)
+                .and_then(|bytes| std::str::from_utf8(bytes).ok())
+                .unwrap_or(candidate);
             // Try increasing lengths matching the spec (95 / 96 chars).
             for needed in [95_usize, 96] {
-                if window.len() >= needed {
-                    let attempt = &window[..needed];
+                if let Some(attempt) = window.get(..needed) {
                     if validate_pat_shape(attempt).is_ok() {
                         count += 1;
                         break;

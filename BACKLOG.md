@@ -11661,54 +11661,182 @@ owner: tl
 status: done
 verify: |
   python3 - <<"PY"
-  import glob, pathlib, re, sys
+  import base64, glob, pathlib, re, sys
+
+  def fail(message):
+      print(f"FALHA: {message}")
+      sys.exit(1)
+
   fmt = pathlib.Path("crates/corelink-pat/src/format.rs")
-  if not fmt.is_file():
-      print("FALHA: format.rs sumiu — sem a forma canonica este portao nao decide nada; reavalie."); sys.exit(1)
+  types = pathlib.Path("crates/corelink-pat/src/types.rs")
+  if not fmt.is_file() or not types.is_file():
+      fail("o parser Rust sumiu — instrumento sem fonte de verdade")
   src = fmt.read_text()
-  envs = re.findall(r'b"([a-z]{2,3})"', src.split("ENV_LITERALS")[1][:120]) if "ENV_LITERALS" in src else []
-  if sorted(envs) != ["ci", "pat", "ro"]:
-      print(f"FALHA: ENV_LITERALS mudou (li {envs}) — a forma canonica se moveu; releia o item antes de confiar neste portao."); sys.exit(1)
-  TOK = re.compile(r"corelink_[A-Za-z0-9]+_[A-Za-z0-9._-]+")
-  achados = {}
+  types_src = types.read_text()
+
+  # Pin every parser length in the Rust source. A verifier which only checks
+  # total characters can silently accept an env/segment-length mutation.
+  def rust_const(name, text):
+      match = re.search(rf"\b(?:pub\s+)?const {name}\s*:\s*usize\s*=\s*(\d+)\s*;", text)
+      return int(match.group(1)) if match else None
+
+  expected_lengths = {
+      "PAT_PREFIX_LEN": 9,
+      "PAT_TOKEN_ID_LEN": 16,
+      "PAT_RANDOM_SECRET_LEN": 43,
+      "PAT_HMAC_SIG_LEN": 22,
+      "PAT_RANDOM_SECRET_RAW_LEN": 32,
+      "PAT_HMAC_SIG_RAW_LEN": 16,
+  }
+  for name, expected in expected_lengths.items():
+      if rust_const(name, src if name != "PAT_TOKEN_ID_LEN" else types_src) != expected:
+          fail(f"{name} mudou ou nao foi encontrado; parser envelope nao e mais canonico")
+
+  env_block = re.search(r"const ENV_LITERALS\s*:[^=]+=[^[]*\[(.*?)\];", src, re.S)
+  envs = re.findall(r'b"([^"\n]*)"', env_block.group(1)) if env_block else []
+  if envs != ["pat", "ci", "ro"]:
+      fail(f"ENV_LITERALS mudou (li {envs})")
+  for required in ("let bytes = input.as_bytes()", "match bytes.len()",
+                   "PatTokenId::parse(token_id_str)",
+                   "decode(secret_bytes)",
+                   "decode(sig_bytes)"):
+      if required not in src:
+          fail(f"parser Rust deixou de aplicar a guarda de bytes/decodificacao: {required}")
+
+  cli_manifest = pathlib.Path("tools/cli/Cargo.toml")
+  cli_auth = pathlib.Path("tools/cli/src/auth.rs")
+  if not cli_manifest.is_file() or not cli_auth.is_file():
+      fail("superficie local do CLI sumiu")
+  cli_manifest_src = cli_manifest.read_text()
+  cli_src = cli_auth.read_text()
+  if "corelink-pat = { workspace = true }" not in cli_manifest_src \
+          or "corelink_pat::parse_plaintext(pat)" not in cli_src \
+          or "validate_pat_shape(&raw)?" not in cli_src:
+      fail("CLI nao usa o parser Rust localmente antes da rede")
+
+  # Pin the exact uppercase Crockford implementation, not broad ASCII
+  # alphanumeric acceptance (which admits I/L/O/U and lowercase).
+  crock = re.search(r"const fn is_crockford_b32\(c: char\) -> bool \{(.*?)\n\}", types_src, re.S)
+  if not crock:
+      fail("is_crockford_b32 sumiu")
+  crock_body = crock.group(1)
+  for fragment in ("'0'..='9'", "'A'..='H'", "'J'", "'K'", "'M'", "'N'",
+                   "'P'..='T'", "'V'..='Z'"):
+      if fragment not in crock_body:
+          fail(f"charset Crockford mudou: falta {fragment}")
+  token_parse = re.search(r"pub fn parse\(raw: &str\).*?\n    \}", types_src, re.S)
+  if not token_parse or "raw.len() != PAT_TOKEN_ID_LEN" not in token_parse.group(0) \
+          or "for c in raw.chars()" not in token_parse.group(0) \
+          or "is_crockford_b32(c)" not in token_parse.group(0):
+      fail("PatTokenId::parse deixou de ser length/charset estrito")
+
+  def parse_pat(text):
+      # Rust parses `&str` by exact UTF-8 bytes, not Unicode scalar count.
+      raw = text.encode("utf-8")
+      if len(raw) == 95:
+          env_len = 2
+      elif len(raw) == 96:
+          env_len = 3
+      else:
+          return False
+      if raw[:9] != b"corelink_":
+          return False
+      env = raw[9:9 + env_len]
+      if env not in (b"pat", b"ci", b"ro"):
+          return False
+      if raw[9 + env_len:10 + env_len] != b"_":
+          return False
+      token_start = 10 + env_len
+      token = raw[token_start:token_start + 16]
+      if len(token) != 16 or any(c not in b"0123456789ABCDEFGHJKMNPQRSTVWXYZ" for c in token):
+          return False
+      if raw[token_start + 16:token_start + 17] != b".":
+          return False
+      secret_start = token_start + 17
+      secret = raw[secret_start:secret_start + 43]
+      if len(secret) != 43 or any(c not in b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_" for c in secret):
+          return False
+      try:
+          decoded_secret = base64.b64decode(secret + b"=", altchars=b"-_", validate=True)
+      except Exception:
+          return False
+      if len(decoded_secret) != 32 or raw[secret_start + 43:secret_start + 44] != b".":
+          return False
+      sig_start = secret_start + 44
+      sig = raw[sig_start:sig_start + 22]
+      if len(sig) != 22 or sig_start + 22 != len(raw) \
+              or any(c not in b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_" for c in sig):
+          return False
+      try:
+          decoded_sig = base64.b64decode(sig + b"==", altchars=b"-_", validate=True)
+      except Exception:
+          return False
+      return len(decoded_sig) == 16
+
+  # Mutation probes pin the negative space of the parser: punctuation,
+  # forbidden Crockford symbols, lowercase, Unicode/multibyte, env, and each
+  # segment's exact byte length must all reject.
+  canonical = "corelink_pat_0123456789ABCDEF." + "A" * 43 + "." + "B" * 22
+  if not parse_pat(canonical):
+      fail("controle positivo canonico nao passou")
+  for bad in (
+      canonical.replace("A", "!", 1),
+      canonical.replace("A", "I", 1), canonical.replace("A", "O", 1),
+      canonical.replace("A", "L", 1), canonical.replace("A", "U", 1),
+      canonical.replace("A", "i", 1), canonical.replace("A", "l", 1),
+      canonical.replace("A", "o", 1), canonical.replace("A", "u", 1),
+      canonical.replace("A" * 43, "!" * 43),
+      canonical.replace("B" * 22, "!" * 22),
+      canonical.replace("corelink_pat_", "corelink_dev_"),
+      canonical[:-1], canonical + "A", canonical.replace("A", "é", 1),
+      canonical.replace("A", "😀", 1),
+  ):
+      if parse_pat(bad):
+          fail(f"mutacao invalida aceita pelo oraculo: {bad!r}")
+
+  # Capture broad UTF-8 candidates so a Unicode truncation or punctuation
+  # mutation cannot disappear from the scan merely because ASCII regex did
+  # not match it. Non-PAT `corelink_*` metric names are filtered below.
+  token_re = re.compile(r"corelink_[^\s`\"'<>()[\]{};,|:@/]+")
+  old_envs = {"pat", "ci", "ro", "dev", "staging", "prod"}
+  found = {}
   for f in glob.glob("apps/docs/docs/**/*", recursive=True):
       p = pathlib.Path(f)
-      if not p.is_file() or p.suffix not in (".md", ".mdx"): continue
-      for m in TOK.finditer(p.read_text(errors="ignore")):
-          t = m.group(0)
-          if t.count(".") == 2 or t.startswith("corelink_pat_"):
-              achados.setdefault(t, set()).add(f)
-  if not achados:
-      print("FALHA: a varredura nao achou NENHUM literal com forma de PAT em apps/docs/docs — instrumento quebrado, nao doc limpa."); sys.exit(1)
-  def canon(t):
-      parts = t.split("_")
-      if len(parts) != 3 or parts[0] != "corelink" or parts[1] not in ("pat", "ci", "ro"):
-          return False
-      expected_len = 96 if parts[1] == "pat" else 95
-      return len(t) == expected_len and t.count(".") == 2
-  bons = [t for t in achados if canon(t)]
-  if len(bons) != len(achados):
-      print(f"FALHA: {len(achados) - len(bons)} de {len(achados)} literais publicados nao satisfazem o envelope canonico"); sys.exit(1)
-  canonical = "corelink_pat_0123456789ABCDEF." + "A" * 43 + "." + "B" * 22
-  if canon(canonical[:-1]):
-      print("FALHA: mutacao truncada ainda foi aceita como canonica"); sys.exit(1)
-  print(f"fechado: {len(achados)} literais publicados satisfazem o envelope canonico; mutacao truncada rejeitada")
+      if not p.is_file() or p.suffix not in (".md", ".mdx"):
+          continue
+      for match in token_re.finditer(p.read_text(encoding="utf-8", errors="strict")):
+          candidate = match.group(0)
+          rest = candidate[len("corelink_"):]
+          env = rest.split("_", 1)[0]
+          if candidate.startswith("corelink_pat_") or candidate.count(".") == 2 or env in old_envs:
+              found.setdefault(candidate, set()).add(str(p))
+  if not found:
+      fail("a varredura nao achou nenhum literal de PAT — instrumento quebrado, nao doc limpa")
+  invalid = {t: paths for t, paths in found.items() if not parse_pat(t)}
+  if invalid:
+      sample = next(iter(invalid))
+      fail(f"{len(invalid)} literal(is) publicado(s) nao parseiam; exemplo {sample!r}")
+  print(f"fechado: {len(found)} literais publicados passam no parser Rust byte-exato; mutacoes negativas rejeitadas")
   PY
 verify-means: |
   done — todos os literais publicados com forma de PAT satisfazem o envelope que
   `parse_plaintext` exige, e a mutacao truncada e rejeitada.
 
-  **O envelope é LIDO do código, não constante no portão.** O comando extrai `ENV_LITERALS`
-  de `format.rs` e **falha alto** se ele deixar de ser `pat|ci|ro` — se a forma canônica
-  mudar, este portão para em vez de julgar a doc contra uma regra morta. Um `95|96` escrito à
-  mão aqui envelheceria em silêncio, que é a doença que este arquivo tenta não ter.
+  **A forma é conferida nos dois lados.** O portão lê e fixa no código Rust todos os
+  comprimentos (inclusive bytes crus e comprimentos decodificados), a ordem de `ENV_LITERALS`,
+  a chamada byte-oriented de `parse_plaintext`, e a implementação exata de
+  `is_crockford_b32`/`PatTokenId::parse`. Ele também exige que o CLI dependa dessa crate,
+  valide `CORELINK_PAT` antes de construir a requisição e não mantenha um parser paralelo.
+  Se qualquer uma dessas guardas mudar, ele falha alto em vez de julgar a documentação contra
+  uma regra morta.
 
   **Controle positivo embutido:** se a varredura não achar **nenhum** literal, isso é
   declarado instrumento quebrado, não documentação consertada. Sem essa guarda, renomear o
   diretório de docs faria o item se declarar resolvido.
 
-  **Fecha por exaustão, não por amostra:** todos os literais sao verificados, e o controle
-  positivo truncado prova que o oraculo nao aceita apenas o prefixo.
+  **Fecha por exaustão, não por amostra:** todos os literais são verificados pelo mesmo modelo
+  de bytes que o Rust, e controles negativos cobrem `!`, I/O/L/U, lowercase, Unicode/multibyte,
+  env desconhecido e truncamento/extensão de cada segmento.
 
   **Medido pelos dois lados:** a arvore atual sai `fechado`; a mutacao truncada sai `FALHA`.
 
@@ -11716,7 +11844,7 @@ verify-means: |
   Isso exige um PAT real e cinco requisições a produção — depende de [B-160]. Está no corpo
   porque é a metade que explica por que o defeito não é auto-corrigível pelo cliente, e é o
   que impede fechar este item apenas ajeitando os exemplos e declarando vitória.
-last-verified: 2026-08-31
+last-verified: 2026-09-05
 ```
 
 ### B-163 — 🔴 a receita publicada "Upload a directory" monta a URL com o digest VAZIO e imprime sucesso com o digest certo

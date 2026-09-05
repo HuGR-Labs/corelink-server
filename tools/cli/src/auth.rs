@@ -1,29 +1,10 @@
 //! Auth resolution for `corelink-cli` (WI-S15-001).
 //!
 //! Order: env var `CORELINK_PAT` first → config file `[auth].pat` fallback →
-//! error if neither set (CTRL-CRED-001 compliant).
-//!
-//! PAT format validation: `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>`
-//! regex match per `auth_model.md §2.2` cycle 9 SEAL decision (a).
+//! error if neither set (CTRL-CRED-001 compliant). PAT shape validation is
+//! delegated to `corelink-pat`, the server's canonical parser (B-162).
 
 use crate::error::CliError;
-
-/// PAT validation regex — checks structural shape without full crypto.
-/// Full validation (HMAC-SHA256 sig) happens server-side.
-///
-/// Shape:
-/// - `corelink_` literal (9 chars)
-/// - env: `pat|ci|ro` (2-3 chars)
-/// - `_` separator
-/// - token_id: 16-char Crockford base32 `[0-9A-Za-z]`
-/// - `.` separator
-/// - random_secret: 43-char base64url no-pad `[A-Za-z0-9_-]`
-/// - `.` separator
-/// - hmac_sig: 22-char base64url no-pad `[A-Za-z0-9_-]`
-const PAT_PREFIX: &str = "corelink_";
-const PAT_TOKEN_ID_LEN: usize = 16;
-const PAT_RANDOM_SECRET_LEN: usize = 43;
-const PAT_HMAC_SIG_LEN: usize = 22;
 
 /// Resolve PAT from `CORELINK_PAT` env var first, then config file.
 ///
@@ -51,81 +32,15 @@ fn load_from_config() -> Result<String, CliError> {
         .ok_or(CliError::PatNotFound)
 }
 
-/// Validates the structural shape of a PAT plaintext.
+/// Validate a PAT using the exact byte-oriented parser used by the server.
 ///
-/// Does NOT perform cryptographic verification (that is server-side).
-/// Returns [`CliError::PatMalformed`] for any shape deviation.
+/// This performs structural validation, including canonical environment
+/// tags, Crockford token-id charset, exact byte lengths, and base64url
+/// decoding. Cryptographic verification remains server-side.
 pub fn validate_pat_shape(pat: &str) -> Result<(), CliError> {
-    let bytes = pat.as_bytes();
-
-    // Prefix check.
-    if !pat.starts_with(PAT_PREFIX) {
-        return Err(CliError::PatMalformed);
-    }
-
-    // env + token_id separator position depends on env length (2 or 3).
-    let after_prefix = &pat[PAT_PREFIX.len()..];
-
-    // Find the `_` that terminates the env segment.
-    let env_sep = after_prefix.find('_').ok_or(CliError::PatMalformed)?;
-    let env = &after_prefix[..env_sep];
-    if env != "pat" && env != "ci" && env != "ro" {
-        return Err(CliError::PatMalformed);
-    }
-
-    let after_env = &after_prefix[env_sep + 1..];
-
-    // token_id: 16 Crockford base32 chars.
-    if after_env.len() < PAT_TOKEN_ID_LEN + 1 {
-        return Err(CliError::PatMalformed);
-    }
-    let token_id = &after_env[..PAT_TOKEN_ID_LEN];
-    if !token_id.bytes().all(|b| b.is_ascii_alphanumeric()) {
-        return Err(CliError::PatMalformed);
-    }
-
-    let after_token = &after_env[PAT_TOKEN_ID_LEN..];
-    if !after_token.starts_with('.') {
-        return Err(CliError::PatMalformed);
-    }
-    let after_dot1 = &after_token[1..];
-
-    // random_secret: 43 base64url no-pad chars.
-    if after_dot1.len() < PAT_RANDOM_SECRET_LEN + 1 {
-        return Err(CliError::PatMalformed);
-    }
-    let secret = &after_dot1[..PAT_RANDOM_SECRET_LEN];
-    if !secret
-        .bytes()
-        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-    {
-        return Err(CliError::PatMalformed);
-    }
-
-    let after_dot2_check = &after_dot1[PAT_RANDOM_SECRET_LEN..];
-    if !after_dot2_check.starts_with('.') {
-        return Err(CliError::PatMalformed);
-    }
-    let hmac_sig = &after_dot2_check[1..];
-
-    // hmac_sig: exactly 22 base64url no-pad chars.
-    if hmac_sig.len() != PAT_HMAC_SIG_LEN {
-        return Err(CliError::PatMalformed);
-    }
-    if !hmac_sig
-        .bytes()
-        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-    {
-        return Err(CliError::PatMalformed);
-    }
-
-    // Total length guard (95 or 96 chars).
-    let total = bytes.len();
-    if total != 95 && total != 96 {
-        return Err(CliError::PatMalformed);
-    }
-
-    Ok(())
+    corelink_pat::parse_plaintext(pat)
+        .map(|_| ())
+        .map_err(|_| CliError::PatMalformed)
 }
 
 #[cfg(test)]
@@ -139,11 +54,8 @@ mod tests {
     use super::*;
 
     fn make_pat(env: &str) -> String {
-        // token_id: 16 alphanumeric chars
         let token_id = "ABCDEFGH01234567";
-        // random_secret: 43 base64url no-pad chars
         let secret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-        // hmac_sig: 22 base64url no-pad chars
         let sig = "AAAAAAAAAAAAAAAAAAAAAA";
         format!("corelink_{env}_{token_id}.{secret}.{sig}")
     }
@@ -156,57 +68,41 @@ mod tests {
     }
 
     #[test]
-    fn invalid_prefix_rejected() {
-        let pat = make_pat("pat").replace("corelink_", "badprefix_");
+    fn invalid_crockford_token_id_is_rejected() {
+        for illegal in ['I', 'L', 'O', 'U', 'i', 'l', 'o', 'u', '!'] {
+            let pat = make_pat("pat").replacen('A', &illegal.to_string(), 1);
+            assert!(matches!(
+                validate_pat_shape(&pat),
+                Err(CliError::PatMalformed)
+            ));
+        }
+    }
+
+    #[test]
+    fn invalid_prefix_and_env_are_rejected() {
         assert!(matches!(
-            validate_pat_shape(&pat),
+            validate_pat_shape(&make_pat("pat").replace("corelink_", "badprefix_")),
+            Err(CliError::PatMalformed)
+        ));
+        assert!(matches!(
+            validate_pat_shape(&make_pat("dev")),
             Err(CliError::PatMalformed)
         ));
     }
 
     #[test]
-    fn invalid_env_rejected() {
-        let pat = make_pat("dev"); // 'dev' not in allowlist
-        assert!(matches!(
-            validate_pat_shape(&pat),
-            Err(CliError::PatMalformed)
-        ));
-    }
-
-    #[test]
-    fn short_secret_rejected() {
-        let token_id = "ABCDEFGH01234567";
-        let short_secret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"[..42].to_owned();
-        let sig = "AAAAAAAAAAAAAAAAAAAAAA";
-        let pat = format!("corelink_pat_{token_id}.{short_secret}.{sig}");
-        assert!(matches!(
-            validate_pat_shape(&pat),
-            Err(CliError::PatMalformed)
-        ));
-    }
-
-    #[test]
-    fn wrong_separator_rejected() {
-        let pat = make_pat("pat").replace('.', "_");
-        assert!(matches!(
-            validate_pat_shape(&pat),
-            Err(CliError::PatMalformed)
-        ));
-    }
-
-    #[test]
-    fn empty_rejected() {
-        assert!(matches!(
-            validate_pat_shape(""),
-            Err(CliError::PatMalformed)
-        ));
-    }
-
-    #[test]
-    fn literal_rejected() {
-        assert!(matches!(
-            validate_pat_shape("--pat=secret"),
-            Err(CliError::PatMalformed)
-        ));
+    fn unicode_and_length_mutations_are_rejected_without_panic() {
+        let valid = make_pat("pat");
+        for candidate in [
+            format!("{valid}é"),
+            valid[..valid.len() - 1].to_owned(),
+            format!("{valid}A"),
+            valid.replace("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "!"),
+        ] {
+            assert!(matches!(
+                validate_pat_shape(&candidate),
+                Err(CliError::PatMalformed)
+            ));
+        }
     }
 }

@@ -32,6 +32,8 @@ mod_module_files = "deny"
 # print_stdout/print_stderr allowed at crate level in main.rs (CLI binary is intentionally user-facing).
 
 [dependencies]
+# Canonical PAT parser shared with the server (B-162).
+corelink-pat = { workspace = true }
 # WI-S17-003: runbook dry-run tracker (pure-logic library — no I/O, no async).
 corelink-runbook-tracker = { workspace = true }
 # WI-R-PREP-AUDIT-EXPORT: audit log export CLI (json-ld/csv/parquet + Merkle proofs).

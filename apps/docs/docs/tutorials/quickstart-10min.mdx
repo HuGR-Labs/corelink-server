@@ -41,7 +41,7 @@ your tenant, region, and a starter PAT server-side — no billing step.
    US-Central and a safe default for most teams).
 3. The wizard drops you on the **`/welcome`** page where your starter PAT
    is displayed **exactly once**. Copy it now before closing the tab.
-   It looks like: `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB…xxx`
+   It looks like: `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB`
 
 :::warning Copy your PAT from /welcome — it is shown once
 If you close the tab without copying, regenerate via **Settings → Access
@@ -59,7 +59,7 @@ your chosen region.
 
 ```bash
 curl -fsSL https://corelink-get.humangr.com | sh -s -- \
-  --token=corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB…xxx \
+  --token=corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB \
   --region=ord
 ```
 
@@ -120,7 +120,7 @@ Invoke-WebRequest -Uri https://github.com/HuGR-Labs/corelink-cli/releases/latest
 After a manual install, write your PAT to the config manually:
 
 ```bash
-corelink config set auth.pat "corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB…xxx"
+corelink config set auth.pat "corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB"
 corelink config set defaults.region ord
 ```
 
@@ -266,7 +266,7 @@ Available regions: `ord` (US-Central), `iad` (US-East), `lhr` (EU-West),
 
 ```bash
 echo $CORELINK_PAT
-# should print: corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB…xxx
+# should print: corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB
 ```
 
 If empty, either re-export it or ensure it is written to
@@ -274,7 +274,7 @@ If empty, either re-export it or ensure it is written to
 automatically):
 
 ```bash
-corelink config set auth.pat "corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB…xxx"
+corelink config set auth.pat "corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB"
 ```
 
 ### `.bazelrc` duplicate-line warning
