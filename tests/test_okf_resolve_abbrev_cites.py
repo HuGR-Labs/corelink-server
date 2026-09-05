@@ -288,6 +288,29 @@ class AbbreviatedCitationResolverTest(unittest.TestCase):
         )
         self.assertNotIn(signature, mutant)
 
+    def test_c5c_regression_is_wired_and_trigger_path_mutations_are_red(self) -> None:
+        """C5c's implementation and regression cannot silently bypass the gate."""
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        implementation_path = "      - 'scripts/okf_anchor_reverify.py'"
+        regression_path = "      - 'tests/test_okf_anchor_reverify.py'"
+
+        def c5c_wiring_present(text: str) -> bool:
+            return (
+                text.count(implementation_path) == 2
+                and text.count(regression_path) == 2
+                and text.count("run: python3 tests/test_okf_anchor_reverify.py") == 1
+            )
+
+        # Each trigger has an independent PR and push path block.
+        self.assertTrue(c5c_wiring_present(workflow))
+
+        # Mutation proof: dropping either path leaves one trigger unprotected,
+        # so the contract must reject the mutated workflow rather than relying
+        # on the explicit job step alone.
+        for path in (implementation_path, regression_path):
+            mutant = workflow.replace(path + "\n", "", 1)
+            self.assertFalse(c5c_wiring_present(mutant))
+
         resolver = SCRIPT.read_text(encoding="utf-8")
         guard = "    if candidate not in declared_sources:\n        return None\n"
         self.assertIn(guard, resolver)
