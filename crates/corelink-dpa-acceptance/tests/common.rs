@@ -124,6 +124,21 @@ pub fn build_service(now_ms: i64) -> (TestService, RsaPublicKeyPem) {
     (svc, keys.public)
 }
 
+pub fn ctx(signup: &str, locale: LocaleBcp47) -> TenantCtx {
+    TenantCtx {
+        tenant_id: TenantId(format!("tenant-{}", signup)),
+        signup_id: SignupId(signup.to_owned()),
+        jurisdiction: match locale {
+            LocaleBcp47::EnUs => Jurisdiction::Us,
+            LocaleBcp47::PtBr => Jurisdiction::Br,
+            LocaleBcp47::Es419 => Jurisdiction::Latam,
+            _ => Jurisdiction::Us,
+        },
+        client_ip: "203.0.113.1".to_owned(),
+        resolved_locale: locale,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,20 +160,5 @@ mod tests {
         assert_eq!(private.size() * 8, 2048);
         assert_eq!(public.size() * 8, 2048);
         assert_eq!(private.n(), public.n());
-    }
-}
-
-pub fn ctx(signup: &str, locale: LocaleBcp47) -> TenantCtx {
-    TenantCtx {
-        tenant_id: TenantId(format!("tenant-{}", signup)),
-        signup_id: SignupId(signup.to_owned()),
-        jurisdiction: match locale {
-            LocaleBcp47::EnUs => Jurisdiction::Us,
-            LocaleBcp47::PtBr => Jurisdiction::Br,
-            LocaleBcp47::Es419 => Jurisdiction::Latam,
-            _ => Jurisdiction::Us,
-        },
-        client_ip: "203.0.113.1".to_owned(),
-        resolved_locale: locale,
     }
 }

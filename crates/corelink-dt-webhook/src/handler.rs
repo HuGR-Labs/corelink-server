@@ -388,6 +388,8 @@ impl DtWebhookHandler for InMemoryDtWebhookHandler {
 
 /// Minimal date helper to avoid a heavy chrono dependency in wasm32 contexts.
 mod chrono_mini {
+    use std::time::SystemTime;
+
     /// A simplistic naive date (year, month, day) for ADR sunset calculation.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
     pub struct NaiveDate {
