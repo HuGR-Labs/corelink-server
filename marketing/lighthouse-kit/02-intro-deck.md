@@ -121,7 +121,7 @@ tags: ["lighthouse", "marketing", "deck", "intro", "pitch", "slides"]
 
 **Bullets:**
 - SOC 2 Type 1 audit kickoff in flight (auditor engagement letter on request)
-- External pentest report available under NDA (last pass D-30; remediation log in `compliance/pentest/`)
+- External pentest is planned pre-GA; no vendor has been contracted and no report or remediation log exists yet.
 - DSR (data subject request) erasure SLO ≤ 30 days with Ed25519-signed attestation
 - Data residency by region pin; no cross-region copy without explicit tenant approval
 - Sub-processor change notification: 30 days advance notice contractually committed
@@ -186,7 +186,7 @@ tags: ["lighthouse", "marketing", "deck", "intro", "pitch", "slides"]
 | In place today | Honest about |
 |---|---|
 | SOC 2 Type 1 audit kickoff in flight | Type 2 audit window opens after GA, not before |
-| External pentest pass (under NDA on request) | Remediation log open for verification |
+| External pentest (planned pre-GA; no report yet) | Engagement and remediation evidence will be shared only once they exist |
 | BYOK on 4 providers, chaos-drilled weekly | Single-tenant isolation only — multi-tenant BYOK key sharing is out of scope |
 | Ed25519-signed audit chain, append-only | Audit chain verification CLI ships at GA; pre-GA verification is internal |
 | DPA + Schrems II TIA template ready | Country-specific data residency beyond our 4 regions is roadmap, not GA |

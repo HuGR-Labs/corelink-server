@@ -354,7 +354,7 @@ Talk to us before signing. We support a generic HTTP cache API (any client that 
 Yes, but we only attest the SLOs you actually exercise during the 30-day window. ML training data caching, Docker layer caching, generic CAS — all are in-scope use cases, all get sampled if you exercise them.
 
 **11. What about a security audit on our side — can we pentest CoreLink?**
-Subject to our responsible-disclosure policy. Email `security@humangr.com` before any probing. Our Pentest-1 firm engagement is documented; we can share the executive summary under NDA.
+Subject to our responsible-disclosure policy. Email `security@humangr.com` before any probing. No external Pentest-1 firm has been engaged yet, so no executive summary exists to share; the pre-GA engagement is planned.
 
 **12. What happens during the 30-day window if you ship a CoreLink update that affects us?**
 Any deploy that touches your tenant's hot path: 24h notice in Slack Connect, with rollback plan. You can request a freeze on your tenant during a critical period of your own work — tell us. Material spec or DPA changes follow `specs/_runbooks/RB-DPA-CHANGE.md`.

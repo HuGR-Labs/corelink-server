@@ -326,13 +326,13 @@ let data = client.get("af1c3e9b…").await?;
 
 ```
 corelink-docs.humangr.com/quickstart      — 10-minute tutorial
-corelink-docs.humangr.com/trust           — TLA+ specs, SBOM, pentest
+corelink-docs.humangr.com/trust           — TLA+ specs, SBOM, pentest status (planned; no report yet)
 corelink-docs.humangr.com/pricing         — sandbox is free
 ```
 
 **Voiceover (~18s):**
 
-> "That's the deep-dive. Ten-minute quickstart at humangr.com/corelink. The trust center has our TLA+ specs, full SBOM, and the third-party pentest letter. Sandbox is free, no credit card. If you're evaluating for a regulated workload, our seven-minute BYOK deep dive walks the four-provider matrix and the kill-switch flow. Thanks for watching."
+> "That's the deep-dive. Ten-minute quickstart at humangr.com/corelink. The trust center has our TLA+ specs, full SBOM, and the current pentest status — the external engagement is planned and no report exists yet. Sandbox is free, no credit card. If you're evaluating for a regulated workload, our seven-minute BYOK deep dive walks the four-provider matrix and the kill-switch flow. Thanks for watching."
 
 **Hold final URL card for 2s. End.**
 

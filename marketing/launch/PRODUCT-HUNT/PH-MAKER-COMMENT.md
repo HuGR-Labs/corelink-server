@@ -16,7 +16,7 @@ Quick context on what we're shipping and why we think it matters.
 
 1. **Tenant isolation is a TLA+ invariant.** We maintain four formal specifications in CI and the build fails if the safety property regresses. Most "multi-tenant" caches are single-tenant SaaS with namespacing; this one is structurally different.
 2. **BYOK is real on AWS KMS** (GCP KMS, Azure Key Vault, and HashiCorp Vault are on the roadmap). Customer-managed kill switch. Verifiable crypto-erasure (a customer-served Ed25519 attestation is on the roadmap). The vendor cannot read your bytes unilaterally — that's the property, not the marketing.
-3. **Engineering gate separated from launch.** We split GA into a binary engineering gate (PRR + pentest + 30d staging + 3 lighthouse customers attested) and a soft-gate launch orchestration (this post, the press release, the blog series). The engineering gate is binary, unappealable, and gated the launch — not the other way around.
+3. **Engineering gate separated from launch.** We split GA into a binary engineering gate (PRR + a completed external pentest + 30d staging + 3 lighthouse customers attested) and a soft-gate launch orchestration (this post, the press release, the blog series). The external pentest is a remaining pre-GA gate: no vendor has been contracted or report issued today. The engineering gate is binary, unappealable, and gates the launch — not the other way around.
 
 **Who it's for.** Build-heavy engineering teams running Bazel at scale, particularly teams with residency, BYOK, or audit requirements that existing remote caches paper over.
 

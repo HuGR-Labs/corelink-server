@@ -122,7 +122,7 @@ compliance-led platform team where:
 What we offer the lighthouse:
 
   • 6 months free on the Enterprise tier (full BYOK + DPA amendment + SOC 2
-    Type 1 audit kickoff materials + pentest letter on request)
+    Type 1 audit kickoff materials + current pentest status on request; no external report exists yet)
   • Founder-led onboarding (me) + dedicated Customer Success engineer
   • Direct PagerDuty escalation rights during the 30-day observation window
   • Sanitized, NDA-protected case study you co-approve before any external use
