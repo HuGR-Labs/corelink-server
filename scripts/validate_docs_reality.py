@@ -467,7 +467,7 @@ def _route_to_regex(route: str) -> re.Pattern:
             out.append(".*")
         else:
             out.append(re.escape(ch))
-    out.append(r"(?:/.*)?$")  # exact OR a deeper path under this route (nesting)
+    out.append(r"$")  # route parameters are explicit; deeper paths need registration
     return re.compile("".join(out))
 
 
@@ -475,10 +475,6 @@ def endpoint_resolves(path: str, route_regexes: list[re.Pattern],
                       route_prefixes: set[str]) -> bool:
     for rx in route_regexes:
         if rx.match(path):
-            return True
-    for pref in route_prefixes:
-        base = pref.rstrip("/")
-        if base and (path == base or path.startswith(base + "/")):
             return True
     return False
 
