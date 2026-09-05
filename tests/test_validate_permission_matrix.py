@@ -91,6 +91,38 @@ def test_comment_only_predicate_does_not_count() -> None:
     assert any("can_read" in error or "can_write" in error for error in errors)
 
 
+def test_nested_block_comments_are_stripped() -> None:
+    source = "before /* outer marker /* nested can_write() */ */ after"
+    assert "can_write()" not in gate._strip_comments(source)
+
+
+def test_comment_markers_inside_rust_literals_are_preserved() -> None:
+    source = r'''let line = "// can_write()"; let raw = r#"/* can_read() */"#; /* hidden */'''
+    cleaned = gate._strip_comments(source)
+    assert '"// can_write()"' in cleaned
+    assert 'r#"/* can_read() */"#' in cleaned
+    assert "hidden" not in cleaned
+
+
+def test_unterminated_block_comment_fails_closed() -> None:
+    source = _sources()
+    source["crates/corelink-container/src/routes/cas.rs"] = "/* can_write()"
+    errors = gate.check(_matrix(), source)
+    assert any("source comment parse failure" in error for error in errors)
+
+
+def test_block_comment_only_predicates_and_routes_do_not_count() -> None:
+    # Move every required predicate and route into a nested multiline block
+    # comment.  The gate must reject the mutation, not find marker text inside
+    # the comment and report a false green.
+    source = {
+        path: f"/* outer\n/* inner\n{text}\n*/\n*/"
+        for path, text in _sources().items()
+    }
+    errors = gate.check(_matrix(), source)
+    assert any("applied gate missing" in error or "served route missing" in error for error in errors)
+
+
 def test_unknown_published_row_and_missing_row_fail_closed() -> None:
     source = _sources()
     matrix = _matrix().replace("| Read CAS blobs + AC", "| Unknown published permission", 1)

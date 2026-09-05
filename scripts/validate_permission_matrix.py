@@ -26,6 +26,9 @@ ROLES = ("owner", "admin", "developer", "viewer")
 GRANTED = "✅"
 DENIED = "❌"
 ABSENT = "—"
+_RUST_TOKEN = re.compile(r"[/rb\"']")
+_BLOCK_TOKEN = re.compile(r"[/*\n]")
+_COMMENT_TEXT = re.compile(r"[^\n]")
 
 
 @dataclass(frozen=True)
@@ -36,6 +39,10 @@ class Applied:
     route: str | None = None
     absent: tuple[str, ...] = ()
     required_by_source: tuple[tuple[str, tuple[str, ...]], ...] = ()
+
+
+class CommentSyntaxError(ValueError):
+    """A Rust block comment was not terminated."""
 
 
 # The closed-world manifest is deliberately explicit.  Adding a row to the
@@ -105,8 +112,141 @@ def rows(text: str):
             yield cells[0], tuple(_clean_cell(c) for c in cells[-4:])
 
 
+def _raw_string_start(source: str, index: int) -> tuple[int, int] | None:
+    """Return (opening-quote index, hash count) for a Rust raw string."""
+    prefix_end = index
+    if source.startswith("br", index):
+        prefix_end += 2
+    elif source.startswith("r", index):
+        prefix_end += 1
+    else:
+        return None
+    hash_count = 0
+    while prefix_end + hash_count < len(source) and source[prefix_end + hash_count] == "#":
+        hash_count += 1
+    quote = prefix_end + hash_count
+    if quote >= len(source) or source[quote] != '"':
+        return None
+    return quote, hash_count
+
+
 def _strip_comments(source: str) -> str:
-    return "\n".join(line.split("//", 1)[0] for line in source.splitlines())
+    """Remove Rust comments while retaining literals and source line numbers.
+
+    Rust permits nested block comments.  Comment text is replaced with spaces
+    (newlines are retained), so a predicate can never satisfy the manifest from
+    inside `/* ... */` or `// ...`.  An unterminated block or raw string is an
+    instrument error rather than a permissive result.
+    """
+    output: list[str] = []
+    index = 0
+    length = len(source)
+    while index < length:
+        token = _RUST_TOKEN.search(source, index)
+        if token is None:
+            output.append(source[index:])
+            break
+        if token.start() > index:
+            output.append(source[index : token.start()])
+            index = token.start()
+        character = source[index]
+        if character == "/" and source.startswith("//", index):
+            output.extend((" ", " "))
+            index += 2
+            while index < length and source[index] != "\n":
+                output.append(" ")
+                index += 1
+            continue
+        if character == "/" and source.startswith("/*", index):
+            output.extend((" ", " "))
+            index += 2
+            depth = 1
+            while index < length and depth:
+                token = _BLOCK_TOKEN.search(source, index)
+                if token is None:
+                    output.append(_COMMENT_TEXT.sub(" ", source[index:]))
+                    index = length
+                    break
+                if token.start() > index:
+                    output.append(_COMMENT_TEXT.sub(" ", source[index : token.start()]))
+                    index = token.start()
+                character = source[index]
+                if character == "/" and source.startswith("/*", index):
+                    output.extend((" ", " "))
+                    index += 2
+                    depth += 1
+                elif character == "*" and source.startswith("*/", index):
+                    output.extend((" ", " "))
+                    index += 2
+                    depth -= 1
+                elif character == "\n":
+                    output.append("\n")
+                    index += 1
+                else:
+                    output.append(" ")
+                    index += 1
+            if depth:
+                raise CommentSyntaxError("unterminated Rust block comment")
+            continue
+
+        if character in {"r", "b"}:
+            raw = _raw_string_start(source, index)
+            if raw is not None:
+                quote, hash_count = raw
+                closing = '"' + ("#" * hash_count)
+                end = source.find(closing, quote + 1)
+                if end < 0:
+                    raise CommentSyntaxError("unterminated Rust raw string")
+                output.extend(source[index : end + len(closing)])
+                index = end + len(closing)
+                continue
+
+        # Byte strings/chars enter the same literal states as their ordinary
+        # counterparts.  The prefix is copied before consuming the quote.
+        if character == "b" and index + 1 < length and source[index + 1] in {'"', "'"}:
+            output.append(source[index])
+            index += 1
+
+        if index < length and source[index] == '"':
+            output.append(source[index])
+            index += 1
+            terminated = False
+            while index < length:
+                character = source[index]
+                output.append(character)
+                index += 1
+                if character == "\\" and index < length:
+                    output.append(source[index])
+                    index += 1
+                elif character == '"':
+                    terminated = True
+                    break
+            if not terminated:
+                raise CommentSyntaxError("unterminated Rust string literal")
+            continue
+
+        if index < length and source[index] == "'":
+            # A lifetime (`'a`) is not a char literal.  Only consume a char
+            # literal when a closing quote occurs on the same source line.
+            end = index + 1
+            escaped = False
+            while end < length and source[end] != "\n":
+                character = source[end]
+                if character == "'" and not escaped:
+                    break
+                if character == "\\" and not escaped:
+                    escaped = True
+                else:
+                    escaped = False
+                end += 1
+            if end < length and source[end] == "'":
+                output.extend(source[index : end + 1])
+                index = end + 1
+                continue
+
+        output.append(source[index])
+        index += 1
+    return "".join(output)
 
 
 def _read(root: Path, relative: str, errors: list[str]) -> str:
@@ -122,7 +262,13 @@ def _read(root: Path, relative: str, errors: list[str]) -> str:
 def check(matrix_text: str, source_texts: dict[str, str]) -> list[str]:
     errors: list[str] = []
     seen: set[str] = set()
-    clean_sources = {path: _strip_comments(source) for path, source in source_texts.items()}
+    clean_sources: dict[str, str] = {}
+    for path, source in source_texts.items():
+        try:
+            clean_sources[path] = _strip_comments(source)
+        except CommentSyntaxError as exc:
+            errors.append(f"source comment parse failure in {path}: {exc}")
+            clean_sources[path] = ""
     for label, actual_roles in rows(matrix_text):
         key = norm(label)
         if key not in APPLIED:
