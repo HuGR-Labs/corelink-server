@@ -6580,7 +6580,7 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-094 — o material publicado promete gRPC e compatibilidade com Buck2; o código registra que nenhum dos dois existe
+### B-094 — o material publicado prometia gRPC e compatibilidade com Buck2; o código registra que nenhum dos dois existe
 
 A superfície Bazel é REAPI v2 **sobre REST**. O `crates/corelink-container/src/routes/bazel_v2.rs:331`
 anota: *"(Buck2 cannot use these routes — it speaks REAPI over gRPC only.)"* Não há
@@ -6629,76 +6629,25 @@ peça afirma e redigir o texto honesto. Corrigir material comercial **falso** é
 voz de marca. A decisão a jusante — o que a empresa quer afirmar no lugar — é do owner, e ele
 a toma sobre um texto pronto.
 
+**Fechado em 2026-09-05.** A superfície publicada agora descreve REAPI v2 sobre
+HTTP/REST, preserva comparações e negativas legítimas e não apresenta Buck2 como cliente
+suportado. O censo determinístico cobre 949 arquivos e classifica 417 ocorrências; o
+manifesto fixa conteúdo e população, e mutações exercitam promessas em Markdown, HTML,
+metadados, entidades, soft-wraps e todos os locales publicados.
+
 ```backlog
 id: B-094
 repo: corelink-server
 owner: tl
-status: open
-verify: |
-  bash -c 'b=crates/corelink-container/src/routes/bazel_v2.rs
-  [ -f "$b" ] || { echo "FALHA: bazel_v2.rs sumiu — o item nao pode ser verificado."; exit 1; }
-  grep -qi "Buck2 cannot use these routes" "$b" || { echo "FALHA: o codigo nao admite mais que Buck2 nao conecta — reavalie: o gRPC pode existir agora, e ai o material deve VOLTAR a prometer."; exit 1; }
-  corpus=$(grep -rliE "buck2|grpc" --include="*.md" --include="*.mdx" --include="*.html" marketing/ apps/docs/ README.md 2>/dev/null | wc -l | tr -d " ")
-  [ "$corpus" -gt 20 ] || { echo "FALHA: so $corpus arquivo(s) do corpus citam buck2/grpc — a varredura perdeu o corpus e nao pode concluir ausencia."; exit 1; }
-  ressalva=$(grep -rliE "no gRPC ingress|gRPC-only|serves no gRPC|has no gRPC|REST-only|not supported today|not yet supported" marketing/ apps/docs/ 2>/dev/null | wc -l | tr -d " ")
-  [ "$ressalva" -gt 10 ] || { echo "FALHA: so $ressalva arquivo(s) carregam a ressalva de gRPC ausente — o reparo JA FEITO regrediu."; exit 1; }
-  reg=$(grep -rlE "REAPI-compatible \(Bazel|Bazel, Buck2, and (RBE|Remote Build Execution)|Bazel, Buck2, Cargo|drop into any Bazel, Buck2|REAPI-compatible for Bazel|Bazel / Buck2 configurations work" marketing/ 2>/dev/null | wc -l | tr -d " ")
-  [ "$reg" = 0 ] || { echo "FALHA: $reg arquivo(s) de marketing voltaram a prometer Buck2 como cliente suportado — o reparo JA FEITO regrediu."; exit 1; }
-  precos=apps/docs/docs/pricing/index.mdx
-  [ -f "$precos" ] || { echo "FALHA: a pagina de precos sumiu — o comando perdeu o pior caso e nao pode concluir."; exit 1; }
-  res=$(grep -rliE "buck2" --include="*.md" --include="*.mdx" apps/docs/docs/ README.md 2>/dev/null | wc -l | tr -d " ")
-  if [ "$res" -gt 0 ]; then
-    echo "aberto: os 20 arquivos de marketing/ estao corrigidos, mas a SUPERFICIE PUBLICADA segue vendendo Buck2 em $res arquivo(s) de apps/docs/docs/ + README.md — incluindo o checkmark de todos os tiers em $precos:45, enquanto tutorial/04-buck2-quickstart.mdx diz que Buck2 nao e suportado. Estender o diff a apps/docs/** e ao README."
-    exit 0
-  fi
-  echo "FALHA: nenhum arquivo de apps/docs/docs/ ou do README cita mais Buck2 — a razao restante deste item acabou. Feche B-094 (status: done) com verify de polaridade INVERTIDA."
-  exit 1'
+status: done
+verify: python3 scripts/verify_b094_published_claims.py
 verify-means: |
-  open — e a polaridade voltou a ser `open` **de propósito**, revertendo um `done`
-  prematuro. O defeito do fechamento anterior não foi o texto (que está correto), foi o
-  **alcance do portão**: o item se chama "material **publicado**" e o `verify` varria
-  `marketing/`, deixando de fora `apps/docs/` — o site que o cliente de fato lê. Medido:
-  **244 menções a Buck2 em 115 arquivos, 83 fora de `marketing/`.**
-
-  O comando tem três papéis, e vale distingui-los:
-
-  1. **Âncora do item** (herdada): se o `bazel_v2.rs` parar de admitir que Buck2 não
-     conecta, o gRPC pode ter passado a existir — e nesse caso o material deve VOLTAR a
-     prometê-lo. O comando falha para forçar a releitura, em vez de aprovar em silêncio um
-     material que virou pessimista demais. Esse é o sentido inverso, e ele é real.
-  2. **Protege o reparo já feito**: se as frases de promessa retiradas voltarem a
-     `marketing/`, ou se a contagem de arquivos com a ressalva cair, fica vermelho mesmo
-     com o item `open`.
-  3. **Mede o resíduo**: enquanto `apps/docs/docs/` ou o `README.md` citarem Buck2, o item
-     é `open` e o comando sai `exit 0`. Quando chegar a zero, fica **vermelho** mandando
-     fechar com polaridade invertida.
-
-  As contagens de corpus e a exigência de que a página de preços exista são **controle do
-  instrumento**: deletar `apps/docs/` satisfaria qualquer teste de ausência sozinho; aqui
-  falha.
-
-  O que NÃO decide, e admito, em cinco pontos:
-
-  1. **Paráfrase.** O portão mede as formulações medidas, não a ideia. Um texto que
-     prometa compatibilidade com "qualquer cliente REAPI" sem escrever "Buck2" passa. A
-     defesa real é revisão humana.
-  2. **A metade `apps/docs/` do resíduo é medida, não triada.** As 83 posições não foram
-     lidas uma a uma; algumas serão legítimas (o próprio
-     `tutorial/04-buck2-quickstart.mdx`, que diz que Buck2 NÃO é suportado, está entre
-     elas). O comando as conta como resíduo de propósito: conta a favor de manter o item
-     aberto, nunca a favor de fechá-lo.
-  3. Se um servidor gRPC existe no workspace. Mantenho a recusa medida da versão original:
-     grepar `tonic` casa os comentários que dizem que ele NÃO está lá, e `tonic` é
-     dependência real de duas crates; grepar `Server::builder()` casa o middleware de
-     timing-padding do axum. Continuo gateando na admissão do código.
-  4. Se o material comercial já circulou na forma antiga. Fora do repositório.
-  5. As afirmações NÃO relacionadas a gRPC nos mesmos arquivos — *"three lighthouse
-     customers attested"* no `TWITTER-THREAD.md:83` e no comunicado. São de [B-088].
-
-  Reconciliado 2026-08-31 (o campo é `tl`): é material comercial, e a voz é dele — mas
-  corrigir uma afirmação FALSA é conserto, não redação de marca. Provar contra o produto e
-  redigir o texto honesto é meu; publicar é dele.
-last-verified: 2026-08-31
+  done — o verificador rederiva o corpus publicado, exige correspondência exata com o
+  manifesto fechado, classifica semanticamente cada ocorrência e reprova promessa de
+  compatibilidade Buck2/gRPC, população ausente/extra, conteúdo adulterado, manifesto
+  inválido ou runtime acima do limite. Menções de protocolo, negativas, concorrentes e o
+  contraexemplo de teste permanecem explicitamente classificados.
+last-verified: 2026-09-05
 ```
 
 ### B-095 — três defeitos funcionais na interface do cliente, dos quais o mais grave mente sobre residência
