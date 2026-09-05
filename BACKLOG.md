@@ -8834,13 +8834,13 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
-### B-131 — o doc da frota manda re-rodar uma sonda que nao existe mais
+### B-131 — o doc da frota precisa apontar para a sonda executável atual
 
 `docs/internal/ci-runner-fabric-box.md` e o que alguem le antes de planejar contra a
-frota, e sua instrucao central e: **"Re-run it (`workflow_dispatch`) rather than trusting
-this page"**, apontando para `.github/workflows/runner-probe.yml`.
+frota. A instrucao central precisa apontar para a sonda que existe e esta implementada:
+`.github/workflows/runner-fleet-health.yml`, apoiada por `scripts/check_runner_fleet.py`.
 
-**Esse arquivo nao esta mais na `main`.** So o historico de execucoes sobrevive — a mais
+**O antigo `runner-probe.yml` nao esta mais na `main`.** So o historico de execucoes sobrevive — a mais
 recente e a run 31454999820, de **2026-08-11T03:18Z**.
 
 **Por que isso e pior que documentacao desatualizada.** Documento velho engana; instrucao
@@ -8853,7 +8853,7 @@ indistinguiveis, que e a classe de defeito dominante desta campanha.
 O `gh` tinha sido assado **as 20:53Z do mesmo dia** (corelink-runners#453). Dezessete
 horas. A retratacao esta em #1495.
 
-**O conserto nao e so restaurar o arquivo.** Uma sonda restaurada volta a envelhecer no
+**O conserto nao e restaurar o arquivo historico.** Uma sonda restaurada volta a envelhecer no
 dia seguinte. O que falta e o segundo passo: comparar a **data da sonda** com o `git log`
 do `deploy/runner/Dockerfile`. Uma sonda mais velha que o ultimo commit da imagem e
 registro historico, nao inventario — e so o par (sonda, data-da-imagem) responde "o que a
@@ -8867,20 +8867,27 @@ a imagem muda sem commit neste repo.
 id: B-131
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'doc=docs/internal/ci-runner-fabric-box.md
-  [ -f "$doc" ] || { echo "FALHA: o doc da frota sumiu — reavalie o item."; exit 1; }
-  grep -q "runner-probe" "$doc" || { echo "FALHA: o doc nao cita mais runner-probe — feche ou reescreva."; exit 1; }
-  if [ -f .github/workflows/runner-probe.yml ]; then
-    echo "FALHA: runner-probe.yml VOLTOU para a main — feche o item (status: done + verify invertido)."; exit 1
-  fi
-  echo "aberto: o doc manda re-rodar runner-probe.yml, que nao existe em .github/workflows/"'
+  bash -c 'set -euo pipefail
+  doc=docs/internal/ci-runner-fabric-box.md
+  wf=.github/workflows/runner-fleet-health.yml
+  probe=scripts/check_runner_fleet.py
+  [ -f "$doc" ] && [ -f "$wf" ] && [ -f "$probe" ] || { echo "FALHA: sonda atual ou doc ausente"; exit 1; }
+  grep -q "current executable fleet probe" "$doc"
+  grep -q "runner-fleet-health.yml" "$doc"
+  grep -q "scripts/check_runner_fleet.py" "$doc"
+  python3 scripts/validate_docs_reality.py >/tmp/b131-docs-reality.txt
+  mutant=$(mktemp)
+  trap "rm -f \"$mutant\"" EXIT
+  sed 's/runner-fleet-health\.yml/runner-fleet-health-MUTANT.yml/' "$doc" > "$mutant"
+  grep -q "runner-fleet-health-MUTANT.yml" "$mutant"
+  ! grep -q "current executable fleet probe is runner-fleet-health.yml" "$mutant"
+  echo "fechado: doc aponta para runner-fleet-health.yml/check_runner_fleet.py; realidade e mutacao passaram"'
 verify-means: |
-  open — o doc instrui a re-rodar uma sonda ausente da arvore.
-
-  Vira DRIFTED quando `runner-probe.yml` voltar (ai o item fecha e a polaridade do verify
-  INVERTE), ou quando o doc parar de citar a sonda.
+  done — a documentacao aponta para a sonda atual implementada, o workflow e o helper
+  existem, o gate docs-reality passa, e a mutacao que remove a referencia central e
+  detectada. As execucoes `runner-probe.yml` permanecem marcadas como historicas.
 last-verified: 2026-08-31
 ```
 
