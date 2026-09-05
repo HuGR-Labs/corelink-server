@@ -40,6 +40,18 @@ def test_complete_published_population_is_green() -> None:
     assert len(list(gate.rows(_matrix()))) == len(gate.APPLIED)
 
 
+def test_permission_matrix_notice_is_current_in_published_locales() -> None:
+    paths = [ROOT / gate.MATRIX]
+    paths.extend(sorted((ROOT / "apps" / "docs" / "i18n").glob(
+        "*/docusaurus-plugin-content-docs/current/explanation/rbac/permission-matrix.mdx"
+    )))
+    assert len(paths) == 4
+    for path in paths:
+        contents = path.read_text(encoding="utf-8")
+        assert "**No gate checks it.**" not in contents
+        assert "row or gate drift fails closed" in contents
+
+
 def test_every_published_role_cell_is_mutation_checked() -> None:
     source = _sources()
     matrix = _matrix()

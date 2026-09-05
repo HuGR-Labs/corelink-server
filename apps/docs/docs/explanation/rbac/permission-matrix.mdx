@@ -28,10 +28,10 @@ Legend:
 - self only — operation is permitted only against the actor's own account
   (for example, mint a PAT for yourself).
 
-> **Note (manual):** This matrix is hand-maintained against the route
-> tables in `crates/corelink-container/src/routes/` and the predicates in
-> `crates/corelink-container/src/scope.rs`. **No gate checks it.** Verify
-> a row against the cited source before relying on it.
+> **Note:** This matrix is checked in CI against the route tables in
+> `crates/corelink-container/src/routes/` and the predicates in
+> `crates/corelink-container/src/scope.rs`; row or gate drift fails closed.
+> Verify a row against the cited source before relying on it.
 
 ## CAS — cache surface
 
