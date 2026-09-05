@@ -5237,54 +5237,29 @@ verify-means: |
 last-verified: 2026-09-04
 ```
 
-### B-082 — a sonda profunda de saúde do contêiner existe, funciona, e não é alcançável por ninguém
+### B-082 — a sonda profunda de saúde do contêiner preserva o sinal de storage somente para operadores
 
-`worker/src/index.ts:861` documenta que `/_health/container` expõe o campo `storage`, que
-revela se um handler caiu para o armazenamento em memória. A linha 2116 do mesmo arquivo
-executa `delete raw["storage"]`.
-
-A remoção é deliberada e **correta** — foi reparo de segurança, para não vazar topologia
-de armazenamento a um chamador anônimo. O defeito é que nenhuma variante autenticada foi
-criada em seu lugar. O sinal existe, é produzido pela sonda profunda que de fato alcança
-o DO `_system`, e é descartado antes de chegar a qualquer consumidor, inclusive ao
-operador. E o comentário da linha 861 continua descrevendo o comportamento antigo.
-
-Consequência operacional concreta: o modo de falha "o handler subiu com armazenamento em
-memória" é indetectável de fora. É precisamente o que uma sonda de saúde existe para
-detectar.
-
-Reparo: variante autenticada de `/_health/container` que preserve `storage` atrás do
-`CORELINK_ADMIN_AUTH_KEY`, e corrigir o comentário da linha 861.
+`worker/src/index.ts` agora mantém `/_health/container` anônimo e redige os campos de
+storage/topologia, enquanto `/_health/container/authenticated` expõe o sinal completo
+somente após autenticação constante no tempo com o dedicado `CORELINK_ADMIN_AUTH_KEY`.
+O variant autenticado não aceita segredo em query string, não usa o fallback da chave
+interna compartilhada e marca a resposta `no-store`; o DO continua sempre fixado no
+tenant `_system`.
 
 ```backlog
 id: B-082
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'f=worker/src/index.ts
-  [ -f "$f" ] || { echo "FALHA: index.ts sumiu — reavalie o item."; exit 1; }
-  strip=0; grep -qE "delete raw\[\"storage\"\]|delete raw\[.storage.\]" "$f" && strip=1
-  [ "$strip" = 1 ] || { echo "FALHA: o campo storage nao e mais removido — feche o item ou reescreva-o."; exit 1; }
-  autent=0
-  awk "/delete raw\[/{n=NR} n&&NR>=n-40&&NR<=n+40" "$f" | grep -qiE "ADMIN_AUTH_KEY|authenticated variant|health_container_authed" && autent=1
-  [ "$autent" = 0 ] || { echo "FALHA: existe caminho autenticado na sonda de container — feche o item."; exit 1; }
-  echo "aberto: campo storage removido e nenhuma variante autenticada da sonda"'
+  python3 scripts/verify_b082_health_probe.py
 verify-means: |
-  open — o campo `storage` continua sendo removido E não existe caminho autenticado que
-  o preserve. As duas metades são a alegação: a remoção é correta, a ausência de
-  alternativa é o defeito.
-
-  Vira DRIFTED quando aparecer a variante autenticada. Se alguém simplesmente parar de
-  remover o campo, o primeiro ramo falha e o item também fecha — mas isso seria REGRESSÃO
-  de segurança, então a mensagem manda reavaliar em vez de fechar cegamente. Registro
-  essa ambiguidade de propósito: prefiro um portão que peça julgamento a um que aprove
-  o desfazimento de um reparo.
-
-  A correção do comentário da linha 861 é reportada na prosa e não gateada: é
-  documentação, e travar o item nela atrasaria a variante autenticada, que é o que
-  importa.
-last-verified: 2026-08-30
+  done — the executable verifier checks the anonymous redaction and dedicated admin
+  authentication/preservation arms, then runs the 143-test focal Worker suite. Its
+  inverted mutation self-test must reject removing anonymous `storage` redaction and
+  bypassing the authenticated gate. Keep the public route safe: changing it to return
+  storage is a regression, not a valid closure.
+last-verified: 2026-09-05
 ```
 
 ### B-083 — o BYOK é vendido a $99/mês, consta do SLA assinado, e é um `XOR` em memória no binário embarcado

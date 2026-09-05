@@ -1,74 +1,31 @@
-# Storage Backing Alert — 2026-05-30
+# Storage Backing Alert — historical record and current probe
 
-Provisioned by agent wave ops run on 2026-05-30. Additive to existing
-monitor `4466381` (`/_health`). Does NOT replace or modify `4466381`.
+This document records the 2026-05-30 storage monitor and the current operator
+procedure. The old public monitor is retained as historical evidence only.
 
-> **B-082 security update (2026-09-05):** `/_health/container` is deliberately
-> anonymous and now strips the container's storage/topology diagnostics. The
-> historical BetterStack keyword monitor below cannot observe `"storage":"r2"`
-> anymore and must not be recreated or treated as an active storage alert. Use
-> `GET /_health/container/authenticated` with the dedicated
-> `X-Corelink-Internal-Auth` header for operator diagnostics. Never put that
-> credential in a URL, query string, public monitor, or status page.
+## Historical monitor (retired by B-082)
 
----
+On 2026-05-30, BetterStack monitor `4467865` was created against the anonymous
+URL `https://corelink-api.humangr.com/_health/container`, with the keyword
+`"storage":"r2"`, 180-second checks, and status-page resource `8890128` under
+status page `247652` / API section `328864`. The recorded state was **up**.
 
-## New Monitor
+That monitor is no longer an actionable storage alert. The anonymous endpoint
+now deliberately removes `storage` and topology fields, so a public keyword
+monitor cannot distinguish durable R2 from the in-memory fallback. Do not
+recreate, re-enable, attach alerting to, or expose this monitor as a storage
+signal. The historical resource should be disabled or removed through the
+BetterStack console by the service owner; this codebase performs no remote
+monitor mutation.
 
-| Field               | Value                                                        |
-|---------------------|--------------------------------------------------------------|
-| Monitor ID          | `4467865`                                                    |
-| URL                 | `https://corelink-api.humangr.com/_health/container` (historical; anonymous redaction) |
-| Monitor type        | `keyword` (body must contain required keyword)               |
-| Required keyword    | Not applicable after B-082 (`storage` is intentionally redacted) |
-| Alert condition     | Historical monitor is not a valid storage signal; disable/replace it |
-| Check frequency     | 180 s (plan cap; 60 s was requested, plan enforces 3-min min)|
-| Regions             | us, eu, as, au (4-region global coverage)                    |
-| Expected HTTP codes | 200                                                          |
-| SSL verification    | enabled                                                      |
-| SSL expiry alert    | 30 days                                                      |
-| Domain expiry alert | 30 days                                                      |
-| Request timeout     | 10 s                                                         |
-| Recovery period     | 60 s                                                         |
-| Current status      | **up**                                                       |
-| policy_id           | `null` — PagerDuty wiring pending (see §PagerDuty below)     |
-| Created at          | 2026-05-30T18:52:57Z                                         |
+The old provisioning helper is retired at
+`scripts/provision-storage-monitor.sh`; it exits with an explanatory error and
+must not be replaced with a public monitor carrying a secret.
 
----
+## Current operator deep probe (B-082)
 
-## Status Page Resource
-
-Monitor `4467865` was added to status page `247652` under section "API":
-
-| Field       | Value                          |
-|-------------|--------------------------------|
-| Resource ID | `8890128`                      |
-| Public name | CoreLink Container Storage     |
-| Section     | API (section ID `328864`)      |
-| Status      | operational                    |
-
----
-
-## Historical Alert Semantics
-
-Before B-082, the route `GET /_health/container` returned one of:
-
-```json
-{"status":"ok","storage":"r2"}      <- healthy: keyword present, no alert
-{"status":"ok","storage":"inmemory"} <- degraded: keyword absent, ALERT FIRES
-```
-
-BetterStack `monitor_type=keyword` fires the alert when `required_keyword` is
-**absent** from the response body. The keyword `"storage":"r2"` is absent when
-the container fell back to `InMemoryStorage`, which is the exact silent
-degradation the monitor was designed to catch. After B-082, the anonymous route
-returns only the safe liveness fields, so this monitor cannot distinguish R2
-from InMemoryStorage and should not be used for alerting.
-
-## Operator Deep Probe (B-082)
-
-The authenticated variant preserves the native container signal for an operator
-or a secret-bearing internal probe:
+Use the authenticated variant from a protected operator shell or secret-bearing
+internal probe:
 
 ```sh
 curl -fsS \
@@ -76,112 +33,26 @@ curl -fsS \
   https://corelink-api.humangr.com/_health/container/authenticated
 ```
 
-The response must contain `"status":"ok"` and `"storage":"r2"`. A missing or
-malformed configured `CORELINK_ADMIN_AUTH_KEY` returns `503`; a missing or
-incorrect header returns `401`. Query-string credentials are never accepted.
+The response must contain `"status":"ok"` and `"storage":"r2"`. The
+`CORELINK_ADMIN_AUTH_KEY` is the dedicated admin key, not the shared internal
+key. Never put it in a URL, query string, public monitor, status page, or log.
 
----
+Authentication semantics are intentional: a missing or malformed configured
+admin key returns `503`; a missing or incorrect header returns `401`. The
+authenticated response is marked `Cache-Control: no-store`.
 
-## PagerDuty Integration Status
+## Fallback runbook
 
-**Not yet wired via API.** BetterStack v2 API does not expose endpoints for
-creating PagerDuty integrations or escalation policies programmatically
-(all attempts returned 404). The `PAGERDUTY_ROUTING_KEY` in `.env.local` is
-the production Events API v2 routing key.
+If the authenticated probe reports `"storage":"inmemory"`:
 
-**Required console actions (operator TODO — HIGH priority):**
+1. Check the R2 bindings on the main Worker and signup Worker (names only).
+2. Confirm `R2_S3_ACCESS_KEY_ID`, `R2_S3_SECRET_ACCESS_KEY`, and
+   `R2_S3_ENDPOINT` are present and valid.
+3. Re-inject rotated values with `wrangler secret put` and redeploy the affected
+   Worker through the normal release process.
+4. Repeat the authenticated probe and confirm `"storage":"r2"`.
+5. Audit writes accepted during the in-memory interval; they are not durable.
 
-1. Log into https://uptime.betterstack.com
-2. On-call > Integrations > Add integration > PagerDuty
-3. Paste `PAGERDUTY_ROUTING_KEY` from `.env.local` — save, note integration ID
-4. On-call > Policies > Create policy "CoreLink Storage P1"
-5. Add step: alert via PagerDuty integration from step 3, delay = 0 min
-6. Save — note policy ID
-7. Wire the policy to monitor `4467865`:
-   ```sh
-   source .env.local
-   curl -X PATCH \
-     -H "Authorization: Bearer $BETTERSTACK_API_TOKEN" \
-     -H "Content-Type: application/json" \
-     -d '{"policy_id": "<POLICY_ID>"}' \
-     "https://uptime.betterstack.com/api/v2/monitors/4467865"
-   ```
-
-Until wired, alerts go to team email only (BetterStack `email: true` is set).
-
----
-
-## Runbook
-
-Full operator runbook (diagnosis + remediation steps):
-`specs/_runbooks/rb-storage-fallback.md`
-
-**TL;DR when paged:**
-
-1. Confirm with the authenticated deep probe shown above.
-2. Container returned `"storage":"inmemory"` — R2 credentials are broken
-3. Check secrets on main worker + signup-worker:
-   - `R2_S3_ACCESS_KEY_ID`
-   - `R2_S3_SECRET_ACCESS_KEY`
-   - `R2_S3_ENDPOINT`
-4. Re-inject any missing/rotated secrets via `wrangler secret put`
-5. Redeploy: `npx wrangler deploy --env prod`
-6. Verify recovery: the authenticated response must contain `"storage":"r2"`
-
----
-
-## Verification gate
-
-```sh
-source .env.local
-curl -H "Authorization: Bearer $BETTERSTACK_API_TOKEN" \
-  "https://uptime.betterstack.com/api/v2/monitors/4467865" \
-  | python3 -c "
-import json, sys
-d = json.load(sys.stdin)['data']['attributes']
-print('url:', d['url'])
-print('type:', d['monitor_type'])
-print('keyword:', d['required_keyword'])
-print('status:', d['status'])
-print('freq:', d['check_frequency'], 's')
-"
-```
-
-Expected output:
-```
-url: https://corelink-api.humangr.com/_health/container
-type: keyword
-keyword: "storage":"r2"
-status: up
-freq: 180 s
-```
-
----
-
-## Existing monitor preserved
-
-| Monitor ID | URL                                              | Status |
-|------------|--------------------------------------------------|--------|
-| `4466381`  | `https://corelink-api.humangr.com/_health`       | up     |
-| `4467865`  | `https://corelink-api.humangr.com/_health/container` | up |
-
-Monitor `4466381` was NOT modified. The new monitor `4467865` is purely additive.
-
----
-
-## Actions taken this run
-
-1. Called `GET /api/v2/monitors` — confirmed 1 existing monitor (ID `4466381`), no duplicate at `/_health/container`.
-2. Called `POST /api/v2/monitors` — created monitor `4467865` with `monitor_type=keyword`, `required_keyword="storage":"r2"`.
-3. Called `POST /api/v2/status-pages/247652/resources` — added monitor `4467865` as resource `8890128` under section "API" (`328864`).
-4. Verified `GET /api/v2/monitors/4467865` returns `status: up`, `required_keyword: '"storage":"r2"'`.
-5. Documented PagerDuty console-only gap (hard pause trigger #2 per task spec).
-6. Created runbook at `specs/_runbooks/rb-storage-fallback.md`.
-
----
-
-## Notes
-
-- Check frequency returned 180 s (plan minimum); 60 s was requested.
-- `policy_id` is `null` — email-only alerts until PD console wiring is done.
-- The provisioning script is at `scripts/ops/provision-storage-monitor.sh` (idempotent; checks for existing monitor at same URL before creating).
+The detailed remediation runbook is
+`specs/_runbooks/rb-storage-fallback.md`, which must follow the same
+authenticated probe procedure.

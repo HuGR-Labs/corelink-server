@@ -5,7 +5,7 @@ doc_status: "ACTIVE"
 audit_status: "ACTIVE"
 version: "1.0.0"
 created: "2026-05-30"
-updated: "2026-05-30"
+updated: "2026-09-05"
 owner: "SRE Lead"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -16,9 +16,10 @@ tags: ["runbook", "storage", "r2", "inmemory", "betterstack", "pagerduty", "sile
 
 # RB-STORAGE-FALLBACK — Container fell back to InMemory storage
 
-> **Status:** ACTIVE. Triggered by BetterStack monitor `4467865` on
-> `https://corelink-api.humangr.com/_health/container` when the response body
-> does NOT contain `"storage":"r2"` (i.e., `"storage":"inmemory"` is returned).
+> **Status:** ACTIVE, operator-triggered. Historical BetterStack monitor `4467865`
+> is retired by B-082 because anonymous `/_health/container` redacts storage.
+> Confirm the condition with the authenticated
+> `/_health/container/authenticated` probe below.
 >
 > **Severity:** P1 — silent data-loss risk. Writes accepted by the container are
 > not persisted to R2. No client-visible error is returned, so this degrades
@@ -28,11 +29,13 @@ tags: ["runbook", "storage", "r2", "inmemory", "betterstack", "pagerduty", "sile
 
 ## 1. Trigger conditions
 
-This runbook fires when BetterStack monitor `4467865` raises an alert, meaning:
+This runbook is opened when a protected operator probe reports:
 
-- `GET https://corelink-api.humangr.com/_health/container` returns HTTP 200 **but**
-- The response body does NOT contain the substring `"storage":"r2"`
-- Typical failing body: `{"status":"ok","storage":"inmemory"}`
+- `GET /_health/container/authenticated` returns HTTP 200 **and**
+- The response body contains `"storage":"inmemory"`.
+
+The anonymous `/_health/container` endpoint intentionally returns only safe
+liveness fields and is not a storage signal.
 
 The container initialization sequence tries R2 first; if R2 credentials are
 missing or invalid, it silently falls back to `InMemoryStorage`. All writes
@@ -43,7 +46,9 @@ succeed but nothing persists across restarts.
 ### 2.1 Confirm the active storage backend
 
 ```sh
-curl -sf https://corelink-api.humangr.com/_health/container | python3 -m json.tool
+curl -sf \
+  -H "X-Corelink-Internal-Auth: $CORELINK_ADMIN_AUTH_KEY" \
+  https://corelink-api.humangr.com/_health/container/authenticated | python3 -m json.tool
 ```
 
 Expected healthy response:
@@ -133,15 +138,17 @@ npx wrangler deploy --env prod
 ```sh
 # Poll until storage=r2 is confirmed (runs every 10s, up to 3 minutes)
 for i in $(seq 1 18); do
-  RESP=$(curl -sf https://corelink-api.humangr.com/_health/container)
+  RESP=$(curl -sf \
+    -H "X-Corelink-Internal-Auth: $CORELINK_ADMIN_AUTH_KEY" \
+    https://corelink-api.humangr.com/_health/container/authenticated)
   echo "$RESP"
   echo "$RESP" | grep -q '"storage":"r2"' && { echo "RECOVERED"; break; }
   sleep 10
 done
 ```
 
-BetterStack will auto-resolve the incident once the monitor detects
-`"storage":"r2"` in the next check cycle (≤ 180 s after recovery).
+The protected probe is the source of truth after recovery. The retired
+BetterStack monitor must not be used to auto-resolve this condition.
 
 ## 4. Escalation
 
@@ -150,40 +157,18 @@ BetterStack will auto-resolve the incident once the monitor detects
 | Secrets exist but R2 still fails after redeploy | Escalate to Cloudflare support; R2 regional incident |
 | R2 bucket deleted or misconfigured | Escalate to Gustavo Schneiter immediately — bucket recreation is a data-loss event |
 | InMemory was active for > 30 min | Audit what writes landed in that window; those objects are lost — run postmortem per `RB-POSTMORTEM-PROCESS.md` |
-| PagerDuty policy not yet wired | BetterStack sends email alerts until PD policy is configured (see §5) |
+| Historical monitor `4467865` | Do not use it as a storage signal; anonymous health redacts `storage` |
 
-## 5. PagerDuty escalation wiring — OPERATOR TODO
+## 5. Historical BetterStack record
 
-BetterStack's PagerDuty integration requires console-side setup. The routing
-key `PAGERDUTY_ROUTING_KEY` is stored in `.env.local` but BetterStack does
-NOT expose an API endpoint to create PagerDuty integrations programmatically
-(v2 API returns 404 for `/api/v2/integrations`, `/api/v2/policies`, etc.).
+Monitor `4467865` was created on 2026-05-30 against the anonymous
+`/_health/container` URL with keyword `"storage":"r2"`; its status-page resource
+was `8890128` (API section, page `247652`). This is historical evidence only.
+The monitor cannot carry `CORELINK_ADMIN_AUTH_KEY`, so it must not be enabled or
+used for alerting after B-082. Any alerting integration must invoke the
+authenticated probe through a protected secret-bearing system.
 
-**Required manual console steps:**
-
-1. Log into https://uptime.betterstack.com
-2. Navigate to On-call > Integrations > Add integration
-3. Select "PagerDuty"
-4. Paste the routing key from `.env.local` (`PAGERDUTY_ROUTING_KEY`)
-5. Save the integration — note the integration ID
-6. Go to On-call > Policies > Create policy
-7. Name it "CoreLink Storage P1"
-8. Add a step: "Alert via PagerDuty" using the integration from step 4
-9. Set escalation delay: 0 min (immediate)
-10. Save the policy — note the policy ID
-11. Call the BetterStack API to attach the policy to monitor `4467865`:
-    ```sh
-    source .env.local
-    curl -X PATCH \
-      -H "Authorization: Bearer $BETTERSTACK_API_TOKEN" \
-      -H "Content-Type: application/json" \
-      -d '{"policy_id": "<POLICY_ID_FROM_STEP_10>"}' \
-      "https://uptime.betterstack.com/api/v2/monitors/4467865"
-    ```
-
-Until this is done, alerts go to the team email only.
-
-## 6. Monitor configuration summary
+## 6. Historical monitor configuration summary
 
 | Field | Value |
 |---|---|
@@ -191,11 +176,11 @@ Until this is done, alerts go to the team email only.
 | URL | `https://corelink-api.humangr.com/_health/container` |
 | Type | `keyword` (body must contain required keyword) |
 | Required keyword | `"storage":"r2"` |
-| Alert condition | Keyword absent from body = degraded |
+| Alert condition | Historical only; anonymous response redacts storage |
 | Check frequency | 180 s (plan cap; 60 s was requested) |
 | Regions | us, eu, as, au |
 | Status page resource | `8890128` under section "API" (page 247652) |
-| policy_id | `null` (pending console wiring per §5) |
+| policy_id | `null` (historical record) |
 | Created at | 2026-05-30T18:52:57Z |
 
 ## 7. Related documents

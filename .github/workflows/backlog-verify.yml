@@ -64,6 +64,17 @@ on:
       - "worker/tsconfig.test.json"
       - "worker/tests/setup.ts"
       - "crates/corelink-container/src/routes/customer.rs"
+      # B-082's executable verifier reads the Worker route/auth source and its
+      # focal test harness. Keep every direct input in the trigger set so a
+      # security regression cannot land without rerunning the inverted guard.
+      - "scripts/verify_b082_health_probe.py"
+      - "worker/package.json"
+      - "worker/vitest.config.mts"
+      - "worker/src/**"
+      - "worker/tests/index.test.ts"
+      - "worker/tests/setup.ts"
+      - "worker/tests/d1_batch_mock.ts"
+      - "pnpm-lock.yaml"
       - "marketing/sales/legal-questionnaires/EVIDENCE-PACK-INDEX.md"
       # B-161's verifier reads exactly these published pages and its focused test.
       - "apps/docs/docs/integrations/homebrew.md"
@@ -111,6 +122,14 @@ on:
       - "worker/tsconfig.test.json"
       - "worker/tests/setup.ts"
       - "crates/corelink-container/src/routes/customer.rs"
+      - "scripts/verify_b082_health_probe.py"
+      - "worker/package.json"
+      - "worker/vitest.config.mts"
+      - "worker/src/**"
+      - "worker/tests/index.test.ts"
+      - "worker/tests/setup.ts"
+      - "worker/tests/d1_batch_mock.ts"
+      - "pnpm-lock.yaml"
       - "apps/docs/docs/integrations/homebrew.md"
       - "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/integrations/homebrew.md"
       - "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/integrations/homebrew.md"
@@ -142,9 +161,8 @@ jobs:
           # than a red one, because it reports green. Full history or nothing.
           fetch-depth: 0
 
-      # B-161 executes a focused Vitest suite from apps/docs. Prepare only that
-      # workspace and its dependencies, with both toolchain actions pinned and
-      # the lockfile treated as an immutable contract.
+      # B-161 and B-082 execute focused Vitest suites. Prepare only those
+      # workspaces and their dependencies, with the lockfile immutable.
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271  # v4.1.0
         with:
           version: 10.32.1
@@ -153,13 +171,11 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-      - name: prepare docs dependencies for B-161
-        run: pnpm install --frozen-lockfile --filter @corelink/docs...
-      # B-160's executable verifier runs the Worker focal. Keep this explicit,
-      # frozen, and package-scoped so a missing runner cannot become a green
-      # source-only check.
-      - name: prepare worker dependencies for B-160
-        run: pnpm install --frozen-lockfile --filter @corelink/worker... --ignore-scripts
+      - name: prepare docs and Worker dependencies for B-161/B-082
+        # B-160 and B-082 both execute Worker focal tests. Keep installation
+        # frozen and package-scoped; ignore lifecycle scripts just as B-160's
+        # independently reviewed guard requires.
+        run: pnpm install --frozen-lockfile --filter @corelink/docs... --filter @corelink/worker... --ignore-scripts
 
       # The gate's own gate. A checker nobody has watched fail proves nothing, so
       # the self-test runs FIRST: if it cannot produce a red verdict on a backlog
@@ -184,6 +200,8 @@ jobs:
             tests/test_gitleaks_b094_manifest.py
       - name: B-169 evidence-pack guard and mutations
         run: python3 -m unittest tests/test_verify_b169_evidence_pack.py
+      - name: B-082 verifier, mutations, and focal health tests
+        run: python3 scripts/verify_b082_health_probe.py
 
       - name: BACKLOG.md agrees with the repo
         # Items that query the Actions API need gh authenticated. Items about
