@@ -287,34 +287,112 @@ def _grep_checks_text(
     return checks, invocations, indeterminate
 
 
+def _is_shell_expansion(text: str, offset: int) -> bool:
+    """Return whether ``$`` at *offset* starts active shell syntax."""
+    if offset + 1 >= len(text):
+        return False
+    next_char = text[offset + 1]
+    return (
+        next_char in "{("
+        or next_char in "@*#?$!-0123456789"
+        or next_char == "_"
+        or next_char.isalpha()
+    )
+
+
+def _decode_nested_payload(text: str, start: int) -> tuple[str, int]:
+    """Decode one quoted ``shell -c`` argument using shell quote rules."""
+    if start >= len(text) or text[start] not in "\"'":
+        raise InstrumentError("nested shell -c payload is not a literal quote")
+    quote = text[start]
+    index = start + 1
+    decoded: list[str] = []
+    while index < len(text):
+        char = text[index]
+        if quote == "'":
+            if char == "'":
+                quote = ""
+                index += 1
+                continue
+            # Backslash has no special meaning in a POSIX single-quoted word.
+            decoded.append(char)
+            index += 1
+            continue
+        if quote == '"' and char == '"':
+            quote = ""
+            index += 1
+            continue
+        if not quote:
+            # Adjacent quoted/unquoted pieces form one shell word.  This is
+            # how a literal payload can contain an apostrophe, and it is also
+            # where an expansion can be smuggled after a literal prefix.
+            if char.isspace() or char in ";;&|()<>\n":
+                return "".join(decoded), index
+            if char in "\"'":
+                quote = char
+                index += 1
+                continue
+            if char == "\\":
+                if index + 1 >= len(text):
+                    raise InstrumentError("unterminated nested shell -c payload")
+                decoded.append(text[index + 1])
+                index += 2
+                continue
+            if char == "$" and _is_shell_expansion(text, index):
+                raise InstrumentError(
+                    "nested shell -c payload contains an active expansion"
+                )
+            if char == "`":
+                raise InstrumentError(
+                    "nested shell -c payload contains an active command substitution"
+                )
+            decoded.append(char)
+            index += 1
+            continue
+        # In double quotes, backslash quotes only $, `, ", \\, and newline.
+        if char == "\\":
+            if index + 1 >= len(text):
+                raise InstrumentError("unterminated nested shell -c payload")
+            escaped = text[index + 1]
+            if escaped in "$`\"\\\n":
+                if escaped != "\n":
+                    decoded.append(escaped)
+            else:
+                decoded.extend(("\\", escaped))
+            index += 2
+            continue
+        if char == "$" and _is_shell_expansion(text, index):
+            raise InstrumentError(
+                "nested shell -c payload contains an active expansion"
+            )
+        if char == "`":
+            raise InstrumentError(
+                "nested shell -c payload contains an active command substitution"
+            )
+        decoded.append(char)
+        index += 1
+    if not quote:
+        return "".join(decoded), index
+    raise InstrumentError("unterminated nested shell -c payload")
+
+
 def _mask_nested_shells(text: str) -> tuple[str, list[tuple[str, int]]]:
     """Mask static ``bash|sh|zsh -c`` bodies and return their payloads."""
     spans: list[tuple[int, int, str, int]] = []
     for match in NESTED_SHELL.finditer(text):
+        # An outer match owns its quoted body; inner shell text is discovered
+        # when that body is scanned recursively.
+        if any(start <= match.start() < end for start, end, _, _ in spans):
+            continue
         line_start = text.rfind("\n", 0, match.start()) + 1
         if not COMMAND_BOUNDARY.search(text[line_start : match.start()]):
             continue
         pos = match.end()
         while pos < len(text) and text[pos].isspace():
             pos += 1
-        if pos >= len(text) or text[pos] not in "\"'":
-            raise InstrumentError("nested shell -c payload is not a literal quote")
-        quote = text[pos]
-        end = pos + 1
-        while end < len(text):
-            if text[end] == "\\" and end + 1 < len(text):
-                end += 2
-                continue
-            if text[end] == quote:
-                break
-            end += 1
-        if end >= len(text):
-            raise InstrumentError("unterminated nested shell -c payload")
-        payload = text[pos + 1 : end]
-        if re.match(r"\s*(?:\$\{?[A-Za-z_]|\$\()", payload):
-            raise InstrumentError("nested shell -c payload is dynamically generated")
+        payload, end = _decode_nested_payload(text, pos)
         first_line = text.count("\n", 0, pos + 1) + 1
-        spans.append((match.start(), end + 1, payload, first_line))
+        spans.append((match.start(), end, payload, first_line))
 
     if not spans:
         return text, []

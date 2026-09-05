@@ -116,6 +116,60 @@ class B155VerifierTests(unittest.TestCase):
         with self.assertRaises(verifier.InstrumentError):
             verifier._grep_checks(record)
 
+    def test_dynamic_nested_payload_expansions_fail_closed_at_every_position(self) -> None:
+        # The old guard only inspected the beginning of the payload, allowing
+        # an expansion to manufacture the rest of a script after a harmless
+        # prefix.  A double-quoted argument is expanded by the invoking shell
+        # at every position; all shell spellings must therefore be rejected.
+        for shell in ("bash", "sh", "zsh"):
+            for payload in (
+                '"$SCRIPT; grep -q foo file"',
+                '"echo hi $SCRIPT; grep -q foo file"',
+                '"echo hi; grep -q foo file; $SCRIPT"',
+                '"$(gen); grep -q foo file"',
+                '"echo hi $(gen); grep -q foo file"',
+                '"echo hi; grep -q foo file; $(gen)"',
+            ):
+                with self.subTest(shell=shell, payload=payload):
+                    with self.assertRaises(verifier.InstrumentError):
+                        verifier._grep_checks(
+                            {"id": "B-155", "verify": f"{shell} -c {payload}"}
+                        )
+
+    def test_single_quoted_payload_is_literal_to_invoking_shell(self) -> None:
+        # These expansions are data passed to the child shell, matching the
+        # production backlog's literal bash -c bodies.  Conversely, a single
+        # quote inside an outer double-quoted word does not suppress expansion
+        # in the invoking shell and must still fail closed.
+        for shell in ("bash", "sh", "zsh"):
+            with self.subTest(shell=shell):
+                checks, invocations, indeterminate = verifier._grep_checks(
+                    {
+                        "id": "B-155",
+                        "verify": f"{shell} -c 'echo hi $SCRIPT; grep -q foo file'",
+                    }
+                )
+                self.assertEqual(invocations, 1)
+                self.assertEqual([check.pattern for check in checks], ["foo"])
+                self.assertEqual(indeterminate, [])
+                with self.assertRaises(verifier.InstrumentError):
+                    verifier._grep_checks(
+                        {
+                            "id": "B-155",
+                            "verify": f'{shell} -c "echo \'$SCRIPT\'; grep -q foo file"',
+                        }
+                    )
+
+    def test_escaped_quotes_in_double_quoted_payload_are_decoded(self) -> None:
+        checks, invocations, indeterminate = verifier._grep_checks(
+            {"id": "B-155", "verify": 'bash -c "grep -q \\"foo\\" file"'}
+        )
+        self.assertEqual(invocations, 1)
+        self.assertEqual(indeterminate, [])
+        self.assertEqual(len(checks), 1)
+        self.assertEqual(checks[0].pattern, "foo")
+        self.assertEqual(checks[0].quote, '"')
+
     def test_bre_ere_fixed_and_shell_variable_semantics_are_not_literal(self) -> None:
         self.assertIsNotNone(verifier._as_python_regex(r"foo\|bar").search("bar"))
         self.assertIsNone(verifier._as_python_regex(r"foo|bar").search("bar"))
