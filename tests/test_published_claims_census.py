@@ -34,13 +34,14 @@ def test_published_claims_census_mutations() -> None:
     assert MODULE.validate(ROOT, ROOT / "scripts/published_claims_inventory.json") == []
     current = MODULE.collect_occurrences(ROOT)
     pentest = [entry for entry in current if str(entry.get("term", "")).lower() == "pentest"]
-    assert len(pentest) == 202
+    assert len(pentest) == 203
     assert len({str(entry["path"]) for entry in pentest}) == 60
 
     with tempfile.TemporaryDirectory(prefix="b156-census-") as raw:
         root = Path(raw)
         inventory = write_fixture(root)
         assert MODULE.validate(root, inventory) == []
+        original = (root / "apps/docs/page.mdx").read_text(encoding="utf-8")
 
         # A new published file cannot hide behind the old file/hash population.
         (root / "apps/docs/new.mdx").write_text("CoreLink BYOK is live.\n", encoding="utf-8")
@@ -54,6 +55,8 @@ def test_published_claims_census_mutations() -> None:
         failures = MODULE.validate(root, inventory)
         assert any("file bytes changed" in failure for failure in failures), failures
         assert any("new/changed occurrence" in failure for failure in failures), failures
+        (root / "apps/docs/page.mdx").write_text(original, encoding="utf-8")
+        assert MODULE.validate(root, inventory) == []
     # Keep the synonym in the same canonical population as the short form.
     with tempfile.TemporaryDirectory(prefix="b156-synonym-") as raw:
         root = Path(raw)

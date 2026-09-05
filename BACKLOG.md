@@ -6012,7 +6012,7 @@ verify-means: |
   canônico de B-156: qualquer falha ou claim positivo faz o gate falhar. As quatro
   obrigações futuras aprovadas em `legal/dpa`/SCC são registros legítimos e não bloqueiam
   a conclusão; sua execução é responsabilidade dos itens legais. O verificador exige o
-  tracker de cinco fornecedores `NOT_CONTACTED`, a população de 202 ocorrências/60
+  tracker de cinco fornecedores `NOT_CONTACTED`, a população de 203 ocorrências/60
   arquivos e a classificação canônica, com mutações cobrindo `unavailable` e variantes
   de completed/engaged sem permitir que uma negação não relacionada esconda um claim.
 
@@ -6030,7 +6030,7 @@ verify-means: |
      `[HQ_LOCATION]`, `[INVESTOR_PLACEHOLDERS]`.
   5. A afirmação de Rekor em `marketing/sales/PROOF-POINTS.md` §2.15, que contradiz o
      `STA-11.1` do CAIQ (agora "N"). Achado adjacente, precisa de item próprio.
-last-verified: 2026-08-31
+last-verified: 2026-09-05
 ```
 
 ### B-089 — o SLA promete créditos automáticos como remédio exclusivo e não existe código que emita crédito
@@ -10810,99 +10810,36 @@ last-verified: 2026-09-05
 
 ### B-156 — o resíduo de afirmação falsa na superfície publicada é uma ordem de grandeza maior do que os itens que o descrevem
 
-[B-083] mede o `Dockerfile` e o `Cargo.toml`. [B-088] mede o `PRESS-RELEASE.md` e o tracker
-de RFP. [B-094] conta arquivos de `marketing/`. Os três estão certos, e os três medem o
-**recorte** que descobriu o defeito, não a extensão dele.
+[B-083] mede o `Dockerfile` e o `Cargo.toml`; [B-088] mantém a fonte factual de procurement;
+e [B-094] cobre apenas `marketing/`. Este item fecha a visão compartilhada da superfície
+publicada (`apps/docs/`, `marketing/`, `legal/`) com o censo determinístico canônico.
 
-Varredura própria, 2026-08-31, sobre a superfície que o cliente lê — `apps/docs/`,
-`marketing/`, `legal/`:
+**Censo congelado em 2026-09-05 na árvore cumulativa D02:** `BYOK=1339` ocorrências em
+`243` arquivos, `Buck2=254` em `89`, e `pentest=203` em `60`. Cada ocorrência tem caminho,
+linha, texto, hash e ID estável; mudança de bytes, população ou posição reprova o gate para
+forçar nova derivação e triagem. Menções legítimas permanecem no inventário e não são
+confundidas com claims positivos.
 
-| alegação (menção) | posições | arquivos |
-|---|---:|---:|
-| `BYOK` | **915** | 242 |
-| `Buck2` | **240** | 123 |
-| `pentest` | **121** | 60 |
-
-**86 dos arquivos com `Buck2` estão fora de `marketing/`** — isto é, fora do único diretório
-que o `verify` do [B-094] conta. É esse número que faz o item: fechar o [B-094] esvaziando
-`marketing/` deixaria 86 arquivos vivos e o portão ficaria verde.
-
-Amostras que mostram a natureza do resíduo, não só o tamanho: a **tabela de preços** com
-checkmark de Buck2 em todos os tiers; o `$99/mo` de BYOK numa planilha de preços; e uma
-**linha de log fabricada** em `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md:219` —
-*"scheduled BYOK chaos drill, kill-switch RTT 3m12s (target ≤ 5 min, PASS)"* — dentro de um
-bloco que imita a saída de um relatório operacional. É a mesma família do [B-084]: não é
-promessa exagerada, é **evidência fabricada**.
-
-⚠️ **Contado não é triado, e o `verify` argumenta por construção a favor de manter aberto.**
-Uma parte das posições é **legítima**: `apps/docs/docs/tutorial/04-buck2-quickstart.mdx`
-existe para dizer que Buck2 **não** é suportado (*"CoreLink does not expose a gRPC
-remote-execution endpoint"*) e entra na conta do mesmo jeito, porque a palavra está lá. Um
-comando que conta menções nunca vai chegar a zero e não deve. **O trabalho do item é a
-triagem**; a contagem serve para dimensionar e para notar crescimento, não para acusar linha
-a linha.
-
-**Números diferentes dos que a fila trazia, e o motivo importa.** A fila registrava
-1055/244/65. A diferença é de **predicado**, não de repositório: um escopo mais largo, ou
-"BYOK como entregue" em vez de "menção a BYOK". Anotei os meus com o comando que os produz
-para que a próxima medição compare a mesma coisa — foi a falta disso que fez os três itens
-anteriores medirem recortes incomparáveis.
-
-**O que este item NÃO decide:** o destino de cada menção. Corrigir, remover a página, ou
-construir a capacidade são saídas diferentes por arquivo, e algumas são decisão comercial do
-owner. (Precisão, 2026-08-31: a versão anterior desta frase dizia que *"[B-083], [B-088],
-[B-094] já são `owner:`"*. **Não são mais** — os três desceram para `tl` na reclassificação do
-campo, porque em todos o próximo passo é medir e redigir. O que continua sendo dele nessa
-vizinhança são os instrumentos assinados: [B-154], [B-086], [B-089].) Este item é `tl` porque
-o que falta é a **triagem**, que é minha.
+No recorte de pentest, o verificador classifica toda a população: referências contextuais,
+operacionais, negativas verdadeiras, planos futuros e as quatro obrigações contratuais
+futuras de `legal/dpa`/SCC. Não há claim positivo não substanciado. As obrigações continuam
+legítimas e não alegam que uma contratação, relatório ou reteste ocorreu.
 
 ```backlog
 id: B-156
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'set -e
-  for d in apps/docs marketing legal; do [ -d "$d" ] || { echo "FALHA: $d nao existe — a superficie publicada mudou de lugar; reavalie o item."; exit 1; }; done
-  ctl=$(grep -rlI "^[^#<*>-]*CoreLink" apps/docs marketing legal 2>/dev/null | wc -l | tr -d " ")
-  [ "$ctl" -ge 50 ] || { echo "FALHA: o controle positivo achou so $ctl arquivos com CoreLink — a varredura nao esta enxergando; instrumento, nao arvore limpa."; exit 1; }
-  byok=$(grep -rlI "^[^#<*>-]*BYOK" apps/docs marketing legal 2>/dev/null | wc -l | tr -d " ")
-  buck=$(grep -rlI "^[^#<*>-]*Buck2" apps/docs marketing legal 2>/dev/null | wc -l | tr -d " ")
-  fora=$(grep -rlI "^[^#<*>-]*Buck2" apps/docs legal 2>/dev/null | wc -l | tr -d " ")
-  pen=$(grep -rlI "^[^#<*>-]*pentest" apps/docs marketing legal 2>/dev/null | wc -l | tr -d " ")
-  fab=0
-  p=marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md
-  [ -f "$p" ] && grep -qE "^[^#<*>-]*kill-switch RTT" "$p" && fab=1
-  soma=$((byok + buck + pen))
-  [ "$soma" -gt 30 ] || { echo "FALHA: o residuo caiu para $soma arquivos (byok=$byok buck2=$buck pentest=$pen) — a triagem avancou de verdade; reavalie o item e feche-o se acabou."; exit 1; }
-  echo "aberto: byok=$byok buck2=$buck (fora de marketing/: $fora) pentest=$pen arquivos na superficie publicada; linha de log fabricada no playbook=$fab; controle CoreLink=$ctl"'
+  python3 scripts/verify_b156_pentest_claims.py
 verify-means: |
-  open — o resíduo na superfície publicada (`apps/docs/`, `marketing/`, `legal/`) segue na
-  casa das centenas de arquivos.
-
-  **Tem controle positivo, e ele é o que separa "árvore limpa" de "grep cego".** Antes de
-  contar qualquer alegação o comando conta arquivos com a palavra `CoreLink`; menos de 50 é
-  declarado **falha de instrumento**. Sem isso, um `grep` que deixasse de enxergar o
-  diretório (renomeação, `--exclude` mal posto) reportaria zero resíduo e o item se fecharia
-  no momento em que perdeu a visão.
-
-  ⚠️ **Contado não é triado, e este `verify` sempre argumenta por manter aberto.** Ele conta
-  **menções**, e menções incluem páginas que existem justamente para negar a capacidade —
-  `tutorial/04-buck2-quickstart.mdx` diz que Buck2 não é suportado e entra na conta. O item
-  **não** fecha levando a contagem a zero: fecha quando a triagem estiver feita, cada menção
-  classificada em legítima / corrigida / removida, e este `verify` for **substituído** por um
-  que meça as não-triadas. Um sucessor que continue contando menções seria um portão que
-  nunca pode ficar verde, e isso é um defeito, não rigor.
-
-  **O limiar de 30 é uma guarda de reavaliação, não a definição de pronto.** Se a contagem
-  cair abaixo dele, o comando **falha e manda reavaliar** em vez de fechar sozinho — porque
-  uma queda dessa ordem tanto pode ser triagem real quanto uma pasta que sumiu.
-
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: byok=242 buck2=123
-  (fora de marketing/: 86) pentest=60 … fabricada=1"* e exit 0. Numa cópia do repositório com
-  as três palavras removidas da superfície publicada, sai *"FALHA: o residuo caiu para 0
-  arquivos"* e exit 1.
-last-verified: 2026-08-31
+  done — o verificador carrega o censo Python canônico e o tracker root-local, impõe população
+  e hashes exatos, classifica todos os 203 registros de pentest e falha em qualquer claim
+  positivo não substanciado. A bateria de mutações cobre afirmações disponíveis/concluídas/
+  engaged e a negativa verdadeira `unavailable`; a ausência ou mudança do tracker também
+  falha fechado. As quatro obrigações DPA/SCC têm rationale explícita e continuam sob os
+  respectivos itens legais.
+last-verified: 2026-09-05
 ```
 
 ### B-157 — 🔴 SEGURANÇA: a página publicada do Bazel manda copiar um `.bazelrc` que vaza o PAT no stderr de todo build
