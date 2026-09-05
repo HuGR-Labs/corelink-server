@@ -11957,47 +11957,28 @@ quer de qualquer forma. A segunda escolha é de produto.
 id: B-163
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'set -e
-  p=apps/docs/docs/integrations/raw-curl.md
-  [ -f "$p" ] || { echo "FALHA: $p sumiu — reavalie o item em vez de fecha-lo."; exit 1; }
-  bloco=$(awk "/^## Upload a directory/{c=1} c{print} c&&/^## /&&!/^## Upload a directory/{exit}" "$p")
-  [ -n "$bloco" ] || { echo "FALHA: a secao Upload a directory nao existe mais — se foi removida esse pode ser o reparo; confirme e feche o item explicitamente."; exit 1; }
-  url=0; det=0
-  printf "%s\n" "$bloco" | grep -qE "^[^#]*/v1/cas/.*\\\$\(cat " && url=1
-  printf "%s\n" "$bloco" | grep -qE "^[^#]*tar -czf -" && det=1
-  sort=0
-  printf "%s\n" "$bloco" | grep -qE "^[^#]*(--sort=name|--mtime|gzip -n)" && sort=1
-  n=0
-  [ "$url" = 1 ] && n=$((n+1))
-  [ "$det" = 1 ] && [ "$sort" = 0 ] && n=$((n+1))
-  [ "$n" -gt 0 ] || { echo "FALHA: a receita nao monta mais a URL com \$(cat …) e o tar nao e mais nao-deterministico — feche o item."; exit 1; }
-  echo "aberto: $n de 2 defeitos na receita publicada (url-com-cat-no-mesmo-pipeline=$url, tar-czf-sem-flags-de-determinismo=$det/sort=$sort)"'
+  pnpm --filter @corelink/docs exec vitest run tests/raw-curl-directory-upload.test.ts
 verify-means: |
-  open — a receita ainda monta a URL com `$(cat …)` do arquivo que o **próprio pipeline**
-  escreve, **ou** ainda usa `tar -czf -` sem nenhuma flag de determinismo.
+  done — o teste focal lê a receita publicada em todas as quatro localidades, exige que
+  `--fail-with-body` esteja na linha executável de `curl` (não apenas em comentário), e
+  executa a matriz real de HTTP 422/500 em bash e zsh. Também cobre o vínculo entre digest
+  da URL e bytes enviados, `mktemp` portável, limpeza e falhas de `tar`/`curl`.
 
-  **Mede o BLOCO recortado, não o arquivo.** A página tem várias receitas e outras usam
-  `$(cat …)` legitimamente, depois do arquivo existir; o que decide é o uso **dentro da
-  seção** cujo pipeline escreve e lê o mesmo arquivo. Recortar de `## Upload a directory` até
-  o próximo `##` é o que torna a medida sobre a receita e não sobre a página.
+  A matriz é deliberadamente mutation-resistant: remover a flag do comando, deixá-la só em
+  comentário, quebrar qualquer localidade, shell ou status HTTP faz o teste focal falhar.
+  O `backlog_verify` chama este único teste, para não manter uma segunda implementação
+  estática que possa divergir da prova executável.
 
-  **Âncoras `^[^#]*` em todos os greps** — a página é markdown com cabeçalhos e comentários
-  de shell começando em `#`, e o reparo provável é justamente comentar a linha ruim com uma
-  explicação. Sem a âncora, o item ficaria aberto para sempre por causa do próprio conserto.
+  **Medido pelos dois lados (2026-09-01):** o teste focal passa com 27 testes, incluindo
+  16 casos reais de HTTP (bash/zsh × 4 localidades × 422/500); alterar qualquer âncora
+  protegida acima faz a mesma invocação sair não-zero.
 
-  **A seção sumir NÃO fecha o item sozinho:** remover a receita pode ser o reparo certo, mas
-  o comando falha alto e exige que quem removeu escreva isso, em vez de o portão inferir.
-
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 2 de 2 defeitos"* e
-  exit 0. Numa cópia com o tar materializado num arquivo antes do `curl` e
-  `--sort=name --mtime` no `tar`, sai *"FALHA: a receita nao monta mais a URL com \$(cat …)"*
-  e exit 1.
-
-  **Fecha por exaustão:** consertar só a URL mantém o item aberto com contagem 1, que é o
-  certo — a receita corrigida pela metade continua não reproduzindo o próprio resultado.
-last-verified: 2026-08-31
+  **Determinismo continua fora do escopo:** consertar a URL, a portabilidade e o tratamento
+  HTTP não torna tar/gzip reprodutível; a receita recomenda que builds que precisem de bytes
+  idênticos produzam o archive com ferramenta reprodutível.
+last-verified: 2026-09-01
 ```
 
 ### B-164 — o `corelink doctor` rotula 401 como `COR_QUOTA_EXCEEDED`, e a doc do npm manda rodar um comando impossível para o cliente
