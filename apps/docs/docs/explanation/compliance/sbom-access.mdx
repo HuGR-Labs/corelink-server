@@ -27,28 +27,30 @@ import { DraftBanner } from "../../../src/components/DraftBanner";
 
 - **Format:** CycloneDX 1.5+ JSON (canonical per ADR-0014). SPDX 2.3+ available
   on request.
-- **Cadence:** generated on every release build, signed with `cosign`.
+- **Cadence:** generated on every release build. **Not signed** — see
+  "Signature verification" below.
 - **Coverage:** Worker, Container, and CLI binaries — Rust crates and JS deps
   inclusive.
 
 ## How enterprise customers request the SBOM
 
-1. Open a support ticket of type **"Procurement / Security Review"**.
+1. Open a support ticket of type **Procurement / Security Review**.
 2. Provide your account ID and the release version you need the SBOM for.
-3. We respond within TBD business days with a signed download URL.
-4. Verify the signature with the publicly distributed `cosign` key.
+3. We respond within TBD business days with a time-limited download URL.
 
-## Verification example
+## Signature verification
 
-The following snippet is illustrative — exact key URL is `$TBD` until the
-release signing key is published.
+**There is no SBOM signature to verify today, and we would rather say so than
+print a command that cannot work.** No CoreLink release signing key has ever
+been published, and no Sigstore/Rekor entry has ever been created for a CoreLink
+artifact — the signing workflow was removed on 2026-08-31 after review
+established it had never executed. This page previously carried an illustrative
+`cosign verify-blob` snippet against a `$TBD` key URL; it has been removed rather
+than left to imply a capability that does not exist.
 
-```sh
-cosign verify-blob \
-  --key https://corelink.humangr.com/keys/release.pub \
-  --signature corelink-vX.Y.Z.sbom.json.sig \
-  corelink-vX.Y.Z.sbom.json
-```
+What you *can* verify today: the SBOM is CycloneDX 1.5+ JSON and validates
+against the CycloneDX schema, and the CLI build is reproducible — rebuilding the
+published tag yields a byte-identical binary.
 
 ## Cross-functional review checklist
 

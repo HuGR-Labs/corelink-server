@@ -203,7 +203,7 @@ later; mirrors `apps/docs/docs/trust/subprocessors.mdx`'s
 
 | Vendor | Role | Why it is not a customer-data sub-processor |
 |---|---|---|
-| The Linux Foundation (Sigstore) | Keyless signing + Rekor transparency log (`.github/workflows/cosign-sign.yml`) over **CoreLink's own build artifacts** | Never receives customer data; open-source supply-chain infrastructure, not a processor under Art. 28. Listed for completeness only. |
+| The Linux Foundation (Sigstore) | Release signing + Rekor transparency for **CoreLink's own build artifacts** (the former OCI lane was removed; release-chain use remains separately gated) | Never receives customer data; open-source supply-chain infrastructure, not a processor under Art. 28. Listed for completeness only. |
 
 ## Notification Policy
 

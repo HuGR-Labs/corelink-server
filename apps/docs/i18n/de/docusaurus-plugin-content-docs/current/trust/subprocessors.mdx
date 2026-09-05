@@ -138,7 +138,7 @@ zero-retention guarantee and no-customer-data scope, please raise it via
 The following appear in our internal registers but are **not**
 sub-processors:
 
-- **Sigstore (Linux Foundation)** — keyless signing (`.github/workflows/cosign-sign.yml`)
+- **Sigstore (Linux Foundation)** — release signing and transparency for CoreLink build artifacts; the former OCI lane was removed and release-chain use is separately gated
   over CoreLink's **own build artifacts** as part of our supply-chain pipeline.
   It never receives customer data and is not a customer-data sub-processor;
   captured in `legal/sub-processors.md` for completeness only.

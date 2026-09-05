@@ -1,7 +1,19 @@
 # WP-CI — tirar o CI da máquina do owner: a tabela de decisão
 
-Medido em **2026-08-31** contra `origin/main` @ `af42b328`. Esta página é a
+Medição histórica de **2026-08-31** contra `origin/main` @ `af42b328`; esta página é a
 **decisão**; os PRs são execução. Nada em `.github/workflows/` foi editado antes dela.
+
+> **Restack factual — 2026-09-04.** Os números e estados de execução abaixo são
+> históricos; não são uma leitura presente da frota. O snapshot operacional disponível
+> agora registra **12 runners `corelink` offline e 5 Macs idle**. Não há override local
+> por SHA exato para esse estado, portanto nenhuma conclusão nova de disponibilidade pode
+> ser inferida daqui. `semgrep` já está em `corelink` pelo #1505 mergeado. O #1506
+> continua **HOLD**: a imagem assa `cargo-fuzz 0.13.2`, mas as workflows ainda pinam
+> `0.13.1`, e o experimento de workspace permanece bloqueado por **ENOSPC**; registrar a
+> divergência em B-138 antes de mover lanes. A varredura Darwin noturna atual encontrou
+> **7 arquivos / 12 linhas**, não 9. Essas correções mantêm a metodologia de probes, o
+> controle de zero execuções e a lição de sobreposição por arquivo sem transformar
+> contagens antigas em estado atual.
 
 > **Revisão 2 (2026-08-31 ~04:10Z) — eu me corrigi, duas vezes.** A revisão 1 afirmava
 > que `gh` e `docker` estavam ausentes da frota. **As duas afirmações estavam erradas, e
@@ -57,7 +69,9 @@ Antes de qualquer outra coisa, a premissa do pacote inteiro. `gh api
 | …dos quais macOS | **0** |
 | Mac builders `corelink-builder-1…5` | 5 — labels `self-hosted, macOS, X64, mac, corelink-builder`, **nenhum com `corelink`** |
 
-**Os dois pools são disjuntos por label: `runs-on: corelink` não pode cair no Mac.**
+**Na medição histórica, os dois pools eram disjuntos por label: `runs-on: corelink` não
+caía no Mac.** O snapshot de 2026-09-04 registra 12 runners `corelink` offline e 5 Macs
+idle; a disponibilidade atual não está determinada por esta tabela.
 Isso **refuta** a nota de 2026-08-17 em `ci-runner-fabric-box.md` («o label `corelink`
 é um pool MISTO … o scheduler escolhe qualquer um»), que, se fosse verdade, invalidaria
 este WP inteiro. Corrigido lá em PR **#1495**.
@@ -66,8 +80,9 @@ este WP inteiro. Corrigido lá em PR **#1495**.
 o token em uso. Os 5 Macs e os 27 da frota aparecem no nível de repo, então o pool contra
 o qual este repo agenda é o medido.
 
-**E a contenção, na mesma leitura: os 5 de 5 Macs estavam `online` E `busy`.** É essa a
-fila que este pacote drena.
+**E a contenção, na mesma leitura histórica: os 5 de 5 Macs estavam `online` E `busy`.**
+No snapshot atual eles estão idle; não extrapolar a fila histórica para a disponibilidade
+de hoje.
 
 ### 1.1 ⚠️ A correção: `gh` ESTÁ na imagem, e eu disse o contrário
 
@@ -134,7 +149,7 @@ Isto **não** mudou e continua sendo bloqueio real:
 |---|---|---|
 | toolchain **`nightly`** | os 7 do Grupo B (`cargo fuzz` exige nightly) | `rustc` 80 MiB + `cargo` 10 MiB + `rust-std` 30 MiB **= 120 MiB xz** (canal `nightly-2026-08-31`) |
 | **`llvm-tools`** (no 1.91.1) | `coverage.yml` (`cargo-llvm-cov`) | **35,7 MiB xz** (`llvm-tools-1.91.1-x86_64-unknown-linux-gnu.tar.xz`, `content-length: 37402920`) |
-| **`cargo-fuzz`** | os 7 do Grupo B | **879 KiB** — binário musl pré-compilado, `cargo-fuzz 0.13.2`; **não precisa compilar** |
+| **`cargo-fuzz`** | os 7 do Grupo B | **879 KiB** — a imagem traz `cargo-fuzz 0.13.2`, mas as workflows ainda pinam `0.13.1`; divergência registrada em **B-138** |
 
 Total do acréscimo baixado: **~156 MiB xz** para os três. Isso é o número que a decisão
 pede, e é um argumento a favor de assar: hoje esses 7 workflows pagariam
@@ -233,11 +248,17 @@ entrar.** Se a primeira encher o disco, isso não é falha da migração: é **a
 frota**, vira item no `corelink-runners`, as outras cinco param, e a resposta é disco
 maior — não seis lanes brigando por 18 GB.
 
+**Restack operacional:** a API de Actions também registrou `startup_failure` em jobs que
+nunca chegaram ao executor. O snapshot não tem override local por SHA exato para
+reproduzir esse estado; trate-o como falha de infraestrutura, não como regressão de
+workflow, e preserve a evidência do run antes de reexecutar.
+
 ---
 
 ## 3. ⚠️ A armadilha que a tabela existe para mostrar
 
-Nove workflows têm o caminho do toolchain **darwin escrito à mão**:
+A varredura Darwin noturna atual encontrou **7 arquivos / 12 linhas** com o caminho do
+toolchain **darwin escrito à mão**:
 
 ```yaml
 run: echo "$HOME/.rustup/toolchains/nightly-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
@@ -261,9 +282,9 @@ resolver — nunca um `echo` que sai 0.
 | Z — **não migra** (macOS real ou semântica do gate) | **5** | = |
 | | **45** | |
 
-A contagem preliminar do briefing era ~35/9/1. Os **9 com caminho darwin** e o **1
-macOS-real** se confirmam. A diferença que sobrevive à correção do §1.1: **2 dos 9 não
-migram por outra razão** (`release-cli`, `reproducible-build`), e **`perf-nightly` +
+A contagem preliminar do briefing era ~35/9/1. O snapshot atual corrige o inventário para
+**7 arquivos / 12 linhas** e mantém o **1 macOS-real**. Dois desses arquivos não migram
+por outra razão (`release-cli`, `reproducible-build`), e **`perf-nightly` +
 `perf-regression` não migram por semântica de gate, não por ferramenta** — a distinção
 mais fácil de errar do lote.
 
@@ -368,20 +389,20 @@ mais fácil de errar do lote.
 | `coverage.yml` | 1 | `ubuntu-x64-4core` | `corelink` (**G-D**) | Mesmo argumento de núcleos. Falta `llvm-tools` na imagem (§1.2). `cargo-llvm-cov` instrumenta o workspace inteiro: **maior risco de disco da lista.** |
 | `mutation-nightly.yml` | 1 | `ubuntu-x64-4core` | `corelink` (**G-H**) | «~4,5 h; 2-core estoura o teto de 6 h» — em 4 vCPU o tempo é comparável. O job de agregação **já roda em `corelink`**. `gh` existe. **Desbloqueado.** |
 | `codeql.yml` | 1 | `ubuntu-latest` | `corelink` (**G-D**) | `cargo build --workspace` + banco CodeQL. Última execução **falhou** (2026-08-30) — investigar antes, não junto. Disco. |
-| `semgrep.yml` | 1 | ~~`ubuntu-latest`~~ → **Mac** (#1475) | `corelink` (**#1505**) | O #1475 achou o defeito real (o corpo já era sem-docker; o `runs-on:` era a linha esquecida, daí 388 execuções / 0 sucessos) mas mandou para o **Mac do owner**. O `pip3` ausente **não importa**: o passo cria o próprio venv (`python3 -m venv`) e usa o pip DELE — o comentário do arquivo superestimava a dependência. |
+| `semgrep.yml` | 1 | ~~`ubuntu-latest`~~ → **corelink** (#1505 mergeado) | `corelink` | O #1475 achou o defeito real (388 execuções / 0 sucessos); o #1505 corrigiu o destino. O `pip3` ausente não importa: o passo cria o próprio venv. |
 | `ffi-matrix-ci.yml` | 5 | `ubuntu-latest` | — | `go` ausente; `actions/setup-go` resolveria. **Mas esta lane nunca passou** (parked, `workflow_dispatch`-only). Migrar não conserta isso. **Item de backlog, não PR.** |
 | `cas-canary.yml` | 1 | `ubuntu-latest` | **fica hosted** | O job irmão já está em `corelink`. Este existe **para sair da nossa rede**: `# datacenter IP genuinely outside our provider`. Movê-lo apaga o que o canário mede. **A ÚNICA exceção `ubuntu-*` justificada por desenho** — as outras duas são pendências, não exceções. |
 | `smoke-install.yml` | 1 | `ubuntu-latest` | **experimento** | `installer smoke (real Docker daemon required)`. A frota tem um **shim** `docker` (nerdctl) desde 2026-08-13, **não** um daemon — se o instalador sobrevive a isso é **desconhecido**. Uma execução decide. §1.3. |
-| `cosign-sign.yml` | 2 | `ubuntu-latest` | **veredito, não migração** | `docker/build-push-action` quer um builder `buildx`; o shim mapeia `buildx build` → `nerdctl build` — **não verificado**. Mas o problema real não é esse: **0 execuções na vida** (§6). Migrar um workflow morto é a ordem errada. |
+| `cosign-sign.yml` | — | **removido pelo #1490** | **veredito, não migração** | **0 execuções na vida** (§6); a remoção é específica da lane OCI. Os caminhos de release-SLSA/CAS continuam independentes e gated. |
 | `secrets-drift.yml` | 1 | condicional | `corelink` | Contado no A1. |
 
 ---
 
 ## 6. `cosign-sign.yml` — o veredito de três saídas (CI-Q3)
 
-O waiver responde «por que hosted». **Não** responde «por que nunca rodou». Medido: **0
-execuções**, contra um controle que devolve 15 na mesma consulta (`rustfmt`) — o
-instrumento enxerga; o workflow é que está morto.
+O waiver respondia «por que hosted». **Não** respondia «por que nunca rodou». Medido:
+**0 execuções**, contra um controle que devolve 15 na mesma consulta (`rustfmt`) — o
+instrumento enxergava; a lane estava morta e foi removida pelo #1490.
 
 As três saídas, e nenhuma é «deixar como está»:
 1. **Morto e ninguém assina release nenhum** → apagar, e o gate de assinatura vira item
@@ -391,8 +412,9 @@ As três saídas, e nenhuma é «deixar como está»:
 3. **A assinatura mudou de dono** (`release-slsa3.yml` também usa cosign) → duplicata,
    apagar.
 
-**Este WP não toca `cosign-sign.yml`.** Já existe como B-118; a contribuição aqui é a
-medição do zero com controle ao lado.
+**Este WP não reintroduz `cosign-sign.yml`.** O B-118 conserva a medição de zero execuções
+com controle ao lado e a decisão de remover somente a lane OCI; release-SLSA e CAS têm
+seus próprios caminhos de assinatura.
 
 ---
 
@@ -403,7 +425,7 @@ medição do zero com controle ao lado.
 | **G-A1** | 20 | 25 | python3/bash/node/jq — uma linha por arquivo | pronto |
 | **G-A2** | 7 | 15 | idem + `taiki-e`/`setup-terraform`/`setup-java` | pronto |
 | **G-A3** | 6 | 9 | mesma troca, mas **exercem token de escrita** — agrupado por risco | pronto |
-| **G-B** | **6** | **16** | o path darwin colado à mão | ✅ **#1506** — imagem pronta (`corelink-runners`#523 mergeado) |
+| **G-B** | **7** | **16** | o path darwin colado à mão | **HOLD #1506** — imagem pronta, mas ENOSPC e pin `0.13.1` × imagem `0.13.2` |
 | **G-H** | 2 | 2 | `semgrep` + `mutation-nightly` — cada um com uma falha própria a investigar antes | investigar |
 | **G-D** | 5 | — | **disco de 18 GB não medido** — em série, uma por PR, `df -h`, a 1ª é experimento | serial |
 
@@ -414,7 +436,7 @@ linhas.
 
 ## 8. O que este trabalho NÃO decide
 
-- **Não decide o destino de `cosign-sign.yml`** (B-118) nem de `ffi-matrix-ci` (parked,
+- **Não reabre `cosign-sign.yml`** (B-118) nem decide o destino de `ffi-matrix-ci` (parked,
   nunca passou).
 - **Não decide partir a matriz de `release-cli.yml`** para tirar linux/windows do Mac.
 - **Não decide se `reproducible-build` troca o artefato provado** (darwin → linux).
@@ -459,14 +481,14 @@ dos braços.
 |---|---|---|---|
 | **#523** | `corelink-runners` | assa `nightly` + `llvm-tools` + `cargo-fuzz` | ✅ **mergeado** |
 | **#1498** | `corelink-server` | **G-A1** — 19 workflows / 21 jobs | ✅ **mergeado** |
-| **#1488** | `corelink-server` | esta tabela | aberto |
+| **#1488** | `corelink-server` | esta tabela | **HOLD/restack** — snapshot factual 2026-09-04 |
 | **#1495** | `corelink-server` | corrige `ci-runner-fabric-box.md` | aberto |
 | **#1500** | `corelink-server` | o guard de rustup que encolhia sozinho | aberto |
 | **#1501** | `corelink-server` | **G-A2** — 6 workflows / 15 jobs | aberto |
 | **#1502** | `corelink-server` | **G-A3** — 4 lanes com token de escrita / 6 jobs | aberto |
 | **#1504** | `corelink-server` | B-131..B-135 | aberto |
-| **#1505** | `corelink-server` | `semgrep` → `corelink` (a segunda metade do #1475) | aberto |
-| **#1506** | `corelink-server` | **G-B** — 6 workflows / 16 jobs de fuzz | aberto |
+| **#1505** | `corelink-server` | `semgrep` → `corelink` (a segunda metade do #1475) | ✅ **mergeado** |
+| **#1506** | `corelink-server` | **G-B** — 7 workflows / 16 jobs de fuzz | **HOLD** — ENOSPC + pin `cargo-fuzz` divergente |
 
 ### 9.1 ⚠️ Dois pacotes disjuntos por TEMA, sobrepostos por ARQUIVO
 

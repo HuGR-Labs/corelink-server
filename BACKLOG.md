@@ -3751,21 +3751,28 @@ owner: tl
 status: open
 verify: |
   bash -c 'grep -q "cargo zigbuild" .github/workflows/release-cli.yml || exit 1
-  grep -q "authorized-by: repo owner" .github/workflows/cosign-sign.yml || exit 1
+  test ! -e .github/workflows/cosign-sign.yml || exit 1
   uses=$(grep -cE -- "--repo[[:space:]]+HumanGuardrail/corelink-cli" .github/workflows/release-cli.yml 2>/dev/null || true)
   [ "${uses:-0}" = 0 ] || { echo "FALHA: $uses uso(s) executavel(is) de --repo HumanGuardrail/corelink-cli em release-cli.yml — o repontamento deste PR foi revertido e a lane volta a publicar num repo que responde 404."; exit 1; }
   git ls-remote --tags origin "refs/tags/v*" 2>/dev/null | grep -q . && exit 1
+  grep -q -- "--draft" .github/workflows/release-cli.yml || exit 1
+  grep -q "staging-manifest.json" .github/workflows/release-cli.yml || exit 1
+  grep -q "release-slsa3:" .github/workflows/release-cli.yml || exit 1
+  grep -q "publish-release:" .github/workflows/release-cli.yml || exit 1
+  for f in sign-linux sign-windows notarize-macos; do grep -q "workflow_call:" ".github/workflows/${f}.yml" || exit 1; ! grep -q "workflow_run:" ".github/workflows/${f}.yml" || exit 1; done
+  ! grep -q "spctl .*|| true" .github/workflows/notarize-macos.yml || exit 1
+  grep -Fq RAW_ASSET .github/workflows/sign-linux.yml || exit 1
+  grep -q "Bind OIDC provenance to the immutable release tag and source" .github/workflows/release-slsa3.yml || exit 1
+  test -f scripts/cli_release_manifest.py || exit 1
   exit 0'
 verify-means: |
   open — decide as duas alegações estruturais que sustentam o item: o
-  `release-cli` ainda constrói por `cargo zigbuild` (a raiz não foi trocada) e o
-  waiver do `cosign-sign` ainda está no arquivo (ninguém o removeu ao "limpar"
-  lanes hosted). Vira vermelho também se surgir a primeira tag `v*`, porque aí o
-  `cosign-sign` deixa de estar trigger-starved e a análise precisa ser refeita
-  com execução real. Não ancora em histórico de execução: a causa do
-  `release-slsa3` está não-diagnosticada por logs expirados e um verify sobre
-  runs leria isso como verde.
-last-verified: 2026-08-30
+  `release-cli` ainda constrói por `cargo zigbuild`; a antiga lane OCI
+  `cosign-sign.yml` foi removida pelo #1490 e não pode reaparecer. O gate também
+  prova a cadeia draft→staging→signers→SLSA por estrutura fail-closed. Vira
+  vermelho se surgir uma tag `v*` ou se faltar identidade/asset obrigatório; não
+  ancora em histórico de execução.
+last-verified: 2026-09-04
 ```
 
 ### B-113 — seis lanes self-hosted sem sucesso, cada uma por um motivo próprio
