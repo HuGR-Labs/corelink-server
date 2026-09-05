@@ -44,13 +44,29 @@ copy_fixture "${TMP}/smoke-backend"
 sed -i.bak '/if command -v docker.*docker info.*then/d' "${TMP}/smoke-backend/.github/workflows/smoke-install.yml"
 expect_red smoke-backend "${TMP}/smoke-backend"
 
+copy_fixture "${TMP}/smoke-backend-comment"
+sed -i.bak 's/^          if command -v docker.*then$/          # if command -v docker \/dev\/null 2>\&1 \&\& docker info \/dev\/null 2>\&1; then\n          if true; then/' "${TMP}/smoke-backend-comment/.github/workflows/smoke-install.yml"
+expect_red smoke-backend-comment "${TMP}/smoke-backend-comment"
+
 copy_fixture "${TMP}/smoke-pat"
 sed -i.bak '/if \[ -n "\${CORELINK_CANARY_PAT:-}" \]; then/d' "${TMP}/smoke-pat/.github/workflows/smoke-install.yml"
 expect_red smoke-pat "${TMP}/smoke-pat"
 
+copy_fixture "${TMP}/smoke-run-echo"
+sed -i.bak 's/^          docker run --rm/          echo docker run --rm/g' "${TMP}/smoke-run-echo/.github/workflows/smoke-install.yml"
+expect_red smoke-run-echo "${TMP}/smoke-run-echo"
+
 copy_fixture "${TMP}/cosign-verify"
 sed -i.bak '/cosign verify \\/d' "${TMP}/cosign-verify/.github/workflows/cosign-sign.yml"
 expect_red cosign-verify "${TMP}/cosign-verify"
+
+copy_fixture "${TMP}/cosign-backend-comment"
+sed -i.bak 's/^          if ! docker info/          # if ! docker info/' "${TMP}/cosign-backend-comment/.github/workflows/cosign-sign.yml"
+expect_red cosign-backend-comment "${TMP}/cosign-backend-comment"
+
+copy_fixture "${TMP}/cosign-sign-echo"
+sed -i.bak 's/^          cosign sign --yes/          echo cosign sign --yes/' "${TMP}/cosign-sign-echo/.github/workflows/cosign-sign.yml"
+expect_red cosign-sign-echo "${TMP}/cosign-sign-echo"
 
 copy_fixture "${TMP}/placeholder"
 sed -i.bak 's/cosign sign --yes.*/cosign sign --yes "${IMAGE}" # placeholder mutation/' "${TMP}/placeholder/.github/workflows/cosign-sign.yml"
@@ -68,6 +84,10 @@ copy_fixture "${TMP}/dockerfile-token"
 echo 'ENV CORELINK_TEST_TOKEN=synthetic' >> "${TMP}/dockerfile-token/apps/get-corelink-worker/test/smoke-install.Dockerfile"
 expect_red dockerfile-token "${TMP}/dockerfile-token"
 
+copy_fixture "${TMP}/dockerfile-arg-token"
+echo 'ARG CORELINK_TEST_TOKEN=synthetic' >> "${TMP}/dockerfile-arg-token/apps/get-corelink-worker/test/smoke-install.Dockerfile"
+expect_red dockerfile-arg-token "${TMP}/dockerfile-arg-token"
+
 copy_fixture "${TMP}/cosign-zone"
 sed -i.bak '/if ! \[\[ "\${CF_DEPLOY_ZONE_ID:-}" =~/d' "${TMP}/cosign-zone/.github/workflows/cosign-sign.yml"
 expect_red cosign-zone "${TMP}/cosign-zone"
@@ -75,5 +95,13 @@ expect_red cosign-zone "${TMP}/cosign-zone"
 copy_fixture "${TMP}/cosign-manual-tag"
 echo '      tag:' >> "${TMP}/cosign-manual-tag/.github/workflows/cosign-sign.yml"
 expect_red cosign-manual-tag "${TMP}/cosign-manual-tag"
+
+copy_fixture "${TMP}/cosign-tag-guard"
+sed -i.bak '/if ! \[\[ "\${GITHUB_REF:-}" =~/d' "${TMP}/cosign-tag-guard/.github/workflows/cosign-sign.yml"
+expect_red cosign-tag-guard "${TMP}/cosign-tag-guard"
+
+copy_fixture "${TMP}/ledger-status"
+sed -i.bak 's/^\*\*Status:\*\* open/**Status:** closed/' "${TMP}/ledger-status/docs/campaigns/remediation/B-134-docker-shim-experiment.md"
+expect_red ledger-status "${TMP}/ledger-status"
 
 echo "B-134 observability mutations: all controls passed"

@@ -41,9 +41,9 @@ def require(text: str, needle: str, where: str) -> None:
 def run_blocks(text: str) -> str:
     """Return only the contents of YAML multiline ``run: |`` blocks.
 
-    Contract checks must inspect executable shell, not comments or prose. The
-    workflows intentionally keep their shell in multiline blocks so this
-    small indentation-aware extractor is sufficient and dependency-free.
+    The caller removes shell comments before matching commands. The workflows
+    intentionally keep their shell in multiline blocks so this small
+    indentation-aware extractor is sufficient and dependency-free.
     """
 
     lines = text.splitlines()
@@ -65,6 +65,34 @@ def run_blocks(text: str) -> str:
     return "\n".join(blocks)
 
 
+def executable_script(text: str) -> str:
+    """Remove blank and full-line shell comments from extracted run blocks."""
+
+    return "\n".join(line for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#"))
+
+
+def require_exec(script: str, pattern: str, where: str) -> None:
+    """Require a command/guard at the beginning of an executable shell line."""
+
+    if not re.search(pattern, script, re.MULTILINE):
+        raise ContractError(f"{where}: missing executable contract {pattern!r}")
+
+
+def require_exec_line(script: str, line: str, where: str) -> None:
+    """Require one exact non-comment shell line, allowing workflow indentation."""
+
+    require_exec(script, rf"^\s*{re.escape(line)}\s*$", where)
+
+
+def require_line(text: str, pattern: str, where: str) -> None:
+    """Require a non-comment workflow/Dockerfile line, not prose mentioning it."""
+
+    if not re.search(pattern, "\n".join(
+        line for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")
+    ), re.MULTILINE):
+        raise ContractError(f"{where}: missing required line {pattern!r}")
+
+
 def require_run_on_corelink(text: str, where: str) -> None:
     runs_on = re.findall(r"(?m)^\s+runs-on:\s*([^#\s]+)", text)
     if not runs_on or any(value != "corelink" for value in runs_on):
@@ -75,18 +103,19 @@ def require_run_on_corelink(text: str, where: str) -> None:
 
 def check_smoke(text: str) -> None:
     where = WORKFLOW_FILES["smoke-install"]
-    script = run_blocks(text)
+    script = executable_script(run_blocks(text))
     require_run_on_corelink(text, where)
     if "HOSTED_ACTIONS_AVAILABLE" in text:
         raise ContractError(f"{where}: hosted availability gate would hide the experiment")
-    require(text, "CORELINK_CANARY_PAT: ${{ secrets.CORELINK_CANARY_PAT }}", where)
-    require(text, '-e CORELINK_TEST_TOKEN="$CORELINK_CANARY_PAT"', where)
-    require(text, "run: docker build -f apps/get-corelink-worker/test/smoke-install.Dockerfile", where)
-    require(script, "if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then", where)
-    require(script, 'if [ -n "${CORELINK_CANARY_PAT:-}" ]; then', where)
-    require(script, 'if [ -z "${CORELINK_TEST_TOKEN:-}" ]; then', where)
-    for needle in ("docker info", "docker run", "corelink --version", "corelink doctor"):
-        require(script, needle, where)
+    require_line(text, r"^\s*CORELINK_CANARY_PAT:\s*\$\{\{ secrets\.CORELINK_CANARY_PAT \}\}\s*$", where)
+    require_exec_line(script, '-e CORELINK_TEST_TOKEN="$CORELINK_CANARY_PAT" \\', where)
+    require_line(text, r"^\s*run:\s*docker build -f apps/get-corelink-worker/test/smoke-install\.Dockerfile\s+", where)
+    require_exec_line(script, "if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then", where)
+    require_exec_line(script, 'if [ -n "${CORELINK_CANARY_PAT:-}" ]; then', where)
+    require_exec_line(script, 'if [ -z "${CORELINK_TEST_TOKEN:-}" ]; then', where)
+    require_exec(script, r"^\s*docker run\s+", where)
+    require_exec(script, r"&& corelink --version\b", where)
+    require_exec(script, r"&& corelink doctor\b", where)
     if re.search(r"(?i)CORELINK_INSTALL_PROBE_TOKEN|PROBE_TOKEN|openssl rand", script):
         raise ContractError(f"{where}: synthetic installer token would create false evidence")
     if re.search(r"(?i)changeme|placeholder|stub", script):
@@ -95,23 +124,26 @@ def check_smoke(text: str) -> None:
 
 def check_cosign(text: str) -> None:
     where = WORKFLOW_FILES["cosign-sign"]
-    script = run_blocks(text)
+    script = executable_script(run_blocks(text))
     require_run_on_corelink(text, where)
     if re.search(r"(?m)^\s+tag:\s*$|\b(?:github\.event\.)?inputs\.tag\b", text):
         raise ContractError(f"{where}: manual tag input is unsupported; dispatch must select a release tag ref")
-    require(script, "release signing requires dispatching or pushing a vMAJOR.MINOR.PATCH tag", where)
-    require(script, "if ! docker info >/dev/null 2>&1; then", where)
-    require(text, "CF_DEPLOY_ZONE_ID: ${{ secrets.CF_DEPLOY_ZONE_ID }}", where)
-    require(script, "if ! [[ \"${CF_DEPLOY_ZONE_ID:-}\" =~ ^[0-9a-fA-F]{32}$ ]]; then", where)
-    for needle in ("docker info", "docker/build-push-action@", "cosign sign", "cosign verify"):
-        require(script if needle.startswith("cosign ") else text, needle, where)
+    require_exec_line(script, 'if ! [[ "${GITHUB_REF:-}" =~ ^refs/tags/v[0-9]+\\.[0-9]+\\.[0-9]+$ ]]; then', where)
+    require_exec_line(script, "if ! docker info >/dev/null 2>&1; then", where)
+    require_line(text, r"^\s*CF_DEPLOY_ZONE_ID:\s*\$\{\{ secrets\.CF_DEPLOY_ZONE_ID \}\}\s*$", where)
+    require_exec_line(script, 'if ! [[ "${CF_DEPLOY_ZONE_ID:-}" =~ ^[0-9a-fA-F]{32}$ ]]; then', where)
+    require_line(text, r"^\s*uses:\s*docker/build-push-action@\S+\s*(?:#.*)?$", where)
+    require_exec(script, r"^\s*cosign sign\s+", where)
+    require_exec(script, r"^\s*cosign verify\s+", where)
     if re.search(r"(?i)stub|placeholder|TODO|ZONE_ID_PLACEHOLDER", script):
         raise ContractError(f"{where}: placeholder/stub/TODO text remains in the cosign contract")
 
 
 def check_ledger(text: str) -> None:
     require(text, "B-134", LEDGER)
-    require(text, "status: open", LEDGER)
+    statuses = re.findall(r"(?im)^\*\*Status:\*\*\s*([a-z]+)\b", text)
+    if statuses != ["open"]:
+        raise ContractError(f"{LEDGER}: expected exactly one `**Status:** open` field, got {statuses!r}")
     for workflow in WORKFLOW_FILES:
         if not re.search(rf"(?m)^\|\s*{re.escape(workflow)}\s*\|.*\|\s*UNMEASURED\s*\|", text):
             raise ContractError(f"{LEDGER}: {workflow} must remain UNMEASURED until a real run is recorded")
@@ -123,7 +155,9 @@ def check(root: Path) -> None:
     check_smoke(read(root, WORKFLOW_FILES["smoke-install"]))
     check_cosign(read(root, WORKFLOW_FILES["cosign-sign"]))
     dockerfile = read(root, SMOKE_DOCKERFILE)
-    if re.search(r"(?im)^\s*ENV\s+CORELINK_TEST_TOKEN\s*=|CORELINK_INSTALL_PROBE_TOKEN|PROBE_TOKEN", dockerfile):
+    if re.search(r"(?im)^\s*(?:ENV|ARG)\s+(?:CORELINK_TEST_TOKEN|CORELINK_INSTALL_PROBE_TOKEN|PROBE_TOKEN)(?:\s|=)", "\n".join(
+        line for line in dockerfile.splitlines() if line.strip() and not line.lstrip().startswith("#")
+    )):
         raise ContractError(f"{SMOKE_DOCKERFILE}: image must not contain a synthetic token or token default")
     if re.search(r"(?i)ephemeral.*probe token|unauthenticated.*leg", dockerfile):
         raise ContractError(f"{SMOKE_DOCKERFILE}: stale unauthenticated/probe-token claim")
