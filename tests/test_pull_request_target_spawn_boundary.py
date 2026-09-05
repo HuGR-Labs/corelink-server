@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import copy
 import re
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -151,7 +152,16 @@ def _parse_workflow_subset(text: str) -> dict:
         if key in workflow:
             raise ValueError(f"duplicate top-level key: {key}")
         if value:
-            workflow[key] = _scalar(value)
+            parsed = _scalar(value)
+            if key == "on" and (
+                parsed == "pull_request_target"
+                or isinstance(parsed, list) and "pull_request_target" in parsed
+            ):
+                raise ValueError(
+                    "inline/scalar pull_request_target trigger is unsupported; "
+                    "use a mapping event key so the boundary can audit it"
+                )
+            workflow[key] = parsed
             index += 1
             continue
         start = index + 1
@@ -229,8 +239,79 @@ def load_workflow(name: str) -> dict:
     return loaded
 
 
+def _census_pull_request_target_workflows(paths: tuple[Path, ...]) -> dict[str, dict]:
+    """Find and parse every workflow with a real pull_request_target trigger.
+
+    The census is intentionally structural rather than a grep for arbitrary
+    prose: comments and quoted values are stripped by ``_workflow_lines``, then
+    only the top-level ``on`` section is inspected.  A quoted event key is the
+    same YAML mapping key as its unquoted spelling.  Inline/scalar event syntax
+    is rejected explicitly because this focused parser cannot audit it; it must
+    never disappear from the population by returning ``False``.
+    """
+    discovered: dict[str, dict] = {}
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        try:
+            lines = _workflow_lines(text)
+            has_target = False
+            index = 0
+            while index < len(lines):
+                indent, content = lines[index]
+                if indent != 0:
+                    raise ValueError(f"expected top-level mapping, found {content!r}")
+                # YAML document markers are valid outside the focused workflow
+                # subset.  Ignore them for discovery; a candidate is still
+                # handed to the strict parser below and fails there if its
+                # boundary fields cannot be decoded.
+                if content in {"---", "..."}:
+                    index += 1
+                    continue
+                key, value = _mapping_entry(content)
+                start = index + 1
+                end = start
+                while end < len(lines) and lines[end][0] > 0:
+                    end += 1
+                if key == "on":
+                    if value:
+                        parsed = _scalar(value)
+                        if parsed == "pull_request_target":
+                            raise ValueError(
+                                "scalar pull_request_target trigger is unsupported"
+                            )
+                        if isinstance(parsed, list) and "pull_request_target" in parsed:
+                            raise ValueError(
+                                "inline pull_request_target trigger is unsupported"
+                            )
+                    else:
+                        for event_indent, event_content in lines[start:end]:
+                            if event_indent == 2:
+                                event, _ = _mapping_entry(event_content)
+                                if event == "pull_request_target":
+                                    has_target = True
+                            elif event_indent < 2:
+                                raise ValueError(
+                                    f"invalid trigger indentation: {event_content!r}"
+                                )
+                index = end if not value else index + 1
+
+            if not has_target:
+                continue
+            loaded = _parse_workflow_subset(text)
+            if not triggers_pull_request_target(loaded):
+                raise ValueError(
+                    "pull_request_target token was not represented by the parsed trigger map"
+                )
+            discovered[path.name] = loaded
+        except ValueError as error:
+            raise ValueError(f"{path.name}: {error}") from error
+    return discovered
+
+
 def triggers_pull_request_target(workflow: dict) -> bool:
     triggers = workflow.get("on")
+    if isinstance(triggers, list) and "pull_request_target" in triggers:
+        raise ValueError("inline pull_request_target trigger is unsupported")
     return isinstance(triggers, dict) and "pull_request_target" in triggers
 
 
@@ -396,24 +477,55 @@ class PullRequestTargetSpawnBoundaryTest(unittest.TestCase):
             "jobs:\n  broken\n",
             "jobs:\n  broken:\n    runs-on: corelink\n    if: >-\n",
             "jobs:\n\tbroken:\n",
+            "on: [push, pull_request_target]\n",
         ):
             with self.subTest(malformed=malformed), self.assertRaises(ValueError):
                 _parse_workflow_subset(malformed)
 
     def test_pull_request_target_population_is_closed(self) -> None:
-        actual = {
-            path.name
-            for path in WORKFLOW_PATHS
-            # A top-level trigger key is cheap to census; parse only the small
-            # population it identifies so this focused gate does not spend
-            # tens of seconds loading every large workflow document.
-            if re.search(
-                r"^  pull_request_target:",
-                path.read_text(encoding="utf-8"),
-                re.MULTILINE,
-            )
-        }
+        actual = set(_census_pull_request_target_workflows(WORKFLOW_PATHS))
         self.assertEqual(actual, ALL_PULL_REQUEST_TARGET_WORKFLOWS)
+
+    def test_new_trigger_spellings_cannot_evade_population(self) -> None:
+        quoted = """name: sixth quoted trigger
+on:
+  "pull_request_target":
+permissions:
+  contents: read
+jobs:
+  escaped:
+    runs-on: corelink
+    if: github.event.pull_request.author_association == 'OWNER'
+"""
+        inline = """name: sixth inline trigger
+on: [push, pull_request_target]
+permissions:
+  contents: read
+jobs:
+  escaped:
+    runs-on: corelink
+    if: github.event.pull_request.author_association == 'OWNER'
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            quoted_path = root / "sixth-quoted.yml"
+            inline_path = root / "sixth-inline.yml"
+            quoted_path.write_text(quoted, encoding="utf-8")
+            inline_path.write_text(inline, encoding="utf-8")
+
+            with self.subTest(spelling="quoted mapping"):
+                discovered = _census_pull_request_target_workflows(
+                    (*WORKFLOW_PATHS, quoted_path)
+                )
+                self.assertIn(quoted_path.name, discovered)
+                with self.assertRaises(AssertionError):
+                    self.assertEqual(set(discovered), ALL_PULL_REQUEST_TARGET_WORKFLOWS)
+
+            with self.subTest(spelling="inline sequence"):
+                with self.assertRaisesRegex(
+                    ValueError, r"sixth-inline\.yml: inline pull_request_target"
+                ):
+                    _census_pull_request_target_workflows((*WORKFLOW_PATHS, inline_path))
 
     def test_population_jobs_and_permissions_are_explicit(self) -> None:
         for name in ALL_PULL_REQUEST_TARGET_WORKFLOWS:
