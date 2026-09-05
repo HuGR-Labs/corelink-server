@@ -7,6 +7,7 @@ must not satisfy this test, because it cannot produce the two required calls.
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import stat
@@ -21,6 +22,13 @@ WRAPPER = ROOT / "scripts" / "validate_alert_promtool.sh"
 
 def fail(message: str) -> None:
     raise SystemExit(f"FALHA: {message}")
+
+
+def assert_mutation_failed(name: str, result: subprocess.CompletedProcess[str], calls: list[list[str]], reason: str) -> None:
+    """Require a decoy to fail without invoking the canonical fake calls."""
+    if calls:
+        fail(f"{name} mutation invoked fake promtool")
+    assert result.returncode != 0, f"{name} mutation unexpectedly passed: {reason}"
 
 
 def fake_source() -> str:
@@ -70,11 +78,21 @@ def main() -> int:
         fail("wrapper no longer has its two canonical calls")
 
     mutations = {
-        "echo": 'echo "promtool --version"\necho "promtool check rules dashboards/alerts/*.yml"',
-        "printf": 'printf "%s\\n" "promtool --version"\nprintf "%s\\n" "promtool check rules dashboards/alerts/*.yml"',
-        "string": 'mention="promtool --version"\nprintf "%s\\n" "$mention"\nmention="promtool check rules dashboards/alerts/*.yml"\nprintf "%s\\n" "$mention"',
-        "heredoc": "cat <<'EOF'\npromtool --version\nEOF\ncat <<'EOF'\npromtool check rules dashboards/alerts/*.yml\nEOF",
+        # `false` makes the decoy's failed validation observable as a non-zero
+        # process result; without it, calls==[] with rc0 is a false green.
+        "echo": 'echo "promtool --version"\necho "promtool check rules dashboards/alerts/*.yml"\nfalse',
+        "printf": 'printf "%s\\n" "promtool --version"\nprintf "%s\\n" "promtool check rules dashboards/alerts/*.yml"\nfalse',
+        "string": 'mention="promtool --version"\nprintf "%s\\n" "$mention"\nmention="promtool check rules dashboards/alerts/*.yml"\nprintf "%s\\n" "$mention"\nfalse',
+        "heredoc": "cat <<'EOF'\npromtool --version\nEOF\ncat <<'EOF'\npromtool check rules dashboards/alerts/*.yml\nEOF\nfalse",
     }
+    expected_failure_reason = {
+        "echo": "echo only prints the command text",
+        "printf": "printf only prints the command text",
+        "string": "a shell string only mentions the command text",
+        "heredoc": "a heredoc only contains command text",
+    }
+    if set(mutations) != set(expected_failure_reason):
+        fail("mutation table and expected_failure_reason table diverged")
 
     with tempfile.TemporaryDirectory(prefix="alert-promtool-test-") as directory:
         temp = Path(directory)
@@ -100,16 +118,48 @@ def main() -> int:
             result = run(mutant, mutation_log, fake_dir, files)
             calls = ([json.loads(line) for line in mutation_log.read_text().splitlines() if line]
                      if mutation_log.exists() else [])
-            # The shell decoy itself may exit zero (echo/printf/cat are valid
-            # shell), but it has failed the behavioral contract: no exact fake
-            # calls were made. A mutation that produces the required calls is
-            # the only false green this test must reject.
-            if calls:
-                fail(f"{name} mutation invoked fake promtool")
-            if result.returncode != 0:
-                continue
+            assert_mutation_failed(name, result, calls, expected_failure_reason[name])
 
-    print("ok: canonical promtool wrapper invokes exactly --version and check rules; decoys fail")
+        # Directly exercise the load-bearing assertion with a synthetic rc0
+        # result. This must raise; the meta-mutation below removes that assert
+        # and proves the weakened test fails this same check.
+        try:
+            assert_mutation_failed(
+                "synthetic-rc0", subprocess.CompletedProcess([], 0), [],
+                "zero exit is not an observed validation failure",
+            )
+        except AssertionError:
+            pass
+        else:
+            fail("rc0 mutation was not rejected by the assertion")
+
+        # Meta-mutation: remove the required rc assertion from the checker and
+        # run that weakened function against rc0. The source-level guard check
+        # below must detect the weakened checker rather than accept a green.
+        checker_source = inspect.getsource(assert_mutation_failed)
+        guard = '    assert result.returncode != 0, f"{name} mutation unexpectedly passed: {reason}"\n'
+        if guard not in checker_source:
+            fail("rc!=0 assertion disappeared before meta-mutation")
+        weakened = checker_source.replace(guard, "    pass\n", 1)
+        if weakened == checker_source:
+            fail("meta-mutation guard target disappeared")
+        namespace: dict[str, object] = {}
+        exec(weakened, globals(), namespace)
+        try:
+            namespace["assert_mutation_failed"](
+                "meta-rc0", subprocess.CompletedProcess([], 0), [],
+                "zero exit is not an observed validation failure",
+            )
+        except AssertionError:
+            fail("meta-mutation did not remove the rc!=0 assertion")
+        try:
+            assert guard in weakened, "removed rc!=0 assertion was not detected"
+        except AssertionError:
+            pass
+        else:
+            fail("meta-mutation removing rc!=0 assertion was accepted")
+
+    print("ok: canonical promtool wrapper invokes exactly --version and check rules; decoys fail with rc!=0; meta-mutation red")
     return 0
 
 

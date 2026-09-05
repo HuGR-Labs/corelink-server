@@ -1304,8 +1304,11 @@ verify-means: |
   done — `scripts/test_validate_alert_promtool.py` runs the dedicated executable
   with a hermetic fake `promtool` in `PATH`, and requires exactly the two calls
   `--version` and `check rules dashboards/alerts/*.yml`. Echo, printf, quoted
-  strings and heredoc payload mutations cannot invoke the fake and are rejected.
-  The check does not claim that the rules are published or firing.
+  strings and heredoc payload mutations must each have zero fake calls **and
+  non-zero exit status**, with an `expected_failure_reason` entry. A bounded
+  meta-mutation removes the `rc != 0` assertion and must itself fail, proving
+  that the mutation gate is load-bearing. The check does not claim that the
+  rules are published or firing.
 
   CLOSED by PR #1264 on the second branch of that condition: `alerts-validate.yml`
   runs `promtool check rules` over all ten files on `corelink` (proven in CI —
