@@ -8877,17 +8877,25 @@ verify: |
   grep -q "current executable fleet probe" "$doc"
   grep -q "runner-fleet-health.yml" "$doc"
   grep -q "scripts/check_runner_fleet.py" "$doc"
+  assert_current_probe_reference() {
+    grep -qF 'current executable fleet probe is `runner-fleet-health.yml`' "$1"
+  }
+  assert_current_probe_reference "$doc" || { echo "FALHA: referencia semantica da sonda atual ausente"; exit 1; }
   python3 scripts/validate_docs_reality.py >/tmp/b131-docs-reality.txt
   mutant=$(mktemp)
   trap "rm -f \"$mutant\"" EXIT
   sed 's/runner-fleet-health\.yml/runner-fleet-health-MUTANT.yml/' "$doc" > "$mutant"
-  grep -q "runner-fleet-health-MUTANT.yml" "$mutant"
-  ! grep -q "current executable fleet probe is runner-fleet-health.yml" "$mutant"
-  echo "fechado: doc aponta para runner-fleet-health.yml/check_runner_fleet.py; realidade e mutacao passaram"'
+  grep -qF 'current executable fleet probe is `runner-fleet-health-MUTANT.yml`' "$mutant"
+  if assert_current_probe_reference "$mutant"; then
+    echo "FALHA: mutacao da referencia da sonda nao foi detectada"
+    exit 1
+  fi
+  echo "fechado: doc aponta para runner-fleet-health.yml/check_runner_fleet.py; realidade e mutacao semantica passaram"'
 verify-means: |
   done — a documentacao aponta para a sonda atual implementada, o workflow e o helper
-  existem, o gate docs-reality passa, e a mutacao que remove a referencia central e
-  detectada. As execucoes `runner-probe.yml` permanecem marcadas como historicas.
+  existem, o gate docs-reality passa, e a mutacao da referencia semantica (com backticks)
+  falha depois de um controle positivo sobre a frase exata. As execucoes `runner-probe.yml`
+  permanecem marcadas como historicas.
 last-verified: 2026-08-31
 ```
 
