@@ -73,6 +73,7 @@ import { handleTenantLookup } from "./lib/tenant_lookup.js";
 import {
   resolveConsumerKey,
   constantTimeSecretEqual,
+  requireDedicatedAdminAuth,
   type InternalConsumer,
 } from "./lib/internal_auth.js";
 import { emitFirstCliAuthed } from "./lib/onboarding_events.js";
@@ -538,6 +539,7 @@ type RouteKind =
   | "auth_rotate"
   | "internal"
   | "health_container"
+  | "health_container_authed"
   | "not_found";
 
 /** Auth extraction result from the Authorization header. */
@@ -860,12 +862,21 @@ function stripClientTrustHeaders(h: Headers): void {
 function matchRoute(url: URL): RouteMatch {
   const path = url.pathname;
 
-  // Container health deep-probe — /_health/container forwards through the
-  // _system DO to the container's own /_health endpoint, exposing A4's
-  // `storage` field (r2 vs inmemory) that the Worker's fast-path /_health
-  // never returns.  Publicly probeable, no auth required.
+  // Container health deep-probe — the anonymous variant forwards through the
+  // _system DO but redacts storage backing below. Operators use the explicit
+  // authenticated variant when they need that diagnostic signal.
   if (path === "/_health/container" || path === "/_health/container/") {
     return { tenantId: "_system", pathSuffix: "/_health", routeKind: "health_container" };
+  }
+  if (
+    path === "/_health/container/authenticated" ||
+    path === "/_health/container/authenticated/"
+  ) {
+    return {
+      tenantId: "_system",
+      pathSuffix: "/_health",
+      routeKind: "health_container_authed",
+    };
   }
 
   // Health: /health (legacy CF/customer liveness) + /_health (smoke-prod check
@@ -2136,25 +2147,42 @@ const baseHandler: ExportedHandler<Env> = {
       return applyCors(resp, request);
     }
 
-    // Container health deep-probe — /_health/container — no auth required.
-    // Forwards to the container's /_health via the _system DO.
-    //
-    // Security (L1): the container body includes a `storage` field (`r2` vs
-    // `inmemory`) that leaks when prod cold-starts into the InMemory fallback.
-    // Strip `storage` from the JSON before returning to unauthenticated callers:
-    // parse the container's JSON response, delete `storage`, re-serialize. The
-    // liveness `status` field is preserved so monitoring tools still work.
-    if (route.routeKind === "health_container") {
+    // Container health deep-probe — both variants forward to the container's
+    // /_health via the _system DO. The authenticated variant is the only path
+    // that may return storage backing/topology diagnostics.
+    if (
+      route.routeKind === "health_container" ||
+      route.routeKind === "health_container_authed"
+    ) {
+      const includeStorage = route.routeKind === "health_container_authed";
+      if (includeStorage) {
+        const authError = requireDedicatedAdminAuth(request, env, requestId);
+        if (authError !== null) {
+          return applyCors(authError, request);
+        }
+        if (request.method !== "GET" && request.method !== "HEAD") {
+          return applyCors(
+            reapiError("METHOD_NOT_ALLOWED", "health probe requires GET", 405, requestId),
+            request,
+          );
+        }
+      }
       const systemDoId = env.CORELINK_SERVER.idFromName("_system");
       const systemStub = env.CORELINK_SERVER.get(systemDoId, serverGetOpts(env));
       const containerHealthUrl = new URL(request.url);
       containerHealthUrl.pathname = "/_health";
+      // The container health handler has no query parameters. Never carry a
+      // caller-controlled query string (especially a possible secret) onward.
+      containerHealthUrl.search = "";
       const containerReq = new Request(containerHealthUrl.toString(), {
         method: "GET",
         headers: (() => {
           const h = new Headers();
           h.set("x-request-id", requestId);
-          h.set("x-corelink-route-kind", "health_container");
+          h.set(
+            "x-corelink-route-kind",
+            includeStorage ? "health_container_authed" : "health_container",
+          );
           h.set("x-corelink-tenant-id", "_system");
           return h;
         })(),
@@ -2174,20 +2202,35 @@ const baseHandler: ExportedHandler<Env> = {
       if (!containerHeaders.has("x-request-id")) {
         containerHeaders.set("x-request-id", requestId);
       }
-      // Strip the `storage` field (L1 fix): parse JSON, delete `storage`,
-      // re-serialize. If the body is not valid JSON (container returned an
-      // error body or non-JSON), pass it through unmodified — liveness
-      // semantics are preserved by the upstream status code.
+      if (includeStorage) {
+        // The dedicated admin key was verified above. Preserve the deep probe
+        // body, including `storage`, without forwarding the credential.
+        containerHeaders.set("Cache-Control", "no-store");
+        return applyCors(
+          new Response(containerResp.body, {
+            status: containerResp.status,
+            statusText: containerResp.statusText,
+            headers: containerHeaders,
+          }),
+          request,
+        );
+      }
+      // Strip storage backing and topology fields (L1/B-082): parse JSON,
+      // delete both diagnostics, then re-serialize. If the body is not valid
+      // JSON (container returned an error body or non-JSON), use a generic safe
+      // body instead of streaming potentially sensitive upstream content.
       let redactedBody: BodyInit;
       try {
         const raw = await containerResp.json() as Record<string, unknown>;
         delete raw["storage"];
+        delete raw["topology"];
         redactedBody = JSON.stringify(raw);
         containerHeaders.set("Content-Type", "application/json");
       } catch {
         // Non-JSON body (e.g. container down, returned plain-text error):
-        // fall back to streaming the raw body through without redaction.
-        redactedBody = containerResp.body ?? "";
+        // preserve status/liveness semantics without exposing raw content.
+        redactedBody = JSON.stringify({ status: "unavailable" });
+        containerHeaders.set("Content-Type", "application/json");
       }
       return applyCors(
         new Response(redactedBody, {

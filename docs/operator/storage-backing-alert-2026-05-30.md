@@ -3,6 +3,14 @@
 Provisioned by agent wave ops run on 2026-05-30. Additive to existing
 monitor `4466381` (`/_health`). Does NOT replace or modify `4466381`.
 
+> **B-082 security update (2026-09-05):** `/_health/container` is deliberately
+> anonymous and now strips the container's storage/topology diagnostics. The
+> historical BetterStack keyword monitor below cannot observe `"storage":"r2"`
+> anymore and must not be recreated or treated as an active storage alert. Use
+> `GET /_health/container/authenticated` with the dedicated
+> `X-Corelink-Internal-Auth` header for operator diagnostics. Never put that
+> credential in a URL, query string, public monitor, or status page.
+
 ---
 
 ## New Monitor
@@ -10,10 +18,10 @@ monitor `4466381` (`/_health`). Does NOT replace or modify `4466381`.
 | Field               | Value                                                        |
 |---------------------|--------------------------------------------------------------|
 | Monitor ID          | `4467865`                                                    |
-| URL                 | `https://corelink-api.humangr.com/_health/container`        |
+| URL                 | `https://corelink-api.humangr.com/_health/container` (historical; anonymous redaction) |
 | Monitor type        | `keyword` (body must contain required keyword)               |
-| Required keyword    | `"storage":"r2"`                                             |
-| Alert condition     | Keyword absent = monitor goes down = alert fires             |
+| Required keyword    | Not applicable after B-082 (`storage` is intentionally redacted) |
+| Alert condition     | Historical monitor is not a valid storage signal; disable/replace it |
 | Check frequency     | 180 s (plan cap; 60 s was requested, plan enforces 3-min min)|
 | Regions             | us, eu, as, au (4-region global coverage)                    |
 | Expected HTTP codes | 200                                                          |
@@ -41,9 +49,9 @@ Monitor `4467865` was added to status page `247652` under section "API":
 
 ---
 
-## Alert Semantics
+## Historical Alert Semantics
 
-The route `GET /_health/container` returns one of:
+Before B-082, the route `GET /_health/container` returned one of:
 
 ```json
 {"status":"ok","storage":"r2"}      <- healthy: keyword present, no alert
@@ -53,7 +61,24 @@ The route `GET /_health/container` returns one of:
 BetterStack `monitor_type=keyword` fires the alert when `required_keyword` is
 **absent** from the response body. The keyword `"storage":"r2"` is absent when
 the container fell back to `InMemoryStorage`, which is the exact silent
-degradation this monitor is designed to catch.
+degradation the monitor was designed to catch. After B-082, the anonymous route
+returns only the safe liveness fields, so this monitor cannot distinguish R2
+from InMemoryStorage and should not be used for alerting.
+
+## Operator Deep Probe (B-082)
+
+The authenticated variant preserves the native container signal for an operator
+or a secret-bearing internal probe:
+
+```sh
+curl -fsS \
+  -H "X-Corelink-Internal-Auth: $CORELINK_ADMIN_AUTH_KEY" \
+  https://corelink-api.humangr.com/_health/container/authenticated
+```
+
+The response must contain `"status":"ok"` and `"storage":"r2"`. A missing or
+malformed configured `CORELINK_ADMIN_AUTH_KEY` returns `503`; a missing or
+incorrect header returns `401`. Query-string credentials are never accepted.
 
 ---
 
@@ -93,7 +118,7 @@ Full operator runbook (diagnosis + remediation steps):
 
 **TL;DR when paged:**
 
-1. Confirm: `curl -sf https://corelink-api.humangr.com/_health/container`
+1. Confirm with the authenticated deep probe shown above.
 2. Container returned `"storage":"inmemory"` — R2 credentials are broken
 3. Check secrets on main worker + signup-worker:
    - `R2_S3_ACCESS_KEY_ID`
@@ -101,7 +126,7 @@ Full operator runbook (diagnosis + remediation steps):
    - `R2_S3_ENDPOINT`
 4. Re-inject any missing/rotated secrets via `wrangler secret put`
 5. Redeploy: `npx wrangler deploy --env prod`
-6. Verify recovery: response must contain `"storage":"r2"`
+6. Verify recovery: the authenticated response must contain `"storage":"r2"`
 
 ---
 
