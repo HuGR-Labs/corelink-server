@@ -34,7 +34,8 @@ import { DraftBanner } from "@site/src/components/DraftBanner";
 
 - **Format:** CycloneDX 1.5+ JSON (canonical per ADR-0014). SPDX 2.3+ available
   on request.
-- **Cadence:** generated on every release build, signed with `cosign`.
+- **Cadence:** generated on every release build. The separate CAS signing path
+  signs its gated release artifacts; customer distribution is not offered yet.
 - **Coverage:** Worker, Container, and CLI binaries — Rust crates and JS deps
   inclusive.
 
@@ -42,20 +43,15 @@ import { DraftBanner } from "@site/src/components/DraftBanner";
 
 1. Open a support ticket of type **"Procurement / Security Review"**.
 2. Provide your account ID and the release version you need the SBOM for.
-3. We respond within TBD business days with a signed download URL.
-4. Verify the signature with the publicly distributed `cosign` key.
+3. We respond within TBD business days with a time-limited download URL.
 
-## Verification example
+## Signature verification
 
-The following snippet is illustrative — exact key URL is `$TBD` until the
-release signing key is published.
-
-```sh
-cosign verify-blob \
-  --key https://corelink.humangr.com/keys/release.pub \
-  --signature corelink-vX.Y.Z.sbom.json.sig \
-  corelink-vX.Y.Z.sbom.json
-```
+This draft does not expose a customer SBOM signature to verify today. The
+former Worker OCI image lane never emitted a Fulcio certificate or Rekor entry
+and was removed after review found that it never executed. Separate
+release-SLSA and CAS signing paths remain active and independently gated; this
+page does not claim that Sigstore is absent everywhere.
 
 ## Cross-functional review checklist
 

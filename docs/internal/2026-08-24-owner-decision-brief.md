@@ -204,7 +204,7 @@ blocker is squarely yours; a second is a question only you can resolve:
   job now returns *"the job was not started because recent account payments have
   failed or your spending limit needs to be increased"* (live on `cas-canary`
   run 32765508324). Until billing is cleared or the last hosted lanes are
-  re-homed, `cosign-sign`, `smoke-install`, `codeql` and `cas-canary` cannot
+  re-homed, the remaining hosted `smoke-install`, `codeql` and `cas-canary` cannot
   start at all.
 - **`CORELINK_CANARY_PAT` binding is disputed — please confirm (do not assume).**
   A 2026-08-23 `smoke-install` run failed on the corelink CLI binary's own runtime

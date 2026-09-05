@@ -125,8 +125,9 @@ monitored — verifiable on request:
 - **A.5.21 Information security in the ICT supply chain:** CycloneDX SBOM,
   license allowlist, dependency advisory scanning, and reproducible builds
   (byte-identical CLI rebuild verified in CI). **Not** operating today, and
-  listed rather than omitted: Cosign-signed releases and Rekor transparency
-  logs — the signing workflow never executed and was removed 2026-08-31.
+  listed rather than omitted: the former Worker OCI image lane never emitted a
+  signature and was removed after review found it had never executed. Separate
+  release-SLSA and CAS signing paths remain independently gated.
   See our [security overview](/security).
 - **A.5.28 Collection of evidence:** Merkle-linked append-only audit chain
   with RFC 6962 inclusion proofs, R2 Object Lock Governance Mode, 7-year

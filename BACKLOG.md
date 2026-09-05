@@ -7902,32 +7902,26 @@ last-verified: 2026-08-30
 
 ---
 
-### B-118 — a única lane hosted protegida por waiver nunca executou
+### B-118 — a antiga lane OCI foi removida após nunca executar
 
-`cosign-sign.yml` assina a imagem OCI do Worker com Cosign keyless e publica no Rekor. Ela
-é a **única** lane que o owner autorizou manter hospedada na GitHub, com waiver escrito no
-cabeçalho do arquivo (2026-08-11), sob o argumento de que o custo é desprezível porque só
-dispara em tag de release.
-
-O argumento está certo. O efeito é que o waiver protege uma lane que **nunca assinou
-nada**:
+`cosign-sign.yml` deveria assinar a imagem OCI do Worker com Cosign keyless e publicar no
+Rekor. A consulta datada confirmou **zero execuções**; a lane nunca emitiu certificado,
+assinatura ou entrada de transparência para uma imagem. O workflow foi removido em
+2026-08-31, e a decisão é específica dessa lane — os caminhos release-SLSA e CAS
+continuam ativos e independentemente gated.
 
 ```
-gh run list --workflow=cosign-sign.yml --limit 5   →  zero linhas
-gh run list --workflow=nightly.yml     --limit 2   →  2 linhas
+gh run list --workflow=cosign-sign.yml --limit 5   →  zero linhas (histórico)
+gh run list --workflow=nightly.yml     --limit 2   →  2 linhas (controle)
 ```
 
 A segunda consulta existe para provar o mecanismo: a mesma chamada devolve linhas quando há
 linhas, então o vazio da primeira é ausência real e não consulta quebrada.
 
-Ela é, portanto, mais uma lane com zero sucessos — só que do lado protegido da fronteira,
-onde a varredura de lanes hosted não a procura porque o waiver a marca como resolvida.
-
 **Consequência que já chegou ao cliente.** O `apps/docs/docs/trust/index.mdx` prometia
-entradas de transparência Sigstore/Rekor para a imagem do Worker, "verificáveis com
-`cosign verify` contra o emissor `token.actions.githubusercontent.com`, sem chave nossa".
-Nada disso jamais foi emitido. O #1356 remove a promessa — e a remoção deixa de ser
-plausível e passa a ser provada por este item.
+entradas de transparência Sigstore/Rekor para a imagem do Worker. Essa promessa foi
+removida junto com a lane; as páginas agora identificam a remoção da lane OCI sem
+afirmar que Sigstore deixou de existir em release-SLSA ou CAS.
 
 O precedente que define o padrão de reparo é a `reproducible-build`: zero verdes por motivo
 **estrutural**, não por flake — ela hasheava um artefato wasm que o build não produz, e
@@ -7937,17 +7931,57 @@ ninguém tinha lido o que a lane fazia. Leia o corpo desta antes de classificar.
 id: B-118
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'test -f .github/workflows/cosign-sign.yml || { echo "FALHA: cosign-sign.yml nao existe mais — se foi apagada por decisao, feche o item registrando o motivo."; exit 1; }
-  ctrl=$(gh api "repos/HuGR-Labs/corelink-server/actions/workflows/nightly.yml/runs?per_page=1" --jq ".total_count" 2>/dev/null || echo "")
-  case "$ctrl" in ""|0) echo "INDETERMINADO: a consulta de controle (nightly.yml) nao devolveu execucoes; sem gh/rede autenticada este predicado nao decide nada — nao interprete como ausencia."; exit 0 ;; esac
-  n=$(gh api "repos/HuGR-Labs/corelink-server/actions/workflows/cosign-sign.yml/runs?per_page=1" --jq ".total_count" 2>/dev/null || echo "")
-  case "$n" in "") echo "INDETERMINADO: a consulta da cosign-sign falhou enquanto a de controle funcionou; investigue em vez de concluir."; exit 0 ;; esac
-  [ "$n" = 0 ] || { echo "FALHA: cosign-sign.yml ja executou $n vez(es) — a lane saiu do zero, feche ou reescreva o item."; exit 1; }
-  echo "aberto: cosign-sign.yml tem 0 execucoes (controle nightly.yml: $ctrl) e segue com waiver de custo hosted"'
+  bash -c 'set -euo pipefail
+  check_b118() {
+    root=$1
+    (
+      cd "$root"
+      test ! -e .github/workflows/cosign-sign.yml
+      stale="cosign-sign\\.yml|Worker container image.*signed keyless|transparency-log entries for the \\*\\*Worker container image\\*\\*|every release binary carries a Sigstore|Every release ships a Sigstore provenance|generated on every release build, signed with .*cosign|publicly distributed .*cosign.* key|transparency-log entries for every release"
+      if rg -n -i "$stale" apps/docs legal docs/internal/secrets-checklist.md scripts/compliance-weekly-digest.py; then
+        echo "B-118 verifier: stale customer/legal/i18n/operational claim found" >&2
+        exit 1
+      else
+        rg_rc=$?
+        if [ "$rg_rc" -ne 1 ]; then
+          echo "B-118 verifier: rg failed while checking stale claims (rc=$rg_rc)" >&2
+          exit 2
+        fi
+      fi
+      test -f .github/workflows/release-slsa3.yml
+      rg -q "cosign sign-blob" .github/workflows/release-slsa3.yml
+      rg -q "verify_cli_rekor_bundle.py|cosign verify-blob" .github/workflows/release-slsa3.yml
+      test -f .github/workflows/cas_foundation.yml
+      rg -q "cosign sign-blob" .github/workflows/cas_foundation.yml
+      rg -q "cosign verify-blob" .github/workflows/cas_foundation.yml
+    )
+  }
+  check_b118 "$PWD"
+  mutation_tree=$(mktemp -d)
+  trap "rm -rf \"$mutation_tree\"" EXIT
+  mkdir -p "$mutation_tree/apps" "$mutation_tree/legal" "$mutation_tree/docs/internal" "$mutation_tree/scripts"
+  cp -a .github "$mutation_tree/"
+  cp -a apps/docs "$mutation_tree/apps/"
+  cp -a legal/. "$mutation_tree/legal/"
+  cp docs/internal/secrets-checklist.md "$mutation_tree/docs/internal/"
+  cp scripts/compliance-weekly-digest.py "$mutation_tree/scripts/"
+  printf "\\nEvery release ships a Sigstore provenance attestation.\\n" >> "$mutation_tree/apps/docs/docs/trust/index.mdx"
+  if check_b118 "$mutation_tree"; then
+    echo "B-118 verifier mutation unexpectedly passed" >&2
+    exit 1
+  else
+    mutation_rc=$?
+    [ "$mutation_rc" -eq 1 ] || { echo "B-118 verifier mutation returned unexpected rc=$mutation_rc" >&2; exit 1; }
+  fi
+  echo "B-118 done: removed OCI lane; stale claims absent; release-SLSA/CAS signers remain gated; mutation red"'
 verify-means: |
-  open — a lane existe, tem waiver, e nunca rodou.
+  done — o workflow da antiga lane OCI não existe; o verificador local confirma que
+  claims de imagem/cliente, legal, i18n e operação não apontam para a lane removida, e
+  que `release-slsa3.yml` e `cas_foundation.yml` ainda contêm assinatura e verificação
+  Cosign/Rekor independentes. Uma árvore temporária com claim stale injetado precisa
+  deixar o mesmo verifier vermelho (rc=1).
 
   A consulta de controle não é enfeite. Este predicado depende de rede autenticada, e a
   classe de defeito dominante desta campanha é concluir ausência a partir de saída vazia.
@@ -7960,11 +7994,10 @@ verify-means: |
   completamente diferente nos dois casos. Quem fechar precisa dizer qual é, com o corpo do
   workflow na mão.
 
-  Saídas aceitáveis, as mesmas três de qualquer lane sem sucesso: consertar na raiz e
-  fazê-la ficar verde; apagá-la, com o motivo no corpo do PR — e nesse caso **toda**
-  promessa de assinatura na doc do cliente sai junto; ou documentar o bloqueio. Nenhuma
-  fica no meio, e "flaky, deixa quieto" não é saída.
-last-verified: 2026-08-30
+  A remoção é a saída escolhida porque a lane nunca executou nem produziu assinatura.
+  O verificador mantém a distinção: não aceita referências stale à antiga lane, mas
+  exige a presença dos caminhos release-SLSA/CAS que continuam assinando.
+last-verified: 2026-09-04
 ```
 
 ---

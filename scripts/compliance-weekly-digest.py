@@ -145,7 +145,7 @@ DRILL_CRITICALITY: dict[str, str] = {
 
 # Compliance-gate workflow file-name fragments (substring match).
 COMPLIANCE_WORKFLOW_TAGS: tuple[str, ...] = (
-    "compliance", "byok", "cargo-deny", "cargo-audit", "cosign-sign",
+    "compliance", "byok", "cargo-deny", "cargo-audit", "release-slsa3", "cas_foundation",
     "drata", "lgpd", "backup-daily", "dr-drill", "pentest", "fips",
     "license-audit", "verify-fips", "verify-lgpd", "validate_specs",
     "sbom", "cold-restore", "active-failover",

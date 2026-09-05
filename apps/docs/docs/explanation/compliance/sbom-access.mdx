@@ -27,8 +27,8 @@ import { DraftBanner } from "../../../src/components/DraftBanner";
 
 - **Format:** CycloneDX 1.5+ JSON (canonical per ADR-0014). SPDX 2.3+ available
   on request.
-- **Cadence:** generated on every release build. **Not signed** — see
-  "Signature verification" below.
+- **Cadence:** generated on every release build. The separate CAS signing path
+  signs its gated release artifacts; customer distribution is not offered yet.
 - **Coverage:** Worker, Container, and CLI binaries — Rust crates and JS deps
   inclusive.
 
@@ -40,13 +40,13 @@ import { DraftBanner } from "../../../src/components/DraftBanner";
 
 ## Signature verification
 
-**There is no SBOM signature to verify today, and we would rather say so than
-print a command that cannot work.** No CoreLink release signing key has ever
-been published, and no Sigstore/Rekor entry has ever been created for a CoreLink
-artifact — the signing workflow was removed on 2026-08-31 after review
-established it had never executed. This page previously carried an illustrative
-`cosign verify-blob` snippet against a `$TBD` key URL; it has been removed rather
-than left to imply a capability that does not exist.
+**This draft does not expose a customer SBOM signature to verify today.** The
+former Worker OCI image lane never emitted a Fulcio certificate or Rekor entry
+and was removed on 2026-08-31 after review established that it never executed.
+The separate release-SLSA and CAS signing paths remain active and independently
+gated; this page does not claim that Sigstore is absent everywhere. The former
+illustrative `cosign verify-blob` snippet against a `$TBD` key URL was removed
+rather than left to imply a customer distribution capability that does not exist.
 
 What you *can* verify today: the SBOM is CycloneDX 1.5+ JSON and validates
 against the CycloneDX schema, and the CLI build is reproducible — rebuilding the

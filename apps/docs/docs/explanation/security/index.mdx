@@ -46,10 +46,11 @@ CoreLink is a multi-tenant shared cache. The blast radius of a compromise is
 - **Append-only audit chain** — Merkle-linked audit log with RFC 6962
   inclusion proofs and a 7-year retention window. See
   [Audit chain](./audit-chain).
-- **Supply-chain provenance — NOT yet in force.** Release binaries do **not**
-  currently carry a Sigstore provenance attestation, and no Rekor transparency
-  entry has ever been created for a CoreLink artifact. Reproducible builds and
-  CycloneDX SBOM generation are real; signing is not. See [trust](/trust).
+- **Supply-chain provenance — partially wired.** The former Worker OCI image
+  lane never emitted a Sigstore provenance attestation and was removed. The
+  separate release-SLSA and CAS paths retain independently gated signing and
+  Rekor verification; this page makes no customer-wide claim for every binary.
+  Reproducible builds and CycloneDX SBOM generation are real. See [trust](/trust).
 - **RFC 8785 JCS canonicalization** — every signed payload is canonicalized
   before signing so signature verification is deterministic across runtimes.
 

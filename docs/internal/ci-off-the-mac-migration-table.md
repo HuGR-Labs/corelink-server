@@ -136,10 +136,12 @@ Prova contemporânea de que build de imagem funciona na frota:
 («real Docker daemon required») funcionam **através** do shim. Ninguém rodou.
 Portanto:
 
-- `smoke-install` e `cosign-sign` **saem de «fica hosted porque não há docker»** e
-  entram em **«experimento pendente»**. Ver §5.
-- **Um experimento, não um PR de migração**: dispare cada um uma vez em
-  `runs-on: corelink` e leia o resultado. Barato, e decide os dois.
+- `smoke-install` **sai de «fica hosted porque não há docker»** e entra em
+  **«experimento pendente»**. A antiga lane OCI `cosign-sign` foi removida pelo
+  B-118 porque nunca executou nem emitiu assinatura de imagem; ela não é um
+  experimento pendente. Ver §5–§6.
+- **Um experimento, não um PR de migração**: dispare `smoke-install` uma vez em
+  `runs-on: corelink` e leia o resultado. Barato, e decide essa lane.
 
 ### 1.2 O que a imagem realmente NÃO tem
 
@@ -445,8 +447,9 @@ linhas.
   da imagem, são as medições.
 - **Não afirma que a frota aguenta 205 jobs.** Afirma o modo de falha (spawn recusado →
   `queued` sem teto) e que a exposição dobra.
-- **Não decide se `smoke-install` / `cosign-sign` rodam através do shim `docker`.** É um
-  experimento de uma execução cada, nomeado em §1.3 e não feito aqui.
+- **Não decide se `smoke-install` roda através do shim `docker`.** É um experimento
+  de uma execução, nomeado em §1.3 e não feito aqui. `cosign-sign` foi removida e
+  portanto não tem execução pendente.
 - **Não afirma que a imagem de hoje é a de amanhã.** §7 do `ci-runner-fabric-box.md`
   documenta que ela muda sem aviso; §1.1 e §1.3 desta página são a prova de que isso já
   me pegou **duas** vezes no mesmo dia.

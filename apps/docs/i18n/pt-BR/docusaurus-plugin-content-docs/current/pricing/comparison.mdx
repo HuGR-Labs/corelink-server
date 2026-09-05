@@ -62,8 +62,9 @@ Bazel/REAPI **Remote Cache** profile (ContentAddressableStorage + ActionCache
   (`security_model.md §3`).
 - **Audit-grade retention.** Seven-year append-only audit log with RFC 6962
   inclusion proofs is on by default for Business and Enterprise tiers.
-- **Supply-chain visibility.** Every release ships a Sigstore provenance
-  attestation that can be verified against the public transparency log.
+- **Supply-chain visibility.** Release-SLSA and CAS paths provide independently
+  gated provenance/signing where enabled; this is not a claim that every release
+  or customer-facing artifact carries an attestation.
 
 ## What CoreLink does not aim to do
 

@@ -85,13 +85,13 @@ Compliance docs can be theatre. We try hard to make ours falsifiable:
 - **Not yet available, and listed here rather than omitted:**
   the CLI binaries are **not** signed — the signing step in the CLI release
   workflow is still a placeholder. Container-image signing via
-  Sigstore / Rekor is **not live and no longer planned in its previous form**:
-  no Rekor transparency entry has ever been created, and on 2026-08-31 the
-  signing workflow was **removed** after review found it had never executed once
-  and could not have (it published to a registry namespace it had no rights to,
-  and its deploy step carried a literal placeholder). SBOMs are generated on
-  every release build but are **not signed**, and have **no customer
-  distribution path yet**: the procurement process is drafted, not offered.
+  Sigstore / Rekor signing for the **former Worker OCI image lane** is not
+  available: no entry was ever created for that lane, and on 2026-08-31 its
+  workflow was **removed** after review found it had never executed once and
+  could not have (it published to a registry namespace it had no rights to, and
+  its deploy step carried a literal placeholder). The separate release-SLSA and
+  CAS signing paths remain independently gated; SBOM customer distribution is
+  still drafted, not offered.
   The external penetration test is **planned pre-GA; no report exists
   yet** (see the internal pentest posture note — the compliance
   summary page is draft-gated until Legal review completes).

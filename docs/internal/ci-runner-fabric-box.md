@@ -40,7 +40,8 @@ before you rely on any line below.
 > present (CF fleet), not on a bare Mac builder. So the remaining lanes need either an
 > ephemeral-fleet-only label or runner-image work — a follow-up, tracked, NOT done here.
 > Still hosted: `bazel-starter-ci`, `smoke-install`, `corelink-client-verify/cbindgen`,
-> `docs-ci` a11y/lighthouse jobs, `e2e-prod`, `cosign-sign`.
+> `docs-ci` a11y/lighthouse jobs, and `e2e-prod`. The former OCI `cosign-sign` lane
+> was removed after B-118 established that it never executed.
 
 ### B-133: base-controlled static inspection on the mixed pool
 
@@ -326,7 +327,7 @@ Practical consequences:
 **A — moves today (20):**
 `byok_kill_switch_drill_weekly`, `byok_matrix_weekly`, `cargo-deny`,
 `cas-canary`, `corelink-adapter-host`, `corelink-client-verify`,
-`corelink-meta`, `corelink-server`, `cosign-sign`, `coverage`⚠️, `docs-vale`,
+`corelink-meta`, `corelink-server`, `coverage`⚠️, `docs-vale`,
 `dpa-legal-review`, `dr-drill-monthly`, `gc-sweep-dry-run`,
 `legal-changes-review`, `mutation-pr`, `reproducible-build`,
 `sbom-consolidated`, `tenant-path`, `terraform-lint`

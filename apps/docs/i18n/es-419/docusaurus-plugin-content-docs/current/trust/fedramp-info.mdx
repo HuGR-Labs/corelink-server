@@ -92,7 +92,7 @@ baseline as program / privacy out-of-baseline):
 | --- | --- | --- |
 | **AC** Access Control | Coverage | WebAuthn + Clerk SSO + MFA + per-tenant DO + RBAC |
 | **AU** Audit & Accountability | Partial (≥80% substance) | Los eventos de auditoría con cadena de hash y pruebas de inclusión ya están conectados; el sink de producción es en memoria (se pierde al reiniciar, no es durable) — la persistencia en R2 y la retención de 7 años con Object Lock están diferidas |
-| **CM** Configuration Management | Coverage (exceeds) | SLSA L3 + Cosign + Rekor + reproducible builds |
+| **CM** Configuration Management | Partial | Reproducible builds + CycloneDX SBOM. SLSA L3, Cosign signing and Rekor transparency are not in force |
 | **MA** Maintenance | Coverage (inherited) | Sub-processor SOC 2 (cloud-only) |
 | **MP** Media Protection | Coverage | Logical erasure + sub-processor media destruction |
 | **PE** Physical & Environmental | Coverage (inherited) | Sub-processor SOC 2 Type II |
