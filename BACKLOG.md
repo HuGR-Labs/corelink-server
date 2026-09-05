@@ -8869,28 +8869,39 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  bash -c 'set -euo pipefail
-  doc=docs/internal/ci-runner-fabric-box.md
-  wf=.github/workflows/runner-fleet-health.yml
-  probe=scripts/check_runner_fleet.py
-  [ -f "$doc" ] && [ -f "$wf" ] && [ -f "$probe" ] || { echo "FALHA: sonda atual ou doc ausente"; exit 1; }
-  grep -q "current executable fleet probe" "$doc"
-  grep -q "runner-fleet-health.yml" "$doc"
-  grep -q "scripts/check_runner_fleet.py" "$doc"
-  assert_current_probe_reference() {
-    grep -qF 'current executable fleet probe is `runner-fleet-health.yml`' "$1"
-  }
-  assert_current_probe_reference "$doc" || { echo "FALHA: referencia semantica da sonda atual ausente"; exit 1; }
-  python3 scripts/validate_docs_reality.py >/tmp/b131-docs-reality.txt
-  mutant=$(mktemp)
-  trap "rm -f \"$mutant\"" EXIT
-  sed 's/runner-fleet-health\.yml/runner-fleet-health-MUTANT.yml/' "$doc" > "$mutant"
-  grep -qF 'current executable fleet probe is `runner-fleet-health-MUTANT.yml`' "$mutant"
-  if assert_current_probe_reference "$mutant"; then
-    echo "FALHA: mutacao da referencia da sonda nao foi detectada"
-    exit 1
-  fi
-  echo "fechado: doc aponta para runner-fleet-health.yml/check_runner_fleet.py; realidade e mutacao semantica passaram"'
+  python3 - <<'PY'
+  from pathlib import Path
+  import subprocess
+  import tempfile
+
+  doc = Path("docs/internal/ci-runner-fabric-box.md")
+  wf = Path(".github/workflows/runner-fleet-health.yml")
+  probe = Path("scripts/check_runner_fleet.py")
+  if not (doc.is_file() and wf.is_file() and probe.is_file()):
+      raise SystemExit("FALHA: sonda atual ou doc ausente")
+
+  expected = "current executable fleet probe is `runner-fleet-health.yml`"
+  text = doc.read_text(encoding="utf-8")
+  if expected not in text:
+      raise SystemExit("FALHA: referencia semantica da sonda atual ausente")
+
+  reality = subprocess.run(
+      ["python3", "scripts/validate_docs_reality.py"],
+      check=False,
+      stdout=subprocess.DEVNULL,
+  )
+  if reality.returncode != 0:
+      raise SystemExit("FALHA: validate_docs_reality.py reprovou")
+
+  with tempfile.NamedTemporaryFile("w+", encoding="utf-8") as mutant:
+      mutant.write(text.replace("runner-fleet-health.yml", "runner-fleet-health-MUTANT.yml"))
+      mutant.flush()
+      mutated = Path(mutant.name).read_text(encoding="utf-8")
+  mutant_expected = "current executable fleet probe is `runner-fleet-health-MUTANT.yml`"
+  if mutant_expected not in mutated or expected in mutated:
+      raise SystemExit("FALHA: mutacao da referencia da sonda nao foi detectada")
+  print("fechado: doc aponta para runner-fleet-health.yml/check_runner_fleet.py; realidade e mutacao semantica passaram")
+  PY
 verify-means: |
   done — a documentacao aponta para a sonda atual implementada, o workflow e o helper
   existem, o gate docs-reality passa, e a mutacao da referencia semantica (com backticks)
