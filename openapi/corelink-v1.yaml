@@ -243,40 +243,6 @@ paths:
         "422": { $ref: "#/components/responses/Unprocessable" }
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
-<<<<<<< HEAD
-  /v1/pats:
-    x-status: implemented
-    x-implementing-handler: crates/corelink-container/src/routes/customer.rs
-    x-implementing-crate: corelink-pat
-    x-reconciliation-note: |
-      Customer-authorized issuance is mounted by `customer::router` and routed
-      through the Worker `customer_v1` auth family. The Worker derives the
-      tenant from an edge-validated Clerk session or canonical PAT and never
-      forwards the operator-only PAT mint authority. A Clerk session is the
-      browser/dashboard authentication for this POST; the JWT is stripped
-      before the tenant Durable Object receives the request.
-    post:
-      tags: [pat]
-      summary: Issue a new Personal Access Token.
-      operationId: patIssue
-      security:
-        - ClerkSessionCookie: []
-        - BearerPAT: []
-      description: |
-        Creates a PAT for the caller's authenticated tenant. Browser/dashboard
-        callers authenticate with an edge-validated Clerk session cookie; CLI
-        callers may use a canonical PAT for compatibility. The Worker derives
-        the tenant from that verified credential; clients
-        cannot supply a tenant id and this endpoint never accepts the
-        operator-only mint authority. The raw token is returned exactly once in
-        `token` and is never logged or retrievable later. Self-service tokens
-        expire after 90 days and cannot grant `admin`.
-        This endpoint and the legacy dashboard alias `POST /v1/customer/keys`
-        use the same customer-plane mint flow and the same per-tenant
-        `pat-issue` bucket: burst 10, then 10 tokens per hour (one every 360
-        seconds). The limiter runs before mint and audit; a denied request
-        returns `429` with `Retry-After`.
-=======
   /v1/customer/keys:
     x-status: implemented
     x-implementing-crate: corelink-container
@@ -314,7 +280,6 @@ paths:
         Minting a credential that carries any write/admin scope requires the
         caller to already hold a cache-write capability — a read-only token
         cannot bootstrap a write token for itself (`403`).
->>>>>>> c5fbd8f61 (fix(openapi): remove the 14 published API paths nothing serves, and correct the 6 that lied the other way)
       requestBody:
         required: true
         content:
@@ -327,52 +292,6 @@ paths:
           content:
             application/json:
               schema:
-<<<<<<< HEAD
-                $ref: "#/components/schemas/PatIssueResponse"
-        "400":
-          description: Malformed JSON or request body rejected by the HTTP extractor.
-          content:
-            text/plain:
-              schema: { type: string }
-        "401":
-          description: |
-            Authentication failed at the edge returns the Worker's JSON
-            `WorkerErrorEnvelope` with `error`, `message`, and `request_id`.
-            A request that reaches the container but has no trusted tenant,
-            or requests an invalid/ungrantable (`admin`/`owner`) scope, returns
-            the handler's plain-text `401`. No PAT is minted in either case.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/WorkerErrorEnvelope" }
-            text/plain:
-              schema: { type: string }
-        "403":
-          description: |
-            The authenticated principal is valid but lacks the write capability
-            required to mint a requested write/admin credential. The container
-            handler returns plain text.
-          content:
-            text/plain:
-              schema: { type: string }
-        "429":
-          description: PAT issuance rate limit exceeded.
-          headers:
-            Retry-After:
-              schema: { type: integer, minimum: 1 }
-          content:
-            text/plain:
-              schema: { type: string }
-        "500":
-          description: PAT storage or handler failure.
-          content:
-            text/plain:
-              schema: { type: string }
-        "503":
-          description: Rate-limit clock or pipeline unavailable; no PAT was minted.
-          content:
-            text/plain:
-              schema: { type: string }
-=======
                 $ref: "#/components/schemas/CustomerKeyCreateResponse"
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -404,7 +323,6 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "500": { $ref: "#/components/responses/InternalError" }
->>>>>>> c5fbd8f61 (fix(openapi): remove the 14 published API paths nothing serves, and correct the 6 that lied the other way)
   /v1/billing/stripe-webhook:
     x-status: implemented
     x-implementing-crate: corelink-container
@@ -1761,22 +1679,6 @@ components:
             details:
               type: object
               additionalProperties: true
-    WorkerErrorEnvelope:
-      type: object
-      required: [error, message, request_id]
-      description: JSON envelope emitted by the edge Worker before a request
-        reaches the tenant Durable Object. It contains no credential material.
-      properties:
-        error:
-          type: string
-          description: Stable machine-readable Worker error code.
-          examples: [UNAUTHORIZED, FORBIDDEN, INTERNAL_ERROR]
-        message:
-          type: string
-          description: Safe human-readable message; secrets are never echoed.
-        request_id:
-          type: string
-          description: Worker request correlation identifier.
     SignupRequest:
       type: object
       required: [clerk_event_id, email_hash, locale, idempotency_key, correlation_id]
@@ -1860,46 +1762,6 @@ components:
         checkout_session_url: { type: string, format: uri }
         checkout_session_id: { type: string }
         tier: { $ref: "#/components/schemas/SubscriptionTier" }
-<<<<<<< HEAD
-    PatIssueRequest:
-      type: object
-      required: [label]
-      properties:
-        label:
-          type: string
-          minLength: 1
-          maxLength: 64
-          examples: ["ci-runner-build-cache"]
-        scopes:
-          type: array
-          items:
-            type: string
-            enum: [cache:read, cache:write, cache:find-missing]
-          default: [cache:read]
-    PatIssueResponse:
-      type: object
-      required: [pat, token]
-      properties:
-        pat:
-          $ref: "#/components/schemas/CustomerPatMetadata"
-        token:
-          type: string
-          description: Canonical raw PAT material — **shown exactly once** and
-            never logged or retrievable again.
-    CustomerPatMetadata:
-      type: object
-      required: [pat_id, name, scopes, created_at]
-      properties:
-        pat_id: { type: string }
-        name: { type: string }
-        scopes:
-          type: array
-          items: { type: string }
-        created_at: { type: string, format: date-time }
-        last_used_at: { type: [string, "null"], format: date-time }
-        revoked_at: { type: [string, "null"], format: date-time }
-=======
->>>>>>> c5fbd8f61 (fix(openapi): remove the 14 published API paths nothing serves, and correct the 6 that lied the other way)
     PatMetadata:
       type: object
       description: |

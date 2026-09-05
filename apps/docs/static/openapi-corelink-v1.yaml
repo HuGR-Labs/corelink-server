@@ -78,16 +78,16 @@ security:
   - ClerkSessionCookie: []
 paths:
   /v1/signup:
-    x-status: planned
-    x-binding: cf-worker-pending
+    x-status: implemented
     x-implementing-crate: corelink-signup
+    x-served-at: worker/src/index.ts:972 (edge-terminated)
     x-reconciliation-note: |
       Distinct intent from the SERVER-ONLY `/v1/signup/pilot/{token}`
       (pilot-program HMAC-token redemption, axum-mounted in
       `crates/corelink-container/src/routes/signup.rs`). The customer-
       facing self-service signup endpoint is the one documented here;
       `crates/corelink-signup` ships the orchestrator + atomic-
-      provisioning logic, awaiting the CF Worker entry crate to bind it.
+      provisioning logic and the Worker terminates the route at the edge.
     post:
       tags: [signup]
       summary: Provision a new tenant from a verified Clerk identity.
@@ -140,103 +140,79 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
-  /v1/dpa/accept:
+  /v1/onboarding/dpa-accept:
+    x-status: implemented
+    x-implementing-crate: corelink-container
+    x-served-at: crates/corelink-container/src/routes/dpa_accept.rs:634
     post:
       tags: [dpa]
       summary: Record click-through acceptance of the current DPA version.
       operationId: dpaAccept
-      x-status: planned
-      x-binding: cf-worker-pending
-      x-implementing-crate: corelink-dpa-acceptance
-      x-reconciliation-note: |
-        Business-logic crate `corelink-dpa-acceptance` ships the service +
-        schema (doc-comments mark `POST /v1/dpa/accept` as canonical). Axum
-        binding is deferred to PRR per `trait-abstraction-defer` charter
-        (tools/openapi/src/lib.rs L29-39 — utoipa derives land with the
-        CF Worker entry crate). Reconciled 2026-05-27 per
-        specs/_audits/2026-05-27-openapi-reconciliation-seal.md.
       description: |
-        Records 6-field consent proof (`notice_text_hash`, `notice_version`,
-        `locale`, `wording_id`, `ui_capture_ts`, `submission_ts` server-set)
-        and emits an RS256-signed JWT receipt. Idempotent on
-        `(tenant_id, notice_text_hash, ui_capture_ts)`.
+        Records the click-through consent proof for the caller's tenant and
+        returns the immutable audit reference for it. The tenant is taken from
+        the Clerk-authenticated session at the edge and is **never** read from
+        the body — a smuggled `tenant_id` is rejected (`400 bad_request`,
+        unknown fields are denied).
+
+        Idempotent on `(tenant, dpa_version)`: replaying an acceptance returns
+        the original `audit_event_id` unchanged, with the same `200`.
+
+        `dpa_version` must equal the server's current DPA version; an older
+        one is rejected with `400 dpa_version_mismatch`. `dpa_locale` must be
+        inside the closed GA locale set (`en-US` / `pt-BR` / `es-419`, and
+        their bare-language forms); anything else — `de` included — is
+        `400 unsupported_locale`.
+
+        `INV-ONBOARD-DPA-FIRST`: `/v1/onboarding/tier-select` stays locked
+        until an acceptance row exists for the tenant.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/DpaAcceptanceRequest"
+              $ref: "#/components/schemas/DpaAcceptRequest"
       responses:
-        "201":
-          description: Acceptance recorded; JWT receipt returned and emailed.
+        "200":
+          description: |
+            Acceptance recorded — or replayed unchanged, which returns the same
+            body as the original acceptance.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/DpaAcceptanceReceipt"
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "409":
-          description: Idempotent replay — original receipt returned unchanged.
+                $ref: "#/components/schemas/DpaAcceptResponse"
+        "400":
+          description: |
+            `bad_request` (malformed JSON, unknown field, malformed notice
+            hash), `unsupported_locale`, or `dpa_version_mismatch`.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/DpaAcceptanceReceipt"
-        "422": { $ref: "#/components/responses/Unprocessable" }
-        "429": { $ref: "#/components/responses/RateLimited" }
-        "500": { $ref: "#/components/responses/InternalError" }
-  /v1/dpa/re-accept:
-    post:
-      tags: [dpa]
-      summary: Re-accept a major-bumped DPA notice within the 30-day grace window.
-      operationId: dpaReAccept
-      x-status: planned
-      x-binding: cf-worker-pending
-      x-implementing-crate: corelink-privacy (dpa::versioning::middleware)
-      x-reconciliation-note: |
-        `RE_ACCEPT_PATH` const in
-        `crates/corelink-privacy/src/dpa/versioning/middleware.rs:67` is the
-        canonical gate token used by the read-only-degrade middleware. The
-        middleware identifies this path but the actual handler axum mount
-        is deferred to the CF Worker entry crate.
-      description: |
-        When a new DPA version is published the tenant enters a 30-day grace
-        window; `corelink-dpa-versioning` middleware flips writes to read-only
-        until the customer self-recovers via this endpoint.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/DpaAcceptanceRequest"
-      responses:
-        "201":
-          description: Re-acceptance recorded; tenant returns to read-write.
+                $ref: "#/components/schemas/DpaAcceptError"
+        "401":
+          description: |
+            `unauthenticated` (edge internal-auth failed) or
+            `no_verified_tenant` (no tenant bound to the session).
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/DpaAcceptanceReceipt"
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403":
-          description: Grace window expired; tenant is now read-only-frozen and
-            requires manual unfreeze via admin.
+                $ref: "#/components/schemas/DpaAcceptError"
+        "500":
+          description: |
+            `internal` — durable-store or receipt-signing failure. Fail-CLOSED:
+            never reported as "already accepted".
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorEnvelope"
-        "422": { $ref: "#/components/responses/Unprocessable" }
-        "500": { $ref: "#/components/responses/InternalError" }
+                $ref: "#/components/schemas/DpaAcceptError"
   /v1/onboarding/tier-select:
     post:
       tags: [tier]
       summary: Select a subscription tier and receive a Stripe Checkout session URL.
       operationId: tierSelect
-      x-status: planned
-      x-binding: cf-worker-pending
+      x-status: implemented
       x-implementing-crate: corelink-tier-selection
-      x-reconciliation-note: |
-        `crates/corelink-tier-selection/src/lib.rs` doc-comments mark
-        `POST /v1/onboarding/tier-select` as canonical (Lote 10.16 fix).
-        Sprint S-19 WI-S19-004 (sealed) scopes the handler; the axum
-        mount lives in the deferred CF Worker entry crate.
+      x-served-at: crates/corelink-container/src/routes/tier_select.rs:588
       description: |
         Enforces `INV-ONBOARD-DPA-FIRST` via a D1 lock — tier selection is
         rejected until a DPA acceptance row exists for the tenant.
@@ -267,98 +243,90 @@ paths:
         "422": { $ref: "#/components/responses/Unprocessable" }
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
-  /v1/pats:
+  /v1/customer/keys:
     x-status: implemented
-    x-implementing-handler: crates/corelink-container/src/routes/customer.rs
-    x-implementing-crate: corelink-pat
-    x-reconciliation-note: |
-      Customer-authorized issuance is mounted by `customer::router` and routed
-      through the Worker `customer_v1` auth family. The Worker derives the
-      tenant from an edge-validated Clerk session or canonical PAT and never
-      forwards the operator-only PAT mint authority. A Clerk session is the
-      browser/dashboard authentication for this POST; the JWT is stripped
-      before the tenant Durable Object receives the request.
+    x-implementing-crate: corelink-container
+    x-served-at: crates/corelink-container/src/routes/customer.rs:212
+    get:
+      tags: [pat]
+      summary: List the tenant's Personal Access Tokens (metadata only).
+      operationId: customerKeysList
+      description: |
+        Returns PAT metadata plus the tenant's BYOK status. No raw token
+        material is ever returned here.
+
+        Requires a cache-**write** capability: enumerating a tenant's
+        credentials is an admin operation, so a read-only (`cas:r`) token is
+        rejected with `403`.
+      responses:
+        "200":
+          description: PAT list (metadata only) and BYOK status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerKeysListResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "500": { $ref: "#/components/responses/InternalError" }
     post:
       tags: [pat]
       summary: Issue a new Personal Access Token.
-      operationId: patIssue
-      security:
-        - ClerkSessionCookie: []
-        - BearerPAT: []
+      operationId: customerKeysCreate
       description: |
-        Creates a PAT for the caller's authenticated tenant. Browser/dashboard
-        callers authenticate with an edge-validated Clerk session cookie; CLI
-        callers may use a canonical PAT for compatibility. The Worker derives
-        the tenant from that verified credential; clients
-        cannot supply a tenant id and this endpoint never accepts the
-        operator-only mint authority. The raw token is returned exactly once in
-        `token` and is never logged or retrievable later. Self-service tokens
-        expire after 90 days and cannot grant `admin`.
-        This endpoint and the legacy dashboard alias `POST /v1/customer/keys`
-        use the same customer-plane mint flow and the same per-tenant
-        `pat-issue` bucket: burst 10, then 10 tokens per hour (one every 360
-        seconds). The limiter is a durable, serialized per-tenant Durable Object
-        bucket and therefore survives restarts and container replacement. It
-        runs before mint and audit; malformed or unavailable limiter state fails
-        closed with `503`, while a denied request returns `429` with
-        `Retry-After`.
+        Returns the raw token material **once**, in the `token` field. The
+        token is hashed before storage; every subsequent read returns metadata
+        only.
+
+        Minting a credential that carries any write/admin scope requires the
+        caller to already hold a cache-write capability — a read-only token
+        cannot bootstrap a write token for itself (`403`).
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/PatIssueRequest"
+              $ref: "#/components/schemas/CustomerKeyCreateRequest"
       responses:
         "201":
-          description: PAT issued.
+          description: PAT issued. `token` is shown exactly once.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PatIssueResponse"
-        "400":
-          description: Malformed JSON or request body rejected by the HTTP extractor.
-          content:
-            text/plain:
-              schema: { type: string }
-        "401":
-          description: |
-            Authentication failed at the edge returns the Worker's JSON
-            `WorkerErrorEnvelope` with `error`, `message`, and `request_id`.
-            A request that reaches the container but has no trusted tenant,
-            or requests an invalid/ungrantable (`admin`/`owner`) scope, returns
-            the handler's plain-text `401`. No PAT is minted in either case.
+                $ref: "#/components/schemas/CustomerKeyCreateResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/customer/keys/{pat_id}/revoke:
+    x-status: implemented
+    x-implementing-crate: corelink-container
+    x-served-at: crates/corelink-container/src/routes/customer.rs:216
+    post:
+      tags: [pat]
+      summary: Revoke a Personal Access Token by id.
+      operationId: customerKeyRevoke
+      description: |
+        Revocation is destructive and tenant-wide, so it requires a cache-write
+        capability; a read-only (`cas:r`) principal is rejected with `403`.
+        Subsequent uses of the revoked token MUST fail closed
+        (`INV-PAT-REVOKE-PROPAGATION`).
+      parameters:
+        - $ref: "#/components/parameters/PatId"
+      responses:
+        "200":
+          description: Revoked. Returns the PAT metadata with `revoked_at` set.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/WorkerErrorEnvelope" }
-            text/plain:
-              schema: { type: string }
-        "403":
-          description: |
-            The authenticated principal is valid but lacks the write capability
-            required to mint a requested write/admin credential. The container
-            handler returns plain text.
-          content:
-            text/plain:
-              schema: { type: string }
-        "429":
-          description: PAT issuance rate limit exceeded.
-          headers:
-            Retry-After:
-              schema: { type: integer, minimum: 1 }
-          content:
-            text/plain:
-              schema: { type: string }
-        "500":
-          description: PAT storage or handler failure.
-          content:
-            text/plain:
-              schema: { type: string }
-        "503":
-          description: Durable rate-limit state or pipeline unavailable; no PAT was minted.
-          content:
-            text/plain:
-              schema: { type: string }
+              schema:
+                $ref: "#/components/schemas/CustomerKeyRevokeResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
   /v1/billing/stripe-webhook:
+    x-status: implemented
+    x-implementing-crate: corelink-container
+    x-served-at: crates/corelink-container/src/webhook.rs:56 (STRIPE_WEBHOOK_ROUTE)
     post:
       tags: [billing]
       summary: Receive a Stripe webhook event (HMAC-SHA256 signature required).
@@ -408,14 +376,14 @@ paths:
               schema:
                 type: string
   /v1/privacy/dsr/{action}:
-    x-status: planned
-    x-binding: cf-worker-pending
+    x-status: implemented
     x-implementing-crate: corelink-dsr
+    x-served-at: crates/corelink-container/src/routes/dsr/portal.rs:719-724
     x-reconciliation-note: |
-      `crates/corelink-dsr/src/endpoint.rs` marks
-      `POST /v1/privacy/dsr/{access|portability|...}` as canonical;
-      Sprint S-11 WI-S11-001 (sealed) scopes the 7-endpoint surface.
-      Axum mount deferred to CF Worker entry crate.
+      Mounted as six enumerated literals (`/access`, `/portability`,
+      `/rectification`, `/erasure`, `/restriction`, `/objection`) rather than
+      one templated segment — an `{action}` outside that closed set is a 404,
+      not a validation error.
     post:
       tags: [privacy-dsr]
       summary: Submit a Data Subject Request (GDPR / LGPD / CCPA).
@@ -466,9 +434,9 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
   /v1/privacy/dsr/{request_id}/status:
-    x-status: planned
-    x-binding: cf-worker-pending
+    x-status: implemented
     x-implementing-crate: corelink-dsr
+    x-served-at: crates/corelink-container/src/routes/dsr/portal.rs:726
     get:
       tags: [privacy-dsr]
       summary: Poll the status of a previously submitted DSR.
@@ -490,239 +458,6 @@ paths:
                 $ref: "#/components/schemas/DsrTicket"
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
-        "500": { $ref: "#/components/responses/InternalError" }
-  /v1/admin/ops:
-    x-status: planned
-    x-binding: cf-worker-pending
-    x-implementing-crate: corelink-ops (admin::api) + corelink-dual-approval
-    x-reconciliation-note: |
-      `crates/corelink-ops/src/admin/api.rs` carries the `corelink-admin-api`
-      pipeline + dual-approval gate. Distinct intent from the SERVER-ONLY
-      `/v1/admin/read/:resource` + `/v1/admin/mutate` placeholder routes,
-      which expose an in-memory admin handler used for the wave-11 wire-up
-      demonstration. The dual-approval-gated `/v1/admin/ops*` family is the
-      production surface; CF Worker entry crate binds it.
-    post:
-      tags: [admin]
-      summary: Submit a dual-approval-gated admin operation.
-      operationId: adminOpsSubmit
-      description: |
-        Implemented by `corelink-admin-api::middleware::AdminApiPipeline`.
-        Enforces `INV-ADMIN-DUAL-APPROVAL` (caller + distinct approver
-        with fresh MFA) and audit-emit-BEFORE-handler atomically.
-        Op taxonomy: `ConfigRollback`, `SecretRotationStart`,
-        `TenantTombstone`, plus runbook-specific variants.
-      security:
-        - BearerPAT: [admin]
-      parameters:
-        - $ref: "#/components/parameters/AdminOperationReason"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AdminOpRequest"
-      responses:
-        "202":
-          description: Op accepted; result available at
-            `GET /v1/admin/ops/{op_id}`.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AdminOpAccepted"
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "409":
-          description: Approver collision (caller == approver) or duplicate nonce.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorEnvelope"
-        "422": { $ref: "#/components/responses/Unprocessable" }
-        "500": { $ref: "#/components/responses/InternalError" }
-  /v1/admin/ops/{op_id}:
-    x-status: planned
-    x-binding: cf-worker-pending
-    x-implementing-crate: corelink-ops (admin::api)
-    get:
-      tags: [admin]
-      summary: Inspect an admin op (status + audit envelope).
-      operationId: adminOpGet
-      security:
-        - BearerPAT: [admin]
-      parameters:
-        - $ref: "#/components/parameters/AdminOpId"
-      responses:
-        "200":
-          description: Op result.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AdminOpResult"
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-  /v1/admin/ops/{op_id}/approve:
-    x-status: planned
-    x-binding: cf-worker-pending
-    x-implementing-crate: corelink-ops (admin::api) + corelink-dual-approval
-    post:
-      tags: [admin]
-      summary: Approve a pending admin op (second-approver step).
-      operationId: adminOpApprove
-      security:
-        - BearerPAT: [admin]
-      parameters:
-        - $ref: "#/components/parameters/AdminOpId"
-        - $ref: "#/components/parameters/AdminOperationReason"
-      responses:
-        "200":
-          description: Approved.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AdminOpResult"
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "409":
-          description: Approver collision or op already approved/rejected.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorEnvelope"
-  /v1/admin/ops/{op_id}/reject:
-    x-status: planned
-    x-binding: cf-worker-pending
-    x-implementing-crate: corelink-ops (admin::api) + corelink-dual-approval
-    post:
-      tags: [admin]
-      summary: Reject a pending admin op.
-      operationId: adminOpReject
-      security:
-        - BearerPAT: [admin]
-      parameters:
-        - $ref: "#/components/parameters/AdminOpId"
-        - $ref: "#/components/parameters/AdminOperationReason"
-      responses:
-        "200":
-          description: Rejected.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AdminOpResult"
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "409":
-          description: Op already terminal (approved or rejected).
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorEnvelope"
-  /v1/admin/audit/events:
-    x-status: planned
-    x-binding: cf-worker-pending
-    x-implementing-crate: corelink-audit-chain (admin query surface)
-    x-reconciliation-note: |
-      Distinct intent from the SERVER-ONLY `/v1/audit/export` (bulk R2
-      export) and `/v1/audit/analytics/*` (event-count + timeline
-      aggregates). This is the per-tenant admin event-search surface
-      paginated for the admin UI. SDK quickstarts currently target a
-      dashed `/v1/admin/audit-events` typo (`tools/sdks/{go,python}/
-      examples/quickstart_audit.{go,py}`) — SDK fix tracked separately;
-      the dashed variant is NOT canonical. CLI quickstart at
-      `tools/cli/examples/quickstart_audit.rs:31` shares the typo.
-    get:
-      tags: [admin]
-      summary: Search the canonical audit chain (read-only).
-      operationId: adminAuditEvents
-      security:
-        - BearerPAT: [admin]
-      parameters:
-        - name: tenant_id
-          in: query
-          schema: { type: string, format: uuid }
-        - name: event_type
-          in: query
-          schema: { type: string, examples: ["corelink.signup.completed"] }
-        - name: since_ms
-          in: query
-          schema: { type: integer, format: int64, minimum: 0 }
-        - name: until_ms
-          in: query
-          schema: { type: integer, format: int64, minimum: 0 }
-        - name: limit
-          in: query
-          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
-      responses:
-        "200":
-          description: Filtered audit-event page.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AuditEventPage"
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-  /v1/admin/tenants:
-    x-status: planned
-    x-binding: cf-worker-pending
-    x-implementing-crate: corelink-tenant-registry (admin query surface)
-    get:
-      tags: [admin]
-      summary: Search tenants (admin read).
-      operationId: adminTenantsList
-      security:
-        - BearerPAT: [admin]
-      parameters:
-        - name: region
-          in: query
-          schema: { $ref: "#/components/schemas/PrimaryRegion" }
-        - name: tier
-          in: query
-          schema: { $ref: "#/components/schemas/SubscriptionTier" }
-        - name: state
-          in: query
-          schema:
-            type: string
-            enum: [active, deferred_billing, read_only_frozen, tombstoned]
-        - name: limit
-          in: query
-          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
-      responses:
-        "200":
-          description: Tenant page.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TenantPage"
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-  /v1/enterprise/inquire:
-    x-status: planned
-    x-binding: cf-worker-pending
-    x-implementing-crate: corelink-enterprise-inquiry
-    post:
-      tags: [enterprise]
-      summary: Submit an enterprise sales / BYOK inquiry.
-      operationId: enterpriseInquire
-      description: |
-        Implemented by `corelink-enterprise-inquiry`. Atomic outbox to
-        Slack channel + CRM lead; 24h auto-reply SLA.
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/EnterpriseInquiryRequest"
-      responses:
-        "202":
-          description: Inquiry queued.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EnterpriseInquiryResponse"
-        "422": { $ref: "#/components/responses/Unprocessable" }
-        "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
   /v1/users/me:
     x-status: implemented
@@ -766,33 +501,14 @@ paths:
                 token_prefix: "clpat_abcd"
                 route_kind: "reapi_v1"
         "401": { $ref: "#/components/responses/Unauthorized" }
-  /v1/data-categories:
-    x-status: planned
-    x-binding: cf-worker-pending
-    x-implementing-crate: corelink-privacy (DataCategory enum)
-    get:
-      tags: [data-categories]
-      summary: List canonical data-category enums (privacy_model §5.6).
-      operationId: dataCategoriesList
-      security: []
-      responses:
-        "200":
-          description: Canonical list.
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/DataCategory"
   /api/health:
-    x-status: planned
-    x-binding: cf-worker-pending
+    x-status: implemented
+    x-served-at: worker/src/index.ts:878 (edge-terminated)
     x-reconciliation-note: |
-      Adapter-host pip server exposes `/healthz` (rows 28 of route inventory
-      §2) for its own liveness, but that is the pip-adapter port, not the
-      customer API surface. The canonical `/api/health` endpoint lives in
-      the CF Worker entry crate; native server container has no liveness
-      route mounted at this path.
+      Terminated at the edge by the Worker — it never reaches the container.
+      Not to be confused with the adapter-host pip server's own `/healthz`
+      (that is the pip-adapter port, not the customer API surface), nor with
+      the container's `/_health`, which is documented separately.
     get:
       tags: [ops]
       summary: Liveness / readiness probe.
@@ -805,38 +521,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
-  /api/csp-report:
-    x-status: planned
-    x-binding: cf-worker-pending
-    x-reconciliation-note: |
-      S-16 WI-S16-001 (sealed) scopes the CSP-report intake on the
-      Next.js side; the corresponding backend ingestion endpoint here is
-      pending the CF Worker entry crate.
-    post:
-      tags: [ops]
-      summary: Browser Content-Security-Policy violation report intake.
-      operationId: cspReport
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/csp-report:
-            schema:
-              $ref: "#/components/schemas/CspReport"
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CspReport"
-      responses:
-        "204":
-          description: Recorded.
-
-  # ============================================================
-  # SERVER-ONLY paths reconciled 2026-05-27 — these axum routes
-  # serve traffic today (see specs/_audits/2026-05-27-openapi-
-  # route-inventory.md §2) but were undocumented in the contract.
-  # Added with `x-status: implemented` + handler-file pointers.
-  # ============================================================
-
   /v1/signup/pilot/{token}:
     x-status: implemented
     x-implementing-handler: crates/corelink-container/src/routes/signup.rs (handle_pilot_signup)
@@ -1056,9 +740,10 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
-  /v1/audit/export:
+  /v1/audit/{tenant}/export:
     x-status: implemented
     x-implementing-handler: crates/corelink-container/src/routes/audit_export/handler.rs (handle_export)
+    x-served-at: crates/corelink-container/src/routes/audit_export/types.rs:20 (AUDIT_EXPORT_ROUTE)
     get:
       tags: [audit-export]
       summary: Stream a bulk audit-chain export from R2.
@@ -1082,12 +767,12 @@ paths:
           schema: { type: string }
           description: Exclusive upper bound (same shapes as `from`).
         - name: tenant
-          in: query
-          required: false
+          in: path
+          required: true
           schema: { type: string, format: uuid }
           description: |
-            Optional — when supplied as a different tenant than the
-            authenticated principal, the route emits a cross-tenant
+            The tenant whose chain is exported. When it differs from the
+            authenticated principal's tenant, the route emits a cross-tenant
             attempt audit row and returns 403.
         - name: X-Tenant-Id
           in: header
@@ -1828,6 +1513,146 @@ components:
         idempotency_key: "idem-2026-05-14-1f3c"
         correlation_id: "evt_2NmPsl2HxqGq7BhM4VqW8Y3JxAa"
   schemas:
+    CustomerPat:
+      type: object
+      description: |
+        One PAT row as returned by the `/v1/customer/keys` family. Metadata
+        only — raw token material appears exactly once, in
+        `CustomerKeyCreateResponse.token`, and never again.
+      required: [pat_id, name, scopes, created_at]
+      properties:
+        pat_id:
+          type: string
+          description: Opaque PAT identifier.
+        name:
+          type: string
+          description: Human-readable name given at creation.
+        scopes:
+          type: array
+          items: { type: string }
+          description: Granted scopes (e.g. `cas:r`, `cas:rw`).
+        created_at:
+          type: string
+          description: ISO-8601 creation timestamp.
+        last_used_at:
+          type: [string, "null"]
+          description: ISO-8601 timestamp of last use; `null` if never used.
+        revoked_at:
+          type: [string, "null"]
+          description: ISO-8601 revocation timestamp; `null` while active.
+    CustomerByokStatus:
+      type: object
+      description: BYOK posture for the tenant, returned alongside the PAT list.
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [none, active, rotation_pending]
+        cmk_id:
+          type: [string, "null"]
+          description: CMK identifier when `status` is not `none`.
+        last_rotated_at:
+          type: [string, "null"]
+          description: ISO-8601 timestamp of the last rotation, when present.
+    CustomerKeysListResponse:
+      type: object
+      required: [pats, byok]
+      properties:
+        pats:
+          type: array
+          items: { $ref: "#/components/schemas/CustomerPat" }
+        byok: { $ref: "#/components/schemas/CustomerByokStatus" }
+    CustomerKeyCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: Human-readable name for the new PAT.
+        scopes:
+          type: array
+          items: { type: string }
+          default: []
+          description: |
+            Scopes to grant. Requesting any write/admin scope requires the
+            caller to already hold a cache-write capability.
+    CustomerKeyCreateResponse:
+      type: object
+      required: [pat, token]
+      properties:
+        pat: { $ref: "#/components/schemas/CustomerPat" }
+        token:
+          type: string
+          description: |
+            Raw bearer token. Shown **once**; it is hashed before storage and
+            is not recoverable afterwards.
+    CustomerKeyRevokeResponse:
+      type: object
+      required: [pat]
+      properties:
+        pat: { $ref: "#/components/schemas/CustomerPat" }
+    DpaAcceptRequest:
+      type: object
+      additionalProperties: false
+      required: [dpa_version, dpa_locale, notice_text_hash]
+      description: |
+        Unknown fields are rejected (`400 bad_request`) — in particular a
+        smuggled `tenant_id`, which is header-bound at the edge and never read
+        from the body.
+      properties:
+        dpa_version:
+          type: string
+          description: |
+            DPA template version accepted. Must equal the server's current
+            version, else `400 dpa_version_mismatch`.
+        dpa_locale:
+          type: string
+          enum: [en, pt, es, en-US, pt-BR, es-419]
+          description: |
+            UI locale. Closed GA set — anything outside it (`de` included) is
+            `400 unsupported_locale`.
+        notice_text_hash:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+          description: Client-computed SHA-256 (hex64) of the rendered notice text.
+        ui_capture_ts:
+          type: integer
+          format: int64
+          description: |
+            Client-captured click timestamp (ms since epoch). Optional for
+            older clients; when absent the server uses its own time.
+    DpaAcceptResponse:
+      type: object
+      required: [audit_event_id, dpa_version, dpa_locale, dpa_accepted_at]
+      properties:
+        audit_event_id:
+          type: string
+          description: Immutable audit reference (the RS256 receipt `jti`).
+        dpa_version:
+          type: string
+          description: Accepted DPA version (echoed).
+        dpa_locale:
+          type: string
+          description: Accepted locale, canonicalised to BCP-47.
+        dpa_accepted_at:
+          type: string
+          description: Acceptance time (ms since epoch, as a string).
+    DpaAcceptError:
+      type: object
+      required: [error]
+      description: |
+        The DPA-accept route returns this bare envelope, NOT the shared
+        `ErrorEnvelope`.
+      properties:
+        error:
+          type: string
+          enum:
+            - unauthenticated
+            - no_verified_tenant
+            - bad_request
+            - unsupported_locale
+            - dpa_version_mismatch
+            - internal
     ErrorEnvelope:
       type: object
       required: [error]
@@ -1854,22 +1679,6 @@ components:
             details:
               type: object
               additionalProperties: true
-    WorkerErrorEnvelope:
-      type: object
-      required: [error, message, request_id]
-      description: JSON envelope emitted by the edge Worker before a request
-        reaches the tenant Durable Object. It contains no credential material.
-      properties:
-        error:
-          type: string
-          description: Stable machine-readable Worker error code.
-          examples: [UNAUTHORIZED, FORBIDDEN, INTERNAL_ERROR]
-        message:
-          type: string
-          description: Safe human-readable message; secrets are never echoed.
-        request_id:
-          type: string
-          description: Worker request correlation identifier.
     SignupRequest:
       type: object
       required: [clerk_event_id, email_hash, locale, idempotency_key, correlation_id]
@@ -1931,25 +1740,6 @@ components:
           format: int64
           description: Server-assigned (overwrites any client value).
           readOnly: true
-    DpaAcceptanceRequest:
-      type: object
-      required: [proof]
-      properties:
-        proof:
-          $ref: "#/components/schemas/ConsentProofPayload"
-    DpaAcceptanceReceipt:
-      type: object
-      required: [jwt_receipt, jti, accepted_at_ms]
-      properties:
-        jwt_receipt:
-          type: string
-          description: RS256-signed compact JWT (header.payload.sig).
-        jti:
-          type: string
-          description: JWT id; primary key into `dpa_acceptances`.
-        accepted_at_ms:
-          type: integer
-          format: int64
     SubscriptionTier:
       type: string
       enum: [free, team, business, enterprise]
@@ -1972,45 +1762,13 @@ components:
         checkout_session_url: { type: string, format: uri }
         checkout_session_id: { type: string }
         tier: { $ref: "#/components/schemas/SubscriptionTier" }
-    PatIssueRequest:
-      type: object
-      required: [label]
-      properties:
-        label:
-          type: string
-          minLength: 1
-          maxLength: 64
-          examples: ["ci-runner-build-cache"]
-        scopes:
-          type: array
-          items:
-            type: string
-            enum: [cache:read, cache:write, cache:find-missing]
-          default: [cache:read]
-    PatIssueResponse:
-      type: object
-      required: [pat, token]
-      properties:
-        pat:
-          $ref: "#/components/schemas/CustomerPatMetadata"
-        token:
-          type: string
-          description: Canonical raw PAT material — **shown exactly once** and
-            never logged or retrievable again.
-    CustomerPatMetadata:
-      type: object
-      required: [pat_id, name, scopes, created_at]
-      properties:
-        pat_id: { type: string }
-        name: { type: string }
-        scopes:
-          type: array
-          items: { type: string }
-        created_at: { type: string, format: date-time }
-        last_used_at: { type: [string, "null"], format: date-time }
-        revoked_at: { type: [string, "null"], format: date-time }
     PatMetadata:
       type: object
+      description: |
+        PAT metadata as returned by the **signup** flow (`/v1/signup`). This is
+        NOT the shape of the `/v1/customer/keys` family — that surface returns
+        `CustomerPat`, whose field names differ (`name`/`created_at` rather
+        than `label`/`created_at_ms`, and no `prefix`).
       required: [pat_id, label, scopes, created_at_ms, prefix]
       properties:
         pat_id: { type: string, format: uuid }
@@ -2110,45 +1868,6 @@ components:
         - RegionMigration
         - PatRevokeAll
         - AbuseAppeal
-    AdminOpRequest:
-      type: object
-      required: [op_type, op_payload, approver_user_id, approver_signature, nonce]
-      properties:
-        op_type: { $ref: "#/components/schemas/AdminOpType" }
-        op_payload:
-          type: object
-          additionalProperties: true
-        approver_user_id: { type: string, format: uuid }
-        approver_signature:
-          type: string
-          description: HMAC-SHA256 over `(payload || nonce || ts_ms)` with
-            the admin signing key.
-        nonce:
-          type: string
-          description: 16 random bytes hex-encoded (replay protection).
-    AdminOpAccepted:
-      type: object
-      required: [op_id, status]
-      properties:
-        op_id: { type: string, format: uuid }
-        status:
-          type: string
-          enum: [pending_approval, approved, executed]
-    AdminOpResult:
-      type: object
-      required: [op_id, op_type, status]
-      properties:
-        op_id: { type: string, format: uuid }
-        op_type: { $ref: "#/components/schemas/AdminOpType" }
-        status:
-          type: string
-          enum: [pending_approval, approved, executed, rejected, failed]
-        caller_user_id: { type: string, format: uuid }
-        approver_user_id: { type: string, format: uuid }
-        executed_at_ms: { type: [integer, "null"], format: int64 }
-        result:
-          type: object
-          additionalProperties: true
     AuditEvent:
       type: object
       required: [event_id, event_type, occurred_at_ms]
@@ -2166,15 +1885,6 @@ components:
         payload:
           type: object
           additionalProperties: true
-    AuditEventPage:
-      type: object
-      required: [items]
-      properties:
-        items:
-          type: array
-          items: { $ref: "#/components/schemas/AuditEvent" }
-        next_cursor:
-          type: [string, "null"]
     TenantSummary:
       type: object
       required: [tenant_id, region, tier, state, created_at_ms]
@@ -2190,39 +1900,6 @@ components:
           type: string
           pattern: "^[0-9a-f]{64}$"
           description: SHA-256 hex; raw email NOT exposed.
-    TenantPage:
-      type: object
-      required: [items]
-      properties:
-        items:
-          type: array
-          items: { $ref: "#/components/schemas/TenantSummary" }
-        next_cursor:
-          type: [string, "null"]
-    EnterpriseInquiryRequest:
-      type: object
-      required: [name, work_email, company, message]
-      properties:
-        name: { type: string, minLength: 1, maxLength: 128 }
-        work_email:
-          type: string
-          format: email
-          examples: ["test-tenant@example.com"]
-        company: { type: string, minLength: 1, maxLength: 128 }
-        message: { type: string, minLength: 10, maxLength: 4096 }
-        expected_egress_gb_month: { type: [integer, "null"], minimum: 0 }
-        byok_provider:
-          type: [string, "null"]
-          enum: [aws, gcp, azure, vault]
-    EnterpriseInquiryResponse:
-      type: object
-      required: [inquiry_id, received_at_ms]
-      properties:
-        inquiry_id: { type: string, format: uuid }
-        received_at_ms: { type: integer, format: int64 }
-        auto_reply_sla_hours:
-          type: integer
-          default: 24
     UserProfile:
       type: object
       required: [user_id, email_hash, locale, created_at_ms]
@@ -2242,23 +1919,6 @@ components:
       properties:
         locale: { $ref: "#/components/schemas/Bcp47Locale" }
         display_name: { type: [string, "null"], maxLength: 128 }
-    DataCategory:
-      type: object
-      required: [id, name, legal_basis]
-      properties:
-        id:
-          type: string
-          examples: ["account_identity", "build_cache_artifact", "usage_telemetry"]
-        name:
-          type: string
-        legal_basis:
-          type: string
-          enum: [contract, consent, legitimate_interest, legal_obligation]
-        retention_days:
-          type: integer
-          minimum: 0
-        description:
-          type: string
     HealthResponse:
       type: object
       required: [status]
@@ -2268,15 +1928,6 @@ components:
           enum: [SERVING, NOT_SERVING]
         version: { type: string, examples: ["0.1.0"] }
         commit: { type: string, examples: ["445e3cc"] }
-    CspReport:
-      type: object
-      description: Schema accepts the legacy `csp-report` envelope and the
-        new Reporting API `csp-violation` payload.
-      additionalProperties: true
-      properties:
-        csp-report:
-          type: object
-          additionalProperties: true
     Bcp47Locale:
       type: string
       examples: ["en-US", "pt-BR", "fr-FR"]
