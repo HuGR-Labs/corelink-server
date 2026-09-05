@@ -55,6 +55,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import tempfile
 import sys
 from pathlib import Path
 
@@ -322,16 +323,24 @@ def collect_rust_consts() -> dict[str, str]:
 
 
 def is_test_path(path: Path) -> bool:
-    parts = path.parts
+    # Path parts are case-sensitive on some runners and not on others.  Keep
+    # the production census stable, and exclude both singular and plural
+    # fixture directories (including Playwright's usual capitalisation).
+    parts = {part.casefold() for part in path.parts}
+    name = path.name.casefold()
     return (
         "tests" in parts
+        or "test" in parts
+        or "spec" in parts
         or "benches" in parts
         or "__tests__" in parts
-        or path.name.startswith("test_")
-        or path.name.startswith("tests")
-        or path.name.endswith(".test.ts")
-        or path.name.endswith(".spec.ts")
-        or "_tests" in path.stem
+        or "playwright" in parts
+        or "e2e" in parts
+        or name.startswith("test_")
+        or name.startswith("tests")
+        or name.endswith(".test.ts")
+        or name.endswith(".spec.ts")
+        or "_tests" in Path(name).stem
     )
 
 
@@ -427,8 +436,8 @@ APP_CONST = re.compile(
     rf"\b(?:const|let)\s+(?P<name>{APP_IDENT})\s*=\s*(?P<value>{APP_QUOTED})"
 )
 APP_ALIAS = re.compile(
-    rf"\b(?:const|let)\s+(?P<name>{APP_IDENT})\s*=\s*[^;\n]*?"
-    rf"\.\s*pathname\b"
+    rf"\b(?:const|let)\s+(?P<name>{APP_IDENT})\s*=\s*"
+    rf"(?P<source>{APP_TERM}\s*\.\s*pathname)\b"
 )
 
 
@@ -438,21 +447,6 @@ def app_comparisons(src: str):
     matches.extend(APP_COMPARE_REVERSED.finditer(src))
     matches.extend(APP_COMPARE_REVERSED_TERM.finditer(src))
     yield from sorted(matches, key=lambda match: match.start())
-
-
-def app_worker_files() -> set[Path]:
-    """Resolve TypeScript Worker entrypoints from each app's wrangler config."""
-    files: set[Path] = set()
-    for config in APPS.glob("*/wrangler*.toml"):
-        try:
-            text = config.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        for match in re.finditer(r'^\s*main\s*=\s*["\']([^"\']+)', text, re.MULTILINE):
-            candidate = (config.parent / match.group(1)).resolve()
-            if candidate.suffix == ".ts":
-                files.add(candidate)
-    return files
 
 
 def collect_app_routes() -> dict[str, set[str]]:
@@ -468,7 +462,7 @@ def collect_app_routes() -> dict[str, set[str]]:
     if not APPS.is_dir():
         return routes
     for file in sorted(APPS.rglob("*.ts")):
-        if is_test_path(file) or "playwright" in file.parts or "e2e" in file.parts:
+        if is_test_path(file):
             continue
         try:
             raw = file.read_text(encoding="utf-8", errors="replace")
@@ -478,7 +472,7 @@ def collect_app_routes() -> dict[str, set[str]]:
             continue
         src = strip_ts_comments(raw)
         constants = app_string_constants(src)
-        aliases = {m.group("name") for m in APP_ALIAS.finditer(src)}
+        aliases = app_path_aliases(src)
         for match in app_comparisons(src):
             left, right = match.group("left"), match.group("right")
             if not (is_app_path_term(left, aliases) or is_app_path_term(right, aliases)):
@@ -575,9 +569,32 @@ def app_static_value(token: str, constants: dict[str, str]) -> str | None:
     return constants.get(token)
 
 
+def app_path_aliases(src: str) -> set[str]:
+    """Names directly assigned from a URL-like object's pathname.
+
+    Keep aliases useful for Worker code (`const path = url.pathname`) while
+    avoiding generic framework locals such as `req.nextUrl.pathname`, which
+    are page/middleware matching rather than an app Worker dispatch surface.
+    The distinction is based on expression shape, never file or entrypoint
+    names.
+    """
+    aliases: set[str] = set()
+    for match in APP_ALIAS.finditer(src):
+        source = match.group("source").replace(" ", "")
+        if source.count(".") == 1 or source.endswith(".url.pathname"):
+            aliases.add(match.group("name"))
+    return aliases
+
+
 def is_app_path_term(term: str, aliases: set[str]) -> bool:
     term = term.replace(" ", "")
-    return term == "pathname" or term.endswith(".pathname") or term in aliases
+    # A bare local named `pathname` is common in Next.js middleware and page
+    # helpers, but is not evidence of a Worker request dispatcher.  Require a
+    # property access (`url.pathname`, `requestUrl.pathname`, …) or an alias
+    # explicitly derived from one.  This is syntax-based, not an app-name or
+    # Wrangler-entrypoint allowlist, so every actual Worker dispatch remains
+    # covered by the fail-closed census.
+    return term.endswith(".pathname") or term in aliases
 
 
 def collect_app_unsupported() -> list[str]:
@@ -592,9 +609,8 @@ def collect_app_unsupported() -> list[str]:
     findings: list[str] = []
     if not APPS.is_dir():
         return findings
-    worker_files = app_worker_files()
     for file in sorted(APPS.rglob("*.ts")):
-        if is_test_path(file) or "playwright" in file.parts or "e2e" in file.parts:
+        if is_test_path(file):
             continue
         try:
             raw = file.read_text(encoding="utf-8", errors="replace")
@@ -604,10 +620,14 @@ def collect_app_unsupported() -> list[str]:
             continue
         src = strip_ts_comments(raw)
         constants = app_string_constants(src)
-        aliases = {m.group("name") for m in APP_ALIAS.finditer(src)}
+        aliases = app_path_aliases(src)
 
         def record(match: re.Match[str], kind: str, value: str | None) -> None:
-            public = is_public(value) if value is not None else file.resolve() in worker_files
+            # An unresolved expression in apps/** is deliberately public until
+            # proven otherwise.  Entrypoint names and constants are not a
+            # sound boundary: a helper can be imported by a deployed Worker,
+            # and guessing from names made the old census silently green.
+            public = True if value is None else is_public(value)
             if public:
                 line = src.count("\n", 0, match.start()) + 1
                 where = f"{file.relative_to(REPO)}:{line}"
@@ -622,11 +642,7 @@ def collect_app_unsupported() -> list[str]:
             if value is None:
                 value = app_static_value(left, constants)
             token = right if is_app_path_term(left, aliases) else left
-            if value is None and (
-                file.resolve() in worker_files
-                or token.startswith("`")
-                or token.upper().endswith(("PATH", "ROUTE"))
-            ):
+            if value is None:
                 record(match, "comparison", None)
             elif (
                 value is not None
@@ -730,6 +746,98 @@ SELF_TEST_CASES = [
     ("route registered via a const", "/v1/audit/{tenant}/export"),
     ("Worker-terminated exact path", "/api/health"),
 ]
+
+
+def app_mutation_self_test() -> list[str]:
+    """Run app-dispatch mutations through the real census and comparison.
+
+    Regex-only controls can prove that a pattern matches a string while the
+    directory walk remains blind.  This fixture creates actual files under an
+    ``apps/`` tree, runs both app extractors, and requires the resulting
+    served public route to be red in the raw (strict) comparison.
+    """
+    global REPO, APPS
+    old_repo, old_apps = REPO, APPS
+    failures: list[str] = []
+    try:
+        with tempfile.TemporaryDirectory(prefix="validate-api-b130-") as tmp:
+            root = Path(tmp)
+            apps = root / "apps" / "fixture-worker"
+            apps.mkdir(parents=True)
+            fixtures = {
+                "exact.ts": 'if (url.pathname === "/v1/b130-mutation") return response;\n',
+                "reversed.ts": 'if ("/v1/b130-reversed" === url.pathname) return response;\n',
+                "constant.ts": (
+                    'const ROUTE = "/v1/b130-constant";\n'
+                    "if (url.pathname === ROUTE) return response;\n"
+                ),
+                "alias.ts": (
+                    "const path = request.url.pathname;\n"
+                    'if (path === "/v1/b130-alias") return response;\n'
+                ),
+                "dynamic.ts": (
+                    'if (url.pathname === `/v1/b130/${requestId}`) return response;\n'
+                ),
+                "prefix.ts": (
+                    'if (url.pathname.startsWith("/v1/b130/")) return response;\n'
+                ),
+                "switch.ts": (
+                    'switch (url.pathname) { case "/v1/b130-switch": return response; }\n'
+                ),
+                "unresolved.ts": (
+                    "const UNKNOWN_ROUTE = routeFromConfig();\n"
+                    "if (url.pathname === UNKNOWN_ROUTE) return response;\n"
+                ),
+            }
+            for name, source in fixtures.items():
+                (apps / name).write_text(source, encoding="utf-8")
+            for directory, name in (
+                ("test", "test-route.ts"),
+                ("spec", "spec-route.ts"),
+                ("Playwright", "playwright-route.ts"),
+                ("__tests__", "tests-route.ts"),
+                ("e2e", "e2e-route.ts"),
+            ):
+                path = root / "apps" / "fixture-worker" / directory / name
+                path.parent.mkdir()
+                path.write_text(
+                    'if (url.pathname === "/v1/b130-excluded") return response;\n',
+                    encoding="utf-8",
+                )
+
+            REPO, APPS = root, root / "apps"
+            routes = collect_app_routes()
+            unsupported = collect_app_unsupported()
+            expected_routes = {
+                "/v1/b130-mutation",
+                "/v1/b130-reversed",
+                "/v1/b130-constant",
+                "/v1/b130-alias",
+            }
+            missing_route, missing_doc = compare({}, {}, {}, routes)
+            missing_doc_paths = {path for path, _ in missing_doc}
+            if not expected_routes.issubset(routes):
+                failures.append("static app mutations were not extracted")
+            if "/v1/b130-mutation" not in missing_doc_paths:
+                failures.append("strict comparison did not turn mutation into MISSING_DOC")
+            expected_unsupported = (
+                "dynamic",
+                "startsWith",
+                "switch",
+                "<unresolved>",
+            )
+            if not all(any(kind in finding for finding in unsupported) for kind in expected_unsupported):
+                failures.append("unsupported app mutations did not reach fail-closed census")
+            if "/v1/b130-excluded" in routes or any(
+                "/v1/b130-excluded" in finding for finding in unsupported
+            ):
+                failures.append("test/spec/Playwright/e2e app fixtures entered production census")
+            # `missing_route` is intentionally unused above: the strict-red
+            # assertion is the served -> documented direction exercised here.
+            del missing_route
+    finally:
+        REPO, APPS = old_repo, old_apps
+    return failures
 
 
 def self_test(documented, rust_routes, worker_routes, app_routes=None, app_unsupported=None) -> int:
@@ -846,6 +954,12 @@ def self_test(documented, rust_routes, worker_routes, app_routes=None, app_unsup
         "test fixtures excluded from app production scan",
         is_test_path(Path("apps/example/src/__tests__/route.test.ts")),
         ".test.ts and __tests__ are excluded",
+    )
+    mutation_failures = app_mutation_self_test()
+    check(
+        "mutation — temporary app tree reaches census and strict red",
+        not mutation_failures,
+        "; ".join(mutation_failures) or "real files extracted and raw comparison reports MISSING_DOC",
     )
 
     if failures:

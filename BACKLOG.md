@@ -8794,12 +8794,16 @@ verify: |
   grep -qE "^CRATES = |^WORKER = |^APPS = " "$s" || { echo "FALHA: raizes de servico ausentes."; exit 1; }
   grep -qE "APPS = REPO / \"apps\"" "$s" || { echo "FALHA: apps/ nao e raiz do comparador."; exit 1; }
   grep -qE "^ *- \"apps/\*\*\"" .github/workflows/api-surface-parity.yml || { echo "FALHA: a lane nao dispara em apps/**."; exit 1; }
-  python3 "$s" --self-test >/dev/null || { echo "FALHA: self-test nao enxerga a rota de app."; exit 1; }
+  grep -q "def app_mutation_self_test" "$s" || { echo "FALHA: mutacao end-to-end ausente."; exit 1; }
+  grep -q "TemporaryDirectory" "$s" || { echo "FALHA: mutacao nao usa arvore temporaria."; exit 1; }
   raw=$(python3 "$s" --strict 2>&1) || true
   for p in "/v1/event" "/v1/digest/preview"; do
     printf "%s\n" "$raw" | grep -E "MISSING_DOC +.*${p}$" >/dev/null || { echo "FALHA: strict nao acusa ${p}."; exit 1; }
   done
-  python3 "$s" >/dev/null || { echo "FALHA: ledger nao cobre o inventario atual."; exit 1; }
+  # The normal run executes the self-test as a mandatory precondition, so the
+  # two modes below cover self-test + raw strict + ledger without a third full
+  # repository scan.
+  python3 "$s" >/dev/null || { echo "FALHA: self-test ou ledger nao cobre o inventario atual."; exit 1; }
   echo "done: apps/** e rotas publicas entram no comparador, strict acusa as rotas, ledger fecha"'
 verify-means: |
   done — a raiz `apps/**`, o extrator de dispatch estático, o filtro da lane, o self-test
@@ -8809,12 +8813,12 @@ verify-means: |
   `__tests__`, `tests`, `e2e` e `playwright`) não entram no inventário de produção.
 
   Mutações controláveis cobrem igualdade reversa, constantes, templates dinâmicos,
-  `startsWith` e `switch`; os quatro últimos chegam ao census e reprovam o portão se
-  apontarem para superfície pública sem modelagem explícita. Adicionar
-  `if (url.pathname === "/v1/b130-mutation")` a um Worker de produção faz `--strict`
-  acusar `MISSING_DOC ... /v1/b130-mutation` e faz o modo normal reprovar como divergência
-  não declarada. Remover a literal conhecida faz o self-test reprovar, evitando green por
-  extração cega.
+  `startsWith` e `switch` em arquivos inseridos numa árvore `apps/` temporária. A
+  extração real e a comparação crua (`--strict`) são exigidas: a literal
+  `/v1/b130-mutation` vira `MISSING_DOC`, enquanto as formas não modeladas chegam ao
+  census fail-closed. Remover a literal conhecida ou quebrar as exclusões de
+  `test/`, `spec/`, `Playwright/` e equivalentes faz o self-test reprovar, evitando
+  green por regex isolada.
 
   O status não afirma que as rotas foram documentadas: essa decisão contratual permanece
   pendente e está visível no ledger B-130, que impede um falso fechamento.
