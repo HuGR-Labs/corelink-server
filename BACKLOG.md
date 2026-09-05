@@ -1300,9 +1300,8 @@ owner: tl
 status: done
 verify: "grep -rq 'promtool' .github/workflows/"
 verify-means: |
-  done — the inverted guard confirms promtool validation is wired; it reopens if the
-  rules are validated and published, or relabelled non-live with the false gate
-  claim removed.
+  done — the guard confirms a workflow still invokes promtool; it reopens if that
+  invocation disappears. The check does not claim that the rules are published or firing.
 
   CLOSED by PR #1264 on the second branch of that condition: `alerts-validate.yml`
   runs `promtool check rules` over all ten files on `corelink` (proven in CI —
@@ -2529,8 +2528,8 @@ owner: tl
 status: done
 verify: manual
 verify-means: |
-  done — manual re-verification confirms neither live Clerk credential is a repo secret, i.e. the browser
-  suite cannot run in CI at all. Check by hand with
+  done — manual re-verification confirms both live Clerk credentials are repo secrets, so the browser
+  suite can run in CI. Check by hand with
   `gh secret list --repo HuGR-Labs/corelink-server | grep CLERK_LIVE`.
   MANUAL on purpose, and the reason is the point: no GitHub Actions token can
   read the secret list (`GITHUB_TOKEN` gets HTTP 403 on
@@ -10296,6 +10295,8 @@ verify: |
       fail("open legítimo foi recusado")
   if probe("parked", "waiting on the owner")["verdict"] != "CONFIRMED":
       fail("parked legítimo foi recusado")
+  if probe("parked", "open — still checking the defect")["verdict"] != "CONFIRMED":
+      fail("parked legítimo com marcador open foi recusado")
 
   sys.path.insert(0, "scripts")
   import backlog_verify as bv
@@ -10319,7 +10320,7 @@ verify-means: |
   primeira linha; formas legadas sem marcador e as descrições `done` existentes continuam
   válidas. Ele não tenta interpretar shell, que seria um predicado indecidível.
 
-  **Mutações e controles negativos:** cinco sondas via `--file` provam `done` explicitamente
+  **Mutações e controles negativos:** seis sondas via `--file` provam `done` explicitamente
   aberto ⇒ `BROKEN`, `done` legado e `done` marcado ⇒ `CONFIRMED`, e `open`/`parked` legítimos
   continuam passando. Cada subprocesso tem timeout de 10s; sonda não parseada ou JSON inválido
   falha alto, nunca vira silêncio verde.

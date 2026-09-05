@@ -432,6 +432,8 @@ cell "done legacy prose passes" 0 CONFIRMED \
   "$(printf '### B-001 — fixture\n\n```backlog\nid: B-001\nrepo: corelink-server\nowner: tl\nstatus: done\nverify: "true"\nverify-means: test fixture\nlast-verified: 2026-08-23\n```\n')"
 cell "done with an inversion declaration passes" 0 CONFIRMED \
   "$(printf '### B-001 — fixture\n\n```backlog\nid: B-001\nrepo: corelink-server\nowner: tl\nstatus: done\nverify: "true"\nverify-means: done — inverted regression guard\nlast-verified: 2026-08-23\n```\n')"
+cell "parked with an explicit open marker remains legitimate" 0 CONFIRMED \
+  "$(printf '### B-001 — fixture\n\n```backlog\nid: B-001\nrepo: corelink-server\nowner: tl\nstatus: parked\nverify: "true"\nverify-means: open — still waiting on the owner\nlast-verified: 2026-08-23\n```\n')"
 
 # ── B-167: the canonical id form ────────────────────────────────────────────
 # `^B-\d+$` (B-143) was necessary and not sufficient. `B-0142` satisfies it,
