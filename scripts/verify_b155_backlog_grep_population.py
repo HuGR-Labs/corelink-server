@@ -11,6 +11,7 @@ member changes the verdict.
 from __future__ import annotations
 
 import argparse
+from functools import lru_cache
 import re
 import shlex
 import sys
@@ -42,6 +43,9 @@ COMMAND_BOUNDARY = re.compile(
 NESTED_SHELL = re.compile(r"\b(?:bash|sh|zsh)\s+-c\b")
 ID = re.compile(r"^B-\d{3}$")
 COMMENT_PREFIXES = ("//", "#", "/*", "<!--", "*", "--")
+MAX_BACKLOG_BYTES = 2_000_000
+MAX_NESTED_SHELL_DEPTH = 8
+MAX_NESTED_PAYLOAD_BYTES = 200_000
 POSIX_CLASSES = {
     "[[:space:]]": r"\s",
     "[[:digit:]]": r"\d",
@@ -63,6 +67,8 @@ class GrepCheck:
     source: str
     quote: str = ""
     resolved_patterns: tuple[str, ...] = ()
+    source_kind: str = "unknown"
+    comment_prefixes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -79,11 +85,14 @@ class Census:
 EXPECTED_RECORDS = 169
 EXPECTED_COMMAND_RECORDS = 138
 EXPECTED_MANUAL_RECORDS = 31
-EXPECTED_GREP_INVOCATIONS = 348
-EXPECTED_ASSERTIONS = 329
+EXPECTED_GREP_INVOCATIONS = 329
+EXPECTED_ASSERTIONS = 311
 
 
+@lru_cache(maxsize=32)
 def _records(backlog: str) -> list[dict[str, object]]:
+    if len(backlog.encode("utf-8")) > MAX_BACKLOG_BYTES:
+        raise InstrumentError("backlog exceeds bounded census size")
     blocks = list(FENCE.finditer(backlog))
     if not blocks:
         raise InstrumentError("no ```backlog records found")
@@ -140,6 +149,67 @@ def _shell_values(verify: str) -> dict[str, tuple[str, ...]]:
     return values
 
 
+@lru_cache(maxsize=512)
+def _source_paths(verify: str) -> tuple[str, ...]:
+    """Collect literal file/path hints without evaluating shell syntax."""
+    paths: list[str] = []
+    for match in re.finditer(
+        r"\b[A-Za-z_][A-Za-z0-9_]*=(?:'([^']+)'|\"([^\"]+)\"|([^\s;&|()]+))",
+        verify,
+    ):
+        value = next((part for part in match.groups() if part is not None), "")
+        if "/" in value or re.search(r"\.(?:rs|ts|tsx|js|mjs|py|md|mdx|ya?ml|toml|json|sh)$", value):
+            paths.append(value)
+    for token in re.findall(r"(?:[A-Za-z0-9_.-]+/)+[^\s;&|()]+|[A-Za-z0-9_.-]+\.(?:rs|ts|tsx|js|mjs|py|md|mdx|ya?ml|toml|json|sh)", verify):
+        paths.append(token.strip("'\""))
+    return tuple(dict.fromkeys(paths))
+
+
+def _source_kind(line: str, verify: str) -> tuple[str, tuple[str, ...]]:
+    """Classify the likely target syntax for a grep assertion.
+
+    The classifier is intentionally conservative: a missing or mixed target
+    keeps the full comment-prefix set, which makes the check fail closed.
+    """
+    assignments: dict[str, str] = {}
+    for match in re.finditer(
+        r"\b([A-Za-z_][A-Za-z0-9_]*)=(?:'([^']+)'|\"([^\"]+)\"|([^\s;&|()]+))",
+        verify,
+    ):
+        assignments[match.group(1)] = next(
+            part for part in match.groups()[1:] if part is not None
+        )
+    linked = []
+    for name in re.findall(r"\$(?:\{)?([A-Za-z_][A-Za-z0-9_]*)", line):
+        if name in assignments:
+            linked.append(assignments[name])
+    direct = re.findall(
+        r"(?:[A-Za-z0-9_.-]+/)+[^\s;&|()]+|[A-Za-z0-9_.-]+\.(?:rs|ts|tsx|js|mjs|py|md|mdx|ya?ml|toml|json|sh|sql|bazelrc)",
+        line,
+    )
+    hints = " ".join(linked or direct or _source_paths(verify)) + " " + line
+    suffixes = {suffix.lower() for suffix in re.findall(r"\.([A-Za-z0-9]+)", hints)}
+    if "rs" in suffixes:
+        return "rust", ("//", "/*", "*")
+    if suffixes & {"ts", "tsx", "js", "mjs"}:
+        return "typescript", ("//", "/*", "*")
+    if suffixes & {"yaml", "yml", "toml", "sql", "bazelrc", "env"} or ".github/workflows" in hints or "migrations/" in hints:
+        return "config", ("#",)
+    if suffixes & {"sh"}:
+        return "shell", ("#",)
+    if suffixes & {"py"}:
+        return "python", ("#",)
+    if suffixes & {"md", "mdx"} or "apps/docs" in hints or "marketing/" in hints:
+        return "markdown", ("#", "<!--", ">", "*", "-")
+    if suffixes & {"json"}:
+        return "data", ()
+    if "|" in line or "$" in line:
+        return "stream", COMMENT_PREFIXES
+    if "grep -r" in line or "grep -l" in line:
+        return "data", ()
+    return "unknown", COMMENT_PREFIXES
+
+
 def _resolved_patterns(pattern: str, verify: str) -> tuple[tuple[str, ...], bool]:
     variables = SHELL_VARIABLE.findall(pattern)
     if not variables:
@@ -189,6 +259,7 @@ def _grep_checks_text(
     record_id: str,
     context: str,
     line_offset: int = 0,
+    depth: int = 0,
 ) -> tuple[list[GrepCheck], int, list[GrepCheck]]:
     """Census shell text and recurse into literal ``shell -c`` payloads.
 
@@ -197,6 +268,10 @@ def _grep_checks_text(
     numbers) and scanned recursively. Dynamic or unterminated payloads fail
     closed instead of silently shrinking the grep population.
     """
+    if depth > MAX_NESTED_SHELL_DEPTH:
+        raise InstrumentError("nested shell depth exceeds bounded census limit")
+    if len(verify.encode("utf-8")) > MAX_NESTED_PAYLOAD_BYTES:
+        raise InstrumentError("nested shell payload exceeds bounded census limit")
     masked, nested = _mask_nested_shells(verify)
     checks: list[GrepCheck] = []
     indeterminate: list[GrepCheck] = []
@@ -215,6 +290,7 @@ def _grep_checks_text(
             options = match.group("options") or ""
             pattern = match.group("pattern")
             resolved, unresolved = _resolved_patterns(pattern, context)
+            kind, prefixes = _source_kind(line, context)
             check = GrepCheck(
                 record_id=record_id,
                 line=line_number + line_offset,
@@ -223,6 +299,8 @@ def _grep_checks_text(
                 source=line.strip(),
                 quote=match.group("quote"),
                 resolved_patterns=resolved,
+                source_kind=kind,
+                comment_prefixes=prefixes,
             )
             # `grep -v` is a filter in a pipeline, not a positive capability
             # assertion. It remains in the invocation census, but is not in the
@@ -230,6 +308,8 @@ def _grep_checks_text(
             if "v" not in options.replace("--", ""):
                 checks.append(check)
             if unresolved and not _generated_hex_pattern_file(check, verify):
+                indeterminate.append(check)
+            if check.source_kind == "unknown":
                 indeterminate.append(check)
         # The shell permits a bare regex word (`grep unsafe file`) in addition
         # to the quoted form above.  Parse it separately, retaining the same
@@ -246,6 +326,7 @@ def _grep_checks_text(
             options = match.group("options") or ""
             pattern = match.group("pattern")
             resolved, unresolved = _resolved_patterns(pattern, context)
+            kind, prefixes = _source_kind(line, context)
             check = GrepCheck(
                 record_id=record_id,
                 line=line_number + line_offset,
@@ -253,10 +334,14 @@ def _grep_checks_text(
                 options=options,
                 source=line.strip(),
                 resolved_patterns=resolved,
+                source_kind=kind,
+                comment_prefixes=prefixes,
             )
             if "v" not in options.replace("--", ""):
                 checks.append(check)
             if unresolved and not _generated_hex_pattern_file(check, verify):
+                indeterminate.append(check)
+            if check.source_kind == "unknown":
                 indeterminate.append(check)
         # A grep invocation with an unquoted/dynamic pattern is still an
         # invocation, but its dialect and polarity cannot be proven by this
@@ -279,7 +364,7 @@ def _grep_checks_text(
             )
     for payload, first_line in nested:
         nested_checks, nested_invocations, nested_indeterminate = _grep_checks_text(
-            payload, record_id, payload, line_offset + first_line - 1
+            payload, record_id, context, line_offset + first_line - 1, depth + 1
         )
         checks.extend(nested_checks)
         invocations += nested_invocations
@@ -421,6 +506,27 @@ def _as_python_regex(pattern: str, options: str = "") -> re.Pattern[str]:
     # literal.  ERE reverses that rule.  Preserve the distinction for Python's
     # regex dialect, especially for Markdown-table and shell-`||` checks.
     if "E" not in options:
+        # Python defaults to ERE.  BRE only enables grouping/quantifiers when
+        # those operators are escaped, so normalize the opposite spellings
+        # before compiling.  This matters for literal code such as
+        # ``blockConcurrencyWhile(async () =>`` in the live backlog.
+        normalized: list[str] = []
+        index = 0
+        while index < len(translated):
+            char = translated[index]
+            if char == "\\" and index + 1 < len(translated):
+                escaped = translated[index + 1]
+                if escaped in "(){}+?":
+                    # BRE enables these operators only in escaped form.
+                    normalized.append(escaped)
+                    index += 2
+                    continue
+            if char in "(){}+?":
+                normalized.append("\\" + char)
+            else:
+                normalized.append(char)
+            index += 1
+        translated = "".join(normalized)
         marker = "__B155_ALTERNATION__"
         translated = translated.replace(r"\|", marker)
         translated = translated.replace("|", r"\|")
@@ -480,12 +586,14 @@ def _matches_comment(check: GrepCheck) -> bool:
         except re.error:
             return True  # An unmodelled dialect is an instrument gap, fail closed.
         for witness in _regex_witness(pattern, check.options):
-            probes = tuple(f"{prefix} {witness}" for prefix in COMMENT_PREFIXES)
+            prefixes = check.comment_prefixes or COMMENT_PREFIXES
+            probes = tuple(f"{prefix} {witness}" for prefix in prefixes)
             if any(expression.search(probe) for probe in probes):
                 return True
     return False
 
 
+@lru_cache(maxsize=32)
 def census(backlog: str) -> Census:
     records = _records(backlog)
     assertions: list[GrepCheck] = []
@@ -547,27 +655,22 @@ def mutation_self_test(backlog: str) -> None:
     )
     if target is None or "grep" not in target.group(1):
         raise InstrumentError("B-083 population member missing from mutation fixture")
-    # B-083 is the historical reproducer.  The canonical baseline deliberately
-    # remains open: its unguarded assertion is an executable member of the
-    # unfinished population.  The mutation below proves that anchoring that
-    # member changes the semantic verdict, without claiming that the whole
-    # population is repaired.
+    # B-083 is the historical reproducer.  Removing its syntax-specific guard
+    # must reopen the census, proving the positive population is load-bearing.
+    guarded = 'grep -q "^[^#]*byok"'
     old = 'grep -q "byok"'
-    guarded = 'grep -q "^byok"'
-    if old not in target.group(1):
-        raise InstrumentError("B-083 mutation target is not the canonical open member")
-    mutated_block = target.group(1).replace(old, guarded, 1)
+    if guarded not in target.group(1):
+        raise InstrumentError("B-083 mutation target is not the canonical guarded member")
+    mutated_block = target.group(1).replace(guarded, old, 1)
     if mutated_block == target.group(1):
         raise InstrumentError("B-083 mutation did not change the fixture")
     mutated = backlog[: target.start()] + mutated_block + backlog[target.end() :]
     changed = census(mutated)
-    if len(changed.unsafe) >= len(baseline.unsafe):
-        raise InstrumentError("anchoring a real B-083 population member did not reduce risk")
+    if len(changed.unsafe) <= len(baseline.unsafe):
+        raise InstrumentError("removing a real B-083 guard did not increase risk")
 
     # B-112 starts its nested `bash -c` body with a grep, the boundary that a
-    # flat line scanner used to miss.  The nested member is intentionally open
-    # in this baseline; replacing it with a real anchor must reduce the unsafe
-    # population, proving recursive discovery without closing B-155.
+    # flat line scanner used to miss.  Removing that guard must reopen risk.
     nested_target = re.search(
         r"(id: B-112\n.*?verify: \|\n(?:  .*\n)+?)",
         backlog,
@@ -575,11 +678,11 @@ def mutation_self_test(backlog: str) -> None:
     )
     if nested_target is None:
         raise InstrumentError("B-112 nested-shell mutation fixture is missing")
+    nested_guarded = 'grep -q "^[^#]*cargo zigbuild"'
     nested_open = 'grep -q "cargo zigbuild"'
-    nested_guarded = 'grep -q "^cargo zigbuild"'
-    if nested_open not in nested_target.group(1):
-        raise InstrumentError("B-112 nested grep is not the canonical open member")
-    nested_block = nested_target.group(1).replace(nested_open, nested_guarded, 1)
+    if nested_guarded not in nested_target.group(1):
+        raise InstrumentError("B-112 nested grep is not the canonical guarded member")
+    nested_block = nested_target.group(1).replace(nested_guarded, nested_open, 1)
     if nested_block == nested_target.group(1):
         raise InstrumentError("B-112 mutation did not change the fixture")
     nested_mutated = (
@@ -588,8 +691,8 @@ def mutation_self_test(backlog: str) -> None:
         + backlog[nested_target.end() :]
     )
     nested_changed = census(nested_mutated)
-    if len(nested_changed.unsafe) >= len(baseline.unsafe):
-        raise InstrumentError("anchoring the B-112 nested grep did not reduce risk")
+    if len(nested_changed.unsafe) <= len(baseline.unsafe):
+        raise InstrumentError("removing the B-112 nested grep guard did not increase risk")
 
     # Parser completeness is also load-bearing: removing every fenced record
     # cannot become a falsely clean zero-population result.

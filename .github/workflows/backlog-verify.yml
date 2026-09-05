@@ -36,6 +36,7 @@ on:
       - "scripts/backlog_verify.py"
       - "scripts/test_backlog_verify.sh"
       - "scripts/verify_b155_backlog_grep_population.py"
+      - "scripts/repair_b155_grep_population.py"
       - "tests/test_verify_b155_backlog_grep_population.py"
       # B-094 hashes and semantically classifies the complete published corpus.
       - "scripts/verify_b094_published_claims.py"
@@ -95,6 +96,7 @@ on:
       - "scripts/backlog_verify.py"
       - "scripts/test_backlog_verify.sh"
       - "scripts/verify_b155_backlog_grep_population.py"
+      - "scripts/repair_b155_grep_population.py"
       - "tests/test_verify_b155_backlog_grep_population.py"
       - "scripts/verify_b094_published_claims.py"
       - "scripts/b094_published_inventory.json"
