@@ -54,7 +54,7 @@ function validateBucket(value: unknown, tenantId: string): PatIssueBucket {
   return value as PatIssueBucket;
 }
 
-function validTenantId(tenantId: string | null): boolean {
+function validTenantId(tenantId: string | null): tenantId is string {
   return (
     tenantId !== null &&
     tenantId.length > 0 &&
@@ -80,12 +80,15 @@ export async function enforcePatIssueRateLimit(
   requestId: string,
   tenantId: string | null,
 ): Promise<PatIssueGateResult> {
+  // Compute the response class before the type guard narrows the invalid
+  // branch to `null`; the valid branch below is then soundly `string`.
+  const tenantMissing = tenantId === null || tenantId.length === 0;
   if (!validTenantId(tenantId)) {
     return {
       allowed: false,
       response: jsonDoError(
-        tenantId === null || tenantId.length === 0 ? 401 : 403,
-        tenantId === null || tenantId.length === 0 ? "UNAUTHENTICATED_TENANT" : "INVALID_TENANT_BINDING",
+        tenantMissing ? 401 : 403,
+        tenantMissing ? "UNAUTHENTICATED_TENANT" : "INVALID_TENANT_BINDING",
         requestId,
       ),
     };
