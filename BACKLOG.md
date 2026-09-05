@@ -11464,14 +11464,12 @@ verify-means: |
 last-verified: 2026-09-01
 ```
 
-### B-160 — rota self-service de PAT existe, mas o limite por tenant ainda não é durável
+### B-160 — rota self-service de PAT e limite durável por tenant
 
-**Reaberto após revisão de integridade pós-merge (2026-09-04).** A rota, os gates de
-autenticação/escopo e a matemática do bucket foram entregues, mas a autoridade do limite
-continua sendo `InMemoryTokenBucketRateLimiter`. O estado zera em recycle/restart e não é
-compartilhado entre instâncias, permitindo obter outro burst de 10 antes de uma hora. O
-reparo `WP-B160-DURABLE` precisa tornar a aquisição atômica, durável e fail-closed, com
-provas de restart, concorrência e duas instâncias, antes de este item voltar a `done`.
+**Reparado em 2026-09-05 (P0).** A autoridade do limite está no Durable Object por tenant:
+o bucket é persistente e atualizado atomicamente antes do container, portanto recycle/cold
+start, aliases e concorrência não concedem burst extra. Estado ausente é inicializado com
+burst 10; estado inválido ou storage indisponível falha fechado com `503`.
 
 **Implementado em 2026-09-04.** O servidor monta `POST /v1/pats` como rota customer-plane autorizada (Clerk session ou PAT validado) e nunca usa a credencial de mint do operador. O alias legado `POST /v1/customer/keys` chama o mesmo `create_pat_response`, portanto tenant, principal, escopo, auditoria, token mostrado uma vez e política de limite não podem divergir.
 
@@ -11483,7 +11481,7 @@ O caminho self-service está publicado na referência da API, no guia de seguran
 id: B-160
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   bash -c 'set -e
   route=crates/corelink-container/src/routes/customer.rs
@@ -11491,14 +11489,23 @@ verify: |
   grep -q "create_pat_response(state, headers, body.label, body.scopes)" "$route" || { echo "FALHA: public alias não converge"; exit 1; }
   grep -q "create_pat_response(state, headers, body.name, body.scopes)" "$route" || { echo "FALHA: dashboard alias não converge"; exit 1; }
   grep -q "PAT_ISSUE_ENDPOINT_ID: &str = \"pat-issue\"" "$route" || { echo "FALHA: pat-issue bucket ausente"; exit 1; }
-  grep -q "try_acquire(bucket_tenant, bucket_key, 1, limiter_now_ms)" "$route" || { echo "FALHA: limiter não precede mint"; exit 1; }
-  grep -q "InMemoryTokenBucketRateLimiter::new" "$route" || { echo "FALHA: o limiter em memória não está mais no caminho — reavalie e feche B-160 com provas duráveis"; exit 1; }
-  echo "aberto: aliases convergem, mas o limiter pat-issue ainda é local ao processo e reinicia com a instância"'
+  do=worker/src/durable_object.ts
+  rate=worker/src/pat_issue_rate_limit.ts
+  worker=worker/src/index.ts
+  grep -q "PAT_ISSUE_AUTHORIZED_HEADER" "$route" || { echo "FALHA: container não exige lease do DO"; exit 1; }
+  grep -q 'PAT_ISSUE_BUCKET_KEY = "ratelimit:pat-issue:v1"' "$rate" || { echo "FALHA: bucket durável ausente"; exit 1; }
+  grep -q "blockConcurrencyWhile(async () =>" "$rate" || { echo "FALHA: decisão não é serializada no DO"; exit 1; }
+  grep -q "storage.put(PAT_ISSUE_BUCKET_KEY" "$rate" || { echo "FALHA: decisão não persiste bucket"; exit 1; }
+  grep -q "Retry-After" "$rate" || { echo "FALHA: Retry-After ausente"; exit 1; }
+  grep -q '"x-corelink-pat-issue-authorized"' "$worker" || { echo "FALHA: lease forjado não é removido na borda"; exit 1; }
+  test -f worker/tests/pat_issue_rate_limit.test.ts || { echo "FALHA: testes de corrida ausentes"; exit 1; }
+  echo "confirmado: aliases convergem, DO por tenant decide/persiste atomicamente pat-issue, container exige lease, Worker remove cópias do cliente"'
 verify-means: |
-  open — rota, autenticação e aliases estão presentes, mas o verificador rejeita a construção
-  do limiter em memória no caminho de produção. O fechamento exige autoridade durável e
-  atômica, compartilhada entre instâncias e resistente a restart, além dos testes existentes
-  de 401/403, token shown-once, auditoria, aliases e fronteira exata de 360 segundos.
+  done — além do registro executável de `POST /v1/pats` e convergência dos dois aliases, o
+  verificador exige a chave durável, `blockConcurrencyWhile` + `storage.put` no seam do DO,
+  lease obrigatório no container, remoção de cópias client-supplied no Worker, `Retry-After`
+  e o teste versionado de restart, duas instâncias concorrentes, isolamento de tenant,
+  estado adulterado/storage indisponível e fronteira exata de 360 segundos.
 last-verified: 2026-09-04
 ```
 

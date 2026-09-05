@@ -156,7 +156,9 @@ callers authenticate with a validated Clerk session cookie; CLI callers may
 use a canonical PAT. The plaintext token is returned exactly once. The
 dashboard-compatible alias `POST /v1/customer/keys` uses the same mint flow
 and per-tenant `pat-issue` limiter (burst 10, then 10/hour; one token every
-360 seconds), applied before mint and audit. Listing is
+360 seconds), applied before mint and audit. The bucket is durably serialized
+by the tenant Durable Object across restarts and container instances; invalid
+or unavailable limiter state fails closed with `503`. Listing is
 `GET /v1/customer/keys`; dashboard revocation is
 `POST /v1/customer/keys/{pat_id}/revoke`. The public `GET /v1/pats` and
 `DELETE /v1/pats/{pat_id}` operations remain planned, and are not aliases for

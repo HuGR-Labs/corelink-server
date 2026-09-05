@@ -794,6 +794,9 @@ const CLIENT_TRUST_HEADERS: ReadonlyArray<string> = [
   // NOT be able to smuggle a forged role to escalate — strip it structurally on
   // EVERY forward so only the Worker's D1-derived value reaches the container.
   "x-corelink-role",
+  // PAT issuance lease: only the tenant Durable Object may stamp this after
+  // its serialized durable bucket decision. Never forward a client copy.
+  "x-corelink-pat-issue-authorized",
 ];
 
 /**

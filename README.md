@@ -62,7 +62,10 @@ additional token with `POST /v1/pats` (`{"label":"ci","scopes":["cache:read"]}`)
 The dashboard-compatible `POST /v1/customer/keys` alias uses the same mint flow.
 Both aliases share the per-tenant `pat-issue` limiter: burst 10, then 10 tokens
 per hour (one every 360 seconds), enforced before mint and audit. A `429`
-includes `Retry-After`; the plaintext token is returned exactly once.
+includes `Retry-After`; the plaintext token is returned exactly once. The
+bucket is durably serialized by the tenant Durable Object, so restart and
+multiple container instances cannot reset or double-spend the allowance;
+unavailable or invalid limiter state fails closed with `503`.
 
 ## Production status
 

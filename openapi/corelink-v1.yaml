@@ -297,8 +297,11 @@ paths:
         This endpoint and the legacy dashboard alias `POST /v1/customer/keys`
         use the same customer-plane mint flow and the same per-tenant
         `pat-issue` bucket: burst 10, then 10 tokens per hour (one every 360
-        seconds). The limiter runs before mint and audit; a denied request
-        returns `429` with `Retry-After`.
+        seconds). The limiter is a durable, serialized per-tenant Durable Object
+        bucket and therefore survives restarts and container replacement. It
+        runs before mint and audit; malformed or unavailable limiter state fails
+        closed with `503`, while a denied request returns `429` with
+        `Retry-After`.
       requestBody:
         required: true
         content:
@@ -351,7 +354,7 @@ paths:
             text/plain:
               schema: { type: string }
         "503":
-          description: Rate-limit clock or pipeline unavailable; no PAT was minted.
+          description: Durable rate-limit state or pipeline unavailable; no PAT was minted.
           content:
             text/plain:
               schema: { type: string }

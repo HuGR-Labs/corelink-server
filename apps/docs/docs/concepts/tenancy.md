@@ -84,5 +84,7 @@ A common pattern in the meantime: create separate accounts for `acme-prod` and `
 `POST /v1/pats` is the live public self-service creation route. Dashboard users
 can issue through the compatible `POST /v1/customer/keys` alias; both routes
 share the `pat-issue` per-tenant limiter (burst 10, then 10/hour, one token
-every 360 seconds) before mint and audit. A revoked PAT receives `401
+every 360 seconds) before mint and audit. Its bucket is durably serialized by
+the tenant Durable Object across restarts and container replacement; malformed
+or unavailable state fails closed with `503`. A revoked PAT receives `401
 Unauthorized` on subsequent requests.

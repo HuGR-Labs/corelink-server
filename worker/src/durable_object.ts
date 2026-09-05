@@ -34,6 +34,10 @@ import type {
 } from "@cloudflare/workers-types";
 import type { Env } from "./index.js";
 import { patRotationEnv } from "./lib/pat_rotation_env.js";
+import {
+  enforcePatIssueRateLimit,
+  PAT_ISSUE_AUTHORIZED_HEADER,
+} from "./pat_issue_rate_limit.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
@@ -535,6 +539,16 @@ export class CoreLinkServer implements DurableObject {
     });
   }
 
+  private enforcePatIssueRateLimit(requestId: string, tenantId: string | null) {
+    return enforcePatIssueRateLimit(
+      this.state,
+      this.storage,
+      this.lifecycleState.tenantId,
+      requestId,
+      tenantId,
+    );
+  }
+
   // ──────────────────────────────────────────────────────────────────────────
   // fetch — DO entry point
   // ──────────────────────────────────────────────────────────────────────────
@@ -551,6 +565,27 @@ export class CoreLinkServer implements DurableObject {
     }
     if (url.pathname === "/_do/stop") {
       return this.handleStop(requestId);
+    }
+
+    // Both public PAT aliases are authorized by this tenant DO before the
+    // container starts. The DO's serialized durable decision is the sole
+    // issuance authority across restarts and container instances.
+    let requestForProxy = request;
+    if (
+      request.method === "POST" &&
+      (url.pathname === "/v1/pats" || url.pathname === "/v1/customer/keys")
+    ) {
+      const gate = await this.enforcePatIssueRateLimit(
+        requestId,
+        request.headers.get("x-corelink-tenant-id"),
+      );
+      if (!gate.allowed) return gate.response;
+      const headers = new Headers(request.headers);
+      // A caller-supplied copy can never authorize itself; only this DO's
+      // successful decision may stamp the one-request lease.
+      headers.delete(PAT_ISSUE_AUTHORIZED_HEADER);
+      headers.set(PAT_ISSUE_AUTHORIZED_HEADER, "1");
+      requestForProxy = new Request(request, { headers });
     }
 
     // ── Tenant resolution (WP-T1) ─────────────────────────────────────────────
@@ -619,7 +654,7 @@ export class CoreLinkServer implements DurableObject {
     const fetcher = container.getTcpPort(CONTAINER_PORT);
 
     try {
-      const resp = await proxyToContainer(request, fetcher);
+      const resp = await proxyToContainer(requestForProxy, fetcher);
       return resp;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message.slice(0, 80) : "unknown";
