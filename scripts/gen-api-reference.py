@@ -795,7 +795,7 @@ def render_endpoint_mdx(endpoint: Endpoint, spec: Spec) -> str:
     # the existing reference set untouched; the sync gate consequently catches
     # accidental EOF drift.
     one_lf_pages = {
-        "patIssue",
+        "patIssueCompatibilityAlias",
         "customerKeysList",
         "customerKeysCreate",
         "customerKeyRevoke",

@@ -31,6 +31,15 @@ class GeneratorCheckTests(unittest.TestCase):
                 out_dir = Path(raw_dir) / "reference"
 
                 self.assertEqual(self._run(out_dir)[0], 0)  # normal generation
+                for filename in (
+                    "get-v1-customer-keys.mdx",
+                    "post-v1-customer-keys-by-pat_id-revoke.mdx",
+                    "post-v1-pats.mdx",
+                ):
+                    generated = out_dir / "endpoints" / filename
+                    content = generated.read_bytes()
+                    self.assertTrue(content.endswith(b"\n"), filename)
+                    self.assertFalse(content.endswith(b"\n\n"), filename)
                 self.assertEqual(self._run(out_dir, "--check")[0], 0)
 
                 changed = out_dir / "endpoints/post-v1-customer-keys.mdx"
