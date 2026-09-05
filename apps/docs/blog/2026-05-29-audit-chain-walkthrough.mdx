@@ -246,10 +246,11 @@ Or, using the CoreLink export API directly:
 
 ```bash
 curl -s \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   "https://corelink-api.humangr.com/v1/audit/export/window\
 ?since=2026-04-01T00:00:00Z&until=2026-05-01T00:00:00Z" \
-  > april_export.ndjson
+  > april_export.ndjson --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 The export endpoint returns the canonical NDJSON format — one event

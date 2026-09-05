@@ -27,8 +27,10 @@ deriva o tenant da credencial e remove o JWT do Clerk antes de encaminhar a
 requisição ao Durable Object do tenant; o cliente nunca fornece o tenant.
 
 ```bash
-curl -H "Authorization: Bearer $CORELINK_PAT" \
-  https://corelink-api.humangr.com/v1/users/me
+curl --silent --config - <<EOF
+url = "https://corelink-api.humangr.com/v1/users/me"
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 Nenhum outro esquema de autenticação (Basic, cabeçalho de API key, parâmetro de
@@ -46,8 +48,10 @@ Retorna a identidade do PAT usado na requisição.
 **Requisição**
 
 ```bash
-curl -s -H "Authorization: Bearer $CORELINK_PAT" \
-  https://corelink-api.humangr.com/v1/users/me
+curl --silent --config - <<EOF
+url = "https://corelink-api.humangr.com/v1/users/me"
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 **Resposta 200**
@@ -93,10 +97,11 @@ Envia um blob. O CAS nativo é chaveado por **BLAKE3**: o digest BLAKE3 no camin
 DIGEST=$(b3sum ./output.tar.gz | awk '{print $1}')   # BLAKE3, not sha256
 
 curl -s -X PUT \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   -H "Content-Type: application/octet-stream" \
   --data-binary @./output.tar.gz \
-  "https://corelink-api.humangr.com/v1/cas/acme-prod/$DIGEST"
+  "https://corelink-api.humangr.com/v1/cas/acme-prod/$DIGEST" --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 **Resposta 201** — o corpo ecoa o BLAKE3 armazenado em hex:
@@ -128,9 +133,10 @@ Baixa um blob pelo digest.
 
 ```bash
 curl -s \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   "https://corelink-api.humangr.com/v1/cas/acme-prod/$DIGEST" \
-  -o ./output-downloaded.tar.gz
+  -o ./output-downloaded.tar.gz --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 **Resposta 200** — `Content-Type: application/octet-stream`, o corpo são bytes brutos.

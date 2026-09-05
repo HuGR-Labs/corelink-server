@@ -94,9 +94,10 @@ heraus automatisieren:
 
 ```bash
 curl -X POST https://corelink-api.humangr.com/v1/customer/team/invite \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   -H "Content-Type: application/json" \
-  -d '{"email":"teammate@example.com","role":"Developer"}'
+  -d '{"email":"teammate@example.com","role":"Developer"}' --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 Mitglieder einzuladen (und zu entfernen) ist **ausschließlich Owner/Admin
@@ -125,8 +126,9 @@ angemeldet hat, erscheint unter **Pending invitations**.
 Dasselbe per Skript:
 
 ```bash
-curl https://corelink-api.humangr.com/v1/customer/team \
-  -H "Authorization: Bearer $CORELINK_PAT"
+curl https://corelink-api.humangr.com/v1/customer/team --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 Die Antwort enthält ein `members`-Array; jeder Eintrag trägt `user_id`,
@@ -153,9 +155,10 @@ ausstellen möchten, nutzen Sie die Keys-API — auch dafür gibt es kein CLI:
 
 ```bash
 curl -X POST https://corelink-api.humangr.com/v1/customer/keys \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   -H "Content-Type: application/json" \
-  -d '{"name":"ci-service-account","scopes":["cache:r","cache:w","cache:find-missing"]}'
+  -d '{"name":"ci-service-account","scopes":["cache:r","cache:w","cache:find-missing"]}' --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 Der Request-Body besteht nur aus einem Namen und einer Liste von Scopes —

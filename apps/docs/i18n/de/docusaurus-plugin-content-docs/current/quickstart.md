@@ -43,8 +43,10 @@ export CORELINK_TENANT="your-tenant-id"   # shown on the welcome screen
 ## Schritt 2 — Überprüfen Sie Ihre Anmeldedaten
 
 ```bash
-curl -s -H "Authorization: Bearer $CORELINK_PAT" \
-  https://corelink-api.humangr.com/v1/users/me
+curl --silent --config - <<EOF
+url = "https://corelink-api.humangr.com/v1/users/me"
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 Erwartete Antwort:
@@ -69,10 +71,11 @@ DIGEST=$(b3sum ./my-artifact.bin | awk '{print $1}')
 
 # Upload
 curl -s -X PUT \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   -H "Content-Type: application/octet-stream" \
   --data-binary @./my-artifact.bin \
-  "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST"
+  "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST" --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 Erwartete Antwort (HTTP 201) — der Body gibt das gespeicherte BLAKE3-Hex zurück:
@@ -89,9 +92,10 @@ Erwartete Antwort (HTTP 201) — der Body gibt das gespeicherte BLAKE3-Hex zurü
 
 ```bash
 curl -s \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST" \
-  -o ./my-artifact-downloaded.bin
+  -o ./my-artifact-downloaded.bin --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 Überprüfen Sie, ob die Bytes identisch sind:

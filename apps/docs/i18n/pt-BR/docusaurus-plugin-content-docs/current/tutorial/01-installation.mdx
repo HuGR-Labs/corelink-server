@@ -58,7 +58,7 @@ Add these lines to your `.bazelrc`:
 ```ini
 build --remote_cache=https://corelink-api.humangr.com/bazel/v2
 build --remote_instance_name=${CORELINK_TENANT}
-build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
 build --remote_upload_local_results=true
 ```
 
@@ -77,7 +77,7 @@ REAPI client (the tenant comes from the PAT, not the URL, so drop
 
 ```ini
 build --remote_cache=https://corelink-api.humangr.com/bazel/cache
-build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
 ```
 
 See the [Bazel quickstart](./03-bazel-quickstart) for details.

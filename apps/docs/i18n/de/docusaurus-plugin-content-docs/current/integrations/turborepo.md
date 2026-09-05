@@ -100,8 +100,9 @@ Sie können außerdem bestätigen, dass das Token gültig ist:
 
 ```bash
 curl -s \
-  -H "Authorization: Bearer $CORELINK_PAT" \
-  https://corelink-api.humangr.com/v1/users/me
+  https://corelink-api.humangr.com/v1/users/me --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 # {"tenant_id":"acme-prod","token_prefix":"corelink","route_kind":"reapi_v1"}
 ```
 

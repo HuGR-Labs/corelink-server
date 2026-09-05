@@ -241,7 +241,7 @@ Friday evening or Sunday morning in your CI runners' timezone).
 # NEW — stock-Bazel HTTP alias. No tenant in the URL: it is resolved from the
 # PAT, so there is no --remote_instance_name line.
 build:ci --remote_cache=https://corelink-api.humangr.com/bazel/cache
-build:ci --remote_header=Authorization=Bearer\ $CORELINK_PAT
+build:ci --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
 build:ci --remote_upload_local_results=true
 build:ci --remote_timeout=60s
 ```

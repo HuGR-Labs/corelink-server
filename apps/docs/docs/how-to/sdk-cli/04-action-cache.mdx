@@ -77,8 +77,9 @@ the admin API (CLI does not expose AC writes or deletes):
 
 ```bash
 curl -X DELETE \
-  -H "Authorization: Bearer $CORELINK_PAT" \
-  "https://corelink-api.humangr.com/v1/tenants/acme-corp/ac/<digest>"
+  "https://corelink-api.humangr.com/v1/tenants/acme-corp/ac/<digest>" --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 See [admin API reference](../../reference/cli/index.mdx) for the full

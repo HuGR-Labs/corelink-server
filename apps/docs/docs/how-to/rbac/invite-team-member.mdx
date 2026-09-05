@@ -83,9 +83,10 @@ script invites from CI with a PAT:
 
 ```bash
 curl -X POST https://corelink-api.humangr.com/v1/customer/team/invite \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   -H "Content-Type: application/json" \
-  -d '{"email":"teammate@example.com","role":"Developer"}'
+  -d '{"email":"teammate@example.com","role":"Developer"}' --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 Inviting (and removing) a member is **owner/admin only** — a `Developer`
@@ -111,8 +112,9 @@ in yet appear under **Pending invitations**.
 To check the same thing from a script:
 
 ```bash
-curl https://corelink-api.humangr.com/v1/customer/team \
-  -H "Authorization: Bearer $CORELINK_PAT"
+curl https://corelink-api.humangr.com/v1/customer/team --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 The response carries a `members` array; each entry has the member's
@@ -138,9 +140,10 @@ API — again, there is no CLI for this:
 
 ```bash
 curl -X POST https://corelink-api.humangr.com/v1/customer/keys \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   -H "Content-Type: application/json" \
-  -d '{"name":"ci-service-account","scopes":["cache:r","cache:w","cache:find-missing"]}'
+  -d '{"name":"ci-service-account","scopes":["cache:r","cache:w","cache:find-missing"]}' --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 The request body is only a name and a list of scopes — there is no field

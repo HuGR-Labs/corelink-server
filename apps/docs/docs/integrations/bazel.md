@@ -47,15 +47,17 @@ build --remote_cache=https://corelink-api.humangr.com/bazel/v2
 # Your tenant UUID becomes the REAPI :instance path segment.
 build --remote_instance_name=${CORELINK_TENANT}
 
-# Authenticate with your PAT.
-build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+# Authenticate with your PAT through Bazel 6+'s host-scoped credential helper.
+build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
 
 build --remote_upload_local_results=true
 build --remote_timeout=60
 ```
 
-Export both values before building; in CI pass the PAT from a secret so it never
-appears literally:
+Copy the helper from the [Bazel starter example](../../../../examples/bazel-starter/.bazel/corelink-credential-helper.sh)
+into your workspace (or point the setting above at your equivalent helper). Export
+both values before building; in CI pass the PAT from a secret so it never appears
+in `.bazelrc`, process arguments, or build logs:
 
 ```bash
 export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"   # ${{ secrets.CORELINK_PAT }} in CI
@@ -67,10 +69,16 @@ export CORELINK_TENANT="acme-prod"
 After running a build, verify the PAT and tenant are recognized:
 
 ```bash
-curl -s -H "Authorization: Bearer $CORELINK_PAT" \
-  https://corelink-api.humangr.com/v1/users/me
+curl --silent --config - <<EOF
+url = "https://corelink-api.humangr.com/v1/users/me"
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 # {"tenant_id":"acme-prod","token_prefix":"corelink","route_kind":"reapi_v1"}
 ```
+
+The probe supplies the header through curl's stdin config; do not replace it
+with `-H "Authorization: Bearer $CORELINK_PAT"`, which exposes the PAT in
+process arguments and CI diagnostics.
 
 For a cache-hit check, run the same build twice. Inspect Bazel's execution log
 (`--execution_log_json_file`) for `remoteCacheHit: true` entries on the second

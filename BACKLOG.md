@@ -11212,43 +11212,30 @@ Consertar um não conserta o outro.
 id: B-157
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'set -e
-  p=apps/docs/docs/integrations/bazel.md
-  e=examples/bazel-starter/.bazelrc
-  [ -f "$p" ] || { echo "FALHA: $p sumiu — reavalie o item em vez de fecha-lo."; exit 1; }
-  [ -f "$e" ] || { echo "FALHA: $e sumiu — sem o controle este portao nao consegue mostrar que a casa conhece a forma correta; reavalie."; exit 1; }
-  grep -qE "^[^#]*credential_helper" "$e" || { echo "FALHA: o exemplo do repo nao usa mais credential helper — o controle mudou; releia antes de confiar neste portao."; exit 1; }
-  vaza=0
-  grep -qE "^[^#]*remote_header=Authorization=Bearer" "$p" && vaza=1
-  if [ "$vaza" = 0 ]; then
-    echo "FALHA: a pagina nao instrui mais o --remote_header com Bearer — o reparo aterrissou; feche o item."; exit 1; fi
-  echo "aberto: bazel.md ainda manda escrever --remote_header=Authorization=Bearer com o PAT no .bazelrc, enquanto examples/bazel-starter/.bazelrc usa credential helper por CTRL-CRED-001"'
+  python3 scripts/verify_b157_published_credentials.py
+  bash tests/test_b157_credential_recipe.sh
+  python3 tests/test_b157_published_credentials.py
 verify-means: |
-  open — a página publicada ainda carrega a linha do `--remote_header` **e** o exemplo
-  correto do repositório continua existindo como controle.
+  done — the closed-world census scans every Markdown/MDX/HTML file in `apps/docs/`,
+  `marketing/`, `legal/`, and `README.md`. It rejects active `--remote_header=Authorization=Bearer`
+  and `curl -H/--header "Authorization: Bearer … $CORELINK_PAT"` recipes, requires every
+  credential helper to be host-scoped, and validates every stdin-config heredoc.
 
-  **O grep na página é ancorado em `^[^#]*`** porque a correção provável é transformar a
-  linha em prosa de aviso (*"# não faça `--remote_header=Authorization=Bearer …`"*) dentro de
-  um bloco de exemplo ou de um cabeçalho markdown — e um grep nu continuaria vendo o defeito
-  depois de consertado, mantendo o item aberto para sempre. O grep no exemplo é ancorado pelo
-  motivo simétrico.
+  **O helper é premissa e falha ALTO.** Se `examples/bazel-starter/.bazelrc` ou o helper
+  sumirem, ou qualquer diretiva perder o prefixo `corelink-api.humangr.com=`, o comando para.
+  A prova também exige a população publicada e verifica que cada heredoc realmente contém
+  `url`, o header interpolado no stdin e o terminador `EOF`.
 
-  **O controle é premissa e falha ALTO.** Se `examples/bazel-starter/.bazelrc` sumir ou
-  deixar de usar credential helper, o comando **para** — sem ele, o item vira opinião sobre
-  qual forma é melhor, e deixa de ser a constatação de que a casa documentou a forma segura e
-  publicou a insegura.
+  **Medido pelos dois lados (2026-09-05):** the pre-repair census had 42 active
+  `remote_header` lines and 31 PAT-bearing curl lines. The repaired tree reports
+  `files=948 helpers=40 stdin_curls=32 remote_header=0 curl_argv=0`; mutations in a
+  non-English translated Bazel page for either unsafe form fail closed.
 
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: bazel.md ainda
-  manda escrever --remote_header…"* e exit 0. Numa cópia com a linha 51 trocada pelo bloco de
-  credential helper do exemplo, sai *"FALHA: a pagina nao instrui mais o --remote_header"* e
-  exit 1.
-
-  O que ele **não** decide: se a página passa a ensinar o helper ou a apontar para o exemplo.
-  E **não** cobre o esquema de URL errado da mesma página, que é [B-158] — os dois podem ser
-  consertados em ordens diferentes e por pessoas diferentes.
-last-verified: 2026-08-31
+  O que ele **não** cobre é o esquema de URL errado da mesma página, que é [B-158] — os dois
+  itens têm portões independentes e B-158 permanece aberto.
+last-verified: 2026-09-05
 ```
 
 ### B-158 — o `.bazelrc` publicado aponta `--remote_cache` para `/bazel/v2`, prefixo em que o Bazel stock emite `/bazel/v2/cas/<hash>` — rota não registrada

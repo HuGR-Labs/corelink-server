@@ -54,11 +54,14 @@ build --remote_cache=https://corelink-api.humangr.com/bazel/v2
 build --remote_instance_name=${CORELINK_TENANT}
 
 # Authenticate with your PAT.
-build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
 
 build --remote_upload_local_results=true
 build --remote_timeout=60
 ```
+
+Helper-Quelle: [Bazel-Starter-Beispiel](../../../../examples/bazel-starter/.bazel/corelink-credential-helper.sh).
+Der host-spezifische Helper liest `CORELINK_PAT` aus der Umgebung und setzt ihn nicht in Argumente oder Logs.
 
 Exportieren Sie beide Werte vor dem Kompilieren; in der CI übergeben Sie den PAT aus einem Secret, damit er
 nie im Klartext erscheint:
@@ -73,8 +76,10 @@ export CORELINK_TENANT="acme-prod"
 Führen Sie einen Build aus und überprüfen Sie anschließend, ob PAT und Tenant erkannt werden:
 
 ```bash
-curl -s -H "Authorization: Bearer $CORELINK_PAT" \
-  https://corelink-api.humangr.com/v1/users/me
+curl --silent --config - <<EOF
+url = "https://corelink-api.humangr.com/v1/users/me"
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 # {"tenant_id":"acme-prod","token_prefix":"corelink","route_kind":"reapi_v1"}
 ```
 

@@ -132,7 +132,7 @@ und schreibt eine `.corelink/credentials`-Datei (Modus `0600`):
 corelink bazel-init: appended to .bazelrc:
   build --remote_cache=https://corelink-api.humangr.com/bazel/v2
   build --remote_instance_name=acme-prod
-  build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+  build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
   build --remote_timeout=30s
   build --remote_upload_local_results=true
 corelink bazel-init: wrote .corelink/credentials (mode 0600)
@@ -150,7 +150,7 @@ den Mandanten aus dem PAT ab (daher kein `--remote_instance_name`):
 
 ```ini
 build --remote_cache=https://corelink-api.humangr.com/bazel/cache
-build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
 build --remote_upload_local_results=true
 ```
 

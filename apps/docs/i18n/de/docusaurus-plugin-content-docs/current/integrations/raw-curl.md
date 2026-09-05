@@ -41,10 +41,11 @@ echo "Digest: $DIGEST"
 
 # 2. Upload
 curl -s -X PUT \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   -H "Content-Type: application/octet-stream" \
   --data-binary @./artifact.tar.gz \
-  "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$DIGEST"
+  "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$DIGEST" --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 Bei Erfolg gibt der Server **201 Created** zurück (oder **200 OK**, falls der Blob bereits
@@ -59,9 +60,10 @@ af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
 
 ```bash
 curl -s \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$DIGEST" \
-  -o ./artifact-downloaded.tar.gz
+  -o ./artifact-downloaded.tar.gz --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 
 # Verify integrity
 b3sum ./artifact-downloaded.tar.gz
@@ -72,8 +74,9 @@ b3sum ./artifact-downloaded.tar.gz
 
 ```bash
 curl -s -I \
-  -H "Authorization: Bearer $CORELINK_PAT" \
-  "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$DIGEST"
+  "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$DIGEST" --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 - HTTP 200: Der Blob existiert.
@@ -88,10 +91,11 @@ Nützlich zum Zwischenspeichern von Build-Ausgabeverzeichnissen:
 tar -czf - ./dist/ \
   | tee >(b3sum | awk '{print $1}' > /tmp/digest.txt) \
   | curl -s -X PUT \
-      -H "Authorization: Bearer $CORELINK_PAT" \
       -H "Content-Type: application/octet-stream" \
       --data-binary @- \
-      "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$(cat /tmp/digest.txt)"
+      "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$(cat /tmp/digest.txt)" --config /dev/fd/3 3<<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 
 echo "Uploaded as $(cat /tmp/digest.txt)"
 ```
@@ -115,10 +119,11 @@ jobs:
         run: |
           DIGEST=$(b3sum ./dist/app.bin | awk '{print $1}')
           curl -fsSL -X PUT \
-            -H "Authorization: Bearer $CORELINK_PAT" \
             -H "Content-Type: application/octet-stream" \
             --data-binary @./dist/app.bin \
-            "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST"
+            "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST" --config - <<EOF
+          header = "Authorization: Bearer ${CORELINK_PAT}"
+          EOF
           echo "ARTIFACT_DIGEST=$DIGEST" >> $GITHUB_OUTPUT
         id: push
 
@@ -132,17 +137,20 @@ jobs:
       - name: Pull artifact from CoreLink
         run: |
           curl -fsSL \
-            -H "Authorization: Bearer $CORELINK_PAT" \
             "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/${{ needs.build.outputs.ARTIFACT_DIGEST }}" \
-            -o ./app.bin
+            -o ./app.bin --config - <<EOF
+          header = "Authorization: Bearer ${CORELINK_PAT}"
+          EOF
           chmod +x ./app.bin
 ```
 
 ## Überprüfen, ob es funktioniert hat
 
 ```bash
-curl -s -H "Authorization: Bearer $CORELINK_PAT" \
-  https://corelink-api.humangr.com/v1/users/me
+curl --silent --config - <<EOF
+url = "https://corelink-api.humangr.com/v1/users/me"
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 # {"tenant_id":"acme-prod","token_prefix":"corelink","route_kind":"reapi_v1"}
 ```
 

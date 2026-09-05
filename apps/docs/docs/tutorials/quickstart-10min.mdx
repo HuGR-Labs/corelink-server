@@ -163,7 +163,7 @@ remote-cache lines to your `.bazelrc`:
 ```ini
 build --remote_cache=https://corelink-api.humangr.com/bazel/v2
 build --remote_instance_name=${CORELINK_TENANT}
-build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
 build --remote_upload_local_results=true
 ```
 
@@ -183,7 +183,7 @@ Bazel emits, and resolves your tenant from the PAT (so no
 
 ```ini
 build --remote_cache=https://corelink-api.humangr.com/bazel/cache
-build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
 build --remote_upload_local_results=true
 ```
 
