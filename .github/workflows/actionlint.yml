@@ -126,3 +126,10 @@ jobs:
       - name: Pull request target spawn boundary (B-141)
         shell: bash
         run: python3 tests/test_pull_request_target_spawn_boundary.py
+
+      # The boundary parser is intentionally stdlib-only. -S disables site
+      # packages, proving this gate does not depend on the runner image's
+      # unprovisioned PyYAML (or any other ambient package).
+      - name: Pull request target spawn boundary (B-141, hermetic)
+        shell: bash
+        run: python3 -S tests/test_pull_request_target_spawn_boundary.py

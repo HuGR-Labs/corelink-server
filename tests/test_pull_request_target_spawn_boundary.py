@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
+import ast
 import copy
 import re
 import unittest
 from pathlib import Path
-
-import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -64,15 +63,174 @@ EXPECTED_PERMISSIONS = {
 }
 
 
+_YAML_KEY = re.compile(r"^(?P<key>[^:#][^:]*?):(?:[ \t]*(?P<value>.*))?$")
+
+
+def _workflow_lines(text: str) -> list[tuple[int, str]]:
+    """Return significant lines, rejecting tabs before any interpretation.
+
+    This is deliberately a small, closed parser for the workflow subset used by
+    this gate.  It does not pretend to be a general YAML implementation: an
+    unsupported/malformed line is an error rather than a silently ignored gate.
+    """
+    lines: list[tuple[int, str]] = []
+    for lineno, raw in enumerate(text.splitlines(), 1):
+        if "\t" in raw[: len(raw) - len(raw.lstrip())]:
+            raise ValueError(f"line {lineno}: tabs are not supported")
+        content = raw.lstrip(" ")
+        if not content or content.startswith("#"):
+            continue
+        indent = len(raw) - len(content)
+        if "#" in content:
+            quote = None
+            for index, char in enumerate(content):
+                if char in "'\"":
+                    quote = None if quote == char else char if quote is None else quote
+                elif char == "#" and quote is None and (index == 0 or content[index - 1].isspace()):
+                    content = content[:index].rstrip()
+                    break
+        if content:
+            lines.append((indent, content))
+    return lines
+
+
+def _mapping_entry(content: str) -> tuple[str, str]:
+    match = _YAML_KEY.match(content)
+    if match is None:
+        raise ValueError(f"unsupported YAML mapping entry: {content!r}")
+    key = match.group("key").strip()
+    if not key or key.startswith("-"):
+        raise ValueError(f"unsupported YAML key: {key!r}")
+    return key.strip("'\""), match.group("value") or ""
+
+
+def _scalar(value: str):
+    value = value.strip()
+    if not value:
+        return None
+    if value.startswith("["):
+        if not value.endswith("]"):
+            raise ValueError(f"unterminated inline sequence: {value!r}")
+        members = [member.strip() for member in value[1:-1].split(",") if member.strip()]
+        return [_scalar(member) for member in members]
+    if value[:1] in {"'", '"'}:
+        try:
+            parsed = ast.literal_eval(value)
+        except (SyntaxError, ValueError) as error:
+            raise ValueError(f"malformed quoted scalar: {value!r}") from error
+        if not isinstance(parsed, str):
+            raise ValueError(f"unsupported scalar: {value!r}")
+        return parsed
+    if value in {"null", "~"}:
+        return None
+    if value == "true":
+        return True
+    if value == "false":
+        return False
+    if re.fullmatch(r"-?[0-9]+", value):
+        return int(value)
+    return value
+
+
+def _parse_workflow_subset(text: str) -> dict:
+    """Parse only top-level triggers, permissions, and job boundary fields.
+
+    The five target workflows use mappings, inline sequences, and folded `if:`
+    scalars for these fields.  Steps and other job metadata are intentionally
+    opaque; their indentation is still validated, while required boundary
+    fields are decoded strictly.
+    """
+    lines = _workflow_lines(text)
+    workflow: dict = {}
+    index = 0
+    while index < len(lines):
+        indent, content = lines[index]
+        if indent != 0:
+            raise ValueError(f"expected top-level mapping, found {content!r}")
+        key, value = _mapping_entry(content)
+        if key in workflow:
+            raise ValueError(f"duplicate top-level key: {key}")
+        if value:
+            workflow[key] = _scalar(value)
+            index += 1
+            continue
+        start = index + 1
+        end = start
+        while end < len(lines) and lines[end][0] > 0:
+            end += 1
+        section = lines[start:end]
+        if key == "on":
+            events: dict = {}
+            for event_indent, event_content in section:
+                if event_indent == 2:
+                    event, event_value = _mapping_entry(event_content)
+                    if event in events:
+                        raise ValueError(f"duplicate trigger: {event}")
+                    events[event] = _scalar(event_value) if event_value else {}
+                elif event_indent < 2:
+                    raise ValueError(f"invalid trigger indentation: {event_content!r}")
+            workflow[key] = events
+        elif key == "permissions":
+            permissions: dict = {}
+            for permission_indent, permission_content in section:
+                if permission_indent == 2:
+                    permission, permission_value = _mapping_entry(permission_content)
+                    if permission in permissions or not permission_value:
+                        raise ValueError(f"invalid permission entry: {permission_content!r}")
+                    permissions[permission] = _scalar(permission_value)
+                elif permission_indent < 2:
+                    raise ValueError(f"invalid permission indentation: {permission_content!r}")
+            workflow[key] = permissions
+        elif key == "jobs":
+            jobs: dict = {}
+            cursor = 0
+            while cursor < len(section):
+                job_indent, job_content = section[cursor]
+                if job_indent != 2:
+                    cursor += 1
+                    continue
+                job_name, job_value = _mapping_entry(job_content)
+                if job_value:
+                    raise ValueError(f"job {job_name} must be a mapping")
+                if job_name in jobs:
+                    raise ValueError(f"duplicate job: {job_name}")
+                job: dict = {}
+                cursor += 1
+                while cursor < len(section) and section[cursor][0] > 2:
+                    field_indent, field_content = section[cursor]
+                    if field_indent != 4:
+                        cursor += 1
+                        continue
+                    field, field_value = _mapping_entry(field_content)
+                    if field in job:
+                        raise ValueError(f"duplicate job field: {job_name}:{field}")
+                    if field_value in {">-", ">", "|-", "|"}:
+                        chunks: list[str] = []
+                        cursor += 1
+                        while cursor < len(section) and section[cursor][0] > 4:
+                            chunks.append(section[cursor][1])
+                            cursor += 1
+                        if not chunks:
+                            raise ValueError(f"empty folded scalar: {job_name}:{field}")
+                        job[field] = " ".join(chunks) if field_value.startswith(">") else "\n".join(chunks)
+                        continue
+                    job[field] = _scalar(field_value)
+                    cursor += 1
+                jobs[job_name] = job
+            workflow[key] = jobs
+        index = end
+    return workflow
+
+
 def load_workflow(name: str) -> dict:
-    loaded = yaml.safe_load((WORKFLOWS / name).read_text(encoding="utf-8"))
-    assert isinstance(loaded, dict), f"{name} must be a workflow mapping"
+    loaded = _parse_workflow_subset((WORKFLOWS / name).read_text(encoding="utf-8"))
+    if not isinstance(loaded, dict):
+        raise AssertionError(f"{name} must be a workflow mapping")
     return loaded
 
 
 def triggers_pull_request_target(workflow: dict) -> bool:
-    # PyYAML 1.1 resolves YAML's unquoted `on` as True.
-    triggers = workflow.get("on", workflow.get(True))
+    triggers = workflow.get("on")
     return isinstance(triggers, dict) and "pull_request_target" in triggers
 
 
@@ -233,6 +391,15 @@ def assert_welcome_boundary(test: unittest.TestCase, workflow: dict) -> None:
 
 
 class PullRequestTargetSpawnBoundaryTest(unittest.TestCase):
+    def test_parser_fails_closed_on_unsupported_or_malformed_yaml(self) -> None:
+        for malformed in (
+            "jobs:\n  broken\n",
+            "jobs:\n  broken:\n    runs-on: corelink\n    if: >-\n",
+            "jobs:\n\tbroken:\n",
+        ):
+            with self.subTest(malformed=malformed), self.assertRaises(ValueError):
+                _parse_workflow_subset(malformed)
+
     def test_pull_request_target_population_is_closed(self) -> None:
         actual = {
             path.name

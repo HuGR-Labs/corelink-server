@@ -9741,7 +9741,7 @@ verify: |
   bash -c 'set -o pipefail
   t=tests/test_pull_request_target_spawn_boundary.py
   [ -f "$t" ] || { echo "FALHA: $t nao existe — boundary sem suite executavel"; exit 1; }
-  python3 "$t" >/dev/null || { echo "DRIFTED: boundary ou mutacao nao esta coberto"; exit 1; }
+  python3 -S "$t" >/dev/null || { echo "DRIFTED: boundary ou mutacao nao esta coberto"; exit 1; }
   grep -q "author_association.*OWNER" .github/workflows/pr-labels.yml || { echo "DRIFTED: OWNER gate sumiu"; exit 1; }
   grep -q "author_association.*MEMBER" .github/workflows/pr-labels.yml || { echo "DRIFTED: MEMBER gate sumiu"; exit 1; }
   grep -q "author_association.*COLLABORATOR" .github/workflows/pr-labels.yml || { echo "DRIFTED: COLLABORATOR gate sumiu"; exit 1; }
@@ -9759,7 +9759,8 @@ verify-means: |
   de remoção/alargamento dos gates, retorno de jobs ao fabric e ampliação do token; cada mutação
   tem de ficar vermelha.
 
-  O verificador não consulta a visibilidade do repositório nem um teto externo de spawn. A
+  O parser da suíte é stdlib-only e o verify usa `python3 -S`, portanto não depende de PyYAML
+  ou de qualquer pacote instalado na imagem do runner. O verificador não consulta a visibilidade do repositório nem um teto externo de spawn. A
   primeira não é admissão e o segundo vive fora deste checkout. A decisão permanente do host
   Mac está registrada acima e no documento de remediação. O verificador não consulta rede,
   visibilidade do repositório ou quota externa: esses sinais não são controles de admissão para
