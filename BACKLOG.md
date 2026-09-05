@@ -8616,17 +8616,13 @@ manda o autor desfazer um trabalho correto.
 id: B-128
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'ctl=$(ls .github/workflows/*.yml 2>/dev/null | wc -l | tr -d " ")
-  [ "${ctl:-0}" -gt 50 ] || { echo "INDETERMINADO: so $ctl workflows encontrados — o instrumento falhou, nao a arvore."; exit 0; }
-  guard=$(grep -rln "df -[hH]" .github/workflows/ 2>/dev/null | wc -l | tr -d " ")
-  live=$(grep -rnE "No space left on device|ENOSPC" scripts/ .github/workflows/ 2>/dev/null | grep -vE ":[[:space:]]*#|# " | wc -l | tr -d " ")
-  [ "$guard" = 0 ] || { echo "FALHA: $guard workflow(s) ja checam espaco com df — pode ser o reparo; verifique e feche."; exit 1; }
-  [ "$live" = 0 ] || { echo "FALHA: $live linha(s) NAO-comentario ja tratam ENOSPC — pode ser o reparo; verifique e feche."; exit 1; }
-  echo "aberto: nenhum workflow checa espaco com df e nenhuma linha executavel trata ENOSPC; a exaustao chega como vermelho generico"'
+  python3 scripts/classify-runner-failure.py <<<'cargo: could not create incremental directory: No space left on device (os error 28)' >/dev/null; test $? -eq 42
+  python3 scripts/classify-runner-failure.py <<<'ld terminated with signal 7 [Bus error]' >/dev/null; test $? -eq 42
+  grep -q 'run-with-infra-classification.sh' .github/workflows/corelink-server.yml
 verify-means: |
-  open — nada no repo distingue "sem espaço" de "seu código quebrou".
+  done — the executable classifier requires storage/linker context, preserves mixed code failures, and the PR workflow runs it through the neutral infrastructure wrapper.
 
   O predicado mede **tratamento executável**, não menção. A primeira versão contava
   qualquer ocorrência da string e nasceu DRIFTED: os dois arquivos que ela achou —
