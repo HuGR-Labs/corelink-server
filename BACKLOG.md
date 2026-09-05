@@ -10175,7 +10175,7 @@ falso-positivo — que é a razão pela qual `flagship_files` nasceu vazio.
 id: B-145
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   python3 - <<"PY"
   import json, sys, importlib.util, pathlib
