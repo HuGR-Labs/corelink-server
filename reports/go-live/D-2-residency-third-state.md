@@ -32,3 +32,11 @@ was added. A new invalid writer receives the existing fail-closed audit error
 path (503 where the caller exposes sink failure); the residency verifier is a
 read-only operator control with exit states `COMPLIANT`, `FAILED`, and
 `INDETERMINATE`.
+
+## Proposed BACKLOG transition
+
+Keep `B-127` **open** and owner `tl` until the lead reruns the full-population
+check against production D1 and explains the residual orphan population. After
+that evidence is attached, the proposed transition is `open → ready_for_lead_verify`;
+only the lead may then close it. This patch supplies the writer guard, verifier,
+and adversarial tests, but makes no production or historical-row claim.
