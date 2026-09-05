@@ -6451,61 +6451,29 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
-### B-095 — três defeitos funcionais na interface do cliente, dos quais o mais grave mente sobre residência
+### B-095 — contratos da interface do cliente alinhados com a realidade persistida
 
-**Pin de workspace.** `apps/admin-ui/src/components/customer/WorkspacesClient.tsx:161`
-diz ao cliente que Pin mantém o conteúdo *"exempt from eviction"* e é *"billed as a metered
-add-on ($5/mo per 100 GB pinned)"*. O handler
-(`crates/corelink-container/src/routes/workspaces.rs:286`) executa
-`UPDATE workspaces SET pinned = 1 - pinned` e nada mais; o cabeçalho da própria rota
-(:394) admite *"`pinned` = false until snapshot sizing/pinning land"*; e não existe medidor
-de $5/100 GB em código, SQL ou Stripe. Somando com [B-071], não há eviction da qual isentar.
-
-**Convite de time.** `TeamClient.tsx:36` oferece quatro papéis
-`["Owner","Admin","Developer","Viewer"]`; a migração `0074_team_member.sql:41` aceita
-`('owner','admin','member','viewer')`. O `customer_d1.rs:376` mapeia `"owner" | "admin" =>
-"admin"` e tudo mais para `member`, enquanto a resposta ecoa de volta o papel pedido. Dois
-dos quatro papéis oferecidos não existem, e o usuário vê confirmado o papel errado.
-
-**Flag `--region` do instalador.** `apps/get-corelink-worker/src/install.ts:191` — *"`--region`
-remains accepted on the command line as a no-op until a real config key exists for it"*. Um
-cliente com requisito de residência passa `--region=weur`, não recebe erro, e acredita ter
-fixado a região.
-
-O último é o mais sério: residência é a peça central de compliance do produto ([B-085],
-[B-086]), e a interface primária para escolhê-la mente silenciosamente.
+Fechado: o pin de workspace agora recebe estado explícito (`pinned: boolean`) e é
+idempotente, sem prometer residência garantida, isenção de eviction ou cobrança extra.
+Convites persistem somente `owner/admin/member/viewer` (com `member` como papel de
+engenharia); valores desconhecidos e `owner` em convite são rejeitados antes de
+auditoria/mutação. O instalador rejeita opções não suportadas, incluindo `--region`, e
+residência continua sendo uma decisão server-side. UI, mocks, API client, RBAC docs,
+quickstarts e traduções refletem o mesmo contrato.
 
 ```backlog
 id: B-095
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'n=0; det=""
-  i=apps/get-corelink-worker/src/install.ts
-  if [ -f "$i" ] && grep -qi "^[^/*]*no-op" "$i" && grep -q "^[^/*]*region" "$i"; then n=$((n+1)); det="$det region-noop"; fi
-  t=apps/admin-ui/src/components/customer/TeamClient.tsx
-  if [ -f "$t" ] && grep -q "^[^/*]*Developer" "$t"; then
-    m=migrations/d1/0074_team_member.sql
-    if [ -f "$m" ] && ! grep -qi "^[^#]*developer" "$m"; then n=$((n+1)); det="$det papel-developer-inexistente"; fi
-  fi
-  w=crates/corelink-container/src/routes/workspaces.rs
-  if [ -f "$w" ] && grep -q "^[^/*]*pinned = 1 - pinned" "$w"; then n=$((n+1)); det="$det pin-e-so-toggle"; fi
-  [ "$n" -gt 0 ] || { echo "FALHA: os tres defeitos de interface sumiram — feche o item."; exit 1; }
-  echo "aberto: $n de 3 defeitos de interface persistem:$det"'
+  python3 scripts/verify_b095_interface_contract.py --expect done
 verify-means: |
-  open — pelo menos um dos três defeitos persiste. Cada um é detectado pelo seu próprio
-  predicado: `--region` ainda documentado como no-op; papel `Developer` oferecido pela
-  interface e ausente do CHECK da migração; e o pin ainda sendo puro toggle.
-
-  Conta 3/2/1 em vez de exigir zero: consertar um reduz o número e o item permanece aberto
-  listando os que faltam. Progresso parcial aparece, e os três são independentes.
-
-  Vira DRIFTED quando os três forem resolvidos. Se a decisão for remover a promessa em vez
-  de implementá-la (remover `--region`, remover `Developer` da interface, remover o texto
-  de $5/100 GB), o comando também fecha — desfechos legítimos, porque a alegação é a
-  DIVERGÊNCIA entre o que a interface promete e o que o sistema faz.
-last-verified: 2026-08-30
+  done — o verificador fail-closed lê os marcadores executáveis dos três contratos,
+  valida os quatro quickstarts publicados e confirma a matriz Owner. Ele ignora prosa
+  histórica (inclusive referências ao antigo no-op), evitando falso positivo. Qualquer
+  parser permissivo, role fora do CHECK, pin toggle ou claim de região volta a `open`.
+last-verified: 2026-09-05
 ```
 
 ### B-096 — documentação do moat reconciliada com as superfícies cross-tenant reais

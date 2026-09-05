@@ -158,12 +158,11 @@ function WorkspacesInner(): React.ReactElement {
           it onto any machine in seconds — no re-clone, no cold rebuild.{" "}
           <strong>Pin</strong>{" "}
           <HelpPopover label="What is Pin?">
-            Pin keeps a snapshot guaranteed-warm: its content stays resident and
-            marks this snapshot for future retention policy work. Pinning is
-            currently a durable flag only; it does not yet change eviction or
-            billing, so there is no metered add-on promise here.
+            Pin records a durable retention preference for this snapshot. It does
+            not currently guarantee residency, change eviction, or change billing;
+            there is no metered add-on promise here.
           </HelpPopover>{" "}
-          the ones your team hydrates most so they never fall out of cache.
+          the ones your team hydrates most so the retention preference is recorded.
         </p>
         <div className="lin-mt">
           <Button

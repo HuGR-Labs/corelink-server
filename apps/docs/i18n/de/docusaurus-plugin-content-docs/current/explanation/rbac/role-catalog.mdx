@@ -38,7 +38,8 @@ and the SQL `CHECK` constraint lives in `specs/03_architecture/data_model.md`
 - Everything an `Admin` can do (see below), **plus**:
   - View and mutate billing surface (the `billing` capability of an
     owner dashboard session; never a minted cache PAT).
-  - Grant or revoke the `Owner` role on other users.
+  - Manage users below the `Owner` role. The served team API cannot grant or
+    revoke `Owner`, including for another Owner.
   - Act as approver for destructive operations.
   - Initiate Enterprise BYOK setup (KMS root key wrap).
 
@@ -256,7 +257,7 @@ Who can change whom:
 
 | Initiator → target | → Owner            | → Admin     | → Member    | → Viewer    |
 |--------------------|--------------------|-------------|-------------|-------------|
-| `Owner`            | Grant / revoke     | Grant / revoke | Grant / revoke | Grant / revoke |
+| `Owner`            | ❌                  | Grant / revoke | Grant / revoke | Grant / revoke |
 | `Admin`            | ❌                  | ❌           | Grant / revoke | Grant / revoke |
 | `Member`           | ❌                  | ❌           | ❌           | ❌           |
 | `Viewer`           | ❌                  | ❌           | ❌           | ❌           |

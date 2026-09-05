@@ -83,6 +83,8 @@ on:
       - "apps/docs/**"
       - "legal/**"
       - "README.md"
+      - "scripts/verify_b095_interface_contract.py"
+      - "tests/test_verify_b095_interface_contract.py"
       - "marketing/sales/legal-questionnaires/EVIDENCE-PACK-INDEX.md"
       # B-161's verifier reads exactly these published pages and its focused test.
       - "apps/docs/docs/integrations/homebrew.md"
@@ -146,6 +148,8 @@ on:
       - "apps/docs/**"
       - "legal/**"
       - "README.md"
+      - "scripts/verify_b095_interface_contract.py"
+      - "tests/test_verify_b095_interface_contract.py"
       - "apps/docs/docs/integrations/homebrew.md"
       - "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/integrations/homebrew.md"
       - "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/integrations/homebrew.md"
@@ -221,6 +225,11 @@ jobs:
 
       - name: B-088 published pentest claim verifier and mutations
         run: python3 -m unittest tests/b088_pentest_claims_test.py
+
+      - name: B-095 interface contract verifier
+        run: python3 scripts/verify_b095_interface_contract.py --expect done
+      - name: B-095 verifier mutation tests
+        run: python3 -m unittest tests/test_verify_b095_interface_contract.py
 
       - name: BACKLOG.md agrees with the repo
         # Items that query the Actions API need gh authenticated. Items about

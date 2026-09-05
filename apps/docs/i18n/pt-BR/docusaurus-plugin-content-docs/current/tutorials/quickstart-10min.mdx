@@ -44,8 +44,8 @@ seu tenant, região e um PAT inicial no servidor — sem etapa de cobrança.
 ## Passo 1 — Cadastre-se <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
 
 1. Abra **[https://humangr.com/corelink](https://humangr.com/corelink)** no navegador.
-2. Conclua o wizard de cadastro em 2 passos (escolha sua região primária — `ord`
-   (US-Central) é um bom padrão para a maioria dos times).
+2. Conclua o wizard de cadastro em 2 passos. A residência do tenant é
+   registrada e roteada no servidor.
 3. O wizard leva à página **`/welcome`**, onde seu PAT inicial é exibido
    **uma única vez**. Copie-o antes de fechar a aba.
    Formato: `ct_live_xxx…xxx`
@@ -74,8 +74,8 @@ O script:
    `.sha256` publicado ao lado do artefato de release **antes** de torná-lo
    executável — a ausência do checksum aborta a instalação — e então o move
    para `/usr/local/bin/corelink` (via `sudo` se você não for root).
-3. Escreve `~/.corelink/config.toml` com permissão `0600`, contendo seu
-   token, a região e o endpoint da API.
+3. Escreve `~/.corelink/config.toml` com permissão `0600`, contendo seu token
+   e o endpoint da API. A residência do tenant não é uma configuração do cliente.
 4. Executa `corelink whoami`, que resolve sua identidade em `/v1/users/me`
    e grava o `tenant_id` resolvido nesse mesmo arquivo de configuração —
    todo comando com escopo de tenant depende dele.
@@ -210,8 +210,8 @@ acima de 200 ms, ou o Bazel registra `UNAVAILABLE`.
 corelink bazel-init --force
 ```
 
-Regiões disponíveis: `ord` (US-Central), `iad` (US-East), `lhr` (EU-West),
-`nrt` (AP-Northeast), `syd` (AP-Southeast).
+Alterações de residência são tratadas no servidor pelo suporte; não são uma
+opção da CLI nem do `config.toml`.
 
 ### Token ausente — `UNAUTHENTICATED` em todas as ações Bazel
 

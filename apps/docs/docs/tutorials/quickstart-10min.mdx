@@ -37,8 +37,8 @@ your tenant, region, and a starter PAT server-side — no billing step.
 ## Step 1 — Sign up <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
 
 1. Open **[https://humangr.com/corelink](https://humangr.com/corelink)** in your browser.
-2. Complete the 2-step signup wizard (pick your primary region — `ord` is
-   US-Central and a safe default for most teams).
+2. Complete the 2-step signup wizard. Tenant residency is recorded and routed
+   server-side.
 3. The wizard drops you on the **`/welcome`** page where your starter PAT
    is displayed **exactly once**. Copy it now before closing the tab.
    It looks like: `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA`
@@ -251,8 +251,8 @@ Common failure modes and their fixes:
 not suitable for your CI location, contact support@humangr.com; changing
 residency is a server-side data-migration request, not a CLI config change.
 
-Available regions: `ord` (US-Central), `iad` (US-East), `lhr` (EU-West),
-`nrt` (AP-Northeast), `syd` (AP-Southeast).
+Residency changes are handled as a server-side support request; they are not a
+client-side CLI or `config.toml` setting.
 
 ### Token not set — `UNAUTHENTICATED` on every Bazel action
 

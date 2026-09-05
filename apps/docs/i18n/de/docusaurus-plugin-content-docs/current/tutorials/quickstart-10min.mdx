@@ -44,8 +44,8 @@ kein Abrechnungsschritt erforderlich.
 ## Schritt 1 — Registrieren <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 Min.)</span>
 
 1. Öffnen Sie **[https://humangr.com/corelink](https://humangr.com/corelink)** im Browser.
-2. Schließen Sie den 2-Schritt-Anmelde-Assistenten ab (wählen Sie Ihre
-   primäre Region — `ord` US-Central ist für die meisten Teams ein sicherer Standard).
+2. Schließen Sie den 2-Schritt-Anmelde-Assistenten ab. Die Tenant-Residenz
+   wird serverseitig erfasst und geroutet.
 3. Der Assistent leitet Sie auf die **`/welcome`**-Seite, wo Ihr Starter-PAT
    **genau einmal** angezeigt wird. Kopieren Sie ihn, bevor Sie den Tab schließen.
    Format: `ct_live_xxx…xxx`
@@ -77,8 +77,8 @@ Das Skript:
    ausführbar gemacht wird — eine fehlende Prüfsumme bricht die
    Installation ab — und verschiebt es dann nach `/usr/local/bin/corelink`
    (per `sudo`, falls Sie nicht root sind).
-3. Schreibt `~/.corelink/config.toml` mit Modus `0600` und Ihrem Token,
-   der Region und dem API-Endpunkt.
+3. Schreibt `~/.corelink/config.toml` mit Modus `0600`, Ihrem Token
+   und dem API-Endpunkt. Die Tenant-Residenz ist keine Client-Konfiguration.
 4. Führt `corelink whoami` aus: das löst Ihre Identität über
    `/v1/users/me` auf und legt die ermittelte `tenant_id` in derselben
    Konfigurationsdatei ab — jeder spätere tenant-bezogene Befehl braucht sie.
@@ -213,8 +213,8 @@ den größten Nutzen beim zweiten Lauf Ihrer CI-Pipeline.
 corelink bazel-init --force
 ```
 
-Verfügbare Regionen: `ord` (US-Central), `iad` (US-East), `lhr` (EU-West),
-`nrt` (AP-Northeast), `syd` (AP-Southeast).
+Änderungen der Residenz werden serverseitig über den Support bearbeitet; sie
+sind keine CLI- oder `config.toml`-Einstellung.
 
 ### Token nicht gesetzt — `UNAUTHENTICATED` bei jeder Bazel-Aktion
 

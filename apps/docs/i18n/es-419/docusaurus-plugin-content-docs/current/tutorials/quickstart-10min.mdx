@@ -45,8 +45,8 @@ facturación.
 ## Paso 1 — Regístrate <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
 
 1. Abre **[https://humangr.com/corelink](https://humangr.com/corelink)** en tu navegador.
-2. Completa el asistente de registro en 2 pasos (elige tu región primaria — `ord`
-   US-Central es un buen valor predeterminado para la mayoría de los equipos).
+2. Completa el asistente de registro en 2 pasos. La residencia del tenant se
+   registra y enruta en el servidor.
 3. El asistente te lleva a la página **`/welcome`** donde tu PAT inicial se muestra
    **exactamente una vez**. Cópialo antes de cerrar la pestaña.
    Formato: `ct_live_xxx…xxx`
@@ -75,8 +75,8 @@ El script:
    `.sha256` publicado junto al artefacto de release **antes** de hacerlo
    ejecutable — la ausencia del checksum aborta la instalación — y luego lo
    mueve a `/usr/local/bin/corelink` (con `sudo` si no eres root).
-3. Escribe `~/.corelink/config.toml` con permisos `0600`, con tu token, la
-   región y el endpoint de la API.
+3. Escribe `~/.corelink/config.toml` con permisos `0600`, con tu token y el
+   endpoint de la API. La residencia del tenant no es una configuración del cliente.
 4. Ejecuta `corelink whoami`, que resuelve tu identidad contra
    `/v1/users/me` y guarda el `tenant_id` resuelto en ese mismo archivo de
    configuración — todo comando con alcance de tenant lo necesita.
@@ -212,8 +212,8 @@ latencia superior a 200 ms, o Bazel registra `UNAVAILABLE`.
 corelink bazel-init --force
 ```
 
-Regiones disponibles: `ord` (US-Central), `iad` (US-East), `lhr` (EU-West),
-`nrt` (AP-Northeast), `syd` (AP-Southeast).
+Los cambios de residencia se tramitan en el servidor mediante soporte; no son
+una opción del CLI ni de `config.toml`.
 
 ### Token no configurado — `UNAUTHENTICATED` en cada acción Bazel
 
