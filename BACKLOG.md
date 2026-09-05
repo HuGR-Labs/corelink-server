@@ -1323,6 +1323,55 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
+### B-170 — owner must reconcile executed legal claims and superseded questionnaire recipients
+
+B-087 closed the engineering-controlled questionnaire wording without pretending that
+executed agreements, PagerDuty evidence, or communications to prior recipients had been
+changed. The exact action packet is
+`docs/internal/b087-questionnaire-owner-actions.md`. Completion requires three independent
+owner artifacts: Legal's disposition for the executed DPA/SLA/residency-amendment claims,
+Operations' PagerDuty rotation export, and Sales/Legal's decision on notification of
+recipients of superseded questionnaire copies. Engineering cannot sign, export, or make
+those external decisions.
+
+```backlog
+id: B-170
+repo: corelink-server
+owner: owner
+status: open
+verify: |
+  python3 - <<'PY'
+  from pathlib import Path
+  import sys
+  packet = Path("docs/internal/b087-questionnaire-owner-actions.md")
+  if not packet.is_file():
+      print("INSTRUMENTO QUEBRADO: owner packet B-087 sumiu", file=sys.stderr); sys.exit(2)
+  text = packet.read_text(encoding="utf-8")
+  required = ("Object Lock", "PagerDuty", "superseded copy")
+  absent = [term for term in required if term not in text]
+  if absent:
+      print("INSTRUMENTO QUEBRADO: packet perdeu ações: " + ", ".join(absent), file=sys.stderr)
+      sys.exit(2)
+  evidence = (
+      Path("reports/owner-actions/b170-legal-contract-review.md"),
+      Path("reports/owner-actions/b170-pagerduty-export.json"),
+      Path("reports/owner-actions/b170-recipient-notification-decision.md"),
+  )
+  missing = [path.as_posix() for path in evidence if not path.is_file()]
+  if missing:
+      print("open: owner evidence pending: " + ", ".join(missing)); sys.exit(0)
+  print("DRIFTED: all three owner artifacts exist; validate their contents, close B-170, and invert this guard", file=sys.stderr)
+  sys.exit(1)
+  PY
+verify-means: |
+  `open` — o pacote operacional precisa existir e nomear as três decisões externas; o
+  comando passa enquanto pelo menos um dos três artefatos canônicos ainda não existe.
+  Quando os três aparecerem, fica vermelho de propósito para forçar validação de conteúdo,
+  transição para `done` e inversão do guard. Arquivo de pacote ausente ou ambíguo é erro de
+  instrumento, nunca conclusão. Nenhuma assinatura, exportação ou notificação é alegada.
+last-verified: 2026-09-05
+```
+
 ### B-028 — Dependabot alert census is triaged but still has three unpatched highs
 
 The issue is an owner-reviewed alert census, not a blanket dependency update.
