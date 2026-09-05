@@ -26,7 +26,9 @@ except ImportError as error:  # pragma: no cover - exercised by the CLI environm
 FENCE = re.compile(r"```backlog\n(.*?)\n```", re.DOTALL)
 GREP = re.compile(
     r"\bgrep\s+(?P<options>(?:-[A-Za-z0-9-]+\s+)*)"
-    r"(?P<quote>[\"'])(?P<pattern>.*?)(?P=quote)"
+    # Keep shell-escaped quotes inside a quoted regex instead of truncating
+    # the pattern at the first escaped quote.
+    r"(?P<quote>[\"'])(?P<pattern>(?:\\.|(?!(?P=quote)).)*?)(?P=quote)"
 )
 COMMAND_BOUNDARY = re.compile(r"(?:^|[;&|(!]|\$\()\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s*)*$")
 ID = re.compile(r"^B-\d{3}$")
@@ -116,21 +118,32 @@ def _grep_checks(record: dict[str, object]) -> tuple[list[GrepCheck], int]:
     return checks, invocations
 
 
-def _as_python_regex(pattern: str) -> re.Pattern[str]:
+def _as_python_regex(pattern: str, options: str = "") -> re.Pattern[str]:
+    # The census sees shell source before double-quoted `\\` escapes are
+    # reduced to one regex escape by the shell.
+    pattern = pattern.replace("\\\\", "\\")
+    if "F" in options:
+        return re.compile(re.escape(pattern))
     translated = pattern
     translated = translated.replace("[^[:space:]]", r"[^\s]")
     translated = translated.replace("[[:space:]-]", r"[\s-]")
     for source, target in POSIX_CLASSES.items():
         translated = translated.replace(source, target)
-    # Existing verify commands use grep -E's escaped alternation frequently.
-    translated = translated.replace(r"\|", "|")
+    # In basic grep, escaped `|` is alternation while an unescaped pipe is
+    # literal.  ERE reverses that rule.  Preserve the distinction for Python's
+    # regex dialect, especially for Markdown-table and shell-`||` checks.
+    if "E" not in options:
+        marker = "__B155_ALTERNATION__"
+        translated = translated.replace(r"\|", marker)
+        translated = translated.replace("|", r"\|")
+        translated = translated.replace(marker, "|")
     return re.compile(translated)
 
 
 def _matches_comment(check: GrepCheck) -> bool:
     """Return true when the assertion regex can match a comment-shaped line."""
     try:
-        expression = _as_python_regex(check.pattern)
+        expression = _as_python_regex(check.pattern, check.options)
     except re.error:
         return True  # An unmodelled dialect is an instrument gap, fail closed.
     tokens = re.findall(r"[A-Za-z][A-Za-z0-9_.:/-]{2,}", check.pattern)
@@ -158,7 +171,7 @@ def census(backlog: str) -> Census:
     indeterminate: list[GrepCheck] = []
     for check in assertions:
         try:
-            _as_python_regex(check.pattern)
+            _as_python_regex(check.pattern, check.options)
         except re.error:
             indeterminate.append(check)
         if _matches_comment(check):
@@ -184,17 +197,27 @@ def mutation_self_test(backlog: str) -> None:
     )
     if target is None or "grep" not in target.group(1):
         raise InstrumentError("B-083 population member missing from mutation fixture")
-    mutated_block = target.group(1).replace(
-        'grep -q "byok"',
-        'grep -q "^byok"',
-        1,
-    )
+    # B-083 is the historical reproducer.  In the open baseline its member is
+    # unanchored; after repair it carries the canonical non-comment guard.
+    # Exercise both directions so the self-test remains useful after closure.
+    old = 'grep -q "byok"'
+    guarded = 'grep -q "^[^#/<*-]*byok"'
+    if old in target.group(1):
+        mutated_block = target.group(1).replace(old, guarded, 1)
+        expect = "reduction"
+    elif guarded in target.group(1):
+        mutated_block = target.group(1).replace(guarded, old, 1)
+        expect = "increase"
+    else:
+        raise InstrumentError("B-083 mutation target is neither open nor guarded")
     if mutated_block == target.group(1):
         raise InstrumentError("B-083 mutation did not change the fixture")
     mutated = backlog[: target.start()] + mutated_block + backlog[target.end() :]
     changed = census(mutated)
-    if len(changed.unsafe) >= len(baseline.unsafe):
+    if expect == "reduction" and len(changed.unsafe) >= len(baseline.unsafe):
         raise InstrumentError("anchoring a real B-083 population member did not reduce risk")
+    if expect == "increase" and len(changed.unsafe) <= len(baseline.unsafe):
+        raise InstrumentError("removing the B-083 guard did not increase risk")
 
     # Parser completeness is also load-bearing: removing every fenced record
     # cannot become a falsely clean zero-population result.

@@ -35,6 +35,8 @@ on:
       - "BACKLOG.md"
       - "scripts/backlog_verify.py"
       - "scripts/test_backlog_verify.sh"
+      - "scripts/verify_b155_backlog_grep_population.py"
+      - "tests/test_verify_b155_backlog_grep_population.py"
       - ".github/workflows/backlog-verify.yml"
       # Any workflow can change the truth of a backlog verify command. Keep the
       # complete workflow surface in the trigger so those changes cannot land
@@ -46,6 +48,8 @@ on:
       - "BACKLOG.md"
       - "scripts/backlog_verify.py"
       - "scripts/test_backlog_verify.sh"
+      - "scripts/verify_b155_backlog_grep_population.py"
+      - "tests/test_verify_b155_backlog_grep_population.py"
       - ".github/workflows/**"
   schedule:
     # Daily, early UTC. Cheap: a handful of greps and gh API calls.

@@ -746,7 +746,7 @@ id: B-015
 repo: corelink-server
 owner: tl
 status: done
-verify: "grep -q 'audit/archive' crates/corelink-container/src/main.rs && grep -q 'corelink-audit-weur' .github/workflows/audit-chain-daily-verify.yml"
+verify:  "grep -q '^[^#/<*-]*audit/archive' crates/corelink-container/src/main.rs && grep -q '^[^#/<*-]*corelink-audit-weur' .github/workflows/audit-chain-daily-verify.yml"
 verify-means: done while the archive route is MOUNTED in the container composition root and the daily verifier reads the same bucket the archiver writes
 last-verified: 2026-08-24
 ```
@@ -1106,7 +1106,7 @@ id: B-022
 repo: corelink-server
 owner: tl
 status: done
-verify: "grep -q 'partitions_failed' .github/workflows/audit-archive-lag.yml"
+verify:  "grep -q '^[^#/<*-]*partitions_failed' .github/workflows/audit-archive-lag.yml"
 verify-means: |
   done — a scheduled check looks at per-partition archive failure and can page
   on it alone. Reopens if the per-partition clause is torn out of the lag cron
@@ -1251,7 +1251,7 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  test "$(grep -c 'quarantined_at' migrations/d1/0100_audit_outbox_quarantine.sql)" -gt 0
+  test "$(grep -c '^[^#/<*-]*quarantined_at' migrations/d1/0100_audit_outbox_quarantine.sql)" -gt 0
 verify-means: |
   done while the quarantine policy the owner decided is present in the applied
   migration. The prod-state half is a one-time observation, recorded in the table
@@ -1685,7 +1685,7 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  grep -q "create_only\|put_if_absent" crates/corelink-container/src/routes/turbo_v8.rs
+  grep -q "^[^#/<*-]*\(create_only\|put_if_absent\)" crates/corelink-container/src/routes/turbo_v8.rs
 verify-means: |
   done — Turborepo PUT is create-only (put_if_absent): the surface refuses an
   overwrite with 409. Reopens if the create-only semantics are torn out of that
@@ -1738,7 +1738,7 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  ! grep -q "slsa-github-generator" .github/workflows/release-slsa3.yml
+  ! grep -q "^[^#/<*-]*slsa-github-generator" .github/workflows/release-slsa3.yml
 verify-means: |
   done once the lane no longer depends on the hosted SLSA builder — the string is
   gone (self-hosted L2 provenance). The `!` makes the check exit 0 while the item
@@ -2025,7 +2025,7 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  grep -rqE '^[^#]*HuGR-Labs/corelink-cli/releases' .github/workflows/
+  grep -rqE '^[^#/<*-]*HuGR-Labs/corelink-cli/releases' .github/workflows/
 verify-means: |
   done — a workflow (manual-install-recipes.yml) downloads the documented
   release assets by name and verifies the published checksum the way the
@@ -2213,7 +2213,7 @@ status: done
 verify: |
   test "$(curl -s "https://api.stripe.com/v1/webhook_endpoints?limit=20" \
     -u "$(grep -m1 '^STRIPE_LIVE_SECRET_KEY=' .env.local | cut -d= -f2-):" \
-    | grep -c 'we_1Tca')" = "0"
+    | grep -c '^[^#/<*-]*we_1Tca')" = "0"
 verify-means: |
   done while the endpoint the leaked secret belonged to stays absent from the live
   account. Requires .env.local, so it only runs locally — the CI gate treats a
@@ -2825,7 +2825,7 @@ owner: tl
 status: done
 verify: |
   grep -rqE '\.route\("[^"]*scrub' crates/corelink-container/src/routes/ \
-    && grep -q 'cas_scrub::router' crates/corelink-container/src/main.rs
+    && grep -q '^[^#/<*-]*cas_scrub::router' crates/corelink-container/src/main.rs
 verify-means: |
   done — passes while the scrub ROUTE is registered AND actually mounted in
   `main.rs`. Both halves are required: a `router()` no caller merges is a
@@ -2892,8 +2892,8 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  grep -q 'CAS_READ_MAX_OBJECT_BYTES' crates/corelink-container/src/routes/cas.rs \
-    && grep -q 'get_capped' crates/corelink-container/src/storage/r2_s3.rs
+  grep -q '^[^#/<*-]*CAS_READ_MAX_OBJECT_BYTES' crates/corelink-container/src/routes/cas.rs \
+    && grep -q '^[^#/<*-]*get_capped' crates/corelink-container/src/storage/r2_s3.rs
 verify-means: |
   done — passes while the ceiling constant exists AND the read path reaches R2
   through `get_capped`. Both halves are required: the constant alone would be
@@ -2965,7 +2965,7 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  ! grep -qE 'GLOBAL_CAS_READ_BUDGET|GLOBAL_CAS_GET_BUDGET' \
+  ! grep -qE '^[^#/<*-]*(GLOBAL_CAS_READ_BUDGET|GLOBAL_CAS_GET_BUDGET)' \
       crates/corelink-container/src/routes/cas.rs
 verify-means: |
   open — passes while no process-wide CAS read budget exists, which is the gap.
@@ -3011,7 +3011,7 @@ owner: tl
 status: done
 verify: |
   awk '/^async fn handle_read\(/,/^\) ->/' \
-      crates/corelink-container/src/routes/cas.rs | grep -q 'ConcurrencyGuard'
+      crates/corelink-container/src/routes/cas.rs | grep -q '^[^#/<*-]*ConcurrencyGuard'
 verify-means: |
   done — passes while `handle_read` declares a concurrency guard among its
   extractors, which is the fix (#1367). Turns red if the guard is ever removed
@@ -3165,9 +3165,9 @@ owner: tl
 status: done
 verify: |
   bash -c 'f=crates/corelink-container/src/routes/audit_cas_attempted.rs
-  grep -q "Sli::AvailCasGet" "$f" || { echo "FALHA: a emissao de AvailCasGet sumiu do caminho da costura de auditoria — a regressao desfez o reparo."; exit 1; }
-  grep -q "Sli::LatencyCasGetP99" "$f" || { echo "FALHA: AvailCasGet existe mas LatencyCasGetP99 nao — a emissao ficou pela metade; a disponibilidade e observada e a latencia nao."; exit 1; }
-  grep -q "edge_ms" "$f" || { echo "FALHA: a emissao existe mas nao carrega edge_ms — a latencia observada seria a do container, nao a da borda."; exit 1; }
+  grep -q "^[^#/<*-]*Sli::AvailCasGet" "$f" || { echo "FALHA: a emissao de AvailCasGet sumiu do caminho da costura de auditoria — a regressao desfez o reparo."; exit 1; }
+  grep -q "^[^#/<*-]*Sli::LatencyCasGetP99" "$f" || { echo "FALHA: AvailCasGet existe mas LatencyCasGetP99 nao — a emissao ficou pela metade; a disponibilidade e observada e a latencia nao."; exit 1; }
+  grep -q "^[^#/<*-]*edge_ms" "$f" || { echo "FALHA: a emissao existe mas nao carrega edge_ms — a latencia observada seria a do container, nao a da borda."; exit 1; }
   echo "done: a costura /_internal/audit/cas-attempted emite AvailCasGet e LatencyCasGetP99 com a janela edge_ms"'
 verify-means: |
   done — o caminho servido pela borda deixou de ser invisivel para os SLOs. O
@@ -4100,12 +4100,12 @@ verify: |
   w=.github/workflows/signup-worker-deploy.yml
   [ -f "$cron" ] && [ -f "$h" ] && [ -f "$t" ] && [ -f "$s" ] && [ -f "$w" ] || { echo "FALHA: superficie do reparo sumiu — reavalie."; exit 1; }
   grep -q "\"rows_sealed\"" "$h" || { echo "FALHA: handler nao emite mais rows_sealed — a alegacao mudou, reavalie."; exit 1; }
-  grep -q "resolveDedicatedEraseAuthKey" "$cron" || { echo "FALHA: drain perdeu a chave dedicada sem fallback — reabra."; exit 1; }
-  grep -q "parseAuditDrainResponse" "$cron" || { echo "FALHA: 2xx sem contrato estrito voltou a parecer sucesso — reabra."; exit 1; }
+  grep -q "^[^#/<*-]*resolveDedicatedEraseAuthKey" "$cron" || { echo "FALHA: drain perdeu a chave dedicada sem fallback — reabra."; exit 1; }
+  grep -q "^[^#/<*-]*parseAuditDrainResponse" "$cron" || { echo "FALHA: 2xx sem contrato estrito voltou a parecer sucesso — reabra."; exit 1; }
   grep -q "!body.ok || body.partitions_failed > 0" "$cron" || { echo "FALHA: ok:false/falha de particao pode voltar a parecer completa — reabra."; exit 1; }
   grep -q "!madeDrainProgress(body)" "$cron" || { echo "FALHA: incomplete sem progresso pode voltar a repetir cego — reabra."; exit 1; }
-  grep -q "CORELINK_ERASE_AUTH_KEY" "$s" && grep -q "verify-signup-worker-secrets.sh" "$w" || { echo "FALHA: chave dedicada nao esta presa ao gate de deploy — reabra."; exit 1; }
-  grep -q "ok:false as terminal even when partitions_failed is zero" "$t" && grep -q "missing ok" "$t" && grep -q "non-boolean ok" "$t" && grep -q "missing incomplete" "$t" && grep -q "non-boolean incomplete" "$t" && grep -q "non-finite counter" "$t" && grep -q "incomplete-with-no-progress" "$t" || { echo "FALHA: dentes de contrato incompletos — reabra."; exit 1; }
+  grep -q "^[^#/<*-]*CORELINK_ERASE_AUTH_KEY" "$s" && grep -q "^[^#/<*-]*verify-signup-worker-secrets.sh" "$w" || { echo "FALHA: chave dedicada nao esta presa ao gate de deploy — reabra."; exit 1; }
+  grep -q "ok:false as terminal even when partitions_failed is zero" "$t" && grep -q "missing ok" "$t" && grep -q "non-boolean ok" "$t" && grep -q "missing incomplete" "$t" && grep -q "non-boolean incomplete" "$t" && grep -q "non-finite counter" "$t" && grep -q "^[^#/<*-]*incomplete-with-no-progress" "$t" || { echo "FALHA: dentes de contrato incompletos — reabra."; exit 1; }
   echo "fechado: caller dedicado, contrato 2xx estrito, falhas/no-progress terminais e segredo preso ao deploy"'
 verify-means: |
   done — polaridade invertida. Passa somente enquanto o caller usa
@@ -4208,7 +4208,7 @@ status: done
 verify: |
   bash -c 'f=.github/workflows/smoke-install.yml
   [ -f "$f" ] || { echo "FALHA: smoke-install.yml sumiu — a recusa perdeu objeto, reavalie."; exit 1; }
-  grep -q "HOSTED_ACTIONS_AVAILABLE" "$f" || { echo "FALHA: o job NAO esta mais portado atras do gate — a recusa deixou de valer, REABRA o item."; exit 1; }
+  grep -q "^[^#/<*-]*HOSTED_ACTIONS_AVAILABLE" "$f" || { echo "FALHA: o job NAO esta mais portado atras do gate — a recusa deixou de valer, REABRA o item."; exit 1; }
   echo "recusa mantida: smoke-install portado atras de HOSTED_ACTIONS_AVAILABLE"'
 verify-means: |
   done — polaridade INVERTIDA, como todo item fechado neste arquivo: o comando PASSA
@@ -4329,8 +4329,8 @@ verify: |
   ignored_pat=$(grep -rl "#\[ignore" crates/corelink-pat --include="*.rs" | sort)
   test "$ignored_pat" = "$seed"
   grep -q "#\[ignore" "$seed"
-  grep -q "CORELINK_PAT_SIGNING_KEY_HEX" "$seed"
-  grep -q "PAT_PLAINTEXT" "$seed"
+  grep -q "^[^#/<*-]*CORELINK_PAT_SIGNING_KEY_HEX" "$seed"
+  grep -q "^[^#/<*-]*PAT_PLAINTEXT" "$seed"
   grep -q "cargo test --locked --release --package corelink-pat --test constant_time" "$lane"
   grep -q "persist-credentials: false" "$lane"
   ! grep -qE "secrets\." "$lane"
@@ -4338,8 +4338,8 @@ verify: |
   grep -q "requires live CF D1 credentials" crates/corelink-container/src/storage/d1_http.rs
   grep -q "requires live R2 credentials" crates/corelink-container/src/storage/r2_s3.rs
   grep -q "#\[ignore = \"live network\"\]" crates/corelink-stripe-real/tests/live_integration.rs
-  ! grep -rlE "\-\-ignored|include-ignored" .github/workflows/ scripts/ 2>/dev/null
-  ! { test -f .config/nextest.toml && grep -q "run-ignored" .config/nextest.toml; }
+  ! grep -rlE "^[^#/<*-]*(\-\-ignored|include-ignored)" .github/workflows/ scripts/ 2>/dev/null
+  ! { test -f .config/nextest.toml && grep -q "^[^#/<*-]*run-ignored" .config/nextest.toml; }
   echo "aberto: harnesses reais D1/R2/Stripe seguem ignorados; constant_time e selecionado em release; seed PAT secreto nao e executado"'
 verify-means: |
   open — os harnesses reais de D1, R2 e Stripe seguem `#[ignore]` sem executor. O
@@ -4477,7 +4477,7 @@ verify: |
   n=0
   for f in Dockerfile .github/workflows/cf-deploy-prod.yml .github/workflows/container-build-push-prod.yml; do
     [ -f "$f" ] || continue
-    grep -qE "gc_sweep|corelink-gc" "$f" && n=$((n+1))
+    grep -qE "^[^#/<*-]*(gc_sweep|corelink-gc)" "$f" && n=$((n+1))
   done
   [ "$n" = 0 ] || { echo "FALHA: $n artefato(s) de build/deploy ja referenciam o GC — feche o item."; exit 1; }
   echo "aberto: corelink-gc existe e nao e referenciado por Dockerfile nem pelas lanes de deploy de prod"'
@@ -4599,7 +4599,7 @@ verify: |
   temtenant=0; printf "%s" "$sel" | grep -qE "WHERE[^\"]*tenant_id[[:space:]]*=" && temtenant=1
   temexp=0; printf "%s" "$sel" | grep -qiE "expires_at|expiry|invited_at_ms[[:space:]]*>" && temexp=1
   temfuture=0; printf "%s" "$sel" | grep -qE "invited_at_ms[[:space:]]*<=[[:space:]]*\\?4" && temfuture=1
-  temver=0; grep -qE "email_verified|verification" "$c" && temver=1
+  temver=0; grep -qE "^[^#/<*-]*(email_verified|verification)" "$c" && temver=1
   [ "$temexp" = 1 ] && [ "$temfuture" = 1 ] && [ "$temtoken" = 0 ] && [ "$temtenant" = 0 ] && [ "$temver" = 0 ] || {
     echo "FALHA: estado mudou (token=$temtoken tenant=$temtenant exp=$temexp future=$temfuture verif=$temver) — reavalie e feche ou reescreva o item."; exit 1; }
   echo "aberto: aceitacao de convite ainda sem token, escopo de tenant e checagem de verificacao; expiracao e limite futuro confirmados"'
@@ -4656,7 +4656,7 @@ verify: |
   for f in crates/corelink-container/src/routes/tier_select.rs crates/corelink-container/src/routes/dpa_accept.rs; do
     [ -f "$f" ] || continue
     cru=0; grep -qE "env::var\(\"CORELINK_INTERNAL_AUTH_KEY\"\)" "$f" && cru=1
-    helper=0; grep -q "resolve_internal_auth_key" "$f" && helper=1
+    helper=0; grep -q "^[^#/<*-]*resolve_internal_auth_key" "$f" && helper=1
     if [ "$cru" = 1 ] && [ "$helper" = 0 ]; then n=$((n+1)); det="$det $(basename $f)"; fi
   done
   [ "$n" -gt 0 ] || { echo "FALHA: nenhum dos dois arquivos le a chave compartilhada crua — feche o item."; exit 1; }
@@ -4767,7 +4767,7 @@ verify: |
   t=worker/tests/devenv_guard.test.ts
   [ -f "$g" ] || { echo "FALHA: $g sumiu — o guard que este item fechou nao existe mais; reavalie o item."; exit 1; }
   [ -f "$t" ] || { echo "FALHA: $t foi removido — sem o teste este item volta a ser indefeso."; exit 1; }
-  grep -qE "install_status" "$g" && grep -qE "SELECT .*install_status|COLUMNS = .*install_status" "$g" && { echo "FALHA: o guard voltou a nomear install_status numa query — coluna FANTASMA: o D1 lanca no such column em TODA chamada e o guard passa a decidir 100% pelo catch."; exit 1; }
+  grep -qE "^[^#/<*-]*install_status" "$g" && grep -qE "SELECT .*install_status|COLUMNS = .*install_status" "$g" && { echo "FALHA: o guard voltou a nomear install_status numa query — coluna FANTASMA: o D1 lanca no such column em TODA chamada e o guard passa a decidir 100% pelo catch."; exit 1; }
   for caso in "selects ONLY columns the migrations actually create" "does not select the phantom install_status column" "the D1 stub REJECTS an invented column" "DENIES a tenant with no runners_entitlement row" "DENIES when D1 throws at" "DENIES when env.CONFIG_DB is absent" "ALLOWS a tenant with a positive concurrency cap" "query survives the schema-faithful stub end to end" "is the STRING" "the column is inert"; do
     grep -qF "$caso" "$t" || { echo "FALHA: o teste perdeu o caso [$caso] — anti-vacuidade: um teste esvaziado passaria verde."; exit 1; }
   done
@@ -4888,7 +4888,7 @@ verify: |
   c=crates/corelink-stripe-real/src/client.rs
   w=apps/signup-worker/src/webhooks/stripe.ts
   [ -f "$s" ] && [ -f "$c" ] && [ -f "$w" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
-  lock=0; awk "/fn release_lock/,/^    }/" "$s" | grep -q "correlation_id" || lock=1
+  lock=0; awk "/fn release_lock/,/^    }/" "$s" | grep -q "^[^#/<*-]*correlation_id" || lock=1
   idem=0; grep -qE "format!\(\"customer:\{\}\"" "$c" && idem=1
   clob=0; awk "/ON CONFLICT \(tenant_id\)/,/updated_at_ms/" "$w" | grep -q "stripe_subscription_id[[:space:]]*=[[:space:]]*excluded" && clob=1
   leitor=$(grep -rl "FROM stripe_checkout_sessions" --include="*.rs" --include="*.ts" . 2>/dev/null | grep -v "/target/" | wc -l | tr -d " ")
@@ -4967,10 +4967,10 @@ verify: |
   bash -c 'a=crates/corelink-container/src/adapter_pat.rs
   c=crates/corelink-container/src/routes/cas.rs
   [ -f "$a" ] && [ -f "$c" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
-  medida=$(grep -c "CONTAINER_MEMORY_BYTES" "$c" 2>/dev/null | tr -d " ")
+  medida=$(grep -c "^[^#/<*-]*CONTAINER_MEMORY_BYTES" "$c" 2>/dev/null | tr -d " ")
   [ "$medida" -gt 0 ] || { echo "FALHA: cas.rs nao define mais CONTAINER_MEMORY_BYTES — reavalie o item."; exit 1; }
-  fora=$(grep -rl "CONTAINER_MEMORY_BYTES" crates/ --include="*.rs" 2>/dev/null | grep -v "routes/cas.rs" | wc -l | tr -d " ")
-  velho=0; grep -qE "standard-1|~4 GiB|0\.5 vCPU" "$a" && velho=1
+  fora=$(grep -rl "^[^#/<*-]*CONTAINER_MEMORY_BYTES" crates/ --include="*.rs" 2>/dev/null | grep -v "routes/cas.rs" | wc -l | tr -d " ")
+  velho=0; grep -qE "^[^#/<*-]*(standard-1|~4 GiB|0\.5 vCPU)" "$a" && velho=1
   if [ "$fora" -gt 0 ] && [ "$velho" = 0 ]; then
     echo "FALHA: CONTAINER_MEMORY_BYTES ja e usado fora do cas.rs E adapter_pat nao cita mais a instancia velha — feche o item."; exit 1; fi
   echo "aberto: arquivos_usando_a_constante_fora_do_cas=$fora  adapter_pat_ainda_cita_standard-1_ou_0.5vCPU=$velho"'
@@ -5017,10 +5017,10 @@ status: open
 verify: |
   bash -c 'f=crates/corelink-container/src/routes/cas.rs
   [ -f "$f" ] || { echo "FALHA: cas.rs sumiu — reavalie o item."; exit 1; }
-  grep -q "BATCH_MAX_BYTES" "$f" || { echo "FALHA: BATCH_MAX_BYTES nao existe mais — reavalie o item."; exit 1; }
+  grep -q "^[^#/<*-]*BATCH_MAX_BYTES" "$f" || { echo "FALHA: BATCH_MAX_BYTES nao existe mais — reavalie o item."; exit 1; }
   corpo=$(awk "/fn handle_batch_read/,/^async fn |^pub async fn |^fn /" "$f" | head -200)
-  linha_cap=$(printf "%s" "$corpo" | grep -n "BATCH_MAX_BYTES" | head -1 | cut -d: -f1)
-  linha_fan=$(printf "%s" "$corpo" | grep -nE "spawn|join_all|JoinSet|futures::" | head -1 | cut -d: -f1)
+  linha_cap=$(printf "%s" "$corpo" | grep -n "^[^#/<*-]*BATCH_MAX_BYTES" | head -1 | cut -d: -f1)
+  linha_fan=$(printf "%s" "$corpo" | grep -nE "^[^#/<*-]*(spawn|join_all|JoinSet|futures::)" | head -1 | cut -d: -f1)
   if [ -n "$linha_cap" ] && [ -n "$linha_fan" ] && [ "$linha_cap" -lt "$linha_fan" ]; then
     echo "FALHA: o teto de bytes e aplicado ANTES do fan-out (cap@$linha_cap fanout@$linha_fan) — feche o item."; exit 1; fi
   echo "aberto: teto de bytes aplicado depois do fan-out (cap@${linha_cap:-ausente} fanout@${linha_fan:-ausente})"'
@@ -5136,9 +5136,9 @@ verify: |
   done
   [ -z "$revividos" ] || { echo "FALHA: escopo decorativo RESSUSCITOU no catalogo:$revividos"; exit 1; }
   # 2. A assercao que fecha a classe continua no teste (ninguem a esvaziou).
-  grep -q "every_canonical_scope_name_is_enforced_or_declared" "$t" \
+  grep -q "^[^#/<*-]*every_canonical_scope_name_is_enforced_or_declared" "$t" \
     || { echo "FALHA: a assercao que fecha a classe sumiu do teste."; exit 1; }
-  grep -q "removed_admin_scope_names_are_denied_everywhere" "$t" \
+  grep -q "^[^#/<*-]*removed_admin_scope_names_are_denied_everywhere" "$t" \
     || { echo "FALHA: a prova de NEGACAO sumiu do teste."; exit 1; }
   # 3. A ledger de excecoes declaradas nao cresceu (3 entradas, cada uma com motivo).
   # Conta so as linhas de NOME (contem `:`), nunca as de motivo — calibrado:
@@ -5206,9 +5206,9 @@ verify: |
   t=worker/tests/pat_rotation_forward.test.ts
   [ -f "$a" ] && [ -f "$d" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
   [ -f "$h" ] && [ -f "$t" ] || { echo "FALHA: prova focal sumiu — reavalie o item."; exit 1; }
-  aceita=0; grep -q "PAT_SIGNING_KEY_PREV" "$a" && aceita=1
+  aceita=0; grep -q "^[^#/<*-]*PAT_SIGNING_KEY_PREV" "$a" && aceita=1
   [ "$aceita" = 1 ] || { echo "FALHA: o container nao aceita mais chaves de transicao — reavalie o item."; exit 1; }
-  grep -q "PAT_SIGNING_KEY_PREV" "$h" && grep -q "PAT_SIGNING_KEY_NEW" "$h" || { echo "FALHA: helper nao encaminha ambas as chaves."; exit 1; }
+  grep -q "^[^#/<*-]*PAT_SIGNING_KEY_PREV" "$h" && grep -q "^[^#/<*-]*PAT_SIGNING_KEY_NEW" "$h" || { echo "FALHA: helper nao encaminha ambas as chaves."; exit 1; }
   grep -q "patRotationEnv(this.env)" "$d" || { echo "FALHA: DO nao injeta o helper no container.start."; exit 1; }
   pnpm --dir worker test:file tests/pat_rotation_forward.test.ts --run >/dev/null || { echo "FALHA: prova focal B-081 nao passou."; exit 1; }
   echo "concluido: container aceita e o DO encaminha PREV/NEW; prova focal em $t"'
@@ -5267,7 +5267,7 @@ verify: |
   strip=0; grep -qE "delete raw\[\"storage\"\]|delete raw\[.storage.\]" "$f" && strip=1
   [ "$strip" = 1 ] || { echo "FALHA: o campo storage nao e mais removido — feche o item ou reescreva-o."; exit 1; }
   autent=0
-  awk "/delete raw\[/{n=NR} n&&NR>=n-40&&NR<=n+40" "$f" | grep -qiE "ADMIN_AUTH_KEY|authenticated variant|health_container_authed" && autent=1
+  awk "/delete raw\[/{n=NR} n&&NR>=n-40&&NR<=n+40" "$f" | grep -qiE "^[^#/<*-]*(ADMIN_AUTH_KEY|authenticated variant|health_container_authed)" && autent=1
   [ "$autent" = 0 ] || { echo "FALHA: existe caminho autenticado na sonda de container — feche o item."; exit 1; }
   echo "aberto: campo storage removido e nenhuma variante autenticada da sonda"'
 verify-means: |
@@ -5435,7 +5435,7 @@ verify: |
   [ -n "$buildline" ] || { echo "FALHA: nenhuma linha NAO-COMENTADA de build do corelink-server no Dockerfile — o comando perdeu o objeto e nao pode concluir ausencia de feature; reavalie o item a mao."; exit 1; }
   temfeat=0; printf "%s" "$buildline" | grep -qE "byok-(aws|gcp|azure|vault)-real" && temfeat=1
   defvazio=0; grep -qE "^default[[:space:]]*=[[:space:]]*\[\]" "$c" && defvazio=1
-  defbyok=0; grep -E "^default[[:space:]]*=" "$c" | grep -q "byok" && defbyok=1
+  defbyok=0; grep -E "^default[[:space:]]*=" "$c" | grep -q "^[^#/<*-]*byok" && defbyok=1
   if [ "$temfeat" = 1 ] || [ "$defbyok" = 1 ]; then
     echo "FALHA: o build embarca alguma feature byok-*-real (cmdline=$temfeat default=$defbyok). REAVALIE o item: compilar a feature e condicao NECESSARIA, nao suficiente — o [B-084] cobra um drill REAL contra um KMS real, e o residuo documental (231 arquivos) nao e lido por este comando. So feche (status: done) depois disso, com verify de polaridade INVERTIDA."; exit 1; fi
   echo "aberto: Dockerfile constroi sem --features byok-*-real e default=[] (default_vazio=$defvazio)"'
@@ -5790,7 +5790,7 @@ verify: |
   [ "$ocorr" -ge 2 ] || { echo "FALHA: menos de 2 database_id reais no wrangler.toml — reavalie o item."; exit 1; }
   amend=legal/dpa-residency-amendment.md
   declara=0
-  [ -f "$amend" ] && grep -qE "D1" "$amend" && grep -qiE "tenant-pinned" "$amend" && declara=1
+  [ -f "$amend" ] && grep -qE "D1" "$amend" && grep -qiE "^[^#/<*-]*tenant-pinned" "$amend" && declara=1
   jd=$(grep -c "^jurisdiction" wrangler.toml | tr -d " ")
   if [ "$ids" -gt 1 ] || [ "$declara" = 0 ]; then
     echo "FALHA: ha $ids database_id distintos ou o DPA nao declara mais D1 tenant-pinned — feche ou reescreva o item."; exit 1; fi
@@ -5975,8 +5975,8 @@ verify: |
     [ -f "$f" ] || { echo "FALHA: $f sumiu — o comando perdeu o objeto que mede e nao pode concluir nada."; exit 1; }
   done
   grep -q "^sla_version:" "$sla" || { echo "FALHA: $sla nao tem front-matter sla_version — nao e mais o SLA que este portao acha que le; reavalie a mao."; exit 1; }
-  grep -q "DPA-RESIDENCY-AMENDMENT" "$amd" || { echo "FALHA: $amd nao se identifica mais como DPA-RESIDENCY-AMENDMENT — reavalie a mao."; exit 1; }
-  grep -q "REAL_KMS_PROVIDER_WIRED" "$byok" || { echo "FALHA: o gate REAL_KMS_PROVIDER_WIRED sumiu de $byok — a condicao que este portao pressupoe mudou de forma; reavalie a mao."; exit 1; }
+  grep -q "^[^#/<*-]*DPA-RESIDENCY-AMENDMENT" "$amd" || { echo "FALHA: $amd nao se identifica mais como DPA-RESIDENCY-AMENDMENT — reavalie a mao."; exit 1; }
+  grep -q "^[^#/<*-]*REAL_KMS_PROVIDER_WIRED" "$byok" || { echo "FALHA: o gate REAL_KMS_PROVIDER_WIRED sumiu de $byok — a condicao que este portao pressupoe mudou de forma; reavalie a mao."; exit 1; }
   if grep -q "byok_not_available" "$byok"; then n501=1; else n501=0; fi
   [ "$n501" = 1 ] || { echo "FALHA: /v1/admin/byok/activate nao devolve mais 501 byok_not_available — se o BYOK embarcou, a premissa desta metade caiu e o item tem de ser reavaliado a mao (progresso, nao regressao)."; exit 1; }
   p5="BYOK kill-switch p99 <= 5 min"
@@ -6178,11 +6178,11 @@ verify: |
   n=$(wc -l < "$p" | tr -d " ")
   [ "$n" -gt 50 ] || { echo "FALHA: o press release tem so $n linhas — o comando perdeu o objeto e nao pode concluir ausencia."; exit 1; }
   grep -q "No external pentest has been commissioned" "$p" || { echo "FALHA: o comunicado nao declara mais que nenhum pentest externo foi contratado — o reparo JA FEITO regrediu; conserte antes de qualquer outra coisa."; exit 1; }
-  ! grep -q "CEO_NAME" "$p" || { echo "FALHA: o marcador CEO_NAME voltou ao comunicado — o reparo JA FEITO regrediu."; exit 1; }
+  ! grep -q "^[^#/<*-]*CEO_NAME" "$p" || { echo "FALHA: o marcador CEO_NAME voltou ao comunicado — o reparo JA FEITO regrediu."; exit 1; }
   ! grep -qE "\*\*External pentest, clean\.\*\*" "$p" || { echo "FALHA: o bullet afirmativo de pentest limpo voltou ao comunicado — o reparo JA FEITO regrediu."; exit 1; }
-  corpus=$(grep -rli "pentest" --include="*.md" --include="*.mdx" marketing/ apps/docs/ README.md 2>/dev/null | wc -l | tr -d " ")
+  corpus=$(grep -rli "^[^#/<*-]*pentest" --include="*.md" --include="*.mdx" marketing/ apps/docs/ README.md 2>/dev/null | wc -l | tr -d " ")
   [ "$corpus" -gt 20 ] || { echo "FALHA: so $corpus arquivo(s) do corpus citam pentest — a varredura perdeu o corpus e nao pode concluir ausencia."; exit 1; }
-  res=$(grep -rlE "External pentest is engaged|pentest letter on request|External pentest report|External pentest pass|PRR \+ pentest|pentest \+ 30d|Pentest-1|Schellman|Bishop Fox" --include="*.md" --include="*.mdx" marketing/ apps/docs/ README.md 2>/dev/null | grep -v "PENTEST-RFP-EMAIL" | wc -l | tr -d " ")
+  res=$(grep -rlE "^[^#/<*-]*(External pentest is engaged|pentest letter on request|External pentest report|External pentest pass|PRR \+ pentest|pentest \+ 30d|Pentest-1|Schellman|Bishop Fox)" --include="*.md" --include="*.mdx" marketing/ apps/docs/ README.md 2>/dev/null | grep -v "PENTEST-RFP-EMAIL" | wc -l | tr -d " ")
   if [ "$res" -gt 0 ]; then
     echo "aberto: o comunicado esta corrigido, mas a afirmacao de pentest externo segue viva em $res arquivo(s) do material publicado (inclui apps/docs/docs/trust/fedramp-info.mdx e iso27001/compliance/index x 4 locales). Estender o diff a apps/docs/** e ao README, ou fechar so quando res=0."
     exit 0
@@ -6297,7 +6297,7 @@ verify: |
   [ -f "$s" ] || { echo "FALHA: o SLA sumiu — reavalie o item."; exit 1; }
   promete=0; grep -qiE "issued automatically|automatic.*credit" "$s" && promete=1
   [ "$promete" = 1 ] || { echo "FALHA: o SLA nao promete mais credito automatico — feche o item."; exit 1; }
-  impl=$(grep -rlE "service_credit|sla_credit|credit_note|balance_transaction" crates/ worker/src/ apps/ --include="*.rs" --include="*.ts" --include="*.tsx" 2>/dev/null | grep -v "/target/" | grep -v node_modules | wc -l | tr -d " ")
+  impl=$(grep -rlE "^[^#/<*-]*(service_credit|sla_credit|credit_note|balance_transaction)" crates/ worker/src/ apps/ --include="*.rs" --include="*.ts" --include="*.tsx" 2>/dev/null | grep -v "/target/" | grep -v node_modules | wc -l | tr -d " ")
   [ "$impl" = 0 ] || { echo "FALHA: $impl arquivo(s) implementam emissao de credito — feche o item."; exit 1; }
   echo "aberto: SLA promete credito automatico como remedio exclusivo e ZERO codigo emite credito"'
 verify-means: |
@@ -6461,7 +6461,7 @@ owner: tl
 status: done
 verify: |
   grep -q '^license = "LicenseRef-CoreLink-Proprietary"$' Cargo.toml \
-    && ! grep -q 'UNLICENSED' Cargo.toml \
+    && ! grep -q '^[^#/<*-]*UNLICENSED' Cargo.toml \
     && ! grep -Eiq 'placeholder[^[:space:]]*[[:space:]-]*pin|pin[^[:space:]]*[[:space:]-]*placeholder' .github/workflows/sbom.yml \
     && python3 tests/verify_rust_sbom.py --check \
     && python3 -m pytest -q tests/test_sbom_workflow_dependencies.py
@@ -6502,7 +6502,7 @@ status: done
 verify: |
   bash -c 'i=apps/docs/docs/intro.md
   [ -f "$i" ] || { echo "FALHA: intro.md sumiu — o reparo nao pode ser verificado."; exit 1; }
-  b3=$(grep -ciE "blake3|b3sum" "$i" | tr -d " ")
+  b3=$(grep -ciE "^[^#/<*-]*(blake3|b3sum)" "$i" | tr -d " ")
   [ "$b3" -gt 0 ] || { echo "FALHA: intro.md voltou a nao mencionar BLAKE3/b3sum — o reparo regrediu."; exit 1; }
   ensina=$(grep -inE "sha-?256" "$i" | grep -viE "not.{0,4}sha256sum" | wc -l | tr -d " ")
   [ "$ensina" = 0 ] || { echo "FALHA: intro.md voltou a ensinar SHA-256 em $ensina linha(s) fora da negativa — o reparo regrediu."; exit 1; }
@@ -6560,7 +6560,7 @@ verify: |
   [ -f "$m" ] || { echo "FALHA: main.rs sumiu — reavalie o item."; exit 1; }
   glob=0; grep -qE "GLOBAL_BODY_LIMIT_BYTES.*10[[:space:]]*\*[[:space:]]*1024[[:space:]]*\*[[:space:]]*1024" "$m" && glob=1
   [ "$glob" = 1 ] || { echo "FALHA: o limite global de 10 MiB mudou — reavalie o item."; exit 1; }
-  ovcas=0; grep -q "DefaultBodyLimit" crates/corelink-container/src/routes/cas.rs 2>/dev/null && \
+  ovcas=0; grep -q "^[^#/<*-]*DefaultBodyLimit" crates/corelink-container/src/routes/cas.rs 2>/dev/null && \
     grep -qE "layer\(.*DefaultBodyLimit" crates/corelink-container/src/routes/cas.rs 2>/dev/null && ovcas=1
   ovbz=0; grep -qE "layer\(.*DefaultBodyLimit" crates/corelink-container/src/routes/bazel_v2.rs 2>/dev/null && ovbz=1
   if [ "$ovcas" = 1 ] && [ "$ovbz" = 1 ]; then
@@ -6638,15 +6638,15 @@ verify: |
   bash -c 'b=crates/corelink-container/src/routes/bazel_v2.rs
   [ -f "$b" ] || { echo "FALHA: bazel_v2.rs sumiu — o item nao pode ser verificado."; exit 1; }
   grep -qi "Buck2 cannot use these routes" "$b" || { echo "FALHA: o codigo nao admite mais que Buck2 nao conecta — reavalie: o gRPC pode existir agora, e ai o material deve VOLTAR a prometer."; exit 1; }
-  corpus=$(grep -rliE "buck2|grpc" --include="*.md" --include="*.mdx" --include="*.html" marketing/ apps/docs/ README.md 2>/dev/null | wc -l | tr -d " ")
+  corpus=$(grep -rliE "^[^#/<*-]*(buck2|grpc)" --include="*.md" --include="*.mdx" --include="*.html" marketing/ apps/docs/ README.md 2>/dev/null | wc -l | tr -d " ")
   [ "$corpus" -gt 20 ] || { echo "FALHA: so $corpus arquivo(s) do corpus citam buck2/grpc — a varredura perdeu o corpus e nao pode concluir ausencia."; exit 1; }
-  ressalva=$(grep -rliE "no gRPC ingress|gRPC-only|serves no gRPC|has no gRPC|REST-only|not supported today|not yet supported" marketing/ apps/docs/ 2>/dev/null | wc -l | tr -d " ")
+  ressalva=$(grep -rliE "^[^#/<*-]*(no gRPC ingress|gRPC-only|serves no gRPC|has no gRPC|REST-only|not supported today|not yet supported)" marketing/ apps/docs/ 2>/dev/null | wc -l | tr -d " ")
   [ "$ressalva" -gt 10 ] || { echo "FALHA: so $ressalva arquivo(s) carregam a ressalva de gRPC ausente — o reparo JA FEITO regrediu."; exit 1; }
   reg=$(grep -rlE "REAPI-compatible \(Bazel|Bazel, Buck2, and (RBE|Remote Build Execution)|Bazel, Buck2, Cargo|drop into any Bazel, Buck2|REAPI-compatible for Bazel|Bazel / Buck2 configurations work" marketing/ 2>/dev/null | wc -l | tr -d " ")
   [ "$reg" = 0 ] || { echo "FALHA: $reg arquivo(s) de marketing voltaram a prometer Buck2 como cliente suportado — o reparo JA FEITO regrediu."; exit 1; }
   precos=apps/docs/docs/pricing/index.mdx
   [ -f "$precos" ] || { echo "FALHA: a pagina de precos sumiu — o comando perdeu o pior caso e nao pode concluir."; exit 1; }
-  res=$(grep -rliE "buck2" --include="*.md" --include="*.mdx" apps/docs/docs/ README.md 2>/dev/null | wc -l | tr -d " ")
+  res=$(grep -rliE "^[^#/<*-]*buck2" --include="*.md" --include="*.mdx" apps/docs/docs/ README.md 2>/dev/null | wc -l | tr -d " ")
   if [ "$res" -gt 0 ]; then
     echo "aberto: os 20 arquivos de marketing/ estao corrigidos, mas a SUPERFICIE PUBLICADA segue vendendo Buck2 em $res arquivo(s) de apps/docs/docs/ + README.md — incluindo o checkmark de todos os tiers em $precos:45, enquanto tutorial/04-buck2-quickstart.mdx diz que Buck2 nao e suportado. Estender o diff a apps/docs/** e ao README."
     exit 0
@@ -6733,11 +6733,11 @@ status: open
 verify: |
   bash -c 'n=0; det=""
   i=apps/get-corelink-worker/src/install.ts
-  if [ -f "$i" ] && grep -qi "no-op" "$i" && grep -q "region" "$i"; then n=$((n+1)); det="$det region-noop"; fi
+  if [ -f "$i" ] && grep -qi "^[^#/<*-]*no-op" "$i" && grep -q "^[^#/<*-]*region" "$i"; then n=$((n+1)); det="$det region-noop"; fi
   t=apps/admin-ui/src/components/customer/TeamClient.tsx
-  if [ -f "$t" ] && grep -q "Developer" "$t"; then
+  if [ -f "$t" ] && grep -q "^[^#/<*-]*Developer" "$t"; then
     m=migrations/d1/0074_team_member.sql
-    if [ -f "$m" ] && ! grep -qi "developer" "$m"; then n=$((n+1)); det="$det papel-developer-inexistente"; fi
+    if [ -f "$m" ] && ! grep -qi "^[^#/<*-]*developer" "$m"; then n=$((n+1)); det="$det papel-developer-inexistente"; fi
   fi
   w=crates/corelink-container/src/routes/workspaces.rs
   if [ -f "$w" ] && grep -q "pinned = 1 - pinned" "$w"; then n=$((n+1)); det="$det pin-e-so-toggle"; fi
@@ -6782,18 +6782,18 @@ status: done
 verify: |
   bash -c 'm=crates/corelink-container/src/public_base_allowlist.manifest
   [ "$(grep -cE "^[[:space:]]*sha256:" "$m" | tr -d " ")" = 6 ] || exit 1
-  grep -q "PipMoatStore" crates/corelink-container/src/routes/pip.rs || exit 1
-  grep -q "BrewMoatStore" crates/corelink-container/src/routes/brew.rs || exit 1
-  grep -q "namespace_for_meta_key" crates/corelink-container/src/routes/npm.rs || exit 1
+  grep -q "^[^#/<*-]*PipMoatStore" crates/corelink-container/src/routes/pip.rs || exit 1
+  grep -q "^[^#/<*-]*BrewMoatStore" crates/corelink-container/src/routes/brew.rs || exit 1
+  grep -q "^[^#/<*-]*namespace_for_meta_key" crates/corelink-container/src/routes/npm.rs || exit 1
   grep -q "is_allowlisted(blob_key)" crates/corelink-container/src/routes/oci.rs || exit 1
   grep -q "pip wheels/sdists" CLAUDE.md || exit 1
   grep -q "npm shares only unscoped package metadata" CLAUDE.md || exit 1
   grep -q "applies only to" docs/internal/b096-oci-public-scope.md && grep -q "OCI blob upload/finalize" docs/internal/b096-oci-public-scope.md || exit 1
   grep -q "tenant-scoped.*ManifestKvStore" docs/internal/b096-oci-public-scope.md && grep -q "never in.*_public" docs/internal/b096-oci-public-scope.md || exit 1
-  grep -q "inc6_owner_pinned_index_shaped_blob_routes_via_finalize_only" crates/corelink-container/src/routes/oci.rs || exit 1
-  grep -q "inc6_manifest_put_index_stays_tenant_scoped" crates/corelink-container/src/routes/oci.rs || exit 1
+  grep -q "^[^#/<*-]*inc6_owner_pinned_index_shaped_blob_routes_via_finalize_only" crates/corelink-container/src/routes/oci.rs || exit 1
+  grep -q "^[^#/<*-]*inc6_manifest_put_index_stays_tenant_scoped" crates/corelink-container/src/routes/oci.rs || exit 1
   grep -q "client blob dedup gate.*ON" crates/corelink-container/src/public_base_allowlist.rs || exit 1
-  grep -q "tenant_prefix" crates/corelink-container/src/storage/r2_s3.rs || exit 1
+  grep -q "^[^#/<*-]*tenant_prefix" crates/corelink-container/src/storage/r2_s3.rs || exit 1
   echo "done: docs enumerate pip/brew bytes, npm metadata, owner-pinned OCI, and native HMAC isolation"'
 verify-means: |
   done — o verificador confirma a população de seis pins, os enforcers de pip/brew/npm/OCI,
@@ -6877,8 +6877,8 @@ verify: |
   bash -c 'tags=$(git tag -l "v*" 2>/dev/null | wc -l | tr -d " ")
   lints=0
   f=crates/corelink-runbook-tracker/Cargo.toml
-  if [ -f "$f" ] && grep -q "workspace.lints" -r crates/corelink-runbook-tracker 2>/dev/null; then lints=0; else
-    if [ -f "$f" ] && grep -q "\[lints" "$f" && ! grep -q "print_stdout" "$f"; then lints=1; fi
+  if [ -f "$f" ] && grep -q "^[^#/<*-]*workspace.lints" -r crates/corelink-runbook-tracker 2>/dev/null; then lints=0; else
+    if [ -f "$f" ] && grep -q "\[lints" "$f" && ! grep -q "^[^#/<*-]*print_stdout" "$f"; then lints=1; fi
   fi
   crates_reais=$(ls -d crates/*/ 2>/dev/null | wc -l | tr -d " ")
   crates_doc=$(grep -oE "~?[0-9]+ Rust crates" CLAUDE.md 2>/dev/null | grep -oE "[0-9]+" | head -1)
@@ -7659,7 +7659,7 @@ owner: tl
 status: open
 verify: |
   bash -c 'f=crates/corelink-container/src/routes/cas.rs
-  hint=$(grep -rln "oother\|OOTHER" crates/corelink-container/src --include="*.rs" 2>/dev/null | head -1)
+  hint=$(grep -rln "^[^#/<*-]*\(oother\|OOTHER\)" crates/corelink-container/src --include="*.rs" 2>/dev/null | head -1)
   [ -n "$hint" ] || { echo "FALHA: nao encontro a emissao de oother — reavalie o item."; exit 1; }
   fases=$(grep -rhoE "\"o[a-z]+\"" crates/corelink-container/src --include="*.rs" 2>/dev/null | sort -u | wc -l | tr -d " ")
   [ "$fases" -gt 0 ] || { echo "FALHA: nenhuma fase nomeada encontrada — reavalie."; exit 1; }
@@ -7765,7 +7765,7 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  bash -c 'n=$(grep -rn "wrangler deploy" .github/workflows/ 2>/dev/null | grep -ci "dry-run" | tr -d " ")
+  bash -c 'n=$(grep -rn "wrangler deploy" .github/workflows/ 2>/dev/null | grep -ci "^[^#/<*-]*dry-run" | tr -d " ")
   [ "$n" = 0 ] || { echo "FALHA: $n lane(s) ja fazem deploy de ensaio — feche o item."; exit 1; }
   echo "aberto: nenhuma lane executa wrangler deploy --dry-run; um PR pode ficar verde e tornar a producao nao-deployavel"'
 verify-means: |
@@ -8012,7 +8012,7 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  bash -c 'docs=$(ls apps/docs/docs/reference/api/endpoints/ 2>/dev/null | grep -c "admin-ops" | tr -d " ")
+  bash -c 'docs=$(ls apps/docs/docs/reference/api/endpoints/ 2>/dev/null | grep -c "^[^#/<*-]*admin-ops" | tr -d " ")
   [ "$docs" -gt 0 ] || { echo "FALHA: nenhuma pagina de doc de admin/ops encontrada — ou foram removidas (feche) ou o caminho mudou; investigue antes de fechar."; exit 1; }
   srv=$(grep -rn -- "\"/v1/admin/ops" crates/ worker/src 2>/dev/null | wc -l | tr -d " ")
   [ "$srv" = 0 ] || { echo "FALHA: /v1/admin/ops agora tem $srv literal(is) no servidor — a rota nasceu, feche ou reescreva o item."; exit 1; }
@@ -8066,7 +8066,7 @@ status: open
 verify: |
   bash -c 'test -f apps/docs/docs/reference/api/endpoints/post-v1-enterprise-inquire.mdx || { echo "FALHA: a pagina do endpoint sumiu — se foi decisao, feche o item registrando o motivo."; exit 1; }
   srv=$(grep -rn -- "\"/v1/enterprise/inquire\"" crates/ worker/src 2>/dev/null | wc -l | tr -d " ")
-  dep=$(grep -c "corelink-enterprise-inquiry" crates/corelink-container/Cargo.toml 2>/dev/null | tr -d " ")
+  dep=$(grep -c "^[^#/<*-]*corelink-enterprise-inquiry" crates/corelink-container/Cargo.toml 2>/dev/null | tr -d " ")
   [ "$srv" = 0 ] || { echo "FALHA: /v1/enterprise/inquire aparece $srv vez(es) como literal de caminho no servidor — a rota pode ter nascido; verifique e feche."; exit 1; }
   [ "$dep" = 0 ] || { echo "FALHA: o binario do conteiner agora depende de corelink-enterprise-inquiry — a implementacao pode ter sido ligada; verifique e feche."; exit 1; }
   echo "aberto: a doc publica /v1/enterprise/inquire, nenhum literal de caminho o registra, e o crate nao e dependencia do binario servido"'
@@ -8233,9 +8233,9 @@ status: open
 verify: |
   bash -c 'a=crates/corelink-container/src/adapter_cache.rs
   [ -f "$a" ] || { echo "FALHA: adapter_cache.rs sumiu — reavalie o item."; exit 1; }
-  sb=$(grep -c "spawn_blocking" "$a" | tr -d " ")
+  sb=$(grep -c "^[^#/<*-]*spawn_blocking" "$a" | tr -d " ")
   [ "$sb" -gt 0 ] || { echo "FALHA: nao ha mais spawn_blocking no adapter_cache — reavalie."; exit 1; }
-  handle=$(grep -c "with_handle\|current_ledger" "$a" | tr -d " ")
+  handle=$(grep -c "^[^#/<*-]*\(with_handle\|current_ledger\)" "$a" | tr -d " ")
   [ "$handle" = 0 ] || { echo "FALHA: o adapter_cache ja captura handle de ledger — feche ou reescreva o item."; exit 1; }
   echo "aberto: $sb sitio(s) de spawn_blocking no adapter_cache e ZERO captura de handle"'
 verify-means: |
@@ -8573,7 +8573,7 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  grep -rq "region" migrations/d1/0023_residency_check_constraints.sql
+  grep -rq "^[^#/<*-]*region" migrations/d1/0023_residency_check_constraints.sql
 verify-means: |
   open — a STRUCTURAL pin: it passes while the residency constraint migration is
   in the tree, i.e. while the mechanism this item is about still exists. It
@@ -8718,11 +8718,11 @@ verify: |
   bash -c 'w=worker/src/index.ts
   [ -f "$w" ] || { echo "FALHA: index.ts sumiu — reavalie o item."; exit 1; }
   gated=0; grep -qE "no .qother.|sem .qother.|without .qother" "$w" && gated=1
-  grep -q "qother" "$w" || { echo "FALHA: qother nao existe mais no Worker — reavalie o item."; exit 1; }
+  grep -q "^[^#/<*-]*qother" "$w" || { echo "FALHA: qother nao existe mais no Worker — reavalie o item."; exit 1; }
   residuos=0
-  grep -q "oother" crates/corelink-container/src/origin_timing.rs 2>/dev/null && residuos=$((residuos+1))
-  grep -q "qother" "$w" && residuos=$((residuos+1))
-  grep -q "ohop" "$w" && residuos=$((residuos+1))
+  grep -q "^[^#/<*-]*oother" crates/corelink-container/src/origin_timing.rs 2>/dev/null && residuos=$((residuos+1))
+  grep -q "^[^#/<*-]*qother" "$w" && residuos=$((residuos+1))
+  grep -q "^[^#/<*-]*ohop" "$w" && residuos=$((residuos+1))
   [ "$residuos" -ge 2 ] || { echo "FALHA: restam menos de 2 residuos por subtracao — feche ou reescreva o item."; exit 1; }
   echo "aberto: $residuos residuos por subtracao no caminho quente (oother/qother/ohop); qother gated=$gated"'
 verify-means: |
@@ -8860,7 +8860,7 @@ status: open
 verify: |
   bash -c 'doc=docs/internal/ci-runner-fabric-box.md
   [ -f "$doc" ] || { echo "FALHA: o doc da frota sumiu — reavalie o item."; exit 1; }
-  grep -q "runner-probe" "$doc" || { echo "FALHA: o doc nao cita mais runner-probe — feche ou reescreva."; exit 1; }
+  grep -q "^[^#/<*-]*runner-probe" "$doc" || { echo "FALHA: o doc nao cita mais runner-probe — feche ou reescreva."; exit 1; }
   if [ -f .github/workflows/runner-probe.yml ]; then
     echo "FALHA: runner-probe.yml VOLTOU para a main — feche o item (status: done + verify invertido)."; exit 1
   fi
@@ -8944,7 +8944,7 @@ verify: |
   [ -f "$w" ] || { echo "FALHA: secrets-drift.yml sumiu — reavalie o item."; exit 1; }
   grep -qE "^\s+runs-on:.*schedule.*ubuntu-latest" "$w" || {
     echo "FALHA: o braco schedule nao aponta mais para ubuntu-latest — reavalie/feche o item."; exit 1; }
-  grep -q "CC6.1" "$w" || echo "  aviso: a justificativa SOC 2 nao esta mais citada no arquivo"
+  grep -q "^[^#/<*-]*CC6.1" "$w" || echo "  aviso: a justificativa SOC 2 nao esta mais citada no arquivo"
   echo "aberto: o braco schedule ainda roteia para ubuntu-latest sob a justificativa de evidencia SOC 2"'
 verify-means: |
   open — o roteamento por evento continua mandando o run diario para hosted.
@@ -9022,7 +9022,7 @@ status: open
 verify: |
   bash -c 'w=.github/workflows/dependabot-policy.yml
   [ -f "$w" ] || { echo "FALHA: dependabot-policy.yml sumiu — reavalie o item."; exit 1; }
-  grep -q "refs/pull/" "$w" || { echo "FALHA: nao ha mais checkout do merge-ref — feche o item."; exit 1; }
+  grep -q "^[^#/<*-]*refs/pull/" "$w" || { echo "FALHA: nao ha mais checkout do merge-ref — feche o item."; exit 1; }
   grep -qE "^[[:space:]]+run: bash scripts/ci-use-host-toolchain\.sh[[:space:]]*$" "$w" || {
     echo "FALHA: o passo que executa script da arvore checada sumiu — feche o item (verify invertido)."; exit 1; }
   echo "aberto: checkout de refs/pull/N/merge seguido de bash de um script da arvore checada"'
@@ -9206,10 +9206,10 @@ verify: |
   [ -f "$w" ] || { echo "FALHA: $w nao existe — este item pressupoe o gate do backlog; reavalie."; exit 1; }
   g=$(awk "/^concurrency:/{c=1;next} c&&/^[^ ]/{exit} c&&/^ *group *:/{print;exit}" "$w")
   [ -n "$g" ] || { echo "FALHA: nao achei a linha group: no bloco concurrency de $w — o bloco mudou de forma; releia antes de confiar neste portao."; exit 1; }
-  echo "$g" | grep -q "github.event_name" || { echo "REGRESSAO: o grupo voltou a NAO incluir github.event_name — push, schedule e workflow_dispatch na main colapsam no mesmo grupo e o cron do backlog volta a poder morrer calado. grupo=$g"; exit 1; }
-  echo "$g" | grep -q "github.ref" || { echo "REGRESSAO: o grupo escopa por evento mas perdeu o ref — dois PRs distintos passam a cancelar um ao outro dentro do mesmo evento, que e o defeito do #1503 de volta. grupo=$g"; exit 1; }
+  echo "$g" | grep -q "^[^#/<*-]*github.event_name" || { echo "REGRESSAO: o grupo voltou a NAO incluir github.event_name — push, schedule e workflow_dispatch na main colapsam no mesmo grupo e o cron do backlog volta a poder morrer calado. grupo=$g"; exit 1; }
+  echo "$g" | grep -q "^[^#/<*-]*github.ref" || { echo "REGRESSAO: o grupo escopa por evento mas perdeu o ref — dois PRs distintos passam a cancelar um ao outro dentro do mesmo evento, que e o defeito do #1503 de volta. grupo=$g"; exit 1; }
   c=$(awk "/^concurrency:/{c=1;next} c&&/^[^ ]/{exit} c&&/^ *cancel-in-progress *:/{print;exit}" "$w")
-  echo "$c" | grep -q "true" || { echo "nota: cancel-in-progress nao esta mais ligado — sem cancelamento nao ha colisao, entao o item segue fechado por outro caminho ($c)"; exit 0; }
+  echo "$c" | grep -q "^[^#/<*-]*true" || { echo "nota: cancel-in-progress nao esta mais ligado — sem cancelamento nao ha colisao, entao o item segue fechado por outro caminho ($c)"; exit 0; }
   ev=$(awk "/^on:/{o=1;next} o&&/^[^ ]/{exit} o&&/^  [a-z_]+:/{gsub(/[ :]/,\"\");print}" "$w" | tr "\n" " ")
   echo "fechado: grupo=$g escopa por evento E por ref, com cancel ligado, sobre os gatilhos [$ev]"'
 verify-means: |
@@ -9292,13 +9292,13 @@ verify: |
     c=$(awk "/^concurrency:/{c=1;next} c&&/^[^ ]/{exit} c&&/^ *cancel-in-progress *:/{print;exit}" "$f")
     ev=$(awk "/^on:/{o=1;next} o&&/^[^ ]/{exit} o&&/^  [a-z_]+:/{gsub(/[ :]/,\"\");print}" "$f" | tr "\n" " ")
     # Fechada por qualquer um dos tres caminhos, e o verify nao opina sobre qual.
-    if echo "$g" | grep -q "github.event_name"; then
+    if echo "$g" | grep -q "^[^#/<*-]*github.event_name"; then
       # Escopar por evento so vale se o ref continuar la: um grupo com evento e
       # SEM ref serializa todas as noturnas agendadas entre si.
-      echo "$g" | grep -q "github.ref" || { echo "REGRESSAO em $w: o grupo escopa por evento mas perdeu o ref — grupo=$g"; exit 1; }
+      echo "$g" | grep -q "^[^#/<*-]*github.ref" || { echo "REGRESSAO em $w: o grupo escopa por evento mas perdeu o ref — grupo=$g"; exit 1; }
       fechados=$((fechados+1)); continue
     fi
-    echo "$c" | grep -q "true" || { fechados=$((fechados+1)); continue; }
+    echo "$c" | grep -q "^[^#/<*-]*true" || { fechados=$((fechados+1)); continue; }
     echo "$ev" | grep -q schedule || { fechados=$((fechados+1)); continue; }
     echo "$ev" | grep -q workflow_dispatch || { fechados=$((fechados+1)); continue; }
     abertos="$abertos $w"
@@ -10109,7 +10109,7 @@ verify: |
   [ -n "$sel" ] || { echo "FALHA: revoke() nao le mais FROM pat WHERE — a consulta mudou; reavalie."; exit 1; }
   ctl=$(grep -c "principal_id = ?2" "$f")
   [ "$ctl" -ge 2 ] || { echo "FALHA: o controle sumiu — o arquivo usa principal_id = ?2 em apenas $ctl caminho(s); sem controle este portao mede estilo, nao escolha."; exit 1; }
-  if printf "%s\n" "$sel" | grep -q "principal_id"; then
+  if printf "%s\n" "$sel" | grep -q "^[^#/<*-]*principal_id"; then
     echo "FALHA: o SELECT de revoke() ja filtra por principal_id — o reparo aterrissou; feche o item."; exit 1; fi
   echo "aberto: o SELECT de revoke() resolve o alvo so por tenant_id, e o mesmo arquivo usa principal_id = ?2 em $ctl outros caminhos"'
 verify-means: |
@@ -10970,7 +10970,7 @@ verify: |
   grep -qE "^[^#]*Object Lock" "$d" && { n=$((n+1)); det="$det dpa-afirma-object-lock"; }
   grep -qE "^[^#]*BYOK kill-switch" "$s" && { n=$((n+1)); det="$det sla-compromete-kill-switch"; }
   if [ -f "$b" ]; then
-    grep -qE "^[^/]*NOT_IMPLEMENTED" "$b" || { echo "FALHA: byok_admin.rs nao devolve mais NOT_IMPLEMENTED em linha executavel — o BYOK pode ter sido construido; releia o item antes de confiar neste portao."; exit 1; }
+    grep -qE "^[^#/<*-]*NOT_IMPLEMENTED" "$b" || { echo "FALHA: byok_admin.rs nao devolve mais NOT_IMPLEMENTED em linha executavel — o BYOK pode ter sido construido; releia o item antes de confiar neste portao."; exit 1; }
   else
     echo "FALHA: $b sumiu — sem ele nao consigo sustentar que o SLA promete o que nao existe."; exit 1
   fi
@@ -11121,12 +11121,12 @@ status: open
 verify: |
   bash -c 'set -e
   for d in apps/docs marketing legal; do [ -d "$d" ] || { echo "FALHA: $d nao existe — a superficie publicada mudou de lugar; reavalie o item."; exit 1; }; done
-  ctl=$(grep -rlI "CoreLink" apps/docs marketing legal 2>/dev/null | wc -l | tr -d " ")
+  ctl=$(grep -rlI "^[^#/<*-]*CoreLink" apps/docs marketing legal 2>/dev/null | wc -l | tr -d " ")
   [ "$ctl" -ge 50 ] || { echo "FALHA: o controle positivo achou so $ctl arquivos com CoreLink — a varredura nao esta enxergando; instrumento, nao arvore limpa."; exit 1; }
-  byok=$(grep -rlI "BYOK" apps/docs marketing legal 2>/dev/null | wc -l | tr -d " ")
-  buck=$(grep -rlI "Buck2" apps/docs marketing legal 2>/dev/null | wc -l | tr -d " ")
-  fora=$(grep -rlI "Buck2" apps/docs legal 2>/dev/null | wc -l | tr -d " ")
-  pen=$(grep -rlI "pentest" apps/docs marketing legal 2>/dev/null | wc -l | tr -d " ")
+  byok=$(grep -rlI "^[^#/<*-]*BYOK" apps/docs marketing legal 2>/dev/null | wc -l | tr -d " ")
+  buck=$(grep -rlI "^[^#/<*-]*Buck2" apps/docs marketing legal 2>/dev/null | wc -l | tr -d " ")
+  fora=$(grep -rlI "^[^#/<*-]*Buck2" apps/docs legal 2>/dev/null | wc -l | tr -d " ")
+  pen=$(grep -rlI "^[^#/<*-]*pentest" apps/docs marketing legal 2>/dev/null | wc -l | tr -d " ")
   fab=0
   p=marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md
   [ -f "$p" ] && grep -qE "^[^#]*kill-switch RTT" "$p" && fab=1
@@ -11209,7 +11209,7 @@ verify: |
   e=examples/bazel-starter/.bazelrc
   [ -f "$p" ] || { echo "FALHA: $p sumiu — reavalie o item em vez de fecha-lo."; exit 1; }
   [ -f "$e" ] || { echo "FALHA: $e sumiu — sem o controle este portao nao consegue mostrar que a casa conhece a forma correta; reavalie."; exit 1; }
-  grep -qE "^[^#]*credential_helper" "$e" || { echo "FALHA: o exemplo do repo nao usa mais credential helper — o controle mudou; releia antes de confiar neste portao."; exit 1; }
+  grep -qE "^[^#/<*-]*credential_helper" "$e" || { echo "FALHA: o exemplo do repo nao usa mais credential helper — o controle mudou; releia antes de confiar neste portao."; exit 1; }
   vaza=0
   grep -qE "^[^#]*remote_header=Authorization=Bearer" "$p" && vaza=1
   if [ "$vaza" = 0 ]; then
@@ -11306,7 +11306,7 @@ verify: |
   aponta=0
   grep -qE "^[^#]*remote_cache=.*bazel/v2[^/]*$" "$p" && aponta=1
   aconselha=0
-  grep -qE "^[^#]*remote_instance_name" "$p" && aconselha=1
+  grep -qE "^[^#/<*-]*remote_instance_name" "$p" && aconselha=1
   [ "$aponta" = 1 ] || { echo "FALHA: o bloco publicado nao aponta mais --remote_cache para o prefixo /bazel/v2 — o reparo aterrissou; feche o item."; exit 1; }
   echo "aberto: bazel.md manda --remote_cache=.../bazel/v2 (aponta=$aponta) mas o servidor so registra /bazel/v2/{instance}/blobs/... e /bazel/cache/{cas,ac}/{hash}; a pagina ainda aconselha --remote_instance_name=$aconselha, que o transporte HTTP nao transmite"'
 verify-means: |
@@ -11393,15 +11393,15 @@ verify: |
       count=$(grep -cE "^\\|[[:space:]]*\`$m\`[[:space:]]*\\|" "$q" || true)
       [ "$count" -eq 1 ] || { echo "FALHA: $q deve ter exatamente uma linha de tabela para $m (count=$count)"; exit 1; }
     done
-    grep -qiE "read-only|Nur-Lesen|solo lectura|somente leitura" "$q" || { echo "FALHA: $q nao explica o latch read-only"; exit 1; }
-    grep -qiE "failed write|Schreibfehler|fallo de escritura|falha de escrita" "$q" || { echo "FALHA: $q nao liga falha de escrita ao latch"; exit 1; }
+    grep -qiE "^[^#/<*-]*(read-only|Nur-Lesen|solo lectura|somente leitura)" "$q" || { echo "FALHA: $q nao explica o latch read-only"; exit 1; }
+    grep -qiE "^[^#/<*-]*(failed write|Schreibfehler|fallo de escritura|falha de escrita)" "$q" || { echo "FALHA: $q nao liga falha de escrita ao latch"; exit 1; }
     grep -q "Cache errors" "$q" || { echo "FALHA: $q nao manda conferir Cache errors"; exit 1; }
     grep -q "sccache --show-stats" "$q" || { echo "FALHA: $q nao aponta para --show-stats"; exit 1; }
     grep -q "\\.sccache_check" "$q" || { echo "FALHA: $q nao identifica a chave particular da sonda"; exit 1; }
-    sed -n "/\\.sccache_check/,+4p" "$q" | grep -qiE "probe-only|ausschließlich für die Sonde bestimmt|exclusiva de la sonda|exclusiva da sonda" || {
+    sed -n "/\\.sccache_check/,+4p" "$q" | grep -qiE "^[^#/<*-]*(probe-only|ausschließlich für die Sonde bestimmt|exclusiva de la sonda|exclusiva da sonda)" || {
       echo "FALHA: $q nao mantém .sccache_check exclusiva da sonda"; exit 1;
     }
-    if sed -n "/\\.sccache_check/,+4p" "$q" | grep -qiE "internal cleanup|internal-only|not as a public|nicht nur intern|nicht als öffentliche|no solo interna|no como un método público|limpieza de control interno|não apenas interna|não como método público"; then
+    if sed -n "/\\.sccache_check/,+4p" "$q" | grep -qiE "^[^#/<*-]*(internal cleanup|internal-only|not as a public|nicht nur intern|nicht als öffentliche|no solo interna|no como un método público|limpieza de control interno|não apenas interna|não como método público)"; then
       echo "FALHA: $q rebaixa DELETE a cleanup interno em vez de publicar a operação"; exit 1
     fi
   done
@@ -11409,18 +11409,18 @@ verify: |
   # capability proof (B-155); every method must have a live branch/arm.
   runtime=$(sed -E "/^[[:space:]]*\\/\\//d; /\\/\\*/,/\\*\\//d" "$c")
   [ -n "$runtime" ] || { echo "FALHA: runtime vazio apos remover comentarios"; exit 1; }
-  grep -qE "Method::GET" <<<"$runtime" || { echo "FALHA: GET nao aparece no runtime"; exit 1; }
-  grep -qE "Method::PUT" <<<"$runtime" || { echo "FALHA: PUT nao aparece no runtime"; exit 1; }
-  grep -qE "Method::HEAD" <<<"$runtime" || { echo "FALHA: HEAD nao aparece no runtime"; exit 1; }
+  grep -qE "^[^#/<*-]*Method::GET" <<<"$runtime" || { echo "FALHA: GET nao aparece no runtime"; exit 1; }
+  grep -qE "^[^#/<*-]*Method::PUT" <<<"$runtime" || { echo "FALHA: PUT nao aparece no runtime"; exit 1; }
+  grep -qE "^[^#/<*-]*Method::HEAD" <<<"$runtime" || { echo "FALHA: HEAD nao aparece no runtime"; exit 1; }
   grep -qE "req\\.method\\(\\)\\.as_str\\(\\) == .*PROPFIND" <<<"$runtime" || { echo "FALHA: PROPFIND nao aparece em branch executavel"; exit 1; }
   grep -qE "req\\.method\\(\\)\\.as_str\\(\\) == .*MKCOL" <<<"$runtime" || { echo "FALHA: MKCOL nao aparece em branch executavel"; exit 1; }
   grep -qE "if req\\.method\\(\\) == Method::DELETE" <<<"$runtime" || { echo "FALHA: DELETE nao aparece em branch executavel"; exit 1; }
   grep -qE "async fn handle_delete" <<<"$runtime" || { echo "FALHA: handler DELETE sumiu"; exit 1; }
-  grep -qE "resolve_with_capability" <<<"$runtime" || { echo "FALHA: DELETE perdeu auth de capacidade"; exit 1; }
-  grep -qE "normal_pat_can_still_delete_an_artifact|delete_existing_key_is_204_and_removes_it" "$c" || { echo "FALHA: sem teste funcional de DELETE no runtime"; exit 1; }
+  grep -qE "^[^#/<*-]*resolve_with_capability" <<<"$runtime" || { echo "FALHA: DELETE perdeu auth de capacidade"; exit 1; }
+  grep -qE "^[^#/<*-]*(normal_pat_can_still_delete_an_artifact|delete_existing_key_is_204_and_removes_it)" "$c" || { echo "FALHA: sem teste funcional de DELETE no runtime"; exit 1; }
   [ -f package.json ] || { echo "FALHA: package.json ausente; nao ha contrato de dependencias reproduzivel"; exit 1; }
   [ -f pnpm-lock.yaml ] || { echo "FALHA: pnpm-lock.yaml ausente; nao ha lockfile hermetico"; exit 1; }
-  grep -q "packageManager" package.json && grep -q "pnpm@10.32.1" package.json || { echo "FALHA: package.json nao fixa packageManager pnpm@10.32.1"; exit 1; }
+  grep -q "^[^#/<*-]*packageManager" package.json && grep -q "pnpm@10.32.1" package.json || { echo "FALHA: package.json nao fixa packageManager pnpm@10.32.1"; exit 1; }
   command -v pnpm >/dev/null 2>&1 || { echo "FALHA: pnpm@10.32.1 necessario para o contrato Vitest"; exit 1; }
   [ "$(pnpm --version)" = "10.32.1" ] || { echo "FALHA: pnpm $(pnpm --version) detectado; esperado 10.32.1"; exit 1; }
   pnpm install --frozen-lockfile --offline --ignore-scripts >/dev/null 2>&1 || { echo "FALHA: pnpm install --frozen-lockfile --offline nao conseguiu preparar as dependencias; ausencias nao podem virar sucesso"; exit 1; }
@@ -11482,7 +11482,7 @@ verify: |
   grep -q "create_pat_response(state, headers, body.name, body.scopes)" "$route" || { echo "FALHA: dashboard alias não converge"; exit 1; }
   grep -q "PAT_ISSUE_ENDPOINT_ID: &str = \"pat-issue\"" "$route" || { echo "FALHA: pat-issue bucket ausente"; exit 1; }
   grep -q "try_acquire(bucket_tenant, bucket_key, 1, limiter_now_ms)" "$route" || { echo "FALHA: limiter não precede mint"; exit 1; }
-  grep -q "InMemoryTokenBucketRateLimiter::new" "$route" || { echo "FALHA: o limiter em memória não está mais no caminho — reavalie e feche B-160 com provas duráveis"; exit 1; }
+  grep -q "^[^#/<*-]*InMemoryTokenBucketRateLimiter::new" "$route" || { echo "FALHA: o limiter em memória não está mais no caminho — reavalie e feche B-160 com provas duráveis"; exit 1; }
   echo "aberto: aliases convergem, mas o limiter pat-issue ainda é local ao processo e reinicia com a instância"'
 verify-means: |
   open — rota, autenticação e aliases estão presentes, mas o verificador rejeita a construção
@@ -11850,7 +11850,7 @@ verify: |
   [ -f "$n" ] || { echo "FALHA: $n sumiu — reavalie o item."; exit 1; }
   bloco=$(awk "/async fn check_quota/{c=1} c{print} c&&/^}/{exit}" "$d" | grep -v "^[[:space:]]*//")
   [ -n "$bloco" ] || { echo "FALHA: nao recortei check_quota — a funcao mudou de forma; releia antes de confiar neste portao."; exit 1; }
-  ctl=0; grep -qE "^[^/]*COR_NET_UNREACHABLE" "$d" && ctl=1
+  ctl=0; grep -qE "^[^#/<*-]*COR_NET_UNREACHABLE" "$d" && ctl=1
   [ "$ctl" = 1 ] || { echo "FALHA: o controle sumiu — o doctor nao usa mais codigo de erro proprio para rede; sem contraste este portao mede estilo, nao escolha."; exit 1; }
   arm=$(printf "%s\n" "$bloco" | awk "/Err\(_\)/{c=1} c{print}")
   [ -n "$arm" ] || { echo "FALHA: check_quota nao tem mais braco Err(_) — a funcao mudou de forma; releia antes de confiar neste portao."; exit 1; }
