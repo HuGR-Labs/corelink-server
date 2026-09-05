@@ -22,8 +22,10 @@ on:
       - 'scripts/validate_okf.py'
       - 'scripts/okf_git_batch.py'
       - 'scripts/okf_resolve_abbrev_cites.py'
+      - 'scripts/okf_shift_citations.py'
       - 'tests/okf/**'
       - 'tests/test_okf_resolve_abbrev_cites.py'
+      - 'tests/test_okf_shift_citations.py'
   push:
     branches: [main]
     paths:
@@ -35,8 +37,10 @@ on:
       - 'scripts/validate_okf.py'
       - 'scripts/okf_git_batch.py'
       - 'scripts/okf_resolve_abbrev_cites.py'
+      - 'scripts/okf_shift_citations.py'
       - 'tests/okf/**'
       - 'tests/test_okf_resolve_abbrev_cites.py'
+      - 'tests/test_okf_shift_citations.py'
 
 permissions:
   contents: read
@@ -85,6 +89,11 @@ jobs:
         # Exit 1 is a real finding and MUST fail this job; exit 2 means the
         # scan itself was not trustworthy and is likewise fatal.
         run: python3 scripts/okf_resolve_abbrev_cites.py
+
+      - name: Test content-verified citation shifter (B-124)
+        # Hermetic tests cover a real line insertion, the mixed hand-edit guard,
+        # and ambiguous content.  A second invocation must never double-shift.
+        run: python3 tests/test_okf_shift_citations.py
 
       - name: Validator acceptance suite (good + per-check bad fixtures)
         # Gates the validator's OWN correctness — proves every contract check

@@ -8347,15 +8347,20 @@ in this repo (replacing `file:N` corrupts a neighbouring `file:N-M`).
 id: B-124
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  ! test -x scripts/okf_shift_citations.py
+  test -x scripts/okf_shift_citations.py \
+    && python3 tests/test_okf_shift_citations.py
 verify-means: |
-  open — passes while there is no repo-owned, idempotent citation shifter, so
-  each session writes its own throwaway and re-meets this hazard. Closes when a
-  shared tool exists that is safe to run twice. It does NOT prove any concept
-  is currently double-shifted; that is what content verification is for.
-last-verified: 2026-08-30
+  done — the repo-owned executable resolves citation destinations by matching
+  the base file's authored content, refuses a file whose citations already
+  differ from base (the mixed hand-edit/programmatic case), and applies all
+  rewrites atomically. The hermetic suite mutates a source with a real line
+  insertion, checks content-verified output, proves a second invocation cannot
+  double-shift it, and covers hand-edited and ambiguous inputs. It does NOT
+  assert that any existing concept is currently wrong; the OKF validator does
+  that separately.
+last-verified: 2026-09-05
 ```
 
 ### B-125 — the audit chain seals 200 rows/hour, so evidence lags the event by hours
