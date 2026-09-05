@@ -16,10 +16,9 @@ tags: ["runbook", "storage", "r2", "inmemory", "betterstack", "pagerduty", "sile
 
 # RB-STORAGE-FALLBACK — Container fell back to InMemory storage
 
-> **Status:** ACTIVE, operator-triggered. Historical BetterStack monitor `4467865`
-> is retired by B-082 because anonymous `/_health/container` redacts storage.
-> Confirm the condition with the authenticated
-> `/_health/container/authenticated` probe below.
+> **Status:** ACTIVE, operator-triggered. The historical public storage alert
+> is retired because anonymous health redacts storage. Confirm the condition
+> with the authenticated probe below.
 >
 > **Severity:** P1 — silent data-loss risk. Writes accepted by the container are
 > not persisted to R2. No client-visible error is returned, so this degrades
@@ -29,37 +28,35 @@ tags: ["runbook", "storage", "r2", "inmemory", "betterstack", "pagerduty", "sile
 
 ## 1. Trigger conditions
 
-This runbook is opened when a protected operator probe reports:
+Open this runbook when a protected operator probe reports an in-memory storage
+backend:
 
-- `GET /_health/container/authenticated` returns HTTP 200 **and**
-- The response body contains `"storage":"inmemory"`.
+- The authenticated health request returns HTTP 200.
+- The response reports `storage` as `inmemory`.
 
-The anonymous `/_health/container` endpoint intentionally returns only safe
-liveness fields and is not a storage signal.
-
-The container initialization sequence tries R2 first; if R2 credentials are
-missing or invalid, it silently falls back to `InMemoryStorage`. All writes
-succeed but nothing persists across restarts.
+The anonymous health endpoint intentionally returns only safe liveness fields
+and is not a storage signal. The container initialization sequence tries R2
+first; if R2 credentials are missing or invalid, it silently falls back to
+`InMemoryStorage`. All writes succeed but nothing persists across restarts.
 
 ## 2. Diagnosis
 
 ### 2.1 Confirm the active storage backend
 
+Set `CORELINK_API_ORIGIN` to the current API origin in the protected operator
+shell. The dedicated admin key must be supplied through the header, never in a
+URL or query string.
+
 ```sh
+AUTH_HEALTH_URL="${CORELINK_API_ORIGIN:?set the current API origin}/_health/container/authenticated"
 curl -sf \
   -H "X-Corelink-Internal-Auth: $CORELINK_ADMIN_AUTH_KEY" \
-  https://corelink-api.humangr.com/_health/container/authenticated | python3 -m json.tool
+  "$AUTH_HEALTH_URL" | python3 -m json.tool
 ```
 
-Expected healthy response:
-```json
-{"status": "ok", "storage": "r2"}
-```
+Expected healthy response: `.status == "ok"` and `.storage == "r2"`.
 
-Degraded response that triggered this page:
-```json
-{"status": "ok", "storage": "inmemory"}
-```
+The degraded response that triggers this page has `.storage == "inmemory"`.
 
 ### 2.2 Check R2 secrets on both workers
 
@@ -137,18 +134,19 @@ npx wrangler deploy --env prod
 
 ```sh
 # Poll until storage=r2 is confirmed (runs every 10s, up to 3 minutes)
+AUTH_HEALTH_URL="${CORELINK_API_ORIGIN:?set the current API origin}/_health/container/authenticated"
 for i in $(seq 1 18); do
   RESP=$(curl -sf \
     -H "X-Corelink-Internal-Auth: $CORELINK_ADMIN_AUTH_KEY" \
-    https://corelink-api.humangr.com/_health/container/authenticated)
+    "$AUTH_HEALTH_URL")
   echo "$RESP"
-  echo "$RESP" | grep -q '"storage":"r2"' && { echo "RECOVERED"; break; }
+  echo "$RESP" | jq -e '.storage == "r2"' >/dev/null && { echo "RECOVERED"; break; }
   sleep 10
 done
 ```
 
-The protected probe is the source of truth after recovery. The retired
-BetterStack monitor must not be used to auto-resolve this condition.
+The protected probe is the source of truth after recovery. The retired public
+alert must not be used to auto-resolve this condition.
 
 ## 4. Escalation
 
@@ -157,35 +155,20 @@ BetterStack monitor must not be used to auto-resolve this condition.
 | Secrets exist but R2 still fails after redeploy | Escalate to Cloudflare support; R2 regional incident |
 | R2 bucket deleted or misconfigured | Escalate to Gustavo Schneiter immediately — bucket recreation is a data-loss event |
 | InMemory was active for > 30 min | Audit what writes landed in that window; those objects are lost — run postmortem per `RB-POSTMORTEM-PROCESS.md` |
-| Historical monitor `4467865` | Do not use it as a storage signal; anonymous health redacts `storage` |
+| Historical public storage alert is encountered | Do not use it as a storage signal; use the authenticated probe |
 
-## 5. Historical BetterStack record
+## 5. Historical alert record
 
-Monitor `4467865` was created on 2026-05-30 against the anonymous
-`/_health/container` URL with keyword `"storage":"r2"`; its status-page resource
-was `8890128` (API section, page `247652`). This is historical evidence only.
-The monitor cannot carry `CORELINK_ADMIN_AUTH_KEY`, so it must not be enabled or
-used for alerting after B-082. Any alerting integration must invoke the
-authenticated probe through a protected secret-bearing system.
+A BetterStack storage check was created on 2026-05-30 against an anonymous
+container-health response and a body marker. Its status-page entry and alert
+configuration are historical evidence only. The anonymous response cannot
+carry `CORELINK_ADMIN_AUTH_KEY`, so the check must not be enabled or used for
+alerting. Any alerting integration must invoke the authenticated probe through
+a protected secret-bearing system.
 
-## 6. Historical monitor configuration summary
+## 6. Related documents
 
-| Field | Value |
-|---|---|
-| Monitor ID | `4467865` |
-| URL | `https://corelink-api.humangr.com/_health/container` |
-| Type | `keyword` (body must contain required keyword) |
-| Required keyword | `"storage":"r2"` |
-| Alert condition | Historical only; anonymous response redacts storage |
-| Check frequency | 180 s (plan cap; 60 s was requested) |
-| Regions | us, eu, as, au |
-| Status page resource | `8890128` under section "API" (page 247652) |
-| policy_id | `null` (historical record) |
-| Created at | 2026-05-30T18:52:57Z |
-
-## 7. Related documents
-
-- `docs/operator/storage-backing-alert-2026-05-30.md` — creation log and wiring details
-- `docs/operator/betterstack-state-2026-05-29.md` — BetterStack account state (existing monitor `4466381`)
+- `docs/operator/storage-backing-alert-2026-05-30.md` — historical record and current probe
+- `docs/operator/betterstack-state-2026-05-29.md` — BetterStack account state
 - `specs/_runbooks/RB-SECRETS-DRIFT.md` — secret drift detection and rotation runbook
-- `specs/_audits/2026-05-28-multimodel-prod-readiness-audit.md` — prod readiness audit noting wiring gap
+- `specs/_audits/2026-05-28-multimodel-prod-readiness-audit.md` — prod readiness audit
