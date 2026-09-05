@@ -36,13 +36,9 @@ on:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
 
-  # Manual trigger for ops/re-sign scenarios
+  # Manual trigger for ops/re-sign scenarios. Select the existing release tag
+  # in the GitHub dispatch UI; a branch dispatch is rejected by the preflight.
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Release tag to sign (e.g. v0.1.0)'
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -80,6 +76,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if ! [[ "${GITHUB_REF:-}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error title=cosign-sign cannot run::release signing requires dispatching or pushing a vMAJOR.MINOR.PATCH tag; branch dispatches are refused."
+            exit 1
+          fi
           command -v docker >/dev/null 2>&1 || {
             echo "::error title=cosign-sign cannot run (Docker-compatible backend)::docker CLI is unavailable on this runner."
             exit 1

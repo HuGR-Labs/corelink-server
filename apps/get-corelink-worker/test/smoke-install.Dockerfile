@@ -10,6 +10,6 @@ ENV CORELINK_GET_URL=https://corelink-get.humangr.com
 # real install path. DS-0002 is path-scoped-suppressed in .trivyignore.yaml
 # (ephemeral test image, never deployed). NOTE: image-level findings can't be
 # inline-ignored, hence the ignorefile.
-# The workflow supplies an ephemeral, non-credential probe token for the
-# unauthenticated install leg. There is deliberately no token default here:
-# missing credentials must be visible instead of being mistaken for evidence.
+# The workflow passes the real canary PAT explicitly at runtime. This image has
+# no token default or credential-free path: missing credentials must remain
+# visible instead of being mistaken for evidence.
