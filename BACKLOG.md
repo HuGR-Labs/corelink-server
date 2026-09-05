@@ -8755,7 +8755,7 @@ last-verified: 2026-08-30
 
 O [B-121] entregou o comparador `scripts/validate_api_surface.py`. Ele agora cobre
 `crates/`, `worker/src` e os Workers irmãos sob `apps/**`, cujo despacho é por
-`url.pathname`. O extrator percorre todos os TypeScript de produção sob `apps/`, e a lane
+`url.pathname`. O extrator percorre todos os TypeScript/TSX de produção sob `apps/`, e a lane
 dispara em qualquer mudança em `apps/**`; uma rota nova não pode ficar invisível por
 esquecimento de adicionar um diretório a uma allowlist.
 
@@ -8776,7 +8776,11 @@ B-130, portanto o alcance foi fechado sem transformar o achado em um falso verde
 O extrator de apps é um segundo formato de registro (despacho por `url.pathname`, não
 registro axum), e a lane tem o filtro amplo `apps/**`. O self-test exige a rota conhecida
 `/v1/event`, e a mutação de uma rota literal em um Worker transforma o resultado em
-`MISSING_DOC` com `apps/...:linha`.
+`MISSING_DOC` com `apps/...:linha`. Além do extrator, um census lexical percorre todo
+`apps/**/*.{ts,tsx}` e exige que cada token vivo `.pathname` seja consumido por uma forma
+de dispatch suportada, por uma allowlist exata de arquivo + expressão não-dispatch, ou
+vire `unsupported` fail-closed. Comentários, strings e os fixtures `test/spec/Playwright/
+e2e` (com casefold, inclusive `.SPEC.TSX`) não entram no census.
 
 **O que este item NÃO decide:** se `/v1/event` e `/v1/digest/preview` *devem* estar na spec
 pública ou se são superfície interna de telemetria. O comparador faz a acusação e o ledger
@@ -8796,6 +8800,9 @@ verify: |
   grep -qE "^ *- \"apps/\*\*\"" .github/workflows/api-surface-parity.yml || { echo "FALHA: a lane nao dispara em apps/**."; exit 1; }
   grep -q "def app_mutation_self_test" "$s" || { echo "FALHA: mutacao end-to-end ausente."; exit 1; }
   grep -q "TemporaryDirectory" "$s" || { echo "FALHA: mutacao nao usa arvore temporaria."; exit 1; }
+  grep -q "APP_TYPESCRIPT_SUFFIXES" "$s" || { echo "FALHA: census nao inclui TSX."; exit 1; }
+  grep -q "def _live_pathname_tokens" "$s" || { echo "FALHA: census lexical ausente."; exit 1; }
+  grep -q "APP_NON_DISPATCH_ALLOWLIST" "$s" || { echo "FALHA: allowlist exata ausente."; exit 1; }
   raw=$(python3 "$s" --strict 2>&1) || true
   for p in "/v1/event" "/v1/digest/preview"; do
     printf "%s\n" "$raw" | grep -E "MISSING_DOC +.*${p}$" >/dev/null || { echo "FALHA: strict nao acusa ${p}."; exit 1; }
@@ -8813,8 +8820,10 @@ verify-means: |
   `__tests__`, `tests`, `e2e` e `playwright`) não entram no inventário de produção.
 
   Mutações controláveis cobrem igualdade reversa, constantes, templates dinâmicos,
-  `startsWith` e `switch` em arquivos inseridos numa árvore `apps/` temporária. A
-  extração real e a comparação crua (`--strict`) são exigidas: a literal
+  `!==`, `.includes`, `startsWith`, `switch`, uma rota `.tsx` e um fixture
+  `SPEC.TSX` em arquivos inseridos numa árvore `apps/` temporária. O census lexical
+  também prova que comentários, strings e interpolação literal não viram tokens.
+  A extração real e a comparação crua (`--strict`) são exigidas: a literal
   `/v1/b130-mutation` vira `MISSING_DOC`, enquanto as formas não modeladas chegam ao
   census fail-closed. Remover a literal conhecida ou quebrar as exclusões de
   `test/`, `spec/`, `Playwright/` e equivalentes faz o self-test reprovar, evitando
@@ -8822,7 +8831,7 @@ verify-means: |
 
   O status não afirma que as rotas foram documentadas: essa decisão contratual permanece
   pendente e está visível no ledger B-130, que impede um falso fechamento.
-last-verified: 2026-08-31
+last-verified: 2026-09-05
 ```
 
 ### B-131 — o doc da frota manda re-rodar uma sonda que nao existe mais

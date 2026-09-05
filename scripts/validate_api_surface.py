@@ -20,14 +20,14 @@ The served surface is `crates/`, `worker/src`, and the Worker entrypoints under
     `apps/**` (the source file is retained for an actionable finding).
 
 The app scan is intentionally structural and closed-world: it examines every
-non-test TypeScript file under `apps/`, rather than an allowlist of today's
-Worker names. Static exact dispatch is extracted, while every unsupported
-pathname dispatch form (prefix, switch, dynamic template, or unresolved
-constant) is reported as a hard failure for public `/v1` paths. A newly added
-Worker route therefore cannot be hidden by forgetting to add its directory or
-by changing its dispatch spelling. Non-API app paths remain outside the
-OpenAPI contract through the same explicit public-path policy used for Rust
-routes below. `/v1/event` is currently served by
+non-test TypeScript/TSX file under `apps/`, rather than an allowlist of today's
+Worker names. Static exact dispatch is extracted, while a lexical census
+consumes every live `.pathname` token not handled by a supported dispatch form
+or an exact non-dispatch allowlist entry. A newly added Worker route therefore
+cannot be hidden by forgetting to add its directory, changing its dispatch
+spelling, or using an operator the matcher does not know. Non-API app paths
+remain outside the OpenAPI contract through the same explicit public-path
+policy used for Rust routes below. `/v1/event` is currently served by
 `apps/analytics-worker/src/index.ts` and is absent from the spec; the ledger
 keeps that finding visible until the contract owner documents or excludes it.
 
@@ -57,6 +57,7 @@ import argparse
 import re
 import tempfile
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -65,6 +66,7 @@ OPENAPI = REPO / "openapi" / "corelink-v1.yaml"
 CRATES = REPO / "crates"
 WORKER = REPO / "worker" / "src"
 APPS = REPO / "apps"
+APP_TYPESCRIPT_SUFFIXES = {".ts", ".tsx"}
 
 HTTP_METHODS = {
     "get",
@@ -338,10 +340,18 @@ def is_test_path(path: Path) -> bool:
         or "e2e" in parts
         or name.startswith("test_")
         or name.startswith("tests")
-        or name.endswith(".test.ts")
-        or name.endswith(".spec.ts")
+        or name.endswith((".test.ts", ".spec.ts", ".test.tsx", ".spec.tsx"))
         or "_tests" in Path(name).stem
     )
+
+
+def iter_app_typescript() -> Iterator[Path]:
+    """Yield every TypeScript source file in ``apps/``, including TSX."""
+    if not APPS.is_dir():
+        return
+    for file in sorted(APPS.rglob("*")):
+        if file.is_file() and file.suffix.casefold() in APP_TYPESCRIPT_SUFFIXES:
+            yield file
 
 
 def collect_rust_routes() -> dict[str, set[str]]:
@@ -461,7 +471,7 @@ def collect_app_routes() -> dict[str, set[str]]:
     routes: dict[str, set[str]] = {}
     if not APPS.is_dir():
         return routes
-    for file in sorted(APPS.rglob("*.ts")):
+    for file in iter_app_typescript():
         if is_test_path(file):
             continue
         try:
@@ -597,6 +607,215 @@ def is_app_path_term(term: str, aliases: set[str]) -> bool:
     return term.endswith(".pathname") or term in aliases
 
 
+def _skip_quoted(src: str, start: int, quote: str) -> int:
+    """Return the first offset after a JS string literal."""
+    i = start + 1
+    while i < len(src):
+        if src[i] == "\\":
+            i += 2
+        elif src[i] == quote:
+            return i + 1
+        else:
+            i += 1
+    return len(src)
+
+
+def _live_pathname_tokens(src: str) -> list[tuple[int, str]]:
+    """Find live ``.pathname`` tokens, including template interpolations.
+
+    A regex over source text cannot distinguish a route token from a comment or
+    string fixture.  This small lexer only needs JS lexical boundaries: normal
+    strings are skipped, and a template's ``${...}`` expression is scanned as
+    code while its literal portions remain inert.  Offsets are preserved so a
+    dispatch matcher can consume the exact token it recognized.
+    """
+    tokens: list[tuple[int, str]] = []
+    n = len(src)
+
+    def scan_template(i: int) -> int:
+        while i < n:
+            if src[i] == "\\":
+                i += 2
+            elif src[i] == "`":
+                return i + 1
+            elif src.startswith("${", i):
+                i = scan_code(i + 2, stop_at_closing_brace=True)
+            else:
+                i += 1
+        return n
+
+    def scan_code(i: int, stop_at_closing_brace: bool = False) -> int:
+        brace_depth = 0
+        while i < n:
+            if src.startswith("//", i):
+                newline = src.find("\n", i + 2)
+                i = n if newline == -1 else newline + 1
+                continue
+            if src.startswith("/*", i):
+                end = src.find("*/", i + 2)
+                i = n if end == -1 else end + 2
+                continue
+            if src[i] in "\"'":
+                i = _skip_quoted(src, i, src[i])
+                continue
+            if src[i] == "`":
+                i = scan_template(i + 1)
+                continue
+            if src[i] == "{":
+                brace_depth += 1
+                i += 1
+                continue
+            if src[i] == "}":
+                if stop_at_closing_brace and brace_depth == 0:
+                    return i + 1
+                brace_depth = max(0, brace_depth - 1)
+                i += 1
+                continue
+            if src.startswith(".pathname", i):
+                end = i + len(".pathname")
+                if end == n or not (src[end].isalnum() or src[end] in "_$"):
+                    tokens.append((i, normalize_path_expression(src, i)))
+                i = end
+                continue
+            i += 1
+        return n
+
+    scan_code(0)
+    return tokens
+
+
+def _identifier_start(src: str, end: int) -> int | None:
+    end = end
+    while end > 0 and src[end - 1].isspace():
+        end -= 1
+    i = end
+    while i > 0 and (src[i - 1].isalnum() or src[i - 1] in "_$"):
+        i -= 1
+    return i if i < end else None
+
+
+def _member_chain_start(src: str, end: int) -> int | None:
+    """Return the start of an identifier/member chain ending before ``end``."""
+    end = end
+    start = _identifier_start(src, end)
+    if start is None:
+        return None
+    while True:
+        before = start
+        while before > 0 and src[before - 1].isspace():
+            before -= 1
+        if before == 0 or src[before - 1] != ".":
+            return start
+        previous = _identifier_start(src, before - 1)
+        if previous is None:
+            return start
+        start = previous
+
+
+def normalize_path_expression(src: str, dot_offset: int) -> str:
+    """Canonicalize the receiver expression immediately before ``.pathname``."""
+    end = dot_offset
+    while end > 0 and src[end - 1].isspace():
+        end -= 1
+    if end > 0 and src[end - 1] == ")":
+        # Calls such as ``new URL(...).pathname`` are non-dispatch allowlist
+        # entries.  Keep the whole immediate call, not an outer open call.
+        # Find the opening paren by balancing from the nearest expression
+        # boundary; this is intentionally lexical and never interprets route
+        # operators.
+        depth = 0
+        i = end - 1
+        while i >= 0:
+            if src[i] == ")":
+                depth += 1
+            elif src[i] == "(":
+                depth -= 1
+                if depth == 0:
+                    callee_start = _member_chain_start(src, i)
+                    if callee_start is not None:
+                        before = callee_start
+                        while before > 0 and src[before - 1].isspace():
+                            before -= 1
+                        if (
+                            before >= 3
+                            and src[before - 3:before] == "new"
+                            and (before == 3 or not (src[before - 4].isalnum() or src[before - 4] in "_$"))
+                        ):
+                            callee_start = before - 3
+                        return re.sub(r"\s+", "", src[callee_start:end]) + ".pathname"
+                    break
+            i -= 1
+    start = _member_chain_start(src, end)
+    if start is None:
+        return ".pathname"
+    return re.sub(r"\s+", "", src[start:end]) + ".pathname"
+
+
+# These are deliberately exact source identities, not directory or filename
+# heuristics.  They are URL/path reads in UI, docs tooling, or assignment code,
+# not Worker request dispatch.  Any new expression must be modeled or fail.
+APP_NON_DISPATCH_ALLOWLIST: dict[tuple[str, str], str] = {
+    ("apps/admin-ui/src/middleware.ts", "req.nextUrl.pathname"): "Next middleware page matching",
+    ("apps/admin-ui/src/components/UpgradeButton.tsx", "window.location.pathname"): "browser UI URL read",
+    ("apps/docs/worker/index.ts", "dest.pathname"): "docs asset URL rewrite",
+    ("apps/docs/worker/index.ts", "url.pathname"): "docs asset URL rewrite",
+}
+for _docs_script in (
+    "i18n-coverage.ts",
+    "export-xliff.ts",
+    "i18n-coverage-report.ts",
+    "mt-stub-seed.ts",
+    "import-xliff.ts",
+    "translation-quality-check.ts",
+):
+    APP_NON_DISPATCH_ALLOWLIST[
+        (f"apps/docs/scripts/{_docs_script}", 'newURL(".",import.meta.url).pathname')
+    ] = "docs filesystem tooling"
+
+
+def app_dispatch_spans(src: str, aliases: set[str]) -> list[tuple[int, int]]:
+    """Spans whose pathname token was consumed by a modeled dispatch form."""
+    spans: list[tuple[int, int]] = []
+    for match in app_comparisons(src):
+        if is_app_path_term(match.group("left"), aliases) or is_app_path_term(match.group("right"), aliases):
+            spans.append((match.start(), match.end()))
+    for match in APP_STARTS_WITH.finditer(src):
+        if is_app_path_term(match.group("term"), aliases):
+            spans.append((match.start(), match.end()))
+    for switch in APP_SWITCH.finditer(src):
+        if is_app_path_term(switch.group("term"), aliases):
+            spans.append((switch.start(), switch.end()))
+    return spans
+
+
+def collect_app_pathname_census() -> list[str]:
+    """Fail closed on every live app pathname token not otherwise consumed."""
+    findings: list[str] = []
+    for file in iter_app_typescript():
+        if is_test_path(file):
+            continue
+        try:
+            raw = file.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if ".pathname" not in raw:
+            continue
+        src = strip_ts_comments(raw)
+        aliases = app_path_aliases(src)
+        spans = app_dispatch_spans(src, aliases)
+        relative = str(file.relative_to(REPO))
+        for offset, expression in _live_pathname_tokens(raw):
+            if any(start <= offset < end for start, end in spans):
+                continue
+            if (relative, expression) in APP_NON_DISPATCH_ALLOWLIST:
+                continue
+            line = raw.count("\n", 0, offset) + 1
+            findings.append(
+                f"{relative}:{line}: unsupported app pathname token {expression}"
+            )
+    return sorted(set(findings))
+
+
 def collect_app_unsupported() -> list[str]:
     """Return source locations for app pathname dispatches we cannot model.
 
@@ -609,7 +828,7 @@ def collect_app_unsupported() -> list[str]:
     findings: list[str] = []
     if not APPS.is_dir():
         return findings
-    for file in sorted(APPS.rglob("*.ts")):
+    for file in iter_app_typescript():
         if is_test_path(file):
             continue
         try:
@@ -664,6 +883,7 @@ def collect_app_unsupported() -> list[str]:
                 value = app_static_value(case.group("value"), constants)
                 if value is None or value.startswith("/v1"):
                     record(case, "switch", value)
+    findings.extend(collect_app_pathname_census())
     return sorted(set(findings))
 
 
@@ -778,25 +998,42 @@ def app_mutation_self_test() -> list[str]:
                 "dynamic.ts": (
                     'if (url.pathname === `/v1/b130/${requestId}`) return response;\n'
                 ),
+                "not-equal.ts": (
+                    "if (url.pathname !== routeFromConfig()) return notFound;\n"
+                ),
+                "includes.ts": (
+                    'if (url.pathname.includes("/v1/b130-hidden")) return response;\n'
+                ),
                 "prefix.ts": (
                     'if (url.pathname.startsWith("/v1/b130/")) return response;\n'
                 ),
                 "switch.ts": (
                     'switch (url.pathname) { case "/v1/b130-switch": return response; }\n'
                 ),
+                "tsx-route.tsx": (
+                    'if (url.pathname === "/v1/b130-tsx") return response;\n'
+                ),
                 "unresolved.ts": (
                     "const UNKNOWN_ROUTE = routeFromConfig();\n"
                     "if (url.pathname === UNKNOWN_ROUTE) return response;\n"
+                ),
+                "ignored.SPEC.TSX": (
+                    'if (url.pathname === "/v1/b130-excluded") return response;\n'
+                ),
+                "lexical.ts": (
+                    '// url.pathname in a comment\n'
+                    'const text = "url.pathname";\n'
+                    'const template = `.pathname`;\n'
                 ),
             }
             for name, source in fixtures.items():
                 (apps / name).write_text(source, encoding="utf-8")
             for directory, name in (
-                ("test", "test-route.ts"),
-                ("spec", "spec-route.ts"),
-                ("Playwright", "playwright-route.ts"),
-                ("__tests__", "tests-route.ts"),
-                ("e2e", "e2e-route.ts"),
+                ("TEST", "test-route.ts"),
+                ("SPEC", "spec-route.tsx"),
+                ("PLAYWRIGHT", "playwright-route.tsx"),
+                ("__TESTS__", "tests-route.tsx"),
+                ("E2E", "e2e-route.tsx"),
             ):
                 path = root / "apps" / "fixture-worker" / directory / name
                 path.parent.mkdir()
@@ -813,6 +1050,7 @@ def app_mutation_self_test() -> list[str]:
                 "/v1/b130-reversed",
                 "/v1/b130-constant",
                 "/v1/b130-alias",
+                "/v1/b130-tsx",
             }
             missing_route, missing_doc = compare({}, {}, {}, routes)
             missing_doc_paths = {path for path, _ in missing_doc}
@@ -822,6 +1060,7 @@ def app_mutation_self_test() -> list[str]:
                 failures.append("strict comparison did not turn mutation into MISSING_DOC")
             expected_unsupported = (
                 "dynamic",
+                "token",
                 "startsWith",
                 "switch",
                 "<unresolved>",
@@ -832,6 +1071,8 @@ def app_mutation_self_test() -> list[str]:
                 "/v1/b130-excluded" in finding for finding in unsupported
             ):
                 failures.append("test/spec/Playwright/e2e app fixtures entered production census")
+            if any("lexical.ts" in finding for finding in unsupported):
+                failures.append("comments or strings entered live pathname census")
             # `missing_route` is intentionally unused above: the strict-red
             # assertion is the served -> documented direction exercised here.
             del missing_route
