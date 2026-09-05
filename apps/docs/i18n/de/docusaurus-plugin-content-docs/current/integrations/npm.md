@@ -68,7 +68,7 @@ npm den Spiegel verwendet.
 | Symptom | Wahrscheinliche Ursache | Lösung |
 |---|---|---|
 | `401 Unauthorized` | Fehlende oder fehlerhafte `_authToken`-Zeile | Host + Pfad der Token-Zeile müssen exakt mit `registry=` übereinstimmen, und das Token muss ein `corelink_pat_...`-PAT sein |
-| Installationen greifen weiterhin auf `registry.npmjs.org` zu | `registry=` wurde nicht übernommen | Prüfen Sie den `.npmrc`-Geltungsbereich (Projekt vs. Benutzer) und führen Sie `npm config get registry` erneut aus |
+| Installationen greifen weiterhin auf `registry.npmjs.org` zu | `registry=` wurde nicht übernommen | Prüfen Sie den `.npmrc`-Geltungsbereich (Projekt vs. Benutzer) mit `npm config get @scope:registry` (ersetzen Sie `@scope` durch den Paketbereich), wiederholen Sie danach `npm install --loglevel http` und achten Sie auf Anfragen an `corelink-api.humangr.com` |
 | `EINTEGRITY` | Der Upstream-Tarball hat sich geändert | CoreLink prüft den `dist.shasum` und schlägt bei einer Abweichung fehlsicher fehl — wiederholen Sie es oder melden Sie das Upstream-Paket |
 
 Vollständige Fehlerreferenz: [Fehlerbehebung](../troubleshooting.md).

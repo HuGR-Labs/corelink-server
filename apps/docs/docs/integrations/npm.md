@@ -62,7 +62,7 @@ npm is using the mirror.
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `401 Unauthorized` | Missing or malformed `_authToken` line | The token line's host + path must match `registry=` exactly, and the token must be a `corelink_pat_...` PAT |
-| Installs still hit `registry.npmjs.org` | `registry=` not picked up | Confirm the `.npmrc` scope (project vs. user) and re-run `npm config get registry` |
+| Installs still hit `registry.npmjs.org` | `registry=` not picked up | Confirm the `.npmrc` scope (project vs. user) with `npm config get @scope:registry` (replace `@scope` with the package scope), then retry with `npm install --loglevel http` and look for `corelink-api.humangr.com` requests |
 | `EINTEGRITY` | Upstream tarball changed | CoreLink verifies `dist.shasum` and fails closed on mismatch — retry, or report the upstream package |
 
 Full error reference: [Troubleshooting](../troubleshooting.md).

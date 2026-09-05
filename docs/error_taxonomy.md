@@ -104,6 +104,10 @@ and server API responses. All codes use the `COR_` prefix (namespace: CoreLink).
 garbage-collection verb and there is no customer-facing eviction endpoint.
 Freeing quota means upgrading the plan (or an operator-side action).
 
+The quota check does not treat every failed usage request as exhaustion: HTTP 401
+maps to `COR_AUTH_INVALID`, HTTP 403 to `COR_AUTH_FORBIDDEN`, HTTP 429 to
+`COR_RATE_LIMITED`, and other HTTP failures to `COR_INTERNAL_ERROR`.
+
 ---
 
 ### COR_CLIENT_VERIFY_DISABLED

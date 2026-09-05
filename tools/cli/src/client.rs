@@ -450,15 +450,16 @@ impl CorelinkClient {
                 Ok(r) if is_transient(r.status()) => {
                     attempt += 1;
                     if attempt > MAX_RETRIES {
-                        return Err(CliError::Other(format!(
-                            "HTTP {} after retries",
-                            r.status()
-                        )));
+                        return Err(CliError::HttpStatus {
+                            status: r.status().as_u16(),
+                        });
                     }
                     tokio::time::sleep(Duration::from_millis(backoff_ms(attempt))).await;
                 }
                 Ok(r) => {
-                    return Err(CliError::Other(format!("HTTP error {}", r.status())));
+                    return Err(CliError::HttpStatus {
+                        status: r.status().as_u16(),
+                    });
                 }
                 Err(e) if attempt < MAX_RETRIES => {
                     attempt += 1;
@@ -543,6 +544,27 @@ mod tests {
             !got.is_empty(),
             "default/empty body would survive otherwise"
         );
+    }
+
+    #[tokio::test]
+    async fn get_json_preserves_http_status_without_response_body() {
+        // Doctor needs to distinguish an invalid PAT from quota exhaustion;
+        // the structured error carries only the status, never response text.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/customer/usage"))
+            .respond_with(
+                ResponseTemplate::new(401).set_body_string("do not expose this response body"),
+            )
+            .mount(&server)
+            .await;
+        let client = CorelinkClient::for_test(server.uri(), Some("t-test".to_owned()));
+        let err = client
+            .get_json("/v1/customer/usage")
+            .await
+            .expect_err("401 must be an HTTP status error");
+        assert!(matches!(err, CliError::HttpStatus { status: 401 }));
+        assert!(!err.to_string().contains("do not expose"));
     }
 
     #[tokio::test]

@@ -68,7 +68,7 @@ npm está usando o espelho.
 | Sintoma | Causa provável | Correção |
 |---|---|---|
 | `401 Unauthorized` | Linha `_authToken` ausente ou malformada | O host + caminho da linha do token devem corresponder exatamente ao `registry=`, e o token deve ser um PAT `corelink_pat_...` |
-| Instalações ainda acessam `registry.npmjs.org` | `registry=` não foi captado | Confirme o escopo do `.npmrc` (projeto vs. usuário) e execute novamente `npm config get registry` |
+| Instalações ainda acessam `registry.npmjs.org` | `registry=` não foi captado | Confirme o escopo do `.npmrc` (projeto vs. usuário) com `npm config get @scope:registry` (troque `@scope` pelo escopo do pacote), depois repita com `npm install --loglevel http` e procure requisições para `corelink-api.humangr.com` |
 | `EINTEGRITY` | O tarball do upstream mudou | O CoreLink verifica o `dist.shasum` e falha de forma fechada em caso de divergência — tente novamente ou reporte o pacote do upstream |
 
 Referência completa de erros: [Resolução de problemas](../troubleshooting.md).

@@ -11836,59 +11836,50 @@ ninguém as re-abra sem medir.**
   mesma família do [B-129] (o `Server-Timing` foi desenhado para somar, e somar é compatível
   com esconder). Quem for medir cobertura de fases deve fazê-lo **sob** o B-129, não aqui.
 
-**O que este item NÃO decide:** se `check_quota` deve propagar o status HTTP (o mais útil) ou
-apenas cair para um `COR_UNKNOWN` (o mais barato). A primeira exige que o cliente HTTP exponha
-o status, o que é mudança de assinatura.
+**Corrigido em 2026-09-05 (B-164).** O cliente agora preserva apenas o status HTTP em erros de
+JSON, sem carregar o corpo da resposta. O `doctor` classifica 401 como `COR_AUTH_INVALID`,
+403 como `COR_AUTH_FORBIDDEN`, 429 como `COR_RATE_LIMITED` e falhas restantes como
+`COR_INTERNAL_ERROR`/`COR_NET_UNREACHABLE`. A receita publicada agora consulta o registry
+escopado (`npm config get @scope:registry`) em inglês e nas três traduções, e confirma o
+endpoint pelo log HTTP da instalação.
 
 ```backlog
 id: B-164
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   bash -c 'set -e
   d=tools/cli/src/doctor.rs
-  n=apps/docs/docs/integrations/npm.md
   [ -f "$d" ] || { echo "FALHA: $d sumiu — reavalie o item."; exit 1; }
-  [ -f "$n" ] || { echo "FALHA: $n sumiu — reavalie o item."; exit 1; }
-  bloco=$(awk "/async fn check_quota/{c=1} c{print} c&&/^}/{exit}" "$d" | grep -v "^[[:space:]]*//")
-  [ -n "$bloco" ] || { echo "FALHA: nao recortei check_quota — a funcao mudou de forma; releia antes de confiar neste portao."; exit 1; }
-  ctl=0; grep -qE "^[^/]*COR_NET_UNREACHABLE" "$d" && ctl=1
-  [ "$ctl" = 1 ] || { echo "FALHA: o controle sumiu — o doctor nao usa mais codigo de erro proprio para rede; sem contraste este portao mede estilo, nao escolha."; exit 1; }
-  arm=$(printf "%s\n" "$bloco" | awk "/Err\(_\)/{c=1} c{print}")
-  [ -n "$arm" ] || { echo "FALHA: check_quota nao tem mais braco Err(_) — a funcao mudou de forma; releia antes de confiar neste portao."; exit 1; }
-  codigo=$(printf "%s\n" "$arm" | grep -oE "^[[:space:]]*\"COR_[A-Z_]+\"," | head -1 | tr -d " \",")
-  [ -n "$codigo" ] || { echo "FALHA: nao achei o codigo de erro do braco Err(_) — a forma do DoctorCheck::fail mudou; releia."; exit 1; }
-  colapsa=0
-  [ "$codigo" = "COR_QUOTA_EXCEEDED" ] && colapsa=1
-  locales=$(grep -rlE "^[^#]*npm config get registry" apps/docs/docs/integrations/npm.md apps/docs/i18n/*/docusaurus-plugin-content-docs/current/integrations/npm.md 2>/dev/null | wc -l | tr -d " ")
-  soma=$((colapsa + (locales > 0 ? 1 : 0)))
-  [ "$soma" -gt 0 ] || { echo "FALHA: check_quota nao colapsa mais Err(_) em COR_QUOTA_EXCEEDED E nenhuma pagina do npm manda rodar npm config get registry — feche o item."; exit 1; }
-  echo "aberto: o braco Err(_) do check_quota devolve o codigo $codigo (colapsa=$colapsa) (controle COR_NET_UNREACHABLE=$ctl); paginas do npm mandando rodar npm config get registry=$locales"'
+  bloco=$(awk "/async fn check_quota/{c=1} c{print} c&&/^}/{exit}" "$d")
+  printf "%s\n" "$bloco" | grep -q "CliError::HttpStatus { status: 401 }"
+  printf "%s\n" "$bloco" | grep -q '"COR_AUTH_INVALID"'
+  printf "%s\n" "$bloco" | grep -q '"COR_AUTH_FORBIDDEN"'
+  printf "%s\n" "$bloco" | grep -q '"COR_RATE_LIMITED"'
+  ! printf "%s\n" "$bloco" | grep -q '"COR_QUOTA_EXCEEDED".*Cannot read usage'
+  grep -q "get_json_preserves_http_status_without_response_body" tools/cli/src/client.rs
+  grep -q "check_quota_unauthorized_is_auth_failure" "$d"
+  grep -q "check_quota_forbidden_is_scope_failure" "$d"
+  grep -q "check_quota_rate_limited_is_not_quota_exhaustion" "$d"
+  for n in \
+    apps/docs/docs/integrations/npm.md \
+    apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/integrations/npm.md \
+    apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/integrations/npm.md \
+    apps/docs/i18n/de/docusaurus-plugin-content-docs/current/integrations/npm.md; do
+    [ -f "$n" ]
+    ! grep -qF "npm config get registry" "$n"
+    grep -qF "npm config get @scope:registry" "$n"
+  done
+  echo "fechado: HTTP 401 e demais falhas de uso têm classificação própria; as quatro receitas npm verificam registry escopado"'
 verify-means: |
-  open — o `check_quota` ainda mapeia `Err(_)` para `COR_QUOTA_EXCEEDED`, **ou** alguma das
-  quatro páginas do npm ainda manda rodar `npm config get registry`. Fecha só quando as duas
-  caírem.
-
-  **O recorte de função com comentários removidos é o que impede o falso positivo.** O
-  arquivo tem um doc-comment que menciona `COR_QUOTA_EXCEEDED` (`:342`) e testes que o
-  afirmam (`:601`); grepar o arquivo casaria os três e o portão continuaria "aberto" com o
-  código já consertado.
-
-  **O controle é premissa e falha ALTO:** se `COR_NET_UNREACHABLE` sumir do doctor, o comando
-  para — sem um código de erro específico vivo no mesmo arquivo, "quota para tudo" deixa de
-  ser uma escolha deste caminho e vira o estilo da ferramenta, e o item precisa ser reescrito.
-
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: … =1 … paginas do
-  npm … =4"* e exit 0. Numa cópia com o braço `Err(_)` do `check_quota` devolvendo
-  `COR_UNKNOWN` e a linha retirada das quatro páginas do npm, sai *"FALHA: check_quota nao
-  colapsa mais…"* e exit 1.
-
-  **O que ele NÃO cobre, por decisão:** as duas alegações do achado original que **não
-  reproduziram** (o host de DNS no `doctor`, refutado por `config.rs:105`) e a cobertura de
-  `Server-Timing`, que pertence a [B-129]. Estão nomeadas no corpo para que a próxima
-  varredura não as reabra como novidade.
-last-verified: 2026-08-31
+  done — `get_json` preserva o status sem resposta/token body; o `doctor` mapeia 401/403/429
+  para códigos de autenticação/limitação distintos, transport errors para `COR_NET_UNREACHABLE`
+  e outros HTTP failures para `COR_INTERNAL_ERROR`. A suíte hermética cobre 401, 403, 429,
+  500 e ausência de corpo. As quatro páginas npm removem o comando global e instruem a
+  consulta escopada seguida do log HTTP. Reabre se qualquer mutação restaurar `Err(_)` como
+  quota ou `npm config get registry` sem escopo.
+last-verified: 2026-09-05
 ```
 
 ### B-165 — o caminho de RECUSA já custa 52–195 ms contra um alvo de 15–30 ms, e o caminho SERVIDO segue sem número
