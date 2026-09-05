@@ -55,6 +55,13 @@ CLASSIFICATIONS = {
     "instructional-counterexample": "an exact, reviewed example of a claim support staff must not send",
 }
 
+# Line numbers are deliberately excluded: occurrence identity is stable across
+# harmless line moves, as exercised by the focused suite. Every other persisted
+# occurrence field is part of the closed payload and must match the re-derived
+# corpus exactly.
+OCCURRENCE_PAYLOAD_FIELDS = ("id", "path", "text", "class", "reason", "terms")
+OCCURRENCE_MANIFEST_FIELDS = set((*OCCURRENCE_PAYLOAD_FIELDS, "line"))
+
 # This is intentionally a path-and-line allowlist, not an ``example`` keyword
 # escape hatch.  The template introduces the quoted sentence as a reply agents
 # must never send; changing either the location or wording makes it ordinary
@@ -644,6 +651,17 @@ def positive_claims(occurrences: Iterable[dict[str, object]]) -> list[str]:
     return failures
 
 
+def _canonical_occurrence_payload(entry: object, *, manifest_entry: bool = False) -> tuple[object, ...] | None:
+    """Return the persisted occurrence payload, ignoring derived semantics and line moves."""
+    if not isinstance(entry, dict):
+        return None
+    if manifest_entry and set(entry) != OCCURRENCE_MANIFEST_FIELDS:
+        return None
+    if any(field not in entry for field in OCCURRENCE_PAYLOAD_FIELDS):
+        return None
+    return tuple(entry[field] for field in OCCURRENCE_PAYLOAD_FIELDS)
+
+
 def validate(root: Path, manifest_path: Path = MANIFEST) -> list[str]:
     failures: list[str] = []
     if not manifest_path.is_file():
@@ -690,6 +708,15 @@ def validate(root: Path, manifest_path: Path = MANIFEST) -> list[str]:
         failures.append(f"HALT: {len(missing)} inventoried occurrence(s) disappeared; re-derive and review the manifest")
     if unknown:
         failures.append(f"HALT: {len(unknown)} new or changed occurrence(s) are not classified in the manifest")
+    expected_payload = [
+        _canonical_occurrence_payload(entry, manifest_entry=True)
+        for entry in expected
+    ]
+    actual_payload = [_canonical_occurrence_payload(entry) for entry in occurrences]
+    if expected_payload != actual_payload:
+        failures.append(
+            "HALT: occurrence manifest payload differs from the published corpus; review and re-derive the inventory"
+        )
     expected_classes = set(CLASSIFICATIONS)
     for entry in expected:
         if not isinstance(entry, dict) or entry.get("class") not in expected_classes:

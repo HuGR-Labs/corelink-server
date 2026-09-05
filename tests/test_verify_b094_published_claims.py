@@ -49,6 +49,27 @@ def test_complete_inventory_passes(tmp_path: Path):
     assert MODULE.validate(root, manifest) == []
 
 
+def test_manifest_occurrence_text_tampering_halts(tmp_path: Path):
+    root, manifest = _fixture(tmp_path)
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    payload["occurrences"][0]["text"] += " tampered"
+    manifest.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    failures = MODULE.validate(root, manifest)
+    assert any("occurrence manifest payload" in failure for failure in failures)
+
+
+def test_manifest_valid_class_substitution_halts(tmp_path: Path):
+    root, manifest = _fixture(tmp_path)
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    original = payload["occurrences"][0]["class"]
+    payload["occurrences"][0]["class"] = next(
+        classification for classification in MODULE.CLASSIFICATIONS if classification != original
+    )
+    manifest.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    failures = MODULE.validate(root, manifest)
+    assert any("occurrence manifest payload" in failure for failure in failures)
+
+
 def test_checked_in_published_corpus_passes_with_a_bounded_process():
     """Keep the production manifest gate load-bearing in the CI test glob."""
     result = subprocess.run(
