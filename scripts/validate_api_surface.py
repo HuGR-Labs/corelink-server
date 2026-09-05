@@ -241,39 +241,143 @@ CONST_DECL = re.compile(
 ROUTE_CALL = re.compile(r"\.route\s*\(")
 
 
-def strip_line_comments(src: str) -> str:
-    """Blank out `//` comments without disturbing offsets or string literals."""
-    out = []
-    i = 0
-    n = len(src)
-    in_str = False
-    while i < n:
-        c = src[i]
-        if in_str:
-            out.append(c)
-            if c == "\\" and i + 1 < n:
-                out.append(src[i + 1])
-                i += 2
+class SourceSyntaxError(ValueError):
+    """A source comment or literal is incomplete for static inspection."""
+
+
+def _raw_string_start(source: str, index: int) -> tuple[int, int] | None:
+    """Return (opening quote, hash count) for a Rust raw string."""
+    if source.startswith("br", index):
+        prefix_end = index + 2
+    elif source.startswith("r", index):
+        prefix_end = index + 1
+    else:
+        return None
+    hashes = 0
+    while prefix_end + hashes < len(source) and source[prefix_end + hashes] == "#":
+        hashes += 1
+    quote = prefix_end + hashes
+    if quote >= len(source) or source[quote] != '"':
+        return None
+    return quote, hashes
+
+
+def _blank_comment(value: str) -> str:
+    return "".join("\n" if character == "\n" else " " for character in value)
+
+
+def strip_source_comments(src: str, *, nested: bool = False) -> str:
+    """Blank Rust/Worker comments without disturbing literals or offsets.
+
+    Rust permits nested block comments; TypeScript/JavaScript block comments do
+    not, so callers select the language's syntax with ``nested``. Unterminated
+    comments and strings raise rather than silently shrinking the evidence set.
+    """
+    out: list[str] = []
+    index = 0
+    length = len(src)
+    while index < length:
+        if src.startswith("//", index):
+            out.extend((" ", " "))
+            index += 2
+            while index < length and src[index] != "\n":
+                out.append(" ")
+                index += 1
+            continue
+        if src.startswith("/*", index):
+            out.extend((" ", " "))
+            index += 2
+            depth = 1
+            while index < length and depth:
+                if nested and src.startswith("/*", index):
+                    out.extend((" ", " "))
+                    index += 2
+                    depth += 1
+                elif src.startswith("*/", index):
+                    out.extend((" ", " "))
+                    index += 2
+                    depth -= 1
+                elif src[index] == "\n":
+                    out.append("\n")
+                    index += 1
+                else:
+                    end = index
+                    while end < length and src[end] not in "/*\n":
+                        end += 1
+                    if end == index:
+                        out.append(" ")
+                        index += 1
+                    else:
+                        out.append(_blank_comment(src[index:end]))
+                        index = end
+            if depth:
+                raise SourceSyntaxError("unterminated block comment")
+            continue
+
+        if src[index] in {"r", "b"}:
+            raw = _raw_string_start(src, index)
+            if raw is not None:
+                quote, hashes = raw
+                closing = '"' + ("#" * hashes)
+                end = src.find(closing, quote + 1)
+                if end < 0:
+                    raise SourceSyntaxError("unterminated raw string")
+                out.append(src[index : end + len(closing)])
+                index = end + len(closing)
                 continue
-            if c == '"':
-                in_str = False
-            i += 1
+
+        quote = src[index]
+        if quote == "b" and index + 1 < length and src[index + 1] in {'"', "'"}:
+            out.append(quote)
+            index += 1
+            quote = src[index]
+        if quote in {'"', "'", "`"}:
+            # A Rust lifetime (`'a`) is not a character literal. Only consume
+            # an apostrophe when a closing quote exists on this source line.
+            if quote == "'":
+                end = index + 1
+                escaped = False
+                while end < length and src[end] != "\n":
+                    character = src[end]
+                    if character == "'" and not escaped:
+                        break
+                    if character == "\\" and not escaped:
+                        escaped = True
+                    else:
+                        escaped = False
+                    end += 1
+                if end >= length or src[end] != "'":
+                    out.append(quote)
+                    index += 1
+                    continue
+                out.append(src[index : end + 1])
+                index = end + 1
+                continue
+            out.append(quote)
+            index += 1
+            terminated = False
+            while index < length:
+                character = src[index]
+                out.append(character)
+                index += 1
+                if character == "\\" and index < length:
+                    out.append(src[index])
+                    index += 1
+                elif character == quote:
+                    terminated = True
+                    break
+            if not terminated:
+                raise SourceSyntaxError("unterminated string literal")
             continue
-        if c == '"':
-            in_str = True
-            out.append(c)
-            i += 1
-            continue
-        if c == "/" and i + 1 < n and src[i + 1] == "/":
-            j = src.find("\n", i)
-            if j == -1:
-                j = n
-            out.append(" " * (j - i))
-            i = j
-            continue
-        out.append(c)
-        i += 1
+
+        out.append(src[index])
+        index += 1
     return "".join(out)
+
+
+def strip_line_comments(src: str) -> str:
+    """Compatibility wrapper for callers that need Rust lexical stripping."""
+    return strip_source_comments(src, nested=True)
 
 
 def first_argument(src: str, open_paren: int) -> str:
@@ -318,6 +422,7 @@ def collect_rust_consts() -> dict[str, str]:
             src = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
+        src = strip_source_comments(src, nested=True)
         for name, value in CONST_DECL.findall(src):
             if value.startswith("/"):
                 consts.setdefault(name, value)
@@ -367,7 +472,7 @@ def collect_rust_routes() -> dict[str, set[str]]:
             continue
         if ".route" not in raw:
             continue
-        src = strip_line_comments(raw)
+        src = strip_source_comments(raw, nested=True)
         for m in ROUTE_CALL.finditer(src):
             open_paren = src.index("(", m.start())
             arg = first_argument(src, open_paren).strip()
@@ -407,7 +512,9 @@ def collect_worker_routes() -> dict[str, set[str]]:
     for file in sorted(WORKER.rglob("*.ts")):
         if file.name.endswith(".test.ts") or is_test_path(file):
             continue
-        src = strip_line_comments(file.read_text(encoding="utf-8", errors="replace"))
+        src = strip_source_comments(
+            file.read_text(encoding="utf-8", errors="replace"), nested=False
+        )
         for m in WORKER_EXACT.finditer(src):
             value = m.group(1).rstrip("/") or "/"
             line = src.count("\n", 0, m.start()) + 1
@@ -1081,6 +1188,69 @@ def app_mutation_self_test() -> list[str]:
     return failures
 
 
+def source_comment_mutation_self_test() -> list[str]:
+    """Prove Rust/Worker comment-only registrations never enter the inventory."""
+    global REPO, CRATES, WORKER
+    old_repo, old_crates, old_worker = REPO, CRATES, WORKER
+    failures: list[str] = []
+    try:
+        with tempfile.TemporaryDirectory(prefix="validate-api-comments-") as tmp:
+            root = Path(tmp)
+            crates = root / "crates" / "fixture"
+            worker = root / "worker" / "src"
+            crates.mkdir(parents=True)
+            worker.mkdir(parents=True)
+            rust = crates / "routes.rs"
+            rust.write_text(
+                "/* outer\n"
+                "   /* .route(\"/v1/b130-comment-only\", get(handler)) */\n"
+                "*/\n"
+                ".route(\"/v1/b130-live\", get(handler));\n",
+                encoding="utf-8",
+            )
+            worker_file = worker / "index.ts"
+            worker_file.write_text(
+                "/* /api/b130-comment-only */\n"
+                "if (path === \"/api/b130-live\") return response;\n",
+                encoding="utf-8",
+            )
+            REPO, CRATES, WORKER = root, root / "crates", root / "worker" / "src"
+            rust_routes = collect_rust_routes()
+            worker_routes = collect_worker_routes()
+            if "/v1/b130-live" not in rust_routes:
+                failures.append("live Rust route was not extracted")
+            if "/api/b130-live" not in worker_routes:
+                failures.append("live Worker path was not extracted")
+            if "/v1/b130-comment-only" in rust_routes:
+                failures.append("comment-only Rust route entered inventory")
+            if "/api/b130-comment-only" in worker_routes:
+                failures.append("comment-only Worker path entered inventory")
+            literals = strip_source_comments(
+                'const text = "// /api/string"; '
+                'const template = `/* ${path} */`; /* hidden */',
+                nested=False,
+            )
+            if '"// /api/string"' not in literals or "`/* ${path} */`" not in literals:
+                failures.append("Worker string/template literal was altered")
+            rust.write_text("/* .route(\"/v1/b130-unterminated\")", encoding="utf-8")
+            try:
+                collect_rust_routes()
+            except SourceSyntaxError:
+                pass
+            else:
+                failures.append("unterminated Rust comment did not fail closed")
+            worker_file.write_text("/* path === \"/api/b130-unterminated\"", encoding="utf-8")
+            try:
+                collect_worker_routes()
+            except SourceSyntaxError:
+                pass
+            else:
+                failures.append("unterminated Worker comment did not fail closed")
+    finally:
+        REPO, CRATES, WORKER = old_repo, old_crates, old_worker
+    return failures
+
+
 def self_test(documented, rust_routes, worker_routes, app_routes=None, app_unsupported=None) -> int:
     """Prove each extractor can SEE before any of its silences is believed.
 
@@ -1202,6 +1372,12 @@ def self_test(documented, rust_routes, worker_routes, app_routes=None, app_unsup
         not mutation_failures,
         "; ".join(mutation_failures) or "real files extracted and raw comparison reports MISSING_DOC",
     )
+    source_comment_failures = source_comment_mutation_self_test()
+    check(
+        "mutation — comment-only Rust/Worker registrations stay out",
+        not source_comment_failures,
+        "; ".join(source_comment_failures) or "comment-only registrations are ignored and malformed comments fail closed",
+    )
 
     if failures:
         print(f"\nself-test FAILED ({len(failures)}): {', '.join(failures)}")
@@ -1249,8 +1425,12 @@ def main() -> int:
         return 2
 
     documented = parse_openapi_paths(OPENAPI.read_text(encoding="utf-8"))
-    rust_routes = collect_rust_routes()
-    worker_routes = collect_worker_routes()
+    try:
+        rust_routes = collect_rust_routes()
+        worker_routes = collect_worker_routes()
+    except (OSError, UnicodeDecodeError, SourceSyntaxError) as exc:
+        print(f"FATAL: route source parse failure: {exc}")
+        return 2
     app_routes = collect_app_routes()
     app_unsupported = collect_app_unsupported()
 
