@@ -3,16 +3,25 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/okf_shift_citations.py"
+sys.path.insert(0, str(ROOT / "scripts"))
+spec = importlib.util.spec_from_file_location("okf_shift_citations", SCRIPT)
+assert spec and spec.loader
+shifter = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = shifter
+spec.loader.exec_module(shifter)
 
 
 class ShiftHarness(unittest.TestCase):
@@ -111,6 +120,52 @@ class ShiftHarness(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("ambiguous", result.stdout)
         self.assertIn("`src.txt:3`", (self.tmp / "docs/knowledge/auth/x.md").read_text())
+
+    def test_body_edit_before_citation_uses_current_span_without_corruption(self) -> None:
+        self._write_source(["inserted", "zero", "alpha", "beta", "gamma", "delta"])
+        concept = self.tmp / "docs/knowledge/auth/x.md"
+        concept.write_text(
+            concept.read_text(encoding="utf-8").replace(
+                "base claim", "THIS IS A LONG HAND-EDITED DESCRIPTION before base claim"
+            ),
+            encoding="utf-8",
+        )
+        result = self._run("--base-ref", "HEAD", "--apply", "src.txt")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        shifted = concept.read_text(encoding="utf-8")
+        self.assertIn("THIS IS A LONG HAND-EDITED DESCRIPTION before base claim", shifted)
+        self.assertIn("`src.txt:4`", shifted)
+
+    def test_mixed_edit_in_one_concept_blocks_every_concept_for_the_file(self) -> None:
+        second = self.tmp / "docs/knowledge/auth/y.md"
+        second.write_text(
+            (self.tmp / "docs/knowledge/auth/x.md").read_text(encoding="utf-8").replace(
+                "B-124 test", "B-124 second test"
+            ),
+            encoding="utf-8",
+        )
+        self._git("add", ".")
+        self._git("commit", "-qm", "two concepts")
+        self._write_source(["inserted", "zero", "alpha", "beta", "gamma", "delta"])
+        second.write_text(
+            second.read_text(encoding="utf-8").replace("`src.txt:3`", "`src.txt:4`"),
+            encoding="utf-8",
+        )
+        first_before = (self.tmp / "docs/knowledge/auth/x.md").read_text(encoding="utf-8")
+        result = self._run("--base-ref", "HEAD", "--apply", "src.txt")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("whole file", result.stdout)
+        self.assertEqual(first_before, (self.tmp / "docs/knowledge/auth/x.md").read_text(encoding="utf-8"))
+        self.assertIn("`src.txt:4`", second.read_text(encoding="utf-8"))
+
+    def test_atomic_write_failure_preserves_original_and_cleans_temp(self) -> None:
+        target = self.tmp / "docs/knowledge/auth/x.md"
+        original = target.read_text(encoding="utf-8")
+        with mock.patch.object(shifter.os, "replace", side_effect=OSError("simulated interruption")):
+            with self.assertRaises(OSError):
+                shifter._atomic_write_text(target, "replacement")
+        self.assertEqual(original, target.read_text(encoding="utf-8"))
+        self.assertEqual([], list(target.parent.glob(f".{target.name}.*")))
 
 
 if __name__ == "__main__":

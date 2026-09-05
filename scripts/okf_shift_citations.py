@@ -11,9 +11,11 @@ operation; this is the guard against the B-124 double shift.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -37,6 +39,29 @@ class Citation:
     @property
     def range(self) -> tuple[int, int]:
         return self.start, self.end
+
+
+@dataclass
+class ShiftResult:
+    """A no-write preflight result for one concept."""
+
+    concept: Path
+    rewritten: int = 0
+    rendered_text: str | None = None
+    unresolved: list[str] | None = None
+    refused: list[str] | None = None
+    relevant: set[str] | None = None
+    mixed_paths: set[str] | None = None
+
+    def __post_init__(self) -> None:
+        if self.unresolved is None:
+            self.unresolved = []
+        if self.refused is None:
+            self.refused = []
+        if self.relevant is None:
+            self.relevant = set()
+        if self.mixed_paths is None:
+            self.mixed_paths = set()
 
 
 def _run(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -144,6 +169,11 @@ def _ranges(citations: list[Citation], path: str) -> list[tuple[int, int]]:
     return [citation.range for citation in citations if citation.path == path]
 
 
+def _signatures(citations: list[Citation], path: str) -> list[tuple[tuple[int, int], bool]]:
+    """Include spelling style so a hand edit cannot hide behind equal ranges."""
+    return [(citation.range, citation.abbreviated) for citation in citations if citation.path == path]
+
+
 def _format_range(start: int, end: int) -> str:
     return str(start) if start == end else f"{start}-{end}"
 
@@ -153,29 +183,37 @@ def _shift_concept(
     concept: Path,
     base: str,
     targets: set[str],
-    apply: bool,
-) -> tuple[int, list[str], list[str]]:
-    """Return (rewritten, unresolved, refused), atomically per concept."""
+) -> ShiftResult:
+    """Preflight one concept and render its complete replacement in memory."""
+    result = ShiftResult(concept)
+    if concept.is_symlink():
+        result.refused.append(f"{concept.relative_to(root)}: concept is a symlink")
+        return result
     current_text = concept.read_text(encoding="utf-8")
     if CONFLICT_RE.search(current_text):
-        return 0, [], [f"{concept.relative_to(root)}: conflict markers present"]
+        result.refused.append(f"{concept.relative_to(root)}: conflict markers present")
+        return result
     frontmatter, body = okf._split(current_text)
     if frontmatter is None or body is None:
-        return 0, [], []
+        return result
     try:
         metadata = okf.parse_frontmatter(frontmatter)
     except Exception as exc:
-        return 0, [], [f"{concept.relative_to(root)}: invalid frontmatter ({exc})"]
+        result.refused.append(f"{concept.relative_to(root)}: invalid frontmatter ({exc})")
+        return result
     declared = {value for value in (metadata.get("source_files") or []) if isinstance(value, str)}
     relevant = targets & declared
+    result.relevant = relevant
     if not relevant:
-        return 0, [], []
+        return result
     base_text = _show(root, base, concept.relative_to(root).as_posix())
     if base_text is None:
-        return 0, [], [f"{concept.relative_to(root)}: concept is absent at base {base[:12]}"]
+        result.refused.append(f"{concept.relative_to(root)}: concept is absent at base {base[:12]}")
+        return result
     base_frontmatter, base_body = okf._split(base_text)
     if base_frontmatter is None or base_body is None:
-        return 0, [], [f"{concept.relative_to(root)}: base has no usable frontmatter"]
+        result.refused.append(f"{concept.relative_to(root)}: base has no usable frontmatter")
+        return result
     try:
         base_metadata = okf.parse_frontmatter(base_frontmatter)
     except Exception:
@@ -186,16 +224,17 @@ def _shift_concept(
     current_cites = _citations(body, declared)
     base_cites = _citations(base_body, base_declared)
     edits: list[tuple[int, int, str]] = []
-    unresolved: list[str] = []
-    refused: list[str] = []
     for path in sorted(relevant):
         current_ranges = _ranges(current_cites, path)
         base_ranges = _ranges(base_cites, path)
+        current_signatures = _signatures(current_cites, path)
+        base_signatures = _signatures(base_cites, path)
         # Any existing difference means somebody already selected a method for
-        # this file.  Refuse the whole pair so one hand edit cannot be shifted
-        # again while untouched citations are processed.
-        if current_ranges != base_ranges:
-            refused.append(
+        # this file.  Refuse the whole file globally so one hand edit cannot be
+        # shifted again while another concept touching the same file is processed.
+        if current_ranges != base_ranges or current_signatures != base_signatures:
+            result.mixed_paths.add(path)
+            result.refused.append(
                 f"{concept.relative_to(root)}: citations to {path!r} already differ from base; "
                 "choose hand editing OR this tool for the whole file"
             )
@@ -203,51 +242,83 @@ def _shift_concept(
         source = root / path
         base_source = _show(root, base, path)
         if base_source is None or not source.is_file():
-            refused.append(f"{concept.relative_to(root)}: source {path!r} is missing at base or in tree")
+            result.refused.append(f"{concept.relative_to(root)}: source {path!r} is missing at base or in tree")
             continue
         current_source_text = source.read_text(encoding="utf-8", errors="replace")
         if CONFLICT_RE.search(current_source_text):
-            refused.append(f"{concept.relative_to(root)}: source {path!r} has conflict markers")
+            result.refused.append(f"{concept.relative_to(root)}: source {path!r} has conflict markers")
             continue
         base_lines, current_lines = _lines(base_source), _lines(current_source_text)
-        for citation in [item for item in base_cites if item.path == path]:
+        base_path_cites = [item for item in base_cites if item.path == path]
+        current_path_cites = [item for item in current_cites if item.path == path]
+        for citation, current_citation in zip(base_path_cites, current_path_cites):
             if citation.start < 1 or citation.end > len(base_lines):
-                unresolved.append(
+                result.unresolved.append(
                     f"{concept.relative_to(root)}: {path}:{_format_range(citation.start, citation.end)} "
                     "is out of bounds in base"
                 )
                 continue
             block = _norm(base_lines, citation.start, citation.end)
             if not any(line.strip() for line in block):
-                unresolved.append(f"{concept.relative_to(root)}: {path}:{_format_range(citation.start, citation.end)} is blank")
+                result.unresolved.append(f"{concept.relative_to(root)}: {path}:{_format_range(citation.start, citation.end)} is blank")
                 continue
             hits = _locate(base_lines, current_lines, citation.start, citation.end)
             if len(hits) != 1:
                 detail = "not found" if not hits else "ambiguous at " + ", ".join(map(str, hits))
-                unresolved.append(
+                result.unresolved.append(
                     f"{concept.relative_to(root)}: {path}:{_format_range(citation.start, citation.end)} {detail}"
                 )
                 continue
             new_start = hits[0]
             new_end = new_start + citation.end - citation.start
             if _norm(current_lines, new_start, new_end) != block:
-                unresolved.append(f"{concept.relative_to(root)}: content verification failed for {path}:{new_start}")
+                result.unresolved.append(f"{concept.relative_to(root)}: content verification failed for {path}:{new_start}")
                 continue
             if (new_start, new_end) == citation.range:
                 continue
-            token = f":{_format_range(new_start, new_end)}" if citation.abbreviated else (
+            token = f":{_format_range(new_start, new_end)}" if current_citation.abbreviated else (
                 f"{path}:{_format_range(new_start, new_end)}"
             )
-            edits.append((citation.span_start, citation.span_end, token))
-    if refused or unresolved:
-        # Do not partially rewrite a concept when one target cannot be proven.
-        return 0, unresolved, refused
-    if apply and edits:
+            # Spans must come from the current body.  The prose may have been
+            # edited without changing citation coordinates; base offsets would
+            # silently splice the replacement into unrelated text.
+            edits.append((current_citation.span_start, current_citation.span_end, token))
+    if result.refused or result.unresolved:
+        return result
+    if edits:
         rewritten_body = body
         for start, end, token in sorted(edits, key=lambda item: item[0], reverse=True):
             rewritten_body = rewritten_body[:start] + token + rewritten_body[end:]
-        concept.write_text(f"---\n{frontmatter}\n---\n{rewritten_body}", encoding="utf-8")
-    return len(edits), unresolved, refused
+        result.rewritten = len(edits)
+        result.rendered_text = f"---\n{frontmatter}\n---\n{rewritten_body}"
+    return result
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Replace a file only after its complete UTF-8 contents are durable."""
+    mode = path.stat().st_mode & 0o7777
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        os.fchmod(fd, mode)
+        with os.fdopen(fd, "wb", closefd=True) as destination:
+            fd = -1
+            destination.write(text.encode("utf-8"))
+            destination.flush()
+            os.fsync(destination.fileno())
+        os.replace(temporary, path)
+        directory_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except BaseException:
+        if fd >= 0:
+            os.close(fd)
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -263,16 +334,33 @@ def main(argv: list[str] | None = None) -> int:
     bundle = root / args.knowledge_dir
     if not bundle.is_dir():
         raise SystemExit(f"knowledge directory does not exist: {bundle}")
-    rewritten = 0
+    plans: list[ShiftResult] = []
     unresolved: list[str] = []
     refused: list[str] = []
     for concept in sorted(bundle.rglob("*.md")):
         if concept.name in okf.RESERVED_NAMES:
             continue
-        count, errors, refusals = _shift_concept(root, concept, base, targets, args.apply)
-        rewritten += count
-        unresolved.extend(errors)
-        refused.extend(refusals)
+        plans.append(_shift_concept(root, concept, base, targets))
+    # Preflight every concept before any write.  A mixed edit in one concept
+    # blocks every concept touching that source file, enforcing B-124's
+    # per-file method choice rather than merely refusing the one that noticed it.
+    mixed_paths = set().union(*(plan.mixed_paths for plan in plans))
+    for plan in plans:
+        for path in sorted(mixed_paths & plan.relevant):
+            if path not in plan.mixed_paths:
+                plan.refused.append(
+                    f"{plan.concept.relative_to(root)}: source {path!r} has mixed citation edits elsewhere; "
+                    "choose hand editing OR this tool for the whole file"
+                )
+    for plan in plans:
+        unresolved.extend(plan.unresolved)
+        refused.extend(plan.refused)
+    failed = bool(unresolved or refused)
+    rewritten = 0 if failed else sum(plan.rewritten for plan in plans)
+    if args.apply and not failed:
+        for plan in plans:
+            if plan.rendered_text is not None:
+                _atomic_write_text(plan.concept, plan.rendered_text)
     print(f"base: {base[:12]}; targets: {', '.join(sorted(targets))}")
     print(f"rewritten: {rewritten}; unresolved: {len(unresolved)}; refused: {len(refused)}")
     for message in refused:
