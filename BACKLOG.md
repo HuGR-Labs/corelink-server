@@ -7904,47 +7904,20 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  bash -c 'set -o pipefail
-  [ -f scripts/validate_api_surface.py ] || { echo "FALHA: o comparador sumiu."; exit 1; }
-  [ -f .github/workflows/api-surface-parity.yml ] || { echo "FALHA: a lane de PR sumiu."; exit 1; }
-  grep -q "^[^#]*runs-on: corelink" .github/workflows/api-surface-parity.yml || { echo "FALHA: a lane nao esta em runner self-hosted."; exit 1; }
-  raw=$(python3 scripts/validate_api_surface.py 2>&1) || { echo "FALHA: o comparador ou seu self-test/ledger reprovou."; printf "%s\n" "$raw"; exit 1; }
-  for p in "/v1/admin/ops" "/v1/enterprise/inquire" "/v1/dpa/accept" "/v1/audit/export" "/v1/admin/audit/events" "/v1/admin/tenants" "/v1/data-categories" "/v1/customer/account/delete" "/v1/customer/account/export"; do
-    printf "%s\n" "$raw" | grep -E "^[^#/*-]*\ \$\{p\}\ " >/dev/null || { echo "FALHA: o comparador NAO acusa a divergencia conhecida ${p} — portao que nao pega o defeito conhecido nao e portao."; exit 1; }
-  done
-  printf "%s\n" "$raw" | grep -q "^[^#/*-]*OK: no undeclared divergence" || { echo "FALHA: ha divergencia NAO declarada, ou uma entrada do ledger ficou obsoleta."; exit 1; }
-  echo "done: o comparador existe, o self-test passa, ele acusa as 7 familias conhecidas + as 2 do B-117, e nao ha divergencia fora do ledger"'
+  python3 scripts/verify_b121_surface.py
 verify-means: |
-  done — o comparador existe, roda em lane de `pull_request` self-hosted, e foi **visto
-  pegando o defeito conhecido**.
+  done — a guarda executável fail-closed é a fonte direta desta verificação. Ela valida a
+  existência e a fiação do comparador `scripts/validate_api_surface.py` e da lane
+  `.github/workflows/api-surface-parity.yml`, roda o self-test positivo e exerce mutações
+  para superfície limpa, `MISSING_ROUTE`, `MISSING_DOC` e `STALE_LEDGER`. Em produção, exige
+  populações mínimas de 30 caminhos documentados, 50 rotas de crate e 3 caminhos Worker,
+  rejeita qualquer `LEDGER_MISSING_ROUTE` e só passa sem divergência não declarada ou stale.
 
-  A polaridade inverteu junto com o status. O predicado `open` media a **ausência** do
-  comparador; este mede quatro coisas que só um comparador correto satisfaz ao mesmo tempo:
-
-  1. o script e a lane existem, e a lane não é hosted;
-  2. o **self-test do extrator passa** — ele prova, com controle positivo, que enxerga as
-     quatro formas de registro (literal na linha do `.route(`, literal na linha **seguinte**,
-     registro por **constante**, e caminho terminado no Worker). Um extrator cego reporta
-     superfície limpa, e foi exatamente assim que a primeira varredura produziu 32 ausências
-     fantasmas;
-  3. no relatório normal, ele **acusa nominalmente** as sete famílias documentadas-sem-rota
-     mais as duas rotas-sem-doc do [B-117], ao mesmo tempo que exige a confirmação final do
-     ledger. Este é o item que o `verify-means` anterior exigiu de quem fechasse, e está
-     mecanizado aqui em vez de prometido em prosa;
-  4. no modo normal, não sobra divergência **fora do ledger** — e uma entrada de ledger cuja
-     divergência já foi consertada também reprova (`STALE_LEDGER`), então o conserto de
-     [B-116]/[B-119]/[B-120]/[B-117] não pode aterrissar deixando a própria desculpa para trás.
-
-  O que este comando NÃO decide: se as divergências foram **consertadas**. Não foram — este
-  item entregava o instrumento, não os reparos. As sete famílias continuam abertas sob
-  [B-116], [B-117], [B-119] e [B-120], agora com um portão que impede a nona.
-
-  Achados novos que a varredura completa trouxe, além dos oito já catalogados: `/v1/dpa/re-accept`
-  (documentado, sem rota em lugar nenhum — só uma proptest o nomeia), `/api/csp-report`
-  (servido pelo `apps/admin-ui`, não pela API — não pertence a esta spec), e a superfície
-  `/v1/customer/*` inteira, `/v1/admin/tenants/{tenant_id}/*`, `/v1/public/*` — todas servidas
-  e ausentes do OpenAPI. Estão no ledger com o item dono de cada uma.
-last-verified: 2026-08-31
+  População verificada em 2026-09-05: 33 caminhos documentados, 106 rotas de crate e 33
+  caminhos terminados no Worker; 27 `MISSING_DOC` permanecem declarados e presentes no
+  ledger. A guarda passou o self-test e o veredito live sem `MISSING_ROUTE`, divergência não
+  declarada ou entrada stale.
+last-verified: 2026-09-05
 ```
 
 ### B-122 — regiao de fase sob `spawn_blocking` nao registra nada, e o `ostore` nao se separa sem mover as fronteiras
