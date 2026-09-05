@@ -43,17 +43,17 @@ corelink_<env>_<token_id>.<random_secret>.<hmac_sig>
 Example placeholder used throughout this documentation:
 
 ```
-corelink_dev_t_xxx.xxx.xxx
+corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA
 ```
 
 :::warning Never commit a real PAT
-The placeholder `corelink_dev_t_xxx.xxx.xxx` is intentional. Real PATs must live in environment variables, secret managers, or your CI provider's secret store — never in source code.
+The placeholder `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA` is intentional. Real PATs must live in environment variables, secret managers, or your CI provider's secret store — never in source code.
 :::
 
 ## 4. Export it
 
 ```bash
-export CORELINK_PAT="corelink_dev_t_xxx.xxx.xxx"  # replace with your real token
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"  # replace with your real token
 ```
 
 Add the line to your shell profile (`~/.zshrc`, `~/.bashrc`) for persistence, or load it through a secret manager (`direnv`, `1password`, `op`).

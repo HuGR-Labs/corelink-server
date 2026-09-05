@@ -39,7 +39,7 @@ Beide werden per Bearer-PAT authentifiziert. (Bazel adressiert Inhalte per SHA-2
 
 - Standard-Bazel (für den Alias `/bazel/cache`) oder ein REAPI/ByteStream-
   kompatibler Client (für `/bazel/v2`). Beides funktioniert.
-- Ein CoreLink-PAT (`corelink_pat_...`) mit Lese- und Schreibberechtigung für den Cache. Siehe [PAT-Erstellung](../concepts/tenancy.md).
+- Ein CoreLink-PAT (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA`) mit Lese- und Schreibberechtigung für den Cache. Siehe [PAT-Erstellung](../concepts/tenancy.md).
 
 ## `.bazelrc` konfigurieren
 
@@ -64,7 +64,7 @@ Exportieren Sie beide Werte vor dem Kompilieren; in der CI übergeben Sie den PA
 nie im Klartext erscheint:
 
 ```bash
-export CORELINK_PAT="corelink_pat_XXXXXXXXXXXX"   # ${{ secrets.CORELINK_PAT }} in CI
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"   # ${{ secrets.CORELINK_PAT }} in CI
 export CORELINK_TENANT="acme-prod"
 ```
 

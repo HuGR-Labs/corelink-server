@@ -104,7 +104,7 @@ see [Rate limits](../explanation/rate-limits).
 ## 9 — Do I need a separate PAT per environment?
 
 Yes — PATs are tenant-scoped and environment-scoped. The token format
-`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB` makes the env explicit (`pat`,
+`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA` makes the env explicit (`pat`,
 `ci`, `ro`). Mixing a PAT from one environment against another
 tenant is rejected with `COR_AUTH_TENANT_MISMATCH` at the edge. You
 can mint as many PATs per tenant as you want; revocation is per-token.

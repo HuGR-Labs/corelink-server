@@ -23,14 +23,14 @@ Linux, and Windows) and need to run any command except `version`.
 ## Recommended: Env var
 
 ```bash
-export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB"
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 corelink ls --tenant acme-corp
 ```
 
 ## Alternative: Config file
 
 ```bash
-corelink config set auth.pat corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB
+corelink config set auth.pat corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA
 corelink config set defaults.tenant_id acme-corp
 ```
 
@@ -42,7 +42,7 @@ The file lives at `~/.corelink/config.toml` on macOS/Linux and
 
 ```bash
 # DO NOT DO THIS — the CLI exits 2 with an explicit security error.
-corelink --pat=corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB ls --tenant acme-corp
+corelink --pat=corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA ls --tenant acme-corp
 ```
 
 CTRL-CRED-001 forbids the `--pat` flag because process arguments leak via

@@ -34,7 +34,7 @@ Registry-Versionsbereich zu folgen.
 ## Empfohlene Umgebungsvariable (Node.js)
 
 ```bash
-export CORELINK_PAT="corelink_dev_t_xxx.xxx.xxx"
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 ```
 
 ```typescript
@@ -71,7 +71,7 @@ ein auftragsbezogenes PAT mit den minimal erforderlichen Berechtigungen ausstell
 ```typescript
 // DO NOT DO THIS
 const client = new CoreLinkClient({
-  pat: "corelink_dev_t_xxx.xxx.xxx",
+  pat: "corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA",
   tenantId: "acme-corp",
 });
 ```

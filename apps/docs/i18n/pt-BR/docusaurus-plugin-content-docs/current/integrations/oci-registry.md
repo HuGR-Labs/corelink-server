@@ -26,7 +26,7 @@ de duas etapas do registro (`GET /token` e depois `Authorization: Bearer`).
 ## Pré-requisitos
 
 - `docker` (ou `podman`) instalado.
-- Um PAT do CoreLink (`corelink_pat_...`) com escopo de leitura + escrita de cache.
+- Um PAT do CoreLink (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA`) com escopo de leitura + escrita de cache.
 
 ## Fazer login
 

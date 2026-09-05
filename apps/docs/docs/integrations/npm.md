@@ -19,7 +19,7 @@ packages and does not accept `npm publish`.
 ## Prerequisites
 
 - `npm` (or a compatible client) installed.
-- A CoreLink PAT (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB`).
+- A CoreLink PAT (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA`).
 - Your tenant UUID.
 
 ## Configure `.npmrc`
@@ -29,7 +29,7 @@ Add your tenant registry and its auth token to `.npmrc` (project-local or
 
 ```ini
 registry=https://corelink-api.humangr.com/npm/<your-tenant-id>/
-//corelink-api.humangr.com/npm/<your-tenant-id>/:_authToken=corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB
+//corelink-api.humangr.com/npm/<your-tenant-id>/:_authToken=corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA
 ```
 
 npm sends the `_authToken` as `Authorization: Bearer <token>`, which is exactly
@@ -61,7 +61,7 @@ npm is using the mirror.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `401 Unauthorized` | Missing or malformed `_authToken` line | The token line's host + path must match `registry=` exactly, and the token must be a `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB` PAT |
+| `401 Unauthorized` | Missing or malformed `_authToken` line | The token line's host + path must match `registry=` exactly, and the token must be a `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA` PAT |
 | Installs still hit `registry.npmjs.org` | `registry=` not picked up | Check the effective unscoped registry with `npm config get registry --location=project` and `npm config get registry --location=user`, then retry with `npm install --loglevel http` and look for `corelink-api.humangr.com` requests |
 | `EINTEGRITY` | Upstream tarball changed | CoreLink verifies `dist.shasum` and fails closed on mismatch — retry, or report the upstream package |
 

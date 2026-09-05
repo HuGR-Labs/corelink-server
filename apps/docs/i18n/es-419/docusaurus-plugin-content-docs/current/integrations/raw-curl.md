@@ -22,7 +22,7 @@ Esta página trata el uso de la API de CoreLink directamente con `curl`. Es úti
 ## Configuración de autenticación
 
 ```bash
-export CORELINK_PAT="corelink_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 export CORELINK_TENANT="acme-prod"
 export CORELINK_BASE="https://corelink-api.humangr.com"
 ```

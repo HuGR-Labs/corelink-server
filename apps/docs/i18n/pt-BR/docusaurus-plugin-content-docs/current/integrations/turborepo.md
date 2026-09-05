@@ -36,7 +36,7 @@ fronteira de segurança e não aparece na URL base.
 
 ```bash
 export TURBO_API="https://corelink-api.humangr.com"
-export TURBO_TOKEN="corelink_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+export TURBO_TOKEN="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 ```
 
 Depois, execute o Turborepo normalmente (passe um label `--team` para que o Turborepo habilite o cache

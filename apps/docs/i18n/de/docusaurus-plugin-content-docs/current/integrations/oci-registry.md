@@ -26,7 +26,7 @@ zweistufigen Bearer-Token-Ablauf der Registry (`GET /token`, dann `Authorization
 ## Voraussetzungen
 
 - `docker` (oder `podman`) installiert.
-- Ein CoreLink-PAT (`corelink_pat_...`) mit Lese- und Schreibberechtigung für den Cache.
+- Ein CoreLink-PAT (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA`) mit Lese- und Schreibberechtigung für den Cache.
 
 ## Anmelden
 

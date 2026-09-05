@@ -25,7 +25,7 @@ privaten Indizes und akzeptiert kein `twine upload`.
 ## Voraussetzungen
 
 - `pip` (oder ein kompatibler Client) installiert.
-- Ein CoreLink-PAT (`corelink_pat_...`).
+- Ein CoreLink-PAT (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA`).
 - Die UUID Ihres Tenants.
 
 ## Konfigurieren
@@ -37,7 +37,7 @@ Anmeldedaten — in `pip.conf` ein (`~/.config/pip/pip.conf` unter Linux,
 
 ```ini
 [global]
-index-url = https://hugr:corelink_pat_XXXXXXXXXXXX@corelink-api.humangr.com/pip/<your-tenant-id>/simple/
+index-url = https://hugr:corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA@corelink-api.humangr.com/pip/<your-tenant-id>/simple/
 ```
 
 Installieren Sie anschließend wie gewohnt:
@@ -72,7 +72,7 @@ pip über den Spiegel auflöst.
 
 | Symptom | Wahrscheinliche Ursache | Lösung |
 |---|---|---|
-| `401 Unauthorized` | Der Benutzername ist nicht `hugr`, oder das Passwort ist kein `corelink_pat_...`-PAT | Verwenden Sie `hugr` als Benutzernamen und Ihren PAT als Passwort |
+| `401 Unauthorized` | Der Benutzername ist nicht `hugr`, oder das Passwort ist kein `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA`-PAT | Verwenden Sie `hugr` als Benutzernamen und Ihren PAT als Passwort |
 | `Could not find a version` | Projekt noch nicht zwischengespeichert und Upstream nicht erreichbar | Wiederholen Sie es; CoreLink holt es bei der ersten Anfrage von PyPI |
 | Hash-Abweichung bei einem Wheel | Das Upstream-Artefakt hat sich geändert | CoreLink prüft das `#sha256=`-Fragment und schlägt bei einer Abweichung fehlsicher fehl |
 

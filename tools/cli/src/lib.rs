@@ -142,6 +142,19 @@ mod lib_tests {
     }
 
     #[test]
+    fn count_pat_leaks_handles_unicode_at_scan_window_boundary() {
+        let token_id = "ABCDEFGH01234567";
+        let secret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        let sig = "AAAAAAAAAAAAAAAAAAAAAA";
+        let pat = format!("corelink_pat_{token_id}.{secret}.{sig}");
+        // The multibyte character begins at byte 127 of the candidate. A
+        // direct `&candidate[..128]` would panic on its non-UTF-8 boundary.
+        let buf = format!("{pat}{}é", "x".repeat(31));
+        assert_eq!(buf.find('é'), Some(127));
+        assert_eq!(fuzz_api::count_pat_leaks(&buf), 1);
+    }
+
+    #[test]
     fn parse_config_toml_rejects_garbage() {
         let r = fuzz_api::parse_config_toml(b"\x00\xff\xff not toml");
         assert!(r.is_err(), "garbage bytes must not parse as TOML");

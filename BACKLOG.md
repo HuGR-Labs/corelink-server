@@ -11705,14 +11705,20 @@ verify: |
 
   cli_manifest = pathlib.Path("tools/cli/Cargo.toml")
   cli_auth = pathlib.Path("tools/cli/src/auth.rs")
-  if not cli_manifest.is_file() or not cli_auth.is_file():
+  cli_lib = pathlib.Path("tools/cli/src/lib.rs")
+  if not cli_manifest.is_file() or not cli_auth.is_file() or not cli_lib.is_file():
       fail("superficie local do CLI sumiu")
   cli_manifest_src = cli_manifest.read_text()
   cli_src = cli_auth.read_text()
+  cli_lib_src = cli_lib.read_text()
   if "corelink-pat = { workspace = true }" not in cli_manifest_src \
           or "corelink_pat::parse_plaintext(pat)" not in cli_src \
           or "validate_pat_shape(&raw)?" not in cli_src:
       fail("CLI nao usa o parser Rust localmente antes da rede")
+  for required in ("pub fn count_pat_leaks", "from_utf8(bytes)",
+                   ".get(..end)", ".get(..needed)"):
+      if required not in cli_lib_src:
+          fail(f"scanner Unicode-safe deixou de aplicar a guarda: {required}")
 
   # Pin the exact uppercase Crockford implementation, not broad ASCII
   # alphanumeric acceptance (which admits I/L/O/U and lowercase).
@@ -11724,6 +11730,14 @@ verify: |
                    "'P'..='T'", "'V'..='Z'"):
       if fragment not in crock_body:
           fail(f"charset Crockford mudou: falta {fragment}")
+  # Presence-only checks above are insufficient: a mutant can retain every
+  # valid arm while adding a forbidden one. Reject the forbidden alphabet
+  # explicitly so this verifier tests the predicate's semantics.
+  for forbidden in ("'I'", "'L'", "'O'", "'U'", "'i'", "'l'", "'o'", "'u'",
+                    "'A'..='Z'", "is_ascii_alphanumeric", "is_ascii_alphabetic",
+                    "is_ascii_uppercase", "to_ascii_uppercase"):
+      if forbidden in crock_body:
+          fail(f"charset Crockford aceitou simbolo proibido: {forbidden}")
   token_parse = re.search(r"pub fn parse\(raw: &str\).*?\n    \}", types_src, re.S)
   if not token_parse or "raw.len() != PAT_TOKEN_ID_LEN" not in token_parse.group(0) \
           or "for c in raw.chars()" not in token_parse.group(0) \
@@ -11760,6 +11774,11 @@ verify: |
           decoded_secret = base64.b64decode(secret + b"=", altchars=b"-_", validate=True)
       except Exception:
           return False
+      # Python's decoder accepts non-zero unused trailing bits, while Rust's
+      # URL_SAFE_NO_PAD rejects them. Round-trip to the canonical no-pad form
+      # so this oracle cannot bless a string the production parser rejects.
+      if base64.urlsafe_b64encode(decoded_secret).rstrip(b"=") != secret:
+          return False
       if len(decoded_secret) != 32 or raw[secret_start + 43:secret_start + 44] != b".":
           return False
       sig_start = secret_start + 44
@@ -11771,12 +11790,14 @@ verify: |
           decoded_sig = base64.b64decode(sig + b"==", altchars=b"-_", validate=True)
       except Exception:
           return False
+      if base64.urlsafe_b64encode(decoded_sig).rstrip(b"=") != sig:
+          return False
       return len(decoded_sig) == 16
 
   # Mutation probes pin the negative space of the parser: punctuation,
   # forbidden Crockford symbols, lowercase, Unicode/multibyte, env, and each
   # segment's exact byte length must all reject.
-  canonical = "corelink_pat_0123456789ABCDEF." + "A" * 43 + "." + "B" * 22
+  canonical = "corelink_pat_0123456789ABCDEF." + "A" * 43 + "." + "B" * 21 + "A"
   if not parse_pat(canonical):
       fail("controle positivo canonico nao passou")
   for bad in (
@@ -11786,10 +11807,14 @@ verify: |
       canonical.replace("A", "i", 1), canonical.replace("A", "l", 1),
       canonical.replace("A", "o", 1), canonical.replace("A", "u", 1),
       canonical.replace("A" * 43, "!" * 43),
-      canonical.replace("B" * 22, "!" * 22),
+      canonical.replace("B" * 21 + "A", "!" * 22),
       canonical.replace("corelink_pat_", "corelink_dev_"),
       canonical[:-1], canonical + "A", canonical.replace("A", "é", 1),
       canonical.replace("A", "😀", 1),
+      # Valid alphabet but non-zero unused Base64 trailing bits; Rust's
+      # URL_SAFE_NO_PAD rejects these and the oracle must reject them too.
+      canonical[:-1] + "B",
+      canonical.replace("A" * 43, "A" * 42 + "B"),
   ):
       if parse_pat(bad):
           fail(f"mutacao invalida aceita pelo oraculo: {bad!r}")
@@ -11800,16 +11825,20 @@ verify: |
   token_re = re.compile(r"corelink_[^\s`\"'<>()[\]{};,|:@/]+")
   old_envs = {"pat", "ci", "ro", "dev", "staging", "prod"}
   found = {}
-  for f in glob.glob("apps/docs/docs/**/*", recursive=True):
-      p = pathlib.Path(f)
-      if not p.is_file() or p.suffix not in (".md", ".mdx"):
-          continue
-      for match in token_re.finditer(p.read_text(encoding="utf-8", errors="strict")):
-          candidate = match.group(0)
-          rest = candidate[len("corelink_"):]
-          env = rest.split("_", 1)[0]
-          if candidate.startswith("corelink_pat_") or candidate.count(".") == 2 or env in old_envs:
-              found.setdefault(candidate, set()).add(str(p))
+  # Docusaurus serves the default docs, every configured locale, blog posts,
+  # and source pages. Keep all four trees in the population so an untranslated
+  # or page-level example cannot bypass the published-claims gate.
+  for root in ("apps/docs/docs", "apps/docs/i18n", "apps/docs/blog", "apps/docs/src/pages"):
+      for f in glob.glob(root + "/**/*", recursive=True):
+          p = pathlib.Path(f)
+          if not p.is_file() or p.suffix not in (".md", ".mdx"):
+              continue
+          for match in token_re.finditer(p.read_text(encoding="utf-8", errors="strict")):
+              candidate = match.group(0)
+              rest = candidate[len("corelink_"):]
+              env = rest.split("_", 1)[0]
+              if candidate.startswith("corelink_pat_") or candidate.count(".") == 2 or env in old_envs:
+                  found.setdefault(candidate, set()).add(str(p))
   if not found:
       fail("a varredura nao achou nenhum literal de PAT — instrumento quebrado, nao doc limpa")
   invalid = {t: paths for t, paths in found.items() if not parse_pat(t)}
@@ -11834,11 +11863,17 @@ verify-means: |
   declarado instrumento quebrado, não documentação consertada. Sem essa guarda, renomear o
   diretório de docs faria o item se declarar resolvido.
 
+  **População publicada completa:** a varredura percorre as fontes de documentos padrão,
+  os quatro locales configurados, posts do blog e páginas do site (`apps/docs/docs`,
+  `apps/docs/i18n`, `apps/docs/blog`, `apps/docs/src/pages`). Assim uma tradução ou página
+  fora da árvore inglesa não pode carregar um exemplo morto sem ser contado.
+
   **Fecha por exaustão, não por amostra:** todos os literais são verificados pelo mesmo modelo
   de bytes que o Rust, e controles negativos cobrem `!`, I/O/L/U, lowercase, Unicode/multibyte,
   env desconhecido e truncamento/extensão de cada segmento.
 
-  **Medido pelos dois lados:** a arvore atual sai `fechado`; a mutacao truncada sai `FALHA`.
+  **Medido pelos dois lados:** a arvore atual sai `fechado`; truncamento, bits residuais
+  Base64, charset proibido e a mutacao Unicode do scanner saem `FALHA`.
 
   **O que ele NÃO mede:** a ausência de oráculo no servidor (401 idêntico para cinco causas).
   Isso exige um PAT real e cinco requisições a produção — depende de [B-160]. Está no corpo

@@ -32,7 +32,7 @@ diese zu ersetzen. Die folgende Konfiguration richtet beide ein.
 - `sccache` **0.15 oder neuer** (`cargo install sccache` oder das Paket Ihrer
   Distribution). Prüfen Sie es mit `sccache --version` — die mehrstufige Storage-Kette,
   die Ihnen eine lokale Ebene verschafft, kam mit 0.15.0.
-- Ein CoreLink-PAT (`corelink_pat_...`) mit Lese- und Schreibberechtigung für den Cache.
+- Ein CoreLink-PAT (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA`) mit Lese- und Schreibberechtigung für den Cache.
 - Die UUID Ihres Tenants.
 
 ## Konfigurieren
@@ -42,7 +42,7 @@ PAT als Bearer-Token und schalten Sie eine lokale Festplatten-Ebene davor:
 
 ```bash
 export SCCACHE_WEBDAV_ENDPOINT="https://corelink-api.humangr.com/cargo/<your-tenant-id>"
-export SCCACHE_WEBDAV_TOKEN="corelink_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+export SCCACHE_WEBDAV_TOKEN="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 export SCCACHE_MULTILEVEL_CHAIN="disk,webdav"   # erfordert sccache >= 0.15
 export SCCACHE_DIR="$HOME/.cache/sccache"       # Ablageort der lokalen Ebene
 export RUSTC_WRAPPER=sccache
@@ -174,7 +174,7 @@ hinweg erhalten.
 | Symptom | Wahrscheinliche Ursache | Lösung |
 |---|---|---|
 | Jeder Build kompiliert neu | `RUSTC_WRAPPER` nicht gesetzt | Exportieren Sie `RUSTC_WRAPPER=sccache` in derselben Shell |
-| `401 Unauthorized` in den sccache-Protokollen | `SCCACHE_WEBDAV_TOKEN` fehlt oder ist falsch | Setzen Sie ihn auf Ihren `corelink_pat_...`-PAT |
+| `401 Unauthorized` in den sccache-Protokollen | `SCCACHE_WEBDAV_TOKEN` fehlt oder ist falsch | Setzen Sie ihn auf Ihren `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA`-PAT |
 | `403 Forbidden` | PAT auf einen anderen Tenant beschränkt | Prüfen Sie, ob der `<tenant>` im Endpunkt mit dem Tenant Ihres PAT übereinstimmt |
 | Cache-Misses bleiben bestehen | Nichtdeterministische Build-Eingaben | Fixieren Sie die Toolchain + `CARGO_INCREMENTAL=0`; führen Sie `sccache --show-stats` zur Analyse aus |
 | Treffer werden gezählt, aber jeder einzelne ist eine Netzwerkanfrage | `SCCACHE_MULTILEVEL_CHAIN` nicht gesetzt — sccache arbeitet nur remote | Setzen Sie `SCCACHE_MULTILEVEL_CHAIN="disk,webdav"` **und** `SCCACHE_DIR` |

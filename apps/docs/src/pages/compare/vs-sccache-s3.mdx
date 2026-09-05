@@ -262,13 +262,13 @@ so you can compare cache-hit ratios and latency without a flag day.
 Sign up at `https://humangr.com/corelink/sign-up`. No credit card.
 Free tier (10 GB, 500k req/mo) is sufficient for the trial phase. The
 sign-up wizard provisions your tenant, your region, and a starter
-Personal Access Token (`corelink_pat_…`), rendered once.
+Personal Access Token (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA`), rendered once.
 
 **Step 2: Install the CoreLink CLI and confirm it is authenticated.**
 
 ```bash
 curl -fsSL https://corelink-get.humangr.com | sh -s -- \
-  --token=corelink_pat_XXXX --region=ord
+  --token=corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA --region=ord
 ```
 
 The installer ends by running `corelink whoami`, which resolves your
@@ -285,7 +285,7 @@ so the same variables work locally and in CI.
 
 ```bash
 export SCCACHE_WEBDAV_ENDPOINT="https://corelink-api.humangr.com/cargo/<your-tenant-id>"
-export SCCACHE_WEBDAV_TOKEN="corelink_pat_XXXX"
+export SCCACHE_WEBDAV_TOKEN="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 export SCCACHE_MULTILEVEL_CHAIN="disk,webdav"   # requires sccache >= 0.15
 export SCCACHE_DIR="$HOME/.cache/sccache"       # where the local layer lives
 export RUSTC_WRAPPER=sccache

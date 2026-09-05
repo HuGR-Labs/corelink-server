@@ -22,7 +22,7 @@ Goal: authenticated, first push and pull, verified in under 5 minutes.
 Your PAT looks like:
 
 ```text
-corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB
+corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA
 ```
 
 That is `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>`, where `<env>`
@@ -32,7 +32,7 @@ tokens respectively).
 Export it for the examples below:
 
 ```bash
-export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB"
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 export CORELINK_TENANT="your-tenant-id"   # shown on the welcome screen
 ```
 

@@ -25,7 +25,7 @@ Pakete und akzeptiert kein `npm publish`.
 ## Voraussetzungen
 
 - `npm` (oder ein kompatibler Client) installiert.
-- Ein CoreLink-PAT (`corelink_pat_...`).
+- Ein CoreLink-PAT (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA`).
 - Die UUID Ihres Tenants.
 
 ## `.npmrc` konfigurieren
@@ -35,7 +35,7 @@ Fügen Sie die Registry Ihres Tenants und ihr Auth-Token zu `.npmrc` hinzu (proj
 
 ```ini
 registry=https://corelink-api.humangr.com/npm/<your-tenant-id>/
-//corelink-api.humangr.com/npm/<your-tenant-id>/:_authToken=corelink_pat_XXXXXXXXXXXXXXXXXXXXXXXX
+//corelink-api.humangr.com/npm/<your-tenant-id>/:_authToken=corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA
 ```
 
 npm sendet das `_authToken` als `Authorization: Bearer <token>`, genau das,
@@ -67,7 +67,7 @@ npm den Spiegel verwendet.
 
 | Symptom | Wahrscheinliche Ursache | Lösung |
 |---|---|---|
-| `401 Unauthorized` | Fehlende oder fehlerhafte `_authToken`-Zeile | Host + Pfad der Token-Zeile müssen exakt mit `registry=` übereinstimmen, und das Token muss ein `corelink_pat_...`-PAT sein |
+| `401 Unauthorized` | Fehlende oder fehlerhafte `_authToken`-Zeile | Host + Pfad der Token-Zeile müssen exakt mit `registry=` übereinstimmen, und das Token muss ein `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA`-PAT sein |
 | Installationen greifen weiterhin auf `registry.npmjs.org` zu | `registry=` wurde nicht übernommen | Prüfen Sie das wirksame unscoped Registry mit `npm config get registry --location=project` und `npm config get registry --location=user`, wiederholen Sie danach `npm install --loglevel http` und achten Sie auf Anfragen an `corelink-api.humangr.com` |
 | `EINTEGRITY` | Der Upstream-Tarball hat sich geändert | CoreLink prüft den `dist.shasum` und schlägt bei einer Abweichung fehlsicher fehl — wiederholen Sie es oder melden Sie das Upstream-Paket |
 

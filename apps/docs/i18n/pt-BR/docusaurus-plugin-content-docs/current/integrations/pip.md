@@ -25,7 +25,7 @@ Este é um **espelho somente leitura** para instalar pacotes públicos. Ele não
 ## Pré-requisitos
 
 - `pip` (ou um cliente compatível) instalado.
-- Um PAT do CoreLink (`corelink_pat_...`).
+- Um PAT do CoreLink (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA`).
 - O UUID do seu tenant.
 
 ## Configurar
@@ -37,7 +37,7 @@ embutidas — no `pip.conf` (`~/.config/pip/pip.conf` no Linux,
 
 ```ini
 [global]
-index-url = https://hugr:corelink_pat_XXXXXXXXXXXX@corelink-api.humangr.com/pip/<your-tenant-id>/simple/
+index-url = https://hugr:corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA@corelink-api.humangr.com/pip/<your-tenant-id>/simple/
 ```
 
 Depois, instale normalmente:
@@ -72,7 +72,7 @@ pip está resolvendo através do espelho.
 
 | Sintoma | Causa provável | Correção |
 |---|---|---|
-| `401 Unauthorized` | O nome de usuário não é `hugr`, ou a senha não é um PAT `corelink_pat_...` | Use `hugr` como nome de usuário e seu PAT como senha |
+| `401 Unauthorized` | O nome de usuário não é `hugr`, ou a senha não é um PAT `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA` | Use `hugr` como nome de usuário e seu PAT como senha |
 | `Could not find a version` | Projeto ainda não cacheado e upstream inacessível | Tente novamente; o CoreLink busca do PyPI na primeira requisição |
 | Divergência de hash em uma wheel | O artefato do upstream mudou | O CoreLink verifica o fragmento `#sha256=` e falha de forma fechada em caso de divergência |
 

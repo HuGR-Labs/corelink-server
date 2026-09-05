@@ -36,7 +36,7 @@ Sicherheitsgrenze und erscheint nicht in der Basis-URL.
 
 ```bash
 export TURBO_API="https://corelink-api.humangr.com"
-export TURBO_TOKEN="corelink_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+export TURBO_TOKEN="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 ```
 
 Führen Sie Turborepo anschließend wie gewohnt aus (übergeben Sie ein `--team`-Label, damit Turborepo das Remote-

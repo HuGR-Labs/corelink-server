@@ -39,7 +39,7 @@ rotas `/bazel/*` aceitam; o CAS REST *nativo* em `/v1/cas/...` é chaveado por B
 
 - Bazel padrão (para o alias `/bazel/cache`) ou um cliente compatível com
   REAPI/ByteStream (para `/bazel/v2`). Qualquer um funciona.
-- Um PAT do CoreLink (`corelink_pat_...`) com escopo de leitura + escrita de cache. Veja [criação de PAT](../concepts/tenancy.md).
+- Um PAT do CoreLink (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA`) com escopo de leitura + escrita de cache. Veja [criação de PAT](../concepts/tenancy.md).
 
 ## Configurar o `.bazelrc`
 
@@ -64,7 +64,7 @@ Exporte ambos os valores antes de compilar; na CI, passe o PAT a partir de um se
 apareça literalmente:
 
 ```bash
-export CORELINK_PAT="corelink_pat_XXXXXXXXXXXX"   # ${{ secrets.CORELINK_PAT }} in CI
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"   # ${{ secrets.CORELINK_PAT }} in CI
 export CORELINK_TENANT="acme-prod"
 ```
 

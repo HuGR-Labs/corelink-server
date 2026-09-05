@@ -25,7 +25,7 @@ privados y no acepta `npm publish`.
 ## Requisitos previos
 
 - `npm` (o un cliente compatible) instalado.
-- Un PAT de CoreLink (`corelink_pat_...`).
+- Un PAT de CoreLink (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA`).
 - El UUID de su tenant.
 
 ## Configurar `.npmrc`
@@ -35,7 +35,7 @@ Agregue el registro de su tenant y su token de autenticación a `.npmrc` (local 
 
 ```ini
 registry=https://corelink-api.humangr.com/npm/<your-tenant-id>/
-//corelink-api.humangr.com/npm/<your-tenant-id>/:_authToken=corelink_pat_XXXXXXXXXXXXXXXXXXXXXXXX
+//corelink-api.humangr.com/npm/<your-tenant-id>/:_authToken=corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA
 ```
 
 npm envía el `_authToken` como `Authorization: Bearer <token>`, que es exactamente
@@ -67,7 +67,7 @@ npm está usando el espejo.
 
 | Síntoma | Causa probable | Solución |
 |---|---|---|
-| `401 Unauthorized` | Línea `_authToken` ausente o malformada | El host + camino de la línea del token deben coincidir exactamente con `registry=`, y el token debe ser un PAT `corelink_pat_...` |
+| `401 Unauthorized` | Línea `_authToken` ausente o malformada | El host + camino de la línea del token deben coincidir exactamente con `registry=`, y el token debe ser un PAT `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA` |
 | Las instalaciones siguen accediendo a `registry.npmjs.org` | `registry=` no se detectó | Compruebe el registro sin ámbito efectivo con `npm config get registry --location=project` y `npm config get registry --location=user`, luego repita con `npm install --loglevel http` y busque solicitudes a `corelink-api.humangr.com` |
 | `EINTEGRITY` | El tarball del upstream cambió | CoreLink verifica el `dist.shasum` y falla de forma cerrada ante una discrepancia — reintente o reporte el paquete del upstream |
 

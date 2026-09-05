@@ -25,7 +25,7 @@ a local disk layer, not to replace it. The configuration below sets up both.
 - `sccache` **0.15 or newer** (`cargo install sccache` or your distribution's
   package). Check with `sccache --version` — the multi-level storage chain that
   gives you a local layer landed in 0.15.0.
-- A CoreLink PAT (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB`) with cache read + write scope.
+- A CoreLink PAT (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA`) with cache read + write scope.
 - Your tenant UUID.
 
 ## Configure
@@ -35,7 +35,7 @@ token, and chain a local disk layer in front of it:
 
 ```bash
 export SCCACHE_WEBDAV_ENDPOINT="https://corelink-api.humangr.com/cargo/<your-tenant-id>"
-export SCCACHE_WEBDAV_TOKEN="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB"
+export SCCACHE_WEBDAV_TOKEN="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 export SCCACHE_MULTILEVEL_CHAIN="disk,webdav"   # requires sccache >= 0.15
 export SCCACHE_DIR="$HOME/.cache/sccache"       # where the local layer lives
 export RUSTC_WRAPPER=sccache
@@ -161,7 +161,7 @@ persist `SCCACHE_DIR` across runs with your runner's cache action.
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Every build rebuilds | `RUSTC_WRAPPER` not set | Export `RUSTC_WRAPPER=sccache` in the same shell |
-| `401 Unauthorized` in sccache logs | Missing or wrong `SCCACHE_WEBDAV_TOKEN` | Set it to your `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB` PAT |
+| `401 Unauthorized` in sccache logs | Missing or wrong `SCCACHE_WEBDAV_TOKEN` | Set it to your `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA` PAT |
 | `403 Forbidden` | PAT scoped to a different tenant | Confirm the `<tenant>` in the endpoint matches your PAT's tenant |
 | Cache misses persist | Non-deterministic build inputs | Pin toolchain + `CARGO_INCREMENTAL=0`; run `sccache --show-stats` to inspect |
 | Hits are counted, but every one is a network request | `SCCACHE_MULTILEVEL_CHAIN` unset — sccache is remote-only | Set `SCCACHE_MULTILEVEL_CHAIN="disk,webdav"` **and** `SCCACHE_DIR` |

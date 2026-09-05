@@ -33,7 +33,7 @@ Both are Bearer-PAT authenticated. (Bazel content-addresses by SHA-256, which th
 
 - Stock Bazel (for the `/bazel/cache` alias) or a REAPI/ByteStream-compatible
   client (for `/bazel/v2`). Either works.
-- A CoreLink PAT (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB`) with cache read + write scope. See [PAT creation](../concepts/tenancy.md).
+- A CoreLink PAT (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA`) with cache read + write scope. See [PAT creation](../concepts/tenancy.md).
 
 ## Configure `.bazelrc`
 
@@ -58,7 +58,7 @@ Export both values before building; in CI pass the PAT from a secret so it never
 appears literally:
 
 ```bash
-export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB"   # ${{ secrets.CORELINK_PAT }} in CI
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"   # ${{ secrets.CORELINK_PAT }} in CI
 export CORELINK_TENANT="acme-prod"
 ```
 

@@ -29,14 +29,14 @@ Linux e Windows) e precisa executar qualquer comando, exceto `version`.
 ## Recomendado: variável de ambiente
 
 ```bash
-export CORELINK_PAT="corelink_dev_t_xxx.xxx.xxx"
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 corelink ls --tenant acme-corp
 ```
 
 ## Alternativa: arquivo de configuração
 
 ```bash
-corelink config set auth.pat corelink_dev_t_xxx.xxx.xxx
+corelink config set auth.pat corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA
 corelink config set defaults.tenant_id acme-corp
 ```
 
@@ -48,7 +48,7 @@ O arquivo fica em `~/.corelink/config.toml` no macOS/Linux e em
 
 ```bash
 # DO NOT DO THIS — the CLI exits 2 with an explicit security error.
-corelink --pat=corelink_dev_t_xxx.xxx.xxx ls --tenant acme-corp
+corelink --pat=corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA ls --tenant acme-corp
 ```
 
 CTRL-CRED-001 proíbe a flag `--pat` porque os argumentos de processo vazam via
