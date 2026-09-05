@@ -208,9 +208,15 @@ class B155VerifierTests(unittest.TestCase):
         # therefore red rather than silently disappearing.
         wrapped = (
             "sudo grep -q \"needle\" file.rs",
+            "sudo -u alice grep -q \"needle\" file.rs",
             "env grep -q \"needle\" file.rs",
+            "env -i VAR=x grep -q \"needle\" file.rs",
             "git grep -q \"needle\" file.rs",
+            "git -C repo grep -q \"needle\" file.rs",
             "xargs grep -q \"needle\" file.rs",
+            "xargs -n 1 grep -q \"needle\" file.rs",
+            "{ grep -q \"needle\" file.rs; }",
+            "VAR=value grep -q \"needle\" file.rs",
             "2>/dev/null grep -q \"needle\" file.rs",
         )
         for verify in wrapped:
@@ -222,6 +228,22 @@ class B155VerifierTests(unittest.TestCase):
                 self.assertEqual(len(checks), 1)
                 self.assertEqual(checks[0].source_kind, "rust")
                 self.assertEqual(indeterminate, [])
+
+        # Replacing any recognized wrapper with an unknown executable must not
+        # make the grep disappear from the census.
+        for prefix in ("sudo -u alice", "env -i VAR=x", "git -C repo", "xargs -n 1"):
+            with self.subTest(prefix=prefix):
+                known = f"{prefix} grep -q \"needle\" file.rs"
+                unknown = known.replace(prefix, "mystery-wrapper", 1)
+                _, known_count, known_unknown = verifier._grep_checks(
+                    {"id": "B-155", "verify": known}
+                )
+                _, unknown_count, unknown_indeterminate = verifier._grep_checks(
+                    {"id": "B-155", "verify": unknown}
+                )
+                self.assertEqual((known_count, known_unknown), (1, []))
+                self.assertEqual(unknown_count, 1)
+                self.assertEqual(len(unknown_indeterminate), 1)
 
         checks, invocations, indeterminate = verifier._grep_checks(
             {"id": "B-155", "verify": "sudo grep -q \"needle\""}

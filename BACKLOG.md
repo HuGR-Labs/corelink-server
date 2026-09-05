@@ -10771,13 +10771,15 @@ Os outros dois: **B-118** punia a confissão da remoção (o `verify` casava o t
 descrevia o conserto) e **B-112** punia a explicação do repontamento. Três formas do mesmo
 erro: **o portão lê a prosa sobre o código em vez do código.**
 
-Varredura desta árvore: **93 de 134** `verify` com comando invocam `grep` com um padrão que
-não começa em `^` e sem filtro de comentário — [B-007], [B-015], [B-016], [B-019], [B-020],
-[B-021] e mais 87. Não é um bug em 93 itens; é a ausência de uma convenção mecanizada.
+**Medição histórica, antes do reparo estrutural (2026-08-31):** **93 de 134** `verify` com
+comando invocavam `grep` com um padrão que não começava em `^` e sem filtro de comentário —
+[B-007], [B-015], [B-016], [B-019], [B-020], [B-021] e mais 87. Não era um bug em 93
+itens; era a ausência de uma convenção mecanizada. Esses números não são o censo atual.
 
-⚠️ **Contado não é triado, e a distinção é a parte útil.** Boa parte dos 91 grepa arquivo sem
-comentário de linha, ou padrão que nenhum comentário plausível conteria — são falsos
-positivos legítimos da varredura. O trabalho do item é **triar** os 93 e ancorar os que podem
+⚠️ **Contado não é triado, e a distinção é a parte útil.** Na mesma medição histórica, boa
+parte dos 91 `grep`s lia arquivo sem comentário de linha, ou padrão que nenhum comentário
+plausível conteria — eram falsos positivos legítimos da varredura. O trabalho do item é **triar**
+os casos e ancorar os que podem
 ser satisfeitos por comentário; a contagem serve para saber quando parar, não para acusar.
 
 **O que este item NÃO decide:** se o reparo é ancorar caso a caso ou proibir `grep` nu num

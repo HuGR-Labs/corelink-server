@@ -86,6 +86,14 @@ class GrepCheck:
 
 
 @dataclass(frozen=True)
+class _ShellToken:
+    value: str
+    start: int
+    end: int
+    kind: str = "word"
+
+
+@dataclass(frozen=True)
 class Census:
     records: int
     command_records: int
@@ -233,6 +241,126 @@ def _is_command_boundary(text: str) -> bool:
     )
 
 
+_COMMAND_SEPARATORS = {";", "&&", "||", "|", "&", "(", ")", "{", "}"}
+_CONTROL_WORDS = {"if", "elif", "then", "while", "until", "do", "command", "builtin", "exec", "!"}
+_KNOWN_WRAPPERS = {"sudo", "env", "git", "xargs"}
+_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_REDIRECTION = re.compile(r"^(?:\d*)?(?:>>>|<<<|>>|<<|>|<)")
+
+
+def _shell_tokens(text: str) -> tuple[_ShellToken, ...]:
+    """Lex enough shell structure to distinguish commands from prose.
+
+    This is deliberately not a shell interpreter.  It preserves token spans,
+    separators, assignments, and redirections so the grep scanner can prove
+    that a match starts an executable word.  Anything not understood by this
+    small grammar is left as a word and handled by the fail-closed wrapper
+    classification below.
+    """
+    tokens: list[_ShellToken] = []
+    index = 0
+    length = len(text)
+    while index < length:
+        if text[index].isspace():
+            index += 1
+            continue
+        if text[index] == "#":
+            # An unquoted # starts a shell comment when it begins a word.
+            if not tokens or text[index - 1].isspace():
+                break
+        start = index
+        if text.startswith("&&", index) or text.startswith("||", index) or text.startswith(";;", index):
+            op = text[index : index + 2]
+            tokens.append(_ShellToken(op, index, index + 2, "separator"))
+            index += 2
+            continue
+        if text[index] in ";|&(){}":
+            tokens.append(_ShellToken(text[index], index, index + 1, "separator"))
+            index += 1
+            continue
+        value: list[str] = []
+        quote: str | None = None
+        while index < length:
+            char = text[index]
+            if quote is None and (char.isspace() or char in ";|&(){}"):
+                break
+            if quote is None and char == "#" and (index == start or text[index - 1].isspace()):
+                break
+            if char == "\\" and quote != "'":
+                if index + 1 >= length:
+                    value.append("\\")
+                    index += 1
+                else:
+                    value.append(text[index + 1])
+                    index += 2
+                continue
+            if char in "'\"":
+                if quote is None:
+                    quote = char
+                elif quote == char:
+                    quote = None
+                else:
+                    value.append(char)
+                index += 1
+                continue
+            value.append(char)
+            index += 1
+        if quote is not None:
+            # Keep the malformed word visible; it will not be mistaken for a
+            # command because its span starts before any inner grep spelling.
+            value.append(quote)
+        raw = text[start:index]
+        kind = "word"
+        if _REDIRECTION.match(raw):
+            kind = "redirection"
+        elif _ASSIGNMENT.match(raw):
+            kind = "assignment"
+        tokens.append(_ShellToken("".join(value), start, index, kind))
+    return tuple(tokens)
+
+
+def _grep_command_kind(line: str, offset: int) -> str | None:
+    """Return direct/wrapped/unknown-wrapper, or None for grep-looking prose."""
+    prefix_text = line[:offset]
+    # A command substitution starts a fresh command even when it appears in a
+    # quoted argument (e.g. ``test "$(grep -c ...)"``).  The lightweight lexer
+    # intentionally keeps that surrounding word intact, so recurse on the
+    # substitution body before looking at ordinary shell tokens.
+    substitution = prefix_text.rfind("$(")
+    if substitution >= 0 and (substitution == 0 or prefix_text[substitution - 1] != "\\"):
+        nested_prefix = prefix_text[substitution + 2 :]
+        nested_line = nested_prefix + "grep"
+        nested_kind = _grep_command_kind(nested_line, len(nested_prefix))
+        if nested_kind is not None:
+            return nested_kind
+    tokens = _shell_tokens(line)
+    target_index = next(
+        (
+            index
+            for index, token in enumerate(tokens)
+            if token.start == offset and token.value == "grep" and token.kind == "word"
+        ),
+        None,
+    )
+    if target_index is None:
+        return None
+    prefix = list(tokens[:target_index])
+    boundary = -1
+    for index, token in enumerate(prefix):
+        if token.kind == "separator" and token.value in _COMMAND_SEPARATORS:
+            boundary = index
+    segment = prefix[boundary + 1 :]
+    while segment and segment[0].kind in {"assignment", "redirection"}:
+        segment.pop(0)
+    while segment and segment[0].kind == "word" and segment[0].value in _CONTROL_WORDS:
+        segment.pop(0)
+    if not segment:
+        return "direct"
+    if segment[0].kind == "word" and segment[0].value in _KNOWN_WRAPPERS:
+        return "wrapped"
+    return "unknown-wrapper"
+
+
 def _resolved_patterns(pattern: str, verify: str) -> tuple[tuple[str, ...], bool]:
     variables = SHELL_VARIABLE.findall(pattern)
     if not variables:
@@ -304,9 +432,10 @@ def _grep_checks_text(
         known_starts: set[int] = set()
         for match in GREP.finditer(line):
             # A grep-looking string in an embedded Python/awk expression is
-            # not a shell invocation. Require a shell command boundary (or a
-            # command substitution/assignment immediately before it).
-            if not _is_command_boundary(line[: match.start()]):
+            # not a shell invocation. Require a structurally valid command
+            # token; unknown wrappers are counted but fail closed below.
+            command_kind = _grep_command_kind(line, match.start())
+            if command_kind is None:
                 continue
             invocations += 1
             known_starts.add(match.start())
@@ -334,6 +463,8 @@ def _grep_checks_text(
                 indeterminate.append(check)
             if check.source_kind == "unknown":
                 indeterminate.append(check)
+            if command_kind == "unknown-wrapper":
+                indeterminate.append(check)
         # The shell permits a bare regex word (`grep unsafe file`) in addition
         # to the quoted form above.  Parse it separately, retaining the same
         # boundary and polarity rules.  A variable or shell expression is
@@ -342,7 +473,8 @@ def _grep_checks_text(
         for match in GREP_UNQUOTED.finditer(line):
             if match.start() in known_starts:
                 continue
-            if not _is_command_boundary(line[: match.start()]):
+            command_kind = _grep_command_kind(line, match.start())
+            if command_kind is None:
                 continue
             invocations += 1
             known_starts.add(match.start())
@@ -366,6 +498,8 @@ def _grep_checks_text(
                 indeterminate.append(check)
             if check.source_kind == "unknown":
                 indeterminate.append(check)
+            if command_kind == "unknown-wrapper":
+                indeterminate.append(check)
         # A grep invocation with an unquoted/dynamic pattern is still an
         # invocation, but its dialect and polarity cannot be proven by this
         # parser.  Count it and fail closed instead of silently shrinking the
@@ -373,7 +507,8 @@ def _grep_checks_text(
         for word in re.finditer(r"\bgrep\b", line):
             if word.start() in known_starts:
                 continue
-            if not _is_command_boundary(line[: word.start()]):
+            command_kind = _grep_command_kind(line, word.start())
+            if command_kind is None:
                 continue
             invocations += 1
             indeterminate.append(
