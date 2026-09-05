@@ -39,6 +39,7 @@ COMMAND_BOUNDARY = re.compile(
     r"(?:^|[;&|(!]|\$\(|\b(?:if|elif|then|while|until|do|command|builtin|exec)\b)"
     r"\s*(?:!\s*)?(?:[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|\"[^\"]*\"|\S+)\s*)*$"
 )
+NESTED_SHELL = re.compile(r"\b(?:bash|sh|zsh)\s+-c\b")
 ID = re.compile(r"^B-\d{3}$")
 COMMENT_PREFIXES = ("//", "#", "/*", "<!--", "*", "--")
 POSIX_CLASSES = {
@@ -78,8 +79,8 @@ class Census:
 EXPECTED_RECORDS = 168
 EXPECTED_COMMAND_RECORDS = 137
 EXPECTED_MANUAL_RECORDS = 31
-EXPECTED_GREP_INVOCATIONS = 348
-EXPECTED_ASSERTIONS = 328
+EXPECTED_GREP_INVOCATIONS = 349
+EXPECTED_ASSERTIONS = 329
 
 
 def _records(backlog: str) -> list[dict[str, object]]:
@@ -180,11 +181,28 @@ def _grep_checks(record: dict[str, object]) -> tuple[list[GrepCheck], int, list[
     verify = record.get("verify")
     if not isinstance(verify, str) or verify.strip() == "manual":
         return [], 0, []
+    return _grep_checks_text(verify, str(record["id"]), verify)
+
+
+def _grep_checks_text(
+    verify: str,
+    record_id: str,
+    context: str,
+    line_offset: int = 0,
+) -> tuple[list[GrepCheck], int, list[GrepCheck]]:
+    """Census shell text and recurse into literal ``shell -c`` payloads.
+
+    A quoted ``bash -c '...'`` is a second shell program, not prose. Its
+    payload is masked from the outer scan (newlines are retained for line
+    numbers) and scanned recursively. Dynamic or unterminated payloads fail
+    closed instead of silently shrinking the grep population.
+    """
+    masked, nested = _mask_nested_shells(verify)
     checks: list[GrepCheck] = []
     indeterminate: list[GrepCheck] = []
     invocations = 0
     known_starts: set[int] = set()
-    for line_number, line in enumerate(verify.splitlines(), 1):
+    for line_number, line in enumerate(masked.splitlines(), 1):
         known_starts: set[int] = set()
         for match in GREP.finditer(line):
             # A grep-looking string in an embedded Python/awk expression is
@@ -196,10 +214,10 @@ def _grep_checks(record: dict[str, object]) -> tuple[list[GrepCheck], int, list[
             known_starts.add(match.start())
             options = match.group("options") or ""
             pattern = match.group("pattern")
-            resolved, unresolved = _resolved_patterns(pattern, verify)
+            resolved, unresolved = _resolved_patterns(pattern, context)
             check = GrepCheck(
-                record_id=str(record["id"]),
-                line=line_number,
+                record_id=record_id,
+                line=line_number + line_offset,
                 pattern=pattern,
                 options=options,
                 source=line.strip(),
@@ -227,10 +245,10 @@ def _grep_checks(record: dict[str, object]) -> tuple[list[GrepCheck], int, list[
             known_starts.add(match.start())
             options = match.group("options") or ""
             pattern = match.group("pattern")
-            resolved, unresolved = _resolved_patterns(pattern, verify)
+            resolved, unresolved = _resolved_patterns(pattern, context)
             check = GrepCheck(
-                record_id=str(record["id"]),
-                line=line_number,
+                record_id=record_id,
+                line=line_number + line_offset,
                 pattern=pattern,
                 options=options,
                 source=line.strip(),
@@ -252,14 +270,62 @@ def _grep_checks(record: dict[str, object]) -> tuple[list[GrepCheck], int, list[
             invocations += 1
             indeterminate.append(
                 GrepCheck(
-                    record_id=str(record["id"]),
-                    line=line_number,
+                    record_id=record_id,
+                    line=line_number + line_offset,
                     pattern="",
                     options="",
                     source=line.strip(),
                 )
             )
+    for payload, first_line in nested:
+        nested_checks, nested_invocations, nested_indeterminate = _grep_checks_text(
+            payload, record_id, payload, line_offset + first_line - 1
+        )
+        checks.extend(nested_checks)
+        invocations += nested_invocations
+        indeterminate.extend(nested_indeterminate)
     return checks, invocations, indeterminate
+
+
+def _mask_nested_shells(text: str) -> tuple[str, list[tuple[str, int]]]:
+    """Mask static ``bash|sh|zsh -c`` bodies and return their payloads."""
+    spans: list[tuple[int, int, str, int]] = []
+    for match in NESTED_SHELL.finditer(text):
+        line_start = text.rfind("\n", 0, match.start()) + 1
+        if not COMMAND_BOUNDARY.search(text[line_start : match.start()]):
+            continue
+        pos = match.end()
+        while pos < len(text) and text[pos].isspace():
+            pos += 1
+        if pos >= len(text) or text[pos] not in "\"'":
+            raise InstrumentError("nested shell -c payload is not a literal quote")
+        quote = text[pos]
+        end = pos + 1
+        while end < len(text):
+            if text[end] == "\\" and end + 1 < len(text):
+                end += 2
+                continue
+            if text[end] == quote:
+                break
+            end += 1
+        if end >= len(text):
+            raise InstrumentError("unterminated nested shell -c payload")
+        payload = text[pos + 1 : end]
+        if re.match(r"\s*(?:\$\{?[A-Za-z_]|\$\()", payload):
+            raise InstrumentError("nested shell -c payload is dynamically generated")
+        first_line = text.count("\n", 0, pos + 1) + 1
+        spans.append((match.start(), end + 1, payload, first_line))
+
+    if not spans:
+        return text, []
+    chars = list(text)
+    payloads: list[tuple[str, int]] = []
+    for start, end, payload, first_line in spans:
+        payloads.append((payload, first_line))
+        for index in range(start, end):
+            if chars[index] != "\n":
+                chars[index] = " "
+    return "".join(chars), payloads
 
 
 def _as_python_regex(pattern: str, options: str = "") -> re.Pattern[str]:
@@ -424,6 +490,32 @@ def mutation_self_test(backlog: str) -> None:
         raise InstrumentError("anchoring a real B-083 population member did not reduce risk")
     if expect == "increase" and len(changed.unsafe) <= len(baseline.unsafe):
         raise InstrumentError("removing the B-083 guard did not increase risk")
+
+    # B-112 starts its nested `bash -c` body with a grep, the boundary that a
+    # flat line scanner used to miss.  Keep a mutation on that exact member so
+    # recursion cannot regress while the headline census remains unchanged.
+    nested_target = re.search(
+        r"(id: B-112\n.*?verify: \|\n(?:  .*\n)+?)",
+        backlog,
+        re.DOTALL,
+    )
+    if nested_target is None:
+        raise InstrumentError("B-112 nested-shell mutation fixture is missing")
+    nested_guarded = 'grep -q "^[^#/<*-]*cargo zigbuild"'
+    nested_open = 'grep -q "cargo zigbuild"'
+    if nested_guarded not in nested_target.group(1):
+        raise InstrumentError("B-112 nested grep is not guarded")
+    nested_block = nested_target.group(1).replace(nested_guarded, nested_open, 1)
+    if nested_block == nested_target.group(1):
+        raise InstrumentError("B-112 mutation did not change the fixture")
+    nested_mutated = (
+        backlog[: nested_target.start()]
+        + nested_block
+        + backlog[nested_target.end() :]
+    )
+    nested_changed = census(nested_mutated)
+    if len(nested_changed.unsafe) <= len(baseline.unsafe):
+        raise InstrumentError("removing the B-112 nested grep guard did not increase risk")
 
     # Parser completeness is also load-bearing: removing every fenced record
     # cannot become a falsely clean zero-population result.

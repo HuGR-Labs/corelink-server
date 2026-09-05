@@ -82,6 +82,9 @@ jobs:
       - name: the gate can go red (self-test)
         run: bash scripts/test_backlog_verify.sh
 
+      - name: B-155 verifier mutation suite
+        run: python3 tests/test_verify_b155_backlog_grep_population.py
+
       - name: BACKLOG.md agrees with the repo
         # Items that query the Actions API need gh authenticated. Items about
         # SIBLING repos are deliberately `verify: manual` — the Actions token is

@@ -3756,7 +3756,7 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  bash -c 'grep -q "cargo zigbuild" .github/workflows/release-cli.yml || exit 1
+  bash -c 'grep -q "^[^#/<*-]*cargo zigbuild" .github/workflows/release-cli.yml || exit 1
   grep -q "^[^#/<*-]*authorized-by: repo owner" .github/workflows/cosign-sign.yml || exit 1
   uses=$(grep -cE -- "^[^#/<*-]*--repo[[:space:]]+HumanGuardrail/corelink-cli" .github/workflows/release-cli.yml 2>/dev/null || true)
   [ "${uses:-0}" = 0 ] || { echo "FALHA: $uses uso(s) executavel(is) de --repo HumanGuardrail/corelink-cli em release-cli.yml — o repontamento deste PR foi revertido e a lane volta a publicar num repo que responde 404."; exit 1; }
@@ -11021,7 +11021,8 @@ descrevia o conserto) e **B-112** punia a explicação do repontamento. Três fo
 erro: **o portão lê a prosa sobre o código em vez do código.**
 
 O censo fechado percorre **168** fences (`137` verifies com comando, `31` manuais), encontra
-`348` invocações e `328` asserções positivas, incluindo formas sem aspas e em condicionais.
+`349` invocações e `329` asserções positivas, incluindo formas sem aspas, em condicionais e
+dentro de scripts literais `bash -c`.
 A transformação limitada em `scripts/repair_b155_grep_population.py` endureceu **122** asserções que podiam casar
 comentários, preservando cada padrão e sua polaridade; padrões já ancorados só foram
 ampliados quando tinham o guard conhecido `[^#]`/`[^/]`. As demais formas foram deixadas
@@ -11053,16 +11054,19 @@ verify-means: |
 
   **Anti-vacuidade:** população vazia, fence sem YAML, ID ausente/duplicado, remoção de B-084,
   remoção de uma asserção positiva de B-082, grep sem aspas desconhecido, ou regex
-  indeterminada não produz um `done`; todos são erros ou riscos explícitos. O self-test ainda
-  ancora uma asserção real de B-083 em memória e exige redução do risco, além de provar que
-  remover toda a população é rejeitado.
+  indeterminada, ou `bash|sh|zsh -c` sem payload literal não produz um `done`; todos são
+  erros ou riscos explícitos. O self-test ainda ancora asserções reais de B-083 e B-112 em
+  memória e exige aumento/redução do risco, além de provar que remover toda a população é
+  rejeitado.
 
-  ⚠️ **A população não está fechada.** O portão só pode mudar para `done` quando o censo
-  inteiro tiver zero `comment_sensitive` e zero `indeterminate`; uma redução mecânica ou uma
-  lista parcial não fecha o item.
+  **Fechamento:** o portão só aceita `done` quando o censo inteiro tiver zero
+  `comment_sensitive` e zero `indeterminate`. A mutação do B-083 remove o guard canônico e
+  precisa aumentar o risco; a população inclui greps dentro de scripts literais `bash -c`,
+  `sh -c` e `zsh -c`; payload dinâmico ou não terminado é erro de instrumento, nunca uma
+  população vazia. Remover todas as fences continua sendo rejeitado.
 
   **Medido na árvore atual (2026-09-05):** `records=168`, `command_records=137`, `manual=31`,
-  `grep_invocations=348`, `assertions=328`, `comment_sensitive=0`, `indeterminate=0`.
+  `grep_invocations=349`, `assertions=329`, `comment_sensitive=0`, `indeterminate=0`.
   O comando é offline e somente este censo decide o fechamento da população.
 last-verified: 2026-09-05
 ```

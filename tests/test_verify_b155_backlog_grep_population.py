@@ -26,8 +26,8 @@ class B155VerifierTests(unittest.TestCase):
         self.assertEqual(result.command_records, 137)
         self.assertEqual(result.manual_records, 31)
         self.assertEqual(result.command_records + result.manual_records, result.records)
-        self.assertEqual(result.grep_invocations, 348)
-        self.assertEqual(len(result.assertions), 328)
+        self.assertEqual(result.grep_invocations, 349)
+        self.assertEqual(len(result.assertions), 329)
         self.assertEqual(len(result.unsafe), 0)
         self.assertEqual(len(result.indeterminate), 0)
 
@@ -93,6 +93,28 @@ class B155VerifierTests(unittest.TestCase):
         mutated = self.backlog.replace(marker, "if grep unsafe BACKLOG.md", 1)
         result = verifier.census(mutated)
         self.assertTrue(any(check.pattern == "unsafe" for check in result.unsafe))
+
+    def test_nested_bash_c_grep_is_counted_and_guard_mutation_reopens_gate(self) -> None:
+        record = next(item for item in verifier._records(self.backlog) if item["id"] == "B-112")
+        checks, invocations, _ = verifier._grep_checks(record)
+        self.assertEqual(invocations, 4)
+        self.assertIn("^[^#/<*-]*cargo zigbuild", [check.pattern for check in checks])
+
+        marker = 'grep -q "^[^#/<*-]*cargo zigbuild"'
+        self.assertEqual(self.backlog.count(marker), 1)
+        mutated = self.backlog.replace(marker, 'grep -q "cargo zigbuild"', 1)
+        changed = verifier.census(mutated)
+        self.assertTrue(
+            any(check.pattern == "cargo zigbuild" for check in changed.unsafe)
+        )
+
+    def test_dynamic_nested_shell_payload_fails_closed(self) -> None:
+        record = {
+            "id": "B-155",
+            "verify": 'bash -c "$SCRIPT"',
+        }
+        with self.assertRaises(verifier.InstrumentError):
+            verifier._grep_checks(record)
 
     def test_bre_ere_fixed_and_shell_variable_semantics_are_not_literal(self) -> None:
         self.assertIsNotNone(verifier._as_python_regex(r"foo\|bar").search("bar"))
