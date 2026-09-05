@@ -30,16 +30,59 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
+use argon2::{Algorithm, Argon2, Params, PasswordHasher, SaltString, Version};
+use password_hash::PasswordHash;
 use proptest::prelude::*;
 
 use corelink_auth::webauthn::{
     sign_count::{assess, SignCountSeverity},
     Aaguid, AaguidPolicy, AuthenticatorAttachment, AuthenticatorFlags, ChallengeId, CredentialId,
     EngineConfig, FixedClock, InMemoryEngine, InMemoryRecoveryOtpStore, Origin, OriginAllowlist,
-    RecoveryChannel, RecoveryOtpStore, RecoveryOtpVerifyOutcome, RecoveryRateLimit,
-    RegistrationResponse, RpId, SignCount, UserAccountId, WebAuthnEngine, WebAuthnError,
-    COSE_ALG_ES256,
+    RecoveryChannel, RecoveryOtpHash, RecoveryOtpId, RecoveryOtpRecord, RecoveryOtpStore,
+    RecoveryOtpVerifyOutcome, RecoveryRateLimit, RegistrationResponse, RpId, SignCount,
+    UserAccountId, WebAuthnEngine, WebAuthnError, COSE_ALG_ES256,
 };
+
+// This is deliberately a test-file seam, never a production configuration.
+// The 100-cycle invariant below exercises the store's atomic consume/replay
+// behavior without spending the production Argon2id cost 100 times. The
+// production-cost smoke test below still calls `mint_otp` directly.
+const PROPERTY_ARGON2_M_COST_KIB: u32 = 8_192;
+const PROPERTY_ARGON2_T_COST: u32 = 1;
+const PROPERTY_ARGON2_P_COST: u32 = 1;
+
+fn mint_property_otp(
+    user: UserAccountId,
+    now_ms: u64,
+    sequence: u32,
+) -> (String, RecoveryOtpRecord) {
+    let plaintext = format!("{:06}", sequence % 1_000_000);
+    let salt_bytes = [sequence as u8; 16];
+    let salt = SaltString::encode_b64(&salt_bytes).unwrap();
+    let params = Params::new(
+        PROPERTY_ARGON2_M_COST_KIB,
+        PROPERTY_ARGON2_T_COST,
+        PROPERTY_ARGON2_P_COST,
+        Some(32),
+    )
+    .unwrap();
+    let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+    let hash = argon
+        .hash_password(plaintext.as_bytes(), &salt)
+        .unwrap()
+        .to_string();
+    let record = RecoveryOtpRecord {
+        id: RecoveryOtpId::new_v7(),
+        user,
+        hash: RecoveryOtpHash::from_phc_string(hash),
+        issued_at_ms: now_ms,
+        expires_at_ms: now_ms + 600_000,
+        consumed_at_ms: None,
+        attempts_remaining: 5,
+        channel: RecoveryChannel::ClerkSsoEmail,
+    };
+    (plaintext, record)
+}
 
 /// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 10k
 /// for the PR gate; 100k nightly via `PROPTEST_CASES=100_000`.
@@ -179,29 +222,19 @@ fn prop_replay_resistance_single_use() {
 
 #[test]
 fn prop_recovery_otp_single_use_100() {
-    // Argon2id at OWASP-2024 cost (m=65536 KiB, t=3, p=4) gates the
-    // wall-clock budget; 100 mint+verify+rejection cycles is sufficient
-    // to pin the single-use invariant inside CI's per-test budget.
-    // The cheap invariants (challenge id uniqueness, sign-count
-    // monotonicity, AAGUID policy, origin allowlist) carry the 10k
-    // proptest case load above.
+    // Keep 100 complete mint-equivalent + verify + replay cycles. The
+    // test-only seam uses a self-describing, reduced-cost PHC so this
+    // property tests the store's consume/replay semantics quickly; it never
+    // changes the production `mint_otp` parameters.
     let store = InMemoryRecoveryOtpStore::new(RecoveryRateLimit::canonical());
     let mut now_ms: u64 = 1_700_000_000_000;
 
-    for _ in 0..100 {
+    for sequence in 0..100 {
         let user = UserAccountId::new_v7();
-        let minted = corelink_auth::webauthn::recovery::mint_otp(
-            user,
-            now_ms,
-            Duration::from_secs(600),
-            RecoveryChannel::ClerkSsoEmail,
-            5,
-        )
-        .unwrap();
-        let plaintext = minted.plaintext.into_string();
+        let (plaintext, record) = mint_property_otp(user, now_ms, sequence);
         assert_eq!(plaintext.len(), 6);
         assert!(plaintext.chars().all(|c| c.is_ascii_digit()));
-        store.put(minted.record).unwrap();
+        store.put(record).unwrap();
 
         let outcome = store
             .verify_and_consume(user, &plaintext, now_ms + 1_000)
@@ -216,6 +249,40 @@ fn prop_recovery_otp_single_use_100() {
 
         now_ms += 4_000;
     }
+}
+
+#[test]
+fn recovery_otp_production_cost_owasp_smoke() {
+    // One real mint + store verify proves the production path remains wired
+    // to the OWASP-2024 floor; the 100-cycle property above is intentionally
+    // not the place to pay this cost repeatedly.
+    let store = InMemoryRecoveryOtpStore::new(RecoveryRateLimit::canonical());
+    let user = UserAccountId::new_v7();
+    let now_ms: u64 = 1_700_000_000_000;
+    let minted = corelink_auth::webauthn::recovery::mint_otp(
+        user,
+        now_ms,
+        Duration::from_secs(600),
+        RecoveryChannel::ClerkSsoEmail,
+        5,
+    )
+    .unwrap();
+    let phc = PasswordHash::new(minted.record.hash.as_str()).unwrap();
+    assert_eq!(phc.params.get_decimal("m").unwrap_or(0), 65_536);
+    assert_eq!(phc.params.get_decimal("t").unwrap_or(0), 3);
+    assert_eq!(phc.params.get_decimal("p").unwrap_or(0), 4);
+    let plaintext = minted.plaintext.into_string();
+    store.put(minted.record).unwrap();
+    assert!(matches!(
+        store
+            .verify_and_consume(user, &plaintext, now_ms + 1_000)
+            .unwrap(),
+        RecoveryOtpVerifyOutcome::Consumed { .. }
+    ));
+    assert!(matches!(
+        store.verify_and_consume(user, &plaintext, now_ms + 2_000),
+        Err(WebAuthnError::RecoveryOtpAlreadyConsumed)
+    ));
 }
 
 #[test]
