@@ -36,7 +36,7 @@ brew install HuGR-Labs/tap/corelink
 # 2. Create a tenant on the Free tier (no credit card).
 #    Sign up at https://humangr.com/corelink/sign-up, then mint a PAT at
 #    https://humangr.com/corelink/en/customer/keys and copy it:
-export CORELINK_PAT="corelink_pat_xxx.xxx.xxx"
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA" # synthetic shape; replace with your real PAT
 corelink doctor                    # 8/8 checks PASS
 
 # 3. Store an artifact. BLAKE3 digest IS the storage key.

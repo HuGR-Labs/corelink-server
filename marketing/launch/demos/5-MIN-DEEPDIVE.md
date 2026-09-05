@@ -114,7 +114,7 @@ GA · May 2026
 
 **Screen:** `/[locale]/onboarding/pat`. The PAT is shown once, with a "Copy" button and an explicit "I have saved this token" checkbox.
 
-**Action:** click "Copy". The PAT format `corelink_sandbox_t_xxx.xxx.xxx` is highlighted on-screen with a brief redaction overlay (real characters blurred for the recording).
+**Action:** click "Copy". The synthetic PAT format `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA` is highlighted on-screen with a brief redaction overlay (real characters blurred for the recording).
 
 **Voiceover (~9s):**
 
@@ -132,7 +132,7 @@ GA · May 2026
 ### 2.1 — Export PAT + doctor (1:10 → 1:25)
 
 ```bash
-$ export CORELINK_PAT="corelink_sandbox_t_xxx.xxx.xxx"
+$ export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA" # synthetic shape
 $ corelink doctor
 8/8 checks PASS  — net OK, auth OK (tenant=acme-build-cache, ttl=23h58m), storage OK, BYOK n/a (sandbox), region OK (us-west-2), quota OK, client-verify OK, telemetry OK
 ```

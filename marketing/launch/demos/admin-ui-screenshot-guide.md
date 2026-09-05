@@ -81,7 +81,7 @@ tags:
 ## Shot #05 — PAT issued (one-time view)
 
 - **Route:** `/en/onboarding/pat`
-- **What to capture:** the one-time PAT display card. The token must be **fake** (`corelink_sandbox_t_xxx.xxx.xxx` literal) with the rest blurred for the recording.
+- **What to capture:** the one-time PAT display card. The token must be **fake** (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA` synthetic shape) with the rest blurred for the recording.
 - **Highlight:** ring around the "Copy" button + the "I have saved this token" checkbox.
 - **Annotation overlay:** "Shown once. Never logged. Never re-displayable."
 - **Used in:** `5-MIN-DEEPDIVE.md` §1.5; quickstart hero (`apps/docs/docs/tutorials/quickstart-10min.mdx` step 1).
@@ -198,7 +198,7 @@ Run with: `pnpm --filter admin-ui exec playwright test marketing-shots.spec.ts`
 
 ## Redaction checklist (before any public publish)
 
-- [ ] PATs replaced with literal `corelink_sandbox_t_xxx.xxx.xxx` or blurred.
+- [ ] PATs replaced with the synthetic canonical shape `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA` or blurred.
 - [ ] Customer emails (sign-in card, audit actor field) replaced with `demo-eval@example.com`.
 - [ ] AWS account IDs replaced with `111122223333` (docs-canonical).
 - [ ] GCP project IDs replaced with `corelink-demo-project`.

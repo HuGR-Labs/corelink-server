@@ -20,7 +20,7 @@ cd corelink-server/examples/bazel-starter
 ### 2. Export your PAT
 
 ```bash
-export CORELINK_PAT=corelink_prod_...
+export CORELINK_PAT=corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA # synthetic shape; replace with a real PAT
 ```
 
 The PAT is read by `.bazel/corelink-credential-helper.sh` at build time.
@@ -78,7 +78,7 @@ Bazel calls it with a JSON request on stdin; the helper emits an
 
 ```
 stdin:   {"uri":"https://corelink-api.humangr.com/bazel/cache"}
-stdout:  {"headers":{"Authorization":["Bearer corelink_prod_..."]}}
+stdout:  {"headers":{"Authorization":["Bearer corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"]}}
 ```
 
 The PAT is read from `CORELINK_PAT` env var — never shell-expanded into argv
@@ -103,7 +103,7 @@ The PAT is read from `CORELINK_PAT` env var — never shell-expanded into argv
 ## Troubleshooting
 
 **`ERROR: CORELINK_PAT environment variable is not set`**
-→ `export CORELINK_PAT=corelink_prod_...`
+→ `export CORELINK_PAT=corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA` (synthetic shape)
 
 **`(401) Unauthorized`**
 → PAT may be expired or lack `cache:write` scope.

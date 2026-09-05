@@ -940,7 +940,7 @@ footer{text-align:center;color:var(--muted);font-size:12.5px;padding:36px 20px}
           <p class="prob"><span class="probl">Solves</span> Lets trusted backends (signup-worker, githugr www) call internal mint/lookup/exchange routes without a usable timing side-channel, and refuses to serve any internal endpoint without a properly sized secret.</p>
           <code class="ev">worker/src/lib/internal_auth.ts:97</code>
         </div>
-        <div class="card" data-status="shipped" data-text="per-consumer internal-auth key split resolveconsumerkey()/requireconsumerauth() pick a dedicated per-surface secret (corelink_pat_mint_auth_key / corelink_admin_auth_key / corelink_erase_auth_key) with shared-key fallback; too-short dedicated key is treated as absent (never weakens the gate). tightens blast radius — leaking the signup-worker&#x27;s mint secret cannot unlock admin or erase internal routes (red-team #3 hardening), rolled out per-consumer without a flag-day. internal-auth">
+        <div class="card" data-status="shipped" data-text="per-consumer internal-auth key split resolveconsumerkey()/requireconsumerauth() pick a dedicated per-surface secret (CORELINK_PAT_MINT_AUTH_KEY / CORELINK_ADMIN_AUTH_KEY / CORELINK_ERASE_AUTH_KEY) with shared-key fallback; too-short dedicated key is treated as absent (never weakens the gate). tightens blast radius — leaking the signup-worker&#x27;s mint secret cannot unlock admin or erase internal routes (red-team #3 hardening), rolled out per-consumer without a flag-day. internal-auth">
           <div class="chead">
             <h3>Per-consumer internal-auth key split</h3>
             <span class="badge" style="color:#1a7f37;background:#dafbe1">Shipped</span>

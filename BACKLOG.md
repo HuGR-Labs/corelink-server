@@ -11823,29 +11823,64 @@ verify: |
   # mutation cannot disappear from the scan merely because ASCII regex did
   # not match it. Non-PAT `corelink_*` metric names are filtered below.
   token_re = re.compile(r"corelink_[^\s`\"'<>()[\]{};,|:@/]+")
-  old_envs = {"pat", "ci", "ro", "dev", "staging", "prod"}
+  old_envs = {"pat", "ci", "ro", "dev", "staging", "prod", "sandbox"}
+  published_roots = (
+      "README.md", "apps/docs/docs", "apps/docs/i18n", "apps/docs/blog",
+      "apps/docs/src/pages", "examples", "marketing",
+  )
+  published_suffixes = {".md", ".mdx", ".html", ".sh", ".txt", ".yml", ".yaml", ".json", ".toml"}
+
+  def is_candidate(candidate):
+      rest = candidate[len("corelink_"):]
+      env = rest.split("_", 1)[0]
+      return candidate.startswith("corelink_pat_") or candidate.count(".") == 2 or env in old_envs
+
+  def scan_text(text):
+      return [m.group(0) for m in token_re.finditer(text) if is_candidate(m.group(0))]
+
   found = {}
+  root_hits = {root: set() for root in published_roots}
   # Docusaurus serves the default docs, every configured locale, blog posts,
-  # and source pages. Keep all four trees in the population so an untranslated
-  # or page-level example cannot bypass the published-claims gate.
-  for root in ("apps/docs/docs", "apps/docs/i18n", "apps/docs/blog", "apps/docs/src/pages"):
-      for f in glob.glob(root + "/**/*", recursive=True):
-          p = pathlib.Path(f)
-          if not p.is_file() or p.suffix not in (".md", ".mdx"):
+  # and source pages. The repository also publishes the root README, starter
+  # examples, and marketing demos; keep all of those roots in the population.
+  for root in published_roots:
+      root_path = pathlib.Path(root)
+      files = [root_path] if root_path.is_file() else root_path.rglob("*")
+      for p in files:
+          if not p.is_file() or p.suffix.lower() not in published_suffixes:
               continue
-          for match in token_re.finditer(p.read_text(encoding="utf-8", errors="strict")):
-              candidate = match.group(0)
-              rest = candidate[len("corelink_"):]
-              env = rest.split("_", 1)[0]
-              if candidate.startswith("corelink_pat_") or candidate.count(".") == 2 or env in old_envs:
-                  found.setdefault(candidate, set()).add(str(p))
+          text = p.read_text(encoding="utf-8", errors="strict")
+          for candidate in scan_text(text):
+              found.setdefault(candidate, set()).add(str(p))
+              root_hits[root].add(str(p))
   if not found:
       fail("a varredura nao achou nenhum literal de PAT — instrumento quebrado, nao doc limpa")
+  for root, hits in root_hits.items():
+      if not hits:
+          fail(f"a população publicada ficou sem candidatos em {root} — instrumento incompleto")
   invalid = {t: paths for t, paths in found.items() if not parse_pat(t)}
   if invalid:
       sample = next(iter(invalid))
       fail(f"{len(invalid)} literal(is) publicado(s) nao parseiam; exemplo {sample!r}")
-  print(f"fechado: {len(found)} literais publicados passam no parser Rust byte-exato; mutacoes negativas rejeitadas")
+
+  # Each published root gets an in-memory mutation probe. The mutated literal
+  # must remain visible to the broad scanner and fail the canonical oracle;
+  # otherwise a narrowed glob or vacuous mutation could bless stale examples.
+  for root, hits in root_hits.items():
+      sample_path = sorted(hits)[0]
+      sample_text = pathlib.Path(sample_path).read_text(encoding="utf-8", errors="strict")
+      sample = next(t for t, paths in found.items() if sample_path in paths)
+      mutations = [sample[:-1]]
+      token_start = sample.index("_", len("corelink_")) + 1
+      alpha = next((i for i in range(token_start, token_start + 16) if sample[i].isalpha()), None)
+      if alpha is not None:
+          mutations.extend((sample[:alpha] + sample[alpha].lower() + sample[alpha + 1:],
+                            sample[:alpha] + "I" + sample[alpha + 1:]))
+      for bad in mutations:
+          mutated_text = sample_text.replace(sample, bad, 1)
+          if bad not in scan_text(mutated_text) or parse_pat(bad):
+              fail(f"mutacao publicada nao foi observada/rejeitada em {root}: {bad!r}")
+  print(f"fechado: {len(found)} literais publicados passam no parser Rust byte-exato; mutacoes negativas por root rejeitadas")
   PY
 verify-means: |
   done — todos os literais publicados com forma de PAT satisfazem o envelope que
@@ -11864,16 +11899,18 @@ verify-means: |
   diretório de docs faria o item se declarar resolvido.
 
   **População publicada completa:** a varredura percorre as fontes de documentos padrão,
-  os quatro locales configurados, posts do blog e páginas do site (`apps/docs/docs`,
-  `apps/docs/i18n`, `apps/docs/blog`, `apps/docs/src/pages`). Assim uma tradução ou página
-  fora da árvore inglesa não pode carregar um exemplo morto sem ser contado.
+  os quatro locales configurados, posts do blog, páginas do site, README raiz, starters e
+  demos de marketing (`apps/docs/docs`, `apps/docs/i18n`, `apps/docs/blog`,
+  `apps/docs/src/pages`, `README.md`, `examples`, `marketing`). Assim uma tradução, starter
+  ou página fora da árvore inglesa não pode carregar um exemplo morto sem ser contado.
 
   **Fecha por exaustão, não por amostra:** todos os literais são verificados pelo mesmo modelo
   de bytes que o Rust, e controles negativos cobrem `!`, I/O/L/U, lowercase, Unicode/multibyte,
   env desconhecido e truncamento/extensão de cada segmento.
 
   **Medido pelos dois lados:** a arvore atual sai `fechado`; truncamento, bits residuais
-  Base64, charset proibido e a mutacao Unicode do scanner saem `FALHA`.
+  Base64, charset proibido, a mutacao Unicode do scanner e mutações em cada root publicado
+  saem `FALHA`.
 
   **O que ele NÃO mede:** a ausência de oráculo no servidor (401 idêntico para cinco causas).
   Isso exige um PAT real e cinco requisições a produção — depende de [B-160]. Está no corpo

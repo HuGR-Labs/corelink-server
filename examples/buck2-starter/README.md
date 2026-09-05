@@ -30,7 +30,7 @@ Get your **first remote-cache hit in under 5 minutes** using Buck2 + CoreLink.
 ## Step 2 — Set your PAT (~30 s)
 
 ```bash
-export CORELINK_PAT=corelink_pat_...   # never commit this
+export CORELINK_PAT=corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA   # synthetic shape; never commit a real PAT
 ```
 
 > **Security note:** The `.buckconfig` in this project reads `CORELINK_PAT` from

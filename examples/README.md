@@ -10,7 +10,7 @@ All examples default to the production API at `https://corelink-api.humangr.com`
 
 ```bash
 export CORELINK_API_URL="https://corelink-api.humangr.com"     # or your dedicated region URL
-export CORELINK_PAT="corelink_pat_..."                  # PAT issued via POST /v1/pats
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA" # synthetic shape; replace with a PAT issued via POST /v1/pats
 ```
 
 Issue a PAT through the Console (https://humangr.com/corelink/en/customer/keys) or via the bootstrap signup flow (`quickstart_signup` + `quickstart_put`).
