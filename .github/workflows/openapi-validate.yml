@@ -85,7 +85,7 @@ jobs:
         run: python3 scripts/openapi_sync.py --check
 
       - name: B-151 closed-world + locale gate
-        run: python3 scripts/verify_b151_openapi.py --expect done
+        run: python3 scripts/verify_b151_openapi.py --expect 'done'
 
       - name: B-151 mutation tests
         run: python3 -m unittest tests/test_verify_b151_openapi.py
