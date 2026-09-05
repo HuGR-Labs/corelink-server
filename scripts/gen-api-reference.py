@@ -789,11 +789,18 @@ def render_endpoint_mdx(endpoint: Endpoint, spec: Spec) -> str:
         "Replace `<YOUR_PAT>` with a Personal Access Token issued via "
         "[`POST /v1/customer/keys`](./post-v1-customer-keys.mdx)._\n\n"
     )
-    # The PAT page was already published with one terminal LF before it was
-    # brought back under generation. Preserve that byte-level contract while
-    # leaving the historical two-LF termination of the existing reference set
-    # untouched; the sync gate consequently catches accidental PAT EOF drift.
-    examples_terminal = "" if endpoint.operation_id == "patIssue" else "\n"
+    # The PAT and customer-keys pages were already published with one
+    # terminal LF before being brought back under generation. Preserve those
+    # byte-level contracts while leaving the historical two-LF termination of
+    # the existing reference set untouched; the sync gate consequently catches
+    # accidental EOF drift.
+    one_lf_pages = {
+        "patIssue",
+        "customerKeysList",
+        "customerKeysCreate",
+        "customerKeyRevoke",
+    }
+    examples_terminal = "" if endpoint.operation_id in one_lf_pages else "\n"
     parts.append(render_examples(endpoint, spec) + examples_terminal)
 
     return "".join(parts)
@@ -871,16 +878,24 @@ def write_if_changed(path: Path, content: str, *, dry_run: bool) -> bool:
     return True
 
 
-def clean_endpoints_dir(endpoints_dir: Path, keep_slugs: set[str], *, dry_run: bool) -> int:
-    """Delete stale endpoint files. Returns the count of removals."""
+def clean_endpoints_dir(
+    endpoints_dir: Path, keep_slugs: set[str], *, dry_run: bool
+) -> list[Path]:
+    """Delete stale endpoint files and return their paths.
+
+    Returning the paths (rather than only a count) lets ``--check`` identify
+    every stale generated file in its failure output.  A count alone makes a
+    drift report needlessly hard to act on and can hide which output was
+    accidentally added.
+    """
     if not endpoints_dir.is_dir():
-        return 0
-    removed = 0
+        return []
+    removed: list[Path] = []
     for f in sorted(endpoints_dir.iterdir()):
         if f.suffix != ".mdx":
             continue
         if f.stem not in keep_slugs:
-            removed += 1
+            removed.append(f)
             if not dry_run:
                 f.unlink()
     return removed
@@ -962,7 +977,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"endpoints: {len(endpoints)}")
     print(f"changed:   {len(changes)}")
-    print(f"stale removed: {removed}")
+    print(f"stale removed: {len(removed)}")
     localized_failures = (
         validate_localized_api_indexes(endpoint.file_name for endpoint in endpoints)
         if args.check else []
@@ -971,9 +986,6 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write("localized API reference parity failure:\n")
         for failure in localized_failures:
             sys.stderr.write(f"  {failure}\n")
-    if args.dry_run:
-        print("dry-run: no files written")
-        return 0
     if args.check:
         if changes or removed or localized_failures:
             sys.stderr.write(
@@ -981,7 +993,14 @@ def main(argv: list[str] | None = None) -> int:
             )
             for c in changes:
                 sys.stderr.write(f"  changed: {c}\n")
+            for stale in removed:
+                sys.stderr.write(
+                    f"  stale: {stale.relative_to(REPO_ROOT)}\n"
+                )
             return 1
+        return 0
+    if args.dry_run:
+        print("dry-run: no files written")
         return 0
     return 0
 
