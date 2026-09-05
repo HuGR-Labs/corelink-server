@@ -40,6 +40,20 @@ COMMAND_BOUNDARY = re.compile(
     r"(?:^|[;&|(!]|\$\(|\b(?:if|elif|then|while|until|do|command|builtin|exec)\b)"
     r"\s*(?:!\s*)?(?:[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|\"[^\"]*\"|\S+)\s*)*$"
 )
+# These are still shell command boundaries: the grep executable is wrapped
+# rather than invoked as the first word.  Keeping the wrappers explicit avoids
+# treating prose such as `echo sudo grep ...` as an assertion while covering
+# the common command forms used by backlog verifies.
+WRAPPED_COMMAND_BOUNDARY = re.compile(
+    r"(?:^|[;&|(!]|\$\(|\b(?:if|elif|then|while|until|do|command|builtin|exec)\b)"
+    r"\s*(?:!\s*)?(?:[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|\"[^\"]*\"|\S+)\s*)*"
+    r"(?:(?:sudo|env|git|xargs)(?:\s+-[^\s;&|()]+|\s+[A-Za-z_][A-Za-z0-9_]*=[^\s;&|()]+)*\s+)+$"
+)
+REDIRECTION_BOUNDARY = re.compile(
+    r"(?:^|[;&|(!]|\$\(|\b(?:if|elif|then|while|until|do|command|builtin|exec)\b)"
+    r"\s*(?:!\s*)?(?:[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|\"[^\"]*\"|\S+)\s*)*"
+    r"(?:\d*(?:>>>|<<<|>>|<<|>|<)\s*(?:'[^']*'|\"[^\"]*\"|[^\s;&|()]+)\s*)+$"
+)
 NESTED_SHELL = re.compile(r"\b(?:bash|sh|zsh)\s+-c\b")
 ID = re.compile(r"^B-\d{3}$")
 COMMENT_PREFIXES = ("//", "#", "/*", "<!--", "*", "--")
@@ -210,6 +224,15 @@ def _source_kind(line: str, verify: str) -> tuple[str, tuple[str, ...]]:
     return "unknown", COMMENT_PREFIXES
 
 
+def _is_command_boundary(text: str) -> bool:
+    """Recognize direct, wrapped, and redirection-prefixed shell commands."""
+    return bool(
+        COMMAND_BOUNDARY.search(text)
+        or WRAPPED_COMMAND_BOUNDARY.search(text)
+        or REDIRECTION_BOUNDARY.search(text)
+    )
+
+
 def _resolved_patterns(pattern: str, verify: str) -> tuple[tuple[str, ...], bool]:
     variables = SHELL_VARIABLE.findall(pattern)
     if not variables:
@@ -283,7 +306,7 @@ def _grep_checks_text(
             # A grep-looking string in an embedded Python/awk expression is
             # not a shell invocation. Require a shell command boundary (or a
             # command substitution/assignment immediately before it).
-            if not COMMAND_BOUNDARY.search(line[: match.start()]):
+            if not _is_command_boundary(line[: match.start()]):
                 continue
             invocations += 1
             known_starts.add(match.start())
@@ -319,7 +342,7 @@ def _grep_checks_text(
         for match in GREP_UNQUOTED.finditer(line):
             if match.start() in known_starts:
                 continue
-            if not COMMAND_BOUNDARY.search(line[: match.start()]):
+            if not _is_command_boundary(line[: match.start()]):
                 continue
             invocations += 1
             known_starts.add(match.start())
@@ -350,7 +373,7 @@ def _grep_checks_text(
         for word in re.finditer(r"\bgrep\b", line):
             if word.start() in known_starts:
                 continue
-            if not COMMAND_BOUNDARY.search(line[: word.start()]):
+            if not _is_command_boundary(line[: word.start()]):
                 continue
             invocations += 1
             indeterminate.append(
@@ -470,7 +493,7 @@ def _mask_nested_shells(text: str) -> tuple[str, list[tuple[str, int]]]:
         if any(start <= match.start() < end for start, end, _, _ in spans):
             continue
         line_start = text.rfind("\n", 0, match.start()) + 1
-        if not COMMAND_BOUNDARY.search(text[line_start : match.start()]):
+        if not _is_command_boundary(text[line_start : match.start()]):
             continue
         pos = match.end()
         while pos < len(text) and text[pos].isspace():

@@ -202,6 +202,43 @@ class B155VerifierTests(unittest.TestCase):
                 self.assertEqual(checks[0].source_kind, kind)
                 self.assertTrue(verifier._matches_comment(checks[0]))
 
+    def test_wrapped_grep_forms_are_counted_or_fail_closed(self) -> None:
+        # A wrapper must not hide a grep from the command census.  File-backed
+        # forms classify normally; a dynamic/no-file form is indeterminate and
+        # therefore red rather than silently disappearing.
+        wrapped = (
+            "sudo grep -q \"needle\" file.rs",
+            "env grep -q \"needle\" file.rs",
+            "git grep -q \"needle\" file.rs",
+            "xargs grep -q \"needle\" file.rs",
+            "2>/dev/null grep -q \"needle\" file.rs",
+        )
+        for verify in wrapped:
+            with self.subTest(verify=verify):
+                checks, invocations, indeterminate = verifier._grep_checks(
+                    {"id": "B-155", "verify": verify}
+                )
+                self.assertEqual(invocations, 1)
+                self.assertEqual(len(checks), 1)
+                self.assertEqual(checks[0].source_kind, "rust")
+                self.assertEqual(indeterminate, [])
+
+        checks, invocations, indeterminate = verifier._grep_checks(
+            {"id": "B-155", "verify": "sudo grep -q \"needle\""}
+        )
+        self.assertEqual(invocations, 1)
+        self.assertEqual(len(checks), 1)
+        self.assertEqual(checks[0].source_kind, "unknown")
+        self.assertEqual(len(indeterminate), 1)
+        # Unknown syntax is fail-closed at census level, even when the helper
+        # is exercised directly with a synthetic record.
+        with self.assertRaises(verifier.InstrumentError):
+            verifier.census(
+                "```backlog\n"
+                "id: B-155\nrepo: corelink-server\nowner: tl\nstatus: open\n"
+                "verify: sudo grep -q needle\nverify-means: wrapped\n```\n"
+            )
+
     def test_repair_is_idempotent_and_never_uses_global_prefix(self) -> None:
         rewritten, changed = repair.repair(self.backlog)
         self.assertEqual(changed, 0)
