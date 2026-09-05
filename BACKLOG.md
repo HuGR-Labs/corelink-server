@@ -11493,11 +11493,11 @@ verify: |
   rate=worker/src/pat_issue_rate_limit.ts
   worker=worker/src/index.ts
   grep -q "PAT_ISSUE_AUTHORIZED_HEADER" "$route" || { echo "FALHA: container não exige lease do DO"; exit 1; }
-  grep -q 'PAT_ISSUE_BUCKET_KEY = "ratelimit:pat-issue:v1"' "$rate" || { echo "FALHA: bucket durável ausente"; exit 1; }
+  grep -q "PAT_ISSUE_BUCKET_KEY = \"ratelimit:pat-issue:v1\"" "$rate" || { echo "FALHA: bucket durável ausente"; exit 1; }
   grep -q "blockConcurrencyWhile(async () =>" "$rate" || { echo "FALHA: decisão não é serializada no DO"; exit 1; }
   grep -q "storage.put(PAT_ISSUE_BUCKET_KEY" "$rate" || { echo "FALHA: decisão não persiste bucket"; exit 1; }
   grep -q "Retry-After" "$rate" || { echo "FALHA: Retry-After ausente"; exit 1; }
-  grep -q '"x-corelink-pat-issue-authorized"' "$worker" || { echo "FALHA: lease forjado não é removido na borda"; exit 1; }
+  grep -q "\"x-corelink-pat-issue-authorized\"" "$worker" || { echo "FALHA: lease forjado não é removido na borda"; exit 1; }
   test -f worker/tests/pat_issue_rate_limit.test.ts || { echo "FALHA: testes de corrida ausentes"; exit 1; }
   echo "confirmado: aliases convergem, DO por tenant decide/persiste atomicamente pat-issue, container exige lease, Worker remove cópias do cliente"'
 verify-means: |
@@ -11506,7 +11506,7 @@ verify-means: |
   lease obrigatório no container, remoção de cópias client-supplied no Worker, `Retry-After`
   e o teste versionado de restart, duas instâncias concorrentes, isolamento de tenant,
   estado adulterado/storage indisponível e fronteira exata de 360 segundos.
-last-verified: 2026-09-04
+last-verified: 2026-09-05
 ```
 
 ### B-161 — 🔴 SEGURANÇA: a página do Homebrew manda o cliente exportar o PAT como credencial do `ghcr.io`
