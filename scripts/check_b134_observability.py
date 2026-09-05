@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -71,10 +72,55 @@ def executable_script(text: str) -> str:
     return "\n".join(line for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#"))
 
 
+def reachable_script_lines(script: str) -> list[tuple[str, bool]]:
+    """Mark lines hidden by a few obvious, statically dead shell constructs.
+
+    This is intentionally not a shell interpreter. It only rejects the easy
+    ways to make a required command look executable while placing it after an
+    unconditional exit/return, inside ``if false; then``, or after a continued
+    ``false &&``. The real workflow run remains the authority for runtime
+    behavior.
+    """
+
+    lines: list[tuple[str, bool]] = []
+    if_stack: list[bool] = []
+    false_and_pending = False
+    brace_group_depth = 0
+    terminated = False
+    for raw in script.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        dead = terminated or any(if_stack) or false_and_pending
+        lines.append((raw, dead))
+
+        if false_and_pending:
+            false_and_pending = False
+        if re.search(r"^false\s*&&\s*(?:\\\s*)?$", line):
+            false_and_pending = True
+        if re.match(r"^if\b", line):
+            if_stack.append(bool(if_stack) or bool(re.search(r"^if\s+false\s*;\s*then(?:\s*#.*)?$", line)))
+        if line == "fi" or line.startswith("fi "):
+            if if_stack:
+                if_stack.pop()
+        if re.search(r"(?:\|\||&&)\s*\{\s*$", line) or line == "{":
+            brace_group_depth += 1
+        if line == "}":
+            brace_group_depth = max(0, brace_group_depth - 1)
+        if (
+            not if_stack
+            and brace_group_depth == 0
+            and re.match(r"^(?:exit|return)(?:\s|$)", line)
+        ):
+            terminated = True
+    return lines
+
+
 def require_exec(script: str, pattern: str, where: str) -> None:
     """Require a command/guard at the beginning of an executable shell line."""
 
-    if not re.search(pattern, script, re.MULTILINE):
+    matches = [raw for raw, dead in reachable_script_lines(script) if not dead and re.search(pattern, raw)]
+    if not matches:
         raise ContractError(f"{where}: missing executable contract {pattern!r}")
 
 
@@ -155,10 +201,27 @@ def check(root: Path) -> None:
     check_smoke(read(root, WORKFLOW_FILES["smoke-install"]))
     check_cosign(read(root, WORKFLOW_FILES["cosign-sign"]))
     dockerfile = read(root, SMOKE_DOCKERFILE)
-    if re.search(r"(?im)^\s*(?:ENV|ARG)\s+(?:CORELINK_TEST_TOKEN|CORELINK_INSTALL_PROBE_TOKEN|PROBE_TOKEN)(?:\s|=)", "\n".join(
-        line for line in dockerfile.splitlines() if line.strip() and not line.lstrip().startswith("#")
-    )):
-        raise ContractError(f"{SMOKE_DOCKERFILE}: image must not contain a synthetic token or token default")
+    for raw in dockerfile.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        instruction, _, payload = line.partition(" ")
+        if instruction.upper() not in {"ENV", "ARG"}:
+            continue
+        try:
+            assignments = shlex.split(payload)
+        except ValueError as exc:
+            raise ContractError(f"{SMOKE_DOCKERFILE}: invalid {instruction.upper()} syntax: {exc}") from exc
+        if instruction.upper() == "ENV" and assignments and "=" not in assignments[0]:
+            assignments = [f"{assignments[0]}={' '.join(assignments[1:])}"]
+        for assignment in assignments:
+            name, separator, default = assignment.partition("=")
+            if (
+                separator
+                and default
+                and re.search(r"(?i)(?:^|_)(?:TOKEN|PAT|SECRET|KEY|CREDENTIALS?)(?:_|$)", name)
+            ):
+                raise ContractError(f"{SMOKE_DOCKERFILE}: token-shaped {instruction.upper()} default is not allowed ({name})")
     if re.search(r"(?i)ephemeral.*probe token|unauthenticated.*leg", dockerfile):
         raise ContractError(f"{SMOKE_DOCKERFILE}: stale unauthenticated/probe-token claim")
     check_ledger(read(root, LEDGER))

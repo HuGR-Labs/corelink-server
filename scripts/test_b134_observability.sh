@@ -34,6 +34,15 @@ expect_red() {
     echo "B134-${id}: PASS (mutation red)"
 }
 
+expect_repro_red() {
+    local id="$1" root="$2"
+    if python3 "${CHECKER}" --root "${root}" >/dev/null 2>&1; then
+        echo "B134-${id}: adversarial reproduction survived" >&2
+        return 1
+    fi
+    echo "B134-${id}: PASS (reproduction red)"
+}
+
 expect_green baseline "${ROOT}"
 
 copy_fixture "${TMP}/smoke-route"
@@ -63,6 +72,10 @@ expect_red cosign-verify "${TMP}/cosign-verify"
 copy_fixture "${TMP}/cosign-backend-comment"
 sed -i.bak 's/^          if ! docker info/          # if ! docker info/' "${TMP}/cosign-backend-comment/.github/workflows/cosign-sign.yml"
 expect_red cosign-backend-comment "${TMP}/cosign-backend-comment"
+
+copy_fixture "${TMP}/cosign-backend"
+sed -i.bak '/^          if ! docker info.*then$/d' "${TMP}/cosign-backend/.github/workflows/cosign-sign.yml"
+expect_red cosign-backend "${TMP}/cosign-backend"
 
 copy_fixture "${TMP}/cosign-sign-echo"
 sed -i.bak 's/^          cosign sign --yes/          echo cosign sign --yes/' "${TMP}/cosign-sign-echo/.github/workflows/cosign-sign.yml"
@@ -103,5 +116,45 @@ expect_red cosign-tag-guard "${TMP}/cosign-tag-guard"
 copy_fixture "${TMP}/ledger-status"
 sed -i.bak 's/^\*\*Status:\*\* open/**Status:** closed/' "${TMP}/ledger-status/docs/campaigns/remediation/B-134-docker-shim-experiment.md"
 expect_red ledger-status "${TMP}/ledger-status"
+
+# Adversarial regressions: required commands must be reachable, not merely
+# present in comments or dead shell branches. These focused reproductions are
+# additional to the 18 named contract mutations above.
+copy_fixture "${TMP}/repro-if-false"
+sed -i.bak '/^          cosign verify \\/i\
+          if false; then' "${TMP}/repro-if-false/.github/workflows/cosign-sign.yml"
+sed -i.bak '/^          echo "Signature verification passed\."/i\
+          fi' "${TMP}/repro-if-false/.github/workflows/cosign-sign.yml"
+expect_repro_red repro-if-false "${TMP}/repro-if-false"
+
+copy_fixture "${TMP}/repro-false-and"
+python3 - "${TMP}/repro-false-and/.github/workflows/cosign-sign.yml" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+text = text.replace("          cosign verify \\\n", "          false && \\\n          cosign verify \\\n", 1)
+path.write_text(text, encoding="utf-8")
+PY
+expect_repro_red repro-false-and "${TMP}/repro-false-and"
+
+copy_fixture "${TMP}/repro-exit"
+sed -i.bak '/^          cosign verify \\/i\
+          exit 0' "${TMP}/repro-exit/.github/workflows/cosign-sign.yml"
+expect_repro_red repro-exit "${TMP}/repro-exit"
+
+copy_fixture "${TMP}/repro-return"
+sed -i.bak '/^          cosign verify \\/i\
+          return 0' "${TMP}/repro-return/.github/workflows/cosign-sign.yml"
+expect_repro_red repro-return "${TMP}/repro-return"
+
+copy_fixture "${TMP}/repro-arg-token"
+echo 'ARG UNRELATED_TOKEN=synthetic' >> "${TMP}/repro-arg-token/apps/get-corelink-worker/test/smoke-install.Dockerfile"
+expect_repro_red repro-arg-token "${TMP}/repro-arg-token"
+
+copy_fixture "${TMP}/repro-env-pat"
+echo 'ENV PAT=changeme' >> "${TMP}/repro-env-pat/apps/get-corelink-worker/test/smoke-install.Dockerfile"
+expect_repro_red repro-env-pat "${TMP}/repro-env-pat"
 
 echo "B-134 observability mutations: all controls passed"
