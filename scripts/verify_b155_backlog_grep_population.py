@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shlex
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,13 +25,20 @@ except ImportError as error:  # pragma: no cover - exercised by the CLI environm
 
 
 FENCE = re.compile(r"```backlog\n(.*?)\n```", re.DOTALL)
+BACKLOG_OPEN = re.compile(r"^```backlog(?:[ \t]*)$", re.MULTILINE)
 GREP = re.compile(
     r"\bgrep\s+(?P<options>(?:-[A-Za-z0-9-]+\s+)*)"
     # Keep shell-escaped quotes inside a quoted regex instead of truncating
     # the pattern at the first escaped quote.
     r"(?P<quote>[\"'])(?P<pattern>(?:\\.|(?!(?P=quote)).)*?)(?P=quote)"
 )
-COMMAND_BOUNDARY = re.compile(r"(?:^|[;&|(!]|\$\()\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s*)*$")
+GREP_UNQUOTED = re.compile(
+    r"\bgrep\s+(?P<options>(?:-[A-Za-z0-9-]+\s+)*)(?P<pattern>[^\s;&|()<>]+)"
+)
+COMMAND_BOUNDARY = re.compile(
+    r"(?:^|[;&|(!]|\$\(|\b(?:if|elif|then|while|until|do|command|builtin|exec)\b)"
+    r"\s*(?:!\s*)?(?:[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|\"[^\"]*\"|\S+)\s*)*$"
+)
 ID = re.compile(r"^B-\d{3}$")
 COMMENT_PREFIXES = ("//", "#", "/*", "<!--", "*", "--")
 POSIX_CLASSES = {
@@ -52,6 +60,8 @@ class GrepCheck:
     pattern: str
     options: str
     source: str
+    quote: str = ""
+    resolved_patterns: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -65,10 +75,19 @@ class Census:
     indeterminate: tuple[GrepCheck, ...]
 
 
+EXPECTED_RECORDS = 168
+EXPECTED_COMMAND_RECORDS = 137
+EXPECTED_MANUAL_RECORDS = 31
+EXPECTED_GREP_INVOCATIONS = 348
+EXPECTED_ASSERTIONS = 328
+
+
 def _records(backlog: str) -> list[dict[str, object]]:
     blocks = list(FENCE.finditer(backlog))
     if not blocks:
         raise InstrumentError("no ```backlog records found")
+    if len(BACKLOG_OPEN.findall(backlog)) != len(blocks):
+        raise InstrumentError("unclosed or malformed ```backlog fence")
     records: list[dict[str, object]] = []
     seen: set[str] = set()
     for index, match in enumerate(blocks, 1):
@@ -88,13 +107,85 @@ def _records(backlog: str) -> list[dict[str, object]]:
     return records
 
 
-def _grep_checks(record: dict[str, object]) -> tuple[list[GrepCheck], int]:
+SHELL_VARIABLE = re.compile(r"(?<!\\)\$(?:\{(?P<braced>[A-Za-z_][A-Za-z0-9_]*)\}|(?P<plain>[A-Za-z_][A-Za-z0-9_]*))")
+
+
+def _shell_values(verify: str) -> dict[str, tuple[str, ...]]:
+    """Resolve only literal assignments and finite ``for x in ...`` lists."""
+    values: dict[str, tuple[str, ...]] = {}
+    # printf command substitutions are deliberately restricted to a single
+    # quoted format string; no command or shell expansion is evaluated here.
+    assignment = re.compile(
+        r"\b([A-Za-z_][A-Za-z0-9_]*)=(?:\"([^\"$]*)\"|'([^']*)'|\$\(printf\s+\"([^\"$]*)\"\))"
+    )
+    for match in assignment.finditer(verify):
+        value = next((item for item in match.groups()[1:] if item is not None), None)
+        if value is not None:
+            values[match.group(1)] = (value,)
+    for match in re.finditer(r"\bfor\s+([A-Za-z_][A-Za-z0-9_]*)\s+in\s+(.+?);\s*do\b", verify):
+        try:
+            words = tuple(shlex.split(match.group(2)))
+        except ValueError:
+            continue
+        expanded: list[str] = []
+        for word in words:
+            variable = SHELL_VARIABLE.fullmatch(word)
+            if variable:
+                expanded.extend(values.get(variable.group("braced") or variable.group("plain"), ()))
+            else:
+                expanded.append(word)
+        if expanded and all("$" not in word and "$(" not in word for word in expanded):
+            values[match.group(1)] = tuple(expanded)
+    return values
+
+
+def _resolved_patterns(pattern: str, verify: str) -> tuple[tuple[str, ...], bool]:
+    variables = SHELL_VARIABLE.findall(pattern)
+    if not variables:
+        return (pattern,), False
+    values = _shell_values(verify)
+    resolved = [pattern]
+    unresolved = False
+    for braced, plain in variables:
+        name = braced or plain
+        options = values.get(name)
+        if not options:
+            unresolved = True
+            continue
+        expanded: list[str] = []
+        for candidate in resolved:
+            for value in options:
+                expanded.append(candidate.replace("${" + name + "}", value).replace("$" + name, value))
+        resolved = expanded
+    return tuple(resolved), unresolved
+
+
+def _generated_hex_pattern_file(check: GrepCheck, verify: str) -> bool:
+    """Recognize B-061's generated ``^hex`` pattern file without executing it."""
+    generated = any(
+        not line.lstrip().startswith("#")
+        and (("s|^|^|" in line and "$tmp/pat" in line) or "$tmp/hit" in line)
+        and ">" in line
+        for line in verify.splitlines()
+    )
+    return (
+        "f" in check.options
+        and ("$tmp/pat" in check.pattern or "$tmp/hit" in check.pattern)
+        and generated
+        and ("$tmp/reach" in check.source or "$tmp/pairs" in check.source)
+    )
+
+
+def _grep_checks(record: dict[str, object]) -> tuple[list[GrepCheck], int, list[GrepCheck]]:
     verify = record.get("verify")
     if not isinstance(verify, str) or verify.strip() == "manual":
-        return [], 0
+        return [], 0, []
     checks: list[GrepCheck] = []
+    indeterminate: list[GrepCheck] = []
     invocations = 0
+    known_starts: set[int] = set()
     for line_number, line in enumerate(verify.splitlines(), 1):
+        known_starts: set[int] = set()
         for match in GREP.finditer(line):
             # A grep-looking string in an embedded Python/awk expression is
             # not a shell invocation. Require a shell command boundary (or a
@@ -102,20 +193,73 @@ def _grep_checks(record: dict[str, object]) -> tuple[list[GrepCheck], int]:
             if not COMMAND_BOUNDARY.search(line[: match.start()]):
                 continue
             invocations += 1
+            known_starts.add(match.start())
             options = match.group("options") or ""
+            pattern = match.group("pattern")
+            resolved, unresolved = _resolved_patterns(pattern, verify)
             check = GrepCheck(
                 record_id=str(record["id"]),
                 line=line_number,
-                pattern=match.group("pattern"),
+                pattern=pattern,
                 options=options,
                 source=line.strip(),
+                quote=match.group("quote"),
+                resolved_patterns=resolved,
             )
             # `grep -v` is a filter in a pipeline, not a positive capability
             # assertion. It remains in the invocation census, but is not in the
             # population whose comment sensitivity determines this item.
             if "v" not in options.replace("--", ""):
                 checks.append(check)
-    return checks, invocations
+            if unresolved and not _generated_hex_pattern_file(check, verify):
+                indeterminate.append(check)
+        # The shell permits a bare regex word (`grep unsafe file`) in addition
+        # to the quoted form above.  Parse it separately, retaining the same
+        # boundary and polarity rules.  A variable or shell expression is
+        # intentionally not guessed: it becomes an explicit indeterminate
+        # population member below.
+        for match in GREP_UNQUOTED.finditer(line):
+            if match.start() in known_starts:
+                continue
+            if not COMMAND_BOUNDARY.search(line[: match.start()]):
+                continue
+            invocations += 1
+            known_starts.add(match.start())
+            options = match.group("options") or ""
+            pattern = match.group("pattern")
+            resolved, unresolved = _resolved_patterns(pattern, verify)
+            check = GrepCheck(
+                record_id=str(record["id"]),
+                line=line_number,
+                pattern=pattern,
+                options=options,
+                source=line.strip(),
+                resolved_patterns=resolved,
+            )
+            if "v" not in options.replace("--", ""):
+                checks.append(check)
+            if unresolved and not _generated_hex_pattern_file(check, verify):
+                indeterminate.append(check)
+        # A grep invocation with an unquoted/dynamic pattern is still an
+        # invocation, but its dialect and polarity cannot be proven by this
+        # parser.  Count it and fail closed instead of silently shrinking the
+        # assertion population.
+        for word in re.finditer(r"\bgrep\b", line):
+            if word.start() in known_starts:
+                continue
+            if not COMMAND_BOUNDARY.search(line[: word.start()]):
+                continue
+            invocations += 1
+            indeterminate.append(
+                GrepCheck(
+                    record_id=str(record["id"]),
+                    line=line_number,
+                    pattern="",
+                    options="",
+                    source=line.strip(),
+                )
+            )
+    return checks, invocations, indeterminate
 
 
 def _as_python_regex(pattern: str, options: str = "") -> re.Pattern[str]:
@@ -140,16 +284,62 @@ def _as_python_regex(pattern: str, options: str = "") -> re.Pattern[str]:
     return re.compile(translated)
 
 
+def _split_alternatives(pattern: str, options: str) -> list[str]:
+    """Split only real BRE/ERE alternation operators, not quoted pipes."""
+    needle = "|" if "E" in options else r"\|"
+    return pattern.split(needle) if needle in pattern else [pattern]
+
+
+def _regex_witness(pattern: str, options: str) -> list[str]:
+    """Build conservative text witnesses for the complete regex expression."""
+    if "F" in options:
+        return [pattern]
+    witnesses: list[str] = []
+    for branch in _split_alternatives(pattern, options):
+        value = branch
+        # Shell-escaped regex punctuation is represented by its literal byte;
+        # BRE grouping delimiters are syntax and therefore disappear.
+        value = re.sub(r"\\([()])", "", value)
+        value = re.sub(r"\\([.|+?{}])", r"\1", value)
+        value = value.replace(r"\[", "[").replace(r"\]", "]")
+        value = value.replace(r"\*", "*")
+        value = value.replace(r"\^", "^").replace(r"\$", "$")
+        value = value.replace(r"[[:space:]]", " ")
+        value = value.replace(r"[[:digit:]]", "0")
+        value = value.replace(r"[[:alpha:]]", "a")
+        value = value.replace(r"[[:alnum:]]", "a")
+        value = re.sub(r"\[\^?[^]]*\]", "a", value)
+        value = re.sub(r"\.\*|\.\+|\.\?", "x", value)
+        value = value.replace(".", "x")
+        value = re.sub(r"\\[+?]", "x", value)
+        value = re.sub(r"\\\{\d+(?:,\d*)?\\\}", "x", value)
+        value = value.replace("^", "", 1) if value.startswith("^") else value
+        if value.endswith("$"):
+            value = value[:-1]
+        value = re.sub(r"[+?*]", "", value)
+        value = re.sub(r"\{\d+(?:,\d*)?\}", "", value)
+        value = value.replace("(", "").replace(")", "")
+        witnesses.append(value)
+    return witnesses or ["verify"]
+
+
 def _matches_comment(check: GrepCheck) -> bool:
     """Return true when the assertion regex can match a comment-shaped line."""
-    try:
-        expression = _as_python_regex(check.pattern, check.options)
-    except re.error:
-        return True  # An unmodelled dialect is an instrument gap, fail closed.
-    tokens = re.findall(r"[A-Za-z][A-Za-z0-9_.:/-]{2,}", check.pattern)
-    token = max(tokens, key=len) if tokens else "verify"
-    probes = tuple(f"{prefix} {token}" for prefix in COMMENT_PREFIXES)
-    return any(expression.search(probe) for probe in probes)
+    # A double-quoted shell variable is expanded at runtime.  Its value is
+    # unknown to the census, so conservatively mark it unsafe; the repair tool
+    # can put a line guard around the expansion without resolving its value.
+    if check.quote == '"' and re.search(r"(?<!\\)\$[A-Za-z_][A-Za-z0-9_]*", check.pattern) and not check.resolved_patterns:
+        return True
+    for pattern in check.resolved_patterns or (check.pattern,):
+        try:
+            expression = _as_python_regex(pattern, check.options)
+        except re.error:
+            return True  # An unmodelled dialect is an instrument gap, fail closed.
+        for witness in _regex_witness(pattern, check.options):
+            probes = tuple(f"{prefix} {witness}" for prefix in COMMENT_PREFIXES)
+            if any(expression.search(probe) for probe in probes):
+                return True
+    return False
 
 
 def census(backlog: str) -> Census:
@@ -158,17 +348,19 @@ def census(backlog: str) -> Census:
     invocations = 0
     command_records = 0
     manual_records = 0
+    unknown_indeterminate: list[GrepCheck] = []
     for record in records:
         verify = record.get("verify")
         if isinstance(verify, str) and verify.strip() == "manual":
             manual_records += 1
         elif isinstance(verify, str):
             command_records += 1
-        checks, count = _grep_checks(record)
+        checks, count, unknown = _grep_checks(record)
         assertions.extend(checks)
+        unknown_indeterminate.extend(unknown)
         invocations += count
     unsafe: list[GrepCheck] = []
-    indeterminate: list[GrepCheck] = []
+    indeterminate: list[GrepCheck] = list(unknown_indeterminate)
     for check in assertions:
         try:
             _as_python_regex(check.pattern, check.options)
@@ -176,7 +368,7 @@ def census(backlog: str) -> Census:
             indeterminate.append(check)
         if _matches_comment(check):
             unsafe.append(check)
-    return Census(
+    result = Census(
         records=len(records),
         command_records=command_records,
         manual_records=manual_records,
@@ -185,6 +377,20 @@ def census(backlog: str) -> Census:
         unsafe=tuple(unsafe),
         indeterminate=tuple(indeterminate),
     )
+    if (
+        result.records != EXPECTED_RECORDS
+        or result.command_records != EXPECTED_COMMAND_RECORDS
+        or result.manual_records != EXPECTED_MANUAL_RECORDS
+        or result.grep_invocations != EXPECTED_GREP_INVOCATIONS
+        or len(result.assertions) != EXPECTED_ASSERTIONS
+    ):
+        raise InstrumentError(
+            "B-155 population drift: "
+            f"records={result.records}, command_records={result.command_records}, "
+            f"manual={result.manual_records}, grep_invocations={result.grep_invocations}, "
+            f"assertions={len(result.assertions)}"
+        )
+    return result
 
 
 def mutation_self_test(backlog: str) -> None:

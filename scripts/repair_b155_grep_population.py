@@ -29,6 +29,10 @@ COMMENT_GUARD = "^[^#/<*-]*"
 
 
 def harden_pattern(pattern: str, options: str = "") -> str:
+    # `grep .` is a non-empty-line predicate, so merely prefixing the guard
+    # would still let the wildcard consume the comment marker at position 0.
+    if "F" not in options and pattern in {".", ".*"}:
+        return "^[^#/<*-].*"
     if pattern.startswith("^[^#]*"):
         return COMMENT_GUARD + pattern[len("^[^#]*") :]
     if pattern.startswith("^[^/]*"):
@@ -40,7 +44,10 @@ def harden_pattern(pattern: str, options: str = "") -> str:
     # The guard must apply to the whole expression.  Without grouping,
     # `guardfoo|bar` leaves the `bar` alternative able to match a comment.
     if "F" in options:
-        body = pattern
+        # A fixed-string assertion cannot carry a regex line guard.  The
+        # caller switches F to E and escapes the literal body before applying
+        # this guard, preserving the original fixed-string semantics.
+        body = pattern if VERIFIER.SHELL_VARIABLE.search(pattern) else VERIFIER.re.escape(pattern)
     elif "E" in options and "|" in pattern:
         body = "(" + pattern + ")"
     elif "E" not in options and r"\|" in pattern:
@@ -50,11 +57,26 @@ def harden_pattern(pattern: str, options: str = "") -> str:
     return COMMENT_GUARD + body
 
 
+def _grep_matches(line: str):
+    quoted = list(VERIFIER.GREP.finditer(line))
+    starts = {match.start() for match in quoted}
+    matches = list(quoted)
+    for match in VERIFIER.GREP_UNQUOTED.finditer(line):
+        if match.start() not in starts:
+            matches.append(match)
+    return matches
+
+
 def _rewrite_verify(record: dict[str, object]) -> tuple[str, int]:
     verify = record.get("verify")
     if not isinstance(verify, str) or verify.strip() == "manual":
         return "", 0
-    checks, _ = VERIFIER._grep_checks(record)
+    checks, _, indeterminate = VERIFIER._grep_checks(record)
+    if indeterminate:
+        names = ", ".join(f"{check.record_id}:{check.line}" for check in indeterminate)
+        raise VERIFIER.InstrumentError(
+            f"cannot repair indeterminate grep pattern(s): {names}"
+        )
     unsafe = {(check.line, check.pattern, check.options) for check in checks if VERIFIER._matches_comment(check)}
     if not unsafe:
         return verify, 0
@@ -62,7 +84,7 @@ def _rewrite_verify(record: dict[str, object]) -> tuple[str, int]:
     changed = 0
     for index, original in enumerate(lines):
         replacements: list[tuple[int, int, str]] = []
-        for match in VERIFIER.GREP.finditer(original):
+        for match in _grep_matches(original):
             if not VERIFIER.COMMAND_BOUNDARY.search(original[: match.start()]):
                 continue
             options = match.group("options") or ""
@@ -71,25 +93,29 @@ def _rewrite_verify(record: dict[str, object]) -> tuple[str, int]:
                 continue
             if (index + 1, pattern, options) not in unsafe:
                 continue
-            replacements.append(
-                (
-                    match.start("pattern"),
-                    match.end("pattern"),
-                    harden_pattern(pattern, options),
-                )
-            )
+            replacement = harden_pattern(pattern, options)
+            # The canonical guard contains shell metacharacters; quote a
+            # previously bare pattern so the repaired command remains valid
+            # shell and the parser cannot mistake `<`/`>` for redirection.
+            if not match.groupdict().get("quote"):
+                replacement = '"' + replacement.replace('"', '\\"') + '"'
+            replacements.append((match.start("pattern"), match.end("pattern"), replacement))
+            if "F" in options:
+                replacements.append((match.start("options"), match.end("options"), options.replace("F", "E")))
         for start, end, replacement in reversed(replacements):
             original = original[:start] + replacement + original[end:]
+        if replacements:
+            # Count assertions, not replacement spans (`-F` repairs also
+            # replace the option with `-E`).
             changed += 1
         lines[index] = original
     return "".join(lines), changed
 
 
 def repair(backlog: str) -> tuple[str, int]:
-    output = backlog
+    changes: list[tuple[int, int, str]] = []
     total_changed = 0
-    # Work backwards so offsets remain valid while replacing each YAML fence.
-    for fence in reversed(list(VERIFIER.FENCE.finditer(backlog))):
+    for fence in VERIFIER.FENCE.finditer(backlog):
         block = fence.group(1)
         record = VERIFIER.yaml.safe_load(block)
         if not isinstance(record, dict):
@@ -108,10 +134,20 @@ def repair(backlog: str) -> tuple[str, int]:
             new_block = "".join(lines[:start] + body + lines[stop:])
         else:
             key = next(i for i, line in enumerate(lines) if line.startswith("verify:"))
-            lines[key] = "verify: " + lines[key].split("verify:", 1)[1].replace(verify, rewritten, 1)
+            # Scalar YAML verifies are commonly double-quoted.  Re-encode the
+            # complete shell string so newly inserted shell quotes and regex
+            # backslashes cannot terminate or alter the YAML scalar.
+            encoded = '"' + rewritten.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
+            lines[key] = "verify: " + encoded + "\n"
             new_block = "".join(lines)
-        output = output[: fence.start(1)] + new_block + output[fence.end(1) :]
+        changes.append((fence.start(1), fence.end(1), new_block))
         total_changed += changed
+    output = backlog
+    # Apply offsets against the untouched source in reverse order; rebuilding
+    # from an already-lengthened suffix would otherwise splice later edits at
+    # stale offsets and silently lose earlier repairs.
+    for start, end, new_block in reversed(changes):
+        output = output[:start] + new_block + output[end:]
     return output, total_changed
 
 
