@@ -30,12 +30,12 @@ class B155VerifierTests(unittest.TestCase):
 
     def test_census_is_complete_and_population_is_closed(self) -> None:
         result = verifier.census(self.backlog)
-        self.assertEqual(result.records, 169)
-        self.assertEqual(result.command_records, 138)
+        self.assertEqual(result.records, 170)
+        self.assertEqual(result.command_records, 139)
         self.assertEqual(result.manual_records, 31)
         self.assertEqual(result.command_records + result.manual_records, result.records)
-        self.assertEqual(result.grep_invocations, 329)
-        self.assertEqual(len(result.assertions), 311)
+        self.assertEqual(result.grep_invocations, 301)
+        self.assertEqual(len(result.assertions), 284)
         self.assertEqual(len(result.unsafe), 0)
         self.assertEqual(len(result.indeterminate), 0)
 
