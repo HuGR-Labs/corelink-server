@@ -445,7 +445,11 @@ impl CorelinkClient {
                 .await;
             match resp {
                 Ok(r) if r.status().is_success() => {
-                    return Ok(r.json().await?);
+                    // Decode explicitly so a malformed successful response is
+                    // reported as a JSON contract error, not as a transport
+                    // failure through reqwest's combined `json()` error.
+                    let body = r.bytes().await?;
+                    return serde_json::from_slice(&body).map_err(CliError::Json);
                 }
                 Ok(r) if is_transient(r.status()) => {
                     attempt += 1;
@@ -565,6 +569,22 @@ mod tests {
             .expect_err("401 must be an HTTP status error");
         assert!(matches!(err, CliError::HttpStatus { status: 401 }));
         assert!(!err.to_string().contains("do not expose"));
+    }
+
+    #[tokio::test]
+    async fn get_json_malformed_success_is_decode_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/customer/usage"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not-json"))
+            .mount(&server)
+            .await;
+        let client = CorelinkClient::for_test(server.uri(), Some("t-test".to_owned()));
+        let err = client
+            .get_json("/v1/customer/usage")
+            .await
+            .expect_err("malformed JSON must fail decoding");
+        assert!(matches!(err, CliError::Json(_)));
     }
 
     #[tokio::test]

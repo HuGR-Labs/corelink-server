@@ -68,7 +68,7 @@ npm está usando el espejo.
 | Síntoma | Causa probable | Solución |
 |---|---|---|
 | `401 Unauthorized` | Línea `_authToken` ausente o malformada | El host + camino de la línea del token deben coincidir exactamente con `registry=`, y el token debe ser un PAT `corelink_pat_...` |
-| Las instalaciones siguen accediendo a `registry.npmjs.org` | `registry=` no se detectó | Confirme el alcance de `.npmrc` (proyecto vs. usuario) con `npm config get @scope:registry` (reemplace `@scope` por el alcance del paquete), luego repita con `npm install --loglevel http` y busque solicitudes a `corelink-api.humangr.com` |
+| Las instalaciones siguen accediendo a `registry.npmjs.org` | `registry=` no se detectó | Compruebe el registro sin ámbito efectivo con `npm config get registry --location=project` y `npm config get registry --location=user`, luego repita con `npm install --loglevel http` y busque solicitudes a `corelink-api.humangr.com` |
 | `EINTEGRITY` | El tarball del upstream cambió | CoreLink verifica el `dist.shasum` y falla de forma cerrada ante una discrepancia — reintente o reporte el paquete del upstream |
 
 Referencia completa de errores: [Resolución de problemas](../troubleshooting.md).

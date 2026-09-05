@@ -11808,11 +11808,11 @@ quota colapsa todas as causas num código que nomeia uma delas.**
 
 **2. Comando de troubleshooting impossível de executar.**
 `apps/docs/docs/integrations/npm.md:65` — e as três traduções — manda, diante de "instalações
-ainda vão para `registry.npmjs.org`", *"execute novamente `npm config get registry`"*. Um
-cliente de CoreLink configura o registry por **escopo** (`@scope:registry=`) num `.npmrc`;
-`npm config get registry` devolve o registry **global**, que continua sendo o do npmjs e
-**está correto que assim seja**. O comando sempre "confirma" o sintoma. É conselho que produz
-um falso positivo garantido, nos quatro idiomas.
+ainda vão para `registry.npmjs.org`", consultar a configuração efetiva. A receita publicada
+usa o registry **sem escopo** (`registry=`), mas a orientação anterior não distinguia o local
+do `.npmrc`; consultar somente uma camada podia confirmar um valor incorreto e produzir um
+falso positivo. A correção consulta o mesmo nome sem escopo explicitamente em `project` e
+`user`, nos quatro idiomas.
 
 **Duas alegações do mesmo achado que NÃO reproduzem nesta árvore, e registro as duas para que
 ninguém as re-abra sem medir.**
@@ -11840,8 +11840,8 @@ ninguém as re-abra sem medir.**
 JSON, sem carregar o corpo da resposta. O `doctor` classifica 401 como `COR_AUTH_INVALID`,
 403 como `COR_AUTH_FORBIDDEN`, 429 como `COR_RATE_LIMITED` e falhas restantes como
 `COR_INTERNAL_ERROR`/`COR_NET_UNREACHABLE`. A receita publicada agora consulta o registry
-escopado (`npm config get @scope:registry`) em inglês e nas três traduções, e confirma o
-endpoint pelo log HTTP da instalação.
+sem escopo nos locais `project` e `user` em inglês e nas três traduções, e confirma o endpoint
+pelo log HTTP da instalação.
 
 ```backlog
 id: B-164
@@ -11862,23 +11862,26 @@ verify: |
   grep -q "check_quota_unauthorized_is_auth_failure" "$d"
   grep -q "check_quota_forbidden_is_scope_failure" "$d"
   grep -q "check_quota_rate_limited_is_not_quota_exhaustion" "$d"
+  grep -q "check_quota_transport_is_net_unreachable" "$d"
+  grep -q "get_json_malformed_success_is_decode_error" tools/cli/src/client.rs
   for n in \
     apps/docs/docs/integrations/npm.md \
     apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/integrations/npm.md \
     apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/integrations/npm.md \
     apps/docs/i18n/de/docusaurus-plugin-content-docs/current/integrations/npm.md; do
     [ -f "$n" ]
-    ! grep -qF "npm config get registry" "$n"
-    grep -qF "npm config get @scope:registry" "$n"
+    ! grep -qF "npm config get @scope:registry" "$n"
+    grep -qF "npm config get registry --location=project" "$n"
+    grep -qF "npm config get registry --location=user" "$n"
   done
-  echo "fechado: HTTP 401 e demais falhas de uso têm classificação própria; as quatro receitas npm verificam registry escopado"'
+  echo "fechado: HTTP 401 e demais falhas de uso têm classificação própria; as quatro receitas npm verificam registry sem escopo por local"'
 verify-means: |
   done — `get_json` preserva o status sem resposta/token body; o `doctor` mapeia 401/403/429
   para códigos de autenticação/limitação distintos, transport errors para `COR_NET_UNREACHABLE`
   e outros HTTP failures para `COR_INTERNAL_ERROR`. A suíte hermética cobre 401, 403, 429,
-  500 e ausência de corpo. As quatro páginas npm removem o comando global e instruem a
-  consulta escopada seguida do log HTTP. Reabre se qualquer mutação restaurar `Err(_)` como
-  quota ou `npm config get registry` sem escopo.
+  500, ausência de corpo, transporte e JSON inválido. As quatro páginas npm consultam o
+  registry sem escopo nos locais `project` e `user`, seguida do log HTTP. Reabre se qualquer
+  mutação restaurar `Err(_)` como quota ou remover uma das consultas explícitas por local.
 last-verified: 2026-09-05
 ```
 

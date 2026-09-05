@@ -690,8 +690,36 @@ mod tests {
             .respond_with(ResponseTemplate::new(429))
             .mount(&server)
             .await;
-        let c = check_quota(&mock_client(&server)).await;
+        let c = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            check_quota(&mock_client(&server)),
+        )
+        .await
+        .expect("429 retry loop must terminate");
         assert_eq!(c.error_code.as_deref(), Some("COR_RATE_LIMITED"));
+        let reqs = server.received_requests().await.expect("recorded");
+        assert_eq!(reqs.len(), 4, "429 retries exactly three times");
+    }
+
+    #[tokio::test]
+    async fn check_quota_transport_is_net_unreachable() {
+        // Bind and release an ephemeral localhost port so every attempt is a
+        // deterministic connection refusal, without touching the network.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        drop(listener);
+        let client = CorelinkClient::for_test(
+            format!("http://127.0.0.1:{port}"),
+            Some("t-test".to_owned()),
+        );
+        let c = tokio::time::timeout(std::time::Duration::from_secs(5), check_quota(&client))
+            .await
+            .expect("transport retry loop must terminate");
+        assert_eq!(c.status, CheckStatus::Fail);
+        assert_eq!(c.error_code.as_deref(), Some("COR_NET_UNREACHABLE"));
+        assert!(c.next_action.as_deref().unwrap().contains("127.0.0.1"));
     }
 
     #[tokio::test]

@@ -4,5 +4,5 @@
   `corelink doctor` preserves HTTP status codes without response bodies, reporting invalid
   PATs as `COR_AUTH_INVALID` instead of quota exhaustion (and distinguishing forbidden,
   rate-limited, internal, and network failures). The npm integration guide and all three
-  translations now inspect the scoped `@scope:registry` value and HTTP install log instead
-  of querying npm's unrelated global registry.
+  translations now inspect the unscoped `registry` value at explicit project/user locations
+  and the HTTP install log instead of querying an unrelated config layer.
