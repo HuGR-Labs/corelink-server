@@ -294,7 +294,7 @@ CSP / CSC responsibility column:
 | TVM-01.1 | Vulnerability management policy? | Y | CSP | `specs/03_architecture/security_model.md` + ADR-0024 Dependency-Track. | CC7.1 |
 | TVM-02.1 | Scanning at planned intervals? | Y | CSP | DAILY (cargo-deny + Dependency-Track + CodeQL/Semgrep on every PR). | CC7.1 |
 | TVM-03.1 | Severity-based SLA for remediation? | Y | CSP | `RB-STATIC-ANALYSIS-TRIAGE.md`. | CC7.1 |
-| TVM-04.1 | Pentest performed at planned intervals? | P | CSP | Internal adversarial reviews + cargo-fuzz summary; external pentest scoped under R-6 staging-bake (T-30d pre-GA). | CC7.1 |
+| TVM-04.1 | Pentest performed at planned intervals? | P | CSP | No external pentest has been commissioned; `CAP-GA-002` remains an unmet hard pre-GA gate. Internal adversarial reviews + cargo-fuzz summary exist, but no external report, NDA availability, or date is promised. | CC7.1 |
 | TVM-05.1 | Threat intelligence consumed? | Y | CSP | Dependency-Track CVE feeds + GitHub Advisory Database + cargo-deny daily. | CC3.2 |
 | TVM-06.1 | Coordinated disclosure / VDP? | Y | CSP | `apps/docs/docs/security/policy` + RFC 9116 `/.well-known/security.txt` + PGP. | CC7.3 |
 | TVM-07.1 | Bug bounty / responsible disclosure? | P | CSP | VDP + safe harbor in place; formal bug bounty deferred to post-GA. | CC7.3 |

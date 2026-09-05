@@ -164,7 +164,7 @@ Your KMS holds the **Key Encryption Key (KEK)**. CoreLink generates per-blob **D
 
 **Q:** When was the last pentest? Can we see the report?
 
-**A:** No — and we say so plainly: **no external penetration test has been commissioned yet.** Engagement is planned pre-GA; no report exists today (`pentest-summary.mdx` states this verbatim, and `PROOF-POINTS.md` 2.12 marks any pentest result NOT A CLAIM). In the meantime, internal adversarial reviews and cargo-fuzz summaries are tracked (SIG Lite G.11). Once the first engagement completes, the executive summary will be shareable under NDA via `trust@humangr.com`; the intent is an annual cadence post-GA. We will never describe a pentest as run or clean until a report exists.
+**A:** No — and we say so plainly: **no external penetration test has been commissioned.** No firm is engaged and no report, NDA availability, publication date, or cadence is promised. `CAP-GA-002` remains a hard pre-GA gate; it requires independent report and retest evidence with no outstanding HIGH or CRITICAL findings before GA may be claimed. In the meantime, internal adversarial reviews and cargo-fuzz summaries are tracked (SIG Lite G.11). We will never describe a pentest as run or clean until a report exists.
 
 **Sources:** `apps/docs/docs/explanation/compliance/pentest-summary.mdx`; `marketing/sales/PROOF-POINTS.md` 2.12; SIG Lite A.4 / G.11.
 

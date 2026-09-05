@@ -1056,7 +1056,7 @@
       "apps/docs/docs/how-to/sdk-python/06-ci-integration.mdx": "7036d29e499be6abd6669a25b3fd3c0a6892d9eb762c99329a92057b7456570f",
       "apps/docs/docs/how-to/sdk-python/07-troubleshooting.mdx": "b96fb830e6d879588672ba748107b7f4e5c5bfffb45f75648bf472fcc32d6b98",
       "apps/docs/docs/how-to/survey-response.mdx": "09746eb4f4538ebf9e413bc71d1920f016c13a95c6d74573c8ad2f64a9bd08ab",
-      "apps/docs/docs/index.mdx": "4103323414e65aec978f67abbda1dfd017a2791b09ec18093742aeea395168fd",
+      "apps/docs/docs/index.mdx": "1cf8b4154a021ba9a567cabe77230d110c67cc7021154c9aab75c968e7e1c35e",
       "apps/docs/docs/integrations/bazel.md": "1841905d3f8f24d920e38aa5aa483538e4b5e7bb309c00b2d82a0f0a034920ac",
       "apps/docs/docs/integrations/homebrew.md": "a41907c3163ac058a881a7c9d5bb8d6600d7dd0808584bffc255d083cf85d9b1",
       "apps/docs/docs/integrations/npm.md": "f9b9f831737a4f071229b8f8b70117fcd0f617a0ef2546d8a8438b8cb7872c87",
@@ -1068,7 +1068,7 @@
       "apps/docs/docs/intro.md": "e929c81c7af6741ba88e1fa38d4a8053258ef4789473a9fa012645aa1283e2d3",
       "apps/docs/docs/pricing/calculator.mdx": "b9fb9bd30466fc400c4d755b4c21910a8be39fe1a15f770cef2d9fd699c6e739",
       "apps/docs/docs/pricing/comparison.mdx": "450a976caeedc4643f1f7f8bc763b53eecd141006fbcbf2d5b3846afeb1c0b5a",
-      "apps/docs/docs/pricing/index.mdx": "990962266a93768cd009e2a4154845201bf2c1ce3ae9c5ea90f4125ba655fbb4",
+      "apps/docs/docs/pricing/index.mdx": "1c2fc030ed6496657d7cdff908542afa5e250e576b81a047a7963a364d7cf20d",
       "apps/docs/docs/quickstart.md": "a28ac9c1b49dd51451c3c6f62c966943005dd9aabb6ac31e5356d5092672913b",
       "apps/docs/docs/reference/api/endpoints/get-_health.mdx": "1b8498cd266de05ae9222077ceaf8d4363c51a65d1eef32aecac6de846a86937",
       "apps/docs/docs/reference/api/endpoints/get-api-health.mdx": "b466077f2f0f07e6a373e9aae8da03aa47cc32772908a4fcbab29e8b594d48e2",
@@ -1168,7 +1168,7 @@
       "apps/docs/docs/troubleshooting.md": "b8bb3fbf1c73b5329395d767df4870fcc739bbde0024f32a3cc27fb3fe7bc38f",
       "apps/docs/docs/trust/compliance.mdx": "cf469e4a4c470e81d1350288d4cdbcd5192a8646abf5a82ed953852d8f26a72a",
       "apps/docs/docs/trust/data-handling.mdx": "2922e27af0fb4877231427cda595c6edd9340e8b2635bcfbe96ac15e9563e9c0",
-      "apps/docs/docs/trust/fedramp-info.mdx": "43b47764afcdd124337cc1049a83bc1c1225ff7f5c228da788eff59e2495499a",
+      "apps/docs/docs/trust/fedramp-info.mdx": "a15289a43c0eed347307b13b38d551a699e231b724c947957ab6a691855eb2e9",
       "apps/docs/docs/trust/incident-response.mdx": "1d811457ad89acfdbaaf0ddd8b5572d169a6539590db6f2df341484b9ca9d9e2",
       "apps/docs/docs/trust/index.mdx": "8e8b9bdbdb3b13ae019a7fedefacc2c13da1ed1203c3ef334fa22c3ac56bb5b3",
       "apps/docs/docs/trust/iso27001.mdx": "14e19ab4737a128bd22db88b689de2a195a2d7c126912aec1ebb15ff3f2e100b",
@@ -1260,7 +1260,7 @@
       "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/how-to/sdk-python/06-ci-integration.mdx": "2ba6398b52dc0a3722b34a9e8e794b5a6e3995036cf86fb7c725f73bdb7e9c78",
       "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/how-to/sdk-python/07-troubleshooting.mdx": "9072c09aaa7d4cc04c56ba01fbddc6ad1af9b5ef155b456a905415ecae1281b3",
       "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/how-to/survey-response.mdx": "c30222f813bc01b7cdfaf07a6937853ebfc44cca81d6d3c01067f3792c7a52e9",
-      "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/index.mdx": "1eaece4b300e3b92683a6f2e829e6dbfb94b1d594faaa4fa8aa8127796140917",
+      "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/index.mdx": "236e466ccac49f03718e8351f1cf1c18dc9d49dbe50c2e3de9fe16e612e5215a",
       "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/integrations/bazel.md": "561e7f3d95fe292cacc856f696e75662ae71d79162f75ebcc67878264e83451d",
       "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/integrations/homebrew.md": "4768397157a677774ba88cf785301fd603ba86f082188620728f8be2795a25b2",
       "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/integrations/npm.md": "f9f99dbe21ddd740c83ce4dfad869715c672321e5b8e7231831202e8354882df",
@@ -1272,7 +1272,7 @@
       "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/intro.md": "41f991bde6bbe0c1cb49179f19eae1d2204cf84a1049fdf20eb4758e4aa09678",
       "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/pricing/calculator.mdx": "e1f5ca0ca7d120c53df53ac0a1ad586d01987cb431f018095c5b83bef244833e",
       "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/pricing/comparison.mdx": "34b2600cce39755da8ae2aa8af30f08d90b3abd1bbdd97ff65feabf98ebdf811",
-      "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/pricing/index.mdx": "52d75897d8e64fcacd34bc68ca74f1da59ae3af04eb34846bade25300f5e83f5",
+      "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/pricing/index.mdx": "b3de5ecaf3ae07f2b245bd0ce815931ceba4ef71e3d5e5904e4f94d4ffa9f4fe",
       "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/quickstart.md": "ef5983881668bfe4a9dd9a7c6c0e05286caecb1e2977e12adc3fb3487725675c",
       "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/reference/api/endpoints/get-_health.mdx": "1b8498cd266de05ae9222077ceaf8d4363c51a65d1eef32aecac6de846a86937",
       "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/reference/api/endpoints/get-api-health.mdx": "a813332bb1a0adae3dbee0c99be01d22cda5701fc63cc8a8ae6bd24bb56467dd",
@@ -1372,9 +1372,9 @@
       "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/troubleshooting.md": "2548217a269f9b55bfb7e3f1999a3b282d4e281bc3388ffac1a0ec720adfb14f",
       "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/trust/compliance.mdx": "8925c64c4dcf0f78af7a7f7fee24a755188df193e81ad1d5c21d3f4ea8ecdb27",
       "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/trust/data-handling.mdx": "bbc56f4d29eef723e5900c021e0ae242898fd9c6b87a5e0a9e7248033c05a73c",
-      "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/trust/fedramp-info.mdx": "09f0465298d18d8109063a2aa9fea29ff265811a6d289e44fdc623ee2b119212",
+      "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/trust/fedramp-info.mdx": "2b9fc9e53d6bc53704c9e259833b1704e5e7b5ff5e270fb428c2af7e91757004",
       "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/trust/incident-response.mdx": "01d7c3ad7ac75957ff6886c40693d4c969ae7edfd1fe73e3b586c64869ef6e74",
-      "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/trust/index.mdx": "06cee5bb8705827241a12893c6086b2f40b219a46d9bc6266818fc74c21995df",
+      "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/trust/index.mdx": "9e74fe8275203ef081d729099949cb8fc56a8694fbf91c8a74fa1d22e2c3720c",
       "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/trust/iso27001.mdx": "ae177375a3f0d0cc48179df53aa8afc03039fdbf04be22645f2eea86c4f96e3b",
       "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/trust/pci-dss.mdx": "8198be984af85b71991ada791a23375b36776f9420660793c4dfeb28021ede6d",
       "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/trust/subprocessors.mdx": "96ca4a04045830fa02b0f76133b94363c593f18b842ed4e55db6c38b35aa22e6",
@@ -1465,7 +1465,7 @@
       "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/how-to/sdk-python/06-ci-integration.mdx": "a080d9e3c21da3aa5e47bd60aa1a3572f57a64b5e6562b083998854bb75040bc",
       "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/how-to/sdk-python/07-troubleshooting.mdx": "cf2aa390c4402362a2976a8aa02fec3c66d37527c1c8dd607571e5e0207515f0",
       "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/how-to/survey-response.mdx": "5b2f162f4465ce8edb2054480f23ef7debc7e169f995f6f0c26a9c670d9e2d0c",
-      "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/index.mdx": "561c40797b728e2fae521d31aa89afa0a1707658cb32cb3f2ea1f2101048515a",
+      "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/index.mdx": "997d77a58189b15bd42240553a36b2581bb463dd8c6714ce7dfa2a80b83312b5",
       "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/integrations/bazel.md": "17d650bbefc6f6f33017a810740cd01e78d6b6378dfd07d1104bf821e5b4486e",
       "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/integrations/homebrew.md": "f4c02a5d4d85f1794e453ec56d1f58566911af79610421a7e412af2e48f24165",
       "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/integrations/npm.md": "9d75b632bb7a72b8f805ed86c13d6d18482b01d8e812c2704bd23aa6ef387d69",
@@ -1477,7 +1477,7 @@
       "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/intro.md": "59c97f4022bfa047456ff71c39164ad4a6b86aa3bca402a2145e4d4521685418",
       "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/pricing/calculator.mdx": "b12102ab86ad4edfa58f5141e925119a1bcc867ac174e9ef446770930d4c792f",
       "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/pricing/comparison.mdx": "50cdd05d069d664d446b478f7d1da044316a66eeebd63491cc471cc2dfac23aa",
-      "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/pricing/index.mdx": "44e5b7e8630bc885ec1f5036544a289596763877d78d0e54ec5281430c6b7b1a",
+      "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/pricing/index.mdx": "23d5669a599dac768375b0401c1631fe72d3fbe1fbd4b0f3e32146b4e230d4ff",
       "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/quickstart.md": "666fc7ff189826faf3a03ca143a7fe2f02582d0f72da38d8d70e36420d823d12",
       "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/reference/api/endpoints/get-_health.mdx": "1b8498cd266de05ae9222077ceaf8d4363c51a65d1eef32aecac6de846a86937",
       "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/reference/api/endpoints/get-api-health.mdx": "4ee09ca7ea5a60ff14e3ee7080790f9e63d808404140b22e5619b7a1c4cae9b2",
@@ -1577,9 +1577,9 @@
       "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/troubleshooting.md": "893670d9424077a043225f4194a0a1650cc0994173208d7d2a82f3b3f414bf8e",
       "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/trust/compliance.mdx": "2c86d703acbc9bf0ff9daee2bd4eb1c94d465fd8859300285d258acfa52d46cc",
       "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/trust/data-handling.mdx": "831c0f02d00d4a32268452e5a1ed2cd51bbcca863a8927d40581b0f54d0b5b00",
-      "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/trust/fedramp-info.mdx": "b2d7ed916b4c3067a4a71e02fae9fcee357b7daced5e32ab09f396455901a0b0",
+      "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/trust/fedramp-info.mdx": "8c9ec33833e4315e5e1d5ec5f04f0162b1fa95dc075ea5bc434cbf50b8c520ce",
       "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/trust/incident-response.mdx": "f9a227a745def87d6ec340ed7d74fb1a6ae4c7cf703795bf4fd8b37c10ea2aaa",
-      "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/trust/index.mdx": "5e6a3ff1231a1048e8b6d369777d057ac838409fcfbd8066e60c8119db11f3cc",
+      "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/trust/index.mdx": "ecfcde29b25dd4cb606e56fadb552fe5c0c5b01e45027bbf99eb359039825914",
       "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/trust/iso27001.mdx": "2b8689cf5a2930c76614ab20e8679f7468dfb4fe36ec5eca3b478b854467e1f8",
       "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/trust/pci-dss.mdx": "ed69a0f11a6f3d8a0b3c774847e98721939f07b8b953a4de932a369592fb6fb8",
       "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/trust/subprocessors.mdx": "5491bbf7db32c83582fbc2e65882f9667bb56e3eea17b2121ec4aff5d4fbc721",
@@ -1669,7 +1669,7 @@
       "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/how-to/sdk-python/06-ci-integration.mdx": "d8b66f6883fe91d484f19110d56a893a6b38e9ac605db9caf66f73aac4873899",
       "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/how-to/sdk-python/07-troubleshooting.mdx": "0ffdc430fea43137f95a78cb6b7f21d9d2bf290eb0cd2029608f765ada9b042b",
       "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/how-to/survey-response.mdx": "0c0c96b596fd98c3efd3f893e69510a7a18f934dbc0c53267cf0721a6d4f6a47",
-      "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/index.mdx": "1b6cfa3245104573f7112378ef8011c47f7e0f6a29d63bca2731c572d4bfb605",
+      "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/index.mdx": "e89ec4c887e95ceed0e4dcd11b7d221f48da3b8d18657690b6d8fa0324425d08",
       "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/integrations/bazel.md": "01ffce3248b1867a6e7eb1bf0648d3524d531c585a0869a02eee65f9d126e20f",
       "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/integrations/homebrew.md": "61e4d6790d70074351f123007e29fb4d0183747c9b69bd9df4e512709f329311",
       "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/integrations/npm.md": "a5e72c316959646795a98c39e035bb15d45a44aac44e42527d1d0a521e8e3c2e",
@@ -1681,7 +1681,7 @@
       "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/intro.md": "cdbd7d67564313f0dc252670cfb962996a1d31d690f7e3f4caffa764dd34650b",
       "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/pricing/calculator.mdx": "4c6830711540646e8bb33e021e2f02dc4218e5893a56786ec8d59c7562d3eeec",
       "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/pricing/comparison.mdx": "b1c6bdf8a441e160df13a5a9cc6f98c1c736833f70b8d5e1dc1d1ec8a138a7fe",
-      "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/pricing/index.mdx": "53f035faea09013bc916b1be565a47cdd580dea321475cf7ab0e6692ec098f91",
+      "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/pricing/index.mdx": "d06afb188ff603f154f497acb59db4e198f5b42cdded58f1618ba070543a38b5",
       "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/quickstart.md": "93cffee5d166f8b6943c4e1ae5997b092debf43e39e4e95122735af24b5beeb8",
       "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/reference/api/endpoints/get-_health.mdx": "1b8498cd266de05ae9222077ceaf8d4363c51a65d1eef32aecac6de846a86937",
       "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/reference/api/endpoints/get-api-health.mdx": "b17abb5a8f758244fef917a78a53a4522b32e1bd434613d3b2accf0202e12f46",
@@ -1781,9 +1781,9 @@
       "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/troubleshooting.md": "28afbfc3dd791099a7300c9822178dfbe7d75be3c63b4286f4f3514a32cb3120",
       "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/trust/compliance.mdx": "b5fc0a264cd681822fd8524f59b39822db3b237597cdd0b2edeb1be69482034f",
       "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/trust/data-handling.mdx": "ba7ac796539f70ce83c4b12b1e8b81cd78cbc3f1ba5fb874f45bb606062a7b89",
-      "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/trust/fedramp-info.mdx": "4b9f75137c3d36d0865f545cae8dc594c1b5714ebacc8b9b31f99312eb115825",
+      "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/trust/fedramp-info.mdx": "213b927b309f34cbb7413c49db223a047eb427fe0d713cf756c5c38b74ff8df0",
       "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/trust/incident-response.mdx": "c6a2b55e0f7b24bef475e25cb6cec5a5db029181b4d6e48ab1c96c3c7d9ee410",
-      "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/trust/index.mdx": "407d0cacee063b2688589da5dcb4998534f2b8424ca2f0a3015e363385334bb5",
+      "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/trust/index.mdx": "7cd3a37463432693456f75869c8a7cfad49212a7533251878a93e220f725645d",
       "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/trust/iso27001.mdx": "90d8e7c65e7d1908610b2cb73255e89102df870baa32b0f22b9242a99f45e1d3",
       "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/trust/pci-dss.mdx": "d51420f2cb36d625ee989491b867bb8c9e8bee677f3307e32c36ec66218fbb20",
       "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/trust/subprocessors.mdx": "2cf6d4463f6ed1eceda464884e47459b973264a580f0d8bd1278b4e0df4b619f",
@@ -1843,18 +1843,18 @@
       "marketing/expansion/corelink-workspaces.md": "e8f2c83893eeb5188d2aeb24e2f50278098117ebc5c9f89750302ab00c1a7531",
       "marketing/expansion/event-streaming.md": "ed3ea9487e22aa047f1f9b0c6a3acc55976bbd30fb150ab046dccdb561e6a254",
       "marketing/expansion/game-studios.md": "1d01bbd09701afe742790005f669920a4ebb1ba67a8496dd73767b9e824778a3",
-      "marketing/launch/BLOG-POSTS/01-introducing-corelink.md": "a7c3ad70528b052ac7859b018aa68e764d09dc28f3d7772ac771bd306b1adc3e",
+      "marketing/launch/BLOG-POSTS/01-introducing-corelink.md": "9b448f48d024a09f036b2b27dbacfb0ab0249cacc99467673526ba3729c847e1",
       "marketing/launch/BLOG-POSTS/02-byok-deep-dive.md": "752a873988b13a0dd526bd5a47e7d5a8c47e3213cffa56bc6760890f9f1d2c3a",
       "marketing/launch/BLOG-POSTS/03-audit-chain-merkle-proofs.md": "f3911ea8df4dd86602f16057dc610257b4ab6ca61228a0da75706fe3eed79203",
       "marketing/launch/BLOG-POSTS/04-multi-region-residency.md": "9c4bc5b5c7eb2cdb34e1b6124c61de815bcaf6396ebbec24756d0beda147aedb",
       "marketing/launch/BLOG-POSTS/05-fast-cache-hit-economics.md": "d856ed606b4a83762ef82bba8515e94e80a46bb353749083fc1fb9f3844bf8e3",
-      "marketing/launch/CASE-STUDIES/enterprise-byok.md": "88c58e45c40e799b5cdf3f20847858ed954277f928937e15b9b719a28ee14d20",
+      "marketing/launch/CASE-STUDIES/enterprise-byok.md": "618449045560bd0787460d3dc34eb21a4a77076e96a6a3b312c3d1529407f084",
       "marketing/launch/CASE-STUDIES/forge-team-tier.md": "7d65451690bb6e6c9f7dcb306fe582ec08b278bc26959e2b5ad7fcaa8d98a57e",
       "marketing/launch/CASE-STUDIES/oss-team-tier.md": "5bd2a376b0dd60b7841dd41474e5e865d80f542c962ac16703377a0d8e667aed",
-      "marketing/launch/COORDINATION/LAUNCH-RUNBOOK.md": "03dc8674f7660c607a32b2bfc9b17a2a2f986d35b0c2718f7c0136e489d9c321",
+      "marketing/launch/COORDINATION/LAUNCH-RUNBOOK.md": "97004336d1c45fec725455df956c699b90379002e3951caebc6e38bdbb2844d2",
       "marketing/launch/CRISIS-COMMS-TEMPLATES.md": "135a1eeb9b4c19b68a5add1950aa785bfcdeba2a61be10771fed0c08b152f3f4",
       "marketing/launch/DAY-1-DASHBOARD-SPEC.md": "edba66222e8bfc44eae40756393aec352ff1dd7c904637c83c42d94e06b0c952",
-      "marketing/launch/LAUNCH-CHECKLIST-V2.md": "3e379c41b92e01689a208d5491463d8754bc4367f4573010ee1f94bbdf40a9a2",
+      "marketing/launch/LAUNCH-CHECKLIST-V2.md": "c8187dace32c1026fbb2f48065b2a4ae735f39f7a407fcfd67089079733be41b",
       "marketing/launch/METRICS-DASHBOARD.md": "fc51e20340ef17e862259e67318799a172ebac510a39fa7b67d606e4365272ba",
       "marketing/launch/PENTEST-RFP-EMAIL-BISHOP-FOX.md": "d9539e06bc387cceebb924ce0354bcc8b8c525e834545f5b33e41355a43cc33b",
       "marketing/launch/PENTEST-RFP-EMAIL-NCC.md": "f76b5656b410335b47050199433a75f8f7dd455bacc7af4ee6138ac47a925dfc",
@@ -1867,34 +1867,34 @@
       "marketing/launch/PILOT-TWEET-THREAD.md": "6a600e0dd0d3cd7c57cc0c84dcd468d80c6d251e61fab0680a7663f5a611d615",
       "marketing/launch/PRESS-RELEASE.md": "d3f14d891d52b1537a5f22114ea30360f68927063545796dbc56e1710b078e7d",
       "marketing/launch/PRODUCT-HUNT/PH-DESCRIPTION.md": "1d4fe38ba1fe63f4f42a664584d21f57fe7a50956572c252a846159bcee1fc22",
-      "marketing/launch/PRODUCT-HUNT/PH-FAQ.md": "e44659316cbc475c99d800e259dc62842b626cfc5993d882efe48c1a442db535",
+      "marketing/launch/PRODUCT-HUNT/PH-FAQ.md": "aec32019fb93e88b6289d5e0f587b079d0aca271afe33b00891110b05b1186fd",
       "marketing/launch/PRODUCT-HUNT/PH-LAUNCH-PLAN.md": "d2f355cd0f202312d450aea4613c927be8a6c5f90e343d86683e69687fdff38e",
-      "marketing/launch/PRODUCT-HUNT/PH-MAKER-COMMENT.md": "cfcb35f6160b83949c750efdc2bb512346a9a8cd373ad8f6a9a2fa5f13937297",
+      "marketing/launch/PRODUCT-HUNT/PH-MAKER-COMMENT.md": "b6a8900eb1f9a58e8ab09f83b3640a285ca3443efc6fafe96deb912f10bb4650",
       "marketing/launch/PRODUCT-HUNT/PH-TAGLINE.md": "d69011a1249a39b1141b7bea71a2ca4c33681de4c4c6e7513f5ac8d92ed8dba8",
       "marketing/launch/RELEASE-NOTES-EDITORIAL-GUIDE.md": "07c379f175030118119fbd6263ec4bf0d0dc2cef382e36af9ac5cb5a9d45db6c",
-      "marketing/launch/SOCIAL/HACKERNEWS-SHOW-HN.md": "2dde714f344831bf5b5f65e4b1df75055344f27503efc72cf466cea2927b130f",
-      "marketing/launch/SOCIAL/LINKEDIN-POST.md": "5ee47ac49379199efc7460ce1ca883b6d16320b664755764ebf03702dc7bfaad",
-      "marketing/launch/SOCIAL/TWITTER-THREAD.md": "271814dfe57b6dbbc2ddbd0016d035f2e0124eb1327b41256808056b84f1863d",
+      "marketing/launch/SOCIAL/HACKERNEWS-SHOW-HN.md": "541bbf472c0cfa2ae73bdf757341c7d1befea0b5dd5378c688bd89e286689af7",
+      "marketing/launch/SOCIAL/LINKEDIN-POST.md": "28bd6718da089c6fd6fcf5198c2a8c3dad186d9a8cb1e0fd388515d256a03fda",
+      "marketing/launch/SOCIAL/TWITTER-THREAD.md": "9537a1d1a60bebe90fce2e1862dee536abd89be3ae51725188e7334a964dc840",
       "marketing/launch/STATUS-PAGE-SPEC.md": "019bc91fc3aa2f225a439f632f7e84a6f6a31de22215c496b9e1f189a46df726",
       "marketing/launch/STATUSPAGE-INIT.md": "7b5880bb8ff0140dedf496c92cc0199fb34ed8b11703e749533d8dc0fec2822f",
       "marketing/launch/STATUSPAGE-PRE-LAUNCH-TEST.md": "6389d6f72d28844454a61121eeb5c64cb27218e4bd3d776ed93e2dbd2ae76ac9",
       "marketing/launch/STATUSPAGE-SUBSCRIBER-IMPORT.md": "012037b3381518c72e5845707e2b06c6afc55c95781bb25134f4374a8350145b",
       "marketing/launch/SUPPORT-DASHBOARD-SPEC.md": "eb73af1caddbc21044897f850ada0fed364b1cb08f13b998dff03f52b2cf648e",
       "marketing/launch/SUPPORT-RESPONSE-TEMPLATES.md": "5b62e50ddc7786a5521a8460d7fffdeb6d3b7108e077bacff36cacd6e634b28d",
-      "marketing/launch/demos/5-MIN-DEEPDIVE.md": "6b453bb3530c7a8c3d02d8d31a8ab68aae93384946c6f285ddbd3405992f0e43",
+      "marketing/launch/demos/5-MIN-DEEPDIVE.md": "07406c39e0cc351f967b54f4531f36cb819eabcbb16b48b8b0b46eaa5d53c432",
       "marketing/launch/demos/60-SEC-ELEVATOR.md": "24b9611de610b68258ca3e117b630b3273c2f42263c32c2a6eb88720993a45c7",
       "marketing/launch/demos/README.md": "90686ff09ff45e4a062ad72c4c8209ede982407101ca5976abd875ea58dc3691",
       "marketing/launch/demos/admin-ui-screenshot-guide.md": "5d1e85119e5a3d9bc50c467ef929258b892b6fed631ffc7dc4446b1c671d80ce",
       "marketing/launch/demos/byok-deep-dive-demo.md": "31f50009cf693817e0c7c98918d5a196a1b23baa5dfb1bc2f10d4cbc92d3b1d8",
       "marketing/launch/demos/competitive-comparison-demo.md": "3abe1760e606fe0f3516ebe426d3684ba914d8aea7d80f1e9bbf1e03da83b7b3",
-      "marketing/lighthouse-kit/01-outreach-email.md": "52edd38ebc499397d3c4df7435de6626ca1f356b2df528b1688d7a0de68b49dd",
-      "marketing/lighthouse-kit/02-intro-deck.md": "a6e9af94c5330033f40559036575ae7e58f316b399faef09c178904b3f0e8f44",
+      "marketing/lighthouse-kit/01-outreach-email.md": "5904cb6ebd79139f150f059edf35d32c8f8337db957524345d187edaff5f3edd",
+      "marketing/lighthouse-kit/02-intro-deck.md": "9ff3378da2609ab63927c69c7bb7bf4f800bb19f15a085e648854b4359c8179e",
       "marketing/lighthouse-kit/03-integration-timeline.md": "f104bfbd713be28cca03484e941f07fda9676630d59704035b2f858fa6c6eafb",
       "marketing/lighthouse-kit/04-weekly-checkin-agenda.md": "8729c159e101f9e2fee9ee5d14cc21a9228f36f8d4ea3064e6d3a417326f61ad",
       "marketing/lighthouse-kit/05-sla-attestation-instructions.md": "fc3b81daa49cd8519ff21e4eb3f454b3a470fa12b01fc99291c163196a6f430c",
       "marketing/lighthouse-kit/06-case-study-interview-script.md": "838b9410ad90579b75f9ea652a9dbcb0e11d978e6cfe2c6361bee5a1224e63cd",
       "marketing/lighthouse-kit/07-pricing-comparison-internal.md": "61fcd4686d8b48826e6a380fdf793522c20bcd8e0301dd33fcdc3e615191c80c",
-      "marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md": "fba111f77d81d2ddbb5d58fa302b79532bf5ce7e6bfc2e36fd753adc512af0ff",
+      "marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md": "f83bc0305e028126b947be1344811af7ca04be41d565e5efa5adcb5fed84ef65",
       "marketing/lighthouse-kit/INDEX.md": "8c21b340dc0e637ca2cbdc70f5d128ad1310f2a68cd63ce382a5ff4f9e5a00e5",
       "marketing/lighthouse-kit/case-study-template/enterprise-byok.md": "4edf462fa355fac47b2a631744d0b4756ffe2a95fe7d563840f131cb5f10be93",
       "marketing/lighthouse-kit/case-study-template/team-A-forge.md": "e054a88d8ab6dc24a5c46944374c51e1c292815ce7186a2f791c43df4a77537e",
@@ -1913,16 +1913,16 @@
       "marketing/retention/quarterly-review-template.md": "f0771469fdf23bab5427cbda237ae47f915f23f40a7c2c8fba0eb8d1ffad95d0",
       "marketing/sales/API-STABILITY-FAQ.md": "863beeee3d6bae843934ce658c2252903efa4572f3cae0bb09043eb8064c5cd7",
       "marketing/sales/COMPETITIVE-MATRIX.md": "d08c9eb0d097c52f2e01a414f5f05333fda9b6d9f16d716d38998c28837d9447",
-      "marketing/sales/FAQ-MASTER.md": "ddb5e5ac38cffb75c216e803c72351f1887d00d4ed525bd7ea2b3de7c4f9da52",
-      "marketing/sales/OBJECTION-HANDLING.md": "ae3dea74f57df751523b098a2307a8bc41c926fdc96361297fc5ceb1bf094aa5",
+      "marketing/sales/FAQ-MASTER.md": "3fec79f0e6f5ea9f9bd0cca334d4ebb5f5258d41735a2e4e2f3e204de8834172",
+      "marketing/sales/OBJECTION-HANDLING.md": "055f31156d4240083e5ca4f18a39318f3515e77afce20f331fffb342e6f6cec0",
       "marketing/sales/PRICING-WORKSHEET.md": "2a7792d6eab6b9c6300ef54c60447742c9f62d9eec1622d907552dfd1a9c5bc7",
       "marketing/sales/PROOF-POINTS.md": "fb6f1d716b11b6a4fe4de96fd0675c0f183914627b06e43b21cd3c002d6d5967",
       "marketing/sales/RATE-LIMIT-FAQ.md": "68afdd178494af00d47ae34087c94ed66883179c7eccc1f4b94a25b04c2f7ef7",
-      "marketing/sales/legal-questionnaires/CAIQ-V4-pre-filled.md": "58442e754ce2a54b47a594e4e5bb4e247dbf07b481c3bc5cf7d12c66dc9cb4b9",
+      "marketing/sales/legal-questionnaires/CAIQ-V4-pre-filled.md": "a219ff3563ab8f7918b3e25ca8ba2040525b7e6b766d1e0181a88a90de92d2ec",
       "marketing/sales/legal-questionnaires/EVIDENCE-PACK-INDEX.md": "28b7e573d04b19931d0aac3c055297016042c8cbbe59404050cf2da42ea28651",
       "marketing/sales/legal-questionnaires/RESPONSE-SLA-POLICY.md": "4ce45867f765436ad7ab34280f2546fdbcdda5e16a597518f11246537271ab1b",
-      "marketing/sales/legal-questionnaires/SIG-LITE-2026-pre-filled.md": "e3ec359511104540edf249f3b88ff1b233336e146b82276d561307ed4226b2a5",
-      "marketing/sales/legal-questionnaires/VENDOR-QUESTIONNAIRE-RESPONSE-TEMPLATE.md": "843c8e95393a69774d6c8030e627e8ffb4ae04f3109504c3f1708632e2f231e2",
+      "marketing/sales/legal-questionnaires/SIG-LITE-2026-pre-filled.md": "f063ab0c08883f148703869c69fd9f5ff509f13000579765b8f9740d649c58e0",
+      "marketing/sales/legal-questionnaires/VENDOR-QUESTIONNAIRE-RESPONSE-TEMPLATE.md": "542ebac8598e7f686b9e2ebc50ce2d2a6b4d696716429b9b3941dce27cb8a9eb",
       "marketing/sales/pricing-preview.html": "05d24b0e3e23efed5eb58573e4ef8ec50e3ec76216c9946f224903c5f48ddc85",
       "marketing/sales/pricing-proposal-v2.html": "3d81c32323520fd3e840b2ea37a94e728d76eb05389369803f1074b977a2a695"
     },
@@ -2058,7 +2058,6 @@
       "067ab4f1ac2b0b9e28eb050f",
       "f9c58be042f4e68b4b45a93e",
       "3e0158aff2b5b8b652c2ad3a",
-      "acfcd206b0688070e9e545a4",
       "49b4536a1c295d42a806e4c7",
       "5ee67ae1dec7196f18a4e712",
       "8c04c5e6c71894a01cb7924a",
@@ -2066,7 +2065,9 @@
       "0af45e3bc34e66aa6c59e9c0",
       "f8471604b022a5c9b7194c45",
       "49e323eabb5aeb4e24264b84",
-      "56a6e2f0c18ce50a8b87fe05",
+      "6b913ce1625f52d024f93b77",
+      "31feece362f01a6648940f49",
+      "5768f0a844048564fca82402",
       "932a37f67cfdb82e2287d1a7",
       "f0e2878d52fea594e1b1ca89",
       "dabf4bcd5806b7ad80e480ae",
@@ -2094,7 +2095,9 @@
       "d1e11283923c789265ee0392",
       "9eee2c57f9a6d3621eb818bc",
       "7785dc8dd5febb60fb83e4ad",
-      "b33f9f06607da99669272571",
+      "268194dee24e8a7e51410f3c",
+      "1cf1507115500d5858e28358",
+      "94137132c1430956874d3ff3",
       "e3f118a1bd4a425d26c14f54",
       "23b7d866098d885bc8fc3287",
       "85d69a207678317590cd2d86",
@@ -2277,7 +2280,6 @@
       "40972ac32fa19f034e73046b",
       "0de492ce37a9c4b08c7e2a70",
       "7c476908f46c4d697c131f2c",
-      "b0559c86bec66f962e964e22",
       "5a851f987d82877c8a887ad4",
       "8f7d5b3ebd58cf02549825d6",
       "e7a639494eeb5667737cd83b",
@@ -2286,7 +2288,9 @@
       "d68029bf1179a43243245bd9",
       "f00f27facab0a06873cad509",
       "fe57f0dabfe475a727da7f1e",
-      "851feb66188566137bd87178",
+      "7f60a7a11281dfab03c35690",
+      "fd3264624ec2a5c7a3caf921",
+      "e2954f00c3e22c925ea55232",
       "0b636175f9a609ed9c175bf2",
       "d0125b4116849dd7b1308073",
       "af7c4196daf3eb18d723a353",
@@ -2314,7 +2318,9 @@
       "87adea8b388315b6d93b9745",
       "6b2f1d770eb93a652a52d679",
       "b801837fbdb0c898150c1350",
-      "dde59a8f007ff5c96a5f6c95",
+      "8c6a1bf171d874e84831fa05",
+      "721b63edeb73f8e7243ec652",
+      "d24f9139cb41ef07bec4ab8e",
       "7fb918c284e9a2f45cda5766",
       "bc4654508a7af89aba3d9f3a",
       "05545751b67b2d6ca0e25f19",
@@ -2333,7 +2339,6 @@
       "8b0f04c3e13c204457d5f086",
       "d1e0e296f86fc289aa29a062",
       "fee25f8a41f5f327d04828d1",
-      "825943b5d06369c4efe37b0c",
       "4cbd849d522e4652d18afe80",
       "2b8bf53e62611cf12fab8d5c",
       "24592964e4bac8b268ce15da",
@@ -2498,7 +2503,6 @@
       "d3303d2b13349cb9c071a57e",
       "705f3ddd56cf23dde33fd267",
       "ebc01dfb94710ce4dd084847",
-      "551c85293d1a96edd8e02362",
       "a78ed8b8659f0395df203861",
       "f2535d027e6bcb48ba18cac8",
       "6ca2c64e468be5941f6cbc27",
@@ -2507,7 +2511,9 @@
       "1ce33ad2216b4d8da2c55997",
       "84c75d06f54ed0c4d90e120f",
       "d5fb3e0d6956d2c10bfb8bc2",
-      "bda7e600362f4ccb2fcc183f",
+      "8e247952048126c523e556c9",
+      "6bc13e30a2b8eacffcdd4a1c",
+      "a5c877121e2156bde463e70d",
       "c3e435cd152b7e7c07e7d643",
       "b01a85bb6297336f4e97e73f",
       "4c66ab1f0f4eea174b08b14e",
@@ -2535,7 +2541,9 @@
       "97e87fb1f001f8c8ec77e349",
       "ec15c8be72e507b716eee7c7",
       "363b3e36e313f114ae5a8836",
-      "7b51259ccf21b4e97a37ae75",
+      "734ce86549abf69cd91feb93",
+      "582b5a60d84bc082ac530efb",
+      "2d07f8c83863747df3cc5fb5",
       "fcb1e1690104dc9fdd3e2d90",
       "c62e75961a1a56198e8398a4",
       "5c876329e6961ceb70636a5f",
@@ -2554,7 +2562,6 @@
       "19b151d23fb06f5cab581985",
       "f89061c2443d72e63e26ce65",
       "24e4b75f5f43d119a0992666",
-      "40e1fd5835a0dd2039e81bd4",
       "7fe04261b419de875b49a1a6",
       "855a1b22cf5b803b4c88d32a",
       "a0e6c8ad8f72f2abbffa5d2e",
@@ -2720,7 +2727,6 @@
       "525f4406f4dd3c204426c434",
       "f79b096395695ddfe4f02d31",
       "b3cec7c6338c11f2f35bf50d",
-      "f2587764c1c4527f9af67548",
       "9412a4018077ad6177383399",
       "772d1a11488ce316acbb25f3",
       "3abbbee5567326887686c720",
@@ -2729,7 +2735,9 @@
       "3ee61dad589625f7e4d69994",
       "b9490650b862707501676962",
       "8ac3c1043060ea6451dd3620",
-      "f569447f6a0533eda10d617f",
+      "afa7b521e118806cd3c54cf8",
+      "8ef242b90453b47551bd9890",
+      "57da8053eb2d1db8252fb0cf",
       "e0a49c7d9479092a1fb11c6c",
       "7f3f6d38d21eb4357041b90c",
       "1b847a86084abf3cf0343c1b",
@@ -2757,7 +2765,9 @@
       "107c05459936a32f32862140",
       "c8ec26e9e24f8fca4246f580",
       "e1bae72399bfea9d626dab87",
-      "2f2a3fca7677ffd7dfdb4f4e",
+      "c3e47cb8a7fbf37f7715211c",
+      "9a7c2e5c684f2b02ba505370",
+      "2870ac877846285c5a946f74",
       "522aae0b58dd4673d8e1ebb1",
       "9dfe05a9b3803fa578a66e9a",
       "a1283a5f6892fd8ae298cba1",
@@ -2776,7 +2786,6 @@
       "1fd1b0006d704cd4812679cd",
       "20a6089e8ee79f61504770b1",
       "978b39e8e253c5c1d623f960",
-      "b11e1e3bfbcd0832cd150df4",
       "de1fc88b2159347615859150",
       "5569bfb3eb44f3dfe8747154",
       "986e339ee3c4688f24c7a6a1",
@@ -3034,8 +3043,8 @@
       "2f598c40302f948c3cdc62c1",
       "d2559eba2ee3bd902445cf21",
       "9d15a425f0cbe5b69446d363",
-      "01d1bd56bcb9d51b5d697c3d",
-      "030a8d68f5c392506fb06e9a",
+      "3428b2df679ed2d682467708",
+      "1492081bf0bcaa2274259c9d",
       "e8eeec5f0c18fc3e9ae3b070",
       "fe22738f2234d8d81848a74c",
       "adfe05e3016122399d17474e",
@@ -3070,7 +3079,7 @@
       "b182ea24864a19bbb20cdab6",
       "a556485dbee8aad934b47d36",
       "ba05bed1855b1dc9392646b2",
-      "a8d07f4992d6cfc057aa1496",
+      "0078dd53cbb9df0ab7b96eb0",
       "56a832a31d2e8db685ddacfc",
       "0c85d002e2e479d7ef3928cb",
       "1d83963962c0505fab0d0465",
@@ -3079,9 +3088,10 @@
       "44eb5568d3235d516ef1f739",
       "b5aebf771cb57063c7588e16",
       "cf9ed18a037610528a1443ba",
-      "69e464ed098ba39c834cc871",
+      "61b6a764549e4c397bed9d89",
+      "9da9ed6c50f15e33cc4ed134",
       "db61251421604aa1d912592b",
-      "cc5f6727053dc1090307ed6a",
+      "79c5fcb7d6b64b373f66eae7",
       "d77fe091c7f7c4ae16bfd35a",
       "26b85404f6e0d2f19a3052d3",
       "07ef1c068ddd61359715060c",
@@ -3097,8 +3107,8 @@
       "1c31a805400cac3c190b27aa",
       "cbd96f4d628f8175696b9689",
       "4a0b2e7b544bec1bf1420f9e",
-      "f0eb5d7d78eebcc4f76dd8a2",
-      "4ec1de9f7e7f038985869c7e",
+      "d5780c03342c566254f32e72",
+      "4ca8dd8bf3cd36a6f0412df3",
       "6e240a43ff5f89dc00e24188",
       "1e5e9cd4789215737dcecc31",
       "610cff4e0f43448ba0d77c94",
@@ -3203,19 +3213,19 @@
       "e8ca61dfeca59c3da3c6f569",
       "c7ea739ccbe2e78b731b1cb6",
       "4ae4ed687eaa2024526ff294",
-      "abfa16fb57fff37c29301d47",
-      "43fa57e120d7ee61f03404b1",
+      "66192cb674777f0e82d95550",
+      "7be741225f6ca72372aa92a9",
       "be1010e9ede97bafe40761bd",
       "4e423c3d207b0812c2f9cb4a",
-      "93d545b0380005a1351fb36e",
+      "92b1a70f90586622c69710d4",
+      "e394317e78218169343ef02f",
       "5b5b71f81a8baa808b85f59d",
       "edc42d186dbf2ae2bcdb836f",
       "dcfbe58fcd63bbb91ef55bbe",
       "eb8293215e9b72ebd4e375c0",
       "dd705cb715c95c90e77e007a",
       "3c2ef24c28dd1d0f2032c78b",
-      "1907d21ac031c77c35f16e25",
-      "bb98c1e4a64eeb7ec7e3aa50",
+      "581a1c43fc235c209d6265bf",
       "d7609179ee9a0976258dd2e4",
       "1dd0d8f4f493da7a198e6a3a",
       "c201f9ebda72ba5724396c5f",
@@ -3230,24 +3240,21 @@
       "cb1475c428b3ef8d79850d5c",
       "b83553fcdcbcac2487f00d88",
       "9bd8b0c17e1665b04c8a5f6c",
-      "81fcd5e0636c003da3300238",
-      "edda1055946730be072f90c1",
+      "6c6add2f10613dfa01e863bc",
       "21fc92ae8aff579428ed00bd",
       "ec143db78d3ffc223ebf4cf7",
       "39a91071ffe325346a860a5d",
-      "702120527082d9ae8a36e53c",
-      "268461ee53320f164342cf25",
+      "1452c942524d02e29997ee1a",
       "fd937e4dc6d8a48d9090c09e",
       "14688f9d5a49a2382b5c34df",
-      "2e24958de8e7e4b65c66c568",
       "af0778c1eaa563ee71a8c005",
       "2d125b32d32601ec3a1ac158",
       "368b9e44fde778b5d6155c79",
       "e6bab8326baa72da9621f1af",
       "a8ad4e6714381e77d1a15e7e",
       "f057e270ff85f4972b24322e",
-      "6b13553a142cf442d7deddeb",
-      "68820394a00db76fc7efdb22",
+      "e3ef4b814396aae2a314045a",
+      "2656c3f92d7f830712aadf35",
       "bddfee7df10d22105f3a71a3",
       "7719ce75e01e095d95172011",
       "a9cdedd82f14dd235a843ca6",
@@ -3287,9 +3294,8 @@
       "277eebcd3605788c5167e6f8",
       "820b936126ba00a008a238db",
       "bb985d32ee4bd43251135807",
-      "d0c23d0996ad971a9e58e329",
-      "0c6de5cc80e6942f8ab803b1",
-      "3024e8fbe32f0d151686430a",
+      "0ae9843df321d60d911df73c",
+      "8f3724a15e3a7adc8b96b916",
       "adbf710b31bf683d9cca0f4e",
       "d34f789a07beb0714003e19b",
       "4cb648958781477ef66369f0",
@@ -3382,10 +3388,10 @@
       "2615762db32f5a450855048a",
       "91bf51dbb53425467a55d380",
       "15c34c87d3f277a8f7f1053a",
-      "f2afc842e031229245db28c1",
-      "356d91797fd3c265a0bcf045",
-      "b7507bb0971e6ec366cd8096",
-      "e7344a2ce8b1ff970ee3aa27",
+      "72e668cad8ae0818938e4ebf",
+      "24729e2a02d97b1335230187",
+      "8d4ec117ce948a6d1669191a",
+      "bc39a9fd7479b6f2594a2b1b",
       "120d15b4d2a61534975f5c9e",
       "f0ecdd980a3e14284959b309",
       "a97d3112d58a5191fd71d973",
@@ -3397,10 +3403,10 @@
       "467c525764eafb35b4fa47f4",
       "9a1d37854ba5fa196f4d36b9",
       "022b3bc33a06c3426a26c477",
-      "5312718fb8fb8a292f906fc8",
+      "496ff4c205b1549831bd7637",
       "c1f036313069319be5c07b0f",
       "9d038cb1284d97b5500c0ac4",
-      "5aa1d350b75e8d261ad9b7ad",
+      "51d8a11ea9f3847587640cbe",
       "439c4934bb2927b5400726af",
       "fc869aec97041b431b78054c",
       "996133f59ae4eaaab0d12c6d",
@@ -3468,7 +3474,7 @@
       "2f672c82f323adf8e2ff2fa6",
       "7e29c61d982e4692168820be",
       "e44ae4edde73e353b0460016",
-      "3ea0cc3cbd5724a203596bcb",
+      "3b1ca1080e120932da4197d5",
       "12b2e6689080918ad84882a2",
       "1cb1e5129a3774f4c5b83db0",
       "7f80ee132d3cb3579575c233",
@@ -3572,10 +3578,8 @@
       "a1e728d7893144055e3d6c21",
       "6a577c5e42b9012625ca512c",
       "97456a3c4cbe6a690a6647bc",
-      "4f1914147489c9e1b81f56e9",
-      "79ae9ef5f016fcca89d43d7d",
-      "3e97fed8c8c10734076f3c93",
-      "2b1da598afc4d27a6ce1da9e",
+      "fccf26f66804929776f7c5e7",
+      "32df6ee66d55f2360b699e78",
       "5216ba6206ffa66755e994ba",
       "191e7650942ca0f9be6b0d32",
       "c7c7f4398066976d96fbb0e4",
@@ -3626,10 +3630,9 @@
       "20d4c1ef8d092ba0d6ea958c",
       "11acf66707572b0a2c0cc636",
       "9eaa1cb4643e35cb5fa5ed6d",
-      "49d3e2a7e6bb25144a937a54",
-      "6203d78dc1935b4a11313535",
+      "e3d0959e540efc14171763a3",
       "7f24bdfd6b4b82f33c08073b",
-      "ed756bc9f246d6e25ca35939",
+      "e1567c4169bae02532e69d43",
       "0dcbc5c7de3bc912b1c7a2ff",
       "353bb517df1d3d45aee67f44",
       "ab35987f3e49935d7606890a",
@@ -3708,8 +3711,8 @@
       "3d44bc98a13b2399e2be278e",
       "a595e0c3062329e8ca70d102",
       "0f80c8bf85c1f7fcd68914b3",
-      "e6eab12366d01157d4499213",
-      "e04f3a2082e4c7a8bd6472c5",
+      "d6b04c6670dfc301742b08a0",
+      "3f5eb315698d613ee46da784",
       "99f5ce89cf3144b049f94a0b",
       "a17f6c4e709b1f490cb00a34",
       "89e3d3acc14dd7b674c16e75",
@@ -3728,9 +3731,8 @@
       "6950be4e76408fbcbfda3d29",
       "8173fb1b658613138fed8957",
       "edae7321afbfb17996365a7b",
-      "ee1b55274b363bbff3b44a33",
-      "2384971925fbecf9cb9e049f",
-      "f675fad2d58d5897b1740731",
+      "2966386c6ef1e55f574c89d5",
+      "a2c89eb1928c2960adf60b31",
       "7dbe811054c3624aae7adec0",
       "70cc3279fee4fa737b92c890",
       "96f4a6ac30d62856ee7fe157",
@@ -3746,8 +3748,8 @@
       "0bc9c361f30174458d82bf95",
       "9f99898cdc2da6b0608efde0",
       "f8b0b1dc1a630cafa1449391",
-      "9afbd0c343b212da936ebac0",
-      "a45670b8548d2aae7d5346e9",
+      "919a164784170e803af7d456",
+      "d488a34cea7042156b2a80cd",
       "9f94b330341ea2e691d53922",
       "bf460dc07a3397782553c45d",
       "4e398405b65c720a17f2d2ab",
@@ -4804,14 +4806,6 @@
       "triage": "untriaged"
     },
     {
-      "id": "acfcd206b0688070e9e545a4",
-      "path": "apps/docs/docs/index.mdx",
-      "line": 47,
-      "term": "pentest",
-      "text": "- **Trust and compliance**: [security policy](/security) \u2014 SBOM, pentest",
-      "triage": "untriaged"
-    },
-    {
       "id": "49b4536a1c295d42a806e4c7",
       "path": "apps/docs/docs/intro.md",
       "line": 12,
@@ -4868,11 +4862,27 @@
       "triage": "untriaged"
     },
     {
-      "id": "56a6e2f0c18ce50a8b87fe05",
+      "id": "6b913ce1625f52d024f93b77",
       "path": "apps/docs/docs/pricing/index.mdx",
       "line": 54,
       "term": "pentest",
-      "text": "| External penetration test | Planned pre-GA; no report exists today | \u2014 | \u2014 | \u2014 | \u2014 |",
+      "text": "| External pentest report \u2014 unavailable | \u2014 | \u2014 | \u2014 | \u2014 | \u2014 |",
+      "triage": "untriaged"
+    },
+    {
+      "id": "31feece362f01a6648940f49",
+      "path": "apps/docs/docs/pricing/index.mdx",
+      "line": 59,
+      "term": "pentest",
+      "text": "> **External pentest report:** unavailable. No external penetration test has",
+      "triage": "untriaged"
+    },
+    {
+      "id": "5768f0a844048564fca82402",
+      "path": "apps/docs/docs/pricing/index.mdx",
+      "line": 59,
+      "term": "pentest",
+      "text": "> **External pentest report:** unavailable. No external penetration test has",
       "triage": "untriaged"
     },
     {
@@ -5092,11 +5102,27 @@
       "triage": "untriaged"
     },
     {
-      "id": "b33f9f06607da99669272571",
+      "id": "268194dee24e8a7e51410f3c",
       "path": "apps/docs/docs/trust/fedramp-info.mdx",
       "line": 63,
       "term": "pentest",
-      "text": "| **External pentest** | Planned pre-GA; no vendor has been contracted and no report exists | `trust@humangr.com` for current status |",
+      "text": "| **Pentest report (annual external)** | **Does not exist.** No external penetration test has been commissioned and no firm has been engaged \u2014 every vendor in `reports/pentest-rfp-tracker.json` is `NOT_CONTACTED`. Assurance today is internal: TLA+ invariants gated in CI, CodeQL / cargo-audit / semgrep / trivy scanning, sealed cargo-fuzz summaries, and internal adversarial review. | n/a \u2014 ask `trust@humangr.com` for current status |",
+      "triage": "untriaged"
+    },
+    {
+      "id": "1cf1507115500d5858e28358",
+      "path": "apps/docs/docs/trust/fedramp-info.mdx",
+      "line": 63,
+      "term": "pentest",
+      "text": "| **Pentest report (annual external)** | **Does not exist.** No external penetration test has been commissioned and no firm has been engaged \u2014 every vendor in `reports/pentest-rfp-tracker.json` is `NOT_CONTACTED`. Assurance today is internal: TLA+ invariants gated in CI, CodeQL / cargo-audit / semgrep / trivy scanning, sealed cargo-fuzz summaries, and internal adversarial review. | n/a \u2014 ask `trust@humangr.com` for current status |",
+      "triage": "untriaged"
+    },
+    {
+      "id": "94137132c1430956874d3ff3",
+      "path": "apps/docs/docs/trust/fedramp-info.mdx",
+      "line": 63,
+      "term": "pentest",
+      "text": "| **Pentest report (annual external)** | **Does not exist.** No external penetration test has been commissioned and no firm has been engaged \u2014 every vendor in `reports/pentest-rfp-tracker.json` is `NOT_CONTACTED`. Assurance today is internal: TLA+ invariants gated in CI, CodeQL / cargo-audit / semgrep / trivy scanning, sealed cargo-fuzz summaries, and internal adversarial review. | n/a \u2014 ask `trust@humangr.com` for current status |",
       "triage": "untriaged"
     },
     {
@@ -6556,14 +6582,6 @@
       "triage": "untriaged"
     },
     {
-      "id": "b0559c86bec66f962e964e22",
-      "path": "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/index.mdx",
-      "line": 54,
-      "term": "pentest",
-      "text": "- **Trust and compliance**: [security policy](/security) \u2014 SBOM, pentest",
-      "triage": "untriaged"
-    },
-    {
       "id": "5a851f987d82877c8a887ad4",
       "path": "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/intro.md",
       "line": 18,
@@ -6628,11 +6646,27 @@
       "triage": "untriaged"
     },
     {
-      "id": "851feb66188566137bd87178",
+      "id": "7f60a7a11281dfab03c35690",
       "path": "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/pricing/index.mdx",
       "line": 61,
       "term": "pentest",
-      "text": "| External penetration test | Vor dem GA geplant; heute kein Bericht vorhanden | \u2014 | \u2014 | \u2014 | \u2014 |",
+      "text": "| External pentest report \u2014 unavailable | \u2014 | \u2014 | \u2014 | \u2014 | \u2014 |",
+      "triage": "untriaged"
+    },
+    {
+      "id": "fd3264624ec2a5c7a3caf921",
+      "path": "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/pricing/index.mdx",
+      "line": 66,
+      "term": "pentest",
+      "text": "> **External pentest report:** unavailable. No external penetration test has",
+      "triage": "untriaged"
+    },
+    {
+      "id": "e2954f00c3e22c925ea55232",
+      "path": "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/pricing/index.mdx",
+      "line": 66,
+      "term": "pentest",
+      "text": "> **External pentest report:** unavailable. No external penetration test has",
       "triage": "untriaged"
     },
     {
@@ -6852,11 +6886,27 @@
       "triage": "untriaged"
     },
     {
-      "id": "dde59a8f007ff5c96a5f6c95",
+      "id": "8c6a1bf171d874e84831fa05",
       "path": "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/trust/fedramp-info.mdx",
       "line": 70,
       "term": "pentest",
-      "text": "| **Externaler Pentest** | Vor dem GA geplant; kein Anbieter beauftragt, kein Bericht vorhanden | `trust@humangr.com` f\u00fcr den aktuellen Status |",
+      "text": "| **Pentest report (annual external)** | **Does not exist.** No external penetration test has been commissioned and no firm has been engaged \u2014 every vendor in `reports/pentest-rfp-tracker.json` is `NOT_CONTACTED`. Assurance today is internal: TLA+ invariants gated in CI, CodeQL / cargo-audit / semgrep / trivy scanning, sealed cargo-fuzz summaries, and internal adversarial review. | n/a \u2014 ask `trust@humangr.com` for current status |",
+      "triage": "untriaged"
+    },
+    {
+      "id": "721b63edeb73f8e7243ec652",
+      "path": "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/trust/fedramp-info.mdx",
+      "line": 70,
+      "term": "pentest",
+      "text": "| **Pentest report (annual external)** | **Does not exist.** No external penetration test has been commissioned and no firm has been engaged \u2014 every vendor in `reports/pentest-rfp-tracker.json` is `NOT_CONTACTED`. Assurance today is internal: TLA+ invariants gated in CI, CodeQL / cargo-audit / semgrep / trivy scanning, sealed cargo-fuzz summaries, and internal adversarial review. | n/a \u2014 ask `trust@humangr.com` for current status |",
+      "triage": "untriaged"
+    },
+    {
+      "id": "d24f9139cb41ef07bec4ab8e",
+      "path": "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/trust/fedramp-info.mdx",
+      "line": 70,
+      "term": "pentest",
+      "text": "| **Pentest report (annual external)** | **Does not exist.** No external penetration test has been commissioned and no firm has been engaged \u2014 every vendor in `reports/pentest-rfp-tracker.json` is `NOT_CONTACTED`. Assurance today is internal: TLA+ invariants gated in CI, CodeQL / cargo-audit / semgrep / trivy scanning, sealed cargo-fuzz summaries, and internal adversarial review. | n/a \u2014 ask `trust@humangr.com` for current status |",
       "triage": "untriaged"
     },
     {
@@ -7001,14 +7051,6 @@
       "line": 127,
       "term": "BYOK",
       "text": "- [BYOK customer-managed keys](/security/byok) \u2014 provider matrix and key flow.",
-      "triage": "untriaged"
-    },
-    {
-      "id": "825943b5d06369c4efe37b0c",
-      "path": "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/trust/index.mdx",
-      "line": 139,
-      "term": "pentest",
-      "text": "| DPA, SOC 2 letter, current pentest status (no report yet) | `trust@humangr.com` |",
       "triage": "untriaged"
     },
     {
@@ -8324,14 +8366,6 @@
       "triage": "untriaged"
     },
     {
-      "id": "551c85293d1a96edd8e02362",
-      "path": "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/index.mdx",
-      "line": 52,
-      "term": "pentest",
-      "text": "- **Confianza and compliance**: [security policy](/security) \u2014 SBOM, pentest",
-      "triage": "untriaged"
-    },
-    {
       "id": "a78ed8b8659f0395df203861",
       "path": "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/intro.md",
       "line": 18,
@@ -8396,11 +8430,27 @@
       "triage": "untriaged"
     },
     {
-      "id": "bda7e600362f4ccb2fcc183f",
+      "id": "8e247952048126c523e556c9",
       "path": "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/pricing/index.mdx",
       "line": 60,
       "term": "pentest",
-      "text": "| External penetration test | Planeada antes de GA; no existe informe hoy | \u2014 | \u2014 | \u2014 | \u2014 |",
+      "text": "| External pentest report \u2014 unavailable | \u2014 | \u2014 | \u2014 | \u2014 | \u2014 |",
+      "triage": "untriaged"
+    },
+    {
+      "id": "6bc13e30a2b8eacffcdd4a1c",
+      "path": "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/pricing/index.mdx",
+      "line": 65,
+      "term": "pentest",
+      "text": "> **External pentest report:** unavailable. No external penetration test has",
+      "triage": "untriaged"
+    },
+    {
+      "id": "a5c877121e2156bde463e70d",
+      "path": "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/pricing/index.mdx",
+      "line": 65,
+      "term": "pentest",
+      "text": "> **External pentest report:** unavailable. No external penetration test has",
       "triage": "untriaged"
     },
     {
@@ -8620,11 +8670,27 @@
       "triage": "untriaged"
     },
     {
-      "id": "7b51259ccf21b4e97a37ae75",
+      "id": "734ce86549abf69cd91feb93",
       "path": "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/trust/fedramp-info.mdx",
       "line": 70,
       "term": "pentest",
-      "text": "| **Pentest externo** | Planeado antes de GA; no se ha contratado proveedor ni existe un informe | `trust@humangr.com` para conocer el estado actual |",
+      "text": "| **Pentest report (annual external)** | **Does not exist.** No external penetration test has been commissioned and no firm has been engaged \u2014 every vendor in `reports/pentest-rfp-tracker.json` is `NOT_CONTACTED`. Assurance today is internal: TLA+ invariants gated in CI, CodeQL / cargo-audit / semgrep / trivy scanning, sealed cargo-fuzz summaries, and internal adversarial review. | n/a \u2014 ask `trust@humangr.com` for current status |",
+      "triage": "untriaged"
+    },
+    {
+      "id": "582b5a60d84bc082ac530efb",
+      "path": "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/trust/fedramp-info.mdx",
+      "line": 70,
+      "term": "pentest",
+      "text": "| **Pentest report (annual external)** | **Does not exist.** No external penetration test has been commissioned and no firm has been engaged \u2014 every vendor in `reports/pentest-rfp-tracker.json` is `NOT_CONTACTED`. Assurance today is internal: TLA+ invariants gated in CI, CodeQL / cargo-audit / semgrep / trivy scanning, sealed cargo-fuzz summaries, and internal adversarial review. | n/a \u2014 ask `trust@humangr.com` for current status |",
+      "triage": "untriaged"
+    },
+    {
+      "id": "2d07f8c83863747df3cc5fb5",
+      "path": "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/trust/fedramp-info.mdx",
+      "line": 70,
+      "term": "pentest",
+      "text": "| **Pentest report (annual external)** | **Does not exist.** No external penetration test has been commissioned and no firm has been engaged \u2014 every vendor in `reports/pentest-rfp-tracker.json` is `NOT_CONTACTED`. Assurance today is internal: TLA+ invariants gated in CI, CodeQL / cargo-audit / semgrep / trivy scanning, sealed cargo-fuzz summaries, and internal adversarial review. | n/a \u2014 ask `trust@humangr.com` for current status |",
       "triage": "untriaged"
     },
     {
@@ -8769,14 +8835,6 @@
       "line": 131,
       "term": "BYOK",
       "text": "- [BYOK customer-managed keys](/security/byok) \u2014 provider matrix and key flow.",
-      "triage": "untriaged"
-    },
-    {
-      "id": "40e1fd5835a0dd2039e81bd4",
-      "path": "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/trust/index.mdx",
-      "line": 146,
-      "term": "pentest",
-      "text": "| DPA, SOC 2 letter, estado actual del pentest (sin informe a\u00fan) | `trust@humangr.com` |",
       "triage": "untriaged"
     },
     {
@@ -10100,14 +10158,6 @@
       "triage": "untriaged"
     },
     {
-      "id": "f2587764c1c4527f9af67548",
-      "path": "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/index.mdx",
-      "line": 52,
-      "term": "pentest",
-      "text": "- **Confian\u00e7a and compliance**: [security policy](/security) \u2014 SBOM, pentest",
-      "triage": "untriaged"
-    },
-    {
       "id": "9412a4018077ad6177383399",
       "path": "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/intro.md",
       "line": 18,
@@ -10172,11 +10222,27 @@
       "triage": "untriaged"
     },
     {
-      "id": "f569447f6a0533eda10d617f",
+      "id": "afa7b521e118806cd3c54cf8",
       "path": "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/pricing/index.mdx",
       "line": 60,
       "term": "pentest",
-      "text": "| External penetration test | Planejado antes do GA; n\u00e3o h\u00e1 relat\u00f3rio hoje | \u2014 | \u2014 | \u2014 | \u2014 |",
+      "text": "| External pentest report \u2014 unavailable | \u2014 | \u2014 | \u2014 | \u2014 | \u2014 |",
+      "triage": "untriaged"
+    },
+    {
+      "id": "8ef242b90453b47551bd9890",
+      "path": "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/pricing/index.mdx",
+      "line": 65,
+      "term": "pentest",
+      "text": "> **External pentest report:** unavailable. No external penetration test has",
+      "triage": "untriaged"
+    },
+    {
+      "id": "57da8053eb2d1db8252fb0cf",
+      "path": "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/pricing/index.mdx",
+      "line": 65,
+      "term": "pentest",
+      "text": "> **External pentest report:** unavailable. No external penetration test has",
       "triage": "untriaged"
     },
     {
@@ -10396,11 +10462,27 @@
       "triage": "untriaged"
     },
     {
-      "id": "2f2a3fca7677ffd7dfdb4f4e",
+      "id": "c3e47cb8a7fbf37f7715211c",
       "path": "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/trust/fedramp-info.mdx",
       "line": 70,
       "term": "pentest",
-      "text": "| **Pentest externo** | Planejado para antes do GA; nenhum fornecedor foi contratado e n\u00e3o h\u00e1 relat\u00f3rio | `trust@humangr.com` para o status atual |",
+      "text": "| **Pentest report (annual external)** | **Does not exist.** No external penetration test has been commissioned and no firm has been engaged \u2014 every vendor in `reports/pentest-rfp-tracker.json` is `NOT_CONTACTED`. Assurance today is internal: TLA+ invariants gated in CI, CodeQL / cargo-audit / semgrep / trivy scanning, sealed cargo-fuzz summaries, and internal adversarial review. | n/a \u2014 ask `trust@humangr.com` for current status |",
+      "triage": "untriaged"
+    },
+    {
+      "id": "9a7c2e5c684f2b02ba505370",
+      "path": "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/trust/fedramp-info.mdx",
+      "line": 70,
+      "term": "pentest",
+      "text": "| **Pentest report (annual external)** | **Does not exist.** No external penetration test has been commissioned and no firm has been engaged \u2014 every vendor in `reports/pentest-rfp-tracker.json` is `NOT_CONTACTED`. Assurance today is internal: TLA+ invariants gated in CI, CodeQL / cargo-audit / semgrep / trivy scanning, sealed cargo-fuzz summaries, and internal adversarial review. | n/a \u2014 ask `trust@humangr.com` for current status |",
+      "triage": "untriaged"
+    },
+    {
+      "id": "2870ac877846285c5a946f74",
+      "path": "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/trust/fedramp-info.mdx",
+      "line": 70,
+      "term": "pentest",
+      "text": "| **Pentest report (annual external)** | **Does not exist.** No external penetration test has been commissioned and no firm has been engaged \u2014 every vendor in `reports/pentest-rfp-tracker.json` is `NOT_CONTACTED`. Assurance today is internal: TLA+ invariants gated in CI, CodeQL / cargo-audit / semgrep / trivy scanning, sealed cargo-fuzz summaries, and internal adversarial review. | n/a \u2014 ask `trust@humangr.com` for current status |",
       "triage": "untriaged"
     },
     {
@@ -10545,14 +10627,6 @@
       "line": 130,
       "term": "BYOK",
       "text": "- [BYOK customer-managed keys](/security/byok) \u2014 provider matrix and key flow.",
-      "triage": "untriaged"
-    },
-    {
-      "id": "b11e1e3bfbcd0832cd150df4",
-      "path": "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/trust/index.mdx",
-      "line": 145,
-      "term": "pentest",
-      "text": "| DPA, SOC 2 letter, status atual do pentest (sem relat\u00f3rio ainda) | `trust@humangr.com` |",
       "triage": "untriaged"
     },
     {
@@ -12612,19 +12686,19 @@
       "triage": "untriaged"
     },
     {
-      "id": "01d1bd56bcb9d51b5d697c3d",
+      "id": "3428b2df679ed2d682467708",
       "path": "marketing/launch/BLOG-POSTS/01-introducing-corelink.md",
       "line": 93,
       "term": "pentest",
-      "text": "The first is the **engineering gate** \u2014 binary, unappealable, enforced by the founder. It is the gate that decides whether CoreLink can be sold. It is `APPROVED` or it is not, and `APPROVED` requires all seven engineering work items in sprint S-20 sealed, the Production Readiness Review globally approved across thirteen canonical sign-offs, a completed external pentest with retest, thirty days of sustained staging, three lighthouse customers with SLA met, SOC 2 gap analysis delivered, on-call runbooks rehearsed, and zero active waivers in CRITICAL controls. The external pentest remains planned; no vendor has been contracted and no report exists today.",
+      "text": "The first is the **engineering gate** \u2014 binary, unappealable, enforced by the founder. It is the gate that decides whether CoreLink can be sold. It is `APPROVED` or it is not, and `APPROVED` requires all seven engineering work items in sprint S-20 sealed, the Production Readiness Review globally approved across thirteen canonical sign-offs, thirty days of sustained staging, three lighthouse customers with SLA met, SOC 2 gap analysis delivered, on-call runbooks rehearsed, and zero active waivers in CRITICAL controls. `CAP-GA-002` is also required: an independent external-pentest report and retest with no outstanding HIGH or CRITICAL findings. It is unmet because no external pentest has been commissioned.",
       "triage": "untriaged"
     },
     {
-      "id": "030a8d68f5c392506fb06e9a",
+      "id": "1492081bf0bcaa2274259c9d",
       "path": "marketing/launch/BLOG-POSTS/01-introducing-corelink.md",
       "line": 93,
       "term": "pentest",
-      "text": "The first is the **engineering gate** \u2014 binary, unappealable, enforced by the founder. It is the gate that decides whether CoreLink can be sold. It is `APPROVED` or it is not, and `APPROVED` requires all seven engineering work items in sprint S-20 sealed, the Production Readiness Review globally approved across thirteen canonical sign-offs, a completed external pentest with retest, thirty days of sustained staging, three lighthouse customers with SLA met, SOC 2 gap analysis delivered, on-call runbooks rehearsed, and zero active waivers in CRITICAL controls. The external pentest remains planned; no vendor has been contracted and no report exists today.",
+      "text": "The first is the **engineering gate** \u2014 binary, unappealable, enforced by the founder. It is the gate that decides whether CoreLink can be sold. It is `APPROVED` or it is not, and `APPROVED` requires all seven engineering work items in sprint S-20 sealed, the Production Readiness Review globally approved across thirteen canonical sign-offs, thirty days of sustained staging, three lighthouse customers with SLA met, SOC 2 gap analysis delivered, on-call runbooks rehearsed, and zero active waivers in CRITICAL controls. `CAP-GA-002` is also required: an independent external-pentest report and retest with no outstanding HIGH or CRITICAL findings. It is unmet because no external pentest has been commissioned.",
       "triage": "untriaged"
     },
     {
@@ -12900,11 +12974,11 @@
       "triage": "untriaged"
     },
     {
-      "id": "a8d07f4992d6cfc057aa1496",
+      "id": "0078dd53cbb9df0ab7b96eb0",
       "path": "marketing/launch/CASE-STUDIES/enterprise-byok.md",
       "line": 38,
       "term": "pentest",
-      "text": "- **External pentest** is a remaining pre-GA gate; no vendor has been contracted and no report or retest exists today.",
+      "text": "- **Internal adversarial-review and sealed cargo-fuzz summaries** available under NDA; no external pentest has been commissioned.",
       "triage": "untriaged"
     },
     {
@@ -12972,11 +13046,19 @@
       "triage": "untriaged"
     },
     {
-      "id": "69e464ed098ba39c834cc871",
+      "id": "61b6a764549e4c397bed9d89",
       "path": "marketing/launch/COORDINATION/LAUNCH-RUNBOOK.md",
       "line": 13,
       "term": "pentest",
-      "text": "| T-7d | **External pentest gate** (must be complete with zero HIGH/CRITICAL pending and a passed retest) \u2014 `EVT-040`. | Security Lead | **BLOCKED until a vendor is contracted and the report exists.** |",
+      "text": "| T-7d | **External pentest gate** (report and passed retest with zero HIGH/CRITICAL pending) \u2014 `EVT-040`. | Security Lead | **BLOCKED** \u2014 no external pentest has been commissioned; no launch claim is authorized. |",
+      "triage": "untriaged"
+    },
+    {
+      "id": "9da9ed6c50f15e33cc4ed134",
+      "path": "marketing/launch/COORDINATION/LAUNCH-RUNBOOK.md",
+      "line": 13,
+      "term": "pentest",
+      "text": "| T-7d | **External pentest gate** (report and passed retest with zero HIGH/CRITICAL pending) \u2014 `EVT-040`. | Security Lead | **BLOCKED** \u2014 no external pentest has been commissioned; no launch claim is authorized. |",
       "triage": "untriaged"
     },
     {
@@ -12988,11 +13070,11 @@
       "triage": "untriaged"
     },
     {
-      "id": "cc5f6727053dc1090307ed6a",
+      "id": "79c5fcb7d6b64b373f66eae7",
       "path": "marketing/launch/COORDINATION/LAUNCH-RUNBOOK.md",
       "line": 63,
       "term": "pentest",
-      "text": "| T-0 06:00 PT | **Trust center embargoed assets** unlocked: TLA+ specs, SBOM, pentest status (no report until the planned engagement completes), DPA package. | Marketing + Trust Engineering |",
+      "text": "| T-0 06:00 PT | **Trust center embargoed assets** unlocked: TLA+ specs, SBOM, current pentest status (no report commissioned), DPA package. | Marketing + Trust Engineering |",
       "triage": "untriaged"
     },
     {
@@ -13116,19 +13198,19 @@
       "triage": "untriaged"
     },
     {
-      "id": "f0eb5d7d78eebcc4f76dd8a2",
-      "path": "marketing/launch/LAUNCH-CHECKLIST-V2.md",
-      "line": 60,
-      "term": "pentest",
-      "text": "| L1 | T-24h 06:00 PT | Engineering Gate revalidation | CEO + CTO | Reconfirm `PRR-S20-GA` work_status = `APPROVED`; no SEV-1 in last 48h staging; completed external pentest report and passed retest on file. | Written GO recorded in war room log. | **DEFER** \u2014 invoke `CRISIS-COMMS-TEMPLATES.md` \u00a7F (defer comms). Marketing reverts press kit recall. No further row executes. |",
-      "triage": "untriaged"
-    },
-    {
-      "id": "4ec1de9f7e7f038985869c7e",
+      "id": "d5780c03342c566254f32e72",
       "path": "marketing/launch/LAUNCH-CHECKLIST-V2.md",
       "line": 89,
       "term": "pentest",
-      "text": "| L23 | T-0 06:00:30 PT | Trust center unlock | VPSec | Unlock TLA+ specs, SBOM, current pentest status (the external engagement remains planned), DPA package at `corelink-docs.humangr.com/trust`. | All assets behind their gates load on incognito. | If the status page breaks: temporarily route to email-on-request; do not imply that a report exists. |",
+      "text": "| L23 | T-0 06:00:30 PT | Trust center unlock | VPSec | Unlock TLA+ specs, SBOM, DPA package at `corelink-docs.humangr.com/trust`. (No pentest letter \u2014 none has been commissioned.) | All 3 assets behind their gates load on incognito. | If NDA-gated download breaks: temporarily route to email-on-request; do not expose pentest letter publicly. |",
+      "triage": "untriaged"
+    },
+    {
+      "id": "4ca8dd8bf3cd36a6f0412df3",
+      "path": "marketing/launch/LAUNCH-CHECKLIST-V2.md",
+      "line": 89,
+      "term": "pentest",
+      "text": "| L23 | T-0 06:00:30 PT | Trust center unlock | VPSec | Unlock TLA+ specs, SBOM, DPA package at `corelink-docs.humangr.com/trust`. (No pentest letter \u2014 none has been commissioned.) | All 3 assets behind their gates load on incognito. | If NDA-gated download breaks: temporarily route to email-on-request; do not expose pentest letter publicly. |",
       "triage": "untriaged"
     },
     {
@@ -13964,19 +14046,19 @@
       "triage": "untriaged"
     },
     {
-      "id": "abfa16fb57fff37c29301d47",
+      "id": "66192cb674777f0e82d95550",
       "path": "marketing/launch/PRODUCT-HUNT/PH-FAQ.md",
       "line": 20,
       "term": "pentest",
-      "text": "A: GA is gated on seven engineering work items sealed across S-20, PRR globally approved with thirteen canonical sign-offs, a completed external pentest with retest, 30 days of sustained staging, three lighthouse customers with SLA met, SOC 2 gap analysis delivered, and zero active waivers in CRITICAL controls. The external pentest is still planned; no vendor has been contracted and no report exists today.",
+      "text": "A: The S-20 GA bar includes seven engineering work items sealed, PRR globally approved with thirteen canonical sign-offs, 30 days of sustained staging, three lighthouse customers with SLA met, SOC 2 gap analysis delivered, zero active waivers in CRITICAL controls, and `CAP-GA-002`: an independent external-pentest report and retest with no outstanding HIGH or CRITICAL findings. `CAP-GA-002` is unmet: no external pentest has been commissioned, so this draft does not authorize a GA claim.",
       "triage": "untriaged"
     },
     {
-      "id": "43fa57e120d7ee61f03404b1",
+      "id": "7be741225f6ca72372aa92a9",
       "path": "marketing/launch/PRODUCT-HUNT/PH-FAQ.md",
       "line": 20,
       "term": "pentest",
-      "text": "A: GA is gated on seven engineering work items sealed across S-20, PRR globally approved with thirteen canonical sign-offs, a completed external pentest with retest, 30 days of sustained staging, three lighthouse customers with SLA met, SOC 2 gap analysis delivered, and zero active waivers in CRITICAL controls. The external pentest is still planned; no vendor has been contracted and no report exists today.",
+      "text": "A: The S-20 GA bar includes seven engineering work items sealed, PRR globally approved with thirteen canonical sign-offs, 30 days of sustained staging, three lighthouse customers with SLA met, SOC 2 gap analysis delivered, zero active waivers in CRITICAL controls, and `CAP-GA-002`: an independent external-pentest report and retest with no outstanding HIGH or CRITICAL findings. `CAP-GA-002` is unmet: no external pentest has been commissioned, so this draft does not authorize a GA claim.",
       "triage": "untriaged"
     },
     {
@@ -13996,11 +14078,19 @@
       "triage": "untriaged"
     },
     {
-      "id": "93d545b0380005a1351fb36e",
+      "id": "92b1a70f90586622c69710d4",
       "path": "marketing/launch/PRODUCT-HUNT/PH-FAQ.md",
       "line": 52,
       "term": "pentest",
-      "text": "A: External pentest is planned pre-GA with a two-week test plus one-week retest; no vendor has been engaged, no test has run, and no summary letter exists. GA will require zero HIGH/CRITICAL findings pending once the engagement is complete.",
+      "text": "A: We have not commissioned an external pentest. No firm is engaged and no report exists \u2014 every vendor in `reports/pentest-rfp-tracker.json` is `NOT_CONTACTED`. `CAP-GA-002` remains a hard pre-GA gate; no report, NDA availability, publication date, or later cadence is promised. Internal adversarial reviews and cargo-fuzz summaries are the current evidence.",
+      "triage": "untriaged"
+    },
+    {
+      "id": "e394317e78218169343ef02f",
+      "path": "marketing/launch/PRODUCT-HUNT/PH-FAQ.md",
+      "line": 52,
+      "term": "pentest",
+      "text": "A: We have not commissioned an external pentest. No firm is engaged and no report exists \u2014 every vendor in `reports/pentest-rfp-tracker.json` is `NOT_CONTACTED`. `CAP-GA-002` remains a hard pre-GA gate; no report, NDA availability, publication date, or later cadence is promised. Internal adversarial reviews and cargo-fuzz summaries are the current evidence.",
       "triage": "untriaged"
     },
     {
@@ -14052,19 +14142,11 @@
       "triage": "untriaged"
     },
     {
-      "id": "1907d21ac031c77c35f16e25",
+      "id": "581a1c43fc235c209d6265bf",
       "path": "marketing/launch/PRODUCT-HUNT/PH-MAKER-COMMENT.md",
       "line": 19,
       "term": "pentest",
-      "text": "3. **Engineering gate separated from launch.** We split GA into a binary engineering gate (PRR + a completed external pentest + 30d staging + 3 lighthouse customers attested) and a soft-gate launch orchestration (this post, the press release, the blog series). The external pentest is a remaining pre-GA gate: no vendor has been contracted or report issued today. The engineering gate is binary, unappealable, and gates the launch \u2014 not the other way around.",
-      "triage": "untriaged"
-    },
-    {
-      "id": "bb98c1e4a64eeb7ec7e3aa50",
-      "path": "marketing/launch/PRODUCT-HUNT/PH-MAKER-COMMENT.md",
-      "line": 19,
-      "term": "pentest",
-      "text": "3. **Engineering gate separated from launch.** We split GA into a binary engineering gate (PRR + a completed external pentest + 30d staging + 3 lighthouse customers attested) and a soft-gate launch orchestration (this post, the press release, the blog series). The external pentest is a remaining pre-GA gate: no vendor has been contracted or report issued today. The engineering gate is binary, unappealable, and gates the launch \u2014 not the other way around.",
+      "text": "3. **Engineering gate separated from launch.** We split GA into a binary engineering gate (PRR + 30d staging + 3 lighthouse customers attested + `CAP-GA-002` external report and retest with no outstanding HIGH/CRITICAL findings) and a soft-gate launch orchestration (this post, the press release, the blog series). `CAP-GA-002` is unmet: no external pentest has been commissioned, so this draft does not authorize a GA claim.",
       "triage": "untriaged"
     },
     {
@@ -14180,19 +14262,11 @@
       "triage": "untriaged"
     },
     {
-      "id": "81fcd5e0636c003da3300238",
+      "id": "6c6add2f10613dfa01e863bc",
       "path": "marketing/launch/SOCIAL/HACKERNEWS-SHOW-HN.md",
       "line": 30,
       "term": "pentest",
-      "text": "- **Engineering gate is separated from launch orchestration.** GA will be decided by a binary engineering gate (PRR + completed external pentest with retest + 30d sustained staging + 3 lighthouse customers attested + zero CRITICAL waivers), not by marketing readiness. The external pentest remains planned; no vendor has been contracted or report issued today. Splitting those two gates was a discipline we wanted to bake in from the start.",
-      "triage": "untriaged"
-    },
-    {
-      "id": "edda1055946730be072f90c1",
-      "path": "marketing/launch/SOCIAL/HACKERNEWS-SHOW-HN.md",
-      "line": 30,
-      "term": "pentest",
-      "text": "- **Engineering gate is separated from launch orchestration.** GA will be decided by a binary engineering gate (PRR + completed external pentest with retest + 30d sustained staging + 3 lighthouse customers attested + zero CRITICAL waivers), not by marketing readiness. The external pentest remains planned; no vendor has been contracted or report issued today. Splitting those two gates was a discipline we wanted to bake in from the start.",
+      "text": "- **Engineering gate is separated from launch orchestration.** GA is decided by a binary engineering gate (PRR + 30d sustained staging + 3 lighthouse customers attested + zero CRITICAL waivers + `CAP-GA-002` external report and retest with no outstanding HIGH/CRITICAL findings), not by marketing readiness. `CAP-GA-002` is unmet: no external pentest has been commissioned, so this draft does not authorize a GA claim.",
       "triage": "untriaged"
     },
     {
@@ -14220,19 +14294,11 @@
       "triage": "untriaged"
     },
     {
-      "id": "702120527082d9ae8a36e53c",
+      "id": "1452c942524d02e29997ee1a",
       "path": "marketing/launch/SOCIAL/LINKEDIN-POST.md",
       "line": 15,
       "term": "pentest",
-      "text": "**1. We split GA into two gates.** An engineering gate that is binary and unappealable \u2014 PRR globally approved, completed external pentest with retest, 30 days of sustained staging, three lighthouse customers with SLA met, SOC 2 gap analysis delivered, zero active waivers in CRITICAL controls. The external pentest remains planned; no vendor has been contracted or report issued today. And a launch orchestration gate \u2014 this post, the press release, the blog series \u2014 which is soft and could shift its date without affecting the engineering decision. The engineering gate gates the launch. Not the other way around.",
-      "triage": "untriaged"
-    },
-    {
-      "id": "268461ee53320f164342cf25",
-      "path": "marketing/launch/SOCIAL/LINKEDIN-POST.md",
-      "line": 15,
-      "term": "pentest",
-      "text": "**1. We split GA into two gates.** An engineering gate that is binary and unappealable \u2014 PRR globally approved, completed external pentest with retest, 30 days of sustained staging, three lighthouse customers with SLA met, SOC 2 gap analysis delivered, zero active waivers in CRITICAL controls. The external pentest remains planned; no vendor has been contracted or report issued today. And a launch orchestration gate \u2014 this post, the press release, the blog series \u2014 which is soft and could shift its date without affecting the engineering decision. The engineering gate gates the launch. Not the other way around.",
+      "text": "**1. We split GA into two gates.** An engineering gate that is binary and unappealable \u2014 PRR globally approved, 30 days of sustained staging, three lighthouse customers with SLA met, SOC 2 gap analysis delivered, zero active waivers in CRITICAL controls, and `CAP-GA-002` external report plus retest with no outstanding HIGH/CRITICAL findings. `CAP-GA-002` is unmet: no external pentest has been commissioned, so this draft does not authorize a GA claim. And a launch orchestration gate \u2014 this post, the press release, the blog series \u2014 which is soft and could shift its date without affecting the engineering decision. The engineering gate gates the launch. Not the other way around.",
       "triage": "untriaged"
     },
     {
@@ -14249,14 +14315,6 @@
       "line": 23,
       "term": "BYOK",
       "text": "**5. We named three lighthouse customers and held the gate against marketing pressure.** Two team-tier deployments and one enterprise BYOK deployment, each with SLA claims met across a sustained 30-day observation. None of those attestations were waived. None of the engineering criteria were waived.",
-      "triage": "untriaged"
-    },
-    {
-      "id": "2e24958de8e7e4b65c66c568",
-      "path": "marketing/launch/SOCIAL/LINKEDIN-POST.md",
-      "line": 25,
-      "term": "pentest",
-      "text": "To the engineering team at HuGR Labs and the engineering teams at the three lighthouse customers \u2014 thank you. To external counsel (Cooley / DLA Piper / Bird & Bird) for the DPA review, to the planned pentest engagement that will challenge the things we want it to find, to the on-call rotation for the synthetic page exercises that nobody enjoys \u2014 thank you.",
       "triage": "untriaged"
     },
     {
@@ -14308,19 +14366,19 @@
       "triage": "untriaged"
     },
     {
-      "id": "6b13553a142cf442d7deddeb",
+      "id": "e3ef4b814396aae2a314045a",
       "path": "marketing/launch/SOCIAL/TWITTER-THREAD.md",
       "line": 76,
       "term": "pentest",
-      "text": "> 1. Engineering gate (binary, unappealable): PRR + completed external pentest + 30d staging + 3 lighthouse customers + zero CRITICAL waivers. The pentest remains planned; no vendor has been contracted or report issued today.",
+      "text": "> 1. Engineering gate (binary, unappealable): PRR + 30d staging + 3 lighthouse customers + zero CRITICAL waivers + `CAP-GA-002` external-pentest report and retest with no outstanding HIGH/CRITICAL findings. No external pentest has been commissioned, so this draft does not authorize a GA claim.",
       "triage": "untriaged"
     },
     {
-      "id": "68820394a00db76fc7efdb22",
+      "id": "2656c3f92d7f830712aadf35",
       "path": "marketing/launch/SOCIAL/TWITTER-THREAD.md",
       "line": 76,
       "term": "pentest",
-      "text": "> 1. Engineering gate (binary, unappealable): PRR + completed external pentest + 30d staging + 3 lighthouse customers + zero CRITICAL waivers. The pentest remains planned; no vendor has been contracted or report issued today.",
+      "text": "> 1. Engineering gate (binary, unappealable): PRR + 30d staging + 3 lighthouse customers + zero CRITICAL waivers + `CAP-GA-002` external-pentest report and retest with no outstanding HIGH/CRITICAL findings. No external pentest has been commissioned, so this draft does not authorize a GA claim.",
       "triage": "untriaged"
     },
     {
@@ -14636,27 +14694,19 @@
       "triage": "untriaged"
     },
     {
-      "id": "d0c23d0996ad971a9e58e329",
-      "path": "marketing/launch/demos/5-MIN-DEEPDIVE.md",
-      "line": 329,
-      "term": "pentest",
-      "text": "corelink-docs.humangr.com/trust           \u2014 TLA+ specs, SBOM, pentest status (planned; no report yet)",
-      "triage": "untriaged"
-    },
-    {
-      "id": "0c6de5cc80e6942f8ab803b1",
+      "id": "0ae9843df321d60d911df73c",
       "path": "marketing/launch/demos/5-MIN-DEEPDIVE.md",
       "line": 335,
       "term": "pentest",
-      "text": "> \"That's the deep-dive. Ten-minute quickstart at humangr.com/corelink. The trust center has our TLA+ specs, full SBOM, and the current pentest status \u2014 the external engagement is planned and no report exists yet. Sandbox is free, no credit card. If you're evaluating for a regulated workload, our seven-minute BYOK deep dive walks the four-provider matrix and the kill-switch flow. Thanks for watching.\"",
+      "text": "> \"That's the deep-dive. Ten-minute quickstart at humangr.com/corelink. The trust center has our TLA+ specs, full SBOM, and our DPA package \u2014 plus an honest page on what we do not have yet, including an external pentest. Sandbox is free, no credit card. If you're evaluating for a regulated workload, our seven-minute BYOK deep dive walks the four-provider matrix and the kill-switch flow. Thanks for watching.\"",
       "triage": "untriaged"
     },
     {
-      "id": "3024e8fbe32f0d151686430a",
+      "id": "8f3724a15e3a7adc8b96b916",
       "path": "marketing/launch/demos/5-MIN-DEEPDIVE.md",
       "line": 335,
       "term": "BYOK",
-      "text": "> \"That's the deep-dive. Ten-minute quickstart at humangr.com/corelink. The trust center has our TLA+ specs, full SBOM, and the current pentest status \u2014 the external engagement is planned and no report exists yet. Sandbox is free, no credit card. If you're evaluating for a regulated workload, our seven-minute BYOK deep dive walks the four-provider matrix and the kill-switch flow. Thanks for watching.\"",
+      "text": "> \"That's the deep-dive. Ten-minute quickstart at humangr.com/corelink. The trust center has our TLA+ specs, full SBOM, and our DPA package \u2014 plus an honest page on what we do not have yet, including an external pentest. Sandbox is free, no credit card. If you're evaluating for a regulated workload, our seven-minute BYOK deep dive walks the four-provider matrix and the kill-switch flow. Thanks for watching.\"",
       "triage": "untriaged"
     },
     {
@@ -15396,33 +15446,33 @@
       "triage": "untriaged"
     },
     {
-      "id": "f2afc842e031229245db28c1",
+      "id": "72e668cad8ae0818938e4ebf",
       "path": "marketing/lighthouse-kit/01-outreach-email.md",
-      "line": 125,
+      "line": 126,
       "term": "pentest",
-      "text": "Type 1 audit kickoff materials + current pentest status on request; no external report exists yet)",
+      "text": "on request; no external pentest report exists yet)",
       "triage": "untriaged"
     },
     {
-      "id": "356d91797fd3c265a0bcf045",
+      "id": "24729e2a02d97b1335230187",
       "path": "marketing/lighthouse-kit/01-outreach-email.md",
-      "line": 137,
+      "line": 138,
       "term": "BYOK",
       "text": "I'd appreciate 30 minutes to walk you through the architecture, the BYOK",
       "triage": "untriaged"
     },
     {
-      "id": "b7507bb0971e6ec366cd8096",
+      "id": "8d4ec117ce948a6d1669191a",
       "path": "marketing/lighthouse-kit/01-outreach-email.md",
-      "line": 156,
+      "line": 157,
       "term": "BYOK",
       "text": "{Mutual} suggested I reach out \u2014 they thought CoreLink's BYOK +",
       "triage": "untriaged"
     },
     {
-      "id": "e7344a2ce8b1ff970ee3aa27",
+      "id": "bc39a9fd7479b6f2594a2b1b",
       "path": "marketing/lighthouse-kit/01-outreach-email.md",
-      "line": 160,
+      "line": 161,
       "term": "BYOK",
       "text": "We're recruiting one Enterprise BYOK lighthouse customer ahead of GA;",
       "triage": "untriaged"
@@ -15516,11 +15566,11 @@
       "triage": "untriaged"
     },
     {
-      "id": "5312718fb8fb8a292f906fc8",
+      "id": "496ff4c205b1549831bd7637",
       "path": "marketing/lighthouse-kit/02-intro-deck.md",
       "line": 124,
       "term": "pentest",
-      "text": "- External pentest is planned pre-GA; no vendor has been contracted and no report or remediation log exists yet.",
+      "text": "- No external pentest has been commissioned \u2014 stated plainly. Under NDA we share internal adversarial-review and sealed cargo-fuzz summaries instead.",
       "triage": "untriaged"
     },
     {
@@ -15540,11 +15590,11 @@
       "triage": "untriaged"
     },
     {
-      "id": "5aa1d350b75e8d261ad9b7ad",
+      "id": "51d8a11ea9f3847587640cbe",
       "path": "marketing/lighthouse-kit/02-intro-deck.md",
       "line": 189,
       "term": "pentest",
-      "text": "| External pentest (planned pre-GA; no report yet) | Engagement and remediation evidence will be shared only once they exist |",
+      "text": "| Internal adversarial review + sealed fuzzing summaries (under NDA on request) | No external penetration test has been commissioned \u2014 there is no third-party report to share |",
       "triage": "untriaged"
     },
     {
@@ -16084,11 +16134,11 @@
       "triage": "untriaged"
     },
     {
-      "id": "3ea0cc3cbd5724a203596bcb",
+      "id": "3b1ca1080e120932da4197d5",
       "path": "marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md",
       "line": 357,
       "term": "pentest",
-      "text": "Subject to our responsible-disclosure policy. Email `security@humangr.com` before any probing. No external Pentest-1 firm has been engaged yet, so no executive summary exists to share; the pre-GA engagement is planned.",
+      "text": "Subject to our responsible-disclosure policy. Email `security@humangr.com` before any probing. We have not engaged an external pentest firm, so there is no third-party summary to share; under NDA we can share internal adversarial-review and sealed cargo-fuzz summaries.",
       "triage": "untriaged"
     },
     {
@@ -16916,35 +16966,19 @@
       "triage": "untriaged"
     },
     {
-      "id": "4f1914147489c9e1b81f56e9",
+      "id": "fccf26f66804929776f7c5e7",
       "path": "marketing/sales/FAQ-MASTER.md",
       "line": 167,
       "term": "pentest",
-      "text": "**A:** No \u2014 and we say so plainly: **no external penetration test has been commissioned yet.** Engagement is planned pre-GA; no report exists today (`pentest-summary.mdx` states this verbatim, and `PROOF-POINTS.md` 2.12 marks any pentest result NOT A CLAIM). In the meantime, internal adversarial reviews and cargo-fuzz summaries are tracked (SIG Lite G.11). Once the first engagement completes, the executive summary will be shareable under NDA via `trust@humangr.com`; the intent is an annual cadence post-GA. We will never describe a pentest as run or clean until a report exists.",
+      "text": "**A:** No \u2014 and we say so plainly: **no external penetration test has been commissioned.** No firm is engaged and no report, NDA availability, publication date, or cadence is promised. `CAP-GA-002` remains a hard pre-GA gate; it requires independent report and retest evidence with no outstanding HIGH or CRITICAL findings before GA may be claimed. In the meantime, internal adversarial reviews and cargo-fuzz summaries are tracked (SIG Lite G.11). We will never describe a pentest as run or clean until a report exists.",
       "triage": "untriaged"
     },
     {
-      "id": "79ae9ef5f016fcca89d43d7d",
+      "id": "32df6ee66d55f2360b699e78",
       "path": "marketing/sales/FAQ-MASTER.md",
       "line": 167,
       "term": "pentest",
-      "text": "**A:** No \u2014 and we say so plainly: **no external penetration test has been commissioned yet.** Engagement is planned pre-GA; no report exists today (`pentest-summary.mdx` states this verbatim, and `PROOF-POINTS.md` 2.12 marks any pentest result NOT A CLAIM). In the meantime, internal adversarial reviews and cargo-fuzz summaries are tracked (SIG Lite G.11). Once the first engagement completes, the executive summary will be shareable under NDA via `trust@humangr.com`; the intent is an annual cadence post-GA. We will never describe a pentest as run or clean until a report exists.",
-      "triage": "untriaged"
-    },
-    {
-      "id": "3e97fed8c8c10734076f3c93",
-      "path": "marketing/sales/FAQ-MASTER.md",
-      "line": 167,
-      "term": "pentest",
-      "text": "**A:** No \u2014 and we say so plainly: **no external penetration test has been commissioned yet.** Engagement is planned pre-GA; no report exists today (`pentest-summary.mdx` states this verbatim, and `PROOF-POINTS.md` 2.12 marks any pentest result NOT A CLAIM). In the meantime, internal adversarial reviews and cargo-fuzz summaries are tracked (SIG Lite G.11). Once the first engagement completes, the executive summary will be shareable under NDA via `trust@humangr.com`; the intent is an annual cadence post-GA. We will never describe a pentest as run or clean until a report exists.",
-      "triage": "untriaged"
-    },
-    {
-      "id": "2b1da598afc4d27a6ce1da9e",
-      "path": "marketing/sales/FAQ-MASTER.md",
-      "line": 167,
-      "term": "pentest",
-      "text": "**A:** No \u2014 and we say so plainly: **no external penetration test has been commissioned yet.** Engagement is planned pre-GA; no report exists today (`pentest-summary.mdx` states this verbatim, and `PROOF-POINTS.md` 2.12 marks any pentest result NOT A CLAIM). In the meantime, internal adversarial reviews and cargo-fuzz summaries are tracked (SIG Lite G.11). Once the first engagement completes, the executive summary will be shareable under NDA via `trust@humangr.com`; the intent is an annual cadence post-GA. We will never describe a pentest as run or clean until a report exists.",
+      "text": "**A:** No \u2014 and we say so plainly: **no external penetration test has been commissioned.** No firm is engaged and no report, NDA availability, publication date, or cadence is promised. `CAP-GA-002` remains a hard pre-GA gate; it requires independent report and retest evidence with no outstanding HIGH or CRITICAL findings before GA may be claimed. In the meantime, internal adversarial reviews and cargo-fuzz summaries are tracked (SIG Lite G.11). We will never describe a pentest as run or clean until a report exists.",
       "triage": "untriaged"
     },
     {
@@ -17348,19 +17382,11 @@
       "triage": "untriaged"
     },
     {
-      "id": "49d3e2a7e6bb25144a937a54",
+      "id": "e3d0959e540efc14171763a3",
       "path": "marketing/sales/OBJECTION-HANDLING.md",
       "line": 188,
       "term": "pentest",
-      "text": "- **Our position:** no external pentest report exists yet \u2014 engagement is planned pre-GA (`pentest-summary.mdx`). Internal adversarial reviews + cargo-fuzz summaries are available under NDA today; the executive summary of the first external engagement will be shareable under NDA once it completes. Annual cadence post-GA is the intent.",
-      "triage": "untriaged"
-    },
-    {
-      "id": "6203d78dc1935b4a11313535",
-      "path": "marketing/sales/OBJECTION-HANDLING.md",
-      "line": 188,
-      "term": "pentest",
-      "text": "- **Our position:** no external pentest report exists yet \u2014 engagement is planned pre-GA (`pentest-summary.mdx`). Internal adversarial reviews + cargo-fuzz summaries are available under NDA today; the executive summary of the first external engagement will be shareable under NDA once it completes. Annual cadence post-GA is the intent.",
+      "text": "- **Our position:** no external pentest report exists \u2014 no firm is engaged. `CAP-GA-002` remains a hard pre-GA gate, not a report entitlement: no external-report NDA availability, date, or cadence is promised. Internal adversarial reviews + cargo-fuzz summaries are available under NDA today.",
       "triage": "untriaged"
     },
     {
@@ -17372,11 +17398,11 @@
       "triage": "untriaged"
     },
     {
-      "id": "ed756bc9f246d6e25ca35939",
+      "id": "e1567c4169bae02532e69d43",
       "path": "marketing/sales/OBJECTION-HANDLING.md",
       "line": 190,
       "term": "pentest",
-      "text": "- **Counter-question:** \"Is your annual-pentest requirement satisfiable by a scoped engagement letter + scheduled date now, with exec summary + remediation status to follow once the first engagement completes? Full unredacted report access is rare; the executive summary we can do under NDA.\"",
+      "text": "- **Counter-question:** \"Is your annual-pentest requirement a hard procurement prerequisite? If it is, we cannot represent it as satisfied: no external engagement or report exists. If internal adversarial-review and cargo-fuzz evidence is useful for an evaluation, it is available under NDA today.\"",
       "triage": "untriaged"
     },
     {
@@ -18004,19 +18030,19 @@
       "triage": "untriaged"
     },
     {
-      "id": "e6eab12366d01157d4499213",
+      "id": "d6b04c6670dfc301742b08a0",
       "path": "marketing/sales/legal-questionnaires/CAIQ-V4-pre-filled.md",
       "line": 297,
       "term": "pentest",
-      "text": "| TVM-04.1 | Pentest performed at planned intervals? | P | CSP | Internal adversarial reviews + cargo-fuzz summary; external pentest scoped under R-6 staging-bake (T-30d pre-GA). | CC7.1 |",
+      "text": "| TVM-04.1 | Pentest performed at planned intervals? | P | CSP | No external pentest has been commissioned; `CAP-GA-002` remains an unmet hard pre-GA gate. Internal adversarial reviews + cargo-fuzz summary exist, but no external report, NDA availability, or date is promised. | CC7.1 |",
       "triage": "untriaged"
     },
     {
-      "id": "e04f3a2082e4c7a8bd6472c5",
+      "id": "3f5eb315698d613ee46da784",
       "path": "marketing/sales/legal-questionnaires/CAIQ-V4-pre-filled.md",
       "line": 297,
       "term": "pentest",
-      "text": "| TVM-04.1 | Pentest performed at planned intervals? | P | CSP | Internal adversarial reviews + cargo-fuzz summary; external pentest scoped under R-6 staging-bake (T-30d pre-GA). | CC7.1 |",
+      "text": "| TVM-04.1 | Pentest performed at planned intervals? | P | CSP | No external pentest has been commissioned; `CAP-GA-002` remains an unmet hard pre-GA gate. Internal adversarial reviews + cargo-fuzz summary exist, but no external report, NDA availability, or date is promised. | CC7.1 |",
       "triage": "untriaged"
     },
     {
@@ -18164,27 +18190,19 @@
       "triage": "untriaged"
     },
     {
-      "id": "ee1b55274b363bbff3b44a33",
+      "id": "2966386c6ef1e55f574c89d5",
       "path": "marketing/sales/legal-questionnaires/SIG-LITE-2026-pre-filled.md",
       "line": 61,
       "term": "pentest",
-      "text": "| A.4 | Have you completed a third-party risk assessment / pentest in the last 12 months? | P | Pentest scheduled pre-GA; summaries from internal adversarial reviews + cargo-fuzz at `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md`. Full external pentest scoped under R-6 staging-bake (T-30d pre-GA). | `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md`; `apps/docs/docs/trust/index.mdx` |",
+      "text": "| A.4 | Have you completed a third-party risk assessment / pentest in the last 12 months? | P | No external pentest has been commissioned. `CAP-GA-002` remains an unmet hard pre-GA gate; no external report, NDA availability, or date is promised. Internal adversarial-review + cargo-fuzz summaries exist at `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md`. | `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md`; `apps/docs/docs/trust/index.mdx` |",
       "triage": "untriaged"
     },
     {
-      "id": "2384971925fbecf9cb9e049f",
+      "id": "a2c89eb1928c2960adf60b31",
       "path": "marketing/sales/legal-questionnaires/SIG-LITE-2026-pre-filled.md",
       "line": 61,
       "term": "pentest",
-      "text": "| A.4 | Have you completed a third-party risk assessment / pentest in the last 12 months? | P | Pentest scheduled pre-GA; summaries from internal adversarial reviews + cargo-fuzz at `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md`. Full external pentest scoped under R-6 staging-bake (T-30d pre-GA). | `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md`; `apps/docs/docs/trust/index.mdx` |",
-      "triage": "untriaged"
-    },
-    {
-      "id": "f675fad2d58d5897b1740731",
-      "path": "marketing/sales/legal-questionnaires/SIG-LITE-2026-pre-filled.md",
-      "line": 61,
-      "term": "pentest",
-      "text": "| A.4 | Have you completed a third-party risk assessment / pentest in the last 12 months? | P | Pentest scheduled pre-GA; summaries from internal adversarial reviews + cargo-fuzz at `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md`. Full external pentest scoped under R-6 staging-bake (T-30d pre-GA). | `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md`; `apps/docs/docs/trust/index.mdx` |",
+      "text": "| A.4 | Have you completed a third-party risk assessment / pentest in the last 12 months? | P | No external pentest has been commissioned. `CAP-GA-002` remains an unmet hard pre-GA gate; no external report, NDA availability, or date is promised. Internal adversarial-review + cargo-fuzz summaries exist at `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md`. | `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md`; `apps/docs/docs/trust/index.mdx` |",
       "triage": "untriaged"
     },
     {
@@ -18308,19 +18326,19 @@
       "triage": "untriaged"
     },
     {
-      "id": "9afbd0c343b212da936ebac0",
+      "id": "919a164784170e803af7d456",
       "path": "marketing/sales/legal-questionnaires/VENDOR-QUESTIONNAIRE-RESPONSE-TEMPLATE.md",
       "line": 279,
       "term": "pentest",
-      "text": "| Prospect requests pentest results we don't have | \"External pentest scoped under R-6 staging-bake (T-30d pre-GA); summary will be available `<date>`.\" |",
+      "text": "| Prospect requests pentest results we don't have | \"No external pentest has been commissioned and no report or availability date exists. `CAP-GA-002` remains a hard pre-GA gate; do not promise an NDA report or later cadence. Internal adversarial-review and cargo-fuzz evidence can be discussed under NDA.\" |",
       "triage": "untriaged"
     },
     {
-      "id": "a45670b8548d2aae7d5346e9",
+      "id": "d488a34cea7042156b2a80cd",
       "path": "marketing/sales/legal-questionnaires/VENDOR-QUESTIONNAIRE-RESPONSE-TEMPLATE.md",
       "line": 279,
       "term": "pentest",
-      "text": "| Prospect requests pentest results we don't have | \"External pentest scoped under R-6 staging-bake (T-30d pre-GA); summary will be available `<date>`.\" |",
+      "text": "| Prospect requests pentest results we don't have | \"No external pentest has been commissioned and no report or availability date exists. `CAP-GA-002` remains a hard pre-GA gate; do not promise an NDA report or later cadence. Internal adversarial-review and cargo-fuzz evidence can be discussed under NDA.\" |",
       "triage": "untriaged"
     },
     {

@@ -6076,119 +6076,38 @@ verify-means: |
 last-verified: 2026-08-31
 ```
 
-### B-088 — o comunicado de lançamento afirma pentest externo limpo; o próprio repositório instrui a não afirmar isso
+### B-088 — a superfície publicada deve refletir que nenhum pentest externo foi contratado
 
-`marketing/launch/PRESS-RELEASE.md:26` declara *"External pentest, clean"*, e a linha 39
-traz citação atribuída a `[CEO_NAME]` — marcador de substituição nunca preenchido.
+`reports/pentest-rfp-tracker.json` é a fonte factual: os cinco fornecedores canônicos
+estão em `NOT_CONTACTED` e têm `rfp_sent_date: null`. A superfície publicada agora
+repete esse estado, sem apagar a documentação legítima de roadmap, RFP/procurement ou
+obrigações contratuais aprovadas.
 
-`reports/pentest-rfp-tracker.json` lista cinco fornecedores, todos com `NOT_CONTACTED` e
-`rfp_sent_date: null`.
+O reparo cobre press release, blog, Product Hunt, social, demos, lighthouse collateral,
+sales/questionnaires, pricing em quatro locales e o Trust Center. O Trust Center marca
+`CAP-GA-002` como `PRE-GA-BLOCKER`; o gate exige relatório externo independente e reteste
+sem HIGH/CRITICAL pendente antes de qualquer alegação de GA.
 
-E `marketing/sales/PROOF-POINTS.md:71` — documento destinado à mesma equipe comercial —
-diz: *"**NOT A CLAIM — no external pentest has been commissioned.** … Reps must not assert
-any pentest result."*
-
-O aviso correto existe, está escrito, e não alcançou o comunicado. É a forma mais nítida
-do padrão de [B-101]: falha de propagação, não de conhecimento. Reparo: remover as
-afirmações e o marcador `[CEO_NAME]`, propagando o texto que o `PROOF-POINTS.md` já tem.
-
-**Parcialmente reparado 2026-08-31 (PR WP-C) — o item SEGUE ABERTO.** O comunicado passou
-a declarar, no lugar do bullet afirmativo, que **nenhum pentest externo foi contratado**,
-citando o tracker (todo vendor `NOT_CONTACTED`, `rfp_sent_date: null`), a página pública
-que já dizia isso (`apps/docs/docs/explanation/compliance/pentest-summary.mdx`: *"No
-vendor has been contracted"*) e o §2.12 do `PROOF-POINTS.md`. A afirmação saiu do
-sub-título e da citação do CEO, com o texto retirado transcrito no lugar para que a
-reversão seja visível em vez de silenciosa. O marcador `[CEO_NAME]` saiu das três
-posições. A mesma afirmação saiu de
-`marketing/launch/BLOG-POSTS/01-introducing-corelink.md:31`.
-
-**Uma revisão fria adversarial reverteu o `done` deste item.** Ele havia sido fechado com
-a afirmação **viva em pelo menos 30 arquivos e 65 posições**, várias delas nos próprios
-arquivos que o PR editou — o PR corrigiu uma linha e deixou a irmã duas telas abaixo. O
-resíduo **medido** neste commit:
-
-- `marketing/launch/PRODUCT-HUNT/PH-FAQ.md:52` — *"External pentest **is engaged** with one
-  of Schellman, A-LIGN, or Trail of Bits"*. **O PR editou a linha 26 deste mesmo arquivo e
-  deixou a 52.** Também `:20`.
-- `marketing/launch/BLOG-POSTS/01-introducing-corelink.md:93` — **o PR corrigiu a `:31` e
-  deixou a `:93`.**
-- `marketing/launch/PRODUCT-HUNT/PH-MAKER-COMMENT.md:19`;
-  `marketing/launch/SOCIAL/HACKERNEWS-SHOW-HN.md:30`;
-  `marketing/launch/SOCIAL/LINKEDIN-POST.md:15` e `:25`;
-  `marketing/launch/SOCIAL/TWITTER-THREAD.md:76` — *"PRR + pentest + 30d staging"* como
-  portão de engenharia já cumprido.
-- `marketing/launch/demos/5-MIN-DEEPDIVE.md:335`;
-  `marketing/lighthouse-kit/01-outreach-email.md:125` (*"pentest letter on request"*);
-  `marketing/lighthouse-kit/02-intro-deck.md:124` (*"External pentest report available
-  under NDA (last pass D-30)"*) e `:189`;
-  `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md:357` (*"Our Pentest-1 …"*);
-  `marketing/launch/CASE-STUDIES/enterprise-byok.md:38` (*"External pentest report with
-  retest, available under NDA pre-purchase"*).
-- `marketing/sales/FAQ-MASTER.md`, `marketing/sales/OBJECTION-HANDLING.md`,
-  `marketing/sales/legal-questionnaires/{CAIQ-V4,SIG-LITE-2026,VENDOR-QUESTIONNAIRE-RESPONSE-TEMPLATE,RESPONSE-SLA-POLICY}`.
-- **E a superfície publicada, que o `verify` deste item nunca varreu:**
-  `apps/docs/docs/trust/fedramp-info.mdx:63` — tabela citando *"Schellman / Bishop Fox"*
-  como fornecedores do *"Pentest report (annual external)"* —, mais
-  `apps/docs/docs/trust/{iso27001,compliance,index}.mdx`, **cada uma × 4 locales**.
-
-O item volta a `status: open` com a polaridade `open` restaurada. O texto já corrigido
-**fica** — o `verify` protege-o contra regressão — mas o item não pode ser declarado
-fechado enquanto o comprador continuar lendo, na página de confiança publicada, o nome de
-duas firmas de pentest que nunca foram contatadas.
-
-
-**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: varrer o resíduo medido e
-retratar a afirmação. Corrigir texto que afirma um pentest que não existe é conserto, não
-decisão comercial — e o repositório já contém a instrução de não afirmá-lo. Distribuir o
-comunicado corrigido é dele; escrevê-lo é meu.
+**Reparado na superfície publicada; item concluído.** As quatro linhas aprovadas em
+`legal/dpa` e no SCC representam obrigações contratuais futuras e permanecem classificadas
+como legítimas; sua execução/alteração vive nos itens legais correspondentes. Os e-mails
+RFP continuam sendo convites (não evidência de contratação).
 
 ```backlog
 id: B-088
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'p=marketing/launch/PRESS-RELEASE.md
-  [ -f "$p" ] || { echo "FALHA: o press release sumiu — o reparo ja feito nao pode ser verificado."; exit 1; }
-  n=$(wc -l < "$p" | tr -d " ")
-  [ "$n" -gt 50 ] || { echo "FALHA: o press release tem so $n linhas — o comando perdeu o objeto e nao pode concluir ausencia."; exit 1; }
-  grep -q "^[^#<*>-]*No external pentest has been commissioned" "$p" || { echo "FALHA: o comunicado nao declara mais que nenhum pentest externo foi contratado — o reparo JA FEITO regrediu; conserte antes de qualquer outra coisa."; exit 1; }
-  ! grep -q "^[^#<*>-]*CEO_NAME" "$p" || { echo "FALHA: o marcador CEO_NAME voltou ao comunicado — o reparo JA FEITO regrediu."; exit 1; }
-  ! grep -qE "\*\*External pentest, clean\.\*\*" "$p" || { echo "FALHA: o bullet afirmativo de pentest limpo voltou ao comunicado — o reparo JA FEITO regrediu."; exit 1; }
-  corpus=$(grep -rli "^[^#<*>-]*pentest" --include="*.md" --include="*.mdx" marketing/ apps/docs/ README.md 2>/dev/null | wc -l | tr -d " ")
-  [ "$corpus" -gt 20 ] || { echo "FALHA: so $corpus arquivo(s) do corpus citam pentest — a varredura perdeu o corpus e nao pode concluir ausencia."; exit 1; }
-  res=$(grep -rlE "^[^#<*>-]*(External pentest is engaged|pentest letter on request|External pentest report|External pentest pass|PRR \+ pentest|pentest \+ 30d|Pentest-1|Schellman|Bishop Fox)" --include="*.md" --include="*.mdx" marketing/ apps/docs/ README.md 2>/dev/null | grep -v "PENTEST-RFP-EMAIL" | wc -l | tr -d " ")
-  if [ "$res" -gt 0 ]; then
-    echo "aberto: o comunicado esta corrigido, mas a afirmacao de pentest externo segue viva em $res arquivo(s) do material publicado (inclui apps/docs/docs/trust/fedramp-info.mdx e iso27001/compliance/index x 4 locales). Estender o diff a apps/docs/** e ao README, ou fechar so quando res=0."
-    exit 0
-  fi
-  echo "FALHA: o residuo de pentest chegou a zero — a razao restante deste item acabou. Feche B-088 (status: done) com verify de polaridade INVERTIDA."
-  exit 1'
+  python3 scripts/verify_b088_pentest_claims.py
 verify-means: |
-  open — e a polaridade voltou a ser `open` **de propósito**, revertendo um `done`
-  prematuro. O item havia sido fechado com a afirmação viva em 30 arquivos e 65 posições,
-  incluindo linhas nos MESMOS arquivos que o PR editou (`PH-FAQ.md`: corrigida a 26,
-  deixada a 52; `01-introducing-corelink.md`: corrigida a 31, deixada a 93).
-
-  O comando tem duas metades com papéis opostos, e isso é deliberado:
-
-  1. **Protege o reparo já feito.** Se o comunicado parar de declarar a ausência, se o
-     `CEO_NAME` voltar, ou se o bullet `**External pentest, clean.**` reaparecer, o
-     comando fica **vermelho** — mesmo com o item `open`. Um item aberto não é licença
-     para regredir a parte já corrigida.
-  2. **Mede o resíduo.** Enquanto sobrar ao menos um arquivo com afirmação ativa, o item
-     está legitimamente `open` e o comando sai `exit 0`. Quando o resíduo chegar a zero,
-     o comando fica **vermelho** mandando fechar com polaridade invertida.
-
-  Gateio a frase de negação, não a ausência da string "pentest": o texto corrigido PRECISA
-  dizer *"No external pentest has been commissioned"*. Um comando que proibisse a string
-  proibiria a retratação junto com a afirmação — a mesma armadilha de [B-085].
-
-  A contagem de linhas do comunicado e a contagem do corpus são **controle do
-  instrumento**: um comunicado truncado, ou um `apps/docs/` deletado, passariam em
-  qualquer teste de ausência. Aqui falham. E os `PENTEST-RFP-EMAIL-*.md` são excluídos da
-  varredura de resíduo porque neles nomear Schellman / Bishop Fox / Trail of Bits é o
-  propósito legítimo do arquivo — é o e-mail que os CONVIDA.
+  done — `scripts/verify_b088_pentest_claims.py` inverte o resultado do censo fechado
+  canônico de B-156: qualquer falha ou claim positivo faz o gate falhar. As quatro
+  obrigações futuras aprovadas em `legal/dpa`/SCC são registros legítimos e não bloqueiam
+  a conclusão; sua execução é responsabilidade dos itens legais. O verificador exige o
+  tracker de cinco fornecedores `NOT_CONTACTED`, a população de 202 ocorrências/60
+  arquivos e a classificação canônica, com mutações cobrindo `unavailable` e variantes
+  de completed/engaged sem permitir que uma negação não relacionada esconda um claim.
 
   O que NÃO decide, e admito, em cinco pontos:
 

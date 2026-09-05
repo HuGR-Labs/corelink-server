@@ -24,7 +24,7 @@
     "description": "Status badge legend section title"
   },
   "trust.landing.legend.intro": {
-    "message": "Every compliance claim below is tagged with one of three honesty badges. We do not claim certifications we have not yet achieved. SOC 2 Type II is IN-AUDIT (observation window opened 2026-05-15), not \"certified\".",
+    "message": "Every compliance claim below is tagged with one of four honesty badges. We do not claim certifications we have not yet achieved. SOC 2 Type II is IN-AUDIT (observation window opened 2026-05-15), not \"certified\".",
     "description": "Status badge legend intro paragraph"
   },
   "trust.landing.legend.live": {
@@ -32,12 +32,16 @@
     "description": "LIVE-ATTESTATION badge meaning"
   },
   "trust.landing.legend.inaudit": {
-    "message": "Independent verification is engaged but not yet complete (e.g. SOC 2 Type I report being drafted, ISO 27001 Stage-1 prep, external pentest engagement).",
+    "message": "Independent verification is engaged but not yet complete (e.g. SOC 2 Type I report being drafted, ISO 27001 Stage-1 prep).",
     "description": "IN-AUDIT badge meaning"
   },
   "trust.landing.legend.postga": {
     "message": "Roadmap item not yet started or only internally scoped (e.g. SOC 2 Type II 6-month observation window, ISO 27001 Stage-2 surveillance audit, FedRAMP sponsorship path).",
     "description": "POST-GA badge meaning"
+  },
+  "trust.landing.legend.pregaBlocker": {
+    "message": "A hard pre-GA condition lacks its required evidence. GA remains blocked until CAP-GA-002 has an external report and retest with no outstanding HIGH or CRITICAL findings.",
+    "description": "PRE-GA-BLOCKER badge meaning"
   },
   "trust.landing.contact.title": {
     "message": "Talk to us",

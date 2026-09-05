@@ -185,9 +185,9 @@ tags: ["sales", "objection-handling", "r-prep", "ga", "playbook"]
 ### Obj-17 — "We need an annual pentest report."
 
 - **Why it matters:** procurement standard.
-- **Our position:** no external pentest report exists yet — engagement is planned pre-GA (`pentest-summary.mdx`). Internal adversarial reviews + cargo-fuzz summaries are available under NDA today; the executive summary of the first external engagement will be shareable under NDA once it completes. Annual cadence post-GA is the intent.
+- **Our position:** no external pentest report exists — no firm is engaged. `CAP-GA-002` remains a hard pre-GA gate, not a report entitlement: no external-report NDA availability, date, or cadence is promised. Internal adversarial reviews + cargo-fuzz summaries are available under NDA today.
 - **Evidence:** `apps/docs/docs/explanation/compliance/pentest-summary.mdx` ("No vendor has been contracted"); `marketing/sales/PROOF-POINTS.md` 2.12; SIG Lite A.4 / G.11.
-- **Counter-question:** "Is your annual-pentest requirement satisfiable by a scoped engagement letter + scheduled date now, with exec summary + remediation status to follow once the first engagement completes? Full unredacted report access is rare; the executive summary we can do under NDA."
+- **Counter-question:** "Is your annual-pentest requirement a hard procurement prerequisite? If it is, we cannot represent it as satisfied: no external engagement or report exists. If internal adversarial-review and cargo-fuzz evidence is useful for an evaluation, it is available under NDA today."
 
 ---
 

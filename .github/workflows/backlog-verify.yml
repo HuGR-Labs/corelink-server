@@ -76,6 +76,13 @@ on:
       - "worker/tests/setup.ts"
       - "worker/tests/d1_batch_mock.ts"
       - "pnpm-lock.yaml"
+      - "scripts/verify_b088_pentest_claims.py"
+      - "tests/b088_pentest_claims_test.py"
+      - "reports/pentest-rfp-tracker.json"
+      - "marketing/**"
+      - "apps/docs/**"
+      - "legal/**"
+      - "README.md"
       - "marketing/sales/legal-questionnaires/EVIDENCE-PACK-INDEX.md"
       # B-161's verifier reads exactly these published pages and its focused test.
       - "apps/docs/docs/integrations/homebrew.md"
@@ -132,6 +139,13 @@ on:
       - "worker/tests/setup.ts"
       - "worker/tests/d1_batch_mock.ts"
       - "pnpm-lock.yaml"
+      - "scripts/verify_b088_pentest_claims.py"
+      - "tests/b088_pentest_claims_test.py"
+      - "reports/pentest-rfp-tracker.json"
+      - "marketing/**"
+      - "apps/docs/**"
+      - "legal/**"
+      - "README.md"
       - "apps/docs/docs/integrations/homebrew.md"
       - "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/integrations/homebrew.md"
       - "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/integrations/homebrew.md"
@@ -204,6 +218,9 @@ jobs:
         run: python3 -m unittest tests/test_verify_b169_evidence_pack.py
       - name: B-082 verifier, mutations, and focal health tests
         run: python3 scripts/verify_b082_health_probe.py
+
+      - name: B-088 published pentest claim verifier and mutations
+        run: python3 -m unittest tests/b088_pentest_claims_test.py
 
       - name: BACKLOG.md agrees with the repo
         # Items that query the Actions API need gh authenticated. Items about

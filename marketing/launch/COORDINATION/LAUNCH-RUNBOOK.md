@@ -10,7 +10,7 @@
 
 | Time | Action | Owner | Pass criterion |
 |---|---|---|---|
-| T-7d | **External pentest gate** (must be complete with zero HIGH/CRITICAL pending and a passed retest) — `EVT-040`. | Security Lead | **BLOCKED until a vendor is contracted and the report exists.** |
+| T-7d | **External pentest gate** (report and passed retest with zero HIGH/CRITICAL pending) — `EVT-040`. | Security Lead | **BLOCKED** — no external pentest has been commissioned; no launch claim is authorized. |
 | T-7d | **SOC 2 readiness confirmed** — gap analysis delivered, GAP-XX list with fix timeline — `EVT-031`. | Compliance Officer | Document on file. |
 | T-7d | **Lighthouse SLA attestations on file** — 3 customers attesting 30d SLA met — `EVT-018`. | Customer Success | 3 attestations signed. |
 | T-7d | **PRR globally approved** — 13 canonical sign-offs (or 5/8 minimum per ADR-0034 Option C). | Owner | PRR-S20-GA approved. |
@@ -60,7 +60,7 @@
 |---|---|---|
 | T-0 06:00 PT | **Press release wire: BusinessWire** (primary) — embargo lifts. PR Newswire (secondary) goes at T+2h. | PR firm |
 | T-0 06:00 PT | **Blog post 01 publishes** on `corelink-docs.humangr.com/blog`. | Marketing |
-| T-0 06:00 PT | **Trust center embargoed assets** unlocked: TLA+ specs, SBOM, pentest status (no report until the planned engagement completes), DPA package. | Marketing + Trust Engineering |
+| T-0 06:00 PT | **Trust center embargoed assets** unlocked: TLA+ specs, SBOM, current pentest status (no report commissioned), DPA package. | Marketing + Trust Engineering |
 | T-0 06:30 PT | **Inbound press monitoring** begins. PR firm fields journalist follow-ups. | PR firm |
 
 ### Mid-morning (Pacific)

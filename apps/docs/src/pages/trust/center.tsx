@@ -19,8 +19,10 @@
  *     on CoreLink (e.g. SAQ-A self-attestation, LGPD ROPA, sub-processor
  *     register, status page, security.txt).
  *   - IN-AUDIT → independent verification is engaged but not yet complete
- *     (e.g. SOC 2 Type I report being drafted, ISO 27001 Stage-1 prep,
- *     external pentest engagement).
+ *     (e.g. SOC 2 Type I report being drafted, ISO 27001 Stage-1 prep).
+ *   - PRE-GA-BLOCKER → a hard launch condition with no supporting evidence
+ *     yet. The external pentest belongs here: no firm is engaged and no RFP
+ *     has been sent, while CAP-GA-002 remains a hard pre-GA gate.
  *   - POST-GA → roadmap item not yet started or only internally scoped
  *     (e.g. SOC 2 Type II 6-month observation window, ISO 27001 Stage-2
  *     surveillance audit, FedRAMP sponsorship path).
@@ -34,7 +36,8 @@
  *   - Five quadrants: Compliance, Security, Privacy, Reliability, Operations.
  *   - Each quadrant: 3–5 cards linking to existing trust pages (Docusaurus
  *     docs at `/trust/<slug>` or React pages at `/trust/<slug>`).
- *   - Status badges (LIVE / IN-AUDIT / POST-GA) on every compliance claim.
+ *   - Status badges (LIVE / IN-AUDIT / POST-GA / PRE-GA-BLOCKER) on every
+ *     compliance claim.
  *   - Footer: security@humangr.com contact + report-security policy link.
  *
  * i18n: copy is wrapped in `<Translate>` so the 4 locales (en-US default,
@@ -46,7 +49,7 @@ import Link from "@docusaurus/Link";
 import Translate from "@docusaurus/Translate";
 import type { ReactElement, ReactNode } from "react";
 
-type ClaimStatus = "LIVE" | "IN-AUDIT" | "POST-GA";
+type ClaimStatus = "LIVE" | "IN-AUDIT" | "POST-GA" | "PRE-GA-BLOCKER";
 
 interface TrustCard {
   readonly title: string;
@@ -66,12 +69,14 @@ const STATUS_LABELS: Record<ClaimStatus, string> = {
   LIVE: "LIVE-ATTESTATION",
   "IN-AUDIT": "IN-AUDIT",
   "POST-GA": "POST-GA",
+  "PRE-GA-BLOCKER": "PRE-GA BLOCKER",
 };
 
 const STATUS_COLORS: Record<ClaimStatus, { bg: string; fg: string; border: string }> = {
   LIVE: { bg: "#dcfce7", fg: "#14532d", border: "#16a34a" },
   "IN-AUDIT": { bg: "#fef3c7", fg: "#7c2d12", border: "#b45309" },
   "POST-GA": { bg: "#e0e7ff", fg: "#1e3a8a", border: "#3730a3" },
+  "PRE-GA-BLOCKER": { bg: "#fee2e2", fg: "#7f1d1d", border: "#b91c1c" },
 };
 
 const QUADRANTS: readonly TrustQuadrant[] = [
@@ -153,11 +158,11 @@ const QUADRANTS: readonly TrustQuadrant[] = [
           "Coordinated VDP with safe-harbor, 90-day disclosure window, severity matrix, and PGP-encrypted intake — see report-security policy.",
       },
       {
-        title: "External pentest engagement",
+        title: "External pentest — hard pre-GA blocker",
         href: "/trust/compliance#pentest",
-        status: "IN-AUDIT",
+        status: "PRE-GA-BLOCKER",
         summary:
-          "RFP sent to Schellman / A-LIGN / Bishop Fox (wave-25); engagement target T-14d pre-GA. Reports published post-engagement with redactions.",
+          "No external penetration test has been commissioned and no RFP has been sent — every vendor in reports/pentest-rfp-tracker.json is NOT_CONTACTED. CAP-GA-002 requires an external report and retest with no outstanding HIGH or CRITICAL findings before GA. Assurance today is internal: TLA+ invariants gated in CI, CodeQL / cargo-audit / semgrep / trivy scanning, sealed cargo-fuzz summaries, and internal adversarial review waves.",
       },
     ],
   },
@@ -445,7 +450,7 @@ export default function TrustCenter(): ReactElement {
               id="trust.landing.legend.intro"
               description="Status badge legend intro paragraph"
             >
-              Every compliance claim below is tagged with one of three
+              Every compliance claim below is tagged with one of four
               honesty badges. We do not claim certifications we have not yet
               achieved. SOC 2 Type II is IN-AUDIT (observation window opened
               2026-05-15), not "certified".
@@ -466,6 +471,19 @@ export default function TrustCenter(): ReactElement {
               }
             />
             <LegendItem
+              status="PRE-GA-BLOCKER"
+              description={
+                <Translate
+                  id="trust.landing.legend.pregaBlocker"
+                  description="PRE-GA-BLOCKER badge meaning"
+                >
+                  A hard pre-GA condition lacks its required evidence. GA
+                  remains blocked until CAP-GA-002 has an external report and
+                  retest with no outstanding HIGH or CRITICAL findings.
+                </Translate>
+              }
+            />
+            <LegendItem
               status="IN-AUDIT"
               description={
                 <Translate
@@ -474,7 +492,7 @@ export default function TrustCenter(): ReactElement {
                 >
                   Independent verification is engaged but not yet complete
                   (e.g. SOC 2 Type I report being drafted, ISO 27001 Stage-1
-                  prep, external pentest engagement).
+                  prep).
                 </Translate>
               }
             />
