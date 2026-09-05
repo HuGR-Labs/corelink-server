@@ -8307,17 +8307,15 @@ squash/rebase) and [B-124].
 id: B-123
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  grep -q 'source_blobs' scripts/validate_okf.py \
-    && ! grep -q 'anchor_content_reverify' scripts/validate_okf.py
+  python3 tests/test_okf_anchor_reverify.py
 verify-means: |
-  open — passes while validate_okf still honours a source_blobs anchor without
-  any content re-verification of the citations it covers, i.e. while the anchor
-  remains a vacuously-green shortcut. Closes when the gate carries a named
-  re-verification step. It does NOT prove any specific concept is wrong today —
-  only that the cheap wrong fix is still available and still rewarded.
-last-verified: 2026-08-30
+  done — executable git-harness mutation advances a source blob after inserting
+  a line above a cited block and requires [C5c] for the stale citation, while
+  accepting the same mutation with the citation renumbered. This guards the
+  named anchor re-verification step against regression without a manual grep.
+last-verified: 2026-09-05
 ```
 
 ### B-124 — hand-edits and a bulk shifter over the same file double-shift it
