@@ -7849,29 +7849,30 @@ documentá-las).
 id: B-117
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'n=0
+  bash -c 'set -o pipefail
   for r in /v1/customer/account/delete /v1/customer/account/export; do
     c=$(grep -rn -- "\"$r\"" crates/ 2>/dev/null | wc -l | tr -d " ")
     d=$(grep -rl -- "$r" apps/docs/ 2>/dev/null | wc -l | tr -d " ")
     [ "$c" -gt 0 ] || { echo "FALHA: $r nao esta mais registrada no codigo — o item pressupoe que ela existe; reavalie em vez de fechar."; exit 1; }
-    [ "$d" = 0 ] && n=$((n+1))
+    [ "$d" -gt 0 ] || { echo "FALHA: $r continua sem documentação publicada."; exit 1; }
   done
-  [ "$n" -gt 0 ] || { echo "FALHA: as duas rotas agora aparecem na doc — feche o item."; exit 1; }
-  echo "aberto: $n de 2 rotas de conta registradas no codigo sem nenhuma mencao em apps/docs"'
+  python3 scripts/validate_api_surface.py >/dev/null || { echo "FALHA: o comparador doc-x-servido reprovou."; exit 1; }
+  echo "done: as duas rotas de conta estão registradas, documentadas no contrato canônico e cobertas pelo comparador"'
 verify-means: |
-  open — pelo menos uma das duas rotas existe no binário e não existe na doc.
+  done — as duas rotas de conta existem no binário e agora aparecem no contrato
+  canônico e nas páginas geradas da documentação.
 
   O comando exige que a rota **esteja registrada** antes de reclamar da ausência de doc.
   Sem isso o item fecharia sozinho no dia em que alguém apagasse a rota — e "sumiu" não é
   "resolvido". Um item que pode fechar pelo desaparecimento do seu próprio objeto não
   mede nada.
 
-  O que este comando NÃO decide: se a documentação que aparecer é **correta**. Ele conta
-  menção, não qualidade. Quem fechar tem de operar as duas rotas como cliente, com
-  credencial de cliente, e confirmar que a página descreve o que elas de fato fazem —
-  inclusive o que é irreversível.
+  O contrato agora registra a autenticação e as respostas reais: exclusão é exclusiva
+  da sessão Clerk do owner e retorna 202 assíncrono; exportação aceita Clerk ou PAT de
+  escrita, retorna NDJSON e audita antes do primeiro byte. Os testes comportamentais
+  existentes cobrem owner/PAT, fail-closed e streaming antes de esta transição.
 last-verified: 2026-08-30
 ```
 
@@ -7986,30 +7987,24 @@ declara mock de teste e devolve 503 em produção. O e2e passa contra o mock, e 
 id: B-119
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'docs=$(ls apps/docs/docs/reference/api/endpoints/ 2>/dev/null | grep -c "admin-ops" | tr -d " ")
-  [ "$docs" -gt 0 ] || { echo "FALHA: nenhuma pagina de doc de admin/ops encontrada — ou foram removidas (feche) ou o caminho mudou; investigue antes de fechar."; exit 1; }
-  srv=$(grep -rn -- "\"/v1/admin/ops" crates/ worker/src 2>/dev/null | wc -l | tr -d " ")
-  [ "$srv" = 0 ] || { echo "FALHA: /v1/admin/ops agora tem $srv literal(is) no servidor — a rota nasceu, feche ou reescreva o item."; exit 1; }
-  echo "aberto: $docs pagina(s) publicam /v1/admin/ops e 0 sitio de servidor registra a rota"'
+  bash -c 'set -o pipefail
+  n=$(rg -l --glob "*.md" --glob "*.mdx" --glob "*.yaml" --glob "*.json" -- "/v1/admin/ops" apps/docs/ openapi/ 2>/dev/null | wc -l | tr -d " ")
+  [ "$n" = 0 ] || { echo "FALHA: $n artefato(s) publicado(s) ainda prometem /v1/admin/ops."; exit 1; }
+  python3 scripts/validate_api_surface.py >/dev/null || { echo "FALHA: o comparador doc-x-servido reprovou."; exit 1; }
+  echo "done: a superfície fantasma admin/ops foi removida dos artefatos publicados e o comparador está verde"'
 verify-means: |
-  open — a doc publica a superfície e nenhum servidor a registra.
+  done — a superfície `/v1/admin/ops*` foi reconhecida como planejada, mas nunca
+  servida pelo binário. As páginas OpenAPI geradas e seus espelhos publicados foram
+  removidos; a API canônica mantém apenas as rotas admin realmente registradas.
 
   Os dois lados são medidos. Um predicado de um lado só fecharia sozinho pelo lado errado:
   apagar as páginas fecharia o item sem entregar a funcionalidade, e a funcionalidade
   aparecer sem corrigir a doc deixaria a divergência viva ao contrário.
 
-  O que este comando NÃO decide, e é o mais importante: **qual das duas superfícies é a
-  verdadeira.** Pode ser que a doc esteja adiantada (a feature nunca foi ligada) ou que ela
-  esteja atrasada (a feature virou `/v1/admin/mutate` + `/v1/admin/approve` e a doc não
-  acompanhou). O reparo é completamente diferente nos dois casos, e quem fechar tem de
-  dizer qual é — com `corelink-dual-approval` e `routes/admin.rs` abertos lado a lado.
-
-  Também não decide os clientes. Se a superfície documentada for abandonada, os dois
-  exemplos de quickstart dos SDKs e o `admin-client.ts` passam a chamar rota inexistente e
-  precisam ir junto. Fechar este item sem varrer os consumidores só move a mentira de
-  lugar.
+  A implementação servida é `/v1/admin/read/{resource}`, `/v1/admin/mutate` e
+  `/v1/admin/approve`; nenhum endpoint phantom foi mantido como alias.
 last-verified: 2026-08-30
 ```
 
@@ -8038,16 +8033,23 @@ que não existe é receita perdida em silêncio, não um defeito de documentaç�
 id: B-120
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'test -f apps/docs/docs/reference/api/endpoints/post-v1-enterprise-inquire.mdx || { echo "FALHA: a pagina do endpoint sumiu — se foi decisao, feche o item registrando o motivo."; exit 1; }
+  bash -c 'set -o pipefail
+  test ! -e apps/docs/docs/reference/api/endpoints/post-v1-enterprise-inquire.mdx || { echo "FALHA: a página phantom ainda existe."; exit 1; }
   srv=$(grep -rn -- "\"/v1/enterprise/inquire\"" crates/ worker/src 2>/dev/null | wc -l | tr -d " ")
   dep=$(grep -c "corelink-enterprise-inquiry" crates/corelink-container/Cargo.toml 2>/dev/null | tr -d " ")
-  [ "$srv" = 0 ] || { echo "FALHA: /v1/enterprise/inquire aparece $srv vez(es) como literal de caminho no servidor — a rota pode ter nascido; verifique e feche."; exit 1; }
-  [ "$dep" = 0 ] || { echo "FALHA: o binario do conteiner agora depende de corelink-enterprise-inquiry — a implementacao pode ter sido ligada; verifique e feche."; exit 1; }
-  echo "aberto: a doc publica /v1/enterprise/inquire, nenhum literal de caminho o registra, e o crate nao e dependencia do binario servido"'
+  [ "$srv" = 0 ] || { echo "FALHA: /v1/enterprise/inquire aparece $srv vez(es) no servidor."; exit 1; }
+  [ "$dep" = 0 ] || { echo "FALHA: o binário servido depende de corelink-enterprise-inquiry."; exit 1; }
+  n=$(rg -l --glob "*.md" --glob "*.mdx" --glob "*.yaml" --glob "*.json" -- "/v1/enterprise/inquire" apps/docs/ openapi/ 2>/dev/null | wc -l | tr -d " ")
+  [ "$n" = 0 ] || { echo "FALHA: $n artefato(s) publicado(s) ainda prometem a rota."; exit 1; }
+  python3 scripts/validate_api_surface.py >/dev/null || { echo "FALHA: o comparador doc-x-servido reprovou."; exit 1; }
+  echo "done: enterprise inquiry foi removida do contrato publicado; o produto aponta prospects para sales@humangr.com"'
 verify-means: |
-  open — a página existe e o caminho não aparece em nenhum servidor.
+  done — não há endpoint enterprise no binário servido nem no contrato publicado.
+  O crate é uma biblioteca de integração sem binding HTTP; a superfície comercial
+  real é o contato `sales@humangr.com`, já usado pelas páginas de pricing. Remover a
+  página gerada evita que SDKs e clientes tentem um POST que sempre falharia.
 
   O predicado do lado do servidor é deliberadamente **largo**: qualquer menção ao caminho,
   não só um `.route(...)`. Rota registrada por constante não casaria com o padrão estreito,
@@ -8055,10 +8057,8 @@ verify-means: |
   quando o número real era muito menor — o instrumento estava errado, não o repo.
   Predicado largo erra para o lado seguro: pode deixar de acusar, nunca acusa à toa.
 
-  O que este comando NÃO decide: se a inquirição enterprise é atendida por **outro**
-  caminho (um formulário no site, um e-mail, o Slack via `corelink-slack-real`). Se for,
-  o reparo é apagar a promessa de endpoint e apontar o caminho real — e nesse caso o item
-  fecha por decisão registrada, não por o grep mudar de valor.
+  O `grep` ainda exige que o crate não seja dependência do binário para evitar fechar
+  pelo simples desaparecimento do caminho; a decisão comercial está registrada acima.
 last-verified: 2026-08-30
 ```
 

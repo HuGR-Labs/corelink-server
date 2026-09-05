@@ -2081,9 +2081,8 @@ const baseHandler: ExportedHandler<Env> = {
       //
       // Dynamic so the spec is not parsed on isolate start for the requests
       // that never ask for it.
-      const { corelinkV1Spec } = await import("./lib/openapi_v1.js");
-      const spec = corelinkV1Spec;
-      const resp = new Response(JSON.stringify(spec), {
+      const { corelinkV1Json } = await import("./lib/openapi_v1.js");
+      const resp = new Response(corelinkV1Json, {
         status: 200,
         headers: {
           "Content-Type": "application/json",

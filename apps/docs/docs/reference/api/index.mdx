@@ -23,6 +23,7 @@ See also the raw spec page at [REST API spec](./openapi.mdx).
 | [`POST /v1/customer/keys/{pat_id}/revoke`](./endpoints/post-v1-customer-keys-by-pat_id-revoke.mdx) | `pat` | Revoke a Personal Access Token by id. |
 | [`POST /v1/onboarding/dpa-accept`](./endpoints/post-v1-onboarding-dpa-accept.mdx) | `dpa` | Record click-through acceptance of the current DPA version. |
 | [`POST /v1/onboarding/tier-select`](./endpoints/post-v1-onboarding-tier-select.mdx) | `tier` | Select a subscription tier and receive a Stripe Checkout session URL. |
+| [`POST /v1/pats`](./endpoints/post-v1-pats.mdx) | `pat` | Issue a Personal Access Token (compatibility alias). |
 | [`POST /v1/signup`](./endpoints/post-v1-signup.mdx) | `signup` | Provision a new tenant from a verified Clerk identity. |
 | [`GET /v1/users/me`](./endpoints/get-v1-users-me.mdx) | `users` | Reflect the authenticated caller's PAT identity. |
 
@@ -71,6 +72,8 @@ See also the raw spec page at [REST API spec](./openapi.mdx).
 
 | Endpoint | Tag | Summary |
 | --- | --- | --- |
+| [`POST /v1/customer/account/delete`](./endpoints/post-v1-customer-account-delete.mdx) | `privacy-dsr` | Request deletion of the authenticated tenant account. |
+| [`POST /v1/customer/account/export`](./endpoints/post-v1-customer-account-export.mdx) | `privacy-dsr` | Export the authenticated tenant's portability bundle. |
 | [`POST /v1/privacy/dsr/{action}`](./endpoints/post-v1-privacy-dsr-by-action.mdx) | `privacy-dsr` | Submit a Data Subject Request (GDPR / LGPD / CCPA). |
 | [`GET /v1/privacy/dsr/{request_id}/status`](./endpoints/get-v1-privacy-dsr-by-request_id-status.mdx) | `privacy-dsr` | Poll the status of a previously submitted DSR. |
 

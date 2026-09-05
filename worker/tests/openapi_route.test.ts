@@ -22,6 +22,7 @@
 import { describe, it, expect } from "vitest";
 import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
+import { corelinkV1Json } from "../src/lib/openapi_v1.js";
 
 /** Minimal Env: no bindings at all — the shape a fresh environment has. */
 function envWithoutDevenv(): Env {
@@ -64,6 +65,8 @@ describe("GET /openapi.json", () => {
     expect(Object.keys(spec.paths).length).toBeGreaterThan(20);
     expect(spec.paths).toHaveProperty("/v1/cas/{tenant}/{hash}");
     expect(spec.paths).toHaveProperty("/v1/customer/keys");
+    expect(spec.paths).toHaveProperty("/v1/customer/account/delete");
+    expect(spec.paths).toHaveProperty("/v1/customer/account/export");
 
     // No DevEnv path may leak into the general contract either.
     const devenvPaths = Object.keys(spec.paths).filter((p) => p.includes("devenv"));
@@ -75,6 +78,11 @@ describe("GET /openapi.json", () => {
     expect(resp.status).toBe(200);
     const spec = (await resp.json()) as { info: { title: string } };
     expect(spec.info.title).not.toContain("DevEnv");
+  });
+
+  it("serves the exact generated JSON artifact bytes", async () => {
+    const resp = await get("/openapi.json", envWithoutDevenv());
+    expect(await resp.text()).toBe(corelinkV1Json);
   });
 
   it("does not require authentication", async () => {

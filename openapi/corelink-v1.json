@@ -440,6 +440,177 @@
         }
       }
     },
+    "/v1/customer/account/delete": {
+      "x-status": "implemented",
+      "x-implementing-handler": "crates/corelink-container/src/routes/customer.rs (handle_account_delete)",
+      "x-served-at": "crates/corelink-container/src/routes/customer.rs:264",
+      "post": {
+        "tags": [
+          "privacy-dsr"
+        ],
+        "summary": "Request deletion of the authenticated tenant account.",
+        "operationId": "customerAccountDelete",
+        "security": [
+          {
+            "ClerkSessionCookie": []
+          }
+        ],
+        "description": "Requests GDPR/LGPD erasure of the caller's whole tenant account. This\nirreversible operation is restricted to the tenant owner using a\nClerk-authenticated dashboard session; a cache PAT is rejected.\n\nThe request is durably anchored and queued before acknowledgement. A\nrepeated request is safe and returns the same accepted outcome. The\nresponse does not claim that erasure has completed: it only confirms\nthat the erasure workflow was accepted (`erasure_requested`) or that\nno account remained (`no_account`).\n",
+        "responses": {
+          "202": {
+            "description": "Erasure request accepted or idempotent no-account acknowledgement.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerAccountDeleteResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "description": "Erasure worker is not configured; no acknowledgement was emitted.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/customer/account/export": {
+      "x-status": "implemented",
+      "x-implementing-handler": "crates/corelink-container/src/routes/customer.rs (handle_account_export)",
+      "x-served-at": "crates/corelink-container/src/routes/customer.rs:265",
+      "post": {
+        "tags": [
+          "privacy-dsr"
+        ],
+        "summary": "Export the authenticated tenant's portability bundle.",
+        "operationId": "customerAccountExport",
+        "security": [
+          {
+            "ClerkSessionCookie": []
+          },
+          {
+            "BearerPAT": []
+          }
+        ],
+        "description": "Streams the complete tenant portability bundle as bounded,\ncontent-addressed NDJSON: governance records first, then CAS/AC blob\nbytes, followed by a manifest. Only an owner/admin with a dashboard\nsession or a write-capable PAT may invoke it; read-only cache tokens are\nrejected because the bundle contains team PII, DPA/audit records and\nall tenant blobs.\n\nThe export is rate-limited and an audit record is durably written before\nthe first byte is disclosed. A source or audit failure returns a 5xx\nbefore streaming begins; the `x-corelink-export-schema` header is\n`corelink.tenant_export.v1`.\n",
+        "responses": {
+          "200": {
+            "description": "Portability bundle streamed as newline-delimited JSON.",
+            "headers": {
+              "x-corelink-export-schema": {
+                "description": "Stable export wire-schema identifier.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "corelink.tenant_export.v1"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "description": "Export source is not configured or temporarily unavailable.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/pats": {
+      "x-status": "implemented",
+      "x-implementing-handler": "crates/corelink-container/src/routes/customer.rs (handle_pats_create)",
+      "x-served-at": "crates/corelink-container/src/routes/customer.rs:256",
+      "x-reconciliation-note": "Compatibility alias for `POST /v1/customer/keys`. Both routes use the\nsame customer-plane issuance handler and the same Clerk/PAT auth gates.\nNew integrations should use `/v1/customer/keys`; this alias remains\ndocumented while existing clients migrate so a served route is never\nsilently omitted from the published contract.\n",
+      "post": {
+        "tags": [
+          "pat"
+        ],
+        "summary": "Issue a Personal Access Token (compatibility alias).",
+        "operationId": "patIssueCompatibilityAlias",
+        "security": [
+          {
+            "ClerkSessionCookie": []
+          },
+          {
+            "BearerPAT": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerKeyCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "PAT issued. `token` is shown exactly once.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerKeyCreateResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
     "/v1/billing/stripe-webhook": {
       "x-status": "implemented",
       "x-implementing-crate": "corelink-container",
@@ -2537,6 +2708,27 @@
         "properties": {
           "pat": {
             "$ref": "#/components/schemas/CustomerPat"
+          }
+        }
+      },
+      "CustomerAccountDeleteResponse": {
+        "type": "object",
+        "required": [
+          "ok",
+          "status"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "erasure_requested",
+              "no_account"
+            ],
+            "description": "Accepted for asynchronous erasure, or idempotent no-account acknowledgement."
           }
         }
       },

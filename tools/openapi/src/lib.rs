@@ -57,16 +57,18 @@ pub const SPEC_VERSION: &str = "v1";
 pub mod paths {
     /// Customer signup orchestration.
     pub const SIGNUP: &str = "/v1/signup";
-    /// DPA click-through acceptance.
-    pub const DPA_ACCEPT: &str = "/v1/dpa/accept";
-    /// DPA re-acceptance (30d grace window).
-    pub const DPA_RE_ACCEPT: &str = "/v1/dpa/re-accept";
+    /// DPA click-through acceptance (Clerk onboarding surface).
+    pub const DPA_ACCEPT: &str = "/v1/onboarding/dpa-accept";
     /// Tier selection + Stripe Checkout handoff.
     pub const TIER_SELECT: &str = "/v1/onboarding/tier-select";
     /// PAT collection root (POST issue / GET list).
     pub const PATS: &str = "/v1/pats";
-    /// PAT item (DELETE revoke).
-    pub const PATS_ITEM: &str = "/v1/pats/{pat_id}";
+    /// Customer PAT revoke operation.
+    pub const PATS_ITEM: &str = "/v1/customer/keys/{pat_id}/revoke";
+    /// Whole-account erasure request.
+    pub const ACCOUNT_DELETE: &str = "/v1/customer/account/delete";
+    /// Whole-account portability export.
+    pub const ACCOUNT_EXPORT: &str = "/v1/customer/account/export";
     /// Stripe webhook ingestion.
     pub const STRIPE_WEBHOOK: &str = "/v1/billing/stripe-webhook";
     /// DSR submit (6 actions).
@@ -129,28 +131,10 @@ pub mod paths {
     // lands — see `apps/admin-ui/src/app/[locale]/consent/retired.ts`.
     // -------------------------------------------------------------------
 
-    /// Admin op submission (dual-approval).
-    pub const ADMIN_OPS: &str = "/v1/admin/ops";
-    /// Admin op detail.
-    pub const ADMIN_OPS_ITEM: &str = "/v1/admin/ops/{op_id}";
-    /// Admin op approve.
-    pub const ADMIN_OPS_APPROVE: &str = "/v1/admin/ops/{op_id}/approve";
-    /// Admin op reject.
-    pub const ADMIN_OPS_REJECT: &str = "/v1/admin/ops/{op_id}/reject";
-    /// Audit-event search.
-    pub const ADMIN_AUDIT_EVENTS: &str = "/v1/admin/audit/events";
-    /// Tenant search.
-    pub const ADMIN_TENANTS: &str = "/v1/admin/tenants";
-    /// Enterprise sales inquiry.
-    pub const ENTERPRISE_INQUIRE: &str = "/v1/enterprise/inquire";
     /// Current-user profile.
     pub const USERS_ME: &str = "/v1/users/me";
-    /// Canonical data-category list.
-    pub const DATA_CATEGORIES: &str = "/v1/data-categories";
     /// Liveness probe.
     pub const HEALTH: &str = "/api/health";
-    /// Browser CSP-report intake.
-    pub const CSP_REPORT: &str = "/api/csp-report";
 
     // -------------------------------------------------------------
     // SERVER-ONLY paths reconciled 2026-05-27 — see
@@ -171,7 +155,7 @@ pub mod paths {
     /// Run the 24h pilot activation check-in.
     pub const ADMIN_PILOTS_CHECKIN: &str = "/v1/admin/pilots/{tenant_id}/checkin";
     /// Bulk audit-chain export from R2 (per-tenant window).
-    pub const AUDIT_EXPORT: &str = "/v1/audit/export";
+    pub const AUDIT_EXPORT: &str = "/v1/audit/{tenant}/export";
     /// Audit-event count aggregates over a window.
     pub const AUDIT_ANALYTICS_EVENT_COUNT: &str = "/v1/audit/analytics/event-count";
     /// Audit-event timeline bucketed at a chosen granularity.
@@ -188,24 +172,16 @@ pub mod paths {
     pub const ALL: &[&str] = &[
         SIGNUP,
         DPA_ACCEPT,
-        DPA_RE_ACCEPT,
         TIER_SELECT,
         PATS,
         PATS_ITEM,
+        ACCOUNT_DELETE,
+        ACCOUNT_EXPORT,
         STRIPE_WEBHOOK,
         DSR_SUBMIT,
         DSR_STATUS,
-        ADMIN_OPS,
-        ADMIN_OPS_ITEM,
-        ADMIN_OPS_APPROVE,
-        ADMIN_OPS_REJECT,
-        ADMIN_AUDIT_EVENTS,
-        ADMIN_TENANTS,
-        ENTERPRISE_INQUIRE,
         USERS_ME,
-        DATA_CATEGORIES,
         HEALTH,
-        CSP_REPORT,
         // SERVER-ONLY (reconciled 2026-05-27)
         SIGNUP_PILOT,
         ADMIN_READ,

@@ -119,9 +119,6 @@ HTTP_METHODS = {
 LEDGER_MISSING_ROUTE: dict[str, str] = {}
 
 LEDGER_MISSING_DOC: dict[str, str] = {
-    # --- the two B-117 named -----------------------------------------------
-    "/v1/customer/account/delete": "B-117",
-    "/v1/customer/account/export": "B-117",
     # --- the rest of the same undocumented customer portal ------------------
     "/v1/customer/audit": "B-117 (same customer-portal family; never documented)",
     "/v1/customer/billing": "B-117 (same customer-portal family; never documented)",
