@@ -6,8 +6,8 @@ that `scripts/gen-api-reference.py` turns into the 45 MDX pages under
 `apps/docs/docs/reference/api/endpoints/`.  The pages are propagation, not
 source: regenerating them fixes nothing.  The spec is what drifts.
 
-The served surface COVERED HERE is `crates/` plus `worker/src` — the API data
-plane — and nothing else.  Two registration sites:
+The served surface is `crates/`, `worker/src`, and the Worker entrypoints under
+`apps/**`.  Three registration sites:
 
   * axum `.route(<path-expr>, ...)` in `crates/` — the path expression may be
     a string literal, may sit on the line AFTER `.route(`, and is frequently a
@@ -16,14 +16,17 @@ plane — and nothing else.  Two registration sites:
     (`worker/src/index.ts`) — `path === "/api/health"` and friends, which are
     served AT THE EDGE and never reach the container.
 
-`apps/**` is OUT OF REACH, deliberately and for now: the sibling Workers
-(`apps/signup-worker`, `apps/analytics-worker`, …) dispatch on `url.pathname`
-in ~376 TypeScript files, and neither the extractor nor the workflow's `paths:`
-filter looks there.  This is a NAMED hole, not an oversight — `/v1/event` and
-`/v1/digest/preview` are served by `apps/analytics-worker/src/index.ts` and
-appear in no spec, and this gate does not see them.  B-130 owns closing it.
-Widening the reach is new scope, so the honest move is to declare it here
-rather than let this header claim more than the enumeration below delivers.
+  * exact `url.pathname === "/..."` dispatch in sibling Workers under
+    `apps/**` (the source file is retained for an actionable finding).
+
+The app scan is intentionally structural and closed-world: it examines every
+non-test TypeScript file under `apps/`, rather than an allowlist of today's
+Worker names. A newly added Worker route therefore cannot be hidden by
+forgetting to add its directory to this script. Non-API app paths remain
+outside the OpenAPI contract through the same explicit public-path policy used
+for Rust routes below. `/v1/event` is currently served by
+`apps/analytics-worker/src/index.ts` and is absent from the spec; the ledger
+keeps that finding visible until the contract owner documents or excludes it.
 
 A line-oriented `grep '\\.route("'` sees only the first of those three forms.
 That instrument reported 32 phantom absences once already; the extractor here
@@ -57,6 +60,7 @@ REPO = Path(__file__).resolve().parent.parent
 OPENAPI = REPO / "openapi" / "corelink-v1.yaml"
 CRATES = REPO / "crates"
 WORKER = REPO / "worker" / "src"
+APPS = REPO / "apps"
 
 HTTP_METHODS = {
     "get",
@@ -137,6 +141,9 @@ LEDGER_MISSING_DOC: dict[str, str] = {
     "/v1/privacy/dsr/{request_id}/verify-mfa": "B-121 (outside the documented /v1/privacy/dsr/{action} shape)",
     "/v1/public/attestation/{request_id}": "B-121 (public attestation surface, never documented)",
     "/v1/public/keys/erasure/{region_pub}": "B-121 (public attestation surface, never documented)",
+    # --- app Worker surface (B-130) ----------------------------------------
+    "/v1/event": "B-130 (apps/analytics-worker public ingest route)",
+    "/v1/digest/preview": "B-130 (apps/analytics-worker dev-only preview; contract owner must decide)",
 }
 
 # --------------------------------------------------------------------------
@@ -383,6 +390,40 @@ def collect_worker_routes() -> dict[str, set[str]]:
     return routes
 
 
+# ============================================================================
+# Served surface — sibling Workers under apps/
+# ============================================================================
+APP_EXACT = re.compile(
+    r'(?:\burl\s*\.\s*)?pathname\s*===\s*["\'](/[^"\']*)["\']'
+)
+
+
+def collect_app_routes() -> dict[str, set[str]]:
+    """Paths selected by exact pathname dispatch in every app TypeScript file.
+
+    App Workers do not use axum's route table. Their public entrypoints route
+    on ``url.pathname`` instead, so limiting the walk to ``crates/`` silently
+    loses an entire deployed API. Test/fixture source is excluded because it
+    models requests rather than serving them; all production app TypeScript is
+    intentionally in the walk.
+    """
+    routes: dict[str, set[str]] = {}
+    if not APPS.is_dir():
+        return routes
+    for file in sorted(APPS.rglob("*.ts")):
+        if is_test_path(file) or "playwright" in file.parts:
+            continue
+        try:
+            src = strip_line_comments(file.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+        for match in APP_EXACT.finditer(src):
+            value = match.group(1).rstrip("/") or "/"
+            line = src.count("\n", 0, match.start()) + 1
+            routes.setdefault(value, set()).add(f"{file.relative_to(REPO)}:{line}")
+    return routes
+
+
 # ==========================================================================
 # Comparison
 # ==========================================================================
@@ -425,27 +466,30 @@ def is_public(path: str) -> bool:
     return path.startswith("/v1/") or path == "/v1"
 
 
-def compare(documented, rust_routes, worker_routes):
+def compare(documented, rust_routes, worker_routes, app_routes=None):
+    app_routes = app_routes or {}
     # Direction A (documented -> served) counts BOTH sources: a path the
     # Worker terminates at the edge (/api/health) is served even though no
     # crate registers it.
-    served_all = sorted(set(rust_routes) | set(worker_routes))
+    served_all = sorted(set(rust_routes) | set(worker_routes) | set(app_routes))
     missing_route = [
         p for p in sorted(documented) if not any(covers(p, s) for s in served_all)
     ]
 
-    # Direction B (served -> documented) counts CRATE routes only.  A Worker
-    # `path === "/v1/onboarding"` arm is a DISPATCH guard, not an endpoint
-    # declaration, and there is no structural way to tell the two apart in
-    # matchRoute.  Conservative on purpose: this direction may under-report a
-    # genuinely edge-only endpoint, and never invents one.
+    # Direction B (served -> documented) counts crate registrations and exact
+    # app pathname dispatch. A Worker `path === "/v1/onboarding"` arm is a
+    # DISPATCH guard, not an endpoint declaration, and there is no structural
+    # way to tell the two apart in matchRoute. Conservative on purpose: this
+    # direction may under-report a genuinely edge-only endpoint, and never
+    # invents one.
     missing_doc = []
-    for path in sorted(rust_routes):
+    for path in sorted(set(rust_routes) | set(app_routes)):
         if not is_public(path):
             continue
         if any(covers(d, path) for d in documented):
             continue
-        missing_doc.append((path, sorted(rust_routes[path])))
+        where = set(rust_routes.get(path, set())) | set(app_routes.get(path, set()))
+        missing_doc.append((path, sorted(where)))
     return missing_route, missing_doc
 
 
@@ -461,12 +505,13 @@ SELF_TEST_CASES = [
 ]
 
 
-def self_test(documented, rust_routes, worker_routes) -> int:
+def self_test(documented, rust_routes, worker_routes, app_routes=None) -> int:
     """Prove each extractor can SEE before any of its silences is believed.
 
     "found nothing" and "my command broke" are indistinguishable without this.
     """
     failures = []
+    app_routes = app_routes or {}
 
     def check(label, ok, detail):
         status = "ok  " if ok else "FAIL"
@@ -504,6 +549,11 @@ def self_test(documented, rust_routes, worker_routes) -> int:
         f"{len(worker_routes)} edge-terminated paths (expected >= 3)",
     )
     check(
+        "apps pathname routes extracted",
+        "/v1/event" in app_routes,
+        "/v1/event (apps/analytics-worker/src/index.ts)",
+    )
+    check(
         "form 1 — literal on the .route( line",
         "/v1/onboarding/tier-select" in rust_routes,
         "/v1/onboarding/tier-select (routes/tier_select.rs)",
@@ -532,11 +582,16 @@ def self_test(documented, rust_routes, worker_routes) -> int:
     )
     # A path that is documented AND served must NOT be reported missing — a
     # gate that flags everything is as useless as one that flags nothing.
-    missing_route, _ = compare(documented, rust_routes, worker_routes)
+    missing_route, missing_doc = compare(documented, rust_routes, worker_routes, app_routes)
     check(
         "no false positive on a known-served documented path",
         "/v1/onboarding/tier-select" not in missing_route,
         "/v1/onboarding/tier-select is documented and served",
+    )
+    check(
+        "apps routes participate in parity comparison",
+        any(path == "/v1/event" for path, _ in missing_doc),
+        "/v1/event is reported as an undocumented app route",
     )
 
     if failures:
@@ -580,24 +635,28 @@ def main() -> int:
     if not CRATES.is_dir():
         print(f"FATAL: {CRATES} not found — cannot read the served surface.")
         return 2
+    if not APPS.is_dir():
+        print(f"FATAL: {APPS} not found — cannot read the app Worker surface.")
+        return 2
 
     documented = parse_openapi_paths(OPENAPI.read_text(encoding="utf-8"))
     rust_routes = collect_rust_routes()
     worker_routes = collect_worker_routes()
+    app_routes = collect_app_routes()
 
     if args.self_test:
         print("validate_api_surface self-test (positive controls)\n")
-        return self_test(documented, rust_routes, worker_routes)
+        return self_test(documented, rust_routes, worker_routes, app_routes)
 
     # The self-test is a PRECONDITION of every run, not an opt-in mode: an
     # extractor that has gone blind reports a clean surface, and a clean
     # report from a blind instrument is the failure mode this gate exists to
     # prevent.
-    if self_test(documented, rust_routes, worker_routes) != 0:
+    if self_test(documented, rust_routes, worker_routes, app_routes) != 0:
         return 2
     print()
 
-    missing_route, missing_doc = compare(documented, rust_routes, worker_routes)
+    missing_route, missing_doc = compare(documented, rust_routes, worker_routes, app_routes)
 
     print("=" * 74)
     print("DOCUMENTED (openapi/corelink-v1.yaml) but NOT SERVED")
@@ -626,7 +685,8 @@ def main() -> int:
     print(
         f"summary: {len(documented)} documented paths, "
         f"{len(rust_routes)} registered crate routes, "
-        f"{len(worker_routes)} edge-terminated paths — "
+        f"{len(worker_routes)} edge-terminated paths, "
+        f"{len(app_routes)} app pathname routes — "
         f"{len(missing_route)} MISSING_ROUTE, {len(missing_doc)} MISSING_DOC"
     )
 

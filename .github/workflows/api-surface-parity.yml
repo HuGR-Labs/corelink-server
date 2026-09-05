@@ -13,9 +13,9 @@ name: api surface parity (openapi/corelink-v1.yaml vs the routes the code regist
 # re-verify byte-identical code on a clock, which is the burn the 2026-08-02
 # sweep removed from 14 workflows.
 #
-# Path filter is deliberately WIDE on the Rust side: a route can be registered
-# from any crate, and a filter that misses one turns this lane into a gate that
-# passes because it never ran.
+# Path filters are deliberately WIDE: a route can be registered from any crate,
+# Worker source, or sibling Worker under apps/. A filter that misses one turns
+# this lane into a gate that passes because it never ran.
 
 on:
   pull_request:
@@ -23,6 +23,7 @@ on:
       - "openapi/corelink-v1.yaml"
       - "crates/**/*.rs"
       - "worker/src/**/*.ts"
+      - "apps/**"
       - "scripts/validate_api_surface.py"
       - ".github/workflows/api-surface-parity.yml"
   workflow_dispatch:
