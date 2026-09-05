@@ -34,7 +34,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: e2e-prod-${{ github.ref }}
+  group: e2e-prod-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

@@ -1197,7 +1197,7 @@ def _wrangler_config_dirs(surface_root: Path) -> list[Path]:
 # ---------------------------------------------------------------------------
 class Failures:
     ORDER = [
-        "C1", "C2", "C3", "C4", "C4b", "C4c", "C5", "C5b", "C6", "C6b", "C6c",
+        "C1", "C2", "C3", "C4", "C4b", "C4c", "C5", "C5b", "C5c", "C6", "C6b", "C6c",
         "C7", "C8", "C9", "C10", "C10b",
     ]
 
@@ -1619,6 +1619,10 @@ def run_checks(args, git: Git, fails: Failures):
 
     # --- C4c: blob addressing is a RATCHET (needs a 'previous' version) ---
     _check_c4c(args, git, bundle_root, concepts, fails)
+
+    # --- C5c: a moved blob anchor must be paid for with citation renumbering ---
+    from okf_anchor_reverify import _check_anchor_content_reverify  # noqa: E402
+    _check_anchor_content_reverify(args, git, bundle_root, concepts, fails)
 
     # --- C10 / C10b: manifest (skip-with-warning when absent/unparseable) ---
     # Runs before C7 because it populates the planned-id set used by C7 tolerance.

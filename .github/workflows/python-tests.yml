@@ -59,7 +59,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: python-tests-${{ github.ref }}
+  group: python-tests-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

@@ -25,29 +25,27 @@ concurrency:
   group: pr-labels-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
-# ⚠️ EXPOSURE + STALL NOTE for both jobs below, added with the move to the
-# ephemeral fabric (WP-CI):
+# ⚠️ EXPOSURE + STALL NOTE (resolved by the job-level boundary below):
+# `pull_request_target` bypasses first-contributor approval. The job-level
+# conditions below run before `runs-on` allocation: only trusted PR associations
+# may allocate a CoreLink microVM. External PRs receive skipped metadata jobs.
+# Do not replace this with `isPrivate`; visibility is not admission control. The
+# welcome lane deliberately remains on the watched Mac pool.
 #
-#   1. `pull_request_target` has no actor gate here, so every PR event spawns two
-#      microVMs. Today that is bounded by repository VISIBILITY, not by anything
-#      in this file: measured 2026-08-31, the repo is PRIVATE with 0 forks, so
-#      only members and invited collaborators can raise the event. If this repo
-#      is ever made public, `pull_request_target` is exempt from the "require
-#      approval for first-time contributors" policy that gates `pull_request`,
-#      and an outsider's PRs become an unauthenticated fleet-spawn trigger. Gate
-#      on actor before flipping visibility.
-#   2. A refused or dropped spawn leaves the job `queued`, and `timeout-minutes`
-#      does not bound queued time — it starts once a job is RUNNING. The fabric's
-#      `redriveOrphanedJobs` reconciler retries on a 1-minute cron, but only
-#      `MAX_ORPHAN_ATTEMPTS = 3` with a 30-minute dead-letter TTL; past that the
-#      job is never revisited. That matters MORE here than for the greeter lane:
-#      these two jobs run on every PR, and `scripts/pre-merge-gate-check.sh`
-#      scores a pending check as ⛔ DO NOT MERGE — so one stranded box does not
-#      fail the PR, it makes it unmergeable until someone notices.
+# Historical exposure note (now remediated):
+#   1. Before the job-level boundary, every PR event spawned two
+#      microVMs. The boundary above now prevents untrusted associations from
+#      allocating those jobs; the repository's current visibility is not part of
+#      the admission decision. A refused spawn can still remain queued, so a
+#      pending metadata check remains visible to the pre-merge gate.
 #      See docs/internal/ci-runner-fabric-box.md.
 jobs:
   label:
     name: Apply path-based labels
+    if: >-
+      github.event.pull_request.author_association == 'OWNER' ||
+      github.event.pull_request.author_association == 'MEMBER' ||
+      github.event.pull_request.author_association == 'COLLABORATOR'
     # zero-hosted (WP-CI): gh + actions/labeler (JS action) — gh assado na imagem
     runs-on: corelink
     steps:
@@ -63,6 +61,10 @@ jobs:
 
   size:
     name: Compute size bucket
+    if: >-
+      github.event.pull_request.author_association == 'OWNER' ||
+      github.event.pull_request.author_association == 'MEMBER' ||
+      github.event.pull_request.author_association == 'COLLABORATOR'
     # zero-hosted (WP-CI): gh + actions/labeler (JS action) — gh assado na imagem
     runs-on: corelink
     steps:

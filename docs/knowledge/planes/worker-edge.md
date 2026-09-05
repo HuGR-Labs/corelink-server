@@ -9,6 +9,7 @@ source_files:
   - "worker/src/lib/tenant_tier_cache.ts"
   - "worker/src/lib/onboarding_events.ts"
   - "worker/src/lib/internal_auth.ts"
+  - "openapi/corelink-v1.yaml"
 source_blobs:
   - "worker/src/index.ts@0e17001b0122bae8d19c0522a7cf1c5a22c82afb"
   - "worker/src/sentry-scrub.ts@e9cd0d761cab3aaa83ea618f7d270e8b77adc316"
@@ -16,6 +17,7 @@ source_blobs:
   - "worker/src/lib/tenant_tier_cache.ts@4a440e51a8199a471bcde1b80ed31a872aee2b53"
   - "worker/src/lib/onboarding_events.ts@13087a3f130b93729ade6e30e9568ea500344c22"
   - "worker/src/lib/internal_auth.ts@4a60c0111b8db4c3512976ffe6e92406e749edfc"
+  - "openapi/corelink-v1.yaml@37ea2d0426721f9574ac4e344bb9b3fea9030659"
 checkpoint_sha: "aa98b018efa7addd5573647726606cbdfa2a04e8"
 provenance: "AUTHORED"
 tags: ["planes", "worker", "edge", "auth", "routing"]
@@ -45,6 +47,9 @@ keeps forged tokens cheap to reject before any expensive work.
   launch-checkout coupon id `STRIPE_LAUNCH_COUPON` alongside the `EMAIL_HASH_SALT` salt — unset ⇒ checkout
   falls back to `allow_promotion_codes=true`, zero regression; a var the container reads via `env::var`
   but neither declared on `Env` here nor forwarded by the DO would silently never reach the container.
+- The public API contract is authored in `openapi/corelink-v1.yaml:1-16`. The docs download is a
+  generated copy of that document, and `scripts/openapi_sync.py --check` plus the B-151 closed-world
+  gate reject path, method, operation-identity, and document-level drift before publication.
 
 # How it works
 1. The exported handler is `baseHandler.fetch`, which resolves a request-id, handles CORS preflight,

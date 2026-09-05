@@ -34,7 +34,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: api-reference-sync-${{ github.ref }}
+  group: api-reference-sync-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

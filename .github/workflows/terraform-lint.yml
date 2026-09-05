@@ -28,7 +28,7 @@ permissions:
   security-events: write # for tfsec SARIF upload
 
 concurrency:
-  group: terraform-lint-${{ github.ref }}
+  group: terraform-lint-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

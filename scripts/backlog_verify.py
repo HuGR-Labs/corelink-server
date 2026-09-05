@@ -68,6 +68,16 @@ DEFAULT_MAX_AGE_DAYS = 14
 # A command that hangs would turn a red gate into a stuck one, which is worse.
 VERIFY_TIMEOUT_S = 120
 
+# A command's polarity cannot be inferred from arbitrary shell.  We can still
+# reject the known dangerous declaration: a `done` item whose human explanation
+# explicitly says the check remains `open`.  Unmarked legacy entries remain
+# compatible; authors may describe their inverted guard in their existing prose.
+OPEN_VERIFY_MARKER_RE = re.compile(
+    r"^(?:open\b|(?:polaridade|polarity)\s+(?:abert[ao]|open)\b|"
+    r"(?:polaridade|polarity)\s+de\s+item\s+abert[oa]\b)",
+    re.IGNORECASE,
+)
+
 CONFIRMED, DRIFTED, STALE, BROKEN = "CONFIRMED", "DRIFTED", "STALE", "BROKEN"
 
 
@@ -166,6 +176,11 @@ def validate_schema(item: Item) -> None:
             "status: done with owner: owner — `owner: owner` means the item still needs "
             "the human, and a finished item does not. Set `owner: tl`, or reopen it."
         )
+    if d.get("status") == "done" and has_explicit_open_verify_marker(d.get("verify-means")):
+        item.problems.append(
+            "status: done has an explicit open-polarity declaration in the first non-empty "
+            "line of `verify-means`; invert the verify or reopen the item"
+        )
     if "last-verified" in d:
         try:
             parse_date(d["last-verified"])
@@ -177,6 +192,19 @@ def parse_date(value) -> dt.date:
     if isinstance(value, dt.date):
         return value
     return dt.datetime.strptime(str(value), "%Y-%m-%d").date()
+
+
+def has_explicit_open_verify_marker(value) -> bool:
+    """Return whether ``verify-means`` explicitly declares an open polarity.
+
+    Only an explicit first-line marker is actionable.  This rejects the known
+    false-done shape without inventing a semantic parser for arbitrary prose.
+    """
+    if not isinstance(value, str):
+        return False
+    first = next((line.strip() for line in value.splitlines() if line.strip()), "")
+    first = re.sub(r"[*`_]", "", first).strip()
+    return bool(OPEN_VERIFY_MARKER_RE.match(first))
 
 
 def age_days(item: Item, today: dt.date) -> int:

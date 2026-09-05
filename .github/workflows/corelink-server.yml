@@ -20,6 +20,10 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/corelink-server.yml'
+      - 'scripts/classify-runner-failure.py'
+      - 'scripts/exec-with-timeout.py'
+      - 'scripts/run-with-infra-classification.sh'
+      - 'tests/test_classify_runner_failure.sh'
   # No `push: branches:[main]` — avoids the heavy-gate stampede on main merges.
   # The PR `paths:` lane + the nightly workspace gate keep coverage continuous.
   # ⛔ CRON REMOVED 2026-08-02 — redundant: this workflow already has a
@@ -108,7 +112,10 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: cargo clippy (corelink-server, -D warnings)
-        run: cargo clippy --package corelink-server --all-targets -- -D warnings
+        run: bash scripts/run-with-infra-classification.sh cargo clippy --package corelink-server --all-targets -- -D warnings
 
       - name: cargo test (corelink-server, debug)
-        run: cargo test --package corelink-server --all-targets
+        run: bash scripts/run-with-infra-classification.sh cargo test --package corelink-server --all-targets
+
+      - name: Verify runner failure classification
+        run: bash tests/test_classify_runner_failure.sh

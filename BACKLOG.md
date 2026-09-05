@@ -1298,11 +1298,17 @@ id: B-027
 repo: corelink-server
 owner: tl
 status: done
-verify: "grep -rq 'promtool' .github/workflows/"
+verify: |
+  scripts/test_validate_alert_promtool.py
 verify-means: |
-  open while no workflow runs promtool over dashboards/alerts/. Closes when the
-  rules are validated and published, or relabelled non-live with the false gate
-  claim removed.
+  done — `scripts/test_validate_alert_promtool.py` runs the dedicated executable
+  with a hermetic fake `promtool` in `PATH`, and requires exactly the two calls
+  `--version` and `check rules dashboards/alerts/*.yml`. Echo, printf, quoted
+  strings and heredoc payload mutations must each have zero fake calls **and
+  non-zero exit status**, with an `expected_failure_reason` entry. A bounded
+  meta-mutation removes the `rc != 0` assertion and must itself fail, proving
+  that the mutation gate is load-bearing. The check does not claim that the
+  rules are published or firing.
 
   CLOSED by PR #1264 on the second branch of that condition: `alerts-validate.yml`
   runs `promtool check rules` over all ten files on `corelink` (proven in CI —
@@ -1314,7 +1320,7 @@ verify-means: |
   green run cannot be misread as "these alerts are firing". Publishing was never
   part of this item's stated closure condition; if it is wanted, it needs its own
   item rather than holding this one open forever.
-last-verified: 2026-08-24
+last-verified: 2026-09-05
 ```
 
 ### B-028 — Dependabot alert census is triaged but still has three unpatched highs
@@ -2529,8 +2535,8 @@ owner: tl
 status: done
 verify: manual
 verify-means: |
-  open while neither live Clerk credential is a repo secret, i.e. the browser
-  suite cannot run in CI at all. Check by hand with
+  done — manual re-verification confirms both live Clerk credentials are repo secrets, so the browser
+  suite can run in CI. Check by hand with
   `gh secret list --repo HuGR-Labs/corelink-server | grep CLERK_LIVE`.
   MANUAL on purpose, and the reason is the point: no GitHub Actions token can
   read the secret list (`GITHUB_TOKEN` gets HTTP 403 on
@@ -8099,7 +8105,7 @@ literais de caminho de `crates/`, `worker/` e `apps/`:
 | `GET /v1/admin/audit/events` | não registrado |
 | `GET /v1/admin/tenants` (lista) | não registrado; só existem as sub-rotas `/{tenant_id}/…` |
 | `GET /v1/data-categories` | não registrado; só `admin-ui/src/lib/dsr-client.ts` o chama |
-| `GET`/`POST` `/v1/pats`, `DELETE /v1/pats/{pat_id}` | só existe a variante admin `/v1/admin/tenants/{tenant_id}/pats` |
+| `GET`/`POST` `/v1/pats`, `DELETE /v1/pats/{pat_id}` | corrigido por B160: `POST /v1/pats` agora é customer-plane; os aliases restantes seguem fora deste achado |
 
 Duas formas distintas aparecem aqui e o reparo difere: **ausência** (a rota não existe) e
 **divergência de caminho** (a rota existe com outro caminho). A segunda é pior para o
@@ -8130,13 +8136,12 @@ verify: |
   [ -f scripts/validate_api_surface.py ] || { echo "FALHA: o comparador sumiu."; exit 1; }
   [ -f .github/workflows/api-surface-parity.yml ] || { echo "FALHA: a lane de PR sumiu."; exit 1; }
   grep -q "runs-on: corelink" .github/workflows/api-surface-parity.yml || { echo "FALHA: a lane nao esta em runner self-hosted."; exit 1; }
-  python3 scripts/validate_api_surface.py --self-test >/dev/null || { echo "FALHA: o self-test do extrator reprovou — o instrumento esta cego e o silencio dele nao vale nada."; exit 1; }
-  raw=$(python3 scripts/validate_api_surface.py --strict 2>&1)
-  for p in "/v1/admin/ops" "/v1/enterprise/inquire" "/v1/dpa/accept" "/v1/audit/export" "/v1/admin/audit/events" "/v1/admin/tenants" "/v1/data-categories" "/v1/pats" "/v1/customer/account/delete" "/v1/customer/account/export"; do
-    printf "%s\n" "$raw" | grep -E "MISSING_(ROUTE|DOC) +.*(  | )${p}\$" >/dev/null || { echo "FALHA: o comparador NAO acusa a divergencia conhecida ${p} — portao que nao pega o defeito conhecido nao e portao."; exit 1; }
+  raw=$(python3 scripts/validate_api_surface.py 2>&1) || { echo "FALHA: o comparador ou seu self-test/ledger reprovou."; printf "%s\n" "$raw"; exit 1; }
+  for p in "/v1/admin/ops" "/v1/enterprise/inquire" "/v1/dpa/accept" "/v1/audit/export" "/v1/admin/audit/events" "/v1/admin/tenants" "/v1/data-categories" "/v1/customer/account/delete" "/v1/customer/account/export"; do
+    printf "%s\n" "$raw" | grep -F " ${p} " >/dev/null || { echo "FALHA: o comparador NAO acusa a divergencia conhecida ${p} — portao que nao pega o defeito conhecido nao e portao."; exit 1; }
   done
-  python3 scripts/validate_api_surface.py >/dev/null || { echo "FALHA: ha divergencia NAO declarada, ou uma entrada do ledger ficou obsoleta."; exit 1; }
-  echo "done: o comparador existe, o self-test passa, ele acusa as 8 familias conhecidas + as 2 do B-117, e nao ha divergencia fora do ledger"'
+  printf "%s\n" "$raw" | grep -q "OK: no undeclared divergence" || { echo "FALHA: ha divergencia NAO declarada, ou uma entrada do ledger ficou obsoleta."; exit 1; }
+  echo "done: o comparador existe, o self-test passa, ele acusa as 7 familias conhecidas + as 2 do B-117, e nao ha divergencia fora do ledger"'
 verify-means: |
   done — o comparador existe, roda em lane de `pull_request` self-hosted, e foi **visto
   pegando o defeito conhecido**.
@@ -8150,15 +8155,16 @@ verify-means: |
      registro por **constante**, e caminho terminado no Worker). Um extrator cego reporta
      superfície limpa, e foi exatamente assim que a primeira varredura produziu 32 ausências
      fantasmas;
-  3. em `--strict`, ele **acusa nominalmente** as oito famílias documentadas-sem-rota mais as
-     duas rotas-sem-doc do [B-117]. Este é o item que o `verify-means` anterior exigiu de
-     quem fechasse, e está mecanizado aqui em vez de prometido em prosa;
+  3. no relatório normal, ele **acusa nominalmente** as sete famílias documentadas-sem-rota
+     mais as duas rotas-sem-doc do [B-117], ao mesmo tempo que exige a confirmação final do
+     ledger. Este é o item que o `verify-means` anterior exigiu de quem fechasse, e está
+     mecanizado aqui em vez de prometido em prosa;
   4. no modo normal, não sobra divergência **fora do ledger** — e uma entrada de ledger cuja
      divergência já foi consertada também reprova (`STALE_LEDGER`), então o conserto de
      [B-116]/[B-119]/[B-120]/[B-117] não pode aterrissar deixando a própria desculpa para trás.
 
   O que este comando NÃO decide: se as divergências foram **consertadas**. Não foram — este
-  item entregava o instrumento, não os reparos. As oito famílias continuam abertas sob
+  item entregava o instrumento, não os reparos. As sete famílias continuam abertas sob
   [B-116], [B-117], [B-119] e [B-120], agora com um portão que impede a nona.
 
   Achados novos que a varredura completa trouxe, além dos oito já catalogados: `/v1/dpa/re-accept`
@@ -8307,17 +8313,15 @@ squash/rebase) and [B-124].
 id: B-123
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  grep -q 'source_blobs' scripts/validate_okf.py \
-    && ! grep -q 'anchor_content_reverify' scripts/validate_okf.py
+  python3 tests/test_okf_anchor_reverify.py
 verify-means: |
-  open — passes while validate_okf still honours a source_blobs anchor without
-  any content re-verification of the citations it covers, i.e. while the anchor
-  remains a vacuously-green shortcut. Closes when the gate carries a named
-  re-verification step. It does NOT prove any specific concept is wrong today —
-  only that the cheap wrong fix is still available and still rewarded.
-last-verified: 2026-08-30
+  done — executable git-harness mutation advances a source blob after inserting
+  a line above a cited block and requires [C5c] for the stale citation, while
+  accepting the same mutation with the citation renumbered. This guards the
+  named anchor re-verification step against regression without a manual grep.
+last-verified: 2026-09-05
 ```
 
 ### B-124 — hand-edits and a bulk shifter over the same file double-shift it
@@ -8347,15 +8351,20 @@ in this repo (replacing `file:N` corrupts a neighbouring `file:N-M`).
 id: B-124
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  ! test -x scripts/okf_shift_citations.py
+  test -x scripts/okf_shift_citations.py \
+    && python3 tests/test_okf_shift_citations.py
 verify-means: |
-  open — passes while there is no repo-owned, idempotent citation shifter, so
-  each session writes its own throwaway and re-meets this hazard. Closes when a
-  shared tool exists that is safe to run twice. It does NOT prove any concept
-  is currently double-shifted; that is what content verification is for.
-last-verified: 2026-08-30
+  done — the repo-owned executable resolves citation destinations by matching
+  the base file's authored content, refuses a file whose citations already
+  differ from base (the mixed hand-edit/programmatic case), and applies all
+  rewrites atomically. The hermetic suite mutates a source with a real line
+  insertion, checks content-verified output, proves a second invocation cannot
+  double-shift it, and covers hand-edited and ambiguous inputs. It does NOT
+  assert that any existing concept is currently wrong; the OKF validator does
+  that separately.
+last-verified: 2026-09-05
 ```
 
 ### B-125 — the audit chain seals 200 rows/hour, so evidence lags the event by hours
@@ -8618,15 +8627,18 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  bash -c 'ctl=$(ls .github/workflows/*.yml 2>/dev/null | wc -l | tr -d " ")
-  [ "${ctl:-0}" -gt 50 ] || { echo "INDETERMINADO: so $ctl workflows encontrados — o instrumento falhou, nao a arvore."; exit 0; }
-  guard=$(grep -rln "df -[hH]" .github/workflows/ 2>/dev/null | wc -l | tr -d " ")
-  live=$(grep -rnE "No space left on device|ENOSPC" scripts/ .github/workflows/ 2>/dev/null | grep -vE ":[[:space:]]*#|# " | wc -l | tr -d " ")
-  [ "$guard" = 0 ] || { echo "FALHA: $guard workflow(s) ja checam espaco com df — pode ser o reparo; verifique e feche."; exit 1; }
-  [ "$live" = 0 ] || { echo "FALHA: $live linha(s) NAO-comentario ja tratam ENOSPC — pode ser o reparo; verifique e feche."; exit 1; }
-  echo "aberto: nenhum workflow checa espaco com df e nenhuma linha executavel trata ENOSPC; a exaustao chega como vermelho generico"'
+  test -x scripts/run-with-infra-classification.sh
+  bash tests/test_classify_runner_failure.sh
 verify-means: |
-  open — nada no repo distingue "sem espaço" de "seu código quebrou".
+  open — the executable wrapper now preserves the original non-zero status for
+  storage/linker failures, emits a structured classification plus annotation,
+  preserves code and mixed-failure polarity, and bounds execution with an
+  explicit timeout. The local harness covers each of those contracts.
+
+  The item remains open until a real `corelink` runner job is run with an
+  induced ENOSPC and an induced linker failure, and the evidence records the
+  non-zero step status plus the infrastructure annotation before any code
+  investigation. No synthetic shell fixture is evidence of that runner state.
 
   O predicado mede **tratamento executável**, não menção. A primeira versão contava
   qualquer ocorrência da string e nasceu DRIFTED: os dois arquivos que ela achou —
@@ -8647,7 +8659,7 @@ verify-means: |
   Também não decide o reparo do lado do `corelink-runners` — dimensionar o disco da imagem
   ou podar `target/` no fim do job é trabalho naquele repo, e este item só rastreia o lado
   do servidor. Fechar aqui sem o outro lado deixa a causa viva.
-last-verified: 2026-08-31
+last-verified: 2026-09-05
 ```
 
 ### B-129 — o `Server-Timing` foi desenhado para SOMAR, e somar e compativel com esconder
@@ -8739,76 +8751,87 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-130 — o comparador de superfície de API não enxerga `apps/**`, e há rota pública lá
+### B-130 — o comparador de superfície de API passou a enxergar `apps/**`
 
-O [B-121] entregou o comparador `scripts/validate_api_surface.py`. Ele cobre `crates/` e
-`worker/src` — o plano de dados da API — e **nada além disso**. Os Workers irmãos sob
-`apps/` despacham por `url.pathname` em ~376 arquivos TypeScript, e nem o extrator nem o
-filtro `paths:` da lane `api-surface-parity.yml` olham para lá.
+O [B-121] entregou o comparador `scripts/validate_api_surface.py`. Ele agora cobre
+`crates/`, `worker/src` e os Workers irmãos sob `apps/**`, cujo despacho é por
+`url.pathname`. O extrator percorre todos os TypeScript/TSX de produção sob `apps/`, e a lane
+dispara em qualquer mudança em `apps/**`; uma rota nova não pode ficar invisível por
+esquecimento de adicionar um diretório a uma allowlist.
 
 A lacuna não é hipotética. `apps/analytics-worker/src/index.ts:28` e `:38` servem
 `POST /v1/event` e `GET /v1/digest/preview`; nenhum dos dois aparece em
 `openapi/corelink-v1.yaml`. São exatamente a classe `MISSING_DOC` que o [B-117] descreve —
-rota pública `/v1` sem documento — e o portão que existe para acusá-la **não a alcança**.
+rota pública `/v1` sem documento — e o portão agora acusa ambos, com a origem do arquivo.
 `apps/signup-worker/src/index.ts:51` serve ainda
 `/internal/v1/runner/provision-installation`, que o prefixo `/internal/` excluiria de
 qualquer forma, mas que ilustra que a superfície servida por `apps/**` é real e não
 inventariada.
 
-Registro a assimetria porque ela é a parte enganosa: a lane fica **verde** hoje, e a
-verdura é honesta dentro do alcance declarado e **muda** se alguém ler o cabeçalho do
-script como "todas as rotas do repo". Por isso o cabeçalho declara a exclusão em vez de
-prometer cobertura total — a mentira teria sido mais barata e é o defeito que o [B-121]
-existia para impedir.
+O comparador mantém a política closed-world: caminhos públicos `/v1` de Rust e de apps são
+comparados contra o OpenAPI; caminhos internos, health e protocolos de registry continuam
+fora do contrato por prefixos explícitos. O ledger registra as duas divergências de apps em
+B-130, portanto o alcance foi fechado sem transformar o achado em um falso verde.
 
-Ampliar o comparador é **escopo novo**, não conserto do [B-121]: exige um segundo extrator
-(despacho por `url.pathname` em Worker, não registro axum), uma decisão sobre quais Workers
-de `apps/` fazem parte do contrato público de API, e alargar o filtro `paths:` da lane.
-Nada disso se decide dentro do PR que entregou o instrumento.
+O extrator de apps é um segundo formato de registro (despacho por `url.pathname`, não
+registro axum), e a lane tem o filtro amplo `apps/**`. O self-test exige a rota conhecida
+`/v1/event`, e a mutação de uma rota literal em um Worker transforma o resultado em
+`MISSING_DOC` com `apps/...:linha`. Além do extrator, um census lexical percorre todo
+`apps/**/*.{ts,tsx}` e exige que cada token vivo `.pathname` seja consumido por uma forma
+de dispatch suportada, por uma allowlist exata de arquivo + expressão não-dispatch, ou
+vire `unsupported` fail-closed. Comentários, strings e os fixtures `test/spec/Playwright/
+e2e` (com casefold, inclusive `.SPEC.TSX`) não entram no census.
 
 **O que este item NÃO decide:** se `/v1/event` e `/v1/digest/preview` *devem* estar na spec
-pública ou se são superfície interna de telemetria. Essa é a primeira pergunta de quem
-pegar o item, e a resposta pode ser "documentar" ou "declarar fora do contrato" — mas hoje
-não é nenhuma das duas, é ninguém tendo perguntado.
+pública ou se são superfície interna de telemetria. O comparador faz a acusação e o ledger
+preserva a verdade; a decisão de contrato continua explicitamente pendente no B-130.
 
 ```backlog
 id: B-130
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   bash -c 'set -o pipefail
   s=scripts/validate_api_surface.py
-  [ -f "$s" ] || { echo "FALHA: o comparador do B-121 sumiu — este item pressupoe que ele existe; reavalie."; exit 1; }
-  grep -E "^CRATES = |^WORKER = " "$s" >/dev/null || { echo "FALHA: as raizes varridas mudaram de forma — releia o script antes de confiar neste portao."; exit 1; }
-  grep -E "REPO / \"apps\"" "$s" >/dev/null && { echo "FALHA: o comparador agora varre apps/ — feche este item."; exit 1; }
-  grep -E "^ *- \"apps/" .github/workflows/api-surface-parity.yml >/dev/null && { echo "FALHA: a lane agora dispara em apps/ — feche este item."; exit 1; }
-  hit=$(grep -rlE "pathname === \"/v1/(event|digest/preview)\"" apps/ --include="*.ts" 2>/dev/null | wc -l | tr -d " ")
-  [ "$hit" -gt 0 ] || { echo "FALHA: as rotas /v1/event e /v1/digest/preview nao estao mais em apps/ — ou foram movidas para o alcance do portao, ou removidas; reavalie o item em vez de fecha-lo cego."; exit 1; }
-  grep -E "^  /v1/event:|^  /v1/digest/preview:" openapi/corelink-v1.yaml >/dev/null && { echo "FALHA: as rotas foram documentadas na spec — reavalie: falta so alargar o alcance do portao."; exit 1; }
-  echo "aberto: apps/ serve rota publica /v1 ($hit arquivo(s)) que nao esta na spec e que o comparador nao alcanca"'
+  [ -f "$s" ] || { echo "FALHA: o comparador sumiu."; exit 1; }
+  grep -qE "^CRATES = |^WORKER = |^APPS = " "$s" || { echo "FALHA: raizes de servico ausentes."; exit 1; }
+  grep -qE "APPS = REPO / \"apps\"" "$s" || { echo "FALHA: apps/ nao e raiz do comparador."; exit 1; }
+  grep -qE "^ *- \"apps/\*\*\"" .github/workflows/api-surface-parity.yml || { echo "FALHA: a lane nao dispara em apps/**."; exit 1; }
+  grep -q "def app_mutation_self_test" "$s" || { echo "FALHA: mutacao end-to-end ausente."; exit 1; }
+  grep -q "TemporaryDirectory" "$s" || { echo "FALHA: mutacao nao usa arvore temporaria."; exit 1; }
+  grep -q "APP_TYPESCRIPT_SUFFIXES" "$s" || { echo "FALHA: census nao inclui TSX."; exit 1; }
+  grep -q "def _live_pathname_tokens" "$s" || { echo "FALHA: census lexical ausente."; exit 1; }
+  grep -q "APP_NON_DISPATCH_ALLOWLIST" "$s" || { echo "FALHA: allowlist exata ausente."; exit 1; }
+  raw=$(python3 "$s" --strict 2>&1) || true
+  for p in "/v1/event" "/v1/digest/preview"; do
+    printf "%s\n" "$raw" | grep -E "MISSING_DOC +.*${p}$" >/dev/null || { echo "FALHA: strict nao acusa ${p}."; exit 1; }
+  done
+  # The normal run executes the self-test as a mandatory precondition, so the
+  # two modes below cover self-test + raw strict + ledger without a third full
+  # repository scan.
+  python3 "$s" >/dev/null || { echo "FALHA: self-test ou ledger nao cobre o inventario atual."; exit 1; }
+  echo "done: apps/** e rotas publicas entram no comparador, strict acusa as rotas, ledger fecha"'
 verify-means: |
-  open — o comparador não varre `apps/`, a lane não dispara em `apps/`, e existe pelo menos
-  uma rota pública `/v1` servida de lá que a spec não documenta.
+  done — a raiz `apps/**`, o extrator de dispatch estático, o filtro da lane, o self-test
+  positivo, o census fail-closed de formas não suportadas e o ledger são verificáveis.
+  `--strict` acusa `/v1/event` e `/v1/digest/preview` nominalmente e o modo normal só fica
+  verde porque ambos estão explicitamente ledgerizados. Testes (`.test.ts`, `.spec.ts`,
+  `__tests__`, `tests`, `e2e` e `playwright`) não entram no inventário de produção.
 
-  As quatro metades são a alegação inteira, e cada uma falha com mensagem própria em vez de
-  um `exit 1` mudo. Duas delas fecham o item por si (`o comparador agora varre apps/`, `a
-  lane agora dispara em apps/`) — é o conserto, e o portão o reconhece.
+  Mutações controláveis cobrem igualdade reversa, constantes, templates dinâmicos,
+  `!==`, `.includes`, `startsWith`, `switch`, uma rota `.tsx` e um fixture
+  `SPEC.TSX` em arquivos inseridos numa árvore `apps/` temporária. O census lexical
+  também prova que comentários, strings e interpolação literal não viram tokens.
+  A extração real e a comparação crua (`--strict`) são exigidas: a literal
+  `/v1/b130-mutation` vira `MISSING_DOC`, enquanto as formas não modeladas chegam ao
+  census fail-closed. Remover a literal conhecida ou quebrar as exclusões de
+  `test/`, `spec/`, `Playwright/` e equivalentes faz o self-test reprovar, evitando
+  green por regex isolada.
 
-  As outras duas mandam **reavaliar**, não fechar: se `/v1/event` sumir de `apps/`, pode ter
-  sido movida para dentro do alcance (conserto) ou apagada (o item perdeu o objeto); se
-  aparecer na spec, o inventário foi feito à mão e falta só alargar o alcance. Prefiro um
-  portão que peça julgamento a um que aprove qualquer mudança que apague o sintoma.
-
-  O primeiro ramo é a defesa contra o item se pressupor: se o comparador do [B-121] não
-  existir, este item não tem sobre o que falar, e diz isso em vez de reportar uma lacuna
-  imaginária. O segundo detecta o script ter sido reescrito de forma que os greves seguintes
-  passem a medir outra coisa — sem ele, uma refatoração das constantes deixaria este portão
-  verde por vacuidade.
-
-  O que este comando NÃO decide: se as rotas **devem** ser documentadas. Ele mede alcance do
-  instrumento, não a política de contrato público.
-last-verified: 2026-08-31
+  O status não afirma que as rotas foram documentadas: essa decisão contratual permanece
+  pendente e está visível no ledger B-130, que impede um falso fechamento.
+last-verified: 2026-09-05
 ```
 
 ### B-131 — o doc da frota manda re-rodar uma sonda que nao existe mais
@@ -9704,79 +9727,67 @@ verify-means: |
 last-verified: 2026-09-01
 ```
 
-### B-141 — `pull_request_target` sem gate de ator: hoje só a visibilidade do repo segura
+### B-141 — `pull_request_target` sem boundary de ator: spawn efêmero limitado — FECHADO
 
-O #1502 põe `pr-labels.yml` e `welcome-first-pr.yml` na frota efêmera. Os dois disparam em
-`pull_request_target` (e o `welcome` também em `issues`) **sem nenhum `if:` de ator**, então,
-depois desse PR, cada evento desses **spawna microVM da nossa frota Cloudflare**.
+O achado original do #1502 era que `pr-labels.yml` e `welcome-first-pr.yml` usavam
+`pull_request_target` na frota efêmera sem um boundary antes de `runs-on`. A visibilidade
+privada do repositório não é controle de admissão e não pode ser a prova de segurança.
 
-O que limita isso hoje **não está nesses arquivos**: é a **visibilidade do repositório**.
-Medido em 2026-08-31 — repo **PRIVADO**, **0 forks** —, então só membros da org e
-colaboradores convidados levantam o evento, que é o mesmo conjunto de pessoas que já
-enfileirava trabalho na frota. Ou seja, **não é um furo vivo**, e registrá-lo como se fosse
-seria exagerar.
+Este fechamento aplica o boundary fail-closed completo: os dois jobs de `pr-labels.yml` e o
+job de `file-size-ratchet.yml` só alocam `corelink` para `author_association` exatamente
+`OWNER`, `MEMBER` ou `COLLABORATOR`. Os jobs que tratam Dependabot
+(`dependabot-auto-merge.yml` e `dependabot-policy.yml`) continuam exigindo, em conjunto,
+actor e autor `dependabot[bot]`; o sentinel não-Dependabot de `dependabot-policy.yml` foi
+movido para o pool Mac e não aloca a frota.
+`welcome-first-pr.yml` preserva o propósito de saudar first-timers, mas roda em
+`[self-hosted, mac, corelink-builder]`, nunca na frota efêmera. Associação ausente ou
+inesperada não casa com a allowlist e fica bloqueada.
 
-O que o torna um item, e não uma nota: `pull_request_target` é **isento** da política "exigir
-aprovação para contribuidor de primeira viagem" que protege `pull_request`. No dia em que
-este repo virar público — o que o lançamento do produto torna plausível — essas duas lanes
-viram gatilho de spawn **não autenticado**, sem que ninguém precise tocar em CI para causar
-isso. É uma mudança de configuração, num outro lugar, que arma um defeito aqui.
+O risco de fila continua sendo operacional: um spawn recusado pode ficar `queued`, e
+`timeout-minutes` limita somente trabalho em execução. Isso não é usado como controle de
+admissão. O boundary e as mutações estão cobertos por
+`tests/test_pull_request_target_spawn_boundary.py` e documentados em
+`docs/campaigns/remediation/WP-141-spawn-boundary.md`.
 
-Risco secundário, independente de quem dispara: **spawn recusado deixa o job `queued`**, e
-`timeout-minutes` **não limita fila** — ele começa quando o job está RODANDO. O
-`redriveOrphanedJobs` da frota (cron de 1 min) retenta, mas só `MAX_ORPHAN_ATTEMPTS = 3`,
-com dead-letter de 30 min; passado isso, o job nunca é revisitado. Em `pr-labels`, que roda em
-**todo** PR, um job encalhado não reprova o PR — vira check **pendente**, que o
-`scripts/pre-merge-gate-check.sh` pontua como ⛔ DO NOT MERGE.
-
-**O que este item NÃO decide:** o **teto de spawn** da frota. Ele vive no spawn worker, em
-`corelink-runners`, e não é observável daqui — não afirmo que exista nem que não exista. Quem
-pegar o item mede isso primeiro: sem teto, o pior caso deixa de ser "fila" e passa a ser
-custo.
-
-Encaminhamentos possíveis, e são excludentes:
-
-1. Gate de ator nas duas lanes (mata o propósito do `welcome`, que existe para saudar quem
-   ainda não é contribuidor).
-2. Manter só o `welcome-first-pr` no Mac — é a única disparada por não-colaborador.
-3. Teto de spawn por ator/evento na frota, que é o conserto no lugar certo.
-
-A decisão é barata **antes** de o repo virar público e cara depois.
+**Decisão permanente:** a retenção no pool `[self-hosted, mac, corelink-builder]` é a política
+do greeter de first-timers e do sentinel não-Dependabot. Somente os gates de associação/actor
+acima podem alocar `corelink`. O item fecha pela prova local dessa fronteira, sem depender da
+visibilidade atual do repositório ou de inferência sobre um teto de spawn em `corelink-runners`.
 
 ```backlog
 id: B-141
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   bash -c 'set -o pipefail
-  n=0
-  for f in .github/workflows/pr-labels.yml .github/workflows/welcome-first-pr.yml; do
-    [ -f "$f" ] || { echo "FALHA: $f nao existe — a premissa deste item mudou; reavalie em vez de fechar."; exit 1; }
-    grep -q "pull_request_target" "$f" || { echo "FALHA: $f nao dispara mais em pull_request_target — releia o item antes de confiar neste portao."; exit 1; }
-    if grep -qE "^[[:space:]]+if:.*(github\.actor|author_association)" "$f"; then
-      echo "gate de ator PRESENTE em $f"
-    else
-      n=$((n+1))
-    fi
-  done
-  if [ "$n" -gt 0 ]; then
-    echo "AINDA ABERTO: $n de 2 lanes pull_request_target seguem sem gate de ator"
-    exit 0
-  fi
-  echo "FECHADO?: ambas ganharam gate de ator — confirme que o welcome ainda sauda quem deve e atualize este item."
-  exit 1'
+  t=tests/test_pull_request_target_spawn_boundary.py
+  [ -f "$t" ] || { echo "FALHA: $t nao existe — boundary sem suite executavel"; exit 1; }
+  python3 -S "$t" >/dev/null || { echo "DRIFTED: boundary ou mutacao nao esta coberto"; exit 1; }
+  grep -q "author_association.*OWNER" .github/workflows/pr-labels.yml || { echo "DRIFTED: OWNER gate sumiu"; exit 1; }
+  grep -q "author_association.*MEMBER" .github/workflows/pr-labels.yml || { echo "DRIFTED: MEMBER gate sumiu"; exit 1; }
+  grep -q "author_association.*COLLABORATOR" .github/workflows/pr-labels.yml || { echo "DRIFTED: COLLABORATOR gate sumiu"; exit 1; }
+  grep -q "author_association.*OWNER" .github/workflows/file-size-ratchet.yml || { echo "DRIFTED: ratchet OWNER gate sumiu"; exit 1; }
+  grep -q "author_association.*MEMBER" .github/workflows/file-size-ratchet.yml || { echo "DRIFTED: ratchet MEMBER gate sumiu"; exit 1; }
+  grep -q "author_association.*COLLABORATOR" .github/workflows/file-size-ratchet.yml || { echo "DRIFTED: ratchet COLLABORATOR gate sumiu"; exit 1; }
+  grep -qF "runs-on: [self-hosted, mac, corelink-builder]" .github/workflows/welcome-first-pr.yml || { echo "DRIFTED: welcome voltou para a frota"; exit 1; }
+  echo "CLOSED: boundary fail-closed, permissions least-privilege e mutation-tested"
+  exit 0'
 verify-means: |
-  O portão mede a **ausência do gate**, que é a condição do item, e falha alto se qualquer uma
-  das duas premissas se mover (arquivo sumiu, ou o workflow deixou de ser
-  `pull_request_target`) — assim ele não fica verde por vacuidade se o mundo mudar de forma.
+  **Polaridade `done`:** o controle sai 0 somente quando o boundary híbrido, a política
+  permanente de host e os escopos mínimos estão presentes. Sai não-zero se a suíte desaparecer,
+  se uma associação confiável sair do gate, se qualquer job externo voltar a alocar `corelink`,
+  se permissões mudarem, ou se o greeter perder o pool/timeout. A suíte também planta mutações
+  de remoção/alargamento dos gates, retorno de jobs ao fabric e ampliação do token; cada mutação
+  tem de ficar vermelha.
 
-  O que ele **não** mede, e está declarado de propósito: a visibilidade do repositório, que é
-  a coisa que hoje realmente segura o risco. Um `gh repo view --json isPrivate` aqui tornaria
-  o portão dependente de rede e de token, e — pior — faria o item **fechar sozinho** enquanto
-  o repo continuasse privado, que é exatamente o momento em que ele deve continuar aberto. O
-  item existe para ser resolvido ANTES da flip, não por ela.
-last-verified: 2026-08-31
+  O parser da suíte é stdlib-only e o verify usa `python3 -S`, portanto não depende de PyYAML
+  ou de qualquer pacote instalado na imagem do runner. O verificador não consulta a visibilidade do repositório nem um teto externo de spawn. A
+  primeira não é admissão e o segundo vive fora deste checkout. A decisão permanente do host
+  Mac está registrada acima e no documento de remediação. O verificador não consulta rede,
+  visibilidade do repositório ou quota externa: esses sinais não são controles de admissão para
+  esta fronteira.
+last-verified: 2026-09-05
 ```
 
 ### B-142 — todo job `ubuntu-*` não inicia por bloqueio de faturamento, e o CodeQL nightly — o único SAST do repo — está morto desde 2026-08-25
@@ -10174,7 +10185,7 @@ falso-positivo — que é a razão pela qual `flagship_files` nasceu vazio.
 id: B-145
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   python3 - <<"PY"
   import json, sys, importlib.util, pathlib
@@ -10188,19 +10199,19 @@ verify: |
   routes = m.collect_routes()
   if len(routes) < 100:
       print(f"FALHA: collect_routes devolveu so {len(routes)} rotas — o extrator quebrou; e o instrumento, nao a arvore."); sys.exit(1)
-  rx = [m._route_to_regex(r) for r in routes]
-  pref = {r for r in routes if "{" not in r and ":" not in r}
+  inventory = m.collect_route_inventory()
   fantasma = "/v1/zzz-nonexistent-probe"
-  resolve = m.endpoint_resolves(fantasma, rx, pref)
+  resolve = m.endpoint_resolves(fantasma, inventory)
   flag = json.loads(a.read_text()).get("endpoint", {}).get("flagship_files", [])
-  if not resolve and flag:
-      print("FALHA: o resolvedor recusa o caminho fantasma E ha flagship_files — o portao decide endpoint agora; feche o item."); sys.exit(1)
-  print(f"aberto: {fantasma} resolve={resolve} contra {len(routes)} rotas coletadas, flagship_files={len(flag)}")
+  if resolve or not flag:
+      print(f"FALHA: phantom resolve={resolve}, flagship_files={len(flag)} — gate is not decisive."); sys.exit(1)
+  print(f"done: {fantasma} resolve=False against {len(routes)} routes, flagship_files={len(flag)}")
   PY
 verify-means: |
-  open — o resolvedor ainda aceita um caminho que ninguém serve, **ou** `flagship_files`
-  ainda está vazio (um achado só avisa). Fecha quando as **duas** condições caírem juntas,
-  que é o mínimo para o portão poder reprovar um endpoint fantasma.
+  done — o resolvedor agora recusa um caminho que ninguém serve, **e** `flagship_files`
+  contém a receita flagship do OpenAPI (um achado nessa superfície reprova). O comando
+  mantém as duas condições explícitas porque o portão só é decisivo quando recusa o
+  fantasma e há uma superfície escalada.
 
   **É um controle positivo, não uma varredura.** O comando planta um caminho que
   comprovadamente não existe e pergunta ao próprio resolvedor do portão o que ele acha. Não
@@ -10212,38 +10223,32 @@ verify-means: |
   guarda, um extrator quebrado (zero rotas ⇒ zero casamentos ⇒ `resolve=False`) faria o
   portão anunciar que o defeito foi consertado exatamente quando ele piorou.
 
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai
-  `resolve=True … flagship_files=0` e exit 0. Numa cópia do repositório com
-  `endpoint_resolves` trocado por casamento exato **e** um `flagship_files` não-vazio, sai
-  *"FALHA: o resolvedor recusa o caminho fantasma E ha flagship_files"* e exit 1.
+  **Medido pelos dois lados (2026-09-05):** no estado atual sai
+  `resolve=False … flagship_files=1` e exit 0. Se o inventário voltar a incluir
+  `/{pkg}` ou um catch-all genérico, o mesmo comando sai com `resolve=True` e exit 1.
 
   O que ele **não** decide: se as divergências já catalogadas foram consertadas — isso é dos
   itens donos ([B-116], [B-119], [B-120], [B-151]). Este mede só a capacidade de decidir.
-last-verified: 2026-08-31
+last-verified: 2026-09-05
 ```
 
-### B-146 — `backlog_verify.py` é agnóstico ao `status`: um `done` falso sai CONFIRMED até o mundo mudar
+### B-146 — `backlog_verify.py` rejeita `done` explicitamente aberto: um falso não sai CONFIRMED
 
-A regra que abre este arquivo diz que um item `done` carrega o `verify` **invertido**, e o
-próprio texto chama o `done` com polaridade `open` de *"a forma mais nasty deste arquivo"*
-(achada no B-060, 2026-08-29). É verdade, e é **convenção de autoria — nada a mecaniza.**
+O contrato no início deste arquivo diz que um item `done` carrega o `verify` **invertido**, e
+o próprio texto chama o `done` com polaridade `open` de *"a forma mais nasty deste arquivo"*
+(achada no B-060, 2026-08-29). Antes, isso era só convenção: `check()` (`scripts/backlog_verify.py`)
+rodava o comando e mapeava `exit 0 → CONFIRMED` sem usar o `status` para decidir a polaridade.
 
-`check()` (`scripts/backlog_verify.py:198-220`) lê `item.raw["verify"]`, roda, e mapeia
-`exit 0 → CONFIRMED` / `≠0 → DRIFTED`. O `status` entra em **exatamente um** lugar: a string
-da mensagem de DRIFTED (`f"the item claims status \`{item.raw['status']}\`"`) e a coluna
-impressa. Ele não muda predicado nenhum.
+Agora o schema rejeita o caso mecanicamente reconhecível: um `done` cujo primeiro parágrafo de
+`verify-means` declara explicitamente polaridade `open`/`aberta`. O comando continua sendo
+tratado como caixa-preta — não há predicado geral que descubra polaridade de shell —, e formas
+legadas sem marcador continuam válidas. Assim a forma perigosa que se declara aberta fica
+vermelha **no PR que a escreve**, sem quebrar o legado por exigir uma migração textual global.
 
-Consequência exata, e é mais estreita do que parece: um item marcado `done` cujo `verify`
-ainda mede a **existência do defeito** sai CONFIRMED — o portão concorda com um item que diz
-"pronto" enquanto mede "quebrado". O erro fica invisível **no PR que o escreve** (o trabalho
-ainda não está na árvore) e só aparece como vermelho no merge **seguinte**, cobrando de quem
-não causou. Foi assim no B-060.
-
-**O que este item NÃO decide.** Não existe predicado geral que decida polaridade a partir do
-comando — decidir isso é o problema da parada. O que é mecanizável é mais modesto e vale a
-pena: exigir que um item `done` declare a inversão (um campo, ou uma marca no
-`verify-means`), e reprovar o `done` que não a declare. Escolher entre "campo novo" e "marca
-convencionada" é do implementador; este item não escolhe.
+O `verify` deste item mede os dois lados: sondas de mutação confirmam que `done` explicitamente
+aberto é `BROKEN`, que um `done` legado e um `done` descrito como invertido passam, e que
+`open`/`parked` não são alargados; depois o parser do próprio script lê o `BACKLOG.md` vivo e
+exige pelo menos 100 itens, o próprio B-146 e zero `done` explicitamente abertos.
 
 Relação com [B-143]: lá o portão falha aberto para um **id** malformado; aqui ele falha
 aberto para a **polaridade**. Mesma classe — o portão só verifica o que já entrou na sua
@@ -10253,54 +10258,94 @@ gramática — mecanismos distintos.
 id: B-146
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'set -e
-  s=scripts/backlog_verify.py
-  [ -f "$s" ] || { echo "FALHA: $s sumiu — reavalie o item."; exit 1; }
-  d=$(mktemp -d); trap "rm -rf $d" EXIT
-  hoje=$(date +%Y-%m-%d)
-  cerca=$(printf "\140\140\140")
-  {
-    printf "### B-001 — sonda\n\n"
-    printf "%sbacklog\n" "$cerca"
-    printf "id: B-001\nrepo: corelink-server\nowner: tl\nstatus: done\n"
-    printf "verify: |\n  true\n"
-    printf "verify-means: |\n  polaridade de item ABERTO num item marcado done — a forma que o B-060 produziu\n"
-    printf "last-verified: %s\n" "$hoje"
-    printf "%s\n" "$cerca"
-  } > "$d/sonda.md"
-  out=$(python3 "$s" --file "$d/sonda.md" --format json 2>&1) || true
-  printf "%s" "$out" | grep -q "\"id\": \"B-001\"" || { echo "FALHA: a sonda nao foi parseada pelo script (--file mudou de contrato?) — saida: $(printf "%s" "$out" | tr "\n" " " | cut -c1-160)"; exit 1; }
-  if printf "%s" "$out" | grep -q "CONFIRMED"; then
-    echo "aberto: item status=done com verify de polaridade ABERTA sai CONFIRMED — o script nao le status para decidir nada"
-    exit 0
-  fi
-  echo "FALHA: a sonda done-com-polaridade-aberta NAO saiu CONFIRMED — o script passou a considerar status; feche o item."
-  exit 1'
+  python3 - <<'PY'
+  import datetime, json, os, subprocess, sys, tempfile
+  from pathlib import Path
+
+  S = "scripts/backlog_verify.py"
+  FENCE = chr(96) * 3
+
+  def fail(message):
+      print("FALHA: " + message)
+      raise SystemExit(1)
+
+  if not os.path.isfile(S) or not os.path.isfile("BACKLOG.md"):
+      fail("scripts/backlog_verify.py ou BACKLOG.md sumiu — reavalie o item.")
+
+  def probe(status, means):
+      body = (
+          "### B-001 — sonda\n\n" + FENCE + "backlog\n"
+          + "id: B-001\nrepo: corelink-server\nowner: tl\nstatus: %s\n" % status
+          + 'verify: "true"\nverify-means: %s\nlast-verified: %s\n' % (
+              means, datetime.date.today().isoformat())
+          + FENCE + "\n"
+      )
+      with tempfile.TemporaryDirectory() as directory:
+          path = Path(directory) / "probe.md"
+          path.write_text(body)
+          try:
+              result = subprocess.run(
+                  [sys.executable, S, "--file", str(path), "--format", "json"],
+                  capture_output=True, text=True, timeout=10,
+              )
+          except subprocess.TimeoutExpired:
+              fail("a sonda excedeu 10s — instrumento não está bounded")
+      output = (result.stdout or "") + (result.stderr or "")
+      if '"id": "B-001"' not in output:
+          fail("a sonda não foi parseada (--file mudou de contrato?): " + " ".join(output.split())[:200])
+      try:
+          return json.loads(result.stdout)[0]
+      except (ValueError, IndexError, TypeError) as error:
+          fail("saída JSON inválida da sonda: %s" % error)
+
+  # Mutation controls: a done item must not launder an explicitly open-polarity
+  # verify. Legacy prose and an explicit done declaration remain valid; the
+  # other statuses are negative controls for an accidentally broad rule.
+  if probe("done", "open — still checking the defect")["verdict"] != "BROKEN":
+      fail("REGRESSAO: done explicitamente aberto passou")
+  if probe("done", "legacy verification prose")["verdict"] != "CONFIRMED":
+      fail("done legado sem marcador foi recusado")
+  if probe("done", "done — inverted regression guard")["verdict"] != "CONFIRMED":
+      fail("done com declaração invertida foi recusado")
+  if probe("open", "open — still checking the defect")["verdict"] != "CONFIRMED":
+      fail("open legítimo foi recusado")
+  if probe("parked", "waiting on the owner")["verdict"] != "CONFIRMED":
+      fail("parked legítimo foi recusado")
+  if probe("parked", "open — still checking the defect")["verdict"] != "CONFIRMED":
+      fail("parked legítimo com marcador open foi recusado")
+
+  sys.path.insert(0, "scripts")
+  import backlog_verify as bv
+  items = bv.parse(Path(bv.BACKLOG_PATH).read_text())
+  if len(items) < 100:
+      fail("o parser viu %d itens no BACKLOG.md — instrumento, não achado" % len(items))
+  if not any(item.raw.get("id") == "B-146" for item in items):
+      fail("o parser não achou o próprio B-146 — instrumento, não achado")
+  violations = [item.id for item in items
+                if item.raw.get("status") == "done"
+                and bv.has_explicit_open_verify_marker(item.raw.get("verify-means"))]
+  if violations:
+      fail("done explicitamente aberto no BACKLOG.md vivo: " + ", ".join(violations))
+  print("done: polaridade status-aware, mutações bounded e ledger vivo (%d itens, 0 violações)" % len(items))
+  PY
 verify-means: |
-  open — o script ainda emite CONFIRMED para um item que se declara `done` carregando um
-  `verify` de polaridade **aberta**.
+  **Polaridade `done` — INVERTIDA.** Sai 0 somente quando o schema recusa `done` explicitamente
+  aberto e o `BACKLOG.md` vivo não contém esse caso; sai 1 se qualquer metade regredir.
 
-  **Controle positivo sobre arquivo sintético, via a interface que o próprio script expõe
-  para isso (`--file`, usada pelo self-test).** Não toca no `BACKLOG.md` real e não depende
-  de nenhum item existente estar num estado específico — o que ele mede é o comportamento do
-  script diante de uma forma que ele deveria recusar.
+  **Compatibilidade deliberada:** o script só rejeita a marca explícita `open`/`aberta` na
+  primeira linha; formas legadas sem marcador e as descrições `done` existentes continuam
+  válidas. Ele não tenta interpretar shell, que seria um predicado indecidível.
 
-  **Anti-vacuidade:** se a sonda não for sequer parseada (o contrato de `--file` mudou), o
-  comando **falha alto** com a saída recortada, em vez de concluir "aberto" a partir de um
-  silêncio. Um portão que confunde "não mediu" com "mediu e achou" é o defeito que este
-  próprio item descreve, e seria vergonhoso reproduzi-lo aqui.
+  **Mutações e controles negativos:** seis sondas via `--file` provam `done` explicitamente
+  aberto ⇒ `BROKEN`, `done` legado e `done` marcado ⇒ `CONFIRMED`, e `open`/`parked` legítimos
+  continuam passando. Cada subprocesso tem timeout de 10s; sonda não parseada ou JSON inválido
+  falha alto, nunca vira silêncio verde.
 
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: item status=done …
-  sai CONFIRMED"* e exit 0. Numa cópia do repositório com três linhas em `check()` que
-  reprovam `status == "done"` sem inversão declarada, sai *"FALHA: a sonda … NAO saiu
-  CONFIRMED"* e exit 1.
-
-  Fecha quando o script recusar essa forma. O que ele **não** decide: qual mecanismo de
-  declaração (campo próprio ou marca no `verify-means`) — nem tenta, porque decidir
-  polaridade a partir do comando é indecidível e um portão que finja isso seria pior que
-  nenhum.
+  **Ledger truth:** a segunda metade usa `bv.parse` e `bv.has_explicit_open_verify_marker` sobre
+  o `BACKLOG.md` real, exige ≥100 itens e o próprio B-146 antes de acreditar em zero violações.
+  Nenhum comando externo, rede ou suite pesada é necessário.
 last-verified: 2026-08-31
 ```
 
@@ -10487,84 +10532,50 @@ verify-means: |
 last-verified: 2026-08-31
 ```
 
-### B-148 — 44 itens dependem de `.github/workflows/**` e o gate do backlog não roda quando um PR mexe lá
+### B-148 — o gate do backlog dispara quando qualquer workflow muda
 
-`backlog-verify.yml` declara `pull_request.paths` = `BACKLOG.md`,
-`scripts/backlog_verify.py`, `scripts/test_backlog_verify.sh` e **ele mesmo**. Um PR que
-altera qualquer outro workflow **não** dispara o gate.
+`backlog-verify.yml` declara `pull_request.paths` e `push.paths` com
+`.github/workflows/**`, além dos arquivos do próprio gate. Um PR que altera qualquer
+workflow agora dispara o gate no mesmo PR; o push em `main` também revalida a árvore.
 
-Medido nesta árvore: **44 de 165 itens (27%)** têm `verify` que lê `.github/workflows`. Um PR
-de workflow pode derrubar qualquer um deles **sem que o gate rode nesse PR**; o vermelho
-aparece no próximo PR que toque `BACKLOG.md`, que é quase sempre de outra pessoa e de outro
-assunto. **Já aconteceu** — [B-110] × #1505.
+Medido nesta árvore: **44 de 165 itens (27%)** têm `verify` que lê `.github/workflows`. O
+gate roda todos os itens quando esse diretório muda, atribuindo o vermelho ao PR que mudou
+a superfície que pode ter alterado a verdade.
 
-O custo não é o vermelho: é a **atribuição errada**. Quem recebe o vermelho lê um item que
-não conhece, sobre uma lane que não tocou, e a saída barata é mexer no item até ficar verde.
-Foi assim que dois `verify` desta campanha ganharam predicado mais fraco.
+O custo de executar os `verify` do backlog em PRs de CI é conhecido e aceito nesta decisão:
+a atribuição correta vale mais que deixar 44 verificações dependentes de um PR futuro e
+desconexo. A própria suíte do gate testa o disparo por conteúdo e muta/remover o glob para
+provar que a cobertura não é decorativa.
 
-**O que este item NÃO decide:** acrescentar `.github/workflows/**` ao `paths` é a correção
-óbvia e tem custo próprio — o gate passa a rodar 143 `verify` (dos quais dezenas invocam
-`gh`, `curl`, `cargo`) em **todo** PR de CI, e este repositório já mede que
-`backlog_verify.py` sem `--id` dispara ~24 ferramentas externas. As alternativas são executar
-só o subconjunto dos 41, ou rodar o conjunto completo num gatilho separado. Quem pegar o item
-mede o tempo antes de escolher.
+**Contrato fechado:** a cobertura é o glob literal `.github/workflows/**` em ambos os
+gatilhos (`pull_request` e `push`); remover, substituir ou comentar esse glob deve reabrir
+o item e falhar a regressão B-148.
 
 ```backlog
 id: B-148
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  python3 - <<"PY"
-  import re, sys, yaml
-  w = ".github/workflows/backlog-verify.yml"
-  try:
-      d = yaml.safe_load(open(w))
-  except FileNotFoundError:
-      print(f"FALHA: {w} sumiu — o gate do backlog nao existe mais; reavalie o item."); sys.exit(1)
-  on = d.get(True, d.get("on")) or {}
-  pr = on.get("pull_request")
-  if pr is None:
-      print("FALHA: backlog-verify.yml nao dispara mais em pull_request — a premissa mudou; releia antes de confiar neste portao."); sys.exit(1)
-  paths = (pr or {}).get("paths")
-  if paths is None:
-      print("FALHA: pull_request sem `paths` — o gate roda em TODO PR; feche o item."); sys.exit(1)
-  cobre = any(p.startswith(".github/workflows/") and p.rstrip("/").endswith("**") for p in paths)
-  t = open("BACKLOG.md").read()
-  blocos = re.findall(r"```backlog\n(.*?)\n```", t, re.S)
-  if len(blocos) < 100:
-      print(f"FALHA: so {len(blocos)} blocos parseados no BACKLOG.md — instrumento quebrado, nao arvore limpa."); sys.exit(1)
-  dep = 0; ilegiveis = 0
-  for b in blocos:
-      try: it = yaml.safe_load(b) or {}
-      except Exception: ilegiveis += 1; continue
-      if ".github/workflows" in str(it.get("verify", "")): dep += 1
-  if ilegiveis:
-      print(f"FALHA: {ilegiveis} bloco(s) backlog com YAML ilegivel — bloco que nao parseia sai da conta em SILENCIO e encolhe o numero; conserte o YAML antes de acreditar neste portao."); sys.exit(1)
-  if cobre:
-      print(f"FALHA: paths ja cobre .github/workflows/** — feche o item (itens dependentes: {dep})."); sys.exit(1)
-  print(f"aberto: {dep} de {len(blocos)} itens tem verify lendo .github/workflows, e o paths do gate ({paths}) nao cobre .github/workflows/**")
-  PY
+  bash scripts/test_backlog_verify.sh --b148
 verify-means: |
-  open — o `paths` do gate **não** cobre `.github/workflows/**`, enquanto N itens dependem
-  desse diretório. O comando parseia o YAML em vez de grepar, então um comentário
-  `# .github/workflows/**` no workflow não o satisfaz.
+  done — o verify executa `scripts/test_backlog_verify.sh --b148`, que ancora a entrada no
+  caminho checked-out `.github/workflows/backlog-verify.yml` e parseia YAML, nunca `/dev/fd`.
+  O harness exige o glob literal `.github/workflows/**` nos gatilhos `pull_request` e
+  `push` para `main`, e exige ainda `schedule` com `cron` e `workflow_dispatch`.
 
-  **Anti-vacuidade, cada caminho com falha nomeada:** workflow ausente; `pull_request`
-  removido; `paths` ausente (que significa "roda em todo PR", isto é, item **fechado**, e o
-  comando diz isso em vez de confundir com o defeito); menos de 100 blocos parseados no
-  `BACKLOG.md`; e **bloco com YAML ilegível**, que é o caminho que a primeira versão deste
-  comando engolia com um `except Exception: continue` mudo — um item que não parseia sai da
-  contagem em silêncio e **encolhe** o número que o portão publica. Agora ele reprova alto.
-  Nenhum desses estados devolve "aberto".
+  **Harness de mutação:** remoção e substituição do glob, remoção do self-trigger (`push`),
+  remoção do cron e remoção do dispatch têm de falhar. A suíte geral do gate chama o mesmo
+  harness, e este verify o chama diretamente, para que a regressão não fique apenas em
+  comentário ou em uma célula que nunca roda. Aspas simples e duplas no scalar YAML são
+  equivalentes e ambas entram no harness; erro ao gerar qualquer fixture reprova o gate, em
+  vez de ser contado como mutação rejeitada.
 
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 44 de 165 itens …
-  nao cobre"* e exit 0. Numa cópia com `.github/workflows/**` acrescentado ao `paths`, sai
-  *"FALHA: paths ja cobre .github/workflows/**"* e exit 1.
+  **Medido (2026-09-05):** a árvore atual passa controle positivo e todas as cinco
+  mutações falham no checker, tanto com scalars YAML em aspas duplas quanto simples.
+  Ausência/alteração de qualquer trigger retorna exit 1, não `CONFIRMED`.
 
-  O que ele **não** decide: se cobrir o diretório inteiro é o reparo certo — o item registra
-  que ele tem custo de tempo próprio e que há duas alternativas mais baratas.
-last-verified: 2026-08-31
+last-verified: 2026-09-05
 ```
 
 ### B-149 — três testes que passam sem afirmar nada, e um quarto que delega por escrito ao mais fraco deles
@@ -10615,12 +10626,12 @@ parcial do Rust pelo verificador.
 id: B-149
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  python3 scripts/verify_b149_test_strength.py --expect open
+  python3 scripts/verify_b149_test_strength.py --expect done
 verify-means: |
-  open — pelo menos um dos cinco checkpoints SHA-256 diverge do reparo B-149 aprovado
-  (`627ec21`): os quatro arquivos de teste relevantes e
+  drift — pelo menos um dos cinco checkpoints SHA-256 diverge do reparo B-149 aprovado
+  (o registry SHA-256 versionado neste verificador): os quatro arquivos de teste relevantes e
   `routes/billing_ingest.rs`, que contém o mapeamento de produção. As quatro mensagens
   continuam a identificar qual propriedade do item exige revisão; qualquer byte divergente
   é `review required`, mesmo que pareça uma mudança inocente.
@@ -10628,7 +10639,9 @@ verify-means: |
   done — os cinco arquivos completos são byte a byte iguais ao conjunto revisto. Os hashes
   são a autoridade para `done`; o verify não tenta provar novamente semântica Rust com lexer,
   regex ou recortes de função, pois essas aproximações aceitaram várias formas mortas ou
-  desconectadas de evidência.
+  desconectadas de evidência. A suíte constrói sua cópia `done` a partir de
+  `tests/fixtures/b149-approved/`, uma fixture autocontida, em vez de buscar um commit ou
+  objeto histórico com `git show`.
 
   **Anti-vacuidade e caminho seguro:** o registro é exatamente os cinco pares
   `path`/SHA-256 revisados; vazio, omissão, entrada extra ou digest alterado são erro de
@@ -10645,19 +10658,19 @@ verify-means: |
   nova revisão da prova, atualização explícita dos cinco hashes no verifier e das mutações
   correspondentes; não se aceita uma regra permissiva para preservar verde automaticamente.
 
-  **Medido pelos dois lados (2026-09-02):** a árvore de higiene permanece `open` com as
-  quatro lacunas; uma fixture que reproduz exatamente `627ec21` é `done`, e qualquer mutação
-  de byte volta a `open`.
-last-verified: 2026-09-02
+  **Medido pelos dois lados (2026-09-05):** esta árvore reproduz exatamente os cinco
+  checkpoints do registry e está `done`; a fixture autocontida também passa em uma árvore
+  rasa sem objetos Git, e qualquer mutação de byte volta a `open`.
+last-verified: 2026-09-05
 ```
 
-### B-150 — a colisão de ref do [B-136]/[B-137] vale para mais 28 workflows que ninguém escopou
+### B-150 — a colisão de ref do [B-136]/[B-137] vale para mais 26 workflows que ninguém escopou
 
-[B-136] cobre `backlog-verify`; [B-137] cobre cinco noturnas. **Seis.** Varrendo os 123
+[B-136] cobre `backlog-verify`; [B-137] cobre cinco noturnas. **Seis.** Varrendo os 124
 workflows com bloco `concurrency` desta árvore com o mesmo predicado — grupo que interpola
 `github.ref`, `cancel-in-progress` ligado, e **dois ou mais** gatilhos que resolvem `github.ref`
 para `refs/heads/main` (`push`, `schedule`, `workflow_dispatch`, `workflow_run`,
-`repository_dispatch`) — saem **34**. Os outros **28** já eram assim antes do #1503; ninguém
+`repository_dispatch`) — saem **32**. Os outros **26** já eram assim antes do #1503; ninguém
 os escopou porque o #1503 tinha um recorte próprio e o recorte virou, sem querer, a definição
 do problema.
 
@@ -10684,45 +10697,13 @@ grupo que interpola `${{ github.workflow }}`, constante disfarçada de expressã
 id: B-150
 repo: corelink-server
 owner: tl
-status: open
-verify: |
-  python3 - <<"PY"
-  import glob, sys, yaml
-  COBERTOS = {"backlog-verify", "byok_kill_switch_drill_weekly", "byok_matrix_weekly",
-              "dr-drill-monthly", "nightly", "perf-nightly"}
-  MAIN = {"push", "schedule", "workflow_dispatch", "workflow_run", "repository_dispatch"}
-  arqs = sorted(glob.glob(".github/workflows/*.yml")) + sorted(glob.glob(".github/workflows/*.yaml"))
-  if len(arqs) < 50:
-      print(f"FALHA: so {len(arqs)} workflows encontrados — instrumento quebrado, nao arvore limpa."); sys.exit(1)
-  com_conc = 0; achados = []; ilegiveis = []
-  for f in arqs:
-      try: d = yaml.safe_load(open(f))
-      except Exception: ilegiveis.append(f.rsplit("/", 1)[-1]); continue
-      if not isinstance(d, dict): continue
-      c = d.get("concurrency")
-      if not isinstance(c, dict): continue
-      com_conc += 1
-      nome = f.rsplit("/", 1)[-1].rsplit(".", 1)[0]
-      if nome in COBERTOS: continue
-      g = str(c.get("group", ""))
-      if "github.ref" not in g: continue
-      if "github.event_name" in g: continue   # o grupo ja separa os eventos: reparado
-      if not c.get("cancel-in-progress"): continue
-      on = d.get(True, d.get("on"))
-      evs = set(on) if isinstance(on, (dict, list)) else {on}
-      if len(MAIN & evs) >= 2: achados.append(nome)
-  if ilegiveis:
-      print(f"FALHA: {len(ilegiveis)} workflow(s) com YAML ilegivel ({', '.join(sorted(ilegiveis)[:5])}) — workflow que nao parseia sai da varredura em SILENCIO, e sabotar exatamente os infratores zeraria a contagem; conserte antes de acreditar neste portao."); sys.exit(1)
-  if com_conc < 20:
-      print(f"FALHA: so {com_conc} workflows com bloco concurrency — o parser nao esta enxergando; instrumento."); sys.exit(1)
-  if not achados:
-      print(f"FALHA: nenhum workflow fora dos {len(COBERTOS)} ja escopados colide (de {com_conc} com concurrency) — feche o item."); sys.exit(1)
-  print(f"aberto: {len(achados)} de {com_conc} workflows com concurrency colidem em refs/heads/main fora do recorte de B-136/B-137: {', '.join(sorted(achados)[:8])}…")
-  PY
+status: done
+verify: "python3 scripts/concurrency_event_collision_scan.py"
 verify-means: |
-  open — existe pelo menos um workflow, **fora** dos seis já escopados por [B-136]/[B-137],
-  com grupo interpolando `github.ref`, cancelamento em voo ligado, e dois ou mais gatilhos
-  que resolvem para `refs/heads/main`.
+  done — `scripts/concurrency_event_collision_scan.py` parseia a estrutura YAML, rejeita
+  YAML ilegível e chaves duplicadas, entende a chave nua `on` (PyYAML 1.1), e identifica
+  somente grupos com `github.ref`, cancelamento ativo em pelo menos dois eventos que
+  resolvem para `refs/heads/main`, e sem `${{ github.event_name }}`.
 
   **Parseia YAML, não grepa.** As três condições vivem em lugares diferentes do arquivo e
   duas delas são estruturais (o conjunto de chaves sob `on:`); um grep responderia sobre
@@ -10730,44 +10711,37 @@ verify-means: |
   YAML transforma a chave nua `on` em booleano `True` — ler só `"on"` devolveria vazio e o
   portão diria "nenhum colide" sobre um repositório inteiro.
 
-  **Anti-vacuidade com falha nomeada em QUATRO pontos:** menos de 50 workflows no diretório;
-  menos de 20 com bloco `concurrency` (o parser deixou de enxergar); a lista de cobertos é
-  uma exclusão explícita, não um filtro silencioso; e **qualquer YAML ilegível reprova alto**.
+  **Anti-vacuidade com falha nomeada:** menos de 50 workflows no diretório; menos de 20 com
+  bloco `concurrency`; a lista de cobertos é explícita; e qualquer YAML ilegível reprova alto.
 
-  O quarto ponto foi acrescentado depois de uma revisão fria **demonstrar** o buraco: com o
-  `except Exception: continue` mudo da primeira versão, sabotar o YAML **exatamente dos 28
-  infratores** fazia o comando imprimir *"FALHA: nenhum workflow fora dos 6 ja escopados
-  colide"* — isto é, o portão anunciava o conserto no momento em que perdeu a visão. Era o
-  caminho que o `verify-means` prometia estar coberto e não estava.
 
-  Nenhum desses estados devolve "aberto".
+  O self-test do instrumento mantém dentes contra YAML corrompido, chaves duplicadas,
+  comentários e remoção do discriminador; nenhum desses estados pode produzir falso verde.
 
-  Fecha por **exaustão**, não por amostra: consertar dez mantém o item aberto com contagem
-  menor. E fecha sozinho se [B-136]/[B-137] forem generalizados para o repositório inteiro,
-  que é o desfecho desejável.
-
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 28 de 123 …"* e
-  exit 0. Numa cópia do repositório com `github.event_name` acrescentado ao grupo dos 28,
-  sai *"FALHA: nenhum workflow fora dos 6 ja escopados colide"* e exit 1.
+  Medido em 2026-09-05: havia 26 colisões reais; `alerts-validate`, `codeql` e `sdks-js`
+  usam uma guarda provadamente falsa nos eventos de `main`. Os 26 grupos receberam o
+  discriminador de evento. Expressões de cancelamento desconhecidas permanecem suspeitas.
 
   O que ele **não** decide: a classe do grupo `${{ github.workflow }}` constante, nomeada no
   [B-137] e ainda sem item — o predicado aqui exige `github.ref`, então aquela é invisível
   para este comando de propósito.
-last-verified: 2026-08-31
+last-verified: 2026-09-05
 ```
 
-### B-151 — um SEGUNDO contrato OpenAPI é publicado com 21 dos 40 caminhos, e nenhum portão compara os dois
+### B-151 — o segundo contrato OpenAPI divergia da canônica, sem portão fechado
 
 [B-121] estabeleceu que a fonte da divergência é `openapi/corelink-v1.yaml` — a spec escrita
 à mão — e entregou o comparador spec × rotas servidas. Ficou de fora uma coisa que o recorte
 não previa: **existe uma segunda cópia da spec, publicada ao cliente, e ela não é gerada da
 primeira.**
 
-Medido nesta árvore: `openapi/corelink-v1.yaml` declara **40** caminhos;
-`apps/docs/static/openapi-corelink-v1.yaml` — servido pelo site de documentação, o arquivo
-que um cliente baixa para gerar cliente — declara **21**. Nenhum script gera um do outro e
-nenhum portão compara os dois. O `gen-api-reference.py` lê a canônica e gera **MDX**; o
-`static/` é cópia manual congelada em algum ponto do passado.
+Medido na abertura do achado (2026-08-31): `openapi/corelink-v1.yaml` declarava **40**
+caminhos e `apps/docs/static/openapi-corelink-v1.yaml` — servido pelo site de documentação,
+o arquivo que um cliente baixa para gerar cliente — declarava **21**. Nesta árvore, após
+ajustes posteriores na canônica, a divergência pré-reparo era **39 caminhos/43 operações**
+contra **20 caminhos/20 operações**. Nenhum script gerava um do outro e nenhum portão
+comparava os dois; o `gen-api-reference.py` lia a canônica e gerava **MDX**, enquanto o
+`static/` era cópia manual congelada em algum ponto do passado.
 
 A consequência é pior que a de uma página errada: quem baixa a spec publicada e gera um SDK
 recebe **um produto menor que o real**, sem erro nenhum, e não tem como saber. E como o
@@ -10787,51 +10761,34 @@ tem dono é a **segunda spec** e o resíduo de tradução.
 id: B-151
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  python3 - <<"PY"
-  import glob, sys, yaml
-  can = "openapi/corelink-v1.yaml"
-  pub = "apps/docs/static/openapi-corelink-v1.yaml"
-  try:
-      c = yaml.safe_load(open(can)) or {}
-  except FileNotFoundError:
-      print(f"FALHA: {can} sumiu — a spec canonica e a premissa deste item; reavalie."); sys.exit(1)
-  nc = len(c.get("paths") or {})
-  if nc < 10:
-      print(f"FALHA: a spec canonica declara so {nc} caminhos — instrumento ou spec quebrada, nao achado."); sys.exit(1)
-  try:
-      p = yaml.safe_load(open(pub)) or {}
-      np = len(p.get("paths") or {})
-      div = np != nc
-  except FileNotFoundError:
-      print(f"FALHA: {pub} nao existe mais — a segunda spec foi removida; feche esta metade e reavalie o item."); sys.exit(1)
-  loc = [f for f in sorted(glob.glob("apps/docs/i18n/*/docusaurus-plugin-content-docs/current/explanation/rbac/index.mdx"))
-         if "five customer-facing" in open(f).read()]
-  if not div and not loc:
-      print(f"FALHA: a spec publicada tem os mesmos {nc} caminhos E nenhum locale diz 'five customer-facing' — feche o item."); sys.exit(1)
-  print(f"aberto: spec publicada declara {np} caminhos contra {nc} da canonica (divergem={div}); locales ainda dizendo 'five customer-facing' sobre tabela de 3 linhas: {len(loc)}")
-  PY
+  python3 scripts/verify_b151_openapi.py --expect done
 verify-means: |
-  open — a spec publicada diverge da canônica em número de caminhos, **ou** algum locale
-  ainda afirma cinco categorias sobre a tabela de três. Fecha só quando as duas caírem.
+  drift — o parser falha, a spec publicada diverge da canônica em caminhos, métodos,
+  `operationId` ou qualquer campo do documento, **ou** algum locale ainda afirma cinco
+  categorias sobre a tabela de três. Fecha só quando as duas caírem.
 
-  **Compara os dois arquivos parseados, não grepa nenhum dos dois.** Contar `paths:` por
-  grep casaria a chave dentro de exemplos e descrições; o que decide é a estrutura.
+  **Compara os dois arquivos parseados, não grepa nenhum dos dois.** O comparador closed-world
+  rejeita caminhos e métodos faltantes ou extras, identidade de operação alterada e qualquer
+  divergência de documento (info, servers, segurança ou schemas), não apenas contagem.
+  `scripts/openapi_sync.py --check` também exige que o YAML publicado seja byte-a-byte o
+  artefato gerado da canônica.
 
   **Anti-vacuidade com falha nomeada:** canônica ausente; canônica com menos de 10 caminhos
   (spec ou parser quebrado, nunca "consertado"); e a **ausência da segunda spec** é tratada
-  como mudança de premissa que exige releitura, não como fechamento automático — apagar o
-  arquivo publicado pode ser o reparo certo, mas quem o apagar tem de dizer isso no item.
+  como falha de instrumento, não como fechamento automático. As três localizações esperadas
+  (`de`, `es-419`, `pt-BR`) também são exigidas; locale ausente reprova.
 
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: spec publicada
-  declara 21 caminhos contra 40 da canonica (divergem=True); locales … 3"* e exit 0. Numa
-  cópia com a spec publicada substituída pela canônica **e** os três locales corrigidos, sai
-  *"FALHA: a spec publicada tem os mesmos 40 caminhos E nenhum locale…"* e exit 1.
+  **Medido após o reparo (2026-09-05):** `scripts/verify_b151_openapi.py --expect done`
+  sai *"B-151 done: canonical and published OpenAPI match (39 paths, 43 operations);
+  RBAC locales checked: 3"* e exit 0. Os 10 testes de mutação reprovam remoção/adição de
+  caminho ou método, troca de `operationId`, alteração de schema, frase stale e locale
+  ausente.
 
-  O que ele **não** decide: se a segunda spec deve ser gerada, symlinkada ou removida — as
-  três fecham o item e têm custos diferentes para quem publica documentação versionada.
-last-verified: 2026-08-31
+  O que ele **não** decide: a política de conteúdo da canônica, nem os oito caminhos
+  documentados-sem-rota e endpoints explicitamente excluídos no escopo acima.
+last-verified: 2026-09-05
 ```
 
 ### B-152 — cinco jobs mortos aos ~10m00s no MESMO PR, em lanes independentes: é padrão, e o vermelho parece defeito de código
@@ -10940,43 +10897,30 @@ substituir este `verify` por um que plante a linha permissiva e exija que o port
 id: B-153
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'set -e
-  m=apps/docs/docs/explanation/rbac/permission-matrix.mdx
-  c=crates/corelink-container/src/routes/cas.rs
-  [ -f "$m" ] || { echo "FALHA: $m sumiu — a matriz publicada e a premissa deste item; reavalie."; exit 1; }
-  [ -f "$c" ] || { echo "FALHA: $c sumiu — reavalie o item."; exit 1; }
-  linhas=$(grep -cE "^\| " "$m")
-  [ "$linhas" -ge 4 ] || { echo "FALHA: so $linhas linhas de tabela em $m — a matriz mudou de forma; instrumento, nao achado."; exit 1; }
-  grep -qE "^[^/]*can_write\(\)" "$c" || { echo "FALHA: cas.rs nao gateia mais por can_write() em linha executavel — a premissa mudou; releia antes de confiar neste portao."; exit 1; }
-  leitores=$(grep -rlE "permission-matrix|role-catalog|reference/rbac/permissions" scripts/ .github/workflows/ 2>/dev/null | wc -l | tr -d " ")
-  [ "$leitores" = 0 ] || { echo "FALHA: $leitores instrumento(s) em scripts/ ou .github/workflows/ ja leem a matriz de permissoes — verifique o que eles decidem e feche o item."; exit 1; }
-  echo "aberto: $linhas linhas de matriz publicada, gate real por can_write() no codigo, e ZERO instrumentos em scripts/ ou .github/workflows/ leem a matriz"'
+  set -o pipefail
+  s=scripts/validate_permission_matrix.py
+  t=tests/test_validate_permission_matrix.py
+  for p in "$s" "$t" apps/docs/docs/explanation/rbac/permission-matrix.mdx; do
+    [ -f "$p" ] || { echo "FALHA: instrumento/superfície ausente: $p"; exit 1; }
+  done
+  python3 "$s" --self-test
+  python3 "$s"
+  python3 -m pytest -q "$t"
 verify-means: |
-  open — a matriz publicada existe, o gate real do código continua sendo `can_write()`, e
-  **nenhum** script ou workflow lê qualquer uma das três páginas de permissão.
-
-  **Duas âncoras contra comentário.** `grep -cE "^\| "` conta linha de tabela markdown a
-  partir do início da linha, então prosa que cite um pipe não infla a contagem. E
-  `grep -qE "^[^/]*can_write\(\)"` exige a chamada numa linha que **não** comece com `//` —
-  sem isso, os doc-comments do `cas.rs` que descrevem o gate satisfariam a premissa mesmo se
-  o gate tivesse sido removido, que é a falha de instrumento do [B-155].
-
-  **Anti-vacuidade com falha nomeada:** matriz ausente; matriz com menos de 4 linhas de
-  tabela (mudou de forma — instrumento, não achado); `can_write()` sumido do código
-  executável (a premissa mudou, releia). Nenhum devolve "aberto".
-
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: … ZERO
-  instrumentos"* e exit 0. Numa cópia com um script em `scripts/` que abre
-  `permission-matrix.mdx`, sai *"FALHA: 1 instrumento(s) … ja leem a matriz"* e exit 1.
-
-  **A fraqueza, escrita porque é o texto que sobrevive:** este portão é satisfeito por um
-  instrumento que apenas **cite** os arquivos. Ele mede ausência total de leitor, que é o
-  estado de hoje; não mede se o leitor decide. Quem construir o portão de verdade **troca
-  este `verify`** por um que plante `Developer ❌` na linha de deleção e exija reprovação —
-  e essa troca é parte do fechamento, não opcional.
-last-verified: 2026-08-31
+  `validate_permission_matrix.py` is a closed-world manifest of the
+  22 role-bearing rows in the canonical published matrix. It reads every
+  mapped source, strips line and nested block comments before looking for
+  predicates, and fails
+  on missing/duplicate/unmapped rows, missing routes, absent routes becoming
+  served, and either permissive or denial drift. `--self-test` plants a
+  permissive role mutation. The pytest suite mutates every published role cell,
+  the CAS gate, and comment-only predicates, and proves missing/unknown rows do
+  not become a green empty population. The dedicated CI workflow runs both
+  controls, and the OKF workflow runs the validator on its same claim/code
+  trigger boundary. This is a done gate: removal or vacuity is non-zero.
+last-verified: 2026-09-05
 ```
 
 ### B-154 — ⛔ OWNER: dois instrumentos jurídicos executados afirmam capacidades que a plataforma devolve como não-implementadas
@@ -11106,56 +11050,22 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  python3 - <<"PY"
-  import re, sys, yaml, pathlib
-  SEGURO = re.compile(r"""grep\s+-[A-Za-z]*v[A-Za-z]*\s|^\s*#|\bawk\b|\bpython3\b|\byaml\b""")
-  PADRAO = re.compile(r"""grep\s+(?:-[A-Za-z]+\s+)*(?P<q>["'])(?P<pat>.*?)(?P=q)""")
-  t = pathlib.Path("BACKLOG.md").read_text()
-  blocos = re.findall(r"```backlog\n(.*?)\n```", t, re.S)
-  if len(blocos) < 100:
-      print(f"FALHA: so {len(blocos)} blocos parseados — instrumento quebrado, nao arvore limpa."); sys.exit(1)
-  total = 0; suspeitos = []; ilegiveis = 0
-  for b in blocos:
-      try: d = yaml.safe_load(b) or {}
-      except Exception: ilegiveis += 1; continue
-      v = d.get("verify")
-      if not isinstance(v, str) or v.strip() == "manual": continue
-      total += 1
-      for ln in v.splitlines():
-          if "grep" not in ln or SEGURO.search(ln): continue
-          if any(not m.group("pat").startswith("^") for m in PADRAO.finditer(ln)):
-              suspeitos.append(str(d.get("id"))); break
-  if ilegiveis:
-      print(f"FALHA: {ilegiveis} bloco(s) backlog com YAML ilegivel — sairiam da varredura em silencio e encolheriam a contagem; conserte o YAML antes de acreditar neste portao."); sys.exit(1)
-  if not suspeitos:
-      print(f"FALHA: nenhum dos {total} verifies com comando usa grep de padrao nao-ancorado — a triagem de classe terminou; feche o item."); sys.exit(1)
-  print(f"aberto: {len(suspeitos)} de {total} verifies com comando fazem grep de padrao nao-ancorado; primeiros: {', '.join(suspeitos[:6])}")
-  PY
+  python3 scripts/verify_b155_backlog_grep_population.py --expect open
 verify-means: |
-  open — pelo menos um `verify` com comando ainda invoca `grep` com padrão que não começa em
-  `^` e sem filtro de comentário.
+  open — o censo offline confirma que a população contextual insegura ainda existe; este
+  item não afirma que ela foi reparada.
 
-  **O detector é sobre o PADRÃO, não sobre a linha.** Ele extrai o argumento entre aspas de
-  cada `grep` e pergunta se ele está ancorado; uma linha que já filtre comentário
-  (`grep -v`), ou que delegue a `awk`/`python3`/parser YAML, é considerada segura e sai da
-  conta. Isso é o que impede o próprio detector de casar prosa.
+  O instrumento parseia todos os fences `backlog`, valida IDs/YAML, percorre fronteiras de
+  shell incluindo `bash -c`, distingue filtros `grep -v` de asserções, resolve apenas
+  padrões literais e testa prefixos de comentário (`//`, `#`, `/*`, `<!--`, `*`, `--`).
+  População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido ou contagem
+  divergente falham fechado; não podem produzir um falso `done`.
 
-  **Anti-vacuidade, dois caminhos:** menos de 100 blocos parseados é declarado instrumento
-  quebrado; e **bloco com YAML ilegível reprova alto** em vez de sair da conta calado. Sem
-  essas guardas, quebrar o parser — ou só o YAML dos itens infratores — zeraria a lista e o
-  item se declararia resolvido no exato momento em que perdeu a capacidade de medir.
-
-  ⚠️ **Contado não é triado, e o `verify` argumenta por construção a favor de manter aberto.**
-  A contagem inclui greps sobre arquivos sem comentário de linha e padrões que nenhum
-  comentário plausível conteria. Fechar este item **não** é levar a contagem a zero por
-  reescrita mecânica — é triar os 93, ancorar os que podem ser satisfeitos por comentário, e
-  então trocar este `verify` pelo portão-de-portões que recusa `grep` nu em `verify` novo.
-  Zerar a contagem sem triar seria o mesmo vício que o item denuncia, uma camada acima.
-
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 93 de 134 …"* e
-  exit 0. Numa cópia do `BACKLOG.md` com todo padrão de `grep` prefixado por `^[^#]*`, sai
-  *"FALHA: nenhum dos 134 verifies com comando usa grep de padrao nao-ancorado"* e exit 1.
-last-verified: 2026-08-31
+  **Medido na árvore atual (2026-09-05):** `records=169`, `command_records=138`,
+  `manual=31`, `grep_invocations=348`, `assertions=329`, `comment_sensitive=247`,
+  `indeterminate=0`. O status permanece honestamente `open`; a próxima ação é triagem
+  individual, não uma reescrita mecânica da população.
+last-verified: 2026-09-05
 ```
 
 ### B-156 — o resíduo de afirmação falsa na superfície publicada é uma ordem de grandeza maior do que os itens que o descrevem
@@ -12465,4 +12375,34 @@ verify-means: |
   hrefs` com N > 0. Um gate que checou zero href sai 2 (instrumento quebrado),
   nunca 0. Script ou workflow ausentes, e PyYAML ausente, também saem 2.
 last-verified: 2026-08-31
+```
+
+### B-169 — committed merge markers made the legal evidence index ambiguous and offered a false public SLO link
+
+The SLO alternatives in `marketing/sales/legal-questionnaires/EVIDENCE-PACK-INDEX.md`
+were committed with all three Git conflict-marker families. The unresolved
+alternative also pointed auditors at a public SLO URL that does not exist. The
+index now retains one internal catalog row (88), and row 89 truthfully says the
+public summary is not published and sends the reader to row 88.
+
+```backlog
+id: B-169
+repo: corelink-server
+owner: tl
+status: done
+verify: |
+  python3 scripts/verify_b169_evidence_pack.py --expect done && \
+  python3 -m unittest tests/test_verify_b169_evidence_pack.py
+verify-means: |
+  **Polaridade `done`:** o bounded verifier sai 0 somente quando o índice não
+  contém nenhum dos três tipos de marcador, tem exatamente uma linha 88 e uma
+  linha 89, e a linha 89 diz que `/slo` não foi publicado e referencia o
+  catálogo interno da linha 88. A suíte focal também carrega o índice do main
+  exato antes do reparo e exige `open`, depois confirma `done` no reparo.
+
+  As mutações isoladas de `<<<<<<<`, `=======` e `>>>>>>>`, de duplicação ou
+  remoção das linhas 88/89, e de URL pública na linha 89 precisam sair
+  vermelhas com o motivo nomeado. Arquivo ausente é erro de instrumento (2),
+  nunca um falso verde.
+last-verified: 2026-09-05
 ```

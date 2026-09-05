@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-"""Regenerate ``openapi/corelink-v1.json`` from the canonical
-``openapi/corelink-v1.yaml`` and validate the result.
+"""Regenerate OpenAPI sibling artifacts from the canonical YAML.
 
-Single source of truth: the YAML. The JSON sibling exists for tooling
-that cannot consume YAML (Redocly Bundle pipelines, some SDK generators,
-JS-side fetch consumers) and is regenerated from the YAML by this
-script.
+Single source of truth: the YAML. The JSON sibling exists for tooling that
+cannot consume YAML, and the docs static YAML is the download served to
+clients. Both are regenerated from the canonical source by this script.
 
 Usage:
     python3 scripts/openapi_sync.py            # regenerate + validate
@@ -24,6 +22,8 @@ import difflib
 import json
 import sys
 from pathlib import Path
+
+from verify_b151_openapi import compare_closed_world, load_document
 
 try:
     import yaml
@@ -111,49 +111,16 @@ def validate_meta(spec: dict) -> list[str]:
     return []
 
 
-def validate_static_subset(spec: dict) -> list[str]:
-    """Validate the published docs asset as an intentional canonical subset.
-
-    The docs asset is smaller than the server contract because it omits REAPI
-    and other protocol-only operations.  It must therefore not be compared
-    byte-for-byte, but every path/operation it publishes must remain present in
-    the canonical document and retain its operation identity.
-    """
-
-    if not STATIC_PATH.exists():
-        return [f"static OpenAPI asset missing: {STATIC_PATH.relative_to(ROOT)}"]
+def validate_static_contract(spec: dict) -> list[str]:
+    """Validate the docs asset as the complete generated canonical contract."""
     try:
-        with STATIC_PATH.open() as handle:
-            published = yaml.safe_load(handle)
-    except Exception as exc:
-        return [f"static OpenAPI asset could not be parsed: {exc}"]
-
-    errors: list[str] = []
-    canonical_paths = spec.get("paths") or {}
-    published_paths = (published or {}).get("paths") or {}
-    if not published_paths:
-        return ["static OpenAPI asset has no paths"]
-    for path, item in published_paths.items():
-        if path not in canonical_paths:
-            errors.append(f"static subset path absent from canonical spec: {path}")
-            continue
-        for method, operation in (item or {}).items():
-            if method.startswith("x") or method.startswith("$"):
-                continue
-            canonical_operation = (canonical_paths[path] or {}).get(method)
-            if canonical_operation is None:
-                errors.append(f"static subset operation absent from canonical spec: {method.upper()} {path}")
-                continue
-            published_id = (operation or {}).get("operationId")
-            canonical_id = (canonical_operation or {}).get("operationId")
-            if published_id != canonical_id:
-                errors.append(
-                    f"static subset operationId drift: {method.upper()} {path}: "
-                    f"{published_id!r} != {canonical_id!r}"
-                )
+        published = load_document(STATIC_PATH, "published OpenAPI")
+    except ValueError as exc:
+        return [str(exc)]
+    errors = compare_closed_world(spec, published)
     print(
-        f"static OpenAPI subset: {len(published_paths)} paths, "
-        f"canonical has {len(canonical_paths)}"
+        f"static OpenAPI contract: {len(published.get('paths') or {})} paths, "
+        f"canonical has {len(spec.get('paths') or {})}"
     )
     return errors
 
@@ -162,41 +129,50 @@ def emit_json(spec: dict) -> str:
     return json.dumps(spec, indent=2, sort_keys=False) + "\n"
 
 
+def emit_static_yaml() -> str:
+    """Copy canonical source bytes so the published YAML is generated."""
+    return YAML_PATH.read_text()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true")
     args = ap.parse_args()
 
     spec = load_spec()
-    errors = validate_structure(spec) + validate_meta(spec) + validate_static_subset(spec)
+    errors = validate_structure(spec) + validate_meta(spec) + validate_static_contract(spec)
     if errors:
         for e in errors:
             print(f"error: {e}", file=sys.stderr)
         return 1
 
-    new_json = emit_json(spec)
-    if JSON_PATH.exists():
-        existing = JSON_PATH.read_text()
-    else:
-        existing = ""
-
+    artefacts = [(JSON_PATH, emit_json(spec)), (STATIC_PATH, emit_static_yaml())]
     if args.check:
-        if existing == new_json:
-            print(f"{JSON_PATH.name}: in sync")
-            return 0
-        print(f"error: {JSON_PATH.name} drift detected — run scripts/openapi_sync.py", file=sys.stderr)
-        diff = difflib.unified_diff(
-            existing.splitlines(keepends=True),
-            new_json.splitlines(keepends=True),
-            fromfile=str(JSON_PATH.relative_to(ROOT)) + " (on disk)",
-            tofile=str(JSON_PATH.relative_to(ROOT)) + " (regenerated)",
-            n=2,
-        )
-        sys.stderr.writelines(diff)
-        return 2
-
-    JSON_PATH.write_text(new_json)
-    print(f"wrote {JSON_PATH.relative_to(ROOT)}")
+        drifted = False
+        for path, generated in artefacts:
+            existing = path.read_text() if path.exists() else ""
+            if existing == generated:
+                print(f"{path.name}: in sync")
+                continue
+            drifted = True
+            label = "drift detected" if existing else "MISSING"
+            print(
+                f"error: {path.relative_to(ROOT)} {label} — run scripts/openapi_sync.py",
+                file=sys.stderr,
+            )
+            sys.stderr.writelines(
+                difflib.unified_diff(
+                    existing.splitlines(keepends=True),
+                    generated.splitlines(keepends=True),
+                    fromfile=str(path.relative_to(ROOT)) + " (on disk)",
+                    tofile=str(path.relative_to(ROOT)) + " (regenerated)",
+                    n=2,
+                )
+            )
+        return 2 if drifted else 0
+    for path, generated in artefacts:
+        path.write_text(generated)
+        print(f"wrote {path.relative_to(ROOT)}")
     return 0
 
 

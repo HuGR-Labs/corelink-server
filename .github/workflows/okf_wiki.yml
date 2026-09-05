@@ -20,10 +20,15 @@ on:
       - 'worker/**'
       - 'apps/**'
       - 'scripts/validate_okf.py'
+      - 'scripts/validate_permission_matrix.py'
       - 'scripts/okf_git_batch.py'
       - 'scripts/okf_resolve_abbrev_cites.py'
+      - 'scripts/okf_shift_citations.py'
+      - 'scripts/okf_anchor_reverify.py'
       - 'tests/okf/**'
       - 'tests/test_okf_resolve_abbrev_cites.py'
+      - 'tests/test_okf_shift_citations.py'
+      - 'tests/test_okf_anchor_reverify.py'
   push:
     branches: [main]
     paths:
@@ -33,10 +38,15 @@ on:
       - 'worker/**'
       - 'apps/**'
       - 'scripts/validate_okf.py'
+      - 'scripts/validate_permission_matrix.py'
       - 'scripts/okf_git_batch.py'
       - 'scripts/okf_resolve_abbrev_cites.py'
+      - 'scripts/okf_shift_citations.py'
+      - 'scripts/okf_anchor_reverify.py'
       - 'tests/okf/**'
       - 'tests/test_okf_resolve_abbrev_cites.py'
+      - 'tests/test_okf_shift_citations.py'
+      - 'tests/test_okf_anchor_reverify.py'
 
 permissions:
   contents: read
@@ -75,6 +85,17 @@ jobs:
       - name: Validate OKF-CoreLink knowledge bundle
         run: python3 scripts/validate_okf.py
 
+      # B-153 is part of the same published-claim freshness boundary: an OKF
+      # run must not be green while the customer-facing role matrix disagrees
+      # with a served authorization gate.
+      - name: Validate published permission matrix
+        run: python3 scripts/validate_permission_matrix.py
+
+      - name: Test C5c anchor re-verification regression (B-123)
+        # This git-backed regression proves stale citations cannot survive a
+        # moved source blob, a post-anchor source edit, or an orphaned checkpoint.
+        run: python3 tests/test_okf_anchor_reverify.py
+
       - name: Test abbreviated-citation resolver contract (B-059)
         # The resolver is also integrated into validate_okf's C5/C6 collection;
         # this focused suite keeps inheritance, traversal, EOF, and malformed
@@ -85,6 +106,11 @@ jobs:
         # Exit 1 is a real finding and MUST fail this job; exit 2 means the
         # scan itself was not trustworthy and is likewise fatal.
         run: python3 scripts/okf_resolve_abbrev_cites.py
+
+      - name: Test content-verified citation shifter (B-124)
+        # Hermetic tests cover a real line insertion, the mixed hand-edit guard,
+        # and ambiguous content.  A second invocation must never double-shift.
+        run: python3 tests/test_okf_shift_citations.py
 
       - name: Validator acceptance suite (good + per-check bad fixtures)
         # Gates the validator's OWN correctness — proves every contract check

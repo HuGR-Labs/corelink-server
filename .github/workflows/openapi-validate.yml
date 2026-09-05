@@ -1,12 +1,13 @@
 name: openapi validate (3.1 spec + breaking-change detection)
 
-# Quality gate for `openapi/corelink-v1.yaml` and its generated JSON sibling.
+# Quality gate for `openapi/corelink-v1.yaml` and its generated public artifacts.
 # Steps:
 #   1. Redocly lint (0 errors, warnings ok).
 #   2. OpenAPI 3.1 meta-schema validation via openapi-spec-validator.
-#   3. Drift check: `scripts/openapi_sync.py --check` ensures the JSON
-#      sibling is kept in sync with the YAML.
-#   4. Breaking-change detection vs the base branch (PR only) via
+#   3. Drift check: `scripts/openapi_sync.py --check` ensures the JSON and
+#      docs static YAML are generated from the canonical contract.
+#   4. B-151 closed-world + localized RBAC gate and mutation tests.
+#   5. Breaking-change detection vs the base branch (PR only) via
 #      `oasdiff` — reports breaking changes as a job warning; fail
 #      only on PRs that toggle a `breaking-api-ok` label.
 
@@ -15,16 +16,26 @@ on:
     paths:
       - "openapi/**"
       - "apps/docs/static/openapi-corelink-v1.yaml"
+      - "apps/docs/docs/reference/api/openapi.mdx"
+      - "apps/docs/i18n/**/docusaurus-plugin-content-docs/current/reference/api/openapi.mdx"
+      - "apps/docs/i18n/**/docusaurus-plugin-content-docs/current/explanation/rbac/index.mdx"
       - "tools/openapi/**"
       - "scripts/openapi_sync.py"
+      - "scripts/verify_b151_openapi.py"
+      - "tests/test_verify_b151_openapi.py"
       - ".github/workflows/openapi-validate.yml"
   push:
     branches: [main]
     paths:
       - "openapi/**"
       - "apps/docs/static/openapi-corelink-v1.yaml"
+      - "apps/docs/docs/reference/api/openapi.mdx"
+      - "apps/docs/i18n/**/docusaurus-plugin-content-docs/current/reference/api/openapi.mdx"
+      - "apps/docs/i18n/**/docusaurus-plugin-content-docs/current/explanation/rbac/index.mdx"
       - "tools/openapi/**"
       - "scripts/openapi_sync.py"
+      - "scripts/verify_b151_openapi.py"
+      - "tests/test_verify_b151_openapi.py"
       - ".github/workflows/openapi-validate.yml"
   workflow_dispatch:
 
@@ -33,12 +44,12 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: openapi-validate-${{ github.ref }}
+  group: openapi-validate-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   lint-and-validate:
-    name: lint + meta-schema + JSON sync
+    name: lint + meta-schema + closed-world contract sync
     runs-on: corelink  # zero-hosted: node/python already baked into the corelink image
     timeout-minutes: 10
     steps:
@@ -70,8 +81,14 @@ jobs:
       - name: Redocly lint (0 errors required)
         run: redocly lint openapi/corelink-v1.yaml --format=stylish
 
-      - name: OpenAPI 3.1 meta-schema validation + JSON sync check
+      - name: OpenAPI 3.1 meta-schema validation + generated artifacts sync check
         run: python3 scripts/openapi_sync.py --check
+
+      - name: B-151 closed-world + locale gate
+        run: python3 scripts/verify_b151_openapi.py --expect 'done'
+
+      - name: B-151 mutation tests
+        run: python3 -m unittest tests/test_verify_b151_openapi.py
 
   breaking-change-detection:
     name: breaking-change detection (vs base branch)

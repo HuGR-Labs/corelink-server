@@ -44,7 +44,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: subprocessors-sync-${{ github.ref }}
+  group: subprocessors-sync-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

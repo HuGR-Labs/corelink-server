@@ -34,7 +34,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: translation-import-validate-${{ github.ref }}
+  group: translation-import-validate-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

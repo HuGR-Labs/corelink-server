@@ -34,12 +34,16 @@ on:
     paths:
       - 'dashboards/alerts/**'
       - 'scripts/validate_alert_runbook_labels.py'
+      - 'scripts/validate_alert_promtool.sh'
+      - 'scripts/test_validate_alert_promtool.py'
       - '.github/workflows/alerts-validate.yml'
   push:
     branches: [main]
     paths:
       - 'dashboards/alerts/**'
       - 'scripts/validate_alert_runbook_labels.py'
+      - 'scripts/validate_alert_promtool.sh'
+      - 'scripts/test_validate_alert_promtool.py'
       - '.github/workflows/alerts-validate.yml'
   workflow_dispatch:
 
@@ -65,28 +69,6 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
-
-      # A `paths:` filter that stops matching, a directory rename, or a bad
-      # glob all present identically: zero files checked, job green. Refuse
-      # that outcome BEFORE doing any work, so the failure names its own cause.
-      # (The python validator below repeats this check for when it is run
-      # outside CI; both are cheap and neither is redundant with the other.)
-      - name: Refuse an empty match set
-        shell: bash
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          files=(dashboards/alerts/*.yml)
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "::error::'dashboards/alerts/*.yml' matched ZERO files."
-            echo "This gate will not report green over an empty match set."
-            echo "If the rules moved, update the 'paths:' filter in this"
-            echo "workflow and ALERT_GLOB in"
-            echo "scripts/validate_alert_runbook_labels.py together."
-            exit 1
-          fi
-          echo "rule files to validate: ${#files[@]}"
-          printf '  %s\n' "${files[@]}"
 
       # Cache the extracted promtool binary, keyed on the exact pinned version.
       # A version bump changes the key and re-downloads; nothing else does.
@@ -132,17 +114,16 @@ jobs:
             "prometheus-${PROMETHEUS_VERSION}.linux-amd64/promtool"
           chmod +x .promtool-bin/promtool
 
-      # `promtool check rules` parses each file: PromQL expression validity,
-      # `for:`/`keep_firing_for:` durations, label and annotation templates,
-      # and duplicate rules within a group. It exits non-zero on the first
-      # invalid file (verified locally against a deliberately broken `expr:`).
+      - name: Add promtool to PATH
+        shell: bash
+        run: echo "${GITHUB_WORKSPACE}/.promtool-bin" >> "$GITHUB_PATH"
+
+      # The dedicated executable owns both promtool invocations and the empty
+      # glob guard. Keeping shell here canonical prevents prose/string mentions
+      # from masquerading as an executed validation.
       - name: promtool check rules
         shell: bash
-        run: |
-          set -euo pipefail
-          export PATH="$PWD/.promtool-bin:$PATH"
-          promtool --version
-          promtool check rules dashboards/alerts/*.yml
+        run: scripts/validate_alert_promtool.sh
 
       # A `runbook:` label naming a file that does not exist costs the on-call
       # responder a search at 03:00 before they conclude there is nothing to

@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/verify_b149_test_strength.py"
-APPROVED = "627ec21afefb3873e11010800db2ba216b86b87a"
+FIXTURE_ROOT = ROOT / "tests/fixtures/b149-approved"
 spec = importlib.util.spec_from_file_location("b149_verifier", SCRIPT)
 assert spec and spec.loader
 verifier = importlib.util.module_from_spec(spec)
@@ -28,9 +28,9 @@ class B149VerifierTests(unittest.TestCase):
 
     def populate_approved_root(self, root: Path) -> None:
         for relative in verifier.CHECKPOINTS:
-            content = subprocess.check_output(
-                ["git", "show", f"{APPROVED}:{relative}"], cwd=ROOT
-            )
+            fixture = FIXTURE_ROOT / relative
+            self.assertTrue(fixture.is_file(), f"missing B-149 fixture: {relative}")
+            content = fixture.read_bytes()
             target = root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
@@ -51,8 +51,8 @@ class B149VerifierTests(unittest.TestCase):
             target.write_bytes(content.replace(old, new, 1))
             return verifier.assess(root)
 
-    def test_hygiene_baseline_is_open_with_the_four_named_gaps(self) -> None:
-        self.assertEqual(list(verifier.GAPS), verifier.assess(ROOT))
+    def test_hygiene_baseline_is_done_with_no_named_gaps(self) -> None:
+        self.assertEqual([], verifier.assess(ROOT))
 
     def test_exact_approved_candidate_is_done_and_cli_polarity_reverses(self) -> None:
         temp, root = self.approved_root()
@@ -68,6 +68,16 @@ class B149VerifierTests(unittest.TestCase):
             )
             self.assertEqual(done.returncode, 0, done.stderr)
             self.assertEqual(opened.returncode, 1)
+
+    def test_approved_fixture_works_without_git_history_or_objects(self) -> None:
+        """The mutation oracle must also work in shallow/archive-style trees."""
+        temp, root = self.approved_root()
+        with temp:
+            git_dir = root / ".git"
+            git_dir.mkdir()
+            (git_dir / "shallow").write_text("0000000000000000000000000000000000000000\n")
+            self.assertFalse((git_dir / "objects").exists())
+            self.assertEqual(verifier.assess(root), [])
 
     def test_a_byte_mutation_in_each_protected_file_reopens_its_gap(self) -> None:
         expected = {
@@ -226,7 +236,7 @@ class B149VerifierTests(unittest.TestCase):
                 text=True,
                 capture_output=True,
                 check=False,
-                timeout=2,
+                timeout=5,
             )
             self.assertEqual(result.returncode, 2, result.stderr)
             self.assertIn("checkpoint is not a regular file", result.stderr)

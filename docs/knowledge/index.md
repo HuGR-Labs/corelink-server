@@ -11,7 +11,7 @@ profile_version: '0.1'
 
 This is the reserved machine-generated listing of every concept in `docs/knowledge/` (profile §1 / §2.3). Concepts are grounded code/docs knowledge; author new ones with `scripts/okf_scaffold.py` and re-run this generator. The frozen contract lives outside the bundle at `docs/internal/okf-wiki/01-okf-corelink-profile.contract.md`; the change history is in `/log.md`.
 
-**Concepts: 162**
+**Concepts: 166**
 
 ## planes
 
@@ -25,8 +25,8 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 
 - [Action Cache (AC) surface](/surfaces/action-cache.md)
 - [Bazel REAPI v2 surface](/surfaces/bazel-reapi.md)
-- [Native CAS surface](/surfaces/native-cas.md)
 - [DevEnv edge surface](/surfaces/devenv-edge.md)
+- [Native CAS surface](/surfaces/native-cas.md)
 - [_public package-manager surfaces (npm/pip/brew/oci)](/surfaces/public-packages.md)
 - [sccache / cargo (WebDAV) surface](/surfaces/sccache-cargo.md)
 - [Turborepo v8 remote-cache surface](/surfaces/turborepo.md)
@@ -61,8 +61,8 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 ## flows
 
 - [Billing quota check flow](/flows/billing-quota-check.md)
-- [CAS write flow](/flows/cas-write.md)
 - [CAS at-rest integrity scrub](/flows/cas-integrity-scrub.md)
+- [CAS write flow](/flows/cas-write.md)
 - [Introspection flow (runners fabric)](/flows/introspection-fabric.md)
 - [PAT verification gauntlet](/flows/pat-gauntlet.md)
 - [Runner GitHub-App install → tenant-map provisioning flow](/flows/runner-github-install.md)

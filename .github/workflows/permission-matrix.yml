@@ -1,0 +1,67 @@
+name: Published permission matrix
+
+# B-153: the customer-facing RBAC tables are claims about live authorization.
+# Run the closed-world checker whenever either side of that claim changes.  The
+# validator is stdlib-only and intentionally does not build Rust or TypeScript.
+on:
+  pull_request:
+    paths:
+      - 'apps/docs/docs/explanation/rbac/permission-matrix.mdx'
+      - 'apps/docs/docs/explanation/rbac/role-catalog.mdx'
+      - 'apps/docs/docs/reference/rbac/permissions.mdx'
+      - 'apps/docs/i18n/**/docusaurus-plugin-content-docs/current/explanation/rbac/permission-matrix.mdx'
+      - 'apps/docs/i18n/**/docusaurus-plugin-content-docs/current/explanation/rbac/role-catalog.mdx'
+      - 'apps/docs/i18n/**/docusaurus-plugin-content-docs/current/reference/rbac/permissions.mdx'
+      - 'crates/corelink-container/src/routes/**'
+      - 'crates/corelink-container/src/scope.rs'
+      - 'worker/src/index.ts'
+      - 'scripts/validate_permission_matrix.py'
+      - 'tests/test_validate_permission_matrix.py'
+      - '.github/workflows/permission-matrix.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/docs/docs/explanation/rbac/permission-matrix.mdx'
+      - 'apps/docs/docs/explanation/rbac/role-catalog.mdx'
+      - 'apps/docs/docs/reference/rbac/permissions.mdx'
+      - 'apps/docs/i18n/**/docusaurus-plugin-content-docs/current/explanation/rbac/permission-matrix.mdx'
+      - 'apps/docs/i18n/**/docusaurus-plugin-content-docs/current/explanation/rbac/role-catalog.mdx'
+      - 'apps/docs/i18n/**/docusaurus-plugin-content-docs/current/reference/rbac/permissions.mdx'
+      - 'crates/corelink-container/src/routes/**'
+      - 'crates/corelink-container/src/scope.rs'
+      - 'worker/src/index.ts'
+      - 'scripts/validate_permission_matrix.py'
+      - 'tests/test_validate_permission_matrix.py'
+      - '.github/workflows/permission-matrix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  permission-matrix:
+    runs-on: corelink
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+      - name: Run mutation self-test
+        run: python3 scripts/validate_permission_matrix.py --self-test
+      - name: Validate published claims against applied gates
+        run: python3 scripts/validate_permission_matrix.py
+      - name: Install pytest (venv on system python3)
+        run: |
+          set -euo pipefail
+          python3 -m venv .venv
+          .venv/bin/python3 -m pip install --quiet --upgrade pip
+          .venv/bin/python3 -m pip install --quiet -r requirements-ci.txt
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+      - name: Run validator regression suite
+        run: python3 -m pytest -q tests/test_validate_permission_matrix.py

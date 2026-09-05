@@ -26,7 +26,7 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$REPO_ROOT"
+cd "$REPO_ROOT" || exit 2
 
 LOG_DIR="target/ci-logs"
 mkdir -p "$LOG_DIR"
@@ -121,7 +121,8 @@ VALIDATOR_GATES=(
 
 # --- helpers ------------------------------------------------------------------
 RESULTS_FILE="$(mktemp)"
-trap 'rm -f "$RESULTS_FILE"' EXIT
+INFRA_FILE="$(mktemp)"
+trap 'rm -f "$RESULTS_FILE" "$INFRA_FILE"' EXIT
 
 run_gate() {
     # Args: name, command, group
@@ -140,8 +141,20 @@ run_gate() {
     else
         end_ns=$(python3 -c 'import time; print(int(time.time_ns()))')
         dur_ms=$(( (end_ns - start_ns) / 1000000 ))
-        printf '%s|%s|FAIL|%s|%s\n' "$group" "$name" "$dur_ms" "$log" >>"$RESULTS_FILE"
-        printf '  \033[31m✘\033[0m %-32s  %5d ms  (see %s)\n' "$name" "$dur_ms" "$log" >&2
+        if classification=$(python3 scripts/classify-runner-failure.py <"$log"); then
+            printf '%s|%s|FAIL|%s|%s\n' "$group" "$name" "$dur_ms" "$log" >>"$RESULTS_FILE"
+            printf '  \033[31m✘\033[0m %-32s  %5d ms  (see %s)\n' "$name" "$dur_ms" "$log" >&2
+        else
+            classify_rc=$?
+            if [ "$classify_rc" -eq 42 ]; then
+                printf '%s|%s|INFRA|%s|%s\n' "$group" "$name" "$dur_ms" "$log" >>"$RESULTS_FILE"
+                printf '%s/%s\n' "$group" "$name" >>"$INFRA_FILE"
+                printf '  ⚠ %s\n' "$classification" >&2
+            else
+                printf '%s|%s|FAIL|%s|%s\n' "$group" "$name" "$dur_ms" "$log" >>"$RESULTS_FILE"
+                printf '  \033[31m✘\033[0m %-32s  %5d ms  (see %s)\n' "$name" "$dur_ms" "$log" >&2
+            fi
+        fi
     fi
 }
 
@@ -202,8 +215,10 @@ echo "─── Summary ───" >&2
 # grep -c exits 1 when match count is 0; capture exit and force a clean integer.
 PASS_COUNT=$(grep -c '|PASS|' "$RESULTS_FILE" 2>/dev/null); [ -z "$PASS_COUNT" ] && PASS_COUNT=0
 FAIL_COUNT=$(grep -c '|FAIL|' "$RESULTS_FILE" 2>/dev/null); [ -z "$FAIL_COUNT" ] && FAIL_COUNT=0
+INFRA_COUNT=$(grep -c . "$INFRA_FILE" 2>/dev/null); [ -z "$INFRA_COUNT" ] && INFRA_COUNT=0
 echo "  PASS: $PASS_COUNT" >&2
 echo "  FAIL: $FAIL_COUNT" >&2
+echo "  INFRA: $INFRA_COUNT" >&2
 echo "  Wall: ${TOTAL_MS} ms" >&2
 if [ "${CORELINK_NO_SCCACHE:-0}" != 1 ] && command -v sccache >/dev/null 2>&1; then
     echo "  --- sccache ---" >&2
@@ -213,9 +228,10 @@ fi
 if [ "$FAIL_COUNT" -gt 0 ]; then
     echo "" >&2
     echo "─── Failures ───" >&2
-    grep '|FAIL|' "$RESULTS_FILE" | while IFS='|' read -r group name status dur log; do
+    grep '|FAIL|' "$RESULTS_FILE" | while IFS='|' read -r group name _status _dur log; do
         printf '  \033[31m✘\033[0m %s/%s — see %s\n' "$group" "$name" "$log" >&2
     done
 fi
 
+if [ "$INFRA_COUNT" -gt 0 ]; then exit 42; fi
 exit "$FAIL_COUNT"

@@ -19,9 +19,9 @@ source_blobs:
   - "worker/src/durable_object.ts@8dd527c8b4123ecf725ce41b3bd3bf9546b9d026"
   - "crates/corelink-container/src/routes.rs@90c8f13a942bca512dec0047e7f0bf0b2356c229"
   - "crates/corelink-container/src/origin_timing.rs@d649a806e8e6c62adffd0cafe7f1bab2d1b1725a"
-  - "crates/corelink-container/src/storage/d1_audit_sink.rs@e7469a400d53d76a210a6e7c27bf5c4b5aa87c37"
+  - "crates/corelink-container/src/storage/d1_audit_sink.rs@54dfda0a9fd3df896dda5e279c9f9c09c276ee93"
   - "crates/corelink-container/src/storage/r2_s3.rs@6882c633b816e969236c16a64f568bcdd5b4f8d0"
-checkpoint_sha: "254ced2f9c315eab0cdd13a5bc96297214921789"
+checkpoint_sha: "1bc5d856a4e38572092a677b391a44bd047a57a6"
 provenance: "AUTHORED"
 tags: ["planes", "request-flow", "topology", "end-to-end"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -150,7 +150,7 @@ semantics in the container.
    `D1AuditOutboxSink::write_blocking` — the choke point every SYNC native-plane CAS/AC `AuditSink::emit`
    call routes through before/after a read or mutation — is timed into `Phase::Audit` via a
    `PhaseScope` opened at the top of that method
-   (`crates/corelink-container/src/storage/d1_audit_sink.rs:408-416`). Separately, and UNGATED, the same
+   (`crates/corelink-container/src/storage/d1_audit_sink.rs:412-420`). Separately, and UNGATED, the same
    native CAS/AC handlers' R2/S3 object GET/PUT/DELETE/LIST calls (`R2CasHandler`/`R2AcHandler`, made
    through the sync `block_in_place` bridge) are now wrapped into the EXISTING `ostore` phase rather than
    falling into `oother`
@@ -195,7 +195,7 @@ semantics in the container.
    now joins ONE batched `ReadAttempted` write with up to `MAX_CONCURRENT_EXISTS_PROBES` in-flight
    HEADs (`crates/corelink-container/src/storage/r2_s3.rs:1715-1825`, bound at `crates/corelink-container/src/storage/r2_s3.rs:661`). Attribution follows 9d exactly, at TWO levels: one
    `Phase::Store` scope covers the whole joined window and `Phase::Audit` is never entered for it
-   (`append_batch_async`, like `append_async`, opens no scope — `crates/corelink-container/src/storage/d1_audit_sink.rs:367-387`), AND the per-probe
+   (`append_batch_async`, like `append_async`, opens no scope — `crates/corelink-container/src/storage/d1_audit_sink.rs:367-390`), AND the per-probe
    helper opens no scope either (`crates/corelink-container/src/storage/r2_s3.rs:1874-1892`) — N overlapping probes each entering `Phase::Store`
    would bill the same window N times over and could make `ostore` alone exceed `total_ms`.
    Fail-CLOSED is likewise unchanged: the audit result is evaluated FIRST and can short-circuit to
@@ -260,7 +260,7 @@ semantics in the container.
 13. `crates/corelink-container/src/origin_timing.rs:218-232` — the `Phase::Argon` / `Phase::Permit` / `Phase::Tier` variants W2 split out of `oother`: the PAT Argon2id region (found arm AND row-not-found dummy burn, same name), the `ARGON2_PERMIT_WAIT` semaphore acquires, and `ensure_tier_applied`'s D1 read.
 14. `crates/corelink-container/src/origin_timing.rs:479-481` — `current_ledger`: captures a handle to the ambient ledger on the ORIGINATING task, for a region (the Argon2id `FlightGroup`'s spawned lead future) that runs on a different task and cannot see the task-local `timed`/`PhaseScope::enter` rely on.
 15. `crates/corelink-container/src/origin_timing.rs:417-420` — `detail_phases_enabled`: reads `CORELINK_ORIGIN_TIMING_DETAIL`, off by default and load-bearing — `opermit` presence is a warm-memo oracle, and the dummy burn's padding is timing that a named split would erode. B-109 narrowed the gate to exactly that credential-path pair; the arm that skips them is `crates/corelink-container/src/origin_timing.rs:360`, and `ortier`/`oaudit` fall through it and publish always.
-16. `crates/corelink-container/src/storage/d1_audit_sink.rs:408-416` — `D1AuditOutboxSink::write_blocking`: the choke point every SYNC native CAS/AC `AuditSink::emit`/`append` call routes through, timed into `Phase::Audit` (`oaudit`) via `PhaseScope::enter`.
+16. `crates/corelink-container/src/storage/d1_audit_sink.rs:412-420` — `D1AuditOutboxSink::write_blocking`: the choke point every SYNC native CAS/AC `AuditSink::emit`/`append` call routes through, timed into `Phase::Audit` (`oaudit`) via `PhaseScope::enter`.
 17. `crates/corelink-container/src/storage/r2_s3.rs:1333-1337` — `R2CasHandler::read`'s R2 GET, timed into the EXISTING `Phase::Store` (`ostore`) — the first native-plane R2 call this phase absorbs (see also `crates/corelink-container/src/storage/r2_s3.rs:2787-2791` for the AC counterpart, `R2AcHandler::lookup`).
 18. `crates/corelink-container/src/storage/r2_s3.rs:2294-2408` — `R2CasHandler::list`'s concurrent seam (W4, this reconcile): when built with the async audit seam wired, the mandatory `ListAttempted` audit write and the R2 `ListObjectsV2` call run under one `tokio::join!` instead of two serial round trips; without that seam (every test handler) the original fully serial code path runs unchanged. `R2AcHandler::list` mirrors it exactly.
 19. `crates/corelink-container/src/storage/d1_audit_sink.rs:324-334` — `append_async`: the audit half of the join in 18, deliberately WITHOUT its own `PhaseScope` — the caller (18) attributes the whole overlapping window to `Phase::Store` exactly once, so `Σ(phases) ≤ total` still holds when `oaudit` and `ostore` would otherwise have double-counted the same wall-clock window.
@@ -269,4 +269,4 @@ semantics in the container.
 21. `crates/corelink-container/src/storage/r2_s3.rs:1715-1825` — `R2CasHandler::exists_batch_inner`: the Bazel `findMissingBlobs` seam. Same join shape as 18 — one batched audit write plus the concurrent R2 HEADs under one `block_in_place`/`block_on`, one `Phase::Store` scope over the whole window, audit result evaluated first (`crates/corelink-container/src/storage/r2_s3.rs:1804-1806`).
 22. `crates/corelink-container/src/storage/r2_s3.rs:1874-1892` — `probe_existence_unaudited`, the storage half of ONE probe: no `PhaseScope` of its own (N concurrent probes each entering `Phase::Store` would bill the same wall-clock window N times over). Shared with the single-digest `exists()` seam, so both drive one body.
 23. `crates/corelink-container/src/storage/r2_s3.rs:661` — `MAX_CONCURRENT_EXISTS_PROBES`: the bound on 21's in-flight HEADs, kept small because the container is a 0.25-vCPU `basic` instance and R2 request limits are shared across tenants.
-24. `crates/corelink-container/src/storage/d1_audit_sink.rs:367-387` — `append_batch_async`: the audit half of 21 — N rows in one JSON1 statement and, like 19, deliberately without its own `PhaseScope`.
+24. `crates/corelink-container/src/storage/d1_audit_sink.rs:367-390` — `append_batch_async` and `build_batch_statements`: the audit half of 21 — N rows in one JSON1 statement and, like 19, deliberately without its own `PhaseScope`.

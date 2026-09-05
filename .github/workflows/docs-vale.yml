@@ -32,7 +32,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: docs-vale-${{ github.ref }}
+  group: docs-vale-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
