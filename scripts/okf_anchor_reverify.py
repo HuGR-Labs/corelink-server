@@ -135,10 +135,18 @@ def _check_anchor_content_reverify(args, git, bundle_root: Path, concepts, fails
             if old_blob is not None:
                 old_lines = git.blob_lines(old_blob)
             elif isinstance(previous_checkpoint, str) and hex40.fullmatch(previous_checkpoint):
+                # A well-formed checkpoint may be a squash orphan.  Mirror C5's
+                # fallback to the reachable base rather than silently dropping
+                # the previous cited content from C5c's comparison.
                 old_lines = git.show_lines(previous_checkpoint, path)
+                if old_lines is None and base_rev:
+                    old_lines = git.show_lines(base_rev, path)
             else:
                 old_lines = git.show_lines(base_rev, path) if base_rev else None
-            new_lines = git.worktree_lines(path) or git.blob_lines(new_blob)
+            # C5c verifies the content represented by the NEW anchor itself.
+            # Never substitute the mutable worktree: a later source edit in the
+            # same PR could erase the moved block and make this check vacuous.
+            new_lines = git.blob_lines(new_blob)
             if old_lines is None or new_lines is None:
                 continue
             old_ranges = list(dict.fromkeys((a, b) for p, a, b in previous_cites if p == path))
