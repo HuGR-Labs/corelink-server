@@ -11547,7 +11547,14 @@ verify-means: |
 last-verified: 2026-09-01
 ```
 
-### B-160 — rota self-service de PAT e limite comum por tenant estão implementados
+### B-160 — rota self-service de PAT existe, mas o limite por tenant ainda não é durável
+
+**Reaberto após revisão de integridade pós-merge (2026-09-04).** A rota, os gates de
+autenticação/escopo e a matemática do bucket foram entregues, mas a autoridade do limite
+continua sendo `InMemoryTokenBucketRateLimiter`. O estado zera em recycle/restart e não é
+compartilhado entre instâncias, permitindo obter outro burst de 10 antes de uma hora. O
+reparo `WP-B160-DURABLE` precisa tornar a aquisição atômica, durável e fail-closed, com
+provas de restart, concorrência e duas instâncias, antes de este item voltar a `done`.
 
 **Implementado em 2026-09-04.** O servidor monta `POST /v1/pats` como rota customer-plane autorizada (Clerk session ou PAT validado) e nunca usa a credencial de mint do operador. O alias legado `POST /v1/customer/keys` chama o mesmo `create_pat_response`, portanto tenant, principal, escopo, auditoria, token mostrado uma vez e política de limite não podem divergir.
 
@@ -11559,7 +11566,7 @@ O caminho self-service está publicado na referência da API, no guia de seguran
 id: B-160
 repo: corelink-server
 owner: tl
-status: done
+status: open
 verify: |
   bash -c 'set -e
   route=crates/corelink-container/src/routes/customer.rs
@@ -11568,12 +11575,13 @@ verify: |
   grep -q "create_pat_response(state, headers, body.name, body.scopes)" "$route" || { echo "FALHA: dashboard alias não converge"; exit 1; }
   grep -q "PAT_ISSUE_ENDPOINT_ID: &str = \"pat-issue\"" "$route" || { echo "FALHA: pat-issue bucket ausente"; exit 1; }
   grep -q "try_acquire(bucket_tenant, bucket_key, 1, limiter_now_ms)" "$route" || { echo "FALHA: limiter não precede mint"; exit 1; }
-  echo "confirmado: /v1/pats e /v1/customer/keys convergem no mint customer-plane e compartilham o bucket pat-issue por tenant"'
+  grep -q "InMemoryTokenBucketRateLimiter::new" "$route" || { echo "FALHA: o limiter em memória não está mais no caminho — reavalie e feche B-160 com provas duráveis"; exit 1; }
+  echo "aberto: aliases convergem, mas o limiter pat-issue ainda é local ao processo e reinicia com a instância"'
 verify-means: |
-  done — o verificador exige o registro executável de `POST /v1/pats`, comprova que os dois
-  aliases chamam o mesmo mint e que a aquisição usa a chave estável `pat-issue` por tenant
-  antes da criação. Os testes de rota cobrem 401/403, token shown-once, auditoria, aliases
-  intercalados e a fronteira exata de 360 segundos.
+  open — rota, autenticação e aliases estão presentes, mas o verificador rejeita a construção
+  do limiter em memória no caminho de produção. O fechamento exige autoridade durável e
+  atômica, compartilhada entre instâncias e resistente a restart, além dos testes existentes
+  de 401/403, token shown-once, auditoria, aliases e fronteira exata de 360 segundos.
 last-verified: 2026-09-04
 ```
 
