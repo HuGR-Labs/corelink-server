@@ -79,8 +79,8 @@ class Census:
 EXPECTED_RECORDS = 169
 EXPECTED_COMMAND_RECORDS = 138
 EXPECTED_MANUAL_RECORDS = 31
-EXPECTED_GREP_INVOCATIONS = 347
-EXPECTED_ASSERTIONS = 328
+EXPECTED_GREP_INVOCATIONS = 348
+EXPECTED_ASSERTIONS = 329
 
 
 def _records(backlog: str) -> list[dict[str, object]]:
@@ -547,31 +547,27 @@ def mutation_self_test(backlog: str) -> None:
     )
     if target is None or "grep" not in target.group(1):
         raise InstrumentError("B-083 population member missing from mutation fixture")
-    # B-083 is the historical reproducer.  In the open baseline its member is
-    # unanchored; after repair it carries the canonical non-comment guard.
-    # Exercise both directions so the self-test remains useful after closure.
+    # B-083 is the historical reproducer.  The canonical baseline deliberately
+    # remains open: its unguarded assertion is an executable member of the
+    # unfinished population.  The mutation below proves that anchoring that
+    # member changes the semantic verdict, without claiming that the whole
+    # population is repaired.
     old = 'grep -q "byok"'
-    guarded = 'grep -q "^[^#/<*-]*byok"'
-    if old in target.group(1):
-        mutated_block = target.group(1).replace(old, guarded, 1)
-        expect = "reduction"
-    elif guarded in target.group(1):
-        mutated_block = target.group(1).replace(guarded, old, 1)
-        expect = "increase"
-    else:
-        raise InstrumentError("B-083 mutation target is neither open nor guarded")
+    guarded = 'grep -q "^byok"'
+    if old not in target.group(1):
+        raise InstrumentError("B-083 mutation target is not the canonical open member")
+    mutated_block = target.group(1).replace(old, guarded, 1)
     if mutated_block == target.group(1):
         raise InstrumentError("B-083 mutation did not change the fixture")
     mutated = backlog[: target.start()] + mutated_block + backlog[target.end() :]
     changed = census(mutated)
-    if expect == "reduction" and len(changed.unsafe) >= len(baseline.unsafe):
+    if len(changed.unsafe) >= len(baseline.unsafe):
         raise InstrumentError("anchoring a real B-083 population member did not reduce risk")
-    if expect == "increase" and len(changed.unsafe) <= len(baseline.unsafe):
-        raise InstrumentError("removing the B-083 guard did not increase risk")
 
     # B-112 starts its nested `bash -c` body with a grep, the boundary that a
-    # flat line scanner used to miss.  Keep a mutation on that exact member so
-    # recursion cannot regress while the headline census remains unchanged.
+    # flat line scanner used to miss.  The nested member is intentionally open
+    # in this baseline; replacing it with a real anchor must reduce the unsafe
+    # population, proving recursive discovery without closing B-155.
     nested_target = re.search(
         r"(id: B-112\n.*?verify: \|\n(?:  .*\n)+?)",
         backlog,
@@ -579,11 +575,11 @@ def mutation_self_test(backlog: str) -> None:
     )
     if nested_target is None:
         raise InstrumentError("B-112 nested-shell mutation fixture is missing")
-    nested_guarded = 'grep -q "^[^#/<*-]*cargo zigbuild"'
     nested_open = 'grep -q "cargo zigbuild"'
-    if nested_guarded not in nested_target.group(1):
-        raise InstrumentError("B-112 nested grep is not guarded")
-    nested_block = nested_target.group(1).replace(nested_guarded, nested_open, 1)
+    nested_guarded = 'grep -q "^cargo zigbuild"'
+    if nested_open not in nested_target.group(1):
+        raise InstrumentError("B-112 nested grep is not the canonical open member")
+    nested_block = nested_target.group(1).replace(nested_open, nested_guarded, 1)
     if nested_block == nested_target.group(1):
         raise InstrumentError("B-112 mutation did not change the fixture")
     nested_mutated = (
@@ -592,8 +588,8 @@ def mutation_self_test(backlog: str) -> None:
         + backlog[nested_target.end() :]
     )
     nested_changed = census(nested_mutated)
-    if len(nested_changed.unsafe) <= len(baseline.unsafe):
-        raise InstrumentError("removing the B-112 nested grep guard did not increase risk")
+    if len(nested_changed.unsafe) >= len(baseline.unsafe):
+        raise InstrumentError("anchoring the B-112 nested grep did not reduce risk")
 
     # Parser completeness is also load-bearing: removing every fenced record
     # cannot become a falsely clean zero-population result.

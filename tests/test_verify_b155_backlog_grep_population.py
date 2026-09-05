@@ -14,37 +14,30 @@ verifier = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = verifier
 spec.loader.exec_module(verifier)
 
-REPAIR_SCRIPT = ROOT / "scripts/repair_b155_grep_population.py"
-repair_spec = importlib.util.spec_from_file_location("b155_repair", REPAIR_SCRIPT)
-assert repair_spec and repair_spec.loader
-repair = importlib.util.module_from_spec(repair_spec)
-sys.modules[repair_spec.name] = repair
-repair_spec.loader.exec_module(repair)
-
 
 class B155VerifierTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.backlog = (ROOT / "BACKLOG.md").read_text(encoding="utf-8")
 
-    def test_census_is_complete_and_population_is_closed(self) -> None:
+    def test_census_is_complete_and_population_is_not_closed(self) -> None:
         result = verifier.census(self.backlog)
         self.assertEqual(result.records, 169)
         self.assertEqual(result.command_records, 138)
         self.assertEqual(result.manual_records, 31)
         self.assertEqual(result.command_records + result.manual_records, result.records)
-        self.assertEqual(result.grep_invocations, 347)
-        self.assertEqual(len(result.assertions), 328)
-        self.assertEqual(len(result.unsafe), 0)
+        self.assertEqual(result.grep_invocations, 348)
+        self.assertEqual(len(result.assertions), 329)
+        self.assertGreater(len(result.unsafe), 0)
         self.assertEqual(len(result.indeterminate), 0)
 
     def test_real_unanchored_member_mutation_changes_semantic_verdict(self) -> None:
         baseline = verifier.census(self.backlog)
-        marker = 'grep -q "^[^#/<*-]*byok"'
+        marker = 'grep -q "byok"'
         self.assertEqual(self.backlog.count(marker), 1)
-        mutated = self.backlog.replace(marker, 'grep -q "byok"', 1)
+        mutated = self.backlog.replace(marker, 'grep -q "^byok"', 1)
         changed = verifier.census(mutated)
-        self.assertGreater(len(changed.unsafe), len(baseline.unsafe))
+        self.assertLess(len(changed.unsafe), len(baseline.unsafe))
 
     def test_parser_rejects_empty_population_instead_of_returning_done(self) -> None:
         with self.assertRaises(verifier.InstrumentError):
@@ -95,38 +88,24 @@ class B155VerifierTests(unittest.TestCase):
             verifier.census(mutated)
 
     def test_unquoted_grep_in_if_is_parsed_and_reopens_gate(self) -> None:
-        marker = 'grep -q "^[^#/<*-]*byok"'
+        marker = 'grep -q "byok"'
         self.assertEqual(self.backlog.count(marker), 1)
         mutated = self.backlog.replace(marker, "if grep unsafe BACKLOG.md", 1)
         result = verifier.census(mutated)
         self.assertTrue(any(check.pattern == "unsafe" for check in result.unsafe))
 
-    def test_nested_bash_c_grep_is_counted_and_guard_mutation_reopens_gate(self) -> None:
+    def test_nested_bash_c_grep_is_counted_and_guard_mutation_changes_verdict(self) -> None:
         record = next(item for item in verifier._records(self.backlog) if item["id"] == "B-112")
         checks, invocations, _ = verifier._grep_checks(record)
         self.assertEqual(invocations, 4)
-        self.assertIn("^[^#/<*-]*cargo zigbuild", [check.pattern for check in checks])
+        self.assertIn("cargo zigbuild", [check.pattern for check in checks])
 
-        marker = 'grep -q "^[^#/<*-]*cargo zigbuild"'
+        marker = 'grep -q "cargo zigbuild"'
         self.assertEqual(self.backlog.count(marker), 1)
-        mutated = self.backlog.replace(marker, 'grep -q "cargo zigbuild"', 1)
+        mutated = self.backlog.replace(marker, 'grep -q "^cargo zigbuild"', 1)
         changed = verifier.census(mutated)
-        self.assertTrue(
-            any(check.pattern == "cargo zigbuild" for check in changed.unsafe)
-        )
-
-    def test_repair_hardens_nested_bash_c_grep_and_is_idempotent(self) -> None:
-        marker = 'grep -q "^[^#/<*-]*cargo zigbuild"'
-        mutated = self.backlog.replace(marker, 'grep -q "cargo zigbuild"', 1)
-        rewritten, changed = repair.repair(mutated)
-        self.assertGreater(changed, 0)
-        result = verifier.census(rewritten)
-        self.assertEqual(len(result.unsafe), 0)
-        self.assertIn(marker, rewritten)
-
-        again, changed_again = repair.repair(rewritten)
-        self.assertEqual(changed_again, 0)
-        self.assertEqual(again, rewritten)
+        baseline = verifier.census(self.backlog)
+        self.assertLess(len(changed.unsafe), len(baseline.unsafe))
 
     def test_dynamic_nested_shell_payload_fails_closed(self) -> None:
         record = {
