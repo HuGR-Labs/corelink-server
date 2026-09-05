@@ -21,8 +21,8 @@ The `<instance>` path segment is your tenant UUID.
   **stock-HTTP alias** `https://corelink-api.humangr.com/bazel/cache` — it serves the
   `/cas/<sha256>` and `/ac/<sha256>` paths stock Bazel emits (`PUT`→`204`, `GET`→`200`).
   No REAPI client needed.
-- **REAPI v2 / ByteStream:** point `--remote_cache` at `/bazel/v2` (this doc's config)
-  for a ByteStream-compatible client.
+- **REAPI v2 / ByteStream:** point a ByteStream-compatible client at `/bazel/v2`
+  and include the tenant instance segment in its blob paths.
 
 Both are Bearer-PAT authenticated. (Bazel content-addresses by SHA-256, which the
 `/bazel/*` routes accept; the *native* REST CAS at `/v1/cas/...` is BLAKE3-keyed — see
@@ -37,15 +37,13 @@ Both are Bearer-PAT authenticated. (Bazel content-addresses by SHA-256, which th
 
 ## Configure `.bazelrc`
 
-Here is a reference `.bazelrc` config. It points Bazel's REAPI instance at
-your tenant:
+Here is a reference `.bazelrc` config for stock Bazel's plain-HTTP cache
+client. The `/bazel/cache` prefix is the registered stock-Bazel alias; stock
+Bazel appends `/cas/<sha256>` and `/ac/<sha256>` to it:
 
 ```ini
-# Point at the CoreLink REAPI v2 endpoint (the /bazel/v2 prefix is required).
-build --remote_cache=https://corelink-api.humangr.com/bazel/v2
-
-# Your tenant UUID becomes the REAPI :instance path segment.
-build --remote_instance_name=${CORELINK_TENANT}
+# Point stock Bazel at the registered plain-HTTP cache alias.
+build --remote_cache=https://corelink-api.humangr.com/bazel/cache
 
 # Authenticate with your PAT through Bazel 6+'s host-scoped credential helper.
 build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
@@ -88,9 +86,9 @@ run.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Every request 404s | `--remote_cache` points at the wrong prefix | Use `/bazel/cache` (stock plain-HTTP) or `/bazel/v2` (REAPI/ByteStream) — both live; a bare host or `/v1/cas` will 404 for Bazel's paths |
+| Every request 404s | `--remote_cache` points at the wrong prefix | Stock Bazel must use `/bazel/cache`; a REAPI/ByteStream client may use `/bazel/v2/<tenant>/blobs/...` — a bare host, `/bazel/v2` with stock Bazel, or `/v1/cas` will 404 for Bazel's paths |
 | `UNAUTHENTICATED` | Missing or wrong `Authorization` header | Verify `CORELINK_PAT` is exported in your shell / CI env |
-| `PERMISSION_DENIED` / 403 | Instance name is not your tenant | Set `--remote_instance_name` to your tenant UUID |
+| `PERMISSION_DENIED` / 403 | PAT or cache scope is missing | Use a PAT with cache read + write scope; the stock alias resolves the tenant from the authenticated request, not from a URL instance segment |
 | Cache miss on every build | `--remote_upload_local_results=false` | Set to `true` in at least one CI job |
 
 Full error reference: [Troubleshooting](../troubleshooting.md).

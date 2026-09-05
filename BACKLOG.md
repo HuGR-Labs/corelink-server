@@ -11309,50 +11309,40 @@ comportamento observável com dois tenants reais — e isso depende de [B-160], 
 `/bazel/cache` (mínimo, imediato), ou reescrever a página para dois blocos completos e
 rotulados. E **não** cobre o vazamento de PAT da mesma página, que é [B-157].
 
+**Reparo concluído (2026-09-05).** O bloco copiável agora usa o alias registrado
+`/bazel/cache`, e a receita HTTP stock não anuncia `--remote_instance_name`, que não é
+transmitido pelo cliente HTTP. O esquema REAPI/ByteStream permanece documentado
+separadamente. O verificador abaixo constrói os caminhos `/cas/<sha256>` e `/ac/<sha256>`
+que o Bazel stock deriva do prefixo, confere as duas rotas Axum registradas e executa
+mutações em memória dos dois lados. Isto é uma prova estrutural offline; não afirma um
+404 em produção nem isolamento observável entre dois tenants (B-160).
+
 ```backlog
 id: B-158
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'set -e
-  p=apps/docs/docs/integrations/bazel.md
-  r=crates/corelink-container/src/routes/bazel_v2.rs
-  [ -f "$p" ] || { echo "FALHA: $p sumiu — reavalie o item."; exit 1; }
-  [ -f "$r" ] || { echo "FALHA: $r sumiu — sem as rotas servidas nao consigo contrastar; reavalie."; exit 1; }
-  grep -qE "^[^/]*\"/bazel/cache/cas/" "$r" || { echo "FALHA: o alias HTTP stock /bazel/cache/cas nao esta mais registrado — a premissa mudou; releia antes de confiar neste portao."; exit 1; }
-  if grep -qE "^[^/]*\"/bazel/v2/(cas|ac)/" "$r"; then
-    echo "FALHA: o servidor passou a registrar /bazel/v2/cas ou /bazel/v2/ac — o prefixo publicado ficou valido; feche o item."; exit 1; fi
-  aponta=0
-  grep -qE "^[^#]*remote_cache=.*bazel/v2[^/]*$" "$p" && aponta=1
-  aconselha=0
-  grep -qE "^[^#]*remote_instance_name" "$p" && aconselha=1
-  [ "$aponta" = 1 ] || { echo "FALHA: o bloco publicado nao aponta mais --remote_cache para o prefixo /bazel/v2 — o reparo aterrissou; feche o item."; exit 1; }
-  echo "aberto: bazel.md manda --remote_cache=.../bazel/v2 (aponta=$aponta) mas o servidor so registra /bazel/v2/{instance}/blobs/... e /bazel/cache/{cas,ac}/{hash}; a pagina ainda aconselha --remote_instance_name=$aconselha, que o transporte HTTP nao transmite"'
+  python3 scripts/verify_b158_bazel_remote_cache.py --expect done
 verify-means: |
-  open — a página ainda manda apontar `--remote_cache` para o prefixo `/bazel/v2`, **e** o
-  servidor continua sem registrar `/bazel/v2/cas` ou `/bazel/v2/ac`, que é o que o Bazel
-  stock derivaria desse prefixo.
+  done — `bazel.md` usa o alias stock `/bazel/cache`, que deriva exatamente
+  `/bazel/cache/cas/<sha256>` e `/bazel/cache/ac/<sha256>`; essas duas rotas estão
+  registradas em `bazel_v2.rs`.
 
-  **As duas condições do código são premissas e falham ALTO, em direções opostas.** Se o
-  alias `/bazel/cache/cas` sumir, o comando para (a comparação perdeu o outro lado). Se
-  alguém **registrar** `/bazel/v2/cas`, o comando manda fechar — porque nesse mundo a página
-  passou a estar certa sem ninguém tocar nela, e essa é uma saída legítima do item.
+  A verificação exige simultaneamente o alias stock e a ausência de rotas sob o prefixo
+  stock-incompatível; qualquer mutação deve deixar o diagnóstico vermelho.
 
-  **Âncoras:** `^[^/]*` no Rust (o arquivo tem 31 ocorrências de `/blobs/` em comentários e
-  em `format!` de teste — foi exatamente por não ancorar que a primeira versão deste portão
-  concluiu o oposto do verdadeiro) e `^[^#]*` no markdown. O `[^/]*$` no fim do padrão de
-  `remote_cache` é o que separa o prefixo `/bazel/v2` de um `/bazel/v2/algo`.
+  O verificador ancora a extração do bloco `.bazelrc` e as strings de registro Axum, evitando
+  confundir comentários ou exemplos com rotas servidas.
 
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: bazel.md manda
-  --remote_cache=.../bazel/v2 …"* e exit 0. Numa cópia com o bloco apontando para
-  `/bazel/cache`, sai *"FALHA: o bloco publicado nao aponta mais…"* e exit 1.
+  O verificador constrói os caminhos e executa mutações em memória do prefixo publicado e
+  das rotas; qualquer drift deve deixar o diagnóstico vermelho.
 
   **O que ele NÃO mede:** o 404 de verdade. Provar o 404 exige rodar Bazel contra produção
   com um PAT ([B-160]); o que este comando decide é a **incompatibilidade estrutural** entre
   o prefixo publicado e as rotas registradas, que é decidível sem rede e é suficiente para o
   item existir.
-last-verified: 2026-08-31
+last-verified: 2026-09-05
 ```
 
 ### B-159 — sccache: sonda de escrita falha ⇒ cache vazio para sempre, build verde, e a página subdeclara o contrato
