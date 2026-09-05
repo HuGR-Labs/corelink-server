@@ -243,21 +243,6 @@ pub enum Phase {
     Audit,
 }
 
-#[cfg(test)]
-impl Phase {
-    const fn index(self) -> usize {
-        match self {
-            Self::Pat => 0,
-            Self::Quota => 1,
-            Self::Store => 2,
-            Self::Argon => 3,
-            Self::Permit => 4,
-            Self::Tier => 5,
-            Self::Audit => 6,
-        }
-    }
-}
-
 /// Sentinel for "this phase did not run at all", mirroring the Worker's `-1`
 /// convention for the `wdb` sub-phases.
 ///
@@ -346,6 +331,32 @@ impl PhaseLedger {
         }
     }
 
+    #[cfg(test)]
+    fn completed_window_counter(&self, phase: Phase) -> &AtomicUsize {
+        match phase {
+            Phase::Pat => &self.completed_windows[0],
+            Phase::Quota => &self.completed_windows[1],
+            Phase::Store => &self.completed_windows[2],
+            Phase::Argon => &self.completed_windows[3],
+            Phase::Permit => &self.completed_windows[4],
+            Phase::Tier => &self.completed_windows[5],
+            Phase::Audit => &self.completed_windows[6],
+        }
+    }
+
+    #[cfg(test)]
+    fn recording_counter(&self, phase: Phase) -> &AtomicUsize {
+        match phase {
+            Phase::Pat => &self.recordings[0],
+            Phase::Quota => &self.recordings[1],
+            Phase::Store => &self.recordings[2],
+            Phase::Argon => &self.recordings[3],
+            Phase::Permit => &self.recordings[4],
+            Phase::Tier => &self.recordings[5],
+            Phase::Audit => &self.recordings[6],
+        }
+    }
+
     /// Enter a phase's active wall-clock window.
     ///
     /// A phase is a partition of request wall time, not an arbitrary label.
@@ -388,18 +399,19 @@ impl PhaseLedger {
             let micros = i64::try_from(elapsed.as_micros()).unwrap_or(i64::MAX);
             self.add(phase, micros);
             #[cfg(test)]
-            self.completed_windows[phase.index()].fetch_add(1, Ordering::Relaxed);
+            self.completed_window_counter(phase)
+                .fetch_add(1, Ordering::Relaxed);
         }
     }
 
     #[cfg(test)]
     fn completed_windows_for_test(&self, phase: Phase) -> usize {
-        self.completed_windows[phase.index()].load(Ordering::Relaxed)
+        self.completed_window_counter(phase).load(Ordering::Relaxed)
     }
 
     #[cfg(test)]
     fn recordings_for_test(&self, phase: Phase) -> usize {
-        self.recordings[phase.index()].load(Ordering::Relaxed)
+        self.recording_counter(phase).load(Ordering::Relaxed)
     }
 
     #[cfg(test)]
@@ -413,7 +425,8 @@ impl PhaseLedger {
     /// Add `micros` to `phase`, promoting it out of the not-run sentinel.
     fn add(&self, phase: Phase, micros: i64) {
         #[cfg(test)]
-        self.recordings[phase.index()].fetch_add(1, Ordering::Relaxed);
+        self.recording_counter(phase)
+            .fetch_add(1, Ordering::Relaxed);
         let _ = self
             .slot(phase)
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |cur| {
