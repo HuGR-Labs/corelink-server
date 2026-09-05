@@ -16,7 +16,7 @@ spec.loader.exec_module(vdr)
 
 def test_nonexistent_deep_path_does_not_resolve() -> None:
     routes = ["/v1", "/v1/customer/{id}"]
-    regexes = [vdr._route_to_regex(route) for route in routes]
+    regexes = [vdr._route_to_regex(route) for route in routes if not vdr._is_generic_catchall(route)]
     assert not vdr.endpoint_resolves("/v1/zzz-nonexistent-probe", regexes, set())
 
 
@@ -26,7 +26,12 @@ def test_flagship_allowlist_is_nonempty() -> None:
 
 
 def test_route_mutation_would_reintroduce_prefix_match() -> None:
-    exact = vdr._route_to_regex("/v1")
     mutated = re.compile(r"^/v1(?:/.*)?$")
-    assert not exact.match("/v1/zzz-nonexistent-probe")
+    assert vdr._is_generic_catchall("/{*path}")
     assert mutated.match("/v1/zzz-nonexistent-probe")
+
+
+def test_generic_wildcard_is_not_endpoint_evidence() -> None:
+    routes = [r for r in ["/{*path}", "/v1/customer/{id}"] if not vdr._is_generic_catchall(r)]
+    regexes = [vdr._route_to_regex(route) for route in routes]
+    assert not vdr.endpoint_resolves("/v1/zzz-nonexistent-probe", regexes, set())

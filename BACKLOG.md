@@ -10194,9 +10194,9 @@ verify: |
   fantasma = "/v1/zzz-nonexistent-probe"
   resolve = m.endpoint_resolves(fantasma, rx, pref)
   flag = json.loads(a.read_text()).get("endpoint", {}).get("flagship_files", [])
-  if not resolve and flag:
-      print("FALHA: o resolvedor recusa o caminho fantasma E ha flagship_files — o portao decide endpoint agora; feche o item."); sys.exit(1)
-  print(f"aberto: {fantasma} resolve={resolve} contra {len(routes)} rotas coletadas, flagship_files={len(flag)}")
+  if resolve or not flag:
+      print(f"FALHA: phantom resolve={resolve}, flagship_files={len(flag)} — gate is not decisive."); sys.exit(1)
+  print(f"done: {fantasma} resolve=False against {len(routes)} routes, flagship_files={len(flag)}")
   PY
 verify-means: |
   open — o resolvedor ainda aceita um caminho que ninguém serve, **ou** `flagship_files`

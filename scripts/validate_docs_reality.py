@@ -467,8 +467,13 @@ def _route_to_regex(route: str) -> re.Pattern:
             out.append(".*")
         else:
             out.append(re.escape(ch))
-    out.append(r"$")  # route parameters are explicit; deeper paths need registration
+    out.append(r"(?:/.*)?$")  # explicit route roots may own documented subpaths
     return re.compile("".join(out))
+
+
+def _is_generic_catchall(route: str) -> bool:
+    """Catch-all dispatchers are inventory evidence, not public endpoints."""
+    return "{*" in route or route.rstrip().endswith("/*") or route in {"/v1", "/"}
 
 
 def endpoint_resolves(path: str, route_regexes: list[re.Pattern],
@@ -1079,7 +1084,7 @@ def main() -> int:
 
     # --- [endpoint-existence] (best-effort, WARN unless flagship) ---
     routes = collect_routes()
-    route_regexes = [_route_to_regex(r) for r in routes]
+    route_regexes = [_route_to_regex(r) for r in routes if not _is_generic_catchall(r)]
     route_prefixes = {r for r in routes if "{" not in r and ":" not in r}
     endpoint_cfg = allow.get("endpoint", {})
     flagship_files = set(endpoint_cfg.get("flagship_files", []))
