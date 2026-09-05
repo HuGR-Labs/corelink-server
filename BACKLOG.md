@@ -12379,3 +12379,33 @@ verify-means: |
   nunca 0. Script ou workflow ausentes, e PyYAML ausente, também saem 2.
 last-verified: 2026-08-31
 ```
+
+### B-169 — committed merge markers made the legal evidence index ambiguous and offered a false public SLO link
+
+The SLO alternatives in `marketing/sales/legal-questionnaires/EVIDENCE-PACK-INDEX.md`
+were committed with all three Git conflict-marker families. The unresolved
+alternative also pointed auditors at a public SLO URL that does not exist. The
+index now retains one internal catalog row (88), and row 89 truthfully says the
+public summary is not published and sends the reader to row 88.
+
+```backlog
+id: B-169
+repo: corelink-server
+owner: tl
+status: done
+verify: |
+  python3 scripts/verify_b169_evidence_pack.py --expect done && \
+  python3 -m unittest tests/test_verify_b169_evidence_pack.py
+verify-means: |
+  **Polaridade `done`:** o bounded verifier sai 0 somente quando o índice não
+  contém nenhum dos três tipos de marcador, tem exatamente uma linha 88 e uma
+  linha 89, e a linha 89 diz que `/slo` não foi publicado e referencia o
+  catálogo interno da linha 88. A suíte focal também carrega o índice do main
+  exato antes do reparo e exige `open`, depois confirma `done` no reparo.
+
+  As mutações isoladas de `<<<<<<<`, `=======` e `>>>>>>>`, de duplicação ou
+  remoção das linhas 88/89, e de URL pública na linha 89 precisam sair
+  vermelhas com o motivo nomeado. Arquivo ausente é erro de instrumento (2),
+  nunca um falso verde.
+last-verified: 2026-09-05
+```
