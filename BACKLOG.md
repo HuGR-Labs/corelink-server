@@ -11454,29 +11454,15 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  bash -c 'set -e
-  route=crates/corelink-container/src/routes/customer.rs
-  [ "$(grep -cE "^[^/]*\"/v1/pats\"" "$route")" -ge 1 ] || { echo "FALHA: POST /v1/pats não está montado"; exit 1; }
-  grep -q "create_pat_response(state, headers, body.label, body.scopes)" "$route" || { echo "FALHA: public alias não converge"; exit 1; }
-  grep -q "create_pat_response(state, headers, body.name, body.scopes)" "$route" || { echo "FALHA: dashboard alias não converge"; exit 1; }
-  grep -q "PAT_ISSUE_ENDPOINT_ID: &str = \"pat-issue\"" "$route" || { echo "FALHA: pat-issue bucket ausente"; exit 1; }
-  do=worker/src/durable_object.ts
-  rate=worker/src/pat_issue_rate_limit.ts
-  worker=worker/src/index.ts
-  grep -q "PAT_ISSUE_AUTHORIZED_HEADER" "$route" || { echo "FALHA: container não exige lease do DO"; exit 1; }
-  grep -q "PAT_ISSUE_BUCKET_KEY = \"ratelimit:pat-issue:v1\"" "$rate" || { echo "FALHA: bucket durável ausente"; exit 1; }
-  grep -q "blockConcurrencyWhile(async () =>" "$rate" || { echo "FALHA: decisão não é serializada no DO"; exit 1; }
-  grep -q "storage.put(PAT_ISSUE_BUCKET_KEY" "$rate" || { echo "FALHA: decisão não persiste bucket"; exit 1; }
-  grep -q "Retry-After" "$rate" || { echo "FALHA: Retry-After ausente"; exit 1; }
-  grep -q "\"x-corelink-pat-issue-authorized\"" "$worker" || { echo "FALHA: lease forjado não é removido na borda"; exit 1; }
-  test -f worker/tests/pat_issue_rate_limit.test.ts || { echo "FALHA: testes de corrida ausentes"; exit 1; }
-  echo "confirmado: aliases convergem, DO por tenant decide/persiste atomicamente pat-issue, container exige lease, Worker remove cópias do cliente"'
+  python3 scripts/verify_b160_pat_limit.py
 verify-means: |
-  done — além do registro executável de `POST /v1/pats` e convergência dos dois aliases, o
-  verificador exige a chave durável, `blockConcurrencyWhile` + `storage.put` no seam do DO,
-  lease obrigatório no container, remoção de cópias client-supplied no Worker, `Retry-After`
-  e o teste versionado de restart, duas instâncias concorrentes, isolamento de tenant,
-  estado adulterado/storage indisponível e fronteira exata de 360 segundos.
+  done — `scripts/verify_b160_pat_limit.py` valida o caminho completo, exige o package manager
+  pinado e o executável Vitest, executa o relatório JSON focal com timeout de 90s (9/9 casos),
+  e falha fechado se qualquer objeto/runtime/teste desaparecer. Antes do Vitest, três mutações
+  são aplicadas em memória e precisam ficar vermelhas: teste focal vazio, enforcement removido
+  do DO e strip do lease removido da borda. `tests/test_verify_b160_pat_limit.py` mantém essa
+  propriedade executável. A preparação determinística do Worker é declarada no workflow de
+  backlog (`pnpm@10.32.1`, lockfile frozen, filtro `@corelink/worker`).
 last-verified: 2026-09-05
 ```
 

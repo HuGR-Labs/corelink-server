@@ -50,6 +50,20 @@ on:
       - "crates/corelink-container/src/routes/bazel_v2.rs"
       - "scripts/verify_b169_evidence_pack.py"
       - "tests/test_verify_b169_evidence_pack.py"
+      # B-160's verifier executes the Worker PAT-limiter focal and its mutation teeth.
+      - "scripts/verify_b160_pat_limit.py"
+      - "tests/test_verify_b160_pat_limit.py"
+      - "worker/src/pat_issue_rate_limit.ts"
+      - "worker/src/durable_object.ts"
+      - "worker/src/index.ts"
+      - "worker/tests/pat_issue_rate_limit.test.ts"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "worker/package.json"
+      - "worker/vitest.config.mts"
+      - "worker/tsconfig.test.json"
+      - "worker/tests/setup.ts"
+      - "crates/corelink-container/src/routes/customer.rs"
       - "marketing/sales/legal-questionnaires/EVIDENCE-PACK-INDEX.md"
       # B-161's verifier reads exactly these published pages and its focused test.
       - "apps/docs/docs/integrations/homebrew.md"
@@ -84,6 +98,19 @@ on:
       - ".github/workflows/**"
       - "scripts/verify_b169_evidence_pack.py"
       - "marketing/sales/legal-questionnaires/EVIDENCE-PACK-INDEX.md"
+      - "scripts/verify_b160_pat_limit.py"
+      - "tests/test_verify_b160_pat_limit.py"
+      - "worker/src/pat_issue_rate_limit.ts"
+      - "worker/src/durable_object.ts"
+      - "worker/src/index.ts"
+      - "worker/tests/pat_issue_rate_limit.test.ts"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "worker/package.json"
+      - "worker/vitest.config.mts"
+      - "worker/tsconfig.test.json"
+      - "worker/tests/setup.ts"
+      - "crates/corelink-container/src/routes/customer.rs"
       - "apps/docs/docs/integrations/homebrew.md"
       - "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/integrations/homebrew.md"
       - "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/integrations/homebrew.md"
@@ -128,12 +155,20 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - name: prepare docs dependencies for B-161
         run: pnpm install --frozen-lockfile --filter @corelink/docs...
+      # B-160's executable verifier runs the Worker focal. Keep this explicit,
+      # frozen, and package-scoped so a missing runner cannot become a green
+      # source-only check.
+      - name: prepare worker dependencies for B-160
+        run: pnpm install --frozen-lockfile --filter @corelink/worker... --ignore-scripts
 
       # The gate's own gate. A checker nobody has watched fail proves nothing, so
       # the self-test runs FIRST: if it cannot produce a red verdict on a backlog
       # designed to fail, the real run below is worthless and we stop here.
       - name: the gate can go red (self-test)
         run: bash scripts/test_backlog_verify.sh
+
+      - name: B-160 verifier mutation suite
+        run: python3 tests/test_verify_b160_pat_limit.py
 
       - name: B-155 verifier mutation suite
         run: python3 tests/test_verify_b155_backlog_grep_population.py
