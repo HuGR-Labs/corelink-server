@@ -10512,56 +10512,21 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  python3 - <<"PY"
-  import re, sys, yaml
-  w = ".github/workflows/backlog-verify.yml"
-  try:
-      d = yaml.safe_load(open(w))
-  except FileNotFoundError:
-      print(f"FALHA: {w} sumiu — o gate do backlog nao existe mais; reavalie o item."); sys.exit(1)
-  on = d.get(True, d.get("on")) or {}
-  pr = on.get("pull_request")
-  if pr is None:
-      print("FALHA: backlog-verify.yml nao dispara mais em pull_request — a premissa mudou; releia antes de confiar neste portao."); sys.exit(1)
-  paths = (pr or {}).get("paths")
-  if paths is None:
-      print("CONFIRMED: pull_request sem `paths` — o gate roda em TODO PR; B-148 esta fechado."); sys.exit(0)
-  cobre = ".github/workflows/**" in paths
-  t = open("BACKLOG.md").read()
-  blocos = re.findall(r"```backlog\n(.*?)\n```", t, re.S)
-  if len(blocos) < 100:
-      print(f"FALHA: so {len(blocos)} blocos parseados no BACKLOG.md — instrumento quebrado, nao arvore limpa."); sys.exit(1)
-  dep = 0; ilegiveis = 0
-  for b in blocos:
-      try: it = yaml.safe_load(b) or {}
-      except Exception: ilegiveis += 1; continue
-      if ".github/workflows" in str(it.get("verify", "")): dep += 1
-  if ilegiveis:
-      print(f"FALHA: {ilegiveis} bloco(s) backlog com YAML ilegivel — bloco que nao parseia sai da conta em SILENCIO e encolhe o numero; conserte o YAML antes de acreditar neste portao."); sys.exit(1)
-  if not cobre:
-      print(f"FALHA: paths nao cobre .github/workflows/** — B-148 reaberto (itens dependentes: {dep})."); sys.exit(1)
-  push = on.get("push") or {}
-  push_paths = push.get("paths") if isinstance(push, dict) else None
-  if push_paths is not None and ".github/workflows/**" not in push_paths:
-      print("FALHA: push.paths nao cobre .github/workflows/** — B-148 reaberto."); sys.exit(1)
-  print(f"CONFIRMED: pull_request e push cobrem .github/workflows/** ({dep} itens dependem da superficie)")
-  PY
+  bash scripts/test_backlog_verify.sh --b148
 verify-means: |
-  done — `pull_request.paths` e `push.paths` cobrem literalmente `.github/workflows/**`,
-  enquanto N itens dependem desse diretório. O comando parseia o YAML em vez de grepar,
-  então um comentário `# .github/workflows/**` no workflow não o satisfaz.
+  done — o verify executa `scripts/test_backlog_verify.sh --b148`, que ancora a entrada no
+  caminho checked-out `.github/workflows/backlog-verify.yml` e parseia YAML, nunca `/dev/fd`.
+  O harness exige o glob literal `.github/workflows/**` nos gatilhos `pull_request` e
+  `push` para `main`, e exige ainda `schedule` com `cron` e `workflow_dispatch`.
 
-  **Anti-vacuidade, cada caminho com falha nomeada:** workflow ausente; `pull_request`
-  removido; `paths` ausente (que significa "roda em todo PR", isto é, item **fechado**, e o
-  comando diz isso em vez de confundir com o defeito); menos de 100 blocos parseados no
-  `BACKLOG.md`; e **bloco com YAML ilegível**, que é o caminho que a primeira versão deste
-  comando engolia com um `except Exception: continue` mudo — um item que não parseia sai da
-  contagem em silêncio e **encolhe** o número que o portão publica. Agora ele reprova alto.
-  Nenhum desses estados devolve "CONFIRMED".
+  **Harness de mutação:** remoção e substituição do glob, remoção do self-trigger (`push`),
+  remoção do cron e remoção do dispatch têm de falhar. A suíte geral do gate chama o mesmo
+  harness, e este verify o chama diretamente, para que a regressão não fique apenas em
+  comentário ou em uma célula que nunca roda.
 
-  **Medido (2026-09-05):** no estado atual sai *"CONFIRMED: pull_request e push cobrem
-  .github/workflows/**"* e exit 0. Numa cópia com o glob removido ou substituído, sai
-  *"FALHA: paths nao cobre .github/workflows/**"* e exit 1.
+  **Medido (2026-09-05):** a árvore atual passa controle positivo e todas as cinco
+  mutações falham no checker. Ausência/alteração de qualquer trigger retorna exit 1, não
+  `CONFIRMED`.
 
 last-verified: 2026-09-05
 ```

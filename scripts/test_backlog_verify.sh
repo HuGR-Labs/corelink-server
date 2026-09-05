@@ -43,6 +43,93 @@ item() { # $1 id, $2 status, $3 verify, $4 last-verified
     "$1" "$1" "$2" "$3" "$4"
 }
 
+# Focused B-148 harness. Its input is always the checked-out workflow path;
+# /dev/fd and process substitution would only prove that a temporary stream can
+# be parsed, not that the workflow we ship has the required trigger semantics.
+b148_workflow_harness() {
+  local workflow="$HERE/../.github/workflows/backlog-verify.yml"
+  local mutant="$SANDBOX/backlog-verify-mutant.yml"
+  local replacement="$SANDBOX/backlog-verify-replacement.yml"
+  local push_mutant="$SANDBOX/backlog-verify-push-mutant.yml"
+  local schedule_mutant="$SANDBOX/backlog-verify-schedule-mutant.yml"
+  local dispatch_mutant="$SANDBOX/backlog-verify-dispatch-mutant.yml"
+
+  workflow_trigger_check() {
+    python3 - "$1" <<'PY'
+import sys
+import yaml
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    doc = yaml.safe_load(fh) or {}
+on = doc.get(True, doc.get("on")) or {}
+expected = ".github/workflows/**"
+pr = on.get("pull_request")
+if not isinstance(pr, dict) or expected not in (pr.get("paths") or []):
+    raise SystemExit("pull_request does not cover .github/workflows/**")
+push = on.get("push")
+if not isinstance(push, dict) or expected not in (push.get("paths") or []):
+    raise SystemExit("push does not cover .github/workflows/**")
+if "main" not in (push.get("branches") or []):
+    raise SystemExit("push trigger is not anchored to main")
+schedule = on.get("schedule")
+if not isinstance(schedule, list) or not schedule or not all(
+    isinstance(entry, dict) and isinstance(entry.get("cron"), str) and entry["cron"]
+    for entry in schedule
+):
+    raise SystemExit("schedule trigger is missing a cron")
+if "workflow_dispatch" not in on:
+    raise SystemExit("workflow_dispatch trigger is missing")
+print("workflow trigger covers workflow paths, main push, schedule, and dispatch")
+PY
+  }
+
+  if workflow_trigger_check "$workflow" >/dev/null 2>&1; then
+    pass "B-148 checked-out workflow has path/self/schedule/dispatch triggers"
+  else
+    fail "B-148 checked-out workflow has path/self/schedule/dispatch triggers"
+  fi
+
+  python3 - "$workflow" "$mutant" "$replacement" "$push_mutant" \
+    "$schedule_mutant" "$dispatch_mutant" <<'PY'
+import sys
+source, removal, replacement, push, schedule, dispatch = sys.argv[1:]
+text = open(source, encoding="utf-8").read()
+glob_line = '      - ".github/workflows/**"'
+if text.count(glob_line) != 2:
+    raise SystemExit(f"expected two workflow glob lines, found {text.count(glob_line)}")
+open(removal, "w", encoding="utf-8").write(text.replace(glob_line + "\n", "", 1))
+open(replacement, "w", encoding="utf-8").write(
+    text.replace(glob_line, '      - "BACKLOG.md"  # workflow coverage removed', 1)
+)
+line = glob_line + "\n"
+first = text.find(line)
+second = text.find(line, first + len(line))
+if first < 0 or second < 0:
+    raise SystemExit("could not locate both workflow glob lines")
+open(push, "w", encoding="utf-8").write(text[:second] + text[second + len(line):])
+open(schedule, "w", encoding="utf-8").write(
+    text.replace('    - cron: "17 6 * * *"\n', "", 1)
+)
+open(dispatch, "w", encoding="utf-8").write(
+    text.replace("  workflow_dispatch: {}\n", "", 1)
+)
+PY
+
+  if workflow_trigger_check "$mutant" >/dev/null 2>&1; then fail "B-148 removal mutation is detected"; else pass "B-148 removal mutation is detected"; fi
+  if workflow_trigger_check "$replacement" >/dev/null 2>&1; then fail "B-148 replacement mutation is detected"; else pass "B-148 replacement mutation is detected"; fi
+  if workflow_trigger_check "$push_mutant" >/dev/null 2>&1; then fail "B-148 self-trigger mutation is detected"; else pass "B-148 self-trigger mutation is detected"; fi
+  if workflow_trigger_check "$schedule_mutant" >/dev/null 2>&1; then fail "B-148 schedule mutation is detected"; else pass "B-148 schedule mutation is detected"; fi
+  if workflow_trigger_check "$dispatch_mutant" >/dev/null 2>&1; then fail "B-148 dispatch mutation is detected"; else pass "B-148 dispatch mutation is detected"; fi
+}
+
+if [[ "${1:-}" == "--b148" ]]; then
+  echo "B-148 workflow trigger mutation harness"
+  b148_workflow_harness
+  [[ "$fails" -eq 0 ]] || exit 1
+  echo "B-148 harness: all cells passed"
+  exit 0
+fi
+
 echo "backlog gate"
 
 cell "a truthful item passes" 0 CONFIRMED "$(item B-001 open '"true"' 2026-08-23)"
@@ -202,62 +289,7 @@ for n in range(1, 1001):
 PYGEN
 )" "is not canonical"
 
-# B-148: every workflow is a load-bearing input to at least one backlog verify
-# command. The backlog gate must therefore trigger for the complete workflow
-# directory, not merely for its own YAML file. This is intentionally tested by
-# content mutation: deleting the glob must make the checker red, and a comment
-# must not count as coverage.
-workflow_trigger_check() {
-  local workflow="$1"
-  python3 - "$workflow" <<'PY'
-import sys
-import yaml
-
-with open(sys.argv[1], encoding="utf-8") as fh:
-    doc = yaml.safe_load(fh) or {}
-on = doc.get(True, doc.get("on")) or {}
-expected = ".github/workflows/**"
-for event in ("pull_request", "push"):
-    config = on.get(event) or {}
-    paths = config.get("paths") if isinstance(config, dict) else None
-    if expected not in (paths or []):
-        raise SystemExit(f"{event} does not cover {expected}")
-print("workflow trigger covers all workflow surfaces")
-PY
-}
-
-workflow="$HERE/../.github/workflows/backlog-verify.yml"
-if workflow_trigger_check "$workflow" >/dev/null 2>&1; then
-  pass "B-148 workflow changes trigger backlog verification"
-else
-  fail "B-148 workflow changes trigger backlog verification"
-fi
-
-mutant="$SANDBOX/backlog-verify-mutant.yml"
-sed '/^[[:space:]]*-[[:space:]]*"\.github\/workflows\/\*\*"/d' "$workflow" >"$mutant"
-if workflow_trigger_check "$mutant" >/dev/null 2>&1; then
-  fail "B-148 removal mutation is detected"
-else
-  pass "B-148 removal mutation is detected"
-fi
-
-comment_mutant="$SANDBOX/backlog-verify-comment-mutant.yml"
-python3 - "$workflow" "$comment_mutant" <<'PY'
-import sys
-source, destination = sys.argv[1:]
-text = open(source, encoding="utf-8").read()
-old = '- ".github/workflows/**"'
-if old not in text:
-    raise SystemExit("workflow glob missing before replacement mutation")
-open(destination, "w", encoding="utf-8").write(
-    text.replace(old, '- "BACKLOG.md"  # workflow coverage removed', 1)
-)
-PY
-if workflow_trigger_check "$comment_mutant" >/dev/null 2>&1; then
-  fail "B-148 replacement mutation is detected"
-else
-  pass "B-148 replacement mutation is detected"
-fi
+b148_workflow_harness
 
 echo
 if [[ "$fails" -eq 0 ]]; then echo "backlog gate: all cells passed"; exit 0; fi
