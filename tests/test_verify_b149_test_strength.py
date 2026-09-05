@@ -51,8 +51,8 @@ class B149VerifierTests(unittest.TestCase):
             target.write_bytes(content.replace(old, new, 1))
             return verifier.assess(root)
 
-    def test_hygiene_baseline_is_open_with_the_four_named_gaps(self) -> None:
-        self.assertEqual(list(verifier.GAPS), verifier.assess(ROOT))
+    def test_hygiene_baseline_is_done_with_no_named_gaps(self) -> None:
+        self.assertEqual([], verifier.assess(ROOT))
 
     def test_exact_approved_candidate_is_done_and_cli_polarity_reverses(self) -> None:
         temp, root = self.approved_root()

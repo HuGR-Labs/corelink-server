@@ -10611,9 +10611,9 @@ parcial do Rust pelo verificador.
 id: B-149
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  python3 scripts/verify_b149_test_strength.py --expect open
+  python3 scripts/verify_b149_test_strength.py --expect done
 verify-means: |
   open — pelo menos um dos cinco checkpoints SHA-256 diverge do reparo B-149 aprovado
   (`627ec21`): os quatro arquivos de teste relevantes e
@@ -10641,10 +10641,9 @@ verify-means: |
   nova revisão da prova, atualização explícita dos cinco hashes no verifier e das mutações
   correspondentes; não se aceita uma regra permissiva para preservar verde automaticamente.
 
-  **Medido pelos dois lados (2026-09-02):** a árvore de higiene permanece `open` com as
-  quatro lacunas; uma fixture que reproduz exatamente `627ec21` é `done`, e qualquer mutação
-  de byte volta a `open`.
-last-verified: 2026-09-02
+  **Medido pelos dois lados (2026-09-04):** esta árvore reproduz exatamente `627ec21` nos
+  cinco checkpoints e está `done`; qualquer mutação de byte volta a `open`.
+last-verified: 2026-09-04
 ```
 
 ### B-150 — a colisão de ref do [B-136]/[B-137] vale para mais 28 workflows que ninguém escopou

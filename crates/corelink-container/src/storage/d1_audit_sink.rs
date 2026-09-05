@@ -365,15 +365,7 @@ impl D1AuditOutboxSink {
     /// is attributed exactly once. See `origin_timing.rs`'s "Concurrent
     /// native-plane list seam" note.
     async fn append_batch_async(&self, rows: Vec<AuditRow>) -> Result<(), String> {
-        if rows.is_empty() {
-            // Zero events ⇒ zero rows ⇒ no statement at all. Matches the
-            // serial path, which simply never calls `append`.
-            return Ok(());
-        }
-        let statements = rows
-            .chunks(AUDIT_BATCH_ROWS_PER_STATEMENT)
-            .map(Self::build_batch_insert)
-            .collect::<Result<Vec<_>, String>>()?;
+        let statements = Self::build_batch_statements(&rows)?;
         // Chunks are independent `INSERT OR IGNORE`s over disjoint row sets,
         // so dispatching them together is safe and bounded: at the 4096
         // digest cap this is 16 in flight, never more.
@@ -384,6 +376,18 @@ impl D1AuditOutboxSink {
         )
         .await
         .map(|_| ())
+    }
+
+    /// Build exactly the D1 statements [`Self::append_batch_async`] dispatches.
+    ///
+    /// An empty slice deliberately produces an empty statement list: no
+    /// `json_each('[]')` query is sent for a batch with no events.
+    fn build_batch_statements(
+        rows: &[AuditRow],
+    ) -> Result<Vec<(&'static str, Vec<Value>)>, String> {
+        rows.chunks(AUDIT_BATCH_ROWS_PER_STATEMENT)
+            .map(Self::build_batch_insert)
+            .collect()
     }
 
     /// Drive the async [`D1HttpClient::query`] to completion from the sync
