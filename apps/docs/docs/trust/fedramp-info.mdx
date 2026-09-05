@@ -85,14 +85,14 @@ baseline as program / privacy out-of-baseline):
 | --- | --- | --- |
 | **AC** Access Control | Coverage | WebAuthn + Clerk SSO + MFA + per-tenant DO + RBAC |
 | **AU** Audit & Accountability | Partial (≥80% substance) | Hash-chained audit events with inclusion proofs are wired; the production sink is in-memory (lost on restart, not durable) — R2 persistence and 7y Object Lock retention are deferred |
-| **CM** Configuration Management | Coverage (exceeds) | SLSA L3 + Cosign + Rekor + reproducible builds |
+| **CM** Configuration Management | Coverage (exceeds) | SBOM + reproducible builds + SHA-256 (`.sha256`) checksum sidecars for CLI release assets; no SLSA/Cosign/Rekor artifact is currently published |
 | **MA** Maintenance | Coverage (inherited) | Sub-processor SOC 2 (cloud-only) |
 | **MP** Media Protection | Coverage | Logical erasure + sub-processor media destruction |
 | **PE** Physical & Environmental | Coverage (inherited) | Sub-processor SOC 2 Type II |
 | **RA** Risk Assessment | Coverage | STRIDE/LINDDUN + Dependency-Track + failure-mode taxonomy |
 | **SA** System & Services Acquisition | Coverage | SBOM + property tests + TLA+ + vendor risk register |
 | **SI** System & Information Integrity | Coverage (exceeds) | Rust memory safety + cargo-fuzz + immutable Workers |
-| **SR** Supply Chain Risk Management | Coverage (exceeds) | SLSA L3 + signed deploys + transparency logs + vendor register |
+| **SR** Supply Chain Risk Management | Coverage (exceeds) | Dependency scanning + release checksums + vendor register; signed deploys and transparency logs are not live |
 | **AT** Awareness & Training | Partial (≥80% substance) | Training cadence informal; formality gap |
 | **CP** Contingency Planning | Partial (≥80% substance) | 14-drill BCP/DR cadence; first cycle scheduled |
 | **CA** Assessment, Authorization & Monitoring | Partial (≥80% substance) | CA-6 ATO process itself is FedRAMP-unique |

@@ -11951,9 +11951,9 @@ verify-means: |
 last-verified: 2026-08-31
 ```
 
-### B-166 — `corelink --version` imprime ao cliente uma URL de atestação SLSA num hostname que não tem DNS
+### B-166 — `corelink --version` imprimia ao cliente uma URL de atestação SLSA num hostname que não tem DNS — FECHADO
 
-`tools/cli/src/commands/version.rs:58` monta, e o CLI **entrega ao cliente**, no campo
+Antes do reparo, `tools/cli/src/commands/version.rs:58` montava, e o CLI **entregava ao cliente**, no campo
 `slsa_attestation` de `corelink --version`:
 
 ```
@@ -12003,76 +12003,26 @@ não autoriza generalizar sobre a vizinhança dela sem medir a vizinhança.
 a mais honesta e a mais barata, e é decisão de produto — um cliente que não vê o campo sabe
 menos, mas não é enganado.
 
+**Concluído em 2026-09-01.** O campo e a URL foram removidos do wire output e da documentação.
+Os guias de instalação/CI orientam somente a verificação do checksum `.sha256`; a referência
+explica os fallbacks reais de `GIT_COMMIT_SHA`, `TARGET` e `SOURCE_DATE_EPOCH`; e a distinção
+entre `--version` (somente SemVer) e `version` (metadados) está testada por execução real.
+
 ```backlog
 id: B-166
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  python3 - <<"PY"
-  import pathlib, re, socket, sys
-  v = pathlib.Path("tools/cli/src/commands/version.rs")
-  if not v.is_file():
-      print("FALHA: version.rs sumiu — reavalie o item em vez de fecha-lo."); sys.exit(1)
-
-  def resolve(h):
-      try:
-          return socket.getaddrinfo(h, None)[0][4][0]
-      except OSError:
-          return ""
-
-  ctl = resolve("corelink-api.humangr.com")
-  if not ctl:
-      print("FALHA: o controle corelink-api.humangr.com tambem nao resolveu — sem rede ou sem DNS; instrumento, nao achado."); sys.exit(1)
-  host = ""
-  for ln in v.read_text().splitlines():
-      s = ln.lstrip()
-      if s.startswith("//"):
-          continue
-      m = re.search(r"https://([a-z0-9.-]+)/attestations/cli/", ln)
-      if m:
-          host = m.group(1); break
-  if not host:
-      print("FALHA: nao achei a URL de atestacao em linha executavel de version.rs — o campo mudou de forma ou sumiu; releia antes de confiar neste portao."); sys.exit(1)
-  res = resolve(host)
-  if res:
-      print(f"FALHA: o host da atestacao ({host}) resolve para {res} — o reparo aterrissou; feche o item."); sys.exit(1)
-  d = pathlib.Path("docs/cli/json-output-schema.md")
-  doc = 1 if (d.is_file() and any(
-      f"https://{host}/attestations/cli/" in ln and not ln.lstrip().startswith("#")
-      for ln in d.read_text().splitlines())) else 0
-  print(f"aberto: corelink --version imprime atestacao em https://{host}/... que NAO resolve (controle corelink-api -> {ctl}); schema JSON publicado repete o host morto={doc}")
-  PY
+  python3 -m pytest -q tests/test_b166_cli_version_docs_contract.py
 verify-means: |
-  open — o host da URL de atestação que o CLI imprime **não resolve**, enquanto o controle
-  positivo na mesma execução resolve.
-
-  **O hostname é EXTRAÍDO do código, não escrito no portão.** O comando lê a URL da linha
-  executável de `version.rs` e resolve o que encontrar. Um `dig corelink.humangr.com` fixo
-  aqui continuaria vermelho — corretamente — depois de alguém corrigir o campo para outro
-  host, e o item nunca fecharia.
-
-  **O controle positivo é o que separa "host morto" de "sem rede".** `corelink-api.humangr.com`
-  é resolvido primeiro; se ele falhar, o comando declara **falha de instrumento** em vez de
-  concluir que o host da atestação morreu. Sem isso, uma máquina de CI sem DNS reportaria o
-  defeito como presente todo dia, e um portão que grita sempre é um portão que ninguém lê.
-  `dig` ausente é a terceira falha nomeada.
-
-  **Âncoras:** `^[^/]*` em Rust (o arquivo cita a URL também numa asserção de teste na `:91`,
-  e comentários futuros a citariam) e `^[^#]*` no markdown do schema.
-
-  **Medido pelos dois lados (2026-08-31), e com `PATH` reduzido a `/usr/bin:/bin` para
-  reproduzir o runner sem `dig`:** no estado atual sai *"aberto: corelink --version imprime
-  atestacao em https://corelink.humangr.com/... que NAO resolve (controle corelink-api ->
-  2606:4700:3035::ac43:a70d); schema JSON publicado repete o host morto=1"* e exit 0. Numa
-  cópia com a URL apontando para `corelink-api.humangr.com`, sai *"FALHA: o host da atestacao
-  (corelink-api.humangr.com) resolve para …"* e exit 1.
-
-  **O que ele NÃO decide, e é metade do problema:** se o artefato **existe**. Mesmo com o
-  host resolvendo, o caminho promete `slsa3.json` de uma cadeia que é **L2** ([B-045], cujo
-  `verify` é um laço fechado sobre doze arquivos de `specs/` — `tools/` está fora) e que
-  nunca emitiu bundle ([B-091]). Fechar este item pelo DNS e parar aí trocaria um erro de
-  resolução por um 404, o que é pior: o 404 parece nossa culpa e é.
+  done — delega ao checker semântico completo `tests/test_b166_cli_version_docs_contract.py`,
+  cuja população explícita de 36 documentos cobre os oito guias SDK, as oito páginas públicas
+  de security/pricing, as 16 páginas Trust (compliance, ISO 27001, FedRAMP e índice nos quatro
+  locais) e as quatro páginas de acesso a SBOM. O checker falha para promessas SLSA, Sigstore,
+  Rekor, Cosign, provenance ou assinatura de release/binary/worker — inclusive `signing`,
+  `firma` e `assinatura` multilinha — aceitando somente qualificações explícitas de ausência;
+  usos legítimos de assinatura fora da distribuição de binários permanecem permitidos.
 last-verified: 2026-08-31
 ```
 

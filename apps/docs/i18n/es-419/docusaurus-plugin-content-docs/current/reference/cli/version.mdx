@@ -2,7 +2,7 @@
 id: cli-version
 title: corelink version
 sidebar_label: version
-description: Print version, git revision, and SLSA attestation URL.
+description: Print version, git revision, and build metadata.
 tags: [reference, cli, version]
 ---
 
@@ -14,8 +14,12 @@ tags: [reference, cli, version]
 
 # `corelink version`
 
-Print precise build metadata: semver, git revision, and a link to the
-SLSA-3 attestation for the running binary.
+Print the package version and the build metadata compiled into the binary.
+The current release workflow injects `SOURCE_DATE_EPOCH` only: it does not
+inject `GIT_COMMIT_SHA` or `TARGET`. Consequently, `git_rev` is `unknown`,
+`build_timestamp` is an `epoch:` value in release builds (or `unknown` in a
+local build), and `target_triple` falls back to the target architecture (for
+example, `x86_64`).
 
 ## Synopsis
 
@@ -36,10 +40,10 @@ corelink version
 ```
 
 ```text
-corelink 1.4.2
-git_rev:  9c3f1ab
-built:    2026-04-30T11:02:33Z
-slsa:     https://attest.corelink.humangr.com/9c3f1ab.intoto.jsonl
+corelink 0.1.0
+  git rev:      unknown
+  built:        unknown
+  target:       x86_64
 ```
 
 ```bash
@@ -48,21 +52,23 @@ corelink version --output json
 
 ```json
 {
-  "ok": true,
-  "subcommand": "version",
-  "version": "1.4.2",
-  "git_rev": "9c3f1ab",
-  "built_at": "2026-04-30T11:02:33Z",
-  "slsa_attestation_url": "https://attest.corelink.humangr.com/9c3f1ab.intoto.jsonl"
+  "version": "0.1.0",
+  "git_rev": "unknown",
+  "build_timestamp": "unknown",
+  "target_triple": "x86_64"
 }
 ```
 
 ## Notes
 
 - This subcommand does **not** require a PAT.
-- The `slsa_attestation_url` is stable for the binary's lifetime and is the
-  authoritative provenance source — verify it before trusting an
-  out-of-band download.
+- `GIT_COMMIT_SHA` and `TARGET` are optional build-time injections, not
+  release guarantees. Do not interpret `unknown` or the architecture fallback
+  as a verified source revision or a target triple.
+- Attestation fields are intentionally absent while no published, independently
+  retrievable bundle exists. Consumers must accept their absence and must not
+  derive an artifact URL from `version` or `git_rev`. A future published bundle
+  may add an optional field with its exact URL.
 
 ## Exit codes
 

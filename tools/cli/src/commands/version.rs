@@ -1,4 +1,4 @@
-//! `corelink version` — print version + git rev + SLSA attestation link (WI-S15-001).
+//! `corelink version` — print version, git revision, and build metadata.
 
 use std::fmt;
 
@@ -17,9 +17,7 @@ pub struct VersionInfo {
     pub git_rev: String,
     /// Build timestamp (deterministic via `SOURCE_DATE_EPOCH`).
     pub build_timestamp: String,
-    /// SLSA attestation link (S-12 supply chain alignment).
-    pub slsa_attestation: String,
-    /// Target triple this binary was compiled for.
+    /// Target triple when injected at build time; otherwise target architecture.
     pub target_triple: String,
 }
 
@@ -28,8 +26,7 @@ impl fmt::Display for VersionInfo {
         writeln!(f, "corelink {}", self.version)?;
         writeln!(f, "  git rev:      {}", self.git_rev)?;
         writeln!(f, "  built:        {}", self.build_timestamp)?;
-        writeln!(f, "  target:       {}", self.target_triple)?;
-        write!(f, "  attestation:  {}", self.slsa_attestation)
+        write!(f, "  target:       {}", self.target_triple)
     }
 }
 
@@ -54,14 +51,10 @@ pub fn build_version_info() -> VersionInfo {
     let target_triple = option_env!("TARGET")
         .unwrap_or(std::env::consts::ARCH)
         .to_owned();
-    let slsa_attestation =
-        format!("https://corelink.humangr.com/attestations/cli/{version}/{git_rev}/slsa3.json");
-
     VersionInfo {
         version,
         git_rev,
         build_timestamp,
-        slsa_attestation,
         target_triple,
     }
 }
@@ -84,26 +77,48 @@ mod tests {
     }
 
     #[test]
-    fn version_info_has_slsa_link() {
-        let info = build_version_info();
-        assert!(info
-            .slsa_attestation
-            .starts_with("https://corelink.humangr.com/attestations/cli/"));
-    }
-
-    #[test]
     fn version_info_display_contains_version() {
         let info = build_version_info();
         let s = format!("{info}");
         assert!(s.contains("corelink"));
         assert!(s.contains("git rev:"));
+        assert!(s.contains("built:"));
+        assert!(s.contains("target:"));
+        assert!(!s.contains("attestation"));
+        assert!(!s.contains("slsa"));
+        assert!(!s.contains("https://"));
     }
 
     #[test]
-    fn version_info_serialises() {
+    fn version_info_serialises_without_unpublished_attestation() {
         let info = build_version_info();
-        let json = serde_json::to_string(&info).unwrap();
-        assert!(json.contains("\"version\""));
-        assert!(json.contains("\"slsa_attestation\""));
+        let json = serde_json::to_value(&info).unwrap();
+        let object = json
+            .as_object()
+            .expect("version info serialises to an object");
+        let actual_keys = object.keys().map(String::as_str).collect::<Vec<_>>();
+        assert_eq!(
+            actual_keys,
+            ["build_timestamp", "git_rev", "target_triple", "version"]
+        );
+        assert_eq!(
+            json.get("version"),
+            Some(&serde_json::Value::String(info.version))
+        );
+        assert_eq!(
+            json.get("git_rev"),
+            Some(&serde_json::Value::String(info.git_rev))
+        );
+        assert_eq!(
+            json.get("build_timestamp"),
+            Some(&serde_json::Value::String(info.build_timestamp))
+        );
+        assert_eq!(
+            json.get("target_triple"),
+            Some(&serde_json::Value::String(info.target_triple))
+        );
+        assert!(json.get("slsa_attestation").is_none());
+        assert!(json.get("slsa_attestation_url").is_none());
+        assert!(json.get("attestation").is_none());
     }
 }

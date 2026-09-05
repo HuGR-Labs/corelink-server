@@ -83,15 +83,17 @@ These controls are implemented and continuously monitored, even though the
 external attestation is still in flight:
 
 - **CC6.1 / CC6.7 — logical access + cryptographic protection:** TLS 1.2 floor, 1.3 negotiated
-  enforced edge-to-origin, MFA-enforced admin plane, signed-deploy
-  pipeline, Rekor transparency-log entries for every release.
+  enforced edge-to-origin, MFA-enforced admin plane, branch protection, and
+  SHA-256 (`.sha256`) checksum verification for CLI release assets. No signed release
+  artifact is currently published.
 - **CC7.1 — vulnerability management:** Dependency-Track + cargo-deny +
   cargo-fuzz with daily evidence collection. See
   [security policy](/security).
 - **CC7.2 — system monitoring:** SLO catalogue + Prometheus metrics +
   PagerDuty 24/7 rotation across 3 regions.
 - **CC8.1 — change management:** branch protection + dual-approval pattern
-  (`PAT-DUAL-APPROVAL-001`) + Cosign-verified releases.
+  (`PAT-DUAL-APPROVAL-001`) + release checksums. Cosign verification is not
+  part of the current release contract.
 - **PI1.2 — auditability:** append-only, Merkle-linked audit chain with
   RFC 6962 inclusion proofs. See [Audit chain](/security/audit-chain).
 

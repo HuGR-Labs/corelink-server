@@ -157,12 +157,30 @@ Exit code: `0` if all checks ok/skip, `1` if any check fails.
 ```json
 {
   "version": "0.1.0",
-  "git_rev": "abc1234",
-  "build_timestamp": "epoch:1715040000",
-  "slsa_attestation": "https://corelink.humangr.com/attestations/cli/0.1.0/abc1234/slsa3.json",
-  "target_triple": "aarch64-apple-darwin"
+  "git_rev": "unknown",
+  "build_timestamp": "unknown",
+  "target_triple": "x86_64"
 }
 ```
+
+The current release workflow injects `SOURCE_DATE_EPOCH`, so release builds
+normally report `build_timestamp` as `epoch:<release-commit-timestamp>`. It does
+not inject `GIT_COMMIT_SHA` or `TARGET`: `git_rev` therefore remains `unknown`,
+and `target_triple` uses the target-architecture fallback (for example,
+`x86_64`). Local builds without `SOURCE_DATE_EPOCH` report `unknown` for the
+timestamp as well.
+
+`slsa_attestation` is intentionally absent from both the JSON and text
+outputs. CoreLink has not published a resolving CLI attestation bundle, so
+the CLI must not construct or advertise an attestation URL. Consumers MUST
+treat the field as optional and MUST NOT infer an artifact URL from the
+version or git revision. A successful DNS lookup only establishes that a host
+resolves; it does not establish that an artifact exists. Likewise, a network
+failure is indeterminate, while a successful HTTP `404` for a candidate path
+confirms that path has no published artifact.
+
+When a real, independently retrievable attestation bundle is published, a
+future schema version may add an optional artifact field with its exact URL.
 
 ---
 

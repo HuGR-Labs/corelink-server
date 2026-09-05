@@ -48,7 +48,7 @@ Bazel/REAPI **Remote Cache** profile (ContentAddressableStorage + ActionCache
 | Multi-region storage pinning | ✓ | varies | varies | ✓ | depends |
 | BYOK (customer-managed KMS) | ✓ (Enterprise) | varies | varies | varies | depends |
 | Append-only audit chain (RFC 6962) | ✓ | varies | varies | varies | — |
-| SLSA L3 provenance on releases | ✓ | varies | varies | varies | — |
+| Published release integrity check | SHA-256 checksum sidecars | varies | varies | varies | — |
 | Open source license | partial (CLI + SDK) | source-available | Apache-2.0 | proprietary | Apache-2.0 |
 | Public pricing | `$X` per [tier](./) | varies | n/a | contact sales | n/a |
 
@@ -63,8 +63,10 @@ Bazel/REAPI **Remote Cache** profile (ContentAddressableStorage + ActionCache
   (`security_model.md §3`).
 - **Audit-grade retention.** Seven-year append-only audit log with RFC 6962
   inclusion proofs is on by default for Business and Enterprise tiers.
-- **Supply-chain visibility.** Every release ships a Sigstore provenance
-  attestation that can be verified against the public transparency log.
+- **Release integrity.** Current public CLI assets ship with matching SHA-256
+  (`.sha256`) checksum sidecars. No additional binary-verification artifact is part of the
+  current public release contract; a future independently retrievable bundle
+  would be an explicitly separate, optional contract.
 
 ## What CoreLink does not aim to do
 

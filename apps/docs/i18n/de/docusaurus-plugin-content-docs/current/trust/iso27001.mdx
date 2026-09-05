@@ -129,10 +129,10 @@ After certificate issuance:
 These ISO 27001 control families are already operating and continuously
 monitored — verifiable on request:
 
-- **A.5.21 Information security in the ICT supply chain:** SLSA Level 3
-  build attestation, Cosign-signed releases, Rekor transparency logs,
-  CycloneDX SBOM, Dependency-Track, license allowlist, reproducible builds.
-  See our [security overview](/security).
+- **A.5.21 Information security in the ICT supply chain:** CycloneDX SBOM,
+  Dependency-Track, license allowlist, reproducible builds, and SHA-256
+  (`.sha256`) checksum sidecars for CLI release assets. SLSA/Cosign/Rekor signing is not
+  part of the current release contract. See our [security overview](/security).
 - **A.5.28 Collection of evidence:** Merkle-linked append-only audit chain
   with RFC 6962 inclusion proofs, R2 Object Lock Governance Mode, 7-year
   retention. See [Audit chain](/security/audit-chain).
