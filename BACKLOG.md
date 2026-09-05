@@ -3192,7 +3192,7 @@ verify-means: |
   problema do B-057, nao deste item. Registrar a distincao importa: a versao
   original deste item foi escrita supondo que os SLOs mediam alguma coisa, e
   essa suposicao era falsa.
-last-verified: 2026-08-31
+last-verified: 2026-09-05
 ```
 
 
@@ -9069,25 +9069,28 @@ A imagem da frota ganhou um **drop-in** `docker` em corelink-runners#459 (2026-0
 `docker-shim.sh` fazendo `exec nerdctl` sobre containerd + BuildKit. **Nao e um daemon
 Docker.**
 
-Dois workflows dependem de docker e continuam hosted:
+Dois workflows dependiam de docker e eram hosted; esta branch os roteia para a fila
+`corelink` como experimento controlado:
 
-- `smoke-install.yml` — "installer smoke (**real Docker daemon required**)"
-- `cosign-sign.yml` — `docker/build-push-action`, que quer um builder `buildx`; o shim
-  mapeia `buildx build` para `nerdctl build`, o que **pode** bastar
+- `smoke-install.yml` — preflight `docker info`, build, install/version e `doctor`
+- `cosign-sign.yml` — preflight `docker info`, `docker/build-push-action`, assinatura
+  keyless e verificacao Rekor antes do webhook
 
 **O que se sabe:** build de imagem funciona na frota — `container-build-push-prod.yml`
 esta verde (2026-08-31T00:39). **Mas ele chama `buildctl` DIRETO**, nao passa pelo shim.
 Isso nao prova nada sobre os dois acima.
 
-**O experimento e barato e decide os dois:** despachar cada um uma vez com
-`runs-on: corelink` e ler o resultado. Enquanto isso nao acontece, a afirmacao "eles
-precisam ficar hosted" e **herdada, nao medida** — o comentario em `cargo-deny.yml:102`
+**O experimento e barato e decide os dois:** a proxima execucao deve despachar cada um com
+`runs-on: corelink` e ler o resultado. Ate que exista essa execucao, a afirmacao "eles
+funcionam na frota" segue **nao medida** — o comentario em `cargo-deny.yml:102`
 ("the `corelink` box image ships no docker at all") ja esta desatualizado pelo mesmo
 motivo.
 
-**Este item existe para "shim nao e daemon" nao virar promessa esquecida.** Recusar trocar
-um bloqueio falso por uma promessa foi a decisao certa; deixar a promessa sem dono seria a
-errada.
+**A branch deixa o gate fail-closed e registra a fronteira de verdade em
+`docs/campaigns/remediation/B-134-docker-shim-experiment.md`:** o roteamento e a presenca
+de comandos sao verificaveis estaticamente; nenhum PASS de frota e inferido antes de um run
+real com logs e evidencias de assinatura/deploy. Recusar trocar um bloqueio falso por uma
+promessa foi a decisao certa; deixar a promessa sem dono seria a errada.
 
 **O que este item NAO decide:** se `smoke-install` **deve** migrar mesmo que funcione — um
 smoke de instalador que valida a experiencia real do cliente pode ter razao para rodar num
@@ -9099,20 +9102,18 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  bash -c 'n=0
-  for w in .github/workflows/smoke-install.yml .github/workflows/cosign-sign.yml; do
-    [ -f "$w" ] || continue
-    grep -qE "^\s+runs-on: ubuntu" "$w" && n=$((n+1))
-  done
-  [ "$n" -ge 1 ] || { echo "FALHA: nenhum dos dois esta mais em ubuntu-* — feche ou reescreva o item."; exit 1; }
-  echo "aberto: $n de 2 (smoke-install, cosign-sign) ainda em ubuntu-*, sem experimento na frota"'
+  python3 scripts/check_b134_observability.py
+  bash scripts/test_b134_observability.sh
 verify-means: |
-  open — pelo menos um dos dois segue hosted com a hipotese "precisa de docker de verdade"
-  nao testada.
+  open — os dois workflows estao roteados para `corelink`, mas a ledger permanece
+  `UNMEASURED` ate haver um run real. O checker confirma preflight e passos observaveis;
+  a suite de mutacoes prova que rota, verificacao, placeholders e ledger falsa falham.
 
-  Vira DRIFTED quando os dois sairem de `ubuntu-*` — por migracao ou por remocao
-  (`cosign-sign` pode simplesmente morrer, ver B-118).
-last-verified: 2026-08-31
+  Vira PASS somente com GitHub run IDs, conclusoes, logs do backend, evidencia de imagem
+  publicada/assinada/verificada e webhook aceito. Vira DRIFTED se a rota, verificacao ou
+  contrato de evidencia regredir, ou se o workflow for removido (`cosign-sign` pode
+  simplesmente morrer, ver B-118).
+last-verified: 2026-09-05
 ```
 
 ### B-135 — a imagem do runner nao e construida por nenhum gatilho de PR, e carrega rotulos que ninguem le
