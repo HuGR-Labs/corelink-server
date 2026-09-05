@@ -118,7 +118,7 @@ searching that file for the triple finds nothing.
 
 ### Common use cases
 
-1. Day-to-day admin: onboarding a new engineer (invite + assign Developer
+1. Day-to-day admin: onboarding a new engineer (invite + assign Member
    role + mint their first PAT).
 2. Forensics: querying audit log after a suspected leak — see
    [Audit role changes](../../how-to/rbac/audit-role-changes).
@@ -144,7 +144,7 @@ searching that file for the triple finds nothing.
 
 ---
 
-## `Developer` — CAS read/write, no admin surface
+## `Member` — CAS read/write, no admin surface
 
 > "I build code and need to read/write the cache. I don't touch tenant
 > settings."
@@ -160,7 +160,7 @@ searching that file for the triple finds nothing.
 
 ### Cannot do
 
-- *(Correction: a Developer **can** delete CAS blobs. `DELETE /v1/cas/{tenant}/{hash}`
+- *(Correction: a Member **can** delete CAS blobs. `DELETE /v1/cas/{tenant}/{hash}`
   is gated on the cache-WRITE capability, not on a delete-specific scope, so any
   write-capable token deletes. The `cache:delete` scope is defined but no
   enforcement point reads it.)*
@@ -173,7 +173,7 @@ searching that file for the triple finds nothing.
 
 ### Common use cases
 
-1. CI service account: assign Developer role, mint a PAT with
+1. CI service account: assign Member role, mint a PAT with
    `cache:r | cache:w | cache:find-missing` scope mask.
 2. Engineer on the team: same as above, but PAT is bound to
    `issued_to_user = <their UUID>` for forensics.
@@ -182,11 +182,11 @@ searching that file for the triple finds nothing.
 ### Example workflow: Mint a CI PAT for yourself
 
 ```
-1. Developer: opens admin UI → "My tokens" → "Mint new token"
+1. Member: opens admin UI → "My tokens" → "Mint new token"
 2. Selects scopes: cache:r, cache:w, cache:find-missing
 3. UI displays the token once (Argon2id hash is stored; raw is gone after
    close).
-4. Developer: copies the token into the CI secret store
+4. Member: copies the token into the CI secret store
    (GitHub Actions, GitLab CI, etc).
 5. PAT used in Authorization: Bearer header on every cache request.
 ```
@@ -246,11 +246,11 @@ searching that file for the triple finds nothing.
 
 Who can change whom:
 
-| Initiator → target | → Owner            | → Admin     | → Developer | → Viewer    |
+| Initiator → target | → Owner            | → Admin     | → Member    | → Viewer    |
 |--------------------|--------------------|-------------|-------------|-------------|
 | `Owner`            | Grant / revoke     | Grant / revoke | Grant / revoke | Grant / revoke |
 | `Admin`            | ❌                  | ❌           | Grant / revoke | Grant / revoke |
-| `Developer`        | ❌                  | ❌           | ❌           | ❌           |
+| `Member`           | ❌                  | ❌           | ❌           | ❌           |
 | `Viewer`           | ❌                  | ❌           | ❌           | ❌           |
 
 > **Last-Owner safeguard:** A tenant must always retain at least one `Owner`.

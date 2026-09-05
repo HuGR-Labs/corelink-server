@@ -54,13 +54,12 @@ or source code. Store it in a secret manager (`direnv`, `1password`,
 
 ## Step 2 — Install the CLI <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
 
-Run the one-liner install script. Pass the PAT you copied in Step 1 and
-your chosen region.
+Run the one-liner install script with the PAT you copied in Step 1. Your
+tenant's region was selected during signup and is routed server-side.
 
 ```bash
 curl -fsSL https://corelink-get.humangr.com | sh -s -- \
-  --token=corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA \
-  --region=ord
+  --token=corelink_pat_xxx…xxx
 ```
 
 The script:
@@ -71,8 +70,8 @@ The script:
    `.sha256` published beside the release asset **before** making it
    executable — a missing checksum aborts the install — then moves it to
    `/usr/local/bin/corelink` (via `sudo` if you are not root).
-3. Writes `~/.corelink/config.toml` at mode `0600` with your token,
-   region, and API endpoint.
+3. Writes `~/.corelink/config.toml` at mode `0600` with your token and API
+   endpoint. Tenant residency is not a client-side config setting.
 4. Runs `corelink whoami`, which resolves your identity against
    `/v1/users/me` and caches the resolved `tenant_id` back into that
    config file — every later tenant-scoped command needs it.
@@ -120,8 +119,7 @@ Invoke-WebRequest -Uri https://github.com/HuGR-Labs/corelink-cli/releases/latest
 After a manual install, write your PAT to the config manually:
 
 ```bash
-corelink config set auth.pat "corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
-corelink config set defaults.region ord
+corelink config set auth.pat "corelink_pat_xxx…xxx"
 ```
 
 </details>
@@ -248,12 +246,10 @@ Common failure modes and their fixes:
 **Symptom:** the `network` check in `corelink doctor` reports a latency over
 200 ms, or `bazel build` logs `UNAVAILABLE: connection closed`.
 
-**Fix:** your `.bazelrc` is pointing to the wrong region endpoint. Run
-`corelink doctor` and read the `region` check. Then:
-
-```bash
-corelink config set defaults.region <correct-region>
-```
+**Fix:** CoreLink routes each tenant to its server-side primary region. Run
+`corelink doctor` and read the `region` check. If the provisioned region is
+not suitable for your CI location, contact support@humangr.com; changing
+residency is a server-side data-migration request, not a CLI config change.
 
 Available regions: `ord` (US-Central), `iad` (US-East), `lhr` (EU-West),
 `nrt` (AP-Northeast), `syd` (AP-Southeast).

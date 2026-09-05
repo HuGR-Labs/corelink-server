@@ -22,7 +22,7 @@ test.describe("customer team", () => {
     await expect(page.getByTestId("team-row-user_e2e_member")).toBeVisible();
 
     await page.getByTestId("team-invite-email").fill("newbie@acme.example");
-    await page.getByTestId("team-invite-role").selectOption("Developer");
+    await page.getByTestId("team-invite-role").selectOption("member");
 
     const inviteResp = page.waitForResponse(
       (r) =>

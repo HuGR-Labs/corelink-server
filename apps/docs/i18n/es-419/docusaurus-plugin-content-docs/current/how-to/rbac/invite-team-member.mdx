@@ -34,7 +34,7 @@ which role to pick.
 
 | Their job                                                      | Role to assign   |
 |----------------------------------------------------------------|------------------|
-| Engineer who reads/writes the cache from CI or local dev       | `Developer`      |
+| Engineer who reads/writes the cache from CI or local dev       | `Member`         |
 | Tech lead / SRE who needs to mint tokens or read audit log     | `Admin`          |
 | Co-founder / Head of Engineering who also owns billing         | `Owner`          |
 | External auditor or read-only dashboard consumer               | `Viewer`         |
@@ -45,7 +45,7 @@ job. You can always promote later. Demotion is also one click.
 > **A note on `Owner`:** Only assign `Owner` if the person should see the
 > invoice and be able to act as the second approver for destructive
 > operations. Most engineering hires should start as `Admin` or
-> `Developer`.
+> `Member`.
 
 ## Step 1 — Confirm Clerk SSO is configured
 
@@ -94,13 +94,13 @@ así que puedes automatizar invitaciones desde CI con un PAT:
 ```bash
 curl -X POST https://corelink-api.humangr.com/v1/customer/team/invite \
   -H "Content-Type: application/json" \
-  -d '{"email":"teammate@example.com","role":"Developer"}' --config - <<EOF
+  -d '{"email":"teammate@example.com","role":"member"}' --config - <<EOF
 header = "Authorization: Bearer ${CORELINK_PAT}"
 EOF
 ```
 
 Invitar (y quitar) a un miembro es **exclusivo de owner/admin**: un token
-`Developer` o `Viewer` recibe un `403` aquí, por cualquiera de las dos
+`Member` o `Viewer` recibe un `403` aquí, por cualquiera de las dos
 rutas.
 
 ## Paso 3 — La persona invitada acepta la invitación
@@ -142,9 +142,9 @@ vuelve como un marcador de posición: mira la nota de abajo.
 > (`INV-AUDIT-NO-RAW-PII`): el registro `team.invited` guarda el rol, no
 > la dirección.
 
-## Paso 5 — Emitir su primer PAT (`Developer` o superior)
+## Paso 5 — Emitir su primer PAT (`Member` o superior)
 
-Las personas con rol `Developer`, `Admin` y `Owner` pueden emitir sus
+Las personas con rol `Member`, `Admin` y `Owner` pueden emitir sus
 propios PAT desde la página **API keys** del panel
 (`https://humangr.com/corelink/en/customer/keys`); `Viewer` no puede.
 

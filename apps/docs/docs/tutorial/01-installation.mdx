@@ -35,7 +35,8 @@ The installer:
    executable. A missing checksum aborts the install.
 3. Installs it to `/usr/local/bin/corelink` (via `sudo` if you are not
    root) and writes `~/.corelink/config.toml` at mode `0600` with your
-   token, region, and API endpoint.
+   token and API endpoint. Tenant residency is selected server-side during
+   signup, not in the client config.
 4. Runs `corelink whoami`, which resolves your identity against
    `/v1/users/me` and caches the resolved `tenant_id` back into that same
    config file — every later tenant-scoped command needs it.

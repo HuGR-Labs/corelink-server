@@ -149,7 +149,7 @@ describe("CustomerClient wire-shape contract", () => {
           member: {
             user_id: "0198f0e3-0000-7000-8000-000000000001",
             email: "alice@example.com",
-            role: "Developer",
+            role: "member",
             joined_at: "",
             status: "invited",
           },
@@ -158,7 +158,7 @@ describe("CustomerClient wire-shape contract", () => {
       ),
     });
 
-    const member = await client.inviteTeam({ email: "alice@example.com", role: "Developer" });
+    const member = await client.inviteTeam({ email: "alice@example.com", role: "member" });
 
     expect(member.email).toBe("alice@example.com");
     expect(member.user_id).toBe("0198f0e3-0000-7000-8000-000000000001");
@@ -267,7 +267,7 @@ describe("CustomerClient wire-shape contract", () => {
           {
             user_id: "user_owner",
             email: "—",
-            role: "Owner",
+            role: "owner",
             joined_at: "2026-05-01T00:00:00Z",
             status: "active",
           },
@@ -277,6 +277,6 @@ describe("CustomerClient wire-shape contract", () => {
 
     const { members } = await client.listTeam();
     expect(members).toHaveLength(1);
-    expect(members[0]!.role).toBe("Owner");
+    expect(members[0]!.role).toBe("owner");
   });
 });

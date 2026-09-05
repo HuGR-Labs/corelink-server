@@ -92,7 +92,8 @@ to.
 - [ ] **Identify the riskiest CI job.** Pick the build you're least
   worried about breaking — that's your Phase 2 canary.
 
-- [ ] **Pin your CoreLink region.** `corelink config get defaults.region`.
+- [ ] **Confirme a residência do CoreLink.** A região primária do tenant é
+  escolhida no cadastro e roteada no servidor; fale com o suporte para migrar.
   Match it to your CI runners' AWS/GCP region to keep egress under
   100 ms p50.
 

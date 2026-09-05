@@ -698,6 +698,18 @@ impl KeyRevokeResponse {
 
 // ─── Team ────────────────────────────────────────────────────────────────────
 
+/// Normalize an invite role to the frozen `team_member.role` CHECK domain.
+/// Unknown and non-grantable roles are rejected instead of silently downgraded.
+#[must_use]
+pub fn canonical_invite_role(role: &str) -> Option<&'static str> {
+    match role.trim().to_ascii_lowercase().as_str() {
+        "admin" => Some("admin"),
+        "member" => Some("member"),
+        "viewer" => Some("viewer"),
+        _ => None,
+    }
+}
+
 /// One team member row.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -706,7 +718,7 @@ pub struct TeamMemberRow {
     pub user_id: String,
     /// User's email address.
     pub email: String,
-    /// One of `"Owner"` / `"Admin"` / `"Developer"` / `"Viewer"`.
+    /// One of the persisted values `"owner"` / `"admin"` / `"member"` / `"viewer"`.
     pub role: String,
     /// ISO-8601 timestamp when the user joined (accepted invite).
     pub joined_at: String,

@@ -34,7 +34,7 @@ which role to pick.
 
 | Their job                                                      | Role to assign   |
 |----------------------------------------------------------------|------------------|
-| Engineer who reads/writes the cache from CI or local dev       | `Developer`      |
+| Engineer who reads/writes the cache from CI or local dev       | `Member`         |
 | Tech lead / SRE who needs to mint tokens or read audit log     | `Admin`          |
 | Co-founder / Head of Engineering who also owns billing         | `Owner`          |
 | External auditor or read-only dashboard consumer               | `Viewer`         |
@@ -45,7 +45,7 @@ job. You can always promote later. Demotion is also one click.
 > **A note on `Owner`:** Only assign `Owner` if the person should see the
 > invoice and be able to act as the second approver for destructive
 > operations. Most engineering hires should start as `Admin` or
-> `Developer`.
+> `Member`.
 
 ## Step 1 — Confirm Clerk SSO is configured
 
@@ -95,13 +95,13 @@ heraus automatisieren:
 ```bash
 curl -X POST https://corelink-api.humangr.com/v1/customer/team/invite \
   -H "Content-Type: application/json" \
-  -d '{"email":"teammate@example.com","role":"Developer"}' --config - <<EOF
+  -d '{"email":"teammate@example.com","role":"member"}' --config - <<EOF
 header = "Authorization: Bearer ${CORELINK_PAT}"
 EOF
 ```
 
 Mitglieder einzuladen (und zu entfernen) ist **ausschließlich Owner/Admin
-vorbehalten** — ein `Developer`- oder `Viewer`-Token erhält hier auf
+vorbehalten** — ein `Member`- oder `Viewer`-Token erhält hier auf
 beiden Wegen ein `403`.
 
 ## Schritt 3 — Die eingeladene Person nimmt die Einladung an
@@ -144,9 +144,9 @@ aber als Platzhalter zurück — siehe den Hinweis unten.
 > (`INV-AUDIT-NO-RAW-PII`): der Eintrag `team.invited` hält die Rolle
 > fest, nicht die Adresse.
 
-## Schritt 5 — Das erste PAT ausstellen (ab `Developer`)
+## Schritt 5 — Das erste PAT ausstellen (ab `Member`)
 
-`Developer`, `Admin` und `Owner` können ihre eigenen PATs auf der Seite
+`Member`, `Admin` und `Owner` können ihre eigenen PATs auf der Seite
 **API keys** des Dashboards ausstellen
 (`https://humangr.com/corelink/en/customer/keys`); `Viewer` kann das nicht.
 

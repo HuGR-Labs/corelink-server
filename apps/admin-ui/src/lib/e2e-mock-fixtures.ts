@@ -220,21 +220,21 @@ function makeCustomerTeam(): CustomerTeamMember[] {
     {
       user_id: "user_e2e_admin",
       email: "admin@acme.example",
-      role: "Owner",
+      role: "owner",
       joined_at: "2026-01-15T09:00:00Z",
       status: "active",
     },
     {
       user_id: "user_e2e_approver",
       email: "approver@acme.example",
-      role: "Admin",
+      role: "admin",
       joined_at: "2026-02-01T09:00:00Z",
       status: "active",
     },
     {
       user_id: "user_e2e_member",
       email: "member@acme.example",
-      role: "Developer",
+      role: "member",
       joined_at: "2026-03-10T09:00:00Z",
       status: "active",
     },
@@ -657,12 +657,18 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
     return { status: 200, body: { members: state.customer.team } };
   }
   if (path === "/v1/customer/team/invite" && method === "POST") {
-    const b = (body ?? {}) as { email?: string; role?: CustomerTeamMember["role"] };
+    const b = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
     if (!b.email) return rfc7807(400, "Bad Request", "email required");
+    if (typeof b.role !== "string") return rfc7807(422, "Unprocessable Entity", "role is required");
+    const role = b.role.trim().toLowerCase();
+    if (role === "owner") return rfc7807(403, "Forbidden", "owner role is not grantable");
+    if (role !== "admin" && role !== "member" && role !== "viewer") {
+      return rfc7807(400, "Bad Request", "unsupported team invite role");
+    }
     const m: CustomerTeamMember = {
       user_id: `user_invite_${state.customer.team.length + 1}`,
-      email: b.email,
-      role: b.role ?? "Developer",
+      email: String(b.email),
+      role,
       joined_at: new Date().toISOString(),
       status: "invited",
     };

@@ -32,7 +32,7 @@ The `membership.role` column is constrained to exactly four values
 |-------------|-------------------|-------------------------------------------------------------------------|
 | `Owner`     | Tenant-wide       | Full access including billing, role grants, planned Enterprise BYOK; can act as approver. |
 | `Admin`     | Tenant-wide       | All operations except billing; can act as approver.                     |
-| `Developer` | Per-user surface  | CAS read/write, PAT mint for self; no admin surface.                    |
+| `Member`    | Per-user surface  | CAS read/write, PAT mint for self; no admin surface.                    |
 | `Viewer`    | Per-user surface  | Read-only CAS + audit-log read; cannot mint PATs.                       |
 
 > **The "Billing" role is NOT a separate membership role.** Billing is a

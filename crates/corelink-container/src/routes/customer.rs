@@ -420,9 +420,9 @@ fn mint_requests_write(scopes: &[String]) -> bool {
     )
 }
 
-/// True when `role` is a privileged team role (`Owner` / `Admin`) — granting it
+/// True when `role` is a privileged team role (`owner` / `admin`) — granting it
 /// is a write/admin mutation a read-only principal must not perform (cluster A).
-/// `Developer` / `Viewer` are non-privileged and allowed from any authenticated
+/// `member` / `viewer` are non-privileged and allowed from any authenticated
 /// caller. Case-insensitive exact match.
 fn role_is_privileged(role: &str) -> bool {
     matches!(role.trim().to_ascii_lowercase().as_str(), "owner" | "admin")
@@ -542,7 +542,7 @@ pub struct PatIssueBody {
 pub struct InviteBody {
     /// Email address to invite.
     pub email: String,
-    /// Role to assign (`"Owner"` / `"Admin"` / `"Developer"` / `"Viewer"`).
+    /// Role to assign (`"admin"` / `"member"` / `"viewer"`).
     pub role: String,
 }
 
@@ -1637,6 +1637,9 @@ impl AccountDeletionRequester for D1AccountDeletionRequester {
 fn map_err(e: CustomerHandlerError) -> axum::response::Response {
     tracing::warn!(error = ?e, "customer handler error");
     match e {
+        CustomerHandlerError::InvalidRequest(_) => {
+            (StatusCode::BAD_REQUEST, "invalid request").into_response()
+        }
         CustomerHandlerError::Unauthorized(_) => {
             (StatusCode::UNAUTHORIZED, "unauthorized").into_response()
         }

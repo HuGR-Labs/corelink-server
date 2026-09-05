@@ -60,13 +60,12 @@ PAT in geteilte Dokumente, Slack oder Quellcode ein.
 
 ## Schritt 2 — CLI installieren <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 Min.)</span>
 
-Führen Sie das Installations-Skript aus. Übergeben Sie den in Schritt 1
-kopierten PAT und Ihre gewählte Region.
+Führen Sie das Installations-Skript mit dem in Schritt 1 kopierten PAT aus.
+Die Region Ihres Tenants wurde bei der Anmeldung gewählt und serverseitig geroutet.
 
 ```bash
 curl -fsSL https://corelink-get.humangr.com | sh -s -- \
-  --token=ct_live_xxx…xxx \
-  --region=ord
+  --token=ct_live_xxx…xxx
 ```
 
 Das Skript:
@@ -211,7 +210,6 @@ den größten Nutzen beim zweiten Lauf Ihrer CI-Pipeline.
 
 **Lösung:**
 ```bash
-corelink config set defaults.region <korrekte-region>
 corelink bazel-init --force
 ```
 

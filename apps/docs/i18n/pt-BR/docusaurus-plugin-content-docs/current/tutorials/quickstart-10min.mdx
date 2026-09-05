@@ -59,12 +59,11 @@ Nunca cole um PAT real em docs compartilhados, Slack ou código-fonte.
 
 ## Passo 2 — Instale a CLI <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
 
-Execute o script de instalação. Passe o PAT copiado no Passo 1 e a região escolhida.
+Execute o script de instalação com o PAT copiado no Passo 1. A região do seu tenant foi escolhida no cadastro e é roteada no servidor.
 
 ```bash
 curl -fsSL https://corelink-get.humangr.com | sh -s -- \
-  --token=ct_live_xxx…xxx \
-  --region=ord
+  --token=ct_live_xxx…xxx
 ```
 
 O script:
@@ -208,7 +207,6 @@ acima de 200 ms, ou o Bazel registra `UNAVAILABLE`.
 
 **Correção:**
 ```bash
-corelink config set defaults.region <região-correta>
 corelink bazel-init --force
 ```
 

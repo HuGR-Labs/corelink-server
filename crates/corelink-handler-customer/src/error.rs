@@ -6,6 +6,10 @@ use thiserror::Error;
 #[derive(Debug, Error, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CustomerHandlerError {
+    /// Caller supplied a syntactically valid request with an unsupported value.
+    #[error("invalid request: {0}")]
+    InvalidRequest(String),
+
     /// Cross-tenant access denied — the caller's authenticated tenant
     /// does not match the requested tenant. Audit row emitted BEFORE
     /// this error is returned (fail-CLOSED ordering).

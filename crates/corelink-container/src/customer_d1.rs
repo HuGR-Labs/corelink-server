@@ -60,8 +60,8 @@ use std::time::Duration;
 
 use corelink_handler_customer::observer::Sli;
 use corelink_handler_customer::request::{
-    ByokStatus, CustomerAuditEventRow, DailyUsageBucket, InvoiceRow, OverviewBilling,
-    OverviewUsage, PatRow, TeamMemberRow,
+    canonical_invite_role, ByokStatus, CustomerAuditEventRow, DailyUsageBucket, InvoiceRow,
+    OverviewBilling, OverviewUsage, PatRow, TeamMemberRow,
 };
 use corelink_handler_customer::{
     AuditEvent, AuditEventKind, AuditQueryRequest, AuditQueryResponse, AuditSink, BillingRequest,
@@ -363,22 +363,22 @@ fn scope_to_list(scope: &str, find_only: bool) -> Vec<String> {
     }
 }
 
-/// Map a dashboard role string onto the FROZEN `team_member.role` CHECK domain
-/// (migration 0074: `owner` / `admin` / `member` / `viewer`). The admin-ui sends
-/// `"Owner"` / `"Admin"` / `"Developer"` / `"Viewer"`; `Developer` (and any
-/// unrecognized value) collapses to the least-privileged `member` so the INSERT
-/// can never violate the CHECK (which would surface as a 500). Case-insensitive.
-fn normalize_invite_role(role: &str) -> &'static str {
-    match role.trim().to_ascii_lowercase().as_str() {
-        // `owner` is NEVER mintable via a self-serve invite (there is exactly one
-        // owner — the tenant creator). The route handler rejects an owner invite
-        // outright (`handle_team_invite`); this maps it to `admin` as
-        // defense-in-depth so NO code path can ever persist a second owner seat
-        // (the member→owner escalation closed at the persistence layer too).
-        "owner" | "admin" => "admin",
-        "viewer" => "viewer",
-        // `developer` + anything else → the least-privileged seat (CHECK-safe).
-        _ => "member",
+/// Accept only roles that can be inserted by a self-serve invite. Unknown
+/// values are rejected rather than silently persisted as `member`.
+fn normalize_invite_role(role: &str) -> Result<&'static str, CustomerHandlerError> {
+    canonical_invite_role(role).ok_or_else(|| {
+        CustomerHandlerError::InvalidRequest("unsupported team invite role".to_owned())
+    })
+}
+
+/// Decode persisted role values before returning them on the API wire.
+fn persisted_team_role(role: &str) -> Option<&'static str> {
+    match role {
+        "owner" => Some("owner"),
+        "admin" => Some("admin"),
+        "member" => Some("member"),
+        "viewer" => Some("viewer"),
+        _ => None,
     }
 }
 
@@ -1443,7 +1443,7 @@ impl CustomerTeamHandler for D1CustomerHandler {
         let mut members = vec![TeamMemberRow::new(
             owner_id.clone(),
             "—",
-            "Owner",
+            "owner",
             joined_at,
             "active",
         )];
@@ -1463,6 +1463,9 @@ impl CustomerTeamHandler for D1CustomerHandler {
                 continue;
             }
             let role = col_opt_str(row, "role").unwrap_or_else(|| "member".to_owned());
+            let role = persisted_team_role(&role).ok_or_else(|| {
+                CustomerHandlerError::Internal("invalid persisted team role".to_owned())
+            })?;
             let status = col_opt_str(row, "status").unwrap_or_else(|| "invited".to_owned());
             let joined = col_opt_i64(row, "joined_at_ms")
                 .or_else(|| col_opt_i64(row, "invited_at_ms"))
@@ -1504,7 +1507,13 @@ impl CustomerTeamHandler for D1CustomerHandler {
         // key diverges. Normalization (trim+lowercase) lives inside the helper.
         let email_hash = crate::email_hash::hash_email(&req.email);
         // The role is collapsed onto the FROZEN 0074 CHECK domain (CHECK-safe).
-        let role = normalize_invite_role(&req.role);
+        let role = match normalize_invite_role(&req.role) {
+            Ok(role) => role,
+            Err(err) => {
+                self.emit_sli(true);
+                return Err(err);
+            }
+        };
         // No real Clerk user_id exists yet (OB-1) — `team_member.user_id` is NOT
         // NULL (PK), so a fresh UUID is the invitation-id placeholder 0074 expects
         // ("carries the Clerk invitation id until acceptance binds the real user").
@@ -1555,7 +1564,7 @@ impl CustomerTeamHandler for D1CustomerHandler {
         let member = TeamMemberRow::new(
             invitation_id,
             req.email.clone(),
-            req.role.clone(),
+            role,
             String::new(),
             "invited",
         );
@@ -3380,7 +3389,7 @@ mod tests {
                 TENANT,
                 "clpat_x",
                 "Alice@Example.com",
-                "Developer",
+                "Member",
                 0,
             ))
             .expect_err("audit-insert fault must fail the invite CLOSED");
@@ -3632,7 +3641,7 @@ mod tests {
             resp.members[0].email, "—",
             "email is hashed in D1: honest dash"
         );
-        assert_eq!(resp.members[0].role, "Owner");
+        assert_eq!(resp.members[0].role, "owner");
         assert_eq!(resp.members[0].status, "active");
         assert_eq!(resp.members[0].joined_at, ms_to_iso8601(1_690_000_000_000));
     }
@@ -3653,14 +3662,14 @@ mod tests {
                 TENANT,
                 "clpat_x",
                 "Alice@Example.com",
-                "Developer",
+                "Member",
                 0,
             ))
             .expect("invite must succeed");
         assert_eq!(resp.member.status, "invited");
         // Response echoes the caller-supplied email + requested role (InMemory shape).
         assert_eq!(resp.member.email, "Alice@Example.com");
-        assert_eq!(resp.member.role, "Developer");
+        assert_eq!(resp.member.role, "member");
 
         // Exactly one D1 write: the team_member INSERT (status='invited').
         let calls = f.db.calls();
@@ -3685,7 +3694,7 @@ mod tests {
                 "raw invitee email must never be persisted (CTRL-PRIV-001)"
             );
         }
-        // `Developer` collapses onto the CHECK domain → `member`.
+        // The canonical `member` role is persisted in the CHECK domain.
         assert_eq!(insert.1[3], json!("member"));
         assert_eq!(
             insert.1[4],
@@ -3706,14 +3715,22 @@ mod tests {
 
     #[test]
     fn normalize_invite_role_maps_to_check_domain() {
-        // RBAC hardening: `owner` is NEVER mintable via a self-serve invite — it
-        // maps to `admin` (defense-in-depth so no code path persists a 2nd owner).
-        assert_eq!(normalize_invite_role("Owner"), "admin");
-        assert_eq!(normalize_invite_role("ADMIN"), "admin");
-        assert_eq!(normalize_invite_role("Viewer"), "viewer");
-        assert_eq!(normalize_invite_role("Developer"), "member");
-        assert_eq!(normalize_invite_role("  member "), "member");
-        assert_eq!(normalize_invite_role("anything-else"), "member");
+        // RBAC hardening: `owner` is NEVER mintable via a self-serve invite.
+        assert_eq!(
+            normalize_invite_role("Owner").unwrap_err(),
+            CustomerHandlerError::InvalidRequest("unsupported team invite role".to_owned())
+        );
+        assert_eq!(normalize_invite_role("ADMIN").unwrap(), "admin");
+        assert_eq!(normalize_invite_role("Viewer").unwrap(), "viewer");
+        assert_eq!(
+            normalize_invite_role("Developer").unwrap_err(),
+            CustomerHandlerError::InvalidRequest("unsupported team invite role".to_owned())
+        );
+        assert_eq!(normalize_invite_role("  member ").unwrap(), "member");
+        assert_eq!(
+            normalize_invite_role("anything-else").unwrap_err(),
+            CustomerHandlerError::InvalidRequest("unsupported team invite role".to_owned())
+        );
     }
 
     #[test]
@@ -3737,7 +3754,7 @@ mod tests {
             CustomerTeamHandler::list(&f.handler, TeamListRequest::new(TENANT, "clpat_x", 0))
                 .unwrap();
         assert_eq!(resp.members.len(), 2, "owner + 1 member");
-        assert_eq!(resp.members[0].role, "Owner");
+        assert_eq!(resp.members[0].role, "owner");
         assert_eq!(resp.members[1].user_id, "user_member1");
         assert_eq!(resp.members[1].status, "active");
     }

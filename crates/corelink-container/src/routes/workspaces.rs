@@ -12,7 +12,7 @@
 //! GET    /v1/customer/workspaces               → { workspaces: CustomerWorkspace[] }
 //! POST   /v1/customer/workspaces   { name }    → CustomerWorkspace (201)
 //! DELETE /v1/customer/workspaces/:workspace_id → { ok: true }
-//! POST   /v1/customer/workspaces/:workspace_id/pin → CustomerWorkspace (toggled)
+//! POST   /v1/customer/workspaces/:workspace_id/pin → CustomerWorkspace (explicit state)
 //! ```
 //!
 //! # Auth model
@@ -369,12 +369,19 @@ async fn handle_delete(
 /// `POST /v1/customer/workspaces/:workspace_id/pin` → the updated
 /// `CustomerWorkspace`.
 ///
-/// Toggles the `pinned` flag (`pinned = 1 - pinned`), tenant-scoped, then
-/// returns the fresh row. A missing id ⇒ 404. Fail-CLOSED: unwired `db` ⇒ 503.
+/// Sets the requested `pinned` state, tenant-scoped, then returns the fresh row.
+/// Repeating the same request is idempotent. A missing id ⇒ 404. Fail-CLOSED:
+/// unwired `db` ⇒ 503.
+#[derive(Debug, Deserialize)]
+struct PinBody {
+    pinned: bool,
+}
+
 async fn handle_pin(
     State(state): State<WorkspacesRouteState>,
     headers: HeaderMap,
     Path(workspace_id): Path<String>,
+    body: Option<Json<PinBody>>,
 ) -> impl IntoResponse {
     let t = match tenant(&headers) {
         Ok(t) => t,
@@ -389,11 +396,18 @@ async fn handle_pin(
     let Some(db) = state.db.as_ref() else {
         return workspaces_unconfigured();
     };
-    // Toggle, tenant-scoped.
+    let Some(Json(body)) = body else {
+        return (StatusCode::BAD_REQUEST, "pin state is required").into_response();
+    };
+    // Explicit set, tenant-scoped; retries cannot invert state.
     if let Err(e) = db.query(
-        "UPDATE workspaces SET pinned = 1 - pinned \
+        "UPDATE workspaces SET pinned = ?3 \
          WHERE tenant_id = ?1 AND workspace_id = ?2",
-        vec![json!(t), json!(workspace_id)],
+        vec![
+            json!(t),
+            json!(workspace_id),
+            json!(if body.pinned { 1 } else { 0 }),
+        ],
     ) {
         return internal(&t, "workspace pin", &e);
     }
@@ -629,7 +643,7 @@ mod tests {
             "/v1/customer/workspaces",
             Some("t1"),
             None,
-            None,
+            Some(json!({"pinned": true})),
         )
         .await;
         assert_eq!(s, StatusCode::OK);
@@ -651,7 +665,7 @@ mod tests {
             "/v1/customer/workspaces/abc",
             Some("t1"),
             Some("cas:rw"),
-            None,
+            Some(json!({"pinned": true})),
         )
         .await;
         assert_eq!(del, StatusCode::SERVICE_UNAVAILABLE);
@@ -769,7 +783,7 @@ mod tests {
 
     /// Pin toggles then reads the fresh row back; a present row is 200 + shape.
     #[tokio::test]
-    async fn pin_toggles_and_reads_back() {
+    async fn pin_sets_and_reads_back() {
         let (state, _) = state_with(MockWsD1 {
             readback_row: vec![d1row(&[
                 ("workspace_id", json!("ws-1")),
@@ -786,12 +800,50 @@ mod tests {
             "/v1/customer/workspaces/ws-1/pin",
             Some("t1"),
             Some("cas:rw"),
-            None,
+            Some(json!({"pinned": true})),
         )
         .await;
         assert_eq!(s, StatusCode::OK);
         assert_eq!(body["workspace_id"], json!("ws-1"));
         assert_eq!(body["pinned"], json!(true));
+    }
+
+    /// Retrying the same desired state sends the same bind each time; retries
+    /// therefore cannot invert the pin as the former toggle did.
+    #[tokio::test]
+    async fn pin_retry_is_idempotent() {
+        let (state, db) = state_with(MockWsD1 {
+            readback_row: vec![d1row(&[
+                ("workspace_id", json!("ws-1")),
+                ("name", json!("nightly")),
+                ("size_bytes", json!(0)),
+                ("pinned", json!(1)),
+                ("created_at_ms", json!(1_700_000_000_000_i64)),
+            ])],
+            ..MockWsD1::default()
+        });
+        for _ in 0..2 {
+            let (status, body) = send(
+                state.clone(),
+                http::Method::POST,
+                "/v1/customer/workspaces/ws-1/pin",
+                Some("t1"),
+                Some("cas:rw"),
+                Some(json!({"pinned": true})),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(body["pinned"], json!(true));
+        }
+        let calls = db.calls.lock().unwrap();
+        let updates: Vec<_> = calls
+            .iter()
+            .filter(|(sql, _)| sql.contains("UPDATE workspaces"))
+            .collect();
+        assert_eq!(updates.len(), 2);
+        assert!(updates
+            .iter()
+            .all(|(_, binds)| binds == &vec![json!("t1"), json!("ws-1"), json!(1)]));
     }
 
     /// Pin of a missing id ⇒ 404 (empty read-back).
@@ -804,7 +856,7 @@ mod tests {
             "/v1/customer/workspaces/nope/pin",
             Some("t1"),
             Some("cas:rw"),
-            None,
+            Some(json!({"pinned": true})),
         )
         .await;
         assert_eq!(s, StatusCode::NOT_FOUND);

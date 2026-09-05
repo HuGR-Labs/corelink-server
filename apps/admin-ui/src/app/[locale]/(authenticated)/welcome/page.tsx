@@ -204,7 +204,7 @@ export default async function WelcomePage(props: {
           <h2 id="welcome-install-h">Install the CLI</h2>
           <p>Run this one-liner to install and authenticate the CoreLink CLI.</p>
           <div className="lin-mt">
-            <InstallOneLiner token={pat} region={region} />
+            <InstallOneLiner token={pat} />
           </div>
         </section>
 

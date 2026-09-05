@@ -286,11 +286,11 @@ export class CustomerClient {
     );
   }
 
-  /** [live] Toggle pin on a workspace snapshot (BE-11). */
-  async pinWorkspace(workspaceId: string): Promise<CustomerWorkspace> {
+  /** [live] Set pin state on a workspace snapshot (idempotent) (BE-11). */
+  async pinWorkspace(workspaceId: string, pinned: boolean): Promise<CustomerWorkspace> {
     return this.request<CustomerWorkspace>(
       `/v1/customer/workspaces/${encodeURIComponent(workspaceId)}/pin`,
-      { method: "POST" },
+      { method: "POST", body: JSON.stringify({ pinned }) },
     );
   }
 
