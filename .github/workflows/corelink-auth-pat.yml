@@ -29,6 +29,7 @@ on:
       - '.cargo/config.toml'
       - 'scripts/ci-assert-pinned-toolchain.sh'
       - 'crates/corelink-clerk/tests/prop_validate.rs'
+      - 'crates/corelink-clerk/src/fakes.rs'
       - 'scripts/verify_b247_clerk_proptest.py'
       - 'tests/test_verify_b247_clerk_proptest.py'
       - '.github/workflows/corelink-auth-pat.yml'

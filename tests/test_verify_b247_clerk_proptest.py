@@ -23,8 +23,9 @@ class B247ProptestContract(unittest.TestCase):
         verifier.mutation_checks(self.source)
 
     def test_pem_parse_is_only_in_cached_key_constructor(self) -> None:
-        self.assertEqual(self.source.count("EncodingKey::from_rsa_pem"), 1)
-        self.assertIn("encode(&header, claims, shared_encoding_key())", self.source)
+        self.assertEqual(self.source.count("EncodingKey::from_rsa_pem"), 2)
+        self.assertIn("encode(&header, claims, shared_property_encoding_key())", self.source)
+        self.assertIn("sign_2048_smoke", self.source)
 
 
 if __name__ == "__main__":

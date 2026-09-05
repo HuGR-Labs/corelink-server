@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "crates/corelink-clerk/tests/prop_validate.rs"
+FAKE_SOURCE = ROOT / "crates/corelink-clerk/src/fakes.rs"
 MAX_SOURCE_BYTES = 200_000
 STRUCTURAL_INVARIANTS = {
     "wrong_signature_is_rejected": (
@@ -50,6 +51,15 @@ def read_source() -> str:
     source = SOURCE.read_text(encoding="utf-8")
     if len(source.encode("utf-8")) > MAX_SOURCE_BYTES:
         raise VerificationError("Clerk property test exceeds bounded size")
+    return source
+
+
+def read_fake_source() -> str:
+    if not FAKE_SOURCE.is_file():
+        raise VerificationError(f"missing test-only RSA fake source: {FAKE_SOURCE}")
+    source = FAKE_SOURCE.read_text(encoding="utf-8")
+    if len(source.encode("utf-8")) > MAX_SOURCE_BYTES:
+        raise VerificationError("test-only RSA fake source exceeds bounded size")
     return source
 
 
@@ -106,7 +116,7 @@ def strip_rust_comments(source: str) -> str:
 
 def function_region(source: str, name: str) -> str:
     marker = f"fn {name}"
-    starts = [match.start() for match in re.finditer(re.escape(marker), source)]
+    starts = [match.start() for match in re.finditer(rf"\b{re.escape(marker)}\b", source)]
     if len(starts) != 1:
         raise VerificationError(f"expected exactly one function {name}, found {len(starts)}")
     start = starts[0]
@@ -119,12 +129,17 @@ def function_region(source: str, name: str) -> str:
     return source[start:end]
 
 
-def validate_source(source: str) -> None:
+def validate_source(source: str, fake_source: str | None = None) -> None:
     code = strip_rust_comments(source)
+    fake_code = strip_rust_comments(fake_source if fake_source is not None else read_fake_source())
     if "PROPTEST_CASES" not in code or "unwrap_or(10_000)" not in code:
         raise VerificationError("PROPTEST_CASES default 10_000 contract is missing")
     if "cases: proptest_cases()" not in code:
         raise VerificationError("proptest case count is not wired to the runtime knob")
+    if "const PROPERTY_RSA_BITS: usize = 512;" not in code:
+        raise VerificationError("property loop must pin its test-only RSA key to 512 bits")
+    if "const SMOKE_RSA_BITS: usize = 2048;" not in code:
+        raise VerificationError("RSA-2048 smoke key size is not pinned explicitly")
     for name, markers in STRUCTURAL_INVARIANTS.items():
         region = function_region(code, name)
         for marker in markers:
@@ -135,50 +150,110 @@ def validate_source(source: str) -> None:
     if "Algorithm::RS256" not in sign_code:
         raise VerificationError("sign no longer fixes Algorithm::RS256")
 
-    shared_key = function_region(code, "shared_key")
-    if "OnceLock<TestRsaKey>" not in shared_key or "TestRsaKey::generate(\"kid_v1\")" not in shared_key:
-        raise VerificationError("RSA keypair is not process-shared through OnceLock")
-
-    cached = function_region(code, "shared_encoding_key")
-    if "OnceLock<EncodingKey>" not in cached or cached.count("EncodingKey::from_rsa_pem") != 1:
-        raise VerificationError("EncodingKey PEM parse is not isolated to the OnceLock cache")
-
     sign = function_region(code, "sign")
-    if "shared_encoding_key()" not in sign or "EncodingKey::from_rsa_pem" in sign:
+    if "shared_property_encoding_key()" not in sign or "EncodingKey::from_rsa_pem" in sign:
         raise VerificationError("sign still parses EncodingKey per property case")
-    if "encode(&header, claims, shared_encoding_key())" not in sign:
+    if "encode(&header, claims, shared_property_encoding_key())" not in sign:
         raise VerificationError("sign does not use the cached EncodingKey")
 
-    if code.count("EncodingKey::from_rsa_pem") != 1:
-        raise VerificationError("EncodingKey::from_rsa_pem must occur exactly once")
-    if "sign(shared_key()" in code:
+    if code.count("EncodingKey::from_rsa_pem") != 2:
+        raise VerificationError("EncodingKey::from_rsa_pem must occur only in the two caches")
+    if "sign(shared_property_key()" in code:
         raise VerificationError("property cases still pass a key requiring per-case parsing")
+
+    property_key = function_region(code, "shared_property_key")
+    if "OnceLock<TestRsaKey>" not in property_key or "generate_with_bits(\"kid_property\", PROPERTY_RSA_BITS)" not in property_key:
+        raise VerificationError("property key is not test-only and OnceLock-cached")
+    smoke_key = function_region(code, "shared_smoke_key")
+    if "generate_with_bits(\"kid_smoke_2048\", SMOKE_RSA_BITS)" not in smoke_key:
+        raise VerificationError("RSA-2048 smoke key is not generated explicitly")
+    smoke_encoding = function_region(code, "shared_smoke_encoding_key")
+    if "OnceLock<EncodingKey>" not in smoke_encoding or "EncodingKey::from_rsa_pem" not in smoke_encoding:
+        raise VerificationError("RSA-2048 smoke key is not cached before signing")
+    smoke = function_region(code, "rsa_2048_smoke_validates")
+    for marker in ("let key = shared_smoke_key();", "build_adapter_for(key)", "sign_2048_smoke", "RSA-2048 smoke"):
+        if marker not in smoke:
+            raise VerificationError(f"RSA-2048 smoke is missing structural marker: {marker}")
+
+    fake_key = function_region(fake_code, "generate_with_bits")
+    if '#[cfg(feature = "test-utils")]' not in fake_code or "pub mod test_keys" not in fake_code:
+        raise VerificationError("variable-size RSA helper escaped the test-utils feature boundary")
+    if "RsaPrivateKey::new(&mut rng, bits)" not in fake_key:
+        raise VerificationError("test-only RSA fake does not honor explicit key size")
+    if "pub fn generate(kid: &str)" not in fake_code or "generate_with_bits(kid, 2048)" not in fake_code:
+        raise VerificationError("default test RSA helper no longer pins RSA-2048")
 
 
 def mutation_checks(source: str) -> None:
-    validate_source(source)
-    parse = "EncodingKey::from_rsa_pem(shared_key().private_pem.as_bytes())"
-    mutant = source.replace("encode(&header, claims, shared_encoding_key())", parse, 1)
+    fake_source = read_fake_source()
+    validate_source(source, fake_source)
+    parse = "EncodingKey::from_rsa_pem(shared_property_key().private_pem.as_bytes())"
+    mutant = source.replace("encode(&header, claims, shared_property_encoding_key())", parse, 1)
     if mutant == source:
         raise VerificationError("per-case parse mutation fixture did not change source")
     try:
-        validate_source(mutant)
+        validate_source(mutant, fake_source)
     except VerificationError:
         pass
     else:
         raise VerificationError("per-case EncodingKey parse mutation was accepted")
-    validate_source(source)
+    validate_source(source, fake_source)
 
     mutant = source.replace("unwrap_or(10_000)", "unwrap_or(100)", 1)
     if mutant == source:
         raise VerificationError("proptest-density mutation fixture did not change source")
     try:
-        validate_source(mutant)
+        validate_source(mutant, fake_source)
     except VerificationError:
         pass
     else:
         raise VerificationError("reduced PROPTEST_CASES mutation was accepted")
-    validate_source(source)
+    validate_source(source, fake_source)
+
+    for old, new, message in (
+        (
+            "const PROPERTY_RSA_BITS: usize = 512;",
+            "const PROPERTY_RSA_BITS: usize = 2048;",
+            "property weak-key boundary",
+        ),
+        (
+            "const SMOKE_RSA_BITS: usize = 2048;",
+            "const SMOKE_RSA_BITS: usize = 512;",
+            "RSA-2048 smoke boundary",
+        ),
+    ):
+        mutant = source.replace(old, new, 1)
+        if mutant == source:
+            raise VerificationError(f"{message} mutation fixture did not change source")
+        try:
+            validate_source(mutant, fake_source)
+        except VerificationError:
+            pass
+        else:
+            raise VerificationError(f"{message} mutation was accepted")
+        validate_source(source, fake_source)
+
+    fake_mutant = fake_source.replace('#[cfg(feature = "test-utils")]', "#[cfg(feature = \"production\")]", 1)
+    if fake_mutant == fake_source:
+        raise VerificationError("test-utils boundary mutation fixture did not change source")
+    try:
+        validate_source(source, fake_mutant)
+    except VerificationError:
+        pass
+    else:
+        raise VerificationError("variable-size RSA helper boundary mutation was accepted")
+    validate_source(source, fake_source)
+
+    mutant = source.replace("async fn rsa_2048_smoke_validates()", "async fn rsa_smoke_validates()", 1)
+    if mutant == source:
+        raise VerificationError("RSA-2048 smoke removal mutation fixture did not change source")
+    try:
+        validate_source(mutant, fake_source)
+    except VerificationError:
+        pass
+    else:
+        raise VerificationError("RSA-2048 smoke removal mutation was accepted")
+    validate_source(source, fake_source)
 
     for name, markers in STRUCTURAL_INVARIANTS.items():
         marker = markers[0]
@@ -186,12 +261,12 @@ def mutation_checks(source: str) -> None:
         if mutant == source:
             raise VerificationError(f"{name} mutation fixture did not change source")
         try:
-            validate_source(mutant)
+            validate_source(mutant, fake_source)
         except VerificationError:
             pass
         else:
             raise VerificationError(f"{name} weakening mutation was accepted")
-        validate_source(source)
+        validate_source(source, fake_source)
 
 
 def main() -> int:
@@ -201,7 +276,7 @@ def main() -> int:
     except (OSError, VerificationError) as error:
         print(f"B247 DRIFTED: {error}", file=sys.stderr)
         return 1
-    print("B247 candidate confirmed: cached EncodingKey; 7/7 weakening mutations rejected")
+    print("B247 candidate confirmed: test-only 512-bit property key + 2048-bit smoke; 11/11 mutations rejected")
     return 0
 
 

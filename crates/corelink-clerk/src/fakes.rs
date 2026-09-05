@@ -338,8 +338,17 @@ pub mod test_keys {
             reason = "test-only: keygen failures here are catastrophic test-environment misconfig"
         )]
         pub fn generate(kid: &str) -> Self {
+            Self::generate_with_bits(kid, 2048)
+        }
+
+        /// Generate a test-only RSA keypair with an explicit size.
+        #[allow(
+            clippy::expect_used,
+            reason = "test-only: keygen failures here are catastrophic test-environment misconfig"
+        )]
+        pub fn generate_with_bits(kid: &str, bits: usize) -> Self {
             let mut rng = rand::thread_rng();
-            let private = RsaPrivateKey::new(&mut rng, 2048).expect("rsa keygen");
+            let private = RsaPrivateKey::new(&mut rng, bits).expect("rsa keygen");
             let public = RsaPublicKey::from(&private);
             let private_pem = private
                 .to_pkcs1_pem(rsa::pkcs1::LineEnding::LF)
