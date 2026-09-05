@@ -1,6 +1,6 @@
-## B-087 procurement questionnaire reality guard
+### Fixed
 
-- Corrected duplicated CAIQ v4 and SIG Lite answers for unavailable BYOK,
+- **Correct B-087 procurement questionnaire claims and guard their evidence.** Corrected duplicated CAIQ v4 and SIG Lite answers for unavailable BYOK,
   unavailable R2 Object Lock/WORM, limited SAST/fuzz cadence, absent supply-chain
   attestations, and non-production synthetic paging. Preserved the substantiated
   signed-commit control.
