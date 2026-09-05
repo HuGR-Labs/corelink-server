@@ -54,6 +54,9 @@ b148_workflow_harness() {
   local push_mutant="$SANDBOX/backlog-verify-push-mutant.yml"
   local schedule_mutant="$SANDBOX/backlog-verify-schedule-mutant.yml"
   local dispatch_mutant="$SANDBOX/backlog-verify-dispatch-mutant.yml"
+  local paths_scalar_mutant="$SANDBOX/backlog-verify-paths-scalar-mutant.yml"
+  local branches_scalar_mutant="$SANDBOX/backlog-verify-branches-scalar-mutant.yml"
+  local noop_mutant="$SANDBOX/backlog-verify-noop-mutant.yml"
   local single_quote_mutant="$SANDBOX/backlog-verify-single-quote-mutant.yml"
   local single_quote_replacement="$SANDBOX/backlog-verify-single-quote-replacement.yml"
   local single_quote_push_mutant="$SANDBOX/backlog-verify-single-quote-push-mutant.yml"
@@ -70,12 +73,21 @@ with open(sys.argv[1], encoding="utf-8") as fh:
 on = doc.get(True, doc.get("on")) or {}
 expected = ".github/workflows/**"
 pr = on.get("pull_request")
-if not isinstance(pr, dict) or expected not in (pr.get("paths") or []):
+pr_paths = pr.get("paths") if isinstance(pr, dict) else None
+if not isinstance(pr_paths, list):
+    raise SystemExit("pull_request paths is not a list")
+if expected not in pr_paths:
     raise SystemExit("pull_request does not cover .github/workflows/**")
 push = on.get("push")
-if not isinstance(push, dict) or expected not in (push.get("paths") or []):
+push_paths = push.get("paths") if isinstance(push, dict) else None
+if not isinstance(push_paths, list):
+    raise SystemExit("push paths is not a list")
+if expected not in push_paths:
     raise SystemExit("push does not cover .github/workflows/**")
-if "main" not in (push.get("branches") or []):
+push_branches = push.get("branches") if isinstance(push, dict) else None
+if not isinstance(push_branches, list):
+    raise SystemExit("push branches is not a list")
+if "main" not in push_branches:
     raise SystemExit("push trigger is not anchored to main")
 schedule = on.get("schedule")
 if not isinstance(schedule, list) or not schedule or not all(
@@ -87,6 +99,11 @@ if "workflow_dispatch" not in on:
     raise SystemExit("workflow_dispatch trigger is missing")
 print("workflow trigger covers workflow paths, main push, schedule, and dispatch")
 PY
+  }
+
+  b148_fixture_changed() {
+    local source="$1" fixture="$2"
+    [[ -s "$fixture" ]] && ! cmp -s "$source" "$fixture"
   }
 
   if workflow_trigger_check "$workflow" >/dev/null 2>&1; then
@@ -141,7 +158,7 @@ open(dispatch, "w", encoding="utf-8").write(
 PY
     then
       for generated in "$removal" "$replacement" "$push" "$schedule" "$dispatch"; do
-        if [[ ! -s "$generated" ]]; then
+        if ! b148_fixture_changed "$source" "$generated"; then
           fail "B-148 mutation fixture generation produced $generated"
           return 1
         fi
@@ -180,6 +197,62 @@ PY
       "workflow_dispatch trigger is missing"
   fi
 
+  if python3 - "$workflow" "$paths_scalar_mutant" "$branches_scalar_mutant" <<'PY'
+import re
+import sys
+
+source, paths_scalar, branches_scalar = sys.argv[1:]
+text = open(source, encoding="utf-8").read()
+
+paths_pattern = re.compile(
+    r'^(  pull_request:\n)    paths:\n'
+    r'(?:(?:^      - .*\n)|(?:^      #.*\n))+',
+    re.MULTILINE,
+)
+text_paths, paths_count = paths_pattern.subn(
+    r'\1    paths: ".github/workflows/**"\n', text, count=1
+)
+if paths_count != 1:
+    raise SystemExit(f"expected one pull_request paths list, found {paths_count}")
+
+branches_pattern = re.compile(r'^    branches: \[main\]\n', re.MULTILINE)
+text_branches, branches_count = branches_pattern.subn(
+    "    branches: main\n", text, count=1
+)
+if branches_count != 1:
+    raise SystemExit(f"expected one push branches list, found {branches_count}")
+
+open(paths_scalar, "w", encoding="utf-8").write(text_paths)
+open(branches_scalar, "w", encoding="utf-8").write(text_branches)
+PY
+  then
+    for generated in "$paths_scalar_mutant" "$branches_scalar_mutant"; do
+      if ! b148_fixture_changed "$workflow" "$generated"; then
+        fail "B-148 scalar mutation fixture generation produced $generated"
+        return 1
+      fi
+    done
+    b148_expect_rejected "$paths_scalar_mutant" \
+      "B-148 scalar pull_request paths mutation is detected" \
+      "pull_request paths is not a list"
+    b148_expect_rejected "$branches_scalar_mutant" \
+      "B-148 scalar push branches mutation is detected" \
+      "push branches is not a list"
+  else
+    fail "B-148 scalar mutation fixture generation succeeded"
+  fi
+
+  # A no-op mutation must be rejected by the fixture-integrity check rather
+  # than being mistaken for a checker rejection. This pins the distinction the
+  # harness makes between a changed fixture and a copied source file.
+  if ! cp "$workflow" "$noop_mutant"; then
+    fail "B-148 no-op mutation fixture generation failed"
+  elif b148_fixture_changed "$workflow" "$noop_mutant"; then
+    fail "B-148 no-op mutation unexpectedly changed the fixture"
+  else
+    pass "B-148 no-op mutation is rejected as unchanged fixture"
+  fi
+
   # YAML gives single-quoted and double-quoted scalars identical semantics. The
   # old fixture generator only recognized the latter and could therefore fail
   # before writing fixtures; the missing files were then mistaken for rejected
@@ -189,7 +262,13 @@ PY
 import sys
 source, destination = sys.argv[1:]
 text = open(source, encoding="utf-8").read()
-text = text.replace('      - ".github/workflows/**"', "      - '.github/workflows/**'")
+double_glob = '      - ".github/workflows/**"'
+single_glob = "      - '.github/workflows/**'"
+if text.count(double_glob) != 2:
+    raise SystemExit(f"expected two double-quoted workflow globs, found {text.count(double_glob)}")
+text = text.replace(double_glob, single_glob)
+if text.count(single_glob) != 2 or double_glob in text:
+    raise SystemExit("single-quote fixture did not replace exactly both glob scalars")
 open(destination, "w", encoding="utf-8").write(text)
 PY
   then
