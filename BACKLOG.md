@@ -9705,79 +9705,66 @@ verify-means: |
 last-verified: 2026-09-01
 ```
 
-### B-141 — `pull_request_target` sem gate de ator: hoje só a visibilidade do repo segura
+### B-141 — `pull_request_target` sem boundary de ator: spawn efêmero limitado — FECHADO
 
-O #1502 põe `pr-labels.yml` e `welcome-first-pr.yml` na frota efêmera. Os dois disparam em
-`pull_request_target` (e o `welcome` também em `issues`) **sem nenhum `if:` de ator**, então,
-depois desse PR, cada evento desses **spawna microVM da nossa frota Cloudflare**.
+O achado original do #1502 era que `pr-labels.yml` e `welcome-first-pr.yml` usavam
+`pull_request_target` na frota efêmera sem um boundary antes de `runs-on`. A visibilidade
+privada do repositório não é controle de admissão e não pode ser a prova de segurança.
 
-O que limita isso hoje **não está nesses arquivos**: é a **visibilidade do repositório**.
-Medido em 2026-08-31 — repo **PRIVADO**, **0 forks** —, então só membros da org e
-colaboradores convidados levantam o evento, que é o mesmo conjunto de pessoas que já
-enfileirava trabalho na frota. Ou seja, **não é um furo vivo**, e registrá-lo como se fosse
-seria exagerar.
+Este fechamento aplica o boundary fail-closed completo: os dois jobs de `pr-labels.yml` e o
+job de `file-size-ratchet.yml` só alocam `corelink` para `author_association` exatamente
+`OWNER`, `MEMBER` ou `COLLABORATOR`. Os jobs que tratam Dependabot
+(`dependabot-auto-merge.yml` e `dependabot-policy.yml`) continuam exigindo, em conjunto,
+actor e autor `dependabot[bot]`; o sentinel não-Dependabot de `dependabot-policy.yml` foi
+movido para o pool Mac e não aloca a frota.
+`welcome-first-pr.yml` preserva o propósito de saudar first-timers, mas roda em
+`[self-hosted, mac, corelink-builder]`, nunca na frota efêmera. Associação ausente ou
+inesperada não casa com a allowlist e fica bloqueada.
 
-O que o torna um item, e não uma nota: `pull_request_target` é **isento** da política "exigir
-aprovação para contribuidor de primeira viagem" que protege `pull_request`. No dia em que
-este repo virar público — o que o lançamento do produto torna plausível — essas duas lanes
-viram gatilho de spawn **não autenticado**, sem que ninguém precise tocar em CI para causar
-isso. É uma mudança de configuração, num outro lugar, que arma um defeito aqui.
+O risco de fila continua sendo operacional: um spawn recusado pode ficar `queued`, e
+`timeout-minutes` limita somente trabalho em execução. Isso não é usado como controle de
+admissão. O boundary e as mutações estão cobertos por
+`tests/test_pull_request_target_spawn_boundary.py` e documentados em
+`docs/campaigns/remediation/WP-141-spawn-boundary.md`.
 
-Risco secundário, independente de quem dispara: **spawn recusado deixa o job `queued`**, e
-`timeout-minutes` **não limita fila** — ele começa quando o job está RODANDO. O
-`redriveOrphanedJobs` da frota (cron de 1 min) retenta, mas só `MAX_ORPHAN_ATTEMPTS = 3`,
-com dead-letter de 30 min; passado isso, o job nunca é revisitado. Em `pr-labels`, que roda em
-**todo** PR, um job encalhado não reprova o PR — vira check **pendente**, que o
-`scripts/pre-merge-gate-check.sh` pontua como ⛔ DO NOT MERGE.
-
-**O que este item NÃO decide:** o **teto de spawn** da frota. Ele vive no spawn worker, em
-`corelink-runners`, e não é observável daqui — não afirmo que exista nem que não exista. Quem
-pegar o item mede isso primeiro: sem teto, o pior caso deixa de ser "fila" e passa a ser
-custo.
-
-Encaminhamentos possíveis, e são excludentes:
-
-1. Gate de ator nas duas lanes (mata o propósito do `welcome`, que existe para saudar quem
-   ainda não é contribuidor).
-2. Manter só o `welcome-first-pr` no Mac — é a única disparada por não-colaborador.
-3. Teto de spawn por ator/evento na frota, que é o conserto no lugar certo.
-
-A decisão é barata **antes** de o repo virar público e cara depois.
+**Decisão permanente:** a retenção no pool `[self-hosted, mac, corelink-builder]` é a política
+do greeter de first-timers e do sentinel não-Dependabot. Somente os gates de associação/actor
+acima podem alocar `corelink`. O item fecha pela prova local dessa fronteira, sem depender da
+visibilidade atual do repositório ou de inferência sobre um teto de spawn em `corelink-runners`.
 
 ```backlog
 id: B-141
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   bash -c 'set -o pipefail
-  n=0
-  for f in .github/workflows/pr-labels.yml .github/workflows/welcome-first-pr.yml; do
-    [ -f "$f" ] || { echo "FALHA: $f nao existe — a premissa deste item mudou; reavalie em vez de fechar."; exit 1; }
-    grep -q "pull_request_target" "$f" || { echo "FALHA: $f nao dispara mais em pull_request_target — releia o item antes de confiar neste portao."; exit 1; }
-    if grep -qE "^[[:space:]]+if:.*(github\.actor|author_association)" "$f"; then
-      echo "gate de ator PRESENTE em $f"
-    else
-      n=$((n+1))
-    fi
-  done
-  if [ "$n" -gt 0 ]; then
-    echo "AINDA ABERTO: $n de 2 lanes pull_request_target seguem sem gate de ator"
-    exit 0
-  fi
-  echo "FECHADO?: ambas ganharam gate de ator — confirme que o welcome ainda sauda quem deve e atualize este item."
-  exit 1'
+  t=tests/test_pull_request_target_spawn_boundary.py
+  [ -f "$t" ] || { echo "FALHA: $t nao existe — boundary sem suite executavel"; exit 1; }
+  python3 "$t" >/dev/null || { echo "DRIFTED: boundary ou mutacao nao esta coberto"; exit 1; }
+  grep -q "author_association.*OWNER" .github/workflows/pr-labels.yml || { echo "DRIFTED: OWNER gate sumiu"; exit 1; }
+  grep -q "author_association.*MEMBER" .github/workflows/pr-labels.yml || { echo "DRIFTED: MEMBER gate sumiu"; exit 1; }
+  grep -q "author_association.*COLLABORATOR" .github/workflows/pr-labels.yml || { echo "DRIFTED: COLLABORATOR gate sumiu"; exit 1; }
+  grep -q "author_association.*OWNER" .github/workflows/file-size-ratchet.yml || { echo "DRIFTED: ratchet OWNER gate sumiu"; exit 1; }
+  grep -q "author_association.*MEMBER" .github/workflows/file-size-ratchet.yml || { echo "DRIFTED: ratchet MEMBER gate sumiu"; exit 1; }
+  grep -q "author_association.*COLLABORATOR" .github/workflows/file-size-ratchet.yml || { echo "DRIFTED: ratchet COLLABORATOR gate sumiu"; exit 1; }
+  grep -qF "runs-on: [self-hosted, mac, corelink-builder]" .github/workflows/welcome-first-pr.yml || { echo "DRIFTED: welcome voltou para a frota"; exit 1; }
+  echo "CLOSED: boundary fail-closed, permissions least-privilege e mutation-tested"
+  exit 0'
 verify-means: |
-  O portão mede a **ausência do gate**, que é a condição do item, e falha alto se qualquer uma
-  das duas premissas se mover (arquivo sumiu, ou o workflow deixou de ser
-  `pull_request_target`) — assim ele não fica verde por vacuidade se o mundo mudar de forma.
+  **Polaridade `done`:** o controle sai 0 somente quando o boundary híbrido, a política
+  permanente de host e os escopos mínimos estão presentes. Sai não-zero se a suíte desaparecer,
+  se uma associação confiável sair do gate, se qualquer job externo voltar a alocar `corelink`,
+  se permissões mudarem, ou se o greeter perder o pool/timeout. A suíte também planta mutações
+  de remoção/alargamento dos gates, retorno de jobs ao fabric e ampliação do token; cada mutação
+  tem de ficar vermelha.
 
-  O que ele **não** mede, e está declarado de propósito: a visibilidade do repositório, que é
-  a coisa que hoje realmente segura o risco. Um `gh repo view --json isPrivate` aqui tornaria
-  o portão dependente de rede e de token, e — pior — faria o item **fechar sozinho** enquanto
-  o repo continuasse privado, que é exatamente o momento em que ele deve continuar aberto. O
-  item existe para ser resolvido ANTES da flip, não por ela.
-last-verified: 2026-08-31
+  O verificador não consulta a visibilidade do repositório nem um teto externo de spawn. A
+  primeira não é admissão e o segundo vive fora deste checkout. A decisão permanente do host
+  Mac está registrada acima e no documento de remediação. O verificador não consulta rede,
+  visibilidade do repositório ou quota externa: esses sinais não são controles de admissão para
+  esta fronteira.
+last-verified: 2026-09-05
 ```
 
 ### B-142 — todo job `ubuntu-*` não inicia por bloqueio de faturamento, e o CodeQL nightly — o único SAST do repo — está morto desde 2026-08-25

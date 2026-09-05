@@ -34,6 +34,11 @@ concurrency:
 jobs:
   ratchet:
     name: no file grows past the god-file baseline
+    if: >-
+      github.event_name != 'pull_request_target' ||
+      github.event.pull_request.author_association == 'OWNER' ||
+      github.event.pull_request.author_association == 'MEMBER' ||
+      github.event.pull_request.author_association == 'COLLABORATOR'
     runs-on: corelink
     timeout-minutes: 5
     steps:

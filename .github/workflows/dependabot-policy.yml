@@ -76,8 +76,11 @@ jobs:
   # -----------------------------------------------------------------------
   sentinel:
     name: dependabot-policy sentinel
-    # zero-hosted (WP-CI): gh + cargo-deny assados; e o merge-ref do PR passa a ser avaliado em microVM descartável, não no Mac do owner
-    runs-on: corelink
+    # This no-op sentinel is still needed as a required check for ordinary PRs,
+    # but it must not allocate the ephemeral fabric for an untrusted actor.
+    # Keep it on the watched Mac pool; the actual Dependabot gate below remains
+    # actor-gated on `corelink`.
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 1
     if: github.actor != 'dependabot[bot]'
     steps:

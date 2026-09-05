@@ -31,6 +31,7 @@ on:
       - 'scripts/validate_no_shared_rustup_mutation.py'
       - 'scripts/validate_workflow_path_filters.py'
       - 'scripts/ci-use-host-toolchain.sh'
+      - 'tests/test_pull_request_target_spawn_boundary.py'
   push:
     branches: [main]
     paths:
@@ -41,6 +42,7 @@ on:
       - 'scripts/validate_no_shared_rustup_mutation.py'
       - 'scripts/validate_workflow_path_filters.py'
       - 'scripts/ci-use-host-toolchain.sh'
+      - 'tests/test_pull_request_target_spawn_boundary.py'
 
 permissions:
   contents: read
@@ -116,3 +118,11 @@ jobs:
       - name: Workflow path filters must match at least one tracked file
         shell: bash
         run: python3 scripts/validate_workflow_path_filters.py
+
+      # B-141: every pull_request_target job that can allocate the ephemeral
+      # fabric must be actor-gated, and write scopes must stay least-privilege.
+      # This suite includes negative mutations so a permissive gate cannot turn
+      # green merely because the workflow still parses.
+      - name: Pull request target spawn boundary (B-141)
+        shell: bash
+        run: python3 tests/test_pull_request_target_spawn_boundary.py
