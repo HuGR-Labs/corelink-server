@@ -3872,7 +3872,8 @@ verify: |
   cut -f2 "$tmp/pairs" | sort -u | sed "s|^|^|" > "$tmp/pat"
   grep -hoE -f "$tmp/pat" "$tmp/reach" | sort -u > "$tmp/hit"
   n=$(cut -f2 "$tmp/pairs" | grep -vxF -f "$tmp/hit" | wc -l | tr -d " ")
-  [ "$n" -gt 0 ] || { echo "FALHA: zero ancoras inalcancaveis — o apodrecimento acabou, feche o item."; exit 1; grep -A1 -E "^[^#]*if\ not\ git\.is_ancestor\(str\(prev_sha\),\ args\.base_ref\):"e_ref):" scripts/validate_okf.py) || {
+  [ "$n" -gt 0 ] || { echo "FALHA: zero ancoras inalcancaveis — o apodrecimento acabou, feche o item."; exit 1; }
+  blk=$(grep -A1 -E "^[^#]*if not git\.is_ancestor\(str\(prev_sha\), args\.base_ref\):" scripts/validate_okf.py) || {
     echo "INDETERMINADO: o bloco de ancestralidade do C5b nao foi encontrado em validate_okf.py."
     echo "Alguem refatorou o caminho. NAO estou concluindo nada — olhe a mao e reescreva este verify."
     exit 1

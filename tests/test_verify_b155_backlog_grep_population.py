@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -206,6 +207,22 @@ class B155VerifierTests(unittest.TestCase):
         self.assertEqual(changed, 0)
         self.assertEqual(rewritten, self.backlog)
         self.assertNotIn("^[^#/<*-]*", self.backlog)
+
+    def test_b061_extracted_shell_payload_is_syntactically_valid(self) -> None:
+        record = next(item for item in verifier._records(self.backlog) if item["id"] == "B-061")
+        verify = record["verify"]
+        self.assertIsInstance(verify, str)
+        match = verifier.NESTED_SHELL.search(verify)
+        self.assertIsNotNone(match)
+        assert match is not None
+        position = match.end()
+        while position < len(verify) and verify[position].isspace():
+            position += 1
+        payload, _ = verifier._decode_nested_payload(verify, position)
+        parsed = subprocess.run(
+            ["bash", "-n"], input=payload, text=True, capture_output=True, check=False
+        )
+        self.assertEqual(parsed.returncode, 0, parsed.stderr)
 
 
 if __name__ == "__main__":
