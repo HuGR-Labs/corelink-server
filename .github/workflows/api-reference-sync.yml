@@ -1,7 +1,7 @@
 name: api reference sync (regenerate MDX from openapi/corelink-v1.yaml)
 
 # Drift gate for the auto-generated typed REST API reference under
-# `apps/docs/docs/reference/api/`.
+# `apps/docs/docs/reference/api/` and their generated localized mirrors.
 #
 #  - On `pull_request` that touches the canonical YAML or the
 #    generator, runs `scripts/gen-api-reference.py --check` and fails
@@ -21,12 +21,16 @@ on:
       - "openapi/corelink-v1.yaml"
       - "scripts/gen-api-reference.py"
       - "apps/docs/docs/reference/api/**"
+      - "apps/docs/i18n/*/docusaurus-plugin-content-docs/current/reference/api/**"
+      - "scripts/api_reference_i18n_check.py"
       - ".github/workflows/api-reference-sync.yml"
   push:
     branches: [main]
     paths:
       - "openapi/corelink-v1.yaml"
       - "scripts/gen-api-reference.py"
+      - "scripts/api_reference_i18n_check.py"
+      - "apps/docs/i18n/*/docusaurus-plugin-content-docs/current/reference/api/**"
   workflow_dispatch:
 
 permissions:
@@ -75,6 +79,9 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/gen-api-reference.py
+          # --check also validates that every generated endpoint has a
+          # corresponding file and index link in de, es-419, and pt-BR.
+          python3 scripts/gen-api-reference.py --check
 
       - name: Detect changes
         id: diff

@@ -312,11 +312,11 @@ let data = client.get("af1c3e9b…").await?;
 
 ### 5.4 — Sensitive-op approval queue (4:25 → 4:40)
 
-**Action:** click "Activate BYOK". A modal explains this is a sensitive operation that requires **two distinct approvers** per security control. URL: `/[locale]/admin/ops` → new pending op row visible.
+**Action:** skip this section. The sensitive-operation workflow is disabled until durable persistence and a safe Worker binding are available; no queue or approval page is served.
 
 **Voiceover (~13s):**
 
-> "Activation is a sensitive operation. It enters a queue requiring two distinct admins to approve — not one admin clicking twice. The kill switch, key rotation, and emergency revoke all share this workflow. See our BYOK blog post or the deeper seven-minute BYOK demo for the rotation + kill-switch flow."
+> "Sensitive mutations are unavailable in this build while the durable, auditable operator workflow is being rebuilt. We will publish the approval flow only after its persistence and Worker binding are ready."
 
 ---
 

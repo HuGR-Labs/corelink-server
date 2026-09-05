@@ -136,21 +136,16 @@ tags:
 - **Used in:** `5-MIN-DEEPDIVE.md` §5.3; `byok-deep-dive-demo.md` §3.
 - **Redaction note:** ARN account ID must be the AWS docs-canonical `111122223333`, never a real account.
 
-## Shot #12 — Sensitive ops queue (dual-approval workflow)
+## Shot #12 — Sensitive-operation workflow (reserved)
 
-- **Route:** `/en/admin/ops`
-- **What to capture:** queue of sensitive operations with the new "Activate BYOK on acme-prod" row in "pending — 1/2 approvers" state.
-- **Highlight:** ring around the new pending row.
-- **Annotation overlay:** "Two distinct approvers. Not one admin clicking twice."
-- **Used in:** `5-MIN-DEEPDIVE.md` §5.4; `byok-deep-dive-demo.md` §4.
+- **Status:** retired from the launch set until durable persistence and a safe Worker binding exist.
+- **What to capture:** nothing. Do not fabricate a queue, pending operation, or approval result.
+- **Replacement:** use the real admin audit and tenant screens; sensitive mutations remain unavailable.
 
-## Shot #13 — Sensitive op detail (approve / reject)
+## Shot #13 — Sensitive-operation detail (reserved)
 
-- **Route:** `/en/admin/ops/[op_id]`
-- **What to capture:** the op detail page showing requestor, op type (`byok_activate`), requested-at, justification field, approval log (with first approver listed), and "Approve" / "Reject" buttons greyed out for the *requestor* (they cannot self-approve).
-- **Highlight:** the greyed-out approve button + the "requestor cannot self-approve" hint.
-- **Annotation overlay:** "Separation of duties. Cryptographically enforced."
-- **Used in:** `byok-deep-dive-demo.md` §4; blog post `02-byok-deep-dive.md` §"Kill switch".
+- **Status:** retired from the launch set for the same reason as Shot #12.
+- **What to capture:** nothing. There is no served operation-detail or approve/reject screen.
 
 ## Shot #14 — Audit page filtered for `byok.*` events (rotation evidence)
 

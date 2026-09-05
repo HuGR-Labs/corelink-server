@@ -5,7 +5,10 @@ use uuid::Uuid;
 
 /// An admin operation request requiring dual-approval gate.
 ///
-/// Corresponds to `POST /v1/admin/ops` body after header extraction.
+/// Internal operation request after authentication/header extraction.
+///
+/// This type is not a published HTTP contract; the server has no route that
+/// accepts it until durable persistence and a safe Worker binding exist.
 ///
 /// # Wire headers mapped into struct
 ///

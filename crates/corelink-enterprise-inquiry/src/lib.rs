@@ -53,7 +53,8 @@
 //!
 //! # Production wiring (deferred to PRR ship gate)
 //!
-//! - Cloudflare Worker `POST /v1/enterprise/inquire` handler binding.
+//! - Cloudflare Worker HTTP handler binding. This crate has no published route
+//!   until the durable persistence and production binding are implemented.
 //! - Slack webhook HTTPS POST via `worker::send_future` fire-and-
 //!   forget per Lote 10.7bis R5 P0-3 (NEVER `tokio::spawn`).
 //! - SES auto-reply email HTTPS POST.

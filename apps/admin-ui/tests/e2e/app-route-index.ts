@@ -23,8 +23,7 @@
  *   `[...param]`         consumes one or more (catch-all)
  *   `[[...param]]`       consumes zero or more (optional catch-all)
  * Backtracking is required because a literal directory and a `[param]` sibling
- * can both match the same segment (`/en/admin/ops/op_byok_001` must fall
- * through `ops/page.tsx` into `ops/[op_id]/page.tsx`).
+ * can both match the same segment when a dynamic route is present.
  */
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -147,7 +146,7 @@ function walk(dir: string, segments: readonly string[]): string | null {
  * The `page` file that serves `urlPath`, or `null` when nothing on disk does.
  *
  * `urlPath` is the app-relative path WITHOUT the `/corelink` basePath — the
- * same shape `warm-routes.ts` stores (`/en/admin/ops/op_byok_001`).
+ * same shape `warm-routes.ts` stores.
  */
 export function resolveAppPage(urlPath: string, appDir: string = APP_DIR): string | null {
   const segments = urlPath.split("?")[0]?.split("/").filter(Boolean) ?? [];

@@ -25,8 +25,7 @@ const SCREENS: { path: string; auth: Auth; name: string }[] = [
   { path: "/en/customer/settings", auth: "existingTenant", name: "11-customer-settings" },
   // Admin / operator
   { path: "/en/admin/audit", auth: "admin", name: "20-admin-audit" },
-  { path: "/en/admin/ops", auth: "admin", name: "21-admin-ops" },
-  { path: "/en/admin/tenants", auth: "admin", name: "22-admin-tenants" },
+  { path: "/en/admin/tenants", auth: "admin", name: "21-admin-tenants" },
   // Onboarding / activation
   { path: "/en/team/invite", auth: "existingTenant", name: "32-team-invite" },
   // DSR

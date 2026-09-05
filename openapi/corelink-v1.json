@@ -210,6 +210,11 @@
         ],
         "summary": "Record click-through acceptance of the current DPA version.",
         "operationId": "dpaAccept",
+        "security": [
+          {
+            "ClerkSessionCookie": []
+          }
+        ],
         "description": "Records the click-through consent proof for the caller's tenant and\nreturns the immutable audit reference for it. The tenant is taken from\nthe Clerk-authenticated session at the edge and is **never** read from\nthe body \u2014 a smuggled `tenant_id` is rejected (`400 bad_request`,\nunknown fields are denied).\n\nIdempotent on `(tenant, dpa_version)`: replaying an acceptance returns\nthe original `audit_event_id` unchanged, with the same `200`.\n\n`dpa_version` must equal the server's current DPA version; an older\none is rejected with `400 dpa_version_mismatch`. `dpa_locale` must be\ninside the closed GA locale set (`en-US` / `pt-BR` / `es-419`, and\ntheir bare-language forms); anything else \u2014 `de` included \u2014 is\n`400 unsupported_locale`.\n\n`INV-ONBOARD-DPA-FIRST`: `/v1/onboarding/tier-select` stays locked\nuntil an acceptance row exists for the tenant.\n",
         "requestBody": {
           "required": true,

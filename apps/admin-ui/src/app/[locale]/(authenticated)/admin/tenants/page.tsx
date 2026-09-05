@@ -14,8 +14,8 @@ export default function AdminTenantsPage(): React.ReactElement {
             <p>
               Look up any tenant in operator scope to inspect its plan, region, and BYOK
               status, then open the deep-dive. Filter the list by plan, region, or BYOK
-              state. Sensitive actions (suspend, offboard, entitlement changes) are queued
-              for dual approval in <code>/admin/ops</code>.
+              state. Sensitive actions are currently unavailable while the durable,
+              auditable operator workflow is being rebuilt.
             </p>
             <div className="lin-mt-lg">
               <TenantSearchClient />

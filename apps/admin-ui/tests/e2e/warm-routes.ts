@@ -66,7 +66,6 @@
  *     …
  *     GET /en/customer/billing             200 in 1649ms   <- server still fine
  *     GET /en/admin/tenants                200 in 1612ms
- *     GET /en/admin/ops/op_byok_001        404 in   63ms (next.js:   6ms)
  *
  * Three facts follow, and together they name the fault exactly:
  *
@@ -82,8 +81,8 @@
  *      runs 30765324783 / 30773211630 / 30773554607 / 30779501435 / 30781832643
  *      — the last of which is the SAME COMMIT, ten minutes later. And in the
  *      failing run's own sibling job, `next build` emitted both of them into
- *      the production route table (`ƒ /[locale]/customer/audit/visualization`,
- *      `ƒ /[locale]/admin/ops/[op_id]`). **The pages are not broken; only the
+ *      the production route table (`ƒ /[locale]/customer/audit/visualization`).
+ *      **The page is not broken; only the
  *      dev server's lazily-built route tree is**, and when it is short it is
  *      short at the DEEPEST entries (every warmed route at `/[locale]/a/b`
  *      resolved; all three at `/[locale]/a/b/c` did not).
@@ -127,8 +126,6 @@ export const ROUTES = [
   "/en/customer/team",
   "/en/admin/audit",
   "/en/admin/tenants",
-  "/en/admin/ops/op_byok_001",
-  "/en/admin/ops/op_dsr_001",
 ];
 
 /**

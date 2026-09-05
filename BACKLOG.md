@@ -7830,7 +7830,7 @@ last-verified: 2026-08-30
 ### B-117 — apagar e exportar a própria conta não têm documento nenhum
 
 O contêiner registra `POST /v1/customer/account/delete` e
-`GET /v1/customer/account/export`. **Nenhuma das duas aparece em lugar algum do
+`POST /v1/customer/account/export`. **Nenhuma das duas aparece em lugar algum do
 `apps/docs`** — nem página de referência, nem índice, nem OpenAPI, nem tutorial, nem a
 tradução pt-BR.
 
@@ -7945,27 +7945,21 @@ last-verified: 2026-08-30
 
 ---
 
-### B-119 — `POST /v1/admin/ops` é documentado, chamado por três clientes, e não existe
+### B-119 — superfície de aprovação dupla planejada, mas sem persistência nem binding seguro
 
-A superfície de aprovação dupla é publicada como quatro endpoints — `POST /v1/admin/ops`,
+A superfície de aprovação dupla foi planejada como quatro endpoints — `POST /v1/admin/ops`,
 `GET /v1/admin/ops/{op_id}`, `POST /v1/admin/ops/{op_id}/approve`,
-`POST /v1/admin/ops/{op_id}/reject` — cada um com página própria em
-`apps/docs/docs/reference/api/endpoints/`.
+`POST /v1/admin/ops/{op_id}/reject` — mas nenhum servidor registra qualquer um deles.
+O contêiner serve os fluxos administrativos reais (`/v1/admin/mutate` e
+`/v1/admin/approve`), e a decisão canônica é manter a superfície planejada desabilitada
+até que exista persistência durável e um binding seguro no Worker.
 
-**Nenhum servidor registra nenhum dos quatro.** O contêiner registra `/v1/admin/mutate` e
-`/v1/admin/approve`.
+O reparo removeu as páginas `/admin/ops*`, métodos correspondentes do `AdminClient`, cards
+e testes E2E que só exercitavam mocks, além dos quickstarts CLI/SDK/WASM que ensinavam o
+endpoint inexistente. Os crates `corelink-dual-approval` e `corelink-ops` permanecem como
+política interna reutilizável, mas declaram explicitamente que não têm binding HTTP.
 
-O que torna este caso grave não é a ausência, é **quantas coisas já foram construídas em
-cima dela**:
-
-- `apps/admin-ui/src/lib/admin-client.ts:139-163` chama os quatro.
-- `crates/corelink-wasm/examples/quickstart_team_invite.ts` e
-  `quickstart_byok_rotate.ts` — **exemplos de quickstart publicados dos SDKs** — chamam
-  `POST /v1/admin/ops` e `POST /v1/admin/ops/{op_id}/approve`.
-- `crates/corelink-dual-approval/src/types.rs:8` tem um tipo cujo doc-comment diz
-  *"Corresponds to `POST /v1/admin/ops` body after header extraction."*
-
-E o crate que teria a implementação **não está no binário servido**:
+O crate que teria a implementação continua **fora do binário servido**:
 
 ```
 cargo tree -p corelink-server --edges normal
@@ -7990,21 +7984,22 @@ owner: tl
 status: done
 verify: |
   bash -c 'set -o pipefail
-  n=$(rg -l --glob "*.md" --glob "*.mdx" --glob "*.yaml" --glob "*.json" -- "/v1/admin/ops" apps/docs/ openapi/ 2>/dev/null | wc -l | tr -d " ")
-  [ "$n" = 0 ] || { echo "FALHA: $n artefato(s) publicado(s) ainda prometem /v1/admin/ops."; exit 1; }
+  python3 scripts/verify_b119_surface.py --self-test >/dev/null || { echo "FALHA: o self-test do censo B-119 reprovou."; exit 1; }
+  python3 scripts/verify_b119_surface.py || { echo "FALHA: a superfície viva/publicada ainda contém uma alegação de admin/ops."; exit 1; }
   python3 scripts/validate_api_surface.py >/dev/null || { echo "FALHA: o comparador doc-x-servido reprovou."; exit 1; }
-  echo "done: a superfície fantasma admin/ops foi removida dos artefatos publicados e o comparador está verde"'
+  echo "done: admin/ops está desabilitado em UI, mocks, SDKs, docs e crates; censo fechado e comparador verdes"'
 verify-means: |
-  done — a superfície `/v1/admin/ops*` foi reconhecida como planejada, mas nunca
-  servida pelo binário. As páginas OpenAPI geradas e seus espelhos publicados foram
-  removidos; a API canônica mantém apenas as rotas admin realmente registradas.
+  done — a superfície planejada nunca foi servida pelo binário e agora também não é
+  publicada por UI, mocks, exemplos de SDK/WASM/CLI, documentação ou doc-comments de
+  crates. Ela só poderá voltar quando a persistência durável e o binding seguro no Worker
+  forem implementados juntos.
 
-  Os dois lados são medidos. Um predicado de um lado só fecharia sozinho pelo lado errado:
-  apagar as páginas fecharia o item sem entregar a funcionalidade, e a funcionalidade
-  aparecer sem corrigir a doc deixaria a divergência viva ao contrário.
+  O censo `verify_b119_surface.py` é fechado sobre todos os roots de produto e tem uma
+  mutação positiva e uma negativa no `--self-test`; assim, não basta o comparador OpenAPI
+  ficar verde enquanto um mock, página ou quickstart continua ensinando o endpoint.
 
-  A implementação servida é `/v1/admin/read/{resource}`, `/v1/admin/mutate` e
-  `/v1/admin/approve`; nenhum endpoint phantom foi mantido como alias.
+  A implementação servida mantém apenas os fluxos administrativos reais; nenhum alias
+  phantom foi mantido.
 last-verified: 2026-08-30
 ```
 

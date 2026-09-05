@@ -103,17 +103,6 @@ async function withoutApiUrlEnv<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 describe("API-client same-origin fallback basePath", () => {
-  it("AdminClient falls back to /corelink/api, not the apex /api", async () => {
-    await withoutApiUrlEnv(async () => {
-      vi.resetModules();
-      const { AdminClient } = await import("@/lib/admin-client");
-      const captured: string[] = [];
-      const client = new AdminClient({ fetchImpl: captureFetch(captured, { ops: [] }) });
-      await client.listOps();
-      expect(captured).toEqual(["/corelink/api/v1/admin/ops"]);
-    });
-  });
-
   it("CustomerClient falls back to /corelink/api, not the apex /api", async () => {
     await withoutApiUrlEnv(async () => {
       vi.resetModules();

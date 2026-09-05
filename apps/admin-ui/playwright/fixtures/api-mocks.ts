@@ -32,15 +32,6 @@ interface RouteState {
     sla_due_at: string;
     status: "pending" | "processing" | "completed";
   }>;
-  /** ops awaiting dual-approval */
-  pendingOps: Array<{
-    op_id: string;
-    type: string;
-    submitted_by: string;
-    submitted_at: string;
-    approved_by?: string;
-    status: "pending" | "approved" | "rejected" | "executed";
-  }>;
 }
 
 function freshState(): RouteState {
@@ -54,15 +45,6 @@ function freshState(): RouteState {
       },
     ],
     dsrRequests: [],
-    pendingOps: [
-      {
-        op_id: "op_pending_1",
-        type: "tenant_delete",
-        submitted_by: "user_e2e_newdev",
-        submitted_at: "2026-05-13T09:00:00Z",
-        status: "pending",
-      },
-    ],
   };
 }
 
@@ -260,43 +242,6 @@ export async function installApiMocks(page: Page): Promise<void> {
           },
           payload_redacted: { tenant_id: "tenant_acme" },
         }),
-      });
-    }
-
-    // ----- Admin: ops dual-approval -----
-    if (path === "/v1/admin/ops" && method === "GET") {
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ items: state.pendingOps, cursor: null }),
-      });
-    }
-    if (path.startsWith("/v1/admin/ops/") && path.endsWith("/approve") && method === "POST") {
-      const id = path.split("/")[4];
-      const op = state.pendingOps.find((o) => o.op_id === id);
-      if (!op) {
-        return route.fulfill({ status: 404, body: "{}" });
-      }
-      const approver = (req.headers()["x-e2e-user"] ?? "").toString();
-      if (approver && approver === op.submitted_by) {
-        return route.fulfill({
-          status: 409,
-          contentType: "application/problem+json",
-          body: JSON.stringify(
-            makeRfc7807(
-              409,
-              "Conflict",
-              "submitter cannot approve own op (CTRL-DUAL-APPROVAL)",
-            ),
-          ),
-        });
-      }
-      op.status = "executed";
-      op.approved_by = approver || "user_e2e_approver";
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(op),
       });
     }
 

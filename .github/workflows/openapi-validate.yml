@@ -1,6 +1,7 @@
 name: openapi validate (3.1 spec + breaking-change detection)
 
-# Quality gate for `openapi/corelink-v1.yaml` and its generated JSON sibling.
+# Quality gate for `openapi/corelink-v1.yaml`, generated JSON/Worker copies,
+# and the published static YAML copy under `apps/docs/static/`.
 # Steps:
 #   1. Redocly lint (0 errors, warnings ok).
 #   2. OpenAPI 3.1 meta-schema validation via openapi-spec-validator.
@@ -14,6 +15,7 @@ on:
   pull_request:
     paths:
       - "openapi/**"
+      - "apps/docs/static/openapi-corelink-v1.yaml"
       - "tools/openapi/**"
       - "scripts/openapi_sync.py"
       # The Worker module served at GET /openapi.json is GENERATED from the
@@ -26,6 +28,7 @@ on:
     branches: [main]
     paths:
       - "openapi/**"
+      - "apps/docs/static/openapi-corelink-v1.yaml"
       - "tools/openapi/**"
       - "scripts/openapi_sync.py"
       - "worker/src/lib/openapi_v1.ts"

@@ -148,6 +148,8 @@ paths:
       tags: [dpa]
       summary: Record click-through acceptance of the current DPA version.
       operationId: dpaAccept
+      security:
+        - ClerkSessionCookie: []
       description: |
         Records the click-through consent proof for the caller's tenant and
         returns the immutable audit reference for it. The tenant is taken from

@@ -8,7 +8,7 @@
  * Determinism rules:
  *   - Fixed timestamps for list endpoints so date filters can be asserted.
  *   - Mutations DO update the in-memory state so a request like
- *     "approve op" causes a subsequent "list audit" to reflect the audit row.
+ *     an admin DSR mutation causes a subsequent "list audit" to reflect the audit row.
  *   - State is a `globalThis`-backed singleton (see `mockGlobals()` below) — a
  *     single Node process per playwright run, and the global anchor keeps the
  *     state alive across Next.js dev route recompiles (a plain module-level
@@ -23,7 +23,7 @@
  * pure and have no side effects on real backends.
  */
 
-import type { AdminOp, AuditEventDetail, AuditPage, Tenant } from "./types";
+import type { AuditEventDetail, AuditPage, Tenant } from "./types";
 import type {
   CustomerAuditEvent,
   CustomerBilling,
@@ -51,7 +51,6 @@ interface MockState {
   tenants: Tenant[];
   auditEvents: AuditPage["rows"];
   auditDetails: Map<string, AuditEventDetail>;
-  ops: AdminOp[];
   dsrRequests: Array<{
     request_id: string;
     action: string;
@@ -160,33 +159,6 @@ function makeAuditDetail(id: string, state: MockState): AuditEventDetail {
     },
     r2_url: "https://example.invalid/audit-archive/" + summary.event_id,
   };
-}
-
-function makeOps(): AdminOp[] {
-  return [
-    {
-      op_id: "op_byok_001",
-      op_type: "byok_cmk_rotation",
-      requestor: "user_e2e_admin",
-      requested_at: "2026-05-13T08:00:00Z",
-      status: "awaiting_approval",
-      payload: { tenant_id: "tenant_001", new_cmk_id: "cmk_v2" },
-      impact_summary: "Rotate CMK for tenant_001 (BYOK).",
-      tenant_scope: ["tenant_001"],
-      approvals: [],
-    },
-    {
-      op_id: "op_dsr_001",
-      op_type: "tenant_data_export",
-      requestor: "user_e2e_admin",
-      requested_at: "2026-05-13T09:00:00Z",
-      status: "awaiting_approval",
-      payload: { request_id: "dsr_001", tenant_id: "tenant_001" },
-      impact_summary: "Export tenant_001 personal data for DSR access request.",
-      tenant_scope: ["tenant_001"],
-      approvals: [],
-    },
-  ];
 }
 
 function makeCustomerAudit(): CustomerAuditEvent[] {
@@ -303,7 +275,6 @@ function freshState(): MockState {
     tenants: makeTenants(),
     auditEvents: events,
     auditDetails: new Map(),
-    ops: makeOps(),
     dsrRequests: [
       {
         request_id: "dsr_001",
@@ -335,11 +306,11 @@ function freshState(): MockState {
 // The mock's mutable state MUST survive across sequential HTTP requests within a
 // Playwright run. A plain module-level `let state` does NOT: the Next.js dev
 // server re-evaluates shared lib modules when it compiles a not-yet-visited
-// route (e.g. the first navigation to /admin/audit after an approve), which
+// route (e.g. the first navigation to /admin/audit after a mutation), which
 // re-runs the module top-level and silently resets `state` — wiping the very
 // mutation the next assertion depends on. The symptom was "audit row never
-// appears / approve-btn state lost", flaky-green only on retry (retry = warm
-// server, no recompile). Anchoring the state on `globalThis` (the standard
+// appears", flaky-green only on retry (retry = warm server, no recompile).
+// Anchoring the state on `globalThis` (the standard
 // Next.js dev-singleton pattern) makes it a true per-process singleton that
 // survives module re-evaluation, so a mutation is observed by every later
 // request until an explicit reset. `portalSessionSeq` lives here too so its
@@ -429,51 +400,6 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
     const id = path.split("/").pop()!;
     if (!state.auditDetails.has(id)) state.auditDetails.set(id, makeAuditDetail(id, state));
     return { status: 200, body: state.auditDetails.get(id) };
-  }
-
-  // ----- ops dual-approval -----
-  if (path === "/v1/admin/ops" && method === "GET") {
-    const status = query["status"];
-    const ops = status ? state.ops.filter((o) => o.status === status) : state.ops;
-    return { status: 200, body: { ops } };
-  }
-  if (path.startsWith("/v1/admin/ops/") && path.endsWith("/approve") && method === "POST") {
-    const id = path.split("/")[4];
-    const op = state.ops.find((o) => o.op_id === id);
-    if (!op) return rfc7807(404, "Not Found", "op not found");
-    const reason =
-      (typeof body === "object" && body !== null && "reason" in (body as Record<string, unknown>)
-        ? String((body as Record<string, unknown>)["reason"])
-        : "") ||
-      req.headers["x-admin-operation-reason"] ||
-      "approved via e2e";
-    op.approvals.push({
-      approver: "user_e2e_approver",
-      approved_at: new Date().toISOString(),
-      reason,
-    });
-    if (op.approvals.length >= 2) op.status = "executed";
-    // Drop an audit row so the audit-trail spec can assert it.
-    state.auditEvents = [
-      {
-        event_id: `evt_op_${op.op_id}`,
-        ts: new Date().toISOString(),
-        tenant_id: op.tenant_scope[0] ?? "tenant_001",
-        event_type: "admin.op_approved",
-        severity: "warn",
-        actor: "user_e2e_approver",
-        summary: `approved ${op.op_type} ${op.op_id}`,
-        correlation_id: `corr-${op.op_id}`,
-      },
-      ...state.auditEvents,
-    ];
-    return { status: 200, body: op };
-  }
-  if (path.startsWith("/v1/admin/ops/") && method === "GET") {
-    const id = path.split("/").pop()!;
-    const op = state.ops.find((o) => o.op_id === id);
-    if (!op) return rfc7807(404, "Not Found", "op not found");
-    return { status: 200, body: op };
   }
 
   // ----- customer audit-chain visualization (wt/r-prep-audit-chain-viz) -----
