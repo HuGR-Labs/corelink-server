@@ -128,3 +128,11 @@ returned `401`).
 
 - [Upload a blob](./02-upload-blob.mdx)
 - [Download a blob](./03-download-blob.mdx)
+
+## Self-service PAT issuance
+
+Authenticated tenants can issue an additional PAT with `POST /v1/pats`;
+`POST /v1/customer/keys` is the compatible dashboard alias. Both routes use
+the same per-tenant `pat-issue` limiter (burst 10, then 10/hour, one token
+every 360 seconds), enforced before mint and audit. Handle `429` and its
+`Retry-After` header; the plaintext token is returned only once.

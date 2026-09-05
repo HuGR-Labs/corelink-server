@@ -57,6 +57,12 @@
 
 use crate::config::RateLimitConfig;
 
+/// Tolerance used only to neutralize binary floating-point representation at
+/// an otherwise exact millisecond boundary (for example 360s × 1/360).
+/// It is far below one millisecond at the slowest supported public bucket, so
+/// it cannot admit a request a clock tick early.
+const BOUNDARY_EPSILON: f64 = 1e-9;
+
 /// Token-bucket state machine.
 ///
 /// Production wiring stores this struct as the in-memory representation
@@ -81,10 +87,24 @@ impl TokenBucketState {
     /// admission policy.
     #[must_use]
     pub fn new_full(burst_capacity: u32, refill_rate_per_sec: u32, created_at_ms: u64) -> Self {
+        Self::new_full_exact(
+            burst_capacity,
+            f64::from(refill_rate_per_sec),
+            created_at_ms,
+        )
+    }
+
+    /// Build a fresh full bucket with an exact refill rate.
+    #[must_use]
+    pub fn new_full_exact(
+        burst_capacity: u32,
+        refill_rate_per_sec: f64,
+        created_at_ms: u64,
+    ) -> Self {
         Self {
             available_tokens: f64::from(burst_capacity),
             burst_capacity,
-            refill_rate_per_sec: f64::from(refill_rate_per_sec),
+            refill_rate_per_sec,
             last_refill_at_ms: created_at_ms,
         }
     }
@@ -103,10 +123,24 @@ impl TokenBucketState {
         refill_rate_per_sec: u32,
         created_at_ms: u64,
     ) -> Self {
+        Self::new_exhausted_exact(
+            burst_capacity,
+            f64::from(refill_rate_per_sec),
+            created_at_ms,
+        )
+    }
+
+    /// Build a freshly exhausted bucket with an exact refill rate.
+    #[must_use]
+    pub fn new_exhausted_exact(
+        burst_capacity: u32,
+        refill_rate_per_sec: f64,
+        created_at_ms: u64,
+    ) -> Self {
         Self {
             available_tokens: 0.0,
             burst_capacity,
-            refill_rate_per_sec: f64::from(refill_rate_per_sec),
+            refill_rate_per_sec,
             last_refill_at_ms: created_at_ms,
         }
     }
@@ -248,8 +282,11 @@ pub fn try_acquire(
     // next call's delta computes correctly.
     let next_now = now_ms.max(state.last_refill_at_ms);
 
-    if refilled >= cost_f {
-        let after = refilled - cost_f;
+    if refilled + BOUNDARY_EPSILON >= cost_f {
+        // At an exact boundary `refilled` may be a few ULP below `cost_f`.
+        // The epsilon admits that boundary; clamp the residual so it never
+        // turns the persisted token count negative.
+        let after = (refilled - cost_f).max(0.0);
         let next_state = TokenBucketState {
             available_tokens: after,
             burst_capacity: state.burst_capacity,
@@ -278,7 +315,10 @@ pub fn try_acquire(
             // RFC 6585 §4 + RFC 9331 — minimum wait for `cost - refilled`
             // tokens to refill.
             let needed = cost_f - refilled;
-            let wait_secs_f = (needed / state.refill_rate_per_sec).ceil();
+            // Subtract only representation noise before ceil: without this,
+            // `ceil(360.00000000000006)` emits a false 361-second retry for
+            // the mathematically exact 10/hour bucket.
+            let wait_secs_f = ((needed / state.refill_rate_per_sec) - BOUNDARY_EPSILON).ceil();
             // Defensive: clamp to live-tenant floor + hard ceiling.
             let wait_u = if wait_secs_f.is_nan() || wait_secs_f < 0.0 {
                 config.retry_after_floor_secs()

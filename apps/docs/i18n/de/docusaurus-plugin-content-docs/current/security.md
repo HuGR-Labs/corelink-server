@@ -15,14 +15,14 @@ description: PAT-Lebenszyklus, Scopes, Rotationsrichtlinie, Audit-Log und die IN
 
 ## PAT-Lebenszyklus
 
-Personal Access Tokens (PATs) sind der einzige Anmeldeinformationstyp, den CoreLink akzeptiert. Das Verständnis ihres Lebenszyklus ist für einen sicheren Betrieb entscheidend.
+Personal Access Tokens (PATs) sind der einzige programmgesteuerte Anmeldeinformationstyp, den CoreLink akzeptiert; Browser-Kundenabläufe verwenden zusätzlich validierte Clerk-Sitzungen. Das Verständnis ihres Lebenszyklus ist für einen sicheren Betrieb entscheidend.
 
 ### Erstellung
 
 PATs werden an zwei Stellen erstellt:
 
-1. **Registrierungsassistent** — stellt automatisch ein Starter-PAT mit den Scopes `cas:read cas:write ac:read ac:write` aus. Dies ist heute der einzige produktive Weg, ein PAT zu erstellen.
-2. **Self-Service-PAT-Ausstellung** (`POST /v1/pats`, ein PAT mit einer beliebigen Teilmenge von Scopes) ist geplant, aber noch nicht auf eine Route verdrahtet — der Aufruf liefert heute `404`. Wenden Sie sich bis dahin an den Support, um weitere PATs für Ihren Mandanten ausstellen zu lassen.
+1. **Registrierungsassistent** — stellt automatisch ein Starter-PAT mit den Scopes `cas:read cas:write ac:read ac:write` aus. Dies ist einer von zwei heute aktiven Wegen, ein PAT zu erstellen.
+2. **Self-Service-PAT-Ausstellung** (`POST /v1/pats`) ist aktiv. Browser-Aufrufer verwenden eine validierte Clerk-Sitzung; CLI-Aufrufer können aus Kompatibilitätsgründen ein kanonisches PAT verwenden. Der Mandant wird serverseitig abgeleitet und der Klartext-Token wird genau einmal zurückgegeben.
 
 Bei der Erstellung wird der Klartext-Token **genau einmal** angezeigt. CoreLink speichert den Klartext niemals. Es gibt keinen Endpunkt zum Abrufen.
 
@@ -54,11 +54,11 @@ PATs haben keine automatische Rotation. Empfohlene Rotationskadenz, sobald die S
 | CI/CD | 90 Tage oder bei Teamwechsel |
 | Integration (gemeinsam genutzt) | 30 Tage |
 
-**Self-Service-PAT-Erstellung und -Widerruf (`POST /v1/pats`, `DELETE /v1/pats/:pat_id`) sind noch nicht produktiv** — die Routen sind nicht verdrahtet. Wenden Sie sich bis dahin an [support@humangr.com](mailto:support@humangr.com), um ein Ersatz-PAT ausstellen zu lassen und das alte zu widerrufen; es gibt heute keinen Weg im Produkt selbst.
+**Self-Service-PAT-Ausstellung (`POST /v1/pats`) und der Dashboard-Alias (`POST /v1/customer/keys`) sind aktiv. Beide teilen die tenantbezogene `pat-issue`-Richtlinie: Burst 10 und Refill 10/Stunde (ein Token alle 360 Sekunden), vor Mint und Audit. `429`-Antworten enthalten `Retry-After`. Der Widerruf erfolgt über `POST /v1/customer/keys/{pat_id}/revoke`; das öffentliche `DELETE /v1/pats/{pat_id}` bleibt geplant.
 
 ### Widerruf
 
-Der Widerruf läuft aktuell über den Support — schreiben Sie an [support@humangr.com](mailto:support@humangr.com) mit dem Label des PATs oder der Mandanten-ID. Nach dem Widerruf schlagen laufende Anfragen mit diesem PAT innerhalb des Cloudflare-Edge-Propagationsfensters (typischerweise < 100 ms) mit `401` fehl.
+Die Dashboard-Route `POST /v1/customer/keys/{pat_id}/revoke` widerruft tenantbezogen und erfordert einen schreibberechtigten Aufrufer. Die öffentliche Operation `DELETE /v1/pats/{pat_id}` ist noch nicht aktiv. Nach dem Widerruf schlagen laufende Anfragen mit diesem PAT innerhalb des Cloudflare-Edge-Propagationsfensters (typischerweise < 100 ms) mit `401` fehl.
 
 ## Scopes
 

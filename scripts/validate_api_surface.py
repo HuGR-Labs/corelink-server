@@ -88,8 +88,6 @@ LEDGER_MISSING_ROUTE: dict[str, str] = {
     "/v1/admin/audit/events": "B-121",
     "/v1/admin/tenants": "B-121 (only the /{tenant_id}/... sub-routes exist)",
     "/v1/data-categories": "B-121 (only admin-ui/src/lib/dsr-client.ts calls it)",
-    "/v1/pats": "B-121 (only /v1/admin/tenants/{tenant_id}/pats exists)",
-    "/v1/pats/{pat_id}": "B-121 (only the admin variant exists)",
     # --- PATH DIVERGENCE: the endpoint exists under a different path -------
     # Worse for the caller than absence: the doc looks right and the call
     # 404s AFTER authenticating.  Each of these has a MISSING_DOC twin below.

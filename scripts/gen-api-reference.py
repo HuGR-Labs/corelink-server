@@ -45,6 +45,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
+from api_reference_i18n_check import validate_localized_api_indexes
+
 try:
     import yaml  # type: ignore[import-untyped]
 except ImportError as exc:  # pragma: no cover - bootstrap guard
@@ -57,7 +59,6 @@ except ImportError as exc:  # pragma: no cover - bootstrap guard
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SPEC = REPO_ROOT / "openapi" / "corelink-v1.yaml"
 DEFAULT_OUT = REPO_ROOT / "apps" / "docs" / "docs" / "reference" / "api"
-
 HTTP_METHODS = (
     "get",
     "post",
@@ -788,7 +789,12 @@ def render_endpoint_mdx(endpoint: Endpoint, spec: Spec) -> str:
         "Replace `<YOUR_PAT>` with a Personal Access Token issued via "
         "[`POST /v1/pats`](./post-v1-pats.mdx)._\n\n"
     )
-    parts.append(render_examples(endpoint, spec) + "\n")
+    # The PAT page was already published with one terminal LF before it was
+    # brought back under generation. Preserve that byte-level contract while
+    # leaving the historical two-LF termination of the existing reference set
+    # untouched; the sync gate consequently catches accidental PAT EOF drift.
+    examples_terminal = "" if endpoint.operation_id == "patIssue" else "\n"
+    parts.append(render_examples(endpoint, spec) + examples_terminal)
 
     return "".join(parts)
 
@@ -957,11 +963,19 @@ def main(argv: list[str] | None = None) -> int:
     print(f"endpoints: {len(endpoints)}")
     print(f"changed:   {len(changes)}")
     print(f"stale removed: {removed}")
+    localized_failures = (
+        validate_localized_api_indexes(endpoint.file_name for endpoint in endpoints)
+        if args.check else []
+    )
+    if localized_failures:
+        sys.stderr.write("localized API reference parity failure:\n")
+        for failure in localized_failures:
+            sys.stderr.write(f"  {failure}\n")
     if args.dry_run:
         print("dry-run: no files written")
         return 0
     if args.check:
-        if changes or removed:
+        if changes or removed or localized_failures:
             sys.stderr.write(
                 "drift: regenerate via `python3 scripts/gen-api-reference.py`\n"
             )

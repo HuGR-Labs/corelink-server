@@ -5,7 +5,7 @@ info:
   summary: REST surface for CoreLink customer onboarding, privacy (DSR / DPA),
     billing webhooks, admin operations and health.
   description: |
-    Hand-authored OpenAPI 3.1 contract for the **non-REAPI** surface of CoreLink.
+    Hand-authored OpenAPI 3.1 contract for the **selected non-REAPI** surface of CoreLink.
     The high-volume CAS / AC / ByteStream / Capabilities surface is gRPC
     (Remote Execution API v2) and documented separately under
     `docs/reference/reapi/`.
@@ -18,6 +18,12 @@ info:
 
     **Stability:** `v1` — public, semver-compatible. Breaking changes require a
     new major path prefix (`/v2/...`).
+
+    This published asset is an intentional subset of the canonical
+    `openapi/corelink-v1.yaml`, not a byte-for-byte mirror. It contains the
+    customer/privacy routes consumed by the docs site; `scripts/openapi_sync.py
+    --check` verifies that every path and operation in this subset still exists
+    in the canonical contract and that operation identities do not drift.
   termsOfService: https://corelink.humangr.com/legal/terms
   contact:
     name: CoreLink Support
@@ -280,14 +286,30 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
   /v1/pats:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/customer.rs
+    x-implementing-crate: corelink-pat
     post:
       tags: [pat]
       summary: Issue a new Personal Access Token.
       operationId: patIssue
+      security:
+        - ClerkSessionCookie: []
+        - BearerPAT: []
       description: |
-        Returns the raw token material **once** (`shown_once`). The token is
-        hashed (BLAKE3-keyed) before storage; subsequent reads only ever
-        return the hash prefix and metadata.
+        Creates a PAT for the caller's authenticated tenant. Browser/dashboard
+        callers authenticate with an edge-validated Clerk session cookie; CLI
+        callers may use a canonical PAT for compatibility. The Worker derives
+        the tenant from that verified credential; clients
+        cannot supply a tenant id and this endpoint never accepts the
+        operator-only mint authority. The raw token is returned exactly once in
+        `token` and is never logged or retrievable later. Self-service tokens
+        expire after 90 days and cannot grant `admin`.
+        This endpoint and the legacy dashboard alias `POST /v1/customer/keys`
+        use the same customer-plane mint flow and the same per-tenant
+        `pat-issue` bucket: burst 10, then 10 tokens per hour (one every 360
+        seconds). The limiter runs before mint and audit; a denied request
+        returns `429` with `Retry-After`.
       requestBody:
         required: true
         content:
@@ -301,39 +323,49 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PatIssueResponse"
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "422": { $ref: "#/components/responses/Unprocessable" }
-        "429": { $ref: "#/components/responses/RateLimited" }
-        "500": { $ref: "#/components/responses/InternalError" }
-    get:
-      tags: [pat]
-      summary: List the caller's Personal Access Tokens.
-      operationId: patList
-      responses:
-        "200":
-          description: PAT list (metadata only — no raw token material).
+        "400":
+          description: Malformed JSON or request body rejected by the HTTP extractor.
+          content:
+            text/plain:
+              schema: { type: string }
+        "401":
+          description: |
+            Authentication failed at the edge returns the Worker's JSON
+            `WorkerErrorEnvelope` with `error`, `message`, and `request_id`.
+            A request that reaches the container but has no trusted tenant,
+            or requests an invalid/ungrantable (`admin`/`owner`) scope, returns
+            the handler's plain-text `401`. No PAT is minted in either case.
           content:
             application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/PatMetadata"
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "500": { $ref: "#/components/responses/InternalError" }
-  /v1/pats/{pat_id}:
-    delete:
-      tags: [pat]
-      summary: Revoke a Personal Access Token by id.
-      operationId: patRevoke
-      parameters:
-        - $ref: "#/components/parameters/PatId"
-      responses:
-        "204":
-          description: Revoked. Subsequent uses MUST fail closed (`INV-PAT-REVOKE-PROPAGATION`).
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "500": { $ref: "#/components/responses/InternalError" }
+              schema: { $ref: "#/components/schemas/WorkerErrorEnvelope" }
+            text/plain:
+              schema: { type: string }
+        "403":
+          description: |
+            The authenticated principal is valid but lacks the write capability
+            required to mint a requested write/admin credential. The container
+            handler returns plain text.
+          content:
+            text/plain:
+              schema: { type: string }
+        "429":
+          description: PAT issuance rate limit exceeded.
+          headers:
+            Retry-After:
+              schema: { type: integer, minimum: 1 }
+          content:
+            text/plain:
+              schema: { type: string }
+        "500":
+          description: PAT storage or handler failure.
+          content:
+            text/plain:
+              schema: { type: string }
+        "503":
+          description: Rate-limit clock or pipeline unavailable; no PAT was minted.
+          content:
+            text/plain:
+              schema: { type: string }
   /v1/billing/stripe-webhook:
     post:
       tags: [billing]
@@ -665,25 +697,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/UserProfile"
         "401": { $ref: "#/components/responses/Unauthorized" }
-    patch:
-      tags: [users]
-      summary: Update mutable profile fields.
-      operationId: usersMePatch
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UserProfilePatch"
-      responses:
-        "200":
-          description: Updated profile.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UserProfile"
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "422": { $ref: "#/components/responses/Unprocessable" }
   /v1/data-categories:
     get:
       tags: [data-categories]
@@ -876,6 +889,22 @@ components:
             details:
               type: object
               additionalProperties: true
+    WorkerErrorEnvelope:
+      type: object
+      required: [error, message, request_id]
+      description: JSON envelope emitted by the edge Worker before a request
+        reaches the tenant Durable Object. It contains no credential material.
+      properties:
+        error:
+          type: string
+          description: Stable machine-readable Worker error code.
+          examples: [UNAUTHORIZED, FORBIDDEN, INTERNAL_ERROR]
+        message:
+          type: string
+          description: Safe human-readable message; secrets are never echoed.
+        request_id:
+          type: string
+          description: Worker request correlation identifier.
     SignupRequest:
       type: object
       required: [clerk_event_id, email_hash, locale, idempotency_key, correlation_id]
@@ -991,22 +1020,30 @@ components:
           type: array
           items:
             type: string
-            enum: [cas.read, cas.write, ac.read, ac.write, admin]
-          default: [cas.read, cas.write, ac.read, ac.write]
-        expires_at_ms:
-          type: integer
-          format: int64
-          nullable: true
+            enum: [cache:read, cache:write, cache:find-missing]
+          default: [cache:read]
     PatIssueResponse:
-      allOf:
-        - $ref: "#/components/schemas/PatMetadata"
-        - type: object
-          required: [shown_once_token]
-          properties:
-            shown_once_token:
-              type: string
-              description: Raw PAT material — **shown exactly once**. Stored
-                BLAKE3-keyed; never retrievable again.
+      type: object
+      required: [pat, token]
+      properties:
+        pat:
+          $ref: "#/components/schemas/CustomerPatMetadata"
+        token:
+          type: string
+          description: Canonical raw PAT material — **shown exactly once** and
+            never logged or retrievable again.
+    CustomerPatMetadata:
+      type: object
+      required: [pat_id, name, scopes, created_at]
+      properties:
+        pat_id: { type: string }
+        name: { type: string }
+        scopes:
+          type: array
+          items: { type: string }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time, nullable: true }
+        revoked_at: { type: string, format: date-time, nullable: true }
     PatMetadata:
       type: object
       required: [pat_id, label, scopes, created_at_ms, prefix]

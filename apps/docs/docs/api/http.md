@@ -13,14 +13,22 @@ All endpoints require HTTPS. HTTP is not accepted.
 
 ## Authentication
 
-Every request must carry a `Authorization: Bearer <PAT>` header.
+Most requests must carry an `Authorization: Bearer <PAT>` header. The
+customer PAT-issuance POST is the browser exception: the dashboard sends an
+edge-validated Clerk session cookie (`__session`), while CLI callers may use a
+canonical PAT for compatibility. The Worker resolves the tenant from the
+credential and strips the Clerk JWT before forwarding to the tenant Durable
+Object; clients never provide a tenant id.
 
 ```bash
 curl -H "Authorization: Bearer $CORELINK_PAT" \
   https://corelink-api.humangr.com/v1/users/me
 ```
 
-No other authentication scheme (Basic, API key header, query param) is accepted. If the header is missing or malformed, the API returns `401`.
+No other authentication scheme (Basic, API key header, query param) is accepted.
+For `POST /v1/pats` (and its dashboard alias `POST /v1/customer/keys`), use a
+validated Clerk session cookie for browser traffic or a canonical PAT for CLI
+traffic. Missing or malformed authentication is rejected with `401`.
 
 ## Endpoints
 
@@ -135,19 +143,25 @@ curl -s https://corelink-api.humangr.com/api/health
 
 ---
 
-### PAT management (`GET`/`POST /v1/pats`, `DELETE /v1/pats/:pat_id`) — planned, not yet live
+### PAT issuance (`POST /v1/pats`)
 
-These routes are specified for a future self-service PAT-management surface
-(list, create, revoke) but are **not mounted today** — calling any of them
-returns `404`. The only PAT-creation path that is live is the automatic
-starter PAT issued by the sign-up wizard. An admin-only, read-only surface
-exists for support to inspect a tenant's PATs
-(`GET /v1/admin/tenants/{tenant_id}/pats`), but it requires an admin PAT and
-is not something a regular customer token can call.
+This live self-service route issues an additional tenant-scoped PAT. Browser
+callers authenticate with a validated Clerk session cookie; CLI callers may
+use a canonical PAT. The plaintext token is returned exactly once. The
+dashboard-compatible alias `POST /v1/customer/keys` uses the same mint flow
+and per-tenant `pat-issue` limiter (burst 10, then 10/hour; one token every
+360 seconds), applied before mint and audit. Listing is
+`GET /v1/customer/keys`; dashboard revocation is
+`POST /v1/customer/keys/{pat_id}/revoke`. The public `GET /v1/pats` and
+`DELETE /v1/pats/{pat_id}` operations remain planned, and are not aliases for
+the dashboard route.
 
-Until self-service PAT management ships, email
-[support@humangr.com](mailto:support@humangr.com) to mint an additional PAT
-or revoke one.
+Error media types depend on the layer. A `401` rejected by the edge Worker
+uses the JSON `{error, message, request_id}` envelope. A request that reaches
+the customer handler uses `text/plain` for its `400/401/403/429/500/503`
+responses. Invalid or ungrantable `admin`/`owner` scope requests are handler
+`401`, not `422`; a read-only caller requesting a write credential is `403`.
+Rate-limited responses include `Retry-After`.
 
 ---
 
@@ -164,7 +178,9 @@ or revoke one.
 | `429 Too Many Requests` | `rate_limited` | Request rate exceeded | Back off and retry; see `Retry-After` header |
 | `503 Service Unavailable` | `audit_closed` | Tenant's audit period is closed — writes temporarily suspended | Contact support; reads still work |
 
-All error responses share this shape:
+REAPI and customer endpoints other than PAT issuance normally use this JSON
+shape. PAT issuance is the documented layer exception described above: edge
+errors are JSON, while handler errors are `text/plain`.
 
 ```json
 {

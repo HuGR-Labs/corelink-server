@@ -9,14 +9,14 @@ description: PAT lifecycle, scopes, rotation policy, audit log, and the INV-TENA
 
 ## PAT lifecycle
 
-Personal Access Tokens (PATs) are the only credential type CoreLink accepts. Understanding their lifecycle is critical for operating securely.
+Personal Access Tokens (PATs) are the only programmatic credential type CoreLink accepts; browser customer flows also use validated Clerk sessions. Understanding their lifecycle is critical for operating securely.
 
 ### Creation
 
 PATs are created in two places:
 
-1. **Sign-up wizard** — issues a starter PAT with `cas:read cas:write ac:read ac:write` scopes automatically. This is the only PAT-creation path that is live today.
-2. **Self-service PAT issuance** (`POST /v1/pats`, creating additional PATs with a custom scope subset) is planned but not yet wired to a route — it will 404 today. Until it ships, ask support to mint additional PATs for your tenant.
+1. **Sign-up wizard** — issues a starter PAT with `cas:read cas:write ac:read ac:write` scopes automatically. This is one of the two live PAT-creation paths.
+2. **Self-service PAT issuance** (`POST /v1/pats`, creating additional PATs with a custom scope subset) is live. Browser callers use a validated Clerk session; CLI callers may use a canonical PAT for compatibility. The tenant is derived server-side and the plaintext is returned exactly once.
 
 At creation time, the plaintext token is displayed **exactly once**. CoreLink never stores the plaintext. There is no retrieval endpoint.
 
@@ -40,8 +40,7 @@ CoreLink does not serve HTTP. All API traffic uses TLS 1.2 or TLS 1.3. HTTPS is 
 
 ### Rotation
 
-PATs have no automatic rotation. Recommended rotation cadence once
-self-service issuance ships:
+PATs have no automatic rotation. Recommended rotation cadence for self-service-issued PATs:
 
 | PAT type | Cadence |
 |---|---|
@@ -49,18 +48,15 @@ self-service issuance ships:
 | CI/CD | 90 days or on team change |
 | Integration (shared) | 30 days |
 
-**Self-service PAT creation and revocation (`POST /v1/pats`,
-`DELETE /v1/pats/:pat_id`) are not yet live** — the routes are not mounted.
-Until they ship, email [support@humangr.com](mailto:support@humangr.com) to
-mint a replacement PAT and to revoke the old one; there is no in-product way
-to do either today.
+**Self-service PAT issuance (`POST /v1/pats`) and the dashboard alias (`POST /v1/customer/keys`) are live. Both share the `pat-issue` per-tenant policy: burst 10 and refill 10/hour (one token every 360 seconds), enforced before mint and audit. A `429` includes `Retry-After`. Revocation is available through the dashboard route `POST /v1/customer/keys/{pat_id}/revoke`; public `DELETE /v1/pats/{pat_id}` remains planned.
 
 ### Revocation
 
-Revocation currently goes through support — email
-[support@humangr.com](mailto:support@humangr.com) with the PAT's label or
-tenant ID. Once revoked, in-flight requests using that PAT fail with `401`
-within the Cloudflare edge propagation window (typically < 100 ms).
+The dashboard revocation route `POST /v1/customer/keys/{pat_id}/revoke` is
+tenant-scoped and requires a write-capable caller. The public
+`DELETE /v1/pats/{pat_id}` operation is not live. Once revoked, in-flight
+requests using that PAT fail with `401` within the Cloudflare edge propagation
+window (typically < 100 ms).
 
 ## Scopes
 

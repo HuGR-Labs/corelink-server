@@ -18,14 +18,24 @@ tags: [pat, rest-api]
 
 ## Description
 
-Returns the raw token material **once** (`shown_once`). The token is
-hashed (BLAKE3-keyed) before storage; subsequent reads only ever
-return the hash prefix and metadata.
+Creates a PAT for the caller's authenticated tenant. Browser/dashboard
+callers authenticate with an edge-validated Clerk session cookie; CLI
+callers may use a canonical PAT for compatibility. The Worker derives
+the tenant from that verified credential; clients
+cannot supply a tenant id and this endpoint never accepts the
+operator-only mint authority. The raw token is returned exactly once in
+`token` and is never logged or retrievable later. Self-service tokens
+expire after 90 days and cannot grant `admin`.
+This endpoint and the legacy dashboard alias `POST /v1/customer/keys`
+use the same customer-plane mint flow and the same per-tenant
+`pat-issue` bucket: burst 10, then 10 tokens per hour (one every 360
+seconds). The limiter runs before mint and audit; a denied request
+returns `429` with `Retry-After`.
 
 ## Authentication
 
-- `BearerPAT`
 - `ClerkSessionCookie`
+- `BearerPAT`
 
 ## Parameters
 
@@ -42,10 +52,12 @@ _None._
 | Status | Schema | Description |
 | --- | --- | --- |
 | `201` | [`PatIssueResponse`](#schema-patissueresponse) | PAT issued. |
-| `401` | [`ErrorEnvelope`](#schema-errorenvelope) | Missing or invalid credentials. |
-| `422` | [`ErrorEnvelope`](#schema-errorenvelope) | Schema-valid but semantically invalid payload. |
-| `429` | [`ErrorEnvelope`](#schema-errorenvelope) | Rate-limit exceeded. |
-| `500` | [`ErrorEnvelope`](#schema-errorenvelope) | Server error. Safe to retry idempotent operations. |
+| `400` | `string` | Malformed JSON or request body rejected by the HTTP extractor. |
+| `401` | [`WorkerErrorEnvelope`](#schema-workererrorenvelope) | Authentication failed at the edge returns the Worker's JSON `WorkerErrorEnvelope` with `error`, `message`, and `request_id`. A request that reaches the container but has no trusted tenant, or requests an invalid/ungrantable (`admin`/`owner`) scope, returns the handler's plain-text `401`. No PAT is minted in either case.  |
+| `403` | `string` | The authenticated principal is valid but lacks the write capability required to mint a requested write/admin credential. The container handler returns plain text.  |
+| `429` | `string` | PAT issuance rate limit exceeded. |
+| `500` | `string` | PAT storage or handler failure. |
+| `503` | `string` | Rate-limit clock or pipeline unavailable; no PAT was minted. |
 
 ## Examples
 
@@ -59,10 +71,9 @@ curl -X POST \
   -H 'Authorization: Bearer <YOUR_PAT>' \
   -H 'Content-Type: application/json' \
   -d '{
-  "expires_at_ms": null,
   "label": "ci-runner-build-cache",
   "scopes": [
-    "cas.read"
+    "cache:read"
   ]
 }'
 ```
@@ -78,10 +89,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
     let body: Value = serde_json::from_str(r#"
 {
-  "expires_at_ms": null,
   "label": "ci-runner-build-cache",
   "scopes": [
-    "cas.read"
+    "cache:read"
   ]
 }
     "#)?;
@@ -110,10 +120,9 @@ def main() -> None:
         "Content-Type": "application/json",
     }
     body = {
-  "expires_at_ms": null,
   "label": "ci-runner-build-cache",
   "scopes": [
-    "cas.read"
+    "cache:read"
   ]
 }
     resp = httpx.post(
@@ -142,10 +151,9 @@ import (
 
 func main() {
     body := []byte(`{
-  "expires_at_ms": null,
   "label": "ci-runner-build-cache",
   "scopes": [
-    "cas.read"
+    "cache:read"
   ]
 }`)
     req, err := http.NewRequest("POST", "https://corelink-api.humangr.com/v1/pats", bytes.NewReader(body))
@@ -174,10 +182,9 @@ const resp = await fetch("https://corelink-api.humangr.com/v1/pats", {
     "Content-Type": "application/json",
   },
   body: JSON.stringify({
-  "expires_at_ms": null,
   "label": "ci-runner-build-cache",
   "scopes": [
-    "cas.read"
+    "cache:read"
   ]
 }),
 });
@@ -186,4 +193,3 @@ if (!resp.ok) {
 }
 console.log(await resp.json());
 ```
-

@@ -16,7 +16,7 @@ source_files:
   - "crates/corelink-ratelimit/src/key.rs"
 source_blobs:
   - "crates/corelink-ratelimit/src/limiter.rs@c6384aac307b1b9e41ea7a85ae330d220d989c41"
-  - "crates/corelink-ratelimit/src/bucket.rs@c34b98261d14fb61f4ba3abcd9652d8c01370b5a"
+  - "crates/corelink-ratelimit/src/bucket.rs@4ab6aa7c1baf67ad2824cc5a96b23ebb01f8da6b"
 checkpoint_sha: "db0dc2936842d0e43fa41a613317245b80c89da6"
 provenance: "AUTHORED"
 tags: ["crates", "gc", "eviction", "ratelimit", "ops", "sre"]
@@ -36,7 +36,7 @@ The cluster backs the [GC / eviction operations](/ops/gc-eviction.md) runbook an
 - `corelink-gc` ships the GC run state machine — the executed `GcPhase::can_transition_to` enforces the monotone forward chain (Idle→Mark→Sweep→PhysicalDelete→Reconcile→Completed, any-pre-terminal→Failed, everything else rejected) (`crates/corelink-gc/src/run.rs:102-119`).
 - GC carries a `gc-pause` emergency stop: the worker consults the `DegradeProbe` (contract: `crates/corelink-gc/src/degrade.rs:114-122`) at every phase transition — `transition_or_abort` probes BEFORE advancing the phase (`crates/corelink-gc/src/worker.rs:213`); only `GcPause` forces an abort at the next batch boundary (`requires_abort`, `crates/corelink-gc/src/degrade.rs:57-60`).
 - `corelink-eviction` is soft-delete-first and reachability-gated: the executed reachable probe protects any blob a live AC entry references, using the strict `<` evict-arm / `>=` protect-arm boundary mirroring the GC TLA semantics (`crates/corelink-eviction/src/reachable.rs:177-200`); reclamation is the soft-delete `UPDATE … SET deleted_at` (NEVER a direct R2 DELETE), idempotent on `deleted_at IS NULL` (`crates/corelink-eviction/src/blob_meta.rs:336-353`).
-- `corelink-ratelimit` is a lazy-refill token bucket keyed by a tenant-leftmost composite (`per_tenant` / `per_ip` / `per_tenant_per_endpoint`) per DO singleton, emitting RFC 6585 Retry-After seconds clamped to a floor/ceiling — the executed bucket math (`crates/corelink-ratelimit/src/bucket.rs:230-301`), the key dimensions (`crates/corelink-ratelimit/src/key.rs:30-49`). The live-bucket `HashMap` is **LRU-bounded** (`LIMITER_BUCKET_MAP_CAP`): a new key past the cap evicts the least-recently-accessed of a bounded sample (Redis-style approximate LRU, `O(1)` amortised) BEFORE materialising — closing the #534 OCI distinct-repo cross-tenant DoS where unbounded distinct keys grew the singleton's heap until the OOM-killer reaped it (`crates/corelink-ratelimit/src/limiter.rs:581` guard, eviction `evict_if_at_cap`).
+- `corelink-ratelimit` is a lazy-refill token bucket keyed by a tenant-leftmost composite (`per_tenant` / `per_ip` / `per_tenant_per_endpoint`) per DO singleton, emitting RFC 6585 Retry-After seconds clamped to a floor/ceiling — the executed bucket math (`crates/corelink-ratelimit/src/bucket.rs:251-338`), the key dimensions (`crates/corelink-ratelimit/src/key.rs:30-49`). The live-bucket `HashMap` is **LRU-bounded** (`LIMITER_BUCKET_MAP_CAP`): a new key past the cap evicts the least-recently-accessed of a bounded sample (Redis-style approximate LRU, `O(1)` amortised) BEFORE materialising — closing the #534 OCI distinct-repo cross-tenant DoS where unbounded distinct keys grew the singleton's heap until the OOM-killer reaped it (`crates/corelink-ratelimit/src/limiter.rs:581` guard, eviction `evict_if_at_cap`).
 
 # Invariants
 
@@ -63,5 +63,5 @@ The cluster backs the [GC / eviction operations](/ops/gc-eviction.md) runbook an
 4. `crates/corelink-eviction/src/blob_meta.rs:336-353` — `INV-EVICT-SOFT-DELETE-FIRST`: the executed soft-delete `deleted_at` write (never a direct R2 DELETE; idempotent).
 5. `crates/corelink-ratelimit/src/limiter.rs:581-590` — `INV-AVAIL-ISOLATION` / `INV-TENANT-ISOLATION`: the executed tenant-mismatch guard.
 5b. `crates/corelink-ratelimit/src/limiter.rs:401` — `evict_if_at_cap`: the LRU-bounded live-bucket map (#534 OCI distinct-repo DoS fix; cap = `LIMITER_BUCKET_MAP_CAP`, approximate-LRU sample eviction).
-6. `crates/corelink-ratelimit/src/bucket.rs:230-301` — `try_acquire`: lazy-refill token bucket + RFC 6585 Retry-After clamped to a per-config floor + hard ceiling.
+6. `crates/corelink-ratelimit/src/bucket.rs:251-338` — `try_acquire`: lazy-refill token bucket + RFC 6585 Retry-After clamped to a per-config floor + hard ceiling.
 6b. `crates/corelink-ratelimit/src/key.rs:30-49` — the tenant-leftmost bucket-key dimensions (`per_tenant` / `per_ip` / `per_tenant_per_endpoint`).

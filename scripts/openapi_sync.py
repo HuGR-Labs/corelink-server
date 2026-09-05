@@ -34,6 +34,7 @@ except ImportError:
 ROOT = Path(__file__).resolve().parent.parent
 YAML_PATH = ROOT / "openapi" / "corelink-v1.yaml"
 JSON_PATH = ROOT / "openapi" / "corelink-v1.json"
+STATIC_PATH = ROOT / "apps" / "docs" / "static" / "openapi-corelink-v1.yaml"
 
 
 def load_spec() -> dict:
@@ -110,6 +111,53 @@ def validate_meta(spec: dict) -> list[str]:
     return []
 
 
+def validate_static_subset(spec: dict) -> list[str]:
+    """Validate the published docs asset as an intentional canonical subset.
+
+    The docs asset is smaller than the server contract because it omits REAPI
+    and other protocol-only operations.  It must therefore not be compared
+    byte-for-byte, but every path/operation it publishes must remain present in
+    the canonical document and retain its operation identity.
+    """
+
+    if not STATIC_PATH.exists():
+        return [f"static OpenAPI asset missing: {STATIC_PATH.relative_to(ROOT)}"]
+    try:
+        with STATIC_PATH.open() as handle:
+            published = yaml.safe_load(handle)
+    except Exception as exc:
+        return [f"static OpenAPI asset could not be parsed: {exc}"]
+
+    errors: list[str] = []
+    canonical_paths = spec.get("paths") or {}
+    published_paths = (published or {}).get("paths") or {}
+    if not published_paths:
+        return ["static OpenAPI asset has no paths"]
+    for path, item in published_paths.items():
+        if path not in canonical_paths:
+            errors.append(f"static subset path absent from canonical spec: {path}")
+            continue
+        for method, operation in (item or {}).items():
+            if method.startswith("x") or method.startswith("$"):
+                continue
+            canonical_operation = (canonical_paths[path] or {}).get(method)
+            if canonical_operation is None:
+                errors.append(f"static subset operation absent from canonical spec: {method.upper()} {path}")
+                continue
+            published_id = (operation or {}).get("operationId")
+            canonical_id = (canonical_operation or {}).get("operationId")
+            if published_id != canonical_id:
+                errors.append(
+                    f"static subset operationId drift: {method.upper()} {path}: "
+                    f"{published_id!r} != {canonical_id!r}"
+                )
+    print(
+        f"static OpenAPI subset: {len(published_paths)} paths, "
+        f"canonical has {len(canonical_paths)}"
+    )
+    return errors
+
+
 def emit_json(spec: dict) -> str:
     return json.dumps(spec, indent=2, sort_keys=False) + "\n"
 
@@ -120,7 +168,7 @@ def main() -> int:
     args = ap.parse_args()
 
     spec = load_spec()
-    errors = validate_structure(spec) + validate_meta(spec)
+    errors = validate_structure(spec) + validate_meta(spec) + validate_static_subset(spec)
     if errors:
         for e in errors:
             print(f"error: {e}", file=sys.stderr)

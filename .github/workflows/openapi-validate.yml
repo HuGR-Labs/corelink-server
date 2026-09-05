@@ -14,6 +14,7 @@ on:
   pull_request:
     paths:
       - "openapi/**"
+      - "apps/docs/static/openapi-corelink-v1.yaml"
       - "tools/openapi/**"
       - "scripts/openapi_sync.py"
       - ".github/workflows/openapi-validate.yml"
@@ -21,6 +22,7 @@ on:
     branches: [main]
     paths:
       - "openapi/**"
+      - "apps/docs/static/openapi-corelink-v1.yaml"
       - "tools/openapi/**"
       - "scripts/openapi_sync.py"
       - ".github/workflows/openapi-validate.yml"

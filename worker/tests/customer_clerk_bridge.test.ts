@@ -180,6 +180,15 @@ async function customerFetch(env: Env, headers: Record<string, string>): Promise
   return workerHandler.fetch!(req, env, makeCtx());
 }
 
+/** Exact public self-serve PAT route — it must retain the customer bridge. */
+async function patsFetch(env: Env, headers: Record<string, string>): Promise<Response> {
+  const req = new Request("http://localhost/v1/pats", {
+    method: "POST",
+    headers,
+  });
+  return workerHandler.fetch!(req, env, makeCtx());
+}
+
 // DSR destructive-arm (erasure) fetch on the privacy plane — the surface where
 // the Worker stamps the container's fail-CLOSED `x-corelink-mfa-verified: 1`
 // step-up marker. Distinct path from customerFetch on purpose (the marker is
@@ -217,6 +226,71 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
     expect(h.get("authorization")).toBe(`Bearer ${TEST_PAT_TOKEN}`);
     expect(h.get("x-corelink-token-prefix")).not.toBe("clerk");
     // The Clerk verifier must never run on the PAT surface.
+    expect(mockVerifyToken).not.toHaveBeenCalled();
+  });
+
+  it("POST /v1/pats routes valid PATs through customer_v1", async () => {
+    const captured: { req?: Request; doName?: string } = {};
+    const env = makeBridgeEnv({ captured, pats: new Map([[TEST_TOKEN_ID, { tenant_id: TEST_TENANT_ID, expires_ms: Date.now() + 3_600_000 }]]) });
+    const resp = await patsFetch(env, { Authorization: `Bearer ${TEST_PAT_TOKEN}` });
+    expect(resp.status).toBe(200);
+    expect(captured.req?.headers.get("x-corelink-route-kind")).toBe("customer_v1");
+  });
+
+  it("POST /v1/pats without credentials returns 401", async () => {
+    const resp = await patsFetch(makeBridgeEnv({ captured: {} }), {});
+    expect(resp.status).toBe(401);
+    expect((await resp.json() as { error: string }).error).toBe("UNAUTHORIZED");
+  });
+
+  it("POST /v1/pats rejects an expired canonical PAT before forwarding", async () => {
+    const tokenId = "CCCCCCCCCCCCCCCC";
+    const token = await mintTestPat({ tokenId });
+    const captured: { req?: Request; doName?: string } = {};
+    const env = makeBridgeEnv({ captured, pats: new Map([[tokenId, { tenant_id: TEST_TENANT_ID, expires_ms: Date.now() - 1000 }]]) });
+    const resp = await patsFetch(env, { Authorization: `Bearer ${token}` });
+    expect(resp.status).toBe(401);
+    expect(captured.req).toBeUndefined();
+  });
+
+  it("POST /v1/pats: a new Clerk customer is tenant-bound without operator authority", async () => {
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_new_customer",
+      azp: "https://humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
+    const captured: { req?: Request; doName?: string } = {};
+    const tenant = "00000000-0000-0000-0000-00000000b160";
+    const env = makeBridgeEnv({
+      captured,
+      clerkUserToTenant: new Map([["user_new_customer", tenant]]),
+    });
+
+    const resp = await patsFetch(env, { Authorization: "Bearer valid.clerk.jwt" });
+
+    expect(resp.status).toBe(200);
+    expect(captured.doName).toBe(tenant);
+    const h = captured.req!.headers;
+    expect(h.get("x-corelink-route-kind")).toBe("customer_v1");
+    expect(h.get("x-corelink-tenant-id")).toBe(tenant);
+    expect(h.get("x-corelink-token-prefix")).toBe("clerk");
+    expect(h.get("authorization")).toBeNull();
+    expect(h.get("x-corelink-internal-auth")).toBeNull();
+  });
+
+  it("POST /v1/pats: revoked PAT is rejected before any customer forward", async () => {
+    const captured: { req?: Request; doName?: string } = {};
+    const env = makeBridgeEnv({
+      captured,
+      pats: new Map([
+        [REVOKED_TOKEN_ID, { tenant_id: TEST_TENANT_ID, expires_ms: Date.now() + 3_600_000, revoked_at_ms: Date.now() - 1000 }],
+      ]),
+    });
+
+    const resp = await patsFetch(env, { Authorization: `Bearer ${REVOKED_PAT_TOKEN}` });
+
+    expect(resp.status).toBe(401);
+    expect(captured.req).toBeUndefined();
     expect(mockVerifyToken).not.toHaveBeenCalled();
   });
 

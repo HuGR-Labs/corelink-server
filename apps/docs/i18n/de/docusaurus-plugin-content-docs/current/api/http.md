@@ -19,14 +19,24 @@ Alle Endpunkte erfordern HTTPS. HTTP wird nicht akzeptiert.
 
 ## Authentifizierung
 
-Jede Anfrage muss einen `Authorization: Bearer <PAT>`-Header enthalten.
+Die meisten Anfragen müssen einen `Authorization: Bearer <PAT>`-Header
+enthalten. Die POST-Ausstellung eines Kunden-PAT ist die Browser-Ausnahme: Das
+Dashboard sendet ein am Edge validiertes Clerk-Sitzungs-Cookie (`__session`),
+während CLI-Aufrufer aus Kompatibilitätsgründen ein kanonisches PAT verwenden
+können. Der Worker leitet den Tenant aus der Berechtigung ab und entfernt das
+Clerk-JWT vor der Weiterleitung an das Tenant-Durable-Object; Clients liefern
+keine Tenant-ID.
 
 ```bash
 curl -H "Authorization: Bearer $CORELINK_PAT" \
   https://corelink-api.humangr.com/v1/users/me
 ```
 
-Kein anderes Authentifizierungsschema (Basic, API-Key-Header, Query-Parameter) wird akzeptiert. Fehlt der Header oder ist er fehlerhaft, gibt die API `401` zurück.
+Kein anderes Authentifizierungsschema (Basic, API-Key-Header, Query-Parameter)
+wird akzeptiert. Für `POST /v1/pats` (und den Dashboard-Alias
+`POST /v1/customer/keys`) wird im Browser ein validiertes Clerk-Sitzungs-Cookie
+und in der CLI ein kanonisches PAT verwendet. Fehlende oder fehlerhafte
+Authentifizierung wird mit `401` abgewiesen.
 
 ## Endpunkte
 
@@ -141,19 +151,26 @@ curl -s https://corelink-api.humangr.com/api/health
 
 ---
 
-### Verwaltung von PATs (`GET`/`POST /v1/pats`, `DELETE /v1/pats/:pat_id`) — geplant, noch nicht live
+### PAT-Ausstellung (`POST /v1/pats`)
 
-Diese Routen sind für eine zukünftige Self-Service-PAT-Verwaltung (Liste,
-Erstellung, Widerruf) spezifiziert, aber **heute nicht verdrahtet** — jeder
-Aufruf liefert `404`. Der einzige aktive PAT-Erstellungsweg ist der
-automatische Start-PAT des Registrierungsassistenten. Eine Admin-only,
-nur lesende Oberfläche existiert, damit der Support die PATs eines Tenants
-einsehen kann (`GET /v1/admin/tenants/{tenant_id}/pats`), erfordert aber
-ein Admin-PAT und ist nicht mit einem normalen Kunden-Token aufrufbar.
+Diese aktive Self-Service-Route stellt ein zusätzliches, tenantbezogenes PAT
+aus. Browser-Aufrufer authentifizieren sich mit einem validierten Clerk-
+Sitzungs-Cookie; CLI-Aufrufer können ein kanonisches PAT verwenden. Der
+Klartext-Token wird genau einmal zurückgegeben. Der dashboard-kompatible Alias
+`POST /v1/customer/keys` verwendet denselben Mint-Ablauf und denselben
+tenantbezogenen `pat-issue`-Limiter (Burst 10, danach 10/Stunde; ein Token
+alle 360 Sekunden), vor Mint und Audit. Die Auflistung ist
+`GET /v1/customer/keys`; der Dashboard-Widerruf ist
+`POST /v1/customer/keys/{pat_id}/revoke`. Die öffentlichen Operationen
+`GET /v1/pats` und `DELETE /v1/pats/{pat_id}` bleiben geplant und sind keine
+Aliase der Dashboard-Route.
 
-Bis die Self-Service-PAT-Verwaltung verfügbar ist, schreiben Sie an
-[support@humangr.com](mailto:support@humangr.com), um ein zusätzliches PAT
-ausstellen oder eines widerrufen zu lassen.
+Die Fehlermedien hängen von der Schicht ab. Ein vom Edge-Worker abgewiesenes
+`401` verwendet das JSON-Envelope `{error, message, request_id}`. Erreicht die
+Anfrage den Kunden-Handler, verwendet dieser für `400/401/403/429/500/503`
+`text/plain`. Ungültige oder nicht vergebbare `admin`-/`owner`-Scopes sind beim
+Handler `401`, nicht `422`; ein Read-only-Aufrufer, der ein Schreib-PAT
+anfordert, erhält `403`. Ratenbegrenzte Antworten enthalten `Retry-After`.
 
 ---
 
@@ -171,7 +188,9 @@ ausstellen oder eines widerrufen zu lassen.
 | `429 Too Many Requests` | `rate_limited` | Anfragerate überschritten | Zurückfahren und erneut versuchen; siehe `Retry-After`-Header |
 | `503 Service Unavailable` | `audit_closed` | Der Auditzeitraum des Tenants ist geschlossen — Schreibvorgänge vorübergehend ausgesetzt | Support kontaktieren; Lesevorgänge funktionieren weiterhin |
 
-Alle Fehlerantworten haben dieses Format:
+REAPI- und Kundenendpunkte außer der PAT-Ausstellung verwenden normalerweise
+dieses JSON-Format. Bei der PAT-Ausstellung sind Edge-Fehler JSON, während
+Handler-Fehler wie oben beschrieben `text/plain` verwenden.
 
 ```json
 {

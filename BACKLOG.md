@@ -11547,87 +11547,34 @@ verify-means: |
 last-verified: 2026-09-01
 ```
 
-### B-160 — não existe rota self-service para o cliente cunhar um PAT: `POST /v1/pats` não está montado
+### B-160 — rota self-service de PAT e limite comum por tenant estão implementados
 
-**Reescrito 2026-08-31 — o bloqueio de owner acabou, a lacuna de produto não.** A versão
-anterior deste item era *"o owner precisa criar a conta e me entregar dois PATs"*. O owner
-**autorizou o uso de `CORELINK_PAT_MINT_AUTH_KEY`** do `.env.local`, então a medição deixou de
-depender dele e o campo desce para `tl`. O que o item passa a rastrear é **só a lacuna real**,
-que a autorização não toca: **não existe caminho self-service para o cliente obter um PAT** —
-`POST /v1/pats` não está montado em servidor nenhum, e a única rota publicada é um wizard de
-sign-up com senha. Isso é defeito de superfície de produto, não de acesso meu.
+**Implementado em 2026-09-04.** O servidor monta `POST /v1/pats` como rota customer-plane autorizada (Clerk session ou PAT validado) e nunca usa a credencial de mint do operador. O alias legado `POST /v1/customer/keys` chama o mesmo `create_pat_response`, portanto tenant, principal, escopo, auditoria, token mostrado uma vez e política de limite não podem divergir.
 
-**Bloqueia pelo menos três medições já enfileiradas, e provavelmente toda a série que mede o
-produto como cliente.**
+Ambos consomem o bucket `pat-issue` por tenant: burst de 10, refill de 10 por hora (um token a cada 360s), antes do mint e do audit. A janela de 360s é inclusiva no limite documentado e respostas 429 incluem `Retry-After`.
 
-O caminho publicado — `apps/docs/docs/quickstart.md:16-20`,
-`apps/docs/docs/tutorial/02-first-pat.mdx` — é um wizard do Clerk que exige **criar conta com
-senha**, o que um agente não pode fazer nem deve. E `apps/docs/docs/concepts/tenancy.md`
-confirma que o PAT inicial do sign-up é a **única** rota self-service: `POST /v1/pats` **não
-está montado** em servidor nenhum (só aparece em `apps/admin-ui/playwright/fixtures/api-mocks.ts`
-e numa server-action do onboarding).
-
-`CORELINK_PAT_MINT_AUTH_KEY` existe no `.env.local` e **agora está autorizado** pelo owner.
-Com ela eu cunho os **dois PATs de tenants distintos** que as medições exigem — um só fecha as
-lentes *Funciona / Rápido / Registrado*; **dois** são necessários para o invariante de
-**isolamento**, que é a promessa central da página do sccache e a pergunta aberta do [B-158].
-Isso desbloqueia [B-158], [B-105] e a série de latência.
-
-⚠️ **E a autorização NÃO fecha este item — fecha o bloqueio, não a lacuna.** A ressalva
-original continua literalmente verdadeira e é o que sobrou: **a chave de mint é credencial de
-OPERADOR**, e um gate autenticado com credencial de operador mede permissão e finge medir
-realidade. O caminho que eu percorro com ela **não é o caminho que o cliente tem**, e essa
-diferença é o defeito que este item rastreia. Toda medição feita por essa rota deve declarar,
-na própria medição, que percorreu a rota de operador.
-
-**Próximo passo, e por que é `tl`:** montar `POST /v1/pats` (ou registrar por escrito a recusa
-de tê-lo, com o wizard como superfície única e deliberada). É trabalho de rota, autorização e
-escopo — engenharia comum, minha. Nada aqui espera credencial, dinheiro, assinatura ou máquina
-do owner.
+O caminho self-service está publicado na referência da API, no guia de segurança e nos SDKs. O wizard de sign-up continua sendo o caminho para o primeiro PAT; `POST /v1/pats` é a opção para emitir PATs adicionais a partir de uma sessão autenticada.
 
 ```backlog
 id: B-160
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   bash -c 'set -e
-  q=apps/docs/docs/quickstart.md
-  [ -f "$q" ] || { echo "FALHA: $q sumiu — o caminho publicado e a premissa deste item; reavalie."; exit 1; }
-  montada=$(grep -rlE "^[^/]*\"/v1/pats\"" crates/ worker/ 2>/dev/null | wc -l | tr -d " ")
-  [ "$montada" = 0 ] || { echo "FALHA: $montada arquivo(s) de servidor registram /v1/pats — pode existir rota self-service agora; releia e feche o item se for o caso."; exit 1; }
-  ctl=$(grep -rlE "^[^/]*\"/v1/cas" crates/ 2>/dev/null | wc -l | tr -d " ")
-  [ "$ctl" -ge 1 ] || { echo "FALHA: o controle nao achou nem a rota /v1/cas registrada — a varredura de rotas nao esta enxergando; instrumento, nao achado."; exit 1; }
-  grep -qiE "^[^#]*(sign up|sign-up|dashboard|onboarding|wizard)" "$q" || { echo "FALHA: o quickstart nao aponta mais para o wizard de sign-up — o caminho de obtencao mudou; releia antes de confiar neste portao."; exit 1; }
-  echo "aberto: nenhuma rota /v1/pats registrada em crates/ ou worker/ (controle /v1/cas encontrado em $ctl arquivo(s)); o unico caminho publicado e o wizard de conta com senha"'
+  route=crates/corelink-container/src/routes/customer.rs
+  [ "$(grep -cE "^[^/]*\"/v1/pats\"" "$route")" -ge 1 ] || { echo "FALHA: POST /v1/pats não está montado"; exit 1; }
+  grep -q "create_pat_response(state, headers, body.label, body.scopes)" "$route" || { echo "FALHA: public alias não converge"; exit 1; }
+  grep -q "create_pat_response(state, headers, body.name, body.scopes)" "$route" || { echo "FALHA: dashboard alias não converge"; exit 1; }
+  grep -q "PAT_ISSUE_ENDPOINT_ID: &str = \"pat-issue\"" "$route" || { echo "FALHA: pat-issue bucket ausente"; exit 1; }
+  grep -q "try_acquire(bucket_tenant, bucket_key, 1, limiter_now_ms)" "$route" || { echo "FALHA: limiter não precede mint"; exit 1; }
+  echo "confirmado: /v1/pats e /v1/customer/keys convergem no mint customer-plane e compartilham o bucket pat-issue por tenant"'
 verify-means: |
-  open — nenhum servidor registra `/v1/pats`, o controle positivo confirma que a varredura
-  **enxerga** rotas registradas, e o quickstart continua apontando para o wizard.
-
-  **O controle positivo é o coração deste portão.** "Não achei a rota" e "não sei procurar
-  rota" são a mesma saída de um grep, e este repositório já produziu 32 ausências fantasmas
-  exatamente assim ([B-121]). Por isso o comando exige achar `/v1/cas` — uma rota que
-  sabidamente existe — antes de acreditar na ausência de `/v1/pats`.
-
-  **Âncoras:** `^[^/]*` nas buscas em Rust (um doc-comment mencionando `/v1/pats` não é
-  registro de rota — e existe pelo menos um) e `^[^#]*` no markdown.
-
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: nenhuma rota
-  /v1/pats registrada … (controle /v1/cas encontrado em 14 arquivo(s))"* e exit 0. Numa cópia
-  com `.route("/v1/pats", post(mint))` acrescentado a um crate de rotas, sai *"FALHA: 1
-  arquivo(s) de servidor registram /v1/pats"* e exit 1.
-
-  **`tl` pelo critério estrito (reclassificado 2026-08-31).** O item era `owner:` porque o
-  desbloqueio exigia que ele criasse conta com senha e me entregasse os PATs. Ele autorizou
-  `CORELINK_PAT_MINT_AUTH_KEY` no lugar, então esse bloqueio deixou de existir. **A ressalva
-  fica registrada: essa chave é credencial de OPERADOR — ela mede permissão, não a rota do
-  cliente.** O que o `verify` mede **não mudou uma linha** — ele sempre mediu a ausência da
-  rota, nunca a falta do meu acesso — e é essa ausência que continua sendo o item.
-
-  O que ele **não** decide, e é a única coisa a jusante: se o produto **deve** ter
-  `POST /v1/pats` self-service. Se a resposta for não, o item fecha como **recusa registrada**
-  (com polaridade invertida guardando o wizard como superfície única), não apagado.
-last-verified: 2026-08-31
+  done — o verificador exige o registro executável de `POST /v1/pats`, comprova que os dois
+  aliases chamam o mesmo mint e que a aquisição usa a chave estável `pat-issue` por tenant
+  antes da criação. Os testes de rota cobrem 401/403, token shown-once, auditoria, aliases
+  intercalados e a fronteira exata de 360 segundos.
+last-verified: 2026-09-04
 ```
 
 ### B-161 — 🔴 SEGURANÇA: a página do Homebrew manda o cliente exportar o PAT como credencial do `ghcr.io`

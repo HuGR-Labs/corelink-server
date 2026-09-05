@@ -47,8 +47,8 @@ serviço.
 | Formato | `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` — `<env>` é `pat` (PAT de usuário), `ci` (token de runner de CI) ou `ro` (token somente leitura) |
 | Escopo | Exatamente um tenant no momento da emissão |
 | Exibido uma vez | Exibido em texto puro apenas na criação; nunca armazenado em texto puro no servidor |
-| Revogável | Apenas o PAT inicial emitido no cadastro existe self-service hoje; revogar ou emitir PATs adicionais (`DELETE /v1/pats/:pat_id`, `POST /v1/pats`) ainda não está conectado a nenhuma rota — até lá, escreva para o suporte |
-| Expiração | Opcional; definida no momento da criação; por padrão não expira |
+| Revogável | O PAT inicial e os PATs adicionais emitidos por `POST /v1/pats` são tenant-scoped; os aliases usam a mesma política `pat-issue` (burst 10, 10/hora), antes do mint e auditoria. |
+| Expiração | PATs emitidos por self-service expiram após 90 dias |
 
 ### Escopos de PAT
 
@@ -68,11 +68,11 @@ suficiente para todas as integrações de ferramentas de build.
 
 ### Boas práticas de CI/CD
 
-Não use seu PAT inicial pessoal em CI. A criação self-service de um PAT de CI
-dedicado (`POST /v1/pats`) está planejada, mas ainda não conectada a uma rota.
-Até lá, escreva para [support@humangr.com](mailto:support@humangr.com) para
-solicitar um PAT de CI dedicado com os escopos mínimos necessários
-(tipicamente `cas:read cas:write ac:read ac:write`, sem `admin`).
+Não use seu PAT inicial pessoal em CI. Emita um PAT de CI dedicado por meio de
+`POST /v1/pats`, com os escopos mínimos necessários (tipicamente `cas:read
+cas:write ac:read ac:write`, sem `admin`). A rota compatível do dashboard,
+`POST /v1/customer/keys`, usa o mesmo limitador por tenant antes do mint e da
+auditoria.
 
 Armazene o valor do token retornado nos secrets do GitHub Actions, no Vault ou no
 gerenciador de segredos de sua escolha.
@@ -115,12 +115,9 @@ configurados por ambiente.
 
 ## Listar e revogar PATs
 
-Hoje não existe rota self-service para listar ou revogar PATs (`GET`/`POST
-/v1/pats`, `DELETE /v1/pats/:pat_id` estão planejadas, mas não conectadas).
 Existe uma superfície de leitura admin-only para o suporte inspecionar os PATs
 de um tenant (`GET /v1/admin/tenants/{tenant_id}/pats`), mas não é chamável com
-um PAT comum. Para revogar um PAT, escreva para
-[support@humangr.com](mailto:support@humangr.com).
-
-Assim que a revogação estiver disponível (self-service ou via suporte),
-quaisquer requisições em andamento com aquele PAT receberão `401 Unauthorized`.
+um PAT comum. A emissão adicional está ativa por `POST /v1/pats` e pelo alias
+compatível `POST /v1/customer/keys`; listagem e revogação continuam nas
+superfícies do dashboard. Um PAT revogado recebe `401 Unauthorized` em
+requisições posteriores.

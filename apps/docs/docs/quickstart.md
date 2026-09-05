@@ -56,7 +56,9 @@ Expected response:
 (`token_prefix` is a 6-character hash-derived identifier for log/rate-limit
 correlation — it is not a literal prefix of your token.)
 
-If you get `401 Unauthorized`, the PAT is wrong or expired — generate a new one from the admin dashboard.
+If you get `401 Unauthorized`, the PAT is wrong, revoked, or expired. Sign in to
+the dashboard and create a replacement, or use the authenticated
+[`POST /v1/pats`](./reference/api/endpoints/post-v1-pats.mdx) self-service route.
 
 ## Step 3 — Push a blob
 

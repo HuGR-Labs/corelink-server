@@ -372,17 +372,25 @@
       }
     },
     "/v1/pats": {
-      "x-status": "planned",
-      "x-binding": "cf-worker-pending",
+      "x-status": "implemented",
+      "x-implementing-handler": "crates/corelink-container/src/routes/customer.rs",
       "x-implementing-crate": "corelink-pat",
-      "x-reconciliation-note": "PAT primitives (`mint`, `verify`, `format`, `argon`, `scopes`) all\nship in `crates/corelink-pat`. SDK quickstarts (`quickstart_put.py`,\n`quickstart_list.py`) target this path; the binding is on the\nCF Worker entry-crate deferral list.\n",
+      "x-reconciliation-note": "Customer-authorized issuance is mounted by `customer::router` and routed\nthrough the Worker `customer_v1` auth family. The Worker derives the\ntenant from an edge-validated Clerk session or canonical PAT and never\nforwards the operator-only PAT mint authority. A Clerk session is the\nbrowser/dashboard authentication for this POST; the JWT is stripped\nbefore the tenant Durable Object receives the request.\n",
       "post": {
         "tags": [
           "pat"
         ],
         "summary": "Issue a new Personal Access Token.",
         "operationId": "patIssue",
-        "description": "Returns the raw token material **once** (`shown_once`). The token is\nhashed (BLAKE3-keyed) before storage; subsequent reads only ever\nreturn the hash prefix and metadata.\n",
+        "security": [
+          {
+            "ClerkSessionCookie": []
+          },
+          {
+            "BearerPAT": []
+          }
+        ],
+        "description": "Creates a PAT for the caller's authenticated tenant. Browser/dashboard\ncallers authenticate with an edge-validated Clerk session cookie; CLI\ncallers may use a canonical PAT for compatibility. The Worker derives\nthe tenant from that verified credential; clients\ncannot supply a tenant id and this endpoint never accepts the\noperator-only mint authority. The raw token is returned exactly once in\n`token` and is never logged or retrievable later. Self-service tokens\nexpire after 90 days and cannot grant `admin`.\nThis endpoint and the legacy dashboard alias `POST /v1/customer/keys`\nuse the same customer-plane mint flow and the same per-tenant\n`pat-issue` bucket: burst 10, then 10 tokens per hour (one every 360\nseconds). The limiter runs before mint and audit; a denied request\nreturns `429` with `Retry-After`.\n",
         "requestBody": {
           "required": true,
           "content": {
@@ -404,79 +412,78 @@
               }
             }
           },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "422": {
-            "$ref": "#/components/responses/Unprocessable"
-          },
-          "429": {
-            "$ref": "#/components/responses/RateLimited"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
-          }
-        }
-      },
-      "get": {
-        "tags": [
-          "pat"
-        ],
-        "summary": "List the caller's Personal Access Tokens.",
-        "operationId": "patList",
-        "responses": {
-          "200": {
-            "description": "PAT list (metadata only \u2014 no raw token material).",
+          "400": {
+            "description": "Malformed JSON or request body rejected by the HTTP extractor.",
             "content": {
-              "application/json": {
+              "text/plain": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/PatMetadata"
-                  }
+                  "type": "string"
                 }
               }
             }
           },
           "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
-          }
-        }
-      }
-    },
-    "/v1/pats/{pat_id}": {
-      "x-status": "planned",
-      "x-binding": "cf-worker-pending",
-      "x-implementing-crate": "corelink-pat",
-      "delete": {
-        "tags": [
-          "pat"
-        ],
-        "summary": "Revoke a Personal Access Token by id.",
-        "operationId": "patRevoke",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/PatId"
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Revoked. Subsequent uses MUST fail closed (`INV-PAT-REVOKE-PROPAGATION`)."
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
+            "description": "Authentication failed at the edge returns the Worker's JSON\n`WorkerErrorEnvelope` with `error`, `message`, and `request_id`.\nA request that reaches the container but has no trusted tenant,\nor requests an invalid/ungrantable (`admin`/`owner`) scope, returns\nthe handler's plain-text `401`. No PAT is minted in either case.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerErrorEnvelope"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "403": {
-            "$ref": "#/components/responses/Forbidden"
+            "description": "The authenticated principal is valid but lacks the write capability\nrequired to mint a requested write/admin credential. The container\nhandler returns plain text.\n",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
+          "429": {
+            "description": "PAT issuance rate limit exceeded.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "500": {
-            "$ref": "#/components/responses/InternalError"
+            "description": "PAT storage or handler failure.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Rate-limit clock or pipeline unavailable; no PAT was minted.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }
@@ -2969,6 +2976,34 @@
           }
         }
       },
+      "WorkerErrorEnvelope": {
+        "type": "object",
+        "required": [
+          "error",
+          "message",
+          "request_id"
+        ],
+        "description": "JSON envelope emitted by the edge Worker before a request reaches the tenant Durable Object. It contains no credential material.",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Stable machine-readable Worker error code.",
+            "examples": [
+              "UNAUTHORIZED",
+              "FORBIDDEN",
+              "INTERNAL_ERROR"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Safe human-readable message; secrets are never echoed."
+          },
+          "request_id": {
+            "type": "string",
+            "description": "Worker request correlation identifier."
+          }
+        }
+      },
       "SignupRequest": {
         "type": "object",
         "required": [
@@ -3185,47 +3220,73 @@
             "items": {
               "type": "string",
               "enum": [
-                "cas.read",
-                "cas.write",
-                "ac.read",
-                "ac.write",
-                "admin"
+                "cache:read",
+                "cache:write",
+                "cache:find-missing"
               ]
             },
             "default": [
-              "cas.read",
-              "cas.write",
-              "ac.read",
-              "ac.write"
+              "cache:read"
             ]
-          },
-          "expires_at_ms": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64"
           }
         }
       },
       "PatIssueResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/PatMetadata"
+        "type": "object",
+        "required": [
+          "pat",
+          "token"
+        ],
+        "properties": {
+          "pat": {
+            "$ref": "#/components/schemas/CustomerPatMetadata"
           },
-          {
-            "type": "object",
-            "required": [
-              "shown_once_token"
-            ],
-            "properties": {
-              "shown_once_token": {
-                "type": "string",
-                "description": "Raw PAT material \u2014 **shown exactly once**. Stored BLAKE3-keyed; never retrievable again."
-              }
-            }
+          "token": {
+            "type": "string",
+            "description": "Canonical raw PAT material \u2014 **shown exactly once** and never logged or retrievable again."
           }
-        ]
+        }
+      },
+      "CustomerPatMetadata": {
+        "type": "object",
+        "required": [
+          "pat_id",
+          "name",
+          "scopes",
+          "created_at"
+        ],
+        "properties": {
+          "pat_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_used_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "revoked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
       },
       "PatMetadata": {
         "type": "object",

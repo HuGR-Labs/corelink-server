@@ -993,7 +993,7 @@ function matchRoute(url: URL): RouteMatch {
   // (unchanged), anything else takes the Clerk-session bridge (edge-verified
   // JWT, tenant from clerk_user_id). Customer routes are NOT pre-tenant
   // (unlike signup).
-  if (path.startsWith("/v1/customer/") || path === "/v1/customer") {
+  if (path.startsWith("/v1/customer/") || path === "/v1/customer" || path === "/v1/pats") {
     return { tenantId: "_anonymous", pathSuffix: path, routeKind: "customer_v1" };
   }
 

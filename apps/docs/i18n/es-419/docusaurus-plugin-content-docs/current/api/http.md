@@ -19,14 +19,24 @@ Todos los endpoints requieren HTTPS. HTTP no se acepta.
 
 ## Autenticación
 
-Cada solicitud debe llevar un encabezado `Authorization: Bearer <PAT>`.
+La mayoría de las solicitudes debe llevar un encabezado `Authorization: Bearer
+<PAT>`. La emisión de un PAT de cliente por POST es la excepción del
+navegador: el panel envía una cookie de sesión Clerk validada en el edge
+(`__session`), mientras que los clientes CLI pueden usar un PAT canónico por
+compatibilidad. El Worker deriva el tenant de la credencial y elimina el JWT
+de Clerk antes de reenviar la solicitud al Durable Object del tenant; el
+cliente nunca proporciona el tenant.
 
 ```bash
 curl -H "Authorization: Bearer $CORELINK_PAT" \
   https://corelink-api.humangr.com/v1/users/me
 ```
 
-No se acepta ningún otro esquema de autenticación (Basic, encabezado de API key, parámetro de query). Si el encabezado falta o está malformado, la API devuelve `401`.
+No se acepta ningún otro esquema de autenticación (Basic, encabezado de API key,
+parámetro de query). Para `POST /v1/pats` (y su alias del panel
+`POST /v1/customer/keys`), el navegador usa una sesión Clerk validada y la CLI
+puede usar un PAT canónico. La autenticación ausente o malformada se rechaza
+con `401`.
 
 ## Endpoints
 
@@ -141,20 +151,25 @@ curl -s https://corelink-api.humangr.com/api/health
 
 ---
 
-### Gestión de PATs (`GET`/`POST /v1/pats`, `DELETE /v1/pats/:pat_id`) — planificado, aún no activo
+### Emisión de PAT (`POST /v1/pats`)
 
-Estas rutas están especificadas para una futura superficie self-service de
-gestión de PATs (listar, crear, revocar) pero **no están conectadas hoy** —
-llamar a cualquiera de ellas devuelve `404`. La única vía de creación de PAT
-activa es el PAT inicial automático emitido por el asistente de registro.
-Existe una superficie admin-only de solo lectura para que soporte inspeccione
-los PAT de un tenant (`GET /v1/admin/tenants/{tenant_id}/pats`), pero requiere
-un PAT de administrador y no es algo que un token de cliente normal pueda
-llamar.
+Esta ruta self-service activa emite un PAT adicional ligado al tenant. El
+navegador se autentica con una sesión Clerk validada; la CLI puede usar un PAT
+canónico. El token en texto plano se devuelve exactamente una vez. El alias
+compatible con el panel, `POST /v1/customer/keys`, usa el mismo flujo de mint y
+el mismo limitador `pat-issue` por tenant (burst 10 y luego 10/hora; un token
+cada 360 segundos), aplicado antes del mint y la auditoría. La lista es
+`GET /v1/customer/keys`; la revocación del panel es
+`POST /v1/customer/keys/{pat_id}/revoke`. Las operaciones públicas
+`GET /v1/pats` y `DELETE /v1/pats/{pat_id}` siguen planificadas y no son alias
+de la ruta del panel.
 
-Hasta que la gestión self-service de PATs esté disponible, escriba a
-[support@humangr.com](mailto:support@humangr.com) para emitir un PAT adicional
-o revocar uno.
+El tipo de contenido del error depende de la capa. Un `401` rechazado por el
+Worker en el edge usa el envelope JSON `{error, message, request_id}`. Si la
+solicitud llega al handler de cliente, este usa `text/plain` para sus respuestas
+`400/401/403/429/500/503`. Los scopes `admin`/`owner` inválidos o no otorgables
+son `401` del handler, no `422`; un cliente de solo lectura que solicite un PAT
+de escritura recibe `403`. Las respuestas limitadas incluyen `Retry-After`.
 
 ---
 
@@ -172,7 +187,10 @@ o revocar uno.
 | `429 Too Many Requests` | `rate_limited` | Se excedió la tasa de solicitudes | Espere y reintente; consulte el encabezado `Retry-After` |
 | `503 Service Unavailable` | `audit_closed` | El período de auditoría del tenant está cerrado — escrituras suspendidas temporalmente | Contacte a soporte; las lecturas siguen funcionando |
 
-Todas las respuestas de error comparten este formato:
+Las respuestas de REAPI y de los endpoints de clientes, salvo la emisión de
+PAT, normalmente comparten este formato JSON. En la emisión de PAT, los
+errores del edge son JSON y los errores del handler son `text/plain`, como se
+describe arriba.
 
 ```json
 {
