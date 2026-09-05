@@ -1298,10 +1298,69 @@ id: B-027
 repo: corelink-server
 owner: tl
 status: done
-verify: "grep -rq 'promtool' .github/workflows/"
+verify: |
+  python3 - <<'PY'
+  import re
+  import sys
+  from pathlib import Path
+
+  path = Path(".github/workflows/alerts-validate.yml")
+  if not path.is_file():
+      print("FALHA: alerts-validate.yml sumiu — reavalie o item.")
+      raise SystemExit(1)
+
+  def executable_promtool_lines(text):
+      """Return promtool commands in YAML literal `run:` blocks only."""
+      found = []
+      run_indent = None
+      for number, line in enumerate(text.splitlines(), 1):
+          indent = len(line) - len(line.lstrip())
+          if run_indent is None:
+              if re.match(r"^\s*run:\s*[|>-]\s*(?:#.*)?$", line):
+                  run_indent = indent
+              continue
+          if line.strip() and indent <= run_indent:
+              run_indent = None
+              if re.match(r"^\s*run:\s*[|>-]\s*(?:#.*)?$", line):
+                  run_indent = indent
+              continue
+          command = line.strip()
+          if command.startswith("#") or command.startswith("echo "):
+              continue
+          if re.match(r"^(?:command\s+)?promtool(?:\s|$)", command):
+              found.append(number)
+      return found
+
+  source = path.read_text()
+  executable = executable_promtool_lines(source)
+  if len(executable) < 2:
+      print("FALHA: esperava as duas invocações executáveis de promtool.")
+      raise SystemExit(1)
+  comments = [line for line in source.splitlines()
+              if line.lstrip().startswith("#") and "promtool" in line]
+  if not comments:
+      print("FALHA: a mutação não tem comentário promtool para preservar.")
+      raise SystemExit(1)
+  mutated = "\n".join(
+      "# B-027 mutation: removed command"
+      if number in executable else line
+      for number, line in enumerate(source.splitlines(), 1)
+  )
+  if not any(line.lstrip().startswith("#") and "promtool" in line
+             for line in mutated.splitlines()):
+      print("FALHA: a mutação removeu também os comentários promtool.")
+      raise SystemExit(1)
+  if executable_promtool_lines(mutated):
+      print("FALHA: remover as invocações deixou o guard verde.")
+      raise SystemExit(1)
+  print("ok: promtool invocations are executable; comment/string mutation is rejected")
+  PY
 verify-means: |
-  done — the guard confirms a workflow still invokes promtool; it reopens if that
-  invocation disappears. The check does not claim that the rules are published or firing.
+  done — the guard parses the workflow `run:` blocks and requires executable
+  `promtool` commands, ignoring comments and `echo`/string mentions. It also
+  removes both executable lines in memory while retaining the comments and
+  asserts that the mutation is rejected. The check does not claim that the
+  rules are published or firing.
 
   CLOSED by PR #1264 on the second branch of that condition: `alerts-validate.yml`
   runs `promtool check rules` over all ten files on `corelink` (proven in CI —
@@ -1313,7 +1372,7 @@ verify-means: |
   green run cannot be misread as "these alerts are firing". Publishing was never
   part of this item's stated closure condition; if it is wanted, it needs its own
   item rather than holding this one open forever.
-last-verified: 2026-08-24
+last-verified: 2026-09-05
 ```
 
 ### B-028 — Dependabot alert census is triaged but still has three unpatched highs
