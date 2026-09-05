@@ -8798,14 +8798,14 @@ verify: |
   grep -qE "^CRATES = |^WORKER = |^APPS = " "$s" || { echo "FALHA: raizes de servico ausentes."; exit 1; }
   grep -qE "APPS = REPO / \"apps\"" "$s" || { echo "FALHA: apps/ nao e raiz do comparador."; exit 1; }
   grep -qE "^ *- \"apps/\*\*\"" .github/workflows/api-surface-parity.yml || { echo "FALHA: a lane nao dispara em apps/**."; exit 1; }
-  grep -q "def app_mutation_self_test" "$s" || { echo "FALHA: mutacao end-to-end ausente."; exit 1; }
-  grep -q "TemporaryDirectory" "$s" || { echo "FALHA: mutacao nao usa arvore temporaria."; exit 1; }
-  grep -q "APP_TYPESCRIPT_SUFFIXES" "$s" || { echo "FALHA: census nao inclui TSX."; exit 1; }
-  grep -q "def _live_pathname_tokens" "$s" || { echo "FALHA: census lexical ausente."; exit 1; }
-  grep -q "APP_NON_DISPATCH_ALLOWLIST" "$s" || { echo "FALHA: allowlist exata ausente."; exit 1; }
+  grep -q "^[^#/<*-]*def app_mutation_self_test" "$s" || { echo "FALHA: mutacao end-to-end ausente."; exit 1; }
+  grep -q "^[^#/<*-]*TemporaryDirectory" "$s" || { echo "FALHA: mutacao nao usa arvore temporaria."; exit 1; }
+  grep -q "^[^#/<*-]*APP_TYPESCRIPT_SUFFIXES" "$s" || { echo "FALHA: census nao inclui TSX."; exit 1; }
+  grep -q "^[^#/<*-]*def _live_pathname_tokens" "$s" || { echo "FALHA: census lexical ausente."; exit 1; }
+  grep -q "^[^#/<*-]*APP_NON_DISPATCH_ALLOWLIST" "$s" || { echo "FALHA: allowlist exata ausente."; exit 1; }
   raw=$(python3 "$s" --strict 2>&1) || true
   for p in "/v1/event" "/v1/digest/preview"; do
-    printf "%s\n" "$raw" | grep -E "MISSING_DOC +.*${p}$" >/dev/null || { echo "FALHA: strict nao acusa ${p}."; exit 1; }
+    printf "%s\n" "$raw" | grep -E "^[^#/<*-]*MISSING_DOC +.*${p}$" >/dev/null || { echo "FALHA: strict nao acusa ${p}."; exit 1; }
   done
   # The normal run executes the self-test as a mandatory precondition, so the
   # two modes below cover self-test + raw strict + ledger without a third full
@@ -9764,13 +9764,13 @@ verify: |
   t=tests/test_pull_request_target_spawn_boundary.py
   [ -f "$t" ] || { echo "FALHA: $t nao existe — boundary sem suite executavel"; exit 1; }
   python3 -S "$t" >/dev/null || { echo "DRIFTED: boundary ou mutacao nao esta coberto"; exit 1; }
-  grep -q "author_association.*OWNER" .github/workflows/pr-labels.yml || { echo "DRIFTED: OWNER gate sumiu"; exit 1; }
-  grep -q "author_association.*MEMBER" .github/workflows/pr-labels.yml || { echo "DRIFTED: MEMBER gate sumiu"; exit 1; }
-  grep -q "author_association.*COLLABORATOR" .github/workflows/pr-labels.yml || { echo "DRIFTED: COLLABORATOR gate sumiu"; exit 1; }
-  grep -q "author_association.*OWNER" .github/workflows/file-size-ratchet.yml || { echo "DRIFTED: ratchet OWNER gate sumiu"; exit 1; }
-  grep -q "author_association.*MEMBER" .github/workflows/file-size-ratchet.yml || { echo "DRIFTED: ratchet MEMBER gate sumiu"; exit 1; }
-  grep -q "author_association.*COLLABORATOR" .github/workflows/file-size-ratchet.yml || { echo "DRIFTED: ratchet COLLABORATOR gate sumiu"; exit 1; }
-  grep -qF "runs-on: [self-hosted, mac, corelink-builder]" .github/workflows/welcome-first-pr.yml || { echo "DRIFTED: welcome voltou para a frota"; exit 1; }
+  grep -q "^[^#/<*-]*author_association.*OWNER" .github/workflows/pr-labels.yml || { echo "DRIFTED: OWNER gate sumiu"; exit 1; }
+  grep -q "^[^#/<*-]*author_association.*MEMBER" .github/workflows/pr-labels.yml || { echo "DRIFTED: MEMBER gate sumiu"; exit 1; }
+  grep -q "^[^#/<*-]*author_association.*COLLABORATOR" .github/workflows/pr-labels.yml || { echo "DRIFTED: COLLABORATOR gate sumiu"; exit 1; }
+  grep -q "^[^#/<*-]*author_association.*OWNER" .github/workflows/file-size-ratchet.yml || { echo "DRIFTED: ratchet OWNER gate sumiu"; exit 1; }
+  grep -q "^[^#/<*-]*author_association.*MEMBER" .github/workflows/file-size-ratchet.yml || { echo "DRIFTED: ratchet MEMBER gate sumiu"; exit 1; }
+  grep -q "^[^#/<*-]*author_association.*COLLABORATOR" .github/workflows/file-size-ratchet.yml || { echo "DRIFTED: ratchet COLLABORATOR gate sumiu"; exit 1; }
+  grep -qE "^[^#/<*-]*runs\-on:\ \[self\-hosted,\ mac,\ corelink\-builder\]" .github/workflows/welcome-first-pr.yml || { echo "DRIFTED: welcome voltou para a frota"; exit 1; }
   echo "CLOSED: boundary fail-closed, permissions least-privilege e mutation-tested"
   exit 0'
 verify-means: |
@@ -11031,10 +11031,10 @@ Os outros dois: **B-118** punia a confissão da remoção (o `verify` casava o t
 descrevia o conserto) e **B-112** punia a explicação do repontamento. Três formas do mesmo
 erro: **o portão lê a prosa sobre o código em vez do código.**
 
-O censo fechado percorre **168** fences (`137` verifies com comando, `31` manuais), encontra
-`349` invocações e `329` asserções positivas, incluindo formas sem aspas, em condicionais e
+O censo fechado percorre **169** fences (`138` verifies com comando, `31` manuais), encontra
+`347` invocações e `328` asserções positivas, incluindo formas sem aspas, em condicionais e
 dentro de scripts literais `bash -c`.
-A transformação limitada em `scripts/repair_b155_grep_population.py` endureceu **122** asserções que podiam casar
+A transformação limitada em `scripts/repair_b155_grep_population.py` endureceu **123** asserções que podiam casar
 comentários, preservando cada padrão e sua polaridade; padrões já ancorados só foram
 ampliados quando tinham o guard conhecido `[^#]`/`[^/]`. As demais formas foram deixadas
 intactas e o parser agora modela corretamente `grep -F`, BRE/ERE, aspas escapadas, invocações
@@ -11051,12 +11051,12 @@ reabre B-155.
 id: B-155
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  python3 scripts/verify_b155_backlog_grep_population.py --expect open
+  python3 scripts/verify_b155_backlog_grep_population.py --expect done
 verify-means: |
-  open — a população ainda contém verificações `grep` cujo padrão pode casar uma linha de
-  comentário, ou cujo dialeto não pode ser modelado com segurança pelo analisador.
+  done — a população inteira tem zero verificações `grep` cujo padrão possa casar uma linha
+  de comentário e zero dialetos que o analisador não consiga modelar com segurança.
 
   **O detector é estrutural.** Ele parseia cada fence `backlog` como YAML, valida IDs únicos,
   extrai invocações em fronteiras de comando shell, distingue filtros `grep -v` de asserções e
@@ -11076,8 +11076,8 @@ verify-means: |
   `sh -c` e `zsh -c`; payload dinâmico ou não terminado é erro de instrumento, nunca uma
   população vazia. Remover todas as fences continua sendo rejeitado.
 
-  **Medido na árvore atual (2026-09-05):** `records=168`, `command_records=137`, `manual=31`,
-  `grep_invocations=349`, `assertions=329`, `comment_sensitive=0`, `indeterminate=0`.
+  **Medido na árvore atual (2026-09-05):** `records=169`, `command_records=138`, `manual=31`,
+  `grep_invocations=347`, `assertions=328`, `comment_sensitive=0`, `indeterminate=0`.
   O comando é offline e somente este censo decide o fechamento da população.
 last-verified: 2026-09-05
 ```
