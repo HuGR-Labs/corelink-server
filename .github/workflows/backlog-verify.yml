@@ -54,6 +54,10 @@ on:
       # B-160's verifier executes the Worker PAT-limiter focal and its mutation teeth.
       - "scripts/verify_b160_pat_limit.py"
       - "tests/test_verify_b160_pat_limit.py"
+      - "crates/corelink-dpa-acceptance/tests/common.rs"
+      - "crates/corelink-dpa-acceptance/tests/prop_idempotency.rs"
+      - "scripts/verify_dpa_acceptance_fixture.py"
+      - "tests/test_verify_dpa_acceptance_fixture.py"
       - "worker/src/pat_issue_rate_limit.ts"
       - "worker/src/durable_object.ts"
       - "worker/src/index.ts"
@@ -138,6 +142,10 @@ on:
       - "marketing/sales/legal-questionnaires/EVIDENCE-PACK-INDEX.md"
       - "scripts/verify_b160_pat_limit.py"
       - "tests/test_verify_b160_pat_limit.py"
+      - "crates/corelink-dpa-acceptance/tests/common.rs"
+      - "crates/corelink-dpa-acceptance/tests/prop_idempotency.rs"
+      - "scripts/verify_dpa_acceptance_fixture.py"
+      - "tests/test_verify_dpa_acceptance_fixture.py"
       - "worker/src/pat_issue_rate_limit.ts"
       - "worker/src/durable_object.ts"
       - "worker/src/index.ts"
@@ -236,6 +244,9 @@ jobs:
 
       - name: B-160 verifier mutation suite
         run: python3 tests/test_verify_b160_pat_limit.py
+
+      - name: DPA acceptance fixture guard and mutations
+        run: python3 scripts/verify_dpa_acceptance_fixture.py --self-test
 
       - name: B-155 verifier mutation suite
         run: python3 tests/test_verify_b155_backlog_grep_population.py
