@@ -10189,19 +10189,19 @@ verify: |
   routes = m.collect_routes()
   if len(routes) < 100:
       print(f"FALHA: collect_routes devolveu so {len(routes)} rotas — o extrator quebrou; e o instrumento, nao a arvore."); sys.exit(1)
-  rx = [m._route_to_regex(r) for r in routes]
-  pref = {r for r in routes if "{" not in r and ":" not in r}
+  inventory = m.collect_route_inventory()
   fantasma = "/v1/zzz-nonexistent-probe"
-  resolve = m.endpoint_resolves(fantasma, rx, pref)
+  resolve = m.endpoint_resolves(fantasma, inventory)
   flag = json.loads(a.read_text()).get("endpoint", {}).get("flagship_files", [])
   if resolve or not flag:
       print(f"FALHA: phantom resolve={resolve}, flagship_files={len(flag)} — gate is not decisive."); sys.exit(1)
   print(f"done: {fantasma} resolve=False against {len(routes)} routes, flagship_files={len(flag)}")
   PY
 verify-means: |
-  open — o resolvedor ainda aceita um caminho que ninguém serve, **ou** `flagship_files`
-  ainda está vazio (um achado só avisa). Fecha quando as **duas** condições caírem juntas,
-  que é o mínimo para o portão poder reprovar um endpoint fantasma.
+  done — o resolvedor agora recusa um caminho que ninguém serve, **e** `flagship_files`
+  contém a receita flagship do OpenAPI (um achado nessa superfície reprova). O comando
+  mantém as duas condições explícitas porque o portão só é decisivo quando recusa o
+  fantasma e há uma superfície escalada.
 
   **É um controle positivo, não uma varredura.** O comando planta um caminho que
   comprovadamente não existe e pergunta ao próprio resolvedor do portão o que ele acha. Não
@@ -10213,10 +10213,9 @@ verify-means: |
   guarda, um extrator quebrado (zero rotas ⇒ zero casamentos ⇒ `resolve=False`) faria o
   portão anunciar que o defeito foi consertado exatamente quando ele piorou.
 
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai
-  `resolve=True … flagship_files=0` e exit 0. Numa cópia do repositório com
-  `endpoint_resolves` trocado por casamento exato **e** um `flagship_files` não-vazio, sai
-  *"FALHA: o resolvedor recusa o caminho fantasma E ha flagship_files"* e exit 1.
+  **Medido pelos dois lados (2026-09-05):** no estado atual sai
+  `resolve=False … flagship_files=1` e exit 0. Se o inventário voltar a incluir
+  `/{pkg}` ou um catch-all genérico, o mesmo comando sai com `resolve=True` e exit 1.
 
   O que ele **não** decide: se as divergências já catalogadas foram consertadas — isso é dos
   itens donos ([B-116], [B-119], [B-120], [B-151]). Este mede só a capacidade de decidir.

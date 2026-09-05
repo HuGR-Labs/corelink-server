@@ -107,6 +107,7 @@ import json
 import re
 import sys
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -156,7 +157,15 @@ DOC_ROOTS_WITH_EXCLUDES = [
 ROOT_DOC_GLOBS = ["*.md"]
 ROOT_DOC_EXCLUDE = {"CHANGELOG.md"}
 # Route sources for the best-effort endpoint check.
-ROUTE_SOURCE_ROOTS = [REPO_ROOT / "crates", REPO_ROOT / "worker" / "src"]
+# Only the composed container router and the edge dispatcher can prove a
+# customer-facing endpoint.  Adapter-local routers are intentionally not
+# scanned as global roots: their paths are meaningful only after a mount prefix
+# (for example npm's `/{pkg}` lives under `/npm`).
+ROUTE_SOURCE_ROOTS = [
+    REPO_ROOT / "crates" / "corelink-container" / "src" / "routes",
+    REPO_ROOT / "crates" / "corelink-container" / "src" / "main.rs",
+    REPO_ROOT / "worker" / "src",
+]
 
 DOC_EXTS = {".md", ".mdx", ".mdc", ".html", ".htm", ".txt"}
 WALK_EXCLUDE_DIRS = {"node_modules", ".git", "build", "dist", ".open-next",
@@ -422,7 +431,8 @@ def extract_cli_refs(doc: DocFile) -> list[CliRef]:
 # ---------------------------------------------------------------------------
 # Route inventory (best-effort endpoint check)
 # ---------------------------------------------------------------------------
-_ROUTE_DECL_RE = re.compile(r"\.(?:route|nest|nest_service)\(\s*\"([^\"]+)\"")
+_ROUTE_DECL_RE = re.compile(
+    r"\.(?P<kind>route|nest|nest_service)\(\s*\"(?P<path>[^\"]+)\"")
 # Worker route literals + bare "/path" table entries. Best-effort: any string
 # literal that looks like an absolute product route.
 _WORKER_PATH_RE = re.compile(r"[\"'](/(?:v1|v2|turbo|bazel|npm|nix|cache|cas|ac|"
@@ -430,8 +440,44 @@ _WORKER_PATH_RE = re.compile(r"[\"'](/(?:v1|v2|turbo|bazel|npm|nix|cache|cas|ac|
                              r"_internal|healthz|_health)[A-Za-z0-9/_{}:.*-]*)[\"']")
 
 
-def collect_routes() -> set[str]:
-    routes: set[str] = set()
+@dataclass(frozen=True)
+class RouteRegistration:
+    path: str
+    kind: str = "route"
+    methods: frozenset[str] = frozenset()
+
+
+@dataclass(frozen=True)
+class RouteInventory:
+    registrations: tuple[RouteRegistration, ...]
+
+    @property
+    def all(self) -> frozenset[str]:
+        return frozenset(r.path for r in self.registrations)
+
+    def resolves(self, path: str, method: str | None = None) -> bool:
+        for registration in self.registrations:
+            if method and registration.methods and method.upper() not in registration.methods:
+                continue
+            if _route_to_regex(registration.path,
+                               nested=registration.kind in {"nest", "nest_service"}).fullmatch(path):
+                return True
+        return False
+
+
+def _route_methods(text: str, end: int) -> frozenset[str]:
+    """Read axum method combinators near a route declaration.
+
+    An empty set means the method could not be proven statically, so path-only
+    checks remain conservative.  `nest*` registrations never have methods.
+    """
+    tail = text[end:text.find(".route(", end) if text.find(".route(", end) >= 0 else end + 500]
+    methods = re.findall(r"\b(get|post|put|delete|patch|head|options|connect|trace|any)\s*\(", tail, re.I)
+    return frozenset(m.upper() for m in methods)
+
+
+def collect_route_inventory() -> RouteInventory:
+    registrations: list[RouteRegistration] = []
     for root in ROUTE_SOURCE_ROOTS:
         if not root.exists():
             continue
@@ -444,16 +490,28 @@ def collect_routes() -> set[str]:
                 t = p.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
                 continue
-            for m in _ROUTE_DECL_RE.findall(t):
-                routes.add(m)
+            for m in _ROUTE_DECL_RE.finditer(t):
+                kind, path = m.group("kind"), m.group("path")
+                methods = frozenset() if kind != "route" else _route_methods(t, m.end())
+                registrations.append(RouteRegistration(path, kind, methods))
             for m in _WORKER_PATH_RE.findall(t):
-                routes.add(m)
-    return routes
+                registrations.append(RouteRegistration(m, "route"))
+    # Adapter-local parameter roots (notably `/{pkg}` in the npm router) are
+    # matched only after a mount prefix is stripped.  Without a full router
+    # composition graph they are unsafe evidence for a public path.
+    registrations = [r for r in registrations if not _is_generic_catchall(r.path)]
+    unique = {(r.path, r.kind, r.methods): r for r in registrations}
+    return RouteInventory(tuple(unique.values()))
 
 
-def _route_to_regex(route: str) -> re.Pattern:
-    """axum/itty path -> regex. `{param}` / `:param` / `{*rest}` / `*` are
-    wildcards; a trailing wildcard also matches deeper (nested) paths."""
+def collect_routes() -> set[str]:
+    """Compatibility seam used by the backlog probe and older callers."""
+    return set(collect_route_inventory().all)
+
+
+@lru_cache(maxsize=None)
+def _route_to_regex(route: str, *, nested: bool = False) -> re.Pattern:
+    """Compile an axum/itty route; only an explicit nest gets a deep suffix."""
     tmp = re.sub(r"\{\*[^}]+\}", "\x00", route)            # {*rest} -> catch-all
     tmp = re.sub(r"\{[^}]+\}", "\x01", tmp)                # {param} -> one segment
     tmp = re.sub(r":[A-Za-z_][A-Za-z0-9_]*", "\x01", tmp)  # :param -> one segment
@@ -467,21 +525,36 @@ def _route_to_regex(route: str) -> re.Pattern:
             out.append(".*")
         else:
             out.append(re.escape(ch))
-    out.append(r"(?:/.*)?$")  # explicit route roots may own documented subpaths
+    out.append(r"(?:/.*)?$" if nested else r"$")
     return re.compile("".join(out))
 
 
 def _is_generic_catchall(route: str) -> bool:
     """Catch-all dispatchers are inventory evidence, not public endpoints."""
-    return "{*" in route or route.rstrip().endswith("/*") or route in {"/v1", "/"}
+    if route == "/":
+        return True
+    parts = [part for part in route.strip("/").split("/") if part]
+    return bool("{*" in route or route.rstrip().endswith("/*") or
+                (parts and (re.fullmatch(r"\{[^}]+\}|:[A-Za-z_]\w*", parts[0]) is not None)))
 
 
-def endpoint_resolves(path: str, route_regexes: list[re.Pattern],
-                      route_prefixes: set[str]) -> bool:
+def endpoint_resolves(path: str, route_regexes: list[re.Pattern] | RouteInventory,
+                      route_prefixes: set[str] | None = None,
+                      method: str | None = None) -> bool:
+    if isinstance(route_regexes, RouteInventory):
+        return route_regexes.resolves(path, method)
     for rx in route_regexes:
-        if rx.match(path):
+        if rx.fullmatch(path):
             return True
     return False
+
+
+def _endpoint_method(line: str, raw: str) -> str | None:
+    """Recover an explicitly documented HTTP verb when one is present."""
+    before = line[:line.find(raw)] if raw in line else line
+    explicit = re.findall(r"(?:-X\s+|\b)(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|CONNECT|TRACE)\b",
+                          before, re.IGNORECASE)
+    return explicit[-1].upper() if explicit else None
 
 
 _DOC_PATH_RE = re.compile(r"(grpcs?://[A-Za-z0-9./_{}:-]+|/(?:v1|v2|turbo|bazel|"
@@ -1083,23 +1156,32 @@ def main() -> int:
                             if f.rule_id in deferred_tracked_ids and not args.strict]
 
     # --- [endpoint-existence] (best-effort, WARN unless flagship) ---
-    routes = collect_routes()
-    route_regexes = [_route_to_regex(r) for r in routes if not _is_generic_catchall(r)]
-    route_prefixes = {r for r in routes if "{" not in r and ":" not in r}
+    route_inventory = collect_route_inventory()
     endpoint_cfg = allow.get("endpoint", {})
     flagship_files = set(endpoint_cfg.get("flagship_files", []))
     ignore_prefixes = tuple(endpoint_cfg.get("ignore_path_prefixes", []))
+    ignore_paths = set(endpoint_cfg.get("ignore_paths", []))
     endpoint_warns: list[str] = []
     endpoint_fatal: list[str] = []
     seen_ep: set[tuple] = set()
     for d in docs:
+        doc_lines = d.text.splitlines()
         for ln, raw in extract_doc_endpoints(d):
             norm = _normalise_endpoint(raw)
             if norm is None:
                 continue
             if ignore_prefixes and norm.startswith(ignore_prefixes):
                 continue
-            if endpoint_resolves(norm, route_regexes, route_prefixes):
+            if norm in ignore_paths:
+                continue
+            line_text = doc_lines[ln - 1] if ln <= len(doc_lines) else ""
+            # The flagship inventory intentionally documents future operations;
+            # `planned` is a typed non-runtime claim, not a promise that should
+            # be resolved against today's router.
+            if re.search(r"\bplanned\b", line_text, re.IGNORECASE):
+                continue
+            if endpoint_resolves(norm, route_inventory,
+                                 method=_endpoint_method(line_text, raw)):
                 continue
             key = (d.rel, norm)
             if key in seen_ep:
