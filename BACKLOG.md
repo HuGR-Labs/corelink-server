@@ -8996,41 +8996,127 @@ governance-file modifications", que so roda **depois** (tarde demais para este).
 microVM descartavel em vez do Mac do owner com `$HOME` compartilhado — **melhora o
 ambiente, nao conserta o defeito**. A invariante continua violada.
 
-**O que este item NAO decide:** se o conserto e rodar o script a partir do ref BASE
-(`actions/checkout` para um caminho separado), nao roda-lo, ou reescrever a nota para
-descrever o que o arquivo realmente faz. **A ultima opcao e legitima e e a mais perigosa
-de escolher por preguica** — reescrever a invariante para caber no codigo e como
-invariantes morrem.
+**Consertado 2026-08-31 (este PR), pelo caminho que o item listava primeiro — e NÃO
+reescrevendo a nota.** O item avisava que reescrever a invariante para caber no código *"é
+como invariantes morrem"*. A nota foi corrigida para descrever o que o arquivo faz **agora**,
+depois de o código passar a obedecê-la.
+
+Um segundo checkout, do ref **BASE** (`github.event.pull_request.base.sha`, que vem do
+payload do evento, não do conteúdo do PR), em `path: _base`, sparse com só o que o passo lê.
+Ele vem **depois** do checkout do PR de propósito: `actions/checkout` limpa o destino, então
+um `_base` criado antes seria varrido.
+
+**⚠️ E o conserto do item, sozinho, NÃO teria fechado o furo.** Seguindo o consumidor até o
+leitor final: `scripts/ci-use-host-toolchain.sh` faz `cd "$(git rev-parse --show-toplevel)"`
+e lê o canal de `rust-toolchain.toml`. **O diretório de trabalho decide de quem é o toml.**
+Trocar só o caminho do script — `bash _base/scripts/…`, exatamente o que o item recomenda —
+roda código confiável com **dado do atacante**. E o dado não é inerte:
+
+```
+TC="$HOME/.rustup/toolchains/${CHANNEL}-${HOST_TRIPLE}"
+echo "$TC/bin" >> "$GITHUB_PATH"
+```
+
+`CHANNEL` ia **sem validação** para dentro de um caminho que é prependado ao `PATH` de todo
+passo seguinte. **Cadeia medida, executada de ponta a ponta:** com
+`channel = "../../../<checkout>/evil"` e um `evil-<triple>/bin/{cargo,rustc}` dentro da
+árvore do PR — o git preserva o bit de execução — o script **sai 0**, imprime
+`PATH -> …/evil-…/bin` e executa o binário do atacante como `rustc`:
+
+```
+ci-use-host-toolchain: PATH -> /Users/…/.rustup/toolchains/../../../../tmp/b133x/repo/evil-x86_64-apple-darwin/bin
+PWNED: attacker cargo ran
+rc=0
+```
+
+Fechado nas **duas** pontas: `working-directory: _base` no passo (o toml também vem do base),
+e uma checagem de classe de caracteres sobre `CHANNEL` **no script**, que protege os **25**
+workflows que o chamam em vez de só esta lane. Com o guard, o mesmo canal sai `rc=2` e
+`$GITHUB_PATH` fica **vazio**.
 
 ```backlog
 id: B-133
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'w=.github/workflows/dependabot-policy.yml
-  [ -f "$w" ] || { echo "FALHA: dependabot-policy.yml sumiu — reavalie o item."; exit 1; }
-  grep -q "refs/pull/" "$w" || { echo "FALHA: nao ha mais checkout do merge-ref — feche o item."; exit 1; }
-  grep -qE "^[[:space:]]+run: bash scripts/ci-use-host-toolchain\.sh[[:space:]]*$" "$w" || {
-    echo "FALHA: o passo que executa script da arvore checada sumiu — feche o item (verify invertido)."; exit 1; }
-  echo "aberto: checkout de refs/pull/N/merge seguido de bash de um script da arvore checada"'
+  bash -c 'set -uo pipefail
+  python3 scripts/check_dependabot_policy_trusted_tree.py || exit 1
+  bash scripts/test_ci_use_host_toolchain.sh > /tmp/b133_guard.txt 2>&1 || {
+    echo "REGRESSAO: o teste do guard de canal falhou:"; tail -20 /tmp/b133_guard.txt; exit 1; }
+  channel_passes=$(grep -c "^  PASS  \[B133-CHANNEL-" /tmp/b133_guard.txt)
+  channel_cells=$(sed -n "s/^  PASS  \[\(B133-CHANNEL-[^]]*\)\].*/\1/p" /tmp/b133_guard.txt | sort -u | wc -l | tr -d " ")
+  channel_rejects=$(sed -n "s/^  PASS  \[\(B133-CHANNEL-REJECT-[0-9][0-9]\)\].*/\1/p" /tmp/b133_guard.txt | sort -u | wc -l | tr -d " ")
+  channel_accepts=$(sed -n "s/^  PASS  \[\(B133-CHANNEL-ACCEPT-[0-9][0-9]\)\].*/\1/p" /tmp/b133_guard.txt | sort -u | wc -l | tr -d " ")
+  [ "$channel_passes" -eq "$channel_cells" ] || { echo "INSTRUMENTO QUEBRADO: $channel_passes PASSes do guard, mas so $channel_cells IDs unicos — duplicata nao prova outra particao."; exit 1; }
+  [ "$channel_rejects" -eq 7 ] && [ "$channel_accepts" -eq 6 ] && [ "$channel_cells" -eq 13 ] || { echo "INSTRUMENTO QUEBRADO: particoes do guard erradas (reject=$channel_rejects/7 accept=$channel_accepts/6 total=$channel_cells/13)."; exit 1; }
+  bash scripts/test_dependabot_policy_trust_boundary.sh > /tmp/b133_trust_boundary.txt 2>&1 || {
+    echo "REGRESSAO: o teste da fronteira Cargo falhou:"; tail -30 /tmp/b133_trust_boundary.txt; exit 1; }
+  boundary_passes=$(grep -c "^  PASS  \[B133-CELL-" /tmp/b133_trust_boundary.txt)
+  boundary_ids=$(sed -n "s/^  PASS  \[\(B133-CELL-[0-9][0-9]\)\].*/\1/p" /tmp/b133_trust_boundary.txt | sort -u)
+  boundary_cells=$(printf "%s\n" "$boundary_ids" | sed "/^$/d" | wc -l | tr -d " ")
+  boundary_expected=$(awk "BEGIN { for (i = 1; i <= 49; i++) printf \"B133-CELL-%02d\\n\", i }")
+  [ "$boundary_passes" -eq "$boundary_cells" ] || { echo "INSTRUMENTO QUEBRADO: $boundary_passes PASSes B-133, mas so $boundary_cells IDs unicos — celula duplicada nao prova cobertura independente."; exit 1; }
+  [ "$boundary_cells" -eq 49 ] && [ "$boundary_ids" = "$boundary_expected" ] || { echo "INSTRUMENTO QUEBRADO: esperava exatamente B133-CELL-01..49 uma vez cada; obtive $boundary_cells IDs."; exit 1; }
+  echo "fechado: dependabot-policy executa somente checker/teeth do BASE; bytes do PR sao dados, nunca codigo, e os guards passam em $channel_cells+$boundary_cells celulas unicas"'
 verify-means: |
-  open — o arquivo ainda faz checkout do conteudo do PR E executa um script vindo dele.
+  **Polaridade INVERTIDA (`done`):** sai 0 — fechado — enquanto **as duas** metades
+  valerem: o workflow não executar script da árvore do PR, e o guard de canal do
+  `ci-use-host-toolchain.sh` recusar travessia. Sai 1 nomeando qual metade regrediu.
 
-  Vira DRIFTED assim que um dos dois sumir: o checkout do merge-ref, ou o `bash` do script
-  da arvore. Qualquer dos dois fecha o furo; o verify nao opina sobre qual.
+  A polaridade `open` ficaria verde neste PR e **vermelha no merge seguinte**, contaminando
+  todo PR irmão. Invertida junto com o `status`.
 
-  O terceiro predicado casa o **`run:`**, nao o nome do script em qualquer lugar do
-  arquivo. Um `grep -q "ci-use-host-toolchain.sh"` solto casava tambem a **linha 144**,
-  que e prosa de comentario ("Full reasoning: scripts/ci-use-host-toolchain.sh header."):
-  o portao continuava dizendo "aberto" mesmo depois de o passo executavel sumir. Dois
-  mutantes sobreviviam, e o pior dos dois era **o conserto que este item recomenda** —
-  trocar o passo por `bash _base/scripts/ci-use-host-toolchain.sh`, a partir de um
-  checkout do ref BASE. Um item de seguranca cujo portao nao reconhece o proprio reparo
-  fica aberto para sempre ou e fechado a mao, sem prova. A ancora `^[[:space:]]+run: `
-  e o `$` final casam 1x hoje (so a 147); `run: echo skipped` e o caminho `_base/…`
-  agora ficam ambos DRIFTED.
-last-verified: 2026-08-31
+  **Por que duas metades, e não a que o item pedia.** O item propunha rodar o script a partir
+  do ref BASE. Isso sozinho é **meio conserto**: o script faz
+  `cd "$(git rev-parse --show-toplevel)"`, então com a árvore do PR como cwd ele lê o
+  `rust-toolchain.toml` **do PR**, e esse canal chega ao `$GITHUB_PATH` sem validação. Código
+  confiável, dado do atacante. `scripts/check_dependabot_policy_trusted_tree.py` trata esse
+  meio conserto como **falha nomeada**, e essa é a sua célula mais importante: verificado que
+  o mutante *`_base/` no caminho, `working-directory` removido* sai `rc=1`.
+
+  **O guard vive no SCRIPT, não no YAML desta lane**, porque 25 workflows o chamam. Um guard
+  por lane deixaria as outras 24 abertas e daria a impressão contrária.
+
+  **Anti-vacuidade, agora como censo fechado.** O checker falha alto — nunca "fechado" — se
+  o arquivo sumir, se o YAML não parsear, se não houver `policy-gate`, se faltar um checkout
+  do PR **ou** do BASE, se o gatilho deixar de observar seus próprios controles, ou se a lista
+  ordenada de passos executáveis divergir. Cada `uses:`, script, interpretador e sink Cargo/Git
+  depois do checkout tem uma origem/classificação explícita; um passo novo ou ambíguo é falha,
+  não "nenhuma invocação encontrada". O corpo de cada `run:` entra num allowlist exato com
+  SHA-256 — regex não é parser de shell e não pode decidir que `then bash`, `./script` ou um
+  prefixo de atribuição é seguro. O autor imutável do PR, e não o ator que disparou o evento,
+  decide se a porta Dependabot roda. E o `verify` conta IDs **únicos** por partição: exatamente
+  sete rejeições + seis aceitações `B133-CHANNEL-*`, e **exatamente** `B133-CELL-01` até
+  `B133-CELL-49`, uma vez cada, para a fronteira. O próprio teste prova que remover uma
+  célula ou duplicar uma existente é vermelho; repetir uma célula não infla a população.
+
+  **Os controles negativos do guard são metade das suas células.** Sem eles, um `exit 2` na
+  primeira linha do script satisfaria as sete células de recusa e quebraria os 25 chamadores.
+  As seis grafias legais — `1.91.1`, `stable`, `beta`, `nightly`, `nightly-2026-01-01`,
+  `1.91.1-x86_64-apple-darwin` — têm de continuar passando.
+
+  **A fronteira Cargo também faz parte deste item.** A primeira versão dizia que
+  `cargo deny` era leitura estática e que `cargo metadata` não executava `build.rs`.
+  Isso era estreito demais: o metadata completo invoca `rustc -vV`, e Cargo carrega
+  `.cargo/config.toml` antes disso; um `[build] rustc-wrapper` controlado pelo PR era
+  executado quatro vezes durante `cargo deny`, mesmo com o gate verde. O gate agora rejeita
+  symlink/submodule **antes** de extrair o archive, exige `Cargo.toml`, `Cargo.lock` e
+  `deny.toml` regulares, remove `.cargo/` e `rust-toolchain*`, e usa `HOME`/`CARGO_HOME`
+  efêmeros com wrappers, flags, Git, SSH e pager neutralizados. A política `deny.toml` vem do
+  checkout BASE, é copiada para fora da árvore de dados e é passada com `--config`; o PR não
+  escolhe a regra que o julga. `install-action` é SHA-pinned, sem fallback, e só pode escrever
+  no HOME efêmero. O checker também cobre ações compostas/externas, scripts, gatilhos e sinks
+  Cargo/Git; as 49 células determinísticas provam wrapper local/de workspace, config e alias
+  ancestrais, symlink, remoção de manifesto, pré-flight de fonte TOML (inclusive chave
+  indentada) antes de Cargo/rede, troca de policy, fallback, credenciais, Git injetado,
+  ambiente e caminhos de execução — inclusive interpretador escondido depois de `then`,
+  `./executável` e prefixo de atribuição. O selector `$CARGO` é explicitamente reconduzido ao
+  host toolchain e a população do `env` do job é fechada: uma variável nova é falha, não herança
+  acidental. O workflow de dentes continua `pull_request_target`: ele executa somente o checker
+  e os dentes vindos de `_base`; o checkout do PR é lido como bytes para o censo estático e
+  jamais como código, configuração, action ou diretório de trabalho.
+last-verified: 2026-09-01
 ```
 
 ### B-134 — "shim nao e daemon": ninguem observou `smoke-install` nem `cosign-sign` rodando na frota

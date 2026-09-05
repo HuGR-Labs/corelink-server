@@ -42,6 +42,22 @@ before you rely on any line below.
 > Still hosted: `bazel-starter-ci`, `smoke-install`, `corelink-client-verify/cbindgen`,
 > `docs-ci` a11y/lighthouse jobs, `e2e-prod`, `cosign-sign`.
 
+### B-133: base-controlled static inspection on the mixed pool
+
+`dependabot-policy-trust-boundary.yml` must **not** be read as an exception to
+the warning above. It runs on `corelink` only because its
+`pull_request_target` definition is selected from the base revision: it checks
+out that revision into `_base`, checks out the PR merge result into `_pr-data`
+as data, and executes exclusively from `_base`. The BASE checker compares the
+fixed B-133 control files as regular-file bytes and rejects any PR change
+before the dynamic teeth run. It does not execute a PR script, composite
+action, or working directory on this mixed pool.
+
+This is a control-change deny gate, not evidence of an ephemeral runner
+contract. A workflow that needs to execute PR-controlled code still requires
+the not-yet-provisioned ephemeral-fleet-only label (or an equivalent proved
+isolated lifecycle/no-shared-home contract).
+
 Why this doc exists: reading `deploy/runner/Dockerfile` (in the
 `corelink-runners` repo) answers *"what was installed"*, not *"what the box
 has"* — and on two decisive points the answers differ. Everything here was

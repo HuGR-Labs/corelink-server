@@ -1,0 +1,80 @@
+# B-133 trust-boundary proof, deliberately executed from the BASE revision.
+#
+# `corelink` is a mixed self-hosted pool, not an isolation boundary. This
+# workflow therefore uses pull_request_target, checks out the base revision
+# first, and treats the PR checkout strictly as opaque data for a byte-level
+# control census. No command, action, or working-directory may resolve from
+# `_pr-data`; the executable teeth below are the reviewed `_base` copies.
+name: dependabot-policy trust-boundary teeth
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    # The BASE workflow owns this filter. A PR cannot make its own mutation
+    # disappear by editing this YAML: pull_request_target evaluates the base
+    # revision, then the BASE checker reads the PR tree only as data.
+    paths:
+      - ".github/workflows/dependabot-policy-trust-boundary.yml"
+      - ".github/workflows/dependabot-policy.yml"
+      - "scripts/check_dependabot_policy_trusted_tree.py"
+      - "scripts/test_dependabot_policy_trust_boundary.sh"
+      - "scripts/test_ci_use_host_toolchain.sh"
+      - "scripts/ci-use-host-toolchain.sh"
+      - "rust-toolchain.toml"
+
+permissions:
+  contents: read
+
+jobs:
+  trust-boundary-teeth:
+    name: Dependabot trust-boundary teeth (BASE-only execution)
+    # This is intentionally not evidence that `corelink` is isolated. Its
+    # safety rests on executing only the base tree; generic shared labels must
+    # never be used for a pull_request workflow that executes PR-controlled
+    # scripts.
+    runs-on: corelink
+    timeout-minutes: 10
+    steps:
+      - name: Checkout BASE control tree (SHA-pinned)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: _base
+          persist-credentials: false
+          fetch-depth: 1
+
+      # Checkout itself is data transport. No later executable step uses
+      # this directory; the BASE checker refuses any B-133 control byte that
+      # differs here, before the remaining BASE-only teeth run.
+      - name: Checkout PR merge data for static inspection (SHA-pinned)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          path: _pr-data
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Statically reject B-133 control mutations (BASE checker)
+        working-directory: _base
+        env:
+          B133_UNTRUSTED_TREE: ${{ github.workspace }}/_pr-data
+        run: python3 scripts/check_dependabot_policy_trusted_tree.py --untrusted-tree "$B133_UNTRUSTED_TREE"
+
+      # The dynamic Cargo marker tooth calls real cargo-deny. It is installed
+      # into a per-run home, and every script below is resolved from `_base`.
+      - name: Install cargo-deny for BASE trust-boundary teeth (SHA-pinned)
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b  # v2.83.4
+        env:
+          HOME: ${{ runner.temp }}/corelink-b133-teeth-home
+          CARGO_HOME: ${{ runner.temp }}/corelink-b133-teeth-cargo-home
+        with:
+          tool: cargo-deny@0.19.8
+          fallback: none
+
+      - name: Prove host-toolchain channel guard (BASE tree)
+        working-directory: _base
+        run: bash scripts/test_ci_use_host_toolchain.sh
+
+      - name: Prove Dependabot trust-boundary teeth (BASE tree)
+        working-directory: _base
+        run: bash scripts/test_dependabot_policy_trust_boundary.sh
