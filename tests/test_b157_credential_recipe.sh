@@ -47,7 +47,8 @@ grep -qE '^build --credential_helper=corelink-api\.humangr\.com=' "$BAZELRC"
 sentinel='corelink_pat_SENTINEL.behavior-test'
 helper_stderr="$(mktemp)"
 missing_stderr="$(mktemp)"
-trap 'rm -f "$helper_stderr" "$missing_stderr"' EXIT
+helper_xtrace_stderr="$(mktemp)"
+trap 'rm -f "$helper_stderr" "$missing_stderr" "$helper_xtrace_stderr"' EXIT
 helper_stdout="$(printf '{\"uri\":\"https://corelink-api.humangr.com/bazel/cache\"}\n' | env LC_ALL=C LANG=C CORELINK_PAT="$sentinel" bash "$HELPER" 2>"$helper_stderr")"
 test "$helper_stdout" = "{\"headers\":{\"Authorization\":[\"Bearer $sentinel\"]}}"
 if [ -s "$helper_stderr" ]; then
@@ -64,8 +65,16 @@ if grep -q "$sentinel" "$missing_stderr"; then
   exit 1
 fi
 grep -q 'CORELINK_PAT environment variable is not set' "$missing_stderr"
+
+xtrace_stdout="$(printf '{\"uri\":\"https://corelink-api.humangr.com/bazel/cache\"}\n' | env LC_ALL=C LANG=C CORELINK_PAT="$sentinel" bash -x "$HELPER" 2>"$helper_xtrace_stderr")"
+test "$xtrace_stdout" = "{\"headers\":{\"Authorization\":[\"Bearer $sentinel\"]}}"
+if grep -q "$sentinel" "$helper_xtrace_stderr"; then
+  echo 'B-157 helper xtrace leaked sentinel' >&2
+  exit 1
+fi
+
 tmp="$(mktemp)"
-trap 'rm -f "$tmp" "$helper_stderr" "$missing_stderr"' EXIT
+trap 'rm -f "$tmp" "$helper_stderr" "$missing_stderr" "$helper_xtrace_stderr"' EXIT
 awk '{gsub(/\.\.\/\.\.\/\.\.\/\.\.\/examples\/bazel-starter/, "../../../../examples/buck2-starter"); print}' "$PAGE" >"$tmp"
 if assert_helper_link "$tmp"; then
   echo 'B-157 link mutation unexpectedly passed' >&2

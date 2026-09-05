@@ -40,8 +40,32 @@ def main() -> int:
         assert any("curl_argv" in failure for failure in mutated_failures), mutated_failures
 
         target.write_text(
+            "curl https://status.example.invalid " + chr(92) + "\n"
+            "  -H \"Authorization: Token token=${STATUSPAGE_API_KEY}\"\n",
+            encoding="utf-8",
+        )
+        _, mutated_failures = MODULE.verify(root)
+        assert any("curl_argv" in failure for failure in mutated_failures), mutated_failures
+
+        target.write_text(
+            "curl https://example.invalid " + chr(92) + "\n"
+            "  -H \"Authorization: Bearer ${CORELINK_" + chr(92) + "\nPAT}\"\n",
+            encoding="utf-8",
+        )
+        _, mutated_failures = MODULE.verify(root)
+        assert any("curl_argv" in failure for failure in mutated_failures), mutated_failures
+
+        target.write_text(
+            "curl https://collector.example.invalid " + chr(92) + "\n"
+            "  -H \"Authorization: Bearer ${OTEL_BEARER_" + chr(92) + "\nTOKEN}\"\n",
+            encoding="utf-8",
+        )
+        _, mutated_failures = MODULE.verify(root)
+        assert any("curl_argv" in failure for failure in mutated_failures), mutated_failures
+
+        target.write_text(
             "curl --config - <<EOF\n"
-            "header = \"Authorization: Bearer $CORELINK_PAT\"\n"
+            "header = \"X-Not-Authorization: $CORELINK_PAT\"\n"
             "EOF\n",
             encoding="utf-8",
         )

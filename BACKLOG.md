@@ -11220,7 +11220,8 @@ verify: |
 verify-means: |
   done — the closed-world census scans every Markdown/MDX/HTML file in `apps/docs/`,
   `marketing/`, `legal/`, and `README.md`. It rejects active `--remote_header=Authorization=Bearer`
-  and `curl -H/--header "Authorization: Bearer … $CORELINK_PAT"` recipes, requires every
+  and `curl -H/--header Authorization` recipes that expand secret-shaped variables
+  (`PAT`, `TOKEN`, `SECRET`, or `KEY`), including shell line continuations, requires every
   credential helper to be host-scoped, and validates every stdin-config heredoc.
 
   **O helper é premissa e falha ALTO.** Se `examples/bazel-starter/.bazelrc` ou o helper
@@ -11230,8 +11231,10 @@ verify-means: |
 
   **Medido pelos dois lados (2026-09-05):** the pre-repair census had 42 active
   `remote_header` lines and 31 PAT-bearing curl lines. The repaired tree reports
-  `files=948 helpers=40 stdin_curls=32 remote_header=0 curl_argv=0`; mutations in a
-  non-English translated Bazel page for either unsafe form fail closed.
+  `files=948 helpers=40 stdin_curls=116 remote_header=0 curl_argv=0`; mutations in a
+  non-English translated Bazel page, including split shell expansions, fail closed.
+  The helper is also executed under `bash -x` with a sentinel and must not emit that
+  sentinel to its trace stream.
 
   O que ele **não** cobre é o esquema de URL errado da mesma página, que é [B-158] — os dois
   itens têm portões independentes e B-158 permanece aberto.

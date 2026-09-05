@@ -14,6 +14,9 @@
 # Reference: https://bazel.build/docs/credential-helper
 # WI-S15-002 / WI-S15-005, CAP-SDK-004.
 
+# A caller may enable Bash xtrace (`bash -x helper`). Disable it before any
+# command below can expand CORELINK_PAT; `set +x` itself contains no secret.
+set +x
 set -euo pipefail
 
 # Validate that CORELINK_PAT is set.  An unset PAT used to emit empty headers

@@ -16,9 +16,11 @@ ROOT_FILES = ("README.md",)
 EXTENSIONS = {".md", ".mdx", ".html", ".htm"}
 EXCLUDED = {".git", ".docusaurus", ".wrangler", "build", "dist", "node_modules"}
 REMOTE_HEADER = re.compile(r"--remote_header=Authorization=Bearer")
+SECRET_NAME = r"(?:PAT|TOKEN|SECRET|KEY|[A-Za-z_][A-Za-z0-9_]*(?:PAT|TOKEN|SECRET|KEY)[A-Za-z0-9_]*)"
+SECRET_VAR = rf"\$(?:\{{{SECRET_NAME}\}}|{SECRET_NAME})"
 CURL_ARGV = re.compile(
-    r"\bcurl\b.*(?:--header|-H).*Authorization:\s*Bearer.*"
-    r"(?:\$\{?CORELINK_PAT\}?|CORELINK_PAT)",
+    r"\bcurl\b.*(?:--header|-H).*Authorization:\s*[A-Za-z][A-Za-z0-9_-]*\s+.*"
+    + SECRET_VAR,
     re.IGNORECASE,
 )
 HELPER = re.compile(
@@ -27,7 +29,10 @@ HELPER = re.compile(
 CONFIG_CURL = re.compile(
     r"\bcurl\b.*--config\s+(?:-|/dev/fd/3)(?:\s+3)?\s*<<EOF\s*$"
 )
-SAFE_HEADER = re.compile(r'^\s*header\s*=\s*"Authorization: Bearer \$\{CORELINK_PAT\}"\s*$')
+SAFE_HEADER = re.compile(
+    r'^\s*header\s*=\s*"Authorization:\s*[^\"]*' + SECRET_VAR + r'[^\"]*"\s*$',
+    re.IGNORECASE,
+)
 
 
 def published_files(root: Path) -> list[Path]:
@@ -65,7 +70,11 @@ def census(root: Path) -> dict[str, object]:
                 end = index
                 while end + 1 < len(lines) and lines[end].rstrip().endswith("\\"):
                     end += 1
-                command = " ".join(lines[index : end + 1])
+                # Model shell line continuation: backslash-newline is removed,
+                # rather than replaced by a space. This catches a split
+                # `${CORELINK_\\\nPAT}` expansion as Bash sees it.
+                raw_command = "\n".join(lines[index : end + 1])
+                command = re.sub(r"\\[ \t]*\r?\n", "", raw_command)
                 if CURL_ARGV.search(command):
                     findings.append({"kind": "curl_argv", "path": rel, "line": line_number})
                 if CONFIG_CURL.search(command):

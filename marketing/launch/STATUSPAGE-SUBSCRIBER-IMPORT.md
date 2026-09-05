@@ -202,17 +202,21 @@ while IFS=, read -r name target kind components evidence; do
   fi
   if [ "$kind" = "email" ]; then
     curl -sS -X POST "https://api.statuspage.io/v1/pages/${STATUSPAGE_PAGE_ID}/subscribers" \
-      -H "Authorization: OAuth ${STATUSPAGE_API_KEY}" \
       -H "Content-Type: application/json" \
       -d "$(jq -n --arg e "$target" --argjson c "$components" \
-            '{subscriber:{email:$e,skip_confirmation_notification:false,component_ids:$c}}')"
+            '{subscriber:{email:$e,skip_confirmation_notification:false,component_ids:$c}}')" \
+      --config /dev/fd/3 3<<EOF
+header = "Authorization: OAuth ${STATUSPAGE_API_KEY}"
+EOF
   elif [ "$kind" = "sms" ]; then
     country="${target%%:*}"; number="${target#*:}"
     curl -sS -X POST "https://api.statuspage.io/v1/pages/${STATUSPAGE_PAGE_ID}/subscribers" \
-      -H "Authorization: OAuth ${STATUSPAGE_API_KEY}" \
       -H "Content-Type: application/json" \
       -d "$(jq -n --arg cc "$country" --arg ph "$number" --argjson c "$components" \
-            '{subscriber:{phone_country:$cc,phone_number:$ph,skip_confirmation_notification:false,component_ids:$c}}')"
+            '{subscriber:{phone_country:$cc,phone_number:$ph,skip_confirmation_notification:false,component_ids:$c}}')" \
+      --config /dev/fd/3 3<<EOF
+header = "Authorization: OAuth ${STATUSPAGE_API_KEY}"
+EOF
   fi
   sleep 1.5
 done < marketing/launch/STATUSPAGE-SUBSCRIBER-IMPORT-roster.csv
@@ -316,10 +320,11 @@ contact_name,target,kind,components,evidence_envelope_id,evidence_pdf_path
 Run nightly at 02:00 PT:
 
 ```bash
-curl -sS -H "Authorization: OAuth ${STATUSPAGE_API_KEY}" \
+curl -sS \
   "https://api.statuspage.io/v1/pages/${STATUSPAGE_PAGE_ID}/subscribers" \
-  | jq -r '.[] | [.id,.email // (.phone_country + ":" + .phone_number),.state,.created_at] | @csv' \
-  > /tmp/statuspage-subscribers-$(date -u +%F).csv
+  --config - <<EOF | jq -r '.[] | [.id,.email // (.phone_country + ":" + .phone_number),.state,.created_at] | @csv' > /tmp/statuspage-subscribers-$(date -u +%F).csv
+header = "Authorization: OAuth ${STATUSPAGE_API_KEY}"
+EOF
 ```
 
 Diff against the roster CSV. Any row in roster but missing from API = follow-up. Any row in API but missing from roster = **immediate red flag** (someone subscribed by mistake or an attacker added a row). Page DevOps with SEV2.
