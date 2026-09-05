@@ -8621,13 +8621,20 @@ manda o autor desfazer um trabalho correto.
 id: B-128
 repo: corelink-server
 owner: tl
-status: done
+status: open
 verify: |
-  python3 scripts/classify-runner-failure.py <<<'cargo: could not create incremental directory: No space left on device (os error 28)' >/dev/null; test $? -eq 42
-  python3 scripts/classify-runner-failure.py <<<'ld terminated with signal 7 [Bus error]' >/dev/null; test $? -eq 42
-  grep -q 'run-with-infra-classification.sh' .github/workflows/corelink-server.yml
+  test -x scripts/run-with-infra-classification.sh
+  bash tests/test_classify_runner_failure.sh
 verify-means: |
-  done — the executable classifier requires storage/linker context, preserves mixed code failures, and the PR workflow runs it through the neutral infrastructure wrapper.
+  open — the executable wrapper now preserves the original non-zero status for
+  storage/linker failures, emits a structured classification plus annotation,
+  preserves code and mixed-failure polarity, and bounds execution with an
+  explicit timeout. The local harness covers each of those contracts.
+
+  The item remains open until a real `corelink` runner job is run with an
+  induced ENOSPC and an induced linker failure, and the evidence records the
+  non-zero step status plus the infrastructure annotation before any code
+  investigation. No synthetic shell fixture is evidence of that runner state.
 
   O predicado mede **tratamento executável**, não menção. A primeira versão contava
   qualquer ocorrência da string e nasceu DRIFTED: os dois arquivos que ela achou —
@@ -8648,7 +8655,7 @@ verify-means: |
   Também não decide o reparo do lado do `corelink-runners` — dimensionar o disco da imagem
   ou podar `target/` no fim do job é trabalho naquele repo, e este item só rastreia o lado
   do servidor. Fechar aqui sem o outro lado deixa a causa viva.
-last-verified: 2026-08-31
+last-verified: 2026-09-05
 ```
 
 ### B-129 — o `Server-Timing` foi desenhado para SOMAR, e somar e compativel com esconder

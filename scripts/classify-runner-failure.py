@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Classify storage/linker failures as runner infrastructure, not PR failures."""
+"""Classify storage/linker failures as runner infrastructure, not PR code."""
 import re, sys
 text = sys.stdin.read()
 code_failure = re.search(r"error\s*\[E\d+\]|assertion failed|panicked at|tests? .*FAILED", text, re.I)
@@ -8,6 +8,6 @@ linker = re.search(r"(?:collect2|\bld(?:\.exe)?\b|linker).{0,120}(bus error|sign
 if code_failure:
     print("CODE_FAILURE")
 elif storage or linker:
-    print("INFRA_FAILURE runner-disk-or-linker — do not attribute this red result to the PR")
+    print("INFRA_FAILURE runner-disk-or-linker — attribute the red result to infrastructure")
     raise SystemExit(42)
 print("CODE_FAILURE")

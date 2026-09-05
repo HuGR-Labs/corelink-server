@@ -21,6 +21,7 @@ on:
       - 'Cargo.lock'
       - '.github/workflows/corelink-server.yml'
       - 'scripts/classify-runner-failure.py'
+      - 'scripts/exec-with-timeout.py'
       - 'scripts/run-with-infra-classification.sh'
       - 'tests/test_classify_runner_failure.sh'
   # No `push: branches:[main]` — avoids the heavy-gate stampede on main merges.
