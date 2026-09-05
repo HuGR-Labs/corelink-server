@@ -26,7 +26,9 @@ const server = http.createServer((request, response) => {
 });
 
 server.listen(0, "127.0.0.1", () => {
-  fs.writeFileSync(portFile, String(server.address().port));
+  const port = server.address().port;
+  fs.writeFileSync(portFile, String(port));
+  process.stdout.write(`${JSON.stringify({ ready: true, port })}\n`);
 });
 
 process.on("SIGTERM", () => {

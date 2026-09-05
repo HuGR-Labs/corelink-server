@@ -2,12 +2,16 @@ import { execFileSync, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { clearTimeout as clearTimer, setTimeout as setTimer } from "node:timers";
 import { describe, expect, it } from "vitest";
 
 const DOCS_ROOT = path.resolve(__dirname, "..");
 const RECIPE = path.join(__dirname, "fixtures", "raw-curl-directory-upload.sh");
 const RECORDER = path.join(__dirname, "fixtures", "raw-curl-recorder.sh");
 const HTTP_SERVER = path.join(__dirname, "fixtures", "raw-curl-http-server.mjs");
+const HTTP_READY_TIMEOUT_MS = 15_000;
+const HTTP_REQUEST_TIMEOUT_MS = 10_000;
+const HTTP_STOP_TIMEOUT_MS = 2_000;
 
 const LOCALE_PAGES = [
   "docs/integrations/raw-curl.md",
@@ -111,15 +115,120 @@ function runRecipe(
   return { url, uploadedDigest, output };
 }
 
-function runRecipeAgainstHttp(
+function waitForServerReady(server: ReturnType<typeof spawn>): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let buffer = "";
+    let timer: ReturnType<typeof setTimer>;
+    const finish = (error?: Error, port?: string): void => {
+      if (settled) return;
+      settled = true;
+      clearTimer(timer);
+      server.stdout?.removeListener("data", onData);
+      server.removeListener("error", onError);
+      server.removeListener("exit", onExit);
+      if (error) reject(error);
+      else resolve(port!);
+    };
+    const onData = (chunk: Uint8Array | string): void => {
+      buffer += chunk.toString();
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line) continue;
+        try {
+          const message = JSON.parse(line) as { ready?: boolean; port?: number };
+          if (message.ready && Number.isInteger(message.port) && message.port! > 0) {
+            finish(undefined, String(message.port));
+            return;
+          }
+        } catch {
+          // Ignore non-protocol fixture output while waiting for readiness.
+        }
+      }
+    };
+    const onError = (error: Error): void => finish(error);
+    const onExit = (code: number | null, signal: string | null): void =>
+      finish(new Error(`HTTP fixture server exited before readiness (${code ?? signal ?? "unknown"})`));
+    timer = setTimer(
+      () => finish(new Error("HTTP fixture server readiness timed out")),
+      HTTP_READY_TIMEOUT_MS,
+    );
+    server.stdout?.setEncoding("utf8");
+    server.stdout?.on("data", onData);
+    server.once("error", onError);
+    server.once("exit", onExit);
+    if (server.exitCode !== null || server.signalCode !== null) {
+      finish(
+        new Error(
+          `HTTP fixture server exited before readiness (${server.exitCode ?? server.signalCode ?? "unknown"})`,
+        ),
+      );
+    }
+  });
+}
+
+function waitForFile(file: string, timeoutMs: number): Promise<void> {
+  if (fs.existsSync(file)) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let watcher: fs.FSWatcher | undefined;
+    const finish = (error?: Error): void => {
+      if (settled) return;
+      settled = true;
+      clearTimer(timer);
+      watcher?.close();
+      if (error) reject(error);
+      else resolve();
+    };
+    const timer = setTimer(
+      () => finish(new Error(`Timed out waiting for ${file}`)),
+      timeoutMs,
+    );
+    try {
+      watcher = fs.watch(path.dirname(file), () => {
+        if (fs.existsSync(file)) finish();
+      });
+      // The request may complete between the initial check and watcher setup.
+      if (fs.existsSync(file)) finish();
+    } catch (error) {
+      finish(error as Error);
+    }
+  });
+}
+
+function waitForExit(server: ReturnType<typeof spawn>, timeoutMs: number): Promise<boolean> {
+  if (server.exitCode !== null || server.signalCode !== null) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const timer = setTimer(() => {
+      server.removeListener("exit", onExit);
+      resolve(false);
+    }, timeoutMs);
+    const onExit = (): void => {
+      clearTimer(timer);
+      resolve(true);
+    };
+    server.once("exit", onExit);
+  });
+}
+
+async function stopServer(server: ReturnType<typeof spawn>): Promise<void> {
+  if (server.exitCode !== null || server.signalCode !== null) return;
+  server.kill("SIGTERM");
+  if (await waitForExit(server, HTTP_STOP_TIMEOUT_MS)) return;
+  server.kill("SIGKILL");
+  await waitForExit(server, HTTP_STOP_TIMEOUT_MS);
+}
+
+async function runRecipeAgainstHttp(
   shell: string,
   workDir: string,
   relative: string,
   status: number,
-): {
+): Promise<{
   result: ReturnType<typeof spawnSync>;
   request: { method: string; url: string; bytes: number };
-} {
+}> {
   const portFile = path.join(workDir, `http-${status}.port`);
   const requestFile = path.join(workDir, `http-${status}.request`);
   const server = spawn(process.execPath, [HTTP_SERVER], {
@@ -129,14 +238,10 @@ function runRecipeAgainstHttp(
       CORELINK_HTTP_REQUEST_FILE: requestFile,
       CORELINK_HTTP_STATUS: String(status),
     },
-    stdio: "ignore",
+    stdio: ["ignore", "pipe", "pipe"],
   });
   try {
-    for (let attempt = 0; attempt < 100 && !fs.existsSync(portFile); attempt += 1) {
-      spawnSync("sh", ["-c", "sleep 0.01"], { stdio: "ignore" });
-    }
-    expect(fs.existsSync(portFile), "HTTP fixture server did not start").toBe(true);
-    const port = fs.readFileSync(portFile, "utf8").trim();
+    const port = await waitForServerReady(server);
     const recipePath = path.join(workDir, `http-recipe-${status}.sh`);
     fs.writeFileSync(recipePath, `${extractRecipe(relative)}\n`);
     const distDir = path.join(workDir, "dist");
@@ -155,10 +260,10 @@ function runRecipeAgainstHttp(
       encoding: "utf8",
       timeout: 15_000,
     });
-    expect(fs.existsSync(requestFile), `HTTP ${status} server saw no request`).toBe(true);
+    await waitForFile(requestFile, HTTP_REQUEST_TIMEOUT_MS);
     return { result, request: JSON.parse(fs.readFileSync(requestFile, "utf8")) };
   } finally {
-    server.kill("SIGTERM");
+    await stopServer(server);
   }
 }
 
@@ -296,12 +401,12 @@ describe("raw-curl directory upload recipe", () => {
 
   it.each(HTTP_FAILURE_CASES)(
     "fails closed on a real HTTP $shell × $page × $status response",
-    ({ shell, page: relative, status }) => {
+    async ({ shell, page: relative, status }) => {
       const shellPath = commandPath(shell);
       expect(shellPath, `${shell} is required for HTTP failure teeth`).toBeTruthy();
       expect(commandPath("curl"), "curl is required for HTTP failure teeth").toBeTruthy();
       const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "raw-curl-http-"));
-      const { result, request } = runRecipeAgainstHttp(shellPath!, workDir, relative, status);
+      const { result, request } = await runRecipeAgainstHttp(shellPath!, workDir, relative, status);
       expect(request.method).toBe("PUT");
       expect(request.url).toMatch(new RegExp(`/v1/cas/fixture-tenant/[0-9a-f]{64}$`));
       expect(request.bytes).toBeGreaterThan(0);
