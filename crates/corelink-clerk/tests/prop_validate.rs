@@ -70,10 +70,8 @@ fn fixed_clock() -> SystemTime {
     UNIX_EPOCH + Duration::from_secs(NOW_FIXED)
 }
 
-/// Single shared RSA keypair for the entire prop-test run. Generating
-/// a 2048-bit RSA keypair takes ~30 ms — at 10k iter that would be
-/// ~5 min just on keygen. We share one keypair across cases and rely
-/// on the structural variants (mutated signature, varied claims) to
+/// Single shared RSA keypair for the entire prop-test run. Key generation is
+/// process-once setup; generated cases vary the signature and claims to
 /// exercise the security invariants.
 fn shared_key() -> &'static TestRsaKey {
     static KEY: OnceLock<TestRsaKey> = OnceLock::new();
@@ -82,7 +80,8 @@ fn shared_key() -> &'static TestRsaKey {
 
 /// Parse the fixed test key once for the entire property-test process. The
 /// key material is immutable and the resulting `EncodingKey` is reusable;
-/// reparsing the PEM inside every generated case dominated the 10k PR run.
+/// this avoids reparsing PEM for every generated case. Runtime measurement
+/// remains a separate concern from this structural allocation contract.
 fn shared_encoding_key() -> &'static EncodingKey {
     static KEY: OnceLock<EncodingKey> = OnceLock::new();
     KEY.get_or_init(|| {

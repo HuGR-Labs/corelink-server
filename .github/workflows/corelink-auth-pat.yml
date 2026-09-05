@@ -28,6 +28,9 @@ on:
       - 'rust-toolchain.toml'
       - '.cargo/config.toml'
       - 'scripts/ci-assert-pinned-toolchain.sh'
+      - 'crates/corelink-clerk/tests/prop_validate.rs'
+      - 'scripts/verify_b247_clerk_proptest.py'
+      - 'tests/test_verify_b247_clerk_proptest.py'
       - '.github/workflows/corelink-auth-pat.yml'
 
 permissions:
@@ -84,6 +87,12 @@ jobs:
           set -euo pipefail
           command -v python3
           python3 --version
+
+      - name: B247 Clerk property-test contract and mutations
+        run: python3 scripts/verify_b247_clerk_proptest.py
+
+      - name: B247 Clerk property-test verifier regressions
+        run: python3 -m unittest tests/test_verify_b247_clerk_proptest.py
 
       # Negative control: the exact schema assertion must kill deletion of the
       # pgcrypto extension. Restore before this step exits so later steps and

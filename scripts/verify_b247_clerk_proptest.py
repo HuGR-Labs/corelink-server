@@ -10,6 +10,34 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "crates/corelink-clerk/tests/prop_validate.rs"
 MAX_SOURCE_BYTES = 200_000
+STRUCTURAL_INVARIANTS = {
+    "wrong_signature_is_rejected": (
+        "sig_bytes[idx] = new_byte;",
+        "adapter.validate(&mutated)",
+        "AuthError::SignatureInvalid",
+    ),
+    "expired_token_is_rejected": (
+        "claims.exp =",
+        "adapter.validate(&jwt)",
+        "AuthError::Expired",
+    ),
+    "issuer_mismatch_is_rejected": (
+        "claims.iss = bogus.clone();",
+        "adapter.validate(&jwt)",
+        "AuthError::IssuerMismatch",
+        "prop_assert_eq!(&got, &bogus)",
+    ),
+    "audience_mismatch_is_rejected": (
+        "claims.aud = bogus;",
+        "adapter.validate(&jwt)",
+        "AuthError::AudienceMismatch",
+    ),
+    "random_bytes_never_panic": (
+        "String::from_utf8_lossy(&blob)",
+        "adapter.validate(&s)",
+        "result.is_err()",
+    ),
+}
 
 
 class VerificationError(RuntimeError):
@@ -25,13 +53,66 @@ def read_source() -> str:
     return source
 
 
+def strip_rust_comments(source: str) -> str:
+    """Blank comments while preserving strings, code, and line positions."""
+    out: list[str] = []
+    index = 0
+    block_depth = 0
+    while index < len(source):
+        if block_depth:
+            if source.startswith("/*", index):
+                block_depth += 1
+                out.extend("  ")
+                index += 2
+            elif source.startswith("*/", index):
+                block_depth -= 1
+                out.extend("  ")
+                index += 2
+            else:
+                out.append("\n" if source[index] == "\n" else " ")
+                index += 1
+            continue
+        if source.startswith("//", index):
+            out.extend("  ")
+            index += 2
+            while index < len(source) and source[index] != "\n":
+                out.append(" ")
+                index += 1
+            continue
+        if source.startswith("/*", index):
+            block_depth = 1
+            out.extend("  ")
+            index += 2
+            continue
+        if source[index] == '"':
+            out.append(source[index])
+            index += 1
+            while index < len(source):
+                out.append(source[index])
+                if source[index] == "\\" and index + 1 < len(source):
+                    index += 1
+                    out.append(source[index])
+                elif source[index] == '"':
+                    index += 1
+                    break
+                index += 1
+            continue
+        out.append(source[index])
+        index += 1
+    if block_depth:
+        raise VerificationError("unterminated Rust block comment")
+    return "".join(out)
+
+
 def function_region(source: str, name: str) -> str:
     marker = f"fn {name}"
     starts = [match.start() for match in re.finditer(re.escape(marker), source)]
     if len(starts) != 1:
         raise VerificationError(f"expected exactly one function {name}, found {len(starts)}")
     start = starts[0]
-    following = re.search(r"\n(?:fn |#\[tokio::test|proptest!)", source[start + len(marker) :])
+    following = re.search(
+        r"\n[ \t]*(?:fn |#\[tokio::test|proptest!)", source[start + len(marker) :]
+    )
     end = start + len(marker) + following.start() if following else len(source)
     if end - start > 50_000:
         raise VerificationError(f"function {name} boundary is missing or too large")
@@ -39,43 +120,38 @@ def function_region(source: str, name: str) -> str:
 
 
 def validate_source(source: str) -> None:
-    if "PROPTEST_CASES" not in source or "unwrap_or(10_000)" not in source:
+    code = strip_rust_comments(source)
+    if "PROPTEST_CASES" not in code or "unwrap_or(10_000)" not in code:
         raise VerificationError("PROPTEST_CASES default 10_000 contract is missing")
-    if "cases: proptest_cases()" not in source:
+    if "cases: proptest_cases()" not in code:
         raise VerificationError("proptest case count is not wired to the runtime knob")
-    required = (
-        "wrong_signature_is_rejected",
-        "expired_token_is_rejected",
-        "issuer_mismatch_is_rejected",
-        "audience_mismatch_is_rejected",
-        "random_bytes_never_panic",
-        "Algorithm::RS256",
-        "AuthError::SignatureInvalid",
-        "AuthError::Expired",
-        "AuthError::IssuerMismatch",
-        "AuthError::AudienceMismatch",
-    )
-    for marker in required:
-        if marker not in source:
-            raise VerificationError(f"security invariant marker missing: {marker}")
+    for name, markers in STRUCTURAL_INVARIANTS.items():
+        region = function_region(code, name)
+        for marker in markers:
+            if marker not in region:
+                raise VerificationError(f"{name} missing structural marker: {marker}")
 
-    shared_key = function_region(source, "shared_key")
+    sign_code = function_region(code, "sign")
+    if "Algorithm::RS256" not in sign_code:
+        raise VerificationError("sign no longer fixes Algorithm::RS256")
+
+    shared_key = function_region(code, "shared_key")
     if "OnceLock<TestRsaKey>" not in shared_key or "TestRsaKey::generate(\"kid_v1\")" not in shared_key:
         raise VerificationError("RSA keypair is not process-shared through OnceLock")
 
-    cached = function_region(source, "shared_encoding_key")
+    cached = function_region(code, "shared_encoding_key")
     if "OnceLock<EncodingKey>" not in cached or cached.count("EncodingKey::from_rsa_pem") != 1:
         raise VerificationError("EncodingKey PEM parse is not isolated to the OnceLock cache")
 
-    sign = function_region(source, "sign")
+    sign = function_region(code, "sign")
     if "shared_encoding_key()" not in sign or "EncodingKey::from_rsa_pem" in sign:
         raise VerificationError("sign still parses EncodingKey per property case")
     if "encode(&header, claims, shared_encoding_key())" not in sign:
         raise VerificationError("sign does not use the cached EncodingKey")
 
-    if source.count("EncodingKey::from_rsa_pem") != 1:
+    if code.count("EncodingKey::from_rsa_pem") != 1:
         raise VerificationError("EncodingKey::from_rsa_pem must occur exactly once")
-    if "sign(shared_key()" in source:
+    if "sign(shared_key()" in code:
         raise VerificationError("property cases still pass a key requiring per-case parsing")
 
 
@@ -104,6 +180,19 @@ def mutation_checks(source: str) -> None:
         raise VerificationError("reduced PROPTEST_CASES mutation was accepted")
     validate_source(source)
 
+    for name, markers in STRUCTURAL_INVARIANTS.items():
+        marker = markers[0]
+        mutant = source.replace(marker, f"// removed {name}: {marker}", 1)
+        if mutant == source:
+            raise VerificationError(f"{name} mutation fixture did not change source")
+        try:
+            validate_source(mutant)
+        except VerificationError:
+            pass
+        else:
+            raise VerificationError(f"{name} weakening mutation was accepted")
+        validate_source(source)
+
 
 def main() -> int:
     try:
@@ -112,7 +201,7 @@ def main() -> int:
     except (OSError, VerificationError) as error:
         print(f"B247 DRIFTED: {error}", file=sys.stderr)
         return 1
-    print("B247 candidate confirmed: cached EncodingKey; 2/2 weakening mutations rejected")
+    print("B247 candidate confirmed: cached EncodingKey; 7/7 weakening mutations rejected")
     return 0
 
 
