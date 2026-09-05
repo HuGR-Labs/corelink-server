@@ -5,6 +5,8 @@ import re
 import sys
 from pathlib import Path
 
+import pytest
+
 import importlib.util
 
 ROOT = Path(__file__).parents[1]
@@ -60,3 +62,59 @@ def test_generic_wildcard_is_not_endpoint_evidence() -> None:
     routes = [r for r in ["/{*path}", "/v1/customer/{id}"] if not vdr._is_generic_catchall(r)]
     regexes = [vdr._route_to_regex(route) for route in routes]
     assert not vdr.endpoint_resolves("/v1/zzz-nonexistent-probe", regexes, set())
+
+
+def test_comment_only_route_and_worker_paths_are_not_evidence(tmp_path, monkeypatch) -> None:
+    source = tmp_path / "routes.rs"
+    source.write_text(
+        "/* outer\n/* nested .route(\"/v1/comment-only\") */\n*/\n"
+        ".route(\"/v1/live\", get(handler));\n",
+        encoding="utf-8",
+    )
+    worker = tmp_path / "worker.ts"
+    worker.write_text(
+        "/* worker-only /v1/worker-only\n"
+        "   still comment */\nconst path = \"/v1/live-worker\";\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(vdr, "ROUTE_SOURCE_ROOTS", [tmp_path])
+    inventory = vdr.collect_route_inventory()
+    assert "/v1/live" in inventory.all
+    assert "/v1/live-worker" in inventory.all
+    assert "/v1/comment-only" not in inventory.all
+    assert "/v1/worker-only" not in inventory.all
+    assert not inventory.resolves("/v1/comment-only")
+    assert not inventory.resolves("/v1/worker-only")
+
+
+def test_route_scanner_fails_closed_on_unterminated_comment(tmp_path, monkeypatch) -> None:
+    source = tmp_path / "routes.rs"
+    source.write_text('/* .route("/v1/comment-only")', encoding="utf-8")
+    monkeypatch.setattr(vdr, "ROUTE_SOURCE_ROOTS", [tmp_path])
+    with pytest.raises(vdr.SourceSyntaxError):
+        vdr.collect_route_inventory()
+
+
+def test_cli_model_ignores_comment_only_variant(tmp_path) -> None:
+    source = tmp_path / "main.rs"
+    source.write_text(
+        "enum Commands {\n"
+        "    /* outer\n"
+        "    /* FakeCommand, */\n"
+        "    */\n"
+        "    RealCommand,\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    model = vdr.parse_cli_model(source)
+    assert "real-command" in model.top
+    assert "fake-command" not in model.top
+
+
+def test_source_literals_keep_comment_markers() -> None:
+    cleaned = vdr._strip_source_comments(
+        r'''let a = "// /v1/literal"; let b = r#"/* /v1/raw */"#; /* hidden */'''
+    )
+    assert '"// /v1/literal"' in cleaned
+    assert 'r#"/* /v1/raw */"#' in cleaned
+    assert "hidden" not in cleaned

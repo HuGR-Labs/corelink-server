@@ -10214,7 +10214,7 @@ verify-means: |
 
   O que ele **não** decide: se as divergências já catalogadas foram consertadas — isso é dos
   itens donos ([B-116], [B-119], [B-120], [B-151]). Este mede só a capacidade de decidir.
-last-verified: 2026-08-31
+last-verified: 2026-09-05
 ```
 
 ### B-146 — `backlog_verify.py` é agnóstico ao `status`: um `done` falso sai CONFIRMED até o mundo mudar

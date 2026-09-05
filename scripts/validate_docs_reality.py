@@ -179,6 +179,140 @@ SHELL_FENCE_LANGS = {"", "bash", "sh", "shell", "shell-session", "console",
                      "zsh", "text", "sh-session", "terminal"}
 
 
+class SourceSyntaxError(ValueError):
+    """A source comment or literal is incomplete for static inspection."""
+
+
+def _raw_string_start(source: str, index: int) -> tuple[int, int] | None:
+    """Return (opening quote, hash count) for a Rust raw string."""
+    if source.startswith("br", index):
+        prefix_end = index + 2
+    elif source.startswith("r", index):
+        prefix_end = index + 1
+    else:
+        return None
+    hashes = 0
+    while prefix_end + hashes < len(source) and source[prefix_end + hashes] == "#":
+        hashes += 1
+    quote = prefix_end + hashes
+    if quote >= len(source) or source[quote] != '"':
+        return None
+    return quote, hashes
+
+
+def _blank_comment(value: str) -> str:
+    """Replace comment text without changing line positions."""
+    return "".join("\n" if character == "\n" else " " for character in value)
+
+
+def _strip_source_comments(source: str, *, nested: bool = True) -> str:
+    """Remove Rust/Worker comments while preserving all string literals.
+
+    Rust block comments nest; Worker comments do not, but accepting nesting is
+    harmless and keeps a malformed fixture from becoming evidence.  An
+    unterminated comment or literal raises instead of returning a permissive
+    partial source surface.
+    """
+    output: list[str] = []
+    index = 0
+    length = len(source)
+    while index < length:
+        if source.startswith("//", index):
+            output.extend((" ", " "))
+            index += 2
+            while index < length and source[index] != "\n":
+                output.append(" ")
+                index += 1
+            continue
+        if source.startswith("/*", index):
+            output.extend((" ", " "))
+            index += 2
+            depth = 1
+            while index < length and depth:
+                if nested and source.startswith("/*", index):
+                    output.extend((" ", " "))
+                    index += 2
+                    depth += 1
+                elif source.startswith("*/", index):
+                    output.extend((" ", " "))
+                    index += 2
+                    depth -= 1
+                elif source[index] == "\n":
+                    output.append("\n")
+                    index += 1
+                else:
+                    end = index
+                    while end < length and source[end] not in "/*\n":
+                        end += 1
+                    if end == index:
+                        output.append(" ")
+                        index += 1
+                    else:
+                        output.append(_blank_comment(source[index:end]))
+                        index = end
+            if depth:
+                raise SourceSyntaxError("unterminated block comment")
+            continue
+
+        if source[index] in {"r", "b"}:
+            raw = _raw_string_start(source, index)
+            if raw is not None:
+                quote, hashes = raw
+                closing = '"' + ("#" * hashes)
+                end = source.find(closing, quote + 1)
+                if end < 0:
+                    raise SourceSyntaxError("unterminated raw string")
+                output.append(source[index : end + len(closing)])
+                index = end + len(closing)
+                continue
+
+        quote = source[index]
+        if quote in {'"', "`"} or (quote == "b" and index + 1 < length and source[index + 1] in {'"', "'"}):
+            if quote == "b":
+                output.append(quote)
+                index += 1
+                quote = source[index]
+            output.append(quote)
+            index += 1
+            terminated = False
+            while index < length:
+                character = source[index]
+                output.append(character)
+                index += 1
+                if character == "\\" and index < length:
+                    output.append(source[index])
+                    index += 1
+                elif character == quote:
+                    terminated = True
+                    break
+            if not terminated:
+                raise SourceSyntaxError("unterminated string literal")
+            continue
+
+        if quote == "'":
+            # Rust lifetimes (`'a`) are not character literals.  A closing
+            # quote on this line proves the latter; otherwise copy the tick.
+            end = index + 1
+            escaped = False
+            while end < length and source[end] != "\n":
+                character = source[end]
+                if character == "'" and not escaped:
+                    break
+                if character == "\\" and not escaped:
+                    escaped = True
+                else:
+                    escaped = False
+                end += 1
+            if end < length and source[end] == "'":
+                output.append(source[index : end + 1])
+                index = end + 1
+                continue
+
+        output.append(source[index])
+        index += 1
+    return "".join(output)
+
+
 # ---------------------------------------------------------------------------
 # CLI command model — parsed LIVE from tools/cli/src/main.rs
 # ---------------------------------------------------------------------------
@@ -220,7 +354,7 @@ def parse_cli_model(main_rs: Path) -> CliModel:
     `action: <Enum>` field wiring that links a group command to its action enum.
     Robust to new commands: everything is derived from the source, nothing hard-
     coded."""
-    text = main_rs.read_text(encoding="utf-8")
+    text = _strip_source_comments(main_rs.read_text(encoding="utf-8"))
     lines = text.splitlines()
 
     # 1. Split into brace-balanced enum bodies keyed by enum name.
@@ -490,6 +624,7 @@ def collect_route_inventory() -> RouteInventory:
                 t = p.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
                 continue
+            t = _strip_source_comments(t, nested=p.suffix == ".rs")
             for m in _ROUTE_DECL_RE.finditer(t):
                 kind, path = m.group("kind"), m.group("path")
                 methods = frozenset() if kind != "route" else _route_methods(t, m.end())
@@ -1071,7 +1206,11 @@ def main() -> int:
               f"{len(host_refs)} hostname mentions")
         return 0
 
-    model = parse_cli_model(CLI_MAIN)
+    try:
+        model = parse_cli_model(CLI_MAIN)
+    except (OSError, UnicodeDecodeError, SourceSyntaxError) as exc:
+        print(f"DOCS-REALITY INVALID: source parse failure: {exc}")
+        return 1
     docs = _iter_doc_files()
 
     all_refs: list[CliRef] = []
@@ -1156,7 +1295,11 @@ def main() -> int:
                             if f.rule_id in deferred_tracked_ids and not args.strict]
 
     # --- [endpoint-existence] (best-effort, WARN unless flagship) ---
-    route_inventory = collect_route_inventory()
+    try:
+        route_inventory = collect_route_inventory()
+    except (OSError, UnicodeDecodeError, SourceSyntaxError) as exc:
+        print(f"DOCS-REALITY INVALID: route source parse failure: {exc}")
+        return 1
     endpoint_cfg = allow.get("endpoint", {})
     flagship_files = set(endpoint_cfg.get("flagship_files", []))
     ignore_prefixes = tuple(endpoint_cfg.get("ignore_path_prefixes", []))
