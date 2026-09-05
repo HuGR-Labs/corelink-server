@@ -10619,7 +10619,7 @@ status: done
 verify: |
   python3 scripts/verify_b149_test_strength.py --expect done
 verify-means: |
-  open — pelo menos um dos cinco checkpoints SHA-256 diverge do reparo B-149 aprovado
+  drift — pelo menos um dos cinco checkpoints SHA-256 diverge do reparo B-149 aprovado
   (o registry SHA-256 versionado neste verificador): os quatro arquivos de teste relevantes e
   `routes/billing_ingest.rs`, que contém o mapeamento de produção. As quatro mensagens
   continuam a identificar qual propriedade do item exige revisão; qualquer byte divergente
@@ -10754,7 +10754,7 @@ status: done
 verify: |
   python3 scripts/verify_b151_openapi.py --expect done
 verify-means: |
-  open — o parser falha, a spec publicada diverge da canônica em caminhos, métodos,
+  drift — o parser falha, a spec publicada diverge da canônica em caminhos, métodos,
   `operationId` ou qualquer campo do documento, **ou** algum locale ainda afirma cinco
   categorias sobre a tabela de três. Fecha só quando as duas caírem.
 
