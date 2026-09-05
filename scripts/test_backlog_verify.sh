@@ -202,6 +202,63 @@ for n in range(1, 1001):
 PYGEN
 )" "is not canonical"
 
+# B-148: every workflow is a load-bearing input to at least one backlog verify
+# command. The backlog gate must therefore trigger for the complete workflow
+# directory, not merely for its own YAML file. This is intentionally tested by
+# content mutation: deleting the glob must make the checker red, and a comment
+# must not count as coverage.
+workflow_trigger_check() {
+  local workflow="$1"
+  python3 - "$workflow" <<'PY'
+import sys
+import yaml
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    doc = yaml.safe_load(fh) or {}
+on = doc.get(True, doc.get("on")) or {}
+expected = ".github/workflows/**"
+for event in ("pull_request", "push"):
+    config = on.get(event) or {}
+    paths = config.get("paths") if isinstance(config, dict) else None
+    if expected not in (paths or []):
+        raise SystemExit(f"{event} does not cover {expected}")
+print("workflow trigger covers all workflow surfaces")
+PY
+}
+
+workflow="$HERE/../.github/workflows/backlog-verify.yml"
+if workflow_trigger_check "$workflow" >/dev/null 2>&1; then
+  pass "B-148 workflow changes trigger backlog verification"
+else
+  fail "B-148 workflow changes trigger backlog verification"
+fi
+
+mutant="$SANDBOX/backlog-verify-mutant.yml"
+sed '/^[[:space:]]*-[[:space:]]*"\.github\/workflows\/\*\*"/d' "$workflow" >"$mutant"
+if workflow_trigger_check "$mutant" >/dev/null 2>&1; then
+  fail "B-148 removal mutation is detected"
+else
+  pass "B-148 removal mutation is detected"
+fi
+
+comment_mutant="$SANDBOX/backlog-verify-comment-mutant.yml"
+python3 - "$workflow" "$comment_mutant" <<'PY'
+import sys
+source, destination = sys.argv[1:]
+text = open(source, encoding="utf-8").read()
+old = '- ".github/workflows/**"'
+if old not in text:
+    raise SystemExit("workflow glob missing before replacement mutation")
+open(destination, "w", encoding="utf-8").write(
+    text.replace(old, '- "BACKLOG.md"  # workflow coverage removed', 1)
+)
+PY
+if workflow_trigger_check "$comment_mutant" >/dev/null 2>&1; then
+  fail "B-148 replacement mutation is detected"
+else
+  pass "B-148 replacement mutation is detected"
+fi
+
 echo
 if [[ "$fails" -eq 0 ]]; then echo "backlog gate: all cells passed"; exit 0; fi
 echo "backlog gate: $fails cell(s) failed"; exit 1

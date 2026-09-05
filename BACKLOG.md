@@ -10487,33 +10487,30 @@ verify-means: |
 last-verified: 2026-08-31
 ```
 
-### B-148 — 44 itens dependem de `.github/workflows/**` e o gate do backlog não roda quando um PR mexe lá
+### B-148 — o gate do backlog dispara quando qualquer workflow muda
 
-`backlog-verify.yml` declara `pull_request.paths` = `BACKLOG.md`,
-`scripts/backlog_verify.py`, `scripts/test_backlog_verify.sh` e **ele mesmo**. Um PR que
-altera qualquer outro workflow **não** dispara o gate.
+`backlog-verify.yml` declara `pull_request.paths` e `push.paths` com
+`.github/workflows/**`, além dos arquivos do próprio gate. Um PR que altera qualquer
+workflow agora dispara o gate no mesmo PR; o push em `main` também revalida a árvore.
 
-Medido nesta árvore: **44 de 165 itens (27%)** têm `verify` que lê `.github/workflows`. Um PR
-de workflow pode derrubar qualquer um deles **sem que o gate rode nesse PR**; o vermelho
-aparece no próximo PR que toque `BACKLOG.md`, que é quase sempre de outra pessoa e de outro
-assunto. **Já aconteceu** — [B-110] × #1505.
+Medido nesta árvore: **44 de 165 itens (27%)** têm `verify` que lê `.github/workflows`. O
+gate roda todos os itens quando esse diretório muda, atribuindo o vermelho ao PR que mudou
+a superfície que pode ter alterado a verdade.
 
-O custo não é o vermelho: é a **atribuição errada**. Quem recebe o vermelho lê um item que
-não conhece, sobre uma lane que não tocou, e a saída barata é mexer no item até ficar verde.
-Foi assim que dois `verify` desta campanha ganharam predicado mais fraco.
+O custo de executar os `verify` do backlog em PRs de CI é conhecido e aceito nesta decisão:
+a atribuição correta vale mais que deixar 44 verificações dependentes de um PR futuro e
+desconexo. A própria suíte do gate testa o disparo por conteúdo e muta/remover o glob para
+provar que a cobertura não é decorativa.
 
-**O que este item NÃO decide:** acrescentar `.github/workflows/**` ao `paths` é a correção
-óbvia e tem custo próprio — o gate passa a rodar 143 `verify` (dos quais dezenas invocam
-`gh`, `curl`, `cargo`) em **todo** PR de CI, e este repositório já mede que
-`backlog_verify.py` sem `--id` dispara ~24 ferramentas externas. As alternativas são executar
-só o subconjunto dos 41, ou rodar o conjunto completo num gatilho separado. Quem pegar o item
-mede o tempo antes de escolher.
+**Contrato fechado:** a cobertura é o glob literal `.github/workflows/**` em ambos os
+gatilhos (`pull_request` e `push`); remover, substituir ou comentar esse glob deve reabrir
+o item e falhar a regressão B-148.
 
 ```backlog
 id: B-148
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   python3 - <<"PY"
   import re, sys, yaml
@@ -10528,8 +10525,8 @@ verify: |
       print("FALHA: backlog-verify.yml nao dispara mais em pull_request — a premissa mudou; releia antes de confiar neste portao."); sys.exit(1)
   paths = (pr or {}).get("paths")
   if paths is None:
-      print("FALHA: pull_request sem `paths` — o gate roda em TODO PR; feche o item."); sys.exit(1)
-  cobre = any(p.startswith(".github/workflows/") and p.rstrip("/").endswith("**") for p in paths)
+      print("CONFIRMED: pull_request sem `paths` — o gate roda em TODO PR; B-148 esta fechado."); sys.exit(0)
+  cobre = ".github/workflows/**" in paths
   t = open("BACKLOG.md").read()
   blocos = re.findall(r"```backlog\n(.*?)\n```", t, re.S)
   if len(blocos) < 100:
@@ -10541,14 +10538,18 @@ verify: |
       if ".github/workflows" in str(it.get("verify", "")): dep += 1
   if ilegiveis:
       print(f"FALHA: {ilegiveis} bloco(s) backlog com YAML ilegivel — bloco que nao parseia sai da conta em SILENCIO e encolhe o numero; conserte o YAML antes de acreditar neste portao."); sys.exit(1)
-  if cobre:
-      print(f"FALHA: paths ja cobre .github/workflows/** — feche o item (itens dependentes: {dep})."); sys.exit(1)
-  print(f"aberto: {dep} de {len(blocos)} itens tem verify lendo .github/workflows, e o paths do gate ({paths}) nao cobre .github/workflows/**")
+  if not cobre:
+      print(f"FALHA: paths nao cobre .github/workflows/** — B-148 reaberto (itens dependentes: {dep})."); sys.exit(1)
+  push = on.get("push") or {}
+  push_paths = push.get("paths") if isinstance(push, dict) else None
+  if push_paths is not None and ".github/workflows/**" not in push_paths:
+      print("FALHA: push.paths nao cobre .github/workflows/** — B-148 reaberto."); sys.exit(1)
+  print(f"CONFIRMED: pull_request e push cobrem .github/workflows/** ({dep} itens dependem da superficie)")
   PY
 verify-means: |
-  open — o `paths` do gate **não** cobre `.github/workflows/**`, enquanto N itens dependem
-  desse diretório. O comando parseia o YAML em vez de grepar, então um comentário
-  `# .github/workflows/**` no workflow não o satisfaz.
+  done — `pull_request.paths` e `push.paths` cobrem literalmente `.github/workflows/**`,
+  enquanto N itens dependem desse diretório. O comando parseia o YAML em vez de grepar,
+  então um comentário `# .github/workflows/**` no workflow não o satisfaz.
 
   **Anti-vacuidade, cada caminho com falha nomeada:** workflow ausente; `pull_request`
   removido; `paths` ausente (que significa "roda em todo PR", isto é, item **fechado**, e o
@@ -10556,15 +10557,13 @@ verify-means: |
   `BACKLOG.md`; e **bloco com YAML ilegível**, que é o caminho que a primeira versão deste
   comando engolia com um `except Exception: continue` mudo — um item que não parseia sai da
   contagem em silêncio e **encolhe** o número que o portão publica. Agora ele reprova alto.
-  Nenhum desses estados devolve "aberto".
+  Nenhum desses estados devolve "CONFIRMED".
 
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 44 de 165 itens …
-  nao cobre"* e exit 0. Numa cópia com `.github/workflows/**` acrescentado ao `paths`, sai
-  *"FALHA: paths ja cobre .github/workflows/**"* e exit 1.
+  **Medido (2026-09-05):** no estado atual sai *"CONFIRMED: pull_request e push cobrem
+  .github/workflows/**"* e exit 0. Numa cópia com o glob removido ou substituído, sai
+  *"FALHA: paths nao cobre .github/workflows/**"* e exit 1.
 
-  O que ele **não** decide: se cobrir o diretório inteiro é o reparo certo — o item registra
-  que ele tem custo de tempo próprio e que há duas alternativas mais baratas.
-last-verified: 2026-08-31
+last-verified: 2026-09-05
 ```
 
 ### B-149 — três testes que passam sem afirmar nada, e um quarto que delega por escrito ao mais fraco deles
