@@ -48,11 +48,17 @@ item() { # $1 id, $2 status, $3 verify, $4 last-verified
 # be parsed, not that the workflow we ship has the required trigger semantics.
 b148_workflow_harness() {
   local workflow="$HERE/../.github/workflows/backlog-verify.yml"
+  local single_quote_workflow="$SANDBOX/backlog-verify-single-quote.yml"
   local mutant="$SANDBOX/backlog-verify-mutant.yml"
   local replacement="$SANDBOX/backlog-verify-replacement.yml"
   local push_mutant="$SANDBOX/backlog-verify-push-mutant.yml"
   local schedule_mutant="$SANDBOX/backlog-verify-schedule-mutant.yml"
   local dispatch_mutant="$SANDBOX/backlog-verify-dispatch-mutant.yml"
+  local single_quote_mutant="$SANDBOX/backlog-verify-single-quote-mutant.yml"
+  local single_quote_replacement="$SANDBOX/backlog-verify-single-quote-replacement.yml"
+  local single_quote_push_mutant="$SANDBOX/backlog-verify-single-quote-push-mutant.yml"
+  local single_quote_schedule_mutant="$SANDBOX/backlog-verify-single-quote-schedule-mutant.yml"
+  local single_quote_dispatch_mutant="$SANDBOX/backlog-verify-single-quote-dispatch-mutant.yml"
 
   workflow_trigger_check() {
     python3 - "$1" <<'PY'
@@ -89,24 +95,43 @@ PY
     fail "B-148 checked-out workflow has path/self/schedule/dispatch triggers"
   fi
 
-  python3 - "$workflow" "$mutant" "$replacement" "$push_mutant" \
-    "$schedule_mutant" "$dispatch_mutant" <<'PY'
+  b148_generate_mutants() {
+    local source="$1"
+    local removal="$2"
+    local replacement="$3"
+    local push="$4"
+    local schedule="$5"
+    local dispatch="$6"
+
+    if python3 - "$source" "$removal" "$replacement" "$push" \
+      "$schedule" "$dispatch" <<'PY'
 import sys
 source, removal, replacement, push, schedule, dispatch = sys.argv[1:]
 text = open(source, encoding="utf-8").read()
-glob_line = '      - ".github/workflows/**"'
-if text.count(glob_line) != 2:
-    raise SystemExit(f"expected two workflow glob lines, found {text.count(glob_line)}")
-open(removal, "w", encoding="utf-8").write(text.replace(glob_line + "\n", "", 1))
-open(replacement, "w", encoding="utf-8").write(
-    text.replace(glob_line, '      - "BACKLOG.md"  # workflow coverage removed', 1)
+import re
+
+glob = re.compile(r'^(?P<indent>[ \t]*)-[ \t]*["\']\.github/workflows/\*\*["\'][ \t]*$', re.MULTILINE)
+matches = list(glob.finditer(text))
+if len(matches) != 2:
+    raise SystemExit(f"expected two workflow glob lines, found {len(matches)}")
+
+def remove_match(match):
+    return ""
+
+def replace_match(match):
+    return f'{match.group("indent")}- "BACKLOG.md"  # workflow coverage removed'
+
+seen = [0]
+def remove_second(match):
+    match_number = seen[0]
+    seen[0] += 1
+    return "" if match_number == 1 else match.group(0)
+
+open(removal, "w", encoding="utf-8").write(glob.sub(remove_match, text, count=1))
+open(replacement, "w", encoding="utf-8").write(glob.sub(replace_match, text, count=1))
+open(push, "w", encoding="utf-8").write(
+    glob.sub(remove_second, text)
 )
-line = glob_line + "\n"
-first = text.find(line)
-second = text.find(line, first + len(line))
-if first < 0 or second < 0:
-    raise SystemExit("could not locate both workflow glob lines")
-open(push, "w", encoding="utf-8").write(text[:second] + text[second + len(line):])
 open(schedule, "w", encoding="utf-8").write(
     text.replace('    - cron: "17 6 * * *"\n', "", 1)
 )
@@ -114,12 +139,78 @@ open(dispatch, "w", encoding="utf-8").write(
     text.replace("  workflow_dispatch: {}\n", "", 1)
 )
 PY
+    then
+      for generated in "$removal" "$replacement" "$push" "$schedule" "$dispatch"; do
+        if [[ ! -s "$generated" ]]; then
+          fail "B-148 mutation fixture generation produced $generated"
+          return 1
+        fi
+      done
+    else
+      fail "B-148 mutation fixture generation succeeded"
+      return 1
+    fi
+  }
 
-  if workflow_trigger_check "$mutant" >/dev/null 2>&1; then fail "B-148 removal mutation is detected"; else pass "B-148 removal mutation is detected"; fi
-  if workflow_trigger_check "$replacement" >/dev/null 2>&1; then fail "B-148 replacement mutation is detected"; else pass "B-148 replacement mutation is detected"; fi
-  if workflow_trigger_check "$push_mutant" >/dev/null 2>&1; then fail "B-148 self-trigger mutation is detected"; else pass "B-148 self-trigger mutation is detected"; fi
-  if workflow_trigger_check "$schedule_mutant" >/dev/null 2>&1; then fail "B-148 schedule mutation is detected"; else pass "B-148 schedule mutation is detected"; fi
-  if workflow_trigger_check "$dispatch_mutant" >/dev/null 2>&1; then fail "B-148 dispatch mutation is detected"; else pass "B-148 dispatch mutation is detected"; fi
+  b148_expect_rejected() {
+    local fixture="$1"
+    local description="$2"
+    local expected_error="$3"
+    local result
+    if result=$(workflow_trigger_check "$fixture" 2>&1); then
+      fail "$description"
+    elif [[ "$result" == *"$expected_error"* ]]; then
+      pass "$description"
+    else
+      fail "$description (unexpected checker failure)"
+    fi
+  }
+
+  if b148_generate_mutants "$workflow" "$mutant" "$replacement" "$push_mutant" \
+    "$schedule_mutant" "$dispatch_mutant"; then
+    b148_expect_rejected "$mutant" "B-148 removal mutation is detected" \
+      "pull_request does not cover"
+    b148_expect_rejected "$replacement" "B-148 replacement mutation is detected" \
+      "pull_request does not cover"
+    b148_expect_rejected "$push_mutant" "B-148 self-trigger mutation is detected" \
+      "push does not cover"
+    b148_expect_rejected "$schedule_mutant" "B-148 schedule mutation is detected" \
+      "schedule trigger is missing"
+    b148_expect_rejected "$dispatch_mutant" "B-148 dispatch mutation is detected" \
+      "workflow_dispatch trigger is missing"
+  fi
+
+  # YAML gives single-quoted and double-quoted scalars identical semantics. The
+  # old fixture generator only recognized the latter and could therefore fail
+  # before writing fixtures; the missing files were then mistaken for rejected
+  # mutations. Keep this equivalent representation as a regression test. A
+  # fixture-generation error is itself a failure, never a rejected mutation.
+  if ! python3 - "$workflow" "$single_quote_workflow" <<'PY'
+import sys
+source, destination = sys.argv[1:]
+text = open(source, encoding="utf-8").read()
+text = text.replace('      - ".github/workflows/**"', "      - '.github/workflows/**'")
+open(destination, "w", encoding="utf-8").write(text)
+PY
+  then
+    fail "B-148 single-quote regression fixture generation succeeded"
+  elif ! workflow_trigger_check "$single_quote_workflow" >/dev/null 2>&1; then
+    fail "B-148 single-quoted workflow remains semantically valid"
+  elif b148_generate_mutants "$single_quote_workflow" "$single_quote_mutant" \
+    "$single_quote_replacement" "$single_quote_push_mutant" \
+    "$single_quote_schedule_mutant" "$single_quote_dispatch_mutant"; then
+    pass "B-148 single-quoted workflow is covered by the mutation generator"
+    b148_expect_rejected "$single_quote_mutant" \
+      "B-148 single-quoted removal mutation is detected" "pull_request does not cover"
+    b148_expect_rejected "$single_quote_replacement" \
+      "B-148 single-quoted replacement mutation is detected" "pull_request does not cover"
+    b148_expect_rejected "$single_quote_push_mutant" \
+      "B-148 single-quoted self-trigger mutation is detected" "push does not cover"
+    b148_expect_rejected "$single_quote_schedule_mutant" \
+      "B-148 single-quoted schedule mutation is detected" "schedule trigger is missing"
+    b148_expect_rejected "$single_quote_dispatch_mutant" \
+      "B-148 single-quoted dispatch mutation is detected" "workflow_dispatch trigger is missing"
+  fi
 }
 
 if [[ "${1:-}" == "--b148" ]]; then

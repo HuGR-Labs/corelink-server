@@ -10522,11 +10522,13 @@ verify-means: |
   **Harness de mutação:** remoção e substituição do glob, remoção do self-trigger (`push`),
   remoção do cron e remoção do dispatch têm de falhar. A suíte geral do gate chama o mesmo
   harness, e este verify o chama diretamente, para que a regressão não fique apenas em
-  comentário ou em uma célula que nunca roda.
+  comentário ou em uma célula que nunca roda. Aspas simples e duplas no scalar YAML são
+  equivalentes e ambas entram no harness; erro ao gerar qualquer fixture reprova o gate, em
+  vez de ser contado como mutação rejeitada.
 
   **Medido (2026-09-05):** a árvore atual passa controle positivo e todas as cinco
-  mutações falham no checker. Ausência/alteração de qualquer trigger retorna exit 1, não
-  `CONFIRMED`.
+  mutações falham no checker, tanto com scalars YAML em aspas duplas quanto simples.
+  Ausência/alteração de qualquer trigger retorna exit 1, não `CONFIRMED`.
 
 last-verified: 2026-09-05
 ```
