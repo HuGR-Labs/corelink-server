@@ -18,9 +18,10 @@ name: release-cli
 #   corelink-darwin-aarch64     aarch64-apple-darwin
 #   corelink-windows-x86_64.exe x86_64-pc-windows-gnu
 #
-# Required GH Secret (set MANUALLY by operator):
+# Required GH Secret (set MANUALLY by operator, used only by `release`):
 #   CORELINK_CLI_RELEASE_TOKEN  PAT with `repo` scope on
-#                               HuGR-Labs/corelink-cli
+#                               HuGR-Labs/corelink-cli. Build jobs never receive
+#                               this credential.
 #
 # TODO (v2): cosign keyless signing via GH OIDC.
 #   Wired as a placeholder below; un-stub when ready.
@@ -33,10 +34,8 @@ on:
 
 # Workflow-level least-privilege.
 # The cross-repo release write is handled by CORELINK_CLI_RELEASE_TOKEN.
-# id-token: write is reserved for cosign keyless (v2 TODO).
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: release-cli-${{ github.ref }}
@@ -65,6 +64,11 @@ jobs:
     name: build (${{ matrix.target.name }})
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 45
+    env:
+      TARGET_TRIPLE: ${{ matrix.target.triple }}
+      TARGET_NAME: ${{ matrix.target.name }}
+      TARGET_SIGNER_NAME: ${{ matrix.target.signer_name }}
+      TARGET_EXT: ${{ matrix.target.ext }}
     strategy:
       fail-fast: false
       # max-parallel: 3 instead of unbounded.
@@ -82,18 +86,23 @@ jobs:
         target:
           - triple: x86_64-unknown-linux-gnu
             name: corelink-linux-x86_64
+            signer_name: corelink-linux-x86_64
             ext: ""
           - triple: aarch64-unknown-linux-gnu
             name: corelink-linux-aarch64
+            signer_name: corelink-linux-arm64
             ext: ""
           - triple: x86_64-apple-darwin
             name: corelink-darwin-x86_64
+            signer_name: corelink-darwin-x86_64
             ext: ""
           - triple: aarch64-apple-darwin
             name: corelink-darwin-aarch64
+            signer_name: corelink-darwin-arm64
             ext: ""
           - triple: x86_64-pc-windows-gnu
             name: corelink-windows-x86_64
+            signer_name: corelink-windows-x86_64
             ext: ".exe"
 
     steps:
@@ -101,6 +110,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       # Do NOT provision a toolchain on the self-hosted fleet. Per its own action.yml,
       # `dtolnay/rust-toolchain` runs `rustup toolchain install` + `rustup default`
@@ -110,35 +120,39 @@ jobs:
       # default, silently moving every concurrent job off the ADR-0015 reproducibility
       # pin. Full reasoning: scripts/ci-use-host-toolchain.sh header.
       - name: Use the workspace-pinned host toolchain (provisions nothing)
-        run: bash scripts/ci-use-host-toolchain.sh ${{ matrix.target.triple }}
+        run: bash scripts/ci-use-host-toolchain.sh "${TARGET_TRIPLE}"
 
-      - name: Cargo cache
-        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c  # v2.7.7
-        if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
-        with:
-          workspaces: ". -> target"
-          shared-key: cli-release-${{ matrix.target.triple }}
+      - name: Validate matrix target values before shell use
+        run: |
+          set -euo pipefail
+          case "${TARGET_TRIPLE}:${TARGET_NAME}:${TARGET_SIGNER_NAME}:${TARGET_EXT}" in
+            x86_64-unknown-linux-gnu:corelink-linux-x86_64:corelink-linux-x86_64:|aarch64-unknown-linux-gnu:corelink-linux-aarch64:corelink-linux-arm64:|x86_64-apple-darwin:corelink-darwin-x86_64:corelink-darwin-x86_64:|aarch64-apple-darwin:corelink-darwin-aarch64:corelink-darwin-arm64:|x86_64-pc-windows-gnu:corelink-windows-x86_64:corelink-windows-x86_64:.exe) ;;
+            *) echo "::error::untrusted matrix target metadata" >&2; exit 1 ;;
+          esac
 
       # zig cross-toolchain: provides libc headers + linker for Linux + Windows.
       # SKIPPED for darwin targets: on a macOS host, native `cargo build`
       # cross-compiles fine using the system linker; using zigcc for
       # darwin-on-darwin triggers an upstream iconv/charset linker bug.
       #
-      # Optimization: skip the action download/install if `zig` is already
-      # on PATH (self-hosted runner host has it via `brew install zig`).
-      - name: Install Zig (Linux + Windows only, if not present)
+      # Do not treat an arbitrary Homebrew Zig as good enough: cargo-zigbuild's
+      # generated wrappers are coupled to Zig's CLI. The failed release chain
+      # had no recorded tool versions, so an incompatible host upgrade was
+      # indistinguishable from a source failure. This pin is checked, not
+      # assumed, before every cross build.
+      - name: Verify pinned Zig (Linux + Windows)
         if: ${{ !contains(matrix.target.triple, 'apple-darwin') }}
         shell: bash
         run: |
-          if command -v zig > /dev/null 2>&1; then
-            echo "  zig found at $(command -v zig) — skipping setup-zig"
-          else
-            echo "  zig not in PATH; falling back to setup-zig"
-            # Fallback action would go here; for now hard-fail with a
-            # clear message so the operator knows to `brew install zig`.
-            echo "ERROR: zig is required but not installed. On the self-hosted runner host, run: brew install zig" >&2
+          set -euo pipefail
+          EXPECTED_ZIG_VERSION=0.16.0
+          command -v zig
+          ACTUAL_ZIG_VERSION="$(zig version)"
+          if [ "$ACTUAL_ZIG_VERSION" != "$EXPECTED_ZIG_VERSION" ]; then
+            echo "::error::release-cli needs Zig ${EXPECTED_ZIG_VERSION}, got ${ACTUAL_ZIG_VERSION}. Install the pinned Zig on the builder before dispatching cli-v*." >&2
             exit 1
           fi
+          zig version
 
       # Prebuilt binary, NOT `cargo install`. The old form compiled cargo-zigbuild
       # from source into the SHARED `~/.cargo` that all 5 self-hosted runners use
@@ -153,22 +167,26 @@ jobs:
         with:
           tool: cargo-zigbuild@0.19.8
 
-      # Exit-126 fix: cargo-zigbuild writes zigcc-*.sh linker wrapper scripts to
-      # ~/Library/Caches/cargo-zigbuild/<version>/. Swatinem/rust-cache restores
-      # these files but macOS tar strips the execute bit on restore. The scripts
-      # are tiny (~100 bytes) so we unconditionally chmod +x rather than trying
-      # to detect whether they were cache-restored vs. freshly created.
-      # Ref: https://github.com/rust-cross/cargo-zigbuild/issues/XXX
-      - name: Fix zigcc linker-script permissions (exit-126 guard)
+      # cargo-zigbuild places linker wrappers in its cache. That cache was
+      # previously shared through $HOME; a non-executable restored wrapper led
+      # to exit 126 and, worse, one matrix leg could reuse another's partial
+      # wrapper. A per-job cache makes wrapper creation atomic from this job's
+      # point of view and removes the chmod-after-the-fact race.
+      - name: Verify cargo-zigbuild and isolate its wrapper cache
         if: ${{ !contains(matrix.target.triple, 'apple-darwin') }}
+        shell: bash
         run: |
-          ZIGBUILD_CACHE="$HOME/Library/Caches/cargo-zigbuild"
-          if [ -d "$ZIGBUILD_CACHE" ]; then
-            find "$ZIGBUILD_CACHE" -name '*.sh' -exec chmod +x {} +
-            echo "Permissions fixed for zigcc wrapper scripts in $ZIGBUILD_CACHE"
-          else
-            echo "No zigcc cache dir yet — scripts will be created fresh by zigbuild"
+          set -euo pipefail
+          EXPECTED_CARGO_ZIGBUILD_VERSION=0.19.8
+          ACTUAL_CARGO_ZIGBUILD_VERSION="$(cargo zigbuild --version | awk '{print $2}')"
+          if [ "$ACTUAL_CARGO_ZIGBUILD_VERSION" != "$EXPECTED_CARGO_ZIGBUILD_VERSION" ]; then
+            echo "::error::release-cli needs cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}, got ${ACTUAL_CARGO_ZIGBUILD_VERSION}." >&2
+            exit 1
           fi
+          ZIGBUILD_CACHE="${RUNNER_TEMP}/cargo-zigbuild/${TARGET_TRIPLE}"
+          mkdir -p "$ZIGBUILD_CACHE"
+          echo "CARGO_ZIGBUILD_CACHE_DIR=${ZIGBUILD_CACHE}" >> "$GITHUB_ENV"
+          cargo zigbuild --version
 
       # Reproducible build: SOURCE_DATE_EPOCH from git commit timestamp.
       - name: Set SOURCE_DATE_EPOCH
@@ -186,7 +204,7 @@ jobs:
         run: |
           rm -rf "$HOME"/.cargo/registry/src/index.crates.io-*/windows_x86_64_gnu-*
           rm -rf "$HOME"/.cargo/registry/src/index.crates.io-*/windows-targets-*
-          cargo fetch --target "${{ matrix.target.triple }}"
+          cargo fetch --target "${TARGET_TRIPLE}"
 
       # Strip absolute dev-host paths from the binary (CTRL-PATH-HYGIENE).
       # Without this, `strings` on the binary exposes
@@ -212,7 +230,7 @@ jobs:
             -p corelink-cli \
             --release \
             --locked \
-            --target ${{ matrix.target.triple }}
+            --target "${TARGET_TRIPLE}"
 
       - name: Build (cargo build, native) — macOS targets
         # The runner host is macOS x86_64. cargo can natively cross-compile
@@ -227,24 +245,53 @@ jobs:
             -p corelink-cli \
             --release \
             --locked \
-            --target ${{ matrix.target.triple }}
+            --target "${TARGET_TRIPLE}"
 
       # Binary stripping is handled by [profile.release] strip = true
       # in the workspace Cargo.toml — no explicit strip step needed.
-      - name: Prepare artifact (rename + SHA-256 checksum)
+      #
+      # Keep the raw binary for the public installer AND publish the archive
+      # consumed by sign-linux/sign-windows/notarize-macos. Previously only the
+      # former existed, so every downstream signer asked the release root for a
+      # .tar.gz/.zip that did not exist.
+      - name: Prepare installer + signer artifacts and SHA-256 checksums
         shell: bash
         run: |
-          SRC="target/${{ matrix.target.triple }}/release/corelink"
-          SRC="${SRC}${{ matrix.target.ext }}"
-          ASSET="${{ matrix.target.name }}${{ matrix.target.ext }}"
+          set -euo pipefail
+          SRC="target/${TARGET_TRIPLE}/release/corelink"
+          SRC="${SRC}${TARGET_EXT}"
+          ASSET="${TARGET_NAME}${TARGET_EXT}"
           mkdir -p out
           cp "$SRC" "out/${ASSET}"
-          # sha256sum (Linux); shasum -a 256 fallback (macOS).
-          if command -v sha256sum > /dev/null 2>&1; then
-            (cd out && sha256sum "${ASSET}" > "${ASSET}.sha256")
+          PACKAGE_DIR="${RUNNER_TEMP}/corelink-package-${TARGET_NAME}"
+          mkdir -p "$PACKAGE_DIR"
+          cp "$SRC" "$PACKAGE_DIR/corelink${TARGET_EXT}"
+          if [ "${TARGET_TRIPLE}" = "x86_64-pc-windows-gnu" ]; then
+            ARCHIVE="${TARGET_SIGNER_NAME}.zip"
+            # The Windows signer extracts and signs exactly
+            # `./assets/extracted/corelink.exe`.  Do not use ditto --keepParent:
+            # it nests the binary below the package directory (and can add
+            # __MACOSX), leaving no binary at that signer path.  zip -j produces
+            # one deterministic member named corelink.exe instead.
+            command -v zip
+            command -v unzip
+            ARCHIVE_PATH="$(pwd)/out/${ARCHIVE}"
+            rm -f "$ARCHIVE_PATH"
+            (cd "$PACKAGE_DIR" && zip -q -X "$ARCHIVE_PATH" corelink.exe)
+            unzip -t "$ARCHIVE_PATH"
+            ARCHIVE_MEMBERS="$(unzip -Z1 "$ARCHIVE_PATH")"
+            if [ "$ARCHIVE_MEMBERS" != "corelink.exe" ]; then
+              echo "::error::Windows signer archive must contain exactly corelink.exe, got: ${ARCHIVE_MEMBERS}" >&2
+              exit 1
+            fi
           else
-            (cd out && shasum -a 256 "${ASSET}" > "${ASSET}.sha256")
+            ARCHIVE="${TARGET_SIGNER_NAME}.tar.gz"
+            tar -czf "out/${ARCHIVE}" -C "$PACKAGE_DIR" "corelink${TARGET_EXT}"
           fi
+          for FILE in "$ASSET" "$ARCHIVE"; do
+            (cd out && shasum -a 256 "$FILE" > "${FILE}.sha256")
+            (cd out && shasum -a 256 -c "${FILE}.sha256")
+          done
           echo "ASSET=${ASSET}" >> "$GITHUB_ENV"
 
       # TODO (v2): cosign keyless signing
@@ -262,7 +309,7 @@ jobs:
           retention-days: 1
 
   # -------------------------------------------------------------------
-  # release — collect artifacts, create GH Release in THIS repo
+  # release — collect artifacts and create the public CLI release
   #
   # ⚠️ STALE COMMENT CORRECTED 2026-08-02. The block here claimed the release
   # had been "switched to publishing in this repo's Releases" and that the
@@ -301,33 +348,71 @@ jobs:
     needs: build
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 15
+    outputs:
+      staging_manifest_sha256: ${{ steps.staging-manifest.outputs.sha256 }}
+    # The source-repo GITHUB_TOKEN cannot publish cross-repo. The only write
+    # credential is injected in the two release steps below as the external,
+    # manually provisioned CORELINK_CLI_RELEASE_TOKEN.
     permissions:
-      contents: write  # default GITHUB_TOKEN writes to this repo's Releases
+      contents: read
 
     steps:
+      - name: Checkout manifest verifier
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify pinned GitHub CLI
+        env:
+          EXPECTED_GH_VERSION: "2.79.0"
+        run: |
+          set -euo pipefail
+          gh --version | head -1 | grep -Fx "gh version ${EXPECTED_GH_VERSION} (2025-09-08)"
+
       - name: Download all build artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           path: dist/
           merge-multiple: true
 
-      - name: Verify artifact count (expect 10 = 5 binaries + 5 checksums)
+      - name: Verify artifact inventory and individual checksums
         shell: bash
         run: |
+          set -euo pipefail
           echo "=== dist/ contents ==="
           find dist/ -maxdepth 1 -type f | sort
-          EXPECTED=10
+          # 5 installer binaries + 5 signer archives, each with its own digest.
+          EXPECTED=20
           ACTUAL=$(find dist/ -maxdepth 1 -type f | wc -l | tr -d ' ')
           if [ "$ACTUAL" -ne "$EXPECTED" ]; then
             echo "ERROR: expected ${EXPECTED} files, got ${ACTUAL}" >&2
             exit 1
           fi
+          for CHECKSUM in dist/*.sha256; do
+            (cd dist && shasum -a 256 -c "$(basename "$CHECKSUM")")
+          done
 
       - name: Build combined checksums.txt
+        shell: bash
         run: |
-          cat dist/*.sha256 > dist/checksums.txt
+          set -euo pipefail
+          LC_ALL=C sort dist/*.sha256 > dist/checksums.txt
           echo "=== checksums.txt ==="
           cat dist/checksums.txt
+
+      - name: Bind staged artifacts to the immutable source manifest
+        id: staging-manifest
+        env:
+          TAG: ${{ github.ref_name }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/cli_release_manifest.py create \
+            --directory dist --output dist/staging-manifest.json \
+            --tag "${TAG}" --source-sha "${SOURCE_SHA}"
+          shasum -a 256 dist/staging-manifest.json | awk '{print $1}' > /tmp/staging-manifest.sha256
+          echo "sha256=$(cat /tmp/staging-manifest.sha256)" >> "${GITHUB_OUTPUT}"
 
       - name: Write release notes
         shell: bash
@@ -361,16 +446,332 @@ jobs:
           echo "Built from \`HumanGuardrail/corelink-server\` tag \`${GITHUB_REF_NAME}\`." \
             >> /tmp/release-notes.md
 
-      - name: Create GitHub Release in this repo
+      - name: Assert external cross-repository release credential
+        env:
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::CORELINK_CLI_RELEASE_TOKEN is required only to publish to HuGR-Labs/corelink-cli; it is intentionally unavailable to build jobs." >&2
+            exit 1
+          fi
+          gh api --method GET repos/HuGR-Labs/corelink-cli >/dev/null
+
+      - name: Create GitHub Release in HuGR-Labs/corelink-cli
         env:
           GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
         run: |
           gh release create "${GITHUB_REF_NAME}" --repo HuGR-Labs/corelink-cli \
             --title "CoreLink CLI ${GITHUB_REF_NAME#cli-}" \
-            --notes-file /tmp/release-notes.md
+            --notes-file /tmp/release-notes.md --draft
 
       - name: Upload binaries + checksums to release
         env:
           GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
         run: |
           gh release upload "${GITHUB_REF_NAME}" dist/* --repo HuGR-Labs/corelink-cli --clobber
+
+      - name: Read back published artifacts and verify release-root digests
+        env:
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLISHED="${RUNNER_TEMP}/corelink-release-readback"
+          mkdir -p "$PUBLISHED"
+          gh release download "${GITHUB_REF_NAME}" \
+            --repo HuGR-Labs/corelink-cli \
+            --dir "$PUBLISHED" \
+            --pattern 'corelink-*' \
+            --pattern 'checksums.txt' \
+            --pattern 'staging-manifest.json' \
+            --clobber
+          ACTUAL=$(find "$PUBLISHED" -maxdepth 1 -type f | wc -l | tr -d ' ')
+          if [ "$ACTUAL" -ne 22 ]; then
+            echo "::error::staging release must expose 20 artifacts, checksums.txt, and staging-manifest.json; got ${ACTUAL}." >&2
+            find "$PUBLISHED" -maxdepth 1 -type f -print | sort >&2
+            exit 1
+          fi
+          (cd "$PUBLISHED" && shasum -a 256 -c checksums.txt)
+          python3 scripts/cli_release_manifest.py verify \
+            --directory "$PUBLISHED" --manifest "$PUBLISHED/staging-manifest.json" \
+            --tag "${GITHUB_REF_NAME}" --source-sha "${GITHUB_SHA}"
+
+  # The release root owns the full serial writer chain. Calling each signer as a
+  # reusable workflow preserves the exact tag as an explicit typed input and
+  # lets GitHub's `needs` semantics stop the next writer on a true failure;
+  # unlike a workflow_run hop, it never rebinds identity to the default branch.
+  sign-linux:
+    needs: release
+    uses: ./.github/workflows/sign-linux.yml
+    with:
+      tag: ${{ github.ref_name }}
+      source_sha: ${{ github.sha }}
+      staging_manifest_sha256: ${{ needs.release.outputs.staging_manifest_sha256 }}
+    secrets:
+      CORELINK_CLI_RELEASE_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PRIVATE_KEY_PASS: ${{ secrets.GPG_PRIVATE_KEY_PASS }}
+      GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+      GPG_KEY_FINGERPRINT: ${{ secrets.GPG_KEY_FINGERPRINT }}
+
+  release-readiness:
+    name: decide signed-release readiness
+    needs: release
+    runs-on: [self-hosted, mac, corelink-builder]
+    outputs:
+      publish: ${{ steps.decision.outputs.publish }}
+    steps:
+      - id: decision
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PRIVATE_KEY_PASS: ${{ secrets.GPG_PRIVATE_KEY_PASS }}
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+          GPG_KEY_FINGERPRINT: ${{ secrets.GPG_KEY_FINGERPRINT }}
+          WINDOWS_CERT: ${{ secrets.WINDOWS_CODE_SIGNING_CERT }}
+          WINDOWS_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_PASSWORD }}
+          WINDOWS_FINGERPRINT: ${{ secrets.WINDOWS_CODE_SIGNING_FINGERPRINT }}
+          WINDOWS_SUBJECT: ${{ secrets.WINDOWS_CODE_SIGNING_SUBJECT }}
+          APPLE_CERT: ${{ secrets.APPLE_DEVELOPER_ID }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_FINGERPRINT: ${{ secrets.APPLE_DEVELOPER_ID_FINGERPRINT }}
+          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARIZATION_API_KEY }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARIZATION_KEY_ID }}
+          APPLE_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARIZATION_ISSUER }}
+        run: |
+          set -euo pipefail
+          if [ -n "${GPG_PRIVATE_KEY}" ] && [ -n "${GPG_PRIVATE_KEY_PASS}" ] && [ -n "${GPG_KEY_ID}" ] && [ -n "${GPG_KEY_FINGERPRINT}" ] && \
+             [ -n "${WINDOWS_CERT}" ] && [ -n "${WINDOWS_PASSWORD}" ] && [ -n "${WINDOWS_FINGERPRINT}" ] && [ -n "${WINDOWS_SUBJECT}" ] && \
+             [ -n "${APPLE_CERT}" ] && [ -n "${APPLE_CERT_PASSWORD}" ] && [ -n "${APPLE_TEAM_ID}" ] && [ -n "${APPLE_FINGERPRINT}" ] && \
+             [ -n "${APPLE_NOTARY_KEY}" ] && [ -n "${APPLE_NOTARY_KEY_ID}" ] && [ -n "${APPLE_NOTARY_ISSUER}" ]; then
+            echo "publish=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "publish=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice::Signing identity is formally deferred; release remains draft and no unsigned asset is public."
+          fi
+
+  sign-windows:
+    needs: [sign-linux, release]
+    uses: ./.github/workflows/sign-windows.yml
+    with:
+      tag: ${{ github.ref_name }}
+      source_sha: ${{ github.sha }}
+      staging_manifest_sha256: ${{ needs.release.outputs.staging_manifest_sha256 }}
+    secrets:
+      CORELINK_CLI_RELEASE_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+      WINDOWS_CODE_SIGNING_CERT: ${{ secrets.WINDOWS_CODE_SIGNING_CERT }}
+      WINDOWS_CODE_SIGNING_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_PASSWORD }}
+      WINDOWS_CODE_SIGNING_FINGERPRINT: ${{ secrets.WINDOWS_CODE_SIGNING_FINGERPRINT }}
+      WINDOWS_CODE_SIGNING_SUBJECT: ${{ secrets.WINDOWS_CODE_SIGNING_SUBJECT }}
+
+  notarize-macos:
+    needs: [sign-windows, release]
+    uses: ./.github/workflows/notarize-macos.yml
+    with:
+      tag: ${{ github.ref_name }}
+      source_sha: ${{ github.sha }}
+      staging_manifest_sha256: ${{ needs.release.outputs.staging_manifest_sha256 }}
+    secrets:
+      CORELINK_CLI_RELEASE_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+      APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
+      APPLE_DEVELOPER_ID_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_NOTARIZATION_API_KEY: ${{ secrets.APPLE_NOTARIZATION_API_KEY }}
+      APPLE_NOTARIZATION_KEY_ID: ${{ secrets.APPLE_NOTARIZATION_KEY_ID }}
+      APPLE_NOTARIZATION_ISSUER: ${{ secrets.APPLE_NOTARIZATION_ISSUER }}
+      APPLE_DEVELOPER_ID_FINGERPRINT: ${{ secrets.APPLE_DEVELOPER_ID_FINGERPRINT }}
+
+  final-manifest:
+    name: bind final signed inventory
+    needs: [notarize-macos, release-readiness, release]
+    if: needs.release-readiness.outputs.publish == 'true'
+    runs-on: [self-hosted, mac, corelink-builder]
+    outputs:
+      sha256: ${{ steps.manifest.outputs.sha256 }}
+    steps:
+      - name: Checkout manifest tool
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify pinned GitHub CLI
+        run: test "$(gh --version | awk 'NR == 1 {print $3}')" = "2.79.0"
+      - name: Bind final signed inventory
+        id: manifest
+        env:
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          SOURCE_SHA: ${{ github.sha }}
+          STAGING_MANIFEST_SHA256: ${{ needs.release.outputs.staging_manifest_sha256 }}
+        run: |
+          set -euo pipefail
+          RELEASE_API="${RUNNER_TEMP}/corelink-final-manifest-release.json"
+          gh api "repos/HuGR-Labs/corelink-cli/releases/tags/${TAG}" > "${RELEASE_API}"
+          mkdir final-assets
+          STAGING_ASSET_COUNT="$(python3 - "${RELEASE_API}" <<'PY'
+          import json, sys
+          release = json.load(open(sys.argv[1], encoding="utf-8"))
+          print(sum(asset.get("name") == "staging-manifest.json" for asset in release.get("assets", [])))
+          PY
+          )"
+          case "${STAGING_ASSET_COUNT}" in
+            0)
+              # A retry after a successful cleanup is safe only when the
+              # authenticated API proves the private input is still absent.
+              gh release download "${TAG}" --repo HuGR-Labs/corelink-cli --dir final-assets \
+                --pattern release-manifest.json --clobber
+              test -f final-assets/release-manifest.json
+              python3 - "final-assets/release-manifest.json" "${STAGING_MANIFEST_SHA256}" <<'PY'
+          import json, sys
+          manifest = json.load(open(sys.argv[1], encoding="utf-8"))
+          if manifest.get("version") != 2 or manifest.get("staging_manifest_sha256") != sys.argv[2]:
+              raise SystemExit("retry manifest is not bound to the staging manifest")
+          PY
+              shasum -a 256 final-assets/release-manifest.json | awk '{print $1}' > manifest.sha256
+              ;;
+            1)
+              gh release download "${TAG}" --repo HuGR-Labs/corelink-cli --dir final-assets \
+                --pattern 'corelink-*' --pattern checksums.txt --pattern staging-manifest.json --clobber
+              test "$(shasum -a 256 final-assets/staging-manifest.json | awk '{print $1}')" = "${STAGING_MANIFEST_SHA256}"
+              python3 scripts/cli_release_manifest.py create --directory final-assets \
+                --output final-assets/release-manifest.json --tag "${TAG}" --source-sha "${SOURCE_SHA}" \
+                --staging-manifest final-assets/staging-manifest.json
+              # The parent staging manifest is consumed into the final manifest's
+              # content-addressed lineage; it is not a final public subject.
+              rm -f final-assets/staging-manifest.json
+              python3 scripts/cli_release_manifest.py verify --directory final-assets \
+                --manifest final-assets/release-manifest.json --tag "${TAG}" --source-sha "${SOURCE_SHA}"
+              shasum -a 256 final-assets/release-manifest.json | awk '{print $1}' > manifest.sha256
+              gh release upload "${TAG}" --repo HuGR-Labs/corelink-cli --clobber final-assets/release-manifest.json
+              ;;
+            *)
+              echo "::error::authenticated release inventory contains ${STAGING_ASSET_COUNT} staging manifests" >&2
+              exit 1
+              ;;
+          esac
+          echo "sha256=$(cat manifest.sha256)" >> "${GITHUB_OUTPUT}"
+
+          # The delete is deliberately driven by the authenticated asset ID,
+          # not a best-effort local filename.  A zero count is an idempotent
+          # retry success; every API error and every duplicate remains fatal.
+          RELEASE_API="${RUNNER_TEMP}/corelink-final-manifest-release-after-upload.json"
+          gh api "repos/HuGR-Labs/corelink-cli/releases/tags/${TAG}" > "${RELEASE_API}"
+          STAGING_ASSET_COUNT="$(python3 - "${RELEASE_API}" <<'PY'
+          import json, sys
+          release = json.load(open(sys.argv[1], encoding="utf-8"))
+          print(sum(asset.get("name") == "staging-manifest.json" for asset in release.get("assets", [])))
+          PY
+          )"
+          case "${STAGING_ASSET_COUNT}" in
+            0) ;;
+            1)
+              STAGING_ASSET_ID="$(python3 - "${RELEASE_API}" <<'PY'
+          import json, sys
+          release = json.load(open(sys.argv[1], encoding="utf-8"))
+          ids = [asset["id"] for asset in release.get("assets", []) if asset.get("name") == "staging-manifest.json"]
+          if len(ids) != 1:
+              raise SystemExit("staging asset inventory changed unexpectedly")
+          print(ids[0])
+          PY
+            )"
+            gh api --method DELETE "repos/HuGR-Labs/corelink-cli/releases/assets/${STAGING_ASSET_ID}"
+              ;;
+            *)
+              echo "::error::authenticated release inventory contains ${STAGING_ASSET_COUNT} staging manifests" >&2
+              exit 1
+              ;;
+          esac
+          STAGING_ASSET_COUNT="$(gh api "repos/HuGR-Labs/corelink-cli/releases/tags/${TAG}" \
+            --jq '[.assets[] | select(.name == "staging-manifest.json")] | length')"
+          test "${STAGING_ASSET_COUNT}" = "0"
+
+  release-slsa3:
+    needs: [final-manifest, release-readiness]
+    if: needs.release-readiness.outputs.publish == 'true'
+    # Called workflows cannot elevate the caller's token permissions. Grant
+    # OIDC only to this provenance call; all other release jobs retain the
+    # workflow-level contents:read default.
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/release-slsa3.yml
+    with:
+      release_tag: ${{ github.ref_name }}
+      source_sha: ${{ github.sha }}
+      manifest_sha256: ${{ needs.final-manifest.outputs.sha256 }}
+    secrets:
+      CORELINK_CLI_RELEASE_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+
+  publish-release:
+    name: publish verified signed release
+    needs: [release-slsa3, release-readiness, final-manifest]
+    if: needs.release-readiness.outputs.publish == 'true'
+    runs-on: [self-hosted, mac, corelink-builder]
+    steps:
+      - name: Checkout release inventory verifier
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify pinned GitHub CLI
+        run: test "$(gh --version | awk 'NR == 1 {print $3}')" = "2.79.0"
+      - name: Install Cosign for final bundle verification
+        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
+        with:
+          cosign-release: 'v2.4.3'
+      - name: Verify complete authenticated inventory before publication
+        env:
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          SOURCE_SHA: ${{ github.sha }}
+          FINAL_MANIFEST_SHA256: ${{ needs.final-manifest.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          API_JSON="${RUNNER_TEMP}/corelink-publish-release.json"
+          PUBLISHED="${RUNNER_TEMP}/corelink-publish-assets"
+          mkdir -p "${PUBLISHED}"
+          gh api "repos/HuGR-Labs/corelink-cli/releases/tags/${TAG}" > "${API_JSON}"
+          gh release download "${TAG}" --repo HuGR-Labs/corelink-cli --dir "${PUBLISHED}" --clobber
+          python3 scripts/verify_cli_release_inventory.py \
+            --api-json "${API_JSON}" --directory "${PUBLISHED}" \
+            --manifest "${PUBLISHED}/release-manifest.json" \
+            --provenance "${PUBLISHED}/provenance.intoto.jsonl" \
+            --tag "${TAG}" --source-sha "${SOURCE_SHA}" \
+            --manifest-sha256 "${FINAL_MANIFEST_SHA256}"
+      - name: Publish only the verified signed release
+        env:
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          SOURCE_SHA: ${{ github.sha }}
+          FINAL_MANIFEST_SHA256: ${{ needs.final-manifest.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          # Re-fetch the complete authenticated inventory and every asset in
+          # this same shell, immediately before the irreversible draft=false
+          # transition. The earlier verification prepares the files; this
+          # second API read + byte download closes the late-reintroduction and
+          # replacement window between workflow steps.
+          API_JSON="${RUNNER_TEMP}/corelink-publish-release-final.json"
+          FINAL_ASSETS="${RUNNER_TEMP}/corelink-publish-assets-final"
+          rm -rf "${FINAL_ASSETS}"
+          mkdir -p "${FINAL_ASSETS}"
+          gh api "repos/HuGR-Labs/corelink-cli/releases/tags/${TAG}" > "${API_JSON}"
+          gh release download "${TAG}" --repo HuGR-Labs/corelink-cli \
+            --dir "${FINAL_ASSETS}" --clobber
+          python3 scripts/verify_cli_release_inventory.py \
+            --api-json "${API_JSON}" \
+            --directory "${FINAL_ASSETS}" \
+            --manifest "${FINAL_ASSETS}/release-manifest.json" \
+            --provenance "${FINAL_ASSETS}/provenance.intoto.jsonl" \
+            --tag "${TAG}" --source-sha "${SOURCE_SHA}" \
+            --manifest-sha256 "${FINAL_MANIFEST_SHA256}"
+          ESCAPED_TAG="$(python3 -c 'import os,re; print(re.escape(os.environ["TAG"]))')"
+          IDENTITY_RE="^https://github\.com/${GITHUB_REPOSITORY}/\.github/workflows/release-slsa3\.yml@refs/tags/${ESCAPED_TAG}$"
+          cosign verify-blob \
+            --bundle "${FINAL_ASSETS}/provenance.intoto.jsonl.bundle" \
+            --certificate-identity-regexp "${IDENTITY_RE}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${FINAL_ASSETS}/provenance.intoto.jsonl"
+          gh release edit "${TAG}" --repo HuGR-Labs/corelink-cli --draft=false

@@ -1,6 +1,6 @@
 # CoreLink CLI — Windows Authenticode signing workflow (WI-S15-006 §6.4).
 #
-# Activates on the same `v*` tag trigger as `release-cli.yml`. After the
+# Activates after the same `cli-v*` tag release as `release-cli.yml`. After the
 # release-cli pipeline produces the unsigned Windows binary
 # (`windows-x86_64`), this workflow:
 #
@@ -31,18 +31,34 @@ concurrency:
   group: "ci-sign-windows"
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       tag:
-        description: "Release tag to Authenticode-sign (e.g. v0.1.0)"
+        description: "Canonical cli-v* release tag to sign"
         required: true
         type: string
-  workflow_run:
-    workflows: ["release-cli"]
-    types: [completed]
+      source_sha:
+        description: "Immutable source commit selected by the release tag"
+        required: true
+        type: string
+      staging_manifest_sha256:
+        description: "Immutable SHA-256 emitted by release-cli before signer access"
+        required: true
+        type: string
+    secrets:
+      CORELINK_CLI_RELEASE_TOKEN:
+        required: false
+      WINDOWS_CODE_SIGNING_CERT:
+        required: false
+      WINDOWS_CODE_SIGNING_PASSWORD:
+        required: false
+      WINDOWS_CODE_SIGNING_FINGERPRINT:
+        required: false
+      WINDOWS_CODE_SIGNING_SUBJECT:
+        required: false
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -66,8 +82,12 @@ jobs:
         id: check
         env:
           WINDOWS_CODE_SIGNING_CERT: ${{ secrets.WINDOWS_CODE_SIGNING_CERT }}
+          WINDOWS_CODE_SIGNING_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_PASSWORD }}
+          WINDOWS_CODE_SIGNING_FINGERPRINT: ${{ secrets.WINDOWS_CODE_SIGNING_FINGERPRINT }}
+          WINDOWS_CODE_SIGNING_SUBJECT: ${{ secrets.WINDOWS_CODE_SIGNING_SUBJECT }}
         run: |
-          if [ -z "${WINDOWS_CODE_SIGNING_CERT}" ]; then
+          if [ -z "${WINDOWS_CODE_SIGNING_CERT}" ] || [ -z "${WINDOWS_CODE_SIGNING_PASSWORD}" ] \
+            || [ -z "${WINDOWS_CODE_SIGNING_FINGERPRINT}" ] || [ -z "${WINDOWS_CODE_SIGNING_SUBJECT}" ]; then
             echo "ready=false" >> "${GITHUB_OUTPUT}"
             echo "::notice ::WINDOWS_CODE_SIGNING_CERT secret not populated — Windows Authenticode signing skipped (DEFERRED per ADR-S15-009; NOT shipped unsigned)."
           else
@@ -77,7 +97,8 @@ jobs:
   sign:
     name: osslsigncode authenticode (windows-x86_64, cross-signed on Linux)
     needs: windows-cert-present
-    if: needs.windows-cert-present.outputs.ready == 'true'
+    if: >-
+      needs.windows-cert-present.outputs.ready == 'true'
     # Runner: `corelink` — see the `windows-cert-present` job above for why the
     # previous `[self-hosted, Linux, X64]` pool does not exist. `corelink` is
     # Ubuntu 24.04 with apt-get + passwordless sudo, exactly what the
@@ -89,45 +110,97 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
+          # Tag refs are fetched by checkout before it removes the source token;
+          # resolving a release identity must not retain that credential.
+          fetch-tags: true
+          persist-credentials: false
 
-      - name: Install osslsigncode + p7zip (self-hosted Linux runner)
+      - name: Verify pinned signing toolchain on the runner image
         shell: bash
+        env:
+          # This is the version exercised against the legacy PFX and DigiCert
+          # RFC-3161 endpoint in infra/ci-runners/README.md. Do not mutate the
+          # runner at signing time: an apt mirror changing under a tag would
+          # make a release non-reproducible.
+          EXPECTED_OSSLSIGNCODE_VERSION: "2.13"
         run: |
-          if ! command -v osslsigncode >/dev/null 2>&1 || ! command -v 7z >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends osslsigncode p7zip-full
-          fi
-          osslsigncode --version | head -1 || true
+          set -euo pipefail
+          command -v osslsigncode
+          command -v 7z
+          osslsigncode --version | head -1 | grep -F "${EXPECTED_OSSLSIGNCODE_VERSION}"
 
       - name: Resolve release tag
         id: tag
         shell: bash
         env:
-          INPUT_TAG: ${{ github.event.inputs.tag }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
-          if [ -n "${INPUT_TAG}" ]; then
-            echo "tag=${INPUT_TAG}" >> "${GITHUB_OUTPUT}"
-          else
-            echo "tag=${{ github.event.workflow_run.head_branch }}" >> "${GITHUB_OUTPUT}"
-          fi
+          set -euo pipefail
+          case "${INPUT_TAG}" in cli-v*) ;; *)
+            echo "::error::expected a cli-v* release tag, got: ${INPUT_TAG}" >&2
+            exit 1
+          esac
+          [[ "${INPUT_TAG}" =~ ^cli-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]
+          git show-ref --verify --quiet "refs/tags/${INPUT_TAG}"
+          ACTUAL_SOURCE_SHA="$(git rev-list -n 1 "${INPUT_TAG}")"
+          EXPECTED_SOURCE_SHA="${INPUT_SOURCE_SHA:-${ACTUAL_SOURCE_SHA}}"
+          test "${EXPECTED_SOURCE_SHA}" = "${ACTUAL_SOURCE_SHA}"
+          TAG="${INPUT_TAG}"
+          echo "source_sha=${ACTUAL_SOURCE_SHA}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+
+      - name: Verify pinned GitHub CLI
+        run: test "$(gh --version | awk 'NR == 1 {print $3}')" = "2.79.0"
 
       - name: Download release asset
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # This source repository's GITHUB_TOKEN cannot read the separate
+          # release root. Restrict the cross-repo PAT to gh steps only.
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
           TAG: ${{ steps.tag.outputs.tag }}
+          SOURCE_SHA: ${{ steps.tag.outputs.source_sha }}
+          STAGING_MANIFEST_SHA256: ${{ inputs.staging_manifest_sha256 }}
           ASSET: corelink-windows-x86_64.zip
+          RAW_ASSET: corelink-windows-x86_64.exe
         run: |
+          set -euo pipefail
           mkdir -p ./assets
-          gh release download "${TAG}" --pattern "${ASSET}" --dir ./assets
+          gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" --pattern "${ASSET}" --dir ./assets
+          gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" --pattern "${RAW_ASSET}" --dir ./assets
+          gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" --pattern staging-manifest.json --dir ./assets --clobber
+          test "$(shasum -a 256 ./assets/staging-manifest.json | awk '{print $1}')" = "${STAGING_MANIFEST_SHA256}"
+          python3 scripts/cli_release_manifest.py verify --directory ./assets \
+            --manifest ./assets/staging-manifest.json --tag "${TAG}" \
+            --source-sha "${SOURCE_SHA}" --asset "${ASSET}"
+          python3 scripts/cli_release_manifest.py verify --directory ./assets \
+            --manifest ./assets/staging-manifest.json --tag "${TAG}" \
+            --source-sha "${SOURCE_SHA}" --asset "${RAW_ASSET}"
+          test -f "./assets/${RAW_ASSET}"
+          python3 - "./assets/${ASSET}" <<'PY'
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as archive:
+              members = archive.infolist()
+          if (len(members) != 1 or members[0].filename != "corelink.exe" or members[0].is_dir()
+                  or ((members[0].external_attr >> 16) & 0o170000) not in (0, 0o100000)):
+              raise SystemExit("unsafe Windows archive inventory")
+          PY
           7z x "./assets/${ASSET}" -o./assets/extracted
+          test -f ./assets/extracted/corelink.exe
           ls -la ./assets/extracted
 
       - name: Decode signing cert
+        id: certificate
         shell: bash
         env:
           WINDOWS_CODE_SIGNING_CERT: ${{ secrets.WINDOWS_CODE_SIGNING_CERT }}
+          WINDOWS_CODE_SIGNING_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_PASSWORD }}
+          WINDOWS_CODE_SIGNING_FINGERPRINT: ${{ secrets.WINDOWS_CODE_SIGNING_FINGERPRINT }}
+          WINDOWS_CODE_SIGNING_SUBJECT: ${{ secrets.WINDOWS_CODE_SIGNING_SUBJECT }}
         run: |
+          set -euo pipefail
           # WINDOWS_CODE_SIGNING_CERT = base64 of a legacy-cipher PKCS#12 (.pfx) —
           # the standard format for CA-issued code-signing certs. osslsigncode reads
           # these directly; verified locally 2026-05-31 (sign + verify + RFC-3161
@@ -136,19 +209,33 @@ jobs:
           # error. If that happens, re-export the cert as legacy and re-base64 it:
           #   openssl pkcs12 -in m.pfx -nodes -provider legacy -provider default \
           #     | openssl pkcs12 -export -legacy -out legacy.pfx
-          echo "${WINDOWS_CODE_SIGNING_CERT}" | base64 --decode > /tmp/cert.pfx
-          echo "CERT_PATH=/tmp/cert.pfx" >> "${GITHUB_ENV}"
+          umask 077
+          CERT_PATH="$(mktemp "${RUNNER_TEMP}/corelink-windows-cert.XXXXXX")"
+          echo "${WINDOWS_CODE_SIGNING_CERT}" | base64 --decode > "${CERT_PATH}"
+          echo "path=${CERT_PATH}" >> "${GITHUB_OUTPUT}"
+          PASSWORD_FILE="$(mktemp "${RUNNER_TEMP}/corelink-windows-sign-pass.XXXXXX")"
+          trap 'rm -f "${PASSWORD_FILE}"' EXIT
+          printf '%s' "${WINDOWS_CODE_SIGNING_PASSWORD}" > "${PASSWORD_FILE}"
+          CERT_FINGERPRINT="$(openssl pkcs12 -in "${CERT_PATH}" -clcerts -nokeys -passin "file:${PASSWORD_FILE}" 2>/dev/null | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':')"
+          CERT_SUBJECT="$(openssl pkcs12 -in "${CERT_PATH}" -clcerts -nokeys -passin "file:${PASSWORD_FILE}" 2>/dev/null | openssl x509 -noout -subject -nameopt RFC2253 | sed 's/^subject=//')"
+          test "${CERT_FINGERPRINT}" = "${WINDOWS_CODE_SIGNING_FINGERPRINT}"
+          test "${CERT_SUBJECT}" = "${WINDOWS_CODE_SIGNING_SUBJECT}"
 
       - name: osslsigncode sign (Authenticode, RFC 3161 timestamp)
         shell: bash
         env:
-          CERT_PATH: ${{ env.CERT_PATH }}
+          CERT_PATH: ${{ steps.certificate.outputs.path }}
           WINDOWS_CODE_SIGNING_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_PASSWORD }}
         run: |
+          set -euo pipefail
+          umask 077
+          PASSWORD_FILE="$(mktemp "${RUNNER_TEMP}/corelink-windows-sign-pass.XXXXXX")"
+          trap 'rm -f "${PASSWORD_FILE}" "${CERT_PATH}"' EXIT
+          printf '%s' "${WINDOWS_CODE_SIGNING_PASSWORD}" > "${PASSWORD_FILE}"
           # signtool /fd sha256 /tr <rfc3161> /td sha256  ->  osslsigncode -h sha256 -ts <rfc3161>
           osslsigncode sign \
             -pkcs12 "${CERT_PATH}" \
-            -pass "${WINDOWS_CODE_SIGNING_PASSWORD}" \
+            -readpass "${PASSWORD_FILE}" \
             -n "CoreLink CLI" \
             -i "https://corelink.io" \
             -ts "http://timestamp.digicert.com" \
@@ -156,6 +243,9 @@ jobs:
             -in "./assets/extracted/corelink.exe" \
             -out "./assets/extracted/corelink-signed.exe"
           mv -f "./assets/extracted/corelink-signed.exe" "./assets/extracted/corelink.exe"
+          # The raw .exe is a public release asset too.  Replace it with the
+          # exact Authenticode-signed bytes; do not leave an unsigned sibling.
+          cp "./assets/extracted/corelink.exe" "./assets/corelink-windows-x86_64.exe"
 
       - name: osslsigncode verify
         shell: bash
@@ -171,16 +261,54 @@ jobs:
           (cd ./assets/extracted && 7z a "../${ASSET}" corelink.exe)
           ls -la ./assets
 
-      - name: Attach signed binary to release
+      - name: Refresh checksums for the signed Windows archive
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
           TAG: ${{ steps.tag.outputs.tag }}
           ASSET: corelink-windows-x86_64.zip
+          RAW_ASSET: corelink-windows-x86_64.exe
         run: |
-          gh release upload "${TAG}" "./assets/${ASSET}" --clobber
+          set -euo pipefail
+          gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" \
+            --pattern 'corelink-*.sha256' --dir ./assets --clobber
+          (cd ./assets && shasum -a 256 "${ASSET}" > "${ASSET}.sha256")
+          (cd ./assets && shasum -a 256 "${RAW_ASSET}" > "${RAW_ASSET}.sha256")
+          (cd ./assets && LC_ALL=C sort corelink-*.sha256 > checksums.txt)
+          (cd ./assets && shasum -a 256 -c "${ASSET}.sha256")
 
-      - name: Wipe cert
+      - name: Attach signed binary and refreshed checksums to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
+          TAG: ${{ steps.tag.outputs.tag }}
+          ASSET: corelink-windows-x86_64.zip
+          RAW_ASSET: corelink-windows-x86_64.exe
+        run: |
+          set -euo pipefail
+          gh release upload "${TAG}" --repo "${RELEASE_REPOSITORY}" --clobber \
+            "./assets/${ASSET}" "./assets/${ASSET}.sha256" \
+            "./assets/${RAW_ASSET}" "./assets/${RAW_ASSET}.sha256" ./assets/checksums.txt
+
+      - name: Read back signer-updated release checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          PUBLISHED="${RUNNER_TEMP}/corelink-sign-windows-readback"
+          mkdir -p "$PUBLISHED"
+          gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" --dir "$PUBLISHED" \
+            --pattern 'corelink-*' --pattern checksums.txt --clobber
+          (cd "$PUBLISHED" && shasum -a 256 -c checksums.txt)
+
+      - name: Wipe certificate material
         if: always()
         shell: bash
-        run: rm -f /tmp/cert.pfx || true
+        run: |
+          set -euo pipefail
+          rm -f "${RUNNER_TEMP}/corelink-windows-cert."* "${RUNNER_TEMP}/corelink-windows-sign-pass."*

@@ -1,17 +1,18 @@
 # CoreLink CLI — macOS notarization workflow (WI-S15-006 §6.2).
 #
-# Activates on the same `v*` tag trigger as `release-cli.yml`. After the
+# Activates after the same `cli-v*` tag release as `release-cli.yml`. After the
 # release-cli pipeline produces unsigned macOS binaries (`darwin-arm64`,
 # `darwin-x86_64`), this workflow:
 #
 #   1. Imports a `Developer ID Application` certificate into a temporary
 #      keychain (cert + private key delivered via the `APPLE_DEVELOPER_ID`
 #      secret — base64-encoded `.p12`; passphrase via
-#      `APPLE_DEVELOPER_ID_PASSWORD`).
+#      `APPLE_DEVELOPER_ID_PASSWORD`, passed to `security` through a private
+#      file/TTY bridge rather than a process argument).
 #   2. Codesigns each binary with `--options runtime --timestamp` and an
 #      entitlements file expressing the hardened runtime baseline.
-#   3. Submits a zipped binary bundle to Apple notarytool with the team-ID +
-#      app-specific password (`APPLE_TEAM_ID`, `APPLE_NOTARIZATION_PASSWORD`).
+#   3. Submits a zipped binary bundle to Apple notarytool using an App Store
+#      Connect API key held in a mode-0600 temporary file (never an argv value).
 #   4. Staples the resulting ticket to the binary so Gatekeeper validates
 #      offline (`xcrun stapler staple`).
 #   5. Uploads the stapled binaries as GitHub Release assets.
@@ -21,8 +22,9 @@
 #   - APPLE_DEVELOPER_ID           — base64-encoded .p12 cert
 #   - APPLE_DEVELOPER_ID_PASSWORD  — passphrase for the .p12
 #   - APPLE_TEAM_ID                — 10-character Team ID
-#   - APPLE_NOTARIZATION_USERNAME  — Apple ID email for notarytool
-#   - APPLE_NOTARIZATION_PASSWORD  — app-specific password
+#   - APPLE_NOTARIZATION_API_KEY   — base64-encoded App Store Connect .p8 key
+#   - APPLE_NOTARIZATION_KEY_ID    — App Store Connect key ID (identifier)
+#   - APPLE_NOTARIZATION_ISSUER    — App Store Connect issuer UUID (identifier)
 #
 # Per WI-S15-006 §6 + Lote 10.15 codex P1: cert acquisition is plan-of-record
 # (ahead of D-day; lead time 1–2 weeks). If the secrets are not yet populated
@@ -35,19 +37,40 @@ concurrency:
   group: "ci-notarize-macos"
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       tag:
-        description: "Release tag to notarize (e.g. v0.1.0)"
+        description: "Canonical cli-v* release tag to notarize"
         required: true
         type: string
-  workflow_run:
-    workflows: ["release-cli"]
-    types: [completed]
+      source_sha:
+        description: "Immutable source commit selected by the release tag"
+        required: true
+        type: string
+      staging_manifest_sha256:
+        description: "Immutable SHA-256 emitted by release-cli before signer access"
+        required: true
+        type: string
+    secrets:
+      CORELINK_CLI_RELEASE_TOKEN:
+        required: false
+      APPLE_DEVELOPER_ID:
+        required: false
+      APPLE_DEVELOPER_ID_PASSWORD:
+        required: false
+      APPLE_TEAM_ID:
+        required: false
+      APPLE_NOTARIZATION_API_KEY:
+        required: false
+      APPLE_NOTARIZATION_KEY_ID:
+        required: false
+      APPLE_NOTARIZATION_ISSUER:
+        required: false
+      APPLE_DEVELOPER_ID_FINGERPRINT:
+        required: false
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -72,8 +95,17 @@ jobs:
         id: check
         env:
           APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
+          APPLE_DEVELOPER_ID_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_DEVELOPER_ID_FINGERPRINT: ${{ secrets.APPLE_DEVELOPER_ID_FINGERPRINT }}
+          APPLE_NOTARIZATION_API_KEY: ${{ secrets.APPLE_NOTARIZATION_API_KEY }}
+          APPLE_NOTARIZATION_KEY_ID: ${{ secrets.APPLE_NOTARIZATION_KEY_ID }}
+          APPLE_NOTARIZATION_ISSUER: ${{ secrets.APPLE_NOTARIZATION_ISSUER }}
         run: |
-          if [ -z "${APPLE_DEVELOPER_ID}" ]; then
+          if [ -z "${APPLE_DEVELOPER_ID}" ] || [ -z "${APPLE_DEVELOPER_ID_PASSWORD}" ] \
+            || [ -z "${APPLE_TEAM_ID}" ] || [ -z "${APPLE_DEVELOPER_ID_FINGERPRINT}" ] \
+            || [ -z "${APPLE_NOTARIZATION_API_KEY}" ] || [ -z "${APPLE_NOTARIZATION_KEY_ID}" ] \
+            || [ -z "${APPLE_NOTARIZATION_ISSUER}" ]; then
             echo "ready=false" >> "${GITHUB_OUTPUT}"
             echo "::notice ::Apple Developer ID cert secret not populated — notarization skipped (cert acquisition in flight; see ADR-S15-009 for Windows-equivalent deferral pattern)."
           else
@@ -83,10 +115,17 @@ jobs:
   notarize:
     name: codesign + notarytool + staple (${{ matrix.asset_suffix }})
     needs: apple-cert-present
-    if: needs.apple-cert-present.outputs.ready == 'true'
+    if: >-
+      needs.apple-cert-present.outputs.ready == 'true'
     runs-on: [self-hosted, mac, corelink-builder]
+    env:
+      # These are deterministic per-run values. Job scope avoids treating any
+      # secret-derived value as a GITHUB_ENV assignment.
+      KEYCHAIN_NAME: corelink-notarize.keychain-db
+      KEYCHAIN_PASSWORD: tmp-${{ github.run_id }}
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - asset_suffix: darwin-arm64
@@ -99,26 +138,66 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
+          # Fetch the immutable tag refs before removing the source token; the
+          # notarization job only needs local read access for tag resolution.
+          fetch-tags: true
+          persist-credentials: false
 
       - name: Resolve release tag
         id: tag
         env:
-          INPUT_TAG: ${{ github.event.inputs.tag }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
-          if [ -n "${INPUT_TAG}" ]; then
-            echo "tag=${INPUT_TAG}" >> "${GITHUB_OUTPUT}"
-          else
-            # workflow_run trigger → resolve tag from upstream run's head.
-            echo "tag=${{ github.event.workflow_run.head_branch }}" >> "${GITHUB_OUTPUT}"
-          fi
+          set -euo pipefail
+          case "${INPUT_TAG}" in cli-v*) ;; *)
+            echo "::error::expected a cli-v* release tag, got: ${INPUT_TAG}" >&2
+            exit 1
+          esac
+          [[ "${INPUT_TAG}" =~ ^cli-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]
+          git show-ref --verify --quiet "refs/tags/${INPUT_TAG}"
+          ACTUAL_SOURCE_SHA="$(git rev-list -n 1 "${INPUT_TAG}")"
+          EXPECTED_SOURCE_SHA="${INPUT_SOURCE_SHA:-${ACTUAL_SOURCE_SHA}}"
+          test "${EXPECTED_SOURCE_SHA}" = "${ACTUAL_SOURCE_SHA}"
+          TAG="${INPUT_TAG}"
+          echo "source_sha=${ACTUAL_SOURCE_SHA}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+
+      - name: Verify pinned GitHub CLI
+        run: test "$(gh --version | awk 'NR == 1 {print $3}')" = "2.79.0"
 
       - name: Download release asset
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The public CLI release is in a different repository. Keep this PAT
+          # scoped to the exact gh read/write steps, never the notarization work.
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
           TAG: ${{ steps.tag.outputs.tag }}
+          SOURCE_SHA: ${{ steps.tag.outputs.source_sha }}
+          STAGING_MANIFEST_SHA256: ${{ inputs.staging_manifest_sha256 }}
           ASSET: corelink-${{ matrix.asset_suffix }}.tar.gz
+          RAW_ASSET: corelink-${{ matrix.asset_suffix }}
         run: |
-          gh release download "${TAG}" --pattern "${ASSET}" --dir ./assets
+          set -euo pipefail
+          mkdir -p ./assets
+          gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" --pattern "${ASSET}" --dir ./assets
+          gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" --pattern "${RAW_ASSET}" --dir ./assets
+          gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" --pattern staging-manifest.json --dir ./assets --clobber
+          test "$(shasum -a 256 ./assets/staging-manifest.json | awk '{print $1}')" = "${STAGING_MANIFEST_SHA256}"
+          python3 scripts/cli_release_manifest.py verify --directory ./assets \
+            --manifest ./assets/staging-manifest.json --tag "${TAG}" \
+            --source-sha "${SOURCE_SHA}" --asset "${ASSET}"
+          python3 scripts/cli_release_manifest.py verify --directory ./assets \
+            --manifest ./assets/staging-manifest.json --tag "${TAG}" \
+            --source-sha "${SOURCE_SHA}" --asset "${RAW_ASSET}"
+          test -f "./assets/${RAW_ASSET}"
+          python3 - "./assets/${ASSET}" <<'PY'
+          import sys, tarfile
+          with tarfile.open(sys.argv[1], "r:gz") as archive:
+              members = archive.getmembers()
+          if len(members) != 1 or members[0].name != "corelink" or not members[0].isfile():
+              raise SystemExit("unsafe macOS archive inventory")
+          PY
           tar -xzf "./assets/${ASSET}" -C ./assets
           ls -la ./assets
 
@@ -126,26 +205,52 @@ jobs:
         env:
           APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
           APPLE_DEVELOPER_ID_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_PASSWORD }}
-          KEYCHAIN_NAME: corelink-notarize.keychain-db
-          KEYCHAIN_PASSWORD: tmp-${{ github.run_id }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_DEVELOPER_ID_FINGERPRINT: ${{ secrets.APPLE_DEVELOPER_ID_FINGERPRINT }}
         run: |
-          # Persist password for later steps.
-          echo "KEYCHAIN_PASSWORD=${KEYCHAIN_PASSWORD}" >> "${GITHUB_ENV}"
-          echo "KEYCHAIN_NAME=${KEYCHAIN_NAME}" >> "${GITHUB_ENV}"
-
-          echo "${APPLE_DEVELOPER_ID}" | base64 --decode > /tmp/cert.p12
+          set -euo pipefail
+          umask 077
+          CERT_PASSWORD_FILE="$(mktemp "${RUNNER_TEMP}/corelink-p12-pass.XXXXXX")"
+          printf '%s' "${APPLE_DEVELOPER_ID_PASSWORD}" > "${CERT_PASSWORD_FILE}"
+          CERT_PATH="$(mktemp "${RUNNER_TEMP}/corelink-apple-cert.XXXXXX")"
+          echo "${APPLE_DEVELOPER_ID}" | base64 --decode > "${CERT_PATH}"
+          # `security import -P` exposes the PKCS#12 password in argv.  Its
+          # interactive prompt is deliberately driven by a private expect
+          # bridge, which receives the password only through a mode-0600 file.
+          # macOS runners provide /usr/bin/expect; fail closed if it is absent.
+          test -x /usr/bin/expect
+          cat > "${RUNNER_TEMP}/corelink-security-import.expect" <<'EXPECT'
+          log_user 0
+          set password_file $env(CERT_PASSWORD_FILE)
+          set fh [open $password_file r]
+          set password [read $fh]
+          close $fh
+          spawn security import $env(CERT_PATH) -k $env(KEYCHAIN_NAME) -T /usr/bin/codesign -T /usr/bin/security
+          expect {
+            -re {Enter Import Password:} { send -- "$password\r"; exp_continue }
+            eof
+          }
+          catch wait result
+          exit [lindex $result 3]
+          EXPECT
           security create-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_NAME}"
           security set-keychain-settings -lut 21600 "${KEYCHAIN_NAME}"
           security unlock-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_NAME}"
-          security import /tmp/cert.p12 \
-            -k "${KEYCHAIN_NAME}" \
-            -P "${APPLE_DEVELOPER_ID_PASSWORD}" \
-            -T /usr/bin/codesign \
-            -T /usr/bin/security
+          CERT_PASSWORD_FILE="${CERT_PASSWORD_FILE}" CERT_PATH="${CERT_PATH}" KEYCHAIN_NAME="${KEYCHAIN_NAME}" \
+            /usr/bin/expect "${RUNNER_TEMP}/corelink-security-import.expect"
           # shellcheck disable=SC2046  # word-splitting on keychain paths is intentional here
           security list-keychains -d user -s "${KEYCHAIN_NAME}" $(security list-keychains -d user | tr -d '"')
           security set-key-partition-list -S apple-tool:,apple: -s -k "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_NAME}"
-          rm -f /tmp/cert.p12
+          IDENTITY_LINE="$(security find-identity -v -p codesigning "${KEYCHAIN_NAME}" | grep "Developer ID Application:.*(${APPLE_TEAM_ID})" | head -1)"
+          test -n "${IDENTITY_LINE}"
+          IDENTITY_FINGERPRINT="$(printf '%s\n' "${IDENTITY_LINE}" | awk '{print $2}')"
+          test "${IDENTITY_FINGERPRINT}" = "${APPLE_DEVELOPER_ID_FINGERPRINT}"
+          IDENTITY="$(printf '%s\n' "${IDENTITY_LINE}" | sed -n 's/.*"\(.*\)".*/\1/p')"
+          test -n "${IDENTITY}"
+          umask 077
+          printf '%s' "${IDENTITY}" > "${RUNNER_TEMP}/corelink-codesign-identity"
+          rm -f "${CERT_PASSWORD_FILE}" "${RUNNER_TEMP}/corelink-security-import.expect"
+          rm -f "${CERT_PATH}"
 
       - name: Write hardened-runtime entitlements
         run: |
@@ -165,8 +270,9 @@ jobs:
         env:
           BINARY: ./assets/${{ matrix.binary_name }}
         run: |
+          IDENTITY="$(cat "${RUNNER_TEMP}/corelink-codesign-identity")"
           codesign \
-            --sign "Developer ID Application" \
+            --sign "${IDENTITY}" \
             --options runtime \
             --timestamp \
             --entitlements ./entitlements.plist \
@@ -176,25 +282,36 @@ jobs:
 
       - name: Submit to Apple notarytool
         env:
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_NOTARIZATION_USERNAME: ${{ secrets.APPLE_NOTARIZATION_USERNAME }}
-          APPLE_NOTARIZATION_PASSWORD: ${{ secrets.APPLE_NOTARIZATION_PASSWORD }}
+          APPLE_NOTARIZATION_API_KEY: ${{ secrets.APPLE_NOTARIZATION_API_KEY }}
+          APPLE_NOTARIZATION_KEY_ID: ${{ secrets.APPLE_NOTARIZATION_KEY_ID }}
+          APPLE_NOTARIZATION_ISSUER: ${{ secrets.APPLE_NOTARIZATION_ISSUER }}
           BINARY: ./assets/${{ matrix.binary_name }}
         run: |
+          set -euo pipefail
+          umask 077
+          API_KEY_FILE="$(mktemp "${RUNNER_TEMP}/corelink-notary-api-key.XXXXXX")"
+          trap 'rm -f "${API_KEY_FILE}" ./submission.zip' EXIT
+          printf '%s' "${APPLE_NOTARIZATION_API_KEY}" | base64 --decode > "${API_KEY_FILE}"
           ditto -c -k --keepParent "${BINARY}" ./submission.zip
           xcrun notarytool submit ./submission.zip \
-            --apple-id "${APPLE_NOTARIZATION_USERNAME}" \
-            --team-id "${APPLE_TEAM_ID}" \
-            --password "${APPLE_NOTARIZATION_PASSWORD}" \
+            --key "${API_KEY_FILE}" \
+            --key-id "${APPLE_NOTARIZATION_KEY_ID}" \
+            --issuer "${APPLE_NOTARIZATION_ISSUER}" \
             --wait
 
       - name: Staple notarization ticket
         env:
           BINARY: ./assets/${{ matrix.binary_name }}
+          RAW_ASSET: corelink-${{ matrix.asset_suffix }}
         run: |
           xcrun stapler staple "${BINARY}"
           xcrun stapler validate "${BINARY}"
-          spctl --assess --type execute --verbose=4 "${BINARY}" || true
+          spctl --assess --type execute --verbose=4 "${BINARY}"
+          # The unpackaged executable is also public.  Copy only after
+          # stapling/assessment so it is byte-identical to the final archive
+          # member, not merely an earlier codesigned version.
+          case "${RAW_ASSET}" in corelink-darwin-arm64|corelink-darwin-x86_64) ;; *) exit 1 ;; esac
+          cp "${BINARY}" "./assets/${RAW_ASSET}"
 
       - name: Re-pack stapled artifact
         env:
@@ -203,15 +320,55 @@ jobs:
         run: |
           tar -czf "./assets/${ASSET}" -C ./assets "${BINARY}"
 
-      - name: Attach stapled binary to release
+      - name: Refresh checksums for the notarized archive
+        shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
           TAG: ${{ steps.tag.outputs.tag }}
           ASSET: corelink-${{ matrix.asset_suffix }}.tar.gz
+          RAW_ASSET: corelink-${{ matrix.asset_suffix }}
         run: |
-          gh release upload "${TAG}" "./assets/${ASSET}" --clobber
+          set -euo pipefail
+          gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" \
+            --pattern 'corelink-*.sha256' --dir ./assets --clobber
+          (cd ./assets && shasum -a 256 "${ASSET}" > "${ASSET}.sha256")
+          (cd ./assets && shasum -a 256 "${RAW_ASSET}" > "${RAW_ASSET}.sha256")
+          (cd ./assets && LC_ALL=C sort corelink-*.sha256 > checksums.txt)
+          (cd ./assets && shasum -a 256 -c "${ASSET}.sha256")
+
+      - name: Attach stapled binary and refreshed checksums to release
+        env:
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
+          TAG: ${{ steps.tag.outputs.tag }}
+          ASSET: corelink-${{ matrix.asset_suffix }}.tar.gz
+          RAW_ASSET: corelink-${{ matrix.asset_suffix }}
+        run: |
+          set -euo pipefail
+          gh release upload "${TAG}" --repo "${RELEASE_REPOSITORY}" --clobber \
+            "./assets/${ASSET}" "./assets/${ASSET}.sha256" \
+            "./assets/${RAW_ASSET}" "./assets/${RAW_ASSET}.sha256" ./assets/checksums.txt
+
+      - name: Read back signer-updated release checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
+          TAG: ${{ steps.tag.outputs.tag }}
+          ASSET_SUFFIX: ${{ matrix.asset_suffix }}
+        run: |
+          set -euo pipefail
+          case "${ASSET_SUFFIX}" in darwin-arm64|darwin-x86_64) ;; *) exit 1 ;; esac
+          PUBLISHED="${RUNNER_TEMP}/corelink-notarize-readback-${ASSET_SUFFIX}"
+          mkdir -p "$PUBLISHED"
+          gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" --dir "$PUBLISHED" \
+            --pattern 'corelink-*' --pattern checksums.txt --clobber
+          (cd "$PUBLISHED" && shasum -a 256 -c checksums.txt)
 
       - name: Clean keychain
         if: always()
         run: |
-          security delete-keychain "${KEYCHAIN_NAME}" || true
+          rm -f "${RUNNER_TEMP}/corelink-codesign-identity"
+          rm -f "${RUNNER_TEMP}/corelink-p12-pass."* "${RUNNER_TEMP}/corelink-security-import.expect" "${RUNNER_TEMP}/corelink-apple-cert."*
+          security delete-keychain "${KEYCHAIN_NAME}"
