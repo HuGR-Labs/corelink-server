@@ -62,7 +62,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: rustfmt-${{ github.ref }}
+  group: rustfmt-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

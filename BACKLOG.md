@@ -10616,13 +10616,13 @@ verify-means: |
 last-verified: 2026-09-04
 ```
 
-### B-150 — a colisão de ref do [B-136]/[B-137] vale para mais 28 workflows que ninguém escopou
+### B-150 — a colisão de ref do [B-136]/[B-137] vale para mais 26 workflows que ninguém escopou
 
-[B-136] cobre `backlog-verify`; [B-137] cobre cinco noturnas. **Seis.** Varrendo os 123
+[B-136] cobre `backlog-verify`; [B-137] cobre cinco noturnas. **Seis.** Varrendo os 124
 workflows com bloco `concurrency` desta árvore com o mesmo predicado — grupo que interpola
 `github.ref`, `cancel-in-progress` ligado, e **dois ou mais** gatilhos que resolvem `github.ref`
 para `refs/heads/main` (`push`, `schedule`, `workflow_dispatch`, `workflow_run`,
-`repository_dispatch`) — saem **34**. Os outros **28** já eram assim antes do #1503; ninguém
+`repository_dispatch`) — saem **32**. Os outros **26** já eram assim antes do #1503; ninguém
 os escopou porque o #1503 tinha um recorte próprio e o recorte virou, sem querer, a definição
 do problema.
 
@@ -10649,45 +10649,13 @@ grupo que interpola `${{ github.workflow }}`, constante disfarçada de expressã
 id: B-150
 repo: corelink-server
 owner: tl
-status: open
-verify: |
-  python3 - <<"PY"
-  import glob, sys, yaml
-  COBERTOS = {"backlog-verify", "byok_kill_switch_drill_weekly", "byok_matrix_weekly",
-              "dr-drill-monthly", "nightly", "perf-nightly"}
-  MAIN = {"push", "schedule", "workflow_dispatch", "workflow_run", "repository_dispatch"}
-  arqs = sorted(glob.glob(".github/workflows/*.yml")) + sorted(glob.glob(".github/workflows/*.yaml"))
-  if len(arqs) < 50:
-      print(f"FALHA: so {len(arqs)} workflows encontrados — instrumento quebrado, nao arvore limpa."); sys.exit(1)
-  com_conc = 0; achados = []; ilegiveis = []
-  for f in arqs:
-      try: d = yaml.safe_load(open(f))
-      except Exception: ilegiveis.append(f.rsplit("/", 1)[-1]); continue
-      if not isinstance(d, dict): continue
-      c = d.get("concurrency")
-      if not isinstance(c, dict): continue
-      com_conc += 1
-      nome = f.rsplit("/", 1)[-1].rsplit(".", 1)[0]
-      if nome in COBERTOS: continue
-      g = str(c.get("group", ""))
-      if "github.ref" not in g: continue
-      if "github.event_name" in g: continue   # o grupo ja separa os eventos: reparado
-      if not c.get("cancel-in-progress"): continue
-      on = d.get(True, d.get("on"))
-      evs = set(on) if isinstance(on, (dict, list)) else {on}
-      if len(MAIN & evs) >= 2: achados.append(nome)
-  if ilegiveis:
-      print(f"FALHA: {len(ilegiveis)} workflow(s) com YAML ilegivel ({', '.join(sorted(ilegiveis)[:5])}) — workflow que nao parseia sai da varredura em SILENCIO, e sabotar exatamente os infratores zeraria a contagem; conserte antes de acreditar neste portao."); sys.exit(1)
-  if com_conc < 20:
-      print(f"FALHA: so {com_conc} workflows com bloco concurrency — o parser nao esta enxergando; instrumento."); sys.exit(1)
-  if not achados:
-      print(f"FALHA: nenhum workflow fora dos {len(COBERTOS)} ja escopados colide (de {com_conc} com concurrency) — feche o item."); sys.exit(1)
-  print(f"aberto: {len(achados)} de {com_conc} workflows com concurrency colidem em refs/heads/main fora do recorte de B-136/B-137: {', '.join(sorted(achados)[:8])}…")
-  PY
+status: done
+verify: "python3 scripts/concurrency_event_collision_scan.py"
 verify-means: |
-  open — existe pelo menos um workflow, **fora** dos seis já escopados por [B-136]/[B-137],
-  com grupo interpolando `github.ref`, cancelamento em voo ligado, e dois ou mais gatilhos
-  que resolvem para `refs/heads/main`.
+  done — `scripts/concurrency_event_collision_scan.py` parseia a estrutura YAML, rejeita
+  YAML ilegível e chaves duplicadas, entende a chave nua `on` (PyYAML 1.1), e identifica
+  somente grupos com `github.ref`, cancelamento ativo em pelo menos dois eventos que
+  resolvem para `refs/heads/main`, e sem `${{ github.event_name }}`.
 
   **Parseia YAML, não grepa.** As três condições vivem em lugares diferentes do arquivo e
   duas delas são estruturais (o conjunto de chaves sob `on:`); um grep responderia sobre
@@ -10695,30 +10663,21 @@ verify-means: |
   YAML transforma a chave nua `on` em booleano `True` — ler só `"on"` devolveria vazio e o
   portão diria "nenhum colide" sobre um repositório inteiro.
 
-  **Anti-vacuidade com falha nomeada em QUATRO pontos:** menos de 50 workflows no diretório;
-  menos de 20 com bloco `concurrency` (o parser deixou de enxergar); a lista de cobertos é
-  uma exclusão explícita, não um filtro silencioso; e **qualquer YAML ilegível reprova alto**.
+  **Anti-vacuidade com falha nomeada:** menos de 50 workflows no diretório; menos de 20 com
+  bloco `concurrency`; a lista de cobertos é explícita; e qualquer YAML ilegível reprova alto.
 
-  O quarto ponto foi acrescentado depois de uma revisão fria **demonstrar** o buraco: com o
-  `except Exception: continue` mudo da primeira versão, sabotar o YAML **exatamente dos 28
-  infratores** fazia o comando imprimir *"FALHA: nenhum workflow fora dos 6 ja escopados
-  colide"* — isto é, o portão anunciava o conserto no momento em que perdeu a visão. Era o
-  caminho que o `verify-means` prometia estar coberto e não estava.
 
-  Nenhum desses estados devolve "aberto".
+  O self-test do instrumento mantém dentes contra YAML corrompido, chaves duplicadas,
+  comentários e remoção do discriminador; nenhum desses estados pode produzir falso verde.
 
-  Fecha por **exaustão**, não por amostra: consertar dez mantém o item aberto com contagem
-  menor. E fecha sozinho se [B-136]/[B-137] forem generalizados para o repositório inteiro,
-  que é o desfecho desejável.
-
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 28 de 123 …"* e
-  exit 0. Numa cópia do repositório com `github.event_name` acrescentado ao grupo dos 28,
-  sai *"FALHA: nenhum workflow fora dos 6 ja escopados colide"* e exit 1.
+  Medido em 2026-09-05: havia 26 colisões reais; `alerts-validate`, `codeql` e `sdks-js`
+  usam uma guarda provadamente falsa nos eventos de `main`. Os 26 grupos receberam o
+  discriminador de evento. Expressões de cancelamento desconhecidas permanecem suspeitas.
 
   O que ele **não** decide: a classe do grupo `${{ github.workflow }}` constante, nomeada no
   [B-137] e ainda sem item — o predicado aqui exige `github.ref`, então aquela é invisível
   para este comando de propósito.
-last-verified: 2026-08-31
+last-verified: 2026-09-05
 ```
 
 ### B-151 — o segundo contrato OpenAPI divergia da canônica, sem portão fechado

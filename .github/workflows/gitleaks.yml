@@ -47,7 +47,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: gitleaks-${{ github.ref }}
+  group: gitleaks-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
