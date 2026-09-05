@@ -188,6 +188,12 @@ jobs:
           echo "${RUNNER_TEMP}/gitleaks-bin" >> "${GITHUB_PATH}"
           "${RUNNER_TEMP}/gitleaks-bin/gitleaks" version
 
+      - name: gitleaks shape regression
+        # Load-bearing cells for the custom 64-hex rule: opaque and suggestive
+        # assignments must fail, while public digest syntax and fixture paths
+        # must pass. This invokes the same checked-in config as the scan below.
+        run: bash scripts/tests/gitleaks-shape-regression.sh
+
       - name: gitleaks detect — PR commit range
         # On a PR we scan ONLY the commits the PR introduces (base..head) so the
         # gate is fast and only blocks on NEW leaks — historical findings are
