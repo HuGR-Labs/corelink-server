@@ -1300,7 +1300,7 @@ owner: tl
 status: done
 verify: "grep -rq 'promtool' .github/workflows/"
 verify-means: |
-  open while no workflow runs promtool over dashboards/alerts/. Closes when the
+  done — the inverted guard confirms promtool validation is wired; it reopens if the
   rules are validated and published, or relabelled non-live with the false gate
   claim removed.
 
@@ -2529,7 +2529,7 @@ owner: tl
 status: done
 verify: manual
 verify-means: |
-  open while neither live Clerk credential is a repo secret, i.e. the browser
+  done — manual re-verification confirms neither live Clerk credential is a repo secret, i.e. the browser
   suite cannot run in CI at all. Check by hand with
   `gh secret list --repo HuGR-Labs/corelink-server | grep CLERK_LIVE`.
   MANUAL on purpose, and the reason is the point: no GitHub Actions token can
@@ -10215,28 +10215,23 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
-### B-146 — `backlog_verify.py` é agnóstico ao `status`: um `done` falso sai CONFIRMED até o mundo mudar
+### B-146 — `backlog_verify.py` rejeita `done` explicitamente aberto: um falso não sai CONFIRMED
 
-A regra que abre este arquivo diz que um item `done` carrega o `verify` **invertido**, e o
-próprio texto chama o `done` com polaridade `open` de *"a forma mais nasty deste arquivo"*
-(achada no B-060, 2026-08-29). É verdade, e é **convenção de autoria — nada a mecaniza.**
+O contrato no início deste arquivo diz que um item `done` carrega o `verify` **invertido**, e
+o próprio texto chama o `done` com polaridade `open` de *"a forma mais nasty deste arquivo"*
+(achada no B-060, 2026-08-29). Antes, isso era só convenção: `check()` (`scripts/backlog_verify.py`)
+rodava o comando e mapeava `exit 0 → CONFIRMED` sem usar o `status` para decidir a polaridade.
 
-`check()` (`scripts/backlog_verify.py:198-220`) lê `item.raw["verify"]`, roda, e mapeia
-`exit 0 → CONFIRMED` / `≠0 → DRIFTED`. O `status` entra em **exatamente um** lugar: a string
-da mensagem de DRIFTED (`f"the item claims status \`{item.raw['status']}\`"`) e a coluna
-impressa. Ele não muda predicado nenhum.
+Agora o schema rejeita o caso mecanicamente reconhecível: um `done` cujo primeiro parágrafo de
+`verify-means` declara explicitamente polaridade `open`/`aberta`. O comando continua sendo
+tratado como caixa-preta — não há predicado geral que descubra polaridade de shell —, e formas
+legadas sem marcador continuam válidas. Assim a forma perigosa que se declara aberta fica
+vermelha **no PR que a escreve**, sem quebrar o legado por exigir uma migração textual global.
 
-Consequência exata, e é mais estreita do que parece: um item marcado `done` cujo `verify`
-ainda mede a **existência do defeito** sai CONFIRMED — o portão concorda com um item que diz
-"pronto" enquanto mede "quebrado". O erro fica invisível **no PR que o escreve** (o trabalho
-ainda não está na árvore) e só aparece como vermelho no merge **seguinte**, cobrando de quem
-não causou. Foi assim no B-060.
-
-**O que este item NÃO decide.** Não existe predicado geral que decida polaridade a partir do
-comando — decidir isso é o problema da parada. O que é mecanizável é mais modesto e vale a
-pena: exigir que um item `done` declare a inversão (um campo, ou uma marca no
-`verify-means`), e reprovar o `done` que não a declare. Escolher entre "campo novo" e "marca
-convencionada" é do implementador; este item não escolhe.
+O `verify` deste item mede os dois lados: sondas de mutação confirmam que `done` explicitamente
+aberto é `BROKEN`, que um `done` legado e um `done` descrito como invertido passam, e que
+`open`/`parked` não são alargados; depois o parser do próprio script lê o `BACKLOG.md` vivo e
+exige pelo menos 100 itens, o próprio B-146 e zero `done` explicitamente abertos.
 
 Relação com [B-143]: lá o portão falha aberto para um **id** malformado; aqui ele falha
 aberto para a **polaridade**. Mesma classe — o portão só verifica o que já entrou na sua
@@ -10246,54 +10241,92 @@ gramática — mecanismos distintos.
 id: B-146
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'set -e
-  s=scripts/backlog_verify.py
-  [ -f "$s" ] || { echo "FALHA: $s sumiu — reavalie o item."; exit 1; }
-  d=$(mktemp -d); trap "rm -rf $d" EXIT
-  hoje=$(date +%Y-%m-%d)
-  cerca=$(printf "\140\140\140")
-  {
-    printf "### B-001 — sonda\n\n"
-    printf "%sbacklog\n" "$cerca"
-    printf "id: B-001\nrepo: corelink-server\nowner: tl\nstatus: done\n"
-    printf "verify: |\n  true\n"
-    printf "verify-means: |\n  polaridade de item ABERTO num item marcado done — a forma que o B-060 produziu\n"
-    printf "last-verified: %s\n" "$hoje"
-    printf "%s\n" "$cerca"
-  } > "$d/sonda.md"
-  out=$(python3 "$s" --file "$d/sonda.md" --format json 2>&1) || true
-  printf "%s" "$out" | grep -q "\"id\": \"B-001\"" || { echo "FALHA: a sonda nao foi parseada pelo script (--file mudou de contrato?) — saida: $(printf "%s" "$out" | tr "\n" " " | cut -c1-160)"; exit 1; }
-  if printf "%s" "$out" | grep -q "CONFIRMED"; then
-    echo "aberto: item status=done com verify de polaridade ABERTA sai CONFIRMED — o script nao le status para decidir nada"
-    exit 0
-  fi
-  echo "FALHA: a sonda done-com-polaridade-aberta NAO saiu CONFIRMED — o script passou a considerar status; feche o item."
-  exit 1'
+  python3 - <<'PY'
+  import datetime, json, os, subprocess, sys, tempfile
+  from pathlib import Path
+
+  S = "scripts/backlog_verify.py"
+  FENCE = chr(96) * 3
+
+  def fail(message):
+      print("FALHA: " + message)
+      raise SystemExit(1)
+
+  if not os.path.isfile(S) or not os.path.isfile("BACKLOG.md"):
+      fail("scripts/backlog_verify.py ou BACKLOG.md sumiu — reavalie o item.")
+
+  def probe(status, means):
+      body = (
+          "### B-001 — sonda\n\n" + FENCE + "backlog\n"
+          + "id: B-001\nrepo: corelink-server\nowner: tl\nstatus: %s\n" % status
+          + 'verify: "true"\nverify-means: %s\nlast-verified: %s\n' % (
+              means, datetime.date.today().isoformat())
+          + FENCE + "\n"
+      )
+      with tempfile.TemporaryDirectory() as directory:
+          path = Path(directory) / "probe.md"
+          path.write_text(body)
+          try:
+              result = subprocess.run(
+                  [sys.executable, S, "--file", str(path), "--format", "json"],
+                  capture_output=True, text=True, timeout=10,
+              )
+          except subprocess.TimeoutExpired:
+              fail("a sonda excedeu 10s — instrumento não está bounded")
+      output = (result.stdout or "") + (result.stderr or "")
+      if '"id": "B-001"' not in output:
+          fail("a sonda não foi parseada (--file mudou de contrato?): " + " ".join(output.split())[:200])
+      try:
+          return json.loads(result.stdout)[0]
+      except (ValueError, IndexError, TypeError) as error:
+          fail("saída JSON inválida da sonda: %s" % error)
+
+  # Mutation controls: a done item must not launder an explicitly open-polarity
+  # verify. Legacy prose and an explicit done declaration remain valid; the
+  # other statuses are negative controls for an accidentally broad rule.
+  if probe("done", "open — still checking the defect")["verdict"] != "BROKEN":
+      fail("REGRESSAO: done explicitamente aberto passou")
+  if probe("done", "legacy verification prose")["verdict"] != "CONFIRMED":
+      fail("done legado sem marcador foi recusado")
+  if probe("done", "done — inverted regression guard")["verdict"] != "CONFIRMED":
+      fail("done com declaração invertida foi recusado")
+  if probe("open", "open — still checking the defect")["verdict"] != "CONFIRMED":
+      fail("open legítimo foi recusado")
+  if probe("parked", "waiting on the owner")["verdict"] != "CONFIRMED":
+      fail("parked legítimo foi recusado")
+
+  sys.path.insert(0, "scripts")
+  import backlog_verify as bv
+  items = bv.parse(Path(bv.BACKLOG_PATH).read_text())
+  if len(items) < 100:
+      fail("o parser viu %d itens no BACKLOG.md — instrumento, não achado" % len(items))
+  if not any(item.raw.get("id") == "B-146" for item in items):
+      fail("o parser não achou o próprio B-146 — instrumento, não achado")
+  violations = [item.id for item in items
+                if item.raw.get("status") == "done"
+                and bv.has_explicit_open_verify_marker(item.raw.get("verify-means"))]
+  if violations:
+      fail("done explicitamente aberto no BACKLOG.md vivo: " + ", ".join(violations))
+  print("done: polaridade status-aware, mutações bounded e ledger vivo (%d itens, 0 violações)" % len(items))
+  PY
 verify-means: |
-  open — o script ainda emite CONFIRMED para um item que se declara `done` carregando um
-  `verify` de polaridade **aberta**.
+  **Polaridade `done` — INVERTIDA.** Sai 0 somente quando o schema recusa `done` explicitamente
+  aberto e o `BACKLOG.md` vivo não contém esse caso; sai 1 se qualquer metade regredir.
 
-  **Controle positivo sobre arquivo sintético, via a interface que o próprio script expõe
-  para isso (`--file`, usada pelo self-test).** Não toca no `BACKLOG.md` real e não depende
-  de nenhum item existente estar num estado específico — o que ele mede é o comportamento do
-  script diante de uma forma que ele deveria recusar.
+  **Compatibilidade deliberada:** o script só rejeita a marca explícita `open`/`aberta` na
+  primeira linha; formas legadas sem marcador e as descrições `done` existentes continuam
+  válidas. Ele não tenta interpretar shell, que seria um predicado indecidível.
 
-  **Anti-vacuidade:** se a sonda não for sequer parseada (o contrato de `--file` mudou), o
-  comando **falha alto** com a saída recortada, em vez de concluir "aberto" a partir de um
-  silêncio. Um portão que confunde "não mediu" com "mediu e achou" é o defeito que este
-  próprio item descreve, e seria vergonhoso reproduzi-lo aqui.
+  **Mutações e controles negativos:** cinco sondas via `--file` provam `done` explicitamente
+  aberto ⇒ `BROKEN`, `done` legado e `done` marcado ⇒ `CONFIRMED`, e `open`/`parked` legítimos
+  continuam passando. Cada subprocesso tem timeout de 10s; sonda não parseada ou JSON inválido
+  falha alto, nunca vira silêncio verde.
 
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: item status=done …
-  sai CONFIRMED"* e exit 0. Numa cópia do repositório com três linhas em `check()` que
-  reprovam `status == "done"` sem inversão declarada, sai *"FALHA: a sonda … NAO saiu
-  CONFIRMED"* e exit 1.
-
-  Fecha quando o script recusar essa forma. O que ele **não** decide: qual mecanismo de
-  declaração (campo próprio ou marca no `verify-means`) — nem tenta, porque decidir
-  polaridade a partir do comando é indecidível e um portão que finja isso seria pior que
-  nenhum.
+  **Ledger truth:** a segunda metade usa `bv.parse` e `bv.has_explicit_open_verify_marker` sobre
+  o `BACKLOG.md` real, exige ≥100 itens e o próprio B-146 antes de acreditar em zero violações.
+  Nenhum comando externo, rede ou suite pesada é necessário.
 last-verified: 2026-08-31
 ```
 
