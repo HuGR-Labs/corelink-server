@@ -21,10 +21,13 @@ The served surface is `crates/`, `worker/src`, and the Worker entrypoints under
 
 The app scan is intentionally structural and closed-world: it examines every
 non-test TypeScript file under `apps/`, rather than an allowlist of today's
-Worker names. A newly added Worker route therefore cannot be hidden by
-forgetting to add its directory to this script. Non-API app paths remain
-outside the OpenAPI contract through the same explicit public-path policy used
-for Rust routes below. `/v1/event` is currently served by
+Worker names. Static exact dispatch is extracted, while every unsupported
+pathname dispatch form (prefix, switch, dynamic template, or unresolved
+constant) is reported as a hard failure for public `/v1` paths. A newly added
+Worker route therefore cannot be hidden by forgetting to add its directory or
+by changing its dispatch spelling. Non-API app paths remain outside the
+OpenAPI contract through the same explicit public-path policy used for Rust
+routes below. `/v1/event` is currently served by
 `apps/analytics-worker/src/index.ts` and is absent from the spec; the ledger
 keeps that finding visible until the contract owner documents or excludes it.
 
@@ -323,8 +326,11 @@ def is_test_path(path: Path) -> bool:
     return (
         "tests" in parts
         or "benches" in parts
+        or "__tests__" in parts
         or path.name.startswith("test_")
         or path.name.startswith("tests")
+        or path.name.endswith(".test.ts")
+        or path.name.endswith(".spec.ts")
         or "_tests" in path.stem
     )
 
@@ -393,13 +399,64 @@ def collect_worker_routes() -> dict[str, set[str]]:
 # ============================================================================
 # Served surface — sibling Workers under apps/
 # ============================================================================
-APP_EXACT = re.compile(
-    r'(?:\burl\s*\.\s*)?pathname\s*===\s*["\'](/[^"\']*)["\']'
+APP_IDENT = r"[A-Za-z_$][A-Za-z0-9_$]*"
+APP_TERM = rf"{APP_IDENT}(?:\s*\.\s*{APP_IDENT})*"
+APP_QUOTED = r'''(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)'''
+APP_COMPARE = re.compile(
+    rf"(?P<left>{APP_TERM})\s*(?P<op>===|==)\s*"
+    rf"(?P<right>{APP_QUOTED}|{APP_IDENT})"
+)
+APP_COMPARE_REVERSED = re.compile(
+    rf"(?P<left>{APP_QUOTED})\s*(?P<op>===|==)\s*"
+    rf"(?P<right>{APP_TERM})"
+)
+APP_COMPARE_REVERSED_TERM = re.compile(
+    rf"(?P<left>(?!pathname\b){APP_IDENT})\s*(?P<op>===|==)\s*"
+    rf"(?P<right>{APP_TERM})"
+)
+APP_STARTS_WITH = re.compile(
+    rf"(?P<term>{APP_TERM})\s*\.\s*startsWith\s*\(\s*"
+    rf"(?P<value>{APP_QUOTED}|{APP_IDENT})"
+)
+APP_SWITCH = re.compile(
+    rf"switch\s*\(\s*(?P<term>{APP_TERM})\s*\)\s*\{{(?P<body>.*?)\}}",
+    re.DOTALL,
+)
+APP_CASE = re.compile(rf"\bcase\s+(?P<value>{APP_QUOTED}|{APP_IDENT})\s*:")
+APP_CONST = re.compile(
+    rf"\b(?:const|let)\s+(?P<name>{APP_IDENT})\s*=\s*(?P<value>{APP_QUOTED})"
+)
+APP_ALIAS = re.compile(
+    rf"\b(?:const|let)\s+(?P<name>{APP_IDENT})\s*=\s*[^;\n]*?"
+    rf"\.\s*pathname\b"
 )
 
 
+def app_comparisons(src: str):
+    """Yield forward and reversed static/path comparisons in source order."""
+    matches = list(APP_COMPARE.finditer(src))
+    matches.extend(APP_COMPARE_REVERSED.finditer(src))
+    matches.extend(APP_COMPARE_REVERSED_TERM.finditer(src))
+    yield from sorted(matches, key=lambda match: match.start())
+
+
+def app_worker_files() -> set[Path]:
+    """Resolve TypeScript Worker entrypoints from each app's wrangler config."""
+    files: set[Path] = set()
+    for config in APPS.glob("*/wrangler*.toml"):
+        try:
+            text = config.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for match in re.finditer(r'^\s*main\s*=\s*["\']([^"\']+)', text, re.MULTILINE):
+            candidate = (config.parent / match.group(1)).resolve()
+            if candidate.suffix == ".ts":
+                files.add(candidate)
+    return files
+
+
 def collect_app_routes() -> dict[str, set[str]]:
-    """Paths selected by exact pathname dispatch in every app TypeScript file.
+    """Paths selected by static exact pathname dispatch in app TypeScript.
 
     App Workers do not use axum's route table. Their public entrypoints route
     on ``url.pathname`` instead, so limiting the walk to ``crates/`` silently
@@ -411,17 +468,187 @@ def collect_app_routes() -> dict[str, set[str]]:
     if not APPS.is_dir():
         return routes
     for file in sorted(APPS.rglob("*.ts")):
-        if is_test_path(file) or "playwright" in file.parts:
+        if is_test_path(file) or "playwright" in file.parts or "e2e" in file.parts:
             continue
         try:
-            src = strip_line_comments(file.read_text(encoding="utf-8", errors="replace"))
+            raw = file.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        for match in APP_EXACT.finditer(src):
-            value = match.group(1).rstrip("/") or "/"
+        if "pathname" not in raw:
+            continue
+        src = strip_ts_comments(raw)
+        constants = app_string_constants(src)
+        aliases = {m.group("name") for m in APP_ALIAS.finditer(src)}
+        for match in app_comparisons(src):
+            left, right = match.group("left"), match.group("right")
+            if not (is_app_path_term(left, aliases) or is_app_path_term(right, aliases)):
+                continue
+            value = app_static_value(right, constants)
+            if value is None:
+                value = app_static_value(left, constants)
+            if value is None or not value.startswith("/"):
+                continue
+            value = value.rstrip("/") or "/"
             line = src.count("\n", 0, match.start()) + 1
             routes.setdefault(value, set()).add(f"{file.relative_to(REPO)}:{line}")
     return routes
+
+
+def strip_ts_comments(src: str) -> str:
+    """Blank JS/TS line and block comments without shifting source offsets."""
+    out: list[str] = []
+    i = 0
+    n = len(src)
+    quote: str | None = None
+    while i < n:
+        c = src[i]
+        if quote:
+            out.append(c)
+            if c == "\\" and i + 1 < n:
+                out.append(src[i + 1])
+                i += 2
+                continue
+            if c == quote:
+                quote = None
+            i += 1
+            continue
+        if c in "\"'`":
+            quote = c
+            out.append(c)
+            i += 1
+            continue
+        if c == "/" and i + 1 < n and src[i + 1] == "/":
+            j = src.find("\n", i)
+            j = n if j == -1 else j
+            out.extend(" " * (j - i))
+            i = j
+            continue
+        if c == "/" and i + 1 < n and src[i + 1] == "*":
+            j = src.find("*/", i + 2)
+            j = n if j == -1 else j + 2
+            chunk = src[i:j]
+            out.extend("\n" if ch == "\n" else " " for ch in chunk)
+            i = j
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def app_string_constants(src: str) -> dict[str, str]:
+    constants: dict[str, str] = {}
+    for match in APP_CONST.finditer(src):
+        value = app_unquote(match.group("value"))
+        if value is not None:
+            constants[match.group("name")] = value
+    return constants
+
+
+def app_unquote(token: str) -> str | None:
+    if len(token) < 2 or token[0] not in "\"'`" or token[-1] != token[0]:
+        return None
+    value = token[1:-1]
+    if token[0] == "`" and "${" in value:
+        return None
+    if "\\" in value:
+        # Route literals in this repo are plain ASCII. Refuse escaped strings
+        # rather than turning a partially decoded value into false coverage.
+        return None
+    return value
+
+
+def app_static_value(token: str, constants: dict[str, str]) -> str | None:
+    if token.startswith(("\"", "'", "`")):
+        plain = app_unquote(token)
+        if plain is not None:
+            return plain
+        if token.startswith("`") and token.endswith("`"):
+            value = token[1:-1]
+            names = re.findall(r"\$\{(" + APP_IDENT + r")\}", value)
+            if names and all(name in constants for name in names):
+                return re.sub(
+                    r"\$\{(" + APP_IDENT + r")\}",
+                    lambda match: constants[match.group(1)],
+                    value,
+                )
+        return None
+    return constants.get(token)
+
+
+def is_app_path_term(term: str, aliases: set[str]) -> bool:
+    term = term.replace(" ", "")
+    return term == "pathname" or term.endswith(".pathname") or term in aliases
+
+
+def collect_app_unsupported() -> list[str]:
+    """Return source locations for app pathname dispatches we cannot model.
+
+    This is deliberately fail-closed for public API paths: an app Worker may
+    use a prefix, switch arm, dynamic template, or unresolved route constant,
+    but the parity gate must stop until that form is modeled or explicitly
+    reviewed. Non-public literals are retained in the census for diagnostics
+    but do not fail the contract.
+    """
+    findings: list[str] = []
+    if not APPS.is_dir():
+        return findings
+    worker_files = app_worker_files()
+    for file in sorted(APPS.rglob("*.ts")):
+        if is_test_path(file) or "playwright" in file.parts or "e2e" in file.parts:
+            continue
+        try:
+            raw = file.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if "pathname" not in raw:
+            continue
+        src = strip_ts_comments(raw)
+        constants = app_string_constants(src)
+        aliases = {m.group("name") for m in APP_ALIAS.finditer(src)}
+
+        def record(match: re.Match[str], kind: str, value: str | None) -> None:
+            public = is_public(value) if value is not None else file.resolve() in worker_files
+            if public:
+                line = src.count("\n", 0, match.start()) + 1
+                where = f"{file.relative_to(REPO)}:{line}"
+                shown = value or "<unresolved>"
+                findings.append(f"{where}: unsupported app pathname {kind} {shown}")
+
+        for match in app_comparisons(src):
+            left, right = match.group("left"), match.group("right")
+            if not (is_app_path_term(left, aliases) or is_app_path_term(right, aliases)):
+                continue
+            value = app_static_value(right, constants)
+            if value is None:
+                value = app_static_value(left, constants)
+            token = right if is_app_path_term(left, aliases) else left
+            if value is None and (
+                file.resolve() in worker_files
+                or token.startswith("`")
+                or token.upper().endswith(("PATH", "ROUTE"))
+            ):
+                record(match, "comparison", None)
+            elif (
+                value is not None
+                and value.startswith("/v1")
+                and app_static_value(token, constants) is None
+            ):
+                record(match, "dynamic comparison", value)
+
+        for match in APP_STARTS_WITH.finditer(src):
+            if not is_app_path_term(match.group("term"), aliases):
+                continue
+            value = app_static_value(match.group("value"), constants)
+            record(match, "startsWith", value if value and value.startswith("/") else None)
+
+        for switch in APP_SWITCH.finditer(src):
+            if not is_app_path_term(switch.group("term"), aliases):
+                continue
+            for case in APP_CASE.finditer(switch.group("body")):
+                value = app_static_value(case.group("value"), constants)
+                if value is None or value.startswith("/v1"):
+                    record(case, "switch", value)
+    return sorted(set(findings))
 
 
 # ==========================================================================
@@ -505,13 +732,14 @@ SELF_TEST_CASES = [
 ]
 
 
-def self_test(documented, rust_routes, worker_routes, app_routes=None) -> int:
+def self_test(documented, rust_routes, worker_routes, app_routes=None, app_unsupported=None) -> int:
     """Prove each extractor can SEE before any of its silences is believed.
 
     "found nothing" and "my command broke" are indistinguishable without this.
     """
     failures = []
     app_routes = app_routes or {}
+    app_unsupported = app_unsupported or []
 
     def check(label, ok, detail):
         status = "ok  " if ok else "FAIL"
@@ -593,6 +821,32 @@ def self_test(documented, rust_routes, worker_routes, app_routes=None) -> int:
         any(path == "/v1/event" for path, _ in missing_doc),
         "/v1/event is reported as an undocumented app route",
     )
+    check(
+        "apps unsupported pathname census is empty",
+        not app_unsupported,
+        "; ".join(app_unsupported[:3]) or "all app dispatch forms are modeled",
+    )
+    # Mutation controls exercise the forms that previously went invisible:
+    # reversed equality, template interpolation, prefix dispatch, and switch
+    # cases. The production census above then turns any newly introduced public
+    # form into a hard failure instead of trusting this synthetic control.
+    reversed_mutation = APP_COMPARE_REVERSED.search('"/v1/b130-reversed" === url.pathname')
+    constant_reverse = APP_COMPARE_REVERSED_TERM.search("ROUTE === url.pathname")
+    dynamic_mutation = APP_COMPARE.search('url.pathname === `/v1/b130/${id}`')
+    prefix_mutation = APP_STARTS_WITH.search('url.pathname.startsWith("/v1/b130/")')
+    switch_mutation = APP_SWITCH.search(
+        'switch (url.pathname) { case "/v1/b130-switch": return response; }'
+    )
+    check("mutation — reversed pathname equality visible", reversed_mutation is not None, "reversed form")
+    check("mutation — reversed constant equality visible", constant_reverse is not None, "constant reversed form")
+    check("mutation — dynamic template reaches census", dynamic_mutation is not None, "template form")
+    check("mutation — startsWith reaches census", prefix_mutation is not None, "prefix form")
+    check("mutation — switch pathname reaches census", switch_mutation is not None, "switch form")
+    check(
+        "test fixtures excluded from app production scan",
+        is_test_path(Path("apps/example/src/__tests__/route.test.ts")),
+        ".test.ts and __tests__ are excluded",
+    )
 
     if failures:
         print(f"\nself-test FAILED ({len(failures)}): {', '.join(failures)}")
@@ -643,16 +897,22 @@ def main() -> int:
     rust_routes = collect_rust_routes()
     worker_routes = collect_worker_routes()
     app_routes = collect_app_routes()
+    app_unsupported = collect_app_unsupported()
 
     if args.self_test:
         print("validate_api_surface self-test (positive controls)\n")
-        return self_test(documented, rust_routes, worker_routes, app_routes)
+        return self_test(documented, rust_routes, worker_routes, app_routes, app_unsupported)
 
     # The self-test is a PRECONDITION of every run, not an opt-in mode: an
     # extractor that has gone blind reports a clean surface, and a clean
     # report from a blind instrument is the failure mode this gate exists to
     # prevent.
-    if self_test(documented, rust_routes, worker_routes, app_routes) != 0:
+    if self_test(documented, rust_routes, worker_routes, app_routes, app_unsupported) != 0:
+        return 2
+    if app_unsupported:
+        print("FAIL: unsupported public app pathname dispatch (fail-closed census).")
+        for finding in app_unsupported:
+            print(f"  - {finding}")
         return 2
     print()
 

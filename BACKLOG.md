@@ -8802,14 +8802,19 @@ verify: |
   python3 "$s" >/dev/null || { echo "FALHA: ledger nao cobre o inventario atual."; exit 1; }
   echo "done: apps/** e rotas publicas entram no comparador, strict acusa as rotas, ledger fecha"'
 verify-means: |
-  done — a raiz `apps/**`, o extrator `url.pathname`, o filtro da lane, o self-test positivo
-  e o ledger são todos verificáveis. `--strict` acusa `/v1/event` e `/v1/digest/preview`
-  nominalmente e o modo normal só fica verde porque ambos estão explicitamente ledgerizados.
+  done — a raiz `apps/**`, o extrator de dispatch estático, o filtro da lane, o self-test
+  positivo, o census fail-closed de formas não suportadas e o ledger são verificáveis.
+  `--strict` acusa `/v1/event` e `/v1/digest/preview` nominalmente e o modo normal só fica
+  verde porque ambos estão explicitamente ledgerizados. Testes (`.test.ts`, `.spec.ts`,
+  `__tests__`, `tests`, `e2e` e `playwright`) não entram no inventário de produção.
 
-  Uma mutação controlável (adicionar `if (url.pathname === "/v1/b130-mutation")` a um
-  Worker de produção) faz `--strict` acusar `MISSING_DOC ... /v1/b130-mutation` e faz o
-  modo normal reprovar como divergência não declarada. Remover a literal conhecida faz o
-  self-test reprovar, evitando green por extração cega.
+  Mutações controláveis cobrem igualdade reversa, constantes, templates dinâmicos,
+  `startsWith` e `switch`; os quatro últimos chegam ao census e reprovam o portão se
+  apontarem para superfície pública sem modelagem explícita. Adicionar
+  `if (url.pathname === "/v1/b130-mutation")` a um Worker de produção faz `--strict`
+  acusar `MISSING_DOC ... /v1/b130-mutation` e faz o modo normal reprovar como divergência
+  não declarada. Remover a literal conhecida faz o self-test reprovar, evitando green por
+  extração cega.
 
   O status não afirma que as rotas foram documentadas: essa decisão contratual permanece
   pendente e está visível no ledger B-130, que impede um falso fechamento.
