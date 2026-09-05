@@ -6432,7 +6432,7 @@ a toma sobre um texto pronto.
 
 **Fechado em 2026-09-05.** A superfície publicada agora descreve REAPI v2 sobre
 HTTP/REST, preserva comparações e negativas legítimas e não apresenta Buck2 como cliente
-suportado. O censo determinístico cobre 949 arquivos e classifica 417 ocorrências; o
+suportado. O censo determinístico cobre 929 arquivos e classifica 417 ocorrências; o
 manifesto fixa conteúdo e população, e mutações exercitam promessas em Markdown, HTML,
 metadados, entidades, soft-wraps e todos os locales publicados.
 
