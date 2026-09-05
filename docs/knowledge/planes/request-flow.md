@@ -206,6 +206,7 @@ semantics in the container.
    (`crates/corelink-container/src/storage/r2_s3.rs:1704-1709`).
 
 # Invariants
+- Durable tenant-attributed audit writes resolve the row's region from an existing `tenant.primary_region`; migration 0107 rejects a missing tenant instead of allowing an unevaluable residency row, while the explicit `_public` namespace remains pinned to `wnam` (`crates/corelink-container/src/storage/d1_audit_sink.rs:143-174`).
 - The DO is always selected from the PAT-resolved tenant, never the URL tenant — isolation is
   established at this hop (`worker/src/index.ts:3986-3988`).
 - The request that crosses Worker→DO carries only Worker-established trust headers; client values are

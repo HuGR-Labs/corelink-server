@@ -154,8 +154,12 @@ def assess(counts: Counts, *, environment: str) -> tuple[str, str]:
         raise Indeterminate("orphan rows escaped the unevaluable bucket")
     if counts.erased_orphan_rows > counts.orphan_rows:
         raise Indeterminate("erased-orphan rows exceed the orphan denominator")
+    if counts.erased_orphan_tenants > counts.orphan_tenants:
+        raise Indeterminate("erased-orphan tenants exceed the orphan denominator")
     if counts.unexplained_orphan_rows != counts.orphan_rows - counts.erased_orphan_rows:
         raise Indeterminate("unexplained-orphan count does not conserve the orphan denominator")
+    if counts.unexplained_orphan_tenants != counts.orphan_tenants - counts.erased_orphan_tenants:
+        raise Indeterminate("unexplained-orphan tenant count does not conserve the orphan denominator")
     if counts.weur_orphan_rows > counts.weur_audit_rows:
         raise Indeterminate("weur orphan count exceeds the weur audit population")
     if environment == "production" and counts.erasure_log_rows == 0:

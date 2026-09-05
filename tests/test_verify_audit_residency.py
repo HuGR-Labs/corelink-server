@@ -186,6 +186,7 @@ def test_incomplete_result_set_evidence_exits_2(
         response(total_rows=0, satisfied_rows=0),
         response(total_rows=10, satisfied_rows=9),
         response(orphan_rows=1),
+        response(orphan_tenants=1),
         response(erasure_log_rows=0),
         {"success": True, "result": [{"success": True, "results": [{}]}]},
     ],

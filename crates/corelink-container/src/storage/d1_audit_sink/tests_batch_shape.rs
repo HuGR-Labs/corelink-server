@@ -55,6 +55,14 @@ fn batch_element_and_single_row_params_agree_field_for_field() {
     assert_eq!(element["at"], params[6], "enqueued_at");
     assert_eq!(params.len(), 7, "single-row shape unchanged");
     assert!(sql_one.contains("INSERT OR IGNORE"), "{sql_one}");
+    assert!(
+        sql_one.contains("(SELECT primary_region FROM tenant WHERE tenant_id = ?2)"),
+        "single-row writes must resolve residency from an existing tenant: {sql_one}"
+    );
+    assert!(
+        !sql_one.contains("COALESCE"),
+        "single-row writes must not disguise a missing tenant as wnam: {sql_one}"
+    );
 }
 
 #[test]
@@ -87,8 +95,14 @@ fn batch_insert_binds_exactly_one_param_carrying_every_row() {
     assert!(sql.contains("INSERT OR IGNORE INTO audit_outbox"), "{sql}");
     assert!(sql.contains("FROM json_each(?1)"), "{sql}");
     assert!(
-        sql.contains("COALESCE((SELECT primary_region FROM tenant WHERE tenant_id = json_extract(value,'$.tenant')), 'wnam')"),
-        "the migration-0023 residency trigger MUST be satisfied per row: {sql}"
+        sql.contains(
+            "(SELECT primary_region FROM tenant WHERE tenant_id = json_extract(value,'$.tenant'))"
+        ),
+        "the migration-0107 residency guard must resolve every row from an existing tenant: {sql}"
+    );
+    assert!(
+        !sql.contains("COALESCE"),
+        "batch writes must not disguise a missing tenant as wnam: {sql}"
     );
     // Every `$.…` path the SQL reads must exist on every element.
     for element in arr {
