@@ -78,8 +78,10 @@ We say this without irony: EngFlow is excellent at what it does.
    AOSP, or any of the long-tail REAPI-adjacent build systems with
    non-trivial integration debt, EngFlow has probably already done the
    integration work. CoreLink supports the REAPI v2 contract — that
-   covers Bazel, Buck2, Pants, Please, BuildStream, recc — but we do
-   not advertise Goma or Soong integration depth.
+   covers any REAPI v2 client that speaks HTTP/REST, Bazel included.
+   It does not cover gRPC-only clients (Buck2, Pants, NativeLink):
+   CoreLink serves no gRPC ingress. We also do not advertise Goma or
+   Soong integration depth.
 
 2. **Remote execution as a first-class product.** EngFlow runs Linux,
    macOS, **and** Windows executor fleets. The autoscaler is a real

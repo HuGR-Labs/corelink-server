@@ -11,8 +11,9 @@ import CodeBlock from "@theme/CodeBlock";
 
 CoreLink exposes two API surfaces:
 
-- **REAPI v2 (gRPC)** — high-throughput CAS / AC / ByteStream / Capabilities.
-  Documented under [REAPI v2 reference](../reapi/index.mdx).
+- **REAPI v2 over HTTP/REST** — cache-oriented CAS / Action Cache routes on
+  the REST bridge. CoreLink exposes no gRPC ingress, so gRPC-only REAPI
+  clients such as Buck2 and Pants cannot connect.
 - **REST (this page)** — customer onboarding, privacy (DSR + DPA),
   Stripe billing webhook, admin operations, and ops endpoints.
 

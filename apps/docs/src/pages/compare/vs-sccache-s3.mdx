@@ -18,7 +18,7 @@ last_updated: "2026-05-27"
 
 sccache and CoreLink solve overlapping pain — slow Rust and C++ builds on CI — from different starting points. sccache is Mozilla's open-source compiler-caching daemon: it intercepts compiler invocations, caches the object files, and, when you add an S3 (or GCS or Azure Blob) bucket, becomes a shared distributed cache for your entire build fleet. It is free software, widely used, and does exactly what it advertises.
 
-CoreLink is a REAPI v2 polyglot cache with a managed data plane on Cloudflare edge. It covers Bazel, Buck2, Pants, and Please via the standard Remote Execution API, plus first-class adapters for Cargo, npm, pip, brew, and OCI on the same content-addressable store. BYOK across four KMS providers and an RFC 6962 Merkle-chained audit log are at the Enterprise tier.
+CoreLink is a REAPI v2 polyglot cache with a managed data plane on Cloudflare edge. It covers Bazel and any other REAPI client that speaks HTTP/REST via the standard Remote Execution API — but not gRPC-only clients such as Buck2 and Pants, because CoreLink serves no gRPC ingress — plus first-class adapters for Cargo, npm, pip, brew, and OCI on the same content-addressable store. BYOK across four KMS providers and an RFC 6962 Merkle-chained audit log are at the Enterprise tier.
 
 This page lays out the honest tradeoffs. It is dated **2026-05-27**; S3 pricing changes — verify the AWS pricing calculator before quoting in a buying decision.
 
@@ -29,7 +29,8 @@ This page lays out the honest tradeoffs. It is dated **2026-05-27**; S3 pricing 
   comfortable managing S3 bucket policies and sccache daemon rollouts,
   and the budget is zero for tooling.
 - **Pick CoreLink if** you want a managed cache that speaks REAPI v2
-  (Bazel, Buck2, Pants, Please) in addition to Cargo, has BYOK on four
+  over HTTP/REST (Bazel; not gRPC-only clients such as Buck2 or
+  Pants) in addition to Cargo, has BYOK on four
   KMS providers, ships a tamper-evident audit chain, and does not
   require you to operate S3 bucket policies, sccache daemon configs, or
   GHA cache invalidation scripts.
@@ -44,7 +45,8 @@ This page lays out the honest tradeoffs. It is dated **2026-05-27**; S3 pricing 
 | Pricing (smallest paid tier) | $15/mo flat (Solo); Pro $50/mo (500 GB / 20M req included) | $0 software + AWS S3 storage (~$0.023/GB/mo) + transfer (~$0.09/GB egress beyond free tier) |
 | Free tier | 10 GB cache, 500k req/mo, 1 workspace, no card | Unlimited (your bucket cost) |
 | Wire protocol | REAPI v2 (CAS + ActionCache + Capabilities) | Compiler-interception protocol (non-REAPI) |
-| Bazel / Buck2 / Pants / Please | Yes (any REAPI client) | No — compiler cache only; Bazel integration is manual and partial |
+| Bazel (REAPI over HTTP/REST) | Yes | No — compiler cache only; Bazel integration is manual and partial |
+| Buck2 / Pants (REAPI over gRPC only) | **No** — CoreLink serves no gRPC ingress | No |
 | Cargo / Rust compiler caching | Yes — Cargo adapter + REAPI CAS | Yes — native: intercepts `rustc` invocations via `RUSTC_WRAPPER` |
 | C++ / Clang / GCC caching | Via REAPI (bazel-built C++ works; standalone `clang` or `gcc` requires REAPI client) | Yes — native: GCC, Clang, MSVC all supported |
 | Swift caching | Via REAPI (if build tool is REAPI-capable) | Yes — native Swift support in sccache >= 0.4 |
@@ -80,7 +82,7 @@ sccache is a mature, well-understood tool. These are its genuine strengths.
 3. **Wide compiler support.** sccache handles Rust (`rustc`), GCC, Clang,
    MSVC, NVCC (CUDA), and Swift out of the box with one daemon config.
    CoreLink reaches bare-compiler workloads only when they run behind a
-   REAPI-capable build tool (Bazel or Buck2); standalone `clang` / `gcc`
+   REAPI-over-HTTP build tool (Bazel); standalone `clang` / `gcc`
    invocations are not intercepted today.
 
 4. **Cloud-agnostic storage backend.** sccache supports S3, GCS, Azure
@@ -109,12 +111,14 @@ These are deliberate design decisions; they are also the places where sccache + 
    to manage, no lifecycle rule to tune, no IAM role to debug when your
    fresh CI runner lacks S3 permissions.
 
-2. **REAPI v2: Bazel, Buck2, Pants, Please, BuildStream, recc — all
-   work natively.** sccache is not a REAPI cache. If your monorepo uses
-   Bazel or Buck2, you cannot point `--remote_cache` at sccache; you
-   need a separate REAPI backend. That means two cache tiers: sccache
-   for your raw `cargo build` paths and a REAPI cache (bazel-remote,
-   EngFlow, BuildBuddy, or CoreLink) for your Bazel / Buck2 paths. A
+2. **REAPI v2 over HTTP/REST works natively; gRPC-only clients do
+   not.** sccache is not a REAPI cache. If your monorepo uses Bazel or
+   Buck2, you cannot point `--remote_cache` at sccache; you need a
+   separate REAPI backend. That means two cache tiers: sccache for your
+   raw `cargo build` paths and a REAPI cache (bazel-remote, EngFlow,
+   BuildBuddy, or CoreLink) for your REAPI paths. CoreLink covers the
+   Bazel path; for Buck2 you need a gRPC-capable backend, because
+   CoreLink serves no gRPC ingress. A
    CoreLink workspace handles both on the same content-addressable store,
    one bill, one audit log, one BYOK envelope.
 
@@ -226,7 +230,7 @@ apples-to-apples.
 
 Three questions resolve most buying conversations:
 
-1. **Do you need REAPI (Bazel, Buck2, Pants, Please)?**
+1. **Do you need REAPI (Bazel, or a gRPC-only client such as Buck2 or Pants)?**
    - YES → sccache alone is not sufficient; you need a REAPI cache
      layer. Use CoreLink, bazel-remote, or another REAPI backend.
      If you also have Rust/C++, CoreLink handles both on one workspace.

@@ -69,9 +69,9 @@ where things split.
 
 ```text
                            ┌──────────────────────────────┐
-   bazel / buck2 / pants   │   Cloudflare edge (TB-0/1)   │
+   Bazel / sccache / HTTP  │   Cloudflare edge (TB-0/1)   │
    sccache / nix / cargo   │   TLS 1.2+, WAF, rate-limit  │
-   ───── REAPI v2 gRPC ───▶│                              │
+   ── REAPI v2 HTTP/REST ──▶│                              │
                            └────────────┬─────────────────┘
                                         │
                        service binding (never public Internet)
@@ -86,7 +86,7 @@ where things split.
                         ▼                      ▼
    ┌───────────────────────────────┐   ┌──────────────────────┐
    │  Data plane — Cloudflare      │   │  Durable Objects     │
-   │  Container, Rust REAPI gRPC   │   │  rate buckets,       │
+   │  Container, Rust REAPI HTTP   │   │  rate buckets,       │
    │  chunk · hash · dedup · R2 IO │   │  config singletons,  │
    └──┬─────────────┬───────────┬──┘   │  replica fan-out     │
       │             │           │      └──────────────────────┘
@@ -609,8 +609,8 @@ would love to be wrong about any of them.
   WASM build only via canonical vectors. We want full property
   coverage on WASM and we do not yet have the harness for it.
 
-- **The OpenAPI vs REAPI gRPC split.** Our wire surface is REAPI v2
-  gRPC; our admin and metrics surface is REST/OpenAPI. The two are
+- **The OpenAPI vs REAPI-over-HTTP split.** Our wire surface is REAPI v2
+  over HTTP/REST; our admin and metrics surface is REST/OpenAPI. The two are
   not the same shape and we have lived with a small reconciliation
   layer between them for the entire life of the project. We have
   considered going all-REAPI or all-REST and neither works; the

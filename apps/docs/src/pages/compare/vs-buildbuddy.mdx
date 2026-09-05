@@ -46,7 +46,8 @@ prices and quotas change — verify before quoting in a buying decision.
 | Pricing (smallest paid tier) | $15/mo flat (Solo); Pro $50/mo (500 GB / 20M req included) | "Team" pay-as-you-go: per-GB cache transfer over 100 GB; Mac cores $45/core; price not posted on page |
 | Free tier limits | 10 GB cache, 500k req/mo, 1 workspace, no card | 100 GB cache transfer/mo, 80 Linux cores RBE, 10 users |
 | Wire protocol | REAPI v2 (CAS + ActionCache + Capabilities) | REAPI v2 (CAS + AC + Capabilities + Execution) |
-| Bazel / Buck2 / Pants / Please | Yes (any REAPI client) | Yes (Bazel-first; Buck2 via REAPI; build-events UI is Bazel-native) |
+| Bazel (REAPI over HTTP/REST) | Yes | Yes (Bazel-first; build-events UI is Bazel-native) |
+| Buck2 / Pants (REAPI over gRPC only) | **No** — CoreLink serves no gRPC ingress | Yes |
 | Multi-language cache (Cargo / npm / pip / OCI) | Yes — first-class adapters | No — Bazel-shaped surface only |
 | Remote execution (RBE) | No (cache-only by design) | Yes (Linux + macOS; 80 Linux cores free, 800 paid) |
 | BYOK across 4 KMS (AWS / GCP / Azure / Vault) | Yes — customer-held KEK, 5-min DEK cap, Ed25519 erasure attest | Not advertised at the cache tier |

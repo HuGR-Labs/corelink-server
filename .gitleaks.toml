@@ -160,6 +160,12 @@ description = "`*_key` identifiers that are dedup/partition keys, not credential
 regexTarget = "match"
 regexes = ['''(?i)\b(?:dedup|dedupe|idempotency|partition|shard|sort)[_.-]?key\b''']
 
+[[rules.allowlists]]
+description = "B-094's generated file-content digests: only published-path JSON keys with an exact SHA-256 value in the exact manifest file."
+paths = ['''^scripts/b094_published_inventory\.json$''']
+regexTarget = "line"
+regexes = ['''^\s*"(?:README\.md|(?:apps/docs|marketing|legal)/[^"]+\.(?:md|mdx|html|htm))": "[a-f0-9]{64}",?$''']
+
 [allowlist]
 description = "CoreLink deliberate test/example/fixture/spec values — NOT operational secrets"
 # Pure example / fixture / spec / doc-REFERENCE / test trees. These legitimately

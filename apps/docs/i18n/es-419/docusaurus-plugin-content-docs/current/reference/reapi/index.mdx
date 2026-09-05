@@ -15,7 +15,7 @@ description: Remote Execution API v2 — services, messages, and per-service cod
 # REAPI v2 reference
 
 CoreLink implementa un subconjunto compatible a nivel de wire, con
-alcance por tenant, de [`bazelbuild/remote-apis @ v2.12.0`](https://github.com/bazelbuild/remote-apis/tree/v2.12.0). Bazel 6+, Buck2, y cualquier otro cliente REAPI v2 se conectan **sin cambios de código** — solo difieren el endpoint de la caché y el PAT.
+alcance por tenant, de [`bazelbuild/remote-apis @ v2.12.0`](https://github.com/bazelbuild/remote-apis/tree/v2.12.0). Bazel 6+, y cualquier otro cliente REAPI v2 que hable **HTTP/REST**, se conectan **sin cambios de código** — solo difieren el endpoint de la caché y el PAT. CoreLink no expone ingress gRPC, por lo que los clientes REAPI que solo hablan gRPC (Buck2, Pants, NativeLink) no pueden conectarse.
 
 ## Authentication
 

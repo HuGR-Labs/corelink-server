@@ -167,7 +167,9 @@ Subject: [CoreLink] {{ticket_id}} — Thanks for the question
 
 Hi {{customer_first_name}},
 
-Thanks for reaching out. {{Optional: one-line direct answer if obvious;
+Thanks for reaching out. {{Optional: one-line direct answer if obvious.
+Never send a support claim without checking the current product status; an
+instructional counterexample follows:
 e.g., "Yes, we support Pants 2.20 — see docs link below."}}
 
 {{tenant_context — paraphrase the question + any caveats}}

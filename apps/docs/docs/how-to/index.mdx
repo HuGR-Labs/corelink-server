@@ -20,13 +20,13 @@ CoreLink without a lighthouse-style white-glove engagement:
 
 - **[Migration overview](./migrate/index.mdx)** — decision matrix
   + shared pre-flight checklist.
-- **[From a Bazel remote cache](./migrate/from-bazel-remote-cache.mdx)** — `bazel-remote`, BuildBuddy, Buck2, Pants.
+- **[From a Bazel remote cache](./migrate/from-bazel-remote-cache.mdx)** — `bazel-remote`, BuildBuddy. (Buck2 and Pants are gRPC-only REAPI clients and cannot cut over — the guide says so.)
 - **[From S3-only artifact storage](./migrate/from-s3-only.mdx)** — plain object stores; build artifacts, ML datasets, release binaries.
 - **[From a Docker registry](./migrate/from-docker-registry.mdx)** — self-hosted Harbor / Quay / `registry:2`.
 
 :::note WI-S18-002..004 will populate the rest of this section
-Planned how-tos: BYOK configuration, Bazel CI integration, Buck2 CI
-integration, DSR export, multi-region failover drill. Added by
+Planned how-tos: BYOK configuration, Bazel CI integration, DSR
+export, multi-region failover drill. Added by
 subsequent S-18 work items.
 :::
 
@@ -35,8 +35,6 @@ subsequent S-18 work items.
 - **Configure BYOK (bring your own key)** — bind your KMS key to a
   tenant.
 - **Integrate CoreLink with Bazel remote cache** — `.bazelrc`
-  + auth.
-- **Integrate CoreLink with Buck2 remote cache** — `.buckconfig`
   + auth.
 - **Request a DSR export and verify it** — for LGPD / GDPR data subject
   requests.

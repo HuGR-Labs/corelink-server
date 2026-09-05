@@ -15,11 +15,11 @@ description: CoreLink es un caché multiinquilino direccionable por contenido pa
 
 CoreLink es un **caché direccionable por contenido** alojado y multiinquilino para artefactos de compilación. Almacena cualquier blob exactamente una vez por su digest SHA-256 y lo sirve desde el borde de Cloudflare más cercano a cada cliente.
 
-Las herramientas de compilación que admiten la [Remote Execution API (REAPI)](https://github.com/bazelbuild/remote-apis) — Bazel, Buck2, NativeLink y otras — pueden apuntar directamente a CoreLink sin cambios de código. Turborepo se conecta mediante una sola variable de entorno. Los clientes HTTP sin procesar usan los endpoints REST.
+Las herramientas de compilación que hablan la [Remote Execution API (REAPI)](https://github.com/bazelbuild/remote-apis) **sobre HTTP/REST** — Bazel y otros clientes REAPI capaces de REST — pueden apuntar directamente a CoreLink sin cambios de código. CoreLink no expone ingress gRPC, por lo que los clientes REAPI que solo hablan gRPC (Buck2, NativeLink) no pueden conectarse hoy. Turborepo se conecta mediante una sola variable de entorno. Los clientes HTTP sin procesar usan los endpoints REST.
 
 ## Para quién es
 
-- **Equipos que ejecutan Bazel o Buck2** que quieren un caché remoto administrado sin operar buckets de S3, Redis ni `bazel-remote` por su cuenta.
+- **Equipos que ejecutan Bazel** que quieren un caché remoto administrado sin operar buckets de S3, Redis ni `bazel-remote` por su cuenta.
 - **Monorepos de Turborepo** que quieren un caché remoto personalizado fuera de la oferta alojada de Vercel.
 - **Equipos de ingeniería de plataforma** que quieren aislamiento de inquilinos, registros de auditoría y cifrado BYOK en un solo servicio.
 
