@@ -19,7 +19,7 @@ private indexes and does not accept `twine upload`.
 ## Prerequisites
 
 - `pip` (or a compatible client) installed.
-- A CoreLink PAT (`corelink_pat_...`).
+- A CoreLink PAT (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB`).
 - Your tenant UUID.
 
 ## Configure
@@ -31,7 +31,7 @@ embedded — in `pip.conf` (`~/.config/pip/pip.conf` on Linux,
 
 ```ini
 [global]
-index-url = https://hugr:corelink_pat_XXXXXXXXXXXX@corelink-api.humangr.com/pip/<your-tenant-id>/simple/
+index-url = https://hugr:corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB@corelink-api.humangr.com/pip/<your-tenant-id>/simple/
 ```
 
 Then install as normal:
@@ -66,7 +66,7 @@ pip is resolving through the mirror.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `401 Unauthorized` | Username is not `hugr`, or the password is not a `corelink_pat_...` PAT | Use `hugr` as the username and your PAT as the password |
+| `401 Unauthorized` | Username is not `hugr`, or the password is not a `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB` PAT | Use `hugr` as the username and your PAT as the password |
 | `Could not find a version` | Project not yet cached and upstream unreachable | Retry; CoreLink fetches from PyPI on the first request |
 | Hash mismatch on a wheel | Upstream artifact changed | CoreLink verifies the `#sha256=` fragment and fails closed on mismatch |
 

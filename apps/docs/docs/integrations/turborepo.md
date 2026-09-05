@@ -30,7 +30,7 @@ security boundary and does not appear in the base URL.
 
 ```bash
 export TURBO_API="https://corelink-api.humangr.com"
-export TURBO_TOKEN="corelink_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+export TURBO_TOKEN="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB"
 ```
 
 Then run Turborepo normally (pass a `--team` label so Turborepo enables remote

@@ -11658,7 +11658,7 @@ testável; escolher é de quem escreve a doc.
 id: B-162
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
   python3 - <<"PY"
   import glob, pathlib, re, sys
@@ -11681,15 +11681,22 @@ verify: |
   if not achados:
       print("FALHA: a varredura nao achou NENHUM literal com forma de PAT em apps/docs/docs — instrumento quebrado, nao doc limpa."); sys.exit(1)
   def canon(t):
-      return len(t) in (95, 96) and t.split("_")[1] in ("pat", "ci", "ro") and t.count(".") == 2
+      parts = t.split("_")
+      if len(parts) != 3 or parts[0] != "corelink" or parts[1] not in ("pat", "ci", "ro"):
+          return False
+      expected_len = 96 if parts[1] == "pat" else 95
+      return len(t) == expected_len and t.count(".") == 2
   bons = [t for t in achados if canon(t)]
-  if bons:
-      print(f"FALHA: {len(bons)} de {len(achados)} literais publicados JA tem a forma canonica — o reparo comecou; reavalie e feche quando todos tiverem."); sys.exit(1)
-  print(f"aberto: {len(achados)} literais com forma de PAT publicados em apps/docs/docs, ZERO canonicos (envelope: 95/96 chars, env em pat|ci|ro, 2 pontos)")
+  if len(bons) != len(achados):
+      print(f"FALHA: {len(achados) - len(bons)} de {len(achados)} literais publicados nao satisfazem o envelope canonico"); sys.exit(1)
+  canonical = "corelink_pat_0123456789ABCDEF." + "A" * 43 + "." + "B" * 22
+  if canon(canonical[:-1]):
+      print("FALHA: mutacao truncada ainda foi aceita como canonica"); sys.exit(1)
+  print(f"fechado: {len(achados)} literais publicados satisfazem o envelope canonico; mutacao truncada rejeitada")
   PY
 verify-means: |
-  open — nenhum dos literais com forma de PAT publicados na documentação satisfaz o envelope
-  que `parse_plaintext` exige.
+  done — todos os literais publicados com forma de PAT satisfazem o envelope que
+  `parse_plaintext` exige, e a mutacao truncada e rejeitada.
 
   **O envelope é LIDO do código, não constante no portão.** O comando extrai `ENV_LITERALS`
   de `format.rs` e **falha alto** se ele deixar de ser `pat|ci|ro` — se a forma canônica
@@ -11700,13 +11707,10 @@ verify-means: |
   declarado instrumento quebrado, não documentação consertada. Sem essa guarda, renomear o
   diretório de docs faria o item se declarar resolvido.
 
-  **Fecha por exaustão, não por amostra:** o primeiro literal canônico publicado já faz o
-  comando parar e pedir reavaliação, porque a partir dali a alegação "nenhum" deixou de valer
-  e o item precisa ser reescrito para "quantos ainda faltam".
+  **Fecha por exaustão, não por amostra:** todos os literais sao verificados, e o controle
+  positivo truncado prova que o oraculo nao aceita apenas o prefixo.
 
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 9 literais … ZERO
-  canonicos"* e exit 0. Numa cópia com um literal de 96 chars (`corelink_pat_` + 3 segmentos)
-  numa página, sai *"FALHA: 1 de 10 literais publicados JA tem a forma canonica"* e exit 1.
+  **Medido pelos dois lados:** a arvore atual sai `fechado`; a mutacao truncada sai `FALHA`.
 
   **O que ele NÃO mede:** a ausência de oráculo no servidor (401 idêntico para cinco causas).
   Isso exige um PAT real e cinco requisições a produção — depende de [B-160]. Está no corpo
