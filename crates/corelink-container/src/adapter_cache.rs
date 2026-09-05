@@ -302,9 +302,21 @@ impl MoatCache {
             namespace,
             unix_ms_now(),
         );
-        let result = tokio::task::spawn_blocking(move || handler.read(req))
-            .await
-            .map_err(|e| MoatError::Backend(format!("cas read join: {e}")))?;
+        // `spawn_blocking` runs the sync CAS adapter on a different Tokio task,
+        // so the request task-local ledger is not ambient there. Carry the
+        // request handle explicitly; `PhaseScope`'s shared window coalescer
+        // merges the nested Store scope when `MoatCache::get` is already
+        // timing the whole operation, while still recording it standalone.
+        let ledger = crate::origin_timing::current_ledger();
+        let result = tokio::task::spawn_blocking(move || {
+            let _scope = crate::origin_timing::PhaseScope::with_handle(
+                ledger,
+                crate::origin_timing::Phase::Store,
+            );
+            handler.read(req)
+        })
+        .await
+        .map_err(|e| MoatError::Backend(format!("cas read join: {e}")))?;
         match result {
             Ok(resp) => {
                 // Defense-in-depth integrity check on the READ path. The write
@@ -386,9 +398,20 @@ impl MoatCache {
             unix_ms_now(),
         )
         .with_storage_quota_bytes(storage_quota_bytes);
-        let result = tokio::task::spawn_blocking(move || handler.write(req))
-            .await
-            .map_err(|e| MoatError::Backend(format!("cas write join: {e}")))?;
+        // See `get_untimed`: this explicit handle is the bridge across the
+        // blocking task boundary. The outer `timed(Store, put_untimed(..))`
+        // owns the whole request window; the inner handler scope is coalesced
+        // into it and cannot inflate `ostore`.
+        let ledger = crate::origin_timing::current_ledger();
+        let result = tokio::task::spawn_blocking(move || {
+            let _scope = crate::origin_timing::PhaseScope::with_handle(
+                ledger,
+                crate::origin_timing::Phase::Store,
+            );
+            handler.write(req)
+        })
+        .await
+        .map_err(|e| MoatError::Backend(format!("cas write join: {e}")))?;
         result.map_err(|e| MoatError::Backend(format!("cas write: {e:?}")))?;
         self.map
             .put(namespace, url_hash, &content_hash, content_len)
@@ -493,32 +516,15 @@ mod tests {
         )
     }
 
-    /// **`Phase::Store` is recorded exactly ONCE on the `MoatCache::put` path,
-    /// and the reason is subtle enough to pin with a test.**
+    /// **`Phase::Store` is recorded exactly ONCE on the `MoatCache::put` path.**
     ///
     /// `MoatCache::put` wraps the whole write in `timed(Phase::Store, ..)`
     /// (`Self::put`), and the production CAS handler `R2CasHandler::write`
     /// (`storage/r2_s3.rs`) enters `Phase::Store` AGAIN around its R2 calls.
-    /// `PhaseScope` has no depth tracking — `enter` stamps an `Instant` and
-    /// `drop` adds the elapsed span unconditionally — so on its face that
-    /// nesting should double-count the R2 window.
-    ///
-    /// It does not, and the reason is `spawn_blocking`. `put_untimed` hands the
-    /// handler to `tokio::task::spawn_blocking`, which runs it on a DIFFERENT
-    /// task, and the ledger is a task-local. The inner `PhaseScope::enter`
-    /// therefore finds no ambient ledger and records nothing; the outer `timed`
-    /// accounts the whole window, once. (`r2_s3.rs` reaches its R2 calls through
-    /// `block_in_place` 49 times against `spawn_blocking` once — `block_in_place`
-    /// stays on the same task, so on the NATIVE plane, where there is no outer
-    /// `timed`, those scopes do record.)
-    ///
-    /// This test was written to prove the opposite — that B-107's 654 ms
-    /// `ostore` was inflated by a double count — and it disproved that. The
-    /// measurement stands. It is kept, inverted, because the property it now
-    /// pins is load-bearing and fragile in BOTH directions: swap
-    /// `spawn_blocking` for `block_in_place` and the R2 window is counted twice;
-    /// drop the outer `timed` and it is counted zero times and falls into
-    /// `oother`.
+    /// The handler runs under `spawn_blocking`, so it receives the request
+    /// ledger through an explicit handle rather than an ambient task-local.
+    /// shared phase-window accounting coalesces that inner scope; the outer
+    /// scope accounts the complete operation once.
     #[tokio::test]
     async fn put_records_the_store_phase_exactly_once() {
         use corelink_handler_cas::{CasReadResponse, CasWriteResponse};

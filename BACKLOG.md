@@ -8207,24 +8207,24 @@ verify: |
   sb=$(grep -c "spawn_blocking" "$a" | tr -d " ")
   [ "$sb" -gt 0 ] || { echo "FALHA: nao ha mais spawn_blocking no adapter_cache — reavalie."; exit 1; }
   handle=$(grep -c "with_handle\|current_ledger" "$a" | tr -d " ")
-  [ "$handle" = 0 ] || { echo "FALHA: o adapter_cache ja captura handle de ledger — feche ou reescreva o item."; exit 1; }
-  echo "aberto: $sb sitio(s) de spawn_blocking no adapter_cache e ZERO captura de handle"'
+  [ "$handle" -gt 0 ] || { echo "FALHA: o adapter_cache perdeu a ponte de ledger — reabra a peca 1."; exit 1; }
+  grep -q "depth" crates/corelink-container/src/origin_timing.rs || { echo "FALHA: PhaseScope sem controle de profundidade — reabra a peca 2."; exit 1; }
+  echo "aberto: $sb sitio(s) de spawn_blocking, ponte de ledger e controle de profundidade presentes; remedição de baseline ainda manual"'
 verify-means: |
-  open — o `adapter_cache` ainda entrega trabalho a `spawn_blocking` sem capturar handle do
-  ledger, logo qualquer fase alcancada la dentro registra zero.
+  open — o predicado agora confirma a peca 1 (as duas regiões `spawn_blocking` carregam
+  handle) e a presença estrutural da peca 2 (controle de profundidade), mas não fecha o item.
+  A mensagem deixa explícito que a peca 3 continua manual: a medição não pode ser fabricada
+  por um teste local nem comparada com um servidor que ainda não recebeu este binário.
 
-  Vira DRIFTED quando o `adapter_cache` passar a capturar handle, que e a peca 1.
-
-  **O que este comando NAO decide, e admito, porque e a maior parte do item:** as pecas 2 e
-  3. Ele nao ve se o `PhaseScope` ganhou controle de profundidade, e nao ve se as linhas de
-  base foram remedidas. Um `verify` que fechasse so na peca 1 seria exatamente o portao
-  dominado que o criterio de aceitacao proibe — e eu prefiro dizer isso a fabricar um
-  comando que parece decidir tres coisas.
+  **O que este comando NÃO decide:** se o `PhaseScope` suprime corretamente cada reentrada
+  em uma janela real, nem se as linhas de base de [B-102] e [B-107] foram refeitas. O teste
+  adversarial `nested_reentry_of_the_same_phase_records_once` e a prova de integração do
+  `MoatCache::put` cobrem a primeira propriedade; a produção com versão registrada cobre a
+  segunda. Um `verify` que fechasse qualquer dessas duas partes seria um portão dominado.
 
   Quem fechar deve provar as tres a mao: (1) uma fase sob `spawn_blocking` aparecendo no
   header; (2) um teste que aninhe a MESMA fase na MESMA task e mostre `Sigma(fases) <=
-  total` — hoje `origin_timing::nested_reentry_of_the_same_phase_double_counts` fixa o
-  comportamento oposto e teria de ser invertido, o que e o sinal de que a peca 2 entrou;
+  total` — `origin_timing::nested_reentry_of_the_same_phase_records_once` fixa a propriedade;
   (3) linhas de base novas para [B-102] e [B-107], com a versao de producao registrada.
 
   Nota de ordem: [B-107] esta BLOQUEADO por este item e nao deve receber otimizacao antes

@@ -66,9 +66,11 @@
 //!
 //! ## Concurrent native-plane list seam — the ONE place two phases now overlap
 //!
-//! Every phase above is entered and exited on the SAME task, one at a time —
-//! the regions are sequential, so summing their accumulated microseconds is a
-//! true partition of the request and can never double-count a millisecond.
+//! Distinct phases on a production path are entered and exited one at a time;
+//! their regions are sequential, so summing their accumulated microseconds is
+//! a true partition of the request and can never double-count a millisecond.
+//! When a same-phase region crosses a task boundary, the shared ledger
+//! coalesces nested and overlapping scopes into one wall-clock window.
 //! `R2CasHandler::list` / `R2AcHandler::list` (`storage/r2_s3.rs`) are the ONE
 //! exception: the mandatory `ListAttempted` durable-audit write and the R2
 //! `ListObjectsV2` call now run CONCURRENTLY, `tokio::join!`ed under a single
@@ -173,11 +175,12 @@
 //! # Overhead
 //!
 //! Per request: one `Arc` allocation, one task-local scope, two `Instant::now()`
-//! calls in the layer plus two per instrumented phase, three relaxed atomic
-//! adds, and one header format (~50 bytes). Tens of nanoseconds each — call it a
-//! low single-digit microsecond against a phase measured in hundreds of
-//! milliseconds, i.e. under 0.001 %. Nothing here does I/O, allocates per phase,
-//! or takes a lock.
+//! calls in the layer plus one short mutex-protected window transition per
+//! phase, three relaxed atomic adds, and one header format (~50 bytes). The
+//! lock is held only while changing a phase's active-window counter; it never
+//! spans I/O. This is the necessary cost of making nested and genuinely
+//! concurrent scopes report the union of wall windows rather than either
+//! double-counting or dropping a sibling's time.
 //!
 //! # Recording is best-effort by construction
 //!
@@ -187,8 +190,11 @@
 //! path here at all.
 
 use std::future::Future;
+#[cfg(test)]
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Instant;
 
 use axum::extract::Request;
@@ -237,6 +243,21 @@ pub enum Phase {
     Audit,
 }
 
+#[cfg(test)]
+impl Phase {
+    const fn index(self) -> usize {
+        match self {
+            Self::Pat => 0,
+            Self::Quota => 1,
+            Self::Store => 2,
+            Self::Argon => 3,
+            Self::Permit => 4,
+            Self::Tier => 5,
+            Self::Audit => 6,
+        }
+    }
+}
+
 /// Sentinel for "this phase did not run at all", mirroring the Worker's `-1`
 /// convention for the `wdb` sub-phases.
 ///
@@ -249,11 +270,10 @@ const DID_NOT_RUN: i64 = -1;
 /// Per-request accumulator for the instrumented phases, in microseconds.
 ///
 /// A phase may be entered more than once in a request (a PUT verifies the PAT
-/// in the write gate and the adapter may verify again); occurrences **add**,
-/// because the question the phase answers is "how many milliseconds did this
-/// request spend in D1 `pat` reads", not "how long did the last one take". The
-/// instrumented regions are sequential and non-overlapping, so the sum stays a
-/// partition of the request rather than double-counting it.
+/// in the write gate and the adapter may verify again). Sequential windows
+/// **add**, while nested or concurrent windows are coalesced into their union;
+/// this keeps the sum a partition of the request across synchronous and
+/// blocking-task boundaries.
 #[derive(Debug)]
 pub struct PhaseLedger {
     pat_us: AtomicI64,
@@ -263,6 +283,17 @@ pub struct PhaseLedger {
     permit_us: AtomicI64,
     tier_us: AtomicI64,
     audit_us: AtomicI64,
+    windows: [Mutex<PhaseWindow>; 7],
+    #[cfg(test)]
+    completed_windows: [AtomicUsize; 7],
+    #[cfg(test)]
+    recordings: [AtomicUsize; 7],
+}
+
+#[derive(Debug, Default)]
+struct PhaseWindow {
+    active: usize,
+    started: Option<Instant>,
 }
 
 impl Default for PhaseLedger {
@@ -283,6 +314,11 @@ impl PhaseLedger {
             permit_us: AtomicI64::new(DID_NOT_RUN),
             tier_us: AtomicI64::new(DID_NOT_RUN),
             audit_us: AtomicI64::new(DID_NOT_RUN),
+            windows: std::array::from_fn(|_| Mutex::new(PhaseWindow::default())),
+            #[cfg(test)]
+            completed_windows: std::array::from_fn(|_| AtomicUsize::new(0)),
+            #[cfg(test)]
+            recordings: std::array::from_fn(|_| AtomicUsize::new(0)),
         }
     }
 
@@ -298,8 +334,86 @@ impl PhaseLedger {
         }
     }
 
+    fn window_slot(&self, phase: Phase) -> &Mutex<PhaseWindow> {
+        match phase {
+            Phase::Pat => &self.windows[0],
+            Phase::Quota => &self.windows[1],
+            Phase::Store => &self.windows[2],
+            Phase::Argon => &self.windows[3],
+            Phase::Permit => &self.windows[4],
+            Phase::Tier => &self.windows[5],
+            Phase::Audit => &self.windows[6],
+        }
+    }
+
+    /// Enter a phase's active wall-clock window.
+    ///
+    /// A phase is a partition of request wall time, not an arbitrary label.
+    /// Consequently an inner scope of the same phase must not add its already
+    /// covered window a second time. The active count is shared by all tasks
+    /// that carry this request ledger, so this remains true across a
+    /// `spawn_blocking` boundary and also handles genuinely overlapping
+    /// sibling scopes without dropping either one's union.
+    fn begin(&self, phase: Phase) {
+        let mut window = self
+            .window_slot(phase)
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if window.active == 0 {
+            window.started = Some(Instant::now());
+        }
+        window.active += 1;
+    }
+
+    /// Leave a phase scope and close the union window when its final scope
+    /// exits. A poisoned lock is recovered because timing is best-effort and
+    /// must never turn an application response into an instrumentation error.
+    fn end(&self, phase: Phase) {
+        let elapsed = {
+            let mut window = self
+                .window_slot(phase)
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if window.active == 0 {
+                return;
+            }
+            window.active -= 1;
+            if window.active == 0 {
+                window.started.take().map(|started| started.elapsed())
+            } else {
+                None
+            }
+        };
+        if let Some(elapsed) = elapsed {
+            let micros = i64::try_from(elapsed.as_micros()).unwrap_or(i64::MAX);
+            self.add(phase, micros);
+            #[cfg(test)]
+            self.completed_windows[phase.index()].fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    #[cfg(test)]
+    fn completed_windows_for_test(&self, phase: Phase) -> usize {
+        self.completed_windows[phase.index()].load(Ordering::Relaxed)
+    }
+
+    #[cfg(test)]
+    fn recordings_for_test(&self, phase: Phase) -> usize {
+        self.recordings[phase.index()].load(Ordering::Relaxed)
+    }
+
+    #[cfg(test)]
+    fn active_depth_for_test(&self, phase: Phase) -> usize {
+        self.window_slot(phase)
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .active
+    }
+
     /// Add `micros` to `phase`, promoting it out of the not-run sentinel.
     fn add(&self, phase: Phase, micros: i64) {
+        #[cfg(test)]
+        self.recordings[phase.index()].fetch_add(1, Ordering::Relaxed);
         let _ = self
             .slot(phase)
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |cur| {
@@ -444,11 +558,11 @@ tokio::task_local! {
 ///
 /// Pass-through (zero recording, no allocation) when no ledger is in scope.
 pub async fn timed<F: Future>(phase: Phase, fut: F) -> F::Output {
-    let start = Instant::now();
-    let out = fut.await;
-    let micros = i64::try_from(start.elapsed().as_micros()).unwrap_or(i64::MAX);
-    LEDGER.try_with(|l| l.add(phase, micros)).ok();
-    out
+    // Use the same RAII guard as multi-statement regions. Besides keeping the
+    // pass-through behaviour when no ledger is installed, this prevents a
+    // nested `timed`/`PhaseScope` pair from double-counting one wall window.
+    let _scope = PhaseScope::enter(phase);
+    fut.await
 }
 
 /// Run `fut` with `ledger` installed as the ambient task-local, for tests in
@@ -493,7 +607,6 @@ pub fn current_ledger() -> Option<Arc<PhaseLedger>> {
 pub struct PhaseScope {
     ledger: Option<Arc<PhaseLedger>>,
     phase: Phase,
-    start: Instant,
 }
 
 impl PhaseScope {
@@ -502,11 +615,11 @@ impl PhaseScope {
     /// is not a single future.
     #[must_use]
     pub fn enter(phase: Phase) -> Self {
-        Self {
-            ledger: current_ledger(),
-            phase,
-            start: Instant::now(),
+        let ledger = current_ledger();
+        if let Some(ledger) = &ledger {
+            ledger.begin(phase);
         }
+        Self { ledger, phase }
     }
 
     /// Time a region reached on a DIFFERENT task than the one that opened the
@@ -515,19 +628,17 @@ impl PhaseScope {
     /// before spawning — see that function's doc for why.
     #[must_use]
     pub fn with_handle(ledger: Option<Arc<PhaseLedger>>, phase: Phase) -> Self {
-        Self {
-            ledger,
-            phase,
-            start: Instant::now(),
+        if let Some(ledger) = &ledger {
+            ledger.begin(phase);
         }
+        Self { ledger, phase }
     }
 }
 
 impl Drop for PhaseScope {
     fn drop(&mut self) {
         if let Some(ledger) = &self.ledger {
-            let micros = i64::try_from(self.start.elapsed().as_micros()).unwrap_or(i64::MAX);
-            ledger.add(self.phase, micros);
+            ledger.end(self.phase);
         }
     }
 }

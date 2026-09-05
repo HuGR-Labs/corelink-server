@@ -140,55 +140,30 @@ fn residue_is_clamped_rather_than_reported_negative() {
     assert_eq!(parsed["oother"], 0);
 }
 
-/// **A nested re-entry of the SAME phase on the SAME task is counted twice.**
+/// **A nested re-entry of the SAME phase is one wall-clock window.**
 ///
-/// This is a HAZARD guard, not a bug report — and the distinction was
-/// established by measurement, not by reading. `PhaseScope::enter` stamps an
-/// `Instant` and `drop` adds the elapsed span unconditionally; there is no
-/// depth tracking, so two nested scopes of one phase add overlapping windows
-/// and `Σ(phases)` stops being a partition of the request.
-///
-/// The module doc claims the phases "partition, not label" the request and
-/// that summing them "can never double-count a millisecond". That holds
-/// today only because no live path nests one phase on one task. The nesting
-/// that LOOKS like it does — `MoatCache::put` wrapping `timed(Phase::Store)`
-/// around a `R2CasHandler::write` that enters `Phase::Store` again — is
-/// severed by `spawn_blocking`, which moves the handler to another task
-/// where the task-local ledger is invisible. That is pinned separately by
-/// `adapter_cache::tests::put_records_the_store_phase_exactly_once`.
-///
-/// So this test does not report a defect. It fixes the COST of one, so that
-/// whoever swaps a `spawn_blocking` for a `block_in_place` — a change that
-/// looks like a pure performance tweak — can read here what it does to the
-/// header: the residue clamps at zero and absorbs the overcount silently.
+/// The outer scope may live on the request task while an inner scope runs in
+/// a `spawn_blocking` task with the same ledger handle. Both scopes describe
+/// one storage window, so only the outermost scope owns the phase clock. This
+/// keeps `Server-Timing` additive instead of allowing `oother`'s clamp to hide
+/// an overcount.
 #[test]
-fn nested_reentry_of_the_same_phase_double_counts() {
-    let ledger = PhaseLedger::new();
-    // Simulate the real shape: an outer Store window that fully contains an
-    // inner Store window, as `MoatCache::put` contains `R2CasHandler::write`.
-    ledger.add(Phase::Store, 100_000); // outer: the whole put (100 ms)
-    ledger.add(Phase::Store, 60_000); //  inner: the R2 call (60 ms), INSIDE it
+fn nested_reentry_of_the_same_phase_records_once() {
+    let ledger = std::sync::Arc::new(PhaseLedger::new());
+    let outer = super::PhaseScope::with_handle(Some(std::sync::Arc::clone(&ledger)), Phase::Store);
+    assert_eq!(ledger.active_depth_for_test(Phase::Store), 1);
+    let inner = super::PhaseScope::with_handle(Some(std::sync::Arc::clone(&ledger)), Phase::Store);
+    assert_eq!(ledger.active_depth_for_test(Phase::Store), 2);
+    drop(inner);
+    assert_eq!(ledger.completed_windows_for_test(Phase::Store), 0);
+    assert_eq!(ledger.recordings_for_test(Phase::Store), 0);
+    assert_eq!(ledger.active_depth_for_test(Phase::Store), 1);
+    drop(outer);
 
-    let parsed = parse(&ledger.server_timing_value_with(100_000, false));
-    assert_eq!(
-        parsed.get("ostore"),
-        Some(&160),
-        "ostore reports 160 ms for a request that spent 100 ms — the inner \
-         scope re-added a window the outer already covered"
-    );
-    // And the residue absorbs the lie: `oother` clamps at zero instead of
-    // reporting that the parts no longer fit the whole.
-    assert_eq!(
-        parsed.get("oother"),
-        Some(&0),
-        "the (total - attributed).max(0) guard silences the overcount"
-    );
-    let sum: i64 = parsed.values().copied().sum();
-    assert!(
-        sum > 100,
-        "phases + residue ({sum}) EXCEED the container total (100) — the \
-         header is no longer a partition of the request"
-    );
+    assert_eq!(ledger.completed_windows_for_test(Phase::Store), 1);
+    assert_eq!(ledger.recordings_for_test(Phase::Store), 1);
+    assert_eq!(ledger.active_depth_for_test(Phase::Store), 0);
+    assert!(ledger.micros(Phase::Store).is_some());
 }
 
 /// The residue always closes: named phases plus `oother` sum to the total,
