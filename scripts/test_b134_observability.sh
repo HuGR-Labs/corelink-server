@@ -58,6 +58,7 @@ sed -i.bak 's/^          if command -v docker.*then$/          # if command -v d
 expect_red smoke-backend-comment "${TMP}/smoke-backend-comment"
 
 copy_fixture "${TMP}/smoke-pat"
+# shellcheck disable=SC2016  # Fixture regex must keep the GitHub expression literal.
 sed -i.bak '/if \[ -n "\${CORELINK_CANARY_PAT:-}" \]; then/d' "${TMP}/smoke-pat/.github/workflows/smoke-install.yml"
 expect_red smoke-pat "${TMP}/smoke-pat"
 
@@ -82,6 +83,7 @@ sed -i.bak 's/^          cosign sign --yes/          echo cosign sign --yes/' "$
 expect_red cosign-sign-echo "${TMP}/cosign-sign-echo"
 
 copy_fixture "${TMP}/placeholder"
+# shellcheck disable=SC2016  # Fixture replacement must keep the GitHub expression literal.
 sed -i.bak 's/cosign sign --yes.*/cosign sign --yes "${IMAGE}" # placeholder mutation/' "${TMP}/placeholder/.github/workflows/cosign-sign.yml"
 expect_red placeholder "${TMP}/placeholder"
 
@@ -90,6 +92,7 @@ sed -i.bak 's/| UNMEASURED |/| PASS |/g' "${TMP}/ledger/docs/campaigns/remediati
 expect_red ledger "${TMP}/ledger"
 
 copy_fixture "${TMP}/synthetic-token"
+# shellcheck disable=SC2016  # Fixture replacement must keep the GitHub expression literal.
 sed -i.bak 's/-e CORELINK_TEST_TOKEN="\$CORELINK_CANARY_PAT"/-e CORELINK_INSTALL_PROBE_TOKEN="synthetic"/' "${TMP}/synthetic-token/.github/workflows/smoke-install.yml"
 expect_red synthetic-token "${TMP}/synthetic-token"
 
@@ -102,6 +105,7 @@ echo 'ARG CORELINK_TEST_TOKEN=synthetic' >> "${TMP}/dockerfile-arg-token/apps/ge
 expect_red dockerfile-arg-token "${TMP}/dockerfile-arg-token"
 
 copy_fixture "${TMP}/cosign-zone"
+# shellcheck disable=SC2016  # Fixture regex must keep the GitHub expression literal.
 sed -i.bak '/if ! \[\[ "\${CF_DEPLOY_ZONE_ID:-}" =~/d' "${TMP}/cosign-zone/.github/workflows/cosign-sign.yml"
 expect_red cosign-zone "${TMP}/cosign-zone"
 
@@ -110,6 +114,7 @@ echo '      tag:' >> "${TMP}/cosign-manual-tag/.github/workflows/cosign-sign.yml
 expect_red cosign-manual-tag "${TMP}/cosign-manual-tag"
 
 copy_fixture "${TMP}/cosign-tag-guard"
+# shellcheck disable=SC2016  # Fixture regex must keep the GitHub expression literal.
 sed -i.bak '/if ! \[\[ "\${GITHUB_REF:-}" =~/d' "${TMP}/cosign-tag-guard/.github/workflows/cosign-sign.yml"
 expect_red cosign-tag-guard "${TMP}/cosign-tag-guard"
 
