@@ -34,8 +34,8 @@ class B155VerifierTests(unittest.TestCase):
         self.assertEqual(result.command_records, 139)
         self.assertEqual(result.manual_records, 31)
         self.assertEqual(result.command_records + result.manual_records, result.records)
-        self.assertEqual(result.grep_invocations, 301)
-        self.assertEqual(len(result.assertions), 284)
+        self.assertEqual(result.grep_invocations, 295)
+        self.assertEqual(len(result.assertions), 278)
         self.assertEqual(len(result.unsafe), 0)
         self.assertEqual(len(result.indeterminate), 0)
 

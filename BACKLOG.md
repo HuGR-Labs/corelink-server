@@ -10804,7 +10804,7 @@ verify-means: |
   divergente falham fechado; não podem produzir um falso `done`.
 
   **Medido na árvore cumulativa D02 (2026-09-05):** `records=170`,
-  `command_records=139`, `manual=31`, `grep_invocations=301`, `assertions=284`,
+  `command_records=139`, `manual=31`, `grep_invocations=295`, `assertions=278`,
   `comment_sensitive=0`, `indeterminate=0`. Cada assertion recebe uma classificação
   explícita pelo alvo; a reparação é limitada ao manifesto e idempotente.
 last-verified: 2026-09-05
