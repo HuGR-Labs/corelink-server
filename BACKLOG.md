@@ -10751,18 +10751,20 @@ verify-means: |
 last-verified: 2026-08-31
 ```
 
-### B-151 — um SEGUNDO contrato OpenAPI é publicado com 21 dos 40 caminhos, e nenhum portão compara os dois
+### B-151 — o segundo contrato OpenAPI divergia da canônica, sem portão fechado
 
 [B-121] estabeleceu que a fonte da divergência é `openapi/corelink-v1.yaml` — a spec escrita
 à mão — e entregou o comparador spec × rotas servidas. Ficou de fora uma coisa que o recorte
 não previa: **existe uma segunda cópia da spec, publicada ao cliente, e ela não é gerada da
 primeira.**
 
-Medido nesta árvore: `openapi/corelink-v1.yaml` declara **40** caminhos;
-`apps/docs/static/openapi-corelink-v1.yaml` — servido pelo site de documentação, o arquivo
-que um cliente baixa para gerar cliente — declara **21**. Nenhum script gera um do outro e
-nenhum portão compara os dois. O `gen-api-reference.py` lê a canônica e gera **MDX**; o
-`static/` é cópia manual congelada em algum ponto do passado.
+Medido na abertura do achado (2026-08-31): `openapi/corelink-v1.yaml` declarava **40**
+caminhos e `apps/docs/static/openapi-corelink-v1.yaml` — servido pelo site de documentação,
+o arquivo que um cliente baixa para gerar cliente — declarava **21**. Nesta árvore, após
+ajustes posteriores na canônica, a divergência pré-reparo era **39 caminhos/43 operações**
+contra **20 caminhos/20 operações**. Nenhum script gerava um do outro e nenhum portão
+comparava os dois; o `gen-api-reference.py` lia a canônica e gerava **MDX**, enquanto o
+`static/` era cópia manual congelada em algum ponto do passado.
 
 A consequência é pior que a de uma página errada: quem baixa a spec publicada e gera um SDK
 recebe **um produto menor que o real**, sem erro nenhum, e não tem como saber. E como o
@@ -10782,51 +10784,34 @@ tem dono é a **segunda spec** e o resíduo de tradução.
 id: B-151
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  python3 - <<"PY"
-  import glob, sys, yaml
-  can = "openapi/corelink-v1.yaml"
-  pub = "apps/docs/static/openapi-corelink-v1.yaml"
-  try:
-      c = yaml.safe_load(open(can)) or {}
-  except FileNotFoundError:
-      print(f"FALHA: {can} sumiu — a spec canonica e a premissa deste item; reavalie."); sys.exit(1)
-  nc = len(c.get("paths") or {})
-  if nc < 10:
-      print(f"FALHA: a spec canonica declara so {nc} caminhos — instrumento ou spec quebrada, nao achado."); sys.exit(1)
-  try:
-      p = yaml.safe_load(open(pub)) or {}
-      np = len(p.get("paths") or {})
-      div = np != nc
-  except FileNotFoundError:
-      print(f"FALHA: {pub} nao existe mais — a segunda spec foi removida; feche esta metade e reavalie o item."); sys.exit(1)
-  loc = [f for f in sorted(glob.glob("apps/docs/i18n/*/docusaurus-plugin-content-docs/current/explanation/rbac/index.mdx"))
-         if "five customer-facing" in open(f).read()]
-  if not div and not loc:
-      print(f"FALHA: a spec publicada tem os mesmos {nc} caminhos E nenhum locale diz 'five customer-facing' — feche o item."); sys.exit(1)
-  print(f"aberto: spec publicada declara {np} caminhos contra {nc} da canonica (divergem={div}); locales ainda dizendo 'five customer-facing' sobre tabela de 3 linhas: {len(loc)}")
-  PY
+  python3 scripts/verify_b151_openapi.py --expect done
 verify-means: |
-  open — a spec publicada diverge da canônica em número de caminhos, **ou** algum locale
-  ainda afirma cinco categorias sobre a tabela de três. Fecha só quando as duas caírem.
+  open — o parser falha, a spec publicada diverge da canônica em caminhos, métodos,
+  `operationId` ou qualquer campo do documento, **ou** algum locale ainda afirma cinco
+  categorias sobre a tabela de três. Fecha só quando as duas caírem.
 
-  **Compara os dois arquivos parseados, não grepa nenhum dos dois.** Contar `paths:` por
-  grep casaria a chave dentro de exemplos e descrições; o que decide é a estrutura.
+  **Compara os dois arquivos parseados, não grepa nenhum dos dois.** O comparador closed-world
+  rejeita caminhos e métodos faltantes ou extras, identidade de operação alterada e qualquer
+  divergência de documento (info, servers, segurança ou schemas), não apenas contagem.
+  `scripts/openapi_sync.py --check` também exige que o YAML publicado seja byte-a-byte o
+  artefato gerado da canônica.
 
   **Anti-vacuidade com falha nomeada:** canônica ausente; canônica com menos de 10 caminhos
   (spec ou parser quebrado, nunca "consertado"); e a **ausência da segunda spec** é tratada
-  como mudança de premissa que exige releitura, não como fechamento automático — apagar o
-  arquivo publicado pode ser o reparo certo, mas quem o apagar tem de dizer isso no item.
+  como falha de instrumento, não como fechamento automático. As três localizações esperadas
+  (`de`, `es-419`, `pt-BR`) também são exigidas; locale ausente reprova.
 
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: spec publicada
-  declara 21 caminhos contra 40 da canonica (divergem=True); locales … 3"* e exit 0. Numa
-  cópia com a spec publicada substituída pela canônica **e** os três locales corrigidos, sai
-  *"FALHA: a spec publicada tem os mesmos 40 caminhos E nenhum locale…"* e exit 1.
+  **Medido após o reparo (2026-09-05):** `scripts/verify_b151_openapi.py --expect done`
+  sai *"B-151 done: canonical and published OpenAPI match (39 paths, 43 operations);
+  RBAC locales checked: 3"* e exit 0. Os 10 testes de mutação reprovam remoção/adição de
+  caminho ou método, troca de `operationId`, alteração de schema, frase stale e locale
+  ausente.
 
-  O que ele **não** decide: se a segunda spec deve ser gerada, symlinkada ou removida — as
-  três fecham o item e têm custos diferentes para quem publica documentação versionada.
-last-verified: 2026-08-31
+  O que ele **não** decide: a política de conteúdo da canônica, nem os oito caminhos
+  documentados-sem-rota e endpoints explicitamente excluídos no escopo acima.
+last-verified: 2026-09-05
 ```
 
 ### B-152 — cinco jobs mortos aos ~10m00s no MESMO PR, em lanes independentes: é padrão, e o vermelho parece defeito de código
