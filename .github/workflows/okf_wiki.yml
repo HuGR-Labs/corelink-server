@@ -20,6 +20,7 @@ on:
       - 'worker/**'
       - 'apps/**'
       - 'scripts/validate_okf.py'
+      - 'scripts/validate_permission_matrix.py'
       - 'scripts/okf_git_batch.py'
       - 'scripts/okf_resolve_abbrev_cites.py'
       - 'scripts/okf_shift_citations.py'
@@ -35,6 +36,7 @@ on:
       - 'worker/**'
       - 'apps/**'
       - 'scripts/validate_okf.py'
+      - 'scripts/validate_permission_matrix.py'
       - 'scripts/okf_git_batch.py'
       - 'scripts/okf_resolve_abbrev_cites.py'
       - 'scripts/okf_shift_citations.py'
@@ -78,6 +80,12 @@ jobs:
 
       - name: Validate OKF-CoreLink knowledge bundle
         run: python3 scripts/validate_okf.py
+
+      # B-153 is part of the same published-claim freshness boundary: an OKF
+      # run must not be green while the customer-facing role matrix disagrees
+      # with a served authorization gate.
+      - name: Validate published permission matrix
+        run: python3 scripts/validate_permission_matrix.py
 
       - name: Test abbreviated-citation resolver contract (B-059)
         # The resolver is also integrated into validate_okf's C5/C6 collection;

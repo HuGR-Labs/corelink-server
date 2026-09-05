@@ -10849,43 +10849,29 @@ substituir este `verify` por um que plante a linha permissiva e exija que o port
 id: B-153
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'set -e
-  m=apps/docs/docs/explanation/rbac/permission-matrix.mdx
-  c=crates/corelink-container/src/routes/cas.rs
-  [ -f "$m" ] || { echo "FALHA: $m sumiu — a matriz publicada e a premissa deste item; reavalie."; exit 1; }
-  [ -f "$c" ] || { echo "FALHA: $c sumiu — reavalie o item."; exit 1; }
-  linhas=$(grep -cE "^\| " "$m")
-  [ "$linhas" -ge 4 ] || { echo "FALHA: so $linhas linhas de tabela em $m — a matriz mudou de forma; instrumento, nao achado."; exit 1; }
-  grep -qE "^[^/]*can_write\(\)" "$c" || { echo "FALHA: cas.rs nao gateia mais por can_write() em linha executavel — a premissa mudou; releia antes de confiar neste portao."; exit 1; }
-  leitores=$(grep -rlE "permission-matrix|role-catalog|reference/rbac/permissions" scripts/ .github/workflows/ 2>/dev/null | wc -l | tr -d " ")
-  [ "$leitores" = 0 ] || { echo "FALHA: $leitores instrumento(s) em scripts/ ou .github/workflows/ ja leem a matriz de permissoes — verifique o que eles decidem e feche o item."; exit 1; }
-  echo "aberto: $linhas linhas de matriz publicada, gate real por can_write() no codigo, e ZERO instrumentos em scripts/ ou .github/workflows/ leem a matriz"'
+  set -o pipefail
+  s=scripts/validate_permission_matrix.py
+  t=tests/test_validate_permission_matrix.py
+  for p in "$s" "$t" apps/docs/docs/explanation/rbac/permission-matrix.mdx; do
+    [ -f "$p" ] || { echo "FALHA: instrumento/superfície ausente: $p"; exit 1; }
+  done
+  python3 "$s" --self-test
+  python3 "$s"
+  python3 -m pytest -q "$t"
 verify-means: |
-  open — a matriz publicada existe, o gate real do código continua sendo `can_write()`, e
-  **nenhum** script ou workflow lê qualquer uma das três páginas de permissão.
-
-  **Duas âncoras contra comentário.** `grep -cE "^\| "` conta linha de tabela markdown a
-  partir do início da linha, então prosa que cite um pipe não infla a contagem. E
-  `grep -qE "^[^/]*can_write\(\)"` exige a chamada numa linha que **não** comece com `//` —
-  sem isso, os doc-comments do `cas.rs` que descrevem o gate satisfariam a premissa mesmo se
-  o gate tivesse sido removido, que é a falha de instrumento do [B-155].
-
-  **Anti-vacuidade com falha nomeada:** matriz ausente; matriz com menos de 4 linhas de
-  tabela (mudou de forma — instrumento, não achado); `can_write()` sumido do código
-  executável (a premissa mudou, releia). Nenhum devolve "aberto".
-
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: … ZERO
-  instrumentos"* e exit 0. Numa cópia com um script em `scripts/` que abre
-  `permission-matrix.mdx`, sai *"FALHA: 1 instrumento(s) … ja leem a matriz"* e exit 1.
-
-  **A fraqueza, escrita porque é o texto que sobrevive:** este portão é satisfeito por um
-  instrumento que apenas **cite** os arquivos. Ele mede ausência total de leitor, que é o
-  estado de hoje; não mede se o leitor decide. Quem construir o portão de verdade **troca
-  este `verify`** por um que plante `Developer ❌` na linha de deleção e exija reprovação —
-  e essa troca é parte do fechamento, não opcional.
-last-verified: 2026-08-31
+  `validate_permission_matrix.py` is a closed-world manifest of the
+  22 role-bearing rows in the canonical published matrix. It reads every
+  mapped source, strips line comments before looking for predicates, and fails
+  on missing/duplicate/unmapped rows, missing routes, absent routes becoming
+  served, and either permissive or denial drift. `--self-test` plants a
+  permissive role mutation. The pytest suite mutates every published role cell,
+  the CAS gate, and comment-only predicates, and proves missing/unknown rows do
+  not become a green empty population. The dedicated CI workflow runs both
+  controls, and the OKF workflow runs the validator on its same claim/code
+  trigger boundary. This is a done gate: removal or vacuity is non-zero.
+last-verified: 2026-09-05
 ```
 
 ### B-154 — ⛔ OWNER: dois instrumentos jurídicos executados afirmam capacidades que a plataforma devolve como não-implementadas
