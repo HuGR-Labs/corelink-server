@@ -11039,56 +11039,30 @@ repo: corelink-server
 owner: tl
 status: open
 verify: |
-  python3 - <<"PY"
-  import re, sys, yaml, pathlib
-  SEGURO = re.compile(r"""grep\s+-[A-Za-z]*v[A-Za-z]*\s|^\s*#|\bawk\b|\bpython3\b|\byaml\b""")
-  PADRAO = re.compile(r"""grep\s+(?:-[A-Za-z]+\s+)*(?P<q>["'])(?P<pat>.*?)(?P=q)""")
-  t = pathlib.Path("BACKLOG.md").read_text()
-  blocos = re.findall(r"```backlog\n(.*?)\n```", t, re.S)
-  if len(blocos) < 100:
-      print(f"FALHA: so {len(blocos)} blocos parseados — instrumento quebrado, nao arvore limpa."); sys.exit(1)
-  total = 0; suspeitos = []; ilegiveis = 0
-  for b in blocos:
-      try: d = yaml.safe_load(b) or {}
-      except Exception: ilegiveis += 1; continue
-      v = d.get("verify")
-      if not isinstance(v, str) or v.strip() == "manual": continue
-      total += 1
-      for ln in v.splitlines():
-          if "grep" not in ln or SEGURO.search(ln): continue
-          if any(not m.group("pat").startswith("^") for m in PADRAO.finditer(ln)):
-              suspeitos.append(str(d.get("id"))); break
-  if ilegiveis:
-      print(f"FALHA: {ilegiveis} bloco(s) backlog com YAML ilegivel — sairiam da varredura em silencio e encolheriam a contagem; conserte o YAML antes de acreditar neste portao."); sys.exit(1)
-  if not suspeitos:
-      print(f"FALHA: nenhum dos {total} verifies com comando usa grep de padrao nao-ancorado — a triagem de classe terminou; feche o item."); sys.exit(1)
-  print(f"aberto: {len(suspeitos)} de {total} verifies com comando fazem grep de padrao nao-ancorado; primeiros: {', '.join(suspeitos[:6])}")
-  PY
+  python3 scripts/verify_b155_backlog_grep_population.py --expect open
 verify-means: |
-  open — pelo menos um `verify` com comando ainda invoca `grep` com padrão que não começa em
-  `^` e sem filtro de comentário.
+  open — a população ainda contém verificações `grep` cujo padrão pode casar uma linha de
+  comentário, ou cujo dialeto não pode ser modelado com segurança pelo analisador.
 
-  **O detector é sobre o PADRÃO, não sobre a linha.** Ele extrai o argumento entre aspas de
-  cada `grep` e pergunta se ele está ancorado; uma linha que já filtre comentário
-  (`grep -v`), ou que delegue a `awk`/`python3`/parser YAML, é considerada segura e sai da
-  conta. Isso é o que impede o próprio detector de casar prosa.
+  **O detector é estrutural.** Ele parseia cada fence `backlog` como YAML, valida IDs únicos,
+  extrai invocações em fronteiras de comando shell, distingue filtros `grep -v` de asserções e
+  testa cada regex contra formas de comentário (`//`, `#`, `/*`, `<!--`, `*`, `--`). O censo
+  mantém também as invocações filtradas e os padrões indeterminados, em vez de os descartar.
 
-  **Anti-vacuidade, dois caminhos:** menos de 100 blocos parseados é declarado instrumento
-  quebrado; e **bloco com YAML ilegível reprova alto** em vez de sair da conta calado. Sem
-  essas guardas, quebrar o parser — ou só o YAML dos itens infratores — zeraria a lista e o
-  item se declararia resolvido no exato momento em que perdeu a capacidade de medir.
+  **Anti-vacuidade:** população vazia, fence sem YAML, ID ausente/duplicado, ou regex
+  indeterminada não produz um `done`; todos são erros ou riscos explícitos. O self-test ainda
+  ancora uma asserção real de B-083 em memória e exige redução do risco, além de provar que
+  remover toda a população é rejeitado.
 
-  ⚠️ **Contado não é triado, e o `verify` argumenta por construção a favor de manter aberto.**
-  A contagem inclui greps sobre arquivos sem comentário de linha e padrões que nenhum
-  comentário plausível conteria. Fechar este item **não** é levar a contagem a zero por
-  reescrita mecânica — é triar os 93, ancorar os que podem ser satisfeitos por comentário, e
-  então trocar este `verify` pelo portão-de-portões que recusa `grep` nu em `verify` novo.
-  Zerar a contagem sem triar seria o mesmo vício que o item denuncia, uma camada acima.
+  ⚠️ **A população não está fechada.** O portão só pode mudar para `done` quando o censo
+  inteiro tiver zero `comment_sensitive` e zero `indeterminate`; uma redução mecânica ou uma
+  lista parcial não fecha o item.
 
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 93 de 134 …"* e
-  exit 0. Numa cópia do `BACKLOG.md` com todo padrão de `grep` prefixado por `^[^#]*`, sai
-  *"FALHA: nenhum dos 134 verifies com comando usa grep de padrao nao-ancorado"* e exit 1.
-last-verified: 2026-08-31
+  **Medido na árvore atual (2026-09-05):** `records=168`, `command_records=137`, `manual=31`,
+  `grep_invocations=333`, `assertions=316`, `comment_sensitive=152`, `indeterminate=28`.
+  Portanto o status permanece honestamente `open`; o comando é offline e não alegará que
+  qualquer item individual foi reparado.
+last-verified: 2026-09-05
 ```
 
 ### B-156 — o resíduo de afirmação falsa na superfície publicada é uma ordem de grandeza maior do que os itens que o descrevem
