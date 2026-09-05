@@ -1479,6 +1479,18 @@ impl CustomerTeamHandler for D1CustomerHandler {
     }
 
     fn invite(&self, req: TeamInviteRequest) -> Result<TeamInviteResponse, CustomerHandlerError> {
+        // Validate the requested role before emitting ANY audit event or
+        // touching the persistence layer. Unknown/non-grantable values must
+        // be a clean 400, not a TeamInviteAttempted record for an operation
+        // that can never be performed.
+        let role = match normalize_invite_role(&req.role) {
+            Ok(role) => role,
+            Err(err) => {
+                self.emit_sli(true);
+                return Err(err);
+            }
+        };
+
         // Attempted audit BEFORE the mutation (fail-CLOSED ordering) — mirrors
         // `remove()` / `create()`.
         self.emit_audit(
@@ -1506,14 +1518,6 @@ impl CustomerTeamHandler for D1CustomerHandler {
         // and the signup-worker accept-match MUST use the SAME helper, or the join
         // key diverges. Normalization (trim+lowercase) lives inside the helper.
         let email_hash = crate::email_hash::hash_email(&req.email);
-        // The role is collapsed onto the FROZEN 0074 CHECK domain (CHECK-safe).
-        let role = match normalize_invite_role(&req.role) {
-            Ok(role) => role,
-            Err(err) => {
-                self.emit_sli(true);
-                return Err(err);
-            }
-        };
         // No real Clerk user_id exists yet (OB-1) — `team_member.user_id` is NOT
         // NULL (PK), so a fresh UUID is the invitation-id placeholder 0074 expects
         // ("carries the Clerk invitation id until acceptance binds the real user").
@@ -3711,6 +3715,39 @@ mod tests {
                 AuditEventKind::TeamInviteCommitted
             ]
         );
+    }
+
+    #[test]
+    fn team_invite_rejects_unsupported_role_before_audit_or_mutation() {
+        // Production D1 must reject UI-era aliases (Developer) and arbitrary
+        // values before even the attempted audit. This protects the audit
+        // contract and guarantees that an invalid request cannot create a seat.
+        let _env = crate::email_hash::EnvGuard::acquire();
+        for role in ["Developer", "unknown"] {
+            let f = fixture_with(MockD1::with(vec![]), None);
+            let err = f
+                .handler
+                .invite(TeamInviteRequest::new(
+                    TENANT,
+                    "clpat_x",
+                    "attacker@example.com",
+                    role,
+                    0,
+                ))
+                .expect_err("unsupported role must be rejected");
+            assert_eq!(
+                err,
+                CustomerHandlerError::InvalidRequest("unsupported team invite role".to_owned())
+            );
+            assert!(
+                f.audit.snapshot().unwrap().is_empty(),
+                "{role} must not emit TeamInviteAttempted or any audit"
+            );
+            assert!(
+                f.db.calls().is_empty(),
+                "{role} must not query D1 or mutate team_member"
+            );
+        }
     }
 
     #[test]

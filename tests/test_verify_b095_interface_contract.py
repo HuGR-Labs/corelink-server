@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import shutil
 import subprocess
 import sys
@@ -19,6 +20,28 @@ spec.loader.exec_module(verifier)
 
 
 class B095InterfaceContractTests(unittest.TestCase):
+    def test_workflow_triggers_cover_every_verifier_input(self) -> None:
+        workflow = (ROOT / ".github/workflows/backlog-verify.yml").read_text(
+            encoding="utf-8"
+        )
+        expected = {
+            str(path) for path in (*verifier.FILES.values(), *verifier.QUICKSTARTS)
+        }
+        for event in ("pull_request", "push"):
+            match = re.search(
+                rf"(?ms)^  {event}:\n(.*?)(?=^  (?:push|schedule|workflow_dispatch):|\Z)",
+                workflow,
+            )
+            self.assertIsNotNone(match, f"workflow must define {event}")
+            paths = set(
+                re.findall(r'^\s+- "([^"]+)"$', match.group(1), re.MULTILINE)
+            )
+            self.assertEqual(
+                expected - paths,
+                set(),
+                f"{event}.paths must include every B-095 verifier input",
+            )
+
     def copy_fixture(self) -> tempfile.TemporaryDirectory[str]:
         temp = tempfile.TemporaryDirectory()
         root = Path(temp.name)
