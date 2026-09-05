@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed B-149 verifier pinned to approved candidate 627ec21.
+"""Fail-closed B-149 verifier pinned to the reviewed checkpoint registry.
 
 `done` means these complete files are byte-for-byte the reviewed repair. A
 legitimate edit is deliberately review-required: re-review it, then update the
@@ -23,7 +23,7 @@ VALIDATE = "crates/corelink-container/src/routes/billing_ingest/tests_validate_r
 SKIP = "crates/corelink-container/src/routes/billing_ingest/tests_record_skip.rs"
 INGEST = "crates/corelink-container/src/routes/billing_ingest.rs"
 
-# SHA-256 of complete source files at approved B-149 repair 627ec21.  This is
+# SHA-256 of complete source files at the approved B-149 repair.  This is
 # deliberately a read-only public view, not the authority used by `assess`:
 # the authority is repeated as literals in `_validated_checkpoints` so that an
 # accidental reassignment, omission, or extension cannot turn this verifier

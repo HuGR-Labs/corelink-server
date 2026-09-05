@@ -10574,7 +10574,7 @@ verify: |
   python3 scripts/verify_b149_test_strength.py --expect done
 verify-means: |
   open — pelo menos um dos cinco checkpoints SHA-256 diverge do reparo B-149 aprovado
-  (`627ec21`): os quatro arquivos de teste relevantes e
+  (o registry SHA-256 versionado neste verificador): os quatro arquivos de teste relevantes e
   `routes/billing_ingest.rs`, que contém o mapeamento de produção. As quatro mensagens
   continuam a identificar qual propriedade do item exige revisão; qualquer byte divergente
   é `review required`, mesmo que pareça uma mudança inocente.
@@ -10582,7 +10582,9 @@ verify-means: |
   done — os cinco arquivos completos são byte a byte iguais ao conjunto revisto. Os hashes
   são a autoridade para `done`; o verify não tenta provar novamente semântica Rust com lexer,
   regex ou recortes de função, pois essas aproximações aceitaram várias formas mortas ou
-  desconectadas de evidência.
+  desconectadas de evidência. A suíte constrói sua cópia `done` a partir de
+  `tests/fixtures/b149-approved/`, uma fixture autocontida, em vez de buscar um commit ou
+  objeto histórico com `git show`.
 
   **Anti-vacuidade e caminho seguro:** o registro é exatamente os cinco pares
   `path`/SHA-256 revisados; vazio, omissão, entrada extra ou digest alterado são erro de
@@ -10599,9 +10601,10 @@ verify-means: |
   nova revisão da prova, atualização explícita dos cinco hashes no verifier e das mutações
   correspondentes; não se aceita uma regra permissiva para preservar verde automaticamente.
 
-  **Medido pelos dois lados (2026-09-04):** esta árvore reproduz exatamente `627ec21` nos
-  cinco checkpoints e está `done`; qualquer mutação de byte volta a `open`.
-last-verified: 2026-09-04
+  **Medido pelos dois lados (2026-09-05):** esta árvore reproduz exatamente os cinco
+  checkpoints do registry e está `done`; a fixture autocontida também passa em uma árvore
+  rasa sem objetos Git, e qualquer mutação de byte volta a `open`.
+last-verified: 2026-09-05
 ```
 
 ### B-150 — a colisão de ref do [B-136]/[B-137] vale para mais 26 workflows que ninguém escopou
