@@ -67,6 +67,113 @@ def _grep_matches(line: str):
     return matches
 
 
+def _nested_shell_spans(text: str):
+    """Return literal nested-shell payload spans, matching the verifier."""
+    spans = []
+    for match in VERIFIER.NESTED_SHELL.finditer(text):
+        # An outer shell owns its quoted body; recurse into that body below.
+        if any(start <= match.start() < end for start, end, *_ in spans):
+            continue
+        line_start = text.rfind("\n", 0, match.start()) + 1
+        if not VERIFIER.COMMAND_BOUNDARY.search(text[line_start : match.start()]):
+            continue
+        pos = match.end()
+        while pos < len(text) and text[pos].isspace():
+            pos += 1
+        payload, end = VERIFIER._decode_nested_payload(text, pos)
+        spans.append((pos, end, text[pos], payload, text.count("\n", 0, pos + 1) + 1))
+    return spans
+
+
+def _encode_nested_payload(payload: str, quote: str) -> str:
+    """Encode decoded shell payload while preserving its literal semantics."""
+    if quote == "'":
+        # A single-quoted shell word cannot contain a literal apostrophe; the
+        # adjacent-quoted spelling below is the POSIX representation for one.
+        return "'" + payload.replace("'", "'\"'\"'") + "'"
+    if quote == '"':
+        # The decoder rejects active expansions in double-quoted payloads, so
+        # escape every expansion introducer when re-encoding the repaired text.
+        escaped = (
+            payload.replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("$", "\\$")
+            .replace("`", "\\`")
+        )
+        return '"' + escaped + '"'
+    raise VERIFIER.InstrumentError("nested shell payload has no literal quote")
+
+
+def _rewrite_shell_text(
+    text: str,
+    unsafe: set[tuple[int, str, str]],
+    line_offset: int = 0,
+) -> tuple[str, int]:
+    """Rewrite top-level and recursively nested grep assertions in *text*."""
+    # Mask nested shell bodies for the current shell level. Newlines remain, so
+    # line numbers and the verifier's unsafe keys stay aligned with the source.
+    masked, _ = VERIFIER._mask_nested_shells(text)
+    lines = text.splitlines(True)
+    masked_lines = masked.splitlines(True)
+    replacements: list[tuple[int, int, str]] = []
+    changed = 0
+    source_offset = 0
+    for index, (original, visible) in enumerate(zip(lines, masked_lines)):
+        line_replacements: list[tuple[int, int, str]] = []
+        for match in _grep_matches(visible):
+            if not VERIFIER.COMMAND_BOUNDARY.search(visible[: match.start()]):
+                continue
+            options = match.group("options") or ""
+            pattern = match.group("pattern")
+            if "v" in options.replace("--", ""):
+                continue
+            if (line_offset + index + 1, pattern, options) not in unsafe:
+                continue
+            replacement = harden_pattern(pattern, options)
+            # The canonical guard contains shell metacharacters; quote a
+            # previously bare pattern so the repaired command remains valid
+            # shell and the parser cannot mistake < or > for redirection.
+            if not match.groupdict().get("quote"):
+                replacement = '"' + replacement.replace('"', '\\"') + '"'
+            line_replacements.append(
+                (
+                    source_offset + match.start("pattern"),
+                    source_offset + match.end("pattern"),
+                    replacement,
+                )
+            )
+            if "F" in options:
+                line_replacements.append(
+                    (
+                        source_offset + match.start("options"),
+                        source_offset + match.end("options"),
+                        options.replace("F", "E"),
+                    )
+                )
+        replacements.extend(line_replacements)
+        if line_replacements:
+            changed += 1
+        source_offset += len(original)
+
+    # The verifier recursively treats each literal shell -c body as another
+    # shell program. Re-encode only that argument after repairing its decoded
+    # payload, preserving the outer command and its quote semantics.
+    nested_replacements: list[tuple[int, int, str]] = []
+    for start, end, quote, payload, first_line in _nested_shell_spans(text):
+        repaired_payload, nested_changed = _rewrite_shell_text(
+            payload, unsafe, line_offset + first_line - 1
+        )
+        if nested_changed:
+            encoded = _encode_nested_payload(repaired_payload, quote)
+            nested_replacements.append((start, end, encoded))
+            changed += nested_changed
+    replacements.extend(nested_replacements)
+    output = text
+    for start, end, replacement in sorted(replacements, reverse=True):
+        output = output[:start] + replacement + output[end:]
+    return output, changed
+
+
 def _rewrite_verify(record: dict[str, object]) -> tuple[str, int]:
     verify = record.get("verify")
     if not isinstance(verify, str) or verify.strip() == "manual":
@@ -80,36 +187,7 @@ def _rewrite_verify(record: dict[str, object]) -> tuple[str, int]:
     unsafe = {(check.line, check.pattern, check.options) for check in checks if VERIFIER._matches_comment(check)}
     if not unsafe:
         return verify, 0
-    lines = verify.splitlines(True)
-    changed = 0
-    for index, original in enumerate(lines):
-        replacements: list[tuple[int, int, str]] = []
-        for match in _grep_matches(original):
-            if not VERIFIER.COMMAND_BOUNDARY.search(original[: match.start()]):
-                continue
-            options = match.group("options") or ""
-            pattern = match.group("pattern")
-            if "v" in options.replace("--", ""):
-                continue
-            if (index + 1, pattern, options) not in unsafe:
-                continue
-            replacement = harden_pattern(pattern, options)
-            # The canonical guard contains shell metacharacters; quote a
-            # previously bare pattern so the repaired command remains valid
-            # shell and the parser cannot mistake `<`/`>` for redirection.
-            if not match.groupdict().get("quote"):
-                replacement = '"' + replacement.replace('"', '\\"') + '"'
-            replacements.append((match.start("pattern"), match.end("pattern"), replacement))
-            if "F" in options:
-                replacements.append((match.start("options"), match.end("options"), options.replace("F", "E")))
-        for start, end, replacement in reversed(replacements):
-            original = original[:start] + replacement + original[end:]
-        if replacements:
-            # Count assertions, not replacement spans (`-F` repairs also
-            # replace the option with `-E`).
-            changed += 1
-        lines[index] = original
-    return "".join(lines), changed
+    return _rewrite_shell_text(verify, unsafe)
 
 
 def repair(backlog: str) -> tuple[str, int]:

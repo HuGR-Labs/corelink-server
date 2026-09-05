@@ -14,6 +14,13 @@ verifier = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = verifier
 spec.loader.exec_module(verifier)
 
+REPAIR_SCRIPT = ROOT / "scripts/repair_b155_grep_population.py"
+repair_spec = importlib.util.spec_from_file_location("b155_repair", REPAIR_SCRIPT)
+assert repair_spec and repair_spec.loader
+repair = importlib.util.module_from_spec(repair_spec)
+sys.modules[repair_spec.name] = repair
+repair_spec.loader.exec_module(repair)
+
 
 class B155VerifierTests(unittest.TestCase):
     @classmethod
@@ -107,6 +114,19 @@ class B155VerifierTests(unittest.TestCase):
         self.assertTrue(
             any(check.pattern == "cargo zigbuild" for check in changed.unsafe)
         )
+
+    def test_repair_hardens_nested_bash_c_grep_and_is_idempotent(self) -> None:
+        marker = 'grep -q "^[^#/<*-]*cargo zigbuild"'
+        mutated = self.backlog.replace(marker, 'grep -q "cargo zigbuild"', 1)
+        rewritten, changed = repair.repair(mutated)
+        self.assertGreater(changed, 0)
+        result = verifier.census(rewritten)
+        self.assertEqual(len(result.unsafe), 0)
+        self.assertIn(marker, rewritten)
+
+        again, changed_again = repair.repair(rewritten)
+        self.assertEqual(changed_again, 0)
+        self.assertEqual(again, rewritten)
 
     def test_dynamic_nested_shell_payload_fails_closed(self) -> None:
         record = {
