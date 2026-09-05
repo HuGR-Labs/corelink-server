@@ -10863,7 +10863,8 @@ verify: |
 verify-means: |
   `validate_permission_matrix.py` is a closed-world manifest of the
   22 role-bearing rows in the canonical published matrix. It reads every
-  mapped source, strips line comments before looking for predicates, and fails
+  mapped source, strips line and nested block comments before looking for
+  predicates, and fails
   on missing/duplicate/unmapped rows, missing routes, absent routes becoming
   served, and either permissive or denial drift. `--self-test` plants a
   permissive role mutation. The pytest suite mutates every published role cell,
