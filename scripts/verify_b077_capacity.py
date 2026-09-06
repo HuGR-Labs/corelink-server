@@ -98,7 +98,7 @@ def main() -> int:
     assert "Frame::data(axum::body::Bytes::from(resp.bytes))" in sources[CAS]
     assert "BLOOM_CACHE_BIT_ARRAY_BYTES" in sources[CAS_ERASE]
     assert "bits.min(DEFAULT_BLOOM_BITS)" in sources[CAS_ERASE]
-    assert "max_tenants.max(1).min(DEFAULT_MAX_TENANT_BLOOMS)" in sources[CAS_ERASE]
+    assert "max_tenants.clamp(1, DEFAULT_MAX_TENANT_BLOOMS)" in sources[CAS_ERASE]
     assert "byok_read_peak_is_bounded" in cap
     assert_capped_read_paths(sources[R2_S3])
     mutation_self_test(sources[R2_S3])
