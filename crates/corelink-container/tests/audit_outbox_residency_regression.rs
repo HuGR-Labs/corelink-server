@@ -108,11 +108,25 @@ fn fixed_insert_satisfies_residency_trigger_for_enam_tenant() {
 fn buggy_insert_aborts_on_the_residency_trigger_fail_before() {
     let conn = seeded();
     // The prod incident: region omitted ⇒ 'wnam' ⇒ trigger `'wnam' != 'enam'` ⇒
-    // RAISE(ABORT). This is the exact failure that fail-closed the handler to 503.
+    // RAISE(ABORT). SQLite runs same-table BEFORE triggers in reverse creation
+    // order, so migration 0107 may report `residency_unprovable` before the
+    // older 0023 `residency_violation`; both are the real fail-closed guards.
     let err = conn.execute(BUGGY_INSERT, bind()).unwrap_err();
+    let message = err.to_string();
     assert!(
-        err.to_string().contains("residency_violation"),
-        "the omitted-region INSERT must abort on the residency trigger, got: {err}"
+        message.contains("residency_unprovable") || message.contains("residency_violation"),
+        "the omitted-region INSERT must abort on a residency guard, got: {message}"
+    );
+    let rows: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM audit_outbox WHERE id='id-1'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        rows, 0,
+        "a rejected audit INSERT must not leave a row behind"
     );
 }
 
