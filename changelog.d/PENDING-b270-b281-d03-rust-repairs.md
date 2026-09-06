@@ -1,6 +1,6 @@
 ### Fixed
 
-- Closed B-270 through B-293 from the final D03 bundled Rust pass: repaired
+- Closed B-270 through B-296 from the final D03 bundled Rust pass: repaired
   extracted-module paths and scopes, restored the fenced physical-GC API,
   normalized audit D1 rows, corrected timing/SLI types, removed strict-Clippy
   residues, and made runtime invitation entropy a production dependency. A

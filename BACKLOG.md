@@ -1153,6 +1153,60 @@ verify-means: |
 last-verified: 2026-09-06
 ```
 
+### B-294 — billing mount reads durable D1 client before its declaration
+```backlog
+id: B-294
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/main.rs:690-750"
+finding-title: "Stripe webhook fail-closed gate references d1_client out of scope"
+problem: "the durable client is constructed only after the gate that requires it"
+evidence: "scripts/ci.sh --rust-only at 30e4aa0be"
+acceptance: "D1 initializes before the gate and a secret without durable D1 remains unmounted"
+verify: python3 scripts/verify_b294_b296_bundle_residuals.py
+verify-means: |
+  done — pre-gate construction and the durable two-factor mount condition are guarded.
+last-verified: 2026-09-06
+```
+
+### B-295 — adversarial-tail is both module and standalone strict-Clippy target
+```backlog
+id: B-295
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "tests/e2e-tenant-isolation/tests/adversarial_tail.rs"
+finding-title: "standalone tail lacks crate docs/test lint policy and has brittle imports"
+problem: "Cargo discovers the included fragment independently, making its inherited test policy unavailable"
+evidence: "scripts/ci.sh --rust-only at 30e4aa0be"
+acceptance: "the file is valid in both contexts, documents itself, scopes test lints and imports the harness crate"
+verify: python3 scripts/verify_b294_b296_bundle_residuals.py
+verify-means: |
+  done — canonical crate import is required and invalid parent import is rejected; bundled Clippy proves lint policy.
+last-verified: 2026-09-06
+```
+
+### B-296 — billing materializer test fixture path is one directory short
+```backlog
+id: B-296
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-billing-stripe-materializer/src/handler/tests.rs:113"
+finding-title: "include_str resolves container webhook fixture below src"
+problem: "the fixture lives at crate root but the extracted test uses a single parent traversal"
+evidence: "scripts/ci.sh --rust-only at 30e4aa0be"
+acceptance: "include_str resolves the tracked crate-root fixture and materializer tests compile"
+verify: python3 scripts/verify_b294_b296_bundle_residuals.py
+verify-means: |
+  done — the exact two-level fixture path is guarded and the old path is forbidden.
+last-verified: 2026-09-06
+```
+
 ### B-003 — the 864s ceiling from 2026-08-02 has no established mechanism
 
 That incident concluded jobs past ~900 s were being SIGTERMed. They could not
@@ -14292,8 +14346,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-06):** `records=293`,
-  `command_records=277`, `manual=16`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-06):** `records=296`,
+  `command_records=280`, `manual=16`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma

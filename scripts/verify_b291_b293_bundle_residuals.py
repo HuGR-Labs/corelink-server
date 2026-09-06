@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS = (
     ("crates/corelink-container/src/storage.rs", "/// BYOK convergent-encryption helpers for native CAS storage.\npub mod byok_cas;", "pub(crate) mod byok_cas;"),
     ("crates/corelink-container/src/adapter_pat_gate.rs", "pub(super) struct PerTenantEntry", "struct PerTenantEntry"),
-    ("tests/e2e-tenant-isolation/tests/adversarial_tail.rs", "use e2e_tenant_isolation::{", "use super::*;"),
+    ("tests/e2e-tenant-isolation/tests/adversarial_tail.rs", "use e2e_tenant_isolation::*;", "use super::*;"),
 )
 
 class VerificationError(RuntimeError):
