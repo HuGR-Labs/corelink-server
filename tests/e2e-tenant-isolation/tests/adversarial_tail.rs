@@ -1,7 +1,18 @@
-use e2e_tenant_isolation::{
-    AuditCapture, AuditChain, AuditQueryEngine, DenyKind, DsrIntake, HierarchicalQuotaStore,
-    KvReplicatedPatStore, MultipartBroker, RegionRouter, StripeWebhookLedger, TenantCtx,
-};
+//! Pentest-readiness adversarial cross-tenant scenarios (18–25).
+//!
+//! This file is both an integration-test crate and a module included by
+//! `adversarial.rs`, so its crate-level lint configuration is valid in either
+//! context.
+
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test module — assertions panic by design"
+)]
+
+use e2e_tenant_isolation::*;
 
 /// Scenario 18 — Audit chain leaf forge: Tenant A constructs a forged
 /// leaf claiming it belongs to Tenant B's chain. Chain verify under
