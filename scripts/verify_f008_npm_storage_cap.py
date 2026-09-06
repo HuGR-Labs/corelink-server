@@ -16,6 +16,13 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MAX_SOURCE_BYTES = 2_000_000
 MAX_TOKENS = 500_000
+CONTRACT_FILES = (
+    "crates/corelink-container/src/routes/npm.rs",
+    "crates/corelink-container/src/routes/build.rs",
+    "docs/knowledge/surfaces/public-packages.md",
+    "crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs",
+    "crates/corelink-container/src/byte_accounting/b126_m2_test_2_1.rs",
+)
 
 
 def _tokens(source: str) -> list[str]:
@@ -331,6 +338,7 @@ def verify(root: Path = ROOT) -> None:
 
     _contains_npm_contract(npm)
     _contains_build_contract(build)
+    _contains_documentation_contract(root)
 
 
 def _contains(tokens: list[str], needle: list[str], label: str) -> None:
@@ -351,10 +359,78 @@ def _contains_build_contract(build: list[str]) -> None:
     _contains(build, ["npm_cap_resolver", ",", ")"], "build cap argument")
 
 
+def _contains_documentation_contract(root: Path) -> None:
+    """Keep the public explanation and accounting proof aligned with shipped code.
+
+    These checks are intentionally phrase- and context-sensitive: a stale
+    sentence saying that *all* adapters pass ``None`` must not survive merely
+    because another comment or string contains the newer resolver vocabulary.
+    """
+    public = _read(root, "docs/knowledge/surfaces/public-packages.md")
+    implementation = _read(
+        root, "crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs"
+    )
+    regression = _read(
+        root, "crates/corelink-container/src/byte_accounting/b126_m2_test_2_1.rs"
+    )
+    stale = "brew/npm/pip pass `None`"
+    for relative, text in (
+        ("docs/knowledge/surfaces/public-packages.md", public),
+        ("b126_m2_impl_01.rs", implementation),
+        ("b126_m2_test_2_1.rs", regression),
+    ):
+        if stale in text:
+            raise AssertionError(f"{relative}: stale all-adapter None wording")
+
+    gotchas_start = public.find("- `_public` writes need BOTH")
+    gotchas_end = public.find("\n- ", gotchas_start + 1)
+    if gotchas_start < 0 or gotchas_end < 0:
+        raise AssertionError("public package guidance missing the byte-accounting gotcha")
+    gotcha = public[gotchas_start:gotchas_end]
+    required_public = (
+        "brew and pip pass `None`",
+        "npm tarball bytes are per-tenant (not `_public`)",
+        "PAT-derived tenant's effective per-tier cap through the shared D1 selector",
+        "post-buffer moat write",
+        "absent or indeterminate selector remains `None` and therefore fail-closed",
+    )
+    for phrase in required_public:
+        if phrase not in gotcha:
+            raise AssertionError(f"public package guidance missing: {phrase}")
+
+    implementation_start = implementation.find("// brutal-audit H3")
+    implementation_end = implementation.find("// Break the coupling", implementation_start + 1)
+    if implementation_start < 0 or implementation_end < 0:
+        raise AssertionError("byte-accounting implementation comment block missing")
+    implementation_comment = implementation[implementation_start:implementation_end]
+    required_implementation = (
+        "no fresh cap (brew/pip, or npm only through an indeterminate",
+        "Production npm resolves the PAT-derived cap",
+        "before this post-buffer moat write",
+    )
+    for phrase in required_implementation:
+        if phrase not in implementation_comment:
+            raise AssertionError(f"byte-accounting implementation comment missing: {phrase}")
+
+    regression_start = regression.find("async fn over_cap_downgrade_write_still_reconciles")
+    regression_end = regression.find("\n#[tokio::test]", regression_start + 1)
+    if regression_start < 0 or regression_end < 0:
+        raise AssertionError("byte-accounting regression comment block missing")
+    regression_comment = regression[regression_start:regression_end]
+    required_regression = (
+        "no fresh cap (the low-level `None` case)",
+        "Production npm supplies its resolved cap",
+        "before the post-buffer moat write",
+    )
+    for phrase in required_regression:
+        if phrase not in regression_comment:
+            raise AssertionError(f"byte-accounting regression comment missing: {phrase}")
+
+
 def _mutated(root: Path, replacements: dict[str, str]) -> Path:
     tmp = Path(tempfile.mkdtemp(prefix="f008-npm-mutation-"))
     changed_any = False
-    for relative in ("crates/corelink-container/src/routes/npm.rs", "crates/corelink-container/src/routes/build.rs"):
+    for relative in CONTRACT_FILES:
         target = tmp / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         text = _read(root, relative)
@@ -410,6 +486,21 @@ def self_test(root: Path = ROOT) -> None:
             original_flow:
             original_flow + "\n        self.moat\n            .put(&other_tenant, &digest.to_hex(), bytes, None)",
         },
+        # Inverse wording must reopen B-259 even when the runtime flow is intact.
+        {
+            "npm tarball bytes are per-tenant (not `_public`)":
+            "npm tarball bytes are shared cross-tenant",
+        },
+        {
+            "Production npm resolves the PAT-derived cap":
+            "Production npm passes `None` for the resolved cap",
+        },
+        # A positive sentence hidden in a quoted/string-bait fragment is not
+        # evidence for the surrounding documentation contract.
+        {
+            "PAT-derived tenant's effective per-tier cap through the shared D1 selector":
+            "\"PAT-derived tenant's effective per-tier cap\" + \" through the shared D1 selector\"",
+        },
     ]
     for mutation in mutations:
         candidate = _mutated(root, mutation)
@@ -422,4 +513,4 @@ def self_test(root: Path = ROOT) -> None:
 
 if __name__ == "__main__":
     self_test()
-    print("F008 npm storage-cap contract: PASS (structural flow + 10 semantic mutations)")
+    print("F008 npm storage-cap contract: PASS (structural flow + 13 semantic mutations)")
