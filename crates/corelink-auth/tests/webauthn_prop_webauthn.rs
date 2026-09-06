@@ -30,8 +30,8 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use argon2::{Algorithm, Argon2, Params, PasswordHasher, SaltString, Version};
-use password_hash::PasswordHash;
+use argon2::{Algorithm, Argon2, Params, PasswordHasher, Version};
+use password_hash::{PasswordHash, SaltString};
 use proptest::prelude::*;
 
 use corelink_auth::webauthn::{
