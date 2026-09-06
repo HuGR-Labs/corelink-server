@@ -6,23 +6,38 @@ import { handleRunnerAuthorize } from "../src/lib/runner_authorization.js";
 const KEY = "runner-authorize-test-key-0123456789abcdef";
 const TENANT = "11111111-1111-1111-1111-111111111111";
 
-function env(opts: { suspended?: boolean; maxConcurrency?: unknown; maxVcpuH?: unknown; mintCalls?: number[] }): Env {
+function env(opts: {
+  suspended?: boolean;
+  maxConcurrency?: unknown;
+  maxVcpuH?: unknown;
+  mintCalls?: number[];
+  tenant?: string;
+  dbReads?: { value: number };
+}): Env {
   const db = {
-    prepare: (sql: string) => ({
-      bind: (...args: unknown[]) => ({
-        first: async <T>() => {
-          if (sql.includes("tenant_gh_installation_map")) return { tenant_id: TENANT } as T;
-          if (sql.includes("tenant_offboarding_state")) return (opts.suspended ? { 1: 1 } : null) as T;
-          if (sql.includes("runner_repo_allowlist")) return { 1: 1 } as T;
-          if (sql.includes("runners_entitlement")) {
-            return (opts.maxConcurrency === undefined ? { max_concurrency: 4, max_vcpu_h: opts.maxVcpuH ?? null } :
-              { max_concurrency: opts.maxConcurrency, max_vcpu_h: opts.maxVcpuH ?? null }) as T;
-          }
-          return null as T;
-        },
-        run: async () => ({ success: true, meta: { changes: 0 } }),
-      }),
-    }),
+    prepare: (sql: string) => {
+      if (opts.dbReads) opts.dbReads.value++;
+      return {
+        bind: (...args: unknown[]) => ({
+          first: async <T>() => {
+            if (sql.includes("tenant_gh_installation_map")) {
+              return { tenant_id: opts.tenant ?? TENANT } as T;
+            }
+            if (sql.includes("tenant_offboarding_state")) {
+              return (opts.suspended ? { 1: 1 } : null) as T;
+            }
+            if (sql.includes("runner_repo_allowlist")) return { 1: 1 } as T;
+            if (sql.includes("runners_entitlement")) {
+              return (opts.maxConcurrency === undefined
+                ? { max_concurrency: 4, max_vcpu_h: opts.maxVcpuH ?? null }
+                : { max_concurrency: opts.maxConcurrency, max_vcpu_h: opts.maxVcpuH ?? null }) as T;
+            }
+            return null as T;
+          },
+          run: async () => ({ success: true, meta: { changes: 0 } }),
+        }),
+      };
+    },
   } as unknown as D1Database;
   return {
     CORELINK_INTERNAL_AUTH_KEY: KEY,
@@ -54,6 +69,17 @@ describe("POST /internal/v1/runner/authorize", () => {
     expect(missing.status).toBe(400);
   });
 
+  it.each([
+    { job_id: " job-1", repo_full_name: "acme/widgets", installation_id: "gh-1" },
+    { job_id: "job-1", repo_full_name: " acme/widgets", installation_id: "gh-1" },
+    { job_id: "job-1", repo_full_name: "acme/widgets", installation_id: " gh-1" },
+  ])("rejects whitespace identity before any DB reads: %j", async (body) => {
+    const dbReads = { value: 0 };
+    const response = await handleRunnerAuthorize(request(body), env({ dbReads }), "req-whitespace");
+    expect(response.status).toBe(400);
+    expect(dbReads.value).toBe(0);
+  });
+
   it.each([null, "not-json"]) ("rejects malformed body %j before any effects", async (body) => {
     const requestBody = body === "not-json" ? body : JSON.stringify(body);
     const malformed = new Request("https://worker.test/internal/v1/runner/authorize", {
@@ -76,6 +102,17 @@ describe("POST /internal/v1/runner/authorize", () => {
     const response = await handleRunnerAuthorize(request({ job_id: "job-1", repo_full_name: "acme/widgets", installation_id: "gh-1" }), e, "req-2");
     expect(response.status).toBe(403);
     expect(fetches).toBe(0);
+  });
+
+  it("rejects a whitespace-corrupted derived tenant before authz reads", async () => {
+    const dbReads = { value: 0 };
+    const response = await handleRunnerAuthorize(
+      request({ job_id: "job-1", repo_full_name: "acme/widgets", installation_id: "gh-1" }),
+      env({ tenant: ` ${TENANT}`, dbReads }),
+      "req-tenant",
+    );
+    expect(response.status).toBe(403);
+    expect(dbReads.value).toBe(1);
   });
 
   it("rejects invalid concurrency while allowing a finite zero budget", async () => {

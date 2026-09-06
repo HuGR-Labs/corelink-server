@@ -223,7 +223,8 @@ async function resolveTenantFromAcquiringPat(
   if (
     parsed.valid !== true ||
     typeof parsed.tenant_id !== "string" ||
-    parsed.tenant_id.length === 0
+    parsed.tenant_id.length === 0 ||
+    parsed.tenant_id !== parsed.tenant_id.trim()
   ) {
     return null;
   }
@@ -359,11 +360,15 @@ export async function handleRunnerMint(
     return reapiError("BAD_REQUEST", "invalid request body", 400, requestId);
   }
   const jobId = body.job_id;
-  if (typeof jobId !== "string" || jobId.length === 0) {
+  if (typeof jobId !== "string" || jobId.length === 0 || jobId !== jobId.trim()) {
     return reapiError("BAD_REQUEST", "job_id required", 400, requestId);
   }
   const repoFullName = body.repo_full_name;
-  if (typeof repoFullName !== "string" || repoFullName.length === 0) {
+  if (
+    typeof repoFullName !== "string" ||
+    repoFullName.length === 0 ||
+    repoFullName !== repoFullName.trim()
+  ) {
     return reapiError("BAD_REQUEST", "repo_full_name required", 400, requestId);
   }
   const explicitOperationId = body.operation_id;
@@ -378,7 +383,9 @@ export async function handleRunnerMint(
   const installationId = body.installation_id;
   if (
     installationId !== undefined &&
-    (typeof installationId !== "string" || installationId.length === 0)
+    (typeof installationId !== "string" ||
+      installationId.length === 0 ||
+      installationId !== installationId.trim())
   ) {
     return reapiError(
       "BAD_REQUEST",
@@ -427,7 +434,7 @@ export async function handleRunnerMint(
     runnerJobAcKey = RUNNER_AC_KEY_DENY_DELETE_ONLY;
   } else {
     const name = body.ac_output_name;
-    if (typeof name !== "string" || name.length === 0) {
+    if (typeof name !== "string" || name.length === 0 || name !== name.trim()) {
       return reapiError("BAD_REQUEST", "ac_output_name must be a non-empty string", 400, requestId);
     }
     runnerJobAcKey = await blake3Hex(RUNNER_AC_KEY_PREFIX + name);
@@ -462,7 +469,8 @@ export async function handleRunnerMint(
       if (
         mapRow === null ||
         typeof mapRow.tenant_id !== "string" ||
-        mapRow.tenant_id.length === 0
+        mapRow.tenant_id.length === 0 ||
+        mapRow.tenant_id !== mapRow.tenant_id.trim()
       ) {
         return forbidden();
       }
