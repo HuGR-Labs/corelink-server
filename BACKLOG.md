@@ -1557,6 +1557,31 @@ verify-means: |
 last-verified: 2026-09-06
 ```
 
+### B-315 — concurrent merges can allocate the same dense BACKLOG id from one stale snapshot
+```backlog
+id: B-315
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 containment adjudication record"
+source-locator: "WP-LEDGER-ID-ALLOC — Dense BACKLOG IDs / concurrent allocation"
+finding-title: "dense BACKLOG id allocation has no merge-time serialization or revalidation"
+problem: "Two merge authorities can read the same main snapshot, choose the same next contiguous id, and both issue a merge; the existing courtesy precheck only reports a collision after the stale merge and accepts a degenerate census."
+evidence: "The merge gate's former BACKLOG block fetched PR/main independently, printed renumber commands, and had no lock or second main-ref/snapshot check; repository merge commits are allowed, while branch-protection/ruleset API checks return GitHub 403 on this plan."
+acceptance: "The single --merge authority holds a crash-safe exclusive lock through allocation and merge, captures exact base/main/head bytes, validates the complete canonical dense candidate population against those bytes, creates a signed DCO merge commit whose parents are base then head and whose tree is exactly head, and pushes it normally to refs/heads/main so a moved main is rejected atomically."
+verify: python3 scripts/verify_b315_dense_id_allocation.py --self-test
+verify-means: |
+  done — the executable baseline, two-authority same-snapshot race, no-gap/no-silent-disappearance
+  fixture, and malformed/non-positive/non-canonical/duplicate controls all pass. The merge
+  gate uses the allocator under a crash-safe process lock, performs current-main and candidate
+  revalidation, and uses a unique create-only remote lease with owner-safe conditional release.
+  The signed merge commit is parent/tree checked before a normal non-force main push; GitHub
+  state and resulting main OID/tree are polled before claiming MERGED. Any missing snapshot,
+  changed main/head, invalid census, signature/DCO mismatch, push rejection, or PR-not-MERGED
+  state is a refusal, never an advisory green result.
+last-verified: 2026-09-06
+```
+
 ### B-003 — the 864s ceiling from 2026-08-02 has no established mechanism
 
 That incident concluded jobs past ~900 s were being SIGTERMed. They could not

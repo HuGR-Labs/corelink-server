@@ -108,6 +108,13 @@ on:
       - "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/explanation/privacy/gdpr.mdx"
       - "apps/docs/docs/trust/subprocessors.mdx"
       - "scripts/gen-public-subprocessors.py"
+      # B-315 owns dense-id allocation/revalidation in the sole merge authority.
+      - "scripts/backlog_id_alloc.py"
+      - "scripts/verify_b315_dense_id_allocation.py"
+      - "tests/test_b315_dense_id_allocation.py"
+      - "scripts/pre-merge-gate-check.sh"
+      - "scripts/b315_atomic_merge.sh"
+      - "changelog.d/b315-dense-backlog-id-allocation.md"
       - "scripts/b155_backlog_grep_parser.py"
       - "scripts/verify_d03_graduation.py"
       - "scripts/validate_permission_matrix.py"
@@ -328,6 +335,13 @@ on:
       - "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/explanation/privacy/gdpr.mdx"
       - "apps/docs/docs/trust/subprocessors.mdx"
       - "scripts/gen-public-subprocessors.py"
+      # Repeat the B-315 source population for push-to-main verification.
+      - "scripts/backlog_id_alloc.py"
+      - "scripts/verify_b315_dense_id_allocation.py"
+      - "tests/test_b315_dense_id_allocation.py"
+      - "scripts/pre-merge-gate-check.sh"
+      - "scripts/b315_atomic_merge.sh"
+      - "changelog.d/b315-dense-backlog-id-allocation.md"
       - "scripts/b155_backlog_grep_parser.py"
       - "scripts/verify_d03_graduation.py"
       - "scripts/validate_permission_matrix.py"
@@ -584,6 +598,10 @@ jobs:
         run: |
           python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test
           python3 -m pytest -q tests/test_verify_b314_gdpr_sigstore.py
+      - name: B-315 dense backlog allocation guard and mutations
+        run: |
+          python3 scripts/verify_b315_dense_id_allocation.py --self-test
+          python3 -m pytest -q tests/test_b315_dense_id_allocation.py
       - name: B-094 published-claims guard and mutations
         run: |
           command -v gitleaks

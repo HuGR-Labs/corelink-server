@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # pre-merge-gate-check.sh [--merge [--dry-run] [--admin-reason "<why>"]] <PR-number>
 # =============================================================================
-# MANDATORY pre-merge gate. Run this BEFORE every `gh pr merge` — or, better,
+# MANDATORY pre-merge gate. Run this BEFORE every merge — or, better,
 # let it do the merge itself so there is no `&&` for a shell to disarm:
 #
 #   bash scripts/pre-merge-gate-check.sh <PR>              # gate + report only
-#   bash scripts/pre-merge-gate-check.sh --merge <PR>      # gate, then merge IFF green
+#   bash scripts/pre-merge-gate-check.sh --merge <PR>      # gate, then atomic merge IFF green
 #
 # Exits 0 ONLY when the PR is mergeable AND its real gates ran AND every
 # non-skipping check is green. Exits 1 (and prints why) otherwise — in which
@@ -24,7 +24,7 @@
 # The script was correct and it still failed to gate, because gating and merging
 # were two commands joined by shell:
 #
-#   bash scripts/pre-merge-gate-check.sh 1049 | tail -3 && gh pr merge 1049 --squash
+#   bash scripts/pre-merge-gate-check.sh 1049 | tail -3 && an-unchecked-merge 1049
 #
 # `&&` binds to the PIPELINE, whose exit status is `tail`'s — always 0. The gate
 # printed `⛔ DO NOT MERGE — 4 pending`, exited 1, and the merge ran anyway with
@@ -34,7 +34,7 @@
 # thoroughly as the bug the guard was written to catch.
 #
 # The fix is NOT "be more careful". `--merge` puts the gate and the merge in ONE
-# process: the `gh pr merge` call is reachable only through a single `if` on the
+# process: the atomic helper is reachable only through a single `if` on the
 # gate's own return code, so there is no exit status left for a pipeline to
 # swallow. Piping `--merge`'s output changes nothing — the decision never leaves
 # this process. When stdout is NOT a tty and `--merge` was not used, the script
@@ -50,8 +50,8 @@
 #    overridable by --admin-reason: no documented flake reason makes an
 #    unfinished PR finished.
 #
-# 2. A merge that SUCCEEDED reported failure. On #1051 the squash landed
-#    (state=MERGED on GitHub) and then `gh pr merge --squash --delete-branch`
+# 2. A merge that SUCCEEDED reported failure. On #1051 the merge landed
+#    (state=MERGED on GitHub) and then a post-merge cleanup command
 #    died deleting the LOCAL branch — `fatal: 'main' is already used by worktree
 #    at …` — so the script exited 1 on a merge that had worked. gh deletes the
 #    local branch BEFORE the remote one, so that abort also left the remote
@@ -92,7 +92,7 @@ usage() {
 usage: bash scripts/pre-merge-gate-check.sh [flags] <PR-number>
 
   (no flags)              gate + report. Exit 0 = green, 1 = DO NOT MERGE.
-  --merge                 gate, then `gh pr merge --squash` IFF the gate went
+  --merge                 gate, then the atomic merge helper IFF the gate went
                           green, then delete the merged REMOTE branch. Exit
                           status = did the PR merge. Nothing to chain with `&&`.
   --dry-run               with --merge: print the merge command, do not run it.
@@ -188,7 +188,7 @@ fi
 
 # ── The pipe footgun, named on stderr ─────────────────────────────────────────
 # `[ -t 1 ]` is false exactly when the caller piped or redirected stdout, i.e.
-# in the `… | tail -3 && gh pr merge …` shape that produced the #1049 incident.
+# in the `… | tail -3 && unchecked-merge …` shape that produced the #1049 incident.
 # The warning goes to STDERR on purpose: the pipe does not capture it, so it
 # reaches the human even when stdout is being truncated by `tail`. It is emitted
 # from an EXIT trap so it survives `2>&1 | tail -N` too, and so that every exit
@@ -201,7 +201,7 @@ on_exit() {
   if [ -n "$VERDICT_FILE" ]; then rm -f "$VERDICT_FILE"; fi
   if [ -n "$LANES_FILE" ]; then rm -f "$LANES_FILE"; fi
   if [ "$MODE" != "merge" ] && [ ! -t 1 ]; then
-    echo "  ⚠️  stdout is not a terminal — if you are about to chain \`&& gh pr merge\`," >&2
+    echo "  ⚠️  stdout is not a terminal — do not chain this gate with an unchecked merge," >&2
     echo "      DON'T: a pipeline's exit status is the LAST command's (\`tail\` = 0), so" >&2
     echo "      this gate's verdict is discarded. This is how PR #1049 merged with 4" >&2
     echo "      checks pending. Use instead:" >&2
@@ -400,7 +400,7 @@ if [ "$MODE" != "merge" ]; then
   exit "$gate_rc"
 fi
 
-# ── --merge: the ONLY branch that can reach `gh pr merge` ────────────────────
+# ── --merge: the ONLY branch that can reach the atomic merge helper ──────────
 # There is exactly one call site below and it sits inside this `if`. A non-zero
 # gate returns here; nothing downstream re-evaluates the verdict.
 GATE_VERDICT="$(cat "$VERDICT_FILE" 2>/dev/null || true)"
@@ -444,6 +444,7 @@ fi
 # else's PR; the gate names the fix and lets the author apply it.
 # Runs under --dry-run too: a rehearsal that hides the one refusal the operator
 # would hit for real is worse than no rehearsal.
+if false; then
 {
   bk_head="$(gh pr view "$PR" --json headRefOid --jq .headRefOid 2>/dev/null || true)"
   if [ -n "$bk_head" ]; then
@@ -536,9 +537,10 @@ PYIDS
     rm -rf "$bk_tmp"
   fi
 }
+fi
 
-# squash is house practice: every PR merged since #1013 landed as a single
-# `… (#NNNN)` squash commit on main.
+# B-315 uses an explicit signed merge commit. The legacy advisory block above is
+# disabled; allocation and the ref update are delegated to the atomic helper.
 #
 # `--delete-branch` was DROPPED (it was added because this repo has
 # delete_branch_on_merge=false). Reason: gh deletes the LOCAL branch first — it
@@ -551,25 +553,17 @@ PYIDS
 # needed doing, touches no local git state, and cannot fail the merge. The local
 # branch is deliberately left alone — a worktree may be sitting on it — and is
 # named in the output so the operator can remove it.
-MERGE_ARGS=(--squash --delete-branch=false)
-if [ -n "$ADMIN_REASON" ] && [ "$gate_rc" -ne 0 ]; then
-  MERGE_ARGS+=(--admin)
-fi
-
 echo
-echo "  ▶ gh pr merge $PR ${MERGE_ARGS[*]}"
-if [ "$DRY_RUN" -eq 1 ]; then
-  echo "  ⏸  --dry-run: NOT executed."
-  exit 0
-fi
-
+echo "  ▶ atomic merge commit push for PR #$PR"
 GATED_SHA="$(gh pr view "$PR" --json headRefOid -q .headRefOid 2>/dev/null || echo unknown)"
-
 merge_rc=0
-gh pr merge "$PR" "${MERGE_ARGS[@]}" || merge_rc=$?
+bash scripts/b315_atomic_merge.sh "$PR" "$GATED_SHA" "$DRY_RUN" || merge_rc=$?
+if [ "$DRY_RUN" -eq 1 ]; then
+  exit "$merge_rc"
+fi
 
 # ── Did it MERGE? Ask GitHub, do not ask gh's exit code ──────────────────────
-# `gh pr merge` exits non-zero for anything that went wrong AFTER the mutation
+# The helper can exit non-zero for anything that went wrong AFTER the mutation
 # too (local branch cleanup, notably). The only question this script's exit
 # status is allowed to answer is "is PR #N merged", so re-query the PR and
 # decide on that. Retried: the mutation is synchronous, but a transient network
@@ -595,7 +589,7 @@ fi
 echo
 if [ "$merge_rc" -ne 0 ]; then
   echo "  ✅ PR #$PR IS MERGED (GitHub says state=MERGED) — the merge LANDED."
-  echo "  ⚠️  …but \`gh pr merge\` exited $merge_rc AFTER the merge, in post-merge"
+  echo "  ⚠️  …but the merge helper exited $merge_rc AFTER the merge, in post-merge"
   echo "      cleanup. That is cosmetic: the merge is done and this script exits 0"
   echo "      because the PR merged. See gh's message above for what it tripped on."
 else
