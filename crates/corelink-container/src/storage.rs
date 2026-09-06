@@ -29,6 +29,7 @@
 //!   `corelink_handler_cas::{CasReadHandler, CasWriteHandler}`.
 //! - [`d1_http`] — async D1 HTTP API client for metadata reads.
 
+/// BYOK convergent-encryption helpers for native CAS storage.
 pub mod byok_cas;
 pub mod cas_write_fence;
 pub mod d1_audit_sink;
