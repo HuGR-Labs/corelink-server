@@ -8,7 +8,7 @@ async fn team_invite_returns_201_with_member() {
     let app = router(state);
     let body = serde_json::to_string(&serde_json::json!({
         "email": "alice@example.com",
-        "role": "Developer"
+        "role": "member"
     }))
     .unwrap();
     let req = Request::builder()
@@ -25,7 +25,7 @@ async fn team_invite_returns_201_with_member() {
     let bytes = to_bytes(resp.into_body(), 1 << 20).await.expect("body");
     let v: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
     assert_eq!(v["member"]["email"], "alice@example.com");
-    assert_eq!(v["member"]["role"], "Developer");
+    assert_eq!(v["member"]["role"], "member");
     assert_eq!(v["member"]["status"], "invited");
 }
 
@@ -82,11 +82,7 @@ async fn team_invite_is_owner_admin_gated() {
     };
     // member / viewer / unknown cannot invite at all → 403.
     for caller in ["member", "viewer", ""] {
-        let r = app
-            .clone()
-            .oneshot(invite(caller, "Developer"))
-            .await
-            .unwrap();
+        let r = app.clone().oneshot(invite(caller, "member")).await.unwrap();
         assert_eq!(
             r.status(),
             StatusCode::FORBIDDEN,
@@ -96,7 +92,7 @@ async fn team_invite_is_owner_admin_gated() {
     // admin can invite a non-privileged member → 201, but NOT a privileged admin → 403.
     assert_eq!(
         app.clone()
-            .oneshot(invite("admin", "Developer"))
+            .oneshot(invite("admin", "member"))
             .await
             .unwrap()
             .status(),
@@ -104,7 +100,7 @@ async fn team_invite_is_owner_admin_gated() {
     );
     assert_eq!(
         app.clone()
-            .oneshot(invite("admin", "Admin"))
+            .oneshot(invite("admin", "admin"))
             .await
             .unwrap()
             .status(),
@@ -114,7 +110,7 @@ async fn team_invite_is_owner_admin_gated() {
     // owner can invite an admin → 201.
     assert_eq!(
         app.clone()
-            .oneshot(invite("owner", "Admin"))
+            .oneshot(invite("owner", "admin"))
             .await
             .unwrap()
             .status(),
@@ -171,7 +167,7 @@ async fn team_remove_with_write_scope_flips_seat() {
     let (state, _) = fixture();
     let app = router(state);
     let invite_body = serde_json::to_string(&serde_json::json!({
-        "email": "bob@example.com", "role": "Developer"
+        "email": "bob@example.com", "role": "member"
     }))
     .unwrap();
     let invite = Request::builder()

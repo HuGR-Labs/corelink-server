@@ -10,27 +10,27 @@ tags: [sdk, cli, auth, how-to]
 
 ## When to use this guide
 
-You installed the `corelink` binary (single signed executable for macOS,
+You installed the `corelink` binary (single executable for macOS,
 Linux, and Windows) and need to run any command except `version`.
 
 ## Prerequisites
 
 - `corelink` binary on `$PATH`. Install via your package manager or
-  download from the GitHub releases page. Verify the SLSA attestation
-  before first use.
+  download it from the GitHub releases page. When downloading a release
+  asset, verify its matching `.sha256` checksum before first use.
 - A PAT minted at `https://humangr.com/corelink/en/customer/keys`.
 
 ## Recommended: Env var
 
 ```bash
-export CORELINK_PAT="corelink_dev_t_xxx.xxx.xxx"
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 corelink ls --tenant acme-corp
 ```
 
 ## Alternative: Config file
 
 ```bash
-corelink config set auth.pat corelink_dev_t_xxx.xxx.xxx
+corelink config set auth.pat corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA
 corelink config set defaults.tenant_id acme-corp
 ```
 
@@ -42,7 +42,7 @@ The file lives at `~/.corelink/config.toml` on macOS/Linux and
 
 ```bash
 # DO NOT DO THIS — the CLI exits 2 with an explicit security error.
-corelink --pat=corelink_dev_t_xxx.xxx.xxx ls --tenant acme-corp
+corelink --pat=corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA ls --tenant acme-corp
 ```
 
 CTRL-CRED-001 forbids the `--pat` flag because process arguments leak via

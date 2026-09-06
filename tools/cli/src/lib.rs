@@ -100,11 +100,16 @@ pub mod fuzz_api {
             let candidate = &haystack[idx..];
             // PAT total length is 95 or 96; clip to 96 + safety margin.
             let end = candidate.len().min(128);
-            let window = &candidate[..end];
+            // Keep this fuzz helper panic-free for arbitrary Unicode: never
+            // slice a `str` at a non-UTF-8 byte boundary.
+            let window = candidate
+                .as_bytes()
+                .get(..end)
+                .and_then(|bytes| std::str::from_utf8(bytes).ok())
+                .unwrap_or(candidate);
             // Try increasing lengths matching the spec (95 / 96 chars).
             for needed in [95_usize, 96] {
-                if window.len() >= needed {
-                    let attempt = &window[..needed];
+                if let Some(attempt) = window.get(..needed) {
                     if validate_pat_shape(attempt).is_ok() {
                         count += 1;
                         break;
@@ -134,6 +139,19 @@ mod lib_tests {
     fn count_pat_leaks_zero_on_clean_text() {
         let buf = "error: PAT must NOT be passed as a CLI argument";
         assert_eq!(fuzz_api::count_pat_leaks(buf), 0);
+    }
+
+    #[test]
+    fn count_pat_leaks_handles_unicode_at_scan_window_boundary() {
+        let token_id = "ABCDEFGH01234567";
+        let secret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        let sig = "AAAAAAAAAAAAAAAAAAAAAA";
+        let pat = format!("corelink_pat_{token_id}.{secret}.{sig}");
+        // The multibyte character begins at byte 127 of the candidate. A
+        // direct `&candidate[..128]` would panic on its non-UTF-8 boundary.
+        let buf = format!("{pat}{}é", "x".repeat(31));
+        assert_eq!(buf.find('é'), Some(127));
+        assert_eq!(fuzz_api::count_pat_leaks(&buf), 1);
     }
 
     #[test]

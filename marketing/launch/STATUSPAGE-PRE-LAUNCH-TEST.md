@@ -127,7 +127,7 @@ Before any test runs, **all** of these must be true:
 
 1. In PagerDuty, trigger a synthetic incident on the test service:
    ```bash
-   curl -sS -H "Authorization: Token token=${PD_API_TOKEN}" \
+   curl -sS \
      -H "Content-Type: application/json" \
      -H "From: sre-lead@humangr.com" \
      -X POST https://api.pagerduty.com/incidents \
@@ -138,7 +138,10 @@ Before any test runs, **all** of these must be true:
          "service": { "id": "${PD_TEST_SERVICE_ID}", "type": "service_reference" },
          "urgency": "high"
        }
-     }'
+     }' \
+     --config /dev/fd/3 3<<EOF
+header = "Authorization: Token token=${PD_API_TOKEN}"
+EOF
    ```
 2. Within 60 s, expect a new Statuspage incident on the TEST component with status `Investigating` and the SEV1 auto-publish template body.
 3. Acknowledge the PD incident → expect the SP incident status to advance to `Identified` within 60 s.

@@ -1,13 +1,13 @@
-//! `corelink-admin-api` — Admin API `POST /v1/admin/ops` endpoint
-//! + Tower middleware composition (WI-S13-002).
+//! `corelink-admin-api` — internal admin-operation policy pipeline
+//! (WI-S13-002), with no published HTTP binding.
 //!
 //! # What this crate ships
 //!
 //! Per the corelink autonomous execution charter
 //! (`trait-abstraction-defer`), this crate ships the **pure-logic
-//! pipeline** for admin op request processing. Production CF Worker
-//! binding (HTTP routing, real D1, real KV signing key) is deferred
-//! to WI-S13-006 PRR ship gate.
+//! pipeline** for admin op request processing. A production HTTP binding is
+//! deliberately disabled until durable persistence and a safe CF Worker
+//! binding are available.
 //!
 //! Specifically:
 //!

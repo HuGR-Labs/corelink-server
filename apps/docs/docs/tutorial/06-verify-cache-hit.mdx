@@ -9,7 +9,7 @@ description: Confirm the remote cache is actually serving hits — and benchmark
 
 The tutorial is complete only when you can prove the cache is working. This page collects three independent checks.
 
-## A. Bazel BES / Buck2 logs
+## A. Bazel build logs
 
 Bazel:
 
@@ -18,13 +18,9 @@ bazel build //:hello 2>&1 | grep -E "remote cache hit|disk cache hit|processes:"
 # INFO: 12 processes: 11 remote cache hit, 1 internal.
 ```
 
-Buck2:
+A 100% green build that prints **0 processes** is the strongest single signal — Bazel short-circuited every action through the cache.
 
-```bash
-buck2 build //:hello --show-output 2>&1 | grep -iE "cache hits"
-```
-
-A 100% green build that prints **0 processes** is the strongest single signal — Bazel/Buck2 short-circuited every action through the cache.
+(There is no Buck2 equivalent to show: Buck2 speaks REAPI over gRPC only and cannot connect to CoreLink — see [Buck2 support status](./04-buck2-quickstart).)
 
 ## B. CLI microbenchmark
 

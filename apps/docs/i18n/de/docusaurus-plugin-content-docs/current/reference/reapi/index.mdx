@@ -17,8 +17,11 @@ description: Remote Execution API v2 — services, messages, and per-service cod
 
 CoreLink implementiert eine mandantenfähige, wire-kompatible Teilmenge von
 [`bazelbuild/remote-apis @ v2.12.0`](https://github.com/bazelbuild/remote-apis/tree/v2.12.0).
-Bazel 6+, Buck2 und jeder andere REAPI-v2-Client verbinden sich **ohne
-Codeänderungen** — nur der Cache-Endpoint und der PAT unterscheiden sich.
+Bazel 6+ und jeder andere REAPI-v2-Client, der **HTTP/REST** spricht,
+verbinden sich **ohne Codeänderungen** — nur der Cache-Endpoint und der PAT
+unterscheiden sich. CoreLink stellt keinen gRPC-Ingress bereit; REAPI-Clients,
+die ausschließlich gRPC sprechen (Buck2, Pants, NativeLink), können sich
+daher nicht verbinden.
 
 ## Authentifizierung
 
@@ -30,7 +33,7 @@ corelink_<env>_<token_id>.<random_secret>.<hmac_sig>
 ```
 
 Der auf dieser Website durchgängig verwendete Platzhalter —
-`corelink_dev_t_xxx.xxx.xxx` — ist beabsichtigt und darf in Produktion
+`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA` — ist beabsichtigt und darf in Produktion
 niemals auftauchen.
 
 ## Automatisch generierte Service-Seiten

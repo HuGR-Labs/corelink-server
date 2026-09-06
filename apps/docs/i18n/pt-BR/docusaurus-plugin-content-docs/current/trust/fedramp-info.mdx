@@ -67,7 +67,7 @@ For ~95% of commercial-regulated prospects who ask about FedRAMP **as a quality 
 | **SOC 2 Type I report** | Target Q1-2027; readiness 83.7% internal / 96.4% Drata as of 2026-05-15 | [Compliance → SOC 2](./compliance#soc-2) |
 | **ISO 27001:2022 certificate** | Target Q1-2027; 98.9% in-scope coverage today | [ISO 27001:2022](./iso27001) |
 | **CSA STAR Level 1 (CAIQ) self-assessment** | Available on request (~2 person-weeks turnaround) | `trust@humangr.com` |
-| **Pentest report (annual external)** | Schellman / Bishop Fox | `trust@humangr.com` (NDA-gated) |
+| **Pentest report (annual external)** | **Does not exist.** No external penetration test has been commissioned and no firm has been engaged — every vendor in `reports/pentest-rfp-tracker.json` is `NOT_CONTACTED`. Assurance today is internal: TLA+ invariants gated in CI, CodeQL / cargo-audit / semgrep / trivy scanning, sealed cargo-fuzz summaries, and internal adversarial review. | n/a — ask `trust@humangr.com` for current status |
 | **Sub-processor SOC 2 + FedRAMP inheritance** | Inherited from Cloudflare, AWS, GCP, Azure, Drata, PagerDuty | [Sub-processors](./subprocessors) |
 
 ## Coverage estimate vs. FedRAMP Moderate
@@ -92,14 +92,14 @@ baseline as program / privacy out-of-baseline):
 | --- | --- | --- |
 | **AC** Access Control | Coverage | WebAuthn + Clerk SSO + MFA + per-tenant DO + RBAC |
 | **AU** Audit & Accountability | Partial (≥80% substance) | Eventos de auditoria em cadeia de hash com provas de inclusão já conectados; o sink de produção é em memória (perdido em restart, não durável) — a persistência em R2 e a retenção de 7 anos via Object Lock estão adiadas |
-| **CM** Configuration Management | Coverage (exceeds) | SLSA L3 + Cosign + Rekor + reproducible builds |
+| **CM** Configuration Management | Coverage (exceeds) | SBOM + reproducible builds + SHA-256 (`.sha256`) checksum sidecars for CLI release assets; no SLSA/Cosign/Rekor artifact is currently published |
 | **MA** Maintenance | Coverage (inherited) | Sub-processor SOC 2 (cloud-only) |
 | **MP** Media Protection | Coverage | Logical erasure + sub-processor media destruction |
 | **PE** Physical & Environmental | Coverage (inherited) | Sub-processor SOC 2 Type II |
 | **RA** Risk Assessment | Coverage | STRIDE/LINDDUN + Dependency-Track + failure-mode taxonomy |
 | **SA** System & Services Acquisition | Coverage | SBOM + property tests + TLA+ + vendor risk register |
 | **SI** System & Information Integrity | Coverage (exceeds) | Rust memory safety + cargo-fuzz + immutable Workers |
-| **SR** Supply Chain Risk Management | Coverage (exceeds) | SLSA L3 + signed deploys + transparency logs + vendor register |
+| **SR** Supply Chain Risk Management | Coverage (exceeds) | Dependency scanning + release checksums + vendor register; signed deploys and transparency logs are not live |
 | **AT** Awareness & Training | Partial (≥80% substance) | Training cadence informal; formality gap |
 | **CP** Contingency Planning | Partial (≥80% substance) | 14-drill BCP/DR cadence; first cycle scheduled |
 | **CA** Assessment, Authorization & Monitoring | Partial (≥80% substance) | CA-6 ATO process itself is FedRAMP-unique |

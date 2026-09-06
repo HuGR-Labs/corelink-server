@@ -1,10 +1,14 @@
 # smoke-install — end-to-end smoke test of the `corelink` install one-liner.
+# B-134 experiment: this run exercises the `corelink` runner's
+# Docker-compatible nerdctl/containerd backend. A successful `docker info` or
+# `docker build` proves command compatibility only; it does not claim a Docker
+# daemon exists.
 # -----------------------------------------------------------------------------
 # Builds a clean Debian container, runs the public install script, and asserts
-# `corelink --version` / `corelink doctor`. This is a Docker-DAEMON workflow (plain
+# `corelink --version` / `corelink doctor`. This is a Docker CLI workflow (plain
 # `docker build`/`docker run` `run:` steps — NOT a container action), so it does
-# NOT hit the "Container action is only supported on Linux" failure. It runs on
-# `ubuntu-latest`, whose hosted image ships a working Docker daemon.
+# NOT hit the "Container action is only supported on Linux" failure. The B-134
+# candidate runs it on `corelink` so the backend behavior can be measured.
 #
 # ⚠️ THIS GATE WAS GREEN AND BLIND (fixed 2026-08-02).
 #   The CI test token it gated on never existed — verified: absent from the repo
@@ -22,28 +26,17 @@
 #   otherwise notice the gap. That principle stands; what follows is the second
 #   correction to how it was applied.
 #
-# ⚠️ AND THEN IT WAS ALL-OR-NOTHING (fixed in the same pass, 2026-08-02).
-#   The first fix made the missing token a HARD FAIL of the whole job. That
-#   over-corrected: it gated the ONE step that needs no credential at all behind
-#   a credential. `smoke-install.Dockerfile:11` sets `ENV CORELINK_TEST_TOKEN=changeme`
-#   — a literal placeholder, labelled as such — and its `CMD` (:18) runs the
-#   install one-liner then `corelink --version`, which performs NO authentication.
-#   That step alone proves download + arch mapping + SHA-256 verification +
-#   chmod + PATH + the binary actually executing.
-#
-#   That is precisely the class of defect that shipped to customers' laptops:
-#   `uname -m` reports `arm64` on Apple Silicon while the published asset is
-#   `corelink-darwin-aarch64`, so the download 404'd before any auth could
-#   matter (fixed 2026-08-02, see CHANGELOG). A credential-gated preflight
-#   blocked the only test that would have caught it, for want of a token that
-#   test never reads.
+# The installer itself invokes `corelink whoami` after writing its config, so a
+# successful end-to-end install necessarily requires a real PAT. The workflow
+# therefore fails closed when `CORELINK_CANARY_PAT` is unavailable; a synthetic
+# token would only create false evidence by stopping at the installer's auth
+# check. The same real PAT is then used by `corelink doctor` for its CAS write.
 #
 # THE CREDENTIAL: `CORELINK_CANARY_PAT`. There is NO owner action outstanding.
 #   RETIRED: the never-created secret this file used to demand, and used to tell
 #   the owner to go and mint, was `CORELINK_TEST_TOKEN_CI`. It is referenced
-#   nowhere in this workflow any more. Two docs still describe it as live and are
-#   now stale, tracked separately: `docs/internal/secrets-checklist.md:198`
-#   (matrix row 134) and `apps/get-corelink-worker/test/README.md:43,49`.
+#   nowhere in this workflow any more. The retirement remains recorded in
+#   `docs/internal/secrets-checklist.md` (matrix row 134) and the test README.
 #
 #   No new secret is minted and nothing waits on a human. `CORELINK_CANARY_PAT`
 #   already exists, is already bound, and is already working: `cas-canary.yml:38-46`
@@ -58,21 +51,17 @@
 #   `cas-canary.yml` (hourly, prod CAS round-trip) and this one. Rotating or
 #   revoking it takes both red. Update both consumers in the same pass.
 #
-# DEGRADATION — honest, not all-or-nothing:
-#   * No Docker daemon  -> HARD FAIL the job. `ubuntu-latest` ships one, so a
-#     miss means a broken runner image: a failure, not an environmental skip.
-#     (Confirmed at runtime in run 30723111099: "Docker daemon reachable.")
-#   * No PAT            -> the unauthenticated `--version` step STILL RUNS, and
-#     only the `doctor` step fails, LOUDLY, with `::error::`. Never
-#     skip-and-report-green: an unrunnable gate reports red, always.
+# DEGRADATION — honest and fail-closed:
+#   * No Docker-compatible backend -> HARD FAIL the job.
+#   * No PAT -> HARD FAIL before the install runs. The installer calls `whoami`,
+#     so proceeding with a fake token would not exercise the advertised path.
 #
 #   Safe to fail loudly: the triggers are `push:main` + weekly schedule + manual
 #   dispatch, NOT `pull_request`, so a red here blocks nobody's PR.
 #
-# NOT YET AN OBSERVED PASS. This gate has never executed its steps, so nobody
-#   knows whether the install one-liner and `doctor` are green against prod
-#   today. The first real run is the measurement, and a red there is the gate
-#   working — read its output rather than re-gating it into silence.
+# NOT YET AN OBSERVED PASS. This gate has never executed its steps on the
+# `corelink` backend, so the first real run is the measurement. A red there is
+# the gate working; read its output rather than re-gating it into silence.
 
 name: smoke-install
 on:
@@ -99,18 +88,9 @@ concurrency:
 
 jobs:
   smoke:
-    name: installer smoke (real Docker daemon required)
-    # Gated hosted, mirroring cas-canary.yml: this job's hard requirement is a
-    # REAL Docker daemon (the preflight `exit 1`s without one), which the
-    # `corelink` Firecracker fabric does not provide — only the founder's arm64
-    # Mac has one, and it would cross-emulate the amd64 install image. So the
-    # zero-hosted mandate resolves the other way here: the lane does NOT run
-    # rather than run on a box that cannot serve it. Unset today (hosted Actions
-    # cannot start), so this SKIPS cleanly instead of failing red on every push;
-    # it re-arms the moment an operator sets HOSTED_ACTIONS_AVAILABLE (which also
-    # implies CORELINK_CANARY_PAT is provisioned for the authenticated leg).
-    if: vars.HOSTED_ACTIONS_AVAILABLE == 'true'
-    runs-on: ubuntu-latest
+    name: installer smoke (Docker-compatible backend experiment)
+    # The shim is intentionally not described as a Docker daemon.
+    runs-on: corelink
     timeout-minutes: 5
     env:
       # Map the secret to a job-level env so the preflight can test for its
@@ -122,53 +102,52 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Preflight — Docker daemon (hard requirement)
+      - name: Preflight — Docker-compatible backend (hard requirement)
         shell: bash
         run: |
           set -uo pipefail
 
-          # Docker is the ONLY hard requirement of this job: without it nothing
-          # below can execute at all. On ubuntu-latest the daemon ships with the
-          # runner image, so a miss here means the image is broken — a genuine
-          # failure, not an environmental skip. (`docker info` also catches a
-          # present CLI with a dead daemon.)
+          # A Docker-compatible backend is the ONLY hard requirement: without
+          # it nothing below can execute. On `corelink`, docker is a drop-in
+          # shim over nerdctl/containerd/buildkitd; success proves compatibility,
+          # not daemon identity.
           if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-            echo "Docker daemon reachable."
+            echo "Docker-compatible backend reachable."
           else
-            echo "::error title=smoke-install cannot run (Docker)::No Docker daemon on this runner. ubuntu-latest ships one, so this points at a broken runner image."
+            echo "::error title=smoke-install cannot run (Docker-compatible backend)::The docker command or its backend is unavailable on this runner."
             exit 1
           fi
 
-          # The PAT is deliberately NOT a hard requirement. The unauthenticated
-          # `--version` leg needs no credential and must still run — it is the
-          # leg that catches download / arch-mapping / checksum / PATH breakage.
-          # Its absence is surfaced here as a warning and enforced as a hard
-          # ::error:: in the `doctor` step below, which genuinely needs it.
+          # The installer calls `corelink whoami` before returning, so a real
+          # PAT is a hard requirement for this end-to-end path. Do not replace
+          # it with a token-shaped sentinel: that would make the smoke stop
+          # before the version and doctor assertions and report misleading
+          # evidence.
           if [ -n "${CORELINK_CANARY_PAT:-}" ]; then
-            echo "CORELINK_CANARY_PAT is set — the authenticated doctor leg will run."
+            echo "CORELINK_CANARY_PAT is set — the authenticated install and doctor legs will run."
           else
-            echo "::warning title=smoke-install degraded::CORELINK_CANARY_PAT is not set. The unauthenticated --version leg will still run; the doctor leg will FAIL (not skip)."
+            echo "::error title=smoke-install cannot run (PAT)::CORELINK_CANARY_PAT is required because the installer invokes corelink whoami."
+            exit 1
           fi
 
       - name: Build smoke image
         id: build
         run: docker build -f apps/get-corelink-worker/test/smoke-install.Dockerfile -t corelink-smoke .
 
-      # UNAUTHENTICATED — no credential is passed, by design. The image's own
-      # `ENV CORELINK_TEST_TOKEN=changeme` placeholder satisfies the install
-      # script's `--token=` arg, and `corelink --version` never authenticates.
-      # `if: success()` depends ONLY on the Docker preflight + the image build:
-      # this step runs whether or not the PAT exists. That is the whole point of
-      # the 2026-08-02 second fix — do not re-gate it on a secret.
-      - name: Run install one-liner (corelink --version) — needs NO credential
+      - name: Run install one-liner (corelink --version)
         if: success()
-        run: docker run --rm corelink-smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -e CORELINK_TEST_TOKEN="$CORELINK_CANARY_PAT" \
+            corelink-smoke \
+            sh -c 'curl -fsSL "$CORELINK_GET_URL" | sh -s -- --token="$CORELINK_TEST_TOKEN" && corelink --version'
 
-      # AUTHENTICATED — this leg genuinely needs a cas:rw PAT (doctor performs a
-      # real prod CAS PUT). It is gated on the IMAGE existing, not on the job
-      # being clean: it still runs when the `--version` leg above went red, so
-      # one run yields both verdicts instead of hiding the second behind the
-      # first. A missing PAT produces a RED step here, never a silent skip.
+      # AUTHENTICATED — doctor genuinely needs a cas:rw PAT (it performs a real
+      # prod CAS PUT). It is gated on the IMAGE existing, not on the version leg
+      # being clean, so one run yields both verdicts instead of hiding the second
+      # behind the first.
       - name: Verify corelink doctor reaches the server
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         shell: bash

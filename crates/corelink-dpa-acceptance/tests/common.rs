@@ -11,7 +11,7 @@
 #![allow(missing_docs, reason = "test fixtures: documented in module rustdoc")]
 #![allow(dead_code, reason = "shared fixtures not used by every test binary")]
 
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use corelink_dpa_acceptance::service::{Clock, DpaAcceptanceService, JtiMinter};
 use corelink_dpa_acceptance::{
@@ -72,6 +72,27 @@ pub fn gen_keys() -> Keys {
     }
 }
 
+/// Return the immutable RSA fixture used by service builders.
+///
+/// Property cases must exercise the service invariants, not pay for a fresh
+/// 2048-bit keypair.  Keep the PEM strings owned by each returned [`Keys`]
+/// value so every service owns its signing material while the expensive
+/// generation happens once per test binary.  [`gen_keys`] remains fresh for
+/// tests that intentionally need a foreign key.
+fn fixture_keys() -> Keys {
+    static PEM: OnceLock<(String, String)> = OnceLock::new();
+    let (private_pem, public_pem) = PEM
+        .get_or_init(|| {
+            let keys = gen_keys();
+            (keys.private.0, keys.public.0)
+        })
+        .clone();
+    Keys {
+        private: RsaPrivateKeyPem(private_pem),
+        public: RsaPublicKeyPem(public_pem),
+    }
+}
+
 pub fn registry_three_locales() -> LocaleNoticeRegistry {
     let mut r = LocaleNoticeRegistry::new();
     r.register(LocaleBcp47::EnUs, "DPA v1.0.0 (en-US) — canonical text.");
@@ -89,7 +110,7 @@ pub type TestService = DpaAcceptanceService<
 >;
 
 pub fn build_service(now_ms: i64) -> (TestService, RsaPublicKeyPem) {
-    let keys = gen_keys();
+    let keys = fixture_keys();
     let svc = DpaAcceptanceService::new(
         InMemoryDpaAcceptanceStore::new(),
         InMemoryDpaAuditSink::new(),
@@ -115,5 +136,29 @@ pub fn ctx(signup: &str, locale: LocaleBcp47) -> TenantCtx {
         },
         client_ip: "203.0.113.1".to_owned(),
         resolved_locale: locale,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rsa::pkcs1::DecodeRsaPrivateKey;
+    use rsa::pkcs8::DecodePublicKey;
+    use rsa::traits::PublicKeyParts;
+
+    #[test]
+    fn fixture_is_rsa_2048_and_pem_shaped() {
+        let keys = fixture_keys();
+        assert!(keys
+            .private
+            .0
+            .starts_with("-----BEGIN RSA PRIVATE KEY-----"));
+        assert!(keys.public.0.starts_with("-----BEGIN PUBLIC KEY-----"));
+
+        let private = RsaPrivateKey::from_pkcs1_pem(&keys.private.0).expect("private PEM");
+        let public = RsaPublicKey::from_public_key_pem(&keys.public.0).expect("public PEM");
+        assert_eq!(private.size() * 8, 2048);
+        assert_eq!(public.size() * 8, 2048);
+        assert_eq!(private.n(), public.n());
     }
 }

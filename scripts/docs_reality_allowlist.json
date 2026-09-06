@@ -397,13 +397,6 @@
         "expires": "2026-09-30",
         "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
       },
-      "attest.corelink.humangr.com": {
-        "reason": "TODO(dead-host-sweep): Attestation host in the docs site; never provisioned.",
-        "added": "2026-08-22",
-        "owner": "dead-host-sweep",
-        "expires": "2026-09-30",
-        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
-      },
       "api.corelink.humangr.com": {
         "reason": "TODO(dead-host-sweep): Dotted API host in corelink-ops deploy doc-comments/examples and CLI samples; the API is corelink-api.humangr.com.",
         "added": "2026-08-22",

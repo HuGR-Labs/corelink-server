@@ -27,7 +27,7 @@ which role to pick.
 
 | Their job                                                      | Role to assign   |
 |----------------------------------------------------------------|------------------|
-| Engineer who reads/writes the cache from CI or local dev       | `Developer`      |
+| Engineer who reads/writes the cache from CI or local dev       | `Member`         |
 | Tech lead / SRE who needs to mint tokens or read audit log     | `Admin`          |
 | Co-founder / Head of Engineering who also owns billing         | `Owner`          |
 | External auditor or read-only dashboard consumer               | `Viewer`         |
@@ -38,7 +38,7 @@ job. You can always promote later. Demotion is also one click.
 > **A note on `Owner`:** Only assign `Owner` if the person should see the
 > invoice and be able to act as the second approver for destructive
 > operations. Most engineering hires should start as `Admin` or
-> `Developer`.
+> `Member`.
 
 ## Step 1 — Confirm Clerk SSO is configured
 
@@ -83,12 +83,13 @@ script invites from CI with a PAT:
 
 ```bash
 curl -X POST https://corelink-api.humangr.com/v1/customer/team/invite \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   -H "Content-Type: application/json" \
-  -d '{"email":"teammate@example.com","role":"Developer"}'
+  -d '{"email":"teammate@example.com","role":"member"}' --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
-Inviting (and removing) a member is **owner/admin only** — a `Developer`
+Inviting (and removing) a member is **owner/admin only** — a `Member`
 or `Viewer` token gets a `403` here, whichever path it uses.
 
 ## Step 3 — Invitee accepts the invite
@@ -111,8 +112,9 @@ in yet appear under **Pending invitations**.
 To check the same thing from a script:
 
 ```bash
-curl https://corelink-api.humangr.com/v1/customer/team \
-  -H "Authorization: Bearer $CORELINK_PAT"
+curl https://corelink-api.humangr.com/v1/customer/team --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 The response carries a `members` array; each entry has the member's
@@ -127,9 +129,9 @@ as a placeholder — see the note below.
 > (`INV-AUDIT-NO-RAW-PII`): the `team.invited` entry records the role, not
 > the address.
 
-## Step 5 — Mint their first PAT (Developer and above)
+## Step 5 — Mint their first PAT (Member and above)
 
-`Developer`, `Admin` and `Owner` users can mint their own PATs from the
+`Member`, `Admin` and `Owner` users can mint their own PATs from the
 **API keys** page of the dashboard
 (`https://humangr.com/corelink/en/customer/keys`); `Viewer` cannot.
 
@@ -138,9 +140,10 @@ API — again, there is no CLI for this:
 
 ```bash
 curl -X POST https://corelink-api.humangr.com/v1/customer/keys \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   -H "Content-Type: application/json" \
-  -d '{"name":"ci-service-account","scopes":["cache:r","cache:w","cache:find-missing"]}'
+  -d '{"name":"ci-service-account","scopes":["cache:r","cache:w","cache:find-missing"]}' --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 The request body is only a name and a list of scopes — there is no field

@@ -104,8 +104,8 @@ see [Rate limits](../explanation/rate-limits).
 ## 9 — Do I need a separate PAT per environment?
 
 Yes — PATs are tenant-scoped and environment-scoped. The token format
-`corelink_<env>_t_xxx.xxx.xxx` makes the env explicit (`dev`,
-`staging`, `prod`). Mixing a `prod` PAT against a `staging`
+`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA` makes the env explicit (`pat`,
+`ci`, `ro`). Mixing a PAT from one environment against another
 tenant is rejected with `COR_AUTH_TENANT_MISMATCH` at the edge. You
 can mint as many PATs per tenant as you want; revocation is per-token.
 
@@ -115,7 +115,7 @@ In the admin UI: **Settings → Tokens → Revoke**. Revocation propagates
 globally in **&lt; 60 seconds** (FM-061 rotation drill measures the
 actual P95). Revoked tokens immediately fail with
 `COR_AUTH_PAT_REVOKED` even if cached client-side. For programmatic
-rotation see the [REST API](../reference/api/openapi) `/v1/pats`
+rotation see the [REST API](../reference/api/openapi) `/v1/customer/keys`
 endpoints — the canonical pattern is "create new → swap into
 secrets-store → revoke old."
 

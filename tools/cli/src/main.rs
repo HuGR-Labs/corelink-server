@@ -124,7 +124,7 @@ enum Commands {
         json: bool,
     },
 
-    /// Print version, git rev, and SLSA attestation link.
+    /// Print version, git revision, and build metadata.
     Version,
 
     /// Manage local config (~/.corelink/config.toml).
@@ -921,5 +921,37 @@ mod cli_tests {
     #[test]
     fn cli_command_has_no_arg_id_collisions() {
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn version_help_does_not_advertise_an_unpublished_attestation() {
+        // Exercise clap's real help path, rather than inspecting the command
+        // metadata directly. This is the regression tooth: changing the
+        // `Version` doc comment back to a public SLSA promise makes this RED.
+        let error = Cli::command()
+            .try_get_matches_from(["corelink", "version", "--help"])
+            .expect_err("--help must render through clap's error path");
+        let help = error.to_string();
+        let normalized = help.to_ascii_lowercase();
+        assert!(normalized.contains("print version, git revision, and build metadata"));
+        assert!(!normalized.contains("slsa"));
+        assert!(!normalized.contains("attestation"));
+        assert!(!normalized.contains("https://"));
+    }
+
+    #[test]
+    fn global_version_flag_is_semver_only_and_has_no_artifact_url() {
+        // `--version` is handled by clap before command dispatch. Keep this
+        // path covered separately from `corelink version`, whose output also
+        // includes build metadata.
+        let error = Cli::command()
+            .try_get_matches_from(["corelink", "--version"])
+            .expect_err("--version must render through clap's error path");
+        let output = error.to_string();
+        assert!(output.contains(env!("CARGO_PKG_VERSION")));
+        let normalized = output.to_ascii_lowercase();
+        assert!(!normalized.contains("slsa"));
+        assert!(!normalized.contains("attestation"));
+        assert!(!normalized.contains("https://"));
     }
 }

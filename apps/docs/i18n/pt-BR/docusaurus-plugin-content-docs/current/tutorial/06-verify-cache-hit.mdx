@@ -16,7 +16,7 @@ description: Confirme que o cache remoto está realmente servindo acertos — e 
 O tutorial só está completo quando você consegue provar que o cache está
 funcionando. Esta página reúne três verificações independentes.
 
-## A. Logs de Bazel BES / Buck2
+## A. Logs de build do Bazel
 
 Bazel:
 
@@ -25,14 +25,12 @@ bazel build //:hello 2>&1 | grep -E "remote cache hit|disk cache hit|processes:"
 # INFO: 12 processes: 11 remote cache hit, 1 internal.
 ```
 
-Buck2:
-
-```bash
-buck2 build //:hello --show-output 2>&1 | grep -iE "cache hits"
-```
-
 Uma build 100% verde que imprime **0 processes** é o sinal isolado mais forte — o
-Bazel/Buck2 curto-circuitou cada ação através do cache.
+o Bazel curto-circuitou cada ação através do cache.
+
+(Não há equivalente para Buck2: o Buck2 fala REAPI apenas sobre gRPC e não
+consegue se conectar ao CoreLink — veja o
+[status de suporte ao Buck2](./04-buck2-quickstart).)
 
 ## B. Microbenchmark de CLI
 

@@ -48,9 +48,15 @@ fn proptest_cases() -> u32 {
         .unwrap_or(10_000)
 }
 
+// D01 baseline observation: the 10k run measured 1716.42s; this change avoids
+// repeated test-only key setup structurally, and the post-change duration is
+// intentionally left for a later measurement.
+
 const ISSUER: &str = "https://clerk.test.example.dev";
 const AUDIENCE: &str = "corelink-api";
 const NOW_FIXED: u64 = 1_750_000_000;
+const PROPERTY_RSA_BITS: usize = 512;
+const SMOKE_RSA_BITS: usize = 2048;
 
 #[derive(Serialize, Clone)]
 struct TestClaims {
@@ -70,24 +76,51 @@ fn fixed_clock() -> SystemTime {
     UNIX_EPOCH + Duration::from_secs(NOW_FIXED)
 }
 
-/// Single shared RSA keypair for the entire prop-test run. Generating
-/// a 2048-bit RSA keypair takes ~30 ms — at 10k iter that would be
-/// ~5 min just on keygen. We share one keypair across cases and rely
-/// on the structural variants (mutated signature, varied claims) to
+/// Single shared RSA keypair for the entire prop-test run. Key generation is
+/// process-once setup; generated cases vary the signature and claims to
 /// exercise the security invariants.
-fn shared_key() -> &'static TestRsaKey {
+fn shared_property_key() -> &'static TestRsaKey {
     static KEY: OnceLock<TestRsaKey> = OnceLock::new();
-    KEY.get_or_init(|| TestRsaKey::generate("kid_v1"))
+    KEY.get_or_init(|| TestRsaKey::generate_with_bits("kid_property", PROPERTY_RSA_BITS))
+}
+
+/// Parse the fixed test key once for the entire property-test process. The
+/// key material is immutable and the resulting `EncodingKey` is reusable;
+/// this avoids reparsing PEM for every generated case. Runtime measurement
+/// remains a separate concern from this structural allocation contract.
+fn shared_property_encoding_key() -> &'static EncodingKey {
+    static KEY: OnceLock<EncodingKey> = OnceLock::new();
+    KEY.get_or_init(|| {
+        EncodingKey::from_rsa_pem(shared_property_key().private_pem.as_bytes())
+            .expect("test rsa pem accepted")
+    })
+}
+
+fn shared_smoke_key() -> &'static TestRsaKey {
+    static KEY: OnceLock<TestRsaKey> = OnceLock::new();
+    KEY.get_or_init(|| TestRsaKey::generate_with_bits("kid_smoke_2048", SMOKE_RSA_BITS))
+}
+
+fn shared_smoke_encoding_key() -> &'static EncodingKey {
+    static KEY: OnceLock<EncodingKey> = OnceLock::new();
+    KEY.get_or_init(|| {
+        EncodingKey::from_rsa_pem(shared_smoke_key().private_pem.as_bytes())
+            .expect("test rsa 2048 pem accepted")
+    })
 }
 
 fn build_adapter() -> ClerkAdapter {
+    build_adapter_for(shared_property_key())
+}
+
+fn build_adapter_for(key: &TestRsaKey) -> ClerkAdapter {
     let cfg = ClerkConfig::builder()
         .jwks_url("https://clerk.test.example.dev/.well-known/jwks.json")
         .issuer_allowlist([ISSUER])
         .audience(AUDIENCE)
         .build()
         .unwrap();
-    let fetcher = StaticJwksFetcher::new(shared_key().into_jwks());
+    let fetcher = StaticJwksFetcher::new(key.into_jwks());
     let cache = InMemoryKvCache::with_clock(fixed_clock);
     ClerkAdapter::new_with_clock(cfg, fetcher, cache, fixed_clock)
 }
@@ -107,25 +140,41 @@ fn baseline_claims() -> TestClaims {
     }
 }
 
-fn sign(key: &TestRsaKey, claims: &TestClaims) -> String {
+fn sign(claims: &TestClaims) -> String {
     let mut header = Header::new(Algorithm::RS256);
-    header.kid = Some(key.kid.clone());
-    let encoding =
-        EncodingKey::from_rsa_pem(key.private_pem.as_bytes()).expect("test rsa pem accepted");
-    encode(&header, claims, &encoding).expect("test sign")
+    header.kid = Some(shared_property_key().kid.clone());
+    encode(&header, claims, shared_property_encoding_key()).expect("test sign")
+}
+
+fn sign_2048_smoke(claims: &TestClaims) -> String {
+    let mut header = Header::new(Algorithm::RS256);
+    header.kid = Some(shared_smoke_key().kid.clone());
+    encode(&header, claims, shared_smoke_encoding_key()).expect("test rsa 2048 sign")
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn happy_path_validates() {
     let adapter = build_adapter();
     let claims = baseline_claims();
-    let jwt = sign(shared_key(), &claims);
+    let jwt = sign(&claims);
     let principal = adapter.validate(&jwt).await.expect("validate ok");
     assert_eq!(principal.user_id.as_str(), "user_2abc");
     assert_eq!(principal.email.as_str(), "alice@example.dev");
     assert!(principal.org_id.is_some());
     let snapshot = adapter.counters();
     assert_eq!(snapshot.validate_ok, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rsa_2048_smoke_validates() {
+    let key = shared_smoke_key();
+    let adapter = build_adapter_for(key);
+    let jwt = sign_2048_smoke(&baseline_claims());
+    let principal = adapter
+        .validate(&jwt)
+        .await
+        .expect("RSA-2048 smoke validates");
+    assert_eq!(principal.user_id.as_str(), "user_2abc");
 }
 
 proptest! {
@@ -144,7 +193,7 @@ proptest! {
     ) {
         let adapter = build_adapter();
         let claims = baseline_claims();
-        let jwt = sign(shared_key(), &claims);
+        let jwt = sign(&claims);
         // Decompose into header.payload.signature; mutate a signature byte.
         let parts: Vec<&str> = jwt.split('.').collect();
         prop_assume!(parts.len() == 3);
@@ -179,7 +228,7 @@ proptest! {
         let adapter = build_adapter();
         let mut claims = baseline_claims();
         claims.exp = (NOW_FIXED - 60 - secs_past_leeway) as i64;
-        let jwt = sign(shared_key(), &claims);
+        let jwt = sign(&claims);
         let result = futures_executor_blocking(adapter.validate(&jwt));
         // SOTA-OK: variant-only assertion sufficient — AuthError::Expired is a unit variant carrying no semantic state.
         prop_assert!(matches!(result, Err(AuthError::Expired)),
@@ -194,7 +243,7 @@ proptest! {
         let mut claims = baseline_claims();
         let bogus = format!("https://clerk.attacker.{noise}");
         claims.iss = bogus.clone();
-        let jwt = sign(shared_key(), &claims);
+        let jwt = sign(&claims);
         let result = futures_executor_blocking(adapter.validate(&jwt));
         match result {
             Err(AuthError::IssuerMismatch { got, expected }) => {
@@ -218,7 +267,7 @@ proptest! {
         let bogus = format!("audi-{noise}");
         prop_assume!(bogus != AUDIENCE);
         claims.aud = bogus;
-        let jwt = sign(shared_key(), &claims);
+        let jwt = sign(&claims);
         let result = futures_executor_blocking(adapter.validate(&jwt));
         // SOTA-OK: variant-only assertion sufficient — AuthError::AudienceMismatch is a unit variant carrying no semantic state.
         prop_assert!(matches!(result, Err(AuthError::AudienceMismatch)),
@@ -245,7 +294,7 @@ proptest! {
         let adapter = build_adapter();
         let mut claims = baseline_claims();
         claims.exp = (NOW_FIXED - secs_within) as i64;
-        let jwt = sign(shared_key(), &claims);
+        let jwt = sign(&claims);
         let result = futures_executor_blocking(adapter.validate(&jwt));
         prop_assert!(result.is_ok(), "expected accept within leeway, got {:?}", result);
     }

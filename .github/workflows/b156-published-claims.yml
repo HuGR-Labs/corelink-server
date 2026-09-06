@@ -1,0 +1,70 @@
+name: b156-published-claims
+
+# B-156 protects the material a customer can read.  Its gate must run when
+# that material changes, not only when BACKLOG.md or the checker changes.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "apps/docs/**"
+      - "marketing/**"
+      - "legal/**"
+      - "README.md"
+      - "examples/**"
+      - "reports/pentest-rfp-tracker.json"
+      - "requirements-ci.txt"
+      - "scripts/**"
+      - "tests/*.py"
+      - "docs/internal/published-claims-b156-pentest-triage.md"
+      - ".github/workflows/b156-published-claims.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/docs/**"
+      - "marketing/**"
+      - "legal/**"
+      - "README.md"
+      - "examples/**"
+      - "reports/pentest-rfp-tracker.json"
+      - "requirements-ci.txt"
+      - "scripts/**"
+      - "tests/*.py"
+      - "docs/internal/published-claims-b156-pentest-triage.md"
+      - ".github/workflows/b156-published-claims.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: b156-published-claims-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: corelink
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+
+      - name: Install Python test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv .venv
+          .venv/bin/python3 -m pip install --quiet --upgrade pip
+          .venv/bin/python3 -m pip install --quiet -r requirements-ci.txt
+
+      - name: Verify B-156 published claim census and semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv/bin/python3 scripts/verify_b156_pentest_claims.py
+          .venv/bin/python3 scripts/published_claims_census.py
+          .venv/bin/python3 -m pytest \
+            tests/test_b156_pentest_claims.py \
+            tests/test_published_claims_census.py \
+            -q

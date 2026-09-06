@@ -170,6 +170,31 @@ function makeEnv(doStubStatus = 503, d1Override?: D1Database): Env {
   };
 }
 
+/** Env whose _system DO returns a realistic native container health body. */
+function makeContainerHealthEnv(
+  body = { status: "ok", storage: "r2", topology: "regional" },
+  status = 200,
+): { env: Env; requests: Request[] } {
+  const requests: Request[] = [];
+  const stub = {
+    fetch: async (request: Request): Promise<Response> => {
+      requests.push(request);
+      return new Response(JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+  };
+  const namespace = {
+    idFromName: (_name: string) => ({ toString: () => "health-stub-id" }),
+    get: (_id: unknown) => stub,
+    idFromString: (_s: string) => ({ toString: () => "health-stub-id" }),
+    newUniqueId: () => ({ toString: () => "health-stub-id" }),
+    jurisdiction: (_j: string) => namespace,
+  } as unknown as DurableObjectNamespace;
+  return { env: { ...makeEnv(), CORELINK_SERVER: namespace }, requests };
+}
+
 /** Invoke the worker fetch handler */
 async function workerFetch(
   url: string,
@@ -227,6 +252,116 @@ describe("GET /health", () => {
   it("does not require Authorization header", async () => {
     const resp = await workerFetch("http://localhost/health");
     expect(resp.status).toBe(200);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Container deep-health variants (B-082)
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("container deep-health storage disclosure (B-082)", () => {
+  const ADMIN_HEALTH_KEY = "admin-health-key-".repeat(5);
+
+  it("anonymous route strips storage/topology and does not forward query strings", async () => {
+    const { env, requests } = makeContainerHealthEnv();
+    const response = await workerFetch(
+      "http://localhost/_health/container?credential=must-not-authenticate",
+      undefined,
+      env,
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json() as Record<string, unknown>;
+    expect(body).toEqual({ status: "ok" });
+    expect(requests).toHaveLength(1);
+    expect(new URL(requests[0]!.url).pathname).toBe("/_health");
+    expect(new URL(requests[0]!.url).search).toBe("");
+  });
+
+  it("authenticated variant preserves storage only with the dedicated admin key", async () => {
+    const { env, requests } = makeContainerHealthEnv();
+    env.CORELINK_ADMIN_AUTH_KEY = ADMIN_HEALTH_KEY;
+    const response = await workerFetch(
+      "http://localhost/_health/container/authenticated?credential=ignored",
+      { headers: { "X-Corelink-Internal-Auth": ADMIN_HEALTH_KEY } },
+      env,
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json() as Record<string, unknown>;
+    expect(body).toEqual({ status: "ok", storage: "r2", topology: "regional" });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.headers.get("x-corelink-internal-auth")).toBeNull();
+    expect(requests[0]!.headers.get("x-corelink-route-kind")).toBe("health_container_authed");
+  });
+
+  it("rejects missing and forged credentials before reaching the DO", async () => {
+    const { env, requests } = makeContainerHealthEnv();
+    env.CORELINK_ADMIN_AUTH_KEY = ADMIN_HEALTH_KEY;
+    const missing = await workerFetch(
+      "http://localhost/_health/container/authenticated",
+      undefined,
+      env,
+    );
+    const forged = await workerFetch(
+      "http://localhost/_health/container/authenticated",
+      { headers: { "X-Corelink-Internal-Auth": `${ADMIN_HEALTH_KEY}forged` } },
+      env,
+    );
+    expect(missing.status).toBe(401);
+    expect(forged.status).toBe(401);
+    expect(requests).toHaveLength(0);
+  });
+
+  it("fails closed when the dedicated key is missing, malformed, or only the shared key exists", async () => {
+    const noKey = makeContainerHealthEnv();
+    expect(
+      (await workerFetch(
+        "http://localhost/_health/container/authenticated",
+        { headers: { "X-Corelink-Internal-Auth": ADMIN_HEALTH_KEY } },
+        noKey.env,
+      )).status,
+    ).toBe(503);
+
+    const shortKey = makeContainerHealthEnv();
+    shortKey.env.CORELINK_ADMIN_AUTH_KEY = "too-short";
+    expect(
+      (await workerFetch(
+        "http://localhost/_health/container/authenticated",
+        { headers: { "X-Corelink-Internal-Auth": "too-short" } },
+        shortKey.env,
+      )).status,
+    ).toBe(503);
+
+    const sharedOnly = makeContainerHealthEnv();
+    sharedOnly.env.CORELINK_INTERNAL_AUTH_KEY = ADMIN_HEALTH_KEY;
+    expect(
+      (await workerFetch(
+        "http://localhost/_health/container/authenticated",
+        { headers: { "X-Corelink-Internal-Auth": ADMIN_HEALTH_KEY } },
+        sharedOnly.env,
+      )).status,
+    ).toBe(503);
+    expect(sharedOnly.requests).toHaveLength(0);
+  });
+
+  it("does not accept a query-string credential and rejects unsupported methods", async () => {
+    const { env, requests } = makeContainerHealthEnv();
+    env.CORELINK_ADMIN_AUTH_KEY = ADMIN_HEALTH_KEY;
+    const queryCredential = await workerFetch(
+      `http://localhost/_health/container/authenticated?auth=${encodeURIComponent(ADMIN_HEALTH_KEY)}`,
+      undefined,
+      env,
+    );
+    const post = await workerFetch(
+      "http://localhost/_health/container/authenticated",
+      {
+        method: "POST",
+        headers: { "X-Corelink-Internal-Auth": ADMIN_HEALTH_KEY },
+      },
+      env,
+    );
+    expect(queryCredential.status).toBe(401);
+    expect(post.status).toBe(405);
+    expect(requests).toHaveLength(0);
   });
 });
 

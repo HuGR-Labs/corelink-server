@@ -27,7 +27,7 @@ tags: ["lighthouse", "marketing", "deck", "intro", "pitch", "slides"]
 
 **Header:** "CoreLink — managed content-addressable storage for build, package, and ML pipelines."
 
-**One-liner:** "BLAKE3-keyed, multi-region, audit-chain-backed cache that drops into Bazel and OCI/ML toolchains in under an hour — Turborepo and sccache too, with Buck2 and Pants on the roadmap."
+**One-liner:** "BLAKE3-keyed, multi-region, audit-chain-backed cache that drops into Bazel and OCI/ML toolchains in under an hour — Turborepo and sccache too. Buck2 and Pants are not supported and are not on a committed timeline."
 
 **Speaker notes:**
 - We are the cache layer your CI already wants — but with multi-region failover, BYOK, and an Ed25519-signed audit chain.
@@ -75,13 +75,13 @@ tags: ["lighthouse", "marketing", "deck", "intro", "pitch", "slides"]
 
 ## Slide 4 — Team tier feature deep-dive (1 of 2)
 
-**Header:** "Team tier — built for Bazel OSS and product teams (Buck2/Pants on the roadmap)."
+**Header:** "Team tier — built for Bazel OSS and product teams (Buck2/Pants not supported)."
 
 **Bullets:**
 - Native bazel-remote-cache over REST (Bazel REAPI v2 — no gRPC; workerd has no HTTP trailers support)
 - Turborepo REST integration
 - sccache over WebDAV
-- Buck2 CAS adapter and Pants v2 lifted-cache shim — **roadmap, not yet shipped**
+- Buck2 and Pants — **not supported, and not on a committed timeline.** Both speak REAPI over gRPC only; CoreLink serves no gRPC ingress (workerd has no HTTP trailers), and Buck2 has no plain-HTTP cache backend upstream (facebook/buck2#459, closed `wontfix`).
 - Multi-region (wnam, enam, weur, sam) with geo-aware routing
 - Sub-300 ms P99 cache-GET globally
 
@@ -121,7 +121,7 @@ tags: ["lighthouse", "marketing", "deck", "intro", "pitch", "slides"]
 
 **Bullets:**
 - SOC 2 Type 1 audit kickoff in flight (auditor engagement letter on request)
-- External pentest report available under NDA (last pass D-30; remediation log in `compliance/pentest/`)
+- No external pentest has been commissioned — stated plainly. Under NDA we share internal adversarial-review and sealed cargo-fuzz summaries instead.
 - DSR (data subject request) erasure SLO ≤ 30 days with Ed25519-signed attestation
 - Data residency by region pin; no cross-region copy without explicit tenant approval
 - Sub-processor change notification: 30 days advance notice contractually committed
@@ -169,7 +169,7 @@ tags: ["lighthouse", "marketing", "deck", "intro", "pitch", "slides"]
 - Remote Build Execution (RBE) — not just cache, full RBE worker pool
 - Bring-your-own-worker for compliance-restricted compute
 - ML checkpoint store with content-addressed model versioning
-- Buck2 native integration (CAS adapter) and Pants v2 support: Skylark cache hooks, plus the base CAS adapters themselves
+- (Buck2 and Pants are **not** listed here: both are gRPC-only, CoreLink serves no gRPC ingress, and Buck2 has no plain-HTTP cache backend upstream — there is no date to give.)
 
 **Lighthouse benefit:** "You get quarterly roadmap-review calls and your feedback is committed to the RFC pipeline before public disclosure."
 
@@ -186,7 +186,7 @@ tags: ["lighthouse", "marketing", "deck", "intro", "pitch", "slides"]
 | In place today | Honest about |
 |---|---|
 | SOC 2 Type 1 audit kickoff in flight | Type 2 audit window opens after GA, not before |
-| External pentest pass (under NDA on request) | Remediation log open for verification |
+| Internal adversarial review + sealed fuzzing summaries (under NDA on request) | No external penetration test has been commissioned — there is no third-party report to share |
 | BYOK on 4 providers, chaos-drilled weekly | Single-tenant isolation only — multi-tenant BYOK key sharing is out of scope |
 | Ed25519-signed audit chain, append-only | Audit chain verification CLI ships at GA; pre-GA verification is internal |
 | DPA + Schrems II TIA template ready | Country-specific data residency beyond our 4 regions is roadmap, not GA |

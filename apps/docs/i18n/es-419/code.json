@@ -24,7 +24,7 @@
     "description": "Status badge legend section title"
   },
   "trust.landing.legend.intro": {
-    "message": "Cada afirmación de cumplimiento abajo está etiquetada con uno de tres distintivos de honestidad. No reclamamos certificaciones que aún no hemos obtenido. SOC 2 Type II está EN AUDITORÍA (ventana de observación abierta el 2026-05-15), no \"certificado\".",
+    "message": "Cada afirmación de cumplimiento abajo está etiquetada con uno de cuatro distintivos de honestidad. No reclamamos certificaciones que aún no hemos obtenido. SOC 2 Type II está EN AUDITORÍA (ventana de observación abierta el 2026-05-15), no \"certificado\".",
     "description": "Status badge legend intro paragraph"
   },
   "trust.landing.legend.live": {
@@ -32,12 +32,16 @@
     "description": "LIVE-ATTESTATION badge meaning"
   },
   "trust.landing.legend.inaudit": {
-    "message": "La verificación independiente está en curso pero aún no se ha completado (p. ej. informe SOC 2 Type I en redacción, preparación Stage-1 ISO 27001, pentest externo en ejecución).",
+    "message": "La verificación independiente está en curso pero aún no se ha completado (p. ej. informe SOC 2 Type I en redacción, preparación Stage-1 de ISO 27001).",
     "description": "IN-AUDIT badge meaning"
   },
   "trust.landing.legend.postga": {
     "message": "Elemento de roadmap no iniciado o con alcance solo interno (p. ej. ventana de observación de 6 meses de SOC 2 Type II, auditoría de surveillance Stage-2 ISO 27001, ruta de patrocinio FedRAMP).",
     "description": "POST-GA badge meaning"
+  },
+  "trust.landing.legend.pregaBlocker": {
+    "message": "Una condición rígida pre-GA todavía no tiene la evidencia exigida. GA permanece bloqueada hasta que CAP-GA-002 tenga un informe externo y una repetición de prueba sin hallazgos HIGH o CRITICAL pendientes.",
+    "description": "PRE-GA-BLOCKER badge meaning"
   },
   "trust.landing.contact.title": {
     "message": "Habla con nosotros",

@@ -31,7 +31,7 @@ uma camada local em disco, não para substituí-la. A configuração abaixo mont
 - `sccache` **0.15 ou mais novo** (`cargo install sccache` ou o pacote da sua
   distribuição). Confira com `sccache --version` — a cadeia de armazenamento multinível
   que lhe dá uma camada local chegou na 0.15.0.
-- Um PAT do CoreLink (`corelink_pat_...`) com escopo de leitura + escrita de cache.
+- Um PAT do CoreLink (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA`) com escopo de leitura + escrita de cache.
 - O UUID do seu tenant.
 
 ## Configurar
@@ -41,7 +41,7 @@ bearer e encadeie uma camada local em disco na frente dele:
 
 ```bash
 export SCCACHE_WEBDAV_ENDPOINT="https://corelink-api.humangr.com/cargo/<your-tenant-id>"
-export SCCACHE_WEBDAV_TOKEN="corelink_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+export SCCACHE_WEBDAV_TOKEN="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 export SCCACHE_MULTILEVEL_CHAIN="disk,webdav"   # requer sccache >= 0.15
 export SCCACHE_DIR="$HOME/.cache/sccache"       # onde fica a camada local
 export RUSTC_WRAPPER=sccache
@@ -167,7 +167,7 @@ persistir o `SCCACHE_DIR` entre execuções com a action de cache do seu runner.
 | Sintoma | Causa provável | Correção |
 |---|---|---|
 | Todo build recompila | `RUSTC_WRAPPER` não definido | Exporte `RUSTC_WRAPPER=sccache` no mesmo shell |
-| `401 Unauthorized` nos logs do sccache | `SCCACHE_WEBDAV_TOKEN` ausente ou incorreto | Defina-o como seu PAT `corelink_pat_...` |
+| `401 Unauthorized` nos logs do sccache | `SCCACHE_WEBDAV_TOKEN` ausente ou incorreto | Defina-o como seu PAT `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA` |
 | `403 Forbidden` | PAT com escopo para um tenant diferente | Confirme que o `<tenant>` no endpoint corresponde ao tenant do seu PAT |
 | Falhas de cache persistem | Entradas de build não determinísticas | Fixe o toolchain + `CARGO_INCREMENTAL=0`; execute `sccache --show-stats` para inspecionar |
 | Os acertos são contabilizados, mas cada um é uma requisição de rede | `SCCACHE_MULTILEVEL_CHAIN` não definido — o sccache está somente-remoto | Defina `SCCACHE_MULTILEVEL_CHAIN="disk,webdav"` **e** o `SCCACHE_DIR` |

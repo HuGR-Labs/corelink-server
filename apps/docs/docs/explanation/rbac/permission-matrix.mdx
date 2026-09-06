@@ -35,7 +35,7 @@ Legend:
 
 ## CAS — cache surface
 
-| Permission                  | Scope                 | Served route | Owner | Admin | Developer | Viewer |
+| Permission                  | Scope                 | Served route | Owner | Admin | Member | Viewer |
 |-----------------------------|-----------------------|--------------|:-----:|:-----:|:---------:|:------:|
 | Read CAS blobs + AC         | `cache:r`             | `GET /v1/cas/{tenant}/{hash}`, `GET /v1/ac/{tenant}/{action_digest}` |   ✅  |   ✅  |     ✅     |   ✅   |
 | Write CAS blobs + AC        | `cache:w`             | `PUT` on the same two paths |   ✅  |   ✅  |     ✅     |   ❌   |
@@ -46,7 +46,7 @@ Legend:
 > (`cas.rs:709`, `ac.rs:451`) but is gated on the cache-**write**
 > capability — `scope.can_write()` at `cas.rs:1584` and `ac.rs:707` —
 > so any `read-write` / `cas:rw` holder can delete, including a
-> `Developer`. No mint path ever emits the `SCOPE_CACHE_DELETE` bit
+> `Member`. No mint path ever emits the `SCOPE_CACHE_DELETE` bit
 > (`customer_d1.rs:1267-1273`, `internal_pat.rs:134-140`) and no route
 > reads it. A runner-job credential is refused outright
 > (`cas.rs:1576-1582`).
@@ -73,9 +73,9 @@ full served surface with source line numbers.
 
 ## Members — users and tokens
 
-| Permission | Served route | Gate | Owner | Admin | Developer | Viewer |
+| Permission | Served route | Gate | Owner | Admin | Member | Viewer |
 |---|---|---|:-----:|:-----:|:---------:|:------:|
-| Invite user (Developer / Viewer) | `POST /v1/customer/team/invite` | role `owner`/`admin` | ✅ | ✅ | ❌ | ❌ |
+| Invite user (Member / Viewer) | `POST /v1/customer/team/invite` | role `owner`/`admin` | ✅ | ✅ | ❌ | ❌ |
 | Invite user (Admin) | `POST /v1/customer/team/invite` | caller must be `owner` | ✅ | ❌ | ❌ | ❌ |
 | Invite user (Owner) | — refused for every caller | `customer.rs:936-941` | ❌ | ❌ | ❌ | ❌ |
 | Revoke user (soft-delete row) | `DELETE /v1/customer/team/{user_id}` | role `owner`/`admin` | ✅ | ✅* | ❌ | ❌ |
@@ -130,7 +130,7 @@ in the body of the same `mutate` route; none has an endpoint of its own.
 Two different predicates guard the audit surface, and they disagree about
 `Viewer`. Merging them into one row is what made the old table wrong.
 
-| Permission | Served route | Gate | Owner | Admin | Developer | Viewer |
+| Permission | Served route | Gate | Owner | Admin | Member | Viewer |
 |---|---|---|:-----:|:-----:|:---------:|:------:|
 | Read audit log of the tenant (dashboard) | `GET /v1/customer/audit` | `requires_billing_admin` | ✅ | ✅ | ❌ | **❌ (403)** |
 | Export audit log / analytics | `GET /v1/audit/{tenant}/export`, `GET /v1/audit/analytics/*` | `requires_audit_read` | ✅ | ✅ | ✅ | **✅** |
@@ -169,7 +169,7 @@ irreversible, so the decision is deliberately left open.
 
 ## Billing
 
-| Permission | Served route | Gate | Owner | Admin | Developer | Viewer |
+| Permission | Served route | Gate | Owner | Admin | Member | Viewer |
 |---|---|---|:-----:|:-----:|:---------:|:------:|
 | View billing detail | `GET /v1/customer/billing` | `requires_billing_admin` | ✅ | ✅ | ❌ | ❌ |
 | Manage payment method / cancel subscription | `POST /v1/customer/billing/portal` (mints a Stripe portal link) | `requires_billing_admin` | ✅ | ✅ | ❌ | ❌ |
@@ -213,7 +213,7 @@ scope.
 
 ## Executor (Phase 2 only — not granted to humans)
 
-| Permission                  | Scope              | Owner | Admin | Developer | Viewer |
+| Permission                  | Scope              | Owner | Admin | Member | Viewer |
 |-----------------------------|--------------------|:-----:|:-----:|:---------:|:------:|
 | Report action started       | `execute:action`   |   ❌  |   ❌  |     ❌     |   ❌   |
 | Report result               | `report:result`    |   ❌  |   ❌  |     ❌     |   ❌   |
@@ -223,7 +223,7 @@ scope.
 
 ## Counters
 
-- **Roles:** 4 (`Owner`, `Admin`, `Developer`, `Viewer`). The Worker
+- **Roles:** 4 (`Owner`, `Admin`, `Member`, `Viewer`). The Worker
   collapses them to three scope strings —
   `viewer` → `read-only`, `owner`/`admin` → `read-write billing`,
   everyone else → `read-write` (`worker/src/index.ts:3100-3107`) — plus

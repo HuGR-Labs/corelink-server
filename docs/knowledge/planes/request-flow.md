@@ -19,9 +19,9 @@ source_blobs:
   - "worker/src/durable_object.ts@8dd527c8b4123ecf725ce41b3bd3bf9546b9d026"
   - "crates/corelink-container/src/routes.rs@90c8f13a942bca512dec0047e7f0bf0b2356c229"
   - "crates/corelink-container/src/origin_timing.rs@d649a806e8e6c62adffd0cafe7f1bab2d1b1725a"
-  - "crates/corelink-container/src/storage/d1_audit_sink.rs@54dfda0a9fd3df896dda5e279c9f9c09c276ee93"
+  - "crates/corelink-container/src/storage/d1_audit_sink.rs@fff6b82acb191661b4df906e28b988820934ffd0"
   - "crates/corelink-container/src/storage/r2_s3.rs@6882c633b816e969236c16a64f568bcdd5b4f8d0"
-checkpoint_sha: "1bc5d856a4e38572092a677b391a44bd047a57a6"
+checkpoint_sha: "b153cd9250c7b1f20e2abfb928fac0ab790b7ad1"
 provenance: "AUTHORED"
 tags: ["planes", "request-flow", "topology", "end-to-end"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -206,6 +206,7 @@ semantics in the container.
    (`crates/corelink-container/src/storage/r2_s3.rs:1704-1709`).
 
 # Invariants
+- Durable tenant-attributed audit writes resolve the row's region from an existing `tenant.primary_region`; migration 0107 rejects a missing tenant instead of allowing an unevaluable residency row, while the explicit `_public` namespace remains pinned to `wnam` (`crates/corelink-container/src/storage/d1_audit_sink.rs:143-174`).
 - The DO is always selected from the PAT-resolved tenant, never the URL tenant — isolation is
   established at this hop (`worker/src/index.ts:3986-3988`).
 - The request that crosses Worker→DO carries only Worker-established trust headers; client values are

@@ -92,7 +92,8 @@ to.
 - [ ] **Identify the riskiest CI job.** Pick the build you're least
   worried about breaking — that's your Phase 2 canary.
 
-- [ ] **Pin your CoreLink region.** `corelink config get defaults.region`.
+- [ ] **Confirme a residência do CoreLink.** A região primária do tenant é
+  escolhida no cadastro e roteada no servidor; fale com o suporte para migrar.
   Match it to your CI runners' AWS/GCP region to keep egress under
   100 ms p50.
 
@@ -248,7 +249,7 @@ Friday evening or Sunday morning in your CI runners' timezone).
 # NEW — stock-Bazel HTTP alias. No tenant in the URL: it is resolved from the
 # PAT, so there is no --remote_instance_name line.
 build:ci --remote_cache=https://corelink-api.humangr.com/bazel/cache
-build:ci --remote_header=Authorization=Bearer\ $CORELINK_PAT
+build:ci --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
 build:ci --remote_upload_local_results=true
 build:ci --remote_timeout=60s
 ```

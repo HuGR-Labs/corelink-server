@@ -37,11 +37,11 @@ your tenant, region, and a starter PAT server-side — no billing step.
 ## Step 1 — Sign up <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
 
 1. Open **[https://humangr.com/corelink](https://humangr.com/corelink)** in your browser.
-2. Complete the 2-step signup wizard (pick your primary region — `ord` is
-   US-Central and a safe default for most teams).
+2. Complete the 2-step signup wizard. Tenant residency is recorded and routed
+   server-side.
 3. The wizard drops you on the **`/welcome`** page where your starter PAT
    is displayed **exactly once**. Copy it now before closing the tab.
-   It looks like: `corelink_pat_xxx…xxx`
+   It looks like: `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA`
 
 :::warning Copy your PAT from /welcome — it is shown once
 If you close the tab without copying, regenerate via **Settings → Access
@@ -54,13 +54,12 @@ or source code. Store it in a secret manager (`direnv`, `1password`,
 
 ## Step 2 — Install the CLI <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
 
-Run the one-liner install script. Pass the PAT you copied in Step 1 and
-your chosen region.
+Run the one-liner install script with the PAT you copied in Step 1. Your
+tenant's region was selected during signup and is routed server-side.
 
 ```bash
 curl -fsSL https://corelink-get.humangr.com | sh -s -- \
-  --token=corelink_pat_xxx…xxx \
-  --region=ord
+  --token=corelink_pat_xxx…xxx
 ```
 
 The script:
@@ -71,8 +70,8 @@ The script:
    `.sha256` published beside the release asset **before** making it
    executable — a missing checksum aborts the install — then moves it to
    `/usr/local/bin/corelink` (via `sudo` if you are not root).
-3. Writes `~/.corelink/config.toml` at mode `0600` with your token,
-   region, and API endpoint.
+3. Writes `~/.corelink/config.toml` at mode `0600` with your token and API
+   endpoint. Tenant residency is not a client-side config setting.
 4. Runs `corelink whoami`, which resolves your identity against
    `/v1/users/me` and caches the resolved `tenant_id` back into that
    config file — every later tenant-scoped command needs it.
@@ -121,7 +120,6 @@ After a manual install, write your PAT to the config manually:
 
 ```bash
 corelink config set auth.pat "corelink_pat_xxx…xxx"
-corelink config set defaults.region ord
 ```
 
 </details>
@@ -163,14 +161,14 @@ remote-cache lines to your `.bazelrc`:
 ```ini
 build --remote_cache=https://corelink-api.humangr.com/bazel/v2
 build --remote_instance_name=${CORELINK_TENANT}
-build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
 build --remote_upload_local_results=true
 ```
 
 Export your PAT and tenant UUID in the same shell (or your CI secret store):
 
 ```bash
-export CORELINK_PAT="corelink_pat_XXXXXXXXXXXX"
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 export CORELINK_TENANT="acme-prod"
 ```
 
@@ -183,7 +181,7 @@ Bazel emits, and resolves your tenant from the PAT (so no
 
 ```ini
 build --remote_cache=https://corelink-api.humangr.com/bazel/cache
-build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
 build --remote_upload_local_results=true
 ```
 
@@ -248,15 +246,13 @@ Common failure modes and their fixes:
 **Symptom:** the `network` check in `corelink doctor` reports a latency over
 200 ms, or `bazel build` logs `UNAVAILABLE: connection closed`.
 
-**Fix:** your `.bazelrc` is pointing to the wrong region endpoint. Run
-`corelink doctor` and read the `region` check. Then:
+**Fix:** CoreLink routes each tenant to its server-side primary region. Run
+`corelink doctor` and read the `region` check. If the provisioned region is
+not suitable for your CI location, contact support@humangr.com; changing
+residency is a server-side data-migration request, not a CLI config change.
 
-```bash
-corelink config set defaults.region <correct-region>
-```
-
-Available regions: `ord` (US-Central), `iad` (US-East), `lhr` (EU-West),
-`nrt` (AP-Northeast), `syd` (AP-Southeast).
+Residency changes are handled as a server-side support request; they are not a
+client-side CLI or `config.toml` setting.
 
 ### Token not set — `UNAUTHENTICATED` on every Bazel action
 
@@ -266,7 +262,7 @@ Available regions: `ord` (US-Central), `iad` (US-East), `lhr` (EU-West),
 
 ```bash
 echo $CORELINK_PAT
-# should print: corelink_pat_xxx…xxx
+# should print: corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA
 ```
 
 If empty, either re-export it or ensure it is written to
@@ -274,7 +270,7 @@ If empty, either re-export it or ensure it is written to
 automatically):
 
 ```bash
-corelink config set auth.pat "corelink_pat_xxx…xxx"
+corelink config set auth.pat "corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 ```
 
 ### `.bazelrc` duplicate-line warning
@@ -329,7 +325,6 @@ You're done. Cache is live. Where to go next:
   what happens behind every `read_hit`.
 - **Compare CoreLink to alternatives** — [vs bazel-remote + S3](../compare/vs-bazel-remote-s3),
   [vs sccache + S3](../compare/vs-sccache-s3), [vs Turborepo Remote Cache](../compare/vs-turborepo).
-- **Wire Buck2** — [Buck2 quickstart](../tutorial/04-buck2-quickstart) (5 min).
 - **Move to production** — [How-to: production setup](../how-to/index.mdx) for
   custom domain, BYOK, multi-region, and SLA configuration.
 - **BYOK (Bring Your Own Key)** — Enterprise plan only; see

@@ -13,22 +13,16 @@ All endpoints require HTTPS. HTTP is not accepted.
 
 ## Authentication
 
-Most requests must carry an `Authorization: Bearer <PAT>` header. The
-customer PAT-issuance POST is the browser exception: the dashboard sends an
-edge-validated Clerk session cookie (`__session`), while CLI callers may use a
-canonical PAT for compatibility. The Worker resolves the tenant from the
-credential and strips the Clerk JWT before forwarding to the tenant Durable
-Object; clients never provide a tenant id.
+Every request must carry a `Authorization: Bearer <PAT>` header.
 
 ```bash
-curl -H "Authorization: Bearer $CORELINK_PAT" \
-  https://corelink-api.humangr.com/v1/users/me
+curl --silent --config - <<EOF
+url = "https://corelink-api.humangr.com/v1/users/me"
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
-No other authentication scheme (Basic, API key header, query param) is accepted.
-For `POST /v1/pats` (and its dashboard alias `POST /v1/customer/keys`), use a
-validated Clerk session cookie for browser traffic or a canonical PAT for CLI
-traffic. Missing or malformed authentication is rejected with `401`.
+No other authentication scheme (Basic, API key header, query param) is accepted. If the header is missing or malformed, the API returns `401`.
 
 ## Endpoints
 
@@ -39,8 +33,10 @@ Returns the identity of the PAT used in the request.
 **Request**
 
 ```bash
-curl -s -H "Authorization: Bearer $CORELINK_PAT" \
-  https://corelink-api.humangr.com/v1/users/me
+curl --silent --config - <<EOF
+url = "https://corelink-api.humangr.com/v1/users/me"
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 **Response 200**
@@ -86,10 +82,11 @@ Upload a blob. The native CAS is **BLAKE3**-keyed: the BLAKE3 digest in the URL 
 DIGEST=$(b3sum ./output.tar.gz | awk '{print $1}')   # BLAKE3, not sha256
 
 curl -s -X PUT \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   -H "Content-Type: application/octet-stream" \
   --data-binary @./output.tar.gz \
-  "https://corelink-api.humangr.com/v1/cas/acme-prod/$DIGEST"
+  "https://corelink-api.humangr.com/v1/cas/acme-prod/$DIGEST" --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 **Response 201** — the body echoes the stored BLAKE3 hex:
@@ -121,9 +118,10 @@ Download a blob by digest.
 
 ```bash
 curl -s \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   "https://corelink-api.humangr.com/v1/cas/acme-prod/$DIGEST" \
-  -o ./output-downloaded.tar.gz
+  -o ./output-downloaded.tar.gz --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 **Response 200** — `Content-Type: application/octet-stream`, body is raw bytes.
@@ -143,25 +141,36 @@ curl -s https://corelink-api.humangr.com/api/health
 
 ---
 
-### PAT issuance (`POST /v1/pats`)
+### PAT management (`GET`/`POST /v1/customer/keys`, `POST /v1/customer/keys/:pat_id/revoke`)
 
 This live self-service route issues an additional tenant-scoped PAT. Browser
 callers authenticate with a validated Clerk session cookie; CLI callers may
 use a canonical PAT. The plaintext token is returned exactly once. The
 dashboard-compatible alias `POST /v1/customer/keys` uses the same mint flow
 and per-tenant `pat-issue` limiter (burst 10, then 10/hour; one token every
-360 seconds), applied before mint and audit. Listing is
+360 seconds), applied before mint and audit. The bucket is durably serialized
+by the tenant Durable Object across restarts and container instances; invalid
+or unavailable limiter state fails closed with `503`. Listing is
 `GET /v1/customer/keys`; dashboard revocation is
 `POST /v1/customer/keys/{pat_id}/revoke`. The public `GET /v1/pats` and
 `DELETE /v1/pats/{pat_id}` operations remain planned, and are not aliases for
 the dashboard route.
 
-Error media types depend on the layer. A `401` rejected by the edge Worker
-uses the JSON `{error, message, request_id}` envelope. A request that reaches
-the customer handler uses `text/plain` for its `400/401/403/429/500/503`
-responses. Invalid or ungrantable `admin`/`owner` scope requests are handler
-`401`, not `422`; a read-only caller requesting a write credential is `403`.
-Rate-limited responses include `Retry-After`.
+The exact customer-portal shapes are:
+
+- `GET /v1/customer/keys` → `{ "pats": [ … ], "byok": { … } }`. Metadata only.
+- `POST /v1/customer/keys` with `{ "name": "...", "scopes": [ … ] }` → `201
+  { "pat": { … }, "token": "…" }`. The token is shown once.
+- `POST /v1/customer/keys/:pat_id/revoke` → `200 { "pat": { … } }`. Revocation
+  is a POST to a sub-path, **not** a `DELETE` on the token.
+
+All three are admin-grade operations on the tenant's credentials and require a
+cache-write capability; a read-only (`cas:r`) token gets `403` for each. A
+read-only token also cannot mint a write-scoped token for itself.
+
+An admin-only, read-only surface exists for support to inspect a tenant's PATs
+(`GET /v1/admin/tenants/{tenant_id}/pats`); it requires an admin PAT and is not
+something a regular customer token can call.
 
 ---
 
@@ -178,9 +187,7 @@ Rate-limited responses include `Retry-After`.
 | `429 Too Many Requests` | `rate_limited` | Request rate exceeded | Back off and retry; see `Retry-After` header |
 | `503 Service Unavailable` | `audit_closed` | Tenant's audit period is closed — writes temporarily suspended | Contact support; reads still work |
 
-REAPI and customer endpoints other than PAT issuance normally use this JSON
-shape. PAT issuance is the documented layer exception described above: edge
-errors are JSON, while handler errors are `text/plain`.
+All error responses share this shape:
 
 ```json
 {

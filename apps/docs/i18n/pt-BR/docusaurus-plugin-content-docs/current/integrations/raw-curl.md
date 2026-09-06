@@ -22,7 +22,7 @@ Esta página aborda o uso da API do CoreLink diretamente com `curl`. É útil pa
 ## Configuração de autenticação
 
 ```bash
-export CORELINK_PAT="corelink_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 export CORELINK_TENANT="acme-prod"
 export CORELINK_BASE="https://corelink-api.humangr.com"
 ```
@@ -41,10 +41,11 @@ echo "Digest: $DIGEST"
 
 # 2. Upload
 curl -s -X PUT \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   -H "Content-Type: application/octet-stream" \
   --data-binary @./artifact.tar.gz \
-  "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$DIGEST"
+  "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$DIGEST" --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 Em caso de sucesso, o servidor retorna **201 Created** (ou **200 OK** se o blob já
@@ -59,9 +60,10 @@ af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
 
 ```bash
 curl -s \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$DIGEST" \
-  -o ./artifact-downloaded.tar.gz
+  -o ./artifact-downloaded.tar.gz --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 
 # Verify integrity
 b3sum ./artifact-downloaded.tar.gz
@@ -72,8 +74,9 @@ b3sum ./artifact-downloaded.tar.gz
 
 ```bash
 curl -s -I \
-  -H "Authorization: Bearer $CORELINK_PAT" \
-  "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$DIGEST"
+  "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$DIGEST" --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 - HTTP 200: o blob existe.
@@ -84,17 +87,44 @@ curl -s -I \
 Útil para cachear diretórios de saída de build:
 
 ```bash
-# Archive, compute digest, upload in one pipeline
-tar -czf - ./dist/ \
-  | tee >(b3sum | awk '{print $1}' > /tmp/digest.txt) \
-  | curl -s -X PUT \
-      -H "Authorization: Bearer $CORELINK_PAT" \
-      -H "Content-Type: application/octet-stream" \
-      --data-binary @- \
-      "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$(cat /tmp/digest.txt)"
+set -eu
 
-echo "Uploaded as $(cat /tmp/digest.txt)"
+# Materialize os bytes exatos primeiro; o digest e o upload usam este arquivo.
+ARCHIVE="$(mktemp "${TMPDIR:-/tmp}/corelink-dist.XXXXXX")"
+trap 'rm -f "$ARCHIVE"' EXIT
+tar -czf "$ARCHIVE" ./dist/
+
+DIGEST="$(b3sum "$ARCHIVE" | awk '{print $1}')"
+[ -n "$DIGEST" ] || { echo "Não foi possível calcular o digest do arquivo" >&2; exit 1; }
+
+curl --fail-with-body -sS -X PUT \
+      -H "Content-Type: application/octet-stream" \
+      --data-binary "@$ARCHIVE" \
+      "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$DIGEST" --config /dev/fd/3 3<<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
+
+echo "Enviado como $DIGEST"
 ```
+
+A flag `--fail-with-body` faz o comando terminar com código diferente de zero
+para respostas HTTP 4xx/5xx, mantendo o corpo da resposta para diagnóstico;
+assim, a mensagem de sucesso abaixo nunca é exibida para um upload rejeitado.
+
+O digest é calculado deliberadamente depois que o arquivo compactado existe.
+Não use um arquivo auxiliar de digest escrito pelo pipeline de upload: a
+expansão do shell pode lê-lo antes de o produtor escrevê-lo ou reutilizar um
+valor deixado por uma execução anterior. Materializar um único arquivo faz o
+digest da URL corresponder aos bytes exatos enviados com `--data-binary`; o
+servidor rejeita uma divergência com `422`.
+
+O arquivo compactado em si não é prometido como reprodutível entre execuções.
+As implementações de `tar` e gzip disponíveis no macOS e Linux não têm uma
+receita portátil comum para normalizar ordem das entradas, mtimes dos arquivos
+e o timestamp do gzip. Se for necessária reprodução byte a byte, crie primeiro
+o arquivo com as ferramentas de build reprodutível do seu projeto e depois use
+a receita de [enviar um arquivo](#enviar-um-arquivo). Esta receita garante
+apenas que o digest na URL seja o digest dos bytes enviados.
 
 ## Push + pull com script no GitHub Actions
 
@@ -115,10 +145,11 @@ jobs:
         run: |
           DIGEST=$(b3sum ./dist/app.bin | awk '{print $1}')
           curl -fsSL -X PUT \
-            -H "Authorization: Bearer $CORELINK_PAT" \
             -H "Content-Type: application/octet-stream" \
             --data-binary @./dist/app.bin \
-            "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST"
+            "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST" --config - <<EOF
+          header = "Authorization: Bearer ${CORELINK_PAT}"
+          EOF
           echo "ARTIFACT_DIGEST=$DIGEST" >> $GITHUB_OUTPUT
         id: push
 
@@ -132,17 +163,20 @@ jobs:
       - name: Pull artifact from CoreLink
         run: |
           curl -fsSL \
-            -H "Authorization: Bearer $CORELINK_PAT" \
             "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/${{ needs.build.outputs.ARTIFACT_DIGEST }}" \
-            -o ./app.bin
+            -o ./app.bin --config - <<EOF
+          header = "Authorization: Bearer ${CORELINK_PAT}"
+          EOF
           chmod +x ./app.bin
 ```
 
 ## Verificar se funcionou
 
 ```bash
-curl -s -H "Authorization: Bearer $CORELINK_PAT" \
-  https://corelink-api.humangr.com/v1/users/me
+curl --silent --config - <<EOF
+url = "https://corelink-api.humangr.com/v1/users/me"
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 # {"tenant_id":"acme-prod","token_prefix":"corelink","route_kind":"reapi_v1"}
 ```
 

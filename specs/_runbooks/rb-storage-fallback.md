@@ -5,7 +5,7 @@ doc_status: "ACTIVE"
 audit_status: "ACTIVE"
 version: "1.0.0"
 created: "2026-05-30"
-updated: "2026-05-30"
+updated: "2026-09-05"
 owner: "SRE Lead"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -16,9 +16,9 @@ tags: ["runbook", "storage", "r2", "inmemory", "betterstack", "pagerduty", "sile
 
 # RB-STORAGE-FALLBACK — Container fell back to InMemory storage
 
-> **Status:** ACTIVE. Triggered by BetterStack monitor `4467865` on
-> `https://corelink-api.humangr.com/_health/container` when the response body
-> does NOT contain `"storage":"r2"` (i.e., `"storage":"inmemory"` is returned).
+> **Status:** ACTIVE, operator-triggered. The historical public storage alert
+> is retired because anonymous health redacts storage. Confirm the condition
+> with the authenticated probe below.
 >
 > **Severity:** P1 — silent data-loss risk. Writes accepted by the container are
 > not persisted to R2. No client-visible error is returned, so this degrades
@@ -28,33 +28,35 @@ tags: ["runbook", "storage", "r2", "inmemory", "betterstack", "pagerduty", "sile
 
 ## 1. Trigger conditions
 
-This runbook fires when BetterStack monitor `4467865` raises an alert, meaning:
+Open this runbook when a protected operator probe reports an in-memory storage
+backend:
 
-- `GET https://corelink-api.humangr.com/_health/container` returns HTTP 200 **but**
-- The response body does NOT contain the substring `"storage":"r2"`
-- Typical failing body: `{"status":"ok","storage":"inmemory"}`
+- The authenticated health request returns HTTP 200.
+- The response reports `storage` as `inmemory`.
 
-The container initialization sequence tries R2 first; if R2 credentials are
-missing or invalid, it silently falls back to `InMemoryStorage`. All writes
-succeed but nothing persists across restarts.
+The anonymous health endpoint intentionally returns only safe liveness fields
+and is not a storage signal. The container initialization sequence tries R2
+first; if R2 credentials are missing or invalid, it silently falls back to
+`InMemoryStorage`. All writes succeed but nothing persists across restarts.
 
 ## 2. Diagnosis
 
 ### 2.1 Confirm the active storage backend
 
+Set `CORELINK_API_ORIGIN` to the current API origin in the protected operator
+shell. The dedicated admin key must be supplied through the header, never in a
+URL or query string.
+
 ```sh
-curl -sf https://corelink-api.humangr.com/_health/container | python3 -m json.tool
+AUTH_HEALTH_URL="${CORELINK_API_ORIGIN:?set the current API origin}/_health/container/authenticated"
+curl -sf \
+  -H "X-Corelink-Internal-Auth: $CORELINK_ADMIN_AUTH_KEY" \
+  "$AUTH_HEALTH_URL" | python3 -m json.tool
 ```
 
-Expected healthy response:
-```json
-{"status": "ok", "storage": "r2"}
-```
+Expected healthy response: `.status == "ok"` and `.storage == "r2"`.
 
-Degraded response that triggered this page:
-```json
-{"status": "ok", "storage": "inmemory"}
-```
+The degraded response that triggers this page has `.storage == "inmemory"`.
 
 ### 2.2 Check R2 secrets on both workers
 
@@ -132,16 +134,19 @@ npx wrangler deploy --env prod
 
 ```sh
 # Poll until storage=r2 is confirmed (runs every 10s, up to 3 minutes)
+AUTH_HEALTH_URL="${CORELINK_API_ORIGIN:?set the current API origin}/_health/container/authenticated"
 for i in $(seq 1 18); do
-  RESP=$(curl -sf https://corelink-api.humangr.com/_health/container)
+  RESP=$(curl -sf \
+    -H "X-Corelink-Internal-Auth: $CORELINK_ADMIN_AUTH_KEY" \
+    "$AUTH_HEALTH_URL")
   echo "$RESP"
-  echo "$RESP" | grep -q '"storage":"r2"' && { echo "RECOVERED"; break; }
+  echo "$RESP" | jq -e '.storage == "r2"' >/dev/null && { echo "RECOVERED"; break; }
   sleep 10
 done
 ```
 
-BetterStack will auto-resolve the incident once the monitor detects
-`"storage":"r2"` in the next check cycle (≤ 180 s after recovery).
+The protected probe is the source of truth after recovery. The retired public
+alert must not be used to auto-resolve this condition.
 
 ## 4. Escalation
 
@@ -150,57 +155,20 @@ BetterStack will auto-resolve the incident once the monitor detects
 | Secrets exist but R2 still fails after redeploy | Escalate to Cloudflare support; R2 regional incident |
 | R2 bucket deleted or misconfigured | Escalate to Gustavo Schneiter immediately — bucket recreation is a data-loss event |
 | InMemory was active for > 30 min | Audit what writes landed in that window; those objects are lost — run postmortem per `RB-POSTMORTEM-PROCESS.md` |
-| PagerDuty policy not yet wired | BetterStack sends email alerts until PD policy is configured (see §5) |
+| Historical public storage alert is encountered | Do not use it as a storage signal; use the authenticated probe |
 
-## 5. PagerDuty escalation wiring — OPERATOR TODO
+## 5. Historical alert record
 
-BetterStack's PagerDuty integration requires console-side setup. The routing
-key `PAGERDUTY_ROUTING_KEY` is stored in `.env.local` but BetterStack does
-NOT expose an API endpoint to create PagerDuty integrations programmatically
-(v2 API returns 404 for `/api/v2/integrations`, `/api/v2/policies`, etc.).
+A BetterStack storage check was created on 2026-05-30 against an anonymous
+container-health response and a body marker. Its status-page entry and alert
+configuration are historical evidence only. The anonymous response cannot
+carry `CORELINK_ADMIN_AUTH_KEY`, so the check must not be enabled or used for
+alerting. Any alerting integration must invoke the authenticated probe through
+a protected secret-bearing system.
 
-**Required manual console steps:**
+## 6. Related documents
 
-1. Log into https://uptime.betterstack.com
-2. Navigate to On-call > Integrations > Add integration
-3. Select "PagerDuty"
-4. Paste the routing key from `.env.local` (`PAGERDUTY_ROUTING_KEY`)
-5. Save the integration — note the integration ID
-6. Go to On-call > Policies > Create policy
-7. Name it "CoreLink Storage P1"
-8. Add a step: "Alert via PagerDuty" using the integration from step 4
-9. Set escalation delay: 0 min (immediate)
-10. Save the policy — note the policy ID
-11. Call the BetterStack API to attach the policy to monitor `4467865`:
-    ```sh
-    source .env.local
-    curl -X PATCH \
-      -H "Authorization: Bearer $BETTERSTACK_API_TOKEN" \
-      -H "Content-Type: application/json" \
-      -d '{"policy_id": "<POLICY_ID_FROM_STEP_10>"}' \
-      "https://uptime.betterstack.com/api/v2/monitors/4467865"
-    ```
-
-Until this is done, alerts go to the team email only.
-
-## 6. Monitor configuration summary
-
-| Field | Value |
-|---|---|
-| Monitor ID | `4467865` |
-| URL | `https://corelink-api.humangr.com/_health/container` |
-| Type | `keyword` (body must contain required keyword) |
-| Required keyword | `"storage":"r2"` |
-| Alert condition | Keyword absent from body = degraded |
-| Check frequency | 180 s (plan cap; 60 s was requested) |
-| Regions | us, eu, as, au |
-| Status page resource | `8890128` under section "API" (page 247652) |
-| policy_id | `null` (pending console wiring per §5) |
-| Created at | 2026-05-30T18:52:57Z |
-
-## 7. Related documents
-
-- `docs/operator/storage-backing-alert-2026-05-30.md` — creation log and wiring details
-- `docs/operator/betterstack-state-2026-05-29.md` — BetterStack account state (existing monitor `4466381`)
+- `docs/operator/storage-backing-alert-2026-05-30.md` — historical record and current probe
+- `docs/operator/betterstack-state-2026-05-29.md` — BetterStack account state
 - `specs/_runbooks/RB-SECRETS-DRIFT.md` — secret drift detection and rotation runbook
-- `specs/_audits/2026-05-28-multimodel-prod-readiness-audit.md` — prod readiness audit noting wiring gap
+- `specs/_audits/2026-05-28-multimodel-prod-readiness-audit.md` — prod readiness audit

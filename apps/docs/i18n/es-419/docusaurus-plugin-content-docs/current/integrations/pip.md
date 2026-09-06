@@ -25,7 +25,7 @@ Este es un **espejo de solo lectura** para instalar paquetes públicos. No hospe
 ## Requisitos previos
 
 - `pip` (o un cliente compatible) instalado.
-- Un PAT de CoreLink (`corelink_pat_...`).
+- Un PAT de CoreLink (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA`).
 - El UUID de su tenant.
 
 ## Configurar
@@ -37,7 +37,7 @@ incrustadas — en `pip.conf` (`~/.config/pip/pip.conf` en Linux,
 
 ```ini
 [global]
-index-url = https://hugr:corelink_pat_XXXXXXXXXXXX@corelink-api.humangr.com/pip/<your-tenant-id>/simple/
+index-url = https://hugr:corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA@corelink-api.humangr.com/pip/<your-tenant-id>/simple/
 ```
 
 Luego instale de forma normal:
@@ -72,7 +72,7 @@ pip está resolviendo a través del espejo.
 
 | Síntoma | Causa probable | Solución |
 |---|---|---|
-| `401 Unauthorized` | El nombre de usuario no es `hugr`, o la contraseña no es un PAT `corelink_pat_...` | Use `hugr` como nombre de usuario y su PAT como contraseña |
+| `401 Unauthorized` | El nombre de usuario no es `hugr`, o la contraseña no es un PAT `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA` | Use `hugr` como nombre de usuario y su PAT como contraseña |
 | `Could not find a version` | Proyecto aún no almacenado en caché y upstream inaccesible | Reintente; CoreLink obtiene de PyPI en la primera solicitud |
 | Discrepancia de hash en un wheel | El artefacto del upstream cambió | CoreLink verifica el fragmento `#sha256=` y falla de forma cerrada ante una discrepancia |
 

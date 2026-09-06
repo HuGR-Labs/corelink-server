@@ -276,7 +276,7 @@ Typical themes: highly variable — combination of SIG, CAIQ, custom risk-rating
 | Prospect wants to redline DPA beyond ±15% | External counsel per `legal/legal-externo-engagement-contract.md`. |
 | Prospect wants a custom security commitment beyond DPA | Founder + Security Lead — write into SOW addendum, not into questionnaire. |
 | Prospect requests on-site audit | DPO + Security Lead; route via `trust@humangr.com`. Cite DPA §8 right-to-audit terms. |
-| Prospect requests pentest results we don't have | "External pentest scoped under R-6 staging-bake (T-30d pre-GA); summary will be available `<date>`." |
+| Prospect requests pentest results we don't have | "No external pentest has been commissioned and no report or availability date exists. `CAP-GA-002` remains a hard pre-GA gate; do not promise an NDA report or later cadence. Internal adversarial-review and cargo-fuzz evidence can be discussed under NDA." |
 | Prospect insists on HIPAA BAA | Founder + Legal; if PHI is truly in scope, *decline the engagement*. CoreLink is not a HIPAA-aligned product. |
 | Prospect insists on FedRAMP | Founder; explain the 12–18 month 3PAO engagement requirement and ask whether SOC 2 + ISO 27001 satisfy their actual ATO requirement. Most do. |
 

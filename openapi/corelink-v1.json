@@ -114,10 +114,10 @@
   ],
   "paths": {
     "/v1/signup": {
-      "x-status": "planned",
-      "x-binding": "cf-worker-pending",
+      "x-status": "implemented",
       "x-implementing-crate": "corelink-signup",
-      "x-reconciliation-note": "Distinct intent from the SERVER-ONLY `/v1/signup/pilot/{token}`\n(pilot-program HMAC-token redemption, axum-mounted in\n`crates/corelink-container/src/routes/signup.rs`). The customer-\nfacing self-service signup endpoint is the one documented here;\n`crates/corelink-signup` ships the orchestrator + atomic-\nprovisioning logic, awaiting the CF Worker entry crate to bind it.\n",
+      "x-served-at": "worker/src/index.ts:972 (edge-terminated)",
+      "x-reconciliation-note": "Distinct intent from the SERVER-ONLY `/v1/signup/pilot/{token}`\n(pilot-program HMAC-token redemption, axum-mounted in\n`crates/corelink-container/src/routes/signup.rs`). The customer-\nfacing self-service signup endpoint is the one documented here;\n`crates/corelink-signup` ships the orchestrator + atomic-\nprovisioning logic and the Worker terminates the route at the edge.\n",
       "post": {
         "tags": [
           "signup"
@@ -200,115 +200,72 @@
         }
       }
     },
-    "/v1/dpa/accept": {
+    "/v1/onboarding/dpa-accept": {
+      "x-status": "implemented",
+      "x-implementing-crate": "corelink-container",
+      "x-served-at": "crates/corelink-container/src/routes/dpa_accept.rs:634",
       "post": {
         "tags": [
           "dpa"
         ],
         "summary": "Record click-through acceptance of the current DPA version.",
         "operationId": "dpaAccept",
-        "x-status": "planned",
-        "x-binding": "cf-worker-pending",
-        "x-implementing-crate": "corelink-dpa-acceptance",
-        "x-reconciliation-note": "Business-logic crate `corelink-dpa-acceptance` ships the service +\nschema (doc-comments mark `POST /v1/dpa/accept` as canonical). Axum\nbinding is deferred to PRR per `trait-abstraction-defer` charter\n(tools/openapi/src/lib.rs L29-39 \u2014 utoipa derives land with the\nCF Worker entry crate). Reconciled 2026-05-27 per\nspecs/_audits/2026-05-27-openapi-reconciliation-seal.md.\n",
-        "description": "Records 6-field consent proof (`notice_text_hash`, `notice_version`,\n`locale`, `wording_id`, `ui_capture_ts`, `submission_ts` server-set)\nand emits an RS256-signed JWT receipt. Idempotent on\n`(tenant_id, notice_text_hash, ui_capture_ts)`.\n",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DpaAcceptanceRequest"
-              }
-            }
+        "security": [
+          {
+            "ClerkSessionCookie": []
           }
-        },
-        "responses": {
-          "201": {
-            "description": "Acceptance recorded; JWT receipt returned and emailed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DpaAcceptanceReceipt"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "409": {
-            "description": "Idempotent replay \u2014 original receipt returned unchanged.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DpaAcceptanceReceipt"
-                }
-              }
-            }
-          },
-          "422": {
-            "$ref": "#/components/responses/Unprocessable"
-          },
-          "429": {
-            "$ref": "#/components/responses/RateLimited"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
-          }
-        }
-      }
-    },
-    "/v1/dpa/re-accept": {
-      "post": {
-        "tags": [
-          "dpa"
         ],
-        "summary": "Re-accept a major-bumped DPA notice within the 30-day grace window.",
-        "operationId": "dpaReAccept",
-        "x-status": "planned",
-        "x-binding": "cf-worker-pending",
-        "x-implementing-crate": "corelink-privacy (dpa::versioning::middleware)",
-        "x-reconciliation-note": "`RE_ACCEPT_PATH` const in\n`crates/corelink-privacy/src/dpa/versioning/middleware.rs:67` is the\ncanonical gate token used by the read-only-degrade middleware. The\nmiddleware identifies this path but the actual handler axum mount\nis deferred to the CF Worker entry crate.\n",
-        "description": "When a new DPA version is published the tenant enters a 30-day grace\nwindow; `corelink-dpa-versioning` middleware flips writes to read-only\nuntil the customer self-recovers via this endpoint.\n",
+        "description": "Records the click-through consent proof for the caller's tenant and\nreturns the immutable audit reference for it. The tenant is taken from\nthe Clerk-authenticated session at the edge and is **never** read from\nthe body \u2014 a smuggled `tenant_id` is rejected (`400 bad_request`,\nunknown fields are denied).\n\nIdempotent on `(tenant, dpa_version)`: replaying an acceptance returns\nthe original `audit_event_id` unchanged, with the same `200`.\n\n`dpa_version` must equal the server's current DPA version; an older\none is rejected with `400 dpa_version_mismatch`. `dpa_locale` must be\ninside the closed GA locale set (`en-US` / `pt-BR` / `es-419`, and\ntheir bare-language forms); anything else \u2014 `de` included \u2014 is\n`400 unsupported_locale`.\n\n`INV-ONBOARD-DPA-FIRST`: `/v1/onboarding/tier-select` stays locked\nuntil an acceptance row exists for the tenant.\n",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DpaAcceptanceRequest"
+                "$ref": "#/components/schemas/DpaAcceptRequest"
               }
             }
           }
         },
         "responses": {
-          "201": {
-            "description": "Re-acceptance recorded; tenant returns to read-write.",
+          "200": {
+            "description": "Acceptance recorded \u2014 or replayed unchanged, which returns the same\nbody as the original acceptance.\n",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DpaAcceptanceReceipt"
+                  "$ref": "#/components/schemas/DpaAcceptResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`bad_request` (malformed JSON, unknown field, malformed notice\nhash), `unsupported_locale`, or `dpa_version_mismatch`.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DpaAcceptError"
                 }
               }
             }
           },
           "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "description": "Grace window expired; tenant is now read-only-frozen and requires manual unfreeze via admin.",
+            "description": "`unauthenticated` (edge internal-auth failed) or\n`no_verified_tenant` (no tenant bound to the session).\n",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/DpaAcceptError"
                 }
               }
             }
           },
-          "422": {
-            "$ref": "#/components/responses/Unprocessable"
-          },
           "500": {
-            "$ref": "#/components/responses/InternalError"
+            "description": "`internal` \u2014 durable-store or receipt-signing failure. Fail-CLOSED:\nnever reported as \"already accepted\".\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DpaAcceptError"
+                }
+              }
+            }
           }
         }
       }
@@ -320,10 +277,9 @@
         ],
         "summary": "Select a subscription tier and receive a Stripe Checkout session URL.",
         "operationId": "tierSelect",
-        "x-status": "planned",
-        "x-binding": "cf-worker-pending",
+        "x-status": "implemented",
         "x-implementing-crate": "corelink-tier-selection",
-        "x-reconciliation-note": "`crates/corelink-tier-selection/src/lib.rs` doc-comments mark\n`POST /v1/onboarding/tier-select` as canonical (Lote 10.16 fix).\nSprint S-19 WI-S19-004 (sealed) scopes the handler; the axum\nmount lives in the deferred CF Worker entry crate.\n",
+        "x-served-at": "crates/corelink-container/src/routes/tier_select.rs:588",
         "description": "Enforces `INV-ONBOARD-DPA-FIRST` via a D1 lock \u2014 tier selection is\nrejected until a DPA acceptance row exists for the tenant.\nReturns a Stripe Checkout session URL; final activation happens\nwhen the corresponding `checkout.session.completed` event lands\non `/v1/billing/stripe-webhook`.\n",
         "requestBody": {
           "required": true,
@@ -371,112 +327,162 @@
         }
       }
     },
-    "/v1/pats": {
+    "/v1/customer/keys": {
       "x-status": "implemented",
-      "x-implementing-handler": "crates/corelink-container/src/routes/customer.rs",
-      "x-implementing-crate": "corelink-pat",
-      "x-reconciliation-note": "Customer-authorized issuance is mounted by `customer::router` and routed\nthrough the Worker `customer_v1` auth family. The Worker derives the\ntenant from an edge-validated Clerk session or canonical PAT and never\nforwards the operator-only PAT mint authority. A Clerk session is the\nbrowser/dashboard authentication for this POST; the JWT is stripped\nbefore the tenant Durable Object receives the request.\n",
+      "x-implementing-crate": "corelink-container",
+      "x-served-at": "crates/corelink-container/src/routes/customer.rs:212",
+      "get": {
+        "tags": [
+          "pat"
+        ],
+        "summary": "List the tenant's Personal Access Tokens (metadata only).",
+        "operationId": "customerKeysList",
+        "description": "Returns PAT metadata plus the tenant's BYOK status. No raw token\nmaterial is ever returned here.\n\nRequires a cache-**write** capability: enumerating a tenant's\ncredentials is an admin operation, so a read-only (`cas:r`) token is\nrejected with `403`.\n",
+        "responses": {
+          "200": {
+            "description": "PAT list (metadata only) and BYOK status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerKeysListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
       "post": {
         "tags": [
           "pat"
         ],
         "summary": "Issue a new Personal Access Token.",
-        "operationId": "patIssue",
-        "security": [
-          {
-            "ClerkSessionCookie": []
-          },
-          {
-            "BearerPAT": []
-          }
-        ],
-        "description": "Creates a PAT for the caller's authenticated tenant. Browser/dashboard\ncallers authenticate with an edge-validated Clerk session cookie; CLI\ncallers may use a canonical PAT for compatibility. The Worker derives\nthe tenant from that verified credential; clients\ncannot supply a tenant id and this endpoint never accepts the\noperator-only mint authority. The raw token is returned exactly once in\n`token` and is never logged or retrievable later. Self-service tokens\nexpire after 90 days and cannot grant `admin`.\nThis endpoint and the legacy dashboard alias `POST /v1/customer/keys`\nuse the same customer-plane mint flow and the same per-tenant\n`pat-issue` bucket: burst 10, then 10 tokens per hour (one every 360\nseconds). The limiter runs before mint and audit; a denied request\nreturns `429` with `Retry-After`.\n",
+        "operationId": "customerKeysCreate",
+        "description": "Returns the raw token material **once**, in the `token` field. The\ntoken is hashed before storage; every subsequent read returns metadata\nonly.\n\nMinting a credential that carries any write/admin scope requires the\ncaller to already hold a cache-write capability \u2014 a read-only token\ncannot bootstrap a write token for itself (`403`).\n",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PatIssueRequest"
+                "$ref": "#/components/schemas/CustomerKeyCreateRequest"
               }
             }
           }
         },
         "responses": {
           "201": {
-            "description": "PAT issued.",
+            "description": "PAT issued. `token` is shown exactly once.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PatIssueResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Malformed JSON or request body rejected by the HTTP extractor.",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/CustomerKeyCreateResponse"
                 }
               }
             }
           },
           "401": {
-            "description": "Authentication failed at the edge returns the Worker's JSON\n`WorkerErrorEnvelope` with `error`, `message`, and `request_id`.\nA request that reaches the container but has no trusted tenant,\nor requests an invalid/ungrantable (`admin`/`owner`) scope, returns\nthe handler's plain-text `401`. No PAT is minted in either case.\n",
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/v1/customer/keys/{pat_id}/revoke": {
+      "x-status": "implemented",
+      "x-implementing-crate": "corelink-container",
+      "x-served-at": "crates/corelink-container/src/routes/customer.rs:216",
+      "post": {
+        "tags": [
+          "pat"
+        ],
+        "summary": "Revoke a Personal Access Token by id.",
+        "operationId": "customerKeyRevoke",
+        "description": "Revocation is destructive and tenant-wide, so it requires a cache-write\ncapability; a read-only (`cas:r`) principal is rejected with `403`.\nSubsequent uses of the revoked token MUST fail closed\n(`INV-PAT-REVOKE-PROPAGATION`).\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PatId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revoked. Returns the PAT metadata with `revoked_at` set.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WorkerErrorEnvelope"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/CustomerKeyRevokeResponse"
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "description": "The authenticated principal is valid but lacks the write capability\nrequired to mint a requested write/admin credential. The container\nhandler returns plain text.\n",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
+            "$ref": "#/components/responses/Forbidden"
           },
-          "429": {
-            "description": "PAT issuance rate limit exceeded.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "integer",
-                  "minimum": 1
-                }
-              }
-            },
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           },
           "500": {
-            "description": "PAT storage or handler failure.",
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/v1/customer/account/delete": {
+      "x-status": "implemented",
+      "x-implementing-handler": "crates/corelink-container/src/routes/customer.rs (handle_account_delete)",
+      "x-served-at": "crates/corelink-container/src/routes/customer.rs:264",
+      "post": {
+        "tags": [
+          "privacy-dsr"
+        ],
+        "summary": "Request deletion of the authenticated tenant account.",
+        "operationId": "customerAccountDelete",
+        "security": [
+          {
+            "ClerkSessionCookie": []
+          }
+        ],
+        "description": "Requests GDPR/LGPD erasure of the caller's whole tenant account. This\nirreversible operation is restricted to the tenant owner using a\nClerk-authenticated dashboard session; a cache PAT is rejected.\n\nThe request is durably anchored and queued before acknowledgement. A\nrepeated request is safe and returns the same accepted outcome. The\nresponse does not claim that erasure has completed: it only confirms\nthat the erasure workflow was accepted (`erasure_requested`) or that\nno account remained (`no_account`).\n",
+        "responses": {
+          "202": {
+            "description": "Erasure request accepted or idempotent no-account acknowledgement.",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/CustomerAccountDeleteResponse"
                 }
               }
             }
           },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
           "503": {
-            "description": "Rate-limit clock or pipeline unavailable; no PAT was minted.",
+            "description": "Erasure worker is not configured; no acknowledgement was emitted.",
             "content": {
               "text/plain": {
                 "schema": {
@@ -488,7 +494,132 @@
         }
       }
     },
+    "/v1/customer/account/export": {
+      "x-status": "implemented",
+      "x-implementing-handler": "crates/corelink-container/src/routes/customer.rs (handle_account_export)",
+      "x-served-at": "crates/corelink-container/src/routes/customer.rs:265",
+      "post": {
+        "tags": [
+          "privacy-dsr"
+        ],
+        "summary": "Export the authenticated tenant's portability bundle.",
+        "operationId": "customerAccountExport",
+        "security": [
+          {
+            "ClerkSessionCookie": []
+          },
+          {
+            "BearerPAT": []
+          }
+        ],
+        "description": "Streams the complete tenant portability bundle as bounded,\ncontent-addressed NDJSON: governance records first, then CAS/AC blob\nbytes, followed by a manifest. Only an owner/admin with a dashboard\nsession or a write-capable PAT may invoke it; read-only cache tokens are\nrejected because the bundle contains team PII, DPA/audit records and\nall tenant blobs.\n\nThe export is rate-limited and an audit record is durably written before\nthe first byte is disclosed. A source or audit failure returns a 5xx\nbefore streaming begins; the `x-corelink-export-schema` header is\n`corelink.tenant_export.v1`.\n",
+        "responses": {
+          "200": {
+            "description": "Portability bundle streamed as newline-delimited JSON.",
+            "headers": {
+              "x-corelink-export-schema": {
+                "description": "Stable export wire-schema identifier.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "corelink.tenant_export.v1"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "description": "Export source is not configured or temporarily unavailable.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/pats": {
+      "x-status": "implemented",
+      "x-implementing-handler": "crates/corelink-container/src/routes/customer.rs (handle_pats_create)",
+      "x-served-at": "crates/corelink-container/src/routes/customer.rs:256",
+      "x-reconciliation-note": "Compatibility alias for `POST /v1/customer/keys`. Both routes use the\nsame customer-plane issuance handler and the same Clerk/PAT auth gates.\nNew integrations should use `/v1/customer/keys`; this alias remains\ndocumented while existing clients migrate so a served route is never\nsilently omitted from the published contract.\n",
+      "post": {
+        "tags": [
+          "pat"
+        ],
+        "summary": "Issue a Personal Access Token (compatibility alias).",
+        "operationId": "patIssueCompatibilityAlias",
+        "security": [
+          {
+            "ClerkSessionCookie": []
+          },
+          {
+            "BearerPAT": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerKeyCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "PAT issued. `token` is shown exactly once.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerKeyCreateResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
     "/v1/billing/stripe-webhook": {
+      "x-status": "implemented",
+      "x-implementing-crate": "corelink-container",
+      "x-served-at": "crates/corelink-container/src/webhook.rs:56 (STRIPE_WEBHOOK_ROUTE)",
       "post": {
         "tags": [
           "billing"
@@ -560,10 +691,10 @@
       }
     },
     "/v1/privacy/dsr/{action}": {
-      "x-status": "planned",
-      "x-binding": "cf-worker-pending",
+      "x-status": "implemented",
       "x-implementing-crate": "corelink-dsr",
-      "x-reconciliation-note": "`crates/corelink-dsr/src/endpoint.rs` marks\n`POST /v1/privacy/dsr/{access|portability|...}` as canonical;\nSprint S-11 WI-S11-001 (sealed) scopes the 7-endpoint surface.\nAxum mount deferred to CF Worker entry crate.\n",
+      "x-served-at": "crates/corelink-container/src/routes/dsr/portal.rs:719-724",
+      "x-reconciliation-note": "Mounted as six enumerated literals (`/access`, `/portability`,\n`/rectification`, `/erasure`, `/restriction`, `/objection`) rather than\none templated segment \u2014 an `{action}` outside that closed set is a 404,\nnot a validation error.\n",
       "post": {
         "tags": [
           "privacy-dsr"
@@ -637,9 +768,9 @@
       }
     },
     "/v1/privacy/dsr/{request_id}/status": {
-      "x-status": "planned",
-      "x-binding": "cf-worker-pending",
+      "x-status": "implemented",
       "x-implementing-crate": "corelink-dsr",
+      "x-served-at": "crates/corelink-container/src/routes/dsr/portal.rs:726",
       "get": {
         "tags": [
           "privacy-dsr"
@@ -674,438 +805,6 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
-          }
-        }
-      }
-    },
-    "/v1/admin/ops": {
-      "x-status": "planned",
-      "x-binding": "cf-worker-pending",
-      "x-implementing-crate": "corelink-ops (admin::api) + corelink-dual-approval",
-      "x-reconciliation-note": "`crates/corelink-ops/src/admin/api.rs` carries the `corelink-admin-api`\npipeline + dual-approval gate. Distinct intent from the SERVER-ONLY\n`/v1/admin/read/:resource` + `/v1/admin/mutate` placeholder routes,\nwhich expose an in-memory admin handler used for the wave-11 wire-up\ndemonstration. The dual-approval-gated `/v1/admin/ops*` family is the\nproduction surface; CF Worker entry crate binds it.\n",
-      "post": {
-        "tags": [
-          "admin"
-        ],
-        "summary": "Submit a dual-approval-gated admin operation.",
-        "operationId": "adminOpsSubmit",
-        "description": "Implemented by `corelink-admin-api::middleware::AdminApiPipeline`.\nEnforces `INV-ADMIN-DUAL-APPROVAL` (caller + distinct approver\nwith fresh MFA) and audit-emit-BEFORE-handler atomically.\nOp taxonomy: `ConfigRollback`, `SecretRotationStart`,\n`TenantTombstone`, plus runbook-specific variants.\n",
-        "security": [
-          {
-            "BearerPAT": [
-              "admin"
-            ]
-          }
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/AdminOperationReason"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AdminOpRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "description": "Op accepted; result available at `GET /v1/admin/ops/{op_id}`.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AdminOpAccepted"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "409": {
-            "description": "Approver collision (caller == approver) or duplicate nonce.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "$ref": "#/components/responses/Unprocessable"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
-          }
-        }
-      }
-    },
-    "/v1/admin/ops/{op_id}": {
-      "x-status": "planned",
-      "x-binding": "cf-worker-pending",
-      "x-implementing-crate": "corelink-ops (admin::api)",
-      "get": {
-        "tags": [
-          "admin"
-        ],
-        "summary": "Inspect an admin op (status + audit envelope).",
-        "operationId": "adminOpGet",
-        "security": [
-          {
-            "BearerPAT": [
-              "admin"
-            ]
-          }
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/AdminOpId"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Op result.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AdminOpResult"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          }
-        }
-      }
-    },
-    "/v1/admin/ops/{op_id}/approve": {
-      "x-status": "planned",
-      "x-binding": "cf-worker-pending",
-      "x-implementing-crate": "corelink-ops (admin::api) + corelink-dual-approval",
-      "post": {
-        "tags": [
-          "admin"
-        ],
-        "summary": "Approve a pending admin op (second-approver step).",
-        "operationId": "adminOpApprove",
-        "security": [
-          {
-            "BearerPAT": [
-              "admin"
-            ]
-          }
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/AdminOpId"
-          },
-          {
-            "$ref": "#/components/parameters/AdminOperationReason"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Approved.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AdminOpResult"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "409": {
-            "description": "Approver collision or op already approved/rejected.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/admin/ops/{op_id}/reject": {
-      "x-status": "planned",
-      "x-binding": "cf-worker-pending",
-      "x-implementing-crate": "corelink-ops (admin::api) + corelink-dual-approval",
-      "post": {
-        "tags": [
-          "admin"
-        ],
-        "summary": "Reject a pending admin op.",
-        "operationId": "adminOpReject",
-        "security": [
-          {
-            "BearerPAT": [
-              "admin"
-            ]
-          }
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/AdminOpId"
-          },
-          {
-            "$ref": "#/components/parameters/AdminOperationReason"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Rejected.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AdminOpResult"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "409": {
-            "description": "Op already terminal (approved or rejected).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/admin/audit/events": {
-      "x-status": "planned",
-      "x-binding": "cf-worker-pending",
-      "x-implementing-crate": "corelink-audit-chain (admin query surface)",
-      "x-reconciliation-note": "Distinct intent from the SERVER-ONLY `/v1/audit/export` (bulk R2\nexport) and `/v1/audit/analytics/*` (event-count + timeline\naggregates). This is the per-tenant admin event-search surface\npaginated for the admin UI. SDK quickstarts currently target a\ndashed `/v1/admin/audit-events` typo (`tools/sdks/{go,python}/\nexamples/quickstart_audit.{go,py}`) \u2014 SDK fix tracked separately;\nthe dashed variant is NOT canonical. CLI quickstart at\n`tools/cli/examples/quickstart_audit.rs:31` shares the typo.\n",
-      "get": {
-        "tags": [
-          "admin"
-        ],
-        "summary": "Search the canonical audit chain (read-only).",
-        "operationId": "adminAuditEvents",
-        "security": [
-          {
-            "BearerPAT": [
-              "admin"
-            ]
-          }
-        ],
-        "parameters": [
-          {
-            "name": "tenant_id",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "event_type",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "examples": [
-                "corelink.signup.completed"
-              ]
-            }
-          },
-          {
-            "name": "since_ms",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 0
-            }
-          },
-          {
-            "name": "until_ms",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 0
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 500,
-              "default": 100
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Filtered audit-event page.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AuditEventPage"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      }
-    },
-    "/v1/admin/tenants": {
-      "x-status": "planned",
-      "x-binding": "cf-worker-pending",
-      "x-implementing-crate": "corelink-tenant-registry (admin query surface)",
-      "get": {
-        "tags": [
-          "admin"
-        ],
-        "summary": "Search tenants (admin read).",
-        "operationId": "adminTenantsList",
-        "security": [
-          {
-            "BearerPAT": [
-              "admin"
-            ]
-          }
-        ],
-        "parameters": [
-          {
-            "name": "region",
-            "in": "query",
-            "schema": {
-              "$ref": "#/components/schemas/PrimaryRegion"
-            }
-          },
-          {
-            "name": "tier",
-            "in": "query",
-            "schema": {
-              "$ref": "#/components/schemas/SubscriptionTier"
-            }
-          },
-          {
-            "name": "state",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "active",
-                "deferred_billing",
-                "read_only_frozen",
-                "tombstoned"
-              ]
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 500,
-              "default": 100
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Tenant page.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TenantPage"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      }
-    },
-    "/v1/enterprise/inquire": {
-      "x-status": "planned",
-      "x-binding": "cf-worker-pending",
-      "x-implementing-crate": "corelink-enterprise-inquiry",
-      "post": {
-        "tags": [
-          "enterprise"
-        ],
-        "summary": "Submit an enterprise sales / BYOK inquiry.",
-        "operationId": "enterpriseInquire",
-        "description": "Implemented by `corelink-enterprise-inquiry`. Atomic outbox to\nSlack channel + CRM lead; 24h auto-reply SLA.\n",
-        "security": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EnterpriseInquiryRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "description": "Inquiry queued.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EnterpriseInquiryResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "$ref": "#/components/responses/Unprocessable"
-          },
-          "429": {
-            "$ref": "#/components/responses/RateLimited"
           },
           "500": {
             "$ref": "#/components/responses/InternalError"
@@ -1170,38 +869,10 @@
         }
       }
     },
-    "/v1/data-categories": {
-      "x-status": "planned",
-      "x-binding": "cf-worker-pending",
-      "x-implementing-crate": "corelink-privacy (DataCategory enum)",
-      "get": {
-        "tags": [
-          "data-categories"
-        ],
-        "summary": "List canonical data-category enums (privacy_model \u00a75.6).",
-        "operationId": "dataCategoriesList",
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Canonical list.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/DataCategory"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/health": {
-      "x-status": "planned",
-      "x-binding": "cf-worker-pending",
-      "x-reconciliation-note": "Adapter-host pip server exposes `/healthz` (rows 28 of route inventory\n\u00a72) for its own liveness, but that is the pip-adapter port, not the\ncustomer API surface. The canonical `/api/health` endpoint lives in\nthe CF Worker entry crate; native server container has no liveness\nroute mounted at this path.\n",
+      "x-status": "implemented",
+      "x-served-at": "worker/src/index.ts:878 (edge-terminated)",
+      "x-reconciliation-note": "Terminated at the edge by the Worker \u2014 it never reaches the container.\nNot to be confused with the adapter-host pip server's own `/healthz`\n(that is the pip-adapter port, not the customer API surface), nor with\nthe container's `/_health`, which is documented separately.\n",
       "get": {
         "tags": [
           "ops"
@@ -1219,39 +890,6 @@
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "/api/csp-report": {
-      "x-status": "planned",
-      "x-binding": "cf-worker-pending",
-      "x-reconciliation-note": "S-16 WI-S16-001 (sealed) scopes the CSP-report intake on the\nNext.js side; the corresponding backend ingestion endpoint here is\npending the CF Worker entry crate.\n",
-      "post": {
-        "tags": [
-          "ops"
-        ],
-        "summary": "Browser Content-Security-Policy violation report intake.",
-        "operationId": "cspReport",
-        "security": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/csp-report": {
-              "schema": {
-                "$ref": "#/components/schemas/CspReport"
-              }
-            },
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CspReport"
-              }
-            }
-          }
-        },
-        "responses": {
-          "204": {
-            "description": "Recorded."
           }
         }
       }
@@ -1627,9 +1265,10 @@
         }
       }
     },
-    "/v1/audit/export": {
+    "/v1/audit/{tenant}/export": {
       "x-status": "implemented",
       "x-implementing-handler": "crates/corelink-container/src/routes/audit_export/handler.rs (handle_export)",
+      "x-served-at": "crates/corelink-container/src/routes/audit_export/types.rs:20 (AUDIT_EXPORT_ROUTE)",
       "get": {
         "tags": [
           "audit-export"
@@ -1665,13 +1304,13 @@
           },
           {
             "name": "tenant",
-            "in": "query",
-            "required": false,
+            "in": "path",
+            "required": true,
             "schema": {
               "type": "string",
               "format": "uuid"
             },
-            "description": "Optional \u2014 when supplied as a different tenant than the\nauthenticated principal, the route emits a cross-tenant\nattempt audit row and returns 403.\n"
+            "description": "The tenant whose chain is exported. When it differs from the\nauthenticated principal's tenant, the route emits a cross-tenant\nattempt audit row and returns 403.\n"
           },
           {
             "name": "X-Tenant-Id",
@@ -2936,6 +2575,253 @@
       }
     },
     "schemas": {
+      "CustomerPat": {
+        "type": "object",
+        "description": "One PAT row as returned by the `/v1/customer/keys` family. Metadata\nonly \u2014 raw token material appears exactly once, in\n`CustomerKeyCreateResponse.token`, and never again.\n",
+        "required": [
+          "pat_id",
+          "name",
+          "scopes",
+          "created_at"
+        ],
+        "properties": {
+          "pat_id": {
+            "type": "string",
+            "description": "Opaque PAT identifier."
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable name given at creation."
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Granted scopes (e.g. `cas:r`, `cas:rw`)."
+          },
+          "created_at": {
+            "type": "string",
+            "description": "ISO-8601 creation timestamp."
+          },
+          "last_used_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ISO-8601 timestamp of last use; `null` if never used."
+          },
+          "revoked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ISO-8601 revocation timestamp; `null` while active."
+          }
+        }
+      },
+      "CustomerByokStatus": {
+        "type": "object",
+        "description": "BYOK posture for the tenant, returned alongside the PAT list.",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "none",
+              "active",
+              "rotation_pending"
+            ]
+          },
+          "cmk_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "CMK identifier when `status` is not `none`."
+          },
+          "last_rotated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ISO-8601 timestamp of the last rotation, when present."
+          }
+        }
+      },
+      "CustomerKeysListResponse": {
+        "type": "object",
+        "required": [
+          "pats",
+          "byok"
+        ],
+        "properties": {
+          "pats": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomerPat"
+            }
+          },
+          "byok": {
+            "$ref": "#/components/schemas/CustomerByokStatus"
+          }
+        }
+      },
+      "CustomerKeyCreateRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Human-readable name for the new PAT."
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "description": "Scopes to grant. Requesting any write/admin scope requires the\ncaller to already hold a cache-write capability.\n"
+          }
+        }
+      },
+      "CustomerKeyCreateResponse": {
+        "type": "object",
+        "required": [
+          "pat",
+          "token"
+        ],
+        "properties": {
+          "pat": {
+            "$ref": "#/components/schemas/CustomerPat"
+          },
+          "token": {
+            "type": "string",
+            "description": "Raw bearer token. Shown **once**; it is hashed before storage and\nis not recoverable afterwards.\n"
+          }
+        }
+      },
+      "CustomerKeyRevokeResponse": {
+        "type": "object",
+        "required": [
+          "pat"
+        ],
+        "properties": {
+          "pat": {
+            "$ref": "#/components/schemas/CustomerPat"
+          }
+        }
+      },
+      "CustomerAccountDeleteResponse": {
+        "type": "object",
+        "required": [
+          "ok",
+          "status"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "erasure_requested",
+              "no_account"
+            ],
+            "description": "Accepted for asynchronous erasure, or idempotent no-account acknowledgement."
+          }
+        }
+      },
+      "DpaAcceptRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dpa_version",
+          "dpa_locale",
+          "notice_text_hash"
+        ],
+        "description": "Unknown fields are rejected (`400 bad_request`) \u2014 in particular a\nsmuggled `tenant_id`, which is header-bound at the edge and never read\nfrom the body.\n",
+        "properties": {
+          "dpa_version": {
+            "type": "string",
+            "description": "DPA template version accepted. Must equal the server's current\nversion, else `400 dpa_version_mismatch`.\n"
+          },
+          "dpa_locale": {
+            "type": "string",
+            "enum": [
+              "en",
+              "pt",
+              "es",
+              "en-US",
+              "pt-BR",
+              "es-419"
+            ],
+            "description": "UI locale. Closed GA set \u2014 anything outside it (`de` included) is\n`400 unsupported_locale`.\n"
+          },
+          "notice_text_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Client-computed SHA-256 (hex64) of the rendered notice text."
+          },
+          "ui_capture_ts": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Client-captured click timestamp (ms since epoch). Optional for\nolder clients; when absent the server uses its own time.\n"
+          }
+        }
+      },
+      "DpaAcceptResponse": {
+        "type": "object",
+        "required": [
+          "audit_event_id",
+          "dpa_version",
+          "dpa_locale",
+          "dpa_accepted_at"
+        ],
+        "properties": {
+          "audit_event_id": {
+            "type": "string",
+            "description": "Immutable audit reference (the RS256 receipt `jti`)."
+          },
+          "dpa_version": {
+            "type": "string",
+            "description": "Accepted DPA version (echoed)."
+          },
+          "dpa_locale": {
+            "type": "string",
+            "description": "Accepted locale, canonicalised to BCP-47."
+          },
+          "dpa_accepted_at": {
+            "type": "string",
+            "description": "Acceptance time (ms since epoch, as a string)."
+          }
+        }
+      },
+      "DpaAcceptError": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "description": "The DPA-accept route returns this bare envelope, NOT the shared\n`ErrorEnvelope`.\n",
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "unauthenticated",
+              "no_verified_tenant",
+              "bad_request",
+              "unsupported_locale",
+              "dpa_version_mismatch",
+              "internal"
+            ]
+          }
+        }
+      },
       "ErrorEnvelope": {
         "type": "object",
         "required": [
@@ -2973,34 +2859,6 @@
                 "additionalProperties": true
               }
             }
-          }
-        }
-      },
-      "WorkerErrorEnvelope": {
-        "type": "object",
-        "required": [
-          "error",
-          "message",
-          "request_id"
-        ],
-        "description": "JSON envelope emitted by the edge Worker before a request reaches the tenant Durable Object. It contains no credential material.",
-        "properties": {
-          "error": {
-            "type": "string",
-            "description": "Stable machine-readable Worker error code.",
-            "examples": [
-              "UNAUTHORIZED",
-              "FORBIDDEN",
-              "INTERNAL_ERROR"
-            ]
-          },
-          "message": {
-            "type": "string",
-            "description": "Safe human-readable message; secrets are never echoed."
-          },
-          "request_id": {
-            "type": "string",
-            "description": "Worker request correlation identifier."
           }
         }
       },
@@ -3119,39 +2977,6 @@
           }
         }
       },
-      "DpaAcceptanceRequest": {
-        "type": "object",
-        "required": [
-          "proof"
-        ],
-        "properties": {
-          "proof": {
-            "$ref": "#/components/schemas/ConsentProofPayload"
-          }
-        }
-      },
-      "DpaAcceptanceReceipt": {
-        "type": "object",
-        "required": [
-          "jwt_receipt",
-          "jti",
-          "accepted_at_ms"
-        ],
-        "properties": {
-          "jwt_receipt": {
-            "type": "string",
-            "description": "RS256-signed compact JWT (header.payload.sig)."
-          },
-          "jti": {
-            "type": "string",
-            "description": "JWT id; primary key into `dpa_acceptances`."
-          },
-          "accepted_at_ms": {
-            "type": "integer",
-            "format": "int64"
-          }
-        }
-      },
       "SubscriptionTier": {
         "type": "string",
         "enum": [
@@ -3201,95 +3026,9 @@
           }
         }
       },
-      "PatIssueRequest": {
-        "type": "object",
-        "required": [
-          "label"
-        ],
-        "properties": {
-          "label": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64,
-            "examples": [
-              "ci-runner-build-cache"
-            ]
-          },
-          "scopes": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "cache:read",
-                "cache:write",
-                "cache:find-missing"
-              ]
-            },
-            "default": [
-              "cache:read"
-            ]
-          }
-        }
-      },
-      "PatIssueResponse": {
-        "type": "object",
-        "required": [
-          "pat",
-          "token"
-        ],
-        "properties": {
-          "pat": {
-            "$ref": "#/components/schemas/CustomerPatMetadata"
-          },
-          "token": {
-            "type": "string",
-            "description": "Canonical raw PAT material \u2014 **shown exactly once** and never logged or retrievable again."
-          }
-        }
-      },
-      "CustomerPatMetadata": {
-        "type": "object",
-        "required": [
-          "pat_id",
-          "name",
-          "scopes",
-          "created_at"
-        ],
-        "properties": {
-          "pat_id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "scopes": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "last_used_at": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
-          },
-          "revoked_at": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
-          }
-        }
-      },
       "PatMetadata": {
         "type": "object",
+        "description": "PAT metadata as returned by the **signup** flow (`/v1/signup`). This is\nNOT the shape of the `/v1/customer/keys` family \u2014 that surface returns\n`CustomerPat`, whose field names differ (`name`/`created_at` rather\nthan `label`/`created_at_ms`, and no `prefix`).\n",
         "required": [
           "pat_id",
           "label",
@@ -3522,104 +3261,6 @@
           "AbuseAppeal"
         ]
       },
-      "AdminOpRequest": {
-        "type": "object",
-        "required": [
-          "op_type",
-          "op_payload",
-          "approver_user_id",
-          "approver_signature",
-          "nonce"
-        ],
-        "properties": {
-          "op_type": {
-            "$ref": "#/components/schemas/AdminOpType"
-          },
-          "op_payload": {
-            "type": "object",
-            "additionalProperties": true
-          },
-          "approver_user_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "approver_signature": {
-            "type": "string",
-            "description": "HMAC-SHA256 over `(payload || nonce || ts_ms)` with the admin signing key."
-          },
-          "nonce": {
-            "type": "string",
-            "description": "16 random bytes hex-encoded (replay protection)."
-          }
-        }
-      },
-      "AdminOpAccepted": {
-        "type": "object",
-        "required": [
-          "op_id",
-          "status"
-        ],
-        "properties": {
-          "op_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "pending_approval",
-              "approved",
-              "executed"
-            ]
-          }
-        }
-      },
-      "AdminOpResult": {
-        "type": "object",
-        "required": [
-          "op_id",
-          "op_type",
-          "status"
-        ],
-        "properties": {
-          "op_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "op_type": {
-            "$ref": "#/components/schemas/AdminOpType"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "pending_approval",
-              "approved",
-              "executed",
-              "rejected",
-              "failed"
-            ]
-          },
-          "caller_user_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "approver_user_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "executed_at_ms": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64"
-          },
-          "result": {
-            "type": "object",
-            "additionalProperties": true
-          }
-        }
-      },
       "AuditEvent": {
         "type": "object",
         "required": [
@@ -3664,26 +3305,6 @@
           }
         }
       },
-      "AuditEventPage": {
-        "type": "object",
-        "required": [
-          "items"
-        ],
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AuditEvent"
-            }
-          },
-          "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        }
-      },
       "TenantSummary": {
         "type": "object",
         "required": [
@@ -3721,99 +3342,6 @@
             "type": "string",
             "pattern": "^[0-9a-f]{64}$",
             "description": "SHA-256 hex; raw email NOT exposed."
-          }
-        }
-      },
-      "TenantPage": {
-        "type": "object",
-        "required": [
-          "items"
-        ],
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TenantSummary"
-            }
-          },
-          "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        }
-      },
-      "EnterpriseInquiryRequest": {
-        "type": "object",
-        "required": [
-          "name",
-          "work_email",
-          "company",
-          "message"
-        ],
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "work_email": {
-            "type": "string",
-            "format": "email",
-            "examples": [
-              "test-tenant@example.com"
-            ]
-          },
-          "company": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "message": {
-            "type": "string",
-            "minLength": 10,
-            "maxLength": 4096
-          },
-          "expected_egress_gb_month": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 0
-          },
-          "byok_provider": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "aws",
-              "gcp",
-              "azure",
-              "vault"
-            ]
-          }
-        }
-      },
-      "EnterpriseInquiryResponse": {
-        "type": "object",
-        "required": [
-          "inquiry_id",
-          "received_at_ms"
-        ],
-        "properties": {
-          "inquiry_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "received_at_ms": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "auto_reply_sla_hours": {
-            "type": "integer",
-            "default": 24
           }
         }
       },
@@ -3871,43 +3399,6 @@
           }
         }
       },
-      "DataCategory": {
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "legal_basis"
-        ],
-        "properties": {
-          "id": {
-            "type": "string",
-            "examples": [
-              "account_identity",
-              "build_cache_artifact",
-              "usage_telemetry"
-            ]
-          },
-          "name": {
-            "type": "string"
-          },
-          "legal_basis": {
-            "type": "string",
-            "enum": [
-              "contract",
-              "consent",
-              "legitimate_interest",
-              "legal_obligation"
-            ]
-          },
-          "retention_days": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "description": {
-            "type": "string"
-          }
-        }
-      },
       "HealthResponse": {
         "type": "object",
         "required": [
@@ -3932,17 +3423,6 @@
             "examples": [
               "445e3cc"
             ]
-          }
-        }
-      },
-      "CspReport": {
-        "type": "object",
-        "description": "Schema accepts the legacy `csp-report` envelope and the new Reporting API `csp-violation` payload.",
-        "additionalProperties": true,
-        "properties": {
-          "csp-report": {
-            "type": "object",
-            "additionalProperties": true
           }
         }
       },

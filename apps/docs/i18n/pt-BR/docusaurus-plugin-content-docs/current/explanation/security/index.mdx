@@ -1,7 +1,7 @@
 ---
 title: "Segurança overview"
 slug: "/security"
-description: "CoreLink security model — BYOK, envelope encryption, audit chain, SLSA L3, RFC 8785 JCS canonicalization."
+description: "CoreLink security model — BYOK, envelope encryption, audit chain, release checksums, RFC 8785 JCS canonicalization."
 draft: true
 cross_functional_review: TBD
 pending_signoff:
@@ -52,8 +52,10 @@ CoreLink is a multi-tenant shared cache. The blast radius of a compromise is
 - **Append-only audit chain** — Merkle-linked audit log with RFC 6962
   inclusion proofs and a 7-year retention window. See
   [Audit chain](./audit-chain).
-- **SLSA L3 supply chain** — every release binary carries a Sigstore
-  provenance attestation verifiable against the public transparency log.
+- **Release integrity** — published CLI assets include matching SHA-256
+  (`.sha256`) checksum sidecars. No additional binary-verification artifact is part of the
+  current public release contract; a future independently retrievable bundle
+  would be an explicitly separate, optional contract.
 - **RFC 8785 JCS canonicalization** — every signed payload is canonicalized
   before signing so signature verification is deterministic across runtimes.
 
@@ -67,7 +69,7 @@ CoreLink is a multi-tenant shared cache. The blast radius of a compromise is
 | Key derivation | HKDF-SHA256 | per-purpose `info` string |
 | At-rest encryption | AES-256-GCM | R2 SSE |
 | Transport | TLS 1.2 floor, 1.3 negotiated | AES-256-GCM / ChaCha20-Poly1305 |
-| Release signing | Ed25519 via Sigstore/cosign | offline HSM-backed key |
+| Release integrity | SHA-256 checksum sidecar | verify before execution |
 
 Banned: MD5, SHA-1, DES/3DES, RC4, ECB, RSA < 2048, hand-rolled cryptography.
 

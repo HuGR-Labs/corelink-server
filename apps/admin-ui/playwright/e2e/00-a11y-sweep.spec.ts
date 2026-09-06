@@ -20,7 +20,6 @@ const PAGES = [
   // assertion below. Restore this entry when `CONSENT_UI_RETIRED` flips back.
   { path: "/en/dsr", auth: "existingTenant" as const, name: "dsr-landing" },
   { path: "/en/admin/audit", auth: "admin" as const, name: "admin-audit" },
-  { path: "/en/admin/ops", auth: "admin" as const, name: "admin-ops" },
   { path: "/en/privacy", auth: "none" as const, name: "privacy" },
 ];
 

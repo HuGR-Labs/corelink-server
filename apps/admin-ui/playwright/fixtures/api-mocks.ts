@@ -32,15 +32,6 @@ interface RouteState {
     sla_due_at: string;
     status: "pending" | "processing" | "completed";
   }>;
-  /** ops awaiting dual-approval */
-  pendingOps: Array<{
-    op_id: string;
-    type: string;
-    submitted_by: string;
-    submitted_at: string;
-    approved_by?: string;
-    status: "pending" | "approved" | "rejected" | "executed";
-  }>;
 }
 
 function freshState(): RouteState {
@@ -54,15 +45,6 @@ function freshState(): RouteState {
       },
     ],
     dsrRequests: [],
-    pendingOps: [
-      {
-        op_id: "op_pending_1",
-        type: "tenant_delete",
-        submitted_by: "user_e2e_newdev",
-        submitted_at: "2026-05-13T09:00:00Z",
-        status: "pending",
-      },
-    ],
   };
 }
 
@@ -109,37 +91,13 @@ export async function installApiMocks(page: Page): Promise<void> {
     }
 
     // ----- PAT lifecycle -----
-    if (path === "/v1/pats" && method === "POST") {
-      return route.fulfill({
-        status: 201,
-        contentType: "application/json",
-        body: JSON.stringify({
-          pat_id: "pat_e2e_001",
-          // PAT shown once — CTRL-CRED-001 reflection.
-          token: "corelink_pat_live_E2E_DO_NOT_LEAK_abcdef0123456789",
-          scope: "read-write",
-          expires_at: "2027-05-14T00:00:00Z",
-        }),
-      });
-    }
-    if (path === "/v1/pats" && method === "GET") {
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          items: [
-            {
-              pat_id: "pat_e2e_001",
-              name: "first-pat",
-              scope: "read-write",
-              last_used: null,
-              expires_at: "2027-05-14T00:00:00Z",
-            },
-          ],
-          cursor: null,
-        }),
-      });
-    }
+    // The `/v1/pats` GET/POST mocks that used to sit here are GONE. No route in
+    // the workspace registers `/v1/pats`, so a mock answering it could only
+    // ever confirm itself — the suite would stay green against an endpoint that
+    // 404s in every environment. The served PAT surface is
+    // `/v1/customer/keys` (`crates/corelink-container/src/routes/customer.rs:212`),
+    // which `src/lib/e2e-mock-fixtures.ts` mocks against the real shape. No
+    // spec referenced the removed handlers.
 
     // ----- Consent -----
     if (path === "/v1/consent/grant" && method === "POST") {
@@ -284,43 +242,6 @@ export async function installApiMocks(page: Page): Promise<void> {
           },
           payload_redacted: { tenant_id: "tenant_acme" },
         }),
-      });
-    }
-
-    // ----- Admin: ops dual-approval -----
-    if (path === "/v1/admin/ops" && method === "GET") {
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ items: state.pendingOps, cursor: null }),
-      });
-    }
-    if (path.startsWith("/v1/admin/ops/") && path.endsWith("/approve") && method === "POST") {
-      const id = path.split("/")[4];
-      const op = state.pendingOps.find((o) => o.op_id === id);
-      if (!op) {
-        return route.fulfill({ status: 404, body: "{}" });
-      }
-      const approver = (req.headers()["x-e2e-user"] ?? "").toString();
-      if (approver && approver === op.submitted_by) {
-        return route.fulfill({
-          status: 409,
-          contentType: "application/problem+json",
-          body: JSON.stringify(
-            makeRfc7807(
-              409,
-              "Conflict",
-              "submitter cannot approve own op (CTRL-DUAL-APPROVAL)",
-            ),
-          ),
-        });
-      }
-      op.status = "executed";
-      op.approved_by = approver || "user_e2e_approver";
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(op),
       });
     }
 

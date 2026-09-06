@@ -34,7 +34,7 @@ faixa de versões do registro.
 ## Variável de ambiente recomendada (Node.js)
 
 ```bash
-export CORELINK_PAT="corelink_dev_t_xxx.xxx.xxx"
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 ```
 
 ```typescript
@@ -71,7 +71,7 @@ emitir uma PAT com escopo de tarefa contendo os escopos mínimos necessários.
 ```typescript
 // DO NOT DO THIS
 const client = new CoreLinkClient({
-  pat: "corelink_dev_t_xxx.xxx.xxx",
+  pat: "corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA",
   tenantId: "acme-corp",
 });
 ```

@@ -25,7 +25,7 @@ privados e não aceita `npm publish`.
 ## Pré-requisitos
 
 - `npm` (ou um cliente compatível) instalado.
-- Um PAT do CoreLink (`corelink_pat_...`).
+- Um PAT do CoreLink (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA`).
 - O UUID do seu tenant.
 
 ## Configurar o `.npmrc`
@@ -35,7 +35,7 @@ Adicione o registro do seu tenant e seu token de autenticação ao `.npmrc` (loc
 
 ```ini
 registry=https://corelink-api.humangr.com/npm/<your-tenant-id>/
-//corelink-api.humangr.com/npm/<your-tenant-id>/:_authToken=corelink_pat_XXXXXXXXXXXXXXXXXXXXXXXX
+//corelink-api.humangr.com/npm/<your-tenant-id>/:_authToken=corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA
 ```
 
 O npm envia o `_authToken` como `Authorization: Bearer <token>`, que é exatamente
@@ -67,8 +67,8 @@ npm está usando o espelho.
 
 | Sintoma | Causa provável | Correção |
 |---|---|---|
-| `401 Unauthorized` | Linha `_authToken` ausente ou malformada | O host + caminho da linha do token devem corresponder exatamente ao `registry=`, e o token deve ser um PAT `corelink_pat_...` |
-| Instalações ainda acessam `registry.npmjs.org` | `registry=` não foi captado | Confirme o escopo do `.npmrc` (projeto vs. usuário) e execute novamente `npm config get registry` |
+| `401 Unauthorized` | Linha `_authToken` ausente ou malformada | O host + caminho da linha do token devem corresponder exatamente ao `registry=`, e o token deve ser um PAT `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA` |
+| Instalações ainda acessam `registry.npmjs.org` | `registry=` não foi captado | Confira o registry sem escopo efetivo com `npm config get registry --location=project` e `npm config get registry --location=user`, depois repita com `npm install --loglevel http` e procure requisições para `corelink-api.humangr.com` |
 | `EINTEGRITY` | O tarball do upstream mudou | O CoreLink verifica o `dist.shasum` e falha de forma fechada em caso de divergência — tente novamente ou reporte o pacote do upstream |
 
 Referência completa de erros: [Resolução de problemas](../troubleshooting.md).

@@ -18,22 +18,12 @@ See also the raw spec page at [REST API spec](./openapi.mdx).
 
 | Endpoint | Tag | Summary |
 | --- | --- | --- |
-| [`GET /v1/admin/audit/events`](./endpoints/get-v1-admin-audit-events.mdx) | `admin` | Search the canonical audit chain (read-only). |
-| [`POST /v1/admin/ops`](./endpoints/post-v1-admin-ops.mdx) | `admin` | Submit a dual-approval-gated admin operation. |
-| [`GET /v1/admin/ops/{op_id}`](./endpoints/get-v1-admin-ops-by-op_id.mdx) | `admin` | Inspect an admin op (status + audit envelope). |
-| [`POST /v1/admin/ops/{op_id}/approve`](./endpoints/post-v1-admin-ops-by-op_id-approve.mdx) | `admin` | Approve a pending admin op (second-approver step). |
-| [`POST /v1/admin/ops/{op_id}/reject`](./endpoints/post-v1-admin-ops-by-op_id-reject.mdx) | `admin` | Reject a pending admin op. |
-| [`GET /v1/admin/tenants`](./endpoints/get-v1-admin-tenants.mdx) | `admin` | Search tenants (admin read). |
-| [`POST /v1/enterprise/inquire`](./endpoints/post-v1-enterprise-inquire.mdx) | `enterprise` | Submit an enterprise sales / BYOK inquiry. |
 
 ## Auth & Onboarding
 
 | Endpoint | Tag | Summary |
 | --- | --- | --- |
-| [`POST /v1/dpa/accept`](./endpoints/post-v1-dpa-accept.mdx) | `dpa` | Record click-through acceptance of the current DPA version. |
-| [`POST /v1/dpa/re-accept`](./endpoints/post-v1-dpa-re-accept.mdx) | `dpa` | Re-accept a major-bumped DPA notice within the 30-day grace window. |
 | [`POST /v1/onboarding/tier-select`](./endpoints/post-v1-onboarding-tier-select.mdx) | `tier` | Select a subscription tier and receive a Stripe Checkout session URL. |
-| [`POST /v1/pats`](./endpoints/post-v1-pats.mdx) | `pat` | Issue a new Personal Access Token. |
 | [`POST /v1/signup`](./endpoints/post-v1-signup.mdx) | `signup` | Provision a new tenant from a verified Clerk identity. |
 | [`GET /v1/users/me`](./endpoints/get-v1-users-me.mdx) | `users` | Reflect the authenticated caller's PAT identity. |
 
@@ -48,13 +38,20 @@ See also the raw spec page at [REST API spec](./openapi.mdx).
 | Endpoint | Tag | Summary |
 | --- | --- | --- |
 | [`GET /_health`](./endpoints/get-_health.mdx) | `ops` | Container liveness / readiness probe for the DO health check. |
-| [`POST /api/csp-report`](./endpoints/post-api-csp-report.mdx) | `ops` | Browser Content-Security-Policy violation report intake. |
 | [`GET /api/health`](./endpoints/get-api-health.mdx) | `ops` | Liveness / readiness probe. |
 
 ## Other
 
 | Endpoint | Tag | Summary |
 | --- | --- | --- |
+| [`GET /v1/audit/{tenant}/export`](./endpoints/get-v1-audit-by-tenant-export.mdx) | `audit-export` | Stream a bulk audit-chain export from R2. |
+| [`GET /v1/customer/keys`](./endpoints/get-v1-customer-keys.mdx) | `pat` | List the tenant's Personal Access Tokens (metadata only). |
+| [`POST /v1/customer/account/delete`](./endpoints/post-v1-customer-account-delete.mdx) | `privacy-dsr` | Request deletion of the authenticated tenant account. |
+| [`POST /v1/customer/account/export`](./endpoints/post-v1-customer-account-export.mdx) | `privacy-dsr` | Export the authenticated tenant's portability bundle. |
+| [`POST /v1/customer/keys`](./endpoints/post-v1-customer-keys.mdx) | `pat` | Issue a new Personal Access Token. |
+| [`POST /v1/customer/keys/{pat_id}/revoke`](./endpoints/post-v1-customer-keys-by-pat_id-revoke.mdx) | `pat` | Revoke a Personal Access Token by id. |
+| [`POST /v1/onboarding/dpa-accept`](./endpoints/post-v1-onboarding-dpa-accept.mdx) | `dpa` | Record click-through acceptance of the current DPA version. |
+| [`POST /v1/pats`](./endpoints/post-v1-pats.mdx) | `pat` | Issue a Personal Access Token (compatibility alias). |
 | [`GET /bazel/v2/{instance}/blobs/ac/{hash}/{size}`](./endpoints/get-bazel-v2-by-instance-blobs-ac-by-hash-by-size.mdx) | `bazel-v2` | Read an Action Cache result (Bazel REAPI AC GET). |
 | [`PUT /bazel/v2/{instance}/blobs/ac/{hash}/{size}`](./endpoints/put-bazel-v2-by-instance-blobs-ac-by-hash-by-size.mdx) | `bazel-v2` | Write an Action Cache result (Bazel REAPI AC PUT). |
 | [`GET /bazel/v2/{instance}/blobs/{hash}/{size}`](./endpoints/get-bazel-v2-by-instance-blobs-by-hash-by-size.mdx) | `bazel-v2` | Read a CAS blob (Bazel REAPI ByteStream GET). |
@@ -69,7 +66,6 @@ See also the raw spec page at [REST API spec](./openapi.mdx).
 | [`GET /v1/admin/read/{resource}`](./endpoints/get-v1-admin-read-by-resource.mdx) | `admin-read-mutate` | Admin-plane read of a typed resource. |
 | [`GET /v1/audit/analytics/event-count`](./endpoints/get-v1-audit-analytics-event-count.mdx) | `audit-analytics` | Event-type count aggregates over a time window. |
 | [`GET /v1/audit/analytics/timeline`](./endpoints/get-v1-audit-analytics-timeline.mdx) | `audit-analytics` | Event-count timeline bucketed at a chosen granularity. |
-| [`GET /v1/audit/export`](./endpoints/get-v1-audit-export.mdx) | `audit-export` | Stream a bulk audit-chain export from R2. |
 | [`GET /v1/cas/{digest}`](./endpoints/get-v1-cas-by-digest.mdx) | `reapi-http` | Read a CAS blob by canonical digest (REAPI binary). |
 | [`GET /v1/cas/{tenant}/{hash}`](./endpoints/get-v1-cas-by-tenant-by-hash.mdx) | `reapi-http` | Read a CAS blob by `(tenant, content-hash)`. |
 | [`PUT /v1/cas/{tenant}/{hash}`](./endpoints/put-v1-cas-by-tenant-by-hash.mdx) | `reapi-http` | Write a CAS blob by `(tenant, content-hash)`. |
@@ -83,7 +79,5 @@ See also the raw spec page at [REST API spec](./openapi.mdx).
 
 | Endpoint | Tag | Summary |
 | --- | --- | --- |
-| [`GET /v1/data-categories`](./endpoints/get-v1-data-categories.mdx) | `data-categories` | List canonical data-category enums (privacy_model §5.6). |
 | [`POST /v1/privacy/dsr/{action}`](./endpoints/post-v1-privacy-dsr-by-action.mdx) | `privacy-dsr` | Submit a Data Subject Request (GDPR / LGPD / CCPA). |
 | [`GET /v1/privacy/dsr/{request_id}/status`](./endpoints/get-v1-privacy-dsr-by-request_id-status.mdx) | `privacy-dsr` | Poll the status of a previously submitted DSR. |
-

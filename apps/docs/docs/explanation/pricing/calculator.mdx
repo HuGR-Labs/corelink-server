@@ -46,8 +46,8 @@ bill).
   Solo developers and most small teams have `T = 1`. Multi-product
   orgs that want billing isolation per product have `T > 1`.
 - `S_w` is monthly **net** CAS storage growth after dedup and eviction.
-  Bazel monorepos at steady state are typically 10–200 GB; large
-  Buck2 monorepos run 500 GB to a few TB. CAS storage is the only
+  Bazel monorepos at steady state are typically 10–200 GB; the
+  largest monorepos run 500 GB to a few TB. CAS storage is the only
   axis CoreLink meters — there is no separate read-volume quota.
 - `byok` selects whether the tenant needs BYOK. No self-serve tier
   offers BYOK; any `byok` value other than `none` routes the

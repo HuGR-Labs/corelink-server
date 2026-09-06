@@ -77,6 +77,96 @@ async fn phase_scope_with_handle_records_from_a_spawned_task() {
         "a captured-handle PhaseScope must record from the spawned task \
          it runs on, not just from the task that opened the ledger scope"
     );
+    assert!(
+        ledger.micros(Phase::Permit).unwrap_or_default() >= 4_000,
+        "the blocking-task phase must contain a real bounded delay measurement"
+    );
+}
+
+#[test]
+fn active_window_is_released_when_scope_unwinds_from_a_panic() {
+    let ledger = Arc::new(PhaseLedger::new());
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe({
+        let ledger = Arc::clone(&ledger);
+        move || {
+            let _scope = PhaseScope::with_handle(Some(ledger), Phase::Store);
+            panic!("test-only unwind");
+        }
+    }));
+    assert!(result.is_err());
+    assert_eq!(ledger.active_depth_for_test(Phase::Store), 0);
+    assert_eq!(
+        ledger.completed_windows_for_test(Phase::Store),
+        1,
+        "the panicking scope must close its first window during unwind"
+    );
+    assert_eq!(
+        ledger.recordings_for_test(Phase::Store),
+        1,
+        "the panicking scope must record its first window during unwind"
+    );
+
+    let scope = PhaseScope::with_handle(Some(Arc::clone(&ledger)), Phase::Store);
+    assert_eq!(ledger.active_depth_for_test(Phase::Store), 1);
+    drop(scope);
+    assert_eq!(
+        ledger.completed_windows_for_test(Phase::Store),
+        2,
+        "a fresh scope must close a second independent window"
+    );
+    assert_eq!(
+        ledger.recordings_for_test(Phase::Store),
+        2,
+        "a fresh scope must record a second independent window"
+    );
+}
+
+#[tokio::test]
+async fn active_window_is_released_when_a_timed_future_is_cancelled() {
+    let ledger = Arc::new(PhaseLedger::new());
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let task = tokio::spawn({
+        let ledger = Arc::clone(&ledger);
+        async move {
+            super::scope_for_test(ledger, async {
+                timed(Phase::Store, async {
+                    let _ = started_tx.send(());
+                    std::future::pending::<()>().await;
+                })
+                .await;
+            })
+            .await;
+        }
+    });
+    started_rx
+        .await
+        .expect("timed future must start before cancellation");
+    task.abort();
+    let _ = task.await;
+
+    assert_eq!(ledger.active_depth_for_test(Phase::Store), 0);
+    assert_eq!(ledger.completed_windows_for_test(Phase::Store), 1);
+    assert_eq!(ledger.recordings_for_test(Phase::Store), 1);
+}
+
+#[tokio::test]
+async fn overlapping_sibling_scopes_coalesce_to_one_window() {
+    let ledger = Arc::new(PhaseLedger::new());
+    let barrier = Arc::new(tokio::sync::Barrier::new(2));
+
+    async fn sibling(ledger: Arc<PhaseLedger>, barrier: Arc<tokio::sync::Barrier>) {
+        let _scope = PhaseScope::with_handle(Some(ledger), Phase::Store);
+        barrier.wait().await;
+        tokio::task::yield_now().await;
+    }
+
+    tokio::join!(
+        sibling(Arc::clone(&ledger), Arc::clone(&barrier)),
+        sibling(Arc::clone(&ledger), Arc::clone(&barrier)),
+    );
+    assert_eq!(ledger.completed_windows_for_test(Phase::Store), 1);
+    assert_eq!(ledger.active_depth_for_test(Phase::Store), 0);
+    assert_eq!(ledger.recordings_for_test(Phase::Store), 1);
 }
 
 #[tokio::test]

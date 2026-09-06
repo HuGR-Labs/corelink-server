@@ -64,13 +64,6 @@ describe("app-route-index — filesystem truth for App Router URLs", () => {
     expect(resolveAppPage("/en/customer/audit/visualization")).toContain(
       "customer/audit/visualization/page.tsx",
     );
-    // Both op ids are served by the same dynamic segment.
-    expect(resolveAppPage("/en/admin/ops/op_byok_001")).toContain(
-      "admin/ops/[op_id]/page.tsx",
-    );
-    expect(resolveAppPage("/en/admin/ops/op_dsr_001")).toContain(
-      "admin/ops/[op_id]/page.tsx",
-    );
   });
 
   it("sees through route groups and optional catch-alls", () => {
@@ -126,7 +119,7 @@ describe("runWarmPasses — 404 classification", () => {
   });
 
   it("still reports a route that stays 404 through the re-scan", async () => {
-    const broken = "/en/admin/ops/op_byok_001";
+    const broken = "/en/customer/audit/visualization";
     const unresolved = await runWarmPasses(
       deps({ probe: async (route) => (route === broken ? notFound : ok) }),
     );

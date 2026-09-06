@@ -35,7 +35,7 @@ Both clients read `CORELINK_PAT` automatically if you don't pass `pat=`
 explicitly:
 
 ```bash
-export CORELINK_PAT="corelink_pat_01ARZ3NDEKTSV4RRFFQ69G5FAV.4pT7q1yZ9vX2wL8cR5nB3sD6fH0jK1mQ8aV2eS.7bY4tN9oL2x"
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 ```
 
 Async example (`AsyncCoreLinkClient`):
@@ -77,7 +77,7 @@ For local development, write `~/.corelink/config.toml`:
 
 ```toml
 [auth]
-pat = "corelink_pat_01ARZ3NDEKTSV4RRFFQ69G5FAV.4pT7q1yZ9vX2wL8cR5nB3sD6fH0jK1mQ8aV2eS.7bY4tN9oL2x"
+pat = "corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 
 [defaults]
 tenant_id = "acme-corp"
@@ -91,7 +91,7 @@ Do not commit code that hard-codes a PAT:
 
 ```python
 # DO NOT DO THIS
-client = CoreLinkClient(pat="corelink_pat_01ARZ3NDEKTSV4RRFFQ69G5FAV.4pT7q1yZ9vX2wL8cR5nB3sD6fH0jK1mQ8aV2eS.7bY4tN9oL2x", tenant_id="acme-corp")
+client = CoreLinkClient(pat="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA", tenant_id="acme-corp")
 ```
 
 This violates CTRL-CRED-001. Use env vars or config files only.

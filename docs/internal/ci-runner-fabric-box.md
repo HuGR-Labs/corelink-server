@@ -19,10 +19,12 @@ before you rely on any line below.
 > effectively served image remains **unconfirmed** here. Do not classify a lane
 > from the Dockerfile alone.
 >
-> The missing probe is still real: `runner-probe.yml` is absent from the current
-> `main`; `runner-fleet-health.yml` is the available current fleet tooling.
-> Restoring a probe and confirming image rollout are **open owner actions**;
-> no backlog ID has been allocated, and this page does not close or invent one.
+> The current executable fleet probe is `runner-fleet-health.yml`, backed by
+> `scripts/check_runner_fleet.py`. It measures registered Mac slots and queue
+> health (the scheduled workflow runs queue health with its explicit
+> `FLEET_SLOT_CENSUS=skip`; an operator token is required for the slot census).
+> The historical `runner-probe.yml` runs below are evidence only and are not a
+> re-runnable current probe.
 
 > **Update 2026-08-17 (delta since the snapshot):** `lighthouse-ci` was **deleted** —
 > low-value perf score on admin-ui, not worth baking system Chrome, and dead under the
@@ -268,9 +270,11 @@ Practical consequences:
 2. **Do not encode image contents into a gate's assumptions** without a step
    that asserts them. A gate that silently depends on the image is a gate that
    fails on a Tuesday for no reason attributable to the diff.
-3. Use `runner-fleet-health.yml` for the available current signal. A probe must
-   be restored and rerun after any unexplained self-hosted failure **before**
-   blaming the change under test; until then, image contents remain unconfirmed.
+3. Use `runner-fleet-health.yml` for the current fleet signal, or run
+   `scripts/check_runner_fleet.py` directly with a repository-admin token when
+   certifying registered slots. After any unexplained self-hosted failure,
+   collect this signal **before** blaming the change under test; neither route
+   establishes the served image contents.
 
 ---
 
@@ -391,10 +395,10 @@ $39/mo** — roughly **a quarter** of what node+pnpm in the image would unlock.
 > state is the unresolved fact.
 
 The required owner sequence is: dispatch the image build/publish, roll the
-published image to the fleet, restore and run an image probe that asserts the
-served tools (including `CORELINK_NIGHTLY`), and fail closed when the assertion
-is missing. `runner-fleet-health.yml` remains useful for runner registration and
-queue health, but it cannot establish image contents. Until that sequence is
+published image to the fleet, and add/run a separately designed image probe that
+asserts the served tools (including `CORELINK_NIGHTLY`).
+`runner-fleet-health.yml` remains the implemented fleet probe for registration
+and queue health, but it cannot establish image contents. Until that sequence is
 complete, do not claim that the image has rolled out or that the four workflows
 are unblocked by the source Dockerfile.
 
@@ -464,13 +468,13 @@ GH_TOKEN="$REPO_ADMIN_TOKEN" python3 scripts/check_runner_fleet.py \
 ```
 
 When Actions is available again, `runner-fleet-health.yml` is the automated
-equivalent for queue health. Its current `GITHUB_TOKEN` cannot perform the
+fleet probe for queue health. Its current `GITHUB_TOKEN` cannot perform the
 admin-only slot census, so it sets `FLEET_SLOT_CENSUS=skip`; do not substitute
 that workflow for the direct command above when certifying the registered
 slots.
 
 Both routes measure fleet health only: neither inspects the runner image's
-installed tools. A separate image probe must be restored by the owner before
+installed tools. A separate image probe still requires an owner design before
 it can be run; until then, update this doc only with explicitly dated
 registry/source evidence and do not claim rollout. Fleet health is **not** a
 gate for image contents.

@@ -4,7 +4,7 @@ This directory contains an end-to-end smoke test that exercises the full
 install path advertised in our marketing/onboarding docs:
 
 ```sh
-curl -fsSL https://corelink-get.humangr.com | sh -s -- --token=<PAT>
+curl -fsSL https://corelink-get.humangr.com | sh -s -- --token="$CORELINK_TEST_TOKEN"
 ```
 
 ## What it tests
@@ -17,7 +17,8 @@ performs the full bootstrap:
    — fetches the install script from the Cloudflare Worker
 2. The install script downloads the `corelink-cli` binary from GitHub Releases
 3. `corelink --version` — confirms the binary executes
-4. `corelink whoami` — confirms the binary can reach the API and authenticate
+4. `corelink doctor` — confirms the binary can reach the API and perform its
+   authenticated CAS write check
 
 ## When it runs
 
@@ -39,7 +40,7 @@ A failed run means one of the following is broken in production:
 - The install Worker at `corelink-get.humangr.com` (HTTP error, malformed
   script, etc.)
 - The `corelink-cli` GitHub Release artifact (missing, wrong arch, corrupted)
-- The CoreLink API (`corelink whoami` cannot authenticate or reach the server)
+- The CoreLink API (`corelink doctor` cannot authenticate or reach the server)
 - The CI PAT (`CORELINK_CANARY_PAT`, shared with `cas-canary`) has been revoked or expired
 
 ## Configuration
@@ -52,9 +53,10 @@ The workflow expects a GitHub Actions secret:
   production CAS PUT. (`CORELINK_TEST_TOKEN_CI` is retired and never existed.)
   Rotating it takes BOTH workflows red. It is set in the
   repo/org secrets after repo provisioning. **DO NOT** bake a real token
-  into the Dockerfile or workflow YAML; the Dockerfile default
-  (`CORELINK_TEST_TOKEN=changeme`) is intentionally invalid so local builds
-  fail loudly if the override is missing.
+  into the Dockerfile or workflow YAML. There is no token baked into the image.
+  The CI smoke receives only the `CORELINK_CANARY_PAT` secret. A generated
+  token-shaped value is not a valid substitute because the installer invokes
+  `corelink whoami` before returning.
 
 ## Running locally
 
@@ -63,8 +65,12 @@ docker build -f apps/get-corelink-worker/test/smoke-install.Dockerfile \
   -t corelink-smoke .
 
 docker run --rm \
-  -e CORELINK_TEST_TOKEN="<your-test-pat>" \
-  corelink-smoke
+  -e CORELINK_TEST_TOKEN="$CORELINK_CANARY_PAT" \
+  corelink-smoke \
+  sh -c 'curl -fsSL "$CORELINK_GET_URL" | sh -s -- --token="$CORELINK_TEST_TOKEN" && corelink --version'
 ```
+
+`CORELINK_CANARY_PAT` must be a real PAT: the installer invokes `corelink whoami`
+before returning, so a generated or token-shaped value is not a valid smoke input.
 
 To test against a staging Worker, also pass `-e CORELINK_GET_URL=https://...`.

@@ -64,6 +64,17 @@ const FIXTURE = {
   defaultApiEndpoint: "https://corelink-api.humangr.com",
 } as const;
 
+/** Execute only the installer argument parser, without downloading a binary. */
+function parseArgs(args: string[]): { status: number; stdout: string; stderr: string } {
+  const script = renderInstallScript(FIXTURE);
+  const parser = script.match(/TOKEN=""\nwhile \[ \$# -gt 0 \]; do[\s\S]*?^done/m)?.[0];
+  if (!parser) throw new Error("install argument parser not found");
+  const result = spawnSync("sh", ["-c", `${parser}\nprintf 'TOKEN=%s\\n' "$TOKEN"`, "install", ...args], {
+    encoding: "utf8",
+  });
+  return { status: result.status ?? -1, stdout: result.stdout, stderr: result.stderr };
+}
+
 describe("renderInstallScript", () => {
   it("starts with a POSIX-sh shebang", () => {
     const script = renderInstallScript(FIXTURE);
@@ -86,6 +97,20 @@ describe("renderInstallScript", () => {
     expect(script).toContain('if [ -z "$TOKEN" ]; then');
     expect(script).toContain('echo "FATAL: --token required" >&2');
     expect(script).toContain("exit 2");
+  });
+
+  it("rejects the removed --region option instead of silently accepting it", () => {
+    const result = parseArgs(["--token=ct_test", "--region=weur"]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("FATAL: unsupported option: --region=weur");
+    expect(result.stdout).toBe("");
+  });
+
+  it("retains token propagation and warns only for positional extras", () => {
+    const accepted = parseArgs(["--token=ct_test", "extra"]);
+    expect(accepted.status).toBe(0);
+    expect(accepted.stdout).toBe("TOKEN=ct_test\n");
+    expect(accepted.stderr).toContain("WARN: ignoring unknown arg: extra");
   });
 
   it("invariant 3 :: derives OS from `uname -s` (lowercased) and ARCH from `uname -m`", () => {

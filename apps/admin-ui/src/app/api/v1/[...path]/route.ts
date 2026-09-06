@@ -14,9 +14,8 @@
  *   - Browser-side fetches go through page.route() in playwright (same
  *     fixtures shared via getFixtureResponse).
  *
- * Endpoints mirrored from `playwright/fixtures/api-mocks.ts` PLUS the
- * admin-client surface (`/v1/admin/tenants`, `/v1/admin/audit`,
- * `/v1/admin/ops`) that the Sprint-16 viewers need.
+ * Endpoints mirrored from `playwright/fixtures/api-mocks.ts` plus the
+ * audit and tenant read surfaces used by the admin UI.
  */
 
 import { NextResponse, type NextRequest } from "next/server";

@@ -2,7 +2,7 @@
 # CoreLink Bazel starter — build benchmark (com vs sem cache).
 #
 # Usage:
-#   export CORELINK_PAT=corelink_prod_...
+#   export CORELINK_PAT=corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA # synthetic shape
 #   bash scripts/benchmark.sh [--iterations N] [--output BENCHMARK.md]
 #
 # Outputs:

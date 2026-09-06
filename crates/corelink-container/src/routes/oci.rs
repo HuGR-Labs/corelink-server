@@ -2046,10 +2046,11 @@ mod tests {
         .await
         .expect("index manifest PUT should be accepted");
 
-        let rows = kv.0.lock().unwrap();
-        assert!(!rows.is_empty(), "manifest PUT must persist tenant KV rows");
-        assert!(rows.keys().all(|(t, _)| t == &tenant.to_canonical_text()));
-        drop(rows);
+        {
+            let rows = kv.0.lock().unwrap();
+            assert!(!rows.is_empty(), "manifest PUT must persist tenant KV rows");
+            assert!(rows.keys().all(|(t, _)| t == &tenant.to_canonical_text()));
+        }
         assert!(kv
             .get(&other, "oci_manifest:alpine:latest")
             .await

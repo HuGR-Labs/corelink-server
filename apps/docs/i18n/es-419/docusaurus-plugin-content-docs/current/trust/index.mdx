@@ -87,15 +87,15 @@ Compliance docs can be theatre. We try hard to make ours falsifiable:
 - **Verifiable by you, right now:**
   audit-chain proofs ([how-to](/security/audit-chain)), the
   [security.txt](/.well-known/security.txt) contact card, our public
-  [status page](https://hugrl.betteruptime.com), and Sigstore / Rekor
-  transparency-log entries for the **Worker container image** — signed keyless
-  on every release, verifiable with `cosign verify` against the
-  `token.actions.githubusercontent.com` issuer, with no key from us required.
+  [status page](https://hugrl.betteruptime.com), and per-binary
+  SHA-256 (`.sha256`) checksum sidecars on CLI releases.
 - **Not yet available, and listed here rather than omitted:**
   the CLI binaries are **not** signed — the signing step in the CLI release
-  workflow is still a placeholder, so do not expect a Rekor entry for them.
-  SBOMs are generated and signed on every release build but have **no customer
-  distribution path yet**: the procurement process is drafted, not offered.
+  workflow is still a placeholder. Container-image signing via
+  Sigstore / Rekor is designed but **not live**: no Rekor transparency
+  entry has ever been created (the signing workflow has never run).
+  SBOM generation remains an internal build step with **no customer distribution
+  path yet**; no signed SBOM artifact is currently offered.
   Ask at **trust@humangr.com** and we will tell you where it stands rather than
   route you to a process that does not exist.
 - **Attested by us (with evidence on request):**
@@ -143,6 +143,6 @@ back within 1 business day.
 | --- | --- |
 | Security vulnerability report | `security@humangr.com` (see [policy](/security/policy)) |
 | Privacy / data-subject request | `privacy@humangr.com` |
-| DPA, SOC 2 letter, pentest summary | `trust@humangr.com` |
+| DPA, SOC 2 readiness letter | `trust@humangr.com` |
 | Procurement / vendor review forms | `trust@humangr.com` |
 | Press / disclosure-coordination | `press@humangr.com` |

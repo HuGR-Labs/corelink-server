@@ -6,7 +6,7 @@ import * as React from "react";
  * InstallOneLiner — single copy-paste block that bootstraps the CoreLink CLI.
  *
  * Per Phase-0 PLG framework §4 step 4 + §5 row "Copy-paste one-liner install":
- *   curl -fsSL https://corelink-get.humangr.com | sh -s -- --token=corelink_pat_xxx --region=ord
+ *   curl -fsSL https://corelink-get.humangr.com | sh -s -- --token=corelink_pat_xxx
  *
  * Token is shown only on this page once (CTRL-CRED-001 holds: the token is
  * delivered server-rendered by the parent and is **never** persisted to
@@ -19,14 +19,14 @@ import * as React from "react";
  */
 export interface InstallOneLinerProps {
   token: string;
-  region: string;
+  /** Residency is configured server-side, not by the client installer. */
   /** Override the install host for staging / preview environments. */
   installHost?: string;
 }
 
 export function InstallOneLiner(props: InstallOneLinerProps): React.ReactElement {
   const host = props.installHost ?? "corelink-get.humangr.com";
-  const command = `curl -fsSL https://${host} | \\\n  sh -s -- --token=${props.token} --region=${props.region}`;
+  const command = `curl -fsSL https://${host} | \\\n  sh -s -- --token=${props.token}`;
   const [copied, setCopied] = React.useState(false);
   const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 

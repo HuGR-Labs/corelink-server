@@ -101,14 +101,12 @@ CoreLink BYOK — threat model
 
 1. Fill the AWS KMS form with the demo ARN (`arn:aws:kms:us-west-2:111122223333:key/abcd-1234`) and IAM role (`arn:aws:iam::111122223333:role/CorelinkKMSAccess`).
 2. Click "Test access". Green check appears within 2s — show this clearly. The check means CoreLink did an encrypt-then-decrypt round-trip against the customer's KMS.
-3. Click "Activate BYOK". Modal warns: "This is a sensitive operation. Two distinct approvers required."
-4. Click "Submit for approval". Page navigates to `/en/admin/ops` → new row visible in pending state (Shot #12).
-5. Click the row → `/en/admin/ops/[op_id]` (Shot #13). The requestor (logged-in user) sees the "Approve" button greyed out with the hint "Requestor cannot self-approve".
-6. Switch personas (cut to a second browser profile already signed in as a different admin). That admin sees the same op and approves. Status flips to "Approved (2/2) — activating".
+3. Stop before activation. The sensitive-operation workflow is disabled until durable persistence and a safe Worker binding are available.
+4. Do not fabricate a pending row or approval result; use the real audit screen for evidence of served events.
 
 **Voiceover (~55s):**
 
-> "Submit the KMS config. CoreLink performs an encrypt-then-decrypt round-trip against your KMS — the green check means your KMS logged two calls, and CoreLink received bytes back. Activation is a sensitive operation, not a config edit — it enters the dual-approval queue. Two **distinct** admins. The requestor's approve button is greyed out, with a hint explaining why. This separation-of-duties is enforced server-side, not on the button alone — try to API-flip your own request and the server refuses. The same workflow gates BYOK rotation, kill switch arming, tenant data export, and account deletion."
+> "Submit the KMS config. CoreLink performs an encrypt-then-decrypt round-trip against your KMS — the green check means your KMS logged two calls, and CoreLink received bytes back. Sensitive activation remains unavailable until its durable, auditable operator workflow is ready."
 
 ---
 

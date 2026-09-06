@@ -614,14 +614,12 @@ impl PublicRevocationAuditSink for D1PublicRevocationAuditSink {
         let payload_json =
             serde_json::to_string(&payload).map_err(|e| format!("audit payload serialize: {e}"))?;
 
-        // `_public` is not a real tenant, so the tenant subquery yields NULL and
-        // the residency `region` falls to 'wnam' (COALESCE) — the same
-        // correlated-subquery shape the DSR sink uses so the residency trigger
-        // (migration 0023) never aborts the audit INSERT.
+        // `_public` is an explicit global namespace, not a customer tenant. The
+        // residency guard (migration 0107) exempts this namespace and the public
+        // audit is pinned to the canonical global `wnam` region explicitly.
         let sql = "INSERT OR IGNORE INTO audit_outbox \
              (id, tenant_id, digest, request_id, event_type, payload_json, enqueued_at, emitted_at, region) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, \
-                     COALESCE((SELECT primary_region FROM tenant WHERE tenant_id = ?2), 'wnam'))";
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, 'wnam')";
         let params = vec![
             json!(id),
             json!(PUBLIC_NAMESPACE),

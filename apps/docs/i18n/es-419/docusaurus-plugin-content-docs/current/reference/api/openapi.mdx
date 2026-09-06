@@ -18,17 +18,17 @@ import CodeBlock from "@theme/CodeBlock";
 
 CoreLink exposes two API surfaces:
 
-- **REAPI v2 (gRPC)** — high-throughput CAS / AC / ByteStream / Capabilities.
-  Documented under [REAPI v2 reference](../reapi/index.mdx).
+- **REAPI v2 over HTTP/REST** — cache-oriented CAS / Action Cache routes on
+  the REST bridge. CoreLink exposes no gRPC ingress, so gRPC-only REAPI
+  clients such as Buck2 and Pants cannot connect.
 - **REST (this page)** — customer onboarding, privacy (DSR + DPA),
   Stripe billing webhook, admin operations, and ops endpoints.
 
 The canonical contract is
 [`openapi/corelink-v1.yaml`](/openapi-corelink-v1.yaml)
-in the server monorepo. The static asset shipped with this docs site is
-generated from that canonical contract and is the same parsed OpenAPI
-document. `scripts/openapi_sync.py --check` and the B-151 closed-world gate
-reject path, method, operation identity, or document-level drift.
+in the server monorepo. The static asset shipped with this docs site
+mirrors that file byte-for-byte and is gated by the
+`openapi-validate.yml` workflow on every PR.
 
 ## Download
 
@@ -45,20 +45,16 @@ npx @redocly/cli build-docs https://corelink-docs.humangr.com/openapi-corelink-v
 
 ## Endpoint coverage
 
-| Tag | Status | Path |
-| --- | --- | --- |
-| signup | planned | `POST /v1/signup` |
-| dpa | planned | `POST /v1/dpa/accept`, `POST /v1/dpa/re-accept` |
-| tier | planned | `POST /v1/onboarding/tier-select` |
-| pat | **live** | `POST /v1/pats` |
-| pat | planned | `GET /v1/pats`, `DELETE /v1/pats/{pat_id}` |
-| billing | planned | `POST /v1/billing/stripe-webhook` |
-| privacy-dsr | planned | `POST /v1/privacy/dsr/{action}` (6 actions), `GET /v1/privacy/dsr/{request_id}/status` |
-| admin | planned | `POST /v1/admin/ops`, `GET /v1/admin/ops/{op_id}`, `POST /v1/admin/ops/{op_id}/approve`, `POST /v1/admin/ops/{op_id}/reject`, `GET /v1/admin/audit/events`, `GET /v1/admin/tenants` |
-| enterprise | planned | `POST /v1/enterprise/inquire` |
-| users | planned | `GET /v1/users/me`, `PATCH /v1/users/me` |
-| data-categories | planned | `GET /v1/data-categories` |
-| ops | planned | `GET /api/health`, `POST /api/csp-report` |
+| Tag | Path |
+| --- | --- |
+| signup | `POST /v1/signup` |
+| dpa | `POST /v1/onboarding/dpa-accept` |
+| tier | `POST /v1/onboarding/tier-select` |
+| pat | `GET`/`POST /v1/customer/keys`, `POST /v1/customer/keys/{pat_id}/revoke` |
+| billing | `POST /v1/billing/stripe-webhook` |
+| privacy-dsr | `POST /v1/privacy/dsr/{action}` (6 actions), `GET /v1/privacy/dsr/{request_id}/status` |
+| users | `GET /v1/users/me`, `PATCH /v1/users/me` |
+| ops | `GET /api/health`, `GET /_health` |
 
 ## Authentication
 

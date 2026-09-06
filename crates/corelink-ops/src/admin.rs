@@ -4,8 +4,8 @@
 //! submodule as four sub-submodules so consumers can target the exact
 //! granularity they need:
 //!
-//! - [`api`] — physically absorbed (W35-P2-OPS): admin REST API surface
-//!   (was `corelink-admin-api`). Lives at
+//! - [`api`] — physically absorbed (W35-P2-OPS): internal admin-operation
+//!   policy pipeline with no published HTTP binding (was `corelink-admin-api`). Lives at
 //!   `crates/corelink-ops/src/admin/api.rs` plus its sibling files under
 //!   `crates/corelink-ops/src/admin/api/`.
 //! - [`dry_run`] — physically absorbed (W35-P2-OPS): admin dry-run

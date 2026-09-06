@@ -27,7 +27,8 @@ import { DraftBanner } from "../../../src/components/DraftBanner";
 
 - **Format:** CycloneDX 1.5+ JSON (canonical per ADR-0014). SPDX 2.3+ available
   on request.
-- **Cadence:** generated on every release build, signed with `cosign`.
+- **Cadence:** SBOM generation is an internal build step. No customer-facing
+  SBOM artifact is currently distributed.
 - **Coverage:** Worker, Container, and CLI binaries — Rust crates and JS deps
   inclusive.
 
@@ -35,23 +36,20 @@ import { DraftBanner } from "../../../src/components/DraftBanner";
 
 1. Open a support ticket of type **"Procurement / Security Review"**.
 2. Provide your account ID and the release version you need the SBOM for.
-3. We respond within TBD business days with a signed download URL.
-4. Verify the signature with the publicly distributed `cosign` key.
+3. We respond with current availability and any applicable NDA or licensing
+   terms; no download URL or delivery SLA is currently promised.
+4. For CLI release assets, verify the matching `.sha256` checksum before use.
+   SBOM delivery and an independent verification artifact are not currently
+   part of the public release contract.
 
 ## Verification example
 
-The following snippet is illustrative — exact key URL is `$TBD` until the
-release signing key is published.
-
-```sh
-cosign verify-blob \
-  --key https://corelink.humangr.com/keys/release.pub \
-  --signature corelink-vX.Y.Z.sbom.json.sig \
-  corelink-vX.Y.Z.sbom.json
-```
+There is no public SBOM download or independent verification command today.
+Use the CLI release asset's `.sha256` sidecar when verifying a binary.
 
 ## Cross-functional review checklist
 
-- [ ] Security Lead — confirm SBOM scope and signing key URL.
+- [ ] Security Lead — confirm SBOM scope and whether a future distribution
+      contract is ready for review.
 - [ ] Legal — confirm NDA or licensing terms gating distribution.
 - [ ] Procurement — confirm SLA on ticket response time.

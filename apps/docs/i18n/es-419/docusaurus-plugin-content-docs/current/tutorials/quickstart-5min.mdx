@@ -66,7 +66,7 @@ su **Tenant ID**. Ambos se muestran exactamente una vez en esta pantalla.
 Su PAT se ve así:
 
 ```text
-corelink_pat_XXXXXXXXXXXXXXXX.YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY.ZZZZZZZZZZZZZZZZZZZZ
+corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA
 ```
 
 Su Tenant ID es un UUID:
@@ -89,7 +89,7 @@ el almacén de secretos de su proveedor de CI).
 Abra una terminal y exporte los dos valores que copió de la página `/welcome`:
 
 ```bash
-export CORELINK_PAT="corelink_pat_XXXXXXXXXXXXXXXX.YYYYYYYYYYYYYYY.ZZZZZZZZZZ"
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 export CORELINK_TENANT="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 ```
 
@@ -114,10 +114,11 @@ echo "digest: $DIGEST"
 
 # Upload — 201 Created means success
 curl -sSf -X PUT \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   -H "Content-Type: application/octet-stream" \
   --data-binary @/tmp/cl-test.txt \
-  "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST"
+  "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST" --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 Si tiene éxito, el servidor devuelve **HTTP 201 Created** (o **200 OK** si el blob
@@ -146,9 +147,10 @@ original:
 
 ```bash
 curl -sSf \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST" \
-  -o /tmp/cl-test-downloaded.txt
+  -o /tmp/cl-test-downloaded.txt --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 
 diff /tmp/cl-test.txt /tmp/cl-test-downloaded.txt && echo "PASS — byte-exact roundtrip"
 ```
@@ -186,7 +188,7 @@ hacia él, usando su UUID de inquilino como el nombre de instancia REAPI:
 ```ini
 build --remote_cache=https://corelink-api.humangr.com/bazel/v2
 build --remote_instance_name=${CORELINK_TENANT}
-build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
 build --remote_upload_local_results=true
 ```
 

@@ -3,19 +3,15 @@
 // Privacy + security:
 //  - CTRL-CRED-001: session tokens never logged. The fetch helper does not
 //    serialize headers anywhere — Authorization is set per-call and dropped.
-//  - All mutating dual-approval calls REQUIRE an `X-Admin-Operation-Reason`
-//    header; helpers refuse to send the request if reason is missing.
 //
 // The base URL is read from `NEXT_PUBLIC_CORELINK_API_URL`; tests inject a
 // custom `fetch` via the optional `fetchImpl` parameter.
 
 import type {
-  AdminOp,
   AuditEventDetail,
   AuditFilter,
   AuditPage,
   ExportResponse,
-  OpType,
   Tenant,
 } from "./types";
 import { withAppBasePath } from "./route-matcher";
@@ -83,7 +79,7 @@ export class AdminClient {
 
   private async request<T>(
     path: string,
-    init: RequestInit & { reason?: string } = {},
+    init: RequestInit = {},
   ): Promise<T> {
     const headers = new Headers(init.headers ?? {});
     headers.set("Accept", "application/json");
@@ -95,13 +91,6 @@ export class AdminClient {
     if (token) headers.set("Authorization", `Bearer ${token}`);
 
     const method = (init.method ?? "GET").toUpperCase();
-    const isMutation = method !== "GET" && method !== "HEAD";
-    if (isMutation && path.includes("/admin/ops")) {
-      if (!init.reason || !init.reason.trim()) {
-        throw new AdminClientError(0, "X-Admin-Operation-Reason is required for ops mutations");
-      }
-      headers.set("X-Admin-Operation-Reason", init.reason.trim());
-    }
 
     const res = await this.fetchImpl(`${this.baseUrl}${path}`, { ...init, headers });
     if (!res.ok) {
@@ -130,39 +119,6 @@ export class AdminClient {
     return this.request<ExportResponse>(`/v1/admin/audit/export`, {
       method: "POST",
       body: JSON.stringify({ filter, format }),
-    });
-  }
-
-  // ---- dual-approval ops ----------------------------------------------
-  async listOps(status?: string): Promise<AdminOp[]> {
-    const q = status ? `?status=${encodeURIComponent(status)}` : "";
-    const result = await this.request<{ ops: AdminOp[] }>(`/v1/admin/ops${q}`);
-    return result.ops;
-  }
-
-  async getOp(opId: string): Promise<AdminOp> {
-    return this.request<AdminOp>(`/v1/admin/ops/${encodeURIComponent(opId)}`);
-  }
-
-  async submitOp(opType: OpType, payload: Record<string, unknown>, reason: string): Promise<AdminOp> {
-    return this.request<AdminOp>(`/v1/admin/ops`, {
-      method: "POST",
-      body: JSON.stringify({ op_type: opType, payload }),
-      reason,
-    });
-  }
-
-  async approveOp(opId: string, reason: string): Promise<AdminOp> {
-    return this.request<AdminOp>(`/v1/admin/ops/${encodeURIComponent(opId)}/approve`, {
-      method: "POST",
-      reason,
-    });
-  }
-
-  async rejectOp(opId: string, reason: string): Promise<AdminOp> {
-    return this.request<AdminOp>(`/v1/admin/ops/${encodeURIComponent(opId)}/reject`, {
-      method: "POST",
-      reason,
     });
   }
 

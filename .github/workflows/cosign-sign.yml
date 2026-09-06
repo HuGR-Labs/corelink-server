@@ -1,19 +1,14 @@
 name: Cosign Sign Release Artifacts (WI-S12-003)
 
 # Signs the CoreLink Worker OCI image with Cosign keyless OIDC after a
-# release tag is pushed.  Publishes signature to Rekor transparency log
-# and attaches it to the OCI registry (ghcr.io).
+# release tag is pushed. Publishes the signature to Rekor and attaches it to
+# the OCI registry (ghcr.io).
 #
-# WAIVER (human-authorized) — this lane stays GitHub-HOSTED, exempt from the
-# zero-hosted-spend mandate. Reason: it needs `docker` (build-push-action) + the
-# GitHub-hosted OIDC identity for Cosign keyless Fulcio/Rekor signing. The
-# self-hosted `corelink` Firecracker fabric has no docker daemon; the only
-# docker-capable self-hosted box is the founder's arm64 Mac, which would emulate
-# the amd64 image build. Cost is negligible: fires only on a release tag push /
-# manual dispatch, not per-PR.
-#   authorized-by: repo owner | 2026-08-11 ("manter hosted c/ waiver")
-#   remediation: move to self-hosted once a docker-capable native-amd64 runner
-#     exists (and keyless OIDC is verified to issue from it).
+# B-134 experiment: route this release-only lane to `corelink` and measure the
+# Docker-compatible nerdctl/containerd backend used by the fleet. A successful
+# `docker info` proves CLI/backend compatibility only; it is not evidence of a
+# Docker daemon. The workflow must remain red when the backend, OIDC identity,
+# registry, signature, Rekor proof, or deploy configuration is unavailable.
 #
 # Workflow contract (WI-S12-003 §6.1.1):
 #
@@ -21,8 +16,8 @@ name: Cosign Sign Release Artifacts (WI-S12-003)
 #   2. Push to ghcr.io/HumanGuardrail/corelink-worker:<tag>.
 #   3. Cosign sign keyless OIDC → Fulcio short-lived cert (SAN = workflow ref)
 #      → Rekor inclusion proof published.
-#   4. Cosign attest SLSA provenance (from WI-S12-001) + SBOM (from WI-S12-002).
-#   5. Trigger Cloudflare deploy webhook (corelink-deploy-verifier).
+#   4. Verify the Cosign signature before triggering the Cloudflare deploy
+#      webhook (corelink-deploy-verifier).
 #
 # All SHA-pinned per hard constraint (supply chain § §14.s12.4):
 #   - actions/checkout@<sha>
@@ -41,13 +36,9 @@ on:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
 
-  # Manual trigger for ops/re-sign scenarios
+  # Manual trigger for ops/re-sign scenarios. Select the existing release tag
+  # in the GitHub dispatch UI; a branch dispatch is rejected by the preflight.
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Release tag to sign (e.g. v0.1.0)'
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -60,7 +51,8 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  # TODO(org-rename): HumanGuardrail→HuGR-Labs pending coordinated code+registry move
+  # Registry namespace remains HumanGuardrail until the coordinated code and
+  # registry move is complete.
   IMAGE_NAME: HumanGuardrail/corelink-worker
 
 jobs:
@@ -69,7 +61,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────
   sign-release:
     name: build, push & cosign-sign
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 30
 
     outputs:
@@ -79,6 +71,24 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: Preflight — Docker-compatible backend (hard requirement)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! [[ "${GITHUB_REF:-}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error title=cosign-sign cannot run::release signing requires dispatching or pushing a vMAJOR.MINOR.PATCH tag; branch dispatches are refused."
+            exit 1
+          fi
+          command -v docker >/dev/null 2>&1 || {
+            echo "::error title=cosign-sign cannot run (Docker-compatible backend)::docker CLI is unavailable on this runner."
+            exit 1
+          }
+          if ! docker info >/dev/null 2>&1; then
+            echo "::error title=cosign-sign cannot run (Docker-compatible backend)::docker CLI has no reachable backend on this runner."
+            exit 1
+          fi
+          echo "Docker-compatible backend reachable; daemon identity is not asserted."
 
       # ── Docker meta (extract tag from git ref) ───────────────────────────
       - name: Docker metadata
@@ -135,21 +145,6 @@ jobs:
           cosign sign --yes "${IMAGE}"
           echo "Signature published to Rekor transparency log."
 
-      # ── Cosign attest SLSA provenance ────────────────────────────────────
-      # Attaches SLSA provenance from WI-S12-001 to the OCI image.
-      # The provenance.intoto.jsonl is produced by release-slsa3.yml and
-      # uploaded as a workflow artifact; consumed here.
-      #
-      # NOTE: This step is a stub during S-12; full integration in WI-S12-007
-      # when the complete provenance chain is assembled.
-      - name: Attest SLSA provenance (stub — full in WI-S12-007)
-        env:
-          DIGEST: ${{ steps.build-push.outputs.digest }}
-        run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
-          echo "SLSA provenance attestation: full integration in WI-S12-007 PRR gate."
-          echo "Cosign signature + Rekor inclusion completed for: ${IMAGE}"
-
       # ── Verify signature (self-verification, belt-and-suspenders) ────────
       # Verifies the signature we just produced; validates the full chain
       # locally before triggering the deploy webhook.
@@ -173,7 +168,7 @@ jobs:
   trigger-cf-deploy:
     name: trigger CF deploy webhook
     needs: sign-release
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 10
 
     steps:
@@ -188,10 +183,20 @@ jobs:
         env:
           WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
           CF_DEPLOY_VERIFIER_URL: ${{ secrets.CF_DEPLOY_VERIFIER_URL }}
+          CF_DEPLOY_ZONE_ID: ${{ secrets.CF_DEPLOY_ZONE_ID }}
           IMAGE_DIGEST: ${{ needs.sign-release.outputs.image-digest }}
           RELEASE_TAG: ${{ github.ref_name }}
           COMMIT_SHA: ${{ github.sha }}
         run: |
+          set -euo pipefail
+          if ! [[ "${CF_DEPLOY_ZONE_ID:-}" =~ ^[0-9a-fA-F]{32}$ ]]; then
+            echo "::error title=cosign-sign cannot deploy::CF_DEPLOY_ZONE_ID is missing or is not a 32-hex Cloudflare zone ID."
+            exit 1
+          fi
+          if [ -z "${CF_DEPLOY_VERIFIER_URL:-}" ] || [ -z "${WEBHOOK_SECRET:-}" ]; then
+            echo "::error title=cosign-sign cannot deploy::deploy verifier URL or webhook secret is missing."
+            exit 1
+          fi
           # Build webhook payload
           PAYLOAD=$(jq -cn \
             --arg release_tag "${RELEASE_TAG}" \
@@ -199,6 +204,7 @@ jobs:
             --arg workflow_ref "${{ github.ref }}" \
             --arg image_digest "${IMAGE_DIGEST}" \
             --arg image_ref "${{ needs.sign-release.outputs.image-ref }}" \
+            --arg zone_id "${CF_DEPLOY_ZONE_ID}" \
             '{
               release_tag: $release_tag,
               commit_sha: $commit_sha,
@@ -207,7 +213,7 @@ jobs:
               image_ref: $image_ref,
               deploy_target: {
                 script_name: "corelink-worker",
-                zone_id: "ZONE_ID_PLACEHOLDER",
+                zone_id: $zone_id,
                 route_pattern: "api.corelink.humangr.com/*"
               },
               triggered_by: {

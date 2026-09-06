@@ -114,7 +114,7 @@ GA · May 2026
 
 **Screen:** `/[locale]/onboarding/pat`. The PAT is shown once, with a "Copy" button and an explicit "I have saved this token" checkbox.
 
-**Action:** click "Copy". The PAT format `corelink_sandbox_t_xxx.xxx.xxx` is highlighted on-screen with a brief redaction overlay (real characters blurred for the recording).
+**Action:** click "Copy". The synthetic PAT format `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA` is highlighted on-screen with a brief redaction overlay (real characters blurred for the recording).
 
 **Voiceover (~9s):**
 
@@ -132,7 +132,7 @@ GA · May 2026
 ### 2.1 — Export PAT + doctor (1:10 → 1:25)
 
 ```bash
-$ export CORELINK_PAT="corelink_sandbox_t_xxx.xxx.xxx"
+$ export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA" # synthetic shape
 $ corelink doctor
 8/8 checks PASS  — net OK, auth OK (tenant=acme-build-cache, ttl=23h58m), storage OK, BYOK n/a (sandbox), region OK (us-west-2), quota OK, client-verify OK, telemetry OK
 ```
@@ -312,11 +312,11 @@ let data = client.get("af1c3e9b…").await?;
 
 ### 5.4 — Sensitive-op approval queue (4:25 → 4:40)
 
-**Action:** click "Activate BYOK". A modal explains this is a sensitive operation that requires **two distinct approvers** per security control. URL: `/[locale]/admin/ops` → new pending op row visible.
+**Action:** skip this section. The sensitive-operation workflow is disabled until durable persistence and a safe Worker binding are available; no queue or approval page is served.
 
 **Voiceover (~13s):**
 
-> "Activation is a sensitive operation. It enters a queue requiring two distinct admins to approve — not one admin clicking twice. The kill switch, key rotation, and emergency revoke all share this workflow. See our BYOK blog post or the deeper seven-minute BYOK demo for the rotation + kill-switch flow."
+> "Sensitive mutations are unavailable in this build while the durable, auditable operator workflow is being rebuilt. We will publish the approval flow only after its persistence and Worker binding are ready."
 
 ---
 
@@ -326,13 +326,13 @@ let data = client.get("af1c3e9b…").await?;
 
 ```
 corelink-docs.humangr.com/quickstart      — 10-minute tutorial
-corelink-docs.humangr.com/trust           — TLA+ specs, SBOM, pentest
+corelink-docs.humangr.com/trust           — TLA+ specs, SBOM, DPA
 corelink-docs.humangr.com/pricing         — sandbox is free
 ```
 
 **Voiceover (~18s):**
 
-> "That's the deep-dive. Ten-minute quickstart at humangr.com/corelink. The trust center has our TLA+ specs, full SBOM, and the third-party pentest letter. Sandbox is free, no credit card. If you're evaluating for a regulated workload, our seven-minute BYOK deep dive walks the four-provider matrix and the kill-switch flow. Thanks for watching."
+> "That's the deep-dive. Ten-minute quickstart at humangr.com/corelink. The trust center has our TLA+ specs, full SBOM, and our DPA package — plus an honest page on what we do not have yet, including an external pentest. Sandbox is free, no credit card. If you're evaluating for a regulated workload, our seven-minute BYOK deep dive walks the four-provider matrix and the kill-switch flow. Thanks for watching."
 
 **Hold final URL card for 2s. End.**
 

@@ -28,11 +28,11 @@ the same per-tenant R2 blobs the native CAS serves.
 The **stock-HTTP alias** `https://corelink-api.humangr.com/bazel/cache` is live.
 It serves exactly what vanilla Bazel emits: `GET`/`PUT` on `/cas/<sha256>` and
 `/ac/<sha256>`, with no `:instance` segment and no `:size`. Your tenant is
-**not** in that URL — it is resolved from the PAT you pass in `--remote_header`.
+**not** in that URL — it is resolved by the host-scoped credential helper from `CORELINK_PAT`.
 
 ```ini
 build --remote_cache=https://corelink-api.humangr.com/bazel/cache
-build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
 build --remote_upload_local_results=true
 ```
 
@@ -60,7 +60,7 @@ build --remote_instance_name=${CORELINK_TENANT}
 
 # Authenticate with your PAT. The Cloudflare Worker validates the bearer token
 # and injects the tenant header before the request reaches the cache.
-build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
 
 build --remote_timeout=30s
 build --remote_upload_local_results=true
@@ -69,7 +69,7 @@ build --remote_upload_local_results=true
 Export both values before building:
 
 ```bash
-export CORELINK_PAT="corelink_pat_XXXXXXXXXXXX"
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 export CORELINK_TENANT="<your-tenant-id>"
 ```
 
@@ -79,4 +79,4 @@ Run your build twice — the second run should read blobs back from CoreLink
 rather than recompiling. Inspect Bazel's execution log
 (`--execution_log_json_file`) for `remoteCacheHit: true` entries to confirm.
 
-Next: [Buck2 quickstart](./04-buck2-quickstart) or [verify cache hit ratio](./06-verify-cache-hit).
+Next: [verify cache hit ratio](./06-verify-cache-hit). (If you were looking for Buck2, read [Buck2 support status](./04-buck2-quickstart) — it is not supported.)

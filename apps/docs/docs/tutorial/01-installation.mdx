@@ -35,7 +35,8 @@ The installer:
    executable. A missing checksum aborts the install.
 3. Installs it to `/usr/local/bin/corelink` (via `sudo` if you are not
    root) and writes `~/.corelink/config.toml` at mode `0600` with your
-   token, region, and API endpoint.
+   token and API endpoint. Tenant residency is selected server-side during
+   signup, not in the client config.
 4. Runs `corelink whoami`, which resolves your identity against
    `/v1/users/me` and caches the resolved `tenant_id` back into that same
    config file — every later tenant-scoped command needs it.
@@ -52,12 +53,12 @@ Add these lines to your `.bazelrc`:
 ```ini
 build --remote_cache=https://corelink-api.humangr.com/bazel/v2
 build --remote_instance_name=${CORELINK_TENANT}
-build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
 build --remote_upload_local_results=true
 ```
 
 ```bash
-export CORELINK_PAT="corelink_pat_XXXXXXXXXXXX"
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 export CORELINK_TENANT="<your-tenant-id>"
 bazel build //...
 ```
@@ -71,7 +72,7 @@ REAPI client (the tenant comes from the PAT, not the URL, so drop
 
 ```ini
 build --remote_cache=https://corelink-api.humangr.com/bazel/cache
-build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
 ```
 
 See the [Bazel quickstart](./03-bazel-quickstart) for details.
@@ -95,8 +96,10 @@ corelink version
 corelink doctor
 ```
 
-`corelink version` prints the build version, git rev, and SLSA attestation
-link. `corelink doctor` is the one-shot diagnostic: it runs eight checks —
+`corelink version` prints build metadata (version, git revision, build
+timestamp, and target triple). It intentionally omits an attestation URL until
+a published bundle can be retrieved independently. `corelink doctor` is the
+one-shot diagnostic: it runs eight checks —
 `network`, `auth`, `storage_write`, `storage_read`, `byok`, `region`,
 `quota`, and `client_verify` — each reporting `ok`, `fail`, or `skip` with a
 latency and, on failure, an error code and a next action. Add `--json` for

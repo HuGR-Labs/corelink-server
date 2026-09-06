@@ -20,7 +20,7 @@ two-leg bearer-token flow (`GET /token` then `Authorization: Bearer`).
 ## Prerequisites
 
 - `docker` (or `podman`) installed.
-- A CoreLink PAT (`corelink_pat_...`) with cache read + write scope.
+- A CoreLink PAT (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA`) with cache read + write scope.
 
 ## Log in
 

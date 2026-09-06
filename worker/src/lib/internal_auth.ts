@@ -365,3 +365,30 @@ export function requireConsumerAuth(
   }
   return null;
 }
+
+/**
+ * Gate an operator-only endpoint on the dedicated admin key.
+ *
+ * This is intentionally stricter than {@link requireConsumerAuth}: the normal
+ * `admin` consumer preserves the historical shared-key fallback for the
+ * container's admin mutation surface, but diagnostic health data must never
+ * become available merely because the broad shared key is configured. A
+ * missing, empty, or sub-floor `CORELINK_ADMIN_AUTH_KEY` is therefore an
+ * unavailable endpoint (503), while a missing or incorrect header is a caller
+ * authentication failure (401).
+ */
+export function requireDedicatedAdminAuth(
+  request: Request,
+  env: Env,
+  requestId: string,
+): Response | null {
+  const expected = env.CORELINK_ADMIN_AUTH_KEY;
+  if (!expected || expected.length < MIN_INTERNAL_AUTH_KEY_LEN) {
+    return reapiError("SERVICE_UNAVAILABLE", "internal endpoint unavailable", 503, requestId);
+  }
+  const provided = request.headers.get(INTERNAL_AUTH_HEADER) ?? "";
+  if (!constantTimeSecretEqual(expected, provided)) {
+    return reapiError("UNAUTHORIZED", "internal auth required", 401, requestId);
+  }
+  return null;
+}

@@ -10,7 +10,7 @@
 //! use corelink_ops::oncall::*;             // PagerDuty oncall scheduler + fatigue tracking
 //! use corelink_ops::statuspage::*;         // Atlassian Statuspage client (pure-logic re-export)
 //! use corelink_ops::slack::*;              // Slack incoming-webhook client (pure-logic re-export)
-//! use corelink_ops::admin::api::*;         // Admin REST API surface
+//! use corelink_ops::admin::api::*;         // Internal admin policy (no HTTP binding)
 //! use corelink_ops::admin::dry_run::*;     // Admin dry-run preview
 //! use corelink_ops::admin::handler::*;     // Admin handler trait + SLI observer
 //! use corelink_ops::admin::dual_approval::*; // Admin 2-of-N approval gate
@@ -170,7 +170,7 @@
 //!
 //! Absorbed crates (15):
 //!
-//! - `corelink-admin-api` → [`admin::api`] — Admin REST API surface.
+//! - `corelink-admin-api` → [`admin::api`] — internal admin policy (no HTTP binding).
 //! - `corelink-admin-dry-run` → [`admin::dry_run`] — Admin dry-run
 //!   preview (+ 3 bins).
 //! - `corelink-backup-verify` → [`dr::backup_verify`] — Continuous

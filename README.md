@@ -36,7 +36,7 @@ brew install HuGR-Labs/tap/corelink
 # 2. Create a tenant on the Free tier (no credit card).
 #    Sign up at https://humangr.com/corelink/sign-up, then mint a PAT at
 #    https://humangr.com/corelink/en/customer/keys and copy it:
-export CORELINK_PAT="corelink_pat_xxx.xxx.xxx"
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA" # synthetic shape; replace with your real PAT
 corelink doctor                    # 8/8 checks PASS
 
 # 3. Store an artifact. BLAKE3 digest IS the storage key.
@@ -62,7 +62,10 @@ additional token with `POST /v1/pats` (`{"label":"ci","scopes":["cache:read"]}`)
 The dashboard-compatible `POST /v1/customer/keys` alias uses the same mint flow.
 Both aliases share the per-tenant `pat-issue` limiter: burst 10, then 10 tokens
 per hour (one every 360 seconds), enforced before mint and audit. A `429`
-includes `Retry-After`; the plaintext token is returned exactly once.
+includes `Retry-After`; the plaintext token is returned exactly once. The
+bucket is durably serialized by the tenant Durable Object, so restart and
+multiple container instances cannot reset or double-spend the allowance;
+unavailable or invalid limiter state fails closed with `503`.
 
 ## Production status
 
@@ -177,7 +180,7 @@ shows the leaf → root path.
 #### Offline audit-chain verify (WI-S09-008)
 
 Customers download a streaming NDJSON dump of their audit log via
-`GET /v1/audit/export?since=<rfc3339>&until=<rfc3339>` (one
+`GET /v1/audit/<tenant>/export?from=<rfc3339|epoch-ms>&to=<rfc3339|epoch-ms>` (one
 `{event, proof}` line per audit row + a trailing
 `{"manifest": <ExportManifest>}` line). The response header
 `X-CoreLink-Audit-Export-Chain-Head-Anchor` carries the 64-char
@@ -306,9 +309,9 @@ A minimal request-flow sketch:
 
 ```mermaid
 flowchart LR
-    client[REAPI client<br/>Bazel / Buck2 / sccache] -->|TLS 1.3| edge[Cloudflare edge<br/>WAF + rate limit]
+    client[REAPI-over-HTTP client<br/>Bazel / sccache] -->|TLS 1.3| edge[Cloudflare edge<br/>WAF + rate limit]
     edge -->|service binding| cp[Control plane<br/>corelink-worker]
-    cp -->|signed intent| dp[Data plane<br/>Rust REAPI gRPC]
+    cp -->|signed intent| dp[Data plane<br/>Rust REAPI over HTTP/REST]
     dp -->|BLAKE3 + dedup| r2[(R2<br/>blobs + AC + audit)]
     dp -->|hot meta| d1[(D1)]
     dp -->|event| ac[corelink-audit-chain<br/>hash-chained append-only]

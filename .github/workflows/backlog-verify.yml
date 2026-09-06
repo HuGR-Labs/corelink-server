@@ -36,9 +36,76 @@ on:
       - "scripts/backlog_verify.py"
       - "scripts/test_backlog_verify.sh"
       - "scripts/verify_b155_backlog_grep_population.py"
+      - "scripts/repair_b155_grep_population.py"
       - "tests/test_verify_b155_backlog_grep_population.py"
+      # B-094 hashes and semantically classifies the complete published corpus.
+      - "scripts/verify_b094_published_claims.py"
+      - "scripts/b094_published_inventory.json"
+      - "tests/test_verify_b094_published_claims.py"
+      - "tests/test_gitleaks_b094_manifest.py"
+      - "requirements-ci.txt"
+      - ".gitleaks.toml"
+      - "README.md"
+      - "apps/docs/**"
+      - "marketing/**"
+      - "crates/corelink-container/src/routes/bazel_v2.rs"
       - "scripts/verify_b169_evidence_pack.py"
       - "tests/test_verify_b169_evidence_pack.py"
+      # B-160's verifier executes the Worker PAT-limiter focal and its mutation teeth.
+      - "scripts/verify_b160_pat_limit.py"
+      - "tests/test_verify_b160_pat_limit.py"
+      - "crates/corelink-dpa-acceptance/tests/common.rs"
+      - "crates/corelink-dpa-acceptance/tests/prop_idempotency.rs"
+      - "scripts/verify_dpa_acceptance_fixture.py"
+      - "tests/test_verify_dpa_acceptance_fixture.py"
+      - "worker/src/pat_issue_rate_limit.ts"
+      - "worker/src/durable_object.ts"
+      - "worker/src/index.ts"
+      - "worker/tests/pat_issue_rate_limit.test.ts"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "worker/package.json"
+      - "worker/vitest.config.mts"
+      - "worker/tsconfig.test.json"
+      - "worker/tests/setup.ts"
+      - "crates/corelink-container/src/routes/customer.rs"
+      # B-082's executable verifier reads the Worker route/auth source and its
+      # focal test harness. Keep every direct input in the trigger set so a
+      # security regression cannot land without rerunning the inverted guard.
+      - "scripts/verify_b082_health_probe.py"
+      - "worker/package.json"
+      - "worker/vitest.config.mts"
+      - "worker/src/**"
+      - "worker/tests/index.test.ts"
+      - "worker/tests/setup.ts"
+      - "worker/tests/d1_batch_mock.ts"
+      - "pnpm-lock.yaml"
+      - "scripts/verify_b088_pentest_claims.py"
+      - "tests/b088_pentest_claims_test.py"
+      - "reports/pentest-rfp-tracker.json"
+      - "marketing/**"
+      - "apps/docs/**"
+      - "legal/**"
+      - "README.md"
+      - "scripts/verify_b095_interface_contract.py"
+      - "tests/test_verify_b095_interface_contract.py"
+      # B-095 verifier inputs: every source that can change the assessed
+      # interface contract must re-run this guard on the same PR.
+      - "apps/get-corelink-worker/src/install.ts"
+      - "apps/admin-ui/src/components/customer/TeamClient.tsx"
+      - "apps/admin-ui/src/lib/customer-types.ts"
+      - "migrations/d1/0074_team_member.sql"
+      - "crates/corelink-container/src/routes/customer/tests_team.rs"
+      - "crates/corelink-container/src/routes/workspaces.rs"
+      - "apps/admin-ui/src/components/customer/WorkspacesClient.tsx"
+      - "apps/docs/docs/explanation/rbac/role-catalog.mdx"
+      - "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/explanation/rbac/role-catalog.mdx"
+      - "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/explanation/rbac/role-catalog.mdx"
+      - "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/explanation/rbac/role-catalog.mdx"
+      - "apps/docs/docs/tutorials/quickstart-10min.mdx"
+      - "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/tutorials/quickstart-10min.mdx"
+      - "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/tutorials/quickstart-10min.mdx"
+      - "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/tutorials/quickstart-10min.mdx"
       - "marketing/sales/legal-questionnaires/EVIDENCE-PACK-INDEX.md"
       # B-161's verifier reads exactly these published pages and its focused test.
       - "apps/docs/docs/integrations/homebrew.md"
@@ -59,10 +126,71 @@ on:
       - "scripts/backlog_verify.py"
       - "scripts/test_backlog_verify.sh"
       - "scripts/verify_b155_backlog_grep_population.py"
+      - "scripts/repair_b155_grep_population.py"
       - "tests/test_verify_b155_backlog_grep_population.py"
+      - "scripts/verify_b094_published_claims.py"
+      - "scripts/b094_published_inventory.json"
+      - "tests/test_verify_b094_published_claims.py"
+      - "tests/test_gitleaks_b094_manifest.py"
+      - "requirements-ci.txt"
+      - ".gitleaks.toml"
+      - "README.md"
+      - "apps/docs/**"
+      - "marketing/**"
+      - "crates/corelink-container/src/routes/bazel_v2.rs"
       - ".github/workflows/**"
       - "scripts/verify_b169_evidence_pack.py"
       - "marketing/sales/legal-questionnaires/EVIDENCE-PACK-INDEX.md"
+      - "scripts/verify_b160_pat_limit.py"
+      - "tests/test_verify_b160_pat_limit.py"
+      - "crates/corelink-dpa-acceptance/tests/common.rs"
+      - "crates/corelink-dpa-acceptance/tests/prop_idempotency.rs"
+      - "scripts/verify_dpa_acceptance_fixture.py"
+      - "tests/test_verify_dpa_acceptance_fixture.py"
+      - "worker/src/pat_issue_rate_limit.ts"
+      - "worker/src/durable_object.ts"
+      - "worker/src/index.ts"
+      - "worker/tests/pat_issue_rate_limit.test.ts"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "worker/package.json"
+      - "worker/vitest.config.mts"
+      - "worker/tsconfig.test.json"
+      - "worker/tests/setup.ts"
+      - "crates/corelink-container/src/routes/customer.rs"
+      - "scripts/verify_b082_health_probe.py"
+      - "worker/package.json"
+      - "worker/vitest.config.mts"
+      - "worker/src/**"
+      - "worker/tests/index.test.ts"
+      - "worker/tests/setup.ts"
+      - "worker/tests/d1_batch_mock.ts"
+      - "pnpm-lock.yaml"
+      - "scripts/verify_b088_pentest_claims.py"
+      - "tests/b088_pentest_claims_test.py"
+      - "reports/pentest-rfp-tracker.json"
+      - "marketing/**"
+      - "apps/docs/**"
+      - "legal/**"
+      - "README.md"
+      - "scripts/verify_b095_interface_contract.py"
+      - "tests/test_verify_b095_interface_contract.py"
+      # Keep push parity with pull_request: main must not bypass B-095 inputs.
+      - "apps/get-corelink-worker/src/install.ts"
+      - "apps/admin-ui/src/components/customer/TeamClient.tsx"
+      - "apps/admin-ui/src/lib/customer-types.ts"
+      - "migrations/d1/0074_team_member.sql"
+      - "crates/corelink-container/src/routes/customer/tests_team.rs"
+      - "crates/corelink-container/src/routes/workspaces.rs"
+      - "apps/admin-ui/src/components/customer/WorkspacesClient.tsx"
+      - "apps/docs/docs/explanation/rbac/role-catalog.mdx"
+      - "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/explanation/rbac/role-catalog.mdx"
+      - "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/explanation/rbac/role-catalog.mdx"
+      - "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/explanation/rbac/role-catalog.mdx"
+      - "apps/docs/docs/tutorials/quickstart-10min.mdx"
+      - "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/tutorials/quickstart-10min.mdx"
+      - "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/tutorials/quickstart-10min.mdx"
+      - "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/tutorials/quickstart-10min.mdx"
       - "apps/docs/docs/integrations/homebrew.md"
       - "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/integrations/homebrew.md"
       - "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/integrations/homebrew.md"
@@ -94,9 +222,8 @@ jobs:
           # than a red one, because it reports green. Full history or nothing.
           fetch-depth: 0
 
-      # B-161 executes a focused Vitest suite from apps/docs. Prepare only that
-      # workspace and its dependencies, with both toolchain actions pinned and
-      # the lockfile treated as an immutable contract.
+      # B-161 and B-082 execute focused Vitest suites. Prepare only those
+      # workspaces and their dependencies, with the lockfile immutable.
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271  # v4.1.0
         with:
           version: 10.32.1
@@ -105,8 +232,11 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-      - name: prepare docs dependencies for B-161
-        run: pnpm install --frozen-lockfile --filter @corelink/docs...
+      - name: prepare docs and Worker dependencies for B-161/B-082
+        # B-160 and B-082 both execute Worker focal tests. Keep installation
+        # frozen and package-scoped; ignore lifecycle scripts just as B-160's
+        # independently reviewed guard requires.
+        run: pnpm install --frozen-lockfile --filter @corelink/docs... --filter @corelink/worker... --ignore-scripts
 
       # The gate's own gate. A checker nobody has watched fail proves nothing, so
       # the self-test runs FIRST: if it cannot produce a red verdict on a backlog
@@ -114,10 +244,36 @@ jobs:
       - name: the gate can go red (self-test)
         run: bash scripts/test_backlog_verify.sh
 
+      - name: B-160 verifier mutation suite
+        run: python3 tests/test_verify_b160_pat_limit.py
+
+      - name: DPA acceptance fixture guard and mutations
+        run: python3 scripts/verify_dpa_acceptance_fixture.py --self-test
+
       - name: B-155 verifier mutation suite
         run: python3 tests/test_verify_b155_backlog_grep_population.py
+      - name: Prepare Python verifier dependencies
+        env:
+          PIP_DISABLE_PIP_VERSION_CHECK: "1"
+        run: python3 -m pip install -r requirements-ci.txt
+      - name: B-094 published-claims guard and mutations
+        run: |
+          command -v gitleaks
+          python3 -m pytest -q \
+            tests/test_verify_b094_published_claims.py \
+            tests/test_gitleaks_b094_manifest.py
       - name: B-169 evidence-pack guard and mutations
         run: python3 -m unittest tests/test_verify_b169_evidence_pack.py
+      - name: B-082 verifier, mutations, and focal health tests
+        run: python3 scripts/verify_b082_health_probe.py
+
+      - name: B-088 published pentest claim verifier and mutations
+        run: python3 -m unittest tests/b088_pentest_claims_test.py
+
+      - name: B-095 interface contract verifier
+        run: python3 scripts/verify_b095_interface_contract.py --expect 'done'
+      - name: B-095 verifier mutation tests
+        run: python3 -m unittest tests/test_verify_b095_interface_contract.py
 
       - name: BACKLOG.md agrees with the repo
         # Items that query the Actions API need gh authenticated. Items about

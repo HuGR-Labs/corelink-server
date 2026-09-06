@@ -3,9 +3,6 @@
 import { apiPost } from "@/lib/api-client";
 import {
   validateTenantName,
-  validatePatInput,
-  type PatScope,
-  type PatExpiryDays,
   type Region,
   type Plan,
 } from "@/lib/validators";
@@ -144,33 +141,12 @@ export async function createCheckoutSessionAction(
   );
 }
 
-export interface PatIssued {
-  id: string;
-  label: string;
-  /**
-   * Plaintext token, shown to the user ONCE. The server is contractually
-   * obligated to never return this on subsequent fetches (CTRL-CRED-001).
-   */
-  plaintext: string;
-}
-
-export async function createPatAction(input: {
-  label: string;
-  scope: PatScope;
-  expiryDays: PatExpiryDays;
-}): Promise<PatIssued> {
-  const v = validatePatInput(input);
-  if (!v.ok) {
-    throw new Error(`pat_input_invalid:${v.reason}`);
-  }
-  const token = await getSessionToken();
-  return apiPost<PatIssued>(
-    "/v1/pats",
-    {
-      label: input.label,
-      scope: input.scope,
-      expiry_days: input.expiryDays,
-    },
-    { token },
-  );
-}
+// `createPatAction` used to live here. It POSTed to `/v1/pats`, which no route
+// in the workspace registers — the served PAT surface is `/v1/customer/keys`
+// (`crates/corelink-container/src/routes/customer.rs:212`), with a different
+// body shape (`{name, scopes[]}`, not `{label, scope, expiry_days}`) and
+// revocation by `POST .../{pat_id}/revoke` rather than `DELETE`. It had zero
+// callers anywhere in the repo, so nothing was breaking in production; the real
+// PAT lifecycle is already wired through `src/lib/customer-client.ts`, which
+// calls `/v1/customer/keys` correctly. Removed rather than repointed:
+// duplicating a working client to leave it unused is not a fix.

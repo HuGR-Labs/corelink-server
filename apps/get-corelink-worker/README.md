@@ -4,12 +4,13 @@ Cloudflare Worker serving the **CoreLink CLI install one-liner** at
 `https://corelink-get.humangr.com`.
 
 ```bash
-curl -fsSL https://corelink-get.humangr.com | sh -s -- --token=$PAT --region=ord
+curl -fsSL https://corelink-get.humangr.com | sh -s -- --token=$PAT
 ```
 
 The script:
 
-1. Parses `--token=<…>` (required) and `--region=<…>` (optional, default `auto`).
+1. Parses `--token=<…>` (required). Unsupported options are rejected; tenant
+   residency is not a client-side install setting.
 2. Detects the host OS (`linux` / `darwin` / `windows`) and architecture
    (`x86_64` / `aarch64`).
 3. Downloads the matching CoreLink CLI binary from
@@ -17,7 +18,7 @@ The script:
 4. Writes `~/.corelink/config.toml` with `[auth].pat` and
    `[defaults].endpoint = "https://corelink-api.humangr.com"` — the schema
    `tools/cli/src/config.rs` actually reads. (Until fixed, this wrote a flat
-   top-level `token`/`region` that the CLI's TOML deserializer silently
+   top-level `token` that the CLI's TOML deserializer silently
    ignored, so `[auth].pat` stayed unset and every install's own `corelink
    whoami` call below failed with "No PAT found" — see CHANGELOG.)
 5. Runs `corelink whoami` to verify connectivity AND cache the resolved
@@ -140,7 +141,7 @@ The workflow will:
 1. `GET https://corelink-get.humangr.com` returns `Content-Type: text/x-shellscript`
    and exits 200 in < 50 ms p99 (pure static render — no DO / KV / R2 /
    D1 calls).
-2. `curl -fsSL https://corelink-get.humangr.com | sh -s -- --token=$TEST_TOKEN --region=ord`
+2. `curl -fsSL https://corelink-get.humangr.com | sh -s -- --token=$TEST_TOKEN`
    end-to-end succeeds on Linux x86_64 and Darwin aarch64.
 3. `curl -fsSL https://corelink-get.humangr.com | sh -s --` (no `--token`) exits
    non-zero with `FATAL: --token required` on stderr.

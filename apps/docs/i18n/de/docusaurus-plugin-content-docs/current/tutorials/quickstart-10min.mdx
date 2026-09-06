@@ -44,8 +44,8 @@ kein Abrechnungsschritt erforderlich.
 ## Schritt 1 — Registrieren <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 Min.)</span>
 
 1. Öffnen Sie **[https://humangr.com/corelink](https://humangr.com/corelink)** im Browser.
-2. Schließen Sie den 2-Schritt-Anmelde-Assistenten ab (wählen Sie Ihre
-   primäre Region — `ord` US-Central ist für die meisten Teams ein sicherer Standard).
+2. Schließen Sie den 2-Schritt-Anmelde-Assistenten ab. Die Tenant-Residenz
+   wird serverseitig erfasst und geroutet.
 3. Der Assistent leitet Sie auf die **`/welcome`**-Seite, wo Ihr Starter-PAT
    **genau einmal** angezeigt wird. Kopieren Sie ihn, bevor Sie den Tab schließen.
    Format: `ct_live_xxx…xxx`
@@ -60,13 +60,12 @@ PAT in geteilte Dokumente, Slack oder Quellcode ein.
 
 ## Schritt 2 — CLI installieren <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 Min.)</span>
 
-Führen Sie das Installations-Skript aus. Übergeben Sie den in Schritt 1
-kopierten PAT und Ihre gewählte Region.
+Führen Sie das Installations-Skript mit dem in Schritt 1 kopierten PAT aus.
+Die Region Ihres Tenants wurde bei der Anmeldung gewählt und serverseitig geroutet.
 
 ```bash
 curl -fsSL https://corelink-get.humangr.com | sh -s -- \
-  --token=ct_live_xxx…xxx \
-  --region=ord
+  --token=ct_live_xxx…xxx
 ```
 
 Das Skript:
@@ -78,8 +77,8 @@ Das Skript:
    ausführbar gemacht wird — eine fehlende Prüfsumme bricht die
    Installation ab — und verschiebt es dann nach `/usr/local/bin/corelink`
    (per `sudo`, falls Sie nicht root sind).
-3. Schreibt `~/.corelink/config.toml` mit Modus `0600` und Ihrem Token,
-   der Region und dem API-Endpunkt.
+3. Schreibt `~/.corelink/config.toml` mit Modus `0600`, Ihrem Token
+   und dem API-Endpunkt. Die Tenant-Residenz ist keine Client-Konfiguration.
 4. Führt `corelink whoami` aus: das löst Ihre Identität über
    `/v1/users/me` auf und legt die ermittelte `tenant_id` in derselben
    Konfigurationsdatei ab — jeder spätere tenant-bezogene Befehl braucht sie.
@@ -132,7 +131,7 @@ und schreibt eine `.corelink/credentials`-Datei (Modus `0600`):
 corelink bazel-init: appended to .bazelrc:
   build --remote_cache=https://corelink-api.humangr.com/bazel/v2
   build --remote_instance_name=acme-prod
-  build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+  build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
   build --remote_timeout=30s
   build --remote_upload_local_results=true
 corelink bazel-init: wrote .corelink/credentials (mode 0600)
@@ -150,7 +149,7 @@ den Mandanten aus dem PAT ab (daher kein `--remote_instance_name`):
 
 ```ini
 build --remote_cache=https://corelink-api.humangr.com/bazel/cache
-build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
 build --remote_upload_local_results=true
 ```
 
@@ -211,12 +210,11 @@ den größten Nutzen beim zweiten Lauf Ihrer CI-Pipeline.
 
 **Lösung:**
 ```bash
-corelink config set defaults.region <korrekte-region>
 corelink bazel-init --force
 ```
 
-Verfügbare Regionen: `ord` (US-Central), `iad` (US-East), `lhr` (EU-West),
-`nrt` (AP-Northeast), `syd` (AP-Southeast).
+Änderungen der Residenz werden serverseitig über den Support bearbeitet; sie
+sind keine CLI- oder `config.toml`-Einstellung.
 
 ### Token nicht gesetzt — `UNAUTHENTICATED` bei jeder Bazel-Aktion
 
@@ -256,7 +254,7 @@ corelink config set defaults.tenant_id <ihre-tenant-id>
 - **Architektur-Blogpost lesen** — [Wie CoreLink Cloudflare Workers nutzt](/blog/content-addressable-cache-cloudflare-workers).
 - **Mit Alternativen vergleichen** — [vs bazel-remote + S3](../compare/vs-bazel-remote-s3),
   [vs sccache + S3](../compare/vs-sccache-s3), [vs Turborepo Remote Cache](../compare/vs-turborepo).
-- **Buck2 konfigurieren** — [Buck2-Quickstart](../tutorial/04-buck2-quickstart) (5 Min.).
+- **Buck2-Unterstützung prüfen** — [Status der Buck2-Unterstützung](../tutorial/04-buck2-quickstart). Es gibt derzeit keine funktionierende Buck2-Konfiguration.
 - **In Produktion wechseln** — [How-to: Produktionskonfiguration](../how-to/index.mdx).
 
 ---

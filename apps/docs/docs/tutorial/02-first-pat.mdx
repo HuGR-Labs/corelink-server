@@ -20,7 +20,7 @@ CoreLink authenticates every cache read and write with a personal access token (
 1. In the admin UI sidebar, choose **Settings → Tokens**.
 2. Click **New PAT**.
 3. Pick:
-   - **Environment**: `dev`, `staging`, or `prod`.
+   - **Environment**: the parser-defined literal `pat`, `ci`, or `ro`.
    - **Scope**: `cache:read`, `cache:write`, or both.
    - **Expiry**: 30 / 90 / 365 days (or custom).
 4. Click **Create**. The token is shown **once** — copy it.
@@ -31,9 +31,10 @@ credential; never send a tenant ID or an operator mint key.
 
 ```bash
 curl -X POST https://corelink-api.humangr.com/v1/pats \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   -H "Content-Type: application/json" \
-  --data '{"label":"ci-runner","scopes":["cache:read","cache:write"]}'
+  --data '{"label":"ci-runner","scopes":["cache:read","cache:write"]}' --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 The response returns `token` exactly once. Store it immediately; self-service
@@ -47,20 +48,25 @@ CoreLink PATs follow the canonical format defined in the spec:
 corelink_<env>_<token_id>.<random_secret>.<hmac_sig>
 ```
 
-Example placeholder used throughout this documentation:
+Example shape (synthetic; it is not a credential and its signature is not valid):
 
 ```
-corelink_dev_t_xxx.xxx.xxx
+corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA
 ```
+
+Before sending a copied value, the CLI validates this shape locally with
+`corelink login --token "$CORELINK_PAT"`. A malformed value is rejected before
+any network request; the server still uses one opaque 401 response for all
+authentication failures so it does not reveal which token component failed.
 
 :::warning Never commit a real PAT
-The placeholder `corelink_dev_t_xxx.xxx.xxx` is intentional. Real PATs must live in environment variables, secret managers, or your CI provider's secret store — never in source code.
+The placeholder `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA` is intentional. Real PATs must live in environment variables, secret managers, or your CI provider's secret store — never in source code.
 :::
 
 ## 4. Export it
 
 ```bash
-export CORELINK_PAT="corelink_dev_t_xxx.xxx.xxx"  # replace with your real token
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"  # replace with your real token
 ```
 
 Add the line to your shell profile (`~/.zshrc`, `~/.bashrc`) for persistence, or load it through a secret manager (`direnv`, `1password`, `op`).
@@ -72,4 +78,4 @@ corelink doctor --check-auth
 # OK — PAT valid, tenant=acme-dev, scopes=[cache:read,cache:write], expires in 90d
 ```
 
-Next, wire it into your build system: [Bazel quickstart](./03-bazel-quickstart), [Buck2 quickstart](./04-buck2-quickstart), or the [native SDKs](./05-native-ffi-quickstart).
+Next, wire it into your build system: [Bazel quickstart](./03-bazel-quickstart) or the [native SDKs](./05-native-ffi-quickstart). (Buck2 is not supported — see [Buck2 support status](./04-buck2-quickstart).)

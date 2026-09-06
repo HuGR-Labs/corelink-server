@@ -36,7 +36,7 @@ frontera de seguridad y no aparece en la URL base.
 
 ```bash
 export TURBO_API="https://corelink-api.humangr.com"
-export TURBO_TOKEN="corelink_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+export TURBO_TOKEN="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 ```
 
 Luego ejecute Turborepo de forma normal (pase un label `--team` para que Turborepo habilite el caché
@@ -100,8 +100,9 @@ También puede confirmar que el token es válido:
 
 ```bash
 curl -s \
-  -H "Authorization: Bearer $CORELINK_PAT" \
-  https://corelink-api.humangr.com/v1/users/me
+  https://corelink-api.humangr.com/v1/users/me --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 # {"tenant_id":"acme-prod","token_prefix":"corelink","route_kind":"reapi_v1"}
 ```
 

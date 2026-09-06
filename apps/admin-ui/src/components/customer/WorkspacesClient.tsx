@@ -96,7 +96,7 @@ function WorkspacesInner(): React.ReactElement {
     if (pinningId) return;
     setPinningId(ws.workspace_id);
     try {
-      const updated = await client.pinWorkspace(ws.workspace_id);
+      const updated = await client.pinWorkspace(ws.workspace_id, !ws.pinned);
       toast({
         title: updated.pinned
           ? `Pinned "${updated.name}"`
@@ -158,12 +158,11 @@ function WorkspacesInner(): React.ReactElement {
           it onto any machine in seconds — no re-clone, no cold rebuild.{" "}
           <strong>Pin</strong>{" "}
           <HelpPopover label="What is Pin?">
-            Pin keeps a snapshot guaranteed-warm: its content stays resident and
-            exempt from eviction, so every hydrate is a fast cache hit. Pin is
-            refcounted and billed as a metered add-on ($5/mo per 100&nbsp;GB
-            pinned) — you pin only what you want kept hot.
+            Pin records a durable retention preference for this snapshot. It does
+            not currently guarantee residency, change eviction, or change billing;
+            there is no metered add-on promise here.
           </HelpPopover>{" "}
-          the ones your team hydrates most so they never fall out of cache.
+          the ones your team hydrates most so the retention preference is recorded.
         </p>
         <div className="lin-mt">
           <Button

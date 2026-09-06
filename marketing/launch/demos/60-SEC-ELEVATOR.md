@@ -96,7 +96,7 @@ Today: shared cache, no audit, no per-tenant boundary.
 $ corelink version
 corelink 1.0.0 (build sha=abc1234 slsa=https://releases.corelink.humangr.com/cli/1.0.0/slsa)
 
-$ export CORELINK_PAT="corelink_sandbox_t_xxx.xxx.xxx"
+$ export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA" # synthetic shape
 $ corelink doctor
 8/8 checks PASS  — net OK, auth OK (tenant=sandbox-7f3a, ttl=23h59m), storage OK, client-verify OK
 ```

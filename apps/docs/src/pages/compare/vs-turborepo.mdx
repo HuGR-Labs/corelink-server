@@ -36,7 +36,7 @@ Dated **2026-05-27**. Prices and quotas change — verify before quoting.
   monorepos). It is bundled, free within fair-use limits, and requires zero
   configuration. CoreLink cannot beat "zero setup and already on."
 - **Pick CoreLink if** you are not on Vercel (or Vercel is one of several
-  deployment targets), you have a polyglot stack that spans Bazel, Buck2,
+  deployment targets), you have a polyglot stack that spans Bazel,
   Cargo, or OCI alongside your npm/Turborepo builds, or you have a compliance
   requirement around artifact residency, BYOK encryption, or an auditor-facing
   tamper-evident cache log.
@@ -52,7 +52,7 @@ Dated **2026-05-27**. Prices and quotas change — verify before quoting.
 | Requires Vercel deployment | No | Effectively yes — self-hosting the cache layer is community-unofficial and unsupported |
 | Artifact expiry | Configurable; no 7-day hard eviction on paid tiers | **7-day artifact expiry** by default (per Vercel docs 2026-05-27) |
 | Wire protocol | REAPI v2 (CAS + ActionCache + Capabilities) | Turborepo-native artifact protocol (REST-based, proprietary) — not REAPI |
-| Build-tool coverage | Bazel, Buck2, Pants, Please, BuildStream, recc + Cargo / npm / pip / brew / OCI adapters | Turborepo (JS/TS monorepos); community plugins for Rush; not REAPI-compatible |
+| Build-tool coverage | Bazel and other REAPI-over-HTTP clients (**not** gRPC-only Buck2 / Pants) + Cargo / npm / pip / brew / OCI adapters | Turborepo (JS/TS monorepos); community plugins for Rush; not REAPI-compatible |
 | BYOK across 4 KMS (AWS / GCP / Azure / Vault) | Yes — customer-held KEK, 5-min DEK cap, Ed25519 erasure attest | Not advertised |
 | Audit chain (RFC 6962 / RFC 3161) | Yes — re-derivable Merkle root; auditor-independent verification | Not advertised |
 | TLA+-verified tenant isolation | Yes — counterexamples block CI merge | Not advertised |

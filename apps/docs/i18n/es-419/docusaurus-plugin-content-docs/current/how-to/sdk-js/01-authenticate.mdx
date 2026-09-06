@@ -34,7 +34,7 @@ rango del registro.
 ## Variable de entorno recomendada (Node.js)
 
 ```bash
-export CORELINK_PAT="corelink_dev_t_xxx.xxx.xxx"
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 ```
 
 ```typescript
@@ -71,7 +71,7 @@ emitir un PAT con alcance de tarea que tenga los alcances mínimos requeridos.
 ```typescript
 // DO NOT DO THIS
 const client = new CoreLinkClient({
-  pat: "corelink_dev_t_xxx.xxx.xxx",
+  pat: "corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA",
   tenantId: "acme-corp",
 });
 ```

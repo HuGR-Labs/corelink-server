@@ -371,12 +371,35 @@ async fn check_quota(client: &CorelinkClient) -> DoctorCheck {
                 QuotaState::Ok => DoctorCheck::ok("quota", latency),
             }
         }
-        Err(_) => DoctorCheck::fail(
-            "quota",
-            latency,
-            "COR_QUOTA_EXCEEDED",
-            "Cannot read usage from /v1/customer/usage. Verify plan + contact support. See docs/error_taxonomy.md#COR_QUOTA_EXCEEDED",
-        ),
+        Err(err) => {
+            let (error_code, next_action) = match err {
+                CliError::HttpStatus { status: 401 } => (
+                    "COR_AUTH_INVALID",
+                    "PAT is invalid, expired, or revoked. Verify CORELINK_PAT or regenerate it in the admin UI. See docs/error_taxonomy.md#COR_AUTH_INVALID".to_owned(),
+                ),
+                CliError::HttpStatus { status: 403 } => (
+                    "COR_AUTH_FORBIDDEN",
+                    "PAT lacks permission to read customer usage. Verify its tenant scope. See docs/error_taxonomy.md#COR_AUTH_FORBIDDEN".to_owned(),
+                ),
+                CliError::HttpStatus { status: 429 } => (
+                    "COR_RATE_LIMITED",
+                    "Usage request was rate limited; retry later. See docs/error_taxonomy.md#COR_RATE_LIMITED".to_owned(),
+                ),
+                CliError::HttpStatus { status } => (
+                    "COR_INTERNAL_ERROR",
+                    format!("Cannot read usage (HTTP {status}). Contact support. See docs/error_taxonomy.md#COR_INTERNAL_ERROR"),
+                ),
+                CliError::Network(_) => (
+                    "COR_NET_UNREACHABLE",
+                    format!("Cannot reach /v1/customer/usage at {}. Verify network connectivity and DNS. See docs/error_taxonomy.md#COR_NET_UNREACHABLE", client.base_url()),
+                ),
+                _ => (
+                    "COR_INTERNAL_ERROR",
+                    "Cannot read usage. Contact support. See docs/error_taxonomy.md#COR_INTERNAL_ERROR".to_owned(),
+                ),
+            };
+            DoctorCheck::fail("quota", latency, error_code, &next_action)
+        }
     }
 }
 
@@ -618,7 +641,7 @@ mod tests {
 
     #[tokio::test]
     async fn check_quota_unreadable_fails() {
-        // Kills the `Err(_) => fail` arm: an unreadable usage route ⇒ fail.
+        // A server failure is not a quota exhaustion claim.
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/v1/customer/usage"))
@@ -627,6 +650,76 @@ mod tests {
             .await;
         let c = check_quota(&mock_client(&server)).await;
         assert_eq!(c.status, CheckStatus::Fail);
+        assert_eq!(c.error_code.as_deref(), Some("COR_INTERNAL_ERROR"));
+    }
+
+    #[tokio::test]
+    async fn check_quota_unauthorized_is_auth_failure() {
+        // Kills the old `Err(_) => COR_QUOTA_EXCEEDED` collapse: an invalid
+        // PAT must point to auth remediation, never plan upgrade.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/customer/usage"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&server)
+            .await;
+        let c = check_quota(&mock_client(&server)).await;
+        assert_eq!(c.status, CheckStatus::Fail);
+        assert_eq!(c.error_code.as_deref(), Some("COR_AUTH_INVALID"));
+        assert!(c.next_action.as_deref().unwrap().contains("CORELINK_PAT"));
+        assert!(!c.next_action.as_deref().unwrap().contains("upgrade"));
+    }
+
+    #[tokio::test]
+    async fn check_quota_forbidden_is_scope_failure() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/customer/usage"))
+            .respond_with(ResponseTemplate::new(403))
+            .mount(&server)
+            .await;
+        let c = check_quota(&mock_client(&server)).await;
+        assert_eq!(c.error_code.as_deref(), Some("COR_AUTH_FORBIDDEN"));
+    }
+
+    #[tokio::test]
+    async fn check_quota_rate_limited_is_not_quota_exhaustion() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/customer/usage"))
+            .respond_with(ResponseTemplate::new(429))
+            .mount(&server)
+            .await;
+        let c = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            check_quota(&mock_client(&server)),
+        )
+        .await
+        .expect("429 retry loop must terminate");
+        assert_eq!(c.error_code.as_deref(), Some("COR_RATE_LIMITED"));
+        let reqs = server.received_requests().await.expect("recorded");
+        assert_eq!(reqs.len(), 4, "429 retries exactly three times");
+    }
+
+    #[tokio::test]
+    async fn check_quota_transport_is_net_unreachable() {
+        // Bind and release an ephemeral localhost port so every attempt is a
+        // deterministic connection refusal, without touching the network.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        drop(listener);
+        let client = CorelinkClient::for_test(
+            format!("http://127.0.0.1:{port}"),
+            Some("t-test".to_owned()),
+        );
+        let c = tokio::time::timeout(std::time::Duration::from_secs(5), check_quota(&client))
+            .await
+            .expect("transport retry loop must terminate");
+        assert_eq!(c.status, CheckStatus::Fail);
+        assert_eq!(c.error_code.as_deref(), Some("COR_NET_UNREACHABLE"));
+        assert!(c.next_action.as_deref().unwrap().contains("127.0.0.1"));
     }
 
     #[tokio::test]

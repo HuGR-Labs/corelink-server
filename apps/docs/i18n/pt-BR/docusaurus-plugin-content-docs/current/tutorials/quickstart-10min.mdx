@@ -44,8 +44,8 @@ seu tenant, região e um PAT inicial no servidor — sem etapa de cobrança.
 ## Passo 1 — Cadastre-se <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
 
 1. Abra **[https://humangr.com/corelink](https://humangr.com/corelink)** no navegador.
-2. Conclua o wizard de cadastro em 2 passos (escolha sua região primária — `ord`
-   (US-Central) é um bom padrão para a maioria dos times).
+2. Conclua o wizard de cadastro em 2 passos. A residência do tenant é
+   registrada e roteada no servidor.
 3. O wizard leva à página **`/welcome`**, onde seu PAT inicial é exibido
    **uma única vez**. Copie-o antes de fechar a aba.
    Formato: `ct_live_xxx…xxx`
@@ -59,12 +59,11 @@ Nunca cole um PAT real em docs compartilhados, Slack ou código-fonte.
 
 ## Passo 2 — Instale a CLI <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
 
-Execute o script de instalação. Passe o PAT copiado no Passo 1 e a região escolhida.
+Execute o script de instalação com o PAT copiado no Passo 1. A região do seu tenant foi escolhida no cadastro e é roteada no servidor.
 
 ```bash
 curl -fsSL https://corelink-get.humangr.com | sh -s -- \
-  --token=ct_live_xxx…xxx \
-  --region=ord
+  --token=ct_live_xxx…xxx
 ```
 
 O script:
@@ -75,8 +74,8 @@ O script:
    `.sha256` publicado ao lado do artefato de release **antes** de torná-lo
    executável — a ausência do checksum aborta a instalação — e então o move
    para `/usr/local/bin/corelink` (via `sudo` se você não for root).
-3. Escreve `~/.corelink/config.toml` com permissão `0600`, contendo seu
-   token, a região e o endpoint da API.
+3. Escreve `~/.corelink/config.toml` com permissão `0600`, contendo seu token
+   e o endpoint da API. A residência do tenant não é uma configuração do cliente.
 4. Executa `corelink whoami`, que resolve sua identidade em `/v1/users/me`
    e grava o `tenant_id` resolvido nesse mesmo arquivo de configuração —
    todo comando com escopo de tenant depende dele.
@@ -129,7 +128,7 @@ para a raiz do repositório:
 corelink bazel-init: appended to .bazelrc:
   build --remote_cache=https://corelink-api.humangr.com/bazel/v2
   build --remote_instance_name=acme-prod
-  build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+  build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
   build --remote_timeout=30s
   build --remote_upload_local_results=true
 corelink bazel-init: wrote .corelink/credentials (mode 0600)
@@ -147,7 +146,7 @@ não há `--remote_instance_name`):
 
 ```ini
 build --remote_cache=https://corelink-api.humangr.com/bazel/cache
-build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
 build --remote_upload_local_results=true
 ```
 
@@ -208,12 +207,11 @@ acima de 200 ms, ou o Bazel registra `UNAVAILABLE`.
 
 **Correção:**
 ```bash
-corelink config set defaults.region <região-correta>
 corelink bazel-init --force
 ```
 
-Regiões disponíveis: `ord` (US-Central), `iad` (US-East), `lhr` (EU-West),
-`nrt` (AP-Northeast), `syd` (AP-Southeast).
+Alterações de residência são tratadas no servidor pelo suporte; não são uma
+opção da CLI nem do `config.toml`.
 
 ### Token ausente — `UNAUTHENTICATED` em todas as ações Bazel
 
@@ -254,7 +252,7 @@ corelink config set defaults.tenant_id <seu-tenant-id>
   Workers para um cache content-addressable sem operações](/blog/content-addressable-cache-cloudflare-workers).
 - **Compare com alternativas** — [vs bazel-remote + S3](../compare/vs-bazel-remote-s3),
   [vs sccache + S3](../compare/vs-sccache-s3), [vs Turborepo Remote Cache](../compare/vs-turborepo).
-- **Configure o Buck2** — [Quickstart Buck2](../tutorial/04-buck2-quickstart) (5 min).
+- **Verifique o suporte a Buck2** — [Status do suporte a Buck2](../tutorial/04-buck2-quickstart). Atualmente não existe uma configuração funcional para Buck2.
 - **Mover para produção** — [How-to: configuração de produção](../how-to/index.mdx).
 
 ---

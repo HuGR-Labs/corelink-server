@@ -12,7 +12,7 @@ For background: CoreLink is a multi-tenant, content-addressable remote cache bui
 
 Some technical decisions I am proud of, in the order I am proud of them:
 
-**1. We split GA into two gates.** An engineering gate that is binary and unappealable — PRR globally approved, external pentest clean with retest, 30 days of sustained staging, three lighthouse customers with SLA met, SOC 2 gap analysis delivered, zero active waivers in CRITICAL controls. And a launch orchestration gate — this post, the press release, the blog series — which is soft and could shift its date without affecting the engineering decision. The engineering gate gated the launch. Not the other way around.
+**1. We split GA into two gates.** An engineering gate that is binary and unappealable — PRR globally approved, 30 days of sustained staging, three lighthouse customers with SLA met, SOC 2 gap analysis delivered, zero active waivers in CRITICAL controls, and `CAP-GA-002` external report plus retest with no outstanding HIGH/CRITICAL findings. `CAP-GA-002` is unmet: no external pentest has been commissioned, so this draft does not authorize a GA claim. And a launch orchestration gate — this post, the press release, the blog series — which is soft and could shift its date without affecting the engineering decision. The engineering gate gates the launch. Not the other way around.
 
 **2. Tenant isolation is a TLA+ invariant.** We maintain four formal specifications in CI. CI fails if the safety property regresses. We did this because the difference between marketing-language multi-tenant and actually-multi-tenant is exactly the kind of gap formal verification was invented to close.
 
@@ -22,7 +22,7 @@ Some technical decisions I am proud of, in the order I am proud of them:
 
 **5. We named three lighthouse customers and held the gate against marketing pressure.** Two team-tier deployments and one enterprise BYOK deployment, each with SLA claims met across a sustained 30-day observation. None of those attestations were waived. None of the engineering criteria were waived.
 
-To the engineering team at HuGR Labs and the engineering teams at the three lighthouse customers — thank you. To external counsel (Cooley / DLA Piper / Bird & Bird) for the DPA review, to the pentest firm for finding the things we wanted them to find, to the on-call rotation for the synthetic page exercises that nobody enjoys — thank you.
+To the engineering team at HuGR Labs and the engineering teams at the three lighthouse customers — thank you. To external counsel (Cooley / DLA Piper / Bird & Bird) for the DPA review, to the internal red-team reviewers for finding the things we wanted them to find, to the on-call rotation for the synthetic page exercises that nobody enjoys — thank you.
 
 CoreLink is at `humangr.com/corelink`. Trust center is at `corelink-docs.humangr.com/trust`. Blog series (five posts, technical deep-dives) is at `corelink-docs.humangr.com/blog`.
 

@@ -132,7 +132,7 @@ build:ci --remote_upload_local_results=true
 # NOTE: Bazel honors only the LAST --remote_cache flag, so this line REPLACES
 # the primary above — it is your cutover line, not a second destination.
 build:ci --remote_cache=https://corelink-api.humangr.com/bazel/cache
-build:ci --remote_header=Authorization=Bearer\ ${CORELINK_PAT}
+build:ci --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
 ```
 
 (Bazel doesn't natively support dual-write to two remote caches in one flag. One practical pattern today:
@@ -145,7 +145,7 @@ Your Customer Success engineer will walk the directory mirror with you on the D+
 
 **Buck2 — not supported today.** Buck2's cache/RE client (`[buck2_re_client]` `engine_address` / `cas_address` / `action_cache_address`) connects over **gRPC**, and CoreLink exposes no gRPC endpoint — so there is no Buck2 configuration that works, and we won't hand you one that fails to connect. (Buck2 has no plain-HTTP cache backend either; the upstream request for one was closed `wontfix` — facebook/buck2#459.) If Buck2 is your build tool, say so on the scoping call and we'll tell you straight whether the pilot makes sense.
 
-**Bazel-remote-cache replacement candidates** — if you're already running `bazel-remote` standalone, you don't deploy anything of ours: CoreLink answers the same plain-HTTP cache protocol Bazel already speaks, at `--remote_cache=https://corelink-api.humangr.com/bazel/cache` with `--remote_header=Authorization=Bearer ${CORELINK_PAT}` (`/cas/<hash>` + `/ac/<hash>`, same as bazel-remote). Keep your bazel-remote running as primary through the mirror period; cutover and rollback are the one `--remote_cache` line. Full setup: `apps/docs/docs/how-to/migrate/from-bazel-remote-cache.mdx`.
+**Bazel-remote-cache replacement candidates** — if you're already running `bazel-remote` standalone, you don't deploy anything of ours: CoreLink answers the same plain-HTTP cache protocol Bazel already speaks, at `--remote_cache=https://corelink-api.humangr.com/bazel/cache` with the host-scoped credential helper `--credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh` (`/cas/<hash>` + `/ac/<hash>`, same as bazel-remote). The helper reads `CORELINK_PAT` from the environment without putting it in argv. Keep your bazel-remote running as primary through the mirror period; cutover and rollback are the one `--remote_cache` line. Full setup: `apps/docs/docs/how-to/migrate/from-bazel-remote-cache.mdx`.
 
 **Pants — not supported today.** Pants' `reapi` provider accepts only `grpc://` / `grpcs://` addresses, and CoreLink has no gRPC ingress: the edge runs on Cloudflare Workers, which implement no HTTP trailers, and native gRPC cannot work without them. That is a property of the topology, not a missing feature we're about to add — so we are not going to give you a `grpc://` address that cannot connect, and there is no date to promise. Same answer as Buck2, same reason.
 
@@ -354,7 +354,7 @@ Talk to us before signing. We support a generic HTTP cache API (any client that 
 Yes, but we only attest the SLOs you actually exercise during the 30-day window. ML training data caching, Docker layer caching, generic CAS — all are in-scope use cases, all get sampled if you exercise them.
 
 **11. What about a security audit on our side — can we pentest CoreLink?**
-Subject to our responsible-disclosure policy. Email `security@humangr.com` before any probing. Our Pentest-1 firm engagement is documented; we can share the executive summary under NDA.
+Subject to our responsible-disclosure policy. Email `security@humangr.com` before any probing. We have not engaged an external pentest firm, so there is no third-party summary to share; under NDA we can share internal adversarial-review and sealed cargo-fuzz summaries.
 
 **12. What happens during the 30-day window if you ship a CoreLink update that affects us?**
 Any deploy that touches your tenant's hot path: 24h notice in Slack Connect, with rollback plan. You can request a freeze on your tenant during a critical period of your own work — tell us. Material spec or DPA changes follow `specs/_runbooks/RB-DPA-CHANGE.md`.

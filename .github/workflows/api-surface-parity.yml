@@ -25,6 +25,8 @@ on:
       - "worker/src/**/*.ts"
       - "apps/**"
       - "scripts/validate_api_surface.py"
+      - "scripts/verify_b119_surface.py"
+      - "scripts/verify_b121_surface.py"
       - ".github/workflows/api-surface-parity.yml"
   workflow_dispatch:
 
@@ -52,6 +54,13 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/validate_api_surface.py --self-test
+          python3 scripts/verify_b119_surface.py --self-test
+          python3 scripts/verify_b121_surface.py --self-test
+
+      - name: Census retired admin-operation surface
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_b119_surface.py
 
       - name: Compare the documented surface against the served one
         run: |

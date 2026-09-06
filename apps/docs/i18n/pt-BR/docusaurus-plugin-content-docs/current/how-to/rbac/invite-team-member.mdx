@@ -34,7 +34,7 @@ which role to pick.
 
 | Their job                                                      | Role to assign   |
 |----------------------------------------------------------------|------------------|
-| Engineer who reads/writes the cache from CI or local dev       | `Developer`      |
+| Engineer who reads/writes the cache from CI or local dev       | `Member`         |
 | Tech lead / SRE who needs to mint tokens or read audit log     | `Admin`          |
 | Co-founder / Head of Engineering who also owns billing         | `Owner`          |
 | External auditor or read-only dashboard consumer               | `Viewer`         |
@@ -45,7 +45,7 @@ job. You can always promote later. Demotion is also one click.
 > **A note on `Owner`:** Only assign `Owner` if the person should see the
 > invoice and be able to act as the second approver for destructive
 > operations. Most engineering hires should start as `Admin` or
-> `Developer`.
+> `Member`.
 
 ## Step 1 — Confirm Clerk SSO is configured
 
@@ -91,13 +91,14 @@ dá para automatizar convites na CI com um PAT:
 
 ```bash
 curl -X POST https://corelink-api.humangr.com/v1/customer/team/invite \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   -H "Content-Type: application/json" \
-  -d '{"email":"teammate@example.com","role":"Developer"}'
+  -d '{"email":"teammate@example.com","role":"member"}' --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 Convidar (e remover) um membro é **exclusivo de owner/admin** — um token
-`Developer` ou `Viewer` recebe `403` aqui, por qualquer um dos caminhos.
+`Member` ou `Viewer` recebe `403` aqui, por qualquer um dos caminhos.
 
 ## Etapa 3 — A pessoa convidada aceita o convite
 
@@ -120,8 +121,9 @@ o papel de cada pessoa; quem foi convidado mas ainda não entrou aparece em
 Para conferir o mesmo por script:
 
 ```bash
-curl https://corelink-api.humangr.com/v1/customer/team \
-  -H "Authorization: Bearer $CORELINK_PAT"
+curl https://corelink-api.humangr.com/v1/customer/team --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 A resposta traz um array `members`; cada item tem o `user_id`, o `role`, o
@@ -136,9 +138,9 @@ marcador — veja a nota abaixo.
 > a mesma regra (`INV-AUDIT-NO-RAW-PII`): o registro `team.invited` guarda
 > o papel, não o endereço.
 
-## Etapa 5 — Emitir o primeiro PAT (Developer ou acima)
+## Etapa 5 — Emitir o primeiro PAT (Member ou acima)
 
-Usuários `Developer`, `Admin` e `Owner` podem emitir os próprios PATs na
+Usuários `Member`, `Admin` e `Owner` podem emitir os próprios PATs na
 página **API keys** do painel
 (`https://humangr.com/corelink/en/customer/keys`); `Viewer` não pode.
 
@@ -147,9 +149,10 @@ para a CI, use a API de chaves — de novo, não há CLI para isso:
 
 ```bash
 curl -X POST https://corelink-api.humangr.com/v1/customer/keys \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   -H "Content-Type: application/json" \
-  -d '{"name":"ci-service-account","scopes":["cache:r","cache:w","cache:find-missing"]}'
+  -d '{"name":"ci-service-account","scopes":["cache:r","cache:w","cache:find-missing"]}' --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 O corpo da requisição é apenas um nome e uma lista de escopos — não existe

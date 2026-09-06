@@ -234,7 +234,7 @@ Three `.bazelrc` lines:
 ```
 # .bazelrc
 build --remote_cache=https://corelink-api.humangr.com/bazel/v2
-build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
 build --remote_instance_name=<your-tenant-uuid>
 ```
 
@@ -255,7 +255,7 @@ build --remote_instance_name=<tenant-uuid>
 
 # User credentials — not checked into the repo
 # Add to ~/.bazelrc or pass via --bazelrc=.bazelrc.user
-build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
 ```
 
 This keeps secrets out of the repo while letting the cache URL and

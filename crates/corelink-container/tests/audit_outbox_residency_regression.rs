@@ -1,5 +1,5 @@
 //! Regression: the durable CAS/AC + DSR audit-outbox INSERT must satisfy the
-//! migration-0023 residency trigger for a non-`'wnam'` tenant.
+//! migration-0023/0107 residency triggers for a non-`'wnam'` tenant.
 //!
 //! # Why this exists (prod incident 2026-07-17)
 //!
@@ -12,10 +12,12 @@
 //! the in-memory fake to durable D1, EVERY CAS/AC op's audit INSERT aborted →
 //! `AuditFailed` → **503 "audit closed"** on every tenant. The unit tests used a
 //! mock D1 with no trigger, so they were green while prod was down
-//! (test-passed / prod-broke).
+//! (test-passed / prod-broke). Migration 0107 also closes the SQLite
+//! NULL-comparison hole: an unknown tenant is now rejected instead of creating
+//! another unevaluable row.
 //!
 //! This test exercises the REAL schema (the exact `audit_outbox` DDL + trigger
-//! from migrations 0001/0023 + a minimal `tenant` with 0028's `primary_region`)
+//! from migrations 0001/0023/0107 + a minimal `tenant` with 0028's `primary_region`)
 //! against bundled SQLite (byte-identical trigger/CHECK semantics to D1), so a
 //! future edit that stops tagging `region` correctly reddens here.
 
@@ -37,7 +39,12 @@ const SCHEMA: &str = concat!(
     "  UNIQUE (request_id, event_type)); ",
     "CREATE TRIGGER trg_audit_outbox_region_match_insert BEFORE INSERT ON audit_outbox ",
     "  FOR EACH ROW WHEN NEW.region != (SELECT primary_region FROM tenant WHERE tenant_id = NEW.tenant_id) ",
-    "  BEGIN SELECT RAISE(ABORT, 'residency_violation: audit_outbox.region must match tenant.primary_region'); END;"
+    "  BEGIN SELECT RAISE(ABORT, 'residency_violation: audit_outbox.region must match tenant.primary_region'); END; ",
+    "CREATE TRIGGER trg_audit_outbox_tenant_residency_required BEFORE INSERT ON audit_outbox ",
+    "  FOR EACH ROW WHEN NEW.tenant_id != '_public' ",
+    "    AND NOT EXISTS (SELECT 1 FROM tenant WHERE tenant_id = NEW.tenant_id AND primary_region = NEW.region) ",
+    "    AND NOT EXISTS (SELECT 1 FROM audit_outbox AS existing WHERE existing.id = NEW.id) ",
+    "  BEGIN SELECT RAISE(ABORT, 'residency_unprovable: audit_outbox tenant_id must resolve to matching tenant.primary_region'); END;"
 );
 
 /// The CURRENT (fixed) sink INSERT — `region` tagged from a correlated subquery.
@@ -45,7 +52,7 @@ const SCHEMA: &str = concat!(
 const FIXED_INSERT: &str = "INSERT OR IGNORE INTO audit_outbox \
     (id, tenant_id, digest, request_id, event_type, payload_json, enqueued_at, emitted_at, region) \
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, \
-            COALESCE((SELECT primary_region FROM tenant WHERE tenant_id = ?2), 'wnam'))";
+            (SELECT primary_region FROM tenant WHERE tenant_id = ?2))";
 
 /// The OLD (buggy) INSERT — `region` omitted ⇒ `DEFAULT 'wnam'`. Kept only to
 /// PROVE the regression (it aborts for an `'enam'` tenant).
@@ -101,20 +108,33 @@ fn fixed_insert_satisfies_residency_trigger_for_enam_tenant() {
 fn buggy_insert_aborts_on_the_residency_trigger_fail_before() {
     let conn = seeded();
     // The prod incident: region omitted ⇒ 'wnam' ⇒ trigger `'wnam' != 'enam'` ⇒
-    // RAISE(ABORT). This is the exact failure that fail-closed the handler to 503.
+    // RAISE(ABORT). SQLite runs same-table BEFORE triggers in reverse creation
+    // order, so migration 0107 may report `residency_unprovable` before the
+    // older 0023 `residency_violation`; both are the real fail-closed guards.
     let err = conn.execute(BUGGY_INSERT, bind()).unwrap_err();
+    let message = err.to_string();
     assert!(
-        err.to_string().contains("residency_violation"),
-        "the omitted-region INSERT must abort on the residency trigger, got: {err}"
+        message.contains("residency_unprovable") || message.contains("residency_violation"),
+        "the omitted-region INSERT must abort on a residency guard, got: {message}"
+    );
+    let rows: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM audit_outbox WHERE id='id-1'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        rows, 0,
+        "a rejected audit INSERT must not leave a row behind"
     );
 }
 
 #[test]
-fn fixed_insert_tolerates_absent_tenant_row() {
+fn unknown_tenant_is_rejected_instead_of_becoming_unevaluable() {
     let conn = seeded();
-    // Tenant not present → COALESCE 'wnam'; the trigger's `NEW.region != NULL` is
-    // UNKNOWN → no abort → INSERT succeeds (mirrors a pre-provisioning / synthetic
-    // caller, and keeps the audit path fail-safe rather than fail-closed).
+    // Tenant not present used to pass because `NEW.region != NULL` is UNKNOWN.
+    // Migration 0107 makes the missing-tenant arm explicit and fails CLOSED.
     let params: [&dyn rusqlite::ToSql; 7] = [
         &"id-2",
         &"t-missing",
@@ -124,8 +144,45 @@ fn fixed_insert_tolerates_absent_tenant_row() {
         &"{}",
         &2_i64,
     ];
+    let err = conn.execute(FIXED_INSERT, params).unwrap_err();
+    assert!(
+        err.to_string().contains("residency_unprovable"),
+        "unknown tenant must be rejected, got: {err}"
+    );
+}
+
+#[test]
+fn public_namespace_is_explicitly_allowed() {
+    let conn = seeded();
+    let params: [&dyn rusqlite::ToSql; 7] = [
+        &"id-public",
+        &"_public",
+        &"digest",
+        &"req-public",
+        &"public.revoke",
+        &"{}",
+        &3_i64,
+    ];
+    let n = conn
+        .execute(
+            "INSERT OR IGNORE INTO audit_outbox \
+             (id, tenant_id, digest, request_id, event_type, payload_json, enqueued_at, emitted_at, region) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, 'wnam')",
+            params,
+        )
+        .expect("public namespace must remain writable");
+    assert_eq!(n, 1);
+}
+
+#[test]
+fn deterministic_retry_of_retained_row_is_idempotent_after_erasure() {
+    let conn = seeded();
+    let params = bind();
+    conn.execute(FIXED_INSERT, params).unwrap();
+    conn.execute("DELETE FROM tenant WHERE tenant_id = 't-enam'", [])
+        .unwrap();
     let n = conn
         .execute(FIXED_INSERT, params)
-        .expect("absent-tenant INSERT must succeed");
-    assert_eq!(n, 1);
+        .expect("retry of an existing retained row must remain idempotent");
+    assert_eq!(n, 0);
 }

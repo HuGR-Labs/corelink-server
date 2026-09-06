@@ -24,6 +24,16 @@ pub enum CliError {
     #[error("Network error: {0}")]
     Network(#[from] reqwest::Error),
 
+    /// HTTP response status from a JSON endpoint.
+    ///
+    /// Keep only the status code so diagnostics can classify authentication
+    /// failures without retaining or printing a response body.
+    #[error("HTTP error {status}")]
+    HttpStatus {
+        /// HTTP status code returned by the endpoint.
+        status: u16,
+    },
+
     /// JSON serialisation error.
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),

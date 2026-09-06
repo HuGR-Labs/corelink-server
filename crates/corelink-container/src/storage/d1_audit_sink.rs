@@ -33,9 +33,10 @@
 //! ## `region` column
 //!
 //! Every INSERT here sets `region` from a correlated subquery on the tenant's
-//! `primary_region` (COALESCE to `'wnam'` when the tenant row does not exist
-//! yet), NOT from the column default — migration 0023's BEFORE-INSERT
-//! residency trigger aborts any row whose `region` disagrees with the tenant.
+//! `primary_region`, NOT from the column default. The residency guard rejects
+//! a non-public row whose tenant is absent or whose region disagrees; the
+//! result is deliberately allowed to fail CLOSED rather than creating another
+//! unevaluable audit row.
 //! See [`AUDIT_OUTBOX_INSERT_ONE_SQL`] for the incident this encodes.
 
 use std::sync::Arc;
@@ -134,20 +135,15 @@ impl AuditRow {
 /// correlated subquery instead of taking the column default.
 ///
 /// `region` MUST be the tenant's `primary_region`, NOT the `'wnam'` column
-/// default: migration 0023 installs a BEFORE-INSERT residency trigger
-/// (`trg_audit_outbox_region_match_insert`) that RAISE(ABORT)s when
-/// `NEW.region != tenant.primary_region`. Tenants default to `'enam'`
-/// (migration 0028), so relying on the `'wnam'` default aborts the INSERT for
-/// essentially every tenant → the handler fails CLOSED → 503 on every CAS/AC
-/// op (prod incident 2026-07-17, surfaced when task #74 flipped this sink from
-/// InMemory to durable-D1). The correlated subquery tags the row with the
-/// tenant's true residency region and always satisfies the trigger; COALESCE
-/// covers the tenant-absent case (the trigger's `NEW.region != NULL` is
-/// UNKNOWN ⇒ no abort). Mirrors the fix owed to `routes/dsr/audit.rs`.
+/// default. Migration 0107 adds a BEFORE-INSERT guard that rejects non-public
+/// rows when the tenant is missing or mismatched. A missing tenant therefore
+/// propagates D1 failure to the handler (503), instead of being disguised as a
+/// valid US row. `_public` is the only explicit namespace exception and is
+/// handled by the public-revocation sink.
 const AUDIT_OUTBOX_INSERT_ONE_SQL: &str = "INSERT OR IGNORE INTO audit_outbox \
      (id, tenant_id, digest, request_id, event_type, payload_json, enqueued_at, emitted_at, region) \
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, \
-             COALESCE((SELECT primary_region FROM tenant WHERE tenant_id = ?2), 'wnam'))";
+             (SELECT primary_region FROM tenant WHERE tenant_id = ?2))";
 
 /// The BATCH counterpart of [`AUDIT_OUTBOX_INSERT_ONE_SQL`]: the SAME table,
 /// the SAME column list, the SAME `INSERT OR IGNORE` idempotency, the SAME
@@ -174,7 +170,7 @@ const AUDIT_OUTBOX_INSERT_MANY_SQL: &str = "INSERT OR IGNORE INTO audit_outbox \
      SELECT json_extract(value,'$.id'), json_extract(value,'$.tenant'), json_extract(value,'$.digest'), \
             json_extract(value,'$.request_id'), json_extract(value,'$.event_type'), \
             json_extract(value,'$.payload'), json_extract(value,'$.at'), NULL, \
-            COALESCE((SELECT primary_region FROM tenant WHERE tenant_id = json_extract(value,'$.tenant')), 'wnam') \
+            (SELECT primary_region FROM tenant WHERE tenant_id = json_extract(value,'$.tenant')) \
      FROM json_each(?1)";
 
 /// Maximum `audit_outbox` rows carried by ONE
@@ -555,15 +551,13 @@ impl crate::routes::signup::SignupAuditSink for D1AuditOutboxSink {
         } else {
             json!(token)
         };
-        // Same region-safety COALESCE as `append()`: a pilot signup's
-        // tenant_id typically does NOT exist in `tenant` yet (the operator's
-        // `grant-pilot-tier.sh` provisions it later), so the correlated
-        // subquery returns NULL and the trigger's `!= NULL` is UNKNOWN ⇒ no
-        // abort; COALESCE pins the row to `'wnam'` in that case.
+        // The correlated lookup intentionally returns NULL for a missing
+        // tenant. Migration 0107 rejects that row (except `_public`, which is
+        // not emitted by this sink), preserving fail-closed audit semantics.
         let sql = "INSERT OR IGNORE INTO audit_outbox \
              (id, tenant_id, digest, request_id, event_type, payload_json, enqueued_at, emitted_at, region) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, \
-                     COALESCE((SELECT primary_region FROM tenant WHERE tenant_id = ?2), 'wnam'))";
+                     (SELECT primary_region FROM tenant WHERE tenant_id = ?2))";
         let params = vec![
             json!(id),
             json!(tenant),

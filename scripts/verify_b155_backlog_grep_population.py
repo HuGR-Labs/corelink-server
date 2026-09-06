@@ -11,6 +11,7 @@ member changes the verdict.
 from __future__ import annotations
 
 import argparse
+from functools import lru_cache
 import re
 import shlex
 import sys
@@ -39,9 +40,26 @@ COMMAND_BOUNDARY = re.compile(
     r"(?:^|[;&|(!]|\$\(|\b(?:if|elif|then|while|until|do|command|builtin|exec)\b)"
     r"\s*(?:!\s*)?(?:[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|\"[^\"]*\"|\S+)\s*)*$"
 )
+# These are still shell command boundaries: the grep executable is wrapped
+# rather than invoked as the first word.  Keeping the wrappers explicit avoids
+# treating prose such as `echo sudo grep ...` as an assertion while covering
+# the common command forms used by backlog verifies.
+WRAPPED_COMMAND_BOUNDARY = re.compile(
+    r"(?:^|[;&|(!]|\$\(|\b(?:if|elif|then|while|until|do|command|builtin|exec)\b)"
+    r"\s*(?:!\s*)?(?:[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|\"[^\"]*\"|\S+)\s*)*"
+    r"(?:(?:sudo|env|git|xargs)(?:\s+-[^\s;&|()]+|\s+[A-Za-z_][A-Za-z0-9_]*=[^\s;&|()]+)*\s+)+$"
+)
+REDIRECTION_BOUNDARY = re.compile(
+    r"(?:^|[;&|(!]|\$\(|\b(?:if|elif|then|while|until|do|command|builtin|exec)\b)"
+    r"\s*(?:!\s*)?(?:[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|\"[^\"]*\"|\S+)\s*)*"
+    r"(?:\d*(?:>>>|<<<|>>|<<|>|<)\s*(?:'[^']*'|\"[^\"]*\"|[^\s;&|()]+)\s*)+$"
+)
 NESTED_SHELL = re.compile(r"\b(?:bash|sh|zsh)\s+-c\b")
 ID = re.compile(r"^B-\d{3}$")
 COMMENT_PREFIXES = ("//", "#", "/*", "<!--", "*", "--")
+MAX_BACKLOG_BYTES = 2_000_000
+MAX_NESTED_SHELL_DEPTH = 8
+MAX_NESTED_PAYLOAD_BYTES = 200_000
 POSIX_CLASSES = {
     "[[:space:]]": r"\s",
     "[[:digit:]]": r"\d",
@@ -63,6 +81,16 @@ class GrepCheck:
     source: str
     quote: str = ""
     resolved_patterns: tuple[str, ...] = ()
+    source_kind: str = "unknown"
+    comment_prefixes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class _ShellToken:
+    value: str
+    start: int
+    end: int
+    kind: str = "word"
 
 
 @dataclass(frozen=True)
@@ -76,14 +104,17 @@ class Census:
     indeterminate: tuple[GrepCheck, ...]
 
 
-EXPECTED_RECORDS = 169
-EXPECTED_COMMAND_RECORDS = 138
+EXPECTED_RECORDS = 170
+EXPECTED_COMMAND_RECORDS = 139
 EXPECTED_MANUAL_RECORDS = 31
-EXPECTED_GREP_INVOCATIONS = 348
-EXPECTED_ASSERTIONS = 329
+EXPECTED_GREP_INVOCATIONS = 295
+EXPECTED_ASSERTIONS = 278
 
 
+@lru_cache(maxsize=32)
 def _records(backlog: str) -> list[dict[str, object]]:
+    if len(backlog.encode("utf-8")) > MAX_BACKLOG_BYTES:
+        raise InstrumentError("backlog exceeds bounded census size")
     blocks = list(FENCE.finditer(backlog))
     if not blocks:
         raise InstrumentError("no ```backlog records found")
@@ -140,6 +171,196 @@ def _shell_values(verify: str) -> dict[str, tuple[str, ...]]:
     return values
 
 
+@lru_cache(maxsize=512)
+def _source_paths(verify: str) -> tuple[str, ...]:
+    """Collect literal file/path hints without evaluating shell syntax."""
+    paths: list[str] = []
+    for match in re.finditer(
+        r"\b[A-Za-z_][A-Za-z0-9_]*=(?:'([^']+)'|\"([^\"]+)\"|([^\s;&|()]+))",
+        verify,
+    ):
+        value = next((part for part in match.groups() if part is not None), "")
+        if "/" in value or re.search(r"\.(?:rs|ts|tsx|js|mjs|py|md|mdx|ya?ml|toml|json|sh)$", value):
+            paths.append(value)
+    for token in re.findall(r"(?:[A-Za-z0-9_.-]+/)+[^\s;&|()]+|[A-Za-z0-9_.-]+\.(?:rs|ts|tsx|js|mjs|py|md|mdx|ya?ml|toml|json|sh)", verify):
+        paths.append(token.strip("'\""))
+    return tuple(dict.fromkeys(paths))
+
+
+def _source_kind(line: str, verify: str) -> tuple[str, tuple[str, ...]]:
+    """Classify the likely target syntax for a grep assertion.
+
+    The classifier is intentionally conservative: a missing or mixed target
+    keeps the full comment-prefix set, which makes the check fail closed.
+    """
+    assignments: dict[str, str] = {}
+    for match in re.finditer(
+        r"\b([A-Za-z_][A-Za-z0-9_]*)=(?:'([^']+)'|\"([^\"]+)\"|([^\s;&|()]+))",
+        verify,
+    ):
+        assignments[match.group(1)] = next(
+            part for part in match.groups()[1:] if part is not None
+        )
+    linked = []
+    for name in re.findall(r"\$(?:\{)?([A-Za-z_][A-Za-z0-9_]*)", line):
+        if name in assignments:
+            linked.append(assignments[name])
+    direct = re.findall(
+        r"(?:[A-Za-z0-9_.-]+/)+[^\s;&|()]+|[A-Za-z0-9_.-]+\.(?:rs|ts|tsx|js|mjs|py|md|mdx|ya?ml|toml|json|sh|sql|bazelrc)",
+        line,
+    )
+    hints = " ".join(linked or direct or _source_paths(verify)) + " " + line
+    suffixes = {suffix.lower() for suffix in re.findall(r"\.([A-Za-z0-9]+)", hints)}
+    if "rs" in suffixes:
+        return "rust", ("//", "/*", "*")
+    if suffixes & {"ts", "tsx", "js", "mjs"}:
+        return "typescript", ("//", "/*", "*")
+    if suffixes & {"yaml", "yml", "toml", "sql", "bazelrc", "env"} or ".github/workflows" in hints or "migrations/" in hints:
+        return "config", ("#",)
+    if suffixes & {"sh"}:
+        return "shell", ("#",)
+    if suffixes & {"py"}:
+        return "python", ("#",)
+    if suffixes & {"md", "mdx"} or "apps/docs" in hints or "marketing/" in hints:
+        return "markdown", ("#", "<!--", ">", "*", "-")
+    if suffixes & {"json"}:
+        return "data", ()
+    if "|" in line or "$" in line:
+        return "stream", COMMENT_PREFIXES
+    if "grep -r" in line or "grep -l" in line:
+        return "data", ()
+    return "unknown", COMMENT_PREFIXES
+
+
+def _is_command_boundary(text: str) -> bool:
+    """Recognize direct, wrapped, and redirection-prefixed shell commands."""
+    return bool(
+        COMMAND_BOUNDARY.search(text)
+        or WRAPPED_COMMAND_BOUNDARY.search(text)
+        or REDIRECTION_BOUNDARY.search(text)
+    )
+
+
+_COMMAND_SEPARATORS = {";", "&&", "||", "|", "&", "(", ")", "{", "}"}
+_CONTROL_WORDS = {"if", "elif", "then", "while", "until", "do", "command", "builtin", "exec", "!"}
+_KNOWN_WRAPPERS = {"sudo", "env", "git", "xargs"}
+_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_REDIRECTION = re.compile(r"^(?:\d*)?(?:>>>|<<<|>>|<<|>|<)")
+
+
+def _shell_tokens(text: str) -> tuple[_ShellToken, ...]:
+    """Lex enough shell structure to distinguish commands from prose.
+
+    This is deliberately not a shell interpreter.  It preserves token spans,
+    separators, assignments, and redirections so the grep scanner can prove
+    that a match starts an executable word.  Anything not understood by this
+    small grammar is left as a word and handled by the fail-closed wrapper
+    classification below.
+    """
+    tokens: list[_ShellToken] = []
+    index = 0
+    length = len(text)
+    while index < length:
+        if text[index].isspace():
+            index += 1
+            continue
+        if text[index] == "#":
+            # An unquoted # starts a shell comment when it begins a word.
+            if not tokens or text[index - 1].isspace():
+                break
+        start = index
+        if text.startswith("&&", index) or text.startswith("||", index) or text.startswith(";;", index):
+            op = text[index : index + 2]
+            tokens.append(_ShellToken(op, index, index + 2, "separator"))
+            index += 2
+            continue
+        if text[index] in ";|&(){}":
+            tokens.append(_ShellToken(text[index], index, index + 1, "separator"))
+            index += 1
+            continue
+        value: list[str] = []
+        quote: str | None = None
+        while index < length:
+            char = text[index]
+            if quote is None and (char.isspace() or char in ";|&(){}"):
+                break
+            if quote is None and char == "#" and (index == start or text[index - 1].isspace()):
+                break
+            if char == "\\" and quote != "'":
+                if index + 1 >= length:
+                    value.append("\\")
+                    index += 1
+                else:
+                    value.append(text[index + 1])
+                    index += 2
+                continue
+            if char in "'\"":
+                if quote is None:
+                    quote = char
+                elif quote == char:
+                    quote = None
+                else:
+                    value.append(char)
+                index += 1
+                continue
+            value.append(char)
+            index += 1
+        if quote is not None:
+            # Keep the malformed word visible; it will not be mistaken for a
+            # command because its span starts before any inner grep spelling.
+            value.append(quote)
+        raw = text[start:index]
+        kind = "word"
+        if _REDIRECTION.match(raw):
+            kind = "redirection"
+        elif _ASSIGNMENT.match(raw):
+            kind = "assignment"
+        tokens.append(_ShellToken("".join(value), start, index, kind))
+    return tuple(tokens)
+
+
+def _grep_command_kind(line: str, offset: int) -> str | None:
+    """Return direct/wrapped/unknown-wrapper, or None for grep-looking prose."""
+    prefix_text = line[:offset]
+    # A command substitution starts a fresh command even when it appears in a
+    # quoted argument (e.g. ``test "$(grep -c ...)"``).  The lightweight lexer
+    # intentionally keeps that surrounding word intact, so recurse on the
+    # substitution body before looking at ordinary shell tokens.
+    substitution = prefix_text.rfind("$(")
+    if substitution >= 0 and (substitution == 0 or prefix_text[substitution - 1] != "\\"):
+        nested_prefix = prefix_text[substitution + 2 :]
+        nested_line = nested_prefix + "grep"
+        nested_kind = _grep_command_kind(nested_line, len(nested_prefix))
+        if nested_kind is not None:
+            return nested_kind
+    tokens = _shell_tokens(line)
+    target_index = next(
+        (
+            index
+            for index, token in enumerate(tokens)
+            if token.start == offset and token.value == "grep" and token.kind == "word"
+        ),
+        None,
+    )
+    if target_index is None:
+        return None
+    prefix = list(tokens[:target_index])
+    boundary = -1
+    for index, token in enumerate(prefix):
+        if token.kind == "separator" and token.value in _COMMAND_SEPARATORS:
+            boundary = index
+    segment = prefix[boundary + 1 :]
+    while segment and segment[0].kind in {"assignment", "redirection"}:
+        segment.pop(0)
+    while segment and segment[0].kind == "word" and segment[0].value in _CONTROL_WORDS:
+        segment.pop(0)
+    if not segment:
+        return "direct"
+    if segment[0].kind == "word" and segment[0].value in _KNOWN_WRAPPERS:
+        return "wrapped"
+    return "unknown-wrapper"
+
+
 def _resolved_patterns(pattern: str, verify: str) -> tuple[tuple[str, ...], bool]:
     variables = SHELL_VARIABLE.findall(pattern)
     if not variables:
@@ -189,6 +410,7 @@ def _grep_checks_text(
     record_id: str,
     context: str,
     line_offset: int = 0,
+    depth: int = 0,
 ) -> tuple[list[GrepCheck], int, list[GrepCheck]]:
     """Census shell text and recurse into literal ``shell -c`` payloads.
 
@@ -197,6 +419,10 @@ def _grep_checks_text(
     numbers) and scanned recursively. Dynamic or unterminated payloads fail
     closed instead of silently shrinking the grep population.
     """
+    if depth > MAX_NESTED_SHELL_DEPTH:
+        raise InstrumentError("nested shell depth exceeds bounded census limit")
+    if len(verify.encode("utf-8")) > MAX_NESTED_PAYLOAD_BYTES:
+        raise InstrumentError("nested shell payload exceeds bounded census limit")
     masked, nested = _mask_nested_shells(verify)
     checks: list[GrepCheck] = []
     indeterminate: list[GrepCheck] = []
@@ -206,15 +432,17 @@ def _grep_checks_text(
         known_starts: set[int] = set()
         for match in GREP.finditer(line):
             # A grep-looking string in an embedded Python/awk expression is
-            # not a shell invocation. Require a shell command boundary (or a
-            # command substitution/assignment immediately before it).
-            if not COMMAND_BOUNDARY.search(line[: match.start()]):
+            # not a shell invocation. Require a structurally valid command
+            # token; unknown wrappers are counted but fail closed below.
+            command_kind = _grep_command_kind(line, match.start())
+            if command_kind is None:
                 continue
             invocations += 1
             known_starts.add(match.start())
             options = match.group("options") or ""
             pattern = match.group("pattern")
             resolved, unresolved = _resolved_patterns(pattern, context)
+            kind, prefixes = _source_kind(line, context)
             check = GrepCheck(
                 record_id=record_id,
                 line=line_number + line_offset,
@@ -223,6 +451,8 @@ def _grep_checks_text(
                 source=line.strip(),
                 quote=match.group("quote"),
                 resolved_patterns=resolved,
+                source_kind=kind,
+                comment_prefixes=prefixes,
             )
             # `grep -v` is a filter in a pipeline, not a positive capability
             # assertion. It remains in the invocation census, but is not in the
@@ -230,6 +460,10 @@ def _grep_checks_text(
             if "v" not in options.replace("--", ""):
                 checks.append(check)
             if unresolved and not _generated_hex_pattern_file(check, verify):
+                indeterminate.append(check)
+            if check.source_kind == "unknown":
+                indeterminate.append(check)
+            if command_kind == "unknown-wrapper":
                 indeterminate.append(check)
         # The shell permits a bare regex word (`grep unsafe file`) in addition
         # to the quoted form above.  Parse it separately, retaining the same
@@ -239,13 +473,15 @@ def _grep_checks_text(
         for match in GREP_UNQUOTED.finditer(line):
             if match.start() in known_starts:
                 continue
-            if not COMMAND_BOUNDARY.search(line[: match.start()]):
+            command_kind = _grep_command_kind(line, match.start())
+            if command_kind is None:
                 continue
             invocations += 1
             known_starts.add(match.start())
             options = match.group("options") or ""
             pattern = match.group("pattern")
             resolved, unresolved = _resolved_patterns(pattern, context)
+            kind, prefixes = _source_kind(line, context)
             check = GrepCheck(
                 record_id=record_id,
                 line=line_number + line_offset,
@@ -253,10 +489,16 @@ def _grep_checks_text(
                 options=options,
                 source=line.strip(),
                 resolved_patterns=resolved,
+                source_kind=kind,
+                comment_prefixes=prefixes,
             )
             if "v" not in options.replace("--", ""):
                 checks.append(check)
             if unresolved and not _generated_hex_pattern_file(check, verify):
+                indeterminate.append(check)
+            if check.source_kind == "unknown":
+                indeterminate.append(check)
+            if command_kind == "unknown-wrapper":
                 indeterminate.append(check)
         # A grep invocation with an unquoted/dynamic pattern is still an
         # invocation, but its dialect and polarity cannot be proven by this
@@ -265,7 +507,8 @@ def _grep_checks_text(
         for word in re.finditer(r"\bgrep\b", line):
             if word.start() in known_starts:
                 continue
-            if not COMMAND_BOUNDARY.search(line[: word.start()]):
+            command_kind = _grep_command_kind(line, word.start())
+            if command_kind is None:
                 continue
             invocations += 1
             indeterminate.append(
@@ -279,7 +522,7 @@ def _grep_checks_text(
             )
     for payload, first_line in nested:
         nested_checks, nested_invocations, nested_indeterminate = _grep_checks_text(
-            payload, record_id, payload, line_offset + first_line - 1
+            payload, record_id, context, line_offset + first_line - 1, depth + 1
         )
         checks.extend(nested_checks)
         invocations += nested_invocations
@@ -385,7 +628,7 @@ def _mask_nested_shells(text: str) -> tuple[str, list[tuple[str, int]]]:
         if any(start <= match.start() < end for start, end, _, _ in spans):
             continue
         line_start = text.rfind("\n", 0, match.start()) + 1
-        if not COMMAND_BOUNDARY.search(text[line_start : match.start()]):
+        if not _is_command_boundary(text[line_start : match.start()]):
             continue
         pos = match.end()
         while pos < len(text) and text[pos].isspace():
@@ -421,6 +664,27 @@ def _as_python_regex(pattern: str, options: str = "") -> re.Pattern[str]:
     # literal.  ERE reverses that rule.  Preserve the distinction for Python's
     # regex dialect, especially for Markdown-table and shell-`||` checks.
     if "E" not in options:
+        # Python defaults to ERE.  BRE only enables grouping/quantifiers when
+        # those operators are escaped, so normalize the opposite spellings
+        # before compiling.  This matters for literal code such as
+        # ``blockConcurrencyWhile(async () =>`` in the live backlog.
+        normalized: list[str] = []
+        index = 0
+        while index < len(translated):
+            char = translated[index]
+            if char == "\\" and index + 1 < len(translated):
+                escaped = translated[index + 1]
+                if escaped in "(){}+?":
+                    # BRE enables these operators only in escaped form.
+                    normalized.append(escaped)
+                    index += 2
+                    continue
+            if char in "(){}+?":
+                normalized.append("\\" + char)
+            else:
+                normalized.append(char)
+            index += 1
+        translated = "".join(normalized)
         marker = "__B155_ALTERNATION__"
         translated = translated.replace(r"\|", marker)
         translated = translated.replace("|", r"\|")
@@ -480,12 +744,14 @@ def _matches_comment(check: GrepCheck) -> bool:
         except re.error:
             return True  # An unmodelled dialect is an instrument gap, fail closed.
         for witness in _regex_witness(pattern, check.options):
-            probes = tuple(f"{prefix} {witness}" for prefix in COMMENT_PREFIXES)
+            prefixes = check.comment_prefixes or COMMENT_PREFIXES
+            probes = tuple(f"{prefix} {witness}" for prefix in prefixes)
             if any(expression.search(probe) for probe in probes):
                 return True
     return False
 
 
+@lru_cache(maxsize=32)
 def census(backlog: str) -> Census:
     records = _records(backlog)
     assertions: list[GrepCheck] = []
@@ -547,27 +813,22 @@ def mutation_self_test(backlog: str) -> None:
     )
     if target is None or "grep" not in target.group(1):
         raise InstrumentError("B-083 population member missing from mutation fixture")
-    # B-083 is the historical reproducer.  The canonical baseline deliberately
-    # remains open: its unguarded assertion is an executable member of the
-    # unfinished population.  The mutation below proves that anchoring that
-    # member changes the semantic verdict, without claiming that the whole
-    # population is repaired.
+    # B-083 is the historical reproducer.  Removing its syntax-specific guard
+    # must reopen the census, proving the positive population is load-bearing.
+    guarded = 'grep -q "^[^#]*byok"'
     old = 'grep -q "byok"'
-    guarded = 'grep -q "^byok"'
-    if old not in target.group(1):
-        raise InstrumentError("B-083 mutation target is not the canonical open member")
-    mutated_block = target.group(1).replace(old, guarded, 1)
+    if guarded not in target.group(1):
+        raise InstrumentError("B-083 mutation target is not the canonical guarded member")
+    mutated_block = target.group(1).replace(guarded, old, 1)
     if mutated_block == target.group(1):
         raise InstrumentError("B-083 mutation did not change the fixture")
     mutated = backlog[: target.start()] + mutated_block + backlog[target.end() :]
     changed = census(mutated)
-    if len(changed.unsafe) >= len(baseline.unsafe):
-        raise InstrumentError("anchoring a real B-083 population member did not reduce risk")
+    if len(changed.unsafe) <= len(baseline.unsafe):
+        raise InstrumentError("removing a real B-083 guard did not increase risk")
 
     # B-112 starts its nested `bash -c` body with a grep, the boundary that a
-    # flat line scanner used to miss.  The nested member is intentionally open
-    # in this baseline; replacing it with a real anchor must reduce the unsafe
-    # population, proving recursive discovery without closing B-155.
+    # flat line scanner used to miss.  Removing that guard must reopen risk.
     nested_target = re.search(
         r"(id: B-112\n.*?verify: \|\n(?:  .*\n)+?)",
         backlog,
@@ -575,11 +836,11 @@ def mutation_self_test(backlog: str) -> None:
     )
     if nested_target is None:
         raise InstrumentError("B-112 nested-shell mutation fixture is missing")
+    nested_guarded = 'grep -q "^[^#]*cargo zigbuild"'
     nested_open = 'grep -q "cargo zigbuild"'
-    nested_guarded = 'grep -q "^cargo zigbuild"'
-    if nested_open not in nested_target.group(1):
-        raise InstrumentError("B-112 nested grep is not the canonical open member")
-    nested_block = nested_target.group(1).replace(nested_open, nested_guarded, 1)
+    if nested_guarded not in nested_target.group(1):
+        raise InstrumentError("B-112 nested grep is not the canonical guarded member")
+    nested_block = nested_target.group(1).replace(nested_guarded, nested_open, 1)
     if nested_block == nested_target.group(1):
         raise InstrumentError("B-112 mutation did not change the fixture")
     nested_mutated = (
@@ -588,8 +849,8 @@ def mutation_self_test(backlog: str) -> None:
         + backlog[nested_target.end() :]
     )
     nested_changed = census(nested_mutated)
-    if len(nested_changed.unsafe) >= len(baseline.unsafe):
-        raise InstrumentError("anchoring the B-112 nested grep did not reduce risk")
+    if len(nested_changed.unsafe) <= len(baseline.unsafe):
+        raise InstrumentError("removing the B-112 nested grep guard did not increase risk")
 
     # Parser completeness is also load-bearing: removing every fenced record
     # cannot become a falsely clean zero-population result.

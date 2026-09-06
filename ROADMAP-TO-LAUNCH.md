@@ -195,7 +195,7 @@ in one session. Source: plg §3.2.
 2. Click → Clerk sign-up with **GitHub OAuth first**, email/password second
 3. Auto-provision tenant + free plan + nearest region (Geo-IP) + PAT (server-side, invisible)
 4. `/welcome` shows three things: one-line copy-paste install, PAT (copy button), live status pane
-5. User runs `curl -fsSL https://corelink-get.humangr.com | sh -s -- --token=ct_xxx --region=ord` (writes config, runs `corelink whoami`)
+5. User runs `curl -fsSL https://corelink-get.humangr.com | sh -s -- --token=ct_xxx` (writes config, runs `corelink whoami`)
 6. User runs `corelink bazel-init` (CLI detects `WORKSPACE` / `MODULE.bazel`, appends 3 lines to `.bazelrc` idempotently)
 7. User runs `bazel build //...` twice → second build is mostly cache hits → `/welcome` pane animates "First cache hit. Your build was 8× faster."
 

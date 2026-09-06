@@ -107,8 +107,9 @@ service:
 Deploy and verify the Collector is healthy:
 
 ```bash
-curl -sf -H "Authorization: Bearer ${TOKEN}" \
-  https://collector.example.com:13133/health
+curl -sf https://collector.example.com:13133/health --config - <<EOF
+header = "Authorization: Bearer ${TOKEN}"
+EOF
 ```
 
 ## Step 2 — Wire CoreLink to the Collector

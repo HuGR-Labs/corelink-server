@@ -570,7 +570,7 @@ import { TeamClient } from "@/components/customer/TeamClient";
 const MEMBER_FIXTURE: CustomerTeamMember = {
   user_id: "user_001",
   email: "owner@acme.example",
-  role: "Owner",
+  role: "owner",
   joined_at: "2026-01-01T00:00:00Z",
   status: "active",
 };
@@ -600,7 +600,7 @@ describe("TeamClient", () => {
     const newMember: CustomerTeamMember = {
       user_id: "user_new",
       email: "newbie@acme.example",
-      role: "Developer",
+      role: "member",
       joined_at: "2026-05-29T00:00:00Z",
       status: "invited",
     };
@@ -614,7 +614,7 @@ describe("TeamClient", () => {
       target: { value: "newbie@acme.example" },
     });
     fireEvent.change(screen.getByTestId("team-invite-role"), {
-      target: { value: "Developer" },
+      target: { value: "member" },
     });
     fireEvent.click(screen.getByTestId("team-invite-submit"));
 
@@ -624,7 +624,7 @@ describe("TeamClient", () => {
     expect(screen.getByTestId("team-invite-success")).toHaveTextContent("newbie@acme.example");
     expect(customerClientMock.inviteTeam).toHaveBeenCalledWith({
       email: "newbie@acme.example",
-      role: "Developer",
+      role: "member",
     });
   });
 

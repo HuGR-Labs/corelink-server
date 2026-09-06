@@ -1,12 +1,11 @@
-// WI-S16-005 — tenant deep-dive: 5 configurable cards (usage, billing,
-// consents, DSR queue, active PATs). Read-only; sensitive actions route to
-// /admin/ops dual-approval queue.
+// Tenant deep-dive: 5 configurable cards (usage, billing, consents, DSR queue,
+// active PATs). Read-only; sensitive actions remain unavailable until the
+// durable, auditable operator workflow is served.
 //
 // Linear kit: glass `lin-card` panels, BYOK Badge, EmptyState for missing data,
 // a Callout for the dual-approval note. Testids + last4 redaction preserved.
 
 import React from "react";
-import Link from "next/link";
 import type { Tenant } from "@/lib/types";
 import { Badge, Callout, EmptyState } from "@/components/ui/linear";
 import { byokTone } from "./tones";
@@ -153,8 +152,8 @@ export function TenantDeepDive({
 
       <div className="lin-mt">
         <Callout tone="warn">
-          Sensitive actions (delete, BYOK rotate, residency change) must be queued in{" "}
-          <Link href="../ops">/admin/ops</Link> for dual approval.
+          Sensitive actions (delete, BYOK rotate, residency change) are temporarily
+          unavailable while the durable operator workflow is being rebuilt.
         </Callout>
       </div>
     </section>

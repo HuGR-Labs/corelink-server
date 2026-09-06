@@ -208,6 +208,13 @@ ALLOWLIST_REGEX = re.compile(
     # SMOKE_* smoke-harness vars above.
     r"|BASE_URL$"
     r"|PW_EXECUTABLE_PATH$"
+    # 2026-09-05 (B-163) — loopback HTTP fixture coordination for the raw-curl
+    # directory-upload test. These carry a temporary pathname, an ephemeral
+    # loopback port pathname and an HTTP status integer; none is credential
+    # material and none is read by production code.
+    r"|CORELINK_HTTP_PORT_FILE$"
+    r"|CORELINK_HTTP_REQUEST_FILE$"
+    r"|CORELINK_HTTP_STATUS$"
     # 2026-07-09 — client SDK log-level toggle (`CORELINK_LOG=debug` enables
     # verbose logging), NOT a credential. Same class as RUST_LOG / NODE_ENV.
     #   Consumer: sdks/js/src/client.ts (process.env.CORELINK_LOG === "debug")
@@ -238,6 +245,36 @@ EXCLUDE_DIR_PARTS = {
     ".turbo",
     ".pnpm-store",
 }
+
+# Synthetic environment data used only by the raw-curl documentation fixture.
+# This is deliberately a path-scoped manifest rather than a name allowlist:
+# moving the fixture, adding a fourth name, or reusing one from production must
+# remain visible as code-only drift.
+SYNTHETIC_ENV_MANIFEST: dict[str, frozenset[str]] = {
+    "apps/docs/tests/fixtures/raw-curl-http-server.mjs": frozenset(
+        {
+            "CORELINK_HTTP_PORT_FILE",
+            "CORELINK_HTTP_REQUEST_FILE",
+            "CORELINK_HTTP_STATUS",
+        }
+    ),
+    "apps/docs/tests/raw-curl-directory-upload.test.ts": frozenset(
+        {
+            "CORELINK_HTTP_PORT_FILE",
+            "CORELINK_HTTP_REQUEST_FILE",
+            "CORELINK_HTTP_STATUS",
+        }
+    ),
+}
+
+
+def _synthetic_env_names_for_file(root: Path, path: Path) -> frozenset[str]:
+    """Return synthetic names only for an exact manifest path."""
+    try:
+        relative = path.relative_to(root).as_posix()
+    except ValueError:
+        return frozenset()
+    return SYNTHETIC_ENV_MANIFEST.get(relative, frozenset())
 
 # Matrix row regex: `| 1 | <secret> | `ENV_VAR` | ...`
 MATRIX_ROW_RE = re.compile(r"^\|\s*\d+\s*\|")
@@ -392,10 +429,14 @@ def scan_ts(root: Path) -> set[str]:
             txt = f.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
-        for m in TS_ENV_DOT_RE.finditer(txt):
-            hits.add(m.group(1))
-        for m in TS_ENV_BRACKET_RE.finditer(txt):
-            hits.add(m.group(1))
+        file_hits = {
+            *(m.group(1) for m in TS_ENV_DOT_RE.finditer(txt)),
+            *(m.group(1) for m in TS_ENV_BRACKET_RE.finditer(txt)),
+        }
+        # Subtract only the exact path/name pairs in the manifest. Every other
+        # occurrence, including the same names in a production file, remains a
+        # code-only finding and fails closed.
+        hits.update(file_hits - _synthetic_env_names_for_file(root, f))
         # Worker `Env` interfaces + the inline flag cast (see the regexes above).
         for body in _env_interface_bodies(txt):
             for m in ENV_STRING_MEMBER_RE.finditer(body):

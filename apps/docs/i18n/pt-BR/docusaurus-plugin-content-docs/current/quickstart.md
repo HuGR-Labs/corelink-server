@@ -28,7 +28,7 @@ A `corelink-cli` está em desenvolvimento ativo (stream 1.1). Todos os exemplos 
 Seu PAT se parece com:
 
 ```text
-corelink_pat_01ARZ3NDEKTSV4RRFFQ69G5FAV.4pT7q1yZ9vX2wL8cR5nB3sD6fH0jK1mQ8aV2eS.7bY4tN9oL2x
+corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA
 ```
 
 (EN note: `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` — `<env>` is `pat` for a user-issued token; `ci`/`ro` exist for CI and read-only tokens.)
@@ -36,15 +36,17 @@ corelink_pat_01ARZ3NDEKTSV4RRFFQ69G5FAV.4pT7q1yZ9vX2wL8cR5nB3sD6fH0jK1mQ8aV2eS.7
 Exporte-o para os exemplos abaixo:
 
 ```bash
-export CORELINK_PAT="corelink_pat_01ARZ3NDEKTSV4RRFFQ69G5FAV.4pT7q1yZ9vX2wL8cR5nB3sD6fH0jK1mQ8aV2eS.7bY4tN9oL2x"
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"
 export CORELINK_TENANT="your-tenant-id"   # shown on the welcome screen
 ```
 
 ## Passo 2 — Verifique suas credenciais
 
 ```bash
-curl -s -H "Authorization: Bearer $CORELINK_PAT" \
-  https://corelink-api.humangr.com/v1/users/me
+curl --silent --config - <<EOF
+url = "https://corelink-api.humangr.com/v1/users/me"
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 Resposta esperada:
@@ -69,10 +71,11 @@ DIGEST=$(b3sum ./my-artifact.bin | awk '{print $1}')
 
 # Upload
 curl -s -X PUT \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   -H "Content-Type: application/octet-stream" \
   --data-binary @./my-artifact.bin \
-  "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST"
+  "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST" --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 Resposta esperada (HTTP 201) — o corpo ecoa o hex BLAKE3 armazenado:
@@ -89,9 +92,10 @@ Resposta esperada (HTTP 201) — o corpo ecoa o hex BLAKE3 armazenado:
 
 ```bash
 curl -s \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST" \
-  -o ./my-artifact-downloaded.bin
+  -o ./my-artifact-downloaded.bin --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 Verifique se os bytes são idênticos:

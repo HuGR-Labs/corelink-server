@@ -48,9 +48,12 @@ use corelink_handler_customer::{
     KeyCreateRequest, KeyRevokeRequest, KeysListRequest, OverviewRequest, PortalRequest,
     TeamInviteRequest, TeamListRequest, TeamRemoveRequest, UsageRequest,
 };
+#[cfg(test)]
+use corelink_ratelimit::RateLimiter;
+#[cfg(test)]
 use corelink_ratelimit::{
     InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics, InMemoryTokenBucketRateLimiter,
-    RateLimitConfig, RateLimitDecision, RateLimiter,
+    RateLimitConfig, RateLimitDecision,
 };
 use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
@@ -108,9 +111,10 @@ pub struct CustomerRouteState {
     /// cheap in-process token bucket, burst 2 / 1 per 300s). Mirrors how
     /// `audit_export` self-rate-limits its export in the container.
     pub export_rate_limiter: Arc<dyn corelink_ratelimit::RateLimiter>,
-    /// Per-tenant limiter for public PAT issuance (10 requests/hour, burst 10).
-    /// This is separate from the generic data-plane limiter and is applied on
-    /// both Clerk and canonical-PAT authentication paths.
+    /// Test-only seam for direct container route focals. Production PAT
+    /// issuance is authorized by the tenant Durable Object lease, not by an
+    /// in-process limiter that resets on recycle.
+    #[cfg(test)]
     pub pat_issue_rate_limiter: Arc<dyn RateLimiter>,
 }
 
@@ -152,6 +156,7 @@ pub fn build_handlers_from_env() -> CustomerRouteState {
             // the factory env-pure — the export route then fails CLOSED (503).
             export: None,
             export_rate_limiter: crate::routes::customer_export::build_export_rate_limiter(),
+            #[cfg(test)]
             pat_issue_rate_limiter: build_pat_issue_rate_limiter(),
         },
         None => {
@@ -188,6 +193,7 @@ pub fn build_handlers() -> CustomerRouteState {
         // Dev/CI default = unwired; the export route fails CLOSED (503).
         export: None,
         export_rate_limiter: crate::routes::customer_export::build_export_rate_limiter(),
+        #[cfg(test)]
         pat_issue_rate_limiter: build_pat_issue_rate_limiter(),
     }
 }
@@ -195,11 +201,17 @@ pub fn build_handlers() -> CustomerRouteState {
 /// Stable endpoint identity for the public self-serve mint bucket.
 pub const PAT_ISSUE_ENDPOINT_ID: &str = "pat-issue";
 
+/// Header stamped only by the tenant Durable Object after its durable,
+/// serialized bucket decision. The Worker strips client copies before routing;
+/// the container fails closed when the lease is absent.
+pub const PAT_ISSUE_AUTHORIZED_HEADER: &str = "x-corelink-pat-issue-authorized";
+
 /// Public PAT issuance is deliberately much slower than the generic data
 /// plane: ten tokens per tenant per hour, with a ten-request initial burst.
 /// The exact ratio preserves the one-token-per-360-second cadence without a
 /// fixed-point truncation that would incorrectly defer the boundary to 361s.
 #[must_use]
+#[cfg(test)]
 pub fn pat_issue_rate_limit_config() -> RateLimitConfig {
     RateLimitConfig::with_fractional_refill_ratio(10, 3600, 10, 1, 86_400, 7 * 86_400)
         .unwrap_or_else(RateLimitConfig::canonical)
@@ -210,6 +222,7 @@ pub fn pat_issue_rate_limit_config() -> RateLimitConfig {
 /// composite bucket key still includes the tenant and endpoint so tenants
 /// cannot consume one another's allowance.
 #[must_use]
+#[cfg(test)]
 pub fn build_pat_issue_rate_limiter() -> Arc<dyn RateLimiter> {
     Arc::new(InMemoryTokenBucketRateLimiter::new(
         Arc::new(InMemoryRateLimitAuditSink::new()),
@@ -407,9 +420,9 @@ fn mint_requests_write(scopes: &[String]) -> bool {
     )
 }
 
-/// True when `role` is a privileged team role (`Owner` / `Admin`) — granting it
+/// True when `role` is a privileged team role (`owner` / `admin`) — granting it
 /// is a write/admin mutation a read-only principal must not perform (cluster A).
-/// `Developer` / `Viewer` are non-privileged and allowed from any authenticated
+/// `member` / `viewer` are non-privileged and allowed from any authenticated
 /// caller. Case-insensitive exact match.
 fn role_is_privileged(role: &str) -> bool {
     matches!(role.trim().to_ascii_lowercase().as_str(), "owner" | "admin")
@@ -529,7 +542,7 @@ pub struct PatIssueBody {
 pub struct InviteBody {
     /// Email address to invite.
     pub email: String,
-    /// Role to assign (`"Owner"` / `"Admin"` / `"Developer"` / `"Viewer"`).
+    /// Role to assign (`"admin"` / `"member"` / `"viewer"`).
     pub role: String,
 }
 
@@ -882,55 +895,76 @@ async fn create_pat_response(
                 .into_response();
         }
     }
-    let bucket_tenant = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, t.as_bytes());
-    let bucket_key = corelink_ratelimit::BucketKey::per_tenant_per_endpoint(
-        bucket_tenant,
-        PAT_ISSUE_ENDPOINT_ID,
-    );
-    let limiter_now_ms = crate::wall_clock::default_wall_clock().now_ms();
-    if limiter_now_ms == 0 {
+    // Production authority is the tenant Durable Object. It stamps one
+    // request-scoped lease only after its serialized durable decision. A
+    // directly reached/recycled container must fail closed rather than fall
+    // back to an in-process limiter that can reset or diverge between hosts.
+    if headers
+        .get(PAT_ISSUE_AUTHORIZED_HEADER)
+        .and_then(|value| value.to_str().ok())
+        != Some("1")
+    {
+        #[cfg(test)]
+        {
+            let bucket_tenant = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, t.as_bytes());
+            let bucket_key = corelink_ratelimit::BucketKey::per_tenant_per_endpoint(
+                bucket_tenant,
+                PAT_ISSUE_ENDPOINT_ID,
+            );
+            let limiter_now_ms = crate::wall_clock::default_wall_clock().now_ms();
+            if limiter_now_ms == 0 {
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "rate-limit clock unavailable",
+                )
+                    .into_response();
+            }
+            match state.pat_issue_rate_limiter.try_acquire(
+                bucket_tenant,
+                bucket_key,
+                1,
+                limiter_now_ms,
+            ) {
+                Ok(outcome) => match outcome.decision {
+                    RateLimitDecision::Allow { .. } => {}
+                    RateLimitDecision::Deny429 {
+                        retry_after_secs, ..
+                    } => {
+                        let mut response = (
+                            StatusCode::TOO_MANY_REQUESTS,
+                            "PAT issuance rate limit exceeded",
+                        )
+                            .into_response();
+                        if let Ok(value) = retry_after_secs.to_string().parse() {
+                            response
+                                .headers_mut()
+                                .insert(axum::http::header::RETRY_AFTER, value);
+                        }
+                        return response;
+                    }
+                    _ => {
+                        return (
+                            StatusCode::TOO_MANY_REQUESTS,
+                            "PAT issuance rate limit exceeded",
+                        )
+                            .into_response();
+                    }
+                },
+                Err(_) => {
+                    return (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "rate-limit pipeline failed",
+                    )
+                        .into_response();
+                }
+            }
+        }
+        #[cfg(not(test))]
         return (
             StatusCode::SERVICE_UNAVAILABLE,
-            "rate-limit clock unavailable",
+            "PAT issuance rate-limit lease unavailable",
         )
             .into_response();
-    }
-    match state
-        .pat_issue_rate_limiter
-        .try_acquire(bucket_tenant, bucket_key, 1, limiter_now_ms)
-    {
-        Ok(outcome) => match outcome.decision {
-            RateLimitDecision::Allow { .. } => {}
-            RateLimitDecision::Deny429 {
-                retry_after_secs, ..
-            } => {
-                let mut response = (
-                    StatusCode::TOO_MANY_REQUESTS,
-                    "PAT issuance rate limit exceeded",
-                )
-                    .into_response();
-                if let Ok(value) = retry_after_secs.to_string().parse() {
-                    response
-                        .headers_mut()
-                        .insert(axum::http::header::RETRY_AFTER, value);
-                }
-                return response;
-            }
-            _ => {
-                return (
-                    StatusCode::TOO_MANY_REQUESTS,
-                    "PAT issuance rate limit exceeded",
-                )
-                    .into_response();
-            }
-        },
-        Err(_) => {
-            return (
-                StatusCode::SERVICE_UNAVAILABLE,
-                "rate-limit pipeline failed",
-            )
-                .into_response();
-        }
     }
     let p = principal(&headers);
     let req = KeyCreateRequest::new(t, p, name, scopes, now_ms());
@@ -1603,6 +1637,9 @@ impl AccountDeletionRequester for D1AccountDeletionRequester {
 fn map_err(e: CustomerHandlerError) -> axum::response::Response {
     tracing::warn!(error = ?e, "customer handler error");
     match e {
+        CustomerHandlerError::InvalidRequest(_) => {
+            (StatusCode::BAD_REQUEST, "invalid request").into_response()
+        }
         CustomerHandlerError::Unauthorized(_) => {
             (StatusCode::UNAUTHORIZED, "unauthorized").into_response()
         }

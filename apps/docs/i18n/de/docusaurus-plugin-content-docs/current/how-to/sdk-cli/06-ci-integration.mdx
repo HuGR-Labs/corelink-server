@@ -38,8 +38,9 @@ jobs:
       - run: corelink bench --read --output json
 ```
 
-`HumanGuardrail/setup-corelink` installs the signed binary, verifies its
-SLSA attestation, and adds it to `$PATH`.
+`HumanGuardrail/setup-corelink` installiert das Binary und fügt es zu `$PATH`
+hinzu. Bei einem manuellen Download eines Release-Assets prüfen Sie vor dem
+Ausführbarmachen die passende `.sha256`-Prüfsumme.
 
 ## GitLab CI
 

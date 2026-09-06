@@ -1,4 +1,4 @@
-// WI-S16-005 — shared types for admin ops UI.
+// Shared types for the served admin UI.
 
 export type EventType =
   | "auth.login"
@@ -59,33 +59,6 @@ export interface AuditFilter {
 export interface AuditPage {
   rows: AuditEventSummary[];
   next_cursor: string | null;
-}
-
-export type OpType =
-  | "tenant_data_export"
-  | "byok_cmk_rotation"
-  | "tenant_account_deletion"
-  | "data_residency_change";
-
-export type OpStatus = "awaiting_approval" | "approved" | "executed" | "rejected";
-
-export interface DualApproval {
-  approver: string;
-  approved_at: string;
-  reason: string;
-}
-
-export interface AdminOp {
-  op_id: string;
-  op_type: OpType;
-  requestor: string;
-  requested_at: string;
-  status: OpStatus;
-  payload: Record<string, unknown>;
-  impact_summary: string;
-  tenant_scope: string[];
-  approvals: DualApproval[];
-  rejection?: { rejector: string; rejected_at: string; reason: string };
 }
 
 export interface Tenant {

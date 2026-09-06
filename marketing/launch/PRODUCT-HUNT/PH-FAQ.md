@@ -17,7 +17,7 @@ A: CoreLink is a managed service at GA. Apache 2.0 release is anti-scope for GA 
 Source: spec contract S-20 §10.
 
 **Q: What does GA mean for CoreLink?**
-A: GA means seven engineering work items sealed across S-20, PRR globally approved with thirteen canonical sign-offs, external pentest clean with retest, 30 days of sustained staging, three lighthouse customers with SLA met, SOC 2 gap analysis delivered, and zero active waivers in CRITICAL controls.
+A: The S-20 GA bar includes seven engineering work items sealed, PRR globally approved with thirteen canonical sign-offs, 30 days of sustained staging, three lighthouse customers with SLA met, SOC 2 gap analysis delivered, zero active waivers in CRITICAL controls, and `CAP-GA-002`: an independent external-pentest report and retest with no outstanding HIGH or CRITICAL findings. `CAP-GA-002` is unmet: no external pentest has been commissioned, so this draft does not authorize a GA claim.
 Source: spec contract S-20 §6.1.
 
 ## Technical
@@ -49,7 +49,7 @@ A: SOC 2 gap analysis is delivered pre-GA via Drata or Vanta tooling; Type I eng
 Source: spec contract S-20 §5.1 R-S20-3.
 
 **Q: What's the pentest situation?**
-A: External pentest is engaged with one of Schellman, A-LIGN, or Trail of Bits, with a two-week test plus one-week retest. GA requires zero HIGH/CRITICAL findings pending. A summary letter is available under NDA.
+A: We have not commissioned an external pentest. No firm is engaged and no report exists — every vendor in `reports/pentest-rfp-tracker.json` is `NOT_CONTACTED`. `CAP-GA-002` remains a hard pre-GA gate; no report, NDA availability, publication date, or later cadence is promised. Internal adversarial reviews and cargo-fuzz summaries are the current evidence.
 Source: spec contract S-20 §5.1 R-S20-2 + CAP-GA-002.
 
 **Q: How does BYOK work?**

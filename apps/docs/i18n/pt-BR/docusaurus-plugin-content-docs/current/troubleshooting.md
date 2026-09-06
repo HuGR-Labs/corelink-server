@@ -26,8 +26,10 @@ description: Códigos de erro comuns, o que significam e como corrigi-los.
 echo $CORELINK_PAT
 
 # Test the PAT directly
-curl -s -H "Authorization: Bearer $CORELINK_PAT" \
-  https://corelink-api.humangr.com/v1/users/me
+curl --silent --config - <<EOF
+url = "https://corelink-api.humangr.com/v1/users/me"
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 ```
 
 Se `/v1/users/me` retornar `401`, o PAT é inválido. Possibilidades:
@@ -53,8 +55,10 @@ Dois subcasos:
 
 ```bash
 # Confirm your tenant
-curl -s -H "Authorization: Bearer $CORELINK_PAT" \
-  https://corelink-api.humangr.com/v1/users/me
+curl --silent --config - <<EOF
+url = "https://corelink-api.humangr.com/v1/users/me"
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 # Check "tenant_id" in the response
 
 # Confirm tenant in URL matches
@@ -144,7 +148,7 @@ Isso normalmente é acionado durante uma auditoria de conformidade ou uma disput
 O cabeçalho `authorization` não foi encaminhado. Verifique:
 
 1. `CORELINK_PAT` está exportado no shell onde o Bazel roda.
-2. Seu `.bazelrc` usa `${CORELINK_PAT}` (expansão de shell), não um placeholder literal.
+2. Seu `.bazelrc` usa o helper de credenciais restrito ao host da documentação do Bazel; não coloque `${CORELINK_PAT}` em uma flag do Bazel.
 
 ### `remote_cache: PERMISSION_DENIED`
 
@@ -191,23 +195,27 @@ curl -s https://corelink-api.humangr.com/api/health
 # {"status":"ok"}
 
 # 2. PAT validity
-curl -s -H "Authorization: Bearer $CORELINK_PAT" \
-  https://corelink-api.humangr.com/v1/users/me
+curl --silent --config - <<EOF
+url = "https://corelink-api.humangr.com/v1/users/me"
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 # {"tenant_id":"...","token_prefix":"aZ3xQ1","route_kind":"cas"}
 
 # 3. Write a test blob
 echo "healthcheck" > /tmp/cl-test.txt
 DIGEST=$(sha256sum /tmp/cl-test.txt | awk '{print $1}')
 curl -s -X PUT \
-  -H "Authorization: Bearer $CORELINK_PAT" \
   --data-binary @/tmp/cl-test.txt \
-  "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST"
+  "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST" --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 # {"hash":"sha256:<digest>"}
 
 # 4. Read it back
 curl -s \
-  -H "Authorization: Bearer $CORELINK_PAT" \
-  "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST"
+  "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST" --config - <<EOF
+header = "Authorization: Bearer ${CORELINK_PAT}"
+EOF
 # healthcheck
 ```
 

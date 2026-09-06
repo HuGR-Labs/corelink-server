@@ -73,6 +73,7 @@ import { handleTenantLookup } from "./lib/tenant_lookup.js";
 import {
   resolveConsumerKey,
   constantTimeSecretEqual,
+  requireDedicatedAdminAuth,
   type InternalConsumer,
 } from "./lib/internal_auth.js";
 import { emitFirstCliAuthed } from "./lib/onboarding_events.js";
@@ -523,6 +524,7 @@ type RouteKind =
   | "customer_v1"
   | "devenv_v1"
   | "openapi"
+  | "openapi_devenv"
   | "public_attestation"
   | "reapi_v1"
   | "bazel_v2"
@@ -537,6 +539,7 @@ type RouteKind =
   | "auth_rotate"
   | "internal"
   | "health_container"
+  | "health_container_authed"
   | "not_found";
 
 /** Auth extraction result from the Authorization header. */
@@ -794,6 +797,9 @@ const CLIENT_TRUST_HEADERS: ReadonlyArray<string> = [
   // NOT be able to smuggle a forged role to escalate — strip it structurally on
   // EVERY forward so only the Worker's D1-derived value reaches the container.
   "x-corelink-role",
+  // PAT issuance lease: only the tenant Durable Object may stamp this after
+  // its serialized durable bucket decision. Never forward a client copy.
+  "x-corelink-pat-issue-authorized",
 ];
 
 /**
@@ -856,12 +862,21 @@ function stripClientTrustHeaders(h: Headers): void {
 function matchRoute(url: URL): RouteMatch {
   const path = url.pathname;
 
-  // Container health deep-probe — /_health/container forwards through the
-  // _system DO to the container's own /_health endpoint, exposing A4's
-  // `storage` field (r2 vs inmemory) that the Worker's fast-path /_health
-  // never returns.  Publicly probeable, no auth required.
+  // Container health deep-probe — the anonymous variant forwards through the
+  // _system DO but redacts storage backing below. Operators use the explicit
+  // authenticated variant when they need that diagnostic signal.
   if (path === "/_health/container" || path === "/_health/container/") {
     return { tenantId: "_system", pathSuffix: "/_health", routeKind: "health_container" };
+  }
+  if (
+    path === "/_health/container/authenticated" ||
+    path === "/_health/container/authenticated/"
+  ) {
+    return {
+      tenantId: "_system",
+      pathSuffix: "/_health",
+      routeKind: "health_container_authed",
+    };
   }
 
   // Health: /health (legacy CF/customer liveness) + /_health (smoke-prod check
@@ -973,9 +988,23 @@ function matchRoute(url: URL): RouteMatch {
     return { tenantId: "_anonymous", pathSuffix: path, routeKind: "signup" };
   }
 
-  // Public OpenAPI 3.1 schema — /openapi.json (WP-08)
+  // Public OpenAPI 3.1 schema.
+  //
+  //   /openapi.json          → the CoreLink API contract (openapi/corelink-v1.json)
+  //   /openapi/devenv.json   → the DevEnv sub-surface, and ONLY where it is wired
+  //
+  // These used to be one route serving one spec, and that spec was DevEnv's:
+  // `/openapi.json` was introduced by the DevEnv package (#1432) and took the
+  // canonical public path with it, so the only API contract CoreLink published
+  // in production described eight DevEnv endpoints and none of the rest of the
+  // product. Verified against prod, not inferred:
+  // `GET https://corelink-api.humangr.com/openapi.json` → 200, 7707 bytes,
+  // `info.title = "CoreLink DevEnv API"`, 8 paths, all `/v1/customer/devenv*`.
   if (path === "/openapi.json" || path === "/v1/openapi.json") {
     return { tenantId: "_system", pathSuffix: path, routeKind: "openapi" };
+  }
+  if (path === "/openapi/devenv.json") {
+    return { tenantId: "_system", pathSuffix: path, routeKind: "openapi_devenv" };
   }
 
   // DevEnv cloud development environments — /v1/customer/devenv* (WP-08)
@@ -2056,6 +2085,56 @@ const baseHandler: ExportedHandler<Env> = {
       if (request.method !== "GET" && request.method !== "HEAD") {
         return new Response("Method Not Allowed", { status: 405 });
       }
+      // The canonical contract. `openapi_v1.ts` is GENERATED from
+      // `openapi/corelink-v1.yaml` by `scripts/openapi_sync.py`, and
+      // `--check` fails the PR on drift — so this adds no second source of
+      // truth to keep in step: it is a projection of the one we review.
+      //
+      // Dynamic so the spec is not parsed on isolate start for the requests
+      // that never ask for it.
+      const { corelinkV1Json } = await import("./lib/openapi_v1.js");
+      const resp = new Response(corelinkV1Json, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "public, max-age=300",
+          "X-Request-Id": requestId,
+        },
+      });
+      return applyCors(resp, request);
+    }
+
+    // DevEnv sub-surface spec — published ONLY where the feature is wired.
+    //
+    // Every one of the eight DevEnv endpoints answers 503 unless the
+    // `RUNNER_DEVENV_DO` binding exists (see the `devenv_v1` arm below), and
+    // that binding is absent from every deployed environment — measured against
+    // the live Worker through the Cloudflare API, not inferred from the repo:
+    // `corelink-prod` has 97 bindings and 6 Durable Object bindings
+    // (CORELINK_SERVER, EVENT_LOG_DO, REPLICATION_COORDINATOR_DO,
+    // REQUEST_METER_COORDINATOR_DO, REQUEST_METER_SHARD_DO, ROLLOUT_DO), and
+    // RUNNER_DEVENV_DO is not among them.
+    //
+    // So the spec is gated on the same binding the endpoints are gated on. A
+    // contract cannot outlive the thing it describes: where DevEnv is wired the
+    // spec is published, and where it is not, asking for it is a 404 rather
+    // than a document promising eight endpoints that cannot answer. When the
+    // binding is deployed this starts serving on its own — nothing to remember.
+    if (route.routeKind === "openapi_devenv") {
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        return new Response("Method Not Allowed", { status: 405 });
+      }
+      if (!env.RUNNER_DEVENV_DO) {
+        return applyCors(
+          reapiError(
+            "NOT_FOUND",
+            "DevEnv is not enabled in this environment; its API contract is not published here.",
+            404,
+            requestId,
+          ),
+          request,
+        );
+      }
       const { devenvOpenApiSpec } = await import("./lib/openapi_devenv.js");
       const resp = new Response(JSON.stringify(devenvOpenApiSpec), {
         status: 200,
@@ -2068,25 +2147,42 @@ const baseHandler: ExportedHandler<Env> = {
       return applyCors(resp, request);
     }
 
-    // Container health deep-probe — /_health/container — no auth required.
-    // Forwards to the container's /_health via the _system DO.
-    //
-    // Security (L1): the container body includes a `storage` field (`r2` vs
-    // `inmemory`) that leaks when prod cold-starts into the InMemory fallback.
-    // Strip `storage` from the JSON before returning to unauthenticated callers:
-    // parse the container's JSON response, delete `storage`, re-serialize. The
-    // liveness `status` field is preserved so monitoring tools still work.
-    if (route.routeKind === "health_container") {
+    // Container health deep-probe — both variants forward to the container's
+    // /_health via the _system DO. The authenticated variant is the only path
+    // that may return storage backing/topology diagnostics.
+    if (
+      route.routeKind === "health_container" ||
+      route.routeKind === "health_container_authed"
+    ) {
+      const includeStorage = route.routeKind === "health_container_authed";
+      if (includeStorage) {
+        const authError = requireDedicatedAdminAuth(request, env, requestId);
+        if (authError !== null) {
+          return applyCors(authError, request);
+        }
+        if (request.method !== "GET" && request.method !== "HEAD") {
+          return applyCors(
+            reapiError("METHOD_NOT_ALLOWED", "health probe requires GET", 405, requestId),
+            request,
+          );
+        }
+      }
       const systemDoId = env.CORELINK_SERVER.idFromName("_system");
       const systemStub = env.CORELINK_SERVER.get(systemDoId, serverGetOpts(env));
       const containerHealthUrl = new URL(request.url);
       containerHealthUrl.pathname = "/_health";
+      // The container health handler has no query parameters. Never carry a
+      // caller-controlled query string (especially a possible secret) onward.
+      containerHealthUrl.search = "";
       const containerReq = new Request(containerHealthUrl.toString(), {
         method: "GET",
         headers: (() => {
           const h = new Headers();
           h.set("x-request-id", requestId);
-          h.set("x-corelink-route-kind", "health_container");
+          h.set(
+            "x-corelink-route-kind",
+            includeStorage ? "health_container_authed" : "health_container",
+          );
           h.set("x-corelink-tenant-id", "_system");
           return h;
         })(),
@@ -2106,20 +2202,35 @@ const baseHandler: ExportedHandler<Env> = {
       if (!containerHeaders.has("x-request-id")) {
         containerHeaders.set("x-request-id", requestId);
       }
-      // Strip the `storage` field (L1 fix): parse JSON, delete `storage`,
-      // re-serialize. If the body is not valid JSON (container returned an
-      // error body or non-JSON), pass it through unmodified — liveness
-      // semantics are preserved by the upstream status code.
+      if (includeStorage) {
+        // The dedicated admin key was verified above. Preserve the deep probe
+        // body, including `storage`, without forwarding the credential.
+        containerHeaders.set("Cache-Control", "no-store");
+        return applyCors(
+          new Response(containerResp.body, {
+            status: containerResp.status,
+            statusText: containerResp.statusText,
+            headers: containerHeaders,
+          }),
+          request,
+        );
+      }
+      // Strip storage backing and topology fields (L1/B-082): parse JSON,
+      // delete both diagnostics, then re-serialize. If the body is not valid
+      // JSON (container returned an error body or non-JSON), use a generic safe
+      // body instead of streaming potentially sensitive upstream content.
       let redactedBody: BodyInit;
       try {
         const raw = await containerResp.json() as Record<string, unknown>;
         delete raw["storage"];
+        delete raw["topology"];
         redactedBody = JSON.stringify(raw);
         containerHeaders.set("Content-Type", "application/json");
       } catch {
         // Non-JSON body (e.g. container down, returned plain-text error):
-        // fall back to streaming the raw body through without redaction.
-        redactedBody = containerResp.body ?? "";
+        // preserve status/liveness semantics without exposing raw content.
+        redactedBody = JSON.stringify({ status: "unavailable" });
+        containerHeaders.set("Content-Type", "application/json");
       }
       return applyCors(
         new Response(redactedBody, {

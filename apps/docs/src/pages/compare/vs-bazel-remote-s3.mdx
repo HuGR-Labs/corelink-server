@@ -23,8 +23,9 @@ been deployed at hundreds of shops since 2018. It is the answer many
 teams reach for when someone asks "what is the cheapest possible REAPI
 cache?"
 
-CoreLink is a managed REAPI v2 polyglot cache (Bazel, Buck2, Pants,
-Please, BuildStream, recc — plus Cargo, npm, pip, brew, OCI adapters)
+CoreLink is a managed REAPI v2 polyglot cache (Bazel and any other
+REAPI client that speaks HTTP/REST — not gRPC-only clients such as
+Buck2 or Pants — plus Cargo, npm, pip, brew, OCI adapters)
 with BYOK across four KMS providers, an RFC 6962 Merkle-chained audit
 log, and TLA+-verified tenant isolation. We charge a flat fee so your
 team does not have to operate anything.
@@ -208,7 +209,7 @@ the binary; the SRE time estimate is conservative.
 Ask three questions:
 
 **1. Do you need multi-package-manager cache (Cargo / npm / pip / OCI)
-beyond Bazel / Buck2?**
+beyond Bazel?**
 
 - **Yes** → CoreLink. bazel-remote does not have a Cargo or npm adapter.
 - **No** → continue to question 2.
@@ -279,7 +280,7 @@ $0.023/GB-month for the transition window.
 # .bazelrc — stock-Bazel HTTP alias. Your tenant is resolved from the PAT,
 # so there is no tenant or workspace segment in the URL.
 build --remote_cache=https://corelink-api.humangr.com/bazel/cache
-build --remote_header=Authorization=Bearer <PAT>
+build --credential_helper=corelink-api.humangr.com=%workspace%/.bazel/corelink-credential-helper.sh
 build --remote_cache_compression=true
 ```
 

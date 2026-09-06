@@ -89,10 +89,47 @@ describe("WI-S18-003 CLI per-command reference", () => {
     expect(src).toContain("--json");
   });
 
-  it("version surfaces SLSA attestation link", async () => {
+  it("version documents honest metadata and optional future attestation", async () => {
     const src = await readFile(resolve(refRoot, "version.mdx"), "utf8");
-    expect(src).toContain("slsa");
     expect(src).toContain("git_rev");
+    expect(src).toContain("SOURCE_DATE_EPOCH");
+    expect(src).toContain("GIT_COMMIT_SHA");
+    expect(src).toContain("TARGET");
+    expect(src).toContain("unknown");
+    expect(src).toContain("Attestation fields are intentionally absent");
+    expect(src).toContain("future published bundle");
+    expect(src).toContain("optional field");
+    expect(src).not.toMatch(/slsa|attest\.corelink/i);
+  });
+
+  it("global --version documents its distinction from the metadata subcommand", async () => {
+    const src = await readFile(resolve(refRoot, "index.mdx"), "utf8");
+    expect(src).toContain("package version");
+    expect(src).toContain("build metadata");
+    expect(src).not.toMatch(/same as.*version.*subcommand/i);
+  });
+
+  it.each(["01-authenticate.mdx", "06-ci-integration.mdx"])(
+    "SDK guide %s uses checksum verification without provenance theater",
+    async (name) => {
+      const src = await readFile(
+        resolve(refRoot, "../../how-to/sdk-cli", name),
+        "utf8",
+      );
+      expect(src).toContain(".sha256");
+      expect(src).not.toMatch(/slsa|attest|provenance|signed|signature/i);
+    },
+  );
+
+  it.each([
+    ["security overview", "../docs/explanation/security/index.mdx"],
+    ["pricing comparison", "../docs/pricing/comparison.mdx"],
+  ])("%s has only the current checksum release contract", async (_label, relative) => {
+    const src = await readFile(resolve(here, relative), "utf8");
+    expect(src).toContain("SHA-256");
+    expect(src).toContain("current public release contract");
+    expect(src).toContain("future independently retrievable bundle");
+    expect(src).not.toMatch(/slsa|sigstore|provenance|attest|cosign/i);
   });
 
   it("config documents all 4 sub-actions", async () => {

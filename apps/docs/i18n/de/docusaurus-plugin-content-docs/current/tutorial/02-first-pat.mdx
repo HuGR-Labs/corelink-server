@@ -43,17 +43,17 @@ corelink_<env>_<token_id>.<random_secret>.<hmac_sig>
 Example placeholder used throughout this documentation:
 
 ```
-corelink_dev_t_xxx.xxx.xxx
+corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA
 ```
 
 :::warning Never commit a real PAT
-The placeholder `corelink_dev_t_xxx.xxx.xxx` is intentional. Real PATs must live in environment variables, secret managers, or your CI provider's secret store — never in source code.
+The placeholder `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA` is intentional. Real PATs must live in environment variables, secret managers, or your CI provider's secret store — never in source code.
 :::
 
 ## 4. Export it
 
 ```bash
-export CORELINK_PAT="corelink_dev_t_xxx.xxx.xxx"  # replace with your real token
+export CORELINK_PAT="corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA"  # replace with your real token
 ```
 
 Add the line to your shell profile (`~/.zshrc`, `~/.bashrc`) for persistence, or load it through a secret manager (`direnv`, `1password`, `op`).
@@ -65,4 +65,4 @@ corelink doctor --check-auth
 # OK — PAT valid, tenant=acme-dev, scopes=[cache:read,cache:write], expires in 90d
 ```
 
-Next, wire it into your build system: [Bazel quickstart](./03-bazel-quickstart.mdx), [Buck2 quickstart](./04-buck2-quickstart.mdx), or the [native SDKs](./05-native-ffi-quickstart.mdx).
+Next, wire it into your build system: [Bazel quickstart](./03-bazel-quickstart.mdx) or the [native SDKs](./05-native-ffi-quickstart.mdx). (Buck2 is not supported — see [Buck2 support status](./04-buck2-quickstart.mdx).)

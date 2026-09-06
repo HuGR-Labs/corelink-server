@@ -38,9 +38,19 @@ const ADR_SUNSET_SECS: u64 = 90 * 24 * 3600;
 ///
 /// Suitable for tests and staging environments. In production, replace the
 /// alert sinks with real HTTP calls to Slack/Email/PagerDuty APIs.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct InMemoryDtWebhookHandler {
     inner: Arc<Mutex<HandlerState>>,
+    clock: Arc<dyn Fn() -> SystemTime + Send + Sync>,
+}
+
+impl std::fmt::Debug for InMemoryDtWebhookHandler {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("InMemoryDtWebhookHandler")
+            .field("inner", &self.inner)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug)]
@@ -63,6 +73,23 @@ struct HandlerState {
 impl InMemoryDtWebhookHandler {
     /// Create a new handler with the given HMAC secret and mock-injection flag.
     pub fn new(webhook_secret: Vec<u8>, mock_injection_enabled: bool) -> Self {
+        Self::new_with_clock(webhook_secret, mock_injection_enabled, SystemTime::now)
+    }
+
+    /// Create a handler with an injected UTC clock for deterministic sunset tests.
+    ///
+    /// Production callers should use [`Self::new`], which preserves the live
+    /// system-clock sunset semantics. The clock is consulted when each webhook
+    /// is handled, so a long-lived handler cannot retain a stale construction
+    /// date.
+    pub fn new_with_clock<F>(
+        webhook_secret: Vec<u8>,
+        mock_injection_enabled: bool,
+        clock: F,
+    ) -> Self
+    where
+        F: Fn() -> SystemTime + Send + Sync + 'static,
+    {
         Self {
             inner: Arc::new(Mutex::new(HandlerState {
                 webhook_secret,
@@ -72,6 +99,7 @@ impl InMemoryDtWebhookHandler {
                 last_metrics: MetricsSnapshot::default(),
                 mock_injection_enabled,
             })),
+            clock: Arc::new(clock),
         }
     }
 
@@ -114,6 +142,7 @@ impl InMemoryDtWebhookHandler {
     /// 2. A non-empty ADR ref that has not exceeded the 90-day sunset.
     fn check_patch_suppression(
         event: &DtWebhookEvent,
+        now: SystemTime,
     ) -> Option<Result<AlertDelivered, DtWebhookError>> {
         let comp = &event.component;
         if !comp.patched_locally {
@@ -130,7 +159,7 @@ impl InMemoryDtWebhookHandler {
         // Check 90-day sunset if ratified_date is present.
         if let Some(ratified) = &comp.adr_ratified_date {
             if let Ok(parsed) = ratified.parse::<chrono_mini::NaiveDate>() {
-                let today = chrono_mini::today();
+                let today = chrono_mini::today_from_system_time(now);
                 let days = today.days_since(parsed);
                 if days > 90 {
                     // ADR expired — do NOT suppress; alert normally.
@@ -215,7 +244,7 @@ impl DtWebhookHandler for InMemoryDtWebhookHandler {
         }
 
         // ── 2. Patch-locally suppression ─────────────────────────────────────
-        if let Some(suppressed) = Self::check_patch_suppression(&event) {
+        if let Some(suppressed) = Self::check_patch_suppression(&event, (self.clock)()) {
             guard.last_metrics.webhook_outcome = Some("ok".into());
             return suppressed;
         }
@@ -359,6 +388,8 @@ impl DtWebhookHandler for InMemoryDtWebhookHandler {
 
 /// Minimal date helper to avoid a heavy chrono dependency in wasm32 contexts.
 mod chrono_mini {
+    use std::time::SystemTime;
+
     /// A simplistic naive date (year, month, day) for ADR sunset calculation.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
     pub struct NaiveDate {
@@ -405,10 +436,12 @@ mod chrono_mini {
         }
     }
 
-    /// Return today's date from the system clock (UTC approximation).
-    pub fn today() -> NaiveDate {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let secs = SystemTime::now()
+    /// Convert a supplied UTC clock reading to the same calendar date used by
+    /// production. Keeping this conversion separate makes the 90-day boundary
+    /// testable without changing the sunset rule.
+    pub fn today_from_system_time(now: SystemTime) -> NaiveDate {
+        use std::time::UNIX_EPOCH;
+        let secs = now
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
@@ -446,10 +479,22 @@ mod tests {
         hmac::sign,
         types::{ComponentMetadata, DtEventType, VulnerabilityMetadata},
     };
-    use std::time::SystemTime;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     fn make_handler() -> InMemoryDtWebhookHandler {
         InMemoryDtWebhookHandler::new(b"test-secret".to_vec(), false)
+    }
+
+    fn utc_date(date: &str) -> SystemTime {
+        let parsed = chrono_mini::NaiveDate::parse_from_str(date).expect("valid date");
+        let epoch = chrono_mini::NaiveDate::parse_from_str("1970-01-01").expect("epoch");
+        let days = parsed.days_since(epoch);
+        UNIX_EPOCH + Duration::from_secs(days as u64 * 86_400)
+    }
+
+    fn handler_at(date: &str) -> InMemoryDtWebhookHandler {
+        let now = utc_date(date);
+        InMemoryDtWebhookHandler::new_with_clock(b"test-secret".to_vec(), false, move || now)
     }
 
     fn make_event(cvss: f64) -> DtWebhookEvent {
@@ -566,17 +611,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn patched_locally_suppressed() {
-        let handler = make_handler();
+    async fn patched_locally_suppressed_at_day_90() {
+        let handler = handler_at("2026-07-30");
         let mut event = make_event(9.5);
         event.component.patched_locally = true;
         event.component.patched_locally_adr = Some("ADR-0042".into());
-        event.component.adr_ratified_date = Some("2026-05-01".into()); // Recent.
+        event.component.adr_ratified_date = Some("2026-05-01".into());
         signed_event(&handler, &event);
         let result = handler.handle_webhook(event).await;
         assert!(matches!(
             result,
             Err(DtWebhookError::PatchedLocallySuppressed { .. })
         ));
+    }
+
+    #[tokio::test]
+    async fn patched_locally_alerts_at_day_91() {
+        let handler = handler_at("2026-07-31");
+        let mut event = make_event(9.5);
+        event.component.patched_locally = true;
+        event.component.patched_locally_adr = Some("ADR-0042".into());
+        event.component.adr_ratified_date = Some("2026-05-01".into());
+        signed_event(&handler, &event);
+        let result = handler
+            .handle_webhook(event)
+            .await
+            .expect("expired ADR alerts");
+        assert_eq!(result.severity, DtSeverity::Critical);
+        assert_eq!(result.channels.len(), 3);
     }
 }

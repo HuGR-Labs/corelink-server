@@ -81,7 +81,7 @@ tags:
 ## Shot #05 — PAT issued (one-time view)
 
 - **Route:** `/en/onboarding/pat`
-- **What to capture:** the one-time PAT display card. The token must be **fake** (`corelink_sandbox_t_xxx.xxx.xxx` literal) with the rest blurred for the recording.
+- **What to capture:** the one-time PAT display card. The token must be **fake** (`corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA` synthetic shape) with the rest blurred for the recording.
 - **Highlight:** ring around the "Copy" button + the "I have saved this token" checkbox.
 - **Annotation overlay:** "Shown once. Never logged. Never re-displayable."
 - **Used in:** `5-MIN-DEEPDIVE.md` §1.5; quickstart hero (`apps/docs/docs/tutorials/quickstart-10min.mdx` step 1).
@@ -136,21 +136,16 @@ tags:
 - **Used in:** `5-MIN-DEEPDIVE.md` §5.3; `byok-deep-dive-demo.md` §3.
 - **Redaction note:** ARN account ID must be the AWS docs-canonical `111122223333`, never a real account.
 
-## Shot #12 — Sensitive ops queue (dual-approval workflow)
+## Shot #12 — Sensitive-operation workflow (reserved)
 
-- **Route:** `/en/admin/ops`
-- **What to capture:** queue of sensitive operations with the new "Activate BYOK on acme-prod" row in "pending — 1/2 approvers" state.
-- **Highlight:** ring around the new pending row.
-- **Annotation overlay:** "Two distinct approvers. Not one admin clicking twice."
-- **Used in:** `5-MIN-DEEPDIVE.md` §5.4; `byok-deep-dive-demo.md` §4.
+- **Status:** retired from the launch set until durable persistence and a safe Worker binding exist.
+- **What to capture:** nothing. Do not fabricate a queue, pending operation, or approval result.
+- **Replacement:** use the real admin audit and tenant screens; sensitive mutations remain unavailable.
 
-## Shot #13 — Sensitive op detail (approve / reject)
+## Shot #13 — Sensitive-operation detail (reserved)
 
-- **Route:** `/en/admin/ops/[op_id]`
-- **What to capture:** the op detail page showing requestor, op type (`byok_activate`), requested-at, justification field, approval log (with first approver listed), and "Approve" / "Reject" buttons greyed out for the *requestor* (they cannot self-approve).
-- **Highlight:** the greyed-out approve button + the "requestor cannot self-approve" hint.
-- **Annotation overlay:** "Separation of duties. Cryptographically enforced."
-- **Used in:** `byok-deep-dive-demo.md` §4; blog post `02-byok-deep-dive.md` §"Kill switch".
+- **Status:** retired from the launch set for the same reason as Shot #12.
+- **What to capture:** nothing. There is no served operation-detail or approve/reject screen.
 
 ## Shot #14 — Audit page filtered for `byok.*` events (rotation evidence)
 
@@ -198,7 +193,7 @@ Run with: `pnpm --filter admin-ui exec playwright test marketing-shots.spec.ts`
 
 ## Redaction checklist (before any public publish)
 
-- [ ] PATs replaced with literal `corelink_sandbox_t_xxx.xxx.xxx` or blurred.
+- [ ] PATs replaced with the synthetic canonical shape `corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBA` or blurred.
 - [ ] Customer emails (sign-in card, audit actor field) replaced with `demo-eval@example.com`.
 - [ ] AWS account IDs replaced with `111122223333` (docs-canonical).
 - [ ] GCP project IDs replaced with `corelink-demo-project`.
