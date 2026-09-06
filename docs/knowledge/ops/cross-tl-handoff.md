@@ -6,7 +6,7 @@ source_files:
   - "docs/handoff/2026-06-11-corelink-response-hugit-p2-waveplan.md"
 source_blobs:
   - "docs/handoff/2026-06-11-corelink-response-hugit-p2-waveplan.md@971e78e83dbf6b15c36a649deb3e3a8e4890ed15"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "handoff", "tech-lead", "wave-plan", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"

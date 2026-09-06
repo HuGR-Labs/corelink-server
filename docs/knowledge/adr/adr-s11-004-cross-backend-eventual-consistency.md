@@ -9,7 +9,7 @@ tags: ["adr", "s11", "privacy", "erasure", "eventual-consistency", "verification
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-S11-004-cross-backend-eventual-consistency.md@2daeca7bbc8dc5c7416c4210fb622fa43af23678"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S11-004 — Cross-backend erasure is eventual-consistency with a 24h verification gate (not 2PC)

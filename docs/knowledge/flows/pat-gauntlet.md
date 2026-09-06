@@ -10,7 +10,7 @@ source_files:
 source_blobs:
   - "crates/corelink-container/src/adapter_pat_crypto.rs@e0915648eb64b271e4a7b40a0510ce0e03ef17a6"
   - "crates/corelink-container/src/adapter_pat_verifier.rs@9470b565acb3cf43124193fd915d7abafa9cbb0b"
-checkpoint_sha: "a810ff13ddee10d4af4589a51610c1fd0422cbaf"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["flows", "auth", "pat", "argon2id", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"

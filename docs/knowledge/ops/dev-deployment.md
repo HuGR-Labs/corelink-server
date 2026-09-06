@@ -6,7 +6,7 @@ source_files:
   - "docs/dev/cf-worker-deployment-poc.md"
 source_blobs:
   - "docs/dev/cf-worker-deployment-poc.md@b7849165e7ae36cbf9ad4c5b3991808adabafca1"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "dev", "cloudflare", "wasm32", "worker", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"

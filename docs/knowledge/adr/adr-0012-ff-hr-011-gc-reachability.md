@@ -9,7 +9,7 @@ tags: ["adr", "risk-lanes", "garbage-collection", "reachability", "framework"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0012-ff-hr-011-gc-reachability.md@33cdb0f72bff5c85d7cf9847de5e8a4ffa0297df"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0012 — FF-HR-011 forcing factor for GC / reachability changes

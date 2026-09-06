@@ -8,7 +8,7 @@ source_files:
 source_blobs:
   - "docs/operator/launch-pat-scope-fix-runbook.md@33335f00309acd82759b679c5b1ba5b63d3e33dc"
   - "specs/03_architecture/adrs/ADR-0067-secrets-broker-d1-encrypted-lease-deferred.md@e4ad4bb9167c51779292c1e184571409bf8e6b8c"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "secrets", "pat-scope", "broker", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"

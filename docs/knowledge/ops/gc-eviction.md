@@ -19,7 +19,7 @@ source_blobs:
   - "crates/corelink-eviction/src/reservation.rs@d5004a86862d151462dbe4f97910898736bdb2a3"
   - "crates/corelink-eviction/src/trigger.rs@724e3b570b0ccde870b50e7f75c1488566e27d08"
   - "docs/internal/gc-prod-rollout-plan.md@f09191e12bea58e49e98eaefa2420ae415923bb7"
-checkpoint_sha: "eb6ba3ca92ff3cae0693267077d0749b11936849"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "gc", "eviction", "storage", "runbook", "rollout"]
 timestamp: "2026-06-26T00:00:00Z"

@@ -6,7 +6,7 @@ source_files:
   - "specs/03_architecture/adrs/ADR-0062-tier-check-widen-rebuild.md"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0062-tier-check-widen-rebuild.md@73c69b4149b872ee10901db21171d7fabae01439"
-checkpoint_sha: "a810ff13ddee10d4af4589a51610c1fd0422cbaf"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["adr", "d1", "migration", "tier-selection", "additive", "sqlite", "s19"]
 timestamp: "2026-06-26T00:00:00Z"

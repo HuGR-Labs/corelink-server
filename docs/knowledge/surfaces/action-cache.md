@@ -8,7 +8,7 @@ source_files:
 source_blobs:
   - "crates/corelink-container/src/routes/ac/part-00.rs@80864cc770f76f6a66647c9772d1491fb949ddf5"
   - "crates/corelink-container/src/routes/ac/part-01.rs@270e30071a94e097aac010afc95c8c4856fb6cbd"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["surfaces", "action-cache", "cache", "reapi"]
 timestamp: "2026-06-26T00:00:00Z"

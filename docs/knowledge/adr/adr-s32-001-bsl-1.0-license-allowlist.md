@@ -9,7 +9,7 @@ tags: ["adr", "compliance", "license", "supply-chain", "bsl-1.0", "cargo-deny", 
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-S32-001-bsl-1.0-license-allowlist.md@72a4364cb43c61f425641caa42dff78e5487d992"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S32-001 — Permit BSL-1.0 in the license allowlist

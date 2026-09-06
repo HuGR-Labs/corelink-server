@@ -6,7 +6,7 @@ source_files:
   - "specs/03_architecture/adrs/ADR-S34-001-cas-read-integrity-before-streaming.md"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-S34-001-cas-read-integrity-before-streaming.md@17bf02d82ee547024214cb49ae600dee87c97500"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["adr", "cas", "integrity", "streaming", "scrubber", "availability", "read-path"]
 timestamp: "2026-08-26T00:00:00Z"

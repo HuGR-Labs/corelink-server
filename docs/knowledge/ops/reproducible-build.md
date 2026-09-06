@@ -10,7 +10,7 @@ source_blobs:
   - "docs/build/reproducible.md@735e3ec802a1eee1048cd4731d19251592ed2856"
   - "specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md@4a43a0adc95fba146c5db516d8fe946564777da9"
   - "rust-toolchain.toml@5e394abc4407eccd95c0ee6e7763861758e651a9"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "reproducible-build", "supply-chain", "tamper-detection", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"

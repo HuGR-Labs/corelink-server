@@ -9,7 +9,7 @@ tags: ["adr", "s05", "chunker", "api-stability", "semver"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0039-chunker-public-api-stability.md@41512aa79af0d7345695131b960a9486590ba87a"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0039 — corelink-chunker public API stability + mask seed versioning

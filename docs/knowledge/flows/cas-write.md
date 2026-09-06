@@ -14,7 +14,7 @@ source_blobs:
   - "crates/corelink-container/src/routes/cas/single.rs@bbb3c5514c7c720d2374a0bd29ac6cf2fbc46fab"
   - "crates/corelink-container/src/routes/cas/batch.rs@bc3b531744e3659d850eb1f415c2ec015df00e55"
   - "crates/corelink-container/src/storage.rs@2260743898d0c791d2de82b21fee25b0596aa8bb"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["flows", "cas", "hot-path", "storage", "request-flow"]
 timestamp: "2026-06-28T00:00:00Z"

@@ -9,7 +9,7 @@ tags: ["adr", "auth", "tenant-suspend", "offboarding", "kv", "cache", "performan
 timestamp: "2026-07-19T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0070-tenant-suspend-gate-kv-l2-cache.md@9e37d8b45da529dda272a799fcd7c9edb1fbf297"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0070 — Tenant-suspend gate: L2 KV cache with a bounded enforcement window

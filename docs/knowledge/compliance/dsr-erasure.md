@@ -62,7 +62,7 @@ source_blobs:
   - "crates/corelink-dsr/src/receipt.rs@02a5f8cbc6836edfdf2c6fe1412847d1e9feeb15"
   - "crates/corelink-dsr/src/calendar.rs@61b6c50a09a461f43cd93b169593c03c5e7d88bc"
   - "crates/corelink-dsr/src/lib.rs@9499a36d58012395ae7464ec961fa96af28ab64a"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["dsr", "gdpr", "lgpd", "erasure", "right-to-erasure", "compliance", "mfa", "attestation"]
 timestamp: "2026-06-26T00:00:00Z"

@@ -8,7 +8,7 @@ source_files:
 source_blobs:
   - "docs/cli/json-output-schema.md@0aed1d6f813933692363c0ca308aa036b7e16810"
   - "docs/cli/telemetry.md@2a39713a7ee176c7fc43a236515fd48888e3536e"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "cli", "json", "telemetry", "privacy", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"

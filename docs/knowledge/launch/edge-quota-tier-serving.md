@@ -10,7 +10,7 @@ source_blobs:
   - "worker/src/lib/quota.ts@a621dae0319df1e36084b01e5e685f0b9b51d725"
   - "worker/src/lib/quota_storage_cache.ts@0bbb2753f4fa96918a95cfa16e6aa47706be012b"
   - "worker/src/lib/quota_request_cache.ts@33dbb9f924627a5504ce790ae1be5f5f0c88e35e"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: [launch, billing, quota, tier, money-path, worker-edge]
 timestamp: "2026-06-27T00:00:00Z"

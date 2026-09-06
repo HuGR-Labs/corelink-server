@@ -12,7 +12,7 @@ source_blobs:
   - "crates/corelink-config-do/src/lib.rs@ca276589c7f24827d764428fdfec86cee81cf8a4"
   - "crates/corelink-config-do/src/types.rs@9639f8148cf1ea2a4030780e171f8c39a94bccc7"
   - "crates/corelink-cf-bindings/src/lib.rs@c908b3d050663b0d154463bf59f4e785cf1c63a8"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["crates", "container", "platform", "cloudflare", "durable-object", "bindings"]
 timestamp: "2026-06-26T00:00:00Z"

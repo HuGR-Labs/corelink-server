@@ -18,7 +18,7 @@ source_blobs:
   - "crates/corelink-tier-selection/src/lib.rs@ca4ff79f9e120570f81e2c46a8d97496a59cc275"
   - "crates/corelink-tier-selection/src/dpa.rs@dd0c9408c17913fdb037eee46da64bd027634361"
   - "crates/corelink-tier-selection/src/ledger.rs@1bf219d7e64d0b824b8c0db5c70d666539b16d09"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["crates", "billing", "stripe", "tier", "money-path", "commerce"]
 timestamp: "2026-06-26T00:00:00Z"

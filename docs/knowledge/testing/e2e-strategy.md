@@ -6,7 +6,7 @@ source_files:
   - "docs/testing/2026-06-23-gapmap-MASTER.md"
 source_blobs:
   - "docs/testing/2026-06-23-gapmap-MASTER.md@899f62b6dcf8fdeb8d4e2bd66dba450eaed8838e"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["testing", "e2e", "user-simulation", "coverage", "gap-map"]
 timestamp: "2026-06-26T00:00:00Z"

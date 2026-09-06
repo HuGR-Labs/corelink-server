@@ -9,7 +9,7 @@ tags: ["adr", "ownership", "ac-ttl", "eviction", "tier"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0019-ttl-ownership-s04-s07.md@f6aa8f214d3f370008470c5eb80fd60f58781311"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0019 — AC TTL ownership: S-07 supersedes S-04 with per-tier defaults

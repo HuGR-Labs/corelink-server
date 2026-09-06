@@ -8,7 +8,7 @@ source_files:
 source_blobs:
   - "crates/corelink-container/src/request_count.rs@e5eef9aac432e24e6a1928acbb58db62711027a4"
   - "crates/corelink-eviction/src/tier.rs@4cf334a805b8460c887494c05545a38bb1f94ec1"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["tenancy", "quota", "request-count", "oci", "fail-open"]
 timestamp: "2026-06-26T00:00:00Z"

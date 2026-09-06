@@ -10,7 +10,7 @@ source_blobs:
   - "docs/sdk/python.md@f6e57200ecd1320b00b57700d8ccfdbc54d3e90a"
   - "docs/sdk/go.md@f46ade4443e229dc2bba2721ad4fd62b091f3110"
   - "docs/sdk/javascript.md@867049a5648b8f6bab54a730ac0e32b5e1f59545"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "sdk", "client-verify", "blake3", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"

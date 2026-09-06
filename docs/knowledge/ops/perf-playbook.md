@@ -10,7 +10,7 @@ source_blobs:
   - "docs/internal/PERFORMANCE-PLAYBOOK.md@af51279d8cd1e7c97637ccf03b743513e09804cb"
   - "docs/perf/2026-06-19-cas-hot-path-latency.md@f08db60bee482f5cd47e4d3b27d3fb7dab1b2ba5"
   - ".github/workflows/perf-regression.yml@b79ddeeed014cfb54a6f442e2ce870852463eaf4"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "performance", "latency", "hot-path", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"

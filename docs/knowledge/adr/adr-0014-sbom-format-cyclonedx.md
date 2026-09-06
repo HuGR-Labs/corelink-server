@@ -9,7 +9,7 @@ tags: ["adr", "supply-chain", "sbom", "cyclonedx", "compliance"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0014-sbom-format-cyclonedx.md@c10e8aa6339081ba2cb8da52cb06c10ea216f5fc"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0014 — SBOM in CycloneDX 1.5+ (preferred), SPDX 2.3+ accepted

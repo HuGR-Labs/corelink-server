@@ -22,7 +22,7 @@ source_blobs:
   - "crates/corelink-container/src/routes/cas/foundation.rs@c2348f6ddb4567e8c902fd237213f86957300cdc"
   - "crates/corelink-container/src/routes/cas/single.rs@bbb3c5514c7c720d2374a0bd29ac6cf2fbc46fab"
   - "crates/corelink-container/src/main_boot.rs@245e547bb2d9bddba3dc006dee3c155f266978e1"
-checkpoint_sha: "eb6ba3ca92ff3cae0693267077d0749b11936849"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["planes", "container", "rust", "axum", "routing"]
 timestamp: "2026-09-06T00:00:00Z"

@@ -10,7 +10,7 @@ source_blobs:
   - "docs/security/2026-06-23-review-money-path.md@ae1f6616c5b1526376d379684b77c9267c9465d1"
   - "crates/corelink-stripe-real/src/webhook_dispatch.rs@d9329fb5a4e585dbc7069c5e6aeab664ea1e576c"
   - "crates/corelink-billing-stripe-materializer/src/handler.rs@d817a34eae4afe520b733163b79ea1605ea545fa"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["security", "billing", "stripe", "money-path", "quota"]
 timestamp: "2026-06-26T00:00:00Z"

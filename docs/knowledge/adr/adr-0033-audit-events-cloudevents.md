@@ -9,7 +9,7 @@ tags: ["adr", "audit", "cloudevents", "jcs", "hash-chain", "pii", "s03", "s09"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0033-audit-events-cloudevents.md@bb173a11b6ad7938b5c7e70050c64f39c05678c1"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0033 — Audit events: CloudEvents 1.0 + JCS hash chain + PII newtypes

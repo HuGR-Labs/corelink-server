@@ -9,7 +9,7 @@ tags: ["adr", "s15", "ffi", "sdk", "client-verify", "security"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0016-ffi-wrappers-vs-native-http.md@1fa7c1b15c82707675f4070396624d7227ef99be"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0016 — FFI wrappers over a single Rust truth vs native HTTP per language

@@ -9,7 +9,7 @@ tags: ["adr", "s12", "sbom", "cyclonedx", "supply-chain", "ntia"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-S12-001-sbom-cyclonedx-ntia-tsa-dt.md@6b454834f5484703bece009a870d7d9bb9d4f615"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S12-001 — SBOM CycloneDX 1.5+ NTIA strict + RFC 3161 TSA + Dependency-Track

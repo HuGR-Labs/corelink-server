@@ -22,7 +22,7 @@ source_blobs:
   - "specs/03_architecture/adrs/ADR-S19-001-tier-taxonomy-amendment-5-to-6.md@c62746b9f202e0a90444455d4f184d858b86c5dc"
   - "worker/src/durable_object_start.ts@fb3e310dcba3169791ecfc0e6b8bd0c3a7f3c679"
   - "worker/src/index_auth.ts@8cb197bf3200722ceed11e71bcfb82c3a853529e"
-checkpoint_sha: "eb6ba3ca92ff3cae0693267077d0749b11936849"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["launch", "tier", "checkout", "stripe", "onboarding", "money-path"]
 timestamp: "2026-09-06T00:00:00Z"

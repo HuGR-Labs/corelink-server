@@ -6,7 +6,7 @@ source_files:
   - "docs/testing/2026-06-23-gapmap-quality.md"
 source_blobs:
   - "docs/testing/2026-06-23-gapmap-quality.md@52fc0e3744f2132f6389fb678cbae64b24f7a701"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["testing", "ci", "gates", "false-confidence", "methodology"]
 timestamp: "2026-06-26T00:00:00Z"

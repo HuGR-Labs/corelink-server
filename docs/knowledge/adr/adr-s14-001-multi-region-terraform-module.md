@@ -13,7 +13,7 @@ source_blobs:
   - "specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md@3d1dc878902a2d7f35c0bb9982d5e83b6c6daff1"
   - "apps/migrate-single-to-multi-region/src/main.rs@4128e1f04c4e5ed4bec91a22afe7fd2056a4a199"
   - "crates/corelink-container/src/storage/region_map.rs@b21dc64ca160921f1417498a615ab9bed967c14a"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S14-001 — Multi-region Terraform module + per-region KV namespace + DO EU jurisdiction

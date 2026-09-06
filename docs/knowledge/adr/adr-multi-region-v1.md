@@ -9,7 +9,7 @@ tags: ["adr", "multi-region", "containers", "cloudflare", "wrangler", "r2", "dep
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-MULTI-REGION-V1.md@fe848d00d4b2184a65211df9f8c524be6a45b429"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-MULTI-REGION-V1 — Multi-region container deployments v1 (per-region worker envs)

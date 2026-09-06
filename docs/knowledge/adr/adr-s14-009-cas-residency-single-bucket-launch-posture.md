@@ -9,7 +9,7 @@ tags: ["adr", "storage", "residency", "cas", "r2", "schrems-ii", "lgpd", "s14"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-S14-009-cas-residency-single-bucket-launch-posture.md@88e2f7940d27d3145102f1b814f75d7ee3319578"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S14-009 — CAS residency: single-bucket launch posture + per-region remediation

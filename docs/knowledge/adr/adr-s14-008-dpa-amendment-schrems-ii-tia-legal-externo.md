@@ -9,7 +9,7 @@ tags: ["adr", "compliance", "dpa", "schrems-ii", "gdpr", "lgpd", "byok", "s14"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-S14-008-dpa-amendment-schrems-ii-tia-legal-externo.md@1fee422f04ee3df2c2ee1d497b4c2817dc93c3fc"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S14-008 — DPA amendment + Schrems II TIA + legal-externo review path

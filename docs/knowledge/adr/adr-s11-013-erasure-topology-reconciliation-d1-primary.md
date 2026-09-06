@@ -9,7 +9,7 @@ tags: ["adr", "s11", "erasure", "dsr", "topology", "gdpr"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-S11-013-erasure-topology-reconciliation-d1-primary.md@f437650373100fd53147bacb926410ebb59e9fcc"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S11-013 — Erasure Backend Topology Reconciliation (canonical → shipped D1-primary)

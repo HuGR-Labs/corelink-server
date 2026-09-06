@@ -14,7 +14,7 @@ source_blobs:
   - "crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs@2269d7e5559fa1ef565f9dc67a20fdf22ea37aab"
   - "crates/corelink-turbo-bridge/src/adapter.rs@bee7a6c1be4d4ee7a1585627e1452574b8fbd907"
   - "crates/corelink-turbo-bridge/src/error.rs@8bed7e6406ee9e40dffb6a937c930367f1ac732d"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["surfaces", "turborepo", "vercel", "cache"]
 timestamp: "2026-06-26T00:00:00Z"

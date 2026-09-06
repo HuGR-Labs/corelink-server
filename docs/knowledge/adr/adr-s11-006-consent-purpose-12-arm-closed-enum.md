@@ -11,7 +11,7 @@ timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "crates/corelink-privacy/src/consent/schema.rs@f2cec106b2e72c6e9216b12adb169de66b7e4e7e"
   - "specs/03_architecture/adrs/ADR-S11-006-consent-purpose-12-arm-closed-enum.md@34a6fc5a09c5202291bcd3c407eb841cebde51f9"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S11-006 — 12-Arm Closed ConsentPurpose Enum Discipline

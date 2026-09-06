@@ -20,7 +20,7 @@ source_blobs:
   - "apps/signup-worker/src/webhooks/stripe_contract.ts@03044646e229e4db4d7b2ce2463127519cbcac58"
   - "apps/signup-worker/src/webhooks/stripe_persistence.ts@f5ed3490e6f4c47e0d97e488f86d46ddb2e6837f"
   - "apps/signup-worker/src/webhooks/stripe_signature.ts@b11d99bca2527ed4ed619669a0342ca4677c571a"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: [launch, billing, stripe, webhook, activation, money-path]
 timestamp: "2026-06-27T00:00:00Z"

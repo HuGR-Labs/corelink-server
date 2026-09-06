@@ -46,7 +46,7 @@ source_blobs:
   - "crates/corelink-analytics/src/validator.rs@81f7cafda7d59188da5a28e751a9a4de0e777beb"
   - "crates/corelink-container/src/main.rs@f799f8d154e5aa226792dd08995a10ee944f2fb7"
   - ".github/workflows/billing-reconcile-daily.yml@2fb0d3dfaf71f254fc7e1367d31b8b8468b27070"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["billing", "stripe", "usage-metering", "reconciliation", "money-path"]
 timestamp: "2026-06-28T00:00:00Z"

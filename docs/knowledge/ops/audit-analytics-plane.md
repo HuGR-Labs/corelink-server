@@ -50,7 +50,7 @@ source_blobs:
   - "scripts/verify-signup-worker-secrets.sh@cd1d68d7025e8f606df15f9f2b2a5564b552fade"
   - ".github/workflows/signup-worker-deploy.yml@81c3311ccdead012f06d9c48a891c7fd85281411"
   - "docs/cli/audit-export.md@813c70f0a1807411138d865e73c44bb16143102e"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "audit", "export", "analytics", "compliance", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"

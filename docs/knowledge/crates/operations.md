@@ -26,7 +26,7 @@ source_blobs:
   - "crates/corelink-ratelimit/src/limiter.rs@24495e3d30240cedbe3a648768eb229d41fff62f"
   - "crates/corelink-ratelimit/src/bucket.rs@4ab6aa7c1baf67ad2824cc5a96b23ebb01f8da6b"
   - "crates/corelink-ratelimit/src/key.rs@1bb056c23a2b683edc8a9564529aa0bb1e9fcb1c"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["crates", "gc", "eviction", "ratelimit", "ops", "sre"]
 timestamp: "2026-06-26T00:00:00Z"

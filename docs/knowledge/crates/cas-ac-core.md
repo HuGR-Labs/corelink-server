@@ -19,7 +19,7 @@ source_blobs:
   - "crates/corelink-reapi/src/lib.rs@a4e6596b8741aded884e05b445df1b13edf1419b"
   - "crates/corelink-container/src/routes/cas/foundation.rs@c2348f6ddb4567e8c902fd237213f86957300cdc"
   - "crates/corelink-container/src/routes/cas/batch.rs@bc3b531744e3659d850eb1f415c2ec015df00e55"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["crates", "cas", "ac", "integrity", "blake3", "core"]
 timestamp: "2026-06-26T00:00:00Z"

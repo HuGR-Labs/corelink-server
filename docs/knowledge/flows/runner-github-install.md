@@ -18,7 +18,7 @@ source_blobs:
   - "apps/signup-worker/src/index.ts@8caf7d163752ce98831fc8bb7199c1a16a24c2cd"
   - "apps/admin-ui/src/lib/install-state.ts@41380eaf61822e293787e2b9730fa14af2690d8d"
   - "apps/admin-ui/src/app/api/install/github/route.ts@aa5e8f796756b44d1104c36348f9adafb17fae7f"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["flows", "runners", "github-app", "install", "provisioning", "identity", "worker-edge"]
 timestamp: "2026-07-05T00:00:00Z"

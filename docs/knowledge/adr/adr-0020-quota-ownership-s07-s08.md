@@ -9,7 +9,7 @@ tags: ["adr", "ownership", "quota", "rate-limit", "eviction"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0020-quota-ownership-s07-s08.md@82f403ec969bce70e46b5cb5559bfe3dd864f029"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0020 — Quota ownership: S-07 storage soft-pressure, S-08 hard-block + bandwidth

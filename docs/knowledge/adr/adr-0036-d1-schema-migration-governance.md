@@ -9,7 +9,7 @@ tags: ["adr", "d1", "schema", "migration", "sqlite", "governance"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0036-d1-schema-migration-governance.md@f007053967254ee3cd3436a4341b6160518d2270"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0036 — D1 schema migration governance

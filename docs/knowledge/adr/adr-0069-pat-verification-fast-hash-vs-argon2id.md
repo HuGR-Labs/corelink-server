@@ -9,7 +9,7 @@ tags: ["adr", "auth", "pat", "argon2id", "hash", "performance", "deferred"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0069-pat-verification-fast-hash-vs-argon2id.md@c44ae035715cf82644d33e6a9acb9773a472a869"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0069 — PAT verification: fast keyed hash, not Argon2id (high-entropy tokens)

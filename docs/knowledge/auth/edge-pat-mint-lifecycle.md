@@ -14,7 +14,7 @@ source_blobs:
   - "worker/src/lib/auth_rotate.ts@fa9e15868a4d04a803d7f5769469ff6d6b406f3e"
   - "worker/src/lib/pat_expiry.ts@7389d84890e7b7a8969a7ef5bbc7f31a26d91557"
   - "worker/src/pat_issue_rate_limit.ts@47277c780bb9d0853821d5bc92ab79975c9cca96"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "mint", "worker-edge", "tenancy"]
 timestamp: "2026-06-27T00:00:00Z"

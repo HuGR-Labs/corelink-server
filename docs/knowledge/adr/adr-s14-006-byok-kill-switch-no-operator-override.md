@@ -9,7 +9,7 @@ tags: ["adr", "s14", "byok", "kill-switch", "crypto-sovereignty"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-S14-006-byok-kill-switch-no-operator-override.md@c0785bb9b64bbe7e1d1303927a4bde6640dff3fc"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S14-006 — BYOK CMK revocation kill switch (hard-fail, no operator override)

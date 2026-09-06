@@ -33,7 +33,7 @@ source_blobs:
   - "crates/corelink-container/src/usage_meter.rs@b12ccb2ac15f57ab913ee528a4d16e480b0416d8"
   - "crates/corelink-ratelimit/src/audit.rs@b6a12e2520b52bf028d2a1f1c06fdbf776b6c77e"
   - "crates/corelink-ratelimit/src/metrics.rs@4c5558309a771c4442b233dedec95efce8e21f62"
-checkpoint_sha: "eb6ba3ca92ff3cae0693267077d0749b11936849"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["tenancy", "governance", "rate-limit", "customer", "users", "fail-closed"]
 timestamp: "2026-09-06T00:00:00Z"

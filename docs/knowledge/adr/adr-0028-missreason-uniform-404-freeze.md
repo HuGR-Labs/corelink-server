@@ -9,7 +9,7 @@ tags: ["adr", "missreason", "404", "side-channel", "tenant-isolation", "reapi", 
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0028-missreason-uniform-404-freeze.md@662d771366df2e7e4392c8784daa5d6cb2dfcd79"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0028 — MissReason → uniform HTTP 404 freeze (410 deferred)

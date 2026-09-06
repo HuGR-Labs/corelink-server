@@ -12,7 +12,7 @@ source_blobs:
   - "crates/corelink-adapter-host/src/overload.rs@c90795e4b3f5e9f0626a295a751ff702b112569f"
   - "crates/corelink-bazel-bridge/src/lib.rs@97d1c683608fa1b8614c0d4ac06f71705413632d"
   - "crates/corelink-byok/src/lib.rs@61f5bb2b8d0df1524da7c72a2bf218aa8575deca"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["crates", "adapters", "bazel", "byok", "kms", "surfaces"]
 timestamp: "2026-06-26T00:00:00Z"

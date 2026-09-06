@@ -6,7 +6,7 @@ source_files:
   - "docs/testing/2026-06-22-remaining-e2e-journeys-handoff.md"
 source_blobs:
   - "docs/testing/2026-06-22-remaining-e2e-journeys-handoff.md@eda01772443815e6e22d362a30a6907aaa9cd6aa"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["testing", "e2e", "real-user", "black-box", "go-live"]
 timestamp: "2026-06-26T00:00:00Z"

@@ -16,7 +16,7 @@ source_blobs:
   - "crates/corelink-container/src/quota_error.rs@dce61370873ceeb99a7af486b6801609fcb828fd"
   - "crates/corelink-container/src/routes/billing_ingest.rs@7d893cead430dc50f682e36ad4dcce947891ac06"
   - "crates/corelink-container/src/routes/tenant_quota_read.rs@5bbf243002c0eecbe185303189a1b831468b19bc"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["flows", "billing", "quota", "tenancy", "request-flow"]
 timestamp: "2026-06-26T00:00:00Z"

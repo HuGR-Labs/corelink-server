@@ -6,7 +6,7 @@ source_files:
   - "docs/security/2026-06-15-launch-due-diligence-audit.md"
 source_blobs:
   - "docs/security/2026-06-15-launch-due-diligence-audit.md@381b2e65be7494373d7dc47beb04ade0cf1cf7b5"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["launch", "due-diligence", "go-live", "readiness", "security", "compliance"]
 timestamp: "2026-06-26T00:00:00Z"

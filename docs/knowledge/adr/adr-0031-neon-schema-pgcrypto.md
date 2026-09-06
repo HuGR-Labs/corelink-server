@@ -9,7 +9,7 @@ tags: ["adr", "neon", "postgres", "pgcrypto", "rls", "dsr", "auth", "s03"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0031-neon-schema-pgcrypto.md@eaa24e8f495a035ee13c38619b9bb18fe3b251c8"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0031 — Auth Neon schema: pgcrypto + RLS + DSR cascade

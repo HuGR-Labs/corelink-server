@@ -19,7 +19,7 @@ source_blobs:
   - "crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs@358d2554f7a8af80b31368d61990d4f705c06a93"
   - "crates/corelink-container/src/sli_aggregate.rs@9ba20902d00916e434238c0765599873f842455d"
   - "crates/corelink-region/src/region.rs@47b01e523ed5e5c57425454eaf67bbe1020511e8"
-checkpoint_sha: "eb6ba3ca92ff3cae0693267077d0749b11936849"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["storage", "r2", "cas", "s3", "tenant-isolation"]
 timestamp: "2026-06-29T00:00:00Z"

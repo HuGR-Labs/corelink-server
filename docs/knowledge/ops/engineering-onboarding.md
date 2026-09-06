@@ -8,7 +8,7 @@ source_files:
 source_blobs:
   - "docs/internal/ENGINEERING-ONBOARDING.md@fa1f2689fc136fbdbedda3018873ad91c6cd36ca"
   - "docs/internal/onboarding/BUDDY-PROTOCOL.md@4c115f87481c8649132d578c6377c648551b08bf"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "onboarding", "buddy", "process", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"

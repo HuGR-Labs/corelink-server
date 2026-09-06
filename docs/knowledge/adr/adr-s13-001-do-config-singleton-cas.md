@@ -9,7 +9,7 @@ tags: ["adr", "s13", "config", "durable-object", "cas", "admin-plane"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-S13-001-do-config-singleton-cas.md@a987c331f63100198e38fd1e7634b38f32c3a8bd"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S13-001 — DO config-singleton per-region with CAS atomic update

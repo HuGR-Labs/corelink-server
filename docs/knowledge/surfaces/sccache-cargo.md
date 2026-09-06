@@ -8,7 +8,7 @@ source_files:
 source_blobs:
   - "crates/corelink-container/src/routes/cargo/part-00.rs@148cbd2380f825a9ec53a6f7cea1c15ad409af7a"
   - "crates/corelink-container/src/d1_coread.rs@4348d0f8133fa956cc4325783d816703aa855441"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["surfaces", "sccache", "cargo", "cache"]
 timestamp: "2026-06-26T00:00:00Z"

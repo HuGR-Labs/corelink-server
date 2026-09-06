@@ -9,7 +9,7 @@ tags: ["adr", "webauthn", "passkey", "mfa", "step-up", "auth", "s03"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0032-webauthn-level3.md@40396a2b6b81c2f86f3fdcfae53c51c78c5accca"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0032 — WebAuthn Level 3 admin step-up + AAGUID + OTP recovery

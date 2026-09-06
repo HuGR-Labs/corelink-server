@@ -40,7 +40,7 @@ source_blobs:
   - "crates/corelink-slo/src/pagerduty.rs@f441a5e050e731519bc0a4cd2f8c893d2838fbd6"
   - "crates/corelink-slo/src/definition.rs@d2856258e269c38847b0cb3b030053bb0630f045"
   - "crates/corelink-handler-cas/src/observer.rs@5d499c7be8e8036bf43b7c837d6994f094b069a8"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["observability", "telemetry", "tracing", "slo"]
 timestamp: "2026-06-28T00:00:00Z"

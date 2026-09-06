@@ -9,7 +9,7 @@ tags: ["adr", "waiver", "compliance", "legal-externo", "dpa", "tia", "s14"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/WAIVER-S14-001-legal-externo-timeline.md@0e7777ba8fd633682c641eb4feb2d49b78ca5740"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # WAIVER-S14-001 — Legal-externo review timeline exception

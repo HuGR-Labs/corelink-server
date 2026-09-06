@@ -17,7 +17,7 @@ source_blobs:
   - "crates/corelink-container/src/customer_d1_maps_calendar.rs@e7e470f8d4c7f025b8e5478ed6d2dcceea3646c5"
   - "crates/corelink-container/src/customer_d1_billing_keys.rs@6053009007785f810e570f4b251f281c7fcddef0"
   - "crates/corelink-container/src/routes/internal_pat/part-00.rs@d88a5833f1a684151ce5f05d20d8b74571b79863"
-checkpoint_sha: "a810ff13ddee10d4af4589a51610c1fd0422cbaf"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "d1", "store", "scope"]
 timestamp: "2026-07-17T00:00:00Z"

@@ -6,7 +6,7 @@ source_files:
   - "docs/security/2026-06-23-brutal-dataplane.md"
 source_blobs:
   - "docs/security/2026-06-23-brutal-dataplane.md@eb8983127253d0daf5eb273efb589a91f6eced73"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["security", "data-plane", "cache-poisoning", "tenant-isolation", "red-team"]
 timestamp: "2026-06-26T00:00:00Z"

@@ -9,7 +9,7 @@ tags: ["adr", "action-cache", "reapi", "handlers", "invariants", "s04"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0035-ac-handler-invariants.md@566a4dd2b8d15908759509fc638b4bb57bf79946"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0035 — Action Cache handler invariants (REAPI v2)

@@ -26,7 +26,7 @@ source_blobs:
   - "worker/src/index_public_routes.ts@809cff73c186cf63cb34cc5f69087b02bc40e21b"
   - "worker/src/index_quota_stage.ts@d50b245c7321d94443895c04eacfbfec9c0e9402"
   - "worker/src/index_routing_stage.ts@f514a592e520a3a13835fe494717275fb7159e52"
-checkpoint_sha: "eb6ba3ca92ff3cae0693267077d0749b11936849"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["planes", "durable-object", "container-lifecycle", "cold-start"]
 timestamp: "2026-09-06T00:00:00Z"

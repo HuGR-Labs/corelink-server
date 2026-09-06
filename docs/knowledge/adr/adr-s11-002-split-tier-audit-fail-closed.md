@@ -9,7 +9,7 @@ tags: ["adr", "s11", "audit", "fail-closed", "split-tier", "privacy"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-S11-002-split-tier-audit-fail-closed.md@0292fae0e635148a27bfe9c189ef1ebe73d0bfa6"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S11-002 — Split-tier audit fail-CLOSED discipline (S-11 privacy)

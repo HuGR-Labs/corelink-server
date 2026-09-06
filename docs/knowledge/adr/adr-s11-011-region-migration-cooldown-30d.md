@@ -9,7 +9,7 @@ tags: ["adr", "s11", "region-migration", "cooldown", "lgpd", "gdpr"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-S11-011-region-migration-cooldown-30d.md@4e070c7eb66c94cefd7da66744d0d7a903ab836c"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S11-011 — Region Migration Cooldown 30 Days

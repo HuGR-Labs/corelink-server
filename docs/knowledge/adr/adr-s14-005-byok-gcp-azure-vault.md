@@ -9,7 +9,7 @@ tags: ["adr", "s14", "byok", "azure", "vault", "mtls"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-S14-005-byok-gcp-azure-vault.md@611461d131d3596627a637a0bf6c19fd7340bcce"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S14-005 — BYOK 4-provider semantics (Azure AAD flow + Vault mTLS + cross-provider matrix)

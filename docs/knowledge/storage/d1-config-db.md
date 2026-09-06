@@ -14,7 +14,7 @@ source_blobs:
   - "crates/corelink-config-do/src/types.rs@9639f8148cf1ea2a4030780e171f8c39a94bccc7"
   - "crates/corelink-config-do/src/store.rs@a607294082ef81ee5806d3ac659df87965c2f36b"
   - "crates/corelink-container/src/storage/d1_http.rs@64dc091fdc7e967fef131970b9a6c62dc79cbbd5"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["storage", "d1", "config-db", "control-plane", "tenant-isolation"]
 timestamp: "2026-06-26T00:00:00Z"

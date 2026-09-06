@@ -46,7 +46,7 @@ source_blobs:
   - "worker/src/index_schedule.ts@9ed58ccee3e8400c264f88a3d67b0a4e77a3b355"
   - "worker/src/index_special_routes.ts@b586ec72ab4872e6e50a1ee354940a4267d69c5b"
   - "worker/src/route_match.ts@1abbf50c5a2058282ebe362f517b03cda8980646"
-checkpoint_sha: "eb6ba3ca92ff3cae0693267077d0749b11936849"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["planes", "worker", "edge", "auth", "routing"]
 timestamp: "2026-09-06T00:00:00Z"

@@ -78,7 +78,7 @@ source_blobs:
   - "crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs@03bfa805e26de98868ef7ab0e9f15492c9119887"
   - "crates/corelink-container/src/byte_accounting/b126_m2_impl_02.rs@bd65dfc70297a7fea8ef25cb614c6404feac220e"
   - "crates/corelink-container/src/routes/build.rs@7a9035bbb859a3717cfceec3dbcb77622e5e1268"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["handlers", "traits", "cas", "hot-path", "dependency-injection"]
 timestamp: "2026-06-29T00:00:00Z"

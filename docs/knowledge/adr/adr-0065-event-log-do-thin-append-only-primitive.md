@@ -9,7 +9,7 @@ tags: ["adr", "durable-object", "event-log", "primitive", "append-only", "hugit-
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0065-event-log-do-thin-append-only-primitive.md@190923b4bd2a78acd553d2a84e8a831079939638"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0065 — Event-Log DO: a thin, generic, append-only primitive

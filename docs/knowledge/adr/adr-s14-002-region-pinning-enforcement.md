@@ -11,7 +11,7 @@ timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "crates/corelink-container/src/routes/residency.rs@c1c4f958bb8941a1b711a534599b9551d056ebfb"
   - "specs/03_architecture/adrs/ADR-S14-002-region-pinning-enforcement.md@ebf11d65de860e13343e051a2297690b2125439c"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S14-002 — Tenant region-pinning enforcement (custom domain authoritative)

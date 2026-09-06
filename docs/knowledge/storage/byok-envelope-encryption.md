@@ -20,7 +20,7 @@ source_blobs:
   - "crates/corelink-container/src/storage/byok_cas/part-01.rs@0ff91d96f9e7dffe47faed4808c468ce1b196663"
   - "crates/corelink-container/src/routes/byok_admin.rs@6913e1c8858261fe9f6728e1ec4befd7337e23f7"
   - "crates/corelink-container/src/byok_revocation_runtime.rs@f8fd38a1abd966d23eefd06dd2eeb3000ca81b79"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["storage", "byok", "encryption", "kms", "envelope"]
 timestamp: "2026-09-05T00:00:00Z"

@@ -9,7 +9,7 @@ tags: ["adr", "s14", "region", "failover", "replica", "cardinality"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-S14-003-hot-blob-replica-offline-aggregation.md@605259d198ea08a75836970882bc609404e04331"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S14-003 — Hot-blob replica via offline aggregation + residency-restricted failover

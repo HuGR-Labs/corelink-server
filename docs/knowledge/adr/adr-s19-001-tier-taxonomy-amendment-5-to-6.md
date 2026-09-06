@@ -9,7 +9,7 @@ tags: ["adr", "launch", "tier-taxonomy", "stripe-checkout", "pricing", "onboardi
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-S19-001-tier-taxonomy-amendment-5-to-6.md@c62746b9f202e0a90444455d4f184d858b86c5dc"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S19-001 — Tier taxonomy amendment: 5 → 6 tiers

@@ -9,7 +9,7 @@ tags: ["adr", "s12", "supply-chain", "slsa", "sigstore", "rekor"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0045-slsa-l3-rekor-mandatory.md@e3d1308d283a7474f20ba281eaf47556bc5d6f50"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0045 — SLSA L3 + Rekor mandatory build provenance

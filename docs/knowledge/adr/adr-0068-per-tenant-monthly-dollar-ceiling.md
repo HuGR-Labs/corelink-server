@@ -6,7 +6,7 @@ source_files:
   - "specs/03_architecture/adrs/ADR-0068-per-tenant-monthly-dollar-ceiling.md"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0068-per-tenant-monthly-dollar-ceiling.md@7e96bfe1f570e7ee6ea48df00b7878fff8dee772"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["adr", "quota", "cost-ceiling", "fail-closed", "abuse", "hugit-p2"]
 timestamp: "2026-06-26T00:00:00Z"

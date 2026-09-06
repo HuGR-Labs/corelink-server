@@ -8,7 +8,7 @@ source_files:
 source_blobs:
   - "crates/corelink-container/src/native_pat_gate.rs@cd9bcc9414778fbac1e47efe7bf89e6c712a0ffa"
   - "crates/corelink-container/src/main.rs@f799f8d154e5aa226792dd08995a10ee944f2fb7"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path", "native-plane"]
 timestamp: "2026-06-26T00:00:00Z"

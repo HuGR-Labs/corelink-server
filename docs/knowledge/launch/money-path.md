@@ -22,7 +22,7 @@ source_blobs:
   - "apps/signup-worker/src/webhooks/stripe_contract.ts@03044646e229e4db4d7b2ce2463127519cbcac58"
   - "worker/src/index_common.ts@20dd65ac19602927f62330448c9afe30b82296c8"
   - "worker/src/route_match.ts@1abbf50c5a2058282ebe362f517b03cda8980646"
-checkpoint_sha: "eb6ba3ca92ff3cae0693267077d0749b11936849"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: [launch, billing, stripe, checkout, usage, money-path]
 timestamp: "2026-09-06T00:00:00Z"

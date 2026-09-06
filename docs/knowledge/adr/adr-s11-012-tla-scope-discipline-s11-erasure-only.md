@@ -9,7 +9,7 @@ tags: ["adr", "s11", "tla-plus", "formal-verification", "scope-discipline"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-S11-012-tla-scope-discipline-s11-erasure-only.md@0c93371434cc3095ab602a1407821a9df5abd31a"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S11-012 — TLA+ Scope Discipline: S-11 dsr_erasure_atomicity.tla

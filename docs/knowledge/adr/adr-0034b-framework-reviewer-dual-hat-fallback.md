@@ -9,7 +9,7 @@ tags: ["adr", "governance", "reviewers", "dual-hat", "framework-freeze", "small-
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md@a32ef1d53e2316b12218fdd2f2bcf9e50e9eb1f6"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0034b — Framework reviewer dual-hat fallback policy

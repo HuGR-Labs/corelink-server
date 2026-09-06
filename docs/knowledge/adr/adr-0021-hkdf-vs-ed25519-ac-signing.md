@@ -9,7 +9,7 @@ tags: ["adr", "s04", "ac", "hkdf", "signing", "crypto"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0021-hkdf-vs-ed25519-ac-signing.md@c1df595b54afb9a69de71ae39e90c96699737447"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0021 — HKDF-SHA256 + BLAKE3-keyed MAC vs Ed25519 for AC signing

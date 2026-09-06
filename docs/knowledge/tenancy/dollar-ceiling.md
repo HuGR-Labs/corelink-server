@@ -9,7 +9,7 @@ source_files:
 source_blobs:
   - "crates/corelink-container/src/tenant_quota/b126_m2_impl_01.rs@61cac1c025cdc7839dc38b0f9626b5855a60d58e"
   - "crates/corelink-container/src/tenant_quota/b126_m2_impl_02.rs@ed0b48623c863b069812f5cd4c24ca1527f00010"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["tenancy", "quota", "billing", "dollar-ceiling", "adr-0068", "fail-closed"]
 timestamp: "2026-06-26T00:00:00Z"

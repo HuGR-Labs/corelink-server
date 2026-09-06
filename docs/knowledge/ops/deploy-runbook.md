@@ -6,7 +6,7 @@ source_files:
   - "docs/operator/launch-day-sequence-2026-06-09.md"
 source_blobs:
   - "docs/operator/launch-day-sequence-2026-06-09.md@018b6bb20fa5a59cd8ab2060eabb6e0876e24ed1"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "deploy", "launch", "cutover", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"

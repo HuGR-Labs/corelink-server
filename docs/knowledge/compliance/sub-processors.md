@@ -10,7 +10,7 @@ source_blobs:
   - "docs/compliance/vendor-reviews/README.md@a182ae576301b5bca48850387f1c5c236e1b4acb"
   - "docs/compliance/vendor-reviews/_TEMPLATE.md@244d5e9f889f2b025897785e773607805b198fec"
   - "docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md@ce65d5333b62981d60836395c2dcbb66cb845b1f"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["compliance", "gdpr", "sub-processors", "dpa", "vendor-review", "legal"]
 timestamp: "2026-06-26T00:00:00Z"

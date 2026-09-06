@@ -10,7 +10,7 @@ source_blobs:
   - "crates/corelink-container/src/routes/auth_introspect/part-00.rs@c2e74a5dba99c2204e3feb37031b150967440c12"
   - "crates/corelink-container/src/routes/auth_introspect/part-01.rs@a48802270fff8530cd9ffa5eb1265529d42def07"
   - "docs/launch/2026-06-18-sota-tooling-roadmap.md@8a6010944382f85754c5eb9dbff995a0e3189f26"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "runners", "introspect", "entitlement", "fabric", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"

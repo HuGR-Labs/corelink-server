@@ -26,7 +26,7 @@ source_blobs:
   - "worker/src/index_public_routes.ts@809cff73c186cf63cb34cc5f69087b02bc40e21b"
   - "worker/src/index_special_routes.ts@b586ec72ab4872e6e50a1ee354940a4267d69c5b"
   - "worker/src/route_match.ts@1abbf50c5a2058282ebe362f517b03cda8980646"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["surfaces", "devenv", "worker-edge", "auth", "quota", "durable-object"]
 timestamp: "2026-08-30T00:00:00Z"

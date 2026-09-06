@@ -20,7 +20,7 @@ source_blobs:
   - "crates/corelink-erasure-attestation/src/evidence.rs@2f1ff9ce6c4c73240ae7c1e22dce7a964c7fa50e"
   - "crates/corelink-container/src/routes/dsr/attestation.rs@b85b862aaa002b7d9124441eb55d453918e57e58"
   - "crates/corelink-container/src/routes/public_attestation.rs@593a49601cfdbae3369eefb18a9dba5eb294727e"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["compliance", "erasure", "ed25519", "jcs", "rfc-8785", "nist-sp-800-88", "gdpr-art-17", "byok", "dsr"]
 timestamp: "2026-06-26T00:00:00Z"

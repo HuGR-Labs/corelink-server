@@ -9,7 +9,7 @@ tags: ["adr", "auth", "scope", "pat", "find-missing", "bazel", "reapi", "cache"]
 timestamp: "2026-07-20T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0071-find-missing-scope-read-superset-hierarchy.md@bdb7ca9980db6c99015f5c920d48afc6316283f1"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0071 — Cache find-missing is a read-superset capability (read ⊇ find-missing)

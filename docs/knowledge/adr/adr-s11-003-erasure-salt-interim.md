@@ -9,7 +9,7 @@ tags: ["adr", "s11", "privacy", "erasure", "byok", "kms", "interim"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-S11-003-erasure-salt-interim.md@cd3d4029728eeca17706945647d5b78c438a29d2"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S11-003 — Erasure salt management interim (D1-encrypted vault, BYOK KMS deferred to S-14)

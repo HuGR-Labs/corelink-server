@@ -20,7 +20,7 @@ source_blobs:
   - "crates/corelink-pat/src/types.rs@f4c9c6f80375027a919a462c5fb6ab4b5aaa1e71"
   - "crates/corelink-clerk/src/lib.rs@66d6db966cc4c6f6fa261e9f3db5f8bbb8bb7ef0"
   - "crates/corelink-clerk/src/adapter.rs@dc0b33ba3121474da549ba4a425a0ebab07b8f1f"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["crates", "auth", "pat", "clerk", "jwt", "security"]
 timestamp: "2026-06-26T00:00:00Z"

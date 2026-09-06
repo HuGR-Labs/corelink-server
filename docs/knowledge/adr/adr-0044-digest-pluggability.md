@@ -9,7 +9,7 @@ tags: ["adr", "s01", "cas", "blake3", "crypto-load-bearing", "inv-cas-integrity"
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0044-digest-pluggability.md@e895d2ac863121c136ec1afcb71909400709ad3f"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0044 (digest) — Digest type: BLAKE3 sealed newtype, future SHA-256 path

@@ -12,7 +12,7 @@ source_blobs:
   - "crates/corelink-region/src/r2_crr.rs@0067b05ece7e5b5f190d391ceeff6aee804ba514"
   - "crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs@fce57606650b9a03ee57ae9ad84cf4637affb6a9"
   - "crates/corelink-container/src/routes/ac/part-00.rs@80864cc770f76f6a66647c9772d1491fb949ddf5"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["storage", "r2", "action-cache", "region", "residency"]
 timestamp: "2026-06-26T00:00:00Z"

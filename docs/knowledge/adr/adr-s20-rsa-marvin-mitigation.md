@@ -9,7 +9,7 @@ tags: ["adr", "security", "supply-chain", "rsa", "marvin-attack", "rustsec-2023-
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-S20-RSA-MARVIN-MITIGATION.md@8634c2887ae92a9d1eb2e578703fec7d3254fb48"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S20 — rsa 0.9.x Marvin timing-sidechannel decision (waiver + mitigations)

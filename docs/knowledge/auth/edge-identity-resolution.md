@@ -12,7 +12,7 @@ source_blobs:
   - "worker/src/lib/githugr_provision.ts@a0c7da1423f36f48b6b345a9d88613dbc7a01d73"
   - "worker/src/lib/tenant_lookup.ts@dd58aa2b958486c3f9803d850dc52f7327577537"
   - "migrations/d1/0074_team_member.sql@5cc43828b3baeaf573ae22e57c28483ddce39b58"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["auth", "clerk", "tenant-resolution", "edge"]
 timestamp: "2026-06-27T00:00:00Z"

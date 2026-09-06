@@ -14,7 +14,7 @@ source_blobs:
   - "apps/signup-worker/src/webhooks/pat_scrub_cron.ts@361afdb62f0268a4c0bf7279fc73ad3d9be187cf"
   - "apps/signup-worker/src/lib/erase-auth-key.ts@4736d3fd45fd2060d55d7b4a228ac5ad41713190"
   - "apps/signup-worker/src/index.ts@8caf7d163752ce98831fc8bb7199c1a16a24c2cd"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["dsr", "gdpr", "erasure", "cron", "queue", "scheduled", "pat", "compliance", "worker-edge"]
 timestamp: "2026-06-27T00:00:00Z"

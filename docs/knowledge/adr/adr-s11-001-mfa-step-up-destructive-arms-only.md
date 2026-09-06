@@ -9,7 +9,7 @@ tags: ["adr", "s11", "auth", "mfa", "dsr", "privacy"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-S11-001-mfa-step-up-destructive-arms-only.md@d9e5b4ee5a027115b7012df7144437866db7a9bf"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S11-001 — MFA step-up required only on destructive DSR arms

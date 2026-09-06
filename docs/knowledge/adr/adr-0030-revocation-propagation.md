@@ -9,7 +9,7 @@ tags: ["adr", "revocation", "pat", "durable-object", "cf-queue", "auth", "s03"]
 timestamp: "2026-07-17T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0030-revocation-propagation.md@e1840f72fbe913c9c0989aacff6ad331205fd39e"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0030 — PAT revocation propagation (DO + CF Queue, ≤ 60 s p99)

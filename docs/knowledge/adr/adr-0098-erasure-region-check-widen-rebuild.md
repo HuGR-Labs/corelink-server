@@ -8,7 +8,7 @@ source_files:
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0098-erasure-region-check-widen-rebuild.md@793d720840540f3480105ec5051c1f9475cb71f0"
   - "migrations/d1/0098_widen_erasure_region_check_apac.sql@6205411ab0b0cdbe1395c1691973e9fa16707359"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["adr", "d1", "migration", "erasure-attestation", "additive", "sqlite", "s14", "apac"]
 timestamp: "2026-08-18T00:00:00Z"

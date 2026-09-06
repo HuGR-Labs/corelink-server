@@ -9,7 +9,7 @@ tags: ["adr", "s12", "supply-chain", "license", "compliance"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-S12-047-license-review-quarterly.md@843ad0ee1307ab3c2c430727c502b1dbd91c8300"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S12-047 — Quarterly license review process

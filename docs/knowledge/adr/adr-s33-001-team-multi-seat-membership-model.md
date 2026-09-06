@@ -6,7 +6,7 @@ source_files:
   - "specs/03_architecture/adrs/ADR-S33-001-team-multi-seat-membership-model.md"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-S33-001-team-multi-seat-membership-model.md@5c68ff033e7bbe83abeba8c31ecd82ced3bb71fb"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["adr", "tenancy", "identity", "authz", "team", "multi-seat", "clerk", "s33"]
 timestamp: "2026-06-26T00:00:00Z"

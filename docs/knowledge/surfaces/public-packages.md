@@ -26,7 +26,7 @@ source_blobs:
   - "crates/corelink-container/src/public_base_allowlist.rs@4b15671988d7a6f535c960df35b205ead0a20780"
   - "crates/corelink-container/src/public_base_allowlist.manifest@99b7dce748ebaa667bfdb7c3d4370ed7eeaf8c85"
   - "wrangler.toml@87dbd26903ae9f0a11d6da5ede99dcd1b06e4f13"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["surfaces", "public", "npm", "pip", "brew", "oci", "moat"]
 timestamp: "2026-06-26T00:00:00Z"

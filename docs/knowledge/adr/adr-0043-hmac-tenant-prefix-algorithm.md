@@ -9,7 +9,7 @@ tags: ["adr", "s01", "tenant-isolation", "hmac", "crypto-load-bearing"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0043-hmac-tenant-prefix-algorithm.md@68b32b027715e0bf27634112f1f7fbab7dee0fe0"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0043 — HMAC-SHA256 + b64url-trunc-16 tenant path prefix

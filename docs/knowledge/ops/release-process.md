@@ -10,7 +10,7 @@ source_blobs:
   - "docs/release/v1.0.0-GA-tag-draft-final.txt@715960c16b88debd7150bbb1b8e45446282387f3"
   - "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_01.rs@424e6669bc4111af2aeb71c9e6c14d9df9e392cd"
   - "crates/corelink-container/src/main.rs@f799f8d154e5aa226792dd08995a10ee944f2fb7"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "release", "ga", "sign-off", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"

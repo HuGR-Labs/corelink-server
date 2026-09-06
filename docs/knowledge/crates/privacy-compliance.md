@@ -14,7 +14,7 @@ source_blobs:
   - "crates/corelink-erasure-attestation/src/lib.rs@8336a891946ea7c8999e4727e09ad183d0f7d30d"
   - "crates/corelink-erasure-attestation/src/attestation.rs@7682fdf19c0eeb4a05fe0094e32722eac99e18e5"
   - "crates/corelink-erasure-attestation/src/key.rs@2dfc397e0897930d3b6b7a61c6fad6286a591e92"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["crates", "privacy", "dsr", "gdpr", "erasure", "compliance"]
 timestamp: "2026-06-26T00:00:00Z"

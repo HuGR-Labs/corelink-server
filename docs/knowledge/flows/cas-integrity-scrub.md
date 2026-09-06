@@ -10,7 +10,7 @@ source_blobs:
   - "crates/corelink-container/src/routes/cas_scrub.rs@4788ef118b3e60bab81bb348169e388779507198"
   - "crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs@c731944a56c1db190287a93fb8888b09ca67902c"
   - "crates/corelink-container/src/storage/byok_cas/part-01.rs@0ff91d96f9e7dffe47faed4808c468ce1b196663"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["flows", "cas", "integrity", "scrubber", "storage", "byok", "request-flow"]
 timestamp: "2026-08-26T00:00:00Z"

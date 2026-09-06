@@ -9,7 +9,7 @@ tags: ["adr", "s11", "breach-notification", "lgpd", "gdpr", "ccpa", "jurisdictio
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-S11-009-breach-notification-3-jurisdictional-coverage-rationale.md@bb4e950bdb163fb7af3e79a4aa91ed87a05af856"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S11-009 — 3 Jurisdictional Breach-Notification Templates Coverage Rationale

@@ -48,7 +48,7 @@ source_blobs:
   - "crates/corelink-dsr-statuspage-scheduler/src/scheduler.rs@bd62eac30c7c531e3ba9a4054cace111a7d633ed"
   - "crates/corelink-clerk-cf/src/dsr_statuspage_cron.rs@25fc5359f7579ace71a51868d92a8e88c9a07688"
   - "crates/corelink-clerk-cf/wrangler.toml@38f5cf283ac07ebf36aab47d00c19cca621cd31f"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["sre", "operations", "alerting", "chaos", "rotation"]
 timestamp: "2026-06-28T00:00:00Z"

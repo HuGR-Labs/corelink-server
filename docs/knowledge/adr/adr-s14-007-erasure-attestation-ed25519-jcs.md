@@ -13,7 +13,7 @@ source_blobs:
   - "crates/corelink-erasure-attestation/src/attestation.rs@7682fdf19c0eeb4a05fe0094e32722eac99e18e5"
   - "crates/corelink-container/src/routes/dsr/attestation.rs@b85b862aaa002b7d9124441eb55d453918e57e58"
   - "specs/03_architecture/adrs/ADR-S14-007-erasure-attestation-ed25519-jcs.md@6d0d1e22fa3e3bd2e379db70ffbcc2eb662916f9"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-S14-007 — Erasure attestation: Ed25519 + RFC 8785 JCS + 30d key overlap

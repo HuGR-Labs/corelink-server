@@ -8,7 +8,7 @@ source_files:
 source_blobs:
   - "crates/corelink-container/src/billing_d1_http.rs@aa0999b8fbb283cbad24dfe47dfe8c3e92351390"
   - "docs/perf/2026-06-19-cas-hot-path-latency.md@f08db60bee482f5cd47e4d3b27d3fb7dab1b2ba5"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["storage", "perf", "d1", "cas", "latency", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"

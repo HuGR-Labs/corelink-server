@@ -42,7 +42,7 @@ source_blobs:
   - "crates/corelink-container/src/routes/failover.rs@02cb39c2a1f6c3ec974327dbecf0cd9babcdeac1"
   - "crates/corelink-container/Cargo.toml@26c511a0a1fb0f6813de07e2fbd50d609893feac"
   - "tests/e2e-replication-failover/Cargo.toml@13ed9f963c625e3f06885e1aad711547d4ecee67"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["replication", "failover", "multi-region", "availability"]
 timestamp: "2026-06-28T00:00:00Z"

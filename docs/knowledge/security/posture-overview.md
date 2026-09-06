@@ -10,7 +10,7 @@ source_blobs:
   - "docs/security/2026-06-13-CAA-360-audit-report.md@cffbe8ce570f684f2946fc78478746dc1c9fbded"
   - "ARCHITECTURE.md@ce8b4c3228c32bbeff186dacb9fd027c10cbfbdf"
   - "apps/signup-worker/src/security-headers.ts@7b98fa3e44b60f37ed84a6b51ad07c225fbf6653"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["security", "posture", "audit", "tenant-isolation", "compliance"]
 timestamp: "2026-06-26T00:00:00Z"

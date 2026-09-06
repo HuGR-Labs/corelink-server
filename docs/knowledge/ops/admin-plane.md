@@ -20,7 +20,7 @@ source_blobs:
   - "crates/corelink-container/src/routes.rs@ddbe70297312a757a9894c71635d9610f881d3b2"
   - "crates/corelink-container/src/routes/build.rs@7a9035bbb859a3717cfceec3dbcb77622e5e1268"
   - "docs/internal/admin-plane.md@55950a9541c681185f4f784373735d6d7bf18245"
-checkpoint_sha: "eb6ba3ca92ff3cae0693267077d0749b11936849"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "admin", "config", "dual-approval", "runbook"]
 timestamp: "2026-09-06T00:00:00Z"

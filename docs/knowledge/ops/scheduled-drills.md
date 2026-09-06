@@ -6,7 +6,7 @@ source_files:
   - "worker/src/index_common.ts"
 source_blobs:
   - "worker/src/index_common.ts@20dd65ac19602927f62330448c9afe30b82296c8"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "scheduled-drills"]
 

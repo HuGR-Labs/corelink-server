@@ -9,7 +9,7 @@ tags: ["adr", "supply-chain", "cosign", "sigstore", "rekor", "deploy-gate", "s12
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0025-deploy-gate-hard-cosign-keyless.md@acf1dcea1bb33099a063df7d49ef61488a80e517"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0025 — Hard non-bypassable cosign keyless deploy gate

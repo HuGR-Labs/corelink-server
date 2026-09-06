@@ -46,7 +46,7 @@ source_blobs:
   - "crates/corelink-transparency-log/src/entry.rs@fe36c95ab81c0fd6a920639d5b582447aefee71a"
   - "crates/corelink-transparency-log/src/submit.rs@b1cbb9cb2d891dbef5873425ee862fe45bf68980"
   - "crates/corelink-transparency-log/src/lib.rs@8e9f222412d0860c6c0259df9a6f10331fc5e1a1"
-checkpoint_sha: "eb6ba3ca92ff3cae0693267077d0749b11936849"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: [compliance, audit, transparency, hash-chain, blake3, rekor, sigstore, cloudevents, tamper-evidence, soc2]
 timestamp: "2026-09-06T00:00:00Z"

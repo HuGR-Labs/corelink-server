@@ -4,7 +4,7 @@ title: "Deployed container capacity and cache-plane memory envelope"
 description: "The basic production container is 1 GiB / 0.25 vCPU; CAS, Argon2id, Turbo, and the bounded Bloom cache derive from one checked declaration."
 source_files:
   - "crates/corelink-container/src/container_capacity.rs"
-checkpoint_sha: "a810ff13ddee10d4af4589a51610c1fd0422cbaf"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["container", "capacity", "memory", "cas", "argon2id", "turbo", "bloom"]
 timestamp: "2026-09-05T00:00:00Z"

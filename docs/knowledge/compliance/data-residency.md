@@ -12,7 +12,7 @@ source_blobs:
   - "docs/security/2026-06-23-secreview-gdpr-residency.md@48b52a7750988e03bcc9f748663bf9dc1d4cfe38"
   - "crates/corelink-container/src/routes/residency.rs@c1c4f958bb8941a1b711a534599b9551d056ebfb"
   - "crates/corelink-container/src/storage/region_map.rs@b21dc64ca160921f1417498a615ab9bed967c14a"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["compliance", "residency", "gdpr", "lgpd", "schrems-ii", "cas", "r2", "launch-posture"]
 timestamp: "2026-06-26T00:00:00Z"

@@ -24,7 +24,7 @@ source_blobs:
   - "worker/src/index_common.ts@20dd65ac19602927f62330448c9afe30b82296c8"
   - "worker/src/index_finish_stage.ts@99ad4a67d1d619d0e2489cf2d0737aaa926cb9fb"
   - "worker/src/index_public_routes.ts@809cff73c186cf63cb34cc5f69087b02bc40e21b"
-checkpoint_sha: "eb6ba3ca92ff3cae0693267077d0749b11936849"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-09-06T00:00:00Z"

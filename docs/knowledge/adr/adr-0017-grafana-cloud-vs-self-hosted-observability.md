@@ -9,7 +9,7 @@ tags: ["adr", "observability", "grafana", "vendor", "draft"]
 timestamp: "2026-06-26T00:00:00Z"
 source_blobs:
   - "specs/03_architecture/adrs/ADR-0017-grafana-cloud-vs-self-hosted-observability.md@e75e41e6b4f69773e8b63cd9c9a242fa9c5b1175"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
 ---
 # ADR-0017 — Grafana Cloud (managed) vs self-hosted Prom/Loki/Tempo

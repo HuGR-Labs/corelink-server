@@ -10,7 +10,7 @@ source_blobs:
   - "specs/03_architecture/security_model.md@b7aa57fcbb0ef629692bb9982bf5e1cc4c8eb3f8"
   - "specs/03_architecture/adrs/ADR-0072-humangr-zone-min-tls-1.2.md@7aa02bc0ed37bd512804e10cac91f19377f7de5d"
   - "scripts/check_tls_floor.py@336f2365d18b7286006eb1833a61db4047c5d02d"
-checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["adr", "security", "tls", "cloudflare", "zone-config", "sccache", "drift-risk"]
 timestamp: "2026-08-23T00:00:00Z"
