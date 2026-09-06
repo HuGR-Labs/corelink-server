@@ -8,10 +8,10 @@
 // DRIVES THE EXISTING LIVE D1 PIPELINE — it is NOT a second erasure/gather
 // engine:
 //
-// - **Access** (Art.15) → [`super::access::run_access`] (live D1 gather).
-// - **Portability** (Art.20) → [`super::access::run_portability`] (live gather
+// - **Access** (Art.15) → [`super::super::access::run_access`] (live D1 gather).
+// - **Portability** (Art.20) → [`super::super::access::run_portability`] (live gather
 //   + best-effort signed R2 export).
-// - **Rectification** (Art.16) → [`super::access::run_rectification`] (live,
+// - **Rectification** (Art.16) → [`super::super::access::run_rectification`] (live,
 //   allowlisted-field UPDATE, hashed value).
 // - **Erasure** (Art.17) → the SAME in-process, D1-backed erasure worker the
 //   Clerk `user.deleted` + `/v1/customer/account/delete` paths use, via the
@@ -442,12 +442,16 @@ impl D1DsrTicketStore {
 
 impl DsrTicketStore for D1DsrTicketStore {
     fn insert(&self, ticket: &DsrTicket) -> Result<(), String> {
-        super::d1util::d1_query_blocking(&self.d1, Self::upsert_sql(), Self::upsert_params(ticket))
-            .map(|_| ())
+        super::super::d1util::d1_query_blocking(
+            &self.d1,
+            Self::upsert_sql(),
+            Self::upsert_params(ticket),
+        )
+        .map(|_| ())
     }
 
     fn get(&self, tenant_id: &str, request_id: &str) -> Result<Option<DsrTicket>, String> {
-        let rows = super::d1util::d1_query_blocking(
+        let rows = super::super::d1util::d1_query_blocking(
             &self.d1,
             "SELECT * FROM dsr_tickets WHERE tenant_id = ?1 AND request_id = ?2 LIMIT 1",
             vec![json!(tenant_id), json!(request_id)],
@@ -456,7 +460,7 @@ impl DsrTicketStore for D1DsrTicketStore {
     }
 
     fn list(&self, tenant_id: &str, limit: usize) -> Result<Vec<DsrTicket>, String> {
-        let rows = super::d1util::d1_query_blocking(
+        let rows = super::super::d1util::d1_query_blocking(
             &self.d1,
             "SELECT * FROM dsr_tickets WHERE tenant_id = ?1 \
              ORDER BY submitted_at_ms DESC LIMIT ?2",
@@ -470,7 +474,7 @@ impl DsrTicketStore for D1DsrTicketStore {
     }
 
     fn count_since(&self, tenant_id: &str, since_ms: u64) -> Result<u64, String> {
-        let rows = super::d1util::d1_query_blocking(
+        let rows = super::super::d1util::d1_query_blocking(
             &self.d1,
             "SELECT COUNT(*) AS n FROM dsr_tickets WHERE tenant_id = ?1 AND submitted_at_ms >= ?2",
             vec![json!(tenant_id), json!(clamp_i64(since_ms))],
@@ -490,7 +494,7 @@ impl DsrTicketStore for D1DsrTicketStore {
 // ─── Live pipeline seam ──────────────────────────────────────────────────────────
 
 /// The live data-operation driver. Production wires [`LivePipeline`] over the
-/// EXISTING Wave-1 engine (`super::access::*` + the erasure worker); tests
+/// EXISTING Wave-1 engine (`super::super::access::*` + the erasure worker); tests
 /// supply a fake.
 pub trait DsrPipeline: Send + Sync + core::fmt::Debug {
     /// Art.15 — gather the subject's data (machine-readable JSON).
@@ -555,7 +559,7 @@ impl core::fmt::Debug for LivePipeline {
 
 impl DsrPipeline for LivePipeline {
     fn access(&self, tenant_id: &str, dsr_id: &str, now_ms: u64) -> Result<Value, String> {
-        let export = super::access::run_access(&self.d1, dsr_id, tenant_id, now_ms)?;
+        let export = super::super::access::run_access(&self.d1, dsr_id, tenant_id, now_ms)?;
         serde_json::to_value(export).map_err(|e| format!("export serialize: {e}"))
     }
 
@@ -565,7 +569,7 @@ impl DsrPipeline for LivePipeline {
         dsr_id: &str,
         now_ms: u64,
     ) -> Result<(Value, Option<String>), String> {
-        let (export, receipt) = super::access::run_portability(
+        let (export, receipt) = super::super::access::run_portability(
             &self.d1,
             self.r2_audit.as_ref(),
             dsr_id,
@@ -590,7 +594,7 @@ impl DsrPipeline for LivePipeline {
     ) -> Result<Result<(), String>, String> {
         // The only live-rectifiable subject field is the account contact email
         // (`tenant.email_hash`), corrected + hashed by the live pipeline.
-        match super::access::run_rectification(
+        match super::super::access::run_rectification(
             &self.d1,
             dsr_id,
             tenant_id,
@@ -678,7 +682,7 @@ fn build_live() -> Option<(Arc<dyn DsrPipeline>, Arc<dyn DsrTicketStore>)> {
     let d1 = Arc::new(D1HttpClient::new(&storage_env).ok()?);
     // R2 audit bucket for the portability signed export (best-effort; `None`
     // unless the operator asserted a single attestation region).
-    let r2_audit = super::build_audit_r2_client();
+    let r2_audit = super::super::build_audit_r2_client();
     // Reuse the account-deletion requester (anchor + in-process erasure worker).
     let erasure = crate::routes::customer::account_deletion_from_env();
     let pipeline: Arc<dyn DsrPipeline> = Arc::new(LivePipeline {
