@@ -150,6 +150,23 @@ on:
       - "worker/tsconfig.test.json"
       - "worker/tests/setup.ts"
       - "crates/corelink-container/src/routes/customer.rs"
+      # B-056 process-wide CAS byte budget and its closed-world mutation proof.
+      - "scripts/verify_b056_cas_budget.py"
+      - "scripts/verify_b077_capacity.py"
+      - "crates/corelink-container/src/routes/cas.rs"
+      - "docs/knowledge/surfaces/native-cas.md"
+      - "docs/knowledge/planes/container.md"
+      - "docs/okf-wiki-site/index.html"
+      - "changelog.d/056-cas-process-wide-budget.md"
+      # B-053's low-traffic failover floor is one executable verification
+      # surface: router, production wiring, ADR, and mutation guard.
+      - "crates/corelink-container/src/routes/failover.rs"
+      - "crates/corelink-container/src/routes/build.rs"
+      - "crates/corelink-container/src/main.rs"
+      - "crates/corelink-failover-router/src/router.rs"
+      - "docs/knowledge/planes/replication-failover.md"
+      - "specs/03_architecture/adrs/ADR-S14-010-failover-low-traffic-conservative-floor.md"
+      - "scripts/verify_b053_failover.py"
       # B-082's executable verifier reads the Worker route/auth source and its
       # focal test harness. Keep every direct input in the trigger set so a
       # security regression cannot land without rerunning the inverted guard.
@@ -331,6 +348,21 @@ on:
       - "worker/tsconfig.test.json"
       - "worker/tests/setup.ts"
       - "crates/corelink-container/src/routes/customer.rs"
+      # Keep B-056 and B-053 trigger parity with pull_request.
+      - "scripts/verify_b056_cas_budget.py"
+      - "scripts/verify_b077_capacity.py"
+      - "crates/corelink-container/src/routes/cas.rs"
+      - "docs/knowledge/surfaces/native-cas.md"
+      - "docs/knowledge/planes/container.md"
+      - "docs/okf-wiki-site/index.html"
+      - "changelog.d/056-cas-process-wide-budget.md"
+      - "crates/corelink-container/src/routes/failover.rs"
+      - "crates/corelink-container/src/routes/build.rs"
+      - "crates/corelink-container/src/main.rs"
+      - "crates/corelink-failover-router/src/router.rs"
+      - "docs/knowledge/planes/replication-failover.md"
+      - "specs/03_architecture/adrs/ADR-S14-010-failover-low-traffic-conservative-floor.md"
+      - "scripts/verify_b053_failover.py"
       - "scripts/verify_b082_health_probe.py"
       - "worker/package.json"
       - "worker/vitest.config.mts"
@@ -491,6 +523,14 @@ jobs:
         run: python3 -m unittest tests/test_verify_b169_evidence_pack.py
       - name: B-082 verifier, mutations, and focal health tests
         run: python3 scripts/verify_b082_health_probe.py
+
+      - name: B-056 CAS read budget verifier and mutations
+        run: python3 scripts/verify_b056_cas_budget.py --self-test --expect 'done'
+
+      - name: B-053 failover verifier, mutations, and focal Rust test
+        run: |
+          python3 scripts/verify_b053_failover.py
+          cargo test -p corelink-server --lib routes::failover::tests
 
       - name: B-088 published pentest claim verifier and mutations
         run: python3 -m unittest tests/b088_pentest_claims_test.py
