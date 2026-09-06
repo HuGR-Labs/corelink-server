@@ -8,6 +8,7 @@ use std::sync::Arc;
 use corelink_pat::{
     verify_hmac_only_multi, verify_with_hash_multi, PatError, PatHash, PatSigningKey,
 };
+use futures::FutureExt;
 use tokio::sync::Semaphore;
 
 use crate::container_capacity::ARGON2_VERIFY_PERMITS;
@@ -24,7 +25,7 @@ use super::adapter_pat_gate::{
     UNKNOWN_TOKEN_BUCKET,
 };
 pub use super::adapter_pat_lookup::VerifyError;
-use super::adapter_pat_lookup::{PatRow, PatRowLookup, SingleFlightPatLookup};
+use super::adapter_pat_lookup::{PatRowLookup, SingleFlightPatLookup};
 
 /// Container-side PAT → tenant verifier (Option B). Trait-agnostic: each
 /// adapter route wraps an `Arc<PatVerifier>` in its local resolver shell.

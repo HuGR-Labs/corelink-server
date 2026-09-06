@@ -130,7 +130,7 @@ pub(super) struct PerTenantGate {
     /// The cap each per-tenant semaphore is created with
     /// ([`ARGON2_PER_TENANT_PERMITS`] in production). A field (not a const) so a
     /// test can shrink it to drive the two-tier interaction deterministically.
-    cap: usize,
+    pub(super) cap: usize,
     /// LRU capacity of the map ([`PER_TENANT_MAP_CAP`] in production). A field
     /// (not a const) so a test can shrink it to drive eviction deterministically.
     map_cap: usize,

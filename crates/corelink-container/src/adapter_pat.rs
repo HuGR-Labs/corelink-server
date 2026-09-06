@@ -42,15 +42,14 @@ mod tests {
         mint, PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId, SCOPE_CACHE_R,
         SCOPE_CACHE_RW,
     };
+    use futures::FutureExt;
     use tokio::sync::Semaphore;
     use uuid::Uuid;
 
     use super::adapter_pat_crypto::{
         secret_match_fingerprint, FlightGroup, SecretMatchMemo, FLIGHT_GROUP_CAP,
     };
-    use super::adapter_pat_gate::{
-        ARGON2_PERMIT_WAIT, ARGON2_PER_TENANT_PERMITS, UNKNOWN_TOKEN_BUCKET,
-    };
+    use super::adapter_pat_gate::{ARGON2_PER_TENANT_PERMITS, UNKNOWN_TOKEN_BUCKET};
     use super::adapter_pat_lookup::{pat_row_from_columns, PAT_LOOKUP_SQL, PAT_URL_MAP_COREAD_SQL};
     use super::*;
 
