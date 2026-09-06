@@ -85,37 +85,6 @@ pub const fn status_for(err: &OciAdapterError) -> StatusCode {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::status_for;
-    use crate::oci::error::OciAdapterError;
-    use axum::http::StatusCode;
-
-    #[test]
-    fn live_storage_failures_are_retryable_503s() {
-        assert_eq!(
-            status_for(&OciAdapterError::Cas("r2 unavailable".to_owned())),
-            StatusCode::SERVICE_UNAVAILABLE
-        );
-        assert_eq!(
-            status_for(&OciAdapterError::Kv("r2 kv unavailable".to_owned())),
-            StatusCode::SERVICE_UNAVAILABLE
-        );
-    }
-
-    #[test]
-    fn process_and_client_failures_keep_distinct_statuses() {
-        assert_eq!(
-            status_for(&OciAdapterError::Bind(std::io::Error::other("bind"))),
-            StatusCode::INTERNAL_SERVER_ERROR
-        );
-        assert_eq!(
-            status_for(&OciAdapterError::ManifestInvalid("bad json".to_owned())),
-            StatusCode::BAD_REQUEST
-        );
-    }
-}
-
 /// Build a wire-shape JSON error envelope `axum::Response`. Adds the
 /// `Www-Authenticate: Bearer …` header on 401 responses and a
 /// `Retry-After: <secs>` header on 429 responses.
@@ -170,4 +139,35 @@ pub fn err_response(
         }
     }
     (status, headers, Body::from(body)).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::status_for;
+    use crate::oci::error::OciAdapterError;
+    use axum::http::StatusCode;
+
+    #[test]
+    fn live_storage_failures_are_retryable_503s() {
+        assert_eq!(
+            status_for(&OciAdapterError::Cas("r2 unavailable".to_owned())),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert_eq!(
+            status_for(&OciAdapterError::Kv("r2 kv unavailable".to_owned())),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+    }
+
+    #[test]
+    fn process_and_client_failures_keep_distinct_statuses() {
+        assert_eq!(
+            status_for(&OciAdapterError::Bind(std::io::Error::other("bind"))),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        assert_eq!(
+            status_for(&OciAdapterError::ManifestInvalid("bad json".to_owned())),
+            StatusCode::BAD_REQUEST
+        );
+    }
 }

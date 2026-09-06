@@ -666,7 +666,7 @@ fn cross_tenant_denial_is_audited_before_error_for_all_six_groups() {
         assert_eq!(rows.len(), before + 1);
         assert_eq!(rows[before].kind, expected);
         assert_eq!(rows[before].tenant, "tenant_b");
-        assert_eq!(sli.snapshot().unwrap().last().unwrap().is_error, true);
+        assert!(sli.snapshot().unwrap().last().unwrap().is_error);
     };
 
     let err = h

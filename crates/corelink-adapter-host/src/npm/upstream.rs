@@ -44,6 +44,10 @@ pub const NPM_SEARCH_MAX_SIZE: u32 = 250;
 /// response may make the adapter allocate without a hard ceiling.
 pub const NPM_METADATA_MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
+const _: () = assert!(NPM_METADATA_MAX_RESPONSE_BYTES > 0);
+const _: () =
+    assert!(NPM_METADATA_MAX_RESPONSE_BYTES > crate::npm::config::DEFAULT_METADATA_CACHE_MAX_BYTES);
+
 /// User-Agent the adapter sends upstream.
 pub const ADAPTER_USER_AGENT: &str = "corelink-adapter-npm/0.1 (+https://humangr.com)";
 
@@ -291,14 +295,6 @@ mod tests {
     fn constants_are_well_formed() {
         assert!(NPM_ACCEPT.contains("application/json"));
         assert!(ADAPTER_USER_AGENT.starts_with("corelink-adapter-npm/"));
-        assert!(NPM_METADATA_MAX_RESPONSE_BYTES > 0);
-    }
-
-    #[test]
-    fn metadata_response_cap_is_distinct_from_cache_admission() {
-        assert!(
-            NPM_METADATA_MAX_RESPONSE_BYTES > crate::npm::config::DEFAULT_METADATA_CACHE_MAX_BYTES
-        );
     }
 
     #[test]
