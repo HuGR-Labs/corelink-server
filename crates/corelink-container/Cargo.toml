@@ -256,6 +256,8 @@ uuid = { workspace = true, features = ["v5"] }
 hmac = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
+# Team invitation capabilities require OS-backed entropy at runtime.
+rand = "0.8"
 
 # BYOK foundation crate (KmsProvider trait + production provider boundary) —
 # NOT optional: the orchestrator compiles in the default configuration but
@@ -339,7 +341,6 @@ tempfile = { workspace = true }
 # the RS256 receipt (never a committed private key — keeps gitleaks green).
 # Mirrors the `corelink-dpa-acceptance` crate's own test keygen.
 rsa = { version = "0.9", features = ["pem"] }
-rand = "0.8"
 
 [build-dependencies]
 tonic-build = { workspace = true }
