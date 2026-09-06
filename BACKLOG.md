@@ -670,6 +670,33 @@ verify-means: |
 last-verified: 2026-09-06
 ```
 
+### B-269 — pilot harness split resolves lifecycle below a nonexistent directory
+
+The D03 bundle test and Clippy lanes reached `e2e-pilot-onboarding` and failed
+because `harness.rs` declared a bare `mod harness_lifecycle;`. Rust searched
+under `src/harness/`, but the extracted implementation is the existing sibling
+`src/harness_lifecycle.rs`. An explicit path restores that intended module graph.
+
+```backlog
+id: B-269
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "tests/e2e-pilot-onboarding/src/harness.rs:451; tests/e2e-pilot-onboarding/src/harness_lifecycle.rs"
+finding-title: "pilot onboarding harness cannot resolve its extracted lifecycle module"
+problem: "a bare nested mod declaration searches below a nonexistent harness directory"
+evidence: "cargo test -p e2e-pilot-onboarding; cargo clippy -p e2e-pilot-onboarding --all-targets -- -D warnings"
+acceptance: "the parent binds the existing sibling lifecycle file exactly once, focal package tests and Clippy pass, and path/content mutations fail closed"
+verify: python3 scripts/verify_b269_pilot_harness_module_path.py
+verify-means: |
+  done — the focal guard requires the exact active sibling path plus three
+  load-bearing lifecycle methods. Missing, wrong and comment-only bindings or a
+  truncated lifecycle implementation fail closed; package Cargo proof belongs
+  to the exact D03 bundle tail.
+last-verified: 2026-09-06
+```
+
 ### B-003 — the 864s ceiling from 2026-08-02 has no established mechanism
 
 That incident concluded jobs past ~900 s were being SIGTERMed. They could not
@@ -13809,8 +13836,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-06):** `records=268`,
-  `command_records=252`, `manual=16`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-06):** `records=269`,
+  `command_records=253`, `manual=16`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma

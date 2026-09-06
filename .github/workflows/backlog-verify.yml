@@ -76,6 +76,11 @@ on:
       - "changelog.d/PENDING-b268-handler-customer-byok-import.md"
       - "crates/corelink-handler-customer/src/request/keys.rs"
       - "crates/corelink-handler-customer/src/request/overview.rs"
+      - "scripts/verify_b269_pilot_harness_module_path.py"
+      - "tests/test_verify_b269_pilot_harness_module_path.py"
+      - "changelog.d/PENDING-b269-pilot-harness-module-path.md"
+      - "tests/e2e-pilot-onboarding/src/harness.rs"
+      - "tests/e2e-pilot-onboarding/src/harness_lifecycle.rs"
       - "crates/corelink-audit-chain/src/neon_shadow/real.rs"
       - "crates/corelink-audit-chain/src/neon_shadow/native.rs"
       - "crates/corelink-audit/src/events.rs"
@@ -214,6 +219,11 @@ on:
       - "changelog.d/PENDING-b268-handler-customer-byok-import.md"
       - "crates/corelink-handler-customer/src/request/keys.rs"
       - "crates/corelink-handler-customer/src/request/overview.rs"
+      - "scripts/verify_b269_pilot_harness_module_path.py"
+      - "tests/test_verify_b269_pilot_harness_module_path.py"
+      - "changelog.d/PENDING-b269-pilot-harness-module-path.md"
+      - "tests/e2e-pilot-onboarding/src/harness.rs"
+      - "tests/e2e-pilot-onboarding/src/harness_lifecycle.rs"
       - "crates/corelink-audit-chain/src/neon_shadow/real.rs"
       - "crates/corelink-audit-chain/src/neon_shadow/native.rs"
       - "crates/corelink-audit/src/events.rs"
@@ -373,6 +383,10 @@ jobs:
         run: |
           python3 scripts/verify_b268_handler_byok_import.py
           python3 -m pytest -q tests/test_verify_b268_handler_byok_import.py
+      - name: B-269 pilot harness path guard and mutations
+        run: |
+          python3 scripts/verify_b269_pilot_harness_module_path.py
+          python3 -m pytest -q tests/test_verify_b269_pilot_harness_module_path.py
       - name: B-094 published-claims guard and mutations
         run: |
           command -v gitleaks
