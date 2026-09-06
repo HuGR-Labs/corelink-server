@@ -169,7 +169,7 @@ mod tests {
         let client = reqwest::Client::builder()
             // Resolve the public-CDN fixture to the local mock without making
             // the redirect host itself an internal IP literal.
-            .resolve("cdn.example.test", server.address())
+            .resolve("cdn.example.test", *server.address())
             .redirect(ssrf_safe_redirect_policy(3))
             .build()
             .expect("guarded test client builds");
