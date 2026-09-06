@@ -2,8 +2,8 @@
 use super::testing::{InMemoryByteStore, Row};
 use super::*;
 use corelink_handler_cas::{
-    CasDeleteHandler, CasDeleteRequest, CasReadHandler, CasReadRequest, CasWriteHandler,
-    CasWriteRequest, InMemoryAuditSink, InMemoryCasHandler, InMemorySliObserver,
+    CasDeleteHandler, CasDeleteRequest, CasHandlerError, CasReadHandler, CasReadRequest,
+    CasWriteHandler, CasWriteRequest, InMemoryAuditSink, InMemoryCasHandler, InMemorySliObserver,
 };
 
 const REGION: &str = "iad";
