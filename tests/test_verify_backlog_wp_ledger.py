@@ -256,10 +256,15 @@ catalog-counts: B001-B045=8,B046-B090=31,B091-B130=36,B131-B167=32
         validate_ledger_state(stale_population, **kwargs)
 
 
+def test_live_ledger_uses_immutable_d03_head_anchor():
+    assert ledger.LEDGER_BASE_REF == "codex/d03-delivery-20260906"
+    assert ledger.LEDGER_BASE_SHA == "7b992e9db123abeb76381b1c1337011692f2e834"
+
+
 def test_main_rejects_tampered_base_sha_end_to_end(monkeypatch, tmp_path):
     source = ledger.LEDGER_PATH.read_text()
     tampered = source.replace(
-        "base-sha: a65c7d7caed03adf00acd3a227dc20c4e857f7f0",
+        "base-sha: 7b992e9db123abeb76381b1c1337011692f2e834",
         "base-sha: 0000000000000000000000000000000000000000",
     )
     path = tmp_path / "BACKLOG-WP-LEDGER.md"

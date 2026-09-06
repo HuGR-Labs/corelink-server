@@ -77,7 +77,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          fetch-depth: 1
+          # The ledger verifier checks its immutable D03 base is reachable and
+          # an ancestor of the checked head; shallow checkout would make that
+          # provenance check fail closed even when the tree is correct.
+          fetch-depth: 0
 
       # No actions/setup-python — the self-hosted fleets can't provision it
       # (RUNNER_TOOL_CACHE unset → it dies on an unwritable path). Same venv

@@ -1477,6 +1477,43 @@ verify-means: |
 last-verified: 2026-09-06
 ```
 
+### B-313 — D03 WP ledger and changelog retained an obsolete baseline
+```backlog
+id: B-313
+repo: corelink-server
+owner: tl
+status: done
+source-document: "PR containment audit #1550/#1558"
+source-locator: "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md:3-20"
+finding-title: "canonical WP ledger claims 269 records and a pre-D03 base after the backlog reached 312"
+problem: "the ledger verifier, catalogs and two pending changelogs described the obsolete cff/a65 baseline instead of the D03 head and its 14-item open owner population"
+evidence: "python3 scripts/verify_backlog_wp_ledger.py before repair: stale ledger item-count 269; expected 312"
+acceptance: "the ledger and catalogs name the exact D03 base 7b992e9db123abeb76381b1c1337011692f2e834, live counts are reconciled, stale changelog claims are removed, and base-ref/SHA ancestry is fail-closed"
+verify: |
+  set -euo pipefail
+  python3 scripts/verify_d03_graduation.py --schema-only
+  python3 scripts/verify_backlog_wp_ledger.py
+  python3 -m pytest -q tests/test_verify_backlog_wp_ledger.py tests/test_verify_b155_backlog_grep_population.py
+  python3 - <<'PY'
+  import sys
+  from pathlib import Path
+  sys.path.insert(0, "scripts")
+  import verify_backlog_wp_ledger as ledger
+  text = Path("BACKLOG.md").read_text()
+  assert len(ledger.all_backlog_ids(text)) == 313
+  assert len(ledger.open_backlog_ids(text)) == 14
+  assert ledger.backlog_status_counts(text) == {"open": 14, "done": 260, "parked": 39}
+  assert ledger.LEDGER_BASE_SHA == "7b992e9db123abeb76381b1c1337011692f2e834"
+  PY
+verify-means: |
+  done — the live verifier proves 14/14 open-ID ownership, 313 total records,
+  exact catalog populations, predecessor ordering, editable/workflow ownership,
+  and the D03 base ref/SHA relationship. The focused parser suite remains
+  load-bearing: stale metadata, a tampered base and missing CI predecessor are
+  negative fixtures; the B-155 census constants are reconciled to this record.
+last-verified: 2026-09-06
+```
+
 ### B-312 — binary main imports test-only boot constructors in production
 ```backlog
 id: B-312
@@ -14634,8 +14671,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-06):** `records=312`,
-  `command_records=296`, `manual=16`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-06):** `records=313`,
+  `command_records=297`, `manual=16`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma
