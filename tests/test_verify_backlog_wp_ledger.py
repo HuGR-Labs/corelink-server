@@ -221,7 +221,7 @@ WP-150 | WP-148
 def test_ledger_state_rejects_stale_base_and_population():
     state = parse_ledger_state(
         """```ledger-state
-base-ref: codex/d03-bundle-stack-20260905
+base-ref: codex/d03-delivery-20260906
 base-sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 observed-at: 2026-09-06
 item-count: 168
@@ -259,7 +259,7 @@ catalog-counts: B001-B045=8,B046-B090=31,B091-B130=36,B131-B167=32
 def test_main_rejects_tampered_base_sha_end_to_end(monkeypatch, tmp_path):
     source = ledger.LEDGER_PATH.read_text()
     tampered = source.replace(
-        "base-sha: cff0876fa8ee1312a76369338a7f4f9006ee7115",
+        "base-sha: a65c7d7caed03adf00acd3a227dc20c4e857f7f0",
         "base-sha: 0000000000000000000000000000000000000000",
     )
     path = tmp_path / "BACKLOG-WP-LEDGER.md"

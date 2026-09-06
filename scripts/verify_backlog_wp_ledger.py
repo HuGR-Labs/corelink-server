@@ -22,8 +22,8 @@ CATALOGS = {
     REPO_ROOT / "docs/campaigns/remediation/work-packages/B091-B130.md": (91, 130),
     REPO_ROOT / "docs/campaigns/remediation/work-packages/B131-B167.md": (131, 254),
 }
-LEDGER_BASE_REF = "codex/d03-bundle-stack-20260905"
-LEDGER_BASE_SHA = "cff0876fa8ee1312a76369338a7f4f9006ee7115"
+LEDGER_BASE_REF = "codex/d03-delivery-20260906"
+LEDGER_BASE_SHA = "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 LEDGER_PATH = REPO_ROOT / "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md"
 ENTRY_RE = re.compile(r"^(B-\d+)\s+(WP-[A-Z0-9][A-Z0-9./_-]*)$")
 WP_HEADING_RE = re.compile(r"^#{2,6}\s+(WP-[A-Z0-9][A-Z0-9./_-]*)(?:\s|—|$)", re.MULTILINE)

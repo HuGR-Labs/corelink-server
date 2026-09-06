@@ -1,6 +1,6 @@
 # Backlog work-package ledger
 
-> Logical base: `codex/d03-bundle-stack-20260905@cff0876fa8ee1312a76369338a7f4f9006ee7115`,
+> Logical base: `codex/d03-delivery-20260906@a65c7d7caed03adf00acd3a227dc20c4e857f7f0`,
 > observed 2026-09-06 in `America/Sao_Paulo`.
 
 This is the execution ledger for the open CoreLink backlog. `BACKLOG.md` remains
@@ -8,31 +8,31 @@ the single source of truth for item status. This ledger derives work ownership,
 dependency order and completion contracts from that source; it never overrides
 the backlog.
 
-The current population is 258 items: 56 open, 201 done and one parked. The 56
+The current population is 261 items: 14 open, 208 done and 39 parked. The 14
 open items are partitioned exactly once across four contract catalogs:
 
 ```ledger-state
-base-ref: codex/d03-bundle-stack-20260905
-base-sha: cff0876fa8ee1312a76369338a7f4f9006ee7115
+base-ref: codex/d03-delivery-20260906
+base-sha: a65c7d7caed03adf00acd3a227dc20c4e857f7f0
 observed-at: 2026-09-06
-item-count: 258
-open-count: 56
-done-count: 201
-parked-count: 1
-catalog-counts: B001-B045=8,B046-B090=11,B091-B130=21,B131-B254=16
+item-count: 261
+open-count: 14
+done-count: 208
+parked-count: 39
+catalog-counts: B001-B045=6,B046-B090=3,B091-B130=3,B131-B254=2
 ```
 
 | Catalog | Numeric range | Open IDs |
 |---|---:|---:|
-| [`work-packages/B001-B045.md`](work-packages/B001-B045.md) | B-001..B-045 | 8 |
-| [`work-packages/B046-B090.md`](work-packages/B046-B090.md) | B-046..B-090 | 11 |
-| [`work-packages/B091-B130.md`](work-packages/B091-B130.md) | B-091..B-130 | 21 |
-| [`work-packages/B131-B167.md`](work-packages/B131-B167.md) | B-131..B-254 | 16 |
-| **Total** | | **56** |
+| [`work-packages/B001-B045.md`](work-packages/B001-B045.md) | B-001..B-045 | 6 |
+| [`work-packages/B046-B090.md`](work-packages/B046-B090.md) | B-046..B-090 | 3 |
+| [`work-packages/B091-B130.md`](work-packages/B091-B130.md) | B-091..B-130 | 3 |
+| [`work-packages/B131-B167.md`](work-packages/B131-B167.md) | B-131..B-254 | 2 |
+| **Total** | | **14** |
 
-The logical base includes the current B-170/B-216/B-226/B-229/B-250/B-251/B-253/B-254
-open population. Terminal items, including B-168/B-169 and all other `done` or
-`parked` records, remain in BACKLOG.md as historical authority and are excluded
+The logical base includes the current B-008/B-012/B-013/B-032/B-035/B-039,
+B-065/B-086/B-089, B-097/B-110/B-111 and B-154/B-170 open population.
+Terminal items remain in BACKLOG.md as historical authority and are excluded
 from executable coverage.
 
 The CI-grammar lane has one executable order, checked mechanically below; the
