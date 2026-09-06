@@ -532,6 +532,116 @@ verify-means: |
 last-verified: 2026-09-06
 ```
 
+### B-264 — alert transport field documentation breaks the workspace lint gate
+
+The exact D03 Rust bundle reached `corelink-ops` and failed its crate-level
+`missing_docs` deny because `AlertTransportError::NotConfigured.channel` had no
+field documentation. The field now documents the channel whose endpoint or
+provider configuration is absent; no type, error text, or runtime behavior
+changed.
+
+```backlog
+id: B-264
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-ops/src/alerts/channel.rs:72-78"
+finding-title: "AlertTransportError NotConfigured field violates missing_docs"
+problem: "the undocumented channel field makes corelink-ops fail its deny(missing_docs) contract"
+evidence: "cargo check -p corelink-ops; cargo test -p corelink-ops --lib alerts"
+acceptance: "the field has accurate Rust documentation, the focal crate checks pass, and removal/comment mutations fail closed"
+verify: python3 scripts/verify_b264_b267_bundle_repairs.py
+verify-means: |
+  done — the structural bundle-repair gate binds the documentation directly to
+  `NotConfigured.channel` and rejects a missing field doc or comment-only field.
+  The exact D03 candidate passes `cargo check -p corelink-ops` and all five
+  focused alert tests.
+last-verified: 2026-09-06
+```
+
+### B-265 — sealed archive violates two denied Clippy lints
+
+The exact D03 Rust bundle found `indexing_slicing` in the invalid-epoch empty
+prefix and `unnecessary_map_or` in the sealed-link comparison. The repair uses
+the checked empty slice accessor and compares the `Result` directly with the
+claimed hash, preserving the existing fail-closed behavior.
+
+```backlog
+id: B-265
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-audit-chain/src/sealed_archive.rs:421-500"
+finding-title: "sealed archive fails indexing_slicing and unnecessary_map_or"
+problem: "two expressions violate the audit-chain all-target Clippy deny policy"
+evidence: "cargo clippy -p corelink-audit-chain --all-targets -- -D warnings"
+acceptance: "both denied lints are removed without changing error or prefix semantics; focal tests and regression mutations pass"
+verify: python3 scripts/verify_b264_b267_bundle_repairs.py
+verify-means: |
+  done — the gate requires the checked empty-slice expression and direct
+  `Result != Ok(claimed)` comparison while rejecting both original lint forms.
+  The audit-chain library Clippy gate and 182 library tests pass.
+last-verified: 2026-09-06
+```
+
+### B-266 — migration replay splitter closes triggers at CASE endings
+
+Migration 0114 is valid SQLite, but the repository replay harness treated the
+first `END` in each `CASE ... END` expression as the trigger terminator. It then
+split the trigger early and reported `incomplete input` followed by a standalone
+`END`. The splitter now tracks nested CASE depth inside trigger bodies; the SQL
+migration remains unchanged.
+
+```backlog
+id: B-266
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-ops/src/migrations.rs:155-265; migrations/d1/0114_byok_revocation_customer_audit_atomic.sql"
+finding-title: "D1 replay splitter mistakes CASE END for the trigger terminator"
+problem: "CASE expressions split migration 0114 into invalid partial statements"
+evidence: "cargo test -p corelink-ops --test migrations_d1_migration_integration -- --nocapture"
+acceptance: "CASE depth is nested within trigger depth, the focused splitter regression passes, and all 114 D1 migrations replay cleanly without a hazard pin"
+verify: python3 scripts/verify_b264_b267_bundle_repairs.py
+verify-means: |
+  done — the structural gate binds CASE-depth tracking to trigger parsing and
+  requires the four-statement regression fixture. Independent reproduction
+  proved the original 113-clean/1-hard-failure state; the repair passes 114/114
+  migrations with zero skips and zero hard failures. Migration 0114 and both
+  hazard allow-lists remain untouched.
+last-verified: 2026-09-06
+```
+
+### B-267 — extracted audit-chain test modules resolve below nonexistent directories
+
+Three large test modules were extracted into sibling files, but their parent
+modules retained bare `mod` declarations. Rust therefore searched below
+`archive_producer/`, `neon_shadow/`, and `sealed_archive/` directories that do
+not exist. Explicit sibling path attributes restore the intended test graph.
+
+```backlog
+id: B-267
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-audit-chain/src/archive_producer.rs; crates/corelink-audit-chain/src/neon_shadow.rs; crates/corelink-audit-chain/src/sealed_archive.rs"
+finding-title: "three extracted audit-chain test modules have unresolved relative paths"
+problem: "bare test mod declarations resolve to nonexistent nested module directories"
+evidence: "cargo test -p corelink-audit-chain; cargo clippy -p corelink-audit-chain --all-targets -- -D warnings"
+acceptance: "all three parent modules bind their existing sibling test files exactly once; package tests, Clippy, and path mutations pass"
+verify: python3 scripts/verify_b264_b267_bundle_repairs.py
+verify-means: |
+  done — the gate requires exact active sibling path bindings for all three
+  modules and verifies that each child file exists. Removal and comment-bait
+  mutations fail; the package passes 182 unit, 27 mutation, 3 integration and
+  12 property tests plus all-target Clippy.
+last-verified: 2026-09-06
+```
+
 ### B-003 — the 864s ceiling from 2026-08-02 has no established mechanism
 
 That incident concluded jobs past ~900 s were being SIGTERMed. They could not
@@ -13671,8 +13781,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-06):** `records=263`,
-  `command_records=247`, `manual=16`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-06):** `records=267`,
+  `command_records=251`, `manual=16`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma
