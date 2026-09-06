@@ -21,6 +21,7 @@ use corelink_audit::{
     AuthEvent, AuthEventData, AuthEventType, DenyReason, Emitter, InMemoryEmitter, PrincipalIdHash,
     RegionTag, RequestId, RetentionHint, TenantId as AuditTenantId, TenantTier, TokenKind,
 };
+use uuid::Uuid;
 
 // ── Errors ──────────────────────────────────────────────────────────────
 
