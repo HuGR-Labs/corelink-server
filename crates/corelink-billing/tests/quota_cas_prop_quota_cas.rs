@@ -39,6 +39,7 @@
     reason = "test code: panics surface as test failures by design"
 )]
 
+use std::io::Write as _;
 use std::sync::Arc;
 
 use corelink_billing::quota::cas::{
@@ -586,7 +587,11 @@ fn real_latency_probe_under_5ms_p99() {
     }
     samples.sort_unstable();
     let p99 = samples[(samples.len() * 99 / 100).min(samples.len() - 1)];
-    eprintln!("quota CAS real latency probe: samples=1000 p99_us={p99}");
+    writeln!(
+        std::io::stderr().lock(),
+        "quota CAS real latency probe: samples=1000 p99_us={p99}"
+    )
+    .expect("latency probe result must be writable");
     assert!(p99 <= 5_000, "quota CAS p99 exceeded 5ms: {p99}us");
 }
 
