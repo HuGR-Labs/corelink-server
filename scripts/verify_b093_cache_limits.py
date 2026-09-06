@@ -17,6 +17,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 LIMIT = 64 * 1024 * 1024
 
+# Keep this tied to the primary CAS route chain.  The CAS module is assembled
+# from several `include!` units and rustfmt may split the call across lines;
+# a literal substring check would report a false regression after formatting.
+_CAS_PRIMARY_ROUTE = re.compile(
+    r"\.route\s*\(\s*CAS_READ_ROUTE\b.*?"
+    r"\.route\s*\(\s*CAS_LIST_ROUTE\b",
+    re.S,
+)
+_CAS_WRITE_GUARD = re.compile(
+    r"DefaultBodyLimit\s*::\s*max\s*\(\s*"
+    r"corelink_hash::CACHE_ENTRY_MAX_BYTES\s*,?\s*\)",
+    re.S,
+)
+
 
 class VerificationError(RuntimeError):
     pass
@@ -72,7 +86,13 @@ def assess(files: dict[str, str], expected_status: str = "done") -> None:
     cas = files["cas"]
     if "CAS_READ_MAX_OBJECT_BYTES: u64 = corelink_hash::CACHE_ENTRY_MAX_BYTES as u64" not in cas:
         fail("native CAS read ceiling is not sourced from the canonical limit")
-    if cas.count("DefaultBodyLimit::max(corelink_hash::CACHE_ENTRY_MAX_BYTES)") < 1:
+    route_match = _CAS_PRIMARY_ROUTE.search(cas)
+    if not route_match:
+        fail("native CAS read/write route chain is missing")
+    primary_route = route_match.group(0)
+    if ".put(handle_write)" not in primary_route:
+        fail("native CAS write handler is not mounted on the primary CAS route")
+    if not _CAS_WRITE_GUARD.search(primary_route):
         fail("native CAS write route lost its 64 MiB body guard")
     if "BATCH_REQUEST_BODY_LIMIT_BYTES" not in cas or "DefaultBodyLimit::max" not in cas:
         fail("native CAS batch route lost its bounded request-body guard")
@@ -136,10 +156,39 @@ def assess(files: dict[str, str], expected_status: str = "done") -> None:
 
 
 def mutation_checks(files: dict[str, str]) -> None:
+    # Mutate the guard in-place regardless of rustfmt's line wrapping.  This
+    # is the behavioral/static tooth for the exact residual that originally
+    # escaped: a 10 MiB route override must fail the source proof.
+    cas = files["cas"]
+    route_match = _CAS_PRIMARY_ROUTE.search(cas)
+    primary_route = route_match.group(0) if route_match else ""
+    guard = _CAS_WRITE_GUARD.search(primary_route)
+    if not guard:
+        fail("mutation fixture for native CAS override did not match the source")
+    mutant = dict(files)
+    replacement = re.sub(
+        r"corelink_hash::CACHE_ENTRY_MAX_BYTES",
+        "10 * 1024 * 1024",
+        guard.group(0),
+        count=1,
+    )
+    route_offset = route_match.start() if route_match else 0
+    route_end = route_match.end() if route_match else 0
+    mutant["cas"] = (
+        cas[:route_offset]
+        + primary_route.replace(guard.group(0), replacement, 1)
+        + cas[route_end:]
+    )
+    try:
+        assess(mutant)
+    except VerificationError:
+        pass
+    else:
+        fail("mutation unexpectedly passed: native CAS override")
+
     mutants = (
         ("canonical limit", "hash", "64 * 1024 * 1024", "63 * 1024 * 1024"),
         ("native CAS read source", "cas", "CAS_READ_MAX_OBJECT_BYTES: u64 = corelink_hash::CACHE_ENTRY_MAX_BYTES as u64", "CAS_READ_MAX_OBJECT_BYTES: u64 = 63 * 1024 * 1024"),
-        ("native CAS override", "cas", "DefaultBodyLimit::max(corelink_hash::CACHE_ENTRY_MAX_BYTES)", "DefaultBodyLimit::max(10 * 1024 * 1024)"),
         ("Bazel override", "bazel", "DefaultBodyLimit::max(CACHE_ENTRY_MAX_BYTES)", "DefaultBodyLimit::max(10 * 1024 * 1024)"),
         ("Turbo source", "turbo", "TURBO_BODY_LIMIT_BYTES: usize = 100 * 1024 * 1024", "TURBO_BODY_LIMIT_BYTES: usize = 99 * 1024 * 1024"),
         ("bridge source", "bridge", "MAX_BLOB_SIZE_BYTES: u64 = corelink_hash::CACHE_ENTRY_MAX_BYTES as u64", "MAX_BLOB_SIZE_BYTES: u64 = 4 * 1024 * 1024 * 1024"),

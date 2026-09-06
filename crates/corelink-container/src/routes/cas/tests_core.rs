@@ -342,6 +342,30 @@ async fn put_with_rw_scope_succeeds() {
     assert_eq!(resp.status(), StatusCode::CREATED);
 }
 
+/// B-093: the native CAS PUT override is 64 MiB even though the composed
+/// container router has a 10 MiB outer default. A body just over 10 MiB must
+/// reach the handler (and fail content verification with 422); if the
+/// per-route override is removed or narrowed, the outer layer returns 413.
+#[tokio::test]
+async fn native_cas_put_uses_64_mib_route_limit() {
+    let app = router(fixture()).layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024));
+    let body = vec![0x5au8; 10 * 1024 * 1024 + 1];
+    let hash = "0".repeat(64);
+    let req = Request::builder()
+        .method(Method::PUT)
+        .uri(format!("/v1/cas/{TEST_TENANT}/{hash}"))
+        .header("x-corelink-tenant-id", TEST_TENANT)
+        .header(crate::scope::SCOPE_HEADER, "cas:rw")
+        .body(Body::from(body))
+        .expect("request");
+    let resp = app.oneshot(req).await.expect("oneshot");
+    assert_eq!(
+        resp.status(),
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "a body above the outer 10 MiB default must reach native CAS PUT via its 64 MiB override"
+    );
+}
+
 // ── cf-multitenant WP5b: runner-job PAT deny-DELETE ──────────────────────
 
 /// A canonical 64-lowercase-hex CAS hash for the runner-job DELETE tests.
