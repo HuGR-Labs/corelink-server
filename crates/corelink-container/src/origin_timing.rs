@@ -733,7 +733,11 @@ impl Drop for PhaseScope {
         }
         if let Some(previous) = self.previous_blocking_ledger.take() {
             BLOCKING_LEDGER.with(|slot| {
-                slot.replace(previous.flatten());
+                // `take` above removes the outer bookkeeping `Option`; the
+                // value left here is already the thread-local's
+                // `Option<Arc<PhaseLedger>>`.  Restoring it directly keeps a
+                // previously installed ledger (including `None`) intact.
+                slot.replace(previous);
             });
         }
     }
@@ -789,3 +793,46 @@ mod tests_layer;
 
 #[cfg(test)]
 mod tests_recording;
+
+#[cfg(test)]
+mod tests_b279_bridge {
+    use std::sync::Arc;
+
+    use super::{current_ledger, PhaseLedger, PhaseScope};
+
+    #[test]
+    fn blocking_bridge_restores_the_previous_option() {
+        let outer = Arc::new(PhaseLedger::new());
+        let inner = Arc::new(PhaseLedger::new());
+        std::thread::spawn({
+            let outer = Arc::clone(&outer);
+            let inner = Arc::clone(&inner);
+            move || {
+                let outer_bridge = PhaseScope::with_ledger(Some(Arc::clone(&outer)));
+                assert!(
+                    current_ledger().is_some_and(|ledger| Arc::ptr_eq(&ledger, &outer)),
+                    "outer bridge must install its captured ledger"
+                );
+                {
+                    let inner_bridge = PhaseScope::with_ledger(Some(Arc::clone(&inner)));
+                    assert!(
+                        current_ledger().is_some_and(|ledger| Arc::ptr_eq(&ledger, &inner)),
+                        "nested bridge must shadow the outer ledger"
+                    );
+                    drop(inner_bridge);
+                }
+                assert!(
+                    current_ledger().is_some_and(|ledger| Arc::ptr_eq(&ledger, &outer)),
+                    "dropping nested bridge must restore the previous ledger"
+                );
+                drop(outer_bridge);
+                assert!(
+                    current_ledger().is_none(),
+                    "dropping outer bridge must restore the previous None"
+                );
+            }
+        })
+        .join()
+        .expect("bridge restoration thread must not panic");
+    }
+}

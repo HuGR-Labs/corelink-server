@@ -139,7 +139,7 @@ impl WindowedCounters {
     }
 
     fn counters_at(&self, now_ms: u64) -> BTreeMap<Sli, SliCounters> {
-        let mut result = BTreeMap::new();
+        let mut result: BTreeMap<Sli, SliCounters> = BTreeMap::new();
         for bucket in &self.buckets {
             if now_ms.saturating_sub(bucket.start_ms) >= MAX_WINDOW_MS {
                 continue;
@@ -496,5 +496,35 @@ mod tests {
             ),
             Some(corelink_slo::AlertDecision::Quiet)
         );
+    }
+
+    #[test]
+    fn counters_at_merges_each_sli_value_without_cross_keying() {
+        let obs = CountingSliObserver::new();
+        let t0 = super::BUCKET_MS;
+        obs.record_at(Sli::AvailCasGet, true, 11, t0);
+        obs.record_at(Sli::AvailCasGet, false, 29, t0 + super::BUCKET_MS);
+        obs.record_at(Sli::AvailCasPut, false, 7, t0 + super::BUCKET_MS);
+
+        let counters = obs.counters_at(t0 + super::BUCKET_MS).unwrap_or_default();
+        assert_eq!(
+            counters.get(&Sli::AvailCasGet).copied(),
+            Some(super::SliCounters {
+                total: 2,
+                errors: 1,
+                latency_us_sum: 40,
+                latency_us_max: 29,
+            })
+        );
+        assert_eq!(
+            counters.get(&Sli::AvailCasPut).copied(),
+            Some(super::SliCounters {
+                total: 1,
+                errors: 0,
+                latency_us_sum: 7,
+                latency_us_max: 7,
+            })
+        );
+        assert_eq!(counters.len(), 2);
     }
 }
