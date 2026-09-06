@@ -211,10 +211,13 @@ def test_gate_covers_head_base_main_boundary_and_temp_cleanup_fail_closed():
         '[ "$bk_base_name" = main ]',
         '[ "$CAPTURED_BASE" = "$CAPTURED_MAIN" ]',
         'REMOTE_LEASE_REF=refs/heads/corelink-backlog-id-merge-lock',
-        'git push origin "$merge_oid:refs/heads/main"',
-        '--force-with-lease="$REMOTE_LEASE_REF:$REMOTE_LEASE_OID"',
+        '--atomic',
+        '--force-with-lease="refs/heads/main:$main_sha_before"',
+        '--force-with-lease="$HEAD_REF:$bk_head"',
+        'neither ref changed',
         'no false merged claim',
         'main_sha_final',
+        'head_oid',
         'backlog_lock_healthy',
         'rm -rf -- "$BACKLOG_TMP"',
         "trap 'exit 130' INT",
@@ -268,3 +271,14 @@ def test_obsolete_merge_mutations_are_absent(mutation: str):
         encoding="utf-8"
     )
     assert mutation not in gate
+
+
+def test_head_force_push_after_checks_cannot_replace_expected_h1():
+    root = Path(__file__).resolve().parents[1]
+    gate = (root / "scripts/pre-merge-gate-check.sh").read_text(encoding="utf-8")
+    assert 'bash scripts/b315_atomic_merge.sh "$PR" "$CAPTURED_HEAD"' in gate
+    checked_to_helper = gate[gate.index('checked_head='): gate.index('bash scripts/b315_atomic_merge.sh')]
+    assert 'GATED_SHA="$(gh pr view' not in checked_to_helper
+    helper = (root / "scripts/b315_atomic_merge.sh").read_text(encoding="utf-8")
+    assert 'EXPECTED_HEAD=${2:?captured head required}' in helper
+    assert '[ "$bk_head" = "$EXPECTED_HEAD" ]' in helper

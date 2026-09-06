@@ -1485,14 +1485,17 @@ owner: tl
 status: done
 source-document: "PR containment audit #1550/#1558"
 source-locator: "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md:3-20"
-finding-title: "canonical WP ledger claims 269 records and a pre-D03 base after the backlog reached 312"
-problem: "the ledger verifier, catalogs and two pending changelogs described the obsolete cff/a65 baseline instead of the D03 head and its 14-item open owner population"
-evidence: "python3 scripts/verify_backlog_wp_ledger.py before repair: stale ledger item-count 269; expected 312"
+finding-title: "canonical WP ledger must stay aligned with the dense 315-item population"
+problem: "the ledger verifier, catalogs and pending changelogs once described an obsolete pre-D03 baseline instead of the delivered main base and live owner population"
+evidence: "python3 scripts/verify_backlog_wp_ledger.py after reconciliation: 315 items, 15 open, 261 done, 39 parked; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
 acceptance: "the ledger and catalogs name delivered main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266 as the immutable ancestry base, retain 7b992e9db123abeb76381b1c1337011692f2e834 only as D03 provenance, reconcile live counts, and fail closed on wrong or unrelated ancestry"
 verify: |
   set -euo pipefail
   python3 scripts/verify_d03_graduation.py --schema-only
   python3 scripts/verify_backlog_wp_ledger.py
+  python3 scripts/backlog_verify.py --id B-313
+  python3 scripts/backlog_verify.py --id B-314
+  python3 scripts/backlog_verify.py --id B-315
   python3 -m pytest -q tests/test_verify_backlog_wp_ledger.py tests/test_verify_b155_backlog_grep_population.py
   python3 - <<'PY'
   import sys
@@ -1500,14 +1503,14 @@ verify: |
   sys.path.insert(0, "scripts")
   import verify_backlog_wp_ledger as ledger
   text = Path("BACKLOG.md").read_text()
-  assert len(ledger.all_backlog_ids(text)) == 313
-  assert len(ledger.open_backlog_ids(text)) == 14
-  assert ledger.backlog_status_counts(text) == {"open": 14, "done": 260, "parked": 39}
+  assert len(ledger.all_backlog_ids(text)) == 315
+  assert len(ledger.open_backlog_ids(text)) == 15
+  assert ledger.backlog_status_counts(text) == {"open": 15, "done": 261, "parked": 39}
   assert ledger.LEDGER_BASE_REF == "main"
   assert ledger.LEDGER_BASE_SHA == "ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
   PY
 verify-means: |
-  done — the live verifier proves 14/14 open-ID ownership, 313 total records,
+  done — the live verifier proves 15/15 open-ID ownership, 315 total records,
   exact catalog populations, predecessor ordering, editable/workflow ownership,
   and the D03 base ref/SHA relationship. The focused parser suite remains
   load-bearing: stale metadata, a tampered base and missing CI predecessor are
@@ -1568,17 +1571,21 @@ source-locator: "WP-LEDGER-ID-ALLOC — Dense BACKLOG IDs / concurrent allocatio
 finding-title: "dense BACKLOG id allocation has no merge-time serialization or revalidation"
 problem: "Two merge authorities can read the same main snapshot, choose the same next contiguous id, and both issue a merge; the existing courtesy precheck only reports a collision after the stale merge and accepts a degenerate census."
 evidence: "The merge gate's former BACKLOG block fetched PR/main independently, printed renumber commands, and had no lock or second main-ref/snapshot check; repository merge commits are allowed, while branch-protection/ruleset API checks return GitHub 403 on this plan."
-acceptance: "The single --merge authority holds a crash-safe exclusive lock through allocation and merge, captures exact base/main/head bytes, validates the complete canonical dense candidate population against those bytes, creates a signed DCO merge commit whose parents are base then head and whose tree is exactly head, and pushes it normally to refs/heads/main so a moved main is rejected atomically."
+acceptance: "The single --merge authority holds a crash-safe exclusive lock through allocation and merge, captures exact base/main/head bytes and same-repository head ownership, validates the complete canonical dense candidate population against those bytes, creates a signed DCO merge commit whose parents are base then head and whose tree is exactly head, and performs one --atomic dual-ref push with exact force-with-lease values for main and the head branch so any moved ref rejects both updates."
 verify: python3 scripts/verify_b315_dense_id_allocation.py --self-test
 verify-means: |
   done — the executable baseline, two-authority same-snapshot race, no-gap/no-silent-disappearance
   fixture, and malformed/non-positive/non-canonical/duplicate controls all pass. The merge
   gate uses the allocator under a crash-safe process lock, performs current-main and candidate
   revalidation, and uses a unique create-only remote lease with owner-safe conditional release.
-  The signed merge commit is parent/tree checked before a normal non-force main push; GitHub
-  state and resulting main OID/tree are polled before claiming MERGED. Any missing snapshot,
+  The signed merge commit is parent/tree checked before one atomic dual-ref push with exact
+  main/head leases; GitHub state and resulting main/head OIDs/tree are polled before claiming
+  MERGED. Any missing snapshot,
   changed main/head, invalid census, signature/DCO mismatch, push rejection, or PR-not-MERGED
   state is a refusal, never an advisory green result.
+  During the D03 bootstrap, this contract is exercised from the exact
+  `origin/main` gate copy via the authorized exact-SHA contingency; it makes no
+  self-hosting claim before that copy has landed.
 last-verified: 2026-09-06
 ```
 

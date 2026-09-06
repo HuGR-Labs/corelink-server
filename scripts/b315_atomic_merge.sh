@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # B-315 transaction: exact byte authorities, exclusive lease, signed merge
-# commit, normal (non-force) main push, and post-push MERGED/tree proof.
+# commit, atomic dual-ref CAS push, and post-push MERGED/tree proof.
 set -euo pipefail
 PR=${1:?PR number required}; EXPECTED_HEAD=${2:?captured head required}; DRY_RUN=${3:-0}
+EXPECTED_HEAD_REF=${4:?captured head branch required}; EXPECTED_OWNER=${5:?captured head owner required}; EXPECTED_REPO=${6:?captured head repository required}
 REMOTE_LEASE_REF=refs/heads/corelink-backlog-id-merge-lock
+HEAD_REF=
 REMOTE_LEASE_OID=; REMOTE_LEASE_HELD=0; REMOTE_LEASE_CONFIRMED=0
 LOCK_PID=; LOCK_READY=; TMP=
 BACKLOG_TMP=
@@ -45,9 +47,10 @@ grep -q '^locked ' "$LOCK_READY" || { echo "⛔ local allocation lock did not be
 start_backlog_allocation_lock || exit 1
 backlog_lock_healthy() { kill -0 "$LOCK_PID" 2>/dev/null && [ -s "$LOCK_READY" ] && grep -q '^locked ' "$LOCK_READY"; }
 
-meta="$(gh pr view "$PR" --json headRefOid,baseRefOid,baseRefName -q '"\(.headRefOid) \(.baseRefOid) \(.baseRefName)"' 2>/dev/null || true)"; read -r bk_head bk_base bk_base_name <<<"$meta"
+meta="$(gh pr view "$PR" --json headRefOid,baseRefOid,baseRefName,headRefName,isCrossRepository,headRepositoryOwner,headRepository -q '"\(.headRefOid) \(.baseRefOid) \(.baseRefName) \(.headRefName) \(.isCrossRepository) \(.headRepositoryOwner.login) \(.headRepository.name)"' 2>/dev/null || true)"; read -r bk_head bk_base bk_base_name bk_head_ref bk_cross bk_owner bk_repo <<<"$meta"
 main_sha_before="$(git ls-remote origin refs/heads/main 2>/dev/null | awk 'NR==1 {print $1}')"
-[ "$bk_head" = "$EXPECTED_HEAD" ] && [ -n "$bk_base" ] && [ "$bk_base_name" = main ] && [ -n "$main_sha_before" ] || { echo "⛔ exact base/head/main authority changed." >&2; exit 1; }
+[ "$bk_head" = "$EXPECTED_HEAD" ] && [ "$bk_base" ] && [ "$bk_base_name" = main ] && [ "$bk_head_ref" = "$EXPECTED_HEAD_REF" ] && [ "$bk_cross" = false ] && [ "$bk_owner" = "$EXPECTED_OWNER" ] && [ "$bk_repo" = "$EXPECTED_REPO" ] && [ -n "$main_sha_before" ] || { echo "⛔ exact base/head/main authority or same-repo head ownership changed." >&2; exit 1; }
+HEAD_REF="refs/heads/$bk_head_ref"
 CAPTURED_HEAD="$bk_head"; CAPTURED_BASE="$bk_base"; CAPTURED_MAIN="$main_sha_before"
 [ "$bk_head" = "$CAPTURED_HEAD" ] && [ "$CAPTURED_BASE" = "$CAPTURED_MAIN" ] || { echo "⛔ candidate base/head is stale." >&2; exit 1; }
 git fetch --no-tags origin "$bk_base" "$bk_head" >/dev/null 2>&1 || { echo "⛔ immutable base/head objects unavailable locally." >&2; exit 1; }
@@ -74,8 +77,13 @@ REMOTE_LEASE_TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(24))')
 git push origin "$REMOTE_LEASE_OID:$REMOTE_LEASE_REF" || { observed="$(git ls-remote origin "$REMOTE_LEASE_REF" 2>/dev/null | awk 'NR==1 {print $1}')"; echo "⛔ lease acquisition lost race; observed=${observed:-unavailable}; no takeover." >&2; echo "   recovery: git push --force-with-lease=$REMOTE_LEASE_REF:${observed:-unknown} origin :$REMOTE_LEASE_REF" >&2; exit 1; }; REMOTE_LEASE_HELD=1; observed="$(git ls-remote origin "$REMOTE_LEASE_REF" 2>/dev/null | awk 'NR==1 {print $1}')"; [ "$observed" = "$REMOTE_LEASE_OID" ] || { echo "⛔ lease replacement detected; refusing push." >&2; echo "   recovery packet: ref=$REMOTE_LEASE_REF observed_oid=${observed:-unavailable} expected_oid=$REMOTE_LEASE_OID; owner-safe conditional release only." >&2; exit 1; }; REMOTE_LEASE_CONFIRMED=1
 # SIGKILL cannot run cleanup; the fcntl lock is released by the kernel and any
 # surviving remote lease is intentionally handled as stale on the next run.
-backlog_lock_healthy || { echo "⛔ local lock lost." >&2; exit 1; }; git push origin "$merge_oid:refs/heads/main" || { echo "⛔ atomic main push rejected; no merged claim." >&2; exit 1; }
+backlog_lock_healthy || { echo "⛔ local lock lost." >&2; exit 1; }
+# One server-side atomic transaction protects both refs.  The checked head H1
+# is the expected value of the PR branch lease; a moved base or force-pushed H1
+# rejects the entire update, so neither main nor the head branch changes.
+git push --atomic --force-with-lease="refs/heads/main:$main_sha_before" --force-with-lease="$HEAD_REF:$bk_head" origin "$merge_oid:refs/heads/main" "$merge_oid:$HEAD_REF" || { echo "⛔ atomic dual-ref push rejected; neither ref changed (atomic main push rejected)." >&2; exit 1; }
 post_state=UNKNOWN; main_oid=
-for _ in 1 2 3 4 5 6; do post_state="$(gh pr view "$PR" --json state --jq .state 2>/dev/null || echo UNKNOWN)"; main_oid="$(git ls-remote origin refs/heads/main 2>/dev/null | awk 'NR==1 {print $1}')"; [ "$post_state" = MERGED ] && [ "$main_oid" = "$merge_oid" ] && break; sleep 2; done
-[ "$post_state" = MERGED ] || { echo "⛔ PR #$PR is not MERGED; no false merged claim." >&2; exit 1; }; [ "$main_oid" = "$merge_oid" ] || { echo "⛔ resulting main OID mismatch." >&2; exit 1; }; actual_tree="$(gh api "repos/{owner}/{repo}/git/commits/$main_oid" --jq .tree.sha 2>/dev/null || true)"; [ "$actual_tree" = "$head_tree" ] || { echo "⛔ resulting main tree mismatch." >&2; exit 1; }
-echo "✅ PR #$PR MERGED atomically: main=$main_oid tree=$actual_tree parents=$bk_base,$bk_head"
+head_oid=
+for _ in 1 2 3 4 5 6; do post_state="$(gh pr view "$PR" --json state --jq .state 2>/dev/null || echo UNKNOWN)"; main_oid="$(git ls-remote origin refs/heads/main 2>/dev/null | awk 'NR==1 {print $1}')"; head_oid="$(git ls-remote origin "$HEAD_REF" 2>/dev/null | awk 'NR==1 {print $1}')"; [ "$post_state" = MERGED ] && [ "$main_oid" = "$merge_oid" ] && [ "$head_oid" = "$merge_oid" ] && break; sleep 2; done
+[ "$post_state" = MERGED ] || { echo "⛔ PR #$PR is not MERGED; no false merged claim." >&2; exit 1; }; [ "$main_oid" = "$merge_oid" ] && [ "$head_oid" = "$merge_oid" ] || { echo "⛔ resulting main/head OID mismatch." >&2; exit 1; }; actual_tree="$(gh api "repos/{owner}/{repo}/git/commits/$main_oid" --jq .tree.sha 2>/dev/null || true)"; [ "$actual_tree" = "$head_tree" ] || { echo "⛔ resulting main tree mismatch." >&2; exit 1; }
+echo "✅ PR #$PR MERGED atomically: main=$main_oid head=$head_oid tree=$actual_tree parents=$bk_base,$bk_head"

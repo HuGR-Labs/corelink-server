@@ -392,12 +392,36 @@ if [ "$MODE" = "merge" ]; then
   LANES_FILE="$(mktemp "${TMPDIR:-/tmp}/premergelanes.XXXXXX")"
 fi
 
+# Capture H1 and its exact base/branch ownership before any checks run.  Checks
+# are only useful for these bytes; immediately after run_gate we re-read H1 and
+# refuse if the PR was force-pushed while checks were executing.
+CAPTURED_HEAD=""
+CAPTURED_BASE=""
+CAPTURED_BASE_NAME=""
+CAPTURED_HEAD_REF=""
+CAPTURED_HEAD_OWNER=""
+CAPTURED_HEAD_REPO=""
+if [ "$MODE" = "merge" ]; then
+  captured_meta="$(gh pr view "$PR" --json headRefOid,baseRefOid,baseRefName,headRefName,isCrossRepository,headRepositoryOwner,headRepository -q '"\(.headRefOid) \(.baseRefOid) \(.baseRefName) \(.headRefName) \(.isCrossRepository) \(.headRepositoryOwner.login) \(.headRepository.name)"' 2>/dev/null || true)"
+  read -r CAPTURED_HEAD CAPTURED_BASE CAPTURED_BASE_NAME CAPTURED_HEAD_REF captured_cross CAPTURED_HEAD_OWNER CAPTURED_HEAD_REPO <<<"$captured_meta"
+  if [ -z "$CAPTURED_HEAD" ] || [ -z "$CAPTURED_BASE" ] || [ "$CAPTURED_BASE_NAME" != "main" ] || [ "$captured_cross" != "false" ] || [ -z "$CAPTURED_HEAD_REF" ] || [ -z "$CAPTURED_HEAD_OWNER" ] || [ -z "$CAPTURED_HEAD_REPO" ]; then
+    echo "  ⛔ exact H1/base/head-branch ownership unavailable." >&2
+    exit 1
+  fi
+fi
+
 gate_rc=0
 run_gate || gate_rc=$?
 
 # Default mode: report and exit with the gate's own code. Unchanged since 2026-08-03.
 if [ "$MODE" != "merge" ]; then
   exit "$gate_rc"
+fi
+
+checked_head="$(gh pr view "$PR" --json headRefOid --jq .headRefOid 2>/dev/null || true)"
+if [ "$checked_head" != "$CAPTURED_HEAD" ]; then
+  echo "  ⛔ NO MERGE ISSUED for PR #$PR — H1 moved while checks ran; retry." >&2
+  exit 1
 fi
 
 # ── --merge: the ONLY branch that can reach the atomic merge helper ──────────
@@ -555,9 +579,9 @@ fi
 # named in the output so the operator can remove it.
 echo
 echo "  ▶ atomic merge commit push for PR #$PR"
-GATED_SHA="$(gh pr view "$PR" --json headRefOid -q .headRefOid 2>/dev/null || echo unknown)"
+GATED_SHA="$CAPTURED_HEAD"
 merge_rc=0
-bash scripts/b315_atomic_merge.sh "$PR" "$GATED_SHA" "$DRY_RUN" || merge_rc=$?
+bash scripts/b315_atomic_merge.sh "$PR" "$CAPTURED_HEAD" "$DRY_RUN" "$CAPTURED_HEAD_REF" "$CAPTURED_HEAD_OWNER" "$CAPTURED_HEAD_REPO" || merge_rc=$?
 if [ "$DRY_RUN" -eq 1 ]; then
   exit "$merge_rc"
 fi
