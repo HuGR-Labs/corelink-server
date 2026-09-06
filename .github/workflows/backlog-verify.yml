@@ -126,7 +126,6 @@ on:
       - "legal/sub-processors.md"
       - "legal/dpa/SUB-PROCESSOR-COMMITMENTS.md"
       - "specs/_compliance/VENDOR-RISK-REGISTER.md"
-      - "apps/docs/docs/trust/subprocessors.mdx"
       - "changelog.d/b316-pending-vendor-legal-review.md"
       # B-317 locks the strict-lint-safe release workflow contract test shape.
       - "scripts/verify_b317_release_workflow_contract.py"
@@ -371,7 +370,6 @@ on:
       - "legal/sub-processors.md"
       - "legal/dpa/SUB-PROCESSOR-COMMITMENTS.md"
       - "specs/_compliance/VENDOR-RISK-REGISTER.md"
-      - "apps/docs/docs/trust/subprocessors.mdx"
       - "changelog.d/b316-pending-vendor-legal-review.md"
       # Repeat the B-317 verifier, mutation test, and Rust target for push parity.
       - "scripts/verify_b317_release_workflow_contract.py"
