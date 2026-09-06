@@ -587,4 +587,5 @@ where
     clippy::indexing_slicing,
     reason = "tests are allowed to use these primitives"
 )]
+#[path = "sweep_runner_tests.rs"]
 mod sweep_runner_tests;

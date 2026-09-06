@@ -952,4 +952,5 @@ impl ClerkHealthLogic {
     clippy::type_complexity,
     reason = "test code: panics on assertion failure are the canonical signal"
 )]
+#[path = "tests.rs"]
 mod tests;

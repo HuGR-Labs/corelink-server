@@ -928,6 +928,7 @@ impl AuthEvent {
     clippy::indexing_slicing,
     reason = "test module — assertions panic by design"
 )]
+#[path = "tests.rs"]
 mod tests;
 
 #[path = "synthetic_data.rs"]

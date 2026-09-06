@@ -732,4 +732,5 @@ impl GcRunStore for InMemoryGcRunStore {
     clippy::indexing_slicing,
     reason = "tests are allowed to use these primitives"
 )]
+#[path = "run_tests.rs"]
 mod run_tests;

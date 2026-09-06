@@ -598,4 +598,5 @@ pub const fn module_path_marker() -> &'static str {
 
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
+#[path = "tests.rs"]
 mod tests;

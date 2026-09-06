@@ -861,4 +861,5 @@ pub type AwsKmsRealProvider = AwsKmsWasmStub;
     clippy::panic,
     clippy::indexing_slicing
 )]
+#[path = "tests.rs"]
 mod tests;

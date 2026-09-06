@@ -722,4 +722,5 @@ pub fn backoff_wait(attempt: u32, retry_after_secs: Option<u64>) -> Duration {
     clippy::indexing_slicing,
     reason = "tests are allowed to use these primitives"
 )]
+#[path = "tests.rs"]
 mod tests;

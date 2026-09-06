@@ -912,4 +912,5 @@ pub type GcpKmsRealProvider = GcpKmsWasmStub;
     clippy::panic,
     clippy::indexing_slicing
 )]
+#[path = "tests.rs"]
 mod tests;

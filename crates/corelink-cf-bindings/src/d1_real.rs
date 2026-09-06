@@ -741,4 +741,5 @@ impl CfD1DatabaseReal {
     clippy::indexing_slicing,
     reason = "test code: panics on assertion failure are the canonical signal"
 )]
+#[path = "tests.rs"]
 mod tests;

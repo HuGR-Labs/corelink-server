@@ -630,4 +630,5 @@ where
     clippy::indexing_slicing,
     reason = "tests are allowed to use these primitives"
 )]
+#[path = "tests.rs"]
 mod tests;

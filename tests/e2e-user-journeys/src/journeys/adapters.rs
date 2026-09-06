@@ -46,6 +46,7 @@ use crate::harness::{
 };
 use crate::personas::Persona;
 
+#[path = "adapters_auth.rs"]
 mod adapters_auth;
 use adapters_auth::oci_basic_header;
 

@@ -725,4 +725,5 @@ pub fn expected_content_hash(algo: crate::DigestAlgo, bytes: &[u8]) -> String {
     clippy::indexing_slicing,
     reason = "tests are allowed to use these primitives"
 )]
+#[path = "tests.rs"]
 mod tests;

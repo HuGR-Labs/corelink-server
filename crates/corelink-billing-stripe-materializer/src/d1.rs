@@ -685,4 +685,5 @@ fn debug_table(row: &MaterializedRow, expected: &str) -> Result<(), BillingD1Err
     clippy::indexing_slicing,
     reason = "tests are allowed these primitives"
 )]
+#[path = "tests.rs"]
 mod tests;

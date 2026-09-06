@@ -923,4 +923,5 @@ where
     clippy::float_cmp,
     reason = "tests are allowed to use these primitives"
 )]
+#[path = "tests.rs"]
 mod tests;

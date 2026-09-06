@@ -885,4 +885,5 @@ fn classify_verify_err(e: &WebhookVerifyError) -> &'static str {
     clippy::indexing_slicing,
     reason = "tests are allowed these primitives"
 )]
+#[path = "tests.rs"]
 mod tests;
