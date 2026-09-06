@@ -33,6 +33,23 @@ on:
   pull_request:
     paths:
       - "BACKLOG.md"
+      # B-061's roadmap, derived metrics, OKF corpus, tier sources, and its
+      # executable/mutation contract are one closed verification surface.
+      - "docs/campaigns/remediation/ROADMAP.md"
+      - "reports/b061-remediation-roadmap.v1.json"
+      - "reports/b061-actions-census.v1.json"
+      - "changelog.d/b061-remediation-roadmap.md"
+      - "scripts/verify_b061_remediation_roadmap.py"
+      - "tests/test_verify_b061_remediation_roadmap.py"
+      - "scripts/validate_okf.py"
+      - "docs/internal/okf-wiki/concept-manifest.yaml"
+      - "docs/knowledge/index.md"
+      - "scripts/okf_index.py"
+      - "scripts/okf_render.py"
+      - "docs/okf-wiki-site/index.html"
+      - "docs/knowledge/**"
+      - "crates/corelink-tier-selection/src/tier.rs"
+      - "crates/corelink-ratelimit/src/tier.rs"
       - "scripts/backlog_verify.py"
       - "scripts/test_backlog_verify.sh"
       - "scripts/verify_b155_backlog_grep_population.py"
@@ -126,6 +143,21 @@ on:
     branches: [main]
     paths:
       - "BACKLOG.md"
+      - "docs/campaigns/remediation/ROADMAP.md"
+      - "reports/b061-remediation-roadmap.v1.json"
+      - "reports/b061-actions-census.v1.json"
+      - "changelog.d/b061-remediation-roadmap.md"
+      - "scripts/verify_b061_remediation_roadmap.py"
+      - "tests/test_verify_b061_remediation_roadmap.py"
+      - "scripts/validate_okf.py"
+      - "docs/internal/okf-wiki/concept-manifest.yaml"
+      - "docs/knowledge/index.md"
+      - "scripts/okf_index.py"
+      - "scripts/okf_render.py"
+      - "docs/okf-wiki-site/index.html"
+      - "docs/knowledge/**"
+      - "crates/corelink-tier-selection/src/tier.rs"
+      - "crates/corelink-ratelimit/src/tier.rs"
       - "scripts/backlog_verify.py"
       - "scripts/test_backlog_verify.sh"
       - "scripts/verify_b155_backlog_grep_population.py"
@@ -262,6 +294,10 @@ jobs:
         env:
           PIP_DISABLE_PIP_VERSION_CHECK: "1"
         run: python3 -m pip install -r requirements-ci.txt
+      - name: B-061 remediation roadmap verifier and mutations
+        run: |
+          python3 scripts/verify_b061_remediation_roadmap.py
+          python3 -m pytest -q tests/test_verify_b061_remediation_roadmap.py
       - name: B-094 published-claims guard and mutations
         run: |
           command -v gitleaks
