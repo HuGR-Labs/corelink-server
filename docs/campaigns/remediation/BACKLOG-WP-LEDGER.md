@@ -9,18 +9,18 @@ the single source of truth for item status. This ledger derives work ownership,
 dependency order and completion contracts from that source; it never overrides
 the backlog.
 
-The current population is 317 items: 16 open, 262 done and 39 parked. The 16
+The current population is 318 items: 16 open, 263 done and 39 parked. The 16
 open items are partitioned exactly once across four contract catalogs:
 
 ```ledger-state
 base-ref: main
 base-sha: ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266
 observed-at: 2026-09-06
-item-count: 317
+item-count: 318
 open-count: 16
-done-count: 262
+done-count: 263
 parked-count: 39
-catalog-counts: B001-B045=6,B046-B090=3,B091-B130=3,B131-B317=4
+catalog-counts: B001-B045=6,B046-B090=3,B091-B130=3,B131-B318=4
 ```
 
 | Catalog | Numeric range | Open IDs |
@@ -28,7 +28,7 @@ catalog-counts: B001-B045=6,B046-B090=3,B091-B130=3,B131-B317=4
 | [`work-packages/B001-B045.md`](work-packages/B001-B045.md) | B-001..B-045 | 6 |
 | [`work-packages/B046-B090.md`](work-packages/B046-B090.md) | B-046..B-090 | 3 |
 | [`work-packages/B091-B130.md`](work-packages/B091-B130.md) | B-091..B-130 | 3 |
-| [`work-packages/B131-B167.md`](work-packages/B131-B167.md) | B-131..B-317 | 4 |
+| [`work-packages/B131-B167.md`](work-packages/B131-B167.md) | B-131..B-318 | 4 |
 | **Total** | | **16** |
 
 The logical base includes the current B-008/B-012/B-013/B-032/B-035/B-039,

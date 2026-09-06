@@ -1485,9 +1485,9 @@ owner: tl
 status: done
 source-document: "PR containment audit #1550/#1558"
 source-locator: "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md:3-20"
-finding-title: "canonical WP ledger must stay aligned with the dense 317-item population"
+finding-title: "canonical WP ledger must stay aligned with the dense 318-item population"
 problem: "the ledger verifier, catalogs and pending changelogs once described an obsolete pre-D03 baseline instead of the delivered main base and live owner population"
-evidence: "python3 scripts/verify_backlog_wp_ledger.py after reconciliation: 317 items, 16 open, 262 done, 39 parked; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
+evidence: "python3 scripts/verify_backlog_wp_ledger.py after reconciliation: 318 items, 16 open, 263 done, 39 parked; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
 acceptance: "the ledger and catalogs name delivered main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266 as the immutable ancestry base, retain 7b992e9db123abeb76381b1c1337011692f2e834 only as D03 provenance, reconcile live counts, and fail closed on wrong or unrelated ancestry"
 verify: |
   set -euo pipefail
@@ -1500,14 +1500,14 @@ verify: |
   sys.path.insert(0, "scripts")
   import verify_backlog_wp_ledger as ledger
   text = Path("BACKLOG.md").read_text()
-  assert len(ledger.all_backlog_ids(text)) == 317
+  assert len(ledger.all_backlog_ids(text)) == 318
   assert len(ledger.open_backlog_ids(text)) == 16
-  assert ledger.backlog_status_counts(text) == {"open": 16, "done": 262, "parked": 39}
+  assert ledger.backlog_status_counts(text) == {"open": 16, "done": 263, "parked": 39}
   assert ledger.LEDGER_BASE_REF == "main"
   assert ledger.LEDGER_BASE_SHA == "ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
   PY
 verify-means: |
-  done — the live verifier proves 16/16 open-ID ownership, 317 total records,
+  done — the live verifier proves 16/16 open-ID ownership, 318 total records,
   exact catalog populations, predecessor ordering, editable/workflow ownership,
   and the D03 base ref/SHA relationship. The focused parser suite remains
   load-bearing: stale metadata, a tampered base and missing CI predecessor are
@@ -1632,6 +1632,28 @@ verify-means: |
   and rejects panic!, expect, unwrap and allow-attribute regressions. Its focal
   mutation suite proves that prose bait, missing propagation and lint suppression
   fail closed; Cargo remains owned by the frozen D03 sprint bundle.
+last-verified: 2026-09-06
+```
+
+### B-318 — cumulative Clippy exposed four strict-lint regressions in D03 tests
+```backlog
+id: B-318
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-handler-customer/tests/handler_customer.rs; crates/corelink-adapter-host/src/npm/upstream.rs; crates/corelink-adapter-host/src/oci/server/core.rs"
+finding-title: "D03 test additions violated boolean, constant-assertion and item-order Clippy contracts"
+problem: "The cumulative all-targets Clippy gate found one boolean comparison assertion, two constant-folded runtime assertions, and a test module placed before a production function. All four originated in the D03 delta and therefore required repair before delivery."
+evidence: "The bundled CI log at 984804409 identified the four exact diagnostics; b2a73ae52 replaces the boolean comparison, makes both NPM size invariants compile-time load-bearing, and moves the unchanged OCI test module after production items without lint suppression."
+acceptance: "The denial-path assertion remains behaviorally equivalent, both NPM cap relationships are enforced by unique compile-time assertions, the OCI regression tests remain after all production items, targeted lint suppressions are absent, and adversarial mutations fail closed."
+verify: python3 scripts/verify_b318_clippy_residuals.py --self-test
+verify-means: |
+  done — the bounded verifier binds the boolean assertion to its denial closure,
+  requires both unique compile-time NPM invariants, preserves the OCI storage-failure
+  regression test below the production response function, and rejects deletion,
+  runtime-only replacement, module drift and targeted lint suppression. Cargo and
+  Clippy certification remain owned solely by the cumulative D03 sprint CI.
 last-verified: 2026-09-06
 ```
 
@@ -14774,8 +14796,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-06):** `records=317`,
-  `command_records=301`, `manual=16`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-06):** `records=318`,
+  `command_records=302`, `manual=16`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma

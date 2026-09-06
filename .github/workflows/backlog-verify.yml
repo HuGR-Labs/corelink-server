@@ -132,6 +132,13 @@ on:
       - "tests/test_verify_b317_release_workflow_contract.py"
       - "tools/cli/tests/release_workflow_contract.rs"
       - "changelog.d/b317-release-workflow-contract-lints.md"
+      # B-318 locks the final cumulative all-targets Clippy repairs.
+      - "scripts/verify_b318_clippy_residuals.py"
+      - "tests/test_verify_b318_clippy_residuals.py"
+      - "crates/corelink-handler-customer/tests/handler_customer.rs"
+      - "crates/corelink-adapter-host/src/npm/upstream.rs"
+      - "crates/corelink-adapter-host/src/oci/server/core.rs"
+      - "changelog.d/b318-clippy-residuals.md"
       - "scripts/b155_backlog_grep_parser.py"
       - "scripts/verify_d03_graduation.py"
       - "scripts/validate_permission_matrix.py"
@@ -376,6 +383,13 @@ on:
       - "tests/test_verify_b317_release_workflow_contract.py"
       - "tools/cli/tests/release_workflow_contract.rs"
       - "changelog.d/b317-release-workflow-contract-lints.md"
+      # Repeat the B-318 verifier, mutations, and Rust targets for push parity.
+      - "scripts/verify_b318_clippy_residuals.py"
+      - "tests/test_verify_b318_clippy_residuals.py"
+      - "crates/corelink-handler-customer/tests/handler_customer.rs"
+      - "crates/corelink-adapter-host/src/npm/upstream.rs"
+      - "crates/corelink-adapter-host/src/oci/server/core.rs"
+      - "changelog.d/b318-clippy-residuals.md"
       - "scripts/b155_backlog_grep_parser.py"
       - "scripts/verify_d03_graduation.py"
       - "scripts/validate_permission_matrix.py"
@@ -644,6 +658,10 @@ jobs:
         run: |
           python3 scripts/verify_b317_release_workflow_contract.py --self-test
           python3 -m pytest -q tests/test_verify_b317_release_workflow_contract.py
+      - name: B-318 cumulative Clippy residual guard and mutations
+        run: |
+          python3 scripts/verify_b318_clippy_residuals.py --self-test
+          python3 -m pytest -q tests/test_verify_b318_clippy_residuals.py
       - name: B-094 published-claims guard and mutations
         run: |
           command -v gitleaks
