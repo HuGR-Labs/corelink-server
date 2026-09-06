@@ -306,15 +306,12 @@ impl ByteStore for D1ByteStore {
                     // cap. A tenant whose tier was DOWNGRADED below its current
                     // usage is already OVER the new cap: every NATIVE write it
                     // makes is refused (empty RETURNING ⇒ DO UPDATE skipped ⇒ the
-                    // stored `bytes_quota` is NEVER lowered). Adapter writes with
-                    // no fresh cap (brew/pip, or npm only through an indeterminate
-                    // compatibility path) then keep gating against the STALE higher
-                    // stored cap and accrue past the paid-for cap forever — a
-                    // COGS-evasion deadlock (the reconcile was coupled to a
+                    // stored `bytes_quota` is NEVER lowered). Adapter writes
+                    // (brew/npm/pip pass `None`) then keep gating against the STALE
+                    // higher stored cap and accrue past the paid-for cap forever —
+                    // a COGS-evasion deadlock (the reconcile was coupled to a
                     // SUCCESSFUL native write that, for an over-cap tenant, can
-                    // never succeed). Production npm resolves the PAT-derived cap
-                    // before this post-buffer moat write, so it is not a None-seed
-                    // path when the resolver has an answer.
+                    // never succeed).
                     //
                     // Break the coupling: on the refused path, reconcile the stored
                     // cap in a SEPARATE, UN-gated UPDATE so the lowered cap is

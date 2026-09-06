@@ -141,11 +141,8 @@ hold.
 
 # Gotchas
 - `_public` writes need BOTH a `tenant_storage_state` row AND a sentinel R2 prefix for byte accounting;
-  brew and pip pass `None` for the resolved cap and so keep the prior fail-closed-on-fresh-row posture,
-  accruing against the tenant's existing stored cap. npm tarball bytes are per-tenant (not `_public`) and
-  resolve the PAT-derived tenant's effective per-tier cap through the shared D1 selector before the
-  post-buffer moat write; an absent or indeterminate selector remains `None` and therefore fail-closed,
-  never an unlimited bypass (`crates/corelink-container/src/routes/npm.rs:139-198`; `crates/corelink-container/src/routes/build.rs:465-484`).
+  brew/npm/pip pass `None` for the resolved cap and so keep the prior fail-closed-on-fresh-row posture,
+  accruing against the tenant's existing stored cap (`crates/corelink-container/src/routes/brew.rs:99-104`).
 - OCI failed closed historically: the Worker strips `x-corelink-tenant-id` on the OCI pass-through, so
   the old header-based charge was always empty — a total $-ceiling bypass — until the gate was rekeyed
   on the verified bearer.

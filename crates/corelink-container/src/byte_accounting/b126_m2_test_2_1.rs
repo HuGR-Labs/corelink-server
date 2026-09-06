@@ -124,10 +124,8 @@ async fn over_cap_downgrade_write_still_reconciles_so_adapter_writes_are_gated()
     // the new (lower) cap. Its NATIVE writes carry the new cap but are refused
     // (OverCap). Pre-fix, the stored `bytes_quota` was reconciled ONLY inside
     // the cap-gated accrue, so a refused write never lowered it — and ADAPTER
-    // writes with no fresh cap (the low-level `None` case; brew/pip, or npm only
-    // when its resolver is indeterminate) kept accruing past the paid-for cap
-    // indefinitely. Production npm resolves its cap before the post-buffer moat
-    // write. The fix decouples the
+    // writes (brew/npm/pip pass `None`, gating against the STORED cap) kept
+    // accruing past the paid-for cap indefinitely. The fix decouples the
     // reconcile from accrual success: a refused native write STILL lowers the
     // stored cap, WITHOUT any native write needing to succeed.
     let store = Arc::new(InMemoryByteStore::new());
@@ -162,12 +160,9 @@ async fn over_cap_downgrade_write_still_reconciles_so_adapter_writes_are_gated()
              (reconcile decoupled from accrual success) — else adapter writes evade the cap",
     );
 
-    // (2) An ADAPTER write with no fresh cap (the low-level `None` case) now
-    // gates against the reconciled stored cap (500): 800 + 10 = 810 > 500 ⇒
-    // OverCap. Pre-fix it gated against the STALE 10_000 cap and wrongly
-    // Accrued (the COGS evasion). Production npm supplies its resolved cap
-    // before the post-buffer moat write; this assertion exercises the generic
-    // stored-cap fallback, not that production path.
+    // (2) An ADAPTER write (brew/npm/pip pass `None`) now gates against the
+    // reconciled stored cap (500): 800 + 10 = 810 > 500 ⇒ OverCap. Pre-fix it
+    // gated against the STALE 10_000 cap and wrongly Accrued (the COGS evasion).
     assert_eq!(
         acc.accrue("t-dead", 10, None).await.unwrap(),
         AccrueOutcome::OverCap
