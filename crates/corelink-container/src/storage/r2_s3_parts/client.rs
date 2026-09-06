@@ -1,36 +1,36 @@
-//! R2 storage adapter using the AWS S3-compatible API.
-//!
-//! This module provides:
-//!
-//! - [`R2S3Client`] — low-level async `put_object` / `get_object`
-//!   wrapper over `aws-sdk-s3` pointed at the R2 S3 endpoint.
-//! - [`R2CasHandler`] — a sync `CasReadHandler` + `CasWriteHandler`
-//!   implementation that uses [`R2S3Client`] for durable storage and
-//!   `derive_prefix` for tenant-scoped R2 keys.
-//!
-//! # Key scheme
-//!
-//! ```text
-//! <region>/<tenant_prefix_16>/<digest>
-//! ```
-//!
-//! The `tenant_prefix_16` is derived via
-//! `corelink_tenant_path::derive_prefix` so cross-tenant key
-//! co-residence is impossible (layer 5 of `INV-TENANT-ISOLATION`).
-//!
-//! # Sync wrapper
-//!
-//! The `CasReadHandler` / `CasWriteHandler` traits are synchronous
-//! (they exist in the pre-async R-prep layer). `R2CasHandler` bridges
-//! the async S3 SDK into the sync trait surface by using
-//! `tokio::runtime::Handle::current().block_on(...)`. The server runs
-//! inside a tokio runtime, so a handle is always available.
-//!
-//! # Security charter compliance
-//!
-//! - No credentials in code; constructed from [`StorageEnv`].
-//! - No secrets logged; tracing events contain bucket + key only.
-//! - No `unwrap()` / `expect()` / `panic!()` outside `#[cfg(test)]`.
+// R2 storage adapter using the AWS S3-compatible API.
+//
+// This module provides:
+//
+// - [`R2S3Client`] — low-level async `put_object` / `get_object`
+//   wrapper over `aws-sdk-s3` pointed at the R2 S3 endpoint.
+// - [`R2CasHandler`] — a sync `CasReadHandler` + `CasWriteHandler`
+//   implementation that uses [`R2S3Client`] for durable storage and
+//   `derive_prefix` for tenant-scoped R2 keys.
+//
+// # Key scheme
+//
+// ```text
+// <region>/<tenant_prefix_16>/<digest>
+// ```
+//
+// The `tenant_prefix_16` is derived via
+// `corelink_tenant_path::derive_prefix` so cross-tenant key
+// co-residence is impossible (layer 5 of `INV-TENANT-ISOLATION`).
+//
+// # Sync wrapper
+//
+// The `CasReadHandler` / `CasWriteHandler` traits are synchronous
+// (they exist in the pre-async R-prep layer). `R2CasHandler` bridges
+// the async S3 SDK into the sync trait surface by using
+// `tokio::runtime::Handle::current().block_on(...)`. The server runs
+// inside a tokio runtime, so a handle is always available.
+//
+// # Security charter compliance
+//
+// - No credentials in code; constructed from [`StorageEnv`].
+// - No secrets logged; tracing events contain bucket + key only.
+// - No `unwrap()` / `expect()` / `panic!()` outside `#[cfg(test)]`.
 
 use std::sync::Arc;
 use std::time::Instant;

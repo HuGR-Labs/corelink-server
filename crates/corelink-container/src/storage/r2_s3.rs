@@ -6,6 +6,11 @@
 //! public `R2S3Client`/handler API without changing `storage.rs` or downstream
 //! wiring.
 
+// The included implementation parts resolve these names through `super`.
+// Keep aliases at this facade level so the textual split has the same parent
+// scope as the original monolithic module.
+use super::{byok_cas, StorageEnv};
+
 mod implementation {
     include!("r2_s3_parts/client.rs");
     include!("r2_s3_parts/cas_core.rs");
