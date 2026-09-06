@@ -379,12 +379,12 @@ verify: |
 verify-means: |
   done — the stdlib-only focal verifier lexes active Rust structure, proves the
   npm write body carries the resolved cap and production D1 wiring, and kills
-  ten semantic mutations: the six original comment/string/wrong-tenant,
-  removed-resolver, None-argument, and `if false` cases, plus `if 0 == 1`, an
-  early return/short-circuit before the flow, and duplicate writes (including
-  an alternate tenant). It requires exactly one reachable top-level moat
-  write, resolves the PAT-derived tenant cap first, and rejects malformed or
-  statically disabled source rather than treating it as evidence.
+  the semantic mutations covering comment/string bait, wrong tenant,
+  removed-resolver, None-argument, statically disabled flow, early return,
+  duplicate writes (including an alternate tenant), and inverse/stale wording
+  in the public and byte-accounting guidance. It requires exactly one reachable
+  top-level moat write, resolves the PAT-derived tenant cap first, and rejects
+  malformed or statically disabled source rather than treating it as evidence.
   Rust behavioral tests
   exercise under-cap success, over-cap rejection, downgrade rejection,
   missing-cap fail-closed behavior, and per-tenant namespace preservation.

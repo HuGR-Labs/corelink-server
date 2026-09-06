@@ -163,6 +163,12 @@ on:
       # surface: router, production wiring, ADR, and mutation guard.
       - "crates/corelink-container/src/routes/failover.rs"
       - "crates/corelink-container/src/routes/build.rs"
+      # B-259's npm cap flow and its public/byte-accounting truth must rerun the
+      # inverse-wording mutation suite whenever any part of that contract moves.
+      - "scripts/verify_f008_npm_storage_cap.py"
+      - "tests/test_f008_npm_storage_cap.py"
+      - "crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs"
+      - "crates/corelink-container/src/byte_accounting/b126_m2_test_2_1.rs"
       - "crates/corelink-container/src/main.rs"
       - "crates/corelink-failover-router/src/router.rs"
       - "docs/knowledge/planes/replication-failover.md"
@@ -360,6 +366,11 @@ on:
       - "changelog.d/056-cas-process-wide-budget.md"
       - "crates/corelink-container/src/routes/failover.rs"
       - "crates/corelink-container/src/routes/build.rs"
+      # Keep push parity with pull_request for B-259's cap and prose contract.
+      - "scripts/verify_f008_npm_storage_cap.py"
+      - "tests/test_f008_npm_storage_cap.py"
+      - "crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs"
+      - "crates/corelink-container/src/byte_accounting/b126_m2_test_2_1.rs"
       - "crates/corelink-container/src/main.rs"
       - "crates/corelink-failover-router/src/router.rs"
       - "docs/knowledge/planes/replication-failover.md"
@@ -568,6 +579,11 @@ jobs:
         run: |
           python3 scripts/verify_b144_pat_revoke.py --expect 'done' --self-test
           python3 -m pytest -q tests/test_verify_b144_pat_revoke.py
+
+      - name: B-259 npm cap verifier, prose, and inverse mutations
+        run: |
+          python3 scripts/verify_f008_npm_storage_cap.py
+          python3 -m pytest -q tests/test_f008_npm_storage_cap.py
 
       - name: BACKLOG.md agrees with the repo
         # Items that query the Actions API need gh authenticated. Items about
