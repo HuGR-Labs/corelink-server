@@ -168,6 +168,10 @@ on:
       - "README.md"
       - "scripts/verify_b095_interface_contract.py"
       - "tests/test_verify_b095_interface_contract.py"
+      # B-144's verifier owns the PAT-revoke role/tenant contract and its
+      # adversarial mutation suite; changes to either must rerun this gate.
+      - "scripts/verify_b144_pat_revoke.py"
+      - "tests/test_verify_b144_pat_revoke.py"
       # B-095 verifier inputs: every source that can change the assessed
       # interface contract must re-run this guard on the same PR.
       - "apps/get-corelink-worker/src/install.ts"
@@ -338,6 +342,8 @@ on:
       - "README.md"
       - "scripts/verify_b095_interface_contract.py"
       - "tests/test_verify_b095_interface_contract.py"
+      - "scripts/verify_b144_pat_revoke.py"
+      - "tests/test_verify_b144_pat_revoke.py"
       # Keep push parity with pull_request: main must not bypass B-095 inputs.
       - "apps/get-corelink-worker/src/install.ts"
       - "apps/admin-ui/src/components/customer/TeamClient.tsx"
@@ -485,6 +491,11 @@ jobs:
         run: python3 scripts/verify_b095_interface_contract.py --expect 'done'
       - name: B-095 verifier mutation tests
         run: python3 -m unittest tests/test_verify_b095_interface_contract.py
+
+      - name: B-144 PAT revoke verifier and mutations
+        run: |
+          python3 scripts/verify_b144_pat_revoke.py --expect 'done' --self-test
+          python3 -m pytest -q tests/test_verify_b144_pat_revoke.py
 
       - name: BACKLOG.md agrees with the repo
         # Items that query the Actions API need gh authenticated. Items about
