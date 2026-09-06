@@ -757,6 +757,7 @@ impl CasWriteHandler for R2CasHandler {
             }
         };
         debug!(key = %key, bytes = req.bytes.len(), "R2CasHandler::write");
+        let request_bytes_len = req.bytes.len() as u64;
 
         // Idempotent-rewrite detection (rt-nuclear #13 — byte double-charge).
         // CAS is content-addressed: the key already embeds the verified content
@@ -789,8 +790,7 @@ impl CasWriteHandler for R2CasHandler {
                     if let (Some(fence), Some(lease)) =
                         (self.cas_write_fence.as_ref(), fence_lease.as_ref())
                     {
-                        if let Err(e) = fence.commit(lease, req.bytes.len() as u64, req.at_unix_ms)
-                        {
+                        if let Err(e) = fence.commit(lease, request_bytes_len, req.at_unix_ms) {
                             abort_fence(&fence_lease);
                             emit(true);
                             return Err(CasHandlerError::Internal(format!(
@@ -862,7 +862,7 @@ impl CasWriteHandler for R2CasHandler {
                 let metadata_result = if let (Some(fence), Some(lease)) =
                     (self.cas_write_fence.as_ref(), fence_lease.as_ref())
                 {
-                    Some(fence.commit(lease, req.bytes.len() as u64, req.at_unix_ms))
+                    Some(fence.commit(lease, request_bytes_len, req.at_unix_ms))
                 } else {
                     None
                 };
