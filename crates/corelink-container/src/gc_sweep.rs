@@ -708,7 +708,7 @@ impl BlobMetaPurgeStore for D1BlobMetaPurgeStore {
         )
         .map_err(PhysicalDeleteError::Backend)?;
         if let Some(row) = inserted.first() {
-            let epoch = number(row, "epoch")?;
+            let epoch = number(row, "epoch").map_err(PhysicalDeleteError::Backend)?;
             return Ok(Some(PurgeStage::Acquired { epoch }));
         }
         let existing = query_sync(
@@ -720,15 +720,18 @@ impl BlobMetaPurgeStore for D1BlobMetaPurgeStore {
         let Some(row) = existing.first() else {
             return Ok(None);
         };
-        let epoch = number(row, "epoch")?;
-        match text(row, "state")?.as_str() {
+        let epoch = number(row, "epoch").map_err(PhysicalDeleteError::Backend)?;
+        match text(row, "state")
+            .map_err(PhysicalDeleteError::Backend)?
+            .as_str()
+        {
             // A live `purging` row belongs to another worker.  Do not issue
             // a second remote delete concurrently.  A crashed owner is
             // reclaimed after the bounded lease and then receives a new
             // epoch, fencing the stale worker's later updates.
             "purging" => {
                 const PURGE_LEASE_MS: u64 = CAS_WRITE_LEASE_MS;
-                let updated_at = number(row, "updated_at")?;
+                let updated_at = number(row, "updated_at").map_err(PhysicalDeleteError::Backend)?;
                 if now_ms.saturating_sub(updated_at) <= PURGE_LEASE_MS {
                     return Ok(None);
                 }
