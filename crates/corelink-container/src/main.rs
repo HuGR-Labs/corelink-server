@@ -690,6 +690,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
 
+    // Shared D1 client (WP-D1): one StorageEnv → one D1HttpClient shared by
+    // the billing state writer, durable audit emitter (MED-5), and durable
+    // webhook DLQ. Build it before the mount gate so a webhook secret alone
+    // can never enable a non-durable money path; dev/CI without D1 remain
+    // unmounted (fail-CLOSED).
+    let d1_client: Option<Arc<corelink_server::storage::d1_http::D1HttpClient>> =
+        match corelink_server::storage::StorageEnv::from_env() {
+            Some(storage_env) => {
+                match corelink_server::storage::d1_http::D1HttpClient::new(&storage_env) {
+                    Ok(client) => Some(Arc::new(client)),
+                    Err(e) => {
+                        warn!(
+                            error = %e,
+                            "billing: D1HttpClient init failed; \
+                             webhook NOT mounted (fail-CLOSED)"
+                        );
+                        None
+                    }
+                }
+            }
+            None => {
+                warn!(
+                    "billing: D1 config absent (R2_S3_*/CF D1); \
+                     Stripe webhook NOT mounted (fail-CLOSED)"
+                );
+                None
+            }
+        };
+
     // R2-12: the Stripe webhook route is MERGED onto the same listener when
     // STRIPE_WEBHOOK_SECRET is present; absent → skip (dev/CI without billing
     // config stays green). Either way the data plane above is always served.
@@ -733,43 +762,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 ArchiveProducerBillingEmitter as _, CfD1BillingWriter as _,
             };
         }
-        // Item 7b (money-path launch-blocker): wire the DURABLE D1-HTTP
-        // billing writer when the D1 config is present, so Stripe-webhook
-        // state (customers / subscriptions / invoices / disputes / refunds
-        // / tier / the idempotency dedup row) is materialized to D1 over
-        // the CF REST API — NOT lost to the in-memory mirror on the next
-        // container restart. The sync `BillingD1Writer` trait is bridged
-        // to the async `D1HttpClient` inside `D1HttpBillingWriter`
-        // (`block_in_place`; the trait stays sync for the shared wasm32
-        // Worker path). Dev/CI without `R2_S3_*`/CF D1 config keep the
-        // `InMemoryBillingD1` mirror so the suite stays green offline.
-        // Shared D1 client (WP-D1): one StorageEnv → one D1HttpClient shared
-        // by the billing STATE writer, the durable AUDIT emitter (MED-5), and
-        // the durable webhook DLQ. Dev/CI without the CF D1 config keep all
-        // three in-memory so the suite stays green offline.
-        let d1_client: Option<Arc<corelink_server::storage::d1_http::D1HttpClient>> =
-            match corelink_server::storage::StorageEnv::from_env() {
-                Some(storage_env) => {
-                    match corelink_server::storage::d1_http::D1HttpClient::new(&storage_env) {
-                        Ok(client) => Some(Arc::new(client)),
-                        Err(e) => {
-                            warn!(
-                                error = %e,
-                                "billing: D1HttpClient init failed; \
-                                 FALLING BACK to in-memory billing state/audit/DLQ"
-                            );
-                            None
-                        }
-                    }
-                }
-                None => {
-                    warn!(
-                        "billing: D1 config absent (R2_S3_*/CF D1); \
-                         using in-memory billing state/audit/DLQ (dev/CI — NOT durable)"
-                    );
-                    None
-                }
-            };
         let billing_d1: Arc<dyn BillingD1Writer> = match &d1_client {
             Some(client) => {
                 info!(
