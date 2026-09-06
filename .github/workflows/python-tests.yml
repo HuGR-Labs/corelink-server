@@ -23,6 +23,8 @@ on:
     paths:
       - 'tests/*.py'
       - 'scripts/**'
+      - 'docs/campaigns/remediation/BACKLOG-WP-LEDGER.md'
+      - 'docs/campaigns/remediation/work-packages/**'
       - 'requirements-ci.txt'
       - 'Cargo.lock'
       # cargo metadata reads every workspace member manifest. Keep the root
@@ -43,6 +45,8 @@ on:
     paths:
       - 'tests/*.py'
       - 'scripts/**'
+      - 'docs/campaigns/remediation/BACKLOG-WP-LEDGER.md'
+      - 'docs/campaigns/remediation/work-packages/**'
       - 'requirements-ci.txt'
       - 'Cargo.lock'
       - 'Cargo.toml'
@@ -109,6 +113,12 @@ jobs:
         run: |
           set -euo pipefail
           .venv/bin/python3 tests/verify_rust_sbom.py --check
+
+      - name: Verify backlog work-package ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv/bin/python3 scripts/verify_backlog_wp_ledger.py
 
       - name: Collect and run
         shell: bash
