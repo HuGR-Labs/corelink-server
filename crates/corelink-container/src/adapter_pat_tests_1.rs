@@ -216,7 +216,7 @@
         let verifier = PatVerifier::new(lookup, key);
         let err = verifier.verify(&pt).await.unwrap_err();
         assert!(
-            matches!(err, VerifyError::Backend(message) if message.contains("stored PAT hash invalid")),
+            matches!(err, VerifyError::Backend(ref message) if message.contains("stored PAT hash invalid")),
             "a corrupt PHC row is infrastructure failure, not a customer credential mismatch: {err:?}"
         );
     }
