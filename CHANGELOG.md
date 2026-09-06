@@ -32,6 +32,17 @@ Each entry cross-references:
   builder expectations remain caller-selected, and current repository links,
   dashboard projections, and server crate metadata name HuGR-dev without
   changing the independent corelink-cli or runner-label identities.
+- **Runner capacity can be authorized before a PAT is minted.** The internal
+  runner authorization probe reuses the existing tenant derivation,
+  offboarding, repository allowlist, and entitlement gates, returning only the
+  tenant and capacity ceilings. It performs no PAT mint, throttle accounting,
+  or secret write.
+
+- **DevEnv starts no longer accept browser-supplied credentials.** Authorized
+  starts now mint a tenant-bound, short-lived credential server-side, persist
+  activation and cleanup obligations atomically, and invoke the runner through
+  a typed RPC. Validated adoption acknowledgements are required before an
+  obligation closes; bounded alarms retain failed cleanup for retry.
 
 - **Owner-action evidence binding.** B-086 receipts now identify and verify their
   immutable capture commit; B-154 surface references and signed-document hashes

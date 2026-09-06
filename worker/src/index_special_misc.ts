@@ -5,6 +5,7 @@ import type { RouteMatch } from "./route_match.js";
 import { reapiError, getServerNonce } from "./index_common.js";
 import { handleSessionExchange, handleTokenExchange } from "./lib/session_exchange.js";
 import { handleRunnerMint, handleRunnerRevoke } from "./lib/runner_mint.js";
+import { handleRunnerAuthorize } from "./lib/runner_authorization.js";
 import { handleRunnerAdopt } from "./lib/runner_credential_routes.js";
 import { handleRunnerCloseGeneration } from "./lib/runner_credential_generation_routes.js";
 import { handleAuthRotate } from "./lib/auth_rotate.js";
@@ -58,6 +59,11 @@ export async function handleSpecialMiscRoute(
     if (route.routeKind === "runner_mint") {
       const mintResp = await handleRunnerMint(request, env, requestId);
       return applyCors(mintResp, request);
+    }
+
+    if (route.routeKind === "runner_authorize") {
+      const authorizeResp = await handleRunnerAuthorize(request, env, requestId);
+      return applyCors(authorizeResp, request);
     }
 
     if (route.routeKind === "runner_adopt") {

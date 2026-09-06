@@ -289,6 +289,7 @@ export async function handleRunnerMint(
   request: Request,
   env: Env,
   requestId: string,
+  authorizeOnly = false,
 ): Promise<Response> {
   // ── 1. Method gate ─────────────────────────────────────────────────────────
   if (request.method !== "POST") {
@@ -314,7 +315,10 @@ export async function handleRunnerMint(
   // with NO shared fallback (DD-HIGH, WP1), so present the dedicated key when set;
   // There is deliberately no shared-key fallback for this onward authority.
   const internalAuthKey = env.CORELINK_PAT_MINT_AUTH_KEY;
-  if (typeof internalAuthKey !== "string" || internalAuthKey.length < 32) {
+  if (
+    !authorizeOnly &&
+    (typeof internalAuthKey !== "string" || internalAuthKey.length < 32)
+  ) {
     // 503, NOT 403 (2026-08-02). Nothing about the DISPATCHER failed here — it
     // authenticated fine at step 2. What failed is OUR onward credential to the
     // container mint authority, i.e. a config fault on our side. The body always
@@ -349,6 +353,9 @@ export async function handleRunnerMint(
   try {
     body = (await request.json()) as RunnerMintRequest;
   } catch {
+    return reapiError("BAD_REQUEST", "invalid request body", 400, requestId);
+  }
+  if (body === null || typeof body !== "object" || Array.isArray(body)) {
     return reapiError("BAD_REQUEST", "invalid request body", 400, requestId);
   }
   const jobId = body.job_id;
@@ -518,7 +525,7 @@ export async function handleRunnerMint(
 
     let offRow: { 1: number } | null;
     let allowRow: { 1: number } | null;
-    let entRow: { max_concurrency: number; max_vcpu_h: number | null } | null;
+    let entRow: { max_concurrency: number; max_vcpu_h?: unknown } | null;
     if (typeof (env.CONFIG_DB as { batch?: unknown }).batch === "function") {
       // ONE round trip carrying all three statements in the original 5b/5c/5d order.
       const results = await (
@@ -530,14 +537,14 @@ export async function handleRunnerMint(
       ).batch([offStmt, allowStmt, entStmt]);
       offRow = rowOf<{ 1: number }>(results[0]);
       allowRow = rowOf<{ 1: number }>(results[1]);
-      entRow = rowOf<{ max_concurrency: number; max_vcpu_h: number | null }>(results[2]);
+      entRow = rowOf<{ max_concurrency: number; max_vcpu_h?: unknown }>(results[2]);
     } else {
       // Fallback for test doubles that do not implement `batch` — IDENTICAL to
       // today's serial behaviour, so every existing test continues to exercise
       // the same three awaits in the same order.
       offRow = await offStmt.first<{ 1: number }>();
       allowRow = await allowStmt.first<{ 1: number }>();
-      entRow = await entStmt.first<{ max_concurrency: number; max_vcpu_h: number | null }>();
+      entRow = await entStmt.first<{ max_concurrency: number; max_vcpu_h?: unknown }>();
     }
 
     // 5b. Suspend gate: an ACTIVE tenant has NO offboarding row; a row EXISTS ⇒
@@ -566,14 +573,32 @@ export async function handleRunnerMint(
     // which is NOT the same as zero. Only a real positive number is forwarded —
     // a 0 or a negative would make the dispatcher compute a nonsense percentage
     // and warn every tenant on their first job.
-    maxVcpuH =
-      typeof entRow.max_vcpu_h === "number" && entRow.max_vcpu_h > 0
-        ? entRow.max_vcpu_h
-        : null;
+    if (!Number.isSafeInteger(maxConcurrency) || maxConcurrency <= 0) {
+      return forbidden();
+    }
+    const rawVcpuH = entRow.max_vcpu_h;
+    if (rawVcpuH !== null && rawVcpuH !== undefined) {
+      if (typeof rawVcpuH !== "number" || !Number.isFinite(rawVcpuH) || rawVcpuH < 0) {
+        return forbidden();
+      }
+      maxVcpuH = rawVcpuH;
+    }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
     console.error(`[${requestId}] runner mint authz lookup failed: ${message.slice(0, 80)}`);
     return reapiError("INTERNAL_ERROR", "runner mint unavailable", 500, requestId);
+  }
+
+  if (authorizeOnly) {
+    return new Response(JSON.stringify({
+      tenant: tenantId,
+      max_concurrency: maxConcurrency,
+      ...(maxVcpuH !== null ? { max_vcpu_h: maxVcpuH } : {}),
+    }), { status: 200, headers: { "Content-Type": "application/json", "X-Request-Id": requestId } });
+  }
+
+  if (!internalAuthKey || internalAuthKey.length === 0) {
+    return reapiError("SERVICE_UNAVAILABLE", "runner mint unavailable", 503, requestId);
   }
 
   // ── 5e. M22(b) per-tenant mint ceiling (AFTER derivation, BEFORE the mint) ──
