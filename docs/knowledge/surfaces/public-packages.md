@@ -19,7 +19,7 @@ source_blobs:
   - "crates/corelink-container/src/routes/npm.rs@7aa4f6a458d22ac40018ddda1c8a6115e350362e"
   - "crates/corelink-container/src/routes/pip.rs@fcb9c8d5e6261b176774f396732264ae44e0652c"
   - "crates/corelink-container/src/routes/brew.rs@f1ae6c0f89746d465f069bffec31c1be6e8df7ee"
-  - "crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs@cd539aa5127551522023351253c23b25e9ec8851"
+  - "crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs@a175a88e8618a77d7632e8ff2290c251ccfd99af"
   - "crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs@a5562b70fb2161f0f1af8ee9e75212da2fb7b11c"
   - "crates/corelink-container/src/routes/public_pullthrough/part-00.rs@db555cf1cc85ed0023658f2c5277574947c1f193"
   - "crates/corelink-container/src/oci_cap.rs@fa1af6aa6cf7de0620a27959a6bcc8084ebd8ef8"
@@ -44,9 +44,9 @@ bytes are namespaced per-tenant — `crates/corelink-container/src/routes/npm.rs
 DECISION. **OCI is per-tenant by default, with F3.2 flag-gated cross-tenant dedup:** the WRITE side stays
 allowlist-gated — only an owner-allowlisted digest is stored to `_public` by the blob upload/finalize
 path, via the stricter write-only predicate
-`routes_to_public` (`crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:232-233`) — while WP-G M2 makes the blob READ
+`routes_to_public` (`crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:233-234`) — while WP-G M2 makes the blob READ
 side EXISTENCE-based: when the boot `dedup` flag is on, `get_blob` reads the shared `_public` namespace FIRST
-for ANY digest (`crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:635-668`), safe because a `sha256:`-addressed blob
+for ANY digest (`crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:636-669`), safe because a `sha256:`-addressed blob
 in `_public` is byte-identical to any private copy. Default OFF ships the OCI path byte-identical to
 per-tenant-only. They
 build on the same [native CAS](/surfaces/native-cas.md) moat the first-party surfaces use.
@@ -57,7 +57,7 @@ tenant from the bearer PAT (never the path), and enforces per-operation cache sc
 route immutable public bytes through the shared 2-level `MoatCache` under `PUBLIC_NAMESPACE` (cross-tenant
 dedup); **npm** stores tarball bytes per-tenant while sharing only unscoped metadata, and **OCI** stores
 per-tenant by default but routes an allowlisted digest to `PUBLIC_NAMESPACE` on the blob upload/finalize WRITE path when the dedup flag is on
-(`crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:224-233`). Mutable per-package
+(`crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:225-234`). Mutable per-package
 metadata/indexes live in per-tenant (or public-split) D1 KV stores the content-addressed moat cannot
 hold.
 
@@ -115,13 +115,13 @@ hold.
    forwarded to the container through the DO env-contract (see [DO lifecycle](/planes/durable-object.md)),
    so the existence-read + upstream-on-miss closure-promote paths are LIVE in prod, not inert.
    **WRITE path (still allowlist-gated):** the predicate `routes_to_public` = `dedup && is_allowlisted(blob_key)`
-   (`crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:224-233`) decides `finalize_upload`'s namespace — an
+   (`crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:225-234`) decides `finalize_upload`'s namespace — an
    allowlisted digest lands under `PUBLIC_NAMESPACE` with an uncapped `Some(0)` quota-seed, everything else
    under the per-tenant namespace with the resolved cap
-   (`crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:602-613`). **READ path (M2 = EXISTENCE, not allowlist):**
+   (`crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:603-614`). **READ path (M2 = EXISTENCE, not allowlist):**
    `get_blob` reads the shared `_public` namespace FIRST for ANY blob key whenever `dedup` is on, then falls
    back to the per-tenant namespace on a miss (no upstream fetch — read pull-through promotion is the
-   resolver's job) (`crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:635-668`). This is SAFE because an OCI blob
+   resolver's job) (`crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:636-669`). This is SAFE because an OCI blob
    is `sha256:`-addressed, so a `_public` copy of a digest is byte-identical to any private copy (nothing to
    leak); admission to `_public` stays WRITE-gated (client push via `routes_to_public`; resolver closure-promote
    from an allowlisted ROOT) and revocation still filters on read via `MoatCache::get`'s `public_blocklist`.
@@ -136,7 +136,7 @@ hold.
 - npm `@scoped` (private) packages stay in the per-tenant namespace, never `PUBLIC_NAMESPACE` (`crates/corelink-container/src/routes/npm.rs:98-107`).
 - OCI uses `.merge` not `nest_service` because the first segment after `/v2/` is the OCI repo name, not a tenant — stripping it would corrupt the repo (`crates/corelink-container/src/routes/oci.rs:19-30`).
 - OCI cost/request-count attribution is keyed on the tenant recovered from the verified bearer, not a (stripped, forgeable) header: `oci_bearer_tenant` calls `oci::auth::verify` and recovers the tenant (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:243-255`), and `oci_quota_gate` charges that resolved tenant (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:303-307`).
-- **The `_public` BLOB WRITE is allowlist-gated and the M2 READ is existence-based, but they cannot split-brain: the write predicate is a strict SUBSET of the read resolution.** Only a `dedup && is_allowlisted` hit reaches `PUBLIC_NAMESPACE` with the uncapped `Some(0)` quota-seed on blob upload/finalize (`routes_to_public`, `crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:232-233`; `crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:602-613`), so a non-allowlisted client blob push stays per-tenant and quota-charged. Manifest/index PUTs are a separate tenant-scoped `ManifestKvStore` mutation and never write `_public`. The read reads `_public` FIRST by EXISTENCE for any digest under `dedup` (`crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:656-671`): anything the blob write path (or the resolver's closure-promote) placed in `_public` is always found there, and content-addressing makes serving it leak-free — so a by-digest read never disagrees with where the bytes actually live.
+- **The `_public` BLOB WRITE is allowlist-gated and the M2 READ is existence-based, but they cannot split-brain: the write predicate is a strict SUBSET of the read resolution.** Only a `dedup && is_allowlisted` hit reaches `PUBLIC_NAMESPACE` with the uncapped `Some(0)` quota-seed on blob upload/finalize (`routes_to_public`, `crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:233-234`; `crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:603-614`), so a non-allowlisted client blob push stays per-tenant and quota-charged. Manifest/index PUTs are a separate tenant-scoped `ManifestKvStore` mutation and never write `_public`. The read reads `_public` FIRST by EXISTENCE for any digest under `dedup` (`crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:657-672`): anything the blob write path (or the resolver's closure-promote) placed in `_public` is always found there, and content-addressing makes serving it leak-free — so a by-digest read never disagrees with where the bytes actually live.
 - Eligibility for `_public` is a SERVER-owned, owner-gated, digest-pinned decision. The client submits a digest, but the baked set — with no runtime mutation path — decides whether it is eligible and the write verifies its bytes; a client cannot widen the set or substitute different content. The trust root fails closed on any tag, so only immutable `sha256:` digests the owner committed can ever be allowlisted (`crates/corelink-container/src/public_base_allowlist.rs:108`); as of WP-G M3 the shipped manifest carries 6 active pins — the alpine LAYER blob plus 5 base-image INDEX digests (`crates/corelink-container/src/public_base_allowlist.manifest:96`, `crates/corelink-container/src/public_base_allowlist.manifest:99-103`; loaded by `crates/corelink-container/src/public_base_allowlist.rs:29,55-56`).
 
 # Gotchas
@@ -189,10 +189,10 @@ hold.
 22. `crates/corelink-container/src/routes/pip.rs:116-119` — pip wheels dedup cross-tenant under `PUBLIC_NAMESPACE`.
 23. `crates/corelink-container/src/routes/brew.rs:86-96` — brew bottles dedup cross-tenant under `PUBLIC_NAMESPACE`.
 24. `crates/corelink-container/src/routes/npm.rs:149-177` — `NpmMoatStore` get/put namespace npm tarball BYTES per-tenant (cross-tenant dedup is a tracked enhancement).
-25. `crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:224-233` — `OciMoatStore::routes_to_public` = the `dedup && is_allowlisted` predicate that gates the WRITE path (`finalize_upload`); M2's read path (`get_blob`) instead reads `_public` by existence under the `dedup` flag (cite 28).
+25. `crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:225-234` — `OciMoatStore::routes_to_public` = the `dedup && is_allowlisted` predicate that gates the WRITE path (`finalize_upload`); M2's read path (`get_blob`) instead reads `_public` by existence under the `dedup` flag (cite 28).
 26. `crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:95-96` — the router reads the boot `dedup` flag (`public_flags::oci_public_dedup_enabled()`) and loads the baked allowlist fail-closed (malformed → deny-all via `unwrap_or_default()`) ONCE, then passes both to `OciMoatStore::with_allowlist` (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:120-124`); `OciMoatStore::new` is now `#[cfg(test)]`.
-27. `crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:602-613` — `finalize_upload` routes an allowlisted digest to `PUBLIC_NAMESPACE` (uncapped `Some(0)`), else per-tenant with the resolved cap.
-28. `crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:656-671` — WP-G M2: `get_blob` reads the shared `_public` namespace FIRST by EXISTENCE (any blob key) when the `dedup` flag is on, then falls back to the per-tenant namespace on a miss (no upstream fetch — read pull-through promotion is the resolver's job). Safe because an OCI blob is `sha256:`-addressed, so a `_public` copy is byte-identical to any private copy; admission to `_public` stays WRITE-gated (cite 25) and revocation still filters via `MoatCache::get`'s `public_blocklist`.
+27. `crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:603-614` — `finalize_upload` routes an allowlisted digest to `PUBLIC_NAMESPACE` (uncapped `Some(0)`), else per-tenant with the resolved cap.
+28. `crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:657-672` — WP-G M2: `get_blob` reads the shared `_public` namespace FIRST by EXISTENCE (any blob key) when the `dedup` flag is on, then falls back to the per-tenant namespace on a miss (no upstream fetch — read pull-through promotion is the resolver's job). Safe because an OCI blob is `sha256:`-addressed, so a `_public` copy is byte-identical to any private copy; admission to `_public` stays WRITE-gated (cite 25) and revocation still filters via `MoatCache::get`'s `public_blocklist`.
 29. `crates/corelink-container/src/oci_cap.rs:63-82` — `tier_to_cap_bytes`: container-side port of the Worker `QUOTAS` per-tier storage cap for the OCI `/token` mint (unknown tier → `free`, never unlimited).
 30. `crates/corelink-container/src/public_base_allowlist.rs:55-56` — `PublicBaseAllowlist::from_baked_manifest` loads + validates the container-baked owner-curated allowlist (WP-G M3: 6 active pins).
 30b. `crates/corelink-container/src/public_base_allowlist.manifest:96` — the alpine WP-E rootfs LAYER blob pin; `crates/corelink-container/src/public_base_allowlist.manifest:99-103` — the 5 base-image multi-arch INDEX digests (alpine/debian12/ubuntu24.04/node22-slim/python3.12-slim) consumed by the WP-G M2 closure-promote. 6 active pins total.

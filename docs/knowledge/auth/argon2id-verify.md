@@ -9,8 +9,8 @@ source_files:
   - "crates/corelink-container/src/scope.rs"
 source_blobs:
   - "crates/corelink-container/src/adapter_pat_crypto.rs@e0915648eb64b271e4a7b40a0510ce0e03ef17a6"
-  - "crates/corelink-container/src/adapter_pat_gate.rs@7d1ce9e156125336c460fbadfe7236616a296a46"
-  - "crates/corelink-container/src/adapter_pat_verifier.rs@9470b565acb3cf43124193fd915d7abafa9cbb0b"
+  - "crates/corelink-container/src/adapter_pat_gate.rs@e8da6ba8b64da2fee4d726ceb69ad1314167f2ba"
+  - "crates/corelink-container/src/adapter_pat_verifier.rs@e56a1a815183e4d25dc098941824179ad35d637c"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "argon2id", "scope", "dos"]
@@ -59,24 +59,24 @@ allowed to do on a cache surface.
 
 - After HMAC + D1, the full verify runs `verify_with_hash_multi` on a `spawn_blocking` thread: it
   re-parses, constant-time matches `token_id`, re-checks HMAC, then Argon2id-verifies the secret against
-  the stored PHC hash (`crates/corelink-container/src/adapter_pat_verifier.rs:517-704`).
+  the stored PHC hash (`crates/corelink-container/src/adapter_pat_verifier.rs:518-705`).
 - Before that blocking call, the verifier consults `SecretMatchMemo` — a bounded (32 768-entry), TTL'd
   (300 s) set of proven secret-matches keyed by a domain-separated, length-prefixed SHA-256 over
   `(plaintext, token_id, stored pat_hash, scope, find_only)`. A hit skips Argon2id entirely and acquires NO permit
-  (`crates/corelink-container/src/adapter_pat_verifier.rs:517-704`; `crates/corelink-container/src/adapter_pat_crypto.rs:96-310`).
+  (`crates/corelink-container/src/adapter_pat_verifier.rs:518-705`; `crates/corelink-container/src/adapter_pat_crypto.rs:96-310`).
 - A COLD miss is coalesced on a shared future (`FlightGroup`): the first caller for a key leads the one
   Argon2id, concurrent callers join its `Shared` future and all resolve together, and only the leader
   takes a permit. The flight is retired the moment it resolves and a later caller REFUSES to reuse a
   resolved one, so it is a coalescer and not a second cache. The work is SPAWNED, so it always
   completes — a cancelled awaiter can never strand a held permit
   (`crates/corelink-container/src/adapter_pat_crypto.rs:311-450`;
-  `crates/corelink-container/src/adapter_pat_verifier.rs:517-704`).
+  `crates/corelink-container/src/adapter_pat_verifier.rs:518-705`).
 - The burn arm is coalesced too, on its own key and in its own map. The two keys need not be equal —
   only to PARTITION identically, which they do, because every extra field in the hot-path key is a
   pure function of the plaintext at any instant (`token_id` is parsed out of it; `pat_hash`, `scope`
   and `find_only` are that row's). Separate maps keep a flight from ever handing a result across the
   arms (`crates/corelink-container/src/adapter_pat_crypto.rs:96-310`;
-  `crates/corelink-container/src/adapter_pat_verifier.rs:310-513`).
+  `crates/corelink-container/src/adapter_pat_verifier.rs:311-514`).
 - Concurrent Argon2id work is capped process-wide at one permit, derived from the deployed basic
   container's dedicated memory slice, so a flood of valid-PAT requests cannot
   OOM-kill the shared container (`crates/corelink-container/src/adapter_pat_gate.rs:21`).
@@ -85,27 +85,27 @@ allowed to do on a cache surface.
   (`crates/corelink-container/src/adapter_pat_gate.rs:43-59`). On the row-FOUND arm the permit acquires
   sit INSIDE the flight, in the unchanged global→per-tenant order, and a joiner takes no permit at
   all — so concurrent Argon2ids for a tenant still equal that tenant's held sub-permits
-  (`crates/corelink-container/src/adapter_pat_verifier.rs:517-704`). The dummy-burn arm is the one
+  (`crates/corelink-container/src/adapter_pat_verifier.rs:518-705`). The dummy-burn arm is the one
   documented exception to that order — see the bucket bullet below.
 - An unknown/expired/revoked `token_id` runs a dummy Argon2id burn for timing parity so latency does not
   leak whether the token exists, then returns the uniform `InvalidPat`
-  (`crates/corelink-container/src/adapter_pat_verifier.rs:310-513`). The D1 read that decides which arm is
+  (`crates/corelink-container/src/adapter_pat_verifier.rs:311-514`). The D1 read that decides which arm is
   taken is wrapped in the `opat` Server-Timing phase clock — an observability pass-through that adds
   no branch and no await of its own, so neither arm's timing profile moves
-  (`crates/corelink-container/src/adapter_pat_verifier.rs:310-513`).
+  (`crates/corelink-container/src/adapter_pat_verifier.rs:311-514`).
 - **W2 split `oother` into `oargon` / `opermit` / `ortier`.** Both this dummy-burn arm and the row-FOUND
   arm's memo-check-plus-flight now clock under the SAME `oargon` Server-Timing phase, and both arms'
   semaphore acquires clock under `opermit`
-  (`crates/corelink-container/src/adapter_pat_verifier.rs:310-513`;
-  `crates/corelink-container/src/adapter_pat_verifier.rs:517-704`;
-  `crates/corelink-container/src/adapter_pat_verifier.rs:310-513`;
-  `crates/corelink-container/src/adapter_pat_verifier.rs:517-704`). The burn arm's `burn_flights.run` and the
+  (`crates/corelink-container/src/adapter_pat_verifier.rs:311-514`;
+  `crates/corelink-container/src/adapter_pat_verifier.rs:518-705`;
+  `crates/corelink-container/src/adapter_pat_verifier.rs:311-514`;
+  `crates/corelink-container/src/adapter_pat_verifier.rs:518-705`). The burn arm's `burn_flights.run` and the
   verify arm's `verify_flights.run` both spawn their `lead` future onto a task with no ambient
   `origin_timing` task-local, so both capture a ledger HANDLE on the calling task before the spawn and
   publish through it — `origin_timing::current_ledger` + `PhaseScope::with_handle`, not the
   ambient-task-local `PhaseScope::enter` the outer `oargon` wrap uses
-  (`crates/corelink-container/src/adapter_pat_verifier.rs:310-513`;
-  `crates/corelink-container/src/adapter_pat_verifier.rs:517-704`). Both phases are gated OFF by default
+  (`crates/corelink-container/src/adapter_pat_verifier.rs:311-514`;
+  `crates/corelink-container/src/adapter_pat_verifier.rs:518-705`). Both phases are gated OFF by default
   (`CORELINK_ORIGIN_TIMING_DETAIL=on` to arm) precisely because `opermit`'s PRESENCE — not its
   duration — reports whether the Argon2id flight ran at all, i.e. whether this exact secret was
   recently proven by a warm `secret_match_memo` hit; publishing it by default would turn the header
@@ -120,19 +120,19 @@ allowed to do on a cache surface.
   to shed still parked one for the full `ARGON2_PERMIT_WAIT` while queued on the full bucket, so this
   arm's hold on the pool was bounded by the flood's arrival rate rather than by the sub-cap. Taking
   the bucket first means a shed holds no global permit at any instant
-  (`crates/corelink-container/src/adapter_pat_verifier.rs:310-513`;
+  (`crates/corelink-container/src/adapter_pat_verifier.rs:311-514`;
   `crates/corelink-container/src/adapter_pat_gate.rs:250-293`).
 - When the burn cannot get a permit the request is SHED — at EITHER tier — and the shed returns
   `Backend("pat verifier overloaded")`, the same string the row-FOUND arms return, not `InvalidPat`
-  (`crates/corelink-container/src/adapter_pat_verifier.rs:310-513`;
-  `crates/corelink-container/src/adapter_pat_verifier.rs:310-513`).
+  (`crates/corelink-container/src/adapter_pat_verifier.rs:311-514`;
+  `crates/corelink-container/src/adapter_pat_verifier.rs:311-514`).
 - The final scope gate fail-CLOSES a find-only PAT FIRST — `if row.find_only { return InvalidPat }` runs
   BEFORE the read grant (ADR-0071): a find-only PAT stores the CHECK-safe base `read-only`, but this
   adapter verifier authorizes package-manager reads directly from the D1 `scope` (the OCI `/token`
   exchange has no `x-corelink-scope` header gate), so an un-rejected `read-only` base would grant e.g.
   `docker pull`. Only then does the gate fail CLOSED unless the D1 `scope` grants cache read, and finally
   surface the write bit for credential-minting callers to downscope
-  (`crates/corelink-container/src/adapter_pat_verifier.rs:719-780`).
+  (`crates/corelink-container/src/adapter_pat_verifier.rs:720-781`).
 - The scope vocabulary lives in `scope.rs`: `requires_cache_read` / `requires_cache_write` grant by
   exact-token match (`cas:rw`/`read-write`/`admin` etc.), never substring
   (`crates/corelink-container/src/scope.rs:67-95`).
@@ -146,14 +146,14 @@ allowed to do on a cache surface.
 - Argon2id concurrency is bounded; a failed acquire fails CLOSED as `Backend` (503) — on a timeout at
   the global tier and on the row-FOUND arm's sub-cap, immediately on the dummy-burn arm's shared
   bucket — never piling on more 64-MiB allocations
-  (`crates/corelink-container/src/adapter_pat_verifier.rs:517-704`).
+  (`crates/corelink-container/src/adapter_pat_verifier.rs:518-705`).
 - A dummy-burn request that SHEDS holds NO global permit at any instant. The shared
   `UNKNOWN_TOKEN_BUCKET` is acquired first and non-blockingly, so this arm's global-pool footprint is
   the sub-cap and not the flood's arrival rate. The bucket alone does not give that property — the
   ORDER does; with the global permit taken first, a shedding request pinned one for the whole
   `ARGON2_PERMIT_WAIT`. Pinned by `a_shed_on_the_shared_burn_bucket_holds_no_global_permit`, which
   asserts pool CAPACITY rather than a status code, because both orders shed with the identical
-  message (`crates/corelink-container/src/adapter_pat_verifier.rs:310-513`).
+  message (`crates/corelink-container/src/adapter_pat_verifier.rs:311-514`).
 - `INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM` — the shed is SYMMETRIC across D1 row existence. Under
   saturation every outcome is `Backend("pat verifier overloaded")` ⇒ 503, whether or not the
   `token_id` has a live row; outside saturation every rejection is `InvalidPat` ⇒ 401. An asymmetric
@@ -161,14 +161,14 @@ allowed to do on a cache surface.
   on a shed the burn is skipped entirely — so the status must carry no information either. The two
   arms that stay `InvalidPat` are deliberate: the HMAC fast-reject sits upstream of every permit, and
   the terminal rejection after the burn actually ran IS the uniform 401 path
-  (`crates/corelink-container/src/adapter_pat_verifier.rs:310-513`;
-  `crates/corelink-container/src/adapter_pat_verifier.rs:310-513`;
-  `crates/corelink-container/src/adapter_pat_verifier.rs:310-513`;
-  `crates/corelink-container/src/adapter_pat_verifier.rs:310-513`).
+  (`crates/corelink-container/src/adapter_pat_verifier.rs:311-514`;
+  `crates/corelink-container/src/adapter_pat_verifier.rs:311-514`;
+  `crates/corelink-container/src/adapter_pat_verifier.rs:311-514`;
+  `crates/corelink-container/src/adapter_pat_verifier.rs:311-514`).
 - Coalescing does not weaken that invariant — it narrows the surface. The acquires now live INSIDE the
   flight, so a burst of one plaintext takes ONE trip through them instead of N, and every joiner of a
   shed flight receives the identical `Backend` its leader did
-  (`crates/corelink-container/src/adapter_pat_verifier.rs:310-513`).
+  (`crates/corelink-container/src/adapter_pat_verifier.rs:311-514`).
 - Coalescing adds no wait that the admitted path does not already have: a shared future has no queue,
   so the N-th joiner waits exactly as long as the 1st, and that wait is `ARGON2_PERMIT_WAIT` twice plus
   one Argon2id. The load-shed still bounds admission — it now lives inside the flight and fires
@@ -177,7 +177,7 @@ allowed to do on a cache surface.
   `(plaintext, token_id, pat_hash, scope, find_only)` tuple the outcome is a pure function of. Because
   the key binds `scope` and `find_only`, a burst cannot straddle the scope gate — every joiner reaches
   its leader's stage-4 verdict, so a scope-rejected burst leaves the memo empty exactly as a single
-  scope-rejected request does (`crates/corelink-container/src/adapter_pat_verifier.rs:517-704`).
+  scope-rejected request does (`crates/corelink-container/src/adapter_pat_verifier.rs:518-705`).
 - An empty/missing/unrecognized scope grants NOTHING — both read and write return `false`
   (`crates/corelink-container/src/scope.rs:73-95`).
 - Self-serve scope classification is exact-token and fail-CLOSED: unknown grammar can never silently map
@@ -189,13 +189,13 @@ allowed to do on a cache surface.
   and an EMPTY request→`ReadOnly` (back-compat; empty ≠ find-only). Because read is a SUPERSET of
   find-missing, `cache:find-missing` combined with read/write folds into that superset rather than
   minting a mislabeled token (`crates/corelink-container/src/scope.rs:148-194`).
-- A permit is acquired only AFTER the cheap HMAC fast-reject (`crates/corelink-container/src/adapter_pat_verifier.rs:310-513`),
-  so a forged token never reaches the permit acquire (`crates/corelink-container/src/adapter_pat_verifier.rs:517-704`).
+- A permit is acquired only AFTER the cheap HMAC fast-reject (`crates/corelink-container/src/adapter_pat_verifier.rs:311-514`),
+  so a forged token never reaches the permit acquire (`crates/corelink-container/src/adapter_pat_verifier.rs:518-705`).
 - The memo carries NO authorization state. Tenant, scope, `find_only`, expiry and revocation all come
   from the per-request, uncached D1 row (`PAT_LOOKUP_SQL` filters `revoked_at_ms IS NULL` + expiry in
   SQL), so a revocation or scope downgrade applies on the very next request — there is no staleness
-  window on this plane (`crates/corelink-container/src/adapter_pat_verifier.rs:310-513`;
-  `crates/corelink-container/src/adapter_pat_verifier.rs:719-780`).
+  window on this plane (`crates/corelink-container/src/adapter_pat_verifier.rs:311-514`;
+  `crates/corelink-container/src/adapter_pat_verifier.rs:720-781`).
 - A WRONG secret can never hit the memo: the plaintext is part of the key, so the two ways to earn a
   401 — unknown `token_id` (dummy burn) and known `token_id` with a wrong secret (real verify) — both
   still pay full Argon2id, preserving timing parity (`crates/corelink-container/src/adapter_pat_crypto.rs:96-310`).
@@ -204,14 +204,14 @@ allowed to do on a cache surface.
   Argon2id on EVERY request. Memoising it earlier would 401 it slowly once and in ~0 ms thereafter,
   sorting "live credential, insufficient scope" from "dead / unknown / wrong secret" — and a revoked
   PAT from a merely scope-downgraded one — on latency alone, with no grant of any kind
-  (`crates/corelink-container/src/adapter_pat_verifier.rs:719-780`).
+  (`crates/corelink-container/src/adapter_pat_verifier.rs:720-781`).
 - `scope` and `find_only` are in the memo KEY, so a scope DOWNGRADE (as opposed to a revocation)
   makes the old entry unreachable. Without them a downgraded PAT would 401 in ~0 ms off a stale hit
   while a revoked one still paid the slow dummy burn — separating "downgraded" from "revoked" on
   latency (`crates/corelink-container/src/adapter_pat_crypto.rs:96-310`).
 - The memoised fact is a pure function of its key and cannot become false: the stored PHC hash is IN the
   key, so a re-hashed row makes the old proof unreachable rather than stale
-  (`crates/corelink-container/src/adapter_pat_verifier.rs:517-704`).
+  (`crates/corelink-container/src/adapter_pat_verifier.rs:518-705`).
 
 # Gotchas
 
@@ -224,7 +224,7 @@ allowed to do on a cache surface.
   tiers of the shed answer `Backend` for that reason — the global pool and the shared
   `UNKNOWN_TOKEN_BUCKET` sub-cap alike — and coalescing kept it that way when it moved the acquires
   inside the flight. Do not "simplify" either arm, or either tier, back to `InvalidPat`: the burn being
-  skipped is exactly why the status cannot be allowed to differ (`crates/corelink-container/src/adapter_pat_verifier.rs:310-513`).
+  skipped is exactly why the status cannot be allowed to differ (`crates/corelink-container/src/adapter_pat_verifier.rs:311-514`).
 - ⚠️ **`SECRET_MATCH_MEMO_TTL` (300 s) is NOT a revocation window — do not "harmonise" it down to the
   5 s used by `native_pat_gate::VERIFY_CACHE_TTL` and the Worker's `PAT_VERIFY_CACHE_TTL_MS`.** Those two
   cache the authorization DECISION and skip the D1 row on a hit, so their TTL really does bound how long
@@ -241,7 +241,7 @@ allowed to do on a cache surface.
   mirrors both arms, and keeps the acquires inside the flight. Separately: the flight is where the
   Argon2id proof lands, so writing the memo there is the natural thing to do and is exactly the
   pre-scope-gate placement forbidden above, reintroduced for a whole burst at once. Changing any one
-  of these re-opens a finding (`crates/corelink-container/src/adapter_pat_verifier.rs:310-513`).
+  of these re-opens a finding (`crates/corelink-container/src/adapter_pat_verifier.rs:311-514`).
 - `admin` is treated as a cache-rw superset by the capability checks, but admin *route* authorization is
   a SEPARATE internal-auth gate, not this scope module
   (`crates/corelink-container/src/scope.rs:34-45`).
@@ -255,19 +255,19 @@ allowed to do on a cache surface.
 
 1. `crates/corelink-container/src/adapter_pat_gate.rs:21` — the global Argon2id concurrency cap (OOM guard).
 2. `crates/corelink-container/src/adapter_pat_gate.rs:43-59` — the per-tenant Argon2id sub-cap (fairness).
-3. `crates/corelink-container/src/adapter_pat_verifier.rs:310-513` — the dummy burn routed through the shared synthetic bucket (`UNKNOWN_TOKEN_BUCKET`).
-4. `crates/corelink-container/src/adapter_pat_verifier.rs:310-513` — the None-row constant-time Argon2id timing-burn.
-5. `crates/corelink-container/src/adapter_pat_verifier.rs:517-704` — the Argon2id possession verify on a blocking thread.
-6. `crates/corelink-container/src/adapter_pat_verifier.rs:517-704` — permit-acquire timeout → fail-CLOSED `Backend` (row-FOUND arm).
-6b. `crates/corelink-container/src/adapter_pat_verifier.rs:310-513` — the row-NOT-FOUND global-permit shed, returning the SAME `Backend("pat verifier overloaded")` (`INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`).
-6c. `crates/corelink-container/src/adapter_pat_verifier.rs:310-513` — the row-NOT-FOUND per-tenant sub-cap shed, likewise `Backend`.
-6d. `crates/corelink-container/src/adapter_pat_verifier.rs:310-513` — the terminal `InvalidPat` AFTER the burn ran (deliberately NOT a shed).
-7. `crates/corelink-container/src/adapter_pat_verifier.rs:719-780` — the scope gate: find-only fail-close FIRST (`if row.find_only`, ADR-0071), then fail-CLOSED read grant + write-bit surfacing.
+3. `crates/corelink-container/src/adapter_pat_verifier.rs:311-514` — the dummy burn routed through the shared synthetic bucket (`UNKNOWN_TOKEN_BUCKET`).
+4. `crates/corelink-container/src/adapter_pat_verifier.rs:311-514` — the None-row constant-time Argon2id timing-burn.
+5. `crates/corelink-container/src/adapter_pat_verifier.rs:518-705` — the Argon2id possession verify on a blocking thread.
+6. `crates/corelink-container/src/adapter_pat_verifier.rs:518-705` — permit-acquire timeout → fail-CLOSED `Backend` (row-FOUND arm).
+6b. `crates/corelink-container/src/adapter_pat_verifier.rs:311-514` — the row-NOT-FOUND global-permit shed, returning the SAME `Backend("pat verifier overloaded")` (`INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`).
+6c. `crates/corelink-container/src/adapter_pat_verifier.rs:311-514` — the row-NOT-FOUND per-tenant sub-cap shed, likewise `Backend`.
+6d. `crates/corelink-container/src/adapter_pat_verifier.rs:311-514` — the terminal `InvalidPat` AFTER the burn ran (deliberately NOT a shed).
+7. `crates/corelink-container/src/adapter_pat_verifier.rs:720-781` — the scope gate: find-only fail-close FIRST (`if row.find_only`, ADR-0071), then fail-CLOSED read grant + write-bit surfacing.
 8. `crates/corelink-container/src/scope.rs:73-95` — fail-CLOSED: empty/missing scope grants nothing (`requires_cache_read`/`_write`).
 9. `crates/corelink-container/src/scope.rs:67-95` — exact-token `requires_cache_read` / `requires_cache_write`.
 10. `crates/corelink-container/src/scope.rs:107-110` — `requires_find_missing`: find-missing granted by an explicit find token OR any read grant (read ⊇ find, ADR-0071).
 11. `crates/corelink-container/src/scope.rs:148-194` — `classify_requested_scopes`: the single, fail-CLOSED scope truth (canonical `cache:r`/`cache:w` + aliases; `cache:find-missing` now accepted → `FindMissing` class, folding into read/write superset).
-12. `crates/corelink-container/src/adapter_pat_verifier.rs:517-704` — the memo consult, keyed on `(plaintext, token_id, stored pat_hash, scope, find_only)`, sitting between the D1 row read and Argon2id.
+12. `crates/corelink-container/src/adapter_pat_verifier.rs:518-705` — the memo consult, keyed on `(plaintext, token_id, stored pat_hash, scope, find_only)`, sitting between the D1 row read and Argon2id.
 13. `crates/corelink-container/src/adapter_pat_crypto.rs:96-310` — why the memo's TTL is a memory bound and not a revocation window (contrast with the two 5 s decision caches).
 14. `crates/corelink-container/src/adapter_pat_crypto.rs:96-310` — `SecretMatchMemo`: what is memoised, why it is sound, and why it adds no timing oracle.
 15. `crates/corelink-container/src/adapter_pat_crypto.rs:96-310` — `secret_match_fingerprint`: domain-separated, length-prefixed SHA-256; only the digest is retained.
@@ -276,7 +276,7 @@ allowed to do on a cache surface.
 18. `crates/corelink-container/src/adapter_pat_crypto.rs:311-450` — `FlightGroup`: the no-cache shared-future coalescer, and why it is not a mutex.
 19. `crates/corelink-container/src/adapter_pat_crypto.rs:311-450` — `FlightGroup::run`: join-or-lead, the SPAWN that keeps an abandoned run from stranding a permit, resolved flights refused and retired, bounded map, fail-safe uncoalesced run on a poisoned lock.
 20. `crates/corelink-container/src/adapter_pat_crypto.rs:96-310` — `dummy_burn_fingerprint`: why the two arms' keys partition identically for a given plaintext, and why they live in separate maps.
-21. `crates/corelink-container/src/adapter_pat_verifier.rs:517-704` — the hot-path flight: permits acquired INSIDE it in global→per-tenant order; the proof, and ONLY the proof, lives here.
-22. `crates/corelink-container/src/adapter_pat_verifier.rs:310-513` — the mirrored dummy-burn flight (both arms or neither).
-23. `crates/corelink-container/src/adapter_pat_verifier.rs:310-513` — the shed-uniformity mapping: EVERY shed, at either tier, is `Backend`; only a completed burn is `InvalidPat`.
-24. `crates/corelink-container/src/adapter_pat_verifier.rs:310-513` — the adversarial findings against the earlier mutex, and why the shared future answers each.
+21. `crates/corelink-container/src/adapter_pat_verifier.rs:518-705` — the hot-path flight: permits acquired INSIDE it in global→per-tenant order; the proof, and ONLY the proof, lives here.
+22. `crates/corelink-container/src/adapter_pat_verifier.rs:311-514` — the mirrored dummy-burn flight (both arms or neither).
+23. `crates/corelink-container/src/adapter_pat_verifier.rs:311-514` — the shed-uniformity mapping: EVERY shed, at either tier, is `Backend`; only a completed burn is `InvalidPat`.
+24. `crates/corelink-container/src/adapter_pat_verifier.rs:311-514` — the adversarial findings against the earlier mutex, and why the shared future answers each.

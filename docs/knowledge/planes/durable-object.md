@@ -20,9 +20,9 @@ source_blobs:
   - "worker/src/replication_coordinator_do.ts@e3b43ccaadff3a348fd51366c4772cb6e3efe69f"
   - "worker/src/durable_object.ts@f8de8014554cc5a7acd7a9c4906c34a4353d1158"
   - "worker/src/durable_object_probes.ts@300dc258863373c6e0227fd8a4c1098ae7d88148"
-  - "worker/src/durable_object_start.ts@cd0193d447a3b42331fdb6a3938bf9459e5a1ad4"
-  - "worker/src/index_auth.ts@8cb197bf3200722ceed11e71bcfb82c3a853529e"
-  - "worker/src/index_common.ts@20dd65ac19602927f62330448c9afe30b82296c8"
+  - "worker/src/durable_object_start.ts@aa6612c2e3db86269a3b93f126e6dfdbd53af0c6"
+  - "worker/src/index_auth.ts@96f88ae7d6868b338dd197826202f8f9b56c9622"
+  - "worker/src/index_common.ts@23c8989d129c494b48fdafdc289f64238e58aae2"
   - "worker/src/index_public_routes.ts@809cff73c186cf63cb34cc5f69087b02bc40e21b"
   - "worker/src/index_quota_stage.ts@d50b245c7321d94443895c04eacfbfec9c0e9402"
   - "worker/src/index_routing_stage.ts@f514a592e520a3a13835fe494717275fb7159e52"
@@ -245,7 +245,7 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 19. `worker/src/rollout_controller.ts:37-59` — `RolloutController` UNWIRED stub: `/_do/health` 200 but `501 NOT_IMPLEMENTED` "WASM bridge not yet wired (Phase C)" for all other requests.
 20. `worker/src/replication_coordinator_do.ts:425-482` — `ReplicationCoordinatorDO`: the single global coordinator DO — persists role-map + heartbeats under `blockConcurrencyWhile` and self-arms the periodic `alarm()` evaluate→promote driver (always re-arms, even on a throwing tick).
 21. `worker/src/replication_coordinator_do.ts:531-553` — the DO `fetch` router for the `/_repl/<op>` control plane (`arm`/`status`/`tick`), which the Worker reaches by mapping `/_internal/replication/*` onto it; the fixed `REPLICATION_COORDINATOR_SINGLETON` name is the split-brain-safe single-writer promotion lock.
-22. `worker/src/durable_object.ts:586-711` — `handleHealthProbe` + `probeD1Latency`: the `d1_probe` placement instrument on `/_do/health` (primary vs `withSession("first-unconstrained")` replica, feature-detected exactly as `worker/src/index_auth.ts:534-537` does it, warm-up reported not hidden, a throw surfaced as an explicit `error` field, never on the request-serving path).
+22. `worker/src/durable_object.ts:586-711` — `handleHealthProbe` + `probeD1Latency`: the `d1_probe` placement instrument on `/_do/health` (primary vs `withSession("first-unconstrained")` replica, feature-detected exactly as `worker/src/index_auth.ts:535-538` does it, warm-up reported not hidden, a throw surfaced as an explicit `error` field, never on the request-serving path).
 23. `worker/src/index_public_routes.ts:313-352` — `/_internal/do-d1-probe/{tenant_id}` → that tenant's DO `/_do/health`: same forward shape as the `/_internal/replication` → `/_repl` precedent, behind the internal-auth gate on the low-privilege `quota_read` consumer (`worker/src/index_common.ts:460-468`), with the DO id derived by `idFromName(tenant)` so the probe measures the SAME instance that serves that tenant.
 24. `worker/src/durable_object_start.ts:425` — `armInactivityTimeout`: the PLATFORM idle reaper, `container.setInactivityTimeout(IDLE_TIMEOUT_MS)`, which workerd enforces without this Worker (it survives DO eviction, a broken alarm chain and a wedged isolate — the failure modes that made containers immortal). Armed right after `container.start()`, before the health poll (`worker/src/durable_object_start.ts:248-249`), and re-armed on a live non-idle alarm tick (`worker/src/durable_object.ts:773`) because the type declaration does not specify whether the timer resets on activity or is absolute from arming. Feature-detected, and an arming failure is logged rather than thrown (`worker/src/durable_object_start.ts:408-409`) — a container that cannot arm its idle timer must still serve.
 25. `worker/src/index_public_routes.ts:258` — the B1b `/_public`-revoke forward onto the `_system` `CoreLinkServer` DO via `systemStub.fetch` (a Worker-side pass-through the DO proxies to the container unchanged); on the container's `ok` response the Worker best-effort-writes the content-hash-keyed edge blocklist KV (`ctx.waitUntil(writePublicBlocklistKv(...))`, `worker/src/index_public_routes.ts:300`). No new DO handler — the `_system` DO's proxy path is unchanged.

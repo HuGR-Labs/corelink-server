@@ -13,7 +13,7 @@ source_files:
   - "apps/signup-worker/src/webhooks/stripe_signature.ts"
 source_blobs:
   - "apps/signup-worker/src/webhooks/billing_checkout.ts@55577a6337bf565d14efbcbc2e0c43823c91d190"
-  - "crates/corelink-container/src/routes/tier_select_store.rs@7d9f19ade75280de6bad893fbc780fd50d54c2a5"
+  - "crates/corelink-container/src/routes/tier_select_store.rs@952617da8bb4a02793c6732e13e4b537761c21f5"
   - "crates/corelink-stripe-real/src/client.rs@7b8651450b2f9eadaab2b352639cde881517a0ac"
   - "migrations/d1/0111_b076_payable_subscription_ownership.sql@515bdd65ed86e4c8aa161c5a584519749d35fdea"
   - "apps/signup-worker/src/webhooks/stripe.ts@e590f96276cea922d0519f3b29cb49feebc3e003"

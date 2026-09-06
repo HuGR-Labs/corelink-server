@@ -15,6 +15,7 @@ drift is an error.  A partial answer is not a green answer.
 from __future__ import annotations
 
 import argparse
+import ast
 from functools import lru_cache
 import hashlib
 import json
@@ -33,6 +34,13 @@ CHANGELOG = Path("changelog.d/b061-remediation-roadmap.md")
 WORKFLOW = Path(".github/workflows/backlog-verify.yml")
 SCRIPT = Path("scripts/verify_b061_remediation_roadmap.py")
 TEST = Path("tests/test_verify_b061_remediation_roadmap.py")
+OKF_VALIDATOR = Path("scripts/validate_okf.py")
+OKF_RUNTIME = Path("scripts/validate_okf_runtime.py")
+OKF_MANIFEST = Path("docs/internal/okf-wiki/concept-manifest.yaml")
+OKF_INDEX = Path("docs/knowledge/index.md")
+OKF_INDEX_SCRIPT = Path("scripts/okf_index.py")
+OKF_RENDER_SCRIPT = Path("scripts/okf_render.py")
+OKF_RENDERED_SITE = Path("docs/okf-wiki-site/index.html")
 
 CANONICAL_KEYS = {
     "okf_documents",
@@ -295,6 +303,17 @@ def _validate_projections(
         str(CHANGELOG),
         str(SCRIPT),
         str(TEST),
+        str(OKF_VALIDATOR),
+        str(OKF_RUNTIME),
+        "scripts/validate_okf_core1.py",
+        "scripts/validate_okf_core2.py",
+        "scripts/validate_okf_checks.py",
+        "scripts/okf_anchor_reverify.py",
+        str(OKF_MANIFEST),
+        str(OKF_INDEX),
+        str(OKF_INDEX_SCRIPT),
+        str(OKF_RENDER_SCRIPT),
+        str(OKF_RENDERED_SITE),
         "docs/knowledge/**",
         "crates/corelink-tier-selection/src/tier.rs",
         "crates/corelink-ratelimit/src/tier.rs",
@@ -304,6 +323,102 @@ def _validate_projections(
         raise RoadmapVerificationError(f"backlog workflow paths omit B061 inputs: {missing_paths}")
     if "python3 scripts/verify_b061_remediation_roadmap.py" not in workflow:
         raise RoadmapVerificationError("backlog workflow does not execute B061 verifier")
+
+
+def _validate_okf_surfaces(
+    repo_root: Path,
+    *,
+    manifest_path: Path = OKF_MANIFEST,
+    index_path: Path = OKF_INDEX,
+    site_path: Path = OKF_RENDERED_SITE,
+) -> None:
+    """Fail closed when the split validator and its generated OKF surfaces drift."""
+    validator_path = repo_root / OKF_VALIDATOR
+    runtime_path = repo_root / OKF_RUNTIME
+    try:
+        validator_text = validator_path.read_text(encoding="utf-8")
+        runtime_text = runtime_path.read_text(encoding="utf-8")
+        ast.parse(validator_text, filename=str(validator_path))
+        runtime_tree = ast.parse(runtime_text, filename=str(runtime_path))
+    except (OSError, UnicodeDecodeError, SyntaxError) as exc:
+        raise RoadmapVerificationError("split OKF validator is missing, unreadable, or invalid Python") from exc
+    run_checks = next(
+        (node for node in ast.walk(runtime_tree) if isinstance(node, ast.FunctionDef) and node.name == "run_checks"),
+        None,
+    )
+    if run_checks is None or "validate_okf_runtime" not in validator_text:
+        raise RoadmapVerificationError("OKF wrapper/runtime split lost executable run_checks")
+    calls = {node.func.attr for node in ast.walk(run_checks) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)}
+    literal_checks = {
+        node.args[0].value for node in ast.walk(run_checks)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "add" and node.args and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+    }
+    if "is_ancestor" not in calls or "C4" not in literal_checks or '"C5"' not in runtime_text:
+        raise RoadmapVerificationError("OKF split validator lost fail-closed checkpoint/content handling")
+
+    try:
+        import yaml  # type: ignore
+    except ImportError as exc:
+        raise RoadmapVerificationError("PyYAML is required to validate the OKF manifest") from exc
+    manifest_file = manifest_path if manifest_path.is_absolute() else repo_root / manifest_path
+    try:
+        manifest = yaml.safe_load(manifest_file.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        raise RoadmapVerificationError("OKF manifest is invalid or unreadable") from exc
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("candidates"), list):
+        raise RoadmapVerificationError("OKF manifest has no closed candidates population")
+    candidates: set[str] = set()
+    active: set[str] = set()
+    for candidate in manifest["candidates"]:
+        if not isinstance(candidate, dict) or not isinstance(candidate.get("id"), str):
+            raise RoadmapVerificationError("OKF manifest contains a malformed candidate")
+        cid = candidate["id"].strip().lstrip("/")
+        if not cid or cid in candidates:
+            raise RoadmapVerificationError(f"OKF manifest candidate population is not unique: {cid!r}")
+        candidates.add(cid)
+        if candidate.get("status") == "active":
+            active.add(cid)
+
+    scripts_dir = repo_root / "scripts"
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    import okf_index  # type: ignore
+    import okf_render  # type: ignore
+    index_concepts = okf_index.find_concepts()
+    index_ids = [cid for _, cid, _ in index_concepts]
+    if len(index_ids) != len(set(index_ids)) or not set(index_ids) <= candidates or set(index_ids) - active:
+        raise RoadmapVerificationError("OKF manifest is not a unique active superset of the generated index")
+    index_file = index_path if index_path.is_absolute() else repo_root / index_path
+    try:
+        index_text = index_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise RoadmapVerificationError("OKF generated index is missing or unreadable") from exc
+    if index_text != okf_index.render(index_concepts):
+        raise RoadmapVerificationError("OKF index is stale relative to the closed concept population")
+
+    render_concepts = okf_render.find_concepts()
+    render_ids = [concept["id"] for concept in render_concepts]
+    if len(render_ids) != len(index_ids) or set(render_ids) != set(index_ids):
+        raise RoadmapVerificationError("OKF renderer and index disagree on the closed concept population")
+    site_file = site_path if site_path.is_absolute() else repo_root / site_path
+    try:
+        site_text = site_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise RoadmapVerificationError("OKF rendered site is missing or unreadable") from exc
+    if site_text != okf_render.render_html(render_concepts):
+        raise RoadmapVerificationError("OKF rendered site is stale relative to the closed concept population")
+    payload_match = re.search(r'<script type="application/json" id="okf-data">(.*?)</script>', site_text, re.DOTALL)
+    if not payload_match:
+        raise RoadmapVerificationError("OKF rendered site has no machine-readable concept payload")
+    try:
+        payload = json.loads(payload_match.group(1))
+    except json.JSONDecodeError as exc:
+        raise RoadmapVerificationError("OKF rendered site concept payload is invalid JSON") from exc
+    payload_concepts = payload.get("concepts") if isinstance(payload, dict) else None
+    if not isinstance(payload_concepts, list) or {c.get("id") for c in payload_concepts if isinstance(c, dict)} != set(index_ids):
+        raise RoadmapVerificationError("OKF rendered payload does not exactly enumerate the index concepts")
 
 
 def verify(
@@ -336,6 +451,7 @@ def verify(
         changelog_path=changelog_path,
         workflow_path=workflow_path,
     )
+    _validate_okf_surfaces(repo_root)
     return {**metrics, "status": "b061_remediation_roadmap_verified"}
 
 

@@ -18,7 +18,7 @@ source_blobs:
   - "crates/corelink-container/src/routes/admin_pilot/part-01.rs@74d07a747e04f5f2d1cf88b53e6e548275c9cd2e"
   - "crates/corelink-container/src/routes/admin_tenant_detail.rs@4c901b703db19889029303d37281687b106e0c63"
   - "crates/corelink-container/src/routes.rs@ddbe70297312a757a9894c71635d9610f881d3b2"
-  - "crates/corelink-container/src/routes/build.rs@7a9035bbb859a3717cfceec3dbcb77622e5e1268"
+  - "crates/corelink-container/src/routes/build.rs@739abcdc453ab5bd7a5642526aed445cf34eccf8"
   - "docs/internal/admin-plane.md@55950a9541c681185f4f784373735d6d7bf18245"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"

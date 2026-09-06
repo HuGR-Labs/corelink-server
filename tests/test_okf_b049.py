@@ -180,6 +180,27 @@ def test_c5_still_reports_reachable_cited_drift() -> None:
         assert "[C5]" in output and "src.txt:1-1" in output
 
 
+def test_unreachable_blob_anchor_fails_even_when_blob_object_is_present() -> None:
+    with tempfile.TemporaryDirectory(prefix="okf-b049-blob-reach-") as raw:
+        repo = Path(raw)
+        setup(repo)
+        (repo / "src.txt").write_text("stable\n", encoding="utf-8")
+        git(repo, "add", "src.txt")
+        git(repo, "commit", "-qm", "base")
+        base = git(repo, "rev-parse", "HEAD")
+        (repo / "dead.txt").write_text("never landed\n", encoding="utf-8")
+        orphan_blob = git(repo, "hash-object", "-w", "dead.txt")
+        # The blob resolves locally but was never the content of src.txt at a
+        # reachable commit; C4b must reject this timing-artifact anchor.
+        write_concept(repo, base, source_blobs=orphan_blob)
+        git(repo, "add", "-A")
+        git(repo, "commit", "-qm", "unreachable blob anchor")
+        result = validate(repo)
+        output = result.stdout + result.stderr
+        assert result.returncode != 0
+        assert "[C4b]" in output and "NOT the content of that path" in output
+
+
 if __name__ == "__main__":
     test_unreachable_commit_fails_even_when_object_is_present()
     test_first_blob_anchor_is_created_and_validated()

@@ -22,7 +22,7 @@ source_blobs:
   - "migrations/d1/0072_runners_entitlement_max_vcpu_h.sql@22beca81f565bcb4b874c86f2e9b61cbd9945c05"
   - "migrations/d1/0106_devenv_monthly_vcpu.sql@34bebf1daf6054eadf3dc02774a6891d3e2bea78"
   - "crates/corelink-container/src/routes/customer_runners.rs@e9410dfcb4ec1233c1ab7b87e99f68db9e5422b6"
-  - "worker/src/index_common.ts@20dd65ac19602927f62330448c9afe30b82296c8"
+  - "worker/src/index_common.ts@23c8989d129c494b48fdafdc289f64238e58aae2"
   - "worker/src/index_public_routes.ts@809cff73c186cf63cb34cc5f69087b02bc40e21b"
   - "worker/src/index_special_routes.ts@b586ec72ab4872e6e50a1ee354940a4267d69c5b"
   - "worker/src/route_match.ts@1abbf50c5a2058282ebe362f517b03cda8980646"

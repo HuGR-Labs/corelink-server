@@ -15,11 +15,11 @@ source_blobs:
   - "crates/corelink-container/src/byok.rs@f8a04f0a8b2c32d5d86c495811b449c1b71d80c4"
   - "crates/corelink-container/src/byok_orchestrator.rs@3488eee4d20a937e33f1f994ce418c74b176d778"
   - "crates/corelink-byok/src/lib.rs@61f5bb2b8d0df1524da7c72a2bf218aa8575deca"
-  - "crates/corelink-byok/src/byok_aws/real.rs@5f44dc1ffe6b9633ffd4179996bc1a8135d1ba32"
+  - "crates/corelink-byok/src/byok_aws/real.rs@f5efa46296f48198e5bb3475470eca311dfd8329"
   - "crates/corelink-container/src/storage/byok_cas/part-00.rs@05c3cdc673bea6b8e64f4f90f178da2868180174"
   - "crates/corelink-container/src/storage/byok_cas/part-01.rs@0ff91d96f9e7dffe47faed4808c468ce1b196663"
   - "crates/corelink-container/src/routes/byok_admin.rs@6913e1c8858261fe9f6728e1ec4befd7337e23f7"
-  - "crates/corelink-container/src/byok_revocation_runtime.rs@f8fd38a1abd966d23eefd06dd2eeb3000ca81b79"
+  - "crates/corelink-container/src/byok_revocation_runtime.rs@377ac85bd36be4bd632fd7e37c0d76afb4d98fa1"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["storage", "byok", "encryption", "kms", "envelope"]

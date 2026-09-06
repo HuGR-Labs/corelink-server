@@ -109,6 +109,25 @@ def test_actions_export_digest_is_fail_closed(tmp_path: Path) -> None:
         verifier.verify(ROOT, **paths)
 
 
+def test_rendered_okf_surface_staleness_is_fail_closed(tmp_path: Path) -> None:
+    site = tmp_path / verifier.OKF_RENDERED_SITE
+    site.parent.mkdir(parents=True, exist_ok=True)
+    site.write_text((ROOT / verifier.OKF_RENDERED_SITE).read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+    with pytest.raises(verifier.RoadmapVerificationError, match="rendered site is stale"):
+        verifier._validate_okf_surfaces(ROOT, site_path=site)
+
+
+def test_manifest_population_mismatch_is_fail_closed(tmp_path: Path) -> None:
+    manifest = tmp_path / verifier.OKF_MANIFEST
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    text = (ROOT / verifier.OKF_MANIFEST).read_text(encoding="utf-8")
+    manifest.write_text(text.replace('id: "planes/container"', 'id: "planes/phantom"', 1), encoding="utf-8")
+
+    with pytest.raises(verifier.RoadmapVerificationError, match="active superset"):
+        verifier._validate_okf_surfaces(ROOT, manifest_path=manifest)
+
+
 def test_b061_installs_python_requirements_before_pytest() -> None:
     workflow = (ROOT / verifier.WORKFLOW).read_text(encoding="utf-8")
     assert workflow.index("Prepare Python verifier dependencies") < workflow.index(

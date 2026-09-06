@@ -5,7 +5,7 @@ description: "Fail-closed synthetic PagerDuty drill handoff from the Worker cron
 source_files:
   - "worker/src/index_common.ts"
 source_blobs:
-  - "worker/src/index_common.ts@20dd65ac19602927f62330448c9afe30b82296c8"
+  - "worker/src/index_common.ts@23c8989d129c494b48fdafdc289f64238e58aae2"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "scheduled-drills"]

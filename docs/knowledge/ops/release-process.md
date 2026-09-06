@@ -8,8 +8,8 @@ source_files:
   - "crates/corelink-container/src/main.rs"
 source_blobs:
   - "docs/release/v1.0.0-GA-tag-draft-final.txt@715960c16b88debd7150bbb1b8e45446282387f3"
-  - "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_01.rs@424e6669bc4111af2aeb71c9e6c14d9df9e392cd"
-  - "crates/corelink-container/src/main.rs@f799f8d154e5aa226792dd08995a10ee944f2fb7"
+  - "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_01.rs@ec2aa27a1e092556fe11da72d09815b6d918786d"
+  - "crates/corelink-container/src/main.rs@f2a30721e7ad1c435c4590d85ece596e6cfe32dc"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "release", "ga", "sign-off", "runbook"]
@@ -48,10 +48,10 @@ proves the artifact, and to the GA staffing waiver in
    drain): the `POST /_internal/audit/drain` route is mounted and actually seals the live `audit_outbox`
    into the BLAKE3 tamper-evident chain — now with an Ed25519-SIGNED chain head (CF-6, migration 0080) —
    when the erase/internal auth key + D1 are bound
-   (`crates/corelink-container/src/main.rs:462-462`, now mounted directly alongside the
+   (`crates/corelink-container/src/main.rs:463`, now mounted directly alongside the
    `/_internal/dsr/{erase,verify,access,portability,rectification}` family that the DSAR-completion work
    expanded; seal logic at
-   `crates/corelink-container/src/routes/audit_drain/b126_m2_impl_01.rs:530`/`:634-641`/`crates/corelink-container/src/routes/audit_drain/b126_m2_impl_01.rs:100`), and stays mounted-inert
+   `crates/corelink-container/src/routes/audit_drain/b126_m2_impl_01.rs:533`/`:637-644`/`crates/corelink-container/src/routes/audit_drain/b126_m2_impl_01.rs:100`), and stays mounted-inert
    (fail-CLOSED unmount) when the key+D1 are absent — it is NOT a designed-only skeleton (this matches the
    audit-chain concept's WIRED treatment, [compliance/audit-chain.md](/compliance/audit-chain.md));
    **(c) DESIGNED-but-UNWIRED skeletons** enumerated as the target GA posture, not running GA wiring —

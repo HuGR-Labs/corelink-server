@@ -17,8 +17,8 @@ source_blobs:
   - "crates/corelink-hash/src/verified_body.rs@d387eca974b5314dad46b6e92b1623cb8b3e10d5"
   - "crates/corelink-hash/src/digest.rs@40aea50c8127ada98133e3719171b65f047f2bcd"
   - "crates/corelink-reapi/src/lib.rs@a4e6596b8741aded884e05b445df1b13edf1419b"
-  - "crates/corelink-container/src/routes/cas/foundation.rs@c2348f6ddb4567e8c902fd237213f86957300cdc"
-  - "crates/corelink-container/src/routes/cas/batch.rs@bc3b531744e3659d850eb1f415c2ec015df00e55"
+  - "crates/corelink-container/src/routes/cas/foundation.rs@0e5712cd96aa832375398e3192a16b74fad173c0"
+  - "crates/corelink-container/src/routes/cas/batch.rs@6144bd860660f5eb435f3043f3fb1d8d3d29ed40"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["crates", "cas", "ac", "integrity", "blake3", "core"]
@@ -44,7 +44,7 @@ The cluster sits below every cache surface ([native CAS](/surfaces/native-cas.md
 
 - Every body is verified before storage: the only path to a `VerifiedBody` runs the hash check — `VerifiedBody::new` computes the digest then `verify_constant_time`, returning `Err(HashMismatch)` on mismatch (`crates/corelink-hash/src/verified_body.rs:33-44`; `crates/corelink-hash/src/lib.rs:9-13`).
 - Security-sensitive digest comparison uses constant-time `verify_constant_time`, not short-circuiting `PartialEq`, so timing cannot leak (`crates/corelink-hash/src/digest.rs:78-79`; `crates/corelink-hash/src/lib.rs:40-45`).
-- The per-blob order verify → R2 → D1 is the correctness guarantee against orphan classes, but it is NOT enforced by `CasWriteOrchestrator` on the live native path. `CasWriteOrchestrator` has zero production callers (only `corelink-reapi`'s own gRPC handlers + prop tests); the cited `crates/corelink-reapi/src/lib.rs:56-61` is an anti-pattern rustdoc, NOT a live enforcement seam. The live native CAS write enforcer is the `CasWriteHandler` trait object — `handle_write` (`crates/corelink-container/src/routes/cas/batch.rs:575`) and the batch path (`crates/corelink-container/src/routes/cas/batch.rs:575`) call `state.write.write(req)`, and content-verify + R2 PUT + D1 commit (plus the `AccountingCasHandler` byte-accounting decorator) all happen INSIDE that single `state.write` chokepoint that every CAS write surface (native / Bazel / OCI / adapters) shares. Upstream of that chokepoint the native write path also re-derives the PAT's D1-stored `can_write` capability at the container (`pat_gate_reject_write`) so a read-only token can never reach the verify→R2→D1 write (`crates/corelink-container/src/routes/cas/batch.rs:575`). `CasWriteOrchestrator` is the designed REAPI seam, not the load-bearing native guarantee.
+- The per-blob order verify → R2 → D1 is the correctness guarantee against orphan classes, but it is NOT enforced by `CasWriteOrchestrator` on the live native path. `CasWriteOrchestrator` has zero production callers (only `corelink-reapi`'s own gRPC handlers + prop tests); the cited `crates/corelink-reapi/src/lib.rs:56-61` is an anti-pattern rustdoc, NOT a live enforcement seam. The live native CAS write enforcer is the `CasWriteHandler` trait object — `handle_write` (`crates/corelink-container/src/routes/cas/batch.rs:587`) and the batch path (`crates/corelink-container/src/routes/cas/batch.rs:587`) call `state.write.write(req)`, and content-verify + R2 PUT + D1 commit (plus the `AccountingCasHandler` byte-accounting decorator) all happen INSIDE that single `state.write` chokepoint that every CAS write surface (native / Bazel / OCI / adapters) shares. Upstream of that chokepoint the native write path also re-derives the PAT's D1-stored `can_write` capability at the container (`pat_gate_reject_write`) so a read-only token can never reach the verify→R2→D1 write (`crates/corelink-container/src/routes/cas/batch.rs:587`). `CasWriteOrchestrator` is the designed REAPI seam, not the load-bearing native guarantee.
 - The whole cluster is memory-safe by construction: `#![forbid(unsafe_code)]` at each crate root (`crates/corelink-cas/src/lib.rs:83`, `crates/corelink-hash/src/lib.rs:49`, `crates/corelink-reapi/src/lib.rs:71`).
 
 # Gotchas
@@ -64,8 +64,8 @@ The cluster sits below every cache surface ([native CAS](/surfaces/native-cas.md
 7. `crates/corelink-hash/src/lib.rs:56-59` — the small public surface (`Digest`, `VerifiedBody`, errors).
 8. `crates/corelink-reapi/src/lib.rs:1-27` — the verify → R2 → D1 orchestration pipeline diagram.
 9. `crates/corelink-reapi/src/lib.rs:56-61` — the "never bypass `CasWriteOrchestrator`" anti-pattern RUSTDOC (a doc-comment / design guideline scoped to REAPI transports, NOT a live enforcement seam — the orchestrator has zero production callers).
-14. `crates/corelink-container/src/routes/cas/batch.rs:575` + `crates/corelink-container/src/routes/cas/batch.rs:575` — the LIVE native CAS write enforcer: `handle_write` / batch call `state.write.write(req)`, a `CasWriteHandler` trait object where content-verify + R2 PUT + D1 commit happen (the real verify→R2→D1 guarantee on the native path).
-15. `crates/corelink-container/src/routes/cas/batch.rs:575` — `pat_gate_reject_write` re-derives the PAT's D1 `can_write` at the container BEFORE the write chokepoint, so a read-only PAT never reaches the verify→R2→D1 write.
+14. `crates/corelink-container/src/routes/cas/batch.rs:587` + `crates/corelink-container/src/routes/cas/batch.rs:587` — the LIVE native CAS write enforcer: `handle_write` / batch call `state.write.write(req)`, a `CasWriteHandler` trait object where content-verify + R2 PUT + D1 commit happen (the real verify→R2→D1 guarantee on the native path).
+15. `crates/corelink-container/src/routes/cas/batch.rs:587` — `pat_gate_reject_write` re-derives the PAT's D1 `can_write` at the container BEFORE the write chokepoint, so a read-only PAT never reaches the verify→R2→D1 write.
 10. `crates/corelink-reapi/src/lib.rs:71` — `#![forbid(unsafe_code)]`.
 11. `crates/corelink-reapi/src/lib.rs:123-128` — the `CasWriteOrchestrator` / outcome exports.
 12. `crates/corelink-hash/src/verified_body.rs:33-44` — `VerifiedBody::new`: compute-then-`verify_constant_time`, `Err(HashMismatch)` on mismatch.

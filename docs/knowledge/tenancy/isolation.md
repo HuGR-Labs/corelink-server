@@ -16,7 +16,7 @@ source_blobs:
   - "crates/corelink-container/src/auth_tenant.rs@89894fd631b6436ff1c940837b312de30ce3eef7"
   - "crates/tenant-path/src/lib.rs@ed40ce405d38f398b6537f17531f0fd05be3dfdb"
   - "crates/tenant-path/src/prefix.rs@cb25dffd2461c9cd3e6c8f5a98744d3a3d75066c"
-  - "worker/src/index_auth.ts@8cb197bf3200722ceed11e71bcfb82c3a853529e"
+  - "worker/src/index_auth.ts@96f88ae7d6868b338dd197826202f8f9b56c9622"
   - "worker/src/index_quota_stage.ts@d50b245c7321d94443895c04eacfbfec9c0e9402"
   - "worker/src/index_routing_stage.ts@f514a592e520a3a13835fe494717275fb7159e52"
   - "worker/src/route_match.ts@1abbf50c5a2058282ebe362f517b03cda8980646"
@@ -92,7 +92,7 @@ keyed on the same trusted tenant id this control establishes.
 # Citations
 
 1. `worker/src/index_quota_stage.ts:288` — one DO instance per tenant via `idFromName(resolvedTenantId)` (the implementing call).
-2. `worker/src/index_auth.ts:299` — reserved `_system` sentinel DO name for non-tenant traffic (the `_health/container` route return).
+2. `worker/src/index_auth.ts:300` — reserved `_system` sentinel DO name for non-tenant traffic (the `_health/container` route return).
 3. `crates/corelink-worker/src/tenant.rs:36-44` — the `TenantCtx` struct with a private, derived prefix field.
 4. `crates/corelink-worker/src/tenant.rs:55-63` — `TenantCtx::new` derives the prefix from `(tdk, tenant_id)`.
 5. `crates/corelink-container/src/auth_tenant.rs:1-3` — the only trustworthy tenant source is the DO-injected header.

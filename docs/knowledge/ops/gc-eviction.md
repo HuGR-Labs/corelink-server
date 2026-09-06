@@ -13,7 +13,7 @@ source_files:
   - "crates/corelink-eviction/src/trigger.rs"
   - "docs/internal/gc-prod-rollout-plan.md"
 source_blobs:
-  - "crates/corelink-gc/src/run.rs@24591a5c2b55beb45f35255ab97b7796ed3f912a"
+  - "crates/corelink-gc/src/run.rs@2442bb040da2a3e222b1350d140b48eced77c44f"
   - "crates/corelink-gc/src/degrade.rs@cc8083ee0c3f24ffc66055996784bb54e98208ab"
   - "crates/corelink-eviction/src/tier.rs@4cf334a805b8460c887494c05545a38bb1f94ec1"
   - "crates/corelink-eviction/src/reservation.rs@d5004a86862d151462dbe4f97910898736bdb2a3"

@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/main.rs"
 source_blobs:
   - "crates/corelink-container/src/native_pat_gate.rs@cd9bcc9414778fbac1e47efe7bf89e6c712a0ffa"
-  - "crates/corelink-container/src/main.rs@f799f8d154e5aa226792dd08995a10ee944f2fb7"
+  - "crates/corelink-container/src/main.rs@f2a30721e7ad1c435c4590d85ece596e6cfe32dc"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path", "native-plane"]
@@ -74,8 +74,8 @@ absent in dev/CI, mandatory in prod (`crates/corelink-container/src/native_pat_g
 - In prod a `None` from the builder is a SILENT security downgrade; the container's boot path treats it
   as FATAL when prod is detected — the teeth live in `main.rs`, not this builder
   (`crates/corelink-container/src/native_pat_gate.rs:268-283`; the prod-fatal backstop is
-  `should_fatal_on_missing_gate` at `crates/corelink-container/src/main.rs:78` wired at
-  `crates/corelink-container/src/main.rs:172-172`).
+  `should_fatal_on_missing_gate` at `crates/corelink-container/src/main.rs:79` wired at
+  `crates/corelink-container/src/main.rs:173`).
 - The single-flight shards are a FIXED 256-entry array, not a per-token map — bounded memory by
   construction (`crates/corelink-container/src/native_pat_gate.rs:72-77`).
 
@@ -88,8 +88,8 @@ absent in dev/CI, mandatory in prod (`crates/corelink-container/src/native_pat_g
 5. `crates/corelink-container/src/native_pat_gate.rs:247-251` — the uniform 401 (no rejection oracle).
 6. `crates/corelink-container/src/native_pat_gate.rs:257-261` — SHA-256 fingerprint cache key, never the plaintext.
 7. `crates/corelink-container/src/native_pat_gate.rs:268-283` — env-gated builder; prod-fatal on a missing gate.
-8. `crates/corelink-container/src/main.rs:78` — `should_fatal_on_missing_gate` (prod && !gate_present).
-9. `crates/corelink-container/src/main.rs:341` — boot-path call site enforcing the prod-fatal backstop.
+8. `crates/corelink-container/src/main.rs:79` — `should_fatal_on_missing_gate` (prod && !gate_present).
+9. `crates/corelink-container/src/main.rs:342` — boot-path call site enforcing the prod-fatal backstop.
 
 
 # Revalidation

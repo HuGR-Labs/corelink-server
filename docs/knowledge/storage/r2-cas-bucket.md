@@ -12,12 +12,13 @@ source_files:
   - "crates/corelink-container/src/sli_aggregate.rs"
   - "crates/corelink-region/src/region.rs"
 source_blobs:
-  - "crates/corelink-container/src/storage.rs@2260743898d0c791d2de82b21fee25b0596aa8bb"
-  - "crates/corelink-container/src/storage/r2_s3_parts/client.rs@319daaa5f7a6dbc521c49778c4398152963374da"
+  - "crates/corelink-container/src/storage.rs@f0f3edc7ffe0580418c0a62e57295f34b4cc2f17"
+  - "crates/corelink-container/src/storage/cas_write_fence.rs@23e20fdab7e8d38f687048ff2bc3156a4ea99a72"
+  - "crates/corelink-container/src/storage/r2_s3_parts/client.rs@d25455eeac08cbd0584abcf46e71480c0c888360"
   - "crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs@c731944a56c1db190287a93fb8888b09ca67902c"
-  - "crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs@79007ad8fd2c6fa03d8ebb5fa692a93722511528"
+  - "crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs@e00d735e2e5d22496258a7f9f4e93abff618449f"
   - "crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs@358d2554f7a8af80b31368d61990d4f705c06a93"
-  - "crates/corelink-container/src/sli_aggregate.rs@9ba20902d00916e434238c0765599873f842455d"
+  - "crates/corelink-container/src/sli_aggregate.rs@9e830ac543a06095cff49857cb91edff6b0ce7f2"
   - "crates/corelink-region/src/region.rs@47b01e523ed5e5c57425454eaf67bbe1020511e8"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
@@ -56,7 +57,7 @@ unchanged — only the `<digest>` component is hardened for an active tenant.
 1. R2 is reached via the S3-compatible API over egress; this module is the native complement to the
    Worker's wasm bindings (`crates/corelink-container/src/storage.rs:1-30`).
 2. All S3/D1 config is sourced from env all-or-nothing — `from_env` returns `Some` only if every
-   required variable is present and non-empty (`crates/corelink-container/src/storage.rs:100-117`).
+   required variable is present and non-empty (`crates/corelink-container/src/storage.rs:101-118`).
 3. The S3 config is built directly from explicit static R2 credentials, deliberately bypassing the AWS
    credential-provider chain (`crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs:426`).
 4. CAS is a single bucket; the tenant and region are encoded in the object KEY
@@ -66,7 +67,7 @@ unchanged — only the `<digest>` component is hardened for an active tenant.
    same bytes reclaimed (`crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs:80`).
 6. Bucket / region env reads route through `env_or` so an absent OR empty value falls back to the
    container default instead of producing a request-breaking empty bucket name
-   (`crates/corelink-container/src/storage.rs:130-142`).
+   (`crates/corelink-container/src/storage.rs:131-143`).
 7. The production CAS handler builder wires a DURABLE audit trail, not a volatile one: with storage creds
    present (the real data plane) `build_r2_cas_handler_from_env` constructs the D1 `audit_outbox` sink via
    `cas_audit_sink_from_d1_concrete(D1HttpClient::new(&env))` and REFUSES to build the handler if that sink
@@ -105,10 +106,10 @@ unchanged — only the `<digest>` component is hardened for an active tenant.
 
 # Invariants
 - S3 credentials come only from env and are redacted in both `Debug` and `Display` — a `{:?}` must
-  never leak the R2 secret key or CF token (`crates/corelink-container/src/storage.rs:68-92`).
+  never leak the R2 secret key or CF token (`crates/corelink-container/src/storage.rs:69-93`).
 - `StorageEnv::from_env` is all-or-nothing: a partial credential set yields `None` and the caller falls
   back to in-memory fakes rather than a half-configured client
-  (`crates/corelink-container/src/storage.rs:100-117`).
+  (`crates/corelink-container/src/storage.rs:101-118`).
 - The tenant prefix segment is derived via `derive_prefix`, so cross-tenant key co-residence is
   impossible — layer 5 of `INV-TENANT-ISOLATION`
   (`crates/corelink-container/src/storage/r2_s3_parts/client.rs:1-37`).
@@ -152,7 +153,7 @@ The deployed sink is now `CountingSliObserver`
 variant instead of one row per observation — bounded by the closed 18-variant taxonomy regardless of
 traffic — and carries `(errors, total)` in bounded 5-minute buckets, which is exactly the shape
 `corelink_slo::BurnRateCalculator` consumes for the canonical 1h/6h/24h/3d range windows. It implements BOTH handler observer traits
-(`crates/corelink-container/src/sli_aggregate.rs:154-163`), which is why it lives in the container
+(`crates/corelink-container/src/sli_aggregate.rs:156-165`), which is why it lives in the container
 rather than in either handler crate: those stay free of a `tracing` dependency. Every 256
 observations of an SLI it evaluates with the canonical `corelink_slo::BurnRateCalculator` and
 publishes both the aggregate and structured burn-rate decision on the container's ordinary
@@ -164,9 +165,9 @@ structured non-quiet decision is available to the operational log/metrics alert 
 
 # Citations
 1. `crates/corelink-container/src/storage.rs:1-30` — module charter: native R2 access via the S3-compatible API over egress.
-2. `crates/corelink-container/src/storage.rs:68-92` — credential-redacting `Debug`/`Display` impls.
-3. `crates/corelink-container/src/storage.rs:100-117` — all-or-nothing `StorageEnv::from_env`.
-4. `crates/corelink-container/src/storage.rs:130-142` — `env_or` (absent OR empty → default; AC-500 incident).
+2. `crates/corelink-container/src/storage.rs:69-93` — credential-redacting `Debug`/`Display` impls.
+3. `crates/corelink-container/src/storage.rs:101-118` — all-or-nothing `StorageEnv::from_env`.
+4. `crates/corelink-container/src/storage.rs:131-143` — `env_or` (absent OR empty → default; AC-500 incident).
 5. `crates/corelink-container/src/storage/cas_write_fence.rs:1-80` — the D1-backed CAS writer lease that fences GC from concurrent R2 writes.
 5. `crates/corelink-container/src/storage/r2_s3_parts/client.rs:1-37` — CAS key scheme `<region>/<tenant_prefix_16>/<digest>` + tenant isolation.
 6. `crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs:80` — `R2S3Client` bucket field + per-key delete-serialization locks.

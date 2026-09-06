@@ -9,7 +9,7 @@ source_files:
 source_blobs:
   - "docs/security/2026-06-23-brutal-controlplane.md@a46b9871c6a55eff07a5b60fa1aa9642c3848af6"
   - "crates/corelink-container/src/routes/admin/part-00.rs@d7a50818b395cb9a858a5c8bae4380789bebfd3a"
-  - "worker/src/durable_object_start.ts@fb3e310dcba3169791ecfc0e6b8bd0c3a7f3c679"
+  - "worker/src/durable_object_start.ts@aa6612c2e3db86269a3b93f126e6dfdbd53af0c6"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["security", "control-plane", "red-team", "tenant-isolation", "internal-auth"]

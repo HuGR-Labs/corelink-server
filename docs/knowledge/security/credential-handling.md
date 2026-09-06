@@ -15,7 +15,7 @@ source_blobs:
   - "crates/corelink-container/src/routes/admin/part-00.rs@d7a50818b395cb9a858a5c8bae4380789bebfd3a"
   - "crates/corelink-container/src/auth_tenant.rs@89894fd631b6436ff1c940837b312de30ce3eef7"
   - "worker/src/durable_object.ts@f8de8014554cc5a7acd7a9c4906c34a4353d1158"
-  - "worker/src/durable_object_start.ts@fb3e310dcba3169791ecfc0e6b8bd0c3a7f3c679"
+  - "worker/src/durable_object_start.ts@aa6612c2e3db86269a3b93f126e6dfdbd53af0c6"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["security", "credentials", "pat", "secrets", "clerk"]
