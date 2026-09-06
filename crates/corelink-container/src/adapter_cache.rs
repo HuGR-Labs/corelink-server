@@ -736,7 +736,7 @@ mod tests {
         let m = MoatCache::new(
             Arc::clone(&cas) as Arc<dyn CasReadHandler>,
             cas as Arc<dyn CasWriteHandler>,
-            Arc::clone(&map),
+            Arc::clone(&map) as Arc<dyn UrlMapStore>,
             fake_hash,
             "moat-test",
         );
