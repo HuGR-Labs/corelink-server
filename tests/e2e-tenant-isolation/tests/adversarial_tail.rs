@@ -1,4 +1,8 @@
-use super::*;
+use e2e_tenant_isolation::{
+    AuditCapture, AuditChain, AuditQueryEngine, DenyKind, DsrIntake, HierarchicalQuotaStore,
+    KvReplicatedPatStore, MultipartBroker, RegionRouter, StripeWebhookLedger, TenantCtx,
+};
+
 /// Scenario 18 — Audit chain leaf forge: Tenant A constructs a forged
 /// leaf claiming it belongs to Tenant B's chain. Chain verify under
 /// B's root MUST reject (no two chains share a root; membership
