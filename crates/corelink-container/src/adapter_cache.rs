@@ -696,10 +696,12 @@ mod tests {
     async fn public_write_charges_real_tenant_but_round_trips_shared_namespace() {
         use corelink_handler_cas::{CasReadResponse, CasWriteResponse};
 
+        type WriteRecord = (String, String, String, bool);
+
         #[derive(Debug)]
         struct RecordingCas {
             inner: InMemoryCasHandler,
-            writes: Arc<Mutex<Vec<(String, String, String, bool)>>>,
+            writes: Arc<Mutex<Vec<WriteRecord>>>,
         }
         impl CasReadHandler for RecordingCas {
             fn read(&self, req: CasReadRequest) -> Result<CasReadResponse, CasHandlerError> {

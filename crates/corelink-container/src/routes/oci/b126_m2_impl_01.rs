@@ -186,6 +186,7 @@ impl OciMoatStore {
     /// delegates here with the baked manifest; tests inject a hermetic allowlist
     /// so `_public` routing can be exercised with a hermetic allowlist instead of
     /// depending on the production manifest population.
+    #[cfg(test)]
     fn with_allowlist(moat: Arc<MoatCache>, dedup: bool, allowlist: PublicBaseAllowlist) -> Self {
         Self::with_allowlist_and_blob_limit(moat, dedup, allowlist, defaults::BLOB_SIZE_LIMIT_BYTES)
     }

@@ -323,7 +323,7 @@ impl<C: RevocationD1Client> CustomerAlerter for D1RevocationAlerter<C> {
 }
 
 /// Build the complete native revocation detector from one durable D1 client.
-#[must_use]
+#[must_use = "handle the result to obtain the configured revocation detector"]
 pub fn detector_for_client(
     client: Arc<D1HttpClient>,
     provider: Arc<dyn corelink_byok::KmsProvider>,
@@ -351,6 +351,7 @@ pub fn warn_unavailable(reason: &str) {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use std::sync::Mutex;

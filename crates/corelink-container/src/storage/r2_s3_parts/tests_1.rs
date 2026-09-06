@@ -1,3 +1,4 @@
+    #[test]
     fn physical_cas_bucket_must_match_serving_region() {
         assert!(validate_cas_bucket_for_region("corelink-cas-prod", "iad").is_ok());
         assert!(validate_cas_bucket_for_region("corelink-cas-eu", "lhr").is_ok());

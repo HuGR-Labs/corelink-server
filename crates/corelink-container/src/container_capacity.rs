@@ -195,9 +195,14 @@ mod tests {
             BLOOM_CACHE_MEMORY_BUDGET_BYTES,
             258 * MEMORY_BUDGET_UNIT_BYTES
         );
-        assert!(
-            DECLARED_MEMORY_BUDGET_BYTES + RUNTIME_MEMORY_RESERVE_BYTES <= CONTAINER_MEMORY_BYTES
-        );
+        let declared_bytes = DECLARED_MEMORY_BUDGET_BYTES;
+        let reserve_bytes = RUNTIME_MEMORY_RESERVE_BYTES;
+        assert!(budget_fits(
+            CONTAINER_MEMORY_BYTES,
+            declared_bytes,
+            reserve_bytes,
+            CONTAINER_VCPU_MILLICORES,
+        ));
     }
 
     #[test]
@@ -241,9 +246,13 @@ mod tests {
         assert_eq!(CAS_READ_BATCH_PEAK_BYTES, 22 * MEMORY_BUDGET_UNIT_BYTES);
         assert_eq!(CAS_WRITE_BATCH_PEAK_BYTES, 22 * MEMORY_BUDGET_UNIT_BYTES);
         assert_eq!(CAS_READ_SINGLE_PEAK_BYTES, 196 * MEMORY_BUDGET_UNIT_BYTES);
-        assert!(
-            CAS_READ_SINGLE_PEAK_BYTES + CAS_READ_BATCH_PEAK_BYTES <= CAS_READ_GLOBAL_BUDGET_BYTES
-        );
+        let read_peak_bytes = CAS_READ_SINGLE_PEAK_BYTES + CAS_READ_BATCH_PEAK_BYTES;
+        assert!(budget_fits(
+            CAS_READ_GLOBAL_BUDGET_BYTES,
+            read_peak_bytes,
+            0,
+            CONTAINER_VCPU_MILLICORES,
+        ));
     }
 
     #[test]

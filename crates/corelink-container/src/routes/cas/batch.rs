@@ -42,6 +42,10 @@
 /// JSON array `[{"hash":"…","status":"created|exists|error","error":<msg|null>}]`
 /// in manifest order (`created` = fresh write, `exists` = idempotent
 /// already-present, `error` = per-object failure).
+#[allow(
+    clippy::too_many_arguments,
+    reason = "axum extractors form the request handler API; grouping them would change request routing"
+)]
 async fn handle_batch_write(
     State(state): State<CasRouteState>,
     Path(tenant): Path<String>,
@@ -239,6 +243,10 @@ fn batch_object_error_message(e: &CasHandlerError) -> String {
 /// lines + a single blank line `\n` + the concatenated raw bytes of the `ok`
 /// objects in manifest order. `absent` (404-class) and `gone` (410-class
 /// tombstoned) contribute zero bytes.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "axum extractors form the request handler API; grouping them would change request routing"
+)]
 async fn handle_batch_read(
     State(state): State<CasRouteState>,
     Path(tenant): Path<String>,
@@ -499,6 +507,10 @@ async fn handle_batch_read(
 /// # Response 200
 ///
 /// JSON array `[{"hash":"…","present":<bool>}]` in request order.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "axum extractors form the request handler API; grouping them would change request routing"
+)]
 async fn handle_batch_exists(
     State(state): State<CasRouteState>,
     Path(tenant): Path<String>,

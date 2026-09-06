@@ -534,16 +534,25 @@ async fn append_chunk_respects_per_tenant_inflight_budget() {
     let store = OciMoatStore::new(moat, false);
     let hog = TenantId::from_uuid(Uuid::from_u128(0x803));
     let victim = TenantId::from_uuid(Uuid::from_u128(0x71C7100));
-    assert!(OCI_MAX_INFLIGHT_BYTES_PER_TENANT < OCI_MAX_INFLIGHT_BYTES);
 
     // The global counter is far below the global ceiling — only the
     // per-tenant slice should trip here.
     let hog_uuid = store.open_upload(&hog).await.unwrap();
-    store
-        .tenant_inflight
-        .lock()
-        .unwrap()
-        .insert(hog.to_canonical_text(), OCI_MAX_INFLIGHT_BYTES_PER_TENANT);
+    let hog_key = hog.to_canonical_text();
+    let seeded_hog_budget = {
+        let mut tenant_inflight = store.tenant_inflight.lock().unwrap();
+        tenant_inflight.insert(hog_key.clone(), OCI_MAX_INFLIGHT_BYTES_PER_TENANT);
+        tenant_inflight.get(&hog_key).copied()
+    };
+    assert_eq!(
+        seeded_hog_budget,
+        Some(OCI_MAX_INFLIGHT_BYTES_PER_TENANT),
+        "hog setup must seed the per-tenant budget"
+    );
+    assert!(
+        seeded_hog_budget.is_some_and(|bytes| bytes < OCI_MAX_INFLIGHT_BYTES),
+        "per-tenant budget must remain below the global in-flight byte budget"
+    );
 
     let err = store
         .append_chunk(&hog, &hog_uuid, Bytes::from_static(b"x"))

@@ -1,3 +1,4 @@
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn byok_mode_b_read_fails_closed_when_kms_down() {
         // A wired Mode-B handler whose KMS unwrap fails must NOT serve raw bytes.
         let base = make_test_handler_with_tdk("iad").await;

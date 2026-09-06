@@ -107,9 +107,11 @@ struct WindowedCounters {
 
 impl WindowedCounters {
     fn evict(&mut self, now_ms: u64) {
-        while self.buckets.front().map_or(false, |bucket| {
-            now_ms.saturating_sub(bucket.start_ms) >= MAX_WINDOW_MS
-        }) {
+        while self
+            .buckets
+            .front()
+            .is_some_and(|bucket| now_ms.saturating_sub(bucket.start_ms) >= MAX_WINDOW_MS)
+        {
             self.buckets.pop_front();
         }
         while self.buckets.len() > MAX_BUCKETS {
@@ -218,6 +220,7 @@ impl CountingSliObserver {
             .map_err(|_| "sli observer poisoned".to_string())
     }
 
+    #[cfg(test)]
     fn counters_at(&self, now_ms: u64) -> Result<BTreeMap<Sli, SliCounters>, String> {
         self.counters
             .lock()
@@ -225,6 +228,7 @@ impl CountingSliObserver {
             .map_err(|_| "sli observer poisoned".to_string())
     }
 
+    #[cfg(test)]
     fn window_counters_at(
         &self,
         sli: Sli,

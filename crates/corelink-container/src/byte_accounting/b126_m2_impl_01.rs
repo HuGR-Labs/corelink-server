@@ -741,7 +741,7 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
         // releases the real R2 object size) → reserve == release, no drift. A
         // config read error fails CLOSED (503). `None` cache / non-BYOK tenant ⇒
         // `byte_len == plaintext_len`, byte-identical to today.
-        let byte_len = match {
+        let committed_len = {
             let _scope =
                 crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Accounting);
             byok_committed_len(
@@ -749,7 +749,8 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
                 &storage_namespace,
                 plaintext_len,
             )
-        } {
+        };
+        let byte_len = match committed_len {
             Ok(n) => n,
             Err(e) => {
                 tracing::error!(error = %e, "cas: byok committed-size lookup failed; failing closed");

@@ -164,6 +164,7 @@ impl FailoverHeartbeat {
         now_ms.saturating_sub(self.last_seen_ms.load(Ordering::Acquire)) > self.stale_after_ms
     }
 
+    #[cfg(test)]
     #[must_use]
     fn stale_after_ms(&self) -> u64 {
         self.stale_after_ms
@@ -584,6 +585,7 @@ impl FailoverLayerState {
 
     /// Test/inspection accessor for the external liveness signal. Production
     /// callers must use the authenticated internal heartbeat route.
+    #[cfg(test)]
     #[must_use]
     fn heartbeat(&self) -> Arc<FailoverHeartbeat> {
         Arc::clone(&self.heartbeat)

@@ -44,7 +44,7 @@ impl BloomTombstoneStore {
             refresh,
             // A zero cap would defeat the cache AND wedge the eviction loop;
             // clamp to at least 1 live bloom.
-            max_tenants: max_tenants.max(1).min(DEFAULT_MAX_TENANT_BLOOMS),
+            max_tenants: max_tenants.clamp(1, DEFAULT_MAX_TENANT_BLOOMS),
             tick: AtomicU64::new(0),
             bloom_count: AtomicU64::new(0),
         }

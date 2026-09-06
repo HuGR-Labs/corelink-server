@@ -46,10 +46,11 @@ use tracing::{info, warn};
 #[path = "main_boot.rs"]
 mod boot;
 use boot::{
-    build_runners_resolver, build_runners_resolver_from, build_tier_selector,
-    build_tier_selector_from, cache_tier_price_ids_missing_in_prod,
+    build_runners_resolver, build_tier_selector, cache_tier_price_ids_missing_in_prod,
     email_hash_salt_missing_in_prod, should_fatal_on_missing_gate,
 };
+#[cfg(test)]
+use boot::{build_runners_resolver_from, build_tier_selector_from};
 
 /// Storage backing kind captured once at boot by `main()`.
 ///

@@ -795,6 +795,10 @@ mod tests_layer;
 mod tests_recording;
 
 #[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    reason = "tests are allowed to use these primitives"
+)]
 mod tests_b279_bridge {
     use std::sync::Arc;
 

@@ -165,7 +165,9 @@ pub fn router(state: CasRouteState) -> Router {
             get(handle_read)
                 .put(handle_write)
                 .delete(handle_delete)
-                .layer(axum::extract::DefaultBodyLimit::max(corelink_hash::CACHE_ENTRY_MAX_BYTES)),
+                .layer(axum::extract::DefaultBodyLimit::max(
+                    corelink_hash::CACHE_ENTRY_MAX_BYTES,
+                )),
         )
         .route(CAS_LIST_ROUTE, get(handle_list))
         // Bulk routes. These are SIBLINGS of `/v1/cas/:tenant/:hash`, not
@@ -432,6 +434,10 @@ async fn handle_read(
 /// via the URL path. The handler enforces hash equality before
 /// committing to durable storage. On success: 201 Created (fresh
 /// insert) or 200 OK (idempotent re-write).
+#[allow(
+    clippy::too_many_arguments,
+    reason = "axum extractors form the request handler API; grouping them would change request routing"
+)]
 async fn handle_write(
     State(state): State<CasRouteState>,
     Path((tenant, hash)): Path<(String, String)>,

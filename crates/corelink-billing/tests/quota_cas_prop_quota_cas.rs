@@ -536,7 +536,8 @@ proptest! {
             .unwrap()
             .unwrap();
         if should_allow {
-            prop_assert!(matches!(outcome.decision, QuotaCasDecision::Allow { .. }));
+            let is_allow = matches!(outcome.decision, QuotaCasDecision::Allow { .. });
+            prop_assert!(is_allow);
             prop_assert_eq!(row.bytes_used, would_use);
             prop_assert_eq!(row.cas_version, 1);
             prop_assert_eq!(
@@ -548,7 +549,8 @@ proptest! {
                 1
             );
         } else {
-            prop_assert!(matches!(outcome.decision, QuotaCasDecision::Deny429 { .. }));
+            let is_deny = matches!(outcome.decision, QuotaCasDecision::Deny429 { .. });
+            prop_assert!(is_deny);
             prop_assert_eq!(row.bytes_used, used);
             prop_assert_eq!(row.cas_version, 0);
             prop_assert_eq!(

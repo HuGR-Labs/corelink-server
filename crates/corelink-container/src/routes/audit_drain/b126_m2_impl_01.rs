@@ -191,6 +191,7 @@ fn canonical_head_bytes(
 /// duplicating field ordering or accepting a missing version.
 #[allow(
     dead_code,
+    clippy::too_many_arguments,
     reason = "B-054 v2 writer is gated until external witness wiring lands"
 )]
 fn canonical_head_v2_bytes(
@@ -238,6 +239,7 @@ fn sign_head(
 /// receipt before attempting the D1 CAS; signing alone is not a witness.
 #[allow(
     dead_code,
+    clippy::too_many_arguments,
     reason = "B-054 v2 writer is gated until external witness wiring lands"
 )]
 fn sign_head_v2(
@@ -299,6 +301,7 @@ fn verify_head(
 /// tuple.  Any malformed field or signature returns false (fail closed).
 #[allow(
     dead_code,
+    clippy::too_many_arguments,
     reason = "B-054 v2 verifier is gated until external witness wiring lands"
 )]
 fn verify_head_v2(
