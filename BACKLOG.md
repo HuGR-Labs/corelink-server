@@ -1207,6 +1207,294 @@ verify-means: |
 last-verified: 2026-09-06
 ```
 
+### B-297 — tenant-isolation adversarial target retains seven unused imports
+```backlog
+id: B-297
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "tests/e2e-tenant-isolation/tests/adversarial.rs:42"
+finding-title: "strict Clippy rejects stale adversarial harness imports"
+problem: "the integration target imports seven symbols it no longer exercises"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "the target imports exactly the symbols it uses"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — the stale import population is absent and removal mutations fail closed.
+last-verified: 2026-09-06
+```
+
+### B-298 — failover inspection helpers leak test-only dead code into production
+```backlog
+id: B-298
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/routes/failover.rs:168,588"
+finding-title: "stale_after_ms and heartbeat compile unused outside tests"
+problem: "inspection accessors are consumed only by the in-crate test surface"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "both inspection helpers are compiled only for tests"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — both exact helpers require cfg(test); dropping either guard is rejected.
+last-verified: 2026-09-06
+```
+
+### B-299 — OCI injectable allowlist constructor is production dead code
+```backlog
+id: B-299
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:189"
+finding-title: "with_allowlist exists only for hermetic tests"
+problem: "the test seam is compiled into production and denied as dead code"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "the seam remains available to tests and absent from production"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — the exact constructor is cfg(test)-scoped and a missing guard mutation is rejected.
+last-verified: 2026-09-06
+```
+
+### B-300 — SLI aggregation carries stale map_or and production-only test helpers
+```backlog
+id: B-300
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/sli_aggregate.rs:110,221-228"
+finding-title: "strict Clippy rejects unnecessary map_or and unused timestamp accessors"
+problem: "window eviction uses a legacy Option idiom and two accessors exist solely for tests"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "eviction uses is_some_and and timestamp accessors are test-only"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — all three exact structures are guarded and regressive mutations fail closed.
+last-verified: 2026-09-06
+```
+
+### B-301 — BYOK revocation runtime violates strict must-use and test lint policy
+```backlog
+id: B-301
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/byok_revocation_runtime.rs:327,351"
+finding-title: "must_use duplicates the Result contract and tests use denied primitives"
+problem: "the public constructor lacks a diagnostic message while its test module intentionally unwraps fixtures"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "must_use explains the obligation and only the test module receives narrow allowances"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — message and scoped expect/index allowances are required; production-wide allowances are rejected.
+last-verified: 2026-09-06
+```
+
+### B-302 — byte accounting hides a fallible lookup inside a match scrutinee block
+```backlog
+id: B-302
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs:744"
+finding-title: "strict Clippy rejects blocks_in_conditions"
+problem: "the timed BYOK committed-size lookup is embedded directly in match"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "the timed result is bound once before the unchanged fail-closed match"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — one committed_len binding feeds the match and re-embedding the block is rejected.
+last-verified: 2026-09-06
+```
+
+### B-303 — audit-drain v2 cryptographic tuple helpers exceed generic argument limits
+```backlog
+id: B-303
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_01.rs:196,243,304"
+finding-title: "three frozen canonical tuple helpers trigger too_many_arguments"
+problem: "grouping authenticated tuple fields would obscure or change their canonical order"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "only the three intentional v2 helpers carry namespaced narrow allowances"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — the exact three helpers are covered; blanket or unnamespaced suppression is rejected.
+last-verified: 2026-09-06
+```
+
+### B-304 — CAS Axum handlers exceed generic argument limits by extractor design
+```backlog
+id: B-304
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/routes/cas/single.rs:435; batch.rs:45,242,502"
+finding-title: "four request handlers trigger too_many_arguments"
+problem: "their parameters are route extractors and grouping them changes the HTTP extraction contract"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "only the four handler functions carry reasoned narrow allowances"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — all four exact handlers are covered and removal mutations fail closed.
+last-verified: 2026-09-06
+```
+
+### B-305 — bloom tombstone capacity uses a manual clamp chain
+```backlog
+id: B-305
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/routes/cas_erase/b126_m2_impl_02.rs:47"
+finding-title: "max(1).min(DEFAULT_MAX_TENANT_BLOOMS) duplicates clamp"
+problem: "strict Clippy rejects the hand-written clamp idiom"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "capacity remains bounded inclusively with clamp(1, default)"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — the exact clamp and both bounds are required; the former chain is forbidden.
+last-verified: 2026-09-06
+```
+
+### B-306 — adapter-cache test embeds an unreadable nested write-record type
+```backlog
+id: B-306
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/adapter_cache.rs:702"
+finding-title: "RecordingCas trips type_complexity"
+problem: "the test repeats a four-field tuple inside Arc/Mutex/Vec wrappers"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "a local WriteRecord alias names the unchanged tuple"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — the alias and its use in RecordingCas are required and inline regression is rejected.
+last-verified: 2026-09-06
+```
+
+### B-307 — two extracted R2/S3 regression functions lost their test attributes
+```backlog
+id: B-307
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/storage/r2_s3_parts/tests_1.rs:1; tests_3.rs:1"
+finding-title: "physical bucket and Mode-B KMS regressions compile as unused helpers"
+problem: "module extraction retained bodies but dropped the synchronous and Tokio test attributes"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "both functions are executable tests with the required runtime flavor"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — exact #[test] and multi-thread Tokio attributes are load-bearing and mutated away in tests.
+last-verified: 2026-09-06
+```
+
+### B-308 — capacity tests assert compile-time constants instead of runtime predicates
+```backlog
+id: B-308
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/container_capacity.rs:198,244"
+finding-title: "two assert!(true) expressions are optimized away"
+problem: "constant-folded inequalities do not exercise the shared runtime budget predicate"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "both tests invoke budget_fits with runtime bindings and preserve their boundaries"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — two nonconstant budget_fits assertions are required and old direct inequalities are rejected.
+last-verified: 2026-09-06
+```
+
+### B-309 — origin-timing bridge tests use an intentionally denied fixture primitive
+```backlog
+id: B-309
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/origin_timing.rs:807"
+finding-title: "test bridge uses expect under crate-wide deny"
+problem: "the allowance was absent from the smallest module that owns the fixture assertion"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "expect_used is allowed only on tests_b279_bridge with a reason"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — the named test module owns the narrow allowance and broader suppression is rejected.
+last-verified: 2026-09-06
+```
+
+### B-310 — OCI noisy-neighbour test contains a constant assertion
+```backlog
+id: B-310
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/routes/oci/b126_m2_test_1_2.rs:537"
+finding-title: "per-tenant/global-cap assertion is optimized away"
+problem: "the test states the right invariant using only constants, so Clippy rejects it"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "the seeded runtime tenant value equals its cap and remains below the global cap without expect"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — runtime lookup, equality and ordering are required; constant or expect-based regressions fail.
+last-verified: 2026-09-06
+```
+
+### B-311 — quota-CAS property assertions stringify pattern braces as format syntax
+```backlog
+id: B-311
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-billing/tests/quota_cas_prop_quota_cas.rs:539,551"
+finding-title: "prop_assert rejects matches patterns containing { .. }"
+problem: "the macro concatenates the expression text into a format string on this toolchain"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "Allow and Deny matches are evaluated into booleans before prop_assert"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — both named boolean bindings are asserted and direct brace-bearing macro calls are forbidden.
+last-verified: 2026-09-06
+```
+
+### B-312 — binary main imports test-only boot constructors in production
+```backlog
+id: B-312
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/main.rs:49"
+finding-title: "build_runners_resolver_from and build_tier_selector_from are unused outside tests"
+problem: "test injection constructors share the unconditional runtime import group"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "runtime builders remain unconditional and injected builders are cfg(test)-imported"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — the import populations remain separated and removing the cfg boundary is rejected.
+last-verified: 2026-09-06
+```
+
 ### B-003 — the 864s ceiling from 2026-08-02 has no established mechanism
 
 That incident concluded jobs past ~900 s were being SIGTERMed. They could not
@@ -14346,8 +14634,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-06):** `records=296`,
-  `command_records=280`, `manual=16`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-06):** `records=312`,
+  `command_records=296`, `manual=16`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma
