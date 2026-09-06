@@ -780,4 +780,5 @@ impl ArchiveSink for FailingArchiveSink {
     clippy::indexing_slicing,
     reason = "tests are allowed to use these primitives"
 )]
+#[path = "archive_producer_tests.rs"]
 mod archive_producer_tests;

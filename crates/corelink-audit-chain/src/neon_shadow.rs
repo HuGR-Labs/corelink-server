@@ -955,4 +955,5 @@ impl NeonShadowSink for InMemoryNeonShadowSink {
     clippy::assertions_on_constants,
     reason = "tests are allowed to use these primitives"
 )]
+#[path = "neon_shadow_tests.rs"]
 mod neon_shadow_tests;

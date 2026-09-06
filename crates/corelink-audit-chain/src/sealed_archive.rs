@@ -654,4 +654,5 @@ pub fn split_into_chunks(
     clippy::indexing_slicing,
     reason = "tests are allowed to use these primitives"
 )]
+#[path = "sealed_archive_tests.rs"]
 mod sealed_archive_tests;
