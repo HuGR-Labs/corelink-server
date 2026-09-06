@@ -1,6 +1,6 @@
 ---
-version: "1.3.0"
-last_updated: "2026-08-24"
+version: "1.3.1"
+last_updated: "2026-09-06"
 notification_required: true
 sub_processors:
   - id: "cloudflare"
@@ -47,7 +47,7 @@ sub_processors:
     dpa_url: "https://resend.com/legal/dpa"
     primary_jurisdiction: "United States"
     contract_signed_at: null
-    legal_review_evidence: "PENDING — VR-6 in specs/_compliance/VENDOR-RISK-REGISTER.md §5; DPA policy is published, no signed-copy evidence file on file yet"
+    legal_review_evidence: "docs/compliance/vendor-reviews/resend-dpa-review-2026-09.md"
 
   - id: "stripe"
     name: "Stripe, Inc."
@@ -105,7 +105,7 @@ sub_processors:
     dpa_url: "https://sentry.io/legal/dpa/"
     primary_jurisdiction: "United States"
     contract_signed_at: null
-    legal_review_evidence: "PENDING — VR-7 in specs/_compliance/VENDOR-RISK-REGISTER.md §5; DPA policy is published, no signed-copy evidence file on file yet"
+    legal_review_evidence: "docs/compliance/vendor-reviews/sentry-dpa-review-2026-09.md"
 
   - id: "plausible"
     name: "Plausible Insights OÜ (Plausible Analytics)"
@@ -117,7 +117,7 @@ sub_processors:
     dpa_url: "https://plausible.io/dpa"
     primary_jurisdiction: "Estonia (EU)"
     contract_signed_at: null
-    legal_review_evidence: "PENDING — VR-8 in specs/_compliance/VENDOR-RISK-REGISTER.md §5; DPA policy is published, no signed-copy evidence file on file yet"
+    legal_review_evidence: "docs/compliance/vendor-reviews/plausible-dpa-review-2026-09.md"
 
   - id: "betterstack"
     name: "Better Stack, Inc. (BetterStack / Statuspage)"
@@ -129,7 +129,7 @@ sub_processors:
     dpa_url: "https://betterstack.com/privacy"
     primary_jurisdiction: "European Union"
     contract_signed_at: null
-    legal_review_evidence: "PENDING — VR-9 in specs/_compliance/VENDOR-RISK-REGISTER.md §5; DPA policy is published, no signed-copy evidence file on file yet"
+    legal_review_evidence: "docs/compliance/vendor-reviews/betterstack-dpa-review-2026-09.md"
 ---
 
 # CoreLink — Sub-Processors Register

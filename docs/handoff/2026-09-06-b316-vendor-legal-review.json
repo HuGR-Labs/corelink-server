@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "backlog_id": "B-316",
+  "status": "pending_external",
+  "authority": "Legal",
+  "effective_legal_text": {
+    "artifact": "legal/dpa/SUB-PROCESSOR-COMMITMENTS.md",
+    "current_active_ids": ["cloudflare", "clerk", "stripe", "neon"],
+    "required_active_ids": ["cloudflare", "clerk", "resend", "stripe", "github", "pagerduty", "sentry", "plausible", "betterstack"],
+    "stale_extra_ids": ["neon"],
+    "missing_ids": ["resend", "github", "pagerduty", "sentry", "plausible", "betterstack"],
+    "decision": "Legal must approve and version the effective commitments text; this remediation does not edit it.",
+    "status": "pending_external"
+  },
+  "related_owner_backlog": {
+    "vendor_review_cadence_and_Drata_access": "B-032",
+    "GDPR_Sigstore_transfer_table_disposition": "B-314"
+  },
+  "vendors": {
+    "resend": {
+      "risk_action": "VR-6",
+      "due": "2026-09-23",
+      "artifact": "docs/compliance/vendor-reviews/resend-dpa-review-2026-09.md",
+      "action": "Legal records the dated, attributed review and signed-copy DPA evidence; then closes VR-6 and records contract_signed_at."
+    },
+    "sentry": {
+      "risk_action": "VR-7",
+      "due": "2026-09-24",
+      "artifact": "docs/compliance/vendor-reviews/sentry-dpa-review-2026-09.md",
+      "action": "Legal records the dated, attributed review and signed-copy DPA evidence, and attaches the SOC 2 disposition; then closes VR-7 and records contract_signed_at."
+    },
+    "plausible": {
+      "risk_action": "VR-8",
+      "due": "2026-09-24",
+      "artifact": "docs/compliance/vendor-reviews/plausible-dpa-review-2026-09.md",
+      "action": "Legal records the dated, attributed review and signed-copy DPA evidence plus the attestation disposition; then closes VR-8 and records contract_signed_at."
+    },
+    "betterstack": {
+      "risk_action": "VR-9",
+      "due": "2026-09-24",
+      "artifact": "docs/compliance/vendor-reviews/betterstack-dpa-review-2026-09.md",
+      "action": "Legal records the dated, attributed review and signed-copy DPA evidence plus the attestation disposition; then closes VR-9 and records contract_signed_at."
+    }
+  },
+  "non_claims": [
+    "Packet existence is not a signature or executed DPA.",
+    "TEMPLATE records are not completed Legal reviews.",
+    "Public vendor policy pages are not execution evidence.",
+    "No SOC 2 or transfer assessment is inferred."
+  ]
+}

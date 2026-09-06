@@ -1485,9 +1485,9 @@ owner: tl
 status: done
 source-document: "PR containment audit #1550/#1558"
 source-locator: "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md:3-20"
-finding-title: "canonical WP ledger must stay aligned with the dense 315-item population"
+finding-title: "canonical WP ledger must stay aligned with the dense 316-item population"
 problem: "the ledger verifier, catalogs and pending changelogs once described an obsolete pre-D03 baseline instead of the delivered main base and live owner population"
-evidence: "python3 scripts/verify_backlog_wp_ledger.py after reconciliation: 315 items, 15 open, 261 done, 39 parked; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
+evidence: "python3 scripts/verify_backlog_wp_ledger.py after reconciliation: 316 items, 16 open, 261 done, 39 parked; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
 acceptance: "the ledger and catalogs name delivered main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266 as the immutable ancestry base, retain 7b992e9db123abeb76381b1c1337011692f2e834 only as D03 provenance, reconcile live counts, and fail closed on wrong or unrelated ancestry"
 verify: |
   set -euo pipefail
@@ -1500,14 +1500,14 @@ verify: |
   sys.path.insert(0, "scripts")
   import verify_backlog_wp_ledger as ledger
   text = Path("BACKLOG.md").read_text()
-  assert len(ledger.all_backlog_ids(text)) == 315
-  assert len(ledger.open_backlog_ids(text)) == 15
-  assert ledger.backlog_status_counts(text) == {"open": 15, "done": 261, "parked": 39}
+  assert len(ledger.all_backlog_ids(text)) == 316
+  assert len(ledger.open_backlog_ids(text)) == 16
+  assert ledger.backlog_status_counts(text) == {"open": 16, "done": 261, "parked": 39}
   assert ledger.LEDGER_BASE_REF == "main"
   assert ledger.LEDGER_BASE_SHA == "ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
   PY
 verify-means: |
-  done — the live verifier proves 15/15 open-ID ownership, 315 total records,
+  done — the live verifier proves 16/16 open-ID ownership, 316 total records,
   exact catalog populations, predecessor ordering, editable/workflow ownership,
   and the D03 base ref/SHA relationship. The focused parser suite remains
   load-bearing: stale metadata, a tampered base and missing CI predecessor are
@@ -1583,6 +1583,32 @@ verify-means: |
   During the D03 bootstrap, this contract is exercised from the exact
   `origin/main` gate copy via the authorized exact-SHA contingency; it makes no
   self-hosting claim before that copy has landed.
+last-verified: 2026-09-06
+```
+
+### B-316 — four live sub-processors have no canonical Legal-review packet, while the effective commitments list is stale
+```backlog
+id: B-316
+repo: corelink-server
+owner: owner
+status: open
+source-document: "D03 bundled validators-only CI and sub-processor authority audit"
+source-locator: "legal/sub-processors.md frontmatter; legal/dpa/SUB-PROCESSOR-COMMITMENTS.md §1; specs/_compliance/VENDOR-RISK-REGISTER.md §5"
+finding-title: "validator rejects free-form pending evidence, and effective Legal commitments disagree with the nine-vendor active population"
+problem: "Resend, Sentry, Plausible and Better Stack used free-form PENDING prose where the schema requires a canonical review path. Separately, the effective commitments text still names Neon as active and omits Resend, GitHub, PagerDuty, Sentry, Plausible and Better Stack. Creating TEMPLATE packets can close only the structural validator gap; it cannot manufacture signed DPAs, completed reviews, attestations, or Legal approval to amend effective text."
+evidence: "scripts/ci.sh --validators-only at e0ddf3ee608f7e936142875c6c09fd083358753b; exact current/required populations recorded in docs/handoff/2026-09-06-b316-vendor-legal-review.json"
+acceptance: "Legal completes the four dated and attributed vendor-review artifacts with genuine signed-copy/attestation evidence, closes VR-6..VR-9, records contract dates, and approves/versions SUB-PROCESSOR-COMMITMENTS.md to the exact nine-vendor active population with Neon removed. Packet existence or validator green alone is never completion. B-032 retains vendor-cadence/Drata ownership and B-314 retains the GDPR Sigstore-table decision."
+action-packet: docs/handoff/2026-09-06-b316-vendor-legal-review.json
+verify: python3 scripts/verify_b316_pending_vendor_reviews.py --expect open --self-test
+verify-means: |
+  open — exits 0 only while all four canonical artifacts remain explicit TEMPLATE/TBD
+  packets, contract_signed_at remains null, VR-6..VR-9 remain Legal/Open, and the
+  owner packet exactly records the effective-commitments residue (Neon extra; six
+  active vendors missing) plus its nine-vendor approved target. Missing/extra vendors,
+  a fabricated signature, a prematurely closed risk action, partial/mixed state, path
+  drift, or loss of the B-032/B-314 ownership boundaries fails closed. `done` requires
+  all four genuine completed reviews and the Legal-approved effective-text population;
+  validator path/existence success never implies Legal completion.
 last-verified: 2026-09-06
 ```
 
@@ -14725,8 +14751,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-06):** `records=315`,
-  `command_records=299`, `manual=16`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-06):** `records=316`,
+  `command_records=300`, `manual=16`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma

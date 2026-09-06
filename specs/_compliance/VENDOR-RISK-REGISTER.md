@@ -3,9 +3,9 @@ id: "VENDOR-RISK-REGISTER-2026-05-15"
 type: "compliance_register"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.3.0"
+version: "1.4.1"
 created: "2026-05-15"
-updated: "2026-08-24"
+updated: "2026-09-06"
 sprint: "R5-3"
 parent_wi: "WI-R5-3-GAP-14-VENDOR-RISK"
 owner: "Gustavo Schneiter"
@@ -180,10 +180,10 @@ vendor goes dark (the reverse).
 | VR-3 | Confirm BAA signature requirement is not triggered (no PHI today); document the negative as an explicit Privacy-Officer signoff | VP-Sec | 2026-07-15 | Open |
 | VR-4 | Add Cookiebot to Drata vendor module (currently manual) | Eng-Lead | 2026-07-15 | Open |
 | VR-5 | Annual methodology refresh + Risk-Committee charter ratification | VP-Sec | 2027-05-15 | Scheduled |
-| VR-6 | Obtain a signed-copy DPA evidence file for Resend (row 16) — today only the public DPA policy page is linked, no `docs/compliance/vendor-reviews/resend-dpa-review-*.md` exists | Legal | 2026-09-23 | Open |
-| VR-7 | Obtain a signed-copy DPA evidence file for Sentry (row 20) and pull its SOC 2 Type II report into Drata — today only the public DPA policy page is linked, no `docs/compliance/vendor-reviews/sentry-dpa-review-*.md` exists | Legal | 2026-09-24 | Open |
-| VR-8 | Obtain a signed-copy DPA evidence file for Plausible (row 21) and confirm its SOC 2/attestation posture — today only the public DPA/data-policy page is linked, no `docs/compliance/vendor-reviews/plausible-dpa-review-*.md` exists | Legal | 2026-09-24 | Open |
-| VR-9 | Obtain a signed-copy DPA evidence file for Better Stack (row 22) and confirm its SOC 2/attestation posture — today only the public privacy-policy page is linked, no `docs/compliance/vendor-reviews/betterstack-dpa-review-*.md` exists | Legal | 2026-09-24 | Open |
+| VR-6 | Obtain Legal's dated review and signed-copy DPA evidence for Resend (row 16). The canonical packet `docs/compliance/vendor-reviews/resend-dpa-review-2026-09.md` exists but remains explicitly `TEMPLATE`/pending; the public DPA policy is not execution evidence. | Legal | 2026-09-23 | Open |
+| VR-7 | Obtain Legal's dated review and signed-copy DPA evidence for Sentry (row 20), and pull its SOC 2 Type II report into Drata. The canonical packet `docs/compliance/vendor-reviews/sentry-dpa-review-2026-09.md` exists but remains explicitly `TEMPLATE`/pending. | Legal | 2026-09-24 | Open |
+| VR-8 | Obtain Legal's dated review and signed-copy DPA evidence for Plausible (row 21), and confirm its SOC 2/attestation posture. The canonical packet `docs/compliance/vendor-reviews/plausible-dpa-review-2026-09.md` exists but remains explicitly `TEMPLATE`/pending. | Legal | 2026-09-24 | Open |
+| VR-9 | Obtain Legal's dated review and signed-copy DPA evidence for Better Stack (row 22), and confirm its SOC 2/attestation posture. The canonical packet `docs/compliance/vendor-reviews/betterstack-dpa-review-2026-09.md` exists but remains explicitly `TEMPLATE`/pending. | Legal | 2026-09-24 | Open |
 
 ---
 
@@ -196,3 +196,4 @@ vendor goes dark (the reverse).
 | 1.2.0 | 2026-08-23 | Gustavo Schneiter (subprocessor register-truth reconciliation) | Row 16 swapped from **Neon, Inc.** (phantom — `DATABASE_URL` has zero readers; removal tracked jointly with PR #1215) to **Resend, Inc.** (real and previously undisclosed — `RESEND_API_KEY` deployed prod, POSTs recipient PII per `apps/admin-ui/src/app/api/newsletter/subscribe/route.ts`). Added §4b listing 5 registered-but-inert vendors (Drata, Slack, HubSpot, Grafana Labs, Twilio/SendGrid) that must not appear on the public "Active sub-processors" table until a real credential + code consumer exists. `scripts/gen-public-subprocessors.py` updated to render an inert vendors out of a separate `INERT_VENDORS` map; public page regenerated. Sigstore's DPA-matrix status in `legal/sub-processors.md` clarified as supply-chain-only (no customer data), not a customer-data sub-processor. |
 | 1.3.0 | 2026-08-24 | Gustavo Schneiter (Art. 28 gap closure — Sentry + Plausible) | Added row 20 (**Functional Software, Inc. / Sentry**, error-monitoring telemetry across `apps/admin-ui` and the docs-site build; wired per `docs/internal/secrets-checklist.md` rows 135/136/137/145 and `sentry.server.config.ts`/`sentry.edge.config.ts`) and row 21 (**Plausible Insights OÜ**, cookieless docs-site analytics; `apps/docs/docusaurus.config.ts:232`). Both were live in production and undisclosed in this register and in `legal/sub-processors.md`. Both classified **Important**, `telemetry`-only data class, contract **pending** (DPA policy published, no signed-copy evidence file — VR-7, VR-8). Public page regenerated via `scripts/gen-public-subprocessors.py`; active sub-processor count rises from 6 to 8. |
 | 1.4.0 | 2026-08-24 | Gustavo Schneiter (Art. 28 gap closure — Better Stack) | Added row 22 (**Better Stack, Inc.**, synthetic uptime/status monitoring; wired per `docs/internal/secrets-checklist.md` row 131, `monitoring/synthetic/probes.yml`, `apps/docs/src/statuspage-url.ts`, `apps/docs/src/components/StatusPill/classify.ts`). Live in production and undisclosed in this register and in `legal/sub-processors.md`. Classified **Important**, `telemetry`-only data class (synthetic probe results against CoreLink's own endpoints — no customer PII), contract **pending** (DPA policy published, no signed-copy evidence file — VR-9). Public page regenerated via `scripts/gen-public-subprocessors.py`; active sub-processor count rises from 8 to 9. |
+| 1.4.1 | 2026-09-06 | CoreLink backlog remediation (B-316) | Replaced four free-form missing-evidence references with canonical, fail-closed pending packets. VR-6..VR-9 remain Open: packet existence records the unresolved Legal action and is not a DPA signature, review outcome, SOC 2 evidence, or approval. Reconciled the frontmatter version with the existing 1.4.0 history before this patch bump. |

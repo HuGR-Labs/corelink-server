@@ -13,7 +13,7 @@ pending_signoff:
 sources:
   - "specs/_compliance/VENDOR-RISK-REGISTER.md"
   - "legal/sub-processors.md"
-last_updated: "2026-08-24"
+last_updated: "2026-09-06"
 ---
 
 {/* AUTO-GENERATED FILE — DO NOT EDIT BY HAND.
@@ -36,7 +36,7 @@ vendors have a built integration but no live credential or code path yet —
 see "Contracted-but-not-active" below; they are not sub-processors until
 that changes.
 
-> **Last refreshed:** 2026-08-24. This page is **auto-generated** from
+> **Last refreshed:** 2026-09-06. This page is **auto-generated** from
 > the internal vendor register on every change; see
 > `.github/workflows/subprocessors-sync.yml` for the drift gate.
 
@@ -133,11 +133,10 @@ zero-retention guarantee and no-customer-data scope, please raise it via
 The following appear in our internal registers but are **not**
 sub-processors:
 
-- **Sigstore (Linux Foundation)** — a proposed keyless-signing workflow
-  (`.github/workflows/cosign-sign.yml`) over CoreLink's **own build artifacts**;
-  it is not live and publishes no records. It never receives customer data and
-  is not a customer-data sub-processor; captured in `legal/sub-processors.md`
-  for completeness only.
+- **Sigstore (Linux Foundation)** — keyless signing (`.github/workflows/cosign-sign.yml`)
+  over CoreLink's **own build artifacts** as part of our supply-chain pipeline.
+  It never receives customer data and is not a customer-data sub-processor;
+  captured in `legal/sub-processors.md` for completeness only.
 - **Self-hosted Dependency-Track** — operated by CoreLink; no third party.
 - **Per-customer HashiCorp Vault instances** — customer-side infrastructure
   outside CoreLink's processor relationship.
