@@ -937,6 +937,168 @@ verify-means: |
 last-verified: 2026-09-06
 ```
 
+### B-282 — adapter PAT extraction loses futures and sibling test visibility
+```backlog
+id: B-282
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/adapter_pat.rs; adapter_pat_gate.rs; adapter_pat_verifier.rs"
+finding-title: "adapter PAT split loses FutureExt and test-only sibling access"
+problem: "boxed futures do not compile, a test cap is private, and copied imports fail strict Clippy"
+evidence: "scripts/ci.sh --rust-only at 9e14bf60c"
+acceptance: "FutureExt is scoped where used, cap visibility is sibling-only, stale imports are absent, and bundled CI passes"
+verify: python3 scripts/verify_b282_b290_bundle_residuals.py
+verify-means: |
+  done — exact positive and forbidden markers plus mutations cover the split residue; Rust proof is bundled.
+last-verified: 2026-09-06
+```
+
+### B-283 — GC D1 row decoders leak String errors across the purge boundary
+```backlog
+id: B-283
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/gc_sweep.rs:708-735"
+finding-title: "purge row decoding cannot convert String into PhysicalDeleteError"
+problem: "four fail-closed D1 decoders use ? without mapping backend errors"
+evidence: "scripts/ci.sh --rust-only at 9e14bf60c"
+acceptance: "all row decoder failures map to PhysicalDeleteError::Backend and bundled CI passes"
+verify: python3 scripts/verify_b282_b290_bundle_residuals.py
+verify-means: |
+  done — the backend mapping is structurally required and mutation-tested; no decoder error is swallowed.
+last-verified: 2026-09-06
+```
+
+### B-284 — R2 CAS accounting borrows request bytes after moving the payload
+```backlog
+id: B-284
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs:757-866"
+finding-title: "CAS fence commit reads req.bytes after ownership moved"
+problem: "the upload path moves the vector before final plaintext-byte accounting"
+evidence: "scripts/ci.sh --rust-only at 9e14bf60c"
+acceptance: "plaintext length is captured before the move and reused by both fence commits"
+verify: python3 scripts/verify_b282_b290_bundle_residuals.py
+verify-means: |
+  done — the pre-move length and both commit consumers are guarded and mutation-tested.
+last-verified: 2026-09-06
+```
+
+### B-285 — included test fragments retain invalid inner documentation
+```backlog
+id: B-285
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/adapter_pat_gate.rs; crates/corelink-container/src/byte_accounting/b126_m2_test_*.rs"
+finding-title: "included test fragments emit E0753 and empty-doc Clippy errors"
+problem: "inner docs and a blank doc break once the files are textual includes"
+evidence: "scripts/ci.sh --rust-only at 9e14bf60c"
+acceptance: "fragment headers are ordinary comments, the intentional doc paragraph is continuous, and Clippy passes"
+verify: python3 scripts/verify_b282_b290_bundle_residuals.py
+verify-means: |
+  done — every affected header and the repaired doc boundary are guarded against regression.
+last-verified: 2026-09-06
+```
+
+### B-286 — Pip test stores omit the newly required cap resolver
+```backlog
+id: B-286
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/routes/pip/tests_support.rs"
+finding-title: "three PipMoatStore test initializers omit cap_resolver"
+problem: "test helpers no longer construct the complete production-shaped store"
+evidence: "scripts/ci.sh --rust-only at 9e14bf60c"
+acceptance: "all three non-cap test helpers explicitly use cap_resolver None and bundled tests pass"
+verify: python3 scripts/verify_b282_b290_bundle_residuals.py
+verify-means: |
+  done — explicit no-cap test configuration is required and mutation-tested.
+last-verified: 2026-09-06
+```
+
+### B-287 — adapter-host SSRF test passes a borrowed socket address
+```backlog
+id: B-287
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-adapter-host/src/upstream_ssrf.rs:172"
+finding-title: "wiremock address type does not match reqwest resolver input"
+problem: "MockServer returns &SocketAddr while resolve requires SocketAddr"
+evidence: "scripts/ci.sh --rust-only at 9e14bf60c"
+acceptance: "the Copy socket address is passed by value and adapter-host tests compile"
+verify: python3 scripts/verify_b282_b290_bundle_residuals.py
+verify-means: |
+  done — the exact owned-address call is structurally guarded and mutation-tested.
+last-verified: 2026-09-06
+```
+
+### B-288 — adapter-cache test clone cannot infer trait-object Arc coercion
+```backlog
+id: B-288
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/adapter_cache.rs:739"
+finding-title: "Arc::clone fixes FakeUrlMap before the UrlMapStore coercion point"
+problem: "the generic clone argument expects an Arc trait object and rejects the concrete Arc"
+evidence: "scripts/ci.sh --rust-only at 9e14bf60c"
+acceptance: "the cloned fake map is explicitly coerced to Arc<dyn UrlMapStore>"
+verify: python3 scripts/verify_b282_b290_bundle_residuals.py
+verify-means: |
+  done — the trait-object coercion is exact and mutation-tested.
+last-verified: 2026-09-06
+```
+
+### B-289 — byte-accounting regression fragment loses CasHandlerError import
+```backlog
+id: B-289
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/byte_accounting/b126_m2_test_3_1.rs"
+finding-title: "split byte-accounting test cannot resolve CasHandlerError"
+problem: "the included fragment matches the error enum without importing it"
+evidence: "scripts/ci.sh --rust-only at 9e14bf60c"
+acceptance: "the canonical corelink-handler-cas error is imported and the regression compiles"
+verify: python3 scripts/verify_b282_b290_bundle_residuals.py
+verify-means: |
+  done — the canonical import and its use are guarded; removal turns the mutation suite red.
+last-verified: 2026-09-06
+```
+
+### B-290 — PAT corruption assertion partially moves its diagnostic
+```backlog
+id: B-290
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/adapter_pat_tests_1.rs:219-220"
+finding-title: "matches! moves Backend message before the assertion formats err"
+problem: "the failure diagnostic borrows an enum after its String payload was moved"
+evidence: "scripts/ci.sh --rust-only at 9e14bf60c"
+acceptance: "the match borrows the message and retains the full error for diagnostics"
+verify: python3 scripts/verify_b282_b290_bundle_residuals.py
+verify-means: |
+  done — the ref binding is exact and mutation-tested; diagnostic fidelity is preserved.
+last-verified: 2026-09-06
+```
+
 ### B-003 — the 864s ceiling from 2026-08-02 has no established mechanism
 
 That incident concluded jobs past ~900 s were being SIGTERMed. They could not
@@ -14076,8 +14238,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-06):** `records=281`,
-  `command_records=265`, `manual=16`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-06):** `records=290`,
+  `command_records=274`, `manual=16`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma

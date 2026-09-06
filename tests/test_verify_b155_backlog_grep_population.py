@@ -30,8 +30,8 @@ class B155VerifierTests(unittest.TestCase):
 
     def test_census_is_complete_and_population_is_exact(self) -> None:
         result = verifier.census(self.backlog)
-        self.assertEqual(result.records, 281)
-        self.assertEqual(result.command_records, 265)
+        self.assertEqual(result.records, 290)
+        self.assertEqual(result.command_records, 274)
         self.assertEqual(result.manual_records, 16)
         self.assertEqual(result.command_records + result.manual_records, result.records)
         self.assertEqual(result.grep_invocations, 194)
