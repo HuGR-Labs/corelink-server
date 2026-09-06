@@ -3,4 +3,4 @@ mod implementation {
     include!("public_pullthrough/part-01.rs");
 }
 
-pub use implementation::*;
+pub(crate) use implementation::*;

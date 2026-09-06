@@ -9,7 +9,6 @@
 //! lease, and its old token cannot commit after a newer writer takes over.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use serde_json::json;
 use uuid::Uuid;
