@@ -421,7 +421,7 @@ pub fn split_verifying_prefix_for_epoch<'a>(
     let epoch_error = epoch.validate().err();
     if let Some(error) = epoch_error {
         return (
-            &lines[..0],
+            lines.get(..0).unwrap_or(&[]),
             lines.first().map(|line| PrefixBreak {
                 index: 0,
                 sequence_number: line.sequence_number,
@@ -497,7 +497,7 @@ pub fn split_verifying_prefix_for_epoch<'a>(
                             sequence_number: line.sequence_number,
                         })
                     } else if link_for_epoch(epoch, &prev, line.canonical_jcs.as_bytes(), key)
-                        .map_or(true, |computed| computed != claimed)
+                        != Ok(claimed)
                     {
                         Some(SealedArchiveError::LinkHashMismatch {
                             sequence_number: line.sequence_number,
