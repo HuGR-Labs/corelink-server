@@ -186,6 +186,14 @@ ALLOWLIST_REGEX = re.compile(
     r"|R2_CHUNK_BUCKET$"
     r"|R2_CHUNK_REGION$"
     r"|R2_TEST_BUCKET$"
+    # GC sweep runtime controls are non-secret configuration, not credentials:
+    # bucket/run identifiers, the dry-run selector, and the fixed destructive
+    # confirmation literal.  Keep these exact (rather than prefix-allowlisting
+    # GC_*) so a future GC credential cannot disappear from the matrix gate.
+    r"|GC_LIVE_DELETE_CONFIRM$"
+    r"|GC_R2_BUCKET$"
+    r"|GC_RUN_ID$"
+    r"|GC_VALIDATE_ONLY$"
     # WP-3 dashboard revival (2026-06-10) — Stripe billing-portal return_url
     # override (public dashboard URL; default hardcoded in source). No
     # credential material — STRIPE_SECRET_KEY (matrix row) is the actual
@@ -267,6 +275,36 @@ SYNTHETIC_ENV_MANIFEST: dict[str, frozenset[str]] = {
     ),
 }
 
+# B-245 — owner-provisioned credentials used only by the authenticated
+# production-evidence/performance lane. These are real credentials (not
+# non-secret configuration), so they belong in the matrix; the closed path
+# manifest prevents a later reuse from being hidden by a name allowlist.
+B245_PERF_SECRET_MANIFEST: dict[str, frozenset[str]] = {
+    "CORELINK_FRESH_SESSION": frozenset(
+        {
+            ".github/workflows/perf-production-evidence.yml",
+            "scripts/collect_b102_b107_measurements.py",
+        }
+    ),
+    "CORELINK_PERF_PAT": frozenset(
+        {
+            ".github/workflows/perf-production-evidence.yml",
+            "scripts/collect_b102_b107_measurements.py",
+            "scripts/collect_b105_same_lane.py",
+        }
+    ),
+}
+
+# The names necessarily occur in the validator and its mutation verifier.
+# Documentation is deliberately outside the code census: the matrix and
+# handoff rationale may mention a credential without making it a consumer.
+B245_SCOPE_METADATA_FILES = frozenset(
+    {
+        "scripts/validate_secrets_matrix.py",
+        "scripts/verify_b245_secrets_matrix.py",
+    }
+)
+
 
 def _synthetic_env_names_for_file(root: Path, path: Path) -> frozenset[str]:
     """Return synthetic names only for an exact manifest path."""
@@ -275,6 +313,108 @@ def _synthetic_env_names_for_file(root: Path, path: Path) -> frozenset[str]:
     except ValueError:
         return frozenset()
     return SYNTHETIC_ENV_MANIFEST.get(relative, frozenset())
+
+
+def _without_comments(text: str) -> str:
+    """Mask source comments without hiding env names used inside literals."""
+    out = list(text)
+    i = 0
+    quote: str | None = None
+    escaped = False
+    block_comment = False
+    while i < len(text):
+        if block_comment:
+            if text.startswith("*/", i):
+                block_comment = False
+                i += 2
+            else:
+                if text[i] != "\n":
+                    out[i] = " "
+                i += 1
+            continue
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif text[i] == "\\":
+                escaped = True
+            elif text[i] == quote:
+                quote = None
+            i += 1
+            continue
+        if text.startswith("/*", i):
+            block_comment = True
+            out[i] = out[i + 1] = " "
+            i += 2
+            continue
+        if text.startswith("//", i):
+            end = text.find("\n", i)
+            end = len(text) if end < 0 else end
+            for j in range(i, end):
+                out[j] = " "
+            i = end
+            continue
+        if text[i] == "#":
+            end = text.find("\n", i)
+            end = len(text) if end < 0 else end
+            for j in range(i, end):
+                out[j] = " "
+            i = end
+            continue
+        if text[i] in ('"', "'"):
+            quote = text[i]
+        i += 1
+    return "".join(out)
+
+
+def _b245_reference_paths(root: Path, name: str) -> set[str]:
+    """Return source/workflow paths that reference a B-245 credential."""
+    paths: set[str] = set()
+    for path in _iter_files(
+        root,
+        (
+            ".py",
+            ".rs",
+            ".ts",
+            ".tsx",
+            ".js",
+            ".jsx",
+            ".mjs",
+            ".cjs",
+            ".yml",
+            ".yaml",
+            ".toml",
+            ".sh",
+        ),
+    ):
+        try:
+            relative = path.relative_to(root).as_posix()
+        except ValueError:
+            continue
+        if relative in B245_SCOPE_METADATA_FILES or relative.startswith("docs/"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        active = _without_comments(text)
+        if re.search(rf"(?<![A-Z0-9_]){re.escape(name)}(?![A-Z0-9_])", active):
+            paths.add(relative)
+    return paths
+
+
+def validate_b245_perf_scope(
+    root: Path,
+    manifest: dict[str, frozenset[str]] | None = None,
+) -> None:
+    """Enforce the closed B-245 consumer population (fail closed)."""
+    expected_manifest = manifest or B245_PERF_SECRET_MANIFEST
+    for name, expected in expected_manifest.items():
+        observed = _b245_reference_paths(root, name)
+        if observed != set(expected):
+            raise ValueError(
+                f"B-245 scope drift for {name}: expected "
+                f"{sorted(expected)}, observed {sorted(observed)}"
+            )
 
 # Matrix row regex: `| 1 | <secret> | `ENV_VAR` | ...`
 MATRIX_ROW_RE = re.compile(r"^\|\s*\d+\s*\|")
@@ -531,6 +671,12 @@ def main() -> int:
 
     root: Path = args.repo_root.resolve()
     matrix_path = root / MATRIX_FILE_REL
+
+    try:
+        validate_b245_perf_scope(root)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
 
     matrix = parse_matrix(matrix_path)
     code = scan_rust(root) | scan_ts(root) | scan_workflows(root) | scan_wrangler(root)

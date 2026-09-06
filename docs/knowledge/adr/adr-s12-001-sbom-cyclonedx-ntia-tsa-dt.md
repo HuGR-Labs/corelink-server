@@ -4,12 +4,14 @@ title: "ADR-S12-001 — SBOM CycloneDX 1.5+ NTIA strict + RFC 3161 TSA + Depende
 description: "Why CoreLink generates a CycloneDX 1.5 SBOM per release, gates it in NTIA strict mode, timestamps it via the Sigstore RFC 3161 TSA, and ingests it into self-hosted Dependency-Track."
 source_files:
   - "specs/03_architecture/adrs/ADR-S12-001-sbom-cyclonedx-ntia-tsa-dt.md"
-checkpoint_sha: "b5ce2bff384a09047f027082dcf4355136822242"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s12", "sbom", "cyclonedx", "supply-chain", "ntia"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S12-001-sbom-cyclonedx-ntia-tsa-dt.md@6b454834f5484703bece009a870d7d9bb9d4f615"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-S12-001 — SBOM CycloneDX 1.5+ NTIA strict + RFC 3161 TSA + Dependency-Track
 
 Enterprise and federal prospects require a public, verifiable software bill of materials with continuous CVE matching, or CoreLink is not compliance-grade. This ADR fixes the whole SBOM stack: CycloneDX 1.5 as the format (first-class Rust + Sigstore support), NTIA strict mode as the CI gate, the free public Sigstore TSA for RFC 3161 timestamping, and self-hosted Dependency-Track for CVE matching — each chosen against named alternatives.

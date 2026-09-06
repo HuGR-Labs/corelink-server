@@ -48,36 +48,19 @@ If any of those failed, do NOT proceed. Open a follow-up PR to fix.
 ### 2.2 D1 database backup → R2 snapshot
 
 D1 does NOT support in-place rollback (see §5 below). The only
-recoverable rollback path is **restore from R2 snapshot**, so step 1
-is to take a snapshot.
+recoverable rollback path is **restore from an owner-provisioned R2
+snapshot**. The root Worker configuration has no staging D1 binding, so
+this runbook intentionally does not publish an implicit staging export,
+bucket, or upload command. A separately provisioned external staging
+system must provide its own reviewed target/configuration and backup
+procedure before an operator runs it; that procedure is outside this
+repository's root-worker contract.
 
-```bash
-# 1. Export every D1 database (one per region) to a local .sqlite file.
-for REGION in wnam weur sam iad lhr nrt syd; do
-    wrangler d1 export "corelink_d1_${REGION}" --env staging \
-        --output "/tmp/d1-snapshot-staging-${REGION}-$(date -u +%Y%m%dT%H%M%SZ).sqlite"
-done
-
-# 2. Upload to R2 backup bucket (path: d1-backups/<env>/<region>/<ts>.sqlite).
-#    Production wiring uses the existing `provision_ac_buckets.sh` flow
-#    extended with a `corelink-d1-backup-<env>` bucket per region.
-for f in /tmp/d1-snapshot-staging-*.sqlite; do
-    region="$(basename "$f" | cut -d- -f4)"
-    aws s3 cp "$f" \
-        "s3://corelink-d1-backup-staging/${region}/$(basename "$f")" \
-        --endpoint-url "$R2_S3_ENDPOINT"
-done
-```
-
-Verify each snapshot was uploaded:
-
-```bash
-aws s3 ls "s3://corelink-d1-backup-staging/" --endpoint-url "$R2_S3_ENDPOINT" \
-    --recursive | grep "$(date -u +%Y%m%d)"
-```
-
-Snapshot retention: **30 days minimum**, governed by R2 lifecycle on
-the `corelink-d1-backup-<env>` bucket.
+For the shipped root Worker, production D1 backup and restore procedures
+must name an explicitly provisioned production target and R2 bucket. Do
+not substitute `--env staging`, a guessed database name, or a guessed
+bucket: the runner rejects that root environment and a missing target must
+fail closed.
 
 ### 2.3 Operator sanity
 
@@ -87,7 +70,13 @@ the `corelink-d1-backup-<env>` bucket.
 - Read the PR description for any migration-specific caveats (e.g.
   "the column default is NULL, intentional").
 
-## 3. Apply procedure (dev → staging → prod canary)
+## 3. Apply procedure (dev → prod canary)
+
+> **Repository boundary (B-070):** the root Worker configuration intentionally
+> has no `[env.staging]`, and the production workflow has no staging deploy leg.
+> This root-worker runbook intentionally provides no staging command. Any
+> separately provisioned external staging system needs its own reviewed config
+> and runbook; it is not a shipped staging → prod promotion flow.
 
 ### 3.1 Dev
 
@@ -99,30 +88,13 @@ scripts/d1-migration-runner.sh --env dev
 Verify exit code 0. Inspect the log for any `wrangler list` diff that
 shows unexpected pending migrations.
 
-### 3.2 Staging
+### 3.2 External staging (not a root-worker target)
 
-Same script, different env flag:
-
-```bash
-scripts/d1-migration-runner.sh --env staging
-```
-
-After apply, run the post-apply schema verification:
-
-```bash
-# Pull a fresh local snapshot post-apply.
-wrangler d1 export corelink_d1_wnam --env staging \
-    --output /tmp/staging-post.sqlite
-
-# Diff against expected schema derived from migrations/d1/.
-python3 scripts/d1-migration-verify.py \
-    --against /tmp/staging-post.sqlite \
-    migrations/d1/
-```
-
-`d1-migration-verify.py` must exit 0 (no drift). If it reports
-`MISSING_TABLE` / `MISSING_COLUMN`, the migration did not fully apply;
-abort, restore from §2.2 snapshot, file a SEV-2 ticket.
+This root-worker runbook does not apply migrations to staging. Do not pass
+`--env staging` to `scripts/d1-migration-runner.sh`: the wrapper rejects it
+because the root `wrangler.toml` has no such environment. An owner-provisioned
+external staging system must supply and validate its own Wrangler configuration
+and migration procedure before use; that work is outside B-070.
 
 ### 3.3 Production canary
 

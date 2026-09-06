@@ -11,18 +11,26 @@ description: "How CoreLink isolates tenants, how PATs are scoped, and what cross
 
 A **tenant** is the top-level isolation boundary in CoreLink. Every piece of data — CAS blobs, AC entries, audit events, billing records — belongs to exactly one tenant. No data is ever readable or writable across tenants.
 
-You receive a tenant ID during sign-up. It looks like a short, URL-safe identifier:
+You receive a UUIDv7 tenant ID during sign-up. It is a canonical UUID, for
+example:
 
 ```text
-acme-prod
+0192f6e0-7b4a-7abc-8def-0123456789ab
 ```
 
-The tenant ID appears in every API path:
+Tenant addressing depends on the API surface. Tenant-addressed HTTP cache
+routes include the tenant ID in the path:
 
 ```
-/v1/cas/acme-prod/<sha256>
-/v1/ac/acme-prod/<action_digest>
+/v1/cas/0192f6e0-7b4a-7abc-8def-0123456789ab/<sha256>
+/v1/ac/0192f6e0-7b4a-7abc-8def-0123456789ab/<action_digest>
 ```
+
+Native REAPI v1 routes (for example `/v1/cas/blobs/<digest>/<size>`) resolve
+the tenant from the authenticated PAT and do not repeat it in the URL. Bazel
+REAPI v2 carries the tenant ID as its `instance` path segment:
+`/bazel/v2/<tenant_uuidv7>/...`; the Worker and container reject a request when
+that instance does not equal the PAT-resolved tenant.
 
 ## Personal Access Tokens (PATs)
 
@@ -35,8 +43,8 @@ PATs are the only credential type CoreLink accepts for API calls. There are no A
 | Format | `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` — `<env>` is `pat` (user PAT), `ci` (CI runner token), or `ro` (read-only token) |
 | Scoped to | Exactly one tenant at issue time |
 | Shown once | Displayed in plaintext only on creation; never stored in plaintext server-side |
-| Revocable | Yes, self-service, from the dashboard's **Keys** page or via `POST /v1/customer/keys/{pat_id}/revoke`. Minting additional PATs is `POST /v1/customer/keys`. Both require a cache-write capability — a read-only (`cas:r`) token can do neither |
-| Expiry | Optional; set at creation time; defaults to non-expiring |
+| Revocable | Yes, from the dashboard's **Keys** page or via `POST /v1/customer/keys/{pat_id}/revoke` with a server-trusted `owner`/`admin` team role. Minting additional PATs is `POST /v1/customer/keys`; listing and write-capable minting require cache-write. |
+| Expiry | Customer-issued PATs expire after 90 days. The customer mint request has no caller-selected expiry field. |
 
 ### PAT scopes
 
@@ -44,20 +52,22 @@ When creating a PAT you can restrict it to a subset of operations:
 
 | Scope | Grants |
 |---|---|
-| `cas:read` | `GET /v1/cas/*` |
-| `cas:write` | `PUT /v1/cas/*` |
-| `ac:read` | Read action cache entries |
-| `ac:write` | Write action cache entries |
-| `admin` | User management, PAT management, audit log export |
+| `cache:read` (also `cas:r` / `read-only`) | Read CAS blobs and action-cache entries |
+| `cache:write` (also `cas:rw` / `read-write`) | Read and write CAS blobs and action-cache entries; write includes read |
+| `cache:find-missing` (also `find-missing`) | Probe blob existence with `FindMissingBlobs`, without read or write |
+| `admin` | Legacy cache-read/write superset; not grantable by customer self-service |
 
-Omitting a scope means the PAT cannot perform that operation. The starter PAT issued during sign-up has `cas:read cas:write ac:read ac:write` — enough for all build tool integrations.
+Scopes are exact tokens (separated by whitespace or commas); unknown tokens are
+rejected. Omitting a capability means the PAT cannot perform that operation.
+The starter PAT issued during sign-up is stored as `read-write` — enough for
+all build-tool integrations.
 
 ### CI/CD best practice
 
 Do not use your personal starter PAT in CI. Mint a dedicated CI PAT with the
 minimum required scopes from the dashboard's **Keys** page, or with
-`POST /v1/customer/keys` (typically
-`cas:read cas:write ac:read ac:write`, no `admin`).
+`POST /v1/customer/keys` (typically `{"name":"ci-<repo>","scopes":["cache:write"]}`;
+`cas:rw` is an equivalent spelling, and `admin` is not customer-grantable).
 
 Store the returned token value in GitHub Actions secrets, Vault, or your secrets manager of choice.
 
@@ -65,7 +75,10 @@ Store the returned token value in GitHub Actions secrets, Vault, or your secrets
 
 CoreLink enforces tenant isolation at every layer:
 
-1. **API routing**: every CAS and AC request carries the tenant ID in the URL path. The worker validates that the PAT's tenant matches the path tenant before touching storage.
+1. **API routing**: tenant-addressed `/v1/cas/<tenant>/...` and
+   `/v1/ac/<tenant>/...` routes validate the URL tenant against the PAT before
+   touching storage. Native REAPI v1 resolves the tenant from the PAT, while
+   Bazel REAPI v2 validates its `<instance>` segment against that tenant.
 2. **Storage layer**: R2 object keys are prefixed by tenant ID. A bug that omits the prefix check cannot produce a key collision that leaks data from another tenant because the prefix is mandatory, not optional.
 3. **Audit log**: each event carries the tenant ID and is stored in a tenant-specific KV namespace. Admin-level queries are scoped to the calling tenant's namespace.
 
@@ -77,7 +90,9 @@ This isolation guarantee is documented as invariant **INV-TENANT-ISOLATION** in 
 
 Today, CoreLink has a 1:1 mapping between organization (sign-up unit) and tenant. Multi-tenant organizations (where one billing entity manages sub-tenants for different teams or environments) are on the roadmap but not yet available.
 
-A common pattern in the meantime: create separate accounts for `acme-prod` and `acme-staging`, each with their own PATs. Build pipelines are configured per-environment.
+A common pattern in the meantime: create separate accounts for production and
+staging, each with its own UUIDv7 tenant and PATs. Build pipelines are
+configured per environment.
 
 ## Listing and revoking PATs
 
@@ -91,10 +106,10 @@ Unauthorized` on subsequent requests.
 
 Listing and revocation are self-service: `GET /v1/customer/keys` lists the
 tenant's PATs (metadata only — no token material) alongside its BYOK status,
-and `POST /v1/customer/keys/{pat_id}/revoke` revokes one. Both are admin-grade
-operations on the tenant's credentials, so both require a cache-write
-capability; a read-only (`cas:r`) token gets `403` rather than being allowed to
-enumerate or revoke its tenant's credentials.
+and `POST /v1/customer/keys/{pat_id}/revoke` revokes one. Listing retains its
+cache-write gate; revocation is a destructive team-admin operation requiring
+the server-trusted `owner`/`admin` role. Admins may revoke member PATs but not
+owner PATs; members, viewers, and native PAT callers get `403`.
 
 A separate admin-only read surface exists for support to inspect a tenant's
 PATs (`GET /v1/admin/tenants/{tenant_id}/pats`); it needs an admin PAT and is

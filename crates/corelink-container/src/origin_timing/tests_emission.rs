@@ -1,7 +1,7 @@
 //! What the ledger EMITS: which phases appear, which are omitted, and the
-//! arithmetic that keeps `sum(phases) + oother` equal to the container total.
+//! arithmetic that keeps named phases plus `ohandler` equal to the container total.
 //!
-//! This is the partition property — the one that makes `oother` a residue
+//! This is the partition property — the one that makes `ohandler` explicit
 //! rather than a guess — plus the re-entry hazard that would break it.
 #![allow(
     clippy::unwrap_used,
@@ -39,7 +39,10 @@ fn emitted_phases_sum_exactly_to_the_container_total() {
     ledger.add(Phase::Pat, 3_400);
     ledger.add(Phase::Quota, 118_900);
     ledger.add(Phase::Store, 900);
-    let parsed = parse(&ledger.server_timing_value_with(140_250, true));
+    let wire = ledger.server_timing_value_with(140_250, true);
+    assert!(wire.contains("ohandler;dur=19"));
+    assert!(wire.contains("oother;dur=19;desc=\"legacy-alias\""));
+    let parsed = parse(&wire);
     let sum: i64 = parsed.values().sum();
     assert_eq!(
         sum, 140,
@@ -49,15 +52,28 @@ fn emitted_phases_sum_exactly_to_the_container_total() {
     assert_eq!(parsed["opat"], 3);
     assert_eq!(parsed["oquota"], 118);
     assert_eq!(parsed["ostore"], 0);
-    // 140 - (3 + 118 + 0): the truncation residue lands in `oother`, which
-    // is exactly where an unattributed millisecond is supposed to go.
-    assert_eq!(parsed["oother"], 19);
+    // 140 - (3 + 118 + 0): framework time is explicitly named `ohandler`.
+    assert_eq!(parsed["ohandler"], 19);
 }
 
 #[test]
-fn all_seven_named_phases_plus_oother_sum_exactly_to_the_container_total() {
+fn accounting_is_emitted_as_a_disjoint_storage_phase() {
+    // B-107 needs to answer whether a slow PUT is R2 or D1 accounting. These
+    // are separate phase windows, not two labels over one broad Store scope.
+    let ledger = PhaseLedger::new();
+    ledger.add(Phase::Store, 30_000);
+    ledger.add(Phase::Accounting, 10_000);
+    let parsed = parse(&ledger.server_timing_value_with(50_000, true));
+    assert_eq!(parsed["ostore"], 30);
+    assert_eq!(parsed["oaccounting"], 10);
+    assert_eq!(parsed["ohandler"], 10);
+    assert_eq!(parsed.values().sum::<i64>(), 50);
+}
+
+#[test]
+fn all_named_phases_plus_handler_sum_exactly_to_the_container_total() {
     // W2/W3: opat + oquota + ostore + oargon + opermit + ortier + oaudit +
-    // oother must reconcile exactly against the container's own
+    // ohandler must reconcile exactly against the container's own
     // whole-request clock, the same way the original three did.
     let ledger = PhaseLedger::new();
     ledger.add(Phase::Pat, 3_400);
@@ -71,7 +87,7 @@ fn all_seven_named_phases_plus_oother_sum_exactly_to_the_container_total() {
     let sum: i64 = parsed.values().sum();
     assert_eq!(
         sum, 140,
-        "opat+oquota+ostore+oargon+opermit+ortier+oaudit+oother must equal \
+        "named phases + ohandler must equal \
          the 140ms the container held the request; they summed to {sum}. \
          Split: {parsed:?}"
     );
@@ -82,8 +98,8 @@ fn all_seven_named_phases_plus_oother_sum_exactly_to_the_container_total() {
     assert_eq!(parsed["opermit"], 12);
     assert_eq!(parsed["ortier"], 4);
     assert_eq!(parsed["oaudit"], 8);
-    // 140 - (3 + 20 + 0 + 61 + 12 + 4 + 8) = 32, the truncation residue.
-    assert_eq!(parsed["oother"], 32);
+    // 140 - (3 + 20 + 0 + 61 + 12 + 4 + 8) = 32, framework work.
+    assert_eq!(parsed["ohandler"], 32);
 }
 
 #[test]
@@ -137,7 +153,7 @@ fn residue_is_clamped_rather_than_reported_negative() {
     let ledger = PhaseLedger::new();
     ledger.add(Phase::Quota, 50_000);
     let parsed = parse(&ledger.server_timing_value_with(10_000, true));
-    assert_eq!(parsed["oother"], 0);
+    assert_eq!(parsed["ohandler"], 0);
 }
 
 /// **A nested re-entry of the SAME phase is one wall-clock window.**
@@ -145,7 +161,7 @@ fn residue_is_clamped_rather_than_reported_negative() {
 /// The outer scope may live on the request task while an inner scope runs in
 /// a `spawn_blocking` task with the same ledger handle. Both scopes describe
 /// one storage window, so only the outermost scope owns the phase clock. This
-/// keeps `Server-Timing` additive instead of allowing `oother`'s clamp to hide
+/// keeps `Server-Timing` additive instead of allowing a clamp to hide
 /// an overcount.
 #[test]
 fn nested_reentry_of_the_same_phase_records_once() {
@@ -166,8 +182,8 @@ fn nested_reentry_of_the_same_phase_records_once() {
     assert!(ledger.micros(Phase::Store).is_some());
 }
 
-/// The residue always closes: named phases plus `oother` sum to the total,
-/// with the gate OFF as well as ON. This is what makes `oother` a residue
+/// Named phases plus `ohandler` sum to the total,
+/// with the gate OFF as well as ON. This explicit phase is what makes
 /// rather than a guess, and splitting the gate must not break it.
 #[test]
 fn phases_plus_residue_sum_to_the_total_on_both_sides_of_the_gate() {
@@ -183,7 +199,7 @@ fn phases_plus_residue_sum_to_the_total_on_both_sides_of_the_gate() {
         let sum: i64 = parsed.values().copied().sum();
         assert_eq!(
             sum, 200,
-            "phases + oother must equal the container total (detail={detail})"
+            "named phases + ohandler must equal the container total (detail={detail})"
         );
     }
 }

@@ -4,12 +4,14 @@ title: "ADR-0017 — Grafana Cloud (managed) vs self-hosted Prom/Loki/Tempo"
 description: "Chooses managed Grafana Cloud over a self-hosted observability stack for GA to avoid a dedicated SRE FTE, with a documented open-source migration path if cost outgrows benefit."
 source_files:
   - "specs/03_architecture/adrs/ADR-0017-grafana-cloud-vs-self-hosted-observability.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "observability", "grafana", "vendor", "draft"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0017-grafana-cloud-vs-self-hosted-observability.md@e75e41e6b4f69773e8b63cd9c9a242fa9c5b1175"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-0017 — Grafana Cloud (managed) vs self-hosted Prom/Loki/Tempo
 
 CoreLink's dashboards need a metrics + logs + traces stack, and at GA the team is too small to also run one. This ADR (a DRAFT) chooses managed Grafana Cloud over self-hosting Prometheus/Loki/Tempo, trading some vendor dependency and cardinality limits for zero dedicated observability SRE headcount. It matters as the decision that keeps the launch team out of the cap-planning/scaling/upgrade business while leaving an open-source exit open.

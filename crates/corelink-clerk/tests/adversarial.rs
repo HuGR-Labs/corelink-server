@@ -264,6 +264,10 @@ async fn kid_rotation_lazy_refresh_succeeds() {
         result.is_ok(),
         "expected accept after lazy refresh, got {result:?}"
     );
+    // The second refresh found the rotated key; it must not have been inserted
+    // into the negative-kid cache. A replay served from the refreshed cache is
+    // still accepted, which kills the "cache miss before retry" mutation.
+    assert!(adapter.validate(&jwt).await.is_ok());
     let snapshot = adapter.counters();
     assert!(snapshot.refresh_kid_miss + snapshot.refresh_scheduled >= 1);
 }
@@ -300,11 +304,15 @@ async fn kid_still_missing_after_refresh_rejected_no_loop() {
         matches!(result, Err(AuthError::KidNotInJwks)),
         "expected KidNotInJwks, got {result:?}"
     );
-    // Single-shot refresh — no infinite loop. Cold start fetch is
-    // counted as `refresh_scheduled`. The KID-miss path is gated
-    // behind a cached state, so a cold-start path should never
-    // trigger more than 1 fetch in this scenario.
-    let _snapshot = adapter.counters();
+    // Exactly two bounded refreshes (scheduled + one kid-miss retry), then the
+    // negative cache absorbs subsequent attempts without another upstream hit.
+    let snapshot = adapter.counters();
+    assert_eq!(snapshot.refresh_scheduled, 1);
+    assert_eq!(snapshot.refresh_kid_miss, 1);
+    assert!(adapter.validate(&jwt).await.is_err());
+    let after = adapter.counters();
+    assert_eq!(after.refresh_scheduled, snapshot.refresh_scheduled);
+    assert_eq!(after.refresh_kid_miss, snapshot.refresh_kid_miss);
 }
 
 #[tokio::test]

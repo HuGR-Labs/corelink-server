@@ -4,12 +4,14 @@ title: "ADR-0025 — Hard non-bypassable cosign keyless deploy gate"
 description: "Why a Cloudflare-Worker deploy verifier cryptographically gates every Worker rollout on a cosign keyless-OIDC signature with mandatory Rekor inclusion, with no soft-fail or override mode."
 source_files:
   - "specs/03_architecture/adrs/ADR-0025-deploy-gate-hard-cosign-keyless.md"
-checkpoint_sha: "b5ce2bff384a09047f027082dcf4355136822242"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "supply-chain", "cosign", "sigstore", "rekor", "deploy-gate", "s12"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0025-deploy-gate-hard-cosign-keyless.md@acf1dcea1bb33099a063df7d49ef61488a80e517"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-0025 — Hard non-bypassable cosign keyless deploy gate
 
 The deploy boundary is the last mile where a SolarWinds-class supply-chain attack lands: a tampered Worker bundle pushed with stolen deploy credentials would otherwise reach production undetected, because SLSA provenance, SBOMs, and cargo-audit all prove things about the *build* but none of them enforce that the *deployed* artifact is the one CI produced. This ADR records the decision (a DRAFT, ratified at WI-S12-003 SEAL) to put a hard cryptographic gate at the CF API boundary itself.

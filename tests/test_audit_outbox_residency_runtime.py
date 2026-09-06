@@ -11,6 +11,7 @@ TENANT_WRITERS = (
     ROOT / "crates/corelink-container/src/storage/d1_audit_sink.rs",
     ROOT / "crates/corelink-container/src/routes/dsr/audit.rs",
     ROOT / "crates/corelink-container/src/routes/dsr/access.rs",
+    ROOT / "crates/corelink-meta/src/cas_query.rs",
 )
 
 

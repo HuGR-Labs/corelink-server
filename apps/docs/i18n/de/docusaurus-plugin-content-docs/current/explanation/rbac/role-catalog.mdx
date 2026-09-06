@@ -105,7 +105,8 @@ searching that file for the triple finds nothing.
 ### Can do
 
 - Read and mutate tenant config.
-- Mint and revoke PATs for any user in the tenant.
+- Mint PATs for users in the tenant; revoke member PATs. Only the Owner may
+  revoke the tenant owner's PAT.
 - Read tenant audit log.
 - Invite, demote, and revoke users below `Owner`.
 
@@ -138,10 +139,10 @@ searching that file for the triple finds nothing.
 
 ```
 1. Admin: receives alert "PAT tok_abc...XYZ used from unusual region".
-2. Admin: widerruft das Token im Dashboard (https://humangr.com/corelink/)
+2. Admin: widerruft ein Member-Token im Dashboard (https://humangr.com/corelink/)
    oder ruft die HTTP-API direkt auf:
    → POST /v1/customer/keys/{pat_id}/revoke (Einzelakteur; kein zweiter
-     Genehmiger erforderlich; nicht destruktive Operation).
+     Genehmiger erforderlich). Der Owner muss das Owner-PAT widerrufen.
 3. Die pat-Zeile erhält den Zeitstempel revoked_at — idempotent (erneutes
    Widerrufen behält den ursprünglichen Zeitstempel). Es wird kein vom
    Aufrufer angegebener Grund gespeichert: Der Endpunkt nimmt keinen

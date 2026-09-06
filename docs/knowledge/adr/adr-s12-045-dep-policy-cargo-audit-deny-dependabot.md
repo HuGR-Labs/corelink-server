@@ -4,12 +4,14 @@ title: "ADR-S12-045 — Dep Policy: cargo-audit + cargo-deny + Dependabot Canoni
 description: "The three composited supply-chain controls — cargo-audit for RUSTSEC advisories, cargo-deny for policy enforcement, and staggered Dependabot for automated updates — with pinned versions and prebuilt installs."
 source_files:
   - "specs/03_architecture/adrs/ADR-S12-045-dep-policy-cargo-audit-deny-dependabot.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s12", "supply-chain", "cargo-audit", "cargo-deny", "dependabot"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S12-045-dep-policy-cargo-audit-deny-dependabot.md@f80acbd41c606ab0ee4fc3219adc8982437b0b2e"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-S12-045 — Dep Policy: cargo-audit + cargo-deny + Dependabot Canonical Config
 
 CoreLink's HIGH_RISK supply-chain lane needs three things no single tool delivers: RUSTSEC advisory detection within 24h, policy enforcement (license/yanked/sources/advisories) at every merge, and bounded automated dep updates. This ADR composites cargo-audit + cargo-deny + Dependabot into the canonical configuration, with pinned tool versions, SHA-pinned actions, and prebuilt-binary installs that removed the os-error-2 from-source compile race on the contended self-hosted Mac.
@@ -19,6 +21,14 @@ CoreLink's HIGH_RISK supply-chain lane needs three things no single tool deliver
 The supply-chain lane (FF-HR-005) requires three composited controls — RUSTSEC CVE detection, policy enforcement at every PR, and automated weekly dep updates — and no single tool covers all three axes. The Rust ecosystem supplies cargo-audit (advisory scanner), cargo-deny (policy enforcement), and Dependabot (update PRs) (`specs/03_architecture/adrs/ADR-S12-045-dep-policy-cargo-audit-deny-dependabot.md:23-37`).
 
 # Decision
+
+The privileged Dependabot policy is a data-only trust boundary: its
+pull_request_target job checks out the merge ref at `_pr-data`, checks out the
+base at `_base`, and executes every script from `_base`. The base-owned B-133
+teeth workflow verifies the exact event types, path filter, read-only
+permissions, immutable action SHAs, job timeout, checkout paths, and control
+bytes; a mutation or symlink is fail-closed. This does not treat the `corelink`
+runner label as isolation.
 
 **cargo-audit**: `--deny warnings` PR gate + a daily 06:00 UTC cron classifying HIGH/CRITICAL to SEV-2/3, pinned at `0.22.x`, installed via the SHA-pinned `taiki-e/install-action` prebuilt binary. **cargo-deny**: PR gate + offset daily cron, policy from a root `deny.toml`, pinned at `0.19.x`, native install (the Linux-only EmbarkStudios Docker action was retired for the macOS fleet). **Dependabot**: weekly-per-ecosystem but staggered Mon–Thu (the original single-Monday batch near-OOM'd the runner fleet), groups for security/minor-patch/major, auto-merge only patch + minor non-security on green CI, never major or security, 10-PR cap. A lockfile-diff PR comment is mandatory on every `Cargo.lock` change (`specs/03_architecture/adrs/ADR-S12-045-dep-policy-cargo-audit-deny-dependabot.md:39-82`). Rationale covers why two tools not one, why SHA-pin all actions (mutable-ref supply-chain attack), why weekly not daily (reviewer fatigue), why never auto-merge major/security (semver-break risk), and why version-pin the tools (reproducible CI) (`specs/03_architecture/adrs/ADR-S12-045-dep-policy-cargo-audit-deny-dependabot.md:84-113`).
 

@@ -1,0 +1,45 @@
+{
+  "schema": "b250-deleted-workflow-evidence/v1",
+  "repo": "HuGR-Labs/corelink-server",
+  "window": {
+    "start": "2026-09-04T00:00:00Z",
+    "end_exclusive": "2026-09-06T00:00:00Z"
+  },
+  "population": {
+    "run_count": 278,
+    "conclusion": "startup_failure",
+    "job_count": 0,
+    "unique_count": 278,
+    "duplicate_count": 0,
+    "uniqueness_digest": "sha256:7198eb0d9c1a2ac6cc9aa59ef7e03b1ca72540059914e8b51c01a22c5c568eb9",
+    "run_ids": {
+      "count": 278,
+      "retained_in": "authorized Actions evidence packet",
+      "raw_values_persisted": false
+    },
+    "timestamps": {
+      "count": 278,
+      "retained_in": "authorized Actions evidence packet",
+      "raw_values_persisted": false
+    }
+  },
+  "workflow": {
+    "id": 303501160,
+    "path": "BuildFailed",
+    "state": "deleted"
+  },
+  "owner_action": {
+    "owner": "tl",
+    "status": "HOLD",
+    "closure_permitted": false,
+    "next_step": "Identify and disable or repair the stale emitter through the authorized GitHub administration path."
+  },
+  "source": {
+    "document": "specs/_audits/2026-09-05-b250-deleted-workflow-startup-failure.md",
+    "document_sha256": "sha256:a825e688be80375d52e5d6632361fc06c237bf0e5c105baf1750178353674196",
+    "last_refreshed": "2026-09-05T00:00:00Z",
+    "max_age_hours": 48,
+    "read_only": true,
+    "raw_api_payload_persisted": false
+  }
+}

@@ -4,12 +4,14 @@ title: "ADR-0015 — Reproducible builds best-effort (≤5% byte-diff), 100% pos
 description: "Adopts a best-effort reproducible-build posture with a 2-runner diff matrix, three hermetic flags, and a 5% byte-diff CI gate, with a roadmap to 100% bit-identical post-GA."
 source_files:
   - "specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "supply-chain", "reproducible-builds", "tamper-detection", "s12"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md@4a43a0adc95fba146c5db516d8fe946564777da9"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-0015 — Reproducible builds best-effort (≤5% byte-diff), 100% post-GA
 
 Reproducible builds are CoreLink's defense-in-depth against a compromised builder: if two independent runners produce a near-identical binary, an attacker who tampers with one but not the other is detectable. Because the 2026 Rust + LLVM toolchain cannot reliably hit 0% bit-identical for the WASM artifact, this ADR commits to a best-effort posture — a ≤5% byte-diff gate today, with a roadmap to 100% post-GA. It matters as the governance decision that makes tamper-detection a CI gate without overclaiming a reproducibility CoreLink cannot yet deliver.

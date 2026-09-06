@@ -4,12 +4,14 @@ title: "ADR-0034b — Framework reviewer dual-hat fallback policy"
 description: "Why the Owner may dual-hat two of the four framework-freeze reviewer slots under named permitted pairings, eligibility conditions, and auto-expiration triggers."
 source_files:
   - "specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "governance", "reviewers", "dual-hat", "framework-freeze", "small-org"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md@a32ef1d53e2316b12218fdd2f2bcf9e50e9eb1f6"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-0034b — Framework reviewer dual-hat fallback policy
 
 The framework v1.0.0 FROZEN cut needs four distinct senior reviewers (architecture, compliance/privacy, security, production-ops), which a pre-GA small org cannot contractually staff — leaving the cut indefinitely deferred even though the engineering side is ready. This ADR is the framework-freeze-tier analog of ADR-0034: it authorizes the Owner to dual-hat two slots under explicit boundaries so GA is viable without abandoning cross-domain coverage.

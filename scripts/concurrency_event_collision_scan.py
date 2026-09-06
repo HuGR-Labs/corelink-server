@@ -15,6 +15,7 @@ input. ``--self-test`` exercises parser and mutation teeth without the repo.
 from __future__ import annotations
 
 import argparse
+import ast
 import glob
 import re
 import shutil
@@ -22,7 +23,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-import yaml
+try:
+    import yaml
+except ModuleNotFoundError:  # pragma: no cover - exercised on CI's stdlib lane
+    yaml = None
 
 MAIN_EVENTS = frozenset({"push", "schedule", "workflow_dispatch", "workflow_run", "repository_dispatch"})
 EXCLUDED = frozenset({
@@ -36,7 +40,7 @@ PR_CANCEL_EXPR = re.compile(
 )
 
 
-class StrictLoader(yaml.SafeLoader):
+class StrictLoader(yaml.SafeLoader if yaml is not None else object):
     """SafeLoader variant that refuses duplicate mapping keys."""
 
 
@@ -52,15 +56,164 @@ def strict_mapping(loader: StrictLoader, node: yaml.MappingNode, deep: bool = Fa
     return mapping
 
 
-StrictLoader.add_constructor(
-    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, strict_mapping
-)
+if yaml is not None:
+    StrictLoader.add_constructor(
+        yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, strict_mapping
+    )
+
+
+def _minimal_workflow_load(text: str, path: Path) -> dict:
+    """Read only the Actions fields this census needs, without PyYAML.
+
+    The workflow lane is intentionally stdlib-only.  This small structural
+    reader is not a general YAML implementation: it handles top-level
+    ``on``/``concurrency`` mappings and rejects malformed bracket values and
+    duplicate keys instead of silently guessing.  Full PyYAML remains used
+    when available, while this fallback keeps missing optional tooling from
+    turning a runnable verifier into an environment false-negative.
+    """
+    lines = text.splitlines()
+    result: dict = {}
+
+    def scalar(raw: str) -> object:
+        value = _without_comment(raw).strip()
+        if value in {"", "{}"}:
+            return {} if value == "{}" else ""
+        if value in {"true", "false"}:
+            return value == "true"
+        if value in {"null", "~"}:
+            return None
+        if value.startswith("["):
+            if not value.endswith("]"):
+                raise ValueError(f"{path}: malformed flow sequence")
+            return [item.strip().strip("'\"") for item in value[1:-1].split(",") if item.strip()]
+        if value.startswith("{"):
+            if not value.endswith("}"):
+                raise ValueError(f"{path}: malformed flow mapping")
+            return {}
+        if value[:1] in {"'", '"'}:
+            try:
+                return ast.literal_eval(value)
+            except (SyntaxError, ValueError):
+                raise ValueError(f"{path}: malformed quoted scalar") from None
+        return value
+
+    def key_value(line: str) -> tuple[str, str] | None:
+        match = re.match(r"^([A-Za-z_][A-Za-z0-9_-]*|['\"][^'\"]+['\"]):(?:[ \t]*(.*))?$", line)
+        if not match:
+            return None
+        return match.group(1).strip("'\""), match.group(2) or ""
+
+    def immediate_children(start: int) -> tuple[list[tuple[str, str]], list[str], int]:
+        mappings: list[tuple[str, str]] = []
+        sequence: list[str] = []
+        index = start
+        while index < len(lines):
+            child = lines[index]
+            if not child.strip() or child.lstrip().startswith("#"):
+                index += 1
+                continue
+            if not child[0].isspace():
+                break
+            indent = len(child) - len(child.lstrip(" "))
+            if indent < 2:
+                break
+            # Nested workflow data (paths, branches, job steps) is not part of
+            # the trigger/concurrency map.  Looking past it was the old
+            # fallback's false-negative: path list entries became event names.
+            if indent != 2:
+                index += 1
+                continue
+            stripped = child.strip()
+            if stripped.startswith("-"):
+                if mappings:
+                    raise ValueError(f"{path}: mixed mapping and sequence")
+                sequence.append(stripped[1:].strip())
+            else:
+                pair = key_value(stripped)
+                if pair is None:
+                    raise ValueError(f"{path}: ambiguous indented YAML")
+                mappings.append(pair)
+            index += 1
+        return mappings, sequence, index
+
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if not line or line[0].isspace() or line.lstrip().startswith("#"):
+            index += 1
+            continue
+        pair = key_value(_without_comment(line))
+        if pair is None:
+            if line.strip() == "---" and not result:
+                index += 1
+                continue
+            raise ValueError(f"{path}: ambiguous top-level YAML")
+        key, inline = pair
+        if key in result:
+            raise ValueError(f"{path}: duplicate top-level key {key!r}")
+        if key == "on":
+            if inline.strip():
+                trigger = scalar(inline)
+            else:
+                mappings, sequence, index = immediate_children(index + 1)
+                if mappings and sequence:
+                    raise ValueError(f"{path}: mixed trigger mapping and sequence")
+                trigger = sequence if sequence else {child_key: scalar(value) for child_key, value in mappings}
+                if len(mappings) != len(trigger):
+                    raise ValueError(f"{path}: duplicate trigger key")
+            result[True] = trigger
+            continue
+        if key == "concurrency":
+            if inline.strip():
+                block = scalar(inline)
+                if not isinstance(block, dict):
+                    raise ValueError(f"{path}: concurrency must be a mapping")
+            else:
+                mappings, sequence, index = immediate_children(index + 1)
+                if sequence:
+                    raise ValueError(f"{path}: concurrency must be a mapping")
+                block = {}
+                for child_key, value in mappings:
+                    if child_key in block:
+                        raise ValueError(f"{path}: duplicate concurrency key {child_key!r}")
+                    block[child_key] = scalar(value)
+            result[key] = block
+            continue
+        index += 1
+    if "on" not in result and True not in result:
+        raise ValueError(f"{path}: top-level on: trigger is missing or malformed")
+    return result
+
+
+def _without_comment(value: str) -> str:
+    """Remove a YAML comment without truncating a quoted ``#`` value."""
+    quote: str | None = None
+    escaped = False
+    for index, character in enumerate(value):
+        if escaped:
+            escaped = False
+            continue
+        if character == "\\" and quote == '"':
+            escaped = True
+            continue
+        if character in {"'", '"'}:
+            if quote == character:
+                quote = None
+            elif quote is None:
+                quote = character
+        elif character == "#" and quote is None and (index == 0 or value[index - 1].isspace()):
+            return value[:index]
+    return value
 
 
 def load_workflow(path: Path) -> dict:
     try:
-        document = yaml.load(path.read_text(encoding="utf-8"), Loader=StrictLoader)
-    except (OSError, yaml.YAMLError) as error:
+        text = path.read_text(encoding="utf-8")
+        if yaml is None:
+            return _minimal_workflow_load(text, path)
+        document = yaml.load(text, Loader=StrictLoader)
+    except (OSError, ValueError, (yaml.YAMLError if yaml is not None else Exception)) as error:
         raise ValueError(f"{path}: unreadable YAML ({error})") from error
     if not isinstance(document, dict):
         raise ValueError(f"{path}: workflow is not a YAML mapping")
@@ -173,6 +326,16 @@ def fixture(directory: Path, name: str, group: str, cancel: str = "true", trigge
 
 
 def self_test() -> int:
+    # Exercise the actual stdlib path even when PyYAML is installed locally.
+    global yaml
+    saved_yaml = yaml
+
+    def finish(code: int) -> int:
+        global yaml
+        yaml = saved_yaml
+        return code
+
+    yaml = None
     with tempfile.TemporaryDirectory(prefix="concurrency-event-census-") as raw:
         directory = Path(raw)
         # Satisfy the anti-vacancy population checks with 50 no-concurrency files.
@@ -185,21 +348,26 @@ def self_test() -> int:
         )
         bad = fixture(directory, "bad.yml", "ci-${{ github.ref }}")
         unknown = fixture(directory, "unknown.yml", "ci-${{ github.ref }}", "${{ cancelled }}")
+        third = fixture(directory, "third.yml", "ci-${{ github.ref }}", "${{ github.event_name != 'pull_request' }}")
         literal = fixture(directory, "literal.yml", "ci-${{ 'github.ref' }}")
         violations, total = scan(directory)
         names = {name for name, _ in violations}
-        if total != 55 or names != {"bad.yml", "unknown.yml"}:
+        if total != 56 or names != {"bad.yml", "third.yml", "unknown.yml"}:
             print(f"SELF-TEST FAILED: got blocks={total}, violations={sorted(names)}")
-            return 1
+            return finish(1)
 
-        # Mutation 1: adding the event discriminator must remove the finding.
-        bad.write_text(bad.read_text().replace("ci-${{ github.ref }}", "ci-${{ github.event_name }}-${{ github.ref }}"))
-        violations, _ = scan(directory)
-        if any(name == "bad.yml" for name, _ in violations):
-            print("SELF-TEST FAILED: event-discriminator mutation stayed green")
-            return 1
+        # Mutations 1-3: each live collision must disappear only when its
+        # group gains the event discriminator; the other two remain red.
+        for target in (bad, unknown, third):
+            target.write_text(target.read_text().replace(
+                "ci-${{ github.ref }}", "ci-${{ github.event_name }}-${{ github.ref }}", 1
+            ))
+            violations, _ = scan(directory)
+            if any(name == target.name for name, _ in violations):
+                print(f"SELF-TEST FAILED: event-discriminator mutation stayed green for {target.name}")
+                return finish(1)
 
-        # Mutation 2: corrupt exactly one workflow; unreadable input is fatal.
+        # Mutation 4: corrupt exactly one workflow; unreadable input is fatal.
         bad.write_text("on: [unclosed\n", encoding="utf-8")
         try:
             scan(directory)
@@ -207,9 +375,9 @@ def self_test() -> int:
             pass
         else:
             print("SELF-TEST FAILED: malformed YAML was silently omitted")
-            return 1
+            return finish(1)
 
-        # Mutation 3: duplicate structural key must not be first/last-wins.
+        # Mutation 5: duplicate structural key must not be first/last-wins.
         bad.write_text(
             "on:\n  push:\n  schedule:\nconcurrency:\n  group: one\n  group: two\n"
             "  cancel-in-progress: true\njobs: {}\n", encoding="utf-8"
@@ -220,9 +388,9 @@ def self_test() -> int:
             pass
         else:
             print("SELF-TEST FAILED: duplicate concurrency key was accepted")
-            return 1
+            return finish(1)
     print("SELF-TEST OK: structural YAML, event semantics, unknown-expression fail-closed, and mutations")
-    return 0
+    return finish(0)
 
 
 def main() -> int:

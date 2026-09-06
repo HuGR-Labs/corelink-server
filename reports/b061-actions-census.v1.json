@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "status": "unavailable",
+  "as_of": "2026-08-30",
+  "source": {
+    "kind": "github-actions-api",
+    "repository": "HuGR-Labs/corelink-server",
+    "query": "GET /repos/HuGR-Labs/corelink-server/actions/workflows/{workflow_id}/runs?per_page=1; compare total_count with conclusion=success for every registered workflow",
+    "raw_export": "not committed in this checkout; counts requiring it are intentionally unavailable"
+  },
+  "lanes": [
+    {"workflow": ".github/workflows/neon-shadow-reconcile-daily.yml", "result": "ran_no_success"},
+    {"workflow": ".github/workflows/cas_foundation.yml", "result": "ran_no_success"},
+    {"workflow": ".github/workflows/coverage.yml", "result": "ran_no_success"},
+    {"workflow": ".github/workflows/ffi-matrix-ci.yml", "result": "ran_no_success"},
+    {"workflow": ".github/workflows/mutation-nightly.yml", "result": "ran_no_success"},
+    {"workflow": ".github/workflows/semgrep.yml", "result": "ran_no_success"},
+    {"workflow": ".github/workflows/notarize-macos.yml", "result": "ran_no_success"},
+    {"workflow": ".github/workflows/sign-windows.yml", "result": "ran_no_success"},
+    {"workflow": ".github/workflows/release-cli.yml", "result": "ran_no_success"},
+    {"workflow": ".github/workflows/sign-linux.yml", "result": "ran_no_success"},
+    {"workflow": ".github/workflows/release-slsa3.yml", "result": "ran_no_success"},
+    {"workflow": ".github/workflows/nightly.yml", "result": "ran_no_success"},
+    {"workflow": ".github/workflows/terraform-drift.yml", "result": "ran_no_success"},
+    {"workflow": ".github/workflows/sbom.yml", "result": "ran_no_success"},
+    {"workflow": ".github/workflows/buck2-starter-ci.yml", "result": "ran_no_success"},
+    {"workflow": ".github/workflows/fuzz-nightly.yml", "result": "ran_no_success"},
+    {"workflow": ".github/workflows/endurance-2h-nightly.yml", "result": "ran_no_success"},
+    {"workflow": ".github/workflows/load-test-nightly.yml", "result": "ran_no_success"},
+    {"workflow": ".github/workflows/billing-health-daily.yml", "result": "ran_no_success"},
+    {"workflow": ".github/workflows/cosign-sign.yml", "result": "never_ran"}
+  ]
+}

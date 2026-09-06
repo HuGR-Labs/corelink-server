@@ -21,6 +21,8 @@ See also the raw spec page at [REST API spec](./openapi.mdx).
 | [`GET /v1/customer/keys`](./endpoints/get-v1-customer-keys.mdx) | `pat` | List the tenant's Personal Access Tokens (metadata only). |
 | [`POST /v1/customer/keys`](./endpoints/post-v1-customer-keys.mdx) | `pat` | Issue a new Personal Access Token. |
 | [`POST /v1/customer/keys/{pat_id}/revoke`](./endpoints/post-v1-customer-keys-by-pat_id-revoke.mdx) | `pat` | Revoke a Personal Access Token by id. |
+| [`POST /v1/customer/team/accept`](./endpoints/post-v1-customer-team-accept.mdx) | `users` | Redeem a team invitation for the verified Clerk user. |
+| [`POST /v1/customer/team/invite`](./endpoints/post-v1-customer-team-invite.mdx) | `users` | Create a one-time cryptographic team invitation. |
 | [`POST /v1/onboarding/dpa-accept`](./endpoints/post-v1-onboarding-dpa-accept.mdx) | `dpa` | Record click-through acceptance of the current DPA version. |
 | [`POST /v1/onboarding/tier-select`](./endpoints/post-v1-onboarding-tier-select.mdx) | `tier` | Select a subscription tier and receive a Stripe Checkout session URL. |
 | [`POST /v1/pats`](./endpoints/post-v1-pats.mdx) | `pat` | Issue a Personal Access Token (compatibility alias). |

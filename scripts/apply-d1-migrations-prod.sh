@@ -56,10 +56,10 @@ readonly DB_ENV="prod"
 # names = 80 (was 75 across 52 files; +5 net from the adapter/billing/pilot
 # migrations 0053-0061 — pilot_signups, tenant_billing, adapter_cache_map,
 # adapter_npm_meta, adapter_pip_index, adapter_oci_kv). 2026-06-09: +1 file
-# (0062_expand_tier_selections_6tier) widens the tier CHECK via a table REBUILD
-# — net table count UNCHANGED (the two rebuilt tables, tier_selections +
-# stripe_checkout_sessions, are dropped and re-created under the same names), so
-# EXPECTED_TABLE_COUNT stays 80. FLOOR check only: the
+# (0062_expand_tier_selections_6tier) widens the tier CHECK via an in-place
+# sqlite_master catalog edit — net table count UNCHANGED (tier_selections and
+# stripe_checkout_sessions remain the same physical tables), so EXPECTED_TABLE_COUNT
+# stays 80. FLOOR check only: the
 # live sqlite_master count also includes d1_migrations + sqlite internals, so
 # the post-apply verification passes whenever actual >= this value.
 readonly EXPECTED_TABLE_COUNT=80
@@ -191,6 +191,17 @@ fi
 
 WRANGLER_VER="$($WRANGLER_CMD --version 2>/dev/null || echo unknown)"
 log "wrangler version: $WRANGLER_VER"
+
+# 0064 rebuilds the FK parent `tenant`. Detect an unrecorded copy and apply it
+# in one `execute --file` transaction (including its d1_migrations ledger row)
+# before the ordinary sequential command; otherwise a populated DR database
+# would fail midway through `migrations apply`.
+log "checking FK-parent migration 0064 via d1-apply-fk-parent.sh"
+if ! WRANGLER_CMD="$WRANGLER_CMD" "$REPO_ROOT/scripts/d1-apply-fk-parent.sh" \
+    --binding "$DB_NAME" --env "$DB_ENV" --remote; then
+    err "FK-parent migration 0064 pre-step FAILED; refusing plain migrations apply"
+    exit 1
+fi
 
 # CTRL-AUDIT-EMIT-BEFORE-MUTATION: log intent before every mutation.
 log "APPLY MODE: will invoke $WRANGLER_CMD d1 migrations apply $DB_NAME --env $DB_ENV --remote"

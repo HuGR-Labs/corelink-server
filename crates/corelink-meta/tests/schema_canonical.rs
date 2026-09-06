@@ -10,8 +10,9 @@
 //! 2. `MIGRATION_SQL` contains every load-bearing fragment the
 //!    `corelink-meta` impl assumes (PK, indexes, CHECK constraints,
 //!    UNIQUE constraint).
-//! 3. `BlobMetaKey::digest_canonical_text` produces the canonical
-//!    `'algo:hex'` form documented in `data_model.md §1`.
+//! 3. `BlobMetaKey::digest_canonical_text` produces plain canonical
+//!    lowercase hexadecimal for metadata (the algorithm is an external
+//!    surface concern).
 //! 4. `TenantId::to_canonical_text` produces the canonical UUIDv7
 //!    hyphenated lowercase form documented in `data_model.md §2.1`.
 //! 5. Round-trip: insert → get returns a row with all fields populated as
@@ -38,7 +39,7 @@ const CANONICAL_TENANT_TEXT: &str = "01938af0-abcd-7123-8456-000000000001";
 const CANONICAL_DIGEST_HEX: &str =
     "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24";
 const CANONICAL_DIGEST_TEXT: &str =
-    "blake3:d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24";
+    "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24";
 
 #[test]
 fn canonical_migration_file_path() {

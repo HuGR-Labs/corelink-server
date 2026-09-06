@@ -40,6 +40,8 @@ class B152DiagnosticTests(unittest.TestCase):
         self.assertTrue(item["in_window"])
         self.assertEqual(item["step_in_progress"], ["Install"])
         self.assertFalse(item["checkout_incomplete"])
+        self.assertEqual(item["steps"][1]["name"], "Install")
+        self.assertIsNone(item["steps"][1]["step_id"])
 
     def test_duration_window_is_inclusive_at_each_boundary(self):
         job = {
@@ -121,6 +123,21 @@ class B152DiagnosticTests(unittest.TestCase):
         item = diag.classify_job(job, run(1, "2026-08-31T04:00:00Z"), 594, 615)
         self.assertTrue(item["checkout_incomplete"])
 
+    def test_pending_step_state_is_retained_as_unfinished_evidence(self):
+        job = {
+            "id": 29,
+            "name": "lane",
+            "conclusion": "failure",
+            "created_at": "2026-08-31T03:59:00Z",
+            "started_at": "2026-08-31T04:00:00Z",
+            "completed_at": "2026-08-31T04:10:00Z",
+            "steps": [{"name": "Set up Node.js", "status": "pending"}],
+        }
+        item = diag.classify_job(job, run(1, "2026-08-31T04:00:00Z"), 594, 615)
+        self.assertEqual(item["step_in_progress"], [])
+        self.assertEqual(item["step_not_completed"], ["Set up Node.js"])
+        self.assertEqual(item["metadata_signal"], "runner_death_candidate")
+
     def test_unknown_step_status_fails_closed_for_checkout_and_non_checkout_steps(self):
         job = {
             "id": 26,
@@ -149,6 +166,19 @@ class B152DiagnosticTests(unittest.TestCase):
             with self.subTest(status=repr(status)), self.assertRaises(diag.EvidenceUnavailable) as error:
                 diag.classify_job(job, run(1, "2026-08-31T04:00:00Z"), 594, 615)
             self.assertEqual(str(error.exception), "job has malformed step evidence")
+
+    def test_unknown_step_conclusion_fails_closed(self):
+        job = {
+            "id": 30,
+            "name": "lane",
+            "conclusion": "failure",
+            "created_at": "2026-08-31T03:59:00Z",
+            "started_at": "2026-08-31T04:00:00Z",
+            "completed_at": "2026-08-31T04:10:00Z",
+            "steps": [{"name": "Build", "status": "completed", "conclusion": "invented"}],
+        }
+        with self.assertRaises(diag.EvidenceUnavailable):
+            diag.classify_job(job, run(1, "2026-08-31T04:00:00Z"), 594, 615)
 
     def test_non_string_step_statuses_exit_indeterminate_without_traceback(self):
         base_job = {
@@ -223,6 +253,37 @@ class B152DiagnosticTests(unittest.TestCase):
             with self.assertRaises(diag.EvidenceUnavailable):
                 diag.collect_jobs("o/r", {"id": 9})
 
+    def test_duplicate_job_ids_across_runs_fail_closed(self):
+        runs = [run(9, "2026-08-31T00:00:00Z"), run(10, "2026-08-31T00:01:00Z")]
+        job = {
+            "id": 1,
+            "name": "lane",
+            "conclusion": "failure",
+            "created_at": "2026-08-31T00:00:00Z",
+            "started_at": "2026-08-31T00:00:00Z",
+            "completed_at": "2026-08-31T00:01:00Z",
+            "steps": [],
+        }
+        with patch.object(diag, "collect_runs", return_value=runs), \
+             patch.object(diag, "collect_jobs", return_value=[job]):
+            with self.assertRaises(diag.EvidenceUnavailable):
+                diag.collect_evidence(
+                    "o/r", dt.datetime(2026, 8, 31, tzinfo=UTC),
+                    dt.datetime(2026, 9, 1, tzinfo=UTC), 594, 615,
+                )
+
+    def test_startup_failure_is_retained_as_runner_outcome(self):
+        startup = run(99, "2026-08-31T00:00:00Z", conclusion="startup_failure")
+        with patch.object(diag, "collect_runs", return_value=[startup]), \
+             patch.object(diag, "collect_jobs", return_value=[]):
+            report = diag.collect_evidence(
+                "o/r", dt.datetime(2026, 8, 31, tzinfo=UTC),
+                dt.datetime(2026, 9, 1, tzinfo=UTC), 594, 615,
+            )
+        self.assertEqual(report["run_conclusion_counts"], {"startup_failure": 1})
+        self.assertEqual(report["run_outcomes"][0]["classification"], "runner_startup_failure")
+        self.assertEqual(report["failed_run_count"], 0)
+
     def test_malformed_total_count_fails_closed(self):
         with patch.object(diag, "run_gh", return_value={"total_count": "1000", "workflow_runs": []}):
             with self.assertRaises(diag.EvidenceUnavailable):
@@ -230,6 +291,21 @@ class B152DiagnosticTests(unittest.TestCase):
                     "o/r", dt.datetime(2026, 8, 31, tzinfo=UTC),
                     dt.datetime(2026, 9, 1, tzinfo=UTC),
                 )
+
+    def test_unknown_run_conclusion_fails_closed_before_failure_filtering(self):
+        bad = run(1, "2026-08-31T00:00:00Z", conclusion="new_terminal_state")
+        with patch.object(diag, "run_gh", return_value={"total_count": 1, "workflow_runs": [bad]}):
+            with self.assertRaises(diag.EvidenceUnavailable):
+                diag.collect_runs(
+                    "o/r", dt.datetime(2026, 8, 31, tzinfo=UTC),
+                    dt.datetime(2026, 9, 1, tzinfo=UTC),
+                )
+
+    def test_unknown_job_conclusion_fails_closed_before_job_filtering(self):
+        bad = {"id": 1, "conclusion": "new_terminal_state"}
+        with patch.object(diag, "run_gh", return_value={"total_count": 1, "jobs": [bad]}):
+            with self.assertRaises(diag.EvidenceUnavailable):
+                diag.collect_jobs("o/r", {"id": 9})
 
     def test_malformed_page_item_fails_closed(self):
         with patch.object(diag, "run_gh", return_value={"total_count": 1, "workflow_runs": ["not-a-run"]}):
@@ -267,7 +343,19 @@ class B152DiagnosticTests(unittest.TestCase):
         self.assertEqual(logs[0]["causal"], "indeterminate")
         self.assertEqual(logs[0]["job_id"], 42)
         self.assertEqual(logs[0]["error"], "log retrieval failed")
+        self.assertEqual(logs[0]["http_status"], 404)
+        self.assertEqual(logs[0]["log_signature"], "indeterminate")
+        self.assertIsNone(logs[0]["log_sha256"])
         self.assertEqual(sleep.call_args_list, [call(1), call(2)])
+
+    def test_log_classifier_is_conservative_and_distinguishes_cause_signals(self):
+        self.assertEqual(diag.classify_log_text("runner lost communication; operation was canceled"), "runner_cancellation")
+        self.assertEqual(diag.classify_log_text("No space left on device (os error 28) while cargo writes"), "enospc_or_linker_failure")
+        self.assertEqual(diag.classify_log_text("Error: config.webServer command failed"), "playwright_webserver")
+        self.assertEqual(diag.classify_log_text("The job exceeded the maximum allowed execution time"), "job_timeout")
+        self.assertEqual(diag.classify_log_text("runner startup failed during billing allocation"), "billing_or_startup")
+        self.assertEqual(diag.classify_log_text("assertion failed; runner lost communication"), "test_failure")
+        self.assertEqual(diag.classify_log_text("no useful retained diagnostic"), "indeterminate")
 
     def test_run_gh_retries_bounded_timeouts_with_an_explicit_timeout(self):
         timeout = subprocess.TimeoutExpired(["gh", "api", "secret-endpoint"], diag.GH_API_TIMEOUT_SECONDS)
@@ -312,12 +400,14 @@ class B152DiagnosticTests(unittest.TestCase):
             output="secret output",
             stderr="secret stderr",
         )
-        success = SimpleNamespace(returncode=0)
+        success = SimpleNamespace(returncode=0, stdout=b"runner lost communication; operation canceled")
         with patch.object(diag.subprocess, "run", side_effect=[timeout, success]) as command, \
              patch.object(diag.time, "sleep") as sleep:
             logs = diag.fetch_logs("o/r", [{"job_id": 42}])
         self.assertTrue(logs[0]["available"])
         self.assertIsNone(logs[0]["error"])
+        self.assertEqual(logs[0]["log_signature"], "runner_cancellation")
+        self.assertTrue(logs[0]["log_sha256"].startswith("sha256:"))
         self.assertEqual(command.call_count, 2)
         self.assertTrue(all(call.kwargs["timeout"] == diag.GH_API_TIMEOUT_SECONDS for call in command.call_args_list))
         self.assertEqual(sleep.call_args_list, [call(1)])
@@ -329,6 +419,7 @@ class B152DiagnosticTests(unittest.TestCase):
             logs = diag.fetch_logs("o/r", [{"job_id": 42}])
         self.assertFalse(logs[0]["available"])
         self.assertEqual(logs[0]["status"], "indeterminate")
+        self.assertIsNone(logs[0]["http_status"])
         self.assertEqual(logs[0]["error"], "log retrieval timed out")
         self.assertNotIn("secret-log-endpoint", logs[0]["error"])
         self.assertEqual(command.call_count, diag.GH_MAX_ATTEMPTS)
@@ -343,7 +434,8 @@ class B152DiagnosticTests(unittest.TestCase):
         self.assertIn("branches: [main]", workflow)
         self.assertIn("workflow_dispatch:", workflow)
         self.assertIn("- 'scripts/**'", workflow)
-        self.assertIn("REQUIRED_SUITES=(scripts/test_b152_actions_diagnostic.py)", workflow)
+        self.assertIn("scripts/test_b152_actions_diagnostic.py", workflow)
+        self.assertIn("scripts/test_b250_deleted_workflow_startup_failure.py", workflow)
         self.assertIn('python3 -m pytest "${FILES[@]}" "${REQUIRED_SUITES[@]}" -q', workflow)
 
     def test_missing_gh_is_sanitized_indeterminate_not_a_traceback(self):

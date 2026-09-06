@@ -29,10 +29,10 @@ class B244BoundaryTests(unittest.TestCase):
         verifier.validate_source(self.source)
 
     def test_duplicate_focal_and_restoration(self) -> None:
-        declaration = "    #[tokio::test]\n" f"    async fn {verifier.TEST_NAME}()"
+        declaration = "#[tokio::test]\n" f"async fn {verifier.TEST_NAME}()"
         duplicate = self.source.replace(
             declaration,
-            declaration + "\n    #[tokio::test]\n    async fn " + verifier.TEST_NAME + "()",
+            declaration + "\n#[tokio::test]\nasync fn " + verifier.TEST_NAME + "()",
             1,
         )
         with self.assertRaises(verifier.VerificationError):

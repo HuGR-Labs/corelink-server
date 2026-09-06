@@ -60,7 +60,9 @@ fn run(env: Option<&str>) -> Run {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_gc_sweep"));
     cmd.current_dir(env!("CARGO_TARGET_TMPDIR"))
         .stdin(Stdio::null())
-        .env_remove("GC_LIVE_DELETE");
+        .env_remove("GC_LIVE_DELETE")
+        .env_remove("CLOUDFLARE_API_TOKEN")
+        .env_remove("CLOUDFLARE_ACCOUNT_ID");
     if let Some(v) = env {
         cmd.env("GC_LIVE_DELETE", v);
     }
@@ -153,8 +155,15 @@ fn assert_dry_run(env: Option<&str>) {
 }
 
 #[test]
-fn dry_run_when_env_unset() {
-    // GC_LIVE_DELETE unset → fail-closed dry-run.
+fn dry_run_when_delete_flag_is_absent() {
+    // GC_LIVE_DELETE absent → fail-closed dry-run.
+    assert_dry_run(None);
+}
+
+#[test]
+fn dry_run_runs_without_cloudflare_credentials() {
+    // `run` removes both credential variables before spawning. The shipped
+    // fixture must produce its measurable report without cloud credentials.
     assert_dry_run(None);
 }
 

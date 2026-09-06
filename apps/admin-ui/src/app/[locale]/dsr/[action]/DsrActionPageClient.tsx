@@ -43,14 +43,39 @@ interface Props {
  *   3. On success, shows the signed JWT receipt modal.
  */
 export function DsrActionPageClient(props: Props) {
+  // The browser E2E lane has no Clerk FAPI, but it must still exercise the
+  // form, fresh-MFA gate, and receipt path. Keep this fixture behind the same
+  // two conditions as the middleware/API mock: a test flag AND a non-prod
+  // runtime. Production can therefore never receive a synthetic profile or
+  // token merely because an environment variable leaked into a deploy.
+  const e2eFixtureEnabled =
+    process.env["NEXT_PUBLIC_E2E_TEST_MODE"] === "1" &&
+    process.env.NODE_ENV !== "production";
+  const e2eProfile: MeProfile = {
+    email: "user@acme.example",
+    name: "E2E User",
+    language: props.locale,
+  };
+  const e2eCategories: DataCategory[] = [
+    { id: "profile", label: "Profile" },
+    { id: "activity", label: "Activity" },
+  ];
+  const e2eToken = "e2e-dsr-session";
+  const effectiveOverrides = e2eFixtureEnabled
+    ? {
+        profile: e2eProfile,
+        categories: e2eCategories,
+        token: e2eToken,
+      }
+    : props.testOverrides;
   const [profile, setProfile] = useState<MeProfile | null>(
-    props.testOverrides?.profile ?? null,
+    effectiveOverrides?.profile ?? null,
   );
   const [categories, setCategories] = useState<DataCategory[]>(
-    props.testOverrides?.categories ?? [],
+    effectiveOverrides?.categories ?? [],
   );
   const [token, setToken] = useState<string | null>(
-    props.testOverrides?.token ?? null,
+    effectiveOverrides?.token ?? null,
   );
   const [receipt, setReceipt] = useState<DsrSubmitResponse | null>(null);
 
@@ -77,7 +102,7 @@ export function DsrActionPageClient(props: Props) {
 
   const verifier: ReAuthVerifier = useMemo(
     () =>
-      props.testOverrides?.verifier ?? {
+    effectiveOverrides?.verifier ?? {
         async startVerification() {
           // Production: invoke Clerk MFA challenge via
           // `useClerk().session?.startVerification(...)`. The integration
@@ -86,13 +111,13 @@ export function DsrActionPageClient(props: Props) {
           return Date.now();
         },
       },
-    [props.testOverrides?.verifier],
+    [effectiveOverrides?.verifier],
   );
 
   const handleSubmit = useCallback(
     async (req: DsrSubmitRequest): Promise<DsrSubmitResponse> => {
-      if (props.testOverrides?.submit) {
-        const r = await props.testOverrides.submit(req);
+      if (effectiveOverrides?.submit) {
+        const r = await effectiveOverrides.submit(req);
         setReceipt(r);
         return r;
       }
@@ -103,12 +128,12 @@ export function DsrActionPageClient(props: Props) {
       setReceipt(r);
       return r;
     },
-    [props.testOverrides, token],
+    [effectiveOverrides, token],
   );
 
   // Best-effort production fetches; tests bypass via overrides.
   useEffect(() => {
-    if (props.testOverrides || !token) return;
+    if (effectiveOverrides || !token) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -126,7 +151,7 @@ export function DsrActionPageClient(props: Props) {
     return () => {
       cancelled = true;
     };
-  }, [token, props.testOverrides]);
+  }, [token, effectiveOverrides]);
 
   if (!profile) {
     return (

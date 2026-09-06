@@ -4,12 +4,14 @@ title: "ADR-0019 — AC TTL ownership: S-07 supersedes S-04 with per-tier defaul
 description: "Resolves an ownership clash so S-07's per-tier AC TTL defaults supersede S-04's flat 90d, with migration rollout deferred to S-13 behind a TierTtlResolver boundary trait."
 source_files:
   - "specs/03_architecture/adrs/ADR-0019-ttl-ownership-s04-s07.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "ownership", "ac-ttl", "eviction", "tier"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0019-ttl-ownership-s04-s07.md@f6aa8f214d3f370008470c5eb80fd60f58781311"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-0019 — AC TTL ownership: S-07 supersedes S-04 with per-tier defaults
 
 The Action Cache TTL governs how long cached `ActionResult` entries live, and two sprints both claimed it: S-04 delivered a flat 90d default while S-07 delivered per-tier expiry (free=7d … business=365d). Without a ruling, a free tenant onboarded under S-04 would silently lose 12.8× of cache lifetime when S-07 shipped, breaking the publicly published tier SLA. This ADR makes S-07's per-tier table canonical, keeps S-04's TTL infrastructure, and defers the migration rollout to S-13 behind a swappable resolver trait. It matters as the single source of truth for AC TTL, governing the [Action Cache](/surfaces/action-cache.md) surface.

@@ -1,10 +1,8 @@
 /**
  * E2E #5 — DSR erasure with category selection.
  *
- * Asserts:
- *   - Conditional categories presented (LGPD Art. 16; GDPR Art. 17 carve-outs).
- *   - User must explicitly check a category before submit.
- *   - Receipt + SLA clock 30d visible.
+ * The shipped action page waits for real Clerk token/profile wiring. This
+ * probe verifies the missing-tool state has no destructive controls or receipt.
  */
 
 import { test, expect } from "../fixtures/test";
@@ -17,34 +15,28 @@ test.describe("DSR erasure", () => {
     await signInAs(context, FIXTURE_USERS.existingTenant, baseURL!);
   });
 
-  // FIXME(WI-S16-007): same as DSR access — needs real Clerk session.
-  test.fixme("erasure with category selection → receipt + SLA clock", async ({ page }) => {
+  test("category erasure requires fresh MFA and shows receipt + SLA clock", async ({ page }) => {
+    await page.goto("/en/dsr");
+    const erasure = page.getByTestId("dsr-action-button-erasure");
+    await expect(erasure).toBeVisible();
+    await erasure.click();
     await page.goto("/en/dsr/erasure");
+    await expect(page).toHaveURL(/\/en\/dsr\/erasure/);
+    await expect(page.getByTestId("dsr-reauth-gate")).toBeVisible();
+    await expect(page.getByTestId("dsr-reauth-start")).toBeEnabled();
+    await page.getByTestId("dsr-reauth-start").click();
+    await expect(page.getByTestId("dsr-erasure-fields")).toBeVisible();
 
-    // Select at least one category checkbox.
-    const cats = page.getByRole("checkbox");
-    const n = await cats.count();
-    expect(n).toBeGreaterThan(0);
-    await cats.first().check();
+    await page.getByTestId("dsr-erasure-scope-categories").check();
+    const category = page.getByTestId("dsr-erasure-cat-profile");
+    await expect(category).toBeVisible();
+    await category.check();
+    await page.getByTestId("dsr-reason").fill("Please erase my profile data.");
+    await page.getByTestId("dsr-submit").click();
 
-    // MFA + submit.
-    const mfaInput = page
-      .getByRole("textbox", { name: /code|otp|mfa/i })
-      .or(page.locator("input[autocomplete='one-time-code']"))
-      .first();
-    if (await mfaInput.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await mfaInput.fill("123456");
-    }
-    await page.getByRole("button", { name: /submit|send|request|erase/i }).first().click();
-
-    await expect(
-      page.locator("[data-testid='dsr-receipt'], text=/receipt|request.*submitted/i").first(),
-    ).toBeVisible({ timeout: 10_000 });
-
-    // SLA clock visible (30d countdown text or testid).
-    const sla = page
-      .locator("[data-testid='sla-clock'], text=/30.*day|due/i")
-      .first();
-    await expect(sla).toBeVisible({ timeout: 5000 });
+    await expect(page.getByTestId("dsr-receipt-modal")).toBeVisible();
+    await expect(page.getByTestId("receipt-action")).toHaveText("erasure");
+    await expect(page.getByTestId("dsr-sla-countdown")).toBeVisible();
+    await expect(page.getByTestId("dsr-sla-countdown")).toHaveAttribute("data-color", /green|yellow|red/);
   });
 });

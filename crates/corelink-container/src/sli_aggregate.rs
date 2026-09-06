@@ -17,9 +17,9 @@
 //! Retaining the observations was never necessary. The evaluator this
 //! feeds, `corelink_slo::BurnRateCalculator`, consumes a
 //! `BurnRateSample { errors, total }` per window — a pair of counts,
-//! not a log of events. So this keeps one [`SliCounters`] per `Sli`
-//! variant, in a map bounded by the closed `Sli` taxonomy (18 variants
-//! today) regardless of traffic, forever.
+//! not a log of events. So this keeps a bounded five-minute bucket ring per
+//! [`Sli`] variant, retaining at most the canonical three-day range regardless
+//! of traffic.
 //!
 //! # Why it lives in the container and not in the handler crates
 //!
@@ -28,18 +28,24 @@
 //! that way, and puts the sink next to the code that decides what
 //! production wiring means.
 //!
-//! # What this does NOT do
+//! # Consumer
 //!
-//! It does not close the SLO loop. Nothing yet reads these counters to
-//! compute a burn rate or raise an alert; the periodic log line below
-//! is what makes them observable at all, which is strictly more than
-//! the zero readers they had. Wiring `BurnRateCalculator` + alerting is
-//! tracked separately.
+//! Every bounded aggregate is consumed by the canonical
+//! `corelink_slo::BurnRateCalculator` and its structured decision is emitted
+//! on the tracing stream. This keeps the SLO decision path local and
+//! fail-open for request handling; a log/metrics collector can route a
+//! non-quiet decision to the operational alert channel without retaining
+//! request-level observations in the container.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use corelink_slo::definition::Sli;
+use corelink_slo::{
+    canonical_burn_rate_windows, AlertDecision, BurnRateCalculator, BurnRateSample, BurnRateWindow,
+    SloDefinition,
+};
 
 /// How many observations of one SLI pass before its aggregate is
 /// logged.
@@ -48,6 +54,12 @@ use corelink_slo::definition::Sli;
 /// watch a burn develop and rare enough that the log is not itself a
 /// hot path.
 const LOG_EVERY: u64 = 256;
+
+/// Five-minute buckets retain enough resolution for every canonical range
+/// vector while keeping the in-process ring bounded to three days.
+const BUCKET_MS: u64 = 5 * 60 * 1_000;
+const MAX_WINDOW_MS: u64 = 3 * 24 * 60 * 60 * 1_000;
+const MAX_BUCKETS: usize = (MAX_WINDOW_MS / BUCKET_MS) as usize + 1;
 
 /// Per-SLI aggregate: exactly what `corelink_slo::BurnRateCalculator`
 /// consumes, plus the latency summary the p99 SLIs need.
@@ -73,12 +85,117 @@ impl SliCounters {
         self.latency_us_sum = self.latency_us_sum.saturating_add(latency_us);
         self.latency_us_max = self.latency_us_max.max(latency_us);
     }
+
+    fn merge(&mut self, other: Self) {
+        self.total = self.total.saturating_add(other.total);
+        self.errors = self.errors.saturating_add(other.errors);
+        self.latency_us_sum = self.latency_us_sum.saturating_add(other.latency_us_sum);
+        self.latency_us_max = self.latency_us_max.max(other.latency_us_max);
+    }
+}
+
+#[derive(Debug, Default)]
+struct TimedBucket {
+    start_ms: u64,
+    counters: BTreeMap<Sli, SliCounters>,
+}
+
+#[derive(Debug, Default)]
+struct WindowedCounters {
+    buckets: VecDeque<TimedBucket>,
+}
+
+impl WindowedCounters {
+    fn evict(&mut self, now_ms: u64) {
+        while self.buckets.front().map_or(false, |bucket| {
+            now_ms.saturating_sub(bucket.start_ms) >= MAX_WINDOW_MS
+        }) {
+            self.buckets.pop_front();
+        }
+        while self.buckets.len() > MAX_BUCKETS {
+            self.buckets.pop_front();
+        }
+    }
+
+    fn record_at(&mut self, now_ms: u64, sli: Sli, is_error: bool, latency_us: u64) -> SliCounters {
+        let bucket_start = now_ms / BUCKET_MS * BUCKET_MS;
+        if self
+            .buckets
+            .back()
+            .map_or(true, |bucket| bucket.start_ms != bucket_start)
+        {
+            self.buckets.push_back(TimedBucket {
+                start_ms: bucket_start,
+                counters: BTreeMap::new(),
+            });
+        }
+        self.evict(now_ms);
+        let Some(bucket) = self.buckets.back_mut() else {
+            return SliCounters::default();
+        };
+        let counters = bucket.counters.entry(sli).or_default();
+        counters.record(is_error, latency_us);
+        *counters
+    }
+
+    fn counters_at(&self, now_ms: u64) -> BTreeMap<Sli, SliCounters> {
+        let mut result = BTreeMap::new();
+        for bucket in &self.buckets {
+            if now_ms.saturating_sub(bucket.start_ms) >= MAX_WINDOW_MS {
+                continue;
+            }
+            for (sli, counters) in &bucket.counters {
+                result.entry(*sli).or_default().merge(*counters);
+            }
+        }
+        result
+    }
+
+    fn window_counters_at(&self, sli: Sli, now_ms: u64, window: BurnRateWindow) -> SliCounters {
+        let duration_ms = window.window_duration_seconds().saturating_mul(1_000);
+        let mut result = SliCounters::default();
+        for bucket in &self.buckets {
+            if now_ms.saturating_sub(bucket.start_ms) < duration_ms {
+                if let Some(counters) = bucket.counters.get(&sli) {
+                    result.merge(*counters);
+                }
+            }
+        }
+        result
+    }
+}
+
+/// The production SLO targets for the CAS/AC stream. Latency observations are
+/// retained as latency summaries, not treated as availability errors.
+fn availability_target(sli: Sli) -> Option<f64> {
+    match sli {
+        Sli::AvailCasGet | Sli::AvailCasPut | Sli::AvailAcLookup => Some(0.999),
+        Sli::CorrectnessCas => Some(1.0),
+        _ => None,
+    }
+}
+
+/// Consume one bounded aggregate with the canonical burn-rate calculator.
+///
+/// This is deliberately pure and synchronous: the observer's hot path can
+/// evaluate a sample without starting a task or depending on a remote alert
+/// service. The caller chooses the evaluation window.
+#[must_use]
+pub fn evaluate_burn_rate(
+    sli: Sli,
+    counters: SliCounters,
+    window: BurnRateWindow,
+) -> Option<AlertDecision> {
+    let target = availability_target(sli)?;
+    let slo = SloDefinition::new(sli, target).ok()?;
+    let sample = BurnRateSample::new(counters.errors, counters.total);
+    Some(BurnRateCalculator::new().decide(slo, window, sample))
 }
 
 /// Constant-memory SLI observer shared by the CAS and AC handlers.
 #[derive(Debug, Default)]
 pub struct CountingSliObserver {
-    counters: Mutex<BTreeMap<Sli, SliCounters>>,
+    counters: Mutex<WindowedCounters>,
 }
 
 impl CountingSliObserver {
@@ -97,7 +214,26 @@ impl CountingSliObserver {
     pub fn counters(&self) -> Result<BTreeMap<Sli, SliCounters>, String> {
         self.counters
             .lock()
-            .map(|g| g.clone())
+            .map(|g| g.counters_at(now_ms()))
+            .map_err(|_| "sli observer poisoned".to_string())
+    }
+
+    fn counters_at(&self, now_ms: u64) -> Result<BTreeMap<Sli, SliCounters>, String> {
+        self.counters
+            .lock()
+            .map(|g| g.counters_at(now_ms))
+            .map_err(|_| "sli observer poisoned".to_string())
+    }
+
+    fn window_counters_at(
+        &self,
+        sli: Sli,
+        now_ms: u64,
+        window: BurnRateWindow,
+    ) -> Result<SliCounters, String> {
+        self.counters
+            .lock()
+            .map(|g| g.window_counters_at(sli, now_ms, window))
             .map_err(|_| "sli observer poisoned".to_string())
     }
 
@@ -108,31 +244,59 @@ impl CountingSliObserver {
     /// replaces: a prior caller panicked, and dropping an observation
     /// is strictly better than taking the data plane down for it.
     fn record(&self, sli: Sli, is_error: bool, latency_us: u64) {
+        self.record_at(sli, is_error, latency_us, now_ms());
+    }
+
+    fn record_at(&self, sli: Sli, is_error: bool, latency_us: u64, now: u64) {
         let snapshot = {
             let Ok(mut g) = self.counters.lock() else {
                 return;
             };
-            let c = g.entry(sli).or_default();
-            c.record(is_error, latency_us);
+            let c = g.record_at(now, sli, is_error, latency_us);
             if c.total % LOG_EVERY == 0 {
-                Some(*c)
+                Some((c, g.window_counters_at(sli, now, BurnRateWindow::Fast1h)))
             } else {
                 None
             }
         };
         // The guard is dropped above: the tracing subscriber is out of
         // our control and must never run while this lock is held.
-        if let Some(s) = snapshot {
+        if let Some((s, fast)) = snapshot {
+            for window in canonical_burn_rate_windows() {
+                let sample = if *window == BurnRateWindow::Fast1h {
+                    fast
+                } else {
+                    let Ok(g) = self.counters.lock() else { return };
+                    g.window_counters_at(sli, now, *window)
+                };
+                if let Some(decision) = evaluate_burn_rate(sli, sample, *window) {
+                    tracing::info!(
+                        sli = ?sli,
+                        window = %window,
+                        decision = decision.slug(),
+                        total = sample.total,
+                        errors = sample.errors,
+                        "sli burn-rate evaluation"
+                    );
+                }
+            }
             tracing::info!(
                 sli = ?sli,
-                total = s.total,
-                errors = s.errors,
+                total = fast.total,
+                errors = fast.errors,
                 latency_us_sum = s.latency_us_sum,
                 latency_us_max = s.latency_us_max,
                 "sli aggregate"
             );
         }
     }
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or(0)
 }
 
 /// The ONE observer the whole process shares.
@@ -165,7 +329,7 @@ impl corelink_handler_ac::SliObserver for CountingSliObserver {
 
 #[cfg(test)]
 mod tests {
-    use super::{CountingSliObserver, LOG_EVERY};
+    use super::{evaluate_burn_rate, CountingSliObserver, LOG_EVERY};
     use corelink_handler_cas::{SliObservation, SliObserver as _};
     use corelink_slo::definition::Sli;
 
@@ -240,5 +404,97 @@ mod tests {
     fn log_cadence_is_a_power_of_two() {
         assert!(LOG_EVERY.is_power_of_two(), "cheap modulo");
         assert_eq!(LOG_EVERY, 256);
+    }
+
+    #[test]
+    fn bounded_aggregate_has_a_real_burn_rate_consumer() {
+        let decision = evaluate_burn_rate(
+            Sli::AvailCasGet,
+            super::SliCounters {
+                total: 1_000,
+                errors: 20,
+                latency_us_sum: 0,
+                latency_us_max: 0,
+            },
+            corelink_slo::BurnRateWindow::Fast1h,
+        );
+        assert_eq!(decision, Some(corelink_slo::AlertDecision::PageSev0));
+    }
+
+    #[test]
+    fn latency_slis_are_not_misclassified_as_error_burn() {
+        let decision = evaluate_burn_rate(
+            Sli::LatencyCasGetP99,
+            super::SliCounters {
+                total: 1_000,
+                errors: 20,
+                latency_us_sum: 10_000,
+                latency_us_max: 50,
+            },
+            corelink_slo::BurnRateWindow::Fast1h,
+        );
+        assert_eq!(decision, None);
+    }
+
+    #[test]
+    fn time_advance_uses_bounded_windows_and_evicts_old_buckets() {
+        let obs = CountingSliObserver::new();
+        let t0 = super::BUCKET_MS;
+        obs.record_at(Sli::AvailCasGet, true, 10, t0);
+        obs.record_at(Sli::AvailCasGet, false, 10, t0 + 2 * 60 * 60 * 1_000);
+
+        let fast = obs
+            .window_counters_at(
+                Sli::AvailCasGet,
+                t0 + 2 * 60 * 60 * 1_000,
+                corelink_slo::BurnRateWindow::Fast1h,
+            )
+            .unwrap_or_default();
+        let medium = obs
+            .window_counters_at(
+                Sli::AvailCasGet,
+                t0 + 2 * 60 * 60 * 1_000,
+                corelink_slo::BurnRateWindow::Medium6h,
+            )
+            .unwrap_or_default();
+        assert_eq!(fast.errors, 0, "the old error is outside the 1h range");
+        assert_eq!(
+            medium.errors, 1,
+            "the old error remains inside the 6h range"
+        );
+
+        let future = t0 + 4 * 24 * 60 * 60 * 1_000;
+        obs.record_at(Sli::AvailCasGet, false, 10, future);
+        let retained = obs.counters_at(future).unwrap_or_default();
+        let retained_get = retained.get(&Sli::AvailCasGet).copied().unwrap_or_default();
+        assert_eq!(retained_get.errors, 0);
+        assert!(retained_get.total <= 1);
+    }
+
+    #[test]
+    fn one_error_is_diluted_by_successes_inside_the_same_window() {
+        let obs = CountingSliObserver::new();
+        let t0 = super::BUCKET_MS;
+        obs.record_at(Sli::AvailCasGet, true, 1, t0);
+        for _ in 0..999 {
+            obs.record_at(Sli::AvailCasGet, false, 1, t0 + 1_000);
+        }
+        let sample = obs
+            .window_counters_at(
+                Sli::AvailCasGet,
+                t0 + 1_000,
+                corelink_slo::BurnRateWindow::Fast1h,
+            )
+            .unwrap_or_default();
+        assert_eq!(sample.total, 1_000);
+        assert_eq!(sample.errors, 1);
+        assert_eq!(
+            evaluate_burn_rate(
+                Sli::AvailCasGet,
+                sample,
+                corelink_slo::BurnRateWindow::Fast1h,
+            ),
+            Some(corelink_slo::AlertDecision::Quiet)
+        );
     }
 }

@@ -139,6 +139,7 @@
 pub mod archive_producer;
 pub mod audit;
 pub mod chain;
+pub mod epoch;
 pub mod error;
 pub mod event;
 pub mod exporter;
@@ -160,6 +161,11 @@ pub use audit::{
 pub use chain::{
     compute_canonical_bytes, link_chain_hash, link_chain_hash_from_canonical, verify_chain_link,
     HashChainBuilder,
+};
+pub use epoch::{
+    key_matches_commitment, link_for_epoch, link_key_commitment, ChainEpoch, EpochChainState,
+    EpochError, LinkAlgorithm, LinkKey, KEYED_ALGORITHM_ID, KEYED_LINK_DOMAIN,
+    LINK_KEY_COMMITMENT_DOMAIN, UNKEYED_ALGORITHM_ID,
 };
 pub use error::{AuditChainAuditSinkError, AuditChainError, R2AuditSinkError};
 pub use event::{
@@ -198,9 +204,10 @@ pub use exporter::{
     InclusionProof, ProofSibling,
 };
 pub use sealed_archive::{
-    sealed_chunk_key, serialize_chunk, split_into_chunks, split_verifying_prefix, verify_chunk,
+    sealed_chunk_key, serialize_chunk, serialize_chunk_for_epoch, split_into_chunks,
+    split_verifying_prefix, split_verifying_prefix_for_epoch, verify_chunk, verify_chunk_for_epoch,
     PrefixBreak, SealedArchiveError, SealedArchiveLine, DEFAULT_SEALED_MAX_BYTES_PER_CHUNK,
-    DEFAULT_SEALED_MAX_LINES_PER_CHUNK, SEALED_LINE_SCHEMA,
+    DEFAULT_SEALED_MAX_LINES_PER_CHUNK, SEALED_LINE_SCHEMA, SEALED_LINE_SCHEMA_V2,
 };
 pub use sink::{
     canonical_date_yyyy_mm_dd, canonical_r2_key, CapturedR2AuditSink, FailingR2AuditSink,

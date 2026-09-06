@@ -39,6 +39,13 @@
  * bounds leave the remaining backlog for the next hourly tick — the endpoint is
  * idempotent, so stopping early is always safe.
  *
+ * B-125 keeps this caller adaptive under contention: an `incomplete` response
+ * that only reports lease skips or head drift is backpressure, not durable
+ * progress, so it stops for this tick instead of hammering D1 while another
+ * holder owns the partition. The container's explicit production batch budget
+ * is 512 rows/call; its 32-row JSON1 write chunks preserve the same signed
+ * chain values while avoiding one D1 HTTP round trip per row.
+ *
  * The call carries NO body that the handler requires — it sweeps all pending
  * partitions — but we send `{}` so the request is a well-formed JSON POST.
  *
@@ -52,18 +59,18 @@
 import { resolveDedicatedEraseAuthKey } from "../lib/erase-auth-key.js";
 
 /**
- * Hard cap on drain calls per cron tick. At the prod default of 200 rows per
- * call this drains up to 2,000 rows/hour — an order of magnitude over the
- * measured 310/h mean arrival rate, with headroom over the 3,141/h peak burst
- * to catch a cold backlog up over a few ticks rather than never.
+ * Hard cap on drain calls per cron tick. Production declares a 512-row
+ * container budget, so this permits at most 5,120 rows/tick — over the
+ * measured 310/h mean arrival rate and with headroom over the 3,141/h peak
+ * burst to catch a cold backlog up over a few ticks rather than never.
  */
 export const MAX_DRAIN_CALLS = 10;
 
 /**
- * Wall-clock budget for the whole sweep. One call is ~60s at the prod default
- * (200 rows x ~0.3s/row of D1-over-HTTP UPDATE), so this stops the loop before
- * it can crowd out the archive sweep that runs alongside it in the same
- * `scheduled()` tick.
+ * Wall-clock budget for the whole sweep. The bound leaves room for the
+ * production 512-row call budget and its bounded 32-row container write
+ * chunks, while stopping the loop before it can crowd out the archive sweep
+ * that runs alongside it in the same `scheduled()` tick.
  */
 export const DRAIN_WALL_BUDGET_MS = 10 * 60 * 1000;
 
@@ -156,9 +163,15 @@ function parseAuditDrainResponse(value: unknown):
   return { value: body as unknown as AuditDrainResponse };
 }
 
-/** A true incomplete response without any counter movement cannot converge. */
+/**
+ * A true incomplete response without durable progress cannot converge. Lease
+ * skips, drift, and an empty partition are observations/backpressure rather
+ * than progress; retrying those immediately would create a D1 request storm
+ * while the competing holder is still working. Only rows sealed or heads
+ * re-signed justify another call in this tick.
+ */
 function madeDrainProgress(body: AuditDrainResponse): boolean {
-  return DRAIN_COUNTER_FIELDS.some((field) => body[field] > 0);
+  return body.rows_sealed > 0 || body.heads_resigned > 0;
 }
 
 /**

@@ -119,11 +119,15 @@ Legal basis for processing (Controller side): `[CUSTOMER TO SPECIFY: e.g., GDPR 
 
 Cloudflare participates in the EU-US Data Privacy Framework (as of 2023). However, this TIA documents supplementary measures as an additional layer, consistent with the EDPB's guidance that supplementary measures provide defence-in-depth regardless of adequacy decisions.
 
-### 3.2 Brazil (SAM Region — LGPD Context)
+### 3.2 Brazil (LGPD transfer context; SAM is not provisioned)
 
-- Brazilian data stored in sa-east infrastructure (Cloudflare).
+- Brazil is a regulated customer context, not a provisioned CoreLink macro.
+  CoreLink does not promise SAM localization: `sam` has no Cloudflare SAM
+  location, is not provisioned, and signup rejects it. A Brazilian customer
+  must use a provisioned region and receive the corresponding residency terms.
 - LGPD Art. 33 §1: transfers require adequate protection or appropriate safeguards.
-- Supplementary measures in Section 4 apply equally to SAM region transfers.
+- The supplementary measures in Section 4 apply to transfers involving
+  Brazilian customers without representing an unavailable SAM data plane.
 
 ---
 
@@ -182,7 +186,7 @@ Cloudflare participates in the EU-US Data Privacy Framework (as of 2023). Howeve
 
 #### 4.2.1 DPA Amendment — 4 Regions Enumerated
 
-**Measure**: DPA (`legal/dpa-residency-amendment.md`) explicitly commits to data localization in 4 enumerated regions (WNAM/ENAM/WEUR/SAM) with failover restrictions. Customer informed of all data locations.
+**Measure**: DPA (`legal/dpa-residency-amendment.md`) explicitly commits to data localization in the 4 provisioned regions (WNAM/ENAM/WEUR/APAC) with failover restrictions; APAC tenants are pinned to Tokyo (`nrt`). `SAM` is not provisioned and is not promised. Customer informed of all data locations.
 
 **EDPB §84 alignment**: Transparency obligation; data exporter knows where data is processed.
 

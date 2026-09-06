@@ -25,9 +25,8 @@
 //! missing TDK or a non-UUID tenant fails CLOSED
 //! ([`TurboBridgeError::Internal`]) rather than degrade to a public,
 //! predictable prefix — mirroring [`r2_s3::R2AcHandler`]. The padded,
-//! truncated raw-string fallback is gated behind `#[cfg(test)]` and is
-//! unreachable in production (a same-millisecond UUIDv7 prefix collision
-//! would otherwise share a keyspace).
+//! truncated raw-string fallback does not exist: a same-millisecond UUIDv7
+//! prefix collision must never share a keyspace, including in tests.
 //!
 //! ## Testability seam
 //!
@@ -116,34 +115,18 @@ impl R2KvStore {
     ///
     /// # Errors
     ///
-    /// On the production path the prefix is ALWAYS the secret-keyed
-    /// `derive_prefix(tdk, uuid)`. When the TDK is absent or the tenant
-    /// is not a canonical UUID the key is NOT derivable — this returns
-    /// [`TurboBridgeError::Internal`] (fail CLOSED) rather than a public,
-    /// predictable `pad16` prefix. The `pad16` fallback would let two
-    /// tenants onboarded in the same millisecond (UUIDv7) collide into a
-    /// SHARED Turbo keyspace (cross-tenant cache leak/poisoning). This
-    /// mirrors the CAS/AC `R2CasHandler`/`R2AcHandler` posture exactly.
+    /// The prefix is ALWAYS the secret-keyed `derive_prefix(tdk, uuid)`. When
+    /// the TDK is absent or the tenant is not a canonical UUID the key is NOT
+    /// derivable — this returns [`TurboBridgeError::Internal`] (fail CLOSED)
+    /// rather than a public, predictable prefix. This mirrors the CAS/AC
+    /// handler posture exactly; tests use the same production decision path.
     fn object_key(&self, tenant: &str, key: &str) -> Result<String, TurboBridgeError> {
-        let prefix = match &self.tdk {
-            Some(tdk) => match Uuid::try_parse(tenant) {
-                Ok(uid) => derive_prefix(tdk, uid).to_string(),
-                // Non-UUID tenant: test fixtures use the raw padded
-                // prefix; the production path fails CLOSED.
-                #[cfg(test)]
-                Err(_) => pad16(tenant),
-                #[cfg(not(test))]
-                Err(_) => return Err(non_derivable_tenant_err()),
-            },
-            // No TDK is only reachable under `#[cfg(test)]`:
-            // `build_r2_kv_from_env` fails closed when `R2_TDK_HEX` is
-            // unset/invalid, so the production store is never built with
-            // `tdk = None`.
-            #[cfg(test)]
-            None => pad16(tenant),
-            #[cfg(not(test))]
-            None => return Err(non_derivable_tenant_err()),
-        };
+        let tdk = self.tdk.as_ref().ok_or_else(non_derivable_tenant_err)?;
+        let uid = Uuid::try_parse(tenant).map_err(|_| non_derivable_tenant_err())?;
+        if uid.to_string() != tenant {
+            return Err(non_derivable_tenant_err());
+        }
+        let prefix = derive_prefix(tdk, uid).to_string();
         Ok(format!("{prefix}/{key}"))
     }
 
@@ -315,27 +298,11 @@ impl CasWriteStore for R2KvStore {
     }
 }
 
-/// Pad-or-truncate a non-UUID tenant string to a stable 16-char prefix.
-/// PUBLIC, predictable namespace — TEST FIXTURES ONLY. It must NEVER be
-/// used on the production path: two tenants whose first 16 chars collide
-/// (trivial for same-millisecond UUIDv7 ids) would share a keyspace. The
-/// production path fails CLOSED instead (see [`R2KvStore::object_key`]).
-#[cfg(test)]
-fn pad16(tenant: &str) -> String {
-    let mut p = tenant.to_owned();
-    p.truncate(16);
-    while p.len() < 16 {
-        p.push('0');
-    }
-    p
-}
-
 /// The fail-CLOSED error for a non-derivable tenant on the production
 /// Turbo path (no TDK, or a non-UUID tenant). Surfaced as
 /// [`TurboBridgeError::Internal`] so the op NEVER writes/reads under a
-/// public, predictable `pad16` prefix (INV-TENANT-ISOLATION). Mirrors the
+/// public, predictable prefix (INV-TENANT-ISOLATION). Mirrors the
 /// CAS/AC `R2*Handler` 500 posture.
-#[cfg(not(test))]
 fn non_derivable_tenant_err() -> TurboBridgeError {
     tracing::error!(
         "Turbo R2KvStore: tenant prefix is not derivable on the production path \
@@ -400,6 +367,10 @@ fn load_tdk_from_env() -> Option<Zeroizing<[u8; 32]>> {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+
+    const TEST_TENANT: &str = "11111111-1111-1111-1111-111111111111";
+    const OTHER_TENANT: &str = "22222222-2222-2222-2222-222222222222";
+    const TEST_TDK: [u8; 32] = [0x5a; 32];
     use std::collections::HashMap;
     use std::sync::Mutex;
 
@@ -461,32 +432,31 @@ mod tests {
     }
 
     fn store_with(backend: FakeBackend) -> R2KvStore {
-        R2KvStore::new(Arc::new(backend), None)
+        R2KvStore::new(Arc::new(backend), Some(Zeroizing::new(TEST_TDK)))
     }
 
-    // ── F1/F2 — production posture: a TDK + UUID tenant HMACs the prefix,
-    //    never the public pad16 of the tenant string ──
+    // ── F1/F2 — production posture: a TDK + UUID tenant HMACs the prefix ──
 
     /// With a TDK configured (the PRODUCTION posture — `build_r2_kv_from_env`
     /// now fails closed without one), a canonical UUID tenant resolves to
-    /// the secret-keyed `derive_prefix` HMAC, NOT the public, predictable
-    /// `pad16` prefix. This is the regression pin for finding #4: the
+    /// the secret-keyed `derive_prefix` HMAC, NOT a public tenant prefix. This
+    /// is the regression pin for finding #4: the
     /// Turbo store mirrors CAS/AC and never serves under a predictable
     /// 16-char-truncated prefix that two same-millisecond UUIDv7 tenants
     /// could collide into.
     #[test]
-    fn iso_tdk_path_uses_hmac_prefix_not_pad16() {
+    fn iso_tdk_path_uses_hmac_prefix_not_public_prefix() {
         let tdk = Zeroizing::new([0x5au8; 32]);
         let s = R2KvStore::new(Arc::new(FakeBackend::new()), Some(tdk.clone()));
         let tenant = "0190abcd-1234-75ab-8def-0123456789ab";
         let ok = s.object_key(tenant, "artifact").unwrap();
         let prefix = ok.split('/').next().unwrap();
         assert_eq!(prefix.len(), 16, "prefix must be 16 chars: {ok}");
-        // Must NOT be the public pad16 of the raw tenant string.
+        // Must NOT expose the raw tenant prefix.
         assert_ne!(
             prefix,
-            pad16(tenant),
-            "production prefix leaked the public pad16 tenant prefix (F1/F2)"
+            &tenant[..16],
+            "production prefix leaked raw tenant bytes (F1/F2)"
         );
         // And it must equal the canonical secret-keyed derivation.
         let expected = derive_prefix(
@@ -502,23 +472,41 @@ mod tests {
     #[test]
     fn iso_object_key_isolates_by_tenant_prefix() {
         let s = store_with(FakeBackend::new());
-        let k = s.object_key("teamA", "turbo-artifact-hash-xyz").unwrap();
-        assert_eq!(k, "teamA00000000000/turbo-artifact-hash-xyz");
+        let k = s
+            .object_key(TEST_TENANT, "turbo-artifact-hash-xyz")
+            .unwrap();
+        assert!(k.ends_with("/turbo-artifact-hash-xyz"));
         // Different tenant → different prefix → no full-key collision.
-        assert_ne!(k, s.object_key("teamB", "turbo-artifact-hash-xyz").unwrap());
+        assert_ne!(
+            k,
+            s.object_key(OTHER_TENANT, "turbo-artifact-hash-xyz")
+                .unwrap()
+        );
     }
 
     #[test]
-    fn iso_object_key_pads_short_truncates_long_tenants() {
+    fn iso_object_key_rejects_non_uuid_tenants() {
         let s = store_with(FakeBackend::new());
-        assert!(s
-            .object_key("x", "k")
-            .unwrap()
-            .starts_with("x000000000000000/"));
-        assert!(s
-            .object_key("0123456789abcdefGHIJ", "k")
-            .unwrap()
-            .starts_with("0123456789abcdef/"));
+        for tenant in [
+            "x",
+            "0123456789abcdefGHIJ",
+            "tenant_abc123",
+            "0190ABCD-1234-75AB-8DEF-0123456789AB",
+        ] {
+            assert!(matches!(
+                s.object_key(tenant, "k"),
+                Err(TurboBridgeError::Internal(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn iso_object_key_rejects_missing_tdk_even_for_uuid_tenant() {
+        let s = R2KvStore::new(Arc::new(FakeBackend::new()), None);
+        assert!(matches!(
+            s.object_key(TEST_TENANT, "k"),
+            Err(TurboBridgeError::Internal(_))
+        ));
     }
 
     #[test]
@@ -533,9 +521,16 @@ mod tests {
             "..%2F..%2Fvictim",
             "a/../../b",
         ] {
-            let ok = s.object_key("teamA", evil).unwrap();
+            let ok = s.object_key(TEST_TENANT, evil).unwrap();
+            let expected_prefix = format!(
+                "{}/",
+                derive_prefix(
+                    &TenantDerivationKey::from_bytes(Zeroizing::new(TEST_TDK)),
+                    Uuid::try_parse(TEST_TENANT).unwrap()
+                )
+            );
             assert!(
-                ok.starts_with("teamA00000000000/"),
+                ok.starts_with(&expected_prefix),
                 "key {evil:?} escaped prefix: {ok}"
             );
             assert!(ok.ends_with(evil), "opaque key {evil:?} was mutated: {ok}");
@@ -548,8 +543,8 @@ mod tests {
     async fn rt_put_get_roundtrip_binary_and_empty() {
         let s = store_with(FakeBackend::new());
         for bytes in [vec![], vec![0u8], vec![0xFFu8; 4096], (0..=255u8).collect()] {
-            s.write("t", "k", bytes.clone()).unwrap();
-            assert_eq!(s.read("t", "k").unwrap(), bytes);
+            s.write(TEST_TENANT, "k", bytes.clone()).unwrap();
+            assert_eq!(s.read(TEST_TENANT, "k").unwrap(), bytes);
         }
     }
 
@@ -557,15 +552,15 @@ mod tests {
     async fn rt_last_write_wins_and_empty_overwrite() {
         let s = store_with(FakeBackend::new());
         // Fresh insert ⇒ no prior (None). 2-byte body.
-        assert_eq!(s.write("t", "k", b"v1".to_vec()).unwrap(), None);
+        assert_eq!(s.write(TEST_TENANT, "k", b"v1".to_vec()).unwrap(), None);
         // Overwrite ⇒ reports the PRIOR byte length (2).
-        assert_eq!(s.write("t", "k", b"v2".to_vec()).unwrap(), Some(2));
-        assert_eq!(s.read("t", "k").unwrap(), b"v2");
+        assert_eq!(s.write(TEST_TENANT, "k", b"v2".to_vec()).unwrap(), Some(2));
+        assert_eq!(s.read(TEST_TENANT, "k").unwrap(), b"v2");
         // Empty PUT is a real overwrite, not a no-op; prior was 2 bytes.
-        assert_eq!(s.write("t", "k", vec![]).unwrap(), Some(2));
-        assert_eq!(s.read("t", "k").unwrap(), Vec::<u8>::new());
+        assert_eq!(s.write(TEST_TENANT, "k", vec![]).unwrap(), Some(2));
+        assert_eq!(s.read(TEST_TENANT, "k").unwrap(), Vec::<u8>::new());
         // Re-write over the now-empty object ⇒ prior is Some(0).
-        assert_eq!(s.write("t", "k", b"new".to_vec()).unwrap(), Some(0));
+        assert_eq!(s.write(TEST_TENANT, "k", b"new".to_vec()).unwrap(), Some(0));
     }
 
     // ── AUDIT-2026-08-23 F-2: the integrity envelope ──
@@ -577,13 +572,17 @@ mod tests {
         let backend = FakeBackend::new();
         let s = store_with(backend.clone());
         for bytes in [vec![], vec![0u8], vec![0xFFu8; 4096], (0..=255u8).collect()] {
-            s.write("t", "k", bytes.clone()).unwrap();
-            assert_eq!(s.read("t", "k").unwrap(), bytes, "payload must survive");
+            s.write(TEST_TENANT, "k", bytes.clone()).unwrap();
+            assert_eq!(
+                s.read(TEST_TENANT, "k").unwrap(),
+                bytes,
+                "payload must survive"
+            );
             let stored = backend
                 .store
                 .lock()
                 .unwrap()
-                .get(&s.object_key("t", "k").unwrap())
+                .get(&s.object_key(TEST_TENANT, "k").unwrap())
                 .cloned()
                 .expect("stored");
             assert!(
@@ -605,8 +604,9 @@ mod tests {
     async fn tampered_bytes_read_as_a_miss_not_a_hit() {
         let backend = FakeBackend::new();
         let s = store_with(backend.clone());
-        s.write("t", "k", b"the real artifact".to_vec()).unwrap();
-        let object_key = s.object_key("t", "k").unwrap();
+        s.write(TEST_TENANT, "k", b"the real artifact".to_vec())
+            .unwrap();
+        let object_key = s.object_key(TEST_TENANT, "k").unwrap();
 
         // Flip one byte of the PAYLOAD, leaving the digest untouched.
         {
@@ -616,12 +616,16 @@ mod tests {
             *byte ^= 0xFF;
         }
         assert!(
-            matches!(s.read("t", "k"), Err(TurboBridgeError::NotFound { .. })),
+            matches!(
+                s.read(TEST_TENANT, "k"),
+                Err(TurboBridgeError::NotFound { .. })
+            ),
             "tampered payload must read as a MISS, never as bytes"
         );
 
         // And the mirror case: a mangled DIGEST is equally not a hit.
-        s.write("t", "k", b"the real artifact".to_vec()).unwrap();
+        s.write(TEST_TENANT, "k", b"the real artifact".to_vec())
+            .unwrap();
         {
             let mut store = backend.store.lock().unwrap();
             let obj = store.get_mut(&object_key).unwrap();
@@ -631,13 +635,17 @@ mod tests {
             *byte ^= 0xFF;
         }
         assert!(
-            matches!(s.read("t", "k"), Err(TurboBridgeError::NotFound { .. })),
+            matches!(
+                s.read(TEST_TENANT, "k"),
+                Err(TurboBridgeError::NotFound { .. })
+            ),
             "a mangled digest must read as a MISS"
         );
 
         // Self-heal: a normal re-upload restores a verifiable entry.
-        s.write("t", "k", b"the real artifact".to_vec()).unwrap();
-        assert_eq!(s.read("t", "k").unwrap(), b"the real artifact");
+        s.write(TEST_TENANT, "k", b"the real artifact".to_vec())
+            .unwrap();
+        assert_eq!(s.read(TEST_TENANT, "k").unwrap(), b"the real artifact");
     }
 
     /// Objects written before the envelope existed must keep serving. Dropping
@@ -647,7 +655,7 @@ mod tests {
     async fn legacy_objects_still_serve_and_still_account_in_payload_bytes() {
         let backend = FakeBackend::new();
         let s = store_with(backend.clone());
-        let object_key = s.object_key("t", "legacy").unwrap();
+        let object_key = s.object_key(TEST_TENANT, "legacy").unwrap();
         // A pre-envelope object: raw payload, no header.
         backend
             .store
@@ -656,7 +664,7 @@ mod tests {
             .insert(object_key.clone(), b"pre-envelope bytes".to_vec());
 
         assert_eq!(
-            s.read("t", "legacy").unwrap(),
+            s.read(TEST_TENANT, "legacy").unwrap(),
             b"pre-envelope bytes",
             "a legacy object must still be served"
         );
@@ -664,7 +672,7 @@ mod tests {
         // route accrued in — so the byte-accounting delta is unaffected by the
         // format change.
         assert_eq!(
-            s.write("t", "legacy", b"new".to_vec()).unwrap(),
+            s.write(TEST_TENANT, "legacy", b"new".to_vec()).unwrap(),
             Some("pre-envelope bytes".len() as u64)
         );
         // …and it is enveloped from now on.
@@ -734,26 +742,26 @@ mod tests {
         let s = store_with(FakeBackend::new());
         // Fresh insert: no prior ⇒ route keeps the full new charge.
         assert_eq!(
-            s.write("t", "k", b"x".to_vec()).unwrap(),
+            s.write(TEST_TENANT, "k", b"x".to_vec()).unwrap(),
             None,
             "fresh ⇒ None"
         );
         // Same-size overwrite (1→1): prior = 1 ⇒ release 1, net 0.
         assert_eq!(
-            s.write("t", "k", b"y".to_vec()).unwrap(),
+            s.write(TEST_TENANT, "k", b"y".to_vec()).unwrap(),
             Some(1),
             "same-size overwrite ⇒ prior len 1 (net 0 after release)"
         );
         // GROW 1 → 1000: prior = 1 ⇒ release 1, net +(1000-1).
         let big = vec![0u8; 1000];
         assert_eq!(
-            s.write("t", "k", big.clone()).unwrap(),
+            s.write(TEST_TENANT, "k", big.clone()).unwrap(),
             Some(1),
             "grow ⇒ prior len 1 (net +999)"
         );
         // SHRINK 1000 → 1: prior = 1000 ⇒ release 1000, net -(1000-1).
         assert_eq!(
-            s.write("t", "k", b"z".to_vec()).unwrap(),
+            s.write(TEST_TENANT, "k", b"z".to_vec()).unwrap(),
             Some(1000),
             "shrink ⇒ prior len 1000 (net -999)"
         );
@@ -766,15 +774,18 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn rt_write_probe_error_fails_closed_to_none() {
         let backend = FakeBackend::new();
-        let s = R2KvStore::new(Arc::new(backend.clone()), None);
+        let s = store_with(backend.clone());
         // Seed a real prior object so a WORKING probe would return Some(11).
-        assert_eq!(s.write("t", "k", b"prior-bytes".to_vec()).unwrap(), None);
+        assert_eq!(
+            s.write(TEST_TENANT, "k", b"prior-bytes".to_vec()).unwrap(),
+            None
+        );
         // Now error ONLY the presence-probe `get`; `put` still succeeds.
         backend.fail_get_only("R2 503 on probe");
         // Probe error ⇒ write reports None (fail CLOSED: do NOT release the
         // unconfirmed prior), even though a prior object DID exist.
         assert_eq!(
-            s.write("t", "k", b"new-body".to_vec()).unwrap(),
+            s.write(TEST_TENANT, "k", b"new-body".to_vec()).unwrap(),
             None,
             "probe error must fail CLOSED to None (charge full, release nothing)"
         );
@@ -783,7 +794,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn miss_returns_notfound_not_fabricated_empty() {
         let s = store_with(FakeBackend::new());
-        match s.read("t", "never-written") {
+        match s.read(TEST_TENANT, "never-written") {
             Err(TurboBridgeError::NotFound { .. }) => {}
             other => panic!("expected NotFound, got {other:?}"),
         }
@@ -796,18 +807,18 @@ mod tests {
         // Shared backend → both tenants hit the same physical store; only
         // the prefix keeps them apart. This is the breach test.
         let backend = FakeBackend::new();
-        let a = R2KvStore::new(Arc::new(backend.clone()), None);
-        let b = R2KvStore::new(Arc::new(backend), None);
-        a.write("tenantA", "k", b"secretA".to_vec()).unwrap();
+        let a = store_with(backend.clone());
+        let b = store_with(backend);
+        a.write(TEST_TENANT, "k", b"secretA".to_vec()).unwrap();
         // B cannot see A's object under the same opaque key.
-        match b.read("tenantB", "k") {
+        match b.read(OTHER_TENANT, "k") {
             Err(TurboBridgeError::NotFound { .. }) => {}
             other => panic!("cross-tenant leak: {other:?}"),
         }
         // Same key, different tenants, different bytes → each its own.
-        b.write("tenantB", "k", b"valueB".to_vec()).unwrap();
-        assert_eq!(a.read("tenantA", "k").unwrap(), b"secretA");
-        assert_eq!(b.read("tenantB", "k").unwrap(), b"valueB");
+        b.write(OTHER_TENANT, "k", b"valueB".to_vec()).unwrap();
+        assert_eq!(a.read(TEST_TENANT, "k").unwrap(), b"secretA");
+        assert_eq!(b.read(OTHER_TENANT, "k").unwrap(), b"valueB");
     }
 
     // ── §1.4 DURABILITY across handler rebuild [durability] ──
@@ -816,12 +827,12 @@ mod tests {
     async fn dur_object_survives_store_rebuild() {
         let backend = FakeBackend::new();
         {
-            let first = R2KvStore::new(Arc::new(backend.clone()), None);
-            first.write("t", "k", b"durable".to_vec()).unwrap();
+            let first = store_with(backend.clone());
+            first.write(TEST_TENANT, "k", b"durable".to_vec()).unwrap();
         } // first store dropped — simulates container/handler restart.
-        let rebuilt = R2KvStore::new(Arc::new(backend), None);
+        let rebuilt = store_with(backend);
         assert_eq!(
-            rebuilt.read("t", "k").unwrap(),
+            rebuilt.read(TEST_TENANT, "k").unwrap(),
             b"durable",
             "R2KvStore must persist across rebuild (the whole point vs InMemory)"
         );
@@ -832,10 +843,10 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn res_backend_get_error_is_internal_not_notfound() {
         let backend = FakeBackend::new();
-        let s = R2KvStore::new(Arc::new(backend.clone()), None);
-        s.write("t", "k", b"present".to_vec()).unwrap();
+        let s = store_with(backend.clone());
+        s.write(TEST_TENANT, "k", b"present".to_vec()).unwrap();
         backend.fail("R2 503 transient");
-        match s.read("t", "k") {
+        match s.read(TEST_TENANT, "k") {
             Err(TurboBridgeError::Internal(_)) => {} // correct: present data NOT masked as absent
             Err(TurboBridgeError::NotFound { .. }) => {
                 panic!("false 404: backend error masked present data as absent")
@@ -847,9 +858,9 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn res_backend_put_error_surfaces_no_false_success() {
         let backend = FakeBackend::new();
-        let s = R2KvStore::new(Arc::new(backend.clone()), None);
+        let s = store_with(backend.clone());
         backend.fail("R2 PUT 500");
-        match s.write("t", "k", b"x".to_vec()) {
+        match s.write(TEST_TENANT, "k", b"x".to_vec()) {
             Err(TurboBridgeError::Internal(_)) => {}
             other => panic!("write must surface backend error, got {other:?}"),
         }
@@ -862,7 +873,7 @@ mod tests {
 
         /// A-RT-5: object_key is a pure deterministic function.
         #[test]
-        fn prop_object_key_deterministic(t in "[a-zA-Z0-9_-]{1,40}", k in ".{0,200}") {
+        fn prop_object_key_deterministic(t in "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", k in ".{0,200}") {
             let s = store_with(FakeBackend::new());
             proptest::prop_assert_eq!(
                 s.object_key(&t, &k).unwrap(),
@@ -871,12 +882,13 @@ mod tests {
         }
 
         /// A-ISO-3 [sec]: distinct tenants never share a full object key for
-        /// the same opaque key (prefix injectivity over the pad16 domain).
+    /// the same opaque key (prefix injectivity over canonical UUID tenants).
         #[test]
         fn prop_distinct_tenants_no_keyspace_collision(
-            t1 in "[a-zA-Z0-9_-]{1,40}", t2 in "[a-zA-Z0-9_-]{1,40}", k in ".{0,80}"
+            t1 in "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            t2 in "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", k in ".{0,80}"
         ) {
-            proptest::prop_assume!(pad16(&t1) != pad16(&t2));
+            proptest::prop_assume!(t1 != t2);
             let s = store_with(FakeBackend::new());
             proptest::prop_assert_ne!(
                 s.object_key(&t1, &k).unwrap(),
@@ -888,10 +900,16 @@ mod tests {
         /// the tenant prefix; no normalization/aliasing alters which slot is
         /// addressed, and no key can escape the prefix.
         #[test]
-        fn prop_key_opacity_no_escape(t in "[a-zA-Z0-9_-]{1,16}", k in ".{1,200}") {
+        fn prop_key_opacity_no_escape(t in "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", k in ".{1,200}") {
             let s = store_with(FakeBackend::new());
             let ok = s.object_key(&t, &k).unwrap();
-            let expected_prefix = format!("{}/", pad16(&t));
+            let expected_prefix = format!(
+                "{}/",
+                derive_prefix(
+                    &TenantDerivationKey::from_bytes(Zeroizing::new(TEST_TDK)),
+                    Uuid::try_parse(&t).unwrap()
+                )
+            );
             proptest::prop_assert!(ok.starts_with(&expected_prefix));
             proptest::prop_assert_eq!(&ok[expected_prefix.len()..], &k);
         }

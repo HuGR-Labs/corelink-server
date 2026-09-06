@@ -4,19 +4,21 @@ title: "ADR-0036 — D1 schema migration governance"
 description: "Why every CoreLink D1 schema change is heavyweight: inline CHECKs, partial UNIQUE indexes, the SQLite 12-step rebuild, and an ADR per breaking change."
 source_files:
   - "specs/03_architecture/adrs/ADR-0036-d1-schema-migration-governance.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "d1", "schema", "migration", "sqlite", "governance"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0036-d1-schema-migration-governance.md@f007053967254ee3cd3436a4341b6160518d2270"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-0036 — D1 schema migration governance
 
 CoreLink's control-plane state lives in Cloudflare D1, which is SQLite under the hood, and SQLite
 deliberately lacks the in-place constraint surgery (`ALTER TABLE ADD/DROP/MODIFY CONSTRAINT`) that
 Postgres engineers reach for reflexively. This ADR is the cross-sprint discipline that turns that
 limitation into a predictable migration contract instead of a class of surprise CI failures — it is
-the governance record every later table-rebuild ADR (e.g. [ADR-0062](/adr/adr-0062-tier-check-widen-rebuild.md))
+the governance record every later schema-change ADR (e.g. [ADR-0062](/adr/adr-0062-tier-check-widen-rebuild.md))
 cites as its parent pattern, and it pins the materialized-`tenant_prefix` idiom that the
 [D1 CONFIG_DB](/storage/d1-config-db.md) read paths depend on.
 
@@ -49,5 +51,5 @@ in prod is barred, forcing a staged dual-write cutover discipline.
 
 1. `specs/03_architecture/adrs/ADR-0036-d1-schema-migration-governance.md:25-27` — Context: D1/SQLite does NOT support `ALTER TABLE ADD/MODIFY CONSTRAINT`; CHECKs must be inline + later changes use the 12-step recipe.
 2. `specs/03_architecture/adrs/ADR-0036-d1-schema-migration-governance.md:33-77` — Decision: the five rules (inline CHECK, partial UNIQUE, schema-bump-needs-ADR + 12-step recipe, NULLable attribution columns, materialized `tenant_prefix`).
-3. `specs/03_architecture/adrs/ADR-0036-d1-schema-migration-governance.md:69-69` — the prod anti-scope: `DROP TABLE` in prod is blocked.
+3. `specs/03_architecture/adrs/ADR-0036-d1-schema-migration-governance.md:69` — the prod anti-scope: `DROP TABLE` in prod is blocked.
 4. `specs/03_architecture/adrs/ADR-0036-d1-schema-migration-governance.md:81-91` — Consequences: documented limits + explicit evolution path vs heavyweight changes and the prod `DROP` bar.

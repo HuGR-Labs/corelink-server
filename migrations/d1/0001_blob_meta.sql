@@ -10,7 +10,8 @@
 --
 -- Conventions:
 --   - `tenant_id` stored as canonical UUIDv7 TEXT form (data_model.md §2.1 L91-93).
---   - `digest` stored as canonical `'algo:hex'` TEXT form, e.g. `'blake3:a1b2c3...'`
+--   - `digest` stored as plain canonical 64-char lowercase hex TEXT; the
+--     external CAS surface selects the algorithm before reaching metadata.
 --     (data_model.md §1 L71 + §2.1 L94).
 --   - All timestamps stored as `INTEGER` Unix epoch milliseconds (data_model.md §4.2
 --     + WI-S01-004 §9.4). SQLite INTEGER is 64-bit; safe to ~year 292 277 026 596.
@@ -26,7 +27,7 @@
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS blob_meta (
     tenant_id        TEXT    NOT NULL,                                  -- canonical UUIDv7 text
-    digest           TEXT    NOT NULL,                                  -- canonical 'algo:hex'
+    digest           TEXT    NOT NULL,                                  -- canonical lowercase 64-hex
     size_bytes       INTEGER NOT NULL CHECK (size_bytes > 0),
     refcount         INTEGER NOT NULL DEFAULT 1 CHECK (refcount >= 0),  -- first write yields 1 (sprint.md §1.4)
     created_at       INTEGER NOT NULL,                                  -- unix epoch ms

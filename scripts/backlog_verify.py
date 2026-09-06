@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import re
 import subprocess
 import sys
@@ -269,6 +270,26 @@ def main() -> int:
     ap.add_argument("--today", help="override today's date (YYYY-MM-DD), for testing")
     ap.add_argument("--file", help="check a different backlog file (used by the self-test)")
     args = ap.parse_args()
+
+    # The D03 closed-population validator is the authority for the final TL
+    # lane.  Per-item invocations preflight its schema, while the graduation
+    # validator's nested gate runs set this env var to avoid recursion.
+    if args.id and not args.file and not os.environ.get("D03_GRADUATION_NESTED"):
+        validator = REPO_ROOT / "scripts/verify_d03_graduation.py"
+        try:
+            preflight = subprocess.run(
+                [sys.executable, str(validator), "--schema-only"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=VERIFY_TIMEOUT_S,
+            )
+        except subprocess.TimeoutExpired:
+            print("FATAL: D03 graduation schema preflight exceeded timeout", file=sys.stderr)
+            return 2
+        if preflight.returncode:
+            print(preflight.stdout + preflight.stderr, file=sys.stderr)
+            return 2
 
     path = Path(args.file).resolve() if args.file else BACKLOG_PATH
     if not path.exists():

@@ -4,12 +4,14 @@ title: "ADR-0023 — Constant-time 404 MissReason timing-padding middleware"
 description: "Why CAS 404 responses are padded to a uniform p99 latency so the three MissReason compute paths cannot be timed apart into a cross-tenant existence oracle."
 source_files:
   - "specs/03_architecture/adrs/ADR-0023-constant-time-timing-padding.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "side-channel", "timing", "cas", "tenant-isolation", "s02"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0023-constant-time-timing-padding.md@6aba468953d6453e5f962f36275e68f563356a78"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-0023 — Constant-time 404 MissReason timing-padding middleware
 
 ADR-0028 makes every CAS read miss return an identical HTTP 404, but the three underlying `MissReason` variants reach that 404 over compute paths of very different cost — a KV negative-cache hit (`NeverExisted`), a D1 soft-delete check (`Tombstoned`), and a full D1+R2 round-trip (`R2OrphanRow`). This ADR closes the residual *timing* oracle that the uniform status code alone leaves open, so a tenant cannot enumerate other tenants' blobs (or detect soft-deleted ones) by measuring latency. It is the timing-layer half of the pair whose status-layer half is ADR-0028.

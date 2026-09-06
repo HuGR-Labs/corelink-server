@@ -20,6 +20,11 @@ defined in
 and the SQL `CHECK` constraint lives in `specs/03_architecture/data_model.md`
 §4.1 line 174.
 
+The customer-facing `team_member` contract names the cache-capable seat
+`Member`; the legacy auth enum names the equivalent role `Developer`. They
+share the same CAS read/write grants. This alias is documented explicitly so
+the published role names cannot drift from either executable contract.
+
 ---
 
 ## `Owner` — full access including billing
@@ -97,7 +102,8 @@ searching that file for the triple finds nothing.
 ### Can do
 
 - Read and mutate tenant config.
-- Mint and revoke PATs for any user in the tenant.
+- Mint PATs for users in the tenant; revoke member PATs. Only the Owner may
+  revoke the tenant owner's PAT.
 - Read tenant audit log.
 - Invite, demote, and revoke users below `Owner`.
 
@@ -130,10 +136,10 @@ searching that file for the triple finds nothing.
 
 ```
 1. Admin: receives alert "PAT tok_abc...XYZ used from unusual region".
-2. Admin: revokes the token in the dashboard (https://humangr.com/corelink/),
+2. Admin: revokes a member token in the dashboard (https://humangr.com/corelink/),
    or calls the HTTP API directly:
    → POST /v1/customer/keys/{pat_id}/revoke (single-actor; no approver
-     required; this is a non-destructive op).
+     required). The Owner must revoke the tenant owner's PAT.
 3. The pat row is stamped revoked_at — idempotent (re-revoking keeps the
    original timestamp). No caller-supplied reason is recorded: the endpoint
    takes no request body.
@@ -161,7 +167,9 @@ searching that file for the triple finds nothing.
 
 ### Cannot do
 
-- *(Correction: a Member **can** delete CAS blobs. `DELETE /v1/cas/{tenant}/{hash}`
+- *(Correction: a Member **can** delete CAS blobs. The legacy `Developer`
+  role is the same cache-capable seat — Developer **can** delete CAS blobs.
+  `DELETE /v1/cas/{tenant}/{hash}`
   is gated on the cache-WRITE capability, not on a delete-specific scope, so any
   write-capable token deletes. The `cache:delete` scope is defined but no
   enforcement point reads it.)*

@@ -1,0 +1,3 @@
+### Fixed
+
+- **B-029's load-test gate now fails closed on missing, partial, corrupt, or ambiguous evidence.** The real median-vs-baseline comparator remains wired through the workflow's restore/compare/save cache sequence, but it now requires the exact requested scenario set, rejects non-finite measurements and corrupt baselines, and never ratchets a failing run. Behavioral and source-mutation tests cover regression failure, empty/partial artifacts, baseline immutability, and the workflow wiring. B-029 remains **open** because the staging deployment and nightly schedule are still an owner-infrastructure decision; no OKF claim was changed.

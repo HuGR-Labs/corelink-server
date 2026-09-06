@@ -210,12 +210,15 @@ export class CustomerClient {
   async inviteTeam(input: {
     email: string;
     role: CustomerTeamMember["role"];
-  }): Promise<CustomerTeamMember> {
-    const { member } = await this.request<{ member: CustomerTeamMember }>(
+  }): Promise<{ member: CustomerTeamMember; invitation_token: string }> {
+    const { member, invitation_token } = await this.request<{
+      member: CustomerTeamMember;
+      invitation_token: string;
+    }>(
       "/v1/customer/team/invite",
       { method: "POST", body: JSON.stringify(input) },
     );
-    return member;
+    return { member, invitation_token };
   }
 
   /** [live] Remove a member (flips seat to removed AND revokes their PATs). */

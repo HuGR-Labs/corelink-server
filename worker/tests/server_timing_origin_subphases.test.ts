@@ -49,9 +49,19 @@ const DELAY_MS = 150;
 const DELAYED_MIN_MS = 110;
 
 /** The container-reported members of the `origin` group, in emission order. */
-const CONTAINER_PHASES = ["opat", "oquota", "ostore", "oother"] as const;
+const CONTAINER_PHASES = ["opat", "oquota", "ostore", "oaccounting", "ohandler"] as const;
 /** Every member of the `origin` group, including the Worker-derived residue. */
 const ORIGIN_PHASES = ["ohop", ...CONTAINER_PHASES] as const;
+
+/** The old Worker accepted only this legacy spelling for framework work. */
+function legacyContainerSum(header: string): number {
+  let sum = 0;
+  for (const part of header.split(",")) {
+    const match = /^\s*(opat|oquota|ostore|oaccounting|oother);dur=([0-9]+)(?:;.*)?$/.exec(part);
+    if (match !== null) sum += Number(match[2]);
+  }
+  return sum;
+}
 
 function b64urlNoPad(bytes: Uint8Array): string {
   let bin = "";
@@ -212,7 +222,7 @@ describe("Server-Timing `origin` sub-phase attribution", () => {
     // claimed phases have to fit inside that or the merge (correctly) refuses
     // them — see the `unreconciled` case below.
     const env = makeEnv({
-      containerTiming: "opat;dur=40, oquota;dur=50, ostore;dur=1, oother;dur=4",
+      containerTiming: "opat;dur=40, oquota;dur=50, ostore;dur=1, oaccounting;dur=2, ohandler;dur=4",
       hopDelayMs: DELAY_MS,
     });
     const st = await splitOnce(env, await mintValidToken(), "a");
@@ -235,7 +245,8 @@ describe("Server-Timing `origin` sub-phase attribution", () => {
     expect(st["opat"]).toBe(40);
     expect(st["oquota"]).toBe(50);
     expect(st["ostore"]).toBe(1);
-    expect(st["oother"]).toBe(4);
+    expect(st["oaccounting"]).toBe(2);
+    expect(st["ohandler"]).toBe(4);
   });
 
   it("charges the hop delay to `ohop` and to no container phase", async () => {
@@ -243,7 +254,7 @@ describe("Server-Timing `origin` sub-phase attribution", () => {
     // that time is, by construction, the hop. If it landed anywhere else the
     // residue would be wired to the wrong end of the boundary.
     const env = makeEnv({
-      containerTiming: "opat;dur=0, oquota;dur=0, ostore;dur=0, oother;dur=1",
+      containerTiming: "opat;dur=0, oquota;dur=0, ostore;dur=0, oaccounting;dur=0, ohandler;dur=1",
       hopDelayMs: DELAY_MS,
     });
     const st = await splitOnce(env, await mintValidToken(), "b");
@@ -280,7 +291,7 @@ describe("Server-Timing `origin` sub-phase attribution", () => {
     // reconciles: `total == auth + wdb + origin` held on 30/30 in prod and is
     // what makes the whole header trustworthy.
     const st = await splitOnce(
-      makeEnv({ containerTiming: "opat;dur=0, oquota;dur=0, ostore;dur=0, oother;dur=0" }),
+      makeEnv({ containerTiming: "opat;dur=0, oquota;dur=0, ostore;dur=0, oaccounting;dur=0, ohandler;dur=0" }),
       await mintValidToken(),
       "d",
     );
@@ -290,22 +301,22 @@ describe("Server-Timing `origin` sub-phase attribution", () => {
     expect(st["total"]).toBeGreaterThanOrEqual(st["auth"]! + st["wdb"]! + st["origin"]!);
   });
 
-  it("omits qdo and qother by default (SERVER_TIMING_WDB_DETAIL unset) — byte-identical to before", async () => {
+  it("omits qdo and qcontrol by default (SERVER_TIMING_WDB_DETAIL unset) — byte-identical to before", async () => {
     // `qdo`'s presence/absence is a confirmation oracle for whether a
     // client-supplied `x-corelink-fanout-from` matched `CORELINK_INTERNAL_AUTH_KEY`
     // (it only runs when `meter === true`, which is `!isFanout && ...`). It — and
-    // `qother`, which exists only to reconcile against it — must stay OFF unless an
+    // `qcontrol`, which exists only to reconcile against it — must stay OFF unless an
     // operator explicitly sets `SERVER_TIMING_WDB_DETAIL === "on"`. This test's env
     // does not set the flag, matching what ships today.
     const st = await splitOnce(
-      makeEnv({ containerTiming: "opat;dur=0, oquota;dur=0, ostore;dur=0, oother;dur=0" }),
+      makeEnv({ containerTiming: "opat;dur=0, oquota;dur=0, ostore;dur=0, ohandler;dur=0" }),
       await mintValidToken(),
       "e",
     );
     expect(st, "qdo leaked into the default header — confirmation oracle reopened").not.toHaveProperty(
       "qdo",
     );
-    expect(st, "qother leaked into the default header").not.toHaveProperty("qother");
+    expect(st, "qcontrol leaked into the default header").not.toHaveProperty("qcontrol");
     for (const p of ["auth", "wdb", "qtier", "qbatch", "qresid", "origin", "total"] as const) {
       expect(st, `${p} vanished from the default (flag-off) Server-Timing`).toHaveProperty(p);
     }
@@ -313,9 +324,37 @@ describe("Server-Timing `origin` sub-phase attribution", () => {
 
   describe("originSubPhases (the merge itself)", () => {
     it("parses a container header and derives the residue", () => {
-      expect(originSubPhases(300, "opat;dur=97, oquota;dur=118, ostore;dur=1, oother;dur=4")).toEqual(
-        ["ohop;dur=80", "opat;dur=97", "oquota;dur=118", "ostore;dur=1", "oother;dur=4"],
+      expect(originSubPhases(300, "opat;dur=97, oquota;dur=118, ostore;dur=1, oaccounting;dur=2, ohandler;dur=4")).toEqual(
+        ["ohop;dur=78", "opat;dur=97", "oquota;dur=118", "ostore;dur=1", "oaccounting;dur=2", "ohandler;dur=4"],
       );
+    });
+
+    it("normalizes a legacy oother report instead of charging it to ohop", () => {
+      expect(originSubPhases(300, "opat;dur=97, oquota;dur=118, ostore;dur=1, oother;dur=4")).toEqual([
+        "ohop;dur=80",
+        "opat;dur=97",
+        "oquota;dur=118",
+        "ostore;dur=1",
+        "ohandler;dur=4",
+      ]);
+    });
+
+    it("deduplicates the dual rollout aliases and remains readable by an old Worker", () => {
+      const dual = "opat;dur=97, oquota;dur=118, ostore;dur=1, ohandler;dur=4, oother;dur=4;desc=\"legacy-alias\"";
+      expect(legacyContainerSum(dual)).toBe(220);
+      expect(originSubPhases(300, dual)).toEqual([
+        "ohop;dur=80",
+        "opat;dur=97",
+        "oquota;dur=118",
+        "ostore;dur=1",
+        "ohandler;dur=4",
+      ]);
+    });
+
+    it("refuses conflicting canonical and legacy alias durations", () => {
+      expect(originSubPhases(300, "opat;dur=97, ohandler;dur=4, oother;dur=5")).toEqual([
+        'ohop;dur=300;desc="unreconciled"',
+      ]);
     });
 
     it("emits a phase that ran at dur=0 and omits one that did not run", () => {
@@ -323,10 +362,10 @@ describe("Server-Timing `origin` sub-phase attribution", () => {
       // the clock resolves"; ABSENT means "did not run at all" (e.g. a route
       // that performs no PAT verify in the container). Collapsing the two is
       // what forced an inference from `auth` appearing on 3 of 30 responses.
-      expect(originSubPhases(10, "oquota;dur=0, oother;dur=2")).toEqual([
+      expect(originSubPhases(10, "oquota;dur=0, ohandler;dur=2")).toEqual([
         "ohop;dur=8",
         "oquota;dur=0",
-        "oother;dur=2",
+        "ohandler;dur=2",
       ]);
     });
 
@@ -334,7 +373,7 @@ describe("Server-Timing `origin` sub-phase attribution", () => {
       // Clock skew across the boundary, or a stale/incoherent report. Publishing
       // it would need a negative `ohop`; publishing it clamped would break the
       // sum. Say so instead.
-      const out = originSubPhases(50, "opat;dur=40, oquota;dur=30, oother;dur=5");
+      const out = originSubPhases(50, "opat;dur=40, oquota;dur=30, ohandler;dur=5");
       expect(out).toEqual(['ohop;dur=50;desc="unreconciled"']);
     });
 
@@ -342,17 +381,17 @@ describe("Server-Timing `origin` sub-phase attribution", () => {
       // The dangerous case: `ostore` is a name we ATTRIBUTE, so dropping it
       // quietly would move its milliseconds into `ohop` and blame the network
       // for the storage layer. The whole report is refused instead.
-      const out = originSubPhases(300, "opat;dur=97, ostore;dur=abc, oother;dur=4");
+      const out = originSubPhases(300, "opat;dur=97, ostore;dur=abc, ohandler;dur=4");
       expect(out).toEqual(['ohop;dur=300;desc="unreconciled"']);
     });
 
     it("ignores metrics outside the origin group without refusing the split", () => {
       // A future container-side phase must not disarm the merge; it is simply
-      // not one of ours, and its cost is already inside `oother`.
-      expect(originSubPhases(20, "ofuture;dur=3, oquota;dur=5, oother;dur=5")).toEqual([
+      // not one of ours, and its cost is already inside `ohandler`.
+      expect(originSubPhases(20, "ofuture;dur=3, oquota;dur=5, ohandler;dur=5")).toEqual([
         "ohop;dur=10",
         "oquota;dur=5",
-        "oother;dur=5",
+        "ohandler;dur=5",
       ]);
     });
 
@@ -368,7 +407,7 @@ describe("Server-Timing `origin` sub-phase attribution", () => {
         originSubPhases(
           300,
           "opat;dur=5, oquota;dur=0, ostore;dur=60, oargon;dur=30, opermit;dur=2, " +
-            "ortier;dur=3, oaudit;dur=100, oother;dur=1",
+            "ortier;dur=3, oaudit;dur=100, ohandler;dur=1",
         ),
       ).toEqual([
         "ohop;dur=99",
@@ -379,7 +418,7 @@ describe("Server-Timing `origin` sub-phase attribution", () => {
         "opermit;dur=2",
         "ortier;dur=3",
         "oaudit;dur=100",
-        "oother;dur=1",
+        "ohandler;dur=1",
       ]);
     });
 
@@ -399,7 +438,7 @@ describe("Server-Timing `origin` sub-phase attribution", () => {
           [97, 118, 1, 4],
           [500, 400, 300, 200],
         ]) {
-          const header = `opat;dur=${pat}, oquota;dur=${quota}, ostore;dur=${store}, oother;dur=${other}`;
+          const header = `opat;dur=${pat}, oquota;dur=${quota}, ostore;dur=${store}, ohandler;dur=${other}`;
           const out = originSubPhases(originMs, header);
           if (out.length === 1) {
             expect(out[0]).toBe(`ohop;dur=${originMs};desc="unreconciled"`);

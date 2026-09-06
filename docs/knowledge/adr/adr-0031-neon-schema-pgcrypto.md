@@ -4,12 +4,14 @@ title: "ADR-0031 — Auth Neon schema: pgcrypto + RLS + DSR cascade"
 description: "Why the auth domain lives in Neon Postgres with pgcrypto column encryption, default-on RLS, deterministic HMAC email-hash lookup, additive-only migrations, and a hard-coded DSR cascade."
 source_files:
   - "specs/03_architecture/adrs/ADR-0031-neon-schema-pgcrypto.md"
-checkpoint_sha: "cc51893253fa3a86ae5b02bff56c8022cbeb72b5"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "neon", "postgres", "pgcrypto", "rls", "dsr", "auth", "s03"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0031-neon-schema-pgcrypto.md@eaa24e8f495a035ee13c38619b9bb18fe3b251c8"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-0031 — Auth Neon schema: pgcrypto + RLS + DSR cascade
 
 The auth domain is global, relational, and PII-bearing, so it cannot ride on regional D1 and cannot trust a single defence layer. This ADR records the DESIGN-INTENT for why the auth tables would live in Neon Postgres and how five load-bearing invariants — default-on RLS, encrypted PII at rest, additive-only migrations, a complete DSR cascade, and audit pseudonymization — are each met by a specific schema decision.

@@ -60,10 +60,11 @@ pub const TIER_RATE_LADDER: [(Tier, u32, u32); 5] = [
 /// for a tier per WI-S08-001 §6.1.4.
 ///
 /// `Tier` is `#[non_exhaustive]` upstream so future tier additions
-/// don't break this crate's compile; the wildcard arm falls back to
-/// the enterprise rate (most-permissive default — preferred over
-/// crashing or denying when an unknown tier is observed in
-/// production).
+/// don't break this crate's compile. The wildcard arm deliberately
+/// falls back to the same Team bucket used by [`RateLimitConfig::canonical`]
+/// and by unknown billing labels. This keeps an unclassified paying tenant
+/// from being silently throttled to Free while never granting an
+/// unrecognised value Enterprise capacity.
 #[must_use]
 pub fn refill_rate_for_tier(tier: Tier) -> (u32, u32) {
     match tier {
@@ -72,11 +73,10 @@ pub fn refill_rate_for_tier(tier: Tier) -> (u32, u32) {
         Tier::Team => (TEAM_REFILL_RPS, TEAM_BURST),
         Tier::Business => (BUSINESS_REFILL_RPS, BUSINESS_BURST),
         Tier::Enterprise => (ENTERPRISE_REFILL_RPS, ENTERPRISE_BURST),
-        // Forward-compatibility — unknown tier gets enterprise default
-        // (most-permissive; conservative-on-availability per §10
-        // anti-scope: we never accidentally over-throttle a legit
-        // tenant whose plan got renamed in a follow-on sprint).
-        _ => (ENTERPRISE_REFILL_RPS, ENTERPRISE_BURST),
+        // Forward-compatibility — unknown tier gets the canonical Team
+        // default. Keep this in lock-step with the string resolver below:
+        // an unknown value must not receive a paid/Enterprise ceiling.
+        _ => (TEAM_REFILL_RPS, TEAM_BURST),
     }
 }
 
@@ -100,15 +100,19 @@ pub fn refill_rate_for_tier(tier: Tier) -> (u32, u32) {
 /// | `org` (D1 legacy "pro") | `Business`           |
 /// | `pilot` / anything else | `Team` (fallback)    |
 ///
-/// The `pilot`/unknown → `Team` fallback is **zero behavior change**:
-/// `RateLimitConfig::canonical()` already gives every unresolved tenant
-/// the Team rate (200 rps / 1000 burst). It deliberately narrows ONLY
-/// at the string level — the enum **wildcard-arm** fallback in
-/// [`refill_rate_for_tier`] (unknown `Tier` variant → Enterprise rate)
-/// is a different, forward-compatibility concern and stays untouched.
+/// The `pilot`/unknown → `Team` fallback is the canonical availability-safe
+/// default: `RateLimitConfig::canonical()` gives every unresolved tenant the
+/// Team rate (200 rps / 1000 burst). The enum wildcard arm in
+/// [`refill_rate_for_tier`] uses the same default, so the two resolution paths
+/// cannot disagree by silently granting an Enterprise ceiling.
 ///
 /// Labels are matched exactly (canonical wire strings are lower
 /// snake_case); any non-canonical spelling takes the `Team` fallback.
+/// The six customer labels are kept in one ordered list so a new checkout tier
+/// cannot silently bypass the rate-limit taxonomy. Runner SKUs are a separate
+/// entitlement axis and are not accepted by this customer-label parser.
+pub const CANONICAL_CUSTOMER_BILLING_LABELS: [&str; 6] =
+    ["free", "solo", "starter", "pro", "max", "enterprise"];
 ///
 /// Coupling note (§3.5, ratified Q5c): the returned [`Tier`] also
 /// selects the eviction TTL ladder (`corelink_eviction::ttl_for_tier`),
@@ -215,6 +219,7 @@ mod tests {
 
     #[test]
     fn billing_label_mapping_total_over_canonical_taxonomy() {
+        assert_eq!(CANONICAL_CUSTOMER_BILLING_LABELS.len(), 6);
         // The FROZEN 6-tier billing taxonomy (pricing.ts CANONICAL_TIERS).
         assert_eq!(tier_for_billing_label("free"), Tier::Free);
         assert_eq!(tier_for_billing_label("solo"), Tier::Solo);
@@ -282,5 +287,22 @@ mod tests {
         // canonical() implicit default — pin both rate and burst.
         let t = tier_for_billing_label("definitely-not-a-tier");
         assert_eq!(refill_rate_for_tier(t), (TEAM_REFILL_RPS, TEAM_BURST));
+    }
+
+    #[test]
+    fn enum_fallback_is_the_same_team_default_as_string_fallback() {
+        // The wildcard arm cannot be constructed with today's closed enum;
+        // pin its source-level contract so a future enum addition cannot
+        // reopen the Enterprise-capacity leak.
+        let source = include_str!("tier.rs");
+        let resolver = source
+            .split("pub fn refill_rate_for_tier")
+            .nth(1)
+            .expect("resolver source present")
+            .split("pub fn tier_for_billing_label")
+            .next()
+            .expect("resolver body present");
+        assert!(resolver.contains("_ => (TEAM_REFILL_RPS, TEAM_BURST)"));
+        assert!(!resolver.contains("_ => (ENTERPRISE_REFILL_RPS, ENTERPRISE_BURST)"));
     }
 }

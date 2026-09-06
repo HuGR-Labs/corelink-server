@@ -109,6 +109,36 @@ use crate::storage::r2_s3::R2S3Client;
 
 const INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
 
+/// Decode the three nullable B-054 columns without turning malformed metadata
+/// into E0. Only the complete legacy spelling, explicit E0, or a complete
+/// positive keyed tuple is admissible; every partial/downgrade shape stops the
+/// archive before it can manufacture an E0 line.
+fn parse_sealed_epoch_metadata(row: &Value) -> Result<(u8, u64, Option<u64>), String> {
+    fn nullable_i64(row: &Value, field: &str) -> Result<Option<i64>, String> {
+        match row.get(field) {
+            Some(Value::Null) => Ok(None),
+            Some(value) => value
+                .as_i64()
+                .map(Some)
+                .ok_or_else(|| format!("audit_outbox.{field} missing/non-integer")),
+            None => Err(format!("audit_outbox.{field} missing")),
+        }
+    }
+
+    let algorithm = nullable_i64(row, "algorithm_id")?;
+    let epoch = nullable_i64(row, "epoch_id")?;
+    let key = nullable_i64(row, "link_key_id")?;
+    match (algorithm, epoch, key) {
+        (None, None, None) | (Some(0), Some(0), None) => Ok((0, 0, None)),
+        (Some(1), Some(epoch), Some(key)) if epoch > 0 && key > 0 => {
+            Ok((1, epoch as u64, Some(key as u64)))
+        }
+        _ => Err(
+            "audit_outbox sealed epoch metadata is partial, negative, or a downgrade".to_owned(),
+        ),
+    }
+}
+
 /// Bucket the archive lands in when `R2_AUDIT_BUCKET` is unset.
 ///
 /// This is a REAL, provisioned bucket that already carries the 7-year Object
@@ -296,7 +326,8 @@ async fn read_unarchived_rows(
 ) -> Result<Vec<SealedArchiveLine>, String> {
     let rows = d1
         .query(
-            "SELECT id, sequence_number, prev_hash, chain_hash, enqueued_at, canonical_jcs \
+            "SELECT id, sequence_number, prev_hash, chain_hash, enqueued_at, canonical_jcs, \
+                    algorithm_id, epoch_id, link_key_id \
              FROM audit_outbox \
              WHERE tenant_id = ?1 AND region = ?2 \
                AND emitted_at IS NOT NULL AND archived_at IS NULL \
@@ -334,8 +365,12 @@ async fn read_unarchived_rows(
             .get("canonical_jcs")
             .and_then(Value::as_str)
             .ok_or("audit_outbox.canonical_jcs missing on a sealed row")?;
+        let (algorithm_id, epoch_id, link_key_id) = parse_sealed_epoch_metadata(&row)?;
         out.push(SealedArchiveLine {
             schema: SEALED_LINE_SCHEMA.to_owned(),
+            algorithm_id,
+            epoch_id,
+            link_key_id,
             tenant_id: tenant_id.to_owned(),
             region: region.to_owned(),
             sequence_number,
@@ -536,6 +571,20 @@ async fn archive_partition(
     if lines.is_empty() {
         return Ok(PartitionOutcome::default());
     }
+    // The archive route currently owns the proven legacy verifier only.  A
+    // keyed epoch must be verified with its authenticated epoch descriptor and
+    // historical key; quarantining it as if it were a broken E0 row would lose
+    // valid evidence.  Stop closed until the witnessed B-054 archive binding
+    // is deployed.
+    if lines
+        .iter()
+        .any(|line| line.algorithm_id != 0 || line.epoch_id != 0 || line.link_key_id.is_some())
+    {
+        return Err(
+            "B-054 versioned archive rows require the witnessed epoch archive runtime; refusing downgrade"
+                .to_owned(),
+        );
+    }
     let truncated = i64::try_from(lines.len()).unwrap_or(i64::MAX) >= limit;
     // The ordered batch is NOT necessarily chain-contiguous (the 2026-08-14
     // fork). Archive the longest verifying prefix; the break, if any, tells us
@@ -708,6 +757,37 @@ mod tests {
             &headers_with(&format!("{expected}x"))
         ));
         assert!(!internal_auth_ok(expected.as_bytes(), &HeaderMap::new()));
+    }
+
+    #[test]
+    fn sealed_metadata_parser_is_fail_closed() {
+        let legacy = json!({"algorithm_id": null, "epoch_id": null, "link_key_id": null});
+        assert_eq!(parse_sealed_epoch_metadata(&legacy).unwrap(), (0, 0, None));
+        let explicit_e0 = json!({"algorithm_id": 0, "epoch_id": 0, "link_key_id": null});
+        assert_eq!(
+            parse_sealed_epoch_metadata(&explicit_e0).unwrap(),
+            (0, 0, None)
+        );
+        let keyed = json!({"algorithm_id": 1, "epoch_id": 1, "link_key_id": 7});
+        assert_eq!(
+            parse_sealed_epoch_metadata(&keyed).unwrap(),
+            (1, 1, Some(7))
+        );
+
+        for partial in [
+            json!({"algorithm_id": 0, "epoch_id": null, "link_key_id": null}),
+            json!({"algorithm_id": null, "epoch_id": 0, "link_key_id": null}),
+            json!({"algorithm_id": 1, "epoch_id": 1, "link_key_id": null}),
+            json!({"algorithm_id": 1, "epoch_id": 0, "link_key_id": 7}),
+            json!({"algorithm_id": 0, "epoch_id": 0, "link_key_id": 7}),
+            json!({"algorithm_id": 1, "epoch_id": -1, "link_key_id": 7}),
+            json!({"algorithm_id": 1, "epoch_id": 1, "link_key_id": 0}),
+        ] {
+            assert!(
+                parse_sealed_epoch_metadata(&partial).is_err(),
+                "partial/downgrade metadata must not become E0: {partial}"
+            );
+        }
     }
 
     /// The columns this module is ALLOWED to write. Anything else in a `SET`

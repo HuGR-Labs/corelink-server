@@ -22,6 +22,40 @@ export interface AdminClientOptions {
   fetchImpl?: typeof fetch;
 }
 
+async function defaultServerToken(): Promise<string | null> {
+  if (typeof window !== "undefined") {
+    const clerk = window as typeof window & {
+      Clerk?: { session?: { getToken?: () => Promise<string | null> } };
+    };
+    const token = await clerk.Clerk?.session?.getToken?.() ?? null;
+    if (token) return token;
+    const raw = document.cookie.split(";").map((part) => part.trim())
+      .find((part) => part.startsWith("__corelink_e2e_token="))?.split("=")[1];
+    return raw ? decodeURIComponent(raw) : null;
+  }
+  // SSR calls must carry the same Clerk bearer as browser calls. In E2E mode
+  // the cookie is the deterministic stand-in; production uses Clerk's signed
+  // session token when available. Missing token remains fail-closed.
+  try {
+    const clerk = (await import("@clerk/nextjs/server").catch(() => null)) as
+      | { auth?: () => Promise<{ getToken?: () => Promise<string | null> }> }
+      | null;
+    const token = await clerk?.auth?.().then((session) => session.getToken?.() ?? null);
+    if (token) return token;
+  } catch {
+    // Fall through to the test-mode cookie.
+  }
+  try {
+    const headers = (await import("next/headers").catch(() => null)) as
+      | { cookies?: () => Promise<{ get: (name: string) => { value: string } | undefined }> }
+      | null;
+    const raw = headers?.cookies && (await headers.cookies()).get("__corelink_e2e_token")?.value;
+    return raw ? decodeURIComponent(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 export class AdminClientError extends Error {
   constructor(public readonly status: number, message: string) {
     super(message);
@@ -73,13 +107,13 @@ export class AdminClient {
 
   constructor(opts: AdminClientOptions = {}) {
     this.baseUrl = opts.baseUrl ?? DEFAULT_BASE_URL;
-    this.getToken = opts.getToken ?? (async () => null);
+    this.getToken = opts.getToken ?? defaultServerToken;
     this.fetchImpl = opts.fetchImpl ?? globalThis.fetch.bind(globalThis);
   }
 
   private async request<T>(
     path: string,
-    init: RequestInit = {},
+    init: RequestInit & { reason?: string } = {},
   ): Promise<T> {
     const headers = new Headers(init.headers ?? {});
     headers.set("Accept", "application/json");
@@ -89,8 +123,6 @@ export class AdminClient {
 
     const token = await this.getToken();
     if (token) headers.set("Authorization", `Bearer ${token}`);
-
-    const method = (init.method ?? "GET").toUpperCase();
 
     const res = await this.fetchImpl(`${this.baseUrl}${path}`, { ...init, headers });
     if (!res.ok) {

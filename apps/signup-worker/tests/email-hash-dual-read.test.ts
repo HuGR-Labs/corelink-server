@@ -8,6 +8,7 @@ import { acceptTeamInvitation } from "../src/lib/d1.js";
 
 const EMAIL = "alice@example.com";
 const SALT = "server-secret-salt";
+const TOKEN = "c".repeat(64);
 
 /** Reference legacy hash: hex(SHA-256(trim + lowercase)). */
 async function legacyRef(email: string): Promise<string> {
@@ -74,7 +75,8 @@ describe("emailHashCandidates (dual-read candidate set)", () => {
 
 /**
  * Fake D1 that stores a single `team_member`-style row keyed by its stored
- * `email_hash` and honors the `WHERE email_hash IN (?1, ?2)` accept-lookup.
+ * `email_hash` and honors the token-digest accept lookup's `email_hash IN`
+ * predicate (the real SQL puts `invitation_token_hash` first).
  */
 function fakeDbWithInvite(storedEmailHash: string | null) {
   const flips: unknown[][] = [];
@@ -91,8 +93,9 @@ function fakeDbWithInvite(storedEmailHash: string | null) {
         async first<T>(): Promise<T | null> {
           if (
             storedEmailHash !== null &&
-            query.includes("WHERE email_hash IN") &&
-            stmt._binds.slice(0, 2).includes(storedEmailHash)
+            query.includes("invitation_token_hash = ?1") &&
+            query.includes("email_hash IN") &&
+            stmt._binds.slice(1, 3).includes(storedEmailHash)
           ) {
             return { tenant_id: "t_1", user_id: "inv_1" } as unknown as T;
           }
@@ -117,6 +120,8 @@ describe("acceptTeamInvitation dual-read", () => {
       db,
       "clerk_user_x",
       await emailHashCandidates(EMAIL), // salt unset → single candidate
+      Date.now(),
+      TOKEN,
     );
     expect(ok).toBe(true);
     expect(flips).toHaveLength(1);
@@ -130,6 +135,8 @@ describe("acceptTeamInvitation dual-read", () => {
       db,
       "clerk_user_x",
       await emailHashCandidates(EMAIL, SALT), // salt set → {salted, legacy}
+      Date.now(),
+      TOKEN,
     );
     expect(ok).toBe(true);
     expect(flips).toHaveLength(1);
@@ -143,6 +150,8 @@ describe("acceptTeamInvitation dual-read", () => {
       db,
       "clerk_user_x",
       await emailHashCandidates(EMAIL, SALT),
+      Date.now(),
+      TOKEN,
     );
     expect(ok).toBe(true);
   });
@@ -154,6 +163,8 @@ describe("acceptTeamInvitation dual-read", () => {
       db,
       "clerk_user_x",
       await emailHashCandidates("nobody@example.com", SALT),
+      Date.now(),
+      TOKEN,
     );
     expect(ok).toBe(false);
     expect(flips).toHaveLength(0);

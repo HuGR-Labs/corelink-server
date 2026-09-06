@@ -4,12 +4,14 @@ title: "ADR-0022 — Chunk size vs R2 multipart part size decoupling"
 description: "Decouples the content-addressable chunk size (2 MiB) from the R2 multipart part size (16 MiB) so dedup granularity is independent of R2's API cost ceiling."
 source_files:
   - "specs/03_architecture/adrs/ADR-0022-chunk-size-vs-part-size-decoupling.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s05", "chunker", "multipart", "fastcdc", "r2"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0022-chunk-size-vs-part-size-decoupling.md@141a3eaa7fd7d45cf8447dcd6a87ccacb31ad23b"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-0022 — Chunk size vs R2 multipart part size decoupling
 
 CoreLink's chunker splits blobs into content-addressable units for dedup, while R2's multipart API has its own minimum part size — two distinct concepts that the S-05 corpus had silently conflated. This ADR keeps them decoupled: a 2 MiB chunk for good dedup granularity, batched 8-at-a-time into a 16 MiB R2 part to stay above R2's 5 MiB floor and cut R2 ops cost 8×. It matters because conflating them would force either terrible dedup (16 MiB chunks) or an impossible upload (2 MiB parts R2 rejects). It governs the [chunk + manifest bucket](/storage/chunk-manifest-buckets.md) storage layout.

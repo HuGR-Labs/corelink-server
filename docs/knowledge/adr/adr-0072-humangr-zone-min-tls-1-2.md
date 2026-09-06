@@ -3,15 +3,18 @@ type: "ADR"
 title: "ADR-0072 — humangr.com zone min_tls_version lowered 1.3 → 1.2 for sccache"
 description: "Why the edge TLS floor is 1.2 and not 1.3: a 1.3-only zone silently rejected sccache clients on macOS SecureTransport, breaking a live cache surface. Records what was given up, the exit condition that is not currently measurable, and the drift risk of a security setting that lives only in a vendor dashboard."
 source_files:
-  - "specs/03_architecture/adrs/ADR-0072-humangr-zone-min-tls-1.2.md"
   - "specs/03_architecture/security_model.md"
+  - "specs/03_architecture/adrs/ADR-0072-humangr-zone-min-tls-1.2.md"
   - "scripts/check_tls_floor.py"
-checkpoint_sha: "6e334917a4308b0c5e5cb24679356a7461537b1d"
+source_blobs:
+  - "specs/03_architecture/security_model.md@b7aa57fcbb0ef629692bb9982bf5e1cc4c8eb3f8"
+  - "specs/03_architecture/adrs/ADR-0072-humangr-zone-min-tls-1.2.md@7aa02bc0ed37bd512804e10cac91f19377f7de5d"
+  - "scripts/check_tls_floor.py@336f2365d18b7286006eb1833a61db4047c5d02d"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 provenance: "AUTHORED"
 tags: ["adr", "security", "tls", "cloudflare", "zone-config", "sccache", "drift-risk"]
 timestamp: "2026-08-23T00:00:00Z"
 ---
-
 # ADR-0072 — `humangr.com` zone `min_tls_version` lowered 1.3 → 1.2
 
 The edge TLS floor for `humangr.com` is **1.2**, not 1.3. A 1.3-only floor rejected `sccache`
@@ -88,3 +91,8 @@ floor change and the control now says so rather than implying otherwise.
    rather than a minimum, so drift in either direction is a failure. Authentication failure exits
    non-zero rather than passing, because a check that cannot read the value cannot claim it has not
    drifted.
+
+
+# Revalidation
+
+This concept was revalidated against the cumulative implementation tree; its existing source citations remain the controlling evidence for the behavior described above.

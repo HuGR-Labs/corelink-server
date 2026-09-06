@@ -240,8 +240,9 @@ impl MoatCache {
     ///
     /// Timed as the `ostore` sub-phase of the Worker's `origin` block (see
     /// [`crate::origin_timing`]): the whole storage cost of a cache lookup —
-    /// the url-map read AND, on a map hit, the CAS/R2 blob fetch. The work is
-    /// in [`Self::get_untimed`]; this wrapper only starts and stops a clock.
+    /// the CAS/R2 blob fetch. The D1 url-map read is charged to
+    /// `oaccounting` separately, so the two costs can be compared without
+    /// overlapping windows. The work is in [`Self::get_untimed`].
     ///
     /// On the cargo read path the url-map read is now served from the `pat`
     /// read's co-read ([`crate::d1_coread`]), so `ostore` measures ~0 on a miss
@@ -249,11 +250,7 @@ impl MoatCache {
     /// moved into `opat`, which now carries both statements. The phases still
     /// sum exactly — the millisecond changed phase, it did not disappear.
     pub async fn get(&self, namespace: &str, url_hash: &str) -> Result<Option<Vec<u8>>, MoatError> {
-        crate::origin_timing::timed(
-            crate::origin_timing::Phase::Store,
-            self.get_untimed(namespace, url_hash),
-        )
-        .await
+        self.get_untimed(namespace, url_hash).await
     }
 
     /// The unwrapped body of [`Self::get`] — see it for the contract.
@@ -284,11 +281,12 @@ impl MoatCache {
                 // whole 404 path now costs zero storage round trips.
                 None => return Ok(None),
             },
-            None => match self
-                .map
-                .get(namespace, url_hash)
-                .await
-                .map_err(MoatError::Backend)?
+            None => match crate::origin_timing::timed(
+                crate::origin_timing::Phase::Accounting,
+                self.map.get(namespace, url_hash),
+            )
+            .await
+            .map_err(MoatError::Backend)?
             {
                 Some(h) => h,
                 None => return Ok(None),
@@ -304,15 +302,12 @@ impl MoatCache {
         );
         // `spawn_blocking` runs the sync CAS adapter on a different Tokio task,
         // so the request task-local ledger is not ambient there. Carry the
-        // request handle explicitly; `PhaseScope`'s shared window coalescer
-        // merges the nested Store scope when `MoatCache::get` is already
-        // timing the whole operation, while still recording it standalone.
+        // request handle explicitly without opening a phase: the R2 handler
+        // owns its precise `ostore` scope and the D1 map read above owns
+        // `oaccounting`.
         let ledger = crate::origin_timing::current_ledger();
         let result = tokio::task::spawn_blocking(move || {
-            let _scope = crate::origin_timing::PhaseScope::with_handle(
-                ledger,
-                crate::origin_timing::Phase::Store,
-            );
+            let _scope = crate::origin_timing::PhaseScope::with_ledger(ledger);
             handler.read(req)
         })
         .await
@@ -350,9 +345,10 @@ impl MoatCache {
     /// Store `bytes` content-addressed + map `(namespace, url_hash)` to the
     /// content-hash. Identical bytes (any namespace/url) dedup to one CAS blob.
     ///
-    /// Timed as `ostore`, like [`Self::get`] — a write's storage cost belongs
-    /// to the same phase as a read's, so a probe against the write path
-    /// attributes without a second convention.
+    /// R2 work is timed as `ostore`, while D1 accounting and the URL-map write
+    /// are timed as `oaccounting`. Keeping those windows disjoint is what makes
+    /// a production PUT useful for deciding whether storage or accounting is
+    /// the serialization bottleneck.
     pub async fn put(
         &self,
         namespace: &str,
@@ -360,9 +356,28 @@ impl MoatCache {
         bytes: Vec<u8>,
         storage_quota_bytes: Option<i64>,
     ) -> Result<(), MoatError> {
-        crate::origin_timing::timed(
-            crate::origin_timing::Phase::Store,
-            self.put_untimed(namespace, url_hash, bytes, storage_quota_bytes),
+        self.put_for_tenant(namespace, namespace, url_hash, bytes, storage_quota_bytes)
+            .await
+    }
+
+    /// Store a shared/public mapping while charging the authenticated tenant.
+    /// The storage namespace controls deduplication; the accounting namespace
+    /// is carried in the CAS request so public cache fills cannot bypass the
+    /// caller's tier cap by writing into `_public`.
+    pub async fn put_for_tenant(
+        &self,
+        namespace: &str,
+        accounting_namespace: &str,
+        url_hash: &str,
+        bytes: Vec<u8>,
+        storage_quota_bytes: Option<i64>,
+    ) -> Result<(), MoatError> {
+        self.put_untimed(
+            namespace,
+            accounting_namespace,
+            url_hash,
+            bytes,
+            storage_quota_bytes,
         )
         .await
     }
@@ -371,6 +386,7 @@ impl MoatCache {
     async fn put_untimed(
         &self,
         namespace: &str,
+        accounting_namespace: &str,
         url_hash: &str,
         bytes: Vec<u8>,
         storage_quota_bytes: Option<i64>,
@@ -384,39 +400,58 @@ impl MoatCache {
         // `tenant_storage_state` row is seeded with the REAL cap and a
         // DOWNGRADED tenant's stored cap is reconciled on this write (rt-nuclear
         // #16). The OCI surface (WP #10) resolves the cap at `/token` mint and
-        // passes it here via the verified bearer; the brew/npm/pip surfaces pass
-        // `None` (their writes accrue against an EXISTING row's stored cap; a
-        // tenant with NO row yet is seeded on its first NATIVE write, which
-        // carries the Worker cap header). `None` ⇒ fail-closed on an unseeded
-        // tenant — absence is never treated as unlimited.
-        let req = CasWriteRequest::new(
-            namespace,
-            &content_hash,
-            bytes,
-            self.principal.as_str(),
-            namespace,
-            unix_ms_now(),
-        )
+        // passes it here via the verified bearer; the brew/pip public surfaces
+        // resolve and pass the caller's cap as well. `None` ⇒ fail-closed on
+        // an unseeded tenant — absence is never treated as unlimited.
+        let req = if namespace == PUBLIC_NAMESPACE {
+            // `_public` is the physical deduplication namespace.  The
+            // authenticated tenant remains explicit in the request so the
+            // accounting decorator reserves against that tenant's cap.
+            CasWriteRequest::for_public_namespace(
+                accounting_namespace,
+                &content_hash,
+                bytes,
+                self.principal.as_str(),
+                unix_ms_now(),
+            )
+        } else {
+            // Private storage and quota must identify the same tenant.  Do
+            // not let a caller smuggle a private object into another
+            // tenant's physical namespace through the shared-write API.
+            if namespace != accounting_namespace {
+                return Err(MoatError::Backend(
+                    "private storage/accounting namespace mismatch".to_owned(),
+                ));
+            }
+            CasWriteRequest::new(
+                namespace,
+                &content_hash,
+                bytes,
+                self.principal.as_str(),
+                accounting_namespace,
+                unix_ms_now(),
+            )
+        }
         .with_storage_quota_bytes(storage_quota_bytes);
         // See `get_untimed`: this explicit handle is the bridge across the
-        // blocking task boundary. The outer `timed(Store, put_untimed(..))`
-        // owns the whole request window; the inner handler scope is coalesced
-        // into it and cannot inflate `ostore`.
+        // blocking task boundary. The sync decorator and R2 handler own their
+        // disjoint `oaccounting`/`ostore` scopes; no broad outer Store window
+        // can hide D1 serialization inside storage.
         let ledger = crate::origin_timing::current_ledger();
         let result = tokio::task::spawn_blocking(move || {
-            let _scope = crate::origin_timing::PhaseScope::with_handle(
-                ledger,
-                crate::origin_timing::Phase::Store,
-            );
+            let _scope = crate::origin_timing::PhaseScope::with_ledger(ledger);
             handler.write(req)
         })
         .await
         .map_err(|e| MoatError::Backend(format!("cas write join: {e}")))?;
         result.map_err(|e| MoatError::Backend(format!("cas write: {e:?}")))?;
-        self.map
-            .put(namespace, url_hash, &content_hash, content_len)
-            .await
-            .map_err(MoatError::Backend)?;
+        crate::origin_timing::timed(
+            crate::origin_timing::Phase::Accounting,
+            self.map
+                .put(namespace, url_hash, &content_hash, content_len),
+        )
+        .await
+        .map_err(MoatError::Backend)?;
         Ok(())
     }
 
@@ -429,12 +464,11 @@ impl MoatCache {
     /// unreferenced blobs are reclaimed by the storage GC, not by this path.
     /// Idempotent: deleting an absent key succeeds.
     ///
-    /// Timed as `ostore`, like [`Self::get`] / [`Self::put`] — sccache's
-    /// write-probe cleanup issues one of these per build, so it is on the
-    /// measured surface.
+    /// The URL-map delete is a D1 accounting-side operation, so it is timed as
+    /// `oaccounting` (the R2 blob is intentionally retained for GC).
     pub async fn delete(&self, namespace: &str, url_hash: &str) -> Result<(), MoatError> {
         crate::origin_timing::timed(
-            crate::origin_timing::Phase::Store,
+            crate::origin_timing::Phase::Accounting,
             self.map.delete(namespace, url_hash),
         )
         .await
@@ -518,13 +552,12 @@ mod tests {
 
     /// **`Phase::Store` is recorded exactly ONCE on the `MoatCache::put` path.**
     ///
-    /// `MoatCache::put` wraps the whole write in `timed(Phase::Store, ..)`
-    /// (`Self::put`), and the production CAS handler `R2CasHandler::write`
-    /// (`storage/r2_s3.rs`) enters `Phase::Store` AGAIN around its R2 calls.
-    /// The handler runs under `spawn_blocking`, so it receives the request
-    /// ledger through an explicit handle rather than an ambient task-local.
-    /// shared phase-window accounting coalesces that inner scope; the outer
-    /// scope accounts the complete operation once.
+    /// The production CAS handler `R2CasHandler::write`
+    /// (`storage/r2_s3.rs`) enters `Phase::Store` around its R2 calls. The
+    /// handler runs under `spawn_blocking`, so the request ledger is installed
+    /// through an explicit bridge rather than an ambient task-local. The
+    /// accounting decorator's D1 windows use `Phase::Accounting` and therefore
+    /// cannot inflate this storage phase.
     #[tokio::test]
     async fn put_records_the_store_phase_exactly_once() {
         use corelink_handler_cas::{CasReadResponse, CasWriteResponse};
@@ -566,6 +599,12 @@ mod tests {
         let store_us = ledger
             .micros(crate::origin_timing::Phase::Store)
             .expect("the put must have recorded a Store window");
+        assert!(
+            ledger
+                .micros(crate::origin_timing::Phase::Accounting)
+                .is_some(),
+            "the URL-map D1 write must be visible as its own accounting phase"
+        );
 
         assert!(
             store_us <= wall_us,
@@ -574,12 +613,12 @@ mod tests {
              — the R2 window is being counted twice and every `ostore` number, \
              B-107's baseline included, is inflated."
         );
-        // And it must not have vanished either: the outer `timed` has to cover
-        // the handler's 30 ms, or the time fell into `oother` unnamed.
+        // And it must not have vanished either: the explicit ledger bridge has
+        // to cover the handler's 30 ms, or the time fell into `oother` unnamed.
         assert!(
             store_us >= 25_000,
-            "ostore ({store_us} us) is far below the handler's 30 ms — the outer \
-             `timed` stopped covering the write and the time is now unattributed"
+            "ostore ({store_us} us) is far below the handler's 30 ms — the \
+             blocking ledger bridge stopped covering the R2 write"
         );
     }
 
@@ -651,6 +690,115 @@ mod tests {
             Some(bytes.clone())
         );
         assert_eq!(m.get(PUBLIC_NAMESPACE, "urlB").await.unwrap(), Some(bytes));
+    }
+
+    #[tokio::test]
+    async fn public_write_charges_real_tenant_but_round_trips_shared_namespace() {
+        use corelink_handler_cas::{CasReadResponse, CasWriteResponse};
+
+        #[derive(Debug)]
+        struct RecordingCas {
+            inner: InMemoryCasHandler,
+            writes: Arc<Mutex<Vec<(String, String, String, bool)>>>,
+        }
+        impl CasReadHandler for RecordingCas {
+            fn read(&self, req: CasReadRequest) -> Result<CasReadResponse, CasHandlerError> {
+                self.inner.read(req)
+            }
+        }
+        impl CasWriteHandler for RecordingCas {
+            fn write(&self, req: CasWriteRequest) -> Result<CasWriteResponse, CasHandlerError> {
+                let physical = req.tenant.clone();
+                let caller = req.caller_tenant.clone();
+                let accounting = req.accounting_tenant.clone();
+                let result = self.inner.write(req);
+                if let Ok(response) = &result {
+                    self.writes.lock().unwrap().push((
+                        physical,
+                        caller,
+                        accounting,
+                        response.durable,
+                    ));
+                }
+                result
+            }
+        }
+
+        let map = Arc::new(FakeUrlMap::default());
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let cas = Arc::new(RecordingCas {
+            inner: InMemoryCasHandler::new(
+                Arc::new(InMemoryAuditSink::new()),
+                Arc::new(InMemorySliObserver::new()),
+            ),
+            writes: Arc::clone(&writes),
+        });
+        let m = MoatCache::new(
+            Arc::clone(&cas) as Arc<dyn CasReadHandler>,
+            cas as Arc<dyn CasWriteHandler>,
+            Arc::clone(&map),
+            fake_hash,
+            "moat-test",
+        );
+        let bytes = b"public-but-accounted".to_vec();
+        m.put_for_tenant(
+            PUBLIC_NAMESPACE,
+            "tenant-real",
+            "url",
+            bytes.clone(),
+            Some(1024),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            writes.lock().unwrap().as_slice(),
+            [(
+                String::from(PUBLIC_NAMESPACE),
+                String::from("tenant-real"),
+                String::from("tenant-real"),
+                true,
+            )]
+        );
+        assert!(map
+            .rows
+            .lock()
+            .unwrap()
+            .contains_key(&(PUBLIC_NAMESPACE.to_owned(), "url".to_owned())));
+        assert_eq!(m.get(PUBLIC_NAMESPACE, "url").await.unwrap(), Some(bytes));
+
+        // A second authenticated tenant writing identical public content uses
+        // the same physical CAS key and therefore gets the durable dedup no-op,
+        // while its own accounting identity remains visible in the request.
+        m.put_for_tenant(
+            PUBLIC_NAMESPACE,
+            "tenant-other",
+            "url-other",
+            b"public-but-accounted".to_vec(),
+            Some(1024),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            writes.lock().unwrap().as_slice(),
+            [
+                (
+                    String::from(PUBLIC_NAMESPACE),
+                    String::from("tenant-real"),
+                    String::from("tenant-real"),
+                    true,
+                ),
+                (
+                    String::from(PUBLIC_NAMESPACE),
+                    String::from("tenant-other"),
+                    String::from("tenant-other"),
+                    false,
+                ),
+            ]
+        );
+        assert_eq!(
+            m.get(PUBLIC_NAMESPACE, "url-other").await.unwrap(),
+            Some(b"public-but-accounted".to_vec())
+        );
     }
 
     #[tokio::test]

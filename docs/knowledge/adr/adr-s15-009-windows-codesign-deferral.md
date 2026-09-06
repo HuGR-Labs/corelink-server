@@ -4,12 +4,14 @@ title: "ADR-S15-009 — Windows Authenticode: no unsigned fallback, deferral pat
 description: "Forbids shipping an unsigned Windows release; lets macOS + Linux ship at the sprint SEAL while Windows ships later but always signed, preserving the honest '3 OSes signed' claim."
 source_files:
   - "specs/03_architecture/adrs/ADR-S15-009-windows-codesign-deferral.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "ops", "release", "windows", "authenticode", "codesign", "deferral", "s15"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S15-009-windows-codesign-deferral.md@f78d8307ddd6de39900400a7e3b30ce0aa640303"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-S15-009 — Windows Authenticode: no unsigned fallback, deferral path only
 
 The S-15 ship gate requires release binaries signed on three OSes, but the Windows Authenticode EV certificate has a 1-2 week vendor lead that can slip past the sprint window. Rather than admit an "unsigned-with-warning" Windows fallback — which would dilute the trust claim and trigger SmartScreen warnings — this ADR makes the only Windows shipment path a signed one, decoupling the sprint SEAL from cert-procurement variance. It exists to keep "3 OSes signed" an honest claim: when the third OS ships, it ships signed.

@@ -103,7 +103,7 @@ The following must all be **GREEN** at T-7d ± 2h. Any RED defers cutover by ≥
 
 ### 0.8 Dry-run history
 
-The §3 sequence is exercised against in-process fakes via `scripts/ga-cutover-dryrun.sh` ahead of the §9 mandated production dress-rehearsal. Each dry-run emits a sealed audit doc under `specs/_audits/YYYY-MM-DD-ga-cutover-dryrun.md` and a JSON evidence bundle under `reports/ga-cutover-dryrun-YYYY-MM-DD.json`. The dry-run is a *necessary but not sufficient* precondition for the §9 dress-rehearsal: it asserts the runbook orchestration is internally consistent and that the §4 greenlight recording-rule thresholds evaluate cleanly when fed canonical values; it does NOT substitute for the §9 production dress-rehearsal against a real staging environment.
+The §3 sequence is exercised against in-process fakes via `scripts/ga-cutover-dryrun.sh` ahead of the §9 mandated production dress-rehearsal. Each dry-run emits a sealed audit doc under `specs/_audits/YYYY-MM-DD-ga-cutover-dryrun.md` and a JSON evidence bundle under `reports/ga-cutover-dryrun-YYYY-MM-DD.json`. The dry-run is a *necessary but not sufficient* precondition for the §9 dress-rehearsal: it asserts the runbook orchestration is internally consistent and that the §4 greenlight recording-rule thresholds evaluate cleanly when fed canonical values; it does NOT substitute for the §9 owner-authorized rehearsal against an externally provisioned staging-equivalent target.
 
 | Run date | Verdict | Greenlights (G1..G6) | §3 steps PASS | Triggers fired | GA-readiness | Audit doc |
 |---|---|---|---|---|---|---|
@@ -141,21 +141,26 @@ Run secrets sweep per `RB-SECRETS-DRIFT.md` §3:
 
 ---
 
-## 2. T-24h staging + endurance
+## 2. T-24h owner-provisioned staging-equivalent + endurance
 
-### 2.1 Deploy to staging
+> **Repository boundary (B-070):** the root Worker configuration intentionally
+> has no `[env.staging]`, and `cf-deploy-prod.yml` deploys only the five live
+> production environments. This runbook therefore has no executable staging
+> deploy or automatic staging → production promotion step. Before this section
+> can be invoked, the Owner must provision and authorize a separate
+> staging-equivalent target and record its configuration; otherwise this is a
+> hard prerequisite failure, not a reason to deploy directly to production.
+
+### 2.1 Verify the owner-provisioned staging-equivalent target
 
 ```bash
 # 2.1.1 Tag the cutover release candidate
 git tag -s v1.0.0-ga.rc1 -m "GA cutover RC1 — T-24h candidate"
 git push origin v1.0.0-ga.rc1
 
-# 2.1.2 Deploy CF Worker to staging (full rollout, no gradual)
-pnpm --filter @corelink/worker run deploy:staging
-
-# 2.1.3 Verify staging health
-curl https://staging.corelink.humangr.com/__health | jq '.status'
-# expected: "OPERATIONAL"
+# No repository command deploys the root Worker to staging. The Owner must
+# supply the separately provisioned target/configuration and its health probe.
+# Do not substitute `wrangler deploy --env prod` for this prerequisite.
 ```
 
 ### 2.2 Full proptest suite (10k iter)
@@ -170,13 +175,14 @@ cargo test --workspace --release -- --test-threads=4 proptest_ 2>&1 | tee specs/
 
 **Pass criterion:** zero failed proptests across all 10k iterations. Any failure defers cutover by ≥ 48h and triggers root-cause analysis per `RB-CANONICAL-DRIFT.md`.
 
-### 2.3 24h endurance load test
+### 2.3 Legacy staging endurance (retired)
 
-Trigger per `RB-ENDURANCE-24H-DRILL.md` §3:
-
-- Drives sustained 10k req/s mixed-workload against staging for full 24h.
-- P99 latency must stay ≤ SLO (per `slo_catalog.md` §4) for entire window.
-- Zero error-budget burn alerts firing at end of window.
+The former root-Worker staging endurance procedure is obsolete and is not an
+executable step of this runbook. The root Worker has no staging target, and no
+repository command may create staging buckets or deploy a root Worker to one.
+Do not substitute a production target for this retired prerequisite. Any
+independently provisioned staging-equivalent exercise requires a separately
+authorized runbook and evidence record outside this repository path.
 
 ### 2.4 Customer announcement send
 
@@ -189,25 +195,46 @@ Trigger per `RB-ENDURANCE-24H-DRILL.md` §3:
 
 Execute the following **11 steps in strict order**. Each step has its own verification gate; do NOT proceed to step N+1 until step N is GREEN. Target wall-clock: ≤ 4h end-to-end if all gates green; ≤ 8h with 15min holds between gradual rollout stages.
 
-### 3.1 Step 1 — Provision / verify R2 buckets
+### 3.1 Step 1 — Verify production R2 bindings
 
-**Buckets:** 5 regions × (audit + ac + main blob + 2 staging) = 25 buckets total.
+The former staging-bucket provisioning procedure is obsolete and removed. R2
+resources are account-scoped and are already bound by the five production
+environments in `wrangler.toml`; this step verifies the production bindings
+without creating buckets.
 
 ```bash
-# 3.1.1 Verify all 25 buckets exist + permissions correct
-for region in us-east us-west eu-west ap-southeast sa-east; do
-  for purpose in audit ac main staging-1 staging-2; do
-    wrangler r2 bucket list | grep "corelink-${region}-${purpose}" || \
-      wrangler r2 bucket create "corelink-${region}-${purpose}" --location "$region"
-  done
+# 3.1.1 Parse each shipped production environment and its bindings
+PROD_ENVS=(prod prod-sam prod-lhr prod-nrt prod-syd)
+for env in "${PROD_ENVS[@]}"; do
+  wrangler deploy --env "$env" --dry-run >/dev/null
 done
 
-# 3.1.2 Verify CORS + lifecycle policies applied
+# 3.1.2 Verify the account-scoped production bucket inventory
+PROD_BUCKETS=(
+  corelink-cas-prod corelink-cas-eu corelink-cas-apac
+  # prod-lhr uses the EU-jurisdiction bucket; the other production bindings
+  # retain corelink-ac-lhr where configured.
+  corelink-ac-sam corelink-ac-iad corelink-ac-eu corelink-ac-lhr corelink-ac-nrt corelink-ac-syd
+  corelink-chunk-sam corelink-chunk-iad corelink-chunk-lhr corelink-chunk-nrt corelink-chunk-syd
+  corelink-manifest-sam corelink-manifest-iad corelink-manifest-lhr
+  corelink-manifest-nrt corelink-manifest-syd
+)
+BUCKET_INVENTORY="$(wrangler r2 bucket list)"
+for bucket in "${PROD_BUCKETS[@]}"; do
+  grep -F "$bucket" <<<"$BUCKET_INVENTORY" >/dev/null || {
+    echo "missing production R2 bucket: $bucket" >&2
+    exit 1
+  }
+done
+
+# 3.1.3 Verify CORS + lifecycle policies applied
 ./scripts/r2-cors-verify.sh
 ./scripts/r2-lifecycle-verify.sh
 ```
 
-**Verification gate:** `./scripts/r2-cors-verify.sh` exit `0` AND all 25 buckets show in `wrangler r2 bucket list`.
+**Verification gate:** all five production dry-runs exit `0`, the expected
+production bucket names show in `wrangler r2 bucket list`, and both policy
+verifiers exit `0`.
 
 ### 3.2 Step 2 — Apply Neon shadow migrations (idempotent)
 
@@ -229,22 +256,22 @@ Use Cloudflare Workers gradual rollout (`wrangler deploy --gradual=...`). Hold 1
 | Stage | Traffic % | Hold duration | Promote criterion | Rollback criterion |
 |---|---|---|---|---|
 | 3.3.1 | 1 % | 15 min | Zero SEV-0/1 in 15min window; p99 latency within SLO; audit-chain integrity green | Any SEV-0 OR ≥ 1 SEV-1 OR p99 breach → `RB-GA-LAUNCH-ROLLBACK.md` §5 |
-| 3.3.2 | 10 % | 15 min | Same as 3.3.1 + dedup ratio within ±5% of staging baseline | Same as 3.3.1 |
+| 3.3.2 | 10 % | 15 min | Same as 3.3.1 + dedup ratio within ±5% of the release-candidate baseline | Same as 3.3.1 |
 | 3.3.3 | 50 % | 15 min | Same as 3.3.2 + Neon shadow lag p99 ≤ 5min | Same as 3.3.1 |
 | 3.3.4 | 100 % | 30 min observation | Same as 3.3.3 sustained 30min | Same as 3.3.1 |
 
 ```bash
 # 3.3.1 1% gradual rollout
-wrangler deploy --gradual=1 --env=production
+wrangler deploy --gradual=1 --env prod
 
 # 3.3.2 10% promote
-wrangler deploy --gradual=10 --env=production
+wrangler deploy --gradual=10 --env prod
 
 # 3.3.3 50% promote
-wrangler deploy --gradual=50 --env=production
+wrangler deploy --gradual=50 --env prod
 
 # 3.3.4 100% promote
-wrangler deploy --gradual=100 --env=production
+wrangler deploy --gradual=100 --env prod
 ```
 
 **Verification gate:** at each stage, the recording rules in `dashboards/alerts/dash-ga-greenlight.yml` must show GREEN for the full hold duration before promote.
@@ -273,10 +300,10 @@ done
 stripe webhook_endpoints update "$STRIPE_WEBHOOK_ID" --url=https://api.corelink.humangr.com/webhooks/stripe
 
 # 3.5.2 Verify webhook signing secret matches deployed Worker
-wrangler secret list --env=production | grep STRIPE_WEBHOOK_SECRET
+wrangler secret list --env prod | grep STRIPE_WEBHOOK_SECRET
 
 # 3.5.3 Start DLQ consumers
-wrangler tail --env=production --status=ok | grep -c "dlq-consumer-started"
+wrangler tail --env prod --status=ok | grep -c "dlq-consumer-started"
 ```
 
 **Verification gate:** synthetic Stripe webhook (test event) reaches Worker AND is signed-verified AND lands in main pipeline (not DLQ). Triggers `RB-WEBHOOK-DLQ-REPLAY.md` if any test event ends in DLQ.
@@ -304,7 +331,7 @@ wrangler logpush create --destination=r2://corelink-us-east-audit/logs/ \
   --dataset=workers_trace_events --filter='outcome=="ok"'
 
 # 3.7.2 Enable Neon shadow sync cron
-wrangler cron trigger --env=production --cron-name=audit-chain-neon-sync
+wrangler cron trigger --env prod --cron-name=audit-chain-neon-sync
 ```
 
 **Verification gate:** within 5min, audit-chain head SHA appears in R2 audit bucket AND in Neon shadow audit_chain table. Triggers `RB-AUDIT-EXPORT-INTEGRITY.md` if either is missing.
@@ -313,7 +340,7 @@ wrangler cron trigger --env=production --cron-name=audit-chain-neon-sync
 
 ```bash
 # 3.8.1 Enable DSR cron worker
-wrangler cron trigger --env=production --cron-name=dsr-statuspage-publish
+wrangler cron trigger --env prod --cron-name=dsr-statuspage-publish
 ```
 
 **Verification gate:** first cron run completes within 5min, status `dsr_run_status=success`. Triggers `RB-DSR-STATUSPAGE-PUBLISH-FAILED.md` if any failure.
@@ -523,10 +550,10 @@ The `2026-MM-DD-ga-cutover-execution-attestation.md` (`type: audit`) doc must ca
 
 ## 9. Verification + drill cadence
 
-- **Pre-cutover dress rehearsal** at T-14d: full §3 sequence executed against staging (no production impact). Sealed audit doc at `specs/_audits/2026-MM-DD-ga-cutover-dress-rehearsal.md`.
+- **Pre-cutover dress rehearsal** at T-14d: full §3 sequence executed against an owner-provisioned staging-equivalent target (no production impact). Sealed audit doc at `specs/_audits/2026-MM-DD-ga-cutover-dress-rehearsal.md`.
 - **§5 rollback decision-tree tabletop** at T-14d ± 3d: on-call SRE + Product Lead walk through each RB-T1..RB-T6 trigger; document at `specs/_audits/2026-MM-DD-ga-cutover-rollback-tabletop.md`.
 - **§7 comms templates dry-run** at T-14d: render + review (do NOT send); sealed audit doc.
-- **Greenlight dashboard validation** at T-7d: confirm all 6 recording rules in `dashboards/alerts/dash-ga-greenlight.yml` return real values from staging; document at `specs/_audits/2026-MM-DD-ga-cutover-greenlight-validation.md`.
+- **Greenlight dashboard validation** at T-7d: confirm all 6 recording rules in `dashboards/alerts/dash-ga-greenlight.yml` return real values from the owner-provisioned staging-equivalent target; document at `specs/_audits/2026-MM-DD-ga-cutover-greenlight-validation.md`.
 
 ---
 
@@ -554,7 +581,8 @@ The `2026-MM-DD-ga-cutover-execution-attestation.md` (`type: audit`) doc must ca
 - `specs/_runbooks/RB-COMPLIANCE-WEEKLY-REVIEW.md` — weekly attestation at T+7d (§6.3.1).
 - `specs/_runbooks/RB-POSTMORTEM-PROCESS.md` — postmortem template kicked off at §5.3 RB-S5.
 - `specs/_runbooks/RB-PERF-REGRESSION.md` — perf regression handling if §4 G1 trips.
-- `specs/_runbooks/RB-ENDURANCE-24H-DRILL.md` — endurance test executed at §2.3.
+- `specs/_runbooks/RB-ENDURANCE-24H-DRILL.md` — legacy endurance procedure,
+  retired for the root Worker and not invoked by this runbook.
 - `dashboards/alerts/dash-ga-greenlight.yml` — composite greenlight recording rules referenced by §3.3 + §4.
 - `dashboards/alerts/dash-slo-multi-burn.yml` — SLO multi-burn-rate alerts referenced by §4 G1.
 - `dashboards/alerts/dash-rate-alerts.yml` — rate-limit alerts referenced by §3.10.

@@ -221,6 +221,9 @@ paths:
         Returns a Stripe Checkout session URL; final activation happens
         when the corresponding `checkout.session.completed` event lands
         on `/v1/billing/stripe-webhook`.
+        A tenant may have only one payable checkout in flight. Repeating the
+        request is idempotent for that tenant; a second paid subscription is
+        rejected rather than replacing the existing billing owner.
       requestBody:
         required: true
         content:
@@ -308,8 +311,12 @@ paths:
       summary: Revoke a Personal Access Token by id.
       operationId: customerKeyRevoke
       description: |
-        Revocation is destructive and tenant-wide, so it requires a cache-write
-        capability; a read-only (`cas:r`) principal is rejected with `403`.
+        Revocation is a destructive tenant-admin operation. It requires the
+        server-trusted `owner` or `admin` team role from a Clerk dashboard
+        session; cache-write scope alone is not sufficient. An owner may
+        revoke any PAT in the tenant. An admin may revoke member PATs but is
+        rejected with `403` for the owner's PAT. Members, viewers, native PAT
+        callers, and cross-tenant targets are rejected (the latter as `404`).
         Subsequent uses of the revoked token MUST fail closed
         (`INV-PAT-REVOKE-PROPAGATION`).
       parameters:
@@ -324,6 +331,63 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/customer/team/invite:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/customer.rs (handle_team_invite)
+    post:
+      tags: [users]
+      summary: Create a one-time cryptographic team invitation.
+      operationId: customerTeamInvite
+      security:
+        - ClerkSessionCookie: []
+        - BearerPAT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamInviteRequest"
+      responses:
+        "201":
+          description: Invitation created. The token is shown exactly once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamInviteResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/customer/team/accept:
+    x-status: implemented
+    x-implementing-handler: worker/src/lib/team_invitation.ts
+    post:
+      tags: [users]
+      summary: Redeem a team invitation for the verified Clerk user.
+      operationId: customerTeamAccept
+      security:
+        - ClerkSessionCookie: []
+      description: |
+        Requires the authenticated user's Clerk primary email to be explicitly
+        marked `verified`. The opaque token is tenant-bound by its stored
+        digest; no tenant id is accepted from the caller. The expiry check,
+        audit event and one-row status transition are atomic, so replay fails.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamInviteAcceptRequest"
+      responses:
+        "200":
+          description: Invitation accepted exactly once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamInviteAcceptResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/InternalError" }
   /v1/customer/account/delete:
     x-status: implemented
@@ -983,6 +1047,50 @@ paths:
                 $ref: "#/components/schemas/TimelineResponse"
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /v1/cas/{tenant}/batch-read:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/cas.rs (handle_batch_read)
+    post:
+      tags: [reapi-http]
+      summary: Read multiple CAS blobs with bounded, ordered framing.
+      operationId: casBatchRead
+      security:
+        - BearerPAT: []
+      parameters:
+        - name: tenant
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/x-ndjson:
+            schema:
+              type: string
+              description: NDJSON hash objects, at most 2,000 lines.
+      responses:
+        "200":
+          description: Ordered manifest lines, a blank-line terminator, then concatenated blob bytes.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Cross-tenant attempt.
+        "413":
+          description: Object or aggregate payload exceeds the 8 MiB batch-read ceiling; no over-cap body is collected.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [error, limit_objects, limit_bytes]
+                properties:
+                  error: { type: string, const: batch_too_large }
+                  limit_objects: { type: integer, format: int64, example: 2000 }
+                  limit_bytes: { type: integer, format: int64, example: 8388608 }
+
   /v1/cas/{tenant}/{hash}:
     x-status: implemented
     x-implementing-handler: crates/corelink-container/src/routes/cas.rs (handle_read, handle_write)
@@ -1013,7 +1121,7 @@ paths:
           description: Blob bytes (opaque payload).
           content:
             application/octet-stream:
-              schema: { type: string, format: binary }
+              schema: { type: string, format: binary, maxLength: 67108864 }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403":
           description: Cross-tenant attempt — audit row emitted before 403.
@@ -1039,8 +1147,8 @@ paths:
         required: true
         content:
           application/octet-stream:
-            schema: { type: string, format: binary }
-        description: Raw blob bytes. The handler verifies the hash against the path parameter before committing.
+            schema: { type: string, format: binary, maxLength: 67108864 }
+        description: Raw blob bytes, capped at 64 MiB by the shared cache-entry limit. The handler verifies the hash against the path parameter before committing.
       responses:
         "201":
           description: Blob stored (durable commit). Body echoes the content hash.
@@ -1084,7 +1192,7 @@ paths:
           description: Blob bytes.
           content:
             application/octet-stream:
-              schema: { type: string, format: binary }
+              schema: { type: string, format: binary, maxLength: 67108864 }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -1143,7 +1251,7 @@ paths:
         required: true
         content:
           application/octet-stream:
-            schema: { type: string, format: binary }
+            schema: { type: string, format: binary, maxLength: 67108864 }
         description: Raw ActionResult bytes.
       responses:
         "201":
@@ -1272,7 +1380,7 @@ paths:
           description: Artifact bytes.
           content:
             application/octet-stream:
-              schema: { type: string, format: binary }
+              schema: { type: string, format: binary, maxLength: 67108864 }
         "400":
           description: Missing required `teamId` query parameter.
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -1302,7 +1410,7 @@ paths:
         required: true
         content:
           application/octet-stream:
-            schema: { type: string, format: binary }
+            schema: { type: string, format: binary, maxLength: 67108864 }
       responses:
         "200":
           description: Artifact stored. Body is `{"urls":["..."]}` per Vercel spec.
@@ -1360,7 +1468,7 @@ paths:
           description: Blob bytes.
           content:
             application/octet-stream:
-              schema: { type: string, format: binary }
+              schema: { type: string, format: binary, maxLength: 67108864 }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403":
           description: Cross-tenant attempt.
@@ -1397,7 +1505,7 @@ paths:
         required: true
         content:
           application/octet-stream:
-            schema: { type: string, format: binary }
+            schema: { type: string, format: binary, maxLength: 67108864 }
       responses:
         "200":
           description: Blob stored.
@@ -1434,7 +1542,7 @@ paths:
           description: ActionResult bytes.
           content:
             application/octet-stream:
-              schema: { type: string, format: binary }
+              schema: { type: string, format: binary, maxLength: 67108864 }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403":
           description: Cross-tenant attempt.
@@ -1462,7 +1570,7 @@ paths:
         required: true
         content:
           application/octet-stream:
-            schema: { type: string, format: binary }
+            schema: { type: string, format: binary, maxLength: 67108864 }
       responses:
         "200":
           description: ActionResult stored.
@@ -1704,6 +1812,53 @@ components:
       required: [pat]
       properties:
         pat: { $ref: "#/components/schemas/CustomerPat" }
+    TeamInviteRequest:
+      type: object
+      additionalProperties: false
+      required: [email, role]
+      properties:
+        email: { type: string, format: email }
+        role:
+          type: string
+          enum: [admin, member, viewer]
+    TeamInviteResponse:
+      type: object
+      additionalProperties: false
+      required: [member, invitation_token]
+      properties:
+        member:
+          type: object
+          required: [user_id, email, role, joined_at, status]
+          properties:
+            user_id: { type: string }
+            email: { type: string }
+            role: { type: string }
+            joined_at: { type: string }
+            status: { type: string, const: invited }
+        invitation_token:
+          type: string
+          minLength: 64
+          maxLength: 64
+          pattern: "^[0-9a-f]{64}$"
+          description: One-time opaque capability; never returned by list.
+    TeamInviteAcceptRequest:
+      type: object
+      additionalProperties: false
+      required: [invitation_token]
+      properties:
+        invitation_token:
+          type: string
+          minLength: 64
+          maxLength: 64
+          pattern: "^[0-9a-f]{64}$"
+    TeamInviteAcceptResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, tenant_id, role]
+      properties:
+        ok: { type: boolean, const: true }
+        tenant_id: { type: string }
+        role: { type: string }
     CustomerAccountDeleteResponse:
       type: object
       required: [ok, status]

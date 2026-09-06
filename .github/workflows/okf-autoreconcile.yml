@@ -1,4 +1,4 @@
-# OKF auto-reconcile — the "LLM half" of the self-healing loop, operator-dispatched.
+# OKF auto-reconcile — the "LLM half" of the self-healing loop.
 #
 # WHAT IT DOES: after a merge to main that touches source code, it checks whether any
 # OKF concept's cited lines drifted (the deterministic reporter `okf_reconcile.py`). If
@@ -8,32 +8,59 @@
 # the git/PR mechanics are owned by the workflow (not the model), and a PR is opened ONLY
 # if the wiki gate (validate + fixtures) is green.
 #
-# ── TWO ONE-TIME HUMAN STEPS (the workflow is inert until these are done) ──
-#   1. Add the repo secret  OPENAI_API_KEY  (Settings → Secrets → Actions). The
-#      Codex Action cannot run without it. This is the only thing blocking "it works".
-#   2. (optional) If you want the okf-wiki-validation gate to RE-RUN on the auto-PR, set a
+# ── ONE-TIME HUMAN STEP ──
+#   Add the repo secret OPENAI_API_KEY (Settings → Secrets → Actions). The Codex
+#   Action cannot run without it. The workflow is push/main + dispatch/main only;
+#   it never exposes that secret to a fork pull request.
+#   (Optional) If you want the okf-wiki-validation gate to RE-RUN on the auto-PR, set a
 #      PAT secret `OKF_BOT_PAT` (repo+workflow scope). The open-PR step already prefers it
 #      and falls back to GITHUB_TOKEN. With the default token, GitHub suppresses workflows on
 #      the bot PR (anti-recursion) — but the workflow ALREADY validated green before opening
 #      it, so the PR is pre-proven; you just review + merge.
 #
-# COST/SAFETY: runs only on explicit dispatch; spends tokens only when drift is real
-# (stale_count > 0); 20-min hard timeout; bounded by the finite worklist; never touches
-# non-doc code (enforced in the prompt + a post-run guard).
+# COST/SAFETY: runs after a trusted main merge or an operator dispatch on main;
+# spends tokens only when drift is real (stale_count > 0); 20-min hard timeout;
+# bounded by the finite worklist; never touches non-doc code (enforced by the
+# denial guard, state snapshot, prompt, and post-run path guard).
 
 name: OKF auto-reconcile
 
 on:
-  # DISPATCH-ONLY as of 2026-08-29 (owner decision: the OKF robot stays
-  # local/manual — `scripts/okf-reconcile-local.sh`).
-  #
-  # The `push: branches: [main]` trigger that used to live here remains removed:
-  # this lane is intentionally operator-dispatched. While GitHub Actions is
-  # unavailable, invoke `scripts/okf-reconcile-local.sh` with the authenticated
-  # Codex CLI instead of pretending a dispatch occurred.
-  #
-  # Kept dispatchable so it is one click away when Actions is healthy and the
-  # OPENAI_API_KEY repository secret has been provisioned.
+  # No pull_request trigger: OPENAI_API_KEY is never available to fork code.
+  # A merge to main is trusted and is the normal automatic trigger. Dispatch is
+  # also accepted, but the job below is restricted to the main ref.
+  push:
+    branches: [main]
+    paths:
+      - 'docs/knowledge/**'
+      - 'docs/internal/okf-wiki/**'
+      - 'crates/**'
+      - 'migrations/**'
+      - 'specs/**'
+      - 'worker/**'
+      - 'apps/**'
+      - 'scripts/validate_okf.py'
+      - 'scripts/validate_permission_matrix.py'
+      - 'scripts/okf_reconcile.py'
+      - 'scripts/okf_git_batch.py'
+      - 'scripts/okf_resolve_abbrev_cites.py'
+      - 'scripts/okf_shift_citations.py'
+      - 'scripts/okf_anchor_reverify.py'
+      - 'scripts/okf_index.py'
+      - 'scripts/okf_status.py'
+      - 'scripts/verify_okf_autoreconcile.py'
+      - 'scripts/okf-state-sha.sh'
+      - 'scripts/okf-reconcile-local.sh'
+      - 'scripts/okf-agent-*.sh'
+      - 'tests/okf/**'
+      - 'tests/test_verify_okf_autoreconcile.py'
+      - 'tests/test_okf_b049.py'
+      - 'tests/test_okf_resolve_abbrev_cites.py'
+      - 'tests/test_okf_shift_citations.py'
+      - 'tests/test_okf_anchor_reverify.py'
+      - '.claude/skills/okf-reconcile/**'
+      - '.github/workflows/okf*.yml'
+      - '.github/workflows/okf-autoreconcile.yml'
   workflow_dispatch:
     inputs:
       force:
@@ -51,11 +78,11 @@ permissions:
 
 jobs:
   autoreconcile:
-    # corelink: CoreLink's own ephemeral runner fabric (zero-hosted migration).
-    # The Codex Action's default drop-sudo safety strategy is intentionally
-    # irreversible, so this job must never move to the persistent founder-Mac
-    # `corelink-builder` label.
-    runs-on: corelink
+    if: github.ref == 'refs/heads/main'
+    # The Codex action needs a stable, authenticated host. `corelink` is the
+    # ephemeral Cloudflare fleet and has no founder login; the measured runner
+    # registry labels the persistent macOS builders as this exact tuple.
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 20
     steps:
       - name: Checkout (full history — reconcile compares cited lines across SHAs)
@@ -63,6 +90,14 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: B-058 contract and mutation self-test
+        # The contract self-test is deliberately before the reporter: a gate
+        # whose own containment teeth are dead must stop before spending tokens.
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_okf_autoreconcile.py --self-test
+          python3 -m unittest tests/test_verify_okf_autoreconcile.py
 
       - name: Detect OKF drift (deterministic reporter — no LLM, no cost)
         id: drift
@@ -80,6 +115,38 @@ jobs:
           rm -f .okf_worklist.json
           echo "No OKF drift — nothing to reconcile. Exiting clean (zero agent cost)."
 
+      - name: Snapshot git state before Codex (fail-closed baseline)
+        id: snapshot
+        if: steps.drift.outputs.stale_count != '0' || github.event.inputs.force == 'true'
+        run: |
+          set -euo pipefail
+          {
+            echo HEAD; git rev-parse HEAD
+            echo BRANCH; git symbolic-ref --quiet --short HEAD || true
+            echo REFS; git for-each-ref --format='%(refname) %(objectname)'
+            echo REMOTES; git remote -v
+            echo WORKTREES; git worktree list --porcelain
+          } > "$RUNNER_TEMP/okf_state_before"
+          echo "state_sha=$(scripts/okf-state-sha.sh "$RUNNER_TEMP/okf_state_before")" >> "$GITHUB_OUTPUT"
+
+      - name: Install Codex pre-execution denial guard
+        if: steps.drift.outputs.stale_count != '0' || github.event.inputs.force == 'true'
+        run: |
+          set -euo pipefail
+          guard="$RUNNER_TEMP/okf-agent-guard"
+          mkdir -p "$guard/bin"
+          cp scripts/okf-agent-git-guard.sh "$guard/bin/git"
+          cp scripts/okf-agent-gh-guard.sh "$guard/bin/gh"
+          chmod 755 "$guard/bin/git" "$guard/bin/gh"
+          : > "$guard/mutation.log"
+          chmod 600 "$guard/mutation.log"
+          {
+            echo "OKF_ORIGINAL_PATH=$PATH"
+            echo "OKF_REAL_GIT=$(command -v git)"
+            echo "OKF_GUARD_MARKER=$guard/mutation.log"
+          } >> "$GITHUB_ENV"
+          echo "$guard/bin" >> "$GITHUB_PATH"
+
       - name: Run the okf-reconcile skill (Codex headless)
         if: steps.drift.outputs.stale_count != '0' || github.event.inputs.force == 'true'
         uses: openai/codex-action@86365089eb2b84e0a8fb0717b304f8bdcb13b20e # v1
@@ -89,7 +156,7 @@ jobs:
           codex-version: '0.152.1'
           model: 'gpt-5.6-luna'
           effort: 'high'
-          codex-args: '["--ephemeral"]'
+          codex-args: '["--ephemeral", "--ignore-user-config", "--sandbox", "workspace-write"]'
           prompt: |
             You are running headless in CI to reconcile the OKF architecture wiki after a code merge.
             A deterministic reporter has already identified the drifted concepts — its worklist is at
@@ -113,12 +180,55 @@ jobs:
               changing it. If a concept can't be reconciled without a code change, leave it and note it.
             - Every `# Citations` entry must resolve to a real path:line that PERFORMS the claim; every cited
               file must be in that concept's source_files.
-            - Do NOT run git. Do NOT open a PR. The workflow does that. Just leave the reconciled files edited.
+            - Read-only git commands and deterministic helpers are allowed. Do NOT commit, push, mutate refs/remotes/worktrees, or open a PR. The workflow does that. Just leave the reconciled files edited.
             STOP when `python3 scripts/validate_okf.py` reports 0 stale / 0 drift for the concepts you fixed.
+
+      - name: Verify Codex did not mutate git state (fail-closed)
+        if: steps.drift.outputs.stale_count != '0' || github.event.inputs.force == 'true'
+        env:
+          PATH: ${{ env.OKF_ORIGINAL_PATH }}
+          OKF_REAL_GIT: ''
+          OKF_GUARD_MARKER: ''
+        run: |
+          set -euo pipefail
+          {
+            echo HEAD; git rev-parse HEAD
+            echo BRANCH; git symbolic-ref --quiet --short HEAD || true
+            echo REFS; git for-each-ref --format='%(refname) %(objectname)'
+            echo REMOTES; git remote -v
+            echo WORKTREES; git worktree list --porcelain
+          } > "$RUNNER_TEMP/okf_state_after"
+          after_sha="$(scripts/okf-state-sha.sh "$RUNNER_TEMP/okf_state_after")"
+          if [[ "$after_sha" != "${{ steps.snapshot.outputs.state_sha }}" ]]; then
+            echo "::error::Codex mutated HEAD, refs, remotes, or worktrees — refusing to continue"
+            diff -u "$RUNNER_TEMP/okf_state_before" "$RUNNER_TEMP/okf_state_after" || true
+            exit 1
+          fi
+          if [[ -s "$RUNNER_TEMP/okf-agent-guard/mutation.log" ]]; then
+            echo "::error::Codex attempted a forbidden git/PR operation — refusing to continue"
+            cat "$RUNNER_TEMP/okf-agent-guard/mutation.log"
+            exit 1
+          fi
+
+      - name: Restore proprietary gate environment
+        if: steps.drift.outputs.stale_count != '0' || github.event.inputs.force == 'true'
+        run: |
+          set -euo pipefail
+          test -n "${OKF_ORIGINAL_PATH:?}"
+          {
+            echo "PATH=$OKF_ORIGINAL_PATH"
+            echo "OKF_REAL_GIT="
+            echo "OKF_GUARD_MARKER="
+          } >> "$GITHUB_ENV"
+          echo "Codex guard removed before proprietary Verify/Validate/PR gates"
 
       - name: Validate the reconcile (gate — no PR unless green)
         id: validate
         if: steps.drift.outputs.stale_count != '0' || github.event.inputs.force == 'true'
+        env:
+          PATH: ${{ env.OKF_ORIGINAL_PATH }}
+          OKF_REAL_GIT: ''
+          OKF_GUARD_MARKER: ''
         run: |
           set -euo pipefail
           python3 scripts/okf_index.py
@@ -139,7 +249,7 @@ jobs:
           fi
           python3 scripts/validate_okf.py
           bash tests/okf/run_fixtures.sh
-          if [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]]; then
+          if [[ -z "$(git --no-optional-locks status --porcelain=v1 --untracked-files=all)" ]]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"; echo "Agent made no changes — nothing to PR."
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -149,6 +259,9 @@ jobs:
         if: steps.validate.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.OKF_BOT_PAT || github.token }}
+          PATH: ${{ env.OKF_ORIGINAL_PATH }}
+          OKF_REAL_GIT: ''
+          OKF_GUARD_MARKER: ''
         run: |
           set -euo pipefail
           gh auth setup-git

@@ -163,14 +163,12 @@ latency/cost gate.
   (`migrations/d1/0039_tier_selection.sql`) define the persisted tier domain.
   **Migration `0062_expand_tier_selections_6tier.sql`** widens both to accept
   `'solo'` + `'max'` (retaining `'team'` for back-compat). Because SQLite/D1
-  cannot relax an inline CHECK in place, 0062 uses the standard 12-step table
-  **rebuild** (`CREATE …_new` with the widened CHECK → `INSERT … SELECT` 1:1
-  copy → `DROP` → `RENAME`), re-creating every index incl. the UNIQUE partial
-  `idx_tenant_active_subscription` (INV-ONBOARD-DPA-FIRST). This is destructive
-  in **mechanism** (rebuild) but purely **additive in effect** — the accepted
-  value set only grows and zero rows are dropped or mutated. The
-  `check_migrations_additive.py` gate records this via per-line
-  `additive-allowed: ADR-0062` annotations on the `DROP`/`RENAME` tokens;
+  cannot relax an inline CHECK through ordinary DDL, 0062 uses exact in-place
+  `sqlite_master` catalog edits scoped to the two 0039 table names, with a
+  semantic TEMP guard that probes the new values and rolls its rows back. No
+  table, view, index, FK, or row is replaced; the accepted value set only grows
+  and zero rows are dropped or mutated. The
+  `check_migrations_additive.py` gate therefore sees no destructive statements;
   **ADR-0062** is the migration-mechanism record (this ADR governs the
   taxonomy; cf. ADR-0036, D1 migration governance).
   `'team'` is additionally retired at the application/UI layer (new checkout

@@ -5,12 +5,15 @@ description: "The container-side defense-in-depth gate that re-proves PAT posses
 source_files:
   - "crates/corelink-container/src/native_pat_gate.rs"
   - "crates/corelink-container/src/main.rs"
-checkpoint_sha: "ee065d0ff74186f615f0dd3be0a67faff3e70a6f"
+source_blobs:
+  - "crates/corelink-container/src/native_pat_gate.rs@cd9bcc9414778fbac1e47efe7bf89e6c712a0ffa"
+  - "crates/corelink-container/src/main.rs@f799f8d154e5aa226792dd08995a10ee944f2fb7"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path", "native-plane"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # Native HMAC fast-reject PAT gate
 
 The native cache surfaces (CAS / AC / Bazel REAPI / Turbo) trust the Worker-injected
@@ -72,7 +75,7 @@ absent in dev/CI, mandatory in prod (`crates/corelink-container/src/native_pat_g
   as FATAL when prod is detected — the teeth live in `main.rs`, not this builder
   (`crates/corelink-container/src/native_pat_gate.rs:268-283`; the prod-fatal backstop is
   `should_fatal_on_missing_gate` at `crates/corelink-container/src/main.rs:78` wired at
-  `crates/corelink-container/src/main.rs:335`).
+  `crates/corelink-container/src/main.rs:172-172`).
 - The single-flight shards are a FIXED 256-entry array, not a per-token map — bounded memory by
   construction (`crates/corelink-container/src/native_pat_gate.rs:72-77`).
 
@@ -86,4 +89,9 @@ absent in dev/CI, mandatory in prod (`crates/corelink-container/src/native_pat_g
 6. `crates/corelink-container/src/native_pat_gate.rs:257-261` — SHA-256 fingerprint cache key, never the plaintext.
 7. `crates/corelink-container/src/native_pat_gate.rs:268-283` — env-gated builder; prod-fatal on a missing gate.
 8. `crates/corelink-container/src/main.rs:78` — `should_fatal_on_missing_gate` (prod && !gate_present).
-9. `crates/corelink-container/src/main.rs:335` — boot-path call site enforcing the prod-fatal backstop.
+9. `crates/corelink-container/src/main.rs:341` — boot-path call site enforcing the prod-fatal backstop.
+
+
+# Revalidation
+
+This concept was revalidated against the cumulative implementation tree; its existing source citations remain the controlling evidence for the behavior described above.

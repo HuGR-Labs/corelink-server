@@ -28,9 +28,10 @@ Exit codes:
 
 Operational use:
 
-    - Nightly CI job (R-6 sustained staging window onward): runs with
-      `--env staging` against the staging tenant set; gates promotion to
-      production if it fails.
+    - An operator may run the staging mode against an owner-provisioned,
+      external staging tenant set. This repository has no root-worker staging
+      deployment or automatic staging → production promotion consumer; the
+      result is an attestation for an owner-controlled decision.
     - DPO monthly checklist (item 5) runs with `--env production` and
       attaches output to the monthly attestation extract.
     - Pre-attestation refresh: run with `--env production --strict` to

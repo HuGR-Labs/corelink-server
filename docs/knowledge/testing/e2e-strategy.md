@@ -4,12 +4,14 @@ title: "End-to-end testing strategy"
 description: "The consolidated gap map of CoreLink's user-simulation suites: broad in shape but thin in what actually runs+asserts, with two dominant structural problems (green-by-vacuum, the unproven moat)."
 source_files:
   - "docs/testing/2026-06-23-gapmap-MASTER.md"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+source_blobs:
+  - "docs/testing/2026-06-23-gapmap-MASTER.md@899f62b6dcf8fdeb8d4e2bd66dba450eaed8838e"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 provenance: "AUTHORED"
 tags: ["testing", "e2e", "user-simulation", "coverage", "gap-map"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # End-to-end testing strategy
 
 CoreLink's go-live confidence rests on user-simulation suites that pretend to be a real customer
@@ -56,7 +58,7 @@ correctly" and "we have a test that proves it stays correct."
   proven positively, not only negated — its absence is the highest-value missing test
   (`docs/testing/2026-06-23-gapmap-MASTER.md:42-43`).
 - Route-level security probes must distinguish a real deny (401/403) from a route's absence (404);
-  treating 404 as a PASS makes them structurally un-failable (`docs/testing/2026-06-23-gapmap-MASTER.md:43-43`).
+  treating 404 as a PASS makes them structurally un-failable (`docs/testing/2026-06-23-gapmap-MASTER.md:43`).
 
 # Gotchas
 

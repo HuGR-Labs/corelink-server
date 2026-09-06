@@ -15,7 +15,8 @@
 //! The browser holds a Clerk SESSION token, not a CoreLink PAT, so the Worker
 //! edge is the trust boundary: it Clerk-verifies the session, resolves the
 //! tenant, and forwards `/v1/onboarding/*` to this container's Durable Object
-//! with `x-corelink-internal-auth` (constant-time shared secret) +
+//! with `x-corelink-internal-auth` (constant-time dedicated secret, with the
+//! documented shared fallback) +
 //! `x-corelink-tenant-id` (the verified tenant). This route re-uses those exact
 //! header constants (`super::tier_select::{INTERNAL_AUTH_HEADER, TENANT_HEADER}`)
 //! and the same fail-CLOSED gate. The tenant is taken ONLY from the verified
@@ -329,6 +330,18 @@ fn is_sha256_hex64(s: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+/// Hashes of the exact static DPA markdown served by the admin UI. A
+/// syntactically valid SHA-256 for arbitrary text is not consent evidence:
+/// only the server-approved wording is accepted here.
+fn canonical_notice_hash(locale: LocaleBcp47) -> &'static str {
+    match locale {
+        LocaleBcp47::EnUs => "0b8d023331a3e23a8be9750277bd178229a89de57770f5c2fed82752340e9171",
+        LocaleBcp47::PtBr => "045af95b063dccd6b7b5e9bb9e5710a14c8b37c25ed0eedc4785b50bc6fc4f9a",
+        LocaleBcp47::Es419 => "995276f5c839da7547da5ddaeb6421e22083806e65d510b77a9a324cc7a4779b",
+        _ => "",
+    }
+}
+
 /// Deterministic `wording_id`: UUIDv5 over the DPA version (stable identity of
 /// the accepted wording; same version ⇒ same id).
 fn wording_id_for(dpa_version: &str) -> String {
@@ -363,7 +376,7 @@ fn validate_request(
     }
     let locale = map_locale(&body.dpa_locale).ok_or(DpaAcceptHttpError::UnsupportedLocale)?;
     let notice_hash = body.notice_text_hash.trim().to_owned();
-    if !is_sha256_hex64(&notice_hash) {
+    if !is_sha256_hex64(&notice_hash) || notice_hash != canonical_notice_hash(locale) {
         return Err(DpaAcceptHttpError::BadRequest);
     }
     Ok(ValidatedDpaRequest {
@@ -576,19 +589,24 @@ fn parse_signing_key(pem: &str) -> Option<RsaPrivateKeyPem> {
     }
 }
 
+/// Dedicated environment name for the DPA acceptance credential.
+const DPA_ACCEPT_AUTH_KEY_ENV: &str = "CORELINK_DPA_ACCEPT_AUTH_KEY";
+
+/// Resolve the DPA acceptance credential through the common 32-character
+/// fail-closed gate. The shared key remains a documented migration fallback;
+/// a valid dedicated key always wins and can be rotated independently.
+fn dpa_accept_auth_key_from_env() -> Option<Arc<str>> {
+    super::admin::resolve_internal_auth_key(DPA_ACCEPT_AUTH_KEY_ENV)
+}
+
 /// Assemble the production [`DpaAcceptRouteState`] from the environment, or
 /// `None` when the route must NOT be mounted (fail-CLOSED). Mounted ONLY when
-/// the internal-auth secret (≥16 chars), the DPA version, the RS256 signing key
-/// (`DPA_RECEIPT_SIGNING_KEY`, valid PEM), AND the D1 config are all present.
+/// the dedicated internal-auth secret (or its documented shared fallback), the
+/// DPA version, the RS256 signing key (`DPA_RECEIPT_SIGNING_KEY`, valid PEM),
+/// AND the D1 config are all present.
 #[must_use]
 pub fn build_state_from_env() -> Option<DpaAcceptRouteState> {
-    let auth_key = std::env::var("CORELINK_INTERNAL_AUTH_KEY").ok()?;
-    if auth_key.len() < 16 {
-        tracing::warn!(
-            "CORELINK_INTERNAL_AUTH_KEY too short (< 16 chars); /v1/onboarding/dpa-accept NOT mounted"
-        );
-        return None;
-    }
+    let auth_key = dpa_accept_auth_key_from_env()?;
     let Some(dpa_version) = std::env::var("CORELINK_DPA_VERSION")
         .ok()
         .filter(|v| !v.is_empty())
@@ -617,7 +635,7 @@ pub fn build_state_from_env() -> Option<DpaAcceptRouteState> {
     };
 
     Some(DpaAcceptRouteState {
-        internal_auth_key: Arc::from(auth_key),
+        internal_auth_key: auth_key,
         store: Arc::new(super::dpa_accept_store::D1HttpDpaAcceptStore::new(
             Arc::new(d1),
         )),
@@ -636,299 +654,5 @@ pub fn router(state: DpaAcceptRouteState) -> Router {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    reason = "tests are allowed to use these primitives"
-)]
-mod tests {
-    use super::*;
-
-    use std::collections::HashMap;
-    use std::sync::Mutex;
-
-    use rsa::pkcs8::{EncodePrivateKey, LineEnding};
-    use rsa::RsaPrivateKey;
-
-    /// In-memory `DpaAcceptStore` that also exposes the tier-select gate query
-    /// (`SELECT 1 ... WHERE tenant_id=? AND dpa_version=?`) so a test can prove
-    /// the round-trip: accept → row written → `is_accepted` reads true.
-    #[derive(Debug, Default)]
-    struct FakeStore {
-        rows: Mutex<HashMap<String, AcceptanceRow>>,
-    }
-
-    impl FakeStore {
-        fn new() -> Self {
-            Self::default()
-        }
-        fn len(&self) -> usize {
-            self.rows.lock().unwrap().len()
-        }
-        /// Mirror of `D1HttpTierSelectStore::is_dpa_accepted`.
-        fn is_accepted(&self, tenant_id: &str, dpa_version: &str) -> bool {
-            self.rows
-                .lock()
-                .unwrap()
-                .values()
-                .any(|r| r.tenant_id == tenant_id && r.dpa_version == dpa_version)
-        }
-        fn get_row(&self, signup_id: &str) -> Option<AcceptanceRow> {
-            self.rows.lock().unwrap().get(signup_id).cloned()
-        }
-    }
-
-    impl DpaAcceptStore for FakeStore {
-        async fn find_by_signup_id(
-            &self,
-            signup_id: &str,
-        ) -> Result<Option<StoredAcceptance>, String> {
-            Ok(self
-                .rows
-                .lock()
-                .unwrap()
-                .get(signup_id)
-                .map(|r| StoredAcceptance {
-                    jwt_receipt_jti: r.jwt_receipt_jti.clone(),
-                    dpa_version: r.dpa_version.clone(),
-                    locale: r.locale.clone(),
-                    accepted_at: r.accepted_at,
-                }))
-        }
-        async fn insert_acceptance(&self, row: &AcceptanceRow) -> Result<bool, String> {
-            let mut g = self.rows.lock().unwrap();
-            if g.contains_key(&row.signup_id) {
-                return Ok(false); // PK conflict → INSERT OR IGNORE no-op.
-            }
-            g.insert(row.signup_id.clone(), row.clone());
-            Ok(true)
-        }
-    }
-
-    fn test_signing_key() -> RsaPrivateKeyPem {
-        let mut rng = rand::thread_rng();
-        let key = RsaPrivateKey::new(&mut rng, 2048).expect("rsa keygen");
-        RsaPrivateKeyPem(
-            key.to_pkcs8_pem(LineEnding::LF)
-                .expect("pkcs8 pem")
-                .to_string(),
-        )
-    }
-
-    fn valid_req(locale: LocaleBcp47) -> ValidatedDpaRequest {
-        ValidatedDpaRequest {
-            dpa_version: "1.0.0".to_owned(),
-            locale,
-            notice_hash: "a".repeat(64),
-            ui_capture_ts: Some(1_700_000_000_000),
-            client_ip: "203.0.113.7".to_owned(),
-        }
-    }
-
-    #[tokio::test]
-    async fn accept_writes_row_and_gate_reads_true() {
-        let store = FakeStore::new();
-        let key = test_signing_key();
-        let tenant = "tenant-abc";
-        let now = 1_700_000_500_000_i64;
-
-        let resp = orchestrate_dpa_accept(
-            &store,
-            &key,
-            RECEIPT_KID,
-            DEFAULT_IP_HASH_SALT,
-            tenant,
-            &valid_req(LocaleBcp47::EnUs),
-            now,
-        )
-        .await
-        .expect("accept succeeds");
-
-        // The tier-select money-path gate now reads true.
-        assert!(store.is_accepted(tenant, "1.0.0"));
-        assert_eq!(store.len(), 1);
-        assert_eq!(resp.dpa_version, "1.0.0");
-        assert_eq!(resp.dpa_locale, "en-US");
-        assert!(!resp.audit_event_id.is_empty());
-
-        // Row columns are all real + CHECK-valid.
-        let row = store.get_row(&format!("dpa:{tenant}:1.0.0")).unwrap();
-        assert_eq!(row.tenant_id, tenant);
-        assert_eq!(row.locale, "en-US");
-        assert_eq!(row.notice_hash.len(), 64);
-        assert_eq!(row.accepted_ip_hash.len(), 64); // sha256 hex64 (CHECK)
-        assert!(!row.wording_id.is_empty());
-        assert_eq!(row.schema_version, 1);
-        assert_eq!(row.accepted_at, now);
-        assert!(row.submission_ts >= row.ui_capture_ts); // submission_after_capture CHECK
-        assert_eq!(row.jwt_receipt_jti, resp.audit_event_id);
-    }
-
-    #[tokio::test]
-    async fn reaccept_is_idempotent_no_new_row() {
-        let store = FakeStore::new();
-        let key = test_signing_key();
-        let tenant = "tenant-idem";
-
-        let first = orchestrate_dpa_accept(
-            &store,
-            &key,
-            RECEIPT_KID,
-            DEFAULT_IP_HASH_SALT,
-            tenant,
-            &valid_req(LocaleBcp47::PtBr),
-            1_700_000_000_000,
-        )
-        .await
-        .expect("first accept");
-
-        let second = orchestrate_dpa_accept(
-            &store,
-            &key,
-            RECEIPT_KID,
-            DEFAULT_IP_HASH_SALT,
-            tenant,
-            &valid_req(LocaleBcp47::PtBr),
-            1_700_000_999_000,
-        )
-        .await
-        .expect("re-accept");
-
-        assert_eq!(store.len(), 1, "re-accept must NOT write a second row");
-        assert_eq!(
-            first.audit_event_id, second.audit_event_id,
-            "same original receipt"
-        );
-        assert_eq!(second.dpa_accepted_at, first.dpa_accepted_at);
-    }
-
-    #[test]
-    fn unsupported_locale_rejected() {
-        // `de` is outside the closed 3-locale GA set.
-        let body = DpaAcceptRequestBody {
-            dpa_version: "1.0.0".to_owned(),
-            dpa_locale: "de".to_owned(),
-            notice_text_hash: "a".repeat(64),
-            ui_capture_ts: None,
-        };
-        let err = validate_request("1.0.0", body, "ip".to_owned()).unwrap_err();
-        assert_eq!(err, DpaAcceptHttpError::UnsupportedLocale);
-    }
-
-    #[test]
-    fn locales_map_short_and_canonical() {
-        assert_eq!(map_locale("en"), Some(LocaleBcp47::EnUs));
-        assert_eq!(map_locale("en-US"), Some(LocaleBcp47::EnUs));
-        assert_eq!(map_locale("pt"), Some(LocaleBcp47::PtBr));
-        assert_eq!(map_locale("es-419"), Some(LocaleBcp47::Es419));
-        assert_eq!(map_locale("de"), None);
-        assert_eq!(map_locale("fr-FR"), None);
-    }
-
-    #[test]
-    fn bad_notice_hash_rejected() {
-        for bad in ["", "xyz", &"a".repeat(63), &"A".repeat(64), &"g".repeat(64)] {
-            let body = DpaAcceptRequestBody {
-                dpa_version: "1.0.0".to_owned(),
-                dpa_locale: "en".to_owned(),
-                notice_text_hash: bad.to_owned(),
-                ui_capture_ts: None,
-            };
-            assert_eq!(
-                validate_request("1.0.0", body, "ip".to_owned()).unwrap_err(),
-                DpaAcceptHttpError::BadRequest,
-                "hash {bad:?} must be rejected",
-            );
-        }
-    }
-
-    #[test]
-    fn version_mismatch_rejected() {
-        let body = DpaAcceptRequestBody {
-            dpa_version: "2.0.0".to_owned(),
-            dpa_locale: "en".to_owned(),
-            notice_text_hash: "a".repeat(64),
-            ui_capture_ts: None,
-        };
-        assert_eq!(
-            validate_request("1.0.0", body, "ip".to_owned()).unwrap_err(),
-            DpaAcceptHttpError::VersionMismatch,
-        );
-    }
-
-    #[test]
-    fn valid_request_accepted() {
-        let body = DpaAcceptRequestBody {
-            dpa_version: "1.0.0".to_owned(),
-            dpa_locale: "pt".to_owned(),
-            notice_text_hash: "0".repeat(64),
-            ui_capture_ts: Some(123),
-        };
-        let v = validate_request("1.0.0", body, "9.9.9.9".to_owned()).unwrap();
-        assert_eq!(v.locale, LocaleBcp47::PtBr);
-        assert_eq!(v.notice_hash, "0".repeat(64));
-    }
-
-    #[test]
-    fn missing_key_fails_closed() {
-        // Empty / garbage PEM ⇒ None ⇒ route UNMOUNTED (fail-CLOSED).
-        assert!(parse_signing_key("").is_none());
-        assert!(parse_signing_key("   ").is_none());
-        assert!(parse_signing_key("not-a-pem").is_none());
-        assert!(parse_signing_key(
-            "-----BEGIN PRIVATE KEY-----\nbm90YWtleQ==\n-----END PRIVATE KEY-----\n"
-        )
-        .is_none());
-        // A real generated key ⇒ Some ⇒ mountable.
-        let pem = {
-            let mut rng = rand::thread_rng();
-            RsaPrivateKey::new(&mut rng, 2048)
-                .unwrap()
-                .to_pkcs8_pem(LineEnding::LF)
-                .unwrap()
-                .to_string()
-        };
-        assert!(parse_signing_key(&pem).is_some());
-    }
-
-    #[test]
-    fn auth_gate_constant_time_rejects() {
-        let mut h = HeaderMap::new();
-        // Missing header → Unauthenticated.
-        assert_eq!(
-            verify_internal_auth(&h, "the-secret-value-1234").unwrap_err(),
-            DpaAcceptHttpError::Unauthenticated,
-        );
-        // Wrong secret → Unauthenticated.
-        h.insert(INTERNAL_AUTH_HEADER, "wrong".parse().unwrap());
-        assert_eq!(
-            verify_internal_auth(&h, "the-secret-value-1234").unwrap_err(),
-            DpaAcceptHttpError::Unauthenticated,
-        );
-        // Correct secret → Ok.
-        h.insert(
-            INTERNAL_AUTH_HEADER,
-            "the-secret-value-1234".parse().unwrap(),
-        );
-        assert!(verify_internal_auth(&h, "the-secret-value-1234").is_ok());
-    }
-
-    #[test]
-    fn tenant_extracted_from_header_only() {
-        let mut h = HeaderMap::new();
-        assert_eq!(
-            extract_verified_tenant(&h).unwrap_err(),
-            DpaAcceptHttpError::NoVerifiedTenant,
-        );
-        h.insert(TENANT_HEADER, "  tenant-xyz  ".parse().unwrap());
-        assert_eq!(extract_verified_tenant(&h).unwrap(), "tenant-xyz");
-    }
-
-    #[test]
-    fn wording_id_is_deterministic() {
-        assert_eq!(wording_id_for("1.0.0"), wording_id_for("1.0.0"));
-        assert_ne!(wording_id_for("1.0.0"), wording_id_for("1.0.1"));
-    }
-}
+#[path = "dpa_accept_tests.rs"]
+mod tests;

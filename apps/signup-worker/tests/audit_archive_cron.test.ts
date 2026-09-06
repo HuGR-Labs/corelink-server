@@ -39,8 +39,12 @@ describe("runAuditArchiveSweep", () => {
         CORELINK_API_SVC: svc(200, {
           rows_archived: 1200,
           chunks_created: 3,
+          chunks_already_present: 0,
+          partitions_archived: 2,
           partitions_failed: 0,
           incomplete: true,
+          rows_quarantined: 0,
+          partitions_quarantined: 0,
         }),
       }),
       0,
@@ -66,6 +70,8 @@ describe("runAuditArchiveSweep", () => {
         CORELINK_API_SVC: svc(200, {
           rows_archived: 120,
           chunks_created: 1,
+          chunks_already_present: 0,
+          partitions_archived: 1,
           partitions_failed: 0,
           rows_quarantined: 131,
           partitions_quarantined: 1,
@@ -82,13 +88,15 @@ describe("runAuditArchiveSweep", () => {
     });
 
     // An older container that predates migration 0100 omits the fields; that
-    // must read as "none quarantined", never as NaN.
+    // is not complete evidence and must fail closed rather than look healthy.
     const old = await runAuditArchiveSweep(
       env({ CORELINK_API_SVC: svc(200, { rows_archived: 5 }) }),
       0,
     );
     expect(old.rowsQuarantined).toBe(0);
     expect(old.partitionsQuarantined).toBe(0);
+    expect(old.ok).toBe(false);
+    expect(old.incomplete).toBe(true);
   });
 
   it("does NOT read a partial failure as success", async () => {
@@ -100,7 +108,11 @@ describe("runAuditArchiveSweep", () => {
         CORELINK_API_SVC: svc(500, {
           rows_archived: 40,
           chunks_created: 1,
+          chunks_already_present: 0,
+          partitions_archived: 1,
           partitions_failed: 2,
+          rows_quarantined: 0,
+          partitions_quarantined: 0,
           incomplete: false,
         }),
       }),
@@ -109,6 +121,7 @@ describe("runAuditArchiveSweep", () => {
     expect(r.ok).toBe(false);
     expect(r.status).toBe(500);
     expect(r.partitionsFailed).toBe(2);
+    expect(r.incomplete).toBe(true);
     // Rows that DID archive are still reported — a failure elsewhere must not
     // erase the work that landed.
     expect(r.rowsArchived).toBe(40);
@@ -133,13 +146,33 @@ describe("runAuditArchiveSweep", () => {
     expect(called).toBe(false);
   });
 
-  it("survives a non-JSON body without throwing", async () => {
+  it("skips when only the shared key is bound", async () => {
+    let called = false;
+    const r = await runAuditArchiveSweep(
+      env({
+        CORELINK_ERASE_AUTH_KEY: undefined,
+        CORELINK_INTERNAL_AUTH_KEY: "s".repeat(64),
+        CORELINK_API_SVC: {
+          fetch: (async () => {
+            called = true;
+            return Response.json({});
+          }) as unknown as typeof fetch,
+        },
+      }),
+      0,
+    );
+    expect(r.skipped).toBe(true);
+    expect(called).toBe(false);
+  });
+
+  it("fails closed on a non-JSON body without throwing", async () => {
     const r = await runAuditArchiveSweep(
       env({ CORELINK_API_SVC: svc(200, "not json") }),
       0,
     );
-    expect(r.ok).toBe(true);
+    expect(r.ok).toBe(false);
     expect(r.rowsArchived).toBe(0);
+    expect(r.incomplete).toBe(true);
   });
 
   it("survives a transport throw and reports failure", async () => {

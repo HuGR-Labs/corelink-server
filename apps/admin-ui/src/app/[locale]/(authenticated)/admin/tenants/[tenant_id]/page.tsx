@@ -14,15 +14,20 @@ export default async function AdminTenantPage({
   params,
 }: TenantPageProps): Promise<React.ReactElement> {
   const { tenant_id } = await params;
-  let tenant;
-  try {
-    tenant = await adminClient.getTenant(tenant_id);
-  } catch {
-    tenant = null;
-  }
 
-  return (
-    <RbacGuard>
+  async function GuardedTenantContent(): Promise<React.ReactElement> {
+    // Do not fetch privileged tenant data until RbacGuard has admitted the
+    // request. This ordering is security-relevant even if the result is later
+    // rendered only inside the guard: the old code queried first and guarded
+    // second, leaking existence/timing to unauthorized callers.
+    let tenant;
+    try {
+      tenant = await adminClient.getTenant(tenant_id);
+    } catch {
+      tenant = null;
+    }
+
+    return (
       <div className="cx-shell lin">
         <div className="cx-main">
           <main>
@@ -40,6 +45,12 @@ export default async function AdminTenantPage({
           </main>
         </div>
       </div>
+    );
+  }
+
+  return (
+    <RbacGuard>
+      <GuardedTenantContent />
     </RbacGuard>
   );
 }

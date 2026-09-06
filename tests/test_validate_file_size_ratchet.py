@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -60,8 +61,66 @@ class BaselineContractTests(unittest.TestCase):
         with self.assertRaises(ratchet.MeasurementError):
             ratchet.parse_baseline("1001\t../outside.rs\n")
 
+    def test_baseline_non_source_is_indeterminate(self) -> None:
+        with self.assertRaises(ratchet.MeasurementError):
+            ratchet.parse_baseline("1001\tREADME.md\n")
+
+    def test_trusted_base_floor_allows_inherited_drift_but_not_new_growth(self) -> None:
+        bad, policy = ratchet.evaluate(
+            {"old.rs": 1001},
+            {"old.rs": 1001},
+            {"old.rs": 1100},
+            trusted_base_counts={"old.rs": 1100},
+        )
+        self.assertEqual(bad, [])
+        self.assertEqual(policy, [])
+        _bad, policy = ratchet.evaluate(
+            {"old.rs": 1001},
+            {"old.rs": 1001},
+            {"old.rs": 1101},
+            trusted_base_counts={"old.rs": 1100},
+        )
+        self.assertTrue(any("CRESCEU" in item for item in policy))
+
 
 class SourceAndTrustBoundaryTests(unittest.TestCase):
+    def test_workflow_covers_fork_pull_requests_without_skipping_the_gate(self) -> None:
+        workflow = (SCRIPT.parents[1] / ".github/workflows/file-size-ratchet.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("pull_request_target:", workflow)
+        self.assertIn("push:", workflow)
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("      - '**'", workflow)
+        self.assertNotIn("author_association", workflow)
+        self.assertIn("head.repo.full_name", workflow)
+        self.assertIn("fetch-depth: 0", workflow)
+        self.assertIn("persist-credentials: false", workflow)
+        self.assertIn("BASE_REF", workflow)
+        self.assertIn("HEAD_REF", workflow)
+        base_assignments = [
+            line.split(":", 1)[1].strip()
+            for line in workflow.splitlines()
+            if line.lstrip().startswith("BASE_REF:")
+        ]
+        self.assertEqual(
+            base_assignments,
+            ["${{ github.event.pull_request.base.sha || github.event.before || github.sha }}"],
+        )
+        validator_shows = [
+            line.strip()
+            for line in workflow.splitlines()
+            if re.search(r"\bgit\s+show\b", line)
+            and "validate_file_size_ratchet.py" in line
+        ]
+        self.assertEqual(
+            validator_shows,
+            [
+                'git show "${BASE_REF}:scripts/validate_file_size_ratchet.py" > '
+                '"$RUNNER_TEMP/validate_file_size_ratchet.py"'
+            ],
+        )
+
     def test_nul_safe_tree_parser_preserves_path(self) -> None:
         raw = b"100644 blob " + (b"a" * 40) + b"\tpath with space.rs\0"
         entries = ratchet.parse_tree(raw)

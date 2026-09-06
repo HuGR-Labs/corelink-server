@@ -29,6 +29,7 @@ on:
       - 'tests/test_okf_resolve_abbrev_cites.py'
       - 'tests/test_okf_shift_citations.py'
       - 'tests/test_okf_anchor_reverify.py'
+      - 'docs/campaigns/remediation/WP-B044-orphan-teardown.md'
   push:
     branches: [main]
     paths:
@@ -47,6 +48,7 @@ on:
       - 'tests/test_okf_resolve_abbrev_cites.py'
       - 'tests/test_okf_shift_citations.py'
       - 'tests/test_okf_anchor_reverify.py'
+      - 'docs/campaigns/remediation/WP-B044-orphan-teardown.md'
 
 permissions:
   contents: read
@@ -90,6 +92,11 @@ jobs:
       # with a served authorization gate.
       - name: Validate published permission matrix
         run: python3 scripts/validate_permission_matrix.py
+
+      - name: Test checkpoint reachability and first blob anchors (B-049)
+        # Hermetic mutations prove unreachable checkpoints fail closed, first
+        # blob anchors are created, and reachable cited drift remains red.
+        run: python3 tests/test_okf_b049.py
 
       - name: Test C5c anchor re-verification regression (B-123)
         # This git-backed regression proves stale citations cannot survive a

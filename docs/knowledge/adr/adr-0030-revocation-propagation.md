@@ -4,12 +4,14 @@ title: "ADR-0030 — PAT revocation propagation (DO + CF Queue, ≤ 60 s p99)"
 description: "Why PAT revocation uses Neon as source-of-truth with a Durable-Object broadcast cache and CF-Queue cross-region fan-out to hit a single 60 s p99 stale-window SLA."
 source_files:
   - "specs/03_architecture/adrs/ADR-0030-revocation-propagation.md"
-checkpoint_sha: "a889ff0829cec6c25526d4c873a3eda124dfefb4"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "revocation", "pat", "durable-object", "cf-queue", "auth", "s03"]
 timestamp: "2026-07-17T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0030-revocation-propagation.md@e1840f72fbe913c9c0989aacff6ad331205fd39e"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-0030 — PAT revocation propagation (DO + CF Queue, ≤ 60 s p99)
 
 A compromised PAT must stop being accepted globally within one minute of revocation. This ADR records the DESIGN-INTENT for how that `SLO-FRESH-PAT-REVOKE ≤ 60 s p99` would be met by coordinating three Cloudflare primitives — Neon as transactional truth, a region-pinned Durable Object as a broadcast cache, and CF Queue for cross-region fan-out — and why the hot caches are never allowed to become sources of truth.

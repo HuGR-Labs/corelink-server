@@ -57,6 +57,27 @@ export const CLERK_AZP_ALLOWLIST = ["https://humangr.com"] as const;
  */
 export const GITHUGR_AZP_ALLOWLIST = ["https://www.githugr.com"] as const;
 
+/** Wrangler's deployed production markers, including regional prod workers. */
+const PRODUCTION_ENVIRONMENTS = new Set([
+  "prod",
+  "production",
+  "prod-sam",
+  "prod-lhr",
+  "prod-nrt",
+  "prod-syd",
+]);
+
+/** Treat only the documented Wrangler production markers as production. */
+export function isProductionEnvironment(
+  env: Pick<Env, "ENVIRONMENT"> & { NODE_ENV?: string },
+): boolean {
+  const marker = env.ENVIRONMENT.trim().toLowerCase();
+  return (
+    PRODUCTION_ENVIRONMENTS.has(marker) ||
+    env.NODE_ENV?.trim().toLowerCase() === "production"
+  );
+}
+
 /** Result of the shared Clerk-session → tenant resolution pipeline. */
 export type ClerkAuthResult =
   | {
@@ -213,7 +234,9 @@ export async function verifyClerkSessionAndResolveTenant(
           response: reapiError("UNAUTHORIZED", "clerk session issuer invalid", 401, requestId),
         };
       }
-    } else if (env.ENVIRONMENT === "production") {
+    } else if (
+      isProductionEnvironment(env)
+    ) {
       // CAA-360 #30: in PRODUCTION the issuer MUST be exact-pinned. With
       // CLERK_ISSUER_URL unset we fail CLOSED rather than fall back to the weak
       // shape-check — otherwise a misconfigured prod deploy would accept tokens

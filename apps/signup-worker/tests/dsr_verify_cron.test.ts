@@ -195,16 +195,17 @@ describe("runDsrVerifySweep", () => {
     expect((await runDsrVerifySweep(env, now)).swept).toBe(1);
   });
 
-  it("G4: the requested-anchor query has NO lower (window) bound — a stuck DSR never ages out", async () => {
-    // The whole point of the durable anchor is to surface a DSR that never
-    // completes; a 7-day lower bound would silence the alert for exactly that
-    // permanently-stuck case after one week. Assert the query shape directly
-    // (the mock returns rows verbatim, so behaviour can't catch this).
+  it("bounds both D1 scans and expires old requested anchors", async () => {
+    // A permanent requested row must not make every cron invocation scan an
+    // unbounded table. The age window is the operational expiry boundary;
+    // durable DSR/audit retention remains the historical record.
     let requestedSql = "";
+    let logSql = "";
     const now = Date.now();
     const captureDb: D1Lite = {
       prepare: (sql: string) => {
         if (sql.includes("dsr_requested") && sql.includes("SELECT")) requestedSql = sql;
+        if (sql.includes("dsr_erasure_log") && sql.includes("SELECT")) logSql = sql;
         return {
           bind: () => ({
             all: async () => ({ results: [] }),
@@ -224,9 +225,30 @@ describe("runDsrVerifySweep", () => {
     );
     expect(requestedSql).toContain("status = 'requested'");
     expect(requestedSql).toContain("requested_at <= ?1");
-    // No second (>=) bound on the durable anchor → never ages out.
-    expect(requestedSql).not.toMatch(/requested_at\s*>=/);
-    expect(requestedSql).not.toContain("?2");
+    expect(requestedSql).toContain("requested_at >= ?2");
+    expect(requestedSql).toContain("LIMIT ?3");
+    expect(logSql).toContain("LIMIT ?3");
+  });
+
+  it("does not verify a requested anchor beyond the retention window", async () => {
+    const now = Date.now();
+    const env: DsrVerifyCronEnv = {
+      CORELINK_API_BASE: "https://api",
+      CORELINK_INTERNAL_AUTH_KEY: "k",
+      CORELINK_API_SVC: svc(200),
+      CONFIG_DB: db({
+        requestedRows: [{
+          dsr_id: "expired",
+          tenant_id: "t",
+          requested_at: now - 8 * 86_400_000,
+        }],
+      }),
+    };
+    expect(await runDsrVerifySweep(env, now)).toEqual({
+      swept: 0,
+      failed: 0,
+      skipped: false,
+    });
   });
 
   // ── Growth signal on the deliberately-unbounded 'requested' set ───────────
@@ -258,11 +280,7 @@ describe("runDsrVerifySweep", () => {
   }
 
   it("logs ONCE, with the count, when the past-deadline requested backlog exceeds the threshold", async () => {
-    // The 'requested' query has no lower bound BY DESIGN, so the set it
-    // enumerates can grow without limit while DSRs are stuck. That is the
-    // correct alerting behaviour and also the exact shape that grows silently:
-    // a sweep over 26 breached DSRs and a sweep over 0 read identically before
-    // this log existed.
+    // The bounded query still exposes a real backlog when the batch is full.
     const warns = await sweepWithRequested(26);
     const backlog = warns.filter((m) => m.includes("past-deadline dsr_requested backlog"));
     expect(backlog).toHaveLength(1); // once per sweep, never per row

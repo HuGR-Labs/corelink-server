@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { tFor, type Locale } from "@/i18n";
 import { isMfaFresh } from "@/lib/dsr-client";
 import { Badge, Button, Callout, Card } from "@/components/ui/linear";
@@ -41,6 +41,14 @@ export function ReAuthGate(props: ReAuthGateProps) {
   );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The gate is server-rendered, so its button can appear before React has
+  // attached the verifier handler. Keep it disabled for that tiny interval;
+  // otherwise a fast Playwright/user click is silently lost and the sensitive
+  // form remains locked despite an apparent successful interaction.
+  const [interactive, setInteractive] = useState(false);
+  useEffect(() => {
+    setInteractive(true);
+  }, []);
 
   const t = (key: string) => tFor(props.locale, key);
 
@@ -78,7 +86,7 @@ export function ReAuthGate(props: ReAuthGateProps) {
             <Button
               onClick={startVerify}
               loading={pending}
-              disabled={pending}
+              disabled={pending || !interactive}
               data-testid="dsr-reauth-start"
             >
               {pending

@@ -5,12 +5,15 @@ description: "How CoreLink manages secrets and PAT scopes operationally: the wri
 source_files:
   - "docs/operator/launch-pat-scope-fix-runbook.md"
   - "specs/03_architecture/adrs/ADR-0067-secrets-broker-d1-encrypted-lease-deferred.md"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+source_blobs:
+  - "docs/operator/launch-pat-scope-fix-runbook.md@33335f00309acd82759b679c5b1ba5b63d3e33dc"
+  - "specs/03_architecture/adrs/ADR-0067-secrets-broker-d1-encrypted-lease-deferred.md@e4ad4bb9167c51779292c1e184571409bf8e6b8c"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 provenance: "AUTHORED"
 tags: ["ops", "secrets", "pat-scope", "broker", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # Secrets lifecycle & PAT-scope runbook
 
 CoreLink's secret management lives under one hard platform constraint: **Cloudflare Worker secrets are

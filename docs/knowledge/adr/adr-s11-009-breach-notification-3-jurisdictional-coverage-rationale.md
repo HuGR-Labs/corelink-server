@@ -4,12 +4,14 @@ title: "ADR-S11-009 — 3 Jurisdictional Breach-Notification Templates Coverage 
 description: "Why CoreLink pre-drafts breach-notification templates for exactly 3 jurisdictions (BR/EU/US-CA) pre-GA and defers UK, other US states, India, and China to post-GA enterprise expansion."
 source_files:
   - "specs/03_architecture/adrs/ADR-S11-009-breach-notification-3-jurisdictional-coverage-rationale.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s11", "breach-notification", "lgpd", "gdpr", "ccpa", "jurisdictional-coverage"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S11-009-breach-notification-3-jurisdictional-coverage-rationale.md@bb4e950bdb163fb7af3e79a4aa91ed87a05af856"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-S11-009 — 3 Jurisdictional Breach-Notification Templates Coverage Rationale
 
 A breach-notification template takes 4–8h to draft under legal review, and that drafting time eats directly into the 72h regulatory SLA during an actual incident. Pre-drafting removes the bottleneck — but each template carries legal-review cost, so this ADR bounds pre-GA coverage to the three jurisdictions (BR + EU + US-CA) that reach 90%+ of the pre-GA customer base, deferring the rest behind a quarterly escalation trigger.

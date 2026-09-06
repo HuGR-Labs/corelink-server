@@ -4,12 +4,14 @@ title: "ADR-0028 — MissReason → uniform HTTP 404 freeze (410 deferred)"
 description: "Why every CAS read miss returns an identical 404 regardless of MissReason, so the status code itself cannot become a cross-tenant existence oracle or leak prior existence."
 source_files:
   - "specs/03_architecture/adrs/ADR-0028-missreason-uniform-404-freeze.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "missreason", "404", "side-channel", "tenant-isolation", "reapi", "s02"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0028-missreason-uniform-404-freeze.md@662d771366df2e7e4392c8784daa5d6cb2dfcd79"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-0028 — MissReason → uniform HTTP 404 freeze (410 deferred)
 
 A CAS read can miss for several distinct reasons — the digest never existed, it exists only in another tenant, or it was soft-deleted by GC — and an earlier design mapped those to different HTTP status codes. This ADR freezes them all to one indistinguishable 404, because a differentiated status code is itself an enumeration oracle even with no timing analysis. It is the status-layer decision whose timing-layer companion is ADR-0023.

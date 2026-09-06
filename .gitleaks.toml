@@ -74,12 +74,18 @@ paths = ['''^docs/operator/stripe-checkout-e2e-2026-05-29\.md$''']
 regexTarget = "line"
 regexes = ['''we_1TcaMDLh0hhAZjwol9KDCJTp''']
 
+# Raw-hex secret material is identified by deployed configuration shape, not by
+# a finite variable-name list.  A 64-hex literal is the project's
+# `openssl rand -hex 32` credential shape; renaming the assignment must not
+# evade the detector.  Keep the path boundary explicit so public source
+# checksums and fixtures remain outside this custom rule while default rules
+# continue to scan them.
 [[rules]]
-id = "corelink-internal-auth-hex"
-description = "A 64-hex internal-auth/signing key assigned to a CORELINK_*_AUTH_KEY / PAT_SIGNING_KEY (openssl rand -hex 32)"
-regex = '''(?i)(CORELINK_[A-Z_]*AUTH_KEY|PAT_SIGNING_KEY[A-Z_]*)\s*[:=]\s*["']?([a-f0-9]{64})["']?'''
-secretGroup = 2
-keywords = ["auth_key", "signing_key", "CORELINK_", "PAT_SIGNING"]
+id = "corelink-secret-shaped-hex"
+description = "A 64-hex credential assigned to any identifier in a deployable secret surface"
+regex = '''(?im)(?:\b([a-z_][a-z0-9_.-]{0,127}|[0-9]{1,128})|["'`]([^"'`\r\n]{1,128})["'`])\s*[:=]\s*(?:[|>](?:[+-]?[1-9]?|[1-9][+-]?|[+-]?)[ \t]*(?:#[^\r\n]*)?\s*|(?:\\\s*)?["`]{1,3}(?:\\\s*)?|\$'|'|\\\s*)?\s*([a-f0-9]{64})["'`]{0,3}\s*(?:[,;#}]|$)'''
+secretGroup = 3
+path = '''(?i)(?:^|/)(?:wrangler\.toml|wrangler\.jsonc?|.*\.env(?:\.[a-z0-9_-]+)?|.*(?:secrets?|credentials?)[^/]*\.(?:toml|ini|conf|ya?ml|sh)|\.github/workflows/.*(?:secrets?|credentials?)[^/]*\.ya?ml|reports/audits/.*\.md)$'''
 
 # ── Upstream rules re-declared to fix a DETECTION defect ─────────────────────
 # gitleaks merges an extending config into the default ruleset per rule id:

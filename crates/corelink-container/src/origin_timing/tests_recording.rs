@@ -84,6 +84,26 @@ async fn phase_scope_with_handle_records_from_a_spawned_task() {
 }
 
 #[test]
+fn blocking_ledger_bridge_is_scoped_and_restored() {
+    // The bridge is intentionally different from `with_handle`: it is only
+    // for a synchronous `spawn_blocking` closure, where nested R2/accounting
+    // code uses `PhaseScope::enter`. It must not leave a request ledger on the
+    // Tokio worker thread after the closure returns.
+    let ledger = Arc::new(PhaseLedger::new());
+    let thread_ledger = Arc::clone(&ledger);
+    std::thread::spawn(move || {
+        assert!(current_ledger().is_none());
+        let _bridge = PhaseScope::with_ledger(Some(thread_ledger));
+        let _accounting = PhaseScope::enter(Phase::Accounting);
+        assert!(current_ledger().is_some());
+    })
+    .join()
+    .expect("blocking bridge thread must not panic");
+    assert!(current_ledger().is_none());
+    assert!(ledger.micros(Phase::Accounting).is_some());
+}
+
+#[test]
 fn active_window_is_released_when_scope_unwinds_from_a_panic() {
     let ledger = Arc::new(PhaseLedger::new());
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe({

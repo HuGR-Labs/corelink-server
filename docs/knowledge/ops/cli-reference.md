@@ -7,12 +7,13 @@ source_files:
   - "docs/cli/telemetry.md"
 source_blobs:
   - "docs/cli/json-output-schema.md@0aed1d6f813933692363c0ca308aa036b7e16810"
-checkpoint_sha: "f88b5850dddeb4ec7eca62ab6fedad7aa4db7c0f"
+  - "docs/cli/telemetry.md@2a39713a7ee176c7fc43a236515fd48888e3536e"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 provenance: "AUTHORED"
 tags: ["ops", "cli", "json", "telemetry", "privacy", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # The corelink CLI: JSON output schema & opt-in telemetry
 
 The `corelink` CLI is the customer's scripting surface, so two contracts govern it: a stable,
@@ -30,7 +31,7 @@ evolves, and exactly what (minimal, anonymous) data the binary may phone home wh
 
 - Every subcommand accepts `--output=json` (with a `--json` shorthand on `doctor`) `docs/cli/json-output-schema.md:17-30`.
 - Each subcommand has a fixed JSON shape (ls/get/put/stat/bench/doctor/version/config); `ls` returns one **page** of the server's `GET /v1/cas/{tenant}` body — `{"blobs":[{"hash","size","created_at"}],"next_cursor":<string|null>}` with no `total_count` `docs/cli/json-output-schema.md:34-191`.
-- Errors go to stderr with exit 1 for general failures and exit 2 for CTRL-CRED-001 violations `docs/cli/json-output-schema.md:195-208`.
+- Errors go to stderr with exit 1 for general failures and exit 2 for CTRL-CRED-001 violations `docs/cli/json-output-schema.md:213-226`.
 - Telemetry is opt-in, default off — no data leaves the machine until enabled `docs/cli/telemetry.md:10-15`.
 - The collected fields are a fixed, minimal set (version, os, subcommand, outcome, duration, anonymized id) `docs/cli/telemetry.md:18-29`.
 - Opt-in/out is a single config command writing `~/.corelink/config.toml` `docs/cli/telemetry.md:46-64`.
@@ -39,7 +40,7 @@ evolves, and exactly what (minimal, anonymous) data the binary may phone home wh
 # Invariants
 
 - SemVer discipline: additive fields are MINOR, removing/renaming is MAJOR, deprecations warn ≥ 90 days `docs/cli/json-output-schema.md:13-15`.
-- The PAT is always redacted in output; passing it as a CLI arg is a hard exit-2 CTRL-CRED-001 violation `docs/cli/json-output-schema.md:203-208`.
+- The PAT is always redacted in output; passing it as a CLI arg is a hard exit-2 CTRL-CRED-001 violation `docs/cli/json-output-schema.md:221-226`.
 - Telemetry NEVER collects tenant_id, digests, PAT, file paths, IP, hostname, username/email, or any PII `docs/cli/telemetry.md:32-44`.
 - The `anonymized_id` is not linked to account/tenant/PAT, is rotatable, and is discardable `docs/cli/telemetry.md:87-94`.
 - Raw telemetry events are deleted within 7 days; only PII-free aggregates persist 90 days `docs/cli/telemetry.md:114-120`.
@@ -55,8 +56,8 @@ evolves, and exactly what (minimal, anonymous) data the binary may phone home wh
 2. `docs/cli/json-output-schema.md:17-30` — the global `--output=json` flag + subcommand set.
 3. `docs/cli/json-output-schema.md:34-191` — per-subcommand JSON shapes (`ls` is the paginated `{blobs,next_cursor}` page).
 4. `docs/cli/json-output-schema.md:114-131` — bench read/write latency nullability.
-5. `docs/cli/json-output-schema.md:195-208` — error response + exit codes (1 general, 2 CTRL-CRED-001).
-6. `docs/cli/json-output-schema.md:203-208` — PAT-in-args exit-2 violation.
+5. `docs/cli/json-output-schema.md:213-226` — error response + exit codes (1 general, 2 CTRL-CRED-001).
+6. `docs/cli/json-output-schema.md:221-226` — PAT-in-args exit-2 violation.
 7. `docs/cli/telemetry.md:10-15` — opt-in, default-off telemetry.
 8. `docs/cli/telemetry.md:18-29` — the minimal collected field set.
 9. `docs/cli/telemetry.md:32-44` — the never-collected list (no PII).

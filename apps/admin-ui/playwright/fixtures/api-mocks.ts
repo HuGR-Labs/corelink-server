@@ -66,14 +66,42 @@ function makeReceipt(payload: Record<string, unknown>): string {
   return `${header}.${body}.${sig}`;
 }
 
+function sessionFromRequest(req: { headers(): Record<string, string> }): {
+  role: string;
+  mfaAt?: number;
+} | null {
+  const raw = req.headers().cookie?.match(/(?:^|;\s*)__corelink_e2e_session=([^;]+)/)?.[1];
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(decodeURIComponent(raw)) as { role?: string; mfaAt?: number };
+    return typeof parsed.role === "string"
+      ? { role: parsed.role, mfaAt: parsed.mfaAt }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function browserMfaFresh(req: Parameters<typeof sessionFromRequest>[0]): boolean {
+  const session = sessionFromRequest(req);
+  if (!session?.mfaAt) return false;
+  return Date.now() - session.mfaAt * 1000 <= 30 * 60 * 1000;
+}
+
 export async function installApiMocks(page: Page): Promise<void> {
   const state = freshState();
 
   await page.route(/\/v1\/.*/, async (route: Route) => {
     const req = route.request();
     const url = new URL(req.url());
-    const path = url.pathname;
+    // The legacy suite runs with the app mounted at /corelink. Normalize the
+    // mount once so mocks cannot accidentally answer a different URL shape
+    // than the API client uses in CI.
+    const path = url.pathname
+      .replace(/^\/corelink(?=\/|$)/, "")
+      .replace(/^\/api(?=\/|$)/, "");
     const method = req.method();
+    const identity = sessionFromRequest(req);
 
     // ----- Tenants -----
     if (path === "/v1/tenants" && method === "POST") {
@@ -153,6 +181,105 @@ export async function installApiMocks(page: Page): Promise<void> {
     }
 
     // ----- DSR -----
+    if (path === "/v1/users/me" && method === "GET") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ email: "user@acme.example", name: "E2E User", language: "en" }),
+      });
+    }
+    if (path === "/v1/data-categories" && method === "GET") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          { id: "profile", label: "Profile" },
+          { id: "activity", label: "Activity" },
+        ]),
+      });
+    }
+    if (path.startsWith("/v1/privacy/dsr/") && method === "POST") {
+      if (!identity) {
+        return route.fulfill({ status: 401, contentType: "application/problem+json", body: JSON.stringify(makeRfc7807(401, "Unauthorized", "authenticated user required")) });
+      }
+      if (!browserMfaFresh(req)) {
+        return route.fulfill({ status: 403, contentType: "application/problem+json", body: JSON.stringify(makeRfc7807(403, "Forbidden", "fresh MFA required")) });
+      }
+      const action = path.split("/").pop() ?? "access";
+      const body = req.postDataJSON() as Record<string, unknown> | null;
+      const request_id = `dsr_e2e_${state.dsrRequests.length + 1}`;
+      const submitted_at = new Date().toISOString();
+      const sla_deadline = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
+      state.dsrRequests.push({
+        request_id,
+        action,
+        submitted_at,
+        sla_due_at: sla_deadline,
+        status: "pending",
+      });
+      return route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          request_id,
+          action,
+          jurisdiction: "gdpr",
+          sla_deadline,
+          jwt_receipt: makeReceipt({
+            request_id,
+            action,
+            jurisdiction: "gdpr",
+            sla_deadline,
+            iat: Math.floor(Date.now() / 1000),
+          }),
+          accepted_payload: body,
+        }),
+      });
+    }
+    if (path === "/v1/privacy/dsr" && method === "GET") {
+      if (!identity) {
+        return route.fulfill({ status: 401, contentType: "application/problem+json", body: JSON.stringify(makeRfc7807(401, "Unauthorized", "authenticated user required")) });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: state.dsrRequests.map((r) => ({
+            request_id: r.request_id,
+            action: r.action,
+            status: r.status,
+            submitted_at: r.submitted_at,
+            sla_deadline: r.sla_due_at,
+            jurisdiction: "gdpr",
+          })),
+          next_cursor: null,
+        }),
+      });
+    }
+    if (path.startsWith("/v1/privacy/dsr/") && path.endsWith("/status") && method === "GET") {
+      const request_id = path.split("/").at(-2) ?? "";
+      const found = state.dsrRequests.find((r) => r.request_id === request_id);
+      if (!found) {
+        return route.fulfill({
+          status: 404,
+          contentType: "application/problem+json",
+          body: JSON.stringify(makeRfc7807(404, "Not Found", "DSR not found")),
+        });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          request_id,
+          action: found.action,
+          status: found.status,
+          submitted_at: found.submitted_at,
+          sla_deadline: found.sla_due_at,
+          jurisdiction: "gdpr",
+          timeline: [{ at: found.submitted_at, to: found.status }],
+        }),
+      });
+    }
     if (path === "/v1/dsr/requests" && method === "POST") {
       const body = req.postDataJSON() as { action?: string } | null;
       const request_id = `dsr_e2e_${state.dsrRequests.length + 1}`;

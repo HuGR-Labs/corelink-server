@@ -23,7 +23,7 @@ use corelink_tier_selection::{
     },
     compute_stripe_signature, parse_stripe_signature_header,
     stripe::StripeCheckoutSessionCompletedEvent,
-    tier::{canonical_tiers, TierKind},
+    tier::{canonical_runner_tiers, canonical_tiers, TierKind},
     tier_selection_schema_version, verify_stripe_signature, AlwaysDenyDpaGate, DpaAcceptanceGate,
     InMemoryDpaGate, InMemoryStripeClient, StripeClient, StripeCustomerId,
     SubscriptionActivationReceipt, SubscriptionState, TenantCtx, TenantId, TierError,
@@ -57,13 +57,18 @@ fn tier_kind_as_str_canonical_strings_stable_and_distinct() {
         assert_ne!(t.as_str(), "xyzzy");
         assert_eq!(format!("{}", t), *expected);
     }
-    // canonical_tiers list must match.
+    // canonical_tiers is the six-tier customer ladder; runners are separate.
     let canon = canonical_tiers();
-    assert_eq!(canon.len(), 11);
-    for (i, (t, _)) in pairs.iter().enumerate() {
+    assert_eq!(canon.len(), 6);
+    for (i, (t, _)) in pairs[..6].iter().enumerate() {
         assert_eq!(canon[i], *t);
     }
-    // Eleven distinct strings.
+    let runners = canonical_runner_tiers();
+    assert_eq!(runners.len(), 5);
+    for (i, (t, _)) in pairs[6..].iter().enumerate() {
+        assert_eq!(runners[i], *t);
+    }
+    // All eleven enum strings remain distinct.
     let mut sorted: Vec<&str> = pairs.iter().map(|(_, s)| *s).collect();
     sorted.sort_unstable();
     sorted.dedup();

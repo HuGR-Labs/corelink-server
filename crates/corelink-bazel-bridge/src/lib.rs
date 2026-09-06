@@ -41,7 +41,7 @@
 //! # Hard invariants
 //!
 //! - **INV-BAZEL-DIGEST-VALIDATE** — REAPI Digest hash MUST be exactly 64
-//!   lowercase hex characters; size_bytes MUST be ≤ 4 GiB on writes; the
+//!   lowercase hex characters; size_bytes MUST be ≤ 64 MiB on writes; the
 //!   bytes length MUST match size_bytes on PUT, else [`error::BazelBridgeError::SizeMismatch`].
 //! - **INV-BAZEL-FIND-MISSING-CAP** — `findMissingBlobs` rejects batches
 //!   larger than 4096 digests with a 413-equivalent error
@@ -70,6 +70,6 @@ pub const REAPI_VERSION: &str = "2.3.0";
 pub const FIND_MISSING_BLOB_CAP: usize = 4096;
 
 /// Maximum allowed `size_bytes` for a single blob upload. REAPI v2.3.0
-/// §5.2: blobs larger than 4 GiB MUST use the ByteStream API; since this
-/// bridge is REST-only we reject oversized blobs early.
-pub const MAX_BLOB_SIZE_BYTES: u64 = 4 * 1024 * 1024 * 1024; // 4 GiB
+/// §5.2: this REST bridge uses the product-wide HTTP cache-entry ceiling.
+/// Larger blobs must use the separately sealed gRPC/ByteStream contract.
+pub const MAX_BLOB_SIZE_BYTES: u64 = corelink_hash::CACHE_ENTRY_MAX_BYTES as u64;

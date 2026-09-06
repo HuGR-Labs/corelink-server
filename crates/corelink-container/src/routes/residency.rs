@@ -21,9 +21,10 @@
 //!
 //! # Behaviour
 //!
-//! - **Header absent** → pass through. The Worker only sets the header on the
-//!   non-IAD fan-out path; local/IAD-resident traffic (wnam/enam) never carries
-//!   it and is served locally (the IAD container's `R2_CAS_REGION` is `iad`).
+//! - **Header absent** → pass through only on the IAD container (where the
+//!   local Worker path is authoritative). A regional container rejects a
+//!   missing claim, preventing direct traffic from bypassing the data-plane
+//!   residency re-check.
 //! - **Header present, maps to this container's colo** → pass through.
 //! - **Header present, maps to a DIFFERENT colo** → 409 `residency_violation`.
 //! - **Header present but unknown/unprovisioned macro (e.g. `afr`)** → 409
@@ -83,18 +84,26 @@ pub async fn residency_guard(req: Request, next: Next) -> Response {
 /// on a container serving `container_colo`? Extracted so it is unit-testable
 /// with ZERO process-env mutation (avoids the parallel-test `set_var` race).
 ///
-/// - `None` claimed macro (header absent) → Allow (local/IAD path; the Worker
-///   only stamps the header on the non-IAD fan-out).
+/// - `None` claimed macro (header absent) → Allow only on IAD; regional
+///   containers reject the missing trusted claim.
 /// - claimed macro maps to `container_colo` → Allow.
 /// - claimed macro maps to a DIFFERENT colo, or is unknown/unprovisioned (afr) →
 ///   Reject (fail-closed).
 #[must_use]
 pub fn residency_decision(claimed_macro: Option<&str>, container_colo: &str) -> ResidencyDecision {
     let Some(macro_region) = claimed_macro else {
-        return ResidencyDecision::Allow;
+        return if container_colo == "iad" {
+            ResidencyDecision::Allow
+        } else {
+            ResidencyDecision::Reject {
+                claimed_macro: "<missing>".to_owned(),
+            }
+        };
     };
     match colo_for_macro(macro_region) {
-        Some(expected) if expected == container_colo => ResidencyDecision::Allow,
+        Some(_) if crate::storage::region_map::colo_matches_macro(macro_region, container_colo) => {
+            ResidencyDecision::Allow
+        }
         _ => ResidencyDecision::Reject {
             claimed_macro: macro_region.to_owned(),
         },
@@ -164,10 +173,15 @@ mod tests {
     }
 
     #[test]
-    fn decision_absent_header_allows() {
-        // No header (local/IAD path) → allow.
+    fn decision_absent_header_only_allows_on_iad() {
+        // No header is valid only for the local IAD path.
         assert_eq!(residency_decision(None, "iad"), ResidencyDecision::Allow);
-        assert_eq!(residency_decision(None, "lhr"), ResidencyDecision::Allow);
+        assert_eq!(
+            residency_decision(None, "lhr"),
+            ResidencyDecision::Reject {
+                claimed_macro: "<missing>".to_owned()
+            }
+        );
     }
 
     #[test]

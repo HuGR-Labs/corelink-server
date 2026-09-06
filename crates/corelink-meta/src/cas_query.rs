@@ -33,7 +33,7 @@
 ///
 /// Bind:
 /// - `?1` `tenant_id` (canonical UUIDv7 text)
-/// - `?2` `digest` (canonical `'algo:hex'` text)
+/// - `?2` `digest` (canonical 64-char lowercase hexadecimal text)
 /// - `?3` `size_bytes` (i64; > 0 enforced by CHECK)
 /// - `?4` `created_at` (i64 unix-ms)
 /// - `?5` `last_accessed_at` (i64 unix-ms; equals `created_at` on first
@@ -57,6 +57,10 @@ pub const UPDATE_BLOB_META_INCREMENT_REFCOUNT: &str = "\
 UPDATE blob_meta \
 SET refcount = refcount + 1, last_accessed_at = ?3 \
 WHERE tenant_id = ?1 AND digest = ?2 AND deleted_at IS NULL \
+  AND NOT EXISTS (SELECT 1 FROM gc_purge_intent AS pi \
+                  WHERE pi.tenant_id = blob_meta.tenant_id \
+                    AND pi.digest = blob_meta.digest \
+                    AND pi.state IN ('purging', 'r2_deleted', 'retry')) \
 RETURNING refcount";
 
 /// Atomic refcount decrement with `RETURNING refcount`. The CHECK
@@ -69,6 +73,10 @@ pub const UPDATE_BLOB_META_DECREMENT_REFCOUNT: &str = "\
 UPDATE blob_meta \
 SET refcount = refcount - 1, last_accessed_at = ?3 \
 WHERE tenant_id = ?1 AND digest = ?2 AND deleted_at IS NULL \
+  AND NOT EXISTS (SELECT 1 FROM gc_purge_intent AS pi \
+                  WHERE pi.tenant_id = blob_meta.tenant_id \
+                    AND pi.digest = blob_meta.digest \
+                    AND pi.state IN ('purging', 'r2_deleted', 'retry')) \
 RETURNING refcount";
 
 /// Soft-delete: set `deleted_at` to a unix-ms timestamp. Idempotent — the
@@ -80,7 +88,11 @@ RETURNING refcount";
 pub const UPDATE_BLOB_META_SOFT_DELETE: &str = "\
 UPDATE blob_meta \
 SET deleted_at = ?3 \
-WHERE tenant_id = ?1 AND digest = ?2 AND deleted_at IS NULL";
+WHERE tenant_id = ?1 AND digest = ?2 AND deleted_at IS NULL \
+  AND NOT EXISTS (SELECT 1 FROM gc_purge_intent AS pi \
+                  WHERE pi.tenant_id = blob_meta.tenant_id \
+                    AND pi.digest = blob_meta.digest \
+                    AND pi.state IN ('purging', 'r2_deleted', 'retry'))";
 
 /// SELECT a single row by its composite PK. Returns the row regardless of
 /// `deleted_at` state — callers that want only alive rows filter the
@@ -107,12 +119,14 @@ WHERE tenant_id = ?1 AND digest = ?2";
 /// residency trigger (`NEW.region != tenant.primary_region → RAISE(ABORT)`).
 /// Relying on the `'wnam'` column default aborts the INSERT for any non-`wnam`
 /// tenant (tenants default to `'enam'`, 0028) → fail-CLOSED 503 (incident
-/// 2026-07-17); COALESCE `'wnam'` covers the tenant-absent case.
+/// 2026-07-17). A missing tenant deliberately remains `NULL`: migration 0107
+/// must reject it rather than allowing a fallback region to disguise an
+/// unevaluable audit row.
 pub const INSERT_AUDIT_OUTBOX: &str = "\
 INSERT OR IGNORE INTO audit_outbox \
 (id, tenant_id, digest, request_id, event_type, payload_json, enqueued_at, region) \
 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, \
-        COALESCE((SELECT primary_region FROM tenant WHERE tenant_id = ?2), 'wnam'))";
+        (SELECT primary_region FROM tenant WHERE tenant_id = ?2))";
 
 /// Lookup an audit_outbox row by its idempotency key. Used by the impl to
 /// detect "same request_id + event_type, different payload" before

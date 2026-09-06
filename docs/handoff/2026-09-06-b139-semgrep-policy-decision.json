@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "finding": "B-139",
+  "status": "engineering-complete-evidence-pending",
+  "non_claim": "This artifact records policy and executable evidence boundaries only. It does not claim a successful full scan, dispatch, SARIF upload, or Advanced Security availability.",
+  "scan_population": {
+    "bundled_rulesets": [
+      "p/security-audit",
+      "p/rust",
+      "p/typescript",
+      "p/python",
+      "p/owasp-top-ten",
+      "p/cwe-top-25"
+    ],
+    "custom_config": "./semgrep.yml",
+    "custom_rule_count": 4,
+    "custom_rule_prefix": "corelink."
+  },
+  "policy": {
+    "blocking_condition": "A finding blocks only when its SARIF level is error, or when the Semgrep process exits nonzero for an execution or output error.",
+    "bundled_findings": "Bundled findings are counted separately by SARIF level; warning, note, and none are retained and reported but do not block.",
+    "custom_findings": "CoreLink rules declare metadata policy explicit-error and severity ERROR; an unsuppressed custom finding at level error blocks.",
+    "suppression": "Custom suppressions remain subject to the runbook nosemgrep reason and ADR convention; this policy does not broaden exclusions.",
+    "fail_closed": true,
+    "semgrep_error_flag": "not used; the evaluator applies the explicit SARIF ERROR policy and preserves nonzero scanner failures"
+  },
+  "sarif": {
+    "required_files": [
+      "semgrep-bundled.sarif",
+      "semgrep-custom.sarif",
+      "semgrep-b139-report.json"
+    ],
+    "upload_categories": [
+      "semgrep-bundled",
+      "semgrep-custom"
+    ],
+    "advanced_security_unavailable": "The scan remains authoritative locally and SARIF is retained as an artifact; upload is reported as unavailable_or_unverified unless the upload action explicitly succeeds."
+  },
+  "historical_baseline": {
+    "findings": 4228,
+    "scope": "historical Semgrep run 31365335113",
+    "is_current_scan": false,
+    "requires_bundle_rerun": true
+  },
+  "closure": {
+    "requires": [
+      "A D03 bundle run with both SARIF populations and the generated report",
+      "No explicit ERROR findings, or remediation/approved suppression for every ERROR",
+      "Truthful upload outcome or retained artifact evidence when Advanced Security is unavailable"
+    ],
+    "owner_action": "Dispatch and Advanced Security account state remain external owner actions."
+  }
+}

@@ -27,7 +27,7 @@ def fixture_tree(tmp_path: Path) -> Path:
         target = tmp_path / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
-    for relative in (MODULE.CAIQ, MODULE.SIG):
+    for relative in (MODULE.CAIQ, MODULE.SIG, MODULE.OWNER_ACTIONS):
         source = ROOT / relative
         target = tmp_path / relative
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -39,6 +39,12 @@ def mutate_line(path: Path, needle: str, replacement: str) -> None:
     text = path.read_text(encoding="utf-8")
     assert text.count(needle) >= 1, needle
     path.write_text(text.replace(needle, replacement, 1), encoding="utf-8")
+
+
+def mutate_all(path: Path, needle: str, replacement: str) -> None:
+    text = path.read_text(encoding="utf-8")
+    assert text.count(needle) >= 1, needle
+    path.write_text(text.replace(needle, replacement), encoding="utf-8")
 
 
 def test_live_population_passes_with_owner_actions_only() -> None:
@@ -105,6 +111,21 @@ def test_missing_or_renamed_row_fails_closed(tmp_path: Path) -> None:
     assert any("missing named row" in failure and "STA-11.1" in failure for failure in result["failures"])
 
 
+@pytest.mark.parametrize("document", [MODULE.CAIQ, MODULE.SIG, MODULE.OWNER_ACTIONS])
+def test_reintroducing_test_only_byok_provider_claim_fails_closed(
+    tmp_path: Path, document: Path
+) -> None:
+    root = fixture_tree(tmp_path)
+    path = root / document
+    text = path.read_text(encoding="utf-8")
+    marker = "ActiveProvider::Unavailable"
+    assert marker in text
+    path.write_text(text.replace(marker, "InMemoryFake", 1), encoding="utf-8")
+    result = MODULE.verify(root)
+    assert result["ok"] is False
+    assert any("false default BYOK provider claim" in failure for failure in result["failures"])
+
+
 def test_missing_shipped_reality_marker_fails_closed(tmp_path: Path) -> None:
     root = fixture_tree(tmp_path)
     path = root / "crates/corelink-container/src/routes/byok_admin.rs"
@@ -114,6 +135,47 @@ def test_missing_shipped_reality_marker_fails_closed(tmp_path: Path) -> None:
     result = MODULE.verify(root)
     assert result["ok"] is False
     assert any("source control changed or missing" in failure for failure in result["failures"])
+
+
+def test_admin_fail_closed_branch_is_code_and_not_comment_safe(tmp_path: Path) -> None:
+    root = fixture_tree(tmp_path)
+    path = root / "crates/corelink-container/src/routes/byok_admin.rs"
+    mutate_all(path, "crate::byok_orchestrator::make_provider().await", "provider_constructor_removed()")
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write("\n// crate::byok_orchestrator::make_provider().await\n")
+    result = MODULE.verify(root)
+    assert result["ok"] is False
+    assert any("byok_admin.rs" in failure for failure in result["failures"])
+
+
+def test_orchestrator_unavailable_branch_is_code_and_not_string_safe(tmp_path: Path) -> None:
+    root = fixture_tree(tmp_path)
+    path = root / "crates/corelink-container/src/byok_orchestrator.rs"
+    mutate_all(path, "ActiveProvider::Unavailable", "ActiveProvider::NoProvider")
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write('\nconst DECOY: &str = "ActiveProvider::Unavailable";\n')
+    result = MODULE.verify(root)
+    assert result["ok"] is False
+    assert any("ActiveProvider::Unavailable" in failure for failure in result["failures"])
+
+
+def test_production_empty_cron_table_is_structural_and_fail_closed(tmp_path: Path) -> None:
+    root = fixture_tree(tmp_path)
+    path = root / "wrangler.toml"
+    mutate_line(path, "[env.prod.triggers]\ncrons = []", "# [env.prod.triggers]\n# crons = []")
+    result = MODULE.verify(root)
+    assert result["ok"] is False
+    assert any("env.prod.triggers.crons" in failure for failure in result["failures"])
+
+
+@pytest.mark.parametrize("workflow", [".github/workflows/semgrep.yml", ".github/workflows/fuzz-nightly.yml"])
+def test_parked_workflow_cannot_reactivate_schedule(tmp_path: Path, workflow: str) -> None:
+    root = fixture_tree(tmp_path)
+    path = root / workflow
+    mutate_line(path, "# schedule:", "schedule:")
+    result = MODULE.verify(root)
+    assert result["ok"] is False
+    assert any("active schedule" in failure for failure in result["failures"])
 
 
 def test_owner_packet_keeps_legal_and_external_actions_explicit() -> None:

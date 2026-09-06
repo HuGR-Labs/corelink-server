@@ -4,12 +4,14 @@ title: "ADR-0034 — PRR staffing waiver path for solo-tier sprints"
 description: "Why solo-tier HIGH_RISK sprints can SEAL via three named PRR sign-off waiver paths with an audit trail, while the Crypto SME slot stays non-waivable."
 source_files:
   - "specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "prr", "governance", "staffing", "waiver", "solo-tier"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md@300d7c850dc295836fe5dccd6a4655b80d5f9996"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-0034 — PRR staffing waiver path for solo-tier sprints
 
 CoreLink's HIGH_RISK sprints require 11 PRR sign-offs, but the program runs solo-tier (one engineer + Architect + contracted Crypto SME), so a strict 11/11 requirement blocks SEAL whenever a reviewer is unavailable and leaves `_TBD_` slots accumulating across sprints. This ADR records the named, audited waiver paths that close that structural defect without silently skipping reviews.

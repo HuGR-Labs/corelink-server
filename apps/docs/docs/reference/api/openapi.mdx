@@ -60,7 +60,7 @@ Routes marked **planned** are specified but not yet wired (CF Worker entry crate
 | tier | **live** | `POST /v1/onboarding/tier-select` |
 | pat | **live** | `GET`/`POST /v1/customer/keys`, `POST /v1/customer/keys/{pat_id}/revoke` |
 | billing | **live** | `POST /v1/billing/stripe-webhook` |
-| privacy-dsr | **live** | `POST /v1/privacy/dsr/{action}` (6 enumerated actions), `GET /v1/privacy/dsr/{request_id}/status` |
+| privacy-dsr | **live** | `POST /v1/privacy/dsr/access`, `/portability`, `/rectification`, `/erasure`, `/restriction`, `/objection`, `GET /v1/privacy/dsr/{request_id}/status` |
 
 
 

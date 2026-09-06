@@ -15,8 +15,8 @@ Personal Access Tokens (PATs) are the only credential type CoreLink accepts. Und
 
 PATs are created in two places:
 
-1. **Sign-up wizard** — issues a starter PAT with `cas:read cas:write ac:read ac:write` scopes automatically.
-2. **Self-service PAT issuance** — the **Keys** page in the dashboard, backed by [`POST /v1/customer/keys`](./reference/api/endpoints/post-v1-customer-keys.mdx). Send `{"name": "...", "scopes": ["cas:r", "cas:rw"]}` and the response carries the new token once.
+1. **Sign-up wizard** — issues a starter PAT stored with the canonical `read-write` scope.
+2. **Self-service PAT issuance** — the **Keys** page in the dashboard, backed by [`POST /v1/customer/keys`](./reference/api/endpoints/post-v1-customer-keys.mdx). Send `{"name": "...", "scopes": ["cas:rw"]}` and the response carries the new token once. Customer-issued PATs have a fixed 90-day lifetime; the request has no expiry field.
 
    Minting a token that holds any write or admin scope requires the caller to already hold a cache-write capability — a read-only (`cas:r`) token cannot mint itself a write token, and gets `403`.
 
@@ -42,8 +42,7 @@ CoreLink does not serve HTTP. All API traffic uses TLS 1.2 or TLS 1.3. HTTPS is 
 
 ### Rotation
 
-PATs have no automatic rotation. Recommended rotation cadence once
-self-service issuance ships:
+PATs have no automatic rotation. Recommended rotation cadence:
 
 | PAT type | Cadence |
 |---|---|
@@ -61,12 +60,16 @@ Revoke from the **Keys** page in the dashboard, or call
 directly. Note the shape: revocation is a `POST` to a `/revoke` sub-path, not a
 `DELETE` on the token.
 
-Revoking is a destructive, tenant-wide operation, so it needs a cache-write
-capability — a read-only (`cas:r`) token cannot revoke anything, including its
-own tenant's other tokens, and gets `403`.
+Revoking is a destructive team-admin operation. It requires the server-trusted
+`owner` or `admin` role from a Clerk dashboard session, not cache-write scope
+alone. An owner may revoke any PAT in the tenant; an admin may revoke member
+PATs but not the owner's PAT. Members, viewers, native PAT callers, and
+cross-tenant targets are rejected.
 
-Once revoked, in-flight requests using that PAT fail with `401` within the
-Cloudflare edge propagation window (typically < 100 ms).
+Once revoked, subsequent authentication checks reject that PAT with `401`.
+The Worker may serve a previously verified positive PAT result from its edge
+cache for up to 30 seconds; stop using a token immediately after revocation
+and allow that bounded cache window to expire.
 
 ## Scopes
 
@@ -74,13 +77,15 @@ PATs are scoped at creation time. The available scopes are:
 
 | Scope | Grants |
 |---|---|
-| `cas:read` | Read (download) blobs from CAS |
-| `cas:write` | Write (upload) blobs to CAS |
-| `ac:read` | Read action cache entries |
-| `ac:write` | Write action cache entries |
-| `admin` | PAT management, user management, audit log export |
+| `cache:read` (also `cas:r` / `read-only`) | Read (download) CAS blobs and action-cache entries |
+| `cache:write` (also `cas:rw` / `read-write`) | Write CAS blobs and action-cache entries; write includes read |
+| `cache:find-missing` (also `find-missing`) | Probe blob existence only |
+| `admin` | Legacy cache-read/write superset; not grantable through customer self-service |
 
-Principle of least privilege: give each PAT the minimum set of scopes required. A CI job that only populates the cache needs `cas:write ac:write`; a read-only cache proxy needs `cas:read ac:read`.
+Scopes are exact tokens and unknown tokens are rejected. Principle of least
+privilege: give each PAT the minimum capability required. A CI job that
+populates the cache normally needs `cache:write`; a read-only cache proxy needs
+`cache:read`.
 
 ## Tenant isolation (INV-TENANT-ISOLATION)
 
@@ -90,7 +95,7 @@ The core security invariant of CoreLink:
 
 This is enforced at two layers:
 
-1. **PAT validation**: The worker resolves the PAT to a `tenant_id`. If the URL path tenant does not match, the request is rejected with `403` before any storage operation.
+1. **PAT validation**: The worker resolves the PAT to a `tenant_id`. For tenant-addressed routes, a URL tenant that does not match is rejected with `403` before storage; native REAPI routes have no tenant segment and use the PAT-resolved tenant directly.
 2. **Storage key namespace**: R2 object keys are prefixed `<tenant_id>/cas/<hash>`. A storage bug that accidentally omits the tenant check cannot produce a collision because the key still contains the tenant prefix.
 
 CoreLink does not offer cross-tenant sharing. If two teams need to share artifacts, they must use a shared tenant or push the artifact to both tenants independently.
@@ -102,7 +107,7 @@ Every successful CAS read, CAS write, and AC operation is appended to an immutab
 | Field | Example |
 |---|---|
 | `event_type` | `cas.write`, `cas.read`, `ac.write`, `ac.read` |
-| `tenant_id` | `acme-prod` |
+| `tenant_id` | `0192f6e0-7b4a-7abc-8def-0123456789ab` |
 | `content_hash` | `sha256:e3b0c4...` |
 | `pat_prefix` | `aZ3xQ1` |
 | `ip_address` | `1.2.3.4` (hashed in GDPR-constrained regions) |
@@ -113,7 +118,12 @@ The audit log is append-only. Individual entries cannot be deleted. You can expo
 
 ## Encryption at rest
 
-All blobs stored in R2 are encrypted at rest using AES-256 (Cloudflare-managed keys by default). Enterprise plan tenants can supply their own AES-256 key (BYOK). Contact sales to enable BYOK.
+All blobs stored in R2 are encrypted at rest using AES-256 with
+Cloudflare-managed keys. Customer-managed BYOK is not currently shipped: the
+operator-only activation route fails closed with `501 byok_not_available` when
+the real provider is unavailable, and there is no customer self-service
+activation. Do not assume an Enterprise plan has BYOK enabled; contact sales
+for current external availability and rollout status.
 
 ## Responsible disclosure
 

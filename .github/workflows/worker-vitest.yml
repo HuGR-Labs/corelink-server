@@ -8,6 +8,13 @@ on:
   pull_request:
     paths:
       - "worker/**"
+      - "wrangler.toml"
+      - "scripts/verify_b072_scheduled_drills.py"
+      - "scripts/test_b072_scheduled_drills_mutations.py"
+      - "docs/knowledge/ops/scheduled-drills.md"
+      - "docs/internal/b072-scheduled-drills-owner-packet.md"
+      - "changelog.d/b072-scheduled-drills.md"
+      - "BACKLOG.md"
   workflow_dispatch:
 
 concurrency:
@@ -48,6 +55,17 @@ jobs:
         # its declared 90% down to 77%. Do not drop this flag: the config's floor is
         # unenforceable without it. Exit code is vitest's own (no pipe, no `|| true`).
         run: npx vitest run --coverage
+
+      - name: Verify scheduled-drill wiring (B-072)
+        # The job default is worker/; this verifier intentionally reads the
+        # repository-root wrangler.toml and therefore runs from the root.
+        working-directory: .
+        run: python3 scripts/verify_b072_scheduled_drills.py
+
+      - name: Run scheduled-drill adversarial mutations (B-072)
+        # Keep this command rooted at the workflow's worker/ cwd so a moved
+        # script path cannot silently make the mutation gate inert.
+        run: python3 ../scripts/test_b072_scheduled_drills_mutations.py
 
       - name: Run vitest (miniflare / workerd integration)
         # The workerd DO-dispatch / isolation / CORS integration suite. Its

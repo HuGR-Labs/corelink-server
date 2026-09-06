@@ -67,7 +67,8 @@ const CARGO_ROUTE_PATH = path.resolve(
   "corelink-container",
   "src",
   "routes",
-  "cargo.rs",
+  "cargo",
+  "part-00.rs",
 );
 
 const PUBLISHED_METHODS = ["GET", "PUT", "HEAD", "PROPFIND", "MKCOL", "DELETE"];

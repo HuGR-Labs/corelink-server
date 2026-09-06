@@ -58,7 +58,7 @@ Los PAT no tienen rotación automática. Cadencia de rotación recomendada para 
 
 ### Revocación
 
-La ruta de revocación del panel, `POST /v1/customer/keys/{pat_id}/revoke`, está vinculada al tenant y requiere un cliente con capacidad de escritura. La operación pública `DELETE /v1/pats/{pat_id}` todavía no está activa. Una vez revocado, las solicitudes en curso con ese PAT fallarán con `401` dentro de la ventana de propagación del borde de Cloudflare (típicamente < 100 ms).
+La ruta de revocación del panel, `POST /v1/customer/keys/{pat_id}/revoke`, es una operación destructiva de administración del tenant y requiere el rol de Clerk confiable del servidor `owner` o `admin`, no solo capacidad de escritura. El Owner puede revocar cualquier PAT del tenant; el Admin puede revocar PATs de miembros, pero no el PAT del Owner. Los roles Member/Viewer, callers con PAT nativo y objetivos de otro tenant son rechazados. La operación pública `DELETE /v1/pats/{pat_id}` todavía no está activa. Una vez revocado, las solicitudes en curso con ese PAT fallarán con `401` dentro de la ventana de propagación del borde de Cloudflare (típicamente < 100 ms).
 
 ## Scopes
 

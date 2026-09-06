@@ -25,12 +25,14 @@
 //! |----------|--------------------------------------------------------------------|
 //! | `opat`    | the container's per-request D1 `pat` row read (kept by #1022 for immediate revocation) — and, on the cargo read path, the url-map row it CO-READS in the same round trip |
 //! | `oquota`  | the per-tenant monthly `$`-ceiling check/accrue (ADR-0068) — a D1 round trip |
-//! | `ostore`  | the moat storage lookup (`(namespace,key)→content_hash` map read plus the CAS/R2 blob fetch) **and**, on the native CAS/AC plane, the R2/S3 object GET/PUT/DELETE/LIST calls `R2CasHandler`/`R2AcHandler` make through the sync `block_in_place` bridge (`storage/r2_s3.rs`) — **and**, on the native CAS/AC `list()` read path specifically, the CONCURRENT audit write that now runs alongside the R2 `ListObjectsV2` call — and, on the Bazel `findMissingBlobs` path, the whole joined window of the batched audit write plus the concurrent R2 `HeadObject` probes (see "Concurrent native-plane list seam" below) |
+//! | `ostore`  | the moat storage lookup's CAS/R2 blob work and, on the native CAS/AC plane, the R2/S3 object GET/PUT/DELETE/LIST calls `R2CasHandler`/`R2AcHandler` make through the sync `block_in_place` bridge (`storage/r2_s3.rs`) — **and**, on the native CAS/AC `list()` read path specifically, the CONCURRENT audit write that now runs alongside the R2 `ListObjectsV2` call — and, on the Bazel `findMissingBlobs` path, the whole joined window of the batched audit write plus the concurrent R2 `HeadObject` probes (see "Concurrent native-plane list seam" below) |
+//! | `oaccounting` | D1 storage-byte accounting and adapter URL-map writes/reads. It is intentionally separate from `ostore`; the two scopes never overlap. |
 //! | `oargon`  | Argon2id verification (`adapter_pat.rs`): the secret-match memo check plus, on a miss, the coalesced verify flight — AND, on the SAME name, the row-not-found coalesced dummy Argon2id burn that pads timing for a missing/expired/revoked `token_id` (see the security note below) |
 //! | `opermit` | the semaphore acquires bounded by `ARGON2_PERMIT_WAIT`, in both the dummy-burn arm and the real verify arm |
 //! | `ortier`  | `ensure_tier_applied`'s D1 tier-label resolution (`routes/ratelimit_layer.rs` → `oci_cap.rs`) |
 //! | `oaudit`  | the blocking durable-audit D1 write on the request path (`D1AuditOutboxSink::write_blocking`, `storage/d1_audit_sink.rs`) — every `AuditSink::emit`/`append` the native CAS/AC handlers make before/after a mutation or read routes through this one blocking D1-over-HTTP `INSERT`. **Exceptions:** the native CAS/AC `list()` read path's `ListAttempted` audit write, and the Bazel `findMissingBlobs` path's batched `ReadAttempted` write, do NOT appear here when they run concurrently with the R2 calls — see below. |
-//! | `oother`  | **residue** — every other millisecond the container spent: routing, HMAC, body handling, response assembly |
+//! | `oratelimit` | the synchronous per-tenant/OCI token-bucket admission decision; it covers no awaited handler work, so it cannot overlap the named D1/R2 phases |
+//! | `ohandler` | request-framework work outside a more specific phase: routing, HMAC, body handling, response assembly |
 //!
 //! ## Security: `oargon` must not become a token-enumeration oracle
 //!
@@ -54,15 +56,21 @@
 //! unchanged: renaming a phase would strand the ms in `ohop` on any Worker that
 //! has not yet been redeployed (`originSubPhases` ignores names outside its
 //! allowlist), which is exactly the silent mis-attribution this split exists to
-//! prevent. The reconciliation is unaffected — the four still sum EXACTLY to
-//! the time the container held the request, because `oother` is a residue and
-//! the phases partition, not label, the work.
+//! prevent. The reconciliation is unaffected — the named phases still sum
+//! EXACTLY to the time the container held the request, because `ohandler` accounts for the
+//! remaining framework work and the phases partition, not label, the work.
+//! During the mixed-rollout window the wire also carries an identical `oother`
+//! compatibility alias; new Workers normalize that alias and old Workers still
+//! recognize it instead of charging the framework window to `ohop`.
+//! This makes the rollout order safe in either direction: deploy the dual
+//! producer before or after the parser, keep the alias while old Workers drain,
+//! then remove it only in a later cleanup once the old allowlist is gone.
 //!
-//! `oother` is computed by subtraction from the layer's own whole-request clock
-//! and is emitted ALWAYS, so the four **sum exactly** to the time the container
-//! held the request. The Worker then computes `ohop = origin − Σ(these)` — the
-//! DO hop — which is why an unattributed millisecond can never vanish: it lands
-//! in a named phase on one side of the boundary or the other.
+//! `ohandler` is computed from the layer's whole-request clock after every
+//! specific phase has been accounted for. It is an explicit request-framework
+//! phase, not an anonymous residue: the Worker allowlist consumes it and the
+//! canonical phases always partition the container window; the legacy alias is
+//! normalized away by new Workers.
 //!
 //! ## Concurrent native-plane list seam — the ONE place two phases now overlap
 //!
@@ -82,7 +90,7 @@
 //! `Phase::Store`) for that overlapping wall-clock window, their accumulated
 //! microseconds would NOT partition the request any more — the SAME
 //! milliseconds would be counted under two names, `attributed_ms` could
-//! exceed `total_ms`, and `oother`'s `(total_ms - attributed_ms).max(0)` guard
+//! exceed `total_ms`, and `ohandler`'s `(total_ms - attributed_ms).max(0)` guard
 //! would silently swallow the overcount into a floor of zero rather than
 //! reporting it. That would make the header LIE by omission — `Σ(phases)`
 //! would no longer be a request partition even though nothing overflowed.
@@ -99,7 +107,7 @@
 //! unaffected everywhere else (every mutation path — write/update/delete —
 //! stays fully serial and keeps entering `Phase::Audit` exactly as before;
 //! see `r2_s3.rs` for why those paths were NOT made concurrent). The
-//! four-way sum therefore still partitions the request exactly, by
+//! named-phase sum therefore still partitions the request exactly, by
 //! construction, not by the `max(0)` guard papering over an overcount.
 //!
 //! ### The `findMissingBlobs` batch seam obeys the SAME rule
@@ -141,7 +149,7 @@
 //!   path. What is still NOT covered by `ostore` on the native plane is the
 //!   BYOK key-resolution / encrypt / decrypt work (`resolve_byok`,
 //!   `encrypt_body`, `decrypt_body`) that wraps those calls — that remains in
-//!   `oother`. The phase is named for what it measures, not for what one might
+//!   `ohandler`. The phase is named for what it measures, not for what one might
 //!   wish it measured.
 //! * `oaudit` instruments [`crate::storage::d1_audit_sink::D1AuditOutboxSink`]'s
 //!   `write_blocking` — the ONE blocking-D1 choke point every CAS/AC audit
@@ -152,7 +160,7 @@
 //!   native-plane list seam" above.
 //! * The layer stops timing when the handler returns its `Response`. For a
 //!   buffered body (every route on the measured `/cargo` path) that is the whole
-//!   cost; for a streamed body the streaming itself is outside `oother` — and it
+//!   cost; for a streamed body the streaming itself is outside `ohandler` — and it
 //!   is outside the Worker's `origin` too, since `stub.fetch()` also resolves on
 //!   headers. The two clocks stay comparable.
 //! * The DO's own prologue (tenant-id lifecycle bind, `ensureContainerRunning`,
@@ -169,7 +177,7 @@
 //! reading `dur=0` means "no I/O", whereas a container phase reading `dur=0`
 //! means "under a millisecond of actual wall time". Sub-phase micros are
 //! accumulated and truncated to whole milliseconds exactly once, at emission, so
-//! `Σ(parts) ≤ total` holds by the monotonicity of `floor` and `oother` can
+//! `Σ(parts) ≤ total` holds by the monotonicity of `floor` and `ohandler` can
 //! never be negative.
 //!
 //! # Overhead
@@ -211,7 +219,7 @@ const SERVER_TIMING: HeaderName = HeaderName::from_static("server-timing");
 /// A container-internal phase of the Worker's `origin` Server-Timing block.
 ///
 /// The variants are the phases that would change a decision about WHERE to
-/// attack `origin`; everything else is deliberately pooled into the `oother`
+/// attack `origin`; everything else is deliberately pooled into the `ohandler`
 /// residue rather than split into names nobody would act on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
@@ -219,8 +227,14 @@ pub enum Phase {
     Pat,
     /// The per-tenant `$`-ceiling quota check/accrue (`oquota`).
     Quota,
-    /// The moat storage lookup — url-map read + CAS/R2 blob (`ostore`).
+    /// CAS/R2 durable storage work (`ostore`). Adapter URL-map and byte
+    /// accounting D1 calls use [`Phase::Accounting`] so the two costs can be
+    /// measured independently without overlapping the request partition.
     Store,
+    /// D1 storage-byte accounting and adapter URL-map operations
+    /// (`oaccounting`). This phase is deliberately bounded around the actual
+    /// D1 windows; it never wraps the inner R2 handler.
+    Accounting,
     /// Argon2id verification (`oargon`) — the memo check plus, on a miss, the
     /// verify flight (`adapter_pat.rs`'s `verify_capability`), AND the
     /// row-not-found coalesced dummy Argon2id burn that pads timing for a
@@ -233,14 +247,18 @@ pub enum Phase {
     /// Argon2id-permit sibling): the global permit wait in both the dummy-burn
     /// arm and the real verify arm accumulate into this one phase (`opermit`).
     Permit,
-    /// `ensure_tier_applied`'s tier resolution — the one D1 round trip in the
-    /// `oother` residue that no other phase counted (`ortier`).
+    /// `ensure_tier_applied`'s tier resolution (`ortier`).
     Tier,
     /// The blocking durable-audit D1 write on the request path (`oaudit`):
     /// `D1AuditOutboxSink::write_blocking` (`storage/d1_audit_sink.rs`), the
     /// single choke point every CAS/AC `AuditSink::emit`/`append` call routes
     /// through before/after a native-plane read or mutation.
     Audit,
+    /// The synchronous per-tenant/OCI token-bucket admission decision
+    /// (`oratelimit`). This is deliberately scoped around only the
+    /// `try_acquire` call(s); handler execution remains outside this phase, so
+    /// it cannot overlap `opat`/`oquota`/`ostore` or any other awaited phase.
+    RateLimit,
 }
 
 /// Sentinel for "this phase did not run at all", mirroring the Worker's `-1`
@@ -268,11 +286,13 @@ pub struct PhaseLedger {
     permit_us: AtomicI64,
     tier_us: AtomicI64,
     audit_us: AtomicI64,
-    windows: [Mutex<PhaseWindow>; 7],
+    accounting_us: AtomicI64,
+    rate_limit_us: AtomicI64,
+    windows: [Mutex<PhaseWindow>; 9],
     #[cfg(test)]
-    completed_windows: [AtomicUsize; 7],
+    completed_windows: [AtomicUsize; 9],
     #[cfg(test)]
-    recordings: [AtomicUsize; 7],
+    recordings: [AtomicUsize; 9],
 }
 
 #[derive(Debug, Default)]
@@ -299,6 +319,8 @@ impl PhaseLedger {
             permit_us: AtomicI64::new(DID_NOT_RUN),
             tier_us: AtomicI64::new(DID_NOT_RUN),
             audit_us: AtomicI64::new(DID_NOT_RUN),
+            accounting_us: AtomicI64::new(DID_NOT_RUN),
+            rate_limit_us: AtomicI64::new(DID_NOT_RUN),
             windows: std::array::from_fn(|_| Mutex::new(PhaseWindow::default())),
             #[cfg(test)]
             completed_windows: std::array::from_fn(|_| AtomicUsize::new(0)),
@@ -312,10 +334,12 @@ impl PhaseLedger {
             Phase::Pat => &self.pat_us,
             Phase::Quota => &self.quota_us,
             Phase::Store => &self.store_us,
+            Phase::Accounting => &self.accounting_us,
             Phase::Argon => &self.argon_us,
             Phase::Permit => &self.permit_us,
             Phase::Tier => &self.tier_us,
             Phase::Audit => &self.audit_us,
+            Phase::RateLimit => &self.rate_limit_us,
         }
     }
 
@@ -324,10 +348,12 @@ impl PhaseLedger {
             Phase::Pat => &self.windows[0],
             Phase::Quota => &self.windows[1],
             Phase::Store => &self.windows[2],
-            Phase::Argon => &self.windows[3],
-            Phase::Permit => &self.windows[4],
-            Phase::Tier => &self.windows[5],
-            Phase::Audit => &self.windows[6],
+            Phase::Accounting => &self.windows[3],
+            Phase::Argon => &self.windows[4],
+            Phase::Permit => &self.windows[5],
+            Phase::Tier => &self.windows[6],
+            Phase::Audit => &self.windows[7],
+            Phase::RateLimit => &self.windows[8],
         }
     }
 
@@ -337,10 +363,12 @@ impl PhaseLedger {
             Phase::Pat => &self.completed_windows[0],
             Phase::Quota => &self.completed_windows[1],
             Phase::Store => &self.completed_windows[2],
-            Phase::Argon => &self.completed_windows[3],
-            Phase::Permit => &self.completed_windows[4],
-            Phase::Tier => &self.completed_windows[5],
-            Phase::Audit => &self.completed_windows[6],
+            Phase::Accounting => &self.completed_windows[3],
+            Phase::Argon => &self.completed_windows[4],
+            Phase::Permit => &self.completed_windows[5],
+            Phase::Tier => &self.completed_windows[6],
+            Phase::Audit => &self.completed_windows[7],
+            Phase::RateLimit => &self.completed_windows[8],
         }
     }
 
@@ -350,10 +378,12 @@ impl PhaseLedger {
             Phase::Pat => &self.recordings[0],
             Phase::Quota => &self.recordings[1],
             Phase::Store => &self.recordings[2],
-            Phase::Argon => &self.recordings[3],
-            Phase::Permit => &self.recordings[4],
-            Phase::Tier => &self.recordings[5],
-            Phase::Audit => &self.recordings[6],
+            Phase::Accounting => &self.recordings[3],
+            Phase::Argon => &self.recordings[4],
+            Phase::Permit => &self.recordings[5],
+            Phase::Tier => &self.recordings[6],
+            Phase::Audit => &self.recordings[7],
+            Phase::RateLimit => &self.recordings[8],
         }
     }
 
@@ -451,9 +481,9 @@ impl PhaseLedger {
     /// `total_us` microseconds.
     ///
     /// A phase that ran is emitted even at `dur=0`; a phase that did not run is
-    /// omitted entirely. `oother` is the residue and is ALWAYS emitted, so the
-    /// emitted phases sum EXACTLY to `floor(total_us / 1000)` — the property the
-    /// Worker relies on to derive `ohop` without losing a millisecond.
+    /// omitted entirely. `ohandler` accounts for request-framework work, so the
+    /// canonical emitted phases sum EXACTLY to `floor(total_us / 1000)`; the
+    /// compatibility alias is intentionally excluded from that arithmetic.
     #[must_use]
     pub fn server_timing_value(&self, total_us: i64) -> String {
         self.server_timing_value_with(total_us, detail_phases_enabled())
@@ -467,23 +497,24 @@ impl PhaseLedger {
     #[must_use]
     pub(crate) fn server_timing_value_with(&self, total_us: i64, detail: bool) -> String {
         let total_ms = total_us.max(0) / 1_000;
-        let mut parts: Vec<String> = Vec::with_capacity(8);
+        let mut parts: Vec<String> = Vec::with_capacity(11);
         let mut attributed_ms: i64 = 0;
         for (name, phase) in [
             ("opat", Phase::Pat),
             ("oquota", Phase::Quota),
             ("ostore", Phase::Store),
+            ("oaccounting", Phase::Accounting),
             ("oargon", Phase::Argon),
             ("opermit", Phase::Permit),
             ("ortier", Phase::Tier),
             ("oaudit", Phase::Audit),
+            ("oratelimit", Phase::RateLimit),
         ] {
             // Only the CREDENTIAL-PATH pair is gated (see
             // `detail_phases_enabled`). `ortier`/`oaudit` publish
-            // unconditionally: they carry no credential oracle, and leaving them
-            // in the residue is what made `oother` an unnamed 139 ms in the
-            // 2026-08-30 measurement (B-109). Enumerating them costs nothing and
-            // is the whole point of the residue being a residue.
+            // unconditionally: they carry no credential oracle and are already
+            // explicit phases. Keeping this accounting named avoids silently
+            // charging framework work to the DO hop.
             if !detail && matches!(phase, Phase::Argon | Phase::Permit) {
                 continue;
             }
@@ -496,8 +527,13 @@ impl PhaseLedger {
         // `floor(a) + floor(b) <= floor(a + b) <= floor(total)`, so this cannot
         // go negative — the `max(0)` is a belt-and-braces guard against a future
         // phase that overlaps another rather than partitioning the request.
-        let other_ms = (total_ms - attributed_ms).max(0);
-        parts.push(format!("oother;dur={other_ms}"));
+        let handler_ms = (total_ms - attributed_ms).max(0);
+        parts.push(format!("ohandler;dur={handler_ms}"));
+        // Keep the historical name for one safe mixed-rollout window. Old
+        // Workers only allowlist `oother` and would otherwise drop the new
+        // phase, inflating `ohop`. New Workers normalize and deduplicate this
+        // exact-value alias, so it cannot double-count the partition.
+        parts.push(format!("oother;dur={handler_ms};desc=\"legacy-alias\""));
         parts.join(", ")
     }
 }
@@ -523,7 +559,8 @@ impl PhaseLedger {
 /// opt-in for everything the split added — with the note that there was "currently
 /// no reason to ship `oaudit` alone". B-109 is that reason.
 ///
-/// The 2026-08-30 production profile measured `oother` at 139 ms on a warm PUT
+/// The 2026-08-30 production profile measured the then-unnamed framework work at
+/// 139 ms on a warm PUT
 /// against 1 ms on the GET: real container work, unnamed, because the residue is
 /// computed by subtraction and these two were being subtracted into it. The only
 /// way to enumerate it was to arm this flag in production — which would publish
@@ -535,7 +572,7 @@ impl PhaseLedger {
 /// What remains gated is exactly what the oracle argument covers: `oargon` and
 /// `opermit`, both on the credential path, both reporting per-process cache state
 /// by their PRESENCE. When off they are not emitted and their time falls into
-/// `oother`, whose meaning is unchanged. The ledger still RECORDS them
+/// `ohandler`, whose meaning is explicit. The ledger still RECORDS them
 /// unconditionally (an `Instant` is free), so arming the flag needs no rebuild of
 /// the timing code, only a redeploy of this gate.
 ///
@@ -563,8 +600,19 @@ tokio::task_local! {
     /// [`current_ledger`] on the ORIGINATING task, before spawning, and record
     /// through it via [`PhaseScope::with_handle`]; only a region that captures
     /// no handle at all (no `current_ledger()` call reachable) records nothing
-    /// and falls into `oother`.
+    /// and falls into `ohandler`.
     static LEDGER: Arc<PhaseLedger>;
+}
+
+// `spawn_blocking` closures are synchronous and therefore cannot carry the
+// Tokio task-local above.  Keep a thread-local bridge for the duration of the
+// closure so code below the sync CAS traits can still open *its own* bounded
+// phase (R2 versus D1 accounting).  This is deliberately scoped and restored
+// by `PhaseScope`; a worker thread never retains a request ledger after the
+// closure returns.
+thread_local! {
+    static BLOCKING_LEDGER: std::cell::RefCell<Option<Arc<PhaseLedger>>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 /// Time `fut` and attribute its wall duration to `phase`.
@@ -604,7 +652,10 @@ pub(crate) async fn scope_for_test<F: Future>(ledger: Arc<PhaseLedger>, fut: F) 
 /// result into the spawned closure for [`PhaseScope::with_handle`] to consume.
 #[must_use]
 pub fn current_ledger() -> Option<Arc<PhaseLedger>> {
-    LEDGER.try_with(Arc::clone).ok()
+    LEDGER
+        .try_with(Arc::clone)
+        .ok()
+        .or_else(|| BLOCKING_LEDGER.with(|slot| slot.borrow().as_ref().map(Arc::clone)))
 }
 
 /// RAII timer for a region that has its own internal early returns (`?` or
@@ -620,6 +671,7 @@ pub fn current_ledger() -> Option<Arc<PhaseLedger>> {
 pub struct PhaseScope {
     ledger: Option<Arc<PhaseLedger>>,
     phase: Phase,
+    previous_blocking_ledger: Option<Option<Arc<PhaseLedger>>>,
 }
 
 impl PhaseScope {
@@ -632,7 +684,11 @@ impl PhaseScope {
         if let Some(ledger) = &ledger {
             ledger.begin(phase);
         }
-        Self { ledger, phase }
+        Self {
+            ledger,
+            phase,
+            previous_blocking_ledger: None,
+        }
     }
 
     /// Time a region reached on a DIFFERENT task than the one that opened the
@@ -644,7 +700,29 @@ impl PhaseScope {
         if let Some(ledger) = &ledger {
             ledger.begin(phase);
         }
-        Self { ledger, phase }
+        Self {
+            ledger,
+            phase,
+            // This constructor is also used by spawned async futures. Do not
+            // install a thread-local across an await: Tokio may run another
+            // request on the same worker thread. Synchronous closures use
+            // `with_ledger` below instead.
+            previous_blocking_ledger: None,
+        }
+    }
+
+    /// Install a captured ledger on a synchronous task without opening a
+    /// phase.  Use this at a `spawn_blocking` boundary when the sync callee
+    /// owns the phase boundaries (for example, the accounting decorator owns
+    /// `oaccounting` while the R2 handler owns `ostore`).
+    #[must_use]
+    pub fn with_ledger(ledger: Option<Arc<PhaseLedger>>) -> Self {
+        let previous_blocking_ledger = BLOCKING_LEDGER.with(|slot| slot.replace(ledger.clone()));
+        Self {
+            ledger: None,
+            phase: Phase::Store,
+            previous_blocking_ledger: Some(previous_blocking_ledger),
+        }
     }
 }
 
@@ -652,6 +730,11 @@ impl Drop for PhaseScope {
     fn drop(&mut self) {
         if let Some(ledger) = &self.ledger {
             ledger.end(self.phase);
+        }
+        if let Some(previous) = self.previous_blocking_ledger.take() {
+            BLOCKING_LEDGER.with(|slot| {
+                slot.replace(previous.flatten());
+            });
         }
     }
 }
@@ -662,7 +745,8 @@ impl Drop for PhaseScope {
 /// Wired as the OUTERMOST data-plane layer (added last in
 /// [`crate::routes::build_with_factory`]) so its own clock spans everything the
 /// container does — including the rate-limit layer and the OTel export layer —
-/// which is what makes `oother` a true residue rather than a partial one.
+/// which is what makes `ohandler` a complete framework phase rather than a
+/// partial one.
 ///
 /// The header is `insert`ed, replacing (never appending to) any value a handler
 /// set, so the container speaks with exactly one voice about its own timing.
@@ -682,7 +766,7 @@ pub async fn origin_timing_layer(req: Request, next: Next) -> Response {
 // Split by CONCERN, not by size. Each file states the property it pins:
 //
 //   `tests_emission`  — what the ledger emits, and the partition arithmetic that
-//                       keeps `sum(phases) + oother` equal to the container total.
+//                       keeps `sum(phases) + ohandler` equal to the container total.
 //   `tests_gate`      — which detail phases publish. A security property: the
 //                       PRESENCE of `opermit` reports whether the Argon2id flight ran.
 //   `tests_recording` — the two recording mechanisms (ambient task-local vs a

@@ -44,6 +44,7 @@ use axum::{
     routing::post,
     Router,
 };
+use corelink_byok::KmsProvider;
 use serde::Deserialize;
 
 use crate::customer_d1::{
@@ -58,23 +59,6 @@ pub const BYOK_ACTIVATE_ROUTE: &str = "/v1/admin/byok/activate";
 
 /// Canonical deactivation (kill-switch) route path.
 pub const BYOK_DEACTIVATE_ROUTE: &str = "/v1/admin/byok/deactivate";
-
-/// Compile-time truth: did THIS binary link a real `KmsProvider`?
-///
-/// The BYOK data plane's provider is selected at compile time by the
-/// `byok-*-real` cargo features (see [`crate::byok_orchestrator`]). With
-/// NONE of them set — the shipping prod `Dockerfile` case — the only
-/// `KmsProvider` is the `InMemoryFake` (XOR-mask against a fixed constant,
-/// doc-marked "Not for production"). Flipping a tenant to BYOK `active`
-/// under that fake would report a security guarantee the binary cannot
-/// deliver, so activation MUST fail closed (501) in any build where this is
-/// `false`. `active_provider()` is `const fn`, so the whole gate resolves at
-/// compile time (zero hot-path cost) — the exact "feature inert in prod"
-/// mechanism used elsewhere in the container.
-const REAL_KMS_PROVIDER_WIRED: bool = !matches!(
-    crate::byok_orchestrator::active_provider(),
-    crate::byok_orchestrator::ActiveProvider::InMemoryFake
-);
 
 /// Shared route state for the BYOK activation control plane.
 #[derive(Clone)]
@@ -238,31 +222,9 @@ async fn handle_activate(
         );
         return (StatusCode::FORBIDDEN, "forbidden").into_response();
     }
-    // ── Fail-CLOSED: no real KmsProvider linked → BYOK activation is INERT. ──
-    // In a build with no `byok-*-real` feature the only provider is the
-    // `InMemoryFake` (XOR-mask "crypto", "Not for production"). Flipping a
-    // tenant to `active` under it would report a live BYOK guarantee the
-    // binary cannot deliver, so we return 501 Not Implemented and NEVER reach
-    // the writer — state is never mutated to 'active'. This fires AFTER the
-    // operator gate so an unauthenticated caller still 403s (no inertness leak)
-    // and BEFORE the body is parsed or the writer touched.
-    if !REAL_KMS_PROVIDER_WIRED {
-        tracing::error!(
-            event = "ByokActivateNotAvailable",
-            provider = crate::byok_orchestrator::active_provider().as_str(),
-            "byok activate rejected: no real KmsProvider linked (InMemoryFake \
-             active) → 501 not-available; state NOT mutated"
-        );
-        return (
-            StatusCode::NOT_IMPLEMENTED,
-            "{\"error\":\"byok_not_available\"}",
-        )
-            .into_response();
-    }
-    let Some(writer) = state.writer.as_ref() else {
-        tracing::error!("byok activate: D1 writer unwired → 503 (fail-CLOSED)");
-        return (StatusCode::SERVICE_UNAVAILABLE, "byok_write_unavailable").into_response();
-    };
+    // Parse and validate the wire shape before touching KMS or D1. This keeps
+    // malformed/unknown provider input a deterministic 400 with no audit or
+    // mutation side effect.
     let parsed: ByokActivateBody = match serde_json::from_slice(&body) {
         Ok(b) => b,
         Err(e) => {
@@ -273,6 +235,67 @@ async fn handle_activate(
     let activation = match parsed.into_activation() {
         Ok(a) => a,
         Err(msg) => return (StatusCode::BAD_REQUEST, msg).into_response(),
+    };
+    if !matches!(
+        activation.cmk_provider.as_str(),
+        "aws" | "gcp" | "azure" | "vault"
+    ) {
+        return (StatusCode::BAD_REQUEST, "invalid_cmk_provider").into_response();
+    }
+
+    // Provider construction is deliberately runtime-gated as well as
+    // compile-time-selected. Missing credentials, an unavailable endpoint, or
+    // a binary built without a real provider must all stop before the D1
+    // writer. A feature flag alone is not evidence that KMS is usable.
+    let provider = match crate::byok_orchestrator::make_provider().await {
+        Ok(provider) => provider,
+        Err(error) => {
+            tracing::error!(
+                event = "ByokActivateNotAvailable",
+                provider = crate::byok_orchestrator::active_provider().as_str(),
+                reason = "kms_provider_unavailable",
+                error = %error,
+                "byok activate rejected: real KMS provider unavailable; state NOT mutated"
+            );
+            return (
+                StatusCode::NOT_IMPLEMENTED,
+                "{\"error\":\"byok_not_available\"}",
+            )
+                .into_response();
+        }
+    };
+    if activation.cmk_provider != provider.provider_kind().as_str() {
+        tracing::warn!(
+            requested = %activation.cmk_provider,
+            configured = provider.provider_kind().as_str(),
+            "byok activate rejected: CMK provider does not match binary KMS provider"
+        );
+        return (StatusCode::BAD_REQUEST, "cmk_provider_mismatch").into_response();
+    }
+    let key_id = corelink_byok::KmsKeyId {
+        provider: provider.provider_kind(),
+        key_arn_or_id: activation.cmk_key_id.clone(),
+        region: activation.cmk_region.clone().unwrap_or_default(),
+    };
+    if !matches!(
+        provider.check_access(&key_id).await,
+        Ok(corelink_byok::KmsAccessStatus::Ok)
+    ) {
+        tracing::error!(
+            event = "ByokActivateNotAvailable",
+            provider = crate::byok_orchestrator::active_provider().as_str(),
+            reason = "cmk_access_unavailable",
+            "byok activate rejected: CMK access could not be confirmed; state NOT mutated"
+        );
+        return (
+            StatusCode::NOT_IMPLEMENTED,
+            "{\"error\":\"byok_not_available\"}",
+        )
+            .into_response();
+    }
+    let Some(writer) = state.writer.as_ref() else {
+        tracing::error!("byok activate: D1 writer unwired → 503 (fail-CLOSED)");
+        return (StatusCode::SERVICE_UNAVAILABLE, "byok_write_unavailable").into_response();
     };
     let now_ms = i64::try_from(SystemWallClock.now_ms()).unwrap_or(i64::MAX);
     match writer.activate(&activation, now_ms).await {
@@ -380,18 +403,15 @@ mod tests {
     /// must NEVER reach the writer (state is never mutated to 'active').
     ///
     /// Before the gate, this exact request (authenticated, writer unwired,
-    /// fake provider) returned `503 SERVICE_UNAVAILABLE` after passing the
-    /// auth gate — proving the request DID flow into the write path. After the
-    /// gate it short-circuits at 501 BEFORE the writer resolution, so the flip
-    /// to `active` under the `InMemoryFake` is impossible.
+    /// unavailable provider) returned `503 SERVICE_UNAVAILABLE` after passing
+    /// the auth gate — proving the request DID flow into the write path. The
+    /// provider readiness check now short-circuits at 501 before the writer,
+    /// so activation without KMS evidence is impossible.
     ///
     /// Gated to the no-real-provider build (the default/prod build, and the
     /// only one CI compiles — the `byok-*-real` features are prod-flavour, off
     /// by default), mirroring the umbrella crate's
-    /// `no_provider_feature_default_build`. In a real-provider build the 501
-    /// gate is compiled out (`REAL_KMS_PROVIDER_WIRED == true`) and the route
-    /// reaches the write path instead, so this expectation is deliberately
-    /// scoped to the inert build.
+    /// `no_provider_feature_default_build`.
     #[cfg(not(any(
         feature = "byok-aws-real",
         feature = "byok-gcp-real",
@@ -417,7 +437,7 @@ mod tests {
         assert_eq!(
             resp.status(),
             StatusCode::NOT_IMPLEMENTED,
-            "authenticated activate under InMemoryFake must be 501, not a state flip"
+            "authenticated activate without KMS must be 501, not a state flip"
         );
         let bytes = axum::body::to_bytes(resp.into_body(), 64 * 1024)
             .await
@@ -427,6 +447,32 @@ mod tests {
             text.contains("byok_not_available"),
             "501 body must name the not-available reason; got {text:?}"
         );
+    }
+
+    /// Adversarial regression: an unknown provider is rejected before provider
+    /// construction and before the D1 writer can be reached. In particular,
+    /// `developer` must never be treated as an alias for a KMS backend.
+    #[cfg(not(any(
+        feature = "byok-aws-real",
+        feature = "byok-gcp-real",
+        feature = "byok-azure-real",
+        feature = "byok-vault-real",
+    )))]
+    #[tokio::test]
+    async fn activate_unknown_provider_is_400_without_mutation() {
+        let app = router(state_no_writer(Some(KEY)));
+        let body = format!(
+            "{{\"tenant\":\"{TENANT}\",\"mode\":\"byok\",\"cmk_provider\":\"developer\",\
+             \"cmk_key_id\":\"not-a-kms-key\",\"tcs_wrapped_b64\":\"AQID\"}}"
+        );
+        let req = Request::builder()
+            .method(http::Method::POST)
+            .uri(BYOK_ACTIVATE_ROUTE)
+            .header("x-corelink-internal-auth", KEY)
+            .body(Body::from(body))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

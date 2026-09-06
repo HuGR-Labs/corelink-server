@@ -14,8 +14,8 @@ are MT-stub copies and they went on publishing 45 pages for endpoints that had
 already been deleted from EN.  This gate does not see them either; deleting a
 path means deleting its translated pages and index rows by hand.
 
-The served surface COVERED HERE is `crates/` plus `worker/src` — the API data
-plane — and nothing else.  Two registration sites:
+The served surface is `crates/`, `worker/src`, and the Worker entrypoints under
+`apps/**`.  Three registration sites:
 
   * axum `.route(<path-expr>, ...)` in `crates/` — the path expression may be
     a string literal, may sit on the line AFTER `.route(`, and is frequently a
@@ -24,14 +24,20 @@ plane — and nothing else.  Two registration sites:
     (`worker/src/index.ts`) — `path === "/api/health"` and friends, which are
     served AT THE EDGE and never reach the container.
 
-`apps/**` is OUT OF REACH, deliberately and for now: the sibling Workers
-(`apps/signup-worker`, `apps/analytics-worker`, …) dispatch on `url.pathname`
-in ~376 TypeScript files, and neither the extractor nor the workflow's `paths:`
-filter looks there.  This is a NAMED hole, not an oversight — `/v1/event` and
-`/v1/digest/preview` are served by `apps/analytics-worker/src/index.ts` and
-appear in no spec, and this gate does not see them.  B-130 owns closing it.
-Widening the reach is new scope, so the honest move is to declare it here
-rather than let this header claim more than the enumeration below delivers.
+  * exact `url.pathname === "/..."` dispatch in sibling Workers under
+    `apps/**` (the source file is retained for an actionable finding).
+
+The app scan is intentionally structural and closed-world: it examines every
+non-test TypeScript/TSX file under `apps/`, rather than an allowlist of today's
+Worker names. Static exact dispatch is extracted, while a lexical census
+consumes every live `.pathname` token not handled by a supported dispatch form
+or an exact non-dispatch allowlist entry. A newly added Worker route therefore
+cannot be hidden by forgetting to add its directory, changing its dispatch
+spelling, or using an operator the matcher does not know. Non-API app paths
+remain outside the OpenAPI contract through the same explicit public-path
+policy used for Rust routes below. `/v1/event` is currently served by
+`apps/analytics-worker/src/index.ts` and is absent from the spec; the ledger
+keeps that finding visible until the contract owner documents or excludes it.
 
 A line-oriented `grep '\\.route("'` sees only the first of those three forms.
 That instrument reported 32 phantom absences once already; the extractor here
@@ -64,14 +70,33 @@ from __future__ import annotations
 
 import argparse
 import re
+import tempfile
 import sys
+from collections.abc import Iterator
 from pathlib import Path
+
+from validate_api_surface_support import SourceSyntaxError
+from validate_api_surface_app import (
+    APP_CASE,
+    APP_COMPARE,
+    APP_COMPARE_REVERSED,
+    APP_COMPARE_REVERSED_TERM,
+    APP_STARTS_WITH,
+    APP_SWITCH,
+    app_mutation_self_test,
+    collect_app_routes,
+    collect_app_unsupported,
+    _live_pathname_tokens,
+    strip_ts_comments,
+)
 
 REPO = Path(__file__).resolve().parent.parent
 
 OPENAPI = REPO / "openapi" / "corelink-v1.yaml"
 CRATES = REPO / "crates"
 WORKER = REPO / "worker" / "src"
+APPS = REPO / "apps"
+APP_TYPESCRIPT_SUFFIXES = {".ts", ".tsx"}
 
 HTTP_METHODS = {
     "get",
@@ -128,7 +153,6 @@ LEDGER_MISSING_DOC: dict[str, str] = {
     "/v1/customer/runners/entitlement": "B-117 (same customer-portal family; never documented)",
     "/v1/customer/runners/runs": "B-117 (same customer-portal family; never documented)",
     "/v1/customer/team": "B-117 (same customer-portal family; never documented)",
-    "/v1/customer/team/invite": "B-117 (same customer-portal family; never documented)",
     "/v1/customer/team/{user_id}": "B-117 (same customer-portal family; never documented)",
     "/v1/customer/usage": "B-117 (same customer-portal family; never documented)",
     "/v1/customer/workspaces": "B-117 (same customer-portal family; never documented)",
@@ -150,6 +174,9 @@ LEDGER_MISSING_DOC: dict[str, str] = {
     "/v1/privacy/dsr/{request_id}/verify-mfa": "B-121 (outside the documented /v1/privacy/dsr/{action} shape)",
     "/v1/public/attestation/{request_id}": "B-121 (public attestation surface, never documented)",
     "/v1/public/keys/erasure/{region_pub}": "B-121 (public attestation surface, never documented)",
+    # --- app Worker surface (B-130) ----------------------------------------
+    "/v1/event": "B-130 (apps/analytics-worker public ingest route)",
+    "/v1/digest/preview": "B-130 (apps/analytics-worker dev-only preview; contract owner must decide)",
 }
 
 # --------------------------------------------------------------------------
@@ -241,39 +268,139 @@ CONST_DECL = re.compile(
 ROUTE_CALL = re.compile(r"\.route\s*\(")
 
 
-def strip_line_comments(src: str) -> str:
-    """Blank out `//` comments without disturbing offsets or string literals."""
-    out = []
-    i = 0
-    n = len(src)
-    in_str = False
-    while i < n:
-        c = src[i]
-        if in_str:
-            out.append(c)
-            if c == "\\" and i + 1 < n:
-                out.append(src[i + 1])
-                i += 2
+def _raw_string_start(source: str, index: int) -> tuple[int, int] | None:
+    """Return (opening quote, hash count) for a Rust raw string."""
+    if source.startswith("br", index):
+        prefix_end = index + 2
+    elif source.startswith("r", index):
+        prefix_end = index + 1
+    else:
+        return None
+    hashes = 0
+    while prefix_end + hashes < len(source) and source[prefix_end + hashes] == "#":
+        hashes += 1
+    quote = prefix_end + hashes
+    if quote >= len(source) or source[quote] != '"':
+        return None
+    return quote, hashes
+
+
+def _blank_comment(value: str) -> str:
+    return "".join("\n" if character == "\n" else " " for character in value)
+
+
+def strip_source_comments(src: str, *, nested: bool = False) -> str:
+    """Blank Rust/Worker comments without disturbing literals or offsets.
+
+    Rust permits nested block comments; TypeScript/JavaScript block comments do
+    not, so callers select the language's syntax with ``nested``. Unterminated
+    comments and strings raise rather than silently shrinking the evidence set.
+    """
+    out: list[str] = []
+    index = 0
+    length = len(src)
+    while index < length:
+        if src.startswith("//", index):
+            out.extend((" ", " "))
+            index += 2
+            while index < length and src[index] != "\n":
+                out.append(" ")
+                index += 1
+            continue
+        if src.startswith("/*", index):
+            out.extend((" ", " "))
+            index += 2
+            depth = 1
+            while index < length and depth:
+                if nested and src.startswith("/*", index):
+                    out.extend((" ", " "))
+                    index += 2
+                    depth += 1
+                elif src.startswith("*/", index):
+                    out.extend((" ", " "))
+                    index += 2
+                    depth -= 1
+                elif src[index] == "\n":
+                    out.append("\n")
+                    index += 1
+                else:
+                    end = index
+                    while end < length and src[end] not in "/*\n":
+                        end += 1
+                    if end == index:
+                        out.append(" ")
+                        index += 1
+                    else:
+                        out.append(_blank_comment(src[index:end]))
+                        index = end
+            if depth:
+                raise SourceSyntaxError("unterminated block comment")
+            continue
+
+        if src[index] in {"r", "b"}:
+            raw = _raw_string_start(src, index)
+            if raw is not None:
+                quote, hashes = raw
+                closing = '"' + ("#" * hashes)
+                end = src.find(closing, quote + 1)
+                if end < 0:
+                    raise SourceSyntaxError("unterminated raw string")
+                out.append(src[index : end + len(closing)])
+                index = end + len(closing)
                 continue
-            if c == '"':
-                in_str = False
-            i += 1
+
+        quote = src[index]
+        if quote == "b" and index + 1 < length and src[index + 1] in {'"', "'"}:
+            out.append(quote)
+            index += 1
+            quote = src[index]
+        if quote in {'"', "'", "`"}:
+            # A Rust lifetime (`'a`) is not a character literal. Only consume
+            # an apostrophe when a closing quote exists on this source line.
+            if quote == "'":
+                end = index + 1
+                escaped = False
+                while end < length and src[end] != "\n":
+                    character = src[end]
+                    if character == "'" and not escaped:
+                        break
+                    if character == "\\" and not escaped:
+                        escaped = True
+                    else:
+                        escaped = False
+                    end += 1
+                if end >= length or src[end] != "'":
+                    out.append(quote)
+                    index += 1
+                    continue
+                out.append(src[index : end + 1])
+                index = end + 1
+                continue
+            out.append(quote)
+            index += 1
+            terminated = False
+            while index < length:
+                character = src[index]
+                out.append(character)
+                index += 1
+                if character == "\\" and index < length:
+                    out.append(src[index])
+                    index += 1
+                elif character == quote:
+                    terminated = True
+                    break
+            if not terminated:
+                raise SourceSyntaxError("unterminated string literal")
             continue
-        if c == '"':
-            in_str = True
-            out.append(c)
-            i += 1
-            continue
-        if c == "/" and i + 1 < n and src[i + 1] == "/":
-            j = src.find("\n", i)
-            if j == -1:
-                j = n
-            out.append(" " * (j - i))
-            i = j
-            continue
-        out.append(c)
-        i += 1
+
+        out.append(src[index])
+        index += 1
     return "".join(out)
+
+
+def strip_line_comments(src: str) -> str:
+    """Compatibility wrapper for callers that need Rust lexical stripping."""
+    return strip_source_comments(src, nested=True)
 
 
 def first_argument(src: str, open_paren: int) -> str:
@@ -318,6 +445,7 @@ def collect_rust_consts() -> dict[str, str]:
             src = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
+        src = strip_source_comments(src, nested=True)
         for name, value in CONST_DECL.findall(src):
             if value.startswith("/"):
                 consts.setdefault(name, value)
@@ -325,14 +453,33 @@ def collect_rust_consts() -> dict[str, str]:
 
 
 def is_test_path(path: Path) -> bool:
-    parts = path.parts
+    # Path parts are case-sensitive on some runners and not on others.  Keep
+    # the production census stable, and exclude both singular and plural
+    # fixture directories (including Playwright's usual capitalisation).
+    parts = {part.casefold() for part in path.parts}
+    name = path.name.casefold()
     return (
         "tests" in parts
+        or "test" in parts
+        or "spec" in parts
         or "benches" in parts
-        or path.name.startswith("test_")
-        or path.name.startswith("tests")
-        or "_tests" in path.stem
+        or "__tests__" in parts
+        or "playwright" in parts
+        or "e2e" in parts
+        or name.startswith("test_")
+        or name.startswith("tests")
+        or name.endswith((".test.ts", ".spec.ts", ".test.tsx", ".spec.tsx"))
+        or "_tests" in Path(name).stem
     )
+
+
+def iter_app_typescript() -> Iterator[Path]:
+    """Yield every TypeScript source file in ``apps/``, including TSX."""
+    if not APPS.is_dir():
+        return
+    for file in sorted(APPS.rglob("*")):
+        if file.is_file() and file.suffix.casefold() in APP_TYPESCRIPT_SUFFIXES:
+            yield file
 
 
 def collect_rust_routes() -> dict[str, set[str]]:
@@ -348,7 +495,7 @@ def collect_rust_routes() -> dict[str, set[str]]:
             continue
         if ".route" not in raw:
             continue
-        src = strip_line_comments(raw)
+        src = strip_source_comments(raw, nested=True)
         for m in ROUTE_CALL.finditer(src):
             open_paren = src.index("(", m.start())
             arg = first_argument(src, open_paren).strip()
@@ -372,7 +519,9 @@ def collect_rust_routes() -> dict[str, set[str]]:
 # ==========================================================================
 # Served surface — Worker (edge-terminated exact paths only)
 # ==========================================================================
-WORKER_EXACT = re.compile(r'path\s*===\s*"(/[^"]*)"')
+# ``index_special_routes.ts`` dispatches the customer team/DSR endpoints via
+# ``route.pathSuffix``; both forms are live exact-path Worker decisions.
+WORKER_EXACT = re.compile(r'(?:path|pathSuffix)\s*===\s*"(/[^"]*)"')
 
 
 def collect_worker_routes() -> dict[str, set[str]]:
@@ -388,7 +537,9 @@ def collect_worker_routes() -> dict[str, set[str]]:
     for file in sorted(WORKER.rglob("*.ts")):
         if file.name.endswith(".test.ts") or is_test_path(file):
             continue
-        src = strip_line_comments(file.read_text(encoding="utf-8", errors="replace"))
+        src = strip_source_comments(
+            file.read_text(encoding="utf-8", errors="replace"), nested=False
+        )
         for m in WORKER_EXACT.finditer(src):
             value = m.group(1).rstrip("/") or "/"
             line = src.count("\n", 0, m.start()) + 1
@@ -396,9 +547,9 @@ def collect_worker_routes() -> dict[str, set[str]]:
     return routes
 
 
-# ==========================================================================
-# Comparison
-# ==========================================================================
+# ============================================================================
+# Served surface — sibling Workers under apps/
+# ============================================================================
 PARAM = re.compile(r"(?:\{[A-Za-z0-9_]+\}|:[A-Za-z0-9_]+|\{\*[A-Za-z0-9_]+\})")
 
 
@@ -438,27 +589,30 @@ def is_public(path: str) -> bool:
     return path.startswith("/v1/") or path == "/v1"
 
 
-def compare(documented, rust_routes, worker_routes):
+def compare(documented, rust_routes, worker_routes, app_routes=None):
+    app_routes = app_routes or {}
     # Direction A (documented -> served) counts BOTH sources: a path the
     # Worker terminates at the edge (/api/health) is served even though no
     # crate registers it.
-    served_all = sorted(set(rust_routes) | set(worker_routes))
+    served_all = sorted(set(rust_routes) | set(worker_routes) | set(app_routes))
     missing_route = [
         p for p in sorted(documented) if not any(covers(p, s) for s in served_all)
     ]
 
-    # Direction B (served -> documented) counts CRATE routes only.  A Worker
-    # `path === "/v1/onboarding"` arm is a DISPATCH guard, not an endpoint
-    # declaration, and there is no structural way to tell the two apart in
-    # matchRoute.  Conservative on purpose: this direction may under-report a
-    # genuinely edge-only endpoint, and never invents one.
+    # Direction B (served -> documented) counts crate registrations and exact
+    # app pathname dispatch. A Worker `path === "/v1/onboarding"` arm is a
+    # DISPATCH guard, not an endpoint declaration, and there is no structural
+    # way to tell the two apart in matchRoute. Conservative on purpose: this
+    # direction may under-report a genuinely edge-only endpoint, and never
+    # invents one.
     missing_doc = []
-    for path in sorted(rust_routes):
+    for path in sorted(set(rust_routes) | set(app_routes)):
         if not is_public(path):
             continue
         if any(covers(d, path) for d in documented):
             continue
-        missing_doc.append((path, sorted(rust_routes[path])))
+        where = set(rust_routes.get(path, set())) | set(app_routes.get(path, set()))
+        missing_doc.append((path, sorted(where)))
     return missing_route, missing_doc
 
 
@@ -474,12 +628,77 @@ SELF_TEST_CASES = [
 ]
 
 
-def self_test(documented, rust_routes, worker_routes) -> int:
+def source_comment_mutation_self_test() -> list[str]:
+    """Prove Rust/Worker comment-only registrations never enter the inventory."""
+    global REPO, CRATES, WORKER
+    old_repo, old_crates, old_worker = REPO, CRATES, WORKER
+    failures: list[str] = []
+    try:
+        with tempfile.TemporaryDirectory(prefix="validate-api-comments-") as tmp:
+            root = Path(tmp)
+            crates = root / "crates" / "fixture"
+            worker = root / "worker" / "src"
+            crates.mkdir(parents=True)
+            worker.mkdir(parents=True)
+            rust = crates / "routes.rs"
+            rust.write_text(
+                "/* outer\n"
+                "   /* .route(\"/v1/b130-comment-only\", get(handler)) */\n"
+                "*/\n"
+                ".route(\"/v1/b130-live\", get(handler));\n",
+                encoding="utf-8",
+            )
+            worker_file = worker / "index.ts"
+            worker_file.write_text(
+                "/* /api/b130-comment-only */\n"
+                "if (path === \"/api/b130-live\") return response;\n",
+                encoding="utf-8",
+            )
+            REPO, CRATES, WORKER = root, root / "crates", root / "worker" / "src"
+            rust_routes = collect_rust_routes()
+            worker_routes = collect_worker_routes()
+            if "/v1/b130-live" not in rust_routes:
+                failures.append("live Rust route was not extracted")
+            if "/api/b130-live" not in worker_routes:
+                failures.append("live Worker path was not extracted")
+            if "/v1/b130-comment-only" in rust_routes:
+                failures.append("comment-only Rust route entered inventory")
+            if "/api/b130-comment-only" in worker_routes:
+                failures.append("comment-only Worker path entered inventory")
+            literals = strip_source_comments(
+                'const text = "// /api/string"; '
+                'const template = `/* ${path} */`; /* hidden */',
+                nested=False,
+            )
+            if '"// /api/string"' not in literals or "`/* ${path} */`" not in literals:
+                failures.append("Worker string/template literal was altered")
+            rust.write_text("/* .route(\"/v1/b130-unterminated\")", encoding="utf-8")
+            try:
+                collect_rust_routes()
+            except SourceSyntaxError:
+                pass
+            else:
+                failures.append("unterminated Rust comment did not fail closed")
+            worker_file.write_text("/* path === \"/api/b130-unterminated\"", encoding="utf-8")
+            try:
+                collect_worker_routes()
+            except SourceSyntaxError:
+                pass
+            else:
+                failures.append("unterminated Worker comment did not fail closed")
+    finally:
+        REPO, CRATES, WORKER = old_repo, old_crates, old_worker
+    return failures
+
+
+def self_test(documented, rust_routes, worker_routes, app_routes=None, app_unsupported=None) -> int:
     """Prove each extractor can SEE before any of its silences is believed.
 
     "found nothing" and "my command broke" are indistinguishable without this.
     """
     failures = []
+    app_routes = app_routes or {}
+    app_unsupported = app_unsupported or []
 
     def check(label, ok, detail):
         status = "ok  " if ok else "FAIL"
@@ -517,6 +736,11 @@ def self_test(documented, rust_routes, worker_routes) -> int:
         f"{len(worker_routes)} edge-terminated paths (expected >= 3)",
     )
     check(
+        "apps pathname routes extracted",
+        "/v1/event" in app_routes,
+        "/v1/event (apps/analytics-worker/src/index.ts)",
+    )
+    check(
         "form 1 — literal on the .route( line",
         "/v1/onboarding/tier-select" in rust_routes,
         "/v1/onboarding/tier-select (routes/tier_select.rs)",
@@ -545,11 +769,54 @@ def self_test(documented, rust_routes, worker_routes) -> int:
     )
     # A path that is documented AND served must NOT be reported missing — a
     # gate that flags everything is as useless as one that flags nothing.
-    missing_route, _ = compare(documented, rust_routes, worker_routes)
+    missing_route, missing_doc = compare(documented, rust_routes, worker_routes, app_routes)
     check(
         "no false positive on a known-served documented path",
         "/v1/onboarding/tier-select" not in missing_route,
         "/v1/onboarding/tier-select is documented and served",
+    )
+    check(
+        "apps routes participate in parity comparison",
+        any(path == "/v1/event" for path, _ in missing_doc),
+        "/v1/event is reported as an undocumented app route",
+    )
+    check(
+        "apps unsupported pathname census is empty",
+        not app_unsupported,
+        "; ".join(app_unsupported[:3]) or "all app dispatch forms are modeled",
+    )
+    # Mutation controls exercise the forms that previously went invisible:
+    # reversed equality, template interpolation, prefix dispatch, and switch
+    # cases. The production census above then turns any newly introduced public
+    # form into a hard failure instead of trusting this synthetic control.
+    reversed_mutation = APP_COMPARE_REVERSED.search('"/v1/b130-reversed" === url.pathname')
+    constant_reverse = APP_COMPARE_REVERSED_TERM.search("ROUTE === url.pathname")
+    dynamic_mutation = APP_COMPARE.search('url.pathname === `/v1/b130/${id}`')
+    prefix_mutation = APP_STARTS_WITH.search('url.pathname.startsWith("/v1/b130/")')
+    switch_mutation = APP_SWITCH.search(
+        'switch (url.pathname) { case "/v1/b130-switch": return response; }'
+    )
+    check("mutation — reversed pathname equality visible", reversed_mutation is not None, "reversed form")
+    check("mutation — reversed constant equality visible", constant_reverse is not None, "constant reversed form")
+    check("mutation — dynamic template reaches census", dynamic_mutation is not None, "template form")
+    check("mutation — startsWith reaches census", prefix_mutation is not None, "prefix form")
+    check("mutation — switch pathname reaches census", switch_mutation is not None, "switch form")
+    check(
+        "test fixtures excluded from app production scan",
+        is_test_path(Path("apps/example/src/__tests__/route.test.ts")),
+        ".test.ts and __tests__ are excluded",
+    )
+    mutation_failures = app_mutation_self_test(compare)
+    check(
+        "mutation — temporary app tree reaches census and strict red",
+        not mutation_failures,
+        "; ".join(mutation_failures) or "real files extracted and raw comparison reports MISSING_DOC",
+    )
+    source_comment_failures = source_comment_mutation_self_test()
+    check(
+        "mutation — comment-only Rust/Worker registrations stay out",
+        not source_comment_failures,
+        "; ".join(source_comment_failures) or "comment-only registrations are ignored and malformed comments fail closed",
     )
 
     if failures:
@@ -593,24 +860,38 @@ def main() -> int:
     if not CRATES.is_dir():
         print(f"FATAL: {CRATES} not found — cannot read the served surface.")
         return 2
+    if not APPS.is_dir():
+        print(f"FATAL: {APPS} not found — cannot read the app Worker surface.")
+        return 2
 
     documented = parse_openapi_paths(OPENAPI.read_text(encoding="utf-8"))
-    rust_routes = collect_rust_routes()
-    worker_routes = collect_worker_routes()
+    try:
+        rust_routes = collect_rust_routes()
+        worker_routes = collect_worker_routes()
+        app_routes = collect_app_routes()
+        app_unsupported = collect_app_unsupported()
+    except (OSError, UnicodeDecodeError, SourceSyntaxError) as exc:
+        print(f"FATAL: route source parse failure: {exc}")
+        return 2
 
     if args.self_test:
         print("validate_api_surface self-test (positive controls)\n")
-        return self_test(documented, rust_routes, worker_routes)
+        return self_test(documented, rust_routes, worker_routes, app_routes, app_unsupported)
 
     # The self-test is a PRECONDITION of every run, not an opt-in mode: an
     # extractor that has gone blind reports a clean surface, and a clean
     # report from a blind instrument is the failure mode this gate exists to
     # prevent.
-    if self_test(documented, rust_routes, worker_routes) != 0:
+    if self_test(documented, rust_routes, worker_routes, app_routes, app_unsupported) != 0:
+        return 2
+    if app_unsupported:
+        print("FAIL: unsupported public app pathname dispatch (fail-closed census).")
+        for finding in app_unsupported:
+            print(f"  - {finding}")
         return 2
     print()
 
-    missing_route, missing_doc = compare(documented, rust_routes, worker_routes)
+    missing_route, missing_doc = compare(documented, rust_routes, worker_routes, app_routes)
 
     print("=" * 74)
     print("DOCUMENTED (openapi/corelink-v1.yaml) but NOT SERVED")
@@ -639,7 +920,8 @@ def main() -> int:
     print(
         f"summary: {len(documented)} documented paths, "
         f"{len(rust_routes)} registered crate routes, "
-        f"{len(worker_routes)} edge-terminated paths — "
+        f"{len(worker_routes)} edge-terminated paths, "
+        f"{len(app_routes)} app pathname routes — "
         f"{len(missing_route)} MISSING_ROUTE, {len(missing_doc)} MISSING_DOC"
     )
 

@@ -4,12 +4,14 @@ title: "ADR-0070 — Tenant-suspend gate: L2 KV cache with a bounded enforcement
 description: "Why the tenant fast-suspend gate gained a Workers-KV L2 that caches even the NEGATIVE verdict, trading a bounded ≤60s+≤5s suspend-enforcement window for an edge-local read on the South-America hot path."
 source_files:
   - "specs/03_architecture/adrs/ADR-0070-tenant-suspend-gate-kv-l2-cache.md"
-checkpoint_sha: "d10fe2653e889406ec3ae528f130233e05843eea"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "auth", "tenant-suspend", "offboarding", "kv", "cache", "performance", "sam"]
 timestamp: "2026-07-19T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0070-tenant-suspend-gate-kv-l2-cache.md@9e37d8b45da529dda272a799fcd7c9edb1fbf297"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-0070 — Tenant-suspend gate: L2 KV cache with a bounded enforcement window
 
 The tenant fast-suspend gate (`isTenantSuspended`, go-live GAP G4) runs inside `extractAuth` on **every**

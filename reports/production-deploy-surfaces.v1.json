@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "surfaces": [
+    {
+      "id": "corelink-control-plane",
+      "config": "wrangler.toml",
+      "production_environment": "prod",
+      "entrypoint": "worker/src/index.ts",
+      "artifacts": [
+        {"path": "Dockerfile", "generated": false},
+        {"path": "worker/src/index.ts", "generated": false}
+      ],
+      "workflow": ".github/workflows/cf-deploy-prod.yml",
+      "workflow_markers": ["wrangler deploy", "scripts/deploy-container-prod.sh"]
+    },
+    {
+      "id": "signup-worker",
+      "config": "apps/signup-worker/wrangler.toml",
+      "production_environment": "default",
+      "entrypoint": "apps/signup-worker/src/index.ts",
+      "artifacts": [
+        {"path": "apps/signup-worker/src/index.ts", "generated": false}
+      ],
+      "workflow": ".github/workflows/signup-worker-deploy.yml",
+      "workflow_markers": ["wrangler deploy", "pnpm install --frozen-lockfile"]
+    },
+    {
+      "id": "docs-worker",
+      "config": "apps/docs/wrangler.toml",
+      "production_environment": "default",
+      "entrypoint": "apps/docs/worker/index.ts",
+      "artifacts": [
+        {"path": "apps/docs/build", "generated": true, "build_marker": "pnpm build"}
+      ],
+      "workflow": ".github/workflows/docs-deploy.yml",
+      "workflow_markers": ["pnpm build", "wrangler deploy"]
+    },
+    {
+      "id": "admin-ui-worker",
+      "config": "apps/admin-ui/wrangler.toml",
+      "production_environment": "default",
+      "entrypoint": "apps/admin-ui/.open-next/worker.js",
+      "artifacts": [
+        {"path": "apps/admin-ui/src/app/layout.tsx", "generated": false},
+        {"path": "apps/admin-ui/.open-next/worker.js", "generated": true, "build_marker": "pnpm cf:build"},
+        {"path": "apps/admin-ui/.open-next/assets", "generated": true, "build_marker": "pnpm cf:build"}
+      ],
+      "workflow": ".github/workflows/admin-ui-deploy.yml",
+      "workflow_markers": ["pnpm cf:build", "pnpm cf:deploy"]
+    },
+    {
+      "id": "analytics-worker",
+      "config": "apps/analytics-worker/wrangler.toml",
+      "production_environment": "prod",
+      "entrypoint": "apps/analytics-worker/src/index.ts",
+      "artifacts": [
+        {"path": "apps/analytics-worker/src/index.ts", "generated": false},
+        {"path": "apps/analytics-worker/migrations/0001_create_analytics_events.sql", "generated": false}
+      ],
+      "workflow": null,
+      "workflow_markers": [],
+      "deploy_manifest": "apps/analytics-worker/package.json",
+      "deploy_marker": "deploy:prod"
+    },
+    {
+      "id": "get-corelink-worker",
+      "config": "apps/get-corelink-worker/wrangler.toml",
+      "production_environment": "prod",
+      "entrypoint": "apps/get-corelink-worker/src/index.ts",
+      "artifacts": [
+        {"path": "apps/get-corelink-worker/src/index.ts", "generated": false}
+      ],
+      "workflow": null,
+      "workflow_markers": [],
+      "deploy_manifest": "apps/get-corelink-worker/package.json",
+      "deploy_marker": "deploy:prod"
+    }
+  ],
+  "excluded_configs": [
+    {
+      "path": "crates/corelink-clerk-cf/wrangler.toml",
+      "reason": "proof-of-concept worker explicitly documents that it is not a production deployment",
+      "identity": {
+        "name": "corelink-clerk-cf-poc",
+        "main": "build/worker/shim.mjs",
+        "production_name": "corelink-clerk-cf-poc-prod",
+        "environment": "dev"
+      }
+    }
+  ]
+}

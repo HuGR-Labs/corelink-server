@@ -31,6 +31,237 @@ misses=()
 ok()   { echo "  PASS  $1"; pass=$((pass + 1)); }
 miss() { echo "  MISS  $1"; misses+=("$2"); }
 
+# --- Ownership contract: the agent is docs-only; wrapper/workflow owns PRs ----
+assert_ownership_contract() {
+  total=$((total + 1))
+  local skill workflow wrapper
+  skill=".claude/skills/okf-reconcile/SKILL.md"
+  workflow=".github/workflows/okf-autoreconcile.yml"
+  wrapper="scripts/okf-reconcile-local.sh"
+  if ! grep -F 'Read-only git commands and deterministic helpers are permitted' "$skill" >/dev/null ||
+     ! grep -F 'Do **not** commit, push, mutate refs/remotes/worktrees' "$skill" >/dev/null ||
+     ! grep -F 'invoke `gh`, or open a' "$skill" >/dev/null ||
+     grep -F 'Open a reconciliation PR' "$skill" >/dev/null ||
+     ! grep -F 'Do NOT commit, push, mutate refs/remotes/worktrees, or open a PR' "$workflow" >/dev/null ||
+     ! grep -F 'Install Codex pre-execution denial guard' "$workflow" >/dev/null ||
+     ! grep -F 'okf-agent-git-guard.sh' "$workflow" >/dev/null ||
+     ! grep -F 'codex exec' "$wrapper" >/dev/null ||
+     ! grep -F 'git push' "$wrapper" >/dev/null ||
+     ! grep -F 'Codex mutated HEAD, refs, remotes, or worktrees' "$wrapper" >/dev/null ||
+     ! grep -F 'git for-each-ref' "$wrapper" >/dev/null; then
+    miss "OKF ownership contract (agent docs-only; wrapper owns PR)" "ownership-contract"
+  else
+    ok "OKF ownership contract: skill forbids PR/git and wrapper owns PR"
+  fi
+}
+
+assert_doctor_effective_hooks_path() {
+  total=$((total + 1))
+  local tmp repo out rc
+  tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  repo="$tmp/repo"
+  (
+    set -e
+    mkdir -p "$repo/scripts" "$repo/hooks"
+    cp "$REPO_ROOT/scripts/okf-reconcile-local.sh" "$repo/scripts/okf-reconcile-local.sh"
+    cp "$REPO_ROOT/scripts/okf-agent-git-guard.sh" "$repo/scripts/okf-agent-git-guard.sh"
+    cp "$REPO_ROOT/scripts/okf-agent-gh-guard.sh" "$repo/scripts/okf-agent-gh-guard.sh"
+    cp "$REPO_ROOT/hooks/post-merge" "$repo/hooks/post-merge"
+    chmod +x "$repo/scripts/okf-reconcile-local.sh" "$repo/hooks/post-merge"
+    cd "$repo"
+    git init -q
+    git config user.email fixture@okf.invalid
+    git config user.name fixture
+    git config core.hooksPath "$repo/hooks"
+    : > README
+    git add README scripts hooks
+    git commit -qm seed
+    git worktree add -q -b linked "$tmp/linked" HEAD
+    out="$(cd "$tmp/linked" && scripts/okf-reconcile-local.sh --doctor 2>&1)"
+    rc=$?
+    test "$rc" -eq 0
+    printf '%s\n' "$out" | grep 'OKF local hook path:' >/dev/null
+    printf '%s\n' "$out" | grep 'OKF post-merge hook: executable' >/dev/null
+    ! printf '%s\n' "$out" | grep 'NOT configured' >/dev/null
+  )
+  rc=$?
+  if [[ $rc -eq 0 ]]; then
+    ok "doctor fixture: effective hooks path + executable post-merge in linked worktree"
+  else
+    miss "doctor fixture: linked worktree effective hooks path was not accepted" "doctor-hooks-path"
+  fi
+  rm -rf "$tmp"
+}
+
+assert_adversarial_agent_guard() {
+  total=$((total + 1))
+  local tmp repo bare before after fake sha rc guard_marker mutated quiet
+  tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  repo="$tmp/repo"
+  bare="$tmp/remote.git"
+  (
+    set -e
+    mkdir -p "$repo/scripts" "$repo/docs/knowledge" "$repo/docs/internal/okf-wiki"
+    cp "$REPO_ROOT/scripts/okf-reconcile-local.sh" "$repo/scripts/okf-reconcile-local.sh"
+    cp "$REPO_ROOT/scripts/okf-agent-git-guard.sh" "$repo/scripts/okf-agent-git-guard.sh"
+    cp "$REPO_ROOT/scripts/okf-agent-gh-guard.sh" "$repo/scripts/okf-agent-gh-guard.sh"
+    cp "$REPO_ROOT/scripts/okf_reconcile.py" "$repo/scripts/okf_reconcile.py"
+    cp "$REPO_ROOT/scripts/validate_okf.py" "$repo/scripts/validate_okf.py"
+    # The validator is split into dependency-ordered modules.  This fixture is
+    # intentionally standalone, so copy the complete import closure rather
+    # than only the historical two files.
+    cp "$REPO_ROOT/scripts/validate_okf_runtime.py" "$repo/scripts/validate_okf_runtime.py"
+    cp "$REPO_ROOT/scripts/validate_okf_core1.py" "$repo/scripts/validate_okf_core1.py"
+    cp "$REPO_ROOT/scripts/validate_okf_core2.py" "$repo/scripts/validate_okf_core2.py"
+    cp "$REPO_ROOT/scripts/validate_okf_checks.py" "$repo/scripts/validate_okf_checks.py"
+    cp "$REPO_ROOT/scripts/okf_git_batch.py" "$repo/scripts/okf_git_batch.py"
+    # C5c is imported dynamically by validate_okf_runtime.py; it is still part
+    # of the standalone validator closure and must be copied explicitly.
+    cp "$REPO_ROOT/scripts/okf_anchor_reverify.py" "$repo/scripts/okf_anchor_reverify.py"
+    cd "$repo"
+    git init -q
+    git config user.email fixture@okf.invalid
+    git config user.name fixture
+    printf 'original\n' > src.txt
+    git add src.txt
+    git commit -qm seed
+    sha="$(git rev-parse HEAD)"
+    cat > docs/knowledge/adversarial.md <<EOF
+---
+type: "ArchitectureControl"
+title: "adversarial fixture"
+description: "fixture"
+source_files:
+  - "src.txt"
+checkpoint_sha: "$sha"
+provenance: "AUTHORED"
+---
+
+# Adversarial fixture
+
+The source is grounded.
+
+# Citations
+1. \`src.txt:1\` — source line.
+EOF
+    git add docs/knowledge/adversarial.md
+    git commit -qm 'add fixture concept'
+    printf 'drifted\n' > src.txt
+    git add src.txt
+    git commit -qm drift
+    git init --bare -q "$bare"
+    git remote add origin "$bare"
+    fake="$tmp/fake-codex"
+    mkdir "$tmp/bin"
+    cat > "$fake" <<'EOF'
+#!/usr/bin/env bash
+set +e
+if [[ -z "${OKF_GUARD_MARKER-}" ]]; then
+  # The fixture must fail if the production wrapper stops installing its guard,
+  # even when the host sandbox independently blocks real Git writes.
+  touch docs/knowledge/guard-removed
+fi
+if git commit --allow-empty -qm "adversarial fake agent commit"; then
+  # Allowed-document write proves the command guard itself is present.
+  touch docs/knowledge/guard-removed
+fi
+git update-ref refs/heads/adversarial-agent HEAD
+git push origin adversarial-agent
+gh pr create --title adversarial
+# A malicious agent may try to hide the attempt by restoring its worktree.
+git reset --hard HEAD
+git checkout -- .
+# Outside-document write proves the OS sandbox was absent.
+printf 'sandbox bypass\n' > "$OKF_FIXTURE_REPO/sandbox-removed"
+exit 0
+EOF
+    chmod +x "$fake"
+    # Exercise the real command guard's exact read-only forms and nearby bypasses.
+    guard_marker="$tmp/guard-marker"
+    : > "$guard_marker"
+    OKF_GUARD_MARKER="$guard_marker" OKF_REAL_GIT="$(command -v git)" \
+      "$repo/scripts/okf-agent-git-guard.sh" --no-optional-locks status --porcelain=v1 --untracked-files=all >/dev/null
+    if OKF_GUARD_MARKER="$guard_marker" OKF_REAL_GIT="$(command -v git)" \
+      "$repo/scripts/okf-agent-git-guard.sh" status --porcelain=v1 >/dev/null 2>&1; then
+      exit 1
+    fi
+    if OKF_GUARD_MARKER="$guard_marker" OKF_REAL_GIT="$(command -v git)" \
+      "$repo/scripts/okf-agent-git-guard.sh" remote -v add origin "$bare" >/dev/null 2>&1; then
+      exit 1
+    fi
+    if OKF_GUARD_MARKER="$guard_marker" OKF_REAL_GIT="$(command -v git)" \
+      "$repo/scripts/okf-agent-git-guard.sh" rev-parse --verify HEAD >/dev/null 2>&1; then
+      exit 1
+    fi
+    for bypass in \
+      "-C $repo status --porcelain=v1 --untracked-files=all" \
+      "--git-dir=$repo/.git status --porcelain=v1 --untracked-files=all" \
+      "diff --cached" \
+      "hash-object -w src.txt"; do
+      # Each nearby option variant must remain denied; this is intentionally
+      # independent of the wrapper's later snapshot comparison.
+      if read -r -a bypass_args <<< "$bypass" && \
+         OKF_GUARD_MARKER="$guard_marker" OKF_REAL_GIT="$(command -v git)" \
+         "$repo/scripts/okf-agent-git-guard.sh" "${bypass_args[@]}" >/dev/null 2>&1; then
+        exit 1
+      fi
+    done
+    cat > "$tmp/bin/gh" <<EOF
+#!/usr/bin/env bash
+touch "$tmp/external-pr-created"
+exit 0
+EOF
+    chmod +x "$tmp/bin/gh"
+    ln -s "$fake" "$tmp/bin/codex"
+    export OKF_FIXTURE_REPO="$repo"
+    git push -q origin HEAD:refs/heads/seed
+    before="$(mktemp)"; after="$(mktemp)"
+    { echo HEAD; git rev-parse HEAD; echo REFS; git for-each-ref --format='%(refname) %(objectname)';
+      echo REMOTES; git remote -v; echo WORKTREES; git worktree list --porcelain; } > "$before"
+    set +e
+    PATH="$tmp/bin:$PATH" "$repo/scripts/okf-reconcile-local.sh"
+    rc=$?
+    set -e
+    { echo HEAD; git rev-parse HEAD; echo REFS; git for-each-ref --format='%(refname) %(objectname)';
+      echo REMOTES; git remote -v; echo WORKTREES; git worktree list --porcelain; } > "$after"
+    test "$rc" -ne 0
+    diff -u "$before" "$after" >/dev/null
+    ! test -f "$repo/docs/knowledge/guard-removed"
+    ! test -f "$repo/sandbox-removed"
+    ! git --git-dir="$bare" show-ref --verify --quiet refs/heads/adversarial-agent
+    ! test -f "$tmp/external-pr-created"
+
+    # A mutation that removes the production restore call must itself redden at
+    # the wrapper's explicit post-agent environment assertion.  The quiet fake
+    # reaches that assertion; subsequent validation may fail on this tiny repo,
+    # but a missing restore must be the reported failure first.
+    quiet="$tmp/quiet-codex"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$quiet"
+    chmod +x "$quiet"
+    ln -sf "$quiet" "$tmp/bin/codex"
+    mutated="$tmp/mutated-wrapper"
+    sed '/^[[:space:]]*restore_proprietary_environment$/d' \
+      "$repo/scripts/okf-reconcile-local.sh" > "$mutated"
+    chmod +x "$mutated"
+    set +e
+    out="$(PATH="$tmp/bin:$PATH" "$mutated" 2>&1)"
+    rc=$?
+    set -e
+    test "$rc" -ne 0
+    [[ "${out#*proprietary gates still resolve the Codex git guard}" != "$out" ]] || {
+      echo "$out" >&2
+      exit 1
+    }
+  )
+  rc=$?
+  if [[ $rc -eq 0 ]]; then
+    ok "adversarial agent fixture: real wrapper denied commit/ref/push/PR (restoration cannot launder)"
+  else
+    miss "adversarial agent fixture: real wrapper failed to deny mutation" "agent-mutation"
+  fi
+  rm -rf "$tmp"
+}
+
 # --- GOOD bundle: must pass everything (default invocation, no manifest) ------
 assert_good() {
   total=$((total + 1))
@@ -336,12 +567,9 @@ EOF
 
 # --- C5b orphaned-checkpoint REPAIR exemption ---------------------------------
 # When the PREVIOUS checkpoint_sha (the base-ref version) is not an ancestor of
-# the base ref, it is an ORPHANED pointer (a pre-merge branch tip git rewrote at
-# merge; e.g. #677's G4 commit). Repointing it to the real main-history landing
-# SHA is a mandatory C4 repair with byte-identical source — demanding a body
-# edit would force the exact phantom edit C5b rejects. So: SHA bump w/o body edit
-# MUST NOT fire [C5b] when the prev checkpoint is orphaned. The regular phantom
-# case above (prev IS an on-base ancestor) still fires — this is the narrow carve.
+# the base ref, it is an ORPHANED pointer. Strict B-049 treats that as a failed
+# provenance anchor; a checkpoint bump without a body edit remains a phantom
+# reconcile and MUST fire [C5b], regardless of whether the previous SHA is local.
 assert_c5b_orphan_exempt() {
   local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
   local absval="$REPO_ROOT/$VAL"
@@ -400,8 +628,7 @@ EOF
     sha_a="$(git rev-parse HEAD)"
 
     # PR commit B: repoint the ORPHAN -> a real, reachable SHA (sha_a). Body
-    # byte-identical. Because prev (orphan) is not an ancestor of base-ref,
-    # [C5b] must be EXEMPT.
+    # byte-identical. Strict B-049 must reject this phantom repair.
     sed -i.bak "s/$orphan/$sha_a/" docs/knowledge/auth/x.md && rm -f docs/knowledge/auth/x.md.bak
     git add -A
     git commit -q -m B
@@ -410,25 +637,19 @@ EOF
   )
   total=$((total + 1))
   if grep -q '^\[C5b\]' "$tmp/.orphan_out" 2>/dev/null; then
-    miss "C5b orphan-repair exemption: fired [C5b] on an orphaned-prev repair" "C5b-orphan"
+    ok "C5b git-harness: orphaned-prev checkpoint bump without body edit is rejected"
   else
-    ok "C5b git-harness: orphaned-prev checkpoint repair does NOT fire [C5b] (exemption)"
+    miss "C5b fail-open: orphaned-prev phantom repair escaped [C5b]" "C5b-orphan"
   fi
   rm -rf "$tmp"
 }
 
-# --- C4 SQUASH-ORPHAN tolerance + preserved freshness -------------------------
+# --- C4 checkpoint reachability (B-049 fail-closed contract) ------------------
 # A concept's checkpoint_sha is ORPHANED when its PR is squash/rebase-merged: git
 # rewrites the pre-merge branch tip, so the SHA the PR wrote names a commit `main`
-# cannot reach (and a fetch-depth:0 CI clone never fetched it). This is NOT drift —
-# the squash landing preserves the cited source byte-for-byte. The old C4 hard-
-# failed "checkpoint_sha not found in git history" on EVERY downstream PR until a
-# manual #688/#690 repoint. This harness proves the durable fix:
-#   (1) an orphaned 40-hex checkpoint with INTACT cited content must NOT fire [C4]
-#       and the bundle must PASS (the false-positive is gone); and
-#   (2) FRESHNESS CONTROL — with the SAME orphaned checkpoint, if the cited content
-#       DRIFTS relative to the base ref, [C5] MUST still fire. The squash-orphan
-#       tolerance must not blunt the anti-drift guarantee.
+# cannot reach (and a fetch-depth:0 CI clone never fetched it). This is a broken
+# provenance anchor, not a valid baseline. The harness proves strict C4 rejection
+# for intact and drifted orphan cases, with no base-ref fallback.
 assert_c4_squash_orphan_tolerant() {
   local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
   local absval="$REPO_ROOT/$VAL"
@@ -502,33 +723,28 @@ EOF
     python3 "$absval" --bundle docs/knowledge --manifest "$NONE" --base-ref "$sha_a" > "$tmp/.drift_out" 2>&1 || true
   )
 
-  # (1) orphan tolerated: no [C4] failure AND the intact-content run PASSED.
+  # (1) intact content with an orphan still fails closed at C4.
   total=$((total + 1))
-  if ! grep -q '^\[C4\]' "$tmp/.intact_out" 2>/dev/null \
-     && grep -q 'OKF-CoreLink profile valid' "$tmp/.intact_out" 2>/dev/null; then
-    ok "C4 git-harness: squash-orphaned checkpoint w/ intact content does NOT fire [C4] (tolerated + passes)"
+  if grep -q '^\[C4\]' "$tmp/.intact_out" 2>/dev/null \
+     && grep -q 'not reachable\|not a resolvable' "$tmp/.intact_out" 2>/dev/null; then
+    ok "C4 git-harness: squash-orphaned checkpoint fails closed even with intact content"
   else
-    miss "C4 squash-orphan tolerance broken: $(tail -1 "$tmp/.intact_out" 2>/dev/null)" "C4-orphan-tol"
+    miss "C4 reachability guard failed on intact orphan: $(tail -1 "$tmp/.intact_out" 2>/dev/null)" "C4-orphan-tol"
   fi
 
-  # (2) freshness preserved: drift under the SAME orphaned checkpoint fires [C5].
+  # (2) drift under the same orphan remains rejected (C4 is authoritative).
   total=$((total + 1))
-  if grep -q '^\[C5\]' "$tmp/.drift_out" 2>/dev/null; then
-    ok "C4 git-harness: drift under an orphaned checkpoint STILL fires [C5] (freshness preserved)"
+  if grep -q '^\[C4\]' "$tmp/.drift_out" 2>/dev/null; then
+    ok "C4 git-harness: drift under an orphaned checkpoint remains rejected"
   else
-    miss "C4 squash-orphan freshness broken (no [C5] on drift): $(tail -1 "$tmp/.drift_out" 2>/dev/null)" "C4-orphan-fresh"
+    miss "C4 reachability guard failed on drifted orphan: $(tail -1 "$tmp/.drift_out" 2>/dev/null)" "C4-orphan-fresh"
   fi
   rm -rf "$tmp"
 }
 
 # --- C4 orphan with NO reachable base anchor -> FAIL CLOSED --------------------
-# The squash-orphan tolerance re-anchors C5 freshness to the base ref. If the base
-# ref is UNRESOLVABLE (or shares no common ancestor with HEAD), `base_rev_for_c5`
-# is None and there is NO reachable anchor — freshness is UNVERIFIABLE. A gate whose
-# job is to be unbypassable must FAIL CLOSED there, never silently skip C5. This
-# harness drives an orphaned concept with an unresolvable --base-ref and asserts the
-# gate FAILS with a freshness-unverifiable [C5]. (Latent in CI, which always
-# resolves origin/<base_ref>; guards against the fail-open footgun regardless.)
+# An unresolvable base ref cannot launder an orphan into a pass. Checkpoint
+# reachability is checked directly against HEAD, so C4 fails before C5.
 assert_c4_orphan_no_base_fail_closed() {
   local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
   local absval="$REPO_ROOT/$VAL"
@@ -554,8 +770,7 @@ profile_version: '0.1'
 # index
 - [x](/auth/x.md)
 EOF
-    # Orphaned checkpoint, cited content intact — would be TOLERATED if a base
-    # anchor existed. Here the base ref is unresolvable, so it must fail closed.
+    # Orphaned checkpoint, cited content intact — strict C4 rejects it.
     cat > docs/knowledge/auth/x.md <<EOF
 ---
 type: "AuthMechanism"
@@ -589,11 +804,11 @@ EOF
       --base-ref "no-such-base-ref-zzzz" > "$tmp/.nobase_out" 2>&1 || true
   )
   total=$((total + 1))
-  if grep -q '^\[C5\]' "$tmp/.nobase_out" 2>/dev/null \
-     && grep -qi 'unverifiable' "$tmp/.nobase_out" 2>/dev/null; then
-    ok "C4 git-harness: orphaned checkpoint w/ NO reachable base anchor FAILS CLOSED ([C5] unverifiable)"
+  if grep -q '^\[C4\]' "$tmp/.nobase_out" 2>/dev/null \
+     && grep -q 'not a resolvable\|not reachable' "$tmp/.nobase_out" 2>/dev/null; then
+    ok "C4 git-harness: orphaned checkpoint fails closed without a base-ref fallback"
   else
-    miss "C4 fail-open: orphan + unresolvable base did NOT fail closed: $(tail -1 "$tmp/.nobase_out" 2>/dev/null)" "C4-orphan-failclosed"
+    miss "C4 fail-open: orphan + unresolvable base escaped strict reachability: $(tail -1 "$tmp/.nobase_out" 2>/dev/null)" "C4-orphan-failclosed"
   fi
   rm -rf "$tmp"
 }
@@ -1194,8 +1409,7 @@ EOF
 # and C5 silently re-anchors to the BASE REF, which still holds the OLD content
 # -> every citation the branch legitimately moved reads STALE, and the author
 # re-anchors again, and the next rebase undoes it again.
-# Two concepts, same repo, same file, same cited line, same orphaned checkpoint:
-# the legacy one MUST fire the false [C5]; the blob-addressed one MUST NOT.
+# Two concepts exercise strict checkpoint reachability and a valid blob anchor.
 assert_blob_anchor_survives_rewrite() {
   local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
   local absval="$REPO_ROOT/$VAL"
@@ -1228,7 +1442,7 @@ EOF
     # against the NEW content. checkpoint_sha = the pre-merge tip a rebase kills.
     printf 'v2-cited-line\nfiller\n' > code.txt
     blob_v2="$(git hash-object code.txt)"
-    concept() {  # $1=slug  $2=extra frontmatter lines
+    concept() {  # $1=slug  $2=extra frontmatter lines  $3=checkpoint override
       cat > "docs/knowledge/ops/$1.md" <<EOF
 ---
 type: "Runbook"
@@ -1236,7 +1450,7 @@ title: "Rebase survival — $1"
 description: "cites code.txt:1, re-authored against v2."
 source_files:
   - "code.txt"
-$2checkpoint_sha: "$orphan"
+$2checkpoint_sha: "${3:-$orphan}"
 provenance: "AUTHORED"
 ---
 
@@ -1257,27 +1471,27 @@ EOF
     concept legacy  ""
     concept blobbed "source_blobs:
   - \"code.txt@$blob_v2\"
-"
+" "$base_sha"
     git add -A
     git commit -q -m "PR: rewrite code.txt + re-author both concepts"
     python3 "$absval" --bundle docs/knowledge --manifest "$NONE" --base-ref "$base_sha" > "$tmp/.rewrite_out" 2>&1 || true
   )
 
-  # the tax, reproduced: the LEGACY concept reads STALE though nothing is stale.
+  # Strict B-049 rejects the legacy orphan before freshness can be laundered.
   total=$((total + 1))
-  if grep -q 'ops/legacy.md: STALE' "$tmp/.rewrite_out" 2>/dev/null \
-     && grep -q 'base-ref anchor' "$tmp/.rewrite_out" 2>/dev/null; then
-    ok "rebase tax reproduced: the COMMIT-anchored concept falsely reads STALE off the base ref"
+  if grep -q 'ops/legacy.md' "$tmp/.rewrite_out" 2>/dev/null \
+     && grep -q '^\[C4\]' "$tmp/.rewrite_out" 2>/dev/null; then
+    ok "B-049 strictness: the legacy orphan is rejected at C4"
   else
-    miss "rebase tax not reproduced (legacy concept did not fire): $(tail -1 "$tmp/.rewrite_out" 2>/dev/null)" "blob-tax-repro"
+    miss "B-049 strictness failed on legacy orphan: $(tail -1 "$tmp/.rewrite_out" 2>/dev/null)" "blob-tax-repro"
   fi
 
-  # the tax, deleted: the BLOB-anchored concept is clean under the same rewrite.
+  # A blob-addressed concept with a reachable checkpoint remains clean.
   total=$((total + 1))
-  if grep -q 'ops/blobbed.md' "$tmp/.rewrite_out" 2>/dev/null; then
-    miss "blob-anchored concept ALSO went stale under the rewrite: $(grep 'blobbed' "$tmp/.rewrite_out" | head -1)" "blob-tax-gone"
+  if ! grep -q 'ops/blobbed.md' "$tmp/.rewrite_out" 2>/dev/null; then
+    ok "B-049 blob anchor: re-authored content remains fresh"
   else
-    ok "rebase tax deleted: the BLOB-anchored concept is untouched by the orphaned checkpoint"
+    miss "blob-anchored concept went stale or failed: $(grep 'blobbed' "$tmp/.rewrite_out" | head -1)" "blob-tax-gone"
   fi
   rm -rf "$tmp"
 }
@@ -1287,9 +1501,8 @@ EOF
 # well-formed, UNREACHABLE checkpoint_sha is indistinguishable from a genuine
 # squash-orphan, so C5 re-anchors to the base ref — which ALREADY CONTAINS the
 # landed drift — and the drifted citation reads fresh. Reproduced here on the
-# legacy path (positive control, so the fixture proves the hole is real and not
-# folklore), then shown CLOSED on the blob path: a forged blob id is not an
-# orphan, it is an absent object, and it REDs [C4b] with no fallback.
+# strict checkpoint path rejects the legacy forgery at C4; the blob path still
+# rejects a forged blob id at C4b, and the ratchet prevents un-migration.
 # Both attackers also make a cosmetic body edit, which is all C5b requires.
 assert_blob_launder_closed() {
   local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
@@ -1386,12 +1599,13 @@ EOF
     miss "laundering control (expected both STALE): $(tail -1 "$tmp/.honest_out" 2>/dev/null)" "launder-ctl"
   fi
 
-  # positive control: the hole is REAL on the legacy path (forged SHA -> silent).
+  # Strict B-049 closure: a forged unreachable checkpoint fails at C4.
   total=$((total + 1))
-  if grep -q 'ops/legacy.md' "$tmp/.attack_out" 2>/dev/null; then
-    miss "legacy laundering unexpectedly caught — the residual this WP closes is not reproducible" "launder-legacy"
+  if grep -q '^\[C4\]' "$tmp/.attack_out" 2>/dev/null \
+     && grep -q 'ops/legacy.md' "$tmp/.attack_out" 2>/dev/null; then
+    ok "B-049 strictness: forged legacy checkpoint is rejected at [C4]"
   else
-    ok "laundering residual reproduced: a forged unreachable checkpoint_sha silences [C5] on the LEGACY path"
+    miss "forged legacy checkpoint escaped [C4]: $(tail -1 "$tmp/.attack_out" 2>/dev/null)" "launder-legacy"
   fi
 
   # the closure: the SAME forgery on the blob path REDs [C4b], no fallback.
@@ -3335,6 +3549,9 @@ EOF
 echo "OKF-CoreLink validator acceptance suite"
 echo "---------------------------------------"
 assert_good
+assert_ownership_contract
+assert_doctor_effective_hooks_path
+assert_adversarial_agent_guard
 
 # Bad fixtures using default invocation (manifest skipped).
 assert_bad C1  C1  --bundle "$FIX/bad/C1"  --manifest "$NONE"

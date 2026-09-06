@@ -4,12 +4,14 @@ title: "CF Worker deployment POC: wasm32 trait-adapter gotchas"
 description: "What it takes to deploy a Rust Cloudflare Worker (corelink-clerk-cf) — the production trait impls plus the two wasm32 landmines (ring, !Send KV futures) and their fixes."
 source_files:
   - "docs/dev/cf-worker-deployment-poc.md"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+source_blobs:
+  - "docs/dev/cf-worker-deployment-poc.md@b7849165e7ae36cbf9ad4c5b3991808adabafca1"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 provenance: "AUTHORED"
 tags: ["ops", "dev", "cloudflare", "wasm32", "worker", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # CF Worker deployment POC: wasm32 trait-adapter gotchas
 
 Deploying a Rust crate as a real Cloudflare Worker is not "just `wrangler deploy`": the

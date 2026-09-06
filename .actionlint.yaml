@@ -1,13 +1,17 @@
-# actionlint configuration for corelink-server.
+# Canonical actionlint configuration for corelink-server.
 #
 # Reference: https://github.com/rhysd/actionlint/blob/v1.7.12/docs/config.md
 #
+# `.github/actionlint.yaml` is a symlink alias to this file. Keep this root
+# entry point authoritative so actionlint's explicit and repository-discovery
+# paths cannot silently acquire different runner-label populations.
+#
 # Our policy:
-#   - SHA-pin verification of `uses:` is enforced by scripts/verify-action-sha-pinning.py
-#     (separate CI gate: action-sha-audit.yml). actionlint complements that by
-#     catching syntax / semantic / shellcheck drift.
-#   - We do NOT use self-hosted runners today. If that changes, list custom
-#     labels under `self-hosted-runner.labels` here.
+#   - SHA-pin verification of `uses:` is enforced by
+#     scripts/verify-action-sha-pinning.py (separate CI gate: action-sha-audit.yml).
+#     actionlint complements that by catching syntax / semantic / shellcheck drift.
+#   - The custom labels below are the labels actually used by the fleet and
+#     hosted larger-runner jobs; do not remove one without updating the fleet.
 #   - We allow specific shellcheck rule disables inline (e.g. SC2016 false
 #     positives on GHA `${{ }}` inside single-quoted echo strings, SC2046 on
 #     intentional word-splitting in security/list-keychains). Document each
@@ -15,12 +19,43 @@
 #     the offending line.
 
 self-hosted-runner:
-  # We don't use self-hosted runners. Leave the list empty so actionlint
-  # flags any accidental references to non-standard labels (release-cli.yml
-  # macos-13 regression caught by this baseline is the canonical example).
-  labels: []
+  # Fleet labels: corelink fabric plus the macOS builder fleet. The larger
+  # hosted runner label is also declared because actionlint validates all
+  # workflow files with this one canonical configuration.
+  labels:
+    - mac
+    - corelink-builder
+    - ubuntu-x64-4core
+    - corelink
 
 config-variables:
-  # No vars-context variables used today. Add here only if a future workflow
-  # legitimately reads ${{ vars.X }} — otherwise actionlint will warn on typos.
+  # Closed population derived from the vars.* expressions in
+  # .github/workflows/*.yml. Keep this list exact: a missing entry leaves a
+  # real workflow undefined, while an extra entry hides a stale configuration
+  # claim.
+  - AUDIT_R2_BUCKET
+  - BACKUP_R2_BUCKET
+  - BILLING_AGGREGATE_LIVE
+  - BILLING_OVERAGE_RATE_CENTS
+  - BILLING_RECONCILE_LIVE
+  - BILLING_STRIPE_LEDGER_TABLE
+  - BILLING_USAGE_TABLE
+  - CORELINK_APP_URL
+  - CORELINK_FRESH_MINT_URL
+  - CORELINK_PERF_BASE
+  - CORELINK_SCCACHE_PILOT
+  - D1_DATABASES
   - DT_ENDPOINT
+  - E2E_BASE_URL
+  - E2E_DOCS_URL
+  - E2E_INSTALL_URL
+  - HOSTED_ACTIONS_AVAILABLE
+  - HUGR_STRIPE_REF
+  - HUGR_WALLET_BASE
+  - KV_NAMESPACES
+  - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+  - NEXT_PUBLIC_CORELINK_API_URL
+  - NEXT_PUBLIC_SENTRY_DSN
+  - NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+  - R2_TEST_BUCKET
+  - STRIPE_PRICE_ID_STARTER

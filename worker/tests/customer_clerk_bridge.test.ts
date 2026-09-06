@@ -26,6 +26,7 @@ vi.mock("@clerk/backend", () => ({ verifyToken: vi.fn() }));
 import { verifyToken } from "@clerk/backend";
 import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
+import { isProductionEnvironment } from "../src/lib/clerk_auth.js";
 import { TEST_PAT_SIGNING_KEY, mintTestPat } from "./setup.js";
 import { batchViaFirst } from "./d1_batch_mock.js";
 
@@ -155,10 +156,11 @@ function makeBridgeEnv(opts: {
   clerkUserToTenant?: Map<string, string>;
   teamMembers?: Map<string, { tenant_id: string; status: string; role?: string }>;
   withClerkSecret?: boolean;
+  environment?: string;
 }): Env {
   return {
     CORELINK_SERVER: makeCaptureNamespace(opts.captured),
-    ENVIRONMENT: "test",
+    ENVIRONMENT: opts.environment ?? "test",
     CONFIG_DB: makeDualD1({ pats: opts.pats, clerkUserToTenant: opts.clerkUserToTenant, teamMembers: opts.teamMembers }),
     // Honest auth harness (#345): bind the valid test signing key so a minted
     // PAT's HMAC verifies and the PAT surface reaches the real auth/route logic
@@ -745,5 +747,31 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
 
     expect(resp.status).toBe(401);
     expect(captured.req).toBeUndefined();
+  });
+
+  it("M2: fails closed when the production issuer pin is absent", async () => {
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_prod_no_issuer_pin",
+      azp: "https://humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
+    const captured: { req?: Request; doName?: string } = {};
+    const env = makeBridgeEnv({
+      captured,
+      environment: "prod",
+      clerkUserToTenant: new Map([["user_prod_no_issuer_pin", CLERK_TENANT_ID]]),
+    });
+
+    const resp = await customerFetch(env, { Authorization: "Bearer unpinned-prod.jwt" });
+
+    expect(resp.status).toBe(401);
+    expect(captured.req).toBeUndefined();
+  });
+
+  it("M2: recognizes only documented prod markers for the issuer fail-closed gate", () => {
+    expect(isProductionEnvironment({ ENVIRONMENT: "prod" })).toBe(true);
+    expect(isProductionEnvironment({ ENVIRONMENT: "prod-lhr" })).toBe(true);
+    expect(isProductionEnvironment({ ENVIRONMENT: "staging" })).toBe(false);
+    expect(isProductionEnvironment({ ENVIRONMENT: "production-like" })).toBe(false);
   });
 });

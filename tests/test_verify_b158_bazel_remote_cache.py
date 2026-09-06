@@ -19,7 +19,10 @@ class B158VerifierTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.document = (ROOT / verifier.DOC).read_text(encoding="utf-8")
-        cls.routes = (ROOT / verifier.ROUTES).read_text(encoding="utf-8")
+        cls.routes = "\n".join(
+            (ROOT / relative).read_text(encoding="utf-8")
+            for relative in verifier.ROUTES
+        )
 
     def test_published_prefix_constructs_registered_cas_and_ac_paths(self) -> None:
         self.assertEqual(verifier.violations(self.document, self.routes), [])

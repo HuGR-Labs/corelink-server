@@ -97,7 +97,7 @@ caché de su tenant.
 
 Durante su sonda de salud de escritura al iniciar, sccache envía `PUT`, `GET` y
 después `DELETE` para `.sccache_check`. Esa clave está reservada para esta sonda
-y su limpieza: es **exclusiva de la sonda**, no una clave de artefacto de build.
+y su limpieza: es exclusiva de la sonda, no una clave de artefacto de build.
 `DELETE` también está disponible para claves de caché ordinarias. Un proxy que
 filtre métodos debe permitir los seis, incluida esta solicitud de control.
 

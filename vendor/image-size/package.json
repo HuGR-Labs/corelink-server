@@ -1,0 +1,20 @@
+{
+  "name": "image-size",
+  "version": "2.0.3-hugr.0",
+  "description": "Bounded image dimension reader for the CoreLink documentation build",
+  "main": "index.cjs",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "require": "./index.cjs",
+      "import": "./index.mjs"
+    },
+    "./fromFile": {
+      "types": "./fromFile.d.ts",
+      "require": "./fromFile.cjs",
+      "import": "./fromFile.mjs"
+    }
+  },
+  "engines": { "node": ">=20" }
+}

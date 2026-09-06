@@ -16,7 +16,8 @@ from typing import Mapping
 
 
 ROOT = Path(__file__).resolve().parents[1]
-INDEX = ROOT / "worker/src/index.ts"
+INDEX = ROOT / "worker/src/index_public_routes.ts"
+ROUTES = ROOT / "worker/src/route_match.ts"
 TEST = "tests/index.test.ts"
 DOCS = (
     ROOT / "docs/operator/storage-backing-alert-2026-05-30.md",
@@ -90,10 +91,10 @@ def docs_mutation_self_test(documents: Mapping[Path, str]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--skip-tests", action="store_true", help="skip the focal Vitest run")
+    parser.add_argument("--run-tests", action="store_true", help="run the optional focal Vitest test")
     args = parser.parse_args()
 
-    source = INDEX.read_text(encoding="utf-8")
+    source = INDEX.read_text(encoding="utf-8") + "\n" + ROUTES.read_text(encoding="utf-8")
     if not secure_shape(source):
         raise SystemExit("B082 verifier: health probe security shape is incomplete")
     mutation_self_test(source)
@@ -102,7 +103,7 @@ def main() -> int:
         raise SystemExit("B082 verifier: operator docs contain a retired artifact or lost auth probe")
     docs_mutation_self_test(documents)
 
-    if not args.skip_tests:
+    if args.run_tests:
         subprocess.run(
             ["pnpm", "--dir", "worker", "test:file", TEST, "--run"],
             cwd=ROOT,

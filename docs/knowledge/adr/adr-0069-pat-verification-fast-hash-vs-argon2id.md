@@ -4,12 +4,14 @@ title: "ADR-0069 — PAT verification: fast keyed hash, not Argon2id (high-entro
 description: "Why high-entropy PATs should be verified with a fast keyed hash rather than memory-hard Argon2id, and why the migration is a documented deferral with a lazy dual-read design."
 source_files:
   - "specs/03_architecture/adrs/ADR-0069-pat-verification-fast-hash-vs-argon2id.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "auth", "pat", "argon2id", "hash", "performance", "deferred"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0069-pat-verification-fast-hash-vs-argon2id.md@c44ae035715cf82644d33e6a9acb9773a472a869"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-0069 — PAT verification: fast keyed hash, not Argon2id (high-entropy tokens)
 
 CoreLink stored each PAT's random secret as an Argon2id hash and re-verified it with Argon2id on the

@@ -22,7 +22,9 @@ import type { Env } from "../src/index.js";
 
 const mockVerifyToken = vi.mocked(verifyToken);
 
-const INTERNAL_KEY = "test-internal-auth-key-0123456789"; // ≥16 chars
+const INTERNAL_KEY = "test-internal-auth-key-0123456789"; // ≥32 chars
+const TIER_SELECT_KEY = "test-tier-select-auth-key-0123456789";
+const DPA_ACCEPT_KEY = "test-dpa-accept-auth-key-01234567890";
 const CLERK_SECRET = "sk_test_clerk_secret";
 
 function makeCtx(): ExecutionContext {
@@ -73,6 +75,8 @@ function makeOnbEnv(opts: {
   clerkUserToTenant: Map<string, string>;
   withClerkSecret?: boolean;
   withInternalKey?: boolean;
+  tierSelectKey?: string;
+  dpaAcceptKey?: string;
 }): Env {
   return {
     CORELINK_SERVER: makeCaptureNamespace(opts.captured),
@@ -80,11 +84,17 @@ function makeOnbEnv(opts: {
     CONFIG_DB: makeConfigDb(opts.clerkUserToTenant),
     CLERK_SECRET_KEY: opts.withClerkSecret === false ? undefined : CLERK_SECRET,
     CORELINK_INTERNAL_AUTH_KEY: opts.withInternalKey === false ? undefined : INTERNAL_KEY,
+    CORELINK_TIER_SELECT_AUTH_KEY: opts.tierSelectKey,
+    CORELINK_DPA_ACCEPT_AUTH_KEY: opts.dpaAcceptKey,
   } as Env;
 }
 
-async function onbFetch(env: Env, headers: Record<string, string>): Promise<Response> {
-  const req = new Request("http://localhost/v1/onboarding/tier-select", {
+async function onbFetch(
+  env: Env,
+  headers: Record<string, string>,
+  path = "/v1/onboarding/tier-select",
+): Promise<Response> {
+  const req = new Request(`http://localhost${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify({
@@ -119,6 +129,114 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
     expect(h.get("x-corelink-tenant-id")).toBe("acme-default");
     expect(h.get("x-corelink-route-kind")).toBe("onboarding");
     expect(h.get("x-corelink-token-prefix")).toBe("clerk");
+  });
+
+  it("uses the dedicated tier-select key instead of the shared onboarding key", async () => {
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_abc",
+      azp: "https://humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
+    const captured: { req?: Request } = {};
+    const env = makeOnbEnv({
+      captured,
+      clerkUserToTenant: new Map([["user_abc", "acme-default"]]),
+      withInternalKey: false,
+      tierSelectKey: TIER_SELECT_KEY,
+      dpaAcceptKey: DPA_ACCEPT_KEY,
+    });
+
+    const resp = await onbFetch(env, { Authorization: "Bearer clerk.jwt.token" });
+
+    expect(resp.status).toBe(200);
+    expect(captured.req!.headers.get("x-corelink-internal-auth")).toBe(TIER_SELECT_KEY);
+    expect(captured.req!.headers.get("x-corelink-internal-auth")).not.toBe(INTERNAL_KEY);
+    expect(captured.req!.headers.get("x-corelink-internal-auth")).not.toBe(DPA_ACCEPT_KEY);
+  });
+
+  it("uses only the DPA-accept key for DPA acceptance", async () => {
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_abc",
+      azp: "https://humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
+    const captured: { req?: Request } = {};
+    const env = makeOnbEnv({
+      captured,
+      clerkUserToTenant: new Map([["user_abc", "acme-default"]]),
+      withInternalKey: false,
+      tierSelectKey: TIER_SELECT_KEY,
+      dpaAcceptKey: DPA_ACCEPT_KEY,
+    });
+
+    const resp = await onbFetch(
+      env,
+      { Authorization: "Bearer clerk.jwt.token" },
+      "/v1/onboarding/dpa-accept",
+    );
+
+    expect(resp.status).toBe(200);
+    expect(captured.req!.headers.get("x-corelink-internal-auth")).toBe(DPA_ACCEPT_KEY);
+    expect(captured.req!.headers.get("x-corelink-internal-auth")).not.toBe(TIER_SELECT_KEY);
+    expect(captured.req!.headers.get("x-corelink-internal-auth")).not.toBe(INTERNAL_KEY);
+  });
+
+  it("fails CLOSED when a money dedicated key is sub-floor even with a valid shared key", async () => {
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_abc",
+      azp: "https://humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
+    const captured: { req?: Request } = {};
+    const env = makeOnbEnv({
+      captured,
+      clerkUserToTenant: new Map([["user_abc", "acme-default"]]),
+      tierSelectKey: "1234567890123456",
+    });
+
+    const resp = await onbFetch(env, { Authorization: "Bearer clerk.jwt.token" });
+
+    expect(resp.status).toBe(403);
+    expect(captured.req).toBeUndefined();
+  });
+
+  it("fails CLOSED when a money dedicated key is whitespace-only even with a valid shared key", async () => {
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_abc",
+      azp: "https://humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
+    const captured: { req?: Request } = {};
+    const env = makeOnbEnv({
+      captured,
+      clerkUserToTenant: new Map([["user_abc", "acme-default"]]),
+      tierSelectKey: "                                ",
+    });
+
+    const resp = await onbFetch(env, { Authorization: "Bearer clerk.jwt.token" });
+
+    expect(resp.status).toBe(403);
+    expect(captured.req).toBeUndefined();
+  });
+
+  it("fails CLOSED when neither money key reaches the 32-character floor", async () => {
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_abc",
+      azp: "https://humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
+    const captured: { req?: Request } = {};
+    const env = makeOnbEnv({
+      captured,
+      clerkUserToTenant: new Map([["user_abc", "acme-default"]]),
+      withInternalKey: false,
+      tierSelectKey: "1234567890123456",
+    });
+
+    const resp = await onbFetch(env, { Authorization: "Bearer clerk.jwt.token" });
+
+    expect(resp.status).toBe(403);
+    expect(captured.req).toBeUndefined();
   });
 
   it("STRIPS client-supplied internal-auth + tenant-id + Clerk JWT before forwarding (CRITICAL-2)", async () => {

@@ -4,12 +4,14 @@ title: "ADR-S12-046 — License Allowlist: OSI-Approved Permissive + Banned Copy
 description: "Why CoreLink enforces a default-deny license allowlist of permissive OSI licenses (plus copyleft = deny defence-in-depth) at the cargo-deny CI gate to keep its shipped WASM blob free of GPL/AGPL copyleft exposure."
 source_files:
   - "specs/03_architecture/adrs/ADR-S12-046-license-allowlist-7-osi.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s12", "supply-chain", "license-allowlist", "compliance"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S12-046-license-allowlist-7-osi.md@6d2e528dabb107bfc98d1202ec56210db2431ea7"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-S12-046 — License Allowlist: OSI-Approved Permissive + Banned Copyleft
 
 CoreLink ships closed-source Cloudflare Workers WASM binaries built from a transitive crates.io dependency graph. A single silently-introduced GPL/AGPL transitive dep would subject that shipped blob to copyleft obligations, with post-ship remediation requiring legal removal + re-deploy. This ADR enforces a **default-deny** license allowlist of permissive OSI licenses, plus a `copyleft = "deny"` defence-in-depth layer, at the cargo-deny CI gate — so any new license requires explicit ADR review.

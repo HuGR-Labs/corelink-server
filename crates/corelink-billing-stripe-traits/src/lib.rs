@@ -98,7 +98,8 @@ pub enum CanonicalWebhookEventType {
     SubscriptionCreated,
     /// `customer.subscription.trial_will_end` (observability echo).
     SubscriptionTrialWillEnd,
-    /// `charge.refunded`                      (observability echo).
+    /// `charge.refunded`                      (refund materializer; full
+    /// refunds revoke active access).
     ChargeRefunded,
     /// `customer.created`                     (observability echo).
     CustomerCreated,
@@ -148,8 +149,9 @@ impl CanonicalWebhookEventType {
         }
     }
 
-    /// True iff the dispatcher should materialize per-event state. The
-    /// observability-only echoes (`*_created` etc.) return false.
+    /// True iff the dispatcher should materialize per-event state. Refunds are
+    /// included because a full refund revokes active access; the materializer
+    /// decides whether a particular refund is partial or complete.
     #[must_use]
     pub const fn is_state_mutator(self) -> bool {
         matches!(
@@ -159,6 +161,7 @@ impl CanonicalWebhookEventType {
                 | Self::InvoicePaid
                 | Self::InvoicePaymentFailed
                 | Self::ChargeDisputeCreated
+                | Self::ChargeRefunded
         )
     }
 
@@ -338,6 +341,13 @@ pub trait StateMaterializer: fmt::Debug + Send + Sync {
         &self,
         env: &StripeWebhookEnvelope,
     ) -> Result<(), MaterializerError>;
+    /// `charge.refunded` → persist the refund and revoke active access when
+    /// Stripe reports the charge fully refunded. The default is a no-op for
+    /// legacy recorders; production materializers must opt into the refund
+    /// state transition so a refund cannot leave a paid tier alive.
+    fn on_charge_refunded(&self, _env: &StripeWebhookEnvelope) -> Result<(), MaterializerError> {
+        Ok(())
+    }
 }
 
 // =========================================================================
@@ -555,14 +565,14 @@ mod tests {
     }
 
     #[test]
-    fn state_mutator_flag_marks_canonical_five() {
+    fn state_mutator_flag_marks_canonical_six_including_refund() {
         let mut mutators = 0;
         for canon in CanonicalWebhookEventType::sla_event_types() {
             if canon.is_state_mutator() {
                 mutators += 1;
             }
         }
-        assert_eq!(mutators, 5);
+        assert_eq!(mutators, 6);
     }
 
     #[test]

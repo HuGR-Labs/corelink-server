@@ -1,6 +1,6 @@
 //! Core region types — WI-S14-001.
 //!
-//! [`Region`] is the canonical 4-value enum used throughout S-14.
+//! [`Region`] is the canonical six-value enum used throughout S-14.
 //! [`DoJurisdiction`] captures Cloudflare DO jurisdictional restriction.
 
 use serde::{Deserialize, Serialize};
@@ -24,11 +24,22 @@ pub enum Region {
     Weur,
     /// SAM — sa-east (Cloudflare R2/D1 `sam`).
     Sam,
+    /// APAC — asia-pacific (Cloudflare R2/D1 `apac`).
+    Apac,
+    /// AFR — africa (Cloudflare R2/D1 `afr`).
+    Afr,
 }
 
 impl Region {
     /// All valid region values (for property tests + iterate-all patterns).
-    pub const ALL: &'static [Region] = &[Region::Wnam, Region::Enam, Region::Weur, Region::Sam];
+    pub const ALL: &'static [Region] = &[
+        Region::Wnam,
+        Region::Enam,
+        Region::Weur,
+        Region::Sam,
+        Region::Apac,
+        Region::Afr,
+    ];
 
     /// Lowercase identifier string (used in resource names, metrics labels).
     #[must_use]
@@ -38,6 +49,8 @@ impl Region {
             Region::Enam => "enam",
             Region::Weur => "weur",
             Region::Sam => "sam",
+            Region::Apac => "apac",
+            Region::Afr => "afr",
         }
     }
 
@@ -49,6 +62,8 @@ impl Region {
             Region::Enam => "ENAM",
             Region::Weur => "WEUR",
             Region::Sam => "SAM",
+            Region::Apac => "APAC",
+            Region::Afr => "AFR",
         }
     }
 
@@ -60,6 +75,8 @@ impl Region {
             Region::Enam => "us-east",
             Region::Weur => "eu-west",
             Region::Sam => "sa-east",
+            Region::Apac => "asia-pacific",
+            Region::Afr => "africa",
         }
     }
 
@@ -98,6 +115,8 @@ impl Region {
             "enam" => Ok(Region::Enam),
             "weur" => Ok(Region::Weur),
             "sam" => Ok(Region::Sam),
+            "apac" => Ok(Region::Apac),
+            "afr" => Ok(Region::Afr),
             other => Err(crate::error::RegionError::UnknownRegion(other.to_owned())),
         }
     }
@@ -145,6 +164,7 @@ impl DoJurisdiction {
             Region::Enam => DoJurisdiction::Us,
             Region::Weur => DoJurisdiction::Eu, // MANDATORY: Schrems II
             Region::Sam => DoJurisdiction::None,
+            Region::Apac | Region::Afr => DoJurisdiction::None,
         }
     }
 
@@ -202,7 +222,7 @@ mod tests {
 
     #[test]
     fn test_region_all_coverage() {
-        assert_eq!(Region::ALL.len(), 4);
+        assert_eq!(Region::ALL.len(), 6);
         for r in Region::ALL {
             assert!(!r.as_str().is_empty());
             assert!(!r.r2_location_hint().is_empty());
@@ -224,7 +244,8 @@ mod tests {
 
     #[test]
     fn test_region_from_str_unknown() {
-        assert!(Region::from_str("apac").is_err());
+        assert_eq!(Region::from_str("apac"), Ok(Region::Apac));
+        assert_eq!(Region::from_str("afr"), Ok(Region::Afr));
         assert!(Region::from_str("").is_err());
     }
 
@@ -253,6 +274,14 @@ mod tests {
         );
         assert_eq!(
             DoJurisdiction::expected_for_region(Region::Sam),
+            DoJurisdiction::None
+        );
+        assert_eq!(
+            DoJurisdiction::expected_for_region(Region::Apac),
+            DoJurisdiction::None
+        );
+        assert_eq!(
+            DoJurisdiction::expected_for_region(Region::Afr),
             DoJurisdiction::None
         );
     }

@@ -5,6 +5,22 @@ against the code. Every query that could return zero carries a **control query
 alongside it** that is known to return rows, so "found nothing" is distinguishable
 from "my instrument broke".
 
+## Repair boundary (2026-09-05)
+
+The historical 200-row path is now identified in source: the container's
+`build_state_from_env` defaults `AUDIT_DRAIN_BATCH_LIMIT` to 200, the production
+environment vars previously omitted that forwarded setting, and the hourly
+signup-worker `runAuditDrainSweep` is the caller. The code/config repair
+declares a bounded 512-row budget in all five production environment blocks and
+writes seals in ordered 32-row JSON1 chunks; the caller remains bounded at ten
+calls and ten minutes.
+Lease skips and head drift are treated as backpressure, not retry progress. The
+signed head CAS, sealed-tail resume, and fail-closed verifier are unchanged.
+
+This section records repository state only. No production query was run or
+retained for the repair, so B-125 remains **open** pending an authorized
+read-only rerun with retained evidence.
+
 ---
 
 ## 1. Is the chain head actually signed in production? — YES
@@ -48,7 +64,7 @@ This is the finding.
 | unsealed backlog | **4 243** of 77 935 |
 | age of the oldest unsealed row | **6.8 h** |
 
-Exactly 200 per hour for six hours running is a **hard cap**, not a load curve —
+Exactly 200 per hour for six hours running was a **hard cap**, not a load curve —
 a load-shaped series does not land on the same integer six times.
 
 Arrivals over the same window were **86, 300, 2, 30, 88, 92** (mean ≈ 100/h), so
@@ -57,26 +73,27 @@ the whole safety margin: a factor of two against a bursty arrival process whose
 observed peak (300/h) already exceeds the ceiling.** Any sustained burst above
 200/h accumulates, and the backlog only clears at 200/h afterwards.
 
-**What the customer gets:** an event is not tamper-evident when it happens. It
+**Historical customer impact:** an event was not tamper-evident when it happened. It
 becomes so on average **~1.5 hours later**, and in the observed tail **over 5
 hours** later. Anything read from `audit_outbox` inside that window is unsealed —
 present, but outside the chain.
 
 ## 4. What this dossier does NOT decide
 
-- **Where the 200 comes from.** It is not a literal in `audit_drain.rs` — grep
-  returned 0 there against a control of 5 hits for another string in the same
-  file, so the absence is real. It is passed in by the caller, and I did not
-  identify the caller. Stated as unknown rather than guessed.
+- **Whether the repair closes the production latency/throughput threshold.** The
+  source path and configuration default are identified now, but this dossier
+  contains no post-repair production measurement. The historical values above
+  remain evidence of the pre-repair state only.
 - **Whether an outsider can verify the chain end-to-end offline.** Signature
   presence is proven; the customer-facing verification path is not exercised here.
 - **Whether the sealed segment is internally consistent.** Not recomputed.
 
 ## 5. Bearing on the promise
 
-The product promises tamper-evidence. Measured, that promise holds **for rows
-older than a few hours** and does not hold for recent activity. A compliance
-artifact that lags the event by 1.5 h on average is not the same product as one
-that lags by seconds, and the gap is invisible from the code.
+The product promises tamper-evidence. In the historical pre-repair window,
+that promise held **for rows older than a few hours** and did not hold for
+recent activity. A compliance artifact that lags the event by 1.5 h on average
+is not the same product as one that lags by seconds; whether the repair closes
+that gap remains unmeasured.
 
 Filed as **B-125**.

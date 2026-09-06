@@ -13,11 +13,10 @@
 #       /_internal/audit/drain; never falls back to the shared key
 #     - STRIPE_WEBHOOK_SECRET — Stripe webhook signature (the LIVE money path)
 #     - STRIPE_PRICE_ID_TEAM / _PRO / _STARTER — tier resolution
-#   But this Worker is deployed SEPARATELY from the main worker: it is a
-#   single-default-env Worker (`wrangler ... ` with NO `--env prod`), so it
-#   is OUTSIDE the scope of scripts/put-secrets-prod.sh and the
-#   cf-deploy-prod.yml secret gate (both target the main `--env prod`
-#   worker). If any of these is unset on corelink-signup-worker, signups /
+#     - EMAIL_HASH_SALT — shared identity pseudonymisation key
+#   The signup Worker is deployed separately from the root Worker, and the
+#   root Worker has four regional production destinations. If any of these is
+#   unset on one destination, signups /
 #   Stripe webhooks fail SILENTLY (4xx at the Worker; Svix/Stripe stop
 #   retrying) unless this gate stops the signup-worker deploy first.
 #
@@ -55,6 +54,19 @@ REQUIRED=(
   STRIPE_PRICE_ID_TEAM
   STRIPE_PRICE_ID_PRO
   STRIPE_PRICE_ID_STARTER
+  EMAIL_HASH_SALT
+)
+
+# Six explicit deployment destinations must carry the same salt. Keeping this
+# list explicit makes a newly-added production Worker fail review until its
+# secret gate is wired, rather than silently inheriting the wrong environment.
+DESTINATIONS=(
+  "corelink-prod|wrangler.toml|prod"
+  "corelink-prod-sam|wrangler.toml|prod-sam"
+  "corelink-prod-lhr|wrangler.toml|prod-lhr"
+  "corelink-prod-nrt|wrangler.toml|prod-nrt"
+  "corelink-prod-syd|wrangler.toml|prod-syd"
+  "corelink-signup-worker|apps/signup-worker/wrangler.toml|"
 )
 
 if [ ! -f "$SIGNUP_CONFIG" ]; then
@@ -67,28 +79,46 @@ if command -v wrangler >/dev/null 2>&1; then
   WRANGLER_CMD="wrangler"
 fi
 
-printf '%s listing deployed secrets for corelink-signup-worker …\n' "$LOG_PREFIX"
-LIST_JSON="$($WRANGLER_CMD secret list --config "$SIGNUP_CONFIG" 2>/dev/null)"
-if [ -z "$LIST_JSON" ]; then
-  printf '%s fatal: could not list secrets (wrangler auth? CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID set?)\n' "$LOG_PREFIX" >&2
-  exit 2
-fi
-
 MISSING=0
-for name in "${REQUIRED[@]}"; do
-  if printf '%s' "$LIST_JSON" | grep "\"${name}\"" >/dev/null; then
-    printf '  ok      %s\n' "$name"
-  else
-    printf '  MISSING %s\n' "$name"
-    MISSING=$((MISSING + 1))
+for destination in "${DESTINATIONS[@]}"; do
+  IFS='|' read -r worker config env_name <<< "$destination"
+  config_path="$REPO_ROOT/$config"
+  if [ ! -f "$config_path" ]; then
+    printf '%s fatal: config for %s not found at %s\n' "$LOG_PREFIX" "$worker" "$config_path" >&2
+    exit 2
   fi
+  printf '%s listing deployed secrets for %s …\n' "$LOG_PREFIX" "$worker"
+  if [ -n "$env_name" ]; then
+    LIST_JSON="$($WRANGLER_CMD secret list --config "$config_path" --env "$env_name" 2>/dev/null)"
+  else
+    LIST_JSON="$($WRANGLER_CMD secret list --config "$config_path" 2>/dev/null)"
+  fi
+  if [ -z "$LIST_JSON" ]; then
+    printf '%s fatal: could not list secrets for %s (wrangler auth? CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID set?)\n' "$LOG_PREFIX" "$worker" >&2
+    exit 2
+  fi
+  # The signup-worker owns the webhook/payment secret set. The five root and
+  # regional Workers participate only in identity pseudonymisation here, so
+  # requiring their unrelated signup secrets would make this gate false-fail.
+  if [ "$worker" = "corelink-signup-worker" ]; then
+    destination_required=("${REQUIRED[@]}")
+  else
+    destination_required=(EMAIL_HASH_SALT)
+  fi
+  for name in "${destination_required[@]}"; do
+    if printf '%s' "$LIST_JSON" | grep "\"${name}\"" >/dev/null; then
+      printf '  ok      %-24s (%s)\n' "$name" "$worker"
+    else
+      printf '  MISSING %-24s (%s)\n' "$name" "$worker"
+      MISSING=$((MISSING + 1))
+    fi
+  done
 done
 
 if [ "$MISSING" -gt 0 ]; then
-  printf '%s FAIL: %d required signup-worker secret(s) missing. Set each with:\n' "$LOG_PREFIX" "$MISSING" >&2
-  printf '       %s secret put <NAME> --config %s\n' "$WRANGLER_CMD" "$SIGNUP_CONFIG" >&2
+  printf '%s FAIL: %d required destination secret(s) missing. Set each with the destination config/env above.\n' "$LOG_PREFIX" "$MISSING" >&2
   exit 1
 fi
 
-printf '%s OK: all %d required signup-worker secrets are populated.\n' "$LOG_PREFIX" "${#REQUIRED[@]}"
+printf '%s OK: signup-worker secrets and EMAIL_HASH_SALT on all six destinations are populated.\n' "$LOG_PREFIX"
 exit 0

@@ -86,6 +86,14 @@ describe("middleware fail-CLOSED on absent publishable key", () => {
     expect(location.pathname).not.toBe("/sign-in");
   });
 
+  it("(a4) production + E2E flag cannot bypass auth when Clerk keys are absent", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_E2E_TEST_MODE", "1");
+    const res = await middleware(reqFor("/admin/tenants"));
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location") ?? "").toContain("/corelink/sign-in");
+  });
+
   it("(b) non-production + no key → falls through (dev/test ergonomics)", async () => {
     vi.stubEnv("NODE_ENV", "development");
     const res = await middleware(reqFor("/admin/tenants"));

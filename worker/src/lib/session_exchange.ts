@@ -94,12 +94,13 @@ const MINT_THROTTLE_MAX_PER_WINDOW = 10;
  *
  * During a D1 outage the durable throttle is unavailable. This in-process
  * counter provides a LOCAL fallback: it caps the number of mints per principal
- * within a single Worker isolate cold-start lifetime. It does NOT replace the
- * durable D1 throttle — it is an additional defense-in-depth layer that
- * prevents CPU exhaustion from a loop-mint during a D1 outage.
+ * within a deterministic rolling window. It does NOT replace the durable D1
+ * throttle — it is an additional defense-in-depth layer that prevents CPU
+ * exhaustion from a loop-mint during a D1 outage.
  *
  * Invariant: this map is module-scoped (per isolate), so it naturally resets
- * on isolate recycle, which is why the durable D1 counter is the primary gate.
+ * on isolate recycle; each entry also expires at the end of its fallback
+ * window, which is why the durable D1 counter is the primary gate.
  * The local cap is intentionally tighter than the D1 window cap
  * (MAX_IN_MEMORY_BURST < MINT_THROTTLE_MAX_PER_WINDOW) to bound Argon2id
  * CPU cost per isolate instance during an outage.
@@ -107,12 +108,17 @@ const MINT_THROTTLE_MAX_PER_WINDOW = 10;
  * INV-NO-PII-IN-LOGS: the key is the opaque principalId (SHA-256-derived
  * UUID), NOT the raw Clerk user id.
  */
-const _inMemoryMintCounts = new Map<string, number>();
+interface InMemoryMintState {
+  count: number;
+  windowStartMs: number;
+}
+
+const _inMemoryMintCounts = new Map<string, InMemoryMintState>();
 
 /**
  * Max mints per principal allowed in the in-memory backstop before a 429 is
- * returned (F20 fix). This is a per-isolate, per-cold-start ceiling — not a
- * persistent window — so it is deliberately conservative.
+ * returned (F20 fix). This is deliberately conservative and applies only
+ * while D1 is unavailable; it is not a second counter on the healthy path.
  */
 const MAX_IN_MEMORY_BURST = 5;
 
@@ -297,7 +303,7 @@ export async function deriveTenantCeilingThrottleKey(tenantId: string): Promise<
  * On a D1 transport error the durable throttle is bypassed. To prevent
  * Argon2id CPU exhaustion via loop-minting during an outage, a module-level
  * in-memory backstop ({@link _inMemoryMintCounts}) caps mints per principal
- * per isolate lifetime to {@link MAX_IN_MEMORY_BURST} (F20 fix — fail-LOUD:
+ * per fallback window to {@link MAX_IN_MEMORY_BURST} (F20 fix — fail-LOUD:
  * the D1 error is logged AND the in-memory backstop fires a 429 if the burst
  * ceiling is reached within this isolate).
  *
@@ -344,33 +350,56 @@ export async function checkMintThrottle(
     // D1 unavailable — log the outage (fail-LOUD) and fall through to the
     // in-memory backstop (F20 fix). The durable D1 throttle is the primary
     // gate; the in-memory backstop provides a defense-in-depth ceiling for
-    // this isolate's lifetime to bound Argon2id CPU cost during an outage.
+    // this isolate's current fallback window to bound Argon2id CPU cost during
+    // an outage.
     console.error(
       `[${requestId}] session exchange throttle store error; applying in-memory backstop`,
     );
     d1Failed = true;
   }
 
-  // ── Primary gate: durable D1 counter ────────────────────────────────────────
-  if (!d1Failed && row !== null && row.count > maxPerWindow) {
-    return reapiError(
-      "TOO_MANY_REQUESTS",
-      "session exchange mint rate exceeded; retry shortly",
-      429,
-      requestId,
-    );
+  if (!d1Failed) {
+    // D1 is authoritative after ANY successful response, including an
+    // over-limit row. Discard a stale outage snapshot before branching on the
+    // returned count so a later outage cannot inherit a spent local budget.
+    _inMemoryMintCounts.delete(principalId);
+    // A successful D1 statement must return its counter row. Treat an
+    // unexpected empty RETURNING result as a storage fault instead of opening
+    // the mint path or consulting stale local state.
+    if (row === null) {
+      return reapiError(
+        "SERVICE_UNAVAILABLE",
+        "session exchange throttle store returned no counter",
+        503,
+        requestId,
+      );
+    }
+    // ── Primary gate: durable D1 counter ────────────────────────────────────
+    if (row.count > maxPerWindow) {
+      return reapiError(
+        "TOO_MANY_REQUESTS",
+        "session exchange mint rate exceeded; retry shortly",
+        429,
+        requestId,
+      );
+    }
+    return null;
   }
 
-  // ── Backstop gate (F20): in-memory per-isolate burst ceiling ────────────────
-  // Applied on EVERY request (both D1-healthy and D1-outage paths) so the
-  // in-process ceiling is always current. It is intentionally a tighter cap
-  // than the durable window to bound within-isolate Argon2id CPU cost.
+  // ── Backstop gate (F20): in-memory outage-only burst ceiling ────────────────
+  // D1 is authoritative when healthy; only outage calls reach this counter.
+  // During an outage the state is a deterministic fixed window, so a legitimate
+  // mint is never permanently blocked after the window rolls.
   // LRU touch: delete-then-set moves this principal to the most-recently-used
   // end of the insertion-ordered Map, so eviction below removes the oldest
   // (least-recently-used) principal rather than an actively-minting one.
-  const inMemCount = (_inMemoryMintCounts.get(principalId) ?? 0) + 1;
+  const previous = _inMemoryMintCounts.get(principalId);
+  const inMemCount =
+    previous !== undefined && now - previous.windowStartMs < MINT_THROTTLE_WINDOW_MS
+      ? previous.count + 1
+      : 1;
   _inMemoryMintCounts.delete(principalId);
-  _inMemoryMintCounts.set(principalId, inMemCount);
+  _inMemoryMintCounts.set(principalId, { count: inMemCount, windowStartMs: now });
   // Bound the map (CAA-360 #16): we add at most one entry per call, so evicting
   // a single LRU entry whenever we exceed the ceiling keeps size <= the cap.
   if (_inMemoryMintCounts.size > MAX_IN_MEMORY_MINT_ENTRIES) {

@@ -4,12 +4,14 @@ title: "ADR-S20-002 — non_exhaustive MUST/MAY-OMIT policy"
 description: "Refines charter rule L2.1 from a blanket #[non_exhaustive] mandate into a MUST/MAY-OMIT policy keyed on cross-crate API reachability and type shape, with no mass migration."
 source_files:
   - "specs/03_architecture/adrs/ADR-S20-002-NON-EXHAUSTIVE-POLICY.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "crates", "api-stability", "non-exhaustive", "charter", "semver", "s20"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S20-002-NON-EXHAUSTIVE-POLICY.md@26a516112d00ee004a22c29d098ab67ac92460d8"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-S20-002 — non_exhaustive MUST/MAY-OMIT policy
 
 Charter rule L2.1 mandated `#[non_exhaustive]` on public enums/structs, but a post-W36 audit flagged 1,307 declarations and a blanket sweep would be wrong: most are not actually on the cross-crate surface, some enums are deliberately closed (spec-frozen taxonomies, RFC-closed sets), and newtypes/markers gain nothing. This ADR replaces the universal rule with a precise MUST/MAY-OMIT policy keyed on real cross-crate reachability and type shape, and explicitly forbids a retroactive mass migration. It exists so future charter audits enforce the right subset instead of generating 1,307 false positives.

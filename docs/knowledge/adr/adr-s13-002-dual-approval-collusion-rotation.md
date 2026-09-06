@@ -4,12 +4,14 @@ title: "ADR-S13-002 — Dual-approval enforcement + collusion-rotation defense"
 description: "Why destructive admin ops require a second approver with a hard-fail 403 and a collusion-rotation oracle that blocks reciprocal A<->B approval."
 source_files:
   - "specs/03_architecture/adrs/ADR-S13-002-dual-approval-collusion-rotation.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s13", "admin-plane", "dual-approval", "nist-ac-2-7"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S13-002-dual-approval-collusion-rotation.md@b51362304705c3022d4d02af3f3e61fa9cede07f"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-S13-002 — Dual-approval enforcement + collusion-rotation defense
 
 The CoreLink admin plane executes destructive operations with global blast radius — tenant tombstone, retention reduction, secret-rotation start, config rollback. A single admin is a trivial insider threat, and naive two-admin approval is defeated by reciprocal collusion (A approves B, B approves A, repeat). This ADR records `PAT-DUAL-APPROVAL-001`: a hard-fail second-approver gate plus a collusion-rotation oracle that requires three distinct approvers in any rolling window of three destructive ops, satisfying NIST SP 800-53 AC-2(7).

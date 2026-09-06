@@ -4,12 +4,11 @@ name: GC sweep (dry-run)
 # that finds reclaimable bytes (tombstoned / erased / over-cap R2
 # objects classified by the physical-delete gate) and REPORTS them.
 #
-# DRY-RUN BY DEFAULT. The sweep deletes NOTHING unless GC_LIVE_DELETE
-# is explicitly set to `true`. The daily cron ALWAYS runs dry-run; only
-# a manual workflow_dispatch can request live mode (and even then, this
-# build sweeps an in-memory fixture — production live-delete requires
-# the real R2/D1 bindings wired into corelink_gc::GcSweepRunner, an
-# owner-gated follow-up). 100% non-destructive as shipped.
+# DRY-RUN ONLY. This lane always passes `GC_LIVE_DELETE=false`, clears any
+# Cloudflare credential variables, and therefore cannot run a destructive
+# sweep. The fixture proves candidate and byte reporting while retaining zero
+# deletes. Production R2/D1 bindings and any first destructive execution stay
+# owner-gated follow-up work.
 #
 # Runs the corelink-gc test suite (proves the dry-run/live gate +
 # non-destructiveness invariants) and the gc_sweep binary in the
@@ -21,12 +20,6 @@ on:
     # (gc-ship-gate @ 11:00, ac-bucket-acl @ 02:30).
     - cron: "17 4 * * *"
   workflow_dispatch:
-    inputs:
-      live_delete:
-        description: "Set true to ARM the live-delete path (default false = dry-run). Even when true, this build sweeps an in-memory fixture; prod live-delete needs the real R2/D1 bindings (owner-gated)."
-        type: boolean
-        required: false
-        default: false
 
 permissions:
   contents: read
@@ -41,10 +34,10 @@ env:
 
 jobs:
   sweep:
-    name: gc sweep (mode-gated, dry-run default)
+    name: gc sweep (credentialless dry-run)
     # Self-hosted `corelink` (ephemeral CF-Container Ubuntu 24.04) — pure Rust job,
-    # no prod side-effects (dry-run default; even armed it sweeps an in-memory
-    # fixture). Runs at zero hosted-Actions cost. Per the zero-hosted-CI mandate.
+    # no prod side-effects (the in-memory fixture is forced to dry-run). Runs at
+    # zero hosted-Actions cost. Per the zero-hosted-CI mandate.
     runs-on: corelink
     timeout-minutes: 15
     steps:
@@ -68,27 +61,21 @@ jobs:
         with:
           workspaces: ". -> target"
 
-      # Resolve GC_LIVE_DELETE: cron is ALWAYS dry-run; only a manual
-      # dispatch with live_delete=true arms the live path. Fails closed.
-      - name: Resolve sweep mode
-        id: mode
-        run: |
-          set -euo pipefail
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.live_delete }}" == "true" ]]; then
-            echo "gc_live_delete=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::GC live-delete ARMED via manual dispatch. This run sweeps an IN-MEMORY fixture only; production live-delete requires the real R2/D1 bindings wired into GcSweepRunner (owner-gated)."
-          else
-            echo "gc_live_delete=false" >> "$GITHUB_OUTPUT"
-            echo "Dry-run mode (default). Zero deletes."
-          fi
-
       - name: corelink-gc tests (gate + non-destructiveness invariants)
         run: cargo test -p corelink-gc --all-targets
 
       - name: cargo clippy -p corelink-gc -D warnings
         run: cargo clippy -p corelink-gc --all-targets -- -D warnings
 
-      - name: Run gc_sweep
+      - name: Run gc_sweep (credentialless dry-run report)
         env:
-          GC_LIVE_DELETE: ${{ steps.mode.outputs.gc_live_delete }}
-        run: cargo run -p corelink-gc --bin gc_sweep
+          GC_LIVE_DELETE: "false"
+        run: |
+          set -euo pipefail
+          report="$(env -u CLOUDFLARE_API_TOKEN -u CLOUDFLARE_ACCOUNT_ID cargo run -p corelink-gc --bin gc_sweep)"
+          printf '%s\n' "$report"
+          printf '%s\n' "$report" | grep -F 'mode               = dry_run'
+          printf '%s\n' "$report" | grep -F 'reclaimable_count         = 1'
+          printf '%s\n' "$report" | grep -F 'reclaimable_bytes         = 4096'
+          printf '%s\n' "$report" | grep -F 'deleted_count             = 0'
+          printf '%s\n' "$report" | grep -F 'deleted_bytes             = 0'

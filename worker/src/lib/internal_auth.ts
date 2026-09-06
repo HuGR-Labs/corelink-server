@@ -70,11 +70,10 @@ const MIN_INTERNAL_AUTH_KEY_LEN = 32;
  *      `env.<DEDICATED> ?? env.CORELINK_INTERNAL_AUTH_KEY` in `session_exchange.ts`
  *      (x2), `auth_rotate.ts` and `runner_mint.ts` — falls back on UNSET, but
  *      checks only `length === 0`: no >= 32 floor, no fail-closed refusal. AND the
- *      `onboarding` / tier-select-checkout arm in `index.ts`, which reads the
- *      shared key DIRECTLY with NO dedicated-key preference at all — so
- *      provisioning CORELINK_PAT_MINT_AUTH_KEY narrows the `??` sites but can
- *      NEVER narrow onboarding. That is the real ceiling, and it is on the money
- *      path.
+ *      `onboarding` / tier-select-checkout arm in `index.ts`, which resolves
+ *      its own money-path dedicated keys with the same 32-char shared fallback
+ *      as the Rust container. Non-money onboarding routes retain the shared
+ *      onboarding contract.
  *   3. The multi-region fan-out marker (`index.ts`): set on the service-binding
  *      forward and constant-time matched on receipt.
  *

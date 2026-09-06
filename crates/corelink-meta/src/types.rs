@@ -85,14 +85,12 @@ impl BlobMetaKey {
         &self.digest
     }
 
-    /// Canonical text form of `digest` for D1 storage: `'algo:hex'`.
-    ///
-    /// `algo` is hard-coded to `blake3` here because S-01 only stores
-    /// BLAKE3 digests; future multi-algo support (S-12 hash agility) will
-    /// add a parameter. `hex` is the 64-char lowercase BLAKE3-256 output.
+    /// Canonical text form of `digest` for D1 storage: plain 64-char lowercase
+    /// hexadecimal.  The algorithm is selected by the external surface
+    /// parser (native CAS is BLAKE3); it is never embedded in `blob_meta`.
     #[must_use]
     pub fn digest_canonical_text(&self) -> String {
-        format!("blake3:{}", self.digest.to_hex())
+        self.digest.to_hex()
     }
 }
 

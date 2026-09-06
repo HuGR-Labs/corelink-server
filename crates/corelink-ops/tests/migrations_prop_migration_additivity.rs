@@ -118,6 +118,7 @@ const FORBIDDEN_PREFIXES: &[&str] = &[
     "DROP CONSTRAINT",
     "ALTER COLUMN",
     "ALTER TABLE RENAME",
+    "RENAME TO",
     "RENAME TABLE",
     "RENAME COLUMN",
 ];
@@ -155,7 +156,11 @@ fn find_violations(canonical_sql: &str) -> Vec<String> {
             continue;
         }
         for prefix in FORBIDDEN_PREFIXES {
-            if trimmed.starts_with(prefix) {
+            // SQLite spells a table swap `ALTER TABLE <name> RENAME TO`; the
+            // rename token is therefore not at statement offset zero.
+            let forbidden = trimmed.starts_with(prefix)
+                || (*prefix == "RENAME TO" && trimmed.contains("RENAME TO"));
+            if forbidden {
                 // Truncate excerpt.
                 let excerpt: String = trimmed.chars().take(80).collect();
                 viol.push(format!("[{prefix}] {excerpt}"));
@@ -357,6 +362,15 @@ fn forbidden_prefix_detector_handles_case_and_whitespace() {
     assert!(
         !viol.is_empty(),
         "newline-separated DROP TABLE not detected"
+    );
+
+    // SQLite table swaps place `RENAME TO` after the table identifier.
+    let sql = "ALTER TABLE tier_selections_new RENAME TO tier_selections;";
+    let canon = normalize_for_scan(sql);
+    let viol = find_violations(&canon);
+    assert!(
+        !viol.is_empty(),
+        "ALTER TABLE ... RENAME TO was not detected"
     );
 }
 

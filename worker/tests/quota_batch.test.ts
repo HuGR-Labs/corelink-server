@@ -263,14 +263,18 @@ describe("runQuotaBatch — verdicts", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("runQuotaBatch — D1 failure posture (CAA-360 #25 / F21)", () => {
-  it("fails OPEN on a READ when the batch throws, and does not count the request", async () => {
+  it("fails CLOSED on a READ when the batch throws, and does not count the request", async () => {
     const { db, calls } = makeD1({ throwOnBatch: true });
     const result = await runQuotaBatch(db, TEST_TENANT_ID, confirmed("free"), {
       meter: true,
       isMutating: READING,
     });
 
-    expect(result.storage, "a read must stay available during a store outage").toEqual({ ok: true });
+    expect(result.storage.ok, "an unknown storage total must fail closed").toBe(false);
+    if (!result.storage.ok) {
+      expect(result.storage.retryAfterSec).toBe(2);
+      expect(result.storage.reason).toContain("unverifiable");
+    }
     expect(
       result.increment,
       "an uncounted request is the fail-open direction this counter already tolerates; " +
@@ -323,7 +327,11 @@ describe("runQuotaBatch — D1 failure posture (CAA-360 #25 / F21)", () => {
     // exactly the false-positive 429 F21 exists to prevent.
     expect(calls.batches[0]!.some((sql) => sql.includes(STORAGE_SQL))).toBe(false);
     expect(calls.batches[0]!.some((sql) => sql.includes(METER_SQL))).toBe(true);
-    expect(read.storage).toEqual({ ok: true });
+    expect(read.storage.ok, "an unconfirmed cap must fail closed").toBe(false);
+    if (!read.storage.ok) {
+      expect(read.storage.retryAfterSec).toBe(2);
+      expect(read.storage.reason).toContain("unverifiable");
+    }
 
     const { db: db2 } = makeD1();
     const write = await runQuotaBatch(db2, TEST_TENANT_ID, unconfirmed, {

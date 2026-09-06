@@ -32,6 +32,11 @@ on:
       - 'crates/corelink-clerk/src/fakes.rs'
       - 'scripts/verify_b247_clerk_proptest.py'
       - 'tests/test_verify_b247_clerk_proptest.py'
+      - 'scripts/ci-bounded-workspace-tests.sh'
+      - 'scripts/verify_b067_auth_ci.py'
+      - 'tests/test_b067_auth_ci.py'
+      - '.github/workflows/nightly.yml'
+      - '.github/workflows/welcome-first-pr.yml'
       - '.github/workflows/corelink-auth-pat.yml'
 
 permissions:

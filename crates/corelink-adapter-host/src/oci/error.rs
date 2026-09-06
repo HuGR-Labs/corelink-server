@@ -31,12 +31,14 @@ pub enum OciAdapterError {
     Auth(String),
 
     /// Underlying CAS layer (`BlobStore` port) returned an error.
-    /// Surfaces as `500` to the client; audit row already emitted.
+    /// Surfaces as retryable `503 Service Unavailable`; audit row already
+    /// emitted. Client/protocol errors remain distinct 4xx responses.
     #[error("cas: {0}")]
     Cas(String),
 
     /// KV (`ManifestKvStore` port) returned an error during manifest
-    /// or tag-list mutation / read. Surfaces as `500` after audit.
+    /// or tag-list mutation / read. Surfaces as retryable `503 Service
+    /// Unavailable` after audit.
     #[error("kv: {0}")]
     Kv(String),
 

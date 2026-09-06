@@ -138,6 +138,28 @@ pub async fn patch(
     now_unix_ms: u64,
 ) -> Result<axum::response::Response, OciAdapterError> {
     check_repo_push(repo, scope)?;
+    // Reject a single attacker-controlled chunk before handing it to the
+    // session buffer. The cumulative check below remains necessary for a
+    // sequence of individually-valid chunks, but it must not be the first
+    // protection for a request already larger than the configured blob cap.
+    let chunk_len = u64::try_from(chunk.len()).unwrap_or(u64::MAX);
+    if chunk_len > blob_size_limit_bytes {
+        audit_emit(
+            auditor,
+            tenant,
+            &OciAuditEvent::BlobOversize {
+                repo,
+                upload_uuid,
+                size_bytes: chunk_len,
+                limit_bytes: blob_size_limit_bytes,
+            },
+            now_unix_ms,
+        )?;
+        cas.cancel_upload(tenant, upload_uuid)
+            .await
+            .map_err(OciAdapterError::Cas)?;
+        return Err(OciAdapterError::BlobOversized(chunk_len));
+    }
     let new_len = cas
         .append_chunk(tenant, upload_uuid, chunk)
         .await
@@ -242,6 +264,27 @@ pub async fn put(
     // `PUT` body rather than in a final `PATCH`).
     if let Some(tail) = trailing_chunk {
         if !tail.is_empty() {
+            // As with PATCH, do not append a trailing PUT body that is already
+            // larger than the configured blob cap. The cumulative check below
+            // handles a valid tail that crosses the cap after prior PATCHes.
+            let tail_len = u64::try_from(tail.len()).unwrap_or(u64::MAX);
+            if tail_len > blob_size_limit_bytes {
+                audit_emit(
+                    auditor,
+                    tenant,
+                    &OciAuditEvent::BlobOversize {
+                        repo,
+                        upload_uuid,
+                        size_bytes: tail_len,
+                        limit_bytes: blob_size_limit_bytes,
+                    },
+                    now_unix_ms,
+                )?;
+                cas.cancel_upload(tenant, upload_uuid)
+                    .await
+                    .map_err(OciAdapterError::Cas)?;
+                return Err(OciAdapterError::BlobOversized(tail_len));
+            }
             let cumulative = cas
                 .append_chunk(tenant, upload_uuid, tail)
                 .await

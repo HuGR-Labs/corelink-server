@@ -30,6 +30,7 @@ on:
       - "openapi/corelink-v1.yaml"
       - "scripts/gen-api-reference.py"
       - "scripts/api_reference_i18n_check.py"
+      - "apps/docs/docs/reference/api/**"
       - "apps/docs/i18n/*/docusaurus-plugin-content-docs/current/reference/api/**"
   workflow_dispatch:
 

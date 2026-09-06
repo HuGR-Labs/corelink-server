@@ -4,12 +4,14 @@ title: "ADR-S11-011 — Region Migration Cooldown 30 Days"
 description: "Why a tenant's region migration is gated by a 30-day cooldown from primary_region last-set, plus Privacy Officer + Compliance approval, before data may move."
 source_files:
   - "specs/03_architecture/adrs/ADR-S11-011-region-migration-cooldown-30d.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s11", "region-migration", "cooldown", "lgpd", "gdpr"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S11-011-region-migration-cooldown-30d.md@4e070c7eb66c94cefd7da66744d0d7a903ab836c"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-S11-011 — Region Migration Cooldown 30 Days
 
 Changing a tenant's data-residency region is a serious, regulated act: it can trigger a cross-border Transfer Impact Assessment and a DPA update. This ADR fixes the cooldown window at 30 days from the tenant's `primary_region` last-set timestamp, so that Privacy Officer + Compliance always have time to review before any data moves — balancing regulatory diligence against unnecessary UX friction.

@@ -47,7 +47,7 @@ cuenta de servicio.
 | Formato | `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` — `<env>` es `pat` (PAT de usuario), `ci` (token de runner de CI) o `ro` (token de solo lectura) |
 | Alcance | Exactamente un tenant en el momento de la emisión |
 | Se muestra una vez | Se muestra en texto plano solo en la creación; nunca se almacena en texto plano del lado del servidor |
-| Revocable | El PAT inicial y los PATs adicionales emitidos por `POST /v1/pats` están ligados al tenant; los aliases comparten la política `pat-issue` (burst 10, 10/hora), antes del mint y la auditoría. |
+| Revocable | La revocación del panel mediante `POST /v1/customer/keys/{pat_id}/revoke` requiere el rol confiable del servidor `owner`/`admin`; los Admins no pueden revocar PATs del Owner. |
 | Vencimiento | Los PAT emitidos por self-service vencen después de 90 días |
 
 ### Alcances de PAT

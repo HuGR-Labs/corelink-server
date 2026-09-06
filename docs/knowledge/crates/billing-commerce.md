@@ -10,12 +10,20 @@ source_files:
   - "crates/corelink-tier-selection/src/lib.rs"
   - "crates/corelink-tier-selection/src/dpa.rs"
   - "crates/corelink-tier-selection/src/ledger.rs"
-checkpoint_sha: "17516da7418918381a8752550ec2db471b7c4101"
+source_blobs:
+  - "crates/corelink-billing/src/lib.rs@1cb8f80ba9bdaa593f3780717e371ed68f346164"
+  - "crates/corelink-billing-stripe/src/lib.rs@2aef56ced08989fafd6302fc6adaf11dc6d7b81f"
+  - "crates/corelink-billing-stripe/src/idempotency.rs@fc9f9d30bed86e05ee28c849d8249bd046ff02de"
+  - "crates/corelink-billing-stripe/src/signature.rs@d7390d564f61e5cca83b16f6c4ec6bd7b17b9163"
+  - "crates/corelink-tier-selection/src/lib.rs@ca4ff79f9e120570f81e2c46a8d97496a59cc275"
+  - "crates/corelink-tier-selection/src/dpa.rs@dd0c9408c17913fdb037eee46da64bd027634361"
+  - "crates/corelink-tier-selection/src/ledger.rs@1bf219d7e64d0b824b8c0db5c70d666539b16d09"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 provenance: "AUTHORED"
 tags: ["crates", "billing", "stripe", "tier", "money-path", "commerce"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # Billing/commerce crate cluster
 
 This is the cluster CoreLink's revenue runs through, so it is the one where a double-charge, a forged webhook, or a tier granted without payment is a launch-blocking bug rather than a defect. It is grouped around two non-negotiable properties: charges are idempotent (the same usage aggregate yields one Stripe charge no matter the retry storm) and state transitions are audited fail-closed (the audit envelope is written before any state mutation). `corelink-billing` is the aggregator over the 14 billing primitives; `corelink-billing-stripe` owns the idempotency-key derivation and webhook signature verify; `corelink-tier-selection` is the checkout orchestrator that gates every subscription behind DPA acceptance.

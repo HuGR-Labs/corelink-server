@@ -117,7 +117,7 @@ pub use stripe::{
     StripeCheckoutSessionCompletedEvent, StripeClient, STRIPE_REPLAY_WINDOW_MS,
 };
 pub use tenant::{StripeCustomerId, TenantCtx, TenantId};
-pub use tier::{canonical_tiers, TierKind};
+pub use tier::{canonical_runner_tiers, canonical_tiers, TierKind};
 
 /// Crate canonical schema version constant.
 #[must_use]

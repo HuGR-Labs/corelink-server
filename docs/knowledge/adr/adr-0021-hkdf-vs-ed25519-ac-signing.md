@@ -4,12 +4,14 @@ title: "ADR-0021 — HKDF-SHA256 + BLAKE3-keyed MAC vs Ed25519 for AC signing"
 description: "Chooses a symmetric HKDF-derived per-tenant BLAKE3-keyed MAC over Ed25519 for signing Action Cache envelopes, optimizing for WASM speed and reuse of the existing tenant derivation key."
 source_files:
   - "specs/03_architecture/adrs/ADR-0021-hkdf-vs-ed25519-ac-signing.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s04", "ac", "hkdf", "signing", "crypto"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0021-hkdf-vs-ed25519-ac-signing.md@c1df595b54afb9a69de71ae39e90c96699737447"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-0021 — HKDF-SHA256 + BLAKE3-keyed MAC vs Ed25519 for AC signing
 
 Every Action Cache `ActionResult` envelope must be signed so a tenant cannot tamper with or forge another tenant's cached result. This ADR chooses a symmetric MAC — a per-tenant signing key derived via HKDF-SHA256 from the existing tenant derivation key (TDK), then a BLAKE3-keyed tag — over an asymmetric Ed25519 signature. It matters because CoreLink's threat model is tenant-scoped integrity (we sign for ourselves and verify for ourselves), where Ed25519's public-verifier advantage is not load-bearing, and the symmetric path is far faster on Cloudflare Workers WASM. It signs the envelopes of the [Action Cache](/surfaces/action-cache.md) surface.

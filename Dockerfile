@@ -179,9 +179,14 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=corelink-cargo-regist
     for pkg in $FIRST_PARTY; do CLEAN_ARGS="$CLEAN_ARGS -p $pkg"; done; \
     # shellcheck disable=SC2086 -- $CLEAN_ARGS is an intentional list of -p flags
     cargo clean --release --locked $CLEAN_ARGS; \
-    cargo build --release --locked -p corelink-server --bin corelink-server; \
+    # The shipped native image links the real AWS KMS boundary. Runtime KMS
+    # credentials remain owner-provided; missing credentials fail BYOK closed.
+    cargo build --release --locked -p corelink-server --bin corelink-server \
+        --features byok-aws-real; \
+    cargo build --release --locked -p corelink-gc --bin gc_sweep; \
     mkdir -p /out; \
-    cp /build/target/release/corelink-server /out/corelink-server
+    cp /build/target/release/corelink-server /out/corelink-server; \
+    cp /build/target/release/gc_sweep /out/gc_sweep
 
 # ---- Runtime stage ----
 # HO-1: digest-pinned per Wave-32 Phase E audit (supply-chain integrity).
@@ -198,6 +203,10 @@ RUN groupadd --system --gid 1000 corelink \
 # Binary copied out of the builder's cache mount into /out/ (see build
 # RUN step above). The cache mount itself is not visible to this stage.
 COPY --from=builder /out/corelink-server /usr/local/bin/corelink-server
+# `gc_sweep` is deliberately a separately invoked utility: the server
+# entrypoint remains unchanged and the sweep defaults to non-destructive mode
+# unless its explicit gate is armed.
+COPY --from=builder /out/gc_sweep /usr/local/bin/gc_sweep
 
 USER corelink
 

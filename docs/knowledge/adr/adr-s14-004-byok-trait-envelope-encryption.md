@@ -4,12 +4,14 @@ title: "ADR-S14-004 — BYOK adapter trait + envelope-encryption flow"
 description: "The six BYOK envelope-encryption decisions: random CSPRNG DEK, 5-min hard DEK-cache TTL, 96-bit random GCM nonce, mandatory AAD context binding, async KmsProvider trait, and the 16-cell matrix test."
 source_files:
   - "specs/03_architecture/adrs/ADR-S14-004-byok-trait-envelope-encryption.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s14", "byok", "crypto", "kms", "envelope-encryption"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S14-004-byok-trait-envelope-encryption.md@87f0331c472b78fabf48690bee69c812917ac798"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-S14-004 — BYOK adapter trait + envelope-encryption flow
 
 CoreLink's BYOK (Bring Your Own Key) enterprise tier must hold four properties at once: crypto sovereignty (customer CMK revocation makes the cache inaccessible ≤5 min), multi-cloud portability across 4 KMS providers, FIPS 140-3 compliance, and structural prevention of DEK reuse / nonce reuse / cross-blob key swap. This ADR (ACCEPTED) records the six contentious envelope-encryption decisions that satisfy them, and is the trait foundation the other-provider and kill-switch ADRs build on.

@@ -37,6 +37,7 @@ const CANNED_MINT = {
 /** Shape the OLD-pat SELECT resolves to (null = no row). */
 interface OldPatRow {
   tenant_id: string;
+  token_id: string;
   scope: string;
   expires_ms: number;
   revoked_at_ms: number | null;
@@ -136,7 +137,13 @@ function makeEnv(opts: {
 }
 
 function activeRow(scope = "read-write"): OldPatRow {
-  return { tenant_id: TENANT, scope, expires_ms: 1893456000000, revoked_at_ms: null };
+  return {
+    tenant_id: TENANT,
+    token_id: "old-token-id",
+    scope,
+    expires_ms: 1893456000000,
+    revoked_at_ms: null,
+  };
 }
 
 function rotateFetch(

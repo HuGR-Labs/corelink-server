@@ -18,8 +18,12 @@ tags: [pat, rest-api]
 
 ## Description
 
-Revocation is destructive and tenant-wide, so it requires a cache-write
-capability; a read-only (`cas:r`) principal is rejected with `403`.
+Revocation is a destructive tenant-admin operation. It requires the
+server-trusted `owner` or `admin` team role from a Clerk dashboard
+session; cache-write scope alone is not sufficient. An owner may
+revoke any PAT in the tenant. An admin may revoke member PATs but is
+rejected with `403` for the owner's PAT. Members, viewers, native PAT
+callers, and cross-tenant targets are rejected (the latter as `404`).
 Subsequent uses of the revoked token MUST fail closed
 (`INV-PAT-REVOKE-PROPAGATION`).
 

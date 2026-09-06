@@ -6,12 +6,16 @@ source_files:
   - "docs/security/2026-06-13-CAA-360-audit-report.md"
   - "ARCHITECTURE.md"
   - "apps/signup-worker/src/security-headers.ts"
-checkpoint_sha: "b121f6bc7db735782fcc3b9ead0f6aab4b410050"
+source_blobs:
+  - "docs/security/2026-06-13-CAA-360-audit-report.md@cffbe8ce570f684f2946fc78478746dc1c9fbded"
+  - "ARCHITECTURE.md@ce8b4c3228c32bbeff186dacb9fd027c10cbfbdf"
+  - "apps/signup-worker/src/security-headers.ts@7b98fa3e44b60f37ed84a6b51ad07c225fbf6653"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 provenance: "AUTHORED"
 tags: ["security", "posture", "audit", "tenant-isolation", "compliance"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # Security posture overview
 
 CoreLink is a multi-tenant content-addressable cache where a single isolation or integrity failure
@@ -100,3 +104,8 @@ launch gate).
 10. `docs/security/2026-06-13-CAA-360-audit-report.md:104-120` — F1: cross-tenant co-residence when `R2_TDK_HEX` is unset in prod.
 11. `apps/signup-worker/src/security-headers.ts:14-24` — the strict edge security-header set (CSP `default-src 'none'`, HSTS 2y preload, nosniff / `X-Frame-Options: DENY` / no-referrer / `Permissions-Policy`).
 12. `apps/signup-worker/src/security-headers.ts:31-41` — `withSecurityHeaders`: gap-fill merge applied to every signup-worker response.
+
+
+# Revalidation
+
+This concept was revalidated against the cumulative implementation tree; its existing source citations remain the controlling evidence for the behavior described above.

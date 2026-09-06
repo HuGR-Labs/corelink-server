@@ -99,7 +99,7 @@ seines Tenants entfernen.
 
 Während der Schreib-Gesundheitsprüfung beim Start sendet sccache `PUT`, `GET` und
 dann `DELETE` für `.sccache_check`. Dieser Schlüssel ist für diese Sonde und ihre
-Bereinigung reserviert: Er ist **ausschließlich für die Sonde bestimmt**, kein
+Bereinigung reserviert: Er ist ausschließlich für die Sonde bestimmt, kein
 Build-Artefakt-Schlüssel. `DELETE` bleibt trotzdem auch für gewöhnliche
 Cache-Schlüssel verfügbar. Ein Proxy mit Methodenfilter muss alle sechs Methoden
 einschließlich dieser Kontrollanfrage zulassen.

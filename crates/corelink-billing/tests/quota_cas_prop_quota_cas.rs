@@ -23,8 +23,10 @@
 //! - `prop_idempotent_zero_byte_check` — `request_bytes == 0` is
 //!   read-path passthrough; no state mutation; no Commit audit;
 //!   cas_version unchanged.
-//! - `prop_check_duration_under_5ms_p99` — informational SLO probe
-//!   over 10k samples (WI §22 ≤ 5ms p99 SLO).
+//! - `prop_cas_decision_budget_and_correctness` — deterministic decision,
+//!   state, audit, and bounded-attempt invariants over generated inputs.
+//! - `real_latency_probe_under_5ms_p99` — an explicitly ignored, opt-in
+//!   wall-clock probe for the production SLO (never part of general CI).
 //! - `prop_overshoot_does_not_panic` — extreme inputs never panic
 //!   the orchestrator (saturating arithmetic via checked_add).
 
@@ -44,8 +46,8 @@ use corelink_billing::quota::cas::{
     next_month_first_utc_midnight_secs, AtomicCasState, AtomicQuotaChecker, AtomicTenantBytesState,
     InMemoryAtomicCasState, InMemoryAtomicQuotaChecker, InMemoryQuotaCasAuditSink,
     InMemoryQuotaCasMetrics, QuotaCasDecision, QuotaCasEventType, QuotaCasMetricKind,
-    QuotaCasResultLabel, MAX_SECS_PER_MONTH, MIGRATION_0012_QUOTA_CAS_ATTEMPTS,
-    RETRY_AFTER_MIN_SECS,
+    QuotaCasResultLabel, MAX_CAS_AUDIT_EVENTS_PER_ATTEMPT, MAX_CAS_AUDIT_EVENTS_PER_DECISION,
+    MAX_SECS_PER_MONTH, MIGRATION_0012_QUOTA_CAS_ATTEMPTS, RETRY_AFTER_MIN_SECS,
 };
 use corelink_eviction::EvictionRegion;
 use proptest::prelude::*;
@@ -498,38 +500,92 @@ proptest! {
     }
 }
 
-// ---- prop_check_duration_under_5ms_p99 (informational) ------------
+// ---- deterministic decision budget + correctness ------------------
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(proptest_cases_or(1_000)))]
 
-    /// Informational SLO probe: in-memory CAS check duration is
-    /// vanishingly small compared to the WI §22 5ms p99 SLO. The
-    /// production CF DO singleton's wall-clock latency probe is the
-    /// canonical SLO measurement; this property is a sanity check.
+    /// The production contract is bounded work and correct state transition,
+    /// not an environment-sensitive wall-clock sample. Each non-racing
+    /// decision emits exactly two audit records and stays within the bounded
+    /// retry/audit budget even when inputs vary adversarially.
     #[test]
-    fn prop_check_duration_under_5ms_p99(
-        used in 0u64..900,
+    fn prop_cas_decision_budget_and_correctness(
+        used in 0u64..2_000,
         quota in 1_000u64..2_000,
         request_bytes in 1u64..50,
     ) {
         prop_assume!(used < quota);
-        let (checker, _s, _a, _m) = checker_fixture(used, quota);
-        let t0 = std::time::Instant::now();
-        let _ = checker.try_acquire(
+        let (checker, state, audit, metrics) = checker_fixture(used, quota);
+        let would_use = used.checked_add(request_bytes).unwrap();
+        let should_allow = would_use < quota;
+        let outcome = checker.try_acquire(
             Uuid::from_u128(0xa),
             EvictionRegion::Sam,
             request_bytes,
             1_000,
             1,
-        );
-        let elapsed_micros = t0.elapsed().as_micros();
-        prop_assert!(
-            elapsed_micros < 50_000,
-            "duration {} us > 50ms (informational SLO probe)",
-            elapsed_micros
-        );
+        ).unwrap();
+        prop_assert!(outcome.cas_attempts >= 1);
+        prop_assert!(outcome.cas_attempts <= checker.config().max_cas_attempts());
+        prop_assert!((audit.len() as u32) <= MAX_CAS_AUDIT_EVENTS_PER_DECISION);
+        prop_assert_eq!(audit.len() as u32, MAX_CAS_AUDIT_EVENTS_PER_ATTEMPT);
+        prop_assert_eq!(metrics.counter_total(QuotaCasMetricKind::CheckTotal), 1);
+        let row = state
+            .lookup(Uuid::from_u128(0xa), EvictionRegion::Sam)
+            .unwrap()
+            .unwrap();
+        if should_allow {
+            prop_assert!(matches!(outcome.decision, QuotaCasDecision::Allow { .. }));
+            prop_assert_eq!(row.bytes_used, would_use);
+            prop_assert_eq!(row.cas_version, 1);
+            prop_assert_eq!(
+                audit.snapshot_of(QuotaCasEventType::CasCheckPassed).len(),
+                1
+            );
+            prop_assert_eq!(
+                audit.snapshot_of(QuotaCasEventType::CasCommitSucceeded).len(),
+                1
+            );
+        } else {
+            prop_assert!(matches!(outcome.decision, QuotaCasDecision::Deny429 { .. }));
+            prop_assert_eq!(row.bytes_used, used);
+            prop_assert_eq!(row.cas_version, 0);
+            prop_assert_eq!(
+                audit.snapshot_of(QuotaCasEventType::CasDenied429HardBlock).len(),
+                1
+            );
+            prop_assert_eq!(
+                audit.snapshot_of(QuotaCasEventType::CasRetryAfterEmitted).len(),
+                1
+            );
+        }
     }
+}
+
+// ---- isolated real latency measurement ---------------------------
+
+/// Real wall-clock probe for the production WI §22 SLO. It is ignored so a
+/// loaded developer host or shared CI runner cannot turn an informational
+/// measurement into a false general-CI failure. Run explicitly with:
+/// `cargo test -p corelink-billing --test quota_cas_prop_quota_cas
+/// real_latency_probe_under_5ms_p99 -- --ignored --nocapture`.
+#[test]
+#[ignore = "opt-in real latency measurement; excluded from general CI"]
+fn real_latency_probe_under_5ms_p99() {
+    let (checker, _state, _audit, _metrics) = checker_fixture(0, 2_000);
+    let mut samples = Vec::with_capacity(1_000);
+    for _ in 0..1_000 {
+        let started = std::time::Instant::now();
+        checker
+            .try_acquire(Uuid::from_u128(0xa), EvictionRegion::Sam, 1, 1_000, 1)
+            .expect("latency probe fixture must remain valid");
+        samples.push(started.elapsed().as_micros());
+    }
+    samples.sort_unstable();
+    let p99 = samples[(samples.len() * 99 / 100).min(samples.len() - 1)];
+    eprintln!("quota CAS real latency probe: samples=1000 p99_us={p99}");
+    assert!(p99 <= 5_000, "quota CAS p99 exceeded 5ms: {p99}us");
 }
 
 // ---- prop_retry_after_canonical_at_boundary -----------------------

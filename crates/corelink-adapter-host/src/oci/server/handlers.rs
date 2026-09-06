@@ -19,6 +19,8 @@ use axum::body::Body;
 use axum::extract::State;
 use axum::http::{HeaderMap, Method, StatusCode, Uri};
 use axum::response::IntoResponse;
+use bytes::{Bytes, BytesMut};
+use futures::StreamExt;
 
 use corelink_core::SecretWrap;
 
@@ -46,6 +48,15 @@ use crate::oci::server::core::{err_response, status_for, AppState};
 /// `pub` so integration tests and sibling modules can reference the exact
 /// threshold without hard-coding a magic number.
 pub const MAX_MANIFEST_BYTES: usize = 4 * 1024 * 1024; // 4 MiB
+
+/// Hard upper bound for one streamed blob-upload request.
+///
+/// The OCI adapter permits a larger *cumulative* blob (the default is 5 GiB),
+/// but clients must send that blob as bounded PATCHes. Keeping one request at
+/// 64 MiB prevents a single attacker-controlled frame sequence from forcing a
+/// multi-GB allocation before the session/global accounting in `BlobStore` can
+/// run. The cumulative session limit remains authoritative in `append_chunk`.
+pub const MAX_UPLOAD_REQUEST_BYTES: usize = 64 * 1024 * 1024;
 
 /// `GET /v2/` — liveness + auth probe per OCI Distribution Spec v1.1
 /// §2.1. Returns 200 if a valid bearer token is supplied, 401 +
@@ -506,27 +517,15 @@ async fn dispatch_blob_upload_session(
     body: Body,
     now_ms: u64,
 ) -> Result<axum::response::Response, OciAdapterError> {
-    // DoS guard (enterprise-DD HIGH "OCI blob upload OOM"): without a cap,
-    // `to_bytes` buffers this ATTACKER-CONTROLLED PATCH/PUT body in ONE
-    // unbounded allocation, so any authenticated tenant can drive a multi-GB
-    // single-allocation and OOM the shared container process. Cap the
-    // single-request body at the configured max-blob ceiling
-    // (`blob_size_limit_bytes`, default 5 GiB — see `oci::config::defaults`):
-    // a single chunk / monolithic body can never LEGITIMATELY exceed the max
-    // blob size, so an over-cap body is rejected with `413 Payload Too Large`
-    // (`BlobOversized` → `status_for`) BEFORE the allocation completes. This
-    // mirrors the manifest-PUT `MAX_MANIFEST_BYTES` and token-form
-    // `MAX_TOKEN_FORM_BYTES` caps. The cumulative multi-chunk oversize check
-    // in `push::upload` still applies on top of this per-request bound.
-    //
-    // `blob_size_limit_bytes` is `u64`; the container target is 64-bit so the
-    // conversion is lossless. On a hypothetical 32-bit build it saturates to
-    // the max addressable `usize`, which is still a finite, bounded cap (never
-    // the original unbounded `usize::MAX` against an arbitrary 64-bit length).
-    let max_body_bytes = usize::try_from(state.config.blob_size_limit_bytes).unwrap_or(usize::MAX);
-    let chunk = axum::body::to_bytes(body, max_body_bytes)
-        .await
-        .map_err(|_| OciAdapterError::BlobOversized(state.config.blob_size_limit_bytes))?;
+    // DoS guard (enterprise-DD HIGH "OCI blob upload OOM"): stream the body
+    // through a small fixed request cap BEFORE collecting it. `to_bytes` with
+    // the configured 5 GiB blob ceiling would still permit a multi-GB single
+    // allocation. The cumulative session/global accounting remains in
+    // `append_chunk`; this guard only bounds the bytes handed to that method.
+    let configured_limit =
+        usize::try_from(state.config.blob_size_limit_bytes).unwrap_or(usize::MAX);
+    let max_body_bytes = configured_limit.min(MAX_UPLOAD_REQUEST_BYTES);
+    let chunk = collect_upload_body(body, max_body_bytes).await?;
     match method {
         Method::PATCH => {
             crate::oci::push::upload::patch(
@@ -568,6 +567,29 @@ async fn dispatch_blob_upload_session(
         }
         _ => Err(OciAdapterError::NotFound),
     }
+}
+
+/// Collect one PATCH/trailing-PUT body while bounding the allocation.
+///
+/// `Body::into_data_stream` yields frames incrementally, so an oversized
+/// request is rejected as soon as the first byte beyond `limit` arrives. No
+/// `to_bytes` call can allocate the configured multi-GB cumulative blob before
+/// the request cap is checked. A transport/read error is a backend failure,
+/// while a size breach is the existing 413 `BlobOversized` contract.
+async fn collect_upload_body(body: Body, limit: usize) -> Result<Bytes, OciAdapterError> {
+    let mut stream = body.into_data_stream();
+    let mut collected = BytesMut::new();
+    while let Some(frame) = stream.next().await {
+        let frame =
+            frame.map_err(|err| OciAdapterError::Cas(format!("request body read: {err}")))?;
+        if frame.len() > limit.saturating_sub(collected.len()) {
+            return Err(OciAdapterError::BlobOversized(
+                (limit as u64).saturating_add(1),
+            ));
+        }
+        collected.extend_from_slice(&frame);
+    }
+    Ok(collected.freeze())
 }
 
 #[allow(
@@ -650,7 +672,12 @@ async fn dispatch_manifest(
     reason = "tests are allowed to use these primitives"
 )]
 mod tests {
-    use super::{parse_form, MAX_MANIFEST_BYTES, MAX_TOKEN_FORM_BYTES};
+    use super::{
+        collect_upload_body, parse_form, MAX_MANIFEST_BYTES, MAX_TOKEN_FORM_BYTES,
+        MAX_UPLOAD_REQUEST_BYTES,
+    };
+    use axum::body::Body;
+    use bytes::Bytes;
 
     /// Mutation guard (cargo-mutants): pin the exact byte threshold so a
     /// `*`→`+` corruption of the `4 * 1024 * 1024` expression is caught (the
@@ -665,6 +692,39 @@ mod tests {
     fn max_token_form_bytes_is_exactly_64_kib() {
         assert_eq!(MAX_TOKEN_FORM_BYTES, 65_536);
         assert_eq!(MAX_TOKEN_FORM_BYTES, 64 * 1024);
+    }
+
+    #[tokio::test]
+    async fn upload_body_collector_rejects_before_collecting_over_cap() {
+        let body = Body::from(Bytes::from_static(b"0123456789"));
+        let result = collect_upload_body(body, 9).await;
+        assert!(matches!(
+            result,
+            Err(super::OciAdapterError::BlobOversized(10))
+        ));
+    }
+
+    #[tokio::test]
+    async fn upload_body_collector_preserves_bounded_payload() {
+        let body = Body::from(Bytes::from_static(b"0123456789"));
+        let result = collect_upload_body(body, 10).await.expect("bounded body");
+        assert_eq!(result, Bytes::from_static(b"0123456789"));
+    }
+
+    #[test]
+    fn upload_request_cap_keeps_413_and_session_capacity_429_distinct() {
+        assert_eq!(MAX_UPLOAD_REQUEST_BYTES, 64 * 1024 * 1024);
+        assert_eq!(
+            super::status_for(&super::OciAdapterError::BlobOversized(1)),
+            axum::http::StatusCode::PAYLOAD_TOO_LARGE
+        );
+        assert_eq!(
+            super::status_for(&super::OciAdapterError::TooManyOpenSessions {
+                limit: 1,
+                retry_after_secs: 60,
+            }),
+            axum::http::StatusCode::TOO_MANY_REQUESTS
+        );
     }
 
     /// The real `docker push` OAuth2 form body parses into the expected

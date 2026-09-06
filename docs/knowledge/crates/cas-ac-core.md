@@ -8,15 +8,23 @@ source_files:
   - "crates/corelink-hash/src/verified_body.rs"
   - "crates/corelink-hash/src/digest.rs"
   - "crates/corelink-reapi/src/lib.rs"
-  - "crates/corelink-container/src/routes/cas.rs"
+  - "crates/corelink-container/src/routes/cas/foundation.rs"
+  - "crates/corelink-container/src/routes/cas/batch.rs"
+  - "crates/corelink-container/src/routes/cas/batch.rs"
 source_blobs:
-  - "crates/corelink-container/src/routes/cas.rs@e26b524b8e6891d340dfef1911ccdec366ca3ff5"
-checkpoint_sha: "63e00e0444ffa565635eea09da5e11ea6a055464"
+  - "crates/corelink-cas/src/lib.rs@5eef35d4a9c8ad713604a6df5c7493d88b27248e"
+  - "crates/corelink-hash/src/lib.rs@403f7e2e4ef8c7bb30a47e7d7eee3ce94a785730"
+  - "crates/corelink-hash/src/verified_body.rs@d387eca974b5314dad46b6e92b1623cb8b3e10d5"
+  - "crates/corelink-hash/src/digest.rs@40aea50c8127ada98133e3719171b65f047f2bcd"
+  - "crates/corelink-reapi/src/lib.rs@a4e6596b8741aded884e05b445df1b13edf1419b"
+  - "crates/corelink-container/src/routes/cas/foundation.rs@c2348f6ddb4567e8c902fd237213f86957300cdc"
+  - "crates/corelink-container/src/routes/cas/batch.rs@bc3b531744e3659d850eb1f415c2ec015df00e55"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 provenance: "AUTHORED"
 tags: ["crates", "cas", "ac", "integrity", "blake3", "core"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # CAS/AC core crate cluster
 
 This is the bottom of CoreLink's value stack: the crates that turn a blob into a content address and refuse to ever store one that does not match its claimed digest. They exist as a cluster because the CAS hot path was historically fragmented across ten separate crates (chunker, dedup, edge, eviction, lru-tracker, manifest, multipart-schema, meta, handler, r2-multipart), and the integrity guarantee (`INV-CAS-INTEGRITY`) has to hold across all of them as one type-driven boundary, not ten independent ones. `corelink-cas` is the aggregator that re-exports the absorbed primitives under one canonical import; `corelink-hash` owns the type that makes a forged write unrepresentable; `corelink-reapi` is the REAPI/gRPC orchestration that pins the write order for that surface (its `CasWriteOrchestrator` is a designed seam, NOT a live enforcer on the native HTTP path — the native path's verify→R2→D1 guarantee lives in the container's `CasWriteHandler`).
@@ -36,7 +44,7 @@ The cluster sits below every cache surface ([native CAS](/surfaces/native-cas.md
 
 - Every body is verified before storage: the only path to a `VerifiedBody` runs the hash check — `VerifiedBody::new` computes the digest then `verify_constant_time`, returning `Err(HashMismatch)` on mismatch (`crates/corelink-hash/src/verified_body.rs:33-44`; `crates/corelink-hash/src/lib.rs:9-13`).
 - Security-sensitive digest comparison uses constant-time `verify_constant_time`, not short-circuiting `PartialEq`, so timing cannot leak (`crates/corelink-hash/src/digest.rs:78-79`; `crates/corelink-hash/src/lib.rs:40-45`).
-- The per-blob order verify → R2 → D1 is the correctness guarantee against orphan classes, but it is NOT enforced by `CasWriteOrchestrator` on the live native path. `CasWriteOrchestrator` has zero production callers (only `corelink-reapi`'s own gRPC handlers + prop tests); the cited `crates/corelink-reapi/src/lib.rs:56-61` is an anti-pattern rustdoc, NOT a live enforcement seam. The live native CAS write enforcer is the `CasWriteHandler` trait object — `handle_write` (`crates/corelink-container/src/routes/cas.rs:1010`) and the batch path (`crates/corelink-container/src/routes/cas.rs:1178`) call `state.write.write(req)`, and content-verify + R2 PUT + D1 commit (plus the `AccountingCasHandler` byte-accounting decorator) all happen INSIDE that single `state.write` chokepoint that every CAS write surface (native / Bazel / OCI / adapters) shares. Upstream of that chokepoint the native write path also re-derives the PAT's D1-stored `can_write` capability at the container (`pat_gate_reject_write`) so a read-only token can never reach the verify→R2→D1 write (`crates/corelink-container/src/routes/cas.rs:977`). `CasWriteOrchestrator` is the designed REAPI seam, not the load-bearing native guarantee.
+- The per-blob order verify → R2 → D1 is the correctness guarantee against orphan classes, but it is NOT enforced by `CasWriteOrchestrator` on the live native path. `CasWriteOrchestrator` has zero production callers (only `corelink-reapi`'s own gRPC handlers + prop tests); the cited `crates/corelink-reapi/src/lib.rs:56-61` is an anti-pattern rustdoc, NOT a live enforcement seam. The live native CAS write enforcer is the `CasWriteHandler` trait object — `handle_write` (`crates/corelink-container/src/routes/cas/batch.rs:575`) and the batch path (`crates/corelink-container/src/routes/cas/batch.rs:575`) call `state.write.write(req)`, and content-verify + R2 PUT + D1 commit (plus the `AccountingCasHandler` byte-accounting decorator) all happen INSIDE that single `state.write` chokepoint that every CAS write surface (native / Bazel / OCI / adapters) shares. Upstream of that chokepoint the native write path also re-derives the PAT's D1-stored `can_write` capability at the container (`pat_gate_reject_write`) so a read-only token can never reach the verify→R2→D1 write (`crates/corelink-container/src/routes/cas/batch.rs:575`). `CasWriteOrchestrator` is the designed REAPI seam, not the load-bearing native guarantee.
 - The whole cluster is memory-safe by construction: `#![forbid(unsafe_code)]` at each crate root (`crates/corelink-cas/src/lib.rs:83`, `crates/corelink-hash/src/lib.rs:49`, `crates/corelink-reapi/src/lib.rs:71`).
 
 # Gotchas
@@ -56,9 +64,10 @@ The cluster sits below every cache surface ([native CAS](/surfaces/native-cas.md
 7. `crates/corelink-hash/src/lib.rs:56-59` — the small public surface (`Digest`, `VerifiedBody`, errors).
 8. `crates/corelink-reapi/src/lib.rs:1-27` — the verify → R2 → D1 orchestration pipeline diagram.
 9. `crates/corelink-reapi/src/lib.rs:56-61` — the "never bypass `CasWriteOrchestrator`" anti-pattern RUSTDOC (a doc-comment / design guideline scoped to REAPI transports, NOT a live enforcement seam — the orchestrator has zero production callers).
-14. `crates/corelink-container/src/routes/cas.rs:1010` + `crates/corelink-container/src/routes/cas.rs:1178` — the LIVE native CAS write enforcer: `handle_write` / batch call `state.write.write(req)`, a `CasWriteHandler` trait object where content-verify + R2 PUT + D1 commit happen (the real verify→R2→D1 guarantee on the native path).
-15. `crates/corelink-container/src/routes/cas.rs:977` — `pat_gate_reject_write` re-derives the PAT's D1 `can_write` at the container BEFORE the write chokepoint, so a read-only PAT never reaches the verify→R2→D1 write.
+14. `crates/corelink-container/src/routes/cas/batch.rs:575` + `crates/corelink-container/src/routes/cas/batch.rs:575` — the LIVE native CAS write enforcer: `handle_write` / batch call `state.write.write(req)`, a `CasWriteHandler` trait object where content-verify + R2 PUT + D1 commit happen (the real verify→R2→D1 guarantee on the native path).
+15. `crates/corelink-container/src/routes/cas/batch.rs:575` — `pat_gate_reject_write` re-derives the PAT's D1 `can_write` at the container BEFORE the write chokepoint, so a read-only PAT never reaches the verify→R2→D1 write.
 10. `crates/corelink-reapi/src/lib.rs:71` — `#![forbid(unsafe_code)]`.
 11. `crates/corelink-reapi/src/lib.rs:123-128` — the `CasWriteOrchestrator` / outcome exports.
 12. `crates/corelink-hash/src/verified_body.rs:33-44` — `VerifiedBody::new`: compute-then-`verify_constant_time`, `Err(HashMismatch)` on mismatch.
 13. `crates/corelink-hash/src/digest.rs:78-79` — `verify_constant_time` (`ct_eq`) constant-time digest integrity compare.
+15. `crates/corelink-container/src/routes/cas/foundation.rs:1` — declared source anchor.

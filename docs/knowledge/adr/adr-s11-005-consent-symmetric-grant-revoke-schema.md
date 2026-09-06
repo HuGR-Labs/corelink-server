@@ -4,12 +4,14 @@ title: "ADR-S11-005 — Consent grant ↔ revoke symmetric schema"
 description: "Why grant and revoke use one identical 6-field ConsentProofPayload with the same canonicalization, HMAC signature, and verify path."
 source_files:
   - "specs/03_architecture/adrs/ADR-S11-005-consent-symmetric-grant-revoke-schema.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s11", "consent", "schema", "regulatory", "privacy"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S11-005-consent-symmetric-grant-revoke-schema.md@f964d9e16c0b8c6ac07060c534e84d4bc13d3d3f"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-S11-005 — Consent grant ↔ revoke symmetric schema
 
 GDPR Art. 7(3) + LGPD Art. 8 §5 require that "withdrawing consent shall be as easy as giving it," and

@@ -22,18 +22,19 @@
  *                 `sam`-labelled tenant would mis-land in US storage — an LGPD cross-border
  *                 violation. Re-add to PROVISIONED_MACROS only once PROD_SAM has a real
  *                 SAM-jurisdiction bucket/endpoint.)
- *   apac → nrt   (Asia-Pacific — Tokyo; NOT provisioned in Phase 1)
+ *   apac → nrt   (Asia-Pacific — Tokyo; provisioned via the APAC R2 bucket)
  *   afr  → REJECT (no African colo provisioned; must be rejected at signup)
  *
- * Provisioned = { wnam, enam, weur } — exactly the macros backed by a
- * jurisdiction-correct R2 bucket today. sam/apac/afr are valid macro codes (the
- * D1 CHECK accepts them and routing still recognises them) but are NOT
- * provisioned, so signup MUST reject them rather than silently mis-land the
- * tenant's data in the wrong jurisdiction.
+ * Provisioned = { wnam, enam, weur, apac } — the four macros backed by the
+ * currently provisioned storage paths. `apac` resolves to Tokyo (`nrt`) and
+ * uses the APAC bucket; `sam` and `afr` remain valid macro codes (the D1 CHECK
+ * accepts them and routing recognises `sam`) but are NOT provisioned, so signup
+ * MUST reject them rather than silently mis-land the tenant's data.
  *
- * This provisioned set is the SINGLE SOURCE OF TRUTH shared by THREE consumers
+ * This provisioned set is the SINGLE SOURCE OF TRUTH shared by three consumers
  * (this file, the Rust `region_map.rs`, and signup `clerk.ts`); all three are
- * pinned together by `worker/tests/region-map.test.ts` (the 3-way drift gate).
+ * pinned together by `worker/tests/region-map.test.ts` (the three-consumer drift
+ * gate). The provisioned cardinality is four macros.
  */
 
 /** The canonical CoreLink data-residency MACRO region codes (D1 CHECK set). */
@@ -41,6 +42,11 @@ export type MacroRegion = "wnam" | "enam" | "weur" | "sam" | "apac" | "afr";
 
 /** Cloudflare colo codes CoreLink routes residency traffic to. */
 export type Colo = "iad" | "lhr" | "sam" | "nrt";
+
+// Keep the macro vocabulary and the edge-colo vocabulary distinct at the
+// comparison boundary. Both happen to be encoded as `sam` today, but callers
+// must compare through `coloMatchesMacro`, not by treating a macro as a colo.
+const COLO_SAM: Colo = "sam";
 
 /**
  * FROZEN macro→colo map. `afr` is intentionally ABSENT (no provisioned colo →
@@ -51,7 +57,7 @@ const MACRO_TO_COLO: Readonly<Record<MacroRegion, Colo | undefined>> = {
   wnam: "iad",
   enam: "iad",
   weur: "lhr",
-  sam: "sam",
+  sam: COLO_SAM,
   apac: "nrt",
   afr: undefined,
 };
@@ -96,6 +102,13 @@ export function isMacroRegion(s: string): s is MacroRegion {
 export function coloForMacro(macro: string): Colo | undefined {
   if (!isMacroRegion(macro)) return undefined;
   return MACRO_TO_COLO[macro];
+}
+
+/** Compare a trusted macro claim with the serving colo without stringly
+ * equating the two different vocabularies at call sites. */
+export function coloMatchesMacro(macro: string, servingColo: string): boolean {
+  const expected = coloForMacro(macro);
+  return expected !== undefined && expected === servingColo;
 }
 
 /** Is the macro a region whose serving colo is IAD (the local US path)? */

@@ -3,15 +3,19 @@ type: "ComplianceControl"
 title: "Sub-processor / vendor DPA reviews"
 description: "The evidence store and governance for Legal Counsel's review of each CoreLink sub-processor's Data Processing Agreement, transfer mechanism, and GDPR Art. 28 flow-down obligations."
 source_files:
-  - docs/compliance/vendor-reviews/README.md
-  - docs/compliance/vendor-reviews/_TEMPLATE.md
-  - docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+  - "docs/compliance/vendor-reviews/README.md"
+  - "docs/compliance/vendor-reviews/_TEMPLATE.md"
+  - "docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md"
+source_blobs:
+  - "docs/compliance/vendor-reviews/README.md@a182ae576301b5bca48850387f1c5c236e1b4acb"
+  - "docs/compliance/vendor-reviews/_TEMPLATE.md@244d5e9f889f2b025897785e773607805b198fec"
+  - "docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md@ce65d5333b62981d60836395c2dcbb66cb845b1f"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 provenance: "AUTHORED"
 tags: ["compliance", "gdpr", "sub-processors", "dpa", "vendor-review", "legal"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 CoreLink discloses the third parties (Cloudflare, Clerk, Stripe, GitHub, Grafana, Neon, PagerDuty, Sigstore) that process customer data, and each disclosure must point at a recorded outcome of Legal Counsel's review of that vendor's Data Processing Agreement (DPA), Standard Contractual Clauses (SCCs), transfer mechanism, and flow-down obligations. The `docs/compliance/vendor-reviews/` directory is that evidence store: one file per active sub-processor, named to match the exact `legal_review_evidence:` path declared in the contractual disclosures. The references MUST resolve to a real file, and a validator enforces both path format and file existence so a missing evidence record cannot silently pass. As of this checkpoint every file is still a TEMPLATE — the structural gap is closed, but the actual signed-off review content is owner/legal work and must not be fabricated.
 
 # Role

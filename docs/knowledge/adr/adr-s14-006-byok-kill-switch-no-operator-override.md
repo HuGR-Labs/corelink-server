@@ -4,12 +4,14 @@ title: "ADR-S14-006 — BYOK CMK revocation kill switch (hard-fail, no operator 
 description: "Why CMK revocation propagates in <=5 min via 60s detection + 300s hard DEK-cache TTL, with a compile-time absence of any operator override and conservative network-partition degrade."
 source_files:
   - "specs/03_architecture/adrs/ADR-S14-006-byok-kill-switch-no-operator-override.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s14", "byok", "kill-switch", "crypto-sovereignty"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S14-006-byok-kill-switch-no-operator-override.md@c0785bb9b64bbe7e1d1303927a4bde6640dff3fc"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-S14-006 — BYOK CMK revocation kill switch (hard-fail, no operator override)
 
 Crypto sovereignty — the customer's ability to revoke their Customer-Managed Key and have CoreLink immediately cease all access — is the entire value proposition of BYOK enterprise; without an enforced kill switch, BYOK is theater. This ADR (ACTIVE) records three hard decisions: a ≤5 min global revocation SLA, the compile-time *absence* of any operator override, and conservative (read-only) degrade on network partition.

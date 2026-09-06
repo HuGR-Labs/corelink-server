@@ -46,6 +46,9 @@ use crate::harness::{
 };
 use crate::personas::Persona;
 
+mod adapters_auth;
+use adapters_auth::oci_basic_header;
+
 /// Run the adapter journeys (cargo / npm / pip / brew / OCI).
 pub fn run(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
     vec![
@@ -647,40 +650,6 @@ fn oci_token_anonymous_denied(cfg: &Config, client: &Client) -> JourneyResult {
         return JourneyResult::fail(name, ms(start), m);
     }
     JourneyResult::pass(name, ms(start))
-}
-
-/// Build the OCI Basic auth header: `Basic base64("oci:<pat>")` (the `oci:`
-/// username is the adapter's convention; the PAT is the password).
-fn oci_basic_header(pat: &str) -> String {
-    // Minimal standard base64 without pulling a new dep (harness deps are
-    // frozen). `oci:<pat>` is ASCII; encode it directly.
-    format!("Basic {}", base64_standard(format!("oci:{pat}").as_bytes()))
-}
-
-/// Standard-alphabet base64 (no padding tricks) — tiny inline encoder so we do
-/// NOT add a dependency (the harness dep set is frozen).
-fn base64_standard(input: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
-    for chunk in input.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = *chunk.get(1).unwrap_or(&0) as u32;
-        let b2 = *chunk.get(2).unwrap_or(&0) as u32;
-        let n = (b0 << 16) | (b1 << 8) | b2;
-        out.push(ALPHABET[((n >> 18) & 0x3f) as usize] as char);
-        out.push(ALPHABET[((n >> 12) & 0x3f) as usize] as char);
-        if chunk.len() > 1 {
-            out.push(ALPHABET[((n >> 6) & 0x3f) as usize] as char);
-        } else {
-            out.push('=');
-        }
-        if chunk.len() > 2 {
-            out.push(ALPHABET[(n & 0x3f) as usize] as char);
-        } else {
-            out.push('=');
-        }
-    }
-    out
 }
 
 // ── npm / pip / brew (registry/proxy surfaces) ──────────────────────────────

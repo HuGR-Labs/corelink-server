@@ -4,12 +4,14 @@ title: "ADR-S32-001 — Permit BSL-1.0 in the license allowlist"
 description: "Formally ratifies the Boost Software License 1.0 as a permitted license so dual-licensed transitive deps (ryu/ryu-js) clear the SBOM audit unambiguously rather than as CONDITIONAL."
 source_files:
   - "specs/03_architecture/adrs/ADR-S32-001-bsl-1.0-license-allowlist.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "compliance", "license", "supply-chain", "bsl-1.0", "cargo-deny", "s32"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S32-001-bsl-1.0-license-allowlist.md@72a4364cb43c61f425641caa42dff78e5487d992"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-S32-001 — Permit BSL-1.0 in the license allowlist
 
 The wave-32 SBOM/license audit surfaced two transitive deps (`ryu`, `ryu-js`) dual-licensed `Apache-2.0 OR BSL-1.0`; the Apache-2.0 leg already satisfies the OR, so the auditor flagged them CONDITIONAL and recommended a short ADR to make the result unambiguous. This ADR adds BSL-1.0 to the permitted-license allowlist at both artifact sources, removing per-report manual "which leg" triage and pre-clearing future BSL-1.0 deps. It exists because BSL-1.0 is among the most permissive OSI-approved licenses — strictly less restrictive than already-allowlisted Apache-2.0 in compiled form.

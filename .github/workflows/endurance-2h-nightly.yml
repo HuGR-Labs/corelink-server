@@ -173,12 +173,12 @@ jobs:
         run: |
           set -euo pipefail
           # Fetch the last 7 successful endurance-2h-nightly runs (one per
-          # day on the schedule). The first-run case (no history) just
-          # logs and exits 0 to seed the baseline.
+          # day on the schedule). History and the rolling baseline are inputs
+          # to a gate: absent or malformed data must fail closed.
           mkdir -p tests/load/results/endurance-2h-baseline
           # Use the GitHub REST API via gh CLI to enumerate prior runs.
           # Pinned action elsewhere; gh is preinstalled on ubuntu-22.04.
-          gh run list \
+          timeout 30s gh run list \
             --workflow=endurance-2h-nightly.yml \
             --branch=main \
             --status=success \
@@ -192,7 +192,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json, pathlib, sys
+          import json, math, pathlib, sys
 
           REGRESSION_THRESHOLD = 1.20  # 20% over baseline → FAIL
 
@@ -201,42 +201,59 @@ jobs:
 
           curr_dir = pathlib.Path("tests/load/results/endurance-2h-download")
           summaries = sorted(curr_dir.rglob("endurance-2h-summary-*.json"))
-          if not summaries:
-              print("::warning::no current summary present; cannot drift-check")
-              sys.exit(0)
-
-          curr = json.loads(summaries[-1].read_text())
-          curr_metrics = curr.get("metrics") or {}
+          if len(summaries) != 1:
+              print(f"::error::expected exactly one current endurance summary, found {len(summaries)}")
+              sys.exit(1)
+          try:
+              curr = json.loads(summaries[0].read_text())
+          except (OSError, ValueError) as exc:
+              print(f"::error::current endurance summary is malformed: {exc}")
+              sys.exit(1)
+          curr_metrics = curr.get("metrics") if isinstance(curr, dict) else None
+          if not isinstance(curr_metrics, dict):
+              print("::error::current endurance summary has no metrics object")
+              sys.exit(1)
 
           def extract_p99(metrics, op):
               # k6 tag-filtered submetrics surface as e.g.
               # "endurance_op_latency_ms{op:cas_read}" in the summary export.
               key = f"endurance_op_latency_ms{{op:{op}}}"
-              m = metrics.get(key) or {}
-              return (m.get("p(99)") or m.get("p99") or None)
+              m = metrics.get(key)
+              if not isinstance(m, dict):
+                  return None
+              value = m.get("p(99)", m.get("p99"))
+              if isinstance(value, bool) or not isinstance(value, (int, float)):
+                  return None
+              return float(value) if math.isfinite(float(value)) and value > 0 else None
 
           # Baseline = mean of last 7 successful runs' p99 per op.
-          # The runs.json file lists databaseIds; in practice the baseline
-          # would be reconstructed by downloading each prior artifact via
-          # `gh run download <id> --name endurance-2h-results-*`. For the
-          # initial commit we surface the *current* p99 for operator review
-          # and exit 0 if no baseline file is present in this checkout.
           baseline_file = pathlib.Path("tests/load/results/endurance-2h-baseline/rolling-7d-p99.json")
           if not baseline_file.exists():
-              print("::warning::no rolling-7d baseline file present yet (first run seed)")
-              for op in OPS:
-                  p99 = extract_p99(curr_metrics, op)
-                  print(f"seed-baseline op={op} p99={p99}")
-              sys.exit(0)
-
-          baseline = json.loads(baseline_file.read_text())
+              print("::error::rolling-7d p99 baseline is missing; cannot prove endurance health")
+              sys.exit(1)
+          try:
+              baseline = json.loads(baseline_file.read_text())
+          except (OSError, ValueError) as exc:
+              print(f"::error::rolling-7d p99 baseline is malformed: {exc}")
+              sys.exit(1)
+          if not isinstance(baseline, dict):
+              print("::error::rolling-7d p99 baseline must be an object")
+              sys.exit(1)
+          missing = [op for op in OPS if op not in baseline]
+          if missing:
+              print(f"::error::rolling-7d p99 baseline is partial; missing: {', '.join(missing)}")
+              sys.exit(1)
           failed = []
           for op in OPS:
               curr_p99 = extract_p99(curr_metrics, op)
               base_p99 = baseline.get(op)
-              if curr_p99 is None or base_p99 is None or base_p99 == 0:
-                  print(f"::warning::op={op} missing data (curr={curr_p99} base={base_p99}); skipping")
-                  continue
+              if curr_p99 is None:
+                  print(f"::error::current p99 is missing or invalid for op={op}")
+                  sys.exit(1)
+              if isinstance(base_p99, bool) or not isinstance(base_p99, (int, float)) or not math.isfinite(float(base_p99)) or base_p99 <= 0:
+                  print(f"::error::baseline p99 is missing or invalid for op={op}: {base_p99!r}")
+                  sys.exit(1)
+              base_p99 = float(base_p99)
               ratio = curr_p99 / base_p99
               status = "OK" if ratio <= REGRESSION_THRESHOLD else "FAIL"
               print(f"op={op} curr_p99={curr_p99:.2f}ms baseline_p99={base_p99:.2f}ms ratio={ratio:.3f} -> {status}")

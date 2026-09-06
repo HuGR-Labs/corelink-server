@@ -4,12 +4,14 @@ title: "ADR-0065 — Event-Log DO: a thin, generic, append-only primitive"
 description: "Why CoreLink hosts a domain-agnostic append-only log Durable Object and the consumer (hugit) owns the integrity chain."
 source_files:
   - "specs/03_architecture/adrs/ADR-0065-event-log-do-thin-append-only-primitive.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "durable-object", "event-log", "primitive", "append-only", "hugit-p2"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0065-event-log-do-thin-append-only-primitive.md@190923b4bd2a78acd553d2a84e8a831079939638"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-0065 — Event-Log DO: a thin, generic, append-only primitive
 
 The hugit-P2 campaign needed a per-tenant, totally-ordered, append-only event log to back hugit's

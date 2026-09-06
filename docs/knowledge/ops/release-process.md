@@ -4,16 +4,18 @@ title: "Release / GA tag process"
 description: "How the v1.0.0-GA tag is cut: the dual-key 2-signer sign-off (ADR-0034b fallback), the spec-corpus + production-wiring + compliance freeze state recorded in the tag, and the acknowledged open carve-outs tracked for post-GA closure."
 source_files:
   - "docs/release/v1.0.0-GA-tag-draft-final.txt"
-  - "crates/corelink-container/src/routes/audit_drain.rs"
+  - "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_01.rs"
   - "crates/corelink-container/src/main.rs"
 source_blobs:
-  - "crates/corelink-container/src/routes/audit_drain.rs@156104e074f9b0a4bf88d98c8195e839a0466a58"
-checkpoint_sha: "ee065d0ff74186f615f0dd3be0a67faff3e70a6f"
+  - "docs/release/v1.0.0-GA-tag-draft-final.txt@715960c16b88debd7150bbb1b8e45446282387f3"
+  - "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_01.rs@424e6669bc4111af2aeb71c9e6c14d9df9e392cd"
+  - "crates/corelink-container/src/main.rs@f799f8d154e5aa226792dd08995a10ee944f2fb7"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 provenance: "AUTHORED"
 tags: ["ops", "release", "ga", "sign-off", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # Release / GA tag process
 
 The GA tag is not a `git tag -m`: it is a governed cutover artifact that records, in the annotated tag
@@ -46,10 +48,10 @@ proves the artifact, and to the GA staffing waiver in
    drain): the `POST /_internal/audit/drain` route is mounted and actually seals the live `audit_outbox`
    into the BLAKE3 tamper-evident chain — now with an Ed25519-SIGNED chain head (CF-6, migration 0080) —
    when the erase/internal auth key + D1 are bound
-   (`crates/corelink-container/src/main.rs:621`, now mounted directly alongside the
+   (`crates/corelink-container/src/main.rs:462-462`, now mounted directly alongside the
    `/_internal/dsr/{erase,verify,access,portability,rectification}` family that the DSAR-completion work
    expanded; seal logic at
-   `crates/corelink-container/src/routes/audit_drain.rs:649`/`:982`/`:1072`), and stays mounted-inert
+   `crates/corelink-container/src/routes/audit_drain/b126_m2_impl_01.rs:530`/`:660`/`crates/corelink-container/src/routes/audit_drain/b126_m2_impl_01.rs:100`), and stays mounted-inert
    (fail-CLOSED unmount) when the key+D1 are absent — it is NOT a designed-only skeleton (this matches the
    audit-chain concept's WIRED treatment, [compliance/audit-chain.md](/compliance/audit-chain.md));
    **(c) DESIGNED-but-UNWIRED skeletons** enumerated as the target GA posture, not running GA wiring —

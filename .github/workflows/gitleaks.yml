@@ -47,6 +47,8 @@ permissions:
   contents: read
 
 concurrency:
+  # Ref and event are the isolation boundaries: a push, scheduled sweep, and
+  # manual dispatch on the same branch must not cancel one another.
   group: gitleaks-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
@@ -186,7 +188,24 @@ jobs:
           tar -xzf "${tarball}" -C "${RUNNER_TEMP}/gitleaks-bin" gitleaks
           rm -f "${tarball}"
           echo "${RUNNER_TEMP}/gitleaks-bin" >> "${GITHUB_PATH}"
-          "${RUNNER_TEMP}/gitleaks-bin/gitleaks" version
+          installed_version="$("${RUNNER_TEMP}/gitleaks-bin/gitleaks" version)"
+          test "${installed_version}" = "${GITLEAKS_VERSION}"
+
+      - name: gitleaks shape regression
+        # Load-bearing cells for the custom 64-hex rule. This invokes the same
+        # checked-in config and the same pinned binary used by the scan below.
+        run: bash scripts/tests/gitleaks-shape-regression.sh
+
+      - name: gitleaks history census contract
+        # Exercise the history guard and scanner-report mutations without
+        # rescanning this repository's full graph on every pull request.
+        run: bash scripts/tests/gitleaks-history-census-regression.sh
+
+      - name: gitleaks shape history census
+        # Only full-history lanes can prove the known historical positive and
+        # census the commit graph. The script refuses shallow/grafted graphs.
+        if: github.event_name != 'pull_request'
+        run: bash scripts/tests/gitleaks-shape-history-census.sh HEAD
 
       - name: gitleaks detect — PR commit range
         # On a PR we scan ONLY the commits the PR introduces (base..head) so the

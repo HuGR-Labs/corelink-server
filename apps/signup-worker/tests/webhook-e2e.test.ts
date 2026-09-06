@@ -161,7 +161,13 @@ function makeUserCreatedEvent(userId = "user_2test"): ClerkUserCreatedEvent {
     type: "user.created",
     data: {
       id: userId,
-      email_addresses: [{ id: "em_1", email_address: `${userId}@test.com` }],
+      email_addresses: [
+        {
+          id: "em_1",
+          email_address: `${userId}@test.com`,
+          verification: { status: "verified" },
+        },
+      ],
       primary_email_address_id: "em_1",
       external_accounts: [{ provider: "oauth_github", username: "testuser" }],
     },
@@ -242,7 +248,7 @@ describe("Clerk webhook — Stream-5 end-to-end flow", () => {
       CORELINK_API_BASE: "https://corelink-api.humangr.com",
       // #195 fail-loud: provisioning 500s BEFORE any tenant write when the
       // PAT-mint key is absent — the e2e env must carry it like prod does.
-      CORELINK_INTERNAL_AUTH_KEY: "test-internal-auth-key-e2e",
+      CORELINK_INTERNAL_AUTH_KEY: "test-internal-auth-key-e2e-0123456789",
     };
 
     // Inject a stub api that records calls.
@@ -299,7 +305,7 @@ describe("Clerk webhook — Stream-5 end-to-end flow", () => {
     const env: AutoProvisionEnv = {
       CLERK_WEBHOOK_SECRET: WEBHOOK_SECRET,
       CORELINK_API_BASE: "https://corelink-api.humangr.com",
-      CORELINK_INTERNAL_AUTH_KEY: "test-internal-auth-key-e2e",
+      CORELINK_INTERNAL_AUTH_KEY: "test-internal-auth-key-e2e-0123456789",
     };
     const stubApi = () => ({
       async createTenant(_name: string, _ownerUserId: string, region: string) {
@@ -355,7 +361,7 @@ describe("Clerk webhook — Stream-5 end-to-end flow", () => {
       CLERK_WEBHOOK_SECRET: WEBHOOK_SECRET,
       CORELINK_API_BASE: "https://corelink-api.humangr.com",
       CONFIG_DB: db as unknown as Parameters<typeof defaultApiClient>[0]["CONFIG_DB"],
-      CORELINK_INTERNAL_AUTH_KEY: "test-internal-auth-key-e2e",
+      CORELINK_INTERNAL_AUTH_KEY: "test-internal-auth-key-e2e-0123456789",
       // No CLERK_SECRET_KEY → publishUserMetadata is a no-op (dev path).
     };
 
@@ -667,7 +673,7 @@ describe("Clerk webhook — Stream-5 end-to-end flow", () => {
       CLERK_WEBHOOK_SECRET: WEBHOOK_SECRET,
       CORELINK_API_BASE: "https://corelink-api.humangr.com",
       // #195 fail-loud: the PAT-mint key gate runs before provisioning.
-      CORELINK_INTERNAL_AUTH_KEY: "test-internal-auth-key-e2e",
+      CORELINK_INTERNAL_AUTH_KEY: "test-internal-auth-key-e2e-0123456789",
     };
 
     const claimCapturingApi = () => ({

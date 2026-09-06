@@ -6,14 +6,20 @@ source_files:
   - "worker/src/lib/session_exchange.ts"
   - "worker/src/lib/runner_mint.ts"
   - "worker/src/lib/auth_rotate.ts"
+  - "worker/src/lib/pat_expiry.ts"
+  - "worker/src/pat_issue_rate_limit.ts"
 source_blobs:
+  - "worker/src/lib/session_exchange.ts@a14a911be5a2edb415ad9877009fba722f934c4a"
   - "worker/src/lib/runner_mint.ts@5348e004fe2fd09568d20fa0dcf35f80f4bdb7a2"
-checkpoint_sha: "9615e0e694e7c839430341a065ab1f949dbf6dfe"
+  - "worker/src/lib/auth_rotate.ts@fa9e15868a4d04a803d7f5769469ff6d6b406f3e"
+  - "worker/src/lib/pat_expiry.ts@7389d84890e7b7a8969a7ef5bbc7f31a26d91557"
+  - "worker/src/pat_issue_rate_limit.ts@47277c780bb9d0853821d5bc92ab79975c9cca96"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "mint", "worker-edge", "tenancy"]
 timestamp: "2026-06-27T00:00:00Z"
----
 
+---
 # The edge PAT-mint lifecycle (one authority, three consumers)
 
 CoreLink mints Personal Access Tokens from several edge surfaces — a hugit forge
@@ -26,13 +32,13 @@ D1 `pat` row. The three public handlers above it are thin, fail-CLOSED *authoriz
 each proves the caller may mint (a verified session, an internal-auth key plus a
 runners entitlement, or ownership of the old PAT), then delegates the privileged work to
 the shared chokepoint (`worker/src/lib/session_exchange.ts:544-552`,
-`worker/src/lib/runner_mint.ts:589-603`, `worker/src/lib/auth_rotate.ts:286-292`). Each
+`worker/src/lib/runner_mint.ts:589-603`, `worker/src/lib/auth_rotate.ts:295-301`). Each
 consumer now presents the **DEDICATED** `CORELINK_PAT_MINT_AUTH_KEY` to that chokepoint
 — falling back to the shared `CORELINK_INTERNAL_AUTH_KEY` ONLY when the dedicated key is
 unset — because the container's `/_internal/pat/mint` gate now REQUIRES the dedicated
 mint key (DD-HIGH): once the dedicated key is provisioned the shared internal-auth key
 alone no longer authorizes a mint (`worker/src/lib/session_exchange.ts:505-506`,
-`worker/src/lib/runner_mint.ts:288-289`, `worker/src/lib/auth_rotate.ts:180-181`). The
+`worker/src/lib/runner_mint.ts:288-289`, `worker/src/lib/auth_rotate.ts:181-182`). The
 payoff is one signing key, one audit emit, and one revocation surface for
 INV-PAT-REVOKE-PROPAGATION — there is no second mint path to drift, leak, or forget to
 throttle (`worker/src/lib/session_exchange.ts:11-17`).
@@ -65,6 +71,8 @@ place a leaked token can be revoked, since every consumer's token lands in the s
 
 # How it works
 
+- The edge uses one shared expiry predicate (`expires_ms === 0` or a future timestamp), and the DO-side PAT issue bucket validates tenant-bound state before admitting a mint (`worker/src/lib/pat_expiry.ts:11-12`, `worker/src/pat_issue_rate_limit.ts:39-54`).
+
 - `mintScopedPat` is the sole exported mint authority; it takes a branded `MintGrant`,
   SHA-256-derives a stable per-principal UUID from the grant's `principalSource`, then
   builds a FRESH server-to-server request to the container's `/_internal/pat/mint`
@@ -94,15 +102,15 @@ place a leaked token can be revoked, since every consumer's token lands in the s
   (an outage), the code does NOT fail the mint open — it logs the outage fail-LOUD and
   falls through to a module-level in-memory backstop. A per-isolate `Map`
   (`_inMemoryMintCounts`) caps mints per principal to `MAX_IN_MEMORY_BURST` (5, a
-  TIGHTER ceiling than the durable cap of 10) for the isolate's lifetime, bounding the
-  Argon2id CPU a loop-mint can burn while D1 is down; the backstop increments and is
-  evaluated on EVERY request (both D1-healthy and D1-outage paths), not only during the
-  outage (`worker/src/lib/session_exchange.ts:343-351`,
-  `worker/src/lib/session_exchange.ts:364-392`). The map is LRU-bounded at
+  TIGHTER ceiling than the durable cap of 10) for the current deterministic fallback
+  window, bounding the Argon2id CPU a loop-mint can burn while D1 is down. Healthy D1
+  is authoritative and discards stale outage state; the fallback expires when its
+  window rolls (`worker/src/lib/session_exchange.ts:349-383`,
+  `worker/src/lib/session_exchange.ts:386-420`). The map is LRU-bounded at
   `MAX_IN_MEMORY_MINT_ENTRIES` (50 000) via delete-then-set + oldest-key eviction, so a
   long-lived isolate under principal churn cannot grow it unbounded; an evicted
   principal only loses its tighter in-isolate burst memory, never the persistent gate
-  (`worker/src/lib/session_exchange.ts:371-380`).
+  (`worker/src/lib/session_exchange.ts:393-406`).
 - After a 200 from the container it persists the `pat` row (using the returned Argon2id
   hash) and fails CLOSED on any FK/UNIQUE/CHECK/transport error — a token whose row was
   not written is never returned (`worker/src/lib/session_exchange.ts:751-803`).
@@ -158,8 +166,8 @@ place a leaked token can be revoked, since every consumer's token lands in the s
   `MintGrant.fromRotation` whose ceiling is the OLD row's canonical scope (so a same-tenant
   `admin` rotation is permitted), and only THEN soft-revokes the old PAT — so a mint
   failure never leaves a zero-PAT window (`worker/src/lib/auth_rotate.ts:237-241`,
-  `worker/src/lib/auth_rotate.ts:247-252`, `worker/src/lib/auth_rotate.ts:258-265`,
-  `worker/src/lib/auth_rotate.ts:286-292`, `worker/src/lib/auth_rotate.ts:319-325`).
+  `worker/src/lib/auth_rotate.ts:249-254`, `worker/src/lib/auth_rotate.ts:267-274`,
+  `worker/src/lib/auth_rotate.ts:295-301`, `worker/src/lib/auth_rotate.ts:328-334`).
 
 # Invariants
 
@@ -203,7 +211,7 @@ place a leaked token can be revoked, since every consumer's token lands in the s
 - Revocation shares ONE surface: both the runner-revoke and the rotate-old-key write are
   the same idempotent `UPDATE pat SET revoked_at_ms ... WHERE ... revoked_at_ms IS NULL`
   the native plane honors (`worker/src/lib/runner_mint.ts:686-697`,
-  `worker/src/lib/auth_rotate.ts:319-325`).
+  `worker/src/lib/auth_rotate.ts:328-334`).
 
 # Gotchas
 
@@ -221,7 +229,7 @@ place a leaked token can be revoked, since every consumer's token lands in the s
   container mint maps all three since read-only became mintable end-to-end, PR #681), so a
   rotation preserves privilege EXACTLY — no escalation, no weakening. Only a genuinely
   unmappable scope (a label OUTSIDE that canonical set) is refused 422
-  (`worker/src/lib/auth_rotate.ts:266-272`).
+  (`worker/src/lib/auth_rotate.ts:275-281`).
 - A non-200 from the container mint is collapsed to a single fail-CLOSED 500 at the edge,
   so an unauthenticated caller learns nothing about the internal mint surface
   (`worker/src/lib/session_exchange.ts:686-694`). See [the 2-level PAT moat](/auth/pat-moat.md)
@@ -243,11 +251,11 @@ place a leaked token can be revoked, since every consumer's token lands in the s
 7. `worker/src/lib/session_exchange.ts:613` — SHA-256-derived stable per-principal UUID from the grant's `principalSource`.
 8. `worker/src/lib/session_exchange.ts:621-625` — unmappable scope fails CLOSED with a 500 before any container call.
 9. `worker/src/lib/session_exchange.ts:645-648` — per-principal mint throttle → 429 fail-CLOSED (the chokepoint's only self-gate beyond the ceiling).
-9a. `worker/src/lib/session_exchange.ts:313-321` — `checkMintThrottle` is exported with parametrizable window + in-memory caps, so the runner path reuses it as the M22(b) per-tenant ceiling.
-9b. `worker/src/lib/session_exchange.ts:330-339` — durable throttle is ONE atomic `INSERT … ON CONFLICT … DO UPDATE … RETURNING count` (concurrent mints cannot race the cap).
-9c. `worker/src/lib/session_exchange.ts:343-351` — F20: a thrown D1 write logs fail-LOUD and falls through to the in-memory backstop (never fail-open).
-9d. `worker/src/lib/session_exchange.ts:364-392` — the in-memory per-isolate burst backstop (default cap 5 < durable 10) fires on EVERY request to bound Argon2id CPU during a D1 outage.
-9e. `worker/src/lib/session_exchange.ts:371-380` — LRU bound (50 000 entries, delete-then-set + oldest-key eviction) so a long-lived isolate can't grow the map unbounded.
+9a. `worker/src/lib/session_exchange.ts:319-326` — `checkMintThrottle` is exported with parametrizable window + in-memory caps, so the runner path reuses it as the M22(b) per-tenant ceiling.
+9b. `worker/src/lib/session_exchange.ts:333-348` — durable throttle is ONE atomic `INSERT … ON CONFLICT … DO UPDATE … RETURNING count` (concurrent mints cannot race the cap).
+9c. `worker/src/lib/session_exchange.ts:349-359` — F20: a thrown D1 write logs fail-LOUD and falls through to the in-memory backstop (never fail-open).
+9d. `worker/src/lib/session_exchange.ts:371-399` — healthy D1 is authoritative; the in-memory outage backstop uses a deterministic expiring window (default cap 5 < durable 10).
+9e. `worker/src/lib/session_exchange.ts:400-406` — LRU bound (50 000 entries, delete-then-set + oldest-key eviction) so a long-lived isolate can't grow the map unbounded.
 10. `worker/src/lib/session_exchange.ts:664-675` — the FRESH server-to-server request to `/_internal/pat/mint` with the server-trusted internal-auth header.
 11. `worker/src/lib/session_exchange.ts:686-694` — a non-200 container mint collapses to a single fail-CLOSED 500 (no internal oracle).
 12. `worker/src/lib/session_exchange.ts:717-720` — the container mint writes NO `pat` row; the caller persists it (the load-bearing fix).
@@ -271,8 +279,15 @@ place a leaked token can be revoked, since every consumer's token lands in the s
 25. `worker/src/lib/runner_mint.ts:686-697` — idempotent `UPDATE pat SET revoked_at_ms ... WHERE ... revoked_at_ms IS NULL` (tenant-scoped when `owner_tenant` is present, else by `pat_id` alone).
 26. `worker/src/lib/auth_rotate.ts:48` — Consumer 3 imports `mintScopedPat` + `MintGrant` + `canonicalizePatScope` (no second mint path).
 27. `worker/src/lib/auth_rotate.ts:237-241` — `SELECT tenant_id, scope, expires_ms, revoked_at_ms FROM pat WHERE pat_id = ?1` (read the old row).
-28. `worker/src/lib/auth_rotate.ts:247-252` — unknown OR already-revoked PAT → 404 (never silently mint).
-29. `worker/src/lib/auth_rotate.ts:258-265` — caller-named tenant ≠ the row's tenant → 403 (REV-S2, no cross-tenant rotate).
-30. `worker/src/lib/auth_rotate.ts:266-272` — canonicalize the old scope; `read-only`/`read-write`/`admin` all rotate faithfully, only a genuinely unmappable label → 422 (preserve privilege exactly).
-31. `worker/src/lib/auth_rotate.ts:286-292` — mint NEW via the chokepoint with `MintGrant.fromRotation` (ceiling = the old scope, so a same-tenant admin rotation is permitted); on non-200 return it and do NOT revoke (no zero-PAT window).
-32. `worker/src/lib/auth_rotate.ts:319-325` — revoke OLD only after the new mint succeeds (shared idempotent soft-revoke).
+28. `worker/src/lib/auth_rotate.ts:249-254` — unknown OR already-revoked PAT → 404 (never silently mint).
+29. `worker/src/lib/auth_rotate.ts:267-274` — caller-named tenant ≠ the row's tenant → 403 (REV-S2, no cross-tenant rotate).
+30. `worker/src/lib/auth_rotate.ts:275-281` — canonicalize the old scope; `read-only`/`read-write`/`admin` all rotate faithfully, only a genuinely unmappable label → 422 (preserve privilege exactly).
+31. `worker/src/lib/auth_rotate.ts:295-301` — mint NEW via the chokepoint with `MintGrant.fromRotation` (ceiling = the old scope, so a same-tenant admin rotation is permitted); on non-200 return it and do NOT revoke (no zero-PAT window).
+32. `worker/src/lib/auth_rotate.ts:328-334` — revoke OLD only after the new mint succeeds (shared idempotent soft-revoke).
+- `worker/src/lib/pat_expiry.ts:11-12` — canonical zero-sentinel/future expiry predicate shared by edge auth paths.
+- `worker/src/pat_issue_rate_limit.ts:39-54` — fail-closed validation of the tenant-bound PAT issue bucket state.
+
+
+# Revalidation
+
+This concept was revalidated against the cumulative implementation tree; its existing source citations remain the controlling evidence for the behavior described above.

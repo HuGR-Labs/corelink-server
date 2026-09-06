@@ -4,12 +4,14 @@ title: "CI gate machinery & quality gaps"
 description: "The test-quality / methodology weakness map: how the user-simulation suites are built, where they create false confidence (green-by-vacuum, 404-as-PASS, curl-not-CLI, 502-as-PASS), and the fix themes."
 source_files:
   - "docs/testing/2026-06-23-gapmap-quality.md"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+source_blobs:
+  - "docs/testing/2026-06-23-gapmap-quality.md@52fc0e3744f2132f6389fb678cbae64b24f7a701"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 provenance: "AUTHORED"
 tags: ["testing", "ci", "gates", "false-confidence", "methodology"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # CI gate machinery & quality gaps
 
 A test that passes by 503/skip/gate/wrong-shape is worse than no test, because it manufactures

@@ -16,7 +16,7 @@ use super::{Phase, PhaseLedger};
 
 /// The gate is OFF by default and that default must keep the header exactly
 /// as it was before the PAT-detail split existed: no `oargon`, no `opermit`,
-/// their time left inside the `oother` residue — while the two NEUTRAL
+/// their time represented by the explicit handler phase — while the two NEUTRAL
 /// phases (`ortier`, `oaudit`) publish either way.
 ///
 /// This is a security property, not a formatting preference — see
@@ -60,9 +60,9 @@ fn the_credential_phases_are_absent_when_the_gate_is_off() {
     // 200 total - 10 opat - 20 ortier - 15 oaudit = 155; only the two
     // credential-path phases stay in the residue.
     assert_eq!(
-        off.get("oother"),
+        off.get("ohandler"),
         Some(&155),
-        "only the gated credential phases fall into oother"
+        "only the gated credential phases are excluded from the public split"
     );
 
     // With the gate on, the same ledger partitions the very same total.
@@ -71,5 +71,5 @@ fn the_credential_phases_are_absent_when_the_gate_is_off() {
     assert_eq!(on.get("opermit"), Some(&5));
     assert_eq!(on.get("ortier"), Some(&20));
     assert_eq!(on.get("oaudit"), Some(&15));
-    assert_eq!(on.get("oother"), Some(&60), "190 - 90 - 5 - 20 - 15 = 60");
+    assert_eq!(on.get("ohandler"), Some(&60), "190 - 90 - 5 - 20 - 15 = 60");
 }

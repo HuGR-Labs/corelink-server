@@ -5,12 +5,15 @@ description: "The container-side mirror of the Worker's monthly request-count ca
 source_files:
   - "crates/corelink-container/src/request_count.rs"
   - "crates/corelink-eviction/src/tier.rs"
-checkpoint_sha: "e1ef20379e55a165acb45a8541eb4ebbc452377a"
+source_blobs:
+  - "crates/corelink-container/src/request_count.rs@e5eef9aac432e24e6a1928acbb58db62711027a4"
+  - "crates/corelink-eviction/src/tier.rs@4cf334a805b8460c887494c05545a38bb1f94ec1"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 provenance: "AUTHORED"
 tags: ["tenancy", "quota", "request-count", "oci", "fail-open"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # Request-quota enforcement
 
 CoreLink enforces three orthogonal abuse axes — velocity (rate), cumulative dollars (the $-ceiling), and

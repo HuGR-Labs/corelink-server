@@ -31,6 +31,7 @@ on:
       - 'scripts/validate_no_shared_rustup_mutation.py'
       - 'scripts/validate_workflow_path_filters.py'
       - 'scripts/ci-use-host-toolchain.sh'
+      - 'scripts/verify_b254_actionlint_config.py'
       - 'tests/test_pull_request_target_spawn_boundary.py'
   push:
     branches: [main]
@@ -42,6 +43,7 @@ on:
       - 'scripts/validate_no_shared_rustup_mutation.py'
       - 'scripts/validate_workflow_path_filters.py'
       - 'scripts/ci-use-host-toolchain.sh'
+      - 'scripts/verify_b254_actionlint_config.py'
       - 'tests/test_pull_request_target_spawn_boundary.py'
 
 permissions:
@@ -88,6 +90,14 @@ jobs:
           fi
           actionlint -version
           actionlint -color -verbose
+
+      # B-254: .actionlint.yaml is canonical and the .github path is only its
+      # discovery-compatible symlink. Exercise both explicit paths plus
+      # negative label/config mutations so a green discovery run cannot mask a
+      # second, divergent authority.
+      - name: Canonical actionlint config and mutation gate (B-254)
+        shell: bash
+        run: python3 -S scripts/verify_b254_actionlint_config.py
 
       # Fleet-safety gate: a cargo-cache step that runs on the shared-$HOME
       # self-hosted fleet deletes ~/.cargo/registry/src out from under OTHER

@@ -58,7 +58,7 @@ PATs haben keine automatische Rotation. Empfohlene Rotationskadenz, sobald die S
 
 ### Widerruf
 
-Die Dashboard-Route `POST /v1/customer/keys/{pat_id}/revoke` widerruft tenantbezogen und erfordert einen schreibberechtigten Aufrufer. Die öffentliche Operation `DELETE /v1/pats/{pat_id}` ist noch nicht aktiv. Nach dem Widerruf schlagen laufende Anfragen mit diesem PAT innerhalb des Cloudflare-Edge-Propagationsfensters (typischerweise < 100 ms) mit `401` fehl.
+Die Dashboard-Route `POST /v1/customer/keys/{pat_id}/revoke` ist eine destruktive Team-Admin-Operation und erfordert die serververtrauenswürdige Clerk-Rolle `owner` oder `admin`, nicht nur Schreibrechte. Owner dürfen jedes PAT im Tenant widerrufen; Admins dürfen Member-PATs, aber nicht das Owner-PAT widerrufen. Member, Viewer, native PAT-Aufrufer und tenantfremde Ziele werden abgelehnt. Die öffentliche Operation `DELETE /v1/pats/{pat_id}` ist noch nicht aktiv. Nach dem Widerruf schlagen laufende Anfragen mit diesem PAT innerhalb des Cloudflare-Edge-Propagationsfensters (typischerweise < 100 ms) mit `401` fehl.
 
 ## Scopes
 

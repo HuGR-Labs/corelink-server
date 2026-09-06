@@ -108,9 +108,9 @@
 --   - The migration runs inside wrangler's per-file execution.
 --
 -- Dependent views: `stripe_tier_drift_view` (0048) does NOT reference
---   `tenant`, so NO view drop/recreate is required here (contrast 0062
---   which had to guard `stripe_tier_drift_view` because it references
---   `tier_selections`). Confirmed by scanning 0048 definition.
+--   `tenant`, so NO view replacement is required here (0062 retains
+--   `stripe_tier_drift_view` in place while editing the tier table catalog).
+--   Confirmed by scanning 0048 definition.
 --
 -- Idempotency: unlike 0057 this file is NOT re-runnable on its own (a
 --   rebuild is inherently one-shot); it is guarded by the migration
@@ -119,7 +119,8 @@
 --
 -- Canonical sources kept in lock-step with this CHECK:
 --   - migrations/d1/0057_tenant_tier.sql (original inline CHECK)
---   - migrations/d1/0062_expand_tier_selections_6tier.sql (6-tier rebuild pattern)
+--   - migrations/d1/0062_expand_tier_selections_6tier.sql (6-tier in-place
+--     catalog-edit pattern; no table/view replacement)
 --   - worker/src/lib/quota.ts (quota definitions)
 --   - crates/corelink-container/src/routes/admin.rs (TIER_SELECTIONS_TIERS)
 

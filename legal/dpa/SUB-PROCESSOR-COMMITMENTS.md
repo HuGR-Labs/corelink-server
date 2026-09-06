@@ -35,7 +35,7 @@ provided at least **30 calendar days** in advance per DPA §3.1.
 |---|---|
 | Role | Infrastructure provider — Workers, R2, D1, KV, Durable Objects, Pages, Email Routing. |
 | Data categories | Account metadata; blob content (encrypted); audit logs; telemetry. |
-| Region | Multi-region; tenant-pinned per `INV-DATA-RESIDENCY` (WNAM / ENAM / WEUR / SAM). |
+| Region | Multi-region; tenant-pinned per `INV-DATA-RESIDENCY` (WNAM / ENAM / WEUR / APAC); APAC tenants are pinned to Tokyo (`nrt`). `SAM` is not provisioned and is not promised. |
 | DPA reference | <https://www.cloudflare.com/cloudflare-customer-dpa/> |
 | Sub-processor list | <https://www.cloudflare.com/sub-processors/> |
 | SCCs / transfer mechanism | EU SCCs (2021/914) Module 3 (processor → processor); UK IDTA addendum. |

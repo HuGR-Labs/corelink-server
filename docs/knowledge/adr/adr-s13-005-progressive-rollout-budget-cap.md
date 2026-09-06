@@ -4,12 +4,14 @@ title: "ADR-S13-005 — Progressive rollout controller + auto-rollback + monthly
 description: "Why deploys progress 1%->10%->50%->100% with 3 orthogonal auto-rollback triggers and a 30% monthly rollback-budget cap on measured error-budget burn."
 source_files:
   - "specs/03_architecture/adrs/ADR-S13-005-progressive-rollout-budget-cap.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s13", "progressive-rollout", "auto-rollback", "error-budget"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S13-005-progressive-rollout-budget-cap.md@0fbd74ae7564422145cc325e3500354aadbe094c"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-S13-005 — Progressive rollout controller + auto-rollback + monthly budget cap
 
 A bad deploy that touches 100% of customers at once (FM-200) is a P1 failure mode — catastrophic for a crypto-touching change to auth, the audit chain, or secret rotation. This ADR (DRAFT, pending Architect + SRE + Security ratification) records the design of a 4-stage progressive rollout controller with three orthogonal auto-rollback triggers and a measured-burn monthly rollback-budget cap, modeled on the Google SRE Workbook canary chapter and AWS cell-based architecture.

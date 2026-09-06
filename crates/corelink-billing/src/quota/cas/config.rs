@@ -30,6 +30,24 @@ pub const DEFAULT_HARD_BLOCK_PCT: f64 = 1.0;
 /// adversarial concurrent-write floods).
 pub const DEFAULT_MAX_CAS_ATTEMPTS: u32 = 3;
 
+/// Hard upper bound for the admin-configurable retry loop.
+pub const MAX_CONFIGURED_CAS_ATTEMPTS: u32 = 16;
+
+/// Every CAS attempt emits at most one decision audit and one outcome audit:
+/// either `CasCheckPassed` + `CasCommitSucceeded`/`CasRetryAfterEmitted`, or
+/// `CasCheckPassed` + `CasRaceDetected`. Keeping this bound explicit makes the
+/// request's observable work budget deterministic instead of timing-dependent.
+pub const MAX_CAS_AUDIT_EVENTS_PER_ATTEMPT: u32 = 2;
+
+/// Maximum audit records one request can emit under any accepted retry-loop
+/// configuration (including the maximum admin override).
+pub const MAX_CAS_AUDIT_EVENTS_PER_DECISION: u32 =
+    MAX_CONFIGURED_CAS_ATTEMPTS * MAX_CAS_AUDIT_EVENTS_PER_ATTEMPT;
+
+// Keep the exported budget representable by the fixed-width audit counter
+// types used by production adapters.
+const _: () = assert!(MAX_CAS_AUDIT_EVENTS_PER_DECISION <= u8::MAX as u32);
+
 /// Canonical config knobs for [`super::cas::InMemoryAtomicQuotaChecker`].
 ///
 /// Per the autonomous execution charter (`F-001 closure`), config is
@@ -68,7 +86,7 @@ impl QuotaCasConfig {
         } else {
             hard_block_pct.clamp(0.5, 1.0)
         };
-        let attempts = max_cas_attempts.clamp(1, 16);
+        let attempts = max_cas_attempts.clamp(1, MAX_CONFIGURED_CAS_ATTEMPTS);
         Self {
             hard_block_pct: pct,
             max_cas_attempts: attempts,
@@ -146,5 +164,14 @@ mod tests {
     fn clamps_huge_attempts_to_sixteen() {
         let c = QuotaCasConfig::new(1.0, 1024);
         assert_eq!(c.max_cas_attempts(), 16);
+    }
+
+    #[test]
+    fn audit_event_budget_is_bounded_by_retry_budget() {
+        assert_eq!(MAX_CAS_AUDIT_EVENTS_PER_ATTEMPT, 2);
+        assert_eq!(
+            MAX_CAS_AUDIT_EVENTS_PER_DECISION,
+            MAX_CONFIGURED_CAS_ATTEMPTS * MAX_CAS_AUDIT_EVENTS_PER_ATTEMPT
+        );
     }
 }

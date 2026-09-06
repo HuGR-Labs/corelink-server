@@ -15,7 +15,7 @@ shipped posture, with a closed population and mutation tests.
 
 | Surface | Engineering answer | Residue / owner action |
 |---|---|---|
-| BYOK rows (CAIQ CEK/BCR/DSP; SIG N/K) | BYOK is unavailable; activation fails closed with `501 byok_not_available`; default provider is `InMemoryFake`. | Legal must review the executed SLA's five-minute BYOK kill-switch promise and the executed residency amendment's five-minute crypto-erase promise. This change does not amend either instrument. |
+| BYOK rows (CAIQ CEK/BCR/DSP; SIG N/K) | BYOK is unavailable; activation fails closed with `501 byok_not_available`; the shipped default binary reports `ActiveProvider::Unavailable` and no real provider is compiled in. | Legal must review the executed SLA's five-minute BYOK kill-switch promise and the executed residency amendment's five-minute crypto-erase promise. This change does not amend either instrument. |
 | WORM / Object Lock (CAIQ LOG-03; SIG LOG-03) | R2 audit storage is tamper-evident, not immutable; R2 Object Lock is unavailable. | Legal must review the executed DPA's `immutable R2 with Object Lock` language. This change leaves the DPA untouched. |
 | SAST, fuzz, and supply-chain rows | Answers now distinguish PR dependency gates, nightly CodeQL, dispatch-only Semgrep/fuzz, unsigned SBOM/provenance, checksums, and preserved signed-commit controls. | No owner action is implied by the wording; future capability claims require a new evidence review. |
 | Synthetic paging (CAIQ SEF-03; SIG J.4) | Production has no synthetic cron; PagerDuty rotation is not repository-verifiable. | Operations should provide a PagerDuty schedule export before any 24×7 rotation claim is reused. |
@@ -23,6 +23,22 @@ shipped posture, with a closed population and mutation tests.
 
 This packet records decisions still outside the engineering-closeable portion;
 it is not evidence that an owner, customer, prospect, or regulator was contacted.
+
+## Evidence handoff locations
+
+Owners must attach the three independent records below without placing secrets,
+contract bytes, or recipient PII in this repository:
+
+- `reports/owner-actions/b170-legal-contract-review.md` — Legal's disposition
+  of the executed DPA Object Lock language and SLA/residency-amendment promises.
+- `reports/owner-actions/b170-pagerduty-export.json` — Operations' redacted
+  schedule/rotation export, including export time and account/workspace.
+- `reports/owner-actions/b170-recipient-notification-decision.md` — Sales/Legal
+  decision and, if applicable, redacted notification evidence for superseded
+  copies.
+
+The B-170 guard treats missing records as `open` and turns red when all three
+appear, forcing content review before the backlog item can be closed.
 
 ## Proposed follow-up item (ID allocated by the canonical backlog owner)
 

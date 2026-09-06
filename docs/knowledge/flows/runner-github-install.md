@@ -11,13 +11,19 @@ source_files:
   - "apps/admin-ui/src/lib/install-state.ts"
   - "apps/admin-ui/src/app/api/install/github/route.ts"
 source_blobs:
+  - "apps/signup-worker/src/webhooks/github_install_state.ts@f6a04a9a191d0960752067cee982db79a266fb9f"
+  - "apps/signup-worker/src/webhooks/github_install_callback.ts@d730d5a04015184702454dbc8ee132fc08551cf1"
+  - "apps/signup-worker/src/webhooks/github_app_manifest.ts@6d9fbee5ec28c77fbad2fa87b6e3bf0fbe3a59b7"
   - "apps/signup-worker/src/webhooks/github_provision.ts@3e0792e5dd32d3808960fce61a16e155eadfa142"
-checkpoint_sha: "94bbcd5eb6cf97bf962cdc3bffe8bd58eac30c4b"
+  - "apps/signup-worker/src/index.ts@8caf7d163752ce98831fc8bb7199c1a16a24c2cd"
+  - "apps/admin-ui/src/lib/install-state.ts@41380eaf61822e293787e2b9730fa14af2690d8d"
+  - "apps/admin-ui/src/app/api/install/github/route.ts@aa5e8f796756b44d1104c36348f9adafb17fae7f"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 provenance: "AUTHORED"
 tags: ["flows", "runners", "github-app", "install", "provisioning", "identity", "worker-edge"]
 timestamp: "2026-07-05T00:00:00Z"
----
 
+---
 # Runner GitHub-App install → tenant-map provisioning flow
 
 This is the edge path that turns "a tenant wants CoreLink Runners to run their CI" into the two control-plane read models the runner-CI fabric consults: `tenant_gh_installation_map` (installation → tenant) and `runner_repo_allowlist` (per-tenant `owner/repo`). It spans the admin-ui (the tenant-bound state mint) and the `signup-worker` (verify + provision), and is engineered around ONE hard constraint: the raw GitHub `installation` payload carries an `installation.id` + repos but **no CoreLink identity**, so binding a tenant off it alone would be exactly the lazy-provisioning the runner-provisioning primitive (DP3) forbids. The identity must instead come FROM the install flow — a Clerk-authed tenant clicks "Install", CoreLink mints an HMAC-signed `state = tenant_id`, and the setup callback verifies that signature to recover the authenticated tenant. The **mint** happens in the admin-ui (the tenant's authenticated surface); the **verify + provision** happen in the signup-worker. Files: `github_install_state.ts` (the worker's signed-state verify + its `signInstallState` mint half), `github_install_callback.ts` (the `setup_url` callback that provisions), `github_app_manifest.ts` (the one-click App-creation flow), and in the admin-ui `lib/install-state.ts` + `app/api/install/github/route.ts` (the "Install" button's server-side mint entry point — a byte-identical HMAC mirror of the worker's, since the two deployables cannot share a module). All three route off the same `signup-worker` entry point that hosts the Clerk/Stripe webhooks and the internal provisioning primitive; the actual map+allowlist write is the shared `writeInstallationProvision` in `github_provision.ts` (see the sibling [signup auto-provision flow](/flows/signup-auto-provision.md), which owns the internal-auth `POST /internal/v1/runner/provision-installation` variant of the same write).
@@ -71,3 +77,8 @@ This flow is the **Option-B (self-owned) runner install path**: the signup-worke
 11. Step-1 form operator-gated (503 unbound / 403 wrong token, constant-time) `apps/signup-worker/src/webhooks/github_app_manifest.ts:120-126`; step-3 callback code-gated (400 if absent — GitHub's redirect can't carry the setup token) `apps/signup-worker/src/webhooks/github_app_manifest.ts:170-172`.
 12. PKCS#1→PKCS#8 hand-off note + Worker-side PKCS#8 decode: `apps/signup-worker/src/webhooks/github_app_manifest.ts:226-228`, `apps/signup-worker/src/webhooks/github_install_callback.ts:77-86`.
 13. Sibling internal-auth provisioning variant of the same write: [signup auto-provision flow](/flows/signup-auto-provision.md).
+
+
+# Revalidation
+
+This concept was revalidated against the cumulative implementation tree; its existing source citations remain the controlling evidence for the behavior described above.

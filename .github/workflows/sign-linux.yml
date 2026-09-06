@@ -1,6 +1,6 @@
 # CoreLink CLI — Linux GPG detached-signature workflow (WI-S15-006 §6.3).
 #
-# Activates on the same `v*` tag trigger as `release-cli.yml`. After the
+# Activates after the same `cli-v*` tag release as `release-cli.yml`. After the
 # release-cli pipeline produces unsigned Linux binaries (`linux-x86_64`,
 # `linux-arm64`), this workflow:
 #
@@ -29,18 +29,34 @@ concurrency:
   group: "ci-sign-linux"
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       tag:
-        description: "Release tag to GPG-sign (e.g. v0.1.0)"
+        description: "Canonical cli-v* release tag to sign"
         required: true
         type: string
-  workflow_run:
-    workflows: ["release-cli"]
-    types: [completed]
+      source_sha:
+        description: "Immutable source commit selected by the release tag"
+        required: true
+        type: string
+      staging_manifest_sha256:
+        description: "Immutable SHA-256 emitted by release-cli before signer access"
+        required: true
+        type: string
+    secrets:
+      CORELINK_CLI_RELEASE_TOKEN:
+        required: false
+      GPG_PRIVATE_KEY:
+        required: false
+      GPG_PRIVATE_KEY_PASS:
+        required: false
+      GPG_KEY_ID:
+        required: false
+      GPG_KEY_FINGERPRINT:
+        required: false
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -56,8 +72,12 @@ jobs:
         id: check
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PRIVATE_KEY_PASS: ${{ secrets.GPG_PRIVATE_KEY_PASS }}
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+          GPG_KEY_FINGERPRINT: ${{ secrets.GPG_KEY_FINGERPRINT }}
         run: |
-          if [ -z "${GPG_PRIVATE_KEY}" ]; then
+          if [ -z "${GPG_PRIVATE_KEY}" ] || [ -z "${GPG_PRIVATE_KEY_PASS}" ] \
+            || [ -z "${GPG_KEY_ID}" ] || [ -z "${GPG_KEY_FINGERPRINT}" ]; then
             echo "ready=false" >> "${GITHUB_OUTPUT}"
             echo "::notice ::GPG_PRIVATE_KEY secret not populated — Linux signing skipped (acquire 4096-bit RSA key + populate secret + publish pubkey at https://corelink.humangr.com/.well-known/gpg-pubkey.asc)."
           else
@@ -67,10 +87,13 @@ jobs:
   sign:
     name: gpg detach-sign (${{ matrix.asset_suffix }})
     needs: gpg-key-present
-    if: needs.gpg-key-present.outputs.ready == 'true'
+    if: >-
+      needs.gpg-key-present.outputs.ready == 'true'
     runs-on: [self-hosted, mac, corelink-builder]
     strategy:
       fail-fast: false
+      # Matrix legs each rewrite the aggregate release checksum; serialize them.
+      max-parallel: 1
       matrix:
         include:
           - asset_suffix: linux-x86_64
@@ -81,26 +104,71 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
+          # The checkout action obtains the required refs before removing its
+          # token. The resolver below only reads these tags; it must never keep
+          # a source-repository credential on a signer that has release secrets.
+          fetch-tags: true
+          persist-credentials: false
 
       - name: Resolve release tag
         id: tag
         env:
-          INPUT_TAG: ${{ github.event.inputs.tag }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
-          if [ -n "${INPUT_TAG}" ]; then
-            echo "tag=${INPUT_TAG}" >> "${GITHUB_OUTPUT}"
-          else
-            echo "tag=${{ github.event.workflow_run.head_branch }}" >> "${GITHUB_OUTPUT}"
+          set -euo pipefail
+          case "${INPUT_TAG}" in cli-v*) ;; *)
+            echo "::error::expected a cli-v* release tag, got: ${INPUT_TAG}" >&2
+            exit 1
+          esac
+          [[ "${INPUT_TAG}" =~ ^cli-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]
+          git show-ref --verify --quiet "refs/tags/${INPUT_TAG}"
+          ACTUAL_SOURCE_SHA="$(git rev-list -n 1 "${INPUT_TAG}")"
+          EXPECTED_SOURCE_SHA="${INPUT_SOURCE_SHA:-${ACTUAL_SOURCE_SHA}}"
+          if [ "${EXPECTED_SOURCE_SHA}" != "${ACTUAL_SOURCE_SHA}" ]; then
+            echo "::error::release tag/source SHA mismatch" >&2
+            exit 1
           fi
+          TAG="${INPUT_TAG}"
+          echo "source_sha=${ACTUAL_SOURCE_SHA}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+
+      - name: Verify pinned GitHub CLI
+        run: test "$(gh --version | awk 'NR == 1 {print $3}')" = "2.79.0"
 
       - name: Download release asset
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # This source repository's GITHUB_TOKEN has no authority in the
+          # separate public release repository. Keep the cross-repo PAT on this
+          # exact gh step only.
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
           TAG: ${{ steps.tag.outputs.tag }}
+          SOURCE_SHA: ${{ steps.tag.outputs.source_sha }}
+          STAGING_MANIFEST_SHA256: ${{ inputs.staging_manifest_sha256 }}
           ASSET: corelink-${{ matrix.asset_suffix }}.tar.gz
+          RAW_ASSET: corelink-${{ matrix.asset_suffix }}
         run: |
+          set -euo pipefail
           mkdir -p ./assets
-          gh release download "${TAG}" --pattern "${ASSET}" --dir ./assets
+          gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" --pattern "${ASSET}" --dir ./assets
+          gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" --pattern "${RAW_ASSET}" --dir ./assets
+          gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" --pattern staging-manifest.json --dir ./assets --clobber
+          test "$(shasum -a 256 ./assets/staging-manifest.json | awk '{print $1}')" = "${STAGING_MANIFEST_SHA256}"
+          python3 scripts/cli_release_manifest.py verify --directory ./assets \
+            --manifest ./assets/staging-manifest.json --tag "${TAG}" \
+            --source-sha "${SOURCE_SHA}" --asset "${ASSET}"
+          python3 scripts/cli_release_manifest.py verify --directory ./assets \
+            --manifest ./assets/staging-manifest.json --tag "${TAG}" \
+            --source-sha "${SOURCE_SHA}" --asset "${RAW_ASSET}"
+          test -f "./assets/${RAW_ASSET}"
+          python3 - "./assets/${ASSET}" <<'PY'
+          import sys, tarfile
+          with tarfile.open(sys.argv[1], "r:gz") as archive:
+              members = archive.getmembers()
+          if len(members) != 1 or members[0].name != "corelink" or not members[0].isfile():
+              raise SystemExit("unsafe Linux archive inventory")
+          PY
           ls -la ./assets
 
       - name: Import GPG signing key into ephemeral keyring
@@ -108,10 +176,10 @@ jobs:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PRIVATE_KEY_PASS: ${{ secrets.GPG_PRIVATE_KEY_PASS }}
         run: |
-          mkdir -p "${RUNNER_TEMP}/gpg-home"
-          chmod 700 "${RUNNER_TEMP}/gpg-home"
-          export GNUPGHOME="${RUNNER_TEMP}/gpg-home"
-          echo "GNUPGHOME=${GNUPGHOME}" >> "${GITHUB_ENV}"
+          GNUPGHOME="${RUNNER_TEMP}/gpg-home"
+          export GNUPGHOME
+          mkdir -p "${GNUPGHOME}"
+          chmod 700 "${GNUPGHOME}"
           echo "${GPG_PRIVATE_KEY}" | gpg --batch --import
           # Configure loopback pinentry so passphrase comes from env var.
           echo "allow-loopback-pinentry" > "${GNUPGHOME}/gpg-agent.conf"
@@ -122,30 +190,83 @@ jobs:
         env:
           GPG_PRIVATE_KEY_PASS: ${{ secrets.GPG_PRIVATE_KEY_PASS }}
           GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+          GPG_KEY_FINGERPRINT: ${{ secrets.GPG_KEY_FINGERPRINT }}
           ASSET: corelink-${{ matrix.asset_suffix }}.tar.gz
+          RAW_ASSET: corelink-${{ matrix.asset_suffix }}
         run: |
-          gpg --batch --yes \
-            --pinentry-mode loopback \
-            --passphrase "${GPG_PRIVATE_KEY_PASS}" \
-            --local-user "${GPG_KEY_ID}" \
-            --detach-sign --armor \
-            --output "./assets/${ASSET}.asc" \
-            "./assets/${ASSET}"
+          ACTUAL_FINGERPRINT="$(GNUPGHOME="${RUNNER_TEMP}/gpg-home" gpg --with-colons --fingerprint "${GPG_KEY_ID}" | awk -F: '$1 == "fpr" {print $10; exit}')"
+          test "${ACTUAL_FINGERPRINT}" = "${GPG_KEY_FINGERPRINT}"
+          for target in "${ASSET}" "${RAW_ASSET}"; do
+            printf '%s' "${GPG_PRIVATE_KEY_PASS}" | GNUPGHOME="${RUNNER_TEMP}/gpg-home" gpg --batch --yes \
+              --pinentry-mode loopback \
+              --passphrase-fd 0 \
+              --local-user "${GPG_KEY_ID}" \
+              --detach-sign --armor \
+              --output "./assets/${target}.asc" \
+              "./assets/${target}"
+          done
 
       - name: Verify detached signature locally
         env:
           ASSET: corelink-${{ matrix.asset_suffix }}.tar.gz
+          RAW_ASSET: corelink-${{ matrix.asset_suffix }}
+          GPG_KEY_FINGERPRINT: ${{ secrets.GPG_KEY_FINGERPRINT }}
         run: |
-          gpg --verify "./assets/${ASSET}.asc" "./assets/${ASSET}"
+          for target in "${ASSET}" "${RAW_ASSET}"; do
+            STATUS="$(GNUPGHOME="${RUNNER_TEMP}/gpg-home" gpg --status-fd 1 --verify "./assets/${target}.asc" "./assets/${target}" 2>/dev/null)"
+            printf '%s\n' "${STATUS}" | grep -F "[GNUPG:] VALIDSIG ${GPG_KEY_FINGERPRINT} "
+          done
 
-      - name: Attach `.asc` to release
+      - name: Refresh checksums for the signed release assets
+        shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
           TAG: ${{ steps.tag.outputs.tag }}
           ASSET: corelink-${{ matrix.asset_suffix }}.tar.gz
+          RAW_ASSET: corelink-${{ matrix.asset_suffix }}
         run: |
-          gh release upload "${TAG}" "./assets/${ASSET}.asc" --clobber
+          set -euo pipefail
+          gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" \
+            --pattern 'corelink-*.sha256' --dir ./assets --clobber
+          (cd ./assets && shasum -a 256 "${ASSET}" > "${ASSET}.sha256")
+          (cd ./assets && shasum -a 256 "${ASSET}.asc" > "${ASSET}.asc.sha256")
+          (cd ./assets && shasum -a 256 "${RAW_ASSET}.asc" > "${RAW_ASSET}.asc.sha256")
+          (cd ./assets && LC_ALL=C sort corelink-*.sha256 > checksums.txt)
+          (cd ./assets && shasum -a 256 -c "${ASSET}.sha256")
+          (cd ./assets && shasum -a 256 -c "${ASSET}.asc.sha256")
+          (cd ./assets && shasum -a 256 -c "${RAW_ASSET}.asc.sha256")
+
+      - name: Attach signature and refreshed checksums to release
+        env:
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
+          TAG: ${{ steps.tag.outputs.tag }}
+          ASSET: corelink-${{ matrix.asset_suffix }}.tar.gz
+          RAW_ASSET: corelink-${{ matrix.asset_suffix }}
+        run: |
+          set -euo pipefail
+          gh release upload "${TAG}" --repo "${RELEASE_REPOSITORY}" --clobber \
+            "./assets/${ASSET}.asc" "./assets/${ASSET}.sha256" \
+            "./assets/${ASSET}.asc.sha256" "./assets/${RAW_ASSET}.asc" \
+            "./assets/${RAW_ASSET}.asc.sha256" ./assets/checksums.txt
+
+      - name: Read back signer-updated release checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
+          TAG: ${{ steps.tag.outputs.tag }}
+          ASSET_SUFFIX: ${{ matrix.asset_suffix }}
+        run: |
+          set -euo pipefail
+          case "${ASSET_SUFFIX}" in linux-x86_64|linux-arm64) ;; *) exit 1 ;; esac
+          PUBLISHED="${RUNNER_TEMP}/corelink-sign-linux-readback-${ASSET_SUFFIX}"
+          mkdir -p "$PUBLISHED"
+          gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" --dir "$PUBLISHED" \
+            --pattern 'corelink-*' --pattern checksums.txt --clobber
+          (cd "$PUBLISHED" && shasum -a 256 -c checksums.txt)
 
       - name: Wipe GPG keyring
         if: always()
-        run: rm -rf "${GNUPGHOME}" || true
+        run: rm -rf "${RUNNER_TEMP}/gpg-home"

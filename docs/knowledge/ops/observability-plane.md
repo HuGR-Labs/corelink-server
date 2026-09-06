@@ -21,12 +21,31 @@ source_files:
   - "crates/corelink-slo/src/pagerduty.rs"
   - "crates/corelink-slo/src/definition.rs"
   - "crates/corelink-handler-cas/src/observer.rs"
-checkpoint_sha: "03c2ae27deb7094fea4009927b90959533dae21e"
+source_blobs:
+  - "crates/corelink-telemetry/src/lib.rs@1b5e6047daa5785a395823959b694836eb29470f"
+  - "crates/corelink-telemetry/src/otel/exporter.rs@02e74cbc4ec5db698f7eb1250570a8ed245dc9dc"
+  - "crates/corelink-telemetry/src/logpush/sink.rs@403d6c2d05191fac06e7fc2538db2384484f01c6"
+  - "crates/corelink-telemetry/src/canary.rs@08bc8092366b2656319f4a706c1bd07835f569e9"
+  - "crates/corelink-telemetry/src/synthetic_pager/decide.rs@3a42888ce0ae3f1512e919c9b9beb70c3172694e"
+  - "crates/corelink-tracing/src/lib.rs@4d67172dac125b5c0dbe0d26c6b47ac9f3babc95"
+  - "crates/corelink-tracing/src/context.rs@a51a52b06c8bec3c5d01401617739b28df787339"
+  - "crates/corelink-tracing/src/sampler.rs@284586ef46ba7e86d9e45f78e59c4d2cca3f1609"
+  - "crates/corelink-tracing/src/service.rs@9d530f6943d817413b324d96e6af250e7805de03"
+  - "crates/corelink-tracing/tests/prop_tracing.rs@c52a652fa52286b2023d62503e92302b57b97d98"
+  - "crates/corelink-slo/src/lib.rs@ab88f25561880927d8919c0052cb4d887ca13c69"
+  - "crates/corelink-slo/src/window.rs@50139375dc478c41bdb3520ed826050a2e1857fa"
+  - "crates/corelink-slo/src/calculator.rs@00711e816e0e7b132d90faac4534b003fe522a0f"
+  - "crates/corelink-slo/src/decision.rs@77d7d0469af2c7db6c16005e07364ef86944870d"
+  - "crates/corelink-slo/src/alert.rs@341f781afa1641e1b78ff3f86fc0f93d298c867f"
+  - "crates/corelink-slo/src/pagerduty.rs@f441a5e050e731519bc0a4cd2f8c893d2838fbd6"
+  - "crates/corelink-slo/src/definition.rs@d2856258e269c38847b0cb3b030053bb0630f045"
+  - "crates/corelink-handler-cas/src/observer.rs@5d499c7be8e8036bf43b7c837d6994f094b069a8"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 provenance: "AUTHORED"
 tags: ["observability", "telemetry", "tracing", "slo"]
 timestamp: "2026-06-28T00:00:00Z"
----
 
+---
 # Observability plane (telemetry / tracing / SLO)
 
 A multi-tenant cache that cannot see its own error budget burn fast enough to page before the budget is spent is flying blind — so this cluster designs the W3C-distributed-tracing + Google-SRE multi-burn-rate-SLO + structured-logging + synthetic-canary substrate. **STATUS — read this first: it is, at HEAD, almost entirely a pure-logic skeleton.** `corelink-tracing`, `corelink-slo`, and every submodule absorbed into `corelink-telemetry` (`otel` / `logpush` / `canary` / `synthetic_pager` / `lighthouse`) ship the *trait surface* every production binding will satisfy plus an *in-memory fake* that exercises the algorithmic invariants, and explicitly defer the real network wiring (Tempo OTLP HTTP exporter, PagerDuty Events API v2 POST, CF Logpush/R2/Loki fan-out, CF-Workers cron canary) to WI-S09-007 / S-20. The single load-bearing exception that touches the live data plane today is the `Sli` taxonomy enum, which the request handlers re-export through their `observer.rs` SLI emit points.

@@ -723,8 +723,15 @@ def validate(root: Path, manifest_path: Path = MANIFEST) -> list[str]:
             failures.append(f"HALT: occurrence has no valid classification: {entry!r}")
     failures.extend(positive_claims(occurrences))
 
-    anchor = root / "crates/corelink-container/src/routes/bazel_v2.rs"
-    if not anchor.is_file() or "Buck2 cannot use these routes" not in anchor.read_text(encoding="utf-8"):
+    anchors = (
+        root / "crates/corelink-container/src/routes/bazel_v2.rs",
+        root / "crates/corelink-container/src/routes/bazel_v2/part-00.rs",
+        root / "crates/corelink-container/src/routes/bazel_v2/part-01.rs",
+    )
+    if not any(
+        anchor.is_file() and "Buck2 cannot use" in anchor.read_text(encoding="utf-8")
+        for anchor in anchors
+    ):
         failures.append("HALT: product anchor no longer records that Buck2 cannot use the REST routes; re-evaluate B-094")
     return failures
 

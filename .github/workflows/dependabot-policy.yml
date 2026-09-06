@@ -33,16 +33,12 @@ name: dependabot-policy (license + status-check enforcement)
 # SHA-pinned per HIGH_RISK lane FF-HR-005.
 
 # ============================================================================
-# SECURITY SENTINEL — pull_request_target + self-hosted runner WARNING
+# SECURITY SENTINEL — pull_request_target + self-hosted runner
 #
-# This workflow uses `pull_request_target` (trusted context, write permissions)
-# and runs on the self-hosted mac runner (the founder's machine). It checks out
-# PR-HEAD content via `refs/pull/N/merge` in the policy-gate job below.
-#
-# This combination is safe ONLY because the SOLE consumer of the checked-out
-# code is `cargo deny check licenses bans` (~line 111) — a STATIC ANALYZER
-# that reads Cargo.lock/deny.toml but NEVER executes build scripts, proc
-# macros, or any other PR-supplied code.
+# This workflow uses pull_request_target on the corelink runner. It checks out
+# PR-HEAD content via refs/pull/N/merge into _pr-data, then checks out the base
+# into _base. Every executable step is explicitly rooted in _base; selected
+# manifests are copied as data to an isolated temporary tree.
 #
 # DO NOT add any of the following to this job without a dedicated security
 # review and explicit sign-off from the repo owner:
@@ -104,32 +100,88 @@ jobs:
     # so this is defense-in-depth.
     env:
       BASE_REF: ${{ github.event.pull_request.base.ref }}
+      UNTRUSTED_TREE: ${{ github.workspace }}/_pr-data
+      POLICY_HOME: ${{ github.workspace }}/.b133-policy-home
+      POLICY_TREE: ${{ github.workspace }}/.b133-policy-tree
+      CARGO_HOME: ${{ github.workspace }}/.b133-cargo-home
+      DENY_CONFIG: ${{ github.workspace }}/.b133-deny.toml
+      B133_PYTHON: ${{ github.workspace }}/.b133-python
 
     steps:
       # ---------------------------------------------------------------------
       # Step 1 — Checkout the PR head so we can inspect Cargo.lock diffs.
       # We use the merge-ref so the lockfile reflects post-merge state.
       #
-      # SECURITY NOTE: this step checks out PR-HEAD content (refs/pull/N/merge)
-      # on a SELF-HOSTED runner. This is intentional and safe ONLY because no
-      # subsequent step executes code from the checked-out tree (see the
-      # pull_request_target sentinel comment at the top of this file). The
-      # only consumer is `cargo deny check licenses bans` — a static analyzer.
-      # Any future step that builds, installs, or runs PR-supplied code MUST
-      # undergo a security review before being added here.
+      # SECURITY NOTE: this step transports PR data only. The base-owned
+      # checker rejects control mutations, and every later run step uses the
+      # separately checked-out _base working directory.
       # ---------------------------------------------------------------------
       - name: Checkout PR merge ref (SHA-pinned)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          path: _pr-data
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Checkout BASE ref into _base (trusted tree; SHA-pinned)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: _base
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Prepare hermetic checker interpreter (BASE tree)
+        working-directory: _base
+        run: bash scripts/prepare_b133_python.sh "$B133_PYTHON"
+
+      - name: Assert trust-boundary wiring (BASE checker)
+        working-directory: _base
+        env:
+          B133_UNTRUSTED_TREE: ${{ github.workspace }}/_pr-data
+        run: |
+          "$B133_PYTHON/python" -S scripts/check_dependabot_policy_trusted_tree.py --untrusted-tree "$B133_UNTRUSTED_TREE"
+
+      - name: Verify fetched PR history (fail-closed)
+        working-directory: _base
+        run: |
+          set -euo pipefail
+          git -C "$UNTRUSTED_TREE" rev-parse --verify HEAD
+          git -C "$UNTRUSTED_TREE" rev-parse --verify HEAD^1
+          git -C "$UNTRUSTED_TREE" rev-parse --verify HEAD^2
 
       - name: Fetch Dependabot metadata
         id: metadata
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98  # v3.1.0
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Prepare isolated Cargo policy tree (PR data only)
+        working-directory: _base
+        env:
+          CARGO_HOME: ${{ github.workspace }}/.b133-cargo-home
+          DENY_CONFIG: ${{ github.workspace }}/.b133-deny.toml
+        run: |
+          set -euo pipefail
+          rm -rf "$POLICY_TREE" "$CARGO_HOME"
+          mkdir -p "$POLICY_TREE" "$CARGO_HOME"
+          for f in Cargo.toml Cargo.lock; do
+            if [ -f "$UNTRUSTED_TREE/$f" ] && [ ! -L "$UNTRUSTED_TREE/$f" ]; then
+              cp -p --no-preserve=mode,ownership "$UNTRUSTED_TREE/$f" "$POLICY_TREE/$f"
+            fi
+          done
+          # Cargo-deny may resolve workspace members, so provide their
+          # manifests as data while keeping all source/build files out.
+          while IFS= read -r -d '' f; do
+            rel="${f#"$UNTRUSTED_TREE/"}"
+            [ "$rel" = Cargo.toml ] && continue
+            mkdir -p "$POLICY_TREE/$(dirname "$rel")"
+            [ ! -L "$f" ] && cp -p --no-preserve=mode,ownership "$f" "$POLICY_TREE/$rel"
+          done < <(find "$UNTRUSTED_TREE" -type f -name Cargo.toml -print0)
+          cp -p --no-preserve=mode,ownership deny.toml "$DENY_CONFIG"
+          find "$POLICY_TREE" -type f -exec chmod a-w {} +
+          chmod a-w "$DENY_CONFIG"
 
       # ---------------------------------------------------------------------
       # Step 2 — License allowlist cross-check.
@@ -159,24 +211,32 @@ jobs:
       # `uname`, but naming it here costs two lines and removes the coupling
       # entirely — correct whether #1501 lands first, later, or never.
       - name: Use the workspace-pinned host toolchain (provisions nothing)
-        if: hashFiles('Cargo.toml') != ''
+        working-directory: _base
+        if: hashFiles('_pr-data/Cargo.toml') != ''
         env:
           HOST_TRIPLE: x86_64-unknown-linux-gnu
         run: bash scripts/ci-use-host-toolchain.sh
 
       - name: Install cargo-deny (SHA-pinned)
-        if: hashFiles('Cargo.toml') != ''
+        if: hashFiles('_pr-data/Cargo.toml') != ''
+        env:
+          HOME: ${{ github.workspace }}/.b133-policy-home
+          CARGO_HOME: ${{ github.workspace }}/.b133-cargo-home
         uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b  # v2.83.4
         with:
           tool: cargo-deny@0.19.8
 
       - name: Run cargo-deny licenses (fail-closed)
-        if: hashFiles('Cargo.toml') != ''
+        working-directory: _base
+        if: hashFiles('_pr-data/Cargo.toml') != ''
+        env:
+          HOME: ${{ github.workspace }}/.b133-policy-home
+          CARGO_HOME: ${{ github.workspace }}/.b133-cargo-home
         run: |
           set -euo pipefail
           echo "::group::cargo-deny licenses"
           # Fail fast on any banned license OR yanked crate OR advisory.
-          cargo deny --all-features check licenses bans
+          cargo deny --manifest-path "$POLICY_TREE/Cargo.toml" --config "$DENY_CONFIG" check licenses bans
           echo "::endgroup::"
 
       # ---------------------------------------------------------------------
@@ -187,13 +247,14 @@ jobs:
       # cases where cargo-deny misclassifies a SPDX expression.
       # ---------------------------------------------------------------------
       - name: Banned-license signature scan (Cargo.lock)
-        if: hashFiles('Cargo.lock') != ''
+        working-directory: _base
+        if: hashFiles('_pr-data/Cargo.lock') != ''
         run: |
           set -euo pipefail
           banned_regex='(AGPL|GPL-[23]|SSPL|Commons-Clause|BUSL|CDLA-Sharing|CDLA-Permissive-1\.0$)'
           # Search every license-bearing field in Cargo.lock. Empty match => pass.
           # NOTE: cargo-deny is the primary gate; this is the second-line check.
-          if grep -E "${banned_regex}" Cargo.lock; then
+          if grep -E "${banned_regex}" "$POLICY_TREE/Cargo.lock"; then
             echo "::error::Banned license signature detected in Cargo.lock."
             echo "::error::Cross-reference deny.toml [licenses] + escalate per RB-DEPENDABOT-INCIDENT §4.2."
             exit 1
@@ -204,12 +265,13 @@ jobs:
       # Step 4 — npm license scan (if PR touches a package-lock).
       # ---------------------------------------------------------------------
       - name: npm banned-license scan
+        working-directory: _base
         run: |
           set -euo pipefail
           banned_regex='(AGPL|GPL-[23]|SSPL|Commons-Clause|BUSL|CDLA-Sharing)'
           found=0
-          for f in $(git diff --name-only "origin/$BASE_REF"...HEAD -- '*package-lock.json' '*pnpm-lock.yaml' 'apps/**/package.json' 'crates/**/package.json' 'package.json' 2>/dev/null || true); do
-            if grep -E "\"license\".*${banned_regex}" "$f" 2>/dev/null; then
+          for f in $(git -C "$UNTRUSTED_TREE" diff --name-only HEAD^1 HEAD -- '*package-lock.json' '*pnpm-lock.yaml' 'apps/**/package.json' 'crates/**/package.json' 'package.json'); do
+            if [ -f "$UNTRUSTED_TREE/$f" ] && grep -E "\"license\".*${banned_regex}" "$UNTRUSTED_TREE/$f" 2>/dev/null; then
               echo "::error::Banned license in $f"
               found=1
             fi
@@ -223,10 +285,10 @@ jobs:
       # Step 5 — Commit-message hygiene: forbid skip-hook flags.
       # ---------------------------------------------------------------------
       - name: Forbid skip-hook / skip-ci flags
+        working-directory: _base
         run: |
           set -euo pipefail
-          base="origin/$BASE_REF"
-          if git log "${base}"..HEAD --format=%B | grep -E -- '--no-verify|--no-gpg-sign|\[skip ci\]|\[ci skip\]'; then
+          if git -C "$UNTRUSTED_TREE" log --format=%B | grep -E -- '--no-verify|--no-gpg-sign|\[skip ci\]|\[ci skip\]'; then
             echo "::error::Dependabot PR contains skip-hook/skip-ci marker — policy violation."
             exit 1
           fi
@@ -238,10 +300,11 @@ jobs:
       # release manifests, or workflow files. If it does, fail closed.
       # ---------------------------------------------------------------------
       - name: Forbid governance-file modifications
+        working-directory: _base
         run: |
           set -euo pipefail
-          base="origin/$BASE_REF"
-          mapfile -t changed < <(git diff --name-only "${base}"...HEAD)
+          changed_output="$(git -C "$UNTRUSTED_TREE" diff --name-only HEAD^1 HEAD)"
+          mapfile -t changed < <(printf '%s\n' "$changed_output")
           forbidden_regex='^(\.github/(CODEOWNERS|workflows/.*\.yml|dependabot\.yml)|SECURITY\.md|deny\.toml|cosign\.pub|\.well-known/.*|specs/_security/.*)$'
           violations=()
           for f in "${changed[@]}"; do
@@ -277,6 +340,7 @@ jobs:
       # here in the same PR or this gate silently drifts.
       # ---------------------------------------------------------------------
       - name: Verify required checks are present
+        working-directory: _base
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -284,8 +348,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          base="origin/$BASE_REF"
-          mapfile -t changed < <(git diff --name-only "${base}"...HEAD)
+          changed_output="$(git -C "$UNTRUSTED_TREE" diff --name-only HEAD^1 HEAD)"
+          mapfile -t changed < <(printf '%s\n' "$changed_output")
           echo "::group::Changed files (${#changed[@]})"
           printf '  %s\n' "${changed[@]}"
           echo "::endgroup::"
@@ -356,6 +420,7 @@ jobs:
       # Step 8 — Annotate audit-log emission (deferred to audit-chain).
       # ---------------------------------------------------------------------
       - name: Policy-gate audit log
+        working-directory: _base
         run: |
           cat <<EOF
           {

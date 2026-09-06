@@ -4,12 +4,14 @@ title: "ADR-S11-001 — MFA step-up required only on destructive DSR arms"
 description: "Why DSR MFA step-up is required only on the irreversible arms (erasure, rectification, restriction) and forbidden on the read-only arms."
 source_files:
   - "specs/03_architecture/adrs/ADR-S11-001-mfa-step-up-destructive-arms-only.md"
-checkpoint_sha: "04a7eccfdbe5733a9059ab12518f6ee571db0248"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s11", "auth", "mfa", "dsr", "privacy"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S11-001-mfa-step-up-destructive-arms-only.md@d9e5b4ee5a027115b7012df7144437866db7a9bf"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-S11-001 — MFA step-up required only on destructive DSR arms
 
 The DSR API (WI-S11-001) ships seven endpoints across the LGPD/GDPR request kinds, and the controller

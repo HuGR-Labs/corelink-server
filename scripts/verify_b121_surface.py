@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import inspect
+import re
 import sys
 from pathlib import Path
 
@@ -37,10 +38,10 @@ def _load_validator():
 
 
 def _divergences(
-    validator, documented, rust_routes, worker_routes, *, ledger=None
+    validator, documented, rust_routes, worker_routes, app_routes=None, *, ledger=None
 ):
     missing_route, missing_doc = validator.compare(
-        documented, rust_routes, worker_routes
+        documented, rust_routes, worker_routes, app_routes or {}
     )
     missing_doc_paths = {path for path, _ in missing_doc}
     undeclared_route = set(missing_route)
@@ -109,6 +110,8 @@ def _wiring_failures(validator) -> list[str]:
         "parse_openapi_paths",
         "collect_rust_routes",
         "collect_worker_routes",
+        "collect_app_routes",
+        "collect_app_unsupported",
         "compare",
         "self_test",
     )
@@ -116,9 +119,14 @@ def _wiring_failures(validator) -> list[str]:
         if not callable(getattr(validator, name, None)):
             failures.append(f"validator missing callable: {name}")
     source = inspect.getsource(validator.main)
-    if "compare(documented, rust_routes, worker_routes)" not in source:
+    # The production validator now passes the optional app route populations
+    # to both calls.  Match the required leading arguments structurally rather
+    # than requiring the old three-argument spelling; otherwise this guard
+    # reports the live positive control as absent even though main executes it.
+    call_prefix = r"\(\s*documented\s*,\s*rust_routes\s*,\s*worker_routes(?:\s*,|\s*\))"
+    if not re.search(rf"\bcompare{call_prefix}", source):
         failures.append("validator main does not call compare")
-    if "self_test(documented, rust_routes, worker_routes)" not in source:
+    if not re.search(rf"\bself_test{call_prefix}", source):
         failures.append("validator main does not run the positive control")
     workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
     required_workflow_paths = (
@@ -166,6 +174,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         rust_routes = validator.collect_rust_routes()
         worker_routes = validator.collect_worker_routes()
+        app_routes = validator.collect_app_routes()
+        app_unsupported = validator.collect_app_unsupported()
         populations = (
             ("documented", len(documented), MIN_DOCUMENTED_PATHS),
             ("rust", len(rust_routes), MIN_CRATE_ROUTES),
@@ -180,14 +190,16 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             return 1
-        if validator.self_test(documented, rust_routes, worker_routes) != 0:
+        if validator.self_test(
+            documented, rust_routes, worker_routes, app_routes, app_unsupported
+        ) != 0:
             print("FAIL: B-121 production positive control failed")
             return 1
         if _missing_route_ledger_is_invalid(validator):
             print("FAIL: MISSING_ROUTE is not ledgerable")
             return 1
         route, doc, stale = _divergences(
-            validator, documented, rust_routes, worker_routes
+            validator, documented, rust_routes, worker_routes, app_routes
         )
         if route or doc or stale:
             print(

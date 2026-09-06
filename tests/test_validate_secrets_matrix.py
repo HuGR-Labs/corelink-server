@@ -21,6 +21,13 @@ SYNTHETIC_NAMES = {
     "CORELINK_HTTP_STATUS",
 }
 
+GC_CONFIG_NAMES = {
+    "GC_LIVE_DELETE_CONFIRM",
+    "GC_R2_BUCKET",
+    "GC_RUN_ID",
+    "GC_VALIDATE_ONLY",
+}
+
 
 def _source(names: set[str]) -> str:
     return "\n".join(f"const value = process.env.{name};" for name in sorted(names))
@@ -66,3 +73,11 @@ def test_synthetic_names_in_production_paths_fail_closed(tmp_path: Path) -> None
     )
 
     assert gate.scan_rust(tmp_path) == SYNTHETIC_NAMES
+
+
+def test_gc_controls_are_exact_non_secret_allowlist_entries() -> None:
+    assert all(gate.ALLOWLIST_REGEX.match(name) for name in GC_CONFIG_NAMES)
+    # A future GC credential must not be hidden by a broad prefix rule.
+    assert not gate.ALLOWLIST_REGEX.match("GC_ADMIN_TOKEN")
+    shell_gate = (ROOT / "scripts/secrets-checklist-verify.sh").read_text(encoding="utf-8")
+    assert all(f"|{name}$" in shell_gate for name in GC_CONFIG_NAMES)

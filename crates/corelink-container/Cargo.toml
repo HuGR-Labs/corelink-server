@@ -193,6 +193,9 @@ corelink-adapter-host = { workspace = true }
 # ports speak (brew's ports use plain strings; npm/pip use the typed core
 # newtypes, so the route wrappers in `routes/{npm,pip}.rs` need this dep).
 corelink-core = { workspace = true }
+# Native GC runner: the container owns the async D1/R2 clients and adapts
+# them into the pure crate's synchronous reclaim traits.
+corelink-gc = { workspace = true }
 # corelink-hash::Digest::compute — the canonical content hash for the 2-level
 # moat store (must match the CAS write path's blake3).
 corelink-hash = { workspace = true }
@@ -254,11 +257,10 @@ hmac = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 
-# BYOK foundation crate (KmsProvider trait + InMemoryFake used by
-# the orchestrator default path) — NOT optional: the orchestrator
-# must compile in the default `cargo build -p corelink-server`
-# configuration and return `Arc<dyn KmsProvider>` backed by a local
-# in-memory fake when no `byok-*-real` flag is active.
+# BYOK foundation crate (KmsProvider trait + production provider boundary) —
+# NOT optional: the orchestrator compiles in the default configuration but
+# fails closed when no `byok-*-real` flag is active; no in-memory crypto
+# fallback is permitted.
 # Pattern: `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md` §7.
 corelink-byok = { path = "../../crates/corelink-byok" }
 # Wave-35 Phase 2 — the former `corelink-byok-{aws,gcp,azure,vault}`

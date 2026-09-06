@@ -24,18 +24,20 @@
 //! | `apac` | `nrt`           |
 //! | `afr`  | (none — reject) |
 //!
-//! Provisioned = `{wnam, enam, weur}` — exactly the macros backed by a
-//! jurisdiction-correct R2 bucket. `sam`/`apac`/`afr` are valid macro codes (the
-//! D1 CHECK accepts them and routing still recognises them) but are NOT
-//! provisioned. `sam` in particular stays ROUTABLE (`colo_for_macro` still maps
-//! it) but is NOT provisionable: PROD_SAM still points at the DEFAULT US R2
-//! endpoint + shared US bucket, so a `sam`-labelled tenant would mis-land in US
-//! storage — an LGPD cross-border violation. Re-add `sam` only once PROD_SAM has
-//! a real SAM-jurisdiction bucket/endpoint.
+//! Provisioned = `{wnam, enam, weur, apac}` — the four macros backed by the
+//! currently provisioned storage paths. `apac` resolves to Tokyo (`nrt`) and
+//! uses the APAC-located bucket. `sam`/`afr` remain valid macro codes (the D1
+//! CHECK accepts them and routing recognises `sam`) but are NOT provisioned.
+//! `sam` in particular stays ROUTABLE (`colo_for_macro` still maps it) but is
+//! not provisionable: PROD_SAM still points at the DEFAULT US R2 endpoint +
+//! shared US bucket, so a `sam`-labelled tenant would mis-land in US storage —
+//! an LGPD cross-border violation. Re-add `sam` only once PROD_SAM has a real
+//! SAM-jurisdiction bucket/endpoint.
 //!
-//! This provisioned set is the SINGLE SOURCE OF TRUTH shared by THREE consumers
+//! This provisioned set is the SINGLE SOURCE OF TRUTH shared by three consumers
 //! (this file, the worker `region-map.ts`, and signup `clerk.ts`), pinned
-//! together by `worker/tests/region-map.test.ts` (the 3-way drift gate).
+//! together by `worker/tests/region-map.test.ts` (the three-consumer drift gate).
+//! The set has four provisioned macros; “three” describes consumers, not regions.
 
 /// The canonical CoreLink data-residency MACRO region codes (the D1 CHECK set).
 pub const MACRO_REGIONS: [&str; 6] = ["wnam", "enam", "weur", "sam", "apac", "afr"];
@@ -50,6 +52,11 @@ pub const MACRO_REGIONS: [&str; 6] = ["wnam", "enam", "weur", "sam", "apac", "af
 /// but is NOT provisionable — Cloudflare has no SAM region (documented platform
 /// limit), so its data would mis-land in US R2 under a false residency label.
 pub const PROVISIONED_MACROS: [&str; 4] = ["wnam", "enam", "weur", "apac"];
+
+// Macro and colo are separate vocabularies even where their wire encoding is
+// currently the same (`sam`). Keep the collision in one boundary constant so
+// residency callers cannot accidentally compare a macro as if it were a colo.
+const COLO_SAM: &str = "sam";
 
 /// Canonical CAS/AC storage regions — the `<region>/` key-prefix segment swept
 /// by a tenant-wide erase (`<region>/<tenant_prefix>/<digest>`).
@@ -77,11 +84,19 @@ pub fn colo_for_macro(macro_region: &str) -> Option<&'static str> {
     match macro_region {
         "wnam" | "enam" => Some("iad"),
         "weur" => Some("lhr"),
-        "sam" => Some("sam"),
+        "sam" => Some(COLO_SAM),
         "apac" => Some("nrt"),
         // `afr` and anything unrecognised → no colo (reject).
         _ => None,
     }
+}
+
+/// Compare the two distinct region vocabularies at one canonical boundary.
+/// The current SAM wire values happen to both be `sam`; keeping this decision
+/// here prevents stringly macro/colo comparisons from spreading to callers.
+#[must_use]
+pub fn colo_matches_macro(macro_region: &str, serving_colo: &str) -> bool {
+    colo_for_macro(macro_region) == Some(serving_colo)
 }
 
 /// Is `s` one of the six canonical macro region codes?

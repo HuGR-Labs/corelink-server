@@ -4,12 +4,14 @@ title: "WAIVER-S14-001 — Legal-externo review timeline exception"
 description: "An INACTIVE waiver template that activates only if external legal review of the DPA/TIA misses the D+30 sprint window, with compensating controls, a 90-day expiry, and explicit revalidation triggers."
 source_files:
   - "specs/03_architecture/adrs/WAIVER-S14-001-legal-externo-timeline.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "waiver", "compliance", "legal-externo", "dpa", "tia", "s14"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/WAIVER-S14-001-legal-externo-timeline.md@0e7777ba8fd633682c641eb4feb2d49b78ca5740"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # WAIVER-S14-001 — Legal-externo review timeline exception
 
 The DPA + Schrems II TIA templates ([ADR-S14-008](/adr/adr-s14-008-dpa-amendment-schrems-ii-tia-legal-externo.md)) need external-counsel review, but a 6-week legal lead may exceed the sprint window. This is the INACTIVE waiver template that activates only if that review misses D+30 — documenting the accepted residual risk with explicit compensating controls, a 90-day expiry, and revalidation triggers rather than letting a compliance gap go silent. It exists so a missed legal-review deadline is a bounded, monitored, time-boxed exception, not an unrecorded hole — fitting the zero-silent-debt mandate.

@@ -4,12 +4,14 @@ title: "ADR-S11-010 — TLA+ Residency Formal Proof Deferred to S-14"
 description: "Why S-11 ships residency as runtime enforcement + a 20k property test rather than a full TLA+ region_residency.tla proof, which is deferred to S-14 alongside BYOK sovereignty."
 source_files:
   - "specs/03_architecture/adrs/ADR-S11-010-tla-residency-deferred-s14.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s11", "tla-plus", "residency", "formal-verification", "deferred"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S11-010-tla-residency-deferred-s14.md@5926259b56f214b24e6feb878cf02ad471beb281"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-S11-010 — TLA+ Residency Formal Proof Deferred to S-14
 
 S-11 delivers residency enforcement as a runtime layer (custom-domain routing, D1 trigger checks, Worker pre-flight assertions) plus a 20k-iteration property test proving zero cross-region leaks. This ADR records the deliberate scope call to ship that as S-11's primary residency mechanism and **defer** the full `region_residency.tla` formal proof to S-14, where it overlaps with BYOK sovereignty — while noting that S-11 already carries the safety-critical sub-properties formally.

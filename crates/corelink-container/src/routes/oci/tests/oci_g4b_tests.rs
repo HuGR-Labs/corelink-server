@@ -6,6 +6,12 @@
 // This file is included as a child of `oci::tests` via `#[path]`.
 use super::*;
 
+// Load-bearing wiring sentinel: this fixture is intentionally mounted through
+// the parent's exact `#[path] mod g4b_tests` declaration. The sibling guard in
+// `b126_m2_impl_02.rs` references this string through that module path, so
+// deleting or renaming the external fixture cannot leave a green refactor.
+pub(super) const B126_M2_OCI_G4B_WIRING_SENTINEL: &str = "oci-g4b-tests-wired-v1";
+
 // ── G4b: tenant-suspend gate on the OCI plane ──────────────────────────────
 //
 // Two enforcement points, one invariant: a tenant whose offboarding state ∈

@@ -140,7 +140,10 @@ jobs:
           # collector in scripts/, rather than pretending it is a generic
           # tests/ fixture.  Keep it explicit and assert its presence: a glob
           # change must never make this CI gate green over a missing suite.
-          REQUIRED_SUITES=(scripts/test_b152_actions_diagnostic.py)
+          REQUIRED_SUITES=(
+            scripts/test_b152_actions_diagnostic.py
+            scripts/test_b250_deleted_workflow_startup_failure.py
+          )
           for suite in "${REQUIRED_SUITES[@]}"; do
             if [ ! -f "$suite" ]; then
               echo "::error::required Python regression suite is missing: $suite"

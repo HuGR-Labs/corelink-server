@@ -76,6 +76,8 @@ Im Hintergrund:
 
 - Der Sitz wird sofort als `team_member`-Zeile mit dem Status `invited`
   festgehalten — genau das zeigt die Liste **Pending invitations**.
+- Die Antwort enthält ein zufälliges `invitation_token` (256 Bit). Teilen Sie
+  es sicher; es wird nur einmal angezeigt und nur als Digest gespeichert.
 - Gespeichert wird nur ein pseudonymisierter Hash der E-Mail-Adresse
   (getrimmt und kleingeschrieben); die Klartextadresse wird nie
   persistiert.
@@ -109,10 +111,12 @@ beiden Wegen ein `403`.
 1. Sie meldet sich bei CoreLink an — oder registriert sich und richtet
    MFA ein, falls es das erste Mal ist — und zwar mit **derselben
    E-Mail-Adresse, die Sie eingeladen haben**.
-2. Clerk leitet zurück zu CoreLink.
-3. CoreLink findet den offenen Sitz über den E-Mail-Hash, bindet ihn an
-   die echte `user_id` und setzt den Status von `invited` auf `active`.
-   Die beim Einladen gewählte Rolle bleibt erhalten.
+2. Clerk muss die primäre E-Mail als `verified` markieren.
+3. Rufen Sie angemeldet `POST /v1/customer/team/accept` mit
+   `{"invitation_token":"..."}` auf. CoreLink prüft Digest, Tenant-Bindung,
+   14-Tage-Ablauf und E-Mail-Verifizierung atomar; Replay, abgelaufene oder
+   tenant-fremde Tokens werden abgelehnt.
+4. Die beim Einladen gewählte Rolle bleibt erhalten und der Sitz wird `active`.
 
 Ab jetzt erscheint die Person unter **Members** statt unter
 **Pending invitations**.
@@ -136,13 +140,9 @@ Die Antwort enthält ein `members`-Array; jeder Eintrag trägt `user_id`,
 sich anmeldet, danach `active`). Ein Feld `email` ist zwar vorhanden, kommt
 aber als Platzhalter zurück — siehe den Hinweis unten.
 
-> **CoreLink speichert die E-Mail-Adresse der eingeladenen Person nie im
-> Klartext.** Persistiert wird nur ein pseudonymisierter Hash der
-> getrimmten, kleingeschriebenen Adresse (`CTRL-PRIV-001`); dieser Hash
-> ist zugleich der Schlüssel, über den die Einladung bei der Anmeldung
-> gefunden wird. Audit-Zeilen folgen derselben Regel
-> (`INV-AUDIT-NO-RAW-PII`): der Eintrag `team.invited` hält die Rolle
-> fest, nicht die Adresse.
+> **CoreLink speichert E-Mail-Adresse und Token nie im Klartext.** Persistiert
+> werden nur pseudonymisierte Digests (`CTRL-PRIV-001`); die Annahme erfordert
+> einen verifizierten primären Clerk-Account und schreibt `team.accepted`.
 
 ## Schritt 5 — Das erste PAT ausstellen (ab `Member`)
 

@@ -4,12 +4,14 @@ title: "ADR-S14-005 — BYOK 4-provider semantics (Azure AAD flow + Vault mTLS +
 description: "Provider-specific BYOK decisions: a two-layer AES-GCM inner key to give Azure wrapKey AAD binding, mTLS + cert pinning for customer-hosted Vault, and parse-time cross-provider tamper detection."
 source_files:
   - "specs/03_architecture/adrs/ADR-S14-005-byok-gcp-azure-vault.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s14", "byok", "azure", "vault", "mtls"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S14-005-byok-gcp-azure-vault.md@611461d131d3596627a637a0bf6c19fd7340bcce"
+checkpoint_sha: "fc7ec9bb9c5d8711cabc4b93c989062e71d2955f"
 
+---
 # ADR-S14-005 — BYOK 4-provider semantics (Azure AAD flow + Vault mTLS + cross-provider matrix)
 
 Extending the `KmsProvider` trait of ADR-S14-004 to all four providers surfaced three provider-specific problems that needed explicit ratification: Azure Key Vault's `wrapKey` has no native AAD, customer-hosted HashiCorp Vault needs strong mutual auth, and DEK tampering must be detectable without a shared secret across providers. This ADR (ACTIVE, WI-S14-005) records the solutions and makes the 16-cell matrix a mandatory CI gate.

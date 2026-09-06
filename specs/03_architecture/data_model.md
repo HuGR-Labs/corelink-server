@@ -68,7 +68,7 @@ tags: ["architecture", "data-model", "schema", "cas", "ac", "billing"]
 | `Plan`               | free / solo / team / business / enterprise (5 tiers canonical; Lote 10.7bis P0-7 fix — was 3 tiers; align com slo_catalog.md §3.1 + WI-S07-002 ttl_for_tier 5-arm match) | Neon                   | `plan_id`                               |
 | `Subscription`       | `Tenant × Plan × billing_period`                          | Neon                   | `subscription_id`                       |
 | `Region`             | Código da região (enum)                                    | static / config         | `region_code`                           |
-| `Blob`               | Binário CAS; conteúdo indexado por hash                   | R2 `cas-<region>`      | `digest` (`algo:hex`)                  |
+| `Blob`               | Binário CAS; conteúdo indexado por hash                   | R2 `cas-<region>`      | `digest` (plain lowercase `hex`)       |
 | `BlobMeta`           | Metadata leve do blob (size, refcount, created_at)         | D1 `blob_meta`         | `digest` + `tenant_id`                 |
 | `AC-Entry`           | Action Cache entry (result digest → outputs)              | R2 `ac-<region>`       | `action_digest`                         |
 | `AC-Meta`            | Metadata AC (created, last_seen, expires)                  | D1 `ac_meta`            | composite                               |
@@ -91,7 +91,7 @@ tags: ["architecture", "data-model", "schema", "cas", "ac", "billing"]
 | Internal entity (account, tenant…)  | UUIDv7       | `01938af0-abcd-7123-8456-..........` |
 | Event (usage/audit)                  | ULID         | `01HKE3Z9ABCDEF01234567890`         |
 | PAT                                  | `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` (canonical hybrid HMAC + Argon2id per auth_model.md §2.3 + S-03 cycle 9 SEAL decision (a)) | `corelink_pat_abc12345.x9k....abcDEF12345` |
-| Blob digest                          | `algo:hex`   | `blake3:a1b2c3d4...`                |
+| Blob digest                          | `hex`        | `a1b2c3d4...` (64 lowercase chars) |
 | Region                               | enum code    | `wnam`, `weur`, `sam`, ...          |
 | Request-id                           | ULID          | propagado em logs/traces            |
 
@@ -256,7 +256,7 @@ CREATE INDEX idx_dsr_tickets_subject ON dsr_tickets(subject_user_id) WHERE subje
 -- enforced server-side).
 CREATE TABLE IF NOT EXISTS blob_meta (
   tenant_id         TEXT        NOT NULL,                                 -- canonical UUIDv7 text (§2.1 L91)
-  digest            TEXT        NOT NULL,                                 -- canonical 'algo:hex' (§1 L71)
+  digest            TEXT        NOT NULL,                                 -- canonical lowercase 64-hex (§1 L71)
   size_bytes        INTEGER     NOT NULL CHECK (size_bytes > 0),
   refcount          INTEGER     NOT NULL DEFAULT 1 CHECK (refcount >= 0), -- first write yields 1 (S-01 sprint §1.4)
   compression       TEXT        NULL,                                     -- 'zstd' | NULL (S-05 multipart)
@@ -460,8 +460,12 @@ CRITICAL invariants (em **bold**) requerem TLA+ model (CTRL-FORMAL-001):
 
 ### 8.3 Compatibilidade de dado histórico
 
-- Blobs escritos em v1 continuam legíveis em v2 (formato = `digest = algo:hex`).
-- Mudança de algo primary (ex: BLAKE3 → BLAKE3-2) exige fallback: aceitar ambos em read por ≥ 12 meses.
+- Blobs escritos com o legado `blake3:<hex>` são backfilled para plain
+  lowercase hex by migration 0115. Um prefixo de outro algoritmo não é
+  convertido silenciosamente: permanece inelegível e falha fechado no limite
+  tipado, evitando ambiguidade entre keyspaces.
+- Mudança de algoritmo primary (ex: BLAKE3 → BLAKE3-2) exige uma nova surface
+  / keyspace; `blob_meta` e `gc_candidates` nunca misturam prefixos de algoritmo.
 
 ---
 

@@ -1,0 +1,3 @@
+### Added
+
+- **B-101 now has a deterministic historical finding-to-decision coverage gate.** It parses all 110 findings across the three named historical audits, requires every finding to carry an independently auditable equivalence mapping, exact duplicate disposition, or a distinct canonical B-item proposal, and runs on the self-hosted CI fleet with a prepared PyYAML environment. Its closed-world registry classifies every regular file under `docs/security/` and `reports/audits/` as source or explicit exclusion, rejects symlinks and malformed manifest entries, and pins an exact SHA-256 tree/content certificate that survives squash without commit ancestry; the completed semantic census records 33 equivalences, 4 exact duplicates, and 73 new proposals (B-171…B-243).

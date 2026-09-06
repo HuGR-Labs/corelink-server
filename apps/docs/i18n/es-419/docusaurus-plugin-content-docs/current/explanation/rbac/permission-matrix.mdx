@@ -86,7 +86,7 @@ full served surface with source line numbers.
 | Revoke user (soft-delete row) | `DELETE /v1/customer/team/{user_id}` | role `owner`/`admin` | ✅ | ✅* | ❌ | ❌ |
 | List PATs in tenant | `GET /v1/customer/keys` | `requires_cache_write` | ✅ | ✅ | ✅ | ❌ |
 | Mint PAT | `POST /v1/customer/keys` | `requires_cache_write` | ✅ | ✅ | ✅ | ❌ |
-| Revoke a PAT in tenant | `POST /v1/customer/keys/{pat_id}/revoke` | `requires_cache_write` | ✅ | ✅ | ✅ | ❌ |
+| Revoke a PAT in tenant | `POST /v1/customer/keys/{pat_id}/revoke` | role `owner`/`admin`; admin cannot target owner PAT | ✅ | ✅* | ❌ | ❌ |
 | Delete the whole account | `POST /v1/customer/account/delete` | role `owner` only | ✅ | ❌ | ❌ | ❌ |
 
 > \* `Admin` cannot revoke an `Owner`. Last-Owner safeguard applies — at
@@ -96,14 +96,13 @@ full served surface with source line numbers.
 > it for every caller, closing the invite-owner → accept → delete-tenant
 > escalation (`customer.rs:929-941`).
 >
-> PAT list, mint and revoke gate on the cache-**write** capability
-> (`customer.rs:740`, `:796-798`, `:849`), not on a role. Revoke resolves the
-> target with `WHERE pat_id = ?1 AND tenant_id = ?2`
-> (`customer_d1.rs:1379`) — scoped to the tenant, **not** to the calling
-> principal — so any `read-write` holder can revoke any PAT in the
-> tenant, including the owner's. A `Viewer` (`read-only`) can do none of
-> the three. There is no "revoke own PAT only" narrowing in the served
-> handler.
+> PAT list and mint retain the cache-**write** capability gate
+> (`customer.rs:796-798`); revoke is a destructive team-admin operation and
+> gates on the server-trusted role (`customer.rs:1005`). Owner may target any
+> PAT in the tenant. Admin may target member PATs, while the D1 handler rejects
+> owner/legacy rows (`customer_d1.rs`); the tenant predicate remains mandatory
+> so a foreign `pat_id` is never observed or mutated. A `Member`/`Viewer` and
+> a native PAT caller cannot invoke this endpoint.
 >
 > **Changing a member's role is not served.** `/v1/customer/team/{user_id}`
 > accepts `DELETE` only (`customer.rs:222`); there is no `PATCH`. A

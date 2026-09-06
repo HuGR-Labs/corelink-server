@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-06",
+  "repository": "HuGR-Labs/corelink-server",
+  "query": "gh api --paginate --slurp repos/HuGR-Labs/corelink-server/dependabot/alerts?state=open",
+  "default_branch_commit": "ed0cd972a7453ccbd9783d258f2e46d204085ef8",
+  "candidate_commit": "8796799192daf00aa98c99a60e0bd4d790ec1ce9",
+  "post_merge_refresh_required": true,
+  "alerts": [
+    {"number": 26, "package": "image-size", "ghsa": "GHSA-w3rx-r6r6-pgpr", "severity": "high", "classification": "old-main-open-candidate-contained"},
+    {"number": 27, "package": "image-size", "ghsa": "GHSA-5p2g-fcmc-qvqq", "severity": "high", "classification": "old-main-open-candidate-contained"},
+    {"number": 28, "package": "extract-zip", "ghsa": "GHSA-jmr9-qjv8-65gv", "severity": "high", "classification": "old-main-open-candidate-contained"},
+    {"number": 33, "package": "fast-uri", "ghsa": "GHSA-5jgf-p345-68v8", "severity": "high", "classification": "old-main-open-candidate-patched"},
+    {"number": 34, "package": "fast-uri", "ghsa": "GHSA-fph4-wmhf-6fwf", "severity": "high", "classification": "old-main-open-candidate-patched"},
+    {"number": 35, "package": "qs", "ghsa": "GHSA-x5fp-wj9c-mxmx", "severity": "medium", "classification": "old-main-open-candidate-patched"},
+    {"number": 36, "package": "fast-uri", "ghsa": "GHSA-f65p-4m7j-42xc", "severity": "high", "classification": "old-main-open-candidate-patched"},
+    {"number": 37, "package": "fast-uri", "ghsa": "GHSA-jqff-g426-hqxp", "severity": "high", "classification": "old-main-open-candidate-patched"},
+    {"number": 38, "package": "qs", "ghsa": "GHSA-4mjr-xmp4-gh2g", "severity": "medium", "classification": "old-main-open-candidate-patched"}
+  ]
+}

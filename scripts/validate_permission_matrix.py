@@ -22,7 +22,12 @@ MATRIX = Path("apps/docs/docs/explanation/rbac/permission-matrix.mdx")
 ROLE_CATALOG = Path("apps/docs/docs/explanation/rbac/role-catalog.mdx")
 REFERENCE = Path("apps/docs/docs/reference/rbac/permissions.mdx")
 
+# The customer-facing D1 team contract calls the cache-capable seat `member`.
+# The legacy auth schema calls the equivalent role `Developer`; keep that
+# spelling in diagnostics and the applied manifest so a stale role claim is
+# visible rather than silently treated as a new grant.
 ROLES = ("owner", "admin", "developer", "viewer")
+PUBLISHED_ROLE_HEADERS = ("owner", "admin", "member", "viewer")
 GRANTED = "✅"
 DENIED = "❌"
 ABSENT = "—"
@@ -39,10 +44,280 @@ class Applied:
     route: str | None = None
     absent: tuple[str, ...] = ()
     required_by_source: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    # (source path, context start, context end, required markers).  Global
+    # marker presence is insufficient when several handlers share one module:
+    # a mutation can remove the revoke/delete gate while another route keeps
+    # the same token alive.
+    required_in_context: tuple[tuple[str, str, str, tuple[str, ...]], ...] = ()
+    # (source path, context start, context end, predicate tokens, rejection
+    # tokens, protected-effect tokens).  Presence in a module is not enough:
+    # the predicate must be an executable branch that rejects before the
+    # mutation it claims to protect.
+    active_guards: tuple[
+        tuple[str, str, str, tuple[str, ...], tuple[str, ...], tuple[str, ...], bool], ...
+    ] = ()
 
 
 class CommentSyntaxError(ValueError):
     """A Rust block comment was not terminated."""
+
+
+@dataclass(frozen=True)
+class RustToken:
+    """One lexical Rust token, with comments and literals distinguished."""
+
+    kind: str
+    value: str
+
+
+def _tokenize_rust(source: str) -> list[RustToken]:
+    """Tokenize enough Rust to prove an authorization branch is executable.
+
+    This is deliberately not a Rust parser.  It does, however, handle nested
+    comments, normal/raw/byte strings, character literals, identifiers and
+    punctuation.  Comment and literal text never becomes an identifier token,
+    so a reviewer cannot satisfy a gate by planting ``"if can_write()"`` or a
+    commented-out predicate.  Unterminated lexical states fail closed.
+    """
+
+    tokens: list[RustToken] = []
+    index = 0
+    length = len(source)
+    punctuation = (
+        "=>", "->", "::", "&&", "||", "==", "!=", "<=", ">=", "..", "+=", "-=",
+    )
+    while index < length:
+        character = source[index]
+        if character.isspace():
+            index += 1
+            continue
+        if source.startswith("//", index):
+            newline = source.find("\n", index + 2)
+            index = length if newline < 0 else newline + 1
+            continue
+        if source.startswith("/*", index):
+            index += 2
+            depth = 1
+            while index < length and depth:
+                if source.startswith("/*", index):
+                    depth += 1
+                    index += 2
+                elif source.startswith("*/", index):
+                    depth -= 1
+                    index += 2
+                else:
+                    index += 1
+            if depth:
+                raise CommentSyntaxError("unterminated Rust block comment")
+            continue
+
+        # Raw strings (including byte raw strings) may contain any comment or
+        # predicate-looking text. Keep one literal token and never expose its
+        # contents to the control-flow matcher.
+        raw = _raw_string_start(source, index)
+        if raw is not None:
+            quote, hash_count = raw
+            closing = '"' + ("#" * hash_count)
+            end = source.find(closing, quote + 1)
+            if end < 0:
+                raise CommentSyntaxError("unterminated Rust raw string")
+            tokens.append(RustToken("string", source[index : end + len(closing)]))
+            index = end + len(closing)
+            continue
+
+        # Ordinary and byte strings.
+        string_start = character == '"' or (
+            character == "b" and index + 1 < length and source[index + 1] == '"'
+        )
+        if string_start:
+            start = index
+            if character == "b":
+                index += 1
+            index += 1
+            terminated = False
+            while index < length:
+                character = source[index]
+                index += 1
+                if character == "\\" and index < length:
+                    index += 1
+                elif character == '"':
+                    terminated = True
+                    break
+            if not terminated:
+                raise CommentSyntaxError("unterminated Rust string literal")
+            tokens.append(RustToken("string", source[start:index]))
+            continue
+
+        # Character literals are opaque. A lifetime such as `'row` is not.
+        if character == "'" and index + 1 < length and source[index + 1] != "\n":
+            end = index + 1
+            escaped = False
+            while end < length and source[end] != "\n":
+                candidate = source[end]
+                if candidate == "'" and not escaped:
+                    tokens.append(RustToken("char", source[index : end + 1]))
+                    index = end + 1
+                    break
+                if candidate == "\\" and not escaped:
+                    escaped = True
+                else:
+                    escaped = False
+                end += 1
+            else:
+                # This is a lifetime/apostrophe, not a character literal.
+                tokens.append(RustToken("punct", "'"))
+                index += 1
+            continue
+
+        if character.isalpha() or character == "_":
+            end = index + 1
+            while end < length and (source[end].isalnum() or source[end] == "_"):
+                end += 1
+            tokens.append(RustToken("ident", source[index:end]))
+            index = end
+            continue
+        if character.isdigit():
+            end = index + 1
+            while end < length and (source[end].isalnum() or source[end] in "_."):
+                end += 1
+            tokens.append(RustToken("number", source[index:end]))
+            index = end
+            continue
+        operator = next((value for value in punctuation if source.startswith(value, index)), None)
+        if operator is not None:
+            tokens.append(RustToken("punct", operator))
+            index += len(operator)
+        else:
+            tokens.append(RustToken("punct", character))
+            index += 1
+    return tokens
+
+
+def _token_value(token: RustToken) -> str:
+    return token.value
+
+
+def _contains_tokens(tokens: list[RustToken], expected: tuple[str, ...]) -> bool:
+    """Find a token sequence, ignoring comments but never string contents."""
+
+    if not expected or len(tokens) < len(expected):
+        return False
+    values = [_token_value(token) for token in tokens]
+    return any(tuple(values[index : index + len(expected)]) == expected for index in range(len(values) - len(expected) + 1))
+
+
+def _matching_brace(tokens: list[RustToken], opening: int) -> int | None:
+    depth = 0
+    for index in range(opening, len(tokens)):
+        if tokens[index].value == "{":
+            depth += 1
+        elif tokens[index].value == "}":
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
+def has_active_guard(
+    source: str,
+    context_start: str,
+    context_end: str,
+    predicate: tuple[str, ...],
+    rejection: tuple[str, ...] = ("return",),
+    protected_effect: tuple[str, ...] = (),
+    require_positive: bool = False,
+) -> bool:
+    """Require a live ``if`` predicate to reject before its protected effect.
+
+    The matcher intentionally rejects ``if false && predicate`` as dead and
+    rejects a bare/unused predicate call.  ``protected_effect`` is searched
+    only after the rejecting branch, tying the check to the mutation it is
+    supposed to guard rather than to another route in the same module.
+    """
+
+    first = source.find(context_start)
+    if first < 0:
+        return False
+    tail = source[first + len(context_start) :]
+    last = tail.find(context_end)
+    segment = source[first:] if last < 0 else tail[:last]
+    try:
+        tokens = _tokenize_rust(segment)
+    except CommentSyntaxError:
+        return False
+    dead_ranges: list[tuple[int, int]] = []
+    # Record statically unreachable blocks first, so a valid-looking nested
+    # guard cannot hide inside an outer ``if false { ... }`` branch.
+    for index, token in enumerate(tokens):
+        if token.value != "if":
+            continue
+        condition_end = None
+        parens = 0
+        for cursor in range(index + 1, len(tokens)):
+            value = tokens[cursor].value
+            if value in ("(", "["):
+                parens += 1
+            elif value in (")", "]"):
+                parens = max(0, parens - 1)
+            elif value == "{" and parens == 0:
+                condition_end = cursor
+                break
+        if condition_end is not None and any(
+            item.kind == "ident" and item.value == "false"
+            for item in tokens[index + 1 : condition_end]
+        ):
+            closing = _matching_brace(tokens, condition_end)
+            if closing is not None:
+                dead_ranges.append((condition_end, closing))
+    for index, token in enumerate(tokens):
+        if token.value != "if":
+            continue
+        if any(start < index < end for start, end in dead_ranges):
+            continue
+        condition_end = None
+        parens = 0
+        for cursor in range(index + 1, len(tokens)):
+            value = tokens[cursor].value
+            if value in ("(", "["):
+                parens += 1
+            elif value in (")", "]"):
+                parens = max(0, parens - 1)
+            elif value == "{" and parens == 0:
+                condition_end = cursor
+                break
+        if condition_end is None:
+            continue
+        condition = tokens[index + 1 : condition_end]
+        # A literal false anywhere in this condition makes the branch
+        # statically unreachable, even when the required marker follows it.
+        if any(item.kind == "ident" and item.value == "false" for item in condition):
+            continue
+        # These authorization predicates are intentionally canonical complete
+        # conditions. Accepting a surrounding `|| true`, extra bypass term, or
+        # a positive inversion would prove only marker presence, not the gate.
+        if tuple(item.value for item in condition) != predicate:
+            continue
+        if require_positive:
+            # The D1 owner safeguard is an admin equality check. A negated
+            # comparator (`!= "admin"` / `!eq_ignore_ascii_case(...)`) must
+            # never satisfy the positive owner-protection claim.
+            predicate_start = next(
+                (offset for offset in range(len(condition))
+                 if tuple(item.value for item in condition[offset:offset + len(predicate)]) == predicate),
+                None,
+            )
+            if predicate_start is None or predicate_start > 0 and condition[predicate_start - 1].value == "!":
+                continue
+        closing = _matching_brace(tokens, condition_end)
+        if closing is None:
+            continue
+        branch = tokens[condition_end + 1 : closing]
+        if not _contains_tokens(branch, rejection):
+            continue
+        if protected_effect and not _contains_tokens(tokens[closing + 1 :], protected_effect):
+            continue
+        return True
+    return False
 
 
 # The closed-world manifest is deliberately explicit.  Adding a row to the
@@ -52,15 +327,34 @@ APPLIED: dict[str, Applied] = {
     "readcasblobsac": Applied((GRANTED,) * 4, ("crates/corelink-container/src/routes/cas.rs", "crates/corelink-container/src/routes/ac.rs"), ("can_read()",), "CAS_READ_ROUTE", required_by_source=(("crates/corelink-container/src/routes/cas.rs", ("can_read()",)), ("crates/corelink-container/src/routes/ac.rs", ("can_read()",)))),
     "writecasblobsac": Applied((GRANTED, GRANTED, GRANTED, DENIED), ("crates/corelink-container/src/routes/cas.rs", "crates/corelink-container/src/routes/ac.rs"), ("can_write()",), ".put(", required_by_source=(("crates/corelink-container/src/routes/cas.rs", ("can_write()",)), ("crates/corelink-container/src/routes/ac.rs", ("can_write()",)))),
     "findmissingblobs": Applied((GRANTED, GRANTED, GRANTED, DENIED), ("crates/corelink-container/src/routes/bazel_v2.rs",), ("can_find_missing()",), "findMissingBlobs"),
-    "deleteacasblobacref": Applied((GRANTED, GRANTED, GRANTED, DENIED), ("crates/corelink-container/src/routes/cas.rs", "crates/corelink-container/src/routes/ac.rs"), ("can_write()",), ".delete(", required_by_source=(("crates/corelink-container/src/routes/cas.rs", ("can_write()",)), ("crates/corelink-container/src/routes/ac.rs", ("can_write()",)))),
+    "deleteacasblobacref": Applied((GRANTED, GRANTED, GRANTED, DENIED), ("crates/corelink-container/src/routes/cas.rs", "crates/corelink-container/src/routes/ac.rs"), ("can_write()",), ".delete(", required_by_source=(("crates/corelink-container/src/routes/cas.rs", ("can_write()",)), ("crates/corelink-container/src/routes/ac.rs", ("can_write()",))), required_in_context=(
+        ("crates/corelink-container/src/routes/cas.rs", "async fn handle_delete(", "async fn handle_list(", ("scope.can_write()",)),
+        ("crates/corelink-container/src/routes/ac.rs", "async fn handle_delete(", "async fn handle_list_refs(", ("scope.can_write()",)),
+    ), active_guards=(
+        ("crates/corelink-container/src/routes/cas.rs", "async fn handle_delete(", "async fn handle_list(", ("!", "scope", ".", "can_write", "(", ")"), ("return", "(", "StatusCode", "::", "FORBIDDEN"), (".", "delete", "("), False),
+        ("crates/corelink-container/src/routes/ac.rs", "async fn handle_delete(", "async fn handle_list_refs(", ("!", "scope", ".", "can_write", "(", ")"), ("return", "(", "StatusCode", "::", "FORBIDDEN"), (".", "delete", "("), False),
+    )),
     # Team membership and customer credentials
-    "inviteuserdeveloperviewer": Applied((GRANTED, GRANTED, DENIED, DENIED), ("crates/corelink-container/src/routes/customer.rs",), ("caller_is_owner_or_admin", "role_is_privileged"), "/v1/customer/team/invite"),
+    "inviteusermemberviewer": Applied((GRANTED, GRANTED, DENIED, DENIED), ("crates/corelink-container/src/routes/customer.rs",), ("caller_is_owner_or_admin", "role_is_privileged"), "/v1/customer/team/invite"),
     "inviteuseradmin": Applied((GRANTED, DENIED, DENIED, DENIED), ("crates/corelink-container/src/routes/customer.rs",), ("caller_is_owner_or_admin", "role_is_privileged"), "/v1/customer/team/invite"),
     "inviteuserowner": Applied((DENIED,) * 4, ("crates/corelink-container/src/routes/customer.rs",), ("owner role is not grantable",), "/v1/customer/team/invite"),
     "revokeusersoftdeleterow": Applied((GRANTED, GRANTED, DENIED, DENIED), ("crates/corelink-container/src/routes/customer.rs",), ("caller_is_owner_or_admin",), "/v1/customer/team/"),
     "listpatsintenant": Applied((GRANTED, GRANTED, GRANTED, DENIED), ("crates/corelink-container/src/routes/customer.rs",), ("requires_cache_write",), "/v1/customer/keys"),
     "mintpat": Applied((GRANTED, GRANTED, GRANTED, DENIED), ("crates/corelink-container/src/routes/customer.rs",), ("requires_cache_write",), "/v1/customer/keys"),
-    "revokeapatintenant": Applied((GRANTED, GRANTED, GRANTED, DENIED), ("crates/corelink-container/src/routes/customer.rs",), ("requires_cache_write",), "/v1/customer/keys/"),
+    "revokeapatintenant": Applied(
+        (GRANTED, GRANTED, DENIED, DENIED),
+        ("crates/corelink-container/src/routes/customer.rs", "crates/corelink-container/src/customer_d1.rs"),
+        ("caller_is_owner_or_admin",),
+        "/v1/customer/keys/",
+        required_by_source=(("crates/corelink-container/src/routes/customer.rs", ("caller_is_owner_or_admin",)),),
+        required_in_context=(
+            ("crates/corelink-container/src/routes/customer.rs", "async fn handle_keys_revoke(", "async fn handle_team_list(", ("caller_is_owner_or_admin(&headers)",)),
+        ),
+        active_guards=(
+        ("crates/corelink-container/src/routes/customer.rs", "async fn handle_keys_revoke(", "async fn handle_team_list(", ("!", "caller_is_owner_or_admin", "(", "&", "headers", ")"), ("return", "(", "StatusCode", "::", "FORBIDDEN"), ("state", ".", "keys", ".", "revoke", "("), False),
+        ("crates/corelink-container/src/customer_d1.rs", "fn revoke(&self, req: KeyRevokeRequest)", "impl CustomerTeamHandler", ("req", ".", "caller_role", ".", "trim", "(", ")", ".", "eq_ignore_ascii_case", "(", '"admin"', ")", "&&", "col_opt_str", "(", "&", "row", ",", '"principal_id"', ")", ".", "is_none", "(", ")"), ("return", "Err", "(", "CustomerHandlerError", "::", "Unauthorized", "("), ("self", ".", "run", "("), True),
+        ),
+    ),
     "deletethewholeaccount": Applied((GRANTED, DENIED, DENIED, DENIED), ("crates/corelink-container/src/routes/customer.rs",), ("CLERK_TOKEN_PREFIX", "ROLE_HEADER", '!= "owner"'), "/v1/customer/account/delete"),
     # Audit
     "readauditlogofthetenantdashboard": Applied((GRANTED, GRANTED, DENIED, DENIED), ("crates/corelink-container/src/routes/customer.rs",), ("requires_billing_admin",), "/v1/customer/audit"),
@@ -94,12 +388,34 @@ def _clean_cell(value: str) -> str:
     return value
 
 
+def _role_header(line: str) -> tuple[str, ...] | None:
+    """Return the complete role suffix of a Permission table header.
+
+    Looking only at the final four cells would let an added role column hide
+    in the prefix/suffix.  We locate the Owner column and require the complete
+    suffix to equal the closed D1 role population.
+    """
+    if not line.lstrip().startswith("|"):
+        return None
+    cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+    if not cells or cells[0].casefold() != "permission":
+        return None
+    try:
+        owner_index = next(i for i, cell in enumerate(cells[1:], 1) if norm(cell) == "owner")
+    except StopIteration:
+        return ()
+    return tuple(norm(cell) for cell in cells[owner_index:])
+
+
 def rows(text: str):
-    """Yield (label, four role cells) from every canonical role table."""
+    """Yield (label, four role cells) from canonical role tables.
+
+    Malformed role headers intentionally yield no rows; ``check`` reports the
+    header drift and the closed-world population failure together.
+    """
     lines = text.splitlines()
-    role_header = re.compile(r"^\s*\|\s*Permission\s*\|.*\|\s*Owner\s*\|\s*Admin\s*\|\s*Developer\s*\|\s*Viewer\s*\|\s*$", re.I)
     for index, line in enumerate(lines):
-        if not role_header.match(line):
+        if _role_header(line) != PUBLISHED_ROLE_HEADERS:
             continue
         for candidate in lines[index + 2 :]:
             if not candidate.lstrip().startswith("|"):
@@ -252,7 +568,19 @@ def _strip_comments(source: str) -> str:
 def _read(root: Path, relative: str, errors: list[str]) -> str:
     path = root / relative
     if path.is_file():
-        return path.read_text(encoding="utf-8")
+        source = path.read_text(encoding="utf-8")
+        # Route modules are intentionally split into include! parts.  Read the
+        # assembled source while retaining the manifest's stable top-level
+        # paths, so a route re-anchor cannot make its live predicate invisible.
+        include_re = re.compile(r'include!\(\s*"([^"]+)"\s*\)')
+        parts = [source]
+        for include in include_re.findall(source):
+            child = path.parent / include
+            if child.is_file():
+                parts.append(_read(root, str(child.relative_to(root)), errors))
+            else:
+                errors.append(f"missing required input: {child.relative_to(root)}")
+        return "\n".join(parts)
     if path.is_dir():
         return "\n".join(p.read_text(encoding="utf-8") for p in sorted(path.rglob("*.rs")))
     errors.append(f"missing required input: {relative}")
@@ -261,6 +589,23 @@ def _read(root: Path, relative: str, errors: list[str]) -> str:
 
 def check(matrix_text: str, source_texts: dict[str, str]) -> list[str]:
     errors: list[str] = []
+    role_headers = [
+        _role_header(line)
+        for line in matrix_text.splitlines()
+        if _role_header(line) is not None
+    ]
+    if not role_headers:
+        errors.append(
+            "role header drift: no Permission table has the required "
+            "Owner | Admin | Member | Viewer suffix"
+        )
+    for header in role_headers:
+        if header != PUBLISHED_ROLE_HEADERS:
+            rendered = " | ".join(header) if header else "<missing Owner column>"
+            errors.append(
+                "role header drift: expected Owner | Admin | Member | Viewer; "
+                f"found {rendered}"
+            )
     seen: set[str] = set()
     clean_sources: dict[str, str] = {}
     for path, source in source_texts.items():
@@ -293,6 +638,28 @@ def check(matrix_text: str, source_texts: dict[str, str]) -> list[str]:
             for marker in markers:
                 if marker not in source:
                     errors.append(f"applied gate missing: {label} requires {marker!r} in {path}")
+        for path, start, end, markers in expected.required_in_context:
+            source = clean_sources.get(path, "")
+            first = source.find(start)
+            context = "" if first < 0 else source[first:]
+            last = context.find(end, len(start)) if context else -1
+            if last >= 0:
+                context = context[:last]
+            elif first < 0:
+                context = ""
+            for marker in markers:
+                if marker not in context:
+                    errors.append(
+                        f"applied gate missing: {label} requires {marker!r} "
+                        f"in {path} context {start!r}"
+                    )
+        for path, start, end, predicate, rejection, protected_effect, require_positive in expected.active_guards:
+            source = clean_sources.get(path, "")
+            if not has_active_guard(source, start, end, predicate, rejection, protected_effect, require_positive):
+                errors.append(
+                    f"applied gate is not load-bearing: {label} requires live "
+                    f"predicate in {path} context {start!r}"
+                )
         if expected.route and expected.route not in code:
             errors.append(f"served route missing: {label} requires {expected.route!r}")
         for marker in expected.absent:
@@ -313,8 +680,9 @@ def check_published_claim_documents(role_catalog: str, reference: str) -> list[s
     unobserved, more permissive authorization description.
     """
     errors: list[str] = []
-    if re.search(r"Developer\s+\*\*can\*\*\s+delete\s+CAS\s+blobs", role_catalog, re.I) is None:
-        errors.append("role catalog is missing the published Developer CAS-delete claim")
+    for role in ("Member", "Developer"):
+        if re.search(rf"{role}\s+\*\*can\*\*\s+delete\s+CAS\s+blobs", role_catalog, re.I) is None:
+            errors.append(f"role catalog is missing the published {role} CAS-delete claim")
     for marker in ("cache-WRITE", "cache:delete"):
         if marker not in role_catalog:
             errors.append(f"role catalog is missing the CAS-delete distinction: {marker}")
@@ -339,45 +707,71 @@ def validate(repo_root: Path = ROOT) -> list[str]:
 
 
 def self_test() -> int:
-    """Mutation controls: every population row is checked, both directions fail."""
-    matrix = "\n".join(
-        f"| {label} | {' | '.join(roles)} |" for label, roles in (
-            ("Read CAS blobs + AC", (GRANTED,) * 4),
-            ("Write CAS blobs + AC", (GRANTED, GRANTED, GRANTED, DENIED)),
-            ("FindMissingBlobs", (GRANTED, GRANTED, GRANTED, DENIED)),
-            ("Delete a CAS blob / AC ref", (GRANTED, GRANTED, GRANTED, DENIED)),
-            ("Invite user (Developer / Viewer)", (GRANTED, GRANTED, DENIED, DENIED)),
-            ("Invite user (Admin)", (GRANTED, DENIED, DENIED, DENIED)),
-            ("Invite user (Owner)", (DENIED,) * 4),
-            ("Revoke user (soft-delete row)", (GRANTED, GRANTED, DENIED, DENIED)),
-            ("List PATs in tenant", (GRANTED, GRANTED, GRANTED, DENIED)),
-            ("Mint PAT", (GRANTED, GRANTED, GRANTED, DENIED)),
-            ("Revoke a PAT in tenant", (GRANTED, GRANTED, GRANTED, DENIED)),
-            ("Delete the whole account", (GRANTED, DENIED, DENIED, DENIED)),
-            ("Read audit log of the tenant (dashboard)", (GRANTED, GRANTED, DENIED, DENIED)),
-            ("Export audit log / analytics", (GRANTED,) * 4),
-            ("RFC 6962 inclusion proof", (GRANTED,) * 4),
-            ("Query `admin_op_log`", (ABSENT,) * 4),
-            ("View billing detail", (GRANTED, GRANTED, DENIED, DENIED)),
-            ("Manage payment method / cancel subscription", (GRANTED, GRANTED, DENIED, DENIED)),
-            ("Select / change tier", (GRANTED, GRANTED, DENIED, DENIED)),
-            ("Apply tax exemption", (ABSENT,) * 4),
-            ("Report action started", (DENIED,) * 4),
-            ("Report result", (DENIED,) * 4),
-        )
-    )
-    all_markers = "\n".join(
-        marker
-        for spec in APPLIED.values()
-        for marker in (*spec.required, *(tuple([spec.route]) if spec.route else ()))
-    )
-    sources = {path: all_markers for path in {p for spec in APPLIED.values() for p in spec.sources}}
-    # Absent rows are represented by empty route directories in this fixture.
-    mutated = matrix.replace("| ✅ | ❌ |\n| Report action", "| ✅ | ✅ |\n| Report action")
-    if not check(mutated, sources):
-        print("FAIL: permissive mutation was not detected")
+    """Run mutations against the assembled, executable route sources."""
+    baseline = validate(ROOT)
+    if baseline:
+        print("FAIL: baseline permission matrix is not green")
         return 1
-    print("mutation: permissive published role claim rejected")
+    matrix = _read(ROOT, str(MATRIX), [])
+    source_paths = {path for spec in APPLIED.values() for path in spec.sources}
+    sources = {path: _read(ROOT, path, []) for path in source_paths}
+
+    def mutate_context(path: str, start: str, end: str, old: str, new: str) -> dict[str, str]:
+        mutated = dict(sources)
+        text = mutated[path]
+        first = text.index(start)
+        last = text.index(end, first)
+        context = text[first:last]
+        if old not in context:
+            raise ValueError(f"mutation marker missing in {path}: {old}")
+        mutated[path] = text[:first] + context.replace(old, new, 1) + text[last:]
+        return mutated
+
+    mutations = (
+        ("customer positive predicate", mutate_context(
+            "crates/corelink-container/src/routes/customer.rs",
+            "async fn handle_keys_revoke(", "async fn handle_team_list(",
+            "if !caller_is_owner_or_admin(&headers)", "if caller_is_owner_or_admin(&headers)",
+        )),
+        ("customer string bait", mutate_context(
+            "crates/corelink-container/src/routes/customer.rs",
+            "async fn handle_keys_revoke(", "async fn handle_team_list(",
+            "caller_is_owner_or_admin(&headers)", '"caller_is_owner_or_admin(&headers)"',
+        )),
+        ("customer unused predicate", mutate_context(
+            "crates/corelink-container/src/routes/customer.rs",
+            "async fn handle_keys_revoke(", "async fn handle_team_list(",
+            "if !caller_is_owner_or_admin(&headers)",
+            "let _owner_admin = caller_is_owner_or_admin(&headers); if true",
+        )),
+        ("CAS delete scope gate", mutate_context(
+            "crates/corelink-container/src/routes/cas.rs",
+            "async fn handle_delete(", "async fn handle_list(",
+            "scope.can_write()", "scope.can_read()",
+        )),
+        ("PAT revoke false gate", mutate_context(
+            "crates/corelink-container/src/routes/customer.rs",
+            "async fn handle_keys_revoke(", "async fn handle_team_list(",
+            "if !caller_is_owner_or_admin(&headers)", "if false",
+        )),
+        ("D1 owner guard false", mutate_context(
+            "crates/corelink-container/src/customer_d1.rs",
+            "fn revoke(&self, req: KeyRevokeRequest)", "impl CustomerTeamHandler",
+            "if req.caller_role.trim().eq_ignore_ascii_case(\"admin\")",
+            "if false && req.caller_role.trim().eq_ignore_ascii_case(\"admin\")",
+        )),
+        ("D1 owner predicate", mutate_context(
+            "crates/corelink-container/src/customer_d1.rs",
+            "fn revoke(&self, req: KeyRevokeRequest)", "impl CustomerTeamHandler",
+            'if req.caller_role.trim().eq_ignore_ascii_case("admin")',
+            'if !req.caller_role.trim().eq_ignore_ascii_case("admin")',
+        )),
+    )
+    for name, mutated in mutations:
+        if not check(matrix, mutated):
+            print(f"FAIL: {name} mutation escaped")
+            return 1
+        print(f"mutation: {name} rejected")
     return 0
 
 

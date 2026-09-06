@@ -44,8 +44,8 @@ so the code change alone cannot persist an apac attestation or public key.
 SQLite (hence Cloudflare D1) has **no** `ALTER TABLE … ALTER COLUMN` /
 `DROP CONSTRAINT` / `ADD CONSTRAINT` to relax an existing inline CHECK in place.
 The only schema-correct way to widen it is the SQLite-documented **12-step table
-rebuild** — the same mechanism ADR-0062 used for `tier_selections` /
-`stripe_checkout_sessions`.
+rebuild**. ADR-0062 is a related tier-domain widening precedent, but uses an
+in-place catalog edit because these tables must not be replaced.
 
 The `check_migrations_additive.py` gate (INV-AUTH-MIGRATION-ADDITIVE, HIGH)
 rejects raw `DROP TABLE` / `RENAME` tokens unless annotated

@@ -9,7 +9,7 @@
  *   (c) FAIL-CLOSED — a D1 error propagates (caller maps it to a 500); the helper
  *                     NEVER swallows it or returns a shared tenant.
  *   (d) FULL ROW-FAMILY — a FIRST-EVER provision writes all 4 row-families
- *                     (tenant, tier_selections, tenant_quota, tenant_org_map) as
+ *                     (tenant, tier_selections, tenant_quota, githugr_tenant_org_map) as
  *                     ONE transactional batch with the `tenant` row FIRST (FK
  *                     order) — and, since 2026-08-02, NO `runners_entitlement`:
  *                     Runners is a separate PAID axis and any row there is a real
@@ -43,7 +43,7 @@ interface RecordedStatement extends GithugrPreparedStatement {
  *   - `run()` / `first()` apply the effect (read/write) — the read path.
  *   - `batch([...])` applies each statement's write effect IN ORDER, transactionally
  *     (throw mid-batch ⇒ nothing after it applies) — the provision path.
- * A stateful tenant_org_map makes the read-back reflect prior INSERTs.
+ * A stateful githugr_tenant_org_map makes the read-back reflect prior INSERTs.
  *
  * `throwOn` fires on ANY stage (SELECT read-back, a batched INSERT, or the
  * lookup-first SELECT) whose sql includes the substring — the fail-CLOSED probe.
@@ -62,7 +62,7 @@ function makeFakeDb(opts: { throwOn?: string; orgMap?: Map<string, string> } = {
     if (opts.throwOn && sql.includes(opts.throwOn)) {
       throw new Error(`simulated D1 fault on: ${opts.throwOn}`);
     }
-    if (sql.includes("INSERT OR IGNORE INTO tenant_org_map")) {
+    if (sql.includes("INSERT OR IGNORE INTO githugr_tenant_org_map")) {
       const [clerkOrgId, tenantId] = args as [string, string, number];
       if (!orgMap.has(clerkOrgId)) orgMap.set(clerkOrgId, tenantId);
     }
@@ -72,7 +72,7 @@ function makeFakeDb(opts: { throwOn?: string; orgMap?: Map<string, string> } = {
     if (opts.throwOn && sql.includes(opts.throwOn)) {
       throw new Error(`simulated D1 fault on: ${opts.throwOn}`);
     }
-    if (sql.includes("tenant_org_map")) {
+    if (sql.includes("githugr_tenant_org_map")) {
       const clerkOrgId = args[0] as string;
       const t = orgMap.get(clerkOrgId);
       return (t ? { tenant_id: t } : null) as T | null;
@@ -159,7 +159,7 @@ describe("provisionOrLookupGithugrTenant — provision-or-lookup", () => {
     // All 4 families present, in FK order.
     expect(batched[1]!.sql).toContain("INSERT OR IGNORE INTO tier_selections");
     expect(batched[2]!.sql).toContain("INSERT OR IGNORE INTO tenant_quota");
-    expect(batched[3]!.sql).toContain("INSERT OR IGNORE INTO tenant_org_map");
+    expect(batched[3]!.sql).toContain("INSERT OR IGNORE INTO githugr_tenant_org_map");
 
     // NEGATIVE pin (2026-08-02): provisioning grants NO Runners capacity. This
     // batch used to carry a `runners_entitlement('free', 1)` statement, which is
@@ -171,7 +171,7 @@ describe("provisionOrLookupGithugrTenant — provision-or-lookup", () => {
     expect(batched.some((s) => s.sql.includes("runners_entitlement"))).toBe(false);
     // Read-back of the authoritative mapping (SELECTs appear in the sqlLog: the
     // lookup-first miss + the post-batch read-back).
-    expect(sqlLog.some((s) => s.includes("SELECT tenant_id FROM tenant_org_map"))).toBe(true);
+    expect(sqlLog.some((s) => s.includes("SELECT tenant_id FROM githugr_tenant_org_map"))).toBe(true);
   });
 
   it("(H5) ATOMIC: a first-ever provision calls batch EXACTLY ONCE (not 4 .run()s)", async () => {
@@ -193,7 +193,7 @@ describe("provisionOrLookupGithugrTenant — provision-or-lookup", () => {
     // The batch (the ONLY write path) is NEVER invoked on the repeat-login path.
     expect(batchSpy).not.toHaveBeenCalled();
     // Exactly one statement ran: the lookup-first SELECT. No INSERT of any kind.
-    expect(sqlLog).toEqual(["SELECT tenant_id FROM tenant_org_map WHERE clerk_org_id = ?1 LIMIT 1"]);
+    expect(sqlLog).toEqual(["SELECT tenant_id FROM githugr_tenant_org_map WHERE githugr_subject = ?1 LIMIT 1"]);
     expect(sqlLog.some((s) => s.startsWith("INSERT"))).toBe(false);
   });
 
@@ -227,7 +227,7 @@ describe("provisionOrLookupGithugrTenant — provision-or-lookup", () => {
   it("(c) FAIL-CLOSED: a D1 fault on the LOOKUP-FIRST SELECT PROPAGATES (no silent shared tenant)", async () => {
     // With no pre-seeded row, the first statement is the lookup-first SELECT; a
     // fault there must propagate BEFORE any provision write.
-    const { db, batchSpy } = makeFakeDb({ throwOn: "SELECT tenant_id FROM tenant_org_map" });
+    const { db, batchSpy } = makeFakeDb({ throwOn: "SELECT tenant_id FROM githugr_tenant_org_map" });
     await expect(provisionOrLookupGithugrTenant(db, "user_err2", 1)).rejects.toThrow();
     expect(batchSpy).not.toHaveBeenCalled();
   });
@@ -238,7 +238,7 @@ describe("provisionOrLookupGithugrTenant — provision-or-lookup", () => {
     // — both SELECTs share it, but the batch runs between them, so the throw here
     // is the read-back. (Lookup-first also matches, so this equally proves the
     // fail-closed SELECT contract.) The batch itself must NOT be the failure point.
-    const { db } = makeFakeDb({ throwOn: "WHERE clerk_org_id = ?1 LIMIT 1" });
+    const { db } = makeFakeDb({ throwOn: "WHERE githugr_subject = ?1 LIMIT 1" });
     await expect(provisionOrLookupGithugrTenant(db, "user_err3", 1)).rejects.toThrow();
   });
 

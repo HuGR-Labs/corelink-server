@@ -1,0 +1,1882 @@
+{
+  "version": 1,
+  "documents": {
+    "due_diligence_2026_06_15": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+    "go_live_2026_08_26": "reports/audits/2026-08-26-go-live-readiness.md",
+    "pilot_identity_2026_07_02": "docs/security/2026-07-02-pilot-identity-brutal-audit.md",
+    "b028_dependabot_2026_09_06": "docs/security/b028-dependabot-census-2026-09-06.json"
+  },
+  "source_registry_sha256": "ab1842c78f78de7ae470e3e8d4bafc03ec9297e7f3bb808bac870990f2d6a62a",
+  "source_sha256": {
+    "due_diligence_2026_06_15": "0ac20e7bf0b0674d06a195cf7ba676816deac91c038ed85c9385235cc93dae56",
+    "go_live_2026_08_26": "a6661037b0ada6a244c80bd727c193c371d86c8371d15f7486fa1043e6d8f08a",
+    "pilot_identity_2026_07_02": "e252f3053c497b05d2ea9b3243d64bd095ebc290de47402ae5437a8da1807a96",
+    "b028_dependabot_2026_09_06": "8ce42e23b046178e27d8ca1d185ca615f9d6050ee2d0b9166c4740d63356b940"
+  },
+  "decisions": [
+    {
+      "source_id": "DD-001",
+      "kind": "tracked",
+      "backlog_id": "B-081",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-081",
+        "canonical_title": "seguir o runbook de rotação da chave de assinatura de PAT causa indisponibilidade",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "heading 1",
+          "finding_title": "No signing-key rotation support — rotating PAT_SIGNING_KEY instantly invalidates every live PAT (fleet-wide auth outage)"
+        },
+        "proof": "Exact equivalence for DD-001: source title \"No signing-key rotation support — rotating PAT_SIGNING_KEY instantly invalidates every live PAT (fleet-wide auth outage)\" maps to canonical B-081 title \"seguir o runbook de rotação da chave de assinatura de PAT causa indisponibilidade\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-002",
+      "kind": "proposed",
+      "proposal_id": "B-171",
+      "proposed_title": "Degraded-prefix fallback produces a SHARED (not isolated) namespace and the storage op still PROCEEDS — empty prefix collapses all non-UUID tenants into one keyspace",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-171",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "heading 2",
+          "finding_title": "Degraded-prefix fallback produces a SHARED (not isolated) namespace and the storage op still PROCEEDS — empty prefix collapses all non-UUID tenants into one keyspace"
+        },
+        "proof": "Distinct canonical proposal B-171 for DD-002: source title \"Degraded-prefix fallback produces a SHARED (not isolated) namespace and the storage op still PROCEEDS — empty prefix collapses all non-UUID tenants into one keyspace\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-003",
+      "kind": "tracked",
+      "backlog_id": "B-092",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-092",
+        "canonical_title": "a documentação de entrada ensina SHA-256; o CAS é BLAKE3, e o primeiro PUT de todo cliente novo retorna 422",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "heading 3",
+          "finding_title": "Bazel REAPI CAS surface uses BLAKE3 hash verification but REAPI v2 (and real Bazel clients) use SHA-256 — every genuine Bazel CAS upload is rejected with 422"
+        },
+        "proof": "Exact equivalence for DD-003: source title \"Bazel REAPI CAS surface uses BLAKE3 hash verification but REAPI v2 (and real Bazel clients) use SHA-256 — every genuine Bazel CAS upload is rejected with 422\" maps to canonical B-092 title \"a documentação de entrada ensina SHA-256; o CAS é BLAKE3, e o primeiro PUT de todo cliente novo retorna 422\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-004",
+      "kind": "tracked",
+      "backlog_id": "B-024",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-024",
+        "canonical_title": "Turborepo cache entries stay overwritable, on purpose, without evidence",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "heading 4",
+          "finding_title": "Turbo R2KvStore does NOT fail closed when R2_TDK_HEX is absent/malformed — silently degrades to a PUBLIC, predictable, 16-char-truncated tenant prefix (cross-tenant co-residence risk), unlike CAS/AC which 503"
+        },
+        "proof": "Exact equivalence for DD-004: source title \"Turbo R2KvStore does NOT fail closed when R2_TDK_HEX is absent/malformed — silently degrades to a PUBLIC, predictable, 16-char-truncated tenant prefix (cross-tenant co-residence risk), unlike CAS/AC which 503\" maps to canonical B-024 title \"Turborepo cache entries stay overwritable, on purpose, without evidence\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-005",
+      "kind": "proposed",
+      "proposal_id": "B-172",
+      "proposed_title": "OCI manifest PUT has NO body-size limit — unbounded heap allocation DoS",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-172",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "heading 5",
+          "finding_title": "OCI manifest PUT has NO body-size limit — unbounded heap allocation DoS"
+        },
+        "proof": "Distinct canonical proposal B-172 for DD-005: source title \"OCI manifest PUT has NO body-size limit — unbounded heap allocation DoS\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-006",
+      "kind": "proposed",
+      "proposal_id": "B-173",
+      "proposed_title": "OCI upload buffers are in-memory, per-session up to 5 GiB, no global cap and no abandoned-session reaper — shared-process memory exhaustion",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-173",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "heading 6",
+          "finding_title": "OCI upload buffers are in-memory, per-session up to 5 GiB, no global cap and no abandoned-session reaper — shared-process memory exhaustion"
+        },
+        "proof": "Distinct canonical proposal B-173 for DD-006: source title \"OCI upload buffers are in-memory, per-session up to 5 GiB, no global cap and no abandoned-session reaper — shared-process memory exhaustion\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-007",
+      "kind": "proposed",
+      "proposal_id": "B-174",
+      "proposed_title": "0064 tenant rebuild (DROP TABLE) is documented as un-appliable via the canonical apply scripts, but BOTH prod apply scripts use only `wrangler d1 migrations apply` — a fresh-apply / DR-restore against a populated DB will fail mid-migration",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-174",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "heading 7",
+          "finding_title": "0064 tenant rebuild (DROP TABLE) is documented as un-appliable via the canonical apply scripts, but BOTH prod apply scripts use only `wrangler d1 migrations apply` — a fresh-apply / DR-restore against a populated DB will fail mid-migration"
+        },
+        "proof": "Distinct canonical proposal B-174 for DD-007: source title \"0064 tenant rebuild (DROP TABLE) is documented as un-appliable via the canonical apply scripts, but BOTH prod apply scripts use only `wrangler d1 migrations apply` — a fresh-apply / DR-restore against a populated DB will fail mid-migration\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-008",
+      "kind": "proposed",
+      "proposal_id": "B-175",
+      "proposed_title": "OCI cache surface bypasses residency routing entirely — EU tenant image layers land in US (IAD) storage",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-175",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "heading 8",
+          "finding_title": "OCI cache surface bypasses residency routing entirely — EU tenant image layers land in US (IAD) storage"
+        },
+        "proof": "Distinct canonical proposal B-175 for DD-008: source title \"OCI cache surface bypasses residency routing entirely — EU tenant image layers land in US (IAD) storage\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-009",
+      "kind": "proposed",
+      "proposal_id": "B-176",
+      "proposed_title": "Erasure attestation signature is never persisted and there is no serving endpoint — the GDPR Art.17 proof-of-erasure artifact is non-verifiable",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-176",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "heading 9",
+          "finding_title": "Erasure attestation signature is never persisted and there is no serving endpoint — the GDPR Art.17 proof-of-erasure artifact is non-verifiable"
+        },
+        "proof": "Distinct canonical proposal B-176 for DD-009: source title \"Erasure attestation signature is never persisted and there is no serving endpoint — the GDPR Art.17 proof-of-erasure artifact is non-verifiable\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-010",
+      "kind": "tracked",
+      "backlog_id": "B-085",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-085",
+        "canonical_title": "a página LGPD promete São Paulo e imutabilidade à prova de ordem judicial; os dados estão nos EUA e são deletáveis",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "heading 10",
+          "finding_title": "DPA-onboarding doc sells WEUR/SAM residency regions that are NOT provisioned (signup rejects EU/BR tenants with 422)"
+        },
+        "proof": "Exact equivalence for DD-010: source title \"DPA-onboarding doc sells WEUR/SAM residency regions that are NOT provisioned (signup rejects EU/BR tenants with 422)\" maps to canonical B-085 title \"a página LGPD promete São Paulo e imutabilidade à prova de ordem judicial; os dados estão nos EUA e são deletáveis\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-011",
+      "kind": "tracked",
+      "backlog_id": "B-083",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-083",
+        "canonical_title": "BYOK: boundary KMS real, fail-closed e ciclo de vida verificável",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "heading 11",
+          "finding_title": "DPA Schrems-II / 'CoreLink cannot decrypt your data' claim is false for the launched data plane — BYOK is feature-gated and not wired into CAS storage; R2_TDK_HEX is only key-prefix derivation, not envelope encryption"
+        },
+        "proof": "Exact equivalence for DD-011: source title \"DPA Schrems-II / 'CoreLink cannot decrypt your data' claim is false for the launched data plane — BYOK is feature-gated and not wired into CAS storage; R2_TDK_HEX is only key-prefix derivation, not envelope encryption\" maps to canonical B-083 title \"BYOK: boundary KMS real, fail-closed e ciclo de vida verificável\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-012",
+      "kind": "tracked",
+      "backlog_id": "B-095",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-095",
+        "canonical_title": "contratos da interface do cliente alinhados com a realidade persistida",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "heading 12",
+          "finding_title": "Per-request CSP nonce never reaches Next.js → inline hydration scripts emitted nonceless and blocked under enforce-mode CSP"
+        },
+        "proof": "Exact equivalence for DD-012: source title \"Per-request CSP nonce never reaches Next.js → inline hydration scripts emitted nonceless and blocked under enforce-mode CSP\" maps to canonical B-095 title \"contratos da interface do cliente alinhados com a realidade persistida\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-013",
+      "kind": "tracked",
+      "backlog_id": "B-095",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-095",
+        "canonical_title": "contratos da interface do cliente alinhados com a realidade persistida",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "heading 13",
+          "finding_title": "next.config headers() emits a static CSP with a hardcoded, publicly-known nonce literal ('nonce-STATIC') on every path"
+        },
+        "proof": "Exact equivalence for DD-013: source title \"next.config headers() emits a static CSP with a hardcoded, publicly-known nonce literal ('nonce-STATIC') on every path\" maps to canonical B-095 title \"contratos da interface do cliente alinhados com a realidade persistida\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-014",
+      "kind": "proposed",
+      "proposal_id": "B-177",
+      "proposed_title": "Data-plane (CAS/AC/Bazel/Turbo/OCI/cargo/npm/pip/brew) has NO request-rate limiting — only storage quota + a repo-invisible CF zone rule",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-177",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "heading 14",
+          "finding_title": "Data-plane (CAS/AC/Bazel/Turbo/OCI/cargo/npm/pip/brew) has NO request-rate limiting — only storage quota + a repo-invisible CF zone rule"
+        },
+        "proof": "Distinct canonical proposal B-177 for DD-014: source title \"Data-plane (CAS/AC/Bazel/Turbo/OCI/cargo/npm/pip/brew) has NO request-rate limiting — only storage quota + a repo-invisible CF zone rule\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-015",
+      "kind": "proposed",
+      "proposal_id": "B-178",
+      "proposed_title": "checkRequestQuota is a hard-coded no-op — per-tier monthly request caps are documented and advertised but never enforced",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-178",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "heading 15",
+          "finding_title": "checkRequestQuota is a hard-coded no-op — per-tier monthly request caps are documented and advertised but never enforced"
+        },
+        "proof": "Distinct canonical proposal B-178 for DD-015: source title \"checkRequestQuota is a hard-coded no-op — per-tier monthly request caps are documented and advertised but never enforced\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-016",
+      "kind": "proposed",
+      "proposal_id": "B-179",
+      "proposed_title": "Sole data-plane request-rate defense is an unversioned, dashboard-only Cloudflare zone WAF rule that already caused a self-DoS",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-179",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "heading 16",
+          "finding_title": "Sole data-plane request-rate defense is an unversioned, dashboard-only Cloudflare zone WAF rule that already caused a self-DoS"
+        },
+        "proof": "Distinct canonical proposal B-179 for DD-016: source title \"Sole data-plane request-rate defense is an unversioned, dashboard-only Cloudflare zone WAF rule that already caused a self-DoS\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-017",
+      "kind": "tracked",
+      "backlog_id": "B-085",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-085",
+        "canonical_title": "a página LGPD promete São Paulo e imutabilidade à prova de ordem judicial; os dados estão nos EUA e são deletáveis",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "heading 17",
+          "finding_title": "Region fan-out has no termination guard — regional workers re-fan-out and 503 every residency request (all non-IAD tenants unservable)"
+        },
+        "proof": "Exact equivalence for DD-017: source title \"Region fan-out has no termination guard — regional workers re-fan-out and 503 every residency request (all non-IAD tenants unservable)\" maps to canonical B-085 title \"a página LGPD promete São Paulo e imutabilidade à prova de ordem judicial; os dados estão nos EUA e são deletáveis\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-018",
+      "kind": "tracked",
+      "backlog_id": "B-073",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-073",
+        "canonical_title": "convite de assento exige token criptográfico, tenant vinculado e e-mail Clerk verificado",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "heading 18",
+          "finding_title": "Transient PAT-mint failure leaves a permanent PAT-less orphan tenant — idempotency check never re-issues the PAT"
+        },
+        "proof": "Exact equivalence for DD-018: source title \"Transient PAT-mint failure leaves a permanent PAT-less orphan tenant — idempotency check never re-issues the PAT\" maps to canonical B-073 title \"convite de assento exige token criptográfico, tenant vinculado e e-mail Clerk verificado\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-019",
+      "kind": "tracked",
+      "backlog_id": "B-085",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-085",
+        "canonical_title": "a página LGPD promete São Paulo e imutabilidade à prova de ordem judicial; os dados estão nos EUA e são deletáveis",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "heading 19",
+          "finding_title": "F9 erasure-salt fail-closed is defeated in prod: ENVIRONMENT var is never bound for signup-worker"
+        },
+        "proof": "Exact equivalence for DD-019: source title \"F9 erasure-salt fail-closed is defeated in prod: ENVIRONMENT var is never bound for signup-worker\" maps to canonical B-085 title \"a página LGPD promete São Paulo e imutabilidade à prova de ordem judicial; os dados estão nos EUA e são deletáveis\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-020",
+      "kind": "tracked",
+      "backlog_id": "B-085",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-085",
+        "canonical_title": "a página LGPD promete São Paulo e imutabilidade à prova de ordem judicial; os dados estão nos EUA e são deletáveis",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "heading 20",
+          "finding_title": "F9 erasure-salt fail-closed is defanged: ENVIRONMENT is never bound on the signup-worker, so the predictable SHA-256 fallback salt runs in production"
+        },
+        "proof": "Exact equivalence for DD-020: source title \"F9 erasure-salt fail-closed is defanged: ENVIRONMENT is never bound on the signup-worker, so the predictable SHA-256 fallback salt runs in production\" maps to canonical B-085 title \"a página LGPD promete São Paulo e imutabilidade à prova de ordem judicial; os dados estão nos EUA e são deletáveis\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-021",
+      "kind": "proposed",
+      "proposal_id": "B-180",
+      "proposed_title": "OCI token-key env-name drift: prod deploy gate binds/verifies HUGR_OCI_TOKEN_KEY but the code reads CORELINK_OCI_TOKEN_KEY → OCI registry route silently never mounts in prod",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-180",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "heading 21",
+          "finding_title": "OCI token-key env-name drift: prod deploy gate binds/verifies HUGR_OCI_TOKEN_KEY but the code reads CORELINK_OCI_TOKEN_KEY → OCI registry route silently never mounts in prod"
+        },
+        "proof": "Distinct canonical proposal B-180 for DD-021: source title \"OCI token-key env-name drift: prod deploy gate binds/verifies HUGR_OCI_TOKEN_KEY but the code reads CORELINK_OCI_TOKEN_KEY → OCI registry route silently never mounts in prod\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-022",
+      "kind": "tracked",
+      "backlog_id": "B-076",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-076",
+        "canonical_title": "o mesmo tenant pode manter duas assinaturas pagáveis abertas, e a segunda apaga o registro da primeira",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 1",
+          "finding_title": "Checkout idempotency key omits success_url/cancel_url — a tenant re-requesting the same tier with different (still-allowlisted) redirect URLs replays the stale session"
+        },
+        "proof": "Exact equivalence for DD-022: source title \"Checkout idempotency key omits success_url/cancel_url — a tenant re-requesting the same tier with different (still-allowlisted) redirect URLs replays the stale session\" maps to canonical B-076 title \"o mesmo tenant pode manter duas assinaturas pagáveis abertas, e a segunda apaga o registro da primeira\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-023",
+      "kind": "tracked",
+      "backlog_id": "B-065",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-065",
+        "canonical_title": "dois endpoints Stripe vivos processam o mesmo evento duas vezes, há mais de sete dias",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 2",
+          "finding_title": "Two live Stripe webhook handlers share STRIPE_WEBHOOK_SECRET and write the same billing tables, but with a DIVERGENT/incomplete tier map (latent duplicate-endpoint hazard)"
+        },
+        "proof": "Exact equivalence for DD-023: source title \"Two live Stripe webhook handlers share STRIPE_WEBHOOK_SECRET and write the same billing tables, but with a DIVERGENT/incomplete tier map (latent duplicate-endpoint hazard)\" maps to canonical B-065 title \"dois endpoints Stripe vivos processam o mesmo evento duas vezes, há mais de sete dias\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-024",
+      "kind": "tracked",
+      "backlog_id": "B-079",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-079",
+        "canonical_title": "divergência do tier Max e fallbacks generosos de resolução",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 3",
+          "finding_title": "Monthly request quota is never enforced — free-tier (and all-tier) request caps are a no-op at launch"
+        },
+        "proof": "Exact equivalence for DD-024: source title \"Monthly request quota is never enforced — free-tier (and all-tier) request caps are a no-op at launch\" maps to canonical B-079 title \"divergência do tier Max e fallbacks generosos de resolução\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-025",
+      "kind": "proposed",
+      "proposal_id": "B-181",
+      "proposed_title": "Quota storage check fails OPEN on D1 error and on the F21 d1Error path — over-quota tenants pass during partial D1 outages",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-181",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 4",
+          "finding_title": "Quota storage check fails OPEN on D1 error and on the F21 d1Error path — over-quota tenants pass during partial D1 outages"
+        },
+        "proof": "Distinct canonical proposal B-181 for DD-025: source title \"Quota storage check fails OPEN on D1 error and on the F21 d1Error path — over-quota tenants pass during partial D1 outages\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-026",
+      "kind": "proposed",
+      "proposal_id": "B-182",
+      "proposed_title": "Expiry semantics diverge between Worker native auth and container adapter verifier (expires_ms=0 sentinel)",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-182",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 5",
+          "finding_title": "Expiry semantics diverge between Worker native auth and container adapter verifier (expires_ms=0 sentinel)"
+        },
+        "proof": "Distinct canonical proposal B-182 for DD-026: source title \"Expiry semantics diverge between Worker native auth and container adapter verifier (expires_ms=0 sentinel)\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-027",
+      "kind": "proposed",
+      "proposal_id": "B-183",
+      "proposed_title": "Container adapter verifier collapses Argon2id HashError (DB corruption) into InvalidPat (401) instead of Backend (503), contradicting the documented contract",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-183",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 6",
+          "finding_title": "Container adapter verifier collapses Argon2id HashError (DB corruption) into InvalidPat (401) instead of Backend (503), contradicting the documented contract"
+        },
+        "proof": "Distinct canonical proposal B-183 for DD-027: source title \"Container adapter verifier collapses Argon2id HashError (DB corruption) into InvalidPat (401) instead of Backend (503), contradicting the documented contract\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-028",
+      "kind": "proposed",
+      "proposal_id": "B-184",
+      "proposed_title": "No-expiry PAT (expires_ms=0) divergence: Worker treats it as EXPIRED, container treats it as never-expiring",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-184",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 7",
+          "finding_title": "No-expiry PAT (expires_ms=0) divergence: Worker treats it as EXPIRED, container treats it as never-expiring"
+        },
+        "proof": "Distinct canonical proposal B-184 for DD-028: source title \"No-expiry PAT (expires_ms=0) divergence: Worker treats it as EXPIRED, container treats it as never-expiring\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-029",
+      "kind": "proposed",
+      "proposal_id": "B-185",
+      "proposed_title": "M2 issuer pin runs in weak shape-check fallback in production because CLERK_ISSUER_URL is not yet bound",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-185",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 8",
+          "finding_title": "M2 issuer pin runs in weak shape-check fallback in production because CLERK_ISSUER_URL is not yet bound"
+        },
+        "proof": "Distinct canonical proposal B-185 for DD-029: source title \"M2 issuer pin runs in weak shape-check fallback in production because CLERK_ISSUER_URL is not yet bound\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-030",
+      "kind": "proposed",
+      "proposal_id": "B-186",
+      "proposed_title": "E2E synthetic-session cookie auth-bypass is gated correctly but relies on a build-time NEXT_PUBLIC_ flag — verify the prod build never ships with it set",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-186",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 9",
+          "finding_title": "E2E synthetic-session cookie auth-bypass is gated correctly but relies on a build-time NEXT_PUBLIC_ flag — verify the prod build never ships with it set"
+        },
+        "proof": "Distinct canonical proposal B-186 for DD-030: source title \"E2E synthetic-session cookie auth-bypass is gated correctly but relies on a build-time NEXT_PUBLIC_ flag — verify the prod build never ships with it set\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-031",
+      "kind": "proposed",
+      "proposal_id": "B-187",
+      "proposed_title": "Runners max_concurrency ladder is keyed on phantom tiers (team/scale) and omits a real one (solo) — diverges from the canonical TierKind set; latent wrong-cap when Runners entitlement lights up",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-187",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 10",
+          "finding_title": "Runners max_concurrency ladder is keyed on phantom tiers (team/scale) and omits a real one (solo) — diverges from the canonical TierKind set; latent wrong-cap when Runners entitlement lights up"
+        },
+        "proof": "Distinct canonical proposal B-187 for DD-031: source title \"Runners max_concurrency ladder is keyed on phantom tiers (team/scale) and omits a real one (solo) — diverges from the canonical TierKind set; latent wrong-cap when Runners entitlement lights up\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-032",
+      "kind": "proposed",
+      "proposal_id": "B-188",
+      "proposed_title": "AuthTenant extractor accepts any non-sentinel string as the tenant id (no UUID validation) — the only structural check before storage keying",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-188",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 11",
+          "finding_title": "AuthTenant extractor accepts any non-sentinel string as the tenant id (no UUID validation) — the only structural check before storage keying"
+        },
+        "proof": "Distinct canonical proposal B-188 for DD-032: source title \"AuthTenant extractor accepts any non-sentinel string as the tenant id (no UUID validation) — the only structural check before storage keying\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-033",
+      "kind": "proposed",
+      "proposal_id": "B-189",
+      "proposed_title": "Native plane trusts Worker-injected tenant with no container-side Argon2id re-verify (documented F3/F17 posture)",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-189",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 12",
+          "finding_title": "Native plane trusts Worker-injected tenant with no container-side Argon2id re-verify (documented F3/F17 posture)"
+        },
+        "proof": "Distinct canonical proposal B-189 for DD-033: source title \"Native plane trusts Worker-injected tenant with no container-side Argon2id re-verify (documented F3/F17 posture)\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-034",
+      "kind": "proposed",
+      "proposal_id": "B-190",
+      "proposed_title": "CAS/AC R2 object key is built from the raw client-supplied digest, not the canonical lowercase digest — uppercase-hex requests fragment the cache and silently bypass content dedup",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-190",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 13",
+          "finding_title": "CAS/AC R2 object key is built from the raw client-supplied digest, not the canonical lowercase digest — uppercase-hex requests fragment the cache and silently bypass content dedup"
+        },
+        "proof": "Distinct canonical proposal B-190 for DD-034: source title \"CAS/AC R2 object key is built from the raw client-supplied digest, not the canonical lowercase digest — uppercase-hex requests fragment the cache and silently bypass content dedup\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-035",
+      "kind": "tracked",
+      "backlog_id": "B-085",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-085",
+        "canonical_title": "a página LGPD promete São Paulo e imutabilidade à prova de ordem judicial; os dados estão nos EUA e são deletáveis",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 14",
+          "finding_title": "R2 CAS write always reports durable=true → an idempotent re-PUT of identical content returns 201 Created instead of 200 OK"
+        },
+        "proof": "Exact equivalence for DD-035: source title \"R2 CAS write always reports durable=true → an idempotent re-PUT of identical content returns 201 Created instead of 200 OK\" maps to canonical B-085 title \"a página LGPD promete São Paulo e imutabilidade à prova de ordem judicial; os dados estão nos EUA e são deletáveis\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-036",
+      "kind": "proposed",
+      "proposal_id": "B-191",
+      "proposed_title": "AC divergent-body immutability guard is a GET-then-PUT with a TOCTOU window (no compare-and-swap)",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-191",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 15",
+          "finding_title": "AC divergent-body immutability guard is a GET-then-PUT with a TOCTOU window (no compare-and-swap)"
+        },
+        "proof": "Distinct canonical proposal B-191 for DD-036: source title \"AC divergent-body immutability guard is a GET-then-PUT with a TOCTOU window (no compare-and-swap)\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-037",
+      "kind": "tracked",
+      "backlog_id": "B-093",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-093",
+        "canonical_title": "quatro tetos diferentes para o tamanho de uma entrada de cache, e o do caminho de escrita nativo é o menor",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 16",
+          "finding_title": "Bazel CAS write inherits the global 10 MiB body limit (no per-route override) — Bazel build outputs >10 MiB cannot be cached"
+        },
+        "proof": "Exact equivalence for DD-037: source title \"Bazel CAS write inherits the global 10 MiB body limit (no per-route override) — Bazel build outputs >10 MiB cannot be cached\" maps to canonical B-093 title \"quatro tetos diferentes para o tamanho de uma entrada de cache, e o do caminho de escrita nativo é o menor\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-038",
+      "kind": "proposed",
+      "proposal_id": "B-192",
+      "proposed_title": "AuthTenant does not validate that the tenant id is a canonical UUID, so a non-UUID tenant reaches the Turbo store's pad16 public-prefix arm even with TDK present",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-192",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 17",
+          "finding_title": "AuthTenant does not validate that the tenant id is a canonical UUID, so a non-UUID tenant reaches the Turbo store's pad16 public-prefix arm even with TDK present"
+        },
+        "proof": "Distinct canonical proposal B-192 for DD-038: source title \"AuthTenant does not validate that the tenant id is a canonical UUID, so a non-UUID tenant reaches the Turbo store's pad16 public-prefix arm even with TDK present\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-039",
+      "kind": "proposed",
+      "proposal_id": "B-193",
+      "proposed_title": "OCI blob finalize persists bytes BEFORE digest verification; on digest mismatch the unverified bytes are left in the tenant's blob slot (content-address integrity break)",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-193",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 18",
+          "finding_title": "OCI blob finalize persists bytes BEFORE digest verification; on digest mismatch the unverified bytes are left in the tenant's blob slot (content-address integrity break)"
+        },
+        "proof": "Distinct canonical proposal B-193 for DD-039: source title \"OCI blob finalize persists bytes BEFORE digest verification; on digest mismatch the unverified bytes are left in the tenant's blob slot (content-address integrity break)\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-040",
+      "kind": "proposed",
+      "proposal_id": "B-194",
+      "proposed_title": "Live R2 outage returns HTTP 500, not the documented 503 — only the build-refused path is sentinel-tagged for fail-closed 503",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-194",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 19",
+          "finding_title": "Live R2 outage returns HTTP 500, not the documented 503 — only the build-refused path is sentinel-tagged for fail-closed 503"
+        },
+        "proof": "Distinct canonical proposal B-194 for DD-040: source title \"Live R2 outage returns HTTP 500, not the documented 503 — only the build-refused path is sentinel-tagged for fail-closed 503\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-041",
+      "kind": "duplicate",
+      "semantic_disposition": {
+        "relation": "exact_duplicate_finding",
+        "duplicate_of": "DD-036",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 20",
+          "finding_title": "AC update divergent-body protection is a non-atomic GET-then-PUT (TOCTOU) — concurrent divergent writers can both pass the check and last-writer-wins overwrites a proven ActionResult"
+        },
+        "proof": "Exact duplicate for DD-041: source title \"AC update divergent-body protection is a non-atomic GET-then-PUT (TOCTOU) — concurrent divergent writers can both pass the check and last-writer-wins overwrites a proven ActionResult\" repeats the same failure mode and affected surface as DD-036; retain one canonical proposal for the repeated finding."
+      },
+      "duplicate_of": "DD-036"
+    },
+    {
+      "source_id": "DD-042",
+      "kind": "proposed",
+      "proposal_id": "B-195",
+      "proposed_title": "Duplicate migration sequence number 0044 (two files share the 0044 prefix)",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-195",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 21",
+          "finding_title": "Duplicate migration sequence number 0044 (two files share the 0044 prefix)"
+        },
+        "proof": "Distinct canonical proposal B-195 for DD-042: source title \"Duplicate migration sequence number 0044 (two files share the 0044 prefix)\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-043",
+      "kind": "proposed",
+      "proposal_id": "B-196",
+      "proposed_title": "Two unbounded D1 `.all()` scans in the DSR verify cron (no LIMIT) — server-side only, self-limiting, but worth a cap for defense-in-depth",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-196",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 22",
+          "finding_title": "Two unbounded D1 `.all()` scans in the DSR verify cron (no LIMIT) — server-side only, self-limiting, but worth a cap for defense-in-depth"
+        },
+        "proof": "Distinct canonical proposal B-196 for DD-043: source title \"Two unbounded D1 `.all()` scans in the DSR verify cron (no LIMIT) — server-side only, self-limiting, but worth a cap for defense-in-depth\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-044",
+      "kind": "proposed",
+      "proposal_id": "B-197",
+      "proposed_title": "Residency provisioning is enforced ONLY at signup; the data-plane never re-checks it, so apac is fully servable despite being 'must-reject'",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-197",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 23",
+          "finding_title": "Residency provisioning is enforced ONLY at signup; the data-plane never re-checks it, so apac is fully servable despite being 'must-reject'"
+        },
+        "proof": "Distinct canonical proposal B-197 for DD-044: source title \"Residency provisioning is enforced ONLY at signup; the data-plane never re-checks it, so apac is fully servable despite being 'must-reject'\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-045",
+      "kind": "proposed",
+      "proposal_id": "B-198",
+      "proposed_title": "Three divergent PROVISIONED_MACROS definitions; the worker/container source-of-truth disagrees with the live signup gate and has no live caller",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-198",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 24",
+          "finding_title": "Three divergent PROVISIONED_MACROS definitions; the worker/container source-of-truth disagrees with the live signup gate and has no live caller"
+        },
+        "proof": "Distinct canonical proposal B-198 for DD-045: source title \"Three divergent PROVISIONED_MACROS definitions; the worker/container source-of-truth disagrees with the live signup gate and has no live caller\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-046",
+      "kind": "proposed",
+      "proposal_id": "B-199",
+      "proposed_title": "sam macro and sam colo share the literal string 'sam' — fragile self-collision in the residency comparison",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-199",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 25",
+          "finding_title": "sam macro and sam colo share the literal string 'sam' — fragile self-collision in the residency comparison"
+        },
+        "proof": "Distinct canonical proposal B-199 for DD-046: source title \"sam macro and sam colo share the literal string 'sam' — fragile self-collision in the residency comparison\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-047",
+      "kind": "proposed",
+      "proposal_id": "B-200",
+      "proposed_title": "dsr_verify_cron requested-anchor query never self-expires a permanently-stuck DSR (comment contradicts code)",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-200",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 26",
+          "finding_title": "dsr_verify_cron requested-anchor query never self-expires a permanently-stuck DSR (comment contradicts code)"
+        },
+        "proof": "Distinct canonical proposal B-200 for DD-047: source title \"dsr_verify_cron requested-anchor query never self-expires a permanently-stuck DSR (comment contradicts code)\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-048",
+      "kind": "proposed",
+      "proposal_id": "B-201",
+      "proposed_title": "R2 AC erasure + verification rely on the ac_meta D1 index, not LIST-by-prefix — an unindexed R2 AC orphan is neither erased nor detected",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-201",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 27",
+          "finding_title": "R2 AC erasure + verification rely on the ac_meta D1 index, not LIST-by-prefix — an unindexed R2 AC orphan is neither erased nor detected"
+        },
+        "proof": "Distinct canonical proposal B-201 for DD-048: source title \"R2 AC erasure + verification rely on the ac_meta D1 index, not LIST-by-prefix — an unindexed R2 AC orphan is neither erased nor detected\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-049",
+      "kind": "proposed",
+      "proposal_id": "B-202",
+      "proposed_title": "Even if WEUR/SAM were served, CAS blob bytes physically land in the single US bucket corelink-cas-prod — region var only changes the object key prefix",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-202",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 28",
+          "finding_title": "Even if WEUR/SAM were served, CAS blob bytes physically land in the single US bucket corelink-cas-prod — region var only changes the object key prefix"
+        },
+        "proof": "Distinct canonical proposal B-202 for DD-049: source title \"Even if WEUR/SAM were served, CAS blob bytes physically land in the single US bucket corelink-cas-prod — region var only changes the object key prefix\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-050",
+      "kind": "proposed",
+      "proposal_id": "B-203",
+      "proposed_title": "PROVISIONED_MACROS contract drift: region_map (Rust + worker) says 4 regions {wnam,enam,weur,sam}; signup-worker says 2 {wnam,enam}",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-203",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 29",
+          "finding_title": "PROVISIONED_MACROS contract drift: region_map (Rust + worker) says 4 regions {wnam,enam,weur,sam}; signup-worker says 2 {wnam,enam}"
+        },
+        "proof": "Distinct canonical proposal B-203 for DD-050: source title \"PROVISIONED_MACROS contract drift: region_map (Rust + worker) says 4 regions {wnam,enam,weur,sam}; signup-worker says 2 {wnam,enam}\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-051",
+      "kind": "proposed",
+      "proposal_id": "B-204",
+      "proposed_title": "DPA evidence-pack references a BYOK FIPS document that does not exist in the repo",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-204",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 30",
+          "finding_title": "DPA evidence-pack references a BYOK FIPS document that does not exist in the repo"
+        },
+        "proof": "Distinct canonical proposal B-204 for DD-051: source title \"DPA evidence-pack references a BYOK FIPS document that does not exist in the repo\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-052",
+      "kind": "tracked",
+      "backlog_id": "B-095",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-095",
+        "canonical_title": "contratos da interface do cliente alinhados com a realidade persistida",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 31",
+          "finding_title": "Per-request nonce echoed to the client in a dedicated x-nonce response header"
+        },
+        "proof": "Exact equivalence for DD-052: source title \"Per-request nonce echoed to the client in a dedicated x-nonce response header\" maps to canonical B-095 title \"contratos da interface do cliente alinhados com a realidade persistida\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-053",
+      "kind": "proposed",
+      "proposal_id": "B-205",
+      "proposed_title": "In-memory token-bucket limiters (signup + audit-analytics) reset on container cold-start, yielding a per-recycle burst bypass",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-205",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 32",
+          "finding_title": "In-memory token-bucket limiters (signup + audit-analytics) reset on container cold-start, yielding a per-recycle burst bypass"
+        },
+        "proof": "Distinct canonical proposal B-205 for DD-053: source title \"In-memory token-bucket limiters (signup + audit-analytics) reset on container cold-start, yielding a per-recycle burst bypass\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-054",
+      "kind": "tracked",
+      "backlog_id": "B-085",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-085",
+        "canonical_title": "a página LGPD promete São Paulo e imutabilidade à prova de ordem judicial; os dados estão nos EUA e são deletáveis",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 33",
+          "finding_title": "Signup rate-limit collapses all requests lacking x-corelink-client-ip into a single shared '_no_ip' bucket"
+        },
+        "proof": "Exact equivalence for DD-054: source title \"Signup rate-limit collapses all requests lacking x-corelink-client-ip into a single shared '_no_ip' bucket\" maps to canonical B-085 title \"a página LGPD promete São Paulo e imutabilidade à prova de ordem judicial; os dados estão nos EUA e são deletáveis\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-055",
+      "kind": "proposed",
+      "proposal_id": "B-206",
+      "proposed_title": "Idle-stop relies on in-memory setTimeout that does not survive DO eviction → containers outlive the 5-min idle window (cost leak)",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-206",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 34",
+          "finding_title": "Idle-stop relies on in-memory setTimeout that does not survive DO eviction → containers outlive the 5-min idle window (cost leak)"
+        },
+        "proof": "Distinct canonical proposal B-206 for DD-055: source title \"Idle-stop relies on in-memory setTimeout that does not survive DO eviction → containers outlive the 5-min idle window (cost leak)\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-056",
+      "kind": "proposed",
+      "proposal_id": "B-207",
+      "proposed_title": "Concurrent fetch race: no blockConcurrencyWhile around container start → two in-flight requests both cold-start, double telemetry / start flap",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-207",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 35",
+          "finding_title": "Concurrent fetch race: no blockConcurrencyWhile around container start → two in-flight requests both cold-start, double telemetry / start flap"
+        },
+        "proof": "Distinct canonical proposal B-207 for DD-056: source title \"Concurrent fetch race: no blockConcurrencyWhile around container start → two in-flight requests both cold-start, double telemetry / start flap\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-057",
+      "kind": "duplicate",
+      "semantic_disposition": {
+        "relation": "exact_duplicate_finding",
+        "duplicate_of": "DD-008",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 36",
+          "finding_title": "OCI cache surface bypasses region fan-out entirely — OCI tenant data is always stored at IAD regardless of residency"
+        },
+        "proof": "Exact duplicate for DD-057: source title \"OCI cache surface bypasses region fan-out entirely — OCI tenant data is always stored at IAD regardless of residency\" repeats the same failure mode and affected surface as DD-008; retain one canonical proposal for the repeated finding."
+      },
+      "duplicate_of": "DD-008"
+    },
+    {
+      "source_id": "DD-058",
+      "kind": "tracked",
+      "backlog_id": "B-074",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-074",
+        "canonical_title": "o caminho do dinheiro aceita chave interna com metade do piso de entropia e não pode ser estreitado",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 37",
+          "finding_title": "RESIDENCY_UNAVAILABLE 503 echoes the tenant's residency macro back to the client"
+        },
+        "proof": "Exact equivalence for DD-058: source title \"RESIDENCY_UNAVAILABLE 503 echoes the tenant's residency macro back to the client\" maps to canonical B-074 title \"o caminho do dinheiro aceita chave interna com metade do piso de entropia e não pode ser estreitado\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-059",
+      "kind": "tracked",
+      "backlog_id": "B-028",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-028",
+        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 38",
+          "finding_title": "Customer audit-chain visualization fetches /v1/customer/* with NO Clerk bearer token (broken-auth / dead feature at launch)"
+        },
+        "proof": "Exact equivalence for DD-059: source title \"Customer audit-chain visualization fetches /v1/customer/* with NO Clerk bearer token (broken-auth / dead feature at launch)\" maps to canonical B-028 title \"Dependabot dependency paths are remediated; post-merge census refresh remains open\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-060",
+      "kind": "proposed",
+      "proposal_id": "B-208",
+      "proposed_title": "Consent API client calls /v1/consent/* same-origin with no Authorization header (inconsistent auth wiring vs. customer/dsr clients)",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-208",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 39",
+          "finding_title": "Consent API client calls /v1/consent/* same-origin with no Authorization header (inconsistent auth wiring vs. customer/dsr clients)"
+        },
+        "proof": "Distinct canonical proposal B-208 for DD-060: source title \"Consent API client calls /v1/consent/* same-origin with no Authorization header (inconsistent auth wiring vs. customer/dsr clients)\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-061",
+      "kind": "proposed",
+      "proposal_id": "B-209",
+      "proposed_title": "Onboarding server actions accept a client-supplied tenantId injected into /v1/tenants/{tenantId}/* (IDOR surface; depends on backend JWT cross-check)",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-209",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 40",
+          "finding_title": "Onboarding server actions accept a client-supplied tenantId injected into /v1/tenants/{tenantId}/* (IDOR surface; depends on backend JWT cross-check)"
+        },
+        "proof": "Distinct canonical proposal B-209 for DD-061: source title \"Onboarding server actions accept a client-supplied tenantId injected into /v1/tenants/{tenantId}/* (IDOR surface; depends on backend JWT cross-check)\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-062",
+      "kind": "proposed",
+      "proposal_id": "B-210",
+      "proposed_title": "Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates (ordering only safe because the singleton adminClient sends no token)",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-210",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 41",
+          "finding_title": "Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates (ordering only safe because the singleton adminClient sends no token)"
+        },
+        "proof": "Distinct canonical proposal B-210 for DD-062: source title \"Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates (ordering only safe because the singleton adminClient sends no token)\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-063",
+      "kind": "proposed",
+      "proposal_id": "B-211",
+      "proposed_title": "Customer audit-visualization page has NO server-side guard (only unguarded authenticated page)",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-211",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 42",
+          "finding_title": "Customer audit-visualization page has NO server-side guard (only unguarded authenticated page)"
+        },
+        "proof": "Distinct canonical proposal B-211 for DD-063: source title \"Customer audit-visualization page has NO server-side guard (only unguarded authenticated page)\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-064",
+      "kind": "proposed",
+      "proposal_id": "B-212",
+      "proposed_title": "Edge middleware fails OPEN when NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is unset or clerkMiddleware export is absent",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-212",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 43",
+          "finding_title": "Edge middleware fails OPEN when NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is unset or clerkMiddleware export is absent"
+        },
+        "proof": "Distinct canonical proposal B-212 for DD-064: source title \"Edge middleware fails OPEN when NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is unset or clerkMiddleware export is absent\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-065",
+      "kind": "proposed",
+      "proposal_id": "B-213",
+      "proposed_title": "isPublicPath uses unbounded startsWith for the flat PUBLIC_PATH_PREFIXES (no path-boundary check)",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-213",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 44",
+          "finding_title": "isPublicPath uses unbounded startsWith for the flat PUBLIC_PATH_PREFIXES (no path-boundary check)"
+        },
+        "proof": "Distinct canonical proposal B-213 for DD-065: source title \"isPublicPath uses unbounded startsWith for the flat PUBLIC_PATH_PREFIXES (no path-boundary check)\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-066",
+      "kind": "proposed",
+      "proposal_id": "B-214",
+      "proposed_title": "No email-verification gate — user.created provisions a free tenant + read-write PAT for unverified/fake emails",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-214",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 45",
+          "finding_title": "No email-verification gate — user.created provisions a free tenant + read-write PAT for unverified/fake emails"
+        },
+        "proof": "Distinct canonical proposal B-214 for DD-066: source title \"No email-verification gate — user.created provisions a free tenant + read-write PAT for unverified/fake emails\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-067",
+      "kind": "proposed",
+      "proposal_id": "B-215",
+      "proposed_title": "African colos are silently downgraded to US (enam) instead of rejected — residency-leak that backlog #29 claims to close",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-215",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 46",
+          "finding_title": "African colos are silently downgraded to US (enam) instead of rejected — residency-leak that backlog #29 claims to close"
+        },
+        "proof": "Distinct canonical proposal B-215 for DD-067: source title \"African colos are silently downgraded to US (enam) instead of rejected — residency-leak that backlog #29 claims to close\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-068",
+      "kind": "proposed",
+      "proposal_id": "B-216",
+      "proposed_title": "DSR erasure dead-letter queue has no consumer and no alerting — exhausted right-to-erasure requests are silently parked forever",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-216",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 47",
+          "finding_title": "DSR erasure dead-letter queue has no consumer and no alerting — exhausted right-to-erasure requests are silently parked forever"
+        },
+        "proof": "Distinct canonical proposal B-216 for DD-068: source title \"DSR erasure dead-letter queue has no consumer and no alerting — exhausted right-to-erasure requests are silently parked forever\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-069",
+      "kind": "tracked",
+      "backlog_id": "B-027",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-027",
+        "canonical_title": "the whole alerting layer runs nowhere and says it does",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 48",
+          "finding_title": "Stale/incorrect idempotency doc claims an analytics_events svix_id dedup that does not exist"
+        },
+        "proof": "Exact equivalence for DD-069: source title \"Stale/incorrect idempotency doc claims an analytics_events svix_id dedup that does not exist\" maps to canonical B-027 title \"the whole alerting layer runs nowhere and says it does\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-070",
+      "kind": "proposed",
+      "proposal_id": "B-217",
+      "proposed_title": "user.created handler never validates event.data.id before using it as tenant owner / idempotency key",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-217",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 49",
+          "finding_title": "user.created handler never validates event.data.id before using it as tenant owner / idempotency key"
+        },
+        "proof": "Distinct canonical proposal B-217 for DD-070: source title \"user.created handler never validates event.data.id before using it as tenant owner / idempotency key\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-071",
+      "kind": "proposed",
+      "proposal_id": "B-218",
+      "proposed_title": "Inconsistent length floor on CORELINK_INTERNAL_AUTH_KEY: tier-select accepts ≥16 chars; admin/dsr/internal_pat all require ≥32",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-218",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 50",
+          "finding_title": "Inconsistent length floor on CORELINK_INTERNAL_AUTH_KEY: tier-select accepts ≥16 chars; admin/dsr/internal_pat all require ≥32"
+        },
+        "proof": "Distinct canonical proposal B-218 for DD-071: source title \"Inconsistent length floor on CORELINK_INTERNAL_AUTH_KEY: tier-select accepts ≥16 chars; admin/dsr/internal_pat all require ≥32\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-072",
+      "kind": "tracked",
+      "backlog_id": "B-090",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-090",
+        "canonical_title": "o worker que processa Stripe, Clerk e DSR implanta a partir de `npm install` sem lockfile, e o portão de supply-chain é cego a ele",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 51",
+          "finding_title": "17 npm advisories (2 critical-counted vitest, 8 high) sit in the dev/build graph; prod gate is green but esbuild RCE + vitest file-read are real build-time supply-chain risks"
+        },
+        "proof": "Exact equivalence for DD-072: source title \"17 npm advisories (2 critical-counted vitest, 8 high) sit in the dev/build graph; prod gate is green but esbuild RCE + vitest file-read are real build-time supply-chain risks\" maps to canonical B-090 title \"o worker que processa Stripe, Clerk e DSR implanta a partir de `npm install` sem lockfile, e o portão de supply-chain é cego a ele\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-073",
+      "kind": "proposed",
+      "proposal_id": "B-219",
+      "proposed_title": "Ed25519 erasure-attestation verifier trusts the attestation's own carried canonical bytes instead of re-canonicalizing the payload (signature does not bind payload fields)",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-219",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 52",
+          "finding_title": "Ed25519 erasure-attestation verifier trusts the attestation's own carried canonical bytes instead of re-canonicalizing the payload (signature does not bind payload fields)"
+        },
+        "proof": "Distinct canonical proposal B-219 for DD-073: source title \"Ed25519 erasure-attestation verifier trusts the attestation's own carried canonical bytes instead of re-canonicalizing the payload (signature does not bind payload fields)\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-074",
+      "kind": "tracked",
+      "backlog_id": "B-090",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-090",
+        "canonical_title": "o worker que processa Stripe, Clerk e DSR implanta a partir de `npm install` sem lockfile, e o portão de supply-chain é cego a ele",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 53",
+          "finding_title": "Residency 'backstop' fails OPEN when the trusted region header is absent — relies entirely on the edge Worker stamping it"
+        },
+        "proof": "Exact equivalence for DD-074: source title \"Residency 'backstop' fails OPEN when the trusted region header is absent — relies entirely on the edge Worker stamping it\" maps to canonical B-090 title \"o worker que processa Stripe, Clerk e DSR implanta a partir de `npm install` sem lockfile, e o portão de supply-chain é cego a ele\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "DD-075",
+      "kind": "proposed",
+      "proposal_id": "B-220",
+      "proposed_title": "Stale doc comment on smuggled-tenant constant-time compare claims zero-padding that the code does not do",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-220",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 54",
+          "finding_title": "Stale doc comment on smuggled-tenant constant-time compare claims zero-padding that the code does not do"
+        },
+        "proof": "Distinct canonical proposal B-220 for DD-075: source title \"Stale doc comment on smuggled-tenant constant-time compare claims zero-padding that the code does not do\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-076",
+      "kind": "proposed",
+      "proposal_id": "B-221",
+      "proposed_title": "session-exchange in-memory mint throttle is a monotonic counter with no time-window and no eviction — falsely 429s a legitimate principal and leaks memory",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-221",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 55",
+          "finding_title": "session-exchange in-memory mint throttle is a monotonic counter with no time-window and no eviction — falsely 429s a legitimate principal and leaks memory"
+        },
+        "proof": "Distinct canonical proposal B-221 for DD-076: source title \"session-exchange in-memory mint throttle is a monotonic counter with no time-window and no eviction — falsely 429s a legitimate principal and leaks memory\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-077",
+      "kind": "proposed",
+      "proposal_id": "B-222",
+      "proposed_title": "Concurrent duplicate Clerk user.created delivery double-mints a second live PAT for the same tenant (orphan credential)",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-222",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 56",
+          "finding_title": "Concurrent duplicate Clerk user.created delivery double-mints a second live PAT for the same tenant (orphan credential)"
+        },
+        "proof": "Distinct canonical proposal B-222 for DD-077: source title \"Concurrent duplicate Clerk user.created delivery double-mints a second live PAT for the same tenant (orphan credential)\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-078",
+      "kind": "duplicate",
+      "semantic_disposition": {
+        "relation": "exact_duplicate_finding",
+        "duplicate_of": "DD-056",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 57",
+          "finding_title": "Durable Object fetch() not single-flighted: concurrent cold requests can both call startContainer (double cold-start telemetry + double start)"
+        },
+        "proof": "Exact duplicate for DD-078: source title \"Durable Object fetch() not single-flighted: concurrent cold requests can both call startContainer (double cold-start telemetry + double start)\" repeats the same failure mode and affected surface as DD-056; retain one canonical proposal for the repeated finding."
+      },
+      "duplicate_of": "DD-056"
+    },
+    {
+      "source_id": "DD-079",
+      "kind": "proposed",
+      "proposal_id": "B-223",
+      "proposed_title": "Read-through proxy HTTP clients follow redirects with no policy → SSRF same-origin guard bypassable by upstream 3xx",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-223",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 58",
+          "finding_title": "Read-through proxy HTTP clients follow redirects with no policy → SSRF same-origin guard bypassable by upstream 3xx"
+        },
+        "proof": "Distinct canonical proposal B-223 for DD-079: source title \"Read-through proxy HTTP clients follow redirects with no policy → SSRF same-origin guard bypassable by upstream 3xx\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-080",
+      "kind": "proposed",
+      "proposal_id": "B-224",
+      "proposed_title": "npm metadata fetch buffers the full upstream response with NO size cap",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-224",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 59",
+          "finding_title": "npm metadata fetch buffers the full upstream response with NO size cap"
+        },
+        "proof": "Distinct canonical proposal B-224 for DD-080: source title \"npm metadata fetch buffers the full upstream response with NO size cap\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-081",
+      "kind": "proposed",
+      "proposal_id": "B-225",
+      "proposed_title": "OCI PATCH oversize check fires AFTER the chunk is appended to the in-memory session buffer",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-225",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 60",
+          "finding_title": "OCI PATCH oversize check fires AFTER the chunk is appended to the in-memory session buffer"
+        },
+        "proof": "Distinct canonical proposal B-225 for DD-081: source title \"OCI PATCH oversize check fires AFTER the chunk is appended to the in-memory session buffer\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-082",
+      "kind": "proposed",
+      "proposal_id": "B-226",
+      "proposed_title": "Revocation/alert channels are stubbed in production: dashboard & in_app fake Success, email & slack return Failed('not wired')",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-226",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 61",
+          "finding_title": "Revocation/alert channels are stubbed in production: dashboard & in_app fake Success, email & slack return Failed('not wired')"
+        },
+        "proof": "Distinct canonical proposal B-226 for DD-082: source title \"Revocation/alert channels are stubbed in production: dashboard & in_app fake Success, email & slack return Failed('not wired')\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-083",
+      "kind": "proposed",
+      "proposal_id": "B-227",
+      "proposed_title": "Container runs at debug log level by default in prod, enabling full SQL-text logging",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-227",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 62",
+          "finding_title": "Container runs at debug log level by default in prod, enabling full SQL-text logging"
+        },
+        "proof": "Distinct canonical proposal B-227 for DD-083: source title \"Container runs at debug log level by default in prod, enabling full SQL-text logging\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-084",
+      "kind": "proposed",
+      "proposal_id": "B-228",
+      "proposed_title": "Worker-injected principal header logged without control-char sanitization (log-injection vector if Worker is bypassed)",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-228",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 63",
+          "finding_title": "Worker-injected principal header logged without control-char sanitization (log-injection vector if Worker is bypassed)"
+        },
+        "proof": "Distinct canonical proposal B-228 for DD-084: source title \"Worker-injected principal header logged without control-char sanitization (log-injection vector if Worker is bypassed)\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-085",
+      "kind": "proposed",
+      "proposal_id": "B-229",
+      "proposed_title": "CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it gates inbound Clerk webhook signature verification on the provisioning path",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-229",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 64",
+          "finding_title": "CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it gates inbound Clerk webhook signature verification on the provisioning path"
+        },
+        "proof": "Distinct canonical proposal B-229 for DD-085: source title \"CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it gates inbound Clerk webhook signature verification on the provisioning path\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-086",
+      "kind": "proposed",
+      "proposal_id": "B-230",
+      "proposed_title": "prod env [vars] omits R2_CHUNK_BUCKET / R2_CHUNK_REGION that all 4 regional envs set — IAD multipart-chunk region config is implicit",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-230",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 65",
+          "finding_title": "prod env [vars] omits R2_CHUNK_BUCKET / R2_CHUNK_REGION that all 4 regional envs set — IAD multipart-chunk region config is implicit"
+        },
+        "proof": "Distinct canonical proposal B-230 for DD-086: source title \"prod env [vars] omits R2_CHUNK_BUCKET / R2_CHUNK_REGION that all 4 regional envs set — IAD multipart-chunk region config is implicit\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DD-087",
+      "kind": "duplicate",
+      "semantic_disposition": {
+        "relation": "exact_duplicate_finding",
+        "duplicate_of": "DD-021",
+        "evidence": {
+          "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+          "source_locator": "MEDIUM / LOW item 66",
+          "finding_title": "OCI token-key env-name drift — code reads CORELINK_OCI_TOKEN_KEY, secrets tooling provisions HUGR_OCI_TOKEN_KEY"
+        },
+        "proof": "Exact duplicate for DD-087: source title \"OCI token-key env-name drift — code reads CORELINK_OCI_TOKEN_KEY, secrets tooling provisions HUGR_OCI_TOKEN_KEY\" repeats the same failure mode and affected surface as DD-021; retain one canonical proposal for the repeated finding."
+      },
+      "duplicate_of": "DD-021"
+    },
+    {
+      "source_id": "F-001",
+      "kind": "tracked",
+      "backlog_id": "B-046",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-046",
+        "canonical_title": "Compliance/Object-Lock retention mode (storage-enforced immutability)",
+        "evidence": {
+          "source_document": "reports/audits/2026-08-26-go-live-readiness.md",
+          "source_locator": "F-001",
+          "finding_title": "Cadeia de auditoria WORM 7y Governance Object Lock"
+        },
+        "proof": "Exact equivalence for F-001: source title \"Cadeia de auditoria WORM 7y Governance Object Lock\" maps to canonical B-046 title \"Compliance/Object-Lock retention mode (storage-enforced immutability)\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "F-002",
+      "kind": "tracked",
+      "backlog_id": "B-094",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-094",
+        "canonical_title": "o material publicado prometia gRPC e compatibilidade com Buck2; o código registra que nenhum dos dois existe",
+        "evidence": {
+          "source_document": "reports/audits/2026-08-26-go-live-readiness.md",
+          "source_locator": "F-002",
+          "finding_title": "gRPC REAPI GA fantasma `grpcs://`"
+        },
+        "proof": "Exact equivalence for F-002: source title \"gRPC REAPI GA fantasma `grpcs://`\" maps to canonical B-094 title \"o material publicado prometia gRPC e compatibilidade com Buck2; o código registra que nenhum dos dois existe\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "F-003",
+      "kind": "tracked",
+      "backlog_id": "B-083",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-083",
+        "canonical_title": "BYOK: boundary KMS real, fail-closed e ciclo de vida verificável",
+        "evidence": {
+          "source_document": "reports/audits/2026-08-26-go-live-readiness.md",
+          "source_locator": "F-003",
+          "finding_title": "BYOK kill-switch <5min at GA"
+        },
+        "proof": "Exact equivalence for F-003: source title \"BYOK kill-switch <5min at GA\" maps to canonical B-083 title \"BYOK: boundary KMS real, fail-closed e ciclo de vida verificável\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "F-004",
+      "kind": "tracked",
+      "backlog_id": "B-041",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-041",
+        "canonical_title": "`status.corelink.humangr.com` is advertised in 224 places and serves nothing",
+        "evidence": {
+          "source_document": "reports/audits/2026-08-26-go-live-readiness.md",
+          "source_locator": "F-004",
+          "finding_title": "Hostnames congelados mortos no 429/OpenAPI"
+        },
+        "proof": "Exact equivalence for F-004: source title \"Hostnames congelados mortos no 429/OpenAPI\" maps to canonical B-041 title \"`status.corelink.humangr.com` is advertised in 224 places and serves nothing\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "F-005",
+      "kind": "tracked",
+      "backlog_id": "B-085",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-085",
+        "canonical_title": "a página LGPD promete São Paulo e imutabilidade à prova de ordem judicial; os dados estão nos EUA e são deletáveis",
+        "evidence": {
+          "source_document": "reports/audits/2026-08-26-go-live-readiness.md",
+          "source_locator": "F-005",
+          "finding_title": "4+3 regiões isoladas"
+        },
+        "proof": "Exact equivalence for F-005: source title \"4+3 regiões isoladas\" maps to canonical B-085 title \"a página LGPD promete São Paulo e imutabilidade à prova de ordem judicial; os dados estão nos EUA e são deletáveis\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "F-006",
+      "kind": "proposed",
+      "proposal_id": "B-231",
+      "proposed_title": "Taxonomia pricing 4 vias",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-231",
+        "evidence": {
+          "source_document": "reports/audits/2026-08-26-go-live-readiness.md",
+          "source_locator": "F-006",
+          "finding_title": "Taxonomia pricing 4 vias"
+        },
+        "proof": "Distinct canonical proposal B-231 for F-006: source title \"Taxonomia pricing 4 vias\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "F-007",
+      "kind": "proposed",
+      "proposal_id": "B-232",
+      "proposed_title": "`_public` ilimitado Brew/Pip à custa do dono",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-232",
+        "evidence": {
+          "source_document": "reports/audits/2026-08-26-go-live-readiness.md",
+          "source_locator": "F-007",
+          "finding_title": "`_public` ilimitado Brew/Pip à custa do dono"
+        },
+        "proof": "Distinct canonical proposal B-232 for F-007: source title \"`_public` ilimitado Brew/Pip à custa do dono\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "F-008",
+      "kind": "proposed",
+      "proposal_id": "B-233",
+      "proposed_title": "Stale cap alto após downgrade em Brew/Pip",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-233",
+        "evidence": {
+          "source_document": "reports/audits/2026-08-26-go-live-readiness.md",
+          "source_locator": "F-008",
+          "finding_title": "Stale cap alto após downgrade em Brew/Pip"
+        },
+        "proof": "Distinct canonical proposal B-233 for F-008: source title \"Stale cap alto após downgrade em Brew/Pip\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "F-009",
+      "kind": "tracked",
+      "backlog_id": "B-024",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-024",
+        "canonical_title": "Turborepo cache entries stay overwritable, on purpose, without evidence",
+        "evidence": {
+          "source_document": "reports/audits/2026-08-26-go-live-readiness.md",
+          "source_locator": "F-009",
+          "finding_title": "Turborepo opaco sem verify poison intra-time"
+        },
+        "proof": "Exact equivalence for F-009: source title \"Turborepo opaco sem verify poison intra-time\" maps to canonical B-024 title \"Turborepo cache entries stay overwritable, on purpose, without evidence\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "F-010",
+      "kind": "proposed",
+      "proposal_id": "B-234",
+      "proposed_title": "Refund echo mantém tier 30d",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-234",
+        "evidence": {
+          "source_document": "reports/audits/2026-08-26-go-live-readiness.md",
+          "source_locator": "F-010",
+          "finding_title": "Refund echo mantém tier 30d"
+        },
+        "proof": "Distinct canonical proposal B-234 for F-010: source title \"Refund echo mantém tier 30d\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "F-011",
+      "kind": "proposed",
+      "proposal_id": "B-235",
+      "proposed_title": "DLQ volatile + claim-antes perde",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-235",
+        "evidence": {
+          "source_document": "reports/audits/2026-08-26-go-live-readiness.md",
+          "source_locator": "F-011",
+          "finding_title": "DLQ volatile + claim-antes perde"
+        },
+        "proof": "Distinct canonical proposal B-235 for F-011: source title \"DLQ volatile + claim-antes perde\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "F-012",
+      "kind": "tracked",
+      "backlog_id": "B-013",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-013",
+        "canonical_title": "three private keys sitting in ~/Downloads",
+        "evidence": {
+          "source_document": "reports/audits/2026-08-26-go-live-readiness.md",
+          "source_locator": "F-012",
+          "finding_title": "Chaves privadas em `~/Downloads` B-013"
+        },
+        "proof": "Exact equivalence for F-012: source title \"Chaves privadas em `~/Downloads` B-013\" maps to canonical B-013 title \"three private keys sitting in ~/Downloads\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "F-013",
+      "kind": "proposed",
+      "proposal_id": "B-236",
+      "proposed_title": "Matriz segredos drift + gate incompleto",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-236",
+        "evidence": {
+          "source_document": "reports/audits/2026-08-26-go-live-readiness.md",
+          "source_locator": "F-013",
+          "finding_title": "Matriz segredos drift + gate incompleto"
+        },
+        "proof": "Distinct canonical proposal B-236 for F-013: source title \"Matriz segredos drift + gate incompleto\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "F-014",
+      "kind": "tracked",
+      "backlog_id": "B-142",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-142",
+        "canonical_title": "todo job `ubuntu-*` não inicia por bloqueio de faturamento, e o CodeQL nightly — o único SAST do repo — está morto desde 2026-08-25",
+        "evidence": {
+          "source_document": "reports/audits/2026-08-26-go-live-readiness.md",
+          "source_locator": "F-014",
+          "finding_title": "Feed CVE sem commit park"
+        },
+        "proof": "Exact equivalence for F-014: source title \"Feed CVE sem commit park\" maps to canonical B-142 title \"todo job `ubuntu-*` não inicia por bloqueio de faturamento, e o CodeQL nightly — o único SAST do repo — está morto desde 2026-08-25\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "F-015",
+      "kind": "proposed",
+      "proposal_id": "B-237",
+      "proposed_title": "Janela revogação 65s",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-237",
+        "evidence": {
+          "source_document": "reports/audits/2026-08-26-go-live-readiness.md",
+          "source_locator": "F-015",
+          "finding_title": "Janela revogação 65s"
+        },
+        "proof": "Distinct canonical proposal B-237 for F-015: source title \"Janela revogação 65s\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "F-016",
+      "kind": "proposed",
+      "proposal_id": "B-238",
+      "proposed_title": "Enum região 4 vs 6 Afr/Apac unattestable",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-238",
+        "evidence": {
+          "source_document": "reports/audits/2026-08-26-go-live-readiness.md",
+          "source_locator": "F-016",
+          "finding_title": "Enum região 4 vs 6 Afr/Apac unattestable"
+        },
+        "proof": "Distinct canonical proposal B-238 for F-016: source title \"Enum região 4 vs 6 Afr/Apac unattestable\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "F-017",
+      "kind": "tracked",
+      "backlog_id": "B-030",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-030",
+        "canonical_title": "a Mac CI slot is down, and a stuck fleet is invisible",
+        "evidence": {
+          "source_document": "reports/audits/2026-08-26-go-live-readiness.md",
+          "source_locator": "F-017",
+          "finding_title": "Deploy sem drain + Mac SPOF"
+        },
+        "proof": "Exact equivalence for F-017: source title \"Deploy sem drain + Mac SPOF\" maps to canonical B-030 title \"a Mac CI slot is down, and a stuck fleet is invisible\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "F-018",
+      "kind": "proposed",
+      "proposal_id": "B-239",
+      "proposed_title": "Hash DPA forjável",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-239",
+        "evidence": {
+          "source_document": "reports/audits/2026-08-26-go-live-readiness.md",
+          "source_locator": "F-018",
+          "finding_title": "Hash DPA forjável"
+        },
+        "proof": "Distinct canonical proposal B-239 for F-018: source title \"Hash DPA forjável\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "F-019",
+      "kind": "tracked",
+      "backlog_id": "B-001",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-001",
+        "canonical_title": "the idle deadline is in-memory and rearms itself",
+        "evidence": {
+          "source_document": "reports/audits/2026-08-26-go-live-readiness.md",
+          "source_locator": "F-019",
+          "finding_title": "Fantasma 15m + ticket 2h multi-use"
+        },
+        "proof": "Exact equivalence for F-019: source title \"Fantasma 15m + ticket 2h multi-use\" maps to canonical B-001 title \"the idle deadline is in-memory and rearms itself\"; that item owns the same control gap and remediation surface."
+      }
+    },
+    {
+      "source_id": "F-020",
+      "kind": "proposed",
+      "proposal_id": "B-240",
+      "proposed_title": "`kid` flood + LIKE wildcard",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-240",
+        "evidence": {
+          "source_document": "reports/audits/2026-08-26-go-live-readiness.md",
+          "source_locator": "F-020",
+          "finding_title": "`kid` flood + LIKE wildcard"
+        },
+        "proof": "Distinct canonical proposal B-240 for F-020: source title \"`kid` flood + LIKE wildcard\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "PI-001",
+      "kind": "proposed",
+      "proposal_id": "B-241",
+      "proposed_title": "resolve-tenant is a POST-auth enumeration/topology oracle.** Any configured fabric key",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-241",
+        "evidence": {
+          "source_document": "docs/security/2026-07-02-pilot-identity-brutal-audit.md",
+          "source_locator": "follow-up 1",
+          "finding_title": "resolve-tenant is a POST-auth enumeration/topology oracle.** Any configured fabric key"
+        },
+        "proof": "Distinct canonical proposal B-241 for PI-001: source title \"resolve-tenant is a POST-auth enumeration/topology oracle.** Any configured fabric key\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "PI-002",
+      "kind": "proposed",
+      "proposal_id": "B-242",
+      "proposed_title": "salt-drift across the 6 EMAIL_HASH_SALT targets** → a mismatched value makes legit invites",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-242",
+        "evidence": {
+          "source_document": "docs/security/2026-07-02-pilot-identity-brutal-audit.md",
+          "source_locator": "follow-up 2",
+          "finding_title": "salt-drift across the 6 EMAIL_HASH_SALT targets** → a mismatched value makes legit invites"
+        },
+        "proof": "Distinct canonical proposal B-242 for PI-002: source title \"salt-drift across the 6 EMAIL_HASH_SALT targets** → a mismatched value makes legit invites\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "PI-003",
+      "kind": "proposed",
+      "proposal_id": "B-243",
+      "proposed_title": "`tenant_org_map` dual-writer** — the signup-worker (CoreLink Clerk, `user.id` fallback) and the",
+      "semantic_disposition": {
+        "relation": "new_canonical_finding_proposal",
+        "proposal_id": "B-243",
+        "evidence": {
+          "source_document": "docs/security/2026-07-02-pilot-identity-brutal-audit.md",
+          "source_locator": "follow-up 3",
+          "finding_title": "`tenant_org_map` dual-writer** — the signup-worker (CoreLink Clerk, `user.id` fallback) and the"
+        },
+        "proof": "Distinct canonical proposal B-243 for PI-003: source title \"`tenant_org_map` dual-writer** — the signup-worker (CoreLink Clerk, `user.id` fallback) and the\" has no exact equivalent in the current canonical B-ID census; preserve this separate owner, remediation, and verification decision."
+      }
+    },
+    {
+      "source_id": "DA-026",
+      "kind": "tracked",
+      "backlog_id": "B-028",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-028",
+        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "evidence": {"source_document": "docs/security/b028-dependabot-census-2026-09-06.json", "source_locator": "alert 26", "finding_title": "Dependabot alert #26: image-size (GHSA-w3rx-r6r6-pgpr)"},
+        "proof": "Exact canonical mapping for Dependabot alert #26 (GHSA-w3rx-r6r6-pgpr): B-028 is the owner-reviewed dependency census and remediation contract for this alert; the per-alert identity remains explicit in the admitted source."
+      }
+    },
+    {
+      "source_id": "DA-027",
+      "kind": "tracked",
+      "backlog_id": "B-028",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-028",
+        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "evidence": {"source_document": "docs/security/b028-dependabot-census-2026-09-06.json", "source_locator": "alert 27", "finding_title": "Dependabot alert #27: image-size (GHSA-5p2g-fcmc-qvqq)"},
+        "proof": "Exact canonical mapping for Dependabot alert #27 (GHSA-5p2g-fcmc-qvqq): B-028 is the owner-reviewed dependency census and remediation contract for this alert; the per-alert identity remains explicit in the admitted source."
+      }
+    },
+    {
+      "source_id": "DA-028",
+      "kind": "tracked",
+      "backlog_id": "B-028",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-028",
+        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "evidence": {"source_document": "docs/security/b028-dependabot-census-2026-09-06.json", "source_locator": "alert 28", "finding_title": "Dependabot alert #28: extract-zip (GHSA-jmr9-qjv8-65gv)"},
+        "proof": "Exact canonical mapping for Dependabot alert #28 (GHSA-jmr9-qjv8-65gv): B-028 is the owner-reviewed dependency census and remediation contract for this alert; the per-alert identity remains explicit in the admitted source."
+      }
+    },
+    {
+      "source_id": "DA-033",
+      "kind": "tracked",
+      "backlog_id": "B-028",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-028",
+        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "evidence": {"source_document": "docs/security/b028-dependabot-census-2026-09-06.json", "source_locator": "alert 33", "finding_title": "Dependabot alert #33: fast-uri (GHSA-5jgf-p345-68v8)"},
+        "proof": "Exact canonical mapping for Dependabot alert #33 (GHSA-5jgf-p345-68v8): B-028 is the owner-reviewed dependency census and remediation contract for this alert; the per-alert identity remains explicit in the admitted source."
+      }
+    },
+    {
+      "source_id": "DA-034",
+      "kind": "tracked",
+      "backlog_id": "B-028",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-028",
+        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "evidence": {"source_document": "docs/security/b028-dependabot-census-2026-09-06.json", "source_locator": "alert 34", "finding_title": "Dependabot alert #34: fast-uri (GHSA-fph4-wmhf-6fwf)"},
+        "proof": "Exact canonical mapping for Dependabot alert #34 (GHSA-fph4-wmhf-6fwf): B-028 is the owner-reviewed dependency census and remediation contract for this alert; the per-alert identity remains explicit in the admitted source."
+      }
+    },
+    {
+      "source_id": "DA-035",
+      "kind": "tracked",
+      "backlog_id": "B-028",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-028",
+        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "evidence": {"source_document": "docs/security/b028-dependabot-census-2026-09-06.json", "source_locator": "alert 35", "finding_title": "Dependabot alert #35: qs (GHSA-x5fp-wj9c-mxmx)"},
+        "proof": "Exact canonical mapping for Dependabot alert #35 (GHSA-x5fp-wj9c-mxmx): B-028 is the owner-reviewed dependency census and remediation contract for this alert; the per-alert identity remains explicit in the admitted source."
+      }
+    },
+    {
+      "source_id": "DA-036",
+      "kind": "tracked",
+      "backlog_id": "B-028",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-028",
+        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "evidence": {"source_document": "docs/security/b028-dependabot-census-2026-09-06.json", "source_locator": "alert 36", "finding_title": "Dependabot alert #36: fast-uri (GHSA-f65p-4m7j-42xc)"},
+        "proof": "Exact canonical mapping for Dependabot alert #36 (GHSA-f65p-4m7j-42xc): B-028 is the owner-reviewed dependency census and remediation contract for this alert; the per-alert identity remains explicit in the admitted source."
+      }
+    },
+    {
+      "source_id": "DA-037",
+      "kind": "tracked",
+      "backlog_id": "B-028",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-028",
+        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "evidence": {"source_document": "docs/security/b028-dependabot-census-2026-09-06.json", "source_locator": "alert 37", "finding_title": "Dependabot alert #37: fast-uri (GHSA-jqff-g426-hqxp)"},
+        "proof": "Exact canonical mapping for Dependabot alert #37 (GHSA-jqff-g426-hqxp): B-028 is the owner-reviewed dependency census and remediation contract for this alert; the per-alert identity remains explicit in the admitted source."
+      }
+    },
+    {
+      "source_id": "DA-038",
+      "kind": "tracked",
+      "backlog_id": "B-028",
+      "semantic_disposition": {
+        "relation": "equivalent_existing_backlog_item",
+        "canonical_id": "B-028",
+        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "evidence": {"source_document": "docs/security/b028-dependabot-census-2026-09-06.json", "source_locator": "alert 38", "finding_title": "Dependabot alert #38: qs (GHSA-4mjr-xmp4-gh2g)"},
+        "proof": "Exact canonical mapping for Dependabot alert #38 (GHSA-4mjr-xmp4-gh2g): B-028 is the owner-reviewed dependency census and remediation contract for this alert; the per-alert identity remains explicit in the admitted source."
+      }
+    }
+  ]
+}

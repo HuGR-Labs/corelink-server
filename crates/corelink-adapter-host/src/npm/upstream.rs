@@ -10,6 +10,7 @@ use crate::upstream_ssrf::ssrf_safe_redirect_policy;
 use std::fmt;
 
 use bytes::Bytes;
+use futures::StreamExt;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT};
 use reqwest::Client;
 use url::Url;
@@ -36,6 +37,12 @@ pub const NPM_SEARCH_DEFAULT_SIZE: u32 = 20;
 /// npm registry caps `size` at 250; clamp so a hostile `size` can never
 /// amplify one client call into an unbounded upstream fetch).
 pub const NPM_SEARCH_MAX_SIZE: u32 = 250;
+
+/// Maximum metadata/search response the adapter will buffer from upstream.
+/// This is deliberately larger than the KV cache admission limit: valid npm
+/// packuments can exceed the cache budget and are still proxyable, but no
+/// response may make the adapter allocate without a hard ceiling.
+pub const NPM_METADATA_MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
 /// User-Agent the adapter sends upstream.
 pub const ADAPTER_USER_AGENT: &str = "corelink-adapter-npm/0.1 (+https://humangr.com)";
@@ -106,11 +113,7 @@ impl UpstreamClient {
                 "non-success status {status} from upstream metadata"
             )));
         }
-        let body = resp
-            .bytes()
-            .await
-            .map_err(|e| NpmAdapterError::Upstream(format!("read body: {e}")))?;
-        Ok(body.to_vec())
+        read_bounded_json_response(resp).await
     }
 
     /// Proxy an npm registry search (`GET {registry}/-/v1/search`).
@@ -164,11 +167,7 @@ impl UpstreamClient {
                 "non-success status {status} from upstream search"
             )));
         }
-        let body = resp
-            .bytes()
-            .await
-            .map_err(|e| NpmAdapterError::Upstream(format!("read body: {e}")))?;
-        Ok(body.to_vec())
+        read_bounded_json_response(resp).await
     }
 
     /// Fetch a tarball by absolute URL. Returns the raw bytes
@@ -223,6 +222,30 @@ impl UpstreamClient {
     }
 }
 
+/// Read a JSON response without allowing the upstream to force an unbounded
+/// allocation. Content-Length is only an early rejection; chunked responses
+/// are checked incrementally before each append.
+async fn read_bounded_json_response(resp: reqwest::Response) -> Result<Vec<u8>, NpmAdapterError> {
+    if let Some(len) = resp.content_length() {
+        if len > NPM_METADATA_MAX_RESPONSE_BYTES as u64 {
+            return Err(NpmAdapterError::MetadataOversized(len));
+        }
+    }
+
+    let mut stream = resp.bytes_stream();
+    let mut body = Vec::new();
+    let mut total = 0usize;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| NpmAdapterError::Upstream(format!("read body: {e}")))?;
+        total = total.saturating_add(chunk.len());
+        if total > NPM_METADATA_MAX_RESPONSE_BYTES {
+            return Err(NpmAdapterError::MetadataOversized(total as u64));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
 /// Join `path` onto `upstream` and verify the result stays on the SAME origin
 /// (scheme + host + port). `Url::join` host-swaps when `path` carries a scheme
 /// (`https://evil/…`) or a protocol-relative authority (`//evil/…`) — this is
@@ -268,6 +291,14 @@ mod tests {
     fn constants_are_well_formed() {
         assert!(NPM_ACCEPT.contains("application/json"));
         assert!(ADAPTER_USER_AGENT.starts_with("corelink-adapter-npm/"));
+        assert!(NPM_METADATA_MAX_RESPONSE_BYTES > 0);
+    }
+
+    #[test]
+    fn metadata_response_cap_is_distinct_from_cache_admission() {
+        assert!(
+            NPM_METADATA_MAX_RESPONSE_BYTES > crate::npm::config::DEFAULT_METADATA_CACHE_MAX_BYTES
+        );
     }
 
     #[test]

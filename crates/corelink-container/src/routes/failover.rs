@@ -48,8 +48,10 @@
 //! anti-false-positive layers before it can block a write:
 //!
 //! 1. **Sample floor** (`FAILOVER_MIN_SAMPLES`, default 50): below 50 observed
-//!    requests in the 5s window the probe reports Healthy unconditionally —
-//!    3 consecutive slow 5xx cannot freeze all writes region-wide.
+//!    requests in the 5s window a clean/empty window is Healthy, but a window
+//!    containing any 5xx is indeterminate and fails closed through the router's
+//!    probe-error path. The independent hysteresis still protects writes from
+//!    a single transient observation.
 //! 2. **Trip/recover hysteresis**: the guard latches only after 3 consecutive
 //!    DEGRADED probe observations and releases only after 5 consecutive
 //!    HEALTHY ones (no flapping).
@@ -60,18 +62,27 @@
 //!
 //! The audit sink wired here is a BOUNDED ring buffer (`FAILOVER_AUDIT_SINK_CAP`,
 //! 10k records, oldest dropped) — process-lifetime memory stays flat.
+//!
+//! An authenticated internal heartbeat endpoint refreshes [`FailoverHeartbeat`].
+//! The public `/_health` readiness endpoint never refreshes this signal. A stale
+//! heartbeat is treated as degraded through the same hysteresis gate, so a
+//! silent blackhole cannot hide behind an empty data-plane sample window;
+//! data-plane responses never refresh it.
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use axum::{
     extract::{Request, State},
-    http::{HeaderValue, Method, StatusCode},
+    http::{HeaderMap, HeaderValue, Method, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
+    routing::post,
+    Router,
 };
+use subtle::ConstantTimeEq;
 
 use corelink_failover_router::{
     FailoverAuditSink, FailoverRouter, HealthProbe, InMemoryFailoverAuditSink,
@@ -97,12 +108,21 @@ const WINDOW_MS: u64 = SUSTAINED_WINDOW_SECS * 1_000;
 const MAX_SAMPLES: usize = 4_096;
 
 /// Statistical floor on the rolling window: below this many observed requests
-/// in the 5s window the sample is NOT significant and NO degradation signal
-/// may fire. Without it, 3 consecutive slow 5xx (rate = 100% > 1%, p99 >
-/// 300ms, streak >= 3) trip all three triggers at once and freeze EVERY write
-/// region-wide — a brownout amplifier, since the probe counts the container's
-/// own responses. Override with `FAILOVER_MIN_SAMPLES` (0/invalid → default).
+/// in the 5s window a clean sample is NOT significant and no degradation signal
+/// fires. A low-traffic window containing a 5xx is instead indeterminate, so
+/// callers can fail closed rather than claim positive health. Without the floor,
+/// 3 consecutive slow 5xx (rate = 100% > 1%, p99 > 300ms, streak >= 3) trip all
+/// three triggers at once and freeze EVERY write region-wide — a brownout
+/// amplifier, since the probe counts the container's own responses. Override
+/// with `FAILOVER_MIN_SAMPLES` (0/invalid → default).
 const MIN_SAMPLES_FOR_FAILOVER_DEFAULT: usize = 50;
+
+/// The external liveness signal must be refreshed by the authenticated internal
+/// heartbeat route; data-plane traffic and public readiness are deliberately
+/// not allowed to make a silent blackhole look alive.
+const FAILOVER_HEARTBEAT_STALE_DEFAULT_MS: u64 = 15_000;
+
+const INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
 
 /// Hysteresis: consecutive DEGRADED probe observations required before the
 /// guard latches into read-only mode. A single bad observation no longer
@@ -112,6 +132,114 @@ pub(crate) const FAILOVER_TRIP_PROBES: u32 = 3;
 /// Hysteresis grace: consecutive HEALTHY probe observations required before a
 /// latched guard releases. Prevents flapping around the threshold.
 pub(crate) const FAILOVER_RECOVER_PROBES: u32 = 5;
+
+static EXTERNAL_HEARTBEAT: OnceLock<Arc<FailoverHeartbeat>> = OnceLock::new();
+
+/// External liveness signal shared by the authenticated internal heartbeat
+/// endpoint and the data-plane failover layer. A quiet data plane therefore
+/// cannot hide a blackhole: only an authenticated internal scheduler refreshes
+/// this timestamp.
+#[derive(Debug)]
+pub struct FailoverHeartbeat {
+    last_seen_ms: AtomicU64,
+    stale_after_ms: u64,
+}
+
+impl FailoverHeartbeat {
+    #[must_use]
+    fn new(now_ms: u64, stale_after_ms: u64) -> Self {
+        Self {
+            last_seen_ms: AtomicU64::new(now_ms),
+            stale_after_ms,
+        }
+    }
+
+    /// Refresh from the external health checker, never from a data request.
+    fn beat(&self, now_ms: u64) {
+        self.last_seen_ms.store(now_ms, Ordering::Release);
+    }
+
+    #[must_use]
+    fn is_stale(&self, now_ms: u64) -> bool {
+        now_ms.saturating_sub(self.last_seen_ms.load(Ordering::Acquire)) > self.stale_after_ms
+    }
+
+    #[must_use]
+    fn stale_after_ms(&self) -> u64 {
+        self.stale_after_ms
+    }
+}
+
+fn heartbeat_stale_after_ms() -> u64 {
+    crate::storage::env_or(
+        "FAILOVER_HEARTBEAT_STALE_MS",
+        &FAILOVER_HEARTBEAT_STALE_DEFAULT_MS.to_string(),
+    )
+    .parse::<u64>()
+    .ok()
+    .filter(|value| *value > 0)
+    .unwrap_or(FAILOVER_HEARTBEAT_STALE_DEFAULT_MS)
+}
+
+fn register_external_heartbeat(heartbeat: Arc<FailoverHeartbeat>) {
+    let _ = EXTERNAL_HEARTBEAT.set(heartbeat);
+}
+
+fn internal_auth_ok(expected: Option<&Arc<str>>, headers: &HeaderMap) -> bool {
+    let Some(expected) = expected else {
+        return false;
+    };
+    let provided = headers
+        .get(INTERNAL_AUTH_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    let expected_bytes = expected.as_bytes();
+    let provided_bytes = provided.as_bytes();
+    let provided_padded = if provided_bytes.len() >= expected_bytes.len() {
+        provided_bytes
+            .get(..expected_bytes.len())
+            .unwrap_or(&[])
+            .to_vec()
+    } else {
+        let mut padded = provided_bytes.to_vec();
+        padded.resize(expected_bytes.len(), 0);
+        padded
+    };
+    let content_ok = expected_bytes.ct_eq(&provided_padded).unwrap_u8();
+    let length_ok = u8::from(expected_bytes.len() == provided_bytes.len());
+    (content_ok & length_ok) == 1
+}
+
+fn apply_authenticated_heartbeat(
+    heartbeat: &FailoverHeartbeat,
+    expected: Option<&Arc<str>>,
+    headers: &HeaderMap,
+    now_ms: u64,
+) -> StatusCode {
+    if !internal_auth_ok(expected, headers) {
+        return StatusCode::UNAUTHORIZED;
+    }
+    heartbeat.beat(now_ms);
+    StatusCode::OK
+}
+
+async fn internal_heartbeat_handler(headers: HeaderMap) -> StatusCode {
+    let Some(heartbeat) = EXTERNAL_HEARTBEAT.get() else {
+        return StatusCode::SERVICE_UNAVAILABLE;
+    };
+    let expected = crate::routes::admin::internal_auth_key_from_env();
+    apply_authenticated_heartbeat(heartbeat, expected.as_ref(), &headers, now_ms())
+}
+
+/// Build the authenticated internal failover-heartbeat route. It is merged
+/// outside the public readiness and data-plane middleware stacks. Without the
+/// configured internal key, the handler fails closed and cannot refresh state.
+pub fn internal_heartbeat_router() -> Router {
+    Router::new().route(
+        "/_internal/failover/heartbeat",
+        post(internal_heartbeat_handler),
+    )
+}
 
 /// Cap for the production failover audit sink (`with_capacity` ring buffer):
 /// region-failover events are exactly the ones worth auditing, but an
@@ -197,6 +325,10 @@ struct Sample {
     ts_ms: u64,
     is_5xx: bool,
     latency_ms: u64,
+    /// Monotonic event identity for each 5xx. Probe observations consume this
+    /// identity once, so a single transient cannot be counted repeatedly while
+    /// clean probes arrive and the sample remains in the rolling window.
+    error_event: Option<u64>,
 }
 
 /// A production [`HealthProbe`] backed by the container's own observed request
@@ -212,9 +344,12 @@ struct Sample {
 #[derive(Debug)]
 pub struct RollingMetricsHealthProbe {
     samples: Mutex<VecDeque<Sample>>,
-    /// Statistical floor: below this many in-window samples the probe
-    /// reports Healthy unconditionally (see [`MIN_SAMPLES_FOR_FAILOVER_DEFAULT`]).
+    /// Statistical floor: below this many in-window samples the probe refuses
+    /// to make a positive health claim when any 5xx is present; the router
+    /// treats that indeterminate result as degraded (fail-closed).
     min_samples: usize,
+    next_error_event: AtomicU64,
+    last_reported_error_event: AtomicU64,
 }
 
 impl RollingMetricsHealthProbe {
@@ -233,6 +368,8 @@ impl RollingMetricsHealthProbe {
         RollingMetricsHealthProbe {
             samples: Mutex::new(VecDeque::new()),
             min_samples,
+            next_error_event: AtomicU64::new(0),
+            last_reported_error_event: AtomicU64::new(0),
         }
     }
 
@@ -242,10 +379,16 @@ impl RollingMetricsHealthProbe {
     /// and bounds retention to [`MAX_SAMPLES`].
     pub fn record_outcome(&self, is_5xx: bool, latency_ms: u64, now_ms: u64) {
         let mut guard = self.samples.lock().unwrap_or_else(PoisonError::into_inner);
+        let error_event = is_5xx.then(|| {
+            self.next_error_event
+                .fetch_add(1, Ordering::Relaxed)
+                .saturating_add(1)
+        });
         guard.push_back(Sample {
             ts_ms: now_ms,
             is_5xx,
             latency_ms,
+            error_event,
         });
         Self::prune(&mut guard, now_ms);
         while guard.len() > MAX_SAMPLES {
@@ -290,9 +433,34 @@ impl HealthProbe for RollingMetricsHealthProbe {
 
         let total = guard.len();
         if total < self.min_samples {
-            // Below the statistical floor the window is NOT significant —
-            // NO degradation signal counts (prevents 3 bad requests from
-            // freezing all writes region-wide).
+            // The floor still suppresses tiny clean/transient windows, but it
+            // must not turn observed server errors into a positive health
+            // claim. Returning Err is deliberate: InMemoryFailoverRouter maps
+            // probe errors to a conservative degraded snapshot, while
+            // HysteresisGate still requires three consecutive degraded
+            // observations before writes are blocked. Empty/clean low-traffic
+            // windows remain healthy.
+            let newest_error_event = guard
+                .iter()
+                .filter_map(|sample| sample.error_event)
+                .max()
+                .unwrap_or_else(|| self.last_reported_error_event.load(Ordering::Acquire));
+            let last_reported_error_event = self.last_reported_error_event.load(Ordering::Acquire);
+            if newest_error_event > last_reported_error_event
+                && self
+                    .last_reported_error_event
+                    .compare_exchange(
+                        last_reported_error_event,
+                        newest_error_event,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    )
+                    .is_ok()
+            {
+                return Err(
+                    "insufficient samples with observed 5xx; health indeterminate".to_owned(),
+                );
+            }
             return Ok(RegionHealthSnapshot::evaluate(
                 region,
                 0.0,
@@ -342,6 +510,7 @@ impl HealthProbe for RollingMetricsHealthProbe {
 pub struct FailoverLayerState {
     router: Arc<dyn FailoverRouter>,
     probe: Arc<RollingMetricsHealthProbe>,
+    heartbeat: Arc<FailoverHeartbeat>,
     residency: ResidencyGraph,
     primary: Option<Region>,
     /// Trip/recover hysteresis over the raw health verdict (B.2).
@@ -376,13 +545,16 @@ impl FailoverLayerState {
                  (nrt/syd/unknown) — reads/writes pass through unchanged"
             );
         }
-        Self::with_primary(primary)
+        let state = Self::with_primary(primary);
+        register_external_heartbeat(Arc::clone(&state.heartbeat));
+        state
     }
 
     /// Construct with an explicit primary region (test seam + `from_env`).
     #[must_use]
     pub fn with_primary(primary: Option<Region>) -> Self {
         let probe = Arc::new(RollingMetricsHealthProbe::new());
+        let heartbeat = Arc::new(FailoverHeartbeat::new(now_ms(), heartbeat_stale_after_ms()));
         // Bounded ring buffer: failover events are the most audit-worthy, but
         // an unbounded in-memory sink grows for the whole process lifetime
         // and never reaches D1 — cap retention instead of leaking.
@@ -396,6 +568,7 @@ impl FailoverLayerState {
         FailoverLayerState {
             router,
             probe,
+            heartbeat,
             residency: ResidencyGraph,
             primary,
             hysteresis: Arc::new(HysteresisGate::default()),
@@ -407,6 +580,13 @@ impl FailoverLayerState {
     #[must_use]
     pub fn probe(&self) -> Arc<RollingMetricsHealthProbe> {
         Arc::clone(&self.probe)
+    }
+
+    /// Test/inspection accessor for the external liveness signal. Production
+    /// callers must use the authenticated internal heartbeat route.
+    #[must_use]
+    fn heartbeat(&self) -> Arc<FailoverHeartbeat> {
+        Arc::clone(&self.heartbeat)
     }
 
     /// Test/inspection accessor for the hysteresis gate (drive `observe`).
@@ -465,7 +645,10 @@ pub async fn failover_guard(
     // Hysteresis: the raw verdict is instantaneous; the gate latches only
     // after FAILOVER_TRIP_PROBES consecutive degraded observations and
     // releases after FAILOVER_RECOVER_PROBES consecutive healthy ones.
-    let degraded = state.hysteresis.observe(snap.health.requires_failover());
+    let heartbeat_stale = state.heartbeat.is_stale(now);
+    let degraded = state
+        .hysteresis
+        .observe(heartbeat_stale || snap.health.requires_failover());
 
     if degraded {
         let sibling = state.residency.sibling(primary);
@@ -526,363 +709,5 @@ async fn run_and_record(
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    reason = "tests are allowed to use these primitives"
-)]
-mod tests {
-    use super::*;
-    use axum::{
-        body::Body,
-        http::{Request as HttpRequest, StatusCode},
-        routing::get,
-        Router,
-    };
-    use corelink_failover_router::{RegionHealth, CONSECUTIVE_FAILURES_THRESHOLD};
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use tower::ServiceExt; // `.oneshot()`
-
-    // ── colo → failover macro map ────────────────────────────────────────────
-
-    #[test]
-    fn colo_map_is_exact() {
-        assert_eq!(failover_region_for_colo("iad"), Some(Region::Enam));
-        assert_eq!(failover_region_for_colo("lhr"), Some(Region::Weur));
-        assert_eq!(failover_region_for_colo("sam"), Some(Region::Sam));
-        // APAC colos have no sibling in the 4-macro graph → inert.
-        assert_eq!(failover_region_for_colo("nrt"), None);
-        assert_eq!(failover_region_for_colo("syd"), None);
-        assert_eq!(failover_region_for_colo("zzz"), None);
-    }
-
-    // ── RollingMetricsHealthProbe (the REAL probe) ────────────────────────────
-
-    #[test]
-    fn empty_probe_is_healthy() {
-        let p = RollingMetricsHealthProbe::new();
-        let snap = p.probe(Region::Enam, 1_000).unwrap();
-        assert_eq!(snap.health, RegionHealth::Healthy);
-    }
-
-    #[test]
-    fn all_three_signals_degrade() {
-        let p = RollingMetricsHealthProbe::new();
-        let now = 1_000_000;
-        // A sustained streak of high-latency 5xx trips all three signals:
-        // 5xx rate = 100% (> 1%), p99 = 500ms (> 300ms), consecutive >= 3.
-        // Seeded above the sample floor (50) so the window is significant.
-        for _ in 0..MIN_SAMPLES_FOR_FAILOVER_DEFAULT {
-            p.record_outcome(false, 10, now);
-        }
-        for _ in 0..(CONSECUTIVE_FAILURES_THRESHOLD + 2) {
-            p.record_outcome(true, 500, now);
-        }
-        let snap = p.probe(Region::Enam, now).unwrap();
-        assert_eq!(snap.health, RegionHealth::Degraded);
-        assert_eq!(snap.active_triggers.len(), 3);
-    }
-
-    #[test]
-    fn latency_alone_does_not_degrade() {
-        // Multi-signal AND: high latency but ZERO 5xx and no failure streak
-        // must stay Healthy (suppresses transient-slowness false positives).
-        let p = RollingMetricsHealthProbe::new();
-        let now = 1_000_000;
-        for _ in 0..10 {
-            p.record_outcome(false, 900, now);
-        }
-        let snap = p.probe(Region::Enam, now).unwrap();
-        assert_eq!(snap.health, RegionHealth::Healthy);
-    }
-
-    #[test]
-    fn stale_samples_are_pruned_out_of_window() {
-        let p = RollingMetricsHealthProbe::new();
-        // Old outage samples...
-        for _ in 0..5 {
-            p.record_outcome(true, 500, 1_000);
-        }
-        // ...are entirely outside the 5s window at a much later observation.
-        let later = 1_000 + WINDOW_MS + 10_000;
-        let snap = p.probe(Region::Enam, later).unwrap();
-        assert_eq!(snap.health, RegionHealth::Healthy);
-    }
-
-    // ── Tower layer integration (oneshot) ─────────────────────────────────────
-
-    fn app(state: FailoverLayerState, reached: Arc<AtomicBool>) -> Router {
-        let r_get = reached.clone();
-        let r_post = reached;
-        Router::new()
-            .route(
-                "/v1/cas/{tenant}/{hash}",
-                get(move || {
-                    let r = r_get.clone();
-                    async move {
-                        r.store(true, Ordering::SeqCst);
-                        "ok"
-                    }
-                })
-                .put(move || {
-                    let r = r_post.clone();
-                    async move {
-                        r.store(true, Ordering::SeqCst);
-                        "written"
-                    }
-                }),
-            )
-            .layer(axum::middleware::from_fn_with_state(state, failover_guard))
-    }
-
-    fn degrade(state: &FailoverLayerState) {
-        let probe = state.probe();
-        let now = now_ms();
-        for _ in 0..(CONSECUTIVE_FAILURES_THRESHOLD + 2) {
-            probe.record_outcome(true, 500, now);
-        }
-    }
-
-    /// Seed degraded samples AND pump the hysteresis gate through its trip
-    /// threshold so the guard is latched (post-B.2 the raw snapshot alone no
-    /// longer blocks).
-    fn degrade_and_trip(state: &FailoverLayerState) {
-        degrade(state);
-        let gate = state.failover_gate();
-        for _ in 0..FAILOVER_TRIP_PROBES {
-            gate.observe(true);
-        }
-    }
-
-    #[tokio::test]
-    async fn healthy_region_passes_reads_and_writes() {
-        let state = FailoverLayerState::with_primary(Some(Region::Enam));
-        let reached = Arc::new(AtomicBool::new(false));
-        let resp = app(state, reached.clone())
-            .oneshot(
-                HttpRequest::builder()
-                    .method("GET")
-                    .uri("/v1/cas/t1/abc")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-        assert!(reached.load(Ordering::SeqCst));
-        assert!(resp.headers().get(FAILOVER_ACTIVE_HEADER).is_none());
-    }
-
-    #[tokio::test]
-    async fn degraded_region_blocks_writes_503() {
-        let state = FailoverLayerState::with_primary(Some(Region::Enam));
-        degrade_and_trip(&state);
-        let reached = Arc::new(AtomicBool::new(false));
-        let resp = app(state, reached.clone())
-            .oneshot(
-                HttpRequest::builder()
-                    .method("PUT")
-                    .uri("/v1/cas/t1/abc")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
-        // Fail-CLOSED: the handler must NOT have run (no storage write).
-        assert!(!reached.load(Ordering::SeqCst));
-    }
-
-    #[tokio::test]
-    async fn degraded_region_passes_reads_with_sibling_hint() {
-        let state = FailoverLayerState::with_primary(Some(Region::Enam));
-        degrade_and_trip(&state);
-        let reached = Arc::new(AtomicBool::new(false));
-        let resp = app(state, reached.clone())
-            .oneshot(
-                HttpRequest::builder()
-                    .method("GET")
-                    .uri("/v1/cas/t1/abc")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-        assert!(reached.load(Ordering::SeqCst));
-        assert_eq!(resp.headers().get(FAILOVER_ACTIVE_HEADER).unwrap(), "1");
-        // Enam's failover sibling is Wnam (WNAM↔ENAM).
-        assert_eq!(
-            resp.headers().get(FAILOVER_READ_REGION_HEADER).unwrap(),
-            Region::Wnam.as_str()
-        );
-    }
-
-    #[tokio::test]
-    async fn inert_when_no_failover_region() {
-        // primary = None (e.g. nrt/syd colo) → layer passes writes through even
-        // if degradation were recorded (no macro region to fail over).
-        let state = FailoverLayerState::with_primary(None);
-        degrade(&state);
-        let reached = Arc::new(AtomicBool::new(false));
-        let resp = app(state, reached.clone())
-            .oneshot(
-                HttpRequest::builder()
-                    .method("PUT")
-                    .uri("/v1/cas/t1/abc")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-        assert!(reached.load(Ordering::SeqCst));
-    }
-
-    // ── B.1 sample floor + B.2 hysteresis ────────────────────────────────────
-
-    #[test]
-    fn tiny_sample_burst_stays_healthy() {
-        // THE BUG: 3 consecutive slow 5xx within the 5s window used to trip
-        // all three signals (rate=100% > 1%, p99=500ms > 300ms, streak >= 3)
-        // and freeze ALL writes region-wide. Below the statistical floor the
-        // window is NOT significant — no degradation signal may fire.
-        let p = RollingMetricsHealthProbe::new();
-        let now = 1_000_000;
-        for _ in 0..3 {
-            p.record_outcome(true, 500, now);
-        }
-        let snap = p.probe(Region::Enam, now).unwrap();
-        assert_eq!(
-            snap.health,
-            RegionHealth::Healthy,
-            "3 bad requests must NOT degrade the region"
-        );
-        assert!(
-            snap.active_triggers.is_empty(),
-            "no trigger may fire below the sample floor"
-        );
-    }
-
-    #[test]
-    fn outage_above_sample_floor_still_degrades() {
-        // Non-regression: a REAL outage (statistically significant window)
-        // still trips. 60 samples, trailing streak of 5 slow 5xx:
-        // rate ≈ 8.3% > 1%, p99 = 500ms > 300ms, consecutive = 5 ≥ 3.
-        let p = RollingMetricsHealthProbe::new();
-        let now = 1_000_000;
-        for _ in 0..55 {
-            p.record_outcome(false, 10, now);
-        }
-        for _ in 0..5 {
-            p.record_outcome(true, 500, now);
-        }
-        let snap = p.probe(Region::Enam, now).unwrap();
-        assert_eq!(snap.health, RegionHealth::Degraded);
-        assert_eq!(snap.active_triggers.len(), 3);
-    }
-
-    #[test]
-    fn hysteresis_single_degraded_probe_does_not_trip_guard() {
-        let state = FailoverLayerState::with_primary(Some(Region::Enam));
-        degrade(&state); // probe WOULD read Degraded (above floor not required here)
-        let gate = state.failover_gate();
-        assert!(!gate.observe(true), "one degraded probe must not trip");
-    }
-
-    #[test]
-    fn hysteresis_three_consecutive_degraded_probes_trip_guard() {
-        let state = FailoverLayerState::with_primary(Some(Region::Enam));
-        degrade(&state);
-        let gate = state.failover_gate();
-        assert!(!gate.observe(true));
-        assert!(!gate.observe(true));
-        assert!(gate.observe(true), "three consecutive degraded probes trip");
-    }
-
-    #[test]
-    fn hysteresis_recovers_only_after_grace_of_healthy_probes() {
-        let state = FailoverLayerState::with_primary(Some(Region::Enam));
-        let gate = state.failover_gate();
-        for _ in 0..FAILOVER_TRIP_PROBES {
-            gate.observe(true);
-        }
-        // Recovery grace: FAILOVER_RECOVER_PROBES consecutive healthy probes;
-        // release happens ON that Nth healthy observation.
-        for _ in 0..(FAILOVER_RECOVER_PROBES - 1) {
-            assert!(gate.observe(false), "engaged while grace incomplete");
-        }
-        gate.observe(true); // degraded blip resets the healthy streak...
-        for _ in 0..(FAILOVER_RECOVER_PROBES - 1) {
-            assert!(gate.observe(false), "grace restarted after blip");
-        }
-        assert!(
-            !gate.observe(false),
-            "recovers exactly on the Nth consecutive healthy probe"
-        );
-    }
-
-    #[tokio::test]
-    async fn guard_requires_hysteresis_before_blocking_writes() {
-        // Integration: raw-degraded samples present, but only ONE probe
-        // observation so far → the write must PASS (was: instant 503).
-        let state = FailoverLayerState::with_primary(Some(Region::Enam));
-        degrade(&state);
-        let reached = Arc::new(AtomicBool::new(false));
-        let resp = app(state.clone(), reached.clone())
-            .oneshot(
-                HttpRequest::builder()
-                    .method("PUT")
-                    .uri("/v1/cas/t1/abc")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            resp.status(),
-            StatusCode::OK,
-            "single degraded observation must not block writes"
-        );
-        assert!(reached.load(Ordering::SeqCst));
-    }
-
-    // ── B.3 bounded audit sink ───────────────────────────────────────────────
-
-    #[test]
-    fn ring_buffer_sink_keeps_newest_cap_records() {
-        use corelink_failover_router::{
-            FailoverAuditEventType as ReplicaAuditEventType,
-            FailoverAuditRecord as ReplicaAuditRecord, FailoverAuditSink as ReplicaAuditSink,
-        };
-        let mk = |i: u32| ReplicaAuditRecord {
-            event_type: ReplicaAuditEventType::ReplicationStarted,
-            tenant_id_hash: format!("t{i}"),
-            blob_hash: String::new(),
-            primary_region: "enam".to_owned(),
-            replica_region: "wnam".to_owned(),
-            timestamp_ms: 1_000 + u64::from(i),
-            detail: String::new(),
-        };
-        // The production wiring's cap (same constant `with_primary` uses).
-        let state = FailoverLayerState::with_primary(Some(Region::Enam));
-        let sink = state.audit_sink();
-        for i in 0..(FAILOVER_AUDIT_SINK_CAP as u32 + 10) {
-            sink.emit(mk(i)).unwrap();
-        }
-        let records = sink.records();
-        assert_eq!(records.len(), FAILOVER_AUDIT_SINK_CAP, "cap enforced");
-        assert_eq!(
-            records.last().unwrap().tenant_id_hash,
-            format!("t{}", FAILOVER_AUDIT_SINK_CAP as u32 + 9),
-            "newest preserved"
-        );
-        assert_eq!(
-            records.first().unwrap().tenant_id_hash,
-            "t10",
-            "oldest dropped"
-        );
-    }
-}
+#[path = "failover_tests.rs"]
+mod tests;

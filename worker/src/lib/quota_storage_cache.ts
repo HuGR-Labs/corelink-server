@@ -46,14 +46,14 @@
  * must see LIVE storage before it is allowed past the cap — that is the whole
  * point of storage enforcement. Callers keep resolving writes via the live
  * `checkStorageQuota` / `runQuotaBatch` path; only GET/HEAD consult this cache.
- * The existing "reads fail-open, writes fail-closed" posture is preserved: this
- * module is a read-only accelerant, never on the write path.
+ * Storage failures fail closed even on reads: this module is a read-only
+ * accelerant, never an authorization bypass.
  *
- * # Failure posture — FAIL-OPEN, never cache an error
+ * # Failure posture — FAIL-CLOSED, never cache an error
  *
- * A D1 fault on the SUM read yields `d1Error:true`; the caller treats that as the
- * read-side fail-open (`ok:true`) and it is **never cached** (a transient fault
- * can never pin a tenant to a wrong byte count). Only a CONFIRMED SUM is written
+ * A D1 fault on the SUM read yields `d1Error:true`; the caller treats that as a
+ * short fail-closed retry and it is **never cached** (a transient fault can
+ * never pin a tenant to a wrong byte count). Only a CONFIRMED SUM is written
  * to L1+L2 — identical to the tier cache's `d1Error` rule.
  *
  * INV-NO-PII-IN-LOGS: nothing is logged here (no tenant id, no bytes).
@@ -272,7 +272,7 @@ export async function resolveStorageBytesCached(
  * Cached storage-quota check for a NON-MUTATING (GET/HEAD) request — a drop-in for
  * `checkStorageQuota(db, tenant, tier, isMutating=false)` that avoids the
  * synchronous SUM on a warm hit. Semantics are byte-identical to the live check:
- *   - unconfirmed tier (`d1Error`) → fail OPEN (`ok:true`), nothing cached;
+ *   - unconfirmed tier (`d1Error`) → fail CLOSED with a short retry, nothing cached;
  *   - unlimited-storage tier → `ok:true`, no SUM at all;
  *   - otherwise → `storageResultForBytes(cachedBytes, tier)`, the SAME verdict
  *     (and the same `reason` string) the live path returns from the same bytes.
@@ -287,10 +287,15 @@ export async function checkStorageQuotaCachedRead(
   storageCapFinite: boolean,
   opts: StorageOpts = {},
 ): Promise<QuotaCheckResult> {
-  // Unconfirmed tier → read-side fail-open (identical to checkStorageQuota's first
-  // branch for isMutating=false). Never cache.
+  // Unconfirmed tier → fail closed (identical to checkStorageQuota's first
+  // branch after B181). Never cache an authorization decision made without a
+  // confirmed tier.
   if (tierD1Error) {
-    return { ok: true };
+    return {
+      ok: false,
+      retryAfterSec: 2,
+      reason: "storage quota temporarily unverifiable (store error); retry",
+    };
   }
   // Unlimited-storage tier (enterprise) → nothing to check, no SUM.
   if (!storageCapFinite) {
@@ -298,8 +303,13 @@ export async function checkStorageQuotaCachedRead(
   }
   const { totalBytes, d1Error } = await resolveStorageBytesCached(db, tenantId, opts);
   if (d1Error) {
-    // Read-side fail-open on a SUM fault (availability), consistent with the live path.
-    return { ok: true };
+    // A cached read is still an authorization surface: a D1/cache fault must
+    // not turn it into an unbounded quota bypass.
+    return {
+      ok: false,
+      retryAfterSec: 2,
+      reason: "storage quota temporarily unverifiable (store error); retry",
+    };
   }
   return storageResultForBytes(totalBytes, tier);
 }

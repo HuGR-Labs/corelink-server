@@ -2,8 +2,9 @@
 # CoreLink R2-13: D1 migration runner — idempotent wrapper around
 # `wrangler d1 migrations apply`.
 #
-# This script is the canonical entrypoint for staged D1 schema rollouts
-# (dev → staging → prod). It wraps wrangler with defense-in-depth flags,
+# This script is the canonical entrypoint for root-worker D1 schema operations
+# in dev or prod. The root Worker has no staging environment; this wrapper
+# intentionally refuses a staging target instead of implying one exists.
 # captures every interaction with the remote D1 binding to an audit log
 # under `logs/`, and refuses to apply against prod without an explicit
 # `--i-understand-this-is-prod` opt-in.
@@ -25,7 +26,6 @@
 #
 # Usage:
 #   scripts/d1-migration-runner.sh --env dev
-#   scripts/d1-migration-runner.sh --env staging --binding corelink_d1_wnam
 #   scripts/d1-migration-runner.sh --env prod --i-understand-this-is-prod
 #   scripts/d1-migration-runner.sh --dry-run --env dev          # diff only
 #
@@ -48,10 +48,10 @@ EXTRA_ARGS=()
 
 usage() {
     cat >&2 <<'USAGE'
-usage: d1-migration-runner.sh --env <dev|staging|prod> [options]
+usage: d1-migration-runner.sh --env <dev|prod> [options]
 
 required:
-  --env <env>                       one of: dev, staging, prod
+  --env <env>                       one of: dev, prod
 
 options:
   --binding <name>                  D1 binding name (default: DB).
@@ -98,8 +98,8 @@ if [[ -z "$ENV" ]]; then
 fi
 
 case "$ENV" in
-    dev|staging|prod) ;;
-    *) echo "fatal: --env must be one of dev|staging|prod (got: $ENV)" >&2; exit 2 ;;
+    dev|prod) ;;
+    *) echo "fatal: --env must be one of dev|prod (root Worker has no staging target; got: $ENV)" >&2; exit 2 ;;
 esac
 
 if [[ "$ENV" == "prod" && "$PROD_ACK" != "true" ]]; then
@@ -190,6 +190,17 @@ fi
 log "calling: wrangler d1 migrations list $BINDING --env $ENV (pre-flight)"
 if ! wrangler d1 migrations list "$BINDING" --env "$ENV" >>"$LOG_FILE" 2>&1; then
     log "fatal: wrangler list failed — check CF auth + binding name"
+    exit 1
+fi
+
+# 0064 is a foreign-key-parent table rebuild. On a populated tenant table,
+# `migrations apply` enforces the DROP before the deferred-FK window and rolls
+# back. The helper performs an idempotent single-file execute and records the
+# exact migration filename in d1_migrations before this runner applies the rest.
+log "calling: d1-apply-fk-parent.sh --binding $BINDING --env $ENV --remote"
+if ! WRANGLER_CMD=wrangler "$REPO_ROOT/scripts/d1-apply-fk-parent.sh" \
+    --binding "$BINDING" --env "$ENV" --remote >>"$LOG_FILE" 2>&1; then
+    log "FAIL: FK-parent migration 0064 pre-step failed — refusing plain apply"
     exit 1
 fi
 

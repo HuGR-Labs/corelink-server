@@ -135,7 +135,7 @@ describe("CustomerClient wire-shape contract", () => {
     ) as unknown as typeof fetch;
   }
 
-  // `POST /v1/customer/team/invite` → 201 `{ "member": { … } }`
+  // `POST /v1/customer/team/invite` → 201 `{ "member": { … }, "invitation_token": "…" }`
   // (routes/customer.rs:961-969; shape asserted server-side at :2062).
   // Regression: the client bare-cast this envelope to `CustomerTeamMember`, so
   // `.email` was `undefined` and the team screen rendered "Invite sent to
@@ -153,6 +153,7 @@ describe("CustomerClient wire-shape contract", () => {
             joined_at: "",
             status: "invited",
           },
+          invitation_token: "a".repeat(64),
         },
         201,
       ),
@@ -160,9 +161,10 @@ describe("CustomerClient wire-shape contract", () => {
 
     const member = await client.inviteTeam({ email: "alice@example.com", role: "member" });
 
-    expect(member.email).toBe("alice@example.com");
-    expect(member.user_id).toBe("0198f0e3-0000-7000-8000-000000000001");
-    expect(member.status).toBe("invited");
+    expect(member.member.email).toBe("alice@example.com");
+    expect(member.member.user_id).toBe("0198f0e3-0000-7000-8000-000000000001");
+    expect(member.member.status).toBe("invited");
+    expect(member.invitation_token).toHaveLength(64);
   });
 
   // `POST /v1/customer/keys` → 201 `{ "pat": { … }, "token": "…" }`

@@ -46,7 +46,7 @@ akzeptiert. Es gibt keine API-Schlüssel, OAuth-Tokens oder Dienstkonten — ein
 | Format | `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` — `<env>` ist `pat` (Nutzer-PAT), `ci` (CI-Runner-Token) oder `ro` (Nur-Lese-Token) |
 | Geltungsbereich | Genau ein Tenant zum Zeitpunkt der Ausstellung |
 | Einmal angezeigt | Wird nur bei der Erstellung im Klartext angezeigt; niemals im Klartext serverseitig gespeichert |
-| Widerrufbar | Der Start-PAT und zusätzliche PATs aus `POST /v1/pats` sind mandantenbezogen; beide Aliase verwenden dieselbe `pat-issue`-Richtlinie (Burst 10, 10/Stunde), vor Mint und Audit. |
+| Widerrufbar | Dashboard-Revoke via `POST /v1/customer/keys/{pat_id}/revoke` erfordert die serververtrauenswürdige Rolle `owner`/`admin`; Admins dürfen keine Owner-PATs widerrufen. |
 | Ablauf | Self-Service-PATs laufen nach 90 Tagen ab |
 
 ### PAT-Geltungsbereiche
