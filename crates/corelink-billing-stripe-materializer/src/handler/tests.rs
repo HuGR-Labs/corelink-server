@@ -110,7 +110,7 @@ fn container_webhook_events_json_matches_the_matrix() {
     // actually materializes (over-subscription is harmless-but-untidy;
     // under-subscription would silently drop a grant path).
     let json: serde_json::Value =
-        serde_json::from_str(include_str!("../container-webhook-events.json")).unwrap();
+        serde_json::from_str(include_str!("../../container-webhook-events.json")).unwrap();
     let mut from_json: Vec<String> = json["enabled_events"]
         .as_array()
         .unwrap()
