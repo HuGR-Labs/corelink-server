@@ -1485,9 +1485,9 @@ owner: tl
 status: done
 source-document: "PR containment audit #1550/#1558"
 source-locator: "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md:3-20"
-finding-title: "canonical WP ledger must stay aligned with the dense 316-item population"
+finding-title: "canonical WP ledger must stay aligned with the dense 317-item population"
 problem: "the ledger verifier, catalogs and pending changelogs once described an obsolete pre-D03 baseline instead of the delivered main base and live owner population"
-evidence: "python3 scripts/verify_backlog_wp_ledger.py after reconciliation: 316 items, 16 open, 261 done, 39 parked; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
+evidence: "python3 scripts/verify_backlog_wp_ledger.py after reconciliation: 317 items, 16 open, 262 done, 39 parked; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
 acceptance: "the ledger and catalogs name delivered main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266 as the immutable ancestry base, retain 7b992e9db123abeb76381b1c1337011692f2e834 only as D03 provenance, reconcile live counts, and fail closed on wrong or unrelated ancestry"
 verify: |
   set -euo pipefail
@@ -1500,14 +1500,14 @@ verify: |
   sys.path.insert(0, "scripts")
   import verify_backlog_wp_ledger as ledger
   text = Path("BACKLOG.md").read_text()
-  assert len(ledger.all_backlog_ids(text)) == 316
+  assert len(ledger.all_backlog_ids(text)) == 317
   assert len(ledger.open_backlog_ids(text)) == 16
-  assert ledger.backlog_status_counts(text) == {"open": 16, "done": 261, "parked": 39}
+  assert ledger.backlog_status_counts(text) == {"open": 16, "done": 262, "parked": 39}
   assert ledger.LEDGER_BASE_REF == "main"
   assert ledger.LEDGER_BASE_SHA == "ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
   PY
 verify-means: |
-  done — the live verifier proves 16/16 open-ID ownership, 316 total records,
+  done — the live verifier proves 16/16 open-ID ownership, 317 total records,
   exact catalog populations, predecessor ordering, editable/workflow ownership,
   and the D03 base ref/SHA relationship. The focused parser suite remains
   load-bearing: stale metadata, a tampered base and missing CI predecessor are
@@ -1609,6 +1609,29 @@ verify-means: |
   drift, or loss of the B-032/B-314 ownership boundaries fails closed. `done` requires
   all four genuine completed reviews and the Legal-approved effective-text population;
   validator path/existence success never implies Legal completion.
+last-verified: 2026-09-06
+```
+
+### B-317 — strict release workflow contract test failed repository-wide clippy
+```backlog
+id: B-317
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "tools/cli/tests/release_workflow_contract.rs"
+finding-title: "release workflow contract test used panic/expect patterns rejected by strict clippy"
+problem: "Fallible fixture reads and the optional final-manifest retry branch used panic!/expect-style handling in a test compiled under the repository-wide -D warnings policy."
+evidence: "The strict bundled clippy failure was repaired at 7681cc9c155e07336b070e8bc69857d43e8ee304 without changing the release workflow assertions."
+acceptance: "The fixture loaders and outer test propagate Result errors, the retry option is asserted then handled without expect, no panic/expect/unwrap or allow suppression remains in the target, and a comment/string-resistant static mutation guard proves the shape without per-WP Cargo."
+verify: python3 scripts/verify_b317_release_workflow_contract.py --self-test
+verify-means: |
+  done — the bounded static verifier parses the affected Rust functions after
+  blanking comments and literals, requires Result propagation for every fixture
+  loader, requires an explicit retry presence assertion plus guarded destructuring,
+  and rejects panic!, expect, unwrap and allow-attribute regressions. Its focal
+  mutation suite proves that prose bait, missing propagation and lint suppression
+  fail closed; Cargo remains owned by the frozen D03 sprint bundle.
 last-verified: 2026-09-06
 ```
 
@@ -14751,8 +14774,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-06):** `records=316`,
-  `command_records=300`, `manual=16`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-06):** `records=317`,
+  `command_records=301`, `manual=16`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma
