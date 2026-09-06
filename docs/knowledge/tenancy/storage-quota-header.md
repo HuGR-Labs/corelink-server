@@ -8,7 +8,7 @@ source_files:
   - "crates/corelink-rate-headers/src/headers.rs"
   - "crates/corelink-container/src/byte_accounting.rs"
 source_blobs:
-  - "crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs@ad8468964d527262ecffc9d4cfa7b48a8f0e02ea"
+  - "crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs@c0c4fa248f7be243efe0ea0d44016a56311c30af"
   - "crates/corelink-container/src/byte_accounting/b126_m2_impl_02.rs@bd65dfc70297a7fea8ef25cb614c6404feac220e"
   - "crates/corelink-rate-headers/src/headers.rs@b73eb6bd8c9cd9faa5cde21d2405f69d4effffc2"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
@@ -61,7 +61,7 @@ crate is the customer-facing signal that an over-plan boundary (not a bug) cause
   the same (`reserve == release`, so `bytes_used` cannot drift once encryption engages). A non-BYOK /
   inactive tenant reserves the plaintext length, byte-identical to before; a config-read error fails
   CLOSED. The sizing decision is `byok_committed_len`
-  (`crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs:527-558`).
+  (`crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs:530-561`).
 - The over-quota rejection carries the `over_quota` arm of the RFC 9331 `X-Rate-Limit-Type` taxonomy
   (storage/bandwidth 100% boundary) (`crates/corelink-rate-headers/src/headers.rs:30-37`).
 - `counts_against_sli` classifies `over_quota` as legitimate over-plan (NOT counted against the SLO),

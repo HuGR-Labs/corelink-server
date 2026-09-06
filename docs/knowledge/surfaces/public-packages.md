@@ -14,6 +14,7 @@ source_files:
   - "crates/corelink-container/src/public_base_allowlist.manifest"
   - "wrangler.toml"
   - "crates/corelink-container/src/routes/oci.rs"
+  - "crates/corelink-container/src/routes/build.rs"
 source_blobs:
   - "crates/corelink-container/src/routes/oci.rs@d0f6db84e4d4eec61ba3275a4f0a3834f9614496"
   - "crates/corelink-container/src/routes/npm.rs@7aa4f6a458d22ac40018ddda1c8a6115e350362e"
@@ -26,6 +27,7 @@ source_blobs:
   - "crates/corelink-container/src/public_base_allowlist.rs@4b15671988d7a6f535c960df35b205ead0a20780"
   - "crates/corelink-container/src/public_base_allowlist.manifest@99b7dce748ebaa667bfdb7c3d4370ed7eeaf8c85"
   - "wrangler.toml@87dbd26903ae9f0a11d6da5ede99dcd1b06e4f13"
+  - "crates/corelink-container/src/routes/build.rs@739abcdc453ab5bd7a5642526aed445cf34eccf8"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["surfaces", "public", "npm", "pip", "brew", "oci", "moat"]
