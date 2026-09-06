@@ -85,6 +85,8 @@ on:
       - "tests/test_verify_b270_b281_bundle_repairs.py"
       - "scripts/verify_b282_b290_bundle_residuals.py"
       - "tests/test_verify_b282_b290_bundle_residuals.py"
+      - "scripts/verify_b291_b293_bundle_residuals.py"
+      - "tests/test_verify_b291_b293_bundle_residuals.py"
       - "changelog.d/PENDING-b270-b281-d03-rust-repairs.md"
       - "crates/corelink-container/**"
       - "crates/corelink-gc/**"
@@ -249,6 +251,8 @@ on:
       - "tests/test_verify_b270_b281_bundle_repairs.py"
       - "scripts/verify_b282_b290_bundle_residuals.py"
       - "tests/test_verify_b282_b290_bundle_residuals.py"
+      - "scripts/verify_b291_b293_bundle_residuals.py"
+      - "tests/test_verify_b291_b293_bundle_residuals.py"
       - "changelog.d/PENDING-b270-b281-d03-rust-repairs.md"
       - "crates/corelink-container/**"
       - "crates/corelink-gc/**"
@@ -437,6 +441,10 @@ jobs:
         run: |
           python3 scripts/verify_b282_b290_bundle_residuals.py
           python3 -m pytest -q tests/test_verify_b282_b290_bundle_residuals.py
+      - name: B-291 through B-293 second D03 residual guards and mutations
+        run: |
+          python3 scripts/verify_b291_b293_bundle_residuals.py
+          python3 -m pytest -q tests/test_verify_b291_b293_bundle_residuals.py
       - name: B-094 published-claims guard and mutations
         run: |
           command -v gitleaks

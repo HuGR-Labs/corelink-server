@@ -1099,6 +1099,60 @@ verify-means: |
 last-verified: 2026-09-06
 ```
 
+### B-291 — public BYOK storage module lacks required documentation
+```backlog
+id: B-291
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/storage.rs:32"
+finding-title: "public byok_cas module violates missing-docs deny"
+problem: "the extracted public module has no API rustdoc"
+evidence: "scripts/ci.sh --rust-only at 8593f2979"
+acceptance: "the module has accurate public documentation and bundled build passes"
+verify: python3 scripts/verify_b291_b293_bundle_residuals.py
+verify-means: |
+  done — exact rustdoc adjacency is guarded and its removal turns red.
+last-verified: 2026-09-06
+```
+
+### B-292 — PAT gate exposes a field whose entry type remains private
+```backlog
+id: B-292
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/adapter_pat_gate.rs:108"
+finding-title: "sibling verifier tests cannot inspect PerTenantEntry-backed permits"
+problem: "the split gate shares its map but leaves the map value type module-private"
+evidence: "scripts/ci.sh --rust-only at 8593f2979"
+acceptance: "PerTenantEntry is visible only to siblings and bundled tests compile"
+verify: python3 scripts/verify_b291_b293_bundle_residuals.py
+verify-means: |
+  done — minimum sibling visibility is guarded against private or public drift.
+last-verified: 2026-09-06
+```
+
+### B-293 — standalone adversarial-tail test imports a nonexistent parent
+```backlog
+id: B-293
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "tests/e2e-tenant-isolation/tests/adversarial_tail.rs:1"
+finding-title: "integration-test root uses super::* and loses all harness types"
+problem: "a standalone tests/ target has no parent module to glob-import"
+evidence: "scripts/ci.sh --rust-only at 8593f2979"
+acceptance: "the test explicitly imports its public harness types from e2e_tenant_isolation"
+verify: python3 scripts/verify_b291_b293_bundle_residuals.py
+verify-means: |
+  done — canonical crate import is required and the invalid super glob is rejected.
+last-verified: 2026-09-06
+```
+
 ### B-003 — the 864s ceiling from 2026-08-02 has no established mechanism
 
 That incident concluded jobs past ~900 s were being SIGTERMed. They could not
@@ -14238,8 +14292,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-06):** `records=290`,
-  `command_records=274`, `manual=16`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-06):** `records=293`,
+  `command_records=277`, `manual=16`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma
