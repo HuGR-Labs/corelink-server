@@ -91,6 +91,18 @@ on:
       - "tests/test_verify_b294_b296_bundle_residuals.py"
       - "scripts/verify_b297_b312_bundle_residuals.py"
       - "tests/test_verify_b297_b312_bundle_residuals.py"
+      # B-314 owns only the four-locale GDPR Sigstore transfer-table residue and
+      # its Legal/DPO action packet; keep every source and mutation test in the
+      # trigger population so a stale row cannot evade the backlog gate.
+      - "scripts/verify_b314_gdpr_sigstore.py"
+      - "tests/test_verify_b314_gdpr_sigstore.py"
+      - "docs/handoff/2026-09-06-b314-gdpr-sigstore-transfer.json"
+      - "apps/docs/docs/explanation/privacy/gdpr.mdx"
+      - "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/explanation/privacy/gdpr.mdx"
+      - "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/explanation/privacy/gdpr.mdx"
+      - "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/explanation/privacy/gdpr.mdx"
+      - "apps/docs/docs/trust/subprocessors.mdx"
+      - "scripts/gen-public-subprocessors.py"
       - "scripts/b155_backlog_grep_parser.py"
       - "scripts/verify_d03_graduation.py"
       - "scripts/validate_permission_matrix.py"
@@ -296,6 +308,16 @@ on:
       - "tests/test_verify_b294_b296_bundle_residuals.py"
       - "scripts/verify_b297_b312_bundle_residuals.py"
       - "tests/test_verify_b297_b312_bundle_residuals.py"
+      # B-314 source population and packet are repeated for push, not only PR.
+      - "scripts/verify_b314_gdpr_sigstore.py"
+      - "tests/test_verify_b314_gdpr_sigstore.py"
+      - "docs/handoff/2026-09-06-b314-gdpr-sigstore-transfer.json"
+      - "apps/docs/docs/explanation/privacy/gdpr.mdx"
+      - "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/explanation/privacy/gdpr.mdx"
+      - "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/explanation/privacy/gdpr.mdx"
+      - "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/explanation/privacy/gdpr.mdx"
+      - "apps/docs/docs/trust/subprocessors.mdx"
+      - "scripts/gen-public-subprocessors.py"
       - "scripts/b155_backlog_grep_parser.py"
       - "scripts/verify_d03_graduation.py"
       - "scripts/validate_permission_matrix.py"
@@ -548,6 +570,10 @@ jobs:
         run: |
           python3 scripts/verify_b297_b312_bundle_residuals.py
           python3 -m pytest -q tests/test_verify_b297_b312_bundle_residuals.py
+      - name: B-314 GDPR Sigstore transfer-table guard and mutations
+        run: |
+          python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test
+          python3 -m pytest -q tests/test_verify_b314_gdpr_sigstore.py
       - name: B-094 published-claims guard and mutations
         run: |
           command -v gitleaks

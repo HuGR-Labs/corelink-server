@@ -1533,6 +1533,30 @@ verify-means: |
 last-verified: 2026-09-06
 ```
 
+### B-314 — GDPR transfer table still names Sigstore while the Trust Center says it receives no customer data
+```backlog
+id: B-314
+repo: corelink-server
+owner: tl
+status: parked
+source-document: "PR containment audit #1490/#1506 addendum"
+source-locator: "apps/docs/docs/explanation/privacy/gdpr.mdx:191-200; four published locale copies"
+finding-title: "GDPR international-transfer table has an unowned Sigstore recipient row"
+problem: "The four published GDPR locale tables retain a combined PagerDuty / GitHub / Sigstore US row, while the Trust Center and generated subprocessor source say Sigstore is not live, never receives customer data, and is not a customer-data sub-processor. The Legal/DPO disposition for this exact table residue is not recorded."
+evidence: "Four-locale census plus posture markers in apps/docs/docs/trust/subprocessors.mdx and scripts/gen-public-subprocessors.py; no transfer or legal approval is inferred."
+acceptance: "A signed Legal/DPO disposition covers all four locale copies and chooses remove_sigstore_row or retain_and_document_transfer; only then may the table and this item transition."
+action-packet: docs/handoff/2026-09-06-b314-gdpr-sigstore-transfer.json
+verify: python3 -S scripts/verify_b314_gdpr_sigstore.py
+verify-means: |
+  parked — the fail-closed guard exits 0 only while exactly one combined Sigstore row
+  remains in each of the four published locale tables, the Trust Center/generator retain
+  their measured non-processor posture, and the packet's Legal/DPO decision is pending.
+  Removing, duplicating, weakening, or silently restoring any row turns the check red and
+  requires an explicit status transition. The packet's population and action boundary are
+  checked as well; it does not decide B-005/B-112/B-118 or delete/repair cosign-sign.yml.
+last-verified: 2026-09-06
+```
+
 ### B-003 — the 864s ceiling from 2026-08-02 has no established mechanism
 
 That incident concluded jobs past ~900 s were being SIGTERMed. They could not

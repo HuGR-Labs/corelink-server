@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "finding": "B-314",
+  "status": "parked-owner-action-pending",
+  "owner": "tl",
+  "non_claim": "This packet records the repository census and an action boundary only. It does not assert that Sigstore receives a transfer, is a processor, has a DPF/SCC basis, has Legal/DPO approval, or that cosign-sign.yml should be retained or retired.",
+  "scope": {
+    "question": "Decide whether the published GDPR transfer table should name Sigstore at all, given the Trust Center posture that Sigstore never receives customer data and is not a customer-data sub-processor.",
+    "population": [
+      "apps/docs/docs/explanation/privacy/gdpr.mdx",
+      "apps/docs/i18n/de/docusaurus-plugin-content-docs/current/explanation/privacy/gdpr.mdx",
+      "apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/explanation/privacy/gdpr.mdx",
+      "apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/explanation/privacy/gdpr.mdx"
+    ],
+    "out_of_scope": [
+      "B-005 hosted-lane policy",
+      "B-112 release-root contract",
+      "B-118 cosign-sign lane decision",
+      "cosign-sign.yml deletion or repair",
+      "deciding whether image signing is keep or retire"
+    ]
+  },
+  "baseline": {
+    "row_count_per_locale": 1,
+    "row_identity": "PagerDuty / GitHub / Sigstore",
+    "posture_sources": [
+      "apps/docs/docs/trust/subprocessors.mdx",
+      "scripts/gen-public-subprocessors.py"
+    ]
+  },
+  "decision": {
+    "state": "pending",
+    "allowed_outcomes": ["remove_sigstore_row", "retain_and_document_transfer"],
+    "required_reviewers": ["Legal Counsel", "DPO"]
+  },
+  "owner_action": [
+    "UI: Have Legal Counsel and the DPO review the measured row in all four locales together with the Trust Center and generator posture; record a signed disposition without inferring from the workflow's existence or claiming that Sigstore receives no customer data without evidence.",
+    "RUN: If the disposition is remove_sigstore_row, update all four locale tables in one reviewed change, retaining the PagerDuty and GitHub recipients and recording the exact diff.",
+    "UI: If the disposition is retain_and_document_transfer, provide the legal transfer basis, recipient/service scope, data categories, and effective notice wording; do not reuse this packet as approval.",
+    "RUN: Write evidence/owner-actions/B-314/gdpr-sigstore-transfer-decision.json with the four-locale scope, Legal reviewer, DPO reviewer, row disposition, effective date, and source references; then transition B-314 and invert its verifier."
+  ],
+  "evidence": {
+    "path": "evidence/owner-actions/B-314/gdpr-sigstore-transfer-decision.json",
+    "format": "json",
+    "required_fields": ["schema_version", "captured_at", "decision", "legal_reviewer", "dpo_reviewer", "scope", "row_disposition", "effective_at"],
+    "completion_rule": "A signed Legal/DPO disposition covering all four published locale copies is required before the row is removed or retained as a transfer claim."
+  },
+  "retry_and_rollback": "Retry only against the same notice version and retain the measured diff. An unexecuted draft may be abandoned. A signed legal disposition or published notice requires a superseding review; do not use an unreviewed git revert as rollback.",
+  "references": [
+    "BACKLOG.md#B-314",
+    "apps/docs/docs/trust/subprocessors.mdx",
+    "scripts/gen-public-subprocessors.py",
+    "docs/internal/legal-review-process.md",
+    "PR containment audit #1490/#1506 addendum"
+  ]
+}
