@@ -72,7 +72,10 @@ pub struct DeliveryReceipt {
 pub enum AlertTransportError {
     /// The channel was enabled but has no endpoint/provider configuration.
     #[error("{channel} alert provider is not configured")]
-    NotConfigured { channel: AlertChannel },
+    NotConfigured {
+        /// Channel missing endpoint/provider configuration.
+        channel: AlertChannel,
+    },
     /// The provider endpoint is not a valid absolute URL.
     #[error("{channel} alert provider endpoint is invalid: {detail}")]
     InvalidEndpoint {
