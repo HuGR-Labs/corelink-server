@@ -431,8 +431,8 @@ fn extract_verified_tenant(headers: &HeaderMap) -> Result<String, TierSelectHttp
 /// frozen so WP-A/B/C fill the effects against a stable interface.
 ///
 /// The adapters live in sibling modules
-/// ([`super::tier_select_store`] / [`super::tier_select_checkout`] /
-/// [`super::tier_select_audit`]) and each implements one of the three
+/// ([`crate::routes::tier_select_store`] / [`crate::routes::tier_select_checkout`] /
+/// [`crate::routes::tier_select_audit`]) and each implements one of the three
 /// trait seams below.
 #[derive(Clone)]
 pub struct TierSelectRouteState {
@@ -441,12 +441,12 @@ pub struct TierSelectRouteState {
     pub internal_auth_key: Arc<str>,
     /// Durable D1-over-HTTP store: lock / DPA / active-subscription /
     /// persist (WP-A).
-    pub store: Arc<super::tier_select_store::D1HttpTierSelectStore>,
+    pub store: Arc<crate::routes::tier_select_store::D1HttpTierSelectStore>,
     /// Hosted Stripe Checkout creator (`StripeRealClient` via
     /// `spawn_blocking`) (WP-B).
-    pub checkout: Arc<super::tier_select_checkout::StripeCheckoutCreator>,
+    pub checkout: Arc<crate::routes::tier_select_checkout::StripeCheckoutCreator>,
     /// Fail-CLOSED audit sink — emit BEFORE every mutation (WP-C).
-    pub audit: Arc<super::tier_select_audit::TierSelectAuditAdapter>,
+    pub audit: Arc<crate::routes::tier_select_audit::TierSelectAuditAdapter>,
     /// Current DPA version string checked by INV-ONBOARD-DPA-FIRST. Sourced
     /// at boot (env / config); the orchestration passes it to
     /// `store.is_dpa_accepted`.
@@ -597,7 +597,7 @@ const TIER_SELECT_AUTH_KEY_ENV: &str = "CORELINK_TIER_SELECT_AUTH_KEY";
 /// fail-closed gate. A deployment may use the shared key during migration, but
 /// a valid dedicated key always wins and can therefore be rotated independently.
 fn tier_select_auth_key_from_env() -> Option<Arc<str>> {
-    super::admin::resolve_internal_auth_key(TIER_SELECT_AUTH_KEY_ENV)
+    crate::routes::admin::resolve_internal_auth_key(TIER_SELECT_AUTH_KEY_ENV)
 }
 
 /// Assemble the production [`TierSelectRouteState`] from the environment, or
@@ -607,7 +607,7 @@ fn tier_select_auth_key_from_env() -> Option<Arc<str>> {
 /// version are all present; a missing/short secret or any client-init failure
 /// leaves `/v1/onboarding/tier-select` unmounted (404) rather than half-wired.
 /// Mirrors
-/// [`super::internal_pat::build_state_from_env`].
+/// [`crate::routes::internal_pat::build_state_from_env`].
 #[must_use]
 pub fn build_state_from_env() -> Option<TierSelectRouteState> {
     let auth_key = tier_select_auth_key_from_env()?;
@@ -642,13 +642,13 @@ pub fn build_state_from_env() -> Option<TierSelectRouteState> {
 
     Some(TierSelectRouteState {
         internal_auth_key: auth_key,
-        store: Arc::new(super::tier_select_store::D1HttpTierSelectStore::new(
-            Arc::clone(&d1),
-        )),
-        checkout: Arc::new(super::tier_select_checkout::StripeCheckoutCreator::new(
-            Arc::new(stripe),
-        )),
-        audit: Arc::new(super::tier_select_audit::TierSelectAuditAdapter::new(d1)),
+        store: Arc::new(
+            crate::routes::tier_select_store::D1HttpTierSelectStore::new(Arc::clone(&d1)),
+        ),
+        checkout: Arc::new(
+            crate::routes::tier_select_checkout::StripeCheckoutCreator::new(Arc::new(stripe)),
+        ),
+        audit: Arc::new(crate::routes::tier_select_audit::TierSelectAuditAdapter::new(d1)),
         current_dpa_version: Arc::from(dpa_version),
     })
 }

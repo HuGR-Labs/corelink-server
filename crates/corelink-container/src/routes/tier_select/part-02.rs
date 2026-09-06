@@ -19,7 +19,7 @@ mod tests {
 
     #[test]
     fn tier_select_auth_resolution_is_dedicated_first_and_32_char_fail_closed() {
-        let _guard = super::super::admin::INTERNAL_AUTH_ENV_LOCK
+        let _guard = crate::routes::admin::INTERNAL_AUTH_ENV_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         clear_auth_env();
@@ -63,11 +63,11 @@ mod tests {
         // `MemStore`/`SpyCheckout`/`SpyAudit` tests below.
         TierSelectRouteState {
             internal_auth_key: Arc::from("super-secret-internal-key"),
-            store: Arc::new(super::super::tier_select_store::D1HttpTierSelectStore::for_test()),
+            store: Arc::new(crate::routes::tier_select_store::D1HttpTierSelectStore::for_test()),
             checkout: Arc::new(
-                super::super::tier_select_checkout::StripeCheckoutCreator::for_test(),
+                crate::routes::tier_select_checkout::StripeCheckoutCreator::for_test(),
             ),
-            audit: Arc::new(super::super::tier_select_audit::TierSelectAuditAdapter::for_test()),
+            audit: Arc::new(crate::routes::tier_select_audit::TierSelectAuditAdapter::for_test()),
             current_dpa_version: Arc::from("v3"),
         }
     }
@@ -771,7 +771,7 @@ mod tests {
         let mut store = MemStore::default();
         store.dpa_accepted.insert("tenant-x".into());
         let checkout = SpyCheckout::default();
-        let audit = super::super::tier_select_audit::TierSelectAuditAdapter::new(failing_d1());
+        let audit = crate::routes::tier_select_audit::TierSelectAuditAdapter::new(failing_d1());
 
         let r = orchestrate_tier_select(
             &store,

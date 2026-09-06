@@ -208,8 +208,7 @@ impl TierSelectStore for D1HttpTierSelectStore {
         // Lazily evict THIS tenant's expired lock first so a stale row cannot
         // masquerade as a live lock (the daily GC cron is the durable sweep).
         // Best-effort — the INSERT OR IGNORE below makes the real decision.
-        let rows = self
-            .d1
+        self.d1
             .query(
                 "DELETE FROM tier_selection_locks WHERE tenant_id = ?1 AND expires_at_ms < ?2",
                 &[json!(tenant_id), json!(now_ms)],
