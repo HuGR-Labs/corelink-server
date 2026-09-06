@@ -30,6 +30,7 @@ _CAS_WRITE_GUARD = re.compile(
     r"corelink_hash::CACHE_ENTRY_MAX_BYTES\s*,?\s*\)",
     re.S,
 )
+_CAS_WRITE_HANDLER = re.compile(r"\.put\s*\(\s*handle_write\s*\)", re.S)
 
 
 class VerificationError(RuntimeError):
@@ -90,7 +91,7 @@ def assess(files: dict[str, str], expected_status: str = "done") -> None:
     if not route_match:
         fail("native CAS read/write route chain is missing")
     primary_route = route_match.group(0)
-    if ".put(handle_write)" not in primary_route:
+    if not _CAS_WRITE_HANDLER.search(primary_route):
         fail("native CAS write handler is not mounted on the primary CAS route")
     if not _CAS_WRITE_GUARD.search(primary_route):
         fail("native CAS write route lost its 64 MiB body guard")
@@ -162,6 +163,22 @@ def mutation_checks(files: dict[str, str]) -> None:
     cas = files["cas"]
     route_match = _CAS_PRIMARY_ROUTE.search(cas)
     primary_route = route_match.group(0) if route_match else ""
+    handler = _CAS_WRITE_HANDLER.search(primary_route)
+    if not handler:
+        fail("mutation fixture for native CAS handler binding did not match the source")
+    mutant = dict(files)
+    mutant["cas"] = (
+        cas[: route_match.start()]
+        + primary_route.replace(handler.group(0), ".put(handle_read)", 1)
+        + cas[route_match.end() :]
+    )
+    try:
+        assess(mutant)
+    except VerificationError:
+        pass
+    else:
+        fail("mutation unexpectedly passed: native CAS handler binding")
+
     guard = _CAS_WRITE_GUARD.search(primary_route)
     if not guard:
         fail("mutation fixture for native CAS override did not match the source")

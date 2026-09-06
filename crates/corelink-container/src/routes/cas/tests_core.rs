@@ -323,7 +323,7 @@ use tower::ServiceExt; // for `.oneshot()`
 /// Authenticated tenant injected via `x-corelink-tenant-id` so the
 /// `AuthTenant` extractor admits the request; the scope header then
 /// gates read vs write.
-const TEST_TENANT: &str = "t1";
+const TEST_TENANT: &str = "00000000-0000-0000-0000-000000000001";
 
 /// A `cas:rw` PUT writes successfully (current prod scope — happy path).
 #[tokio::test]
