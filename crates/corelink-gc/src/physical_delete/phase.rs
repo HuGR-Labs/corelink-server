@@ -224,9 +224,59 @@ where
         };
         let grace_period_ms = self.config.grace_cas_ms;
 
-        // 4. R2 DeleteObject FIRST (Lote 10.6bis P0-2 ordering;
-        // PAT-RETRY-IDEMPOTENT-001 semantics — both `Deleted` and
-        // `NotFound` are successes).
+        // Acquire the durable epoch before touching R2. A resumed
+        // `R2Deleted` stage skips the remote call and proceeds directly to
+        // the fenced metadata finalization; `None` means another worker owns
+        // the lease (or the row was already finalized).
+        let stage = self.blob_meta_purge.begin_purge(
+            candidate.tenant_id,
+            &candidate.digest,
+            candidate.mark_run_id,
+            now,
+            grace_period_ms,
+        )?;
+        let Some(stage) = stage else {
+            return Ok(PhysicalDeleteDecision::AlreadyResolved {
+                observed_status: candidate.status,
+            });
+        };
+        let (epoch, r2_outcome) = match stage {
+            PurgeStage::Acquired { epoch } => {
+                // 4. R2 DeleteObject FIRST (Lote 10.6bis P0-2 ordering;
+                // PAT-RETRY-IDEMPOTENT-001 semantics — both `Deleted` and
+                // `NotFound` are successes). Record a retry state if the
+                // remote call fails, preserving the D1 row for resume.
+                let outcome = match self.r2.delete(candidate.tenant_id, region, &r2_key) {
+                    Ok(outcome) => outcome,
+                    Err(error) => {
+                        let physical_error = PhysicalDeleteError::from(error);
+                        self.blob_meta_purge.mark_r2_retry(
+                            candidate.tenant_id,
+                            &candidate.digest,
+                            epoch,
+                            now,
+                            &physical_error.to_string(),
+                        )?;
+                        return Err(physical_error);
+                    }
+                };
+                self.blob_meta_purge.mark_r2_deleted(
+                    candidate.tenant_id,
+                    &candidate.digest,
+                    epoch,
+                    now,
+                )?;
+                (epoch, outcome)
+            }
+            PurgeStage::R2Deleted { epoch } => (epoch, R2DeleteOutcome::NotFound),
+        };
+
+        // 5. Audit emit BEFORE flipping the row status — fail-closed
+        // envelope (mirrors sweep) for OWN D1 mutations. Production
+        // wiring atomically rolls back the D1 batch (DELETE blob_meta
+        // + DELETE gc_candidate + INSERT audit_outbox) on emit
+        // failure; the in-memory fake's lower fidelity is documented
+        // in the module-level rustdoc.
         //
         // INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER scope clarification
         // (audit-ordering-high-risk-seal §Escalation 3, 2026-05-27):
@@ -243,17 +293,6 @@ where
         // (step 6+7 below) atomically rolls back on emit failure,
         // preserving the canonical fail-CLOSED envelope around OWN
         // state.
-        let r2_outcome = self
-            .r2
-            .delete(candidate.tenant_id, region, &r2_key)
-            .map_err(PhysicalDeleteError::from)?;
-
-        // 5. Audit emit BEFORE flipping the row status — fail-closed
-        // envelope (mirrors sweep) for OWN D1 mutations. Production
-        // wiring atomically rolls back the D1 batch (DELETE blob_meta
-        // + DELETE gc_candidate + INSERT audit_outbox) on emit
-        // failure; the in-memory fake's lower fidelity is documented
-        // in the module-level rustdoc.
         self.audit.emit(GcAuditRecord {
             event_type: GcEventType::PhysicalDeleted,
             run_id: candidate.mark_run_id,
@@ -268,10 +307,12 @@ where
         })?;
 
         // 6. D1 conditional row purge (re-checks refcount=0 + grace
-        // gate atomically per the SQL predicate).
-        let purged = self.blob_meta_purge.conditional_purge(
+        // gate atomically per the SQL predicate). The epoch is part of
+        // the fence, so a stale worker cannot finalize a newer retry.
+        let purged = self.blob_meta_purge.finalize_purge(
             candidate.tenant_id,
             &candidate.digest,
+            epoch,
             now,
             grace_period_ms,
         )?;
@@ -307,6 +348,18 @@ where
                     candidate.mark_run_id,
                 )?
                 .map_or(CandidateStatus::Swept, |c| c.status);
+            // The fenced D1 finalization trigger performs this candidate
+            // transition in the same transaction as the metadata DELETE.
+            // In that production path our explicit transition observes the
+            // already-committed terminal state; retain the successful purge
+            // accounting instead of misclassifying it as a concurrent no-op.
+            if observed == CandidateStatus::PhysicallyDeleted {
+                return Ok(PhysicalDeleteDecision::Purged {
+                    purged_at_ms: now,
+                    bytes_reclaimed: size_bytes,
+                    r2_outcome,
+                });
+            }
             return Ok(PhysicalDeleteDecision::AlreadyResolved {
                 observed_status: observed,
             });

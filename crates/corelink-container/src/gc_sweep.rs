@@ -713,7 +713,7 @@ impl BlobMetaPurgeStore for D1BlobMetaPurgeStore {
         }
         let existing = query_sync(
             &self.d1,
-            "SELECT epoch, state FROM gc_purge_intent WHERE tenant_id = ?1 AND digest = ?2",
+            "SELECT epoch, state, updated_at FROM gc_purge_intent WHERE tenant_id = ?1 AND digest = ?2",
             &[json!(tenant_id.to_string()), json!(digest.to_string())],
         )
         .map_err(PhysicalDeleteError::Backend)?;

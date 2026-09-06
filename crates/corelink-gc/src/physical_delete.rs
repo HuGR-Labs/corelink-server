@@ -268,6 +268,26 @@ pub struct PurgeState {
     pub deleted_at_ms: u64,
 }
 
+/// Durable progress marker for a cross-system purge.
+///
+/// A backend returns `Acquired` when the caller owns an epoch and must issue
+/// the R2 delete.  `R2Deleted` is the resume path: R2 already succeeded on a
+/// previous attempt, so the caller must only finish the fenced D1 operation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PurgeStage {
+    /// The caller owns this purge epoch and must delete the R2 object.
+    Acquired {
+        /// Monotone ownership epoch.
+        epoch: u64,
+    },
+    /// R2 has already been deleted for this epoch; finish metadata purge.
+    R2Deleted {
+        /// Monotone ownership epoch.
+        epoch: u64,
+    },
+}
+
 /// Trait surfaced by every `blob_meta` purge backend (production D1
 /// reader + conditional DELETE / in-memory fake).
 pub trait BlobMetaPurgeStore: Send + Sync + core::fmt::Debug {
@@ -319,6 +339,75 @@ pub trait BlobMetaPurgeStore: Send + Sync + core::fmt::Debug {
         now_ms: u64,
         grace_period_ms: u64,
     ) -> Result<bool, PhysicalDeleteError>;
+
+    /// Acquire a durable purge epoch, or return `None` when another worker
+    /// owns the live lease or the row is already finalized.
+    ///
+    /// The default keeps older pure-logic adapters source-compatible while
+    /// preserving their original conditional-purge behavior. Production D1
+    /// adapters override this with the fenced intent transaction.
+    fn begin_purge(
+        &self,
+        tenant_id: Uuid,
+        digest: &BlobDigest,
+        _run_id: RunId,
+        _now_ms: u64,
+        _grace_period_ms: u64,
+    ) -> Result<Option<PurgeStage>, PhysicalDeleteError> {
+        if self.lookup_purge_state(tenant_id, digest)?.is_some() {
+            Ok(Some(PurgeStage::Acquired { epoch: 1 }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Claim a retry epoch after a previous owner lease expired.
+    ///
+    /// Backends with durable fencing implement this operation together with
+    /// [`Self::begin_purge`]. Legacy adapters never enter this path.
+    fn claim_retry_epoch(
+        &self,
+        _tenant_id: Uuid,
+        _digest: &BlobDigest,
+        _now_ms: u64,
+    ) -> Result<Option<PurgeStage>, PhysicalDeleteError> {
+        Ok(None)
+    }
+
+    /// Mark the owned epoch complete on the remote-object side.
+    fn mark_r2_deleted(
+        &self,
+        _tenant_id: Uuid,
+        _digest: &BlobDigest,
+        _epoch: u64,
+        _now_ms: u64,
+    ) -> Result<(), PhysicalDeleteError> {
+        Ok(())
+    }
+
+    /// Return an owned epoch to retry after an R2 failure.
+    fn mark_r2_retry(
+        &self,
+        _tenant_id: Uuid,
+        _digest: &BlobDigest,
+        _epoch: u64,
+        _now_ms: u64,
+        _error: &str,
+    ) -> Result<(), PhysicalDeleteError> {
+        Ok(())
+    }
+
+    /// Conditionally remove metadata after the R2 side is fenced as deleted.
+    fn finalize_purge(
+        &self,
+        tenant_id: Uuid,
+        digest: &BlobDigest,
+        _epoch: u64,
+        now_ms: u64,
+        grace_period_ms: u64,
+    ) -> Result<bool, PhysicalDeleteError> {
+        self.conditional_purge(tenant_id, digest, now_ms, grace_period_ms)
+    }
 }
 
 /// In-memory `blob_meta` purge store. Mirrors the canonical
