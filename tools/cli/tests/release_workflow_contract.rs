@@ -8,24 +8,24 @@
 
 use std::path::PathBuf;
 
-fn release_workflow() -> String {
+fn release_workflow() -> Result<String, String> {
     load_workflow("release-cli.yml")
 }
 
-fn load_workflow(name: &str) -> String {
+fn load_workflow(name: &str) -> Result<String, String> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join(".github/workflows")
         .join(name);
-    std::fs::read_to_string(path).unwrap_or_else(|_| panic!("{name} workflow must be readable"))
+    std::fs::read_to_string(path).map_err(|_| format!("{name} workflow must be readable"))
 }
 
-fn load_script(name: &str) -> String {
+fn load_script(name: &str) -> Result<String, String> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join("scripts")
         .join(name);
-    std::fs::read_to_string(path).unwrap_or_else(|_| panic!("{name} script must be readable"))
+    std::fs::read_to_string(path).map_err(|_| format!("{name} script must be readable"))
 }
 
 fn assert_release_contract(workflow: &str) {
@@ -257,19 +257,24 @@ fn assert_retry_manifest_contract(workflow: &str) {
     let retry = workflow
         .split("            0)\n")
         .nth(1)
-        .and_then(|rest| rest.split("            1)\n").next())
-        .expect("final-manifest retry branch must be present");
-    for required in [
-        "--pattern 'corelink-*' --pattern checksums.txt --pattern release-manifest.json",
-        "manifest.get(\"staging_manifest_sha256\") != sys.argv[2]",
-        "manifest.get(\"tag\") != sys.argv[3]",
-        "manifest.get(\"source_sha\") != sys.argv[4]",
-        "cli_release_manifest.py verify --directory final-assets",
-    ] {
-        assert!(
-            retry.contains(required),
-            "retry branch missing inventory proof: {required}"
-        );
+        .and_then(|rest| rest.split("            1)\n").next());
+    assert!(
+        retry.is_some(),
+        "final-manifest retry branch must be present"
+    );
+    if let Some(retry) = retry {
+        for required in [
+            "--pattern 'corelink-*' --pattern checksums.txt --pattern release-manifest.json",
+            "manifest.get(\"staging_manifest_sha256\") != sys.argv[2]",
+            "manifest.get(\"tag\") != sys.argv[3]",
+            "manifest.get(\"source_sha\") != sys.argv[4]",
+            "cli_release_manifest.py verify --directory final-assets",
+        ] {
+            assert!(
+                retry.contains(required),
+                "retry branch missing inventory proof: {required}"
+            );
+        }
     }
 }
 
@@ -313,8 +318,9 @@ fn assert_rekor_helper_contract(script: &str) {
 }
 
 #[test]
-fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_mutations() {
-    let workflow = release_workflow();
+fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_mutations(
+) -> Result<(), String> {
+    let workflow = release_workflow()?;
     assert_release_contract(&workflow);
     assert_publication_inventory_contract(&workflow);
     assert_retry_manifest_contract(&workflow);
@@ -390,12 +396,12 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
     );
 
     for name in ["sign-linux.yml", "sign-windows.yml", "notarize-macos.yml"] {
-        let signer = load_workflow(name);
+        let signer = load_workflow(name)?;
         assert_downstream_signer_contract(name, &signer);
         assert_checksum_refresh_contract(name, &signer);
     }
 
-    let windows = load_workflow("sign-windows.yml");
+    let windows = load_workflow("sign-windows.yml")?;
     assert!(
         workflow.contains("sign-windows:\n    needs: [sign-linux, release]"),
         "Windows signing must wait for Linux through a release-root needs edge"
@@ -409,7 +415,7 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
         "macOS notarization must wait for Windows through a release-root needs edge"
     );
 
-    let slsa = load_workflow("release-slsa3.yml");
+    let slsa = load_workflow("release-slsa3.yml")?;
     for required in [
         "CORELINK_CLI_RELEASE_TOKEN",
         "RELEASE_REPOSITORY: HuGR-Labs/corelink-cli",
@@ -431,7 +437,7 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
         );
     }
 
-    let stale_signer_home = load_workflow("sign-windows.yml").replace(
+    let stale_signer_home = load_workflow("sign-windows.yml")?.replace(
         "RELEASE_REPOSITORY: HuGR-Labs/corelink-cli",
         "RELEASE_REPOSITORY: HumanGuardrail/corelink-cli",
     );
@@ -443,7 +449,7 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
         .is_err(),
         "a signer targeting the stale release home must fail the structural control"
     );
-    let unrefreshed_checksum = load_workflow("notarize-macos.yml").replace(
+    let unrefreshed_checksum = load_workflow("notarize-macos.yml")?.replace(
         "LC_ALL=C sort corelink-*.sha256 > checksums.txt",
         "checksum refresh removed",
     );
@@ -463,7 +469,7 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
         std::panic::catch_unwind(|| assert_release_contract(&nested_windows_archive)).is_err(),
         "a nested ditto Windows archive must fail the structural control"
     );
-    let workflow_run_signer = load_workflow("notarize-macos.yml").replace(
+    let workflow_run_signer = load_workflow("notarize-macos.yml")?.replace(
         "workflow_call:",
         "workflow_run:\n    workflows: [\"sign-windows\"]",
     );
@@ -476,7 +482,7 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
         "a downstream signer must not regress from a reusable workflow to workflow_run"
     );
 
-    let public_unsigned_windows = load_workflow("sign-windows.yml").replace(
+    let public_unsigned_windows = load_workflow("sign-windows.yml")?.replace(
         "cp \"./assets/extracted/corelink.exe\" \"./assets/corelink-windows-x86_64.exe\"",
         "raw Windows asset copy removed",
     );
@@ -488,7 +494,7 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
         .is_err(),
         "a public raw Windows executable must be replaced by signed bytes"
     );
-    let bypassed_gatekeeper = load_workflow("notarize-macos.yml").replace(
+    let bypassed_gatekeeper = load_workflow("notarize-macos.yml")?.replace(
         "spctl --assess --type execute --verbose=4 \"${BINARY}\"",
         "spctl --assess --type execute --verbose=4 \"${BINARY}\" || true",
     );
@@ -500,7 +506,7 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
         .is_err(),
         "Gatekeeper assessment must not be bypassed"
     );
-    let unsigned_linux_raw = load_workflow("sign-linux.yml").replace(
+    let unsigned_linux_raw = load_workflow("sign-linux.yml")?.replace(
         "for target in \"${ASSET}\" \"${RAW_ASSET}\"; do",
         "for target in \"${ASSET}\"; do",
     );
@@ -512,7 +518,7 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
         .is_err(),
         "a public raw Linux executable must retain its detached-signature gate"
     );
-    let argv_notary_password = load_workflow("notarize-macos.yml").replace(
+    let argv_notary_password = load_workflow("notarize-macos.yml")?.replace(
         "xcrun notarytool submit ./submission.zip \\",
         "xcrun notarytool submit ./submission.zip --password \"${APPLE_NOTARIZATION_PASSWORD}\" \\",
     );
@@ -578,7 +584,7 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
         std::panic::catch_unwind(|| assert_slsa_contract(&disabled_rekor)).is_err(),
         "a tlog-disable mutation must fail the production SLSA contract"
     );
-    let inventory_helper = load_script("verify_cli_release_inventory.py");
+    let inventory_helper = load_script("verify_cli_release_inventory.py")?;
     assert_inventory_helper_contract(&inventory_helper);
     let unmatched_asset = inventory_helper.replace("if set(api_names) != expected:", "if False:");
     assert!(
@@ -599,7 +605,7 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
         std::panic::catch_unwind(|| assert_inventory_helper_contract(&checksum_bypass)).is_err(),
         "the closed-world checksum contents check must remain wired into publication"
     );
-    let rekor_helper = load_script("verify_cli_rekor_bundle.py");
+    let rekor_helper = load_script("verify_cli_rekor_bundle.py")?;
     assert_rekor_helper_contract(&rekor_helper);
     let missing_inclusion = rekor_helper.replace("if not entries:", "if False:");
     assert!(
@@ -616,4 +622,5 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
         std::panic::catch_unwind(|| assert_rekor_helper_contract(&digest_unbound)).is_err(),
         "unbound Rekor entry mutation must fail the production verifier contract"
     );
+    Ok(())
 }
