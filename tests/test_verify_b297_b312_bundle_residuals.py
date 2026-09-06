@@ -185,6 +185,85 @@ def test_reviewer_reproducers_reject_ignored_or_wrong_cfg_tests() -> None:
     )
 
 
+def test_reviewer_reproducers_reject_stacked_cfg_attributes() -> None:
+    """Every test-only seam must reject contradictory/stacked cfg attrs."""
+    _reject_mutation(
+        verify.FAILOVER,
+        "    #[cfg(test)]\n    #[must_use]\n    fn stale_after_ms",
+        "    #[cfg(not(test))]\n    #[cfg(test)]\n    #[must_use]\n    fn stale_after_ms",
+    )
+    _reject_mutation(
+        verify.OCI,
+        "    #[cfg(test)]\n    fn with_allowlist",
+        "    #[cfg(not(test))]\n    #[cfg(test)]\n    fn with_allowlist",
+    )
+    _reject_mutation(
+        verify.SLI,
+        "    #[cfg(test)]\n    fn counters_at",
+        "    #[cfg(not(test))]\n    #[cfg(test)]\n    fn counters_at",
+    )
+    _reject_mutation(
+        verify.STORAGE_1,
+        "    #[test]\n    fn physical_cas_bucket_must_match_serving_region",
+        "    #[cfg(not(test))]\n    #[cfg(test)]\n    fn physical_cas_bucket_must_match_serving_region",
+    )
+    _reject_mutation(
+        verify.STORAGE_3,
+        '    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]\n    async fn byok_mode_b_read_fails_closed_when_kms_down',
+        '    #[cfg(not(test))]\n    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]\n    async fn byok_mode_b_read_fails_closed_when_kms_down',
+    )
+
+
+def test_reviewer_reproducers_reject_conflicting_boot_import_cfg() -> None:
+    _reject_mutation(
+        verify.MAIN,
+        "#[cfg(test)]\nuse boot::{build_runners_resolver_from, build_tier_selector_from};",
+        "#[cfg(not(test))]\n#[cfg(test)]\nuse boot::{build_runners_resolver_from, build_tier_selector_from};",
+    )
+
+
+def test_reviewer_reproducers_require_exact_clamp_expression() -> None:
+    _reject_mutation(
+        verify.CAS_ERASE,
+        "max_tenants: max_tenants.clamp(1, DEFAULT_MAX_TENANT_BLOOMS),",
+        "max_tenants: max_tenants.clamp(1, DEFAULT_MAX_TENANT_BLOOMS).max(1),",
+    )
+
+
+def test_reviewer_reproducers_require_direct_live_capacity_assertions() -> None:
+    deployed = """assert!(budget_fits(
+            CONTAINER_MEMORY_BYTES,
+            declared_bytes,
+            reserve_bytes,
+            CONTAINER_VCPU_MILLICORES,
+        ));"""
+    _reject_mutation(
+        verify.CAPACITY,
+        deployed,
+        "if true {\n            " + deployed.replace("\n", "\n            ") + "\n        }",
+    )
+    oci = """assert!(
+        seeded_hog_budget.is_some_and(|bytes| bytes < OCI_MAX_INFLIGHT_BYTES),
+        "per-tenant budget must remain below the global in-flight byte budget"
+    );"""
+    _reject_mutation(
+        verify.OCI_TEST,
+        oci,
+        "if false {\n        " + oci.replace("\n", "\n        ") + "\n    }",
+    )
+
+
+def test_reviewer_reproducers_bind_billing_assertions_to_their_branches() -> None:
+    _reject_mutation(verify.BILLING, "if should_allow {", "if !should_allow {")
+    allow = """let is_allow = matches!(outcome.decision, QuotaCasDecision::Allow { .. });
+            prop_assert!(is_allow);"""
+    _reject_mutation(
+        verify.BILLING,
+        allow,
+        "if true {\n                " + allow.replace("\n", "\n                ") + "\n            }",
+    )
+
+
 def test_reviewer_reproducers_reject_renamed_or_non_test_declarations() -> None:
     _reject_mutation(
         verify.REVOCATION,

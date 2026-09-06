@@ -195,6 +195,67 @@ def _one_name(source: str, name: str, label: str) -> re.Match[str]:
     return _one(_code(source), rf"\bfn\s+{re.escape(name)}\s*\(", label)
 
 
+def _attached_attrs(source: str, token_start: int) -> tuple[str, ...]:
+    """Return the complete contiguous attribute block attached to a token."""
+    code = _code(source)
+    prefix = code[:token_start]
+    match = re.search(
+        r"(?P<attrs>(?:#\[[^\]]*\]\s*)+)(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?$",
+        prefix,
+    )
+    if not match:
+        return ()
+    # ``_code`` blanks literals, which is useful for matching but would erase
+    # the canonical `multi_thread` value in tokio::test.  Slice the same
+    # offsets from the original source when recovering attribute text.
+    raw_attrs = source[match.start() : match.end()]
+    return tuple(re.findall(r"#\[([^\]]*)\]", raw_attrs, re.DOTALL))
+
+
+def _attr_key(attr: str) -> str:
+    return re.sub(r"\s+", "", attr)
+
+
+def _function_attrs(source: str, name: str, label: str) -> tuple[str, ...]:
+    code = _code(source)
+    fn = _one_name(code, name, label + ":function")
+    return _attached_attrs(code, fn.start())
+
+
+def _matching_brace(source: str, opening: int, label: str) -> int:
+    depth = 0
+    for index in range(opening, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return index
+    raise VerificationError(f"{label}: unclosed brace")
+
+
+def _direct_assert(function_block: str, pattern: str, label: str) -> re.Match[str]:
+    """Require an assertion as a direct executable statement in a function."""
+    code = _code(function_block)
+    matches = list(re.finditer(pattern, code, re.MULTILINE | re.DOTALL))
+    if len(matches) != 1:
+        raise VerificationError(f"{label}: expected one assertion, found {len(matches)}")
+    match = matches[0]
+    fn_start = code.find("fn ")
+    body_open = code.find("{", fn_start)
+    if fn_start < 0 or body_open < 0:
+        raise VerificationError(f"{label}: missing function body")
+    depth = code.count("{", body_open, match.start()) - code.count("}", body_open, match.start())
+    if depth != 1:
+        raise VerificationError(f"{label}: assertion must be direct in the test body")
+    line_start = code.rfind("\n", 0, match.start()) + 1
+    if code[line_start:match.start()].strip():
+        raise VerificationError(f"{label}: assertion is not an executable statement")
+    if re.search(r"#\[[^\]]*\]\s*$", code[:line_start]):
+        raise VerificationError(f"{label}: assertion has a conditional/attribute wrapper")
+    return match
+
+
 def _imports(s: str, crate: str, label: str) -> str:
     candidates = list(re.finditer(rf"use\s+{re.escape(crate)}\s*::\s*\{{(?P<body>.*?)\}}\s*;", s, re.MULTILINE | re.DOTALL))
     matches = [m for m in candidates if s.count("{", 0, m.start()) == s.count("}", 0, m.start())]
@@ -217,21 +278,20 @@ def _check_adversarial_import(sources: dict[str, str]) -> None:
 
 def _check_container_import(sources: dict[str, str]) -> None:
     main = _code(sources[MAIN])
-    if re.search(r"#\[cfg\(not\(test\)\)\]\s*use\s+boot\s*::", main):
-        raise VerificationError(f"{MAIN}: production boot import must not be cfg(not(test))")
-    candidates = list(re.finditer(r"(?P<cfg>#\[cfg\(test\)\]\s*)?use\s+boot\s*::\s*\{(?P<body>.*?)\}\s*;", main, re.MULTILINE | re.DOTALL))
+    candidates = list(re.finditer(r"use\s+boot\s*::\s*\{(?P<body>.*?)\}\s*;", main, re.MULTILINE | re.DOTALL))
     boot_imports = [m for m in candidates if main.count("{", 0, m.start()) == main.count("}", 0, m.start())]
-    if len(boot_imports) != 2 or sum(bool(m.group("cfg")) for m in boot_imports) != 1:
+    if len(boot_imports) != 2:
         raise VerificationError(f"{MAIN}: expected one production and one cfg(test) boot import")
-    primary = next(m.group("body") for m in boot_imports if not m.group("cfg"))
+    attrs = [_attached_attrs(main, m.start()) for m in boot_imports]
+    production = [m for m, block in zip(boot_imports, attrs) if not block]
+    test_only = [m for m, block in zip(boot_imports, attrs) if tuple(map(_attr_key, block)) == ("cfg(test)",)]
+    if len(production) != 1 or len(test_only) != 1:
+        raise VerificationError(f"{MAIN}: boot imports must have exactly one bare production and one cfg(test) import")
+    primary = production[0].group("body")
     for name in ("build_runners_resolver_from", "build_tier_selector_from"):
         if re.search(rf"\b{re.escape(name)}\b", primary):
             raise VerificationError(f"B-312 imports: test-only {name} remains in production import")
-    test_body = _one(
-        main,
-        r"#\[cfg\(test\)\]\s*use\s+boot\s*::\s*\{(?P<body>.*?)\}\s*;",
-        MAIN + ":test boot import",
-    ).group("body")
+    test_body = test_only[0].group("body")
     for name in ("build_runners_resolver_from", "build_tier_selector_from"):
         if not re.search(rf"\b{re.escape(name)}\b", test_body):
             raise VerificationError(f"B-312 imports: test import lacks {name}")
@@ -239,39 +299,51 @@ def _check_container_import(sources: dict[str, str]) -> None:
 
 def _check_region_test_registration(sources: dict[str, str]) -> None:
     source = _code(sources[STORAGE_1])
-    _one_name(source, "physical_cas_bucket_must_match_serving_region", STORAGE_1)
-    _one(source, r"#\[test\]\s*fn\s+physical_cas_bucket_must_match_serving_region\s*\(", STORAGE_1)
-    if re.search(r"#\[ignore(?:\([^\]]*\))?\]\s*#\[test\]\s*fn\s+physical_cas_bucket_must_match_serving_region", source):
-        raise VerificationError(f"{STORAGE_1}: B-307 region test must not be ignored")
+    fn = _one(source, r"\bfn\s+physical_cas_bucket_must_match_serving_region\s*\(", STORAGE_1)
+    attrs = tuple(map(_attr_key, _attached_attrs(source, fn.start())))
+    if attrs != ("test",):
+        raise VerificationError(f"{STORAGE_1}: B-307 region test must have only #[test] directly attached")
 
 
 def _check_byok_test_registration(sources: dict[str, str]) -> None:
     raw = sources[STORAGE_3]
     source = _code(raw)
-    _one_name(source, "byok_mode_b_read_fails_closed_when_kms_down", STORAGE_3)
-    _one_attached_raw(raw, r"#\[tokio::test\(flavor\s*=\s*\"multi_thread\"\s*,\s*worker_threads\s*=\s*2\s*\)\]\s*async\s+fn\s+byok_mode_b_read_fails_closed_when_kms_down\s*\(", "byok_mode_b_read_fails_closed_when_kms_down", STORAGE_3)
-    _one(source, r"#\[tokio::test\([^\]]*\)\]\s*async\s+fn\s+byok_mode_b_read_fails_closed_when_kms_down\s*\(", STORAGE_3 + ": test attachment")
-    if re.search(r"#\[ignore(?:\([^\]]*\))?\]\s*#\[tokio::test\([^\]]+\)\]\s*async\s+fn\s+byok_mode_b_read_fails_closed_when_kms_down", source):
-        raise VerificationError(f"{STORAGE_3}: B-307 BYOK test must not be ignored")
+    fn = _one(source, r"\bfn\s+byok_mode_b_read_fails_closed_when_kms_down\s*\(", STORAGE_3)
+    attrs = tuple(map(_attr_key, _attached_attrs(raw, fn.start())))
+    if attrs != ("tokio::test(flavor=\"multi_thread\",worker_threads=2)",):
+        raise VerificationError(f"{STORAGE_3}: B-307 BYOK test must have only the canonical tokio::test")
 
 
 def _check_failover_accessors(sources: dict[str, str]) -> None:
     source = _code(sources[FAILOVER])
     for name in ("stale_after_ms", "heartbeat"):
         _one_name(source, name, f"{FAILOVER}:{name}")
-        _one(source, rf"#\[cfg\(test\)\]\s*#\[must_use\]\s*fn\s+{name}\s*\(", f"{FAILOVER}:{name}")
+        attrs = tuple(map(_attr_key, _function_attrs(source, name, f"{FAILOVER}:{name}")))
+        if attrs != ("cfg(test)", "must_use"):
+            raise VerificationError(f"{FAILOVER}:{name}: only cfg(test), must_use may be attached")
 
 
 def _check_oci_constructor(sources: dict[str, str]) -> None:
     source = _code(sources[OCI])
     _one_name(source, "with_allowlist", f"{OCI}:with_allowlist")
-    _one(source, r"#\[cfg\(test\)\]\s*fn\s+with_allowlist\s*\(", f"{OCI}:with_allowlist")
+    attrs = tuple(map(_attr_key, _function_attrs(source, "with_allowlist", f"{OCI}:with_allowlist")))
+    if attrs != ("cfg(test)",):
+        raise VerificationError(f"{OCI}:with_allowlist: only cfg(test) may be attached")
 
 
 def _check_sli_accessors(sources: dict[str, str]) -> None:
     source = _code(sources[SLI])
     for name in ("counters_at", "window_counters_at"):
-        _one(source, rf"#\[cfg\(test\)\]\s*fn\s+{name}\s*\(", f"{SLI}:{name}")
+        matches = list(re.finditer(rf"\bfn\s+{re.escape(name)}\s*\(", source))
+        if not matches:
+            raise VerificationError(f"{SLI}:{name}: function is missing")
+        all_attrs = [tuple(map(_attr_key, _attached_attrs(source, match.start()))) for match in matches]
+        test_indices = [index for index, attrs in enumerate(all_attrs) if "cfg(test)" in attrs]
+        # The test-only forwarding accessor is the final same-named method;
+        # requiring that identity prevents cfg(test) from being moved onto a
+        # production implementation while leaving the accessor bare.
+        if test_indices != [len(matches) - 1] or all_attrs[-1] != ("cfg(test)",):
+            raise VerificationError(f"{SLI}:{name}: only cfg(test) may be attached")
 
 
 def _check_must_use(sources: dict[str, str]) -> None:
@@ -354,7 +426,9 @@ def _check_cas_arguments(sources: dict[str, str]) -> None:
 
 def _check_clamp(sources: dict[str, str]) -> None:
     source = _code(sources[CAS_ERASE])
-    _one(source, r"max_tenants\s*:\s*max_tenants\.clamp\(\s*1\s*,\s*DEFAULT_MAX_TENANT_BLOOMS\s*\)", CAS_ERASE)
+    # Include the field delimiter so a suffix such as `.max(1)`, a cast, or
+    # another method cannot preserve a substring while changing the value.
+    _one(source, r"max_tenants\s*:\s*max_tenants\.clamp\(\s*1\s*,\s*DEFAULT_MAX_TENANT_BLOOMS\s*\)\s*,", CAS_ERASE)
     if ".max(1).min(DEFAULT_MAX_TENANT_BLOOMS)" in source:
         raise VerificationError("B-305 manual-clamp: old max/min chain remains")
 
@@ -411,7 +485,7 @@ def _check_capacity_assertions(sources: dict[str, str]) -> None:
     peaks = _function_block(capacity, "batch_request_parse_peaks_are_inside_the_read_and_write_slices")
     _one(deployed, r"let\s+declared_bytes\s*=\s*DECLARED_MEMORY_BUDGET_BYTES\s*;", "B-308 deployed declared budget")
     _one(deployed, r"let\s+reserve_bytes\s*=\s*RUNTIME_MEMORY_RESERVE_BYTES\s*;", "B-308 deployed runtime reserve")
-    _one(
+    _direct_assert(
         deployed,
         r"assert!\(\s*budget_fits\(\s*CONTAINER_MEMORY_BYTES\s*,\s*declared_bytes\s*,\s*reserve_bytes\s*,\s*CONTAINER_VCPU_MILLICORES\s*,?\s*\)\s*\)",
         "B-308 assertions-on-constants: deployed budget must assert its predicate directly",
@@ -421,7 +495,7 @@ def _check_capacity_assertions(sources: dict[str, str]) -> None:
         r"let\s+read_peak_bytes\s*=\s*CAS_READ_SINGLE_PEAK_BYTES\s*\+\s*CAS_READ_BATCH_PEAK_BYTES\s*;",
         "B-308 read peak calculation",
     )
-    _one(
+    _direct_assert(
         peaks,
         r"assert!\(\s*budget_fits\(\s*CAS_READ_GLOBAL_BUDGET_BYTES\s*,\s*read_peak_bytes\s*,\s*0\s*,\s*CONTAINER_VCPU_MILLICORES\s*,?\s*\)\s*\)",
         "B-308 assertions-on-constants: batch peaks must assert their predicate directly",
@@ -438,7 +512,7 @@ def _check_oci_assertions(sources: dict[str, str]) -> None:
     seeded = _one(oci, r"assert_eq!\(\s*seeded_hog_budget\s*,\s*Some\(OCI_MAX_INFLIGHT_BYTES_PER_TENANT\)", OCI_TEST)
     if seeded.start() < setup.end():
         raise VerificationError(OCI_TEST + ": seeded budget assertion must follow seed/get setup")
-    predicate = _one(
+    predicate = _direct_assert(
         oci,
         r"assert!\(\s*seeded_hog_budget\.is_some_and\(\s*\|bytes\|\s*bytes\s*<\s*OCI_MAX_INFLIGHT_BYTES\s*\)\s*,",
         OCI_TEST + ": predicate consumed directly by assert",
@@ -453,8 +527,27 @@ def _check_oci_assertions(sources: dict[str, str]) -> None:
 
 def _check_billing(sources: dict[str, str]) -> None:
     source = _function_block(sources[BILLING], "prop_cas_decision_budget_and_correctness")
-    _one(source, r"let\s+is_allow\s*=\s*matches!\(\s*outcome\.decision,\s*QuotaCasDecision::Allow\s*\{\s*\.\.\s*\}\s*\)\s*;\s*prop_assert!\(is_allow\)", BILLING + ":Allow")
-    _one(source, r"let\s+is_deny\s*=\s*matches!\(\s*outcome\.decision,\s*QuotaCasDecision::Deny429\s*\{\s*\.\.\s*\}\s*\)\s*;\s*prop_assert!\(is_deny\)", BILLING + ":Deny429")
+    code = _code(source)
+    branch = _one(code, r"\bif\s+should_allow\s*\{", BILLING + ":decision branch")
+    then_open = code.find("{", branch.start())
+    then_close = _matching_brace(code, then_open, BILLING + ":Allow branch")
+    else_match = _one(code, r"\belse\s*\{", BILLING + ":deny branch")
+    if else_match.start() < then_close:
+        raise VerificationError(BILLING + ": deny branch is not paired with should_allow")
+    else_open = code.find("{", else_match.start())
+    else_close = _matching_brace(code, else_open, BILLING + ":Deny branch")
+    allow_body = "fn __allow_branch() {" + code[then_open + 1 : then_close] + "}"
+    deny_body = "fn __deny_branch() {" + code[else_open + 1 : else_close] + "}"
+    _direct_assert(
+        allow_body,
+        r"let\s+is_allow\s*=\s*matches!\(\s*outcome\.decision,\s*QuotaCasDecision::Allow\s*\{\s*\.\.\s*\}\s*\)\s*;\s*prop_assert!\(is_allow\)",
+        BILLING + ":Allow",
+    )
+    _direct_assert(
+        deny_body,
+        r"let\s+is_deny\s*=\s*matches!\(\s*outcome\.decision,\s*QuotaCasDecision::Deny429\s*\{\s*\.\.\s*\}\s*\)\s*;\s*prop_assert!\(is_deny\)",
+        BILLING + ":Deny429",
+    )
     if re.search(r"prop_assert!\(\s*matches!\([^\n]*\{\s*\.\.\s*\}\s*\)\s*\)", source):
         raise VerificationError("B-311 billing diagnostics: format-bearing matches! remains inside prop_assert!")
 
