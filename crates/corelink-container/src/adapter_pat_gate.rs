@@ -105,7 +105,7 @@ pub(super) const ARGON2_PERMIT_WAIT: Duration = Duration::from_millis(250);
 /// orders the LRU; the smallest tick among the **idle** entries is the eviction
 /// candidate. Cloning yields a fresh `Arc` clone of the same semaphore.
 #[derive(Clone)]
-struct PerTenantEntry {
+pub(super) struct PerTenantEntry {
     sem: Arc<Semaphore>,
     last_access: u64,
 }
