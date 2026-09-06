@@ -1,10 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use corelink_audit::{
-    AuthEvent, AuthEventData, AuthEventType, DenyReason, Emitter, InMemoryEmitter, PrincipalIdHash,
-    RegionTag, RequestId, RetentionHint, TenantId as AuditTenantId, TenantTier, TokenKind,
-};
 use corelink_tenant_path::TenantPrefix;
 use uuid::Uuid;
 
