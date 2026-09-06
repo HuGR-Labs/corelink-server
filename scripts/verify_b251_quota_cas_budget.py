@@ -67,8 +67,13 @@ def assess(config: str, test: str) -> None:
         "(audit.len() as u32) <= MAX_CAS_AUDIT_EVENTS_PER_DECISION",
         "audit.len() as u32, MAX_CAS_AUDIT_EVENTS_PER_ATTEMPT",
         "metrics.counter_total(QuotaCasMetricKind::CheckTotal), 1",
-        "QuotaCasDecision::Allow { .. })",
-        "QuotaCasDecision::Deny429 { .. })",
+        # Keep each decision matcher and its assertion coupled.  The matcher
+        # is bound to a named boolean in the cumulative source; requiring
+        # both forms makes removal of the assertion fail closed as well.
+        "let is_allow = matches!(outcome.decision, QuotaCasDecision::Allow { .. });",
+        "prop_assert!(is_allow);",
+        "let is_deny = matches!(outcome.decision, QuotaCasDecision::Deny429 { .. });",
+        "prop_assert!(is_deny);",
         "row.bytes_used, would_use",
         "row.bytes_used, used",
         "CasCommitSucceeded",
@@ -112,16 +117,24 @@ def mutation_checks(config: str, test: str) -> None:
         (
             "allow correctness removed",
             test.replace(
-                "prop_assert!(matches!(outcome.decision, QuotaCasDecision::Allow { .. }));",
-                "prop_assert!(true);",
+                _function_body(test, "prop_cas_decision_budget_and_correctness"),
+                _function_body(test, "prop_cas_decision_budget_and_correctness").replace(
+                    "prop_assert!(is_allow);",
+                    "prop_assert!(true);",
+                    1,
+                ),
                 1,
             ),
         ),
         (
             "deny correctness removed",
             test.replace(
-                "prop_assert!(matches!(outcome.decision, QuotaCasDecision::Deny429 { .. }));",
-                "prop_assert!(true);",
+                _function_body(test, "prop_cas_decision_budget_and_correctness"),
+                _function_body(test, "prop_cas_decision_budget_and_correctness").replace(
+                    "prop_assert!(is_deny);",
+                    "prop_assert!(true);",
+                    1,
+                ),
                 1,
             ),
         ),
