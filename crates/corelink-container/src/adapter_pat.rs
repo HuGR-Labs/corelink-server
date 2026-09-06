@@ -12,9 +12,13 @@
 //! names and paths used by adapter route shells; no authorization state or
 //! signed-chain semantics are changed.
 
+#[path = "adapter_pat_crypto.rs"]
 mod adapter_pat_crypto;
+#[path = "adapter_pat_gate.rs"]
 mod adapter_pat_gate;
+#[path = "adapter_pat_lookup.rs"]
 mod adapter_pat_lookup;
+#[path = "adapter_pat_verifier.rs"]
 mod adapter_pat_verifier;
 
 pub use adapter_pat_lookup::{PatRow, PatRowLookup, SingleFlightPatLookup};
