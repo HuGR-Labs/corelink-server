@@ -448,6 +448,7 @@ pub struct PilotHarness {
     inner: Mutex<HashMap<String, TenantState>>,
 }
 
+#[path = "harness_lifecycle.rs"]
 mod harness_lifecycle;
 
 impl PilotHarness {
