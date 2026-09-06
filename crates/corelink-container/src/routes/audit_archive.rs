@@ -340,6 +340,9 @@ async fn read_unarchived_rows(
         .await?;
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
+        // D1 returns object maps; normalize once so the shared metadata parser
+        // keeps its Value-based test seam and fail-closed behavior.
+        let row = Value::Object(row);
         let id = row
             .get("id")
             .and_then(Value::as_str)

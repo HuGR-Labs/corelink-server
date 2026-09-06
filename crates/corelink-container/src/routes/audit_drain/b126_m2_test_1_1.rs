@@ -1,4 +1,5 @@
 use super::*;
+use corelink_audit_chain::link_chain_hash_from_canonical;
 
 fn rows(payloads: &[Value]) -> Vec<(String, Value)> {
     payloads

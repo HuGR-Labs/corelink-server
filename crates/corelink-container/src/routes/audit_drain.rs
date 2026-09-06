@@ -108,10 +108,7 @@ use serde_json::{json, Value};
 use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
 
-use corelink_audit_chain::{
-    link_chain_hash_from_canonical, link_for_epoch, ChainEpoch, ChainHash, HashChainBuilder,
-    LinkKey,
-};
+use corelink_audit_chain::{link_for_epoch, ChainEpoch, ChainHash, HashChainBuilder, LinkKey};
 use corelink_erasure_attestation::{ErasureSigningKey, Region};
 
 use crate::storage::d1_http::D1HttpClient;

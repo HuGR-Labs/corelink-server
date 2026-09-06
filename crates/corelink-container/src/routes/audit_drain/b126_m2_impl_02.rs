@@ -163,6 +163,9 @@ async fn read_checkpoint(
     let Some(row) = rows.into_iter().next() else {
         return Ok(None);
     };
+    // D1 HTTP rows are object maps; the nullable checkpoint helpers also serve
+    // the JSON-value test seam, so normalize this query row at the boundary.
+    let row = Value::Object(row);
     let head_hex = row
         .get("head_hash")
         .and_then(Value::as_str)
@@ -222,6 +225,9 @@ async fn read_sealed_tail(
     let Some(row) = rows.into_iter().next() else {
         return Ok(None);
     };
+    // Keep the parser's Value-based malformed-metadata contract while adapting
+    // the D1 client's object-map row representation at this boundary.
+    let row = Value::Object(row);
     let seq = row
         .get("sequence_number")
         .and_then(Value::as_i64)
