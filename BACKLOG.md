@@ -1493,9 +1493,6 @@ verify: |
   set -euo pipefail
   python3 scripts/verify_d03_graduation.py --schema-only
   python3 scripts/verify_backlog_wp_ledger.py
-  python3 scripts/backlog_verify.py --id B-313
-  python3 scripts/backlog_verify.py --id B-314
-  python3 scripts/backlog_verify.py --id B-315
   python3 -m pytest -q tests/test_verify_backlog_wp_ledger.py tests/test_verify_b155_backlog_grep_population.py
   python3 - <<'PY'
   import sys

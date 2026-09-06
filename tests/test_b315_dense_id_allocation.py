@@ -282,3 +282,14 @@ def test_head_force_push_after_checks_cannot_replace_expected_h1():
     helper = (root / "scripts/b315_atomic_merge.sh").read_text(encoding="utf-8")
     assert 'EXPECTED_HEAD=${2:?captured head required}' in helper
     assert '[ "$bk_head" = "$EXPECTED_HEAD" ]' in helper
+
+
+def test_backlog_verify_commands_cannot_recurse_on_their_own_record():
+    from scripts import backlog_verify
+
+    text = (Path(__file__).resolve().parents[1] / "BACKLOG.md").read_text(encoding="utf-8")
+    for item in backlog_verify.parse(text):
+        record_id = item.raw.get("id")
+        verify = item.raw.get("verify")
+        if isinstance(record_id, str) and isinstance(verify, str):
+            assert f"backlog_verify.py --id {record_id}" not in verify
