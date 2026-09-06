@@ -172,6 +172,8 @@ on:
       # adversarial mutation suite; changes to either must rerun this gate.
       - "scripts/verify_b144_pat_revoke.py"
       - "tests/test_verify_b144_pat_revoke.py"
+      - "openapi/corelink-v1.yaml"
+      - "openapi/corelink-v1.json"
       # B-095 verifier inputs: every source that can change the assessed
       # interface contract must re-run this guard on the same PR.
       - "apps/get-corelink-worker/src/install.ts"
@@ -344,6 +346,8 @@ on:
       - "tests/test_verify_b095_interface_contract.py"
       - "scripts/verify_b144_pat_revoke.py"
       - "tests/test_verify_b144_pat_revoke.py"
+      - "openapi/corelink-v1.yaml"
+      - "openapi/corelink-v1.json"
       # Keep push parity with pull_request: main must not bypass B-095 inputs.
       - "apps/get-corelink-worker/src/install.ts"
       - "apps/admin-ui/src/components/customer/TeamClient.tsx"
