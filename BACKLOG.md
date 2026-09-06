@@ -697,6 +697,246 @@ verify-means: |
 last-verified: 2026-09-06
 ```
 
+### B-270 — tenant-isolation audit fake loses its UUID type import
+
+```backlog
+id: B-270
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "tests/e2e-tenant-isolation/src/fakes/foundation.rs"
+finding-title: "tenant-isolation foundation cannot resolve Uuid after extraction"
+problem: "the extracted audit fake uses Uuid without importing the canonical crate type"
+evidence: "cargo check -p e2e-tenant-isolation"
+acceptance: "foundation imports uuid::Uuid exactly once and the final D03 Rust bundle passes"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — the structural bundle guard requires the load-bearing UUID import and
+  its mutation turns red; compilation proof belongs to the frozen D03 bundle.
+last-verified: 2026-09-06
+```
+
+### B-271 — adapter PAT extraction leaves four modules at nonexistent paths
+
+```backlog
+id: B-271
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-container/src/adapter_pat.rs"
+finding-title: "adapter PAT facade cannot resolve its four extracted siblings"
+problem: "bare nested module declarations search below adapter_pat/ instead of beside adapter_pat.rs"
+evidence: "cargo clippy -p corelink-container --all-targets -- -D warnings"
+acceptance: "all four existing sibling files are explicitly bound once and downstream auth inference cascades disappear"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — the guard binds crypto, gate, lookup and verifier to their exact
+  sibling files; removal of any binding fails closed. Rust proof is bundled.
+last-verified: 2026-09-06
+```
+
+### B-272 — R2 S3 client fragment has invalid inner docs and parent scope
+
+```backlog
+id: B-272
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-container/src/storage/r2_s3.rs; crates/corelink-container/src/storage/r2_s3_parts/client.rs"
+finding-title: "included R2 S3 client resolves facade dependencies from the wrong scope"
+problem: "the extracted include fragment retained module docs and super-relative names from its old location"
+evidence: "cargo clippy -p corelink-container --all-targets -- -D warnings"
+acceptance: "the facade supplies canonical byok_cas and StorageEnv aliases, fragment docs are valid, and bundle Clippy passes"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — the guard requires the facade aliases consumed by the textual include;
+  marker removal fails closed and full type proof remains one bundle operation.
+last-verified: 2026-09-06
+```
+
+### B-273 — physical GC implementation and purge trait disagree on fencing
+
+```backlog
+id: B-273
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-gc/src/physical_delete.rs; crates/corelink-gc/src/physical_delete/phase.rs; crates/corelink-container/src/gc_sweep.rs"
+finding-title: "fenced purge stages exist in the D1 adapter but not its shared trait"
+problem: "the phase cannot call the durable acquire, retry, R2-complete and finalize operations"
+evidence: "cargo clippy -p corelink-container --all-targets -- -D warnings"
+acceptance: "PurgeStage and all fenced operations are part of the trait, the phase uses them, and the D1 lease row reads updated_at"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — the structural guard requires the complete fenced API and D1 lease
+  column; each load-bearing marker is mutation-tested before bundle CI.
+last-verified: 2026-09-06
+```
+
+### B-274 — DSR portal include resolves live pipeline helpers one level short
+
+```backlog
+id: B-274
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-container/src/routes/dsr/portal/part-00.rs"
+finding-title: "DSR portal fragment cannot reach access, D1 and audit-R2 siblings"
+problem: "the included implementation retained super paths from before the portal nesting layer"
+evidence: "cargo clippy -p corelink-container --all-targets -- -D warnings"
+acceptance: "all live portal dependencies resolve through the correct parent and the final bundle passes"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — the guard requires every live DSR portal parent binding and mutates
+  each independently; compilation proof is deferred only to the shared bundle.
+last-verified: 2026-09-06
+```
+
+### B-275 — tier-selection include resolves route siblings from the wrong parent
+
+```backlog
+id: B-275
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-container/src/routes/tier_select/part-00.rs; crates/corelink-container/src/routes/tier_select/part-02.rs; crates/corelink-container/src/routes/tier_select_store.rs"
+finding-title: "tier-selection fragment cannot resolve store, checkout, audit and admin routes"
+problem: "split-module relative paths target the implementation facade rather than routes"
+evidence: "cargo clippy -p corelink-container --all-targets -- -D warnings"
+acceptance: "route dependencies use stable crate paths, the stale DELETE binding is removed, and bundle Clippy passes"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — the guard pins all four route dependencies to canonical crate paths;
+  mutations turn red and lint/type proof remains consolidated.
+last-verified: 2026-09-06
+```
+
+### B-276 — tenant-isolation split copies unused audit imports into child fakes
+
+```backlog
+id: B-276
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "tests/e2e-tenant-isolation/src/fakes/extended.rs; tests/e2e-tenant-isolation/src/fakes/stores.rs"
+finding-title: "extracted tenant-isolation fake modules retain unused audit imports"
+problem: "copied parent imports make all-target Clippy fail under -D warnings"
+evidence: "cargo clippy -p e2e-tenant-isolation --all-targets -- -D warnings"
+acceptance: "both child modules contain only imports they consume and bundle Clippy passes"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — the guard rejects reintroduction of the stale audit import in either
+  extracted fake; the negative contract is mutation-tested.
+last-verified: 2026-09-06
+```
+
+### B-277 — audit D1 rows cross JSON parser boundaries as object maps
+
+```backlog
+id: B-277
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-container/src/routes/audit_archive.rs; crates/corelink-container/src/routes/audit_drain/b126_m2_impl_02.rs"
+finding-title: "audit drain and archive pass D1 maps to Value-based metadata parsers"
+problem: "D1 query rows are Map<String, Value> while the shared fail-closed parsers accept Value"
+evidence: "cargo clippy -p corelink-container --all-targets -- -D warnings"
+acceptance: "each affected D1 boundary normalizes its row to Value::Object and bundle tests pass"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — the guard requires normalization at archive and both drain boundaries;
+  removing a boundary conversion turns the mutation suite red.
+last-verified: 2026-09-06
+```
+
+### B-278 — timing restoration and SLI aggregation lost concrete option/map types
+
+```backlog
+id: B-278
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-container/src/origin_timing.rs; crates/corelink-container/src/sli_aggregate.rs"
+finding-title: "timing ledger flattens an already-flat option and SLI merge lacks value inference"
+problem: "the extracted code does not type-check and cannot restore nested timing scopes"
+evidence: "cargo clippy -p corelink-container --all-targets -- -D warnings"
+acceptance: "the prior ledger option is restored directly, the SLI map value is explicit, and focused regressions pass"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — positive and forbidden markers bind both type repairs, mutations fail
+  closed, and focused Rust regressions execute inside the shared bundle.
+last-verified: 2026-09-06
+```
+
+### B-279 — container facade and CAS fence retain two Clippy residues
+
+```backlog
+id: B-279
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-container/src/routes/public_pullthrough.rs; crates/corelink-container/src/storage/cas_write_fence.rs"
+finding-title: "public pullthrough over-reexports its include and CAS fence imports unused Duration"
+problem: "all-target Clippy rejects a hidden glob re-export and an unused import"
+evidence: "cargo clippy -p corelink-container --all-targets -- -D warnings"
+acceptance: "the include re-export is crate-visible, Duration is absent, and bundle Clippy passes"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — the guard pins the intended visibility and rejects the unused import;
+  both sides have explicit red mutations.
+last-verified: 2026-09-06
+```
+
+### B-280 — customer invitation runtime uses a dev-only rand dependency
+
+```backlog
+id: B-280
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-container/Cargo.toml; crates/corelink-container/src/customer_d1.rs"
+finding-title: "production invitation token generation cannot resolve rand"
+problem: "OsRng is used by shipped code while rand is declared only in dev-dependencies"
+evidence: "cargo clippy -p corelink-container --all-targets -- -D warnings"
+acceptance: "rand occurs exactly once as a production dependency and the final bundle passes"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — the guard rejects duplicates and moving rand below dev-dependencies;
+  the manifest placement mutation demonstrably turns red.
+last-verified: 2026-09-06
+```
+
+### B-281 — seventeen extracted test modules resolve below nonexistent directories
+
+```backlog
+id: B-281
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 module-path census"
+source-locator: "17 non-root Rust module declarations enumerated by scripts/verify_b270_b281_bundle_repairs.py"
+finding-title: "residual extracted test modules rely on invalid implicit child paths"
+problem: "each declaration sits in a non-root file while its implementation exists only as a sibling"
+evidence: "repository-wide lexical module-path census; cargo clippy --workspace --all-targets -- -D warnings"
+acceptance: "all 17 sibling modules have exact explicit paths, every sibling exists, the residual census is empty, and bundle Clippy passes"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — the closed census is encoded as 17 exact path/file contracts and every
+  binding is mutation-tested; no unowned module-path finding remains.
+last-verified: 2026-09-06
+```
+
 ### B-003 — the 864s ceiling from 2026-08-02 has no established mechanism
 
 That incident concluded jobs past ~900 s were being SIGTERMed. They could not
@@ -13836,8 +14076,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-06):** `records=269`,
-  `command_records=253`, `manual=16`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-06):** `records=281`,
+  `command_records=265`, `manual=16`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma
