@@ -23,6 +23,7 @@ FILES = {
     "team-ui": Path("apps/admin-ui/src/components/customer/TeamClient.tsx"),
     "team-types": Path("apps/admin-ui/src/lib/customer-types.ts"),
     "team-schema": Path("migrations/d1/0074_team_member.sql"),
+    "team-route-tests": Path("crates/corelink-container/src/routes/customer/tests_team.rs"),
     "workspaces": Path("crates/corelink-container/src/routes/workspaces.rs"),
     "workspace-ui": Path("apps/admin-ui/src/components/customer/WorkspacesClient.tsx"),
     "role-catalog": Path("apps/docs/docs/explanation/rbac/role-catalog.mdx"),
@@ -87,6 +88,10 @@ def assess(root: Path = Path(".")) -> list[str]:
         gaps.append("team-schema-role-check")
     if re.search(r"(?i)developer", schema):
         gaps.append("team-schema-developer-role")
+
+    team_route_tests = text["team-route-tests"]
+    if re.search(r'"(?:Developer|Admin)"', team_route_tests):
+        gaps.append("team-route-tests-legacy-role-wire")
 
     workspaces = text["workspaces"]
     if re.search(r"(?i)SET\s+pinned\s*=\s*1\s*-\s*pinned", workspaces):

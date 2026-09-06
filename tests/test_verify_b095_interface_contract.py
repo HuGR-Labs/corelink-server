@@ -88,6 +88,11 @@ class B095InterfaceContractTests(unittest.TestCase):
                 'export const INVITABLE_ROLES: InviteRole[] = ["admin", "member", "viewer"];',
                 'const ROLES = ["Owner", "Admin", "Developer", "Viewer"];',
             ),
+            "team-route-tests-legacy-role-wire": (
+                verifier.FILES["team-route-tests"],
+                '"role": "member"',
+                '"role": "Developer"',
+            ),
             "workspace-pin-toggle": (
                 verifier.FILES["workspaces"],
                 "SET pinned = ?3",
