@@ -244,8 +244,8 @@ mod tests {
 
     #[test]
     fn test_region_from_str_unknown() {
-        assert_eq!(Region::from_str("apac"), Ok(Region::Apac));
-        assert_eq!(Region::from_str("afr"), Ok(Region::Afr));
+        assert!(matches!(Region::from_str("apac"), Ok(Region::Apac)));
+        assert!(matches!(Region::from_str("afr"), Ok(Region::Afr)));
         assert!(Region::from_str("").is_err());
     }
 
