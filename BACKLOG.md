@@ -1488,7 +1488,7 @@ source-locator: "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md:3-20"
 finding-title: "canonical WP ledger claims 269 records and a pre-D03 base after the backlog reached 312"
 problem: "the ledger verifier, catalogs and two pending changelogs described the obsolete cff/a65 baseline instead of the D03 head and its 14-item open owner population"
 evidence: "python3 scripts/verify_backlog_wp_ledger.py before repair: stale ledger item-count 269; expected 312"
-acceptance: "the ledger and catalogs name the exact D03 base 7b992e9db123abeb76381b1c1337011692f2e834, live counts are reconciled, stale changelog claims are removed, and base-ref/SHA ancestry is fail-closed"
+acceptance: "the ledger and catalogs name delivered main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266 as the immutable ancestry base, retain 7b992e9db123abeb76381b1c1337011692f2e834 only as D03 provenance, reconcile live counts, and fail closed on wrong or unrelated ancestry"
 verify: |
   set -euo pipefail
   python3 scripts/verify_d03_graduation.py --schema-only
@@ -1503,7 +1503,8 @@ verify: |
   assert len(ledger.all_backlog_ids(text)) == 313
   assert len(ledger.open_backlog_ids(text)) == 14
   assert ledger.backlog_status_counts(text) == {"open": 14, "done": 260, "parked": 39}
-  assert ledger.LEDGER_BASE_SHA == "7b992e9db123abeb76381b1c1337011692f2e834"
+  assert ledger.LEDGER_BASE_REF == "main"
+  assert ledger.LEDGER_BASE_SHA == "ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
   PY
 verify-means: |
   done — the live verifier proves 14/14 open-ID ownership, 313 total records,

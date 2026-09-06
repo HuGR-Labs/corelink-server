@@ -22,8 +22,12 @@ CATALOGS = {
     REPO_ROOT / "docs/campaigns/remediation/work-packages/B091-B130.md": (91, 130),
     REPO_ROOT / "docs/campaigns/remediation/work-packages/B131-B167.md": (131, 254),
 }
-LEDGER_BASE_REF = "codex/d03-delivery-20260906"
-LEDGER_BASE_SHA = "7b992e9db123abeb76381b1c1337011692f2e834"
+# The D03 branch is squash-merged and is not a durable ancestry anchor. Keep
+# its head as documentary provenance in the ledger, but anchor verification to
+# delivered main, which remains an ancestor of both the D03 branch and its
+# eventual squash commit.
+LEDGER_BASE_REF = "main"
+LEDGER_BASE_SHA = "ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
 LEDGER_PATH = REPO_ROOT / "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md"
 ENTRY_RE = re.compile(r"^(B-\d+)\s+(WP-[A-Z0-9][A-Z0-9./_-]*)$")
 WP_HEADING_RE = re.compile(r"^#{2,6}\s+(WP-[A-Z0-9][A-Z0-9./_-]*)(?:\s|—|$)", re.MULTILINE)
@@ -703,6 +707,51 @@ def compare(
         raise LedgerError("; ".join(parts))
 
 
+def validate_git_anchor(
+    repo_root: Path,
+    *,
+    source: str,
+    base_ref: str = LEDGER_BASE_REF,
+    base_sha: str = LEDGER_BASE_SHA,
+    head_ref: str = "HEAD",
+) -> None:
+    """Require an immutable base object and ancestry-safe ref/head semantics.
+
+    ``base_ref`` is descriptive and may move after integration; when it is
+    available locally it must still contain ``base_sha``. The immutable SHA
+    must also be an ancestor of the checked head, which survives squash merges
+    that do not preserve D03's original commit objects.
+    """
+    resolved_base = subprocess.run(
+        ["git", "rev-parse", "--verify", base_sha],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    if resolved_base != base_sha:
+        raise LedgerError(f"{source}: logical base unavailable: {base_sha}")
+    resolved_ref = subprocess.run(
+        ["git", "rev-parse", "--verify", base_ref],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    if resolved_ref and subprocess.run(
+        ["git", "merge-base", "--is-ancestor", base_sha, resolved_ref],
+        cwd=repo_root,
+        check=False,
+    ).returncode != 0:
+        raise LedgerError(f"{source}: base-ref {base_ref} does not contain {base_sha}")
+    if subprocess.run(
+        ["git", "merge-base", "--is-ancestor", base_sha, head_ref],
+        cwd=repo_root,
+        check=False,
+    ).returncode != 0:
+        raise LedgerError(f"{source}: base is not an ancestor of {head_ref}: {base_sha}")
+
+
 def main() -> int:
     try:
         backlog_text = (REPO_ROOT / "BACKLOG.md").read_text()
@@ -716,46 +765,12 @@ def main() -> int:
             ledger_source = str(LEDGER_PATH)
         ledger_state = parse_ledger_state(ledger_text, ledger_source)
         expected_base_sha = LEDGER_BASE_SHA
-        resolved_base = subprocess.run(
-            ["git", "rev-parse", "--verify", expected_base_sha],
-            cwd=REPO_ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-        if resolved_base != expected_base_sha:
-            raise LedgerError(
-                f"{ledger_source}: logical D03 base unavailable: {expected_base_sha}"
-            )
-        # The named D03 ref is a moving integration branch; the SHA is the
-        # immutable ledger anchor. When the ref is present locally, require it
-        # to have retained that anchor, but do not require CI to fetch a
-        # sibling branch just to verify a reachable commit object.
-        resolved_ref = subprocess.run(
-            ["git", "rev-parse", "--verify", LEDGER_BASE_REF],
-            cwd=REPO_ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-        if resolved_ref and subprocess.run(
-            ["git", "merge-base", "--is-ancestor", expected_base_sha, resolved_ref],
-            cwd=REPO_ROOT,
-            check=False,
-        ).returncode != 0:
-            raise LedgerError(
-                f"{ledger_source}: base-ref {LEDGER_BASE_REF} no longer contains "
-                f"logical D03 base {expected_base_sha}"
-            )
-        if subprocess.run(
-            ["git", "merge-base", "--is-ancestor", expected_base_sha, "HEAD"],
-            cwd=REPO_ROOT,
-            check=False,
-        ).returncode != 0:
-            raise LedgerError(
-                f"{ledger_source}: logical D03 base is not an ancestor of HEAD: "
-                f"{expected_base_sha}"
-            )
+        validate_git_anchor(
+            REPO_ROOT,
+            source=ledger_source,
+            base_ref=LEDGER_BASE_REF,
+            base_sha=expected_base_sha,
+        )
         catalog_counts: dict[str, int] = {}
         assignments: list[tuple[str, str, str]] = []
         valid_wps: set[str] = set()

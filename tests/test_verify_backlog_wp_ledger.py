@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 import sys
 
 import pytest
@@ -221,7 +222,7 @@ WP-150 | WP-148
 def test_ledger_state_rejects_stale_base_and_population():
     state = parse_ledger_state(
         """```ledger-state
-base-ref: codex/d03-delivery-20260906
+base-ref: main
 base-sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 observed-at: 2026-09-06
 item-count: 168
@@ -257,14 +258,75 @@ catalog-counts: B001-B045=8,B046-B090=31,B091-B130=36,B131-B167=32
 
 
 def test_live_ledger_uses_immutable_d03_head_anchor():
-    assert ledger.LEDGER_BASE_REF == "codex/d03-delivery-20260906"
-    assert ledger.LEDGER_BASE_SHA == "7b992e9db123abeb76381b1c1337011692f2e834"
+    assert ledger.LEDGER_BASE_REF == "main"
+    assert ledger.LEDGER_BASE_SHA == "ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
+
+
+def test_current_d03_tree_has_delivered_main_ancestry_anchor():
+    ledger.validate_git_anchor(ledger.REPO_ROOT, source="current D03 tree")
+
+
+def _git(repo: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+    )
+    return result.stdout.strip()
+
+
+def _synthetic_repo(tmp_path: Path) -> tuple[Path, str]:
+    repo = tmp_path / "squash-repo"
+    repo.mkdir()
+    _git(repo, "init", "--quiet")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "ledger tests")
+    (repo / "state.txt").write_text("base\n")
+    _git(repo, "add", "state.txt")
+    _git(repo, "commit", "--quiet", "-m", "base")
+    base = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "branch", "-M", "main")
+    (repo / "state.txt").write_text("squashed D03 tree\n")
+    _git(repo, "commit", "--quiet", "-am", "squashed D03 tree")
+    return repo, base
+
+
+def test_git_anchor_accepts_squash_style_descendant_without_d03_sha_or_ref(tmp_path):
+    repo, base = _synthetic_repo(tmp_path)
+    ledger.validate_git_anchor(
+        repo,
+        source="fixture",
+        base_ref="main",
+        base_sha=base,
+    )
+
+
+def test_git_anchor_rejects_wrong_ref_and_unrelated_head(tmp_path):
+    repo, base = _synthetic_repo(tmp_path)
+    _git(repo, "checkout", "--quiet", "--orphan", "unrelated")
+    (repo / "unrelated.txt").write_text("unrelated\n")
+    _git(repo, "add", "unrelated.txt")
+    _git(repo, "commit", "--quiet", "-m", "unrelated")
+    with pytest.raises(LedgerError, match="base-ref"):
+        ledger.validate_git_anchor(
+            repo,
+            source="fixture",
+            base_ref="unrelated",
+            base_sha=base,
+            head_ref="main",
+        )
+    with pytest.raises(LedgerError, match="not an ancestor"):
+        ledger.validate_git_anchor(
+            repo,
+            source="fixture",
+            base_ref="main",
+            base_sha=base,
+            head_ref="HEAD",
+        )
 
 
 def test_main_rejects_tampered_base_sha_end_to_end(monkeypatch, tmp_path):
     source = ledger.LEDGER_PATH.read_text()
     tampered = source.replace(
-        "base-sha: 7b992e9db123abeb76381b1c1337011692f2e834",
+        "base-sha: ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266",
         "base-sha: 0000000000000000000000000000000000000000",
     )
     path = tmp_path / "BACKLOG-WP-LEDGER.md"

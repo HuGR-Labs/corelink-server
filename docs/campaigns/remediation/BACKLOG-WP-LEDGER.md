@@ -1,6 +1,7 @@
 # Backlog work-package ledger
 
-> Logical base: `codex/d03-delivery-20260906@7b992e9db123abeb76381b1c1337011692f2e834`,
+> Historical D03 source checkpoint: `codex/d03-delivery-20260906@7b992e9db123abeb76381b1c1337011692f2e834`.
+> Immutable ancestry base: `main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266`,
 > observed 2026-09-06 in `America/Sao_Paulo`.
 
 This is the execution ledger for the open CoreLink backlog. `BACKLOG.md` remains
@@ -12,8 +13,8 @@ The current population is 313 items: 14 open, 260 done and 39 parked. The 14
 open items are partitioned exactly once across four contract catalogs:
 
 ```ledger-state
-base-ref: codex/d03-delivery-20260906
-base-sha: 7b992e9db123abeb76381b1c1337011692f2e834
+base-ref: main
+base-sha: ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266
 observed-at: 2026-09-06
 item-count: 313
 open-count: 14
