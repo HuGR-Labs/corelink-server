@@ -39,6 +39,34 @@ def _require_not(text: str, pattern: str, label: str) -> None:
         raise AssertionError(f"forbidden B-074 regression: {label}")
 
 
+def _check_money_checklist(text: str) -> None:
+    """Bind the canonical matrix rows to the money-path auth contract."""
+    matches = re.findall(r"(?m)^\|\s*(233|234)\s*\|([^\n]*)$", text)
+    if len(matches) != 2 or {row_id for row_id, _ in matches} != {"233", "234"}:
+        raise AssertionError("B-074 checklist must contain exactly rows 233 and 234")
+    rows = dict(matches)
+    expected = {
+        "233": "CORELINK_TIER_SELECT_AUTH_KEY",
+        "234": "CORELINK_DPA_ACCEPT_AUTH_KEY",
+    }
+    for row_id, env_name in expected.items():
+        row = rows[row_id]
+        if f"`{env_name}`" not in row:
+            raise AssertionError(f"B-074 checklist row {row_id} has the wrong environment name")
+        if "**Only UNSET falls back**" not in row:
+            raise AssertionError(
+                f"B-074 checklist row {row_id} must state that only an absent dedicated binding falls back"
+            )
+        if "bound blank, whitespace-only, non-UTF8, or <32-character value fails CLOSED" not in row:
+            raise AssertionError(
+                f"B-074 checklist row {row_id} must document malformed dedicated values as fail-closed"
+            )
+        if re.search(r"UNSET/blank/<32 chars\s+falls back", row, re.IGNORECASE):
+            raise AssertionError(
+                f"B-074 checklist row {row_id} widens malformed dedicated values to the shared authority"
+            )
+
+
 def verify(root: Path = ROOT, *, overrides: dict[str, str] | None = None) -> dict[str, int]:
     overrides = {} if overrides is None else overrides
 
@@ -53,6 +81,7 @@ def verify(root: Path = ROOT, *, overrides: dict[str, str] | None = None) -> dic
     do_start = read("worker/src/durable_object_start.ts")
     rust_test = read("crates/corelink-container/tests/money_path_auth_wiring.rs")
     worker_test = read("worker/tests/onboarding.test.ts")
+    checklist = read("docs/internal/secrets-checklist.md")
     backlog = read("BACKLOG.md")
 
     # The dedicated branch must own invalid values.  The only shared fallback
@@ -129,6 +158,7 @@ def verify(root: Path = ROOT, *, overrides: dict[str, str] | None = None) -> dic
     _require(rust_test, r"whitespace-only dedicated key must fail closed", "Rust invalid dedicated behavior")
     _require(worker_test, r"fails CLOSED when a money dedicated key is sub-floor", "Worker short dedicated behavior")
     _require(worker_test, r"fails CLOSED when a money dedicated key is whitespace-only", "Worker invalid dedicated behavior")
+    _check_money_checklist(checklist)
 
     b074 = re.search(r"### B-074 .*?(?=\n### B-075 )", backlog, re.DOTALL)
     if b074 is None or re.search(r"\nstatus:\s*done\s*\n", b074.group(0)) is None:
@@ -196,6 +226,23 @@ def self_test(root: Path = ROOT) -> None:
         pass
     else:
         raise AssertionError("resolver string bait mutation survived")
+
+    checklist_path = "docs/internal/secrets-checklist.md"
+    checklist = _read(root, checklist_path)
+    for row_id in ("233", "234"):
+        row_match = re.search(rf"(?m)^\|\s*{row_id}\s*\|[^\n]*$", checklist)
+        if row_match is None or "**Only UNSET falls back**" not in row_match.group(0):
+            raise AssertionError(f"B-074 checklist mutation fixture missing row {row_id} contract")
+        mutated_row = row_match.group(0).replace(
+            "**Only UNSET falls back**", "UNSET/blank/<32 chars falls back", 1
+        )
+        mutated_checklist = checklist[: row_match.start()] + mutated_row + checklist[row_match.end() :]
+        try:
+            verify(root, overrides={checklist_path: mutated_checklist})
+        except AssertionError:
+            pass
+        else:
+            raise AssertionError(f"checklist inverse fallback mutation survived for row {row_id}")
 
 
 def main() -> int:
