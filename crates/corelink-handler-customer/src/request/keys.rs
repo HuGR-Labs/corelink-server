@@ -1,5 +1,7 @@
 // ─── Keys (PAT) ──────────────────────────────────────────────────────────────
 
+use super::overview::ByokStatus;
+
 /// One PAT row returned by list / create / revoke responses.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]

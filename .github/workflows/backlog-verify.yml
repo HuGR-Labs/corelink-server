@@ -71,6 +71,11 @@ on:
       - "crates/corelink-audit-chain/src/neon_shadow_tests.rs"
       - "crates/corelink-audit-chain/src/sealed_archive.rs"
       - "crates/corelink-audit-chain/src/sealed_archive_tests.rs"
+      - "scripts/verify_b268_handler_byok_import.py"
+      - "tests/test_verify_b268_handler_byok_import.py"
+      - "changelog.d/PENDING-b268-handler-customer-byok-import.md"
+      - "crates/corelink-handler-customer/src/request/keys.rs"
+      - "crates/corelink-handler-customer/src/request/overview.rs"
       - "crates/corelink-audit-chain/src/neon_shadow/real.rs"
       - "crates/corelink-audit-chain/src/neon_shadow/native.rs"
       - "crates/corelink-audit/src/events.rs"
@@ -204,6 +209,11 @@ on:
       - "crates/corelink-audit-chain/src/neon_shadow_tests.rs"
       - "crates/corelink-audit-chain/src/sealed_archive.rs"
       - "crates/corelink-audit-chain/src/sealed_archive_tests.rs"
+      - "scripts/verify_b268_handler_byok_import.py"
+      - "tests/test_verify_b268_handler_byok_import.py"
+      - "changelog.d/PENDING-b268-handler-customer-byok-import.md"
+      - "crates/corelink-handler-customer/src/request/keys.rs"
+      - "crates/corelink-handler-customer/src/request/overview.rs"
       - "crates/corelink-audit-chain/src/neon_shadow/real.rs"
       - "crates/corelink-audit-chain/src/neon_shadow/native.rs"
       - "crates/corelink-audit/src/events.rs"
@@ -359,6 +369,10 @@ jobs:
         run: |
           python3 scripts/verify_b264_b267_bundle_repairs.py
           python3 -m pytest -q tests/test_verify_b264_b267_bundle_repairs.py
+      - name: B-268 customer BYOK import guard and mutations
+        run: |
+          python3 scripts/verify_b268_handler_byok_import.py
+          python3 -m pytest -q tests/test_verify_b268_handler_byok_import.py
       - name: B-094 published-claims guard and mutations
         run: |
           command -v gitleaks

@@ -8,16 +8,16 @@ the single source of truth for item status. This ledger derives work ownership,
 dependency order and completion contracts from that source; it never overrides
 the backlog.
 
-The current population is 267 items: 14 open, 214 done and 39 parked. The 14
+The current population is 268 items: 14 open, 215 done and 39 parked. The 14
 open items are partitioned exactly once across four contract catalogs:
 
 ```ledger-state
 base-ref: codex/d03-delivery-20260906
 base-sha: a65c7d7caed03adf00acd3a227dc20c4e857f7f0
 observed-at: 2026-09-06
-item-count: 267
+item-count: 268
 open-count: 14
-done-count: 214
+done-count: 215
 parked-count: 39
 catalog-counts: B001-B045=6,B046-B090=3,B091-B130=3,B131-B254=2
 ```

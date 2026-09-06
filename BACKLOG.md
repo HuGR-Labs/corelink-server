@@ -642,6 +642,34 @@ verify-means: |
 last-verified: 2026-09-06
 ```
 
+### B-268 — customer keys split loses the shared BYOK status type
+
+The D03 bundle build reached `corelink-handler-customer` and found that the
+extracted `request/keys.rs` module uses `ByokStatus` without importing the type
+defined by its `overview` sibling. The module now imports that canonical type;
+no response shape or runtime behavior changed.
+
+```backlog
+id: B-268
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-handler-customer/src/request/keys.rs:1-3,94-102"
+finding-title: "customer keys request module cannot resolve ByokStatus after extraction"
+problem: "the split module uses its sibling's response type without importing it"
+evidence: "cargo check -p corelink-handler-customer; cargo clippy -p corelink-handler-customer --all-targets -- -D warnings"
+acceptance: "keys.rs imports the single canonical overview::ByokStatus, the response remains bound to it, focal compilation passes, and import/type mutations fail closed"
+verify: python3 scripts/verify_b268_handler_byok_import.py
+verify-means: |
+  done — the focal guard requires exactly one active sibling import, exactly one
+  canonical `ByokStatus` definition, and the existing keys response field and
+  constructor bindings. Removal, comment-bait, wrong-module, duplicate-type and
+  response-substitution mutations fail closed; focused Cargo proof belongs to
+  the exact D03 bundle tail.
+last-verified: 2026-09-06
+```
+
 ### B-003 — the 864s ceiling from 2026-08-02 has no established mechanism
 
 That incident concluded jobs past ~900 s were being SIGTERMed. They could not
@@ -13781,8 +13809,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-06):** `records=267`,
-  `command_records=251`, `manual=16`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-06):** `records=268`,
+  `command_records=252`, `manual=16`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma
