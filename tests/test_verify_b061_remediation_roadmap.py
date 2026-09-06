@@ -124,8 +124,78 @@ def test_manifest_population_mismatch_is_fail_closed(tmp_path: Path) -> None:
     text = (ROOT / verifier.OKF_MANIFEST).read_text(encoding="utf-8")
     manifest.write_text(text.replace('id: "planes/container"', 'id: "planes/phantom"', 1), encoding="utf-8")
 
-    with pytest.raises(verifier.RoadmapVerificationError, match="active superset"):
+    with pytest.raises(verifier.RoadmapVerificationError, match="exact generated index"):
         verifier._validate_okf_surfaces(ROOT, manifest_path=manifest)
+
+
+def test_tier_extractors_ignore_comment_and_string_bait() -> None:
+    tier_source = '''
+        /* pub enum TierKind { Fake, AlsoFake } */
+        const BAIT: &str = "pub enum TierKind { StringFake }";
+        const RAW_BAIT: &str = r#"pub enum TierKind { RawFake }"#;
+        pub enum TierKind { RealOne, /* Fake */ RealTwo }
+    '''
+    ladder_source = '''
+        // pub const TIER_RATE_LADDER: [(Tier, u32, u32); 99] = [];
+        const BAIT: &str = "TIER_RATE_LADDER [(Tier, u32, u32); 98]";
+        const RAW_BAIT: &str = r#"pub const TIER_RATE_LADDER: [(Tier, u32, u32); 97] = [];"#;
+        pub const TIER_RATE_LADDER: [(Tier, u32, u32); 2] = [
+            (Tier::Free, 1, 1), (Tier::Solo, 2, 2),
+        ];
+    '''
+    assert verifier._tier_kind_variants(tier_source) == ["RealOne", "RealTwo"]
+    assert verifier._rate_ladder_length(ladder_source) == 2
+
+
+def test_split_validator_c5_comment_bait_is_not_an_ast_emission(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime = tmp_path / "validate_okf_runtime.py"
+    source = (ROOT / verifier.OKF_RUNTIME).read_text(encoding="utf-8")
+    source = source.replace('                        "C5",\n', '                        # fails.add("C5", "comment-bait", "not executable")\n')
+    runtime.write_text(source, encoding="utf-8")
+    monkeypatch.setattr(verifier, "OKF_RUNTIME", runtime)
+    monkeypatch.setattr(verifier, "OKF_SPLIT_MODULES", (runtime, *verifier.OKF_SPLIT_MODULES[1:]))
+
+    with pytest.raises(verifier.RoadmapVerificationError, match="fail-closed checkpoint/content"):
+        verifier._validate_okf_surfaces(ROOT)
+
+
+def test_missing_split_validator_module_is_fail_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    missing = tmp_path / "validate_okf_core2.py"
+    monkeypatch.setattr(verifier, "OKF_SPLIT_MODULES", (verifier.OKF_RUNTIME, verifier.OKF_SPLIT_MODULES[1], missing, *verifier.OKF_SPLIT_MODULES[3:]))
+
+    with pytest.raises(verifier.RoadmapVerificationError, match="split validator module"):
+        verifier._validate_okf_surfaces(ROOT)
+
+
+def test_split_paths_must_be_once_per_event_in_both_workflows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    mutated_backlog = tmp_path / "backlog-verify.yml"
+    backlog = (ROOT / verifier.WORKFLOW).read_text(encoding="utf-8")
+    mutated_backlog.write_text(
+        backlog.replace(
+            '      - "scripts/validate_okf_core1.py"\n',
+            '      # - "scripts/validate_okf_core1.py"\n'
+            '      - "scripts/validate_okf_core1.py # string-bait"\n',
+            1,
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(verifier.RoadmapVerificationError, match="pull_request"):
+        verifier._validate_projections(ROOT, workflow_path=mutated_backlog)
+
+    mutated_okf = tmp_path / "okf_wiki.yml"
+    okf = (ROOT / verifier.OKF_WORKFLOW).read_text(encoding="utf-8")
+    mutated_okf.write_text(
+        okf.replace(
+            "      - 'scripts/validate_okf_core1.py'\n",
+            "      # - 'scripts/validate_okf_core1.py'\n"
+            "      - 'scripts/validate_okf_core1.py string-bait'\n",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(verifier, "OKF_WORKFLOW", mutated_okf)
+    with pytest.raises(verifier.RoadmapVerificationError, match="OKF workflow.*pull_request"):
+        verifier._validate_projections(ROOT)
 
 
 def test_b061_installs_python_requirements_before_pytest() -> None:

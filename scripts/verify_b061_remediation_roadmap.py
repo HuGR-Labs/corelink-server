@@ -32,6 +32,7 @@ ACTIONS_EXPORT = Path("reports/b061-actions-census.v1.json")
 BACKLOG = Path("BACKLOG.md")
 CHANGELOG = Path("changelog.d/b061-remediation-roadmap.md")
 WORKFLOW = Path(".github/workflows/backlog-verify.yml")
+OKF_WORKFLOW = Path(".github/workflows/okf_wiki.yml")
 SCRIPT = Path("scripts/verify_b061_remediation_roadmap.py")
 TEST = Path("tests/test_verify_b061_remediation_roadmap.py")
 OKF_VALIDATOR = Path("scripts/validate_okf.py")
@@ -41,6 +42,13 @@ OKF_INDEX = Path("docs/knowledge/index.md")
 OKF_INDEX_SCRIPT = Path("scripts/okf_index.py")
 OKF_RENDER_SCRIPT = Path("scripts/okf_render.py")
 OKF_RENDERED_SITE = Path("docs/okf-wiki-site/index.html")
+OKF_SPLIT_MODULES = (
+    OKF_RUNTIME,
+    Path("scripts/validate_okf_core1.py"),
+    Path("scripts/validate_okf_core2.py"),
+    Path("scripts/validate_okf_checks.py"),
+    Path("scripts/okf_anchor_reverify.py"),
+)
 
 CANONICAL_KEYS = {
     "okf_documents",
@@ -64,9 +72,133 @@ CANONICAL_MARKERS = {
 }
 CHECKPOINT_RE = re.compile(r"^checkpoint_sha:\s*\"?([0-9a-f]{8,40})", re.MULTILINE)
 DEFERRED_RE = re.compile(r"^deferred:\s*", re.MULTILINE)
-TIER_ENUM_RE = re.compile(r"pub\s+enum\s+TierKind\s*\{(?P<body>.*?)^\}", re.DOTALL | re.MULTILINE)
-TIER_VARIANT_RE = re.compile(r"^\s*([A-Z][A-Za-z0-9_]*)\s*(?:,|=)", re.MULTILINE)
-LADDER_RE = re.compile(r"TIER_RATE_LADDER:\s*\[\(Tier,\s*u32,\s*u32\);\s*(\d+)\]")
+MANIFEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)+$")
+
+
+def _rust_tokens(source: str) -> list[str]:
+    """Tokenize Rust enough for declarations, ignoring comments and literals."""
+    tokens: list[str] = []
+    i = 0
+    while i < len(source):
+        if source.startswith("//", i):
+            end = source.find("\n", i + 2)
+            i = len(source) if end < 0 else end + 1
+            continue
+        if source.startswith("/*", i):
+            depth = 1
+            i += 2
+            while i < len(source) and depth:
+                if source.startswith("/*", i):
+                    depth += 1
+                    i += 2
+                elif source.startswith("*/", i):
+                    depth -= 1
+                    i += 2
+                else:
+                    i += 1
+            continue
+        if source.startswith("r#", i) or source.startswith("r\"", i):
+            # Raw strings are literals too; skip through their matching quote.
+            hashes = 0
+            j = i + 1
+            while j < len(source) and source[j] == "#":
+                hashes += 1
+                j += 1
+            if j < len(source) and source[j] == '"':
+                close = '"' + ('#' * hashes)
+                end = source.find(close, j + 1)
+                i = len(source) if end < 0 else end + len(close)
+                continue
+        if source[i] in {'"', "'"}:
+            quote = source[i]
+            i += 1
+            while i < len(source):
+                escaped = source[i] == "\\"
+                i += 2 if escaped else 1
+                if not escaped and source[i - 1] == quote:
+                    break
+            continue
+        if source[i].isspace():
+            i += 1
+            continue
+        if source[i].isalpha() or source[i] == "_":
+            j = i + 1
+            while j < len(source) and (source[j].isalnum() or source[j] == "_"):
+                j += 1
+            tokens.append(source[i:j])
+            i = j
+            continue
+        if source[i].isdigit():
+            j = i + 1
+            while j < len(source) and (source[j].isalnum() or source[j] == "_"):
+                j += 1
+            tokens.append(source[i:j])
+            i = j
+            continue
+        tokens.append(source[i])
+        i += 1
+    return tokens
+
+
+def _matching_delimiter(tokens: list[str], opening: int, left: str = "[", right: str = "]") -> int | None:
+    depth = 0
+    pairs = {"[": "]", "(": ")", "{": "}"}
+    expected = pairs.get(left, right)
+    for index in range(opening, len(tokens)):
+        if tokens[index] == left:
+            depth += 1
+        elif tokens[index] == expected:
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
+def _tier_kind_variants(source: str) -> list[str]:
+    tokens = _rust_tokens(source)
+    try:
+        declaration = next(i for i in range(len(tokens) - 2) if tokens[i:i + 3] == ["pub", "enum", "TierKind"])
+        opening = tokens.index("{", declaration + 3)
+    except ValueError:
+        raise RoadmapVerificationError("TierKind enum disappeared or changed shape") from None
+    closing = _matching_delimiter(tokens, opening, "{", "}")
+    if closing is None:
+        raise RoadmapVerificationError("TierKind enum has unbalanced delimiters")
+    variants: list[str] = []
+    depth = 0
+    for token in tokens[opening + 1:closing]:
+        if token in {"{", "(", "["}:
+            depth += 1
+        elif token in {"}", ")", "]"}:
+            depth -= 1
+        elif depth == 0 and (token[0].isupper() or token[0] == "_"):
+            variants.append(token)
+    if not variants:
+        raise RoadmapVerificationError("TierKind enum has no variants")
+    return variants
+
+
+def _rate_ladder_length(source: str) -> int:
+    tokens = _rust_tokens(source)
+    try:
+        name = next(
+            i for i in range(len(tokens) - 3)
+            if tokens[i:i + 4] == ["pub", "const", "TIER_RATE_LADDER", ":"]
+        ) + 2
+        equals = tokens.index("=", name)
+    except ValueError:
+        raise RoadmapVerificationError("canonical rate ladder declaration disappeared") from None
+    type_open = next((i for i in range(name, equals) if tokens[i] == "["), None)
+    if type_open is None:
+        raise RoadmapVerificationError("canonical rate ladder declaration changed shape")
+    type_close = _matching_delimiter(tokens, type_open)
+    if type_close is None or ";" not in tokens[type_open:type_close]:
+        raise RoadmapVerificationError("canonical rate ladder declaration changed shape")
+    semicolon = tokens.index(";", type_open, type_close)
+    raw_length = tokens[semicolon + 1]
+    if not raw_length.isdigit() or tokens[type_close + 1:equals + 1] != ["="] or tokens[equals + 1] != "[":
+        raise RoadmapVerificationError("canonical rate ladder declaration changed shape")
+    return int(raw_length)
 
 
 class RoadmapVerificationError(ValueError):
@@ -161,17 +293,9 @@ def _derived_okf_cached(repo_root_string: str, head: str) -> tuple[int, int, int
 
 def _derived_tiers(repo_root: Path) -> tuple[int, int]:
     tier_source = _read(repo_root, Path("crates/corelink-tier-selection/src/tier.rs"))
-    enum = TIER_ENUM_RE.search(tier_source)
-    if not enum:
-        raise RoadmapVerificationError("TierKind enum disappeared or changed shape")
-    variants = [m.group(1) for m in TIER_VARIANT_RE.finditer(enum.group("body"))]
-    if not variants:
-        raise RoadmapVerificationError("TierKind enum has no variants")
+    variants = _tier_kind_variants(tier_source)
     rate_source = _read(repo_root, Path("crates/corelink-ratelimit/src/tier.rs"))
-    ladder = LADDER_RE.search(rate_source)
-    if not ladder:
-        raise RoadmapVerificationError("canonical rate ladder declaration disappeared")
-    return len(variants), int(ladder.group(1))
+    return len(variants), _rate_ladder_length(rate_source)
 
 
 def _actions_metrics(
@@ -304,11 +428,6 @@ def _validate_projections(
         str(SCRIPT),
         str(TEST),
         str(OKF_VALIDATOR),
-        str(OKF_RUNTIME),
-        "scripts/validate_okf_core1.py",
-        "scripts/validate_okf_core2.py",
-        "scripts/validate_okf_checks.py",
-        "scripts/okf_anchor_reverify.py",
         str(OKF_MANIFEST),
         str(OKF_INDEX),
         str(OKF_INDEX_SCRIPT),
@@ -318,11 +437,48 @@ def _validate_projections(
         "crates/corelink-tier-selection/src/tier.rs",
         "crates/corelink-ratelimit/src/tier.rs",
     }
-    missing_paths = sorted(path for path in required_paths if f'"{path}"' not in workflow)
-    if missing_paths:
-        raise RoadmapVerificationError(f"backlog workflow paths omit B061 inputs: {missing_paths}")
+    required_paths.update(str(path) for path in OKF_SPLIT_MODULES)
+    try:
+        import yaml  # type: ignore
+    except ImportError as exc:
+        raise RoadmapVerificationError("PyYAML is required to parse workflow filters") from exc
+    try:
+        parsed = yaml.safe_load(workflow)
+    except yaml.YAMLError as exc:
+        raise RoadmapVerificationError("backlog workflow is invalid YAML") from exc
+    trigger = parsed.get("on") if isinstance(parsed, dict) else None
+    if trigger is None and isinstance(parsed, dict):
+        trigger = parsed.get(True)  # PyYAML 1.1 parses the YAML key `on` as bool.
+    if not isinstance(trigger, dict):
+        raise RoadmapVerificationError("backlog workflow has no structured on/push trigger")
+    for event in ("pull_request", "push"):
+        event_data = trigger.get(event)
+        paths = event_data.get("paths") if isinstance(event_data, dict) else None
+        if not isinstance(paths, list) or any(not isinstance(path, str) for path in paths):
+            raise RoadmapVerificationError(f"backlog workflow has no structured {event}.paths filter")
+        missing_paths = sorted(path for path in required_paths if paths.count(path) != 1)
+        if missing_paths:
+            raise RoadmapVerificationError(f"backlog workflow paths omit or duplicate B061 inputs in {event}: {missing_paths}")
     if "python3 scripts/verify_b061_remediation_roadmap.py" not in workflow:
         raise RoadmapVerificationError("backlog workflow does not execute B061 verifier")
+    okf_workflow = _read(repo_root, OKF_WORKFLOW)
+    try:
+        okf_parsed = yaml.safe_load(okf_workflow)
+    except yaml.YAMLError as exc:
+        raise RoadmapVerificationError("OKF workflow is invalid YAML") from exc
+    okf_trigger = okf_parsed.get("on") if isinstance(okf_parsed, dict) else None
+    if okf_trigger is None and isinstance(okf_parsed, dict):
+        okf_trigger = okf_parsed.get(True)
+    if not isinstance(okf_trigger, dict):
+        raise RoadmapVerificationError("OKF workflow has no structured on/push trigger")
+    for event in ("pull_request", "push"):
+        event_data = okf_trigger.get(event)
+        paths = event_data.get("paths") if isinstance(event_data, dict) else None
+        if not isinstance(paths, list) or any(not isinstance(path, str) for path in paths):
+            raise RoadmapVerificationError(f"OKF workflow has no structured {event}.paths filter")
+        missing_paths = sorted(path for path in (str(item) for item in OKF_SPLIT_MODULES) if paths.count(path) != 1)
+        if missing_paths:
+            raise RoadmapVerificationError(f"OKF workflow split-module paths omit or duplicate in {event}: {missing_paths}")
 
 
 def _validate_okf_surfaces(
@@ -337,11 +493,38 @@ def _validate_okf_surfaces(
     runtime_path = repo_root / OKF_RUNTIME
     try:
         validator_text = validator_path.read_text(encoding="utf-8")
-        runtime_text = runtime_path.read_text(encoding="utf-8")
         ast.parse(validator_text, filename=str(validator_path))
-        runtime_tree = ast.parse(runtime_text, filename=str(runtime_path))
+        split_sources = {
+            relative: (repo_root / relative).read_text(encoding="utf-8")
+            for relative in OKF_SPLIT_MODULES
+        }
+        split_trees = {
+            relative: ast.parse(source, filename=str(repo_root / relative))
+            for relative, source in split_sources.items()
+        }
     except (OSError, UnicodeDecodeError, SyntaxError) as exc:
-        raise RoadmapVerificationError("split OKF validator is missing, unreadable, or invalid Python") from exc
+        raise RoadmapVerificationError("OKF split validator module is missing, unreadable, or invalid Python") from exc
+    runtime_text = split_sources[OKF_RUNTIME]
+    runtime_tree = split_trees[OKF_RUNTIME]
+    def imported_modules(tree: ast.AST) -> set[str]:
+        modules: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                modules.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                modules.add(node.module)
+        return modules
+
+    wrapper_imports = imported_modules(ast.parse(validator_text, filename=str(validator_path)))
+    required_wrapper_imports = {
+        "validate_okf_runtime",
+        "validate_okf_core1",
+        "validate_okf_core2",
+        "validate_okf_checks",
+    }
+    imported = wrapper_imports | imported_modules(runtime_tree)
+    if not required_wrapper_imports <= imported or "okf_anchor_reverify" not in imported:
+        raise RoadmapVerificationError("OKF split validator does not import every required module")
     run_checks = next(
         (node for node in ast.walk(runtime_tree) if isinstance(node, ast.FunctionDef) and node.name == "run_checks"),
         None,
@@ -355,7 +538,7 @@ def _validate_okf_surfaces(
         and node.func.attr == "add" and node.args and isinstance(node.args[0], ast.Constant)
         and isinstance(node.args[0].value, str)
     }
-    if "is_ancestor" not in calls or "C4" not in literal_checks or '"C5"' not in runtime_text:
+    if "is_ancestor" not in calls or not {"C4", "C5"} <= literal_checks:
         raise RoadmapVerificationError("OKF split validator lost fail-closed checkpoint/content handling")
 
     try:
@@ -375,7 +558,7 @@ def _validate_okf_surfaces(
         if not isinstance(candidate, dict) or not isinstance(candidate.get("id"), str):
             raise RoadmapVerificationError("OKF manifest contains a malformed candidate")
         cid = candidate["id"].strip().lstrip("/")
-        if not cid or cid in candidates:
+        if not cid or not MANIFEST_ID_RE.fullmatch(cid) or cid in candidates:
             raise RoadmapVerificationError(f"OKF manifest candidate population is not unique: {cid!r}")
         candidates.add(cid)
         if candidate.get("status") == "active":
@@ -388,8 +571,8 @@ def _validate_okf_surfaces(
     import okf_render  # type: ignore
     index_concepts = okf_index.find_concepts()
     index_ids = [cid for _, cid, _ in index_concepts]
-    if len(index_ids) != len(set(index_ids)) or not set(index_ids) <= candidates or set(index_ids) - active:
-        raise RoadmapVerificationError("OKF manifest is not a unique active superset of the generated index")
+    if len(index_ids) != len(set(index_ids)) or active != set(index_ids):
+        raise RoadmapVerificationError("OKF manifest active population is not the exact generated index population")
     index_file = index_path if index_path.is_absolute() else repo_root / index_path
     try:
         index_text = index_file.read_text(encoding="utf-8")
