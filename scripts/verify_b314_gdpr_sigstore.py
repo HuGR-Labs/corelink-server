@@ -4,7 +4,7 @@
 The current notice still has one combined ``PagerDuty / GitHub / Sigstore``
 recipient row in each published locale, while the Trust Center says that
 Sigstore is not a customer-data sub-processor.  This verifier intentionally
-has *parked* polarity: it exits zero while that exact, four-locale inconsistency
+has *open* polarity: it exits zero while that exact, four-locale inconsistency
 and the pending Legal/DPO decision remain.  Once either the row population or
 the pending decision changes, it exits non-zero and forces a backlog transition.
 
@@ -37,10 +37,12 @@ WORKFLOW = ".github/workflows/backlog-verify.yml"
 TEST = "tests/test_verify_b314_gdpr_sigstore.py"
 
 TABLE_HEADING = "| Recipient | Country | Mechanism | What's transferred |"
+CANONICAL_SIGSTORE_ROW = "| PagerDuty / GitHub / Sigstore | US | DPF + SCC + sub-processor-specific posture | Operational metadata; no end-user PII |"
 SIGSTORE_ROW = re.compile(
     r"^\|\s*PagerDuty\s*/\s*GitHub\s*/\s*Sigstore\s*\|\s*US\s*\|"
     r"\s*DPF\s*\+\s*SCC\s*\+\s*sub-processor-specific posture\s*\|"
-    r"\s*Operational metadata;\s*no end-user PII\s*\|\s*$"
+    r"\s*Operational metadata;\s*no end-user PII\s*\|\s*$",
+    re.IGNORECASE,
 )
 REQUIRED_PACKET_FIELDS = {
     "schema_version",
@@ -69,7 +71,7 @@ EXPECTED_WIRING = (
 
 
 class VerificationError(RuntimeError):
-    """Raised when a target is absent, ambiguous, or no longer parked."""
+    """Raised when a target is absent, ambiguous, or no longer open."""
 
 
 def _read(root: Path, path: str, overrides: dict[str, str]) -> str:
@@ -121,9 +123,9 @@ def _check_packet(packet: dict[str, Any]) -> None:
         raise VerificationError("B-314 packet schema_version must be 1")
     for key in ("finding", "status", "owner", "non_claim", "retry_and_rollback"):
         _require_text(packet, key)
-    if packet["finding"] != "B-314" or packet["owner"] != "tl":
+    if packet["finding"] != "B-314" or packet["owner"] != "owner":
         raise VerificationError("B-314 packet identity/owner drifted")
-    if packet["status"] != "parked-owner-action-pending":
+    if packet["status"] != "owner-action-pending":
         raise VerificationError("B-314 packet no longer records the pending external decision")
     scope = packet["scope"]
     if not isinstance(scope, dict) or set(scope) != {"question", "population", "out_of_scope"}:
@@ -170,9 +172,21 @@ def _check_packet(packet: dict[str, Any]) -> None:
     if evidence["path"] != "evidence/owner-actions/B-314/gdpr-sigstore-transfer-decision.json" or evidence["format"] != "json":
         raise VerificationError("B-314 evidence path/format drifted")
     required = evidence["required_fields"]
-    if not isinstance(required, list) or required != ["schema_version", "captured_at", "decision", "legal_reviewer", "dpo_reviewer", "scope", "row_disposition", "effective_at"]:
+    if not isinstance(required, list) or required != [
+        "schema_version", "captured_at", "decision", "legal_reviewer", "dpo_reviewer",
+        "notice_version", "transfer_basis", "recipient_scope", "data_category_scope",
+        "approved_notice_wording", "published_diff", "signed_artifact_sha256_or_reference",
+        "effective_timestamp",
+    ]:
         raise VerificationError("B-314 evidence required fields drifted")
-    if not isinstance(evidence["completion_rule"], str) or "signed" not in evidence["completion_rule"] or "four" not in evidence["completion_rule"]:
+    if not isinstance(evidence["completion_rule"], str) or any(
+        marker not in evidence["completion_rule"]
+        for marker in (
+            "signed-artifact hash/reference", "notice version", "transfer basis",
+            "recipient/data-category scope", "approved notice wording",
+            "exact published diff", "effective timestamp", "four",
+        )
+    ):
         raise VerificationError("B-314 evidence completion rule is not review-bound")
     refs = packet["references"]
     if not isinstance(refs, list) or not all(isinstance(v, str) for v in refs):
@@ -190,11 +204,13 @@ def _check_locale(path: str, text: str) -> None:
     rows = [line for line in lines[start + 1 :] if line.startswith("|") and SIGSTORE_ROW.fullmatch(line)]
     if len(rows) != 1:
         raise VerificationError(f"{path}: expected exactly one baseline Sigstore recipient row, found {len(rows)}")
+    if rows[0] != CANONICAL_SIGSTORE_ROW:
+        raise VerificationError(f"{path}: baseline row case/spacing drifted: {rows[0]!r}")
     # A second Sigstore mention inside the table must not hide a duplicate row
     # behind a changed mechanism or a translated spelling.
     table_tail = lines[start + 1 :]
     table_end = next((i for i, line in enumerate(table_tail) if line.startswith("## ")), len(table_tail))
-    sigstore_mentions = sum("Sigstore" in line for line in table_tail[:table_end])
+    sigstore_mentions = sum(line.lower().count("sigstore") for line in table_tail[:table_end])
     if sigstore_mentions != 1:
         raise VerificationError(f"{path}: transfer table has {sigstore_mentions} Sigstore mentions, expected one")
 
@@ -211,13 +227,30 @@ def _check_posture(trust: str, generator: str) -> None:
 
 
 def _check_runtime(workflow: str) -> None:
-    # The path population must occur in both pull_request and push trigger
-    # blocks.  A path in only one block creates a silent merge-time hole.
+    # The path population must occur exactly once in each pull_request and push
+    # trigger block.  Counting the whole workflow would allow all paths to be
+    # moved into one event or duplicated there while still reporting green.
+    blocks = {}
+    for event, boundary in (("pull_request", r"^  push:"), ("push", r"^  workflow_dispatch:")):
+        if len(re.findall(rf"^  {event}:", workflow, re.MULTILINE)) != 1:
+            raise VerificationError(f"{WORKFLOW}: expected exactly one {event} trigger block")
+        match = re.search(rf"^  {event}:\n(?P<body>.*?)(?={boundary})", workflow, re.MULTILINE | re.DOTALL)
+        if match is None:
+            raise VerificationError(f"{WORKFLOW}: missing {event} trigger block")
+        blocks[event] = match.group("body")
     for path in EXPECTED_WIRING:
-        if workflow.count(path) < 2:
-            raise VerificationError(f"{WORKFLOW}: runtime trigger population is missing {path} in one event")
+        entry = f'- "{path}"'
+        counts = {
+            event: sum(line.strip() == entry for line in body.splitlines())
+            for event, body in blocks.items()
+        }
+        total = sum(line.strip() == entry for line in workflow.splitlines())
+        if total != 2:
+            raise VerificationError(f"{WORKFLOW}: {path} appears {total} trigger entries, expected two")
+        if counts != {"pull_request": 1, "push": 1}:
+            raise VerificationError(f"{WORKFLOW}: {path} trigger counts drifted: {counts}")
     command = "python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test"
-    if workflow.count(command) != 1:
+    if sum(line.strip() == command for line in workflow.splitlines()) != 1:
         raise VerificationError(f"{WORKFLOW}: expected one B-314 self-test step")
     if f"python3 -m pytest -q {TEST}" not in workflow:
         raise VerificationError(f"{WORKFLOW}: B-314 focused pytest is not wired")
@@ -254,6 +287,9 @@ def mutation_checks(root: Path = ROOT) -> int:
         row = next(line for line in originals[path].splitlines() if SIGSTORE_ROW.fullmatch(line))
         _must_reject("row duplicate/restoration", root, {path: originals[path].replace(row, row + "\n" + row, 1)})
         count += 1
+        mixed_case = row.replace("Sigstore", "SIGSTORE", 1)
+        _must_reject("case-insensitive row duplicate", root, {path: originals[path].replace(row, row + "\n" + mixed_case, 1)})
+        count += 1
         _must_reject("row mechanism mutation", root, {path: originals[path].replace("DPF + SCC + sub-processor-specific posture", "SCC only", 1)})
         count += 1
     _must_reject("pending decision mutation", root, {PACKET: originals[PACKET].replace('"state": "pending"', '"state": "remove_sigstore_row"', 1)})
@@ -275,10 +311,10 @@ def main(argv: list[str] | None = None) -> int:
         verify()
         mutations = mutation_checks() if args.self_test else 0
     except (OSError, VerificationError) as exc:
-        print(f"B-314 parked gate FAIL: {exc}", file=sys.stderr)
+        print(f"B-314 open gate FAIL: {exc}", file=sys.stderr)
         return 1
     suffix = f"; mutations={mutations}" if args.self_test else ""
-    print(f"B-314 parked gate PASS: four locale rows + pending Legal/DPO packet{suffix}")
+    print(f"B-314 open gate PASS: four locale rows + pending Legal/DPO packet{suffix}")
     return 0
 
 

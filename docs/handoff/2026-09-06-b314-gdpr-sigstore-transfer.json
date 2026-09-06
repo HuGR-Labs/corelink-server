@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "finding": "B-314",
-  "status": "parked-owner-action-pending",
-  "owner": "tl",
+  "status": "owner-action-pending",
+  "owner": "owner",
   "non_claim": "This packet records the repository census and an action boundary only. It does not assert that Sigstore receives a transfer, is a processor, has a DPF/SCC basis, has Legal/DPO approval, or that cosign-sign.yml should be retained or retired.",
   "scope": {
     "question": "Decide whether the published GDPR transfer table should name Sigstore at all, given the Trust Center posture that Sigstore never receives customer data and is not a customer-data sub-processor.",
@@ -42,8 +42,8 @@
   "evidence": {
     "path": "evidence/owner-actions/B-314/gdpr-sigstore-transfer-decision.json",
     "format": "json",
-    "required_fields": ["schema_version", "captured_at", "decision", "legal_reviewer", "dpo_reviewer", "scope", "row_disposition", "effective_at"],
-    "completion_rule": "A signed Legal/DPO disposition covering all four published locale copies is required before the row is removed or retained as a transfer claim."
+    "required_fields": ["schema_version", "captured_at", "decision", "legal_reviewer", "dpo_reviewer", "notice_version", "transfer_basis", "recipient_scope", "data_category_scope", "approved_notice_wording", "published_diff", "signed_artifact_sha256_or_reference", "effective_timestamp"],
+    "completion_rule": "A signed-artifact hash/reference and signed Legal/DPO disposition covering the four published locale copies, notice version, transfer basis, recipient/data-category scope, approved notice wording, exact published diff, and effective timestamp are required before the row is removed or retained as a transfer claim."
   },
   "retry_and_rollback": "Retry only against the same notice version and retain the measured diff. An unexecuted draft may be abandoned. A signed legal disposition or published notice requires a superseding review; do not use an unreviewed git revert as rollback.",
   "references": [

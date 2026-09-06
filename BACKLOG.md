@@ -1537,8 +1537,8 @@ last-verified: 2026-09-06
 ```backlog
 id: B-314
 repo: corelink-server
-owner: tl
-status: parked
+owner: owner
+status: open
 source-document: "PR containment audit #1490/#1506 addendum"
 source-locator: "apps/docs/docs/explanation/privacy/gdpr.mdx:191-200; four published locale copies"
 finding-title: "GDPR international-transfer table has an unowned Sigstore recipient row"
@@ -1548,7 +1548,7 @@ acceptance: "A signed Legal/DPO disposition covers all four locale copies and ch
 action-packet: docs/handoff/2026-09-06-b314-gdpr-sigstore-transfer.json
 verify: python3 -S scripts/verify_b314_gdpr_sigstore.py
 verify-means: |
-  parked — the fail-closed guard exits 0 only while exactly one combined Sigstore row
+  open — the fail-closed guard exits 0 only while exactly one combined Sigstore row
   remains in each of the four published locale tables, the Trust Center/generator retain
   their measured non-processor posture, and the packet's Legal/DPO decision is pending.
   Removing, duplicating, weakening, or silently restoring any row turns the check red and
