@@ -399,6 +399,7 @@ impl From<NeonError> for NeonShadowError {
 // ---------------------------------------------------------------------------
 
 #[cfg(not(target_arch = "wasm32"))]
+#[path = "native.rs"]
 mod native;
 
 #[cfg(not(target_arch = "wasm32"))]

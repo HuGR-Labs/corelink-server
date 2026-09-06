@@ -930,5 +930,6 @@ impl AuthEvent {
 )]
 mod tests;
 
+#[path = "synthetic_data.rs"]
 mod synthetic_data;
 pub use synthetic_data::synthetic_data_for;

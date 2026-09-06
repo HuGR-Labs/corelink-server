@@ -464,6 +464,74 @@ verify-means: |
 last-verified: 2026-09-06
 ```
 
+### B-262 — Neon shadow real.rs points its native module at a nonexistent directory
+
+The bundle-CI focal compile on the exact D03 delivery head failed with
+E0583: real.rs declared mod native;, so Rust searched for
+neon_shadow/real/native.rs, while the implementation is the sibling
+neon_shadow/native.rs. The implementation and the parent module export were
+already present; only the relative module binding was wrong.
+
+The declaration now uses #[path = "native.rs"] under the existing non-wasm
+production gate. No code was moved and no runtime behavior changed. The focal
+guard and mutation suite prove the executable path binding, native-only cfg,
+parent export, and child implementation, and reject removal, wrong-path,
+comment/string-bait, false-cfg, and missing-implementation mutations.
+
+```backlog
+id: B-262
+repo: corelink-server
+owner: tl
+status: done
+source-document: "bundle-CI focal review"
+source-locator: "crates/corelink-audit-chain/src/neon_shadow/real.rs:401-405"
+finding-title: "Neon shadow real.rs declares native under a nonexistent real/ directory"
+problem: "mod native resolved to neon_shadow/real/native.rs although the implementation is neon_shadow/native.rs"
+evidence: "crates/corelink-audit-chain/src/neon_shadow/native.rs; cargo check -p corelink-audit-chain --features neon-real"
+acceptance: "corelink-audit-chain's native module resolves from its sibling file; focused compile/tests pass and path/cfg/export/implementation mutations are red"
+verify: python3 scripts/verify_b262_neon_shadow_module_paths.py
+verify-means: |
+  done — the stdlib-only focal verifier requires exactly one executable
+  #[path = "native.rs"] mod native; binding under the non-wasm cfg, the
+  native-only RealNeonShadowSink re-export, the parent pub mod real;, and
+  the child implementation. scripts/test_b262_neon_shadow_module_paths.py
+  exercises baseline plus removal, wrong-path, comment-bait, cfg(test),
+  cfg(wasm32), false-cfg, parent-removal, and implementation-removal
+  mutations; each must fail closed. Focused Cargo evidence is
+  cargo check -p corelink-audit-chain --features neon-real and
+  cargo test -p corelink-audit-chain --lib.
+last-verified: 2026-09-06
+```
+
+### B-263 — audit events split and workspace lockfile break bundle compilation
+
+The D03 bundle CI exposed two deterministic integration residues. The split
+`events.rs` declared `mod synthetic_data;` from a nested module context, so
+Rust searched for the nonexistent `events/synthetic_data.rs` instead of the
+committed sibling. The workspace manifest also consumed `corelink-gc` while
+the `corelink-server` lockfile package omitted that dependency.
+
+```backlog
+id: B-263
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-audit/src/events.rs:933; Cargo.toml:576; Cargo.lock corelink-server package"
+finding-title: "audit module path and workspace lockfile are inconsistent after the D03 split"
+problem: "Rust resolves synthetic_data below events/ and Cargo rewrites the lockfile before compiling"
+evidence: "crates/corelink-audit/src/synthetic_data.rs; cargo build --workspace; cargo build --target wasm32-unknown-unknown -p corelink-clerk-cf"
+acceptance: "the audit sibling module resolves explicitly, the lockfile contains corelink-server's corelink-gc dependency, and path/lock removal mutations fail closed"
+verify: python3 scripts/verify_b263_audit_module_paths.py
+verify-means: |
+  done — the focal verifier requires the executable sibling path binding,
+  export and implementation and parses Cargo.toml/Cargo.lock to require the
+  same corelink-gc dependency on the corelink-server package. Its mutation
+  tests reject missing/wrong/commented paths, missing exports or implementations,
+  and manifest/lockfile disagreement.
+last-verified: 2026-09-06
+```
+
 ### B-003 — the 864s ceiling from 2026-08-02 has no established mechanism
 
 That incident concluded jobs past ~900 s were being SIGTERMed. They could not
@@ -13603,8 +13671,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-06):** `records=261`,
-  `command_records=245`, `manual=16`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-06):** `records=263`,
+  `command_records=247`, `manual=16`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma
