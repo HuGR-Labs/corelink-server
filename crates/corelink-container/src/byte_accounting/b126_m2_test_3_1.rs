@@ -1,4 +1,4 @@
-//! Regression net for the reserve→commit→release decorators (cluster C).
+// Regression net for the reserve→commit→release decorators (cluster C).
 use super::testing::{InMemoryByteStore, Row};
 use super::*;
 use corelink_handler_cas::{

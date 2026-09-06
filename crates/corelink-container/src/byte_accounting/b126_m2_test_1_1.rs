@@ -1,4 +1,4 @@
-//! In-memory [`ByteStore`] for tests + route-integration fixtures.
+// In-memory [`ByteStore`] for tests + route-integration fixtures.
 use std::collections::HashMap;
 use std::sync::Mutex;
 

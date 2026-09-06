@@ -22,7 +22,7 @@ use crate::container_capacity::ARGON2_VERIFY_PERMITS;
 /// not from an obsolete instance-size assumption. At 64 MiB per verify this
 /// pool admits one concurrent job and leaves the other process-wide slices
 /// available to cache traffic.
-
+///
 /// Per-tenant sub-cap on concurrent Argon2id verifications (red-team finding
 /// #1, HIGH — per-tenant fairness). The global [`ARGON2_VERIFY_PERMITS`] bound
 /// alone is NOT fair: a single tenant flooding distinct PATs (each forcing a

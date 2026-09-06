@@ -1,8 +1,8 @@
-//! BYOK Wave 3b (audit C3 CRITICAL): the accountant reserves/releases the
-//! COMMITTED (stored) size — `plaintext + BYOK_CLB1_OVERHEAD` for a
-//! BYOK-`active` tenant — so reserve == release == the on-disk object the
-//! delete path frees, and `bytes_used` never drifts. Non-BYOK tenants are
-//! byte-identical to today.
+// BYOK Wave 3b (audit C3 CRITICAL): the accountant reserves/releases the
+// COMMITTED (stored) size — `plaintext + BYOK_CLB1_OVERHEAD` for a
+// BYOK-`active` tenant — so reserve == release == the on-disk object the
+// delete path frees, and `bytes_used` never drifts. Non-BYOK tenants are
+// byte-identical to today.
 use super::testing::InMemoryByteStore;
 use super::*;
 use crate::customer_d1::{ByokConfigError, ByokCryptoMode, ByokMode, ByokState, TenantByokConfig};
