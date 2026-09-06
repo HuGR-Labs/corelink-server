@@ -95,11 +95,30 @@ fn active_window_is_released_when_scope_unwinds_from_a_panic() {
     }));
     assert!(result.is_err());
     assert_eq!(ledger.active_depth_for_test(Phase::Store), 0);
+    assert_eq!(
+        ledger.completed_windows_for_test(Phase::Store),
+        1,
+        "the panicking scope must close its first window during unwind"
+    );
+    assert_eq!(
+        ledger.recordings_for_test(Phase::Store),
+        1,
+        "the panicking scope must record its first window during unwind"
+    );
 
     let scope = PhaseScope::with_handle(Some(Arc::clone(&ledger)), Phase::Store);
+    assert_eq!(ledger.active_depth_for_test(Phase::Store), 1);
     drop(scope);
-    assert_eq!(ledger.completed_windows_for_test(Phase::Store), 1);
-    assert_eq!(ledger.recordings_for_test(Phase::Store), 1);
+    assert_eq!(
+        ledger.completed_windows_for_test(Phase::Store),
+        2,
+        "a fresh scope must close a second independent window"
+    );
+    assert_eq!(
+        ledger.recordings_for_test(Phase::Store),
+        2,
+        "a fresh scope must record a second independent window"
+    );
 }
 
 #[tokio::test]
