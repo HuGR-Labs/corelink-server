@@ -156,7 +156,6 @@ on:
       - "crates/corelink-container/src/routes/cas.rs"
       - "docs/knowledge/surfaces/native-cas.md"
       - "docs/knowledge/planes/container.md"
-      - "docs/okf-wiki-site/index.html"
       - "changelog.d/056-cas-process-wide-budget.md"
       # B-053's low-traffic failover floor is one executable verification
       # surface: router, production wiring, ADR, and mutation guard.
@@ -354,7 +353,6 @@ on:
       - "crates/corelink-container/src/routes/cas.rs"
       - "docs/knowledge/surfaces/native-cas.md"
       - "docs/knowledge/planes/container.md"
-      - "docs/okf-wiki-site/index.html"
       - "changelog.d/056-cas-process-wide-budget.md"
       - "crates/corelink-container/src/routes/failover.rs"
       - "crates/corelink-container/src/routes/build.rs"
