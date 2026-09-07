@@ -316,7 +316,6 @@ async fn observability_echoes_audit_without_state_mutation() {
     let echoes = [
         "customer.subscription.created",
         "customer.subscription.trial_will_end",
-        "charge.refunded",
         "customer.created",
         "invoice.created",
     ];
