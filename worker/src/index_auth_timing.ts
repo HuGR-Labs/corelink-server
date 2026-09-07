@@ -1,5 +1,12 @@
 /** Timing padding for unauthenticated 404 responses. */
 
+/** Target p99 wall-clock for 404 timing-padding (ms). Covers slowest arm. */
+const TIMING_PAD_TARGET_MS = 80;
+/** Jitter range ±% applied to pad target. */
+const TIMING_PAD_JITTER_PCT = 15;
+/** Minimum pad (ms) — safety floor so sleep is never negative. */
+const TIMING_PAD_MIN_MS = 5;
+
 export async function applyTimingPad(
   requestStart: number,
   requestId: string,

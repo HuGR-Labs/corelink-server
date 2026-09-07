@@ -157,7 +157,7 @@ export async function handleSpecialCustomerRoute(
             return applyCors(reapiError("BAD_REQUEST", "invitation token required", 400, requestId), request);
           }
           const keys = Object.keys(body);
-          const token = (body as Record<string, unknown>).invitation_token;
+          const token = (body as Record<string, unknown>)["invitation_token"];
           if (keys.length !== 1 || keys[0] !== "invitation_token" || typeof token !== "string" || token.length > 128) {
             return applyCors(reapiError("BAD_REQUEST", "invitation token required", 400, requestId), request);
           }

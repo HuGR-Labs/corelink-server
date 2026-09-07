@@ -89,6 +89,7 @@ export function ociRoutingTenantId(request: Request): string | undefined {
   const fields = token.split(".");
   if (fields.length !== 6 || fields[0] !== "corelink-oci") return undefined;
   const tenant = fields[1];
+  if (tenant === undefined) return undefined;
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(tenant)
     ? tenant
     : undefined;

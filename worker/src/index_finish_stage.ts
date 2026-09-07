@@ -6,7 +6,7 @@ import type { AuthStageResult } from "./index_auth_stage.js";
 import type { QuotaStageResult } from "./index_quota_stage.js";
 import type { RouteMatch } from "./route_match.js";
 import type { RoutingStageResult } from "./index_routing_stage.js";
-import { runQuotaBatch } from "./lib/quota.js";
+import { runQuotaBatch, secondsUntilNextMonthStart } from "./lib/quota.js";
 import { quotaExceededResponse } from "./index_observability.js";
 import { findMissingResponseBody, shadowCompareEdgeFindMissing } from "./lib/edge_find_missing.js";
 import { shadowCompareEdgePublicRead } from "./lib/edge_public_read.js";
