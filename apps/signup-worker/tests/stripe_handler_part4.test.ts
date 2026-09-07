@@ -17,6 +17,12 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { verifyStripeSignature, handleStripeWebhook } from "../src/webhooks/stripe.js";
 import type { StripeWebhookEnv } from "../src/webhooks/stripe.js";
+import {
+    fakeCtx,
+    fakeDb,
+    makeStripeRequest,
+    baseEnv,
+} from "./stripe_handler_helpers.js";
 
 // ---------------------------------------------------------------------------
 // Signature verification helpers
@@ -60,6 +66,14 @@ const TEST_SECRET = "whsec_" + btoa(String.fromCharCode(...new Array(32).fill(0)
 // ---------------------------------------------------------------------------
 
 describe("handleStripeWebhook", () => {
+    beforeEach(() => {
+        vi.spyOn(globalThis, "fetch").mockResolvedValue({
+            ok: true,
+            status: 200,
+            text: async () => "",
+        } as unknown as Response);
+    });
+
     it("cache checkout.session.completed → NO runner_billing / runners_entitlement writes (no regression)", async () => {
         const db = fakeDb();
         const nowMs = Date.now();
@@ -345,4 +359,3 @@ describe("handleStripeWebhook", () => {
 // above). The mismatch tests pin detectTierPriceMismatch with additional tier
 // combinations beyond the pro/starter case already in the main suite.
 // ---------------------------------------------------------------------------
-});
