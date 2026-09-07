@@ -727,7 +727,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // materialization, audit, and DLQ all require durable D1. Never substitute
     // an in-memory DLQ after claiming an idempotency row: a restart would lose
     // the only copy of a failed event.
-    if let (Ok(secret), Some(_)) = (std::env::var("STRIPE_WEBHOOK_SECRET"), d1_client.as_ref()) {
+    if let (Ok(secret), Some(client)) = (std::env::var("STRIPE_WEBHOOK_SECRET"), d1_client.as_ref())
+    {
         // Wave 17 + 18: the HTTP shell binds the production
         // materializer + audit emitter + D1-backed idempotency store
         // from `corelink-billing-stripe-materializer`. The native
@@ -835,7 +836,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // WP-D1: durable DLQ — a quarantined event MUST survive a container
         // restart (the dedup row committed before materialize means Stripe's
         // retries can never re-run the handler; the DLQ is the only copy).
-        let client = d1_client.as_ref().expect("guarded by durable D1 mount");
         info!("billing: DURABLE D1 webhook-DLQ store wired (migrations 0045+0094)");
         let webhook_dlq: Arc<dyn corelink_billing::stripe::real::dlq::WebhookDlqStore> = Arc::new(
             corelink_server::webhook_dlq_d1::D1WebhookDlqStore::new(Arc::clone(client)),
