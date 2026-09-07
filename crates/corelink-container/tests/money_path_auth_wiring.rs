@@ -1,7 +1,7 @@
 //! Executable PR #1485 replacement: canonical auth resolution and effect gates.
 //!
-//! This deliberately remains one sequential test because `build_state_from_env`
-//! reads process-global configuration. It exercises the real `router().oneshot`
+//! This deliberately remains one sequential test because the route builders
+//! read process-global configuration. It exercises the real `router().oneshot`
 //! wiring, not only pure authorization helpers: invalid auth must stop before
 //! D1/Stripe, while a valid control reaches exactly one D1 attempt. The local
 //! refusing probe and bounded assertions keep the test hermetic and non-hanging.
@@ -34,14 +34,6 @@ const WRONG_KEY_64: &str = "89abcdef0123456789abcdef0123456789abcdef0123456789ab
 const KEY_20: &str = "01234567890123456789";
 
 const ENV_VARS: &[&str] = &[
-    "ALL_PROXY",
-    "HTTP_PROXY",
-    "HTTPS_PROXY",
-    "NO_PROXY",
-    "all_proxy",
-    "http_proxy",
-    "https_proxy",
-    "no_proxy",
     "CLOUDFLARE_ACCOUNT_ID",
     "CF_API_TOKEN",
     "CORELINK_DPA_VERSION",
@@ -85,13 +77,14 @@ impl Drop for EnvGuard {
     }
 }
 
-/// Refuses all traffic while classifying CONNECT as D1 and ordinary HTTP as Stripe.
+/// Refuses all traffic while classifying the D1 and Stripe URL paths.
 struct EffectProbe {
     d1_requests: Arc<AtomicUsize>,
     stripe_requests: Arc<AtomicUsize>,
     stop: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
-    url: String,
+    d1_url: String,
+    stripe_url: String,
 }
 
 impl EffectProbe {
@@ -120,13 +113,22 @@ impl EffectProbe {
                     }
                 }
             })?;
+        let base_url = format!("http://{address}");
         Ok(Self {
             d1_requests,
             stripe_requests,
             stop,
             worker: Some(worker),
-            url: format!("http://{address}"),
+            d1_url: format!("{base_url}/d1"),
+            stripe_url: format!("{base_url}/stripe"),
         })
+    }
+
+    fn d1_url(&self) -> &str {
+        &self.d1_url
+    }
+    fn stripe_url(&self) -> &str {
+        &self.stripe_url
     }
 
     fn reset(&self) {
@@ -168,18 +170,23 @@ fn classify_and_refuse(mut stream: TcpStream, d1: &AtomicUsize, stripe: &AtomicU
     let _ = stream.set_read_timeout(Some(Duration::from_secs(1)));
     let mut request = [0_u8; 1024];
     let bytes_read = stream.read(&mut request).unwrap_or(0);
-    if request
+    let request_target = request
         .get(..bytes_read)
-        .is_some_and(|request| request.starts_with(b"CONNECT "))
-    {
-        d1.fetch_add(1, Ordering::AcqRel);
-    } else {
-        stripe.fetch_add(1, Ordering::AcqRel);
+        .and_then(|request| request.split(|byte| *byte == b'\n').next())
+        .and_then(|line| line.split(|byte| *byte == b' ').nth(1));
+    match request_target {
+        Some(path) if path.starts_with(b"/d1") => {
+            d1.fetch_add(1, Ordering::AcqRel);
+        }
+        Some(path) if path.starts_with(b"/stripe") => {
+            stripe.fetch_add(1, Ordering::AcqRel);
+        }
+        _ => {}
     }
     let _ = stream.write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n");
 }
 
-fn set_common_env(signing_key_pem: &str, probe_url: &str) {
+fn set_common_env(signing_key_pem: &str, stripe_url: &str) {
     env::set_var("CORELINK_DPA_VERSION", "1.0.0");
     env::set_var("R2_S3_ENDPOINT", "https://example.invalid");
     env::set_var("R2_S3_ACCESS_KEY_ID", "test-r2-access-id");
@@ -188,22 +195,9 @@ fn set_common_env(signing_key_pem: &str, probe_url: &str) {
     env::set_var("CF_API_TOKEN", "test-cf-placeholder");
     env::set_var("D1_DATABASE_ID", "00000000-0000-0000-0000-000000000000");
     env::set_var("STRIPE_AUTH_MODE", "direct");
-    env::set_var("STRIPE_API_BASE", probe_url);
+    env::set_var("STRIPE_API_BASE", stripe_url);
     env::set_var("STRIPE_SECRET_KEY", "test-stripe-placeholder");
     env::set_var("DPA_RECEIPT_SIGNING_KEY", signing_key_pem);
-    for name in [
-        "ALL_PROXY",
-        "HTTP_PROXY",
-        "HTTPS_PROXY",
-        "all_proxy",
-        "http_proxy",
-        "https_proxy",
-    ] {
-        env::set_var(name, probe_url);
-    }
-    for name in ["NO_PROXY", "no_proxy"] {
-        env::remove_var(name);
-    }
 }
 
 fn clear_auth_env() {
@@ -301,25 +295,23 @@ fn money_path_enforces_resolver_matrix_and_stops_unauthenticated_requests_before
     let _env = EnvGuard::capture(ENV_VARS);
     let probe = EffectProbe::start()?;
     let pem = test_signing_key_pem()?;
-    set_common_env(&pem, &probe.url);
+    set_common_env(&pem, probe.stripe_url());
 
-    assert_resolver_matrix(
-        "tier-select",
-        "CORELINK_TIER_SELECT_AUTH_KEY",
-        tier_select::build_state_from_env,
-    );
-    assert_resolver_matrix(
-        "dpa-accept",
-        "CORELINK_DPA_ACCEPT_AUTH_KEY",
-        dpa_accept::build_state_from_env,
-    );
+    assert_resolver_matrix("tier-select", "CORELINK_TIER_SELECT_AUTH_KEY", || {
+        tier_select::build_state_from_env_for_loopback_test(probe.d1_url())
+    });
+    assert_resolver_matrix("dpa-accept", "CORELINK_DPA_ACCEPT_AUTH_KEY", || {
+        dpa_accept::build_state_from_env_for_loopback_test(probe.d1_url())
+    });
 
     clear_auth_env();
     env::set_var("CORELINK_INTERNAL_AUTH_KEY", OTHER_KEY_64);
     env::set_var("CORELINK_TIER_SELECT_AUTH_KEY", KEY_64);
-    let tier_state = tier_select::build_state_from_env().ok_or("tier-select did not mount")?;
+    let tier_state = tier_select::build_state_from_env_for_loopback_test(probe.d1_url())
+        .ok_or("tier-select did not mount")?;
     env::set_var("CORELINK_DPA_ACCEPT_AUTH_KEY", KEY_64);
-    let dpa_state = dpa_accept::build_state_from_env().ok_or("dpa-accept did not mount")?;
+    let dpa_state = dpa_accept::build_state_from_env_for_loopback_test(probe.d1_url())
+        .ok_or("dpa-accept did not mount")?;
 
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()

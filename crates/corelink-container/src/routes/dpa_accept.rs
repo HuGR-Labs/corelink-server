@@ -627,23 +627,76 @@ pub fn build_state_from_env() -> Option<DpaAcceptRouteState> {
 
     let storage_env = crate::storage::StorageEnv::from_env()?;
     let d1 = match crate::storage::d1_http::D1HttpClient::new(&storage_env) {
-        Ok(client) => client,
+        Ok(client) => Arc::new(client),
         Err(e) => {
             tracing::warn!(error = %e, "D1HttpClient init failed; /v1/onboarding/dpa-accept NOT mounted");
             return None;
         }
     };
 
-    Some(DpaAcceptRouteState {
+    Some(build_state_with_d1(
+        auth_key,
+        Arc::from(dpa_version),
+        signing_key,
+        d1,
+    ))
+}
+
+fn build_state_with_d1(
+    auth_key: Arc<str>,
+    dpa_version: Arc<str>,
+    signing_key: RsaPrivateKeyPem,
+    d1: Arc<crate::storage::d1_http::D1HttpClient>,
+) -> DpaAcceptRouteState {
+    DpaAcceptRouteState {
         internal_auth_key: auth_key,
-        store: Arc::new(super::dpa_accept_store::D1HttpDpaAcceptStore::new(
-            Arc::new(d1),
-        )),
+        store: Arc::new(super::dpa_accept_store::D1HttpDpaAcceptStore::new(d1)),
         signing_key: Arc::new(signing_key),
         kid: Arc::from(RECEIPT_KID),
-        current_dpa_version: Arc::from(dpa_version),
+        current_dpa_version: dpa_version,
         ip_salt: Arc::from(DEFAULT_IP_HASH_SALT),
-    })
+    }
+}
+
+/// Test-only environment builder that keeps every production env/auth/DPA
+/// gate while injecting an explicitly validated loopback D1 URL.
+#[must_use]
+pub fn build_state_from_env_for_loopback_test(query_url: &str) -> Option<DpaAcceptRouteState> {
+    let auth_key = dpa_accept_auth_key_from_env()?;
+    let Some(dpa_version) = std::env::var("CORELINK_DPA_VERSION")
+        .ok()
+        .filter(|v| !v.is_empty())
+    else {
+        tracing::warn!("CORELINK_DPA_VERSION unset; /v1/onboarding/dpa-accept NOT mounted");
+        return None;
+    };
+    let Some(signing_key) = std::env::var("DPA_RECEIPT_SIGNING_KEY")
+        .ok()
+        .and_then(|pem| parse_signing_key(&pem))
+    else {
+        tracing::warn!(
+            "DPA_RECEIPT_SIGNING_KEY unset/invalid (RSA PKCS#8/PKCS#1 PEM required); \
+             /v1/onboarding/dpa-accept NOT mounted (fail-CLOSED)"
+        );
+        return None;
+    };
+    let storage_env = crate::storage::StorageEnv::from_env()?;
+    let d1 = match crate::storage::d1_http::D1HttpClient::new_for_loopback_test(
+        &storage_env,
+        query_url,
+    ) {
+        Ok(client) => Arc::new(client),
+        Err(e) => {
+            tracing::warn!(error = %e, "loopback D1HttpClient init failed; dpa-accept NOT mounted");
+            return None;
+        }
+    };
+    Some(build_state_with_d1(
+        auth_key,
+        Arc::from(dpa_version),
+        signing_key,
+        d1,
+    ))
 }
 
 /// Build the DPA-accept router.

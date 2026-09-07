@@ -23,6 +23,7 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
+use std::{net::IpAddr, str::FromStr};
 use tracing::{debug, warn};
 
 use super::StorageEnv;
@@ -104,12 +105,22 @@ impl D1HttpClient {
         // backend into a fast, retryable error that RELEASES the worker, so the
         // container degrades gracefully instead of wedging. `pool_idle_timeout`
         // keeps the idle-connection set from lingering across a long drain.
-        let http = reqwest::Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(5))
-            .timeout(std::time::Duration::from_secs(20))
-            .pool_idle_timeout(std::time::Duration::from_secs(30))
-            .build()
-            .map_err(|e| format!("D1HttpClient: reqwest build failed: {e}"))?;
+        let http = build_http_client()?;
+        Ok(Self {
+            http,
+            query_url,
+            api_token: env.cf_api_token.clone(),
+        })
+    }
+
+    /// Construct a D1 client for an explicitly supplied loopback endpoint.
+    ///
+    /// This seam is intentionally named and constrained for integration tests:
+    /// it cannot redirect requests to a hostname, a non-loopback address, or
+    /// an URL carrying credentials or hidden query/fragment components.
+    pub fn new_for_loopback_test(env: &StorageEnv, query_url: &str) -> Result<Self, String> {
+        let query_url = validate_loopback_query_url(query_url)?;
+        let http = build_http_client()?;
         Ok(Self {
             http,
             query_url,
@@ -177,6 +188,46 @@ impl D1HttpClient {
             .map(|r| r.results)
             .unwrap_or_default())
     }
+}
+
+fn build_http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(20))
+        .pool_idle_timeout(std::time::Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::none())
+        .no_proxy()
+        .build()
+        .map_err(|e| format!("D1HttpClient: reqwest build failed: {e}"))
+}
+
+fn validate_loopback_query_url(query_url: &str) -> Result<String, String> {
+    let parsed =
+        reqwest::Url::parse(query_url).map_err(|e| format!("D1 loopback URL parse failed: {e}"))?;
+    if parsed.scheme() != "http" {
+        return Err("D1 loopback URL must use http".to_owned());
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("D1 loopback URL must not contain userinfo".to_owned());
+    }
+    if parsed.query().is_some() {
+        return Err("D1 loopback URL must not contain a query".to_owned());
+    }
+    if parsed.fragment().is_some() {
+        return Err("D1 loopback URL must not contain a fragment".to_owned());
+    }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "D1 loopback URL must contain an IP literal host".to_owned())?;
+    let ip = IpAddr::from_str(host)
+        .map_err(|_| "D1 loopback URL host must be an IP literal".to_owned())?;
+    if !ip.is_loopback() {
+        return Err("D1 loopback URL host must be loopback".to_owned());
+    }
+    if parsed.port().is_none() {
+        return Err("D1 loopback URL must contain an explicit port".to_owned());
+    }
+    Ok(query_url.to_owned())
 }
 
 /// Metadata record for a CAS blob, sourced from D1.
@@ -689,6 +740,31 @@ mod tests {
             client.query_url.contains("db456"),
             "URL must include database_id"
         );
+    }
+
+    #[test]
+    fn loopback_query_url_validation_accepts_explicit_loopback_endpoint() {
+        let url = "http://127.0.0.1:8787/d1";
+        assert_eq!(validate_loopback_query_url(url).as_deref(), Ok(url));
+        assert!(validate_loopback_query_url("http://[::1]:8787/d1").is_ok());
+    }
+
+    #[test]
+    fn loopback_query_url_validation_rejects_unsafe_endpoints() {
+        for url in [
+            "http://localhost:8787/d1",
+            "http://192.0.2.1:8787/d1",
+            "https://127.0.0.1:8787/d1",
+            "http://127.0.0.1/d1",
+            "http://user:pass@127.0.0.1:8787/d1",
+            "http://127.0.0.1:8787/d1?query=hidden",
+            "http://127.0.0.1:8787/d1#fragment",
+        ] {
+            assert!(
+                validate_loopback_query_url(url).is_err(),
+                "unsafe D1 loopback URL accepted: {url}"
+            );
+        }
     }
 
     /// Live D1 query test — requires real credentials.

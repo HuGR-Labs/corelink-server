@@ -161,6 +161,14 @@ pub fn build_state_from_env() -> Option<TierSelectRouteState> {
         }
     };
 
+    build_state_with_d1(auth_key, Arc::from(dpa_version), d1)
+}
+
+fn build_state_with_d1(
+    auth_key: Arc<str>,
+    dpa_version: Arc<str>,
+    d1: Arc<crate::storage::d1_http::D1HttpClient>,
+) -> Option<TierSelectRouteState> {
     let stripe = match corelink_stripe_real::StripeRealClient::from_env() {
         Ok(client) => client,
         Err(e) => {
@@ -178,6 +186,32 @@ pub fn build_state_from_env() -> Option<TierSelectRouteState> {
             crate::routes::tier_select_checkout::StripeCheckoutCreator::new(Arc::new(stripe)),
         ),
         audit: Arc::new(crate::routes::tier_select_audit::TierSelectAuditAdapter::new(d1)),
-        current_dpa_version: Arc::from(dpa_version),
+        current_dpa_version: dpa_version,
     })
+}
+
+/// Test-only environment builder that keeps every production env/auth gate
+/// while injecting an explicitly validated loopback D1 URL.
+#[must_use]
+pub fn build_state_from_env_for_loopback_test(query_url: &str) -> Option<TierSelectRouteState> {
+    let auth_key = tier_select_auth_key_from_env()?;
+    let Some(dpa_version) = std::env::var("CORELINK_DPA_VERSION")
+        .ok()
+        .filter(|v| !v.is_empty())
+    else {
+        tracing::warn!("CORELINK_DPA_VERSION unset; /v1/onboarding/tier-select NOT mounted");
+        return None;
+    };
+    let storage_env = crate::storage::StorageEnv::from_env()?;
+    let d1 = match crate::storage::d1_http::D1HttpClient::new_for_loopback_test(
+        &storage_env,
+        query_url,
+    ) {
+        Ok(client) => Arc::new(client),
+        Err(e) => {
+            tracing::warn!(error = %e, "loopback D1HttpClient init failed; tier-select NOT mounted");
+            return None;
+        }
+    };
+    build_state_with_d1(auth_key, Arc::from(dpa_version), d1)
 }
