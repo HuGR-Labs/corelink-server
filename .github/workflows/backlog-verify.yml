@@ -145,6 +145,11 @@ on:
       - "crates/corelink-billing/tests/quota_cas_prop_quota_cas.rs"
       - "crates/corelink-region/src/region.rs"
       - "changelog.d/b319-b320-final-rust-residuals.md"
+      # B-321 locks strict-lint-safe alert delivery success tests.
+      - "scripts/verify_b321_alert_delivery_tests.py"
+      - "tests/test_verify_b321_alert_delivery_tests.py"
+      - "crates/corelink-ops/src/alerts/alerter.rs"
+      - "changelog.d/b321-alert-delivery-test-lints.md"
       - "scripts/b155_backlog_grep_parser.py"
       - "scripts/verify_d03_graduation.py"
       - "scripts/validate_permission_matrix.py"
@@ -402,6 +407,11 @@ on:
       - "crates/corelink-billing/tests/quota_cas_prop_quota_cas.rs"
       - "crates/corelink-region/src/region.rs"
       - "changelog.d/b319-b320-final-rust-residuals.md"
+      # Repeat the B-321 alert delivery test guard for push parity.
+      - "scripts/verify_b321_alert_delivery_tests.py"
+      - "tests/test_verify_b321_alert_delivery_tests.py"
+      - "crates/corelink-ops/src/alerts/alerter.rs"
+      - "changelog.d/b321-alert-delivery-test-lints.md"
       - "scripts/b155_backlog_grep_parser.py"
       - "scripts/verify_d03_graduation.py"
       - "scripts/validate_permission_matrix.py"
@@ -678,6 +688,10 @@ jobs:
         run: |
           python3 scripts/verify_b319_b320_final_rust_residuals.py --self-test
           python3 -m pytest -q tests/test_verify_b319_b320_final_rust_residuals.py
+      - name: B-321 alert delivery test guard and mutations
+        run: |
+          python3 scripts/verify_b321_alert_delivery_tests.py --self-test
+          python3 -m pytest -q tests/test_verify_b321_alert_delivery_tests.py
       - name: B-094 published-claims guard and mutations
         run: |
           command -v gitleaks
