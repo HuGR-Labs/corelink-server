@@ -6,6 +6,15 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
+autobins = false
+
+[[bin]]
+name = "corelink-server"
+path = "src/main.rs"
+
+[[bin]]
+name = "corelink-gc-sweep-production"
+path = "src/bin/gc_sweep.rs"
 
 [lints]
 workspace = true

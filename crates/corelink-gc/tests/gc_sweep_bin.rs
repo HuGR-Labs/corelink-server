@@ -52,6 +52,7 @@ const LIVE_RECLAIM_DIGEST: &str =
 struct Run {
     success: bool,
     stdout: String,
+    stderr: String,
 }
 
 /// Run the compiled `gc_sweep` bin. `env` is the `GC_LIVE_DELETE` value to
@@ -70,6 +71,7 @@ fn run(env: Option<&str>) -> Run {
     Run {
         success: out.status.success(),
         stdout: String::from_utf8(out.stdout).expect("utf8 stdout"),
+        stderr: String::from_utf8(out.stderr).expect("utf8 stderr"),
     }
 }
 
@@ -83,7 +85,11 @@ fn assert_dry_run(env: Option<&str>) {
     // dropping the `!`) would return Err here → exit non-zero. (kills
     // :146, :149, and both :140 `!=`→`==` mutants)
     // Also: :46 digest `-`→`+`/`/` panics on a bad length → non-zero exit.
-    assert!(r.success, "dry-run must exit 0; stdout:\n{}", r.stdout);
+    assert!(
+        r.success,
+        "dry-run must exit 0; stdout:\n{}\nstderr:\n{}",
+        r.stdout, r.stderr
+    );
 
     // Banner + report are present at all → kills :55 (main→default ExitCode,
     // no output) and :85 (run_one_sweep→Ok(()), no report printed).
@@ -185,7 +191,11 @@ fn dry_run_when_env_garbage() {
 fn assert_live(env: &str) {
     let r = run(Some(env));
 
-    assert!(r.success, "live must exit 0; stdout:\n{}", r.stdout);
+    assert!(
+        r.success,
+        "live must exit 0; stdout:\n{}\nstderr:\n{}",
+        r.stdout, r.stderr
+    );
     assert!(
         r.stdout.contains("mode               = live_delete"),
         "expected live_delete mode for {env:?}; stdout:\n{}",

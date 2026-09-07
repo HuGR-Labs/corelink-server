@@ -1,8 +1,9 @@
 //! Native production GC sweep binary.
 //!
-//! This binary is shipped as `/usr/local/bin/gc_sweep` in the container image.
-//! It has no fixture fallback: missing storage or scope configuration exits
-//! non-zero before any D1/R2 operation.
+//! This production-capable target is intentionally distinct from the
+//! `corelink-gc` crate's shipped `gc_sweep` dry-run self-check. It has no
+//! fixture fallback: missing storage or scope configuration exits non-zero
+//! before any D1/R2 operation. Promotion into the image remains owner-gated.
 
 #![allow(
     clippy::print_stdout,
