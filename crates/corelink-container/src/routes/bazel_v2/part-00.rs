@@ -102,7 +102,6 @@ use corelink_hash::CACHE_ENTRY_MAX_BYTES;
 /// Cloning increments Arc ref-counts; no data is copied.
 #[non_exhaustive]
 #[derive(Clone)]
-#[non_exhaustive]
 pub struct BazelRouteState {
     /// REAPI CAS / AC adapter.
     pub adapter: BazelAdapter,

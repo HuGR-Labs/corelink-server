@@ -150,7 +150,6 @@ async fn handle_account_export(
 /// Failure modes of a self-serve account-deletion request.
 #[non_exhaustive]
 #[derive(Debug)]
-#[non_exhaustive]
 pub enum AccountDeletionError {
     /// No account/tenant row exists to erase (already deleted / never
     /// provisioned) — the route maps this to an idempotent 202 no-op.

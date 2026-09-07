@@ -4,7 +4,6 @@
 /// `GET /v1/customer/usage` query params.
 #[non_exhaustive]
 #[derive(Debug, Deserialize)]
-#[non_exhaustive]
 pub struct UsageQuery {
     /// Optional billing period filter (e.g. `"2026-05"`).
     pub period: Option<String>,
@@ -13,7 +12,6 @@ pub struct UsageQuery {
 /// `GET /v1/customer/audit` query params.
 #[non_exhaustive]
 #[derive(Debug, Deserialize)]
-#[non_exhaustive]
 pub struct AuditQuery {
     /// Optional ISO-8601 since filter (maps to `AuditQueryRequest::since`).
     pub from: Option<String>,
@@ -29,7 +27,6 @@ pub struct AuditQuery {
 /// `POST /v1/customer/keys` request body.
 #[non_exhaustive]
 #[derive(Debug, Deserialize)]
-#[non_exhaustive]
 pub struct CreatePatBody {
     /// Human-readable name for the new PAT.
     pub name: String,
@@ -46,7 +43,6 @@ pub struct CreatePatBody {
 /// audit, and shown-once-token guarantees cannot drift.
 #[non_exhaustive]
 #[derive(Debug, Deserialize)]
-#[non_exhaustive]
 pub struct PatIssueBody {
     /// Human-readable label for the new PAT.
     pub label: String,
@@ -58,7 +54,6 @@ pub struct PatIssueBody {
 /// `POST /v1/customer/team/invite` request body.
 #[non_exhaustive]
 #[derive(Debug, Deserialize)]
-#[non_exhaustive]
 pub struct InviteBody {
     /// Email address to invite.
     pub email: String,

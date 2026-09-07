@@ -153,7 +153,6 @@ const DEFAULT_TIER: &str = "free";
 /// Route state injected at boot time.
 #[non_exhaustive]
 #[derive(Clone)]
-#[non_exhaustive]
 pub struct AuthIntrospectRouteState {
     /// Accepted shared secrets for the `X-Corelink-Internal-Auth` header — one per
     /// distinct CONSUMER, each an independently-rotatable secret so a compromised
@@ -220,7 +219,6 @@ impl AuthIntrospectRouteState {
 #[non_exhaustive]
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-#[non_exhaustive]
 pub struct IntrospectRequest {
     /// The PAT plaintext to introspect (e.g. `corelink_pat_...`). NEVER logged.
     pub token: String,
@@ -231,7 +229,6 @@ pub struct IntrospectRequest {
 /// `None` so they can be added later without a breaking change.
 #[non_exhaustive]
 #[derive(Debug, Serialize, Deserialize)]
-#[non_exhaustive]
 pub struct IntrospectResponse {
     /// Whether the PAT verified.
     pub valid: bool,

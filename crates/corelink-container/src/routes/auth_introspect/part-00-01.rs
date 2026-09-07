@@ -230,7 +230,6 @@ async fn handle_introspect(
 #[non_exhaustive]
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-#[non_exhaustive]
 pub struct ResolveTenantRequest {
     /// The Clerk organization id to resolve to its isolated CoreLink tenant.
     pub clerk_org_id: String,
@@ -239,7 +238,6 @@ pub struct ResolveTenantRequest {
 /// JSON response body for a SUCCESSFUL (`200`) tenant resolution.
 #[non_exhaustive]
 #[derive(Debug, Serialize, Deserialize)]
-#[non_exhaustive]
 pub struct ResolveTenantResponse {
     /// The isolated CoreLink tenant UUID the org maps to.
     pub tenant_id: String,
