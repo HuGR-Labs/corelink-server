@@ -8,11 +8,11 @@
 
 use std::path::PathBuf;
 
-fn release_workflow() -> Result<String, String> {
+pub(super) fn release_workflow() -> Result<String, String> {
     load_workflow("release-cli.yml")
 }
 
-fn load_workflow(name: &str) -> Result<String, String> {
+pub(super) fn load_workflow(name: &str) -> Result<String, String> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join(".github/workflows")
@@ -20,7 +20,7 @@ fn load_workflow(name: &str) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|_| format!("{name} workflow must be readable"))
 }
 
-fn load_script(name: &str) -> Result<String, String> {
+pub(super) fn load_script(name: &str) -> Result<String, String> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join("scripts")
@@ -28,7 +28,7 @@ fn load_script(name: &str) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|_| format!("{name} script must be readable"))
 }
 
-fn assert_release_contract(workflow: &str) {
+pub(super) fn assert_release_contract(workflow: &str) {
     for required in [
         "- \"cli-v*\"",
         "HuGR-Labs/corelink-cli",
@@ -92,7 +92,7 @@ fn assert_release_contract(workflow: &str) {
     );
 }
 
-fn assert_downstream_signer_contract(name: &str, workflow: &str) {
+pub(super) fn assert_downstream_signer_contract(name: &str, workflow: &str) {
     for required in [
         "CORELINK_CLI_RELEASE_TOKEN",
         "RELEASE_REPOSITORY: HuGR-Labs/corelink-cli",
@@ -184,7 +184,7 @@ fn assert_downstream_signer_contract(name: &str, workflow: &str) {
     );
 }
 
-fn assert_checksum_refresh_contract(name: &str, workflow: &str) {
+pub(super) fn assert_checksum_refresh_contract(name: &str, workflow: &str) {
     for required in [
         "--pattern 'corelink-*.sha256'",
         "LC_ALL=C sort corelink-*.sha256 > checksums.txt",
@@ -200,7 +200,7 @@ fn assert_checksum_refresh_contract(name: &str, workflow: &str) {
     }
 }
 
-fn assert_slsa_contract(workflow: &str) {
+pub(super) fn assert_slsa_contract(workflow: &str) {
     for required in [
         "workflow_call:",
         "manifest_sha256:",
@@ -233,7 +233,7 @@ fn assert_slsa_contract(workflow: &str) {
     }
 }
 
-fn assert_publication_inventory_contract(workflow: &str) {
+pub(super) fn assert_publication_inventory_contract(workflow: &str) {
     for required in [
         "Verify complete authenticated inventory before publication",
         "immediately before the irreversible draft=false",
@@ -253,7 +253,7 @@ fn assert_publication_inventory_contract(workflow: &str) {
     }
 }
 
-fn assert_retry_manifest_contract(workflow: &str) {
+pub(super) fn assert_retry_manifest_contract(workflow: &str) {
     let retry = workflow
         .split("            0)\n")
         .nth(1)
@@ -278,7 +278,7 @@ fn assert_retry_manifest_contract(workflow: &str) {
     }
 }
 
-fn assert_inventory_helper_contract(script: &str) {
+pub(super) fn assert_inventory_helper_contract(script: &str) {
     for required in [
         "staging-manifest.json",
         "set(api_names) != expected",
@@ -298,7 +298,7 @@ fn assert_inventory_helper_contract(script: &str) {
     }
 }
 
-fn assert_rekor_helper_contract(script: &str) {
+pub(super) fn assert_rekor_helper_contract(script: &str) {
     for required in [
         "tlogEntries",
         "if not entries:",
