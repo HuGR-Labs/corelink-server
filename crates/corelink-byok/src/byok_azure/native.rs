@@ -281,9 +281,7 @@ impl AzureKeyVaultRealProvider {
 
 include!("native/part-01.rs");
 
-impl KmsProvider for AzureKeyVaultRealProvider {
-    include!("native/part-02.rs");
-}
+include!("native/part-02.rs");
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

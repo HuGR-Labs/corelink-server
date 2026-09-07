@@ -1,3 +1,5 @@
+#[async_trait]
+impl KmsProvider for AzureKeyVaultRealProvider {
     fn provider_kind(&self) -> KmsProviderKind {
         KmsProviderKind::AzureKeyVault
     }
@@ -318,3 +320,4 @@
 
         Ok(map_bundle_to_access(&kb))
     }
+}

@@ -237,5 +237,3 @@ fn mock_unwrap(wrapped: &WrappedDek, canonical_aad: &[u8]) -> Result<Dek, BYOKEr
     }
     Ok(Dek { bytes })
 }
-
-#[async_trait]
