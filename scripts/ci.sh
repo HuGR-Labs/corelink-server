@@ -29,6 +29,35 @@
 
 set -uo pipefail
 
+# Parse arguments before changing directory, creating logs, starting sccache,
+# or allocating a Cargo target.  `--help` is intentionally side-effect-free.
+RUN_RUST=1
+RUN_VALIDATORS=1
+RUN_TEST_COMPILE=1
+RUN_WASM32=1
+for arg in "$@"; do
+    case "$arg" in
+        --fast)
+            RUN_TEST_COMPILE=0
+            RUN_WASM32=0
+            ;;
+        --rust-only)
+            RUN_VALIDATORS=0
+            ;;
+        --validators-only)
+            RUN_RUST=0
+            ;;
+        -h|--help)
+            sed -n '2,/^$/p' "$0"
+            exit 0
+            ;;
+        *)
+            echo "unknown arg: $arg" >&2
+            exit 2
+            ;;
+    esac
+done
+
 # The target directory is deliberately private to this invocation.  In
 # particular, do not reuse a caller-provided CARGO_TARGET_DIR: doing so would
 # re-introduce cross-run races, and cleaning it on exit could destroy data that
@@ -42,10 +71,18 @@ CI_CALLER_TARGET_DIR=""
 CI_CLEANUP_RUNNING=0
 RUST_PID=""
 VAL_PID=""
+RUST_PGID=""
+VAL_PGID=""
+CI_PARENT_PGID="$(ps -o pgid= -p "$$" 2>/dev/null | tr -d '[:space:]')"
 
 if [ "${CARGO_TARGET_DIR+x}" = x ]; then
     CI_CALLER_TARGET_SET=1
     CI_CALLER_TARGET_DIR="$CARGO_TARGET_DIR"
+fi
+
+if [ -z "$CI_PARENT_PGID" ]; then
+    echo "ci.sh: unable to identify the runner process group" >&2
+    exit 2
 fi
 
 # shellcheck disable=SC2329  # invoked indirectly by the EXIT trap below.
@@ -89,35 +126,47 @@ cleanup_ci() {
     exit "$status"
 }
 
-# shellcheck disable=SC2329  # called by terminate_ci_children.
-terminate_child_tree() {
+ci_process_group() {
     local pid="$1"
-    local child
+    local pgid
+
+    pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d '[:space:]')"
+    case "$pgid" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    printf '%s\n' "$pgid"
+}
+
+# shellcheck disable=SC2329  # called by terminate_ci_children.
+terminate_ci_group() {
+    local pid="$1"
+    local pgid="$2"
 
     [ -n "$pid" ] || return 0
-    if command -v pgrep >/dev/null 2>&1; then
-        while IFS= read -r child; do
-            terminate_child_tree "$child"
-        done < <(pgrep -P "$pid" 2>/dev/null || true)
+    # `set -m` gives each top-level gate group a process group whose ID is
+    # captured at launch.  Refuse to signal the runner's own group: a malformed
+    # or unavailable PGID must never turn cleanup into a third-party kill.
+    if [ -n "$pgid" ] \
+        && [ -n "$CI_PARENT_PGID" ] \
+        && [ "$pgid" != "$CI_PARENT_PGID" ]; then
+        kill -TERM -- "-$pgid" 2>/dev/null || true
+        kill -KILL -- "-$pgid" 2>/dev/null || true
+    else
+        printf '[ci] unable to prove an owned process group for PID %s; killing only that owned PID\n' "$pid" >&2
+        kill -KILL "$pid" 2>/dev/null || true
     fi
-    kill -TERM "$pid" 2>/dev/null || true
 }
 
 # shellcheck disable=SC2329  # called by the signal traps below.
 terminate_ci_children() {
-    local pid
-    for pid in "${RUST_PID:-}" "${VAL_PID:-}"; do
-        terminate_child_tree "$pid"
-    done
-    # Do not let an uncooperative gate keep the EXIT cleanup from removing
-    # this invocation's target directory.  Descendants were signalled above;
-    # these direct children are the only PIDs this runner owns.
-    for pid in "${RUST_PID:-}" "${VAL_PID:-}"; do
-        [ -n "$pid" ] && kill -KILL "$pid" 2>/dev/null || true
-    done
-    for pid in "${RUST_PID:-}" "${VAL_PID:-}"; do
-        [ -n "$pid" ] && wait "$pid" 2>/dev/null || true
-    done
+    terminate_ci_group "${RUST_PID:-}" "${RUST_PGID:-}"
+    terminate_ci_group "${VAL_PID:-}" "${VAL_PGID:-}"
+    if [ -n "${RUST_PID:-}" ]; then
+        wait "$RUST_PID" 2>/dev/null || true
+    fi
+    if [ -n "${VAL_PID:-}" ]; then
+        wait "$VAL_PID" 2>/dev/null || true
+    fi
 }
 
 # shellcheck disable=SC2329  # invoked indirectly by the HUP/INT/TERM traps.
@@ -209,34 +258,6 @@ if [ "${CORELINK_NO_SCCACHE:-0}" != 1 ] && command -v sccache >/dev/null 2>&1; t
     sccache --zero-stats >/dev/null 2>&1 || true
     echo "[sccache active — cap ${SCCACHE_CACHE_SIZE}, incremental off]" >&2
 fi
-
-# --- arg parse ----------------------------------------------------------------
-RUN_RUST=1
-RUN_VALIDATORS=1
-RUN_TEST_COMPILE=1
-RUN_WASM32=1
-for arg in "$@"; do
-    case "$arg" in
-        --fast)
-            RUN_TEST_COMPILE=0
-            RUN_WASM32=0
-            ;;
-        --rust-only)
-            RUN_VALIDATORS=0
-            ;;
-        --validators-only)
-            RUN_RUST=0
-            ;;
-        -h|--help)
-            sed -n '2,/^$/p' "$0"
-            exit 0
-            ;;
-        *)
-            echo "unknown arg: $arg" >&2
-            exit 2
-            ;;
-    esac
-done
 
 # --- gate registry ------------------------------------------------------------
 # Format: "name|command"
@@ -333,6 +354,9 @@ run_rust_pipeline() {
 }
 
 run_validator_pool() {
+    # The parent gives this pool its own process group.  Keep its validator
+    # children in that same group so one group signal reaches the whole pool.
+    set +m
     # Validators run in parallel: max 8 concurrent (12-core box; leave room
     # for the rust group if running concurrently). xargs -P-style via &/wait.
     local max_concurrent=8
@@ -356,19 +380,45 @@ echo "Logs: $LOG_DIR/" >&2
 echo "" >&2
 START_NS=$(python3 -c 'import time; print(int(time.time_ns()))')
 
+# Bash job control gives each top-level asynchronous group an owned process
+# group.  This is available on macOS, Linux, and POSIX shells running Bash;
+# keeping it enabled only for these launches avoids changing gate semantics.
+if ! set -m; then
+    echo "ci.sh: unable to enable owned process groups" >&2
+    exit 2
+fi
 if [ "$RUN_RUST" = 1 ]; then
     echo "[rust pipeline launched]" >&2
     run_rust_pipeline &
     RUST_PID=$!
+    RUST_PGID="$(ci_process_group "$RUST_PID")" || {
+        echo "ci.sh: unable to prove the Rust pipeline process group" >&2
+        terminate_ci_children
+        exit 2
+    }
 fi
 if [ "$RUN_VALIDATORS" = 1 ]; then
     echo "[validator pool launched]" >&2
     run_validator_pool &
     VAL_PID=$!
+    VAL_PGID="$(ci_process_group "$VAL_PID")" || {
+        echo "ci.sh: unable to prove the validator pool process group" >&2
+        terminate_ci_children
+        exit 2
+    }
 fi
+set +m
 
-[ "$RUN_RUST" = 1 ] && wait "$RUST_PID"
-[ "$RUN_VALIDATORS" = 1 ] && wait "$VAL_PID"
+if [ "$RUN_RUST" = 1 ]; then
+    wait "$RUST_PID" || true
+    RUST_PID=""
+    RUST_PGID=""
+fi
+if [ "$RUN_VALIDATORS" = 1 ]; then
+    wait "$VAL_PID" || true
+    VAL_PID=""
+    VAL_PGID=""
+fi
 
 END_NS=$(python3 -c 'import time; print(int(time.time_ns()))')
 TOTAL_MS=$(( (END_NS - START_NS) / 1000000 ))
