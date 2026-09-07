@@ -1,5 +1,3 @@
-}
-
 // ─── Error mapping ────────────────────────────────────────────────────────────
 
 /// Map a [`BazelBridgeError`] to the canonical HTTP response.

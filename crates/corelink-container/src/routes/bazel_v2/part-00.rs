@@ -490,3 +490,4 @@ async fn quota_reject_batch(
 fn now_ms() -> u64 {
     use crate::wall_clock::WallClock as _;
     crate::wall_clock::SystemWallClock.now_ms()
+}
