@@ -19,17 +19,180 @@
 #
 # Logs: per-gate stdout/stderr captured under `target/ci-logs/<gate>.log`
 # (preserved across runs; overwritten each invocation).
+# Cargo target: each invocation uses a fresh private directory (under
+# `$RUNNER_TEMP` when usable, otherwise the system temp parent) and removes it
+# on exit.  An ambient caller-provided `CARGO_TARGET_DIR` is intentionally
+# shadowed and never removed; this is the safest behavior for shared runners.
 #
 # Charter alignment: per `docs/internal/TECHLEAD-CHECKLIST.md` §L1 + §L6.
 # Memory feedback: parallel-by-default per user mandate 2026-05-26.
 
 set -uo pipefail
 
+# The target directory is deliberately private to this invocation.  In
+# particular, do not reuse a caller-provided CARGO_TARGET_DIR: doing so would
+# re-introduce cross-run races, and cleaning it on exit could destroy data that
+# the caller owns.  The caller's value is left untouched on disk and is only
+# shadowed in this process for the duration of the CI run.
+CI_TARGET_DIR=""
+CI_TARGET_DIR_MARKER=""
+CI_TARGET_DIR_CREATED=0
+CI_CALLER_TARGET_SET=0
+CI_CALLER_TARGET_DIR=""
+CI_CLEANUP_RUNNING=0
+RUST_PID=""
+VAL_PID=""
+
+if [ "${CARGO_TARGET_DIR+x}" = x ]; then
+    CI_CALLER_TARGET_SET=1
+    CI_CALLER_TARGET_DIR="$CARGO_TARGET_DIR"
+fi
+
+# shellcheck disable=SC2329  # invoked indirectly by the EXIT trap below.
+cleanup_ci() {
+    local status=$?
+
+    # A trap can be entered more than once while a child is being reaped.  Do
+    # not run any destructive cleanup twice.
+    if [ "$CI_CLEANUP_RUNNING" -eq 1 ]; then
+        exit "$status"
+    fi
+    CI_CLEANUP_RUNNING=1
+    trap - EXIT HUP INT TERM
+
+    # Only remove a directory that this process created.  The exact marker
+    # path plus the generated-name check make an accidental broad rm -rf
+    # impossible even if a variable is later corrupted (including if marker
+    # creation failed during setup).
+    if [ "$CI_TARGET_DIR_CREATED" -eq 1 ] \
+        && [ -n "$CI_TARGET_DIR" ] \
+        && [ -n "$CI_TARGET_DIR_MARKER" ] \
+        && [ "$CI_TARGET_DIR_MARKER" = "$CI_TARGET_DIR/.corelink-ci-owned" ] \
+        && [[ "$CI_TARGET_DIR" == */corelink-ci-target.* ]]; then
+        rm -rf -- "$CI_TARGET_DIR"
+    fi
+
+    if [ -n "${RESULTS_FILE:-}" ]; then
+        rm -f -- "$RESULTS_FILE"
+    fi
+    if [ -n "${INFRA_FILE:-}" ]; then
+        rm -f -- "$INFRA_FILE"
+    fi
+
+    # This script is normally a child process, but restore the environment if
+    # it is ever embedded by a caller that uses `source`.
+    if [ "$CI_CALLER_TARGET_SET" -eq 1 ]; then
+        export CARGO_TARGET_DIR="$CI_CALLER_TARGET_DIR"
+    else
+        unset CARGO_TARGET_DIR
+    fi
+    exit "$status"
+}
+
+# shellcheck disable=SC2329  # called by terminate_ci_children.
+terminate_child_tree() {
+    local pid="$1"
+    local child
+
+    [ -n "$pid" ] || return 0
+    if command -v pgrep >/dev/null 2>&1; then
+        while IFS= read -r child; do
+            terminate_child_tree "$child"
+        done < <(pgrep -P "$pid" 2>/dev/null || true)
+    fi
+    kill -TERM "$pid" 2>/dev/null || true
+}
+
+# shellcheck disable=SC2329  # called by the signal traps below.
+terminate_ci_children() {
+    local pid
+    for pid in "${RUST_PID:-}" "${VAL_PID:-}"; do
+        terminate_child_tree "$pid"
+    done
+    # Do not let an uncooperative gate keep the EXIT cleanup from removing
+    # this invocation's target directory.  Descendants were signalled above;
+    # these direct children are the only PIDs this runner owns.
+    for pid in "${RUST_PID:-}" "${VAL_PID:-}"; do
+        [ -n "$pid" ] && kill -KILL "$pid" 2>/dev/null || true
+    done
+    for pid in "${RUST_PID:-}" "${VAL_PID:-}"; do
+        [ -n "$pid" ] && wait "$pid" 2>/dev/null || true
+    done
+}
+
+# shellcheck disable=SC2329  # invoked indirectly by the HUP/INT/TERM traps.
+on_ci_signal() {
+    local signal="$1"
+    local status=143
+    case "$signal" in
+        HUP) status=129 ;;
+        INT) status=130 ;;
+        TERM) status=143 ;;
+    esac
+    trap - HUP INT TERM
+    printf '[ci] received %s; stopping child gates\n' "$signal" >&2
+    terminate_ci_children
+    exit "$status"
+}
+
+trap cleanup_ci EXIT
+trap 'on_ci_signal HUP' HUP
+trap 'on_ci_signal INT' INT
+trap 'on_ci_signal TERM' TERM
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT" || exit 2
 
 LOG_DIR="target/ci-logs"
-mkdir -p "$LOG_DIR"
+mkdir -p "$LOG_DIR" || {
+    echo "ci.sh: unable to create $LOG_DIR" >&2
+    exit 2
+}
+
+create_ci_target_dir() {
+    local runner_temp="${RUNNER_TEMP:-}"
+    local target_parent=""
+
+    # RUNNER_TEMP is already isolated on GitHub-hosted runners.  Require it
+    # to be an existing, writable, non-root directory so a malformed caller
+    # value cannot turn cleanup into a broad-directory operation.
+    if [ -n "$runner_temp" ]; then
+        target_parent="${runner_temp%/}"
+        if [ -n "$target_parent" ] \
+            && [ "$target_parent" != "/" ] \
+            && [ -d "$target_parent" ] \
+            && [ -w "$target_parent" ]; then
+            CI_TARGET_DIR="$(mktemp -d "$target_parent/corelink-ci-target.XXXXXX" 2>/dev/null)" || CI_TARGET_DIR=""
+        fi
+    fi
+
+    # Local runs (and runners with an unusable RUNNER_TEMP) get a fresh
+    # directory from mktemp's private template.  It is never shared with a
+    # previous invocation, even when an old run left evidence behind.
+    if [ -z "$CI_TARGET_DIR" ]; then
+        CI_TARGET_DIR="$(mktemp -d "${TMPDIR:-/tmp}/corelink-ci-target.XXXXXX")" || {
+            echo "ci.sh: unable to create a private Cargo target directory" >&2
+            return 1
+        }
+    fi
+
+    CI_TARGET_DIR_MARKER="$CI_TARGET_DIR/.corelink-ci-owned"
+    # Mark ownership before any operation that can fail, so EXIT cleanup also
+    # removes a freshly-created directory if marker creation itself fails.
+    CI_TARGET_DIR_CREATED=1
+    if ! : >"$CI_TARGET_DIR_MARKER"; then
+        echo "ci.sh: unable to mark private Cargo target directory" >&2
+        return 1
+    fi
+    export CARGO_TARGET_DIR="$CI_TARGET_DIR"
+
+    if [ "$CI_CALLER_TARGET_SET" -eq 1 ]; then
+        echo "[ci] ignoring caller-provided CARGO_TARGET_DIR; using a fresh private target" >&2
+    fi
+    echo "[ci] Cargo target: $CARGO_TARGET_DIR (removed on exit)" >&2
+}
+
+create_ci_target_dir || exit 2
 
 # Compile cache. sccache only helps when incremental is OFF (it can't cache
 # `-C incremental`), so we enable it HERE — in the CI regime — by exporting
@@ -122,9 +285,8 @@ VALIDATOR_GATES=(
 #   - check_ac_infra.sh <env>                  → pre-deploy gate; needs CF_API_TOKEN.
 
 # --- helpers ------------------------------------------------------------------
-RESULTS_FILE="$(mktemp)"
-INFRA_FILE="$(mktemp)"
-trap 'rm -f "$RESULTS_FILE" "$INFRA_FILE"' EXIT
+RESULTS_FILE="$(mktemp)" || exit 2
+INFRA_FILE="$(mktemp)" || exit 2
 
 run_gate() {
     # Args: name, command, group
