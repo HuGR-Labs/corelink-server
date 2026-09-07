@@ -38,7 +38,6 @@ const ENV_VARS: &[&str] = &[
     "HTTP_PROXY",
     "HTTPS_PROXY",
     "NO_PROXY",
-    "REQUEST_METHOD",
     "all_proxy",
     "http_proxy",
     "https_proxy",
@@ -205,8 +204,6 @@ fn set_common_env(signing_key_pem: &str, probe_url: &str) {
     for name in ["NO_PROXY", "no_proxy"] {
         env::remove_var(name);
     }
-    // hyper-util treats REQUEST_METHOD as CGI and disables proxies for HTTPoxy.
-    env::remove_var("REQUEST_METHOD");
 }
 
 fn clear_auth_env() {
