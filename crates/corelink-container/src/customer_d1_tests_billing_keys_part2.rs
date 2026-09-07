@@ -23,6 +23,7 @@ fn keys_revoke_happy_path_updates_and_returns_revoked_at() {
             "FROM pat WHERE pat_id",
             vec![row(&[
                 ("pat_id", json!("pat_1")),
+                ("token_id", json!("0000000000000001")),
                 ("name", json!("ci-key")),
                 ("scope", json!("read-only")),
                 ("created_ms", json!(1_690_000_000_000_i64)),
@@ -58,6 +59,7 @@ fn keys_revoke_is_idempotent_no_second_update() {
             "FROM pat WHERE pat_id",
             vec![row(&[
                 ("pat_id", json!("pat_1")),
+                ("token_id", json!("0000000000000002")),
                 ("name", json!("ci-key")),
                 ("scope", json!("read-only")),
                 ("created_ms", json!(1_690_000_000_000_i64)),
@@ -88,6 +90,7 @@ fn keys_revoke_admin_cannot_revoke_owner_pat() {
             "FROM pat WHERE pat_id",
             vec![row(&[
                 ("pat_id", json!("pat_owner")),
+                ("token_id", json!("0000000000000003")),
                 ("name", json!("owner-key")),
                 ("scope", json!("read-write")),
                 ("created_ms", json!(1_690_000_000_000_i64)),
@@ -136,6 +139,7 @@ fn keys_revoke_admin_can_revoke_member_pat_within_tenant() {
             "FROM pat WHERE pat_id",
             vec![row(&[
                 ("pat_id", json!("pat_member")),
+                ("token_id", json!("0000000000000004")),
                 ("name", json!("member-key")),
                 ("scope", json!("read-only")),
                 ("principal_id", json!("member-uuid")),
@@ -180,6 +184,7 @@ fn keys_revoke_cross_tenant_is_not_found() {
             if sql.contains("FROM pat WHERE pat_id") && binds.get(1) == Some(&json!(TENANT)) {
                 return Ok(vec![row(&[
                     ("pat_id", json!("pat_1")),
+                    ("token_id", json!("0000000000000005")),
                     ("name", json!("ci-key")),
                     ("scope", json!("read-only")),
                     ("created_ms", json!(1_690_000_000_000_i64)),
