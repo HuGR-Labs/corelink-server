@@ -104,9 +104,12 @@ async fn batch_read_admission_is_released_after_response_consumed() {
 struct BatchReadTrackingHandler {
     active: Arc<std::sync::atomic::AtomicUsize>,
     max_active: Arc<std::sync::atomic::AtomicUsize>,
+    started: Option<Arc<std::sync::atomic::AtomicUsize>>,
+    first_started: Option<Arc<tokio::sync::Notify>>,
     saw_max_bytes: Arc<std::sync::atomic::AtomicBool>,
     response_len: usize,
     fail_hash: Option<String>,
+    read_delay: std::time::Duration,
 }
 
 impl CasReadHandler for BatchReadTrackingHandler {
@@ -114,6 +117,12 @@ impl CasReadHandler for BatchReadTrackingHandler {
         use std::sync::atomic::Ordering;
 
         let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
+        if let Some(started) = self.started.as_ref() {
+            started.fetch_add(1, Ordering::SeqCst);
+        }
+        if let Some(first_started) = self.first_started.as_ref() {
+            first_started.notify_waiters();
+        }
         let mut observed = self.max_active.load(Ordering::SeqCst);
         while active > observed {
             match self.max_active.compare_exchange(
@@ -132,7 +141,7 @@ impl CasReadHandler for BatchReadTrackingHandler {
         // Give the other window tasks time to enter the storage seam. This
         // makes the >1 concurrency assertion deterministic on multi-thread
         // test runtimes while the production window remains budget-derived.
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        std::thread::sleep(self.read_delay);
         let result = if self.fail_hash.as_deref() == Some(req.hash.as_str()) {
             Err(CasHandlerError::Internal(
                 "tracked batch read failure".into(),
@@ -194,9 +203,12 @@ async fn batch_read_window_is_bounded_and_passes_object_ceiling() {
     let read = Arc::new(BatchReadTrackingHandler {
         active: active.clone(),
         max_active: max_active.clone(),
+        started: None,
+        first_started: None,
         saw_max_bytes: saw_max_bytes.clone(),
         response_len: 1,
         fail_hash: None,
+        read_delay: std::time::Duration::from_millis(10),
     });
     let hashes: Vec<String> = (0..BATCH_READ_FANOUT)
         .map(|i| fake_hash(format!("window-{i}").as_bytes()))
@@ -234,9 +246,12 @@ async fn batch_read_failure_drains_all_active_tasks_before_return() {
     let read = Arc::new(BatchReadTrackingHandler {
         active: active.clone(),
         max_active: max_active.clone(),
+        started: None,
+        first_started: None,
         saw_max_bytes: saw_max_bytes.clone(),
         response_len: 1,
         fail_hash: Some(hashes[0].clone()),
+        read_delay: std::time::Duration::from_millis(10),
     });
     let response = router(tracking_state(read))
         .oneshot(batch_read_request(&hashes))
@@ -265,9 +280,12 @@ async fn batch_read_overflow_drains_all_active_tasks_before_return() {
     let read = Arc::new(BatchReadTrackingHandler {
         active: active.clone(),
         max_active: max_active.clone(),
+        started: None,
+        first_started: None,
         saw_max_bytes: saw_max_bytes.clone(),
         response_len: BATCH_MAX_BYTES / 2 + 1,
         fail_hash: None,
+        read_delay: std::time::Duration::from_millis(10),
     });
     let hashes: Vec<String> = (0..(BATCH_READ_FANOUT + 1))
         .map(|i| fake_hash(format!("overflow-{i}").as_bytes()))
@@ -281,6 +299,74 @@ async fn batch_read_overflow_drains_all_active_tasks_before_return() {
     assert!(max_active.load(Ordering::SeqCst) > 1);
     assert!(max_active.load(Ordering::SeqCst) <= BATCH_READ_FANOUT);
     assert_eq!(active.load(Ordering::SeqCst), 0);
+}
+
+/// Dropping a handler future must abort its live batch tasks instead of
+/// detaching the JoinHandles. Already-running synchronous reads are allowed to
+/// unwind, but no queued read may start after cancellation and all active
+/// storage calls must finish within the bounded test deadline.
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn batch_read_cancellation_aborts_tasks_and_waits_for_unwind() {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    let active_tasks = Arc::new(AtomicUsize::new(0));
+    let started = Arc::new(AtomicUsize::new(0));
+    let max_active = Arc::new(AtomicUsize::new(0));
+    let saw_max_bytes = Arc::new(AtomicBool::new(false));
+    let first_started = Arc::new(tokio::sync::Notify::new());
+    let read = Arc::new(BatchReadTrackingHandler {
+        active: active_tasks.clone(),
+        max_active: max_active.clone(),
+        started: Some(started.clone()),
+        first_started: Some(first_started.clone()),
+        saw_max_bytes,
+        response_len: 1,
+        fail_hash: None,
+        read_delay: std::time::Duration::from_millis(100),
+    });
+    let hashes: Vec<String> = (0..(BATCH_READ_FANOUT * 2))
+        .map(|i| fake_hash(format!("cancel-{i}").as_bytes()))
+        .collect();
+    let mut response = Box::pin(router(tracking_state(read)).oneshot(batch_read_request(&hashes)));
+
+    tokio::select! {
+        _ = first_started.notified() => {}
+        _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {
+            panic!("batch handler did not start a storage read before cancellation");
+        }
+        _ = &mut response => panic!("batch handler completed before cancellation");
+    }
+    tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        while started.load(Ordering::SeqCst) < BATCH_READ_FANOUT {
+            tokio::select! {
+                _ = &mut response => panic!("batch handler completed before cancellation"),
+                _ = tokio::task::yield_now() => {}
+            }
+        }
+    })
+    .await
+    .expect("the bounded batch window must start before cancellation");
+    let started_at_drop = started.load(Ordering::SeqCst);
+    drop(response);
+
+    tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        loop {
+            assert_eq!(
+                started.load(Ordering::SeqCst),
+                started_at_drop,
+                "no new storage read may start after the handler future is dropped"
+            );
+            if active_tasks.load(Ordering::SeqCst) == 0 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("cancelled batch storage calls must unwind within the bounded deadline");
+    assert_eq!(active_tasks.load(Ordering::SeqCst), 0);
+    assert!(max_active.load(Ordering::SeqCst) > 1);
+    assert!(max_active.load(Ordering::SeqCst) <= BATCH_READ_FANOUT);
 }
 
 /// B-077 HOLD: the single GET keeps its tenant slot until its response

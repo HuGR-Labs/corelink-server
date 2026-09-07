@@ -50,15 +50,19 @@ def assess_source(route: str, handler: str, storage: str, openapi: str, docs: st
 
     required_batch = {
         "bounded-buffer": "Semaphore::new(BATCH_READ_FANOUT)" in batch and "acquire_owned()" in batch,
-        "spawned-fanout": "tokio::spawn(async move" in batch and "handles.push" in batch,
-        "terminal-drain": "abort_and_drain" in batch and "pending.await" in batch,
+        "spawned-fanout": "tokio::spawn(async move" in batch and "tasks.push" in batch,
+        "terminal-drain": (
+            "tasks.abort_and_drain().await" in batch
+            and "pending.await" in route
+            and "impl Drop for BatchReadTaskGuard" in route
+        ),
         "per-read-ceiling": ".with_max_bytes(BATCH_MAX_BYTES as u64)" in batch,
         "request-ceiling": "body.len() > BATCH_REQUEST_BODY_LIMIT_BYTES" in batch,
         "oversize-413": "if payload.len() + bytes.len() > BATCH_MAX_BYTES" in batch and "return batch_too_large()" in batch,
         "aggregate-ceiling": "payload.len() + bytes.len() > BATCH_MAX_BYTES" in batch,
     }
     gaps.extend(name for name, present in required_batch.items() if not present)
-    if "let mut handles: Vec<tokio::task::JoinHandle<PerHash>>" in batch and "Vec::with_capacity(BATCH_READ_FANOUT)" not in batch:
+    if "BatchReadTaskGuard" in batch and "BatchReadTaskGuard::with_capacity(BATCH_READ_FANOUT)" not in batch:
         gaps.append("materialized-task-collection")
 
     if "pub max_bytes: Option<u64>" not in handler:

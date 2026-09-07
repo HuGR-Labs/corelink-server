@@ -46,11 +46,15 @@ class B078ContractTests(unittest.TestCase):
         gaps = verifier.assess_source(mutated, handler, storage, openapi, docs)
         self.assertIn("bounded-buffer", gaps)
 
-    def test_old_vec_joinhandle_mutation_is_rejected(self) -> None:
+    def test_unbounded_task_guard_mutation_is_rejected(self) -> None:
         route, handler, storage = self._sources()
         openapi = (ROOT / "openapi/corelink-v1.yaml").read_text()
         docs = (ROOT / "docs/knowledge/surfaces/native-cas.md").read_text()
-        mutated = route.replace("Vec::with_capacity(BATCH_READ_FANOUT)", "Vec::new()", 1)
+        mutated = route.replace(
+            "BatchReadTaskGuard::with_capacity(BATCH_READ_FANOUT)",
+            "BatchReadTaskGuard::with_capacity(hashes.len())",
+            1,
+        )
         gaps = verifier.assess_source(mutated, handler, storage, openapi, docs)
         self.assertIn("materialized-task-collection", gaps)
 
