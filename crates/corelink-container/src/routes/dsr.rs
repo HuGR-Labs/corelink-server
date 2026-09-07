@@ -84,6 +84,7 @@ const INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
 /// Wire shape of the `dsr.queued.v1` message produced by the Clerk
 /// `user.deleted` webhook (`apps/signup-worker/src/webhooks/clerk.ts`). Unknown
 /// fields (`schema`, `source`, `clerk_user_id`) are accepted and ignored.
+#[non_exhaustive]
 #[derive(Debug, Deserialize)]
 pub struct DsrQueuedV1 {
     /// Canonical UUID DSR id (idempotency key; deterministic per Clerk user).
@@ -101,6 +102,7 @@ pub struct DsrQueuedV1 {
 }
 
 /// Shared state for the DSR erasure route.
+#[non_exhaustive]
 #[derive(Clone)]
 pub struct DsrRouteState {
     /// Accepted internal-auth keys: `[current]`, or `[current, previous]` during
@@ -334,6 +336,7 @@ fn build_audit_r2_client() -> Option<Arc<crate::storage::r2_s3::R2S3Client>> {
 /// no new erasure logic, and no CF Queue producer (the container has none, so the
 /// "enqueue" is a direct, synchronous drive of the worker; `process_erasure` is
 /// sync, with the async D1 round-trips bridged inside the adapters).
+#[non_exhaustive]
 pub struct InProcessErasureSink {
     worker: Arc<InMemoryErasureWorker>,
 }
@@ -452,6 +455,7 @@ pub fn router(state: DsrRouteState) -> Router {
 
 /// Wire shape for the read rights (access / portability). `dsr_id` is the
 /// idempotency/audit key; `tenant_id` is the subject (one-user-per-tenant).
+#[non_exhaustive]
 #[derive(Debug, Deserialize)]
 pub struct DsrSubjectV1 {
     /// Canonical DSR id (idempotency key for the audit ledger).
@@ -461,6 +465,7 @@ pub struct DsrSubjectV1 {
 }
 
 /// Wire shape for `POST /_internal/dsr/rectification` (Art.16).
+#[non_exhaustive]
 #[derive(Debug, Deserialize)]
 pub struct DsrRectifyV1 {
     /// Canonical DSR id (idempotency/audit key).
@@ -636,6 +641,7 @@ fn now_ms() -> u64 {
 /// SLA-clock anchor; the per-DSR `erasure_salt` and raw `subject_id` are **not
 /// retained** post-erasure (and `verify_erasure` never uses the salt — it
 /// re-fingerprints by tenant), so they are omitted here.
+#[non_exhaustive]
 #[derive(Debug, Deserialize)]
 pub struct DsrVerifyV1 {
     /// Canonical UUID DSR id (matches the original erase request).

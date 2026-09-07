@@ -21,6 +21,7 @@ pub(crate) fn deterministic_dsr_id(subject_key: &str) -> String {
 /// `user.deleted` path: resolve the account's Clerk id, derive the deterministic
 /// `dsr_id`, honor an operator legal hold, build the canonical `dsr.queued.v1`
 /// message, `INSERT OR IGNORE` the `dsr_requested` anchor (G4), then enqueue.
+#[non_exhaustive]
 pub struct D1AccountDeletionRequester {
     /// D1 row source (production: `customer_d1::D1HttpCustomerDb`).
     db: Arc<dyn crate::customer_d1::CustomerD1>,
