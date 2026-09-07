@@ -37,6 +37,74 @@ fn stripe_checkout_sessions_precedes_tier_selections() {
 }
 
 #[test]
+fn stripe_checkout_ownership_ledger_precedes_tier_selections() {
+    let child = TENANT_ID_TABLES
+        .iter()
+        .position(|&t| t == "stripe_checkout_ownership_ledger")
+        .unwrap();
+    let parent = TENANT_ID_TABLES
+        .iter()
+        .position(|&t| t == "tier_selections")
+        .unwrap();
+    assert!(
+        child < parent,
+        "FK-ORDER VIOLATION: stripe_checkout_ownership_ledger (idx {child}) \
+         must be deleted BEFORE tier_selections (idx {parent})"
+    );
+}
+
+#[test]
+fn clerk_lock_is_special_and_precedes_tenant_root() {
+    let lock = SPECIAL_ERASE_TABLES
+        .iter()
+        .position(|&t| t == "clerk_provisioning_lock")
+        .unwrap();
+    let root = SPECIAL_ERASE_TABLES
+        .iter()
+        .position(|&t| t == "tenant")
+        .unwrap();
+    assert!(
+        lock < root,
+        "clerk_provisioning_lock must be erased by tenant.clerk_user_id \
+         before the tenant root is deleted"
+    );
+    assert!(!TENANT_ID_TABLES.contains(&"clerk_provisioning_lock"));
+}
+
+#[test]
+fn epoch_contract_tables_are_retained_and_new_intents_are_erased() {
+    for table in [
+        "audit_chain_epoch_ledger",
+        "audit_chain_epoch",
+        "audit_chain_archive_manifest",
+    ] {
+        assert!(
+            ALL_TENANT_KEYED_TABLES.contains(&table),
+            "{table} must be in the tenant-keyed registry"
+        );
+        assert!(RETAIN_SET.contains(&table), "{table} must be retained");
+        assert!(!TENANT_ID_TABLES.contains(&table));
+    }
+    for table in [
+        "stripe_checkout_ownership_ledger",
+        "githugr_tenant_org_map",
+        "gc_purge_intent",
+        "cas_write_intent",
+        "cas_reconciliation_intent",
+    ] {
+        assert!(
+            ALL_TENANT_KEYED_TABLES.contains(&table),
+            "{table} must be in the tenant-keyed registry"
+        );
+        assert!(
+            TENANT_ID_TABLES.contains(&table),
+            "{table} must be erased by tenant_id"
+        );
+        assert!(!RETAIN_SET.contains(&table));
+    }
+}
+
+#[test]
 fn erase_set_has_no_overlap_and_no_dupes() {
     // Duplicate guard (kept from the original) across the full erase-set:
     // tenant_id + namespace + the bespoke specials.

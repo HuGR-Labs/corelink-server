@@ -72,6 +72,11 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     // tail: 4 tenants with an un-completed checkout session were the only rows
     // left un-erased for weeks. Keep every erase-set CHILD ahead of its PARENT;
     // the `stripe_checkout_sessions_precedes_tier_selections` test guards this edge.
+    // Recoverable Stripe Checkout ownership state (migr. 0111). This row has
+    // a foreign key to `tier_selections`, so it MUST be deleted before that
+    // parent (the checkout-session child immediately below is ordered for the
+    // same reason).
+    "stripe_checkout_ownership_ledger",
     // Stripe Checkout *session* state, `tenant_id`-keyed (migr. 0039/0062).
     // Transient pre-purchase intent — NOT the fiscal record (the retained
     // invoice/customer/subscription rows are the 5y fiscal artifact). ERASE.
@@ -108,6 +113,9 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     // CAA-360 #11: per-tenant spend ledger (`tenant_id` PK, migration 0066).
     // Operational quota state, not a fiscal invoice record → erased on a DSR.
     "tenant_quota",
+    // githugr issuer → isolated tenant identity map (migr. 0112). This is
+    // operational identity state, not a retained audit/fiscal record.
+    "githugr_tenant_org_map",
     // ── CF-1 (2026-06-28): tenant-keyed tables added AFTER the 2026-06-11
     // ADR-S11-013 ratification that were never back-added to the erase-set.
     // Each is operational tenant state / tenant PII with no legal-retention
@@ -187,6 +195,11 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     // opposite. Shipping the table without this line trades a loud 500 for
     // silent UNDER-erasure, which is the worse half of that pair.
     "devenv_monthly_vcpu",
+    // B-071 GC/CAS intent fences (migr. 0115). These are transient recovery
+    // state and must not survive tenant erasure.
+    "gc_purge_intent",
+    "cas_write_intent",
+    "cas_reconciliation_intent",
 ];
 
 /// Erase-set tables keyed by a `namespace` column. The bound value is the
@@ -237,6 +250,12 @@ pub(super) const RETAIN_SET: &[&str] = &[
     "stripe_submission_state",      // billing submission state (migr. 0019)
     "customer_audit_events",        // per-tenant audit evidence (migr. 0077)
     "audit_chain_head",             // audit-chain seal head — integrity (migr. 0078)
+    // B-054 epoch-contract evidence (migr. 0109). These are append-only
+    // audit-chain authority/projection/manifest rows and therefore remain as
+    // legal audit evidence after tenant erasure.
+    "audit_chain_epoch_ledger",
+    "audit_chain_epoch",
+    "audit_chain_archive_manifest",
     // Durable money-path audit-before-mutation record (migr. 0092): the
     // tier-select orchestration's `tier_select_attempted` / `dpa_first_violation`
     // / `stripe_checkout_session_created` / `tier_activated_free` events. Holds
@@ -303,9 +322,15 @@ const CAS_PLANE_OWNED: &[&str] = &[
 
 /// Erase-set tables handled by bespoke logic (not the simple
 /// `WHERE <col> = ?1` loop): `signup_attempts` joins through
-/// `signup_orchestration.idempotency_key`; `tenant` is deleted LAST.
-pub(super) const SPECIAL_ERASE_TABLES: &[&str] =
-    &["signup_orchestration", "signup_attempts", "tenant"];
+/// `signup_orchestration.idempotency_key`; `clerk_provisioning_lock` is keyed
+/// by `tenant.clerk_user_id` and is deleted before the root; `tenant` is
+/// deleted LAST.
+pub(super) const SPECIAL_ERASE_TABLES: &[&str] = &[
+    "signup_orchestration",
+    "signup_attempts",
+    "clerk_provisioning_lock",
+    "tenant",
+];
 
 /// **Every** live, tenant-scoped D1 table (keyed by `tenant_id`, `namespace`,
 /// or an opaque principal id), derived from `migrations/d1/*.sql`. Transient
@@ -320,6 +345,7 @@ pub(super) const SPECIAL_ERASE_TABLES: &[&str] =
 /// migration therefore cannot silently escape erasure classification.
 const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     // erase-set (tenant_id)
+    "stripe_checkout_ownership_ledger",
     "tier_selections",
     "tenant_billing",
     "pilot_signups",
@@ -342,6 +368,7 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "adapter_oci_kv",
     "survey_responses",
     "tenant_quota",
+    "githugr_tenant_org_map",
     "team_member",
     "cas_tombstone",
     "pilot_tenants",
@@ -361,6 +388,9 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "usage_daily",
     "runner_usage_counter",
     "devenv_monthly_vcpu",
+    "gc_purge_intent",
+    "cas_write_intent",
+    "cas_reconciliation_intent",
     // erase-set (namespace)
     "adapter_cache_map",
     "adapter_npm_meta",
@@ -383,6 +413,9 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "stripe_submission_state",
     "customer_audit_events",
     "audit_chain_head",
+    "audit_chain_epoch_ledger",
+    "audit_chain_epoch",
+    "audit_chain_archive_manifest",
     "tier_select_audit_events",
     "stripe_billing_audit_events",
     "tenant_legal_hold",
@@ -396,6 +429,7 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "manifest_chunks",
     "multipart_sessions",
     // special
+    "clerk_provisioning_lock",
     "signup_orchestration",
     "signup_attempts",
     "tenant",
@@ -510,6 +544,31 @@ impl D1EraseAdapter {
         Ok(region)
     }
 
+    /// Read the Clerk principal that owns the tenant before any row is
+    /// deleted. `clerk_provisioning_lock` is keyed by this value rather than
+    /// `tenant_id`, so a missing/blank value is a fail-closed error: deleting
+    /// the tenant without it would make the lock impossible to target and
+    /// could leave identity state behind.
+    fn clerk_user_id_before_delete(&self, tid: &str) -> Result<String, ErasureBackendError> {
+        let rows = d1_query_blocking(
+            &self.d1,
+            "SELECT clerk_user_id FROM tenant WHERE tenant_id = ?1 LIMIT 1",
+            vec![json!(tid)],
+        )
+        .map_err(ErasureBackendError::Transport)?;
+        let Some(clerk_user_id) = rows.first().and_then(|row| col_str(row, "clerk_user_id")) else {
+            return Err(ErasureBackendError::Transport(
+                "tenant.clerk_user_id missing; refusing DSR deletion".to_owned(),
+            ));
+        };
+        if clerk_user_id.trim().is_empty() {
+            return Err(ErasureBackendError::Transport(
+                "tenant.clerk_user_id blank; refusing DSR deletion".to_owned(),
+            ));
+        }
+        Ok(clerk_user_id)
+    }
+
     /// `signup_attempts` has no `tenant_id`; its rows join to the tenant via
     /// `idempotency_key` → `signup_orchestration`. MUST run before the
     /// `signup_orchestration` delete (else the subquery finds nothing).
@@ -532,6 +591,24 @@ impl D1EraseAdapter {
         Ok(n)
     }
 
+    /// `clerk_provisioning_lock` is keyed by `tenant.clerk_user_id`, not by
+    /// `tenant_id`; the caller must obtain the principal before deleting the
+    /// tenant root. The lock is transient provisioning state and is erased
+    /// before the root deletion.
+    fn count_clerk_provisioning_lock(
+        &self,
+        clerk_user_id: &str,
+    ) -> Result<u64, ErasureBackendError> {
+        self.count("clerk_provisioning_lock", "clerk_user_id", clerk_user_id)
+    }
+
+    fn delete_clerk_provisioning_lock(
+        &self,
+        clerk_user_id: &str,
+    ) -> Result<u64, ErasureBackendError> {
+        self.count_then_delete("clerk_provisioning_lock", "clerk_user_id", clerk_user_id)
+    }
+
     /// Count all remaining erase-set rows for a tenant (verification sweep).
     fn remaining_rows(&self, tid: &str) -> Result<u64, ErasureBackendError> {
         let mut remaining = 0u64;
@@ -544,6 +621,24 @@ impl D1EraseAdapter {
         remaining = remaining.saturating_add(self.count_signup_attempts(tid)?);
         remaining =
             remaining.saturating_add(self.count("signup_orchestration", "tenant_id", tid)?);
+        // The lock is keyed by tenant.clerk_user_id. If the root is still
+        // present (for example after a partial failure), count it through the
+        // same tenant binding; after a successful root deletion there can be
+        // no lock that this tenant-scoped adapter can legitimately identify.
+        let clerk_rows = d1_query_blocking(
+            &self.d1,
+            "SELECT clerk_user_id FROM tenant WHERE tenant_id = ?1 LIMIT 1",
+            vec![json!(tid)],
+        )
+        .map_err(ErasureBackendError::Transport)?;
+        if let Some(clerk_user_id) = clerk_rows
+            .first()
+            .and_then(|row| col_str(row, "clerk_user_id"))
+            .filter(|id| !id.trim().is_empty())
+        {
+            remaining =
+                remaining.saturating_add(self.count_clerk_provisioning_lock(&clerk_user_id)?);
+        }
         remaining = remaining.saturating_add(self.count("tenant", "tenant_id", tid)?);
         Ok(remaining)
     }
@@ -581,6 +676,10 @@ impl BackendErasureAdapter for D1EraseAdapter {
         // MUST precede every mutation, including child cleanup. A missing or
         // malformed residency pin fails closed and leaves the tenant intact.
         let _primary_region = self.primary_region_before_delete(&tid)?;
+        // This lookup is deliberately before the first DELETE. The special
+        // lock cleanup below is keyed by this value and therefore cannot be
+        // safely deferred until after the tenant root is gone.
+        let clerk_user_id = self.clerk_user_id_before_delete(&tid)?;
         let mut total = 0u64;
 
         // Group A — tenant_id-keyed child tables.
@@ -598,7 +697,10 @@ impl BackendErasureAdapter for D1EraseAdapter {
             "tenant_id",
             &tid,
         )?);
-        // Group D — the root identity row LAST (covers the ALTER columns
+        // Group D — the Clerk provisioning lease is keyed by the tenant's
+        // Clerk principal. It MUST be removed before the tenant root.
+        total = total.saturating_add(self.delete_clerk_provisioning_lock(&clerk_user_id)?);
+        // Group E — the root identity row LAST (covers the ALTER columns
         // primary_region / byok_status / clerk_user_id / email_hash /
         // stripe_customer_id on `tenant`).
         total = total.saturating_add(self.count_then_delete("tenant", "tenant_id", &tid)?);
