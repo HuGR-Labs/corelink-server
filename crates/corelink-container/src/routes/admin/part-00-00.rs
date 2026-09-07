@@ -160,6 +160,29 @@ pub struct AdminRouteState {
     pub approvals_durable: bool,
 }
 
+impl AdminRouteState {
+    /// Construct route state from the complete public handler stack and gate
+    /// configuration.
+    #[must_use]
+    pub fn new(
+        read: Arc<dyn AdminReadHandler>,
+        mutate: Arc<dyn AdminMutateHandler>,
+        internal_auth_key: Option<Arc<str>>,
+        approval_writer: Arc<dyn ApprovalLedgerWriter>,
+        approver_auth_key: Option<Arc<str>>,
+        approvals_durable: bool,
+    ) -> Self {
+        Self {
+            read,
+            mutate,
+            internal_auth_key,
+            approval_writer,
+            approver_auth_key,
+            approvals_durable,
+        }
+    }
+}
+
 impl core::fmt::Debug for AdminRouteState {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("AdminRouteState").finish_non_exhaustive()

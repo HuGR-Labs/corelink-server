@@ -302,6 +302,24 @@ pub struct PilotAdminRouteState {
     pub internal_auth_key: Option<Arc<str>>,
 }
 
+impl PilotAdminRouteState {
+    /// Construct pilot-admin route state from its public collaborators.
+    #[must_use]
+    pub fn new(
+        store: Arc<dyn PilotStore>,
+        audit_sink: Arc<dyn PilotAuditSink>,
+        wall_clock: Arc<dyn crate::wall_clock::WallClock>,
+        internal_auth_key: Option<Arc<str>>,
+    ) -> Self {
+        Self {
+            store,
+            audit_sink,
+            wall_clock,
+            internal_auth_key,
+        }
+    }
+}
+
 impl fmt::Debug for PilotAdminRouteState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PilotAdminRouteState")

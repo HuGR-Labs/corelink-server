@@ -60,14 +60,14 @@ const TEST_INTERNAL_AUTH_KEY: &str = "test-internal-auth-key-32-bytes-x";
 /// Build an `AdminRouteState` with the operator gate configured.
 fn admin_state_with_gate() -> AdminRouteState {
     let stack = admin::build_handler_stack();
-    AdminRouteState {
-        read: stack.read,
-        mutate: stack.mutate,
-        internal_auth_key: Some(Arc::from(TEST_INTERNAL_AUTH_KEY)),
-        approval_writer: stack.approval_writer,
-        approver_auth_key: Some(Arc::from(TEST_INTERNAL_AUTH_KEY)),
-        approvals_durable: stack.durable,
-    }
+    AdminRouteState::new(
+        stack.read,
+        stack.mutate,
+        Some(Arc::from(TEST_INTERNAL_AUTH_KEY)),
+        stack.approval_writer,
+        Some(Arc::from(TEST_INTERNAL_AUTH_KEY)),
+        stack.durable,
+    )
 }
 
 /// AC lookup against a fresh handler MUST reach the handler and

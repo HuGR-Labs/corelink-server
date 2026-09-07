@@ -286,6 +286,28 @@ pub struct PilotTenant {
     pub first_blob_at_ms: Option<u64>,
 }
 
+impl PilotTenant {
+    /// Construct a new tenant record with free-tier defaults.
+    #[must_use]
+    pub fn new(
+        tenant_id: Uuid,
+        slug: impl Into<String>,
+        pilot_state: PilotState,
+        signup_at_ms: u64,
+    ) -> Self {
+        Self {
+            tenant_id,
+            slug: slug.into(),
+            tier: "free".to_string(),
+            cap_bytes: 0,
+            pilot_state,
+            signup_at_ms,
+            tier_granted_at_ms: None,
+            first_blob_at_ms: None,
+        }
+    }
+}
+
 // -----------------------------------------------------------------------------
 // Audit row + sink
 // -----------------------------------------------------------------------------
