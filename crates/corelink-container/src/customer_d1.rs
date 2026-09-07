@@ -142,7 +142,9 @@ mod tests {
     include!("customer_d1_tests_maps_calendar.rs");
     include!("customer_d1_tests_overview_usage.rs");
     include!("customer_d1_tests_billing_keys.rs");
+    include!("customer_d1_tests_billing_keys_part2.rs");
     include!("customer_d1_tests_team_audit_misc.rs");
+    include!("customer_d1_tests_team_audit_misc_part2.rs");
     include!("customer_d1_tests_byok_read.rs");
     include!("customer_d1_tests_byok_write.rs");
 }
