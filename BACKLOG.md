@@ -1485,9 +1485,9 @@ owner: tl
 status: done
 source-document: "PR containment audit #1550/#1558"
 source-locator: "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md:3-20"
-finding-title: "canonical WP ledger must stay aligned with the dense 323-item population"
+finding-title: "canonical WP ledger must stay aligned with the dense 324-item population"
 problem: "the ledger verifier, catalogs and pending changelogs once described an obsolete pre-D03 baseline instead of the delivered main base and live owner population"
-evidence: "python3 scripts/verify_backlog_wp_ledger.py after reconciliation: 323 items, 16 open, 268 done, 39 parked; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
+evidence: "python3 scripts/verify_backlog_wp_ledger.py after reconciliation: 324 items, 16 open, 269 done, 39 parked; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
 acceptance: "the ledger and catalogs name delivered main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266 as the immutable ancestry base, retain 7b992e9db123abeb76381b1c1337011692f2e834 only as D03 provenance, reconcile live counts, and fail closed on wrong or unrelated ancestry"
 verify: |
   set -euo pipefail
@@ -1500,14 +1500,14 @@ verify: |
   sys.path.insert(0, "scripts")
   import verify_backlog_wp_ledger as ledger
   text = Path("BACKLOG.md").read_text()
-  assert len(ledger.all_backlog_ids(text)) == 323
+  assert len(ledger.all_backlog_ids(text)) == 324
   assert len(ledger.open_backlog_ids(text)) == 16
-  assert ledger.backlog_status_counts(text) == {"open": 16, "done": 268, "parked": 39}
+  assert ledger.backlog_status_counts(text) == {"open": 16, "done": 269, "parked": 39}
   assert ledger.LEDGER_BASE_REF == "main"
   assert ledger.LEDGER_BASE_SHA == "ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
   PY
 verify-means: |
-  done — the live verifier proves 16/16 open-ID ownership, 323 total records,
+  done — the live verifier proves 16/16 open-ID ownership, 324 total records,
   exact catalog populations, predecessor ordering, editable/workflow ownership,
   and the D03 base ref/SHA relationship. The focused parser suite remains
   load-bearing: stale metadata, a tampered base and missing CI predecessor are
@@ -1758,6 +1758,26 @@ verify-means: |
   disjoint target identities, pins Docker and test selection to the reviewed
   fixture, preserves the owner gate, and rejects collision, implicit promotion
   or stderr loss. Execution remains owned by the cumulative D03 sprint CI.
+last-verified: 2026-09-06
+```
+
+### B-324 — extracted server tests duplicated their lint allowance
+```backlog
+id: B-324
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/main_tests.rs:1-2"
+finding-title: "the same test-only unwrap and expect allowance appeared twice"
+problem: "Once Clippy reached the server binary test target, duplicated_attributes rejected two byte-identical crate attributes before evaluating the tests."
+evidence: "6cf6da46c retains one test-module allowance and removes only its duplicate."
+acceptance: "The test-only allowance occurs exactly once at module scope, imports and test behavior remain unchanged, no duplicated-attribute suppression is added, and adversarial mutations fail closed."
+verify: python3 scripts/verify_b324_main_test_lint_scope.py --self-test
+verify-means: |
+  done — the bounded verifier requires one exact crate attribute in the
+  reviewed module position and rejects deletion, duplication or conversion to
+  an item attribute. Full Clippy proof remains cumulative at sprint level.
 last-verified: 2026-09-06
 ```
 
@@ -14900,8 +14920,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-06):** `records=323`,
-  `command_records=307`, `manual=16`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-06):** `records=324`,
+  `command_records=308`, `manual=16`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma
