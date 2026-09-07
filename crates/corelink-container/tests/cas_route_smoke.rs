@@ -119,8 +119,8 @@ async fn cas_read_route_does_not_match_literal_braces_uri() {
         // Literal-brace TENANT segment is the route-matching pin (`%7B…%7D`
         // decodes to `{tenant}` and must be treated as path DATA, reaching the
         // handler — not a literal-route collision). The hash is a valid 64-hex
-        // digest so the CAA-360 #9 malformed-hash guard passes and the request
-        // still lands on the handler's not-found 404.
+        // digest so the CAA-360 #9 malformed-hash guard would pass; the
+        // cross-tenant guard rejects the literal path tenant first with 403.
         .uri(
             "/v1/cas/%7Btenant%7D/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         )
