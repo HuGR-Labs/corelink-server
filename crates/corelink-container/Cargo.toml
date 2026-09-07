@@ -318,6 +318,8 @@ corelink-slo = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+# The money-path auth integration test must honor the local system proxy.
+reqwest = { workspace = true, features = ["system-proxy"] }
 # Wave-29 stream-1 — `hmac` / `sha2` / `hex` promoted to main deps
 # above so the pilot-signup route can verify token HMAC-SHA256
 # signatures at runtime. Tests inherit them automatically.
