@@ -18,6 +18,19 @@ class ContractError(RuntimeError):
     pass
 
 
+# Keep the source contract on the live include!()-assembled CAS modules. The
+# historical monolithic units no longer exist after the source split.
+CAS_ROUTE_PARTS = (
+    "foundation_core.rs",
+    "foundation_state.rs",
+    "single_setup.rs",
+    "single_handlers.rs",
+    "batch_write.rs",
+    "batch_read.rs",
+    "list_delete.rs",
+)
+
+
 def _section(source: str, start: str, end: str) -> str:
     begin = source.find(start)
     if begin < 0:
@@ -105,15 +118,7 @@ def assess(root: Path) -> list[str]:
     route += "\n" + "\n".join(
         p.read_text(encoding="utf-8") for p in (
             root / "crates/corelink-container/src/routes/cas" / n
-            for n in (
-                "foundation_core.rs",
-                "foundation_state.rs",
-                "single_setup.rs",
-                "single_handlers.rs",
-                "batch_write.rs",
-                "batch_read.rs",
-                "list_delete.rs",
-            )
+            for n in CAS_ROUTE_PARTS
         )
     )
     handler = (root / "crates/corelink-handler-cas/src/request.rs").read_text(encoding="utf-8")

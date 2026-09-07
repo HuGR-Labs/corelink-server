@@ -20,15 +20,7 @@ class B078ContractTests(unittest.TestCase):
         route = (ROOT / "crates/corelink-container/src/routes/cas.rs").read_text()
         route += "\n" + "\n".join(
             (ROOT / "crates/corelink-container/src/routes/cas" / name).read_text()
-            for name in (
-                "foundation_core.rs",
-                "foundation_state.rs",
-                "single_setup.rs",
-                "single_handlers.rs",
-                "batch_write.rs",
-                "batch_read.rs",
-                "list_delete.rs",
-            )
+            for name in verifier.CAS_ROUTE_PARTS
         )
         handler = (ROOT / "crates/corelink-handler-cas/src/request.rs").read_text()
         handler += (ROOT / "crates/corelink-handler-cas/src/handler.rs").read_text()

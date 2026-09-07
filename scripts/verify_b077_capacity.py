@@ -19,6 +19,20 @@ PAT = ROOT / "crates/corelink-container/src/adapter_pat.rs"
 MAIN = ROOT / "crates/corelink-container/src/main.rs"
 AUTH = ROOT / "crates/corelink-container/src/auth_tenant.rs"
 
+# The executable CAS route is assembled with include!() from these source
+# units. Keep this list aligned with cas.rs so the verifier reads the live
+# implementation rather than historical pre-split modules.
+CAS_ROUTE_PARTS = (
+    "crates/corelink-container/src/routes/cas.rs",
+    "crates/corelink-container/src/routes/cas/foundation_core.rs",
+    "crates/corelink-container/src/routes/cas/foundation_state.rs",
+    "crates/corelink-container/src/routes/cas/single_setup.rs",
+    "crates/corelink-container/src/routes/cas/single_handlers.rs",
+    "crates/corelink-container/src/routes/cas/batch_write.rs",
+    "crates/corelink-container/src/routes/cas/batch_read.rs",
+    "crates/corelink-container/src/routes/cas/list_delete.rs",
+)
+
 
 def const_int(source: str, name: str, env: dict[str, int] | None = None) -> int:
     match = re.search(rf"pub const {name}: u64 =\s*([^;]+);", source)
@@ -34,13 +48,6 @@ def const_int(source: str, name: str, env: dict[str, int] | None = None) -> int:
 
 
 def main() -> int:
-    cas_parts = (
-        "crates/corelink-container/src/routes/cas.rs",
-        "crates/corelink-container/src/routes/cas/foundation.rs",
-        "crates/corelink-container/src/routes/cas/single.rs",
-        "crates/corelink-container/src/routes/cas/batch.rs",
-        "crates/corelink-container/src/routes/cas/list_delete.rs",
-    )
     r2_parts = (
         "crates/corelink-container/src/storage/r2_s3.rs",
         "crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs",
@@ -67,7 +74,9 @@ def main() -> int:
         p: p.read_text(encoding="utf-8")
         for p in (CAPACITY, LIB, CAS_ERASE, TURBO, PAT, MAIN, AUTH)
     }
-    sources[CAS] = "\n".join((ROOT / p).read_text(encoding="utf-8") for p in cas_parts)
+    sources[CAS] = "\n".join(
+        (ROOT / p).read_text(encoding="utf-8") for p in CAS_ROUTE_PARTS
+    )
     sources[R2_S3] = "\n".join((ROOT / p).read_text(encoding="utf-8") for p in r2_parts)
     sources[TURBO] = "\n".join((ROOT / p).read_text(encoding="utf-8") for p in turbo_parts)
     sources[CAS_ERASE] = "\n".join((ROOT / p).read_text(encoding="utf-8") for p in erase_parts)
