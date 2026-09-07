@@ -1,8 +1,44 @@
+    #[tokio::test]
+    async fn index_miss_stores_index_without_blob_fetches() {
+        let r = rig();
+        let t = tenant(4);
+        let repo = "library/debian";
+        let child = sha256_wire(b"per-arch-manifest");
+        let index = index_bytes(&child);
+        let index_digest = sha256_wire(&index);
+        r.manifest_fetcher.insert(
+            repo,
+            "12",
+            FetchedManifest {
+                bytes: index.clone(),
+                content_type: Some("application/vnd.oci.image.index.v1+json".to_owned()),
+                docker_content_digest: Some(index_digest.clone()),
+            },
+        );
+        let out = r
+            .resolver
+            .resolve_on_miss(&t, repo, "12")
+            .await
+            .unwrap()
+            .expect("index resolves");
+        assert_eq!(out.digest, index_digest);
+        assert_eq!(out.content_type, "application/vnd.oci.image.index.v1+json");
+        // Index stored; NO blob fetches, NO recursion into the per-arch child.
+        assert!(r
+            .kv
+            .0
+            .lock()
+            .unwrap()
+            .contains_key(&(t.to_canonical_text(), manifest_key(repo, "12"))));
+        assert_eq!(
+            r.blob_fetcher.call_count(),
+
             0,
             "an index must not fetch blobs"
         );
         assert!(r.cas.0.lock().unwrap().is_empty());
     }
+
 
     #[tokio::test]
     async fn tenant_a_resolution_is_not_visible_to_tenant_b() {

@@ -72,5 +72,6 @@ impl UpstreamManifestResolver {
 )]
 mod tests {
     include!("tests-00-00.rs");
+    include!("fragment-tests-00-00-01.rs");
     include!("tests-00-01.rs");
 }

@@ -1,3 +1,60 @@
+impl UpstreamManifestResolver {
+    /// Promote the FULL TRANSITIVE CLOSURE of an allowlisted-root DIGEST into the
+    /// shared `_public` namespace, then serve the just-promoted manifest. Returns
+    /// `None` on ANY failure (fail-open: the caller falls through to the M1
+    /// per-tenant path) — and, critically, the root index/manifest is stored LAST
+    /// (only after every child + blob verified + stored), so a mid-closure
+    /// failure never leaves a `_public` root that a later existence read would
+    /// serve as a COMPLETE closure. Orphaned children/blobs left behind are
+    /// individually digest-verified + content-addressed (harmless; a re-promote
+    /// is idempotent).
+    ///
+    /// Every descriptor is digest-verified against fetched bytes BEFORE its
+    /// `_public` write (fail-CLOSED). `repo` is gated through the SAME
+    /// origin-escape guard the mirror uses before any upstream fetch.
+    async fn promote_public_closure(
+        &self,
+        repo: &str,
+        root_digest: &str,
+    ) -> Option<ResolvedManifest> {
+        // Anti-bloat ceiling (B4): refuse once this instance has promoted enough
+        // into `_public`. Fail-open — the tenant still gets a per-tenant resolve.
+        if !self.public_under_ceiling() {
+            return None;
+        }
+        if validate_repository(repo).is_err() {
+            return None;
+        }
+        // Fetch + verify the ROOT by its immutable digest.
+        let parsed_root = OciDigest::parse(root_digest).ok()?;
+        let fetched = self
+            .manifest_fetcher
+            .fetch_manifest(repo, root_digest)
+            .await
+            .ok()?;
+        if fetched.bytes.len() > MAX_PULLTHROUGH_MANIFEST_BYTES {
+            return None;
+        }
+        // Fail-CLOSED: the fetched bytes MUST hash to the allowlisted digest.
+        parsed_root.verify_against_bytes(&fetched.bytes).ok()?;
+        let json = serde_json::from_slice::<serde_json::Value>(&fetched.bytes).ok()?;
+        let content_type = manifest_media_type(fetched.content_type.as_deref(), &json);
+
+        if let Some(children) = index_child_digests(&json) {
+            // INDEX: promote each per-arch child (its config + layers + the child
+            // manifest) FIRST; only if ALL succeed store the index bytes LAST.
+            for child in &children {
+                if !self.promote_public_child_manifest(repo, child).await {
+                    return None;
+                }
+            }
+            if self
+                .moat
+                .put(
+                    PUBLIC_NAMESPACE,
+                    root_digest,
+                    fetched.bytes.clone(),
+                    PUBLIC_CAP,
                 )
                 .await
                 .is_err()
