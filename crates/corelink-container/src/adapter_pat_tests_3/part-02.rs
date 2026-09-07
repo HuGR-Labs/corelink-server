@@ -1,3 +1,40 @@
+    /// THE ACQUIRE-ORDER PIN. `a_saturated_shared_burn_bucket_sheds_only_the_unknown_arm`
+    /// above proves the shared bucket sheds the right arm; this proves the shed
+    /// is FREE, which is the property finding #12 was actually claiming.
+    ///
+    /// The bucket caps concurrent dummy BURNS at the sub-cap by construction.
+    /// It does NOT, by construction, cap this arm's occupancy of the GLOBAL
+    /// pool: with the original global-then-bucket order, a request already
+    /// destined to shed first took a global permit and then queued on the full
+    /// bucket for the whole `ARGON2_PERMIT_WAIT`, holding pool capacity hostage
+    /// for 250 ms in order to burn nothing. At the rate the bucket itself
+    /// admits, that pinned essentially the entire pool — the drain the bucket
+    /// exists to close, merely displaced one step upstream. Taking the bucket
+    /// FIRST, and non-blockingly, is what turns the sub-cap into a real bound on
+    /// the arm's global footprint.
+    ///
+    /// So a status assertion cannot carry this test: both orders shed, and both
+    /// shed with the same message. What separates them is whether the pool was
+    /// OCCUPIED while they did it, which is measured here directly — first for
+    /// one request, then for a flood.
+    ///
+    /// ⚠️ A note on what this test deliberately does NOT assert, because the
+    /// obvious formulation is a coin flip: "a concurrent live PAT still
+    /// resolves" does not separate the two orders. `tokio::sync::Semaphore` is
+    /// FIFO-fair, so a live request that queues behind the flood waits for
+    /// exactly ONE release — and the pre-fix arm holds its permit for exactly
+    /// `ARGON2_PERMIT_WAIT`, the same budget the live request is waiting under.
+    /// Measured, the pre-fix order let the live PAT through about half the
+    /// time. What a shedding request provably costs is CAPACITY, so capacity is
+    /// what gets asserted: an outside consumer must be able to take the whole
+    /// pool while the flood is in flight.
+    ///
+    /// PROVEN RED against the pre-fix order (measured, by reverting the arm to
+    /// the bounded `acquire` after the global permit): phase 1 reports
+    /// `parked the global permit on 30-38 of 40 samples`, and with phase 1
+    /// neutralised phase 2 reports `only 0 of 4 global permits were free while
+    /// 4 bogus token_ids shed` on 3 runs of 3. Both are green on 3 runs of 3
+    /// with the fix.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn a_shed_on_the_shared_burn_bucket_holds_no_global_permit() {
         const FLOOD: usize = 4;

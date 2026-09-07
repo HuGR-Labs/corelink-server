@@ -328,3 +328,4 @@ async fn burst_observations(
 /// one bit: the token_id is live. With the fix both arms are 8/8
 /// `Unauthorized`.
 include!("adapter_pat_tests_3/part-01.rs");
+include!("adapter_pat_tests_3/part-02.rs");
