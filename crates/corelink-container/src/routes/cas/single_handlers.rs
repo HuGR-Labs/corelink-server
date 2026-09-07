@@ -130,6 +130,10 @@ async fn handle_read(
 /// via the URL path. The handler enforces hash equality before
 /// committing to durable storage. On success: 201 Created (fresh
 /// insert) or 200 OK (idempotent re-write).
+#[allow(
+    clippy::too_many_arguments,
+    reason = "axum supplies independent request extractors to the route handler"
+)]
 async fn handle_write(
     State(state): State<CasRouteState>,
     Path((tenant, hash)): Path<(String, String)>,

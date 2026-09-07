@@ -42,6 +42,10 @@
 /// JSON array `[{"hash":"…","status":"created|exists|error","error":<msg|null>}]`
 /// in manifest order (`created` = fresh write, `exists` = idempotent
 /// already-present, `error` = per-object failure).
+#[allow(
+    clippy::too_many_arguments,
+    reason = "axum supplies independent request extractors to the route handler"
+)]
 async fn handle_batch_write(
     State(state): State<CasRouteState>,
     Path(tenant): Path<String>,
