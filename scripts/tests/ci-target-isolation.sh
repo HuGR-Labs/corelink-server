@@ -32,10 +32,11 @@ require_pattern 'trap cleanup_ci EXIT' 'EXIT cleanup trap'
 require_pattern "trap 'on_ci_signal (HUP|INT|TERM)'" 'signal cleanup traps'
 require_pattern 'CI_TARGET_DIR_CREATED' 'owned-directory cleanup guard'
 require_pattern 'target/ci-logs' 'preserved CI log directory'
-require_pattern 'set -m' 'owned process-group launch'
-require_pattern 'set \+m' 'validator process-group inheritance'
 # shellcheck disable=SC2016  # grep must inspect literal shell variables.
-require_pattern 'kill -TERM -- "-\$pgid"' 'process-group termination'
+require_pattern 'CI_PRESERVE_TARGET=1' 'cancellation target preservation'
+require_pattern 'CI_PIPELINES_AWAITED=1' 'normal pipeline completion marker'
+# shellcheck disable=SC2016  # grep must inspect the literal shell variable.
+require_pattern 'kill -TERM "\$pid"' 'direct-PID signal forwarding'
 # shellcheck disable=SC2016
 require_pattern 'wait "\$RUST_PID"' 'Rust wait before PID clear'
 # shellcheck disable=SC2016
@@ -43,8 +44,8 @@ require_pattern 'wait "\$VAL_PID"' 'validator wait before PID clear'
 require_pattern 'RUST_PID=""' 'Rust PID clearing'
 require_pattern 'VAL_PID=""' 'validator PID clearing'
 
-if grep -Eq '(^|[^[:alnum:]_])pgrep([^[:alnum:]_]|$)' "$CI_SCRIPT"; then
-    echo 'ci target isolation: cleanup must not depend on pgrep process-tree races' >&2
+if grep -Eq 'set -m|set \+m|pgrep|PGID|process.group|process group' "$CI_SCRIPT"; then
+    echo 'ci target isolation: cleanup must not manage process groups or trees' >&2
     exit 1
 fi
 
@@ -72,5 +73,11 @@ if grep -Eq 'rm -rf -- .*CARGO_TARGET_DIR|rm -rf -- .*CI_CALLER_TARGET_DIR' "$CI
     echo 'ci target isolation: cleanup must not remove a caller-provided target' >&2
     exit 1
 fi
+
+# Target deletion must be gated by normal completion, not merely by EXIT.
+require_pattern 'CI_PRESERVE_TARGET.*-eq 0' 'preserve flag in cleanup gate'
+require_pattern 'CI_PIPELINES_AWAITED.*-eq 1' 'awaited flag in cleanup gate'
+require_pattern '\-z "\$\{RUST_PID:-\}"' 'empty Rust PID cleanup gate'
+require_pattern '\-z "\$\{VAL_PID:-\}"' 'empty validator PID cleanup gate'
 
 echo 'ci target isolation: PASS (static+lifecycle contract; Cargo/CI gates not executed)'
