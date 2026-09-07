@@ -1898,7 +1898,7 @@ source-document: "D03 final CI fixture sweep"
 source-locator: "crates/corelink-container/src/routes/admin/part-02-01.rs; crates/corelink-container/src/routes/dpa_accept_tests.rs; crates/corelink-container/src/routes/tier_select/part-02-00.rs; crates/corelink-container/src/routes/tier_select/part-02-01.rs"
 finding-title: "stale tests expected dedicated-auth fallback and a generic Stripe error"
 problem: "A malformed dedicated key was still asserted to fall back to a valid shared key, and a failed Stripe call was still asserted as Internal instead of the typed StripeUnavailable error."
-evidence: "Integrated by 82d71061c and ff8b4281d; short dedicated keys now fail closed and the failed checkout assertion names StripeUnavailable with its diagnostic."
+evidence: "Integrated by 82d71061c and ff8b4281d; the money_path_auth_wiring.rs matrix covers both short and whitespace-only dedicated keys failing closed, and the failed checkout assertion names StripeUnavailable with its diagnostic."
 acceptance: "Short or whitespace-only dedicated auth values remain unmounted even when the shared key is valid; the Stripe failure path asserts the typed error and preserves reservation cleanup; no assertion is made green by weakening the route."
 verify: manual
 verify-means: |
@@ -15190,8 +15190,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-07):** `records=326`,
-  `command_records=310`, `manual=16`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-07):** `records=334`,
+  `command_records=310`, `manual=24`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma

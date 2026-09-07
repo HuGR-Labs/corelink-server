@@ -100,7 +100,7 @@ class Census:
     indeterminate: tuple[GrepCheck, ...]
 
 
-# Derived independently from the exact D03 fenced-record tree (2026-09-06).
+# Derived independently from the exact D03 fenced-record tree (2026-09-07).
 # Keep these closed: adding/removing/changing a record must require an explicit
 # census reconciliation instead of silently shrinking or growing the proof.
 EXPECTED_RECORDS = 334
