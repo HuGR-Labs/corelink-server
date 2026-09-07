@@ -168,6 +168,11 @@ on:
       - "tests/test_verify_b324_main_test_lint_scope.py"
       - "crates/corelink-container/src/main_tests.rs"
       - "changelog.d/b324-main-test-lint-scope.md"
+      # B-325 locks panic-free result propagation in BYOK wiring tests.
+      - "scripts/verify_b325_byok_wiring_test_results.py"
+      - "tests/test_verify_b325_byok_wiring_test_results.py"
+      - "crates/corelink-byok/tests/byok_revocation_wiring.rs"
+      - "changelog.d/b325-byok-wiring-test-results.md"
       - "scripts/b155_backlog_grep_parser.py"
       - "scripts/verify_d03_graduation.py"
       - "scripts/validate_permission_matrix.py"
@@ -448,6 +453,11 @@ on:
       - "tests/test_verify_b324_main_test_lint_scope.py"
       - "crates/corelink-container/src/main_tests.rs"
       - "changelog.d/b324-main-test-lint-scope.md"
+      # Repeat the B-325 BYOK wiring-test guard for push parity.
+      - "scripts/verify_b325_byok_wiring_test_results.py"
+      - "tests/test_verify_b325_byok_wiring_test_results.py"
+      - "crates/corelink-byok/tests/byok_revocation_wiring.rs"
+      - "changelog.d/b325-byok-wiring-test-results.md"
       - "scripts/b155_backlog_grep_parser.py"
       - "scripts/verify_d03_graduation.py"
       - "scripts/validate_permission_matrix.py"
@@ -740,6 +750,10 @@ jobs:
         run: |
           python3 scripts/verify_b324_main_test_lint_scope.py --self-test
           python3 -m pytest -q tests/test_verify_b324_main_test_lint_scope.py
+      - name: B-325 BYOK wiring test result guard and mutations
+        run: |
+          python3 scripts/verify_b325_byok_wiring_test_results.py --self-test
+          python3 -m pytest -q tests/test_verify_b325_byok_wiring_test_results.py
       - name: B-094 published-claims guard and mutations
         run: |
           command -v gitleaks

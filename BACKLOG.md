@@ -1781,6 +1781,26 @@ verify-means: |
 last-verified: 2026-09-06
 ```
 
+### B-325 — BYOK revocation wiring tests panic on ordinary setup failures
+```backlog
+id: B-325
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-byok/tests/byok_revocation_wiring.rs:29-289"
+finding-title: "six expect calls kept the BYOK wiring integration target out of strict Clippy"
+problem: "Once Clippy reached the complete corelink-byok integration-test population, cache construction, cycle execution and status reads still converted ordinary Result failures into panics."
+evidence: "16d347b9e makes all six async tests return TestResult, propagates cache/cycle/status errors with question-mark, and keeps the negative-path assertions explicit."
+acceptance: "The target contains no panic-based result extraction, all six tests return a fallible result, four cache constructions plus the successful cycle/status reads propagate errors, the fault helper returns its BYOKError, and adversarial mutations fail closed."
+verify: python3 scripts/verify_b325_byok_wiring_test_results.py --self-test
+verify-means: |
+  done — the bounded verifier locks all six test signatures and each reviewed
+  propagation boundary, rejects panic-based extraction and tests four weakening
+  mutations. Full compile, execution and Clippy proof remain sprint-level.
+last-verified: 2026-09-07
+```
+
 ### B-003 — the 864s ceiling from 2026-08-02 has no established mechanism
 
 That incident concluded jobs past ~900 s were being SIGTERMed. They could not
@@ -14920,8 +14940,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-06):** `records=324`,
-  `command_records=308`, `manual=16`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-07):** `records=325`,
+  `command_records=309`, `manual=16`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma
