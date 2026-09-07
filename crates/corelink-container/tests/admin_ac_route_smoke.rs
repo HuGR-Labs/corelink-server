@@ -57,6 +57,9 @@ use tower::ServiceExt;
 /// `admin.rs`.
 const TEST_INTERNAL_AUTH_KEY: &str = "test-internal-auth-key-32-bytes-x";
 
+const TENANT_A: &str = "01938af0-abcd-7123-8456-000000000001";
+const TENANT_B: &str = "01938af0-abcd-7123-8456-000000000002";
+
 /// Build an `AdminRouteState` with the operator gate configured.
 fn admin_state_with_gate() -> AdminRouteState {
     let stack = admin::build_handler_stack();
@@ -80,11 +83,13 @@ async fn ac_lookup_route_reaches_handler_and_returns_handler_miss_404() {
     let app = ac::router(state);
 
     let req = Request::builder()
-        .uri("/v1/ac/tenant-a/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+        .uri(format!(
+            "/v1/ac/{TENANT_A}/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ))
         .method("GET")
         // `AuthTenant` reads `x-corelink-tenant-id` and the handler 403s
-        // unless it equals the `:tenant` path segment — mirror `tenant-a`.
-        .header("x-corelink-tenant-id", "tenant-a")
+        // unless it equals the `:tenant` path segment — mirror `TENANT_A`.
+        .header("x-corelink-tenant-id", TENANT_A)
         .header("x-corelink-scope", "cas:rw")
         .body(Body::empty())
         .expect("build req");
@@ -114,11 +119,13 @@ async fn ac_update_route_reaches_handler_and_returns_handler_created_201() {
     let app = ac::router(state);
 
     let req = Request::builder()
-        .uri("/v1/ac/tenant-a/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+        .uri(format!(
+            "/v1/ac/{TENANT_A}/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ))
         .method("PUT")
         // `AuthTenant` reads `x-corelink-tenant-id` and the handler 403s
-        // unless it equals the `:tenant` path segment — mirror `tenant-a`.
-        .header("x-corelink-tenant-id", "tenant-a")
+        // unless it equals the `:tenant` path segment — mirror `TENANT_A`.
+        .header("x-corelink-tenant-id", TENANT_A)
         .header("x-corelink-scope", "cas:rw")
         .body(Body::from("result-bytes"))
         .expect("build req");
@@ -142,7 +149,7 @@ async fn ac_update_route_reaches_handler_and_returns_handler_created_201() {
 /// header MUST be rejected 401 by the `AuthTenant` extractor BEFORE
 /// the handler runs. Drop the `auth: AuthTenant` arg and this request
 /// would reach the handler and 404 (`ac miss`) instead. The path
-/// `:tenant` is a well-formed value (`tenant-a`) so the ONLY reason
+/// `:tenant` is a well-formed value (`TENANT_A`) so the ONLY reason
 /// for the rejection is the missing authenticated-tenant header.
 #[tokio::test]
 async fn ac_lookup_route_missing_tenant_header_returns_401() {
@@ -151,7 +158,7 @@ async fn ac_lookup_route_missing_tenant_header_returns_401() {
     let app = ac::router(state);
 
     let req = Request::builder()
-        .uri("/v1/ac/tenant-a/digest-xyz")
+        .uri(format!("/v1/ac/{TENANT_A}/digest-xyz"))
         .method("GET")
         // NO `x-corelink-tenant-id` header — `AuthTenant` fails CLOSED
         // with 401 before the handler is invoked.
@@ -178,11 +185,11 @@ async fn ac_lookup_route_path_tenant_ne_header_returns_403() {
     let app = ac::router(state);
 
     let req = Request::builder()
-        .uri("/v1/ac/tenant-a/digest-xyz")
+        .uri(format!("/v1/ac/{TENANT_A}/digest-xyz"))
         .method("GET")
-        // Header tenant (`tenant-b`) != path `:tenant` (`tenant-a`) →
+        // Header tenant (`TENANT_B`) != path `:tenant` (`TENANT_A`) →
         // cross-tenant attempt → 403 before storage access.
-        .header("x-corelink-tenant-id", "tenant-b")
+        .header("x-corelink-tenant-id", TENANT_B)
         .body(Body::empty())
         .expect("build req");
     let resp = app.oneshot(req).await.expect("oneshot");

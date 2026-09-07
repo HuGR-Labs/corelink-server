@@ -48,6 +48,9 @@ use corelink_handler_cas::{
 use corelink_server::routes::cas::{self, CasRouteState, CAS_READ_ROUTE};
 use tower::ServiceExt;
 
+const TENANT_A: &str = "01938af0-abcd-7123-8456-000000000001";
+const TENANT_B: &str = "01938af0-abcd-7123-8456-000000000002";
+
 fn fresh_state() -> CasRouteState {
     let audit = Arc::new(InMemoryAuditSink::new());
     let sli = Arc::new(InMemorySliObserver::new());
@@ -77,11 +80,13 @@ async fn cas_read_route_reaches_handler_and_returns_handler_not_found_404() {
         // so a valid digest is required for the request to reach the handler's
         // not-found 404 this test pins (the guard's 400 is itself handler-emitted,
         // but we assert the original 404/"not found" contract).
-        .uri("/v1/cas/tenant-a/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+        .uri(format!(
+            "/v1/cas/{TENANT_A}/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        ))
         .method("GET")
         // `AuthTenant` reads `x-corelink-tenant-id` and the handler 403s
-        // unless it equals the `:tenant` path segment — mirror `tenant-a`.
-        .header("x-corelink-tenant-id", "tenant-a")
+        // unless it equals the `:tenant` path segment — mirror `TENANT_A`.
+        .header("x-corelink-tenant-id", TENANT_A)
         .header("x-corelink-scope", "cas:rw")
         .body(Body::empty())
         .expect("build req");
@@ -103,7 +108,7 @@ async fn cas_read_route_reaches_handler_and_returns_handler_not_found_404() {
 /// Behavioural pin: a request whose path segments are the literal
 /// `{tenant}`/`{hash}` (percent-encoded curly braces in the URI) MUST
 /// still reach the handler with those literal segments as the path
-/// params and emit the handler's 404 — the matchit-0.8 `{tenant}` /
+/// params and emit the handler's cross-tenant 403 — the matchit-0.8 `{tenant}` /
 /// `{hash}` captures match any single non-slash segment, including
 /// one that happens to be literal braces.
 #[tokio::test]
@@ -121,22 +126,21 @@ async fn cas_read_route_does_not_match_literal_braces_uri() {
         )
         .method("GET")
         // The `:tenant` path segment decodes to the literal `{tenant}`;
-        // `AuthTenant` reads `x-corelink-tenant-id` and the handler 403s
-        // unless it matches — mirror the decoded literal so the request
-        // still reaches the handler (and gets the 404 this test asserts).
-        .header("x-corelink-tenant-id", "{tenant}")
+        // `AuthTenant` reads `x-corelink-tenant-id` and accepts the valid
+        // UUID, then the handler rejects the decoded literal path tenant as
+        // a cross-tenant request.
+        .header("x-corelink-tenant-id", TENANT_A)
         .header("x-corelink-scope", "cas:rw")
         .body(Body::empty())
         .expect("build req");
     let resp = app.oneshot(req).await.expect("oneshot");
-    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     let bytes = to_bytes(resp.into_body(), 1 << 20).await.expect("body");
     let body = String::from_utf8(bytes.to_vec()).expect("utf8 body");
     assert_eq!(
-        body, "not found",
+        body, "cross-tenant",
         "even the literal-braces URI must reach the handler; \
-         the handler resolves the unknown object to its canonical \
-         not-found path"
+         the handler rejects its path tenant as cross-tenant"
     );
 
     // Pin the public route constant — guards against future regression
@@ -163,14 +167,14 @@ async fn cas_route_state_constructs_without_panic_on_native() {
 /// the handler runs. This is the load-bearing route-layer proof that
 /// the `auth: AuthTenant` argument is wired: drop the arg and this
 /// request would reach the handler and 404 instead. The path `:tenant`
-/// is a well-formed value (`tenant-a`) so the ONLY reason for the
+/// is a well-formed value (`TENANT_A`) so the ONLY reason for the
 /// rejection is the missing authenticated-tenant header.
 #[tokio::test]
 async fn cas_read_route_missing_tenant_header_returns_401() {
     let app = cas::router(fresh_state());
 
     let req = Request::builder()
-        .uri("/v1/cas/tenant-a/abc123")
+        .uri(format!("/v1/cas/{TENANT_A}/abc123"))
         .method("GET")
         // NO `x-corelink-tenant-id` header — the `AuthTenant` extractor
         // fails CLOSED with 401 before the handler is invoked.
@@ -195,11 +199,11 @@ async fn cas_read_route_path_tenant_ne_header_returns_403() {
     let app = cas::router(fresh_state());
 
     let req = Request::builder()
-        .uri("/v1/cas/tenant-a/abc123")
+        .uri(format!("/v1/cas/{TENANT_A}/abc123"))
         .method("GET")
-        // Header tenant (`tenant-b`) != path `:tenant` (`tenant-a`) →
+        // Header tenant (`TENANT_B`) != path `:tenant` (`TENANT_A`) →
         // cross-tenant attempt → 403 before storage access.
-        .header("x-corelink-tenant-id", "tenant-b")
+        .header("x-corelink-tenant-id", TENANT_B)
         .body(Body::empty())
         .expect("build req");
     let resp = app.oneshot(req).await.expect("oneshot");
@@ -231,11 +235,11 @@ async fn cas_put_then_get_round_trip_through_router() {
 
     // PUT
     let put_req = Request::builder()
-        .uri(format!("/v1/cas/tenant-a/{hash}"))
+        .uri(format!("/v1/cas/{TENANT_A}/{hash}"))
         .method("PUT")
         // `AuthTenant` reads `x-corelink-tenant-id` and the handler 403s
-        // unless it equals the `:tenant` path segment — mirror `tenant-a`.
-        .header("x-corelink-tenant-id", "tenant-a")
+        // unless it equals the `:tenant` path segment — mirror `TENANT_A`.
+        .header("x-corelink-tenant-id", TENANT_A)
         .header("x-corelink-scope", "cas:rw")
         .body(Body::from(bytes.clone()))
         .expect("build PUT req");
@@ -254,11 +258,11 @@ async fn cas_put_then_get_round_trip_through_router() {
 
     // GET — must return the SAME bytes
     let get_req = Request::builder()
-        .uri(format!("/v1/cas/tenant-a/{hash}"))
+        .uri(format!("/v1/cas/{TENANT_A}/{hash}"))
         .method("GET")
-        // Same authenticated tenant as the PUT above (`tenant-a`) so the
+        // Same authenticated tenant as the PUT above (`TENANT_A`) so the
         // GET reads back the bytes the PUT stored for that tenant.
-        .header("x-corelink-tenant-id", "tenant-a")
+        .header("x-corelink-tenant-id", TENANT_A)
         .header("x-corelink-scope", "cas:rw")
         .body(Body::empty())
         .expect("build GET req");
