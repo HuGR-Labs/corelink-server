@@ -273,7 +273,7 @@ fn dpa_request(auth: &str) -> Result<Request<Body>, http::Error> {
     Request::builder().method("POST").uri("/v1/onboarding/dpa-accept")
         .header(tier_select::INTERNAL_AUTH_HEADER, auth).header(tier_select::TENANT_HEADER, "tenant-money-proof")
         .header("content-type", "application/json").body(Body::from(
-            r#"{"dpa_version":"1.0.0","dpa_locale":"en","notice_text_hash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}"#,
+            r#"{"dpa_version":"1.0.0","dpa_locale":"en","notice_text_hash":"0b8d023331a3e23a8be9750277bd178229a89de57770f5c2fed82752340e9171"}"#,
         ))
 }
 
