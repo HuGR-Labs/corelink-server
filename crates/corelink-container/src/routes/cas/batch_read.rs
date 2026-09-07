@@ -85,7 +85,7 @@ async fn handle_batch_read(
         Absent,
         /// Tombstoned `(tenant, hash)` ⇒ 410-class `gone`.
         Gone,
-        /// Present blob bytes held with its process-wide reservation.
+        /// Present blob bytes held with the per-object delta reservation.
         Ok {
             bytes: Vec<u8>,
             _global_permit: tokio::sync::OwnedSemaphorePermit,
@@ -105,8 +105,57 @@ async fn handle_batch_read(
     // `tokio::task::block_in_place(..)`, which is only valid on a multi-thread
     // runtime WORKER thread — spawn_blocking threads are not workers and would
     // panic.
+    //
+    // The global batch envelope is already reserved by the extractor. A live
+    // object therefore acquires only the single-read delta (174 MiB), not the
+    // full single-read peak (196 MiB). The FIFO drain below is important: a
+    // completed task keeps that delta in its outcome until its bytes are
+    // appended, so the producer must never fill a second window while the
+    // first result is waiting to be consumed.
     let semaphore = Arc::new(tokio::sync::Semaphore::new(BATCH_READ_FANOUT));
     let mut handles: Vec<tokio::task::JoinHandle<PerHash>> = Vec::with_capacity(hashes.len());
+    let mut append_outcome = |hash: &str, outcome: PerHash| match outcome {
+        PerHash::Absent => {
+            manifest.push_str(&format!(
+                "{}\n",
+                serde_json::json!({"hash": hash, "len": 0, "status": "absent"})
+            ));
+            Ok(())
+        }
+        PerHash::Gone => {
+            manifest.push_str(&format!(
+                "{}\n",
+                serde_json::json!({"hash": hash, "len": 0, "status": "gone"})
+            ));
+            Ok(())
+        }
+        PerHash::Ok {
+            bytes,
+            _global_permit: _,
+        } => {
+            if payload.len() + bytes.len() > BATCH_MAX_BYTES {
+                return Err(batch_too_large());
+            }
+            manifest.push_str(&format!(
+                "{}\n",
+                serde_json::json!({"hash": hash, "len": bytes.len(), "status": "ok"})
+            ));
+            payload.extend_from_slice(&bytes);
+            Ok(())
+        }
+        PerHash::BudgetFault => Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "global read budget unavailable",
+        )
+            .into_response()),
+        PerHash::TombstoneFault => Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "tombstone gate unavailable",
+        )
+            .into_response()),
+        PerHash::ReadErr(error) => Err(map_err(error)),
+    };
+    let mut result_hashes = hashes.iter();
     for hash in &hashes {
         // Acquire the permit BEFORE spawning so the in-flight count is bounded
         // to BATCH_READ_FANOUT (permit is moved into the task and held for its
@@ -134,7 +183,7 @@ async fn handle_batch_read(
                 return PerHash::Absent;
             }
             let global_permit = match acquire_global_cas_read_budget(
-                CAS_READ_SINGLE_PERMITS,
+                CAS_READ_BATCH_OBJECT_PERMITS,
                 "batch-read-object",
             )
             .await
@@ -179,12 +228,38 @@ async fn handle_batch_read(
                 Err(e) => PerHash::ReadErr(e),
             }
         }));
+
+        // Drain the oldest result as soon as the bounded window is full. A
+        // completed `Ok` outcome owns its weighted permit until this point;
+        // waiting to drain it while spawning the next window would strand the
+        // global permit behind the producer and recreate the deadlock.
+        if handles.len() == BATCH_READ_FANOUT {
+            let handle = handles.remove(0);
+            let outcome = match handle.await {
+                Ok(o) => o,
+                Err(_join_err) => {
+                    return map_err(CasHandlerError::Internal("batch read task failed".into()));
+                }
+            };
+            let result_hash = match result_hashes.next() {
+                Some(hash) => hash,
+                None => {
+                    return map_err(CasHandlerError::Internal(
+                        "batch read result count mismatch".into(),
+                    ))
+                }
+            };
+            if let Err(response) = append_outcome(result_hash, outcome) {
+                return response;
+            }
+        }
     }
 
     // Reassemble IN push order (== hash order). This ordering is LOAD-BEARING:
     // the client slices the concatenated payload by the manifest `len`s, so the
     // manifest lines and the payload segments must both follow request order.
-    for (hash, handle) in hashes.iter().zip(handles) {
+    while !handles.is_empty() {
+        let handle = handles.remove(0);
         let outcome = match handle.await {
             Ok(o) => o,
             // A spawned task panicked (or was cancelled) ⇒ internal read
@@ -193,47 +268,16 @@ async fn handle_batch_read(
                 return map_err(CasHandlerError::Internal("batch read task failed".into()));
             }
         };
-        match outcome {
-            PerHash::Absent => {
-                manifest.push_str(&format!(
-                    "{}\n",
-                    serde_json::json!({"hash": hash, "len": 0, "status": "absent"})
-                ));
+        let result_hash = match result_hashes.next() {
+            Some(hash) => hash,
+            None => {
+                return map_err(CasHandlerError::Internal(
+                    "batch read result count mismatch".into(),
+                ))
             }
-            PerHash::Gone => {
-                manifest.push_str(&format!(
-                    "{}\n",
-                    serde_json::json!({"hash": hash, "len": 0, "status": "gone"})
-                ));
-            }
-            PerHash::Ok {
-                bytes,
-                _global_permit: _,
-            } => {
-                if payload.len() + bytes.len() > BATCH_MAX_BYTES {
-                    return batch_too_large();
-                }
-                manifest.push_str(&format!(
-                    "{}\n",
-                    serde_json::json!({"hash": hash, "len": bytes.len(), "status": "ok"})
-                ));
-                payload.extend_from_slice(&bytes);
-            }
-            PerHash::BudgetFault => {
-                return (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "global read budget unavailable",
-                )
-                    .into_response();
-            }
-            PerHash::TombstoneFault => {
-                return (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "tombstone gate unavailable",
-                )
-                    .into_response();
-            }
-            PerHash::ReadErr(e) => return map_err(e),
+        };
+        if let Err(response) = append_outcome(result_hash, outcome) {
+            return response;
         }
     }
     // Stream the manifest and payload as separate frames. Keeping both guards

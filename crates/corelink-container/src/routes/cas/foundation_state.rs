@@ -326,6 +326,7 @@ impl FromRequestParts<CasRouteState> for GlobalCasReadBudgetGuard {
 /// or materialising a batch.
 pub(crate) struct GlobalCasBatchReadBudgetGuard {
     _permit: tokio::sync::OwnedSemaphorePermit,
+    _admission: tokio::sync::OwnedSemaphorePermit,
 }
 
 impl FromRequestParts<CasRouteState> for GlobalCasBatchReadBudgetGuard {
@@ -335,8 +336,15 @@ impl FromRequestParts<CasRouteState> for GlobalCasBatchReadBudgetGuard {
         _parts: &mut Parts,
         _state: &CasRouteState,
     ) -> Result<Self, Self::Rejection> {
+        // The batch envelope is intentionally admitted through a second,
+        // weighted gate.  The handler later acquires the 174 MiB delta to a
+        // single-object peak while this 22 MiB reservation remains held; the
+        // admission cap prevents two or more envelopes from consuming every
+        // permit before any one of them can obtain that delta.
+        let admission = acquire_global_cas_batch_read_admission().await?;
         Ok(Self {
             _permit: acquire_global_cas_read_budget(CAS_READ_BATCH_PERMITS, "batch-read").await?,
+            _admission: admission,
         })
     }
 }

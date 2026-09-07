@@ -34,6 +34,58 @@ async fn batch_read_below_limit_releases_slot() {
     );
 }
 
+/// Two concurrent batch reads must not each hold their 22 MiB envelope while
+/// waiting for an impossible full 196 MiB object reservation. The weighted
+/// object delta plus bounded batch admission lets one object read proceed at a
+/// time while preserving the process-wide 220 MiB ceiling.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_batch_reads_do_not_deadlock_global_budget() {
+    let state = fixture();
+    let bytes = b"concurrent-batch-read".to_vec();
+    let hash = fake_hash(&bytes);
+    state
+        .write
+        .write(CasWriteRequest::new(
+            TEST_TENANT,
+            hash.clone(),
+            bytes,
+            format!("anon@{TEST_TENANT}"),
+            TEST_TENANT,
+            0,
+        ))
+        .expect("seed CAS object");
+
+    let request = || {
+        Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/cas/{TEST_TENANT}/batch-read"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .header(axum::http::header::CONTENT_TYPE, NDJSON_CONTENT_TYPE)
+            .body(Body::from(format!(
+                "{}\n",
+                serde_json::json!({ "hash": hash })
+            )))
+            .expect("request")
+    };
+    let (left, right) = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        tokio::join!(
+            router(state.clone()).oneshot(request()),
+            router(state.clone()).oneshot(request()),
+        )
+    })
+    .await
+    .expect("concurrent batch reads must complete within the permit timeout");
+    let left = left.expect("left response");
+    let right = right.expect("right response");
+    assert_eq!(left.status(), StatusCode::OK);
+    assert_eq!(right.status(), StatusCode::OK);
+    let _ = tokio::join!(
+        axum::body::to_bytes(left.into_body(), usize::MAX),
+        axum::body::to_bytes(right.into_body(), usize::MAX),
+    );
+}
+
 /// B-077 HOLD: the single GET keeps its tenant slot until its response
 /// stream is consumed, not merely until the handler returns.
 #[tokio::test]

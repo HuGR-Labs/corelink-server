@@ -193,6 +193,20 @@ const CAS_READ_SINGLE_PERMITS: u32 =
     (crate::container_capacity::CAS_READ_SINGLE_PEAK_BYTES / CAS_READ_BUDGET_UNIT_BYTES) as u32;
 const CAS_READ_BATCH_PERMITS: u32 =
     (crate::container_capacity::CAS_READ_BATCH_PEAK_BYTES / CAS_READ_BUDGET_UNIT_BYTES) as u32;
+/// A batch already owns its 22 MiB envelope reservation.  A live object read
+/// therefore needs only the delta to the single-read peak; charging the full
+/// single-read peak here double-counts the shared batch envelope and lets two
+/// batches deadlock while each waits for 196 MiB that cannot fit behind the
+/// other batch's 22 MiB reservation.
+const CAS_READ_BATCH_OBJECT_PERMITS: u32 = CAS_READ_SINGLE_PERMITS - CAS_READ_BATCH_PERMITS;
+/// Maximum number of batch requests that may hold their envelope reservation
+/// concurrently while still leaving room for one object's delta reservation.
+/// This is deliberately derived from the weighted budget rather than tuned by
+/// hand: with the deployed 220 MiB / 22 MiB / 174 MiB values it admits two
+/// envelopes and one object (218 MiB total).
+const CAS_READ_BATCH_MAX_IN_FLIGHT: usize = (CAS_READ_GLOBAL_PERMITS
+    - CAS_READ_BATCH_OBJECT_PERMITS as usize)
+    / CAS_READ_BATCH_PERMITS as usize;
 const CAS_WRITE_GLOBAL_BUDGET_BYTES: u64 = crate::container_capacity::CAS_WRITE_GLOBAL_BUDGET_BYTES;
 const CAS_WRITE_SINGLE_PERMITS: u32 =
     (crate::container_capacity::CAS_WRITE_SINGLE_PEAK_BYTES / CAS_READ_BUDGET_UNIT_BYTES) as u32;
@@ -206,6 +220,8 @@ const _: () = assert!(CAS_READ_GLOBAL_BUDGET_BYTES > 0);
 const _: () = assert!(CAS_READ_GLOBAL_BUDGET_BYTES % CAS_READ_BUDGET_UNIT_BYTES == 0);
 const _: () = assert!(CAS_READ_GLOBAL_BUDGET_BYTES / CAS_READ_BUDGET_UNIT_BYTES <= u32::MAX as u64);
 const _: () = assert!(CAS_READ_SINGLE_PERMITS > 0 && CAS_READ_BATCH_PERMITS > 0);
+const _: () = assert!(CAS_READ_BATCH_OBJECT_PERMITS > 0);
+const _: () = assert!(CAS_READ_BATCH_MAX_IN_FLIGHT > 0);
 const _: () = assert!(CAS_READ_GLOBAL_BUDGET_BYTES <= CONTAINER_MEMORY_BYTES);
 const _: () = assert!(
     crate::container_capacity::CAS_READ_SINGLE_PEAK_BYTES
@@ -220,6 +236,11 @@ const _: () = assert!(
 );
 
 static GLOBAL_CAS_READ_BUDGET: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
+/// Batch requests hold their 22 MiB envelope while an object read obtains the
+/// remaining 174 MiB delta.  Admit only as many envelopes as can coexist with
+/// one such delta; otherwise several envelopes could consume all 220 MiB and
+/// leave every request waiting on the same impossible reservation.
+static GLOBAL_CAS_BATCH_READ_ADMISSION: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
 static GLOBAL_CAS_WRITE_BUDGET: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
 
 fn global_cas_read_budget() -> Arc<tokio::sync::Semaphore> {
@@ -227,6 +248,44 @@ fn global_cas_read_budget() -> Arc<tokio::sync::Semaphore> {
         GLOBAL_CAS_READ_BUDGET
             .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(CAS_READ_GLOBAL_PERMITS))),
     )
+}
+
+fn global_cas_batch_read_admission() -> Arc<tokio::sync::Semaphore> {
+    Arc::clone(
+        GLOBAL_CAS_BATCH_READ_ADMISSION
+            .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(CAS_READ_BATCH_MAX_IN_FLIGHT))),
+    )
+}
+
+async fn acquire_global_cas_batch_read_admission(
+) -> Result<tokio::sync::OwnedSemaphorePermit, axum::response::Response> {
+    match tokio::time::timeout(
+        CAS_READ_GLOBAL_PERMIT_WAIT,
+        global_cas_batch_read_admission().acquire_owned(),
+    )
+    .await
+    {
+        Ok(Ok(permit)) => Ok(permit),
+        Ok(Err(_)) => {
+            tracing::error!("global CAS batch-read admission closed; failing closed");
+            Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "global read budget unavailable",
+            )
+                .into_response())
+        }
+        Err(_) => {
+            tracing::warn!(
+                limit = CAS_READ_BATCH_MAX_IN_FLIGHT,
+                "global CAS batch-read admission saturated"
+            );
+            Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server busy: too many concurrent reads",
+            )
+                .into_response())
+        }
+    }
 }
 
 async fn acquire_global_cas_read_budget(
