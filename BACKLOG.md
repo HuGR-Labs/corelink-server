@@ -1485,9 +1485,9 @@ owner: tl
 status: done
 source-document: "PR containment audit #1550/#1558"
 source-locator: "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md:3-20"
-finding-title: "canonical WP ledger must stay aligned with the dense 318-item population"
+finding-title: "canonical WP ledger must stay aligned with the dense 320-item population"
 problem: "the ledger verifier, catalogs and pending changelogs once described an obsolete pre-D03 baseline instead of the delivered main base and live owner population"
-evidence: "python3 scripts/verify_backlog_wp_ledger.py after reconciliation: 318 items, 16 open, 263 done, 39 parked; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
+evidence: "python3 scripts/verify_backlog_wp_ledger.py after reconciliation: 320 items, 16 open, 265 done, 39 parked; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
 acceptance: "the ledger and catalogs name delivered main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266 as the immutable ancestry base, retain 7b992e9db123abeb76381b1c1337011692f2e834 only as D03 provenance, reconcile live counts, and fail closed on wrong or unrelated ancestry"
 verify: |
   set -euo pipefail
@@ -1500,14 +1500,14 @@ verify: |
   sys.path.insert(0, "scripts")
   import verify_backlog_wp_ledger as ledger
   text = Path("BACKLOG.md").read_text()
-  assert len(ledger.all_backlog_ids(text)) == 318
+  assert len(ledger.all_backlog_ids(text)) == 320
   assert len(ledger.open_backlog_ids(text)) == 16
-  assert ledger.backlog_status_counts(text) == {"open": 16, "done": 263, "parked": 39}
+  assert ledger.backlog_status_counts(text) == {"open": 16, "done": 265, "parked": 39}
   assert ledger.LEDGER_BASE_REF == "main"
   assert ledger.LEDGER_BASE_SHA == "ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
   PY
 verify-means: |
-  done — the live verifier proves 16/16 open-ID ownership, 318 total records,
+  done — the live verifier proves 16/16 open-ID ownership, 320 total records,
   exact catalog populations, predecessor ordering, editable/workflow ownership,
   and the D03 base ref/SHA relationship. The focused parser suite remains
   load-bearing: stale metadata, a tampered base and missing CI predecessor are
@@ -1654,6 +1654,47 @@ verify-means: |
   regression test below the production response function, and rejects deletion,
   runtime-only replacement, module drift and targeted lint suppression. Cargo and
   Clippy certification remain owned solely by the cumulative D03 sprint CI.
+last-verified: 2026-09-06
+```
+
+### B-319 — the quota CAS latency probe used a forbidden stderr print macro
+```backlog
+id: B-319
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-billing/tests/quota_cas_prop_quota_cas.rs:real_latency_probe_under_5ms_p99"
+finding-title: "ignored latency probe violated the workspace print-stderr lint"
+problem: "The opt-in latency probe used eprintln!, so repository-wide all-targets Clippy rejected the otherwise load-bearing measurement test."
+evidence: "081a0b02e preserves successful p99 diagnostics through a locked stderr writer while retaining the 5ms assertion and adding no lint suppression."
+acceptance: "The probe emits its sample count and p99 value without print macros, retains the explicit 5ms ceiling, and a bounded guard rejects lost output, weakened ceilings and targeted suppression."
+verify: python3 scripts/verify_b319_b320_final_rust_residuals.py --self-test
+verify-means: |
+  done — the verifier binds the diagnostic writer and p99 ceiling to the exact
+  ignored probe, rejects print-macro reintroduction and output/ceiling deletion,
+  and shares a mutation suite with the adjacent final Rust residual. Clippy is
+  certified only by the cumulative D03 sprint CI.
+last-verified: 2026-09-06
+```
+
+### B-320 — new region-alias tests compared Results whose error type is not comparable
+```backlog
+id: B-320
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-region/src/region.rs:test_region_from_str_unknown"
+finding-title: "APAC/AFR success assertions did not compile under cargo test"
+problem: "Two D03 assertions compared Result<Region, RegionError> values with assert_eq!, but RegionError intentionally has no PartialEq implementation."
+evidence: "3d4a08e9f tests the exact APAC and AFR Ok variants with matches! and preserves the unknown-input negative assertion without changing RegionError's public traits."
+acceptance: "Both aliases remain pinned to their expected Region variants, the empty alias remains rejected, no Result equality requirement is introduced, and adversarial mutations fail closed."
+verify: python3 scripts/verify_b319_b320_final_rust_residuals.py --self-test
+verify-means: |
+  done — the bounded verifier requires the two exact successful alias mappings
+  plus the unknown-input negative case and rejects deletion or assert_eq-based
+  Result comparison. Cargo test remains owned solely by the cumulative D03 CI.
 last-verified: 2026-09-06
 ```
 
@@ -14796,8 +14837,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-06):** `records=318`,
-  `command_records=302`, `manual=16`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-06):** `records=320`,
+  `command_records=304`, `manual=16`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma

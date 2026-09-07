@@ -139,6 +139,12 @@ on:
       - "crates/corelink-adapter-host/src/npm/upstream.rs"
       - "crates/corelink-adapter-host/src/oci/server/core.rs"
       - "changelog.d/b318-clippy-residuals.md"
+      # B-319/B-320 lock the final stderr-lint and Result-comparison repairs.
+      - "scripts/verify_b319_b320_final_rust_residuals.py"
+      - "tests/test_verify_b319_b320_final_rust_residuals.py"
+      - "crates/corelink-billing/tests/quota_cas_prop_quota_cas.rs"
+      - "crates/corelink-region/src/region.rs"
+      - "changelog.d/b319-b320-final-rust-residuals.md"
       - "scripts/b155_backlog_grep_parser.py"
       - "scripts/verify_d03_graduation.py"
       - "scripts/validate_permission_matrix.py"
@@ -390,6 +396,12 @@ on:
       - "crates/corelink-adapter-host/src/npm/upstream.rs"
       - "crates/corelink-adapter-host/src/oci/server/core.rs"
       - "changelog.d/b318-clippy-residuals.md"
+      # Repeat the B-319/B-320 final Rust residual guard for push parity.
+      - "scripts/verify_b319_b320_final_rust_residuals.py"
+      - "tests/test_verify_b319_b320_final_rust_residuals.py"
+      - "crates/corelink-billing/tests/quota_cas_prop_quota_cas.rs"
+      - "crates/corelink-region/src/region.rs"
+      - "changelog.d/b319-b320-final-rust-residuals.md"
       - "scripts/b155_backlog_grep_parser.py"
       - "scripts/verify_d03_graduation.py"
       - "scripts/validate_permission_matrix.py"
@@ -662,6 +674,10 @@ jobs:
         run: |
           python3 scripts/verify_b318_clippy_residuals.py --self-test
           python3 -m pytest -q tests/test_verify_b318_clippy_residuals.py
+      - name: B-319/B-320 final Rust residual guards and mutations
+        run: |
+          python3 scripts/verify_b319_b320_final_rust_residuals.py --self-test
+          python3 -m pytest -q tests/test_verify_b319_b320_final_rust_residuals.py
       - name: B-094 published-claims guard and mutations
         run: |
           command -v gitleaks
