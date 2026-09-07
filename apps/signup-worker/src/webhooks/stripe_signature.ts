@@ -49,7 +49,10 @@ export async function verifyStripeSignature(
     // Compute expected HMAC-SHA256 over `${timestamp}.${rawBody}`.
     const key = await crypto.subtle.importKey(
         "raw",
-        secretBytes,
+        // TS 6's lib.dom BufferSource narrows ArrayBufferView to an
+        // ArrayBuffer-backed view, while Workers' TextEncoder returns the
+        // runtime-compatible ArrayBufferLike form.
+        secretBytes as unknown as BufferSource,
         { name: "HMAC", hash: "SHA-256" },
         false,
         ["sign"],

@@ -272,6 +272,12 @@ export interface AnalyticsEmitter {
   ): Promise<void>;
 }
 
+function bytesToHex(buf: ArrayBuffer): string {
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 /**
  * Default analytics emitter backed by the D1 binding owned by the
  * Phase-0 analytics-worker. No-op when the binding is absent so the

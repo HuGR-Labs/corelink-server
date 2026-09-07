@@ -111,8 +111,13 @@ describe("processErasureMessage", () => {
 });
 
 describe("handleErasureQueueBatch", () => {
-  function fakeMsg(body: DsrQueuedV1): QueueMessage<DsrQueuedV1> & { ack: ReturnType<typeof vi.fn>; retry: ReturnType<typeof vi.fn> } {
-    return { body, ack: vi.fn(), retry: vi.fn() };
+  type MockQueueMessage<T> = QueueMessage<T> & {
+    ack: ReturnType<typeof vi.fn<() => void>>;
+    retry: ReturnType<typeof vi.fn<() => void>>;
+  };
+
+  function fakeMsg(body: DsrQueuedV1): MockQueueMessage<DsrQueuedV1> {
+    return { body, ack: vi.fn<() => void>(), retry: vi.fn<() => void>() };
   }
 
   it("acks on 2xx, retries on failure, and isolates per-message", async () => {
@@ -139,15 +144,17 @@ describe("handleErasureQueueBatch", () => {
 });
 
 describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
-  function fakeDlq(body: DsrDlqBody): QueueMessage<DsrDlqBody> & {
-    ack: ReturnType<typeof vi.fn>;
-    retry: ReturnType<typeof vi.fn>;
-  } {
-    return { body, ack: vi.fn(), retry: vi.fn() };
+  type MockQueueMessage<T> = QueueMessage<T> & {
+    ack: ReturnType<typeof vi.fn<() => void>>;
+    retry: ReturnType<typeof vi.fn<() => void>>;
+  };
+
+  function fakeDlq(body: DsrDlqBody): MockQueueMessage<DsrDlqBody> {
+    return { body, ack: vi.fn<() => void>(), retry: vi.fn<() => void>() };
   }
 
   it("emits a critical alert and requeues exactly once", async () => {
-    const send = vi.fn(async () => undefined);
+    const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
     const m = fakeDlq(msg("dlq-1"));
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     let errorCalls: unknown[][] = [];
@@ -167,7 +174,7 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
   });
 
   it("leaves an already requeued message dead and alerts without looping", async () => {
-    const send = vi.fn(async () => undefined);
+    const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
     const m = fakeDlq({ ...msg("dlq-2"), _dlq_requeue: 1 });
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     let errorCalls: unknown[][] = [];
@@ -186,7 +193,7 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
   });
 
   it("retains the DLQ copy when the bounded requeue fails", async () => {
-    const send = vi.fn(async () => { throw new Error("queue down"); });
+    const send = vi.fn<(message: unknown) => Promise<void>>(async () => { throw new Error("queue down"); });
     const m = fakeDlq(msg("dlq-3"));
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {

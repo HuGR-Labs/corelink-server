@@ -954,15 +954,3 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
     },
   };
 }
-
-// Minimal local D1 type — we don't import @cloudflare/workers-types here
-// to keep the unit-test surface independent of the runtime types package.
-interface D1PreparedStatement {
-  bind(...values: unknown[]): D1PreparedStatement;
-  run(): Promise<{ success: boolean; error?: string }>;
-  all<T = unknown>(): Promise<{ results?: T[] }>;
-  first<T = unknown>(): Promise<T | null>;
-}
-interface D1Database {
-  prepare(query: string): D1PreparedStatement;
-}
