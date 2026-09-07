@@ -271,7 +271,10 @@ async fn failed_stripe_call_abandons_payable_reservation() {
         RequestedTier::Pro,
     )
     .await;
-    assert_eq!(r.unwrap_err(), TierSelectHttpError::Internal);
+    assert_eq!(
+        r.unwrap_err(),
+        TierSelectHttpError::StripeUnavailable(Some("stripe down".to_owned()))
+    );
     assert!(*checkout.called.lock().unwrap());
     assert!(store.pending.lock().unwrap().is_empty());
     assert!(store.locks.lock().unwrap().is_empty());

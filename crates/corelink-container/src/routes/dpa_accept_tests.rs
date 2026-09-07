@@ -49,12 +49,10 @@ fn dpa_accept_auth_resolution_is_dedicated_first_and_32_char_fail_closed() {
     std::env::remove_var("CORELINK_INTERNAL_AUTH_KEY");
     assert!(dpa_accept_auth_key_from_env().is_none());
 
-    // A short dedicated value may fall back only to a valid shared key.
+    // A present but short dedicated value fails closed instead of falling
+    // back to a valid shared key.
     std::env::set_var("CORELINK_INTERNAL_AUTH_KEY", TEST_SHARED_KEY);
-    assert_eq!(
-        dpa_accept_auth_key_from_env().as_deref(),
-        Some(TEST_SHARED_KEY)
-    );
+    assert!(dpa_accept_auth_key_from_env().is_none());
     clear_auth_env();
 }
 
