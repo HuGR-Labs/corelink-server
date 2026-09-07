@@ -339,7 +339,7 @@ pub(super) const SPECIAL_ERASE_TABLES: &[&str] = &[
 ///
 /// **CF-1 invariant:** every entry here MUST be classified into EXACTLY ONE of
 /// {erase-set, namespace-set, retain-set, CAS-plane-owned, special} — enforced
-/// fail-closed by [`unclassified_tenant_keyed_tables`] (runtime assert + test)
+/// fail-closed by [`ensure_tenant_keyed_tables_classified`] before any D1 work.
 /// AND cross-checked against the migrations on disk by the
 /// `every_migrated_tenant_keyed_table_is_classified` test. A FUTURE tenant-keyed
 /// migration therefore cannot silently escape erasure classification.
@@ -489,6 +489,7 @@ pub(super) fn ensure_tenant_keyed_tables_classified() -> Result<(), String> {
 /// Returns `(table, count)` for every gap in the production registry. Empty
 /// means the classification is total and disjoint. The runtime gate above is
 /// the source of truth; this helper remains available to focused unit tests.
+#[cfg(test)]
 fn unclassified_tenant_keyed_tables() -> Vec<(&'static str, usize)> {
     classification_gaps(ALL_TENANT_KEYED_TABLES)
 }
