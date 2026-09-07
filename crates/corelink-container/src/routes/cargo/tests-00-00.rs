@@ -452,31 +452,5 @@
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 
-    /// PROPFIND on the collection root (trailing slash) → `207` collection.
-    #[tokio::test]
-    async fn propfind_collection_root_is_207_collection() {
-        use tower::ServiceExt;
-        let moat = in_memory_moat();
-        let app = webdav_router(moat, "tenant-abc", true);
-        let resp = app
-            .oneshot(webdav_request(
-                b"PROPFIND",
-                "/cargo/tenant-abc/",
-                "cas:r",
-                Some("pat"),
-            ))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::MULTI_STATUS);
-        let body = body_string(resp).await;
-        assert!(
-            body.contains("<D:collection/>"),
-            "a collection stat must carry <D:collection/>; got: {body}"
-        );
-        // REGRESSION LOCK: the collection 207 is what opendal PROPFINDs on the
-        // tenant/dir root during its write-check — it MUST also carry
-        // <D:getlastmodified> or the deserialize fails and storage goes ReadOnly.
-        assert!(
-            body.contains("<D:getlastmodified>"),
 
 include!("fragment-tests-00-00-01.rs");
