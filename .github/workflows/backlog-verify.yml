@@ -150,6 +150,11 @@ on:
       - "tests/test_verify_b321_alert_delivery_tests.py"
       - "crates/corelink-ops/src/alerts/alerter.rs"
       - "changelog.d/b321-alert-delivery-test-lints.md"
+      # B-322 locks the panic-free durable D1 mount gate.
+      - "scripts/verify_b322_durable_d1_mount.py"
+      - "tests/test_verify_b322_durable_d1_mount.py"
+      - "crates/corelink-container/src/main.rs"
+      - "changelog.d/b322-durable-d1-mount.md"
       - "scripts/b155_backlog_grep_parser.py"
       - "scripts/verify_d03_graduation.py"
       - "scripts/validate_permission_matrix.py"
@@ -412,6 +417,11 @@ on:
       - "tests/test_verify_b321_alert_delivery_tests.py"
       - "crates/corelink-ops/src/alerts/alerter.rs"
       - "changelog.d/b321-alert-delivery-test-lints.md"
+      # Repeat the B-322 durable D1 mount guard for push parity.
+      - "scripts/verify_b322_durable_d1_mount.py"
+      - "tests/test_verify_b322_durable_d1_mount.py"
+      - "crates/corelink-container/src/main.rs"
+      - "changelog.d/b322-durable-d1-mount.md"
       - "scripts/b155_backlog_grep_parser.py"
       - "scripts/verify_d03_graduation.py"
       - "scripts/validate_permission_matrix.py"
@@ -692,6 +702,10 @@ jobs:
         run: |
           python3 scripts/verify_b321_alert_delivery_tests.py --self-test
           python3 -m pytest -q tests/test_verify_b321_alert_delivery_tests.py
+      - name: B-322 durable D1 mount guard and mutations
+        run: |
+          python3 scripts/verify_b322_durable_d1_mount.py --self-test
+          python3 -m pytest -q tests/test_verify_b322_durable_d1_mount.py
       - name: B-094 published-claims guard and mutations
         run: |
           command -v gitleaks

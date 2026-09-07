@@ -1485,9 +1485,9 @@ owner: tl
 status: done
 source-document: "PR containment audit #1550/#1558"
 source-locator: "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md:3-20"
-finding-title: "canonical WP ledger must stay aligned with the dense 321-item population"
+finding-title: "canonical WP ledger must stay aligned with the dense 322-item population"
 problem: "the ledger verifier, catalogs and pending changelogs once described an obsolete pre-D03 baseline instead of the delivered main base and live owner population"
-evidence: "python3 scripts/verify_backlog_wp_ledger.py after reconciliation: 321 items, 16 open, 266 done, 39 parked; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
+evidence: "python3 scripts/verify_backlog_wp_ledger.py after reconciliation: 322 items, 16 open, 267 done, 39 parked; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
 acceptance: "the ledger and catalogs name delivered main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266 as the immutable ancestry base, retain 7b992e9db123abeb76381b1c1337011692f2e834 only as D03 provenance, reconcile live counts, and fail closed on wrong or unrelated ancestry"
 verify: |
   set -euo pipefail
@@ -1500,14 +1500,14 @@ verify: |
   sys.path.insert(0, "scripts")
   import verify_backlog_wp_ledger as ledger
   text = Path("BACKLOG.md").read_text()
-  assert len(ledger.all_backlog_ids(text)) == 321
+  assert len(ledger.all_backlog_ids(text)) == 322
   assert len(ledger.open_backlog_ids(text)) == 16
-  assert ledger.backlog_status_counts(text) == {"open": 16, "done": 266, "parked": 39}
+  assert ledger.backlog_status_counts(text) == {"open": 16, "done": 267, "parked": 39}
   assert ledger.LEDGER_BASE_REF == "main"
   assert ledger.LEDGER_BASE_SHA == "ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
   PY
 verify-means: |
-  done — the live verifier proves 16/16 open-ID ownership, 321 total records,
+  done — the live verifier proves 16/16 open-ID ownership, 322 total records,
   exact catalog populations, predecessor ordering, editable/workflow ownership,
   and the D03 base ref/SHA relationship. The focused parser suite remains
   load-bearing: stale metadata, a tampered base and missing CI predecessor are
@@ -1716,6 +1716,27 @@ verify-means: |
   requires a unique success assertion and diagnostic, and rejects unwrap,
   assertion deletion, result substitution and lint suppression. All-targets
   Clippy remains certified only by the cumulative D03 sprint CI.
+last-verified: 2026-09-06
+```
+
+### B-322 — durable Stripe mount used a guarded expect under strict Clippy
+```backlog
+id: B-322
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/main.rs:Stripe webhook mount gate"
+finding-title: "the durable D1 webhook mount recovered a client with expect after already checking it"
+problem: "The fail-closed mount gate matched D1 as Some(_) and later used expect to recover the same client, so all-targets Clippy rejected the production binary."
+evidence: "efc4622f3 binds Some(client) in the existing secret-and-D1 gate and passes that reference directly into D1WebhookDlqStore."
+acceptance: "The route remains unmounted without both secret and D1, the durable DLQ receives the matched client, no expect or targeted suppression remains, and adversarial mutations fail closed."
+verify: python3 scripts/verify_b322_durable_d1_mount.py --self-test
+verify-means: |
+  done — the bounded verifier requires the exact fail-closed two-input match,
+  requires the matched client to construct the durable DLQ, and rejects a
+  discarded binding, guarded expect, wrong client or lint suppression. Full
+  Rust behavior remains certified only by the cumulative D03 sprint CI.
 last-verified: 2026-09-06
 ```
 
@@ -14858,8 +14879,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-06):** `records=321`,
-  `command_records=305`, `manual=16`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-06):** `records=322`,
+  `command_records=306`, `manual=16`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma
