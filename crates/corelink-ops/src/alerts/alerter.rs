@@ -426,7 +426,11 @@ mod tests {
             transport.clone(),
         );
 
-        alerter.alert(payload()).await.unwrap();
+        let result = alerter.alert(payload()).await;
+        assert!(
+            result.is_ok(),
+            "configured recording transport must accept the alert: {result:?}"
+        );
 
         let deliveries = transport.deliveries();
         assert_eq!(deliveries.len(), 4);
@@ -462,15 +466,18 @@ mod tests {
         );
         let p = payload();
 
-        alerter
+        let result = alerter
             .alert_recovery(
                 KmsProviderKind::AwsKms,
                 &p.kms_key_id,
                 &p.tenant_id_hashed,
                 42,
             )
-            .await
-            .unwrap();
+            .await;
+        assert!(
+            result.is_ok(),
+            "configured recording transport must accept recovery: {result:?}"
+        );
 
         let deliveries = transport.deliveries();
         assert_eq!(deliveries.len(), 4);
