@@ -181,3 +181,13 @@ fn require_admin_scope(
     }
     Ok(scope)
 }
+
+/// Emit an audit row; on failure, return a `503` response (the
+/// caller's intended response is discarded). Mirrors the wave-20
+/// closure pattern from `audit_export.rs`.
+fn emit_or_503(state: &PilotAdminRouteState, row: PilotAuditRow, happy: Response) -> Response {
+    match state.audit_sink.emit(row) {
+        Ok(()) => happy,
+        Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "audit pipeline closed").into_response(),
+    }
+}
