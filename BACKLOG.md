@@ -1485,9 +1485,9 @@ owner: tl
 status: done
 source-document: "PR containment audit #1550/#1558"
 source-locator: "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md:3-20"
-finding-title: "canonical WP ledger must stay aligned with the dense 322-item population"
+finding-title: "canonical WP ledger must stay aligned with the dense 323-item population"
 problem: "the ledger verifier, catalogs and pending changelogs once described an obsolete pre-D03 baseline instead of the delivered main base and live owner population"
-evidence: "python3 scripts/verify_backlog_wp_ledger.py after reconciliation: 322 items, 16 open, 267 done, 39 parked; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
+evidence: "python3 scripts/verify_backlog_wp_ledger.py after reconciliation: 323 items, 16 open, 268 done, 39 parked; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
 acceptance: "the ledger and catalogs name delivered main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266 as the immutable ancestry base, retain 7b992e9db123abeb76381b1c1337011692f2e834 only as D03 provenance, reconcile live counts, and fail closed on wrong or unrelated ancestry"
 verify: |
   set -euo pipefail
@@ -1500,14 +1500,14 @@ verify: |
   sys.path.insert(0, "scripts")
   import verify_backlog_wp_ledger as ledger
   text = Path("BACKLOG.md").read_text()
-  assert len(ledger.all_backlog_ids(text)) == 322
+  assert len(ledger.all_backlog_ids(text)) == 323
   assert len(ledger.open_backlog_ids(text)) == 16
-  assert ledger.backlog_status_counts(text) == {"open": 16, "done": 267, "parked": 39}
+  assert ledger.backlog_status_counts(text) == {"open": 16, "done": 268, "parked": 39}
   assert ledger.LEDGER_BASE_REF == "main"
   assert ledger.LEDGER_BASE_SHA == "ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
   PY
 verify-means: |
-  done — the live verifier proves 16/16 open-ID ownership, 322 total records,
+  done — the live verifier proves 16/16 open-ID ownership, 323 total records,
   exact catalog populations, predecessor ordering, editable/workflow ownership,
   and the D03 base ref/SHA relationship. The focused parser suite remains
   load-bearing: stale metadata, a tampered base and missing CI predecessor are
@@ -1737,6 +1737,27 @@ verify-means: |
   requires the matched client to construct the durable DLQ, and rejects a
   discarded binding, guarded expect, wrong client or lint suppression. Full
   Rust behavior remains certified only by the cumulative D03 sprint CI.
+last-verified: 2026-09-06
+```
+
+### B-323 — workspace GC binaries collided on the same artifact name
+```backlog
+id: B-323
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/Cargo.toml; crates/corelink-gc/tests/gc_sweep_bin.rs"
+finding-title: "two packages emitted gc_sweep and tests executed the wrong binary"
+problem: "The server's newly auto-discovered production GC binary collided with the corelink-gc self-check, so Cargo overwrote the test-selected artifact and six credentialless scenarios failed against the production configuration gate."
+evidence: "716e4bd7e disables server autobin discovery, declares unique server and production-GC target names, preserves the shipped corelink-gc gc_sweep identity, and retains subprocess stderr."
+acceptance: "Workspace target names are unique, B071 continues to build and exercise the fixture binary, production promotion remains owner-gated, stderr is actionable, and adversarial mutations fail closed."
+verify: python3 scripts/verify_b323_gc_binary_identity.py --self-test
+verify-means: |
+  done — the bounded verifier parses both Cargo manifests, proves the exact
+  disjoint target identities, pins Docker and test selection to the reviewed
+  fixture, preserves the owner gate, and rejects collision, implicit promotion
+  or stderr loss. Execution remains owned by the cumulative D03 sprint CI.
 last-verified: 2026-09-06
 ```
 
@@ -14879,8 +14900,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-06):** `records=322`,
-  `command_records=306`, `manual=16`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-06):** `records=323`,
+  `command_records=307`, `manual=16`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma

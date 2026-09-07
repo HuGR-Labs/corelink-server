@@ -20,7 +20,7 @@ CATALOGS = {
     REPO_ROOT / "docs/campaigns/remediation/work-packages/B001-B045.md": (1, 45),
     REPO_ROOT / "docs/campaigns/remediation/work-packages/B046-B090.md": (46, 90),
     REPO_ROOT / "docs/campaigns/remediation/work-packages/B091-B130.md": (91, 130),
-    REPO_ROOT / "docs/campaigns/remediation/work-packages/B131-B167.md": (131, 322),
+    REPO_ROOT / "docs/campaigns/remediation/work-packages/B131-B167.md": (131, 323),
 }
 # The D03 branch is squash-merged and is not a durable ancestry anchor. Keep
 # its head as documentary provenance in the ledger, but anchor verification to
