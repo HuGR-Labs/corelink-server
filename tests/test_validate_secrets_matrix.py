@@ -28,6 +28,14 @@ GC_CONFIG_NAMES = {
     "GC_VALIDATE_ONLY",
 }
 
+NON_SECRET_CONFIG_NAMES = {
+    "CORELINK_HTTP_PORT_FILE",
+    "CORELINK_HTTP_REQUEST_FILE",
+    "CORELINK_HTTP_STATUS",
+    "D1_DATABASE_ID",
+    "R2_S3_ENDPOINT",
+}
+
 
 def _source(names: set[str]) -> str:
     return "\n".join(f"const value = process.env.{name};" for name in sorted(names))
@@ -81,3 +89,16 @@ def test_gc_controls_are_exact_non_secret_allowlist_entries() -> None:
     assert not gate.ALLOWLIST_REGEX.match("GC_ADMIN_TOKEN")
     shell_gate = (ROOT / "scripts/secrets-checklist-verify.sh").read_text(encoding="utf-8")
     assert all(f"|{name}$" in shell_gate for name in GC_CONFIG_NAMES)
+
+
+def test_non_secret_config_names_are_allowlisted_by_both_validators() -> None:
+    """Keep the Bash deploy gate aligned with Python's narrow classifications."""
+    assert all(gate.ALLOWLIST_REGEX.match(name) for name in NON_SECRET_CONFIG_NAMES)
+
+    shell_gate = (ROOT / "scripts/secrets-checklist-verify.sh").read_text(encoding="utf-8")
+    assert all(f"|{name}$" in shell_gate for name in NON_SECRET_CONFIG_NAMES)
+
+    # The allowlist must stay exact: nearby credentials remain visible as drift.
+    assert not gate.ALLOWLIST_REGEX.match("D1_DATABASE_TOKEN")
+    assert not gate.ALLOWLIST_REGEX.match("R2_S3_SECRET_ACCESS_KEY")
+    assert not gate.ALLOWLIST_REGEX.match("CORELINK_HTTP_SECRET_FILE")
