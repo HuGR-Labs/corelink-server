@@ -104,6 +104,21 @@ pub struct AuditAttempt {
     pub resource_owner: Uuid,
 }
 
+impl AuditAttempt {
+    /// Construct an audit attempt from its rejection kind and tenant ids.
+    ///
+    /// Since this type is `#[non_exhaustive]`, callers outside this crate
+    /// must use this constructor rather than a struct literal.
+    #[must_use]
+    pub fn new(kind: DenyKind, requester: Uuid, resource_owner: Uuid) -> Self {
+        Self {
+            kind,
+            requester,
+            resource_owner,
+        }
+    }
+}
+
 // ── Audit capture wrapper ───────────────────────────────────────────────
 
 /// Wraps an [`InMemoryEmitter`] and records the canonical

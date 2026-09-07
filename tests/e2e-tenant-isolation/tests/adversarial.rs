@@ -284,11 +284,11 @@ async fn s05_byok_envelope_tamper_rejected_with_audit() {
     // (the gRPC handler wraps the decrypt call and writes the deny
     // row alongside the 403 in the same D1 batch).
     audit
-        .record_deny(e2e_tenant_isolation::AuditAttempt {
-            kind: DenyKind::AuthzTenantMismatch,
-            requester: a.tenant_id(),
-            resource_owner: b.tenant_id(),
-        })
+        .record_deny(e2e_tenant_isolation::AuditAttempt::new(
+            DenyKind::AuthzTenantMismatch,
+            a.tenant_id(),
+            b.tenant_id(),
+        ))
         .unwrap();
     assert_eq!(audit.count(), before + 1);
     let last = audit.last_deny().unwrap();
@@ -317,11 +317,11 @@ fn s06_audit_cross_tenant_query_requires_dual_approval() {
             // Cross-tenant: admin role is necessary but not sufficient.
             if !is_admin {
                 audit
-                    .record_deny(e2e_tenant_isolation::AuditAttempt {
-                        kind: DenyKind::AuthzTenantMismatch,
+                    .record_deny(e2e_tenant_isolation::AuditAttempt::new(
+                        DenyKind::AuthzTenantMismatch,
                         requester,
-                        resource_owner: target_tenant,
-                    })
+                        target_tenant,
+                    ))
                     .unwrap();
                 return Err(DenyKind::AuthzTenantMismatch);
             }
@@ -330,11 +330,11 @@ fn s06_audit_cross_tenant_query_requires_dual_approval() {
                 Some(ap) if ap != requester => Ok(vec![]),
                 _ => {
                     audit
-                        .record_deny(e2e_tenant_isolation::AuditAttempt {
-                            kind: DenyKind::DualApprovalRequired,
+                        .record_deny(e2e_tenant_isolation::AuditAttempt::new(
+                            DenyKind::DualApprovalRequired,
                             requester,
-                            resource_owner: target_tenant,
-                        })
+                            target_tenant,
+                        ))
                         .unwrap();
                     Err(DenyKind::DualApprovalRequired)
                 }
