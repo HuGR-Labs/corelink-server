@@ -220,7 +220,10 @@ mod tests {
         let req = Request::builder()
             .uri("/v1/users/me")
             .method("GET")
-            .header("x-corelink-tenant-id", "tenant-abc")
+            .header(
+                "x-corelink-tenant-id",
+                "00000000-0000-0000-0000-000000000001",
+            )
             .header("x-corelink-token-prefix", "clpat_abcd")
             .header("x-corelink-route-kind", "reapi_v1")
             .body(Body::empty())
@@ -229,7 +232,7 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         let bytes = to_bytes(resp.into_body(), 1 << 20).await.expect("body");
         let body = String::from_utf8(bytes.to_vec()).expect("utf8");
-        assert!(body.contains("\"tenant_id\":\"tenant-abc\""));
+        assert!(body.contains("\"tenant_id\":\"00000000-0000-0000-0000-000000000001\""));
         assert!(body.contains("\"token_prefix\":\"clpat_abcd\""));
         assert!(body.contains("\"route_kind\":\"reapi_v1\""));
     }
@@ -277,14 +280,17 @@ mod tests {
         let req = Request::builder()
             .uri("/v1/users/me")
             .method("GET")
-            .header("x-corelink-tenant-id", "tenant-abc")
+            .header(
+                "x-corelink-tenant-id",
+                "00000000-0000-0000-0000-000000000001",
+            )
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::OK);
         let bytes = to_bytes(resp.into_body(), 1 << 20).await.expect("body");
         let body = String::from_utf8(bytes.to_vec()).expect("utf8");
-        assert!(body.contains("\"tenant_id\":\"tenant-abc\""));
+        assert!(body.contains("\"tenant_id\":\"00000000-0000-0000-0000-000000000001\""));
         assert!(body.contains("\"token_prefix\":\"_unknown\""));
         assert!(body.contains("\"route_kind\":\"reapi_v1\""));
     }
@@ -407,7 +413,10 @@ mod tests {
         let req = Request::builder()
             .uri("/v1/users/me")
             .method("GET")
-            .header("x-corelink-tenant-id", "dashboard-tenant")
+            .header(
+                "x-corelink-tenant-id",
+                "00000000-0000-0000-0000-000000000002",
+            )
             .header("x-corelink-token-prefix", "clerk")
             .body(Body::empty())
             .unwrap();
@@ -422,7 +431,10 @@ mod tests {
         let req = Request::builder()
             .uri("/v1/users/me")
             .method("GET")
-            .header("x-corelink-tenant-id", "dev-tenant")
+            .header(
+                "x-corelink-tenant-id",
+                "00000000-0000-0000-0000-000000000003",
+            )
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
