@@ -90,7 +90,7 @@ async fn handle_batch_read(
         /// Present blob bytes held with its process-wide reservation.
         Ok {
             bytes: Vec<u8>,
-            _global_permit: OwnedSemaphorePermit,
+            _global_permit: tokio::sync::OwnedSemaphorePermit,
         },
         /// Process-wide budget unavailable; fail the whole batch closed.
         BudgetFault,
