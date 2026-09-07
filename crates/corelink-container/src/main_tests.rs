@@ -1,5 +1,4 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-#![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use super::{
     build_runners_resolver_from, build_tier_selector_from, cache_tier_price_ids_missing_in_prod,
