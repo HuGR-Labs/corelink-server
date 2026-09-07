@@ -57,12 +57,14 @@ path segment.
    futures retained at once. The fanout is derived from the 220 MiB read slice: one 22 MiB
    envelope plus eight 24 MiB three-copy object reservations peaks at 214 MiB. Each storage
    read receives the 8 MiB ceiling before body collection; an over-size object or aggregate
-   payload returns 413 `batch_too_large`, and terminal errors abort and drain every pending
-   task before returning. Batch request parsing is independently bounded: each line is at most
-   1 KiB, each retained hash is at most 128 bytes, and the object cap is enforced before the
-   next entry is allocated. The shared process-wide reservations cover body, parser
-   strings/clones, payload, and (for batch-read) the streamed response
-   (`crates/corelink-container/src/routes/cas/batch_read.rs:80-290`).
+   payload returns 413 `batch_too_large`, and explicit terminal paths abort and drain every
+   pending task before returning. External cancellation drops the task guard, whose `Drop`
+   aborts its owned handles but cannot await them; a synchronous read already inside
+   `block_in_place` is not preemptible and only unwinds under the R2 timeout/object cap.
+   Batch request parsing is independently bounded: each line is at most 1 KiB, each retained
+   hash is at most 128 bytes, and the object cap is enforced before the next entry is allocated.
+   The shared process-wide reservations cover body, parser strings/clones, payload, and (for
+   batch-read) the streamed response (`crates/corelink-container/src/routes/cas/batch_read.rs:39-107,288-338`).
 7. After the storage handler returns, the surface records a fire-and-forget usage-metering event into
    the in-process display aggregator [`crate::usage_meter`] — a `ReadHit` on a served read, a `ReadMiss`
    on a genuine `NotFound`, a `Write` on a committed write — with no await / no I/O on the hot path
@@ -86,7 +88,7 @@ path segment.
 - Usage metering is fire-and-forget DISPLAY telemetry: the `record(...)` call is off the storage-decision path and never gates, bills, or fails a request (`crates/corelink-container/src/routes/cas/single_handlers.rs:92-123` and `:198-212`).
 - Batch-read scheduling is bounded by the budget-derived `BATCH_READ_FANOUT = 8`; each object
   receives `BATCH_MAX_BYTES` before storage collection, and aggregate overflow is fail-closed as
-  413 (`crates/corelink-container/src/routes/cas/batch_read.rs:80-290`,
+  413 (`crates/corelink-container/src/routes/cas/batch_read.rs:39-107,288-338`,
   `crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs:402-435`).
 - The process-wide CAS read budget is `CONTAINER_MEMORY_BYTES / 2`, weighted in 1 MiB units;
   Tokio's FIFO semaphore plus the existing per-tenant eight-read pool bounds aggregate bytes and
@@ -99,7 +101,7 @@ path segment.
 - Usage metering is fire-and-forget DISPLAY telemetry: the `record(...)` call is off the storage-decision path and never gates, bills, or fails a request (`crates/corelink-container/src/routes/cas/single_handlers.rs:92-123` and `:198-212`).
 - Batch-read scheduling is bounded by the budget-derived `BATCH_READ_FANOUT = 8`; per-object
   storage metadata is checked before body collection and aggregate overflow is fail-closed as 413
-  (`crates/corelink-container/src/routes/cas/batch_read.rs:80-290`).
+  (`crates/corelink-container/src/routes/cas/batch_read.rs:39-107,288-338`).
 - The process-wide CAS read budget is `CONTAINER_MEMORY_BYTES / 2`, weighted in 1 MiB units; Tokio's FIFO semaphore plus the existing per-tenant eight-read pool bounds aggregate bytes and prevents one tenant from monopolising the process (`crates/corelink-container/src/routes/cas/foundation_core.rs:192-230`; `crates/corelink-container/src/routes/cas/foundation_state.rs:200-310`).
 - A saturated or closed process-wide budget fails closed with 503; the saturation log contains only a static route and permit weight, never tenant/hash/request identity (`crates/corelink-container/src/routes/cas/foundation_core.rs:286-320`).
 - Batch parser lines are at most 1 KiB, retained hashes at most 128 bytes, and object caps are enforced before the next entry is allocated; shared reservations cover body, parser strings/clones, payload, and streamed response (`crates/corelink-container/src/routes/cas/foundation_core.rs:110-145`; parser `crates/corelink-container/src/routes/cas/list_delete.rs:1-27`).

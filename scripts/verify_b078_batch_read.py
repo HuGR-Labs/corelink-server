@@ -65,6 +65,14 @@ def assess_source(route: str, handler: str, storage: str, openapi: str, docs: st
     if "BatchReadTaskGuard" in batch and "BatchReadTaskGuard::with_capacity(BATCH_READ_FANOUT)" not in batch:
         gaps.append("materialized-task-collection")
 
+    try:
+        drop_guard = _section(route, "impl Drop for BatchReadTaskGuard", "async fn handle_batch_read")
+    except ContractError as error:
+        gaps.append("drop-guard")
+    else:
+        if "for pending in &self.handles" not in drop_guard or "pending.abort();" not in drop_guard:
+            gaps.append("drop-abort")
+
     if "pub max_bytes: Option<u64>" not in handler:
         gaps.append("request-max-bytes-field")
     if "let actual_bytes = bytes.len() as u64" not in handler or "actual_bytes > limit" not in handler:

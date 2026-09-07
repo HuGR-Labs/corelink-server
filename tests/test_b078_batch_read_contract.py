@@ -58,6 +58,17 @@ class B078ContractTests(unittest.TestCase):
         gaps = verifier.assess_source(mutated, handler, storage, openapi, docs)
         self.assertIn("materialized-task-collection", gaps)
 
+    def test_drop_abort_mutation_is_rejected(self) -> None:
+        route, handler, storage = self._sources()
+        openapi = (ROOT / "openapi/corelink-v1.yaml").read_text()
+        docs = (ROOT / "docs/knowledge/surfaces/native-cas.md").read_text()
+        start = route.index("impl Drop for BatchReadTaskGuard")
+        end = route.index("async fn handle_batch_read", start)
+        drop_guard = route[start:end].replace("pending.abort();", "pending.cancel();", 1)
+        mutated = route[:start] + drop_guard + route[end:]
+        gaps = verifier.assess_source(mutated, handler, storage, openapi, docs)
+        self.assertIn("drop-abort", gaps)
+
     def test_413_wire_contract_mutations_reopen_the_gate(self) -> None:
         route, handler, storage = self._sources()
         openapi = (ROOT / "openapi/corelink-v1.yaml").read_text()

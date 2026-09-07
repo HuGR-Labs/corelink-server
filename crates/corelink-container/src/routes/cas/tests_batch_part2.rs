@@ -121,7 +121,7 @@ impl CasReadHandler for BatchReadTrackingHandler {
             started.fetch_add(1, Ordering::SeqCst);
         }
         if let Some(first_started) = self.first_started.as_ref() {
-            first_started.notify_waiters();
+            first_started.notify_one();
         }
         let mut observed = self.max_active.load(Ordering::SeqCst);
         while active > observed {
@@ -305,7 +305,7 @@ async fn batch_read_overflow_drains_all_active_tasks_before_return() {
 /// detaching the JoinHandles. Already-running synchronous reads are allowed to
 /// unwind, but no queued read may start after cancellation and all active
 /// storage calls must finish within the bounded test deadline.
-#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn batch_read_cancellation_aborts_tasks_and_waits_for_unwind() {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
@@ -336,16 +336,9 @@ async fn batch_read_cancellation_aborts_tasks_and_waits_for_unwind() {
         }
         _ = &mut response => panic!("batch handler completed before cancellation"),
     }
-    tokio::time::timeout(std::time::Duration::from_secs(1), async {
-        while started.load(Ordering::SeqCst) < BATCH_READ_FANOUT {
-            tokio::select! {
-                _ = &mut response => panic!("batch handler completed before cancellation"),
-                _ = tokio::task::yield_now() => {}
-            }
-        }
-    })
-    .await
-    .expect("the bounded batch window must start before cancellation");
+    // One worker leaves the other window handles queued behind the first
+    // synchronous read. They are the cancellation-sensitive work owned by the
+    // guard; removing `Drop::abort` makes their `read()` calls start later.
     let started_at_drop = started.load(Ordering::SeqCst);
     drop(response);
 
@@ -357,6 +350,14 @@ async fn batch_read_cancellation_aborts_tasks_and_waits_for_unwind() {
                 "no new storage read may start after the handler future is dropped"
             );
             if active_tasks.load(Ordering::SeqCst) == 0 {
+                // Give queued detached tasks a bounded scheduling opportunity;
+                // a missing Drop abort must be observable in `started`.
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                assert_eq!(
+                    started.load(Ordering::SeqCst),
+                    started_at_drop,
+                    "queued storage tasks must be aborted with the handler future"
+                );
                 break;
             }
             tokio::task::yield_now().await;
@@ -365,7 +366,6 @@ async fn batch_read_cancellation_aborts_tasks_and_waits_for_unwind() {
     .await
     .expect("cancelled batch storage calls must unwind within the bounded deadline");
     assert_eq!(active_tasks.load(Ordering::SeqCst), 0);
-    assert!(max_active.load(Ordering::SeqCst) > 1);
     assert!(max_active.load(Ordering::SeqCst) <= BATCH_READ_FANOUT);
 }
 
