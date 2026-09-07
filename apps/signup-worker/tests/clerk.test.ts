@@ -732,7 +732,9 @@ describe("defaultApiClient.issuePat (H3: honors scope, no privilege-by-default)"
     } as unknown as AutoProvisionEnv;
 
     await defaultApiClient(env).issuePat("t_1", "read-write");
-    expect(getMintAuth()).toBe("dedicated-mint-key");
+    // Assert the complete binding value. Truncating this secret would make the
+    // container reject the request; the dedicated key must win unchanged.
+    expect(getMintAuth()).toBe(VALID_DEDICATED_MINT_KEY);
   });
 
   it("falls back to the shared CORELINK_INTERNAL_AUTH_KEY when the dedicated key is unset (additive)", async () => {
@@ -746,7 +748,9 @@ describe("defaultApiClient.issuePat (H3: honors scope, no privilege-by-default)"
     } as unknown as AutoProvisionEnv;
 
     await defaultApiClient(env).issuePat("t_1", "read-write");
-    expect(getMintAuth()).toBe("shared-key");
+    // The additive fallback likewise forwards the complete shared binding,
+    // rather than a stale short fixture or a value from the preceding test.
+    expect(getMintAuth()).toBe(VALID_AUTH_KEY);
   });
 
   it("throws (fail-loud) when CORELINK_INTERNAL_AUTH_KEY is absent — never returns a stub PAT", async () => {
