@@ -461,32 +461,4 @@
         );
     }
 
-    #[tokio::test]
-    async fn metadata_cache_hit_round_trip_with_tenant_stripped() {
-        // Mint a real PAT; seed the metadata KV (PUBLIC namespace, unscoped
-        // package) so a GET /<pkg> is a cache HIT (no upstream). Proves
-        // end-to-end: nest_service mount + tenant-strip + scope + Option-B
-        // resolve + KV get + JSON passthrough.
-        let key = test_key();
-        let (plaintext, pat) = mint(
-            PatEnv::Pat,
-            PatTenantId(Uuid::from_u128(0xBEEF)),
-            PrincipalId(Uuid::from_u128(0xF00D)),
-            PatScopes::from_u64(SCOPE_CACHE_RW),
-            None,
-            &key,
-            1,
-        )
-        .unwrap();
-        let pt = plaintext.into_string();
-        let lookup = OneTokenLookup {
-            token_id: pat.token_id.as_str().to_owned(),
-            row: PatRow {
-                tenant_id: pat.tenant_id.0.to_string(),
-                pat_hash: pat.hash.as_str().to_owned(),
-                scope: SCOPE_RW.to_owned(),
-                find_only: false,
-                runner_job: false,
-            },
-
 include!("fragment-tests-01.rs");
