@@ -8,7 +8,10 @@ use super::*;
 /// `Www-Authenticate` challenge. The status is asserted, not merely the
 /// absence of a 200, to guard against a regression that silently drops the
 /// endpoint (which would manifest as 404, not the required gate deny).
-pub(in crate::journeys::oci) fn j12_catalog_always_401(cfg: &Config, client: &Client) -> JourneyResult {
+pub(in crate::journeys::oci) fn j12_catalog_always_401(
+    cfg: &Config,
+    client: &Client,
+) -> JourneyResult {
     let name = "OCI #12: GET /v2/_catalog disabled → 401 (gate proven, not absent)";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
@@ -201,7 +204,10 @@ pub(in crate::journeys::oci) fn j13_ro_push_denied(cfg: &Config, client: &Client
 ///
 /// Assertion: tenant A pushes a blob. Tenant B issues a GET for the SAME
 /// blob URL → 404. (Not 200, which would be a tenant-isolation breach.)
-pub(in crate::journeys::oci) fn j14_cross_tenant_isolation(cfg: &Config, client: &Client) -> JourneyResult {
+pub(in crate::journeys::oci) fn j14_cross_tenant_isolation(
+    cfg: &Config,
+    client: &Client,
+) -> JourneyResult {
     let name = "OCI #14: cross-tenant blob pull → 404 (not 200 or 403)";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
