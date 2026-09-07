@@ -7,8 +7,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
-
 use crate::container_capacity::ARGON2_VERIFY_PERMITS;
 
 /// Process-wide cap on the number of Argon2id verifications running
@@ -106,7 +104,7 @@ pub(super) const ARGON2_PERMIT_WAIT: Duration = Duration::from_millis(250);
 /// candidate. Cloning yields a fresh `Arc` clone of the same semaphore.
 #[derive(Clone)]
 pub(super) struct PerTenantEntry {
-    sem: Arc<Semaphore>,
+    sem: Arc<tokio::sync::Semaphore>,
     last_access: u64,
 }
 
@@ -172,7 +170,7 @@ impl PerTenantGate {
     /// it shrinks back as those verifies complete and a later insert finds an
     /// idle victim. Re-inserting an evicted tenant simply recreates its (idle)
     /// semaphore — semantically identical.
-    pub(super) fn semaphore(&self, tenant: &str) -> Option<Arc<Semaphore>> {
+    pub(super) fn semaphore(&self, tenant: &str) -> Option<Arc<tokio::sync::Semaphore>> {
         let mut map = match self.permits.lock() {
             Ok(guard) => guard,
             // Poisoned: a previous holder panicked while mutating the map. Do
@@ -190,7 +188,7 @@ impl PerTenantGate {
         if map.len() >= self.map_cap {
             self.evict_one_idle(&mut map);
         }
-        let sem = Arc::new(Semaphore::new(self.cap));
+        let sem = Arc::new(tokio::sync::Semaphore::new(self.cap));
         map.insert(
             tenant.to_owned(),
             PerTenantEntry {
@@ -248,7 +246,10 @@ impl PerTenantGate {
     /// — the dummy-burn arm — uses the non-blocking [`Self::try_acquire`]
     /// instead, which cannot participate in a wait-for cycle at all and so
     /// preserves that rationale rather than breaking it.
-    pub(super) async fn acquire(&self, tenant: &str) -> Result<Option<OwnedSemaphorePermit>, ()> {
+    pub(super) async fn acquire(
+        &self,
+        tenant: &str,
+    ) -> Result<Option<tokio::sync::OwnedSemaphorePermit>, ()> {
         let Some(sem) = self.semaphore(tenant) else {
             // Fail-safe: no per-tenant bookkeeping ⇒ global-only.
             return Ok(None);
@@ -280,7 +281,10 @@ impl PerTenantGate {
     /// See the dummy-burn arm of [`PatVerifier::verify_capability`] for why the
     /// inversion is worth having: shedding a request that was going to be shed
     /// anyway must not first park a global permit for the whole wait.
-    pub(super) fn try_acquire(&self, tenant: &str) -> Result<Option<OwnedSemaphorePermit>, ()> {
+    pub(super) fn try_acquire(
+        &self,
+        tenant: &str,
+    ) -> Result<Option<tokio::sync::OwnedSemaphorePermit>, ()> {
         let Some(sem) = self.semaphore(tenant) else {
             // Fail-safe: no per-tenant bookkeeping ⇒ global-only. Identical to
             // `acquire`'s fall-through — a bookkeeping fault never blocks auth.

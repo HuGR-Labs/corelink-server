@@ -1,6 +1,7 @@
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::indexing_slicing)]
 mod tests {
+    #![allow(clippy::expect_used, clippy::indexing_slicing)]
+
     use super::*;
     use std::sync::Mutex;
 
