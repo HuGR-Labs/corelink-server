@@ -83,7 +83,9 @@ BANNED_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 
 # An `additive-allowed: ADR-NNNN` annotation on the same line suppresses
 # the violation. The reason text is mandatory so reviewers can see why.
-ALLOW_PATTERN = re.compile(r"--\s*additive-allowed\s*:\s*ADR-\d{4}\b", re.IGNORECASE)
+ALLOW_PATTERN = re.compile(
+    r"^--\s*additive-allowed\s*:\s*ADR-\d{4}\b\s+\S", re.IGNORECASE
+)
 
 # Strip line comments before scanning so `-- DROP TABLE old_thing` in a
 # rationale block does not trigger.
@@ -99,14 +101,66 @@ def iter_migration_files() -> list[Path]:
     return files
 
 
+def line_comment_start(
+    line: str, in_block_comment: bool, quote: str | None
+) -> tuple[int | None, bool, str | None]:
+    """Locate a real SQL line comment, ignoring quoted text and block comments."""
+    index = 0
+    while index < len(line):
+        if in_block_comment:
+            if line[index : index + 2] == "*/":
+                in_block_comment = False
+                index += 2
+            else:
+                index += 1
+            continue
+        if quote is not None:
+            if line[index] == quote:
+                if index + 1 < len(line) and line[index + 1] == quote:
+                    index += 2
+                    continue
+                quote = None
+            index += 1
+            continue
+        if line[index : index + 2] == "/*":
+            in_block_comment = True
+            index += 2
+        elif line[index : index + 2] == "--":
+            return index, in_block_comment, quote
+        elif line[index] in {"'", '"'}:
+            quote = line[index]
+            index += 1
+        else:
+            index += 1
+    return None, in_block_comment, quote
+
+
+def valid_line_waiver(raw_line: str, comment_start: int) -> bool:
+    """Accept one terminated SQL statement plus an audited, reasoned waiver."""
+    sql = raw_line[:comment_start]
+    comment = raw_line[comment_start:]
+    return (
+        sql.count(";") == 1
+        and sql.rstrip().endswith(";")
+        and ALLOW_PATTERN.search(comment) is not None
+    )
+
+
 def scan_file(path: Path) -> list[tuple[int, str, str]]:
     """Return list of (line_number, banned_pattern_label, raw_line) for
     every banned pattern that fires without an allow annotation."""
     violations: list[tuple[int, str, str]] = []
     raw = path.read_text(encoding="utf-8")
+    in_block_comment = False
+    quote: str | None = None
     for line_no, raw_line in enumerate(raw.splitlines(), start=1):
-        # If the line already carries an additive-allowed annotation, skip.
-        if ALLOW_PATTERN.search(raw_line):
+        comment_start, in_block_comment, quote = line_comment_start(
+            raw_line, in_block_comment, quote
+        )
+        # Waivers are accepted only in a real SQL line comment, after exactly
+        # one terminated statement. Strings, block comments, adjacent SQL, and
+        # missing reasons cannot suppress the gate.
+        if comment_start is not None and valid_line_waiver(raw_line, comment_start):
             continue
         # Strip the `-- …` portion so prose comments cannot trip the scan.
         scan_line = COMMENT_PATTERN.sub("", raw_line)
