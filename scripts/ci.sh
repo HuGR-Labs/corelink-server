@@ -91,7 +91,9 @@ if [ "$RUN_TEST_COMPILE" = 1 ]; then
     if command -v cargo-nextest >/dev/null 2>&1; then
         RUST_GATES+=("cargo-nextest|cargo nextest run --workspace --profile ci")
     else
-        RUST_GATES+=("cargo-test|cargo test --workspace")
+        # Drain every test binary in one bundle run so independent failures are
+        # reported together instead of forcing serial full-workspace reruns.
+        RUST_GATES+=("cargo-test|cargo test --workspace --no-fail-fast")
     fi
 fi
 if [ "$RUN_WASM32" = 1 ]; then
