@@ -278,6 +278,10 @@ pub(super) fn gather_subject_data<Q>(
 where
     Q: FnMut(&str, &[Value]) -> Result<Vec<D1Row>, String>,
 {
+    // The access/portability plan is derived from the same D1 registry as
+    // erasure. Refuse to disclose a partial view if that registry is ever
+    // ambiguous or incomplete, including in release builds.
+    super::adapter_d1::ensure_tenant_keyed_tables_classified()?;
     let plan = build_gather_plan(tenant_id);
     let mut tables: Vec<SubjectTable> = Vec::with_capacity(plan.len());
     for q in plan {

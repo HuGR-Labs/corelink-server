@@ -46,7 +46,7 @@ use corelink_privacy_erasure_worker::error::ErasureBackendError;
 use corelink_privacy_erasure_worker::event::{BackendErasureOutcome, BackendKind};
 
 use super::d1util::{col_str, d1_query_blocking, scalar_count};
-use crate::storage::d1_http::D1HttpClient;
+use crate::storage::d1_http::{D1HttpClient, D1Row};
 
 /// Erase-set tables keyed directly by a `tenant_id` column (incl.
 /// tenant-leftmost composite PKs, where `WHERE tenant_id = ?` is exact).
@@ -453,17 +453,44 @@ fn classification_count(table: &str) -> usize {
         .count()
 }
 
-/// Fail-closed completeness gate (the load-bearing CF-1 fix): every
-/// tenant-keyed table must be classified into EXACTLY ONE bucket. Returns
-/// `(table, count)` for every table that is unclassified (`0`) or ambiguously
-/// multi-classified (`>1`). Empty ⇒ the classification is total and disjoint.
-fn unclassified_tenant_keyed_tables() -> Vec<(&'static str, usize)> {
-    ALL_TENANT_KEYED_TABLES
+/// Return every table whose registry classification is not exactly one
+/// bucket. Kept parameterized so the fail-closed contract can be exercised
+/// with an injected unknown table in a unit test; production passes the
+/// compile-time registry below.
+fn classification_gaps<'a>(tables: &[&'a str]) -> Vec<(&'a str, usize)> {
+    tables
         .iter()
         .map(|t| (*t, classification_count(t)))
-        // `t: &&str`; `classification_count` takes `&str` via deref of `*t`.
-        .filter(|(_, n)| *n != 1)
+        .filter(|(_, count)| *count != 1)
         .collect()
+}
+
+/// Fail-closed completeness gate (the load-bearing CF-1 fix): every
+/// tenant-keyed table must be classified into EXACTLY ONE bucket. Returns an
+/// error for every unclassified (`0`) or ambiguously multi-classified (`>1`)
+/// table. This is intentionally always-on: a release build must not erase or
+/// verify against a partial registry and then attest success.
+fn ensure_classification(tables: &[&str]) -> Result<(), String> {
+    let gaps = classification_gaps(tables);
+    if gaps.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "CF-1: DSR erase-set classification is incomplete/ambiguous; refusing to act: {gaps:?}"
+        ))
+    }
+}
+
+/// Validate the production registry before erasure, access, or verification.
+pub(super) fn ensure_tenant_keyed_tables_classified() -> Result<(), String> {
+    ensure_classification(ALL_TENANT_KEYED_TABLES)
+}
+
+/// Returns `(table, count)` for every gap in the production registry. Empty
+/// means the classification is total and disjoint. The runtime gate above is
+/// the source of truth; this helper remains available to focused unit tests.
+fn unclassified_tenant_keyed_tables() -> Vec<(&'static str, usize)> {
+    classification_gaps(ALL_TENANT_KEYED_TABLES)
 }
 
 /// Real D1 effective erase adapter.
@@ -544,6 +571,20 @@ impl D1EraseAdapter {
         Ok(region)
     }
 
+    /// Decode the Clerk principal needed to clean up the special lock. A
+    /// missing, non-string, or blank value is not safe to treat as "no lock":
+    /// the erasure would otherwise delete the tenant root while leaving an
+    /// unaddressable identity lease behind.
+    fn clerk_user_id_from_rows(rows: &[D1Row]) -> Result<String, String> {
+        let Some(clerk_user_id) = rows.first().and_then(|row| col_str(row, "clerk_user_id")) else {
+            return Err("tenant.clerk_user_id missing; refusing DSR deletion".to_owned());
+        };
+        if clerk_user_id.trim().is_empty() {
+            return Err("tenant.clerk_user_id blank; refusing DSR deletion".to_owned());
+        }
+        Ok(clerk_user_id)
+    }
+
     /// Read the Clerk principal that owns the tenant before any row is
     /// deleted. `clerk_provisioning_lock` is keyed by this value rather than
     /// `tenant_id`, so a missing/blank value is a fail-closed error: deleting
@@ -556,17 +597,7 @@ impl D1EraseAdapter {
             vec![json!(tid)],
         )
         .map_err(ErasureBackendError::Transport)?;
-        let Some(clerk_user_id) = rows.first().and_then(|row| col_str(row, "clerk_user_id")) else {
-            return Err(ErasureBackendError::Transport(
-                "tenant.clerk_user_id missing; refusing DSR deletion".to_owned(),
-            ));
-        };
-        if clerk_user_id.trim().is_empty() {
-            return Err(ErasureBackendError::Transport(
-                "tenant.clerk_user_id blank; refusing DSR deletion".to_owned(),
-            ));
-        }
-        Ok(clerk_user_id)
+        Self::clerk_user_id_from_rows(&rows).map_err(ErasureBackendError::Transport)
     }
 
     /// `signup_attempts` has no `tenant_id`; its rows join to the tenant via
@@ -660,18 +691,11 @@ impl BackendErasureAdapter for D1EraseAdapter {
         if legal_hold {
             return Ok(BackendErasureOutcome::NotApplicable);
         }
-        // CF-1 runtime drift assertion: never run an erasure (and then
-        // attest VerifiedComplete) while a known tenant-keyed table is
-        // unclassified. Cheap const-slice scan; fires in every debug/test
-        // build so an unaccounted-for new table is caught before it can leave
-        // PII behind under a green attestation. (The hard, always-on gate is
-        // the `#[test]`s below, which also cross-check the migrations on disk.)
-        debug_assert!(
-            unclassified_tenant_keyed_tables().is_empty(),
-            "CF-1: DSR erase-set classification is incomplete/ambiguous — \
-             refusing to over-attest: {:?}",
-            unclassified_tenant_keyed_tables()
-        );
+        // CF-1 runtime drift gate: never run an erasure (and then attest
+        // VerifiedComplete) while a known tenant-keyed table is unclassified.
+        // This is an always-on Result path, not a debug assertion: release
+        // builds must fail closed before the first mutation as well.
+        ensure_tenant_keyed_tables_classified().map_err(ErasureBackendError::Transport)?;
         let tid = tenant_id.to_string();
         // MUST precede every mutation, including child cleanup. A missing or
         // malformed residency pin fails closed and leaves the tenant intact.
@@ -711,6 +735,9 @@ impl BackendErasureAdapter for D1EraseAdapter {
     }
 
     fn verification_hash(&self, ctx: VerificationContext) -> Result<[u8; 32], ErasureBackendError> {
+        // Keep verification fail-closed too. A partial registry must never
+        // produce the canonical empty hash and over-attest a tenant.
+        ensure_tenant_keyed_tables_classified().map_err(ErasureBackendError::Transport)?;
         let remaining = self.remaining_rows(&ctx.tenant_id.to_string())?;
         if remaining == 0 {
             // Canonical "no rows for tenant" sentinel (effective backend).

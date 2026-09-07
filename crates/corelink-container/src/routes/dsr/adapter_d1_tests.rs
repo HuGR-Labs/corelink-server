@@ -4,6 +4,8 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
+use serde_json::json;
+
 use super::*;
 
 /// FK-ORDER guard. D1 enforces `PRAGMA foreign_keys = ON`, and
@@ -69,6 +71,32 @@ fn clerk_lock_is_special_and_precedes_tenant_root() {
          before the tenant root is deleted"
     );
     assert!(!TENANT_ID_TABLES.contains(&"clerk_provisioning_lock"));
+}
+
+#[test]
+fn clerk_lookup_fails_closed_for_missing_or_blank_key() {
+    assert!(D1EraseAdapter::clerk_user_id_from_rows(&[]).is_err());
+
+    let mut missing = D1Row::new();
+    missing.insert("tenant_id".to_owned(), json!("tenant-1"));
+    assert!(D1EraseAdapter::clerk_user_id_from_rows(&[missing]).is_err());
+
+    let mut blank = D1Row::new();
+    blank.insert("clerk_user_id".to_owned(), json!("  "));
+    assert!(D1EraseAdapter::clerk_user_id_from_rows(&[blank]).is_err());
+
+    let mut valid = D1Row::new();
+    valid.insert("clerk_user_id".to_owned(), json!("user_123"));
+    assert_eq!(
+        D1EraseAdapter::clerk_user_id_from_rows(&[valid]).unwrap(),
+        "user_123"
+    );
+}
+
+#[test]
+fn classification_gate_rejects_unknown_table_fail_closed() {
+    let err = ensure_classification(&["tenant", "future_unclassified_table"]).unwrap_err();
+    assert!(err.contains("future_unclassified_table"));
 }
 
 #[test]
@@ -152,8 +180,8 @@ fn tenant_linked_pii_tables_are_in_the_erase_set() {
 
 /// CF-1 in-code completeness gate: every table in the hand-maintained
 /// registry is classified into EXACTLY ONE bucket (no unclassified, no
-/// ambiguous double-classification). This is the runtime-checkable half of
-/// the fix (mirrors the `debug_assert!` in `erase()`).
+/// ambiguous double-classification). This is the registry half of the
+/// always-on runtime gate in `erase()` and `verification_hash()`.
 #[test]
 fn every_registered_tenant_keyed_table_is_classified_exactly_once() {
     let gaps = unclassified_tenant_keyed_tables();
