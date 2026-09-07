@@ -1,11 +1,3 @@
-    let gate = state.pat_gate.as_ref()?;
-    let bearer = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    gate.verify(tenant, bearer).await.err()
-}
-
 /// Write-path variant of [`pat_gate_reject`]: independently re-derives the PAT's
 /// D1-stored `can_write` capability at the container (via
 /// `NativePatGate::verify_write`), not just tenant possession — upholding the

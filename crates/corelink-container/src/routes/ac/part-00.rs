@@ -481,3 +481,10 @@ async fn pat_gate_reject(
     tenant: &str,
     headers: &axum::http::HeaderMap,
 ) -> Option<axum::response::Response> {
+    let gate = state.pat_gate.as_ref()?;
+    let bearer = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    gate.verify(tenant, bearer).await.err()
+}
