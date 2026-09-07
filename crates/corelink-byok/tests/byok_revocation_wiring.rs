@@ -198,7 +198,7 @@ fn detector_with_faults(
         RevocationConfig::default(),
     )
     .with_key_source(Arc::new(StaticActiveByokKeySource::new(vec![
-        key_id.clone(),
+        key_id.clone()
     ]))))
 }
 

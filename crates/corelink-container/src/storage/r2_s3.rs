@@ -9,7 +9,7 @@
 // The included implementation parts resolve these names through `super`.
 // Keep aliases at this facade level so the textual split has the same parent
 // scope as the original monolithic module.
-use super::{StorageEnv, byok_cas};
+use super::{byok_cas, StorageEnv};
 
 mod implementation {
     include!("r2_s3_parts/client.rs");
@@ -49,8 +49,8 @@ mod implementation {
 }
 
 pub use implementation::{
-    CappedGet, R2AcHandler, R2CasHandler, R2S3Client, build_r2_ac_handler_from_env,
-    build_r2_cas_handler_from_env,
+    build_r2_ac_handler_from_env, build_r2_cas_handler_from_env, CappedGet, R2AcHandler,
+    R2CasHandler, R2S3Client,
 };
 pub(crate) use implementation::{
     public_namespace_prefix, validate_cas_bucket_for_region, verify_content_hash,

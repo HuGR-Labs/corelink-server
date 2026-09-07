@@ -547,9 +547,8 @@ pub async fn rate_limit_layer(
     let admission = {
         // `oratelimit`: keep the synchronous token-bucket decision out of
         // `oother` without wrapping the handler future or any named I/O phase.
-        let _scope = crate::origin_timing::PhaseScope::enter(
-            crate::origin_timing::Phase::RateLimit,
-        );
+        let _scope =
+            crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::RateLimit);
         state
             .limiter
             .try_acquire(tenant, bucket_key, COST_PER_REQUEST, now_ms)
@@ -706,9 +705,8 @@ async fn run_oci_velocity_gate(
     let admission = {
         // The OCI credential-free branch has the same bounded admission
         // decision as the tenant branch above; keep both populations closed.
-        let _scope = crate::origin_timing::PhaseScope::enter(
-            crate::origin_timing::Phase::RateLimit,
-        );
+        let _scope =
+            crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::RateLimit);
         state
             .oci_limiter
             .try_acquire(realm, bucket_key, COST_PER_REQUEST, now_ms)
