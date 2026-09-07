@@ -88,7 +88,7 @@ fn test_chaos_wnam_outage_isolation() {
         "WNAM must be Degraded during outage"
     );
 
-    // ENAM/WEUR/SAM remain healthy (region isolation)
+    // Every non-WNAM canonical region remains healthy (region isolation).
     verify_region_isolation(&metrics, Region::Wnam);
 
     // Alert: outage event fired
@@ -188,7 +188,7 @@ fn test_chaos_weur_outage_isolation() {
         "WEUR must be Degraded during outage"
     );
 
-    // WNAM/ENAM/SAM remain healthy
+    // Every non-WEUR canonical region remains healthy.
     for (region_str, status) in &metrics.health_status {
         if region_str != "weur" {
             assert_eq!(

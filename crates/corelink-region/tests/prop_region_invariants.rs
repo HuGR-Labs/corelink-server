@@ -19,8 +19,8 @@
 //! | `prop_inv_audit_emit_atomic_with_handler_pre_state`| INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER |
 //!
 //! Adversarial inputs (per WI-S14-001 §6.1.5 + Lote 10.6bis P0-W6-1):
-//! - All-pairs (source × target) over Region (16 ordered pairs; only the
-//!   4 same-region pairs are no-ops; the 12 cross-region pairs MUST be
+//! - All-pairs (source × target) over Region (36 ordered pairs; only the
+//!   6 same-region pairs are no-ops; the 30 cross-region pairs MUST be
 //!   rejected for write under INV-DATA-RESIDENCY).
 //! - Raw tenant_id strings with patterns that ALMOST look like hashes
 //!   (uuid-shaped strings, 64-hex strings that include underscores etc.)
@@ -158,8 +158,8 @@ proptest! {
     /// = WEUR and jurisdiction != EU MUST fail `is_valid_for_region`.
     ///
     /// Adversarial: random (region, jurisdiction) over 6 × 3 = 18 pairs;
-    /// only 4 are valid (WNAM→US, ENAM→US, WEUR→EU, SAM→None). The other
-    /// 8 MUST be rejected.
+    /// only 6 are valid (WNAM→US, ENAM→US, WEUR→EU, and SAM/APAC/AFR→None).
+    /// The other 12 MUST be rejected.
     #[test]
     fn prop_inv_data_residency_weur_mandates_eu(seed in any::<u64>()) {
         let mut rng = ChaCha20Rng::seed_from_u64(seed);
@@ -193,8 +193,8 @@ proptest! {
     /// asserts the equality predicate is reflexive AND total — there is
     /// no fence-post region equality bug.
     ///
-    /// Adversarial: random (primary, target) over the 16 ordered pairs.
-    /// Half are diagonal (same-region; valid); half cross. Property:
+    /// Adversarial: random (primary, target) over 36 ordered pairs.
+    /// Six are diagonal (same-region; valid); 30 are cross-region. Property:
     /// `is_cross_region(primary, target) <=> primary != target` and
     /// `is_cross_region` is symmetric.
     #[test]
