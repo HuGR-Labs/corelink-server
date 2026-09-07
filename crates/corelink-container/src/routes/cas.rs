@@ -38,9 +38,12 @@
 //!   module items, split by existing source order only.
 //! - `tests_read_ceiling.rs`: original read-size ceiling test items.
 
-include!("cas/foundation.rs");
-include!("cas/single.rs");
-include!("cas/batch.rs");
+include!("cas/foundation_core.rs");
+include!("cas/foundation_state.rs");
+include!("cas/single_setup.rs");
+include!("cas/single_handlers.rs");
+include!("cas/batch_write.rs");
+include!("cas/batch_read.rs");
 include!("cas/list_delete.rs");
 
 #[cfg(test)]
@@ -55,8 +58,10 @@ mod tests {
     use super::*;
     use corelink_handler_cas::handler::fake_hash;
 
-    include!("cas/tests_core.rs");
-    include!("cas/tests_batch.rs");
+    include!("cas/tests_core_part1.rs");
+    include!("cas/tests_core_part2.rs");
+    include!("cas/tests_batch_part1.rs");
+    include!("cas/tests_batch_part2.rs");
     include!("cas/tests_edges.rs");
 }
 
