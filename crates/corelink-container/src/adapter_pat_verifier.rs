@@ -6,21 +6,21 @@
 use std::sync::Arc;
 
 use corelink_pat::{
-    PatError, PatHash, PatSigningKey, verify_hmac_only_multi, verify_with_hash_multi,
+    verify_hmac_only_multi, verify_with_hash_multi, PatError, PatHash, PatSigningKey,
 };
 use futures::FutureExt;
 
 use crate::container_capacity::ARGON2_VERIFY_PERMITS;
 use crate::scope::{requires_cache_read, requires_cache_write};
 use crate::storage::d1_http::D1HttpClient;
-use crate::storage::{StorageEnv, non_empty_env};
+use crate::storage::{non_empty_env, StorageEnv};
 
 use super::adapter_pat_crypto::{
-    BurnFlight, FLIGHT_GROUP_CAP, FlightGroup, SECRET_MATCH_MEMO_CAP, SECRET_MATCH_MEMO_TTL,
-    SecretMatchMemo, VerifyFlight, dummy_burn_fingerprint, secret_match_fingerprint,
+    dummy_burn_fingerprint, secret_match_fingerprint, BurnFlight, FlightGroup, SecretMatchMemo,
+    VerifyFlight, FLIGHT_GROUP_CAP, SECRET_MATCH_MEMO_CAP, SECRET_MATCH_MEMO_TTL,
 };
 use super::adapter_pat_gate::{
-    ARGON2_PER_TENANT_PERMITS, ARGON2_PERMIT_WAIT, PER_TENANT_MAP_CAP, PerTenantGate,
+    PerTenantGate, ARGON2_PERMIT_WAIT, ARGON2_PER_TENANT_PERMITS, PER_TENANT_MAP_CAP,
     UNKNOWN_TOKEN_BUCKET,
 };
 pub use super::adapter_pat_lookup::VerifyError;
