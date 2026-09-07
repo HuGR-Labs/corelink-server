@@ -33,10 +33,13 @@ import {
   resolveDoColo,
   timedD1Read,
   timingSafeEqual,
+  errText,
+  unavailablePath,
 } from "./durable_object_probes.js";
 import { startContainer as runStartContainer } from "./durable_object_start.js";
 import type {
   D1ProbeBinding,
+  D1PathProbeResult,
   D1ProbeReport,
 } from "./durable_object_probes.js";
 export { timingSafeEqual };

@@ -395,6 +395,12 @@ describe("security (H4): forwarded-request trust-header hygiene", () => {
             if (sql.includes("primary_region")) {
               return { primary_region: "weur" } as T;
             }
+            if (sql.includes("monthly_request_counts")) {
+              return { request_count: 1 } as T;
+            }
+            if (sql.includes("tenant_storage_state")) {
+              return { total_bytes: 0 } as T;
+            }
             // tenant_storage_state / tier lookups → null (no quota record).
             void args;
             return null as T;
@@ -402,6 +408,7 @@ describe("security (H4): forwarded-request trust-header hygiene", () => {
         }),
         first: async <T>() => null as T | null,
       }),
+      batch: batchViaFirst(),
     } as unknown as D1Database;
 
     const resp = await workerFetch(
@@ -444,11 +451,18 @@ describe("security (H4): forwarded-request trust-header hygiene", () => {
               if (throwIt) throw new Error("D1 transient");
               return (region === null ? null : { primary_region: region }) as T;
             }
+            if (sql.includes("monthly_request_counts")) {
+              return { request_count: 1 } as T;
+            }
+            if (sql.includes("tenant_storage_state")) {
+              return { total_bytes: 0 } as T;
+            }
             return null as T;
           },
         }),
         first: async <T>() => null as T | null,
       }),
+      batch: batchViaFirst(),
     } as unknown as D1Database;
   }
 

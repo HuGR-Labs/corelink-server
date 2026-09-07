@@ -242,7 +242,7 @@ export async function proxyToContainer(request: Request, fetcher: Fetcher): Prom
 // ──────────────────────────────────────────────────────────────────────────────
 
 /** Short, bounded error text. Never carries a body or a secret. */
-function errText(err: unknown): string {
+export function errText(err: unknown): string {
   return err instanceof Error ? err.message.slice(0, 160) : "unknown error";
 }
 
@@ -304,7 +304,7 @@ export async function timedD1Read(
 }
 
 /** A path that could not be attempted at all (distinct from attempted-and-failed). */
-function unavailablePath(reason: string): D1PathProbeResult {
+export function unavailablePath(reason: string): D1PathProbeResult {
   return {
     available: false,
     ok: false,

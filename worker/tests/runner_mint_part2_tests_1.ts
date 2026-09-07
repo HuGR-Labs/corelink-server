@@ -274,7 +274,7 @@ describe("POST /internal/v1/runner/mint — 5b/5c/5d authz reads in ONE batch", 
   }): { db: D1Database; batches: string[][]; serialFirsts: string[] } {
     const mapped = opts.mapped ?? new Map([[INSTALLATION_ID, TENANT]]);
     const suspended = opts.suspended ?? new Set<string>();
-    const allowlisted = opts.allowlisted ?? new Set([`${TENANT}${REPO_FULL_NAME}`]);
+    const allowlisted = opts.allowlisted ?? new Set([`${TENANT}\u0000${REPO_FULL_NAME}`]);
     const entitled = opts.entitled ?? new Map([[TENANT, MAX_CONCURRENCY]]);
     const vcpuCeilings = opts.vcpuCeilings ?? new Map<string, number | null>();
     const batches: string[][] = [];
@@ -293,7 +293,7 @@ describe("POST /internal/v1/runner/mint — 5b/5c/5d authz reads in ONE batch", 
       if (sql.includes("runner_repo_allowlist")) {
         const tenantId = args[0] as string;
         const repo = args[1] as string;
-        return allowlisted.has(`${tenantId}${repo}`) ? { "1": 1 } : null;
+        return allowlisted.has(`${tenantId}\u0000${repo}`) ? { "1": 1 } : null;
       }
       if (sql.includes("runners_entitlement")) {
         const tenantId = args[0] as string;
@@ -306,6 +306,9 @@ describe("POST /internal/v1/runner/mint — 5b/5c/5d authz reads in ONE batch", 
                 : null,
             }
           : null;
+      }
+      if (sql.includes("session_exchange_throttle")) {
+        return { count: 1 };
       }
       return null;
     };

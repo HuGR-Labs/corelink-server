@@ -225,11 +225,18 @@ describe("security (H4): forwarded-request trust-header hygiene", () => {
                 if (throwIt) throw new Error("D1 transient");
                 return (region === null ? null : { primary_region: region }) as T;
               }
+              if (sql.includes("monthly_request_counts")) {
+                return { request_count: 1 } as T;
+              }
+              if (sql.includes("tenant_storage_state")) {
+                return { total_bytes: 0 } as T;
+              }
               return null as T;
             },
           }),
           first: async <T>() => null as T | null,
         }),
+        batch: batchViaFirst(),
       } as unknown as D1Database;
     }
 
