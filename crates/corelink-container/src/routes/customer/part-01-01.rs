@@ -1,7 +1,3 @@
-        }
-    }
-}
-
 /// `POST /v1/customer/account/export` — self-serve tenant bulk export (SEAM).
 ///
 /// Streams the full portability bundle (content-addressed NDJSON): the tenant's

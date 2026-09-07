@@ -488,3 +488,6 @@ async fn handle_account_delete(
         Err(AccountDeletionError::Internal(e)) => {
             tracing::error!(error = %e, tenant = %t, "account delete: erasure request failed");
             (StatusCode::INTERNAL_SERVER_ERROR, "erasure request failed").into_response()
+        }
+    }
+}

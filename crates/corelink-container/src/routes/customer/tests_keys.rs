@@ -478,15 +478,4 @@ async fn keys_revoke_returns_revoked_pat() {
     assert!(v["pat"]["revoked_at"].is_string());
 }
 
-#[tokio::test]
-async fn keys_revoke_rejects_member_viewer_and_missing_role_before_handler() {
-    let (state, shared) = fixture();
-    shared
-        .seed_pat(
-            "t6",
-            PatRow::new(
-                "pat_rev",
-                "revoke-me",
-                vec![],
-
 include!("fragment-tests-keys-01.rs");

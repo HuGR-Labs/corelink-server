@@ -1,3 +1,13 @@
+#[tokio::test]
+async fn keys_revoke_rejects_member_viewer_and_missing_role_before_handler() {
+    let (state, shared) = fixture();
+    shared
+        .seed_pat(
+            "t6",
+            PatRow::new(
+                "pat_rev",
+                "revoke-me",
+                vec![],
                 "2026-05-01T00:00:00Z",
                 None,
                 None,
