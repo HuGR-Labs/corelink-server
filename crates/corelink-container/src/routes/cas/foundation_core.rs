@@ -117,9 +117,8 @@ pub const BATCH_MAX_OBJECTS: usize = 2_000;
 /// (main.rs), so the body limit is unchanged: 8 MiB is the batch-payload
 /// ceiling, the extra 2 MiB body headroom covers manifest framing; parser
 /// strings/clones are reserved separately in the shared capacity envelope.
-pub const BATCH_MAX_BYTES: usize = (crate::container_capacity::CAS_WRITE_BATCH_PAYLOAD_LIMIT_BYTES
-    / crate::container_capacity::MEMORY_BUDGET_UNIT_BYTES)
-    as usize;
+pub const BATCH_MAX_BYTES: usize =
+    crate::container_capacity::CAS_WRITE_BATCH_PAYLOAD_LIMIT_BYTES as usize;
 
 /// Explicit route-side mirror of the global axum body limit. The global layer
 /// normally rejects this first; keeping the check here makes the contract true
