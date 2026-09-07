@@ -418,14 +418,16 @@ proptest! {
             LifecycleState::CaseStudySigned,
             LifecycleState::Withdrawn,
         ];
-        // proptest indices are bounded, so indexing is sound; we suppress
-        // the lint locally because the alternative (.get().unwrap()) is
-        // semantically identical and the lint is a workspace default
-        // designed to catch unbounded indexing.
-        #[allow(clippy::indexing_slicing)]
-        let from = states[from_idx];
-        #[allow(clippy::indexing_slicing)]
-        let to = states[to_idx];
+        // The generators are bounded to the state table, and the fallback
+        // keeps this test panic-free if a future edit widens either range.
+        let from = states
+            .get(from_idx)
+            .copied()
+            .unwrap_or(LifecycleState::Recruiting);
+        let to = states
+            .get(to_idx)
+            .copied()
+            .unwrap_or(LifecycleState::Recruiting);
 
         let mut c = forge();
         c.state = from;

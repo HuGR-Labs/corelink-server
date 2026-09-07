@@ -114,10 +114,10 @@ pub struct UsageResponse {
     pub daily: Vec<DailyUsageBucket>,
 }
 
+#[expect(clippy::too_many_arguments, reason = "flat DTO constructor API")]
 impl UsageResponse {
     /// Construct a [`UsageResponse`] from its fields.
     #[must_use]
-    #[allow(clippy::too_many_arguments, reason = "flat DTO constructor")]
     pub fn new(
         period: impl Into<String>,
         cas_bytes: u64,

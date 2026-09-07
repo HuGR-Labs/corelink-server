@@ -60,6 +60,7 @@ impl LinkAlgorithm {
 
 /// An in-memory 32-byte link key.  Only its commitment belongs in durable
 /// state; this type intentionally cannot be serialized or displayed.
+#[non_exhaustive]
 pub struct LinkKey(Zeroizing<[u8; 32]>);
 
 impl LinkKey {
@@ -130,7 +131,9 @@ pub enum EpochError {
         reason: &'static str,
     },
     /// Appending a link did not start at the current state.
-    #[error("audit-chain append state mismatch: expected sequence {expected_sequence}, observed {observed_sequence}")]
+    #[error(
+        "audit-chain append state mismatch: expected sequence {expected_sequence}, observed {observed_sequence}"
+    )]
     StateMismatch {
         /// Sequence required by the active state.
         expected_sequence: u64,
@@ -143,6 +146,7 @@ pub enum EpochError {
 /// runtime persists these facts in the signed epoch ledger/projection; the
 /// pure type enforces the local invariants before any write is attempted.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ChainEpoch {
     epoch_id: u64,
     algorithm: LinkAlgorithm,
@@ -318,6 +322,7 @@ pub fn key_matches_commitment(key: &LinkKey, expected: &ChainHash) -> bool {
 /// Mutable pure-logic state machine for one active epoch.  It cannot rewind,
 /// relabel a v1 segment, or transition without the exact current boundary.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct EpochChainState {
     epoch: ChainEpoch,
     head: ChainHash,

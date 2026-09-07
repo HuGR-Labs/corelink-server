@@ -8,7 +8,7 @@ use super::*;
 use axum::body::to_bytes;
 use axum::http::HeaderValue;
 use std::collections::HashMap;
-use tokio::sync::Mutex;
+use std::sync::Mutex;
 
 const KEY: &str = "test-erase-key-0000000000000000000000";
 const HASH: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -40,7 +40,7 @@ impl PublicRevocationStore for FakeStore {
         _approver: &str,
         audit_event_id: &str,
     ) -> Result<BlocklistInsertOutcome, String> {
-        let mut g = self.inner.lock().await;
+        let mut g = self.inner.lock().unwrap();
         if let Some(existing) = g.blocklist.get(content_hash) {
             return Ok(BlocklistInsertOutcome::AlreadyRevoked {
                 existing_audit_event_id: existing.clone(),
@@ -54,7 +54,7 @@ impl PublicRevocationStore for FakeStore {
     async fn delete_cache_map(&self, content_hash: &str) -> Result<(), String> {
         self.inner
             .lock()
-            .await
+            .unwrap()
             .map_deletes
             .push(content_hash.to_owned());
         Ok(())
@@ -64,7 +64,7 @@ impl PublicRevocationStore for FakeStore {
         Ok(self
             .inner
             .lock()
-            .await
+            .unwrap()
             .resolve
             .get(oci_digest_wire)
             .cloned())
@@ -79,7 +79,7 @@ struct FakeAudit {
 #[async_trait]
 impl PublicRevocationAuditSink for FakeAudit {
     async fn emit_revocation(&self, event: &PublicRevocationAuditEvent) -> Result<(), String> {
-        self.events.lock().await.push(event.clone());
+        self.events.lock().unwrap().push(event.clone());
         Ok(())
     }
 }
@@ -98,7 +98,7 @@ impl CasBlobEraser for FakeEraser {
         }
         self.calls
             .lock()
-            .await
+            .unwrap()
             .push((tenant.to_owned(), digest.to_owned()));
         Ok(())
     }
@@ -168,11 +168,14 @@ async fn happy_path_revokes_deletes_map_audits_and_erases_once() {
     // can mark the brew/pip edge from the RESPONSE (raw space: verbatim).
     assert_eq!(out.content_hash, HASH);
 
-    assert_eq!(store.inner.lock().await.blocklist.len(), 1);
-    assert_eq!(store.inner.lock().await.map_deletes, vec![HASH.to_owned()]);
-    assert_eq!(audit.events.lock().await.len(), 1);
+    assert_eq!(store.inner.lock().unwrap().blocklist.len(), 1);
+    assert_eq!(
+        store.inner.lock().unwrap().map_deletes,
+        vec![HASH.to_owned()]
+    );
+    assert_eq!(audit.events.lock().unwrap().len(), 1);
     // Erase hits the `_public` prefix ONCE (not per-principal).
-    let calls = eraser.calls.lock().await;
+    let calls = eraser.calls.lock().unwrap();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0], (PUBLIC_NAMESPACE.to_owned(), HASH.to_owned()));
 }
@@ -191,8 +194,8 @@ async fn re_revoke_is_idempotent_reuses_audit_id() {
     assert!(out.revoked);
     assert!(out.already_revoked);
 
-    assert_eq!(store.inner.lock().await.blocklist.len(), 1);
-    let events = audit.events.lock().await;
+    assert_eq!(store.inner.lock().unwrap().blocklist.len(), 1);
+    let events = audit.events.lock().unwrap();
     assert_eq!(
         events.len(),
         2,
@@ -216,9 +219,9 @@ async fn bad_hash_is_400_and_touches_nothing() {
     )
     .await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    assert!(store.inner.lock().await.blocklist.is_empty());
-    assert!(audit.events.lock().await.is_empty());
-    assert!(eraser.calls.lock().await.is_empty());
+    assert!(store.inner.lock().unwrap().blocklist.is_empty());
+    assert!(audit.events.lock().unwrap().is_empty());
+    assert!(eraser.calls.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -235,9 +238,9 @@ async fn wrong_auth_is_401_and_touches_nothing() {
     )
     .await;
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-    assert!(store.inner.lock().await.blocklist.is_empty());
-    assert!(audit.events.lock().await.is_empty());
-    assert!(eraser.calls.lock().await.is_empty());
+    assert!(store.inner.lock().unwrap().blocklist.is_empty());
+    assert!(audit.events.lock().unwrap().is_empty());
+    assert!(eraser.calls.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -259,8 +262,8 @@ async fn r2_erase_failure_is_reported_not_fatal() {
     let out = parse(resp).await;
     assert!(out.revoked);
     assert_eq!(out.r2_delete_failures.len(), 1);
-    assert_eq!(store.inner.lock().await.blocklist.len(), 1);
-    assert_eq!(audit.events.lock().await.len(), 1);
+    assert_eq!(store.inner.lock().unwrap().blocklist.len(), 1);
+    assert_eq!(audit.events.lock().unwrap().len(), 1);
 }
 
 #[test]
@@ -284,7 +287,7 @@ async fn revoke_by_upstream_sha256_that_maps_kills_serving() {
     store
         .inner
         .lock()
-        .await
+        .unwrap()
         .resolve
         .insert(UPSTREAM_DIGEST.to_owned(), HASH.to_owned());
     let audit = Arc::new(FakeAudit::default());
@@ -307,12 +310,12 @@ async fn revoke_by_upstream_sha256_that_maps_kills_serving() {
     assert_eq!(out.content_hash, HASH);
     assert_ne!(out.content_hash, UPSTREAM_DIGEST);
     // The BLAKE3 content_hash (NOT the sha256 digest) is what got blocklisted.
-    let g = store.inner.lock().await;
+    let g = store.inner.lock().unwrap();
     assert!(g.blocklist.contains_key(HASH));
     assert!(!g.blocklist.contains_key(UPSTREAM_DIGEST));
     assert_eq!(g.map_deletes, vec![HASH.to_owned()]);
     drop(g);
-    let calls = eraser.calls.lock().await;
+    let calls = eraser.calls.lock().unwrap();
     assert_eq!(calls[0], (PUBLIC_NAMESPACE.to_owned(), HASH.to_owned()));
 }
 
@@ -334,10 +337,10 @@ async fn revoke_by_upstream_sha256_resolving_to_nothing_is_loud_error() {
 
     assert_ne!(resp.status(), StatusCode::OK, "must NOT be a false success");
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-    assert!(store.inner.lock().await.blocklist.is_empty());
-    assert!(store.inner.lock().await.map_deletes.is_empty());
-    assert!(audit.events.lock().await.is_empty());
-    assert!(eraser.calls.lock().await.is_empty());
+    assert!(store.inner.lock().unwrap().blocklist.is_empty());
+    assert!(store.inner.lock().unwrap().map_deletes.is_empty());
+    assert!(audit.events.lock().unwrap().is_empty());
+    assert!(eraser.calls.lock().unwrap().is_empty());
 }
 
 /// DoD: a pre-emptive block by a raw BLAKE3 content_hash with no currently
@@ -359,7 +362,7 @@ async fn preemptive_raw_blake3_block_with_no_active_row_is_200() {
     let out = parse(resp).await;
     assert!(out.revoked);
     assert!(!out.already_revoked);
-    assert!(store.inner.lock().await.blocklist.contains_key(HASH));
+    assert!(store.inner.lock().unwrap().blocklist.contains_key(HASH));
 }
 
 /// DoD: a bare 64-hex supplied in the upstream space (no `sha256:` prefix,
@@ -380,9 +383,9 @@ async fn bare_64hex_as_upstream_digest_is_rejected_ambiguous() {
     .await;
 
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    assert!(store.inner.lock().await.blocklist.is_empty());
-    assert!(audit.events.lock().await.is_empty());
-    assert!(eraser.calls.lock().await.is_empty());
+    assert!(store.inner.lock().unwrap().blocklist.is_empty());
+    assert!(audit.events.lock().unwrap().is_empty());
+    assert!(eraser.calls.lock().unwrap().is_empty());
 }
 
 /// Guard: neither field, or both fields, is a 400 (exactly-one contract).
