@@ -8,7 +8,7 @@ use super::*;
 /// `Www-Authenticate` challenge. The status is asserted, not merely the
 /// absence of a 200, to guard against a regression that silently drops the
 /// endpoint (which would manifest as 404, not the required gate deny).
-pub(super) fn j12_catalog_always_401(cfg: &Config, client: &Client) -> JourneyResult {
+pub(in crate::journeys::oci) fn j12_catalog_always_401(cfg: &Config, client: &Client) -> JourneyResult {
     let name = "OCI #12: GET /v2/_catalog disabled → 401 (gate proven, not absent)";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
@@ -122,7 +122,7 @@ pub(super) fn j12_catalog_always_401(cfg: &Config, client: &Client) -> JourneyRe
 /// We assert 401 or 403 on the open-upload step itself (before PATCH/PUT).
 /// The exact status depends on whether the adapter returns Auth(…) → 401 or
 /// a scope-denied shape; both are acceptable denials for this assertion.
-pub(super) fn j13_ro_push_denied(cfg: &Config, client: &Client) -> JourneyResult {
+pub(in crate::journeys::oci) fn j13_ro_push_denied(cfg: &Config, client: &Client) -> JourneyResult {
     let name = "OCI #13: read-only PAT push attempt → denied (scope downscoped at token mint)";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
@@ -201,7 +201,7 @@ pub(super) fn j13_ro_push_denied(cfg: &Config, client: &Client) -> JourneyResult
 ///
 /// Assertion: tenant A pushes a blob. Tenant B issues a GET for the SAME
 /// blob URL → 404. (Not 200, which would be a tenant-isolation breach.)
-pub(super) fn j14_cross_tenant_isolation(cfg: &Config, client: &Client) -> JourneyResult {
+pub(in crate::journeys::oci) fn j14_cross_tenant_isolation(cfg: &Config, client: &Client) -> JourneyResult {
     let name = "OCI #14: cross-tenant blob pull → 404 (not 200 or 403)";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
@@ -297,7 +297,7 @@ pub(super) fn j14_cross_tenant_isolation(cfg: &Config, client: &Client) -> Journ
 /// Curl-style monolithic blob push: `POST /v2/<repo>/blobs/uploads/` (→ 202 +
 /// `Location`), then `PUT <location>?digest=<digest>` with the bytes (→ 201).
 /// Returns `Ok(())` on a 201/200 finalize, else a human error.
-pub(super) fn push_blob(
+pub(in crate::journeys::oci) fn push_blob(
     client: &Client,
     base: &str,
     auth: &str,

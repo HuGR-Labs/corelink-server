@@ -13,7 +13,7 @@ use super::*;
 /// separate PATCH requests before the PUT finalizer, proving the server
 /// accumulates chunks correctly. The digest is asserted at both finalize time
 /// (server-side 400 on mismatch) and GET time (local equality).
-pub(super) fn j10_chunked_patch_upload(cfg: &Config, client: &Client) -> JourneyResult {
+pub(in crate::journeys::oci) fn j10_chunked_patch_upload(cfg: &Config, client: &Client) -> JourneyResult {
     let name = "OCI #10: chunked PATCH upload (POST→PATCH×2→PUT) → GET byte equality";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;

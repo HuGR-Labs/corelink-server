@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn oci_host_reachable(cfg: &Config, client: &Client) -> JourneyResult {
+pub(in crate::journeys::oci) fn oci_host_reachable(cfg: &Config, client: &Client) -> JourneyResult {
     let name = "OCI: host reachable (scale-to-zero warmup)";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
@@ -18,7 +18,7 @@ pub(super) fn oci_host_reachable(cfg: &Config, client: &Client) -> JourneyResult
 }
 
 /// Resolve P1's PAT or a gate reason.
-pub(super) fn p1_pat<'a>(cfg: &'a Config, name: &'static str) -> Result<&'a str, JourneyResult> {
+pub(in crate::journeys::oci) fn p1_pat<'a>(cfg: &'a Config, name: &'static str) -> Result<&'a str, JourneyResult> {
     match Persona::P1ReadWrite.resolve(cfg) {
         Ok(p) => Ok(p.token.expect("P1 always has a token")),
         Err(reason) => Err(JourneyResult::gated(name, reason)),
@@ -32,7 +32,7 @@ pub(super) fn p1_pat<'a>(cfg: &'a Config, name: &'static str) -> Result<&'a str,
 /// This is the entrypoint docker uses to discover the token endpoint; a missing
 /// or malformed challenge breaks `docker login` before it starts. Runs on
 /// connectivity alone (no creds needed to assert the challenge).
-pub(super) fn j1_v2_challenge(cfg: &Config, client: &Client) -> JourneyResult {
+pub(in crate::journeys::oci) fn j1_v2_challenge(cfg: &Config, client: &Client) -> JourneyResult {
     let name = "OCI #1: GET /v2/ → 401 + Bearer realm/service challenge";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
@@ -91,7 +91,7 @@ pub(super) fn j1_v2_challenge(cfg: &Config, client: &Client) -> JourneyResult {
 
 /// `GET /token?service=…&scope=repository:<repo>:pull` with Basic(tenant:PAT) →
 /// 200 + a non-empty `token`. The classic docker-pull token leg.
-pub(super) fn j2_token_get(cfg: &Config, client: &Client) -> JourneyResult {
+pub(in crate::journeys::oci) fn j2_token_get(cfg: &Config, client: &Client) -> JourneyResult {
     let name = "OCI #2: GET /token Basic(PAT) pull-scope → 200 + bearer";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
@@ -120,7 +120,7 @@ pub(super) fn j2_token_get(cfg: &Config, client: &Client) -> JourneyResult {
 /// `grant_type=password&username=…&password=<PAT>&scope=…&service=…` → 200 +
 /// bearer. Real `docker push` uses the OAuth2 POST form, NOT the GET leg — a 405
 /// here breaks every push. This is the load-bearing "docker push uses POST" fix.
-pub(super) fn j3_token_post(cfg: &Config, client: &Client) -> JourneyResult {
+pub(in crate::journeys::oci) fn j3_token_post(cfg: &Config, client: &Client) -> JourneyResult {
     let name = "OCI #3: POST /token form grant → 200 + bearer (not 405)";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
@@ -186,7 +186,7 @@ pub(super) fn j3_token_post(cfg: &Config, client: &Client) -> JourneyResult {
 /// `/token` with an EMPTY scope (docker login's credential-check token) → 200
 /// and the minted bearer round-trips on `GET /v2/` (→ 200) even though it grants
 /// no repository scope. A non-200 here breaks `docker login`.
-pub(super) fn j4_token_empty_scope(cfg: &Config, client: &Client) -> JourneyResult {
+pub(in crate::journeys::oci) fn j4_token_empty_scope(cfg: &Config, client: &Client) -> JourneyResult {
     let name = "OCI #4: /token empty scope (docker login) → 200, bearer ok on /v2/";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
@@ -232,7 +232,7 @@ pub(super) fn j4_token_empty_scope(cfg: &Config, client: &Client) -> JourneyResu
 /// JSON decoder expects `issued_at` to be an RFC3339 *string*; a numeric one
 /// (epoch int) makes docker fail to decode the token envelope. The adapter omits
 /// it entirely — assert it is either absent or, if present, a string.
-pub(super) fn j5_no_numeric_issued_at(cfg: &Config, client: &Client) -> JourneyResult {
+pub(in crate::journeys::oci) fn j5_no_numeric_issued_at(cfg: &Config, client: &Client) -> JourneyResult {
     let name = "OCI #5: /token JSON has no numeric issued_at (docker decode)";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
@@ -284,7 +284,7 @@ pub(super) fn j5_no_numeric_issued_at(cfg: &Config, client: &Client) -> JourneyR
 /// the exact-match `OciScope::allows` then rejected → an endless push 401-loop.
 /// The fix parses the path BEFORE the auth check so the challenge is specific.
 /// Runs on connectivity alone (the 401 challenge needs no creds).
-pub(super) fn j6_blob_head_specific_challenge(cfg: &Config, client: &Client) -> JourneyResult {
+pub(in crate::journeys::oci) fn j6_blob_head_specific_challenge(cfg: &Config, client: &Client) -> JourneyResult {
     let name = "OCI #6: blob HEAD no-auth → 401 with specific repo:pull scope (not *)";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;

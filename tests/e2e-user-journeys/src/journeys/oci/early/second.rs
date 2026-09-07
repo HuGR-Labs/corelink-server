@@ -6,7 +6,7 @@ use super::*;
 /// ACCEPTED on a pull op: `HEAD /v2/<repo>/blobs/<absent-digest>` → 404 (miss),
 /// NOT 401. i.e. the scope check treats push⇒pull (a push grant subsumes pull),
 /// so `docker push`'s mount/exists probes don't bounce.
-pub(super) fn j7_push_scoped_bearer_pulls(cfg: &Config, client: &Client) -> JourneyResult {
+pub(in crate::journeys::oci) fn j7_push_scoped_bearer_pulls(cfg: &Config, client: &Client) -> JourneyResult {
     let name = "OCI #7: push-scoped bearer accepted on pull (HEAD blob → 404, not 401)";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
@@ -65,7 +65,7 @@ pub(super) fn j7_push_scoped_bearer_pulls(cfg: &Config, client: &Client) -> Jour
 /// re-challenge must re-advertise the REQUIRED `repository:<repo>:pull` scope
 /// (NOT an empty scope), so docker re-fetches a token for the RIGHT scope
 /// instead of looping. This is the scope-re-challenge fix.
-pub(super) fn j8_insufficient_bearer_rechallenge(cfg: &Config, client: &Client) -> JourneyResult {
+pub(in crate::journeys::oci) fn j8_insufficient_bearer_rechallenge(cfg: &Config, client: &Client) -> JourneyResult {
     let name = "OCI #8: empty-scope bearer on blob HEAD → 401 re-advertising repo:pull";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
@@ -132,7 +132,7 @@ pub(super) fn j8_insufficient_bearer_rechallenge(cfg: &Config, client: &Client) 
 /// manifest → 201), then `HEAD /v2/<repo>/manifests/<tag>` → 200 with a
 /// `Content-Length` equal to the manifest's REAL byte size (NOT 0) and a
 /// `Content-Type`. A `Content-Length: 0` HEAD made docker reject the descriptor.
-pub(super) fn j9_manifest_head_content_length(cfg: &Config, client: &Client) -> JourneyResult {
+pub(in crate::journeys::oci) fn j9_manifest_head_content_length(cfg: &Config, client: &Client) -> JourneyResult {
     let name = "OCI #9: full push then HEAD manifest → 200 + real Content-Length";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;

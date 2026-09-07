@@ -12,7 +12,7 @@ use super::*;
 ///
 /// This exercises the `oci_tags:<repo>` KV slot written by `push::manifest`
 /// and read by `tags::list`.
-pub(super) fn j11_tags_list_after_push(cfg: &Config, client: &Client) -> JourneyResult {
+pub(in crate::journeys::oci) fn j11_tags_list_after_push(cfg: &Config, client: &Client) -> JourneyResult {
     let name = "OCI #11: tags/list after manifest push → 200 + tag enumerated";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
