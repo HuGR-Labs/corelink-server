@@ -173,6 +173,13 @@ on:
       - "tests/test_verify_b325_byok_wiring_test_results.py"
       - "crates/corelink-byok/tests/byok_revocation_wiring.rs"
       - "changelog.d/b325-byok-wiring-test-results.md"
+      # B-326 enforces the Tech Lead 500-LOC cap from a committed baseline.
+      - "scripts/verify_b326_loc_cap.py"
+      - "tests/test_verify_b326_loc_cap.py"
+      - "reports/b326-loc-cap-baseline.txt"
+      - "changelog.d/b326-loc-cap.md"
+      - "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md"
+      - "docs/campaigns/remediation/work-packages/B131-B167.md"
       - "scripts/b155_backlog_grep_parser.py"
       - "scripts/verify_d03_graduation.py"
       - "scripts/validate_permission_matrix.py"
@@ -458,6 +465,13 @@ on:
       - "tests/test_verify_b325_byok_wiring_test_results.py"
       - "crates/corelink-byok/tests/byok_revocation_wiring.rs"
       - "changelog.d/b325-byok-wiring-test-results.md"
+      # Repeat the B-326 LOC-cap guard for push parity.
+      - "scripts/verify_b326_loc_cap.py"
+      - "tests/test_verify_b326_loc_cap.py"
+      - "reports/b326-loc-cap-baseline.txt"
+      - "changelog.d/b326-loc-cap.md"
+      - "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md"
+      - "docs/campaigns/remediation/work-packages/B131-B167.md"
       - "scripts/b155_backlog_grep_parser.py"
       - "scripts/verify_d03_graduation.py"
       - "scripts/validate_permission_matrix.py"
@@ -754,6 +768,10 @@ jobs:
         run: |
           python3 scripts/verify_b325_byok_wiring_test_results.py --self-test
           python3 -m pytest -q tests/test_verify_b325_byok_wiring_test_results.py
+      - name: B-326 Tech Lead LOC-cap guard and mutations
+        run: |
+          python3 scripts/verify_b326_loc_cap.py --self-test
+          python3 -m pytest -q tests/test_verify_b326_loc_cap.py
       - name: B-094 published-claims guard and mutations
         run: |
           command -v gitleaks

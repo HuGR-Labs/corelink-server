@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+"""Verify Tech Lead L2.10 for source files added after the main baseline.
+
+The hosted checkout is deliberately not required to contain ``origin/main``.
+Instead, ``reports/b326-loc-cap-baseline.txt`` is a reviewed, generated
+manifest of the source paths present at the equivalent main commit.  The live
+tracked path set minus that manifest is the closed population of new
+``.rs``, ``.ts`` and ``.tsx`` files.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import subprocess
+import sys
+from pathlib import Path
+from typing import Mapping
+
+ROOT = Path(__file__).resolve().parents[1]
+MANIFEST = ROOT / "reports/b326-loc-cap-baseline.txt"
+BASELINE_SHA = "ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
+MANIFEST_SCHEMA = "b326-loc-cap-v1"
+MAX_LOC = 500
+SOURCE_SUFFIXES = (".rs", ".ts", ".tsx")
+MAX_MANIFEST_BYTES = 1_000_000
+MAX_SOURCE_BYTES = 10_000_000
+PATH_MARKER = "-- paths --"
+
+
+class VerificationError(RuntimeError):
+    """The baseline or source population cannot be trusted."""
+
+
+def _normalise_path(raw: str) -> str:
+    path = raw.strip()
+    if not path or path.startswith("/") or "\\" in path:
+        raise VerificationError(f"invalid manifest path: {raw!r}")
+    parts = Path(path).parts
+    if ".." in parts or "." in parts:
+        raise VerificationError(f"non-canonical manifest path: {raw!r}")
+    if not path.endswith(SOURCE_SUFFIXES):
+        raise VerificationError(f"non-source path in manifest: {raw!r}")
+    return path
+
+
+def _parse_manifest(text: str) -> tuple[set[str], str]:
+    lines = text.splitlines()
+    required: dict[str, str] = {}
+    try:
+        marker = lines.index(PATH_MARKER)
+    except ValueError as error:
+        raise VerificationError("baseline manifest is missing its path marker") from error
+    for line in lines[:marker]:
+        if not line or line.startswith("#"):
+            continue
+        key, separator, value = line.partition(":")
+        if not separator or key not in {
+            "schema",
+            "baseline-ref",
+            "baseline-sha",
+            "source-path-count",
+            "path-sha256",
+        }:
+            raise VerificationError(f"malformed baseline manifest header: {line!r}")
+        if key in required:
+            raise VerificationError(f"duplicate baseline manifest key: {key}")
+        required[key] = value.strip()
+    expected_keys = {
+        "schema",
+        "baseline-ref",
+        "baseline-sha",
+        "source-path-count",
+        "path-sha256",
+    }
+    if set(required) != expected_keys:
+        missing = sorted(expected_keys - set(required))
+        extra = sorted(set(required) - expected_keys)
+        raise VerificationError(f"baseline manifest header mismatch; missing={missing}, extra={extra}")
+    if required["schema"] != MANIFEST_SCHEMA:
+        raise VerificationError(f"unsupported baseline manifest schema: {required['schema']!r}")
+    if required["baseline-ref"] != "origin/main-equivalent":
+        raise VerificationError("baseline manifest must identify origin/main-equivalent")
+    if required["baseline-sha"] != BASELINE_SHA:
+        raise VerificationError(
+            f"baseline SHA mismatch: expected {BASELINE_SHA}, got {required['baseline-sha']}"
+        )
+    try:
+        expected_count = int(required["source-path-count"])
+    except ValueError as error:
+        raise VerificationError("baseline source-path-count is not an integer") from error
+    if expected_count <= 0:
+        raise VerificationError("baseline source population is empty")
+    if len(required["path-sha256"]) != 64:
+        raise VerificationError("baseline path-sha256 must be a SHA-256 digest")
+    try:
+        int(required["path-sha256"], 16)
+    except ValueError as error:
+        raise VerificationError("baseline path-sha256 is not hexadecimal") from error
+
+    paths: list[str] = []
+    for line in lines[marker + 1 :]:
+        if not line:
+            continue
+        paths.append(_normalise_path(line))
+    if len(paths) != expected_count:
+        raise VerificationError(
+            f"baseline source population drift: expected {expected_count}, got {len(paths)}"
+        )
+    if paths != sorted(paths) or len(set(paths)) != len(paths):
+        raise VerificationError("baseline paths must be sorted and unique")
+    digest = hashlib.sha256(("\n".join(paths) + "\n").encode()).hexdigest()
+    if digest != required["path-sha256"]:
+        raise VerificationError("baseline path manifest digest mismatch")
+    return set(paths), required["baseline-sha"]
+
+
+def _tracked_source_paths(root: Path) -> set[str]:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z"],
+            check=True,
+            capture_output=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise VerificationError("cannot enumerate tracked files with git ls-files") from error
+    raw_paths = result.stdout.decode("utf-8")
+    paths = {path for path in raw_paths.split("\0") if path.endswith(SOURCE_SUFFIXES)}
+    if not paths:
+        raise VerificationError("tracked source population is empty")
+    return paths
+
+
+def _line_count(source: str) -> int:
+    return len(source.splitlines())
+
+
+def _generated_exception(source: str) -> bool:
+    """Accept only the charter's explicit generated marker near file start."""
+    return any("@generated" in line for line in source.splitlines()[:40])
+
+
+def verify(
+    *,
+    root: Path = ROOT,
+    manifest_path: Path = MANIFEST,
+    overrides: Mapping[str, str] | None = None,
+    tracked_paths: set[str] | None = None,
+) -> tuple[tuple[str, int], ...]:
+    """Return the bounded advisory population, rejecting hard-cap violations."""
+    try:
+        manifest_text = manifest_path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise VerificationError(f"cannot read baseline manifest: {manifest_path}") from error
+    if len(manifest_text.encode()) > MAX_MANIFEST_BYTES:
+        raise VerificationError("baseline manifest exceeds bounded size")
+    baseline_paths, _ = _parse_manifest(manifest_text)
+    current_paths = tracked_paths if tracked_paths is not None else _tracked_source_paths(root)
+    if not current_paths:
+        raise VerificationError("candidate source population is empty")
+    invalid = sorted(path for path in current_paths if not path.endswith(SOURCE_SUFFIXES))
+    if invalid:
+        raise VerificationError(f"tracked population contains a non-source path: {invalid[0]}")
+    added = sorted(current_paths - baseline_paths)
+    if not added:
+        raise VerificationError("new source population is empty; baseline classification is indeterminate")
+    advisory: list[tuple[str, int]] = []
+    source_overrides = overrides or {}
+    for relative in added:
+        if relative in source_overrides:
+            source = source_overrides[relative]
+        else:
+            path = root / relative
+            if path.is_symlink() or not path.is_file():
+                raise VerificationError(f"new source is missing or non-regular: {relative}")
+            try:
+                if path.stat().st_size > MAX_SOURCE_BYTES:
+                    raise VerificationError(f"new source exceeds bounded size: {relative}")
+                source = path.read_text(encoding="utf-8")
+            except OSError as error:
+                raise VerificationError(f"cannot read new source: {relative}") from error
+        if not isinstance(source, str):
+            raise VerificationError(f"invalid source override: {relative}")
+        loc = _line_count(source)
+        if loc > MAX_LOC and not _generated_exception(source):
+            raise VerificationError(f"HARD-CAP {loc} {relative}")
+        if loc > 200:
+            advisory.append((relative, loc))
+    return tuple(advisory)
+
+
+def self_test() -> None:
+    """Prove the cap and manifest integrity are load-bearing."""
+    baseline = verify()
+    del baseline
+    # Find a real candidate, then make it violate the hard cap in memory.
+    baseline_paths, _ = _parse_manifest(MANIFEST.read_text(encoding="utf-8"))
+    added = sorted(_tracked_source_paths(ROOT) - baseline_paths)
+    if not added:
+        raise VerificationError("self-test cannot find a candidate source")
+    target = added[0]
+    path = ROOT / target
+    source = path.read_text(encoding="utf-8")
+    mutated = source + "\n" + "\n".join("// B-326 mutation" for _ in range(MAX_LOC + 1)) + "\n"
+    try:
+        verify(overrides={target: mutated})
+    except VerificationError:
+        pass
+    else:
+        raise VerificationError("oversized-source mutation was accepted")
+    # Removing a path without re-deriving the manifest digest must not silently
+    # turn a candidate into baseline.
+    manifest = MANIFEST.read_text(encoding="utf-8")
+    baseline_candidate = sorted(baseline_paths)[0]
+    removed = manifest.replace(f"\n{baseline_candidate}\n", "\n", 1)
+    if removed == manifest:
+        raise VerificationError("manifest mutation did not change the fixture")
+    try:
+        _parse_manifest(removed)
+    except VerificationError:
+        pass
+    else:
+        raise VerificationError("manifest population mutation was accepted")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", type=Path, default=ROOT)
+    parser.add_argument("--manifest", type=Path, default=MANIFEST)
+    parser.add_argument("--self-test", action="store_true")
+    args = parser.parse_args(argv)
+    try:
+        advisory = verify(root=args.root, manifest_path=args.manifest)
+        if args.self_test:
+            self_test()
+    except (OSError, VerificationError) as error:
+        print(f"B-326 LOC cap: FAIL: {error}", file=sys.stderr)
+        return 1
+    print(f"B-326 LOC cap: PASS: added-source population; advisory={len(advisory)}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

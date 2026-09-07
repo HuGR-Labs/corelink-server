@@ -1801,6 +1801,29 @@ verify-means: |
 last-verified: 2026-09-07
 ```
 
+### B-326 — Tech Lead 500-LOC hard cap was not mechanically enforced for new source files
+```backlog
+id: B-326
+repo: corelink-server
+owner: tl
+status: done
+source-document: "Tech Lead Charter L2.10 and D03 source-split review"
+source-locator: ".claude/skills/techlead/SKILL.md:L2.10; reports/b326-loc-cap-baseline.txt"
+finding-title: "new Rust and TypeScript source files had no CI-enforced 500-line hard cap"
+problem: "The Tech Lead charter required every new .rs/.ts/.tsx file to stay at or below 500 LOC, but its shell example depended on a locally available origin/main ref and was not a stable CI contract. A shallow or remote-less checkout could skip the population entirely or report an indeterminate result."
+evidence: "The committed origin/main-equivalent path manifest is pinned to main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266; the stdlib verifier classifies tracked source paths absent from that manifest, rejects unmarked files over 500 LOC, reports the 200-LOC advisory band, and passes its mutation/self-tests. Related charter, spec/frontmatter and secrets-matrix findings are closed in the cumulative B-326 tree."
+acceptance: "A reviewed baseline manifest is required and hash-checked; the tracked added .rs/.ts/.tsx population is non-empty and closed; missing, malformed, stale or empty populations fail closed; generated exceptions require an explicit @generated marker; any unmarked file over 500 LOC is a hard failure; workflow paths and both PR/push steps run the verifier and its mutations; B-155 and the D03 ledgers report 326 total, 271 done, 39 parked, 16 open (0 TL-open) and 310 command-bearing records."
+verify: python3 scripts/verify_b326_loc_cap.py --self-test
+verify-means: |
+  done — the verifier uses only the committed baseline manifest and local tracked
+  paths, never an unavailable remote ref. It checks the exact baseline SHA,
+  path count and digest, rejects missing/duplicate/unsorted paths, rejects an
+  empty candidate population, enforces the hard cap and generated marker, and
+  proves both an oversized-source mutation and a manifest-population mutation
+  fail closed.
+last-verified: 2026-09-07
+```
+
 ### B-003 — the 864s ceiling from 2026-08-02 has no established mechanism
 
 That incident concluded jobs past ~900 s were being SIGTERMed. They could not
@@ -14940,13 +14963,13 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-07):** `records=325`,
-  `command_records=309`, `manual=16`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-07):** `records=326`,
+  `command_records=310`, `manual=16`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma
   guarda real ou esvaziar os fences não pode produzir um `done` falso.
-last-verified: 2026-09-06
+last-verified: 2026-09-07
 ```
 
 ### B-156 — o resíduo de afirmação falsa na superfície publicada é uma ordem de grandeza maior do que os itens que o descrevem
