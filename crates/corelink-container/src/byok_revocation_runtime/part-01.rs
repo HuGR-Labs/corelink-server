@@ -142,7 +142,7 @@ mod tests {
     #[test]
     fn status_and_customer_audit_share_one_database_transaction() {
         let sql =
-            include_str!("../../../migrations/d1/0114_byok_revocation_customer_audit_atomic.sql");
+            include_str!("../../../../migrations/d1/0114_byok_revocation_customer_audit_atomic.sql");
         let mut connection = rusqlite::Connection::open_in_memory().expect("sqlite");
         connection
             .execute_batch(
