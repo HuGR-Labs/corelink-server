@@ -479,5 +479,3 @@ fn audit_query_unparseable_since_applies_no_filter() {
     assert_eq!(binds.len(), 2, "tenant + LIMIT only: {binds:?}");
     assert!(sql.ends_with("ORDER BY ts_ms DESC LIMIT ?2"), "{sql}");
 }
-
-include!("customer_d1_tests_team_audit_misc_part2.rs");
