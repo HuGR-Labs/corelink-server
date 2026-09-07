@@ -106,7 +106,11 @@ fn inmemory_probe_all_classes_all_regions() {
             samples.push(p.probe(c, *r, 0).expect("probe"));
         }
     }
-    assert_eq!(samples.len(), 3 * 4, "3 classes × 4 regions = 12 samples");
+    assert_eq!(
+        samples.len(),
+        classes.len() * Region::ALL.len(),
+        "every DO class × canonical region pair must be sampled"
+    );
     assert!(samples.iter().all(|s| s.within_budget()));
 }
 

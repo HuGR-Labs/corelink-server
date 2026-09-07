@@ -157,7 +157,7 @@ proptest! {
     /// jurisdiction = EU. Any (region, jurisdiction) combo where region
     /// = WEUR and jurisdiction != EU MUST fail `is_valid_for_region`.
     ///
-    /// Adversarial: random (region, jurisdiction) over 4 × 3 = 12 pairs;
+    /// Adversarial: random (region, jurisdiction) over 6 × 3 = 18 pairs;
     /// only 4 are valid (WNAM→US, ENAM→US, WEUR→EU, SAM→None). The other
     /// 8 MUST be rejected.
     #[test]

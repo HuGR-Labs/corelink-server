@@ -25,7 +25,7 @@
 //! # Cardinality discipline (INV-OBS-CARDINALITY-BUDGET S-09)
 //!
 //! Labels: `{primary_region, replica_region}` — no `tenant_id` / `object_key`.
-//! With 4 × 4 = 16 pairs max (4 sibling pairs at GA). Budget-safe.
+//! With 6 × 6 = 36 pairs max (4 configured sibling pairs at GA). Budget-safe.
 //!
 //! # Audit ordering
 //!

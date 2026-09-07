@@ -22,8 +22,8 @@
 //!
 //! # Cardinality discipline (INV-OBS-CARDINALITY-BUDGET S-09)
 //!
-//! Labels: `{write_region, read_region}` — no `tenant_id` / `key`. With 4 × 4 = 16
-//! pairs max (12 inter-region pairs after excluding self), budget-safe.
+//! Labels: `{write_region, read_region}` — no `tenant_id` / `key`. With 6 × 6 = 36
+//! pairs max (30 inter-region pairs after excluding self), budget-safe.
 //!
 //! # Audit ordering
 //!

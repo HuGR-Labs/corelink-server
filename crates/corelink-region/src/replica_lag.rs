@@ -21,8 +21,9 @@
 //!
 //! # Cardinality discipline (INV-OBS-CARDINALITY-BUDGET S-09)
 //!
-//! Labels: `{primary_region, replica_region}` — no `tenant_id`. With 4 × 4 = 16
-//! pairs max, sibling-only path = 4 pairs at GA. Budget-safe.
+//! Labels: `{primary_region, replica_region}` — no `tenant_id`. With 6 × 6 = 36
+//! pairs max; the configured sibling-only path is 4 directional pairs at GA.
+//! Budget-safe.
 //!
 //! # Audit ordering
 //!
