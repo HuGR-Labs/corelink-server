@@ -1,3 +1,26 @@
+---
+id: "AUDIT-2026-09-06-B255-CROSS-TENANT-TLC"
+type: "audit"
+doc_status: "ACTIVE"
+audit_status: "SEALED"
+version: "1.0.0"
+created: "2026-09-06"
+updated: "2026-09-06"
+owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
+reviewers: []
+supersedes: null
+superseded_by: null
+tags: ["audit", "b-255", "cross-tenant", "tla", "tlc", "tenant-isolation", "sealed"]
+references:
+  - "specs/03_architecture/invariant_registry.md"
+  - "specs/tla/cross_tenant_handler_audit.tla"
+  - "specs/tla/cross_tenant_handler_audit.cfg"
+  - "scripts/verify_b255_cross_tenant_denied.py"
+  - "scripts/run_tla_suite.sh"
+  - "specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md"
+---
+
 # B-255 cross-tenant handler TLC evidence — 2026-09-06
 
 This is the bounded, machine-readable dispatch record for

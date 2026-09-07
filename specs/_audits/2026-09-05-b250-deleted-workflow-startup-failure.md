@@ -1,3 +1,23 @@
+---
+id: "AUDIT-2026-09-05-B250-DELETED-WORKFLOW-STARTUP-FAILURE"
+type: "audit"
+doc_status: "ACTIVE"
+audit_status: "ACTIVE"
+version: "1.0.0"
+created: "2026-09-05"
+updated: "2026-09-05"
+owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
+reviewers: []
+supersedes: null
+superseded_by: null
+tags: ["audit", "b-250", "github-actions", "startup-failure", "deleted-workflow", "b-152", "hold"]
+references:
+  - "specs/_audits/2026-09-05-b250-deleted-workflow-startup-failure.snapshot.json"
+  - "scripts/b250_deleted_workflow_startup_failure.py"
+  - "scripts/test_b250_deleted_workflow_startup_failure.py"
+---
+
 # B-250 — deleted `BuildFailed` workflow emits startup failures
 
 ## HOLD / evidence
