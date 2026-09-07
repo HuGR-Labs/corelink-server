@@ -443,6 +443,4 @@ async fn a_runner_job_pat_verifies_and_surfaces_its_marker() {
     );
 }
 
-/// The stored PHC hash is part of the memo key, so re-hashing the row makes
-/// the old proof unreachable — the real Argon2id runs again and fails.
 include!("adapter_pat_tests_2/part-01.rs");

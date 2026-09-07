@@ -1,3 +1,6 @@
+    /// The row-FOUND half of the same contract — existing behaviour, pinned
+    /// here in the one-permit idiom so a future refactor cannot quietly
+    /// re-asymmetrise the pair by changing only this side.
     #[tokio::test]
     async fn saturated_pool_sheds_a_live_row_as_backend() {
         let key = test_key();

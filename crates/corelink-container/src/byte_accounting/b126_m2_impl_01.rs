@@ -476,8 +476,4 @@ impl ByteStore for D1ByteStore {
 // to the sync handler traits with `block_in_place` + `block_on`, exactly as the
 // R2 handlers bridge their own async S3 I/O.
 
-/// Sentinel prefix carried in `CasHandlerError::Internal` / `AcHandlerError::Internal`
-/// by an accounting decorator when a write is refused because it would push the
-/// tenant past its storage cap. The route `map_err` maps this to HTTP **402**
-/// (Payment Required — "storage quota exceeded"), distinct from a generic 500.
 include!("b126_m2_impl_01_part_02.rs");

@@ -1,3 +1,7 @@
+/// Sentinel prefix carried in `CasHandlerError::Internal` / `AcHandlerError::Internal`
+/// by an accounting decorator when a write is refused because it would push the
+/// tenant past its storage cap. The route `map_err` maps this to HTTP **402**
+/// (Payment Required — "storage quota exceeded"), distinct from a generic 500.
 pub const OVER_CAP_SENTINEL: &str = "storage-over-cap: ";
 
 /// Sentinel prefix carried in `…::Internal` by an accounting decorator when the

@@ -1,3 +1,5 @@
+    /// The stored PHC hash is part of the memo key, so re-hashing the row makes
+    /// the old proof unreachable — the real Argon2id runs again and fails.
     #[tokio::test]
     async fn a_rehashed_row_is_never_served_from_the_memo() {
         let key = test_key();

@@ -434,7 +434,4 @@ async fn saturated_dummy_burn_bucket_sheds_an_unknown_row_as_backend() {
     );
 }
 
-/// The row-FOUND half of the same contract — existing behaviour, pinned
-/// here in the one-permit idiom so a future refactor cannot quietly
-/// re-asymmetrise the pair by changing only this side.
 include!("adapter_pat_tests_1/part-01.rs");

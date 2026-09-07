@@ -309,23 +309,5 @@ async fn burst_observations(
     out
 }
 
-/// THE ORACLE TEST (the finding that killed the mutex version).
-///
-/// A burst of N copies of one WRONG-SECRET token must cost the same, and
-/// look the same, whether that token's `token_id` exists or not. If only the
-/// row-FOUND arm coalesced, the existing-`token_id` burst would serialise on
-/// the permits and shed while the unknown-`token_id` burst sailed through —
-/// making `token_id` liveness readable straight off the responses, in the
-/// concurrency dimension, which is precisely the enumeration oracle the
-/// dummy burn exists to close.
-///
-/// PROVEN RED without the fix (measured, with coalescing disabled): arm A —
-/// `token_id` EXISTS, wrong secret, so every request pays its own failing
-/// Argon2id — serialises on the single permit and comes back
-/// `[Overloaded, Overloaded, Unauthorized, Overloaded, Overloaded,
-/// Overloaded, Overloaded, Overloaded]`, i.e. 7 of 8 shed, while arm B —
-/// `token_id` ABSENT — comes back `Unauthorized` 8 times out of 8. One burst,
-/// one bit: the token_id is live. With the fix both arms are 8/8
-/// `Unauthorized`.
 include!("adapter_pat_tests_3/part-01.rs");
 include!("adapter_pat_tests_3/part-02.rs");
