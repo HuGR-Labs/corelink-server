@@ -19,10 +19,9 @@
 /// request under pass-through.
 // Wiring/DI constructor: each argument is a distinct production collaborator
 // (CAS read/write handlers, URL-map + manifest KV stores, PAT verifier, realm
-// signing key, and the two optional quota gates). Bundling them into a params
-// struct adds indirection without removing any real coupling, so the
-// too-many-arguments lint is suppressed here by intent.
-#[allow(clippy::too_many_arguments)]
+// signing key, and the two optional quota gates). Keep the production
+// collaborators explicit at this wiring seam; bundling them into a params
+// struct would add indirection without removing any real coupling.
 pub fn router(
     cas_read: Arc<dyn CasReadHandler>,
     cas_write: Arc<dyn CasWriteHandler>,
@@ -330,7 +329,9 @@ async fn oci_quota_gate(
 )]
 mod tests {
     include!("b126_m2_test_1_1.rs");
+    include!("b126_m2_test_1_1_part2.rs");
     include!("b126_m2_test_1_2.rs");
+    include!("b126_m2_test_1_2_part2.rs");
     include!("b126_m2_test_1_3.rs");
 
     #[test]

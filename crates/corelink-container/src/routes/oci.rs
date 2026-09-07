@@ -59,6 +59,8 @@
 //! under the per-tenant namespace (isolated) — see the public-dedup
 //! seam in the module-level OPEN DECISIONS.
 
+#![allow(clippy::too_many_arguments)]
+
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -89,6 +91,7 @@ use crate::public_base_allowlist::PublicBaseAllowlist;
 // the module namespace/API and execution order unchanged while preventing
 // recomposition into a god-file. Symbols moved: OCI_SERVICE_PRINCIPAL, OCI_MAX_OPEN_SESSIONS_PER_TENANT, OCI_MAX_INFLIGHT_BYTES, OCI_MAX_INFLIGHT_BYTES_PER_TENANT, OCI_SESSION_IDLE_TIMEOUT_MS, OCI_BEARER_REALM, OCI_TOKEN_KEY_ENV, OCI_TOKEN_KEY_ENV_LEGACY, UploadSession, OciMoatStore, now_unix_ms, upload_uuid_belongs_to, OciPatResolver, router, OciCostGate, oci_bearer_tenant, oci_quota_gate.
 include!("oci/b126_m2_impl_01.rs");
+include!("oci/b126_m2_impl_01_part2.rs");
 include!("oci/b126_m2_impl_02.rs");
 
 #[cfg(test)]

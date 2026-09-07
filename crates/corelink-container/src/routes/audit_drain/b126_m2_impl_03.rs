@@ -199,6 +199,7 @@ pub(crate) fn build_drain_response_body(outcome: &DrainOutcome) -> serde_json::V
 )]
 mod tests {
     include!("b126_m2_test_1_1.rs");
+    include!("b126_m2_test_1_1_part2.rs");
     include!("b126_m2_test_1_2.rs");
 
     #[test]

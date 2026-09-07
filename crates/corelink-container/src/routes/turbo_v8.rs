@@ -83,7 +83,9 @@ use corelink_turbo_bridge::{
 // the module namespace/API and execution order unchanged while preventing
 // recomposition into a god-file. Symbols moved: TURBO_GET_ROUTE, TURBO_PUT_ROUTE, TURBO_EVENTS_ROUTE, TURBO_STATUS_ROUTE, ARTIFACT_TAG_HEADER, TURBO_BODY_LIMIT_BYTES, TURBO_PUT_CONCURRENCY_LIMIT, TURBO_GET_CONCURRENCY_LIMIT, EVENTS_BODY_LIMIT_BYTES, GLOBAL_TURBO_PUT_PERMITS, GLOBAL_TURBO_GET_PERMITS, GLOBAL_TURBO_EVENTS_PERMITS, EVENTS_CONCURRENCY_LIMIT, EVENTS_BODY_READ_TIMEOUT, GLOBAL_PUT_PERMIT_WAIT, TURBO_WRITE_LOCK_SHARDS, ArtifactQuery, PutArtifactResponse, TurboRouteState, global_turbo_put_budget, global_turbo_get_budget, global_turbo_events_budget, new_write_locks, write_lock_shard, PutSlot, PutConcurrencyGuard, GlobalPutBudgetGuard, GetSlot, GetConcurrencyGuard, GlobalGetBudgetGuard, EventsBudgetGuard, EventsSlot, EventsConcurrencyGuard, build_handlers, router, handle_get, handle_put, handle_events, handle_status, TURBO_STORAGE_UNAVAILABLE_SENTINEL, UnavailableTurboHandler, map_err.
 include!("turbo_v8/b126_m2_impl_01.rs");
+include!("turbo_v8/b126_m2_impl_01_part2.rs");
 include!("turbo_v8/b126_m2_impl_02.rs");
+include!("turbo_v8/b126_m2_impl_02_part2.rs");
 
 #[cfg(test)]
 mod b126_m2_reanchor {

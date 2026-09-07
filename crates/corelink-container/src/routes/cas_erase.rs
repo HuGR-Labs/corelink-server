@@ -67,7 +67,9 @@ use crate::routes::dsr::legitimacy::D1DsrLegitimacyStore;
 // the module namespace/API and execution order unchanged while preventing
 // recomposition into a god-file. Symbols moved: INTERNAL_AUTH_HEADER, CAS_ERASE_ROUTE, MAX_REASON_LEN, TombstoneStore, CasBlobEraser, CasEraseRouteState, router, EraseBody, handle_erase, internal_auth_ok, now_unix_ms, D1TombstoneStore, DEFAULT_BLOOM_BITS, DEFAULT_BLOOM_HASHES, DEFAULT_BLOOM_REFRESH, DEFAULT_MAX_TENANT_BLOOMS, MAX_BLOOM_TENANT_ID_BYTES, MAX_BLOOM_ENTRY_METADATA_BYTES, _, Bloom, TenantBloom, TenantBloomEntry, BloomTombstoneStore, TOMBSTONE_GONE_SENTINEL, TOMBSTONE_UNAVAILABLE_SENTINEL, TombstoneGatedCasHandler, InMemoryTombstoneStore, lock_or_recover, InMemoryBlobEraser, DEFAULT_CAS_BUCKET, TENANT_PREFIX_LEN, R2CasBlobEraser, build_state_from_env, load_tdk_from_env.
 include!("cas_erase/b126_m2_impl_01.rs");
+include!("cas_erase/b126_m2_impl_01_part2.rs");
 include!("cas_erase/b126_m2_impl_02.rs");
+include!("cas_erase/b126_m2_impl_02_part2.rs");
 
 #[cfg(test)]
 mod b126_m2_reanchor {

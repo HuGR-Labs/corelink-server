@@ -118,7 +118,9 @@ use crate::storage::d1_http::D1HttpClient;
 // the module namespace/API and execution order unchanged while preventing
 // recomposition into a god-file. Symbols moved: INTERNAL_AUTH_HEADER, AuditDrainState, load_signing_seed, resolve_seed, signing_key_id_from_env, resolve_key_id, region_for_key, CanonicalAuditHead, CanonicalAuditHeadV2, canonical_head_bytes, canonical_head_v2_bytes, sign_head, sign_head_v2, verify_head, verify_head_v2, internal_auth_ok, build_state_from_env, router, now_ms, AUDIT_DRAIN_LEASE_TTL_MS, new_lease_holder, should_fence, FencedSeal, run_fenced_seal_loop, acquire_lease, release_lease, chain_hash_from_hex, checkpoint_nullable_u64, checkpoint_nullable_text, parse_sealed_epoch_metadata, HeadCheckpoint, SealedRow, PartitionOutcome, seal_rows, seal_rows_for_epoch, resolve_resume, HeadResumeCheck, check_head_on_resume, reject_unwired_epoch_checkpoint, read_pending_partitions, read_unsigned_head_partitions, read_checkpoint, read_sealed_tail, read_pending_rows, write_seal, advance_head_cas, resign_unsigned_head, converge_unsigned_heads, drain_partition, drain_partition_inner, handle_drain, fn, DrainOutcome, build_drain_response_body.
 include!("audit_drain/b126_m2_impl_01.rs");
+include!("audit_drain/b126_m2_impl_01_part2.rs");
 include!("audit_drain/b126_m2_impl_02.rs");
+include!("audit_drain/b126_m2_impl_02_part2.rs");
 include!("audit_drain/b126_m2_impl_03.rs");
 
 #[cfg(test)]
