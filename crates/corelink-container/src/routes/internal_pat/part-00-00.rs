@@ -194,6 +194,7 @@ pub const MAX_INFLIGHT_MINTS_ENV: &str = "PAT_MINT_MAX_INFLIGHT";
 /// below `max`; the returned [`MintSlot`] releases the slot on drop (RAII,
 /// so an early-return / panic in the handler cannot leak a permit).
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct MintInflightLimiter {
     inflight: AtomicU32,
     max: u32,
@@ -255,6 +256,7 @@ impl MintInflightLimiter {
 
 /// RAII permit for one in-flight mint; releases its slot on drop.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct MintSlot {
     limiter: Arc<MintInflightLimiter>,
 }
@@ -307,6 +309,7 @@ pub const MAX_MINTS_PER_WINDOW_ENV: &str = "PAT_MINT_MAX_PER_MINUTE";
 /// Worker-side in-memory backstop). When the window's count reaches the cap,
 /// further mints are shed with `429` until the window rolls.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct MintRateLimiter {
     /// Start of the current window, in ms since the Unix epoch.
     window_start_ms: AtomicU64,

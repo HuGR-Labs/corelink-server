@@ -86,6 +86,7 @@ pub trait CasBlobEraser: Send + Sync + std::fmt::Debug {
 
 /// Shared state for the erase route.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct CasEraseRouteState {
     /// Tombstone persistence (D1 in prod).
     pub tombstones: Arc<dyn TombstoneStore>,
@@ -375,6 +376,7 @@ fn now_unix_ms() -> i64 {
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// `cas_tombstone` D1-over-HTTP tombstone store (migration 0067).
+#[non_exhaustive]
 pub struct D1TombstoneStore {
     d1: Arc<crate::storage::d1_http::D1HttpClient>,
 }

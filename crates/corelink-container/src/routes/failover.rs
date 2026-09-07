@@ -140,6 +140,7 @@ static EXTERNAL_HEARTBEAT: OnceLock<Arc<FailoverHeartbeat>> = OnceLock::new();
 /// cannot hide a blackhole: only an authenticated internal scheduler refreshes
 /// this timestamp.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct FailoverHeartbeat {
     last_seen_ms: AtomicU64,
     stale_after_ms: u64,

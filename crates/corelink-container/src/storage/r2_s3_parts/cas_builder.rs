@@ -133,6 +133,7 @@ pub(crate) fn validate_cas_bucket_for_region(bucket: &str, region: &str) -> Resu
 /// only the bucket differs (`R2_AC_BUCKET` / default `corelink-ac-iad`).
 /// Per-tenant prefix isolation (layer 5 of `INV-TENANT-ISOLATION`)
 /// applies identically.
+#[non_exhaustive]
 pub struct R2AcHandler {
     client: R2S3Client,
     /// The R2 region string (e.g. `"iad"`) used as key prefix.

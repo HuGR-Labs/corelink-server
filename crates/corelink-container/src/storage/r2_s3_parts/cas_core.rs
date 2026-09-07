@@ -3,6 +3,7 @@
 /// Wraps the async S3 operations with
 /// `tokio::runtime::Handle::current().block_on(...)` so the sync
 /// handler traits can drive async I/O from within a tokio runtime.
+#[non_exhaustive]
 pub struct R2CasHandler {
     client: R2S3Client,
     /// The R2 region string (e.g. `"iad"`) used as key prefix.

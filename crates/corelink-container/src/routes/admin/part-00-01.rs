@@ -31,6 +31,7 @@
 /// - Mutate [`MutateOp::RotateAdminToken`] — returns `Internal(...)`
 ///   indicating the multi-step PAT rotation flow is not yet wired
 ///   through the admin trait. Tracked as Phase 2 follow-up.
+#[non_exhaustive]
 pub struct D1AdminHandler {
     client: Arc<crate::storage::d1_http::D1HttpClient>,
     inner: Arc<InMemoryAdminHandler>,

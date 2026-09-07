@@ -172,6 +172,7 @@ const TURBO_WRITE_LOCK_SHARDS: usize = 1024;
 /// extraction before the handler is called).  `slug` is optional and
 /// informational.
 #[derive(Debug, Deserialize)]
+#[non_exhaustive]
 pub struct ArtifactQuery {
     /// Vercel team identifier — a logical sub-namespace WITHIN the authenticated
     /// tenant, NOT the isolation tenant. Forms the storage key prefix
@@ -189,6 +190,7 @@ pub struct ArtifactQuery {
 ///
 /// Vercel spec: `{"urls": ["..."]}`
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct PutArtifactResponse {
     /// Storage URL(s) for the stored artifact.  Turbo treats 200 + this body
     /// as "uploaded successfully"; the URL is informational.
@@ -203,6 +205,7 @@ pub struct PutArtifactResponse {
 /// swappable behind the port trait without changing the route layer.  See
 /// [`build_handlers`] for Phase 0 wiring using `InMemoryKvStore`.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct TurboRouteState {
     /// Handler implementing all four Turbo API verbs.
     pub handler: Arc<dyn TurboArtifactHandler>,

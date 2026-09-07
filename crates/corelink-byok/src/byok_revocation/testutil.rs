@@ -114,6 +114,7 @@ impl KmsProvider for StubKmsProvider {
 
 /// Hermetic active-key source for behavioral revocation tests.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct StaticActiveByokKeySource {
     keys: Arc<Vec<KmsKeyId>>,
 }

@@ -9,6 +9,7 @@ use thiserror::Error;
 /// Closed set of customer-alert delivery channels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum AlertChannel {
     /// Durable customer dashboard alert row/fanout.
     Dashboard,
@@ -41,6 +42,7 @@ impl std::fmt::Display for AlertChannel {
 
 /// PII-minimized, closed payload sent to an alert provider.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
 pub struct AlertEnvelope {
     /// Event kind (`cmk_revoked` or `cmk_recovered`).
     pub event: String,
@@ -60,6 +62,7 @@ pub struct AlertEnvelope {
 
 /// Provider receipt proving a channel accepted the envelope.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct DeliveryReceipt {
     /// Channel that accepted the envelope.
     pub channel: AlertChannel,
@@ -69,6 +72,7 @@ pub struct DeliveryReceipt {
 
 /// Fail-closed transport errors; no error is interpreted as delivery.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum AlertTransportError {
     /// The channel was enabled but has no endpoint/provider configuration.
     #[error("{channel} alert provider is not configured")]
@@ -122,6 +126,7 @@ pub trait AlertTransport: std::fmt::Debug + Send + Sync {
 /// This is not selected by production construction. It records each accepted
 /// envelope and returns an explicit receipt without network or credentials.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct RecordingAlertTransport {
     deliveries: Arc<Mutex<Vec<(AlertChannel, AlertEnvelope)>>>,
 }

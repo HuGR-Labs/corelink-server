@@ -1,6 +1,7 @@
 /// In-memory blob eraser (tests). Records erased `(tenant, digest)` keys; a
 /// real R2 deletion is composed via the #254 adapter in prod.
 #[derive(Debug, Default)]
+#[non_exhaustive]
 pub struct InMemoryBlobEraser {
     erased: Mutex<HashSet<(String, String)>>,
 }
@@ -67,6 +68,7 @@ const TENANT_PREFIX_LEN: usize = 16;
 /// `R2S3Client::blob_key(region, prefix, digest)` leading path the writer
 /// keys under, so a key-derivation mismatch (the earlier `R2Ac` silent-no-op
 /// class of bug) is impossible.
+#[non_exhaustive]
 pub struct R2CasBlobEraser {
     /// Single CAS bucket name (e.g. `corelink-cas-prod`).
     cas_bucket: String,

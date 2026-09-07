@@ -226,6 +226,7 @@ fn parse_provider_kind(s: &str) -> Result<KmsProviderKind, String> {
 /// wrapped DEK + the KMS identity + the AAD + the 12-byte AES-GCM nonce). The
 /// body ciphertext lives separately in R2.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct ByokEnvelopeRow {
     /// KMS-wrapped DEK ciphertext (provider-opaque).
     pub wrapped_dek: Vec<u8>,

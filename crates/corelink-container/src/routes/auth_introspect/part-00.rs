@@ -153,6 +153,7 @@ const DEFAULT_TIER: &str = "free";
 /// Route state injected at boot time.
 #[non_exhaustive]
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct AuthIntrospectRouteState {
     /// Accepted shared secrets for the `X-Corelink-Internal-Auth` header — one per
     /// distinct CONSUMER, each an independently-rotatable secret so a compromised
@@ -219,6 +220,7 @@ impl AuthIntrospectRouteState {
 #[non_exhaustive]
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct IntrospectRequest {
     /// The PAT plaintext to introspect (e.g. `corelink_pat_...`). NEVER logged.
     pub token: String,
@@ -229,6 +231,7 @@ pub struct IntrospectRequest {
 /// `None` so they can be added later without a breaking change.
 #[non_exhaustive]
 #[derive(Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct IntrospectResponse {
     /// Whether the PAT verified.
     pub valid: bool,
@@ -396,7 +399,6 @@ fn decode_runner_cap(rows: &[crate::storage::d1_http::D1Row]) -> Result<Option<u
         .ok_or_else(|| {
             format!("runners_entitlement.max_concurrency out of u32 range or non-positive: {raw}")
         })?;
-
     // The filter above already bounds `cap` to `1..=u32::MAX`, so conversion
     // cannot fail; retain the explicit checked conversion for lint hygiene.
     Ok(Some(u32::try_from(cap).map_err(|_| {
@@ -451,7 +453,6 @@ fn decode_runner_vcpu_h(rows: &[crate::storage::d1_http::D1Row]) -> Result<Optio
         "runners_entitlement.max_vcpu_h conversion failed".to_owned()
     })?))
 }
-
 // ──────────────────────────────────────────────────────────────────────────────
 // Tier resolution (additive Rust mirror of getTierForTenant)
 // ──────────────────────────────────────────────────────────────────────────────

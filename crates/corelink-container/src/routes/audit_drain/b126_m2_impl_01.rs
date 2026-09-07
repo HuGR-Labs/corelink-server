@@ -2,6 +2,7 @@ const INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
 
 /// Shared state for the audit-chain drain route.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct AuditDrainState {
     internal_auth_key: String,
     d1: Arc<D1HttpClient>,

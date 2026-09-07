@@ -3,6 +3,7 @@ use super::*;
 /// In-memory physical-delete phase orchestrator (the canonical
 /// pure-logic skeleton). Composes the trait dependencies declared at
 /// construction time.
+#[non_exhaustive]
 pub struct InMemoryPhysicalDeletePhase<S, C, B, R, A, M, K>
 where
     S: GcRunStore,

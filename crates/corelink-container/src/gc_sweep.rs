@@ -35,6 +35,7 @@ use crate::storage::StorageEnv;
 
 /// Runtime configuration for one tenant/region sweep.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct GcProductionConfig {
     /// Tenant whose candidates are eligible for this invocation.
     pub tenant_id: Uuid,
@@ -314,6 +315,7 @@ const RUN_COLUMNS: &str = "run_id, tenant_id, region, phase, status, started_at_
 
 /// D1-backed `gc_run` implementation.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct D1GcRunStore {
     d1: Arc<D1HttpClient>,
 }

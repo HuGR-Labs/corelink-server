@@ -20,6 +20,7 @@ pub const CAS_WRITE_LEASE_MS: u64 = 15 * 60 * 1000;
 
 /// A D1 lease authorising one tenant/digest CAS write attempt.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct CasWriteLease {
     tenant_id: String,
     digest: String,
@@ -48,6 +49,7 @@ impl CasWriteLease {
 
 /// Result of committing the metadata side of a fenced CAS write.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CasWriteCommit {
     /// A new `blob_meta` row was inserted with `refcount = 1`.
     Inserted,
@@ -75,6 +77,7 @@ pub trait CasWriteFence: Send + Sync + core::fmt::Debug {
 
 /// Production implementation over the same D1 client used by GC.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct D1CasWriteFence {
     d1: Arc<D1HttpClient>,
 }

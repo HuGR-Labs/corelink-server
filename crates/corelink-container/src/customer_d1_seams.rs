@@ -18,6 +18,7 @@ pub trait CustomerD1: Send + Sync + core::fmt::Debug {
 /// Production [`CustomerD1`] over the CF D1 REST API. Single documented
 /// sync↔async bridge point (same pattern as
 /// `billing_d1_http::D1HttpBillingWriter::run`).
+#[non_exhaustive]
 pub struct D1HttpCustomerDb {
     /// Shared D1-over-HTTP client (owns + redacts the CF API token).
     d1: Arc<D1HttpClient>,
@@ -86,6 +87,7 @@ pub trait PortalSessions: Send + Sync + core::fmt::Debug {
 /// Production [`PortalSessions`] over the real Stripe HTTPS client
 /// (`reqwest::blocking`, driven under `block_in_place` — same bridge
 /// rationale as [`D1HttpCustomerDb`]).
+#[non_exhaustive]
 pub struct StripePortalSessions {
     /// Real Stripe client (owns + redacts the bearer key).
     stripe: Arc<corelink_stripe_real::StripeRealClient>,
@@ -132,6 +134,7 @@ impl PortalSessions for StripePortalSessions {
 /// exercised only by injected-failure tests; unlike `InMemoryAuditSink`
 /// this sink is **bounded** (no per-request Vec growth in production).
 #[derive(Debug, Default)]
+#[non_exhaustive]
 pub struct TracingCustomerAuditSink;
 
 impl TracingCustomerAuditSink {
@@ -159,6 +162,7 @@ impl AuditSink for TracingCustomerAuditSink {
 /// Production [`SliObserver`]: structured `tracing` emit (control-plane
 /// availability observations; the prometheus wiring is a follow-up).
 #[derive(Debug, Default)]
+#[non_exhaustive]
 pub struct TracingCustomerSliObserver;
 
 impl TracingCustomerSliObserver {

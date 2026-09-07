@@ -304,6 +304,7 @@ pub const TOMBSTONE_UNAVAILABLE_SENTINEL: &str = "tombstone-unavailable: ";
 ///
 /// `delete` is a pass-through: deleting an already-erased blob is a harmless
 /// idempotent no-op, and DSR/erase deletes must never be blocked by a tombstone.
+#[non_exhaustive]
 pub struct TombstoneGatedCasHandler {
     read: Arc<dyn corelink_handler_cas::CasReadHandler>,
     write: Arc<dyn corelink_handler_cas::CasWriteHandler>,
@@ -438,6 +439,7 @@ impl corelink_handler_cas::CasDeleteHandler for TombstoneGatedCasHandler {
 
 /// In-memory tombstone store (tests).
 #[derive(Debug, Default)]
+#[non_exhaustive]
 pub struct InMemoryTombstoneStore {
     set: Mutex<HashSet<(String, String)>>,
 }

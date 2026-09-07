@@ -3,6 +3,7 @@ use super::*;
 /// In-memory sweep phase orchestrator (the canonical pure-logic
 /// skeleton). Composes the trait dependencies declared at construction
 /// time.
+#[non_exhaustive]
 pub struct InMemorySweepPhase<S, C, B, X, A, M, K>
 where
     S: GcRunStore,

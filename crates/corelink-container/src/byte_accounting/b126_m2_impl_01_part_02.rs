@@ -169,6 +169,7 @@ impl AccountingCasHandler {
 /// both `write` and `delete` acquire the shard their key maps to for their entire
 /// reserve/commit/release sequence, so a write and a delete of the SAME key can
 /// never interleave their accounting (which would under-count `bytes_used`).
+#[non_exhaustive]
 pub struct AccountingCasHandler {
     write_inner: Arc<dyn corelink_handler_cas::CasWriteHandler>,
     delete_inner: Arc<dyn corelink_handler_cas::CasDeleteHandler>,

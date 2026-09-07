@@ -4,6 +4,7 @@
 
 /// Route state injected at boot time.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct InternalPatRouteState {
     /// Shared secret for `X-Corelink-Internal-Auth` header.
     pub internal_auth_key: Arc<str>,
@@ -40,6 +41,7 @@ impl std::fmt::Debug for InternalPatRouteState {
 /// JSON request body.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct MintRequest {
     /// Tenant UUID (UUIDv7 preferred; any valid UUID accepted).
     pub tenant_id: Uuid,
@@ -54,6 +56,7 @@ pub struct MintRequest {
 
 /// JSON response body. NEVER log `token_plaintext`.
 #[derive(Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct MintResponse {
     /// The PAT plaintext. Returned ONCE to the caller; caller writes to
     /// Clerk metadata and then discards.

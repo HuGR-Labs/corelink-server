@@ -105,6 +105,7 @@ const TENANT_SENTINELS: &[&str] = &["_anonymous", "_unknown", "_system", "_pendi
 /// Lifecycle status of a DSR ticket.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TicketStatus {
     /// Recorded, awaiting execution (MFA step-up or operator disposition).
     Pending,
@@ -143,6 +144,7 @@ impl TicketStatus {
 /// One status-transition timeline entry.
 #[non_exhaustive]
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct TimelineEvent {
     /// Transition instant (Unix epoch ms).
     pub at_ms: u64,
@@ -168,6 +170,7 @@ impl TimelineEvent {
 /// A durable DSR request record (one row of `dsr_tickets`).
 #[non_exhaustive]
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct DsrTicket {
     /// Owning tenant (Worker-resolved).
     pub tenant_id: String,
@@ -272,6 +275,7 @@ pub trait DsrTicketStore: Send + Sync + core::fmt::Debug {
 /// enforced the same way the D1 store is: every read binds `tenant_id`.
 #[non_exhaustive]
 #[derive(Debug, Default)]
+#[non_exhaustive]
 pub struct InMemoryDsrTicketStore {
     rows: std::sync::Mutex<Vec<DsrTicket>>,
 }

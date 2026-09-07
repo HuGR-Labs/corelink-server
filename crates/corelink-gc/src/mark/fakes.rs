@@ -3,6 +3,7 @@ use super::*;
 /// In-memory [`ReachableSetSource`] fake. Each tenant carries 3
 /// independent buffers (mirrors per-tenant SQL filtering).
 #[derive(Debug, Default)]
+#[non_exhaustive]
 pub struct InMemoryReachableSetSource {
     inner: Mutex<ReachableSetSourceInner>,
 }
@@ -128,6 +129,7 @@ impl ReachableSetSource for InMemoryReachableSetSource {
 /// `(tenant_id, digest, mark_run_id)` semantics — duplicate INSERT is
 /// a no-op.
 #[derive(Debug, Default)]
+#[non_exhaustive]
 pub struct InMemoryGcCandidatesStore {
     inner: Mutex<std::collections::BTreeMap<(Uuid, BlobDigest, RunId), GcCandidate>>,
 }
@@ -257,6 +259,7 @@ impl GcCandidatesStore for InMemoryGcCandidatesStore {
 /// ms (mirrors per-batch wall-clock progression). Jitter accounting
 /// adds the supplied ms verbatim.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct CountingMarkClock {
     inner: Mutex<u64>,
 }

@@ -1,4 +1,5 @@
 /// R2 adapter with an exact tenant-key check before every delete.
+#[non_exhaustive]
 pub struct R2GcDelete {
     r2: Arc<R2S3Client>,
     tdk: [u8; 32],
@@ -54,6 +55,7 @@ impl R2Delete for R2GcDelete {
 
 /// D1 outbox audit sink for GC events.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct D1GcAuditSink {
     d1: Arc<D1HttpClient>,
 }
@@ -82,6 +84,7 @@ impl GcAuditSink for D1GcAuditSink {
 
 /// Metrics adapter: labels are emitted to the container's structured log.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct TracingGcMetrics;
 impl GcMetricsObserver for TracingGcMetrics {
     fn record_cron_fired(&self, region: GcRegion) -> Result<(), GcMetricsObserverError> {
@@ -141,6 +144,7 @@ impl GcMetricsObserver for TracingGcMetrics {
 
 /// Wall clock used by the native adapter; it never moves backwards.
 #[derive(Debug, Default)]
+#[non_exhaustive]
 pub struct SystemGcClock(Mutex<u64>);
 impl PhysicalDeleteClock for SystemGcClock {
     fn now_ms(&self) -> u64 {
@@ -156,6 +160,7 @@ impl PhysicalDeleteClock for SystemGcClock {
 
 /// Structured D1 report sink. Reports are audit-outbox records, not stdout-only.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct D1GcReportSink {
     d1: Arc<D1HttpClient>,
 }

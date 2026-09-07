@@ -4,6 +4,7 @@
 /// All SQL is parameterised (positional binds); the tenant scope rides
 /// in `WHERE tenant_id = ?1` on every statement (INV-TENANT-ISOLATION).
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct D1QuotaStore {
     client: Arc<crate::storage::d1_http::D1HttpClient>,
 }

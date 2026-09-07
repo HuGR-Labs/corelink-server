@@ -234,6 +234,7 @@ impl MultiChannelAlerter {
 /// client never sends during construction; a receipt is returned only for a
 /// 2xx response, and response bodies are deliberately not buffered.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct HttpAlertTransport {
     client: Option<reqwest::Client>,
     init_error: Option<String>,

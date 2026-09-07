@@ -31,6 +31,7 @@ const BYOK_ACTIVATION_PROVIDERS: [&str; 4] = ["aws", "gcp", "azure", "vault"];
 /// the caller MUST surface any variant as an error — a partial or unvalidated
 /// custody record is never persisted.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ByokWriteError {
     /// Caller-supplied activation parameters are invalid (rejected BEFORE any
     /// D1 write — never persist a half-valid custody record).
@@ -68,6 +69,7 @@ impl std::error::Error for ByokWriteError {}
 /// The activation parameters that flip a tenant to BYOK `active` with its CMK
 /// identity + CMK-wrapped Tenant Convergence Secret.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct ByokActivation {
     /// Tenant id (PK of both `tenant_byok_config` and `tenant_byok_secret`).
     pub tenant_id: String,
@@ -125,6 +127,7 @@ impl ByokActivation {
 /// crypto-shred kill switch that flips it back off. Generic over the same
 /// [`ByokConfigRows`] async seam so unit tests drive it hermetically.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct D1ByokConfigWriter<R = D1HttpClient> {
     /// Async row source (production: [`D1HttpClient`]). `query_rows` carries
     /// both reads and writes (a write returns an empty result set).

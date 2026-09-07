@@ -138,6 +138,7 @@ impl DsrPipeline for LivePipeline {
 /// Shared state for the `/v1/privacy/dsr/*` router.
 #[non_exhaustive]
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct PrivacyDsrRouteState {
     /// Live data-op driver. `None` (dev/CI, storage unconfigured) ⇒ the data
     /// rights fail CLOSED (503) — never a silent ack of an unhonored right.

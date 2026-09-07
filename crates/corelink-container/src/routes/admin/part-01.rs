@@ -285,6 +285,7 @@ const ADMIN_APPROVER_PRINCIPAL: &str = "approver@internal";
 /// match the one recorded here, and the `resource` is derived identically to
 /// [`MutateOp::resource`] so scope-binding lines up.
 #[derive(Clone, Debug, Deserialize)]
+#[non_exhaustive]
 pub struct AdminApproveBody {
     /// Opaque approval id (the operator generates a fresh one, e.g. a UUID).
     pub approval_id: String,

@@ -163,6 +163,7 @@ struct ConfigEntry {
 /// A cache MISS does ONE D1 read; a HIT is in-memory. The cached answer
 /// includes the "not configured / inactive" result, so after warm-up the
 /// non-BYOK hot path adds no D1 hop (frozen policy §1).
+#[non_exhaustive]
 pub struct ByokConfigCache {
     source: Arc<dyn ByokConfigSource>,
     inner: Mutex<HashMap<String, ConfigEntry>>,
@@ -236,6 +237,7 @@ impl ByokConfigCache {
 
 /// The decoded `tenant_byok_secret` row needed to unwrap the Tcs.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct WrappedTcsRow {
     /// CMK-wrapped Tenant Convergence Secret ciphertext (provider-opaque).
     pub tcs_wrapped: Vec<u8>,
@@ -260,6 +262,7 @@ pub trait ByokSecretSource: Send + Sync + core::fmt::Debug {
 /// Production [`ByokSecretSource`] over the async D1 row seam (reuses
 /// [`ByokConfigRows`], which [`D1HttpClient`] already implements).
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct D1ByokSecretReader<R = D1HttpClient> {
     rows: Arc<R>,
 }
@@ -392,6 +395,7 @@ impl TcsCache {
 ///
 /// This is the only place the plaintext Tcs is materialised, and only inside
 /// the bounded cache window.
+#[non_exhaustive]
 pub struct TcsResolver {
     secrets: Arc<dyn ByokSecretSource>,
     kms: Arc<dyn KmsProvider>,
@@ -493,5 +497,4 @@ impl TcsResolver {
 fn tcs_encryption_context(tenant: &str, version: i64) -> Value {
     json!({ "tenant_id": tenant, "blob_hash": format!("tcs:v{version}") })
 }
-
 include!("part-00-tail.rs");

@@ -234,6 +234,7 @@ struct TenantBloomEntry {
 ///    tenant's own bloom. No torn membership state is observable: a concurrent
 ///    `contains` during a reload sees a monotone superset-then-reset-then-
 ///    repopulate, and any inner-store tombstone is re-set by the reload.
+#[non_exhaustive]
 pub struct BloomTombstoneStore {
     /// The authoritative durable store (D1 in prod).
     inner: Arc<dyn TombstoneStore>,

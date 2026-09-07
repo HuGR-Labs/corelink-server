@@ -1,4 +1,5 @@
 /// D1-backed soft-delete lookup and conditional purge.
+#[non_exhaustive]
 pub struct D1BlobMetaPurgeStore {
     d1: Arc<D1HttpClient>,
     region: GcRegion,

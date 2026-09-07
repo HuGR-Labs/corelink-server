@@ -205,6 +205,7 @@ pub const MAX_SLUG_LEN: usize = 256;
 /// D1 `tenants` row (wave-27 schema).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
+#[non_exhaustive]
 pub enum PilotState {
     /// Signup token redeemed; tier not yet granted.
     New,
@@ -264,6 +265,7 @@ impl fmt::Display for PilotState {
 /// checkin (mirrors `apps/server/src/admin/tier_list.rs::TenantSummary`
 /// from the wave-27 placeholder script comments).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct PilotTenant {
     /// Canonical tenant UUID.
     pub tenant_id: Uuid,
@@ -293,6 +295,7 @@ pub struct PilotTenant {
 /// The shape matches the wave-15 admin-handler audit envelope: one
 /// row per route entry, fail-CLOSED if the sink returns `Err`.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct PilotAuditRow {
     /// Canonical event type (one of the `EVENT_TYPE_*` constants).
     pub event_type: String,
@@ -330,6 +333,7 @@ pub trait PilotAuditSink: fmt::Debug + Send + Sync {
 
 /// In-memory audit sink used by tests + dev/CI.
 #[derive(Debug, Default)]
+#[non_exhaustive]
 pub struct InMemoryPilotAuditSink {
     rows: Mutex<Vec<PilotAuditRow>>,
     fail_with: Mutex<Option<&'static str>>,
@@ -447,6 +451,7 @@ pub trait PilotStore: fmt::Debug + Send + Sync {
 
 /// In-memory pilot-tenant store — used by tests + dev/CI.
 #[derive(Debug, Default)]
+#[non_exhaustive]
 pub struct InMemoryPilotStore {
     by_id: Mutex<HashMap<Uuid, PilotTenant>>,
     fail_with: Mutex<Option<&'static str>>,

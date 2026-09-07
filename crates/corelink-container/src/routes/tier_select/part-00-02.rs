@@ -12,6 +12,7 @@
 
 /// The price/customer details returned by Stripe for a paid checkout.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct CheckoutCreated {
     /// Stripe-hosted Checkout URL (always `https://`).
     pub checkout_url: String,

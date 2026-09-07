@@ -10,6 +10,7 @@
 /// Both trait methods are sync (the ledger is consulted from the sync admin
 /// handler chain); each bridges to the async D1 client with the same
 /// `block_in_place` pattern used by [`D1AdminHandler`].
+#[non_exhaustive]
 pub struct D1ApprovalLedger {
     client: Arc<crate::storage::d1_http::D1HttpClient>,
 }
@@ -274,6 +275,7 @@ pub fn router(state: AdminRouteState) -> Router {
 /// longer required to send `initiator` / `initiator_is_admin` — they
 /// default to empty/false and are ignored for the auth decision.
 #[derive(Clone, Debug, Deserialize)]
+#[non_exhaustive]
 pub struct AdminMutateBody {
     /// Operation kind (`set_tenant_tier` / `rotate_admin_token`).
     pub op_kind: String,

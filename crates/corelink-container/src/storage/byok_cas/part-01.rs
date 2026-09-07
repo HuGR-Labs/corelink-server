@@ -63,6 +63,7 @@ pub trait ByokEnvelopeStore: Send + Sync + core::fmt::Debug {
 /// [`ByokConfigRows`], which [`D1HttpClient`] already implements — the
 /// `query_rows` seam runs both the `SELECT` and the idempotent `INSERT`).
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct D1ByokEnvelopeStore<R = D1HttpClient> {
     rows: Arc<R>,
 }
@@ -233,6 +234,7 @@ impl<R: ByokConfigRows + core::fmt::Debug + 'static> ByokEnvelopeStore for D1Byo
 /// deterministic given `(key, nonce, plaintext, aad)`, every writer (a race
 /// loser, a re-PUT of the same `blob_hash`) produces byte-identical ciphertext —
 /// the envelope row is never orphaned and the R2 PUT is idempotent.
+#[non_exhaustive]
 pub struct ModeBEncryptor {
     kms: Arc<dyn KmsProvider>,
     enc: EnvelopeEncryptor<Arc<dyn KmsProvider>>,
@@ -433,6 +435,7 @@ impl ModeBEncryptor {
 /// (refuse rather than risk plaintext for an encrypting tenant). Every other
 /// state is the plaintext path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ByokEngagement {
     /// Run the plaintext path unchanged (not configured / inactive).
     Plaintext,

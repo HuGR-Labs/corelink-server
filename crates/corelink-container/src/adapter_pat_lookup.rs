@@ -41,6 +41,7 @@ pub enum VerifyError {
 /// `token_id` is the non-secret lookup key; the secret material is the
 /// caller-supplied plaintext, verified against `pat_hash`.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct PatRow {
     /// Tenant UUID (text) that owns the PAT.
     pub tenant_id: String,
@@ -358,6 +359,7 @@ type SharedLookup = Shared<BoxFuture<'static, Arc<Result<Option<PatRow>, String>
 /// request and is the sole possession check), so this changes no auth decision,
 /// adds no timing oracle (the D1 hop is dwarfed by Argon2id), and leaves the
 /// dummy-burn / OOM-permit machinery exactly as is.
+#[non_exhaustive]
 pub struct SingleFlightPatLookup {
     inner: Arc<dyn PatRowLookup>,
     /// `token_id -> in-flight shared read`. Sync mutex; the guard is NEVER held

@@ -22,6 +22,7 @@ type CasKey = (String, String);
 
 /// In-memory CAS / R2 fake. See module-level doc for ordering guarantees.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct CasStore {
     // CasKey -> CasEntry
     inner: Arc<Mutex<HashMap<CasKey, CasEntry>>>,
@@ -141,6 +142,7 @@ impl CasStore {
 /// In-memory D1 fake row. Every row carries `tenant_id`; reads /
 /// writes MUST use the JWT-claimed tenant id, NEVER a body field.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct D1Row {
     /// Owning tenant id (matches JWT claim at write time).
     pub tenant_id: Uuid,
@@ -150,6 +152,7 @@ pub struct D1Row {
 
 /// In-memory D1 store with strict JWT-vs-body tenant enforcement.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct D1Store {
     inner: Arc<Mutex<HashMap<(Uuid, String), D1Row>>>,
     audit: AuditCapture,
@@ -203,6 +206,7 @@ impl D1Store {
 /// PAT against a different tenant's resource is rejected with
 /// `auth.denied.signature_invalid` (the PAT HMAC is tenant-keyed).
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct PatStore {
     // pat_token -> bound_tenant_id
     inner: Arc<Mutex<HashMap<String, Uuid>>>,
@@ -260,6 +264,7 @@ impl PatStore {
 /// same-tenant collision with a different body fingerprint emits
 /// `auth.denied.invalid` and rejects.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct IdempotencyStore {
     // (tenant_id, idempotency_key) -> body_fingerprint
     inner: Arc<Mutex<HashMap<(Uuid, String), u64>>>,
@@ -315,6 +320,7 @@ impl IdempotencyStore {
 /// counter; exhausting one tenant's quota MUST NOT affect a sibling
 /// tenant's quota (INV-QUOTA-TENANT-SCOPED).
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct QuotaStore {
     // tenant_id -> (used, ceiling)
     inner: Arc<Mutex<HashMap<Uuid, (u64, u64)>>>,
@@ -380,6 +386,7 @@ impl QuotaStore {
 /// MUST NOT affect Tenant B's quota window
 /// (INV-RATELIMIT-TENANT-SCOPED).
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct RateLimiter {
     // tenant_id -> tokens_remaining
     inner: Arc<Mutex<HashMap<Uuid, i64>>>,

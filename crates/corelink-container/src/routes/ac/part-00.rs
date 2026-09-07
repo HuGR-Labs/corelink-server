@@ -66,6 +66,7 @@ const MAX_LIST_LIMIT: u32 = 1000;
 /// Query parameters for the paginated AC list route (`?limit=&cursor=`).
 #[non_exhaustive]
 #[derive(Debug, Default, serde::Deserialize)]
+#[non_exhaustive]
 pub struct ListQuery {
     /// Requested page size; clamped to `1..=1000` (default 200).
     pub limit: Option<u32>,
@@ -103,6 +104,7 @@ pub const AC_UPDATE_ROUTE: &str = "/v1/ac/{tenant}/{action_digest}";
 /// Shared route state — distinct trait objects for read and update.
 #[non_exhaustive]
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct AcRouteState {
     /// Production wiring builds these `Arc<dyn ...Handler>` values
     /// from the appropriate native or wasm32 impl; see

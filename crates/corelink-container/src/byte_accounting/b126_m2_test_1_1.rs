@@ -7,6 +7,7 @@ use super::*;
 /// One in-memory storage row: the running counter + an optional cap
 /// (`quota == 0` ⇒ uncapped, mirroring the D1 `bytes_quota = 0` default).
 #[derive(Debug, Clone, Copy, Default)]
+#[non_exhaustive]
 pub struct Row {
     /// Running `bytes_used` counter.
     pub used: i64,
@@ -18,6 +19,7 @@ pub struct Row {
 /// with an in-process `Mutex` so the read-modify-write is atomic exactly as
 /// the D1 `bytes_used = bytes_used + ?` increment is.
 #[derive(Debug, Default)]
+#[non_exhaustive]
 pub struct InMemoryByteStore {
     rows: Mutex<HashMap<(String, String), Row>>,
 }
@@ -163,6 +165,7 @@ impl ByteStore for InMemoryByteStore {
 
 /// A [`ByteStore`] that always errors — drives the fail-CLOSED 503 path.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct ErroringByteStore;
 
 #[async_trait]

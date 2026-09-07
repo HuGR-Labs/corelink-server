@@ -86,6 +86,7 @@ pub fn quota_guard_from_env() -> Option<Arc<QuotaGuard>> {
 
 /// One tenant's quota state, mirroring the `tenant_quota` D1 row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct QuotaState {
     /// Owner-tunable monthly ceiling, in micro-dollars.
     pub monthly_budget_usd_micros: i64,

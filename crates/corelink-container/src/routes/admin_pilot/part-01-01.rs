@@ -4,6 +4,7 @@
 
 /// Query string for `GET /v1/admin/pilots`.
 #[derive(Clone, Debug, Deserialize)]
+#[non_exhaustive]
 pub struct ListPilotsQuery {
     /// Required state filter (uppercase canonical form).
     pub state: String,
@@ -18,6 +19,7 @@ pub struct ListPilotsQuery {
 
 /// Response body for `GET /v1/admin/pilots`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ListPilotsResponse {
     /// Echoed state filter.
     pub state: PilotState,
@@ -31,6 +33,7 @@ pub struct ListPilotsResponse {
 
 /// Request body for `POST /v1/admin/pilots` (create a pilot tenant).
 #[derive(Clone, Debug, Deserialize)]
+#[non_exhaustive]
 pub struct CreatePilotBody {
     /// Display slug (lowercase, hyphen-delimited). Required, non-empty,
     /// `≤ MAX_SLUG_LEN` chars — validated at the route boundary (L4).
@@ -44,6 +47,7 @@ pub struct CreatePilotBody {
 
 /// Response body for `POST /v1/admin/pilots`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct CreatePilotResponse {
     /// The newly-created pilot tenant (state `NEW`, tier `free`).
     pub tenant: PilotTenant,
@@ -51,6 +55,7 @@ pub struct CreatePilotResponse {
 
 /// Request body for `POST /v1/admin/pilots/{tenant_id}/grant-tier`.
 #[derive(Clone, Debug, Deserialize)]
+#[non_exhaustive]
 pub struct GrantTierBody {
     /// Tier to grant — MUST be `"pilot"` (parity with the wave-27
     /// `grant-pilot-tier.sh` script).
@@ -61,6 +66,7 @@ pub struct GrantTierBody {
 
 /// Response body for `POST /v1/admin/pilots/{tenant_id}/grant-tier`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct GrantTierResponse {
     /// Post-mutation tenant record.
     pub tenant: PilotTenant,
@@ -68,6 +74,7 @@ pub struct GrantTierResponse {
 
 /// Response body for `POST /v1/admin/pilots/{tenant_id}/checkin`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct CheckinResponse {
     /// Tenant id checked.
     pub tenant_id: Uuid,

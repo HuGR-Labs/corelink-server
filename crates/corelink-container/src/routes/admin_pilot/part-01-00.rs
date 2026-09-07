@@ -28,6 +28,7 @@ pub trait PilotD1: fmt::Debug + Send + Sync {
 
 /// Production [`PilotD1`] over the CF D1 REST API. Single documented
 /// sync↔async bridge point (mirrors `customer_d1::D1HttpCustomerDb`).
+#[non_exhaustive]
 pub struct D1HttpPilotDb {
     /// Shared D1-over-HTTP client (owns + redacts the CF API token).
     d1: Arc<D1HttpClient>,
@@ -66,6 +67,7 @@ impl PilotD1 for D1HttpPilotDb {
 
 /// D1-durable [`PilotStore`] over the `pilot_tenants` table (0065).
 /// Rows survive container restarts (unlike [`InMemoryPilotStore`]).
+#[non_exhaustive]
 pub struct D1PilotStore {
     /// D1 row source (production: [`D1HttpPilotDb`]).
     db: Arc<dyn PilotD1>,
@@ -283,6 +285,7 @@ impl PilotStore for D1PilotStore {
 
 /// Shared route state — store + audit sink + wall clock.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct PilotAdminRouteState {
     /// Tenant store (production: D1-backed; tests: in-memory).
     pub store: Arc<dyn PilotStore>,
@@ -309,6 +312,7 @@ impl fmt::Debug for PilotAdminRouteState {
 /// Parsed admin scope claim — extracted from the
 /// `X-Admin-Scope` header by [`require_admin_scope`].
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct PilotAdminScope {
     /// Validated admin principal id.
     pub principal: String,

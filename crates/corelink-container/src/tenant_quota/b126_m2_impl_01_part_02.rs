@@ -30,6 +30,7 @@
 ///   `lease_ops * cost_per_op` micro-dollars (`$0.016` on a `$5`/mo
 ///   ceiling — see [`DEFAULT_LEASE_OPS`]).
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct LeasedQuotaStore {
     inner: Arc<dyn QuotaStore>,
     /// Ops pre-bought per lease acquisition (defaults to [`DEFAULT_LEASE_OPS`]).

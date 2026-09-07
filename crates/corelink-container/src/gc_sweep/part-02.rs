@@ -23,6 +23,7 @@ fn candidate_from_row(row: &D1Row) -> Result<GcCandidate, String> {
 }
 /// D1-backed `gc_candidates` implementation.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct D1GcCandidatesStore {
     d1: Arc<D1HttpClient>,
     region: GcRegion,

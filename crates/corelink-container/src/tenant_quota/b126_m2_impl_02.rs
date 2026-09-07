@@ -130,6 +130,7 @@ impl QuotaStore for LeasedQuotaStore {
 /// (two `Arc`s) so it drops into per-route state alongside the existing
 /// rate-limit collaborators.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct QuotaGuard {
     store: Arc<dyn QuotaStore>,
     clock: Arc<dyn WallClock>,
@@ -342,6 +343,7 @@ impl QuotaGuard {
 /// (e.g. `InMemoryBillingD1`): hermetic, no D1 round-trip, lost on
 /// restart. Production wires [`D1QuotaStore`] instead.
 #[derive(Debug, Default)]
+#[non_exhaustive]
 pub struct InMemoryQuotaStore {
     rows: Mutex<HashMap<String, QuotaState>>,
 }

@@ -28,6 +28,7 @@ use super::adapter_pat_lookup::{PatRowLookup, SingleFlightPatLookup};
 
 /// Container-side PAT → tenant verifier (Option B). Trait-agnostic: each
 /// adapter route wraps an `Arc<PatVerifier>` in its local resolver shell.
+#[non_exhaustive]
 pub struct PatVerifier {
     pub(super) lookup: Arc<dyn PatRowLookup>,
     /// The HMAC overlap key set: `PAT_SIGNING_KEY` (current) plus any

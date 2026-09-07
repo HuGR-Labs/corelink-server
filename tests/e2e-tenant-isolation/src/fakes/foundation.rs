@@ -29,6 +29,7 @@ use uuid::Uuid;
 /// 1:1 onto a `corelink_audit::AuthEventType` so the harness can
 /// assert the right event was emitted before the reject.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DenyKind {
     /// The requester's authenticated tenant id does not match the
     /// resource's tenant id (CAS read/write/list, audit query, PAT
@@ -93,6 +94,7 @@ pub enum DenyKind {
 /// tenant id (the tenant whose namespace was targeted). Scenarios
 /// assert both sides match the expected attack shape.
 #[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
 pub struct AuditAttempt {
     /// Reason the operation was rejected.
     pub kind: DenyKind,
@@ -110,6 +112,7 @@ pub struct AuditAttempt {
 /// Cloning is cheap (`Arc` internally) so scenarios can hold a
 /// scenario-level handle and hand independent clones to each fake.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct AuditCapture {
     emitter: InMemoryEmitter,
     attempts: Arc<Mutex<Vec<AuditAttempt>>>,
@@ -290,6 +293,7 @@ impl AuditCapture {
 
 /// Errors surfaced by the in-memory fakes.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum FakeError {
     /// Tenant isolation deny — see [`DenyKind`] for the taxonomy.
     #[error("tenant isolation deny: {0:?}")]

@@ -79,6 +79,7 @@ use crate::customer_d1::ByokCryptoMode;
 /// S3-compatible URL. Credentials are taken from [`StorageEnv`] and
 /// never logged.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct R2S3Client {
     inner: Client,
     /// Default bucket for CAS blobs (e.g. `corelink-cas-prod`).
@@ -103,6 +104,7 @@ pub struct R2S3Client {
 /// answers and the caller must not be able to conflate them — a 404 for an
 /// object that exists would tell the client to re-upload bytes we already hold.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CappedGet {
     /// The object exists and is within the ceiling.
     Found(Vec<u8>),

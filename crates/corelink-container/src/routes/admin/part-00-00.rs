@@ -130,6 +130,7 @@ pub const ADMIN_APPROVE_ROUTE: &str = "/v1/admin/approve";
 
 /// Shared route state — distinct trait objects for read and mutate.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct AdminRouteState {
     /// Production wiring builds these `Arc<dyn ...Handler>` values
     /// from the appropriate native or wasm32 impl; see
@@ -172,6 +173,7 @@ impl core::fmt::Debug for AdminRouteState {
 /// handler verifies + consumes against, so an approval created by the
 /// (independently-authenticated) approve endpoint is exactly what a later
 /// mutation must present.
+#[non_exhaustive]
 pub struct AdminHandlerStack {
     /// Admin read handler.
     pub read: Arc<dyn AdminReadHandler>,

@@ -10,6 +10,7 @@ use super::*;
 /// RLS layer (defense in depth — see module docs).
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct RealNeonShadowSink {
     tenant_id: Uuid,
     region: Region,

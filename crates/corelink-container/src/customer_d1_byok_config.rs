@@ -15,6 +15,7 @@
 /// callers MUST treat any variant as "custody undetermined" and refuse to
 /// downgrade to plaintext — never coerce an error into "encryption off".
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ByokConfigError {
     /// D1 transport / decode failure (the underlying row source errored).
     Transport(String),
@@ -37,6 +38,7 @@ impl std::error::Error for ByokConfigError {}
 /// Key-custody rung of a tenant's BYOK configuration
 /// (`tenant_byok_config.mode`, plan §2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ByokMode {
     /// CoreLink-held key (no customer KMS).
     Managed,
@@ -75,6 +77,7 @@ impl core::str::FromStr for ByokMode {
 
 /// Crypto mode — Mode A vs Mode B (`tenant_byok_config.crypto_mode`, plan §2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ByokCryptoMode {
     /// Mode A — convergent encryption keyed by the Tcs; preserves cross-blob
     /// dedup.
@@ -111,6 +114,7 @@ impl core::str::FromStr for ByokCryptoMode {
 /// Onboarding state machine (`tenant_byok_config.state`). Monotonic +
 /// audited; written only by the control-plane authority (signup-worker).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ByokState {
     /// Not configured (no encryption).
     Inactive,
@@ -159,6 +163,7 @@ impl core::str::FromStr for ByokState {
 /// row, migration 0081). `cmk_*` are `None` until a BYOK/HYOK tenant is
 /// onboarded.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct TenantByokConfig {
     /// Tenant id (PK).
     pub tenant_id: String,
@@ -239,6 +244,7 @@ impl ByokConfigRows for D1HttpClient {
 /// NO handler / hot-path calls it yet. Read-only by construction: it never
 /// writes the config tables (the control-plane authority is the sole writer).
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct D1ByokConfigReader<R = D1HttpClient> {
     /// Async row source (production: [`D1HttpClient`]).
     rows: Arc<R>,

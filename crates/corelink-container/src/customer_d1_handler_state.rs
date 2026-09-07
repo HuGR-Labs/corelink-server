@@ -39,6 +39,7 @@ struct UsageRollup {
 /// Production D1-backed customer handler. Implements all 6
 /// `corelink-handler-customer` traits over the [`CustomerD1`] seam.
 /// See the module docs for the per-endpoint HONEST-v1 matrix.
+#[non_exhaustive]
 pub struct D1CustomerHandler {
     /// D1 row source (production: [`D1HttpCustomerDb`]).
     db: Arc<dyn CustomerD1>,

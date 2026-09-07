@@ -69,6 +69,7 @@ use sha2::{Digest as _, Sha256};
 /// independently once a D1-backed impl lands.
 #[non_exhaustive]
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct CustomerRouteState {
     /// Overview handler.
     pub overview: Arc<dyn CustomerOverviewHandler>,

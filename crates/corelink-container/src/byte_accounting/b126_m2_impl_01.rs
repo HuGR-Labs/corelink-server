@@ -39,6 +39,7 @@ pub fn storage_quota_from_headers(headers: &axum::http::HeaderMap) -> Option<i64
 
 /// Outcome of an [`ByteAccountant::accrue`] attempt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum AccrueOutcome {
     /// The bytes were accrued (under the cap, or the row is genuinely uncapped).
     Accrued,
@@ -113,6 +114,7 @@ pub trait ByteStore: std::fmt::Debug + Send + Sync {
 /// plus a small `String`), so it drops into per-route state alongside the
 /// existing quota collaborators.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct ByteAccountant {
     store: Arc<dyn ByteStore>,
     region: String,
@@ -212,6 +214,7 @@ pub fn byte_accountant_from_env() -> Option<Arc<ByteAccountant>> {
 /// All SQL is parameterised (positional binds); the tenant scope rides in the
 /// composite PK `(tenant_id, region)` on every statement (INV-TENANT-ISOLATION).
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct D1ByteStore {
     client: Arc<crate::storage::d1_http::D1HttpClient>,
 }

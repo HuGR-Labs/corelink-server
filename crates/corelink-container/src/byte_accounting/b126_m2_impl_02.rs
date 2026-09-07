@@ -15,6 +15,7 @@
 /// their entire reserve/commit/release sequence, so a write and a delete of the
 /// SAME key can never interleave their accounting; distinct keys map to other
 /// shards and stay fully concurrent.
+#[non_exhaustive]
 pub struct AccountingAcHandler {
     update_inner: Arc<dyn corelink_handler_ac::AcUpdateHandler>,
     delete_inner: Arc<dyn corelink_handler_ac::AcDeleteHandler>,

@@ -22,6 +22,7 @@ type MultipartRow = (Uuid, String, Vec<Vec<u8>>);
 
 /// In-memory R2 multipart broker — see module docs.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct MultipartBroker {
     // upload_id -> MultipartRow
     inner: Arc<Mutex<HashMap<String, MultipartRow>>>,
@@ -122,6 +123,7 @@ type ChildQuotaRow = (Uuid, u64, u64);
 
 /// Hierarchical per-child quota store — see module docs.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct HierarchicalQuotaStore {
     // child_tenant_id -> ChildQuotaRow
     inner: Arc<Mutex<HashMap<Uuid, ChildQuotaRow>>>,
@@ -191,6 +193,7 @@ impl HierarchicalQuotaStore {
 ///
 /// INV-KV-REPLICATION-FAIL-CLOSED, FM-AUTH-013.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct KvReplicatedPatStore {
     // pat_token -> bound_tenant
     home: Arc<Mutex<HashMap<String, Uuid>>>,
@@ -336,6 +339,7 @@ impl KvReplicatedPatStore {
 /// INV-AUDIT-QUERY-TENANT-SCOPED, `STRIDE-corelink-audit-chain.md`
 /// query-injection row.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct AuditQueryEngine {
     // tenant_id -> row payloads
     inner: Arc<Mutex<HashMap<Uuid, Vec<String>>>>,

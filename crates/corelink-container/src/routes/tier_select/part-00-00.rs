@@ -175,6 +175,7 @@ pub const TENANT_HEADER: &str = "x-corelink-tenant-id";
 /// `enterprise` is rejected here and routed to the inquiry form. Kept in
 /// lockstep with `corelink_tier_selection::tier::TierKind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RequestedTier {
     /// Free tier — instant activation, no Checkout Session.
     Free,
@@ -250,6 +251,7 @@ impl RequestedTier {
 /// Outcome of parsing the wire `tier` string. Distinguishes the
 /// enterprise route (422) from genuinely invalid input (400).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ParsedTier {
     /// A valid self-serve tier.
     Tier(RequestedTier),
@@ -270,6 +272,7 @@ pub enum ParsedTier {
 /// only from the edge-verified header (see security model §2).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct TierSelectRequest {
     /// Requested tier: `free` | `solo` | `starter` | `pro` | `max` |
     /// `runner_starter` | `runner_pro` | `runner_team` | `runner_scale` |
@@ -285,6 +288,7 @@ pub struct TierSelectRequest {
 /// JSON success response (200). Mirrors the `TierSelectResponse` the
 /// admin-ui `/api/checkout/session` bridge expects.
 #[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
 pub struct TierSelectResponse {
     /// The Stripe-hosted Checkout URL the client redirects to. Always
     /// `https://`. (For `free`, this is omitted — see [`FreeActivated`].)
@@ -298,6 +302,7 @@ pub struct TierSelectResponse {
 /// Typed error → HTTP status mapping for this route. Kept in lockstep
 /// with `corelink_tier_selection::error::TierError`.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TierSelectHttpError {
     /// Missing/invalid internal-auth header → 401.
     Unauthenticated,
@@ -435,6 +440,7 @@ fn extract_verified_tenant(headers: &HeaderMap) -> Result<String, TierSelectHttp
 /// [`crate::routes::tier_select_audit`]) and each implements one of the three
 /// trait seams below.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct TierSelectRouteState {
     /// Shared secret for `X-Corelink-Internal-Auth` (constant-time compare).
     /// NEVER logged (redacted in `Debug`).

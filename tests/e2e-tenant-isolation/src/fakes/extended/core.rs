@@ -15,6 +15,7 @@ use super::super::{AuditAttempt, AuditCapture, DenyKind, FakeError};
 /// `auth.denied.invalid` (DenyKind::StripeReplay). This pins
 /// INV-STRIPE-WEBHOOK-IDEMPOTENT-CROSS-TENANT.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct StripeWebhookLedger {
     // stripe_event_id -> first_tenant_id
     inner: Arc<Mutex<HashMap<String, Uuid>>>,
@@ -70,6 +71,7 @@ impl StripeWebhookLedger {
 /// THR-I-002 (timing side-channel), `STRIDE-corelink-tenant-path` §2.1
 /// (TB-tp-1 row I), CTRL-ISO-004 / ADR-0023 / ADR-0028.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct ConstantTimeAuthProbe {
     // tenant_id -> exists?
     inner: Arc<Mutex<HashMap<Uuid, bool>>>,
@@ -132,6 +134,7 @@ type CmkVersionRow = (u64, Option<u64>);
 /// In-memory CMK rotation ledger — see module-level docs for the
 /// `INV-BYOK-CMK-ROTATION-ATOMIC` contract.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct CmkRotationLedger {
     // tenant_id -> CmkVersionRow
     inner: Arc<Mutex<HashMap<Uuid, CmkVersionRow>>>,
@@ -215,6 +218,7 @@ type PatRevokeRow = (Uuid, Option<u64>);
 
 /// In-memory PAT revoke ledger — see module docs.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct PatRevokeLedger {
     // pat_token -> PatRevokeRow
     inner: Arc<Mutex<HashMap<String, PatRevokeRow>>>,
@@ -302,6 +306,7 @@ impl PatRevokeLedger {
 /// INV-RESIDENCY-REGION-PINNED, FM-RESIDENCY-001,
 /// `STRIDE-corelink-residency.md` cross-region replay row.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct RegionRouter {
     // tenant_id -> home_region
     inner: Arc<Mutex<HashMap<Uuid, String>>>,
@@ -356,6 +361,7 @@ impl RegionRouter {
 ///
 /// INV-DSR-TENANT-CONTEXT-MATCH, `STRIDE-corelink-dsr.md` §2.1.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct DsrIntake {
     audit: AuditCapture,
 }
@@ -397,6 +403,7 @@ impl DsrIntake {
 ///
 /// INV-AUDIT-CHAIN-NON-FORGEABLE, `STRIDE-corelink-audit-chain.md`.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct AuditChain {
     // tenant_id -> chain leaves (each leaf is opaque bytes)
     inner: Arc<Mutex<HashMap<Uuid, Vec<Vec<u8>>>>>,
