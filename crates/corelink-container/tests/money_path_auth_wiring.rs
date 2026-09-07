@@ -167,6 +167,7 @@ impl Drop for EffectProbe {
 }
 
 fn classify_and_refuse(mut stream: TcpStream, d1: &AtomicUsize, stripe: &AtomicUsize) {
+    let _ = stream.set_nonblocking(false);
     let _ = stream.set_read_timeout(Some(Duration::from_secs(1)));
     let mut request = [0_u8; 1024];
     let bytes_read = stream.read(&mut request).unwrap_or(0);
