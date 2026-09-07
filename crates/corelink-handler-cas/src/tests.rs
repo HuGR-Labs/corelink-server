@@ -106,6 +106,24 @@ fn read_not_found_returns_not_found_and_emits_sli_error() {
 }
 
 #[test]
+fn read_max_bytes_is_observed_before_copying_the_object() {
+    let (_audit, _sli, h) = fixture();
+    let bytes = b"five!".to_vec();
+    let hash = fake_hash(&bytes);
+    h.seed("t1", &hash, bytes).expect("seed");
+    let err = h
+        .read(CasReadRequest::new("t1", hash, "p1", "t1", 1).with_max_bytes(4))
+        .expect_err("object must exceed the request ceiling");
+    assert_eq!(
+        err,
+        CasHandlerError::ObjectTooLarge {
+            actual_bytes: 5,
+            limit_bytes: 4,
+        }
+    );
+}
+
+#[test]
 fn read_correctness_injection_emits_correctness_sli_error() {
     let (audit, sli, h) = fixture();
     let bytes = b"x".to_vec();

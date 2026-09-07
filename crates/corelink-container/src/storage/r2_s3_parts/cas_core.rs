@@ -399,24 +399,26 @@ impl R2CasHandler {
     /// Both the production concurrent-audit path and the serial fallback MUST
     /// use this helper; keeping the capped storage read in one place prevents
     /// a path-specific `get()` from bypassing the B-077 process-wide envelope.
-    async fn get_capped_for_read(&self, key: &str) -> Result<Option<Vec<u8>>, CasHandlerError> {
-        match self
-            .client
-            .get_capped(key, crate::routes::cas::CAS_READ_MAX_OBJECT_BYTES)
-            .await
-        {
+    /// `max_bytes` is supplied by the request so batch-read can use its tighter
+    /// 8 MiB object ceiling while single reads retain the ordinary ceiling.
+    async fn get_capped_for_read(
+        &self,
+        key: &str,
+        max_bytes: u64,
+    ) -> Result<Option<Vec<u8>>, CasHandlerError> {
+        match self.client.get_capped(key, max_bytes).await {
             Ok(CappedGet::Found(bytes)) => Ok(Some(bytes)),
             Ok(CappedGet::Missing) => Ok(None),
             Ok(CappedGet::TooLarge { actual_bytes }) => {
                 warn!(
                     key,
                     actual_bytes = ?actual_bytes,
-                    limit_bytes = crate::routes::cas::CAS_READ_MAX_OBJECT_BYTES,
+                    limit_bytes = max_bytes,
                     "R2CasHandler::read refused an over-size object"
                 );
                 Err(CasHandlerError::ObjectTooLarge {
                     actual_bytes: actual_bytes.unwrap_or(0),
-                    limit_bytes: crate::routes::cas::CAS_READ_MAX_OBJECT_BYTES,
+                    limit_bytes: max_bytes,
                 })
             }
             Err(e) => {

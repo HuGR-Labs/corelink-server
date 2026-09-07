@@ -9,6 +9,14 @@ impl CasReadHandler for R2CasHandler {
     fn read(&self, req: CasReadRequest) -> Result<CasReadResponse, CasHandlerError> {
         use corelink_handler_cas::observer::Sli;
 
+        // Batch-read supplies its 8 MiB object ceiling through the request so
+        // the storage adapter can reject oversized objects from metadata before
+        // collecting a body. Ordinary single reads retain the historical
+        // 64 MiB ceiling.
+        let max_bytes = req
+            .max_bytes
+            .unwrap_or(crate::routes::cas::CAS_READ_MAX_OBJECT_BYTES);
+
         // B-057: the window the latency SLI reports. Started at handler
         // entry so it covers the same work the availability SLI counts.
         let started = Instant::now();
@@ -93,7 +101,7 @@ impl CasReadHandler for R2CasHandler {
                         .r2_key(&req.tenant, &resolved.physical_digest, req.algo)
                         .map_err(CasHandlerError::Internal)?;
                     debug!(key = %key, "R2CasHandler::read");
-                    let got = self.get_capped_for_read(&key).await?;
+                    let got = self.get_capped_for_read(&key, max_bytes).await?;
                     Ok((resolved, got))
                 };
                 // ONE `Phase::Store` scope wraps the ENTIRE joined window —
@@ -154,7 +162,7 @@ impl CasReadHandler for R2CasHandler {
                             crate::origin_timing::Phase::Store,
                         );
                         tokio::task::block_in_place(|| {
-                            handle.block_on(self.get_capped_for_read(&key))
+                            handle.block_on(self.get_capped_for_read(&key, max_bytes))
                         })
                     };
                     match result {

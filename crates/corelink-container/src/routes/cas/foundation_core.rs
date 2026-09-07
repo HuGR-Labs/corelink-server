@@ -117,7 +117,9 @@ pub const BATCH_MAX_OBJECTS: usize = 2_000;
 /// (main.rs), so the body limit is unchanged: 8 MiB is the batch-payload
 /// ceiling, the extra 2 MiB body headroom covers manifest framing; parser
 /// strings/clones are reserved separately in the shared capacity envelope.
-pub const BATCH_MAX_BYTES: usize = 8 * 1024 * 1024;
+pub const BATCH_MAX_BYTES: usize = (crate::container_capacity::CAS_WRITE_BATCH_PAYLOAD_LIMIT_BYTES
+    / crate::container_capacity::MEMORY_BUDGET_UNIT_BYTES)
+    as usize;
 
 /// Explicit route-side mirror of the global axum body limit. The global layer
 /// normally rejects this first; keeping the check here makes the contract true
@@ -145,6 +147,10 @@ const BATCH_METADATA_WORST_CASE_BYTES: u64 = (BATCH_MAX_OBJECTS as u64)
 const _: () = assert!(
     BATCH_METADATA_WORST_CASE_BYTES <= crate::container_capacity::CAS_BATCH_PARSE_METADATA_BYTES,
     "batch parser metadata caps exceed the shared reservation"
+);
+const _: () = assert!(
+    BATCH_MAX_BYTES as u64 * crate::container_capacity::CAS_READ_COPY_MULTIPLIER
+        == crate::container_capacity::CAS_READ_BATCH_OBJECT_PEAK_BYTES
 );
 
 /// FROZEN ceiling on the size of a single CAS object the read path will serve.
@@ -193,14 +199,18 @@ const CAS_READ_SINGLE_PERMITS: u32 =
     (crate::container_capacity::CAS_READ_SINGLE_PEAK_BYTES / CAS_READ_BUDGET_UNIT_BYTES) as u32;
 const CAS_READ_BATCH_PERMITS: u32 =
     (crate::container_capacity::CAS_READ_BATCH_PEAK_BYTES / CAS_READ_BUDGET_UNIT_BYTES) as u32;
-/// Maximum number of batch requests that may hold their envelope reservation
-/// concurrently while leaving room for one full single-object read.  The
-/// conservative one-envelope invariant is derived from the weighted budget:
-/// `22 MiB + 196 MiB = 218 MiB <= 220 MiB`. Two envelopes plus one object
-/// would be `44 MiB + 192 MiB = 236 MiB`, so admitting two is unsound even
-/// though the object reservation overlaps one batch's metadata on paper.
-const CAS_READ_BATCH_MAX_IN_FLIGHT: usize =
-    CAS_READ_GLOBAL_PERMITS / (CAS_READ_BATCH_PERMITS as usize + CAS_READ_SINGLE_PERMITS as usize);
+/// Weighted reservation for one in-flight batch-read object. It is three
+/// copies of the 8 MiB batch object ceiling (SDK bytes, handler `Vec`, and
+/// plaintext), or 24 MiB with the deployed capacity declaration.
+const CAS_READ_BATCH_OBJECT_PERMITS: u32 =
+    (crate::container_capacity::CAS_READ_BATCH_OBJECT_PEAK_BYTES / CAS_READ_BUDGET_UNIT_BYTES)
+        as u32;
+/// Structured object fanout derived from the process-wide read slice: the
+/// 22 MiB batch envelope leaves 198 MiB, which admits eight 24 MiB objects.
+pub const BATCH_READ_FANOUT: usize = crate::container_capacity::CAS_READ_BATCH_FANOUT;
+/// Maximum number of batch envelopes admitted while reserving each envelope's
+/// complete object window. The deployed arithmetic is `220 / (22 + 8*24)`.
+const CAS_READ_BATCH_MAX_IN_FLIGHT: usize = crate::container_capacity::CAS_READ_BATCH_MAX_IN_FLIGHT;
 const CAS_WRITE_GLOBAL_BUDGET_BYTES: u64 = crate::container_capacity::CAS_WRITE_GLOBAL_BUDGET_BYTES;
 const CAS_WRITE_SINGLE_PERMITS: u32 =
     (crate::container_capacity::CAS_WRITE_SINGLE_PEAK_BYTES / CAS_READ_BUDGET_UNIT_BYTES) as u32;
@@ -214,9 +224,12 @@ const _: () = assert!(CAS_READ_GLOBAL_BUDGET_BYTES > 0);
 const _: () = assert!(CAS_READ_GLOBAL_BUDGET_BYTES % CAS_READ_BUDGET_UNIT_BYTES == 0);
 const _: () = assert!(CAS_READ_GLOBAL_BUDGET_BYTES / CAS_READ_BUDGET_UNIT_BYTES <= u32::MAX as u64);
 const _: () = assert!(CAS_READ_SINGLE_PERMITS > 0 && CAS_READ_BATCH_PERMITS > 0);
+const _: () = assert!(CAS_READ_BATCH_OBJECT_PERMITS > 0);
+const _: () = assert!(BATCH_READ_FANOUT > 1);
 const _: () = assert!(CAS_READ_BATCH_MAX_IN_FLIGHT > 0);
 const _: () = assert!(
-    CAS_READ_BATCH_PERMITS as usize + CAS_READ_SINGLE_PERMITS as usize <= CAS_READ_GLOBAL_PERMITS
+    CAS_READ_BATCH_PERMITS as usize + BATCH_READ_FANOUT * CAS_READ_BATCH_OBJECT_PERMITS as usize
+        <= CAS_READ_GLOBAL_PERMITS
 );
 const _: () = assert!(CAS_READ_GLOBAL_BUDGET_BYTES <= CONTAINER_MEMORY_BYTES);
 const _: () = assert!(
@@ -232,9 +245,10 @@ const _: () = assert!(
 );
 
 static GLOBAL_CAS_READ_BUDGET: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
-/// Batch requests hold their 22 MiB envelope while one active object read
-/// obtains the full single-read reservation. Admit only one envelope: two
-/// envelopes plus one 192 MiB object exceed the 220 MiB process-wide slice.
+/// Batch requests hold their 22 MiB envelope while their bounded object window
+/// obtains eight 24 MiB reservations. The derived admission cap is one
+/// envelope, keeping the maximum batch peak at 214 MiB within the 220 MiB
+/// process-wide slice.
 static GLOBAL_CAS_BATCH_READ_ADMISSION: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
 static GLOBAL_CAS_WRITE_BUDGET: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
 

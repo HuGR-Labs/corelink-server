@@ -20,7 +20,15 @@ class B078ContractTests(unittest.TestCase):
         route = (ROOT / "crates/corelink-container/src/routes/cas.rs").read_text()
         route += "\n" + "\n".join(
             (ROOT / "crates/corelink-container/src/routes/cas" / name).read_text()
-            for name in ("foundation.rs", "single.rs", "batch.rs", "list_delete.rs")
+            for name in (
+                "foundation_core.rs",
+                "foundation_state.rs",
+                "single_setup.rs",
+                "single_handlers.rs",
+                "batch_write.rs",
+                "batch_read.rs",
+                "list_delete.rs",
+            )
         )
         handler = (ROOT / "crates/corelink-handler-cas/src/request.rs").read_text()
         handler += (ROOT / "crates/corelink-handler-cas/src/handler.rs").read_text()
@@ -50,7 +58,7 @@ class B078ContractTests(unittest.TestCase):
         route, handler, storage = self._sources()
         openapi = (ROOT / "openapi/corelink-v1.yaml").read_text()
         docs = (ROOT / "docs/knowledge/surfaces/native-cas.md").read_text()
-        mutated = route.replace("Vec::with_capacity(hashes.len())", "Vec::new()", 1)
+        mutated = route.replace("Vec::with_capacity(BATCH_READ_FANOUT)", "Vec::new()", 1)
         gaps = verifier.assess_source(mutated, handler, storage, openapi, docs)
         self.assertIn("materialized-task-collection", gaps)
 

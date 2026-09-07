@@ -169,13 +169,13 @@ def concurrent_read_block(source: str) -> str:
 def assert_capped_read_paths(source: str) -> None:
     """Require both CAS read branches to share the pre-materialisation cap."""
     concurrent = concurrent_read_block(source)
-    if "get_capped(key, crate::routes::cas::CAS_READ_MAX_OBJECT_BYTES)" not in source:
-        raise AssertionError("CAS read helper does not enforce the 64 MiB capped storage read")
-    if "self.get_capped_for_read(&key)" not in concurrent:
+    if "get_capped(key, max_bytes)" not in source:
+        raise AssertionError("CAS read helper does not propagate the request byte ceiling")
+    if "self.get_capped_for_read(&key, max_bytes)" not in concurrent:
         raise AssertionError("concurrent CAS read path does not use the capped helper")
     if "self.client.get(&key)" in concurrent:
         raise AssertionError("concurrent CAS read path bypasses the capped helper")
-    if source.count("self.get_capped_for_read(&key)") != 2:
+    if source.count("self.get_capped_for_read(&key, max_bytes)") != 2:
         raise AssertionError("CAS concurrent and serial paths must each call the capped helper")
 
 
@@ -183,7 +183,7 @@ def mutation_self_test(source: str) -> None:
     """Prove reintroducing an uncapped concurrent GET turns the check red."""
     assert_capped_read_paths(source)
     mutant = source.replace(
-        "self.get_capped_for_read(&key)",
+        "self.get_capped_for_read(&key, max_bytes)",
         "self.client.get(&key)",
         1,
     )

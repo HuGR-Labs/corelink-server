@@ -3,9 +3,9 @@
 
 This is intentionally a small structural guard: the route is synchronous at
 the handler boundary, so the memory property must be visible in the source
-without requiring a live R2 service.  The focused Rust tests cover framing and
-ordering; this guard protects the bounded scheduler and pre-collection cap
-from a future fan-out regression.
+without requiring a live R2 service. The focused Rust tests cover framing,
+ordering, derived fanout and terminal task draining; this guard protects the
+bounded scheduler and pre-collection cap from a future regression.
 """
 
 from __future__ import annotations
@@ -38,12 +38,14 @@ def assess_source(route: str, handler: str, storage: str, openapi: str, docs: st
     required_batch = {
         "bounded-buffer": "Semaphore::new(BATCH_READ_FANOUT)" in batch and "acquire_owned()" in batch,
         "spawned-fanout": "tokio::spawn(async move" in batch and "handles.push" in batch,
+        "terminal-drain": "abort_and_drain" in batch and "pending.await" in batch,
+        "per-read-ceiling": ".with_max_bytes(BATCH_MAX_BYTES as u64)" in batch,
         "request-ceiling": "body.len() > BATCH_REQUEST_BODY_LIMIT_BYTES" in batch,
         "oversize-413": "if payload.len() + bytes.len() > BATCH_MAX_BYTES" in batch and "return batch_too_large()" in batch,
         "aggregate-ceiling": "payload.len() + bytes.len() > BATCH_MAX_BYTES" in batch,
     }
     gaps.extend(name for name, present in required_batch.items() if not present)
-    if "let mut handles: Vec<tokio::task::JoinHandle<PerHash>>" in batch and "Vec::with_capacity(hashes.len())" not in batch:
+    if "let mut handles: Vec<tokio::task::JoinHandle<PerHash>>" in batch and "Vec::with_capacity(BATCH_READ_FANOUT)" not in batch:
         gaps.append("materialized-task-collection")
 
     if "pub max_bytes: Option<u64>" not in handler:
@@ -56,7 +58,7 @@ def assess_source(route: str, handler: str, storage: str, openapi: str, docs: st
     except ContractError as error:
         gaps.append(str(error))
         read = ""
-    if read.count("self.get_capped_for_read(&key)") != 2 or "get_capped(key, crate::routes::cas::CAS_READ_MAX_OBJECT_BYTES)" not in storage:
+    if read.count("self.get_capped_for_read(&key, max_bytes)") != 2 or "get_capped(key, max_bytes)" not in storage:
         gaps.append("r2-pre-collection-cap-on-both-paths")
     if "self.client.get(&key)" in read:
         gaps.append("unbounded-r2-read")
@@ -103,7 +105,15 @@ def assess(root: Path) -> list[str]:
     route += "\n" + "\n".join(
         p.read_text(encoding="utf-8") for p in (
             root / "crates/corelink-container/src/routes/cas" / n
-            for n in ("foundation.rs", "single.rs", "batch.rs", "list_delete.rs")
+            for n in (
+                "foundation_core.rs",
+                "foundation_state.rs",
+                "single_setup.rs",
+                "single_handlers.rs",
+                "batch_write.rs",
+                "batch_read.rs",
+                "list_delete.rs",
+            )
         )
     )
     handler = (root / "crates/corelink-handler-cas/src/request.rs").read_text(encoding="utf-8")

@@ -100,6 +100,189 @@ async fn batch_read_admission_is_released_after_response_consumed() {
         .expect("recovered body");
 }
 
+#[derive(Debug)]
+struct BatchReadTrackingHandler {
+    active: Arc<std::sync::atomic::AtomicUsize>,
+    max_active: Arc<std::sync::atomic::AtomicUsize>,
+    saw_max_bytes: Arc<std::sync::atomic::AtomicBool>,
+    response_len: usize,
+    fail_hash: Option<String>,
+}
+
+impl CasReadHandler for BatchReadTrackingHandler {
+    fn read(&self, req: CasReadRequest) -> Result<CasReadResponse, CasHandlerError> {
+        use std::sync::atomic::Ordering;
+
+        let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
+        let mut observed = self.max_active.load(Ordering::SeqCst);
+        while active > observed {
+            match self.max_active.compare_exchange(
+                observed,
+                active,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => break,
+                Err(next) => observed = next,
+            }
+        }
+        if req.max_bytes == Some(BATCH_MAX_BYTES as u64) {
+            self.saw_max_bytes.store(true, Ordering::SeqCst);
+        }
+        // Give the other window tasks time to enter the storage seam. This
+        // makes the >1 concurrency assertion deterministic on multi-thread
+        // test runtimes while the production window remains budget-derived.
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let result = if self.fail_hash.as_deref() == Some(req.hash.as_str()) {
+            Err(CasHandlerError::Internal(
+                "tracked batch read failure".into(),
+            ))
+        } else {
+            Ok(CasReadResponse::new(vec![0; self.response_len], req.hash))
+        };
+        self.active.fetch_sub(1, Ordering::SeqCst);
+        result
+    }
+}
+
+fn tracking_state(read: Arc<dyn CasReadHandler>) -> CasRouteState {
+    let audit = Arc::new(InMemoryAuditSink::new());
+    let sli = Arc::new(InMemorySliObserver::new());
+    let shared = Arc::new(InMemoryCasHandler::new(audit, sli));
+    let write: Arc<dyn CasWriteHandler> = shared.clone();
+    let delete: Arc<dyn CasDeleteHandler> = shared.clone();
+    let list: Arc<dyn CasListHandler> = shared;
+    CasRouteState {
+        read,
+        write,
+        delete,
+        list,
+        tombstones: None,
+        quota: None,
+        pat_gate: None,
+        put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
+    }
+}
+
+fn batch_read_request(hashes: &[String]) -> Request<Body> {
+    let body = hashes
+        .iter()
+        .map(|hash| format!("{}\n", serde_json::json!({"hash": hash})))
+        .collect::<String>();
+    Request::builder()
+        .method(Method::POST)
+        .uri(format!("/v1/cas/{TEST_TENANT}/batch-read"))
+        .header("x-corelink-tenant-id", TEST_TENANT)
+        .header(crate::scope::SCOPE_HEADER, "cas:r")
+        .header(axum::http::header::CONTENT_TYPE, NDJSON_CONTENT_TYPE)
+        .body(Body::from(body))
+        .expect("request")
+}
+
+/// A full structured window reaches concurrency >1 but never exceeds the
+/// budget-derived eight object tasks. The request ceiling is observed by the
+/// read handler, not merely checked after the response is materialised.
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn batch_read_window_is_bounded_and_passes_object_ceiling() {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    let active = Arc::new(AtomicUsize::new(0));
+    let max_active = Arc::new(AtomicUsize::new(0));
+    let saw_max_bytes = Arc::new(AtomicBool::new(false));
+    let read = Arc::new(BatchReadTrackingHandler {
+        active: active.clone(),
+        max_active: max_active.clone(),
+        saw_max_bytes: saw_max_bytes.clone(),
+        response_len: 1,
+        fail_hash: None,
+    });
+    let hashes: Vec<String> = (0..BATCH_READ_FANOUT)
+        .map(|i| fake_hash(format!("window-{i}").as_bytes()))
+        .collect();
+    let response = router(tracking_state(read))
+        .oneshot(batch_read_request(&hashes))
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let _ = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    assert!(saw_max_bytes.load(Ordering::SeqCst));
+    let observed = max_active.load(Ordering::SeqCst);
+    assert!(observed > 1, "structured batch reads must overlap");
+    assert!(
+        observed <= BATCH_READ_FANOUT,
+        "fanout exceeded derived bound"
+    );
+    assert_eq!(active.load(Ordering::SeqCst), 0);
+}
+
+/// A read failure aborts and drains every later task before the route returns;
+/// no storage task remains active after the terminal response is selected.
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn batch_read_failure_drains_all_active_tasks_before_return() {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    let active = Arc::new(AtomicUsize::new(0));
+    let max_active = Arc::new(AtomicUsize::new(0));
+    let saw_max_bytes = Arc::new(AtomicBool::new(false));
+    let hashes: Vec<String> = (0..(BATCH_READ_FANOUT + 1))
+        .map(|i| fake_hash(format!("failure-{i}").as_bytes()))
+        .collect();
+    let read = Arc::new(BatchReadTrackingHandler {
+        active: active.clone(),
+        max_active: max_active.clone(),
+        saw_max_bytes: saw_max_bytes.clone(),
+        response_len: 1,
+        fail_hash: Some(hashes[0].clone()),
+    });
+    let response = router(tracking_state(read))
+        .oneshot(batch_read_request(&hashes))
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(saw_max_bytes.load(Ordering::SeqCst));
+    assert!(max_active.load(Ordering::SeqCst) > 1);
+    assert!(max_active.load(Ordering::SeqCst) <= BATCH_READ_FANOUT);
+    assert_eq!(
+        active.load(Ordering::SeqCst),
+        0,
+        "all spawned storage tasks must be drained before failure returns"
+    );
+}
+
+/// Aggregate payload overflow is terminal, but all already-spawned reads are
+/// still drained before the 413 reaches the caller.
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn batch_read_overflow_drains_all_active_tasks_before_return() {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    let active = Arc::new(AtomicUsize::new(0));
+    let max_active = Arc::new(AtomicUsize::new(0));
+    let saw_max_bytes = Arc::new(AtomicBool::new(false));
+    let read = Arc::new(BatchReadTrackingHandler {
+        active: active.clone(),
+        max_active: max_active.clone(),
+        saw_max_bytes: saw_max_bytes.clone(),
+        response_len: BATCH_MAX_BYTES / 2 + 1,
+        fail_hash: None,
+    });
+    let hashes: Vec<String> = (0..(BATCH_READ_FANOUT + 1))
+        .map(|i| fake_hash(format!("overflow-{i}").as_bytes()))
+        .collect();
+    let response = router(tracking_state(read))
+        .oneshot(batch_read_request(&hashes))
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    assert!(saw_max_bytes.load(Ordering::SeqCst));
+    assert!(max_active.load(Ordering::SeqCst) > 1);
+    assert!(max_active.load(Ordering::SeqCst) <= BATCH_READ_FANOUT);
+    assert_eq!(active.load(Ordering::SeqCst), 0);
+}
+
 /// B-077 HOLD: the single GET keeps its tenant slot until its response
 /// stream is consumed, not merely until the handler returns.
 #[tokio::test]

@@ -77,89 +77,210 @@ async fn handle_batch_read(
     let mut manifest = String::new();
     let mut payload: Vec<u8> = Vec::new();
 
-    // The process-wide admission gate allows one batch envelope at a time, so
-    // execute the storage reads serially in request order. Each object owns the
-    // full single-read reservation until its bytes have been appended (or its
-    // outcome has been recorded), keeping the 220 MiB bound exact and making
-    // cancellation/detached-task cleanup unnecessary.
-    for hash in &hashes {
-        if !super::ac::is_canonical_digest(hash) {
-            manifest.push_str(&format!(
-                "{}\n",
-                serde_json::json!({"hash": hash, "len": 0, "status": "absent"})
-            ));
-            continue;
-        }
+    // Per-hash outcomes are reassembled in request order. A completed `Ok`
+    // outcome retains its weighted permit until its bytes are appended, so the
+    // producer drains the oldest task whenever the derived window is full and
+    // can never strand a reservation behind later work.
+    enum PerHash {
+        /// Non-canonical hash, or a `NotFound` read ⇒ 404-class `absent`.
+        Absent,
+        /// Tombstoned `(tenant, hash)` ⇒ 410-class `gone`.
+        Gone,
+        /// Present blob bytes held with the 24 MiB object reservation.
+        Ok {
+            bytes: Vec<u8>,
+            _global_permit: tokio::sync::OwnedSemaphorePermit,
+        },
+        /// Process-wide budget unavailable; fail the whole batch closed.
+        BudgetFault,
+        /// Tombstone gate lookup faulted ⇒ fail CLOSED (503) for the whole batch.
+        TombstoneFault,
+        /// Read faulted (non-NotFound) ⇒ propagate via `map_err`.
+        ReadErr(CasHandlerError),
+    }
 
-        let _global_permit = match acquire_global_cas_read_budget(
-            CAS_READ_SINGLE_PERMITS,
-            "batch-read-object",
-        )
-        .await
-        {
-            Ok(permit) => permit,
-            Err(_) => {
-                return (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "global read budget unavailable",
-                )
-                    .into_response();
-            }
-        };
-
-        // Tombstone gate FIRST (mirrors handle_read): an erased blob is
-        // `gone`, never resurrected, never reported absent. A lookup fault
-        // fails CLOSED for the whole batch (the erase write-side is the source
-        // of truth).
-        if let Some(tombstones) = state.tombstones.as_ref() {
-            match tombstones.is_tombstoned(&auth.0, hash).await {
-                Ok(true) => {
+    // Fan out on worker tasks because the synchronous storage trait bridges its
+    // async R2 client with `block_in_place`, which is valid on tokio worker
+    // threads but not on `spawn_blocking` threads. The admission gate reserves
+    // one envelope; this local window is the separately-derived eight-object
+    // bound (`(220 - 22) / 24`).
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(BATCH_READ_FANOUT));
+    let mut handles: Vec<tokio::task::JoinHandle<PerHash>> = Vec::with_capacity(BATCH_READ_FANOUT);
+    let mut append_outcome =
+        |hash: &str, outcome: PerHash| -> Result<(), axum::response::Response> {
+            match outcome {
+                PerHash::Absent => {
+                    manifest.push_str(&format!(
+                        "{}\n",
+                        serde_json::json!({"hash": hash, "len": 0, "status": "absent"})
+                    ));
+                    Ok(())
+                }
+                PerHash::Gone => {
                     manifest.push_str(&format!(
                         "{}\n",
                         serde_json::json!({"hash": hash, "len": 0, "status": "gone"})
                     ));
-                    continue;
+                    Ok(())
                 }
-                Ok(false) => {}
-                Err(e) => {
-                    tracing::warn!(error = %e, "cas batch-read: tombstone gate lookup failed; failing CLOSED (503)");
-                    return (
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "tombstone gate unavailable",
-                    )
-                        .into_response();
+                PerHash::Ok {
+                    bytes,
+                    _global_permit: _,
+                } => {
+                    if payload.len() + bytes.len() > BATCH_MAX_BYTES {
+                        return Err(batch_too_large());
+                    }
+                    manifest.push_str(&format!(
+                        "{}\n",
+                        serde_json::json!({"hash": hash, "len": bytes.len(), "status": "ok"})
+                    ));
+                    payload.extend_from_slice(&bytes);
+                    Ok(())
                 }
+                PerHash::BudgetFault => Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "global read budget unavailable",
+                )
+                    .into_response()),
+                PerHash::TombstoneFault => Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "tombstone gate unavailable",
+                )
+                    .into_response()),
+                PerHash::ReadErr(error) => Err(map_err(error)),
+            }
+        };
+    let mut result_hashes = hashes.iter();
+
+    macro_rules! abort_and_drain {
+        ($handles:expr) => {{
+            for pending in $handles.iter() {
+                pending.abort();
+            }
+            while let Some(pending) = $handles.pop() {
+                let _ = pending.await;
+            }
+        }};
+    }
+
+    for hash in &hashes {
+        // Acquire before spawning so the number of live tasks never exceeds the
+        // derived window. The semaphore is local and never closed, but a
+        // closed result still fails closed after draining any earlier tasks.
+        let permit = match Arc::clone(&semaphore).acquire_owned().await {
+            Ok(permit) => permit,
+            Err(_) => {
+                abort_and_drain!(handles);
+                return map_err(CasHandlerError::Internal(
+                    "batch-read semaphore closed".into(),
+                ));
+            }
+        };
+        let read = state.read.clone();
+        let tombstones = state.tombstones.clone();
+        let tenant = auth.0.clone();
+        let hash = hash.clone();
+        handles.push(tokio::spawn(async move {
+            let _window_permit = permit;
+            // Non-canonical hash ⇒ it cannot name a stored blob; report absent
+            // (it is not a framing error and must not abort the batch).
+            if !super::ac::is_canonical_digest(&hash) {
+                return PerHash::Absent;
+            }
+            let global_permit = match acquire_global_cas_read_budget(
+                CAS_READ_BATCH_OBJECT_PERMITS,
+                "batch-read-object",
+            )
+            .await
+            {
+                Ok(permit) => permit,
+                Err(_) => return PerHash::BudgetFault,
+            };
+            // Tombstone gate FIRST (mirrors handle_read): an erased blob is
+            // `gone`, never resurrected, never reported absent. A lookup fault
+            // fails CLOSED for the whole batch (the erase write-side is the
+            // source of truth).
+            if let Some(tombstones) = tombstones.as_ref() {
+                match tombstones.is_tombstoned(&tenant, &hash).await {
+                    Ok(true) => return PerHash::Gone,
+                    Ok(false) => {}
+                    Err(e) => {
+                        tracing::warn!(error = %e, "cas batch-read: tombstone gate lookup failed; failing CLOSED (503)");
+                        return PerHash::TombstoneFault;
+                    }
+                }
+            }
+            let req = CasReadRequest::new(
+                tenant.clone(),
+                hash.clone(),
+                format!("anon@{tenant}"),
+                tenant.clone(),
+                now_ms,
+            )
+            .with_max_bytes(BATCH_MAX_BYTES as u64);
+            // Sync `read()` — `block_in_place` inside it is valid because this
+            // is a multi-thread-runtime worker thread (`tokio::spawn`).
+            match read.read(req) {
+                Ok(resp) => PerHash::Ok {
+                    bytes: resp.bytes,
+                    _global_permit: global_permit,
+                },
+                Err(CasHandlerError::NotFound { .. }) => PerHash::Absent,
+                Err(e) => PerHash::ReadErr(e),
+            }
+        }));
+
+        // Drain the oldest result as soon as the bounded window is full. On a
+        // terminal result, abort and await every pending task before returning.
+        if handles.len() == BATCH_READ_FANOUT {
+            let handle = handles.remove(0);
+            let outcome = match handle.await {
+                Ok(outcome) => outcome,
+                Err(_) => {
+                    abort_and_drain!(handles);
+                    return map_err(CasHandlerError::Internal("batch read task failed".into()));
+                }
+            };
+            let result_hash = match result_hashes.next() {
+                Some(hash) => hash,
+                None => {
+                    abort_and_drain!(handles);
+                    return map_err(CasHandlerError::Internal(
+                        "batch read result count mismatch".into(),
+                    ));
+                }
+            };
+            if let Err(response) = append_outcome(result_hash, outcome) {
+                abort_and_drain!(handles);
+                return response;
             }
         }
+    }
 
-        let req = CasReadRequest::new(
-            auth.0.clone(),
-            hash.clone(),
-            format!("anon@{}", auth.0),
-            auth.0.clone(),
-            now_ms,
-        );
-        // Sync `read()` deliberately mirrors the single-object read path. Its
-        // implementation uses `block_in_place` to bridge the async storage
-        // client without detaching this batch request from the permit scope.
-        match state.read.read(req) {
-            Ok(resp) => {
-                if payload.len() + resp.bytes.len() > BATCH_MAX_BYTES {
-                    return batch_too_large();
-                }
-                manifest.push_str(&format!(
-                    "{}\n",
-                    serde_json::json!({"hash": hash, "len": resp.bytes.len(), "status": "ok"})
-                ));
-                payload.extend_from_slice(&resp.bytes);
+    // Drain the tail in request order. This second drain has the same terminal
+    // cleanup rule as the full-window path; no `JoinHandle` may outlive the
+    // response or an error return.
+    while !handles.is_empty() {
+        let handle = handles.remove(0);
+        let outcome = match handle.await {
+            Ok(outcome) => outcome,
+            Err(_) => {
+                abort_and_drain!(handles);
+                return map_err(CasHandlerError::Internal("batch read task failed".into()));
             }
-            Err(CasHandlerError::NotFound { .. }) => {
-                manifest.push_str(&format!(
-                    "{}\n",
-                    serde_json::json!({"hash": hash, "len": 0, "status": "absent"})
+        };
+        let result_hash = match result_hashes.next() {
+            Some(hash) => hash,
+            None => {
+                abort_and_drain!(handles);
+                return map_err(CasHandlerError::Internal(
+                    "batch read result count mismatch".into(),
                 ));
             }
-            Err(e) => return map_err(e),
+        };
+        if let Err(response) = append_outcome(result_hash, outcome) {
+            abort_and_drain!(handles);
+            return response;
         }
     }
     // Stream the manifest and payload as separate frames. Keeping both guards

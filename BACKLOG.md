@@ -7427,8 +7427,9 @@ last-verified: 2026-08-26
 
 **CLOSED 2026-09-05.** The native CAS read path now has both bounds: the existing
 per-tenant eight-read pool and a process-wide weighted byte budget of half the
-measured 1024 MiB container. Single-object GETs reserve 64 MiB; `batch-read`
-reserves its 8 MiB response envelope and each fan-out object reserves 64 MiB.
+measured 1024 MiB container. Single-object GETs reserve 196 MiB; `batch-read`
+reserves its 22 MiB response envelope and each of its eight fan-out objects
+reserves 24 MiB, for a derived 214 MiB peak.
 The singleton semaphore is shared by every
 `CasRouteState`, uses FIFO acquisition, and is held by RAII through handler
 return so cancellation, errors and panics release it. A 250 ms wait timeout or
@@ -9333,9 +9334,10 @@ last-verified: 2026-09-05
 
 Único achado classificado como alto entre os 34 do pen-test de 2026-08-30, sobrevivendo à
 refutação adversarial. Resolvido: `handle_batch_read` (`crates/corelink-container/src/routes/cas.rs`)
-agora usa um stream ordenado com `BATCH_READ_FANOUT = 16`, passa o teto de
-`BATCH_MAX_BYTES = 8 MiB` ao storage antes da coleta do corpo e mantém a checagem
-agregada da resposta.
+agora usa uma janela ordenada com `BATCH_READ_FANOUT = 8`, derivada do orçamento
+global: envelope de 22 MiB + oito reservas de objeto de 24 MiB = pico de 214 MiB
+dentro dos 220 MiB. Cada leitura passa o teto de `BATCH_MAX_BYTES = 8 MiB` ao
+storage antes da coleta do corpo e mantém a checagem agregada da resposta.
 
 Uma única requisição autenticada não pode mais reter 2.000 respostas concluídas: os
 resultados são consumidos à medida que o stream avança, e um objeto que excede o teto
@@ -9354,10 +9356,12 @@ verify: |
   python3 -S scripts/verify_b078_batch_read.py
 verify-means: |
   done — the executable guard checks the actual batch-reader section for a
-  `BATCH_READ_FANOUT`-bounded stream, per-read `BATCH_MAX_BYTES` ceiling,
-  aggregate 8 MiB check, and 413 mapping for an object refused before body
-  collection. It also checks the in-memory pre-clone guard, both production R2
-  `get_capped` paths, the OpenAPI 413 contract, and the OKF surface prose.
+  `BATCH_READ_FANOUT`-bounded stream (the fanout is derived from the shared
+  capacity arithmetic), per-read `BATCH_MAX_BYTES` ceiling, aggregate 8 MiB check,
+  and 413 mapping for an object refused before body collection. It also checks the
+  in-memory pre-clone guard, both production R2 `get_capped` paths, the OpenAPI
+  413 contract, and the OKF surface prose. Terminal failures abort and drain all
+  pending read tasks before returning.
   `tests/test_b078_batch_read_contract.py` supplies adversarial mutations for
   an unbounded buffer and the former `Vec<JoinHandle>` materialization.
 last-verified: 2026-09-05

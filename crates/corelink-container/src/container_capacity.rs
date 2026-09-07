@@ -43,6 +43,24 @@ pub const CAS_WRITE_BATCH_PAYLOAD_LIMIT_BYTES: u64 = 8 * MEMORY_BUDGET_UNIT_BYTE
 pub const CAS_READ_BATCH_PEAK_BYTES: u64 = CAS_READ_BATCH_BODY_LIMIT_BYTES
     + CAS_BATCH_PARSE_METADATA_BYTES
     + CAS_WRITE_BATCH_PAYLOAD_LIMIT_BYTES;
+/// Peak bytes charged for one in-flight batch-read object. Batch reads cap each
+/// object at the 8 MiB aggregate payload ceiling and reserve the same three
+/// worst-case copies as a BYOK single read (SDK bytes, handler `Vec`, and
+/// plaintext).
+pub const CAS_READ_BATCH_OBJECT_PEAK_BYTES: u64 =
+    CAS_READ_COPY_MULTIPLIER * CAS_WRITE_BATCH_PAYLOAD_LIMIT_BYTES;
+/// Maximum number of object reads that fit beside one admitted batch envelope.
+/// This is deliberately derived from the shared 220 MiB slice rather than a
+/// hand-tuned scheduler constant: `(220 - 22) / 24 = 8`.
+pub const CAS_READ_BATCH_FANOUT: usize = ((CAS_READ_GLOBAL_BUDGET_BYTES
+    - CAS_READ_BATCH_PEAK_BYTES)
+    / CAS_READ_BATCH_OBJECT_PEAK_BYTES) as usize;
+/// Maximum number of batch envelopes that may be admitted while reserving a
+/// complete fanout window for each envelope. With the deployed values this is
+/// `220 / (22 + 8 * 24) = 1`, so two envelopes cannot overcommit the slice.
+pub const CAS_READ_BATCH_MAX_IN_FLIGHT: usize = (CAS_READ_GLOBAL_BUDGET_BYTES
+    / (CAS_READ_BATCH_PEAK_BYTES + CAS_READ_BATCH_FANOUT as u64 * CAS_READ_BATCH_OBJECT_PEAK_BYTES))
+    as usize;
 /// Peak bytes for one single-object read, including the worst BYOK copies and
 /// bounded request metadata.
 pub const CAS_READ_SINGLE_PEAK_BYTES: u64 =
@@ -148,6 +166,12 @@ pub fn validate_runtime_budget() -> Result<(), &'static str> {
     }
     if ARGON2_VERIFY_PERMITS == 0
         || CAS_READ_GLOBAL_BUDGET_BYTES < CAS_READ_SINGLE_PEAK_BYTES + CAS_READ_BATCH_PEAK_BYTES
+        || CAS_READ_BATCH_OBJECT_PEAK_BYTES == 0
+        || CAS_READ_BATCH_FANOUT < 2
+        || CAS_READ_BATCH_MAX_IN_FLIGHT == 0
+        || CAS_READ_BATCH_PEAK_BYTES
+            + CAS_READ_BATCH_FANOUT as u64 * CAS_READ_BATCH_OBJECT_PEAK_BYTES
+            > CAS_READ_GLOBAL_BUDGET_BYTES
         || CAS_WRITE_GLOBAL_BUDGET_BYTES < CAS_WRITE_SINGLE_PEAK_BYTES
         || CAS_WRITE_GLOBAL_BUDGET_BYTES < CAS_WRITE_BATCH_PEAK_BYTES
         || BLOOM_CACHE_MEMORY_BUDGET_BYTES < BLOOM_CACHE_BIT_ARRAY_BYTES
@@ -163,6 +187,24 @@ pub fn validate_runtime_budget() -> Result<(), &'static str> {
 const _: () = assert!(CONTAINER_MEMORY_BYTES == 1024 * 1024 * 1024);
 const _: () = assert!(CONTAINER_VCPU_MILLICORES == 250);
 const _: () = assert!(CAS_READ_GLOBAL_BUDGET_BYTES % MEMORY_BUDGET_UNIT_BYTES == 0);
+const _: () = assert!(CAS_READ_BATCH_OBJECT_PEAK_BYTES == 24 * MEMORY_BUDGET_UNIT_BYTES);
+const _: () = assert!(CAS_READ_BATCH_FANOUT > 1);
+const _: () = assert!(CAS_READ_BATCH_MAX_IN_FLIGHT > 0);
+const _: () = assert!(
+    CAS_READ_BATCH_PEAK_BYTES + CAS_READ_BATCH_FANOUT as u64 * CAS_READ_BATCH_OBJECT_PEAK_BYTES
+        <= CAS_READ_GLOBAL_BUDGET_BYTES
+);
+const _: () = assert!(
+    CAS_READ_BATCH_PEAK_BYTES
+        + (CAS_READ_BATCH_FANOUT as u64 + 1) * CAS_READ_BATCH_OBJECT_PEAK_BYTES
+        > CAS_READ_GLOBAL_BUDGET_BYTES
+);
+const _: () = assert!(
+    CAS_READ_BATCH_MAX_IN_FLIGHT as u64
+        * (CAS_READ_BATCH_PEAK_BYTES
+            + CAS_READ_BATCH_FANOUT as u64 * CAS_READ_BATCH_OBJECT_PEAK_BYTES)
+        <= CAS_READ_GLOBAL_BUDGET_BYTES
+);
 const _: () = assert!(CAS_WRITE_GLOBAL_BUDGET_BYTES % MEMORY_BUDGET_UNIT_BYTES == 0);
 const _: () =
     assert!(CAS_READ_GLOBAL_BUDGET_BYTES >= CAS_READ_SINGLE_PEAK_BYTES + CAS_READ_BATCH_PEAK_BYTES);
@@ -253,6 +295,32 @@ mod tests {
             0,
             CONTAINER_VCPU_MILLICORES,
         ));
+    }
+
+    #[test]
+    fn batch_read_fanout_is_derived_from_the_budget() {
+        assert_eq!(
+            CAS_READ_BATCH_OBJECT_PEAK_BYTES,
+            24 * MEMORY_BUDGET_UNIT_BYTES
+        );
+        assert_eq!(CAS_READ_BATCH_FANOUT, 8);
+        assert_eq!(CAS_READ_BATCH_MAX_IN_FLIGHT, 1);
+        assert_eq!(
+            CAS_READ_BATCH_PEAK_BYTES
+                + CAS_READ_BATCH_FANOUT as u64 * CAS_READ_BATCH_OBJECT_PEAK_BYTES,
+            214 * MEMORY_BUDGET_UNIT_BYTES
+        );
+        assert!(
+            CAS_READ_BATCH_MAX_IN_FLIGHT as u64
+                * (CAS_READ_BATCH_PEAK_BYTES
+                    + CAS_READ_BATCH_FANOUT as u64 * CAS_READ_BATCH_OBJECT_PEAK_BYTES)
+                <= CAS_READ_GLOBAL_BUDGET_BYTES
+        );
+        assert!(
+            CAS_READ_BATCH_PEAK_BYTES
+                + (CAS_READ_BATCH_FANOUT as u64 + 1) * CAS_READ_BATCH_OBJECT_PEAK_BYTES
+                > CAS_READ_GLOBAL_BUDGET_BYTES
+        );
     }
 
     #[test]

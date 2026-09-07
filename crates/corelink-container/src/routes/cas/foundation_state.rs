@@ -337,10 +337,10 @@ impl FromRequestParts<CasRouteState> for GlobalCasBatchReadBudgetGuard {
         _state: &CasRouteState,
     ) -> Result<Self, Self::Rejection> {
         // The batch envelope is intentionally admitted through a second,
-        // weighted gate. The handler later acquires the full single-object
-        // reservation while this 22 MiB envelope remains held; the admission
-        // cap prevents two envelopes plus one object from exceeding the
-        // process-wide 220 MiB slice.
+        // weighted gate. The handler later acquires the derived 24 MiB
+        // reservation for each object in its eight-task window while this
+        // 22 MiB envelope remains held; the admission cap prevents two full
+        // envelope-plus-window peaks from exceeding the 220 MiB slice.
         let admission = acquire_global_cas_batch_read_admission().await?;
         Ok(Self {
             _permit: acquire_global_cas_read_budget(CAS_READ_BATCH_PERMITS, "batch-read").await?,
