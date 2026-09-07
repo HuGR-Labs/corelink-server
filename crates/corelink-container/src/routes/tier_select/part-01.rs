@@ -22,7 +22,10 @@ pub trait TierSelectAudit {
 ///   6. persist; release lock
 ///
 /// The lock is released on every terminal error path so the tenant can retry.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the public orchestration API preserves its stable argument order"
+)]
 pub async fn orchestrate_tier_select<S, C, A>(
     store: &S,
     checkout: &C,
@@ -79,7 +82,10 @@ where
     result
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the internal orchestration helper mirrors the public API"
+)]
 async fn orchestrate_locked<S, C, A>(
     store: &S,
     checkout: &C,

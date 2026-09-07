@@ -1,8 +1,8 @@
 /// Parse + validate the `{tenant_id}` path capture as a lowercase
 /// hyphenated UUID.
-#[allow(clippy::result_large_err)]
-fn parse_tenant_uuid(raw: &str) -> Result<Uuid, Response> {
-    Uuid::parse_str(raw).map_err(|_| (StatusCode::BAD_REQUEST, "invalid tenant_id").into_response())
+fn parse_tenant_uuid(raw: &str) -> Result<Uuid, Box<Response>> {
+    Uuid::parse_str(raw)
+        .map_err(|_| Box::new((StatusCode::BAD_REQUEST, "invalid tenant_id").into_response()))
 }
 
 /// Constant-time verification of the operator shared secret.
@@ -48,12 +48,11 @@ fn internal_auth_ok(expected: Option<&Arc<str>>, headers: &HeaderMap) -> bool {
 ///
 /// Returns the parsed [`PilotAdminScope`] on success; otherwise a
 /// fully-formed `Response`.
-#[allow(clippy::result_large_err)]
 fn require_admin_scope(
     state: &PilotAdminRouteState,
     headers: &HeaderMap,
     target_tenant: Option<Uuid>,
-) -> Result<PilotAdminScope, Response> {
+) -> Result<PilotAdminScope, Box<Response>> {
     let now_ms = state.wall_clock.now_ms();
 
     // PRIMARY boundary (fail-CLOSED): the operator-only shared secret.
@@ -74,11 +73,11 @@ fn require_admin_scope(
                 "reason": "missing/invalid x-corelink-internal-auth",
             }),
         };
-        return Err(emit_or_503(
+        return Err(Box::new(emit_or_503(
             state,
             row,
             (StatusCode::FORBIDDEN, "operator auth required").into_response(),
-        ));
+        )));
     }
 
     let principal = headers
@@ -143,11 +142,11 @@ fn require_admin_scope(
                     },
                 }),
             };
-            return Err(emit_or_503(
+            return Err(Box::new(emit_or_503(
                 state,
                 row,
                 (StatusCode::FORBIDDEN, "admin scope required").into_response(),
-            ));
+            )));
         }
         let bound_tenant = headers
             .get(ADMIN_TENANT_HEADER)
@@ -173,11 +172,11 @@ fn require_admin_scope(
                     "target_tenant": target.to_string(),
                 }),
             };
-            return Err(emit_or_503(
+            return Err(Box::new(emit_or_503(
                 state,
                 row,
                 (StatusCode::FORBIDDEN, "cross-tenant admin probe").into_response(),
-            ));
+            )));
         }
     }
     Ok(scope)
