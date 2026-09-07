@@ -193,20 +193,14 @@ const CAS_READ_SINGLE_PERMITS: u32 =
     (crate::container_capacity::CAS_READ_SINGLE_PEAK_BYTES / CAS_READ_BUDGET_UNIT_BYTES) as u32;
 const CAS_READ_BATCH_PERMITS: u32 =
     (crate::container_capacity::CAS_READ_BATCH_PEAK_BYTES / CAS_READ_BUDGET_UNIT_BYTES) as u32;
-/// A batch already owns its 22 MiB envelope reservation.  A live object read
-/// therefore needs only the delta to the single-read peak; charging the full
-/// single-read peak here double-counts the shared batch envelope and lets two
-/// batches deadlock while each waits for 196 MiB that cannot fit behind the
-/// other batch's 22 MiB reservation.
-const CAS_READ_BATCH_OBJECT_PERMITS: u32 = CAS_READ_SINGLE_PERMITS - CAS_READ_BATCH_PERMITS;
 /// Maximum number of batch requests that may hold their envelope reservation
-/// concurrently while still leaving room for one object's delta reservation.
-/// This is deliberately derived from the weighted budget rather than tuned by
-/// hand: with the deployed 220 MiB / 22 MiB / 174 MiB values it admits two
-/// envelopes and one object (218 MiB total).
-const CAS_READ_BATCH_MAX_IN_FLIGHT: usize = (CAS_READ_GLOBAL_PERMITS
-    - CAS_READ_BATCH_OBJECT_PERMITS as usize)
-    / CAS_READ_BATCH_PERMITS as usize;
+/// concurrently while leaving room for one full single-object read.  The
+/// conservative one-envelope invariant is derived from the weighted budget:
+/// `22 MiB + 196 MiB = 218 MiB <= 220 MiB`. Two envelopes plus one object
+/// would be `44 MiB + 192 MiB = 236 MiB`, so admitting two is unsound even
+/// though the object reservation overlaps one batch's metadata on paper.
+const CAS_READ_BATCH_MAX_IN_FLIGHT: usize =
+    CAS_READ_GLOBAL_PERMITS / (CAS_READ_BATCH_PERMITS as usize + CAS_READ_SINGLE_PERMITS as usize);
 const CAS_WRITE_GLOBAL_BUDGET_BYTES: u64 = crate::container_capacity::CAS_WRITE_GLOBAL_BUDGET_BYTES;
 const CAS_WRITE_SINGLE_PERMITS: u32 =
     (crate::container_capacity::CAS_WRITE_SINGLE_PEAK_BYTES / CAS_READ_BUDGET_UNIT_BYTES) as u32;
@@ -220,8 +214,10 @@ const _: () = assert!(CAS_READ_GLOBAL_BUDGET_BYTES > 0);
 const _: () = assert!(CAS_READ_GLOBAL_BUDGET_BYTES % CAS_READ_BUDGET_UNIT_BYTES == 0);
 const _: () = assert!(CAS_READ_GLOBAL_BUDGET_BYTES / CAS_READ_BUDGET_UNIT_BYTES <= u32::MAX as u64);
 const _: () = assert!(CAS_READ_SINGLE_PERMITS > 0 && CAS_READ_BATCH_PERMITS > 0);
-const _: () = assert!(CAS_READ_BATCH_OBJECT_PERMITS > 0);
 const _: () = assert!(CAS_READ_BATCH_MAX_IN_FLIGHT > 0);
+const _: () = assert!(
+    CAS_READ_BATCH_PERMITS as usize + CAS_READ_SINGLE_PERMITS as usize <= CAS_READ_GLOBAL_PERMITS
+);
 const _: () = assert!(CAS_READ_GLOBAL_BUDGET_BYTES <= CONTAINER_MEMORY_BYTES);
 const _: () = assert!(
     crate::container_capacity::CAS_READ_SINGLE_PEAK_BYTES
@@ -236,10 +232,9 @@ const _: () = assert!(
 );
 
 static GLOBAL_CAS_READ_BUDGET: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
-/// Batch requests hold their 22 MiB envelope while an object read obtains the
-/// remaining 174 MiB delta.  Admit only as many envelopes as can coexist with
-/// one such delta; otherwise several envelopes could consume all 220 MiB and
-/// leave every request waiting on the same impossible reservation.
+/// Batch requests hold their 22 MiB envelope while one active object read
+/// obtains the full single-read reservation. Admit only one envelope: two
+/// envelopes plus one 192 MiB object exceed the 220 MiB process-wide slice.
 static GLOBAL_CAS_BATCH_READ_ADMISSION: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
 static GLOBAL_CAS_WRITE_BUDGET: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
 

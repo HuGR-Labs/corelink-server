@@ -34,12 +34,12 @@ async fn batch_read_below_limit_releases_slot() {
     );
 }
 
-/// Two concurrent batch reads must not each hold their 22 MiB envelope while
-/// waiting for an impossible full 196 MiB object reservation. The weighted
-/// object delta plus bounded batch admission lets one object read proceed at a
-/// time while preserving the process-wide 220 MiB ceiling.
+/// Batch admission is one-at-a-time because one envelope plus one full object
+/// peak is the safe 220 MiB bound. The admission permit must remain held while
+/// the response stream is outstanding, then become available again after the
+/// stream is consumed.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn concurrent_batch_reads_do_not_deadlock_global_budget() {
+async fn batch_read_admission_is_released_after_response_consumed() {
     let state = fixture();
     let bytes = b"concurrent-batch-read".to_vec();
     let hash = fake_hash(&bytes);
@@ -68,22 +68,36 @@ async fn concurrent_batch_reads_do_not_deadlock_global_budget() {
             )))
             .expect("request")
     };
-    let (left, right) = tokio::time::timeout(std::time::Duration::from_secs(2), async {
-        tokio::join!(
-            router(state.clone()).oneshot(request()),
-            router(state.clone()).oneshot(request()),
-        )
-    })
+    let first = router(state.clone())
+        .oneshot(request())
+        .await
+        .expect("first response");
+    assert_eq!(first.status(), StatusCode::OK);
+
+    // The first response has not been consumed, so its batch envelope and
+    // admission permit are still live. A second batch is bounded backpressure,
+    // not a weighted-budget deadlock or an unbounded queue.
+    let blocked = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        router(state.clone()).oneshot(request()),
+    )
     .await
-    .expect("concurrent batch reads must complete within the permit timeout");
-    let left = left.expect("left response");
-    let right = right.expect("right response");
-    assert_eq!(left.status(), StatusCode::OK);
-    assert_eq!(right.status(), StatusCode::OK);
-    let _ = tokio::join!(
-        axum::body::to_bytes(left.into_body(), usize::MAX),
-        axum::body::to_bytes(right.into_body(), usize::MAX),
-    );
+    .expect("admission timeout must be bounded")
+    .expect("second response");
+    assert_eq!(blocked.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+    let _ = axum::body::to_bytes(first.into_body(), usize::MAX)
+        .await
+        .expect("first body");
+
+    let recovered = router(state)
+        .oneshot(request())
+        .await
+        .expect("recovered response");
+    assert_eq!(recovered.status(), StatusCode::OK);
+    let _ = axum::body::to_bytes(recovered.into_body(), usize::MAX)
+        .await
+        .expect("recovered body");
 }
 
 /// B-077 HOLD: the single GET keeps its tenant slot until its response

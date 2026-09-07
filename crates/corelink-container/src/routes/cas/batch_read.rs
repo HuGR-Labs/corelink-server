@@ -85,7 +85,7 @@ async fn handle_batch_read(
         Absent,
         /// Tombstoned `(tenant, hash)` ⇒ 410-class `gone`.
         Gone,
-        /// Present blob bytes held with the per-object delta reservation.
+        /// Present blob bytes held with the full single-object reservation.
         Ok {
             bytes: Vec<u8>,
             _global_permit: tokio::sync::OwnedSemaphorePermit,
@@ -106,12 +106,12 @@ async fn handle_batch_read(
     // runtime WORKER thread — spawn_blocking threads are not workers and would
     // panic.
     //
-    // The global batch envelope is already reserved by the extractor. A live
-    // object therefore acquires only the single-read delta (174 MiB), not the
-    // full single-read peak (196 MiB). The FIFO drain below is important: a
-    // completed task keeps that delta in its outcome until its bytes are
-    // appended, so the producer must never fill a second window while the
-    // first result is waiting to be consumed.
+    // The global batch envelope is already reserved by the extractor. The
+    // admission gate allows one such envelope at a time, and a live object
+    // acquires the full single-read peak (196 MiB). The FIFO drain below is
+    // important: a completed task keeps that reservation in its outcome until
+    // its bytes are appended, so the producer must never fill a second window
+    // while the first result is waiting to be consumed.
     let semaphore = Arc::new(tokio::sync::Semaphore::new(BATCH_READ_FANOUT));
     let mut handles: Vec<tokio::task::JoinHandle<PerHash>> = Vec::with_capacity(hashes.len());
     let mut append_outcome = |hash: &str, outcome: PerHash| match outcome {
@@ -156,7 +156,11 @@ async fn handle_batch_read(
         PerHash::ReadErr(error) => Err(map_err(error)),
     };
     let mut result_hashes = hashes.iter();
+    let mut terminal_response: Option<axum::response::Response> = None;
     for hash in &hashes {
+        if terminal_response.is_some() {
+            break;
+        }
         // Acquire the permit BEFORE spawning so the in-flight count is bounded
         // to BATCH_READ_FANOUT (permit is moved into the task and held for its
         // lifetime). The semaphore is never closed here, so `Err` (closed) is
@@ -165,9 +169,13 @@ async fn handle_batch_read(
         let permit = match Arc::clone(&semaphore).acquire_owned().await {
             Ok(p) => p,
             Err(_) => {
-                return map_err(CasHandlerError::Internal(
+                terminal_response = Some(map_err(CasHandlerError::Internal(
                     "batch-read semaphore closed".into(),
-                ))
+                )));
+                for pending in &handles {
+                    pending.abort();
+                }
+                break;
             }
         };
         let read = state.read.clone();
@@ -183,7 +191,7 @@ async fn handle_batch_read(
                 return PerHash::Absent;
             }
             let global_permit = match acquire_global_cas_read_budget(
-                CAS_READ_BATCH_OBJECT_PERMITS,
+                CAS_READ_SINGLE_PERMITS,
                 "batch-read-object",
             )
             .await
@@ -236,21 +244,36 @@ async fn handle_batch_read(
         if handles.len() == BATCH_READ_FANOUT {
             let handle = handles.remove(0);
             let outcome = match handle.await {
-                Ok(o) => o,
+                Ok(o) => Some(o),
                 Err(_join_err) => {
-                    return map_err(CasHandlerError::Internal("batch read task failed".into()));
+                    terminal_response = Some(map_err(CasHandlerError::Internal(
+                        "batch read task failed".into(),
+                    )));
+                    for pending in &handles {
+                        pending.abort();
+                    }
+                    None
                 }
             };
-            let result_hash = match result_hashes.next() {
-                Some(hash) => hash,
-                None => {
-                    return map_err(CasHandlerError::Internal(
-                        "batch read result count mismatch".into(),
-                    ))
+            if let Some(outcome) = outcome {
+                let result_hash = match result_hashes.next() {
+                    Some(hash) => hash,
+                    None => {
+                        terminal_response = Some(map_err(CasHandlerError::Internal(
+                            "batch read result count mismatch".into(),
+                        )));
+                        for pending in &handles {
+                            pending.abort();
+                        }
+                        continue;
+                    }
+                };
+                if let Err(response) = append_outcome(result_hash, outcome) {
+                    terminal_response = Some(response);
+                    for pending in &handles {
+                        pending.abort();
+                    }
                 }
-            };
-            if let Err(response) = append_outcome(result_hash, outcome) {
-                return response;
             }
         }
     }
@@ -258,27 +281,54 @@ async fn handle_batch_read(
     // Reassemble IN push order (== hash order). This ordering is LOAD-BEARING:
     // the client slices the concatenated payload by the manifest `len`s, so the
     // manifest lines and the payload segments must both follow request order.
+    // On a terminal error, the producer stops before the next window, aborts
+    // the at-most-(BATCH_READ_FANOUT - 1) pending tasks, and still awaits every
+    // handle here. That bounded cancellation/drain keeps read and permit
+    // lifetimes inside this request rather than detaching work after an error.
     while !handles.is_empty() {
         let handle = handles.remove(0);
         let outcome = match handle.await {
-            Ok(o) => o,
+            Ok(o) => Some(o),
             // A spawned task panicked (or was cancelled) ⇒ internal read
             // failure. Map to the same 500 surface as a generic read error.
             Err(_join_err) => {
-                return map_err(CasHandlerError::Internal("batch read task failed".into()));
+                if terminal_response.is_none() {
+                    terminal_response = Some(map_err(CasHandlerError::Internal(
+                        "batch read task failed".into(),
+                    )));
+                    for pending in &handles {
+                        pending.abort();
+                    }
+                }
+                None
             }
         };
-        let result_hash = match result_hashes.next() {
-            Some(hash) => hash,
-            None => {
-                return map_err(CasHandlerError::Internal(
-                    "batch read result count mismatch".into(),
-                ))
-            }
-        };
-        if let Err(response) = append_outcome(result_hash, outcome) {
-            return response;
+        if terminal_response.is_some() {
+            continue;
         }
+        if let Some(outcome) = outcome {
+            let result_hash = match result_hashes.next() {
+                Some(hash) => hash,
+                None => {
+                    terminal_response = Some(map_err(CasHandlerError::Internal(
+                        "batch read result count mismatch".into(),
+                    )));
+                    for pending in &handles {
+                        pending.abort();
+                    }
+                    continue;
+                }
+            };
+            if let Err(response) = append_outcome(result_hash, outcome) {
+                terminal_response = Some(response);
+                for pending in &handles {
+                    pending.abort();
+                }
+            }
+        }
+    }
+    if let Some(response) = terminal_response {
+        return response;
     }
     // Stream the manifest and payload as separate frames. Keeping both guards
     // in this stream prevents the response payload or tenant slot from
