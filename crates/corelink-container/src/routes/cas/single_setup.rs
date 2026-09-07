@@ -38,16 +38,7 @@
 /// [`UnavailableCasHandler`] (HTTP 503), never the silent `InMemory`
 /// fallback.
 #[must_use]
-#[allow(
-    clippy::type_complexity,
-    reason = "builder returns the fixed read/write/delete/list handler tuple"
-)]
-pub fn build_handlers() -> (
-    Arc<dyn CasReadHandler>,
-    Arc<dyn CasWriteHandler>,
-    Arc<dyn CasDeleteHandler>,
-    Arc<dyn CasListHandler>,
-) {
+pub fn build_handlers() -> CasHandlers {
     #[cfg(not(target_arch = "wasm32"))]
     {
         use crate::storage::{r2_s3, StorageEnv};

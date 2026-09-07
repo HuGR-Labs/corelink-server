@@ -42,16 +42,10 @@
 /// JSON array `[{"hash":"…","status":"created|exists|error","error":<msg|null>}]`
 /// in manifest order (`created` = fresh write, `exists` = idempotent
 /// already-present, `error` = per-object failure).
-#[allow(
-    clippy::too_many_arguments,
-    reason = "axum supplies independent request extractors to the route handler"
-)]
 async fn handle_batch_write(
     State(state): State<CasRouteState>,
     Path(tenant): Path<String>,
-    auth: crate::auth_tenant::AuthTenant,
-    scope: crate::scope::CacheScope,
-    headers: axum::http::HeaderMap,
+    (auth, scope, headers): CasRequestAuth,
     // finding #2 (HIGH DoS): pre-body per-tenant concurrency reservation (declared
     // AHEAD of `body: Bytes`, so axum runs it BEFORE the up-to-BATCH_MAX_BYTES body
     // is buffered). 429 on over-cap; the RAII slot releases on return. SHARES the

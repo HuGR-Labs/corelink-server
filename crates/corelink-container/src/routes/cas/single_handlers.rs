@@ -130,16 +130,10 @@ async fn handle_read(
 /// via the URL path. The handler enforces hash equality before
 /// committing to durable storage. On success: 201 Created (fresh
 /// insert) or 200 OK (idempotent re-write).
-#[allow(
-    clippy::too_many_arguments,
-    reason = "axum supplies independent request extractors to the route handler"
-)]
 async fn handle_write(
     State(state): State<CasRouteState>,
     Path((tenant, hash)): Path<(String, String)>,
-    auth: crate::auth_tenant::AuthTenant,
-    scope: crate::scope::CacheScope,
-    headers: axum::http::HeaderMap,
+    (auth, scope, headers): CasRequestAuth,
     // cluster F: pre-body per-tenant concurrency reservation (declared AHEAD of
     // `body: Bytes`, so axum runs it BEFORE the body is buffered). 429 on over-cap;
     // the RAII slot releases on return. Mirrors `bazel_v2::BazelPutGuard`.

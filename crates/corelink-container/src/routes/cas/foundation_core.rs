@@ -22,6 +22,20 @@ use http_body_util::StreamBody;
 
 use crate::container_capacity::CONTAINER_MEMORY_BYTES;
 
+/// Fixed native CAS handler set returned by [`build_handlers`].
+pub type CasHandlers = (
+    Arc<dyn CasReadHandler>,
+    Arc<dyn CasWriteHandler>,
+    Arc<dyn CasDeleteHandler>,
+    Arc<dyn CasListHandler>,
+);
+
+type CasRequestAuth = (
+    crate::auth_tenant::AuthTenant,
+    crate::scope::CacheScope,
+    axum::http::HeaderMap,
+);
+
 /// Canonical CAS list route path — `GET /v1/cas/:tenant` (D-8).
 pub const CAS_LIST_ROUTE: &str = "/v1/cas/{tenant}";
 

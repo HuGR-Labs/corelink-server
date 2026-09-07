@@ -18,16 +18,10 @@
 /// lines + a single blank line `\n` + the concatenated raw bytes of the `ok`
 /// objects in manifest order. `absent` (404-class) and `gone` (410-class
 /// tombstoned) contribute zero bytes.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "axum supplies independent request extractors to the route handler"
-)]
 async fn handle_batch_read(
     State(state): State<CasRouteState>,
     Path(tenant): Path<String>,
-    auth: crate::auth_tenant::AuthTenant,
-    scope: crate::scope::CacheScope,
-    headers: axum::http::HeaderMap,
+    (auth, scope, headers): CasRequestAuth,
     // brutal-fleet M2 (MED DoS): pre-body per-tenant bulk-read concurrency
     // reservation (declared AHEAD of `body: Bytes`, so axum runs it BEFORE the
     // body is buffered AND before the up-to-BATCH_MAX_BYTES payload accumulator is
@@ -282,16 +276,10 @@ async fn handle_batch_read(
 /// # Response 200
 ///
 /// JSON array `[{"hash":"…","present":<bool>}]` in request order.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "axum supplies independent request extractors to the route handler"
-)]
 async fn handle_batch_exists(
     State(state): State<CasRouteState>,
     Path(tenant): Path<String>,
-    auth: crate::auth_tenant::AuthTenant,
-    scope: crate::scope::CacheScope,
-    headers: axum::http::HeaderMap,
+    (auth, scope, headers): CasRequestAuth,
     // brutal-fleet M2 (MED DoS): pre-body per-tenant bulk-read concurrency
     // reservation (declared AHEAD of `body: Bytes`). `batch-exists` doesn't
     // accumulate object bytes, but it fans out up to BATCH_MAX_OBJECTS storage
