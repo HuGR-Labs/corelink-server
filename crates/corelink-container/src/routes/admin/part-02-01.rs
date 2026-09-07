@@ -73,18 +73,19 @@ fn split_specific_absent_falls_back_to_shared() {
     clear_key_env();
 }
 
-/// #3: a set-but-too-short specific key is treated as absent and the
-/// shared key is used (a misconfigured new secret degrades, never locks
-/// the surface out).
+/// #3: a set-but-too-short specific key fails closed, even when the shared
+/// key is valid. A malformed dedicated secret must never widen authorization
+/// by falling back to the shared authority.
 #[test]
-fn split_specific_too_short_falls_back_to_shared() {
+fn split_specific_too_short_fails_closed() {
     let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     clear_key_env();
     std::env::set_var("CORELINK_INTERNAL_AUTH_KEY", KEY_A);
     std::env::set_var("CORELINK_PAT_MINT_AUTH_KEY", "too-short"); // < 32
-    let resolved = resolve_internal_auth_key("CORELINK_PAT_MINT_AUTH_KEY")
-        .expect("too-short specific → shared fallback");
-    assert_eq!(&*resolved, KEY_A);
+    assert!(
+        resolve_internal_auth_key("CORELINK_PAT_MINT_AUTH_KEY").is_none(),
+        "too-short specific key → fail CLOSED (no shared fallback)"
+    );
     clear_key_env();
 }
 

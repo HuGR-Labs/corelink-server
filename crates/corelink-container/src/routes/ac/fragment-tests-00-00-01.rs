@@ -5,7 +5,7 @@
         let app = router(st);
         let req = Request::builder()
             .method(Method::DELETE)
-            .uri("/v1/ac/victim/{VALID_DIGEST}")
+            .uri(format!("/v1/ac/victim/{VALID_DIGEST}"))
             .header("x-corelink-tenant-id", TEST_TENANT)
             .header(crate::scope::SCOPE_HEADER, "cas:rw")
             .body(Body::empty())
