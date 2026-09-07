@@ -1,3 +1,4 @@
+#[test]
 fn keys_create_without_signing_key_fails_closed() {
     let db = Arc::new(MockD1::with(vec![]));
     let handler = D1CustomerHandler::new(

@@ -427,6 +427,3 @@ fn keys_create_admin_scope_is_never_grantable() {
         "no INSERT may run for a rejected scope"
     );
 }
-
-#[test]
-include!("customer_d1_tests_billing_keys_part2.rs");
