@@ -35,7 +35,7 @@ CANONICAL_WORKFLOW_PATH = "BuildFailed"
 CANONICAL_WORKFLOW_STATE = "deleted"
 OWNER = "tl"
 OWNER_ACTION_STATUS = "HOLD"
-AUDIT_DOCUMENT_SHA256 = "sha256:a825e688be80375d52e5d6632361fc06c237bf0e5c105baf1750178353674196"
+AUDIT_DOCUMENT_SHA256 = "sha256:31d49f91547a09044ea13db8560b3b44f8a6ad3e10355d4856cf676fa8a59d36"
 AUDIT_CONTENT_MARKERS = (
     "# B-250 — deleted `BuildFailed` workflow emits startup failures",
     "The workflow-scoped endpoint for workflow ID `303501160` returned **278 runs**.",
