@@ -1,6 +1,3 @@
-    }
-}
-
 // ─── Live pipeline seam ──────────────────────────────────────────────────────────
 
 /// The live data-operation driver. Production wires [`LivePipeline`] over the

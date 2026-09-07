@@ -1,4 +1,3 @@
-
 fn parse_action(s: &str) -> Option<DsrRequestKind> {
     Some(match s {
         "access" => DsrRequestKind::Access,

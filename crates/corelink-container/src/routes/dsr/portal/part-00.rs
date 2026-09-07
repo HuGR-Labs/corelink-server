@@ -52,7 +52,6 @@
 // data-mutating pipeline call already emits its `audit_outbox` envelope BEFORE
 // the mutation (ADR-S11-002); the durable ticket is the intake evidence.
 // Submissions are capped at [`DSR_DAILY_LIMIT`]/day per tenant (LGPD Art.20).
-
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -497,3 +496,5 @@ impl DsrTicketStore for D1DsrTicketStore {
             })
             .map(|n| u64::try_from(n).unwrap_or(0))
             .unwrap_or(0))
+    }
+}
