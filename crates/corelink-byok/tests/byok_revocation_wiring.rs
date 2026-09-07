@@ -16,7 +16,9 @@ use corelink_byok::revocation::testutil::{
 use corelink_byok::revocation::{
     ActiveByokKeySource, RevocationConfig, RevocationDetector, RevocationError,
 };
-use corelink_byok::{DekCache, KmsKeyId, KmsProviderKind};
+use corelink_byok::{BYOKError, DekCache, KmsKeyId, KmsProviderKind};
+
+type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 fn key(provider: KmsProviderKind, id: &str) -> KmsKeyId {
     KmsKeyId {
@@ -27,8 +29,8 @@ fn key(provider: KmsProviderKind, id: &str) -> KmsKeyId {
 }
 
 #[tokio::test]
-async fn revoked_active_key_reaches_the_real_kill_switch() {
-    let cache = Arc::new(DekCache::new(300).expect("valid cache ttl"));
+async fn revoked_active_key_reaches_the_real_kill_switch() -> TestResult {
+    let cache = Arc::new(DekCache::new(300)?);
     let key_id = key(KmsProviderKind::AwsKms, "arn:aws:kms:test:key/b083");
     let provider = Arc::new(StubKmsProvider::new_revoked());
     let store = Arc::new(InMemoryTenantStore::default());
@@ -43,13 +45,13 @@ async fn revoked_active_key_reaches_the_real_kill_switch() {
     )
     .with_key_source(source)
     .run_one_cycle()
-    .await
-    .expect("configured source must run");
+    .await?;
 
     assert_eq!(
-        store.current_status(&key_id).await.expect("status read"),
+        store.current_status(&key_id).await?,
         Some(corelink_byok::revocation::store::TenantByokStatus::DegradedReadOnly)
     );
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -66,10 +68,10 @@ impl ActiveByokKeySource for FailingSource {
 }
 
 #[tokio::test]
-async fn population_failure_is_not_coerced_to_no_keys() {
+async fn population_failure_is_not_coerced_to_no_keys() -> TestResult {
     let detector = RevocationDetector::new(
         vec![Arc::new(StubKmsProvider::new_revoked())],
-        Arc::new(DekCache::new(300).expect("valid cache ttl")),
+        Arc::new(DekCache::new(300)?),
         Arc::new(InMemoryTenantStore::default()),
         Arc::new(NoopAlerter),
         RevocationConfig::default(),
@@ -77,13 +79,14 @@ async fn population_failure_is_not_coerced_to_no_keys() {
     .with_key_source(Arc::new(FailingSource));
 
     assert!(detector.run_one_cycle().await.is_err());
+    Ok(())
 }
 
 #[tokio::test]
-async fn an_unconfigured_scheduler_does_not_start_a_vacuous_loop() {
+async fn an_unconfigured_scheduler_does_not_start_a_vacuous_loop() -> TestResult {
     let detector = RevocationDetector::new(
         vec![Arc::new(StubKmsProvider::new_revoked())],
-        Arc::new(DekCache::new(300).expect("valid cache ttl")),
+        Arc::new(DekCache::new(300)?),
         Arc::new(InMemoryTenantStore::default()),
         Arc::new(NoopAlerter),
         RevocationConfig::default(),
@@ -91,6 +94,7 @@ async fn an_unconfigured_scheduler_does_not_start_a_vacuous_loop() {
 
     assert!(!detector.has_key_source());
     detector.run_loop().await;
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -182,24 +186,24 @@ fn detector_with_faults(
     store: FaultStore,
     alerter: FaultAlerter,
     key_id: &KmsKeyId,
-) -> RevocationDetector {
-    RevocationDetector::new(
+) -> Result<RevocationDetector, BYOKError> {
+    Ok(RevocationDetector::new(
         vec![Arc::new(StubKmsProvider::new(
             KmsProviderKind::AwsKms,
             status,
         ))],
-        Arc::new(DekCache::new(300).expect("valid cache ttl")),
+        Arc::new(DekCache::new(300)?),
         Arc::new(store),
         Arc::new(alerter),
         RevocationConfig::default(),
     )
     .with_key_source(Arc::new(StaticActiveByokKeySource::new(vec![
-        key_id.clone()
-    ])))
+        key_id.clone(),
+    ]))))
 }
 
 #[tokio::test]
-async fn zero_updated_rows_fail_closed_in_the_kill_switch() {
+async fn zero_updated_rows_fail_closed_in_the_kill_switch() -> TestResult {
     let key_id = key(KmsProviderKind::AwsKms, "zero-update");
     let detector = detector_with_faults(
         corelink_byok::KmsAccessStatus::Revoked,
@@ -213,12 +217,13 @@ async fn zero_updated_rows_fail_closed_in_the_kill_switch() {
             fail_recovery: false,
         },
         &key_id,
-    );
+    )?;
     assert!(detector.run_one_cycle().await.is_err());
+    Ok(())
 }
 
 #[tokio::test]
-async fn revocation_alert_failure_reaches_the_cycle_result() {
+async fn revocation_alert_failure_reaches_the_cycle_result() -> TestResult {
     let key_id = key(KmsProviderKind::AwsKms, "alert-failure");
     let detector = detector_with_faults(
         corelink_byok::KmsAccessStatus::Revoked,
@@ -232,12 +237,13 @@ async fn revocation_alert_failure_reaches_the_cycle_result() {
             fail_recovery: false,
         },
         &key_id,
-    );
+    )?;
     assert!(detector.run_one_cycle().await.is_err());
+    Ok(())
 }
 
 #[tokio::test]
-async fn recovery_status_restore_and_audit_failures_reach_the_cycle_result() {
+async fn recovery_status_restore_and_audit_failures_reach_the_cycle_result() -> TestResult {
     let key_id = key(KmsProviderKind::AwsKms, "recovery-failure");
     for store in [
         FaultStore {
@@ -259,7 +265,7 @@ async fn recovery_status_restore_and_audit_failures_reach_the_cycle_result() {
                 fail_recovery: false,
             },
             &key_id,
-        );
+        )?;
         assert!(detector.run_one_cycle().await.is_err());
     }
 
@@ -275,6 +281,7 @@ async fn recovery_status_restore_and_audit_failures_reach_the_cycle_result() {
             fail_recovery: true,
         },
         &key_id,
-    );
+    )?;
     assert!(detector.run_one_cycle().await.is_err());
+    Ok(())
 }
