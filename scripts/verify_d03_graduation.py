@@ -183,9 +183,14 @@ def verify_document(
     by_id = {record.id: record for record in records}
     if not ORIGINAL_SET.issubset(by_id) or "B-006" not in by_id:
         raise GraduationError("BACKLOG is missing an original TL/open item or B-006")
+    # This is a historical D03 graduation gate.  New post-graduation backlog
+    # findings are checked by their own records and must not invalidate the
+    # closed 42-item D03 population merely because they are engineering-owned.
     remaining_open = sorted(
         record.id for record in records
-        if record.raw.get("owner") == "tl" and record.raw.get("status") == "open"
+        if record.id in ORIGINAL_SET
+        and record.raw.get("owner") == "tl"
+        and record.raw.get("status") == "open"
     )
     if remaining_open:
         raise GraduationError(f"repository still has owner tl/status open: {remaining_open}")

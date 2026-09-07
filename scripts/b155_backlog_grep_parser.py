@@ -103,9 +103,9 @@ class Census:
 # Derived independently from the exact D03 fenced-record tree (2026-09-06).
 # Keep these closed: adding/removing/changing a record must require an explicit
 # census reconciliation instead of silently shrinking or growing the proof.
-EXPECTED_RECORDS = 326
+EXPECTED_RECORDS = 334
 EXPECTED_COMMAND_RECORDS = 310
-EXPECTED_MANUAL_RECORDS = 16
+EXPECTED_MANUAL_RECORDS = 24
 EXPECTED_GREP_INVOCATIONS = 194
 EXPECTED_ASSERTIONS = 191
 

@@ -1500,14 +1500,14 @@ verify: |
   sys.path.insert(0, "scripts")
   import verify_backlog_wp_ledger as ledger
   text = Path("BACKLOG.md").read_text()
-  assert len(ledger.all_backlog_ids(text)) == 324
-  assert len(ledger.open_backlog_ids(text)) == 16
-  assert ledger.backlog_status_counts(text) == {"open": 16, "done": 269, "parked": 39}
+  assert len(ledger.all_backlog_ids(text)) == 334
+  assert len(ledger.open_backlog_ids(text)) == 19
+  assert ledger.backlog_status_counts(text) == {"open": 19, "done": 276, "parked": 39}
   assert ledger.LEDGER_BASE_REF == "main"
   assert ledger.LEDGER_BASE_SHA == "ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
   PY
 verify-means: |
-  done — the live verifier proves 16/16 open-ID ownership, 324 total records,
+  done — the live verifier proves 19/19 open-ID ownership, 334 total records,
   exact catalog populations, predecessor ordering, editable/workflow ownership,
   and the D03 base ref/SHA relationship. The focused parser suite remains
   load-bearing: stale metadata, a tampered base and missing CI predecessor are
@@ -1812,7 +1812,7 @@ source-locator: ".claude/skills/techlead/SKILL.md:L2.10; reports/b326-loc-cap-ba
 finding-title: "new Rust and TypeScript source files had no CI-enforced 500-line hard cap"
 problem: "The Tech Lead charter required every new .rs/.ts/.tsx file to stay at or below 500 LOC, but its shell example depended on a locally available origin/main ref and was not a stable CI contract. A shallow or remote-less checkout could skip the population entirely or report an indeterminate result."
 evidence: "The committed origin/main-equivalent path manifest is pinned to main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266; the stdlib verifier classifies tracked source paths absent from that manifest, rejects unmarked files over 500 LOC, reports the 200-LOC advisory band, and passes its mutation/self-tests. Related charter, spec/frontmatter and secrets-matrix findings are closed in the cumulative B-326 tree."
-acceptance: "A reviewed baseline manifest is required and hash-checked; the tracked added .rs/.ts/.tsx population is non-empty and closed; missing, malformed, stale or empty populations fail closed; generated exceptions require an explicit @generated marker; any unmarked file over 500 LOC is a hard failure; workflow paths and both PR/push steps run the verifier and its mutations; B-155 and the D03 ledgers report 326 total, 271 done, 39 parked, 16 open (0 TL-open) and 310 command-bearing records."
+acceptance: "A reviewed baseline manifest is required and hash-checked; the tracked added .rs/.ts/.tsx population is non-empty and closed; missing, malformed, stale or empty populations fail closed; generated exceptions require an explicit @generated marker; any unmarked file over 500 LOC is a hard failure; workflow paths and both PR/push steps run the verifier and its mutations; B-155 and the D03 ledgers report 334 total, 276 done, 39 parked, 19 open (3 TL-open) and 310 command-bearing records."
 verify: python3 scripts/verify_b326_loc_cap.py --self-test
 verify-means: |
   done — the verifier uses only the committed baseline manifest and local tracked
@@ -1821,6 +1821,229 @@ verify-means: |
   empty candidate population, enforces the hard cap and generated marker, and
   proves both an oversized-source mutation and a manifest-population mutation
   fail closed.
+last-verified: 2026-09-07
+```
+
+### B-327 — final CI fixtures drifted from the canonical UUID tenant contract
+
+The final CI sweep found route and user fixtures still using labels such as
+`t1`, `tenant-a`, and `tenant-abc`. Production `AuthTenant` accepts canonical
+UUID tenant identifiers, so those tests failed before reaching the handler (and
+the literal-braces route case had the wrong expected boundary). The repair is
+test-only: canonical UUID fixtures are used everywhere and the cross-tenant
+assertion remains explicit.
+
+```backlog
+id: B-327
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 final CI fixture sweep"
+source-locator: "crates/corelink-container/src/routes/ac/fragment-tests-00-00-01.rs; crates/corelink-container/src/routes/ac/tests-00-00.rs; crates/corelink-container/src/routes/admin/part-02-01.rs; crates/corelink-container/src/routes/users.rs; crates/corelink-container/tests/admin_ac_route_smoke.rs; crates/corelink-container/tests/cas_route_smoke.rs"
+finding-title: "final CI tenant fixtures used non-canonical identifiers against strict AuthTenant"
+problem: "Route and users/me tests used labels such as t1, tenant-a and tenant-abc, so strict canonical tenant parsing rejected the request before the intended handler assertion; the literal-braces CAS case also asserted the pre-auth outcome."
+evidence: "Integrated by 82d71061c, 7dd4ab70b, 57c6f9ff2 and af27a8fcf; all affected fixtures now use canonical UUIDs and the literal-braces case asserts the cross-tenant 403."
+acceptance: "Every affected route/user fixture uses a canonical UUID; the literal-braces CAS control reaches AuthTenant and asserts the handler's cross-tenant 403; no production auth relaxation or fixture-only bypass is introduced."
+verify: manual
+verify-means: |
+  done — the reviewed D03 commits replace the stale tenant labels in the route,
+  AC/admin smoke and users/me fixtures, and preserve the strict AuthTenant
+  boundary. Reopen if a non-UUID tenant fixture returns to these surfaces or if
+  the literal-braces control is weakened to a pre-handler result.
+last-verified: 2026-09-07
+```
+
+### B-328 — PAT revocation fixtures omitted the `token_id` ownership field
+
+The revocation integration fixtures returned rows without `token_id`, although
+the production query and revocation contract use that field to identify the
+credential. The omission made the final CI fixture population drift from the
+real row shape and left the happy, idempotent, owner, member and cross-tenant
+cases under-specified.
+
+```backlog
+id: B-328
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 final CI fixture sweep"
+source-locator: "crates/corelink-container/src/customer_d1_tests_billing_keys_part2.rs:keys_revoke_*"
+finding-title: "PAT revoke fixtures omitted the canonical token_id field"
+problem: "Five D1 rows used by PAT revocation tests lacked token_id even though the runtime row contract returns and uses it for credential identity."
+evidence: "Integrated by 1e1dc0911; token_id fixtures 0000000000000001 through 0000000000000005 now cover the happy, idempotent, owner, member and cross-tenant cases."
+acceptance: "Every PAT revocation fixture row contains a distinct canonical token_id; the owner-protection, same-tenant member, idempotent and cross-tenant outcomes remain asserted, with no production query weakening."
+verify: manual
+verify-means: |
+  done — the revocation fixture rows now carry token_id in every reviewed D1
+  response and retain the five distinct authorization scenarios. Reopen if a
+  fixture drops token_id or starts accepting a row shape that production cannot
+  identify.
+last-verified: 2026-09-07
+```
+
+### B-329 — stale auth and Stripe assertions contradicted the fail-closed contract
+
+The final CI pass exposed assertions that still treated a short dedicated
+money-path key as eligible for shared-key fallback and that collapsed a typed
+Stripe failure into the old generic error. Those assertions encoded the wrong
+security and error contracts even though the production behavior was already
+fail-closed and typed.
+
+```backlog
+id: B-329
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 final CI fixture sweep"
+source-locator: "crates/corelink-container/src/routes/admin/part-02-01.rs; crates/corelink-container/src/routes/dpa_accept_tests.rs; crates/corelink-container/src/routes/tier_select/part-02-00.rs; crates/corelink-container/src/routes/tier_select/part-02-01.rs"
+finding-title: "stale tests expected dedicated-auth fallback and a generic Stripe error"
+problem: "A malformed dedicated key was still asserted to fall back to a valid shared key, and a failed Stripe call was still asserted as Internal instead of the typed StripeUnavailable error."
+evidence: "Integrated by 82d71061c and ff8b4281d; short dedicated keys now fail closed and the failed checkout assertion names StripeUnavailable with its diagnostic."
+acceptance: "Short or whitespace-only dedicated auth values remain unmounted even when the shared key is valid; the Stripe failure path asserts the typed error and preserves reservation cleanup; no assertion is made green by weakening the route."
+verify: manual
+verify-means: |
+  done — the stale fallback assertions are inverted to fail-closed expectations,
+  and the checkout failure fixture asserts the typed StripeUnavailable result
+  while retaining the empty reservation/lock checks. Reopen if either stale
+  shared-key fallback or generic Stripe expectation returns.
+last-verified: 2026-09-07
+```
+
+### B-330 — CAS batch-read still couples memory, concurrency and task lifetime unsafely
+
+The final CI review found that `batch-read` fans out spawned reads while the
+response payload and weighted process-wide permits have overlapping lifetimes.
+The current shape can make a completed result retain its reservation while the
+producer advances, and cancellation/error paths must drain every task and
+permit. This is an open runtime design defect; the existence of a candidate
+patch on another branch is not integration evidence.
+
+```backlog
+id: B-330
+repo: corelink-server
+owner: tl
+status: open
+source-document: "D03 final CI CAS batch-read review"
+source-locator: "crates/corelink-container/src/routes/cas/batch_read.rs; crates/corelink-container/src/routes/cas/foundation_core.rs; crates/corelink-container/src/routes/cas/foundation_state.rs; crates/corelink-container/src/routes/cas/tests_batch_part2.rs"
+finding-title: "CAS batch-read has an unresolved memory/concurrency/lifetime contract"
+problem: "The spawned batch fan-out, response accumulation and process-wide weighted reservations do not yet have one proven contract for peak memory, bounded concurrency, deterministic ordering, and cancellation-safe task/permit lifetime; an error path must not leave detached work or stranded budget."
+evidence: "Observed on the integrated 806a44248 tree; candidate follow-up commits 816a70c5f, f1c2ab04a and 0dba9d2c8 are not ancestors of this head and are not closure evidence."
+acceptance: "A solution must prove a bounded memory peak, bounded concurrency, deterministic input-order output, and no detached tasks: every spawned task is awaited or explicitly aborted and drained, every permit/response buffer is released on success, error and cancellation, and adversarial mutations turn the proof red. Do not mark done from a static constant or a candidate branch alone."
+verify: manual
+verify-means: |
+  open — the integrated tree still requires a reviewed implementation and
+  mutation-backed proof of the complete memory/concurrency/order/lifetime
+  contract. A candidate patch, source comment or Cargo result outside this
+  integrated head does not close the item.
+last-verified: 2026-09-07
+```
+
+### B-331 — DSR registry drift could fail open in release builds
+
+The DSR registry had drifted as tenant-keyed tables were added, and the
+classification assertion was release-stripped. A production erasure or access
+path could therefore proceed without proving that every registry entry was
+classified exactly once. The integrated repair adds the missing classifications,
+an always-on `Result` gate before D1 work, and fail-closed Clerk-key handling.
+
+```backlog
+id: B-331
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 final CI DSR review"
+source-locator: "crates/corelink-container/src/routes/dsr/adapter_d1.rs; crates/corelink-container/src/routes/dsr/access.rs; crates/corelink-container/src/routes/dsr/adapter_d1_tests.rs"
+finding-title: "DSR tenant-table registry drifted and its release gate was fail-open"
+problem: "New tenant-keyed tables were absent or misclassified, while the completeness assertion was debug-only, so release builds could run erasure/access/verification without an always-on registry Result gate."
+evidence: "Integrated by 68b51f9e7, a2f4889f2 and 806a44248; new erase/retain classifications, unknown-table rejection and invalid Clerk lookup rejection are covered before D1 work."
+acceptance: "The registry is complete and disjoint for the reviewed migrations; erase, verification and access/portability gathering all invoke an always-on fail-closed classification gate; missing/blank Clerk keys and unknown registry entries reject safely; test-only diagnostics cannot be mistaken for the production gate."
+verify: manual
+verify-means: |
+  done — the integrated DSR adapter classifies the newly discovered tenant-keyed
+  tables, runs the Result gate in release code before any D1 mutation/read, and
+  rejects unknown classifications and invalid Clerk lookup keys. Reopen if the
+  gate becomes debug-only or a new registry entry lacks exactly one disposition.
+last-verified: 2026-09-07
+```
+
+### B-332 — refund webhook coverage was hidden by the echo fixture
+
+The webhook test fixture treated refund events as generic echo cases, so it did
+not prove the container's refunded dispatch path and a mutation could survive
+without a dedicated assertion. The integrated test removes refunds from the
+generic fixture and adds an explicit refunded dispatch case.
+
+```backlog
+id: B-332
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 final CI webhook review"
+source-locator: "crates/corelink-container/tests/webhook_unified.rs"
+finding-title: "refund webhook echo coverage did not prove container dispatch"
+problem: "Refund events were included in a generic echo fixture, allowing the test to pass without asserting the refunded container dispatch behavior or proving that the refund-specific branch remained wired."
+evidence: "Integrated by 0c5d3d641 and cc6c73ee5; refunds are excluded from the echo population and have a dedicated refunded-container dispatch assertion."
+acceptance: "The generic echo population excludes refunds; the dedicated refund case asserts the expected container dispatch and outcome; removing or bypassing the refund branch is caught by a load-bearing mutation rather than by an unrelated echo assertion."
+verify: manual
+verify-means: |
+  done — the webhook fixture no longer lets a refund ride the generic echo
+  path, and the explicit refunded dispatch case is present in the integrated
+  test target. Reopen if refund coverage is folded back into echo-only cases or
+  the dedicated dispatch assertion disappears.
+last-verified: 2026-09-07
+```
+
+### B-333 — money-path effect wiring is not yet deterministic
+
+The money-path auth test now reaches the local proxy in the observed CI
+environment, but its effect probe still relies on a background TCP listener,
+polling and wall-clock settling. That is test-environment plumbing, not a
+deterministic proof that unauthorized requests cause zero D1/Stripe effects and
+authorized controls cause exactly the intended effects in order.
+
+```backlog
+id: B-333
+repo: corelink-server
+owner: tl
+status: open
+source-document: "D03 final CI money-path review"
+source-locator: "crates/corelink-container/tests/money_path_auth_wiring.rs; crates/corelink-container/Cargo.toml; crates/corelink-container/src/routes/tier_select/part-00-02.rs"
+finding-title: "money-path effect assertions depend on timing and external proxy wiring"
+problem: "The auth/effect test uses a background refusing TCP listener, polling and proxy behavior to infer D1/Stripe effects; this leaves deterministic ordering and exact effect cardinality coupled to timing and environment instead of an injected effect seam."
+evidence: "The current integrated adjustment is 60ce8f24a (clearing the CGI proxy marker in the test fixture; the earlier f2391c942/9d88829b4 proxy experiment was reverted); none of these commits provides the deterministic effect seam required for closure."
+acceptance: "Integrate a deterministic, injected effect recorder at the production boundary: unauthorized/malformed/tenant-mismatch cases must prove zero effects, authorized controls must prove the exact D1/Stripe effect sequence and cardinality, no ambient proxy or wall-clock polling may decide pass/fail, and a targeted mutator removing the wiring must fail."
+verify: manual
+verify-means: |
+  open — proxy support makes the current test runnable but does not close the
+  deterministic effect-wiring defect. Keep the item open until the injected
+  recorder, exact ordering/cardinality proof and mutation are integrated.
+last-verified: 2026-09-07
+```
+
+### B-334 — CI runs can contaminate each other through Cargo target/doctest state
+
+The final CI sweep found that the shared workspace target can be reused by
+concurrent or sequential runs. Doctest and test-target artifacts can then be
+selected from another invocation, producing false failures or false greens.
+The required fix is per-invocation isolation with safe cleanup and explicit
+doctest contamination coverage; it is not integrated on this head.
+
+```backlog
+id: B-334
+repo: corelink-server
+owner: tl
+status: open
+source-document: "D03 final CI runner review"
+source-locator: "scripts/ci.sh; scripts/tests/ci-target-isolation.sh (candidate, not on this head); .github/workflows/*.yml Cargo/test and doctest gates"
+finding-title: "CI has no integrated per-run Cargo target isolation and doctest contamination guard"
+problem: "CI invocations can share the checkout target directory, so concurrent or stale artifacts from another run can contaminate test and doctest selection; cancellation can also leave state that the next invocation reuses."
+evidence: "Observed on integrated 806a44248; the per-run isolation implementation 58b54dd73 exists only as a non-ancestor candidate and is not closure evidence."
+acceptance: "Each CI invocation must allocate a unique private CARGO_TARGET_DIR, prefer the runner temp area, shadow ambient caller paths, clean only an owned directory on normal exit and signals, and prove that Cargo test plus doctest outputs cannot reuse another run's artifacts. Static/mutation guards must fail on shared-target, unsafe-cleanup or doctest-contamination regressions; do not claim the candidate branch is integrated."
+verify: manual
+verify-means: |
+  open — the integrated head still lacks the required per-run target lifecycle
+  and doctest contamination proof. Keep this open until the isolation workflow,
+  owned cleanup and static/mutation guard land together.
 last-verified: 2026-09-07
 ```
 
