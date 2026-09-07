@@ -150,15 +150,14 @@ async fn batch_read_round_trip_with_absent() {
     assert_eq!(payload, expected.as_slice());
 }
 
-/// Parallel-fan-out invariant: a large mixed batch (present + absent,
-/// interleaved) must come back in EXACT request order despite the reads now
-/// running concurrently (BATCH_READ_FANOUT-way). Asserts, per hash: the
+/// Ordering/slicing invariant: a large mixed batch (present + absent,
+/// interleaved) must come back in EXACT request order. Asserts, per hash: the
 /// manifest line order == request order, the reported `len`s, the per-hash
 /// status, and that the concatenated payload slices back to the right bytes
 /// for each present object. multi_thread so the sync `read()`'s
 /// `block_in_place` (in prod) is exercised on a real worker thread.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn batch_read_parallel_preserves_order_and_slicing() {
+async fn batch_read_preserves_order_and_slicing() {
     let st = fixture();
     // 30 hashes: even index = present (seeded, unique bytes), odd = absent.
     // Present bytes deliberately vary in length so a mis-ordered slice would

@@ -374,10 +374,3 @@ const _: () = assert!(
         <= CAS_READ_GLOBAL_BUDGET_BYTES,
     "one CAS read's peak copies exceed the process-wide read slice"
 );
-
-/// Bounded per-request read concurrency for `handle_batch_read`: each in-flight
-/// R2 GET holds one permit, so at most this many reads run at once. Keeps a
-/// 2000-object batch under the Cloudflare wall-clock deadline (the old fully
-/// sequential loop @ ~80 ms/object blew past it → HTTP 500) while staying gentle
-/// on R2 and on the blocking pool the sync `read()` bridges through.
-pub const BATCH_READ_FANOUT: usize = 16;
