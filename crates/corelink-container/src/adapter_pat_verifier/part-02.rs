@@ -1,3 +1,4 @@
+impl PatVerifier {
     /// The same pipeline as [`Self::verify_capability`], additionally returning
     /// the row's `runner_job` marker (0086).
     ///
@@ -138,7 +139,7 @@
                                         Err(()) => {
                                             return BurnFlight::Backend(
                                                 "pat verifier overloaded".into(),
-                                            )
+                                            );
                                         }
                                     };
                                 // The dummy burn ALSO runs Argon2id (for timing
@@ -177,7 +178,7 @@
                                         _ => {
                                             return BurnFlight::Backend(
                                                 "pat verifier overloaded".into(),
-                                            )
+                                            );
                                         }
                                     }
                                 };
@@ -354,7 +355,7 @@
                                         Ok(Err(_)) | Err(_) => {
                                             return VerifyFlight::Backend(
                                                 "pat verifier overloaded".into(),
-                                            )
+                                            );
                                         }
                                     }
                                 };
@@ -373,7 +374,7 @@
                                     Err(()) => {
                                         return VerifyFlight::Backend(
                                             "pat verifier overloaded".into(),
-                                        )
+                                        );
                                     }
                                 };
                                 let joined = tokio::task::spawn_blocking(move || {
@@ -471,3 +472,4 @@
 
         Ok((row.tenant_id, can_write, row.runner_job))
     }
+}

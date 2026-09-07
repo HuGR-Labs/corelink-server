@@ -6,21 +6,21 @@
 use std::sync::Arc;
 
 use corelink_pat::{
-    verify_hmac_only_multi, verify_with_hash_multi, PatError, PatHash, PatSigningKey,
+    PatError, PatHash, PatSigningKey, verify_hmac_only_multi, verify_with_hash_multi,
 };
 use futures::FutureExt;
 
 use crate::container_capacity::ARGON2_VERIFY_PERMITS;
 use crate::scope::{requires_cache_read, requires_cache_write};
 use crate::storage::d1_http::D1HttpClient;
-use crate::storage::{non_empty_env, StorageEnv};
+use crate::storage::{StorageEnv, non_empty_env};
 
 use super::adapter_pat_crypto::{
-    dummy_burn_fingerprint, secret_match_fingerprint, BurnFlight, FlightGroup, SecretMatchMemo,
-    VerifyFlight, FLIGHT_GROUP_CAP, SECRET_MATCH_MEMO_CAP, SECRET_MATCH_MEMO_TTL,
+    BurnFlight, FLIGHT_GROUP_CAP, FlightGroup, SECRET_MATCH_MEMO_CAP, SECRET_MATCH_MEMO_TTL,
+    SecretMatchMemo, VerifyFlight, dummy_burn_fingerprint, secret_match_fingerprint,
 };
 use super::adapter_pat_gate::{
-    PerTenantGate, ARGON2_PERMIT_WAIT, ARGON2_PER_TENANT_PERMITS, PER_TENANT_MAP_CAP,
+    ARGON2_PER_TENANT_PERMITS, ARGON2_PERMIT_WAIT, PER_TENANT_MAP_CAP, PerTenantGate,
     UNKNOWN_TOKEN_BUCKET,
 };
 pub use super::adapter_pat_lookup::VerifyError;
@@ -265,8 +265,11 @@ impl PatVerifier {
             }
         }
     }
-
-    include!("adapter_pat_verifier/part-01.rs");
-    include!("adapter_pat_verifier/part-02.rs");
-    include!("adapter_pat_verifier/part-03.rs");
 }
+
+// Keep the implementation split at item boundaries. `include!` expands in
+// the surrounding parser context; each fragment owns its own impl block so
+// the expansion is parsed as module items by every rustc/build configuration.
+include!("adapter_pat_verifier/part-01.rs");
+include!("adapter_pat_verifier/part-02.rs");
+include!("adapter_pat_verifier/part-03.rs");

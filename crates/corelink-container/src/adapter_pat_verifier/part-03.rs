@@ -1,3 +1,4 @@
+impl PatVerifier {
     /// Test-only: shrink the per-tenant LRU map cap so the eviction path can be
     /// driven deterministically (the production cap of 10k is too large to fill
     /// in a unit test). Returns `self` for chaining off a constructor.
@@ -14,7 +15,11 @@
     /// size). Used to assert the map stays bounded under distinct-tenant churn.
     #[cfg(test)]
     pub(super) fn per_tenant_map_len(&self) -> usize {
-        self.per_tenant.permits.lock().map(|map| map.len()).unwrap_or_default()
+        self.per_tenant
+            .permits
+            .lock()
+            .map(|map| map.len())
+            .unwrap_or_default()
     }
 
     /// Test-only constructor that overrides the Argon2id concurrency bound so
@@ -70,3 +75,4 @@
             .await
             .map(|(tenant, _can_write)| tenant)
     }
+}

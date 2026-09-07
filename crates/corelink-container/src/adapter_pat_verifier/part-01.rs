@@ -1,3 +1,4 @@
+impl PatVerifier {
     /// Test-only: reach the per-tenant fairness gate's semaphore for `tenant`
     /// through the exact get-or-insert path a verify uses, so a test can
     /// saturate (or pin) a bucket. Production code goes through
@@ -24,3 +25,4 @@
             .await
             .map(|(tenant_id, can_write, _runner_job)| (tenant_id, can_write))
     }
+}
