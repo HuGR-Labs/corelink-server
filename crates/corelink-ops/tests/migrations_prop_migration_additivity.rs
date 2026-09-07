@@ -126,7 +126,31 @@ const FORBIDDEN_PREFIXES: &[&str] = &[
 /// Normalize a SQL fragment for keyword detection: comment-strip, uppercase,
 /// collapse runs of whitespace (incl. tab/newline) into single spaces.
 fn normalize_for_scan(sql: &str) -> String {
-    let stripped = strip_sql_comments(sql);
+    let waiver_filtered = sql
+        .lines()
+        .map(|line| {
+            let Some((_, comment)) = line.split_once("--") else {
+                return line;
+            };
+            let lower = comment.to_ascii_lowercase();
+            let Some((_, waiver)) = lower.split_once("additive-allowed:") else {
+                return line;
+            };
+            let Some(adr) = waiver.trim_start().strip_prefix("adr-") else {
+                return line;
+            };
+            let digits: String = adr.chars().take(4).collect();
+            let reason = adr.get(4..).unwrap_or_default().trim();
+            if digits.len() == 4 && digits.chars().all(|c| c.is_ascii_digit()) && !reason.is_empty()
+            {
+                ""
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let stripped = strip_sql_comments(&waiver_filtered);
     let upper = stripped.to_ascii_uppercase();
     let mut out = String::with_capacity(upper.len());
     let mut prev_ws = false;
@@ -372,6 +396,18 @@ fn forbidden_prefix_detector_handles_case_and_whitespace() {
         !viol.is_empty(),
         "ALTER TABLE ... RENAME TO was not detected"
     );
+}
+
+#[test]
+fn adr_waiver_is_line_local_and_requires_a_reason() {
+    let valid = "DROP TABLE tenant; -- additive-allowed: ADR-0064 widening rebuild";
+    assert!(find_violations(&normalize_for_scan(valid)).is_empty());
+
+    let missing_reason = "DROP TABLE tenant; -- additive-allowed: ADR-0064";
+    assert!(!find_violations(&normalize_for_scan(missing_reason)).is_empty());
+
+    let next_line = "DROP TABLE tenant;\n-- additive-allowed: ADR-0064 wrong line";
+    assert!(!find_violations(&normalize_for_scan(next_line)).is_empty());
 }
 
 /// Unit canary: comment-aware lexer prevents false positives from
