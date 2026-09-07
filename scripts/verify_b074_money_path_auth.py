@@ -73,11 +73,16 @@ def verify(root: Path = ROOT, *, overrides: dict[str, str] | None = None) -> dic
     def read(relative: str) -> str:
         return overrides.get(relative, _read(root, relative))
 
-    admin = read("crates/corelink-container/src/routes/admin/part-00.rs")
+    admin = read("crates/corelink-container/src/routes/admin/part-00-02.rs")
     dpa = read("crates/corelink-container/src/routes/dpa_accept.rs")
-    tier = read("crates/corelink-container/src/routes/tier_select/part-00.rs")
-    worker_auth = read("worker/src/index_auth.ts")
-    worker_special = read("worker/src/index_special_routes.ts")
+    tier = "\n".join(
+        (
+            read("crates/corelink-container/src/routes/tier_select/part-00-00.rs"),
+            read("crates/corelink-container/src/routes/tier_select/part-00-01.rs"),
+        )
+    )
+    worker_auth = read("worker/src/index_auth_policy.ts")
+    worker_special = read("worker/src/index_special_onboarding.ts")
     do_start = read("worker/src/durable_object_start.ts")
     rust_test = read("crates/corelink-container/tests/money_path_auth_wiring.rs")
     worker_test = read("worker/tests/onboarding.test.ts")
@@ -171,7 +176,7 @@ def verify(root: Path = ROOT, *, overrides: dict[str, str] | None = None) -> dic
 
 def self_test(root: Path = ROOT) -> None:
     """Reject implementation removal, comment/string bait, and no-op mutations."""
-    admin_path = "crates/corelink-container/src/routes/admin/part-00.rs"
+    admin_path = "crates/corelink-container/src/routes/admin/part-00-02.rs"
     admin = _read(root, admin_path)
     strict = "if key.len() < INTERNAL_AUTH_KEY_MIN_LEN || key.trim().is_empty() {"
     mutated = admin.replace(strict, "if false {", 1)
@@ -182,7 +187,7 @@ def self_test(root: Path = ROOT) -> None:
     else:
         raise AssertionError("Rust invalid-key mutation survived")
 
-    worker_path = "worker/src/index_auth.ts"
+    worker_path = "worker/src/index_auth_policy.ts"
     worker = _read(root, worker_path)
     worker_mutated, replacements = re.subn(
         r"(dedicatedKey\.length\s*>=\s*ONBOARDING_AUTH_KEY_MIN_LENGTH\s*&&\s*"
