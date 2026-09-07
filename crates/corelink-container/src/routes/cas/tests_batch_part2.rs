@@ -334,7 +334,7 @@ async fn batch_read_cancellation_aborts_tasks_and_waits_for_unwind() {
         _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {
             panic!("batch handler did not start a storage read before cancellation");
         }
-        _ = &mut response => panic!("batch handler completed before cancellation");
+        _ = &mut response => panic!("batch handler completed before cancellation"),
     }
     tokio::time::timeout(std::time::Duration::from_secs(1), async {
         while started.load(Ordering::SeqCst) < BATCH_READ_FANOUT {
