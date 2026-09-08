@@ -111,3 +111,18 @@ def test_raw_string_decoy_cannot_replace_the_saturation_log() -> None:
     mutant["cas"] = f'r###"{marker}"###\n' + files["cas"].replace(marker, "", 1)
     with pytest.raises(verify.VerificationError):
         verify.assess(mutant)
+
+
+def test_unrelated_constant_cannot_replace_the_saturation_log() -> None:
+    files = verify.source()
+    marker = '"global CAS read budget saturated; returning 503 before buffering"'
+    assert marker in files["cas"]
+    mutant = dict(files)
+    mutant["cas"] = (
+        'const UNRELATED_LOG_BAIT: &str = '
+        + marker
+        + ";\n"
+        + files["cas"].replace(marker, '"global CAS read budget marker removed"', 1)
+    )
+    with pytest.raises(verify.VerificationError):
+        verify.assess(mutant)

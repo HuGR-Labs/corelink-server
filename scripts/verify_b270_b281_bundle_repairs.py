@@ -6,10 +6,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from rust_source_lexer import include_paths, marker_count, marker_present, normal_string_marker_count
+from rust_source_lexer import include_paths, marker_count, marker_present, mask, normal_string_literals
 
 
 ROOT = Path(__file__).resolve().parents[1]
+GC_PURGE_PART = "crates/corelink-container/src/gc_sweep/part-03.rs"
+GC_PURGE_QUERY = "SELECT epoch, state, updated_at FROM gc_purge_intent"
 
 INCLUDE_CENSUSES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
@@ -74,7 +76,7 @@ CONTRACTS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
         "fn mark_r2_deleted(", "fn mark_r2_retry(", "fn finalize_purge(",
     ), ()),
     ("crates/corelink-container/src/gc_sweep/part-03.rs", (
-        "SELECT epoch, state, updated_at FROM gc_purge_intent", "fn begin_purge(",
+        "fn begin_purge(",
         "fn claim_retry_epoch(", "fn mark_r2_deleted(", "fn mark_r2_retry(",
         "fn finalize_purge(",
     ), ()),
@@ -132,6 +134,49 @@ class VerificationError(RuntimeError):
     """A D03 repair contract is absent or ambiguous."""
 
 
+def _matching_delimiter(code: str, opening: int, opener: str, closer: str) -> int:
+    depth = 0
+    for index in range(opening, len(code)):
+        if code[index] == opener:
+            depth += 1
+        elif code[index] == closer:
+            depth -= 1
+            if depth == 0:
+                return index
+    raise VerificationError(f"unterminated delimiter in {GC_PURGE_PART}: {opener}")
+
+
+def _verify_gc_query(root: Path, overrides: dict[str, str]) -> None:
+    """Require the SQL marker in begin_purge's real query argument."""
+    source = _read(root, GC_PURGE_PART, overrides)
+    code = mask(source)
+    functions = list(re.finditer(r"\bfn\s+begin_purge\s*\(", code))
+    if len(functions) != 1:
+        raise VerificationError(f"{GC_PURGE_PART}: begin_purge declaration is missing or ambiguous")
+    function = functions[0]
+    opening = code.find("{", function.end())
+    if opening < 0:
+        raise VerificationError(f"{GC_PURGE_PART}: begin_purge body is missing")
+    closing = _matching_delimiter(code, opening, "{", "}")
+    literals = normal_string_literals(source)
+    body = code[function.start() : closing]
+    hits = 0
+    for call in re.finditer(r"\bquery_sync\s*\(", body):
+        call_opening = function.start() + call.end() - 1
+        call_closing = _matching_delimiter(code, call_opening, "(", ")")
+        for start, end, text in literals:
+            if not (call_opening < start < end < call_closing and GC_PURGE_QUERY in text):
+                continue
+            prefix = code[call_opening + 1 : start]
+            suffix = code[end:call_closing]
+            if re.search(r"&self\.d1\s*,\s*$", prefix) and re.match(r"\s*,\s*&\[", suffix):
+                hits += 1
+    if hits != 1:
+        raise VerificationError(
+            f"{GC_PURGE_PART}: gc purge SQL marker is not the unique begin_purge query argument"
+        )
+
+
 def _read(root: Path, path: str, overrides: dict[str, str]) -> str:
     if path in overrides:
         return overrides[path]
@@ -158,10 +203,11 @@ def _verify_include_censuses(root: Path, overrides: dict[str, str]) -> None:
 def verify(root: Path = ROOT, *, overrides: dict[str, str] | None = None) -> None:
     overrides = overrides or {}
     _verify_include_censuses(root, overrides)
+    _verify_gc_query(root, overrides)
     for path, required, forbidden in CONTRACTS:
         source = _read(root, path, overrides)
         for marker in required:
-            if marker_count(source, marker) == 0 and normal_string_marker_count(source, marker) == 0:
+            if marker_count(source, marker) == 0:
                 raise VerificationError(f"{path}: missing {marker!r}")
         for marker in forbidden:
             if marker_present(source, marker):

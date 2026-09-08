@@ -110,3 +110,15 @@ def test_raw_string_decoys_do_not_satisfy_required_markers(path: str, marker: st
     mutated = source.replace(marker, "")
     mutated = f'r###"{marker}"###\n' + mutated
     _must_fail(path, mutated)
+
+
+def test_unrelated_constant_cannot_replace_gc_query_argument() -> None:
+    path = verify.GC_PURGE_PART
+    source = _text(path)
+    marker = verify.GC_PURGE_QUERY
+    assert source.count(marker) == 1
+    mutated = (
+        f'const UNRELATED_SQL_BAIT: &str = "{marker}";\n'
+        + source.replace(marker, "SELECT epoch, state, updated_at FROM missing_table", 1)
+    )
+    _must_fail(path, mutated)

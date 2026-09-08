@@ -169,18 +169,14 @@ def marker_count(source: str, marker: str) -> int:
     return count
 
 
-def normal_string_marker_count(source: str, marker: str) -> int:
-    """Count marker occurrences inside real normal strings (not raw strings)."""
-    spans = _normal_string_spans(source)
-    return sum(
-        1
-        for match in re.finditer(re.escape(marker), source)
-        if any(start <= match.start() and match.end() <= end for start, end in spans)
-    )
+def normal_string_literals(source: str) -> tuple[tuple[int, int, str], ...]:
+    """Return real ordinary Rust string literal spans and decoded source text.
 
-
-def _normal_string_spans(source: str) -> list[tuple[int, int]]:
-    spans: list[tuple[int, int]] = []
+    This is deliberately a low-level lexical primitive.  Callers must scope a
+    returned literal to the code construct whose argument they are proving;
+    a file-wide marker count is not a semantic proof.
+    """
+    literals: list[tuple[int, int, str]] = []
     i = 0
     depth = 0
     while i < len(source):
@@ -213,14 +209,14 @@ def _normal_string_spans(source: str) -> list[tuple[int, int]]:
                 if source[i] == "\\":
                     i += 2
                 elif source[i] == '"':
-                    spans.append((start, i))
+                    literals.append((start, i, source[start:i]))
                     i += 1
                     break
                 else:
                     i += 1
             continue
         i += 1
-    return spans
+    return tuple(literals)
 
 
 def _looks_like_char(source: str, start: int) -> bool:

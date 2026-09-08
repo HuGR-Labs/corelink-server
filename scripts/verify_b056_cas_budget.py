@@ -7,7 +7,7 @@ import argparse
 import re
 from pathlib import Path
 
-from rust_source_lexer import include_paths, mask, normal_string_marker_count, strip_comments
+from rust_source_lexer import include_paths, mask, normal_string_literals, strip_comments
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -76,6 +76,35 @@ def handler_span(cas: str, name: str, next_name: str | None = None) -> str:
     if not match:
         fail(f"B-056 handler missing: {name}")
     return match.group(0)
+
+
+def _matching_delimiter(code: str, opening: int, opener: str, closer: str) -> int:
+    depth = 0
+    for index in range(opening, len(code)):
+        if code[index] == opener:
+            depth += 1
+        elif code[index] == closer:
+            depth -= 1
+            if depth == 0:
+                return index
+    fail(f"B-056 unterminated tracing macro delimiter: {opener}")
+    raise AssertionError("unreachable")
+
+
+def _saturation_log_span(cas: str, marker: str) -> tuple[int, int]:
+    """Find the marker as an argument of a real ``tracing::warn!`` call."""
+    code = mask(cas)
+    literals = normal_string_literals(cas)
+    hits: list[tuple[int, int]] = []
+    for call in re.finditer(r"\btracing::warn!\s*\(", code):
+        opening = code.find("(", call.start(), call.end())
+        closing = _matching_delimiter(code, opening, "(", ")")
+        for start, end, text in literals:
+            if opening < start < end < closing and text == marker:
+                hits.append((call.start(), closing))
+    if len(hits) != 1:
+        fail("B-056 saturation log marker is missing or not an argument of one tracing::warn! call")
+    return hits[0]
 
 
 def assess(files: dict[str, str], expected_status: str = "done") -> None:
@@ -158,11 +187,9 @@ def assess(files: dict[str, str], expected_status: str = "done") -> None:
     # tenant/hash/request identifiers would turn a bounded guard into a high-
     # cardinality observability sink.
     saturation_marker = "global CAS read budget saturated; returning 503 before buffering"
-    if normal_string_marker_count(cas, saturation_marker) != 1:
-        fail("B-056 saturation log marker is missing or ambiguous")
+    call_start, call_end = _saturation_log_span(cas, saturation_marker)
     clean_cas = strip_comments(cas)
-    offset = clean_cas.index(f'"{saturation_marker}')
-    saturation = clean_cas[offset:offset + 180]
+    saturation = clean_cas[call_start:call_end]
     if "tenant_id" in saturation or "hash" in saturation or "request_id" in saturation:
         fail("B-056 saturation log contains high-cardinality identity")
 
