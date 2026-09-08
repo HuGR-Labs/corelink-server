@@ -90,14 +90,14 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
         "owner_packet": "docs/handoff/2026-09-05-b098-owner-action-packet.md",
         "profiles": [], "sample_count": 1,
         "required": ["verify_b098_repo_hygiene.py", "--dry-run", "--expected-main-sha"],
-        "safety": ["no semver release tag", "not create a tag"],
+        "safety": ["no semver release tag", "--dry-run"],
         "forbidden": ["git tag -a", "git push", "--force"],
     },
     "B-102": {
         "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-102",
         "profiles": ["cas:rw"], "sample_count": 3,
         "required": ["/cargo", "1 KiB", "Server-Timing", "third_request_hot"],
-        "safety": ["within 60 seconds", "same", "OWNER_APPROVED_PROBE=1"],
+        "safety": ["-le 60", "cas:rw", "OWNER_APPROVED_PROBE=1"],
         "forbidden": ["/v1/customer/cas/probe"],
     },
     "B-104": {
@@ -110,15 +110,15 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
     "B-106": {
         "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-106",
         "profiles": ["d1", "kv", "l1"], "sample_count": 2,
-        "required": ["cold", "60 seconds", "Server-Timing", "colo"],
+        "required": ["cold", "sleep 61", "Server-Timing"],
         "safety": ["CORELINK_COLD_PAT", "revocation", "OWNER_APPROVED_PROBE=1"],
         "forbidden": ["TTL", "KV_TTL", "--fail"],
     },
     "B-112": {
         "owner_packet": "docs/campaigns/remediation/work-packages/B091-B130.md#WP-B112",
         "profiles": ["linux", "windows"], "sample_count": 1,
-        "required": ["release-cli.yml", "cargo-zigbuild", "checksums", "SLSA"],
-        "safety": ["--root", "production release remains parked"],
+        "required": ["release-cli.yml", "cargo-zigbuild", "checksums", "SLSA", "gh run rerun", "B112_RUN_ID"],
+        "safety": ["--root", "OWNER_APPROVED_RELEASE_RERUN=1"],
         "forbidden": ["git tag", "cosign-sign.yml", "--force"],
     },
     "B-113": {
@@ -126,27 +126,27 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
         "profiles": ["nightly.yml", "sbom.yml", "buck2-starter-ci.yml", "fuzz-nightly.yml", "endurance-2h-nightly.yml", "load-test-nightly.yml", "billing-health-daily.yml"],
         "sample_count": 7,
         "required": ["runner", "conclusion", "terraform-drift.yml"],
-        "safety": ["read-only", "B-111", "OWNER_APPROVED_LANE_DISPATCH=1"],
+        "safety": ["--ref main", "B-111", "OWNER_APPROVED_LANE_DISPATCH=1"],
         "forbidden": ["terraform-drift.yml --dispatch"],
     },
     "B-122": {
         "owner_packet": "docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md#B-122",
         "profiles": ["B-102", "B-107"], "sample_count": 3,
         "required": ["deployed commit", "ostore", "oaccounting", "phase sum"],
-        "safety": ["1 KiB", "within 60 seconds", "OWNER_APPROVED_PROBE=1"],
+        "safety": ["1 KiB", "-le 60", "OWNER_APPROVED_PROBE=1"],
         "forbidden": ["sqlite_master", "DROP ", "DELETE FROM"],
     },
     "B-125": {
         "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-125",
         "profiles": ["audit_outbox"], "sample_count": 1,
-        "required": ["D-1-audit-trail", "arrivals", "sealed rows", "oldest unsealed", "seal latency", "512"],
-        "safety": ["--remote", "read-only", "SELECT", "OWNER_APPROVED_READONLY=1"],
+        "required": ["D-1-audit-trail", "arrivals", "sealed_rows", "oldest_unsealed", "seal_latency", "512"],
+        "safety": ["--remote", "SELECT", "OWNER_APPROVED_READONLY=1"],
         "forbidden": ["AUDIT_DRAIN", "DELETE ", "UPDATE ", "drain --run"],
     },
     "B-127": {
         "owner_packet": "docs/campaigns/remediation/work-packages/B091-B130.md#WP-B127",
         "profiles": ["satisfied", "violated", "unevaluable", "weur"], "sample_count": 1,
-        "required": ["LEFT JOIN", "audit_outbox", "5 tenants", "144 rows", "denominator"],
+        "required": ["LEFT JOIN", "audit_outbox", "tenants", "total_rows", "denominator"],
         "safety": ["--remote", "SELECT", "OWNER_APPROVED_READONLY=1"],
         "forbidden": ["sqlite_master", "DELETE ", "UPDATE ", "DROP "],
     },
@@ -154,7 +154,7 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
         "owner_packet": "docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md#B-129",
         "profiles": ["qtier", "qdo", "qbatch", "qresid", "qcontrol"], "sample_count": 10,
         "required": ["SERVER_TIMING_WDB_DETAIL=on", "deployed commit", "residual", "<10%", "ohop", "wdb", "origin"],
-        "safety": ["diagnostic", "authenticated", "OWNER_APPROVED_PROBE=1"],
+        "safety": ["diagnostic", "Authorization: Bearer", "OWNER_APPROVED_PROBE=1"],
         "forbidden": ["--fail", "production config"],
     },
     "B-134": {
@@ -173,6 +173,32 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
     },
 }
 SEMANTIC_PACKET_FIELDS = {"owner_packet", "profiles", "sample_count", "required", "safety", "forbidden"}
+
+# Each operation is deliberately unique within its command.  A token-only
+# contract could survive removal of the actual probe while retaining a quoted
+# profile name or artifact path, so the verifier also requires these concrete
+# owner-packet operations.
+COMMAND_OPERATIONS: dict[str, tuple[str, ...]] = {
+    "B-044": ("timeout 30s",),
+    "B-046": ("verify_b046_object_lock_probe.py --probe",),
+    "B-063": ("audit-archive-lag.yml --ref main",),
+    "B-068": ("gh workflow run real-ignored-harnesses.yml",),
+    "B-071": ("gh workflow run gc-sweep-dry-run.yml",),
+    "B-072": ("verify_b072_scheduled_drills.py",),
+    "B-083": ("verify_b083_revocation_wiring.py",),
+    "B-098": ("verify_b098_repo_hygiene.py",),
+    "B-102": ("$CORELINK_PROD_BASE/cargo",),
+    "B-104": ("does-not-exist-$ordinal",),
+    "B-106": ("$CORELINK_PROD_BASE/v1/customer/keys",),
+    "B-112": ("gh run rerun",),
+    "B-113": ("gh workflow run \"$workflow\"",),
+    "B-122": ("$CORELINK_PROD_BASE/cargo",),
+    "B-125": ("wrangler d1 execute corelink-prod",),
+    "B-127": ("wrangler d1 execute corelink-prod",),
+    "B-129": ("$CORELINK_PROD_BASE/v1/customer/cas/probe",),
+    "B-134": ("check_b134_observability.py",),
+    "B-251": ("cargo test -p corelink-billing",),
+}
 
 # Frozen from the 42 TL/open records at the D03 starting head.  Do not derive
 # this set from the candidate: doing so would make deletion look like closure.
@@ -242,12 +268,38 @@ def _check_command_contract(item: str, packet: dict[str, Any], root: Path) -> No
     if contract != expected:
         raise GraduationError(f"{item}: command_contract disagrees with the authoritative owner packet")
     command = packet["command"]
+    if "set -euo pipefail" not in command:
+        raise GraduationError(f"{item}: command must enable fail-closed shell options")
+    if "printf" in command:
+        raise GraduationError(f"{item}: assertions must come from tool output, not printf token bait")
+    if not re.search(r"\b(?:grep|jq\s+-e|awk|test|case)\b", command):
+        raise GraduationError(f"{item}: command has no executable assertion over captured tool output")
+    for curl_fragment in re.findall(r"\bcurl\b([^;]*)", command):
+        if "--output /dev/null" not in curl_fragment:
+            raise GraduationError(f"{item}: curl response body must be discarded from evidence")
+    if "wrangler tail" in command and not re.search(r"\btimeout\s+[0-9]+s\s+wrangler tail\b", command):
+        raise GraduationError(f"{item}: wrangler tail must have a finite timeout")
+    if "gh workflow run" in command:
+        if not all(token in command for token in ("run_id", "gh run view", "status", "completed")):
+            raise GraduationError(f"{item}: dispatched workflow must correlate its run ID and wait terminal")
+    if "gh run rerun" in command and not all(token in command for token in ("run_id", "gh run view", "completed")):
+        raise GraduationError(f"{item}: rerun must correlate its run ID and wait terminal")
     marker = f"D03_SAMPLE_COUNT={expected['sample_count']}"
     if marker not in command:
         raise GraduationError(f"{item}: command must carry the explicit {marker} population marker")
+    token_aliases = {
+        # YAML env syntax is the authoritative workflow operation; accepting
+        # the equivalent shell spelling here avoids requiring a second, local
+        # flag that could be mistaken for proof about the remote run.
+        "GC_LIVE_DELETE=false": ('GC_LIVE_DELETE: "false"',),
+        "sleep 61": ("sleep_interval_seconds=61",),
+    }
     for token in (*expected["required"], *expected["safety"]):
-        if token not in command:
+        if token not in command and not any(alias in command for alias in token_aliases.get(token, ())):
             raise GraduationError(f"{item}: command is missing semantic token {token!r}")
+    for operation in COMMAND_OPERATIONS.get(item, ()):
+        if operation not in command:
+            raise GraduationError(f"{item}: command omits load-bearing owner operation {operation!r}")
     for profile in expected["profiles"]:
         if profile not in command:
             raise GraduationError(f"{item}: command omits required profile/population {profile!r}")
@@ -469,9 +521,9 @@ def self_test(root: Path = ROOT) -> None:
         (
             "artifact-capture-removed",
             backlog,
-            packets.replace(" > artifacts/d03/B102-server-timing.json", "", 1).replace(
-                " >> artifacts/d03/B102-server-timing.json", "", 1
-            ),
+            packets.replace(" : > artifacts/d03/B102-server-timing.json", "", 1).replace(
+                " | tee -a artifacts/d03/B102-server-timing.json", "", 3
+            ).replace(" >> artifacts/d03/B102-server-timing.json", "", 1),
         ),
     )
     for name, mutated_backlog, mutated_packets in cases:
@@ -516,12 +568,14 @@ def self_test(root: Path = ROOT) -> None:
         raise GraduationError(f"mutation unexpectedly passed: {name}")
 
     # Every flagged parked command has a population/safety contract.  Kill one
-    # load-bearing safety token and one declared count per item; a verifier that
-    # checks only artifact redirection must not accept either mutant.
+    # load-bearing safety token, declared count, and concrete owner operation
+    # per item; a verifier that checks only artifact redirection must not accept
+    # any of these mutants.
     for item, contract in COMMAND_CONTRACTS.items():
         for name, mutation in (
             ("semantic-token-removed", lambda data, token=contract["safety"][0]: data["packets"][item].update(command=data["packets"][item]["command"].replace(token, ""))),
             ("semantic-count-mutated", lambda data: data["packets"][item]["command_contract"].update(sample_count=contract["sample_count"] + 1)),
+            ("load-bearing-operation-removed", lambda data, operation=COMMAND_OPERATIONS[item][0]: data["packets"][item].update(command=data["packets"][item]["command"].replace(operation, "", 1))),
         ):
             mutated = copy.deepcopy(owner_data)
             # Start from the full graduation document, not only owner packets.
