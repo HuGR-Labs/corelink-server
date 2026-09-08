@@ -2,7 +2,7 @@
 """Executable B-160 proof gate.
 
 This is deliberately a small, bounded verifier rather than a source grep:
-it checks the complete authority path, proves its own teeth with five
+it checks the complete authority path, proves its own teeth with six
 mutations, and runs the load-bearing Worker focal suite while reading its
 machine-readable result.
 """
@@ -58,6 +58,78 @@ def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _strip_ts_comments(source: str) -> str:
+    """Remove TypeScript comments without touching string literals."""
+    output: list[str] = []
+    index = 0
+    while index < len(source):
+        if source[index] == '"':
+            start = index
+            index += 1
+            while index < len(source):
+                if source[index] == "\\":
+                    index += 2
+                elif source[index] == '"':
+                    index += 1
+                    break
+                else:
+                    index += 1
+            output.append(source[start:index])
+            continue
+        if source.startswith("//", index):
+            newline = source.find("\n", index + 2)
+            if newline < 0:
+                output.append("\n")
+                break
+            output.append("\n")
+            index = newline + 1
+            continue
+        if source.startswith("/*", index):
+            end = source.find("*/", index + 2)
+            if end < 0:
+                fail("B-160 CLIENT_TRUST_HEADERS has an unterminated comment")
+            newlines = source[index : end + 2].count("\n")
+            output.append("\n" * newlines)
+            index = end + 2
+            continue
+        output.append(source[index])
+        index += 1
+    return "".join(output)
+
+
+def _client_trust_header_literals(source: str) -> tuple[str, ...]:
+    """Extract exact quoted elements from the authoritative trust-header list."""
+    uncommented = _strip_ts_comments(source)
+    match = re.search(
+        r"const\s+CLIENT_TRUST_HEADERS\s*:\s*ReadonlyArray<string>\s*=\s*\["
+        r"(?P<body>.*?)\];",
+        uncommented,
+        re.DOTALL,
+    )
+    if match is None:
+        fail("B-160 CLIENT_TRUST_HEADERS initializer is missing or malformed")
+    literals: list[str] = []
+    for raw_entry in match.group("body").split(","):
+        entry = raw_entry.strip()
+        if not entry:
+            continue
+        if entry.startswith('"') and entry.endswith('"'):
+            try:
+                value = json.loads(entry)
+            except json.JSONDecodeError as error:
+                fail(f"B-160 CLIENT_TRUST_HEADERS contains malformed string literal: {error}")
+            if not isinstance(value, str):
+                fail("B-160 CLIENT_TRUST_HEADERS contains a non-string literal")
+            literals.append(value)
+        elif re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", entry):
+            # A trusted constant (currently STORAGE_QUOTA_HEADER) is a valid
+            # list element but cannot satisfy an exact literal requirement.
+            continue
+        else:
+            fail(f"B-160 CLIENT_TRUST_HEADERS contains an invalid element: {entry!r}")
+    return tuple(literals)
+
+
 def validate_source(files: dict[str, str]) -> None:
     route = files["route"]
     rate = files["rate"]
@@ -85,6 +157,9 @@ def validate_source(files: dict[str, str]) -> None:
     for name, needle in required:
         if needle not in files[name]:
             fail(f"B-160 runtime proof missing {needle!r} in {name}")
+
+    if "x-corelink-pat-issue-authorized" not in _client_trust_header_literals(edge):
+        fail("B-160 authoritative CLIENT_TRUST_HEADERS list lacks exact PAT lease header")
 
     # index_auth.ts is the production-facing module imported by the worker's
     # request stages. The policy implementation must remain wired through its
@@ -149,6 +224,11 @@ def mutation_checks(files: dict[str, str]) -> None:
             "runtime proof missing '\"x-corelink-pat-issue-authorized\"'",
         ),
         (
+            "comment bait in trust-header list",
+            {**files, "edge": files["edge"].replace('  "x-corelink-pat-issue-authorized",\n', '  // "x-corelink-pat-issue-authorized",\n', 1)},
+            "authoritative CLIENT_TRUST_HEADERS list lacks exact PAT lease header",
+        ),
+        (
             "no-op edge strip",
             {**files, "edge": files["edge"].replace("h.delete(name);", "void name;", 1)},
             "semantic header removal",
@@ -166,6 +246,8 @@ def mutation_checks(files: dict[str, str]) -> None:
             fail("B-160 mutation fixture did not change edge strip")
         if files["edge"] == mutant["edge"] and name == "no-op edge strip":
             fail("B-160 mutation fixture did not change edge behavior")
+        if files["edge"] == mutant["edge"] and name == "comment bait in trust-header list":
+            fail("B-160 mutation fixture did not change trust-header list")
         if files["shim"] == mutant["shim"] and name == "rewired production auth shim":
             fail("B-160 mutation fixture did not change production shim")
         try:
@@ -254,11 +336,11 @@ def main() -> int:
         validate_source(files)
         mutation_checks(files)
         if args.self_test:
-            print("B-160 verifier mutation teeth: 5/5 rejected")
+            print("B-160 verifier mutation teeth: 6/6 rejected")
             return 0
         pnpm = assert_dependencies()
         run_focal(pnpm)
-        print("B-160 confirmed: runtime seams, 5/5 mutations, and focal Vitest 9/9 passed")
+        print("B-160 confirmed: runtime seams, 6/6 mutations, and focal Vitest 9/9 passed")
         return 0
     except VerificationError as error:
         print(f"B-160 DRIFTED: {error}", file=sys.stderr)
