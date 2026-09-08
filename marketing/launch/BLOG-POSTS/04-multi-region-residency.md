@@ -82,7 +82,7 @@ Critically, erasure does not require cross-region read access. The erasure reque
 
 ## Three-locale legal review (EN / PT-BR / ES)
 
-Customers operating across regions sign DPAs and SCC modules whose legal force depends on the locale they are executed in. CoreLink's DPA package was reviewed by external counsel in three locales before any lighthouse customer signed:
+Customers operating across regions sign DPAs and SCC modules whose legal force depends on the locale they are executed in. CoreLink's DPA package is prepared for external-counsel review in three locales; no external lighthouse customer has signed this draft. Customer signature remains a gate before onboarding:
 
 - **English (EU + UK)** — for customers contracting under EU GDPR or UK GDPR. SCC modules where applicable, controller-to-processor and controller-to-controller variants per configuration.
 - **Portuguese (Brazil)** — for customers contracting under LGPD. Sector-specific addenda available for CVM- and BCB-regulated entities.
@@ -100,9 +100,14 @@ For data stored under a US (ENAM) binding — including EU-origin data a custome
 
 `DRAFT — pending customer engagement per WI-S20-004 lighthouse confirmation.`
 
-One of our lighthouse customers is an EU-headquartered software company shipping developer tooling under a procurement framework that requires explicit residency commitments and a Schrems II–era TIA. Their compliance officer's specific ask, in our first procurement conversation, was: "show me, in code, the path by which EU data could leave the EU; if there is no such path, give me the artifact that proves it." We pointed them at the TLA+ specification, the regional architecture diagram, and the consistency-proof verification toolkit for the audit chain. The procurement cycle closed faster than any of us expected, because the answer to the compliance officer's question was an artifact rather than a narrative.
+No external lighthouse customer exists yet for this draft. The procurement
+conversation and compliance-officer question below are placeholders for a
+future engagement, not a customer result or closed procurement cycle. Do not
+attribute them to a customer until the engagement, evidence, and approval
+gates are complete.
 
-The full lighthouse case study, with the customer's name and the executive's attestation, ships with the GA case-study bundle.
+The full lighthouse case study, with a customer's name and executive
+attestation, may ship only after a real engagement and customer approval.
 
 ## What this is not
 

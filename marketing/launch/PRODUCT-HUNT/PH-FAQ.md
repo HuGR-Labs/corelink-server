@@ -17,7 +17,7 @@ A: CoreLink is a managed service at GA. Apache 2.0 release is anti-scope for GA 
 Source: spec contract S-20 §10.
 
 **Q: What does GA mean for CoreLink?**
-A: The S-20 GA bar includes seven engineering work items sealed, PRR globally approved with thirteen canonical sign-offs, 30 days of sustained staging, three lighthouse customers with SLA met, SOC 2 gap analysis delivered, zero active waivers in CRITICAL controls, and `CAP-GA-002`: an independent external-pentest report and retest with no outstanding HIGH or CRITICAL findings. `CAP-GA-002` is unmet: no external pentest has been commissioned, so this draft does not authorize a GA claim.
+A: The S-20 GA bar includes seven engineering work items sealed, PRR globally approved with thirteen canonical sign-offs, 30 days of sustained staging, external lighthouse evidence, SOC 2 gap analysis delivered, zero active waivers in CRITICAL controls, and `CAP-GA-002`: an independent external-pentest report and retest with no outstanding HIGH or CRITICAL findings. The external customer and pentest gates are unmet, so this draft does not authorize a GA claim.
 Source: spec contract S-20 §6.1.
 
 ## Technical
@@ -101,7 +101,9 @@ A: Yes. Published at `humangr.com/corelink/trust/formal-verification`.
 A: Yes. CycloneDX 1.5+, signed, published. `humangr.com/corelink/trust/sbom`.
 
 **Q: Can I see your DPA?**
-A: Yes. `humangr.com/corelink/en/legal/dpa`. The DPA package was Legal-reviewed by external EU privacy counsel before any lighthouse customer signed.
+A: Yes. `humangr.com/corelink/en/legal/dpa`. External-counsel review and
+customer signature remain gates before any lighthouse onboarding; no external
+lighthouse customer has signed this draft.
 
 ---
 

@@ -2,7 +2,7 @@
 
 > **DRAFT — pending Fortune-500 lighthouse engagement confirmation. NOT FOR PUBLICATION until customer-approved + Legal-cleared for external distribution.**
 > Trace: spec contract S-20 §5.2 R-S20-4 · WI-S20-004 lighthouse customer attestations (1 enterprise BYOK slot) · WI-S20-008 §2.1.3 (case study #3) · CAP-GA-004 · WI-S20-005 DPA signature gate.
-> Status: **DRAFT — pending Fortune-500 enterprise engagement (sector candidates: financial services / FedRAMP-ready / EU regulated). Sanitized variant under NDA available for sales.**
+> Status: **DRAFT — pending Fortune-500 enterprise engagement (sector candidates: financial services / FedRAMP-ready / EU regulated). No customer-specific or sanitized sales variant is available.**
 
 ---
 
@@ -82,7 +82,8 @@ and Legal clearance described above. Contact: `sales@humangr.com`.
 
 - Engagement target: per WI-S20-004 timeline (D+10..D+25) via Sales engagement.
 - Status DRAFT pending engagement + customer approval + Legal clearance per WI-S20-005 cumulative.
-- Sanitized variant maintained for NDA-gated sales distribution.
+- No sanitized variant is maintained. Prepare one only after a real customer
+  engagement, evidence, customer approval, and Legal clearance exist.
 - All metrics are placeholders. No specific dollar amounts. No unverified compliance claims.
 - The kill-switch and erasure-attestation bullets now state that no execution or
   evidence exists; they are not a methodology claim or a customer result.

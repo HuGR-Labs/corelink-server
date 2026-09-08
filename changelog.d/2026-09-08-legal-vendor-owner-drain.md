@@ -26,3 +26,9 @@
   failover paths; Sentry's dated 2024 source is not presented as a current
   2026 report; and Better Stack's first-party enterprise page is cited for its
   NDA-gated SOC 2 attestation.
+- **Reconciled launch adoption copy to the verified no-external-customer
+  boundary.** Press, social, Product Hunt, blog, and Enterprise BYOK case-study
+  drafts now state that the external lighthouse/BYOK slots are unpopulated and
+  that no sanitized sales variant exists. The B-156 publication census adds a
+  closed-world semantic guard and mutation coverage for equivalent stale
+  adoption or sanitized-variant claims.

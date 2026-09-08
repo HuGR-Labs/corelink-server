@@ -29,7 +29,11 @@ For build-heavy engineering organizations, the cache is the single most leverage
 
 > **ATTRIBUTION NOT SET.** The speaker's name must be supplied and approved by that person before distribution. An earlier draft carried an unfilled CEO-name placeholder marker here and in the quote slots below, which would have shipped a bracketed template token into a wire release.
 >
-> **A SENTENCE WAS REMOVED FROM THIS QUOTE.** It read: *"GA means we have third-party pentest evidence, thirty days of sustained staging, three lighthouse customers in production, and an external compliance gap analysis on file."* The pentest half is false — no external pentest has been commissioned. The quote must not be reinstated in that form.
+> **A SENTENCE WAS REMOVED FROM THIS QUOTE.** It asserted third-party
+> pentest evidence, sustained staging, external customer adoption, and an
+> external compliance gap analysis. The pentest half is false — no external
+> pentest has been commissioned. The sentence must not be reinstated in that
+> form.
 
 ## Highlights (verified claims)
 
@@ -44,7 +48,10 @@ Every claim below traces to a canonical CoreLink spec source, an external letter
 - **SBOM published, signed.** CycloneDX 1.5+ format, signed and published per sprint S-12.
 - **No external pentest — this is not a claim we can make.** No firm has been engaged and no report exists: every vendor in `reports/pentest-rfp-tracker.json` is `NOT_CONTACTED` with `rfp_sent_date: null`. The public docs page states this correctly (`apps/docs/docs/explanation/compliance/pentest-summary.mdx`: "No vendor has been contracted"), as does `marketing/sales/PROOF-POINTS.md` §2.12: *"Reps must not assert any pentest result."* An earlier draft of this bullet read *"External pentest, clean. Independent firm engagement plus post-remediation retest; zero HIGH/CRITICAL findings pending (CAP-GA-002)."* CAP-GA-002 is an unmet gate, not evidence.
 - **SOC 2 gap analysis delivered.** Continuous-compliance tooling stood up; concrete GAP-XX items with remediation timeline. Type I engagement scheduled six months post-GA (CAP-GA-003).
-- **Three lighthouse customers attested.** Two team-tier deployments and one enterprise BYOK deployment, each with SLA claims met across a sustained 30-day observation window (CAP-GA-004).
+- **No external lighthouse customer attestations exist for this draft.** The
+  Enterprise/BYOK customer slot remains unpopulated; no external deployment,
+  30-day SLA observation, or customer evidence may be claimed until the
+  engagement and approval gates are complete (CAP-GA-004).
 - **24/7 incident response.** PagerDuty rotations across three regions, weekly synthetic page exercise with sub-five-minute response sustained 30 days (CAP-GA-006).
 
 ## Pricing

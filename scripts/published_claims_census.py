@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Bounded, deterministic census of terms on the published claim surface.
 
-This is an inventory gate, not a semantic truth oracle.  ``BYOK``, ``Buck2``
-and ``pentest`` occur in both legitimate context and claims that still need
-triage.  Every occurrence is therefore recorded with its exact source line,
+This is primarily an inventory gate, with one deliberately narrow semantic
+guard for the currently verified enterprise-adoption boundary.  ``BYOK``,
+``Buck2`` and ``pentest`` occur in both legitimate context and claims that
+still need triage.  Every occurrence is therefore recorded with its exact source line,
 stable identity and file hash; a changed population is a fail-closed review
 stop rather than a silently changed count.
 """
@@ -35,6 +36,75 @@ TERM_RE = re.compile(
 MAX_FILES = 2_000
 MAX_FILE_BYTES = 8 * 1024 * 1024
 MAX_TOTAL_BYTES = 128 * 1024 * 1024
+
+# The owner evidence packet establishes that no external enterprise lighthouse
+# or BYOK customer has adopted CoreLink yet. Keep this guard scoped to the
+# customer-facing launch artifacts: runbooks and internal planning documents
+# may legitimately describe the future gate or onboarding workflow. The
+# negative/historical markers below permit explicit non-claims and provenance
+# notes while rejecting a stale positive assertion or an equivalent rewrite.
+ENTERPRISE_CLAIM_SURFACE_PREFIXES = (
+    "marketing/launch/PRESS-RELEASE.md",
+    "marketing/launch/SOCIAL/",
+    "marketing/launch/PRODUCT-HUNT/",
+    "marketing/launch/BLOG-POSTS/",
+    "marketing/launch/CASE-STUDIES/enterprise-byok.md",
+)
+STALE_ENTERPRISE_ADOPTION_PATTERNS = (
+    re.compile(r"\b(?:three|3)\s+lighthouse\s+customers?\b", re.IGNORECASE),
+    re.compile(
+        r"\b(?:two|2)\s+team[- ]tier\s+deployments?.{0,100}\b(?:one|1)\s+enterprise\s+BYOK\s+deployment\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\b(?:one|an|1)\s+enterprise\s+BYOK\s+deployment\b", re.IGNORECASE),
+    re.compile(r"\b(?:one|an|1)\s+enterprise\s+BYOK\s+customer\b", re.IGNORECASE),
+    re.compile(
+        r"\b(?:enterprise\s+)?lighthouse\s+customers?\s+(?:have|has|adopted|signed|attested|deployed|completed|selected)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:enterprise\s+BYOK\s+)?customer(?:s)?\s+(?:adopted|selected|deployed|signed|attested)\s+CoreLink\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\b(?:we|CoreLink)\s+(?:named|have|had)\s+three\s+lighthouse\s+customers?\b", re.IGNORECASE),
+    re.compile(r"\b(?:our|one\s+of\s+our)\s+lighthouse\s+customers?\b", re.IGNORECASE),
+    re.compile(r"\bat\s+our\s+three\s+lighthouse\s+customers?\b", re.IGNORECASE),
+    re.compile(r"\bsanitized\s+variant\b.{0,40}\b(?:available|maintained)\b", re.IGNORECASE),
+)
+NONCLAIM_CONTEXT = re.compile(
+    r"\b(?:no|not|never|none|unmet|pending|placeholder|draft|future|former|removed|"
+    r"without|does\s+not|cannot|can't|not\s+yet|before\s+any|remain(?:s)?\s+unpopulated|"
+    r"must\s+not|may\s+ship\s+only|not\s+authorized|previously)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_claim_surface(relative_path: str) -> bool:
+    return any(
+        relative_path == prefix or relative_path.startswith(prefix)
+        for prefix in ENTERPRISE_CLAIM_SURFACE_PREFIXES
+    )
+
+
+def enterprise_adoption_violations(root: Path, paths: list[Path] | None = None) -> list[str]:
+    """Return positive enterprise-adoption claims forbidden by the owner packet."""
+
+    paths = published_files(root) if paths is None else paths
+    violations: list[str] = []
+    for path in paths:
+        relative_path = path.relative_to(root).as_posix()
+        if not _is_claim_surface(relative_path):
+            continue
+        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if NONCLAIM_CONTEXT.search(line):
+                continue
+            for pattern in STALE_ENTERPRISE_ADOPTION_PATTERNS:
+                if pattern.search(line):
+                    violations.append(
+                        f"{relative_path}:{line_number}: stale positive enterprise-adoption claim: {line.strip()}"
+                    )
+                    break
+    return violations
 
 
 def published_files(root: Path) -> list[Path]:
@@ -165,6 +235,10 @@ def validate(root: Path, inventory_path: Path = INVENTORY) -> list[str]:
     except (OSError, UnicodeDecodeError, ValueError) as exc:
         return [f"HALT: published census cannot be derived: {exc}"]
     failures: list[str] = []
+    failures.extend(
+        f"HALT: {violation}"
+        for violation in enterprise_adoption_violations(root)
+    )
     expected_population = expected.get("population")
     actual_population = actual["population"]
     if not isinstance(expected_population, dict):
@@ -219,6 +293,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if args.json:
         print(json.dumps(derived, indent=2, sort_keys=False))
+    violations = enterprise_adoption_violations(root)
+    if violations:
+        print("\n".join(f"HALT: {violation}" for violation in violations), file=sys.stderr)
+        return 1
     if args.write:
         inventory_path.write_text(json.dumps(derived, indent=2) + "\n", encoding="utf-8")
         print(f"wrote {inventory_path}: {_summary(derived)}")
