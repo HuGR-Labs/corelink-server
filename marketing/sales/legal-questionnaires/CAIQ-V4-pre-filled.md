@@ -285,7 +285,7 @@ CSP / CSC responsibility column:
 | STA-11.1 | Build provenance verifiable? | N | CSP | Not today — no transparency-log entry has ever been created (roadmap). Public integrity evidence today: per-binary SHA-256 checksums on releases. | CC6.7 |
 | STA-12.1 | Open-source license compliance? | Y | CSP | License allowlist enforced; OSS matrix landed 2026-05-15 (commit `44cdf15`). | CC5.2 |
 | STA-13.1 | Sub-processor SOC 2 inheritance documented? | Y | CSP | `legal/sub-processors.md` + ISO 27001 page §"What we'll formally certify vs inherited". | CC6.4 |
-| STA-14.1 | Vendor failover tested for Critical vendors? | Y | CSP | 5 of 6 Critical vendors have tested failover (Drata is monitoring-only, no failover required). | A1.2 |
+| STA-14.1 | Vendor failover tested for Critical vendors? | Y | CSP | 6 of 7 Critical vendors have tested failover (Drata is monitoring-only, no failover required). | A1.2 |
 
 ## TVM — Threat & Vulnerability Management (10 questions)
 

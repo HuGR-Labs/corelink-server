@@ -20,3 +20,9 @@
   Enterprise BYOK case study (B-154).** The case study now says no testimonial
   exists and blocks attribution or circulation until a real drill, evidence,
   and customer approval exist; no capability or customer quote is fabricated.
+- **Reconciled the remaining public legal-owner wording.** The press release
+  now marks the Enterprise customer quote as not yet collected; the register
+  and CAIQ questionnaire agree on seven Critical vendors and six tested
+  failover paths; Sentry's dated 2024 source is not presented as a current
+  2026 report; and Better Stack's first-party enterprise page is cited for its
+  NDA-gated SOC 2 attestation.

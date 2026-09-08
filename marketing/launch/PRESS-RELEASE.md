@@ -67,9 +67,11 @@ Tiered pricing across Free / Team / Enterprise. Specific list prices are availab
 > "We migrated from a self-hosted Bazel remote cache. CoreLink absorbed the operational burden — eviction, GC correctness, blob deduplication, region-aware residency — without changing the REAPI contract our CI already spoke. The migration was effectively a config change."
 > _DRAFT — pending OSS lighthouse engagement confirmation per WI-S20-004._
 
-> **LIGHTHOUSE CUSTOMER #3 (ENTERPRISE / BYOK) QUOTE** — `[ENTERPRISE_NAME_OR_SECTOR_DESCRIPTOR]`
-> "Customer-managed kill switch is not a feature for us; it is a procurement precondition. CoreLink is the only cache vendor we evaluated that exposed a verifiable Ed25519 erasure attestation we could replay into our own audit pipeline."
-> _DRAFT — pending Fortune-500 lighthouse engagement confirmation per WI-S20-004._
+> **LIGHTHOUSE CUSTOMER #3 (ENTERPRISE / BYOK) QUOTE** — **NOT YET COLLECTED.**
+> No enterprise customer testimonial or attributable statement exists for this
+> draft. Do not attribute, circulate, or publish a customer quote until a real
+> engagement produces evidence and the customer approves the exact wording for
+> the intended audience (WI-S20-004).
 
 > **INDUSTRY ANALYST QUOTE** — `[ANALYST_NAME], [ANALYST_FIRM]`
 > "The market has been waiting for a remote cache that takes residency, BYOK, and tenant isolation as first-class concerns rather than enterprise add-ons retrofitted onto a SaaS-first architecture. CoreLink is the first credible entrant in that category."
