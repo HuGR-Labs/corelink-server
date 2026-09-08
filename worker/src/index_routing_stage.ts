@@ -11,6 +11,7 @@ import { type KvReader } from "./lib/pat_verify_cache.js";
 import { coloForMacro } from "./region-map.js";
 import { applyCors } from "./index_auth.js";
 import { STORAGE_QUOTA_HEADER } from "./lib/quota.js";
+import { isPilotSignupPath } from "./route_match.js";
 
 export interface RoutingStageResult {
   readonly primaryRegion: string | undefined;
@@ -198,6 +199,44 @@ export async function routeTenantRequest(
       }
       // colo === "iad" (wnam/enam) or primaryRegion undefined (tenant with no
       // row): fall through to the local IAD DO path below.
+    }
+
+    // Anonymous signup is global policy, not tenant-resident data. Every
+    // regional Worker has a distinct CORELINK_SERVER Durable Object namespace,
+    // so using its local `_anonymous` DO would give an IP five attempts per
+    // region. The IAD Worker is the canonical authority; regional public
+    // hosts must cross the authenticated Service Binding before any local DO
+    // lookup. A missing binding fails closed rather than silently restoring a
+    // per-region bypass. Unrelated `/v1/signup/*` flows keep their existing
+    // regional routing and do not consume the pilot quota.
+    if (
+      request.method === "POST" &&
+      route.routeKind === "signup" &&
+      isPilotSignupPath(route.pathSuffix) &&
+      env.R2_CAS_REGION !== "iad" &&
+      (env.R2_CAS_REGION !== undefined || env.ENVIRONMENT.startsWith("prod-"))
+    ) {
+      const globalBinding = env.PROD_IAD;
+      if (globalBinding === undefined) {
+        return applyCors(
+          reapiError("SERVICE_UNAVAILABLE", "signup authority unavailable", 503, requestId),
+          request,
+        );
+      }
+      const globalRequest = new Request(request, {
+        headers: (() => {
+          const h = new Headers(request.headers);
+          stripClientTrustHeaders(h);
+          h.set("x-request-id", requestId);
+          h.set("x-corelink-route-kind", route.routeKind);
+          h.set("x-corelink-token-prefix", auth.tokenPrefix);
+          h.set("x-corelink-tenant-id", resolvedTenantId);
+          h.set("x-corelink-scope", auth.scope);
+          h.set("x-corelink-client-ip", request.headers.get("cf-connecting-ip") ?? "");
+          return h;
+        })(),
+      });
+      return applyCors(await globalBinding.fetch(globalRequest), request);
     }
 
     // Route to the per-tenant DO. idFromName(resolvedTenantId) guarantees

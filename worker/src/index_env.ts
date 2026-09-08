@@ -276,6 +276,12 @@ export interface Env {
   PROD_LHR?: { fetch: typeof fetch };
   PROD_NRT?: { fetch: typeof fetch };
   PROD_SYD?: { fetch: typeof fetch };
+  /**
+   * Global IAD authority for anonymous pilot signup. Regional deployments must
+   * forward this pre-tenant route here because their CORELINK_SERVER bindings
+   * are distinct namespaces (and therefore cannot share an IP bucket).
+   */
+  PROD_IAD?: { fetch: typeof fetch };
   // ── Onboarding funnel telemetry (PLG §7.1) ─────────────────────────────────
   // Service binding to the analytics ingest Worker (`corelink-analytics-prod`),
   // resolved to its `AnalyticsIngest` RPC entrypoint by
