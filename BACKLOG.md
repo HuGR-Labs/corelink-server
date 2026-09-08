@@ -12015,11 +12015,14 @@ verify-means: |
   Fecha quando o PUT quente cair para a ordem de 30-50 ms. Enquanto estiver em segundos,
   os alvos são [B-107], [B-108] e [B-109], e o de maior alcance é [B-106].
 
-  **Caminho para automatizar:** `cargo-cache-latency-probe.yml` já é `workflow_dispatch`
-  com acesso ao `CORELINK_SCCACHE_TOKEN` e hoje só faz GETs. Estendê-lo com três PUTs
-  cronometrados e um teto sobre o terceiro transforma isto em portão de verdade, medido de
-  dentro da frota. Quem fizer deve substituir este `manual`.
-last-verified: 2026-09-05
+  **Caminho para automatizar (ainda não entregue):** a antiga
+  `cargo-cache-latency-probe.yml` foi arquivada e não existe no branch de integração atual;
+  o instrumento presente é apenas `scripts/probe-cargo-cache-latency.sh`, executável
+  manualmente com `PROBE_TOKEN`. Portanto este item continua `manual`: criar uma nova
+  workflow não é evidência de latência nem fecha o item. Se ela voltar, deverá acrescentar
+  três PUTs cronometrados e um teto sobre o terceiro, medidos de dentro da frota, antes de
+  substituir este `manual`.
+last-verified: 2026-09-08
 ```
 
 ### B-103 — o caminho de escrita do `/cargo` falha em 87% sob paralelismo e satura em ~2 req/s
