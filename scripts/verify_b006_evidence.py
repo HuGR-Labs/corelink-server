@@ -13,16 +13,42 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 
 SOURCE = "https://corelink-spawn-worker.gmhelmold.workers.dev/internal/v1/metrics"
-EXPECTED_VERSION = "122e166c-b7d4-421a-a66c-44b57690af00"
-EXPECTED_SOURCE_SHA = "0ce4070989fe5d02e92c4acd5b0932fe58e4316d"
-EXPECTED_WORKER = "corelink-spawn-worker"
+KEYCHAIN_SERVICE = "CoreLink/METRICS_OBSERVABILITY_KEY"
+KEYCHAIN_ACCOUNT = "corelink-ops"
 COUNTER = "capability_claim_unserved"
-SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+MAX_RECEIPT_AGE = timedelta(hours=24)
+MAX_RECEIPT_FUTURE = timedelta(minutes=5)
+RECEIPT_KEYS = frozenset(
+    {
+        "schema", "verdict", "reason", "source", "captured_at", "http_status",
+        "authenticated", "aggregate_only", "labels_included", COUNTER,
+        "reopen_threshold", "request_attempted", "credential_values_printed",
+        "keychain_service", "keychain_account", "auth_header",
+    }
+)
+ALLOWED_REASONS = frozenset(
+    {
+        "dedicated observability credential was rejected; no counter can be inferred",
+        "production metrics response was not HTTP 200; no counter can be inferred",
+        "bounded production request failed; no counter can be inferred",
+        "Keychain item unavailable; no production request was attempted",
+        "Keychain item empty; no production request was attempted",
+        "Keychain identity mismatch; no production request was attempted",
+        "pinned source URL mismatch; no production request was attempted",
+        "pinned source URL mismatch; no counter can be inferred",
+        "redirect rejected; no counter can be inferred",
+        "authenticated aggregate snapshot retained; separate Wrangler deployment evidence is required for closure",
+        "production metrics response exceeded the bounded body limit",
+        "authenticated response did not contain the expected aggregate counter",
+        "aggregate counter was missing or malformed",
+    }
+)
 
 
 class EvidenceError(ValueError):
@@ -42,57 +68,35 @@ def _load(path: Path) -> dict[str, Any]:
 def validate_receipt(receipt: dict[str, Any]) -> None:
     """Validate a receipt without ever accepting a guessed zero."""
 
-    required = {
-        "schema",
-        "verdict",
-        "reason",
-        "source",
-        "captured_at",
-        "http_status",
-        "authenticated",
-        "aggregate_only",
-        "labels_included",
-        "capability_claim_unserved",
-        "reopen_threshold",
-        "request_attempted",
-        "credential_values_printed",
-        "credential_item",
-        "auth_header",
-        "deployed_worker_version",
-        "deployed_worker",
-        "deployed_version_number",
-        "deployment_percentage",
-        "deployed_source_sha",
-        "deployment_id",
-    }
-    missing = required - set(receipt)
-    if missing:
-        raise EvidenceError(f"missing receipt fields: {sorted(missing)}")
+    if set(receipt) != RECEIPT_KEYS:
+        missing = sorted(RECEIPT_KEYS - set(receipt))
+        extra = sorted(set(receipt) - RECEIPT_KEYS)
+        raise EvidenceError(f"receipt schema drift: missing={missing}, extra={extra}")
     if receipt["schema"] != "corelink-b006-capability-metrics-v2":
         raise EvidenceError("unsupported B-006 evidence schema")
     if receipt["source"] != SOURCE:
         raise EvidenceError("metrics source is not the pinned production surface")
-    if receipt["credential_item"] != "CoreLink/METRICS_OBSERVABILITY_KEY":
-        raise EvidenceError("wrong credential class or service")
+    if receipt["keychain_service"] != KEYCHAIN_SERVICE or receipt["keychain_account"] != KEYCHAIN_ACCOUNT:
+        raise EvidenceError("wrong Keychain service/account")
     if receipt["auth_header"] != "X-Corelink-Internal-Auth":
         raise EvidenceError("metrics request did not use the dedicated auth header")
+    if receipt["reason"] not in ALLOWED_REASONS:
+        raise EvidenceError("receipt reason is not an approved redacted reason")
+    if not isinstance(receipt["captured_at"], str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", receipt["captured_at"]):
+        raise EvidenceError("receipt timestamp must be whole-second UTC")
+    try:
+        captured_at = datetime.strptime(receipt["captured_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError as exc:
+        raise EvidenceError("receipt timestamp is invalid") from exc
+    now = datetime.now(timezone.utc)
+    if captured_at < now - MAX_RECEIPT_AGE or captured_at > now + MAX_RECEIPT_FUTURE:
+        raise EvidenceError("receipt timestamp is stale or from the future")
     if receipt["credential_values_printed"] is not False:
         raise EvidenceError("credential output must remain redacted")
     if receipt["request_attempted"] is not True:
         raise EvidenceError("receipt does not prove a production request was attempted")
     if receipt["reopen_threshold"] != {"counter": COUNTER, "condition": ">0"}:
         raise EvidenceError("reopen threshold drifted")
-    if receipt["deployed_worker_version"] != EXPECTED_VERSION:
-        raise EvidenceError("receipt is not bound to the deployed Worker version")
-    if receipt["deployed_worker"] != EXPECTED_WORKER or receipt["deployed_version_number"] != 133:
-        raise EvidenceError("receipt is not bound to the deployed Worker/version metadata")
-    if receipt["deployment_percentage"] != 100:
-        raise EvidenceError("receipt is not bound to the serving rollout")
-    source_sha = receipt["deployed_source_sha"]
-    if source_sha != EXPECTED_SOURCE_SHA or not SHA_RE.fullmatch(source_sha):
-        raise EvidenceError("receipt is not bound to the exact deployed source SHA")
-    if not isinstance(receipt["deployment_id"], str) or not receipt["deployment_id"]:
-        raise EvidenceError("deployment id is missing")
     if receipt["labels_included"] is not False:
         raise EvidenceError("tenant/customer labels must not be retained")
 
@@ -114,8 +118,11 @@ def validate_receipt(receipt: dict[str, Any]) -> None:
         return
     if aggregate_only is not True or not isinstance(counter, int) or isinstance(counter, bool) or counter < 0:
         raise EvidenceError("authenticated 200 receipt lacks a non-negative aggregate counter")
-    if receipt["verdict"] != ("REOPEN" if counter > 0 else "DONE"):
-        raise EvidenceError("authenticated counter does not match receipt verdict")
+    expected_verdict = "REOPEN" if counter > 0 else "INDETERMINATE"
+    if receipt["verdict"] != expected_verdict:
+        raise EvidenceError("authenticated counter does not match fail-closed receipt verdict")
+    if counter == 0 and receipt["reason"] != "authenticated aggregate snapshot retained; separate Wrangler deployment evidence is required for closure":
+        raise EvidenceError("zero receipt must remain indeterminate without Wrangler evidence")
 
 
 def main(argv: list[str] | None = None) -> int:

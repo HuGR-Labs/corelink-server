@@ -827,7 +827,7 @@ def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict
                 except (json.JSONDecodeError, B006EvidenceError) as exc:
                     raise GraduationError(f"B-006: DONE disposition lacks valid authenticated evidence: {exc}") from exc
                 if receipt.get("verdict") != "DONE":
-                    raise GraduationError("B-006: DONE disposition requires a fresh authenticated zero receipt")
+                    raise GraduationError("B-006: DONE disposition requires fresh authenticated zero evidence plus separately authenticated Wrangler binding")
         elif disposition == "PARKED":
             if packet.get("verify_means") != "parked":
                 raise GraduationError(f"{item}: parked packet must declare verify_means=parked")
@@ -840,6 +840,8 @@ def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict
             for token in (
                 "scripts/collect_b006_metrics.py",
                 "scripts/verify_b006_evidence.py",
+                "--keychain-service 'CoreLink/METRICS_OBSERVABILITY_KEY'",
+                "--keychain-account corelink-ops",
                 "X-Corelink-Internal-Auth",
                 "--timeout 10",
                 "--max-bytes 1048576",

@@ -20,13 +20,20 @@ from pathlib import Path
 from typing import Any
 
 SOURCE = "https://corelink-spawn-worker.gmhelmold.workers.dev/internal/v1/metrics"
-WORKER_VERSION = "122e166c-b7d4-421a-a66c-44b57690af00"
-SOURCE_SHA = "0ce4070989fe5d02e92c4acd5b0932fe58e4316d"
-DEPLOYMENT_ID = "55a021ee-0530-4729-a9c9-a01e012d92f6"
-WORKER = "corelink-spawn-worker"
-VERSION_NUMBER = 133
-DEPLOYMENT_PERCENTAGE = 100
+KEYCHAIN_SERVICE = "CoreLink/METRICS_OBSERVABILITY_KEY"
+KEYCHAIN_ACCOUNT = "corelink-ops"
+AUTH_HEADER = "X-Corelink-Internal-Auth"
 COUNTER = "capability_claim_unserved"
+
+
+class RejectRedirect(urllib.request.HTTPRedirectHandler):
+    """Prevent a credential-bearing request from following any redirect."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, msg, headers, fp)
+
+
+NO_REDIRECT_OPENER = urllib.request.build_opener(RejectRedirect)
 
 
 def _base(reason: str, *, attempted: bool, status: int | None) -> dict[str, Any]:
@@ -44,18 +51,17 @@ def _base(reason: str, *, attempted: bool, status: int | None) -> dict[str, Any]
         "reopen_threshold": {"counter": COUNTER, "condition": ">0"},
         "request_attempted": attempted,
         "credential_values_printed": False,
-        "credential_item": "CoreLink/METRICS_OBSERVABILITY_KEY",
-        "auth_header": "X-Corelink-Internal-Auth",
-        "deployed_worker_version": WORKER_VERSION,
-        "deployed_worker": WORKER,
-        "deployed_version_number": VERSION_NUMBER,
-        "deployment_percentage": DEPLOYMENT_PERCENTAGE,
-        "deployed_source_sha": SOURCE_SHA,
-        "deployment_id": DEPLOYMENT_ID,
+        "keychain_service": KEYCHAIN_SERVICE,
+        "keychain_account": KEYCHAIN_ACCOUNT,
+        "auth_header": AUTH_HEADER,
     }
 
 
 def collect(url: str, service: str, account: str, timeout: float, max_bytes: int) -> dict[str, Any]:
+    if url != SOURCE:
+        return _base("pinned source URL mismatch; no production request was attempted", attempted=False, status=None)
+    if service != KEYCHAIN_SERVICE or account != KEYCHAIN_ACCOUNT:
+        return _base("Keychain identity mismatch; no production request was attempted", attempted=False, status=None)
     try:
         key = subprocess.run(
             ["security", "find-generic-password", "-s", service, "-a", account, "-w"],
@@ -69,12 +75,16 @@ def collect(url: str, service: str, account: str, timeout: float, max_bytes: int
     if not key:
         return _base("Keychain item empty; no production request was attempted", attempted=False, status=None)
 
-    request = urllib.request.Request(url, headers={"X-Corelink-Internal-Auth": key}, method="GET")
+    request = urllib.request.Request(url, headers={AUTH_HEADER: key}, method="GET")
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with NO_REDIRECT_OPENER.open(request, timeout=timeout) as response:
             status = response.status
+            if response.geturl() != url:
+                return _base("pinned source URL mismatch; no counter can be inferred", attempted=True, status=status)
             body = response.read(max_bytes + 1)
     except urllib.error.HTTPError as exc:
+        if 300 <= exc.code < 400:
+            return _base("redirect rejected; no counter can be inferred", attempted=True, status=exc.code)
         return _base("dedicated observability credential was rejected; no counter can be inferred", attempted=True, status=exc.code)
     except (OSError, urllib.error.URLError, TimeoutError):
         return _base("bounded production request failed; no counter can be inferred", attempted=True, status=None)
@@ -92,11 +102,15 @@ def collect(url: str, service: str, account: str, timeout: float, max_bytes: int
     if not isinstance(counter, int) or isinstance(counter, bool) or counter < 0:
         return _base("aggregate counter was missing or malformed", attempted=True, status=status)
 
-    receipt = _base("authenticated aggregate snapshot retained", attempted=True, status=status)
+    receipt = _base(
+        "authenticated aggregate snapshot retained; separate Wrangler deployment evidence is required for closure",
+        attempted=True,
+        status=status,
+    )
     receipt["authenticated"] = True
     receipt["aggregate_only"] = True
     receipt[COUNTER] = counter
-    receipt["verdict"] = "REOPEN" if counter > 0 else "DONE"
+    receipt["verdict"] = "REOPEN" if counter > 0 else "INDETERMINATE"
     return receipt
 
 
@@ -110,8 +124,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-bytes", type=int, default=1_048_576)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
-    if args.url != SOURCE or args.auth_header != "X-Corelink-Internal-Auth" or not 1 <= args.timeout <= 30 or not 1 <= args.max_bytes <= 1_048_576:
-        parser.error("URL, timeout, or body bound is outside the pinned B-006 contract")
+    if (
+        args.url != SOURCE
+        or args.keychain_service != KEYCHAIN_SERVICE
+        or args.keychain_account != KEYCHAIN_ACCOUNT
+        or args.auth_header != AUTH_HEADER
+        or not 1 <= args.timeout <= 30
+        or not 1 <= args.max_bytes <= 1_048_576
+    ):
+        parser.error("URL, Keychain identity, auth header, timeout, or body bound is outside the pinned B-006 contract")
     receipt = collect(args.url, args.keychain_service, args.keychain_account, args.timeout, args.max_bytes)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")

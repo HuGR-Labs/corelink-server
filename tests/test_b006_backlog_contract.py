@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 import re
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import pytest
 
+from scripts.collect_b006_metrics import KEYCHAIN_ACCOUNT, KEYCHAIN_SERVICE, RejectRedirect, SOURCE, collect
 from scripts.verify_b006_evidence import EvidenceError, validate_receipt
 from scripts.verify_d03_graduation import GraduationError, _check_packets, _load_packets
 
@@ -48,6 +51,8 @@ def test_b006_does_not_publish_a_bearer_probe_command() -> None:
     assert "scripts/collect_b006_metrics.py" in command
     assert "scripts/verify_b006_evidence.py" in command
     assert "--auth-header X-Corelink-Internal-Auth" in command
+    assert "--keychain-service 'CoreLink/METRICS_OBSERVABILITY_KEY'" in command
+    assert "--keychain-account corelink-ops" in command
     assert "--timeout 10" in command
     assert "--max-bytes 1048576" in command
     assert "Authorization: Bearer" not in command
@@ -64,20 +69,40 @@ def test_b006_evidence_retains_redacted_403_and_no_guessed_counter() -> None:
     assert evidence["capability_claim_unserved"] is None
 
 
-def test_b006_rejects_unauthenticated_zero_and_binding_mutations() -> None:
+def test_b006_rejects_unauthenticated_zero_and_receipt_boundary_mutations() -> None:
     evidence = json.loads(EVIDENCE.read_text(encoding="utf-8"))
     mutations = (
         {"capability_claim_unserved": 0},
         {"authenticated": True},
         {"aggregate_only": True},
-        {"deployed_worker_version": "wrong-version"},
-        {"deployed_source_sha": "0" * 40},
         {"labels_included": True},
+        {"keychain_service": "CoreLink/OTHER_KEY"},
+        {"keychain_account": "alternate-operator"},
+        {"source": "https://evil.example/metrics"},
+        {"captured_at": "2020-01-01T00:00:00Z"},
+        {"secret": "must-never-be-retained"},
     )
     for mutation in mutations:
         candidate = {**evidence, **mutation}
         with pytest.raises(EvidenceError):
             validate_receipt(candidate)
+
+
+def test_b006_rejects_redirects_before_a_credential_can_leave_origin() -> None:
+    request = urllib.request.Request(SOURCE, method="GET")
+    with pytest.raises(urllib.error.HTTPError) as raised:
+        RejectRedirect().redirect_request(request, None, 302, "Found", {}, "https://evil.example/steal")
+    assert raised.value.code == 302
+    assert raised.value.url == SOURCE
+
+
+def test_b006_collector_pins_url_and_keychain_identity_without_requesting() -> None:
+    wrong_keychain = collect(SOURCE, "CoreLink/OTHER_KEY", KEYCHAIN_ACCOUNT, 1, 1024)
+    assert wrong_keychain["request_attempted"] is False
+    assert wrong_keychain["http_status"] is None
+    wrong_url = collect("https://evil.example/metrics", KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, 1, 1024)
+    assert wrong_url["request_attempted"] is False
+    assert wrong_url["http_status"] is None
 
 
 def test_b006_d03_packet_cannot_mutate_indeterminate_receipt_to_done() -> None:
