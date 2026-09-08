@@ -221,10 +221,20 @@ def _include_paths(source: str) -> tuple[str, ...]:
                 break
             continue
         if char == "/" and next_char == "*":
-            end = source.find("*/", i + 2)
-            if end < 0:
+            cursor = i + 2
+            depth = 1
+            while cursor < len(source) and depth:
+                if source[cursor : cursor + 2] == "/*":
+                    depth += 1
+                    cursor += 2
+                elif source[cursor : cursor + 2] == "*/":
+                    depth -= 1
+                    cursor += 2
+                else:
+                    cursor += 1
+            if depth:
                 raise ContractError("unterminated block comment")
-            i = end + 2
+            i = cursor
             continue
         raw_end = _raw_string_end(source, i)
         if raw_end is not None:
@@ -283,7 +293,10 @@ _TEST_RE = re.compile(
 
 
 def _test_names(source: str) -> tuple[str, ...]:
-    return tuple(_TEST_RE.findall(source))
+    # A test declaration in a comment or string is evidence of neither
+    # registration nor executable coverage.  Mask before matching so a decoy
+    # cannot preserve the expected name after the real declaration is gone.
+    return tuple(_TEST_RE.findall(_code_mask(source)))
 
 
 def assess_source(route: str, parts: dict[str, str]) -> list[str]:
