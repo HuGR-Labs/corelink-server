@@ -16,6 +16,7 @@ Token = tuple[str, str]
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = "worker/src/lib/pat_verify_cache.ts"
+FETCH = "worker/src/index_fetch.ts"
 # Authentication was split out of index_auth.ts.  Keep both sides of the
 # split in the census: the implementation carries the serving path while the
 # facade must continue exporting it from the public module.
@@ -133,12 +134,14 @@ def _active_constant(source_tokens: list[Token], name: str) -> int | None:
 
 def verify() -> None:
     cache = read(CACHE)
+    fetch = read(FETCH)
     auth = read(AUTH)
     auth_facade = read(AUTH_FACADE)
     quota = read(QUOTA)
     quota_facade = read(QUOTA_FACADE)
     sources = {
         CACHE: cache,
+        FETCH: fetch,
         AUTH: auth,
         AUTH_FACADE: auth_facade,
         QUOTA: quota,
@@ -156,6 +159,11 @@ def verify() -> None:
             'const PAT_ROW_SQL = "SELECT tenant_id, expires_ms, scope, runner_job_ac_key, find_only FROM pat WHERE token_id = ?1 AND revoked_at_ms IS NULL LIMIT 1";',
             "if (opts.waitUntil)",
             "opts.waitUntil(putPromise);",
+        ),
+        FETCH: (
+            'import { resolveRequestId } from "./index_auth.js";',
+            'import { authenticateRequest } from "./index_auth_stage.js";',
+            'import { enforceQuota } from "./index_quota_stage.js";',
         ),
         AUTH: (
             'env.CONFIG_DB.withSession("first-unconstrained")',

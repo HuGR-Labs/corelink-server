@@ -31,6 +31,27 @@ KV_PAT_ROW_TTL_SECONDS = 30
 COLD_IDLE_SECONDS = 61
 
 
+def mint_binding_sha256(attestation: dict[str, object]) -> str:
+    material = json.dumps(
+        {
+            "expires_ms": attestation.get("expires_ms"),
+            "pat_id": attestation.get("pat_id"),
+            "tenant_id": attestation.get("tenant_id"),
+            "token_fingerprint": attestation.get("token_fingerprint"),
+            "token_id": attestation.get("token_id"),
+            "mint_operation_id": attestation.get("mint_operation_id"),
+            "mint_request_id": attestation.get("mint_request_id"),
+            "mint_response_sha256": attestation.get("mint_response_sha256"),
+            "minted_at_epoch": attestation.get("minted_at_epoch"),
+            "unused_since_epoch": attestation.get("unused_since_epoch"),
+            "observed_at_epoch": attestation.get("observed_at_epoch"),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return "sha256:" + hashlib.sha256(material).hexdigest()
+
+
 def op(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex}"
 
@@ -126,19 +147,20 @@ def mint_fresh(base: str, tenant: str, session: str, internal_auth: str, operati
         raise RuntimeError("fresh PAT mint API omitted binding metadata")
     response_digest = "sha256:" + hashlib.sha256(payload).hexdigest()
     token_fingerprint = "sha256:" + hashlib.sha256(body["token_plaintext"].encode()).hexdigest()
-    binding_material = json.dumps({"expires_ms": expires_ms, "pat_id": pat_id, "tenant_id": tenant,
+    minted_at = time.time()
+    binding = mint_binding_sha256({"expires_ms": expires_ms, "pat_id": pat_id, "tenant_id": tenant,
                                    "token_fingerprint": token_fingerprint, "token_id": token_id,
                                    "mint_operation_id": operation, "mint_request_id": response_request_id,
-                                   "mint_response_sha256": response_digest}, sort_keys=True, separators=(",", ":")).encode()
-    binding = hashlib.sha256(binding_material).hexdigest()
+                                   "mint_response_sha256": response_digest, "minted_at_epoch": minted_at,
+                                   "unused_since_epoch": None, "observed_at_epoch": None})
     return {
         "token": body["token_plaintext"],
         "token_fingerprint": token_fingerprint,
         "mint_operation_id": operation,
         "mint_request_id": response_request_id,
         "mint_response_sha256": response_digest,
-        "mint_response_binding_sha256": "sha256:" + binding,
-        "minted_at_epoch": time.time(),
+        "mint_response_binding_sha256": binding,
+        "minted_at_epoch": minted_at,
         "mint_elapsed_ms": round((time.monotonic() - started) * 1000, 3),
         "pat_id": pat_id,
         "token_id": token_id,
@@ -219,6 +241,9 @@ def main() -> int:
                                                         "mint_response_binding_sha256": mint["mint_response_binding_sha256"],
                                                         "pat_id": mint["pat_id"], "token_id": mint["token_id"], "expires_ms": mint["expires_ms"]},
                                   "cold": cold, "warm_control": warm}
+    result["items"]["B-106"]["cold_attestation"]["mint_response_binding_sha256"] = mint_binding_sha256(
+        result["items"]["B-106"]["cold_attestation"]
+    )
     # B-107: `ostore` (R2) and `oaccounting` (D1) are distinct wire phases.
     # Never synthesize the old `or2`/`oaccounting` pair from one aggregate:
     # missing either phase means the deployed container is not the instrumented

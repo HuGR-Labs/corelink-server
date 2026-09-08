@@ -36,7 +36,7 @@ request capped a tenant's adapter plane at roughly 3 requests/second — so the 
 HMAC fast-reject and the expiry/revocation-filtered D1 row read still run on every single request.
 That is what makes this memo different in kind from the two caches it sits beside, which buy the
 same saving by caching the DECISION and skipping the row: `native_pat_gate` accepts a ≤5 s
-revocation window, and the Worker's `pat_verify_cache` accepts up to 60 s on its L2 KV layer.
+revocation window, and the Worker's `pat_verify_cache` uses a 30 s L2 KV backstop.
 
 A memo only helps once something has already paid, so a COLD container's first burst — a `cargo -jN`
 build's opening N requests, all bearing one PAT — missed it N times at once, and everything behind

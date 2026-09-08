@@ -20,8 +20,16 @@ def expect_reject(path: str, marker: str, label: str, replacement: str = "MUTATE
     original = (ROOT / path).read_text(encoding="utf-8")
     mutated = original.replace(marker, replacement, 1)
     assert mutated != original, f"mutation marker absent: {path}: {marker}"
+    fetch = (ROOT / verify.FETCH).read_text(encoding="utf-8")
     if path == verify.CACHE:
         cache = mutated
+        auth = (ROOT / verify.AUTH).read_text(encoding="utf-8")
+        auth_facade = (ROOT / verify.AUTH_FACADE).read_text(encoding="utf-8")
+        quota = (ROOT / verify.QUOTA).read_text(encoding="utf-8")
+        quota_facade = (ROOT / verify.QUOTA_FACADE).read_text(encoding="utf-8")
+    elif path == verify.FETCH:
+        fetch = mutated
+        cache = (ROOT / verify.CACHE).read_text(encoding="utf-8")
         auth = (ROOT / verify.AUTH).read_text(encoding="utf-8")
         auth_facade = (ROOT / verify.AUTH_FACADE).read_text(encoding="utf-8")
         quota = (ROOT / verify.QUOTA).read_text(encoding="utf-8")
@@ -55,6 +63,7 @@ def expect_reject(path: str, marker: str, label: str, replacement: str = "MUTATE
     try:
         verify.read = lambda candidate: {
             verify.CACHE: cache,
+            verify.FETCH: fetch,
             verify.AUTH: auth,
             verify.AUTH_FACADE: auth_facade,
             verify.QUOTA: quota,
@@ -75,6 +84,11 @@ def expect_comment_wrapped(path: str, marker: str, label: str) -> None:
 def main() -> int:
     verify.verify()
     expect_reject(verify.CACHE, "const inflight = new Map", "single-flight map removed")
+    expect_reject(
+        verify.FETCH,
+        'import { enforceQuota } from "./index_quota_stage.js";',
+        "fetch pipeline bypassed quota facade",
+    )
     expect_reject(verify.CACHE, "opts.waitUntil(putPromise);", "KV write-behind detached")
     expect_reject(
         verify.CACHE,

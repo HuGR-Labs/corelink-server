@@ -541,21 +541,21 @@
       "status": "open",
       "action_type": "cold_pat_verify_latency_measurement",
       "procedure": [
-        "RUN: Select a production PAT that has not been used for more than 60 seconds, or mint a dedicated test PAT through the approved owner process; send one authenticated request and capture Server-Timing without exposing the token.",
-        "RUN: Repeat the same cold measurement only after intervals longer than 60 seconds, recording auth desc, wall time, colo, and whether the source was d1, kv, or l1; never use consecutive requests as cold samples.",
+        "RUN: Mint a dedicated test PAT through the approved owner process; record the minted, unused-since, and observed timestamps and send one authenticated request after at least 61 seconds idle, capturing Server-Timing without exposing the token.",
+        "RUN: Repeat the same cold measurement only after intervals of at least 61 seconds, recording auth desc, wall time, colo, and whether the source was d1, kv, or l1; never use consecutive requests as cold samples.",
         "UI: Classify the result among replica inactive, no replica in serving region, or primary fallback always taken, and record the remediation decision without increasing the revocation window."
       ],
       "inputs_and_credentials_boundary": {
-        "inputs": ["production endpoint", "dedicated PAT", "cold interval over 60 seconds", "serving colo", "Server-Timing header"],
+        "inputs": ["production endpoint", "fresh dedicated PAT", "minted/unused/observed timestamps", "cold interval of at least 61 seconds", "serving colo", "Server-Timing header"],
         "credentials": "Owner mints or supplies the PAT through a protected channel; the token, signing key, and response body are excluded from logs and evidence."
       },
       "evidence": {
         "path": "evidence/owner-actions/B-106/cold-pat-verify-latency.json",
         "format": "json",
-        "required_fields": ["schema_version", "captured_at", "sample_count", "cold_interval_seconds", "samples", "source_distribution", "hypothesis", "median_ms", "p90_ms", "operator"],
-        "item_schema": "samples[] contains captured_at, colo, auth_source, auth_ms, wall_ms, and status; cold_interval_seconds is over 60 for every pair and hypothesis is replica_inactive, no_replica, primary_fallback, or unresolved."
+        "required_fields": ["schema_version", "captured_at", "sample_count", "cold_interval_seconds", "minted_at_epoch", "unused_since_epoch", "observed_at_epoch", "samples", "source_distribution", "hypothesis", "median_ms", "p90_ms", "operator"],
+        "item_schema": "samples[] contains captured_at, colo, auth_source, auth_ms, wall_ms, and status; minted_at_epoch, unused_since_epoch, and observed_at_epoch bind a fresh token to each cold proof; cold_interval_seconds is at least 61 for every pair and hypothesis is replica_inactive, no_replica, primary_fallback, or unresolved."
       },
-      "expected_postcondition": "Cold verification cost and serving path are measured without weakening the 60-second revocation contract; B-106 remains open until the latency target or a documented safe remedy is evidenced.",
+      "expected_postcondition": "Cold verification cost and serving path are measured without weakening the 30-second KV revocation backstop or 60-second service-level target; B-106 remains open until the latency target or a documented safe remedy is evidenced.",
       "retry_and_rollback": "Retry after the declared cold interval and preserve each sample. Revoke the dedicated PAT after capture; do not increase KV TTL or alter auth cache policy as a probe workaround.",
       "references": ["BACKLOG.md#B-106", "worker/src/lib/pat_verify_cache.ts", "worker/src/index.ts", "specs/03_architecture/adrs/ADR-0030-pat-revocation-window.md"]
     },

@@ -118,10 +118,23 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
         "safety": ["Authorization: Bearer", "HTTP status", "OWNER_APPROVED_PROBE=1"],
         "forbidden": ["--fail", "maximum"],
     },
+    "B-105": {
+        "owner_packet": "docs/campaigns/remediation/work-packages/B091-B130.md#WP-B105",
+        "profiles": [], "sample_count": 6,
+        "required": [
+            "perf-production-evidence.yml",
+            "collect_b105_same_lane.py", "run_id", "gh run view", "gh run download",
+            "b102-b108-owner-evidence-", "corelink-performance-evidence.v2.json",
+            "cache_mode", "disabled", "enabled", "B105-cache-comparison.json", "createdAt", "dispatch_started_at",
+            "verify_b102_b108_evidence.py --packet", "--expect open",
+        ],
+        "safety": ["--ref main", "OWNER_APPROVED_LANE_DISPATCH=1", "status", "completed"],
+        "forbidden": ["release-slsa3.yml", "--force"],
+    },
     "B-106": {
         "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-106",
         "profiles": ["d1", "kv", "l1"], "sample_count": 2,
-        "required": ["cold", "sleep 61", "Server-Timing"],
+        "required": ["cold", "sleep 61", "Server-Timing", "30-second KV revocation backstop", "at least 61 seconds", "minted_at_epoch", "unused_since_epoch", "observed_at_epoch"],
         "safety": ["CORELINK_COLD_PAT", "revocation", "OWNER_APPROVED_PROBE=1"],
         "forbidden": ["TTL", "KV_TTL", "--fail"],
     },
@@ -208,6 +221,11 @@ COMMAND_OPERATIONS: dict[str, tuple[str, ...]] = {
     "B-102": ("$CORELINK_PROD_BASE/cargo",),
     "B-107": ("$CORELINK_PROD_BASE/cargo/${CORELINK_DOGFOOD_TENANT:?}/b107-${ordinal}",),
     "B-104": ("does-not-exist-$ordinal",),
+    "B-105": (
+        "gh workflow run perf-production-evidence.yml --ref main",
+        "run_id=\"\"", "gh run view \"$run_id\"", "gh run download \"$run_id\"",
+        "tee artifacts/d03/B105-cache-comparison.json", "verify_b102_b108_evidence.py --packet",
+    ),
     "B-106": ("$CORELINK_PROD_BASE/v1/customer/keys",),
     "B-112": (
         "gh run rerun",
@@ -717,14 +735,20 @@ def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict
         _check_command_contract(item, packet, root)
         if item == "B-105":
             command = packet["command"]
-            if "perf-production-evidence.yml" not in command:
-                raise GraduationError("B-105: gate must dispatch perf-production-evidence.yml")
+            exact_dispatch = "gh workflow run perf-production-evidence.yml --ref main"
+            if command.count(exact_dispatch) != 1:
+                raise GraduationError("B-105: gate must dispatch exactly perf-production-evidence.yml from main")
             if "release-slsa3.yml" in command:
                 raise GraduationError("B-105: stale release-slsa3.yml dispatch remains in the owner packet")
             workflow = root / ".github/workflows/perf-production-evidence.yml"
             workflow_text = _read(workflow)
-            if "collect_b105_same_lane.py" not in workflow_text:
+            if "python3 scripts/collect_b105_same_lane.py" not in workflow_text:
                 raise GraduationError("B-105: perf-production-evidence.yml does not collect the paired lane")
+        if item == "B-104":
+            command = packet["command"]
+            even_median = "v[int((n+1)/2)] + v[int((n+2)/2)]"
+            if even_median not in command:
+                raise GraduationError("B-104: median must average the two middle samples for even populations")
         if disposition == "PARKED":
             artifact = _require_string(packet, "artifact", item)
             command = _require_string(packet, "command", item)

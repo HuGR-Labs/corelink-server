@@ -126,6 +126,7 @@ def collector_wire_and_join_round_trip() -> None:
         live_now = time.time()
         attestation = evidence["items"]["B-106"]["cold_attestation"]
         attestation.update(minted_at_epoch=live_now - 130, unused_since_epoch=live_now - 120, observed_at_epoch=live_now - 60)
+        attestation["mint_response_binding_sha256"] = verifier.mint_binding_sha256(attestation)
 
         deployment_record = evidence["items"]["B-108"]["deployment"]
         context = {"schema": "corelink.performance-evidence.context.v1", "repository": verifier.REPO,
@@ -190,6 +191,11 @@ def main() -> int:
     expect_error(lambda p: p["items"]["B-104"]["samples"][0].pop("response_request_id"), "B104 response request identity")
     expect_error(lambda p: p["items"]["B-105"]["pairs"][0]["treatment"].update(cache_mode="disabled"), "B105 cache wiring")
     expect_error(lambda p: p["items"]["B-106"]["cold_attestation"].update(unused_since_epoch=NOW - 1), "B106 idle")
+    def stale_mint(p: dict) -> None:
+        attestation = p["items"]["B-106"]["cold_attestation"]
+        attestation["minted_at_epoch"] = NOW - verifier.FRESH_MINT_MAX_AGE_SECONDS - 1
+        attestation["mint_response_binding_sha256"] = verifier.mint_binding_sha256(attestation)
+    expect_error(stale_mint, "B106 stale mint")
     expect_error(lambda p: p["items"]["B-106"].update(kv_ttl_seconds=60), "B106 runtime TTL")
     expect_error(lambda p: p["items"]["B-106"]["cold"].update(token_fingerprint="sha256:" + "b" * 64), "B106 token binding")
     expect_error(lambda p: p["items"]["B-106"]["cold_attestation"].update(mint_response_sha256="sha256:" + "b" * 64), "B106 response digest")

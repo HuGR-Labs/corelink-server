@@ -31,6 +31,7 @@ OP = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$")
 SECRET = re.compile(r"(?i)(bearer\s+|pat[_-]?token|api[_-]?key|password|secret|private[_-]?key|authorization)")
 FINGERPRINT = re.compile(r"^sha256:[0-9a-f]{64}$")
 MAX_AGE = 15 * 60
+FRESH_MINT_MAX_AGE_SECONDS = 15 * 60
 COLD_MIN_IDLE_SECONDS = 60
 KV_PAT_ROW_TTL_SECONDS = 30
 CLOCK_TOLERANCE = 2
@@ -96,6 +97,9 @@ def mint_binding_sha256(att: dict[str, Any]) -> str:
             "mint_operation_id": att.get("mint_operation_id"),
             "mint_request_id": att.get("mint_request_id"),
             "mint_response_sha256": att.get("mint_response_sha256"),
+            "minted_at_epoch": att.get("minted_at_epoch"),
+            "unused_since_epoch": att.get("unused_since_epoch"),
+            "observed_at_epoch": att.get("observed_at_epoch"),
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -313,8 +317,17 @@ def b106(item: dict[str, Any], root: Path, tenant: str, now: float) -> str:
     for key in ("minted_at_epoch", "unused_since_epoch", "observed_at_epoch"):
         num(att.get(key), f"B-106.{key}", 1)
     minted, unused, observed = (float(att[k]) for k in ("minted_at_epoch", "unused_since_epoch", "observed_at_epoch"))
-    if not minted <= unused <= observed - COLD_MIN_IDLE_SECONDS or observed > now + CLOCK_TOLERANCE:
-        raise EvidenceError(f"B-106 does not prove a newly minted token idle for {COLD_MIN_IDLE_SECONDS} seconds")
+    if (
+        not minted <= unused <= observed - COLD_MIN_IDLE_SECONDS
+        or minted > now + CLOCK_TOLERANCE
+        or unused > now + CLOCK_TOLERANCE
+        or observed > now + CLOCK_TOLERANCE
+        or now - minted > FRESH_MINT_MAX_AGE_SECONDS
+    ):
+        raise EvidenceError(
+            f"B-106 does not prove a fresh token minted within {FRESH_MINT_MAX_AGE_SECONDS} seconds "
+            f"and idle for {COLD_MIN_IDLE_SECONDS} seconds"
+        )
     cold, warm = obj(item.get("cold"), "B-106.cold"), obj(item.get("warm_control"), "B-106.warm_control")
     for row, label in ((cold, "B-106.cold"), (warm, "B-106.warm_control")):
         common(row, label, tenant)
