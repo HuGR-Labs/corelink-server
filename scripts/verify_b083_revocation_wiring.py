@@ -450,10 +450,19 @@ def verify(main: str, runtime: str, detector: str, focal: str, migration: str) -
 
 
 def mutation_self_test(main: str, runtime: str, detector: str, focal: str, migration: str) -> None:
-    def insert_before_tests(source: str, bait: str) -> str:
-        marker = "#[cfg(test)]"
+    def insert_before_test_include(source: str, bait: str) -> str:
+        """Insert bait at the production/test include boundary.
+
+        The runtime adapter's tests live in the separately included
+        ``byok_revocation_runtime/part-01.rs`` file.  Looking for a local
+        ``#[cfg(test)]`` marker worked only while those tests happened to be
+        in this file; after the split, the mutation fixture failed before it
+        could exercise the verifier.  Keep the boundary assertion fail-closed
+        by anchoring to the executable include itself.
+        """
+        marker = 'include!("byok_revocation_runtime/part-01.rs");'
         if marker not in source:
-            raise AssertionError("B083 mutation fixture lost the test boundary")
+            raise AssertionError("B083 mutation fixture lost the production/test include boundary")
         return source.replace(marker, bait + "\n" + marker, 1)
 
     inactive_population = runtime.replace("state IN ('active', 'partial')", "state IN ('inactive')", 1)
@@ -467,10 +476,10 @@ def mutation_self_test(main: str, runtime: str, detector: str, focal: str, migra
         "recovery-errors-swallowed": (main, runtime, detector.replace("self.handle_ok_status(provider, &key_id).await?", "self.handle_ok_status(provider, &key_id).await", 1), focal, migration),
         # A required query/guard copied into comments or a fixture string is
         # not executable evidence and must not make the verifier green.
-        "sql-comment-bait": (main, insert_before_tests(inactive_population, "// state IN ('active', 'partial')"), detector, focal, migration),
+        "sql-comment-bait": (main, insert_before_test_include(inactive_population, "// state IN ('active', 'partial')"), detector, focal, migration),
         "sql-string-bait": (
             main,
-            insert_before_tests(
+            insert_before_test_include(
                 inactive_population,
                 'const STRING_BAIT: &str = "state IN (\'active\', \'partial\')";',
             ),
