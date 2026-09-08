@@ -110,12 +110,16 @@ pub struct LinkKeyring(BTreeMap<u64, LinkKey>);
 /// Fail-closed errors for the JSON keyring boundary.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum LinkKeyringError {
+    /// The input is not a JSON object of string ids to string keys.
     #[error("audit-chain keyring must be a JSON object of link-key-id to hex key")]
     InvalidShape,
+    /// A key id is not a positive unsigned decimal integer.
     #[error("audit-chain keyring contains invalid link-key id {0}")]
     InvalidKeyId(String),
+    /// A key is not exactly 32 bytes represented as lower-case hexadecimal.
     #[error("audit-chain keyring entry {0} is not 64 lower-case hex characters")]
     InvalidKey(String),
+    /// No key entries were supplied.
     #[error("audit-chain keyring must contain at least one key")]
     Empty,
 }
@@ -155,16 +159,19 @@ impl LinkKeyring {
     }
 
     #[must_use]
+    /// Look up write-only key material by its registered id.
     pub fn get(&self, link_key_id: u64) -> Option<&LinkKey> {
         self.0.get(&link_key_id)
     }
 
     #[must_use]
+    /// Return the number of registered keys without exposing key material.
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
     #[must_use]
+    /// Return whether the keyring contains no entries.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
