@@ -1,5 +1,9 @@
 name: coverage (R7-1 supply-quality rollup)
 
+# B-110: this heavy link runs on CoreLink's ephemeral Linux runner. The former
+# GitHub-hosted 4-core label was billing-blocked; CoreLink supplies the same
+# measured 4-vCPU/12.5-GB shape without hosted Actions minutes.
+
 concurrency:
   # Escopo por ref. Grupo CONSTANTE torna o grupo repo-global: duas execucoes
   # `workflow_dispatch` deste mesmo workflow em branches DIFERENTES cancelam uma
@@ -65,7 +69,7 @@ permissions:
 jobs:
   coverage:
     name: cargo-llvm-cov (workspace HTML + summary)
-    runs-on: ubuntu-x64-4core  # 4-core hosted: cargo-llvm-cov instruments the whole workspace (heavy link); 2-core OOMs (ld Bus error, signal 7)
+    runs-on: corelink  # 4-vCPU/12.5-GB ephemeral Linux box; 2-core links OOM
     timeout-minutes: 45
     steps:
       - name: Checkout

@@ -1,5 +1,9 @@
 name: mutation-nightly (R2 baseline + 5-crate expansion + wave-24 large-crate lane)
 
+# B-110: the heavy matrix runs on CoreLink's ephemeral 4-vCPU Linux runner.
+# This preserves the 6-hour execution bound while removing the former hosted
+# larger-runner billing dependency.
+
 concurrency:
   # Escopo por ref. Grupo CONSTANTE torna o grupo repo-global: duas execucoes
   # `workflow_dispatch` deste mesmo workflow em branches DIFERENTES cancelam uma
@@ -86,8 +90,8 @@ env:
 jobs:
   mutants:
     name: cargo-mutants kill-rate gate
-    runs-on: ubuntu-x64-4core  # 4-core: heavy crates (pat/clerk — Argon2id + RS256 proptests) are ~4.5h; 2-core would blow the 6h cap
-    timeout-minutes: 330  # under the 6h hosted cap so an over-budget crate fails cleanly instead of a silent runner-cancel
+    runs-on: corelink  # 4-vCPU/12.5-GB ephemeral Linux box; 2-core runs OOM
+    timeout-minutes: 330  # under the 6h runner cap; over-budget crates fail loudly
     strategy:
       fail-fast: false
       matrix:

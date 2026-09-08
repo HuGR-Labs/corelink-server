@@ -1,5 +1,8 @@
 name: FFI Matrix CI (Python × Go × JS)
 
+# B-110: the matrix is intentionally retained, but all legs use CoreLink's
+# ephemeral Linux runner so a dispatch does not consume hosted Actions minutes.
+
 concurrency:
   # Escopo por ref. Grupo CONSTANTE torna o grupo repo-global: duas execucoes
   # `workflow_dispatch` deste mesmo workflow em branches DIFERENTES cancelam uma
@@ -43,7 +46,7 @@ jobs:
   # ── Rust unit tests (all 3 FFI crates) ────────────────────────────────────
   rust-unit:
     name: Rust unit tests (FFI crates)
-    runs-on: ubuntu-latest
+    runs-on: corelink
     # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
     # inherits GitHub's 360-min default, so one wedged run can burn 6h of
     # PAID minutes. Measured runs are minutes; this is generous headroom.
@@ -56,6 +59,10 @@ jobs:
     # on this fleet (provisions into unwritable /Users/runner).
     env:
       PYO3_PYTHON: python3
+      # setup-python/setup-go need a writable cache on self-hosted runners.
+      # Each ephemeral box gets an isolated per-job tool cache; no shared Mac
+      # path is touched and the runtime-version matrix remains intact.
+      RUNNER_TOOL_CACHE: ${{ github.workspace }}/.toolcache
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -97,12 +104,14 @@ jobs:
   # ── Python × maturin × multiple Python versions ───────────────────────────
   python-matrix:
     name: Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    runs-on: corelink
     # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
     # inherits GitHub's 360-min default, so one wedged run can burn 6h of
     # PAID minutes. Measured runs are minutes; this is generous headroom.
     timeout-minutes: 25
     needs: rust-unit
+    env:
+      RUNNER_TOOL_CACHE: ${{ github.workspace }}/.toolcache
     strategy:
       fail-fast: false
       matrix:
@@ -180,12 +189,14 @@ jobs:
   # ── Go × cgo × multiple Go versions ──────────────────────────────────────
   go-matrix:
     name: Go ${{ matrix.go-version }}
-    runs-on: ubuntu-latest
+    runs-on: corelink
     # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
     # inherits GitHub's 360-min default, so one wedged run can burn 6h of
     # PAID minutes. Measured runs are minutes; this is generous headroom.
     timeout-minutes: 25
     needs: rust-unit
+    env:
+      RUNNER_TOOL_CACHE: ${{ github.workspace }}/.toolcache
     strategy:
       fail-fast: false
       matrix:
@@ -235,7 +246,7 @@ jobs:
   # ── JS/TS × WASM × multiple Node.js versions ──────────────────────────────
   js-matrix:
     name: Node.js ${{ matrix.node-version }}
-    runs-on: ubuntu-latest
+    runs-on: corelink
     # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
     # inherits GitHub's 360-min default, so one wedged run can burn 6h of
     # PAID minutes. Measured runs are minutes; this is generous headroom.
@@ -322,7 +333,7 @@ jobs:
   # ── Client-verify same hash across 3 languages (single Rust truth) ────────
   cross-language-verify:
     name: Cross-language BLAKE3 verify (single Rust truth)
-    runs-on: ubuntu-latest
+    runs-on: corelink
     # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
     # inherits GitHub's 360-min default, so one wedged run can burn 6h of
     # PAID minutes. Measured runs are minutes; this is generous headroom.
@@ -334,6 +345,7 @@ jobs:
     # python3 (>= 3.10) rather than risk auto-detecting a stale 3.8.
     env:
       PYO3_PYTHON: python3
+      RUNNER_TOOL_CACHE: ${{ github.workspace }}/.toolcache
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 

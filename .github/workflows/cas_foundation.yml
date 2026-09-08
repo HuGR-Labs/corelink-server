@@ -1,5 +1,10 @@
 name: CAS Foundation CI (WI-S01-007)
 
+# B-110: all jobs in this workflow run on CoreLink's ephemeral Linux runner.
+# The former GitHub-hosted labels were blocked by the organisation's Actions
+# billing state; the corelink image is the measured 4-vCPU/12.5-GB substrate
+# required by the workspace and coverage links.
+
 concurrency:
   # Escopo por ref. Grupo CONSTANTE torna o grupo repo-global: duas execucoes
   # `workflow_dispatch` deste mesmo workflow em branches DIFERENTES cancelam uma
@@ -128,7 +133,7 @@ jobs:
   # ---------------------------------------------------------------------
   workspace-build-test:
     name: Workspace build + test (convergence)
-    runs-on: ubuntu-x64-4core  # 4-core: the full-workspace test link OOMs on 2-core (ld Bus error, signal 7)
+    runs-on: corelink  # 4-vCPU/12.5-GB ephemeral Linux box; 2-core links OOM
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -169,7 +174,7 @@ jobs:
   # ---------------------------------------------------------------------
   cargo-deny:
     name: cargo-deny (license + advisories + sources)
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -194,7 +199,7 @@ jobs:
   # ---------------------------------------------------------------------
   sbom-cyclonedx:
     name: SBOM CycloneDX 1.5+ (NTIA validated)
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 20
     needs: [workspace-build-test]
     steps:
@@ -283,7 +288,7 @@ jobs:
   # ---------------------------------------------------------------------
   cosign-sign:
     name: cosign keyless sign SBOM (Rekor)
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 15
     needs: [sbom-cyclonedx]
     # Release-only: push to main = release surrogate. Tag-based releases
@@ -365,7 +370,7 @@ jobs:
   # ---------------------------------------------------------------------
   reproducible-build-smoke:
     name: Reproducible build smoke (single-runner, ADR-0015)
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
