@@ -1,14 +1,26 @@
 {
-  "schema": "corelink-b006-capability-metrics-v1",
+  "schema": "corelink-b006-capability-metrics-v2",
+  "verdict": "INDETERMINATE",
+  "reason": "bounded request with the dedicated observability credential was rejected with HTTP 403; no counter can be inferred",
   "source": "https://corelink-spawn-worker.gmhelmold.workers.dev/internal/v1/metrics",
-  "captured_at": "2026-09-08T19:26:53Z",
-  "http_status": 200,
-  "authenticated": true,
-  "aggregate_only": true,
+  "captured_at": "2026-09-08T23:17:49Z",
+  "http_status": 403,
+  "authenticated": false,
+  "aggregate_only": false,
   "labels_included": false,
-  "capability_claim_unserved": 0,
+  "capability_claim_unserved": null,
   "reopen_threshold": {
     "counter": "capability_claim_unserved",
     "condition": ">0"
-  }
+  },
+  "request_attempted": true,
+  "credential_values_printed": false,
+  "credential_item": "CoreLink/METRICS_OBSERVABILITY_KEY",
+  "auth_header": "X-Corelink-Internal-Auth",
+  "deployed_worker": "corelink-spawn-worker",
+  "deployed_worker_version": "122e166c-b7d4-421a-a66c-44b57690af00",
+  "deployed_version_number": 133,
+  "deployment_percentage": 100,
+  "deployed_source_sha": "0ce4070989fe5d02e92c4acd5b0932fe58e4316d",
+  "deployment_id": "55a021ee-0530-4729-a9c9-a01e012d92f6"
 }

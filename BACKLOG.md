@@ -2857,19 +2857,21 @@ last-verified: 2026-08-25
 
 The cost premise that justified deferring this is measured false: a second
 container class costs nothing at zero idle. The criterion is demand-gated by
-`capability_claim_unserved`, live since `#485`. The authenticated aggregate
-snapshot captured on 2026-09-08 is **0**, so there is no current unmet image
-shape to implement; B-006 is done until the reopen threshold is crossed.
+`capability_claim_unserved`, live since `#485`. The bounded authenticated
+probe attempted on 2026-09-08 was rejected with HTTP **403**, so no aggregate
+counter was established. B-006 is reopened until a fresh authenticated read
+proves the counter is zero or records a positive demand signal.
 
 ```backlog
 id: B-006
 repo: corelink-runners
 owner: tl
-status: done
+status: open
 verify: manual
 verify-means: |
-  done while the aggregate-only snapshot from the spawn-worker production
-  surface remains zero:
+  open — the retained redacted receipt records an attempted, bounded read
+  from the spawn-worker production surface, but HTTP 403 means no aggregate
+  counter was established:
   `https://corelink-spawn-worker.gmhelmold.workers.dev/internal/v1/metrics`.
   Authenticate with the dedicated `METRICS_OBSERVABILITY_KEY` in the
   `X-Corelink-Internal-Auth` header. A CoreLink tenant PAT / `Authorization:
@@ -2877,9 +2879,11 @@ verify-means: |
   operator-read route and must not be recorded as evidence. Omit all labels,
   tenant identifiers, and customer identifiers from the retained artifact.
   Redacted evidence: `docs/validation/evidence/b006-capability-claim-unserved-2026-09-08.json`.
-  Reopen only when a fresh authenticated aggregate reports
-  `capability_claim_unserved > 0`; missing, stale, or unauthenticated evidence
-  is indeterminate and never closes or reopens the item by itself.
+  The deployed Worker/version and source SHA are bound in the redacted
+  receipt; no credential value, labels, tenant identifiers, or customer
+  identifiers are retained. A fresh authenticated aggregate is required to
+  close this item at zero or reopen it on `capability_claim_unserved > 0`;
+  missing, stale, or unauthenticated evidence never closes it.
 last-verified: 2026-09-08
 ```
 

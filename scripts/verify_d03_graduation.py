@@ -6,7 +6,8 @@ contact GitHub, or pretend that production evidence is present.  It proves
 that the one DCO candidate accounts for the exact original population, that
 every parked item has an executable owner packet, that every post-graduation
 retired item has a local retirement gate, and that the four DONE items still
-pass their local inverted guards.
+pass their local inverted guards. A reopened item must retain a fail-closed
+evidence receipt.
 """
 
 from __future__ import annotations
@@ -26,6 +27,8 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.backlog_verify import parse
+from scripts.verify_b006_evidence import EvidenceError as B006EvidenceError
+from scripts.verify_b006_evidence import validate_receipt as validate_b006_receipt
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -286,6 +289,7 @@ GRADUATED = tuple(item for item in ORIGINAL_TL_OPEN if item not in EXCLUDED) + (
 GRADUATED_SET = frozenset(GRADUATED)
 ORIGINAL_SET = frozenset(ORIGINAL_TL_OPEN)
 DONE_SET = frozenset(("B-028", "B-074", "B-135", "B-253"))
+B006_ARTIFACT = "artifacts/d03/B006-capability-metrics.json"
 EXCLUDED_FINGERPRINTS = {
     "B-061": "d759a0591e6f867b4245f09512963f2ae10924c7b25cfad02754dc1b323657dc",
     "B-126": "88e2fe5082ad1ad9c393c633c862f947043b378c1fd36393a949b64eab34b089",
@@ -781,7 +785,8 @@ def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict
         if not isinstance(packet, dict):
             raise GraduationError(f"{item}: packet must be an object")
         disposition = _require_string(packet, "disposition", item)
-        if disposition not in ("DONE", "PARKED"):
+        allowed_dispositions = ("DONE", "PARKED", "REOPENED") if item == "B-006" else ("DONE", "PARKED")
+        if disposition not in allowed_dispositions:
             raise GraduationError(f"{item}: unclassified disposition {disposition!r}")
         _require_string(packet, "artifact", item)
         _require_string(packet, "command", item)
@@ -815,9 +820,39 @@ def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict
                 raise GraduationError(f"{item}: gate command has no stdout/tee capture for {artifact}")
         if disposition == "DONE":
             _require_string(packet, "evidence", item)
-        else:
+            if item == "B-006":
+                try:
+                    receipt = json.loads(_read(root / B006_ARTIFACT))
+                    validate_b006_receipt(receipt)
+                except (json.JSONDecodeError, B006EvidenceError) as exc:
+                    raise GraduationError(f"B-006: DONE disposition lacks valid authenticated evidence: {exc}") from exc
+                if receipt.get("verdict") != "DONE":
+                    raise GraduationError("B-006: DONE disposition requires a fresh authenticated zero receipt")
+        elif disposition == "PARKED":
             if packet.get("verify_means") != "parked":
                 raise GraduationError(f"{item}: parked packet must declare verify_means=parked")
+        else:
+            if item != "B-006" or packet.get("verify_means") != "reopened":
+                raise GraduationError(f"{item}: reopened packet must declare verify_means=reopened")
+            if packet.get("artifact") != B006_ARTIFACT:
+                raise GraduationError("B-006: reopened packet artifact drifted")
+            command = packet["command"]
+            for token in (
+                "scripts/collect_b006_metrics.py",
+                "scripts/verify_b006_evidence.py",
+                "X-Corelink-Internal-Auth",
+                "--timeout 10",
+                "--max-bytes 1048576",
+            ):
+                if token not in command:
+                    raise GraduationError(f"B-006: reopened command is missing {token!r}")
+            for forbidden in ("Authorization: Bearer", "CORELINK_PROD_TOKEN", "curl --fail"):
+                if forbidden in command:
+                    raise GraduationError(f"B-006: reopened command contains forbidden credential form {forbidden!r}")
+            try:
+                validate_b006_receipt(json.loads(_read(root / B006_ARTIFACT)))
+            except (json.JSONDecodeError, B006EvidenceError) as exc:
+                raise GraduationError(f"B-006: redacted evidence is not fail-closed: {exc}") from exc
     return entries
 
 
@@ -933,10 +968,18 @@ def verify_document(
                 raise GraduationError(f"{item}: PARKED verify-means contains stale open/manual language")
 
     b006 = by_id["B-006"]
-    if b006.raw.get("owner") != "tl" or b006.raw.get("status") != "parked":
-        raise GraduationError("B-006 must remain owner tl / parked")
-    if not str(b006.raw.get("verify-means", "")).lstrip().lower().startswith("parked —"):
-        raise GraduationError("B-006 verify-means must be truthful parked language")
+    if b006.raw.get("owner") != "tl":
+        raise GraduationError("B-006 owner changed from tl")
+    b006_status = b006.raw.get("status")
+    b006_means = str(b006.raw.get("verify-means", "")).lstrip().lower()
+    if b006_status == "open":
+        if packets["B-006"]["disposition"] != "REOPENED" or not b006_means.startswith("open —"):
+            raise GraduationError("B-006 open status must use a truthful reopened packet")
+    elif b006_status == "done":
+        if packets["B-006"]["disposition"] != "DONE" or not b006_means.startswith("done —"):
+            raise GraduationError("B-006 done status must use a DONE packet and inverted means")
+    else:
+        raise GraduationError("B-006 must be open until authenticated zero evidence proves done")
     if packets["B-129"]["disposition"] != "PARKED" or "<10%" not in packets["B-129"]["evidence"]:
         raise GraduationError("B-129 must remain parked until production residual is <10%")
 
@@ -953,7 +996,13 @@ def verify_document(
     if run_gates:
         _run_parked_gates(root, by_id)
         _run_retired_gates(root, by_id)
-    return {"original": len(ORIGINAL_TL_OPEN), "graduated": len(GRADUATED), "done": 3, "parked": len(GRADUATED) - 3}
+    return {
+        "original": len(ORIGINAL_TL_OPEN),
+        "graduated": len(GRADUATED),
+        "done": sum(packet["disposition"] == "DONE" for packet in packets.values()),
+        "parked": sum(packet["disposition"] == "PARKED" for packet in packets.values()),
+        "reopened": sum(packet["disposition"] == "REOPENED" for packet in packets.values()),
+    }
 
 
 _OFFLINE_ONLY_MARKERS = ("manual", "gh ", "gh\\n", "wrangler", "cargo ")
@@ -1116,7 +1165,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         if args.self_test:
             self_test()
-        print(f"D03 graduation: PASS; original={result['original']} graduated={result['graduated']} done={result['done']} parked={result['parked']}")
+        print(f"D03 graduation: PASS; original={result['original']} graduated={result['graduated']} done={result['done']} parked={result['parked']} reopened={result['reopened']}")
         return 0
     except (GraduationError, OSError, subprocess.SubprocessError) as exc:
         print(f"D03 graduation FAIL: {exc}", file=sys.stderr)
