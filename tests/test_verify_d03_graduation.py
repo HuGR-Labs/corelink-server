@@ -46,10 +46,10 @@ def test_flagged_commands_have_load_bearing_semantic_mutations() -> None:
         with pytest.raises(GraduationError, match=item):
             _check_packets(mutated, ROOT)
 
-        mutated = copy.deepcopy(packet)
-        operation = COMMAND_OPERATIONS[item][0]
-        mutated["packets"][item]["command"] = mutated["packets"][item]["command"].replace(
-            operation, "", 1
-        )
-        with pytest.raises(GraduationError, match=item):
-            _check_packets(mutated, ROOT)
+        for operation in COMMAND_OPERATIONS[item]:
+            mutated = copy.deepcopy(packet)
+            mutated["packets"][item]["command"] = mutated["packets"][item]["command"].replace(
+                operation, "", 1
+            )
+            with pytest.raises(GraduationError, match=item):
+                _check_packets(mutated, ROOT)

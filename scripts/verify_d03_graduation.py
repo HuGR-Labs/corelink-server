@@ -40,7 +40,7 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
     "B-044": {
         "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-044",
         "profiles": [], "sample_count": 1,
-        "required": ["orphan_reconcile_scan", "sbox", "observe", "type-1", "type-2"],
+        "required": ["orphan_reconcile_scan", "sbox", "observe", "type-1", "type-2", "tail_rc", "124"],
         "safety": ["RECONCILE_ORPHAN_TEARDOWN=0"],
         "forbidden": ["RECONCILE_ORPHAN_TEARDOWN=1", "wrangler delete", "wrangler destroy"],
     },
@@ -61,7 +61,7 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
     "B-068": {
         "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-068",
         "profiles": ["d1", "r2", "stripe", "neon"], "sample_count": 4,
-        "required": ["real-ignored-harnesses.yml", "workflow_dispatch", "seed"],
+        "required": ["real-ignored-harnesses.yml", "workflow_dispatch", "seed", "active_yaml", "awk"],
         "safety": ["--ref main", "profile=", "OWNER_APPROVED_REAL_INTEGRATION=1"],
         "forbidden": ["emit_e2e_seed", "PAT signing seed"],
     },
@@ -117,7 +117,7 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
     "B-112": {
         "owner_packet": "docs/campaigns/remediation/work-packages/B091-B130.md#WP-B112",
         "profiles": ["linux", "windows"], "sample_count": 1,
-        "required": ["release-cli.yml", "cargo-zigbuild", "checksums", "SLSA", "gh run rerun", "B112_RUN_ID"],
+        "required": ["release-cli.yml", "cargo-zigbuild", "checksums", "SLSA", "gh run rerun", "B112_RUN_ID", "B112_EXPECTED_REF", "B112_EXPECTED_SHA", "workflowName", "headBranch", "headSha", "event"],
         "safety": ["--root", "OWNER_APPROVED_RELEASE_RERUN=1"],
         "forbidden": ["git tag", "cosign-sign.yml", "--force"],
     },
@@ -160,7 +160,7 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
     "B-134": {
         "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-134",
         "profiles": ["smoke-install.yml", "cosign-sign.yml"], "sample_count": 2,
-        "required": ["docker info", "image_digest", "Rekor", "webhook", "UNMEASURED"],
+        "required": ["docker info", "image_digest", "Rekor", "webhook", "UNMEASURED", "headBranch", "headSha", "event", "expected_sha"],
         "safety": ["workflow_dispatch", "corelink", "OWNER_APPROVED_B134=1"],
         "forbidden": ["codeql.yml", "secrets-drift.yml", "--force"],
     },
@@ -179,10 +179,10 @@ SEMANTIC_PACKET_FIELDS = {"owner_packet", "profiles", "sample_count", "required"
 # profile name or artifact path, so the verifier also requires these concrete
 # owner-packet operations.
 COMMAND_OPERATIONS: dict[str, tuple[str, ...]] = {
-    "B-044": ("timeout 30s",),
+    "B-044": ("timeout 30s", "tail_rc=0"),
     "B-046": ("verify_b046_object_lock_probe.py --probe",),
     "B-063": ("audit-archive-lag.yml --ref main",),
-    "B-068": ("gh workflow run real-ignored-harnesses.yml",),
+    "B-068": ("gh workflow run real-ignored-harnesses.yml", "active_yaml=\"$(awk"),
     "B-071": ("gh workflow run gc-sweep-dry-run.yml",),
     "B-072": ("verify_b072_scheduled_drills.py",),
     "B-083": ("verify_b083_revocation_wiring.py",),
@@ -190,13 +190,13 @@ COMMAND_OPERATIONS: dict[str, tuple[str, ...]] = {
     "B-102": ("$CORELINK_PROD_BASE/cargo",),
     "B-104": ("does-not-exist-$ordinal",),
     "B-106": ("$CORELINK_PROD_BASE/v1/customer/keys",),
-    "B-112": ("gh run rerun",),
+    "B-112": ("gh run rerun", "run_meta=\"$(gh run view", "expected_sha=\"${B112_EXPECTED_SHA", ".workflowName == \"release-cli\""),
     "B-113": ("gh workflow run \"$workflow\"",),
     "B-122": ("$CORELINK_PROD_BASE/cargo",),
     "B-125": ("wrangler d1 execute corelink-prod",),
     "B-127": ("wrangler d1 execute corelink-prod",),
     "B-129": ("$CORELINK_PROD_BASE/v1/customer/cas/probe",),
-    "B-134": ("check_b134_observability.py",),
+    "B-134": ("check_b134_observability.py", "expected_sha=\"$(gh api", ".headSha == $sha"),
     "B-251": ("cargo test -p corelink-billing",),
 }
 
@@ -572,11 +572,15 @@ def self_test(root: Path = ROOT) -> None:
     # per item; a verifier that checks only artifact redirection must not accept
     # any of these mutants.
     for item, contract in COMMAND_CONTRACTS.items():
-        for name, mutation in (
+        mutations = [
             ("semantic-token-removed", lambda data, token=contract["safety"][0]: data["packets"][item].update(command=data["packets"][item]["command"].replace(token, ""))),
             ("semantic-count-mutated", lambda data: data["packets"][item]["command_contract"].update(sample_count=contract["sample_count"] + 1)),
-            ("load-bearing-operation-removed", lambda data, operation=COMMAND_OPERATIONS[item][0]: data["packets"][item].update(command=data["packets"][item]["command"].replace(operation, "", 1))),
-        ):
+        ]
+        mutations.extend(
+            (f"load-bearing-operation-removed:{operation}", lambda data, operation=operation: data["packets"][item].update(command=data["packets"][item]["command"].replace(operation, "", 1)))
+            for operation in COMMAND_OPERATIONS[item]
+        )
+        for name, mutation in mutations:
             mutated = copy.deepcopy(owner_data)
             # Start from the full graduation document, not only owner packets.
             full = _load_packets(packets)
