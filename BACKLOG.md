@@ -2866,7 +2866,15 @@ repo: corelink-runners
 owner: tl
 status: parked
 verify: manual
-verify-means: parked — until capability_claim_unserved leaves zero; read via /internal/v1/metrics
+verify-means: |
+  parked until `capability_claim_unserved` leaves zero; read the aggregate-only
+  snapshot from the spawn-worker production surface
+  `https://corelink-spawn-worker.gmhelmold.workers.dev/internal/v1/metrics`.
+  Authenticate with the dedicated `METRICS_OBSERVABILITY_KEY` in the
+  `X-Corelink-Internal-Auth` header. A CoreLink tenant PAT / `Authorization:
+  Bearer` (`CORELINK_PROD_TOKEN`) is the wrong credential class for this
+  operator-read route and must not be recorded as evidence. Omit all labels,
+  tenant identifiers, and customer identifiers from the retained artifact.
 last-verified: 2026-08-23
 ```
 
