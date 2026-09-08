@@ -449,6 +449,7 @@ class B152DiagnosticTests(unittest.TestCase):
         self.assertIn('"zero_window_jobs_is_not_closure": True', workflow)
         self.assertIn("actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", workflow)
         self.assertIn("retention-days: 30", workflow)
+        self.assertIn("Surface collector unavailability", workflow)
         self.assertNotIn("cat .*logs", workflow)
 
     def test_missing_gh_is_sanitized_indeterminate_not_a_traceback(self):

@@ -62,6 +62,7 @@ class B165VerifierTests(unittest.TestCase):
         self.assertIn("--samples 10", workflow)
         self.assertIn("retention-days: 30", workflow)
         self.assertIn("Exit 2 is the expected partial/open result", workflow)
+        self.assertIn("Surface unexpected probe or verifier result", workflow)
 
 
 if __name__ == "__main__":

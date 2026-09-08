@@ -56,3 +56,14 @@ jobs:
             ${{ runner.temp }}/b165-verifier-exit-code
           if-no-files-found: error
           retention-days: 30
+
+      - name: Surface unexpected probe or verifier result
+        if: always()
+        shell: bash
+        run: |
+          probe_rc="$(cat "$RUNNER_TEMP/b165-exit-code")"
+          verifier_rc="$(cat "$RUNNER_TEMP/b165-verifier-exit-code")"
+          if [[ "$probe_rc" != 2 || "$verifier_rc" != 2 ]]; then
+            echo "B-165 monitor did not produce the expected partial/open refusal result." >&2
+            exit 1
+          fi

@@ -80,3 +80,13 @@ jobs:
             ${{ runner.temp }}/b152-exit-code
           if-no-files-found: error
           retention-days: 30
+
+      - name: Surface collector unavailability
+        if: always()
+        shell: bash
+        run: |
+          rc="$(cat "$RUNNER_TEMP/b152-exit-code")"
+          if [[ "$rc" != 0 ]]; then
+            echo "B-152 monitor is indeterminate (collector exit $rc); artifact retained for diagnosis." >&2
+            exit "$rc"
+          fi
