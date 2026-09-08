@@ -54,6 +54,20 @@ class OwnerActionPacketTests(unittest.TestCase):
         with self.assertRaises(MODULE.PacketError):
             MODULE.check_data(stale, "B-013")
 
+    def test_b110_reconciled_closure_matches_backlog(self) -> None:
+        self.assertEqual(
+            MODULE.check_data(self.data, "B-110"),
+            {"items": 29, "population": 29},
+        )
+        item = next(entry for entry in self.data["items"] if entry["id"] == "B-110")
+        self.assertEqual((item["owner"], item["status"]), ("tl", "done"))
+
+        stale = copy.deepcopy(self.data)
+        stale_item = next(entry for entry in stale["items"] if entry["id"] == "B-110")
+        stale_item.update(owner="owner", status="open")
+        with self.assertRaises(MODULE.PacketError):
+            MODULE.check_data(stale, "B-110")
+
     def test_every_load_bearing_field_mutation_fails(self) -> None:
         self.assertEqual(MODULE.mutation_self_test(self.data), 29 * (len(MODULE.ITEM_FIELDS) + 2) + 2)
 

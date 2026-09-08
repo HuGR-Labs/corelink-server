@@ -33,9 +33,9 @@ EXPECTED_IDS = (
 # B-013 was reconciled from an external owner action to a repository-side
 # closure record after its redacted deletion evidence received a strict focal
 # verifier.  It therefore no longer belongs to the legacy ``owner`` subset;
-# the other eleven legacy rows remain owner-controlled until their actions are
+# the other ten legacy rows remain owner-controlled until their actions are
 # evidenced and reclassified.
-LEGACY_OWNER_IDS = frozenset(EXPECTED_IDS[:12]) - {"B-013"}
+LEGACY_OWNER_IDS = frozenset(EXPECTED_IDS[:12]) - {"B-013", "B-110"}
 CLOSED_PACKET_IDS = frozenset({"B-013", "B-110"})
 ITEM_FIELDS = {
     "id", "owner", "status", "action_type", "procedure",
