@@ -172,11 +172,18 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
         "safety": ["workflow_dispatch", "corelink", "OWNER_APPROVED_B134=1"],
         "forbidden": ["codeql.yml", "secrets-drift.yml", "--force"],
     },
+    "B-216": {
+        "owner_packet": "docs/internal/b215-b230-runtime-owner-actions.md#B-216",
+        "profiles": ["corelink-signup-worker", "corelink-dsr-erasure-dlq"], "sample_count": 1,
+        "required": ["dsr.erasure.dead_letter", "requeue_once", "paging", "revision", "priorRequeues < 1"],
+        "safety": ["OWNER_APPROVED_B216=1", "timeout 30s"],
+        "forbidden": ["wrangler queue send", "wrangler queues delete", "DELETE FROM", "--force"],
+    },
     "B-251": {
         "owner_packet": "docs/campaigns/remediation/work-packages/B131-B167.md#WP-B251",
-        "profiles": ["deterministic", "D02"], "sample_count": 1000,
-        "required": ["verify_b251_quota_cas_budget.py", "--ignored", "--exact", "p99", "seed", "blob"],
-        "safety": ["opt-in", "--nocapture"],
+        "profiles": ["deterministic", "D02", "fixture"], "sample_count": 1000,
+        "required": ["verify_b251_quota_cas_budget.py", "--ignored", "--exact", "p99", "seed", "failure", "blob", "D02_SEED", "D02_FAILURE", "D02_BLOB", "OBSERVED_SEED", "OBSERVED_FAILURE", "OBSERVED_BLOB", "fixture_only", "production_latency_measured=false", "InMemoryAtomicQuotaChecker"],
+        "safety": ["opt-in", "--nocapture", "B251_ALLOW_IGNORED_PROBE=1"],
         "forbidden": ["--force", "production quota redesign"],
     },
 }
@@ -206,7 +213,8 @@ COMMAND_OPERATIONS: dict[str, tuple[str, ...]] = {
     "B-122": ("$CORELINK_PROD_BASE/cargo/${CORELINK_DOGFOOD_TENANT:?}/b122-${ordinal}",),
     "B-129": ("$CORELINK_PROD_BASE/cargo/${CORELINK_DOGFOOD_TENANT:?}/${CORELINK_DOGFOOD_CARGO_KEY:?}",),
     "B-134": ("check_b134_observability.py", "expected_sha=\"$(gh api", ".headSha == $sha"),
-    "B-251": ("cargo test -p corelink-billing",),
+    "B-216": ("wrangler tail corelink-signup-worker", "event: \"dsr.erasure.dead_letter\"", "test -s reports/owner-actions/b216-alert-delivery.json", "test -s reports/owner-actions/b216-exhausted-observation.md"),
+    "B-251": ("cargo test -p corelink-billing", "test \"$B251_OBSERVED_SEED\" = \"$B251_D02_SEED\"", "test \"$B251_OBSERVED_FAILURE\" = \"$B251_D02_FAILURE\"", "test \"$B251_OBSERVED_BLOB\" = \"$B251_D02_BLOB\"", "echo 'measurement_mode=fixture_only; production_latency_measured=false'"),
 }
 
 # Frozen from the 42 TL/open records at the D03 starting head.  Do not derive
