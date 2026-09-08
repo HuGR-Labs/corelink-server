@@ -21,6 +21,7 @@ INCLUDE_CENSUSES: tuple[tuple[str, tuple[str, ...]], ...] = (
             "cas/single_handlers.rs", "cas/batch_write.rs", "cas/batch_read.rs",
             "cas/list_delete.rs", "cas/tests_core_part1.rs", "cas/tests_core_part2.rs",
             "cas/tests_batch_part1.rs", "cas/tests_batch_part2.rs",
+            "cas/tests_batch_cancellation_part3.rs",
             "cas/tests_batch_write_part2.rs", "cas/tests_edges.rs", "cas/tests_read_ceiling.rs",
         ),
     ),

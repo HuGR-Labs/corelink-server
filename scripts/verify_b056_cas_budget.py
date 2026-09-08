@@ -36,6 +36,7 @@ CAS_INCLUDE_CENSUS = (
     "tests_core_part2.rs",
     "tests_batch_part1.rs",
     "tests_batch_part2.rs",
+    "tests_batch_cancellation_part3.rs",
     "tests_batch_write_part2.rs",
     "tests_edges.rs",
     "tests_read_ceiling.rs",
@@ -207,8 +208,11 @@ def assess(files: dict[str, str], expected_status: str = "done") -> None:
         fail("B-056 OKF render is missing the process-wide byte budget")
     if "B-056" not in files["changelog"]:
         fail("B-056 changelog fragment is missing its finding ID")
-    if "B-056 CAS read budget verifier and mutations" not in files["workflow"]:
-        fail("workflow does not run the B-056 verifier")
+    workflow = files["workflow"]
+    if "pull_request_target:" not in workflow or workflow.count('paths: ["**"]') < 2:
+        fail("workflow does not track the complete B-056 input tree")
+    if "python3 scripts/backlog_verify.py --trusted-semantic" not in workflow:
+        fail("workflow does not run B-056 through trusted-main backlog semantics")
 
 
 def mutation_checks(files: dict[str, str]) -> None:
@@ -261,6 +265,12 @@ def mutation_checks(files: dict[str, str]) -> None:
             "cas_module",
             'include!("cas/batch_read.rs");',
             '/* include!("cas/batch_read.rs"); */',
+        ),
+        (
+            "trusted workflow execution",
+            "workflow",
+            "python3 scripts/backlog_verify.py --trusted-semantic",
+            "python3 scripts/backlog_verify.py --candidate-only",
         ),
         ("backlog status", "backlog", "status: done", "status: open"),
         (
