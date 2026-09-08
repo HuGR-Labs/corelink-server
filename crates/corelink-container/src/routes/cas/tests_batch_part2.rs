@@ -190,6 +190,80 @@ fn batch_read_request(hashes: &[String]) -> Request<Body> {
         .expect("request")
 }
 
+/// A post-header R2 body stall must surface as a terminal read error, and the
+/// route must release both sides of [`BatchReadLease`] after that timeout.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn batch_read_post_header_timeout_releases_admission_and_tenant_lease() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Debug)]
+    struct PostHeaderStall {
+        started: Arc<tokio::sync::Notify>,
+        active: Arc<AtomicUsize>,
+    }
+
+    impl CasReadHandler for PostHeaderStall {
+        fn read(&self, _req: CasReadRequest) -> Result<CasReadResponse, CasHandlerError> {
+            self.active.fetch_add(1, Ordering::SeqCst);
+            self.started.notify_one();
+            // Model an R2 GetObject whose headers arrived but whose body made
+            // no progress until the body-level idle timeout fails it closed.
+            std::thread::sleep(std::time::Duration::from_millis(25));
+            self.active.fetch_sub(1, Ordering::SeqCst);
+            Err(CasHandlerError::Internal(
+                "R2 body idle timeout".into(),
+            ))
+        }
+    }
+
+    let started = Arc::new(tokio::sync::Notify::new());
+    let active = Arc::new(AtomicUsize::new(0));
+    let state = tracking_state(Arc::new(PostHeaderStall {
+        started: started.clone(),
+        active: active.clone(),
+    }));
+    let admission = global_cas_batch_read_admission();
+    let admission_before = admission.available_permits();
+    assert!(admission_before > 0, "batch admission must be available");
+    let request = router(state.clone()).oneshot(batch_read_request(&[
+        fake_hash(b"post-header-stall"),
+    ]));
+    tokio::pin!(request);
+    tokio::select! {
+        _ = started.notified() => {}
+        response = &mut request => panic!("batch read completed before body timeout: {response:?}"),
+        _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {
+            panic!("batch read did not enter the post-header body stall")
+        }
+    }
+    assert_eq!(state.read_inflight.lock().expect("read tracker").get(TEST_TENANT), Some(&1));
+    assert_eq!(admission.available_permits(), admission_before - 1);
+
+    let response = tokio::time::timeout(std::time::Duration::from_secs(1), request)
+        .await
+        .expect("body timeout must terminate the batch")
+        .expect("batch route response");
+    assert!(response.status().is_server_error());
+    assert_eq!(active.load(Ordering::Acquire), 0);
+    tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        loop {
+            if state
+                .read_inflight
+                .lock()
+                .expect("read tracker")
+                .get(TEST_TENANT)
+                .is_none()
+                && admission.available_permits() == admission_before
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("tenant and global leases must release after body timeout");
+}
+
 /// A full structured window reaches concurrency >1 but never exceeds the
 /// budget-derived eight object tasks. The request ceiling is observed by the
 /// read handler, not merely checked after the response is materialised.
