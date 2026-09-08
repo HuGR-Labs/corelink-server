@@ -119,3 +119,152 @@ pub enum CappedGet {
         actual_bytes: Option<u64>,
     },
 }
+
+/// The narrow body interface keeps the bounded collector testable with a
+/// deterministic stream while the production adapter wraps AWS's
+/// `ByteStream` below.
+trait R2BodyChunkStream {
+    fn next_chunk<'a>(
+        &'a mut self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Option<Result<bytes::Bytes, String>>,
+                > + Send
+                + 'a,
+        >,
+    >;
+}
+
+struct R2SdkBodyStream(aws_sdk_s3::primitives::ByteStream);
+
+impl R2BodyChunkStream for R2SdkBodyStream {
+    fn next_chunk<'a>(
+        &'a mut self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Option<Result<bytes::Bytes, String>>,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            self.0
+                .next()
+                .await
+                .map(|chunk| chunk.map_err(|error| error.to_string()))
+        })
+    }
+}
+
+#[cfg(test)]
+struct R2TestStalledAfterHeaders {
+    emitted: bool,
+}
+
+#[cfg(test)]
+impl R2BodyChunkStream for R2TestStalledAfterHeaders {
+    fn next_chunk<'a>(
+        &'a mut self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Option<Result<bytes::Bytes, String>>,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            if !self.emitted {
+                self.emitted = true;
+                Some(Ok(bytes::Bytes::from_static(b"headers-arrived")))
+            } else {
+                std::future::pending::<Option<Result<bytes::Bytes, String>>>().await
+            }
+        })
+    }
+}
+
+impl R2S3Client {
+    /// Bound the three phases that can otherwise leave a synchronous CAS
+    /// reader parked forever when R2 stops making progress. The operation
+    /// timeout is deliberately longer than the per-read timeout because a
+    /// large object may legitimately need several read windows, while still
+    /// giving cancellation a finite unwind point.
+    pub(crate) const R2_CONNECT_TIMEOUT: std::time::Duration =
+        std::time::Duration::from_secs(2);
+    pub(crate) const R2_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+    pub(crate) const R2_OPERATION_ATTEMPT_TIMEOUT: std::time::Duration =
+        std::time::Duration::from_secs(30);
+    pub(crate) const R2_OPERATION_TIMEOUT: std::time::Duration =
+        std::time::Duration::from_secs(60);
+    /// Body-level deadlines remain necessary after `GetObject` headers arrive:
+    /// the SDK operation timeout does not reliably cover a stalled stream.
+    pub(crate) const R2_BODY_IDLE_TIMEOUT: std::time::Duration =
+        std::time::Duration::from_secs(30);
+    pub(crate) const R2_BODY_TOTAL_TIMEOUT: std::time::Duration =
+        std::time::Duration::from_secs(60);
+
+    #[cfg(test)]
+    pub(crate) fn test_post_header_body_timeout() -> Result<CappedGet, String> {
+        let handle = tokio::runtime::Handle::current();
+        tokio::task::block_in_place(|| {
+            handle.block_on(Self::collect_capped_body_with_deadlines(
+                "batch-post-header-stall",
+                1024,
+                R2TestStalledAfterHeaders { emitted: false },
+                std::time::Duration::from_millis(10),
+                std::time::Duration::from_millis(50),
+            ))
+        })
+    }
+
+    async fn collect_capped_body<S: R2BodyChunkStream>(
+        key: &str,
+        max_bytes: u64,
+        body: S,
+    ) -> Result<CappedGet, String> {
+        Self::collect_capped_body_with_deadlines(
+            key,
+            max_bytes,
+            body,
+            Self::R2_BODY_IDLE_TIMEOUT,
+            Self::R2_BODY_TOTAL_TIMEOUT,
+        )
+        .await
+    }
+
+    async fn collect_capped_body_with_deadlines<S: R2BodyChunkStream>(
+        key: &str,
+        max_bytes: u64,
+        mut body: S,
+        idle_timeout: std::time::Duration,
+        total_timeout: std::time::Duration,
+    ) -> Result<CappedGet, String> {
+        let collect = async {
+            let mut bytes = Vec::new();
+            let mut actual_bytes = 0_u64;
+            loop {
+                let next = tokio::time::timeout(idle_timeout, body.next_chunk())
+                    .await
+                    .map_err(|_| format!("R2 body idle timeout for key {key}"))?;
+                let Some(chunk) = next else {
+                    return Ok(CappedGet::Found(bytes));
+                };
+                let chunk = chunk
+                    .map_err(|error| format!("R2 body read failed for key {key}: {error}"))?;
+                actual_bytes = actual_bytes.saturating_add(chunk.len() as u64);
+                if actual_bytes > max_bytes {
+                    return Ok(CappedGet::TooLarge {
+                        actual_bytes: Some(actual_bytes),
+                    });
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+        };
+        tokio::time::timeout(total_timeout, collect)
+            .await
+            .map_err(|_| format!("R2 body total timeout for key {key}"))?
+    }
+}

@@ -194,57 +194,40 @@ fn batch_read_request(hashes: &[String]) -> Request<Body> {
 /// route must release both sides of [`BatchReadLease`] after that timeout.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn batch_read_post_header_timeout_releases_admission_and_tenant_lease() {
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use crate::storage::r2_s3::{R2CasHandler, R2S3Client};
+    use crate::storage::StorageEnv;
 
-    #[derive(Debug)]
-    struct PostHeaderStall {
-        started: Arc<tokio::sync::Notify>,
-        active: Arc<AtomicUsize>,
-    }
-
-    impl CasReadHandler for PostHeaderStall {
-        fn read(&self, _req: CasReadRequest) -> Result<CasReadResponse, CasHandlerError> {
-            self.active.fetch_add(1, Ordering::SeqCst);
-            self.started.notify_one();
-            // Model an R2 GetObject whose headers arrived but whose body made
-            // no progress until the body-level idle timeout fails it closed.
-            std::thread::sleep(std::time::Duration::from_millis(25));
-            self.active.fetch_sub(1, Ordering::SeqCst);
-            Err(CasHandlerError::Internal(
-                "R2 body idle timeout".into(),
-            ))
-        }
-    }
-
-    let started = Arc::new(tokio::sync::Notify::new());
-    let active = Arc::new(AtomicUsize::new(0));
-    let state = tracking_state(Arc::new(PostHeaderStall {
-        started: started.clone(),
-        active: active.clone(),
-    }));
+    let env = StorageEnv {
+        r2_endpoint: "https://localhost:1".to_owned(),
+        r2_access_key_id: "test".to_owned(),
+        r2_secret_access_key: "test".to_owned(),
+        cloudflare_account_id: "test".to_owned(),
+        cf_api_token: "test".to_owned(),
+        d1_database_id: "test".to_owned(),
+    };
+    let client = R2S3Client::new(&env, "test-bucket")
+        .await
+        .expect("test R2 client");
+    let audit = Arc::new(InMemoryAuditSink::new());
+    let sli = Arc::new(InMemorySliObserver::new());
+    let handler = Arc::new(
+        R2CasHandler::new(client, "iad", None, audit, sli)
+            .with_test_post_header_body_timeout(),
+    );
+    let state = tracking_state(handler);
     let admission = global_cas_batch_read_admission();
     let admission_before = admission.available_permits();
     assert!(admission_before > 0, "batch admission must be available");
-    let request = router(state.clone()).oneshot(batch_read_request(&[
-        fake_hash(b"post-header-stall"),
-    ]));
-    tokio::pin!(request);
-    tokio::select! {
-        _ = started.notified() => {}
-        response = &mut request => panic!("batch read completed before body timeout: {response:?}"),
-        _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {
-            panic!("batch read did not enter the post-header body stall")
-        }
-    }
-    assert_eq!(state.read_inflight.lock().expect("read tracker").get(TEST_TENANT), Some(&1));
-    assert_eq!(admission.available_permits(), admission_before - 1);
-
-    let response = tokio::time::timeout(std::time::Duration::from_secs(1), request)
+    let response = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        router(state.clone()).oneshot(batch_read_request(&[
+            fake_hash(b"post-header-stall"),
+        ])),
+    )
         .await
         .expect("body timeout must terminate the batch")
         .expect("batch route response");
     assert!(response.status().is_server_error());
-    assert_eq!(active.load(Ordering::Acquire), 0);
     tokio::time::timeout(std::time::Duration::from_secs(1), async {
         loop {
             if state

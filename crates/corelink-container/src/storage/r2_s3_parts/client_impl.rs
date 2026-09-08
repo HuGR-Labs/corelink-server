@@ -1,61 +1,4 @@
-/// The narrow body interface keeps the bounded collector testable with a
-/// deterministic stream while the production adapter wraps AWS's
-/// `ByteStream` below.
-trait R2BodyChunkStream {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = Option<Result<bytes::Bytes, String>>,
-                > + Send
-                + 'a,
-        >,
-    >;
-}
-
-struct R2SdkBodyStream(aws_sdk_s3::primitives::ByteStream);
-
-impl R2BodyChunkStream for R2SdkBodyStream {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = Option<Result<bytes::Bytes, String>>,
-                > + Send
-                + 'a,
-        >,
-    > {
-        Box::pin(async move {
-            self.0
-                .next()
-                .await
-                .map(|chunk| chunk.map_err(|error| error.to_string()))
-        })
-    }
-}
-
 impl R2S3Client {
-    /// Bound the three phases that can otherwise leave a synchronous CAS
-    /// reader parked forever when R2 stops making progress. The operation
-    /// timeout is deliberately longer than the per-read timeout because a
-    /// large object may legitimately need several read windows, while still
-    /// giving cancellation a finite unwind point.
-    pub(crate) const R2_CONNECT_TIMEOUT: std::time::Duration =
-        std::time::Duration::from_secs(2);
-    pub(crate) const R2_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-    pub(crate) const R2_OPERATION_ATTEMPT_TIMEOUT: std::time::Duration =
-        std::time::Duration::from_secs(30);
-    pub(crate) const R2_OPERATION_TIMEOUT: std::time::Duration =
-        std::time::Duration::from_secs(60);
-    /// Body-level deadlines remain necessary after `GetObject` headers arrive:
-    /// the SDK operation timeout does not reliably cover a stalled stream.
-    pub(crate) const R2_BODY_IDLE_TIMEOUT: std::time::Duration =
-        std::time::Duration::from_secs(30);
-    pub(crate) const R2_BODY_TOTAL_TIMEOUT: std::time::Duration =
-        std::time::Duration::from_secs(60);
-
     /// Construct an [`R2S3Client`] from a validated [`StorageEnv`].
     ///
     /// The `bucket` parameter selects the R2 bucket name (e.g.
@@ -72,11 +15,9 @@ impl R2S3Client {
             None, // expiry
             "corelink-r2-s3-adapter",
         );
-
         // R2 uses `auto` as the region pseudo-value; the real routing
         // is done by the endpoint URL.
         let region = Region::new("auto");
-
         // CRITICAL — DO NOT call `aws_config::defaults(...).load().await`.
         // That helper triggers the AWS credential-provider chain (IMDS,
         // ECS, STS) which performs blocking outbound metadata probes.
@@ -100,14 +41,12 @@ impl R2S3Client {
                     .build(),
             )
             .build();
-
         Ok(Self {
             inner: Client::from_conf(s3_config),
             bucket: bucket.into(),
             delete_locks: std::sync::Mutex::new(std::collections::HashMap::new()),
         })
     }
-
     /// Upload `bytes` under `key` in the configured bucket.
     ///
     /// # Errors
@@ -132,7 +71,6 @@ impl R2S3Client {
             .map_err(|e| format!("R2 put failed for key {key}: {e}"))?;
         Ok(())
     }
-
     /// Upload `bytes` under `key` ONLY if no object exists there.
     ///
     /// Returns `Ok(true)` when this call created the object and `Ok(false)`
@@ -183,7 +121,6 @@ impl R2S3Client {
             }
         }
     }
-
     /// Download the bytes stored under `key`.
     ///
     /// Returns `Ok(Some(bytes))` on success, `Ok(None)` if the object
@@ -201,7 +138,6 @@ impl R2S3Client {
             .key(key)
             .send()
             .await;
-
         match result {
             Ok(output) => {
                 let bytes = output
@@ -224,7 +160,6 @@ impl R2S3Client {
             }
         }
     }
-
     /// Read the byte size of the object stored under `key` WITHOUT
     /// downloading its body (S3 `HeadObject`).
     ///
@@ -297,53 +232,6 @@ impl R2S3Client {
                 Err(format!("R2 get failed for key {key}: {sdk_err}"))
             }
         }
-    }
-
-    async fn collect_capped_body<S: R2BodyChunkStream>(
-        key: &str,
-        max_bytes: u64,
-        body: S,
-    ) -> Result<CappedGet, String> {
-        Self::collect_capped_body_with_deadlines(
-            key,
-            max_bytes,
-            body,
-            Self::R2_BODY_IDLE_TIMEOUT,
-            Self::R2_BODY_TOTAL_TIMEOUT,
-        )
-        .await
-    }
-
-    async fn collect_capped_body_with_deadlines<S: R2BodyChunkStream>(
-        key: &str,
-        max_bytes: u64,
-        mut body: S,
-        idle_timeout: std::time::Duration,
-        total_timeout: std::time::Duration,
-    ) -> Result<CappedGet, String> {
-        let collect = async {
-            let mut bytes = Vec::new();
-            let mut actual_bytes = 0_u64;
-            loop {
-                let next = tokio::time::timeout(idle_timeout, body.next_chunk())
-                    .await
-                    .map_err(|_| format!("R2 body idle timeout for key {key}"))?;
-                let Some(chunk) = next else {
-                    return Ok(CappedGet::Found(bytes));
-                };
-                let chunk = chunk.map_err(|error| format!("R2 body read failed for key {key}: {error}"))?;
-                actual_bytes = actual_bytes.saturating_add(chunk.len() as u64);
-                if actual_bytes > max_bytes {
-                    return Ok(CappedGet::TooLarge {
-                        actual_bytes: Some(actual_bytes),
-                    });
-                }
-                bytes.extend_from_slice(&chunk);
-            }
-        };
-        tokio::time::timeout(total_timeout, collect)
-            .await
-            .map_err(|_| format!("R2 body total timeout for key {key}"))?
     }
 
     /// Returns `Err(String)` on any non-404 transport/service error.

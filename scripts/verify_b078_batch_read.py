@@ -112,6 +112,7 @@ def assess_source(route: str, handler: str, storage: str, openapi: str, docs: st
 
     try:
         capped = _section(storage, "pub async fn get_capped", "pub async fn head_size")
+        capped += _section(storage, "async fn collect_capped_body<S", "pub async fn new(")
     except ContractError as error:
         gaps.append(str(error))
         capped = ""

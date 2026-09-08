@@ -109,8 +109,8 @@ class B078ContractTests(unittest.TestCase):
         route, handler, storage = self._sources()
         openapi = (ROOT / "openapi/corelink-v1.yaml").read_text()
         docs = (ROOT / "docs/knowledge/surfaces/native-cas.md").read_text()
-        start = storage.index("pub async fn get_capped")
-        end = storage.index("pub async fn head_size", start)
+        start = storage.index("async fn collect_capped_body_with_deadlines")
+        end = storage.index("pub async fn new(", start)
         capped = storage[start:end].replace(
             "body.next_chunk()",
             "body.collect().await?",

@@ -9,6 +9,16 @@ impl CasReadHandler for R2CasHandler {
     fn read(&self, req: CasReadRequest) -> Result<CasReadResponse, CasHandlerError> {
         use corelink_handler_cas::observer::Sli;
 
+        #[cfg(test)]
+        if self.test_post_header_body_timeout {
+            return match R2S3Client::test_post_header_body_timeout() {
+                Err(error) => Err(CasHandlerError::Internal(error)),
+                Ok(outcome) => Err(CasHandlerError::Internal(format!(
+                    "test body collector unexpectedly returned {outcome:?}"
+                ))),
+            };
+        }
+
         // Batch-read supplies its 8 MiB object ceiling through the request so
         // the storage adapter can reject oversized objects from metadata before
         // collecting a body. Ordinary single reads retain the historical

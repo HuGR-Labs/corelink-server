@@ -41,6 +41,8 @@ pub struct R2CasHandler {
     /// `None` → a tenant configured for `crypto_mode='random'` fails CLOSED on
     /// the data plane (never plaintext); Mode A (convergent) is unaffected.
     byok_mode_b: Option<Arc<ModeBEncryptor>>,
+    #[cfg(test)]
+    test_post_header_body_timeout: bool,
 }
 
 impl core::fmt::Debug for R2CasHandler {
@@ -76,7 +78,18 @@ impl R2CasHandler {
             byok_config_cache: None,
             tcs_resolver: None,
             byok_mode_b: None,
+            #[cfg(test)]
+            test_post_header_body_timeout: false,
         }
+    }
+
+    /// Test-only seam that sends the real R2 body collector timeout through
+    /// this production `CasReadHandler` implementation.
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) fn with_test_post_header_body_timeout(mut self) -> Self {
+        self.test_post_header_body_timeout = true;
+        self
     }
 
     /// Attach the concurrent-list async audit seam: `audit_async` MUST be
