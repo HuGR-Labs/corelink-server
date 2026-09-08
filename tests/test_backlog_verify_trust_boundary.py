@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import os
 import shutil
 import subprocess
 import sys
@@ -34,6 +35,8 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         self.assertIn("working-directory: _base", workflow)
         self.assertIn("--candidate-file", workflow)
         self.assertIn("--trusted-file", workflow)
+        self.assertIn("--trusted-semantic", workflow)
+        self.assertIn("if: github.event_name == 'push' || github.event_name == 'schedule'", workflow)
 
     @staticmethod
     def item(item_id: str, *, status: str = "open", verify: str = '"true"', owner: str = "tl") -> backlog_verify.Item:
@@ -115,6 +118,30 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
             candidate.joinpath("scripts/helper.py").write_text("VALUE = 2\n", encoding="utf-8")
             with self.assertRaisesRegex(RuntimeError, "helper.py"):
                 backlog_verify.check_candidate_controls(candidate, trusted, items)
+
+    def test_dynamic_import_control_mutation_is_rejected(self) -> None:
+        trusted_items = backlog_verify.parse((ROOT / "BACKLOG.md").read_text(encoding="utf-8"))
+        controls = backlog_verify._candidate_control_paths(ROOT, trusted_items)
+        self.assertIn("scripts/b155_backlog_grep_parser.py", controls)
+        parser = self.candidate / "scripts" / "b155_backlog_grep_parser.py"
+        parser.write_text(parser.read_text(encoding="utf-8") + "\n# candidate mutation\n", encoding="utf-8")
+
+        result = self.run_gate()
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("b155_backlog_grep_parser.py", result.stdout + result.stderr)
+
+    def test_trusted_semantic_mode_reproduces_stale_b001(self) -> None:
+        result = subprocess.run(
+            [sys.executable, str(VERIFIER), "--trusted-semantic", "--id", "B-001", "--today", "2026-09-08"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "GITHUB_EVENT_NAME": "push"},
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("STALE", result.stdout + result.stderr)
 
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()

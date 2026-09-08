@@ -1,7 +1,7 @@
 # BACKLOG validation is a BASE-owned data gate. The PR checkout is opaque input:
 # no candidate action, verifier, shell fragment, or token-bearing command runs
-# on the persistent runner. Semantic `verify:` execution belongs to the exact-SHA
-# local/orchestrator lane until disposable CI capacity exists.
+# on the persistent runner. Push/schedule semantics run only from the immutable
+# main checkout; the PR lane remains structural/data-only.
 name: backlog-verify
 
 on:
@@ -50,3 +50,7 @@ jobs:
       - name: Prove BASE checker mutation teeth
         working-directory: _base
         run: python3 -m unittest -q tests/test_backlog_verify_trust_boundary.py
+      - name: Execute trusted main semantic checks
+        if: github.event_name == 'push' || github.event_name == 'schedule'
+        working-directory: _base
+        run: python3 scripts/backlog_verify.py --trusted-semantic

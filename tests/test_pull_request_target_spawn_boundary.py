@@ -632,6 +632,8 @@ def assert_backlog_verify_boundary(test: unittest.TestCase, workflow: dict) -> N
     test.assertIn("working-directory: _base", raw)
     test.assertIn("--candidate-file", raw)
     test.assertIn("--trusted-file", raw)
+    test.assertIn("--trusted-semantic", raw)
+    test.assertIn("if: github.event_name == 'push' || github.event_name == 'schedule'", raw)
 
 
 def assert_welcome_boundary(test: unittest.TestCase, workflow: dict) -> None:

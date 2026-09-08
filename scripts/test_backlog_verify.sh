@@ -349,8 +349,8 @@ cell "a truthful item passes" 0 CONFIRMED "$(item B-001 open '"true"' 2026-08-23
 # This file's own first draft made exactly that mistake and CI caught it.
 cell "an unquoted YAML boolean verify is BROKEN, not run" 1 BROKEN "$(item B-001 open true 2026-08-23)"
 
-# The PR gate records declarations but defers semantic execution to exact-SHA CI.
-cell "a verify declaration is recorded but not executed by the data gate" 0 CONFIRMED "$(item B-001 open '"false"' 2026-08-23)"
+# Fixture mode retains the original polarity probe without executing shell text.
+cell "a false fixture declaration is DRIFTED" 1 DRIFTED "$(item B-001 open '"false"' 2026-08-23)"
 
 # The decay rule — the thing that would have caught this project's stale notes.
 cell "an unverifiable claim goes STALE once it ages out" 1 STALE "$(item B-001 open manual 2026-07-01)"

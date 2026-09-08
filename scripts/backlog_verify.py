@@ -37,9 +37,13 @@ transitions, and trusted control closure but never executes candidate
 from __future__ import annotations
 
 import argparse
+import ast
 import datetime as dt
 import json
+import os
+import posixpath
 import re
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -67,10 +71,10 @@ REQUIRED_FIELDS = ("id", "repo", "owner", "status", "verify", "verify-means", "l
 VALID_STATUS = ("open", "done", "parked")
 VALID_OWNER = ("tl", "owner")
 DEFAULT_MAX_AGE_DAYS = 14
-# Candidate and BASE trees are data. No verifier command is executed by this
-# script; semantic verifier execution belongs to the exact-SHA local/orchestrator
-# lane until disposable CI capacity exists.
+# Candidate trees are data. Semantic execution is available only through the
+# explicit trusted-main workflow mode; candidate mode never executes a verifier.
 MAX_BACKLOG_BYTES = 2_000_000
+VERIFY_TIMEOUT_S = 120
 IMMUTABLE_ITEM_FIELDS = frozenset({
     "id", "repo", "verify", "verify-means", "action-packet", "source-document",
     "source-locator", "finding-title", "problem", "evidence", "acceptance",
@@ -220,6 +224,39 @@ def age_days(item: Item, today: dt.date) -> int:
     return (today - parse_date(item.raw["last-verified"])).days
 
 
+def run_verify(command: str, *, mode: str) -> tuple[int, str]:
+    """Run only trusted-main semantics; candidate and fixture text stay inert."""
+    if mode == "fixture":
+        if command == "true":
+            return 0, "true"
+        if command == "false":
+            return 1, "false"
+        return 125, "fixture verify command is not an allowlisted literal (not executed)"
+    if mode != "trusted":
+        return 125, "candidate verify command is data-only (not executed)"
+
+    # This mode is reached only by the explicit trusted-semantic workflow step,
+    # whose checkout is the immutable main github.sha. Keep the declaration's
+    # established shell semantics, but do not inherit runner credential tokens.
+    clean_env = {
+        key: value for key, value in os.environ.items()
+        if key not in {"GH_TOKEN", "GITHUB_TOKEN", "ACTIONS_RUNTIME_TOKEN"}
+    }
+    try:
+        process = subprocess.run(
+            ["/bin/bash", "-o", "pipefail", "-c", command],
+            cwd=REPO_ROOT,
+            timeout=VERIFY_TIMEOUT_S,
+            capture_output=True,
+            text=True,
+            env=clean_env,
+        )
+    except subprocess.TimeoutExpired:
+        return 124, f"verify command exceeded {VERIFY_TIMEOUT_S}s"
+    tail = (process.stdout + process.stderr).strip().splitlines()
+    return process.returncode, tail[-1][:200] if tail else ""
+
+
 def check(
     item: Item,
     today: dt.date,
@@ -227,6 +264,7 @@ def check(
     *,
     trusted_by_id: dict[str, Item] | None = None,
     enforce_manual_age: bool = False,
+    execution_mode: str = "candidate",
 ) -> None:
     if item.verdict:  # already BROKEN at parse time
         return
@@ -257,16 +295,131 @@ def check(
         item.verdict = BROKEN
         item.detail = "verify declaration differs from BASE; semantic execution is deferred to exact-SHA CI"
         return
-    item.verdict = CONFIRMED
-    item.detail = "verify declaration is syntactically present; semantic execution is deferred to exact-SHA CI"
+    if execution_mode == "candidate":
+        item.verdict = CONFIRMED
+        item.detail = "verify declaration is syntactically present; semantic execution is deferred to exact-SHA CI"
+        return
+    code, evidence = run_verify(command, mode=execution_mode)
+    item.evidence = evidence
+    if code == 0:
+        item.verdict = CONFIRMED
+        item.detail = "verify agrees with the declared status"
+    elif code == 124:
+        item.verdict = BROKEN
+        item.detail = evidence
+    else:
+        item.verdict = DRIFTED
+        item.detail = (f"verify exited {code} — the item claims status "
+                       f"`{item.raw['status']}` but the check for that no longer holds")
 
 
 _CONTROL_PATH_RE = re.compile(r"(?<![A-Za-z0-9_.-])((?:scripts|tests)/[A-Za-z0-9_./-]+)")
-_IMPORT_RE = re.compile(
-    r"^(?:from\s+(scripts(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s+import\s+([A-Za-z_][A-Za-z0-9_]*)|"
-    r"import\s+(scripts(?:\.[A-Za-z_][A-Za-z0-9_]*)*))",
-    re.MULTILINE,
-)
+
+
+def _normal_control_path(value: str) -> str | None:
+    """Normalize a statically discovered path without permitting escape."""
+    if value.startswith("/"):
+        return None
+    normalized = posixpath.normpath(value)
+    if normalized == ".." or normalized.startswith("../"):
+        return None
+    return normalized.removeprefix("./")
+
+
+def _static_path_expr(
+    expression: ast.AST, source_relative: str, bindings: dict[str, ast.AST], seen: set[str] | None = None
+) -> str | None:
+    """Resolve bounded Path(__file__) expressions used by dynamic loaders."""
+    seen = seen or set()
+    if isinstance(expression, ast.Constant) and isinstance(expression.value, str):
+        return _normal_control_path(expression.value)
+    if isinstance(expression, ast.Name) and expression.id not in seen and expression.id in bindings:
+        return _static_path_expr(expression=bindings[expression.id], source_relative=source_relative,
+                                  bindings=bindings, seen=seen | {expression.id})
+    if isinstance(expression, ast.Call):
+        if isinstance(expression.func, ast.Name) and expression.func.id == "Path":
+            if expression.args and isinstance(expression.args[0], ast.Name) and expression.args[0].id == "__file__":
+                return source_relative
+            if expression.args and isinstance(expression.args[0], ast.Constant):
+                return _normal_control_path(str(expression.args[0].value))
+        if isinstance(expression.func, ast.Attribute):
+            base = _static_path_expr(expression.func.value, source_relative, bindings, seen)
+            if expression.func.attr == "with_name" and base and expression.args:
+                name = _static_path_expr(expression.args[0], source_relative, bindings, seen)
+                return _normal_control_path(posixpath.join(posixpath.dirname(base), name)) if name else None
+            if expression.func.attr == "resolve":
+                return base
+    if isinstance(expression, ast.Attribute) and expression.attr == "parent":
+        base = _static_path_expr(expression.value, source_relative, bindings, seen)
+        return _normal_control_path(posixpath.dirname(base)) if base else None
+    if isinstance(expression, ast.Subscript) and isinstance(expression.value, ast.Attribute) and expression.value.attr == "parents":
+        base = _static_path_expr(expression.value.value, source_relative, bindings, seen)
+        index = expression.slice.value if isinstance(expression.slice, ast.Constant) else None
+        if base is not None and isinstance(index, int) and index >= 0:
+            for _ in range(index + 1):
+                base = posixpath.dirname(base)
+            return _normal_control_path(base)
+    if isinstance(expression, ast.BinOp) and isinstance(expression.op, ast.Div):
+        base = _static_path_expr(expression.left, source_relative, bindings, seen)
+        suffix = _static_path_expr(expression.right, source_relative, bindings, seen)
+        if suffix is None:
+            return None
+        # A function parameter such as ``root`` is intentionally unresolved,
+        # but a literal scripts/tests suffix is still a safe control path.
+        return _normal_control_path(posixpath.join(base or "", suffix))
+    return None
+
+
+def _python_control_paths(source: Path, trusted_root: Path, relative: str) -> set[str]:
+    try:
+        tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+    except (OSError, UnicodeError, SyntaxError) as exc:
+        raise RuntimeError(f"cannot statically inspect trusted control {relative}: {exc}") from exc
+    bindings: dict[str, ast.AST] = {}
+    for node in ast.walk(tree):
+        assignment = node if isinstance(node, (ast.Assign, ast.AnnAssign)) else None
+        if isinstance(assignment, ast.Assign) and isinstance(assignment.value, ast.AST):
+            for target in assignment.targets:
+                if isinstance(target, ast.Name):
+                    bindings[target.id] = assignment.value
+        elif isinstance(assignment, ast.AnnAssign) and isinstance(assignment.target, ast.Name) and assignment.value:
+            bindings[assignment.target.id] = assignment.value
+
+    discovered: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "scripts" or alias.name.startswith("scripts."):
+                    discovered.add(alias.name.replace(".", "/") + ".py")
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            if node.module == "scripts" or node.module.startswith("scripts."):
+                module_path = node.module.replace(".", "/")
+                direct = module_path + ".py"
+                if (trusted_root / direct).is_file():
+                    discovered.add(direct)
+                for alias in node.names:
+                    imported = module_path + "/" + alias.name + ".py"
+                    if (trusted_root / imported).is_file():
+                        discovered.add(imported)
+        elif isinstance(node, ast.Call):
+            is_spec_loader = (
+                isinstance(node.func, ast.Attribute) and node.func.attr == "spec_from_file_location"
+            ) or (isinstance(node.func, ast.Name) and node.func.id == "spec_from_file_location")
+            if not is_spec_loader or len(node.args) < 2:
+                continue
+            loaded = _static_path_expr(node.args[1], relative, bindings)
+            if loaded is None:
+                raise RuntimeError(
+                    f"unresolved importlib loader path in trusted control {relative}:{node.lineno}"
+                )
+            if loaded.endswith(".py"):
+                discovered.add(loaded)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "import_module":
+            if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+                module = node.args[0].value
+                if module == "scripts" or module.startswith("scripts."):
+                    discovered.add(module.replace(".", "/") + ".py")
+    return {path for path in discovered if (trusted_root / path).is_file()}
 
 
 def _candidate_control_paths(trusted_root: Path, trusted_items: list[Item]) -> set[str]:
@@ -296,19 +449,7 @@ def _candidate_control_paths(trusted_root: Path, trusted_items: list[Item]) -> s
         source = trusted_root / relative
         if not source.is_file() or source.is_symlink():
             continue
-        text = source.read_text(encoding="utf-8")
-        for match in _IMPORT_RE.finditer(text):
-            module = match.group(1) or match.group(3)
-            imported = match.group(2)
-            if not module:
-                continue
-            candidate = module.replace(".", "/") + ".py"
-            if (trusted_root / candidate).is_file():
-                queue.append(candidate)
-            elif imported:
-                imported_candidate = f"{module.replace('.', '/')}/{imported}.py"
-                if (trusted_root / imported_candidate).is_file():
-                    queue.append(imported_candidate)
+        queue.extend(_python_control_paths(source, trusted_root, relative))
     return paths
 
 
@@ -409,6 +550,7 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
         "permissions:\n  contents: read",
         "--candidate-file",
         "--trusted-file",
+        "--trusted-semantic",
     )
     missing = [fragment for fragment in required if fragment not in text]
     if missing:
@@ -427,11 +569,13 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
     # checkout action, or redirect the BASE checker without this data check going
     # red first.
     trigger = document.get(True, document.get("on")) or {}
-    if trigger.get("pull_request_target", {}).get("types") != ["opened", "synchronize", "reopened"]:
+    pr_trigger = trigger.get("pull_request_target") if isinstance(trigger, dict) else None
+    push_trigger = trigger.get("push") if isinstance(trigger, dict) else None
+    if not isinstance(pr_trigger, dict) or pr_trigger.get("types") != ["opened", "synchronize", "reopened"]:
         raise RuntimeError("candidate workflow policy has unexpected pull_request_target types")
-    if trigger.get("pull_request_target", {}).get("paths") != ["**"]:
+    if pr_trigger.get("paths") != ["**"]:
         raise RuntimeError("candidate workflow policy must cover the complete PR tree")
-    if trigger.get("push", {}).get("branches") != ["main"] or trigger.get("push", {}).get("paths") != ["**"]:
+    if not isinstance(push_trigger, dict) or push_trigger.get("branches") != ["main"] or push_trigger.get("paths") != ["**"]:
         raise RuntimeError("candidate workflow policy has unexpected main push trigger")
     if document.get("permissions") != {"contents": "read"}:
         raise RuntimeError("candidate workflow policy must grant contents: read only")
@@ -440,8 +584,10 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
         raise RuntimeError("candidate workflow policy must contain only the verify job")
     job = jobs["verify"]
     steps = job.get("steps") if isinstance(job, dict) else None
-    if job.get("runs-on") != "corelink" or not isinstance(steps, list) or len(steps) != 4:
+    if not isinstance(job, dict) or job.get("runs-on") != "corelink" or not isinstance(steps, list) or len(steps) != 5:
         raise RuntimeError("candidate workflow policy has unexpected verify job shape")
+    if not all(isinstance(step, dict) for step in steps):
+        raise RuntimeError("candidate workflow policy has a malformed verify step")
     checkout_ref = "9f698171ed81b15d1823a05fc7211befd50c8ae0"
     expected_checkouts = (
         ("${{ github.event.pull_request.head.sha || github.sha }}", "_candidate"),
@@ -465,6 +611,12 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
         "python3 -m unittest -q tests/test_backlog_verify_trust_boundary.py"
     ):
         raise RuntimeError("candidate workflow policy has an unexpected BASE test command")
+    if (
+        steps[4].get("if") != "github.event_name == 'push' || github.event_name == 'schedule'"
+        or steps[4].get("working-directory") != "_base"
+        or steps[4].get("run") != "python3 scripts/backlog_verify.py --trusted-semantic"
+    ):
+        raise RuntimeError("candidate workflow policy has an unexpected trusted semantic command")
 
 
 def main() -> int:
@@ -479,6 +631,10 @@ def main() -> int:
     ap.add_argument("--trusted-file", help="trusted-base BACKLOG.md paired with --candidate-file")
     ap.add_argument("--candidate-root", help="PR checkout root paired with --candidate-file")
     ap.add_argument("--trusted-root", help="trusted checkout root paired with --candidate-file")
+    ap.add_argument(
+        "--trusted-semantic", action="store_true",
+        help="execute declarations from this immutable trusted checkout (push/schedule only)",
+    )
     args = ap.parse_args()
 
     candidate_mode = bool(args.candidate_file)
@@ -488,6 +644,14 @@ def main() -> int:
     if candidate_mode and (not args.candidate_root or not args.trusted_root):
         print("FATAL: candidate mode requires --candidate-root and --trusted-root", file=sys.stderr)
         return 2
+    if args.trusted_semantic and (candidate_mode or args.file):
+        print("FATAL: --trusted-semantic cannot be combined with candidate or fixture mode", file=sys.stderr)
+        return 2
+    if args.trusted_semantic and os.environ.get("GITHUB_EVENT_NAME") not in {"push", "schedule"}:
+        print("FATAL: --trusted-semantic is restricted to push/schedule workflow events", file=sys.stderr)
+        return 2
+
+    execution_mode = "fixture" if args.file else "trusted" if args.trusted_semantic else "candidate"
 
     candidate_root = Path(args.candidate_root).resolve() if candidate_mode else None
     path = Path(args.candidate_file).resolve() if candidate_mode else Path(args.file).resolve() if args.file else BACKLOG_PATH
@@ -763,7 +927,8 @@ def main() -> int:
             today,
             args.max_age_days,
             trusted_by_id=trusted_by_id,
-            enforce_manual_age=bool(args.file),
+            enforce_manual_age=execution_mode in {"fixture", "trusted"},
+            execution_mode=execution_mode,
         )
 
     if args.format == "json":
