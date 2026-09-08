@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_closed_population_and_inverted_guards() -> None:
     result = verify_document(run_guards=True, run_gates=False)
-    assert result == {"original": 42, "graduated": 40, "done": 3, "parked": 37}
+    assert result == {"original": 42, "graduated": 40, "done": 4, "parked": 36}
 
 
 def test_register_mutations_are_red() -> None:
@@ -37,7 +37,7 @@ def test_b210_is_retired_and_not_parked_debt() -> None:
     assert "post_graduation_parked" not in packet
     backlog = (ROOT / "BACKLOG.md").read_text(encoding="utf-8")
     result = verify_document(backlog_text=backlog, packet_text=packet_text, run_guards=False, run_gates=False)
-    assert result["done"] == 3
+    assert result["done"] == 4
     b210 = next(record.raw for record in parse(backlog) if record.id == "B-210")
     assert b210["status"] == "done"
     assert b210["verify-means"].lstrip().startswith("done —")

@@ -963,13 +963,14 @@
       }
     },
     "B-135": {
-      "disposition": "PARKED",
+      "disposition": "DONE",
       "owner": "tl",
-      "dependency": "corelink-runners owner and cross-repository Actions access",
-      "action": "Owner runs the two workflow/label greps in corelink-runners and decides whether PR build triggers and label consumers are required.",
-      "artifact": "artifacts/d03/B135-runners-label-consumer.txt",
-      "command": "git -C ../corelink-runners grep -rn 'corelink.rust\\|corelink.gh.version' --include='*.yml' --include='*.sh' --include='*.py' . > artifacts/d03/B135-runners-label-consumer.txt",
-      "verify_means": "parked"
+      "dependency": "redacted exact receipt for the delivered corelink-runners PR #561 tree",
+      "action": "Retain the exact tested-head, tested-tree, merge-commit, and merge-tree receipt; do not infer image publication, repin, or rollout closure.",
+      "artifact": "docs/campaigns/remediation/B-135-corelink-runners-closure.md",
+      "command": "python3 scripts/check_b135_cross_repo.py && bash scripts/test_b135_cross_repo.sh",
+      "verify_means": "done",
+      "evidence": "docs/campaigns/remediation/B-135-corelink-runners-closure.md; tested_head=d8124b1ab89cf6afb08682442e94c4f4d18c6ba8; tested_tree=d9cadd3741c77bb58d7162922f1510ded41c844f; merge_commit=ec9b6d69dbb1f3bd64ef4f9a4ce7e9d9100e69c1; merge_tree=d9cadd3741c77bb58d7162922f1510ded41c844f; pull_request trigger, secretless build-only validation, and removed unconsumed labels are recorded."
     },
     "B-138": {
       "disposition": "PARKED",

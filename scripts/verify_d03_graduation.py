@@ -5,7 +5,7 @@ This is intentionally a bounded register check.  It does not dispatch CI,
 contact GitHub, or pretend that production evidence is present.  It proves
 that the one DCO candidate accounts for the exact original population, that
 every parked item has an executable owner packet, that every post-graduation
-retired item has a local retirement gate, and that the three DONE items still
+retired item has a local retirement gate, and that the four DONE items still
 pass their local inverted guards.
 """
 
@@ -285,7 +285,7 @@ EXCLUDED = frozenset(("B-061", "B-126", "B-155"))
 GRADUATED = tuple(item for item in ORIGINAL_TL_OPEN if item not in EXCLUDED) + ("B-006",)
 GRADUATED_SET = frozenset(GRADUATED)
 ORIGINAL_SET = frozenset(ORIGINAL_TL_OPEN)
-DONE_SET = frozenset(("B-028", "B-074", "B-253"))
+DONE_SET = frozenset(("B-028", "B-074", "B-135", "B-253"))
 EXCLUDED_FINGERPRINTS = {
     "B-061": "d759a0591e6f867b4245f09512963f2ae10924c7b25cfad02754dc1b323657dc",
     "B-126": "88e2fe5082ad1ad9c393c633c862f947043b378c1fd36393a949b64eab34b089",

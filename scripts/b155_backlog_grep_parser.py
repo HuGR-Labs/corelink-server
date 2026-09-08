@@ -104,8 +104,8 @@ class Census:
 # Keep these closed: adding/removing/changing a record must require an explicit
 # census reconciliation instead of silently shrinking or growing the proof.
 EXPECTED_RECORDS = 363
-EXPECTED_COMMAND_RECORDS = 342
-EXPECTED_MANUAL_RECORDS = 21
+EXPECTED_COMMAND_RECORDS = 343
+EXPECTED_MANUAL_RECORDS = 20
 EXPECTED_GREP_INVOCATIONS = 194
 EXPECTED_ASSERTIONS = 191
 
