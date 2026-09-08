@@ -219,7 +219,13 @@ fn validate_loopback_query_url(query_url: &str) -> Result<String, String> {
     let host = parsed
         .host_str()
         .ok_or_else(|| "D1 loopback URL must contain an IP literal host".to_owned())?;
-    let ip = IpAddr::from_str(host)
+    // `url::Url::host_str` preserves brackets around IPv6 literals, while
+    // `IpAddr::from_str` expects the unbracketed address.
+    let ip_literal = host
+        .strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .unwrap_or(host);
+    let ip = IpAddr::from_str(ip_literal)
         .map_err(|_| "D1 loopback URL host must be an IP literal".to_owned())?;
     if !ip.is_loopback() {
         return Err("D1 loopback URL host must be loopback".to_owned());

@@ -322,7 +322,7 @@ async fn concurrent_distinct_key_puts_stay_concurrent_and_sum() {
     let used = || store.used(TEST_AUTH_TENANT, TEST_BYTES_REGION);
 
     let mut handles = Vec::new();
-    for i in 0..6u32 {
+    for i in 0..TURBO_PUT_CONCURRENCY_LIMIT as u32 {
         let app = app.clone();
         handles.push(tokio::spawn(async move {
             let req = Request::builder()
@@ -342,7 +342,11 @@ async fn concurrent_distinct_key_puts_stay_concurrent_and_sum() {
     for h in handles {
         assert_eq!(h.await.expect("join"), StatusCode::OK);
     }
-    assert_eq!(used(), 60, "six fresh distinct 10-byte keys sum to 60");
+    assert_eq!(
+        used(),
+        (TURBO_PUT_CONCURRENCY_LIMIT * 10) as i64,
+        "distinct keys up to the production concurrency limit all land"
+    );
 }
 
 /// The shard index is a pure deterministic function of the lock identity
