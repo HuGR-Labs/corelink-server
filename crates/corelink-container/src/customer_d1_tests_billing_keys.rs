@@ -339,6 +339,19 @@ fn keys_create_mutation_failure_rolls_back_audit_row() {
         ))
         .expect_err("PAT mutation failure must fail closed");
     assert!(matches!(err, CustomerHandlerError::Internal(_)));
+    let calls = f.db.calls();
+    let audit_index = calls
+        .iter()
+        .position(|(sql, _)| sql.contains("customer_audit_events"))
+        .expect("audit statement must be staged");
+    let pat_index = calls
+        .iter()
+        .position(|(sql, _)| sql.contains("INSERT INTO pat"))
+        .expect("PAT mutation must be attempted");
+    assert!(
+        audit_index < pat_index,
+        "audit statement must be staged before the PAT mutation"
+    );
     assert_eq!(
         f.db.atomic_rows(),
         AtomicRows::default(),
@@ -391,6 +404,19 @@ fn team_invite_mutation_failure_rolls_back_audit_row() {
         ))
         .expect_err("team-member mutation failure must fail closed");
     assert!(matches!(err, CustomerHandlerError::Internal(_)));
+    let calls = f.db.calls();
+    let audit_index = calls
+        .iter()
+        .position(|(sql, _)| sql.contains("customer_audit_events"))
+        .expect("audit statement must be staged");
+    let team_member_index = calls
+        .iter()
+        .position(|(sql, _)| sql.contains("INSERT INTO team_member"))
+        .expect("team-member mutation must be attempted");
+    assert!(
+        audit_index < team_member_index,
+        "audit statement must be staged before the team-member mutation"
+    );
     assert_eq!(
         f.db.atomic_rows(),
         AtomicRows::default(),

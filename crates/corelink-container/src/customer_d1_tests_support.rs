@@ -84,6 +84,10 @@ impl CustomerD1 for MockD1 {
         &self,
         op: CustomerPatCreateOperation,
     ) -> Result<(), CustomerAtomicError> {
+        // This seam records the two statements in submission order and only
+        // publishes `AtomicRows` after both pass. It models the D1 batch
+        // commit point without pretending the mock executes a SQL transaction;
+        // the REST implementation is what provides production atomicity.
         self.calls.lock().unwrap().push((
             "INSERT INTO customer_audit_events (tenant_id, event_type, actor, target, ts_ms, detail) VALUES (?1, 'pat.created', ?2, ?3, ?4, ?5)".to_owned(),
             vec![json!(op.tenant_id.clone()), json!(op.audit_actor.clone()), json!(op.pat_id.clone()), json!(op.audit_ts_ms), json!(op.audit_detail.clone())],
@@ -112,6 +116,9 @@ impl CustomerD1 for MockD1 {
         &self,
         op: CustomerTeamInviteOperation,
     ) -> Result<(), CustomerAtomicError> {
+        // Keep the audit slot visibly staged before the mutation slot. The
+        // fake commits its durable counters only after both calls succeed;
+        // production rollback is covered by D1's transactional batch API.
         self.calls.lock().unwrap().push((
             "INSERT INTO customer_audit_events (tenant_id, event_type, actor, target, ts_ms, detail) VALUES (?1, 'team.invited', ?2, ?3, ?4, ?5)".to_owned(),
             vec![json!(op.tenant_id.clone()), json!(op.audit_actor.clone()), json!(op.invitation_id.clone()), json!(op.audit_ts_ms), json!(op.audit_detail.clone())],

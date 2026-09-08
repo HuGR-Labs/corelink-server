@@ -227,7 +227,14 @@ impl D1HttpClient {
         &self,
         statements: Vec<D1BatchStatement>,
     ) -> Result<Vec<Vec<D1Row>>, D1BatchError> {
-        debug!(statements = statements.len(), "D1HttpClient::batch");
+        let expected = statements.len();
+        if expected == 0 {
+            return Err(D1BatchError {
+                statement: None,
+                message: "D1 batch must contain at least one statement".to_owned(),
+            });
+        }
+        debug!(statements = expected, "D1HttpClient::batch");
         let body = D1BatchRequest { batch: statements };
         let resp = self
             .http
@@ -256,20 +263,50 @@ impl D1HttpClient {
             statement: None,
             message: format!("D1 batch response JSON parse failed: {e}"),
         })?;
-        if !parsed.success {
-            let message = parsed
-                .errors
-                .iter()
-                .map(|e| e.message.as_str())
-                .collect::<Vec<_>>()
-                .join("; ");
-            return Err(D1BatchError {
-                statement: parsed.result.iter().position(|r| r.success == Some(false)),
-                message: format!("D1 batch errors: {message}"),
-            });
-        }
-        Ok(parsed.result.into_iter().map(|r| r.results).collect())
+        validate_batch_response(parsed, expected)
     }
+}
+
+/// Validate the complete D1 REST batch response before exposing any rows to a
+/// caller. A top-level `success: true` is insufficient: a malformed response,
+/// missing/extra statement result, or omitted/false nested success flag must
+/// fail closed because the transaction outcome is otherwise indeterminate.
+fn validate_batch_response(
+    parsed: D1Response,
+    expected: usize,
+) -> Result<Vec<Vec<D1Row>>, D1BatchError> {
+    if !parsed.success {
+        let message = parsed
+            .errors
+            .iter()
+            .map(|e| e.message.as_str())
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(D1BatchError {
+            statement: parsed.result.iter().position(|r| r.success != Some(true)),
+            message: format!("D1 batch errors: {message}"),
+        });
+    }
+    if parsed.result.len() != expected {
+        return Err(D1BatchError {
+            statement: None,
+            message: format!(
+                "D1 batch response result count {} != submitted statement count {expected}",
+                parsed.result.len()
+            ),
+        });
+    }
+    if let Some(statement) = parsed
+        .result
+        .iter()
+        .position(|result| result.success != Some(true))
+    {
+        return Err(D1BatchError {
+            statement: Some(statement),
+            message: format!("D1 batch statement {statement} did not report success=true"),
+        });
+    }
+    Ok(parsed.result.into_iter().map(|r| r.results).collect())
 }
 
 fn build_http_client() -> Result<reqwest::Client, String> {
@@ -853,6 +890,78 @@ mod tests {
                 "unsafe D1 loopback URL accepted: {url}"
             );
         }
+    }
+
+    fn batch_response(success: bool, results: Vec<D1QueryResult>) -> D1Response {
+        D1Response {
+            result: results,
+            success,
+            errors: Vec::new(),
+        }
+    }
+
+    fn successful_result() -> D1QueryResult {
+        D1QueryResult {
+            results: Vec::new(),
+            success: Some(true),
+        }
+    }
+
+    #[test]
+    fn batch_response_requires_exact_explicitly_successful_results() {
+        let parsed = batch_response(true, vec![successful_result(), successful_result()]);
+        assert!(validate_batch_response(parsed, 2).is_ok());
+
+        for results in [
+            Vec::new(),
+            vec![successful_result()],
+            vec![
+                successful_result(),
+                successful_result(),
+                successful_result(),
+            ],
+            vec![
+                D1QueryResult {
+                    results: Vec::new(),
+                    success: None,
+                },
+                successful_result(),
+            ],
+            vec![
+                D1QueryResult {
+                    results: Vec::new(),
+                    success: Some(false),
+                },
+                successful_result(),
+            ],
+        ] {
+            let err = validate_batch_response(batch_response(true, results), 2)
+                .expect_err("malformed nested batch result must fail closed");
+            assert!(err.message.contains("D1 batch"));
+        }
+    }
+
+    #[test]
+    fn batch_response_rejects_top_level_failure_even_when_nested_shape_is_complete() {
+        let err = validate_batch_response(
+            D1Response {
+                result: vec![successful_result(), successful_result()],
+                success: false,
+                errors: vec![D1Error {
+                    message: "transaction rolled back".to_owned(),
+                }],
+            },
+            2,
+        )
+        .expect_err("top-level failure must fail closed");
+        assert!(err.message.contains("rolled back"));
+    }
+
+    #[test]
+    fn batch_response_rejects_empty_result_when_statement_was_submitted() {
+        let err = validate_batch_response(batch_response(true, Vec::new()), 1)
+            .expect_err("empty result must not represent a submitted statement");
+        assert!(err.message.contains("result count"));
     }
 
     /// Live D1 query test — requires real credentials.
