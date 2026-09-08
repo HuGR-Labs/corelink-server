@@ -438,6 +438,19 @@ class B152DiagnosticTests(unittest.TestCase):
         self.assertIn("scripts/test_b250_deleted_workflow_startup_failure.py", workflow)
         self.assertIn('python3 -m pytest "${FILES[@]}" "${REQUIRED_SUITES[@]}" -q', workflow)
 
+    def test_b152_monitor_is_bounded_read_only_and_persists_indeterminate_evidence(self):
+        workflow = (pathlib.Path(__file__).resolve().parent.parent / ".github/workflows/b152-actions-monitor.yml").read_text(encoding="utf-8")
+        self.assertIn("cron: '*/15 * * * *'", workflow)
+        self.assertIn("actions: read", workflow)
+        self.assertIn("contents: read", workflow)
+        self.assertIn("runs-on: ubuntu-latest", workflow)
+        self.assertIn("timeout-minutes: 8", workflow)
+        self.assertIn("--fetch-logs", workflow)
+        self.assertIn('"zero_window_jobs_is_not_closure": True', workflow)
+        self.assertIn("actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", workflow)
+        self.assertIn("retention-days: 30", workflow)
+        self.assertNotIn("cat .*logs", workflow)
+
     def test_missing_gh_is_sanitized_indeterminate_not_a_traceback(self):
         with patch.object(diag.subprocess, "run", side_effect=FileNotFoundError("secret path")), patch("sys.stderr") as stderr:
             self.assertEqual(diag.main([
