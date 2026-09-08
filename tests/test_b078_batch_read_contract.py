@@ -27,7 +27,7 @@ class B078ContractTests(unittest.TestCase):
         storage = (ROOT / "crates/corelink-container/src/storage/r2_s3.rs").read_text()
         storage += "\n" + "\n".join(
             (ROOT / "crates/corelink-container/src/storage/r2_s3_parts" / name).read_text()
-            for name in ("client.rs", "cas_core.rs", "cas_ops.rs", "ac_core.rs", "ac_ops.rs")
+            for name in ("client.rs", "client_impl.rs", "cas_core.rs", "cas_ops.rs", "ac_core.rs", "ac_ops.rs")
         )
         return route, handler, storage
 
@@ -92,6 +92,33 @@ class B078ContractTests(unittest.TestCase):
             mutated = route.replace(registration, f"{constant},\n            get({handler_name})", 1)
             gaps = verifier.assess_source(mutated, handler, storage, openapi, docs)
             self.assertIn(f"source-registration-{constant}", gaps)
+
+    def test_cancellation_lease_mutation_is_rejected(self) -> None:
+        route, handler, storage = self._sources()
+        openapi = (ROOT / "openapi/corelink-v1.yaml").read_text()
+        docs = (ROOT / "docs/knowledge/surfaces/native-cas.md").read_text()
+        mutated = route.replace(
+            "let response_lease = Arc::clone(&lease);",
+            "let response_lease = lease;",
+            1,
+        )
+        gaps = verifier.assess_source(mutated, handler, storage, openapi, docs)
+        self.assertIn("cancellation-lease", gaps)
+
+    def test_unbounded_get_capped_collection_is_rejected(self) -> None:
+        route, handler, storage = self._sources()
+        openapi = (ROOT / "openapi/corelink-v1.yaml").read_text()
+        docs = (ROOT / "docs/knowledge/surfaces/native-cas.md").read_text()
+        start = storage.index("pub async fn get_capped")
+        end = storage.index("pub async fn head_size", start)
+        capped = storage[start:end].replace(
+            "while let Some(chunk) = body.next().await",
+            "let bytes = body.collect().await?;",
+            1,
+        )
+        mutated_storage = storage[:start] + capped + storage[end:]
+        gaps = verifier.assess_source(route, handler, mutated_storage, openapi, docs)
+        self.assertIn("bounded-r2-body-loop", gaps)
 
     def test_413_wire_contract_mutations_reopen_the_gate(self) -> None:
         route, handler, storage = self._sources()

@@ -36,6 +36,19 @@ enum BatchReadOutcome {
     ReadErr(CasHandlerError),
 }
 
+/// Shared ownership of the request-level capacity envelope.
+///
+/// A batch read crosses a synchronous trait boundary: a child task may be
+/// inside `block_in_place` when the handler future is dropped. Keeping these
+/// guards behind an `Arc` lets every live child retain the tenant slot and the
+/// global envelope until that synchronous call returns. The response stream
+/// owns the final reference on the success path, so slow consumers still hold
+/// both reservations until their bytes are consumed or dropped.
+struct BatchReadLease {
+    _tenant: CasReadConcurrencyGuard,
+    _global: GlobalCasBatchReadBudgetGuard,
+}
+
 /// Owns every live batch-read task. Dropping the handler future must cancel
 /// queued/runnable tasks rather than detaching them; explicit terminal paths
 /// call [`Self::abort_and_drain`] to await their cancellation before returning.
@@ -165,6 +178,14 @@ async fn handle_batch_read(
     let mut manifest = String::new();
     let mut payload: Vec<u8> = Vec::new();
 
+    // Do not leave the extractor-owned leases as stack locals. Every spawned
+    // read receives a shared reference, making request cancellation retain the
+    // tenant/global envelope until active synchronous reads unwind.
+    let lease = Arc::new(BatchReadLease {
+        _tenant: _read_concurrency,
+        _global: _global_read_budget,
+    });
+
     // Fan out on worker tasks because the synchronous storage trait bridges its
     // async R2 client with `block_in_place`, which is valid on tokio worker
     // threads but not on `spawn_blocking` threads. The admission gate reserves
@@ -235,7 +256,11 @@ async fn handle_batch_read(
         let tombstones = state.tombstones.clone();
         let tenant = auth.0.clone();
         let hash = hash.clone();
+        let lease = Arc::clone(&lease);
         tasks.push(tokio::spawn(async move {
+            // The lease is intentionally held for the complete task lifetime,
+            // including a synchronous `read()` bridged through block_in_place.
+            let _lease = lease;
             let _window_permit = permit;
             // Non-canonical hash ⇒ it cannot name a stored blob; report absent
             // (it is not a framing error and must not abort the batch).
@@ -343,9 +368,11 @@ async fn handle_batch_read(
     // here would let a slow client multiply the per-tenant response heap.
     let mut manifest = manifest.into_bytes();
     manifest.push(b'\n');
+    let response_lease = Arc::clone(&lease);
     let body_stream = async_stream::stream! {
-        let _read_slot = _read_concurrency;
-        let _permit = _global_read_budget;
+        // Hold the request-level tenant/global reservations through response
+        // consumption, not merely until this handler returns.
+        let _lease = response_lease;
         yield Ok::<Frame<axum::body::Bytes>, std::convert::Infallible>(
             Frame::data(axum::body::Bytes::from(manifest)),
         );

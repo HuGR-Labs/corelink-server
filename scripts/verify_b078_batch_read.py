@@ -72,6 +72,12 @@ def assess_source(route: str, handler: str, storage: str, openapi: str, docs: st
             and "pending.await" in route
             and "impl Drop for BatchReadTaskGuard" in route
         ),
+        "cancellation-lease": (
+            "struct BatchReadLease" in route
+            and "Arc::new(BatchReadLease" in batch
+            and "let lease = Arc::clone(&lease)" in batch
+            and "let response_lease = Arc::clone(&lease)" in batch
+        ),
         "per-read-ceiling": ".with_max_bytes(BATCH_MAX_BYTES as u64)" in batch,
         "request-ceiling": "body.len() > BATCH_REQUEST_BODY_LIMIT_BYTES" in batch,
         "oversize-413": "if payload.len() + bytes.len() > BATCH_MAX_BYTES" in batch and "return batch_too_large()" in batch,
@@ -103,6 +109,21 @@ def assess_source(route: str, handler: str, storage: str, openapi: str, docs: st
         gaps.append("r2-pre-collection-cap-on-both-paths")
     if "self.client.get(&key)" in read:
         gaps.append("unbounded-r2-read")
+
+    try:
+        capped = _section(storage, "pub async fn get_capped", "pub async fn head_size")
+    except ContractError as error:
+        gaps.append(str(error))
+        capped = ""
+    if "while let Some(chunk) = body.next().await" not in capped:
+        gaps.append("bounded-r2-body-loop")
+    if "actual_bytes > max_bytes" not in capped:
+        gaps.append("bounded-r2-body-ceiling")
+    if ".body\n                    .collect()" in capped or ".body.collect()" in capped:
+        gaps.append("unbounded-get-capped-collect")
+    for token in ("timeout_config(", ".read_timeout(", ".operation_timeout("):
+        if token not in storage:
+            gaps.append(f"r2-{token.strip('(.')}")
 
     try:
         too_large = _section(route, "fn batch_too_large", "// One manifest line")
@@ -168,7 +189,7 @@ def assess_source(route: str, handler: str, storage: str, openapi: str, docs: st
         if token not in openapi:
             gaps.append(f"openapi-schema-{token}")
 
-    for token in ("BATCH_READ_FANOUT", "8 MiB", "413", "buffered"):
+    for token in ("BATCH_READ_FANOUT", "8 MiB", "413", "buffered", "R2 timeout", "lease"):
         if token not in docs:
             gaps.append(f"okf-doc-{token}")
     return gaps
@@ -187,7 +208,7 @@ def assess(root: Path) -> list[str]:
     storage = (root / "crates/corelink-container/src/storage/r2_s3.rs").read_text(encoding="utf-8")
     storage += "\n" + "\n".join(
         (root / "crates/corelink-container/src/storage/r2_s3_parts" / n).read_text(encoding="utf-8")
-        for n in ("client.rs", "cas_core.rs", "cas_ops.rs", "ac_core.rs", "ac_ops.rs")
+        for n in ("client.rs", "client_impl.rs", "cas_core.rs", "cas_ops.rs", "ac_core.rs", "ac_ops.rs")
     )
     openapi = (root / "openapi/corelink-v1.yaml").read_text(encoding="utf-8")
     docs = (root / "docs/knowledge/surfaces/native-cas.md").read_text(encoding="utf-8")

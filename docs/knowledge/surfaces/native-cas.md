@@ -66,7 +66,10 @@ path segment.
    payload returns 413 `batch_too_large`, and explicit terminal paths abort and drain every
    pending task before returning. External cancellation drops the task guard, whose `Drop`
    aborts its owned handles but cannot await them; a synchronous read already inside
-   `block_in_place` is not preemptible and only unwinds under the R2 timeout/object cap.
+   `block_in_place` is not preemptible and only unwinds under the explicit R2 timeout/object
+   cap. Every live child shares the request lease, so the tenant slot and global batch envelope
+   remain held until that read unwinds; queued children are aborted and terminal paths drain
+   their handles.
    Batch request parsing is independently bounded: each line is at most 1 KiB, each retained
    hash is at most 128 bytes, and the object cap is enforced before the next entry is allocated.
    The shared process-wide reservations cover body, parser strings/clones, payload, and (for
@@ -81,7 +84,10 @@ path segment.
    (three 64 MiB copies plus metadata),
    `batch-read` reserves its 22 MiB response envelope and each fan-out object reserves 24 MiB.
    The RAII permits remain held through response assembly and a 250 ms wait timeout fails closed
-   with 503 under saturation (`crates/corelink-container/src/routes/cas/foundation_core.rs:190-330`;
+   with 503 under saturation. R2 GETs use a 2 s connect, 30 s read, and 60 s operation timeout;
+   `get_capped` consumes chunks incrementally and stops at the declared ceiling rather than
+   relying on unbounded `ByteStream::collect()` (`crates/corelink-container/src/storage/r2_s3_parts/client_impl.rs`).
+   (`crates/corelink-container/src/routes/cas/foundation_core.rs:190-330`;
    guards at `crates/corelink-container/src/routes/cas/foundation_state.rs:319-350`).
 
 The `#[cfg(test)]` CAS module registers the split test units in `cas.rs` in

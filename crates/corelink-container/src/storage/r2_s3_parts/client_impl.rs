@@ -1,4 +1,15 @@
 impl R2S3Client {
+    /// Bound the three phases that can otherwise leave a synchronous CAS
+    /// reader parked forever when R2 stops making progress. The operation
+    /// timeout is deliberately longer than the per-read timeout because a
+    /// large object may legitimately need several read windows, while still
+    /// giving cancellation a finite unwind point.
+    pub(crate) const R2_CONNECT_TIMEOUT: std::time::Duration =
+        std::time::Duration::from_secs(2);
+    pub(crate) const R2_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+    pub(crate) const R2_OPERATION_TIMEOUT: std::time::Duration =
+        std::time::Duration::from_secs(60);
+
     /// Construct an [`R2S3Client`] from a validated [`StorageEnv`].
     ///
     /// The `bucket` parameter selects the R2 bucket name (e.g.
@@ -34,6 +45,13 @@ impl R2S3Client {
             .endpoint_url(&env.r2_endpoint)
             .credentials_provider(credentials)
             .force_path_style(false) // R2 supports virtual-hosted style
+            .timeout_config(
+                aws_sdk_s3::config::timeout::TimeoutConfig::builder()
+                    .connect_timeout(Self::R2_CONNECT_TIMEOUT)
+                    .read_timeout(Self::R2_READ_TIMEOUT)
+                    .operation_timeout(Self::R2_OPERATION_TIMEOUT)
+                    .build(),
+            )
             .build();
 
         Ok(Self {
@@ -215,13 +233,25 @@ impl R2S3Client {
                         actual_bytes: Some(len),
                     });
                 }
-                let bytes = output
-                    .body
-                    .collect()
-                    .await
-                    .map_err(|e| format!("R2 body read failed for key {key}: {e}"))?
-                    .into_bytes()
-                    .to_vec();
+                // Do not use `ByteStream::collect()` here. Content-Length is
+                // useful admission metadata but is not a safe bound for a
+                // malformed/chunked response. Consume incrementally and stop
+                // as soon as the actual stream crosses the ceiling, keeping
+                // peak allocation bounded even when R2 lies about its length.
+                let mut body = output.body;
+                let mut bytes = Vec::new();
+                let mut actual_bytes = 0_u64;
+                while let Some(chunk) = body.next().await {
+                    let chunk = chunk
+                        .map_err(|e| format!("R2 body read failed for key {key}: {e}"))?;
+                    actual_bytes = actual_bytes.saturating_add(chunk.len() as u64);
+                    if actual_bytes > max_bytes {
+                        return Ok(CappedGet::TooLarge {
+                            actual_bytes: Some(actual_bytes),
+                        });
+                    }
+                    bytes.extend_from_slice(&chunk);
+                }
                 Ok(CappedGet::Found(bytes))
             }
             Err(sdk_err) => {
