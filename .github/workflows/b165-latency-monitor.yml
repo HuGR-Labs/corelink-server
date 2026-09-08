@@ -1,0 +1,58 @@
+name: B-165 latency evidence monitor
+
+# The scheduled run keeps the unauthenticated refusal population fresh while
+# the customer-PAT prerequisite for the served population remains unresolved.
+# A refusal-only run is intentionally partial/open and never reports closure.
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: b165-latency-monitor
+  cancel-in-progress: true
+
+jobs:
+  refusal:
+    name: measure refusal and control populations
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Run bounded refusal probe
+        id: probe
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -u -o pipefail
+          raw="$RUNNER_TEMP/b165-refusal.tsv"
+          B165_MODE=refusal B165_SAMPLES=10 B165_RAW_OUT="$raw" \
+            scripts/probe-wp-b165-latency.sh
+          rc=$?
+          printf '%s\n' "$rc" > "$RUNNER_TEMP/b165-exit-code"
+          python3 scripts/verify_b165_latency.py "$raw" --samples 10 > "$RUNNER_TEMP/b165-verdict.json"
+          verifier_rc=$?
+          printf '%s\n' "$verifier_rc" > "$RUNNER_TEMP/b165-verifier-exit-code"
+          # Exit 2 is the expected partial/open result until served credentials
+          # are provisioned. Transport or shape failures remain visible as red.
+          if [[ "$rc" -ne 2 || "$verifier_rc" -ne 2 ]]; then
+            exit 1
+          fi
+
+      - name: Upload latency evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: b165-latency-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/b165-refusal.tsv
+            ${{ runner.temp }}/b165-verdict.json
+            ${{ runner.temp }}/b165-exit-code
+            ${{ runner.temp }}/b165-verifier-exit-code
+          if-no-files-found: error
+          retention-days: 30
