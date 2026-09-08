@@ -69,25 +69,53 @@ class B078ContractTests(unittest.TestCase):
         gaps = verifier.assess_source(mutated, handler, storage, openapi, docs)
         self.assertIn("drop-abort", gaps)
 
+    def test_batch_route_removal_mutations_reopen_completeness_gate(self) -> None:
+        route, handler, storage = self._sources()
+        openapi = (ROOT / "openapi/corelink-v1.yaml").read_text()
+        docs = (ROOT / "docs/knowledge/surfaces/native-cas.md").read_text()
+
+        for path, marker in (
+            ("/v1/cas/{tenant}/batch", "openapi-batch-path"),
+            ("/v1/cas/{tenant}/batch-exists", "openapi-batch-exists-path"),
+        ):
+            start = openapi.index(f"  {path}:")
+            end = openapi.find("\n  /", start + 1)
+            mutated = openapi[:start] + (openapi[end:] if end >= 0 else "")
+            gaps = verifier.assess_source(route, handler, storage, mutated, docs)
+            self.assertIn(marker, gaps)
+
+        for constant, handler_name in (
+            ("CAS_BATCH_ROUTE", "handle_batch_write"),
+            ("CAS_BATCH_EXISTS_ROUTE", "handle_batch_exists"),
+        ):
+            registration = f"{constant},\n            post({handler_name})"
+            mutated = route.replace(registration, f"{constant},\n            get({handler_name})", 1)
+            gaps = verifier.assess_source(mutated, handler, storage, openapi, docs)
+            self.assertIn(f"source-registration-{constant}", gaps)
+
     def test_413_wire_contract_mutations_reopen_the_gate(self) -> None:
         route, handler, storage = self._sources()
         openapi = (ROOT / "openapi/corelink-v1.yaml").read_text()
         docs = (ROOT / "docs/knowledge/surfaces/native-cas.md").read_text()
 
-        marker = "  /v1/cas/{tenant}/batch-read:"
-        prefix, operation_and_rest = openapi.split(marker, 1)
-        operation, rest = operation_and_rest.split("\n  /v1/", 1)
-        operation = marker + operation
-
         for mutated_openapi, expected in (
-            ((prefix + operation.replace("application/json:\n", "text/plain:\n", 1)
-              + "\n  /v1/" + rest),
+            (openapi.replace(
+                '        application/json:\n          schema: { $ref: "#/components/schemas/BatchTooLargeResponse" }',
+                "        text/plain:\n          schema: { type: string }",
+                1,
+            ),
              "openapi-413-application/json"),
-            ((prefix + operation.replace("required: [error, limit_objects, limit_bytes]", "required: [error]", 1)
-              + "\n  /v1/" + rest),
+            (openapi.replace(
+                "      required: [error, limit_objects, limit_bytes]",
+                "      required: [error]",
+                1,
+            ),
              "openapi-413-required: [error, limit_objects, limit_bytes]"),
-            ((prefix + operation.replace("limit_bytes: { type: integer, format: int64, example: 8388608 }", "bytes: { type: integer }", 1)
-              + "\n  /v1/" + rest),
+            (openapi.replace(
+                "        limit_bytes:\n          type: integer\n          format: int64\n          const: 8388608",
+                "        bytes: { type: integer }",
+                1,
+            ),
              "openapi-413-limit_bytes:"),
         ):
             with self.subTest(expected=expected):

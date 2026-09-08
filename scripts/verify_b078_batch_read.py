@@ -43,6 +43,22 @@ def _section(source: str, start: str, end: str) -> str:
 
 def assess_source(route: str, handler: str, storage: str, openapi: str, docs: str) -> list[str]:
     gaps: list[str] = []
+
+    # Keep the three sibling native-CAS batch routes closed as one surface.
+    # Checking only the batch-read path let the write and existence routes
+    # disappear from the published contract without reopening this gate.
+    route_contracts = {
+        "CAS_BATCH_ROUTE": ("/v1/cas/{tenant}/batch", "handle_batch_write"),
+        "CAS_BATCH_READ_ROUTE": ("/v1/cas/{tenant}/batch-read", "handle_batch_read"),
+        "CAS_BATCH_EXISTS_ROUTE": ("/v1/cas/{tenant}/batch-exists", "handle_batch_exists"),
+    }
+    for constant, (path, handler_name) in route_contracts.items():
+        if f'pub const {constant}: &str = "{path}"' not in route:
+            gaps.append(f"source-{constant}")
+        registration = f"{constant},\n            post({handler_name})"
+        if registration not in route:
+            gaps.append(f"source-registration-{constant}")
+
     try:
         batch = _section(route, "async fn handle_batch_read", "async fn handle_batch_exists")
     except ContractError as error:
@@ -99,25 +115,58 @@ def assess_source(route: str, handler: str, storage: str, openapi: str, docs: st
         if token not in too_large:
             gaps.append(f"runtime-413-{token}")
 
-    if "/v1/cas/{tenant}/batch-read:" not in openapi:
-        gaps.append("openapi-batch-read-path")
-    else:
-        operation = openapi[openapi.find("/v1/cas/{tenant}/batch-read:") :]
-        operation = operation[: operation.find("\n  /v1/", 1)] if "\n  /v1/" in operation else operation
-        for token in ('"413"', "batch_too_large", "application/x-ndjson"):
+    def openapi_path_block(path: str) -> str:
+        marker = f"  {path}:"
+        start = openapi.find(marker)
+        if start < 0:
+            return ""
+        end = openapi.find("\n  /", start + len(marker))
+        return openapi[start:] if end < 0 else openapi[start:end]
+
+    expected_operations = {
+        "/v1/cas/{tenant}/batch": ("casBatchWrite", "batch"),
+        "/v1/cas/{tenant}/batch-read": ("casBatchRead", "batch-read"),
+        "/v1/cas/{tenant}/batch-exists": ("casBatchExists", "batch-exists"),
+    }
+    for path, (operation_id, label) in expected_operations.items():
+        operation = openapi_path_block(path)
+        if not operation:
+            gaps.append(f"openapi-{label}-path")
+            continue
+        for token in ("post:", f"operationId: {operation_id}", '"413"', '"415"', '"429"'):
             if token not in operation:
+                gaps.append(f"openapi-{operation_id}-{token.rstrip(':').replace('"', '')}")
+
+    batch_read = openapi_path_block("/v1/cas/{tenant}/batch-read")
+    if batch_read:
+        for token in ("application/x-ndjson", "application/x-hugit-cas-batch"):
+            if token not in batch_read:
                 gaps.append(f"openapi-{token}")
-        response_413 = operation[operation.find('"413":') :]
-        for token in (
-            "application/json",
-            "additionalProperties: false",
-            "required: [error, limit_objects, limit_bytes]",
-            "error: { type: string, const: batch_too_large }",
-            "limit_objects:",
-            "limit_bytes:",
-        ):
-            if token not in response_413:
-                gaps.append(f"openapi-413-{token}")
+
+    # The shared 413 response is a named component so all three routes cannot
+    # drift on caps or error shape independently.
+    response_start = openapi.find("    BatchTooLarge:")
+    response_end = openapi.find("    Unauthorized:", response_start + 1)
+    response_413 = openapi[response_start:response_end] if response_start >= 0 and response_end >= 0 else ""
+    schema_start = openapi.find("    BatchTooLargeResponse:")
+    schema_end = openapi.find("    BatchUploadResult:", schema_start + 1)
+    batch_schema = openapi[schema_start:schema_end] if schema_start >= 0 and schema_end >= 0 else ""
+    for token in ("application/json", "BatchTooLargeResponse"):
+        if token not in response_413:
+            gaps.append(f"openapi-413-{token}")
+    for token in (
+        "additionalProperties: false",
+        "required: [error, limit_objects, limit_bytes]",
+        "error: { type: string, const: batch_too_large }",
+        "limit_objects:",
+        "limit_bytes:",
+    ):
+        if token not in batch_schema:
+            gaps.append(f"openapi-413-{token}")
+
+    for token in ("BatchUploadResult", "BatchExistsResult", "BatchHashNdjsonBody"):
+        if token not in openapi:
+            gaps.append(f"openapi-schema-{token}")
 
     for token in ("BATCH_READ_FANOUT", "8 MiB", "413", "buffered"):
         if token not in docs:
