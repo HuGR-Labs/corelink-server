@@ -27,9 +27,9 @@ Each entry cross-references:
 - **CAS batch-read cancellation and R2 timeout safety.** Batch-read tasks now
   retain the tenant/global capacity envelope until synchronous reads unwind;
   queued work is aborted and terminal paths drain it. R2 operations have
-  explicit connect/read/operation deadlines, and capped reads consume the body
-  incrementally so a misleading content length cannot trigger unbounded
-  buffering.
+  explicit connect/read/attempt/operation deadlines plus idle/total body
+  deadlines, and capped reads consume the body incrementally so a stalled
+  stream or misleading content length cannot trigger unbounded buffering.
 
 - **B-231–B-243 contract hardening.** Public Brew/Pip fills now charge the
   authenticated tenant with live downgrade caps; Stripe refunds revoke fully

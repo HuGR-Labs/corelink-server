@@ -1,3 +1,43 @@
+    #[tokio::test]
+    async fn r2_capped_body_stall_after_headers_hits_idle_deadline() {
+        struct StalledAfterHeaders {
+            emitted: bool,
+        }
+
+        impl R2BodyChunkStream for StalledAfterHeaders {
+            fn next_chunk<'a>(
+                &'a mut self,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<
+                            Output = Option<Result<bytes::Bytes, String>>,
+                        > + Send
+                        + 'a,
+                >,
+            > {
+                Box::pin(async move {
+                    if !self.emitted {
+                        self.emitted = true;
+                        Some(Ok(bytes::Bytes::from_static(b"headers-arrived")))
+                    } else {
+                        std::future::pending::<Option<Result<bytes::Bytes, String>>>().await
+                    }
+                })
+            }
+        }
+
+        let err = R2S3Client::collect_capped_body_with_deadlines(
+            "stalled-after-headers",
+            1024,
+            StalledAfterHeaders { emitted: false },
+            std::time::Duration::from_millis(10),
+            std::time::Duration::from_millis(50),
+        )
+        .await
+        .expect_err("a body that stalls after headers must fail closed");
+        assert_eq!(err, "R2 body idle timeout for key stalled-after-headers");
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn byok_mode_b_read_fails_closed_when_kms_down() {
         // A wired Mode-B handler whose KMS unwrap fails must NOT serve raw bytes.

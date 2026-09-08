@@ -112,13 +112,37 @@ class B078ContractTests(unittest.TestCase):
         start = storage.index("pub async fn get_capped")
         end = storage.index("pub async fn head_size", start)
         capped = storage[start:end].replace(
-            "while let Some(chunk) = body.next().await",
-            "let bytes = body.collect().await?;",
+            "body.next_chunk()",
+            "body.collect().await?",
             1,
         )
         mutated_storage = storage[:start] + capped + storage[end:]
         gaps = verifier.assess_source(route, handler, mutated_storage, openapi, docs)
         self.assertIn("bounded-r2-body-loop", gaps)
+
+    def test_r2_timeout_mutations_are_rejected(self) -> None:
+        route, handler, storage = self._sources()
+        openapi = (ROOT / "openapi/corelink-v1.yaml").read_text()
+        docs = (ROOT / "docs/knowledge/surfaces/native-cas.md").read_text()
+        mutations = (
+            (".connect_timeout(", "r2-connect-timeout"),
+            (".read_timeout(", "r2-read-timeout"),
+            (".operation_attempt_timeout(", "r2-attempt-timeout"),
+            ("Self::R2_BODY_IDLE_TIMEOUT", "bounded-r2-body-idle-timeout"),
+            ("Self::R2_BODY_TOTAL_TIMEOUT", "bounded-r2-body-total-timeout"),
+            (
+                "tokio::time::timeout(idle_timeout, body.next_chunk())",
+                "bounded-r2-body-idle-loop",
+            ),
+            (
+                "tokio::time::timeout(total_timeout, collect)",
+                "bounded-r2-body-total-loop",
+            ),
+        )
+        for token, gap in mutations:
+            mutated_storage = storage.replace(token, "", 1)
+            gaps = verifier.assess_source(route, handler, mutated_storage, openapi, docs)
+            self.assertIn(gap, gaps, token)
 
     def test_413_wire_contract_mutations_reopen_the_gate(self) -> None:
         route, handler, storage = self._sources()

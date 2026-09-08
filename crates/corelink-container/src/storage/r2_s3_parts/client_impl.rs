@@ -1,3 +1,41 @@
+/// The narrow body interface keeps the bounded collector testable with a
+/// deterministic stream while the production adapter wraps AWS's
+/// `ByteStream` below.
+trait R2BodyChunkStream {
+    fn next_chunk<'a>(
+        &'a mut self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Option<Result<bytes::Bytes, String>>,
+                > + Send
+                + 'a,
+        >,
+    >;
+}
+
+struct R2SdkBodyStream(aws_sdk_s3::primitives::ByteStream);
+
+impl R2BodyChunkStream for R2SdkBodyStream {
+    fn next_chunk<'a>(
+        &'a mut self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Option<Result<bytes::Bytes, String>>,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            self.0
+                .next()
+                .await
+                .map(|chunk| chunk.map_err(|error| error.to_string()))
+        })
+    }
+}
+
 impl R2S3Client {
     /// Bound the three phases that can otherwise leave a synchronous CAS
     /// reader parked forever when R2 stops making progress. The operation
@@ -7,7 +45,15 @@ impl R2S3Client {
     pub(crate) const R2_CONNECT_TIMEOUT: std::time::Duration =
         std::time::Duration::from_secs(2);
     pub(crate) const R2_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+    pub(crate) const R2_OPERATION_ATTEMPT_TIMEOUT: std::time::Duration =
+        std::time::Duration::from_secs(30);
     pub(crate) const R2_OPERATION_TIMEOUT: std::time::Duration =
+        std::time::Duration::from_secs(60);
+    /// Body-level deadlines remain necessary after `GetObject` headers arrive:
+    /// the SDK operation timeout does not reliably cover a stalled stream.
+    pub(crate) const R2_BODY_IDLE_TIMEOUT: std::time::Duration =
+        std::time::Duration::from_secs(30);
+    pub(crate) const R2_BODY_TOTAL_TIMEOUT: std::time::Duration =
         std::time::Duration::from_secs(60);
 
     /// Construct an [`R2S3Client`] from a validated [`StorageEnv`].
@@ -49,6 +95,7 @@ impl R2S3Client {
                 aws_sdk_s3::config::timeout::TimeoutConfig::builder()
                     .connect_timeout(Self::R2_CONNECT_TIMEOUT)
                     .read_timeout(Self::R2_READ_TIMEOUT)
+                    .operation_attempt_timeout(Self::R2_OPERATION_ATTEMPT_TIMEOUT)
                     .operation_timeout(Self::R2_OPERATION_TIMEOUT)
                     .build(),
             )
@@ -238,21 +285,8 @@ impl R2S3Client {
                 // malformed/chunked response. Consume incrementally and stop
                 // as soon as the actual stream crosses the ceiling, keeping
                 // peak allocation bounded even when R2 lies about its length.
-                let mut body = output.body;
-                let mut bytes = Vec::new();
-                let mut actual_bytes = 0_u64;
-                while let Some(chunk) = body.next().await {
-                    let chunk = chunk
-                        .map_err(|e| format!("R2 body read failed for key {key}: {e}"))?;
-                    actual_bytes = actual_bytes.saturating_add(chunk.len() as u64);
-                    if actual_bytes > max_bytes {
-                        return Ok(CappedGet::TooLarge {
-                            actual_bytes: Some(actual_bytes),
-                        });
-                    }
-                    bytes.extend_from_slice(&chunk);
-                }
-                Ok(CappedGet::Found(bytes))
+                let body = R2SdkBodyStream(output.body);
+                Self::collect_capped_body(key, max_bytes, body).await
             }
             Err(sdk_err) => {
                 if let aws_sdk_s3::error::SdkError::ServiceError(ref se) = sdk_err {
@@ -263,6 +297,53 @@ impl R2S3Client {
                 Err(format!("R2 get failed for key {key}: {sdk_err}"))
             }
         }
+    }
+
+    async fn collect_capped_body<S: R2BodyChunkStream>(
+        key: &str,
+        max_bytes: u64,
+        body: S,
+    ) -> Result<CappedGet, String> {
+        Self::collect_capped_body_with_deadlines(
+            key,
+            max_bytes,
+            body,
+            Self::R2_BODY_IDLE_TIMEOUT,
+            Self::R2_BODY_TOTAL_TIMEOUT,
+        )
+        .await
+    }
+
+    async fn collect_capped_body_with_deadlines<S: R2BodyChunkStream>(
+        key: &str,
+        max_bytes: u64,
+        mut body: S,
+        idle_timeout: std::time::Duration,
+        total_timeout: std::time::Duration,
+    ) -> Result<CappedGet, String> {
+        let collect = async {
+            let mut bytes = Vec::new();
+            let mut actual_bytes = 0_u64;
+            loop {
+                let next = tokio::time::timeout(idle_timeout, body.next_chunk())
+                    .await
+                    .map_err(|_| format!("R2 body idle timeout for key {key}"))?;
+                let Some(chunk) = next else {
+                    return Ok(CappedGet::Found(bytes));
+                };
+                let chunk = chunk.map_err(|error| format!("R2 body read failed for key {key}: {error}"))?;
+                actual_bytes = actual_bytes.saturating_add(chunk.len() as u64);
+                if actual_bytes > max_bytes {
+                    return Ok(CappedGet::TooLarge {
+                        actual_bytes: Some(actual_bytes),
+                    });
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+        };
+        tokio::time::timeout(total_timeout, collect)
+            .await
+            .map_err(|_| format!("R2 body total timeout for key {key}"))?
     }
 
     /// Returns `Err(String)` on any non-404 transport/service error.

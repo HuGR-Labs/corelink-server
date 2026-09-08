@@ -84,9 +84,11 @@ path segment.
    (three 64 MiB copies plus metadata),
    `batch-read` reserves its 22 MiB response envelope and each fan-out object reserves 24 MiB.
    The RAII permits remain held through response assembly and a 250 ms wait timeout fails closed
-   with 503 under saturation. R2 GETs use a 2 s connect, 30 s read, and 60 s operation timeout;
-   `get_capped` consumes chunks incrementally and stops at the declared ceiling rather than
-   relying on unbounded `ByteStream::collect()` (`crates/corelink-container/src/storage/r2_s3_parts/client_impl.rs`).
+   with 503 under saturation. R2 GETs use a 2 s connect, 30 s read, 30 s attempt, and 60 s
+   operation timeout. After headers, `get_capped` also enforces a 30 s idle and 60 s total body
+   deadline while consuming chunks incrementally; a stalled-after-headers stream therefore cannot
+   park the synchronous reader, and a misleading content length cannot trigger unbounded
+   `ByteStream::collect()` (`crates/corelink-container/src/storage/r2_s3_parts/client_impl.rs`).
    (`crates/corelink-container/src/routes/cas/foundation_core.rs:190-330`;
    guards at `crates/corelink-container/src/routes/cas/foundation_state.rs:319-350`).
 

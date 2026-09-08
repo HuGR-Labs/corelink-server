@@ -115,15 +115,25 @@ def assess_source(route: str, handler: str, storage: str, openapi: str, docs: st
     except ContractError as error:
         gaps.append(str(error))
         capped = ""
-    if "while let Some(chunk) = body.next().await" not in capped:
+    if "body.next_chunk()" not in capped:
         gaps.append("bounded-r2-body-loop")
     if "actual_bytes > max_bytes" not in capped:
         gaps.append("bounded-r2-body-ceiling")
     if ".body\n                    .collect()" in capped or ".body.collect()" in capped:
         gaps.append("unbounded-get-capped-collect")
-    for token in ("timeout_config(", ".read_timeout(", ".operation_timeout("):
+    for token, gap in (
+        ("timeout_config(", "r2-timeout-config"),
+        (".connect_timeout(", "r2-connect-timeout"),
+        (".read_timeout(", "r2-read-timeout"),
+        (".operation_attempt_timeout(", "r2-attempt-timeout"),
+        (".operation_timeout(", "r2-operation-timeout"),
+        ("Self::R2_BODY_IDLE_TIMEOUT", "bounded-r2-body-idle-timeout"),
+        ("Self::R2_BODY_TOTAL_TIMEOUT", "bounded-r2-body-total-timeout"),
+        ("tokio::time::timeout(idle_timeout, body.next_chunk())", "bounded-r2-body-idle-loop"),
+        ("tokio::time::timeout(total_timeout, collect)", "bounded-r2-body-total-loop"),
+    ):
         if token not in storage:
-            gaps.append(f"r2-{token.strip('(.')}")
+            gaps.append(gap)
 
     try:
         too_large = _section(route, "fn batch_too_large", "// One manifest line")
