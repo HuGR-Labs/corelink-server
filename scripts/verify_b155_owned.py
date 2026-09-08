@@ -27,6 +27,7 @@ LEGAL_TLS = (
 )
 MIRROR_URL = "https://corelink-artifacts.humangr.com/tlaplus/v1.8.0/eabd140a70f49eb9305a3bd3f3df944eddf87e5a90d329789085f8953a80533a/tla2tools.jar"
 MIRROR_SHA256_PINNED = "eabd140a70f49eb9305a3bd3f3df944eddf87e5a90d329789085f8953a80533a"
+MIRROR_BYTES_PINNED = 4_487_757
 MIRROR_USER_AGENT = "CoreLink-B039-Verifier/1.0"
 MIRROR_READ_CHUNK_BYTES = 1024 * 1024
 MIRROR_MAX_BYTES = 128 * 1024 * 1024
@@ -498,12 +499,16 @@ def _b039(root: Path, live: bool) -> str:
     if f"/{MIRROR_SHA256_PINNED}/" not in MIRROR_URL:
         raise VerificationError("mirror URL and SHA-256 pin diverge")
     if not live:
-        return "B-039 open static PASS (mirror availability unverified; query skipped)"
+        return "B-039 static PASS (mirror availability unverified; query skipped)"
     try:
         size, actual = _read_mirror_digest()
     except VerificationError:
         raise
     except OSError as exc: raise VerificationError(f"artifact mirror query failed: {exc}") from exc
+    if size != MIRROR_BYTES_PINNED:
+        raise VerificationError(
+            f"mirror byte-count mismatch: expected {MIRROR_BYTES_PINNED}, got {size}"
+        )
     return f"B-039 PASS (mirror HTTP 2xx and SHA-256 verified; bytes={size}, sha256={actual})"
 
 
@@ -770,10 +775,9 @@ def main(argv=None) -> int:
         # credentials or making provider calls.  The repository check itself
         # retains its original live/static polarity.
         result=CHECKS[args.id](ROOT, live=not args.offline) if args.id in {"B-014","B-039"} else CHECKS[args.id](ROOT)
-        # B-039 is intentionally open until an operator re-verifies that the
-        # artifact mirror serves the pinned jar.  Its backlog proof runs in
-        # offline mode, so a network 403 cannot be mistaken for a clean done.
-        is_open = args.id in {"B-035", "B-039"}
+        # B-039 is closed only by the live mirror read. Offline mode remains a
+        # useful static check, but it cannot satisfy the done polarity.
+        is_open = args.id == "B-035" or (args.id == "B-039" and args.offline)
         if args.expect == "open" and not is_open:
             raise VerificationError(f"{args.id} has done polarity but --expect open was requested")
         if args.expect == "done" and is_open:

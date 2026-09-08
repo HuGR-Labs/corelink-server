@@ -2134,6 +2134,114 @@ verify-means: |
 last-verified: 2026-09-08
 ```
 
+### B-360 — B-155 CAS split-path census could silently read stale pre-split files
+
+The B-155 semantic adapters now lex active Rust `include!` calls, resolve the
+complete repository-bounded closure with cycle/escape checks, and bind the CAS
+foundation/single path populations to the live route entrypoint. Path-drift
+mutations and nested comment/string bait are rejected.
+
+```backlog
+id: B-360
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B-155 verifier path census review"
+source-locator: "scripts/verify_b155_owned.py; tests/test_b155_owned.py"
+finding-title: "B-155 CAS split census could verify stale paths instead of the active include closure"
+problem: "After CAS source splitting, the verifier could open old monolithic paths and miss the compiled foundation/single fragments."
+evidence: "5b2dd5dea: comment/string-aware static include lexer, recursive path/cycle/escape census, exact CAS path populations, and path-drift mutations."
+acceptance: "The B-155 verifier follows only active static includes, binds expected CAS fragment sets to the route entrypoint, and fails closed on missing, replaced, escaped, cyclic, or baited includes."
+verify: python3 -m unittest -q tests/test_b155_owned.py
+verify-means: |
+  done — the B-155 recursive CAS include census and focused mutation suite are
+  green. This closes verifier path coverage only; it does not alter or assert
+  any runtime CAS performance or production claim.
+last-verified: 2026-09-08
+```
+
+### B-361 — B-125 audit drain sealed rows one request at a time without bounded JSON1 proof
+
+The audit drain now emits bounded 32-row JSON1 UPDATE chunks with an exact
+`RETURNING id` set check, duplicate-ID rejection, and lease-fence checks before
+and after each committed chunk. Head advancement remains fail-closed on any
+partial, unexpected, duplicate, extra-column, or non-text result.
+
+```backlog
+id: B-361
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B-125 audit drain implementation review"
+source-locator: "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_01_part2.rs; crates/corelink-container/src/routes/audit_drain/b126_m2_impl_02.rs"
+finding-title: "B-125 audit drain used per-row writes without a bounded atomic JSON1 update contract"
+problem: "Per-row emitted_at writes left the drain bottlenecked and lacked an exact result-set proof before advancing the signed head."
+evidence: "2f26055ea: 32-row JSON1 chunk payload/UPDATE, exact RETURNING validation, duplicate/empty rejection, and lease-fence chunk tests."
+acceptance: "The implementation and focused tests prove bounded JSON1 chunks, exact all-or-nothing row identity, and prefix-only lease fencing; no production drain measurement is inferred."
+verify: cargo test -p corelink-container --lib audit_drain --locked
+verify-means: |
+  done — the B-125 source implementation and bounded mutation-focused tests are
+  integrated. B-125 itself remains open until its prescribed production audit
+  drain evidence exists; this record closes only the repository implementation
+  defect.
+last-verified: 2026-09-08
+```
+
+### B-362 — B-071 native GC observation wiring was absent from the runtime image
+
+The native production-capable GC sweep is now built under a distinct binary name,
+copied into the runtime image, and explicitly marked observation-only unless
+`GC_LIVE_DELETE=false` is supplied. The fence verifier follows the split source
+paths and keeps writer fencing, reconciliation, and idempotent retry mutations
+red.
+
+```backlog
+id: B-362
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B-071 GC native observation wiring review"
+source-locator: "Dockerfile; crates/corelink-container/src/gc_sweep.rs; scripts/verify_b071_fence.py"
+finding-title: "B-071 native GC observation binary was not wired into the runtime image with an explicit delete fence"
+problem: "The production-capable sweep had no distinct image entrypoint and observation mode could be ambiguous about live deletion."
+evidence: "b0a8b45e5: distinct native production binary build/copy, explicit GC_OBSERVATION_ONLY plus GC_LIVE_DELETE=false contract, and split-path fence verification."
+acceptance: "The image contains the separately invoked native sweep, malformed or live observation flags fail closed, and writer/GC/reconciliation/idempotency mutations remain red; no live deletion is enabled by this record."
+verify: python3 scripts/verify_b071_fence.py && python3 -m pytest -q tests/test_b071_b073_comment_safe.py tests/test_verify_b323_gc_binary_identity.py
+verify-means: |
+  done — the B-071 native observation wiring and repository fence checks are
+  integrated and mutation-tested. B-071's production/live deletion acceptance
+  remains open; no observation wiring is treated as a live deletion witness.
+last-verified: 2026-09-08
+```
+
+### B-363 — B-072 deferred synthetic PagerDuty delivery lifecycle lacked a repository contract
+
+The synthetic drill receiver and scheduler now share a fail-closed lifecycle
+contract: production delivery is gated, accepted deferred deliveries are
+terminally marked and excluded from the Sunday retry sweep, and the scheduler
+uses the canonical scheduled-time correlation identifier. This is repository
+wiring and lifecycle correctness only; live PagerDuty delivery remains an
+operational claim requiring deployment and drill evidence.
+
+```backlog
+id: B-363
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B-072 receiver/lifecycle implementation review"
+source-locator: "apps/synthetic-pager-worker/src/index.ts; apps/synthetic-pager-worker/tests/receiver.test.ts; worker/tests/scheduled_drills.test.ts; scripts/verify_b072_receiver.py"
+finding-title: "B-072 receiver lifecycle did not prove deferred delivery terminality and canonical correlation"
+problem: "The receiver/scheduler contract could leave accepted deferred rows eligible for duplicate paging or drift from the canonical scheduled-time delivery identifier without a repository-side guard."
+evidence: "1a84024d7: deferred delivery rows retain deferred mode while recording delivered_at_ms and terminal unacked outcome, the retry sweep filters undelivered rows, and receiver/scheduler lifecycle regressions are covered by the static guard and focused tests."
+acceptance: "The repository guard proves fail-closed production and activation gates, D1-before-PagerDuty ordering, signed/correlated webhook updates, terminal deferred-row filtering, and canonical scheduler IDs; no live PagerDuty delivery or human acknowledgement is inferred."
+verify: python3 scripts/verify_b072_receiver.py && python3 scripts/test_b072_migration.py
+verify-means: |
+  done — the integrated B-072 receiver/lifecycle source fix and focused
+  mutation-facing checks are recorded. The live PagerDuty deployment, delivery
+  and human-acknowledgement claim remains open until production drill evidence.
+last-verified: 2026-09-08
+```
+
 ### B-338 — untrusted pull requests could execute backlog verifiers on the persistent runner
 
 ```backlog
@@ -7109,14 +7217,17 @@ agentes, e a ação é **deleção permanente** de chave privada — que eu não
 ```backlog
 id: B-013
 repo: corelink-server
-owner: owner
-status: open
+owner: tl
+status: done
 action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
-verify: python3 -S scripts/verify_owner_action_packets.py --id B-013
+verify: python3 -S scripts/verify_b013_key_deletion.py --self-test
 verify-means: |
-  packet guard validates the exact local deletion procedure and evidence schema;
-  the actual filesystem state is outside this repository and remains owner-only.
-last-verified: 2026-09-05
+  done — the owner-authorized redacted evidence artifact records exactly the three
+  private-key targets, their preflight sizes/dates and `rm -P` action, preserves the
+  public key, and proves all three private targets absent after deletion. The focal
+  verifier is schema-closed, rejects duplicate/extra fields and credential-shaped
+  values, and never inspects or claims to reproduce the owner machine's filesystem.
+last-verified: 2026-09-08
 ```
 
 ### B-014 — the leaked Stripe webhook secret was already verified harmless
@@ -7268,17 +7379,19 @@ it would make a security-path change large and rushed at the same time.
 ```backlog
 id: B-039
 repo: corelink-server
-owner: owner
-status: open
+owner: tl
+status: done
 action-packet: docs/handoff/2026-09-06-d03-graduation-packets.json
 verify: |
-  python3 scripts/verify_b155_owned.py --id B-039 --expect open --offline
+  python3 scripts/verify_b155_owned.py --id B-039 --expect done
 verify-means: |
-  open — the offline verifier proves that NO carrier fetches the jar from the
-  mutable upstream release URL, but deliberately does not claim that our copy
-  serves. The live mirror probe returned HTTP 403 on 2026-09-06; restore and
-  independently re-verify the pinned object before changing this item to done.
-last-verified: 2026-09-06
+  done — the live source verifier reads the controlled mirror with its explicit
+  WAF-compatible user agent, requires HTTP 2xx, exactly 4,487,757 bytes, and the
+  pinned SHA-256 `eabd140a70f49eb9305a3bd3f3df944eddf87e5a90d329789085f8953a80533a`;
+  active carriers remain free of the mutable upstream URL. This closes mirror
+  availability and source verification only; it makes no runtime or production
+  capability claim beyond the measured artifact response.
+last-verified: 2026-09-08
 ```
 
 ### B-040 — `| head` under pipefail is the same SIGPIPE defect, left open on purpose
@@ -9874,6 +9987,222 @@ verify-means: |
   este comando guarda os invariantes estruturais que aquele teste aplica, e falha se
   alguém apagar o teste ou alargar a ledger em silêncio.
 last-verified: 2026-08-31
+```
+
+## Post-D03 verifier reconciliation — 2026-09-08
+
+The records below close repository instrumentation defects discovered while
+reviewing already-landed evidence contracts. They do not graduate the external
+or production-dependent items named by those verifiers.
+
+### B-352 — B-314 owner gate ran outside the trusted BASE workflow boundary
+
+The B-314 contract checker had local mutation coverage, but its workflow wiring
+did not prove that the candidate was treated as data from the immutable BASE
+checkout. The gate now uses `pull_request_target`, all-tree path coverage, and
+BASE-only self-test/focused-test steps; candidate verifier code remains inert.
+
+```backlog
+id: B-352
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B-314 verifier review"
+source-locator: ".github/workflows/backlog-verify.yml; scripts/verify_b314_gdpr_sigstore.py"
+finding-title: "B-314 owner gate did not prove trusted BASE execution and complete path coverage"
+problem: "The workflow contract could lose all-tree coverage or run the B-314 checks outside the immutable BASE checkout without a focused mutation turning red."
+evidence: "4009f4211: BASE-only B-314 self-test/pytest wiring, pull_request_target rejection, all-tree coverage and path-removal/duplicate mutations."
+acceptance: "The workflow gate and verifier reject unsafe trigger, checkout, placement, coverage, command duplication, and candidate-execution mutations while preserving B-314's pending Legal/DPO decision."
+verify: python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test && python3 -m pytest -q tests/test_verify_b314_gdpr_sigstore.py
+verify-means: |
+  done — the B-314 owner gate is now fail-closed at its trusted BASE workflow
+  boundary and the focused mutation suite is green. B-314 itself remains open
+  until the external Legal/DPO disposition is signed; this record closes only
+  the repository gate defect.
+last-verified: 2026-09-08
+```
+
+### B-353 — B-103/B-129 attribution verifier ignored nested Rust includes
+
+The deployed rate-limit scopes and split byte-accounting implementation live in
+nested Rust fragments. The verifier now traverses active `include!` closures,
+rejects cycles/escapes, and recognizes the compiled one-argument rate-limit
+scope form while retaining comment/string and removal mutations.
+
+```backlog
+id: B-353
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B-103/B-129 attribution verifier review"
+source-locator: "scripts/verify_b103_b129_attribution.py; scripts/test_b103_b129_attribution.py"
+finding-title: "B-103/B-129 attribution gate missed nested includes and deployed one-argument rate scopes"
+problem: "The static attribution checker read only the first split fragment and required an obsolete two-argument scope spelling, so compiled symbols could drift without detection."
+evidence: "b713fd5ad: recursive include closure with repository-bound/cycle checks, one-argument RateLimit recognition, and nested-fragment mutation coverage."
+acceptance: "The checker follows the active include tree and recognizes the deployed scope form; missing child symbols, include removal/replacement, and phase mutations fail closed without asserting production timing."
+verify: python3 scripts/verify_b103_b129_attribution.py --self-test && python3 scripts/verify_b103_b129_attribution.py --b129-inline
+verify-means: |
+  done — the nested attribution verifier and its executable mutation checks are
+  green. B-103 and B-129 remain production-dependent parked items; no latency,
+  residual, or runtime closure is inferred from this repository contract.
+last-verified: 2026-09-08
+```
+
+### B-354 — B-039 mirror verifier was rejected by the live WAF and omitted byte binding
+
+The source verifier now sends an explicit WAF-compatible identity, streams the
+bounded object, requires the measured 4,487,757-byte response, and hashes the
+complete body. Hermetic success, forbidden-response, and hash/size mutations
+keep the source guard fail-closed.
+
+```backlog
+id: B-354
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B-039 mirror verification review"
+source-locator: "scripts/verify_b155_owned.py; tests/test_b155_owned.py"
+finding-title: "B-039 source verifier did not survive the mirror WAF or bind the complete object size"
+problem: "The default urllib identity produced a false 403 and the live check did not bind the measured byte population before accepting the pinned hash."
+evidence: "aaf578bea: explicit CoreLink-B039-Verifier/1.0 user agent, bounded streaming SHA-256, exact byte-count guard, and hermetic WAF/hash mutations."
+acceptance: "The source verifier rejects mutable carriers, WAF-forbidden requests, wrong status, wrong size, and wrong digest while accepting the pinned live object; offline mode cannot satisfy done polarity."
+verify: python3 -m unittest -q tests/test_b155_owned.py
+verify-means: |
+  done — the B-039 verifier's WAF-compatible request and full-object byte/hash
+  contract pass their focused hermetic tests. The separate B-039 record carries
+  the live HTTP 200/4,487,757-byte/pinned-SHA witness; this record closes only
+  the verifier defect.
+last-verified: 2026-09-08
+```
+
+### B-355 — B-013 deletion evidence had no repository-side closure verifier
+
+The owner-authorized redacted deletion artifact is now checked by a strict
+stdlib verifier with duplicate-key rejection, exact three-target population,
+positive postconditions, and credential-shape rejection. It never reads the
+owner's filesystem or stores private-key material.
+
+```backlog
+id: B-355
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B-013 deletion evidence review"
+source-locator: "evidence/owner-actions/B-013/downloads-private-key-deletion.json; scripts/verify_b013_key_deletion.py"
+finding-title: "B-013 owner deletion evidence lacked a fail-closed repository verifier"
+problem: "A redacted owner evidence record could be malformed, duplicated, polarity-flipped, or credential-bearing without a canonical repository check."
+evidence: "a07133333: exact schema/population verifier, mutation self-tests, and focused unit tests integrated with the real B-013 evidence artifact."
+acceptance: "The verifier accepts only the canonical three-target redacted closure record and rejects missing/extra/duplicate fields, changed target facts, false postconditions, duplicate JSON keys, and secret-shaped values."
+verify: python3 -S scripts/verify_b013_key_deletion.py --self-test && python3 -m unittest -q tests/test_verify_b013_key_deletion.py
+verify-means: |
+  done — the B-013 evidence verifier and focused mutation suite pass against the
+  integrated redacted artifact. The external deletion is evidenced, not replayed
+  by this repository check.
+last-verified: 2026-09-08
+```
+
+### B-356 — B-046 Object-Lock gate was not wired into trusted semantic verification
+
+The B-046 contract remains a parked platform blocker, but its repository gate now
+checks the parked status, no-Compliance claim, probe semantics, legal-hold safety,
+and trusted workflow placement. The explicit provider probe remains opt-in and
+does not convert local evidence into R2 capability evidence.
+
+```backlog
+id: B-356
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B-046 Object-Lock contract review"
+source-locator: ".github/workflows/backlog-verify.yml; scripts/backlog_verify.py; scripts/verify_b046_object_lock_probe.py"
+finding-title: "B-046 repository gate did not bind parked/no-claim semantics to the trusted workflow"
+problem: "The Object-Lock contract gate could drift in status, command placement, or candidate/base boundaries without a load-bearing mutation failing."
+evidence: "14870c3fc and 8644eab50: trusted B-046 gate wiring, parked-record binding, conservative NotImplemented classification, and workflow-boundary mutation tests."
+acceptance: "The trusted workflow runs the B-046 contract and focused tests; status, verify command, no-Compliance claim, provider classification, legal-hold path, and gate placement mutations fail closed."
+verify: python3 scripts/verify_b046_object_lock_probe.py && python3 -m unittest -q tests/test_verify_b046_object_lock_probe.py tests/test_backlog_verify_trust_boundary.py
+verify-means: |
+  done — the B-046 repository gate and trusted-workflow boundary are integrated
+  and mutation-tested. B-046 remains parked because R2 capability evidence is an
+  external platform fact; no Compliance/Object-Lock production claim is closed.
+last-verified: 2026-09-08
+```
+
+### B-357 — B-083/B-154 verifier hardening accepted disabled includes and distant negation
+
+The revocation wiring guard now rejects commented, string-baited, `cfg`, and
+`cfg_attr`-gated required includes. The instrument-claim guard now scopes polarity
+to the complete sentence, including wrapped Markdown lines, without borrowing a
+negation from an unrelated sentence or table row.
+
+```backlog
+id: B-357
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B-083/B-154 verifier review"
+source-locator: "scripts/verify_b083_revocation_wiring.py; scripts/verify_b154_instrument_claims.py"
+finding-title: "B-083 and B-154 guards could be satisfied by disabled code or distant disclaimer text"
+problem: "Comment/string bait, disabled include attributes, and long/wrapped polarity context could make repository verifiers report a false closure."
+evidence: "2a3c910e1 through 86da5a835: active include lexer, cfg/cfg_attr rejection, sentence-scoped polarity, and adversarial mutation coverage."
+acceptance: "All required active include and legal-claim populations remain executable and polarity-correct; every disabled/bait/distant-negation mutation is red."
+verify: python3 scripts/verify_b083_revocation_wiring.py && python3 scripts/verify_b154_instrument_claims.py --self-test && python3 -m pytest -q tests/test_verify_b154_instrument_claims.py
+verify-means: |
+  done — the B-083/B-154 repository verifiers and adversarial mutation tests are
+  green. B-083's real-KMS and B-154's executed-instrument claims remain external
+  or owner-dependent and are not closed by this instrumentation record.
+last-verified: 2026-09-08
+```
+
+### B-358 — B-107/B-122/B-129 timing packet contracts lacked bounded phase reconciliation
+
+The D03 timing contract now has a bounded offline artifact verifier for sequential
+1 KiB writes, phase-sum/wall-clock checks, complete read phase populations, alias
+handling, q-to-WDB and origin reconciliation, and residual limits. It does not
+contact production or claim the parked timing items measured.
+
+```backlog
+id: B-358
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 timing packet review"
+source-locator: "scripts/verify_d03_timing_artifact.py; scripts/test_verify_d03_timing_artifact.py"
+finding-title: "B-107/B-122/B-129 timing packet contracts lacked a bounded offline phase verifier"
+problem: "Owner timing packets could omit required phases, over-count wall time, hide an alias conflict, or report unreconciled residuals without a focused artifact contract."
+evidence: "a98424827: bounded writes/reads artifact verifier, explicit phase populations, and mutation tests for malformed durations, missing phases, reconciliation, and aliases."
+acceptance: "The offline checker proves only packet shape and arithmetic invariants; malformed, incomplete, over-counted, or unreconciled timing artifacts fail closed."
+verify: python3 -m pytest -q scripts/test_verify_d03_timing_artifact.py
+verify-means: |
+  done — the bounded timing artifact contract and mutation suite are green. The
+  production measurements, deployed commit identity, and latency/residual claims
+  for B-107/B-122/B-129 remain parked and require their prescribed owner probes.
+last-verified: 2026-09-08
+```
+
+### B-359 — B-216/B-251 D03 packet predicates were syntactically present but semantically inert
+
+The graduation verifier now extracts bounded jq filters and executes positive and
+one-field-negative fixtures for B-216 correlations and B-251 identity/measurement
+envelopes. Comment, string, inert-filter, shell-escape, and truth-flip mutations
+are rejected without turning fixture evidence into production evidence.
+
+```backlog
+id: B-359
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 graduation packet review"
+source-locator: "scripts/verify_d03_graduation.py; tests/test_verify_d03_graduation.py"
+finding-title: "B-216/B-251 jq predicates were not executed against negative fixtures"
+problem: "Required jq text could remain in comments or inert filters while the packet verifier still accepted the command shape."
+evidence: "edc5548d8 through 455b55cb4: bounded jq extraction/execution, positive and field-negative fixtures, and four exact inert-filter mutations."
+acceptance: "The packet verifier proves each required B-216/B-251 predicate changes verdict when its correlated field changes and preserves the explicit fixture-only/non-production boundary."
+verify: python3 -m pytest -q tests/test_verify_d03_graduation.py
+verify-means: |
+  done — the B-216/B-251 jq semantics and focused mutation suite are green. The
+  actual DLQ delivery, paging, and production latency evidence remain parked;
+  packet/verifier correctness is not runtime proof.
+last-verified: 2026-09-08
 ```
 
 ### B-081 — seguir o runbook de rotação da chave de assinatura de PAT causa indisponibilidade

@@ -14,7 +14,7 @@ from scripts import verify_b155_owned as verifier
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED = {
-    "B-014": "done", "B-015": "done", "B-035": "open", "B-039": "open",
+    "B-014": "done", "B-015": "done", "B-035": "open", "B-039": "done",
     "B-045": "done", "B-047": "done", "B-050": "done", "B-051": "done",
     "B-052": "done", "B-060": "done",
 }
@@ -60,8 +60,9 @@ class B155OwnedSemanticTests(unittest.TestCase):
         helper = ROOT / "scripts/verify_b155_owned.py"
         for ident, polarity in EXPECTED.items():
             with self.subTest(ident=ident):
+                expected_polarity = "open" if ident == "B-039" else polarity
                 result = subprocess.run(
-                    [sys.executable, str(helper), "--id", ident, "--expect", polarity,
+                    [sys.executable, str(helper), "--id", ident, "--expect", expected_polarity,
                      "--offline", "--self-test"],
                     cwd=ROOT, text=True, capture_output=True, timeout=15,
                 )
@@ -74,7 +75,7 @@ class B155OwnedSemanticTests(unittest.TestCase):
             needle = f"python3 scripts/verify_b155_owned.py --id {ident} --expect {polarity}"
             self.assertEqual(backlog.count(needle), 1, ident)
             if ident == "B-039":
-                self.assertEqual(backlog.count(needle + " --offline"), 1, ident)
+                self.assertEqual(backlog.count(needle + " --offline"), 0, ident)
 
     def test_b039_mirror_forbidden_fails_closed(self) -> None:
         forbidden = urllib.error.HTTPError(
@@ -97,6 +98,7 @@ class B155OwnedSemanticTests(unittest.TestCase):
         with (
             patch.object(verifier, "MIRROR_URL", f"https://mirror.invalid/{expected}/tla2tools.jar"),
             patch.object(verifier, "MIRROR_SHA256_PINNED", expected),
+            patch.object(verifier, "MIRROR_BYTES_PINNED", len(payload)),
             patch.object(verifier.urllib.request, "urlopen", side_effect=open_fixture),
         ):
             result = verifier._b039(ROOT, live=True)
