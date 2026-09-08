@@ -130,3 +130,38 @@ def test_b216_b251_reject_shell_escape_and_inert_token_mutations() -> None:
             mutated["packets"][item]["command"] = command
             with pytest.raises(GraduationError, match=item):
                 _check_packets(mutated, ROOT)
+
+
+def test_b216_b251_reject_exact_inert_jq_comment_and_string_mutations() -> None:
+    packet = _load_packets(
+        (ROOT / "docs/handoff/2026-09-06-d03-graduation-packets.json").read_text(encoding="utf-8")
+    )
+    mutations = (
+        (
+            "B-216",
+            "(.worker == $worker and .revision == $revision and .event == \"dsr.erasure.dead_letter\" and .event_id == $event_id and .exhausted == true and .action == \"requeue_once\" and .requeue_count == 1)",
+            "(.worker == $worker and .revision == $revision and .event == \"inert-event\" and .event_id == $event_id and .exhausted == true and .action == \"requeue_once\" and .requeue_count == 1) # .event == \"dsr.erasure.dead_letter\"",
+        ),
+        (
+            "B-216",
+            "(.event_id == $event_id and .revision == $revision and .channel == \"paging\" and .delivery_status == \"delivered\" and (.receipt_id|type==\"string\" and length > 0))",
+            "(true and .revision == $revision and .channel == \"paging\" and .delivery_status == \"delivered\" and (.receipt_id|type==\"string\" and length > 0)) | if false then \"event_id == $event_id\" else . end",
+        ),
+        (
+            "B-251",
+            "(.source == \"D02\" and (.seed|type==\"string\") and (.failure|type==\"string\") and (.blob|type==\"string\") and .seed == $seed and .failure == $failure and .blob == $blob)",
+            "(true and (.seed|type==\"string\") and (.failure|type==\"string\") and (.blob|type==\"string\") and .seed == $seed and .failure == $failure and .blob == $blob) # .source == \"D02\"",
+        ),
+        (
+            "B-251",
+            ".measurement_mode == \"fixture_only\" and .production_latency_measured == false",
+            ".measurement_mode == \"fixture_only\" and true | if false then \".production_latency_measured == false\" else . end",
+        ),
+    )
+    for item, needle, replacement in mutations:
+        mutated = copy.deepcopy(packet)
+        command = mutated["packets"][item]["command"]
+        assert needle in command
+        mutated["packets"][item]["command"] = command.replace(needle, replacement, 1)
+        with pytest.raises(GraduationError, match=item):
+            _check_packets(mutated, ROOT)

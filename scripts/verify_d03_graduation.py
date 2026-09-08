@@ -376,6 +376,96 @@ def _check_bounded_shell(item: str, command: str, artifact: str) -> None:
             at_command_start = False
 
 
+def _extract_jq_filters(command: str) -> list[tuple[str, bool, dict[str, str]]]:
+    """Extract bounded jq filters and their ``-n`` mode from shell tokens."""
+
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError as exc:
+        raise GraduationError("jq filter command cannot be tokenized") from exc
+    entries: list[tuple[str, bool, dict[str, str]]] = []
+    index = 0
+    while index < len(tokens):
+        if tokens[index] != "jq":
+            index += 1
+            continue
+        index += 1
+        null_input = False
+        args: dict[str, str] = {}
+        while index < len(tokens):
+            token = tokens[index]
+            if token in {"-e", "--exit-status"}:
+                index += 1
+            elif token in {"-n", "--null-input"}:
+                null_input = True
+                index += 1
+            elif token in {"--arg", "--argjson"} and index + 2 < len(tokens):
+                args[tokens[index + 1]] = tokens[index + 2]
+                index += 3
+            elif token.startswith("-"):
+                index += 1
+            else:
+                entries.append((token, null_input, args))
+                index += 1
+                break
+        else:
+            raise GraduationError("jq invocation has no executable filter")
+    return entries
+
+
+def _run_jq_filter(
+    filter_text: str,
+    payload: object | None,
+    args: dict[str, str],
+    null_input: bool = False,
+) -> tuple[int, str]:
+    argv = ["jq", "-e"]
+    if null_input:
+        argv.append("-n")
+    for name, value in args.items():
+        argv.extend(("--arg", name, value))
+    argv.append(filter_text)
+    completed = subprocess.run(
+        argv,
+        input=None if null_input else json.dumps(payload),
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=5,
+    )
+    return completed.returncode, completed.stdout
+
+
+def _assert_jq_filter_active(
+    label: str,
+    filter_text: str,
+    positive: dict[str, object],
+    all_wrong: dict[str, object],
+    args: dict[str, str],
+) -> None:
+    status, _ = _run_jq_filter(filter_text, positive, args)
+    if status != 0:
+        raise GraduationError(f"{label}: positive jq fixture did not match")
+    for key, value in all_wrong.items():
+        negative = dict(positive)
+        negative[key] = value
+        status, _ = _run_jq_filter(filter_text, negative, args)
+        if status == 0:
+            raise GraduationError(f"{label}: jq predicate is inert for field {key!r}")
+
+
+def _assert_jq_envelope(filter_text: str) -> None:
+    status, output = _run_jq_filter(filter_text, None, {}, null_input=True)
+    if status != 0:
+        raise GraduationError("B-251 envelope jq filter did not execute")
+    try:
+        value = json.loads(output)
+    except json.JSONDecodeError as exc:
+        raise GraduationError("B-251 envelope jq filter did not emit JSON") from exc
+    if value != {"measurement_mode": "fixture_only", "production_latency_measured": False}:
+        raise GraduationError("B-251 envelope jq filter is not the declared fixture envelope")
+
+
 def _check_b216_semantics(command: str) -> None:
     required_fragments = (
         "test -n \"${B216_EXPECTED_REVISION:?provide deployed revision}\"",
@@ -401,6 +491,38 @@ def _check_b216_semantics(command: str) -> None:
     if "grep -Eiq" in command or "|" not in command:
         raise GraduationError("B-216: evidence must use structured all-fields correlation, not OR greps")
 
+    filters = _extract_jq_filters(command)
+    if len(filters) != 4 or any(entry[1] for entry in filters):
+        raise GraduationError("B-216: expected four input-backed jq filters")
+    _assert_jq_filter_active(
+        "B-216 deployed worker correlation",
+        filters[0][0],
+        {"worker": "corelink-signup-worker", "queue": "corelink-dsr-erasure-dlq", "revision": "rev-216"},
+        {"worker": "wrong-worker", "queue": "wrong-queue", "revision": "wrong-revision"},
+        {"worker": "corelink-signup-worker", "queue": "corelink-dsr-erasure-dlq", "revision": "rev-216"},
+    )
+    _assert_jq_filter_active(
+        "B-216 alert correlation",
+        filters[1][0],
+        {"event_id": "evt-216", "revision": "rev-216", "channel": "paging", "delivery_status": "delivered", "receipt_id": "receipt-216"},
+        {"event_id": "wrong-event", "revision": "wrong-revision", "channel": "other", "delivery_status": "failed", "receipt_id": ""},
+        {"event_id": "evt-216", "revision": "rev-216"},
+    )
+    _assert_jq_filter_active(
+        "B-216 tail event correlation",
+        filters[2][0],
+        {"worker": "corelink-signup-worker", "revision": "rev-216", "event": "dsr.erasure.dead_letter", "event_id": "evt-216", "exhausted": True, "action": "requeue_once", "requeue_count": 1},
+        {"worker": "wrong-worker", "revision": "wrong-revision", "event": "wrong-event", "event_id": "wrong-id", "exhausted": False, "action": "drop", "requeue_count": 2},
+        {"worker": "corelink-signup-worker", "revision": "rev-216", "event_id": "evt-216"},
+    )
+    _assert_jq_filter_active(
+        "B-216 repeated alert correlation",
+        filters[3][0],
+        {"event_id": "evt-216", "revision": "rev-216", "channel": "paging", "delivery_status": "delivered", "receipt_id": "receipt-216"},
+        {"event_id": "wrong-event", "revision": "wrong-revision", "channel": "other", "delivery_status": "failed", "receipt_id": ""},
+        {"event_id": "evt-216", "revision": "rev-216", "channel": "paging", "delivery_status": "delivered", "receipt_id": "receipt-216"},
+    )
+
 
 def _check_b251_semantics(command: str, artifact: str) -> None:
     required_fragments = (
@@ -421,6 +543,33 @@ def _check_b251_semantics(command: str, artifact: str) -> None:
         raise GraduationError("B-251: D02 identity must come from the retained artifact, not environment fields")
     if "echo" in command or "grep -Eiq" in command:
         raise GraduationError("B-251: fixture/production truth must be a structured jq assertion")
+
+    filters = _extract_jq_filters(command)
+    if len(filters) != 4:
+        raise GraduationError("B-251: expected identity, envelope, and repeated truth jq filters")
+    identity = next((entry for entry in filters if ".source == \"D02\"" in entry[0]), None)
+    envelope = next((entry for entry in filters if entry[1]), None)
+    truth = [entry for entry in filters if ".measurement_mode" in entry[0]]
+    if identity is None or envelope is None or len(truth) != 2:
+        raise GraduationError("B-251: jq filter roles are not structurally present")
+    _assert_jq_filter_active(
+        "B-251 D02 identity correlation",
+        identity[0],
+        {"source": "D02", "seed": "seed-251", "failure": "failure-251", "blob": "blob-251"},
+        {"source": "wrong-source", "seed": "wrong-seed", "failure": "wrong-failure", "blob": "wrong-blob"},
+        {"seed": "seed-251", "failure": "failure-251", "blob": "blob-251"},
+    )
+    _assert_jq_envelope(envelope[0])
+    for index, (filter_text, null_input, _args) in enumerate(truth):
+        if null_input:
+            raise GraduationError(f"B-251 truth filter {index} unexpectedly uses -n")
+        _assert_jq_filter_active(
+            f"B-251 fixture/production truth {index}",
+            filter_text,
+            {"measurement_mode": "fixture_only", "production_latency_measured": False},
+            {"measurement_mode": "production", "production_latency_measured": True},
+            {},
+        )
 
 
 def _check_command_contract(item: str, packet: dict[str, Any], root: Path) -> None:
