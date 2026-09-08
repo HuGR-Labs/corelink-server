@@ -93,3 +93,21 @@ def test_parent_include_removal_fails_closed() -> None:
     )
     with pytest.raises(verify.VerificationError):
         verify.assess(mutant)
+
+
+def test_raw_include_decoy_cannot_replace_the_cas_parent_wiring() -> None:
+    files = verify.source()
+    marker = 'include!("cas/batch_read.rs");'
+    mutant = dict(files)
+    mutant["cas_module"] = f'r###"{marker}"###\n' + files["cas_module"].replace(marker, "", 1)
+    with pytest.raises(verify.VerificationError):
+        verify.assess(mutant)
+
+
+def test_raw_string_decoy_cannot_replace_the_saturation_log() -> None:
+    files = verify.source()
+    marker = '"global CAS read budget saturated; returning 503 before buffering"'
+    mutant = dict(files)
+    mutant["cas"] = f'r###"{marker}"###\n' + files["cas"].replace(marker, "", 1)
+    with pytest.raises(verify.VerificationError):
+        verify.assess(mutant)

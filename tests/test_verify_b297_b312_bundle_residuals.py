@@ -301,6 +301,22 @@ def test_reviewer_reproducers_reject_removed_revocation_test_include() -> None:
     )
 
 
+def test_reviewer_reproducers_reject_raw_revocation_test_include_decoy() -> None:
+    source = _text(verify.REVOCATION)
+    marker = 'include!("byok_revocation_runtime/part-01.rs");'
+    mutated = f'r###"{marker}"###\n' + source.replace(marker, "", 1)
+    with pytest.raises(verify.VerificationError):
+        verify.verify(overrides={verify.REVOCATION: mutated})
+
+
+def test_reviewer_reproducers_reject_raw_cas_extractor_decoy() -> None:
+    source = _text(verify.CAS_SINGLE)
+    marker = "(auth, scope, headers): CasRequestAuth"
+    mutated = f'r###"{marker}"###\n' + source.replace(marker, "")
+    with pytest.raises(verify.VerificationError):
+        verify.verify(overrides={verify.CAS_SINGLE: mutated})
+
+
 def test_reviewer_reproducers_reject_registry_population_or_identity_mutation(monkeypatch: pytest.MonkeyPatch) -> None:
     families = dict(verify.FAMILY_PATHS)
     families["B-297 adversarial imports"] = (verify.MAIN,)

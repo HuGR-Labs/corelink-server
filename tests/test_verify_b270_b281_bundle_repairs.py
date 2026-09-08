@@ -55,3 +55,58 @@ def test_rand_cannot_move_back_to_dev_dependencies() -> None:
     without = source.replace(f"{line}\n", "", 1)
     mutated = without.replace("[dev-dependencies]", f"[dev-dependencies]\n{line}", 1)
     _must_fail(path, mutated)
+
+
+@pytest.mark.parametrize(
+    ("parent", "child"),
+    [(parent, child) for parent, children in verify.INCLUDE_CENSUSES for child in children],
+)
+def test_each_parent_include_is_load_bearing(parent: str, child: str) -> None:
+    source = _text(parent)
+    marker = f'include!("{child}");'
+    assert marker in source
+    _must_fail(parent, source.replace(marker, f'/* {marker} */', 1))
+
+
+@pytest.mark.parametrize(
+    ("parent", "child"),
+    [(parent, child) for parent, children in verify.INCLUDE_CENSUSES for child in children],
+)
+def test_raw_include_decoys_do_not_rewire_a_parent(parent: str, child: str) -> None:
+    source = _text(parent)
+    marker = f'include!("{child}");'
+    assert marker in source
+    mutated = source.replace(marker, "")
+    mutated = f'r###"{marker}"###\n' + mutated
+    _must_fail(parent, mutated)
+
+
+@pytest.mark.parametrize(
+    ("parent", "child"),
+    [(parent, child) for parent, children in verify.INCLUDE_CENSUSES for child in children],
+)
+def test_each_declared_child_must_be_read(
+    parent: str, child: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    child_path = str(Path(parent).parent / child)
+    original = verify._read
+
+    def read(root: Path, path: str, overrides: dict[str, str]) -> str:
+        if path == child_path:
+            raise verify.VerificationError(f"missing input: {path}")
+        return original(root, path, overrides)
+
+    monkeypatch.setattr(verify, "_read", read)
+    with pytest.raises(verify.VerificationError):
+        verify.verify()
+
+
+@pytest.mark.parametrize(
+    ("path", "marker"),
+    [(path, marker) for path, required, _ in verify.CONTRACTS for marker in required],
+)
+def test_raw_string_decoys_do_not_satisfy_required_markers(path: str, marker: str) -> None:
+    source = _text(path)
+    mutated = source.replace(marker, "")
+    mutated = f'r###"{marker}"###\n' + mutated
+    _must_fail(path, mutated)

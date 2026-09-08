@@ -7,6 +7,8 @@ import argparse
 import re
 from pathlib import Path
 
+from rust_source_lexer import include_paths, mask, normal_string_marker_count, strip_comments
+
 ROOT = Path(__file__).resolve().parent.parent
 
 # The CAS route is an include-based module.  Keep the verifier's population
@@ -54,153 +56,6 @@ def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def _strip_comments(source: str) -> str:
-    """Blank Rust comments while retaining strings for include! extraction."""
-    out: list[str] = []
-    i = 0
-    state = "code"
-    depth = 0
-    while i < len(source):
-        ch = source[i]
-        nxt = source[i + 1] if i + 1 < len(source) else ""
-        if state == "line":
-            if ch == "\n":
-                out.append(ch)
-                state = "code"
-            else:
-                out.append(" ")
-            i += 1
-        elif state == "block":
-            if ch == "/" and nxt == "*":
-                depth += 1
-                out.extend((" ", " "))
-                i += 2
-            elif ch == "*" and nxt == "/":
-                depth -= 1
-                out.extend((" ", " "))
-                i += 2
-                if depth == 0:
-                    state = "code"
-            else:
-                out.append("\n" if ch == "\n" else " ")
-                i += 1
-        elif ch == "/" and nxt == "/":
-            out.extend((" ", " "))
-            state = "line"
-            i += 2
-        elif ch == "/" and nxt == "*":
-            out.extend((" ", " "))
-            state = "block"
-            depth = 1
-            i += 2
-        elif ch == '"':
-            # Include paths live in ordinary strings. Preserve string bytes so
-            # the census can inspect them, but do not treat // inside a string
-            # as a comment opener.
-            out.append(ch)
-            i += 1
-            while i < len(source):
-                out.append(source[i])
-                if source[i] == "\\" and i + 1 < len(source):
-                    i += 1
-                    out.append(source[i])
-                elif source[i] == '"':
-                    i += 1
-                    break
-                i += 1
-        else:
-            out.append(ch)
-            i += 1
-    return "".join(out)
-
-
-def _code(source: str) -> str:
-    """Blank Rust comments and literals, preserving line/offset shape."""
-    out: list[str] = []
-    i = 0
-    state = "code"
-    depth = 0
-    while i < len(source):
-        ch = source[i]
-        nxt = source[i + 1] if i + 1 < len(source) else ""
-        if state == "line":
-            if ch == "\n":
-                out.append(ch)
-                state = "code"
-            else:
-                out.append(" ")
-            i += 1
-            continue
-        if state == "block":
-            if ch == "/" and nxt == "*":
-                depth += 1
-                out.extend((" ", " "))
-                i += 2
-            elif ch == "*" and nxt == "/":
-                depth -= 1
-                out.extend((" ", " "))
-                i += 2
-                if depth == 0:
-                    state = "code"
-            else:
-                out.append("\n" if ch == "\n" else " ")
-                i += 1
-            continue
-        if state in {"string", "char"}:
-            quote = '"' if state == "string" else "'"
-            if ch == "\\":
-                out.append(" ")
-                if i + 1 < len(source):
-                    out.append("\n" if source[i + 1] == "\n" else " ")
-                    i += 2
-                else:
-                    i += 1
-            elif ch == quote:
-                out.append(" ")
-                state = "code"
-                i += 1
-            else:
-                out.append("\n" if ch == "\n" else " ")
-                i += 1
-            continue
-        # Raw strings (including r###"..."### and br###"..."###).
-        raw_start = i
-        if ch == "r" or (ch == "b" and nxt == "r"):
-            quote_index = i + (1 if ch == "r" else 2)
-            hash_index = quote_index
-            while hash_index < len(source) and source[hash_index] == "#":
-                hash_index += 1
-            if hash_index < len(source) and source[hash_index] == '"':
-                hashes = source[quote_index:hash_index]
-                terminator = '"' + hashes
-                end = source.find(terminator, hash_index + 1)
-                end = len(source) if end < 0 else end + len(terminator)
-                out.extend("\n" if c == "\n" else " " for c in source[raw_start:end])
-                i = end
-                continue
-        if ch == "/" and nxt == "/":
-            out.extend((" ", " "))
-            state = "line"
-            i += 2
-        elif ch == "/" and nxt == "*":
-            out.extend((" ", " "))
-            state = "block"
-            depth = 1
-            i += 2
-        elif ch == '"':
-            out.append(" ")
-            state = "string"
-            i += 1
-        elif ch == "'" and i + 2 < len(source) and source[i + 2] == "'":
-            out.append(" ")
-            state = "char"
-            i += 1
-        else:
-            out.append(ch)
-            i += 1
-    return "".join(out)
-
-
 def source() -> dict[str, str]:
     return {
         "cas": "\n".join(read(ROOT / part) for part in CAS_PARTS),
@@ -225,11 +80,12 @@ def handler_span(cas: str, name: str, next_name: str | None = None) -> str:
 
 def assess(files: dict[str, str], expected_status: str = "done") -> None:
     cas = files["cas"]
-    parent = _strip_comments(files["cas_module"])
-    includes = tuple(re.findall(r'include!\(\s*"cas/([^"]+)"\s*\)\s*;', parent))
+    includes = tuple(
+        path.removeprefix("cas/") for path in include_paths(files["cas_module"])
+    )
     if includes != CAS_INCLUDE_CENSUS:
         fail("B-056 CAS parent include census is stale or incomplete")
-    code = _code(cas)
+    code = mask(cas)
     required = (
         (
             "budget declaration",
@@ -301,10 +157,11 @@ def assess(files: dict[str, str], expected_status: str = "done") -> None:
     # Global saturation logs deliberately carry only a static route and weight;
     # tenant/hash/request identifiers would turn a bounded guard into a high-
     # cardinality observability sink.
-    clean_cas = _strip_comments(cas)
-    if clean_cas.count('"global CAS read budget saturated; returning 503 before buffering"') != 1:
+    saturation_marker = "global CAS read budget saturated; returning 503 before buffering"
+    if normal_string_marker_count(cas, saturation_marker) != 1:
         fail("B-056 saturation log marker is missing or ambiguous")
-    offset = clean_cas.index('"global CAS read budget saturated')
+    clean_cas = strip_comments(cas)
+    offset = clean_cas.index(f'"{saturation_marker}')
     saturation = clean_cas[offset:offset + 180]
     if "tenant_id" in saturation or "hash" in saturation or "request_id" in saturation:
         fail("B-056 saturation log contains high-cardinality identity")

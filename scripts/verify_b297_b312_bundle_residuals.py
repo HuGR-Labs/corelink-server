@@ -14,6 +14,8 @@ from types import MappingProxyType
 from pathlib import Path
 from typing import Callable
 
+from rust_source_lexer import include_paths, mask as _code
+
 ROOT = Path(__file__).resolve().parents[1]
 
 ADVERSARIAL = "tests/e2e-tenant-isolation/tests/adversarial.rs"
@@ -107,95 +109,6 @@ def _one_attached_raw(source: str, pattern: str, name: str, label: str) -> re.Ma
     return matches[0]
 
 
-def _code(source: str) -> str:
-    """Blank Rust comments and string/char literals, retaining line shape."""
-    out: list[str] = []
-    i = 0
-    state = "code"
-    block_depth = 0
-    while i < len(source):
-        ch = source[i]
-        nxt = source[i + 1] if i + 1 < len(source) else ""
-        if state == "line":
-            if ch == "\n":
-                out.append(ch)
-                state = "code"
-            else:
-                out.append(" ")
-            i += 1
-            continue
-        if state == "block":
-            if ch == "/" and nxt == "*":
-                block_depth += 1
-                out.extend((" ", " "))
-                i += 2
-            elif ch == "*" and nxt == "/":
-                block_depth -= 1
-                out.extend((" ", " "))
-                i += 2
-                if block_depth == 0:
-                    state = "code"
-            else:
-                out.append("\n" if ch == "\n" else " ")
-                i += 1
-            continue
-        if state in {"string", "char"}:
-            quote = '"' if state == "string" else "'"
-            if ch == "\\":
-                out.append(" ")
-                if i + 1 < len(source):
-                    out.append("\n" if source[i + 1] == "\n" else " ")
-                    i += 2
-                else:
-                    i += 1
-            elif ch == quote:
-                out.append(" ")
-                state = "code"
-                i += 1
-            else:
-                out.append("\n" if ch == "\n" else " ")
-                i += 1
-            continue
-        # Rust raw strings (including byte raw strings) may contain quotes,
-        # brackets, and comment-looking text; blank the complete literal so
-        # reviewer bait inside one cannot satisfy a code predicate.
-        raw_start = i
-        if ch == "r" or (ch == "b" and nxt == "r"):
-            quote_index = i + (1 if ch == "r" else 2)
-            hash_index = quote_index
-            while hash_index < len(source) and source[hash_index] == "#":
-                hash_index += 1
-            if hash_index < len(source) and source[hash_index] == '"':
-                hashes = source[quote_index:hash_index]
-                terminator = '"' + hashes
-                end = source.find(terminator, hash_index + 1)
-                end = len(source) if end < 0 else end + len(terminator)
-                out.extend("\n" if c == "\n" else " " for c in source[raw_start:end])
-                i = end
-                continue
-        if ch == "/" and nxt == "/":
-            out.extend((" ", " "))
-            state = "line"
-            i += 2
-        elif ch == "/" and nxt == "*":
-            out.extend((" ", " "))
-            state = "block"
-            block_depth = 1
-            i += 2
-        elif ch == '"':
-            out.append(" ")
-            state = "string"
-            i += 1
-        elif ch == "'" and i + 2 < len(source) and source[i + 2] == "'":
-            out.append(" ")
-            state = "char"
-            i += 1
-        else:
-            out.append(ch)
-            i += 1
-    return "".join(out)
-
-
 def _one_name(source: str, name: str, label: str) -> re.Match[str]:
     return _one(_code(source), rf"\bfn\s+{re.escape(name)}\s*\(", label)
 
@@ -272,12 +185,7 @@ def _imports(s: str, crate: str, label: str) -> str:
 
 def _include_paths(source: str, label: str) -> tuple[str, ...]:
     """Return real include! paths, excluding comment/string bait."""
-    code = _code(source)
-    paths: list[str] = []
-    for match in re.finditer(r'include!\(\s*"([^"]+)"\s*\)\s*;', source):
-        if code[match.start() : match.start() + len("include!")] != "include!":
-            continue
-        paths.append(match.group(1))
+    paths = include_paths(source)
     if not paths:
         raise VerificationError(f"{label}: include! census is empty")
     return tuple(paths)
