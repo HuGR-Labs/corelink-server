@@ -290,6 +290,34 @@ def test_b105_packet_binds_to_production_evidence_workflow() -> None:
     with pytest.raises(GraduationError, match="B-105"):
         _check_packets(missing_download, ROOT)
 
+    echoed_download = copy.deepcopy(packet)
+    echoed_download["packets"]["B-105"]["command"] = echoed_download["packets"]["B-105"]["command"].replace(
+        'gh run download "$run_id"', "echo 'gh run download \"$run_id\"'", 1
+    )
+    with pytest.raises(GraduationError, match="B-105"):
+        _check_packets(echoed_download, ROOT)
+
+    commented_download = copy.deepcopy(packet)
+    commented_download["packets"]["B-105"]["command"] = commented_download["packets"]["B-105"]["command"].replace(
+        'gh run download "$run_id"', '# gh run download "$run_id"', 1
+    )
+    with pytest.raises(GraduationError, match="B-105"):
+        _check_packets(commented_download, ROOT)
+
+    echoed_jq = copy.deepcopy(packet)
+    echoed_jq["packets"]["B-105"]["command"] = echoed_jq["packets"]["B-105"]["command"].replace(
+        "jq -e", "echo 'jq -e'", 2
+    )
+    with pytest.raises(GraduationError, match="B-105"):
+        _check_packets(echoed_jq, ROOT)
+
+    commented_jq = copy.deepcopy(packet)
+    commented_jq["packets"]["B-105"]["command"] = commented_jq["packets"]["B-105"]["command"].replace(
+        "jq -e", "# jq -e", 2
+    )
+    with pytest.raises(GraduationError, match="B-105"):
+        _check_packets(commented_jq, ROOT)
+
     bad_even_median = copy.deepcopy(packet)
     bad_even_median["packets"]["B-104"]["command"] = bad_even_median["packets"]["B-104"]["command"].replace(
         "((v[int((n+1)/2)] + v[int((n+2)/2)]) / 2)", "v[int((n+1)/2)]", 1

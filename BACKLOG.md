@@ -12248,7 +12248,7 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-106 — um verify de PAT frio custa 711 ms e o TTL do KV é 60 s, então todo cliente paga isso continuamente
+### B-106 — um verify de PAT frio custa 711 ms e o TTL do KV é 30 s, então todo cliente paga isso continuamente
 
 Achado que só apareceu porque a causa do [B-102] foi refutada: ao provar que o `desc` era
 camada de cache e não caminho de código, o número que sobrou deixou de ser um artefato de
@@ -12258,8 +12258,7 @@ Um verify servido pelo D1 custa **711 ms**; servido pelo KV, **8 ms**; pela L1 d
 **0 ms**. Medido em produção, 2026-08-30.
 
 O alcance é o ponto. `worker/src/lib/pat_verify_cache.ts` documenta as camadas: L1 é
-per-isolate com TTL de ~5 s, e o L2 KV tem TTL de **60 s** — o comentário na linha 92 diz
-que 60 s é o **piso do KV**, não uma escolha. Então a cada 60 segundos, para cada token, em
+per-isolate com TTL de ~5 s, e o L2 KV tem TTL de **30 s**. Então a cada 30 segundos, para cada token, em
 cada colo, o primeiro request paga 711 ms. Isso não é caso excepcional: é o estado
 permanente de qualquer tráfego que não seja uma rajada contínua sobre o mesmo token no
 mesmo colo.
@@ -12288,9 +12287,9 @@ verify-means: |
   parked — exige credencial de produção e, pior, exige medir um estado FRIO, que é
   destrutivo de si mesmo: a primeira medição aquece o cache e a segunda mede outra coisa.
 
-  Procedimento: um request autenticado com um token que não seja usado há mais de 60 s (ou
-  recém-mintado), lendo o `Server-Timing`. Confirmar `auth;desc="d1"` e cronometrar. Repetir
-  em intervalos maiores que 60 s para amostrar — nunca em sequência, que é exatamente o erro
+  Procedimento: um request autenticado com um token recém-mintado que permaneça sem uso por
+  pelo menos 61 s, lendo o `Server-Timing`. Confirmar `auth;desc="d1"` e cronometrar. Repetir
+  em intervalos maiores que 61 s para amostrar — nunca em sequência, que é exatamente o erro
   que produziu a causa errada do [B-102].
 
   Fecha quando um verify frio cair para a ordem de dezenas de ms, que é o que o comentário
@@ -12301,7 +12300,7 @@ verify-means: |
   tomado sempre. São consertos diferentes e só uma medição as distingue — não escolha por
   intuição, que já custou uma causa errada neste pacote.
 
-  NÃO fechar aumentando o TTL do KV. 60 s é o piso do KV, e alongar a janela de cache
+  NÃO fechar aumentando o TTL do KV. O runtime usa TTL de 30 s; alongar a janela de cache
   alarga a janela de revogação — a ADR-0030 fixa 60 s de p99 para revogação, e trocar
   latência por janela de revogação é trocar performance por furo de segurança.
 last-verified: 2026-09-05

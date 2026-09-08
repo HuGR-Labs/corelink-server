@@ -26,7 +26,7 @@ PHASE = re.compile(r"(?:^|[, ])([a-z][a-z0-9_]*);dur=([0-9]+(?:\.[0-9]+)?)")
 AUTH_PHASE = re.compile(r'(?:^|[, ])auth;dur=[0-9]+(?:\.[0-9]+)?;desc="(l1|kv|d1)"(?:[, ]|$)')
 # Keep the evidence field bound to the deployed Worker contract.  The cold
 # proof intentionally remains stricter than this TTL: a token must be idle for
-# at least 60 seconds, even though the current L2 entry expires after 30 s.
+# at least 61 seconds, even though the current L2 entry expires after 30 s.
 KV_PAT_ROW_TTL_SECONDS = 30
 COLD_IDLE_SECONDS = 61
 
@@ -45,6 +45,7 @@ def mint_binding_sha256(attestation: dict[str, object]) -> str:
             "minted_at_epoch": attestation.get("minted_at_epoch"),
             "unused_since_epoch": attestation.get("unused_since_epoch"),
             "observed_at_epoch": attestation.get("observed_at_epoch"),
+            "attestation_source": attestation.get("attestation_source"),
         },
         sort_keys=True,
         separators=(",", ":"),

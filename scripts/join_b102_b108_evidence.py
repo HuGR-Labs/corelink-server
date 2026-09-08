@@ -22,6 +22,28 @@ SCHEMA = "corelink.performance-evidence.v2"
 SOURCE = "worker/src/lib/quota.ts"
 
 
+def mint_binding_sha256(attestation: dict[str, Any]) -> str:
+    material = json.dumps(
+        {
+            "expires_ms": attestation.get("expires_ms"),
+            "pat_id": attestation.get("pat_id"),
+            "tenant_id": attestation.get("tenant_id"),
+            "token_fingerprint": attestation.get("token_fingerprint"),
+            "token_id": attestation.get("token_id"),
+            "mint_operation_id": attestation.get("mint_operation_id"),
+            "mint_request_id": attestation.get("mint_request_id"),
+            "mint_response_sha256": attestation.get("mint_response_sha256"),
+            "minted_at_epoch": attestation.get("minted_at_epoch"),
+            "unused_since_epoch": attestation.get("unused_since_epoch"),
+            "observed_at_epoch": attestation.get("observed_at_epoch"),
+            "attestation_source": attestation.get("attestation_source"),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return "sha256:" + hashlib.sha256(material).hexdigest()
+
+
 def load(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -59,6 +81,8 @@ def main() -> int:
             "github_repository": context["repository"],
             "github_event": context["github_event"],
             "github_run_id": context["github_run_id"],
+            "github_run_attempt": context["github_run_attempt"],
+            "github_run_started_at": context["github_run_started_at"],
             "github_deployment_id": context["github_deployment_id"],
             "provider_record": provider,
             "provider_blob_sha256": context["provider_blob_sha256"],
@@ -76,6 +100,20 @@ def main() -> int:
         value = dict(value)
         value["deployment"] = deployment(item)
         value["tenant_id"] = tenant
+        if item == "B-106":
+            attestation = dict(value.get("cold_attestation", {}))
+            attestation["attestation_source"] = {
+                "kind": "github_actions_run",
+                "workflow": "perf-production-evidence",
+                "repository": context["repository"],
+                "run_id": context["github_run_id"],
+                "attempt": context["github_run_attempt"],
+                "event": context["github_event"],
+                "head_sha": source_head,
+                "started_at": context["github_run_started_at"],
+            }
+            attestation["mint_response_binding_sha256"] = mint_binding_sha256(attestation)
+            value["cold_attestation"] = attestation
         items[item] = value
 
     b105 = {

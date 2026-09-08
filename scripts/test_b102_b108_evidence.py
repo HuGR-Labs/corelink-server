@@ -27,6 +27,7 @@ RAW64 = "sha256:" + ZERO64
 
 
 def deployment(op: str) -> dict:
+    run_started_at = datetime.fromtimestamp(NOW - 300, timezone.utc).isoformat().replace("+00:00", "Z")
     return {
         "repository": verifier.REPO,
         "environment": "production",
@@ -36,6 +37,8 @@ def deployment(op: str) -> dict:
         "github_repository": verifier.REPO,
         "github_event": "workflow_dispatch",
         "github_run_id": "123456789",
+        "github_run_attempt": "1",
+        "github_run_started_at": run_started_at,
         "github_deployment_id": "987654321",
         "provider_record": {"provider": "cloudflare", "environment": "production", "commit": SHA, "deployment_id": "deploy-123456"},
         "provider_blob_sha256": RAW64,
@@ -71,13 +74,13 @@ def packet() -> dict:
                 "B-103": {"tenant_id": TENANT, "deployment": deployments["B-103"], "runs": runs},
                 "B-104": {"tenant_id": TENANT, "deployment": deployments["B-104"], "samples": samples104, "computed": {"median_ms": 24.5, "p90_ms": 28.1}},
                 "B-105": {"tenant_id": TENANT, "deployment": deployments["B-105"], "pairs": pairs},
-                "B-106": {"tenant_id": TENANT, "deployment": deployments["B-106"], "kv_ttl_seconds": verifier.KV_PAT_ROW_TTL_SECONDS, "cold_attestation": row("op-b106-mint", mint_operation_id="op-b106-mint", minted_at_epoch=NOW - 130, unused_since_epoch=NOW - 120, observed_at_epoch=NOW - 60, mint_raw_output_sha256=RAW64, mint_response_sha256=RAW64, mint_response_binding_sha256=RAW64, mint_request_id="req-b106-mint", pat_id="pat-b106", token_id="tok-b106", expires_ms=(NOW + 300) * 1000, token_fingerprint="sha256:" + ZERO64), "cold": row("op-b106-cold", status=404, authenticated=True, auth_source="d1", colo="GRU", response_request_id="req-b106-cold", auth_ms=40, raw_output_sha256=RAW64, token_fingerprint="sha256:" + ZERO64), "warm_control": row("op-b106-warm", status=404, authenticated=True, auth_source="kv", colo="GRU", response_request_id="req-b106-warm", raw_output_sha256=RAW64, token_fingerprint="sha256:" + ZERO64)},
+                "B-106": {"tenant_id": TENANT, "deployment": deployments["B-106"], "kv_ttl_seconds": verifier.KV_PAT_ROW_TTL_SECONDS, "cold_attestation": row("op-b106-mint", mint_operation_id="op-b106-mint", minted_at_epoch=NOW - 130, unused_since_epoch=NOW - 120, observed_at_epoch=NOW - 59, mint_raw_output_sha256=RAW64, mint_response_sha256=RAW64, mint_response_binding_sha256=RAW64, mint_request_id="req-b106-mint", pat_id="pat-b106", token_id="tok-b106", expires_ms=(NOW + 300) * 1000, token_fingerprint="sha256:" + ZERO64, attestation_source={"kind": "github_actions_run", "workflow": "perf-production-evidence", "repository": verifier.REPO, "run_id": "123456789", "attempt": "1", "event": "workflow_dispatch", "head_sha": SHA, "started_at": deployments["B-106"]["github_run_started_at"]}), "cold": row("op-b106-cold", status=404, authenticated=True, auth_source="d1", colo="GRU", response_request_id="req-b106-cold", auth_ms=40, raw_output_sha256=RAW64, token_fingerprint="sha256:" + ZERO64), "warm_control": row("op-b106-warm", status=404, authenticated=True, auth_source="kv", colo="GRU", response_request_id="req-b106-warm", raw_output_sha256=RAW64, token_fingerprint="sha256:" + ZERO64)},
                 "B-107": {"tenant_id": TENANT, "deployment": deployments["B-107"], "samples": [dict(s, method="PUT", status=200, payload_bytes=1024) for s in samples107], "computed": {"p50_ms": 30, "p90_ms": 30, "p99_ms": 30}},
                 "B-108": b108,
             }}
     # Keep the fixture bound to the deployed runtime contract rather than a
     # duplicated TTL literal; the cold attestation remains independently
-    # required to prove a 60-second idle interval below.
+    # required to prove a 61-second idle interval below.
     result["items"]["B-106"]["kv_ttl_seconds"] = verifier.KV_PAT_ROW_TTL_SECONDS
     result["items"]["B-106"]["cold_attestation"]["mint_response_binding_sha256"] = verifier.mint_binding_sha256(result["items"]["B-106"]["cold_attestation"])
     return result
@@ -124,14 +127,18 @@ def collector_wire_and_join_round_trip() -> None:
         evidence["items"]["B-104"]["samples"] = samples
         evidence["items"]["B-104"]["computed"] = {"median_ms": median, "p90_ms": p90}
         live_now = time.time()
+        trusted_started = datetime.fromtimestamp(live_now - 300, timezone.utc).isoformat().replace("+00:00", "Z")
+        for evidence_item in evidence["items"].values():
+            if isinstance(evidence_item, dict) and isinstance(evidence_item.get("deployment"), dict):
+                evidence_item["deployment"]["github_run_started_at"] = trusted_started
         attestation = evidence["items"]["B-106"]["cold_attestation"]
-        attestation.update(minted_at_epoch=live_now - 130, unused_since_epoch=live_now - 120, observed_at_epoch=live_now - 60)
+        attestation.update(minted_at_epoch=live_now - 130, unused_since_epoch=live_now - 120, observed_at_epoch=live_now - 59)
         attestation["mint_response_binding_sha256"] = verifier.mint_binding_sha256(attestation)
 
         deployment_record = evidence["items"]["B-108"]["deployment"]
         context = {"schema": "corelink.performance-evidence.context.v1", "repository": verifier.REPO,
                    "environment": "production", "source_head": SHA, "github_event": "workflow_dispatch",
-                   "github_run_id": "123456789", "github_deployment_id": "987654321", "deployment_id": deployment_record["deployment_id"],
+                   "github_run_id": "123456789", "github_run_attempt": "1", "github_run_started_at": deployment_record["github_run_started_at"], "github_deployment_id": "987654321", "deployment_id": deployment_record["deployment_id"],
                    "provider": "cloudflare", "provider_commit": SHA, "provider_record": deployment_record["provider_record"],
                    "provider_blob_sha256": RAW64}
         measurements = {"tenant_id": TENANT, "items": {item: evidence["items"][item] for item in ("B-102", "B-103", "B-104", "B-106", "B-107")}}
@@ -201,6 +208,11 @@ def main() -> int:
     expect_error(lambda p: p["items"]["B-106"]["cold_attestation"].update(mint_response_sha256="sha256:" + "b" * 64), "B106 response digest")
     expect_error(lambda p: p["items"]["B-106"]["cold_attestation"].update(mint_response_binding_sha256="sha256:" + "b" * 64), "B106 binding digest")
     expect_error(lambda p: p["items"]["B-106"]["cold_attestation"].update(mint_request_id="substituted-request"), "B106 request identity")
+    def mismatched_attestation_source(p: dict) -> None:
+        attestation = p["items"]["B-106"]["cold_attestation"]
+        attestation["attestation_source"]["head_sha"] = "b" * 40
+        attestation["mint_response_binding_sha256"] = verifier.mint_binding_sha256(attestation)
+    expect_error(mismatched_attestation_source, "B106 trusted source correlation")
     expect_error(lambda p: p["items"]["B-106"]["cold"].pop("response_request_id"), "B106 wire request identity")
     expect_error(lambda p: p["items"]["B-105"]["pairs"].pop(), "B105 six pairs")
     expect_error(lambda p: p["items"]["B-107"]["samples"][0].update(status=500), "B107 status")

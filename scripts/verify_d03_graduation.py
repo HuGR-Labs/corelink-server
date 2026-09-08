@@ -624,6 +624,62 @@ def _check_b251_semantics(command: str, artifact: str) -> None:
         )
 
 
+
+def _active_shell_segments(command: str) -> list[list[str]]:
+    """Tokenize executable shell words, dropping comments and quoted bait."""
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|<>\n")
+    lexer.whitespace_split = True
+    lexer.commenters = "#"
+    separators = {";", "&&", "||", "|", "&", "\n"}
+    segments: list[list[str]] = []
+    current: list[str] = []
+    for token in lexer:
+        if token in separators:
+            if current:
+                segments.append(current)
+                current = []
+        else:
+            current.append(token)
+    if current:
+        segments.append(current)
+    return segments
+
+
+def _require_b105_active_commands(command: str) -> None:
+    """Require B-105's load-bearing operations as executable shell commands."""
+    segments = _active_shell_segments(command)
+
+    def has_prefix(words: tuple[str, ...]) -> bool:
+        return any(tuple(segment[: len(words)]) == words for segment in segments)
+
+    def has_sequence(words: tuple[str, ...]) -> bool:
+        return any(
+            any(tuple(segment[i : i + len(words)]) == words for i in range(len(segment) - len(words) + 1))
+            for segment in segments
+        )
+
+    def has_nested_prefix(prefix: str) -> bool:
+        return any(
+            segment and segment[0] not in {"echo", "printf", ":"} and token.startswith(prefix)
+            for segment in segments
+            for token in segment
+        )
+
+    if not has_sequence(("set", "-euo", "pipefail")):
+        raise GraduationError("B-105: strict shell options are not executable")
+    if not has_prefix(("gh", "workflow", "run", "perf-production-evidence.yml", "--ref", "main")):
+        raise GraduationError("B-105: workflow dispatch is not executable")
+    if not has_sequence(("gh", "run", "watch")) or not (
+        has_sequence(("gh", "run", "view")) or has_nested_prefix("run_meta=$(gh run view ")
+    ):
+        raise GraduationError("B-105: correlated run wait/view is not executable")
+    if not has_prefix(("gh", "run", "download")):
+        raise GraduationError("B-105: artifact download is not executable")
+    if not has_prefix(("jq", "-e")):
+        raise GraduationError("B-105: jq assertion is not executable")
+    if not has_prefix(("python3", "scripts/verify_b102_b108_evidence.py", "--packet")):
+        raise GraduationError("B-105: packet verification is not executable")
+
 def _check_command_contract(item: str, packet: dict[str, Any], root: Path) -> None:
     expected = COMMAND_CONTRACTS.get(item)
     if expected is None:
@@ -735,6 +791,7 @@ def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict
         _check_command_contract(item, packet, root)
         if item == "B-105":
             command = packet["command"]
+            _require_b105_active_commands(command)
             exact_dispatch = "gh workflow run perf-production-evidence.yml --ref main"
             if command.count(exact_dispatch) != 1:
                 raise GraduationError("B-105: gate must dispatch exactly perf-production-evidence.yml from main")

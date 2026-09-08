@@ -32,7 +32,7 @@ SECRET = re.compile(r"(?i)(bearer\s+|pat[_-]?token|api[_-]?key|password|secret|p
 FINGERPRINT = re.compile(r"^sha256:[0-9a-f]{64}$")
 MAX_AGE = 15 * 60
 FRESH_MINT_MAX_AGE_SECONDS = 15 * 60
-COLD_MIN_IDLE_SECONDS = 60
+COLD_MIN_IDLE_SECONDS = 61
 KV_PAT_ROW_TTL_SECONDS = 30
 CLOCK_TOLERANCE = 2
 COUNTER_SQL = (
@@ -100,6 +100,7 @@ def mint_binding_sha256(att: dict[str, Any]) -> str:
             "minted_at_epoch": att.get("minted_at_epoch"),
             "unused_since_epoch": att.get("unused_since_epoch"),
             "observed_at_epoch": att.get("observed_at_epoch"),
+            "attestation_source": att.get("attestation_source"),
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -156,6 +157,10 @@ def deployment(item: dict[str, Any], label: str, root: Path, tenant: str) -> str
     run_id = text(d.get("github_run_id"), f"{label}.deployment.github_run_id")
     if not run_id.isdigit():
         raise EvidenceError(f"{label}.deployment.github_run_id is malformed")
+    run_attempt = text(d.get("github_run_attempt"), f"{label}.deployment.github_run_attempt")
+    if not run_attempt.isdigit() or int(run_attempt) < 1:
+        raise EvidenceError(f"{label}.deployment.github_run_attempt is malformed")
+    iso_epoch(d.get("github_run_started_at"), f"{label}.deployment.github_run_started_at")
     github_deployment_id = text(d.get("github_deployment_id"), f"{label}.deployment.github_deployment_id")
     if not github_deployment_id.isdigit():
         raise EvidenceError(f"{label}.deployment.github_deployment_id is malformed")
@@ -293,6 +298,7 @@ def b105(item: dict[str, Any], root: Path, tenant: str) -> str:
 
 def b106(item: dict[str, Any], root: Path, tenant: str, now: float) -> str:
     deployment(item, "B-106", root, tenant)
+    deployment_record = obj(item.get("deployment"), "B-106.deployment")
     if item.get("kv_ttl_seconds") != KV_PAT_ROW_TTL_SECONDS:
         raise EvidenceError(f"B-106 evidence must report the runtime {KV_PAT_ROW_TTL_SECONDS}-second KV TTL")
     att = obj(item.get("cold_attestation"), "B-106.cold_attestation")
@@ -314,9 +320,30 @@ def b106(item: dict[str, Any], root: Path, tenant: str, now: float) -> str:
         raise EvidenceError("B-106 token fingerprint is not SHA-256")
     if att.get("mint_response_binding_sha256") != mint_binding_sha256(att):
         raise EvidenceError("B-106 mint response binding is not reproducible")
+    source = obj(att.get("attestation_source"), "B-106.attestation_source")
+    if source.get("kind") != "github_actions_run":
+        raise EvidenceError("B-106 attestation source is not a GitHub Actions run")
+    if source.get("workflow") != "perf-production-evidence":
+        raise EvidenceError("B-106 attestation source workflow is not the production evidence lane")
+    if source.get("repository") != REPO:
+        raise EvidenceError("B-106 attestation source is not the canonical repository")
+    if source.get("event") != deployment_record.get("github_event"):
+        raise EvidenceError("B-106 attestation source event is not correlated")
+    if str(source.get("run_id")) != str(deployment_record.get("github_run_id")):
+        raise EvidenceError("B-106 attestation source run is not correlated")
+    if str(source.get("attempt")) != str(deployment_record.get("github_run_attempt")):
+        raise EvidenceError("B-106 attestation source attempt is not correlated")
+    if source.get("head_sha") != deployment_record.get("source_head"):
+        raise EvidenceError("B-106 attestation source SHA is not correlated")
+    source_started = iso_epoch(source.get("started_at"), "B-106.attestation_source.started_at")
+    deployment_started = iso_epoch(deployment_record.get("github_run_started_at"), "B-106.deployment.github_run_started_at")
+    if abs(source_started - deployment_started) > CLOCK_TOLERANCE:
+        raise EvidenceError("B-106 attestation source timestamp is not correlated")
     for key in ("minted_at_epoch", "unused_since_epoch", "observed_at_epoch"):
         num(att.get(key), f"B-106.{key}", 1)
     minted, unused, observed = (float(att[k]) for k in ("minted_at_epoch", "unused_since_epoch", "observed_at_epoch"))
+    if minted < source_started - CLOCK_TOLERANCE:
+        raise EvidenceError("B-106 mint predates the trusted workflow attestation")
     if (
         not minted <= unused <= observed - COLD_MIN_IDLE_SECONDS
         or minted > now + CLOCK_TOLERANCE
