@@ -1487,7 +1487,7 @@ source-document: "PR containment audit #1550/#1558"
 source-locator: "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md:3-20"
 finding-title: "canonical WP ledger must stay aligned with the dense 324-item population"
 problem: "the ledger verifier, catalogs and pending changelogs once described an obsolete pre-D03 baseline instead of the delivered main base and live owner population"
-evidence: "python3 scripts/verify_backlog_wp_ledger.py after final reconciliation: 336 items, 16 open, 281 done, 39 parked; the prior 324/16/269/39 population is retained only as the obsolete baseline this item corrected; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
+evidence: "python3 scripts/verify_backlog_wp_ledger.py after final reconciliation: 337 items, 16 open, 282 done, 39 parked; the prior 324/16/269/39 population is retained only as the obsolete baseline this item corrected; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
 acceptance: "the ledger and catalogs name delivered main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266 as the immutable ancestry base, retain 7b992e9db123abeb76381b1c1337011692f2e834 only as D03 provenance, reconcile live counts, and fail closed on wrong or unrelated ancestry"
 verify: |
   set -euo pipefail
@@ -1500,14 +1500,14 @@ verify: |
   sys.path.insert(0, "scripts")
   import verify_backlog_wp_ledger as ledger
   text = Path("BACKLOG.md").read_text()
-  assert len(ledger.all_backlog_ids(text)) == 336
+  assert len(ledger.all_backlog_ids(text)) == 337
   assert len(ledger.open_backlog_ids(text)) == 16
-  assert ledger.backlog_status_counts(text) == {"open": 16, "done": 281, "parked": 39}
+  assert ledger.backlog_status_counts(text) == {"open": 16, "done": 282, "parked": 39}
   assert ledger.LEDGER_BASE_REF == "main"
   assert ledger.LEDGER_BASE_SHA == "ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
   PY
 verify-means: |
-  done — the live verifier proves 16/16 open-ID ownership, 336 total records,
+  done — the live verifier proves 16/16 open-ID ownership, 337 total records,
   exact catalog populations, predecessor ordering, editable/workflow ownership,
   and the D03 base ref/SHA relationship. The focused parser suite remains
   load-bearing: stale metadata, a tampered base and missing CI predecessor are
@@ -1812,7 +1812,7 @@ source-locator: ".claude/skills/techlead/SKILL.md:L2.10; reports/b326-loc-cap-ba
 finding-title: "new Rust and TypeScript source files had no CI-enforced 500-line hard cap"
 problem: "The Tech Lead charter required every new .rs/.ts/.tsx file to stay at or below 500 LOC, but its shell example depended on a locally available origin/main ref and was not a stable CI contract. A shallow or remote-less checkout could skip the population entirely or report an indeterminate result."
 evidence: "The committed origin/main-equivalent path manifest is pinned to main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266; the stdlib verifier classifies tracked source paths absent from that manifest, rejects unmarked files over 500 LOC, reports the 200-LOC advisory band, and passes its mutation/self-tests. Related charter, spec/frontmatter and secrets-matrix findings are closed in the cumulative B-326 tree."
-acceptance: "A reviewed baseline manifest is required and hash-checked; the tracked added .rs/.ts/.tsx population is non-empty and closed; missing, malformed, stale or empty populations fail closed; generated exceptions require an explicit @generated marker; any unmarked file over 500 LOC is a hard failure; workflow paths and both PR/push steps run the verifier and its mutations; B-155 and the D03 ledgers report 336 total, 281 done, 39 parked, 16 open (0 TL-open) and 315 command-bearing records."
+acceptance: "A reviewed baseline manifest is required and hash-checked; the tracked added .rs/.ts/.tsx population is non-empty and closed; missing, malformed, stale or empty populations fail closed; generated exceptions require an explicit @generated marker; any unmarked file over 500 LOC is a hard failure; workflow paths and both PR/push steps run the verifier and its mutations; B-155 and the D03 ledgers report 337 total, 282 done, 39 parked, 16 open (0 TL-open) and 316 command-bearing records."
 verify: python3 scripts/verify_b326_loc_cap.py --self-test
 verify-means: |
   done — the verifier uses only the committed baseline manifest and local tracked
@@ -2101,6 +2101,36 @@ verify-means: |
   done — the exact Turbo fixture test passes on the integrated head, derives
   its four-request fan-out from the production constant, and retains the
   load-bearing aggregate byte assertion.
+last-verified: 2026-09-07
+```
+
+### B-337 — postmerge CAS test module exceeded the enforced 500-LOC cap
+
+The D03 postmerge proof ran the B-326 closed-population guard against the
+delivered tree and found that the final cancellation coverage had grown
+`tests_batch_part2.rs` to 590 lines. The repair separates the batch-write tests
+from the batch-read/cancellation module without changing production code or test
+behavior.
+
+```backlog
+id: B-337
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 postmerge B-326 proof"
+source-locator: "crates/corelink-container/src/routes/cas.rs; crates/corelink-container/src/routes/cas/tests_batch_part2.rs; crates/corelink-container/src/routes/cas/tests_batch_write_part2.rs"
+finding-title: "final CAS test module exceeded the mechanically enforced 500-line hard cap"
+problem: "The final cancellation tests landed after the B-326 source split and grew tests_batch_part2.rs to 590 lines, so the postmerge B-326 guard correctly rejected the delivered tree."
+evidence: "Commit 3e4c263af splits the module into 410-line batch-read/cancellation and 179-line batch-write files; the B-326 guard/self-test passes and the focused CAS batch test population remains 10/10 green."
+acceptance: "Every new CAS source file is at most 500 lines without a generated exception or lint suppression; all preexisting batch tests remain registered exactly once; the focused tests and B-326 mutation-backed closed-population guard pass; production behavior is unchanged."
+verify: |
+  python3 scripts/verify_b326_loc_cap.py --self-test
+  cargo test -p corelink-server --lib routes::cas::tests::batch --locked -- --test-threads=1
+verify-means: |
+  done — the enforced population reports both split files below 500 lines and
+  still rejects an oversized mutation. The focused Rust population executes all
+  ten batch tests once, preserving read ordering, cancellation ownership and
+  batch-write behavior while the diff touches test module wiring only.
 last-verified: 2026-09-07
 ```
 
@@ -15247,8 +15277,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-07):** `records=336`,
-  `command_records=315`, `manual=21`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-07):** `records=337`,
+  `command_records=316`, `manual=21`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma
