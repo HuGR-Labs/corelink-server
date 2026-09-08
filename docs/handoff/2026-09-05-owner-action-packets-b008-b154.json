@@ -4,7 +4,7 @@
   "repository": "HuGR-Labs/corelink-server",
   "base_sha": "908d3bdc86f17a8b41a280baaea9352d7ed450ab",
   "status": "engineering-packet-only",
-  "non_claim": "No credential was minted, external account changed, legal instrument signed, file deleted, deployment made, or production result asserted by this packet; the owner-authorized B-110 workflow migration is recorded separately by its code commit and redacted evidence.",
+  "non_claim": "No credential was minted, external account changed, legal instrument signed, deployment made, or production result asserted by this packet; the owner-authorized B-013 deletion is evidenced separately by its redacted evidence, and the B-110 workflow migration is recorded separately by its code commit and redacted evidence.",
   "population": ["B-008", "B-012", "B-013", "B-032", "B-035", "B-065", "B-086", "B-089", "B-097", "B-110", "B-111", "B-154", "B-029", "B-044", "B-046", "B-054", "B-063", "B-068", "B-071", "B-072", "B-083", "B-102", "B-106", "B-113", "B-125", "B-128", "B-134", "B-142", "B-165"],
   "items": [
     {
@@ -57,8 +57,8 @@
     },
     {
       "id": "B-013",
-      "owner": "owner",
-      "status": "open",
+      "owner": "tl",
+      "status": "done",
       "action_type": "secure_local_private_key_deletion",
       "procedure": [
         "RUN: On the owner’s Mac, inspect only ~/Downloads/corelink-app.pk8.pem, ~/Downloads/corelink-runners-fleet.2026-06-15.private-key.pem, and ~/Downloads/corelink-runners.2026-07-13.private-key.pem; stop if any path is not a regular file or has changed unexpectedly.",
@@ -75,7 +75,7 @@
         "required_fields": ["schema_version", "captured_at", "machine", "targets", "public_key_preserved", "all_targets_absent_after", "operator"],
         "item_schema": "targets[] entries contain basename, size_before_bytes, mtime_before, deletion_command, and exists_after; no key bytes or hashes are stored."
       },
-      "expected_postcondition": "Exactly the three named private-key files are absent from ~/Downloads while the public key is preserved; B-013 remains open until the owner updates its status.",
+      "expected_postcondition": "Exactly the three named private-key files are absent from ~/Downloads while the public key is preserved; the owner-authorized redacted evidence records this closure and B-013 is closed in BACKLOG without this packet inspecting or reproducing the owner filesystem.",
       "retry_and_rollback": "If preflight is ambiguous, stop without deleting. After successful deletion, retry only the absence check. Secure deletion has no rollback; recoverable copies must be handled by the owner outside this repository before proceeding.",
       "references": ["BACKLOG.md#B-013"]
     },

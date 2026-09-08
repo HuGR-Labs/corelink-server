@@ -3,8 +3,12 @@
 
 This guard validates the packet's portable engineering contract only. It never
 contacts GitHub, PagerDuty, Stripe, Drata, Cloudflare, Apple, Windows, or a
-customer, and it never treats an owner action as completed. Missing, duplicate,
+customer, and it never independently treats an owner action as completed merely
+because a packet field is present. Missing, duplicate,
 ambiguous, or mutated packet fields are errors rather than an empty result.
+It does not perform or independently reproduce an owner action; a closed row is
+accepted only when its packet metadata and canonical BACKLOG contract record the
+corresponding repository/evidence closure.
 """
 
 from __future__ import annotations
@@ -26,7 +30,13 @@ EXPECTED_IDS = (
     "B-072", "B-083", "B-102", "B-106", "B-113", "B-125", "B-128",
     "B-134", "B-142", "B-165",
 )
-LEGACY_OWNER_IDS = frozenset(EXPECTED_IDS[:12])
+# B-013 was reconciled from an external owner action to a repository-side
+# closure record after its redacted deletion evidence received a strict focal
+# verifier.  It therefore no longer belongs to the legacy ``owner`` subset;
+# the other eleven legacy rows remain owner-controlled until their actions are
+# evidenced and reclassified.
+LEGACY_OWNER_IDS = frozenset(EXPECTED_IDS[:12]) - {"B-013"}
+CLOSED_PACKET_IDS = frozenset({"B-013", "B-110"})
 ITEM_FIELDS = {
     "id", "owner", "status", "action_type", "procedure",
     "inputs_and_credentials_boundary", "evidence", "expected_postcondition",
@@ -380,10 +390,11 @@ def _check_item(
     canonical_owner, canonical_status = backlog_contracts[expected_id]
     expected_owner = "owner" if expected_id in LEGACY_OWNER_IDS else "tl"
     allowed_statuses = {"open", "parked"}
-    # B-110 may close after the owner selects the already-provisioned CoreLink
+    # B-013 closes on its owner-authorized redacted deletion record, while
+    # B-110 closes after the owner selects the already-provisioned CoreLink
     # Linux substrate and the four workflow migrations are evidenced. Other
     # legacy owner items remain external-action pending by contract.
-    if expected_id == "B-110":
+    if expected_id in CLOSED_PACKET_IDS:
         allowed_statuses.add("done")
     if canonical_owner != expected_owner or canonical_status not in allowed_statuses:
         raise PacketError(
