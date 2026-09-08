@@ -1,0 +1,14 @@
+{
+  "schema": "corelink-b006-capability-metrics-v1",
+  "source": "https://corelink-spawn-worker.gmhelmold.workers.dev/internal/v1/metrics",
+  "captured_at": "2026-09-08T19:26:53Z",
+  "http_status": 200,
+  "authenticated": true,
+  "aggregate_only": true,
+  "labels_included": false,
+  "capability_claim_unserved": 0,
+  "reopen_threshold": {
+    "counter": "capability_claim_unserved",
+    "condition": ">0"
+  }
+}

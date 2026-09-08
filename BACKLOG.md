@@ -2856,26 +2856,31 @@ last-verified: 2026-08-25
 ### B-006 — F4 (the N-image menu) waits on demand, not on cost
 
 The cost premise that justified deferring this is measured false: a second
-container class costs nothing at zero idle. The criterion is now a number —
-`capability_claim_unserved`, live since `#485`, currently **0**. Nobody has yet
-asked for a machine shape the fleet does not serve.
+container class costs nothing at zero idle. The criterion is demand-gated by
+`capability_claim_unserved`, live since `#485`. The authenticated aggregate
+snapshot captured on 2026-09-08 is **0**, so there is no current unmet image
+shape to implement; B-006 is done until the reopen threshold is crossed.
 
 ```backlog
 id: B-006
 repo: corelink-runners
 owner: tl
-status: parked
+status: done
 verify: manual
 verify-means: |
-  parked until `capability_claim_unserved` leaves zero; read the aggregate-only
-  snapshot from the spawn-worker production surface
+  done while the aggregate-only snapshot from the spawn-worker production
+  surface remains zero:
   `https://corelink-spawn-worker.gmhelmold.workers.dev/internal/v1/metrics`.
   Authenticate with the dedicated `METRICS_OBSERVABILITY_KEY` in the
   `X-Corelink-Internal-Auth` header. A CoreLink tenant PAT / `Authorization:
   Bearer` (`CORELINK_PROD_TOKEN`) is the wrong credential class for this
   operator-read route and must not be recorded as evidence. Omit all labels,
   tenant identifiers, and customer identifiers from the retained artifact.
-last-verified: 2026-08-23
+  Redacted evidence: `docs/validation/evidence/b006-capability-claim-unserved-2026-09-08.json`.
+  Reopen only when a fresh authenticated aggregate reports
+  `capability_claim_unserved > 0`; missing, stale, or unauthenticated evidence
+  is indeterminate and never closes or reopens the item by itself.
+last-verified: 2026-09-08
 ```
 
 ### B-007 — the near-ceiling warning goes nowhere
