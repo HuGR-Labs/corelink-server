@@ -261,6 +261,104 @@ def workflow_runs_on(path: str) -> list[str]:
     ]
 
 
+def workflow_active_lines(path: str) -> list[str]:
+    """Return non-empty workflow lines with YAML comment-only lines removed."""
+    return [
+        line
+        for line in text(path).splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+
+def workflow_top_block(path: str, key: str) -> list[str]:
+    """Return one top-level YAML mapping block, failing closed if ambiguous."""
+    lines = workflow_active_lines(path)
+    matches = [index for index, line in enumerate(lines) if line == f"{key}:"]
+    assert_true(len(matches) == 1, f"workflow top-level block is not unique: {path}:{key}")
+    start = matches[0] + 1
+    end = next(
+        (index for index in range(start, len(lines)) if not lines[index].startswith((" ", "\t"))),
+        len(lines),
+    )
+    return lines[start:end]
+
+
+def workflow_triggers(path: str) -> list[str]:
+    """Return active event keys directly under the workflow's `on:` block."""
+    return [
+        match.group(1)
+        for line in workflow_top_block(path, "on")
+        if (match := re.match(r"^  ([A-Za-z_][A-Za-z0-9_-]*):(?:\s|$)", line))
+    ]
+
+
+def workflow_job_block(path: str, job: str) -> list[str]:
+    """Return one named job block, excluding sibling jobs."""
+    lines = workflow_top_block(path, "jobs")
+    matches = [
+        index for index, line in enumerate(lines)
+        if line == f"  {job}:"
+    ]
+    assert_true(len(matches) == 1, f"workflow job is not unique: {path}:{job}")
+    start = matches[0]
+    end = next(
+        (
+            index for index in range(start + 1, len(lines))
+            if re.match(r"^  [A-Za-z0-9_.-]+:\s*$", lines[index])
+        ),
+        len(lines),
+    )
+    return lines[start:end]
+
+
+def workflow_job_names(path: str) -> list[str]:
+    return [
+        match.group(1)
+        for line in workflow_top_block(path, "jobs")
+        if (match := re.match(r"^  ([A-Za-z0-9_.-]+):\s*$", line))
+    ]
+
+
+def workflow_write_permissions(lines: list[str], *, job: bool) -> list[str]:
+    indent = r"\s{6}" if job else r"\s{2}"
+    return [
+        match.group(1)
+        for line in lines
+        if (match := re.match(rf"^{indent}([A-Za-z0-9_-]+):\s*write(?:\s|$)", line))
+    ]
+
+
+def assert_trusted_write_boundary(block: list[str], label: str) -> None:
+    """Require a job-level guard for every effective write permission."""
+    job_conditions = [line for line in block if re.match(r"^    if:\s*", line)]
+    assert_true(len(job_conditions) == 1, f"{label} does not have one job-level trust guard")
+    source = job_conditions[0]
+    required = (
+        "github.repository == 'HuGR-Labs/corelink-server'",
+        "github.ref == 'refs/heads/main'",
+        "github.ref_protected",
+    )
+    for marker in required:
+        assert_true(marker in source, f"{label} is missing trusted-source guard: {marker}")
+    assert_true("github.event_name == '" in source, f"{label} is missing trusted-event guard")
+
+
+def assert_trusted_write_guard(block: list[str], event: str, label: str) -> None:
+    """Require all four dimensions of the self-hosted write trust boundary."""
+    assert_trusted_write_boundary(block, label)
+    source = next(line for line in block if re.match(r"^    if:\s*", line))
+    assert_true(f"github.event_name == '{event}'" in source, f"{label} has the wrong trusted event")
+
+
+def assert_literal_concurrency(path: str, group: str) -> None:
+    block = workflow_top_block(path, "concurrency")
+    groups = [line for line in block if re.match(r"^  group:\s*", line)]
+    cancels = [line for line in block if re.match(r"^  cancel-in-progress:\s*", line)]
+    assert_true(groups == [f'  group: "{group}"'], f"concurrency group is not literal: {path}")
+    assert_true(cancels == ["  cancel-in-progress: false"], f"concurrency is cancelling: {path}")
+    assert_true("github.ref" not in "\n".join(block), f"concurrency is ref-split: {path}")
+
+
 def packet_item(item_id: str) -> dict[str, object]:
     packet = json.loads(text("docs/handoff/2026-09-05-owner-action-packets-b008-b154.json"))
     items = packet.get("items")
@@ -272,15 +370,64 @@ def packet_item(item_id: str) -> dict[str, object]:
 
 def verify_b110() -> None:
     lanes = ("cas_foundation", "coverage", "ffi-matrix-ci", "mutation-nightly")
+    workflow_paths = [f".github/workflows/{lane}.yml" for lane in lanes]
+    workflow_paths.append(".github/workflows/semgrep.yml")
     for lane in lanes:
         values = workflow_runs_on(f".github/workflows/{lane}.yml")
         assert_true(values, f"runner population missing: {lane}")
         assert_true(all(value == "corelink" for value in values), f"non-corelink runner present: {lane}")
+        assert_true(
+            workflow_triggers(f".github/workflows/{lane}.yml") == ["workflow_dispatch"],
+            f"untrusted or implicit trigger present: {lane}",
+        )
     values = workflow_runs_on(".github/workflows/semgrep.yml")
     assert_true(len(values) == 1, "semgrep runner population is not exactly one")
     assert_true(not re.search(r"ubuntu|macos|windows", values[0], re.I), "semgrep returned to hosted runner")
+    assert_true(workflow_triggers(".github/workflows/semgrep.yml") == ["workflow_dispatch"], "semgrep trigger is not dispatch-only")
+
+    for path in workflow_paths:
+        top_permissions = workflow_write_permissions(workflow_top_block(path, "permissions"), job=False)
+        for job in workflow_job_names(path):
+            block = workflow_job_block(path, job)
+            if not any(re.match(r"^\s+runs-on:\s+corelink(?:\s|$)", line) for line in block):
+                continue
+            job_permissions = workflow_write_permissions(block, job=True)
+            effective = job_permissions if any(line == "    permissions:" for line in block) else top_permissions
+            if effective:
+                assert_trusted_write_boundary(block, f"{path}:{job} ({','.join(effective)})")
+
+    # Every self-hosted job with a write-capable token is checked by name so a
+    # future job cannot satisfy this predicate merely by placing a guard in a
+    # neighboring job or in a comment.
+    assert_trusted_write_guard(
+        workflow_job_block(".github/workflows/cas_foundation.yml", "cosign-sign"),
+        "push",
+        "cas cosign-sign",
+    )
+    mutation_block = workflow_job_block(".github/workflows/mutation-nightly.yml", "aggregate")
+    assert_trusted_write_guard(mutation_block, "workflow_dispatch", "mutation aggregate")
+    assert_true(
+        "if: github.event_name == 'workflow_dispatch' && github.repository == 'HuGR-Labs/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected"
+        in "\n".join(mutation_block),
+        "mutation commit step is missing the trusted-source guard",
+    )
+    semgrep_block = workflow_job_block(".github/workflows/semgrep.yml", "semgrep")
+    assert_trusted_write_guard(
+        semgrep_block,
+        "workflow_dispatch",
+        "semgrep",
+    )
+    semgrep_permissions = workflow_top_block(".github/workflows/semgrep.yml", "permissions")
+    assert_true(
+        semgrep_permissions == ["  security-events: write", "  contents: read"],
+        "semgrep permissions are broader than SARIF upload plus checkout",
+    )
+    coverage_permissions = workflow_top_block(".github/workflows/coverage.yml", "permissions")
+    assert_true(coverage_permissions == ["  contents: read"], "coverage retains dead write permissions")
+    assert_literal_concurrency(".github/workflows/cas_foundation.yml", "corelink-heavy-cargo-build")
+    assert_literal_concurrency(".github/workflows/coverage.yml", "corelink-heavy-cargo-build")
     assert_true(packet_item("B-110").get("status") == "done", "B-110 owner packet is not done")
-    print("done: four lanes use corelink and semgrep remains outside hosted capacity")
+    print("done: corelink runners, trusted write guards, least privilege, and shared heavy-build serialization verified")
 
 
 def verify_b111() -> None:

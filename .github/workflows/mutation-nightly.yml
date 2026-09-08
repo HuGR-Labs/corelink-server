@@ -288,7 +288,10 @@ jobs:
   aggregate:
     name: Aggregate per-crate JSON → reports/mutation/latest.json
     needs: mutants
-    if: always()
+    # This job owns contents/issues write. It may only run from the protected
+    # canonical main ref in the canonical repository; a fork or unprotected
+    # dispatch must never place write-capable credentials on corelink.
+    if: always() && github.repository == 'HuGR-Labs/corelink-server' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected
     runs-on: corelink
     permissions:
       contents: write       # least-privilege: write only on the aggregator
@@ -342,7 +345,7 @@ jobs:
           PY
 
       - name: Commit latest.json (signed) on delta
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && github.repository == 'HuGR-Labs/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

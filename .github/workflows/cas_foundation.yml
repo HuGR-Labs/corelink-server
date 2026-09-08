@@ -6,11 +6,11 @@ name: CAS Foundation CI (WI-S01-007)
 # required by the workspace and coverage links.
 
 concurrency:
-  # Escopo por ref. Grupo CONSTANTE torna o grupo repo-global: duas execucoes
-  # `workflow_dispatch` deste mesmo workflow em branches DIFERENTES cancelam uma
-  # a outra. Foi o que matou tres dispatches em 2026-08-31.
-  group: "ci-cas-foundation-ci-wi-s01-007-${{ github.event.pull_request.number || github.ref }}"
-  cancel-in-progress: true
+  # Shared with coverage.yml: workspace and coverage builds must never compile
+  # concurrently against the same heavy-build resource class. A literal group
+  # queues dispatches across refs and non-cancelling preserves every result.
+  group: "corelink-heavy-cargo-build"
+  cancel-in-progress: false
 
 # Sprint-level convergence workflow per WI-S01-007.
 # Adds CI gates that the per-crate workflows (tenant-path, corelink-hash,
@@ -293,7 +293,7 @@ jobs:
     needs: [sbom-cyclonedx]
     # Release-only: push to main = release surrogate. Tag-based releases
     # (when shipped post-S-12) will extend this to `refs/tags/v*` via OR.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.repository == 'HuGR-Labs/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
     permissions:
       id-token: write   # OIDC token for Fulcio short-lived cert
       contents: read

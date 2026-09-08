@@ -44,5 +44,81 @@ class B126BatchVerifierTests(unittest.TestCase):
                 verifier.verify_b126()
 
 
+class B110WorkflowVerifierTests(unittest.TestCase):
+    def _mutated_text(self, target: str, old: str, new: str) -> object:
+        original = verifier.text
+
+        def read(candidate: str) -> str:
+            source = original(candidate)
+            if candidate == target:
+                source = source.replace(old, new, 1)
+            return source
+
+        return patch.object(verifier, "text", side_effect=read)
+
+    def test_baseline_trust_and_capacity_are_green(self) -> None:
+        verifier.verify_b110()
+
+    def test_untrusted_trigger_is_red(self) -> None:
+        mutation = self._mutated_text(
+            ".github/workflows/coverage.yml",
+            "  workflow_dispatch:\n",
+            "  push:\n",
+        )
+        with mutation:
+            with self.assertRaises(verifier.CheckError):
+                verifier.verify_b110()
+
+    def test_unprotected_mutation_writer_is_red(self) -> None:
+        mutation = self._mutated_text(
+            ".github/workflows/mutation-nightly.yml",
+            " && github.ref_protected",
+            "",
+        )
+        with mutation:
+            with self.assertRaises(verifier.CheckError):
+                verifier.verify_b110()
+
+    def test_ref_split_or_cancelling_heavy_build_is_red(self) -> None:
+        mutation = self._mutated_text(
+            ".github/workflows/cas_foundation.yml",
+            'group: "corelink-heavy-cargo-build"',
+            'group: "corelink-heavy-cargo-build-${{ github.ref }}"',
+        )
+        with mutation:
+            with self.assertRaises(verifier.CheckError):
+                verifier.verify_b110()
+
+    def test_dead_write_permission_is_red(self) -> None:
+        mutation = self._mutated_text(
+            ".github/workflows/coverage.yml",
+            "  contents: read\n",
+            "  contents: read\n  pull-requests: write\n",
+        )
+        with mutation:
+            with self.assertRaises(verifier.CheckError):
+                verifier.verify_b110()
+
+    def test_semgrep_permission_expansion_is_red(self) -> None:
+        mutation = self._mutated_text(
+            ".github/workflows/semgrep.yml",
+            "  contents: read\n",
+            "  contents: read\n  actions: read\n",
+        )
+        with mutation:
+            with self.assertRaises(verifier.CheckError):
+                verifier.verify_b110()
+
+    def test_unguarded_corelink_job_with_write_permission_is_red(self) -> None:
+        mutation = self._mutated_text(
+            ".github/workflows/ffi-matrix-ci.yml",
+            "  contents: read\n",
+            "  contents: write\n",
+        )
+        with mutation:
+            with self.assertRaises(verifier.CheckError):
+                verifier.verify_b110()
+
+
 if __name__ == "__main__":
     unittest.main()
