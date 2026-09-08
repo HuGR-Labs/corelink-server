@@ -22,7 +22,7 @@ class B160VerifierTest(unittest.TestCase):
             timeout=30,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("6/6 rejected", result.stdout)
+        self.assertIn("12/12 rejected", result.stdout)
 
     def test_missing_pnpm_is_red(self):
         environment = os.environ.copy()

@@ -2,7 +2,7 @@
 """Executable B-160 proof gate.
 
 This is deliberately a small, bounded verifier rather than a source grep:
-it checks the complete authority path, proves its own teeth with six
+it checks the complete authority path, proves its own teeth with twelve
 mutations, and runs the load-bearing Worker focal suite while reading its
 machine-readable result.
 """
@@ -10,6 +10,7 @@ machine-readable result.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import re
@@ -58,75 +59,143 @@ def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def _strip_ts_comments(source: str) -> str:
-    """Remove TypeScript comments without touching string literals."""
-    output: list[str] = []
+def _ts_tokens(source: str) -> list[tuple[str, str]]:
+    """Tokenize enough TypeScript to isolate one real initializer.
+
+    Comments (including nested block comments) and all quoted/template
+    strings are opaque tokens. This prevents declaration-shaped bait inside
+    prose, strings, or templates from becoming verifier input.
+    """
+    tokens: list[tuple[str, str]] = []
     index = 0
     while index < len(source):
-        if source[index] == '"':
-            start = index
+        character = source[index]
+        if character.isspace():
             index += 1
-            while index < len(source):
-                if source[index] == "\\":
-                    index += 2
-                elif source[index] == '"':
-                    index += 1
-                    break
-                else:
-                    index += 1
-            output.append(source[start:index])
             continue
         if source.startswith("//", index):
             newline = source.find("\n", index + 2)
-            if newline < 0:
-                output.append("\n")
-                break
-            output.append("\n")
-            index = newline + 1
+            index = len(source) if newline < 0 else newline + 1
             continue
         if source.startswith("/*", index):
-            end = source.find("*/", index + 2)
-            if end < 0:
+            index += 2
+            depth = 1
+            while index < len(source) and depth:
+                # Treat a comment opener at a token boundary as a nested
+                # comment. This handles nested bait while leaving prose such
+                # as `/v1/privacy/*` inside a documentation comment alone.
+                if source.startswith("/*", index) and (
+                    index == 0 or source[index - 1].isspace()
+                ):
+                    depth += 1
+                    index += 2
+                elif source.startswith("*/", index):
+                    depth -= 1
+                    index += 2
+                else:
+                    index += 1
+            if depth:
                 fail("B-160 CLIENT_TRUST_HEADERS has an unterminated comment")
-            newlines = source[index : end + 2].count("\n")
-            output.append("\n" * newlines)
-            index = end + 2
             continue
-        output.append(source[index])
+        if character in {'"', "'", "`"}:
+            quote = character
+            start = index
+            index += 1
+            terminated = False
+            while index < len(source):
+                if source[index] == "\\":
+                    index += 2
+                elif source[index] == quote:
+                    index += 1
+                    terminated = True
+                    break
+                else:
+                    index += 1
+            if not terminated:
+                fail(f"B-160 CLIENT_TRUST_HEADERS has an unterminated {quote} string")
+            kind = "template" if quote == "`" else "string"
+            tokens.append((kind, source[start:index]))
+            continue
+        if character.isalpha() or character in {"_", "$"}:
+            end = index + 1
+            while end < len(source) and (source[end].isalnum() or source[end] in {"_", "$"}):
+                end += 1
+            tokens.append(("ident", source[index:end]))
+            index = end
+            continue
+        if character.isdigit():
+            end = index + 1
+            while end < len(source) and (source[end].isalnum() or source[end] in "._"):
+                end += 1
+            tokens.append(("number", source[index:end]))
+            index = end
+            continue
+        tokens.append(("punct", character))
         index += 1
-    return "".join(output)
+    return tokens
 
 
 def _client_trust_header_literals(source: str) -> tuple[str, ...]:
-    """Extract exact quoted elements from the authoritative trust-header list."""
-    uncommented = _strip_ts_comments(source)
-    match = re.search(
-        r"const\s+CLIENT_TRUST_HEADERS\s*:\s*ReadonlyArray<string>\s*=\s*\["
-        r"(?P<body>.*?)\];",
-        uncommented,
-        re.DOTALL,
-    )
-    if match is None:
-        fail("B-160 CLIENT_TRUST_HEADERS initializer is missing or malformed")
+    """Extract exact literals from exactly one authoritative initializer."""
+    tokens = _ts_tokens(source)
+    declarations = [
+        index for index in range(len(tokens) - 1)
+        if tokens[index][0] == "ident"
+        and tokens[index][1] in {"const", "let", "var"}
+        and tokens[index + 1] == ("ident", "CLIENT_TRUST_HEADERS")
+    ]
+    if len(declarations) != 1 or tokens[declarations[0]][1] != "const":
+        fail("B-160 CLIENT_TRUST_HEADERS initializer is ambiguous; expected exactly one const declaration")
+
+    declaration = declarations[0]
+    expected = ["const", "CLIENT_TRUST_HEADERS", ":", "ReadonlyArray", "<", "string", ">", "=", "["]
+    actual = [value for _, value in tokens[declaration : declaration + len(expected)]]
+    if actual != expected:
+        fail("B-160 CLIENT_TRUST_HEADERS initializer is malformed")
+    opening = declaration + len(expected) - 1
+    depth = 0
+    closing: int | None = None
+    for index in range(opening, len(tokens)):
+        if tokens[index][1] == "[":
+            depth += 1
+        elif tokens[index][1] == "]":
+            depth -= 1
+            if depth == 0:
+                closing = index
+                break
+    if closing is None or closing + 1 >= len(tokens) or tokens[closing + 1][1] != ";":
+        fail("B-160 CLIENT_TRUST_HEADERS initializer is malformed")
+
     literals: list[str] = []
-    for raw_entry in match.group("body").split(","):
-        entry = raw_entry.strip()
+    entry: list[tuple[str, str]] = []
+
+    def consume() -> None:
         if not entry:
-            continue
-        if entry.startswith('"') and entry.endswith('"'):
-            try:
-                value = json.loads(entry)
-            except json.JSONDecodeError as error:
-                fail(f"B-160 CLIENT_TRUST_HEADERS contains malformed string literal: {error}")
-            if not isinstance(value, str):
-                fail("B-160 CLIENT_TRUST_HEADERS contains a non-string literal")
-            literals.append(value)
-        elif re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", entry):
-            # A trusted constant (currently STORAGE_QUOTA_HEADER) is a valid
-            # list element but cannot satisfy an exact literal requirement.
-            continue
+            return
+        if len(entry) != 1:
+            fail(f"B-160 CLIENT_TRUST_HEADERS contains non-literal or unknown entry: {entry!r}")
+        kind, raw = entry[0]
+        if kind == "ident" and raw == "STORAGE_QUOTA_HEADER":
+            return
+        if kind != "string":
+            fail(f"B-160 CLIENT_TRUST_HEADERS contains non-literal or unknown entry: {entry!r}")
+        try:
+            value = ast.literal_eval(raw)
+        except (SyntaxError, ValueError) as error:
+            fail(f"B-160 CLIENT_TRUST_HEADERS contains malformed string literal: {error}")
+        if not isinstance(value, str):
+            fail("B-160 CLIENT_TRUST_HEADERS contains a non-string literal")
+        literals.append(value)
+
+    for token in tokens[opening + 1 : closing]:
+        if token[1] == ",":
+            consume()
+            entry = []
         else:
-            fail(f"B-160 CLIENT_TRUST_HEADERS contains an invalid element: {entry!r}")
+            entry.append(token)
+    consume()
+    if literals.count("x-corelink-pat-issue-authorized") != 1:
+        fail("B-160 authoritative CLIENT_TRUST_HEADERS list lacks exactly one PAT lease header")
     return tuple(literals)
 
 
@@ -151,7 +220,6 @@ def validate_source(files: dict[str, str]) -> None:
         ("rate", 'response.headers.set("Retry-After"'),
         ("do", "await this.enforcePatIssueRateLimit("),
         ("do", 'headers.set(PAT_ISSUE_AUTHORIZED_HEADER, "1")'),
-        ("edge", '"x-corelink-pat-issue-authorized"'),
         ("edge", "function stripClientTrustHeaders"),
     )
     for name, needle in required:
@@ -221,12 +289,52 @@ def mutation_checks(files: dict[str, str]) -> None:
         (
             "remove edge lease strip",
             {**files, "edge": files["edge"].replace('  "x-corelink-pat-issue-authorized",\n', "", 1)},
-            "runtime proof missing '\"x-corelink-pat-issue-authorized\"'",
+            "authoritative CLIENT_TRUST_HEADERS list lacks exactly one PAT lease header",
         ),
         (
             "comment bait in trust-header list",
             {**files, "edge": files["edge"].replace('  "x-corelink-pat-issue-authorized",\n', '  // "x-corelink-pat-issue-authorized",\n', 1)},
-            "authoritative CLIENT_TRUST_HEADERS list lacks exact PAT lease header",
+            "authoritative CLIENT_TRUST_HEADERS list lacks exactly one PAT lease header",
+        ),
+        (
+            "single-quoted bait outside initializer",
+            {**files, "edge": files["edge"].replace(
+                '  "x-corelink-pat-issue-authorized",\n', "", 1
+            ) + "\nconst B160_SINGLE_BAIT = 'x-corelink-pat-issue-authorized';\n"},
+            "authoritative CLIENT_TRUST_HEADERS list lacks exactly one PAT lease header",
+        ),
+        (
+            "double-quoted bait outside initializer",
+            {**files, "edge": files["edge"].replace(
+                '  "x-corelink-pat-issue-authorized",\n', "", 1
+            ) + '\nconst B160_DOUBLE_BAIT = "x-corelink-pat-issue-authorized";\n'},
+            "authoritative CLIENT_TRUST_HEADERS list lacks exactly one PAT lease header",
+        ),
+        (
+            "template bait outside initializer",
+            {**files, "edge": files["edge"].replace(
+                '  "x-corelink-pat-issue-authorized",\n', "", 1
+            ) + "\nconst B160_TEMPLATE_BAIT = `x-corelink-pat-issue-authorized`;\n"},
+            "authoritative CLIENT_TRUST_HEADERS list lacks exactly one PAT lease header",
+        ),
+        (
+            "nested comment bait outside initializer",
+            {**files, "edge": files["edge"].replace(
+                '  "x-corelink-pat-issue-authorized",\n', "", 1
+            ) + '\n/* outer /* nested "x-corelink-pat-issue-authorized" */ still hidden */\n'},
+            "authoritative CLIENT_TRUST_HEADERS list lacks exactly one PAT lease header",
+        ),
+        (
+            "duplicate trust-header initializer",
+            {**files, "edge": files["edge"] + '\nconst CLIENT_TRUST_HEADERS: ReadonlyArray<string> = ["x-corelink-pat-issue-authorized"];\n'},
+            "CLIENT_TRUST_HEADERS initializer is ambiguous",
+        ),
+        (
+            "dynamic trust-header entry",
+            {**files, "edge": files["edge"].replace(
+                '  "x-corelink-pat-issue-authorized",\n', "  makePatIssueHeader(),\n", 1
+            )},
+            "contains non-literal or unknown entry",
         ),
         (
             "no-op edge strip",
@@ -248,6 +356,15 @@ def mutation_checks(files: dict[str, str]) -> None:
             fail("B-160 mutation fixture did not change edge behavior")
         if files["edge"] == mutant["edge"] and name == "comment bait in trust-header list":
             fail("B-160 mutation fixture did not change trust-header list")
+        if files["edge"] == mutant["edge"] and name in {
+            "single-quoted bait outside initializer",
+            "double-quoted bait outside initializer",
+            "template bait outside initializer",
+            "nested comment bait outside initializer",
+            "duplicate trust-header initializer",
+            "dynamic trust-header entry",
+        }:
+            fail(f"B-160 mutation fixture did not change trust-header parser input: {name}")
         if files["shim"] == mutant["shim"] and name == "rewired production auth shim":
             fail("B-160 mutation fixture did not change production shim")
         try:
@@ -336,11 +453,11 @@ def main() -> int:
         validate_source(files)
         mutation_checks(files)
         if args.self_test:
-            print("B-160 verifier mutation teeth: 6/6 rejected")
+            print("B-160 verifier mutation teeth: 12/12 rejected")
             return 0
         pnpm = assert_dependencies()
         run_focal(pnpm)
-        print("B-160 confirmed: runtime seams, 6/6 mutations, and focal Vitest 9/9 passed")
+        print("B-160 confirmed: runtime seams, 12/12 mutations, and focal Vitest 9/9 passed")
         return 0
     except VerificationError as error:
         print(f"B-160 DRIFTED: {error}", file=sys.stderr)
