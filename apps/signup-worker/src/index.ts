@@ -32,6 +32,8 @@ import { runDsrVerifySweep } from "./webhooks/dsr_verify_cron.js";
 import { runPatScrubSweep } from "./webhooks/pat_scrub_cron.js";
 import { runAuditDrainSweep } from "./webhooks/audit_drain_cron.js";
 import { runAuditArchiveSweep } from "./webhooks/audit_archive_cron.js";
+import { providerFromEnv, runSlaCreditSweep } from "./webhooks/sla_credit_cron.js";
+import type { SlaCreditCronEnv } from "./webhooks/sla_credit_cron.js";
 import { withSecurityHeaders } from "./security-headers.js";
 
 type WorkerEnv = AutoProvisionEnv &
@@ -121,7 +123,7 @@ const baseHandler: ExportedHandler<SignupEnv> = {
     }
   },
 
-  // Hourly Cron Trigger (`0 * * * *`). Drives three independent sweeps:
+  // Hourly Cron Trigger (`0 * * * *`). Drives four independent sweeps:
   //   1. DSR 24h verification sweep — re-fingerprints every DSR past its 24h
   //      SLA deadline via the container /_internal/dsr/verify endpoint (inert
   //      until CORELINK_INTERNAL_AUTH_KEY is bound, task #46).
@@ -133,8 +135,27 @@ const baseHandler: ExportedHandler<SignupEnv> = {
   //      tamper-evident hash chain via the container /_internal/audit/drain
   //      endpoint (idempotent; inert until the erase/internal-auth key is
   //      bound, task #46).
+  //   4. B-089 closed-month SLA credit settlement. The provider gate is
+  //      checked again inside the sweep/provider, so a manually supplied
+  //      provider cannot bypass the parked default.
   async scheduled(_event, env: SignupEnv, ctx: ExecutionContext): Promise<void> {
     const nowMs = Date.now();
+
+    ctx.waitUntil(
+      runSlaCreditSweep(
+        env as unknown as SlaCreditCronEnv,
+        nowMs,
+        providerFromEnv(env as unknown as SlaCreditCronEnv),
+      )
+        .then((r) => {
+          console.log(
+            `[sla-credit-cron] skipped=${r.skipped} ok=${r.ok} produced=${r.produced} measured=${r.measured} created=${r.created} applied=${r.applied} failed=${r.failed} blocked=${r.blocked} reconciled=${r.reconciled}`,
+          );
+        })
+        .catch((err: unknown) => {
+          Sentry.captureException(err);
+        }),
+    );
 
     const db = env.CONFIG_DB;
     if (db) {

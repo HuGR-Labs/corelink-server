@@ -1,0 +1,239 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  StripeInvoiceItemProvider,
+  evaluateSlaCredit,
+  monthlyCutoffAtMs,
+  parseUtcMonth,
+  providerFromEnv,
+  runSlaCreditSweep,
+  type D1DatabaseLike,
+  type D1PreparedStatement,
+  type SlaMonthlyMeasurement,
+} from "../src/webhooks/sla_credit_cron.js";
+
+type Row = Record<string, unknown>;
+
+function baseMeasurement(overrides: Partial<SlaMonthlyMeasurement> = {}): SlaMonthlyMeasurement {
+  return {
+    tenant_id: "tenant-1",
+    service_period: "2026-08",
+    tier: "pro",
+    monthly_fee_minor: 5_000,
+    currency: "USD",
+    availability_percent: 99.4,
+    latency_excess_percent: 0,
+    latency_sustained_minutes: 0,
+    dsr_breach_days: 0,
+    billing_drift_percent: 0,
+    billing_drift_sustained_hours: 0,
+    force_majeure: false,
+    eligible_at_ms: 0,
+    ...overrides,
+  };
+}
+
+/** Small D1 double that records the SQL boundaries the adversarial cases care about. */
+class MemoryDb implements D1DatabaseLike {
+  measurements: Row[];
+  ledger = new Map<string, Row>();
+  outbox = new Map<string, Row>();
+  recon = new Map<string, Row>();
+  audits: Row[] = [];
+  customer: string | null = "cus_test";
+  constructor(measurements: Row[]) { this.measurements = measurements; }
+
+  prepare(sql: string): D1PreparedStatement {
+    let args: unknown[] = [];
+    const statement = {
+      bind: (...values: unknown[]) => { args = values; return statement; },
+      all: async <T = Row>() => {
+        if (sql.includes("sla_monthly_observations")) return { results: [] as T[] };
+        if (sql.includes("sla_monthly_measurements")) {
+          return { results: this.measurements.filter((row) => row.state === "pending" && Number(row.eligible_at_ms) <= Number(args[0])).slice(0, 100) as T[] };
+        }
+        if (sql.includes("tenant_billing")) return { results: this.customer ? [{ stripe_customer_id: this.customer }] as T[] : [] as T[] };
+        if (sql.includes("FROM sla_credit_ledger")) {
+          const now = Number(args[0]);
+          return { results: [...this.ledger.values()].filter((row) =>
+            ((row.status === "pending" || row.status === "failed") && Number(row.next_attempt_at_ms) <= now) ||
+            (row.status === "processing" && Number(row.lease_until_ms) <= Number(args[1]))).slice(0, 100) as T[] };
+        }
+        return { results: [] as T[] };
+      },
+      run: async () => this.run(sql, args),
+    };
+    return statement;
+  }
+
+  async batch(statements: D1PreparedStatement[]) {
+    const results: { meta: { changes: number } }[] = [];
+    for (const statement of statements) results.push(await statement.run() as { meta: { changes: number } });
+    return results;
+  }
+
+  private async run(sql: string, args: unknown[]): Promise<{ meta: { changes: number } }> {
+    if (sql.includes("INSERT OR IGNORE INTO sla_credit_ledger")) {
+      const id = String(args[0]);
+      if (this.ledger.has(id)) return { meta: { changes: 0 } };
+      this.ledger.set(id, {
+        credit_id: id, tenant_id: args[1], service_period: args[2], credit_percent: args[3], amount_minor: args[4], currency: args[5],
+        stripe_customer_id: args[6], status: "pending", idempotency_key: args[7], catastrophic: args[8], attempts: 0,
+        next_attempt_at_ms: args[9], created_at_ms: args[10], updated_at_ms: args[11],
+      });
+      return { meta: { changes: 1 } };
+    }
+    if (sql.includes("UPDATE sla_monthly_measurements")) {
+      const row = this.measurements.find((item) => item.tenant_id === args[5] && item.service_period === args[6] && item.state === "pending");
+      if (!row) return { meta: { changes: 0 } };
+      row.state = args[0]; row.decision_reason = args[1]; row.evaluated_at_ms = args[2]; row.credit_percent = args[3]; row.amount_minor = args[4];
+      return { meta: { changes: 1 } };
+    }
+    if (sql.includes("INSERT INTO sla_credit_audit_events")) {
+      this.audits.push({ credit_id: args[0], event_type: args[1], detail: args[2] });
+      return { meta: { changes: 1 } };
+    }
+    if (sql.includes("INSERT OR IGNORE INTO sla_credit_outbox")) {
+      const id = String(args[0]);
+      if (this.outbox.has(id)) return { meta: { changes: 0 } };
+      this.outbox.set(id, { credit_id: id, idempotency_key: args[1], payload_json: args[2], status: "pending" });
+      return { meta: { changes: 1 } };
+    }
+    if (sql.startsWith("UPDATE sla_credit_ledger SET status = 'processing'")) {
+      const row = this.ledger.get(String(args[3]));
+      if (!row || !((row.status === "pending" || row.status === "failed") && Number(row.next_attempt_at_ms) <= Number(args[4]))) return { meta: { changes: 0 } };
+      row.status = "processing"; row.stripe_customer_id = args[0]; row.lease_until_ms = args[1]; row.attempts = Number(row.attempts) + 1;
+      return { meta: { changes: 1 } };
+    }
+    if (sql.startsWith("UPDATE sla_credit_ledger SET status = 'failed', failure_kind = 'transient'")) {
+      const row = this.ledger.get(String(args[3]));
+      if (row) { row.status = "failed"; row.failure_reason = "tenant_mapping_pending"; row.next_attempt_at_ms = args[1]; }
+      return { meta: { changes: row ? 1 : 0 } };
+    }
+    if (sql.includes("SET status = 'applied'")) {
+      const row = this.ledger.get(String(args[3]));
+      if (row) { row.status = "applied"; row.provider_ref = args[0]; }
+      return { meta: { changes: row ? 1 : 0 } };
+    }
+    if (sql.includes("SET status = 'failed'")) {
+      const row = this.ledger.get(String(args[4]));
+      if (row) { row.status = "failed"; row.next_attempt_at_ms = args[2]; }
+      return { meta: { changes: row ? 1 : 0 } };
+    }
+    if (sql.includes("SET status = 'blocked'")) {
+      const id = String(args[args.length - 1]);
+      const row = this.ledger.get(id);
+      if (row) row.status = "blocked";
+      return { meta: { changes: row ? 1 : 0 } };
+    }
+    if (sql.includes("UPDATE sla_credit_outbox")) {
+      const row = this.outbox.get(String(args[args.length - 1]));
+      if (row) { row.status = sql.includes("needs_review") ? "needs_review" : sql.includes("failed") ? "failed" : "sent"; row.provider_ref = args[0]; }
+      return { meta: { changes: row ? 1 : 0 } };
+    }
+    if (sql.includes("INSERT INTO sla_credit_reconciliation")) {
+      this.recon.set(String(args[0]), { credit_id: args[0], provider_ref: args[1], status: sql.includes("'reconciled'") ? "reconciled" : "pending" });
+      return { meta: { changes: 1 } };
+    }
+    return { meta: { changes: 1 } };
+  }
+}
+
+function measurementRow(overrides: Partial<SlaMonthlyMeasurement> = {}): Row {
+  const measurement = baseMeasurement(overrides);
+  return { ...measurement, eligible_at_ms: measurement.eligible_at_ms, state: "pending" };
+}
+
+describe("B-089 strict policy boundaries", () => {
+  it("uses UTC months and a cutoff after the closed month, not local time", () => {
+    expect(parseUtcMonth("2026-02")?.start_ms).toBe(Date.UTC(2026, 1, 1));
+    expect(parseUtcMonth("2026-2")).toBeNull();
+    expect(parseUtcMonth("2026-13")).toBeNull();
+    expect(monthlyCutoffAtMs("2026-08")).toBeGreaterThan(Date.UTC(2026, 8, 1));
+  });
+
+  it("rejects unsafe integer fees and never creates an unsafe amount", () => {
+    expect(evaluateSlaCredit(baseMeasurement({ monthly_fee_minor: Number.MAX_SAFE_INTEGER + 1 })).reason).toBe("invalid_measurement");
+    expect(evaluateSlaCredit(baseMeasurement({ monthly_fee_minor: 1, availability_percent: 99.89 })).eligible).toBe(false);
+    expect(evaluateSlaCredit(baseMeasurement({ currency: "usd", availability_percent: 99.4 })).amount_minor).toBe(250);
+  });
+
+  it("caps stacked credits and marks an absolute <95% result catastrophic", () => {
+    const result = evaluateSlaCredit(baseMeasurement({ availability_percent: 94.99, latency_excess_percent: 80, latency_sustained_minutes: 60, dsr_breach_days: 45, billing_drift_percent: 0.2, billing_drift_sustained_hours: 25 }));
+    expect(result).toMatchObject({ eligible: true, credit_percent: 100, amount_minor: 5_000, catastrophic: true });
+  });
+});
+
+describe("B-089 gates, retries, and transaction boundaries", () => {
+  it("does not let a supplied provider bypass the in-sweep financial gate", async () => {
+    const db = new MemoryDb([measurementRow()]);
+    let calls = 0;
+    const provider = { applyCredit: async () => { calls += 1; return { provider_ref: "ii_test" }; } };
+    const result = await runSlaCreditSweep({ BILLING_DB: db }, 0, provider);
+    expect(result.applied).toBe(0);
+    expect(calls).toBe(0);
+    expect([...db.ledger.values()][0]?.status).toBe("pending");
+  });
+
+  it("retries a missing tenant mapping instead of permanently blocking the credit", async () => {
+    const db = new MemoryDb([measurementRow()]);
+    db.customer = null;
+    const provider = { applyCredit: async () => ({ provider_ref: "ii_test" }) };
+    const first = await runSlaCreditSweep({ BILLING_DB: db, SLA_CREDITS_ENABLED: "true" }, 0, provider);
+    expect(first.failed).toBe(1);
+    expect([...db.ledger.values()][0]?.status).toBe("failed");
+    db.customer = "cus_late";
+    const second = await runSlaCreditSweep({ BILLING_DB: db, SLA_CREDITS_ENABLED: "true" }, 120_000, provider);
+    expect(second.applied).toBe(1);
+    expect([...db.ledger.values()][0]?.stripe_customer_id).toBe("cus_late");
+  });
+
+  it("does not starve a newer row behind a bounded batch of ineligible rows", async () => {
+    const rows = Array.from({ length: 101 }, (_, index) => measurementRow({ tenant_id: `t-${index}`, availability_percent: 99.9 }));
+    rows[100] = measurementRow({ tenant_id: "newer", availability_percent: 99.4 });
+    const db = new MemoryDb(rows);
+    const first = await runSlaCreditSweep({ BILLING_DB: db }, 0);
+    expect(first.measured).toBe(100);
+    const second = await runSlaCreditSweep({ BILLING_DB: db }, 0);
+    expect(second.measured).toBe(1);
+    expect(db.ledger.has("sla_credit:newer:2026-08")).toBe(true);
+  });
+
+  it("records outbox and reconciliation state in the same post-provider batch", async () => {
+    const db = new MemoryDb([measurementRow()]);
+    const provider = { applyCredit: async (request: { idempotency_key: string }) => ({ provider_ref: `ref:${request.idempotency_key}` }) };
+    const result = await runSlaCreditSweep({ BILLING_DB: db, SLA_CREDITS_ENABLED: "true" }, 0, provider);
+    expect(result).toMatchObject({ created: 1, applied: 1, reconciled: 1 });
+    expect(db.outbox.get("sla_credit:tenant-1:2026-08")?.status).toBe("sent");
+    expect(db.recon.get("sla_credit:tenant-1:2026-08")?.status).toBe("reconciled");
+    expect(db.audits.map((row) => row.event_type)).toEqual(["created", "applied"]);
+  });
+});
+
+describe("Stripe provider gate and reconciliation", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("does not call Stripe unless the provider was constructed enabled", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    const request = { credit_id: "c", tenant_id: "t", stripe_customer_id: "cus", amount_minor: 100, currency: "USD", service_period: "2026-08", credit_percent: 1, idempotency_key: "k", catastrophic: false };
+    await expect(new StripeInvoiceItemProvider("sk_test").applyCredit(request)).resolves.toEqual({ failure: { kind: "permanent", reason: "provider_disabled" } });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("uses the stable idempotency key and verifies the created invoice item", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "ii_test" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ amount: -100, customer: "cus", metadata: { credit_id: "c" } }), { status: 200 }));
+    const provider = new StripeInvoiceItemProvider("sk_test", "https://stripe.test/", true);
+    const request = { credit_id: "c", tenant_id: "t", stripe_customer_id: "cus", amount_minor: 100, currency: "USD", service_period: "2026-08", credit_percent: 1, idempotency_key: "stable", catastrophic: false };
+    await expect(provider.applyCredit(request)).resolves.toEqual({ provider_ref: "ii_test" });
+    await expect(provider.reconcileCredit(request, "ii_test")).resolves.toEqual({ ok: true });
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).toMatchObject({ "Idempotency-Key": "stable" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("requires both the parked gate and the Stripe secret", () => {
+    expect(providerFromEnv({ STRIPE_SECRET_KEY: "sk_test" })).toBeUndefined();
+    expect(providerFromEnv({ SLA_CREDITS_ENABLED: "true" })).toBeUndefined();
+    expect(providerFromEnv({ SLA_CREDITS_ENABLED: "true", STRIPE_SECRET_KEY: "sk_test" })).toBeDefined();
+  });
+});

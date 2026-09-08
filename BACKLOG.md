@@ -11083,7 +11083,7 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
-### B-089 — o SLA promete créditos automáticos como remédio exclusivo e não existe código que emita crédito
+### B-089 — o SLA promete créditos automáticos como remédio exclusivo; repo-owned path landed, provider proof remains
 
 `legal/sla/v1.0.0.md:74` promete créditos *"issued automatically against the next
 invoice"*, e a §4.5 declara isso o *"sole and exclusive remedy"* do cliente.
@@ -11100,16 +11100,21 @@ preços marca como `slaCredits: false`.
 Uma cláusula de remédio exclusivo que não pode ser cumprida é a primeira a cair, e sua
 queda expõe danos sem teto.
 
-**Reverificado 2026-08-31 (WP-C) — SEGUE ABERTO, e deliberadamente NÃO reparado.** As três
-afirmações do corpo continuam de pé, e uma quarta foi medida:
+**Reverificado 2026-09-08 — a engenharia repo-owned está implementada, mas o item
+SEGUE ABERTO/PARKED por decisão legal/comercial e prova externa.** O SLA executado não foi
+alterado:
 
 - `legal/sla/v1.0.0.md:74` ainda promete créditos *"issued automatically against the next
   invoice"*, e a §4 (linha 113) ainda os declara *"Customer's sole and exclusive remedy"*.
-- **Zero** arquivos de `crates/`, `worker/src/` e `apps/` implementam emissão de crédito
-  (`service_credit|sla_credit|credit_note|balance_transaction`). O **controle**: a mesma
-  varredura por `checkout.session|subscription` nos mesmos diretórios devolve **99**
-  arquivos — o instrumento enxerga a superfície Stripe, e o zero é leitura, não comando
-  quebrado.
+- O produtor canônico `recordCanonicalSlaObservation` →
+  `publishClosedSlaMeasurements` mede somente meses UTC fechados após o cutoff de
+  dez dias úteis. A ledger, outbox, reconciliação, retry de tenant mapping e Stripe
+  idempotency key estão em `migrations/d1/0117_sla_credit_ledger.sql` e no cron
+  `apps/signup-worker/src/webhooks/sla_credit_cron.ts`.
+- O guard `scripts/verify_b089_sla_credits.py` e os testes adversariais cobrem o
+  caminho repo-owned. O provider exige `SLA_CREDITS_ENABLED=true` em dois pontos e o
+  `wrangler.toml` mantém a flag em `false`; nenhum deploy ou teste local muta Stripe
+  por acidente.
 - O SLA define **quatro** tiers (`Free`, `Starter`, `Pro`, `Enterprise` — linha 30)
   enquanto o produto vende **seis**. Um cliente Solo ($15) ou Max ($149) não tem tier no
   instrumento assinado.
@@ -11143,17 +11148,14 @@ id: B-089
 repo: corelink-server
 owner: owner
 status: open
-action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
-  python3 -S scripts/verify_owner_action_packets.py --id B-089 && \
-  python3 scripts/verify_b089_credit_contract.py
+  python3 scripts/verify_b089_sla_credits.py
 verify-means: |
-  open — o SLA promete crédito automático E nenhum arquivo de código implementa emissão
-  de crédito.
-
-  Vira DRIFTED por qualquer um dos dois reparos: implementar a emissão (o que o contrato
-  exige), ou emendar a cláusula para um remédio que a organização consiga cumprir (o
-  honesto). A escolha é jurídica e comercial.
+  open/parked — o caminho repo-owned de medição, elegibilidade, ledger limitado,
+  outbox transacional, provider idempotente e reconciliação está implementado, mas
+  o guard não alega uma mutação Stripe live. Depois do deploy, o owner precisa
+  aplicar 0117, executar uma operação Stripe em test mode com a flag habilitada,
+  replayar o mesmo sweep e reconciliar o provider id com a próxima invoice.
 
   O que NÃO decide, e admito: o descompasso de quatro tiers no SLA contra seis vendidos, e
   a contradição do `terms.tsx:333` com `slaCredits: false`. São três documentos que
@@ -11161,7 +11163,7 @@ verify-means: |
   de preços — vale escrever junto com o reparo, não antes dele. Ficam registrados na prosa.
 
   Owner: emenda de instrumento assinado.
-last-verified: 2026-09-05
+last-verified: 2026-09-08
 ```
 
 ### B-090 — o worker que processa Stripe, Clerk e DSR implanta a partir de `npm install` sem lockfile, e o portão de supply-chain é cego a ele
