@@ -6,7 +6,7 @@ under ``routes/cas`` is not an executable test, and a path mentioned in a
 comment or string is not a registration.  This guard therefore extracts the
 actual ``mod tests`` include sequence, requires the reviewed split exactly,
 and checks the named batch tests from the registered files.  The census is
-the 28-test focused batch population used by the D03 proof.
+the 30-test focused batch population used by the D03 proof.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ EXPECTED_TEST_INCLUDES = (
     "cas/tests_core_part2.rs",
     "cas/tests_batch_part1.rs",
     "cas/tests_batch_part2.rs",
+    "cas/tests_batch_cancellation_part3.rs",
     "cas/tests_batch_write_part2.rs",
     "cas/tests_edges.rs",
 )
@@ -48,10 +49,14 @@ EXPECTED_BATCH_TESTS = {
     "tests_batch_part2.rs": (
         "batch_read_below_limit_releases_slot",
         "batch_read_admission_is_released_after_response_consumed",
+        "batch_read_post_header_timeout_releases_admission_and_tenant_lease",
         "batch_read_window_is_bounded_and_passes_object_ceiling",
         "batch_read_failure_drains_all_active_tasks_before_return",
         "batch_read_overflow_drains_all_active_tasks_before_return",
+    ),
+    "tests_batch_cancellation_part3.rs": (
         "batch_read_cancellation_aborts_tasks_and_waits_for_unwind",
+        "batch_read_cancellation_retains_leases_until_sync_read_unwinds",
     ),
     "tests_batch_write_part2.rs": (
         "batch_reupload_returns_exists",

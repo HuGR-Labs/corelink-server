@@ -27,7 +27,7 @@ def _sources() -> tuple[str, dict[str, str]]:
     return route, parts
 
 
-def test_exact_registration_and_28_test_census_are_green() -> None:
+def test_exact_registration_and_30_test_census_are_green() -> None:
     assert verifier.assess(ROOT) == []
 
 
@@ -35,6 +35,17 @@ def test_missing_split_include_is_rejected() -> None:
     route, parts = _sources()
     mutated = route.replace(
         '    include!("cas/tests_batch_write_part2.rs");\n',
+        "",
+        1,
+    )
+    gaps = verifier.assess_source(mutated, parts)
+    assert any("test-include-registration" in gap for gap in gaps)
+
+
+def test_missing_cancellation_split_include_is_rejected() -> None:
+    route, parts = _sources()
+    mutated = route.replace(
+        '    include!("cas/tests_batch_cancellation_part3.rs");\n',
         "",
         1,
     )
@@ -95,29 +106,17 @@ def test_comments_and_strings_cannot_preserve_removed_batch_test_identity() -> N
         assert "batch-test-identity:tests_batch_write_part2.rs" in gaps
 
 
-def test_backlog_workflow_tracks_and_executes_the_guard_in_both_lanes() -> None:
+def test_backlog_workflow_tracks_all_inputs_and_executes_guard_on_trusted_main() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     trigger_block = workflow[workflow.index("\non:") : workflow.index("\njobs:")]
-    pull_request = trigger_block[
-        trigger_block.index("  pull_request:") : trigger_block.index("  push:")
+    pull_request_target = trigger_block[
+        trigger_block.index("  pull_request_target:") : trigger_block.index("  push:")
     ]
-    push = trigger_block[trigger_block.index("  push:") :]
-    # Pull request and main-push path filters must both include every direct
-    # verifier input, while the job must execute the guard and its mutation
-    # suite once (the latter is deliberately not inferred from path filters).
-    for path in (
-        '"scripts/verify_b337_cas_batch_tests.py"',
-        '"tests/test_verify_b337_cas_batch_tests.py"',
-        '"crates/corelink-container/src/routes/cas.rs"',
-        '"crates/corelink-container/src/routes/cas/tests_*.rs"',
-        '"docs/knowledge/surfaces/native-cas.md"',
-    ):
-        # Some CAS paths already belong to broader existing trigger groups;
-        # membership in each event's block is the load-bearing property.
-        assert path in pull_request, path
-        assert path in push, path
-    assert workflow.count("name: B-337 CAS batch-test census and mutations") == 1
-    assert workflow.count("python3 scripts/verify_b337_cas_batch_tests.py") == 1
-    assert workflow.count(
-        "python3 -m pytest -q tests/test_verify_b337_cas_batch_tests.py"
-    ) == 1
+    push = trigger_block[trigger_block.index("  push:") : trigger_block.index("  schedule:")]
+    # Both lanes track the complete tree. The untrusted PR lane is deliberately
+    # data-only; exact verifier execution belongs to the immutable trusted-main
+    # semantic closure on push/schedule.
+    assert 'paths: ["**"]' in pull_request_target
+    assert 'paths: ["**"]' in push
+    assert workflow.count("python3 scripts/backlog_verify.py --trusted-semantic") == 1
+    assert "if: github.event_name == 'push' || github.event_name == 'schedule'" in workflow

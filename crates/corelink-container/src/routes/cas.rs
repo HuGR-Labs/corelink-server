@@ -35,7 +35,8 @@
 //! - `batch.rs`: batch write/read/exists handlers and error formatting.
 //! - `list_delete.rs`: NDJSON parsing plus delete/list/error mapping helpers.
 //! - `tests_core_part1.rs`, `tests_core_part2.rs`, `tests_batch_part1.rs`,
-//!   `tests_batch_part2.rs`, `tests_batch_write_part2.rs`, and
+//!   `tests_batch_part2.rs`, `tests_batch_cancellation_part3.rs`,
+//!   `tests_batch_write_part2.rs`, and
 //!   `tests_edges.rs`: original `tests` module items, split by existing
 //!   source order only; batch-write coverage has its own include to keep the
 //!   B-326 source cap mechanical.
@@ -65,6 +66,7 @@ mod tests {
     include!("cas/tests_core_part2.rs");
     include!("cas/tests_batch_part1.rs");
     include!("cas/tests_batch_part2.rs");
+    include!("cas/tests_batch_cancellation_part3.rs");
     include!("cas/tests_batch_write_part2.rs");
     include!("cas/tests_edges.rs");
 }
