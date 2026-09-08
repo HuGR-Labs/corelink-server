@@ -81,6 +81,14 @@ async fn batch_read_cancellation_retains_leases_until_sync_read_unwinds() {
         release: Arc<AtomicBool>,
     }
 
+    struct ReleaseOnDrop(Arc<AtomicBool>);
+
+    impl Drop for ReleaseOnDrop {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::Release);
+        }
+    }
+
     impl CasReadHandler for BlockingRead {
         fn read(&self, req: CasReadRequest) -> Result<CasReadResponse, CasHandlerError> {
             self.active.fetch_add(1, Ordering::SeqCst);
@@ -96,13 +104,15 @@ async fn batch_read_cancellation_retains_leases_until_sync_read_unwinds() {
     let started = Arc::new(tokio::sync::Notify::new());
     let active = Arc::new(AtomicUsize::new(0));
     let release = Arc::new(AtomicBool::new(false));
+    let _release_on_drop = ReleaseOnDrop(Arc::clone(&release));
     let read = Arc::new(BlockingRead {
         started: started.clone(),
         active: active.clone(),
         release: release.clone(),
     });
-    let state = tracking_state(read);
-    let admission = global_cas_batch_read_admission();
+    let mut state = tracking_state(read);
+    let admission = Arc::new(tokio::sync::Semaphore::new(CAS_READ_BATCH_MAX_IN_FLIGHT));
+    state.batch_read_admission = Arc::clone(&admission);
     let admission_before = admission.available_permits();
     let hashes: Vec<String> = (0..BATCH_READ_FANOUT)
         .map(|i| fake_hash(format!("lease-cancel-{i}").as_bytes()))

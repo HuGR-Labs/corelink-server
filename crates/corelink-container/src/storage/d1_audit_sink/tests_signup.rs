@@ -25,22 +25,23 @@ use uuid::Uuid;
 
 /// Minimal production-shaped schema: the `region` match trigger from 0023
 /// and the explicit missing-tenant guard from migration 0107.
-const SCHEMA: &str = "\
-CREATE TABLE tenant (tenant_id TEXT PRIMARY KEY, primary_region TEXT);\
-CREATE TABLE audit_outbox (\
-  id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, digest TEXT, request_id TEXT NOT NULL,\
-  event_type TEXT NOT NULL, payload_json TEXT NOT NULL, enqueued_at INTEGER NOT NULL,\
-  emitted_at INTEGER, region TEXT NOT NULL DEFAULT 'wnam'\
-    CHECK (region IN ('wnam','enam','weur','sam','apac','afr')),\
-  UNIQUE (request_id, event_type));\
-CREATE TRIGGER trg_audit_outbox_region_match_insert BEFORE INSERT ON audit_outbox\
-  FOR EACH ROW WHEN NEW.region != (SELECT primary_region FROM tenant WHERE tenant_id = NEW.tenant_id)\
-  BEGIN SELECT RAISE(ABORT, 'residency_violation: audit_outbox.region must match tenant.primary_region'); END;\
-CREATE TRIGGER trg_audit_outbox_tenant_residency_required BEFORE INSERT ON audit_outbox\
-  FOR EACH ROW WHEN NEW.tenant_id != '_public'\
-    AND NOT EXISTS (SELECT 1 FROM tenant WHERE tenant_id = NEW.tenant_id AND primary_region = NEW.region)\
-    AND NOT EXISTS (SELECT 1 FROM audit_outbox AS existing WHERE existing.id = NEW.id)\
-  BEGIN SELECT RAISE(ABORT, 'residency_unprovable: audit_outbox tenant_id must resolve to matching tenant.primary_region'); END;";
+const SCHEMA: &str = r#"
+CREATE TABLE tenant (tenant_id TEXT PRIMARY KEY, primary_region TEXT);
+CREATE TABLE audit_outbox (
+  id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, digest TEXT, request_id TEXT NOT NULL,
+  event_type TEXT NOT NULL, payload_json TEXT NOT NULL, enqueued_at INTEGER NOT NULL,
+  emitted_at INTEGER, region TEXT NOT NULL DEFAULT 'wnam'
+    CHECK (region IN ('wnam','enam','weur','sam','apac','afr')),
+  UNIQUE (request_id, event_type));
+CREATE TRIGGER trg_audit_outbox_region_match_insert BEFORE INSERT ON audit_outbox
+  FOR EACH ROW WHEN NEW.region != (SELECT primary_region FROM tenant WHERE tenant_id = NEW.tenant_id)
+  BEGIN SELECT RAISE(ABORT, 'residency_violation: audit_outbox.region must match tenant.primary_region'); END;
+CREATE TRIGGER trg_audit_outbox_tenant_residency_required BEFORE INSERT ON audit_outbox
+  FOR EACH ROW WHEN NEW.tenant_id != '_public'
+    AND NOT EXISTS (SELECT 1 FROM tenant WHERE tenant_id = NEW.tenant_id AND primary_region = NEW.region)
+    AND NOT EXISTS (SELECT 1 FROM audit_outbox AS existing WHERE existing.id = NEW.id)
+  BEGIN SELECT RAISE(ABORT, 'residency_unprovable: audit_outbox tenant_id must resolve to matching tenant.primary_region'); END;
+"#;
 
 fn sqlite_value(value: &Value) -> SqlValue {
     match value {

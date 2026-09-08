@@ -75,8 +75,8 @@ def test_comment_markers_cannot_prove_weighted_acquire() -> None:
     files = verify.source()
     mutant = dict(files)
     mutant["cas"] = files["cas"].replace(
-        "global_cas_read_budget().acquire_many_owned(permits)",
-        "/* global_cas_read_budget().acquire_many_owned(permits) */ acquire_owned()",
+        "budget.acquire_many_owned(permits)",
+        "/* budget.acquire_many_owned(permits) */ budget.acquire_owned()",
         1,
     )
     with pytest.raises(verify.VerificationError):

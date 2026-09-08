@@ -179,9 +179,7 @@ def assess(files: dict[str, str], expected_status: str = "done") -> None:
         fail("CAS batch-read lost its process-wide byte guard")
     if batch.index("body: axum::body::Bytes") < batch.index("_global_read_budget"):
         fail("CAS batch-read buffers its body before reserving the byte budget")
-    if not any(
-        name in batch for name in ("acquire_cas_read_budget_from", "acquire_global_cas_read_budget")
-    ) or "CAS_READ_BATCH_OBJECT_PERMITS" not in batch:
+    if "acquire_cas_read_budget" not in batch or "CAS_READ_BATCH_OBJECT_PERMITS" not in batch:
         fail("CAS batch-read object fan-out lost its per-object byte reservations")
 
     # Global saturation logs deliberately carry only a static route and weight;
@@ -233,8 +231,8 @@ def mutation_checks(files: dict[str, str]) -> None:
         (
             "comment-hidden weighted acquire",
             "cas",
-            "global_cas_read_budget().acquire_many_owned(permits)",
-            "/* global_cas_read_budget().acquire_many_owned(permits) */ acquire_owned()",
+            "budget.acquire_many_owned(permits)",
+            "/* budget.acquire_many_owned(permits) */ budget.acquire_owned()",
         ),
         (
             "global semaphore",

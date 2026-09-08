@@ -171,6 +171,8 @@ fn tracking_state(read: Arc<dyn CasReadHandler>) -> CasRouteState {
         pat_gate: None,
         put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        read_budget: test_read_budget(),
+        batch_read_admission: test_batch_read_admission(),
         usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
     }
 }
@@ -214,8 +216,9 @@ async fn batch_read_post_header_timeout_releases_admission_and_tenant_lease() {
         R2CasHandler::new(client, "iad", None, audit, sli)
             .with_test_post_header_body_timeout(),
     );
-    let state = tracking_state(handler);
-    let admission = global_cas_batch_read_admission();
+    let mut state = tracking_state(handler);
+    let admission = Arc::new(tokio::sync::Semaphore::new(CAS_READ_BATCH_MAX_IN_FLIGHT));
+    state.batch_read_admission = Arc::clone(&admission);
     let admission_before = admission.available_permits();
     assert!(admission_before > 0, "batch admission must be available");
     let response = tokio::time::timeout(

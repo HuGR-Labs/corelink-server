@@ -188,6 +188,8 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         pat_gate: native_pat_gate.clone(),
         put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        read_budget: cas::global_cas_read_budget(),
+        batch_read_admission: cas::global_cas_batch_read_admission(),
         // usage-metering-roi: the ONE shared display meter (clone = cheap Arc).
         usage_meter: usage_meter.clone(),
     };

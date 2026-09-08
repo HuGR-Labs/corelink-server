@@ -52,6 +52,14 @@ pub struct CasRouteState {
     /// writes do not contend on one counter (sharing would over-throttle a tenant
     /// that legitimately reads and writes concurrently).
     pub(crate) read_inflight: Arc<Mutex<HashMap<String, usize>>>,
+    /// Process-wide weighted byte-budget for CAS reads. Production states
+    /// share the singleton; tests inject a private semaphore so parallel
+    /// fixtures cannot consume one another's reservations.
+    pub(crate) read_budget: Arc<tokio::sync::Semaphore>,
+    /// Process-wide admission semaphore for batch reads. Production states
+    /// share the singleton; tests may inject a private semaphore so lease
+    /// assertions cannot race unrelated parallel tests.
+    pub(crate) batch_read_admission: Arc<tokio::sync::Semaphore>,
     /// Display usage aggregator (usage-metering-roi). The read-HIT / read-MISS /
     /// write decision points `record` fire-and-forget into this meter — a cheap
     /// lock+increment, NEVER a DB call / `await` on the hot path. Inert (`record`
@@ -92,6 +100,8 @@ impl CasRouteState {
             pat_gate,
             put_inflight: Arc::new(Mutex::new(HashMap::new())),
             read_inflight: Arc::new(Mutex::new(HashMap::new())),
+            read_budget: global_cas_read_budget(),
+            batch_read_admission: global_cas_batch_read_admission(),
             // Inert placeholder for external callers; the production wiring in
             // `build_with_factory` sets the shared, D1-backed meter.
             usage_meter: Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
@@ -313,10 +323,15 @@ impl FromRequestParts<CasRouteState> for GlobalCasReadBudgetGuard {
 
     async fn from_request_parts(
         _parts: &mut Parts,
-        _state: &CasRouteState,
+        state: &CasRouteState,
     ) -> Result<Self, Self::Rejection> {
         Ok(Self {
-            _permit: acquire_global_cas_read_budget(CAS_READ_SINGLE_PERMITS, "single").await?,
+            _permit: acquire_cas_read_budget(
+                Arc::clone(&state.read_budget),
+                CAS_READ_SINGLE_PERMITS,
+                "single",
+            )
+            .await?,
         })
     }
 }
@@ -334,16 +349,22 @@ impl FromRequestParts<CasRouteState> for GlobalCasBatchReadBudgetGuard {
 
     async fn from_request_parts(
         _parts: &mut Parts,
-        _state: &CasRouteState,
+        state: &CasRouteState,
     ) -> Result<Self, Self::Rejection> {
         // The batch envelope is intentionally admitted through a second,
         // weighted gate. The handler later acquires the derived 24 MiB
         // reservation for each object in its eight-task window while this
         // 22 MiB envelope remains held; the admission cap prevents two full
         // envelope-plus-window peaks from exceeding the 220 MiB slice.
-        let admission = acquire_global_cas_batch_read_admission().await?;
+        let admission =
+            acquire_cas_batch_read_admission(Arc::clone(&state.batch_read_admission)).await?;
         Ok(Self {
-            _permit: acquire_global_cas_read_budget(CAS_READ_BATCH_PERMITS, "batch-read").await?,
+            _permit: acquire_cas_read_budget(
+                Arc::clone(&state.read_budget),
+                CAS_READ_BATCH_PERMITS,
+                "batch-read",
+            )
+            .await?,
             _admission: admission,
         })
     }

@@ -257,6 +257,7 @@ async fn handle_batch_read(
         let tenant = auth.0.clone();
         let hash = hash.clone();
         let lease = Arc::clone(&lease);
+        let read_budget = Arc::clone(&state.read_budget);
         tasks.push(tokio::spawn(async move {
             // The lease is intentionally held for the complete task lifetime,
             // including a synchronous `read()` bridged through block_in_place.
@@ -267,7 +268,8 @@ async fn handle_batch_read(
             if !super::ac::is_canonical_digest(&hash) {
                 return BatchReadOutcome::Absent;
             }
-            let global_permit = match acquire_global_cas_read_budget(
+            let global_permit = match acquire_cas_read_budget(
+                read_budget,
                 CAS_READ_BATCH_OBJECT_PERMITS,
                 "batch-read-object",
             )
