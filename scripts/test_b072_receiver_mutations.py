@@ -38,6 +38,7 @@ def mutate_and_require_failure(name: str, relative: str, old: str, new: str) -> 
             "apps/synthetic-pager-worker/src/contract.ts",
             "migrations/d1/0116_synthetic_page_delivery_lifecycle.sql",
             "scripts/verify_b072_receiver.py",
+            ".github/workflows/synthetic-pager-worker-deploy.yml",
         ):
             target = copy_root / relative_path
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -86,6 +87,18 @@ def main() -> None:
             "worker/src/index_schedule.ts",
             'if (!response.ok) {',
             'if (response.ok) {',
+        ),
+        (
+            "enable-auto-deploy",
+            ".github/workflows/synthetic-pager-worker-deploy.yml",
+            "on:\n  workflow_dispatch:",
+            "on:\n  push:",
+        ),
+        (
+            "allow-production-input",
+            ".github/workflows/synthetic-pager-worker-deploy.yml",
+            "options: [staging]",
+            "options: [staging, prod]",
         ),
     ]
     for mutation in mutations:

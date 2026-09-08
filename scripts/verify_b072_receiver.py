@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -21,7 +22,8 @@ def main(root: Path) -> None:
     contract = root / "apps/synthetic-pager-worker/src/contract.ts"
     migration = root / "migrations/d1/0116_synthetic_page_delivery_lifecycle.sql"
     workspace = root / "pnpm-workspace.yaml"
-    for path in (root_config, receiver_config, scheduler, receiver, contract, migration, workspace):
+    deploy_workflow = root / ".github/workflows/synthetic-pager-worker-deploy.yml"
+    for path in (root_config, receiver_config, scheduler, receiver, contract, migration, workspace, deploy_workflow):
         if not path.is_file():
             fail(f"missing B-072 contract file: {path.relative_to(root)}")
 
@@ -67,6 +69,7 @@ def main(root: Path) -> None:
     migration_source = migration.read_text()
     scheduler_source = scheduler.read_text()
     workspace_source = workspace.read_text()
+    deploy_source = deploy_workflow.read_text()
     required_fragments = {
         "production environment guard": 'environment === "prod" || environment?.startsWith("prod-")',
         "activation gate": 'env.SYNTHETIC_DRILL_ENABLED !== "true"',
@@ -102,6 +105,19 @@ def main(root: Path) -> None:
         fail("migration does not document canonical drill id/dedup format")
     if "apps/synthetic-pager-worker" not in workspace_source:
         fail("receiver package is not in the pnpm workspace")
+    if not re.search(r"(?m)^\s+workflow_dispatch:\s*$", deploy_source):
+        fail("receiver deploy must be manually dispatched")
+    if re.search(r"(?m)^\s+(push|pull_request|schedule):\s*$", deploy_source):
+        fail("receiver deploy must not have an automatic trigger")
+    for label, fragment in {
+        "staging-only input": "options: [staging]",
+        "staging environment": "environment: synthetic-drill-staging",
+        "inert pre-deploy guard": "python3 scripts/verify_b072_receiver.py",
+        "receiver typecheck": "pnpm run typecheck",
+        "staging deploy": 'pnpm exec wrangler deploy --env "${{ inputs.environment }}"',
+    }.items():
+        if fragment not in deploy_source:
+            fail(f"missing {label}")
 
     print("B-072 receiver/schedule guard: PASS")
 
