@@ -225,7 +225,7 @@
     },
     {
       "id": "B-110",
-      "owner": "owner",
+      "owner": "tl",
       "status": "done",
       "action_type": "ci_capacity_decision",
       "procedure": [
