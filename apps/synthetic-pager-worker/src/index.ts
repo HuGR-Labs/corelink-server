@@ -67,7 +67,7 @@ async function persistDelivery(env: ReceiverEnv, envelope: SyntheticPageEnvelope
   const deliveredAt = deliveryMode === "immediate" ? page.emit_at_ms : null;
   await env.CONFIG_DB!.batch([
     env.CONFIG_DB!.prepare(
-      `INSERT OR IGNORE INTO synthetic_page_drills
+      `INSERT OR IGNORE INTO synthetic_page_drills_b072
          (drill_id, region, severity, emit_ts_ms, outcome, correlation_id, schema_version,
           delivery_mode, scheduled_at_ms, delivered_at_ms)
        VALUES (?, ?, ?, ?, 'unacked', ?, 1, ?, ?, ?)`,
@@ -146,7 +146,7 @@ async function runDeferredDeliveries(
   if (environmentError !== null) throw new Error("receiver not ready");
   const result = await env.CONFIG_DB!.prepare(
     `SELECT drill_id, region, emit_ts_ms, scheduled_at_ms, correlation_id, delivery_mode, delivered_at_ms
-       FROM synthetic_page_drills
+       FROM synthetic_page_drills_b072
       WHERE delivery_mode = 'deferred' AND delivered_at_ms IS NULL
         AND outcome = 'unacked' AND emit_ts_ms <= ?
       ORDER BY emit_ts_ms ASC
@@ -167,7 +167,7 @@ async function runDeferredDeliveries(
         `delivered:${row.drill_id}`,
       ),
       env.CONFIG_DB!.prepare(
-        `UPDATE synthetic_page_drills
+        `UPDATE synthetic_page_drills_b072
             SET delivered_at_ms = ?, outcome = 'unacked'
           WHERE drill_id = ? AND delivery_mode = 'deferred' AND delivered_at_ms IS NULL`,
       ).bind(controller.scheduledTime, row.drill_id),
@@ -193,7 +193,7 @@ async function handlePagerDutyWebhook(request: Request, env: ReceiverEnv): Promi
   if (event === null) return json({ error: "invalid_webhook_event" }, 400);
   const row = await env.CONFIG_DB!.prepare(
     `SELECT drill_id, emit_ts_ms, outcome, correlation_id
-       FROM synthetic_page_drills WHERE drill_id = ?`,
+       FROM synthetic_page_drills_b072 WHERE drill_id = ?`,
   ).bind(event.drill_id).first<{ drill_id: string; emit_ts_ms: number; outcome: string; correlation_id: string }>();
   if (row === null) return json({ accepted: true, ignored: true }, 202);
   if (row.outcome !== "unacked") return json({ accepted: true, ignored: true, outcome: row.outcome }, 202);
@@ -214,7 +214,7 @@ async function handlePagerDutyWebhook(request: Request, env: ReceiverEnv): Promi
       event.engineer_slug,
     ),
     env.CONFIG_DB!.prepare(
-      `UPDATE synthetic_page_drills
+      `UPDATE synthetic_page_drills_b072
           SET outcome = ?, engineer_slug = ?, ack_ts_ms = ?, mtta_ms = ?, ack_vector = ?
         WHERE drill_id = ? AND outcome = 'unacked'`,
     ).bind(outcome, event.engineer_slug, event.occurred_at_ms, mtta, event.ack_vector, event.drill_id),

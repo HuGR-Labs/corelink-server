@@ -6,9 +6,13 @@
 -- existing rows. The canonical drill_id is now also PagerDuty dedup_key:
 -- `SP-<13-digit scheduled timestamp>`.
 
-PRAGMA foreign_keys = OFF;
-
-CREATE TABLE synthetic_page_drills_b072 (
+-- Keep the original `synthetic_page_drills` table intact.  SQLite/D1 cannot
+-- widen its inline region/vector CHECKs in place without a DROP/RENAME table
+-- rebuild, which would violate INV-AUTH-MIGRATION-ADDITIVE.  The B-072 table
+-- below is the forward-compatible projection used by the receiver; existing
+-- rows are copied once with INSERT OR IGNORE, so the legacy table remains a
+-- rollback/read-only compatibility surface and no historical row is removed.
+CREATE TABLE IF NOT EXISTS synthetic_page_drills_b072 (
     drill_id        TEXT    NOT NULL PRIMARY KEY,
     region          TEXT    NOT NULL CHECK (region IN ('americas', 'emea', 'apac', 'boundary_handoff')),
     severity        TEXT    NOT NULL CHECK (severity = 'sev2_synthetic'),
@@ -45,7 +49,7 @@ CREATE TABLE synthetic_page_drills_b072 (
     )
 );
 
-INSERT INTO synthetic_page_drills_b072 (
+INSERT OR IGNORE INTO synthetic_page_drills_b072 (
     drill_id, region, severity, engineer_slug, emit_ts_ms, ack_ts_ms,
     ack_vector, mtta_ms, outcome, correlation_id, schema_version,
     delivery_mode, scheduled_at_ms, delivered_at_ms
@@ -56,18 +60,15 @@ SELECT
     'immediate', emit_ts_ms, emit_ts_ms
 FROM synthetic_page_drills;
 
-DROP TABLE synthetic_page_drills;
-ALTER TABLE synthetic_page_drills_b072 RENAME TO synthetic_page_drills;
-
-CREATE INDEX IF NOT EXISTS idx_synthetic_drills_region_ts
-    ON synthetic_page_drills (region, emit_ts_ms);
-CREATE INDEX IF NOT EXISTS idx_synthetic_drills_outcome_ts
-    ON synthetic_page_drills (outcome, emit_ts_ms);
-CREATE INDEX IF NOT EXISTS idx_synthetic_drills_engineer
-    ON synthetic_page_drills (engineer_slug)
+CREATE INDEX IF NOT EXISTS idx_synthetic_drills_b072_region_ts
+    ON synthetic_page_drills_b072 (region, emit_ts_ms);
+CREATE INDEX IF NOT EXISTS idx_synthetic_drills_b072_outcome_ts
+    ON synthetic_page_drills_b072 (outcome, emit_ts_ms);
+CREATE INDEX IF NOT EXISTS idx_synthetic_drills_b072_engineer
+    ON synthetic_page_drills_b072 (engineer_slug)
     WHERE engineer_slug IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_synthetic_drills_pending_delivery
-    ON synthetic_page_drills (delivery_mode, emit_ts_ms)
+CREATE INDEX IF NOT EXISTS idx_synthetic_drills_b072_pending_delivery
+    ON synthetic_page_drills_b072 (delivery_mode, emit_ts_ms)
     WHERE delivery_mode = 'deferred';
 
 CREATE TABLE IF NOT EXISTS synthetic_page_audit_events (
@@ -78,10 +79,8 @@ CREATE TABLE IF NOT EXISTS synthetic_page_audit_events (
     correlation_id  TEXT    NOT NULL,
     source_event_id TEXT    NOT NULL UNIQUE,
     engineer_slug   TEXT,
-    FOREIGN KEY (drill_id) REFERENCES synthetic_page_drills (drill_id)
+    FOREIGN KEY (drill_id) REFERENCES synthetic_page_drills_b072 (drill_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_synthetic_page_audit_drill_ts
     ON synthetic_page_audit_events (drill_id, occurred_at_ms);
-
-PRAGMA foreign_keys = ON;
