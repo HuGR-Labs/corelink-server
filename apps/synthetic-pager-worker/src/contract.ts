@@ -1,4 +1,5 @@
 export const SYNTHETIC_PAGE_PATH = "/v1/drills/synthetic_page" as const;
+export const PAGERDUTY_WEBHOOK_PATH = "/v1/webhooks/pagerduty" as const;
 export const PAGERDUTY_EVENTS_URL = "https://events.pagerduty.com/v2/enqueue" as const;
 export const SYNTHETIC_SERVICE = "synthetic-drill" as const;
 export const SYNTHETIC_SEVERITY = "sev2_synthetic" as const;
@@ -34,6 +35,7 @@ export interface ReceiverEnv {
   readonly PAGERDUTY_EVENTS_URL?: string;
   readonly PAGERDUTY_SERVICE?: string;
   readonly PAGERDUTY_SYNTHETIC_ROUTING_KEY?: string;
+  readonly PAGERDUTY_WEBHOOK_SECRET?: string;
   readonly CONFIG_DB?: D1Database;
 }
 
@@ -54,6 +56,17 @@ export interface PagerDutyEvent {
       readonly correlation_id: string;
     };
   };
+}
+
+export type PagerDutyWebhookKind = "acknowledged" | "escalated";
+
+export interface PagerDutyWebhook {
+  readonly event_id: string;
+  readonly kind: PagerDutyWebhookKind;
+  readonly drill_id: string;
+  readonly occurred_at_ms: number;
+  readonly engineer_slug: string;
+  readonly ack_vector: "mobile_push" | "sms" | "email" | "escalation";
 }
 
 const ENVELOPE_KEYS = ["drill", "cron", "scheduled_at_ms", "synthetic_page"] as const;
@@ -103,7 +116,8 @@ export function parseSyntheticPageEnvelope(value: unknown): SyntheticPageEnvelop
     page.dedup_key.length < 1 ||
     page.dedup_key.length > 200 ||
     typeof page.correlation_id !== "string" ||
-    page.correlation_id !== `${SYNTHETIC_CORRELATION_PREFIX}${page.dedup_key}`
+    page.correlation_id !== `${SYNTHETIC_CORRELATION_PREFIX}${page.dedup_key}` ||
+    !/^SP-[0-9]{13}$/.test(page.dedup_key)
   ) {
     return null;
   }
@@ -171,9 +185,75 @@ export function buildPagerDutyEvent(page: SyntheticPagePayload, routingKey: stri
   };
 }
 
-export async function stableDrillId(dedupKey: string): Promise<string> {
-  const bytes = new TextEncoder().encode(dedupKey);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  const hex = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-  return `SP-${hex.slice(0, 32)}`;
+export function validateWebhookEnvironment(env: ReceiverEnv): string | null {
+  const environment = env.ENVIRONMENT?.trim().toLowerCase();
+  if (environment === "prod" || environment?.startsWith("prod-")) {
+    return "synthetic drill webhook is not activatable in production";
+  }
+  if (environment !== "dev" && environment !== "staging") return "unsupported receiver environment";
+  if (env.SYNTHETIC_DRILL_ENABLED !== "true") return "synthetic drill receiver is disabled";
+  if (!env.PAGERDUTY_WEBHOOK_SECRET?.trim()) return "PagerDuty webhook secret is unavailable";
+  if (env.CONFIG_DB === undefined) return "synthetic drill database binding is unavailable";
+  return null;
+}
+
+function hexToBytes(hex: string): Uint8Array | null {
+  if (!/^[0-9a-f]{64}$/i.test(hex)) return null;
+  const bytes = new Uint8Array(32);
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
+  }
+  return bytes;
+}
+
+export async function verifyPagerDutySignature(body: string, header: string | null, secret: string): Promise<boolean> {
+  const signature = header?.split(",").find((part) => part.startsWith("v1="))?.slice(3);
+  const expected = signature === undefined ? null : hexToBytes(signature);
+  if (expected === null) return false;
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const actual = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body)));
+  let difference = 0;
+  for (let index = 0; index < actual.length; index += 1) difference |= actual[index]! ^ expected[index]!;
+  return difference === 0;
+}
+
+function dateMs(value: unknown): number | null {
+  if (typeof value !== "string") return null;
+  const time = Date.parse(value);
+  return Number.isSafeInteger(time) && time >= 0 ? time : null;
+}
+
+export function parsePagerDutyWebhook(value: unknown): PagerDutyWebhook | null {
+  if (!isRecord(value) || typeof value.id !== "string" || !isRecord(value.data)) return null;
+  const kind = value.event_type === "incident.acknowledged" ? "acknowledged" : value.event_type === "incident.escalated" ? "escalated" : null;
+  if (kind === null || !isRecord(value.data.incident)) return null;
+  const incident = value.data.incident;
+  if (
+    isRecord(incident.service) &&
+    typeof incident.service.summary === "string" &&
+    incident.service.summary !== SYNTHETIC_SERVICE
+  ) {
+    return null;
+  }
+  const drillId = typeof incident.incident_key === "string" ? incident.incident_key : null;
+  const occurredAt = dateMs(value.occurred_at);
+  if (drillId === null || !/^SP-[0-9]{13}$/.test(drillId) || occurredAt === null) return null;
+  const assignments = Array.isArray(incident.assignments) ? incident.assignments : [];
+  const firstAssignment = assignments[0];
+  const assignee = isRecord(firstAssignment) && isRecord(firstAssignment.assignee) ? firstAssignment.assignee : null;
+  const engineerSlug = assignee !== null && typeof assignee.summary === "string" ? assignee.summary : `pagerduty-${value.id}`;
+  return {
+    event_id: value.id,
+    kind,
+    drill_id: drillId,
+    occurred_at_ms: occurredAt,
+    engineer_slug: engineerSlug.slice(0, 200),
+    ack_vector: kind === "escalated" ? "escalation" : "mobile_push",
+  };
 }

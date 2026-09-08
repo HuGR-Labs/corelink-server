@@ -36,6 +36,7 @@ def mutate_and_require_failure(name: str, relative: str, old: str, new: str) -> 
             "apps/synthetic-pager-worker/wrangler.toml",
             "apps/synthetic-pager-worker/src/index.ts",
             "apps/synthetic-pager-worker/src/contract.ts",
+            "migrations/d1/0116_synthetic_page_delivery_lifecycle.sql",
             "scripts/verify_b072_receiver.py",
         ):
             target = copy_root / relative_path

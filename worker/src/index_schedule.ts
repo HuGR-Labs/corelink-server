@@ -22,7 +22,10 @@ export async function runScheduled(controller: ScheduledController, env: Env): P
     // `cron` plus Cloudflare's scheduled time is deterministic for this tick,
     // so the downstream receiver can make a retry idempotent. The body carries
     // only scheduler metadata — never a routing key, token, or customer data.
-    const deliveryId = `${drill}:${controller.cron}:${controller.scheduledTime}`;
+    // One canonical identifier is carried in the service-binding header, the
+    // receiver D1 row, and PagerDuty's dedup_key. The scheduled timestamp is
+    // stable for a Cloudflare retry and unique for each weekly tick.
+    const deliveryId = `SP-${controller.scheduledTime}`;
     const week = scheduledWeekNumber(controller.scheduledTime);
     const body = {
       drill,

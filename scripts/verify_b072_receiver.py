@@ -19,8 +19,9 @@ def main(root: Path) -> None:
     scheduler = root / "worker/src/index_schedule.ts"
     receiver = root / "apps/synthetic-pager-worker/src/index.ts"
     contract = root / "apps/synthetic-pager-worker/src/contract.ts"
+    migration = root / "migrations/d1/0116_synthetic_page_delivery_lifecycle.sql"
     workspace = root / "pnpm-workspace.yaml"
-    for path in (root_config, receiver_config, scheduler, receiver, contract, workspace):
+    for path in (root_config, receiver_config, scheduler, receiver, contract, migration, workspace):
         if not path.is_file():
             fail(f"missing B-072 contract file: {path.relative_to(root)}")
 
@@ -54,11 +55,16 @@ def main(root: Path) -> None:
         env_data = receiver_data.get("env", {}).get(environment, {})
         if env_data.get("vars", {}).get("SYNTHETIC_DRILL_ENABLED") != "false":
             fail(f"receiver {environment} activation is not disabled")
-        if env_data.get("triggers", {}).get("crons") != []:
-            fail(f"receiver {environment} has an unexpected cron")
+    if receiver_data.get("triggers", {}).get("crons") != ["59 23 * * 0"]:
+        fail("receiver deferred-delivery cron is missing")
+    if receiver_data.get("env", {}).get("staging", {}).get("triggers", {}).get("crons") != ["59 23 * * 0"]:
+        fail("staging deferred-delivery cron is missing")
+    if receiver_data.get("env", {}).get("prod", {}).get("triggers", {}).get("crons") != []:
+        fail("receiver production cron is not explicitly disabled")
 
     receiver_source = receiver.read_text()
     contract_source = contract.read_text()
+    migration_source = migration.read_text()
     scheduler_source = scheduler.read_text()
     workspace_source = workspace.read_text()
     required_fragments = {
@@ -67,19 +73,30 @@ def main(root: Path) -> None:
         "canonical endpoint gate": "env.PAGERDUTY_EVENTS_URL !== PAGERDUTY_EVENTS_URL",
         "routing-key gate": "PAGERDUTY_SYNTHETIC_ROUTING_KEY?.trim()",
         "header/payload correlation gate": "deliveryId !== envelope.synthetic_page.dedup_key",
-        "PagerDuty non-2xx guard": "!pagerDutyResponse.ok",
+        "PagerDuty non-2xx guard": "response === null || !response.ok",
         "D1-before-PagerDuty path": "await persistDelivery(env, envelope)",
+        "deferred durability path": "delivery_mode = 'deferred'",
+        "webhook signature gate": "verifyPagerDutySignature",
+        "webhook D1 outcome update": "SET outcome = ?, engineer_slug = ?, ack_ts_ms = ?, mtta_ms = ?, ack_vector = ?",
+        "webhook production gate": "validateWebhookEnvironment",
     }
     for label, fragment in required_fragments.items():
-        if fragment not in (receiver_source + contract_source):
+        combined_source = receiver_source + contract_source
+        if label in {"production environment guard", "webhook production gate"}:
+            if combined_source.count(fragment) < 2:
+                fail(f"missing {label}")
+            continue
+        if fragment not in combined_source:
             fail(f"missing {label}")
     for label, fragment in {
-        "scheduler deterministic delivery id": "const deliveryId = `${drill}:${controller.cron}:${controller.scheduledTime}`",
+        "scheduler canonical delivery id": "const deliveryId = `SP-${controller.scheduledTime}`",
         "scheduler correlation id": "correlation_id: `PAT-CORRELATION-ID-001:${deliveryId}`",
         "scheduler retry on non-2xx": "if (!response.ok)",
     }.items():
         if fragment not in scheduler_source:
             fail(f"missing {label}")
+    if "`SP-<13-digit scheduled timestamp>`" not in migration_source:
+        fail("migration does not document canonical drill id/dedup format")
     if "apps/synthetic-pager-worker" not in workspace_source:
         fail("receiver package is not in the pnpm workspace")
 
