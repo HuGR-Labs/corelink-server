@@ -1,13 +1,18 @@
 """Regression and mutation tests for the closed-world B-153 gate."""
 from __future__ import annotations
 
+import fnmatch
 import importlib.util
+import re
 import sys
 from pathlib import Path
+
+import yaml
 
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts/validate_permission_matrix.py"
+WORKFLOW = ROOT / ".github/workflows/permission-matrix.yml"
 spec = importlib.util.spec_from_file_location("published_permission_matrix", SCRIPT)
 assert spec and spec.loader
 gate = importlib.util.module_from_spec(spec)
@@ -36,6 +41,52 @@ def _sources() -> dict[str, str]:
 
 def _matrix() -> str:
     return (ROOT / gate.MATRIX).read_text(encoding="utf-8")
+
+
+def _workflow_paths(event: str) -> tuple[str, ...]:
+    """Read the path filters for one permission-matrix trigger."""
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    # PyYAML follows YAML 1.1 and parses GitHub's ``on`` key as ``True``.
+    triggers = workflow[True]
+    return tuple(triggers[event]["paths"])
+
+
+def _source_files() -> set[str]:
+    """Expand validator source directories and include!-assembled Rust parts."""
+    files: set[str] = set()
+    include_re = re.compile(r'include!\(\s*"([^"]+)"\s*\)')
+
+    def visit(source: str) -> None:
+        if source in files:
+            return
+        target = ROOT / source
+        if target.is_dir():
+            for path in target.rglob("*"):
+                if path.is_file():
+                    visit(str(path.relative_to(ROOT)))
+            return
+        files.add(source)
+        for child in include_re.findall(target.read_text(encoding="utf-8")):
+            included = target.parent / child
+            if included.is_file():
+                visit(str(included.relative_to(ROOT)))
+
+    for source in {path for row in gate.APPLIED.values() for path in row.sources}:
+        visit(source)
+    return files
+
+
+def test_every_validator_source_matches_both_permission_matrix_triggers() -> None:
+    """A changed gate source must schedule the checker on PRs and pushes."""
+    pull_request = _workflow_paths("pull_request")
+    push = _workflow_paths("push")
+    assert pull_request == push
+    sources = _source_files()
+    uncovered = {
+        source for source in sources
+        if not any(fnmatch.fnmatchcase(source, pattern) for pattern in pull_request)
+    }
+    assert not uncovered, f"validator sources lack permission-matrix triggers: {sorted(uncovered)}"
 
 
 def test_complete_published_population_is_green() -> None:

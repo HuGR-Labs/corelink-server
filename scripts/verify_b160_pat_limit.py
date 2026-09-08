@@ -2,7 +2,7 @@
 """Executable B-160 proof gate.
 
 This is deliberately a small, bounded verifier rather than a source grep:
-it checks the complete authority path, proves its own teeth with three
+it checks the complete authority path, proves its own teeth with five
 mutations, and runs the load-bearing Worker focal suite while reading its
 machine-readable result.
 """
@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -23,7 +24,10 @@ PNPM_VERSION = "10.32.1"
 TEST_FILE = ROOT / "worker/tests/pat_issue_rate_limit.test.ts"
 RATE_FILE = ROOT / "worker/src/pat_issue_rate_limit.ts"
 DO_FILE = ROOT / "worker/src/durable_object.ts"
-EDGE_FILE = ROOT / "worker/src/index_auth.ts"
+# The trust-header authority lives in the policy module; index_auth.ts is only
+# a re-export shim after the worker source split.
+EDGE_FILE = ROOT / "worker/src/index_auth_policy.ts"
+AUTH_SHIM_FILE = ROOT / "worker/src/index_auth.ts"
 ROUTE_FILES = (
     ROOT / "crates/corelink-container/src/routes/customer/part-00.rs",
     ROOT / "crates/corelink-container/src/routes/customer/part-01.rs",
@@ -59,6 +63,7 @@ def validate_source(files: dict[str, str]) -> None:
     rate = files["rate"]
     do = files["do"]
     edge = files["edge"]
+    shim = files["shim"]
     test = files["test"]
 
     required = (
@@ -81,6 +86,31 @@ def validate_source(files: dict[str, str]) -> None:
         if needle not in files[name]:
             fail(f"B-160 runtime proof missing {needle!r} in {name}")
 
+    # index_auth.ts is the production-facing module imported by the worker's
+    # request stages. The policy implementation must remain wired through its
+    # re-export; checking the policy file alone would allow a dead helper to
+    # satisfy this verifier.
+    policy_export = re.search(
+        r"export\s*\{(?P<exports>.*?)\}\s*from\s*[\"']\./index_auth_policy\.js[\"']",
+        shim,
+        re.DOTALL,
+    )
+    if policy_export is None or "stripClientTrustHeaders" not in policy_export.group("exports"):
+        fail("B-160 production auth shim does not re-export stripClientTrustHeaders from index_auth_policy.js")
+
+    # Prove behavior, not just the header-list marker: the exported helper
+    # must iterate the authoritative list and delete every client value. The
+    # compact body match also rejects a commented-out or no-op mutation.
+    strip_body = re.search(
+        r"export\s+function\s+stripClientTrustHeaders\(h:\s*Headers\):\s*void\s*\{"
+        r"\s*for\s*\(const\s+name\s+of\s+CLIENT_TRUST_HEADERS\)\s*\{"
+        r"\s*h\.delete\(name\);\s*\}\s*\}",
+        edge,
+        re.DOTALL,
+    )
+    if strip_body is None:
+        fail("B-160 runtime proof missing semantic header removal in stripClientTrustHeaders")
+
     for marker in REQUIRED_TEST_MARKERS:
         if marker not in test:
             fail(f"B-160 focal suite lost required case: {marker}")
@@ -94,6 +124,7 @@ def source_files() -> dict[str, str]:
         "rate": read(RATE_FILE),
         "do": read(DO_FILE),
         "edge": read(EDGE_FILE),
+        "shim": read(AUTH_SHIM_FILE),
         "test": read(TEST_FILE),
     }
 
@@ -117,12 +148,26 @@ def mutation_checks(files: dict[str, str]) -> None:
             {**files, "edge": files["edge"].replace('  "x-corelink-pat-issue-authorized",\n', "", 1)},
             "runtime proof missing '\"x-corelink-pat-issue-authorized\"'",
         ),
+        (
+            "no-op edge strip",
+            {**files, "edge": files["edge"].replace("h.delete(name);", "void name;", 1)},
+            "semantic header removal",
+        ),
+        (
+            "rewired production auth shim",
+            {**files, "shim": files["shim"].replace('} from "./index_auth_policy.js";', '} from "./index_auth_timing.js";', 2)},
+            "production auth shim does not re-export",
+        ),
     )
     for name, mutant, expected in mutants:
         if files["do"] == mutant["do"] and name == "disable runtime enforcement":
             fail("B-160 mutation fixture did not change DO enforcement")
         if files["edge"] == mutant["edge"] and name == "remove edge lease strip":
             fail("B-160 mutation fixture did not change edge strip")
+        if files["edge"] == mutant["edge"] and name == "no-op edge strip":
+            fail("B-160 mutation fixture did not change edge behavior")
+        if files["shim"] == mutant["shim"] and name == "rewired production auth shim":
+            fail("B-160 mutation fixture did not change production shim")
         try:
             validate_source(mutant)
         except VerificationError as error:
@@ -209,11 +254,11 @@ def main() -> int:
         validate_source(files)
         mutation_checks(files)
         if args.self_test:
-            print("B-160 verifier mutation teeth: 3/3 rejected")
+            print("B-160 verifier mutation teeth: 5/5 rejected")
             return 0
         pnpm = assert_dependencies()
         run_focal(pnpm)
-        print("B-160 confirmed: runtime seams, 3/3 mutations, and focal Vitest 9/9 passed")
+        print("B-160 confirmed: runtime seams, 5/5 mutations, and focal Vitest 9/9 passed")
         return 0
     except VerificationError as error:
         print(f"B-160 DRIFTED: {error}", file=sys.stderr)
