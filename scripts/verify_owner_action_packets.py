@@ -84,6 +84,57 @@ B111_RELEASE_CHAIN = {
     "sign-windows": {"sign-linux", "release"},
     "notarize-macos": {"sign-windows", "release"},
 }
+B110_EVIDENCE_PATH = "evidence/owner-actions/B-110/ci-capacity-decision.json"
+B110_EVIDENCE_REQUIRED_FIELDS = [
+    "schema_version",
+    "captured_at",
+    "selected_option",
+    "workflows",
+    "capacity_or_billing_reference",
+    "coverage_impact",
+    "runner_labels",
+    "rollback_owner",
+    "operator",
+]
+B110_EVIDENCE_ITEM_SCHEMA = (
+    "workflows[] contains workflow, current_runner, selected_runner, and action; "
+    "selected_option is hosted_billing, linux_self_hosted, or owner_authorized_park."
+)
+B110_EVIDENCE_WORKFLOWS = [
+    {
+        "workflow": ".github/workflows/cas_foundation.yml",
+        "current_runner": "ubuntu-latest / ubuntu-x64-4core",
+        "selected_runner": "corelink",
+        "action": "migrated",
+    },
+    {
+        "workflow": ".github/workflows/coverage.yml",
+        "current_runner": "ubuntu-x64-4core",
+        "selected_runner": "corelink",
+        "action": "migrated",
+    },
+    {
+        "workflow": ".github/workflows/ffi-matrix-ci.yml",
+        "current_runner": "ubuntu-latest",
+        "selected_runner": "corelink",
+        "action": "migrated",
+    },
+    {
+        "workflow": ".github/workflows/mutation-nightly.yml",
+        "current_runner": "ubuntu-x64-4core",
+        "selected_runner": "corelink",
+        "action": "migrated",
+    },
+]
+B110_EXPECTED_POSTCONDITION = (
+    "The owner-approved Linux self-hosted capacity decision is recorded and the four lanes use viable "
+    "CoreLink capacity without deletion; B-110 is closed only after the workflow and verifier changes are present."
+)
+B110_PROCEDURE = [
+    "UI: Choose one authorized capacity path for cas_foundation, coverage, ffi-matrix-ci, and mutation-nightly: restore hosted billing, provision an adequate Linux self-hosted box, or authorize deletion/parking of the named lanes.",
+    "RUN: For a self-hosted path, register a dedicated runner label with documented CPU/RAM/disk limits and verify the four workflows’ `runs-on` and toolchain assumptions before enabling it.",
+    "UI: For hosted billing, confirm the GitHub account spending limit and payment state; for deletion/parking, obtain explicit owner approval describing the coverage loss. Record the selected option before any workflow mutation.",
+]
 
 
 class PacketError(ValueError):
@@ -373,6 +424,61 @@ def _check_b111_workflow_contract(workflow_contracts: dict[str, object]) -> None
             )
 
 
+def _read_b110_evidence() -> dict[str, object]:
+    path = ROOT / B110_EVIDENCE_PATH
+    if not path.is_file() or path.is_symlink():
+        raise PacketError(f"B-110 evidence is missing/non-regular: {B110_EVIDENCE_PATH}")
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise PacketError(f"B-110 evidence is not valid UTF-8 JSON: {exc}") from exc
+    if not isinstance(record, dict):
+        raise PacketError("B-110 evidence root must be an object")
+    return record
+
+
+def _check_b110_evidence(item: dict[str, object]) -> None:
+    evidence = item["evidence"]
+    assert isinstance(evidence, dict)
+    if evidence["path"] != B110_EVIDENCE_PATH:
+        raise PacketError("B-110 evidence path is not the canonical capacity decision")
+    if evidence["format"] != "json":
+        raise PacketError("B-110 evidence format is not JSON")
+    if evidence["required_fields"] != B110_EVIDENCE_REQUIRED_FIELDS:
+        raise PacketError("B-110 evidence required fields drifted")
+    if evidence["item_schema"] != B110_EVIDENCE_ITEM_SCHEMA:
+        raise PacketError("B-110 evidence item schema drifted")
+    if item["action_type"] != "ci_capacity_decision":
+        raise PacketError("B-110 action type drifted")
+    if item["procedure"] != B110_PROCEDURE:
+        raise PacketError("B-110 procedure drifted")
+    if item["expected_postcondition"] != B110_EXPECTED_POSTCONDITION:
+        raise PacketError("B-110 expected postcondition drifted")
+
+    record = _read_b110_evidence()
+    if set(record) != set(B110_EVIDENCE_REQUIRED_FIELDS):
+        raise PacketError("B-110 evidence fields drifted")
+    if record["schema_version"] != 1 or not isinstance(record["captured_at"], str) or not record["captured_at"].strip():
+        raise PacketError("B-110 evidence capture metadata drifted")
+    if record["selected_option"] != "linux_self_hosted":
+        raise PacketError("B-110 capacity decision is not linux_self_hosted")
+    if record["workflows"] != B110_EVIDENCE_WORKFLOWS:
+        raise PacketError("B-110 workflow evidence drifted")
+    if record["capacity_or_billing_reference"] != (
+        "CoreLink runner image documentation: Linux x86_64, 4 vCPU, 12.5 GB; migration commit 41c47f236"
+    ):
+        raise PacketError("B-110 capacity reference drifted")
+    if record["coverage_impact"] != (
+        "No lane was deleted or parked. The FFI Python/Go/Node matrices remain intact; cache guards remain "
+        "self-hosted-safe; workflow assertions are unchanged."
+    ):
+        raise PacketError("B-110 coverage impact drifted")
+    if record["runner_labels"] != ["corelink"]:
+        raise PacketError("B-110 runner labels drifted")
+    if record["rollback_owner"] != "owner" or record["operator"] != "owner-authorized automation":
+        raise PacketError("B-110 evidence ownership metadata drifted")
+
+
 def _check_item(
     item: object,
     expected_id: str,
@@ -441,6 +547,8 @@ def _check_item(
     references = _string_list(item["references"], f"{expected_id}.references", minimum=1)
     if not any(reference.startswith("BACKLOG.md#") for reference in references):
         raise PacketError(f"{expected_id}.references must include its BACKLOG anchor")
+    if expected_id == "B-110":
+        _check_b110_evidence(item)
     if expected_id == "B-111":
         procedure_text = " ".join(item["procedure"])
         schema_text = item["evidence"]["item_schema"]

@@ -9,6 +9,7 @@ import json
 import subprocess
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -67,6 +68,38 @@ class OwnerActionPacketTests(unittest.TestCase):
         stale_item.update(owner="owner", status="open")
         with self.assertRaises(MODULE.PacketError):
             MODULE.check_data(stale, "B-110")
+
+    def test_b110_exact_evidence_binding_rejects_packet_mutations(self) -> None:
+        mutations = (
+            ("path", "evidence/owner-actions/B-110/missing.json"),
+            ("item_schema", "selected_option is anything"),
+            ("required_fields", ["schema_version"]),
+            ("procedure", ["RUN: noop", "RUN: noop"]),
+            ("expected_postcondition", "B-110 is parked"),
+        )
+        for field, value in mutations:
+            with self.subTest(field=field):
+                mutated = copy.deepcopy(self.data)
+                item = next(entry for entry in mutated["items"] if entry["id"] == "B-110")
+                if field in {"path", "item_schema", "required_fields"}:
+                    item["evidence"][field] = value
+                else:
+                    item[field] = value
+                with self.assertRaises(MODULE.PacketError):
+                    MODULE.check_data(mutated, "B-110")
+
+    def test_b110_capacity_decision_evidence_mutations_fail_closed(self) -> None:
+        for field, value in (
+            ("selected_option", "owner_authorized_park"),
+            ("runner_labels", ["mac"]),
+            ("workflows", []),
+        ):
+            with self.subTest(field=field):
+                record = copy.deepcopy(MODULE._read_b110_evidence())
+                record[field] = value
+                with mock.patch.object(MODULE, "_read_b110_evidence", return_value=record):
+                    with self.assertRaises(MODULE.PacketError):
+                        MODULE.check_data(self.data, "B-110")
 
     def test_every_load_bearing_field_mutation_fails(self) -> None:
         self.assertEqual(MODULE.mutation_self_test(self.data), 29 * (len(MODULE.ITEM_FIELDS) + 2) + 2)

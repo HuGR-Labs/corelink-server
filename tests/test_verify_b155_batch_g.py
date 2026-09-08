@@ -109,6 +109,46 @@ class B110WorkflowVerifierTests(unittest.TestCase):
             with self.assertRaises(verifier.CheckError):
                 verifier.verify_b110()
 
+    def test_multiline_or_bypass_in_every_trusted_guard_is_red(self) -> None:
+        mutations = (
+            (
+                ".github/workflows/cas_foundation.yml",
+                "if: github.event_name == 'workflow_dispatch' && github.repository == 'HuGR-Labs/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected",
+            ),
+            (
+                ".github/workflows/mutation-nightly.yml",
+                "if: always() && github.repository == 'HuGR-Labs/corelink-server' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected",
+            ),
+            (
+                ".github/workflows/semgrep.yml",
+                "if: github.repository == 'HuGR-Labs/corelink-server' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected",
+            ),
+        )
+        for target, old in mutations:
+            with self.subTest(target=target):
+                mutation = self._mutated_text(
+                    target,
+                    old,
+                    old + "\n      || github.event_name == 'workflow_dispatch'",
+                )
+                with mutation:
+                    with self.assertRaises(verifier.CheckError):
+                        verifier.verify_b110()
+
+    def test_folded_multiline_or_bypass_is_red(self) -> None:
+        target = ".github/workflows/semgrep.yml"
+        old = "if: github.repository == 'HuGR-Labs/corelink-server' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected"
+        folded = (
+            "if: >-\n"
+            "      github.repository == 'HuGR-Labs/corelink-server' && github.event_name == 'workflow_dispatch' &&\n"
+            "      github.ref == 'refs/heads/main' && github.ref_protected ||\n"
+            "      github.event_name == 'workflow_dispatch'"
+        )
+        mutation = self._mutated_text(target, old, folded)
+        with mutation:
+            with self.assertRaises(verifier.CheckError):
+                verifier.verify_b110()
+
     def test_ref_split_or_cancelling_heavy_build_is_red(self) -> None:
         mutation = self._mutated_text(
             ".github/workflows/cas_foundation.yml",
@@ -144,6 +184,21 @@ class B110WorkflowVerifierTests(unittest.TestCase):
             ".github/workflows/ffi-matrix-ci.yml",
             "  contents: read\n",
             "  contents: write\n",
+        )
+        with mutation:
+            with self.assertRaises(verifier.CheckError):
+                verifier.verify_b110()
+
+    def test_inline_write_permission_on_new_corelink_job_is_red(self) -> None:
+        mutation = self._mutated_text(
+            ".github/workflows/coverage.yml",
+            "  coverage:\n",
+            "  injected-write:\n"
+            "    runs-on: corelink\n"
+            "    permissions: { contents: write }\n"
+            "    steps:\n"
+            "      - run: echo injected\n"
+            "  coverage:\n",
         )
         with mutation:
             with self.assertRaises(verifier.CheckError):

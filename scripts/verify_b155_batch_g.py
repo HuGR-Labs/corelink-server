@@ -16,6 +16,51 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+B110_LANES = ("cas_foundation", "coverage", "ffi-matrix-ci", "mutation-nightly")
+B110_WORKFLOW_PATHS = tuple(f".github/workflows/{lane}.yml" for lane in B110_LANES)
+B110_SEMGREP_PATH = ".github/workflows/semgrep.yml"
+B110_EVIDENCE_PATH = "evidence/owner-actions/B-110/ci-capacity-decision.json"
+B110_EVIDENCE_REQUIRED_FIELDS = (
+    "schema_version",
+    "captured_at",
+    "selected_option",
+    "workflows",
+    "capacity_or_billing_reference",
+    "coverage_impact",
+    "runner_labels",
+    "rollback_owner",
+    "operator",
+)
+B110_EVIDENCE_ITEM_SCHEMA = (
+    "workflows[] contains workflow, current_runner, selected_runner, and action; "
+    "selected_option is hosted_billing, linux_self_hosted, or owner_authorized_park."
+)
+B110_EVIDENCE_WORKFLOWS = (
+    {
+        "workflow": ".github/workflows/cas_foundation.yml",
+        "current_runner": "ubuntu-latest / ubuntu-x64-4core",
+        "selected_runner": "corelink",
+        "action": "migrated",
+    },
+    {
+        "workflow": ".github/workflows/coverage.yml",
+        "current_runner": "ubuntu-x64-4core",
+        "selected_runner": "corelink",
+        "action": "migrated",
+    },
+    {
+        "workflow": ".github/workflows/ffi-matrix-ci.yml",
+        "current_runner": "ubuntu-latest",
+        "selected_runner": "corelink",
+        "action": "migrated",
+    },
+    {
+        "workflow": ".github/workflows/mutation-nightly.yml",
+        "current_runner": "ubuntu-x64-4core",
+        "selected_runner": "corelink",
+        "action": "migrated",
+    },
+)
 IDS = {
     "B-100": "verify_b100",
     "B-109": "verify_b109",
@@ -319,18 +364,124 @@ def workflow_job_names(path: str) -> list[str]:
     ]
 
 
-def workflow_write_permissions(lines: list[str], *, job: bool) -> list[str]:
-    indent = r"\s{6}" if job else r"\s{2}"
-    return [
-        match.group(1)
-        for line in lines
-        if (match := re.match(rf"^{indent}([A-Za-z0-9_-]+):\s*write(?:\s|$)", line))
-    ]
+def _strip_yaml_comment(line: str) -> str:
+    """Strip a YAML comment without truncating quoted expression content."""
+    quote: str | None = None
+    escaped = False
+    for index, character in enumerate(line):
+        if quote == '"':
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                quote = None
+        elif quote == "'":
+            if character == "'":
+                quote = None
+        elif character in {'"', "'"}:
+            quote = character
+        elif character == "#" and (index == 0 or line[index - 1].isspace()):
+            return line[:index].rstrip()
+    return line.rstrip()
+
+
+def _indent(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
+def _permission_writes(value: str, label: str) -> list[str]:
+    """Parse a permissions scalar or inline mapping, fail-closed on ambiguity."""
+    value = _strip_yaml_comment(value).strip()
+    if value in {"read-all", "{}"}:
+        return []
+    if value == "write-all":
+        return ["*"]
+    if not (value.startswith("{") and value.endswith("}")):
+        raise CheckError(f"unsupported permissions form: {label}")
+    inner = value[1:-1].strip()
+    if not inner:
+        return []
+    writes: list[str] = []
+    for entry in inner.split(","):
+        if ":" not in entry:
+            raise CheckError(f"ambiguous inline permissions: {label}")
+        key, permission = (part.strip() for part in entry.split(":", 1))
+        key = key.strip("'\"")
+        permission = permission.strip().strip("'\"")
+        if not key or permission not in {"read", "write", "none"}:
+            raise CheckError(f"ambiguous inline permissions: {label}")
+        if permission == "write":
+            writes.append(key)
+    return writes
+
+
+def _permission_block_writes(lines: list[str], start: int, parent_indent: int, label: str) -> list[str]:
+    """Parse direct child entries of a block-style permissions mapping."""
+    writes: list[str] = []
+    child_indent = parent_indent + 2
+    for line in lines[start + 1 :]:
+        if not line.strip():
+            continue
+        current_indent = _indent(line)
+        if current_indent <= parent_indent:
+            break
+        if current_indent != child_indent:
+            continue
+        entry = _strip_yaml_comment(line).strip()
+        if ":" not in entry:
+            raise CheckError(f"ambiguous permissions block: {label}")
+        key, permission = (part.strip() for part in entry.split(":", 1))
+        if permission not in {"read", "write", "none"}:
+            raise CheckError(f"ambiguous permissions block: {label}")
+        if permission == "write":
+            writes.append(key.strip("'\""))
+    return writes
+
+
+def workflow_top_permissions(path: str) -> tuple[bool, list[str]]:
+    lines = [_strip_yaml_comment(line) for line in workflow_active_lines(path)]
+    matches = [index for index, line in enumerate(lines) if re.match(r"^permissions:(?:\s|$)", line)]
+    assert_true(len(matches) == 1, f"workflow top-level permissions is not unique: {path}")
+    index = matches[0]
+    value = lines[index].split(":", 1)[1].strip()
+    if value:
+        return True, _permission_writes(value, f"{path}:permissions")
+    return True, _permission_block_writes(lines, index, 0, f"{path}:permissions")
+
+
+def workflow_job_permissions(block: list[str], path: str, job: str) -> tuple[bool, list[str]]:
+    lines = [_strip_yaml_comment(line) for line in block]
+    matches = [index for index, line in enumerate(lines) if re.match(r"^    permissions:(?:\s|$)", line)]
+    assert_true(len(matches) <= 1, f"job permissions is not unique: {path}:{job}")
+    if not matches:
+        return False, []
+    index = matches[0]
+    value = lines[index].split(":", 1)[1].strip()
+    if value:
+        return True, _permission_writes(value, f"{path}:{job}:permissions")
+    return True, _permission_block_writes(lines, index, 4, f"{path}:{job}:permissions")
+
+
+def workflow_job_if_expressions(block: list[str]) -> list[str]:
+    """Collect complete job-level YAML `if` scalars, including continuations."""
+    lines = [_strip_yaml_comment(line) for line in block]
+    expressions: list[str] = []
+    for index, line in enumerate(lines):
+        if not re.match(r"^    if:\s*", line):
+            continue
+        parts = [line.split(":", 1)[1].strip()]
+        for continuation in lines[index + 1 :]:
+            if not continuation.strip() or _indent(continuation) <= 4:
+                break
+            parts.append(continuation.strip())
+        expressions.append(" ".join(part for part in parts if part))
+    return expressions
 
 
 def assert_trusted_write_boundary(block: list[str], label: str) -> None:
     """Require a job-level guard for every effective write permission."""
-    job_conditions = [line for line in block if re.match(r"^    if:\s*", line)]
+    job_conditions = workflow_job_if_expressions(block)
     assert_true(len(job_conditions) == 1, f"{label} does not have one job-level trust guard")
     source = job_conditions[0]
     assert_true("||" not in source, f"{label} trust guard contains an OR bypass")
@@ -347,7 +498,7 @@ def assert_trusted_write_boundary(block: list[str], label: str) -> None:
 def assert_trusted_write_guard(block: list[str], event: str, label: str) -> None:
     """Require all four dimensions of the self-hosted write trust boundary."""
     assert_trusted_write_boundary(block, label)
-    source = next(line for line in block if re.match(r"^    if:\s*", line))
+    source = workflow_job_if_expressions(block)[0]
     assert_true(f"github.event_name == '{event}'" in source, f"{label} has the wrong trusted event")
 
 
@@ -369,31 +520,66 @@ def packet_item(item_id: str) -> dict[str, object]:
     return matches[0]
 
 
+def _verify_b110_packet(item: dict[str, object]) -> None:
+    """Bind the closed B-110 row to the exact redacted decision evidence."""
+    evidence = item.get("evidence")
+    assert_true(isinstance(evidence, dict), "B-110 owner packet evidence is not an object")
+    assert_true(evidence.get("path") == B110_EVIDENCE_PATH, "B-110 evidence path drifted")
+    assert_true(evidence.get("format") == "json", "B-110 evidence format drifted")
+    assert_true(
+        evidence.get("required_fields") == list(B110_EVIDENCE_REQUIRED_FIELDS),
+        "B-110 evidence required fields drifted",
+    )
+    assert_true(evidence.get("item_schema") == B110_EVIDENCE_ITEM_SCHEMA, "B-110 evidence schema drifted")
+
+    evidence_path = required(B110_EVIDENCE_PATH)
+    try:
+        record = json.loads(evidence_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise CheckError(f"B-110 evidence is not valid JSON: {error}") from error
+    assert_true(isinstance(record, dict), "B-110 evidence root is not an object")
+    assert_true(set(record) == set(B110_EVIDENCE_REQUIRED_FIELDS), "B-110 evidence fields drifted")
+    assert_true(record.get("schema_version") == 1, "B-110 evidence schema version drifted")
+    assert_true(record.get("selected_option") == "linux_self_hosted", "B-110 capacity decision drifted")
+    assert_true(record.get("workflows") == list(B110_EVIDENCE_WORKFLOWS), "B-110 workflow decision evidence drifted")
+    assert_true(
+        record.get("capacity_or_billing_reference")
+        == "CoreLink runner image documentation: Linux x86_64, 4 vCPU, 12.5 GB; migration commit 41c47f236",
+        "B-110 capacity reference drifted",
+    )
+    assert_true(
+        record.get("coverage_impact")
+        == "No lane was deleted or parked. The FFI Python/Go/Node matrices remain intact; cache guards remain self-hosted-safe; workflow assertions are unchanged.",
+        "B-110 coverage impact drifted",
+    )
+    assert_true(record.get("runner_labels") == ["corelink"], "B-110 runner labels drifted")
+    assert_true(record.get("rollback_owner") == "owner", "B-110 rollback owner drifted")
+    assert_true(record.get("operator") == "owner-authorized automation", "B-110 operator drifted")
+
+
 def verify_b110() -> None:
-    lanes = ("cas_foundation", "coverage", "ffi-matrix-ci", "mutation-nightly")
-    workflow_paths = [f".github/workflows/{lane}.yml" for lane in lanes]
-    workflow_paths.append(".github/workflows/semgrep.yml")
-    for lane in lanes:
-        values = workflow_runs_on(f".github/workflows/{lane}.yml")
+    workflow_paths = [*B110_WORKFLOW_PATHS, B110_SEMGREP_PATH]
+    for lane, path in zip(B110_LANES, B110_WORKFLOW_PATHS):
+        values = workflow_runs_on(path)
         assert_true(values, f"runner population missing: {lane}")
         assert_true(all(value == "corelink" for value in values), f"non-corelink runner present: {lane}")
         assert_true(
-            workflow_triggers(f".github/workflows/{lane}.yml") == ["workflow_dispatch"],
+            workflow_triggers(path) == ["workflow_dispatch"],
             f"untrusted or implicit trigger present: {lane}",
         )
-    values = workflow_runs_on(".github/workflows/semgrep.yml")
+    values = workflow_runs_on(B110_SEMGREP_PATH)
     assert_true(len(values) == 1, "semgrep runner population is not exactly one")
     assert_true(not re.search(r"ubuntu|macos|windows", values[0], re.I), "semgrep returned to hosted runner")
-    assert_true(workflow_triggers(".github/workflows/semgrep.yml") == ["workflow_dispatch"], "semgrep trigger is not dispatch-only")
+    assert_true(workflow_triggers(B110_SEMGREP_PATH) == ["workflow_dispatch"], "semgrep trigger is not dispatch-only")
 
     for path in workflow_paths:
-        top_permissions = workflow_write_permissions(workflow_top_block(path, "permissions"), job=False)
+        _, top_permissions = workflow_top_permissions(path)
         for job in workflow_job_names(path):
             block = workflow_job_block(path, job)
             if not any(re.match(r"^\s+runs-on:\s+corelink(?:\s|$)", line) for line in block):
                 continue
-            job_permissions = workflow_write_permissions(block, job=True)
-            effective = job_permissions if any(line == "    permissions:" for line in block) else top_permissions
+            has_job_permissions, job_permissions = workflow_job_permissions(block, path, job)
+            effective = job_permissions if has_job_permissions else top_permissions
             if effective:
                 assert_trusted_write_boundary(block, f"{path}:{job} ({','.join(effective)})")
 
@@ -427,7 +613,9 @@ def verify_b110() -> None:
     assert_true(coverage_permissions == ["  contents: read"], "coverage retains dead write permissions")
     assert_literal_concurrency(".github/workflows/cas_foundation.yml", "corelink-heavy-cargo-build")
     assert_literal_concurrency(".github/workflows/coverage.yml", "corelink-heavy-cargo-build")
-    assert_true(packet_item("B-110").get("status") == "done", "B-110 owner packet is not done")
+    packet = packet_item("B-110")
+    assert_true(packet.get("status") == "done", "B-110 owner packet is not done")
+    _verify_b110_packet(packet)
     print("done: corelink runners, trusted write guards, least privilege, and shared heavy-build serialization verified")
 
 
