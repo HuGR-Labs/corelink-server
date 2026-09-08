@@ -11,3 +11,6 @@
   cancellation, Playwright webServer, job timeout, billing/startup, ENOSPC, and
   test failures. Missing logs remain `indeterminate`; no empty window can close
   the backlog item. `verify_b152_snapshot.py` validates the snapshot offline.
+- A hosted-runner monitor now samples a bounded 20-minute window every 15
+  minutes and retains metadata-only artifacts. Empty windows and unavailable
+  logs remain explicitly non-closing.
