@@ -59,3 +59,11 @@ jobs:
         if: github.event_name == 'push' || github.event_name == 'schedule'
         working-directory: _base
         run: python3 scripts/backlog_verify.py --trusted-semantic
+      - name: Execute B-046 Object-Lock contract and mutation checks
+        if: github.event_name == 'push' || github.event_name == 'schedule'
+        working-directory: _base
+        run: |
+          python3 scripts/verify_b046_object_lock_probe.py
+          python3 -m unittest -q tests/test_verify_b046_object_lock_probe.py
+          test -f crates/corelink-container/src/routes/dsr/adapter_r2_cas_legalhold.rs
+          test -f migrations/d1/0102_cas_retention.sql

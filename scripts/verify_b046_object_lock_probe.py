@@ -227,7 +227,7 @@ def _required_markers() -> Mapping[str, tuple[str, ...]]:
     return {
         BACKLOG_PATH.as_posix(): (
             "id: B-046",
-            "status: open",
+            "status: parked",
             "verify: manual",
             "NotImplemented",
             "INDETERMINATE",

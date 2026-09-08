@@ -72,7 +72,7 @@ class B046ObjectLockProbeTests(unittest.TestCase):
         backlog = verifier.BACKLOG_PATH.as_posix()
         b046_start = mutated[backlog].index("id: B-046")
         prefix, suffix = mutated[backlog][:b046_start], mutated[backlog][b046_start:]
-        mutated[backlog] = prefix + suffix.replace("status: open", "status: done", 1)
+        mutated[backlog] = prefix + suffix.replace("status: parked", "status: done", 1)
         with self.assertRaises(verifier.ProbeError):
             verifier.validate_repository_contract(mutated)
 
