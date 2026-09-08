@@ -3,8 +3,7 @@
 /// it stops having written only the ordered prefix and reports `Fenced(prefix)`;
 /// otherwise `Complete(n)`. The `clock` and `write_row` seams make the fence
 /// deterministically unit-testable without D1 (drive `clock` across the expiry
-/// and assert only the prefix was written) while the real path passes `now_ms`
-/// and a `write_seal` closure — one shared loop, no divergence.
+/// and assert only the prefix was written).
 async fn run_fenced_seal_loop<C, W, Fut>(
     sealed: &[SealedRow],
     lease_enabled: bool,
@@ -26,6 +25,40 @@ where
     Ok(FencedSeal::Complete(
         u64::try_from(sealed.len()).unwrap_or(u64::MAX),
     ))
+}
+
+/// Write sealed rows in bounded JSON1 chunks.  The lease fence is checked on
+/// both sides of each statement: if the lease expires after a chunk commits,
+/// the head is deliberately left unadvanced and the sealed prefix is resumed
+/// from its durable tail by the next drain.
+async fn run_chunked_fenced_seal_loop<C, W, Fut>(
+    sealed: &[SealedRow],
+    lease_enabled: bool,
+    my_lease_expires_ms: i64,
+    mut clock: C,
+    mut write_chunk: W,
+) -> Result<FencedSeal, String>
+where
+    C: FnMut() -> i64,
+    W: FnMut(Vec<SealedRow>) -> Fut,
+    Fut: std::future::Future<Output = Result<(), String>>,
+{
+    let mut written = 0u64;
+    for chunk in sealed.chunks(AUDIT_SEAL_ROWS_PER_STATEMENT) {
+        if should_fence(clock(), my_lease_expires_ms, lease_enabled) {
+            return Ok(FencedSeal::Fenced(written));
+        }
+        let chunk = chunk.to_vec();
+        let chunk_len = chunk.len();
+        write_chunk(chunk).await?;
+        written = written
+            .checked_add(u64::try_from(chunk_len).map_err(|_| "seal chunk length exceeds u64")?)
+            .ok_or("sealed row count overflow")?;
+        if should_fence(clock(), my_lease_expires_ms, lease_enabled) {
+            return Ok(FencedSeal::Fenced(written));
+        }
+    }
+    Ok(FencedSeal::Complete(written))
 }
 
 /// Acquire the per-partition drain lease atomically (B-038). One SQLite statement

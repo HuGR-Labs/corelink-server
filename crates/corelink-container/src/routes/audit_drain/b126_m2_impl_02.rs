@@ -292,36 +292,111 @@ async fn read_pending_rows(
     Ok(out)
 }
 
-/// Write the sealed columns for one row, guarded by `emitted_at IS NULL` so a
-/// re-run (or a concurrent drain) never double-seals.
-async fn write_seal(d1: &D1HttpClient, row: &SealedRow, now: i64) -> Result<(), String> {
-    let seq = i64::try_from(row.sequence_number).map_err(|_| "sequence_number exceeds i64")?;
-    let epoch_id = i64::try_from(row.epoch_id).map_err(|_| "epoch_id exceeds i64")?;
-    let link_key_id = row
-        .link_key_id
-        .map(i64::try_from)
-        .transpose()
-        .map_err(|_| "link_key_id exceeds i64")?;
-    d1.query(
-        "UPDATE audit_outbox \
-         SET sequence_number = ?1, prev_hash = ?2, chain_hash = ?3, \
-             canonical_jcs = ?4, chained_at = ?5, emitted_at = ?5, \
-             algorithm_id = ?6, epoch_id = ?7, link_key_id = ?8 \
-         WHERE id = ?9 AND emitted_at IS NULL",
-        &[
-            json!(seq),
-            json!(row.prev_hash_hex),
-            json!(row.chain_hash_hex),
-            json!(row.canonical_jcs),
-            json!(now),
-            json!(i64::from(row.algorithm_id)),
-            json!(epoch_id),
-            json!(link_key_id),
-            json!(row.id),
-        ],
-    )
-    .await?;
+/// Maximum number of sealed rows in one JSON1 UPDATE statement.  This keeps
+/// each D1 value bounded while removing the one-HTTP-request-per-row drain
+/// bottleneck.  The global `AUDIT_DRAIN_BATCH_LIMIT` still bounds the total
+/// rows handled by one request.
+const AUDIT_SEAL_ROWS_PER_STATEMENT: usize = 32;
+
+/// One atomic UPDATE for a bounded JSON1 row set.  The count predicate is
+/// intentional: if any expected row was already sealed/raced, *none* of this
+/// chunk is updated and the caller fails closed before advancing the head.
+const AUDIT_SEAL_CHUNK_SQL: &str = "UPDATE audit_outbox \
+    SET sequence_number = (SELECT json_extract(value, '$.sequence_number') FROM json_each(?1) WHERE json_extract(value, '$.id') = audit_outbox.id), \
+        prev_hash = (SELECT json_extract(value, '$.prev_hash') FROM json_each(?1) WHERE json_extract(value, '$.id') = audit_outbox.id), \
+        chain_hash = (SELECT json_extract(value, '$.chain_hash') FROM json_each(?1) WHERE json_extract(value, '$.id') = audit_outbox.id), \
+        canonical_jcs = (SELECT json_extract(value, '$.canonical_jcs') FROM json_each(?1) WHERE json_extract(value, '$.id') = audit_outbox.id), \
+        chained_at = (SELECT json_extract(value, '$.sealed_at') FROM json_each(?1) WHERE json_extract(value, '$.id') = audit_outbox.id), \
+        emitted_at = (SELECT json_extract(value, '$.sealed_at') FROM json_each(?1) WHERE json_extract(value, '$.id') = audit_outbox.id), \
+        algorithm_id = (SELECT json_extract(value, '$.algorithm_id') FROM json_each(?1) WHERE json_extract(value, '$.id') = audit_outbox.id), \
+        epoch_id = (SELECT json_extract(value, '$.epoch_id') FROM json_each(?1) WHERE json_extract(value, '$.id') = audit_outbox.id), \
+        link_key_id = (SELECT json_extract(value, '$.link_key_id') FROM json_each(?1) WHERE json_extract(value, '$.id') = audit_outbox.id) \
+    WHERE id IN (SELECT json_extract(value, '$.id') FROM json_each(?1)) \
+      AND emitted_at IS NULL \
+      AND (SELECT COUNT(*) FROM audit_outbox AS pending \
+           WHERE pending.id IN (SELECT json_extract(value, '$.id') FROM json_each(?1)) \
+             AND pending.emitted_at IS NULL) = json_array_length(?1) \
+    RETURNING id";
+
+/// Build the single JSON parameter consumed by [`AUDIT_SEAL_CHUNK_SQL`].
+/// Duplicate IDs are rejected before the statement is sent because the SQL
+/// count guard compares the array length, not the number of distinct IDs.
+fn seal_chunk_payload(rows: &[SealedRow], now: i64) -> Result<Value, String> {
+    if rows.is_empty() {
+        return Err("audit seal chunk must not be empty".to_owned());
+    }
+    let mut ids = std::collections::HashSet::with_capacity(rows.len());
+    let mut payload = Vec::with_capacity(rows.len());
+    for row in rows {
+        if !ids.insert(&row.id) {
+            return Err(format!("audit seal chunk contains duplicate id {}", row.id));
+        }
+        let sequence_number =
+            i64::try_from(row.sequence_number).map_err(|_| "sequence_number exceeds i64")?;
+        let epoch_id = i64::try_from(row.epoch_id).map_err(|_| "epoch_id exceeds i64")?;
+        let link_key_id = row
+            .link_key_id
+            .map(i64::try_from)
+            .transpose()
+            .map_err(|_| "link_key_id exceeds i64")?;
+        payload.push(json!({
+            "id": row.id,
+            "sequence_number": sequence_number,
+            "prev_hash": row.prev_hash_hex,
+            "chain_hash": row.chain_hash_hex,
+            "canonical_jcs": row.canonical_jcs,
+            "sealed_at": now,
+            "algorithm_id": i64::from(row.algorithm_id),
+            "epoch_id": epoch_id,
+            "link_key_id": link_key_id,
+        }));
+    }
+    serde_json::to_string(&Value::Array(payload))
+        .map(Value::String)
+        .map_err(|e| format!("audit seal chunk payload serialize: {e}"))
+}
+
+/// Validate the exact `RETURNING id` result from a seal chunk.  A missing,
+/// duplicate, unexpected, or malformed id is an error; callers never advance
+/// the chain head on an ambiguous D1 result.
+fn validate_seal_chunk_result(
+    result: &[crate::storage::d1_http::D1Row],
+    expected: &[SealedRow],
+) -> Result<(), String> {
+    if result.len() != expected.len() {
+        return Err(format!(
+            "audit seal chunk updated {} rows, expected {}",
+            result.len(),
+            expected.len()
+        ));
+    }
+    let expected_ids: std::collections::HashSet<&str> =
+        expected.iter().map(|row| row.id.as_str()).collect();
+    let mut seen = std::collections::HashSet::with_capacity(result.len());
+    for returned in result {
+        if returned.len() != 1 {
+            return Err("audit seal RETURNING row has unexpected columns".to_owned());
+        }
+        let id = returned
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or("audit seal RETURNING id missing/non-text")?;
+        if !expected_ids.contains(id) || !seen.insert(id) {
+            return Err(format!(
+                "audit seal RETURNING id is unexpected/duplicate: {id}"
+            ));
+        }
+    }
     Ok(())
+}
+
+/// Write one bounded sealed-row chunk atomically, guarded by `emitted_at IS
+/// NULL`.  A partial/raced result is rejected before the caller advances the
+/// signed head; the count predicate makes the UPDATE itself all-or-nothing.
+async fn write_seal_chunk(d1: &D1HttpClient, rows: &[SealedRow], now: i64) -> Result<(), String> {
+    let payload = seal_chunk_payload(rows, now)?;
+    let result = d1.query(AUDIT_SEAL_CHUNK_SQL, &[payload]).await?;
+    validate_seal_chunk_result(&result, rows)
 }
 
 /// Advance the `audit_chain_head` checkpoint with a compare-and-set on the value

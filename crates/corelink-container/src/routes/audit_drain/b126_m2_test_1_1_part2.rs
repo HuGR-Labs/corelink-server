@@ -275,6 +275,126 @@ async fn seal_loop_propagates_write_error() {
     assert_eq!(err, Err("boom".to_string()));
 }
 
+// ---- B-125: bounded JSON1 seal writes + fail-closed mutation semantics ----
+
+/// The production mutation is one bounded JSON1 UPDATE per chunk, not one D1
+/// request per row. Keep the SQL shape under test so a later edit cannot remove
+/// the pending-row guard or turn the statement back into an unbounded write.
+#[test]
+fn seal_chunk_sql_is_bounded_and_guarded() {
+    assert_eq!(AUDIT_SEAL_ROWS_PER_STATEMENT, 32);
+    assert!(AUDIT_SEAL_CHUNK_SQL.contains("json_each(?1)"));
+    assert!(AUDIT_SEAL_CHUNK_SQL.contains("emitted_at IS NULL"));
+    assert!(AUDIT_SEAL_CHUNK_SQL.contains("json_array_length(?1)"));
+    assert!(AUDIT_SEAL_CHUNK_SQL.contains("RETURNING id"));
+}
+
+#[test]
+fn seal_chunk_payload_rejects_empty_and_duplicate_mutations() {
+    assert!(seal_chunk_payload(&[], 1_700_000_000_000).is_err());
+
+    let rows = sealed_rows(2);
+    let duplicate = vec![rows[0].clone(), rows[0].clone()];
+    let err = seal_chunk_payload(&duplicate, 1_700_000_000_000).unwrap_err();
+    assert!(err.contains("duplicate id"));
+}
+
+#[test]
+fn seal_chunk_payload_preserves_exact_seal_fields() {
+    let rows = sealed_rows(2);
+    let payload = seal_chunk_payload(&rows, 1_700_000_000_000).unwrap();
+    let encoded = payload
+        .as_str()
+        .expect("JSON array encoded as one D1 value");
+    let parsed: Value = serde_json::from_str(encoded).expect("valid JSON array payload");
+    let values = parsed.as_array().expect("JSON array payload");
+    assert_eq!(values.len(), rows.len());
+    assert_eq!(values[0]["id"], rows[0].id);
+    assert_eq!(values[0]["sequence_number"], json!(rows[0].sequence_number));
+    assert_eq!(values[0]["prev_hash"], rows[0].prev_hash_hex);
+    assert_eq!(values[0]["chain_hash"], rows[0].chain_hash_hex);
+    assert_eq!(values[0]["canonical_jcs"], rows[0].canonical_jcs);
+    assert_eq!(values[0]["sealed_at"], json!(1_700_000_000_000i64));
+}
+
+fn returning_id(id: &str) -> crate::storage::d1_http::D1Row {
+    let mut row = serde_json::Map::new();
+    row.insert("id".to_owned(), json!(id));
+    row
+}
+
+#[test]
+fn seal_chunk_result_requires_exact_returning_id_set() {
+    let rows = sealed_rows(2);
+    let good = vec![returning_id(&rows[0].id), returning_id(&rows[1].id)];
+    assert!(validate_seal_chunk_result(&good, &rows).is_ok());
+
+    // Any partial, unexpected, duplicate, extra-column, or non-text result is
+    // ambiguous and must prevent head advancement.
+    assert!(validate_seal_chunk_result(&good[..1], &rows).is_err());
+    assert!(validate_seal_chunk_result(
+        &[returning_id(&rows[0].id), returning_id("not-expected")],
+        &rows
+    )
+    .is_err());
+    assert!(validate_seal_chunk_result(
+        &[returning_id(&rows[0].id), returning_id(&rows[0].id)],
+        &rows
+    )
+    .is_err());
+    let mut extra = returning_id(&rows[0].id);
+    extra.insert("changed".to_owned(), json!(true));
+    assert!(validate_seal_chunk_result(&[extra, returning_id(&rows[1].id)], &rows).is_err());
+    let mut non_text = serde_json::Map::new();
+    non_text.insert("id".to_owned(), json!(42));
+    assert!(validate_seal_chunk_result(&[non_text, returning_id(&rows[1].id)], &rows).is_err());
+}
+
+#[tokio::test]
+async fn chunked_fence_commits_only_bounded_prefix_and_reports_it() {
+    let sealed = sealed_rows(AUDIT_SEAL_ROWS_PER_STATEMENT * 2 + 1);
+    let mut clock_calls = 0;
+    let clock = move || {
+        clock_calls += 1;
+        if clock_calls >= 4 {
+            1_000
+        } else {
+            900
+        }
+    };
+    let mut chunk_lengths = Vec::new();
+    let outcome = run_chunked_fenced_seal_loop(&sealed, true, 1_000, clock, |chunk| {
+        chunk_lengths.push(chunk.len());
+        async { Ok(()) }
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(chunk_lengths, vec![32, 32]);
+    assert_eq!(outcome, FencedSeal::Fenced(64));
+}
+
+#[tokio::test]
+async fn chunked_seal_write_error_stops_before_next_chunk() {
+    let sealed = sealed_rows(AUDIT_SEAL_ROWS_PER_STATEMENT + 1);
+    let mut attempted = Vec::new();
+    let err = run_chunked_fenced_seal_loop(
+        &sealed,
+        false,
+        0,
+        || 0,
+        |chunk| {
+            attempted.push(chunk.len());
+            async { Err("atomic chunk failed".to_owned()) }
+        },
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(err, "atomic chunk failed");
+    assert_eq!(attempted, vec![AUDIT_SEAL_ROWS_PER_STATEMENT]);
+}
+
 /// Sweep plumbing: a `Fenced(n)` outcome is accounted like a truncated batch —
 /// its `n` rows count into `rows_sealed` and it forces `incomplete = true`,
 /// while a `Leased` outcome only increments `partitions_leased`. This mirrors
