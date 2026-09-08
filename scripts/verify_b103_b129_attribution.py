@@ -147,6 +147,57 @@ def _active_include_paths(source: str) -> set[str]:
     return paths
 
 
+def _rust_include_closure(
+    root: Path,
+    entry: str,
+    overrides: dict[str, str],
+) -> str:
+    """Read an active Rust ``include!`` tree, matching compiler resolution.
+
+    The B126-M2 accounting module is intentionally split into nested fragments.
+    Checking only the first fragment lets a required symbol disappear into a
+    child include without the attribution gate noticing.  Resolve each include
+    relative to its containing file, reject paths outside the repository, and
+    fail closed on missing files or include cycles.
+    """
+
+    root = root.resolve()
+    visiting: list[Path] = []
+    visited: set[Path] = set()
+
+    def visit(relative: str) -> str:
+        path = (root / relative).resolve()
+        try:
+            path.relative_to(root)
+        except ValueError as exc:
+            raise VerificationError(f"Rust include escapes repository root: {relative}") from exc
+        canonical = path.relative_to(root)
+        if path in visiting:
+            chain = " -> ".join(str(item.relative_to(root)) for item in (*visiting, path))
+            raise VerificationError(f"Rust include cycle detected: {chain}")
+        if path in visited:
+            return ""
+        source = _read(root, canonical.as_posix(), overrides)
+        visiting.append(path)
+        try:
+            fragments = [source]
+            for include in sorted(_active_include_paths(source)):
+                child = (path.parent / include).resolve()
+                try:
+                    child_relative = child.relative_to(root).as_posix()
+                except ValueError as exc:
+                    raise VerificationError(
+                        f"Rust include escapes repository root: {canonical} -> {include}"
+                    ) from exc
+                fragments.append(visit(child_relative))
+            visited.add(path)
+            return "\n".join(fragments)
+        finally:
+            visiting.pop()
+
+    return visit(entry)
+
+
 def _typescript_tokens(source: str) -> list[tuple[str, str]]:
     """Tokenize executable TypeScript while excluding comments as decoys."""
     tokens: list[tuple[str, str]] = []
@@ -261,6 +312,35 @@ def _call_argument_tokens(tokens: list[tuple[str, str]], name: str) -> list[tupl
             if depth == 0:
                 return tokens[opening + 1 : index]
     return None
+
+
+def _rust_call_arguments_at(
+    tokens: list[tuple[str, str]], opening: int
+) -> list[tuple[str, str]] | None:
+    """Return arguments for a call whose opening parenthesis is at ``opening``."""
+    if opening >= len(tokens) or tokens[opening] != ("punct", "("):
+        return None
+    depth = 1
+    for index in range(opening + 1, len(tokens)):
+        if tokens[index] == ("punct", "("):
+            depth += 1
+        elif tokens[index] == ("punct", ")"):
+            depth -= 1
+            if depth == 0:
+                return tokens[opening + 1 : index]
+    return None
+
+
+def _rate_limit_scope_positions(tokens: list[tuple[str, str]]) -> list[int]:
+    """Find active one-argument ``PhaseScope::enter(Phase::RateLimit)`` calls."""
+    prefix = ("PhaseScope", ":", ":", "enter", "(")
+    expected = ("crate", ":", ":", "origin_timing", ":", ":", "Phase", ":", ":", "RateLimit")
+    positions: list[int] = []
+    for position in _rust_sequence(tokens, prefix):
+        arguments = _rust_call_arguments_at(tokens, position + len(prefix) - 1)
+        if arguments is not None and tuple(_token_values(arguments)) == expected:
+            positions.append(position)
+    return positions
 
 
 def _typescript_function_body(source: str, name: str) -> list[tuple[str, str]] | None:
@@ -425,12 +505,11 @@ def issues(root: Path = ROOT, *, overrides: dict[str, str] | None = None) -> lis
     # particular symbol.  Keeping the wrapper in the read set makes this
     # fail closed if the composition point disappears.
     accounting_wrapper = _read(root, "crates/corelink-container/src/byte_accounting.rs", values)
-    accounting_impl = _read(
+    accounting = _rust_include_closure(
         root,
-        "crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs",
+        "crates/corelink-container/src/byte_accounting.rs",
         values,
     )
-    accounting = f"{accounting_wrapper}\n{accounting_impl}"
     worker = _read(root, "worker/src/index.ts", values)
     worker_observability = _read(root, "worker/src/index_observability.ts", values)
     worker_finish = _read(root, "worker/src/index_finish_stage.ts", values)
@@ -484,10 +563,7 @@ def issues(root: Path = ROOT, *, overrides: dict[str, str] | None = None) -> lis
     try:
         origin_tokens = _rust_tokens(source)
         rate_tokens = _rust_tokens(rate_limit)
-        rate_scope = _rust_sequence(
-            rate_tokens,
-            ("PhaseScope", ":", ":", "enter", "(", "crate", ":", ":", "origin_timing", ":", ":", "Phase", ":", ":", "RateLimit", ",", ")"),
-        )
+        rate_scope = _rate_limit_scope_positions(rate_tokens)
         rate_calls = _rust_sequence(rate_tokens, ("try_acquire", "("))
         if len(rate_scope) != 2:
             result.append(f"ratelimit_layer.rs must have exactly two active RateLimit scopes (found {len(rate_scope)})")
