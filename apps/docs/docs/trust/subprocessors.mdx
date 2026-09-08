@@ -68,7 +68,7 @@ unresolved).
 
 | # | Vendor | Service to CoreLink | Customer-data class | Regions | DPA |
 | --- | --- | --- | --- | --- | --- |
-| 1 | **Cloudflare, Inc.** | Workers / R2 / D1 / DO / KV / Pages / Email | metadata, encrypted-blobs, audit-logs, telemetry | Multi-region (per tenant `primary_region` pin) | [Cloudflare DPA](https://www.cloudflare.com/cloudflare-customer-dpa/) |
+| 1 | **Cloudflare, Inc.** | Workers / R2 / D1 / DO / KV / Pages / Email | metadata, encrypted-blobs, audit-logs, telemetry | R2/DO tenant-pinned; D1 control-plane metadata global under SCC/TIA safeguards | [Cloudflare DPA](https://www.cloudflare.com/cloudflare-customer-dpa/) |
 | 2 | **Stripe, Inc.** | Payment processing + subscription billing + Stripe Atlas counsel | payment, pii | Multi-region (per tenant `primary_region` pin) | [Stripe DPA](https://stripe.com/legal/dpa) |
 | 3 | **Clerk, Inc.** | Authentication + identity provider + JWT issuer | pii | Multi-region (per tenant `primary_region` pin) | Clerk DPA (on request) |
 | 4 | **PagerDuty, Inc.** | Incident management + on-call alerting (prod + synthetic-drill routes) | audit-logs, metadata | US / EU (selectable) | [Trust portal](https://www.pagerduty.com/security/) |

@@ -10861,10 +10861,12 @@ nos EUA. É base de transferência do Art. 46 — não é questão que se resolv
 lançamento.
 
 
-**Só ele (reconfirmado 2026-08-31) — o ato: assinar a emenda de residência
-(`legal/dpa-residency-amendment.md`).** É **instrumento assinado** — mesma classe que mantém
-[B-035], [B-089] e [B-154]. Eu entrego o texto da emenda e a medição da divergência; a
-assinatura é dele.
+**Só ele (reconfirmado 2026-08-31) — o ato: revisão jurídica e eventual execução da
+emenda de residência (`legal/dpa-residency-amendment.md`).** É um **rascunho não
+executado**, explicitamente marcado `PENDING_LEGAL_REVIEW`; nenhuma frase deste item
+transforma o rascunho em obrigação contratual efetiva. Eu entrego o texto e a medição
+da divergência; o Owner decide, com counsel, entre provisionar D1 por jurisdição ou
+emendar e executar o instrumento.
 
 ```backlog
 id: B-086

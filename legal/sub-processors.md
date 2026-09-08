@@ -11,7 +11,7 @@ sub_processors:
       - "blob_content"
       - "audit_logs"
       - "telemetry"
-    region: "Multi-region (tenant-pinned per tenant.primary_region)"
+    region: "R2/DO tenant-pinned per tenant.primary_region; D1 control-plane metadata global under SCC/TIA safeguards"
     certifications:
       - "SOC 2 Type II"
       - "ISO 27001"
