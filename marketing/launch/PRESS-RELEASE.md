@@ -31,8 +31,8 @@ For build-heavy engineering organizations, the cache is the single most leverage
 >
 > **A SENTENCE WAS REMOVED FROM THIS QUOTE.** It asserted third-party
 > pentest evidence, sustained staging, external customer adoption, and an
-> external compliance gap analysis. The pentest half is false — no external
-> pentest has been commissioned. The sentence must not be reinstated in that
+> external compliance gap analysis. The pentest half is false —
+> no external pentest has been commissioned; the sentence must not be reinstated in that
 > form.
 
 ## Highlights (verified claims)

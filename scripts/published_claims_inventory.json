@@ -1841,14 +1841,14 @@
       "marketing/launch/PILOT-LANDING-PAGE-COPY.md": "299ff9ff5d1d3146166dd0e220ad78863af03566d2973a8bb949064c09adb8c7",
       "marketing/launch/PILOT-LINKEDIN-POST.md": "6ae54e21832ff7a6b97e1db71bd05dd5d0926dccc6cfcc1503e11dcd8c7fe45b",
       "marketing/launch/PILOT-TWEET-THREAD.md": "6a600e0dd0d3cd7c57cc0c84dcd468d80c6d251e61fab0680a7663f5a611d615",
-      "marketing/launch/PRESS-RELEASE.md": "d069ce63c8094f1db21317f8c020933eb6639b218284b286b98b02dbdbb44286",
+      "marketing/launch/PRESS-RELEASE.md": "b9e95aef52bb06a02a14a17d502b620fb3bed3a5ed55ece3f39d228a979298f2",
       "marketing/launch/PRODUCT-HUNT/PH-DESCRIPTION.md": "020565f4436a3eff8b2b03ccd408fa72e6e71813939a05f94f0af93b5d8d56ce",
       "marketing/launch/PRODUCT-HUNT/PH-FAQ.md": "f81fda9ec5ab65093f4cb9558f27907222210621b224dce4a64a1dd66a5c8a12",
       "marketing/launch/PRODUCT-HUNT/PH-LAUNCH-PLAN.md": "d2f355cd0f202312d450aea4613c927be8a6c5f90e343d86683e69687fdff38e",
       "marketing/launch/PRODUCT-HUNT/PH-MAKER-COMMENT.md": "88e0cc8a6fbc2b4e9c7dcabcae65e8e90cdb06932b156bb8bd31a3240aba840b",
       "marketing/launch/PRODUCT-HUNT/PH-TAGLINE.md": "d69011a1249a39b1141b7bea71a2ca4c33681de4c4c6e7513f5ac8d92ed8dba8",
       "marketing/launch/RELEASE-NOTES-EDITORIAL-GUIDE.md": "07c379f175030118119fbd6263ec4bf0d0dc2cef382e36af9ac5cb5a9d45db6c",
-      "marketing/launch/SOCIAL/HACKERNEWS-SHOW-HN.md": "aef37a3a33c16e7edaf539a64f4cdd2a4659941c96f9b5648493b16cc2a6298b",
+      "marketing/launch/SOCIAL/HACKERNEWS-SHOW-HN.md": "fe1f7e4b9b6b3262f4826f9ac5e53437ba070d7e77c675877c0f2ab7fb4cee0e",
       "marketing/launch/SOCIAL/LINKEDIN-POST.md": "54b97978c82ca9888825544fdf00b1b21dc53ef3648e3be4507204f85f8cce50",
       "marketing/launch/SOCIAL/TWITTER-THREAD.md": "6eb4ac5fedf40d672d4bbee081c8573b34d1432b98798c367e20bc1532badf81",
       "marketing/launch/STATUS-PAGE-SPEC.md": "019bc91fc3aa2f225a439f632f7e84a6f6a31de22215c496b9e1f189a46df726",
@@ -3157,8 +3157,8 @@
       "52be4b6b8e45dcf5113e2347",
       "d705c8d273488497dbaf2eb3",
       "6cf98caadaf8f61dbdbbcd10",
-      "2c78e91575fef256ba4a2a83",
-      "f039b03518af82a85e10a6ce",
+      "cec597b60538c8b014612776",
+      "71e01a23b847259c7421fd2a",
       "38291dc7575beac0261cb901",
       "41dbaacec511f531802b89be",
       "0d2ca5ec63ad70d73891c995",
@@ -3202,7 +3202,7 @@
       "cb1475c428b3ef8d79850d5c",
       "b83553fcdcbcac2487f00d88",
       "9bd8b0c17e1665b04c8a5f6c",
-      "6808075bddbd608515cffe18",
+      "6745c0b10e7aa3b35ad558c6",
       "ecc571f09d4e124a75047b2d",
       "8bae7a0247af2c90d96b8333",
       "39a91071ffe325346a860a5d",
@@ -13744,19 +13744,19 @@
       "triage": "untriaged"
     },
     {
-      "id": "2c78e91575fef256ba4a2a83",
+      "id": "cec597b60538c8b014612776",
       "path": "marketing/launch/PRESS-RELEASE.md",
       "line": 34,
       "term": "pentest",
-      "text": "> external compliance gap analysis. The pentest half is false \u2014 no external",
+      "text": "> external compliance gap analysis. The pentest half is false \u2014",
       "triage": "untriaged"
     },
     {
-      "id": "f039b03518af82a85e10a6ce",
+      "id": "71e01a23b847259c7421fd2a",
       "path": "marketing/launch/PRESS-RELEASE.md",
       "line": 35,
       "term": "pentest",
-      "text": "> pentest has been commissioned. The sentence must not be reinstated in that",
+      "text": "> no external pentest has been commissioned; the sentence must not be reinstated in that",
       "triage": "untriaged"
     },
     {
@@ -14104,11 +14104,11 @@
       "triage": "untriaged"
     },
     {
-      "id": "6808075bddbd608515cffe18",
+      "id": "6745c0b10e7aa3b35ad558c6",
       "path": "marketing/launch/SOCIAL/HACKERNEWS-SHOW-HN.md",
       "line": 32,
       "term": "pentest",
-      "text": "`CAP-GA-002` external report/retest; those customer and pentest gates are",
+      "text": "`CAP-GA-002` external report/retest; those customer and pentest gates are unmet,",
       "triage": "untriaged"
     },
     {

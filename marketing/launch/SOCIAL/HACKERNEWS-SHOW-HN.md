@@ -29,8 +29,8 @@ CoreLink is a multi-tenant content-addressable remote cache for Bazel and other 
 - **Audit chain is an append-only, tamper-evident hash chain** (`BLAKE3(prev || event)`, each event chained to the previous one — not a Merkle tree). Customers independently re-derive the chain head from their copy of the events, published daily.
 - **Engineering gate is separated from launch orchestration.** The draft gate
   requires external lighthouse evidence, zero CRITICAL waivers, and the
-  `CAP-GA-002` external report/retest; those customer and pentest gates are
-  unmet, so this draft does not authorize a GA claim or imply customer
+  `CAP-GA-002` external report/retest; those customer and pentest gates are unmet,
+  so this draft does not authorize a GA claim or imply customer
   adoption.
 - **REAPI v2 over HTTP/REST.** Most existing Bazel configurations work with a `--remote_cache` URL change. Buck2 and Pants speak REAPI over gRPC only and are not supported.
 
