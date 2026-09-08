@@ -410,14 +410,13 @@
     }
 
     // ---------------------------------------------------------------
-    // Concurrent audit+R2 `list()` seam
+    // Durable-audit-before-R2 `list()` timing
     // ---------------------------------------------------------------
 
-    /// `list()`'s SERIAL FALLBACK path (`audit_async` unset — every test
-    /// handler in this module) is exercised no differently than before this
-    /// PR: the `block_in_place` R2 `ListObjectsV2` call still lands in
+    /// `list()`'s durable attempted audit is completed before the
+    /// `block_in_place` R2 `ListObjectsV2` call, which still lands in
     /// `Phase::Store` (`ostore`). Network-free (stub S3 endpoint), so this
-    /// runs in CI, unlike the concurrent-path test below.
+    /// runs in CI.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn r2_cas_list_serial_fallback_attributes_the_r2_call_to_ostore() {
         let handler = std::sync::Arc::new(make_test_handler("iad").await);
@@ -467,4 +466,192 @@
             "R2CasHandler::list's serial-fallback R2 call must be attributed \
              to Phase::Store (ostore). Header: {header}"
         );
+    }
+    #[derive(Debug)]
+    struct GatedAuditSink {
+        recorder: Arc<StorageDispatchRecorder>,
+        fail: bool,
+    }
+
+    impl AuditSink for GatedAuditSink {
+        fn emit(&self, _event: AuditEvent) -> Result<(), String> {
+            if self.fail {
+                return Err("audit gate closed".to_owned());
+            }
+            self.recorder
+                .audit_committed
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    impl corelink_handler_ac::AuditSink for GatedAuditSink {
+        fn emit(&self, _event: corelink_handler_ac::AuditEvent) -> Result<(), String> {
+            if self.fail {
+                return Err("audit gate closed".to_owned());
+            }
+            self.recorder
+                .audit_committed
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    async fn make_recorded_client(recorder: Arc<StorageDispatchRecorder>) -> R2S3Client {
+        let stub_env = StorageEnv {
+            r2_endpoint: "https://localhost:1".to_owned(),
+            r2_access_key_id: "test".to_owned(),
+            r2_secret_access_key: "test".to_owned(),
+            cloudflare_account_id: "test".to_owned(),
+            cf_api_token: "test".to_owned(),
+            d1_database_id: "test".to_owned(),
+        };
+        R2S3Client::new(&stub_env, "test-bucket")
+            .await
+            .expect("stub client")
+            .with_test_storage_recorder(recorder)
+    }
+
+    /// Native CAS/AC reads and lists must not dispatch storage until the
+    /// durable attempted audit succeeds. The recorder sits immediately before
+    /// each AWS SDK call, making the zero-call assertion independent of network
+    /// behavior and the positive case deterministic even with a stub endpoint.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn attempted_audit_is_a_hard_storage_dispatch_gate() {
+        let cas_digest = "a".repeat(64);
+
+        let storage_body = b"gated storage success".to_vec();
+        let storage_digest = Digest::compute(&storage_body).to_hex();
+        let recorder = StorageDispatchRecorder::new();
+        let audit: Arc<dyn AuditSink> = Arc::new(GatedAuditSink {
+            recorder: Arc::clone(&recorder),
+            fail: true,
+        });
+        let cas = R2CasHandler::new(
+            make_recorded_client(Arc::clone(&recorder)).await,
+            "iad",
+            None,
+            audit,
+            Arc::new(InMemorySliObserver::new()),
+        );
+        let err = CasReadHandler::read(
+            &cas,
+            CasReadRequest::new("tenant-a", cas_digest.clone(), "p", "tenant-a", 1),
+        )
+        .expect_err("failed attempted audit");
+        assert!(matches!(err, CasHandlerError::AuditFailed(_)));
+        assert_eq!(recorder.calls.load(Ordering::SeqCst), 0);
+
+        let recorder = StorageDispatchRecorder::new();
+        let audit: Arc<dyn corelink_handler_ac::AuditSink> = Arc::new(GatedAuditSink {
+            recorder: Arc::clone(&recorder),
+            fail: true,
+        });
+        let ac = R2AcHandler::new(
+            make_recorded_client(Arc::clone(&recorder)).await,
+            "iad",
+            None,
+            audit,
+            Arc::new(corelink_handler_ac::InMemorySliObserver::new()),
+        );
+        let err = corelink_handler_ac::AcLookupHandler::lookup(
+            &ac,
+            corelink_handler_ac::AcLookupRequest::new(
+                "tenant-a", "b".repeat(64), "p", "tenant-a", 1,
+            ),
+        )
+        .expect_err("failed attempted audit");
+        assert!(matches!(err, corelink_handler_ac::AcHandlerError::AuditFailed(_)));
+        assert_eq!(recorder.calls.load(Ordering::SeqCst), 0);
+
+        let recorder = StorageDispatchRecorder::new();
+        let audit: Arc<dyn AuditSink> = Arc::new(GatedAuditSink {
+            recorder: Arc::clone(&recorder),
+            fail: true,
+        });
+        let cas = R2CasHandler::new(
+            make_recorded_client(Arc::clone(&recorder)).await,
+            "iad",
+            None,
+            audit,
+            Arc::new(InMemorySliObserver::new()),
+        );
+        let err = CasListHandler::list(
+            &cas,
+            corelink_handler_cas::CasListRequest::new(
+                "tenant-a",
+                "p",
+                "tenant-a",
+                10,
+                None,
+                1,
+            ),
+        )
+        .expect_err("failed attempted audit");
+        assert!(matches!(err, CasHandlerError::AuditFailed(_)));
+        assert_eq!(recorder.calls.load(Ordering::SeqCst), 0);
+
+        let recorder = StorageDispatchRecorder::new();
+        let audit: Arc<dyn corelink_handler_ac::AuditSink> = Arc::new(GatedAuditSink {
+            recorder: Arc::clone(&recorder),
+            fail: true,
+        });
+        let ac = R2AcHandler::new(
+            make_recorded_client(Arc::clone(&recorder)).await,
+            "iad",
+            None,
+            audit,
+            Arc::new(corelink_handler_ac::InMemorySliObserver::new()),
+        );
+        let err = corelink_handler_ac::AcListHandler::list(
+            &ac,
+            corelink_handler_ac::AcListRequest::new("tenant-a", "p", "tenant-a", 10, None, 1),
+        )
+        .expect_err("failed attempted audit");
+        assert!(matches!(err, corelink_handler_ac::AcHandlerError::AuditFailed(_)));
+        assert_eq!(recorder.calls.load(Ordering::SeqCst), 0);
+
+        let recorder = StorageDispatchRecorder::successful(storage_body.clone());
+        let audit: Arc<dyn AuditSink> = Arc::new(GatedAuditSink {
+            recorder: Arc::clone(&recorder),
+            fail: false,
+        });
+        let cas = R2CasHandler::new(
+            make_recorded_client(Arc::clone(&recorder)).await,
+            "iad",
+            None,
+            audit,
+            Arc::new(InMemorySliObserver::new()),
+        );
+        let response = CasReadHandler::read(
+            &cas,
+            CasReadRequest::new("tenant-a", storage_digest, "p", "tenant-a", 1),
+        )
+        .expect("successful attempted audit and storage");
+        assert_eq!(response.bytes, storage_body);
+        assert_eq!(recorder.calls.load(Ordering::SeqCst), 1);
+        assert!(!recorder.premature.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cross_tenant_reads_are_denied_before_storage_dispatch() {
+        let recorder = StorageDispatchRecorder::new();
+        let audit: Arc<dyn AuditSink> = Arc::new(GatedAuditSink {
+            recorder: Arc::clone(&recorder),
+            fail: false,
+        });
+        let cas = R2CasHandler::new(
+            make_recorded_client(Arc::clone(&recorder)).await,
+            "iad",
+            None,
+            audit,
+            Arc::new(InMemorySliObserver::new()),
+        );
+        let err = CasReadHandler::read(
+            &cas,
+            CasReadRequest::new("victim", "c".repeat(64), "attacker", "attacker", 1),
+        )
+        .expect_err("cross-tenant request");
+        assert!(matches!(err, CasHandlerError::CrossTenantDenied { .. }));
+        assert_eq!(recorder.calls.load(Ordering::SeqCst), 0);
     }

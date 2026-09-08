@@ -38,8 +38,8 @@ pub async fn build_r2_ac_handler_from_env(
     // space is not content-addressed, so a lost/forged audit row is even more
     // dangerous. Wire the D1 `audit_outbox` sink or REFUSE (route mounts the
     // fail-CLOSED handler, never a volatile in-memory fallback).
-    // Kept concrete for `with_async_audit` too — see the matching comment in
-    // `build_r2_cas_handler_from_env`.
+    // Kept concrete for the explicit batch-exists audit seam too — see the
+    // matching comment in `build_r2_cas_handler_from_env`.
     let audit_concrete = match ac_audit_sink_from_d1_concrete(D1HttpClient::new(&env)) {
         Ok(a) => a,
         Err(e) => {

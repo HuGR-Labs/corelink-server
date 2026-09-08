@@ -247,9 +247,8 @@ impl D1AuditOutboxSink {
 
     /// Build the `(sql, params)` pair for a SINGLE audit-event row, shared by
     /// BOTH the sync [`Self::append`] (drives it through
-    /// [`Self::write_blocking`]) and the async [`Self::append_async`] (drives
-    /// it with a bare `.await`, for the CAS/AC concurrent read seam — see
-    /// `storage/r2_s3.rs`). The row's CONTENT comes from [`Self::build_row`],
+    /// [`Self::write_blocking`]) and the batch writer. The row's CONTENT comes
+    /// from [`Self::build_row`],
     /// so this and [`Self::build_batch_insert`] cannot drift.
     fn build_insert(
         &self,
@@ -275,8 +274,7 @@ impl D1AuditOutboxSink {
 
     /// Append a single audit event to `audit_outbox`, synchronously (drives
     /// the write through [`Self::write_blocking`]'s `block_in_place` +
-    /// `block_on` bridge). Every non-concurrent `AuditSink::emit` call
-    /// routes through this.
+    /// `block_on` bridge). Every `AuditSink::emit` call routes through this.
     ///
     /// Keys (`id`, `request_id`) are deterministic per logical event so a
     /// re-emit collides on the PK / `UNIQUE(request_id, event_type)` and is an
@@ -295,46 +293,11 @@ impl D1AuditOutboxSink {
         self.write_blocking(&sql, params)
     }
 
-    /// Async counterpart of [`Self::append`] — same SQL, same idempotency
-    /// key, same fail-CLOSED `Result<(), String>` contract, but a bare
-    /// `.await`-able future instead of a self-contained blocking call.
-    ///
-    /// # Why this exists (narrow seam, not a new audit path)
-    ///
-    /// `AuditSink::emit` is, and stays, SYNC — this method is NOT part of
-    /// that trait and is never called through it. It exists solely so the
-    /// CAS/AC native-plane concurrent LIST seam
-    /// (`R2CasHandler::list` / `R2AcHandler::list` in `storage/r2_s3.rs`)
-    /// can `tokio::join!` the audit write and the R2 enumeration as two
-    /// sibling futures under ONE outer `block_in_place` + `block_on`,
-    /// instead of two separate serial ones. `self.audit.emit(...)`
-    /// (the sync path) cannot be used as one half of a `join!` — it is
-    /// itself a self-contained `block_in_place`+`block_on` call, not a
-    /// `Future`.
-    ///
-    /// Deliberately does NOT wrap a [`crate::origin_timing::PhaseScope`]
-    /// itself (contrast [`Self::write_blocking`], which always does): the
-    /// caller wraps the WHOLE concurrent join in one `Phase::Store` scope,
-    /// so this audit write's wall time is attributed exactly once, not
-    /// double-counted against the overlapping R2 call. See
-    /// `origin_timing.rs`'s "Concurrent native-plane list seam" note.
-    pub(crate) async fn append_async(
-        &self,
-        event_type: &str,
-        tenant: &str,
-        digest: Option<&str>,
-        principal: &str,
-        at_unix_ms: u64,
-    ) -> Result<(), String> {
-        let (sql, params) = self.build_insert(event_type, tenant, digest, principal, at_unix_ms)?;
-        self.d1.query(&sql, &params).await.map(|_| ())
-    }
-
     /// Append MANY audit rows in ONE D1 round trip (or, past
     /// [`AUDIT_BATCH_ROWS_PER_STATEMENT`], a small fixed number of
     /// CONCURRENT ones) instead of one round trip per row.
     ///
-    /// # Why this exists (the same narrow seam as [`Self::append_async`])
+    /// # Why this exists (the narrow batch seam)
     ///
     /// `AuditSink::emit` is, and stays, SYNC and one-row-at-a-time; this
     /// method is NOT part of that trait and is never reached through it. It
@@ -356,11 +319,9 @@ impl D1AuditOutboxSink {
     /// It is ALL-or-nothing at the caller's level — any chunk failing fails
     /// the whole call.
     ///
-    /// Like [`Self::append_async`], it deliberately opens NO
-    /// [`crate::origin_timing::PhaseScope`]: the caller wraps the whole
-    /// concurrent join in one `Phase::Store` scope so the overlapping window
-    /// is attributed exactly once. See `origin_timing.rs`'s "Concurrent
-    /// native-plane list seam" note.
+    /// It deliberately opens NO [`crate::origin_timing::PhaseScope`]: the
+    /// caller wraps the whole concurrent join in one `Phase::Store` scope so
+    /// the overlapping window is attributed exactly once.
     async fn append_batch_async(&self, rows: Vec<AuditRow>) -> Result<(), String> {
         let statements = Self::build_batch_statements(&rows)?;
         // Chunks are independent `INSERT OR IGNORE`s over disjoint row sets,
@@ -401,11 +362,9 @@ impl D1AuditOutboxSink {
     /// `PhaseScope` use: instrumentation can never change this method's
     /// result.
     ///
-    /// [`Self::append_async`] is the ONE exception: it drives the same SQL
-    /// through `self.d1.query` directly (no `block_in_place`, no
-    /// `PhaseScope` here) so its caller (the CAS/AC concurrent `list()` seam
-    /// in `storage/r2_s3.rs`) can attribute the joined window itself — see
-    /// that method's doc.
+    /// The batch writer is the ONE exception: it drives the same SQL through
+    /// `self.d1.query` directly (no `block_in_place`, no `PhaseScope` here)
+    /// so its caller can attribute the joined audit/probe window itself.
     fn write_blocking(&self, sql: &str, params: Vec<Value>) -> Result<(), String> {
         let _scope = crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Audit);
         let d1 = Arc::clone(&self.d1);
@@ -441,28 +400,11 @@ impl corelink_handler_ac::AuditSink for D1AuditOutboxSink {
     }
 }
 
-/// Async counterpart of the CAS `AuditSink::emit` impl above, for the
-/// concurrent-list seam only — see [`D1AuditOutboxSink::append_async`].
-/// NOT a trait impl (the `corelink_handler_cas::AuditSink` trait stays
-/// sync); this is a plain inherent method reached directly by
-/// `storage/r2_s3.rs`, which holds the concrete `Arc<D1AuditOutboxSink>`
-/// alongside the type-erased `Arc<dyn AuditSink>` for exactly this reason.
 impl D1AuditOutboxSink {
-    pub(crate) async fn emit_cas_async(
-        &self,
-        event: corelink_handler_cas::AuditEvent,
-    ) -> Result<(), String> {
-        self.append_async(
-            event.kind.slug(),
-            &event.tenant,
-            Some(event.hash.as_str()),
-            &event.principal,
-            event.at_unix_ms,
-        )
-        .await
-    }
-
-    /// BATCH counterpart of [`Self::emit_cas_async`], for the
+    /// Batch audit writer for the `findMissingBlobs` seam. This is the only
+    /// native read path that intentionally overlaps its durable audit write
+    /// with storage probes; no result is returned until the batch audit
+    /// future has succeeded.
     /// `findMissingBlobs` seam only — see [`Self::append_batch_async`].
     ///
     /// Preserves the taxonomy exactly: one row per event, in request order,
@@ -484,21 +426,6 @@ impl D1AuditOutboxSink {
             })
             .collect::<Result<Vec<_>, String>>()?;
         self.append_batch_async(rows).await
-    }
-
-    /// AC counterpart of [`Self::emit_cas_async`].
-    pub(crate) async fn emit_ac_async(
-        &self,
-        event: corelink_handler_ac::AuditEvent,
-    ) -> Result<(), String> {
-        self.append_async(
-            event.kind.slug(),
-            &event.tenant,
-            Some(event.action_digest.as_str()),
-            &event.principal,
-            event.at_unix_ms,
-        )
-        .await
     }
 }
 
@@ -607,7 +534,7 @@ impl D1AuditOutboxSink {
 /// sink can't force `reqwest` to fail). The production builder
 /// (`build_r2_cas_handler_from_env`) now calls
 /// [`cas_audit_sink_from_d1_concrete`] directly (it needs the concrete type
-/// for the async seam) — this type-erased wrapper is kept for tests that
+/// for the batch seam) — this type-erased wrapper is kept for tests that
 /// only care about the `AuditSink` trait-object shape, hence `#[cfg(test)]`.
 ///
 /// # Errors
@@ -622,12 +549,10 @@ pub(crate) fn cas_audit_sink_from_d1(
 }
 
 /// Concrete-typed counterpart of [`cas_audit_sink_from_d1`], for callers
-/// that need the narrow async seam ([`D1AuditOutboxSink::emit_cas_async`])
-/// and not just the type-erased `AuditSink` trait object — currently only
-/// `build_r2_cas_handler_from_env` (`storage/r2_s3.rs`), which passes this
-/// SAME `Arc` to both `R2CasHandler::new` (coerced to `Arc<dyn AuditSink>`)
-/// and `R2CasHandler::with_async_audit` (kept concrete) so the sync and
-/// concurrent paths are provably the same sink instance, not two.
+/// that need the narrow batch seam and not just the type-erased `AuditSink`
+/// trait object — currently only `build_r2_cas_handler_from_env`, which passes
+/// this SAME `Arc` to both `R2CasHandler::new` (coerced to `Arc<dyn AuditSink>`)
+/// and `R2CasHandler::with_async_audit` (kept concrete).
 ///
 /// # Errors
 ///

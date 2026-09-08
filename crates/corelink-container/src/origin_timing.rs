@@ -25,12 +25,12 @@
 //! |----------|--------------------------------------------------------------------|
 //! | `opat`    | the container's per-request D1 `pat` row read (kept by #1022 for immediate revocation) — and, on the cargo read path, the url-map row it CO-READS in the same round trip |
 //! | `oquota`  | the per-tenant monthly `$`-ceiling check/accrue (ADR-0068) — a D1 round trip |
-//! | `ostore`  | the moat storage lookup's CAS/R2 blob work and, on the native CAS/AC plane, the R2/S3 object GET/PUT/DELETE/LIST calls `R2CasHandler`/`R2AcHandler` make through the sync `block_in_place` bridge (`storage/r2_s3.rs`) — **and**, on the native CAS/AC `list()` read path specifically, the CONCURRENT audit write that now runs alongside the R2 `ListObjectsV2` call — and, on the Bazel `findMissingBlobs` path, the whole joined window of the batched audit write plus the concurrent R2 `HeadObject` probes (see "Concurrent native-plane list seam" below) |
+//! | `ostore`  | the moat storage lookup's CAS/R2 blob work and, on the native CAS/AC plane, the R2/S3 object GET/PUT/DELETE/LIST calls `R2CasHandler`/`R2AcHandler` make through the sync `block_in_place` bridge (`storage/r2_s3.rs`) — and, on the Bazel `findMissingBlobs` path, the whole joined window of the explicit batched-audit exception plus concurrent R2 `HeadObject` probes (see below) |
 //! | `oaccounting` | D1 storage-byte accounting and adapter URL-map writes/reads. It is intentionally separate from `ostore`; the two scopes never overlap. |
 //! | `oargon`  | Argon2id verification (`adapter_pat.rs`): the secret-match memo check plus, on a miss, the coalesced verify flight — AND, on the SAME name, the row-not-found coalesced dummy Argon2id burn that pads timing for a missing/expired/revoked `token_id` (see the security note below) |
 //! | `opermit` | the semaphore acquires bounded by `ARGON2_PERMIT_WAIT`, in both the dummy-burn arm and the real verify arm |
 //! | `ortier`  | `ensure_tier_applied`'s D1 tier-label resolution (`routes/ratelimit_layer.rs` → `oci_cap.rs`) |
-//! | `oaudit`  | the blocking durable-audit D1 write on the request path (`D1AuditOutboxSink::write_blocking`, `storage/d1_audit_sink.rs`) — every `AuditSink::emit`/`append` the native CAS/AC handlers make before/after a mutation or read routes through this one blocking D1-over-HTTP `INSERT`. **Exceptions:** the native CAS/AC `list()` read path's `ListAttempted` audit write, and the Bazel `findMissingBlobs` path's batched `ReadAttempted` write, do NOT appear here when they run concurrently with the R2 calls — see below. |
+//! | `oaudit`  | the blocking durable-audit D1 write on the request path (`D1AuditOutboxSink::write_blocking`, `storage/d1_audit_sink.rs`) — every `AuditSink::emit`/`append` the native CAS/AC handlers make before/after a mutation or read routes through this one blocking D1-over-HTTP `INSERT`. The explicit Bazel `findMissingBlobs` batch exception uses its own joined `ostore` window. |
 //! | `oratelimit` | the synchronous per-tenant/OCI token-bucket admission decision; it covers no awaited handler work, so it cannot overlap the named D1/R2 phases |
 //! | `ohandler` | request-framework work outside a more specific phase: routing, HMAC, body handling, response assembly |
 //!
@@ -72,48 +72,27 @@
 //! canonical phases always partition the container window; the legacy alias is
 //! normalized away by new Workers.
 //!
-//! ## Concurrent native-plane list seam — the ONE place two phases now overlap
+//! ## Durable attempted-audit ordering
 //!
 //! Distinct phases on a production path are entered and exited one at a time;
 //! their regions are sequential, so summing their accumulated microseconds is
 //! a true partition of the request and can never double-count a millisecond.
 //! When a same-phase region crosses a task boundary, the shared ledger
 //! coalesces nested and overlapping scopes into one wall-clock window.
-//! `R2CasHandler::list` / `R2AcHandler::list` (`storage/r2_s3.rs`) are the ONE
-//! exception: the mandatory `ListAttempted` durable-audit write and the R2
-//! `ListObjectsV2` call now run CONCURRENTLY, `tokio::join!`ed under a single
-//! `block_in_place` + `block_on`, because they measurably don't need to be
-//! serial (the audit write and the R2 call don't read each other's result —
-//! see `r2_s3.rs`'s `list()` doc for the fail-CLOSED argument).
+//! Native CAS/AC `ReadAttempted`, `ListAttempted`, and `LookupAttempted` writes
+//! run through the blocking durable-audit bridge and complete before their
+//! corresponding R2 operation is dispatched. This is a security ordering, not
+//! merely a response gate: an audit failure means zero storage dispatches.
 //!
-//! If BOTH sides entered their own `PhaseScope` (`Phase::Audit` and
-//! `Phase::Store`) for that overlapping wall-clock window, their accumulated
-//! microseconds would NOT partition the request any more — the SAME
-//! milliseconds would be counted under two names, `attributed_ms` could
-//! exceed `total_ms`, and `ohandler`'s `(total_ms - attributed_ms).max(0)` guard
-//! would silently swallow the overcount into a floor of zero rather than
-//! reporting it. That would make the header LIE by omission — `Σ(phases)`
-//! would no longer be a request partition even though nothing overflowed.
-//!
-//! The concurrent seam avoids this by attributing the WHOLE joined window
-//! ONCE, to `Phase::Store`, and never entering `Phase::Audit` for it:
-//! `D1AuditOutboxSink::append_async` (the audit half of the join) is a bare
-//! future with NO `PhaseScope` of its own — only the serial
-//! `write_blocking` bridge (used by every other audit call, including
-//! `list()`'s own fallback path when no async-capable sink is wired) still
-//! enters `Phase::Audit`. So: on the concurrent `list()` path, `ostore`
-//! reports the FULL joined window (audit + R2, whichever finishes last) and
-//! `oaudit` reports nothing for that specific write — `oaudit` is
-//! unaffected everywhere else (every mutation path — write/update/delete —
-//! stays fully serial and keeps entering `Phase::Audit` exactly as before;
-//! see `r2_s3.rs` for why those paths were NOT made concurrent). The
-//! named-phase sum therefore still partitions the request exactly, by
-//! construction, not by the `max(0)` guard papering over an overcount.
+//! The only deliberate overlap is the Bazel `findMissingBlobs` batch-exists
+//! exception below, where one batched audit write and many HEAD probes share a
+//! bounded joined window. Its audit result is evaluated first and no flags are
+//! returned unless the audit succeeds.
 //!
 //! ### The `findMissingBlobs` batch seam obeys the SAME rule
 //!
 //! `R2CasHandler::exists_batch` (`storage/r2_s3.rs`, the Bazel REAPI
-//! `findMissingBlobs` path) is the second — and, at time of writing, last —
+//! `findMissingBlobs` path) is the sole — and, at time of writing, last —
 //! place two kinds of work overlap. It joins ONE batched `ReadAttempted`
 //! audit write (`D1AuditOutboxSink::append_batch_async`, N rows in one
 //! statement) with up to `MAX_CONCURRENT_EXISTS_PROBES` in-flight R2
@@ -123,7 +102,7 @@
 //!
 //! * **Across the two kinds of work** — ONE `Phase::Store` scope wraps the
 //!   whole joined window and `Phase::Audit` is never entered for it
-//!   (`append_batch_async`, like `append_async`, opens no scope of its own),
+//!   (`append_batch_async` opens no scope of its own),
 //!   so the audit and the storage halves cannot both bill the same
 //!   milliseconds.
 //! * **Across the concurrent probes themselves** — the per-probe helper
@@ -155,9 +134,8 @@
 //!   `write_blocking` — the ONE blocking-D1 choke point every CAS/AC audit
 //!   `emit`/`append` call routes through, native plane only (the moat
 //!   surfaces' cache-hit audit trail is a separate, already-async path and is
-//!   not in `oaudit`). EXCEPT the native `list()` read path's concurrent
-//!   audit write, which is charged to `ostore` instead — see "Concurrent
-//!   native-plane list seam" above.
+//!   not in `oaudit`). The explicit batch-exists audit/probe join is charged
+//!   to `ostore` as a single joined window.
 //! * The layer stops timing when the handler returns its `Response`. For a
 //!   buffered body (every route on the measured `/cargo` path) that is the whole
 //!   cost; for a streamed body the streaming itself is outside `ohandler` — and it

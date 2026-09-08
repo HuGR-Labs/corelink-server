@@ -4,7 +4,7 @@
     /// joined window is attributed ONCE to `ostore` with `oaudit` ABSENT
     /// (proving neither `append_batch_async` nor the per-probe helper
     /// opened a scope of its own). Mirrors
-    /// `r2_cas_list_concurrent_path_fails_closed_on_bad_audit_creds`.
+    /// `r2_cas_list_durable_audit_failure_precedes_storage`.
     ///
     /// `#[ignore]` for the same reason as that test: needs outbound
     /// reachability to `api.cloudflare.com` (a 401 still proves the join

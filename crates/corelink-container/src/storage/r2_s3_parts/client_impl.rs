@@ -45,8 +45,29 @@ impl R2S3Client {
             inner: Client::from_conf(s3_config),
             bucket: bucket.into(),
             delete_locks: std::sync::Mutex::new(std::collections::HashMap::new()),
+            #[cfg(test)]
+            storage_recorder: None,
         })
     }
+
+    /// Attach a test-only recorder that observes storage dispatches before
+    /// the AWS client is invoked. Production builds do not contain this seam.
+    #[cfg(test)]
+    pub(crate) fn with_test_storage_recorder(
+        mut self,
+        recorder: Arc<StorageDispatchRecorder>,
+    ) -> Self {
+        self.storage_recorder = Some(recorder);
+        self
+    }
+
+    #[cfg(test)]
+    fn record_storage_dispatch(&self) {
+        if let Some(recorder) = self.storage_recorder.as_ref() {
+            recorder.record();
+        }
+    }
+
     /// Upload `bytes` under `key` in the configured bucket.
     ///
     /// # Errors
@@ -126,6 +147,15 @@ impl R2S3Client {
     /// Returns `Ok(Some(bytes))` on success, `Ok(None)` if the object
     /// does not exist (HTTP 404), and `Err(String)` on other errors.
     pub async fn get(&self, key: &str) -> Result<Option<Vec<u8>>, String> {
+        #[cfg(test)]
+        {
+            self.record_storage_dispatch();
+            if let Some(recorder) = self.storage_recorder.as_ref() {
+                if recorder.should_succeed() {
+                    return Ok(Some(recorder.body()));
+                }
+            }
+        }
         debug!(
             bucket = %self.bucket,
             key = %key,
@@ -193,6 +223,15 @@ impl R2S3Client {
     ///
     /// Returns `Err(String)` on any transport/service error other than a 404.
     pub async fn get_capped(&self, key: &str, max_bytes: u64) -> Result<CappedGet, String> {
+        #[cfg(test)]
+        {
+            self.record_storage_dispatch();
+            if let Some(recorder) = self.storage_recorder.as_ref() {
+                if recorder.should_succeed() {
+                    return Ok(CappedGet::Found(recorder.body()));
+                }
+            }
+        }
         debug!(bucket = %self.bucket, key = %key, max_bytes, "R2S3Client::get_capped");
         let result = self
             .inner
@@ -236,6 +275,15 @@ impl R2S3Client {
 
     /// Returns `Err(String)` on any non-404 transport/service error.
     pub async fn head_size(&self, key: &str) -> Result<Option<u64>, String> {
+        #[cfg(test)]
+        {
+            self.record_storage_dispatch();
+            if let Some(recorder) = self.storage_recorder.as_ref() {
+                if recorder.should_succeed() {
+                    return Ok(Some(recorder.body().len() as u64));
+                }
+            }
+        }
         debug!(
             bucket = %self.bucket,
             key = %key,
@@ -429,6 +477,15 @@ impl R2S3Client {
         max_keys: u32,
         cursor: Option<&str>,
     ) -> Result<(Vec<(String, u64, String)>, Option<String>), String> {
+        #[cfg(test)]
+        {
+            self.record_storage_dispatch();
+            if let Some(recorder) = self.storage_recorder.as_ref() {
+                if recorder.should_succeed() {
+                    return Ok((Vec::new(), None));
+                }
+            }
+        }
         let max_keys = max_keys.clamp(1, 1000) as i32;
         let mut req = self
             .inner

@@ -77,7 +77,8 @@ impl R2CasHandler {
         // per future, and NOT a second `Phase::Audit` scope. `Σ(phases) ≤
         // total` holds by construction rather than by `oother`'s `max(0)`
         // guard swallowing a double count. See `origin_timing.rs`'s
-        // "Concurrent native-plane list seam" note, which covers this path.
+        // This explicit batch-exists exception owns the joined audit/probe
+        // timing window; single-object reads and lists remain serial.
         let (audit_result, probe_results) = {
             let _scope =
                 crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);

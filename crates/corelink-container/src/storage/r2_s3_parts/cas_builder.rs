@@ -48,11 +48,9 @@ pub async fn build_r2_cas_handler_from_env(
     // refusal above).
     //
     // The CONCRETE `Arc<D1AuditOutboxSink>` is kept (not just the
-    // type-erased `Arc<dyn AuditSink>`) so it can ALSO be wired as the
-    // handler's `audit_async` seam below — same sink instance, two views:
-    // the sync `AuditSink` trait object every non-list call still uses, and
-    // the concrete type `list()` uses to `tokio::join!` the audit write
-    // with the R2 enumeration (perf: concurrent native-plane list).
+    // type-erased `Arc<dyn AuditSink>`) for the explicit batch-exists audit
+    // seam below. Single-object reads and lists use the sync trait object so
+    // durable audit success is serialized before storage dispatch.
     // B071: the live CAS writer has an explicit D1 fence dependency. Keep a
     // dedicated client for it so a future audit-sink refactor cannot silently
     // drop the writer-side lease wiring.
@@ -141,9 +139,8 @@ pub struct R2AcHandler {
     /// Tenant derivation key — see [`R2CasHandler`].
     tdk: Option<TenantDerivationKey>,
     audit: Arc<dyn corelink_handler_ac::AuditSink>,
-    /// Narrow async-capable seam onto the SAME sink as `audit` — AC
-    /// counterpart of [`R2CasHandler::audit_async`]; see there for the full
-    /// rationale. `list()` uses this; `None` keeps it fully serial.
+    /// Concrete durable sink retained for builder compatibility; AC reads and
+    /// lists are always serial and do not use this seam.
     audit_async: Option<Arc<crate::storage::d1_audit_sink::D1AuditOutboxSink>>,
     sli: Arc<dyn corelink_handler_ac::SliObserver>,
     /// BYOK Wave 3b (GATED-INERT): per-tenant BYOK config cache. `None` on the

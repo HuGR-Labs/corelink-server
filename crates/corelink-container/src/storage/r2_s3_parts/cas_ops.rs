@@ -70,132 +70,47 @@ impl CasReadHandler for R2CasHandler {
         // multi-thread runtime — `#[tokio::main]` gives us that.
         let handle = tokio::runtime::Handle::current();
 
-        // Unlike `list()` (a single R2 call), the read-side store work is a
-        // TWO-STEP chain: BYOK Wave 3c resolution (the §4-hardened physical
-        // key digest, audit H-4, plus the body crypto plan) THEN the R2 GET
-        // keyed off the resolved digest. Both steps run inside `store_fut`
-        // below so the WHOLE chain — not just the R2 call — overlaps with
-        // the audit write; `resolved` is threaded back out because
-        // `decrypt_body` needs `resolved.plan` after the join.
-        type StoreResult = Result<(ByokResolved, Option<Vec<u8>>), CasHandlerError>;
+        // Durable `ReadAttempted` MUST commit before resolving a key or
+        // dispatching any R2 request. This is intentionally serial even when
+        // the production sink is the concrete D1 sink: an audit failure must
+        // result in zero storage calls, not merely zero returned bytes.
+        self.audit
+            .emit(AuditEvent::new(
+                AuditEventKind::ReadAttempted,
+                req.tenant.clone(),
+                req.hash.clone(),
+                req.principal.clone(),
+                req.at_unix_ms,
+            ))
+            .map_err(|e| {
+                emit(true);
+                CasHandlerError::AuditFailed(e)
+            })?;
 
-        let (audit_result, store_result): (Result<(), String>, StoreResult) =
-            if let Some(audit_async) = self.audit_async.as_ref() {
-                // CONCURRENT PATH (production: durable D1 audit sink wired).
-                //
-                // Mirrors `R2CasHandler::list`'s seam exactly (see that
-                // method's doc for the full fail-CLOSED rationale): the
-                // mandatory `ReadAttempted` audit write and the
-                // resolve_byok-then-R2-GET chain are DISPATCHED together
-                // under one `tokio::join!`, but neither result is used —
-                // and no bytes are served — until BOTH complete and are
-                // checked below, in the SAME order the serial code checked
-                // them: audit result first (`AuditFailed` short-circuits
-                // exactly as before), store result second. A failing audit
-                // no longer prevents the R2 GET from having been
-                // *dispatched*; it still prevents any R2 result — and any
-                // decrypted bytes — from ever *reaching the caller*.
-                //
-                // Cross-tenant denial (above) is UNAFFECTED — it returns
-                // before this point and never joins anything.
-                let audit_fut = audit_async.emit_cas_async(AuditEvent::new(
-                    AuditEventKind::ReadAttempted,
-                    req.tenant.clone(),
-                    req.hash.clone(),
-                    req.principal.clone(),
-                    req.at_unix_ms,
-                ));
-                let store_fut = async {
-                    let resolved = self.resolve_byok(&req.tenant, &req.hash, req.algo).await?;
-                    let key = self
-                        .r2_key(&req.tenant, &resolved.physical_digest, req.algo)
-                        .map_err(CasHandlerError::Internal)?;
-                    debug!(key = %key, "R2CasHandler::read");
-                    let got = self.get_capped_for_read(&key, max_bytes).await?;
-                    Ok((resolved, got))
-                };
-                // ONE `Phase::Store` scope wraps the ENTIRE joined window —
-                // see `R2CasHandler::list` for why `oaudit` must NOT also
-                // be entered here (it would double-count the overlapping
-                // wall-clock window; `append_async` opens no scope of its
-                // own for exactly this reason).
-                let _scope =
-                    crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
-                tokio::task::block_in_place(|| {
-                    handle.block_on(async { tokio::join!(audit_fut, store_fut) })
-                })
-            } else {
-                // SERIAL FALLBACK — byte-identical to the pre-existing
-                // behavior. Taken whenever `audit_async` is unset (every
-                // test handler in this module, and any future `AuditSink`
-                // impl that is not the durable D1 sink).
-                let audit_result = self.audit.emit(AuditEvent::new(
-                    AuditEventKind::ReadAttempted,
-                    req.tenant.clone(),
-                    req.hash.clone(),
-                    req.principal.clone(),
-                    req.at_unix_ms,
-                ));
-                let store_result: StoreResult = if audit_result.is_err() {
-                    // Mirrors the old code exactly: on audit failure it
-                    // returned via `?` before ever touching resolve_byok or
-                    // R2 — never compute or evaluate the store side here.
-                    // This filler is never read (audit_result is checked
-                    // first, below).
-                    Ok((
-                        ByokResolved {
-                            physical_digest: String::new(),
-                            plan: ByokBodyPlan::Plaintext,
-                        },
-                        None,
-                    ))
-                } else {
-                    let resolved = match tokio::task::block_in_place(|| {
-                        handle.block_on(self.resolve_byok(&req.tenant, &req.hash, req.algo))
-                    }) {
-                        Ok(r) => r,
-                        Err(e) => {
-                            emit(true);
-                            return Err(e);
-                        }
-                    };
-                    let key = match self.r2_key(&req.tenant, &resolved.physical_digest, req.algo) {
-                        Ok(k) => k,
-                        Err(e) => {
-                            emit(true);
-                            return Err(CasHandlerError::Internal(e));
-                        }
-                    };
-                    debug!(key = %key, "R2CasHandler::read");
-                    let result = {
-                        let _scope = crate::origin_timing::PhaseScope::enter(
-                            crate::origin_timing::Phase::Store,
-                        );
-                        tokio::task::block_in_place(|| {
-                            handle.block_on(self.get_capped_for_read(&key, max_bytes))
-                        })
-                    };
-                    match result {
-                        Ok(got) => Ok((resolved, got)),
-                        Err(e) => {
-                            emit(true);
-                            return Err(e);
-                        }
-                    }
-                };
-                (audit_result, store_result)
-            };
-
-        if let Err(e) = audit_result {
-            emit(true);
-            return Err(CasHandlerError::AuditFailed(e));
-        }
-
-        let (resolved, stored_opt) = match store_result {
+        let resolved = match tokio::task::block_in_place(|| {
+            handle.block_on(self.resolve_byok(&req.tenant, &req.hash, req.algo))
+        }) {
+            Ok(r) => r,
+            Err(e) => {
+                emit(true);
+                return Err(e);
+            }
+        };
+        let key = match self.r2_key(&req.tenant, &resolved.physical_digest, req.algo) {
+            Ok(k) => k,
+            Err(e) => {
+                emit(true);
+                return Err(CasHandlerError::Internal(e));
+            }
+        };
+        debug!(key = %key, "R2CasHandler::read");
+        let stored_opt = {
+            let _scope = crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+            tokio::task::block_in_place(|| handle.block_on(self.get_capped_for_read(&key, max_bytes)))
+        };
+        let stored_opt = match stored_opt {
             Ok(ok) => ok,
             Err(e) => {
-                // Already `warn!`-logged (with key, where available) at the
-                // point the error was produced above.
                 emit(true);
                 return Err(e);
             }
@@ -319,91 +234,27 @@ impl CasReadHandler for R2CasHandler {
             });
         }
 
-        // ReadAttempted audit and the (resolve_byok -> R2 HEAD) chain —
-        // mirrors `read`'s concurrent seam exactly, see there for the full
-        // fail-CLOSED rationale. No `resolved`/decrypt step is needed after
-        // the join here (a HEAD reveals only presence, never bytes), so
-        // `store_fut` only needs to yield `Option<u64>`.
-        //
-        // CRITICAL — `block_in_place` rationale: see `read` above. This is
-        // a HEAD (`head_size`), not a GET — no body transfer, no rehash.
+        // ReadAttempted audit MUST commit before resolving a key or
+        // dispatching the R2 HEAD. A HEAD reveals only presence (not bytes),
+        // but it is still a storage read covered by the durable audit.
         let handle = tokio::runtime::Handle::current();
-        type StoreResult = Result<Option<u64>, CasHandlerError>;
+        self.audit
+            .emit(AuditEvent::new(
+                AuditEventKind::ReadAttempted,
+                req.tenant.clone(),
+                req.hash.clone(),
+                req.principal.clone(),
+                req.at_unix_ms,
+            ))
+            .map_err(|e| {
+                emit(true);
+                CasHandlerError::AuditFailed(e)
+            })?;
 
-        let (audit_result, store_result): (Result<(), String>, StoreResult) =
-            if let Some(audit_async) = self.audit_async.as_ref() {
-                // CONCURRENT PATH — see `read` for the full rationale.
-                let audit_fut = audit_async.emit_cas_async(AuditEvent::new(
-                    AuditEventKind::ReadAttempted,
-                    req.tenant.clone(),
-                    req.hash.clone(),
-                    req.principal.clone(),
-                    req.at_unix_ms,
-                ));
-                // The storage half is the SHARED `probe_existence_unaudited`
-                // — the ONE body the batch seam (`exists_batch`) also drives,
-                // so a single-digest probe and a batched one can never drift
-                // on which key they HEAD or on their fail-CLOSED handling.
-                let store_fut = self.probe_existence_unaudited(&req);
-                let _scope =
-                    crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
-                tokio::task::block_in_place(|| {
-                    handle.block_on(async { tokio::join!(audit_fut, store_fut) })
-                })
-            } else {
-                // SERIAL FALLBACK — byte-identical to the pre-existing
-                // behavior.
-                let audit_result = self.audit.emit(AuditEvent::new(
-                    AuditEventKind::ReadAttempted,
-                    req.tenant.clone(),
-                    req.hash.clone(),
-                    req.principal.clone(),
-                    req.at_unix_ms,
-                ));
-                let store_result: StoreResult = if audit_result.is_err() {
-                    Ok(None)
-                } else {
-                    let resolved = match tokio::task::block_in_place(|| {
-                        handle.block_on(self.resolve_byok(&req.tenant, &req.hash, req.algo))
-                    }) {
-                        Ok(r) => r,
-                        Err(e) => {
-                            emit(true);
-                            return Err(e);
-                        }
-                    };
-                    let key = match self.r2_key(&req.tenant, &resolved.physical_digest, req.algo) {
-                        Ok(k) => k,
-                        Err(e) => {
-                            emit(true);
-                            return Err(CasHandlerError::Internal(e));
-                        }
-                    };
-                    debug!(key = %key, "R2CasHandler::exists");
-                    let result = {
-                        let _scope = crate::origin_timing::PhaseScope::enter(
-                            crate::origin_timing::Phase::Store,
-                        );
-                        tokio::task::block_in_place(|| handle.block_on(self.client.head_size(&key)))
-                    };
-                    match result {
-                        Ok(ok) => Ok(ok),
-                        Err(e) => {
-                            warn!(error = %e, key = %key, "R2CasHandler::exists error");
-                            emit(true);
-                            return Err(CasHandlerError::Internal(e));
-                        }
-                    }
-                };
-                (audit_result, store_result)
-            };
-
-        if let Err(e) = audit_result {
-            emit(true);
-            return Err(CasHandlerError::AuditFailed(e));
-        }
-
-        match store_result {
+        let result = tokio::task::block_in_place(|| {
+            handle.block_on(self.probe_existence_unaudited(&req))
+        });
+        match result {
             Ok(Some(_)) => {
                 emit(false);
                 Ok(true)
@@ -440,8 +291,8 @@ impl CasReadHandler for R2CasHandler {
     /// Returns `None` when the async audit seam is not wired
     /// (`audit_async == None`: every test handler in this module, and any
     /// non-D1 `AuditSink`), so those callers keep looping [`Self::exists`],
-    /// byte-identical to before this method existed. Mirrors exactly how the
-    /// concurrent `list()` seam was introduced.
+    /// byte-identical to before this method existed. This is the sole
+    /// explicit read-audit/storage overlap exception.
     ///
     /// # Fail-CLOSED
     ///

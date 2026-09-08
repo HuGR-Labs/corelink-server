@@ -35,6 +35,9 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+#[cfg(test)]
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::config::{Credentials, Region};
 use aws_sdk_s3::Client;
@@ -96,6 +99,61 @@ pub struct R2S3Client {
     /// does not grow without bound.
     delete_locks:
         std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
+    /// Test-only dispatch recorder used to prove audit gating without a live
+    /// R2 endpoint. It is absent from production builds.
+    #[cfg(test)]
+    storage_recorder: Option<Arc<StorageDispatchRecorder>>,
+}
+
+#[cfg(test)]
+#[derive(Debug)]
+pub(crate) struct StorageDispatchRecorder {
+    pub calls: AtomicUsize,
+    pub premature: AtomicBool,
+    pub audit_committed: AtomicBool,
+    successful: AtomicBool,
+    body: std::sync::Mutex<Option<Vec<u8>>>,
+}
+
+#[cfg(test)]
+impl StorageDispatchRecorder {
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::new(Self {
+            calls: AtomicUsize::new(0),
+            premature: AtomicBool::new(false),
+            audit_committed: AtomicBool::new(false),
+            successful: AtomicBool::new(false),
+            body: std::sync::Mutex::new(None),
+        })
+    }
+
+    pub(crate) fn successful(body: Vec<u8>) -> Arc<Self> {
+        let recorder = Self::new();
+        recorder.successful.store(true, Ordering::SeqCst);
+        if let Ok(mut stored) = recorder.body.lock() {
+            *stored = Some(body);
+        }
+        recorder
+    }
+
+    fn record(&self) {
+        if !self.audit_committed.load(Ordering::SeqCst) {
+            self.premature.store(true, Ordering::SeqCst);
+        }
+        self.calls.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn should_succeed(&self) -> bool {
+        self.successful.load(Ordering::SeqCst)
+    }
+
+    fn body(&self) -> Vec<u8> {
+        self.body
+            .lock()
+            .ok()
+            .and_then(|stored| stored.clone())
+            .unwrap_or_default()
+    }
 }
 
 /// Outcome of [`R2S3Client::get_capped`].
