@@ -44,6 +44,10 @@ def mint_binding_sha256(attestation: dict[str, Any]) -> str:
     return "sha256:" + hashlib.sha256(material).hexdigest()
 
 
+def canonical_json(value: Any) -> bytes:
+    return (json.dumps(value, sort_keys=True, indent=2) + "\n").encode()
+
+
 def load(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -56,12 +60,19 @@ def main() -> int:
     parser.add_argument("--context", type=Path, required=True)
     parser.add_argument("--measurements", type=Path, required=True)
     parser.add_argument("--b105", type=Path, required=True)
+    parser.add_argument("--b106-attestation-subject", type=Path, required=True)
+    parser.add_argument("--b106-attestation-bundle", type=Path, required=True)
+    parser.add_argument("--b106-attestation-verification", type=Path, required=True)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     context = load(args.context)
     measurements = load(args.measurements)
     lane = load(args.b105)
+    subject_bytes = args.b106_attestation_subject.read_bytes()
+    subject = load(args.b106_attestation_subject)
+    bundle = load(args.b106_attestation_bundle)
+    verification = json.loads(args.b106_attestation_verification.read_text(encoding="utf-8"))
     tenant = str(context.get("tenant_id", measurements.get("tenant_id", "")))
     if not tenant or measurements.get("tenant_id") != tenant:
         raise ValueError("context and measurements tenant_id do not match")
@@ -101,19 +112,23 @@ def main() -> int:
         value["deployment"] = deployment(item)
         value["tenant_id"] = tenant
         if item == "B-106":
-            attestation = dict(value.get("cold_attestation", {}))
-            attestation["attestation_source"] = {
-                "kind": "github_actions_run",
-                "workflow": "perf-production-evidence",
-                "repository": context["repository"],
-                "run_id": context["github_run_id"],
-                "attempt": context["github_run_attempt"],
-                "event": context["github_event"],
-                "head_sha": source_head,
-                "started_at": context["github_run_started_at"],
-            }
-            attestation["mint_response_binding_sha256"] = mint_binding_sha256(attestation)
+            attestation = subject.get("cold_attestation")
+            if not isinstance(attestation, dict):
+                raise ValueError("B-106 attestation subject has no cold attestation")
             value["cold_attestation"] = attestation
+            value["github_attestation"] = {
+                "subject_sha256": "sha256:" + hashlib.sha256(subject_bytes).hexdigest(),
+                "subject_name": args.b106_attestation_subject.name,
+                "bundle_sha256": "sha256:" + hashlib.sha256(canonical_json(bundle)).hexdigest(),
+                "bundle": bundle,
+                "verification": verification,
+                "verification_policy": {
+                    "repository": context["repository"],
+                    "signer_workflow": f"{context['repository']}/.github/workflows/perf-production-evidence.yml",
+                    "signer_digest": source_head,
+                    "predicate_type": "https://slsa.dev/provenance/v1",
+                },
+            }
         items[item] = value
 
     b105 = {

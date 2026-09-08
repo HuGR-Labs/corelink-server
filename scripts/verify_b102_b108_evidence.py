@@ -10,6 +10,8 @@ credential is accepted in the packet.  The verifier never contacts production.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import datetime as dt
 import hashlib
 import json
@@ -106,6 +108,59 @@ def mint_binding_sha256(att: dict[str, Any]) -> str:
         separators=(",", ":"),
     ).encode()
     return sha(material)
+
+
+def canonical_json(value: Any) -> bytes:
+    return (json.dumps(value, sort_keys=True, indent=2) + "\n").encode()
+
+
+def b106_subject_bytes(att: dict[str, Any], deployment_record: dict[str, Any]) -> bytes:
+    source = obj(att.get("attestation_source"), "B-106.attestation_source")
+    return canonical_json(
+        {
+            "schema": "corelink.performance-evidence.b106-attestation.v1",
+            "repository": REPO,
+            "workflow": "perf-production-evidence",
+            "run_id": deployment_record["github_run_id"],
+            "run_attempt": deployment_record["github_run_attempt"],
+            "event": deployment_record["github_event"],
+            "head_sha": deployment_record["source_head"],
+            "run_started_at": deployment_record["github_run_started_at"],
+            "cold_attestation": att,
+        }
+    )
+
+
+def attested_subject_digest(bundle: dict[str, Any], label: str) -> str:
+    envelope = obj(bundle.get("dsseEnvelope"), f"{label}.dsseEnvelope")
+    if envelope.get("payloadType") != "application/vnd.in-toto+json":
+        raise EvidenceError(f"{label} is not an in-toto DSSE envelope")
+    signatures = envelope.get("signatures")
+    if not isinstance(signatures, list) or not signatures:
+        raise EvidenceError(f"{label} has no DSSE signature")
+    encoded = text(envelope.get("payload"), f"{label}.dsseEnvelope.payload")
+    try:
+        statement = obj(json.loads(base64.b64decode(encoded, validate=True)), f"{label}.statement")
+    except (ValueError, json.JSONDecodeError, binascii.Error) as exc:
+        raise EvidenceError(f"{label} has an invalid DSSE payload") from exc
+    if statement.get("_type") != "https://in-toto.io/Statement/v1":
+        raise EvidenceError(f"{label} is not an in-toto Statement v1")
+    if statement.get("predicateType") != "https://slsa.dev/provenance/v1":
+        raise EvidenceError(f"{label} predicate type is not SLSA provenance v1")
+    subjects = statement.get("subject")
+    if not isinstance(subjects, list) or not subjects:
+        raise EvidenceError(f"{label} has no attested subject")
+    digests = set()
+    for index, subject_value in enumerate(subjects):
+        subject = obj(subject_value, f"{label}.subject[{index}]")
+        digest = obj(subject.get("digest"), f"{label}.subject[{index}].digest")
+        digests.add(str(digest.get("sha256", "")))
+    if not any(re.fullmatch(r"[0-9a-f]{64}", digest) for digest in digests):
+        raise EvidenceError(f"{label} subject has no SHA-256 digest")
+    verification_material = obj(bundle.get("verificationMaterial"), f"{label}.verificationMaterial")
+    if not verification_material:
+        raise EvidenceError(f"{label} has no verification material")
+    return "sha256:" + next(digest for digest in digests if re.fullmatch(r"[0-9a-f]{64}", digest))
 
 
 def reject_secrets(v: Any, path: str = "packet") -> None:
@@ -355,6 +410,43 @@ def b106(item: dict[str, Any], root: Path, tenant: str, now: float) -> str:
             f"B-106 does not prove a fresh token minted within {FRESH_MINT_MAX_AGE_SECONDS} seconds "
             f"and idle for {COLD_MIN_IDLE_SECONDS} seconds"
         )
+    github_attestation = obj(item.get("github_attestation"), "B-106.github_attestation")
+    subject_sha = raw_hash(github_attestation.get("subject_sha256"), "B-106.github_attestation.subject_sha256")
+    if subject_sha != sha(b106_subject_bytes(att, deployment_record)):
+        raise EvidenceError("B-106 GitHub attestation subject does not bind the exact cold timestamps")
+    if github_attestation.get("subject_name") != "b106-cold-attestation.json":
+        raise EvidenceError("B-106 GitHub attestation subject name is not canonical")
+    bundle = obj(github_attestation.get("bundle"), "B-106.github_attestation.bundle")
+    if github_attestation.get("bundle_sha256") != sha(canonical_json(bundle)):
+        raise EvidenceError("B-106 GitHub attestation bundle hash is not reproducible")
+    if attested_subject_digest(bundle, "B-106.github_attestation.bundle") != subject_sha:
+        raise EvidenceError("B-106 GitHub attestation DSSE subject differs from the cold evidence")
+    policy = obj(github_attestation.get("verification_policy"), "B-106.github_attestation.verification_policy")
+    if policy != {
+        "repository": REPO,
+        "signer_workflow": f"{REPO}/.github/workflows/perf-production-evidence.yml",
+        "signer_digest": deployment_record["source_head"],
+        "predicate_type": "https://slsa.dev/provenance/v1",
+    }:
+        raise EvidenceError("B-106 GitHub attestation verification policy is not the production workflow")
+    verification = github_attestation.get("verification")
+    if not isinstance(verification, list) or not verification:
+        raise EvidenceError("B-106 GitHub attestation has no successful gh verification result")
+    verified_subject = False
+    for entry in verification:
+        if not isinstance(entry, dict):
+            continue
+        result = entry.get("verificationResult")
+        if not isinstance(result, dict):
+            continue
+        statement = result.get("statement")
+        if not isinstance(statement, dict):
+            continue
+        for subject in statement.get("subject", []):
+            if isinstance(subject, dict) and subject.get("digest", {}).get("sha256") == subject_sha.removeprefix("sha256:"):
+                verified_subject = True
+    if not verified_subject:
+        raise EvidenceError("B-106 gh attestation verification output does not name the subject")
     cold, warm = obj(item.get("cold"), "B-106.cold"), obj(item.get("warm_control"), "B-106.warm_control")
     for row, label in ((cold, "B-106.cold"), (warm, "B-106.warm_control")):
         common(row, label, tenant)

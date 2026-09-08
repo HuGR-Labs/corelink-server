@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import copy
+import base64
 import hashlib
 import json
 import subprocess
@@ -53,6 +54,34 @@ def row(op: str, **kwargs) -> dict:
     return {"tenant_id": TENANT, "operation_id": op, **kwargs}
 
 
+def github_attestation(attestation: dict, deployment_record: dict) -> dict:
+    subject = {
+        "_type": "https://in-toto.io/Statement/v1",
+        "subject": [{"name": "b106-cold-attestation.json", "digest": {"sha256": verifier.sha(verifier.b106_subject_bytes(attestation, deployment_record))[len("sha256:") : ]}}],
+        "predicateType": "https://slsa.dev/provenance/v1",
+        "predicate": {},
+    }
+    payload = base64.b64encode(json.dumps(subject, sort_keys=True, separators=(",", ":")).encode()).decode()
+    bundle = {
+        "mediaType": "application/vnd.dev.sigstore.bundle+json;version=0.3",
+        "dsseEnvelope": {"payloadType": "application/vnd.in-toto+json", "payload": payload, "signatures": [{"sig": "fixture-signature"}]},
+        "verificationMaterial": {"fixture": True},
+    }
+    return {
+        "subject_sha256": verifier.sha(verifier.b106_subject_bytes(attestation, deployment_record)),
+        "subject_name": "b106-cold-attestation.json",
+        "bundle_sha256": verifier.sha(verifier.canonical_json(bundle)),
+        "bundle": bundle,
+        "verification": [{"verificationResult": {"statement": subject}}],
+        "verification_policy": {
+            "repository": verifier.REPO,
+            "signer_workflow": f"{verifier.REPO}/.github/workflows/perf-production-evidence.yml",
+            "signer_digest": deployment_record["source_head"],
+            "predicate_type": "https://slsa.dev/provenance/v1",
+        },
+    }
+
+
 def packet() -> dict:
     stamp = datetime.fromtimestamp(NOW - 10, timezone.utc).isoformat().replace("+00:00", "Z")
     deployments = {item: deployment(f"op-deploy-{item.lower()}") for item in verifier.ITEMS}
@@ -83,6 +112,9 @@ def packet() -> dict:
     # required to prove a 61-second idle interval below.
     result["items"]["B-106"]["kv_ttl_seconds"] = verifier.KV_PAT_ROW_TTL_SECONDS
     result["items"]["B-106"]["cold_attestation"]["mint_response_binding_sha256"] = verifier.mint_binding_sha256(result["items"]["B-106"]["cold_attestation"])
+    result["items"]["B-106"]["github_attestation"] = github_attestation(
+        result["items"]["B-106"]["cold_attestation"], result["items"]["B-106"]["deployment"]
+    )
     return result
 
 
@@ -147,9 +179,19 @@ def collector_wire_and_join_round_trip() -> None:
             root = Path(directory)
             for name, value in (("context", context), ("measurements", measurements), ("b105", lane)):
                 (root / f"{name}.json").write_text(json.dumps(value), encoding="utf-8")
+            subject_path = root / "b106-cold-attestation.json"
+            subprocess.run((sys.executable, str(ROOT / "scripts/build_b106_attestation_subject.py"), "--context", str(root / "context.json"), "--measurements", str(root / "measurements.json"), "--output", str(subject_path)), check=True, capture_output=True, text=True)
+            subject = json.loads(subject_path.read_text(encoding="utf-8"))
+            attestation_bundle = github_attestation(subject["cold_attestation"], deployment_record)
+            bundle_path = root / "b106-attestation-bundle.json"
+            bundle_path.write_text(json.dumps(attestation_bundle["bundle"], sort_keys=True, indent=2) + "\n", encoding="utf-8")
+            verification_path = root / "b106-attestation-verification.json"
+            verification_path.write_text(json.dumps(attestation_bundle["verification"], sort_keys=True, indent=2) + "\n", encoding="utf-8")
             output = root / "packet.json"
             subprocess.run((sys.executable, str(ROOT / "scripts/join_b102_b108_evidence.py"), "--context", str(root / "context.json"),
-                            "--measurements", str(root / "measurements.json"), "--b105", str(root / "b105.json"), "--root", str(ROOT), "--output", str(output)),
+                            "--measurements", str(root / "measurements.json"), "--b105", str(root / "b105.json"),
+                            "--b106-attestation-subject", str(subject_path), "--b106-attestation-bundle", str(bundle_path),
+                            "--b106-attestation-verification", str(verification_path), "--root", str(ROOT), "--output", str(output)),
                            check=True, capture_output=True, text=True)
             joined = json.loads(output.read_text(encoding="utf-8"))
             result = verifier.assess(joined, ROOT)
@@ -198,6 +240,13 @@ def main() -> int:
     expect_error(lambda p: p["items"]["B-104"]["samples"][0].pop("response_request_id"), "B104 response request identity")
     expect_error(lambda p: p["items"]["B-105"]["pairs"][0]["treatment"].update(cache_mode="disabled"), "B105 cache wiring")
     expect_error(lambda p: p["items"]["B-106"]["cold_attestation"].update(unused_since_epoch=NOW - 1), "B106 idle")
+    def edited_attestation_timestamp_with_rebound_public_hash(p: dict) -> None:
+        attestation = p["items"]["B-106"]["cold_attestation"]
+        attestation["observed_at_epoch"] = NOW - 58
+        attestation["mint_response_binding_sha256"] = verifier.mint_binding_sha256(attestation)
+        rebound = github_attestation(attestation, p["items"]["B-106"]["deployment"])
+        p["items"]["B-106"]["github_attestation"]["subject_sha256"] = rebound["subject_sha256"]
+    expect_error(edited_attestation_timestamp_with_rebound_public_hash, "B106 timestamp rebound without valid attestation")
     def stale_mint(p: dict) -> None:
         attestation = p["items"]["B-106"]["cold_attestation"]
         attestation["minted_at_epoch"] = NOW - verifier.FRESH_MINT_MAX_AGE_SECONDS - 1

@@ -19,6 +19,8 @@ on:
 permissions:
   contents: read
   deployments: read
+  id-token: write
+  attestations: write
 
 concurrency:
   group: perf-production-evidence-${{ inputs.tenant_id }}
@@ -110,6 +112,38 @@ jobs:
           set -eu
           python3 scripts/collect_b105_same_lane.py "${RUNNER_TEMP}/b105-lane.json"
 
+      - name: Build exact B-106 attestation subject
+        run: |
+          set -euo pipefail
+          python3 scripts/build_b106_attestation_subject.py \
+            --context "${RUNNER_TEMP}/evidence-context.json" \
+            --measurements "${RUNNER_TEMP}/b102-b107-measurements.json" \
+            --output "${RUNNER_TEMP}/b106-cold-attestation.json"
+
+      - name: Attest exact B-106 evidence subject
+        id: attest-b106
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: ${{ runner.temp }}/b106-cold-attestation.json
+          github-token: ${{ github.token }}
+
+      - name: Verify B-106 attestation identity and subject
+        env:
+          GH_TOKEN: ${{ github.token }}
+          B106_SUBJECT: ${{ runner.temp }}/b106-cold-attestation.json
+          B106_BUNDLE: ${{ steps.attest-b106.outputs.bundle-path }}
+          B106_VERIFICATION: ${{ runner.temp }}/b106-attestation-verification.json
+        run: |
+          set -euo pipefail
+          test -s "${B106_BUNDLE}"
+          gh attestation verify "${B106_SUBJECT}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --bundle "${B106_BUNDLE}" \
+            --predicate-type https://slsa.dev/provenance/v1 \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/perf-production-evidence.yml" \
+            --signer-digest "${GITHUB_SHA}" \
+            --format json > "${B106_VERIFICATION}"
+
       - name: Join canonical v2 evidence packet
         run: |
           set -eu
@@ -117,6 +151,9 @@ jobs:
             --context "${RUNNER_TEMP}/evidence-context.json" \
             --measurements "${RUNNER_TEMP}/b102-b107-measurements.json" \
             --b105 "${RUNNER_TEMP}/b105-lane.json" \
+            --b106-attestation-subject "${RUNNER_TEMP}/b106-cold-attestation.json" \
+            --b106-attestation-bundle "${{ steps.attest-b106.outputs.bundle-path }}" \
+            --b106-attestation-verification "${RUNNER_TEMP}/b106-attestation-verification.json" \
             --root "${GITHUB_WORKSPACE}" \
             --output "${RUNNER_TEMP}/corelink-performance-evidence.v2.json"
 
