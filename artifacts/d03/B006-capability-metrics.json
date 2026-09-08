@@ -1,0 +1,1 @@
+{"verdict":"INDETERMINATE","reason":"CORELINK_PROD_BASE and CORELINK_PROD_TOKEN are not available in the isolated environment; no authenticated production request was attempted","source":"/internal/v1/metrics","credential_values_printed":false,"request_attempted":false}
