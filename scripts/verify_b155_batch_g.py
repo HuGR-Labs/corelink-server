@@ -333,6 +333,7 @@ def assert_trusted_write_boundary(block: list[str], label: str) -> None:
     job_conditions = [line for line in block if re.match(r"^    if:\s*", line)]
     assert_true(len(job_conditions) == 1, f"{label} does not have one job-level trust guard")
     source = job_conditions[0]
+    assert_true("||" not in source, f"{label} trust guard contains an OR bypass")
     required = (
         "github.repository == 'HuGR-Labs/corelink-server'",
         "github.ref == 'refs/heads/main'",
@@ -401,7 +402,7 @@ def verify_b110() -> None:
     # neighboring job or in a comment.
     assert_trusted_write_guard(
         workflow_job_block(".github/workflows/cas_foundation.yml", "cosign-sign"),
-        "push",
+        "workflow_dispatch",
         "cas cosign-sign",
     )
     mutation_block = workflow_job_block(".github/workflows/mutation-nightly.yml", "aggregate")

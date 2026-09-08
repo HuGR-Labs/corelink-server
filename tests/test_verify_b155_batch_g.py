@@ -79,6 +79,36 @@ class B110WorkflowVerifierTests(unittest.TestCase):
             with self.assertRaises(verifier.CheckError):
                 verifier.verify_b110()
 
+    def test_or_bypass_in_mutation_guard_is_red(self) -> None:
+        mutation = self._mutated_text(
+            ".github/workflows/mutation-nightly.yml",
+            " && github.repository == 'HuGR-Labs/corelink-server'",
+            " || github.repository == 'HuGR-Labs/corelink-server'",
+        )
+        with mutation:
+            with self.assertRaises(verifier.CheckError):
+                verifier.verify_b110()
+
+    def test_always_or_trust_predicate_is_red(self) -> None:
+        mutation = self._mutated_text(
+            ".github/workflows/mutation-nightly.yml",
+            "if: always() && github.repository",
+            "if: always() || github.repository",
+        )
+        with mutation:
+            with self.assertRaises(verifier.CheckError):
+                verifier.verify_b110()
+
+    def test_or_bypass_in_oidc_guard_is_red(self) -> None:
+        mutation = self._mutated_text(
+            ".github/workflows/cas_foundation.yml",
+            " && github.ref_protected",
+            " || github.ref_protected",
+        )
+        with mutation:
+            with self.assertRaises(verifier.CheckError):
+                verifier.verify_b110()
+
     def test_ref_split_or_cancelling_heavy_build_is_red(self) -> None:
         mutation = self._mutated_text(
             ".github/workflows/cas_foundation.yml",
