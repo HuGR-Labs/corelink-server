@@ -11,7 +11,9 @@ copy_fixture() {
     local dest="$1"
     mkdir -p "${dest}/.github/workflows" "${dest}/docs/campaigns/remediation" "${dest}/apps/get-corelink-worker/test"
     cp "${ROOT}/.github/workflows/smoke-install.yml" "${dest}/.github/workflows/smoke-install.yml"
-    cp "${ROOT}/.github/workflows/cosign-sign.yml" "${dest}/.github/workflows/cosign-sign.yml"
+    if [[ -f "${ROOT}/.github/workflows/cosign-sign.yml" ]]; then
+        cp "${ROOT}/.github/workflows/cosign-sign.yml" "${dest}/.github/workflows/cosign-sign.yml"
+    fi
     cp "${ROOT}/docs/campaigns/remediation/B-134-docker-shim-experiment.md" "${dest}/docs/campaigns/remediation/B-134-docker-shim-experiment.md"
     cp "${ROOT}/apps/get-corelink-worker/test/smoke-install.Dockerfile" "${dest}/apps/get-corelink-worker/test/smoke-install.Dockerfile"
 }
@@ -66,6 +68,7 @@ copy_fixture "${TMP}/smoke-run-echo"
 sed -i.bak 's/^          docker run --rm/          echo docker run --rm/g' "${TMP}/smoke-run-echo/.github/workflows/smoke-install.yml"
 expect_red smoke-run-echo "${TMP}/smoke-run-echo"
 
+if [[ -f "${ROOT}/.github/workflows/cosign-sign.yml" ]]; then
 copy_fixture "${TMP}/cosign-verify"
 sed -i.bak '/cosign verify \\/d' "${TMP}/cosign-verify/.github/workflows/cosign-sign.yml"
 expect_red cosign-verify "${TMP}/cosign-verify"
@@ -153,6 +156,12 @@ copy_fixture "${TMP}/repro-return"
 sed -i.bak '/^          cosign verify \\/i\
           return 0' "${TMP}/repro-return/.github/workflows/cosign-sign.yml"
 expect_repro_red repro-return "${TMP}/repro-return"
+fi
+
+# A retired lane must not silently become accepted if the workflow is recreated.
+copy_fixture "${TMP}/cosign-reintroduced"
+cp "${ROOT}/.github/workflows/smoke-install.yml" "${TMP}/cosign-reintroduced/.github/workflows/cosign-sign.yml"
+expect_red cosign-reintroduced "${TMP}/cosign-reintroduced"
 
 copy_fixture "${TMP}/repro-arg-token"
 echo 'ARG UNRELATED_TOKEN=synthetic' >> "${TMP}/repro-arg-token/apps/get-corelink-worker/test/smoke-install.Dockerfile"

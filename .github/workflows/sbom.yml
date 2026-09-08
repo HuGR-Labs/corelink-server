@@ -4,7 +4,7 @@
 # Trigger:
 #   - release: { types: [published] }        — primary gate (release asset upload)
 #   - workflow_dispatch                        — manual run (ops / dev)
-#   - regular PR/push (via python-tests.yml)   — committed-input drift gate
+#   - no PR/push/schedule trigger               — release + dispatch are intentional
 #
 # All SHA-pinned per CoreLink hard constraints.
 # Permissions: read by default; release upload elevates only its own job.
@@ -29,13 +29,8 @@ on:
         default: ""
   # The weekly `schedule: cron "17 3 * * 2"` was removed 2026-08-31 (WP-E).
   # This SBOM is derived from `Cargo.lock` + the workspace manifests, so it
-  # cannot drift WITHOUT a commit — and the standing rule in CLAUDE.md is that a
-  # cron earns its keep only for what changes without one (CVE feeds, prod
-  # state, backups, cert drift, billing reconciliation). Advisory drift is
-  # already `cargo-audit.yml`'s job, not this lane's. What the cron actually did
-  # was fire 16 red runs at the founder's Mac — which IS the runner — for an
-  # `ls` that could never find its file. `release: published` + dispatch cover
-  # the real need. Re-add a cron only with a reason that survives that test.
+  # cannot drift WITHOUT a commit. Release publication and explicit dispatch
+  # cover the real release/ops need; no schedule or PR/push trigger is claimed.
 
 permissions:
   contents: read

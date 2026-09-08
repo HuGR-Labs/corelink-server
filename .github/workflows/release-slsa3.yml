@@ -216,8 +216,9 @@ jobs:
           test "${GITHUB_SHA}" = "${SOURCE_SHA}"
           test "${CALLER_WORKFLOW_REF}" = "${GITHUB_REPOSITORY}/.github/workflows/release-cli.yml@refs/tags/${TAG}"
 
-      # Cosign 2.x, SHA-pinned to the exact same release used by cosign-sign.yml
-      # (WI-S12-003) so the whole supply-chain toolchain moves as one unit.
+      # Cosign 2.x, SHA-pinned for this release-SLSA lane. The former Worker OCI
+      # lane was removed with B-118; CAS signing is an independent path and may
+      # advance its own pinned tool version.
       - name: Install Cosign
         uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
         with:

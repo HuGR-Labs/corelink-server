@@ -185,21 +185,28 @@ def check_cosign(text: str) -> None:
         raise ContractError(f"{where}: placeholder/stub/TODO text remains in the cosign contract")
 
 
-def check_ledger(text: str) -> None:
+def check_ledger(text: str, *, cosign_exists: bool) -> None:
     require(text, "B-134", LEDGER)
     statuses = re.findall(r"(?im)^\*\*Status:\*\*\s*([a-z]+)\b", text)
     if statuses != ["open"]:
         raise ContractError(f"{LEDGER}: expected exactly one `**Status:** open` field, got {statuses!r}")
-    for workflow in WORKFLOW_FILES:
-        if not re.search(rf"(?m)^\|\s*{re.escape(workflow)}\s*\|.*\|\s*UNMEASURED\s*\|", text):
-            raise ContractError(f"{LEDGER}: {workflow} must remain UNMEASURED until a real run is recorded")
+    if not re.search(r"(?m)^\|\s*smoke-install\s*\|.*\|\s*UNMEASURED\s*\|", text):
+        raise ContractError(f"{LEDGER}: smoke-install must remain UNMEASURED until a real run is recorded")
+    cosign_row = re.search(r"(?m)^\|\s*cosign-sign\s*\|.*\|\s*([^|]+?)\s*\|", text)
+    if cosign_exists:
+        if not cosign_row or cosign_row.group(1).strip() != "UNMEASURED":
+            raise ContractError(f"{LEDGER}: cosign-sign must remain UNMEASURED while the workflow exists")
+    elif not cosign_row or not cosign_row.group(1).strip().startswith("RETIRED"):
+        raise ContractError(f"{LEDGER}: removed cosign-sign lane must be marked RETIRED (B-118)")
     if re.search(r"(?im)^\|\s*(smoke-install|cosign-sign)\s*\|.*\|\s*(PASS|GREEN)\s*\|", text):
         raise ContractError(f"{LEDGER}: runtime success cannot be claimed without observed run evidence")
 
 
 def check(root: Path) -> None:
     check_smoke(read(root, WORKFLOW_FILES["smoke-install"]))
-    check_cosign(read(root, WORKFLOW_FILES["cosign-sign"]))
+    cosign = root / WORKFLOW_FILES["cosign-sign"]
+    if cosign.exists():
+        check_cosign(read(root, WORKFLOW_FILES["cosign-sign"]))
     dockerfile = read(root, SMOKE_DOCKERFILE)
     for raw in dockerfile.splitlines():
         line = raw.strip()
@@ -224,7 +231,7 @@ def check(root: Path) -> None:
                 raise ContractError(f"{SMOKE_DOCKERFILE}: token-shaped {instruction.upper()} default is not allowed ({name})")
     if re.search(r"(?i)ephemeral.*probe token|unauthenticated.*leg", dockerfile):
         raise ContractError(f"{SMOKE_DOCKERFILE}: stale unauthenticated/probe-token claim")
-    check_ledger(read(root, LEDGER))
+    check_ledger(read(root, LEDGER), cosign_exists=cosign.exists())
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -84,6 +84,7 @@ env:
   # deliberately discard every stored baseline (e.g. after a staging resize
   # makes the old numbers meaningless).
   BASELINE_CACHE_PREFIX: load-test-k6-baseline-v1
+  K6_ALL_SCENARIOS: signup,webhook,dsr,cas,byok
   K6_EXPECTED_SCENARIOS: ${{ github.event.inputs.scenarios || 'signup,webhook,dsr,cas,byok' }}
 
 jobs:
@@ -216,7 +217,25 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: classify scenario population
+        id: population
+        run: |
+          set -euo pipefail
+          canonicalize() {
+            tr ',' '\n' <<<"$1" | sed '/^[[:space:]]*$/d; s/^[[:space:]]*//; s/[[:space:]]*$//' | sort -u | paste -sd, -
+          }
+          REQUESTED="$(canonicalize "${K6_EXPECTED_SCENARIOS}")"
+          ALL="$(canonicalize "${K6_ALL_SCENARIOS}")"
+          if [[ "${REQUESTED}" == "${ALL}" ]]; then
+            echo 'full=true' >> "$GITHUB_OUTPUT"
+            echo "complete five-scenario population: ${REQUESTED}"
+          else
+            echo 'full=false' >> "$GITHUB_OUTPUT"
+            echo "subset dispatch (${REQUESTED}) is diagnostic-only: non-gating and non-publishing"
+          fi
+
       - name: download current run artifacts
+        if: steps.population.outputs.full == 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: k6-*-${{ github.run_id }}
@@ -230,6 +249,7 @@ jobs:
       # most recently saved baseline, which is the point.
       - name: restore stored baseline
         id: baseline-restore
+        if: steps.population.outputs.full == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: tests/load/baseline
@@ -238,6 +258,7 @@ jobs:
             ${{ env.BASELINE_CACHE_PREFIX }}-
 
       - name: report baseline provenance
+        if: steps.population.outputs.full == 'true'
         run: |
           set -euo pipefail
           if [[ -f tests/load/baseline/k6-baseline.json ]]; then
@@ -250,6 +271,7 @@ jobs:
 
       - name: compare median vs stored baseline
         id: compare
+        if: steps.population.outputs.full == 'true'
         env:
           EXPECTED_SCENARIOS: ${{ github.event.inputs.scenarios || 'signup,webhook,dsr,cas,byok' }}
         run: |
@@ -264,13 +286,14 @@ jobs:
       # continue-on-error), so a regressing run never publishes a new
       # baseline — a regression cannot ratchet itself in by repeating.
       - name: save baseline for the next run
+        if: steps.population.outputs.full == 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: tests/load/baseline
           key: ${{ env.BASELINE_CACHE_PREFIX }}-${{ github.run_id }}
 
       - name: upload baseline artifact
-        if: always()
+        if: steps.population.outputs.full == 'true' && always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: k6-baseline-${{ github.run_id }}

@@ -91,10 +91,11 @@ Compliance docs can be theatre. We try hard to make ours falsifiable:
 - **Not yet available, and listed here rather than omitted:**
   the CLI binaries are **not** signed — the signing step in the CLI release
   workflow is still a placeholder. Container-image signing via
-  Sigstore / Rekor is designed but **not live**: no Rekor transparency
-  entry has ever been created (the signing workflow has never run).
-  SBOM generation remains an internal build step with **no customer distribution
-  path yet**; no signed SBOM artifact is currently offered.
+  Sigstore / Rekor signing for the **former Worker OCI image lane** is not
+  available: the workflow was removed on **2026-09-08** after review found it
+  had never executed and no entry was issued for that lane. Separate
+  release-SLSA and CAS signing paths remain independently gated; SBOM customer
+  distribution is still drafted, not offered.
   Ask at **trust@humangr.com** and we will tell you where it stands rather than
   route you to a process that does not exist.
 - **Attested by us (with evidence on request):**

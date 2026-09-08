@@ -14,9 +14,11 @@ concurrency:
 # envelope encryption, tenant-path HMAC derivation (extended), audit-
 # chain hash-chain append + JCS canonicalization, HKDF-SHA256 expand.
 #
-# Runs every target for 30 min on a fresh Ubuntu runner. Corpus is
-# persisted via actions/cache so the corpus grows monotonically across
-# nightly runs (libfuzzer accelerates faster on a warm corpus).
+# The intended targets are six sanitizer jobs for 30 min on the self-hosted
+# macOS builder fleet. The schedule is parked: this is dispatch-only until the
+# owner provisions the missing macOS libFuzzer C++ sources or explicitly moves
+# the matrix to Linux. Corpus is persisted via actions/cache so a confirmed
+# manual run can grow it monotonically.
 # Fail-closed: any libfuzzer-discovered crash uploads the offending
 # artifact + exits non-zero.
 
@@ -62,8 +64,8 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  # 30 min per target (1800s) on GHA Linux runners. PR-gate runs at
-  # 300s via scripts/fuzz-all.sh; nightly runs at 1800s.
+  # 30 min per target (1800s) on the self-hosted macOS fleet. PR-gate runs at
+  # 300s via scripts/fuzz-all.sh; a manual dispatch runs at 1800s.
   FUZZ_DURATION: '1800'
 
 jobs:

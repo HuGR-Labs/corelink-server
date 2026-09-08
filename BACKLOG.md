@@ -8686,14 +8686,13 @@ release publicado) e os logs já expiraram, então a causa histórica dela é a
 vez de suposta. Hoje a lane só aceita a chamada reutilizável tipada do
 `release-cli`; isso não é evidência de uma execução verde.
 
-`cosign-sign.yml` é o caso que NÃO é defeito e não deve ser "consertado":
-**0 execuções** porque dispara em push de tag `v*` e **não existe nenhuma tag
-`v*`** no repositório (só `cli-v*`). Ausência de execução não é execução
-vermelha. Ela também carrega um **waiver humano explícito**
-(`authorized-by: repo owner | 2026-08-11`) para permanecer GitHub-hosted, com
-razão técnica registrada — precisa de `docker` e da identidade OIDC hosted para
-assinatura keyless Cosign, e a frota Firecracker não tem daemon docker.
-**Não migrar, não apagar.**
+**`cosign-sign.yml` foi removido em 2026-09-08 (B-118).** A leitura anterior —
+"trigger-starved; não migrar, não apagar" — não sobrevivia à leitura do corpo:
+o workflow tinha namespace de imagem incorreto, sujeito OCI que não era o Worker,
+placeholder de deploy e atestação SLSA declarada como stub. O waiver humano de
+2026-08-11 era real, mas protegia uma lane que nunca poderia produzir evidência.
+O waiver não foi carregado para a árvore atual; recriar a lane exige uma nova
+análise e contrato, não restauração silenciosa.
 
 **A raiz NÃO é falta de secret** — correção de 2026-08-30. O `release-cli` usa
 um único secret, `CORELINK_CLI_RELEASE_TOKEN`, e ele já existe. A falha é
@@ -12713,15 +12712,15 @@ last-verified: 2026-08-30
 
 ---
 
-### B-118 — a única lane hosted protegida por waiver nunca executou
+### B-118 — a antiga lane OCI foi removida após nunca executar — RESOLVIDO
 
-`cosign-sign.yml` assina a imagem OCI do Worker com Cosign keyless e publica no Rekor. Ela
-é a **única** lane que o owner autorizou manter hospedada na GitHub, com waiver escrito no
-cabeçalho do arquivo (2026-08-11), sob o argumento de que o custo é desprezível porque só
-dispara em tag de release.
-
-O argumento está certo. O efeito é que o waiver protege uma lane que **nunca assinou
-nada**:
+**Fechado 2026-09-08: saída = remover.** `cosign-sign.yml` deveria assinar a
+imagem OCI do Worker, mas nunca produziu certificado, assinatura ou entrada
+Rekor. A revisão do corpo encontrou cinco paredes independentes: gatilho `v*`
+sem tags correspondentes; namespace de imagem incompatível com o repositório;
+sujeito OCI que não era o Worker; `ZONE_ID_PLACEHOLDER` no deploy; e atestação
+SLSA que era apenas um `echo` stub. O waiver do owner de 2026-08-11 era real,
+mas não transforma uma lane inexecutável em evidência.
 
 ```
 gh run list --workflow=cosign-sign.yml --limit 5   →  zero linhas
@@ -12748,34 +12747,21 @@ ninguém tinha lido o que a lane fazia. Leia o corpo desta antes de classificar.
 id: B-118
 repo: corelink-server
 owner: tl
-status: parked
+status: done
 verify: |
-  bash -c 'test -f .github/workflows/cosign-sign.yml || { echo "FALHA: cosign-sign.yml nao existe mais — se foi apagada por decisao, feche o item registrando o motivo."; exit 1; }
-  ctrl=$(gh api "repos/HuGR-Labs/corelink-server/actions/workflows/nightly.yml/runs?per_page=1" --jq ".total_count" 2>/dev/null || echo "")
-  case "$ctrl" in ""|0) echo "INDETERMINADO: a consulta de controle (nightly.yml) nao devolveu execucoes; sem gh/rede autenticada este predicado nao decide nada — nao interprete como ausencia."; exit 0 ;; esac
-  n=$(gh api "repos/HuGR-Labs/corelink-server/actions/workflows/cosign-sign.yml/runs?per_page=1" --jq ".total_count" 2>/dev/null || echo "")
-  case "$n" in "") echo "INDETERMINADO: a consulta da cosign-sign falhou enquanto a de controle funcionou; investigue em vez de concluir."; exit 0 ;; esac
-  [ "$n" = 0 ] || { echo "FALHA: cosign-sign.yml ja executou $n vez(es) — a lane saiu do zero, feche ou reescreva o item."; exit 1; }
-  echo "aberto: cosign-sign.yml tem 0 execucoes (controle nightly.yml: $ctrl) e segue com waiver de custo hosted"'
+  bash -c 'set -euo pipefail
+  test ! -e .github/workflows/cosign-sign.yml
+  test -f .github/workflows/release-slsa3.yml
+  test -f .github/workflows/cas_foundation.yml
+  rg -q "cosign sign-blob" .github/workflows/release-slsa3.yml
+  rg -q "cosign verify-blob" .github/workflows/release-slsa3.yml
+  rg -q "cosign sign-blob" .github/workflows/cas_foundation.yml
+  rg -q "cosign verify-blob" .github/workflows/cas_foundation.yml
+  if rg -n -i "cosign-sign\\.yml|Worker container image.*signed keyless|transparency-log entries for the \\*\\*Worker container image\\*\\*" apps/docs legal docs/internal/secrets-checklist.md scripts/compliance-weekly-digest.py; then exit 1; fi
+  echo "done: former OCI lane absent; release-SLSA/CAS signer paths retained"'
 verify-means: |
-  parked — a lane existe, tem waiver, e nunca rodou.
-
-  A consulta de controle não é enfeite. Este predicado depende de rede autenticada, e a
-  classe de defeito dominante desta campanha é concluir ausência a partir de saída vazia.
-  Sem `gh`, sem rede ou sem permissão, a chamada devolve vazio — que se parece com "zero
-  execuções" e significa outra coisa. O controle separa as duas leituras, e o item sai
-  como INDETERMINADO em vez de mentir nos dois sentidos.
-
-  O que este comando NÃO decide: **por que** ela nunca rodou. Zero execuções é compatível
-  com "nunca houve tag de release" e com "o gatilho está quebrado", e o reparo é
-  completamente diferente nos dois casos. Quem fechar precisa dizer qual é, com o corpo do
-  workflow na mão.
-
-  Saídas aceitáveis, as mesmas três de qualquer lane sem sucesso: consertar na raiz e
-  fazê-la ficar verde; apagá-la, com o motivo no corpo do PR — e nesse caso **toda**
-  promessa de assinatura na doc do cliente sai junto; ou documentar o bloqueio. Nenhuma
-  fica no meio, e "flaky, deixa quieto" não é saída.
-last-verified: 2026-08-30
+  done — a antiga lane OCI permanece ausente, as promessas públicas permanecem removidas e os caminhos release-SLSA/CAS, que não são a antiga lane OCI, continuam com assinatura e verificação. O histórico vazio foi capturado como evidência; não é usado como falso-green runtime proof.
+last-verified: 2026-09-08
 ```
 
 ---
@@ -13867,26 +13853,26 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
-### B-134 — "shim nao e daemon": ninguem observou `smoke-install` nem `cosign-sign` rodando na frota
+### B-134 — "shim nao e daemon": `smoke-install` segue sem observação de frota
 
 A imagem da frota ganhou um **drop-in** `docker` em corelink-runners#459 (2026-08-13):
 `docker-shim.sh` fazendo `exec nerdctl` sobre containerd + BuildKit. **Nao e um daemon
 Docker.**
 
-Dois workflows dependiam de docker e eram hosted; esta branch os roteia para a fila
+O único workflow candidato restante depende de Docker e é roteado para a fila
 `corelink` como experimento controlado:
 
 - `smoke-install.yml` — preflight `docker info`, build, install/version e `doctor`
-- `cosign-sign.yml` — preflight `docker info`, `docker/build-push-action`, assinatura
-  keyless e verificacao Rekor antes do webhook
+- `cosign-sign.yml` — **removido em 2026-09-08 (B-118)**; não é mais uma
+  observação pendente nem uma lane que possa ser promovida por evidência futura
 
 **O que se sabe:** build de imagem funciona na frota — `container-build-push-prod.yml`
 esta verde (2026-08-31T00:39). **Mas ele chama `buildctl` DIRETO**, nao passa pelo shim.
 Isso nao prova nada sobre os dois acima.
 
-**O experimento e barato e decide os dois:** a proxima execucao deve despachar cada um com
-`runs-on: corelink` e ler o resultado. Ate que exista essa execucao, a afirmacao "eles
-funcionam na frota" segue **nao medida** — o comentario em `cargo-deny.yml:102`
+**O experimento e barato e decide o smoke:** a proxima execucao deve despacha-lo com
+`runs-on: corelink` e ler o resultado. Ate que exista essa execucao, a afirmacao "ele
+funciona na frota" segue **nao medida** — o comentario em `cargo-deny.yml:102`
 ("the `corelink` box image ships no docker at all") ja esta desatualizado pelo mesmo
 motivo.
 
@@ -13911,15 +13897,14 @@ verify: |
   python3 scripts/check_b134_observability.py
   bash scripts/test_b134_observability.sh
 verify-means: |
-  parked — os dois workflows estao roteados para `corelink`, mas a ledger permanece
-  `UNMEASURED` ate haver um run real. O checker confirma preflight e passos observaveis;
-  a suite de mutacoes prova que rota, verificacao, placeholders e ledger falsa falham.
+  parked — o workflow `smoke-install` está roteado para `corelink`, mas a ledger permanece
+  `UNMEASURED` até haver um run real. O checker confirma preflight e passos observáveis;
+  a suite de mutações prova que rota, verificação, placeholders e ledger falsa falham.
 
-  Vira PASS somente com GitHub run IDs, conclusoes, logs do backend, evidencia de imagem
-  publicada/assinada/verificada e webhook aceito. Vira DRIFTED se a rota, verificacao ou
-  contrato de evidencia regredir, ou se o workflow for removido (`cosign-sign` pode
-  simplesmente morrer, ver B-118).
-last-verified: 2026-09-05
+  Vira PASS somente com GitHub run IDs, conclusões, logs do backend, evidência de imagem
+  publicada/verificada e webhook aceito. Vira DRIFTED se a rota, verificação ou contrato
+  de evidência regredir. A antiga `cosign-sign` foi removida em B-118 e permanece RETIRED.
+last-verified: 2026-09-08
 ```
 
 ### B-135 — a imagem do runner nao e construida por nenhum gatilho de PR, e carrega rotulos que ninguem le
