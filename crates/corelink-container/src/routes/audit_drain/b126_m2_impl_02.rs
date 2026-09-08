@@ -348,8 +348,7 @@ const AUDIT_SEAL_CHUNK_SQL: &str = "UPDATE audit_outbox \
              AND pending.emitted_at IS NULL \
              AND pending.enqueued_at <= (SELECT MIN(CAST(json_extract(value, '$.sealed_at') AS INTEGER)) FROM json_each(?1))) = json_array_length(?1) \
       AND NOT EXISTS (SELECT 1 FROM audit_outbox AS collision, json_each(?1) AS candidate \
-           WHERE json_extract(candidate.value, '$.id') = audit_outbox.id \
-             AND collision.id <> audit_outbox.id \
+           WHERE collision.id <> json_extract(candidate.value, '$.id') \
              AND collision.tenant_id = audit_outbox.tenant_id \
              AND collision.region = audit_outbox.region \
              AND collision.sequence_number = json_extract(candidate.value, '$.sequence_number') \

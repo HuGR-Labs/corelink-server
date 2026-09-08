@@ -287,8 +287,78 @@ fn seal_chunk_sql_is_bounded_and_guarded() {
     assert!(AUDIT_SEAL_CHUNK_SQL.contains("emitted_at IS NULL"));
     assert!(AUDIT_SEAL_CHUNK_SQL.contains("pending.enqueued_at <="));
     assert!(AUDIT_SEAL_CHUNK_SQL.contains("collision.sequence_number"));
+    assert!(
+        !AUDIT_SEAL_CHUNK_SQL.contains("json_extract(candidate.value, '$.id') = audit_outbox.id")
+    );
     assert!(AUDIT_SEAL_CHUNK_SQL.contains("json_array_length(?1)"));
     assert!(AUDIT_SEAL_CHUNK_SQL.contains("RETURNING id"));
+}
+
+#[test]
+fn existing_sequence_collision_blocks_entire_chunk_without_partial_update() {
+    let conn = rusqlite::Connection::open_in_memory().expect("sqlite");
+    conn.execute_batch(
+        "CREATE TABLE audit_outbox (
+            id TEXT PRIMARY KEY,
+            tenant_id TEXT NOT NULL,
+            region TEXT NOT NULL,
+            sequence_number INTEGER,
+            prev_hash TEXT,
+            chain_hash TEXT,
+            canonical_jcs TEXT,
+            chained_at INTEGER,
+            emitted_at INTEGER,
+            algorithm_id INTEGER,
+            epoch_id INTEGER,
+            link_key_id INTEGER,
+            enqueued_at INTEGER NOT NULL
+        );",
+    )
+    .expect("schema");
+    conn.execute(
+        "INSERT INTO audit_outbox (id,tenant_id,region,enqueued_at,emitted_at,sequence_number) VALUES (?1,'tenant','enam',100,NULL,NULL)",
+        rusqlite::params!["candidate-10"],
+    )
+    .expect("candidate 10");
+    conn.execute(
+        "INSERT INTO audit_outbox (id,tenant_id,region,enqueued_at,emitted_at,sequence_number) VALUES (?1,'tenant','enam',100,NULL,NULL)",
+        rusqlite::params!["candidate-11"],
+    )
+    .expect("candidate 11");
+    conn.execute(
+        "INSERT INTO audit_outbox (id,tenant_id,region,enqueued_at,emitted_at,sequence_number) VALUES (?1,'tenant','enam',1,200,11)",
+        rusqlite::params!["existing-11"],
+    )
+    .expect("existing sequence 11");
+
+    let payload = serde_json::json!([
+        {"id":"candidate-10","sequence_number":10,"prev_hash":"00","chain_hash":"10","canonical_jcs":"{}","sealed_at":200,"algorithm_id":0,"epoch_id":0,"link_key_id":null},
+        {"id":"candidate-11","sequence_number":11,"prev_hash":"10","chain_hash":"11","canonical_jcs":"{}","sealed_at":200,"algorithm_id":0,"epoch_id":0,"link_key_id":null}
+    ])
+    .to_string();
+    let mut statement = conn
+        .prepare(AUDIT_SEAL_CHUNK_SQL)
+        .expect("prepare chunk SQL");
+    let returned: Vec<String> = statement
+        .query_map(rusqlite::params![payload], |row| row.get(0))
+        .expect("execute chunk SQL")
+        .collect::<Result<_, _>>()
+        .expect("returning IDs");
+    assert!(returned.is_empty(), "collision must block the whole chunk");
+
+    let mut check = conn
+        .prepare("SELECT sequence_number, emitted_at FROM audit_outbox WHERE id = ?1")
+        .expect("prepare check");
+    for id in ["candidate-10", "candidate-11"] {
+        let (sequence, emitted): (Option<i64>, Option<i64>) = check
+            .query_row(rusqlite::params![id], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("read candidate");
+        assert_eq!(
+            (sequence, emitted),
+            (None, None),
+            "{id} was partially updated"
+        );
+    }
 }
 
 #[test]
