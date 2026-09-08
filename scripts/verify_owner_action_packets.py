@@ -379,15 +379,19 @@ def _check_item(
         raise PacketError(f"item id mismatch: expected {expected_id!r}, got {item.get('id')!r}")
     canonical_owner, canonical_status = backlog_contracts[expected_id]
     expected_owner = "owner" if expected_id in LEGACY_OWNER_IDS else "tl"
-    if canonical_owner != expected_owner or canonical_status not in {"open", "parked"}:
+    allowed_statuses = {"open", "parked"}
+    # B-110 may close after the owner selects the already-provisioned CoreLink
+    # Linux substrate and the four workflow migrations are evidenced. Other
+    # legacy owner items remain external-action pending by contract.
+    if expected_id == "B-110":
+        allowed_statuses.add("done")
+    if canonical_owner != expected_owner or canonical_status not in allowed_statuses:
         raise PacketError(
             f"{expected_id}: BACKLOG canonical contract drifted from "
-            f"{expected_owner}/open-or-parked ({canonical_owner}/{canonical_status})"
+            f"{expected_owner}/allowed-status ({canonical_owner}/{canonical_status})"
         )
-    # The acquisition packet is intentionally frozen at `open`; D03 may park
-    # the corresponding backlog item while the external action is still
-    # pending.  A parked item must therefore continue to match an open packet,
-    # but any other owner/status drift remains fatal.
+    # The packet remains status-aligned with BACKLOG; parked legacy items may
+    # retain an open packet while external action is pending.
     packet_status_ok = item.get("status") == canonical_status or (
         canonical_status == "parked" and item.get("status") == "open"
     )

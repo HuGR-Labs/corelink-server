@@ -4,7 +4,7 @@
   "repository": "HuGR-Labs/corelink-server",
   "base_sha": "908d3bdc86f17a8b41a280baaea9352d7ed450ab",
   "status": "engineering-packet-only",
-  "non_claim": "No credential was minted, external account changed, legal instrument signed, file deleted, deployment made, or production result asserted by this packet.",
+  "non_claim": "No credential was minted, external account changed, legal instrument signed, file deleted, deployment made, or production result asserted by this packet; the owner-authorized B-110 workflow migration is recorded separately by its code commit and redacted evidence.",
   "population": ["B-008", "B-012", "B-013", "B-032", "B-035", "B-065", "B-086", "B-089", "B-097", "B-110", "B-111", "B-154", "B-029", "B-044", "B-046", "B-054", "B-063", "B-068", "B-071", "B-072", "B-083", "B-102", "B-106", "B-113", "B-125", "B-128", "B-134", "B-142", "B-165"],
   "items": [
     {
@@ -226,7 +226,7 @@
     {
       "id": "B-110",
       "owner": "owner",
-      "status": "open",
+      "status": "done",
       "action_type": "ci_capacity_decision",
       "procedure": [
         "UI: Choose one authorized capacity path for cas_foundation, coverage, ffi-matrix-ci, and mutation-nightly: restore hosted billing, provision an adequate Linux self-hosted box, or authorize deletion/parking of the named lanes.",
@@ -243,7 +243,7 @@
         "required_fields": ["schema_version", "captured_at", "selected_option", "workflows", "capacity_or_billing_reference", "coverage_impact", "runner_labels", "rollback_owner", "operator"],
         "item_schema": "workflows[] contains workflow, current_runner, selected_runner, and action; selected_option is hosted_billing, linux_self_hosted, or owner_authorized_park."
       },
-      "expected_postcondition": "The owner-approved capacity decision is recorded and the four lanes either have viable capacity or are explicitly parked/deleted with coverage impact; B-110 remains open until the external action is complete.",
+      "expected_postcondition": "The owner-approved Linux self-hosted capacity decision is recorded and the four lanes use viable CoreLink capacity without deletion; B-110 is closed only after the workflow and verifier changes are present.",
       "retry_and_rollback": "Retry capacity checks before registering duplicate runners or changing billing. Roll back a new runner by disabling/unregistering only that runner; billing can be stopped by the owner. Do not restore deleted coverage without a new owner decision and workflow review.",
       "references": ["BACKLOG.md#B-110", ".github/workflows/cas_foundation.yml", ".github/workflows/coverage.yml", ".github/workflows/ffi-matrix-ci.yml", ".github/workflows/mutation-nightly.yml"]
     },

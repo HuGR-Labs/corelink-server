@@ -274,12 +274,13 @@ def verify_b110() -> None:
     lanes = ("cas_foundation", "coverage", "ffi-matrix-ci", "mutation-nightly")
     for lane in lanes:
         values = workflow_runs_on(f".github/workflows/{lane}.yml")
-        assert_true(any("ubuntu-" in value for value in values), f"hosted runner missing: {lane}")
+        assert_true(values, f"runner population missing: {lane}")
+        assert_true(all(value == "corelink" for value in values), f"non-corelink runner present: {lane}")
     values = workflow_runs_on(".github/workflows/semgrep.yml")
     assert_true(len(values) == 1, "semgrep runner population is not exactly one")
     assert_true(not re.search(r"ubuntu|macos|windows", values[0], re.I), "semgrep returned to hosted runner")
-    assert_true(packet_item("B-110").get("status") == "open", "B-110 owner packet is not open")
-    print("open: four hosted lanes and semgrep outside hosted capacity")
+    assert_true(packet_item("B-110").get("status") == "done", "B-110 owner packet is not done")
+    print("done: four lanes use corelink and semgrep remains outside hosted capacity")
 
 
 def verify_b111() -> None:

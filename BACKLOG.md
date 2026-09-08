@@ -8558,11 +8558,17 @@ hospedado (cartão dele), pagar um box Linux multi-core self-hosted (dinheiro de
 as lanes — e a terceira ele tem de autorizar, porque apaga cobertura (mutation, coverage,
 cas-foundation).
 
+**Resolution (2026-09-08).** The owner authorized the existing CoreLink ephemeral Linux
+substrate as the fourth option operationally equivalent to provisioning a self-hosted
+multi-core Linux box. The four named workflows now use `runs-on: corelink` throughout;
+the matrix coverage and the semgrep anti-regression clause remain present. This removes
+the GitHub-hosted billing dependency without deleting a gate or changing its assertions.
+
 ```backlog
 id: B-110
 repo: corelink-server
 owner: owner
-status: open
+status: done
 action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
   python3 scripts/verify_b155_batch_g.py --id B-110
@@ -8570,11 +8576,11 @@ verify: |
   grep -q "^[^#]*B-110" scripts/verify_b155_batch_g.py
   grep -q "^[^#]*packet_item" scripts/verify_b155_batch_g.py
 verify-means: |
-  open — passa enquanto TODAS as quatro lanes nomeadas ainda apontam para um
-  runner hosted, que é o bloqueio. Vira vermelho assim que QUALQUER UMA for
-  migrada ou apagada, forçando a revisão do item em vez de deixá-lo cobrir uma
-  lane que já saiu do grupo. O laço é sobre as quatro de propósito: um verify que
-  olhasse só uma seria predicado mais fraco que quatro itens separados.
+  done — the four named workflows all run on the existing CoreLink ephemeral
+  Linux substrate (4 vCPU / 12.5 GB), so no job requests GitHub-hosted capacity;
+  the guard turns red if any hosted runner returns or any named workflow loses
+  its `corelink` job. The loop remains over all four lanes so one forgotten job
+  cannot make the aggregate look resolved.
 
   A quinta cláusula é uma catraca, não decoração: ela exige que a `semgrep`
   PERMANEÇA fora do runner GitHub-hosted. Sem ela, alguém poderia reverter a
