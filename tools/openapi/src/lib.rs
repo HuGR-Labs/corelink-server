@@ -1,5 +1,6 @@
 //! `corelink-openapi` — OpenAPI 3.1 contract surface for the CoreLink
-//! non-REAPI HTTP API.
+//! HTTP API, including the native CAS routes documented alongside the
+//! non-REAPI surfaces.
 //!
 //! # What this crate ships
 //!
