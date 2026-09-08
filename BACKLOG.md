@@ -6509,7 +6509,8 @@ must also be fail-closed: an empty or partial matrix, corrupt baseline,
 non-finite measurement, or duplicate scenario must be a red/invalid result,
 never a new green baseline.
 
-**Two of the three blockers are now cleared; the third is owner infra.**
+**Retired as an automated gate by decision; the dispatch-only harness remains
+parked until staging is provisioned.**
 - Comparison logic — REAL since PR #1263 (proven both ways: exit 2 at +73.9%
   over a stored baseline, exit 0 at +15.0%, failing run does not publish a new
   baseline).
@@ -6518,7 +6519,7 @@ never a new green baseline.
   this is a load GENERATOR firing k6 at a remote endpoint, so a datacenter uplink
   matters and host CPU does not — the very reason it never suited the residential
   Mac fleet.
-- **Remaining blocker — there is no staging environment to fire at.**
+- **Measured external fact — there is no staging environment to fire at.**
   `staging.corelink.humangr.com` does not resolve, and the `staging` GitHub
   environment carries none of the secrets the suite reads (`K6_TARGET_HOST`,
   `K6_STAGING_PAT`, …). So even on a live runner the pre-flight fail-closes every
@@ -6526,9 +6527,10 @@ never a new green baseline.
   cost decision, surfaced in `docs/internal/2026-08-24-owner-decision-brief.md`.
 
 The executable verifier checks both halves: the comparator/cache contract is
-real and the current operational status is honest. It keys on the disabled
-nightly `schedule` while staging is absent, so a future staging change must
-enable the schedule in the same change that wires the secrets.
+real and the current operational status is honest. Both workflows are
+operator-dispatched only; there is no automated performance-gate claim while
+staging is absent. A future funded staging deployment may enable automation as
+a separately reviewed owner decision.
 
 ```backlog
 id: B-029
@@ -6540,15 +6542,12 @@ verify: |
   python3 scripts/verify_owner_action_packets.py --id B-029 && \
     python3 scripts/verify_b029_load_gate.py --expect parked
 verify-means: |
-  parked — while the load suite's nightly `schedule` is disabled (the cron line
-  commented out) and the verifier confirms the real comparator, cache restore/
-  save ordering, exact scenario-set wiring, and fail-closed input handling.
-  This is correct while no staging environment exists to load-test against;
-  enabling the schedule sooner only manufactures a nightly red on missing
-  infra. Closes when the cron is re-enabled in the same change that stands up
-  staging and wires K6_TARGET_HOST + the K6_STAGING_* secrets. The residual is
-  owner infra, tracked in the owner decision brief. See B-037 for the sibling
-  dead-label sweep.
+  parked — both staging-targeted workflows are workflow_dispatch-only and the
+  verifier confirms the real comparator, cache restore/save ordering, exact
+  scenario-set wiring, and fail-closed input handling. This is correct while no
+  staging environment exists to load-test against; unattended automation is an
+  owner-funded cutover decision. The residual is owner infrastructure, tracked
+  in the owner decision brief. See B-037 for the sibling dead-label sweep.
 last-verified: 2026-09-05
 ```
 
