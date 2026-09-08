@@ -323,6 +323,14 @@ rotation owner → compromise response → storage location.
   fail CLOSED when a required signup-worker secret is absent.
 - **Build-metadata** rows (#74, #75) are not secrets in the cryptographic sense
   but are included so the verifier doesn't flag them as missing.
+- **GC safety selectors and scope identifiers** (`GC_LIVE_DELETE`,
+  `GC_OBSERVATION_ONLY`, `GC_LIVE_DELETE_CONFIRM`, `GC_R2_BUCKET`,
+  `GC_RUN_ID`, and `GC_VALIDATE_ONLY`) are non-secret runtime controls or
+  identifiers, not credentials and not provisioned secrets. They are
+  allowlisted by exact name in the Bash and Python drift gates; the gates
+  deliberately do **not** allowlist `GC_*` broadly, so a future GC credential
+  must still be added to this matrix. The tenant-derivation credential remains
+  `R2_TDK_HEX` (row #143) and is not allowlisted.
 
 ## Forward-looking secrets
 

@@ -186,14 +186,11 @@ ALLOWLIST_REGEX = re.compile(
     r"|R2_CHUNK_BUCKET$"
     r"|R2_CHUNK_REGION$"
     r"|R2_TEST_BUCKET$"
-    # GC sweep runtime controls are non-secret configuration, not credentials:
-    # bucket/run identifiers, the dry-run selector, and the fixed destructive
-    # confirmation literal.  Keep these exact (rather than prefix-allowlisting
-    # GC_*) so a future GC credential cannot disappear from the matrix gate.
-    r"|GC_LIVE_DELETE_CONFIRM$"
-    r"|GC_R2_BUCKET$"
-    r"|GC_RUN_ID$"
-    r"|GC_VALIDATE_ONLY$"
+    # GC safety selectors are non-secret configuration, not credentials. Keep
+    # these exact rather than accepting a broad GC_* prefix so a future GC
+    # credential remains visible as matrix drift.
+    r"|GC_LIVE_DELETE$"
+    r"|GC_OBSERVATION_ONLY$"
     # WP-3 dashboard revival (2026-06-10) — Stripe billing-portal return_url
     # override (public dashboard URL; default hardcoded in source). No
     # credential material — STRIPE_SECRET_KEY (matrix row) is the actual
