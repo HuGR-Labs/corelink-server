@@ -4,7 +4,7 @@
 This is intentionally a bounded register check.  It does not dispatch CI,
 contact GitHub, or pretend that production evidence is present.  It proves
 that the one DCO candidate accounts for the exact original population, that
-every parked item has an executable owner packet, and that the two DONE items
+every parked item has an executable owner packet, and that the three DONE items
 still pass their local inverted guards.
 """
 
@@ -28,6 +28,7 @@ from scripts.backlog_verify import parse
 ROOT = Path(__file__).resolve().parents[1]
 PACKET_PATH = ROOT / "docs/handoff/2026-09-06-d03-graduation-packets.json"
 OWNER_POPULATION = ("B-039",)
+POST_GRADUATION_PARKED = ("B-210",)
 OWNER_PACKET_FIELDS = {"owner", "status", "dependency", "action", "artifact", "command"}
 OWNER_MIRROR_URL = "https://corelink-artifacts.humangr.com/tlaplus/v1.8.0/eabd140a70f49eb9305a3bd3f3df944eddf87e5a90d329789085f8953a80533a/tla2tools.jar"
 OWNER_MIRROR_SHA256 = "eabd140a70f49eb9305a3bd3f3df944eddf87e5a90d329789085f8953a80533a"
@@ -214,11 +215,11 @@ EXCLUDED = frozenset(("B-061", "B-126", "B-155"))
 GRADUATED = tuple(item for item in ORIGINAL_TL_OPEN if item not in EXCLUDED) + ("B-006",)
 GRADUATED_SET = frozenset(GRADUATED)
 ORIGINAL_SET = frozenset(ORIGINAL_TL_OPEN)
-DONE_SET = frozenset(("B-074", "B-253"))
+DONE_SET = frozenset(("B-028", "B-074", "B-253"))
 EXCLUDED_FINGERPRINTS = {
     "B-061": "d759a0591e6f867b4245f09512963f2ae10924c7b25cfad02754dc1b323657dc",
     "B-126": "88e2fe5082ad1ad9c393c633c862f947043b378c1fd36393a949b64eab34b089",
-    "B-155": "5b82306fd2f4be91ea10d086e2aa38846d0945f5a72d236a258483490756246a",
+    "B-155": "d1887f0eb2fadcbae6a1128f228092439ff1d4e45136efc2a99d84a815b3626d",
 }
 
 
@@ -421,6 +422,12 @@ def verify_document(
     if remaining_open:
         raise GraduationError(f"repository still has owner tl/status open: {remaining_open}")
     packet_data = _load_packets(packet_text)
+    if tuple(packet_data.get("post_graduation_parked", ())) != POST_GRADUATION_PARKED:
+        raise GraduationError("post-graduation parked population is missing or not closed")
+    for item in POST_GRADUATION_PARKED:
+        record = by_id.get(item)
+        if record is None or record.raw.get("owner") != "tl" or record.raw.get("status") != "parked":
+            raise GraduationError(f"{item}: post-graduation disposition must remain tl/parked")
     _check_owner_packets(packet_data, by_id)
     packets = _check_packets(packet_data, root)
     packet_done = frozenset(item for item, packet in packets.items() if packet["disposition"] == "DONE")
@@ -467,6 +474,7 @@ def verify_document(
 
     if run_guards:
         commands = (
+            ("B-028", (sys.executable, "scripts/verify_b028_dependabot.py")),
             ("B-074", (sys.executable, "scripts/verify_b074_money_path_auth.py", "--self-test")),
             ("B-253", (sys.executable, "-m", "pytest", "-q", "tests/test_b253_openapi_version.py")),
         )
@@ -476,7 +484,7 @@ def verify_document(
                 raise GraduationError(f"{item}: inverted guard failed: {result.stdout}{result.stderr}")
     if run_gates:
         _run_parked_gates(root, by_id)
-    return {"original": len(ORIGINAL_TL_OPEN), "graduated": len(GRADUATED), "done": 2, "parked": len(GRADUATED) - 2}
+    return {"original": len(ORIGINAL_TL_OPEN), "graduated": len(GRADUATED), "done": 3, "parked": len(GRADUATED) - 3}
 
 
 _OFFLINE_ONLY_MARKERS = ("manual", "gh ", "gh\\n", "wrangler", "cargo ")
@@ -517,6 +525,7 @@ def self_test(root: Path = ROOT) -> None:
         ("stale-means", backlog.replace("verify-means: |\n  parked —", "verify-means: |\n  open —", 1), packets),
         ("packet-command-removed", backlog, packets.replace('"command":"', '"command_removed":"', 1)),
         ("packet-unclassified", backlog, packets.replace('"disposition":"PARKED"', '"disposition":"UNKNOWN"', 1)),
+        ("post-graduation-omitted", backlog, packets.replace('  "post_graduation_parked": ["B-210"],\n', "", 1)),
         ("fake-done", backlog.replace("id: B-044\nrepo: corelink-runners\nowner: tl\nstatus: parked", "id: B-044\nrepo: corelink-runners\nowner: tl\nstatus: done", 1), packets.replace('"B-044": {"disposition":"PARKED"', '"B-044": {"disposition":"DONE"', 1)),
         (
             "artifact-capture-removed",

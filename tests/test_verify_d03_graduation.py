@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_closed_population_and_inverted_guards() -> None:
     result = verify_document(run_guards=True, run_gates=False)
-    assert result == {"original": 42, "graduated": 40, "done": 2, "parked": 38}
+    assert result == {"original": 42, "graduated": 40, "done": 3, "parked": 37}
 
 
 def test_register_mutations_are_red() -> None:
