@@ -210,6 +210,13 @@ def test_b112_uses_push_tag_identity_and_terminal_revalidation() -> None:
     assert 'slsa_meta=' in command
     assert 'lock_dir="${artifact}.lock"' in command
     assert 'workflow_dispatch' not in command
+    head_sha = '.headSha == $sha'
+    initial_context = command.split('; lock_dir="${artifact}.lock";', 1)[0]
+    terminal_context = command.split('; gh run rerun "$run_id" --failed;', 1)[1].split(
+        '; caller_attempt="$(gh api', 1
+    )[0]
+    assert initial_context.count(head_sha) == 1
+    assert terminal_context.count(head_sha) == 2
 
     mutated = copy.deepcopy(packet)
     mutated["packets"]["B-112"]["command"] = command.replace(
@@ -245,3 +252,20 @@ def test_b112_uses_push_tag_identity_and_terminal_revalidation() -> None:
         mutated["packets"]["B-112"]["command"] = command.replace(original, inverted)
         with pytest.raises(GraduationError, match="B-112"):
             _check_packets(mutated, ROOT)
+
+    mutated = copy.deepcopy(packet)
+    initial_index = command.index(head_sha)
+    mutated["packets"]["B-112"]["command"] = (
+        command[:initial_index] + '.headSha != $sha' + command[initial_index + len(head_sha) :]
+    )
+    with pytest.raises(GraduationError, match="initial release headSha"):
+        _check_packets(mutated, ROOT)
+
+    mutated = copy.deepcopy(packet)
+    terminal_start = command.index('; gh run rerun "$run_id" --failed;')
+    terminal_index = command.index(head_sha, terminal_start)
+    mutated["packets"]["B-112"]["command"] = (
+        command[:terminal_index] + '.headSha != $sha' + command[terminal_index + len(head_sha) :]
+    )
+    with pytest.raises(GraduationError, match="terminal release headSha"):
+        _check_packets(mutated, ROOT)

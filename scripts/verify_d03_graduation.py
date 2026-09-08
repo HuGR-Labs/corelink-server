@@ -624,6 +624,23 @@ def _check_command_contract(item: str, packet: dict[str, Any], root: Path) -> No
             _check_b251_semantics(command, packet["artifact"])
     if item == "B-112" and "#" in command:
         raise GraduationError("B-112 command must not contain shell-comment predicate bait")
+    if item == "B-112":
+        head_sha = ".headSha == $sha"
+        lock_marker = '; lock_dir="${artifact}.lock";'
+        rerun_marker = '; gh run rerun "$run_id" --failed;'
+        slsa_marker = '; caller_attempt="$(gh api'
+        if lock_marker not in command or rerun_marker not in command or slsa_marker not in command:
+            raise GraduationError("B-112 command is missing release rerun structural anchors")
+        initial = command.split(lock_marker, 1)[0]
+        terminal = command.split(rerun_marker, 1)[1].split(slsa_marker, 1)[0]
+        if initial.count(head_sha) != 1:
+            raise GraduationError("B-112 initial release headSha predicate must occur exactly once")
+        if terminal.count(head_sha) != 2:
+            raise GraduationError("B-112 terminal release headSha predicates must occur exactly twice")
+        if '.headSha == $sha and (all(.jobs[]; ((.name | ascii_downcase | startswith("create release")) | not) or .conclusion == "skipped"))' not in initial:
+            raise GraduationError("B-112 initial headSha predicate is not bound to skipped-release guard")
+        if terminal.count('.status == "completed" and .conclusion == "skipped"') != 4:
+            raise GraduationError("B-112 terminal headSha predicates are not bound to skipped-release guards")
     if "set -euo pipefail" not in command:
         raise GraduationError(f"{item}: command must enable fail-closed shell options")
     if "printf" in command:
