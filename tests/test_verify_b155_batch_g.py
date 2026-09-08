@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import importlib.util
 import sys
 import tempfile
@@ -149,6 +150,21 @@ class B110WorkflowVerifierTests(unittest.TestCase):
             with self.assertRaises(verifier.CheckError):
                 verifier.verify_b110()
 
+    def test_yaml_encoded_or_bypass_variants_are_red(self) -> None:
+        target = ".github/workflows/semgrep.yml"
+        old = "if: github.repository == 'HuGR-Labs/corelink-server' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected"
+        for encoded_or in (r"\x7c\x7c", r"\u007c\u007c", r"\U0000007c\U0000007c"):
+            with self.subTest(encoded_or=encoded_or):
+                new = (
+                    'if: "github.repository == \'HuGR-Labs/corelink-server\' && '
+                    "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && "
+                    f"github.ref_protected {encoded_or} github.event_name == 'workflow_dispatch'\""
+                )
+                mutation = self._mutated_text(target, old, new)
+                with mutation:
+                    with self.assertRaises(verifier.CheckError):
+                        verifier.verify_b110()
+
     def test_ref_split_or_cancelling_heavy_build_is_red(self) -> None:
         mutation = self._mutated_text(
             ".github/workflows/cas_foundation.yml",
@@ -203,6 +219,22 @@ class B110WorkflowVerifierTests(unittest.TestCase):
         with mutation:
             with self.assertRaises(verifier.CheckError):
                 verifier.verify_b110()
+
+    def test_packet_load_bearing_fields_are_authoritative(self) -> None:
+        fields = (
+            ("action_type", "other_action"),
+            ("procedure", ["RUN: noop", "RUN: noop"]),
+            ("expected_postcondition", "B-110 is parked"),
+            ("retry_and_rollback", "no rollback"),
+            ("references", ["BACKLOG.md#B-110"]),
+        )
+        for field, value in fields:
+            with self.subTest(field=field):
+                packet = copy.deepcopy(verifier.packet_item("B-110"))
+                packet[field] = value
+                with patch.object(verifier, "packet_item", return_value=packet):
+                    with self.assertRaises(verifier.CheckError):
+                        verifier.verify_b110()
 
 
 if __name__ == "__main__":

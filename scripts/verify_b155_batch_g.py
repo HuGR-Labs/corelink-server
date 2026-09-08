@@ -61,6 +61,25 @@ B110_EVIDENCE_WORKFLOWS = (
         "action": "migrated",
     },
 )
+B110_ACTION_TYPE = "ci_capacity_decision"
+B110_PROCEDURE = (
+    "UI: Choose one authorized capacity path for cas_foundation, coverage, ffi-matrix-ci, and mutation-nightly: restore hosted billing, provision an adequate Linux self-hosted box, or authorize deletion/parking of the named lanes.",
+    "RUN: For a self-hosted path, register a dedicated runner label with documented CPU/RAM/disk limits and verify the four workflows’ `runs-on` and toolchain assumptions before enabling it.",
+    "UI: For hosted billing, confirm the GitHub account spending limit and payment state; for deletion/parking, obtain explicit owner approval describing the coverage loss. Record the selected option before any workflow mutation.",
+)
+B110_EXPECTED_POSTCONDITION = (
+    "The owner-approved Linux self-hosted capacity decision is recorded and the four lanes use viable CoreLink capacity without deletion; B-110 is closed only after the workflow and verifier changes are present."
+)
+B110_RETRY_AND_ROLLBACK = (
+    "Retry capacity checks before registering duplicate runners or changing billing. Roll back a new runner by disabling/unregistering only that runner; billing can be stopped by the owner. Do not restore deleted coverage without a new owner decision and workflow review."
+)
+B110_REFERENCES = (
+    "BACKLOG.md#B-110",
+    ".github/workflows/cas_foundation.yml",
+    ".github/workflows/coverage.yml",
+    ".github/workflows/ffi-matrix-ci.yml",
+    ".github/workflows/mutation-nightly.yml",
+)
 IDS = {
     "B-100": "verify_b100",
     "B-109": "verify_b109",
@@ -390,6 +409,54 @@ def _indent(line: str) -> int:
     return len(line) - len(line.lstrip(" "))
 
 
+def _decode_yaml_double_quoted(value: str, label: str) -> str:
+    """Decode YAML double-quoted escapes used by an `if` scalar."""
+    if not (value.startswith('"') and value.endswith('"')):
+        return value
+    value = value[1:-1]
+    simple = {
+        "0": "\0", "a": "\a", "b": "\b", "t": "\t", "n": "\n",
+        "v": "\v", "f": "\f", "r": "\r", "e": "\x1b", " ": " ",
+        '"': '"', "/": "/", "\\": "\\", "N": "\u0085", "_": "\u00a0",
+        "L": "\u2028", "P": "\u2029",
+    }
+    decoded: list[str] = []
+    index = 0
+    while index < len(value):
+        character = value[index]
+        if character != "\\":
+            decoded.append(character)
+            index += 1
+            continue
+        index += 1
+        if index >= len(value):
+            raise CheckError(f"unterminated YAML escape in {label}")
+        escape = value[index]
+        if escape in simple:
+            decoded.append(simple[escape])
+            index += 1
+            continue
+        width = {"x": 2, "u": 4, "U": 8}.get(escape)
+        if width is None or index + width > len(value):
+            raise CheckError(f"unsupported YAML escape in {label}")
+        digits = value[index + 1 : index + 1 + width]
+        if not re.fullmatch(rf"[0-9A-Fa-f]{{{width}}}", digits):
+            raise CheckError(f"invalid YAML escape in {label}")
+        decoded.append(chr(int(digits, 16)))
+        index += width + 1
+    return "".join(decoded)
+
+
+def _semantic_if_expression(value: str, label: str) -> str:
+    """Inspect the scalar after YAML quoting/escape decoding."""
+    value = value.strip()
+    if value.startswith('"'):
+        return _decode_yaml_double_quoted(value, label)
+    if value.startswith("'") and value.endswith("'"):
+        return value[1:-1].replace("''", "'")
+    return value
+
+
 def _permission_writes(value: str, label: str) -> list[str]:
     """Parse a permissions scalar or inline mapping, fail-closed on ambiguity."""
     value = _strip_yaml_comment(value).strip()
@@ -475,7 +542,7 @@ def workflow_job_if_expressions(block: list[str]) -> list[str]:
             if not continuation.strip() or _indent(continuation) <= 4:
                 break
             parts.append(continuation.strip())
-        expressions.append(" ".join(part for part in parts if part))
+        expressions.append(_semantic_if_expression(" ".join(part for part in parts if part), "job if"))
     return expressions
 
 
@@ -522,6 +589,11 @@ def packet_item(item_id: str) -> dict[str, object]:
 
 def _verify_b110_packet(item: dict[str, object]) -> None:
     """Bind the closed B-110 row to the exact redacted decision evidence."""
+    assert_true(item.get("action_type") == B110_ACTION_TYPE, "B-110 action type drifted")
+    assert_true(item.get("procedure") == list(B110_PROCEDURE), "B-110 procedure drifted")
+    assert_true(item.get("expected_postcondition") == B110_EXPECTED_POSTCONDITION, "B-110 postcondition drifted")
+    assert_true(item.get("retry_and_rollback") == B110_RETRY_AND_ROLLBACK, "B-110 rollback contract drifted")
+    assert_true(item.get("references") == list(B110_REFERENCES), "B-110 references drifted")
     evidence = item.get("evidence")
     assert_true(isinstance(evidence, dict), "B-110 owner packet evidence is not an object")
     assert_true(evidence.get("path") == B110_EVIDENCE_PATH, "B-110 evidence path drifted")
