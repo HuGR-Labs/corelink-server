@@ -19,6 +19,7 @@ ALL_PULL_REQUEST_TARGET_WORKFLOWS = {
     "dependabot-policy.yml",
     "dependabot-policy-trust-boundary.yml",
     "file-size-ratchet.yml",
+    "backlog-verify.yml",
     "pr-labels.yml",
     "welcome-first-pr.yml",
 }
@@ -27,6 +28,7 @@ EXPECTED_JOBS = {
     "dependabot-policy.yml": {"sentinel", "policy-gate"},
     "dependabot-policy-trust-boundary.yml": {"trust-boundary-teeth"},
     "file-size-ratchet.yml": {"ratchet"},
+    "backlog-verify.yml": {"verify"},
     "pr-labels.yml": {"label", "size"},
     "welcome-first-pr.yml": {"welcome"},
 }
@@ -44,6 +46,7 @@ EXPECTED_RUNNERS = {
     "file-size-ratchet.yml": {
         "ratchet": "corelink",
     },
+    "backlog-verify.yml": {"verify": "corelink"},
     "pr-labels.yml": {
         "label": "corelink",
         "size": "corelink",
@@ -61,6 +64,7 @@ EXPECTED_PERMISSIONS = {
     },
     "dependabot-policy-trust-boundary.yml": {"contents": "read"},
     "file-size-ratchet.yml": {"contents": "read"},
+    "backlog-verify.yml": {"contents": "read"},
     "pr-labels.yml": {
         "contents": "read",
         "pull-requests": "write",
@@ -608,6 +612,28 @@ def assert_file_size_trusted_base(test: unittest.TestCase, raw: str) -> None:
     )
 
 
+def assert_backlog_verify_boundary(test: unittest.TestCase, workflow: dict) -> None:
+    """The backlog PR lane executes only BASE control over PR data."""
+    jobs = workflow.get("jobs")
+    test.assertEqual(set(jobs or {}), {"verify"})
+    test.assertEqual(workflow.get("permissions"), {"contents": "read"})
+    test.assertEqual(jobs["verify"].get("runs-on"), "corelink")
+    raw = (WORKFLOWS / "backlog-verify.yml").read_text(encoding="utf-8")
+    test.assertIn("pull_request_target:", raw)
+    test.assertNotIn("\n  pull_request:\n", raw)
+    test.assertGreaterEqual(raw.count("persist-credentials: false"), 2)
+    test.assertIn("github.event.pull_request.head.sha || github.sha", raw)
+    test.assertIn("github.event.pull_request.base.sha || github.sha", raw)
+    test.assertNotIn("github.event.pull_request.head.ref", raw)
+    test.assertNotIn("github.event.pull_request.base.ref", raw)
+    test.assertNotIn("GH_TOKEN", raw)
+    test.assertIn("path: _candidate", raw)
+    test.assertIn("path: _base", raw)
+    test.assertIn("working-directory: _base", raw)
+    test.assertIn("--candidate-file", raw)
+    test.assertIn("--trusted-file", raw)
+
+
 def assert_welcome_boundary(test: unittest.TestCase, workflow: dict) -> None:
     test.assertTrue(triggers_pull_request_target(workflow))
     triggers = workflow.get("on", workflow.get(True))
@@ -699,6 +725,8 @@ jobs:
                     assert_dependabot_gate(self, job, f"{name}:{job_name}")
                 elif name == "file-size-ratchet.yml":
                     assert_file_size_boundary(self, workflow)
+                elif name == "backlog-verify.yml":
+                    assert_backlog_verify_boundary(self, workflow)
                 else:
                     assert_actor_gate(self, job, f"{name}:{job_name}")
 

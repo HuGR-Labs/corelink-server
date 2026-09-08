@@ -11,10 +11,8 @@ and no mechanism existed that could notice.
 
 So a list is not enough. The list has to be able to disagree with the world and
 say so out loud. Every item in BACKLOG.md therefore carries its own verification
-command, and this script runs them:
-
-    verify exits 0        -> the declared status is CONFIRMED
-    verify exits non-zero -> DRIFTED; the item says one thing, the repo says another
+declaration. This gate validates the declaration and its trusted-base transition,
+but deliberately does not execute it: a PR is an untrusted data source.
 
 An item that genuinely cannot be checked by a command declares `verify: manual`
 and must carry a fresh `last-verified` date. Those decay: past `max-age-days`
@@ -27,8 +25,13 @@ USAGE
     python3 scripts/backlog_verify.py            # check every item
     python3 scripts/backlog_verify.py --id B-003 # check one
     python3 scripts/backlog_verify.py --format json
+    python3 scripts/backlog_verify.py --candidate-file PR/BACKLOG.md \
+        --trusted-file BASE/BACKLOG.md --candidate-root PR --trusted-root BASE
 
 Exit code is 0 only when every item is CONFIRMED. Anything else is a red gate.
+Candidate mode validates the PR register, dense-ID population, allowed field
+transitions, and trusted control closure but never executes candidate
+`verify:` strings or candidate verifier code.
 """
 
 from __future__ import annotations
@@ -36,9 +39,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
-import os
 import re
-import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -66,8 +67,15 @@ REQUIRED_FIELDS = ("id", "repo", "owner", "status", "verify", "verify-means", "l
 VALID_STATUS = ("open", "done", "parked")
 VALID_OWNER = ("tl", "owner")
 DEFAULT_MAX_AGE_DAYS = 14
-# A command that hangs would turn a red gate into a stuck one, which is worse.
-VERIFY_TIMEOUT_S = 120
+# Candidate and BASE trees are data. No verifier command is executed by this
+# script; semantic verifier execution belongs to the exact-SHA local/orchestrator
+# lane until disposable CI capacity exists.
+MAX_BACKLOG_BYTES = 2_000_000
+IMMUTABLE_ITEM_FIELDS = frozenset({
+    "id", "repo", "verify", "verify-means", "action-packet", "source-document",
+    "source-locator", "finding-title", "problem", "evidence", "acceptance",
+})
+ALLOWED_TRANSITION_FIELDS = frozenset({"status", "owner", "last-verified"})
 
 # A command's polarity cannot be inferred from arbitrary shell.  We can still
 # reject the known dangerous declaration: a `done` item whose human explanation
@@ -212,21 +220,14 @@ def age_days(item: Item, today: dt.date) -> int:
     return (today - parse_date(item.raw["last-verified"])).days
 
 
-def run_verify(command: str) -> tuple[int, str]:
-    try:
-        p = subprocess.run(
-            command, shell=True, cwd=REPO_ROOT, timeout=VERIFY_TIMEOUT_S,
-            capture_output=True, text=True,
-        )
-    except subprocess.TimeoutExpired:
-        # Distinguished from a normal failure: a timeout means the check itself
-        # is broken, not that the item drifted.
-        return 124, f"verify command exceeded {VERIFY_TIMEOUT_S}s"
-    tail = (p.stdout + p.stderr).strip().splitlines()
-    return p.returncode, tail[-1][:200] if tail else ""
-
-
-def check(item: Item, today: dt.date, max_age: int) -> None:
+def check(
+    item: Item,
+    today: dt.date,
+    max_age: int,
+    *,
+    trusted_by_id: dict[str, Item] | None = None,
+    enforce_manual_age: bool = False,
+) -> None:
     if item.verdict:  # already BROKEN at parse time
         return
     validate_schema(item)
@@ -238,27 +239,232 @@ def check(item: Item, today: dt.date, max_age: int) -> None:
     command = str(item.raw["verify"]).strip()
     if command == "manual":
         age = age_days(item, today)
-        if age > max_age:
+        if enforce_manual_age and age > max_age:
             item.verdict = STALE
             item.detail = (f"last verified {age} days ago (limit {max_age}); "
                            "re-verify it by hand and update last-verified, or give it a real check")
         else:
             item.verdict = CONFIRMED
-            item.detail = f"manual, verified {age} day(s) ago"
+            item.detail = (
+                f"manual, verified {age} day(s) ago"
+                if enforce_manual_age
+                else "manual declaration present; semantic freshness is deferred to exact-SHA CI"
+            )
         return
 
-    code, tail = run_verify(command)
-    item.evidence = tail
-    if code == 0:
-        item.verdict = CONFIRMED
-        item.detail = "verify agrees with the declared status"
-    elif code == 124:
+    trusted = (trusted_by_id or {}).get(item.id)
+    if trusted is not None and item.raw.get("verify") != trusted.raw.get("verify"):
         item.verdict = BROKEN
-        item.detail = tail
-    else:
-        item.verdict = DRIFTED
-        item.detail = (f"verify exited {code} — the item claims status "
-                       f"`{item.raw['status']}` but the check for that no longer holds")
+        item.detail = "verify declaration differs from BASE; semantic execution is deferred to exact-SHA CI"
+        return
+    item.verdict = CONFIRMED
+    item.detail = "verify declaration is syntactically present; semantic execution is deferred to exact-SHA CI"
+
+
+_CONTROL_PATH_RE = re.compile(r"(?<![A-Za-z0-9_.-])((?:scripts|tests)/[A-Za-z0-9_./-]+)")
+_IMPORT_RE = re.compile(
+    r"^(?:from\s+(scripts(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s+import\s+([A-Za-z_][A-Za-z0-9_]*)|"
+    r"import\s+(scripts(?:\.[A-Za-z_][A-Za-z0-9_]*)*))",
+    re.MULTILINE,
+)
+
+
+def _candidate_control_paths(trusted_root: Path, trusted_items: list[Item]) -> set[str]:
+    """Resolve the trusted verifier's direct and transitive data controls.
+
+    This is intentionally a static closure. It never imports or runs a
+    candidate module, and it does not blanket-freeze unrelated source files.
+    """
+    paths = {"scripts/backlog_verify.py"}
+    queue: list[str] = []
+    for item in trusted_items:
+        command = item.raw.get("verify")
+        if isinstance(command, str):
+            queue.extend(
+                match.group(1).rstrip("'\"`),;:}")
+                for match in _CONTROL_PATH_RE.finditer(command)
+            )
+    seen: set[str] = set()
+    while queue:
+        relative = queue.pop()
+        if relative in seen or not relative.endswith((".py", ".sh")):
+            continue
+        seen.add(relative)
+        paths.add(relative)
+        if not relative.endswith(".py"):
+            continue
+        source = trusted_root / relative
+        if not source.is_file() or source.is_symlink():
+            continue
+        text = source.read_text(encoding="utf-8")
+        for match in _IMPORT_RE.finditer(text):
+            module = match.group(1) or match.group(3)
+            imported = match.group(2)
+            if not module:
+                continue
+            candidate = module.replace(".", "/") + ".py"
+            if (trusted_root / candidate).is_file():
+                queue.append(candidate)
+            elif imported:
+                imported_candidate = f"{module.replace('.', '/')}/{imported}.py"
+                if (trusted_root / imported_candidate).is_file():
+                    queue.append(imported_candidate)
+    return paths
+
+
+def _regular_control(root: Path, relative: str) -> bytes:
+    path = root / relative
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError as exc:
+        raise RuntimeError(f"control path escapes checkout: {relative}") from exc
+    try:
+        current = root
+        for component in Path(relative).parts[:-1]:
+            current = current / component
+            if current.is_symlink():
+                raise RuntimeError(f"control parent is a symlink: {relative}")
+        path.lstat()
+    except OSError as exc:
+        raise RuntimeError(f"control file unavailable: {relative}: {exc}") from exc
+    if not path.is_file() or path.is_symlink():
+        raise RuntimeError(f"control file is not a regular non-symlink file: {relative}")
+    return path.read_bytes()
+
+
+def check_candidate_controls(candidate_root: Path, trusted_root: Path, trusted_items: list[Item]) -> None:
+    """Fail closed when PR data changes a trusted control in the closure."""
+    for relative in sorted(_candidate_control_paths(trusted_root, trusted_items)):
+        trusted = _regular_control(trusted_root, relative)
+        candidate = _regular_control(candidate_root, relative)
+        if candidate != trusted:
+            raise RuntimeError(
+                f"candidate mutated trusted backlog control {relative}; "
+                "candidate verifier code is data-only and was not executed"
+            )
+
+
+def validate_candidate_transitions(
+    candidate_items: list[Item], trusted_items: list[Item], today: dt.date
+) -> list[str]:
+    """Validate the small, auditable set of BACKLOG changes a PR may make."""
+    trusted_by_id = {item.id: item for item in trusted_items if item.raw}
+    candidate_by_id = {item.id: item for item in candidate_items if item.raw}
+    errors: list[str] = []
+    allowed_status = {
+        "open": {"open", "parked", "done"},
+        "parked": {"parked", "open", "done"},
+        "done": {"done"},
+    }
+    for item in candidate_items:
+        if not item.raw or item.id not in trusted_by_id:
+            if item.raw.get("status") != "open":
+                errors.append(f"new item {item.id} must start status: open")
+            continue
+        old = trusted_by_id[item.id]
+        old_raw, new_raw = old.raw, item.raw
+        for field in IMMUTABLE_ITEM_FIELDS:
+            if old_raw.get(field) != new_raw.get(field):
+                errors.append(f"{item.id}: immutable field {field!r} changed")
+        for field in set(old_raw) | set(new_raw):
+            if field not in IMMUTABLE_ITEM_FIELDS | ALLOWED_TRANSITION_FIELDS:
+                if old_raw.get(field) != new_raw.get(field):
+                    errors.append(f"{item.id}: unsupported field {field!r} changed")
+        old_status, new_status = old_raw.get("status"), new_raw.get("status")
+        if new_status not in allowed_status.get(old_status, set()):
+            errors.append(f"{item.id}: status transition {old_status!r} -> {new_status!r} is not allowed")
+        if old_raw.get("owner") != new_raw.get("owner") and old_status == new_status:
+            errors.append(f"{item.id}: owner may change only with a status transition")
+        if old_raw.get("verify-means") != new_raw.get("verify-means") and old_status == new_status:
+            errors.append(f"{item.id}: verify-means may change only with a status transition")
+        try:
+            old_date, new_date = parse_date(old_raw["last-verified"]), parse_date(new_raw["last-verified"])
+            if new_date < old_date or new_date > today:
+                errors.append(f"{item.id}: last-verified must move forward and not be future-dated")
+        except Exception:
+            pass  # validate_schema reports the precise date error
+    missing = sorted(set(trusted_by_id) - set(candidate_by_id))
+    if missing:
+        errors.append("candidate deleted BASE item(s): " + ", ".join(missing))
+    return errors
+
+
+def validate_candidate_workflow(candidate_root: Path) -> None:
+    """Inspect workflow policy as data; never execute the candidate workflow."""
+    text = _regular_control(candidate_root, ".github/workflows/backlog-verify.yml").decode("utf-8")
+    try:
+        document = yaml.load(text, Loader=_NoDuplicateKeysLoader) or {}
+    except yaml.YAMLError as exc:
+        raise RuntimeError(f"candidate workflow policy is not valid YAML: {exc}") from exc
+    if not isinstance(document, dict):
+        raise RuntimeError("candidate workflow policy must be a YAML mapping")
+    required = (
+        "pull_request_target:",
+        "github.event.pull_request.head.sha || github.sha",
+        "github.event.pull_request.base.sha || github.sha",
+        "types: [opened, synchronize, reopened]",
+        "persist-credentials: false",
+        'paths: ["**"]',
+        "runs-on: corelink",
+        "permissions:\n  contents: read",
+        "--candidate-file",
+        "--trusted-file",
+    )
+    missing = [fragment for fragment in required if fragment not in text]
+    if missing:
+        raise RuntimeError("candidate workflow policy missing: " + ", ".join(missing))
+    forbidden = (
+        "pull_request:\n", "refs/pull/", "pull_request.head.ref", "pull_request.base.ref",
+        "GH_" + "TOKEN", "github." + "token", "shell" + "=" + "True", "bash" + " " + "-c",
+    )
+    found = [fragment for fragment in forbidden if fragment in text]
+    if found:
+        raise RuntimeError("candidate workflow contains mutable/credentialed execution policy: " + ", ".join(found))
+
+    # The workflow is not executed for this PR, but it becomes the BASE control
+    # plane after merge. Keep its executable shape closed while allowing harmless
+    # comments/concurrency edits. A candidate cannot add a shell step, swap the
+    # checkout action, or redirect the BASE checker without this data check going
+    # red first.
+    trigger = document.get(True, document.get("on")) or {}
+    if trigger.get("pull_request_target", {}).get("types") != ["opened", "synchronize", "reopened"]:
+        raise RuntimeError("candidate workflow policy has unexpected pull_request_target types")
+    if trigger.get("pull_request_target", {}).get("paths") != ["**"]:
+        raise RuntimeError("candidate workflow policy must cover the complete PR tree")
+    if trigger.get("push", {}).get("branches") != ["main"] or trigger.get("push", {}).get("paths") != ["**"]:
+        raise RuntimeError("candidate workflow policy has unexpected main push trigger")
+    if document.get("permissions") != {"contents": "read"}:
+        raise RuntimeError("candidate workflow policy must grant contents: read only")
+    jobs = document.get("jobs")
+    if not isinstance(jobs, dict) or set(jobs) != {"verify"}:
+        raise RuntimeError("candidate workflow policy must contain only the verify job")
+    job = jobs["verify"]
+    steps = job.get("steps") if isinstance(job, dict) else None
+    if job.get("runs-on") != "corelink" or not isinstance(steps, list) or len(steps) != 4:
+        raise RuntimeError("candidate workflow policy has unexpected verify job shape")
+    checkout_ref = "9f698171ed81b15d1823a05fc7211befd50c8ae0"
+    expected_checkouts = (
+        ("${{ github.event.pull_request.head.sha || github.sha }}", "_candidate"),
+        ("${{ github.event.pull_request.base.sha || github.sha }}", "_base"),
+    )
+    for step, (ref, path) in zip(steps[:2], expected_checkouts):
+        if not isinstance(step, dict) or step.get("uses") != f"actions/checkout@{checkout_ref}":
+            raise RuntimeError("candidate workflow policy uses an unexpected checkout action")
+        if step.get("with") != {
+            "ref": ref, "path": path, "fetch-depth": 1, "persist-credentials": False
+        }:
+            raise RuntimeError("candidate workflow policy has an unsafe checkout configuration")
+    expected_gate = (
+        'python3 scripts/backlog_verify.py --candidate-file "$CANDIDATE_ROOT/BACKLOG.md" '
+        '--trusted-file "$TRUSTED_ROOT/BACKLOG.md" --candidate-root "$CANDIDATE_ROOT" '
+        '--trusted-root "$TRUSTED_ROOT"'
+    )
+    if steps[2].get("working-directory") != "_base" or steps[2].get("run") != expected_gate:
+        raise RuntimeError("candidate workflow policy has an unexpected BASE gate command")
+    if steps[3].get("working-directory") != "_base" or steps[3].get("run") != (
+        "python3 -m unittest -q tests/test_backlog_verify_trust_boundary.py"
+    ):
+        raise RuntimeError("candidate workflow policy has an unexpected BASE test command")
 
 
 def main() -> int:
@@ -269,35 +475,66 @@ def main() -> int:
                     help="how long a `verify: manual` item may go unchecked")
     ap.add_argument("--today", help="override today's date (YYYY-MM-DD), for testing")
     ap.add_argument("--file", help="check a different backlog file (used by the self-test)")
+    ap.add_argument("--candidate-file", help="PR BACKLOG.md; parsed as data only")
+    ap.add_argument("--trusted-file", help="trusted-base BACKLOG.md paired with --candidate-file")
+    ap.add_argument("--candidate-root", help="PR checkout root paired with --candidate-file")
+    ap.add_argument("--trusted-root", help="trusted checkout root paired with --candidate-file")
     args = ap.parse_args()
 
-    # The D03 closed-population validator is the authority for the final TL
-    # lane.  Per-item invocations preflight its schema, while the graduation
-    # validator's nested gate runs set this env var to avoid recursion.
-    if args.id and not args.file and not os.environ.get("D03_GRADUATION_NESTED"):
-        validator = REPO_ROOT / "scripts/verify_d03_graduation.py"
-        try:
-            preflight = subprocess.run(
-                [sys.executable, str(validator), "--schema-only"],
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
-                timeout=VERIFY_TIMEOUT_S,
-            )
-        except subprocess.TimeoutExpired:
-            print("FATAL: D03 graduation schema preflight exceeded timeout", file=sys.stderr)
-            return 2
-        if preflight.returncode:
-            print(preflight.stdout + preflight.stderr, file=sys.stderr)
-            return 2
+    candidate_mode = bool(args.candidate_file)
+    if bool(args.candidate_file) != bool(args.trusted_file):
+        print("FATAL: --candidate-file and --trusted-file must be supplied together", file=sys.stderr)
+        return 2
+    if candidate_mode and (not args.candidate_root or not args.trusted_root):
+        print("FATAL: candidate mode requires --candidate-root and --trusted-root", file=sys.stderr)
+        return 2
 
-    path = Path(args.file).resolve() if args.file else BACKLOG_PATH
+    candidate_root = Path(args.candidate_root).resolve() if candidate_mode else None
+    path = Path(args.candidate_file).resolve() if candidate_mode else Path(args.file).resolve() if args.file else BACKLOG_PATH
+    if candidate_mode and (path != candidate_root / "BACKLOG.md" or not path.is_file() or path.is_symlink()):
+        print("FATAL: candidate BACKLOG.md must be a regular file in the candidate root", file=sys.stderr)
+        return 2
     if not path.exists():
         print(f"FATAL: {path} does not exist", file=sys.stderr)
         return 2
 
     today = dt.datetime.strptime(args.today, "%Y-%m-%d").date() if args.today else dt.date.today()
-    items = parse(path.read_text())
+    try:
+        if path.stat().st_size > MAX_BACKLOG_BYTES:
+            print(f"FATAL: {path.name} exceeds {MAX_BACKLOG_BYTES} bytes", file=sys.stderr)
+            return 2
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        print(f"FATAL: cannot read {path}: {exc}", file=sys.stderr)
+        return 2
+    items = parse(text)
+    trusted_by_id: dict[str, Item] | None = None
+    if candidate_mode:
+        trusted_path = Path(args.trusted_file).resolve()
+        if not trusted_path.is_file() or trusted_path.is_symlink():
+            print(f"FATAL: trusted backlog is not a regular file: {trusted_path}", file=sys.stderr)
+            return 2
+        if trusted_path.stat().st_size > MAX_BACKLOG_BYTES:
+            print(f"FATAL: trusted BACKLOG.md exceeds {MAX_BACKLOG_BYTES} bytes", file=sys.stderr)
+            return 2
+        trusted_items = parse(trusted_path.read_text(encoding="utf-8"))
+        trusted_by_id = {item.id: item for item in trusted_items if item.raw}
+        if len(trusted_by_id) != len(trusted_items) or any(item.verdict == BROKEN for item in trusted_items):
+            print("FATAL: trusted-base BACKLOG.md is not parseable; refusing candidate validation", file=sys.stderr)
+            return 2
+        try:
+            check_candidate_controls(
+                candidate_root,
+                Path(args.trusted_root).resolve(),
+                trusted_items,
+            )
+            transition_errors = validate_candidate_transitions(items, trusted_items, today)
+            if transition_errors:
+                raise RuntimeError("candidate transition rejected:\n" + "\n".join(transition_errors))
+            validate_candidate_workflow(candidate_root)
+        except (OSError, RuntimeError) as exc:
+            print(f"FATAL: {exc}", file=sys.stderr)
+            return 2
 
     if not items:
         # An empty backlog is not a pass. It is far more likely that the format
@@ -308,7 +545,6 @@ def main() -> int:
     # Each block must sit under a heading that names the SAME id. Checked before
     # the per-item verifies so a mislabelled item cannot be "confirmed" under a
     # heading that describes different work.
-    text = path.read_text()
     headings = [(m.start(), m.group(1)) for m in HEADING_RE.finditer(text)]
     mismatches: list[str] = []
     # An id that is not `B-<digits>` used to be SKIPPED here, and that silence was
@@ -522,7 +758,13 @@ def main() -> int:
         return 2
 
     for it in selected:
-        check(it, today, args.max_age_days)
+        check(
+            it,
+            today,
+            args.max_age_days,
+            trusted_by_id=trusted_by_id,
+            enforce_manual_age=bool(args.file),
+        )
 
     if args.format == "json":
         print(json.dumps([{
