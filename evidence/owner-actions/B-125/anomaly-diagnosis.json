@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-08T19:20:00Z",
+  "database_access": "remote-read-only",
+  "redaction": "aggregate-only; tenant IDs, request IDs, and payloads omitted",
+  "classification": {
+    "repeated_sequence_groups": {
+      "total": 1505,
+      "last_observed_enqueued_day": "2026-08-14",
+      "post_2026_08_14_groups": 0,
+      "interpretation": "historical residue in the retained production population; not evidence of an active writer after 2026-08-14"
+    },
+    "sequence_gap_rows": {
+      "total": 1502,
+      "last_observed_enqueued_day": "2026-08-14",
+      "post_2026_08_14_rows": 0,
+      "interpretation": "co-located with the historical repeated-sequence residue"
+    },
+    "negative_latency_rows": {
+      "total": 64,
+      "enqueued_interval": "2026-08-14/2026-08-24",
+      "latency_min_ms": -3352329,
+      "latency_max_ms": -576,
+      "interpretation": "historical future-dated enqueued_at values; writer must refuse sealing a row before its enqueue timestamp"
+    },
+    "head_tail_mismatches": {
+      "total": 2,
+      "regions": ["enam"],
+      "head_behind": 1,
+      "head_ahead": 1,
+      "duplicate_tail_partitions": 2,
+      "interpretation": "active verifier/resume hazard for two retained partitions; do not auto-repair or rewrite production rows"
+    }
+  },
+  "source_remediation": {
+    "ambiguous_tail": "Read two sealed-tail candidates and fail closed when the maximum sequence occurs more than once; LIMIT 1 was nondeterministic on a duplicate tail.",
+    "future_seal": "The bounded JSON1 UPDATE now requires every pending row's enqueued_at <= the batch sealed_at timestamp.",
+    "sequence_collision": "Reject duplicate sequence numbers in one chunk and reject collisions with another already-sealed row in the same partition before returning success.",
+    "production_mutation": "none"
+  },
+  "remaining_operator_action": "After deploy, re-run aggregate duplicate/gap/head-tail/negative-latency controls. Historical rows require an explicit offline repair decision; the drain must remain fail-closed until then."
+}
