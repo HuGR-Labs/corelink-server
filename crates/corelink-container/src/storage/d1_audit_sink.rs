@@ -32,11 +32,12 @@
 //!
 //! ## `region` column
 //!
-//! Every INSERT here sets `region` from a correlated subquery on the tenant's
-//! `primary_region`, NOT from the column default. The residency guard rejects
-//! a non-public row whose tenant is absent or whose region disagrees; the
-//! result is deliberately allowed to fail CLOSED rather than creating another
-//! unevaluable audit row.
+//! Tenant-scoped INSERTs set `region` from a correlated subquery on the
+//! tenant's `primary_region`, NOT from the column default. The pre-tenant
+//! pilot-signup path instead pins its canonical `_public` namespace to `wnam`.
+//! The residency guard rejects a non-public row whose tenant is absent or whose
+//! region disagrees; the result is deliberately allowed to fail CLOSED rather
+//! than creating another unevaluable audit row.
 //! See [`AUDIT_OUTBOX_INSERT_ONE_SQL`] for the incident this encodes.
 
 use std::sync::Arc;
@@ -505,19 +506,45 @@ impl D1AuditOutboxSink {
 /// `audit_outbox` table + bridge as the CAS/AC impls above — this is a NEW
 /// trait impl on the EXISTING durable sink, not a new audit mechanism.
 ///
-/// `SignupAuditRow` doesn't carry a `digest` (pre-auth pilot signups have
-/// no blob hash); the token id/prefix rides in the `digest` column slot
-/// instead (same "nullable, non-blob events" contract the column doc
-/// already states) and the full row (`tenant_id`, `token_id_or_prefix`,
-/// `exit_status`, `payload`) is preserved verbatim in the CloudEvents
-/// `data` envelope, unlike the CAS/AC `append()` helper which only carries
-/// `(tenant, digest, principal)`. Pre-auth events (rate-limit / token
-/// reject, before a tenant_id is allocated) use the nil UUID sentinel —
-/// mirrors `routes::signup::PRE_AUTH_TENANT`.
+/// `SignupAuditRow` doesn't carry a `digest` (pilot signups have no blob
+/// hash); the token id/prefix rides in the `digest` column slot instead (same
+/// "nullable, non-blob events" contract the column doc already states) and
+/// the full row (`tenant_id`, `token_id_or_prefix`, `exit_status`, `payload`)
+/// is preserved verbatim in the CloudEvents `data` envelope, unlike the
+/// CAS/AC `append()` helper which only carries `(tenant, digest, principal)`.
+///
+/// The pilot route is pre-tenant for *every* arm. Its rejected/rate-limited
+/// requests have no tenant, and a successful reservation's placeholder id is
+/// not present in `tenant` until operator provisioning. The audit row itself
+/// therefore uses the canonical `_public` namespace, pinned to `wnam` by the
+/// writer. A nil UUID is never a D1 audit identity.
 impl crate::routes::signup::SignupAuditSink for D1AuditOutboxSink {
     fn emit(&self, row: crate::routes::signup::SignupAuditRow) -> Result<(), &'static str> {
+        let (sql, params) = self
+            .build_signup_insert(row)
+            .map_err(|_| "signup audit sink: payload serialize failed")?;
+        self.write_blocking(&sql, params)
+            .map_err(|_| "signup audit sink: D1 write failed")
+    }
+}
+
+impl D1AuditOutboxSink {
+    /// Build the production pilot-signup audit INSERT without sending it.
+    ///
+    /// Kept as one helper so the live sink and the migration-level regression
+    /// exercise exactly the same SQL/parameters. The route remains fail-CLOSED
+    /// because callers still send the returned statement through
+    /// [`Self::write_blocking`], and any D1 error is propagated by `emit`.
+    fn build_signup_insert(
+        &self,
+        row: crate::routes::signup::SignupAuditRow,
+    ) -> Result<(String, Vec<Value>), String> {
         let at_ms = i64::try_from(row.emitted_at_ms).unwrap_or(i64::MAX);
-        let tenant = row.tenant_id.unwrap_or_else(uuid::Uuid::nil).to_string();
+        // `_public` is a canonical residency-guard exception (migration
+        // 0107), unlike the nil UUID previously used for pre-auth rows.
+        // Keep `row.tenant_id` only in the event data below; it is a pilot
+        // reservation correlation id, not yet a tenant row.
+        let tenant = crate::routes::signup::PILOT_AUDIT_NAMESPACE;
         let token = row.token_id_or_prefix.clone().unwrap_or_default();
         let id = format!(
             "{}:{tenant}:{}:{}:{at_ms}",
@@ -545,19 +572,20 @@ impl crate::routes::signup::SignupAuditSink for D1AuditOutboxSink {
             }
         });
         let payload_json = serde_json::to_string(&payload)
-            .map_err(|_| "signup audit sink: payload serialize failed")?;
+            .map_err(|e| format!("signup audit sink: payload serialize failed: {e}"))?;
         let digest_param = if token.is_empty() {
             Value::Null
         } else {
             json!(token)
         };
-        // The correlated lookup intentionally returns NULL for a missing
-        // tenant. Migration 0107 rejects that row (except `_public`, which is
-        // not emitted by this sink), preserving fail-closed audit semantics.
+        // Pilot audit rows are intentionally pre-tenant. Pinning the public
+        // namespace to its canonical region keeps the row compatible with
+        // both the NOT NULL region column and migration 0107's residency
+        // guard; tenant-scoped rows continue to use the correlated lookup in
+        // `append` above.
         let sql = "INSERT OR IGNORE INTO audit_outbox \
              (id, tenant_id, digest, request_id, event_type, payload_json, enqueued_at, emitted_at, region) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, \
-                     (SELECT primary_region FROM tenant WHERE tenant_id = ?2))";
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8)";
         let params = vec![
             json!(id),
             json!(tenant),
@@ -566,9 +594,9 @@ impl crate::routes::signup::SignupAuditSink for D1AuditOutboxSink {
             json!(row.event_type),
             json!(payload_json),
             json!(at_ms),
+            json!(crate::routes::signup::PILOT_AUDIT_REGION),
         ];
-        self.write_blocking(sql, params)
-            .map_err(|_| "signup audit sink: D1 write failed")
+        Ok((sql.to_owned(), params))
     }
 }
 
@@ -699,3 +727,6 @@ mod tests_batch_limits;
 
 #[cfg(test)]
 mod tests_phase_attribution;
+
+#[cfg(test)]
+mod tests_signup;

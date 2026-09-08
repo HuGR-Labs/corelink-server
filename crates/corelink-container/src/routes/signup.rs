@@ -143,6 +143,19 @@ pub const EVENT_TYPE_PILOT_TOKEN_REJECTED: &str = "corelink.signup.pilot_token_r
 /// audit emit.
 pub const EVENT_TYPE_PILOT_RATE_LIMITED: &str = "corelink.signup.pilot_rate_limited.v1";
 
+/// Canonical D1 audit namespace for the pilot route.
+///
+/// Pilot requests are pre-tenant: token rejection and rate limiting happen
+/// before a tenant exists, while a successful reservation only allocates the
+/// placeholder id in `pilot_signups` (the real `tenant` row is created later
+/// by operator provisioning). All pilot audit rows therefore use the shared
+/// public namespace in `audit_outbox`; the reserved id remains in the
+/// CloudEvents data payload for correlation.
+pub const PILOT_AUDIT_NAMESPACE: &str = "_public";
+
+/// Residency pinned by the canonical `_public` audit namespace.
+pub const PILOT_AUDIT_REGION: &str = "wnam";
+
 /// Pilot signup token TTL — tokens older than this (by mint
 /// timestamp) are rejected as expired. 14 days mirrors the operator
 /// pilot-window policy in
